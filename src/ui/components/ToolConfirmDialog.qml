@@ -1,0 +1,125 @@
+import QtQuick
+import QtQuick.Layouts
+import QtQuick.Controls
+import NexusAI
+
+// Tool confirmation dialog - high-risk operation interception
+Dialog {
+    id: dialog
+
+    modal: true
+    anchors.centerIn: parent
+    padding: 0
+
+    property string toolName: ""
+    property string arguments: "{}"
+
+    background: Rectangle {
+        color: Theme.bgSecondary
+        radius: 8
+        border.width: 1
+        border.color: Theme.borderSubtle
+
+        // Warning stripe
+        Rectangle {
+            width: 4
+            height: parent.height
+            color: Theme.statusWarning
+            anchors.left: parent.left
+        }
+
+        // Subtle outer glow for elevation (dark mode only)
+        Rectangle {
+            anchors.fill: parent
+            anchors.margins: -2
+            radius: parent.radius + 2
+            color: "transparent"
+            border.width: 1
+            border.color: Theme.statusWarning
+            opacity: Theme.isDark ? 0.15 : 0.0
+            z: -1
+        }
+    }
+
+    contentItem: ColumnLayout {
+        spacing: 12
+        width: 400
+
+        // Title
+        Text {
+            Layout.fillWidth: true
+            Layout.leftMargin: 20
+            Layout.topMargin: 20
+            Layout.rightMargin: 20
+            text: qsTr("⚠ AI 请求执行高危操作")
+            color: Theme.textPrimary
+            font.pixelSize: Theme.fontSizeH2
+            font.bold: true
+            font.family: Theme.fontSans
+        }
+
+        // Tool name
+        RowLayout {
+            Layout.leftMargin: 20
+            Layout.rightMargin: 20
+            spacing: 8
+
+            Text {
+                text: qsTr("工具名称:")
+                color: Theme.textSecondary
+                font.pixelSize: Theme.fontSizeBody
+                font.family: Theme.fontSans
+            }
+
+            Text {
+                text: dialog.toolName
+                color: Theme.statusWarning
+                font.pixelSize: Theme.fontSizeBody
+                font.family: Theme.fontMono
+                font.bold: true
+            }
+        }
+
+        // Arguments header
+        Text {
+            Layout.leftMargin: 20
+            Layout.rightMargin: 20
+            text: qsTr("调用参数:")
+            color: Theme.textSecondary
+            font.pixelSize: Theme.fontSizeBody
+            font.family: Theme.fontSans
+        }
+
+        // Code block showing arguments
+        CodeBlock {
+            Layout.leftMargin: 20
+            Layout.rightMargin: 20
+            Layout.fillWidth: true
+            Layout.preferredHeight: 120
+            text: dialog.arguments
+        }
+
+        // Action buttons
+        RowLayout {
+            Layout.fillWidth: true
+            Layout.leftMargin: 20
+            Layout.rightMargin: 20
+            Layout.bottomMargin: 20
+            spacing: 8
+
+            Item { Layout.fillWidth: true }
+
+            AppButton {
+                text: qsTr("拒绝")
+                textColor: Theme.statusDanger
+                onClicked: dialog.reject()
+            }
+
+            AppButton {
+                text: qsTr("允许执行")
+                highlighted: true
+                onClicked: dialog.accept()
+            }
+        }
+    }
+}
