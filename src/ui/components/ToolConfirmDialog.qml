@@ -13,6 +13,19 @@ Dialog {
 
     property string toolName: ""
     property string arguments: "{}"
+    property string pendingToolCallId: ""
+
+    // Wire the dialog verdict back into the agent pipeline
+    onAccepted: {
+        if (pendingToolCallId !== "")
+            AgentVM.approveToolCall(pendingToolCallId, true)
+        pendingToolCallId = ""
+    }
+    onRejected: {
+        if (pendingToolCallId !== "")
+            AgentVM.approveToolCall(pendingToolCallId, false)
+        pendingToolCallId = ""
+    }
 
     background: Rectangle {
         color: Theme.bgSecondary

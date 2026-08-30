@@ -8,8 +8,25 @@
 #include <QDir>
 #include <QDebug>
 #include <QDateTime>
+#include <QUuid>
 
 namespace NexusAI {
+
+namespace {
+
+// Human-friendly relative timestamp for the session list
+QString relativeTime(qint64 timestamp) {
+    const QDateTime now = QDateTime::currentDateTime();
+    const QDateTime t = QDateTime::fromMSecsSinceEpoch(timestamp);
+    const qint64 secs = t.secsTo(now);
+    if (secs < 60) return QStringLiteral("刚刚");
+    if (secs < 3600) return QStringLiteral("%1 分钟前").arg(secs / 60);
+    if (secs < 86400) return QStringLiteral("%1 小时前").arg(secs / 3600);
+    if (secs < 172800) return QStringLiteral("昨天");
+    return t.toString(QStringLiteral("MM-dd"));
+}
+
+} // namespace
 
 SqliteMemory::SqliteMemory(const QString& dbPath) : m_dbPath(dbPath) {
     if (m_dbPath.isEmpty()) {
@@ -18,7 +35,8 @@ SqliteMemory::SqliteMemory(const QString& dbPath) : m_dbPath(dbPath) {
         m_dbPath = dataDir + "/nexusai_memory.db";
     }
 
-    m_db = QSqlDatabase::addDatabase("QSQLITE", "nexus_memory");
+    m_db = QSqlDatabase::addDatabase("QSQLITE",
+        QStringLiteral("nexus_memory_%1").arg(QUuid::createUuid().toString(QUuid::WithoutBraces)));
     m_db.setDatabaseName(m_dbPath);
 
     if (!m_db.open()) {
@@ -32,6 +50,10 @@ SqliteMemory::SqliteMemory(const QString& dbPath) : m_dbPath(dbPath) {
 SqliteMemory::~SqliteMemory() {
     if (m_db.isOpen()) {
         m_db.close();
+    }
+    m_db = QSqlDatabase(); // drop the handle before removing the connection
+    if (!m_connName.isEmpty()) {
+        QSqlDatabase::removeDatabase(m_connName);
     }
 }
 
@@ -87,6 +109,31 @@ void SqliteMemory::createTables() {
             VALUES('delete', old.id, old.summary, old.tags);
         END
     )");
+
+    // Sessions table for the sidebar history
+    query.exec(R"(
+        CREATE TABLE IF NOT EXISTS sessions (
+            id TEXT PRIMARY KEY,
+            title TEXT NOT NULL,
+            created_at INTEGER NOT NULL,
+            updated_at INTEGER NOT NULL
+        )
+    )");
+
+    // Audit trail for tool activity
+    query.exec(R"(
+        CREATE TABLE IF NOT EXISTS audit_log (
+            id INTEGER PRIMARY KEY AUTOINCREMENT,
+            session_id TEXT NOT NULL,
+            event TEXT NOT NULL,
+            tool_name TEXT NOT NULL,
+            arguments TEXT,
+            success INTEGER NOT NULL,
+            detail TEXT,
+            timestamp INTEGER NOT NULL
+        )
+    )");
+    query.exec("CREATE INDEX IF NOT EXISTS idx_audit_ts ON audit_log(timestamp)");
 }
 
 void SqliteMemory::saveMessage(const QString& sessionId, const QJsonObject& msg) {
@@ -173,48 +220,124 @@ void SqliteMemory::clear(const QString& sessionId) {
     query.exec();
 }
 
-int SqliteMemory::estimateTokens(const QString& text) {
-    // Rough estimate: ~4 characters per token
-    return text.length() / 4;
+void SqliteMemory::beginSession(const QString& sessionId, const QString& title) {
+    QSqlQuery query(m_db);
+    query.prepare("INSERT OR REPLACE INTO sessions (id, title, created_at, updated_at) "
+                  "VALUES (?, ?, ?, ?)");
+    const qint64 now = QDateTime::currentDateTime().toMSecsSinceEpoch();
+    query.addBindValue(sessionId);
+    query.addBindValue(title);
+    query.addBindValue(now);
+    query.addBindValue(now);
+
+    if (!query.exec()) {
+        qWarning() << "Failed to begin session:" << query.lastError().text();
+    }
 }
 
-int SqliteMemory::estimateTokens(const QJsonArray& messages) {
-    int total = 0;
-    for (const auto& msg : messages) {
-        QJsonObject obj = msg.toObject();
-        total += estimateTokens(obj.value("content").toString());
-        total += estimateTokens(obj.value("role").toString());
+void SqliteMemory::touchSession(const QString& sessionId) {
+    QSqlQuery query(m_db);
+    query.prepare("UPDATE sessions SET updated_at = ? WHERE id = ?");
+    query.addBindValue(QDateTime::currentDateTime().toMSecsSinceEpoch());
+    query.addBindValue(sessionId);
+
+    if (!query.exec()) {
+        qWarning() << "Failed to touch session:" << query.lastError().text();
     }
-    return total;
 }
 
-QJsonArray SqliteMemory::compressIfTooLong(const QJsonArray& messages, int maxTokens) {
-    int currentTokens = estimateTokens(messages);
-    if (currentTokens <= maxTokens) return messages;
+QJsonArray SqliteMemory::listSessions(int limit) {
+    QSqlQuery query(m_db);
+    query.prepare("SELECT id, title, updated_at FROM sessions "
+                  "ORDER BY updated_at DESC LIMIT ?");
+    query.addBindValue(limit);
 
-    QJsonArray compressed;
-
-    // 1. Keep system prompt (first message)
-    if (!messages.isEmpty()) {
-        compressed.append(messages.first());
+    QJsonArray sessions;
+    if (query.exec()) {
+        while (query.next()) {
+            QJsonObject session;
+            session["id"] = query.value(0).toString();
+            session["title"] = query.value(1).toString();
+            const qint64 updated = query.value(2).toLongLong();
+            session["updatedAt"] = static_cast<double>(updated);
+            session["timeText"] = relativeTime(updated);
+            sessions.append(session);
+        }
+    } else {
+        qWarning() << "Failed to list sessions:" << query.lastError().text();
     }
+    return sessions;
+}
 
-    // 2. Summarize middle messages (in a real implementation, call LLM)
-    if (messages.size() > 11) {
-        QJsonObject summaryMsg;
-        summaryMsg["role"] = "system";
-        summaryMsg["content"] = "[Previous conversation has been compressed. "
-                                "Key points: ...]";
-        compressed.append(summaryMsg);
+void SqliteMemory::deleteSession(const QString& sessionId) {
+    QSqlQuery query(m_db);
+    query.prepare("DELETE FROM messages WHERE session_id = ?");
+    query.addBindValue(sessionId);
+    query.exec();
+
+    query.prepare("DELETE FROM episodic WHERE session_id = ?");
+    query.addBindValue(sessionId);
+    query.exec();
+
+    // FTS shadow table keeps itself in sync via the delete trigger
+    query.prepare("DELETE FROM sessions WHERE id = ?");
+    query.addBindValue(sessionId);
+    query.exec();
+}
+
+void SqliteMemory::renameSession(const QString& sessionId, const QString& title) {
+    QSqlQuery query(m_db);
+    query.prepare("UPDATE sessions SET title = ?, updated_at = ? WHERE id = ?");
+    query.addBindValue(title);
+    query.addBindValue(QDateTime::currentDateTime().toMSecsSinceEpoch());
+    query.addBindValue(sessionId);
+    if (!query.exec()) {
+        qWarning() << "Failed to rename session:" << query.lastError().text();
     }
+}
 
-    // 3. Keep the last 10 messages
-    int startIdx = qMax(1, messages.size() - 10);
-    for (int i = startIdx; i < messages.size(); ++i) {
-        compressed.append(messages.at(i));
+void SqliteMemory::logAudit(const QString& sessionId, const QString& event,
+                            const QString& toolName, const QString& arguments,
+                            bool success, const QString& detail) {
+    QSqlQuery query(m_db);
+    query.prepare("INSERT INTO audit_log (session_id, event, tool_name, arguments, "
+                  "success, detail, timestamp) VALUES (?, ?, ?, ?, ?, ?, ?)");
+    query.addBindValue(sessionId);
+    query.addBindValue(event);
+    query.addBindValue(toolName);
+    query.addBindValue(arguments);
+    query.addBindValue(success ? 1 : 0);
+    query.addBindValue(detail);
+    query.addBindValue(QDateTime::currentDateTime().toMSecsSinceEpoch());
+
+    if (!query.exec()) {
+        qWarning() << "Failed to write audit entry:" << query.lastError().text();
     }
+}
 
-    return compressed;
+QJsonArray SqliteMemory::auditLog(int limit) {
+    QSqlQuery query(m_db);
+    query.prepare("SELECT session_id, event, tool_name, arguments, success, detail, "
+                  "timestamp FROM audit_log ORDER BY timestamp DESC, id DESC LIMIT ?");
+    query.addBindValue(limit);
+
+    QJsonArray entries;
+    if (query.exec()) {
+        while (query.next()) {
+            QJsonObject entry;
+            entry["sessionId"] = query.value(0).toString();
+            entry["event"] = query.value(1).toString();
+            entry["toolName"] = query.value(2).toString();
+            entry["arguments"] = query.value(3).toString();
+            entry["success"] = query.value(4).toInt() != 0;
+            entry["detail"] = query.value(5).toString();
+            entry["timestamp"] = query.value(6).toLongLong();
+            entries.append(entry);
+        }
+    } else {
+        qWarning() << "Failed to read audit log:" << query.lastError().text();
+    }
+    return entries;
 }
 
 } // namespace NexusAI

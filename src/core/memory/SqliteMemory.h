@@ -20,10 +20,18 @@ public:
 
     void clear(const QString& sessionId) override;
 
-    // Token estimation and compression
-    static int estimateTokens(const QString& text);
-    static int estimateTokens(const QJsonArray& messages);
-    QJsonArray compressIfTooLong(const QJsonArray& messages, int maxTokens);
+    // Session bookkeeping
+    void beginSession(const QString& sessionId, const QString& title) override;
+    void touchSession(const QString& sessionId) override;
+    QJsonArray listSessions(int limit = 50) override;
+    void deleteSession(const QString& sessionId) override;
+    void renameSession(const QString& sessionId, const QString& title) override;
+
+    // Audit trail
+    void logAudit(const QString& sessionId, const QString& event,
+                  const QString& toolName, const QString& arguments,
+                  bool success, const QString& detail) override;
+    QJsonArray auditLog(int limit = 100) override;
 
 private:
     void initDatabase();
@@ -31,6 +39,7 @@ private:
 
     QSqlDatabase m_db;
     QString m_dbPath;
+    QString m_connName; // unique per instance: several may coexist (tests)
 };
 
 } // namespace NexusAI

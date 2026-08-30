@@ -5,6 +5,7 @@
 #include <QString>
 #include <QStringList>
 #include <QDir>
+#include <QFileInfo>
 #include <QStandardPaths>
 
 namespace NexusAI {
@@ -17,20 +18,23 @@ public:
         Write
     };
 
-    // Validate that a file path is within allowed directories
+    // Validate that a file path is within allowed directories.
+    // The path is canonicalized before matching, so ".." segments, relative
+    // paths and (for existing files) symlinks cannot be used to escape the
+    // policy. Prefix matches are boundary-aware: an allowed base directory
+    // does not authorize a sibling such as "Documents2".
     static bool validatePath(const QString& path, bool isWrite) {
         if (path.isEmpty()) return false;
 
-        // Block dangerous system paths
+        const QString normalizedPath = cleanPath(path);
+
+        // Block dangerous system paths (works for both Unix and Windows)
         static const QStringList blockedPaths = {
             "/etc", "/usr", "/bin", "/sbin", "/boot", "/sys", "/proc",
-            "C:\\Windows\\System32", "C:\\Windows\\System",
-            "C:\\Program Files", "C:\\Program Files (x86)"
+            "C:\\Windows", "C:\\Program Files", "C:\\Program Files (x86)"
         };
-
-        QString normalizedPath = QDir::toNativeSeparators(path);
         for (const auto& blocked : blockedPaths) {
-            if (normalizedPath.startsWith(blocked, Qt::CaseInsensitive)) {
+            if (isWithin(normalizedPath, QDir::toNativeSeparators(blocked))) {
                 return false;
             }
         }
@@ -48,8 +52,8 @@ public:
             }();
 
             for (const auto& allowed : allowedWriteDirs) {
-                if (!allowed.isEmpty() && normalizedPath.startsWith(
-                        QDir::toNativeSeparators(allowed), Qt::CaseInsensitive)) {
+                if (!allowed.isEmpty()
+                        && isWithin(normalizedPath, QDir::toNativeSeparators(allowed))) {
                     return true;
                 }
             }
@@ -78,6 +82,25 @@ public:
 
 private:
     Sandbox() = delete; // Static utility class
+
+    // Resolve symlinks when the target exists, otherwise lexically collapse
+    // "."/".." segments (works for files that are about to be created).
+    static QString cleanPath(const QString& path) {
+        const QFileInfo info(path);
+        const QString canonical = info.canonicalFilePath();
+        return QDir::toNativeSeparators(canonical.isEmpty()
+            ? info.absoluteFilePath() : canonical);
+    }
+
+    // True when path equals base or lies underneath it
+    static bool isWithin(const QString& path, const QString& base) {
+        if (base.isEmpty()) return false;
+        if (!path.startsWith(base, Qt::CaseInsensitive)) return false;
+        if (path.size() == base.size()) return true;
+        const QChar next = path.at(base.size());
+        return next == '/' || next == '\\'
+            || base.endsWith('/') || base.endsWith('\\');
+    }
 };
 
 } // namespace NexusAI

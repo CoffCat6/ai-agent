@@ -14,6 +14,11 @@ OllamaEmbedding::OllamaEmbedding(QObject* parent)
     : QObject(parent), m_nam(new QNetworkAccessManager(this)) {}
 
 QVector<float> OllamaEmbedding::embed(const QString& text) {
+    // Stack-local NAM living on the calling thread: embed() may run on a
+    // worker thread (RAG tool execution, document import) where the
+    // main-thread m_nam would be cross-thread QObject misuse.
+    QNetworkAccessManager nam;
+
     QJsonObject body;
     body["model"] = m_model;
     body["prompt"] = text;
@@ -22,8 +27,9 @@ QVector<float> OllamaEmbedding::embed(const QString& text) {
     QNetworkRequest request;
     request.setUrl(QUrl(m_baseUrl + "/api/embeddings"));
     request.setHeader(QNetworkRequest::ContentTypeHeader, "application/json");
+    request.setTransferTimeout(30000);
 
-    QNetworkReply* reply = m_nam->post(request, doc.toJson());
+    QNetworkReply* reply = nam.post(request, doc.toJson());
 
     QEventLoop loop;
     connect(reply, &QNetworkReply::finished, &loop, &QEventLoop::quit);

@@ -7,6 +7,8 @@ import NexusAI
 Item {
     id: root
 
+    signal settingsRequested()
+
     ColumnLayout {
         anchors.fill: parent
         spacing: 0
@@ -40,22 +42,91 @@ Item {
 
                 delegate: AgentTraceNode {
                     width: traceListView.width
-                    modelData: modelData
+                    // No explicit modelData binding here: AgentTraceNode's
+                    // required property is auto-filled by the view from the
+                    // list model context. Binding "modelData: modelData"
+                    // would self-reference and evaluate to undefined,
+                    // blanking every trace node.
                 }
+            }
+        }
+
+        // Auto-scroll the trace view as content updates
+        // (streaming responses, new nodes, session loading)
+        Connections {
+            target: AgentVM
+            function onTraceChanged() {
+                Qt.callLater(function() {
+                    traceListView.positionViewAtEnd()
+                })
             }
         }
 
         // ── Input Console ──────────────────────────────
         Item {
             Layout.fillWidth: true
-            Layout.preferredHeight: inputConsole.height + 40
+            Layout.preferredHeight: inputConsole.height + 52
 
             InputConsole {
                 id: inputConsole
+                anchors.top: parent.top
                 anchors.left: parent.left
                 anchors.right: parent.right
-                anchors.verticalCenter: parent.verticalCenter
-                anchors.margins: 20
+                anchors.topMargin: 14
+                anchors.leftMargin: 20
+                anchors.rightMargin: 20
+            }
+
+            // Active model badge (click opens the settings dialog)
+            Item {
+                id: modelBadge
+                anchors.top: inputConsole.bottom
+                anchors.topMargin: 6
+                anchors.left: inputConsole.left
+                anchors.leftMargin: 8
+                width: badgeRow.implicitWidth
+                height: 16
+
+                readonly property var profile: Settings.activeProfile
+                readonly property bool hasProfile: profile && profile.provider !== undefined
+                    && profile.provider !== ""
+
+                Row {
+                    id: badgeRow
+                    anchors.verticalCenter: parent.verticalCenter
+                    spacing: 6
+
+                    Rectangle {
+                        width: 6
+                        height: 6
+                        radius: 3
+                        anchors.verticalCenter: parent.verticalCenter
+                        visible: modelBadge.hasProfile
+                        color: modelBadge.profile.provider === "ollama"
+                            ? Theme.statusSuccess : Theme.brandPrimary
+                    }
+
+                    Text {
+                        text: {
+                            const p = modelBadge.profile
+                            if (!modelBadge.hasProfile) return qsTr("未配置模型 · 点击设置")
+                            return (p.displayName ? p.displayName : p.provider) + " · " + p.model
+                        }
+                        color: badgeMA.containsMouse
+                            ? Theme.brandPrimary : Theme.textSecondary
+                        font.pixelSize: 10
+                        font.family: Theme.fontMono
+                    }
+                }
+
+                MouseArea {
+                    id: badgeMA
+                    anchors.fill: parent
+                    anchors.margins: -4
+                    hoverEnabled: true
+                    cursorShape: Qt.PointingHandCursor
+                    onClicked: root.settingsRequested()
+                }
             }
         }
     }

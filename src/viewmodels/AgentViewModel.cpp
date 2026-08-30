@@ -1,10 +1,22 @@
 #include "AgentViewModel.h"
 
+#include "core/agent/AIAgent.h"
+#include "core/tools/ToolRegistry.h"
+#include "core/rag/RagService.h"
+#include "core/utils/TokenEstimator.h"
+
+#include <QClipboard>
 #include <QDateTime>
+#include <QFile>
+#include <QFileInfo>
+#include <QGuiApplication>
+#include <QUrl>
 #include <QUuid>
 #include <QJsonObject>
 #include <QJsonArray>
+#include <QJsonDocument>
 #include <QDebug>
+#include <QtConcurrent/QtConcurrentRun>
 
 namespace NexusAI {
 
@@ -16,6 +28,167 @@ AgentViewModel::AgentViewModel(QObject* parent)
 }
 
 AgentViewModel::~AgentViewModel() = default;
+
+// ── Real agent pipeline ──────────────────────────────────
+
+void AgentViewModel::setAgent(AIAgent* agent) {
+    if (m_agent == agent) return;
+    if (m_agent) {
+        disconnect(m_agent, nullptr, this, nullptr);
+    }
+    m_agent = agent;
+    if (m_agent) {
+        connectAgent(m_agent);
+    } else {
+        // Detached: fall back to simulation state
+        setState(AgentState::Idle);
+        m_traceModel.clear();
+        emit traceChanged();
+        m_sessionList.clear();
+        emit sessionListChanged();
+        m_currentSessionId.clear();
+        emit currentSessionIdChanged();
+    }
+    emit liveModeChanged();
+}
+
+void AgentViewModel::connectAgent(AIAgent* agent) {
+    connect(agent, &AIAgent::stateChanged, this, [this](AgentState state) {
+        setState(state);
+    });
+
+    connect(agent, &AIAgent::traceChanged, this, [this, agent]() {
+        m_traceModel = agent->traceModel().toVariantList();
+        emit traceChanged();
+    });
+
+    connect(agent, &AIAgent::responseReady, this, [this, agent](const QString& response) {
+        m_finalResponse = response;
+        emit responseReady();
+    });
+
+    connect(agent, &AIAgent::toolConfirmRequired, this,
+            [this](const QString& id, const QString& name, const QJsonObject& args) {
+        emit toolConfirmRequired(id, name, args.toVariantMap());
+    });
+
+    connect(agent, &AIAgent::errorOccurred, this, &AgentViewModel::errorOccurred);
+
+    connect(agent, &AIAgent::tokensChanged, this, [this](int usedTokens) {
+        m_usedTokens = usedTokens;
+        emit tokenUsageChanged();
+    });
+
+    connect(agent, &AIAgent::contextLimitChanged, this, [this]() {
+        emit tokenUsageChanged();
+    });
+
+    connect(agent, &AIAgent::sessionsChanged, this, [this]() {
+        refreshSessions();
+    });
+
+    connect(agent, &AIAgent::sessionChanged, this, [this](const QString& sessionId) {
+        if (m_currentSessionId != sessionId) {
+            m_currentSessionId = sessionId;
+            emit currentSessionIdChanged();
+        }
+        refreshSessions();
+    });
+
+    // Initial sync with the agent's state
+    m_state = agent->state();
+    emit stateChanged();
+    m_traceModel = agent->traceModel().toVariantList();
+    emit traceChanged();
+    m_finalResponse = agent->lastResponse();
+    emit responseReady();
+    m_usedTokens = TokenEstimator::estimateTokens(agent->messages());
+    emit tokenUsageChanged();
+    m_currentSessionId = agent->currentSessionId();
+    emit currentSessionIdChanged();
+    refreshSessions();
+}
+
+void AgentViewModel::refreshSessions() {
+    const QVariantList sessions = m_agent
+        ? m_agent->sessionList().toVariantList()
+        : QVariantList{};
+    if (m_sessionList == sessions) return;
+    m_sessionList = sessions;
+    emit sessionListChanged();
+}
+
+// ── Knowledge base (RAG) ─────────────────────────────────
+
+void AgentViewModel::setRagService(RagService* rag) {
+    if (m_rag == rag) return;
+    if (m_rag) disconnect(m_rag, nullptr, this, nullptr);
+    m_rag = rag;
+    if (m_rag) {
+        // ingest/remove may run on worker threads; deliver queued
+        connect(m_rag, &RagService::changed, this, &AgentViewModel::knowledgeChanged);
+    }
+    refreshKnowledge();
+}
+
+void AgentViewModel::refreshKnowledge() {
+    const QVariantList docs = m_rag
+        ? m_rag->documents().toVariantList() : QVariantList{};
+    if (m_knowledgeDocuments == docs) return;
+    m_knowledgeDocuments = docs;
+    emit knowledgeChanged();
+}
+
+void AgentViewModel::importDocument(const QString& path) {
+    if (!m_rag) return;
+    const QString cleanPath = QUrl(path).isLocalFile() ? QUrl(path).toLocalFile() : path;
+    const QFileInfo info(cleanPath);
+    if (!info.isFile()) {
+        emit errorOccurred(QStringLiteral("无法读取文件：%1").arg(cleanPath));
+        return;
+    }
+    QFile file(cleanPath);
+    if (!file.open(QIODevice::ReadOnly | QIODevice::Text)) {
+        emit errorOccurred(QStringLiteral("无法打开文件：%1").arg(file.errorString()));
+        return;
+    }
+    const QString content = QString::fromUtf8(file.readAll());
+    file.close();
+
+    const QString name = info.fileName();
+    // Chunking + embedding can take a while (network per chunk); run off the
+    // GUI thread. RagService guards its state with a mutex, and changed() is
+    // delivered queued to the GUI thread.
+    QtConcurrent::run([this, name, content]() {
+        const int chunks = m_rag->ingestDocument(name, content);
+        if (chunks <= 0) {
+            emit errorOccurred(QStringLiteral("导入失败（文件为空或无法分块）：%1").arg(name));
+        }
+        // success is reported through the changed() signal
+    });
+}
+
+void AgentViewModel::removeDocument(const QString& name) {
+    if (m_rag) m_rag->removeDocument(name);
+}
+
+void AgentViewModel::clearKnowledge() {
+    if (m_rag) m_rag->clear();
+}
+
+// ── Session / audit management ───────────────────────────
+
+void AgentViewModel::deleteSession(const QString& sessionId) {
+    if (m_agent) m_agent->deleteSession(sessionId);
+}
+
+void AgentViewModel::renameSession(const QString& sessionId, const QString& title) {
+    if (m_agent) m_agent->renameSession(sessionId, title);
+}
+
+QVariantList AgentViewModel::auditLog(int limit) {
+    return m_agent ? m_agent->auditLog(limit).toVariantList() : QVariantList{};
+}
 
 // ── State Management ─────────────────────────────────────
 
@@ -36,6 +209,13 @@ QString AgentViewModel::stateText() const {
     case AgentState::Error:              return "Error";
     }
     return "Unknown";
+}
+
+bool AgentViewModel::isBusy() const {
+    return m_state == AgentState::Thinking
+        || m_state == AgentState::ExecutingTool
+        || m_state == AgentState::AwaitingToolConfirm
+        || m_state == AgentState::Summarizing;
 }
 
 // ── Draft Text ───────────────────────────────────────────
@@ -74,53 +254,29 @@ void AgentViewModel::toggleSidebar() {
 
 double AgentViewModel::tokenUsageRate() const {
     if (m_maxTokens == 0) return 0.0;
-    return static_cast<double>(m_usedTokens) / static_cast<double>(m_maxTokens);
+    return static_cast<double>(m_usedTokens) / static_cast<double>(maxTokens());
+}
+
+int AgentViewModel::maxTokens() const {
+    return m_agent ? m_agent->contextLimit() : m_maxTokens;
 }
 
 // ── Tool Registry Init ────────────────────────────────────
 
 void AgentViewModel::initToolRegistry() {
-    // Safe tools (green)
-    {
+    const auto defs = ToolRegistry::instance().listAll();
+    for (const auto& def : defs) {
         QVariantMap tool;
-        tool["name"] = "read_file";
-        tool["level"] = "safe";
-        tool["description"] = "Read file contents";
-        m_toolRegistryModel.append(tool);
-    }
-    {
-        QVariantMap tool;
-        tool["name"] = "web_search";
-        tool["level"] = "safe";
-        tool["description"] = "Search the web";
-        m_toolRegistryModel.append(tool);
-    }
-    // Tools requiring confirmation (yellow)
-    {
-        QVariantMap tool;
-        tool["name"] = "write_file";
-        tool["level"] = "requires_confirm";
-        tool["description"] = "Write to file";
-        m_toolRegistryModel.append(tool);
-    }
-    {
-        QVariantMap tool;
-        tool["name"] = "shell_exec";
-        tool["level"] = "requires_confirm";
-        tool["description"] = "Execute shell command";
-        m_toolRegistryModel.append(tool);
-    }
-    // Dangerous tools (red - blocked by sandbox)
-    {
-        QVariantMap tool;
-        tool["name"] = "rm_rf";
-        tool["level"] = "dangerous";
-        tool["description"] = "Delete files recursively";
+        tool["name"] = def.name;
+        tool["description"] = def.description;
+        tool["level"] = def.level == ToolLevel::Safe ? "safe"
+                      : def.level == ToolLevel::RequiresConfirm ? "requires_confirm"
+                      : "dangerous";
         m_toolRegistryModel.append(tool);
     }
 }
 
-// ── Trace Node Helpers ───────────────────────────────────
+// ── Trace Node Helpers (simulation path) ─────────────────
 
 void AgentViewModel::appendTraceNode(const QString& type, const QString& title,
                                        const QString& status,
@@ -149,29 +305,128 @@ void AgentViewModel::updateLastNodeStatus(const QString& status) {
 // ── QML Actions ───────────────────────────────────────────
 
 void AgentViewModel::startTask(const QString& input) {
-    if (m_state == AgentState::Thinking ||
-        m_state == AgentState::ExecutingTool ||
-        m_state == AgentState::AwaitingToolConfirm) {
-        return; // Already running
+    if (isBusy()) return;
+
+    m_finalResponse.clear();
+    emit responseReady();
+
+    if (m_agent) {
+        // Real LLM pipeline (agent rebuilds the trace itself)
+        m_agent->startTask(input);
+        return;
     }
 
-    // Reset
+    // Simulation fallback
     m_traceModel.clear();
-    m_finalResponse.clear();
+    emit traceChanged();
     m_simStep = 0;
     m_simInput = input;
     m_usedTokens = 0;
-
-    // Add user message to trace
+    emit tokenUsageChanged();
     appendTraceNode("user_message", input, "completed");
-
-    // Update token usage estimate
     m_usedTokens = input.length() / 4;
     emit tokenUsageChanged();
-
     setState(AgentState::Thinking);
     startSimulation();
 }
+
+void AgentViewModel::approveToolCall(const QString& id, bool approved) {
+    if (m_agent) {
+        m_agent->approveToolCall(id, approved);
+        return;
+    }
+
+    // Simulation path
+    for (int i = 0; i < m_traceModel.size(); ++i) {
+        QVariantMap node = m_traceModel.at(i).toMap();
+        if (node["id"].toString() == id) {
+            if (approved) {
+                node["status"] = "running";
+                m_traceModel.replace(i, node);
+                emit traceChanged();
+
+                QTimer::singleShot(1000, this, [this, i]() {
+                    if (i < m_traceModel.size()) {
+                        QVariantMap node = m_traceModel.at(i).toMap();
+                        node["status"] = "success";
+                        m_traceModel.replace(i, node);
+                        emit traceChanged();
+                    }
+
+                    appendTraceNode("tool_result", "File written successfully", "success",
+                        "", "Written 256 bytes to /home/user/output.txt");
+                    m_usedTokens += 100;
+                    emit tokenUsageChanged();
+
+                    setState(AgentState::Thinking);
+                    m_simTimer.start(1500);
+                });
+            } else {
+                node["status"] = "cancelled";
+                m_traceModel.replace(i, node);
+                emit traceChanged();
+
+                m_finalResponse = "Tool call was rejected by the user. "
+                                  "I cannot complete the task without writing the output file.";
+                appendTraceNode("summary", m_finalResponse, "completed");
+                setState(AgentState::Completed);
+                emit responseReady();
+            }
+            break;
+        }
+    }
+}
+
+void AgentViewModel::stop() {
+    if (m_agent) {
+        m_agent->stop();
+        return;
+    }
+
+    // Simulation path
+    m_simTimer.stop();
+    if (!m_traceModel.isEmpty()) {
+        const QVariantMap lastNode = m_traceModel.last().toMap();
+        if (lastNode["status"].toString() == "running")
+            updateLastNodeStatus("cancelled");
+    }
+    setState(AgentState::Idle);
+}
+
+void AgentViewModel::newChat() {
+    m_simTimer.stop();
+    m_finalResponse.clear();
+    emit responseReady();
+
+    if (m_agent) {
+        m_agent->resetSession();
+        return;
+    }
+
+    setState(AgentState::Idle);
+    m_traceModel.clear();
+    emit traceChanged();
+    m_currentSessionId.clear();
+    emit currentSessionIdChanged();
+}
+
+void AgentViewModel::loadSession(const QString& sessionId) {
+    if (!m_agent || isBusy()) return;
+    m_agent->resumeSession(sessionId);
+    m_finalResponse = m_agent->lastResponse();
+    emit responseReady();
+}
+
+void AgentViewModel::cancel() {
+    newChat();
+}
+
+void AgentViewModel::copyToClipboard(const QString& text) {
+    if (!text.isEmpty())
+        QGuiApplication::clipboard()->setText(text);
+}
+
+// ── Simulation (fallback when no agent attached) ─────────
 
 void AgentViewModel::startSimulation() {
     m_simStep = 0;
@@ -181,20 +436,17 @@ void AgentViewModel::startSimulation() {
 void AgentViewModel::simulationStep() {
     switch (m_simStep) {
     case 0:
-        // Thinking: analyzing request
         appendTraceNode("thinking", "Analyzing request...", "running");
         m_simTimer.start(2000);
         break;
 
     case 1:
-        // Thinking complete, planning
         updateLastNodeStatus("completed");
         appendTraceNode("thinking", "Planning tool calls...", "running");
         m_simTimer.start(1500);
         break;
 
     case 2:
-        // Plan complete, first tool call (read_file - safe)
         updateLastNodeStatus("completed");
         appendTraceNode("tool_call", "read_file", "running",
             QString::fromUtf8(QJsonDocument(QJsonObject{
@@ -204,7 +456,6 @@ void AgentViewModel::simulationStep() {
         break;
 
     case 3:
-        // Tool call complete, tool result
         updateLastNodeStatus("success");
         appendTraceNode("tool_result", "File contents loaded", "success",
             "", "Lorem ipsum dolor sit amet, consectetur adipiscing elit...");
@@ -214,14 +465,12 @@ void AgentViewModel::simulationStep() {
         break;
 
     case 4:
-        // Second tool call (write_file - requires confirmation)
         appendTraceNode("tool_call", "write_file", "waiting_confirm",
             QString::fromUtf8(QJsonDocument(QJsonObject{
                 {"path", "/home/user/output.txt"},
                 {"content", "Processed output data..."}
             }).toJson(QJsonDocument::Compact)));
 
-        // Extract the node ID for the pending confirmation
         if (!m_traceModel.isEmpty()) {
             QVariantMap lastNode = m_traceModel.last().toMap();
             m_pendingToolCallId = lastNode["id"].toString();
@@ -233,17 +482,14 @@ void AgentViewModel::simulationStep() {
         }
 
         setState(AgentState::AwaitingToolConfirm);
-        // Don't start timer - wait for user approval
         break;
 
     case 5:
-        // Synthesizing response
         appendTraceNode("thinking", "Synthesizing response...", "running");
         m_simTimer.start(2000);
         break;
 
     case 6:
-        // Final response
         updateLastNodeStatus("completed");
         m_finalResponse = QString("I've analyzed your request: \"%1\"\n\n"
             "I read the file `/home/user/document.txt` and successfully wrote "
@@ -263,59 +509,6 @@ void AgentViewModel::simulationStep() {
     }
 
     m_simStep++;
-}
-
-void AgentViewModel::approveToolCall(const QString& id, bool approved) {
-    // Find the tool call node in trace
-    for (int i = 0; i < m_traceModel.size(); ++i) {
-        QVariantMap node = m_traceModel.at(i).toMap();
-        if (node["id"].toString() == id) {
-            if (approved) {
-                // Mark as running, then success
-                node["status"] = "running";
-                m_traceModel.replace(i, node);
-                emit traceChanged();
-
-                // Simulate tool execution
-                QTimer::singleShot(1000, this, [this, i]() {
-                    if (i < m_traceModel.size()) {
-                        QVariantMap node = m_traceModel.at(i).toMap();
-                        node["status"] = "success";
-                        m_traceModel.replace(i, node);
-                        emit traceChanged();
-                    }
-
-                    // Continue simulation
-                    appendTraceNode("tool_result", "File written successfully", "success",
-                        "", "Written 256 bytes to /home/user/output.txt");
-                    m_usedTokens += 100;
-                    emit tokenUsageChanged();
-
-                    setState(AgentState::Thinking);
-                    m_simTimer.start(1500);
-                });
-            } else {
-                node["status"] = "cancelled";
-                m_traceModel.replace(i, node);
-                emit traceChanged();
-
-                // Skip to final response
-                m_finalResponse = "Tool call was rejected by the user. "
-                                  "I cannot complete the task without writing the output file.";
-                appendTraceNode("summary", m_finalResponse, "completed");
-                setState(AgentState::Completed);
-                emit responseReady();
-            }
-            break;
-        }
-    }
-}
-
-void AgentViewModel::cancel() {
-    m_simTimer.stop();
-    setState(AgentState::Idle);
-    m_traceModel.clear();
-    emit traceChanged();
 }
 
 } // namespace NexusAI

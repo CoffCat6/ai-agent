@@ -29,29 +29,13 @@ public:
             chunkMeta["chunk_index"] = i;
             chunkMeta["chunk_total"] = chunks.size();
             chunkMeta["text"] = chunks[i];
-
-            QVector<float> embedding;
-            if (m_embedFn) {
-                embedding = m_embedFn(chunks[i]);
-            } else {
-                // Fallback: simple hash-based pseudo-embedding
-                embedding = pseudoEmbed(chunks[i]);
-            }
-
-            m_store.insert(embedding, chunkMeta);
+            m_store.insert(embedText(chunks[i]), chunkMeta);
         }
     }
 
     // Search for relevant document chunks
     QJsonArray search(const QString& query, int k = 5) const {
-        QVector<float> queryEmbedding;
-        if (m_embedFn) {
-            queryEmbedding = m_embedFn(query);
-        } else {
-            queryEmbedding = pseudoEmbed(query);
-        }
-
-        auto results = m_store.search(queryEmbedding, k);
+        auto results = m_store.search(embedText(query), k);
         QJsonArray arr;
         for (const auto& obj : results) {
             arr.append(obj);
@@ -65,6 +49,14 @@ public:
     static constexpr int DefaultChunkSize = 512; // ~512 chars per chunk
 
 private:
+    // Embed via the configured function; fall back to the local pseudo
+    // embedding when no embedder is set or the call failed (empty result).
+    QVector<float> embedText(const QString& text) const {
+        QVector<float> embedding;
+        if (m_embedFn) embedding = m_embedFn(text);
+        if (embedding.isEmpty()) embedding = pseudoEmbed(text);
+        return embedding;
+    }
     // Split text into chunks by approximate token count
     static QStringList chunkDocument(const QString& text, int chunkSize) {
         QStringList chunks;

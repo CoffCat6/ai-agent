@@ -7,6 +7,9 @@ import NexusAI
 Rectangle {
     id: root
 
+    signal settingsRequested()
+    signal auditRequested()
+
     color: Theme.bgSecondary
     border.width: 0
 
@@ -149,7 +152,7 @@ Rectangle {
                 anchors.fill: parent
                 hoverEnabled: true
                 cursorShape: Qt.PointingHandCursor
-                onClicked: AgentVM.cancel()
+                onClicked: AgentVM.newChat()
             }
         }
 
@@ -172,17 +175,28 @@ Rectangle {
 
             ListView {
                 id: sessionList
-                model: ListModel {
-                    ListElement { title: "Code Review Session"; time: "2 min ago" }
-                    ListElement { title: "Document Analysis"; time: "1 hour ago" }
-                    ListElement { title: "Bug Investigation"; time: "3 hours ago" }
-                    ListElement { title: "Data Processing"; time: "Yesterday" }
-                    ListElement { title: "API Integration"; time: "2 days ago" }
+                model: AgentVM.sessionList
+                spacing: 2
+                clip: true
+
+                // Empty state
+                Text {
+                    anchors.centerIn: parent
+                    visible: sessionList.count === 0
+                    text: qsTr("暂无历史会话")
+                    color: Theme.textSecondary
+                    font.pixelSize: Theme.fontSizeCaption
+                    font.family: Theme.fontSans
                 }
 
                 delegate: ItemDelegate {
+                    id: sessionDelegate
                     width: sessionList.width
                     height: 48
+
+                    readonly property bool isActive: AgentVM.currentSessionId === modelData.id
+                    property bool renaming: false
+                    property bool confirmDelete: false
 
                     background: Rectangle {
                         color: hovered ? Theme.surfaceHover : "transparent"
@@ -190,7 +204,7 @@ Rectangle {
                             width: 3
                             height: parent.height
                             color: Theme.brandPrimary
-                            visible: index === 0
+                            visible: isActive
                         }
                     }
 
@@ -200,21 +214,115 @@ Rectangle {
                         anchors.rightMargin: 12
                         spacing: 2
 
-                        Text {
-                            text: model.title
-                            color: Theme.textPrimary
-                            font.pixelSize: Theme.fontSizeBody
-                            font.family: Theme.fontSans
-                            elide: Text.ElideRight
+                        // Title row: inline editor / label / hover actions
+                        Item {
                             Layout.fillWidth: true
+                            height: 20
+
+                            TextInput {
+                                id: renameInput
+                                visible: sessionDelegate.renaming
+                                anchors.verticalCenter: parent.verticalCenter
+                                width: parent.width - 8
+                                text: modelData.title
+                                color: Theme.textPrimary
+                                font.pixelSize: Theme.fontSizeBody
+                                font.family: Theme.fontSans
+                                selectByMouse: true
+                                clip: true
+                                onAccepted: {
+                                    if (text.trimmed().length > 0)
+                                        AgentVM.renameSession(modelData.id, text)
+                                    sessionDelegate.renaming = false
+                                }
+                                onFocusChanged: if (!focus && sessionDelegate.renaming)
+                                    sessionDelegate.renaming = false
+
+                                Component.onCompleted: if (sessionDelegate.renaming) forceActiveFocus()
+                            }
+
+                            Text {
+                                visible: !sessionDelegate.renaming
+                                anchors.verticalCenter: parent.verticalCenter
+                                text: modelData.title && modelData.title.length > 0
+                                    ? modelData.title : qsTr("新会话")
+                                color: Theme.textPrimary
+                                font.pixelSize: Theme.fontSizeBody
+                                font.family: Theme.fontSans
+                                elide: Text.ElideRight
+                                width: parent.width - (sessionDelegate.hovered ? 40 : 0)
+                            }
+
+                            Row {
+                                visible: sessionDelegate.hovered && !sessionDelegate.renaming
+                                anchors.verticalCenter: parent.verticalCenter
+                                anchors.right: parent.right
+                                spacing: 4
+
+                                Text {
+                                    text: "✎"
+                                    color: renameMA.containsMouse ? Theme.brandPrimary : Theme.textSecondary
+                                    font.pixelSize: 11
+
+                                    MouseArea {
+                                        id: renameMA
+                                        anchors.fill: parent
+                                        anchors.margins: -4
+                                        hoverEnabled: true
+                                        cursorShape: Qt.PointingHandCursor
+                                        onClicked: {
+                                            sessionDelegate.confirmDelete = false
+                                            sessionDelegate.renaming = true
+                                        }
+                                    }
+                                }
+
+                                Text {
+                                    text: sessionDelegate.confirmDelete ? qsTr("确认?") : "×"
+                                    color: deleteMA.containsMouse || sessionDelegate.confirmDelete
+                                        ? Theme.statusDanger : Theme.textSecondary
+                                    font.pixelSize: sessionDelegate.confirmDelete ? 9 : 13
+                                    font.bold: true
+
+                                    MouseArea {
+                                        id: deleteMA
+                                        anchors.fill: parent
+                                        anchors.margins: -4
+                                        hoverEnabled: true
+                                        cursorShape: Qt.PointingHandCursor
+                                        onClicked: {
+                                            if (!sessionDelegate.confirmDelete) {
+                                                sessionDelegate.confirmDelete = true
+                                                confirmResetTimer.restart()
+                                            } else {
+                                                confirmResetTimer.stop()
+                                                sessionDelegate.confirmDelete = false
+                                                AgentVM.deleteSession(modelData.id)
+                                            }
+                                        }
+                                    }
+                                }
+                            }
+
+                            Timer {
+                                id: confirmResetTimer
+                                interval: 2500
+                                onTriggered: sessionDelegate.confirmDelete = false
+                            }
                         }
 
                         Text {
-                            text: model.time
+                            text: modelData.timeText ? modelData.timeText : ""
                             color: Theme.textSecondary
                             font.pixelSize: Theme.fontSizeCaption
                             font.family: Theme.fontSans
                         }
+                    }
+
+                    onClicked: {
+                        if (sessionDelegate.renaming) return
+                        sessionDelegate.confirmDelete = false
+                        AgentVM.loadSession(modelData.id)
                     }
                 }
             }
@@ -239,6 +347,18 @@ Rectangle {
                 anchors.rightMargin: 20
                 spacing: 12
 
+                // Audit log icon
+                Text {
+                    text: "🛡"
+                    color: Theme.textSecondary
+                    font.pixelSize: 15
+                    MouseArea {
+                        anchors.fill: parent
+                        cursorShape: Qt.PointingHandCursor
+                        onClicked: root.auditRequested()
+                    }
+                }
+
                 // Settings icon
                 Text {
                     text: "⚙"
@@ -247,6 +367,7 @@ Rectangle {
                     MouseArea {
                         anchors.fill: parent
                         cursorShape: Qt.PointingHandCursor
+                        onClicked: root.settingsRequested()
                     }
                 }
 

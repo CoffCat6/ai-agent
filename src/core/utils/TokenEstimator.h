@@ -3,6 +3,7 @@
 #include <QString>
 #include <QJsonArray>
 #include <QJsonObject>
+#include <QVector>
 
 namespace NexusAI {
 
@@ -42,6 +43,60 @@ public:
     // Calculate how many tokens can still be added
     static int remainingBudget(const QJsonArray& messages, int maxTokens) {
         return qMax(0, maxTokens - estimateTokens(messages));
+    }
+
+    // Compress a message history to fit maxTokens: keeps the system prompt
+    // (first message), inserts an omission marker, and keeps the largest
+    // contiguous suffix that starts at a user message. Starting the kept
+    // range at a user message guarantees no orphan "tool" result messages
+    // (which would break the OpenAI tool_call/tool pairing contract).
+    static QJsonArray compressToFit(const QJsonArray& messages, int maxTokens) {
+        if (messages.isEmpty()) return messages;
+
+        // Latest user message that may start the kept suffix
+        int lastUserIdx = -1;
+        for (int i = messages.size() - 1; i >= 1; --i) {
+            if (messages.at(i).toObject().value("role").toString() == "user") {
+                lastUserIdx = i;
+                break;
+            }
+        }
+        if (lastUserIdx < 0) return messages; // nothing safely droppable
+
+        // suffix[i] = estimated tokens of messages[i..end)
+        QVector<int> suffix(messages.size() + 1, 0);
+        for (int i = messages.size() - 1; i >= 0; --i)
+            suffix[i] = suffix[i + 1] + estimateTokens(messages.at(i).toObject());
+
+        constexpr int kMarkerReserve = 24; // rough budget for the marker text
+
+        // Smallest start index (largest suffix) beginning at a user message
+        // that fits alongside the system prompt and the marker.
+        int keepFrom = -1;
+        for (int i = 1; i <= lastUserIdx; ++i) {
+            if (messages.at(i).toObject().value("role").toString() != "user") continue;
+            if (suffix[i] + kMarkerReserve
+                    + estimateTokens(messages.first().toObject()) <= maxTokens) {
+                keepFrom = i;
+                break;
+            }
+        }
+        if (keepFrom < 0) keepFrom = lastUserIdx; // best effort: keep latest turn
+
+        const int omitted = keepFrom - 1;
+        QJsonArray out;
+        out.append(messages.first());
+        if (omitted > 0) {
+            QJsonObject marker;
+            marker["role"] = "system";
+            marker["content"] = QStringLiteral(
+                "[Context compressed: %1 earlier messages were omitted to fit "
+                "the model's context window.]").arg(omitted);
+            out.append(marker);
+        }
+        for (int i = keepFrom; i < messages.size(); ++i)
+            out.append(messages.at(i));
+        return out;
     }
 };
 

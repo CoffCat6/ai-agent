@@ -1,14 +1,22 @@
 import QtQuick
 import QtQuick.Layouts
 import QtQuick.Controls
+import QtQuick.Dialogs
 import NexusAI
 
-// Context panel - token budget and tool sandbox status
+// Context panel - context budget and knowledge base management
 Rectangle {
     id: root
 
     color: Theme.bgSecondary
     border.width: 0
+
+    // Document import dialog (handled off-GUI-thread by AgentViewModel)
+    FileDialog {
+        id: kbFileDialog
+        nameFilters: [qsTr("文本文件 (*.txt *.md *.json *.csv *.log)"), qsTr("所有文件 (*)")]
+        onAccepted: AgentVM.importDocument(selectedFile)
+    }
 
     // Left border separator
     Rectangle {
@@ -83,203 +91,119 @@ Rectangle {
 
     ColumnLayout {
         anchors.fill: parent
-        anchors.margins: 16
-        spacing: 16
+        anchors.margins: 20
+        spacing: 12
 
-        // ── Context Budget Section ───────────────────
-        Text {
-            text: qsTr("Context Budget")
-            color: Theme.textSecondary
-            font.pixelSize: Theme.fontSizeCaption
-            font.bold: true
-            font.family: Theme.fontMono
+        // ── Knowledge Base Section ───────────────────
+        RowLayout {
             Layout.fillWidth: true
-        }
+            spacing: 8
 
-        // Token usage progress bar (custom, not using ProgressBar to avoid style issues)
-        Item {
-            Layout.fillWidth: true
-            height: 8
-
-            // Background track
-            Rectangle {
-                anchors.fill: parent
-                color: Theme.surfaceHover
-                radius: 3
+            Text {
+                text: qsTr("知识库")
+                color: Theme.textSecondary
+                font.pixelSize: Theme.fontSizeCaption
+                font.bold: true
+                font.family: Theme.fontMono
+                Layout.fillWidth: true
             }
 
-            // Fill bar
-            Rectangle {
-                height: parent.height
-                width: parent.width * AgentVM.tokenUsageRate
-                color: AgentVM.tokenUsageRate > 0.8 ? Theme.statusDanger :
-                       AgentVM.tokenUsageRate > 0.6 ? Theme.statusWarning :
-                       Theme.brandPrimary
-                radius: 3
+            Text {
+                text: "+"
+                color: addMouse.containsMouse ? Theme.brandPrimary : Theme.textSecondary
+                font.pixelSize: 16
+                font.bold: true
 
-                Behavior on color { ColorAnimation { duration: 200 } }
-                Behavior on width { NumberAnimation { duration: 200 } }
+                MouseArea {
+                    id: addMouse
+                    anchors.fill: parent
+                    anchors.margins: -6
+                    hoverEnabled: true
+                    cursorShape: Qt.PointingHandCursor
+                    onClicked: kbFileDialog.open()
+                }
             }
         }
 
-        // Token count text
         Text {
-            text: AgentVM.usedTokens + " / " + AgentVM.maxTokens + " Tokens"
-            color: Theme.textPrimary
-            font.pixelSize: Theme.fontSizeCaption
-            font.family: Theme.fontMono
-            Layout.fillWidth: true
-        }
-
-        // ── Divider ──────────────────────────────────
-        Rectangle {
-            Layout.fillWidth: true
-            height: 1
-            color: Theme.borderSubtle
-        }
-
-        // ── Tool Sandbox Section ─────────────────────
-        Text {
-            text: qsTr("Tool Sandbox")
+            visible: AgentVM.knowledgeDocuments.length === 0
+            text: qsTr("导入文本文件（.txt / .md …），\n模型即可检索其内容回答问题")
             color: Theme.textSecondary
-            font.pixelSize: Theme.fontSizeCaption
-            font.bold: true
-            font.family: Theme.fontMono
+            font.pixelSize: 10
+            font.family: Theme.fontSans
+            wrapMode: Text.Wrap
             Layout.fillWidth: true
         }
 
-        // Tool list
         ScrollView {
             Layout.fillWidth: true
             Layout.fillHeight: true
             clip: true
+            visible: AgentVM.knowledgeDocuments.length > 0
 
             ListView {
-                id: toolListView
-                model: AgentVM.toolRegistryModel
+                id: kbList
+                model: AgentVM.knowledgeDocuments
                 spacing: 4
 
-                delegate: RowLayout {
-                    width: toolListView.width
-                    height: 28
-                    spacing: 8
+                delegate: Rectangle {
+                    width: kbList.width
+                    height: kbRow.implicitHeight + 14
+                    radius: 6
+                    color: kbHover.hovered ? Theme.surfaceHover : "transparent"
 
-                    // Status indicator dot
-                    Rectangle {
-                        width: 8
-                        height: 8
-                        radius: 4
-                        color: {
-                            var level = modelData.level
-                            if (level === "safe") return Theme.statusSuccess
-                            if (level === "requires_confirm") return Theme.statusWarning
-                            if (level === "dangerous") return Theme.statusDanger
-                            return Theme.textSecondary
-                        }
-                    }
+                    // Passive hover detection (does not steal the delete click)
+                    HoverHandler { id: kbHover }
 
-                    // Tool name
-                    Text {
-                        text: modelData.name
-                        color: Theme.textPrimary
-                        font.pixelSize: Theme.fontSizeCaption
-                        font.family: Theme.fontMono
-                        Layout.fillWidth: true
-                    }
+                    RowLayout {
+                        id: kbRow
+                        anchors.fill: parent
+                        anchors.margins: 7
+                        anchors.leftMargin: 10
+                        anchors.rightMargin: 8
+                        spacing: 8
 
-                    // Level badge
-                    Rectangle {
-                        width: levelText.implicitWidth + 12
-                        height: 16
-                        radius: 8
-                        color: {
-                            var level = modelData.level
-                            if (level === "safe") return Qt.rgba(0, 1, 0.58, 0.15)
-                            if (level === "requires_confirm") return Qt.rgba(1, 0.72, 0, 0.15)
-                            if (level === "dangerous") return Qt.rgba(1, 0.23, 0.19, 0.15)
-                            return Theme.surfaceHover
+                        ColumnLayout {
+                            Layout.fillWidth: true
+                            spacing: 2
+
+                            Text {
+                                text: modelData.name
+                                color: Theme.textPrimary
+                                font.pixelSize: Theme.fontSizeCaption
+                                font.family: Theme.fontMono
+                                elide: Text.ElideMiddle
+                                Layout.fillWidth: true
+                            }
+
+                            Text {
+                                text: modelData.chunks + qsTr(" 段 · ") + modelData.chars + qsTr(" 字符")
+                                color: Theme.textSecondary
+                                font.pixelSize: 9
+                                font.family: Theme.fontMono
+                            }
                         }
 
                         Text {
-                            id: levelText
-                            anchors.centerIn: parent
-                            text: {
-                                var level = modelData.level
-                                if (level === "safe") return "SAFE"
-                                if (level === "requires_confirm") return "CONFIRM"
-                                if (level === "dangerous") return "BLOCKED"
-                                return level.toUpperCase()
-                            }
-                            color: {
-                                var level = modelData.level
-                                if (level === "safe") return Theme.statusSuccess
-                                if (level === "requires_confirm") return Theme.statusWarning
-                                if (level === "dangerous") return Theme.statusDanger
-                                return Theme.textSecondary
-                            }
-                            font.pixelSize: 9
-                            font.family: Theme.fontMono
+                            text: "×"
+                            color: kbDeleteMA.containsMouse ? Theme.statusDanger : Theme.textSecondary
+                            font.pixelSize: 14
                             font.bold: true
+
+                            MouseArea {
+                                id: kbDeleteMA
+                                anchors.fill: parent
+                                anchors.margins: -6
+                                hoverEnabled: true
+                                cursorShape: Qt.PointingHandCursor
+                                onClicked: AgentVM.removeDocument(modelData.name)
+                            }
                         }
                     }
                 }
             }
         }
 
-        // ── Divider ──────────────────────────────────
-        Rectangle {
-            Layout.fillWidth: true
-            height: 1
-            color: Theme.borderSubtle
-        }
-
-        // ── System Info ──────────────────────────────
-        Text {
-            text: qsTr("System")
-            color: Theme.textSecondary
-            font.pixelSize: Theme.fontSizeCaption
-            font.bold: true
-            font.family: Theme.fontMono
-            Layout.fillWidth: true
-        }
-
-        ColumnLayout {
-            Layout.fillWidth: true
-            spacing: 4
-
-            RowLayout {
-                Layout.fillWidth: true
-                Text {
-                    text: qsTr("Engine:")
-                    color: Theme.textSecondary
-                    font.pixelSize: Theme.fontSizeCaption
-                    font.family: Theme.fontMono
-                }
-                Item { Layout.fillWidth: true }
-                Text {
-                    text: "NexusAI v0.1"
-                    color: Theme.textPrimary
-                    font.pixelSize: Theme.fontSizeCaption
-                    font.family: Theme.fontMono
-                }
-            }
-
-            RowLayout {
-                Layout.fillWidth: true
-                Text {
-                    text: qsTr("Theme:")
-                    color: Theme.textSecondary
-                    font.pixelSize: Theme.fontSizeCaption
-                    font.family: Theme.fontMono
-                }
-                Item { Layout.fillWidth: true }
-                Text {
-                    text: ThemeManager.isDark ? "Dark" : "Light"
-                    color: Theme.textPrimary
-                    font.pixelSize: Theme.fontSizeCaption
-                    font.family: Theme.fontMono
-                }
-            }
-        }
+        Item { Layout.fillHeight: true; visible: AgentVM.knowledgeDocuments.length === 0 }
     }
 }

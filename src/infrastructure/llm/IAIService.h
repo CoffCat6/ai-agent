@@ -4,20 +4,10 @@
 #include <QJsonArray>
 #include <QJsonObject>
 #include <QString>
-#include <QVector>
 
-#include "core/tools/ITool.h"
+#include "core/agent/LLMTypes.h"
 
 namespace NexusAI {
-
-// LLM response structure
-struct LLMResponse {
-    QString content;
-    QVector<ToolCallInfo> toolCalls;
-    int tokensUsed{0};
-    bool success{false};
-    QString error;
-};
 
 // Abstract AI service interface for LLM providers
 class IAIService : public QObject {
@@ -26,7 +16,10 @@ public:
     explicit IAIService(QObject* parent = nullptr) : QObject(parent) {}
     virtual ~IAIService() = default;
 
-    // Send chat completion request with optional tool definitions
+    // Send chat completion request with optional tool definitions.
+    // Messages use the OpenAI wire format (assistant tool_calls carry
+    // JSON-string arguments; tool results use role "tool" + tool_call_id).
+    // Provider-specific conversion happens inside each implementation.
     virtual void chatComplete(const QJsonArray& messages,
                               const QJsonArray& tools = {}) = 0;
     virtual void cancel() = 0;
@@ -43,5 +36,3 @@ signals:
 };
 
 } // namespace NexusAI
-
-Q_DECLARE_METATYPE(NexusAI::LLMResponse)

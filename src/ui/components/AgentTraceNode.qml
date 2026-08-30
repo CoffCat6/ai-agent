@@ -20,6 +20,7 @@ Item {
         if (t === "tool_call") return Theme.statusWarning
         if (t === "tool_result") return Theme.statusSuccess
         if (t === "summary") return Theme.brandPrimary
+        if (t === "error") return Theme.statusDanger
         if (t === "user_message") return Theme.textSecondary
         return Theme.textSecondary
     }
@@ -86,29 +87,63 @@ Item {
         // Node type label (small caption)
         Text {
             text: {
+                if (modelData === undefined || modelData === null)
+                    return "!! MODEL_DATA_UNDEFINED !!"
                 var t = modelData.type
                 if (t === "thinking") return "THINKING"
                 if (t === "tool_call") return "TOOL CALL"
                 if (t === "tool_result") return "TOOL RESULT"
                 if (t === "summary") return "RESPONSE"
+                if (t === "error") return "ERROR"
                 if (t === "user_message") return "YOU"
+                if (t === "context") return "CONTEXT"
                 return t.toUpperCase()
             }
-            color: Theme.textSecondary
+            color: modelData.type === "error" ? Theme.statusDanger : Theme.textSecondary
             font.family: Theme.fontMono
             font.pixelSize: 10
             font.weight: Font.DemiBold
         }
 
-        // Title
+        // Title (plain text for non-summary nodes)
         Text {
+            visible: modelData.type !== "summary"
             Layout.fillWidth: true
             text: modelData.title
-            color: modelData.type === "user_message" ? Theme.textPrimary : Theme.textPrimary
+            color: modelData.type === "error" ? Theme.statusDanger : Theme.textPrimary
             font.family: modelData.type === "user_message" ? Theme.fontSans : Theme.fontMono
             font.pixelSize: Theme.fontSizeBody
             wrapMode: Text.Wrap
             renderType: Text.NativeRendering
+        }
+
+        // Markdown-rendered response (summary nodes) with copy button
+        Item {
+            visible: modelData.type === "summary"
+            Layout.fillWidth: true
+            implicitHeight: mdText.implicitHeight
+
+            Text {
+                id: mdText
+                anchors.left: parent.left
+                anchors.right: parent.right
+                anchors.rightMargin: 56
+                text: modelData.title
+                textFormat: Text.MarkdownText
+                color: Theme.textPrimary
+                linkColor: Theme.brandPrimary
+                font.pixelSize: Theme.fontSizeBody
+                font.family: Theme.fontSans
+                wrapMode: Text.Wrap
+                onLinkActivated: function(link) { Qt.openUrlExternally(link) }
+            }
+
+            CopyButton {
+                anchors.top: parent.top
+                anchors.right: parent.right
+                anchors.topMargin: -4
+                text: modelData.title
+            }
         }
 
         // Tool call arguments (shown for tool_call type)
