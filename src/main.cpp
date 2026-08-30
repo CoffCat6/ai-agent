@@ -12,6 +12,7 @@
 #include "core/tools/ToolRegistry.h"
 #include "core/rag/RagService.h"
 #include "core/rag/KnowledgeSearchTool.h"
+#include "core/utils/Logger.h"
 #include "infrastructure/llm/IAIService.h"
 #include "infrastructure/llm/OpenAIService.h"
 #include "infrastructure/llm/OllamaService.h"
@@ -28,6 +29,12 @@ int main(int argc, char *argv[])
     app.setOrganizationName("NexusAI");
     app.setApplicationName("NexusAI");
     app.setApplicationVersion("0.2.0");
+
+    // ── Logging: mirror all Qt messages to a rotating file ──
+    // (windowed build has no console; see <AppLocalData>/logs/)
+    Logger::install();
+    qInfo() << "NexusAI" << app.applicationVersion() << "starting";
+    qInfo() << "Log file:" << Logger::logFilePath();
 
     // ── Settings (QSettings + env fallbacks) ──────────
     auto* settings = new SettingsService(&app);

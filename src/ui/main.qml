@@ -20,13 +20,18 @@ ApplicationWindow {
         spacing: 0
 
         // ── Left: Sidebar ──────────────────────────────
+        // Collapse animates the width to 0 (content fades inside the
+        // Sidebar); the floating handle below stays reachable while hidden.
         Sidebar {
-            visible: AgentVM.isSidebarExpanded
-            Layout.preferredWidth: 260
+            id: sidebarPanel
+            Layout.preferredWidth: AgentVM.isSidebarExpanded ? 260 : 0
             Layout.fillHeight: true
+            // Stay visible through the whole collapse animation; RowLayout
+            // skips invisible items entirely, which would freeze the width.
+            visible: AgentVM.isSidebarExpanded || width > 0.5
 
             Behavior on Layout.preferredWidth {
-                NumberAnimation { duration: 200; easing.type: Easing.OutQuad }
+                NumberAnimation { duration: 220; easing.type: Easing.OutQuad }
             }
 
             onSettingsRequested: settingsDialog.open()
@@ -42,15 +47,114 @@ ApplicationWindow {
 
         // ── Right: Context Panel ──────────────────────
         ContextPanel {
-            Layout.preferredWidth: 300
-            Layout.minimumWidth: 250
+            id: contextPanel
+            Layout.preferredWidth: AgentVM.isPanelVisible ? 300 : 0
+            Layout.minimumWidth: 0
             Layout.fillHeight: true
-            visible: AgentVM.isPanelVisible
+            visible: AgentVM.isPanelVisible || width > 0.5
 
-            // Smooth show/hide animation
             Behavior on Layout.preferredWidth {
-                NumberAnimation { duration: 200; easing.type: Easing.OutQuad }
+                NumberAnimation { duration: 220; easing.type: Easing.OutQuad }
             }
+        }
+    }
+
+    // ── Sidebar Toggle Handle ──────────────────────────
+    // Floats on the sidebar's right edge; docks to the window edge while
+    // collapsed so the sidebar can always be re-opened from here.
+    Item {
+        id: sidebarHandle
+        width: 24
+        height: 56
+        z: 20
+        anchors.verticalCenter: parent.verticalCenter
+        x: Math.max(sidebarPanel.width - 12, 6)
+
+        Rectangle {
+            anchors.fill: parent
+            radius: height / 2
+
+            color: {
+                if (sidebarHandleMA.containsMouse && AgentVM.isSidebarExpanded) return Theme.brandPrimary
+                if (sidebarHandleMA.containsMouse) return Theme.surfaceHover
+                return Theme.bgSecondary
+            }
+            border.width: 1
+            border.color: sidebarHandleMA.containsMouse && AgentVM.isSidebarExpanded
+                ? Theme.brandPrimary : Theme.borderSubtle
+
+            Behavior on color { ColorAnimation { duration: 150 } }
+
+            AppIcon {
+                anchors.centerIn: parent
+                icon: AgentVM.isSidebarExpanded ? "chevron-left" : "chevron-right"
+                size: 14
+                iconColor: sidebarHandleMA.containsMouse && AgentVM.isSidebarExpanded
+                    ? Theme.bgPrimary : Theme.textSecondary
+            }
+
+            MouseArea {
+                id: sidebarHandleMA
+                anchors.fill: parent
+                anchors.margins: -4   // Slightly larger hit area
+                hoverEnabled: true
+                cursorShape: Qt.PointingHandCursor
+                onClicked: AgentVM.toggleSidebar()
+            }
+
+            ToolTip.visible: sidebarHandleMA.containsMouse
+            ToolTip.delay: 600
+            ToolTip.text: AgentVM.isSidebarExpanded
+                ? qsTr("收起侧边栏 (Ctrl+[)") : qsTr("展开侧边栏 (Ctrl+[)")
+        }
+    }
+
+    // ── Context Panel Toggle Handle ────────────────────
+    // Mirrors the sidebar handle on the right edge.
+    Item {
+        id: panelHandle
+        width: 24
+        height: 56
+        z: 20
+        anchors.verticalCenter: parent.verticalCenter
+        x: parent.width - width - Math.max(contextPanel.width - 12, 6)
+
+        Rectangle {
+            anchors.fill: parent
+            radius: height / 2
+
+            color: {
+                if (panelHandleMA.containsMouse && AgentVM.isPanelVisible) return Theme.brandPrimary
+                if (panelHandleMA.containsMouse) return Theme.surfaceHover
+                return Theme.bgSecondary
+            }
+            border.width: 1
+            border.color: panelHandleMA.containsMouse && AgentVM.isPanelVisible
+                ? Theme.brandPrimary : Theme.borderSubtle
+
+            Behavior on color { ColorAnimation { duration: 150 } }
+
+            AppIcon {
+                anchors.centerIn: parent
+                icon: AgentVM.isPanelVisible ? "chevron-right" : "chevron-left"
+                size: 14
+                iconColor: panelHandleMA.containsMouse && AgentVM.isPanelVisible
+                    ? Theme.bgPrimary : Theme.textSecondary
+            }
+
+            MouseArea {
+                id: panelHandleMA
+                anchors.fill: parent
+                anchors.margins: -4
+                hoverEnabled: true
+                cursorShape: Qt.PointingHandCursor
+                onClicked: AgentVM.togglePanel()
+            }
+
+            ToolTip.visible: panelHandleMA.containsMouse
+            ToolTip.delay: 600
+            ToolTip.text: AgentVM.isPanelVisible
+                ? qsTr("收起上下文面板 (Ctrl+B)") : qsTr("展开上下文面板 (Ctrl+B)")
         }
     }
 
@@ -146,6 +250,11 @@ ApplicationWindow {
     Shortcut {
         sequence: "Ctrl+,"
         onActivated: settingsDialog.open()
+    }
+
+    Shortcut {
+        sequence: "Ctrl+L"
+        onActivated: auditDialog.open()
     }
 
     Shortcut {

@@ -4,17 +4,50 @@ import QtQuick.Controls
 import NexusAI
 
 // Tool-activity audit trail viewer (SQLite-persisted via SqliteMemory).
-// Entries are loaded fresh on every open.
+// Supports event-type filtering, manual/auto refresh and clipboard export.
 Dialog {
     id: dialog
 
     modal: true
     anchors.centerIn: parent
     padding: 0
+    // Fixed content size: a ColumnLayout contentItem cannot derive its own
+    // implicit height from a fillHeight ListView, so size the popup here.
+    width: 680
+    height: 520
 
     property var entries: []
+    property string filter: "all"   // all | execute | approved | denied
 
-    onAboutToShow: entries = AgentVM.auditLog(200)
+    readonly property var filtered: entries.filter(function(e) {
+        if (filter === "all") return true
+        if (filter === "execute") return e.event === "tool_execute"
+        if (filter === "approved") return e.event === "tool_approved"
+        return e.event === "tool_declined" || e.event === "tool_blocked"
+            || e.event === "unknown_tool"
+    })
+
+    function reload() {
+        entries = AgentVM.auditLog(200)
+        logPathCaption.text = AgentVM.logFilePath()
+    }
+
+    function toClipboardText() {
+        var lines = []
+        for (var i = 0; i < filtered.length; ++i) {
+            var e = filtered[i]
+            var t = e.timestamp ? Qt.formatDateTime(new Date(e.timestamp), "yyyy-MM-dd hh:mm:ss") : "-"
+            lines.push(t + "  [" + e.event + "]  " + e.toolName
+                       + (e.arguments ? "  " + e.arguments : "")
+                       + (e.detail ? "  // " + e.detail : ""))
+        }
+        return lines.join("\n")
+    }
+
+    onAboutToShow: {
+        filter = "all"
+        reload()
+    }
 
     background: Rectangle {
         color: Theme.bgSecondary
@@ -25,8 +58,6 @@ Dialog {
 
     contentItem: ColumnLayout {
         spacing: 12
-        width: 620
-        height: 460
 
         Text {
             Layout.leftMargin: 24
@@ -38,17 +69,63 @@ Dialog {
             font.family: Theme.fontSans
         }
 
-        Text {
+        // ── Filter chips + summary ────────────────────
+        RowLayout {
             Layout.leftMargin: 24
-            text: qsTr("最近 %1 条工具操作记录").arg(entries.length)
-            color: Theme.textSecondary
-            font.pixelSize: Theme.fontSizeCaption
-            font.family: Theme.fontSans
+            Layout.rightMargin: 24
+            spacing: 8
+
+            Repeater {
+                model: [
+                    { key: "all", label: qsTr("全部") },
+                    { key: "execute", label: qsTr("执行") },
+                    { key: "approved", label: qsTr("允许") },
+                    { key: "denied", label: qsTr("拒绝/拦截") }
+                ]
+
+                delegate: Rectangle {
+                    readonly property bool active: dialog.filter === modelData.key
+                    width: chipLabel.implicitWidth + 20
+                    height: 24
+                    radius: 12
+                    color: active ? Theme.brandPrimary
+                        : (chipMA.containsMouse ? Theme.surfaceHover : "transparent")
+                    border.width: 1
+                    border.color: active ? Theme.brandPrimary : Theme.borderSubtle
+
+                    Text {
+                        id: chipLabel
+                        anchors.centerIn: parent
+                        text: modelData.label
+                        color: active ? Theme.bgPrimary : Theme.textSecondary
+                        font.pixelSize: Theme.fontSizeCaption
+                        font.family: Theme.fontSans
+                    }
+
+                    MouseArea {
+                        id: chipMA
+                        anchors.fill: parent
+                        hoverEnabled: true
+                        cursorShape: Qt.PointingHandCursor
+                        onClicked: dialog.filter = modelData.key
+                    }
+                }
+            }
+
+            Item { Layout.fillWidth: true }
+
+            Text {
+                text: qsTr("显示 %1 / %2 条").arg(dialog.filtered.length).arg(dialog.entries.length)
+                color: Theme.textSecondary
+                font.pixelSize: Theme.fontSizeCaption
+                font.family: Theme.fontMono
+            }
         }
 
+        // ── Entry list ────────────────────────────────
         ListView {
             id: auditList
-            model: dialog.entries
+            model: dialog.filtered
             clip: true
             spacing: 4
             Layout.fillWidth: true
@@ -61,7 +138,7 @@ Dialog {
             Text {
                 anchors.centerIn: parent
                 visible: auditList.count === 0
-                text: qsTr("暂无记录")
+                text: dialog.entries.length === 0 ? qsTr("暂无记录") : qsTr("当前筛选条件下暂无记录")
                 color: Theme.textSecondary
                 font.pixelSize: Theme.fontSizeBody
                 font.family: Theme.fontSans
@@ -167,12 +244,92 @@ Dialog {
         }
 
         // ── Footer ────────────────────────────────────
+        Text {
+            id: logPathCaption
+            Layout.leftMargin: 24
+            Layout.rightMargin: 24
+            text: ""
+            color: Theme.textSecondary
+            opacity: 0.8
+            font.pixelSize: 9
+            font.family: Theme.fontMono
+            elide: Text.ElideMiddle
+            Layout.fillWidth: true
+        }
+
         RowLayout {
             Layout.fillWidth: true
             Layout.leftMargin: 24
             Layout.rightMargin: 24
             Layout.bottomMargin: 24
             spacing: 8
+
+            // Refresh
+            Rectangle {
+                width: 28
+                height: 28
+                radius: 6
+                color: refreshMA.containsMouse ? Theme.surfaceHover : "transparent"
+
+                AppIcon {
+                    anchors.centerIn: parent
+                    icon: "refresh"
+                    size: 15
+                    iconColor: refreshMA.containsMouse ? Theme.brandPrimary : Theme.textSecondary
+                }
+
+                MouseArea {
+                    id: refreshMA
+                    anchors.fill: parent
+                    hoverEnabled: true
+                    cursorShape: Qt.PointingHandCursor
+                    onClicked: dialog.reload()
+                }
+
+                ToolTip.visible: refreshMA.containsMouse
+                ToolTip.delay: 600
+                ToolTip.text: qsTr("刷新")
+            }
+
+            // Copy filtered entries
+            Rectangle {
+                id: copyButton
+                width: 28
+                height: 28
+                radius: 6
+                color: copyMA.containsMouse ? Theme.surfaceHover : "transparent"
+
+                property bool showTip: false
+
+                AppIcon {
+                    anchors.centerIn: parent
+                    icon: "copy"
+                    size: 15
+                    iconColor: copyMA.containsMouse ? Theme.brandPrimary : Theme.textSecondary
+                }
+
+                MouseArea {
+                    id: copyMA
+                    anchors.fill: parent
+                    hoverEnabled: true
+                    cursorShape: Qt.PointingHandCursor
+                    onClicked: {
+                        AgentVM.copyToClipboard(dialog.toClipboardText())
+                        copyButton.showTip = true
+                        copyHideTimer.restart()
+                    }
+                }
+
+                ToolTip.visible: copyButton.showTip
+                ToolTip.text: qsTr("已复制到剪贴板")
+                ToolTip.delay: 0
+
+                Timer {
+                    id: copyHideTimer
+                    interval: 1500
+                    onTriggered: copyButton.showTip = false
+                }
+            }
 
             Item { Layout.fillWidth: true }
 
@@ -182,5 +339,13 @@ Dialog {
                 onClicked: dialog.close()
             }
         }
+    }
+
+    // Auto-refresh while the dialog is open (5s) for live monitoring
+    Timer {
+        running: dialog.visible
+        interval: 5000
+        repeat: true
+        onTriggered: dialog.reload()
     }
 }

@@ -123,6 +123,7 @@ public:
     Q_INVOKABLE void removeDocument(const QString& name);
     Q_INVOKABLE void clearKnowledge();
     Q_INVOKABLE QVariantList auditLog(int limit = 200);
+    Q_INVOKABLE QString logFilePath() const;   // runtime log file path (for the audit dialog)
 
 signals:
     void stateChanged();

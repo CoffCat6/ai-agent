@@ -37,6 +37,8 @@ add_library(nexus_core STATIC
     src/core/rag/RagService.cpp
     src/core/rag/KnowledgeSearchTool.h
     src/core/utils/TokenEstimator.h
+    src/core/utils/Logger.h
+    src/core/utils/Logger.cpp
 )
 target_include_directories(nexus_core PUBLIC ${CMAKE_CURRENT_SOURCE_DIR}/src)
 target_link_libraries(nexus_core PUBLIC Qt6::Core Qt6::Sql Qt6::Concurrent)
@@ -87,6 +89,7 @@ qt_add_qml_module(nexus_ai
     QML_FILES
         src/ui/main.qml
         src/ui/components/AppButton.qml
+        src/ui/components/AppIcon.qml
         src/ui/components/CodeBlock.qml
         src/ui/components/CopyButton.qml
         src/ui/components/SettingsDialog.qml

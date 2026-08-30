@@ -120,11 +120,11 @@ Rectangle {
 
         readonly property bool sendButtonEnabled: root.canSend
 
-        Text {
+        AppIcon {
             anchors.centerIn: parent
-            text: "➤"
-            color: Theme.bgPrimary
-            font.pixelSize: 14
+            icon: "send"
+            size: 16
+            iconColor: Theme.bgPrimary
         }
 
         MouseArea {
@@ -154,11 +154,11 @@ Rectangle {
             : Theme.statusDanger
         opacity: 0.92
 
-        Text {
+        AppIcon {
             anchors.centerIn: parent
-            text: "■"
-            color: "#ffffff"
-            font.pixelSize: 13
+            icon: "stop"
+            size: 15
+            iconColor: "#ffffff"
         }
 
         MouseArea {

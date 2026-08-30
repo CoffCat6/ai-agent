@@ -3,7 +3,7 @@ import QtQuick.Layouts
 import QtQuick.Controls
 import NexusAI
 
-// Top bar - status indicator and window controls
+// Top bar - sidebar toggle, status indicator and panel toggle
 Rectangle {
     id: root
 
@@ -19,22 +19,36 @@ Rectangle {
 
     RowLayout {
         anchors.fill: parent
-        anchors.leftMargin: 16
+        anchors.leftMargin: 8
         anchors.rightMargin: 8
         spacing: 0
 
-        // ── Menu Icon ────────────────────────────────
-        Text {
-            text: "≡"
-            color: Theme.textPrimary
-            font.pixelSize: 20
-            font.family: Theme.fontMono
+        // ── Sidebar Toggle ───────────────────────────
+        Rectangle {
+            width: 32
+            height: 32
+            radius: 6
+            color: sidebarMA.containsMouse ? Theme.surfaceHover : "transparent"
+
+            AppIcon {
+                anchors.centerIn: parent
+                icon: "menu"
+                size: 20
+                iconColor: sidebarMA.containsMouse ? Theme.brandPrimary : Theme.textPrimary
+            }
 
             MouseArea {
+                id: sidebarMA
                 anchors.fill: parent
+                hoverEnabled: true
                 cursorShape: Qt.PointingHandCursor
                 onClicked: AgentVM.toggleSidebar()
             }
+
+            ToolTip.visible: sidebarMA.containsMouse
+            ToolTip.delay: 600
+            ToolTip.text: AgentVM.isSidebarExpanded
+                ? qsTr("收起侧边栏 (Ctrl+[)") : qsTr("展开侧边栏 (Ctrl+[)")
         }
 
         // ── Spacer ────────────────────────────────────
@@ -83,19 +97,18 @@ Rectangle {
 
         // ── Panel Toggle Button ──────────────────────
         Rectangle {
-            width: 28
-            height: 28
-            radius: 4
+            width: 32
+            height: 32
+            radius: 6
             color: panelToggleMA.containsMouse ? Theme.surfaceHover : "transparent"
             border.width: AgentVM.isPanelVisible ? 0 : 1
             border.color: Theme.borderSubtle
 
-            Text {
+            AppIcon {
                 anchors.centerIn: parent
-                text: AgentVM.isPanelVisible ? "▶" : "◀"
-                color: Theme.textPrimary
-                font.pixelSize: 12
-                font.family: Theme.fontMono
+                icon: AgentVM.isPanelVisible ? "chevron-right" : "chevron-left"
+                size: 18
+                iconColor: panelToggleMA.containsMouse ? Theme.brandPrimary : Theme.textPrimary
             }
 
             MouseArea {
@@ -105,6 +118,11 @@ Rectangle {
                 cursorShape: Qt.PointingHandCursor
                 onClicked: AgentVM.togglePanel()
             }
+
+            ToolTip.visible: panelToggleMA.containsMouse
+            ToolTip.delay: 600
+            ToolTip.text: AgentVM.isPanelVisible
+                ? qsTr("收起上下文面板 (Ctrl+B)") : qsTr("展开上下文面板 (Ctrl+B)")
         }
 
     }

@@ -3,7 +3,10 @@ import QtQuick.Layouts
 import QtQuick.Controls
 import NexusAI
 
-// Left sidebar - session history and navigation
+// Left sidebar - session history and navigation.
+// Collapse/expand is driven by AgentVM.isSidebarExpanded: main.qml animates
+// this item's width to 0 (content fades via contentFade) and hosts the
+// floating toggle handle, which stays reachable while collapsed.
 Rectangle {
     id: root
 
@@ -12,6 +15,10 @@ Rectangle {
 
     color: Theme.bgSecondary
     border.width: 0
+    clip: true
+
+    // Fade the content out while collapsing so text never gets squeezed
+    readonly property real contentFade: AgentVM.isSidebarExpanded ? 1.0 : 0.0
 
     // Right border separator
     Rectangle {
@@ -21,73 +28,13 @@ Rectangle {
         color: Theme.borderSubtle
     }
 
-    // ── Collapse Handle ────────────────────────────
-    Rectangle {
-        id: collapseHandle
-        width: 24
-        height: 56
-        radius: height / 2
-        anchors.right: parent.right
-        anchors.rightMargin: -12
-        anchors.verticalCenter: parent.verticalCenter
-        z: 10
-
-        color: {
-            if (collapseMA.containsMouse && AgentVM.isSidebarExpanded) return Theme.brandPrimary
-            if (collapseMA.containsMouse) return Theme.surfaceHover
-            return Theme.bgSecondary
-        }
-        border.width: 1
-        border.color: collapseMA.containsMouse && AgentVM.isSidebarExpanded
-            ? Theme.brandPrimary : Theme.borderSubtle
-
-        Behavior on color { ColorAnimation { duration: 150 } }
-
-        // Chevron arrow drawn via Canvas for crisp rendering at any scale
-        Canvas {
-            id: arrowIcon
-            anchors.centerIn: parent
-            width: 8
-            height: 14
-
-            onPaint: {
-                var ctx = getContext("2d")
-                ctx.strokeStyle = collapseMA.containsMouse && AgentVM.isSidebarExpanded
-                    ? Theme.bgPrimary : Theme.textSecondary
-                ctx.lineWidth = 2.2
-                ctx.lineCap = "round"
-                ctx.lineJoin = "round"
-
-                ctx.beginPath()
-                ctx.moveTo(width - 1.5, 1.5)
-                ctx.lineTo(1.5, height / 2)
-                ctx.lineTo(width - 1.5, height - 1.5)
-                ctx.stroke()
-            }
-
-            // Arrow rotates 180° when sidebar toggles
-            transform: Rotation {
-                origin.x: width / 2
-                origin.y: height / 2
-                angle: AgentVM.isSidebarExpanded ? 0 : 180
-                Behavior on angle { NumberAnimation { duration: 200; easing.type: Easing.OutQuad } }
-            }
-        }
-
-        MouseArea {
-            id: collapseMA
-            anchors.fill: parent
-            anchors.margins: -4   // Slightly larger hit area
-            hoverEnabled: true
-            cursorShape: Qt.PointingHandCursor
-            onClicked: AgentVM.toggleSidebar()
-        }
-    }
-
     ColumnLayout {
         anchors.fill: parent
         anchors.margins: 0
         spacing: 0
+        opacity: root.contentFade
+
+        Behavior on opacity { NumberAnimation { duration: 150 } }
 
         // ── Logo / Title ───────────────────────────────
         Rectangle {
@@ -139,12 +86,24 @@ Rectangle {
             border.width: 1
             border.color: Theme.borderSubtle
 
-            Text {
+            Row {
                 anchors.centerIn: parent
-                text: "+ New Chat"
-                color: Theme.textPrimary
-                font.pixelSize: Theme.fontSizeBody
-                font.family: Theme.fontSans
+                spacing: 6
+
+                AppIcon {
+                    anchors.verticalCenter: parent.verticalCenter
+                    icon: "add"
+                    size: 14
+                    iconColor: Theme.textPrimary
+                }
+
+                Text {
+                    anchors.verticalCenter: parent.verticalCenter
+                    text: qsTr("新会话")
+                    color: Theme.textPrimary
+                    font.pixelSize: Theme.fontSizeBody
+                    font.family: Theme.fontSans
+                }
             }
 
             MouseArea {
@@ -250,24 +209,32 @@ Rectangle {
                                 font.pixelSize: Theme.fontSizeBody
                                 font.family: Theme.fontSans
                                 elide: Text.ElideRight
-                                width: parent.width - (sessionDelegate.hovered ? 40 : 0)
+                                width: parent.width - (sessionDelegate.hovered ? 44 : 0)
                             }
 
                             Row {
                                 visible: sessionDelegate.hovered && !sessionDelegate.renaming
                                 anchors.verticalCenter: parent.verticalCenter
                                 anchors.right: parent.right
-                                spacing: 4
+                                spacing: 2
 
-                                Text {
-                                    text: "✎"
-                                    color: renameMA.containsMouse ? Theme.brandPrimary : Theme.textSecondary
-                                    font.pixelSize: 11
+                                // Rename action
+                                Rectangle {
+                                    width: 20
+                                    height: 20
+                                    radius: 4
+                                    color: renameMA.containsMouse ? Theme.surfaceHover : "transparent"
+
+                                    AppIcon {
+                                        anchors.centerIn: parent
+                                        icon: "edit"
+                                        size: 12
+                                        iconColor: renameMA.containsMouse ? Theme.brandPrimary : Theme.textSecondary
+                                    }
 
                                     MouseArea {
                                         id: renameMA
                                         anchors.fill: parent
-                                        anchors.margins: -4
                                         hoverEnabled: true
                                         cursorShape: Qt.PointingHandCursor
                                         onClicked: {
@@ -277,17 +244,35 @@ Rectangle {
                                     }
                                 }
 
-                                Text {
-                                    text: sessionDelegate.confirmDelete ? qsTr("确认?") : "×"
+                                // Delete action (two-step confirm)
+                                Rectangle {
+                                    width: 20
+                                    height: 20
+                                    radius: 4
                                     color: deleteMA.containsMouse || sessionDelegate.confirmDelete
-                                        ? Theme.statusDanger : Theme.textSecondary
-                                    font.pixelSize: sessionDelegate.confirmDelete ? 9 : 13
-                                    font.bold: true
+                                        ? Qt.rgba(Theme.statusDanger.r, Theme.statusDanger.g,
+                                                  Theme.statusDanger.b, 0.15) : "transparent"
+
+                                    AppIcon {
+                                        anchors.centerIn: parent
+                                        visible: !sessionDelegate.confirmDelete
+                                        icon: "close"
+                                        size: 12
+                                        iconColor: deleteMA.containsMouse ? Theme.statusDanger : Theme.textSecondary
+                                    }
+
+                                    Text {
+                                        anchors.centerIn: parent
+                                        visible: sessionDelegate.confirmDelete
+                                        text: qsTr("确认?")
+                                        color: Theme.statusDanger
+                                        font.pixelSize: 9
+                                        font.bold: true
+                                    }
 
                                     MouseArea {
                                         id: deleteMA
                                         anchors.fill: parent
-                                        anchors.margins: -4
                                         hoverEnabled: true
                                         cursorShape: Qt.PointingHandCursor
                                         onClicked: {
@@ -328,7 +313,7 @@ Rectangle {
             }
         }
 
-        // ── Bottom Bar: Settings + Theme Toggle ──────
+        // ── Bottom Bar: Audit + Settings + Theme ─────
         Rectangle {
             Layout.fillWidth: true
             Layout.preferredHeight: 48
@@ -343,37 +328,67 @@ Rectangle {
 
             RowLayout {
                 anchors.fill: parent
-                anchors.leftMargin: 20
-                anchors.rightMargin: 20
-                spacing: 12
+                anchors.leftMargin: 12
+                anchors.rightMargin: 12
+                spacing: 4
 
-                // Audit log icon
-                Text {
-                    text: "🛡"
-                    color: Theme.textSecondary
-                    font.pixelSize: 15
+                // Audit log button
+                Rectangle {
+                    width: 32
+                    height: 32
+                    radius: 6
+                    color: auditMA.containsMouse ? Theme.surfaceHover : "transparent"
+
+                    AppIcon {
+                        anchors.centerIn: parent
+                        icon: "shield"
+                        size: 17
+                        iconColor: auditMA.containsMouse ? Theme.brandPrimary : Theme.textSecondary
+                    }
+
                     MouseArea {
+                        id: auditMA
                         anchors.fill: parent
+                        hoverEnabled: true
                         cursorShape: Qt.PointingHandCursor
                         onClicked: root.auditRequested()
                     }
+
+                    ToolTip.visible: auditMA.containsMouse
+                    ToolTip.delay: 600
+                    ToolTip.text: qsTr("审计日志")
                 }
 
-                // Settings icon
-                Text {
-                    text: "⚙"
-                    color: Theme.textSecondary
-                    font.pixelSize: 18
+                // Settings button
+                Rectangle {
+                    width: 32
+                    height: 32
+                    radius: 6
+                    color: settingsMA.containsMouse ? Theme.surfaceHover : "transparent"
+
+                    AppIcon {
+                        anchors.centerIn: parent
+                        icon: "settings"
+                        size: 17
+                        iconColor: settingsMA.containsMouse ? Theme.brandPrimary : Theme.textSecondary
+                    }
+
                     MouseArea {
+                        id: settingsMA
                         anchors.fill: parent
+                        hoverEnabled: true
                         cursorShape: Qt.PointingHandCursor
                         onClicked: root.settingsRequested()
                     }
+
+                    ToolTip.visible: settingsMA.containsMouse
+                    ToolTip.delay: 600
+                    ToolTip.text: qsTr("设置 (Ctrl+,)")
                 }
 
                 Item { Layout.fillWidth: true }
 
-                // Theme toggle
+                // Theme toggle switch: knob carries the mode icon
                 Rectangle {
                     width: 48
                     height: 24
@@ -382,13 +397,6 @@ Rectangle {
                     border.width: 1
                     border.color: Theme.borderSubtle
 
-                    Text {
-                        text: ThemeManager.isDark ? "🌙" : "☀"
-                        font.pixelSize: 12
-                        anchors.centerIn: parent
-                    }
-
-                    // Toggle knob
                     Rectangle {
                         width: 18
                         height: 18
@@ -398,6 +406,13 @@ Rectangle {
                         color: Theme.bgSecondary
                         border.width: 1
                         border.color: Theme.borderSubtle
+
+                        AppIcon {
+                            anchors.centerIn: parent
+                            icon: ThemeManager.isDark ? "moon" : "sun"
+                            size: 11
+                            iconColor: Theme.textPrimary
+                        }
 
                         Behavior on x { NumberAnimation { duration: 200; easing.type: Easing.OutQuad } }
                     }

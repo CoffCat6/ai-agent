@@ -4,12 +4,18 @@ import QtQuick.Controls
 import QtQuick.Dialogs
 import NexusAI
 
-// Context panel - context budget and knowledge base management
+// Context panel - context budget and knowledge base management.
+// Collapse/expand is driven by AgentVM.isPanelVisible: main.qml animates
+// this item's width to 0 and hosts the floating toggle handle.
 Rectangle {
     id: root
 
     color: Theme.bgSecondary
     border.width: 0
+    clip: true
+
+    // Fade the content out while collapsing
+    readonly property real contentFade: AgentVM.isPanelVisible ? 1.0 : 0.0
 
     // Document import dialog (handled off-GUI-thread by AgentViewModel)
     FileDialog {
@@ -26,73 +32,13 @@ Rectangle {
         color: Theme.borderSubtle
     }
 
-    // ── Collapse Handle ────────────────────────────
-    Rectangle {
-        id: collapseHandle
-        width: 24
-        height: 56
-        radius: height / 2
-        anchors.left: parent.left
-        anchors.leftMargin: -12
-        anchors.verticalCenter: parent.verticalCenter
-        z: 10
-
-        color: {
-            if (collapseMA.containsMouse && AgentVM.isPanelVisible) return Theme.brandPrimary
-            if (collapseMA.containsMouse) return Theme.surfaceHover
-            return Theme.bgSecondary
-        }
-        border.width: 1
-        border.color: collapseMA.containsMouse && AgentVM.isPanelVisible
-            ? Theme.brandPrimary : Theme.borderSubtle
-
-        Behavior on color { ColorAnimation { duration: 150 } }
-
-        // Chevron arrow via Canvas
-        Canvas {
-            id: arrowIcon
-            anchors.centerIn: parent
-            width: 8
-            height: 14
-
-            onPaint: {
-                var ctx = getContext("2d")
-                ctx.strokeStyle = collapseMA.containsMouse && AgentVM.isPanelVisible
-                    ? Theme.bgPrimary : Theme.textSecondary
-                ctx.lineWidth = 2.2
-                ctx.lineCap = "round"
-                ctx.lineJoin = "round"
-
-                ctx.beginPath()
-                ctx.moveTo(width - 1.5, 1.5)
-                ctx.lineTo(1.5, height / 2)
-                ctx.lineTo(width - 1.5, height - 1.5)
-                ctx.stroke()
-            }
-
-            // Arrow rotates 180° when panel toggles
-            transform: Rotation {
-                origin.x: width / 2
-                origin.y: height / 2
-                angle: AgentVM.isPanelVisible ? 0 : 180
-                Behavior on angle { NumberAnimation { duration: 200; easing.type: Easing.OutQuad } }
-            }
-        }
-
-        MouseArea {
-            id: collapseMA
-            anchors.fill: parent
-            anchors.margins: -4
-            hoverEnabled: true
-            cursorShape: Qt.PointingHandCursor
-            onClicked: AgentVM.togglePanel()
-        }
-    }
-
     ColumnLayout {
         anchors.fill: parent
         anchors.margins: 20
         spacing: 12
+        opacity: root.contentFade
+
+        Behavior on opacity { NumberAnimation { duration: 150 } }
 
         // ── Knowledge Base Section ───────────────────
         RowLayout {
@@ -108,20 +54,31 @@ Rectangle {
                 Layout.fillWidth: true
             }
 
-            Text {
-                text: "+"
-                color: addMouse.containsMouse ? Theme.brandPrimary : Theme.textSecondary
-                font.pixelSize: 16
-                font.bold: true
+            // Import document action
+            Rectangle {
+                width: 24
+                height: 24
+                radius: 5
+                color: addMouse.containsMouse ? Theme.surfaceHover : "transparent"
+
+                AppIcon {
+                    anchors.centerIn: parent
+                    icon: "add"
+                    size: 14
+                    iconColor: addMouse.containsMouse ? Theme.brandPrimary : Theme.textSecondary
+                }
 
                 MouseArea {
                     id: addMouse
                     anchors.fill: parent
-                    anchors.margins: -6
                     hoverEnabled: true
                     cursorShape: Qt.PointingHandCursor
                     onClicked: kbFileDialog.open()
                 }
+
+                ToolTip.visible: addMouse.containsMouse
+                ToolTip.delay: 600
+                ToolTip.text: qsTr("导入文档")
             }
         }
 
@@ -184,16 +141,25 @@ Rectangle {
                             }
                         }
 
-                        Text {
-                            text: "×"
-                            color: kbDeleteMA.containsMouse ? Theme.statusDanger : Theme.textSecondary
-                            font.pixelSize: 14
-                            font.bold: true
+                        // Remove document action
+                        Rectangle {
+                            width: 22
+                            height: 22
+                            radius: 5
+                            color: kbDeleteMA.containsMouse
+                                ? Qt.rgba(Theme.statusDanger.r, Theme.statusDanger.g,
+                                          Theme.statusDanger.b, 0.15) : "transparent"
+
+                            AppIcon {
+                                anchors.centerIn: parent
+                                icon: "close"
+                                size: 12
+                                iconColor: kbDeleteMA.containsMouse ? Theme.statusDanger : Theme.textSecondary
+                            }
 
                             MouseArea {
                                 id: kbDeleteMA
                                 anchors.fill: parent
-                                anchors.margins: -6
                                 hoverEnabled: true
                                 cursorShape: Qt.PointingHandCursor
                                 onClicked: AgentVM.removeDocument(modelData.name)

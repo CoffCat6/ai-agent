@@ -3,6 +3,7 @@
 #include "core/agent/AIAgent.h"
 #include "core/tools/ToolRegistry.h"
 #include "core/rag/RagService.h"
+#include "core/utils/Logger.h"
 #include "core/utils/TokenEstimator.h"
 
 #include <QClipboard>
@@ -10,6 +11,7 @@
 #include <QFile>
 #include <QFileInfo>
 #include <QGuiApplication>
+#include <QSettings>
 #include <QUrl>
 #include <QUuid>
 #include <QJsonObject>
@@ -25,6 +27,11 @@ AgentViewModel::AgentViewModel(QObject* parent)
     initToolRegistry();
     m_simTimer.setSingleShot(true);
     connect(&m_simTimer, &QTimer::timeout, this, &AgentViewModel::simulationStep);
+
+    // Restore last UI layout (sidebar / context panel visibility)
+    const QSettings uiSettings("NexusAI", "NexusAI");
+    m_isPanelVisible = uiSettings.value("ui/panelVisible", true).toBool();
+    m_isSidebarExpanded = uiSettings.value("ui/sidebarExpanded", true).toBool();
 }
 
 AgentViewModel::~AgentViewModel() = default;
@@ -190,6 +197,10 @@ QVariantList AgentViewModel::auditLog(int limit) {
     return m_agent ? m_agent->auditLog(limit).toVariantList() : QVariantList{};
 }
 
+QString AgentViewModel::logFilePath() const {
+    return Logger::logFilePath();
+}
+
 // ── State Management ─────────────────────────────────────
 
 void AgentViewModel::setState(AgentState state) {
@@ -231,6 +242,7 @@ void AgentViewModel::setDraftText(const QString& text) {
 void AgentViewModel::setIsPanelVisible(bool visible) {
     if (m_isPanelVisible == visible) return;
     m_isPanelVisible = visible;
+    QSettings("NexusAI", "NexusAI").setValue("ui/panelVisible", visible);
     emit panelVisibleChanged();
 }
 
@@ -243,6 +255,7 @@ void AgentViewModel::togglePanel() {
 void AgentViewModel::setIsSidebarExpanded(bool expanded) {
     if (m_isSidebarExpanded == expanded) return;
     m_isSidebarExpanded = expanded;
+    QSettings("NexusAI", "NexusAI").setValue("ui/sidebarExpanded", expanded);
     emit sidebarExpandedChanged();
 }
 

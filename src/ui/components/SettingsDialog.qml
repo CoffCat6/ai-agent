@@ -12,6 +12,10 @@ Dialog {
     modal: true
     anchors.centerIn: parent
     padding: 0
+    // Fixed size: a ColumnLayout contentItem cannot derive a usable implicit
+    // size from fillWidth/fillHeight children, so size the popup here.
+    width: 560
+    height: 680
 
     // ── Editor state ──────────────────────────────────
     property string editingId: Settings.activeProfileId
@@ -45,7 +49,6 @@ Dialog {
 
     contentItem: ColumnLayout {
         spacing: 12
-        width: 520
 
         // ── Title ─────────────────────────────────────
         Text {

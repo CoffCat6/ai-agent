@@ -10,6 +10,8 @@ Dialog {
     modal: true
     anchors.centerIn: parent
     padding: 0
+    width: 440
+    height: 380
 
     property string toolName: ""
     property string arguments: "{}"
@@ -56,19 +58,29 @@ Dialog {
 
     contentItem: ColumnLayout {
         spacing: 12
-        width: 400
 
         // Title
-        Text {
+        RowLayout {
             Layout.fillWidth: true
             Layout.leftMargin: 20
             Layout.topMargin: 20
             Layout.rightMargin: 20
-            text: qsTr("⚠ AI 请求执行高危操作")
-            color: Theme.textPrimary
-            font.pixelSize: Theme.fontSizeH2
-            font.bold: true
-            font.family: Theme.fontSans
+            spacing: 8
+
+            AppIcon {
+                icon: "warning"
+                size: 20
+                iconColor: Theme.statusWarning
+            }
+
+            Text {
+                Layout.fillWidth: true
+                text: qsTr("AI 请求执行高危操作")
+                color: Theme.textPrimary
+                font.pixelSize: Theme.fontSizeH2
+                font.bold: true
+                font.family: Theme.fontSans
+            }
         }
 
         // Tool name
