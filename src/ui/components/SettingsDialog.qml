@@ -71,6 +71,20 @@ Dialog {
             font.family: Theme.fontSans
         }
 
+        // ── Scrollable middle (chips / editor / global / about) ──
+        // The dialog has a fixed height; the model list added under the
+        // editor can overflow the window edge, so the middle section
+        // scrolls instead of growing the popup past the screen.
+        ScrollView {
+            id: settingsScroll
+            Layout.fillWidth: true
+            Layout.fillHeight: true
+            clip: true
+
+            ColumnLayout {
+                width: settingsScroll.availableWidth
+                spacing: 12
+
         // ── Profile chips ─────────────────────────────
         Flow {
             Layout.leftMargin: 24
@@ -312,9 +326,9 @@ Dialog {
             // Model
             ColumnLayout {
                 Layout.fillWidth: true
-                spacing: 4
+                spacing: 6
                 Text {
-                    text: qsTr("模型")
+                    text: qsTr("当前模型")
                     color: Theme.textSecondary
                     font.pixelSize: Theme.fontSizeCaption
                     font.bold: true
@@ -337,6 +351,123 @@ Dialog {
                         border.color: modelField.activeFocus ? Theme.brandPrimary : Theme.borderSubtle
                     }
                     onEditingFinished: dialog.submitField("model", text)
+                }
+
+                // Preset & Saved Candidate Models
+                Text {
+                    text: qsTr("候选模型列表")
+                    color: Theme.textSecondary
+                    font.pixelSize: Theme.fontSizeCaption
+                    font.bold: true
+                    font.family: Theme.fontMono
+                    Layout.topMargin: 4
+                }
+
+                Flow {
+                    Layout.fillWidth: true
+                    spacing: 6
+
+                    Repeater {
+                        model: dialog.editing ? (dialog.editing.models || [dialog.editing.model]) : []
+
+                        delegate: Rectangle {
+                            width: modelChipRow.implicitWidth + 20
+                            height: 26
+                            radius: 13
+
+                            readonly property bool isCurrent: dialog.editing && dialog.editing.model === modelData
+
+                            color: isCurrent ? Qt.rgba(Theme.brandPrimary.r, Theme.brandPrimary.g, Theme.brandPrimary.b, 0.15) : Theme.bgPrimary
+                            border.width: 1
+                            border.color: isCurrent ? Theme.brandPrimary : Theme.borderSubtle
+
+                            Row {
+                                id: modelChipRow
+                                anchors.centerIn: parent
+                                spacing: 4
+
+                                Text {
+                                    text: modelData
+                                    color: isCurrent ? Theme.brandPrimary : Theme.textPrimary
+                                    font.pixelSize: 11
+                                    font.family: Theme.fontMono
+                                    font.bold: isCurrent
+                                    anchors.verticalCenter: parent.verticalCenter
+                                }
+
+                                // Remove model button (if models count > 1)
+                                Rectangle {
+                                    width: 14
+                                    height: 14
+                                    radius: 7
+                                    color: delModelMA.containsMouse ? Theme.surfaceHover : "transparent"
+                                    anchors.verticalCenter: parent.verticalCenter
+                                    visible: dialog.editing && (dialog.editing.models || []).length > 1
+
+                                    AppIcon {
+                                        anchors.centerIn: parent
+                                        icon: "close"
+                                        size: 10
+                                        iconColor: delModelMA.containsMouse ? Theme.statusDanger : Theme.textSecondary
+                                    }
+
+                                    MouseArea {
+                                        id: delModelMA
+                                        anchors.fill: parent
+                                        hoverEnabled: true
+                                        cursorShape: Qt.PointingHandCursor
+                                        onClicked: Settings.removeModelFromProfile(dialog.editing.id, modelData)
+                                    }
+                                }
+                            }
+
+                            MouseArea {
+                                anchors.fill: parent
+                                anchors.rightMargin: 16 // don't steal delete click
+                                cursorShape: Qt.PointingHandCursor
+                                onClicked: Settings.selectModelForProfile(dialog.editing.id, modelData)
+                            }
+                        }
+                    }
+                }
+
+                // Add Custom Model Input
+                RowLayout {
+                    Layout.fillWidth: true
+                    spacing: 6
+                    Layout.topMargin: 2
+
+                    TextField {
+                        id: addModelInput
+                        Layout.fillWidth: true
+                        placeholderText: qsTr("添加自定义模型名称 (如 deepseek-chat)")
+                        placeholderTextColor: Theme.textSecondary
+                        color: Theme.textPrimary
+                        font.pixelSize: Theme.fontSizeCaption
+                        font.family: Theme.fontMono
+                        background: Rectangle {
+                            radius: 6
+                            color: Theme.bgPrimary
+                            border.width: addModelInput.activeFocus ? 2 : 1
+                            border.color: addModelInput.activeFocus ? Theme.brandPrimary : Theme.borderSubtle
+                        }
+                        onAccepted: addModelBtn.addCurrentModel()
+                    }
+
+                    AppButton {
+                        id: addModelBtn
+                        text: qsTr("+ 添加模型")
+                        enabled: (addModelInput.text || "").trim().length > 0
+                        onClicked: addCurrentModel()
+
+                        function addCurrentModel() {
+                            const name = (addModelInput.text || "").trim()
+                            if (name.length > 0 && dialog.editing) {
+                                Settings.addModelToProfile(dialog.editing.id, name)
+                                addModelInput.text = ""
+                            }
+                        }
+                    }
                 }
             }
 
@@ -511,7 +642,10 @@ Dialog {
                 wrapMode: Text.Wrap
                 Layout.fillWidth: true
             }
-        }
+            }
+
+            } // end scrollable middle ColumnLayout
+        } // end ScrollView
 
         // ── Footer ────────────────────────────────────
         RowLayout {

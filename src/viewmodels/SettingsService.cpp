@@ -19,13 +19,17 @@ struct ProviderDefaults {
     QString displayName;
     QString baseUrl;
     QString model;
+    QStringList models;
 };
 
 const QHash<QString, ProviderDefaults>& providerDefaults() {
     static const QHash<QString, ProviderDefaults> defaults = {
-        {"openai",    {QStringLiteral("OpenAI 兼容"), QStringLiteral("https://api.openai.com/v1"),  QStringLiteral("gpt-4o-mini")}},
-        {"anthropic", {QStringLiteral("Claude"),      QStringLiteral("https://api.anthropic.com"), QStringLiteral("claude-sonnet-4-5")}},
-        {"ollama",    {QStringLiteral("Ollama 本地"), QStringLiteral("http://localhost:11434"),     QStringLiteral("qwen2.5:7b")}},
+        {"openai",    {QStringLiteral("OpenAI 兼容"), QStringLiteral("https://api.openai.com/v1"),  QStringLiteral("gpt-4o-mini"),
+                       {QStringLiteral("gpt-4o-mini"), QStringLiteral("gpt-4o"), QStringLiteral("gpt-4-turbo"), QStringLiteral("o3-mini")}}},
+        {"anthropic", {QStringLiteral("Claude"),      QStringLiteral("https://api.anthropic.com"), QStringLiteral("claude-sonnet-4-5"),
+                       {QStringLiteral("claude-sonnet-4-5"), QStringLiteral("claude-3-5-haiku-20241022"), QStringLiteral("claude-3-5-sonnet-20241022"), QStringLiteral("claude-3-opus-20240229")}}},
+        {"ollama",    {QStringLiteral("Ollama 本地"), QStringLiteral("http://localhost:11434"),     QStringLiteral("qwen2.5:7b"),
+                       {QStringLiteral("qwen2.5:7b"), QStringLiteral("llama3.1:8b"), QStringLiteral("deepseek-r1:7b")}}},
     };
     return defaults;
 }
@@ -39,14 +43,24 @@ constexpr auto kActiveKey = "activeProfileId";
 
 QVariantMap makeProfile(const QString& provider, const QString& displayName,
                         const QString& baseUrl, const QString& model,
-                        const QString& apiKey) {
+                        const QString& apiKey, const QStringList& models = {}) {
     QVariantMap p;
     p["id"] = QUuid::createUuid().toString(QUuid::WithoutBraces);
     p["displayName"] = displayName;
-    p["provider"] = kKnownProviders.contains(provider) ? provider : QStringLiteral("openai");
+    const QString validProvider = kKnownProviders.contains(provider) ? provider : QStringLiteral("openai");
+    p["provider"] = validProvider;
     p["baseUrl"] = baseUrl;
     p["model"] = model;
     p["apiKey"] = apiKey;
+    
+    QStringList mList = models;
+    if (mList.isEmpty()) {
+        mList = providerDefaults().value(validProvider).models;
+    }
+    if (!model.isEmpty() && !mList.contains(model)) {
+        mList.prepend(model);
+    }
+    p["models"] = mList;
     return p;
 }
 
@@ -129,8 +143,21 @@ void SettingsService::load() {
         for (const auto& entry : doc.array()) {
             QVariantMap p = entry.toObject().toVariantMap();
             p["apiKey"] = unprotectApiKey(p.value("apiKey").toString());
+            const QString provider = p.value("provider").toString();
             // Drop profiles with an unknown provider type
-            if (!kKnownProviders.contains(p.value("provider").toString())) continue;
+            if (!kKnownProviders.contains(provider)) continue;
+
+            // Ensure "models" field is populated
+            QStringList models = p.value("models").toStringList();
+            if (models.isEmpty()) {
+                models = providerDefaults().value(provider).models;
+            }
+            const QString model = p.value("model").toString();
+            if (!model.isEmpty() && !models.contains(model)) {
+                models.prepend(model);
+            }
+            p["models"] = models;
+
             m_profiles.append(p);
         }
     }
@@ -280,11 +307,94 @@ void SettingsService::setActiveProfile(const QString& id) {
     emit activeProfileChanged();
 }
 
+void SettingsService::selectModelForProfile(const QString& id, const QString& model) {
+    const QString targetId = id.isEmpty() ? m_activeId : id;
+    if (targetId.isEmpty() || model.trimmed().isEmpty()) return;
+
+    for (int i = 0; i < m_profiles.size(); ++i) {
+        QVariantMap p = m_profiles.at(i).toMap();
+        if (p.value("id").toString() != targetId) continue;
+
+        if (p.value("model").toString() == model) return;
+
+        p["model"] = model;
+        QStringList models = p.value("models").toStringList();
+        if (!models.contains(model)) {
+            models.prepend(model);
+            p["models"] = models;
+        }
+        m_profiles[i] = p;
+
+        persist();
+        emit profilesChanged();
+        if (targetId == m_activeId) {
+            emit activeProfileChanged();
+        }
+        return;
+    }
+}
+
+void SettingsService::addModelToProfile(const QString& id, const QString& model) {
+    const QString targetId = id.isEmpty() ? m_activeId : id;
+    const QString trimmedModel = model.trimmed();
+    if (targetId.isEmpty() || trimmedModel.isEmpty()) return;
+
+    for (int i = 0; i < m_profiles.size(); ++i) {
+        QVariantMap p = m_profiles.at(i).toMap();
+        if (p.value("id").toString() != targetId) continue;
+
+        QStringList models = p.value("models").toStringList();
+        if (!models.contains(trimmedModel)) {
+            models.append(trimmedModel);
+            p["models"] = models;
+            m_profiles[i] = p;
+
+            persist();
+            emit profilesChanged();
+            if (targetId == m_activeId) {
+                emit activeProfileChanged();
+            }
+        }
+        return;
+    }
+}
+
+void SettingsService::removeModelFromProfile(const QString& id, const QString& model) {
+    const QString targetId = id.isEmpty() ? m_activeId : id;
+    if (targetId.isEmpty() || model.isEmpty()) return;
+
+    for (int i = 0; i < m_profiles.size(); ++i) {
+        QVariantMap p = m_profiles.at(i).toMap();
+        if (p.value("id").toString() != targetId) continue;
+
+        QStringList models = p.value("models").toStringList();
+        if (models.contains(model)) {
+            models.removeAll(model);
+            p["models"] = models;
+
+            // If the deleted model was current, switch to first remaining
+            if (p.value("model").toString() == model) {
+                p["model"] = models.isEmpty() ? QString() : models.first();
+            }
+
+            m_profiles[i] = p;
+
+            persist();
+            emit profilesChanged();
+            if (targetId == m_activeId) {
+                emit activeProfileChanged();
+            }
+        }
+        return;
+    }
+}
+
 QVariantMap SettingsService::defaultEndpoint(const QString& provider) const {
     const ProviderDefaults& defaults =
         providerDefaults().value(kKnownProviders.contains(provider) ? provider : QStringLiteral("openai"));
     return {{QStringLiteral("baseUrl"), defaults.baseUrl},
-            {QStringLiteral("model"), defaults.model}};
+            {QStringLiteral("model"), defaults.model},
+            {QStringLiteral("models"), defaults.models}};
 }
 
 void SettingsService::setContextTokens(int tokens) {

@@ -97,6 +97,7 @@ qt_add_qml_module(nexus_ai
         src/ui/components/KnowledgeDocDialog.qml
         src/ui/components/AgentTraceNode.qml
         src/ui/components/InputConsole.qml
+        src/ui/components/ModelSelector.qml
         src/ui/components/Sidebar.qml
         src/ui/components/SplitBar.qml
         src/ui/components/TopBar.qml

@@ -220,56 +220,14 @@ Item {
                 anchors.rightMargin: 20
             }
 
-            // Active model badge (click opens the settings dialog)
-            Item {
+            // Active model selector dropdown
+            ModelSelector {
                 id: modelBadge
                 anchors.top: inputConsole.bottom
-                anchors.topMargin: 6
+                anchors.topMargin: 4
                 anchors.left: inputConsole.left
-                anchors.leftMargin: 8
-                width: badgeRow.implicitWidth
-                height: 16
-
-                readonly property var profile: Settings.activeProfile
-                readonly property bool hasProfile: profile && profile.provider !== undefined
-                    && profile.provider !== ""
-
-                Row {
-                    id: badgeRow
-                    anchors.verticalCenter: parent.verticalCenter
-                    spacing: 6
-
-                    Rectangle {
-                        width: 6
-                        height: 6
-                        radius: 3
-                        anchors.verticalCenter: parent.verticalCenter
-                        visible: modelBadge.hasProfile
-                        color: modelBadge.profile.provider === "ollama"
-                            ? Theme.statusSuccess : Theme.brandPrimary
-                    }
-
-                    Text {
-                        text: {
-                            const p = modelBadge.profile
-                            if (!modelBadge.hasProfile) return qsTr("未配置模型 · 点击设置")
-                            return (p.displayName ? p.displayName : p.provider) + " · " + p.model
-                        }
-                        color: badgeMA.containsMouse
-                            ? Theme.brandPrimary : Theme.textSecondary
-                        font.pixelSize: 10
-                        font.family: Theme.fontMono
-                    }
-                }
-
-                MouseArea {
-                    id: badgeMA
-                    anchors.fill: parent
-                    anchors.margins: -4
-                    hoverEnabled: true
-                    cursorShape: Qt.PointingHandCursor
-                    onClicked: root.settingsRequested()
-                }
+                anchors.leftMargin: 4
+                onSettingsRequested: root.settingsRequested()
             }
         }
     }

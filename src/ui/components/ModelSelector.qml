@@ -1,0 +1,322 @@
+import QtQuick
+import QtQuick.Layouts
+import QtQuick.Controls
+import NexusAI
+
+// Dropdown model & profile selector used below the chat input. The popup
+// opens UPWARD because the trigger sits near the window bottom edge.
+Item {
+    id: root
+
+    signal settingsRequested()
+
+    readonly property var activeProfile: Settings.activeProfile
+    readonly property bool hasProfile: activeProfile
+        && activeProfile.provider !== undefined && activeProfile.provider !== ""
+    readonly property var currentModels: hasProfile
+        ? (activeProfile.models || [activeProfile.model]) : []
+
+    implicitWidth: selectorRow.implicitWidth + 20
+    implicitHeight: 28
+
+    // Trigger pill button
+    Rectangle {
+        id: selectorBox
+        anchors.fill: parent
+        radius: 6
+        color: selectorMA.containsMouse || menuPopup.opened
+            ? Theme.surfaceHover : "transparent"
+        border.width: 1
+        border.color: menuPopup.opened || selectorMA.containsMouse
+            ? Theme.brandPrimary : "transparent"
+
+        Behavior on color { ColorAnimation { duration: 150 } }
+
+        Row {
+            id: selectorRow
+            anchors.centerIn: parent
+            spacing: 6
+
+            // Provider indicator dot
+            Rectangle {
+                width: 6
+                height: 6
+                radius: 3
+                anchors.verticalCenter: parent.verticalCenter
+                visible: root.hasProfile
+                color: root.activeProfile.provider === "ollama"
+                    ? Theme.statusSuccess : Theme.brandPrimary
+            }
+
+            Text {
+                anchors.verticalCenter: parent.verticalCenter
+                text: {
+                    if (!root.hasProfile) return qsTr("未配置模型 · 点击设置")
+                    const p = root.activeProfile
+                    return (p.displayName ? p.displayName : p.provider)
+                        + " · " + (p.model || "")
+                }
+                color: selectorMA.containsMouse || menuPopup.opened
+                    ? Theme.brandPrimary : Theme.textSecondary
+                font.pixelSize: 10
+                font.family: Theme.fontMono
+            }
+
+            AppIcon {
+                anchors.verticalCenter: parent.verticalCenter
+                icon: menuPopup.opened ? "chevron-up" : "chevron-down"
+                size: 11
+                iconColor: selectorMA.containsMouse || menuPopup.opened
+                    ? Theme.brandPrimary : Theme.textSecondary
+            }
+        }
+
+        MouseArea {
+            id: selectorMA
+            anchors.fill: parent
+            anchors.margins: -4
+            hoverEnabled: true
+            cursorShape: Qt.PointingHandCursor
+            onClicked: menuPopup.opened ? menuPopup.close() : menuPopup.open()
+        }
+    }
+
+    // Dropdown popup (opens upward, scrolls when tall)
+    Popup {
+        id: menuPopup
+        x: 0
+        y: -height - 6          // opens above the trigger
+        width: Math.max(280, root.width)
+        height: Math.min(menuContent.implicitHeight + 12,
+                         Math.max(200, root.mapToItem(null, 0, 0).y - 12))
+        padding: 6
+        closePolicy: Popup.CloseOnEscape | Popup.CloseOnPressOutside
+
+        background: Rectangle {
+            color: Theme.bgSecondary
+            radius: 8
+            border.width: 1
+            border.color: Theme.borderSubtle
+        }
+
+        contentItem: ScrollView {
+            id: menuScroll
+            clip: true
+
+            ColumnLayout {
+                id: menuContent
+                width: menuScroll.width
+                spacing: 2
+
+                // ── Section 1: models of the active profile ──
+                Text {
+                    visible: root.hasProfile && root.currentModels.length > 0
+                    text: root.hasProfile
+                        ? qsTr("模型 · %1").arg(root.activeProfile.displayName
+                                               || root.activeProfile.provider)
+                        : ""
+                    color: Theme.textSecondary
+                    font.pixelSize: 10
+                    font.bold: true
+                    font.family: Theme.fontMono
+                    Layout.leftMargin: 8
+                    Layout.topMargin: 2
+                }
+
+                Repeater {
+                    model: root.currentModels
+
+                    delegate: Rectangle {
+                        id: modelItem
+                        readonly property bool isSelected: modelData === root.activeProfile.model
+                        Layout.fillWidth: true
+                        Layout.leftMargin: 2
+                        Layout.rightMargin: 2
+                        Layout.preferredHeight: 28
+                        radius: 5
+                        color: modelMA.containsMouse ? Theme.surfaceHover : "transparent"
+
+                        RowLayout {
+                            anchors.fill: parent
+                            anchors.leftMargin: 8
+                            anchors.rightMargin: 8
+                            spacing: 6
+
+                            AppIcon {
+                                Layout.preferredWidth: 12
+                                Layout.preferredHeight: 12
+                                icon: "check"
+                                size: 12
+                                iconColor: Theme.brandPrimary
+                                visible: modelItem.isSelected
+                            }
+
+                            Item {
+                                Layout.preferredWidth: 12
+                                Layout.preferredHeight: 12
+                                visible: !modelItem.isSelected
+                            }
+
+                            Text {
+                                Layout.fillWidth: true
+                                text: modelData
+                                color: modelItem.isSelected
+                                    ? Theme.brandPrimary : Theme.textPrimary
+                                font.pixelSize: Theme.fontSizeCaption
+                                font.family: Theme.fontMono
+                                font.bold: modelItem.isSelected
+                                elide: Text.ElideRight
+                            }
+                        }
+
+                        MouseArea {
+                            id: modelMA
+                            anchors.fill: parent
+                            hoverEnabled: true
+                            cursorShape: Qt.PointingHandCursor
+                            onClicked: {
+                                Settings.selectModelForProfile(
+                                    root.activeProfile.id, modelData)
+                                menuPopup.close()
+                            }
+                        }
+                    }
+                }
+
+                Rectangle {
+                    Layout.fillWidth: true
+                    Layout.leftMargin: 4
+                    Layout.rightMargin: 4
+                    Layout.topMargin: 4
+                    Layout.bottomMargin: 4
+                    Layout.preferredHeight: 1
+                    color: Theme.borderSubtle
+                }
+
+                // ── Section 2: profile switcher ──
+                Text {
+                    text: qsTr("配置 · 共 %1 个").arg(Settings.profiles.length)
+                    color: Theme.textSecondary
+                    font.pixelSize: 10
+                    font.bold: true
+                    font.family: Theme.fontMono
+                    Layout.leftMargin: 8
+                }
+
+                Repeater {
+                    model: Settings.profiles
+
+                    delegate: Rectangle {
+                        id: profileItem
+                        readonly property bool isCurrent: modelData.id === Settings.activeProfileId
+                        Layout.fillWidth: true
+                        Layout.leftMargin: 2
+                        Layout.rightMargin: 2
+                        Layout.preferredHeight: 28
+                        radius: 5
+                        color: profileMA.containsMouse ? Theme.surfaceHover : "transparent"
+
+                        RowLayout {
+                            anchors.fill: parent
+                            anchors.leftMargin: 8
+                            anchors.rightMargin: 8
+                            spacing: 6
+
+                            Rectangle {
+                                Layout.preferredWidth: 6
+                                Layout.preferredHeight: 6
+                                radius: 3
+                                color: modelData.provider === "ollama"
+                                    ? Theme.statusSuccess : Theme.brandPrimary
+                                visible: profileItem.isCurrent
+                            }
+
+                            Item {
+                                Layout.preferredWidth: 6
+                                Layout.preferredHeight: 6
+                                visible: !profileItem.isCurrent
+                            }
+
+                            Text {
+                                Layout.fillWidth: true
+                                text: (modelData.displayName || modelData.provider)
+                                    + " · " + (modelData.model || "")
+                                color: profileItem.isCurrent
+                                    ? Theme.brandPrimary : Theme.textPrimary
+                                font.pixelSize: Theme.fontSizeCaption
+                                font.family: Theme.fontSans
+                                elide: Text.ElideRight
+                            }
+                        }
+
+                        MouseArea {
+                            id: profileMA
+                            anchors.fill: parent
+                            hoverEnabled: true
+                            cursorShape: Qt.PointingHandCursor
+                            onClicked: {
+                                Settings.setActiveProfile(modelData.id)
+                                menuPopup.close()
+                            }
+                        }
+                    }
+                }
+
+                Rectangle {
+                    Layout.fillWidth: true
+                    Layout.leftMargin: 4
+                    Layout.rightMargin: 4
+                    Layout.topMargin: 4
+                    Layout.bottomMargin: 4
+                    Layout.preferredHeight: 1
+                    color: Theme.borderSubtle
+                }
+
+                // ── Section 3: open full settings ──
+                Rectangle {
+                    Layout.fillWidth: true
+                    Layout.leftMargin: 2
+                    Layout.rightMargin: 2
+                    Layout.bottomMargin: 2
+                    Layout.preferredHeight: 30
+                    radius: 5
+                    color: settingsMA.containsMouse ? Theme.surfaceHover : "transparent"
+
+                    RowLayout {
+                        anchors.fill: parent
+                        anchors.leftMargin: 8
+                        anchors.rightMargin: 8
+                        spacing: 6
+
+                        AppIcon {
+                            Layout.preferredWidth: 13
+                            Layout.preferredHeight: 13
+                            icon: "settings"
+                            size: 13
+                            iconColor: Theme.textSecondary
+                        }
+
+                        Text {
+                            Layout.fillWidth: true
+                            text: qsTr("管理模型配置…")
+                            color: Theme.textSecondary
+                            font.pixelSize: Theme.fontSizeCaption
+                            font.family: Theme.fontSans
+                        }
+                    }
+
+                    MouseArea {
+                        id: settingsMA
+                        anchors.fill: parent
+                        hoverEnabled: true
+                        cursorShape: Qt.PointingHandCursor
+                        onClicked: {
+                            menuPopup.close()
+                            root.settingsRequested()
+                        }
+                    }
+                }
+            }
+        }
+    }
+}

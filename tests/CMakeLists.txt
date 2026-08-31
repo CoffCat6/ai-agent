@@ -16,7 +16,11 @@ nexus_add_test(test_memory test_memory.cpp)
 nexus_add_test(test_rag test_rag.cpp)
 nexus_add_test(test_agent test_agent.cpp)
 
-# Needs the viewmodels library (AgentViewModel) in addition to core & infra
+# Needs the viewmodels library (AgentViewModel, SettingsService) in addition to core & infra
 add_executable(test_viewmodel test_viewmodel.cpp)
 target_link_libraries(test_viewmodel PRIVATE nexus_core nexus_infra nexus_viewmodels Qt6::Test)
 add_test(NAME test_viewmodel COMMAND test_viewmodel)
+
+add_executable(test_settings test_settings.cpp)
+target_link_libraries(test_settings PRIVATE nexus_core nexus_infra nexus_viewmodels Qt6::Test)
+add_test(NAME test_settings COMMAND test_settings)

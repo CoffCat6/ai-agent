@@ -45,12 +45,18 @@ public:
     // ── Profile management (QML invokables) ───────────
     // Create a profile with provider defaults; returns its id.
     Q_INVOKABLE QString addProfile();
-    // Merge the given fields (displayName/provider/baseUrl/apiKey/model)
+    // Merge the given fields (displayName/provider/baseUrl/apiKey/model/models)
     // into the profile; unknown fields are ignored.
     Q_INVOKABLE void updateProfile(const QString& id, const QVariantMap& fields);
     Q_INVOKABLE void removeProfile(const QString& id);
     Q_INVOKABLE void setActiveProfile(const QString& id);
-    // {baseUrl, model} defaults for a provider type (used when the editor
+    // Switch active model for a specific profile (or active profile if id is empty)
+    Q_INVOKABLE void selectModelForProfile(const QString& id, const QString& model);
+    // Add a model name to a profile's model list if not present
+    Q_INVOKABLE void addModelToProfile(const QString& id, const QString& model);
+    // Remove a model name from a profile's model list
+    Q_INVOKABLE void removeModelFromProfile(const QString& id, const QString& model);
+    // {baseUrl, model, models} defaults for a provider type (used when the editor
     // switches the provider of a profile).
     Q_INVOKABLE QVariantMap defaultEndpoint(const QString& provider) const;
 
