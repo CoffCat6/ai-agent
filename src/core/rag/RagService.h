@@ -15,28 +15,34 @@ namespace NexusAI {
 // thread while QML calls arrive on the GUI thread) and a document listing
 // for the management UI.
 //
-// Each document gets its own retriever so removal is O(1); embeddings come
-// from the configured embedder (Ollama) with the retriever's local pseudo
-// embedding as fallback when no embedder is set or the call fails.
+// Ingest performs its embedding work OUTSIDE the mutex so searches and the
+// document listing stay responsive while a large document is importing.
 class RagService : public QObject {
     Q_OBJECT
 public:
     explicit RagService(QObject* parent = nullptr);
 
     void setEmbedder(DocumentRetriever::EmbedFn fn);
+    void setBatchEmbedder(DocumentRetriever::BatchEmbedFn fn);
 
-    // Chunk + embed + store a document; returns the number of chunks kept.
-    // Re-ingesting an existing source name replaces it.
+    // Chunk + embed + store a document. Returns the number of chunks kept,
+    // 0 when the input is empty/unusable and -1 when the document exceeds
+    // MaxChunksPerDocument. Re-ingesting an existing source name replaces it.
     int ingestDocument(const QString& sourceName, const QString& content);
 
     // Top-k passages across all documents, sorted by score
     QJsonArray search(const QString& query, int k = 4) const;
 
-    QJsonArray documents() const; // [{name, chunks, chars}]
+    QJsonArray documents() const; // [{name, chunks, chars, pseudo}]
+    // Chunk metadata of one document ordered by chunk_index (detail view);
+    // empty when the document is unknown.
+    QJsonArray documentChunks(const QString& sourceName) const;
     bool removeDocument(const QString& sourceName);
     void clear();
     bool isEmpty() const;
     int documentCount() const; // total chunks across documents
+
+    static constexpr int MaxChunksPerDocument = 512;
 
 signals:
     void changed();
@@ -48,7 +54,10 @@ private:
         std::unique_ptr<DocumentRetriever> retriever;
     };
 
+    void dropDocumentLocked(const QString& sourceName);
+
     DocumentRetriever::EmbedFn m_embedFn;
+    DocumentRetriever::BatchEmbedFn m_batchEmbedFn;
     std::vector<Document> m_docs; // move-only elements -> std::vector
     mutable QMutex m_mutex; // ingest/remove/search may run on different threads
 };

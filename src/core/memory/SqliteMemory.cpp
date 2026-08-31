@@ -134,6 +134,92 @@ void SqliteMemory::createTables() {
         )
     )");
     query.exec("CREATE INDEX IF NOT EXISTS idx_audit_ts ON audit_log(timestamp)");
+
+    // Knowledge-base documents (imported text, restored at startup)
+    query.exec(R"(
+        CREATE TABLE IF NOT EXISTS knowledge_documents (
+            name TEXT PRIMARY KEY,
+            content TEXT NOT NULL,
+            imported_at INTEGER NOT NULL
+        )
+    )");
+
+    // Trace view nodes (thinking / tool calls / results) per session, so
+    // switching conversations restores the full visual timeline
+    query.exec(R"(
+        CREATE TABLE IF NOT EXISTS trace_nodes (
+            session_id TEXT NOT NULL,
+            node_id TEXT NOT NULL,
+            node_order INTEGER NOT NULL,
+            type TEXT NOT NULL,
+            title TEXT NOT NULL,
+            status TEXT NOT NULL,
+            args TEXT NOT NULL,
+            result TEXT NOT NULL,
+            timestamp INTEGER NOT NULL,
+            PRIMARY KEY (session_id, node_id)
+        )
+    )");
+    query.exec("CREATE INDEX IF NOT EXISTS idx_trace_nodes_session "
+               "ON trace_nodes(session_id, node_order)");
+}
+
+// ── Knowledge-base persistence ───────────────────────────
+
+void SqliteMemory::upsertKnowledgeDoc(const QString& name, const QString& content) {
+    QSqlQuery query(m_db);
+    query.prepare("INSERT INTO knowledge_documents (name, content, imported_at) "
+                  "VALUES (?, ?, ?) "
+                  "ON CONFLICT(name) DO UPDATE SET content = excluded.content, "
+                  "imported_at = excluded.imported_at");
+    query.addBindValue(name);
+    query.addBindValue(content);
+    query.addBindValue(QDateTime::currentDateTime().toMSecsSinceEpoch());
+
+    if (!query.exec()) {
+        qWarning() << "Failed to save knowledge document:" << query.lastError().text();
+    }
+}
+
+bool SqliteMemory::removeKnowledgeDoc(const QString& name) {
+    QSqlQuery query(m_db);
+    query.prepare("DELETE FROM knowledge_documents WHERE name = ?");
+    query.addBindValue(name);
+    if (!query.exec()) {
+        qWarning() << "Failed to remove knowledge document:" << query.lastError().text();
+        return false;
+    }
+    return query.numRowsAffected() > 0;
+}
+
+void SqliteMemory::clearKnowledgeDocs() {
+    QSqlQuery query(m_db);
+    if (!query.exec("DELETE FROM knowledge_documents")) {
+        qWarning() << "Failed to clear knowledge documents:" << query.lastError().text();
+    }
+}
+
+QString SqliteMemory::loadKnowledgeDoc(const QString& name) const {
+    QSqlQuery query(m_db);
+    query.prepare("SELECT content FROM knowledge_documents WHERE name = ?");
+    query.addBindValue(name);
+
+    if (query.exec() && query.next())
+        return query.value(0).toString();
+    return QString();
+}
+
+QJsonObject SqliteMemory::loadKnowledgeDocs() const {
+    QSqlQuery query(m_db);
+    query.prepare("SELECT name, content FROM knowledge_documents ORDER BY imported_at ASC");
+
+    QJsonObject docs;
+    if (query.exec()) {
+        while (query.next()) {
+            docs.insert(query.value(0).toString(), query.value(1).toString());
+        }
+    }
+    return docs;
 }
 
 void SqliteMemory::saveMessage(const QString& sessionId, const QJsonObject& msg) {
@@ -283,6 +369,62 @@ void SqliteMemory::deleteSession(const QString& sessionId) {
     query.prepare("DELETE FROM sessions WHERE id = ?");
     query.addBindValue(sessionId);
     query.exec();
+
+    query.prepare("DELETE FROM trace_nodes WHERE session_id = ?");
+    query.addBindValue(sessionId);
+    query.exec();
+}
+
+// ── Trace view persistence ───────────────────────────────
+
+void SqliteMemory::saveTraceNode(const QString& sessionId, const QJsonObject& node, int order) {
+    QSqlQuery query(m_db);
+    // Upsert: position (node_order) is fixed by the first insert; later
+    // saves of the same node id only refresh content/status.
+    query.prepare("INSERT INTO trace_nodes (session_id, node_id, node_order, type, title, "
+                  "status, args, result, timestamp) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?) "
+                  "ON CONFLICT(session_id, node_id) DO UPDATE SET type = excluded.type, "
+                  "title = excluded.title, status = excluded.status, args = excluded.args, "
+                  "result = excluded.result, timestamp = excluded.timestamp");
+    query.addBindValue(sessionId);
+    query.addBindValue(node.value("id").toString());
+    query.addBindValue(order);
+    query.addBindValue(node.value("type").toString());
+    query.addBindValue(node.value("title").toString());
+    query.addBindValue(node.value("status").toString());
+    query.addBindValue(node.value("args").toString());
+    query.addBindValue(node.value("result").toString());
+    query.addBindValue(static_cast<qint64>(node.value("timestamp").toDouble()));
+
+    if (!query.exec()) {
+        qWarning() << "Failed to save trace node:" << query.lastError().text();
+    }
+}
+
+QJsonArray SqliteMemory::loadTraceNodes(const QString& sessionId) {
+    QSqlQuery query(m_db);
+    query.prepare("SELECT node_id, type, title, status, args, result, timestamp, node_order "
+                  "FROM trace_nodes WHERE session_id = ? ORDER BY node_order ASC");
+    query.addBindValue(sessionId);
+
+    QJsonArray nodes;
+    if (query.exec()) {
+        while (query.next()) {
+            QJsonObject node;
+            node["id"] = query.value(0).toString();
+            node["type"] = query.value(1).toString();
+            node["title"] = query.value(2).toString();
+            node["status"] = query.value(3).toString();
+            node["args"] = query.value(4).toString();
+            node["result"] = query.value(5).toString();
+            node["timestamp"] = query.value(6).toLongLong();
+            node["order"] = query.value(7).toInt();
+            nodes.append(node);
+        }
+    } else {
+        qWarning() << "Failed to load trace nodes:" << query.lastError().text();
+    }
+    return nodes;
 }
 
 void SqliteMemory::renameSession(const QString& sessionId, const QString& title) {

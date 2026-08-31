@@ -33,6 +33,18 @@ public:
                   bool success, const QString& detail) override;
     QJsonArray auditLog(int limit = 100) override;
 
+    // Knowledge-base persistence: imported documents survive restarts.
+    // Concrete extension (not part of IMemory); called on the GUI thread.
+    void upsertKnowledgeDoc(const QString& name, const QString& content);
+    bool removeKnowledgeDoc(const QString& name);
+    void clearKnowledgeDocs();
+    QJsonObject loadKnowledgeDocs() const; // { name: content }
+    QString loadKnowledgeDoc(const QString& name) const; // empty when unknown
+
+    // Trace view persistence (IMemory optional capability)
+    void saveTraceNode(const QString& sessionId, const QJsonObject& node, int order) override;
+    QJsonArray loadTraceNodes(const QString& sessionId) override;
+
 private:
     void initDatabase();
     void createTables();

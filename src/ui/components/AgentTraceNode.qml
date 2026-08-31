@@ -3,15 +3,46 @@ import QtQuick.Layouts
 import QtQuick.Controls
 import NexusAI
 
-// Agent trace node - visualizes the thinking/tool-call/result timeline
+// Agent trace node - visualizes the thinking/tool-call/result timeline.
+//
+// - Long detail blocks (tool arguments / results) are collapsed by default
+//   (<= 400 chars stay open); the node header toggles them. The expanded
+//   state is keyed by node id and stored on the containing ListView
+//   (traceListView in AgentChatPage), so it survives the full trace model
+//   resets that follow every agent update.
+// - Intermediate steps (thinking / tool calls / results / context notices)
+//   can be hidden entirely via the page-level "思考过程" toggle.
 Item {
     id: root
 
     required property var modelData
 
+    // ── Process visibility (page-level toggle) ─────────
+    readonly property bool intermediate: modelData.type === "thinking"
+        || modelData.type === "tool_call"
+        || modelData.type === "tool_result"
+        || modelData.type === "context"
+    // A pending confirmation must stay visible even with process hidden,
+    // otherwise its approve/decline buttons would be unreachable.
+    readonly property bool processHidden: intermediate
+        && !traceListView.showProcess && modelData.status !== "waiting_confirm"
+
+    // ── Detail block (args / result) ───────────────────
+    readonly property string detailText: (modelData.args || "") !== ""
+        ? modelData.args : (modelData.result || "")
+    readonly property bool hasDetail: detailText !== "" && modelData.type !== "summary"
+    readonly property string detailKey: (modelData.id || "") !== ""
+        ? modelData.id
+        : modelData.type + ":" + detailText.substring(0, 48)
+    // Short details start open; walls of tool output start collapsed.
+    readonly property bool detailDefault: detailText.length <= 400
+    readonly property bool detailExpanded: hasDetail
+        && traceListView.detailExpanded(detailKey, detailDefault)
+
     // ── Layout ──────────────────────────────────────────
     implicitHeight: contentColumn.implicitHeight + 20
-    height: implicitHeight
+    height: processHidden ? 0 : implicitHeight
+    visible: !processHidden
 
     // Determine node colors based on type
     readonly property color nodeColor: {
@@ -84,25 +115,74 @@ Item {
         anchors.topMargin: 2
         spacing: 6
 
-        // Node type label (small caption)
-        Text {
-            text: {
-                if (modelData === undefined || modelData === null)
-                    return "!! MODEL_DATA_UNDEFINED !!"
-                var t = modelData.type
-                if (t === "thinking") return "THINKING"
-                if (t === "tool_call") return "TOOL CALL"
-                if (t === "tool_result") return "TOOL RESULT"
-                if (t === "summary") return "RESPONSE"
-                if (t === "error") return "ERROR"
-                if (t === "user_message") return "YOU"
-                if (t === "context") return "CONTEXT"
-                return t.toUpperCase()
+        // Node header: type caption + collapse chevron. Clicking anywhere on
+        // it toggles the detail block below (when the node has one).
+        Item {
+            Layout.fillWidth: true
+            height: headerColumn.implicitHeight
+
+            Column {
+                id: headerColumn
+                anchors.left: parent.left
+                anchors.right: parent.right
+                spacing: 2
+
+                Row {
+                    id: headerRow
+                    spacing: 6
+
+                    // Node type label (small caption)
+                    Text {
+                        text: {
+                            if (modelData === undefined || modelData === null)
+                                return "!! MODEL_DATA_UNDEFINED !!"
+                            var t = modelData.type
+                            if (t === "thinking") return "THINKING"
+                            if (t === "tool_call") return "TOOL CALL"
+                            if (t === "tool_result") return "TOOL RESULT"
+                            if (t === "summary") return "RESPONSE"
+                            if (t === "error") return "ERROR"
+                            if (t === "user_message") return "YOU"
+                            if (t === "context") return "CONTEXT"
+                            return t.toUpperCase()
+                        }
+                        color: modelData.type === "error"
+                            ? Theme.statusDanger : Theme.textSecondary
+                        font.family: Theme.fontMono
+                        font.pixelSize: 10
+                        font.weight: Font.DemiBold
+                    }
+
+                    AppIcon {
+                        visible: root.hasDetail
+                        anchors.verticalCenter: parent.verticalCenter
+                        icon: root.detailExpanded ? "chevron-up" : "chevron-down"
+                        size: 11
+                        iconColor: headerMA.containsMouse
+                            ? Theme.brandPrimary : Theme.textSecondary
+                    }
+                }
+
+                // Collapsed hint for detail content
+                Text {
+                    visible: root.hasDetail && !root.detailExpanded
+                    text: qsTr("已折叠 · %1 字符，点击展开").arg(root.detailText.length)
+                    color: Theme.textSecondary
+                    opacity: 0.7
+                    font.family: Theme.fontMono
+                    font.pixelSize: 9
+                }
             }
-            color: modelData.type === "error" ? Theme.statusDanger : Theme.textSecondary
-            font.family: Theme.fontMono
-            font.pixelSize: 10
-            font.weight: Font.DemiBold
+
+            MouseArea {
+                id: headerMA
+                anchors.fill: parent
+                anchors.margins: -4
+                enabled: root.hasDetail
+                hoverEnabled: true
+                cursorShape: root.hasDetail ? Qt.PointingHandCursor : Qt.ArrowCursor
+                onClicked: traceListView.toggleDetail(root.detailKey, root.detailDefault)
+            }
         }
 
         // Title (plain text for non-summary nodes)
@@ -149,14 +229,16 @@ Item {
         // Tool call arguments (shown for tool_call type)
         CodeBlock {
             Layout.fillWidth: true
-            visible: modelData.type === "tool_call" && modelData.args !== ""
+            visible: modelData.type === "tool_call" && (modelData.args || "") !== ""
+                     && root.detailExpanded
             text: modelData.args
         }
 
         // Tool result output
         CodeBlock {
             Layout.fillWidth: true
-            visible: modelData.type === "tool_result" && modelData.result !== ""
+            visible: modelData.type !== "tool_call" && modelData.type !== "summary"
+                     && (modelData.result || "") !== "" && root.detailExpanded
             text: modelData.result
             textColor: Theme.statusSuccess
         }

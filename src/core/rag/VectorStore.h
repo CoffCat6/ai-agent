@@ -49,6 +49,22 @@ public:
         return results;
     }
 
+    // All chunk metadata ordered by chunk_index (document detail view)
+    QJsonArray chunks() const {
+        QVector<QJsonObject> metas;
+        metas.reserve(m_entries.size());
+        for (const auto& entry : m_entries)
+            metas.append(entry.metadata);
+        std::sort(metas.begin(), metas.end(),
+            [](const QJsonObject& a, const QJsonObject& b) {
+                return a.value("chunk_index").toInt() < b.value("chunk_index").toInt();
+            });
+        QJsonArray arr;
+        for (const auto& meta : metas)
+            arr.append(meta);
+        return arr;
+    }
+
     int size() const { return m_entries.size(); }
     void clear() { m_entries.clear(); }
 

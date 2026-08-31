@@ -27,6 +27,7 @@ private slots:
     void sessionDeleteAndRename();
     void episodicFullTextSearch();
     void auditTrail();
+    void traceNodeRoundTrip();
 };
 
 void TestMemory::messageRoundTrip() {
@@ -118,6 +119,50 @@ void TestMemory::episodicFullTextSearch() {
     QCOMPARE(hits.at(0).toObject().value("summary").toString(),
              QStringLiteral("The launch checklist lives in docs/launch.md"));
     QCOMPARE(mem.searchEpisodic("zzz_no_match", 5).size(), 0);
+}
+
+// Trace nodes: upsert semantics (position fixed on first insert, content
+// refreshes afterwards) and per-session cleanup.
+void TestMemory::traceNodeRoundTrip() {
+    SqliteMemory mem(QStringLiteral(":memory:"));
+
+    QJsonObject node;
+    node["id"] = QStringLiteral("n1");
+    node["type"] = QStringLiteral("tool_call");
+    node["title"] = QStringLiteral("read_file");
+    node["status"] = QStringLiteral("running");
+    node["args"] = QStringLiteral("{\"path\":\"a.txt\"}");
+    node["result"] = QString();
+    node["timestamp"] = 1000.0;
+    mem.saveTraceNode("s1", node, 0);
+
+    QJsonObject node2 = node;
+    node2["id"] = QStringLiteral("n2");
+    node2["type"] = QStringLiteral("summary");
+    node2["title"] = QStringLiteral("Final answer");
+    node2["status"] = QStringLiteral("completed");
+    node2["args"] = QString();
+    node2["timestamp"] = 2000.0;
+    mem.saveTraceNode("s1", node2, 1);
+
+    // Status update for n1: same id -> upsert, original position kept
+    node["status"] = QStringLiteral("success");
+    node["result"] = QStringLiteral("file body");
+    node["timestamp"] = 3000.0;
+    mem.saveTraceNode("s1", node, 7);
+
+    const QJsonArray loaded = mem.loadTraceNodes("s1");
+    QCOMPARE(loaded.size(), 2);
+    QCOMPARE(loaded.at(0).toObject().value("id").toString(), QStringLiteral("n1"));
+    QCOMPARE(loaded.at(0).toObject().value("order").toInt(), 0); // first insert wins
+    QCOMPARE(loaded.at(0).toObject().value("status").toString(), QStringLiteral("success"));
+    QCOMPARE(loaded.at(0).toObject().value("result").toString(), QStringLiteral("file body"));
+    QCOMPARE(loaded.at(1).toObject().value("id").toString(), QStringLiteral("n2"));
+    QCOMPARE(loaded.at(1).toObject().value("title").toString(), QStringLiteral("Final answer"));
+
+    QVERIFY(mem.loadTraceNodes("other").isEmpty());
+    mem.deleteSession("s1");
+    QVERIFY(mem.loadTraceNodes("s1").isEmpty());
 }
 
 QTEST_GUILESS_MAIN(TestMemory)

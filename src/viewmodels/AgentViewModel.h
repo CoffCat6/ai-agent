@@ -5,6 +5,7 @@
 #include <QJsonObject>
 #include <QString>
 #include <QTimer>
+#include <functional>
 
 #include "core/agent/AgentState.h"
 
@@ -36,6 +37,8 @@ class AgentViewModel : public QObject {
 
     // ── Context Panel ─────────────────────────────────
     Q_PROPERTY(bool isPanelVisible READ isPanelVisible WRITE setIsPanelVisible NOTIFY panelVisibleChanged FINAL)
+    // User-resizable width of the context panel (persisted)
+    Q_PROPERTY(int panelWidth READ panelWidth WRITE setPanelWidth NOTIFY panelWidthChanged FINAL)
     Q_PROPERTY(double tokenUsageRate READ tokenUsageRate NOTIFY tokenUsageChanged FINAL)
     Q_PROPERTY(int usedTokens READ usedTokens NOTIFY tokenUsageChanged FINAL)
     // Follows the live agent's context limit when attached (needs refresh
@@ -44,6 +47,8 @@ class AgentViewModel : public QObject {
 
     // ── Sidebar ───────────────────────────────────────
     Q_PROPERTY(bool isSidebarExpanded READ isSidebarExpanded WRITE setIsSidebarExpanded NOTIFY sidebarExpandedChanged FINAL)
+    // User-resizable width of the sidebar (persisted)
+    Q_PROPERTY(int sidebarWidth READ sidebarWidth WRITE setSidebarWidth NOTIFY sidebarWidthChanged FINAL)
     Q_PROPERTY(QVariantList sessionList READ sessionList NOTIFY sessionListChanged FINAL)
     Q_PROPERTY(QString currentSessionId READ currentSessionId NOTIFY currentSessionIdChanged FINAL)
 
@@ -52,6 +57,7 @@ class AgentViewModel : public QObject {
 
     // ── Knowledge Base ────────────────────────────────
     Q_PROPERTY(QVariantList knowledgeDocuments READ knowledgeDocuments NOTIFY knowledgeChanged FINAL)
+    Q_PROPERTY(bool knowledgeBusy READ knowledgeBusy NOTIFY knowledgeBusyChanged FINAL)
 
     // ── Pipeline mode ─────────────────────────────────
     Q_PROPERTY(bool liveMode READ liveMode NOTIFY liveModeChanged FINAL)
@@ -64,6 +70,9 @@ public:
     void setAgent(AIAgent* agent);
     // Attach the knowledge-base service (optional). Takes no ownership.
     void setRagService(RagService* rag);
+    // Provide persisted knowledge document content (used by re-embedding).
+    // Called on the GUI thread; return empty when the document is unknown.
+    void setKnowledgeContentProvider(std::function<QString(const QString&)> provider);
     bool liveMode() const { return m_agent != nullptr; }
 
     // State accessors
@@ -84,10 +93,14 @@ public:
     // Panel
     bool isPanelVisible() const { return m_isPanelVisible; }
     void setIsPanelVisible(bool visible);
+    int panelWidth() const { return m_panelWidth; }
+    void setPanelWidth(int width);
 
     // Sidebar
     bool isSidebarExpanded() const { return m_isSidebarExpanded; }
     void setIsSidebarExpanded(bool expanded);
+    int sidebarWidth() const { return m_sidebarWidth; }
+    void setSidebarWidth(int width);
 
     // Sessions
     QVariantList sessionList() const { return m_sessionList; }
@@ -103,6 +116,7 @@ public:
 
     // Knowledge base
     QVariantList knowledgeDocuments() const { return m_knowledgeDocuments; }
+    bool knowledgeBusy() const { return m_knowledgeBusy; }
 
     // ── QML-invokable actions ─────────────────────────
     Q_INVOKABLE void startTask(const QString& input);
@@ -122,6 +136,11 @@ public:
     Q_INVOKABLE void importDocument(const QString& path);
     Q_INVOKABLE void removeDocument(const QString& name);
     Q_INVOKABLE void clearKnowledge();
+    // Chunk metadata of one imported document (document detail dialog)
+    Q_INVOKABLE QVariantList documentChunks(const QString& name);
+    // Re-run embedding for a degraded (pseudo-mode) document, e.g. after the
+    // embedding service came back online.
+    Q_INVOKABLE void reembedDocument(const QString& name);
     Q_INVOKABLE QVariantList auditLog(int limit = 200);
     Q_INVOKABLE QString logFilePath() const;   // runtime log file path (for the audit dialog)
 
@@ -131,14 +150,23 @@ signals:
     void responseReady();
     void draftTextChanged();
     void panelVisibleChanged();
+    void panelWidthChanged();
     void sidebarExpandedChanged();
+    void sidebarWidthChanged();
     void tokenUsageChanged();
     void sessionListChanged();
     void currentSessionIdChanged();
     void knowledgeChanged();
+    void knowledgeBusyChanged();
     void liveModeChanged();
     void toolConfirmRequired(const QString& id, const QString& name, const QVariantMap& args);
     void errorOccurred(const QString& error);
+    // Non-error user feedback (import finished, etc.)
+    void noticeOccurred(const QString& notice);
+    // Emitted after a successful knowledge-base mutation, for persistence
+    void documentImported(const QString& name, const QString& content);
+    void documentRemoved(const QString& name);
+    void knowledgeCleared();
 
 private:
     void setState(AgentState state);
@@ -152,11 +180,14 @@ private:
     void connectAgent(AIAgent* agent);
     void refreshSessions();
     void refreshKnowledge();
+    void setKnowledgeBusy(bool busy);
+    void persistPanelWidths();
     bool isBusy() const;
 
     // ── State ──────────────────────────────────────────
     AIAgent* m_agent{nullptr};
     RagService* m_rag{nullptr};
+    std::function<QString(const QString&)> m_contentProvider;
     AgentState m_state{AgentState::Idle};
     QVariantList m_traceModel;
     QString m_finalResponse;
@@ -164,9 +195,13 @@ private:
 
     // ── Panel ──────────────────────────────────────────
     bool m_isPanelVisible{true};
+    int m_panelWidth{300};
 
     // ── Sidebar ────────────────────────────────────────
     bool m_isSidebarExpanded{true};
+    int m_sidebarWidth{260};
+    // Debounces QSettings writes while the user drags a splitter
+    QTimer m_uiPersistTimer;
     QVariantList m_sessionList;
     QString m_currentSessionId;
 
@@ -179,6 +214,7 @@ private:
 
     // ── Knowledge Base ────────────────────────────────
     QVariantList m_knowledgeDocuments;
+    bool m_knowledgeBusy{false};
 
     // ── Simulation ────────────────────────────────────
     QTimer m_simTimer;

@@ -14,6 +14,9 @@ ApplicationWindow {
     title: "NexusAI"
     color: Theme.bgPrimary
 
+    // Width always kept free of the two side panels when resizing them
+    readonly property int chatMinWidth: 320
+
     // ── Main Layout ────────────────────────────────────
     RowLayout {
         anchors.fill: parent
@@ -22,20 +25,45 @@ ApplicationWindow {
         // ── Left: Sidebar ──────────────────────────────
         // Collapse animates the width to 0 (content fades inside the
         // Sidebar); the floating handle below stays reachable while hidden.
+        // Expanded width comes from AgentVM.sidebarWidth, dragged via
+        // leftSplitter and persisted across runs.
         Sidebar {
             id: sidebarPanel
-            Layout.preferredWidth: AgentVM.isSidebarExpanded ? 260 : 0
+            Layout.preferredWidth: AgentVM.isSidebarExpanded ? AgentVM.sidebarWidth : 0
             Layout.fillHeight: true
             // Stay visible through the whole collapse animation; RowLayout
             // skips invisible items entirely, which would freeze the width.
             visible: AgentVM.isSidebarExpanded || width > 0.5
 
             Behavior on Layout.preferredWidth {
+                // While the splitter is dragged the width must track the
+                // cursor exactly instead of easing behind it
+                enabled: !leftSplitter.dragActive
                 NumberAnimation { duration: 220; easing.type: Easing.OutQuad }
             }
 
             onSettingsRequested: settingsDialog.open()
             onAuditRequested: auditDialog.open()
+        }
+
+        // ── Sidebar / Chat Splitter ────────────────────
+        SplitBar {
+            id: leftSplitter
+            // Sits before AgentChatPage in the RowLayout, so lift it above
+            // the chat's ScrollView to keep the full hit area usable
+            z: 5
+            Layout.fillHeight: true
+            visible: sidebarPanel.width > 0.5
+            Layout.preferredWidth: visible ? implicitWidth : 0
+
+            onDragged: (delta) => {
+                const reserved = (AgentVM.isPanelVisible ? AgentVM.panelWidth : 0)
+                    + chatMinWidth + rightSplitter.width
+                AgentVM.sidebarWidth = Math.max(180, Math.min(
+                    AgentVM.sidebarWidth + delta,
+                    Math.min(560, mainWindow.width - reserved)))
+            }
+            onResetRequested: AgentVM.sidebarWidth = 260
         }
 
         // ── Center: Chat Area ──────────────────────────
@@ -45,17 +73,39 @@ ApplicationWindow {
             onSettingsRequested: settingsDialog.open()
         }
 
+        // ── Chat / Context Panel Splitter ──────────────
+        SplitBar {
+            id: rightSplitter
+            z: 5
+            Layout.fillHeight: true
+            visible: contextPanel.width > 0.5
+            Layout.preferredWidth: visible ? implicitWidth : 0
+
+            // Dragging left (negative delta) widens the panel
+            onDragged: (delta) => {
+                const reserved = (AgentVM.isSidebarExpanded ? AgentVM.sidebarWidth : 0)
+                    + chatMinWidth + leftSplitter.width
+                AgentVM.panelWidth = Math.max(220, Math.min(
+                    AgentVM.panelWidth - delta,
+                    Math.min(640, mainWindow.width - reserved)))
+            }
+            onResetRequested: AgentVM.panelWidth = 300
+        }
+
         // ── Right: Context Panel ──────────────────────
         ContextPanel {
             id: contextPanel
-            Layout.preferredWidth: AgentVM.isPanelVisible ? 300 : 0
+            Layout.preferredWidth: AgentVM.isPanelVisible ? AgentVM.panelWidth : 0
             Layout.minimumWidth: 0
             Layout.fillHeight: true
             visible: AgentVM.isPanelVisible || width > 0.5
 
             Behavior on Layout.preferredWidth {
+                enabled: !rightSplitter.dragActive
                 NumberAnimation { duration: 220; easing.type: Easing.OutQuad }
             }
+
+            onDocumentDetailsRequested: knowledgeDocDialog.openFor(name)
         }
     }
 
@@ -176,6 +226,12 @@ ApplicationWindow {
         parent: Overlay.overlay
     }
 
+    // ── Knowledge Document Detail Dialog ──────────────
+    KnowledgeDocDialog {
+        id: knowledgeDocDialog
+        parent: Overlay.overlay
+    }
+
     // ── Connect tool confirmation signal ───────────────
     Connections {
         target: AgentVM
@@ -243,6 +299,65 @@ ApplicationWindow {
         target: AgentVM
         function onErrorOccurred(message) {
             errorToast.show(message)
+        }
+    }
+
+    // ── Notice Toast (success / info) ────────────────────
+    Rectangle {
+        id: noticeToast
+        parent: Overlay.overlay
+        anchors.horizontalCenter: parent.horizontalCenter
+        anchors.top: parent.top
+        anchors.topMargin: errorToast.visible ? 64 : 24
+        z: 100
+
+        property string message: ""
+
+        width: Math.min(noticeText.implicitWidth, 460) + 32
+        height: noticeText.implicitHeight + 20
+        radius: 8
+        color: Theme.bgSecondary
+        border.width: 1
+        border.color: Theme.statusSuccess
+        opacity: 0
+        visible: opacity > 0
+
+        Behavior on opacity { NumberAnimation { duration: 200 } }
+
+        Text {
+            id: noticeText
+            anchors.centerIn: parent
+            width: Math.min(implicitWidth, 460)
+            text: noticeToast.message
+            color: Theme.statusSuccess
+            font.pixelSize: Theme.fontSizeCaption
+            font.family: Theme.fontSans
+            wrapMode: Text.Wrap
+        }
+
+        function show(msg) {
+            message = msg
+            opacity = 1
+            noticeHideTimer.restart()
+        }
+
+        Timer {
+            id: noticeHideTimer
+            interval: 3500
+            onTriggered: noticeToast.opacity = 0
+        }
+
+        MouseArea {
+            anchors.fill: parent
+            cursorShape: Qt.PointingHandCursor
+            onClicked: noticeToast.opacity = 0
+        }
+    }
+
+    Connections {
+        target: AgentVM
+        function onNoticeOccurred(message) {
+            noticeToast.show(message)
         }
     }
 

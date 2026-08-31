@@ -32,13 +32,26 @@ QString argsToString(const QJsonObject& args) {
 
 QString systemPrompt() {
     return QStringLiteral(
-        "You are NexusAI, a desktop AI assistant running on the user's machine (OS: %1). "
-        "You can call tools to read files, write files, list directories and run shell commands. "
-        "Use tools whenever they are needed to fulfill the request; never pretend to have run a tool. "
-        "File writes and shell commands require user approval - if the user declines, adapt your plan. "
-        "When the task is done, reply with a concise final answer without calling more tools. "
+        "You are NexusAI, a desktop AI assistant running on the user's machine (OS: %1).\n"
+        "\n"
+        "Tool policy - choose the RIGHT tool, then stop:\n"
+        "- Questions about the user's imported documents or knowledge base (keywords "
+        "like knowledge base/docs/imported/according to...): call search_knowledge_base "
+        "and answer from its passages. NEVER answer those by reading files from disk - "
+        "the knowledge base lives inside the app, not as files on disk.\n"
+        "- General knowledge, coding questions, small talk: answer directly WITHOUT "
+        "any tool call.\n"
+        "- read_file / list_dir / shell_exec: only for tasks that explicitly target "
+        "this local workspace.\n"
+        "\n"
+        "Step budget: you have a HARD limit of %2 tool-use steps per request. One "
+        "search usually suffices. When the collected information answers the question, "
+        "stop calling tools and reply with the final answer immediately - do not keep "
+        "exploring to be thorough.\n"
+        "File writes and shell commands require user approval - if the user declines, "
+        "adapt your plan. Never pretend to have run a tool.\n"
         "Always reply in the same language the user writes in."
-    ).arg(QSysInfo::productType());
+    ).arg(QSysInfo::productType()).arg(AIAgent::kMaxIterations);
 }
 
 } // namespace
@@ -81,6 +94,11 @@ void AIAgent::setContextLimit(int tokens) {
 
 // ── Trace helpers ─────────────────────────────────────────
 
+void AIAgent::persistTraceNode(const QJsonObject& node, int order) {
+    if (m_memory && !m_sessionId.isEmpty())
+        m_memory->saveTraceNode(m_sessionId, node, order);
+}
+
 void AIAgent::setState(AgentState state) {
     if (m_state == state) return;
     m_state = state;
@@ -100,6 +118,7 @@ QString AIAgent::appendTraceNode(const QString& type, const QString& title,
     node["result"] = extra.value("result").toString();
 
     m_traceModel.append(node);
+    persistTraceNode(node, m_traceModel.size() - 1);
     emit traceChanged();
     return id;
 }
@@ -109,6 +128,7 @@ void AIAgent::updateLastNodeStatus(const QString& status) {
     QJsonObject node = m_traceModel.last().toObject();
     node["status"] = status;
     m_traceModel.replace(m_traceModel.size() - 1, node);
+    persistTraceNode(node, m_traceModel.size() - 1);
     emit traceChanged();
 }
 
@@ -117,6 +137,7 @@ void AIAgent::updateLastNodeTitle(const QString& title) {
     QJsonObject node = m_traceModel.last().toObject();
     node["title"] = title;
     m_traceModel.replace(m_traceModel.size() - 1, node);
+    persistTraceNode(node, m_traceModel.size() - 1);
     emit traceChanged();
 }
 
@@ -126,6 +147,7 @@ bool AIAgent::updateTraceNodeStatusById(const QString& id, const QString& status
         if (node.value("id").toString() == id) {
             node["status"] = status;
             m_traceModel.replace(i, node);
+            persistTraceNode(node, i);
             emit traceChanged();
             return true;
         }
@@ -181,6 +203,9 @@ void AIAgent::startTask(const QString& userMessage) {
     }
 
     m_iteration = 0;
+    m_lastToolSignature.clear();
+    m_repeatToolCount = 0;
+    m_forcedFinal = false;
     m_pendingToolCalls.clear();
     m_currentConfirmCall = ToolCallInfo{};
     m_confirmNodeId.clear();
@@ -217,6 +242,9 @@ void AIAgent::resetSession() {
     m_traceModel = QJsonArray();
     m_lastResponse.clear();
     m_iteration = 0;
+    m_lastToolSignature.clear();
+    m_repeatToolCount = 0;
+    m_forcedFinal = false;
 
     setState(AgentState::Idle);
     emit traceChanged();
@@ -246,22 +274,39 @@ void AIAgent::resumeSession(const QString& sessionId) {
         }
     }
 
-    // Rebuild the trace view from history
+    // Rebuild the trace view: prefer the persisted timeline (thinking /
+    // tool calls / results); fall back to the user/assistant text summary
+    // for sessions recorded before trace persistence existed.
     m_traceModel = QJsonArray();
     m_lastResponse.clear();
-    for (const auto& entry : m_messages) {
-        const QJsonObject msg = entry.toObject();
-        const QString role = msg.value("role").toString();
-        if (role == "user") {
-            appendTraceNode("user_message", msg.value("content").toString(), "completed");
-        } else if (role == "assistant") {
-            const QString content = msg.value("content").toString();
-            appendTraceNode("summary", content, "completed");
-            m_lastResponse = content;
+    const QJsonArray savedNodes = m_memory ? m_memory->loadTraceNodes(sessionId) : QJsonArray();
+    if (!savedNodes.isEmpty()) {
+        m_traceModel = savedNodes;
+        for (int i = savedNodes.size() - 1; i >= 0; --i) {
+            const QJsonObject node = savedNodes.at(i).toObject();
+            if (node.value("type").toString() == "summary") {
+                m_lastResponse = node.value("title").toString();
+                break;
+            }
+        }
+    } else {
+        for (const auto& entry : m_messages) {
+            const QJsonObject msg = entry.toObject();
+            const QString role = msg.value("role").toString();
+            if (role == "user") {
+                appendTraceNode("user_message", msg.value("content").toString(), "completed");
+            } else if (role == "assistant") {
+                const QString content = msg.value("content").toString();
+                appendTraceNode("summary", content, "completed");
+                m_lastResponse = content;
+            }
         }
     }
 
     m_iteration = 0;
+    m_lastToolSignature.clear();
+    m_repeatToolCount = 0;
+    m_forcedFinal = false;
     m_pendingToolCalls.clear();
     m_currentConfirmCall = ToolCallInfo{};
     m_confirmNodeId.clear();
@@ -283,17 +328,36 @@ void AIAgent::processIteration() {
     }
 
     if (m_iteration >= m_maxIterations) {
-        appendTraceNode("error",
-                        QStringLiteral("Reached max iterations (%1)").arg(m_maxIterations),
-                        "failed");
-        finishTask(QStringLiteral(
-            "I could not finish the task within %1 reasoning steps. "
-            "Please rephrase the request or continue the conversation.")
-            .arg(m_maxIterations));
-        return;
+        if (m_forcedFinal) {
+            // Even the forced no-tools call looped: nothing left to try.
+            appendTraceNode("error",
+                            QStringLiteral("Reached max iterations (%1)").arg(m_maxIterations),
+                            "failed");
+            finishTask(QStringLiteral(
+                "I could not finish the task within %1 reasoning steps. "
+                "Please rephrase the request or continue the conversation.")
+                .arg(m_maxIterations));
+            return;
+        }
+        // Budget exhausted: force ONE final call with tools withheld so the
+        // information already gathered becomes an answer instead of an error.
+        appendTraceNode("context",
+            QStringLiteral("Step budget (%1) exhausted - requesting a final answer "
+                           "from the information collected so far").arg(m_maxIterations),
+            "completed");
+        QJsonObject pushMsg;
+        pushMsg["role"] = "user";
+        pushMsg["content"] = QStringLiteral(
+            "[System] Step budget exhausted. Do NOT call any tools. Based on ALL "
+            "information gathered above, answer the user's last question now; "
+            "state explicitly what you could and could not confirm.");
+        m_messages.append(pushMsg);
+        notifyTokens();
+        m_forcedFinal = true;
+    } else {
+        ++m_iteration;
     }
 
-    ++m_iteration;
     applyContextBudget();
     m_thinkingNodeId = appendTraceNode("thinking",
                                        QStringLiteral("Reasoning (step %1)").arg(m_iteration),
@@ -301,8 +365,9 @@ void AIAgent::processIteration() {
     setState(AgentState::Thinking);
 
     // Build tool definitions for the LLM; dangerous tools are never exposed.
+    // Withheld entirely on the forced final call.
     QJsonArray toolsArray;
-    if (m_toolRegistry) {
+    if (m_toolRegistry && !m_forcedFinal) {
         for (const auto& def : m_toolRegistry->listAll()) {
             if (def.level == ToolLevel::Dangerous) continue;
             QJsonObject toolObj;
@@ -400,6 +465,18 @@ void AIAgent::onLLMResponse(const LLMResponse& response) {
         }
         m_streamText.clear();
         finishTask(response.content, streamed);
+        return;
+    }
+
+    // On the forced final call the model must answer, not call tools. It
+    // tried anyway: drop the calls and finish with whatever text it produced.
+    if (m_forcedFinal) {
+        m_streamText.clear();
+        finishTask(response.content.isEmpty()
+            ? QStringLiteral("Step budget exhausted before I could fully answer. "
+                             "Here is what I found so far - please continue the "
+                             "conversation for more detail.")
+            : response.content);
         return;
     }
 
@@ -533,6 +610,29 @@ void AIAgent::processNextToolCall() {
 // ── Tool execution (worker thread) ────────────────────────
 
 void AIAgent::dispatchToolExecution(const ToolCallInfo& call, const QString& traceNodeId) {
+    // Loop guard: identical back-to-back calls get an escalating note pushed
+    // into the tool result, so the model stops re-running the same probe and
+    // answers instead of burning the whole step budget.
+    const QString signature = call.name + QLatin1Char(':') + argsToString(call.arguments);
+    QString note;
+    if (signature == m_lastToolSignature) {
+        ++m_repeatToolCount;
+        if (m_repeatToolCount == 1) {
+            note = QStringLiteral(
+                "\n\n[Repeated call] You already ran this exact call and the result is "
+                "above. Do NOT call it again; if the information suffices, give your "
+                "final answer now.");
+        } else {
+            note = QStringLiteral(
+                "\n\n[STOP] You keep repeating the same call and are close to the hard "
+                "step limit. Make NO further tool calls: based on ALL results collected "
+                "so far, reply with your final answer immediately.");
+        }
+    } else {
+        m_repeatToolCount = 0;
+    }
+    m_lastToolSignature = signature;
+
     QString nodeId = traceNodeId;
     if (nodeId.isEmpty()) {
         nodeId = appendTraceNode("tool_call", call.name, "running",
@@ -547,7 +647,7 @@ void AIAgent::dispatchToolExecution(const ToolCallInfo& call, const QString& tra
 
     auto* watcher = new QFutureWatcher<ToolResult>(this);
     connect(watcher, &QFutureWatcherBase::finished, this,
-            [this, watcher, call, nodeId, epoch]() {
+            [this, watcher, call, nodeId, epoch, note]() {
         const ToolResult result = watcher->result();
         watcher->deleteLater();
         if (epoch != m_epoch) {
@@ -556,7 +656,7 @@ void AIAgent::dispatchToolExecution(const ToolCallInfo& call, const QString& tra
             updateTraceNodeStatusById(nodeId, "cancelled");
             return;
         }
-        finishToolExecution(call, nodeId, result);
+        finishToolExecution(call, nodeId, result, note);
     });
 
     // Tools are stateless; running them here keeps shell_exec / large file
@@ -568,7 +668,7 @@ void AIAgent::dispatchToolExecution(const ToolCallInfo& call, const QString& tra
 }
 
 void AIAgent::finishToolExecution(const ToolCallInfo& call, const QString& traceNodeId,
-                                  const ToolResult& result) {
+                                  const ToolResult& result, const QString& note) {
     updateTraceNodeStatusById(traceNodeId, result.success ? "success" : "failed");
 
     const QString output = result.success ? result.output : result.error;
@@ -577,8 +677,8 @@ void AIAgent::finishToolExecution(const ToolCallInfo& call, const QString& trace
                     QJsonObject{{"result", truncateText(output, kMaxTraceChars)}});
 
     appendToolResultMessage(call, truncateText(
-        result.success ? result.output
-                       : QStringLiteral("Error: %1").arg(result.error),
+        (result.success ? result.output
+                        : QStringLiteral("Error: %1").arg(result.error)) + note,
         kMaxToolResultChars));
 
     if (m_memory)

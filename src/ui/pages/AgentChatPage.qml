@@ -20,45 +20,188 @@ Item {
         }
 
         // ── Trace View (scrollable) ────────────────────
-        ScrollView {
+        Item {
             Layout.fillWidth: true
             Layout.fillHeight: true
-            clip: true
 
-            ListView {
-                id: traceListView
-                model: AgentVM.traceModel
-                spacing: 0
+            ScrollView {
+                anchors.fill: parent
+                clip: true
 
-                // Empty state
-                Text {
+                ListView {
+                    id: traceListView
+                    model: AgentVM.traceModel
+                    spacing: 0
+                    clip: true
+
+                    // Stick-to-bottom only while the user is already near
+                    // the end; scrolling up to read pauses the auto-scroll.
+                    property bool pinnedToBottom: true
+                    onContentYChanged: {
+                        const distance = contentHeight - contentY - height
+                        pinnedToBottom = distance < 80
+                    }
+                    onContentHeightChanged: if (pinnedToBottom)
+                        Qt.callLater(positionViewAtEnd)
+
+                    // Expand/collapse state of node detail blocks. Lives on
+                    // the view (not the delegate) so it survives the full
+                    // trace model resets that follow every agent update.
+                    property var detailState: ({})
+
+                    // Whether the intermediate agent steps (thinking / tool
+                    // calls / results) are shown at all.
+                    property bool showProcess: true
+
+                    function detailExpanded(key, defaultExpanded) {
+                        return key in detailState ? detailState[key] : defaultExpanded
+                    }
+
+                    function toggleDetail(key, defaultExpanded) {
+                        const next = Object.assign({}, detailState)
+                        next[key] = !(key in next ? next[key] : defaultExpanded)
+                        detailState = next
+                    }
+
+                    function toggleProcess() {
+                        showProcess = !showProcess
+                        if (pinnedToBottom) Qt.callLater(positionViewAtEnd)
+                    }
+
+                    readonly property int intermediateCount: {
+                        let count = 0
+                        for (let i = 0; i < model.length; ++i) {
+                            const t = model[i].type
+                            if (t === "thinking" || t === "tool_call"
+                                || t === "tool_result" || t === "context")
+                                ++count
+                        }
+                        return count
+                    }
+
+                    // Empty state
+                    Text {
+                        anchors.centerIn: parent
+                        visible: traceListView.count === 0
+                        text: "Send a message to start chatting with NexusAI"
+                        color: Theme.textSecondary
+                        font.pixelSize: Theme.fontSizeBody
+                        font.family: Theme.fontSans
+                    }
+
+                    delegate: AgentTraceNode {
+                        width: traceListView.width
+                        // No explicit modelData binding here: AgentTraceNode's
+                        // required property is auto-filled by the view from the
+                        // list model context. Binding "modelData: modelData"
+                        // would self-reference and evaluate to undefined,
+                        // blanking every trace node.
+                    }
+                }
+            }
+
+            // ── Process visibility toggle (floating, top right) ──
+            Rectangle {
+                visible: traceListView.intermediateCount > 0
+                anchors.top: parent.top
+                anchors.topMargin: 8
+                anchors.right: parent.right
+                anchors.rightMargin: 16
+                z: 5
+                width: processRow.implicitWidth + 20
+                height: 26
+                radius: 13
+                color: processMA.containsMouse ? Theme.surfaceHover : Theme.bgSecondary
+                border.width: 1
+                border.color: Theme.borderSubtle
+                opacity: 0.94
+
+                Row {
+                    id: processRow
                     anchors.centerIn: parent
-                    visible: traceListView.count === 0
-                    text: "Send a message to start chatting with NexusAI"
-                    color: Theme.textSecondary
-                    font.pixelSize: Theme.fontSizeBody
-                    font.family: Theme.fontSans
+                    spacing: 6
+
+                    AppIcon {
+                        anchors.verticalCenter: parent.verticalCenter
+                        icon: traceListView.showProcess ? "chevron-up" : "chevron-down"
+                        size: 11
+                        iconColor: processMA.containsMouse
+                            ? Theme.brandPrimary : Theme.textSecondary
+                    }
+
+                    Text {
+                        anchors.verticalCenter: parent.verticalCenter
+                        text: traceListView.showProcess
+                            ? qsTr("折叠过程")
+                            : qsTr("思考过程 · %1").arg(traceListView.intermediateCount)
+                        color: processMA.containsMouse
+                            ? Theme.brandPrimary : Theme.textSecondary
+                        font.pixelSize: 10
+                        font.family: Theme.fontSans
+                    }
                 }
 
-                delegate: AgentTraceNode {
-                    width: traceListView.width
-                    // No explicit modelData binding here: AgentTraceNode's
-                    // required property is auto-filled by the view from the
-                    // list model context. Binding "modelData: modelData"
-                    // would self-reference and evaluate to undefined,
-                    // blanking every trace node.
+                MouseArea {
+                    id: processMA
+                    anchors.fill: parent
+                    hoverEnabled: true
+                    cursorShape: Qt.PointingHandCursor
+                    onClicked: traceListView.toggleProcess()
                 }
+
+                ToolTip.visible: processMA.containsMouse
+                ToolTip.delay: 600
+                ToolTip.text: traceListView.showProcess
+                    ? qsTr("隐藏思考与工具调用过程") : qsTr("显示思考与工具调用过程")
+            }
+
+            // ── Jump to bottom (floating, bottom) ─────────
+            Rectangle {
+                visible: !traceListView.pinnedToBottom
+                anchors.bottom: parent.bottom
+                anchors.bottomMargin: 12
+                anchors.right: parent.right
+                anchors.rightMargin: 16
+                z: 5
+                width: 32
+                height: 32
+                radius: 16
+                color: Theme.bgSecondary
+                border.width: 1
+                border.color: Theme.borderSubtle
+                opacity: 0.94
+
+                AppIcon {
+                    anchors.centerIn: parent
+                    icon: "chevron-down"
+                    size: 15
+                    iconColor: jumpMA.containsMouse ? Theme.brandPrimary : Theme.textPrimary
+                }
+
+                MouseArea {
+                    id: jumpMA
+                    anchors.fill: parent
+                    hoverEnabled: true
+                    cursorShape: Qt.PointingHandCursor
+                    onClicked: traceListView.positionViewAtEnd()
+                }
+
+                ToolTip.visible: jumpMA.containsMouse
+                ToolTip.delay: 600
+                ToolTip.text: qsTr("回到底部")
             }
         }
 
         // Auto-scroll the trace view as content updates
-        // (streaming responses, new nodes, session loading)
+        // (streaming responses, new nodes, session loading) - only while
+        // the user has not scrolled away to read earlier content.
         Connections {
             target: AgentVM
             function onTraceChanged() {
-                Qt.callLater(function() {
-                    traceListView.positionViewAtEnd()
-                })
+                if (traceListView.pinnedToBottom)
+                    Qt.callLater(function() {
+                        traceListView.positionViewAtEnd()
+                    })
             }
         }
 

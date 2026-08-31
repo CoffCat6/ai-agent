@@ -19,6 +19,12 @@ public:
     // Synchronous embedding call (blocks with QEventLoop)
     QVector<float> embed(const QString& text);
 
+    // Synchronous batch embedding via /api/embed (one request for all
+    // texts). Returns an empty container when the request failed so callers
+    // can fall back; must be called from a thread that may run an event
+    // loop (document import runs on a QtConcurrent worker).
+    QVector<QVector<float>> embedBatch(const QStringList& texts);
+
     // Asynchronous embedding call
     void embedAsync(const QString& text);
 

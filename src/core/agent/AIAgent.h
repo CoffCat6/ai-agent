@@ -36,6 +36,9 @@ class IMemory;
 class AIAgent : public QObject {
     Q_OBJECT
 public:
+    // Hard per-request tool-use step budget (shared with the system prompt)
+    static constexpr int kMaxIterations = 10;
+
     explicit AIAgent(QObject* parent = nullptr);
     ~AIAgent() override;
 
@@ -95,11 +98,14 @@ private:
     void clearStreamState();
 
     void processNextToolCall();
+    // Persist one trace node (upsert keyed by node id) so resumed sessions
+    // rebuild the full timeline, not just user/assistant text.
+    void persistTraceNode(const QJsonObject& node, int order);
     // traceNodeId: existing tool_call node to flip to "running" (approval
     // path), or empty to append a fresh one (auto-execution path).
     void dispatchToolExecution(const ToolCallInfo& call, const QString& traceNodeId);
     void finishToolExecution(const ToolCallInfo& call, const QString& traceNodeId,
-                             const ToolResult& result);
+                             const ToolResult& result, const QString& note = QString());
     void appendToolResultMessage(const ToolCallInfo& call, const QString& content);
     void finishTask(const QString& finalText, bool summaryTraced = false);
     void failTask(const QString& error);
@@ -108,7 +114,7 @@ private:
     QJsonArray m_messages;
     QJsonArray m_traceModel;
     int m_iteration{0};
-    int m_maxIterations{10};
+    int m_maxIterations{kMaxIterations};
     bool m_active{false};
     quint64 m_epoch{0};   // bumped on start/stop/reset; stale tool results are dropped
 
@@ -118,6 +124,14 @@ private:
     QVector<ToolCallInfo> m_pendingToolCalls;
     ToolCallInfo m_currentConfirmCall;
     QString m_confirmNodeId;  // trace node of the pending confirmation
+
+    // Loop guard: detects the model re-issuing an identical tool call and
+    // escalates a "stop exploring, answer now" instruction into the result.
+    QString m_lastToolSignature;
+    int m_repeatToolCount{0};
+    // Step budget exhausted: one final LLM call with tools withheld so the
+    // gathered information turns into an answer instead of an error.
+    bool m_forcedFinal{false};
 
     // Streaming display state
     QTimer m_streamTimer;

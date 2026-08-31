@@ -50,6 +50,19 @@ public:
         Q_UNUSED(limit);
         return {};
     }
+
+    // Trace view persistence (optional capability; default no-ops). Trace
+    // nodes rebuild the visual timeline (thinking / tool calls / results)
+    // when a session is resumed - plain message history only keeps the
+    // user/assistant text. `order` fixes the timeline position on first
+    // insert and is ignored on upsert (status/title updates).
+    virtual void saveTraceNode(const QString& sessionId, const QJsonObject& node, int order) {
+        Q_UNUSED(sessionId); Q_UNUSED(node); Q_UNUSED(order);
+    }
+    virtual QJsonArray loadTraceNodes(const QString& sessionId) {
+        Q_UNUSED(sessionId);
+        return {};
+    }
 };
 
 } // namespace NexusAI

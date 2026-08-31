@@ -130,6 +130,7 @@ private slots:
     void confirmDeclineFeedsRejection();
     void unknownToolFeedsError();
     void maxIterationsStops();
+    void traceRestoredOnResume();
     void stopDuringConfirmationIsNoOp();
     void contextBudgetCompressesHistory();
     void auditTrailRecorded();
@@ -253,9 +254,55 @@ void TestAgent::maxIterationsStops() {
     agent.startTask(QStringLiteral("loop"));
     QTRY_COMPARE_WITH_TIMEOUT(spy.count(), 1, 20000);
 
-    QVERIFY(agent.lastResponse().contains("could not finish"));
-    QVERIFY(traceHas(agent.traceModel(), "error", "max iterations"));
-    QCOMPARE(llm.seenMessages.size(), 10); // one call per iteration
+    // Budget exhaustion no longer aborts with an error: one final no-tools
+    // call turns the gathered results into a (fallback) answer.
+    QVERIFY(!agent.lastResponse().isEmpty());
+    QVERIFY(traceHas(agent.traceModel(), "context", "Step budget"));
+    QCOMPARE(llm.seenMessages.size(), 11); // 10 iterations + 1 forced final
+
+    // The forced call is primed with an explicit no-tools instruction and
+    // carries no tool definitions.
+    const QJsonArray lastCall = llm.seenMessages.last();
+    QVERIFY(lastCall.last().toObject().value("content")
+        .toString().contains("Step budget exhausted"));
+    QVERIFY(llm.seenTools.last().isEmpty());
+}
+
+// Switching conversations must restore the full visual timeline (thinking /
+// tool calls / results), not just the user/assistant text.
+void TestAgent::traceRestoredOnResume() {
+    SqliteMemory memory(QStringLiteral(":memory:"));
+    agent.setMemory(&memory);
+
+    QTemporaryDir dir;
+    QVERIFY(dir.isValid());
+    llm.script.append(toolResponse("list_dir", QJsonObject{{"path", dir.path()}}));
+    llm.script.append(textResponse("done"));
+
+    QSignalSpy spy(&agent, &AIAgent::responseReady);
+    agent.startTask(QStringLiteral("scan"));
+    QTRY_COMPARE(spy.count(), 1);
+    QVERIFY(traceHas(agent.traceModel(), "tool_call", "list_dir"));
+    QVERIFY(traceHas(agent.traceModel(), "tool_result"));
+
+    const QString sessionId = agent.currentSessionId();
+    QVERIFY(!sessionId.isEmpty());
+
+    // Leave the session (clears the in-memory trace), then reopen it
+    agent.resetSession();
+    QCOMPARE(agent.traceModel().size(), 0);
+    QVERIFY(traceHas(agent.traceModel(), "tool_call", "list_dir") == false);
+
+    agent.resumeSession(sessionId);
+
+    QVERIFY(agent.traceModel().size() >= 5); // user + thinking + call + result + summary
+    QVERIFY(traceHas(agent.traceModel(), "user_message", "scan"));
+    QVERIFY(traceHas(agent.traceModel(), "tool_call", "list_dir"));
+    QVERIFY(traceHas(agent.traceModel(), "tool_result"));
+    QVERIFY(traceHas(agent.traceModel(), "summary", "done"));
+    QCOMPARE(agent.lastResponse(), QStringLiteral("done"));
+
+    agent.setMemory(nullptr);
 }
 
 void TestAgent::stopDuringConfirmationIsNoOp() {

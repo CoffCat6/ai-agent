@@ -12,32 +12,52 @@ void RagService::setEmbedder(DocumentRetriever::EmbedFn fn) {
     m_embedFn = std::move(fn);
 }
 
-int RagService::ingestDocument(const QString& sourceName, const QString& content) {
-    const QString trimmed = content.trimmed();
-    if (sourceName.isEmpty() || trimmed.isEmpty()) return 0;
-
+void RagService::setBatchEmbedder(DocumentRetriever::BatchEmbedFn fn) {
     QMutexLocker lock(&m_mutex);
+    m_batchEmbedFn = std::move(fn);
+}
 
-    // Replace an existing document of the same name
-    for (int i = 0; i < m_docs.size(); ++i) {
+void RagService::dropDocumentLocked(const QString& sourceName) {
+    for (int i = 0; i < static_cast<int>(m_docs.size()); ++i) {
         if (m_docs[i].name == sourceName) {
             m_docs.erase(m_docs.begin() + i);
             break;
         }
     }
+}
 
+int RagService::ingestDocument(const QString& sourceName, const QString& content) {
+    const QString trimmed = content.trimmed();
+    if (sourceName.isEmpty() || trimmed.isEmpty()) return 0;
+
+    // Upper bound before any embedding work: reject pathologically large
+    // inputs instead of spending minutes (or exhausting memory) on them.
+    const int estimatedChunks = trimmed.size()
+        / (DocumentRetriever::ChunkSize - DocumentRetriever::ChunkOverlap) + 1;
+    if (estimatedChunks > MaxChunksPerDocument) return -1;
+
+    // Build the retriever (embedding = network IO) WITHOUT holding the
+    // mutex; search/documents stay usable during a long import.
     auto retriever = std::make_unique<DocumentRetriever>();
-    retriever->setEmbedFunction(m_embedFn);
-    retriever->addDocument(trimmed, QJsonObject{{"source", sourceName}});
+    {
+        QMutexLocker lock(&m_mutex);
+        retriever->setEmbedFunction(m_embedFn);
+        retriever->setBatchEmbedFunction(m_batchEmbedFn);
+    }
 
-    Document doc;
-    doc.name = sourceName;
-    doc.chars = trimmed.size();
-    doc.retriever = std::move(retriever);
-    const int chunks = doc.retriever->documentCount();
-    m_docs.push_back(std::move(doc));
+    if (!retriever->addDocument(trimmed, QJsonObject{{"source", sourceName}}))
+        return 0;
+    const int chunks = retriever->documentCount();
 
-    lock.unlock();
+    {
+        QMutexLocker lock(&m_mutex);
+        dropDocumentLocked(sourceName); // replace same-name doc (incl. races)
+        Document doc;
+        doc.name = sourceName;
+        doc.chars = trimmed.size();
+        doc.retriever = std::move(retriever);
+        m_docs.push_back(std::move(doc));
+    }
     emit changed();
     return chunks;
 }
@@ -47,7 +67,10 @@ QJsonArray RagService::search(const QString& query, int k) const {
 
     if (query.trimmed().isEmpty() || m_docs.empty()) return {};
 
-    // Merge scored passages from every document, keep the global top-k
+    // Merge scored passages from every document, keep the global top-k.
+    // Each document's retriever keeps its own embedding mode internally, so
+    // scores are only compared within one mode - acceptable when a
+    // pseudo-mode document coexists with real-mode ones.
     QVector<QJsonObject> hits;
     for (const auto& doc : m_docs) {
         const QJsonArray results = doc.retriever->search(query, k);
@@ -74,15 +97,26 @@ QJsonArray RagService::documents() const {
         entry["name"] = doc.name;
         entry["chunks"] = doc.retriever->documentCount();
         entry["chars"] = doc.chars;
+        entry["pseudo"] = doc.retriever->usesPseudoEmbedding();
         out.append(entry);
     }
     return out;
 }
 
+QJsonArray RagService::documentChunks(const QString& sourceName) const {
+    QMutexLocker lock(&m_mutex);
+
+    for (const auto& doc : m_docs) {
+        if (doc.name == sourceName)
+            return doc.retriever->chunks();
+    }
+    return {};
+}
+
 bool RagService::removeDocument(const QString& sourceName) {
     QMutexLocker lock(&m_mutex);
 
-    for (int i = 0; i < m_docs.size(); ++i) {
+    for (int i = 0; i < static_cast<int>(m_docs.size()); ++i) {
         if (m_docs[i].name == sourceName) {
             m_docs.erase(m_docs.begin() + i);
             lock.unlock();

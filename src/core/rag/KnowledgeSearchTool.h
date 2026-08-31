@@ -15,9 +15,12 @@ public:
         ToolDefinition def;
         def.name = "search_knowledge_base";
         def.description =
-            "Search the user's local knowledge base (imported documents) for "
-            "passages relevant to a query. Returns scored text chunks with "
-            "their source document.";
+            "Search the user's local knowledge base (documents imported in the app's "
+            "knowledge panel) for passages relevant to a query. This is the FIRST and "
+            "REQUIRED tool for any question about imported/knowledge-base/document "
+            "content - the base is stored inside the app, so do NOT use file or shell "
+            "tools to look for it on disk. Returns scored text chunks with their "
+            "source document.";
         def.level = ToolLevel::Safe;
         QJsonObject props;
         props["query"] = stringParam("The search query.");

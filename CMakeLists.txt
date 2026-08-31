@@ -94,9 +94,11 @@ qt_add_qml_module(nexus_ai
         src/ui/components/CopyButton.qml
         src/ui/components/SettingsDialog.qml
         src/ui/components/AuditDialog.qml
+        src/ui/components/KnowledgeDocDialog.qml
         src/ui/components/AgentTraceNode.qml
         src/ui/components/InputConsole.qml
         src/ui/components/Sidebar.qml
+        src/ui/components/SplitBar.qml
         src/ui/components/TopBar.qml
         src/ui/components/ToolConfirmDialog.qml
         src/ui/panels/ContextPanel.qml

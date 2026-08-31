@@ -28,13 +28,31 @@ AgentViewModel::AgentViewModel(QObject* parent)
     m_simTimer.setSingleShot(true);
     connect(&m_simTimer, &QTimer::timeout, this, &AgentViewModel::simulationStep);
 
-    // Restore last UI layout (sidebar / context panel visibility)
+    // Restore last UI layout (sidebar / context panel visibility + widths)
     const QSettings uiSettings("NexusAI", "NexusAI");
     m_isPanelVisible = uiSettings.value("ui/panelVisible", true).toBool();
     m_isSidebarExpanded = uiSettings.value("ui/sidebarExpanded", true).toBool();
+    m_panelWidth = uiSettings.value("ui/panelWidth", m_panelWidth).toInt();
+    m_sidebarWidth = uiSettings.value("ui/sidebarWidth", m_sidebarWidth).toInt();
+
+    // Splitter drags update the width per mouse move; coalesce the writes
+    m_uiPersistTimer.setSingleShot(true);
+    m_uiPersistTimer.setInterval(400);
+    connect(&m_uiPersistTimer, &QTimer::timeout, this,
+            &AgentViewModel::persistPanelWidths);
 }
 
-AgentViewModel::~AgentViewModel() = default;
+AgentViewModel::~AgentViewModel() {
+    if (m_uiPersistTimer.isActive()) {
+        m_uiPersistTimer.stop();
+        persistPanelWidths();
+    }
+}
+
+void AgentViewModel::persistPanelWidths() {
+    QSettings("NexusAI", "NexusAI").setValue("ui/sidebarWidth", m_sidebarWidth);
+    QSettings("NexusAI", "NexusAI").setValue("ui/panelWidth", m_panelWidth);
+}
 
 // ── Real agent pipeline ──────────────────────────────────
 
@@ -132,10 +150,17 @@ void AgentViewModel::setRagService(RagService* rag) {
     if (m_rag) disconnect(m_rag, nullptr, this, nullptr);
     m_rag = rag;
     if (m_rag) {
-        // ingest/remove may run on worker threads; deliver queued
-        connect(m_rag, &RagService::changed, this, &AgentViewModel::knowledgeChanged);
+        // changed() may be emitted from worker threads; the queued call to
+        // refreshKnowledge() updates the property BEFORE the QML notify.
+        // (Forwarding the signal straight to knowledgeChanged would make QML
+        // re-read a stale list - documents imported fine but never showed up.)
+        connect(m_rag, &RagService::changed, this, &AgentViewModel::refreshKnowledge);
     }
     refreshKnowledge();
+}
+
+void AgentViewModel::setKnowledgeContentProvider(std::function<QString(const QString&)> provider) {
+    m_contentProvider = std::move(provider);
 }
 
 void AgentViewModel::refreshKnowledge() {
@@ -147,7 +172,7 @@ void AgentViewModel::refreshKnowledge() {
 }
 
 void AgentViewModel::importDocument(const QString& path) {
-    if (!m_rag) return;
+    if (!m_rag || m_knowledgeBusy) return;
     const QString cleanPath = QUrl(path).isLocalFile() ? QUrl(path).toLocalFile() : path;
     const QFileInfo info(cleanPath);
     if (!info.isFile()) {
@@ -163,24 +188,64 @@ void AgentViewModel::importDocument(const QString& path) {
     file.close();
 
     const QString name = info.fileName();
-    // Chunking + embedding can take a while (network per chunk); run off the
-    // GUI thread. RagService guards its state with a mutex, and changed() is
-    // delivered queued to the GUI thread.
+    setKnowledgeBusy(true);
+    // Chunking + batch embedding can take a while (single network request);
+    // run off the GUI thread. RagService guards its state with a mutex and
+    // signals change() queued to the GUI thread.
     QtConcurrent::run([this, name, content]() {
         const int chunks = m_rag->ingestDocument(name, content);
-        if (chunks <= 0) {
+        setKnowledgeBusy(false);
+        if (chunks > 0) {
+            emit noticeOccurred(QStringLiteral("已导入 %1（%2 段）").arg(name).arg(chunks));
+            emit documentImported(name, content);
+        } else if (chunks == 0) {
             emit errorOccurred(QStringLiteral("导入失败（文件为空或无法分块）：%1").arg(name));
+        } else {
+            emit errorOccurred(QStringLiteral("文件过大（超过单文档 %1 段上限）：%2")
+                .arg(RagService::MaxChunksPerDocument).arg(name));
         }
-        // success is reported through the changed() signal
     });
 }
 
 void AgentViewModel::removeDocument(const QString& name) {
-    if (m_rag) m_rag->removeDocument(name);
+    if (m_rag && m_rag->removeDocument(name))
+        emit documentRemoved(name);
 }
 
 void AgentViewModel::clearKnowledge() {
-    if (m_rag) m_rag->clear();
+    if (!m_rag) return;
+    m_rag->clear();
+    emit knowledgeCleared();
+}
+
+QVariantList AgentViewModel::documentChunks(const QString& name) {
+    return m_rag ? m_rag->documentChunks(name).toVariantList() : QVariantList{};
+}
+
+void AgentViewModel::reembedDocument(const QString& name) {
+    if (!m_rag || m_knowledgeBusy) return;
+    const QString content = m_contentProvider ? m_contentProvider(name) : QString();
+    if (content.trimmed().isEmpty()) {
+        emit errorOccurred(QStringLiteral("未找到文档内容，无法重新嵌入：%1").arg(name));
+        return;
+    }
+
+    setKnowledgeBusy(true);
+    QtConcurrent::run([this, name, content]() {
+        const int chunks = m_rag->ingestDocument(name, content);
+        setKnowledgeBusy(false);
+        if (chunks > 0) {
+            emit noticeOccurred(QStringLiteral("已重新嵌入 %1（%2 段）").arg(name).arg(chunks));
+        } else {
+            emit errorOccurred(QStringLiteral("重新嵌入失败：%1").arg(name));
+        }
+    });
+}
+
+void AgentViewModel::setKnowledgeBusy(bool busy) {
+    if (m_knowledgeBusy == busy) return;
+    m_knowledgeBusy = busy;
+    emit knowledgeBusyChanged();
 }
 
 // ── Session / audit management ───────────────────────────
@@ -246,6 +311,15 @@ void AgentViewModel::setIsPanelVisible(bool visible) {
     emit panelVisibleChanged();
 }
 
+void AgentViewModel::setPanelWidth(int width) {
+    // Generous clamp; the QML drag handler applies the window-aware limit
+    const int clamped = qBound(220, width, 640);
+    if (m_panelWidth == clamped) return;
+    m_panelWidth = clamped;
+    m_uiPersistTimer.start();
+    emit panelWidthChanged();
+}
+
 void AgentViewModel::togglePanel() {
     setIsPanelVisible(!m_isPanelVisible);
 }
@@ -257,6 +331,14 @@ void AgentViewModel::setIsSidebarExpanded(bool expanded) {
     m_isSidebarExpanded = expanded;
     QSettings("NexusAI", "NexusAI").setValue("ui/sidebarExpanded", expanded);
     emit sidebarExpandedChanged();
+}
+
+void AgentViewModel::setSidebarWidth(int width) {
+    const int clamped = qBound(180, width, 560);
+    if (m_sidebarWidth == clamped) return;
+    m_sidebarWidth = clamped;
+    m_uiPersistTimer.start();
+    emit sidebarWidthChanged();
 }
 
 void AgentViewModel::toggleSidebar() {

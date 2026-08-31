@@ -1,6 +1,9 @@
 #include <QGuiApplication>
 #include <QQmlApplicationEngine>
 #include <QQmlContext>
+#include <QJsonObject>
+#include <QNetworkProxyFactory>
+#include <QtConcurrent/QtConcurrentRun>
 
 #include "viewmodels/ThemeManager.h"
 #include "viewmodels/ThemeProvider.h"
@@ -23,12 +26,33 @@
 
 using namespace NexusAI;
 
+namespace {
+
+// Local backends (Ollama at localhost) must bypass any system proxy:
+// routing loopback traffic through e.g. a local clash instance breaks
+// the connection ("connection refused" after a seconds-long detour).
+class LoopbackProxyFactory : public QNetworkProxyFactory {
+public:
+    QVector<QNetworkProxy> queryProxy(const QNetworkProxyQuery& query) override {
+        const QString host = query.url().host();
+        if (host == QLatin1String("localhost")
+            || host == QLatin1String("127.0.0.1")
+            || host == QLatin1String("::1"))
+            return { QNetworkProxy(QNetworkProxy::NoProxy) };
+        return systemProxyForQuery(query);
+    }
+};
+
+} // namespace
+
 int main(int argc, char *argv[])
 {
     QGuiApplication app(argc, argv);
     app.setOrganizationName("NexusAI");
     app.setApplicationName("NexusAI");
     app.setApplicationVersion("0.2.0");
+
+    QNetworkProxyFactory::setApplicationProxyFactory(new LoopbackProxyFactory);
 
     // ── Logging: mirror all Qt messages to a rotating file ──
     // (windowed build has no console; see <AppLocalData>/logs/)
@@ -57,6 +81,9 @@ int main(int argc, char *argv[])
     rag->setEmbedder([embedding](const QString& text) {
         return embedding->embed(text);
     });
+    rag->setBatchEmbedder([embedding](const QStringList& texts) {
+        return embedding->embedBatch(texts);
+    });
     // Expose the knowledge base to the model as a safe auto-executed tool
     ToolRegistry::instance().registerTool(std::make_unique<KnowledgeSearchTool>(rag));
 
@@ -69,7 +96,36 @@ int main(int argc, char *argv[])
     auto* themeProvider = new ThemeProvider(themeManager, &app);
     auto* agentVM = new AgentViewModel(&app);
     agentVM->setRagService(rag);
+    // Re-embedding pulls persisted content from SQLite (GUI thread, fast).
+    agentVM->setKnowledgeContentProvider([memory](const QString& name) {
+        return memory->loadKnowledgeDoc(name);
+    });
     auto* connectionTester = new ConnectionTester(&app);
+
+    // ── Knowledge-base persistence ─────────────────────
+    // Import/remove/clear arrive from worker threads; the lambdas run on
+    // the GUI thread (&app context) so all SQLite access stays single-threaded.
+    QObject::connect(agentVM, &AgentViewModel::documentImported, &app,
+        [memory](const QString& name, const QString& content) {
+            memory->upsertKnowledgeDoc(name, content);
+        });
+    QObject::connect(agentVM, &AgentViewModel::documentRemoved, &app,
+        [memory](const QString& name) { memory->removeKnowledgeDoc(name); });
+    QObject::connect(agentVM, &AgentViewModel::knowledgeCleared, &app,
+        [memory]() { memory->clearKnowledgeDocs(); });
+
+    // Restore previously imported documents in the background (embedding
+    // may hit the network); the queued changed() signal updates the UI.
+    const QJsonObject savedDocs = memory->loadKnowledgeDocs();
+    if (!savedDocs.isEmpty()) {
+        qInfo() << "Restoring" << savedDocs.size() << "knowledge document(s)";
+        auto ragPtr = rag;
+        const auto docs = savedDocs.toVariantMap();
+        QtConcurrent::run([ragPtr, docs]() {
+            for (auto it = docs.constBegin(); it != docs.constEnd(); ++it)
+                ragPtr->ingestDocument(it.key(), it.value().toString());
+        });
+    }
 
     // Apply the active model profile to the services and select the provider
     const auto applySettings = [settings, openai, anthropic, ollama, agent]() {
