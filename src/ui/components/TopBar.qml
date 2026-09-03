@@ -66,19 +66,19 @@ Rectangle {
 
                 color: {
                     var s = AgentVM.state
-                    if (s === 0) return Theme.textSecondary        // Idle
-                    if (s === 1) return Theme.brandPrimary         // Thinking
-                    if (s === 2) return Theme.statusWarning        // AwaitingToolConfirm
-                    if (s === 3) return Theme.statusWarning        // ExecutingTool
-                    if (s === 4) return Theme.brandPrimary         // Summarizing
-                    if (s === 5) return Theme.statusSuccess        // Completed
-                    if (s === 6) return Theme.statusDanger         // Error
+                    if (s === AgentVM.stateIdle) return Theme.textSecondary
+                    if (s === AgentVM.stateThinking) return Theme.brandPrimary
+                    if (s === AgentVM.stateAwaitingToolConfirm) return Theme.statusWarning
+                    if (s === AgentVM.stateExecutingTool) return Theme.statusWarning
+                    if (s === AgentVM.stateSummarizing) return Theme.brandPrimary
+                    if (s === AgentVM.stateCompleted) return Theme.statusSuccess
+                    if (s === AgentVM.stateError) return Theme.statusDanger
                     return Theme.textSecondary
                 }
 
                 // Pulsing animation for active states
                 SequentialAnimation on opacity {
-                    running: AgentVM.state >= 1 && AgentVM.state <= 4
+                    running: AgentVM.stateBusy
                     loops: Animation.Infinite
                     NumberAnimation { from: 1.0; to: 0.3; duration: 800 }
                     NumberAnimation { from: 0.3; to: 1.0; duration: 800 }

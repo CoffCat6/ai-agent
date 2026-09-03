@@ -121,7 +121,7 @@ int main(int argc, char *argv[])
         qInfo() << "Restoring" << savedDocs.size() << "knowledge document(s)";
         auto ragPtr = rag;
         const auto docs = savedDocs.toVariantMap();
-        QtConcurrent::run([ragPtr, docs]() {
+        (void)QtConcurrent::run([ragPtr, docs]() {
             for (auto it = docs.constBegin(); it != docs.constEnd(); ++it)
                 ragPtr->ingestDocument(it.key(), it.value().toString());
         });
@@ -135,14 +135,23 @@ int main(int argc, char *argv[])
         const QString apiKey = profile.value("apiKey").toString();
         const QString model = profile.value("model").toString();
 
-        openai->setApiKey(apiKey);
-        openai->setBaseUrl(baseUrl);
-        openai->setModel(model);
-        anthropic->setApiKey(apiKey);
-        anthropic->setBaseUrl(baseUrl);
-        anthropic->setModel(model);
-        ollama->setBaseUrl(baseUrl);
-        ollama->setModel(model);
+        // Only the active provider receives the profile: broadcasting one
+        // profile's baseUrl to all services would corrupt the others
+        // (e.g. an OpenAI-compatible proxy URL ending in /v1 turned into
+        // /v1/v1/messages on the Anthropic path). Each service is configured
+        // here right before it becomes the active one.
+        if (provider == QLatin1String("anthropic")) {
+            anthropic->setApiKey(apiKey);
+            anthropic->setBaseUrl(baseUrl);
+            anthropic->setModel(model);
+        } else if (provider == QLatin1String("ollama")) {
+            ollama->setBaseUrl(baseUrl);
+            ollama->setModel(model);
+        } else if (provider == QLatin1String("openai")) {
+            openai->setApiKey(apiKey);
+            openai->setBaseUrl(baseUrl);
+            openai->setModel(model);
+        }
         agent->setContextLimit(settings->contextTokens());
 
         if (provider.isEmpty()) {

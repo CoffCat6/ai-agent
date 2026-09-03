@@ -1,5 +1,7 @@
 #include "SettingsService.h"
 
+#include "core/agent/AIAgent.h"
+
 #include <QJsonArray>
 #include <QJsonDocument>
 #include <QJsonObject>
@@ -82,7 +84,12 @@ QString protectApiKey(const QString& plain) {
     DATA_BLOB out{};
     if (!CryptProtectData(&in, L"NexusAI.apiKey", nullptr, nullptr, nullptr,
                           0, &out)) {
-        return plain; // fall back to plain text rather than losing the key
+        // Never fall back to storing the plain text: return an empty string
+        // so the key is dropped from persistence instead. The in-memory
+        // profile keeps working for this session; after a restart the user
+        // re-enters the key or relies on the env-var fallback.
+        qWarning() << "DPAPI encryption failed; API key will not be persisted";
+        return QString();
     }
     const QByteArray blob(reinterpret_cast<const char*>(out.pbData),
                           static_cast<int>(out.cbData));
@@ -186,7 +193,9 @@ void SettingsService::load() {
         }
     }
 
-    m_contextTokens = qBound(2048, settings.value("contextTokens", 8192).toInt(), 1048576);
+    m_contextTokens = qBound(AIAgent::MinContextTokens,
+                             settings.value("contextTokens", 8192).toInt(),
+                             AIAgent::MaxContextTokens);
     m_simulationMode = settings.value("simulationMode", false).toBool();
 }
 
@@ -398,7 +407,7 @@ QVariantMap SettingsService::defaultEndpoint(const QString& provider) const {
 }
 
 void SettingsService::setContextTokens(int tokens) {
-    const int clamped = qBound(2048, tokens, 1048576);
+    const int clamped = qBound(AIAgent::MinContextTokens, tokens, AIAgent::MaxContextTokens);
     if (m_contextTokens == clamped) return;
     m_contextTokens = clamped;
     QSettings().setValue("contextTokens", m_contextTokens);

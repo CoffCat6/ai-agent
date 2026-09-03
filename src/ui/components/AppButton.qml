@@ -11,7 +11,9 @@ Rectangle {
     property color buttonColor: Theme.borderSubtle
     property color textColor: Theme.textPrimary
     property bool highlighted: false
-    property bool enabled: true
+    // `enabled` is the native Item property - do not redeclare it. Setting
+    // it (or disabling an ancestor) propagates to the MouseArea below,
+    // which then stops receiving events on its own.
 
     // ── Signals ────────────────────────────────────────
     signal clicked()
@@ -20,13 +22,14 @@ Rectangle {
     implicitHeight: 32
     implicitWidth: buttonText.implicitWidth + 24
     radius: 6
-    color: highlighted ? Theme.brandPrimary : (hoverArea.containsMouse ? Theme.surfaceHover : buttonColor)
+    color: highlighted ? Theme.brandPrimary
+                       : (controlArea.containsMouse ? Theme.surfaceHover : buttonColor)
     opacity: enabled ? 1.0 : 0.5
     border.width: 1
     border.color: highlighted ? Theme.brandPrimary : Theme.borderSubtle
 
     // Press animation
-    scale: pressArea.containsPress ? 0.98 : 1.0
+    scale: controlArea.containsPress ? 0.98 : 1.0
     Behavior on scale { NumberAnimation { duration: 100 } }
 
     // ── Content ────────────────────────────────────────
@@ -42,18 +45,10 @@ Rectangle {
 
     // ── Interaction ───────────────────────────────────
     MouseArea {
-        id: hoverArea
+        id: controlArea
         anchors.fill: parent
         hoverEnabled: true
-        cursorShape: root.enabled ? Qt.PointingHandCursor : Qt.ArrowCursor
-        onClicked: if (root.enabled) root.clicked()
-    }
-
-    MouseArea {
-        id: pressArea
-        anchors.fill: parent
-        onPressed: if (root.enabled) parent.scale = 0.98
-        onReleased: parent.scale = 1.0
-        propagateComposedEvents: true
+        cursorShape: Qt.PointingHandCursor
+        onClicked: root.clicked()
     }
 }

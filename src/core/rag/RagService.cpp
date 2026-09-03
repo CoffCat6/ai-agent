@@ -63,19 +63,39 @@ int RagService::ingestDocument(const QString& sourceName, const QString& content
 }
 
 QJsonArray RagService::search(const QString& query, int k) const {
-    QMutexLocker lock(&m_mutex);
+    const QString trimmed = query.trimmed();
+    if (trimmed.isEmpty()) return {};
 
-    if (query.trimmed().isEmpty() || m_docs.empty()) return {};
+    // Snapshot the embedder under the lock, then release it before any
+    // network IO: the embedding round-trip must never block documents() /
+    // documentChunks(), which run on the GUI thread while the retrieval
+    // tool executes on a worker thread.
+    DocumentRetriever::EmbedFn embedFn;
+    {
+        QMutexLocker lock(&m_mutex);
+        if (m_docs.empty()) return {};
+        embedFn = m_embedFn;
+    }
+
+    // ONE real embedding per search, shared by every real-mode document
+    // (instead of one round-trip per document); the pseudo variant is local
+    // and always available.
+    const QVector<float> realVec = embedFn ? embedFn(trimmed) : QVector<float>{};
+    const QVector<float> pseudoVec = DocumentRetriever::pseudoEmbed(trimmed);
 
     // Merge scored passages from every document, keep the global top-k.
-    // Each document's retriever keeps its own embedding mode internally, so
-    // scores are only compared within one mode - acceptable when a
-    // pseudo-mode document coexists with real-mode ones.
+    // Each document's retriever picks the query vector matching its own
+    // embedding mode, so scores are only compared within one mode -
+    // acceptable when a pseudo-mode document coexists with real-mode ones.
     QVector<QJsonObject> hits;
-    for (const auto& doc : m_docs) {
-        const QJsonArray results = doc.retriever->search(query, k);
-        for (const auto& entry : results)
-            hits.append(entry.toObject());
+    {
+        QMutexLocker lock(&m_mutex);
+        for (const auto& doc : m_docs) {
+            const QJsonArray results =
+                doc.retriever->search(realVec, pseudoVec, k);
+            for (const auto& entry : results)
+                hits.append(entry.toObject());
+        }
     }
     std::sort(hits.begin(), hits.end(),
               [](const QJsonObject& a, const QJsonObject& b) {

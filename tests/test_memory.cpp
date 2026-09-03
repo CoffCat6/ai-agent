@@ -23,6 +23,7 @@ class TestMemory : public QObject {
 
 private slots:
     void messageRoundTrip();
+    void loadMessagesKeepsNewest();
     void sessionBookkeepingAndClear();
     void sessionDeleteAndRename();
     void episodicFullTextSearch();
@@ -41,6 +42,20 @@ void TestMemory::messageRoundTrip() {
     QCOMPARE(loaded.at(0).toObject().value("content").toString(), QStringLiteral("hello"));
     QCOMPARE(loaded.at(1).toObject().value("content").toString(), QStringLiteral("world"));
     QCOMPARE(mem.loadMessages("other-session", 50).size(), 0);
+}
+
+// A limit smaller than the stored history must keep the NEWEST messages
+// (in chronological order), not the oldest ones.
+void TestMemory::loadMessagesKeepsNewest() {
+    SqliteMemory mem(QStringLiteral(":memory:"));
+    for (int i = 0; i < 5; ++i)
+        mem.saveMessage("s1", msg("user", QStringLiteral("m%1").arg(i)));
+
+    const QJsonArray loaded = mem.loadMessages("s1", 3);
+    QCOMPARE(loaded.size(), 3);
+    QCOMPARE(loaded.at(0).toObject().value("content").toString(), QStringLiteral("m2"));
+    QCOMPARE(loaded.at(1).toObject().value("content").toString(), QStringLiteral("m3"));
+    QCOMPARE(loaded.at(2).toObject().value("content").toString(), QStringLiteral("m4"));
 }
 
 void TestMemory::sessionBookkeepingAndClear() {

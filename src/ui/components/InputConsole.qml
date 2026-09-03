@@ -12,10 +12,12 @@ Rectangle {
 
     // Sending is allowed while Idle, after completion, or after an error
     readonly property bool canSend: textArea.length > 0 &&
-        (AgentVM.state === 0 || AgentVM.state === 5 || AgentVM.state === 6)
+        (AgentVM.state === AgentVM.stateIdle
+         || AgentVM.state === AgentVM.stateCompleted
+         || AgentVM.state === AgentVM.stateError)
 
     // Agent busy: Thinking / AwaitingToolConfirm / ExecutingTool / Summarizing
-    readonly property bool isBusy: AgentVM.state >= 1 && AgentVM.state <= 4
+    readonly property bool isBusy: AgentVM.stateBusy
 
     implicitHeight: Math.min(textArea.implicitHeight + 20, maxHeight)
     height: implicitHeight

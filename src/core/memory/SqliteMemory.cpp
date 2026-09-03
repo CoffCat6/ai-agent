@@ -26,6 +26,16 @@ QString relativeTime(qint64 timestamp) {
     return t.toString(QStringLiteral("MM-dd"));
 }
 
+// Schema statements must not fail silently: e.g. a SQLite build without
+// FTS5 would otherwise disable full-text search without a trace.
+bool execDdl(QSqlQuery& query, const QString& sql, const char* what) {
+    if (!query.exec(sql)) {
+        qWarning() << "Failed to" << what << ":" << query.lastError().text();
+        return false;
+    }
+    return true;
+}
+
 } // namespace
 
 SqliteMemory::SqliteMemory(const QString& dbPath) : m_dbPath(dbPath) {
@@ -65,7 +75,7 @@ void SqliteMemory::createTables() {
     QSqlQuery query(m_db);
 
     // Messages table
-    query.exec(R"(
+    execDdl(query, R"(
         CREATE TABLE IF NOT EXISTS messages (
             id INTEGER PRIMARY KEY AUTOINCREMENT,
             session_id TEXT NOT NULL,
@@ -74,10 +84,10 @@ void SqliteMemory::createTables() {
             timestamp INTEGER NOT NULL,
             metadata TEXT
         )
-    )");
+    )", "create messages table");
 
     // Episodic memory table with FTS5
-    query.exec(R"(
+    execDdl(query, R"(
         CREATE TABLE IF NOT EXISTS episodic (
             id INTEGER PRIMARY KEY AUTOINCREMENT,
             session_id TEXT NOT NULL,
@@ -86,42 +96,42 @@ void SqliteMemory::createTables() {
             embedding BLOB,
             timestamp INTEGER NOT NULL
         )
-    )");
+    )", "create episodic table");
 
     // FTS5 virtual table for full-text search
-    query.exec(R"(
+    execDdl(query, R"(
         CREATE VIRTUAL TABLE IF NOT EXISTS episodic_fts USING fts5(
             summary, tags, content='episodic', content_rowid='id'
         )
-    )");
+    )", "create episodic_fts table");
 
     // Triggers to keep FTS in sync
-    query.exec(R"(
+    execDdl(query, R"(
         CREATE TRIGGER IF NOT EXISTS episodic_ai AFTER INSERT ON episodic BEGIN
             INSERT INTO episodic_fts(rowid, summary, tags)
             VALUES (new.id, new.summary, new.tags);
         END
-    )");
+    )", "create episodic_ai trigger");
 
-    query.exec(R"(
+    execDdl(query, R"(
         CREATE TRIGGER IF NOT EXISTS episodic_ad AFTER DELETE ON episodic BEGIN
             INSERT INTO episodic_fts(episodic_fts, rowid, summary, tags)
             VALUES('delete', old.id, old.summary, old.tags);
         END
-    )");
+    )", "create episodic_ad trigger");
 
     // Sessions table for the sidebar history
-    query.exec(R"(
+    execDdl(query, R"(
         CREATE TABLE IF NOT EXISTS sessions (
             id TEXT PRIMARY KEY,
             title TEXT NOT NULL,
             created_at INTEGER NOT NULL,
             updated_at INTEGER NOT NULL
         )
-    )");
+    )", "create sessions table");
 
     // Audit trail for tool activity
-    query.exec(R"(
+    execDdl(query, R"(
         CREATE TABLE IF NOT EXISTS audit_log (
             id INTEGER PRIMARY KEY AUTOINCREMENT,
             session_id TEXT NOT NULL,
@@ -132,21 +142,22 @@ void SqliteMemory::createTables() {
             detail TEXT,
             timestamp INTEGER NOT NULL
         )
-    )");
-    query.exec("CREATE INDEX IF NOT EXISTS idx_audit_ts ON audit_log(timestamp)");
+    )", "create audit_log table");
+    execDdl(query, "CREATE INDEX IF NOT EXISTS idx_audit_ts ON audit_log(timestamp)",
+            "create audit_log index");
 
     // Knowledge-base documents (imported text, restored at startup)
-    query.exec(R"(
+    execDdl(query, R"(
         CREATE TABLE IF NOT EXISTS knowledge_documents (
             name TEXT PRIMARY KEY,
             content TEXT NOT NULL,
             imported_at INTEGER NOT NULL
         )
-    )");
+    )", "create knowledge_documents table");
 
     // Trace view nodes (thinking / tool calls / results) per session, so
     // switching conversations restores the full visual timeline
-    query.exec(R"(
+    execDdl(query, R"(
         CREATE TABLE IF NOT EXISTS trace_nodes (
             session_id TEXT NOT NULL,
             node_id TEXT NOT NULL,
@@ -159,9 +170,10 @@ void SqliteMemory::createTables() {
             timestamp INTEGER NOT NULL,
             PRIMARY KEY (session_id, node_id)
         )
-    )");
-    query.exec("CREATE INDEX IF NOT EXISTS idx_trace_nodes_session "
-               "ON trace_nodes(session_id, node_order)");
+    )", "create trace_nodes table");
+    execDdl(query, "CREATE INDEX IF NOT EXISTS idx_trace_nodes_session "
+                   "ON trace_nodes(session_id, node_order)",
+            "create trace_nodes index");
 }
 
 // ── Knowledge-base persistence ───────────────────────────
@@ -239,8 +251,15 @@ void SqliteMemory::saveMessage(const QString& sessionId, const QJsonObject& msg)
 
 QJsonArray SqliteMemory::loadMessages(const QString& sessionId, int limit) {
     QSqlQuery query(m_db);
-    query.prepare("SELECT role, content, metadata FROM messages WHERE session_id = ? "
-                  "ORDER BY timestamp ASC LIMIT ?");
+    // Latest `limit` messages in chronological order: the inner DESC picks
+    // the newest window (rowid breaks timestamp ties), the outer ASC
+    // restores conversation order. A plain "ASC LIMIT ?" kept the OLDEST
+    // messages and silently dropped the recent ones in long sessions.
+    query.prepare("SELECT role, content, metadata FROM ("
+                  "SELECT role, content, metadata, timestamp, rowid FROM messages "
+                  "WHERE session_id = ? "
+                  "ORDER BY timestamp DESC, rowid DESC LIMIT ?"
+                  ") ORDER BY timestamp ASC, rowid ASC");
     query.addBindValue(sessionId);
     query.addBindValue(limit);
 
@@ -299,11 +318,13 @@ void SqliteMemory::clear(const QString& sessionId) {
     QSqlQuery query(m_db);
     query.prepare("DELETE FROM messages WHERE session_id = ?");
     query.addBindValue(sessionId);
-    query.exec();
+    if (!query.exec())
+        qWarning() << "Failed to clear messages:" << query.lastError().text();
 
     query.prepare("DELETE FROM episodic WHERE session_id = ?");
     query.addBindValue(sessionId);
-    query.exec();
+    if (!query.exec())
+        qWarning() << "Failed to clear episodic memory:" << query.lastError().text();
 }
 
 void SqliteMemory::beginSession(const QString& sessionId, const QString& title) {
@@ -357,22 +378,27 @@ QJsonArray SqliteMemory::listSessions(int limit) {
 
 void SqliteMemory::deleteSession(const QString& sessionId) {
     QSqlQuery query(m_db);
+    const auto execDelete = [&](const char* what) {
+        if (!query.exec())
+            qWarning() << "Failed to" << what << ":" << query.lastError().text();
+    };
+
     query.prepare("DELETE FROM messages WHERE session_id = ?");
     query.addBindValue(sessionId);
-    query.exec();
+    execDelete("delete session messages");
 
     query.prepare("DELETE FROM episodic WHERE session_id = ?");
     query.addBindValue(sessionId);
-    query.exec();
+    execDelete("delete session episodic memory");
 
     // FTS shadow table keeps itself in sync via the delete trigger
     query.prepare("DELETE FROM sessions WHERE id = ?");
     query.addBindValue(sessionId);
-    query.exec();
+    execDelete("delete session record");
 
     query.prepare("DELETE FROM trace_nodes WHERE session_id = ?");
     query.addBindValue(sessionId);
-    query.exec();
+    execDelete("delete session trace nodes");
 }
 
 // ── Trace view persistence ───────────────────────────────

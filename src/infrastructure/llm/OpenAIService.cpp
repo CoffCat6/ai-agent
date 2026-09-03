@@ -152,7 +152,15 @@ void OpenAIService::emitStreamedResponse() {
         ToolCallInfo info;
         info.id = tc.id;
         info.name = tc.name;
-        info.arguments = QJsonDocument::fromJson(tc.arguments.toUtf8()).object();
+        // Malformed arguments keep the call alive with an empty object (the
+        // tool rejects it and the model can retry) - but never silently.
+        QJsonParseError parseError;
+        const QJsonDocument argsDoc =
+            QJsonDocument::fromJson(tc.arguments.toUtf8(), &parseError);
+        if (parseError.error != QJsonParseError::NoError)
+            qWarning() << "Malformed tool call arguments from model:"
+                       << parseError.errorString() << tc.arguments;
+        info.arguments = argsDoc.object();
         response.toolCalls.append(info);
     }
     // Token usage is not reported on streaming responses (would require
@@ -239,8 +247,15 @@ LLMResponse OpenAIService::parseResponse(const QJsonObject& json) {
         ToolCallInfo info;
         info.id = tcObj.value("id").toString();
         info.name = function.value("name").toString();
-        info.arguments = QJsonDocument::fromJson(
-            function.value("arguments").toString().toUtf8()).object();
+        // Same contract as the streaming path: malformed arguments keep the
+        // call alive with an empty object, but are logged.
+        QJsonParseError parseError;
+        const QJsonDocument argsDoc = QJsonDocument::fromJson(
+            function.value("arguments").toString().toUtf8(), &parseError);
+        if (parseError.error != QJsonParseError::NoError)
+            qWarning() << "Malformed tool call arguments from model:"
+                       << parseError.errorString();
+        info.arguments = argsDoc.object();
         if (info.name.isEmpty()) continue;
         response.toolCalls.append(info);
     }

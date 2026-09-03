@@ -13,6 +13,14 @@ find_package(Qt6 REQUIRED COMPONENTS
 
 qt_standard_project_setup(REQUIRES 6.5)
 
+# Warnings on all targets (no -Werror: third-party/generated code must
+# still build with newer toolchains)
+if(MSVC)
+    add_compile_options(/W4)
+else()
+    add_compile_options(-Wall -Wextra)
+endif()
+
 # Set Qt policies for QML module
 qt_policy(SET QTP0001 NEW)
 qt_policy(SET QTP0004 NEW)
@@ -21,7 +29,6 @@ qt_policy(SET QTP0004 NEW)
 add_library(nexus_core STATIC
     src/core/agent/AgentState.h
     src/core/agent/LLMTypes.h
-    src/core/agent/Task.h
     src/core/agent/AIAgent.h
     src/core/agent/AIAgent.cpp
     src/core/memory/IMemory.h
@@ -90,6 +97,7 @@ qt_add_qml_module(nexus_ai
         src/ui/main.qml
         src/ui/components/AppButton.qml
         src/ui/components/AppIcon.qml
+        src/ui/components/AppToast.qml
         src/ui/components/CodeBlock.qml
         src/ui/components/CopyButton.qml
         src/ui/components/SettingsDialog.qml
@@ -104,8 +112,6 @@ qt_add_qml_module(nexus_ai
         src/ui/components/ToolConfirmDialog.qml
         src/ui/panels/ContextPanel.qml
         src/ui/pages/AgentChatPage.qml
-    RESOURCES
-        resources/icons/send.svg
 )
 
 target_link_libraries(nexus_ai PRIVATE

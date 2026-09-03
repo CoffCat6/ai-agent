@@ -15,8 +15,9 @@ namespace NexusAI {
 // thread while QML calls arrive on the GUI thread) and a document listing
 // for the management UI.
 //
-// Ingest performs its embedding work OUTSIDE the mutex so searches and the
-// document listing stay responsive while a large document is importing.
+// Ingest AND search keep their embedding network IO outside the mutex -
+// under the lock only state snapshots and pure in-memory similarity work
+// remain, so GUI-thread readers never wait behind a slow embedding call.
 class RagService : public QObject {
     Q_OBJECT
 public:

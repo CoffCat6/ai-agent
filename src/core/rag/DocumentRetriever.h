@@ -71,10 +71,26 @@ public:
     // Search for relevant document chunks
     QJsonArray search(const QString& query, int k = 5) const {
         if (m_store.size() == 0) return {};
+        // A pseudo-mode store never uses the real vector: skip the (network)
+        // embed call entirely in that mode.
+        QVector<float> realVec = (m_embedFn && !m_usesPseudo)
+            ? m_embedFn(query) : QVector<float>{};
+        return search(realVec, pseudoEmbed(query), k);
+    }
 
-        QVector<float> queryVec = m_embedFn ? m_embedFn(query) : QVector<float>{};
+    // Search with pre-computed query vectors for both embedding modes; the
+    // vector matching this store's mode is used, with the pseudo vector as
+    // the dimension-stable fallback (realVec empty or of a drifted
+    // dimension, e.g. embedder offline or its model changed). Lets a caller
+    // like RagService embed the query once for all documents and keep the
+    // network round-trip outside its lock.
+    QJsonArray search(const QVector<float>& realVec,
+                      const QVector<float>& pseudoVec, int k = 5) const {
+        if (m_store.size() == 0) return {};
+
+        QVector<float> queryVec = m_usesPseudo ? pseudoVec : realVec;
         if (queryVec.isEmpty() || queryVec.size() != m_embeddingDim)
-            queryVec = pseudoEmbed(query);   // embedder unavailable or dimension drift
+            queryVec = pseudoVec;   // embedder unavailable or dimension drift
 
         const auto results = m_store.search(queryVec, k);
         QJsonArray arr;
@@ -99,6 +115,24 @@ public:
     static constexpr int ChunkSize = 512;    // ~chars per chunk
     static constexpr int ChunkOverlap = 64;  // chars carried over between chunks
     static constexpr int PseudoEmbedDim = 128;
+
+    // Dimension-stable fallback embedding (lexical hash; no real semantics,
+    // but keeps search functional when the embedder is offline). Public so
+    // RagService can compute the pseudo query vector once per search.
+    static QVector<float> pseudoEmbed(const QString& text) {
+        QVector<float> vec(PseudoEmbedDim, 0.0f);
+        for (int i = 0; i < text.length(); ++i) {
+            const int idx = (text.at(i).unicode() * 31 + i) % PseudoEmbedDim;
+            vec[idx] += 1.0f;
+        }
+        float norm = 0.0f;
+        for (float v : vec) norm += v * v;
+        norm = std::sqrt(norm);
+        if (norm > 0.0f) {
+            for (float& v : vec) v /= norm;
+        }
+        return vec;
+    }
 
 private:
     // Character-level chunking with overlap, cutting at sentence boundaries
@@ -134,23 +168,6 @@ private:
         return c == '\n' || c == '.' || c == '!' || c == '?' || c == ';' || c == ':'
             || c == u'。' || c == u'！' || c == u'？' || c == u'；' || c == u'…'
             || c == u'，' || c == u'、';
-    }
-
-    // Dimension-stable fallback embedding (lexical hash; no real semantics,
-    // but keeps search functional when the embedder is offline).
-    static QVector<float> pseudoEmbed(const QString& text) {
-        QVector<float> vec(PseudoEmbedDim, 0.0f);
-        for (int i = 0; i < text.length(); ++i) {
-            const int idx = (text.at(i).unicode() * 31 + i) % PseudoEmbedDim;
-            vec[idx] += 1.0f;
-        }
-        float norm = 0.0f;
-        for (float v : vec) norm += v * v;
-        norm = std::sqrt(norm);
-        if (norm > 0.0f) {
-            for (float& v : vec) v /= norm;
-        }
-        return vec;
     }
 
     VectorStore m_store;

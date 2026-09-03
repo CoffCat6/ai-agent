@@ -36,6 +36,23 @@ class TestAgentViewModel : public QObject {
     Q_OBJECT
 
 private slots:
+    // Named AgentState constants exposed to QML must mirror the core enum
+    // (QML compares AgentVM.state against them instead of magic numbers).
+    void namedStateConstants() {
+        AgentViewModel vm;
+        QCOMPARE(vm.stateIdle(), 0);
+        QCOMPARE(vm.stateThinking(), 1);
+        QCOMPARE(vm.stateAwaitingToolConfirm(), 2);
+        QCOMPARE(vm.stateExecutingTool(), 3);
+        QCOMPARE(vm.stateSummarizing(), 4);
+        QCOMPARE(vm.stateCompleted(), 5);
+        QCOMPARE(vm.stateError(), 6);
+
+        // Fresh VM: Idle is not busy; the busy window covers states 1..4
+        QCOMPARE(vm.stateAsInt(), vm.stateIdle());
+        QVERIFY(!vm.stateBusy());
+    }
+
     void widthDefaultsClampingAndSignals() {
         WidthSettingsGuard guard;
         {

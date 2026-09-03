@@ -206,44 +206,9 @@ Dialog {
             Layout.bottomMargin: 24
             spacing: 8
 
-            // Copy all chunks
-            Rectangle {
-                id: copyButton
-                width: 28
-                height: 28
-                radius: 6
-                color: chunkCopyMA.containsMouse ? Theme.surfaceHover : "transparent"
-
-                property bool showTip: false
-
-                AppIcon {
-                    anchors.centerIn: parent
-                    icon: "copy"
-                    size: 15
-                    iconColor: chunkCopyMA.containsMouse ? Theme.brandPrimary : Theme.textSecondary
-                }
-
-                MouseArea {
-                    id: chunkCopyMA
-                    anchors.fill: parent
-                    hoverEnabled: true
-                    cursorShape: Qt.PointingHandCursor
-                    onClicked: {
-                        AgentVM.copyToClipboard(dialog.toClipboardText())
-                        copyButton.showTip = true
-                        copyTipTimer.restart()
-                    }
-                }
-
-                ToolTip.visible: copyButton.showTip
-                ToolTip.text: qsTr("已复制全部分块")
-                ToolTip.delay: 0
-
-                Timer {
-                    id: copyTipTimer
-                    interval: 1500
-                    onTriggered: copyButton.showTip = false
-                }
+            // Copy all chunks (CopyButton carries the "已复制" feedback)
+            CopyButton {
+                text: dialog.toClipboardText()
             }
 
             Item { Layout.fillWidth: true }

@@ -243,56 +243,11 @@ ApplicationWindow {
         }
     }
 
-    // ── Error Toast ─────────────────────────────────────
-    Rectangle {
+    // ── Error / Notice Toasts ───────────────────────────
+    AppToast {
         id: errorToast
-        parent: Overlay.overlay
-        anchors.horizontalCenter: parent.horizontalCenter
-        anchors.top: parent.top
-        anchors.topMargin: 24
-        z: 100
-
-        property string message: ""
-
-        width: Math.min(toastText.implicitWidth, 460) + 32
-        height: toastText.implicitHeight + 20
-        radius: 8
-        color: Theme.bgSecondary
-        border.width: 1
-        border.color: Theme.statusDanger
-        opacity: 0
-        visible: opacity > 0
-
-        Behavior on opacity { NumberAnimation { duration: 200 } }
-
-        Text {
-            id: toastText
-            anchors.centerIn: parent
-            width: Math.min(implicitWidth, 460)
-            text: errorToast.message
-            color: Theme.statusDanger
-            font.pixelSize: Theme.fontSizeCaption
-            font.family: Theme.fontSans
-            wrapMode: Text.Wrap
-        }
-
-        function show(msg) {
-            message = msg
-            opacity = 1
-            hideTimer.restart()
-        }
-
-        Timer {
-            id: hideTimer
-            interval: 5000
-            onTriggered: errorToast.opacity = 0
-        }
-
-        MouseArea {
-            anchors.fill: parent
-            cursorShape: Qt.PointingHandCursor
-            onClicked: errorToast.opacity = 0
-        }
+        accentColor: Theme.statusDanger
+        duration: 5000
     }
 
     Connections {
@@ -302,56 +257,12 @@ ApplicationWindow {
         }
     }
 
-    // ── Notice Toast (success / info) ────────────────────
-    Rectangle {
+    AppToast {
         id: noticeToast
-        parent: Overlay.overlay
-        anchors.horizontalCenter: parent.horizontalCenter
-        anchors.top: parent.top
+        accentColor: Theme.statusSuccess
+        duration: 3500
+        // Slide below the error toast while both are on screen
         anchors.topMargin: errorToast.visible ? 64 : 24
-        z: 100
-
-        property string message: ""
-
-        width: Math.min(noticeText.implicitWidth, 460) + 32
-        height: noticeText.implicitHeight + 20
-        radius: 8
-        color: Theme.bgSecondary
-        border.width: 1
-        border.color: Theme.statusSuccess
-        opacity: 0
-        visible: opacity > 0
-
-        Behavior on opacity { NumberAnimation { duration: 200 } }
-
-        Text {
-            id: noticeText
-            anchors.centerIn: parent
-            width: Math.min(implicitWidth, 460)
-            text: noticeToast.message
-            color: Theme.statusSuccess
-            font.pixelSize: Theme.fontSizeCaption
-            font.family: Theme.fontSans
-            wrapMode: Text.Wrap
-        }
-
-        function show(msg) {
-            message = msg
-            opacity = 1
-            noticeHideTimer.restart()
-        }
-
-        Timer {
-            id: noticeHideTimer
-            interval: 3500
-            onTriggered: noticeToast.opacity = 0
-        }
-
-        MouseArea {
-            anchors.fill: parent
-            cursorShape: Qt.PointingHandCursor
-            onClicked: noticeToast.opacity = 0
-        }
     }
 
     Connections {

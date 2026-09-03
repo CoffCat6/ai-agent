@@ -39,6 +39,11 @@ public:
     // Hard per-request tool-use step budget (shared with the system prompt)
     static constexpr int kMaxIterations = 10;
 
+    // Bounds for the context-window budget (setContextLimit clamps to these;
+    // SettingsService applies the same window in its editor)
+    static constexpr int MinContextTokens = 2048;
+    static constexpr int MaxContextTokens = 1048576;
+
     explicit AIAgent(QObject* parent = nullptr);
     ~AIAgent() override;
 

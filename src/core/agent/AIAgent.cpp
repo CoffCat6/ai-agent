@@ -86,7 +86,7 @@ void AIAgent::setMemory(IMemory* memory) {
 }
 
 void AIAgent::setContextLimit(int tokens) {
-    const int clamped = qBound(1024, tokens, 1048576);
+    const int clamped = qBound(MinContextTokens, tokens, MaxContextTokens);
     if (m_contextLimit == clamped) return;
     m_contextLimit = clamped;
     emit contextLimitChanged();

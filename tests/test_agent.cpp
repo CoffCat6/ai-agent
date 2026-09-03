@@ -330,15 +330,16 @@ void TestAgent::stopDuringConfirmationIsNoOp() {
 void TestAgent::contextBudgetCompressesHistory() {
     // Turn 1 builds a history that overflows the (then-lowered) budget; the
     // second task must trigger compression: system + omission marker + the
-    // newest user turn.
-    llm.script.append(textResponse(QString(3600, 'a'))); // long assistant reply
+    // newest user turn. MinContextTokens (2048) is the smallest budget the
+    // agent accepts, so the reply must exceed it (~4 chars/token).
+    llm.script.append(textResponse(QString(9600, 'a'))); // long assistant reply
     llm.script.append(textResponse("second answer"));
 
     QSignalSpy first(&agent, &AIAgent::responseReady);
     agent.startTask(QStringLiteral("first"));
     QTRY_COMPARE(first.count(), 1);
 
-    agent.setContextLimit(1024);
+    agent.setContextLimit(AIAgent::MinContextTokens);
     QSignalSpy spy(&agent, &AIAgent::responseReady);
     agent.startTask(QStringLiteral("second"));
     QTRY_COMPARE(spy.count(), 1);

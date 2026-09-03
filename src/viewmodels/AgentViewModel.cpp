@@ -18,6 +18,7 @@
 #include <QJsonArray>
 #include <QJsonDocument>
 #include <QDebug>
+#include <QFutureWatcher>
 #include <QtConcurrent/QtConcurrentRun>
 
 namespace NexusAI {
@@ -188,23 +189,7 @@ void AgentViewModel::importDocument(const QString& path) {
     file.close();
 
     const QString name = info.fileName();
-    setKnowledgeBusy(true);
-    // Chunking + batch embedding can take a while (single network request);
-    // run off the GUI thread. RagService guards its state with a mutex and
-    // signals change() queued to the GUI thread.
-    QtConcurrent::run([this, name, content]() {
-        const int chunks = m_rag->ingestDocument(name, content);
-        setKnowledgeBusy(false);
-        if (chunks > 0) {
-            emit noticeOccurred(QStringLiteral("已导入 %1（%2 段）").arg(name).arg(chunks));
-            emit documentImported(name, content);
-        } else if (chunks == 0) {
-            emit errorOccurred(QStringLiteral("导入失败（文件为空或无法分块）：%1").arg(name));
-        } else {
-            emit errorOccurred(QStringLiteral("文件过大（超过单文档 %1 段上限）：%2")
-                .arg(RagService::MaxChunksPerDocument).arg(name));
-        }
-    });
+    startIngestion(name, content, false);
 }
 
 void AgentViewModel::removeDocument(const QString& name) {
@@ -230,16 +215,44 @@ void AgentViewModel::reembedDocument(const QString& name) {
         return;
     }
 
+    startIngestion(name, content, true);
+}
+
+void AgentViewModel::startIngestion(const QString& name, const QString& content, bool reembed) {
     setKnowledgeBusy(true);
-    QtConcurrent::run([this, name, content]() {
-        const int chunks = m_rag->ingestDocument(name, content);
+    auto* watcher = new QFutureWatcher<int>(this);
+    connect(watcher, &QFutureWatcherBase::finished, this,
+            [this, watcher, name, content, reembed]() {
+        const int chunks = watcher->result();
+        watcher->deleteLater();
         setKnowledgeBusy(false);
+        if (reembed) {
+            if (chunks > 0)
+                emit noticeOccurred(QStringLiteral("已重新嵌入 %1（%2 段）").arg(name).arg(chunks));
+            else
+                emit errorOccurred(QStringLiteral("重新嵌入失败：%1").arg(name));
+            return;
+        }
         if (chunks > 0) {
-            emit noticeOccurred(QStringLiteral("已重新嵌入 %1（%2 段）").arg(name).arg(chunks));
+            emit noticeOccurred(QStringLiteral("已导入 %1（%2 段）").arg(name).arg(chunks));
+            emit documentImported(name, content);
+        } else if (chunks == 0) {
+            emit errorOccurred(QStringLiteral("导入失败（文件为空或无法分块）：%1").arg(name));
         } else {
-            emit errorOccurred(QStringLiteral("重新嵌入失败：%1").arg(name));
+            emit errorOccurred(QStringLiteral("文件过大（超过单文档 %1 段上限）：%2")
+                .arg(RagService::MaxChunksPerDocument).arg(name));
         }
     });
+
+    // Chunking + batch embedding can take a while (single network request);
+    // run off the GUI thread. The worker lambda captures only values - never
+    // `this` - so tearing the view model down mid-import cannot dangle; the
+    // watcher (parented to this) delivers the outcome on the GUI thread,
+    // where touching the busy flag and emitting signals is safe.
+    RagService* rag = m_rag;
+    watcher->setFuture(QtConcurrent::run([rag, name, content]() -> int {
+        return rag ? rag->ingestDocument(name, content) : 0;
+    }));
 }
 
 void AgentViewModel::setKnowledgeBusy(bool busy) {

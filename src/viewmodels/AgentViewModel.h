@@ -25,6 +25,18 @@ class AgentViewModel : public QObject {
     // ── State ──────────────────────────────────────────
     Q_PROPERTY(int state READ stateAsInt NOTIFY stateChanged FINAL)
     Q_PROPERTY(QString stateText READ stateText NOTIFY stateChanged FINAL)
+    // Named AgentState values for QML bindings: the core enum is a plain
+    // C++ enum class without QML registration, so these constants keep
+    // state comparisons in QML free of magic numbers.
+    Q_PROPERTY(int stateIdle READ stateIdle CONSTANT FINAL)
+    Q_PROPERTY(int stateThinking READ stateThinking CONSTANT FINAL)
+    Q_PROPERTY(int stateAwaitingToolConfirm READ stateAwaitingToolConfirm CONSTANT FINAL)
+    Q_PROPERTY(int stateExecutingTool READ stateExecutingTool CONSTANT FINAL)
+    Q_PROPERTY(int stateSummarizing READ stateSummarizing CONSTANT FINAL)
+    Q_PROPERTY(int stateCompleted READ stateCompleted CONSTANT FINAL)
+    Q_PROPERTY(int stateError READ stateError CONSTANT FINAL)
+    // Thinking / AwaitingToolConfirm / ExecutingTool / Summarizing
+    Q_PROPERTY(bool stateBusy READ stateBusy NOTIFY stateChanged FINAL)
 
     // ── Trace Model ───────────────────────────────────
     Q_PROPERTY(QVariantList traceModel READ traceModel NOTIFY traceChanged FINAL)
@@ -79,6 +91,18 @@ public:
     int stateAsInt() const { return static_cast<int>(m_state); }
     AgentState state() const { return m_state; }
     QString stateText() const;
+
+    // Named enum constants for QML (see the Q_PROPERTY block above)
+    int stateIdle() const { return static_cast<int>(AgentState::Idle); }
+    int stateThinking() const { return static_cast<int>(AgentState::Thinking); }
+    int stateAwaitingToolConfirm() const { return static_cast<int>(AgentState::AwaitingToolConfirm); }
+    int stateExecutingTool() const { return static_cast<int>(AgentState::ExecutingTool); }
+    int stateSummarizing() const { return static_cast<int>(AgentState::Summarizing); }
+    int stateCompleted() const { return static_cast<int>(AgentState::Completed); }
+    int stateError() const { return static_cast<int>(AgentState::Error); }
+    bool stateBusy() const {
+        return m_state >= AgentState::Thinking && m_state <= AgentState::Summarizing;
+    }
 
     // Trace model
     QVariantList traceModel() const { return m_traceModel; }
@@ -181,6 +205,9 @@ private:
     void refreshSessions();
     void refreshKnowledge();
     void setKnowledgeBusy(bool busy);
+    // Runs ingestDocument on a worker thread; the outcome (busy flag, signals)
+    // is handled back on the GUI thread via a QFutureWatcher.
+    void startIngestion(const QString& name, const QString& content, bool reembed);
     void persistPanelWidths();
     bool isBusy() const;
 
