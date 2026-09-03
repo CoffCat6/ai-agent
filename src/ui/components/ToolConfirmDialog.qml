@@ -2,6 +2,7 @@ import QtQuick
 import QtQuick.Layouts
 import QtQuick.Controls
 import NexusAI
+import NexusAI.ViewModels
 
 // Tool confirmation dialog - high-risk operation interception
 Dialog {
@@ -29,12 +30,7 @@ Dialog {
         pendingToolCallId = ""
     }
 
-    background: Rectangle {
-        color: Theme.bgSecondary
-        radius: 8
-        border.width: 1
-        border.color: Theme.borderSubtle
-
+    background: DialogBackground {
         // Warning stripe
         Rectangle {
             width: 4

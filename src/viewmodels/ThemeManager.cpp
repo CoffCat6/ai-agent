@@ -2,6 +2,18 @@
 
 namespace NexusAI {
 
+ThemeManager* ThemeManager::s_instance = nullptr;
+
+ThemeManager* ThemeManager::instance() {
+    if (!s_instance) s_instance = new ThemeManager(nullptr);
+    return s_instance;
+}
+
+ThemeManager* ThemeManager::create(QQmlEngine*, QJSEngine* js) {
+    QJSEngine::setObjectOwnership(instance(), QJSEngine::CppOwnership);
+    return instance();
+}
+
 ThemeManager::ThemeManager(QObject* parent)
     : QObject(parent), m_settings("NexusAI", "NexusAI") {
     loadTheme();

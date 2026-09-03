@@ -1,6 +1,7 @@
 #pragma once
 
 #include <QCoreApplication>
+#include <QQmlEngine>
 #include <QObject>
 #include <QString>
 #include <QStringList>
@@ -20,6 +21,8 @@ namespace NexusAI {
 // API keys are encrypted at rest on Windows (DPAPI, per-user).
 class SettingsService : public QObject {
     Q_OBJECT
+    QML_SINGLETON
+    QML_NAMED_ELEMENT(Settings)
 
     Q_PROPERTY(QVariantList profiles READ profiles NOTIFY profilesChanged)
     Q_PROPERTY(QString activeProfileId READ activeProfileId NOTIFY activeProfileChanged)
@@ -29,7 +32,13 @@ class SettingsService : public QObject {
     Q_PROPERTY(QString appVersion READ appVersion CONSTANT)
 
 public:
-    explicit SettingsService(QObject* parent = nullptr);
+    // No default constructor on purpose (see AgentViewModel: the engine
+    // would prefer Constructor over the create() factory).
+    explicit SettingsService(QObject* parent);
+
+    // QML singleton plumbing (same pattern as AgentViewModel)
+    static SettingsService* instance();
+    static SettingsService* create(QQmlEngine*, QJSEngine*);
 
     QVariantList profiles() const { return m_profiles; }
     QString activeProfileId() const { return m_activeId; }
@@ -75,6 +84,8 @@ private:
     QString m_activeId;
     int m_contextTokens{8192};
     bool m_simulationMode{false};
+
+    static SettingsService* s_instance;
 };
 
 } // namespace NexusAI

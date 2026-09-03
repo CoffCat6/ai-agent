@@ -1,5 +1,7 @@
 import QtQuick
+import QtQuick.Controls
 import NexusAI
+import NexusAI.ViewModels
 
 // Transient toast banner anchored to the top edge of the overlay.
 // accentColor picks the semantic border/text color (Theme.statusDanger for

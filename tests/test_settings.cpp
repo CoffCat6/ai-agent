@@ -42,7 +42,7 @@ private slots:
             s.remove("activeProfileId");
         }
 
-        SettingsService service;
+        SettingsService service(nullptr);
         const QVariantList profiles = service.profiles();
         QVERIFY(!profiles.isEmpty());
 
@@ -63,7 +63,7 @@ private slots:
             s.remove("activeProfileId");
         }
 
-        SettingsService service;
+        SettingsService service(nullptr);
         const QVariantMap active = service.activeProfile();
         const QString activeId = active.value("id").toString();
         const QString currentModel = active.value("model").toString();
@@ -95,7 +95,7 @@ private slots:
             s.remove("activeProfileId");
         }
 
-        SettingsService service;
+        SettingsService service(nullptr);
         const QString activeId = service.activeProfileId();
 
         service.addModelToProfile(activeId, QStringLiteral("extra-model-1"));
@@ -117,13 +117,13 @@ private slots:
         }
 
         {
-            SettingsService s1;
+            SettingsService s1(nullptr);
             const QString activeId = s1.activeProfileId();
             s1.addModelToProfile(activeId, QStringLiteral("persisted-model-x"));
             s1.selectModelForProfile(activeId, QStringLiteral("persisted-model-x"));
         }
 
-        SettingsService s2;
+        SettingsService s2(nullptr);
         QCOMPARE(s2.activeProfile().value("model").toString(), QStringLiteral("persisted-model-x"));
         QVERIFY(s2.activeProfile().value("models").toStringList().contains(QStringLiteral("persisted-model-x")));
     }

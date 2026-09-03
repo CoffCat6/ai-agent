@@ -3,6 +3,7 @@ import QtQuick.Layouts
 import QtQuick.Controls
 import QtQuick.Dialogs
 import NexusAI
+import NexusAI.ViewModels
 
 // Context panel - context budget and knowledge base management.
 // Collapse/expand is driven by AgentVM.isPanelVisible: main.qml animates
@@ -88,33 +89,16 @@ Rectangle {
             }
 
             // Import document action
-            Rectangle {
+            IconButton {
                 width: 24
                 height: 24
                 radius: 5
+                icon: "add"
+                iconSize: 14
                 opacity: AgentVM.knowledgeBusy ? 0.35 : 1.0
-                color: !AgentVM.knowledgeBusy && addMouse.containsMouse
-                    ? Theme.surfaceHover : "transparent"
-
-                AppIcon {
-                    anchors.centerIn: parent
-                    icon: "add"
-                    size: 14
-                    iconColor: !AgentVM.knowledgeBusy && addMouse.containsMouse
-                        ? Theme.brandPrimary : Theme.textSecondary
-                }
-
-                MouseArea {
-                    id: addMouse
-                    anchors.fill: parent
-                    hoverEnabled: true
-                    cursorShape: AgentVM.knowledgeBusy ? Qt.ArrowCursor : Qt.PointingHandCursor
-                    onClicked: if (!AgentVM.knowledgeBusy) kbFileDialog.open()
-                }
-
-                ToolTip.visible: addMouse.containsMouse && !AgentVM.knowledgeBusy
-                ToolTip.delay: 600
-                ToolTip.text: qsTr("导入文档")
+                enabled: !AgentVM.knowledgeBusy
+                tooltip: qsTr("导入文档")
+                onClicked: kbFileDialog.open()
             }
         }
 
@@ -229,60 +213,30 @@ Rectangle {
 
                         // Re-embed action (degraded documents only, e.g.
                         // after the embedding service came back online)
-                        Rectangle {
+                        IconButton {
                             visible: modelData.pseudo === true
                             width: 22
                             height: 22
                             radius: 5
+                            icon: "refresh"
+                            iconSize: 12
                             opacity: AgentVM.knowledgeBusy ? 0.35 : 1.0
-                            color: !AgentVM.knowledgeBusy && kbReembedMA.containsMouse
-                                ? Theme.surfaceHover : "transparent"
-
-                            AppIcon {
-                                anchors.centerIn: parent
-                                icon: "refresh"
-                                size: 12
-                                iconColor: !AgentVM.knowledgeBusy && kbReembedMA.containsMouse
-                                    ? Theme.brandPrimary : Theme.textSecondary
-                            }
-
-                            MouseArea {
-                                id: kbReembedMA
-                                anchors.fill: parent
-                                hoverEnabled: true
-                                enabled: !AgentVM.knowledgeBusy
-                                cursorShape: Qt.PointingHandCursor
-                                onClicked: AgentVM.reembedDocument(modelData.name)
-                            }
-
-                            ToolTip.visible: kbReembedMA.containsMouse
-                            ToolTip.delay: 600
-                            ToolTip.text: qsTr("重新嵌入")
+                            enabled: !AgentVM.knowledgeBusy
+                            tooltip: qsTr("重新嵌入")
+                            onClicked: AgentVM.reembedDocument(modelData.name)
                         }
 
                         // Remove document action
-                        Rectangle {
+                        IconButton {
                             width: 22
                             height: 22
                             radius: 5
-                            color: kbDeleteMA.containsMouse
-                                ? Qt.rgba(Theme.statusDanger.r, Theme.statusDanger.g,
-                                          Theme.statusDanger.b, 0.15) : "transparent"
-
-                            AppIcon {
-                                anchors.centerIn: parent
-                                icon: "close"
-                                size: 12
-                                iconColor: kbDeleteMA.containsMouse ? Theme.statusDanger : Theme.textSecondary
-                            }
-
-                            MouseArea {
-                                id: kbDeleteMA
-                                anchors.fill: parent
-                                hoverEnabled: true
-                                cursorShape: Qt.PointingHandCursor
-                                onClicked: AgentVM.removeDocument(modelData.name)
-                            }
+                            icon: "close"
+                            iconSize: 12
+                            hoverBgColor: Qt.rgba(Theme.statusDanger.r, Theme.statusDanger.g,
+                                                  Theme.statusDanger.b, 0.15)
+                            hoverIconColor: Theme.statusDanger
+                            onClicked: AgentVM.removeDocument(modelData.name)
                         }
                     }
                 }

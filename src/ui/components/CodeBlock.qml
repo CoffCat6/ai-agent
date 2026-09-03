@@ -1,6 +1,7 @@
 import QtQuick
 import QtQuick.Layouts
 import NexusAI
+import NexusAI.ViewModels
 
 // Code block display component for showing JSON, code, tool arguments.
 // Hover reveals a copy button.

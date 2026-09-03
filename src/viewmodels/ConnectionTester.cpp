@@ -8,6 +8,20 @@
 
 namespace NexusAI {
 
+ConnectionTester* ConnectionTester::s_instance = nullptr;
+
+ConnectionTester* ConnectionTester::instance() {
+    if (!s_instance) s_instance = new ConnectionTester(nullptr);
+    return s_instance;
+}
+
+ConnectionTester* ConnectionTester::create(QQmlEngine*, QJSEngine* js) {
+    QJSEngine::setObjectOwnership(instance(), QJSEngine::CppOwnership);
+    return instance();
+}
+
+ConnectionTester::ConnectionTester(QObject* parent) : QObject(parent) {}
+
 void ConnectionTester::test(const QString& provider, const QString& baseUrl,
                             const QString& apiKey, const QString& model) {
     if (!m_done) return; // a test is already in flight

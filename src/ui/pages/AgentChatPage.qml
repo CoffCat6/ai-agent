@@ -2,6 +2,7 @@ import QtQuick
 import QtQuick.Layouts
 import QtQuick.Controls
 import NexusAI
+import NexusAI.ViewModels
 
 // Agent chat page - main content area with trace view and input
 Item {
@@ -46,7 +47,7 @@ Item {
 
                     // Expand/collapse state of node detail blocks. Lives on
                     // the view (not the delegate) so it survives the full
-                    // trace model resets that follow every agent update.
+                    // trace model resets that follow session switches.
                     property var detailState: ({})
 
                     // Whether the intermediate agent steps (thinking / tool
@@ -68,16 +69,9 @@ Item {
                         if (pinnedToBottom) Qt.callLater(positionViewAtEnd)
                     }
 
-                    readonly property int intermediateCount: {
-                        let count = 0
-                        for (let i = 0; i < model.length; ++i) {
-                            const t = model[i].type
-                            if (t === "thinking" || t === "tool_call"
-                                || t === "tool_result" || t === "context")
-                                ++count
-                        }
-                        return count
-                    }
+                    // Computed in C++ (TraceModel); the JS scan over the
+                    // whole model on every binding evaluation is gone
+                    readonly property int intermediateCount: AgentVM.intermediateCount
 
                     // Empty state
                     Text {

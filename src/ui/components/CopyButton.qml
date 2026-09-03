@@ -1,5 +1,6 @@
 import QtQuick
 import NexusAI
+import NexusAI.ViewModels
 
 // Small copy-to-clipboard button with "copied" feedback
 Rectangle {

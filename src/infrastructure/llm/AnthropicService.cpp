@@ -7,12 +7,10 @@
 namespace NexusAI {
 
 AnthropicService::AnthropicService(QObject* parent)
-    : IAIService(parent), m_nam(new QNetworkAccessManager(this)) {}
-
-AnthropicService::~AnthropicService() {
-    if (m_currentReply) {
-        m_currentReply->abort();
-    }
+    : LLMServiceBase(parent)
+{
+    m_model = QStringLiteral("claude-sonnet-4-5");
+    m_baseUrl = QStringLiteral("https://api.anthropic.com");
 }
 
 AnthropicService::ConvertedHistory
@@ -83,16 +81,6 @@ LLMResponse AnthropicService::parseResponse(const QJsonObject& json) {
     return response;
 }
 
-void AnthropicService::resetStreamState() {
-    m_sseBuffer.clear();
-    m_rawBody.clear();
-    m_content.clear();
-    m_tokensUsed = 0;
-    m_doneReceived = false;
-    m_responseEmitted = false;
-    m_errorEmitted = false;
-}
-
 void AnthropicService::chatComplete(const QJsonArray& messages, const QJsonArray& tools) {
     Q_UNUSED(tools) // plain conversation: tools are not exposed to Claude (MVP scope)
 
@@ -126,144 +114,73 @@ void AnthropicService::chatComplete(const QJsonArray& messages, const QJsonArray
     request.setRawHeader("Accept", "text/event-stream");
     request.setTransferTimeout(120000);
 
-    QNetworkReply* reply = m_nam->post(request, QJsonDocument(body).toJson());
-    m_currentReply = reply;
-
-    connect(reply, &QNetworkReply::readyRead, this, [this, reply]() {
-        if (m_currentReply != reply) return;
-        onReadyRead();
-    });
-
-    connect(reply, &QNetworkReply::finished, this, [this, reply]() {
-        if (m_currentReply == reply) m_currentReply = nullptr;
-        handleReplyFinished(reply);
-    });
+    startReply(request, QJsonDocument(body).toJson());
 }
 
-void AnthropicService::onReadyRead() {
-    const QByteArray data = m_currentReply->readAll();
-    m_rawBody.append(data);
-    m_sseBuffer.append(data);
-    processSSEBuffer();
+bool AnthropicService::streamComplete() const {
+    return m_doneReceived || !m_content.isEmpty();
 }
 
-void AnthropicService::processSSEBuffer() {
-    int newlineIdx;
-    while ((newlineIdx = m_sseBuffer.indexOf('\n')) >= 0) {
-        QByteArray line = m_sseBuffer.left(newlineIdx);
-        m_sseBuffer.remove(0, newlineIdx + 1);
-        line = line.trimmed();
-
-        // Only "data:" events carry payload; "event:" lines are redundant here
-        if (!line.startsWith("data:")) continue;
-
-        const QString payload = QString::fromUtf8(line.mid(5).trimmed());
-        QJsonParseError parseError;
-        const QJsonDocument doc = QJsonDocument::fromJson(payload.toUtf8(), &parseError);
-        if (parseError.error != QJsonParseError::NoError || !doc.isObject()) continue;
-
-        const QJsonObject json = doc.object();
-        const QString type = json.value("type").toString();
-
-        if (type == QLatin1String("error")) {
-            const QString msg = json.value("error").toObject().value("message").toString();
-            m_errorEmitted = true;
-            emit errorOccurred(QStringLiteral("Anthropic error: %1").arg(msg));
-            continue;
-        }
-        if (type == QLatin1String("message_start")) {
-            // input tokens arrive on the opening event
-            m_tokensUsed += json.value("message").toObject().value("usage")
-                                .toObject().value("input_tokens").toInt();
-            continue;
-        }
-        if (type == QLatin1String("content_block_delta")) {
-            const QJsonObject delta = json.value("delta").toObject();
-            if (delta.value("type").toString() == QLatin1String("text_delta")) {
-                const QString text = delta.value("text").toString();
-                if (!text.isEmpty()) {
-                    m_content += text;
-                    emit streamingChunk(text);
-                }
-            }
-            continue;
-        }
-        if (type == QLatin1String("message_delta")) {
-            m_tokensUsed += json.value("usage").toObject().value("output_tokens").toInt();
-            continue;
-        }
-        if (type == QLatin1String("message_stop")) {
-            m_doneReceived = true;
-        }
-    }
-}
-
-void AnthropicService::emitStreamedResponse() {
+LLMResponse AnthropicService::streamResult() const {
     LLMResponse response;
     response.success = true;
     response.content = m_content;
     response.tokensUsed = m_tokensUsed;
-    m_responseEmitted = true;
-    emit responseReady(response);
+    return response;
 }
 
-void AnthropicService::handleReplyFinished(QNetworkReply* reply) {
-    const int status = reply->attribute(QNetworkRequest::HttpStatusCodeAttribute).toInt();
-    const QNetworkReply::NetworkError err = reply->error();
-    const QString errString = reply->errorString();
+QString AnthropicService::extractApiError(const QJsonObject& json) const {
+    if (json.value("type").toString() != QLatin1String("error")
+            && !json.contains("error"))
+        return {};
+    return parseResponse(json).error;
+}
 
-    const QByteArray rest = reply->readAll();
-    reply->deleteLater();
+bool AnthropicService::isCompleteBody(const QJsonObject& json) const {
+    return json.contains("content");
+}
 
-    if (!rest.isEmpty()) {
-        m_rawBody.append(rest);
-        m_sseBuffer.append(rest);
-        processSSEBuffer();
-    }
+void AnthropicService::processLine(const QByteArray& line) {
+    // Only "data:" events carry payload; "event:" lines are redundant here
+    if (!line.startsWith("data:")) return;
 
-    if (m_responseEmitted || m_errorEmitted) return;
-
-    if (m_doneReceived || !m_content.isEmpty()) {
-        emitStreamedResponse();
-        return;
-    }
-
-    // No stream data: error body, plain non-stream JSON, or network failure
+    const QString payload = QString::fromUtf8(line.mid(5).trimmed());
     QJsonParseError parseError;
-    const QJsonDocument doc = QJsonDocument::fromJson(m_rawBody, &parseError);
-    if (parseError.error == QJsonParseError::NoError && doc.isObject()) {
-        const QJsonObject json = doc.object();
-        if (json.value("type").toString() == QLatin1String("error")
-                || json.contains("error")) {
-            emit errorOccurred(QStringLiteral("Anthropic error (HTTP %1): %2")
-                .arg(status).arg(parseResponse(json).error));
-            return;
-        }
-        if (err == QNetworkReply::NoError && json.contains("content")) {
-            // Server ignored the stream flag - treat as regular response
-            LLMResponse response = parseResponse(json);
-            if (response.success) {
-                m_responseEmitted = true;
-                emit responseReady(response);
-            } else {
-                emit errorOccurred(response.error.isEmpty()
-                    ? QStringLiteral("Empty response from Anthropic") : response.error);
-            }
-            return;
-        }
-    }
+    const QJsonDocument doc = QJsonDocument::fromJson(payload.toUtf8(), &parseError);
+    if (parseError.error != QJsonParseError::NoError || !doc.isObject()) return;
 
-    if (err != QNetworkReply::NoError) {
-        emit errorOccurred(QStringLiteral("Network error: %1").arg(errString));
+    const QJsonObject json = doc.object();
+    const QString type = json.value("type").toString();
+
+    if (type == QLatin1String("error")) {
+        const QString msg = json.value("error").toObject().value("message").toString();
+        m_errorEmitted = true;
+        emit errorOccurred(QStringLiteral("Anthropic error: %1").arg(msg));
         return;
     }
-
-    emit errorOccurred("Empty or invalid response from Anthropic");
-}
-
-void AnthropicService::cancel() {
-    if (m_currentReply) {
-        m_currentReply->abort(); // finished handler performs cleanup
+    if (type == QLatin1String("message_start")) {
+        // input tokens arrive on the opening event
+        m_tokensUsed += json.value("message").toObject().value("usage")
+                            .toObject().value("input_tokens").toInt();
+        return;
+    }
+    if (type == QLatin1String("content_block_delta")) {
+        const QJsonObject delta = json.value("delta").toObject();
+        if (delta.value("type").toString() == QLatin1String("text_delta")) {
+            const QString text = delta.value("text").toString();
+            if (!text.isEmpty()) {
+                m_content += text;
+                emit streamingChunk(text);
+            }
+        }
+        return;
+    }
+    if (type == QLatin1String("message_delta")) {
+        m_tokensUsed += json.value("usage").toObject().value("output_tokens").toInt();
+        return;
+    }
+    if (type == QLatin1String("message_stop")) {
+        m_doneReceived = true;
     }
 }
 

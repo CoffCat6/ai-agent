@@ -2,6 +2,7 @@ import QtQuick
 import QtQuick.Layouts
 import QtQuick.Controls
 import NexusAI
+import NexusAI.ViewModels
 
 // Model configuration dialog: manages multiple model profiles (any mix of
 // providers) and switches the active one instantly. The profile selected in
@@ -40,12 +41,7 @@ Dialog {
         modelField.text = p ? (p.model || "") : ""
     }
 
-    background: Rectangle {
-        color: Theme.bgSecondary
-        radius: 8
-        border.width: 1
-        border.color: Theme.borderSubtle
-    }
+    background: DialogBackground {}
 
     contentItem: ColumnLayout {
         spacing: 12

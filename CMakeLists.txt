@@ -8,7 +8,7 @@ set(CMAKE_AUTORCC ON)
 
 # ── Qt 6 ──────────────────────────────────────────────────
 find_package(Qt6 REQUIRED COMPONENTS
-    Core Quick Sql Network Concurrent QuickControls2
+    Core Qml Quick Sql Network Concurrent QuickControls2
 )
 
 qt_standard_project_setup(REQUIRES 6.5)
@@ -53,6 +53,8 @@ target_link_libraries(nexus_core PUBLIC Qt6::Core Qt6::Sql Qt6::Concurrent)
 # ── Infrastructure Library ────────────────────────────────
 add_library(nexus_infra STATIC
     src/infrastructure/llm/IAIService.h
+    src/infrastructure/llm/LLMServiceBase.h
+    src/infrastructure/llm/LLMServiceBase.cpp
     src/infrastructure/llm/OpenAIService.h
     src/infrastructure/llm/OpenAIService.cpp
     src/infrastructure/llm/OllamaService.h
@@ -65,20 +67,37 @@ add_library(nexus_infra STATIC
 target_include_directories(nexus_infra PUBLIC ${CMAKE_CURRENT_SOURCE_DIR}/src)
 target_link_libraries(nexus_infra PUBLIC nexus_core Qt6::Network)
 
-# ── ViewModels Library ────────────────────────────────────
+# ── ViewModels Library (C++ QML module with UI singletons) ──
+# The five singleton classes are registered into the NexusAI.ViewModels
+# module (QML_SINGLETON + create() factories); main.cpp grabs them via
+# instance() first to inject dependencies before the engine loads the UI.
+# TraceModel stays a plain library class: QML reaches it through the
+# AgentVM.traceModel property, not by type name.
 add_library(nexus_viewmodels STATIC
-    src/viewmodels/ThemeManager.h
-    src/viewmodels/ThemeManager.cpp
-    src/viewmodels/ThemeProvider.h
-    src/viewmodels/SettingsService.h
-    src/viewmodels/SettingsService.cpp
-    src/viewmodels/ConnectionTester.h
-    src/viewmodels/ConnectionTester.cpp
-    src/viewmodels/AgentViewModel.h
-    src/viewmodels/AgentViewModel.cpp
+    src/viewmodels/TraceModel.h
+    src/viewmodels/TraceModel.cpp
 )
-target_include_directories(nexus_viewmodels PUBLIC ${CMAKE_CURRENT_SOURCE_DIR}/src)
-target_link_libraries(nexus_viewmodels PUBLIC nexus_core nexus_infra Qt6::Quick)
+qt_add_qml_module(nexus_viewmodels
+    URI NexusAI.ViewModels
+    VERSION 1.0
+    SOURCES
+        src/viewmodels/ThemeProvider.h
+        src/viewmodels/ThemeManager.h
+        src/viewmodels/ThemeManager.cpp
+        src/viewmodels/SettingsService.h
+        src/viewmodels/SettingsService.cpp
+        src/viewmodels/ConnectionTester.h
+        src/viewmodels/ConnectionTester.cpp
+        src/viewmodels/AgentViewModel.h
+        src/viewmodels/AgentViewModel.cpp
+)
+target_include_directories(nexus_viewmodels PUBLIC
+    ${CMAKE_CURRENT_SOURCE_DIR}/src
+    # qmltyperegistration includes the module SOURCES by bare file name
+    # (<AgentViewModel.h>), so the class directory must be on the path
+    ${CMAKE_CURRENT_SOURCE_DIR}/src/viewmodels
+)
+target_link_libraries(nexus_viewmodels PUBLIC nexus_core nexus_infra Qt6::Quick Qt6::Qml)
 if(WIN32)
     # DPAPI (CryptProtectData) for encrypted API key storage
     target_link_libraries(nexus_viewmodels PUBLIC crypt32)
@@ -100,6 +119,8 @@ qt_add_qml_module(nexus_ai
         src/ui/components/AppToast.qml
         src/ui/components/CodeBlock.qml
         src/ui/components/CopyButton.qml
+        src/ui/components/DialogBackground.qml
+        src/ui/components/IconButton.qml
         src/ui/components/SettingsDialog.qml
         src/ui/components/AuditDialog.qml
         src/ui/components/KnowledgeDocDialog.qml
@@ -118,6 +139,7 @@ target_link_libraries(nexus_ai PRIVATE
     nexus_core
     nexus_infra
     nexus_viewmodels
+    nexus_viewmodelsplugin   # QML module registration for NexusAI.ViewModels
     Qt6::Quick
     Qt6::QuickControls2
 )

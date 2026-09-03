@@ -23,6 +23,20 @@
 
 namespace NexusAI {
 
+AgentViewModel* AgentViewModel::s_instance = nullptr;
+
+AgentViewModel* AgentViewModel::instance() {
+    if (!s_instance) s_instance = new AgentViewModel(nullptr);
+    return s_instance;
+}
+
+AgentViewModel* AgentViewModel::create(QQmlEngine*, QJSEngine* js) {
+    // main.cpp keeps its own reference and wires dependencies; the engine
+    // must not garbage-collect the singleton behind its back.
+    QJSEngine::setObjectOwnership(instance(), QJSEngine::CppOwnership);
+    return instance();
+}
+
 AgentViewModel::AgentViewModel(QObject* parent)
     : QObject(parent) {
     initToolRegistry();
@@ -68,7 +82,7 @@ void AgentViewModel::setAgent(AIAgent* agent) {
     } else {
         // Detached: fall back to simulation state
         setState(AgentState::Idle);
-        m_traceModel.clear();
+        m_trace.clearNodes();
         emit traceChanged();
         m_sessionList.clear();
         emit sessionListChanged();
@@ -84,7 +98,7 @@ void AgentViewModel::connectAgent(AIAgent* agent) {
     });
 
     connect(agent, &AIAgent::traceChanged, this, [this, agent]() {
-        m_traceModel = agent->traceModel().toVariantList();
+        m_trace.applyDelta(agent->traceModel().toVariantList());
         emit traceChanged();
     });
 
@@ -124,7 +138,7 @@ void AgentViewModel::connectAgent(AIAgent* agent) {
     // Initial sync with the agent's state
     m_state = agent->state();
     emit stateChanged();
-    m_traceModel = agent->traceModel().toVariantList();
+    m_trace.applyDelta(agent->traceModel().toVariantList());
     emit traceChanged();
     m_finalResponse = agent->lastResponse();
     emit responseReady();
@@ -398,15 +412,12 @@ void AgentViewModel::appendTraceNode(const QString& type, const QString& title,
     node["args"] = args;
     node["result"] = result;
 
-    m_traceModel.append(node);
+    m_trace.appendNode(node);
     emit traceChanged();
 }
 
 void AgentViewModel::updateLastNodeStatus(const QString& status) {
-    if (m_traceModel.isEmpty()) return;
-    QVariantMap lastNode = m_traceModel.last().toMap();
-    lastNode["status"] = status;
-    m_traceModel.replace(m_traceModel.size() - 1, lastNode);
+    m_trace.updateLastNode({{"status", status}});
     emit traceChanged();
 }
 
@@ -425,7 +436,7 @@ void AgentViewModel::startTask(const QString& input) {
     }
 
     // Simulation fallback
-    m_traceModel.clear();
+    m_trace.clearNodes();
     emit traceChanged();
     m_simStep = 0;
     m_simInput = input;
@@ -445,43 +456,36 @@ void AgentViewModel::approveToolCall(const QString& id, bool approved) {
     }
 
     // Simulation path
-    for (int i = 0; i < m_traceModel.size(); ++i) {
-        QVariantMap node = m_traceModel.at(i).toMap();
-        if (node["id"].toString() == id) {
-            if (approved) {
-                node["status"] = "running";
-                m_traceModel.replace(i, node);
+    const int row = m_trace.rowOfId(id);
+    if (row < 0) return;
+
+    if (approved) {
+        m_trace.updateNode(row, {{"status", "running"}});
+        emit traceChanged();
+
+        QTimer::singleShot(1000, this, [this, row]() {
+            if (row < m_trace.count()) {
+                m_trace.updateNode(row, {{"status", "success"}});
                 emit traceChanged();
-
-                QTimer::singleShot(1000, this, [this, i]() {
-                    if (i < m_traceModel.size()) {
-                        QVariantMap node = m_traceModel.at(i).toMap();
-                        node["status"] = "success";
-                        m_traceModel.replace(i, node);
-                        emit traceChanged();
-                    }
-
-                    appendTraceNode("tool_result", "File written successfully", "success",
-                        "", "Written 256 bytes to /home/user/output.txt");
-                    m_usedTokens += 100;
-                    emit tokenUsageChanged();
-
-                    setState(AgentState::Thinking);
-                    m_simTimer.start(1500);
-                });
-            } else {
-                node["status"] = "cancelled";
-                m_traceModel.replace(i, node);
-                emit traceChanged();
-
-                m_finalResponse = "Tool call was rejected by the user. "
-                                  "I cannot complete the task without writing the output file.";
-                appendTraceNode("summary", m_finalResponse, "completed");
-                setState(AgentState::Completed);
-                emit responseReady();
             }
-            break;
-        }
+
+            appendTraceNode("tool_result", "File written successfully", "success",
+                "", "Written 256 bytes to /home/user/output.txt");
+            m_usedTokens += 100;
+            emit tokenUsageChanged();
+
+            setState(AgentState::Thinking);
+            m_simTimer.start(1500);
+        });
+    } else {
+        m_trace.updateNode(row, {{"status", "cancelled"}});
+        emit traceChanged();
+
+        m_finalResponse = "Tool call was rejected by the user. "
+                          "I cannot complete the task without writing the output file.";
+        appendTraceNode("summary", m_finalResponse, "completed");
+        setState(AgentState::Completed);
+        emit responseReady();
     }
 }
 
@@ -493,11 +497,9 @@ void AgentViewModel::stop() {
 
     // Simulation path
     m_simTimer.stop();
-    if (!m_traceModel.isEmpty()) {
-        const QVariantMap lastNode = m_traceModel.last().toMap();
-        if (lastNode["status"].toString() == "running")
-            updateLastNodeStatus("cancelled");
-    }
+    if (m_trace.count() > 0
+            && m_trace.nodeAt(m_trace.count() - 1).value("status").toString() == "running")
+        updateLastNodeStatus("cancelled");
     setState(AgentState::Idle);
 }
 
@@ -512,7 +514,7 @@ void AgentViewModel::newChat() {
     }
 
     setState(AgentState::Idle);
-    m_traceModel.clear();
+    m_trace.clearNodes();
     emit traceChanged();
     m_currentSessionId.clear();
     emit currentSessionIdChanged();
@@ -579,9 +581,9 @@ void AgentViewModel::simulationStep() {
                 {"content", "Processed output data..."}
             }).toJson(QJsonDocument::Compact)));
 
-        if (!m_traceModel.isEmpty()) {
-            QVariantMap lastNode = m_traceModel.last().toMap();
-            m_pendingToolCallId = lastNode["id"].toString();
+        if (m_trace.count() > 0) {
+            m_pendingToolCallId =
+                m_trace.nodeAt(m_trace.count() - 1).value("id").toString();
 
             QVariantMap args;
             args["path"] = "/home/user/output.txt";

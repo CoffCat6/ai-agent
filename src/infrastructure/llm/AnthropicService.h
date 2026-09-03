@@ -1,9 +1,7 @@
 #pragma once
 
-#include "IAIService.h"
+#include "LLMServiceBase.h"
 
-#include <QNetworkAccessManager>
-#include <QNetworkReply>
 #include <QString>
 
 namespace NexusAI {
@@ -18,19 +16,15 @@ namespace NexusAI {
 // with a user turn).
 //
 // Streamed text deltas are forwarded via streamingChunk(); the assembled
-// response is emitted once via responseReady().
-class AnthropicService : public IAIService {
+// response is emitted once via responseReady(). Request lifecycle /
+// streaming accumulation / finished-reply fallback ladder live in
+// LLMServiceBase.
+class AnthropicService : public LLMServiceBase {
     Q_OBJECT
 public:
     explicit AnthropicService(QObject* parent = nullptr);
-    ~AnthropicService() override;
 
     void chatComplete(const QJsonArray& messages, const QJsonArray& tools = {}) override;
-    void cancel() override;
-
-    void setApiKey(const QString& key) override { m_apiKey = key; }
-    void setModel(const QString& model) override { m_model = model; }
-    void setBaseUrl(const QString& url) override { m_baseUrl = url; }
 
     // Pure conversion / parsing helpers (no network state); exposed for tests.
     struct ConvertedHistory {
@@ -40,28 +34,18 @@ public:
     static ConvertedHistory convertMessages(const QJsonArray& messages);
     static LLMResponse parseResponse(const QJsonObject& json);
 
+protected:
+    void processLine(const QByteArray& line) override;
+    bool streamComplete() const override;
+    LLMResponse streamResult() const override;
+    QString providerLabel() const override { return QStringLiteral("Anthropic"); }
+    QString extractApiError(const QJsonObject& json) const override;
+    bool isCompleteBody(const QJsonObject& json) const override;
+    LLMResponse parseBody(const QJsonObject& json) const override
+    { return parseResponse(json); }
+
 private:
-    void onReadyRead();
-    void handleReplyFinished(QNetworkReply* reply);
-    void processSSEBuffer();
-    void emitStreamedResponse();
-    void resetStreamState();
-
-    QString m_apiKey;
-    QString m_model{"claude-sonnet-4-5"};
-    QString m_baseUrl{"https://api.anthropic.com"};
     int m_maxTokens{4096}; // Messages API requires an explicit output cap
-    QNetworkAccessManager* m_nam;
-    QNetworkReply* m_currentReply{nullptr};
-
-    // Streaming state
-    QByteArray m_sseBuffer;
-    QByteArray m_rawBody;
-    QString m_content;
-    int m_tokensUsed{0};
-    bool m_doneReceived{false};
-    bool m_responseEmitted{false};
-    bool m_errorEmitted{false};
 };
 
 } // namespace NexusAI

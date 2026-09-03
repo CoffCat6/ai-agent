@@ -2,6 +2,7 @@ import QtQuick
 import QtQuick.Layouts
 import QtQuick.Controls
 import NexusAI
+import NexusAI.ViewModels
 
 // Dropdown model & profile selector used below the chat input. The popup
 // opens UPWARD because the trigger sits near the window bottom edge.
@@ -92,12 +93,7 @@ Item {
         padding: 6
         closePolicy: Popup.CloseOnEscape | Popup.CloseOnPressOutside
 
-        background: Rectangle {
-            color: Theme.bgSecondary
-            radius: 8
-            border.width: 1
-            border.color: Theme.borderSubtle
-        }
+        background: DialogBackground {}
 
         contentItem: ScrollView {
             id: menuScroll

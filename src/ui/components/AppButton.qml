@@ -1,6 +1,7 @@
 import QtQuick
 import QtQuick.Layouts
 import NexusAI
+import NexusAI.ViewModels
 
 // Reusable button component with tech-minimalist styling
 Rectangle {

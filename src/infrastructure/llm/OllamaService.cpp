@@ -9,12 +9,10 @@
 namespace NexusAI {
 
 OllamaService::OllamaService(QObject* parent)
-    : IAIService(parent), m_nam(new QNetworkAccessManager(this)) {}
-
-OllamaService::~OllamaService() {
-    if (m_currentReply) {
-        m_currentReply->abort();
-    }
+    : LLMServiceBase(parent)
+{
+    m_model = QStringLiteral("qwen2.5:7b");
+    m_baseUrl = QStringLiteral("http://localhost:11434");
 }
 
 QJsonObject OllamaService::buildRequestBody(const QJsonArray& messages, const QJsonArray& tools) {
@@ -73,17 +71,6 @@ QJsonArray OllamaService::convertMessagesForOllama(const QJsonArray& messages) {
     return out;
 }
 
-void OllamaService::resetStreamState() {
-    m_lineBuffer.clear();
-    m_rawBody.clear();
-    m_content.clear();
-    m_toolCalls.clear();
-    m_tokensUsed = 0;
-    m_doneReceived = false;
-    m_responseEmitted = false;
-    m_errorEmitted = false;
-}
-
 void OllamaService::chatComplete(const QJsonArray& messages, const QJsonArray& tools) {
     resetStreamState();
 
@@ -92,66 +79,62 @@ void OllamaService::chatComplete(const QJsonArray& messages, const QJsonArray& t
     request.setHeader(QNetworkRequest::ContentTypeHeader, "application/json");
     request.setTransferTimeout(300000); // local models can be slow
 
-    QNetworkReply* reply = m_nam->post(request,
-        QJsonDocument(buildRequestBody(messages, tools)).toJson());
-    m_currentReply = reply;
-
-    connect(reply, &QNetworkReply::readyRead, this, [this, reply]() {
-        if (m_currentReply != reply) return;
-        onReadyRead();
-    });
-
-    connect(reply, &QNetworkReply::finished, this, [this, reply]() {
-        if (m_currentReply == reply) m_currentReply = nullptr;
-        handleReplyFinished(reply);
-    });
+    startReply(request, QJsonDocument(buildRequestBody(messages, tools)).toJson());
 }
 
-void OllamaService::onReadyRead() {
-    const QByteArray data = m_currentReply->readAll();
-    m_rawBody.append(data);
-    m_lineBuffer.append(data);
-    processLineBuffer();
+bool OllamaService::streamComplete() const {
+    return m_doneReceived;
 }
 
-void OllamaService::processLineBuffer() {
-    int newlineIdx;
-    while ((newlineIdx = m_lineBuffer.indexOf('\n')) >= 0) {
-        QByteArray line = m_lineBuffer.left(newlineIdx);
-        m_lineBuffer.remove(0, newlineIdx + 1);
-        line = line.trimmed();
-        if (line.isEmpty()) continue;
+LLMResponse OllamaService::streamResult() const {
+    LLMResponse response;
+    response.success = true;
+    response.content = m_content;
+    response.toolCalls = m_toolCalls;
+    response.tokensUsed = m_tokensUsed;
+    return response;
+}
 
-        QJsonParseError parseError;
-        const QJsonDocument doc = QJsonDocument::fromJson(line, &parseError);
-        if (parseError.error != QJsonParseError::NoError || !doc.isObject()) continue;
+QString OllamaService::extractApiError(const QJsonObject& json) const {
+    return json.contains("error") ? json.value("error").toString() : QString();
+}
 
-        const QJsonObject json = doc.object();
+bool OllamaService::isCompleteBody(const QJsonObject& json) const {
+    return json.contains("message");
+}
 
-        // Ollama error payload (model not found, etc.)
-        if (json.contains("error")) {
-            m_errorEmitted = true;
-            emit errorOccurred(QStringLiteral("Ollama error: %1")
-                .arg(json.value("error").toString()));
-            continue;
-        }
+void OllamaService::processLine(const QByteArray& line) {
+    if (line.isEmpty()) return;
 
-        const QJsonObject message = json.value("message").toObject();
+    QJsonParseError parseError;
+    const QJsonDocument doc = QJsonDocument::fromJson(line, &parseError);
+    if (parseError.error != QJsonParseError::NoError || !doc.isObject()) return;
 
-        // Streamed content chunk
-        const QString chunk = message.value("content").toString();
-        if (!chunk.isEmpty()) {
-            m_content += chunk;
-            emit streamingChunk(chunk);
-        }
+    const QJsonObject json = doc.object();
 
-        // Final line of a stream carries done=true (+ tool calls + usage)
-        if (json.value("done").toBool()) {
-            m_doneReceived = true;
-            m_toolCalls = parseToolCalls(message);
-            m_tokensUsed = json.value("eval_count").toInt()
-                         + json.value("prompt_eval_count").toInt();
-        }
+    // Ollama error payload (model not found, etc.)
+    if (json.contains("error")) {
+        m_errorEmitted = true;
+        emit errorOccurred(QStringLiteral("Ollama error: %1")
+            .arg(json.value("error").toString()));
+        return;
+    }
+
+    const QJsonObject message = json.value("message").toObject();
+
+    // Streamed content chunk
+    const QString chunk = message.value("content").toString();
+    if (!chunk.isEmpty()) {
+        m_content += chunk;
+        emit streamingChunk(chunk);
+    }
+
+    // Final line of a stream carries done=true (+ tool calls + usage)
+    if (json.value("done").toBool()) {
+        m_doneReceived = true;
+        m_toolCalls = parseToolCalls(message);
+        m_tokensUsed = json.value("eval_count").toInt()
+                     + json.value("prompt_eval_count").toInt();
     }
 }
 
@@ -186,69 +169,6 @@ QVector<ToolCallInfo> OllamaService::parseToolCalls(const QJsonObject& message) 
     return calls;
 }
 
-void OllamaService::emitStreamedResponse() {
-    LLMResponse response;
-    response.success = true;
-    response.content = m_content;
-    response.toolCalls = m_toolCalls;
-    response.tokensUsed = m_tokensUsed;
-    m_responseEmitted = true;
-    emit responseReady(response);
-}
-
-void OllamaService::handleReplyFinished(QNetworkReply* reply) {
-    const int status = reply->attribute(QNetworkRequest::HttpStatusCodeAttribute).toInt();
-    const QNetworkReply::NetworkError err = reply->error();
-    const QString errString = reply->errorString();
-
-    const QByteArray rest = reply->readAll();
-    reply->deleteLater();
-
-    if (!rest.isEmpty()) {
-        m_rawBody.append(rest);
-        m_lineBuffer.append(rest);
-        processLineBuffer();
-    }
-
-    if (m_responseEmitted || m_errorEmitted) return;
-
-    if (m_doneReceived) {
-        emitStreamedResponse();
-        return;
-    }
-
-    // No stream data: error body, plain non-stream JSON, or network failure
-    QJsonParseError parseError;
-    const QJsonDocument doc = QJsonDocument::fromJson(m_rawBody, &parseError);
-    if (parseError.error == QJsonParseError::NoError && doc.isObject()) {
-        const QJsonObject json = doc.object();
-        if (json.contains("error")) {
-            emit errorOccurred(QStringLiteral("Ollama error (HTTP %1): %2")
-                .arg(status).arg(json.value("error").toString()));
-            return;
-        }
-        if (err == QNetworkReply::NoError && json.contains("message")) {
-            // Server ignored the stream flag - treat as regular response
-            LLMResponse response = parseResponse(json);
-            if (response.success) {
-                m_responseEmitted = true;
-                emit responseReady(response);
-            } else {
-                emit errorOccurred(response.error.isEmpty()
-                    ? QStringLiteral("Empty response from Ollama") : response.error);
-            }
-            return;
-        }
-    }
-
-    if (err != QNetworkReply::NoError) {
-        emit errorOccurred(QStringLiteral("Network error: %1").arg(errString));
-        return;
-    }
-
-    emit errorOccurred("Empty or invalid response from Ollama");
-}
-
 LLMResponse OllamaService::parseResponse(const QJsonObject& json) {
     LLMResponse response;
 
@@ -262,12 +182,6 @@ LLMResponse OllamaService::parseResponse(const QJsonObject& json) {
                         + json.value("prompt_eval_count").toInt();
 
     return response;
-}
-
-void OllamaService::cancel() {
-    if (m_currentReply) {
-        m_currentReply->abort(); // finished handler performs cleanup
-    }
 }
 
 } // namespace NexusAI

@@ -1,22 +1,35 @@
 #pragma once
 
-#include <QObject>
 #include <QColor>
+#include <QQmlEngine>
+#include <QObject>
 
 #include "ThemeManager.h"
 
 namespace NexusAI {
 
 // C++ Theme provider - exposes all theme colors as Q_PROPERTY
-// Registered as "Theme" context property, accessible everywhere in QML
+// Registered as the QML singleton "Theme", accessible everywhere in QML
 class ThemeProvider : public QObject {
     Q_OBJECT
+    QML_SINGLETON
+    QML_NAMED_ELEMENT(Theme)
 public:
     explicit ThemeProvider(ThemeManager* manager, QObject* parent = nullptr)
         : QObject(parent), m_manager(manager) {
         connect(m_manager, &ThemeManager::themeChanged, this, [this]() {
             emit themeChanged();
         });
+    }
+
+    // QML singleton plumbing: bound to the ThemeManager singleton
+    static ThemeProvider* instance() {
+        if (!s_instance) s_instance = new ThemeProvider(ThemeManager::instance());
+        return s_instance;
+    }
+    static ThemeProvider* create(QQmlEngine*, QJSEngine*) {
+        QJSEngine::setObjectOwnership(instance(), QJSEngine::CppOwnership);
+        return instance();
     }
 
     Q_PROPERTY(bool isDark READ isDark NOTIFY themeChanged FINAL)
@@ -111,6 +124,8 @@ signals:
 
 private:
     ThemeManager* m_manager;
+
+    inline static ThemeProvider* s_instance = nullptr;
 };
 
 } // namespace NexusAI

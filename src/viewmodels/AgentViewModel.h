@@ -1,6 +1,7 @@
 #pragma once
 
 #include <QObject>
+#include <QQmlEngine>
 #include <QJsonArray>
 #include <QJsonObject>
 #include <QString>
@@ -8,6 +9,7 @@
 #include <functional>
 
 #include "core/agent/AgentState.h"
+#include "TraceModel.h"
 
 namespace NexusAI {
 
@@ -21,6 +23,8 @@ class RagService;
 // allows UI demonstration without a configured backend.
 class AgentViewModel : public QObject {
     Q_OBJECT
+    QML_SINGLETON
+    QML_NAMED_ELEMENT(AgentVM)
 
     // ── State ──────────────────────────────────────────
     Q_PROPERTY(int state READ stateAsInt NOTIFY stateChanged FINAL)
@@ -39,7 +43,13 @@ class AgentViewModel : public QObject {
     Q_PROPERTY(bool stateBusy READ stateBusy NOTIFY stateChanged FINAL)
 
     // ── Trace Model ───────────────────────────────────
-    Q_PROPERTY(QVariantList traceModel READ traceModel NOTIFY traceChanged FINAL)
+    // Incremental QAbstractListModel: appended/updated rows are signaled as
+    // such, so the QML ListView no longer rebuilds every delegate on each
+    // agent update (see TraceModel).
+    Q_PROPERTY(QAbstractListModel* traceModel READ traceModel NOTIFY traceChanged FINAL)
+    Q_PROPERTY(int traceCount READ traceCount NOTIFY traceChanged FINAL)
+    // thinking / tool_call / tool_result / context nodes (fold toggle badge)
+    Q_PROPERTY(int intermediateCount READ intermediateCount NOTIFY traceChanged FINAL)
 
     // ── Response ──────────────────────────────────────
     Q_PROPERTY(QString finalResponse READ finalResponse NOTIFY responseReady FINAL)
@@ -75,8 +85,18 @@ class AgentViewModel : public QObject {
     Q_PROPERTY(bool liveMode READ liveMode NOTIFY liveModeChanged FINAL)
 
 public:
-    explicit AgentViewModel(QObject* parent = nullptr);
+    // No default constructor on purpose: a default-constructible
+    // QML_SINGLETON makes the engine prefer Constructor over the create()
+    // factory (qqmlprivate's construction-mode check), yielding a second,
+    // un-injected instance.
+    explicit AgentViewModel(QObject* parent);
     ~AgentViewModel() override;
+
+    // QML singleton plumbing: main.cpp owns the instance (dependency
+    // injection happens there); the engine picks the same object up through
+    // create() when loading the UI.
+    static AgentViewModel* instance();
+    static AgentViewModel* create(QQmlEngine*, QJSEngine*);
 
     // Attach the real agent pipeline. Takes no ownership (agent outlives the VM).
     void setAgent(AIAgent* agent);
@@ -105,7 +125,9 @@ public:
     }
 
     // Trace model
-    QVariantList traceModel() const { return m_traceModel; }
+    QAbstractListModel* traceModel() { return &m_trace; }
+    int traceCount() const { return m_trace.count(); }
+    int intermediateCount() const { return m_trace.intermediateCount(); }
 
     // Response
     QString finalResponse() const { return m_finalResponse; }
@@ -216,7 +238,7 @@ private:
     RagService* m_rag{nullptr};
     std::function<QString(const QString&)> m_contentProvider;
     AgentState m_state{AgentState::Idle};
-    QVariantList m_traceModel;
+    TraceModel m_trace;
     QString m_finalResponse;
     QString m_draftText;
 
@@ -248,6 +270,8 @@ private:
     int m_simStep{0};
     QString m_simInput;
     QString m_pendingToolCallId;
+
+    static AgentViewModel* s_instance;
 };
 
 } // namespace NexusAI

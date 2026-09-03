@@ -2,6 +2,7 @@ import QtQuick
 import QtQuick.Layouts
 import QtQuick.Controls
 import NexusAI
+import NexusAI.ViewModels
 
 // Input console - multi-line text input with send / stop buttons.
 // Enter sends, Shift+Enter inserts a newline, Ctrl+Enter also sends.

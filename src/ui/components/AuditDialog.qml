@@ -2,6 +2,7 @@ import QtQuick
 import QtQuick.Layouts
 import QtQuick.Controls
 import NexusAI
+import NexusAI.ViewModels
 
 // Tool-activity audit trail viewer (SQLite-persisted via SqliteMemory).
 // Supports event-type filtering, manual/auto refresh and clipboard export.
@@ -49,12 +50,7 @@ Dialog {
         reload()
     }
 
-    background: Rectangle {
-        color: Theme.bgSecondary
-        radius: 8
-        border.width: 1
-        border.color: Theme.borderSubtle
-    }
+    background: DialogBackground {}
 
     contentItem: ColumnLayout {
         spacing: 12
@@ -265,30 +261,13 @@ Dialog {
             spacing: 8
 
             // Refresh
-            Rectangle {
+            IconButton {
                 width: 28
                 height: 28
-                radius: 6
-                color: refreshMA.containsMouse ? Theme.surfaceHover : "transparent"
-
-                AppIcon {
-                    anchors.centerIn: parent
-                    icon: "refresh"
-                    size: 15
-                    iconColor: refreshMA.containsMouse ? Theme.brandPrimary : Theme.textSecondary
-                }
-
-                MouseArea {
-                    id: refreshMA
-                    anchors.fill: parent
-                    hoverEnabled: true
-                    cursorShape: Qt.PointingHandCursor
-                    onClicked: dialog.reload()
-                }
-
-                ToolTip.visible: refreshMA.containsMouse
-                ToolTip.delay: 600
-                ToolTip.text: qsTr("刷新")
+                icon: "refresh"
+                iconSize: 15
+                tooltip: qsTr("刷新")
+                onClicked: dialog.reload()
             }
 
             // Copy filtered entries (CopyButton carries the "已复制" feedback)

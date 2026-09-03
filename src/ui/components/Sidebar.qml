@@ -2,6 +2,7 @@ import QtQuick
 import QtQuick.Layouts
 import QtQuick.Controls
 import NexusAI
+import NexusAI.ViewModels
 
 // Left sidebar - session history and navigation.
 // Collapse/expand is driven by AgentVM.isSidebarExpanded: main.qml animates
@@ -333,57 +334,19 @@ Rectangle {
                 spacing: 4
 
                 // Audit log button
-                Rectangle {
-                    width: 32
-                    height: 32
-                    radius: 6
-                    color: auditMA.containsMouse ? Theme.surfaceHover : "transparent"
-
-                    AppIcon {
-                        anchors.centerIn: parent
-                        icon: "shield"
-                        size: 17
-                        iconColor: auditMA.containsMouse ? Theme.brandPrimary : Theme.textSecondary
-                    }
-
-                    MouseArea {
-                        id: auditMA
-                        anchors.fill: parent
-                        hoverEnabled: true
-                        cursorShape: Qt.PointingHandCursor
-                        onClicked: root.auditRequested()
-                    }
-
-                    ToolTip.visible: auditMA.containsMouse
-                    ToolTip.delay: 600
-                    ToolTip.text: qsTr("审计日志")
+                IconButton {
+                    icon: "shield"
+                    iconSize: 17
+                    tooltip: qsTr("审计日志")
+                    onClicked: root.auditRequested()
                 }
 
                 // Settings button
-                Rectangle {
-                    width: 32
-                    height: 32
-                    radius: 6
-                    color: settingsMA.containsMouse ? Theme.surfaceHover : "transparent"
-
-                    AppIcon {
-                        anchors.centerIn: parent
-                        icon: "settings"
-                        size: 17
-                        iconColor: settingsMA.containsMouse ? Theme.brandPrimary : Theme.textSecondary
-                    }
-
-                    MouseArea {
-                        id: settingsMA
-                        anchors.fill: parent
-                        hoverEnabled: true
-                        cursorShape: Qt.PointingHandCursor
-                        onClicked: root.settingsRequested()
-                    }
-
-                    ToolTip.visible: settingsMA.containsMouse
-                    ToolTip.delay: 600
-                    ToolTip.text: qsTr("设置 (Ctrl+,)")
+                IconButton {
+                    icon: "settings"
+                    iconSize: 17
+                    tooltip: qsTr("设置 (Ctrl+,)")
+                    onClicked: root.settingsRequested()
                 }
 
                 Item { Layout.fillWidth: true }

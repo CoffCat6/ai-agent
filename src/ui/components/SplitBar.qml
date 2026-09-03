@@ -1,6 +1,7 @@
 import QtQuick
 import QtQuick.Controls
 import NexusAI
+import NexusAI.ViewModels
 
 // Vertical splitter strip placed between main-layout columns. Dragging
 // reports raw horizontal mouse deltas through dragged(); the host applies

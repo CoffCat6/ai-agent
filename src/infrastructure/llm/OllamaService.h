@@ -1,9 +1,7 @@
 #pragma once
 
-#include "IAIService.h"
+#include "LLMServiceBase.h"
 
-#include <QNetworkAccessManager>
-#include <QNetworkReply>
 #include <QString>
 #include <QVector>
 
@@ -12,50 +10,37 @@ namespace NexusAI {
 // Ollama native /api/chat service with NDJSON streaming.
 // Converts the agent's OpenAI-format message history into Ollama's format.
 // Content chunks are forwarded via streamingChunk(); the assembled response
-// (content + tool calls) is emitted once via responseReady().
-class OllamaService : public IAIService {
+// (content + tool calls) is emitted once via responseReady(). Request
+// lifecycle / streaming accumulation / finished-reply fallback ladder live
+// in LLMServiceBase.
+class OllamaService : public LLMServiceBase {
     Q_OBJECT
 public:
     explicit OllamaService(QObject* parent = nullptr);
-    ~OllamaService() override;
 
     void chatComplete(const QJsonArray& messages, const QJsonArray& tools = {}) override;
-    void cancel() override;
-
-    void setApiKey(const QString& key) override { Q_UNUSED(key) } // Ollama doesn't need an API key
-    void setModel(const QString& model) override { m_model = model; }
-    void setBaseUrl(const QString& url) override { m_baseUrl = url; }
 
     // Pure parsers over response payloads (no network state); exposed for
     // unit tests.
     static LLMResponse parseResponse(const QJsonObject& json);
     static QVector<ToolCallInfo> parseToolCalls(const QJsonObject& message);
 
-private:
-    void onReadyRead();
-    void handleReplyFinished(QNetworkReply* reply);
-    void processLineBuffer();
-    void emitStreamedResponse();
-    void resetStreamState();
+protected:
+    void processLine(const QByteArray& line) override;
+    bool streamComplete() const override;
+    LLMResponse streamResult() const override;
+    QString providerLabel() const override { return QStringLiteral("Ollama"); }
+    QString extractApiError(const QJsonObject& json) const override;
+    bool isCompleteBody(const QJsonObject& json) const override;
+    LLMResponse parseBody(const QJsonObject& json) const override
+    { return parseResponse(json); }
 
+private:
     static QJsonArray convertMessagesForOllama(const QJsonArray& messages);
 
-    QString m_model{"qwen2.5:7b"};
-    QString m_baseUrl{"http://localhost:11434"};
-    QNetworkAccessManager* m_nam;
-    QNetworkReply* m_currentReply{nullptr};
-
-    // Streaming state
-    QByteArray m_lineBuffer; // trailing incomplete line
-    QByteArray m_rawBody;    // full raw response (for error diagnostics)
-    QString m_content;
-    QVector<ToolCallInfo> m_toolCalls;
-    int m_tokensUsed{0};
-    bool m_doneReceived{false};
-    bool m_responseEmitted{false};
-    bool m_errorEmitted{false};
-
     QJsonObject buildRequestBody(const QJsonArray& messages, const QJsonArray& tools);
+
+    QVector<ToolCallInfo> m_toolCalls;
 };
 
 } // namespace NexusAI

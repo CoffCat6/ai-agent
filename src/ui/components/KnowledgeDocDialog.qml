@@ -2,6 +2,7 @@ import QtQuick
 import QtQuick.Layouts
 import QtQuick.Controls
 import NexusAI
+import NexusAI.ViewModels
 
 // Imported-document detail viewer: document stats plus a chunk-by-chunk
 // preview of what actually entered the vector store, with clipboard export.
@@ -41,12 +42,7 @@ Dialog {
 
     onAboutToShow: reload()
 
-    background: Rectangle {
-        color: Theme.bgSecondary
-        radius: 8
-        border.width: 1
-        border.color: Theme.borderSubtle
-    }
+    background: DialogBackground {}
 
     contentItem: ColumnLayout {
         spacing: 12

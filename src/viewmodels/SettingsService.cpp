@@ -126,6 +126,18 @@ QString unprotectApiKey(const QString& stored) { return stored; }
 
 } // namespace
 
+SettingsService* SettingsService::s_instance = nullptr;
+
+SettingsService* SettingsService::instance() {
+    if (!s_instance) s_instance = new SettingsService(nullptr);
+    return s_instance;
+}
+
+SettingsService* SettingsService::create(QQmlEngine*, QJSEngine* js) {
+    QJSEngine::setObjectOwnership(instance(), QJSEngine::CppOwnership);
+    return instance();
+}
+
 SettingsService::SettingsService(QObject* parent) : QObject(parent) {
     load();
 }

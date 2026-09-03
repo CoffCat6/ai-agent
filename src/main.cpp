@@ -61,7 +61,11 @@ int main(int argc, char *argv[])
     qInfo() << "Log file:" << Logger::logFilePath();
 
     // ── Settings (QSettings + env fallbacks) ──────────
-    auto* settings = new SettingsService(&app);
+    // QML singletons are lazily created through their static factories;
+    // main.cpp takes them via instance() first so dependencies can be
+    // injected before the engine loads the UI.
+    auto* settings = SettingsService::instance();
+    settings->setParent(&app);
 
     // ── LLM services ───────────────────────────────────
     // All three are instantiated; the active one is selected by provider and
@@ -91,16 +95,20 @@ int main(int argc, char *argv[])
     agent->setToolRegistry(&ToolRegistry::instance());
     agent->setMemory(memory);
 
-    // ── ViewModels ─────────────────────────────────────
-    auto* themeManager = new ThemeManager(&app);
-    auto* themeProvider = new ThemeProvider(themeManager, &app);
-    auto* agentVM = new AgentViewModel(&app);
+    // ── ViewModels (QML singletons, owned by the app) ──
+    auto* themeManager = ThemeManager::instance();
+    themeManager->setParent(&app);
+    auto* themeProvider = ThemeProvider::instance();
+    themeProvider->setParent(&app);
+    auto* agentVM = AgentViewModel::instance();
+    agentVM->setParent(&app);
     agentVM->setRagService(rag);
     // Re-embedding pulls persisted content from SQLite (GUI thread, fast).
     agentVM->setKnowledgeContentProvider([memory](const QString& name) {
         return memory->loadKnowledgeDoc(name);
     });
-    auto* connectionTester = new ConnectionTester(&app);
+    auto* connectionTester = ConnectionTester::instance();
+    connectionTester->setParent(&app);
 
     // ── Knowledge-base persistence ─────────────────────
     // Import/remove/clear arrive from worker threads; the lambdas run on
@@ -180,14 +188,10 @@ int main(int argc, char *argv[])
     QObject::connect(settings, &SettingsService::simulationModeChanged, &app, [applyMode]() { applyMode(); });
 
     // ── QML Engine ─────────────────────────────────────
+    // Theme/ThemeManager/AgentVM/Settings/ConnectionTester resolve to the
+    // NexusAI.ViewModels QML singletons above (create() returns the very
+    // instances wired up here).
     QQmlApplicationEngine engine;
-
-    // Register context properties for QML
-    engine.rootContext()->setContextProperty("Theme", themeProvider);
-    engine.rootContext()->setContextProperty("ThemeManager", themeManager);
-    engine.rootContext()->setContextProperty("AgentVM", agentVM);
-    engine.rootContext()->setContextProperty("Settings", settings);
-    engine.rootContext()->setContextProperty("ConnectionTester", connectionTester);
 
     // Load main QML
     const QUrl url(QStringLiteral("qrc:/qt/qml/NexusAI/src/ui/main.qml"));

@@ -2,6 +2,7 @@ import QtQuick
 import QtQuick.Layouts
 import QtQuick.Controls
 import NexusAI
+import NexusAI.ViewModels
 
 // Top bar - sidebar toggle, status indicator and panel toggle
 Rectangle {
@@ -24,31 +25,13 @@ Rectangle {
         spacing: 0
 
         // ── Sidebar Toggle ───────────────────────────
-        Rectangle {
-            width: 32
-            height: 32
-            radius: 6
-            color: sidebarMA.containsMouse ? Theme.surfaceHover : "transparent"
-
-            AppIcon {
-                anchors.centerIn: parent
-                icon: "menu"
-                size: 20
-                iconColor: sidebarMA.containsMouse ? Theme.brandPrimary : Theme.textPrimary
-            }
-
-            MouseArea {
-                id: sidebarMA
-                anchors.fill: parent
-                hoverEnabled: true
-                cursorShape: Qt.PointingHandCursor
-                onClicked: AgentVM.toggleSidebar()
-            }
-
-            ToolTip.visible: sidebarMA.containsMouse
-            ToolTip.delay: 600
-            ToolTip.text: AgentVM.isSidebarExpanded
+        IconButton {
+            icon: "menu"
+            iconSize: 20
+            restIconColor: Theme.textPrimary
+            tooltip: AgentVM.isSidebarExpanded
                 ? qsTr("收起侧边栏 (Ctrl+[)") : qsTr("展开侧边栏 (Ctrl+[)")
+            onClicked: AgentVM.toggleSidebar()
         }
 
         // ── Spacer ────────────────────────────────────
@@ -96,33 +79,15 @@ Rectangle {
         Item { Layout.fillWidth: true }
 
         // ── Panel Toggle Button ──────────────────────
-        Rectangle {
-            width: 32
-            height: 32
-            radius: 6
-            color: panelToggleMA.containsMouse ? Theme.surfaceHover : "transparent"
+        IconButton {
+            icon: AgentVM.isPanelVisible ? "chevron-right" : "chevron-left"
+            iconSize: 18
+            restIconColor: Theme.textPrimary
             border.width: AgentVM.isPanelVisible ? 0 : 1
             border.color: Theme.borderSubtle
-
-            AppIcon {
-                anchors.centerIn: parent
-                icon: AgentVM.isPanelVisible ? "chevron-right" : "chevron-left"
-                size: 18
-                iconColor: panelToggleMA.containsMouse ? Theme.brandPrimary : Theme.textPrimary
-            }
-
-            MouseArea {
-                id: panelToggleMA
-                anchors.fill: parent
-                hoverEnabled: true
-                cursorShape: Qt.PointingHandCursor
-                onClicked: AgentVM.togglePanel()
-            }
-
-            ToolTip.visible: panelToggleMA.containsMouse
-            ToolTip.delay: 600
-            ToolTip.text: AgentVM.isPanelVisible
+            tooltip: AgentVM.isPanelVisible
                 ? qsTr("收起上下文面板 (Ctrl+B)") : qsTr("展开上下文面板 (Ctrl+B)")
+            onClicked: AgentVM.togglePanel()
         }
 
     }
