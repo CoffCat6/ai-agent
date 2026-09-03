@@ -130,6 +130,7 @@ private slots:
     void confirmDeclineFeedsRejection();
     void unknownToolFeedsError();
     void maxIterationsStops();
+    void repeatedCallWithAnswerFinishes();
     void traceRestoredOnResume();
     void stopDuringConfirmationIsNoOp();
     void contextBudgetCompressesHistory();
@@ -245,10 +246,13 @@ void TestAgent::unknownToolFeedsError() {
 }
 
 void TestAgent::maxIterationsStops() {
-    const QString missing = QStandardPaths::writableLocation(QStandardPaths::HomeLocation)
-        + "/nexusai_nonexistent_dir_xyz";
-    llm.script.append(toolResponse("list_dir", QJsonObject{{"path", missing}}));
-    llm.repeatLast = true;
+    // Each round probes a DIFFERENT directory: the identical-round loop
+    // terminator (finishes early on repeated calls) must not kick in, so
+    // the hard step budget is what actually stops the task.
+    const QString home = QStandardPaths::writableLocation(QStandardPaths::HomeLocation);
+    for (int i = 0; i < 10; ++i)
+        llm.script.append(toolResponse("list_dir",
+            QJsonObject{{"path", home + "/nexusai_nonexistent_dir_" + QString::number(i)}}));
 
     QSignalSpy spy(&agent, &AIAgent::responseReady);
     agent.startTask(QStringLiteral("loop"));
@@ -270,6 +274,53 @@ void TestAgent::maxIterationsStops() {
 
 // Switching conversations must restore the full visual timeline (thinking /
 // tool calls / results), not just the user/assistant text.
+// The model writes a full answer AND then re-issues the exact tool call it
+// already ran (seen with OpenAI-compatible proxies). The second identical
+// round must finish the task with the answer that is already on the table -
+// no second execution, no step-budget burn.
+void TestAgent::repeatedCallWithAnswerFinishes() {
+    SqliteMemory memory(QStringLiteral(":memory:"));
+    agent.setMemory(&memory);
+
+    QTemporaryDir dir;
+    QVERIFY(dir.isValid());
+    const QString path = dir.filePath("doc.txt");
+    QFile file(path);
+    QVERIFY(file.open(QIODevice::WriteOnly | QIODevice::Text));
+    file.write("hello agent");
+    file.close();
+
+    const QJsonObject args{{"path", path}};
+    const QString fullAnswer = QStringLiteral(
+        "白艳波 教师简介：人文学院助理研究员，研究领域为明代文献学、道教史，"
+        "主持海南省哲社规划课题，参编两部著作，并在期刊发表多篇论文。");
+
+    LLMResponse first = toolResponse("read_file", args);
+    first.content = QStringLiteral("让我查一下。");
+    LLMResponse second = toolResponse("read_file", args); // identical round
+    second.content = fullAnswer;
+
+    llm.script.append(first);
+    llm.script.append(second);
+
+    QSignalSpy spy(&agent, &AIAgent::responseReady);
+    agent.startTask(QStringLiteral("白艳波是谁"));
+    QTRY_COMPARE_WITH_TIMEOUT(spy.count(), 1, 15000);
+
+    QCOMPARE(agent.state(), AgentState::Completed);
+    QCOMPARE(agent.lastResponse(), fullAnswer);
+
+    // Exactly one real execution: the repeated round was cut off
+    const QJsonArray audit = memory.auditLog(50);
+    int executions = 0;
+    for (const auto& entry : audit) {
+        if (entry.toObject().value("event").toString() == QStringLiteral("tool_execute"))
+            ++executions;
+    }
+    QCOMPARE(executions, 1);
+    QVERIFY(traceHas(agent.traceModel(), "tool_result", "hello agent"));
+}
+
 void TestAgent::traceRestoredOnResume() {
     SqliteMemory memory(QStringLiteral(":memory:"));
     agent.setMemory(&memory);

@@ -3,6 +3,7 @@
 #include "ITool.h"
 
 #include <QHash>
+#include <QStringList>
 #include <QVector>
 #include <memory>
 #include <vector>
@@ -17,6 +18,10 @@ public:
     ITool* find(const QString& name) const;
     QVector<ToolDefinition> listAll() const;
     bool isRegistered(const QString& name) const;
+    // Names of the tools the model is allowed to call (Dangerous excluded) -
+    // used to expose the schema and to teach the model correct names when
+    // it hallucinates one.
+    QStringList toolNamesForModel() const;
 
 private:
     ToolRegistry();

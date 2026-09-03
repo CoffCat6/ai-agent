@@ -133,7 +133,7 @@ SettingsService* SettingsService::instance() {
     return s_instance;
 }
 
-SettingsService* SettingsService::create(QQmlEngine*, QJSEngine* js) {
+SettingsService* SettingsService::create(QQmlEngine*, QJSEngine*) {
     QJSEngine::setObjectOwnership(instance(), QJSEngine::CppOwnership);
     return instance();
 }

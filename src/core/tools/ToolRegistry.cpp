@@ -284,4 +284,13 @@ bool ToolRegistry::isRegistered(const QString& name) const {
     return m_tools.contains(name);
 }
 
+QStringList ToolRegistry::toolNamesForModel() const {
+    QStringList names;
+    for (const auto& tool : m_ownedTools) {
+        if (tool->definition().level != ToolLevel::Dangerous)
+            names.append(tool->definition().name);
+    }
+    return names;
+}
+
 } // namespace NexusAI

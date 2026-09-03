@@ -19,6 +19,9 @@ namespace {
 constexpr int kMaxTraceChars = 1500;      // cap for tool args/results shown in UI
 constexpr int kMaxToolResultChars = 6000; // cap fed back to the LLM
 constexpr int kStreamFlushMs = 100;       // trace flush throttle while streaming
+// An interim assistant answer this long counts as the final result when the
+// model keeps re-issuing an identical tool call instead of stopping.
+constexpr int kMinFinalAnswerChars = 40;
 
 QString truncateText(const QString& text, int maxChars) {
     if (text.size() <= maxChars) return text;
@@ -480,6 +483,54 @@ void AIAgent::onLLMResponse(const LLMResponse& response) {
         return;
     }
 
+    // ── Loop terminator: identical back-to-back tool call rounds ──
+    // Some models write the complete final answer AND then re-issue a tool
+    // call they already ran (observed with OpenAI-compatible proxies).
+    // The second repetition means the loop is stuck: finish with the answer
+    // that is already on the table instead of burning the step budget.
+    QString signature;
+    for (const auto& c : calls)
+        signature += c.name + QLatin1Char(':') + argsToString(c.arguments)
+                   + QLatin1Char(';');
+    const bool repeated = (signature == m_lastToolSignature);
+    m_lastToolSignature = signature;
+    if (repeated) ++m_repeatToolCount; else m_repeatToolCount = 0;
+
+    if (m_repeatToolCount >= 2
+            || (m_repeatToolCount == 1 && response.content.size() >= kMinFinalAnswerChars)) {
+        const bool streamed = m_streamNodeActive;
+        if (streamed) {
+            updateLastNodeStatus("completed");
+            m_streamNodeActive = false;
+        }
+        m_streamText.clear();
+        finishTask(response.content.isEmpty()
+            ? QStringLiteral("Step budget exhausted before I could fully answer. "
+                             "Here is what I found so far - please continue the "
+                             "conversation for more detail.")
+            : response.content, streamed);
+        return;
+    }
+    if (m_repeatToolCount == 1) {
+        // Second identical call without a usable answer: skip the redundant
+        // execution, acknowledge the repeats as tool results, and demand a
+        // final answer.
+        for (const auto& c : calls) {
+            appendTraceNode("tool_call", c.name, "cancelled",
+                            QJsonObject{{"args", argsToString(c.arguments)}});
+            QJsonObject toolMsg;
+            toolMsg["role"] = "tool";
+            toolMsg["tool_call_id"] = c.id;
+            toolMsg["content"] = QStringLiteral(
+                "[Repeated call skipped] This exact call was already executed - its "
+                "result is in the conversation above. Do NOT call it again. Reply "
+                "with your final answer now.");
+            m_messages.append(toolMsg);
+        }
+        processIteration();
+        return;
+    }
+
     // Tool calls follow: the streamed text (if any) is interim assistant text.
     if (m_streamNodeActive) {
         updateLastNodeStatus("completed");
@@ -565,8 +616,14 @@ void AIAgent::processNextToolCall() {
         if (!tool) {
             appendTraceNode("tool_call", call.name, "failed",
                             QJsonObject{{"args", argsToString(call.arguments)}});
+            // Naming the valid tools lets the model self-correct instead of
+            // re-issuing the same hallucinated call until the step budget
+            // runs out.
             appendToolResultMessage(call,
-                QStringLiteral("Error: unknown tool '%1'").arg(call.name));
+                QStringLiteral("Error: unknown tool '%1'. Available tools: %2")
+                    .arg(call.name, m_toolRegistry
+                         ? m_toolRegistry->toolNamesForModel().join(QStringLiteral(", "))
+                         : QString()));
             if (m_memory)
                 m_memory->logAudit(m_sessionId, "unknown_tool", call.name,
                                    argsToString(call.arguments), false,
@@ -610,28 +667,8 @@ void AIAgent::processNextToolCall() {
 // ── Tool execution (worker thread) ────────────────────────
 
 void AIAgent::dispatchToolExecution(const ToolCallInfo& call, const QString& traceNodeId) {
-    // Loop guard: identical back-to-back calls get an escalating note pushed
-    // into the tool result, so the model stops re-running the same probe and
-    // answers instead of burning the whole step budget.
-    const QString signature = call.name + QLatin1Char(':') + argsToString(call.arguments);
-    QString note;
-    if (signature == m_lastToolSignature) {
-        ++m_repeatToolCount;
-        if (m_repeatToolCount == 1) {
-            note = QStringLiteral(
-                "\n\n[Repeated call] You already ran this exact call and the result is "
-                "above. Do NOT call it again; if the information suffices, give your "
-                "final answer now.");
-        } else {
-            note = QStringLiteral(
-                "\n\n[STOP] You keep repeating the same call and are close to the hard "
-                "step limit. Make NO further tool calls: based on ALL results collected "
-                "so far, reply with your final answer immediately.");
-        }
-    } else {
-        m_repeatToolCount = 0;
-    }
-    m_lastToolSignature = signature;
+    // Redundant-call detection lives in onLLMResponse (round-level, before
+    // dispatch) - by the time we get here the call is worth executing.
 
     QString nodeId = traceNodeId;
     if (nodeId.isEmpty()) {
@@ -647,7 +684,7 @@ void AIAgent::dispatchToolExecution(const ToolCallInfo& call, const QString& tra
 
     auto* watcher = new QFutureWatcher<ToolResult>(this);
     connect(watcher, &QFutureWatcherBase::finished, this,
-            [this, watcher, call, nodeId, epoch, note]() {
+            [this, watcher, call, nodeId, epoch]() {
         const ToolResult result = watcher->result();
         watcher->deleteLater();
         if (epoch != m_epoch) {
@@ -656,7 +693,7 @@ void AIAgent::dispatchToolExecution(const ToolCallInfo& call, const QString& tra
             updateTraceNodeStatusById(nodeId, "cancelled");
             return;
         }
-        finishToolExecution(call, nodeId, result, note);
+        finishToolExecution(call, nodeId, result);
     });
 
     // Tools are stateless; running them here keeps shell_exec / large file
@@ -668,7 +705,7 @@ void AIAgent::dispatchToolExecution(const ToolCallInfo& call, const QString& tra
 }
 
 void AIAgent::finishToolExecution(const ToolCallInfo& call, const QString& traceNodeId,
-                                  const ToolResult& result, const QString& note) {
+                                  const ToolResult& result) {
     updateTraceNodeStatusById(traceNodeId, result.success ? "success" : "failed");
 
     const QString output = result.success ? result.output : result.error;
@@ -677,8 +714,8 @@ void AIAgent::finishToolExecution(const ToolCallInfo& call, const QString& trace
                     QJsonObject{{"result", truncateText(output, kMaxTraceChars)}});
 
     appendToolResultMessage(call, truncateText(
-        (result.success ? result.output
-                        : QStringLiteral("Error: %1").arg(result.error)) + note,
+        result.success ? result.output
+                       : QStringLiteral("Error: %1").arg(result.error),
         kMaxToolResultChars));
 
     if (m_memory)

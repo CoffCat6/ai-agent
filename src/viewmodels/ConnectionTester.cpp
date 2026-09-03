@@ -15,7 +15,7 @@ ConnectionTester* ConnectionTester::instance() {
     return s_instance;
 }
 
-ConnectionTester* ConnectionTester::create(QQmlEngine*, QJSEngine* js) {
+ConnectionTester* ConnectionTester::create(QQmlEngine*, QJSEngine*) {
     QJSEngine::setObjectOwnership(instance(), QJSEngine::CppOwnership);
     return instance();
 }

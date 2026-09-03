@@ -92,6 +92,37 @@ bool OpenAIService::isCompleteBody(const QJsonObject& json) const {
     return json.contains("choices");
 }
 
+// Streaming accumulation tolerant of both wire styles:
+// - genuine delta fragments are concatenated ("search_kn" + "owledge_base")
+// - complete values resent by the proxy on every chunk are collapsed
+//   ("search_knowledge_base" + "search_knowledge_base" stays one name)
+QString OpenAIService::accumulateName(const QString& acc, const QString& incoming) {
+    if (incoming.isEmpty()) return acc;
+    if (acc.isEmpty()) return incoming;
+    if (incoming.startsWith(acc)) return incoming;   // resent, grown, or identical
+    if (!acc.contains(incoming)) return acc + incoming;
+    return acc;                                       // repeat of what we have
+}
+
+QString OpenAIService::accumulateArguments(const QString& acc, const QString& incoming) {
+    if (incoming.isEmpty()) return acc;
+    if (acc.isEmpty()) return incoming;
+    if (incoming.startsWith(acc)) return incoming;   // resent, grown, or identical
+
+    // A genuine delta fragment is appended - unless both sides are already
+    // complete JSON objects. Then the proxy resent diverging full payloads
+    // and concatenating would weld them into unparseable garbage; the first
+    // complete document wins.
+    QJsonParseError accErr{}, inErr{};
+    const bool accComplete = QJsonDocument::fromJson(acc.toUtf8(), &accErr).isObject()
+        && accErr.error == QJsonParseError::NoError;
+    const bool incomingComplete =
+        QJsonDocument::fromJson(incoming.toUtf8(), &inErr).isObject()
+        && inErr.error == QJsonParseError::NoError;
+    if (accComplete && incomingComplete) return acc;
+    return acc + incoming;
+}
+
 void OpenAIService::processLine(const QByteArray& line) {
     // SSE spec: only "data:" events carry payload
     if (!line.startsWith("data:")) return;
@@ -139,9 +170,12 @@ void OpenAIService::processLine(const QByteArray& line) {
             m_toolCalls[index].id = tcObj.value("id").toString();
         const QJsonObject fn = tcObj.value("function").toObject();
         if (fn.contains("name"))
-            m_toolCalls[index].name += fn.value("name").toString();
+            m_toolCalls[index].name =
+                accumulateName(m_toolCalls[index].name, fn.value("name").toString());
         if (fn.contains("arguments"))
-            m_toolCalls[index].arguments += fn.value("arguments").toString();
+            m_toolCalls[index].arguments =
+                accumulateArguments(m_toolCalls[index].arguments,
+                                    fn.value("arguments").toString());
     }
 }
 

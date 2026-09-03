@@ -26,6 +26,15 @@ public:
     // exposed for unit tests.
     static LLMResponse parseResponse(const QJsonObject& json);
 
+    // Streaming tool-call accumulation helpers (pure, exposed for tests).
+    // OpenAI sends the tool name once (complete) and arguments as split
+    // delta fragments, but some OpenAI-compatible proxies RESEND the
+    // complete name/arguments on every chunk - naive concatenation then
+    // yields "search_knowledge_basesearch_knowledge_base..." names and
+    // welded-together argument objects that never parse.
+    static QString accumulateName(const QString& acc, const QString& incoming);
+    static QString accumulateArguments(const QString& acc, const QString& incoming);
+
 protected:
     void processLine(const QByteArray& line) override;
     bool streamComplete() const override;

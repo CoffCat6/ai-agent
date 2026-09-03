@@ -4,6 +4,7 @@
 #include <QJsonObject>
 #include <QNetworkProxyFactory>
 #include <QtConcurrent/QtConcurrentRun>
+#include <QQuickStyle>
 
 #include "viewmodels/ThemeManager.h"
 #include "viewmodels/ThemeProvider.h"
@@ -51,6 +52,12 @@ int main(int argc, char *argv[])
     app.setOrganizationName("NexusAI");
     app.setApplicationName("NexusAI");
     app.setApplicationVersion("0.2.0");
+
+    // Non-native control style: the UI customizes TextField/Dialog
+    // backgrounds everywhere, which the native (windows) style forbids -
+    // Basic keeps those customizations effective and silences the
+    // "style does not support customization" warnings.
+    QQuickStyle::setStyle(QStringLiteral("Basic"));
 
     QNetworkProxyFactory::setApplicationProxyFactory(new LoopbackProxyFactory);
 

@@ -28,6 +28,7 @@ private slots:
     void openaiPlainText();
     void openaiToolCalls();
     void openaiMalformedToolArguments();
+    void openaiStreamingAccumulation();
     void openaiNoChoices();
     void openaiErrorBodyHasNoChoices();
 
@@ -41,7 +42,9 @@ private slots:
     void anthropicPlainText();
     void anthropicErrorPayload();
     void anthropicConvertMessages();
+    void anthropicConvertToolCalls();
     void anthropicConvertDropsLeadingAssistant();
+    void anthropicParseToolUse();
 };
 
 void TestLlmParsers::openaiPlainText() {
@@ -84,6 +87,45 @@ void TestLlmParsers::openaiMalformedToolArguments() {
     QVERIFY(r.success);
     QCOMPARE(r.toolCalls.size(), 1);
     QVERIFY(r.toolCalls.first().arguments.isEmpty());
+}
+
+void TestLlmParsers::openaiStreamingAccumulation() {
+    // Official wire style: complete name once, arguments as split fragments
+    QString name = OpenAIService::accumulateName(QString(), QStringLiteral("search_knowledge_base"));
+    QCOMPARE(name, QStringLiteral("search_knowledge_base"));
+    name = OpenAIService::accumulateName(name, QStringLiteral(""));      // no name delta -> unchanged
+    QCOMPARE(name, QStringLiteral("search_knowledge_base"));
+
+    // Proxy bug seen in the wild: the complete name resent on every chunk
+    name = OpenAIService::accumulateName(name, QStringLiteral("search_knowledge_base"));
+    QCOMPARE(name, QStringLiteral("search_knowledge_base"));
+    name = OpenAIService::accumulateName(name, QStringLiteral("search_knowledge_base"));
+    QCOMPARE(name, QStringLiteral("search_knowledge_base"));
+
+    // Genuine name split fragments still concatenate
+    name = OpenAIService::accumulateName(QString(), QStringLiteral("search_kn"));
+    name = OpenAIService::accumulateName(name, QStringLiteral("owledge_base"));
+    QCOMPARE(name, QStringLiteral("search_knowledge_base"));
+
+    // Arguments: genuine split fragments concatenate into one valid object
+    QString args = OpenAIService::accumulateArguments(QString(), QStringLiteral("{\"query\": \"白"));
+    args = OpenAIService::accumulateArguments(args, QStringLiteral("艳波\"}"));
+    QCOMPARE(args, QStringLiteral("{\"query\": \"白艳波\"}"));
+
+    // Proxy bug: complete arguments resent on every chunk (observed as
+    // "{\"query\": ...}{\"query\": ...}" welded payloads)
+    args = OpenAIService::accumulateArguments(QString(), QStringLiteral("{}"));
+    args = OpenAIService::accumulateArguments(args, QStringLiteral("{}"));
+    QCOMPARE(args, QStringLiteral("{}"));
+
+    args = OpenAIService::accumulateArguments(QString(), QStringLiteral("{\"query\": \"a\"}"));
+    args = OpenAIService::accumulateArguments(args, QStringLiteral("{\"query\": \"a\"}"));
+    QCOMPARE(args, QStringLiteral("{\"query\": \"a\"}"));
+
+    // Diverging complete payloads: the first complete document wins
+    args = OpenAIService::accumulateArguments(QString(), QStringLiteral("{\"query\": \"白艳波\"}"));
+    args = OpenAIService::accumulateArguments(args, QStringLiteral("{\"query\": \"教师唯一ID 739\"}"));
+    QCOMPARE(args, QStringLiteral("{\"query\": \"白艳波\"}"));
 }
 
 void TestLlmParsers::openaiNoChoices() {
@@ -176,13 +218,52 @@ void TestLlmParsers::anthropicConvertMessages() {
     ])"));
 
     QCOMPARE(out.system, QStringLiteral("be brief"));
-    // Tool traffic is dropped, consecutive assistant turns merged
-    QCOMPARE(out.messages.size(), 3);
+    // tool_calls -> assistant tool_use block, tool result -> user
+    // tool_result block, consecutive assistant turns merged
+    QCOMPARE(out.messages.size(), 5);
     QCOMPARE(out.messages.at(0).toObject().value("role").toString(), QStringLiteral("user"));
     QCOMPARE(out.messages.at(0).toObject().value("content").toString(), QStringLiteral("question"));
-    QCOMPARE(out.messages.at(1).toObject().value("content").toString(),
+
+    const QJsonObject toolUseTurn = out.messages.at(1).toObject();
+    QCOMPARE(toolUseTurn.value("role").toString(), QStringLiteral("assistant"));
+    const QJsonArray useBlocks = toolUseTurn.value("content").toArray();
+    QCOMPARE(useBlocks.size(), 1);
+    QCOMPARE(useBlocks.at(0).toObject().value("type").toString(), QStringLiteral("tool_use"));
+    QCOMPARE(useBlocks.at(0).toObject().value("id").toString(), QStringLiteral("call_1"));
+
+    const QJsonObject resultTurn = out.messages.at(2).toObject();
+    QCOMPARE(resultTurn.value("role").toString(), QStringLiteral("user"));
+    const QJsonArray resultBlocks = resultTurn.value("content").toArray();
+    QCOMPARE(resultBlocks.size(), 1);
+    QCOMPARE(resultBlocks.at(0).toObject().value("type").toString(), QStringLiteral("tool_result"));
+    QCOMPARE(resultBlocks.at(0).toObject().value("tool_use_id").toString(), QStringLiteral("call_1"));
+    QCOMPARE(resultBlocks.at(0).toObject().value("content").toString(), QStringLiteral("result"));
+
+    QCOMPARE(out.messages.at(3).toObject().value("content").toString(),
              QStringLiteral("part one\n\npart two\n\nlead in"));
-    QCOMPARE(out.messages.at(2).toObject().value("content").toString(), QStringLiteral("again"));
+    QCOMPARE(out.messages.at(4).toObject().value("content").toString(), QStringLiteral("again"));
+}
+
+// Full tool_calls payload: arguments arrive as a JSON string and must be
+// handed to the API as the parsed input object.
+void TestLlmParsers::anthropicConvertToolCalls() {
+    const AnthropicService::ConvertedHistory out = AnthropicService::convertMessages(arrayOf(R"([
+        {"role": "user", "content": "read it"},
+        {"role": "assistant", "content": "",
+         "tool_calls": [{"id": "call_9", "type": "function", "function": {
+             "name": "read_file",
+             "arguments": "{\"path\": \"/tmp/a.txt\"}"
+         }}]}
+    ])"));
+
+    QCOMPARE(out.messages.size(), 2);
+    const QJsonArray blocks = out.messages.at(1).toObject().value("content").toArray();
+    QCOMPARE(blocks.size(), 1); // empty text is not emitted as a block
+    const QJsonObject use = blocks.at(0).toObject();
+    QCOMPARE(use.value("type").toString(), QStringLiteral("tool_use"));
+    QCOMPARE(use.value("id").toString(), QStringLiteral("call_9"));
+    QCOMPARE(use.value("name").toString(), QStringLiteral("read_file"));
+    QCOMPARE(use.value("input").toObject().value("path").toString(), QStringLiteral("/tmp/a.txt"));
 }
 
 void TestLlmParsers::anthropicConvertDropsLeadingAssistant() {
@@ -193,6 +274,28 @@ void TestLlmParsers::anthropicConvertDropsLeadingAssistant() {
     ])"));
     QCOMPARE(out.messages.size(), 1);
     QCOMPARE(out.messages.at(0).toObject().value("role").toString(), QStringLiteral("user"));
+}
+
+// Non-streamed tool use: content blocks carry tool_use entries whose input
+// is already a JSON object.
+void TestLlmParsers::anthropicParseToolUse() {
+    const LLMResponse r = AnthropicService::parseResponse(jsonOf(R"({
+        "type": "message",
+        "role": "assistant",
+        "content": [
+            {"type": "text", "text": "Let me check."},
+            {"type": "tool_use", "id": "toolu_1", "name": "list_dir",
+             "input": {"path": "/x"}}
+        ],
+        "stop_reason": "tool_use",
+        "usage": {"input_tokens": 10, "output_tokens": 5}
+    })"));
+    QVERIFY(r.success);
+    QCOMPARE(r.content, QStringLiteral("Let me check."));
+    QCOMPARE(r.toolCalls.size(), 1);
+    QCOMPARE(r.toolCalls.first().id, QStringLiteral("toolu_1"));
+    QCOMPARE(r.toolCalls.first().name, QStringLiteral("list_dir"));
+    QCOMPARE(r.toolCalls.first().arguments.value("path").toString(), QStringLiteral("/x"));
 }
 
 QTEST_GUILESS_MAIN(TestLlmParsers)

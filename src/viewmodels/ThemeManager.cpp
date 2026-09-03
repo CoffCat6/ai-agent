@@ -9,7 +9,7 @@ ThemeManager* ThemeManager::instance() {
     return s_instance;
 }
 
-ThemeManager* ThemeManager::create(QQmlEngine*, QJSEngine* js) {
+ThemeManager* ThemeManager::create(QQmlEngine*, QJSEngine*) {
     QJSEngine::setObjectOwnership(instance(), QJSEngine::CppOwnership);
     return instance();
 }

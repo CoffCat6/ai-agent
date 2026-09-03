@@ -30,7 +30,7 @@ AgentViewModel* AgentViewModel::instance() {
     return s_instance;
 }
 
-AgentViewModel* AgentViewModel::create(QQmlEngine*, QJSEngine* js) {
+AgentViewModel* AgentViewModel::create(QQmlEngine*, QJSEngine*) {
     // main.cpp keeps its own reference and wires dependencies; the engine
     // must not garbage-collect the singleton behind its back.
     QJSEngine::setObjectOwnership(instance(), QJSEngine::CppOwnership);

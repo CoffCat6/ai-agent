@@ -110,7 +110,7 @@ private:
     // path), or empty to append a fresh one (auto-execution path).
     void dispatchToolExecution(const ToolCallInfo& call, const QString& traceNodeId);
     void finishToolExecution(const ToolCallInfo& call, const QString& traceNodeId,
-                             const ToolResult& result, const QString& note = QString());
+                             const ToolResult& result);
     void appendToolResultMessage(const ToolCallInfo& call, const QString& content);
     void finishTask(const QString& finalText, bool summaryTraced = false);
     void failTask(const QString& error);
@@ -130,8 +130,10 @@ private:
     ToolCallInfo m_currentConfirmCall;
     QString m_confirmNodeId;  // trace node of the pending confirmation
 
-    // Loop guard: detects the model re-issuing an identical tool call and
-    // escalates a "stop exploring, answer now" instruction into the result.
+    // Loop guard (round-level, checked in onLLMResponse): an identical
+    // back-to-back tool call round means the model is stuck; the second
+    // repetition finishes the task with the answer it already wrote instead
+    // of burning the step budget on redundant executions.
     QString m_lastToolSignature;
     int m_repeatToolCount{0};
     // Step budget exhausted: one final LLM call with tools withheld so the
