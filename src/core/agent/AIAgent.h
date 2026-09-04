@@ -103,6 +103,16 @@ private:
     void clearStreamState();
 
     void processNextToolCall();
+    // Append synthetic tool-result messages for calls the assistant already
+    // announced but that will NOT be executed (loop terminator, forced
+    // final, stop). Without them the history ends in dangling tool_calls -
+    // an invalid OpenAI sequence that makes some proxies repeat the stale
+    // call on the next user turn.
+    void sealUnansweredToolCalls(const QVector<ToolCallInfo>& calls);
+    // Replace completed tool-call rounds older than the newest few with a
+    // short assistant note (keeps the model from pattern-matching the
+    // history into calling tools on every new message).
+    void collapseOldToolRounds();
     // Persist one trace node (upsert keyed by node id) so resumed sessions
     // rebuild the full timeline, not just user/assistant text.
     void persistTraceNode(const QJsonObject& node, int order);

@@ -14,6 +14,11 @@ class Logger {
 public:
     static void install();
 
+    // Minimum level written to the log file; messages below it are dropped
+    // (stderr mirror included). Levels: QtDebugMsg < QtInfoMsg <
+    // QtWarningMsg < QtCriticalMsg < QtFatalMsg - Fatal is never filtered.
+    static void setMinLevel(QtMsgType level);
+
     // Path of the log file currently being written (empty before the first
     // message or when the log directory is not writable).
     static QString logFilePath();

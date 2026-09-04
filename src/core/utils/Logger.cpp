@@ -6,6 +6,7 @@
 #include <QFileInfo>
 #include <QMutex>
 #include <QMutexLocker>
+#include <QSettings>
 #include <QStandardPaths>
 #include <QtDebug>
 
@@ -18,6 +19,7 @@ namespace {
 QMutex g_mutex;
 QFile g_file;
 QString g_filePath;
+QtMsgType g_minLevel = QtInfoMsg;
 
 const char* levelName(QtMsgType type) {
     switch (type) {
@@ -30,6 +32,16 @@ const char* levelName(QtMsgType type) {
     return "LOG";
 }
 
+bool parseLevel(const QString& name, QtMsgType& out) {
+    if (name.compare(QLatin1String("debug"), Qt::CaseInsensitive) == 0) { out = QtDebugMsg; return true; }
+    if (name.compare(QLatin1String("info"), Qt::CaseInsensitive) == 0)  { out = QtInfoMsg; return true; }
+    if (name.compare(QLatin1String("warning"), Qt::CaseInsensitive) == 0
+        || name.compare(QLatin1String("warn"), Qt::CaseInsensitive) == 0) { out = QtWarningMsg; return true; }
+    if (name.compare(QLatin1String("critical"), Qt::CaseInsensitive) == 0
+        || name.compare(QLatin1String("crit"), Qt::CaseInsensitive) == 0) { out = QtCriticalMsg; return true; }
+    return false;
+}
+
 // Daily rotation keeps name order == time order; drop everything but the
 // newest files so the log directory cannot grow without bound.
 void pruneOldLogs(const QDir& dir, int keep = 7) {
@@ -40,6 +52,9 @@ void pruneOldLogs(const QDir& dir, int keep = 7) {
 }
 
 void messageHandler(QtMsgType type, const QMessageLogContext& context, const QString& message) {
+    // Level filter (Fatal can never be below the threshold)
+    if (type < g_minLevel) return;
+
     QMutexLocker locker(&g_mutex);
 
     QString line = QString("[%1] [%2]")
@@ -92,7 +107,22 @@ QString Logger::logFilePath() {
     return g_filePath;
 }
 
+void Logger::setMinLevel(QtMsgType level) {
+    QMutexLocker locker(&g_mutex);
+    g_minLevel = level;
+}
+
 void Logger::install() {
+    // Minimum level from settings (logging/level: debug|info|warning|critical,
+    // default "info"), overridable per run via the NEXUSAI_LOG_LEVEL env var.
+    QSettings settings(QStringLiteral("NexusAI"), QStringLiteral("NexusAI"));
+    QtMsgType level = QtInfoMsg;
+    parseLevel(settings.value("logging/level", QStringLiteral("info")).toString(), level);
+    const QString env = qEnvironmentVariable("NEXUSAI_LOG_LEVEL");
+    if (!env.isEmpty())
+        parseLevel(env, level);
+    g_minLevel = level;
+
     qInstallMessageHandler(messageHandler);
 }
 

@@ -13,6 +13,11 @@ find_package(Qt6 REQUIRED COMPONENTS
 
 qt_standard_project_setup(REQUIRES 6.5)
 
+# qmlcachegen / qmllint: resolve the NexusAI.ViewModels module types. The
+# module's <module>.qmltypes is generated into the build root, so the build
+# dir acts as the extra import path for QML ahead-of-time compilation.
+set(QML_IMPORT_PATH ${CMAKE_BINARY_DIR} CACHE STRING "QML import paths" FORCE)
+
 # Warnings on all targets (no -Werror: third-party/generated code must
 # still build with newer toolchains)
 if(MSVC)

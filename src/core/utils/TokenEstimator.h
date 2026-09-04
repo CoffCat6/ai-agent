@@ -10,10 +10,26 @@ namespace NexusAI {
 // Simple token estimator for context window management
 class TokenEstimator {
 public:
-    // Rough estimate: ~4 characters per token (English text average)
+    // Rough estimate: ~4 characters per token for Latin text; CJK characters
+    // cost roughly 1.5 characters per token (most Chinese chars are ~0.6-0.7
+    // tokens). The previous uniform /4 rule underestimated Chinese
+    // conversations by about 2x and let them overflow the real context
+    // window before compression kicked in.
     static int estimateTokens(const QString& text) {
         if (text.isEmpty()) return 0;
-        return text.length() / 4;
+        int cjk = 0;
+        for (const QChar ch : text) {
+            const char16_t u = ch.unicode();
+            if ((u >= 0x2E80 && u <= 0x9FFF)     // CJK radicals .. unified ideographs
+                || (u >= 0xF900 && u <= 0xFAFF)  // compatibility ideographs
+                || (u >= 0x3000 && u <= 0x303F)  // CJK punctuation
+                || (u >= 0xFF00 && u <= 0xFFEF)) // fullwidth forms
+                ++cjk;
+        }
+        const int other = text.length() - cjk;
+        // ceil(other/4) + ceil(cjk/1.5), integer math; never zero for
+        // non-empty text so compression budgets stay conservative.
+        return qMax(1, (other + 3) / 4 + (cjk * 2 + 2) / 3);
     }
 
     // Estimate tokens for a single message object

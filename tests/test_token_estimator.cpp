@@ -41,6 +41,7 @@ class TestTokenEstimator : public QObject {
 
 private slots:
     void estimateBasics();
+    void estimateCjkWeighted();
     void compressFittingHistoryUnchanged();
     void compressKeepsSystemAndSuffix();
     void compressSuffixStartsAtUser();
@@ -55,6 +56,25 @@ void TestTokenEstimator::estimateBasics() {
     QVERIFY(TokenEstimator::estimateTokens("abcdefg") > 0);
     QVERIFY(TokenEstimator::exceedsBudget(QJsonArray{msg("user", QString(100, 'x'))}, 10));
     QCOMPARE(TokenEstimator::remainingBudget(QJsonArray{}, 100), 100);
+}
+
+// CJK characters cost ~1.5 chars per token: the estimator must weight them
+// accordingly, otherwise long Chinese conversations overflow the real
+// context window before compression triggers.
+void TestTokenEstimator::estimateCjkWeighted() {
+    const QString cn = QStringLiteral("教师简介人文学院助理研究员"); // 13 CJK chars
+    QCOMPARE(TokenEstimator::estimateTokens(cn), (13 * 2 + 2) / 3);  // 9, not 13/4=3
+    QVERIFY(TokenEstimator::estimateTokens(cn) > cn.length() / 4);
+
+    // CJK punctuation and fullwidth forms count as CJK
+    QCOMPARE(TokenEstimator::estimateTokens(QStringLiteral("。！")), (2 * 2 + 2) / 3);
+
+    // Mixed text: Latin part /4 + CJK part /1.5
+    QCOMPARE(TokenEstimator::estimateTokens(QStringLiteral("abc中文def")),
+             (6 + 3) / 4 + (2 * 2 + 2) / 3);
+
+    // Non-empty text never estimates to zero
+    QVERIFY(TokenEstimator::estimateTokens(QStringLiteral("中")) >= 1);
 }
 
 void TestTokenEstimator::compressFittingHistoryUnchanged() {

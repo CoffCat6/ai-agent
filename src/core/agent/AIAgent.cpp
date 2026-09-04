@@ -22,6 +22,11 @@ constexpr int kStreamFlushMs = 100;       // trace flush throttle while streamin
 // An interim assistant answer this long counts as the final result when the
 // model keeps re-issuing an identical tool call instead of stopping.
 constexpr int kMinFinalAnswerChars = 40;
+// Completed tool rounds kept verbatim in the history; older rounds are
+// collapsed to a note. A long tail of tool_call/tool messages reads like an
+// "always call tools" pattern and makes weak models fire the tool on every
+// new message, greetings included.
+constexpr int kKeepToolRounds = 2;
 
 QString truncateText(const QString& text, int maxChars) {
     if (text.size() <= maxChars) return text;
@@ -53,6 +58,12 @@ QString systemPrompt() {
         "exploring to be thorough.\n"
         "File writes and shell commands require user approval - if the user declines, "
         "adapt your plan. Never pretend to have run a tool.\n"
+        "Base every tool call on the CURRENT user message and write fresh arguments "
+        "for it; never repeat a previous call verbatim unless the user is asking the "
+        "same question again.\n"
+        "Judge each message on its own: if the current message is a greeting, small "
+        "talk, or needs no fresh information, reply directly - earlier tool usage in "
+        "this conversation does not make a tool call appropriate now.\n"
         "Always reply in the same language the user writes in."
     ).arg(QSysInfo::productType()).arg(AIAgent::kMaxIterations);
 }
@@ -361,6 +372,7 @@ void AIAgent::processIteration() {
         ++m_iteration;
     }
 
+    collapseOldToolRounds();
     applyContextBudget();
     m_thinkingNodeId = appendTraceNode("thinking",
                                        QStringLiteral("Reasoning (step %1)").arg(m_iteration),
@@ -474,6 +486,7 @@ void AIAgent::onLLMResponse(const LLMResponse& response) {
     // On the forced final call the model must answer, not call tools. It
     // tried anyway: drop the calls and finish with whatever text it produced.
     if (m_forcedFinal) {
+        sealUnansweredToolCalls(calls);
         m_streamText.clear();
         finishTask(response.content.isEmpty()
             ? QStringLiteral("Step budget exhausted before I could fully answer. "
@@ -498,6 +511,7 @@ void AIAgent::onLLMResponse(const LLMResponse& response) {
 
     if (m_repeatToolCount >= 2
             || (m_repeatToolCount == 1 && response.content.size() >= kMinFinalAnswerChars)) {
+        sealUnansweredToolCalls(calls);
         const bool streamed = m_streamNodeActive;
         if (streamed) {
             updateLastNodeStatus("completed");
@@ -551,6 +565,10 @@ void AIAgent::stop() {
     if (!m_active) return;
     m_active = false;
     ++m_epoch;
+    // The assistant message may already be in the history announcing calls
+    // that will now never run - seal them or the next turn inherits a
+    // dangling tool_calls sequence.
+    sealUnansweredToolCalls(m_pendingToolCalls);
     m_pendingToolCalls.clear();
 
     if (!m_confirmNodeId.isEmpty())
@@ -605,6 +623,57 @@ void AIAgent::clearStreamState() {
 }
 
 // ── Tool execution pipeline ───────────────────────────────
+
+// Collapse tool-call rounds older than the newest kKeepToolRounds into a
+// single assistant note. Each round (assistant with tool_calls + its tool
+// results) is replaced as a WHOLE so the wire format stays valid. This
+// keeps the model from reading the conversation as an "always call tools"
+// script - the pattern that made it fire search_knowledge_base on greetings.
+void AIAgent::collapseOldToolRounds() {
+    struct Round { int from; int to; };   // inclusive message range
+    QVector<Round> rounds;
+    for (int i = 1; i < m_messages.size(); ++i) {   // skip the system prompt
+        const QJsonObject msg = m_messages.at(i).toObject();
+        if (msg.value("role").toString() != QLatin1String("assistant")
+                || msg.value("tool_calls").toArray().isEmpty())
+            continue;
+        int j = i + 1;
+        while (j < m_messages.size()
+               && m_messages.at(j).toObject().value("role").toString() == QLatin1String("tool"))
+            ++j;
+        rounds.append({i, j - 1});
+        i = j - 1;
+    }
+    if (rounds.size() <= kKeepToolRounds) return;
+
+    const int collapseCount = rounds.size() - kKeepToolRounds;
+    // Replace back-to-front so the indices of the not-yet-collapsed rounds
+    // stay valid.
+    for (int r = collapseCount - 1; r >= 0; --r) {
+        const Round round = rounds.at(r);
+        QJsonObject note;
+        note["role"] = "assistant";
+        note["content"] = QStringLiteral(
+            "[Earlier tool calls (e.g. search_knowledge_base) were executed here; "
+            "their results were already used in the answers that follow.]");
+        for (int idx = round.to; idx >= round.from; --idx)
+            m_messages.removeAt(idx);
+        m_messages.insert(round.from, note);
+    }
+}
+
+void AIAgent::sealUnansweredToolCalls(const QVector<ToolCallInfo>& calls) {
+    if (calls.isEmpty()) return;
+    for (const auto& c : calls) {
+        QJsonObject toolMsg;
+        toolMsg["role"] = "tool";
+        toolMsg["tool_call_id"] = c.id;
+        toolMsg["content"] = QStringLiteral(
+            "[Not executed] The task was completed from the answer above without "
+            "running this call.");
+        m_messages.append(toolMsg);
+    }
+}
 
 void AIAgent::processNextToolCall() {
     if (!m_active) return;

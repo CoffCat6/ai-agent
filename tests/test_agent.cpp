@@ -8,6 +8,7 @@
 #include "core/memory/SqliteMemory.h"
 #include "infrastructure/llm/IAIService.h"
 
+#include <QSet>
 #include <QtTest>
 #include <QSignalSpy>
 #include <QTemporaryDir>
@@ -101,6 +102,29 @@ bool traceHas(const QJsonArray& trace, const QString& type,
     return false;
 }
 
+// Every assistant message announcing tool_calls must be followed by tool
+// result messages covering all its ids - a dangling sequence is invalid for
+// the OpenAI wire format and derails proxies on the next user turn.
+bool noDanglingToolCalls(const QJsonArray& messages) {
+    for (int i = 0; i < messages.size(); ++i) {
+        const QJsonObject msg = messages.at(i).toObject();
+        const QJsonArray calls = msg.value("tool_calls").toArray();
+        if (calls.isEmpty()) continue;
+
+        QSet<QString> unanswered;
+        for (const auto& c : calls)
+            unanswered.insert(c.toObject().value("id").toString());
+
+        for (int j = i + 1; j < messages.size() && !unanswered.isEmpty(); ++j) {
+            const QJsonObject later = messages.at(j).toObject();
+            if (later.value("role").toString() != "tool") continue;
+            unanswered.remove(later.value("tool_call_id").toString());
+        }
+        if (!unanswered.isEmpty()) return false;
+    }
+    return true;
+}
+
 } // namespace
 
 class TestAgent : public QObject {
@@ -131,6 +155,7 @@ private slots:
     void unknownToolFeedsError();
     void maxIterationsStops();
     void repeatedCallWithAnswerFinishes();
+    void oldToolRoundsCollapsed();
     void traceRestoredOnResume();
     void stopDuringConfirmationIsNoOp();
     void contextBudgetCompressesHistory();
@@ -319,6 +344,50 @@ void TestAgent::repeatedCallWithAnswerFinishes() {
     }
     QCOMPARE(executions, 1);
     QVERIFY(traceHas(agent.traceModel(), "tool_result", "hello agent"));
+}
+
+// After several completed tool rounds, older rounds must be collapsed into
+// a note (only the newest two stay verbatim) while the wire format stays
+// valid - a long tail of tool_call/tool messages reads like an "always call
+// tools" script and made the model fire the tool on greetings.
+void TestAgent::oldToolRoundsCollapsed() {
+    QTemporaryDir dir;
+    QVERIFY(dir.isValid());
+
+    for (int i = 0; i < 4; ++i) {
+        const QString path = dir.filePath(QStringLiteral("f%1.txt").arg(i));
+        QFile file(path);
+        QVERIFY(file.open(QIODevice::WriteOnly | QIODevice::Text));
+        file.write("payload");
+        file.close();
+        llm.script.append(toolResponse("read_file",
+            QJsonObject{{"path", path}}));
+    }
+    llm.script.append(textResponse(QStringLiteral("all read")));
+
+    QSignalSpy spy(&agent, &AIAgent::responseReady);
+    agent.startTask(QStringLiteral("read all four"));
+    QTRY_COMPARE_WITH_TIMEOUT(spy.count(), 1, 20000);
+    QCOMPARE(agent.state(), AgentState::Completed);
+
+    // The final LLM call must carry only the newest 2 tool rounds verbatim;
+    // older ones are replaced by the collapsed-rounds note. Pairing must
+    // stay valid after the replacement.
+    const QJsonArray last = llm.seenMessages.last();
+    int toolMsgs = 0;
+    bool collapsedNote = false;
+    for (const auto& entry : last) {
+        const QJsonObject msg = entry.toObject();
+        if (msg.value("role").toString() == QStringLiteral("tool")) ++toolMsgs;
+        if (msg.value("content").toString().contains(QStringLiteral("Earlier tool calls")))
+            collapsedNote = true;
+    }
+    QCOMPARE(toolMsgs, 2);
+    QVERIFY(collapsedNote);
+    QVERIFY2(noDanglingToolCalls(last), "collapse broke tool_call/tool pairing");
+
+    // All four reads really executed before collapsing kicked in
+    QVERIFY(traceHas(agent.traceModel(), "tool_result", "payload"));
 }
 
 void TestAgent::traceRestoredOnResume() {
