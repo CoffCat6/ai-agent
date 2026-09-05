@@ -36,6 +36,7 @@ public:
     static QString accumulateArguments(const QString& acc, const QString& incoming);
 
 protected:
+    void resetStreamState() override;
     void processLine(const QByteArray& line) override;
     bool streamComplete() const override;
     LLMResponse streamResult() const override;

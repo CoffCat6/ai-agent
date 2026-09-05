@@ -26,6 +26,7 @@ public:
     static QVector<ToolCallInfo> parseToolCalls(const QJsonObject& message);
 
 protected:
+    void resetStreamState() override;
     void processLine(const QByteArray& line) override;
     bool streamComplete() const override;
     LLMResponse streamResult() const override;

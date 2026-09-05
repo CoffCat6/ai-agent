@@ -6,6 +6,8 @@
 #include "core/agent/AgentState.h"
 #include "core/tools/ToolRegistry.h"
 #include "core/memory/SqliteMemory.h"
+#include "core/rag/RagService.h"
+#include "core/rag/KnowledgeSearchTool.h"
 #include "infrastructure/llm/IAIService.h"
 
 #include <QSet>
@@ -125,6 +127,20 @@ bool noDanglingToolCalls(const QJsonArray& messages) {
     return true;
 }
 
+// Knowledge-base tool for the TEST-002 behavioral matrix (pseudo embedding,
+// no network). Registered lazily on first use - the earlier
+// dangerousToolsNotExposed test asserts the built-in-only tool count (4) and
+// runs before any of the matrix tests.
+void registerKnowledgeTool() {
+    if (ToolRegistry::instance().isRegistered(QStringLiteral("search_knowledge_base")))
+        return;
+    static RagService rag; // outlives the registry's raw pointer
+    rag.ingestDocument(QStringLiteral("团队手册"),
+        QStringLiteral("孙曼是人文学院助理研究员，研究领域为明代文献学与道教史。"));
+    ToolRegistry::instance().registerTool(
+        std::make_unique<KnowledgeSearchTool>(&rag));
+}
+
 } // namespace
 
 class TestAgent : public QObject {
@@ -160,6 +176,13 @@ private slots:
     void stopDuringConfirmationIsNoOp();
     void contextBudgetCompressesHistory();
     void auditTrailRecorded();
+    // TEST-002: Knowledge/Normal behavioral matrix (agent level, scripted
+    // provider). Locks the contract the provider-state fix must preserve:
+    // once the provider stops leaking stale tool calls, a normal follow-up
+    // question in the same session completes without any tool execution.
+    void knowledgeThenNormalQuestion();
+    void normalThenKnowledgeQuestion();
+    void knowledgeNormalKnowledgeSequence();
 };
 
 void TestAgent::directCompletion() {
@@ -516,6 +539,107 @@ void TestAgent::auditTrailRecorded() {
     QCOMPARE(audit2.at(0).toObject().value("event").toString(), QStringLiteral("tool_execute"));
     QCOMPARE(audit2.at(0).toObject().value("toolName").toString(), QStringLiteral("read_file"));
     QVERIFY(audit2.at(0).toObject().value("success").toBool());
+
+    agent.setMemory(nullptr);
+}
+
+// ── TEST-002: Knowledge/Normal behavioral matrix ──────────
+// Agent-level contract with a scripted (honest) provider: the same session
+// carries a knowledge round and normal rounds, and tool usage follows the
+// CURRENT message - exactly the behavior the provider-state fix must let
+// through. Pairs with test_provider_lifecycle, which proves the real
+// providers stop leaking stale tool calls across these turns.
+
+void TestAgent::knowledgeThenNormalQuestion() {
+    registerKnowledgeTool();
+
+    SqliteMemory memory(QStringLiteral(":memory:"));
+    agent.setMemory(&memory);
+
+    // Task 1: knowledge question -> KB tool -> answer from passages
+    llm.script.append(toolResponse("search_knowledge_base",
+                                   QJsonObject{{"query", QStringLiteral("孙曼")}}));
+    llm.script.append(textResponse(QStringLiteral("孙曼是人文学院助理研究员。")));
+    QSignalSpy spy(&agent, &AIAgent::responseReady);
+    agent.startTask(QStringLiteral("查询知识库：孙曼是谁？"));
+    QTRY_COMPARE_WITH_TIMEOUT(spy.count(), 1, 15000);
+    QCOMPARE(agent.state(), AgentState::Completed);
+    QCOMPARE(llm.seenMessages.size(), 2);    // tool round + final answer
+    QCOMPARE(memory.auditLog(50).size(), 1); // exactly one tool_execute
+
+    // Task 2 (SAME session): ordinary question. A clean provider returns no
+    // tool calls, so the agent must answer in a single LLM round and must
+    // not execute any tool.
+    const int callsBefore = llm.seenMessages.size();
+    llm.script.append(textResponse(
+        QStringLiteral("Python 装饰器是一种在运行时扩展函数行为的语法。")));
+    agent.startTask(QStringLiteral("Python 装饰器是什么？"));
+    QTRY_COMPARE(spy.count(), 2);
+    QCOMPARE(llm.seenMessages.size(), callsBefore + 1);
+    QCOMPARE(memory.auditLog(50).size(), 1); // no new tool execution
+    QVERIFY2(noDanglingToolCalls(llm.seenMessages.last()),
+             "Knowledge->Normal left an illegal history");
+
+    agent.setMemory(nullptr);
+}
+
+void TestAgent::normalThenKnowledgeQuestion() {
+    registerKnowledgeTool();
+
+    SqliteMemory memory(QStringLiteral(":memory:"));
+    agent.setMemory(&memory);
+
+    llm.script.append(textResponse(
+        QStringLiteral("Python 装饰器是一种在运行时扩展函数行为的语法。")));
+    QSignalSpy spy(&agent, &AIAgent::responseReady);
+    agent.startTask(QStringLiteral("Python 装饰器是什么？"));
+    QTRY_COMPARE(spy.count(), 1);
+    QCOMPARE(llm.seenMessages.size(), 1);    // direct answer, no tool round
+
+    llm.script.append(toolResponse("search_knowledge_base",
+                                   QJsonObject{{"query", QStringLiteral("孙曼")}}));
+    llm.script.append(textResponse(QStringLiteral("孙曼是人文学院助理研究员。")));
+    agent.startTask(QStringLiteral("查询知识库：孙曼是谁？"));
+    QTRY_COMPARE_WITH_TIMEOUT(spy.count(), 2, 15000);
+    QCOMPARE(llm.seenMessages.size(), 3);    // tool round + final answer
+    QCOMPARE(memory.auditLog(50).size(), 1);
+    QVERIFY(toolMessageContent(llm.seenMessages.last(), "call_t0").size() > 0);
+    QVERIFY2(noDanglingToolCalls(llm.seenMessages.last()),
+             "Normal->Knowledge left an illegal history");
+
+    agent.setMemory(nullptr);
+}
+
+void TestAgent::knowledgeNormalKnowledgeSequence() {
+    registerKnowledgeTool();
+
+    SqliteMemory memory(QStringLiteral(":memory:"));
+    agent.setMemory(&memory);
+
+    // Knowledge -> Normal -> Knowledge: the middle turn must not suppress
+    // the tool, and the last turn must execute again.
+    llm.script.append(toolResponse("search_knowledge_base",
+                                   QJsonObject{{"query", QStringLiteral("孙曼")}}));
+    llm.script.append(textResponse(QStringLiteral("孙曼是人文学院助理研究员。")));
+    QSignalSpy spy(&agent, &AIAgent::responseReady);
+    agent.startTask(QStringLiteral("查询知识库：孙曼是谁？"));
+    QTRY_COMPARE_WITH_TIMEOUT(spy.count(), 1, 15000);
+
+    llm.script.append(textResponse(
+        QStringLiteral("Python 装饰器是一种在运行时扩展函数行为的语法。")));
+    agent.startTask(QStringLiteral("Python 装饰器是什么？"));
+    QTRY_COMPARE(spy.count(), 2);
+
+    llm.script.append(toolResponse("search_knowledge_base",
+                                   QJsonObject{{"query", QStringLiteral("孙曼著作")}}));
+    llm.script.append(textResponse(QStringLiteral("孙曼参编两部著作。")));
+    agent.startTask(QStringLiteral("再查知识库：孙曼的著作"));
+    QTRY_COMPARE(spy.count(), 3);
+
+    QCOMPARE(llm.seenMessages.size(), 2 + 1 + 2);
+    QCOMPARE(memory.auditLog(50).size(), 2); // one execution per KB task
+    QVERIFY2(noDanglingToolCalls(llm.seenMessages.last()),
+             "Knowledge->Normal->Knowledge left an illegal history");
 
     agent.setMemory(nullptr);
 }

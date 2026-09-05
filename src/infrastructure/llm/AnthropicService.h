@@ -43,6 +43,7 @@ public:
     static LLMResponse parseResponse(const QJsonObject& json);
 
 protected:
+    void resetStreamState() override;
     void processLine(const QByteArray& line) override;
     bool streamComplete() const override;
     LLMResponse streamResult() const override;

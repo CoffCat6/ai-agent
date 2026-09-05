@@ -52,6 +52,15 @@ void OpenAIService::chatComplete(const QJsonArray& messages, const QJsonArray& t
     startReply(request, QJsonDocument(buildRequestBody(messages, tools)).toJson());
 }
 
+// Request-scoped state: tool-call fragments must not survive into the next
+// request, or the previous response's calls are re-emitted with every
+// subsequent response on this instance (deterministic knowledge-tool
+// cross-talk).
+void OpenAIService::resetStreamState() {
+    m_toolCalls.clear();
+    LLMServiceBase::resetStreamState();
+}
+
 bool OpenAIService::streamComplete() const {
     return m_doneReceived || !m_content.isEmpty() || !m_toolCalls.isEmpty();
 }
@@ -147,8 +156,12 @@ void OpenAIService::processLine(const QByteArray& line) {
         return;
     }
 
-    const QJsonObject delta = json.value("choices").toArray().at(0)
-                                  .toObject().value("delta").toObject();
+    // Some providers send keep-alive / empty choices frames; indexing into
+    // an empty array would be undefined behavior.
+    const QJsonArray choices = json.value("choices").toArray();
+    if (choices.isEmpty()) return;
+
+    const QJsonObject delta = choices.at(0).toObject().value("delta").toObject();
 
     // Content delta
     const QString content = delta.value("content").toString();

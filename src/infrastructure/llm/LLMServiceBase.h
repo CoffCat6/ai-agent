@@ -30,10 +30,15 @@ public:
 
 protected:
     // Clears the streaming accumulators; call at the start of chatComplete.
-    void resetStreamState();
+    // Virtual: providers must override it to also clear their per-request
+    // tool-call accumulators - otherwise a previous request's tool calls are
+    // re-emitted with the next response on the same service instance.
+    virtual void resetStreamState();
 
-    // POSTs the body and wires readyRead/finished to the base plumbing
-    // (stale replies are ignored via the m_currentReply guard).
+    // POSTs the body and wires readyRead/finished to the base plumbing.
+    // Each request bumps m_requestGeneration; callbacks capture it and
+    // short-circuit when superseded, so a stale reply can never touch the
+    // live request's stream state.
     void startReply(QNetworkRequest& request, const QByteArray& body);
 
     // ── Protocol hooks ────────────────────────────────
@@ -73,6 +78,7 @@ private:
 
     QNetworkAccessManager* m_nam;
     QNetworkReply* m_currentReply{nullptr};
+    quint64 m_requestGeneration{0};   // bumped per request; stale callbacks exit
 };
 
 } // namespace NexusAI

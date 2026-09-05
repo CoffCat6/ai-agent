@@ -82,6 +82,13 @@ void OllamaService::chatComplete(const QJsonArray& messages, const QJsonArray& t
     startReply(request, QJsonDocument(buildRequestBody(messages, tools)).toJson());
 }
 
+// Request-scoped state: clear stale tool calls even when a request never
+// reaches its done=true line (the usual reassignment would not run).
+void OllamaService::resetStreamState() {
+    m_toolCalls.clear();
+    LLMServiceBase::resetStreamState();
+}
+
 bool OllamaService::streamComplete() const {
     return m_doneReceived;
 }

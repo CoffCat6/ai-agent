@@ -210,6 +210,15 @@ void AnthropicService::chatComplete(const QJsonArray& messages, const QJsonArray
     startReply(request, QJsonDocument(body).toJson());
 }
 
+// Request-scoped state: tool_use blocks must not survive into the next
+// request, or the previous response's calls are re-emitted with every
+// subsequent response on this instance (deterministic knowledge-tool
+// cross-talk).
+void AnthropicService::resetStreamState() {
+    m_toolUses.clear();
+    LLMServiceBase::resetStreamState();
+}
+
 bool AnthropicService::streamComplete() const {
     return m_doneReceived || !m_content.isEmpty() || !m_toolUses.isEmpty();
 }

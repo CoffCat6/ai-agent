@@ -16,6 +16,12 @@ nexus_add_test(test_memory test_memory.cpp)
 nexus_add_test(test_rag test_rag.cpp)
 nexus_add_test(test_agent test_agent.cpp)
 
+# Provider lifecycle tests drive real HTTP through a scripted loopback server
+add_executable(test_provider_lifecycle test_provider_lifecycle.cpp)
+target_link_libraries(test_provider_lifecycle PRIVATE
+    nexus_core nexus_infra Qt6::Test Qt6::Network)
+add_test(NAME test_provider_lifecycle COMMAND test_provider_lifecycle)
+
 # Needs the viewmodels library (AgentViewModel, SettingsService) in addition to core & infra
 add_executable(test_viewmodel test_viewmodel.cpp)
 target_link_libraries(test_viewmodel PRIVATE nexus_core nexus_infra nexus_viewmodels Qt6::Test)

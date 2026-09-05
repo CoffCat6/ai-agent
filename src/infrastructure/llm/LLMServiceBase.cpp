@@ -35,13 +35,20 @@ void LLMServiceBase::resetStreamState() {
 void LLMServiceBase::startReply(QNetworkRequest& request, const QByteArray& body) {
     QNetworkReply* reply = m_nam->post(request, body);
     m_currentReply = reply;
+    const quint64 generation = ++m_requestGeneration;
 
-    connect(reply, &QNetworkReply::readyRead, this, [this, reply]() {
-        if (m_currentReply != reply) return;
+    connect(reply, &QNetworkReply::readyRead, this, [this, reply, generation]() {
+        if (generation != m_requestGeneration || m_currentReply != reply) return;
         onReadyRead();
     });
 
-    connect(reply, &QNetworkReply::finished, this, [this, reply]() {
+    connect(reply, &QNetworkReply::finished, this, [this, reply, generation]() {
+        if (generation != m_requestGeneration) {
+            // Superseded request: its bytes must never touch the current
+            // request's stream state, and it must not emit either.
+            reply->deleteLater();
+            return;
+        }
         if (m_currentReply == reply) m_currentReply = nullptr;
         handleReplyFinished(reply);
     });
@@ -75,6 +82,14 @@ void LLMServiceBase::handleReplyFinished(QNetworkReply* reply) {
         m_rawBody.append(rest);
         m_lineBuffer.append(rest);
         processIncoming();
+        // Servers may end the body without a trailing newline; the leftover
+        // is a complete final line (last SSE event / NDJSON record) that
+        // processIncoming's newline split cannot reach.
+        if (!m_lineBuffer.isEmpty()) {
+            const QByteArray tail = m_lineBuffer;
+            m_lineBuffer.clear();
+            processLine(tail.trimmed());
+        }
     }
 
     if (m_responseEmitted || m_errorEmitted) return;
