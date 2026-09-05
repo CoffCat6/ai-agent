@@ -224,6 +224,9 @@ void AIAgent::startTask(const QString& userMessage) {
     m_currentConfirmCall = ToolCallInfo{};
     m_confirmNodeId.clear();
     m_lastResponse.clear();
+    m_currentExecutingCall = ToolCallInfo{};
+    m_toolExecutions = 0;
+    m_forcedFinalPush.clear();
     clearStreamState();
 
     ++m_epoch; // invalidate results from any previous task
@@ -247,6 +250,9 @@ void AIAgent::resetSession() {
     ++m_epoch;
     m_pendingToolCalls.clear();
     m_currentConfirmCall = ToolCallInfo{};
+    m_currentExecutingCall = ToolCallInfo{};
+    m_toolExecutions = 0;
+    m_forcedFinalPush.clear();
     m_confirmNodeId.clear();
     clearStreamState();
     if (m_llmService && wasActive) m_llmService->cancel();
@@ -323,6 +329,9 @@ void AIAgent::resumeSession(const QString& sessionId) {
     m_forcedFinal = false;
     m_pendingToolCalls.clear();
     m_currentConfirmCall = ToolCallInfo{};
+    m_currentExecutingCall = ToolCallInfo{};
+    m_toolExecutions = 0;
+    m_forcedFinalPush.clear();
     m_confirmNodeId.clear();
     clearStreamState();
 
@@ -359,14 +368,14 @@ void AIAgent::processIteration() {
             QStringLiteral("Step budget (%1) exhausted - requesting a final answer "
                            "from the information collected so far").arg(m_maxIterations),
             "completed");
-        QJsonObject pushMsg;
-        pushMsg["role"] = "user";
-        pushMsg["content"] = QStringLiteral(
+        // The control message belongs to THIS request only: it is injected
+        // at chatComplete time and never becomes part of the conversation
+        // history (a leftover "Do NOT call any tools" user message would
+        // otherwise ride along with every later turn).
+        m_forcedFinalPush = QStringLiteral(
             "[System] Step budget exhausted. Do NOT call any tools. Based on ALL "
             "information gathered above, answer the user's last question now; "
             "state explicitly what you could and could not confirm.");
-        m_messages.append(pushMsg);
-        notifyTokens();
         m_forcedFinal = true;
     } else {
         ++m_iteration;
@@ -396,7 +405,14 @@ void AIAgent::processIteration() {
         }
     }
 
-    m_llmService->chatComplete(m_messages, toolsArray);
+    QJsonArray requestMessages = m_messages;
+    if (!m_forcedFinalPush.isEmpty()) {
+        QJsonObject pushMsg;
+        pushMsg["role"] = "user";
+        pushMsg["content"] = m_forcedFinalPush;
+        requestMessages.append(pushMsg);
+    }
+    m_llmService->chatComplete(requestMessages, toolsArray);
 }
 
 // Compress the persisted history when it exceeds the context budget, so a
@@ -418,6 +434,9 @@ void AIAgent::applyContextBudget() {
 
 void AIAgent::onLLMResponse(const LLMResponse& response) {
     if (!m_active) return;
+
+    // The forced-final control message rode along with this request only.
+    m_forcedFinalPush.clear();
 
     m_streamTimer.stop();
     if (!m_thinkingNodeId.isEmpty()) {
@@ -558,6 +577,7 @@ void AIAgent::onLLMResponse(const LLMResponse& response) {
 
 void AIAgent::onLLMError(const QString& error) {
     if (!m_active) return;
+    m_forcedFinalPush.clear();
     failTask(error);
 }
 
@@ -566,14 +586,24 @@ void AIAgent::stop() {
     m_active = false;
     ++m_epoch;
     // The assistant message may already be in the history announcing calls
-    // that will now never run - seal them or the next turn inherits a
-    // dangling tool_calls sequence.
-    sealUnansweredToolCalls(m_pendingToolCalls);
+    // that will now never run - seal ALL of them (still queued, awaiting
+    // confirmation, and currently executing on the worker pool) or the next
+    // turn inherits a dangling tool_calls sequence.
+    QVector<ToolCallInfo> unanswered = m_pendingToolCalls;
+    if (!m_currentConfirmCall.id.isEmpty())
+        unanswered.append(m_currentConfirmCall);
+    if (!m_currentExecutingCall.id.isEmpty())
+        unanswered.append(m_currentExecutingCall);
+    sealUnansweredToolCalls(unanswered,
+        QStringLiteral("[Not executed] The task was stopped before this call "
+                       "could run."));
     m_pendingToolCalls.clear();
+    m_currentConfirmCall = ToolCallInfo{};
+    m_currentExecutingCall = ToolCallInfo{};
+    m_forcedFinalPush.clear();
 
     if (!m_confirmNodeId.isEmpty())
         updateTraceNodeStatusById(m_confirmNodeId, "cancelled");
-    m_currentConfirmCall = ToolCallInfo{};
     m_confirmNodeId.clear();
 
     if (m_llmService) m_llmService->cancel();
@@ -662,15 +692,14 @@ void AIAgent::collapseOldToolRounds() {
     }
 }
 
-void AIAgent::sealUnansweredToolCalls(const QVector<ToolCallInfo>& calls) {
+void AIAgent::sealUnansweredToolCalls(const QVector<ToolCallInfo>& calls,
+                                      const QString& note) {
     if (calls.isEmpty()) return;
     for (const auto& c : calls) {
         QJsonObject toolMsg;
         toolMsg["role"] = "tool";
         toolMsg["tool_call_id"] = c.id;
-        toolMsg["content"] = QStringLiteral(
-            "[Not executed] The task was completed from the answer above without "
-            "running this call.");
+        toolMsg["content"] = note;
         m_messages.append(toolMsg);
     }
 }
@@ -739,6 +768,32 @@ void AIAgent::dispatchToolExecution(const ToolCallInfo& call, const QString& tra
     // Redundant-call detection lives in onLLMResponse (round-level, before
     // dispatch) - by the time we get here the call is worth executing.
 
+    if (m_toolExecutions >= kMaxToolExecutions) {
+        // Execution budget exhausted: refuse this call, seal everything still
+        // queued, and force one final no-tools answer from what was gathered.
+        if (!traceNodeId.isEmpty())
+            updateTraceNodeStatusById(traceNodeId, "cancelled");
+        else
+            appendTraceNode("tool_call", call.name, "cancelled",
+                            QJsonObject{{"args", argsToString(call.arguments)}});
+        appendTraceNode("context",
+            QStringLiteral("Tool execution budget (%1) exhausted - forcing a "
+                           "final answer").arg(kMaxToolExecutions),
+            "completed");
+        appendToolResultMessage(call,
+            QStringLiteral("[Not executed] Tool execution budget exhausted."));
+        for (const auto& queued : m_pendingToolCalls) {
+            appendTraceNode("tool_call", queued.name, "cancelled",
+                            QJsonObject{{"args", argsToString(queued.arguments)}});
+            appendToolResultMessage(queued,
+                QStringLiteral("[Not executed] Tool execution budget exhausted."));
+        }
+        m_pendingToolCalls.clear();
+        m_forcedFinal = true;
+        processIteration();
+        return;
+    }
+
     QString nodeId = traceNodeId;
     if (nodeId.isEmpty()) {
         nodeId = appendTraceNode("tool_call", call.name, "running",
@@ -747,6 +802,8 @@ void AIAgent::dispatchToolExecution(const ToolCallInfo& call, const QString& tra
         updateTraceNodeStatusById(nodeId, "running");
     }
     setState(AgentState::ExecutingTool);
+    ++m_toolExecutions;
+    m_currentExecutingCall = call;
 
     ITool* tool = m_toolRegistry ? m_toolRegistry->find(call.name) : nullptr;
     const quint64 epoch = m_epoch;
@@ -775,6 +832,7 @@ void AIAgent::dispatchToolExecution(const ToolCallInfo& call, const QString& tra
 
 void AIAgent::finishToolExecution(const ToolCallInfo& call, const QString& traceNodeId,
                                   const ToolResult& result) {
+    m_currentExecutingCall = ToolCallInfo{};
     updateTraceNodeStatusById(traceNodeId, result.success ? "success" : "failed");
 
     const QString output = result.success ? result.output : result.error;

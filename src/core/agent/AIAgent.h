@@ -38,6 +38,10 @@ class AIAgent : public QObject {
 public:
     // Hard per-request tool-use step budget (shared with the system prompt)
     static constexpr int kMaxIterations = 10;
+    // Hard per-request cap on ACTUAL tool executions (one response can
+    // announce arbitrarily many calls; kMaxIterations alone does not bound
+    // the total work).
+    static constexpr int kMaxToolExecutions = 16;
 
     // Bounds for the context-window budget (setContextLimit clamps to these;
     // SettingsService applies the same window in its editor)
@@ -108,7 +112,10 @@ private:
     // final, stop). Without them the history ends in dangling tool_calls -
     // an invalid OpenAI sequence that makes some proxies repeat the stale
     // call on the next user turn.
-    void sealUnansweredToolCalls(const QVector<ToolCallInfo>& calls);
+    void sealUnansweredToolCalls(const QVector<ToolCallInfo>& calls,
+                                 const QString& note = QStringLiteral(
+                                     "[Not executed] The task was completed from the "
+                                     "answer above without running this call."));
     // Replace completed tool-call rounds older than the newest few with a
     // short assistant note (keeps the model from pattern-matching the
     // history into calling tools on every new message).
@@ -138,7 +145,13 @@ private:
 
     QVector<ToolCallInfo> m_pendingToolCalls;
     ToolCallInfo m_currentConfirmCall;
+    // Dispatched to the worker pool but not finished yet: removed from the
+    // pending queue, so stop() must seal it separately.
+    ToolCallInfo m_currentExecutingCall;
     QString m_confirmNodeId;  // trace node of the pending confirmation
+    // Actual tool executions in the current request (kMaxToolExecutions cap;
+    // kMaxIterations alone bounds LLM rounds, not the announced call count).
+    int m_toolExecutions{0};
 
     // Loop guard (round-level, checked in onLLMResponse): an identical
     // back-to-back tool call round means the model is stuck; the second
@@ -149,6 +162,9 @@ private:
     // Step budget exhausted: one final LLM call with tools withheld so the
     // gathered information turns into an answer instead of an error.
     bool m_forcedFinal{false};
+    // Request-scoped control message injected into the forced-final call at
+    // chatComplete time; never becomes part of the conversation history.
+    QString m_forcedFinalPush;
 
     // Streaming display state
     QTimer m_streamTimer;

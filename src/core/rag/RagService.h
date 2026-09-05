@@ -31,6 +31,17 @@ public:
     // MaxChunksPerDocument. Re-ingesting an existing source name replaces it.
     int ingestDocument(const QString& sourceName, const QString& content);
 
+    // Background-restore ingestion: bind to the restore generation the task
+    // started with. clear()/removeDocument() bump the generation, so a user
+    // wiping the base mid-restore makes the remaining restore steps no-ops
+    // (-2) instead of re-adding deleted documents. Same result codes as
+    // ingestDocument.
+    int ingestRestoredDocument(const QString& sourceName, const QString& content,
+                               quint64 generation);
+
+    // Current restore generation (snapshot before starting a restore task).
+    quint64 restoreGeneration() const;
+
     // Top-k passages across all documents, sorted by score
     QJsonArray search(const QString& query, int k = 4) const;
 
@@ -56,11 +67,17 @@ private:
     };
 
     void dropDocumentLocked(const QString& sourceName);
+    // Chunk + embed outside the lock; nullptr with *chunksOut = 0 (empty) or
+    // -1 (oversize). Shared by ingestDocument / ingestRestoredDocument.
+    std::unique_ptr<DocumentRetriever> buildRetriever(const QString& sourceName,
+                                                      const QString& content,
+                                                      int* chunksOut) const;
 
     DocumentRetriever::EmbedFn m_embedFn;
     DocumentRetriever::BatchEmbedFn m_batchEmbedFn;
     std::vector<Document> m_docs; // move-only elements -> std::vector
     mutable QMutex m_mutex; // ingest/remove/search may run on different threads
+    quint64 m_restoreGeneration{0}; // bumped by clear()/removeDocument()
 };
 
 } // namespace NexusAI

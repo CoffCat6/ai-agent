@@ -11,6 +11,7 @@
 #include "infrastructure/llm/IAIService.h"
 
 #include <QSet>
+#include <QSemaphore>
 #include <QtTest>
 #include <QSignalSpy>
 #include <QTemporaryDir>
@@ -141,6 +142,50 @@ void registerKnowledgeTool() {
         std::make_unique<KnowledgeSearchTool>(&rag));
 }
 
+// A Safe tool that parks on a semaphore so a test can stop() the agent while
+// the tool is genuinely executing on the QtConcurrent worker thread.
+class BlockingTool : public ITool {
+public:
+    ToolDefinition definition() const override {
+        ToolDefinition def;
+        def.name = QStringLiteral("test_blocking");
+        def.description = QStringLiteral("Test helper: blocks until released.");
+        def.level = ToolLevel::Safe;
+        def.parameters = QJsonObject{
+            {"type", "object"}, {"properties", QJsonObject{}}, {"required", QJsonArray{}}};
+        return def;
+    }
+    ToolResult execute(const QJsonObject&) override {
+        // Bounded park: a failing test must not wedge the worker pool forever.
+        m_gate.tryAcquire(1, 15000);
+        return ToolResult::ok(QStringLiteral("released"));
+    }
+    void release() { m_gate.release(); }
+private:
+    QSemaphore m_gate;
+};
+
+BlockingTool* registerBlockingTool() {
+    static BlockingTool* tool = nullptr;
+    if (!ToolRegistry::instance().isRegistered(QStringLiteral("test_blocking"))) {
+        auto owned = std::make_unique<BlockingTool>();
+        tool = owned.get();
+        ToolRegistry::instance().registerTool(std::move(owned));
+    }
+    return tool;
+}
+
+bool traceHasRunningToolCall(const QJsonArray& trace, const QString& name) {
+    for (const auto& entry : trace) {
+        const QJsonObject node = entry.toObject();
+        if (node.value("type").toString() == QStringLiteral("tool_call")
+                && node.value("title").toString() == name
+                && node.value("status").toString() == QStringLiteral("running"))
+            return true;
+    }
+    return false;
+}
+
 } // namespace
 
 class TestAgent : public QObject {
@@ -183,6 +228,11 @@ private slots:
     void knowledgeThenNormalQuestion();
     void normalThenKnowledgeQuestion();
     void knowledgeNormalKnowledgeSequence();
+    // Batch 2: agent tool-call lifecycle (FIX-201/202/203)
+    void stopDuringConfirmationSealsToolCalls();
+    void stopDuringExecutionSealsToolCalls();
+    void toolExecutionBudgetForcesFinal();
+    void forcedFinalControlMessageNotPersisted();
 };
 
 void TestAgent::directCompletion() {
@@ -642,6 +692,121 @@ void TestAgent::knowledgeNormalKnowledgeSequence() {
              "Knowledge->Normal->Knowledge left an illegal history");
 
     agent.setMemory(nullptr);
+}
+
+// ── Batch 2: agent tool-call lifecycle ────────────────────
+
+// Stopping while a RequiresConfirm call is pending must still seal the
+// assistant's tool_calls - a dangling sequence is invalid for the wire
+// format and derails proxies on the next user turn.
+void TestAgent::stopDuringConfirmationSealsToolCalls() {
+    QTemporaryDir dir;
+    QVERIFY(dir.isValid());
+    const QString path = dir.filePath("out.txt");
+
+    llm.script.append(toolResponse("write_file",
+        QJsonObject{{"path", path}, {"content", "x"}}));
+
+    QSignalSpy confirmSpy(&agent, &AIAgent::toolConfirmRequired);
+    agent.startTask(QStringLiteral("write it"));
+    QTRY_COMPARE(confirmSpy.count(), 1);
+
+    agent.stop();
+    QCOMPARE(agent.state(), AgentState::Idle);
+    QVERIFY2(noDanglingToolCalls(agent.messages()),
+             "stop during confirmation left dangling tool_calls");
+}
+
+// Stopping while a Safe tool is genuinely executing on the worker thread
+// must seal that call too - it has left the pending queue at that point.
+void TestAgent::stopDuringExecutionSealsToolCalls() {
+    BlockingTool* blocking = registerBlockingTool();
+    llm.script.append(toolResponse("test_blocking", QJsonObject{}));
+
+    QSignalSpy spy(&agent, &AIAgent::responseReady);
+    agent.startTask(QStringLiteral("block"));
+    QTRY_VERIFY_WITH_TIMEOUT(traceHasRunningToolCall(agent.traceModel(),
+                                                    QStringLiteral("test_blocking")),
+                             5000);
+
+    agent.stop();
+    QCOMPARE(agent.state(), AgentState::Idle);
+    blocking->release();            // let the parked worker finish
+    QTest::qWait(300);              // late watcher callback settles (epoch drop)
+
+    QVERIFY2(noDanglingToolCalls(agent.messages()),
+             "stop during execution left dangling tool_calls");
+    QTest::qWait(200);
+    QCOMPARE(spy.count(), 0);       // the stopped task must not resume
+}
+
+// A single response announcing more tool calls than the execution budget
+// allows must execute the budget, seal the rest, and converge into one
+// final no-tools answer instead of running unbounded work.
+void TestAgent::toolExecutionBudgetForcesFinal() {
+    SqliteMemory memory(QStringLiteral(":memory:"));
+    agent.setMemory(&memory);
+
+    QTemporaryDir dir;
+    QVERIFY(dir.isValid());
+    LLMResponse burst;
+    burst.success = true;
+    for (int i = 0; i < 20; ++i) {
+        ToolCallInfo call;
+        call.id = QStringLiteral("call_b%1").arg(i);
+        call.name = QStringLiteral("read_file");
+        call.arguments = QJsonObject{
+            {"path", dir.filePath(QStringLiteral("b%1.txt").arg(i))}};
+        burst.toolCalls.append(call);
+    }
+    llm.script.append(burst);
+    llm.script.append(textResponse(QStringLiteral("summarized"))); // forced final
+
+    QSignalSpy spy(&agent, &AIAgent::responseReady);
+    agent.startTask(QStringLiteral("read twenty files"));
+    QTRY_COMPARE_WITH_TIMEOUT(spy.count(), 1, 20000);
+    QCOMPARE(agent.state(), AgentState::Completed);
+
+    int executions = 0;
+    const QJsonArray audit = memory.auditLog(100);
+    for (const auto& entry : audit) {
+        if (entry.toObject().value("event").toString() == QStringLiteral("tool_execute"))
+            ++executions;
+    }
+    QCOMPARE(executions, AIAgent::kMaxToolExecutions);
+    QVERIFY(traceHas(agent.traceModel(), "context", "budget"));
+    QVERIFY2(noDanglingToolCalls(llm.seenMessages.last()),
+             "budget path left dangling tool_calls");
+
+    agent.setMemory(nullptr);
+}
+
+// The "[System] Step budget exhausted..." control message drives the forced
+// final answer but belongs to the REQUEST, not the conversation: it must be
+// injected into the forced call and must never leak into later turns.
+void TestAgent::forcedFinalControlMessageNotPersisted() {
+    const QString home = QStandardPaths::writableLocation(QStandardPaths::HomeLocation);
+    for (int i = 0; i < 10; ++i)
+        llm.script.append(toolResponse("list_dir",
+            QJsonObject{{"path", home + "/nexusai_nonexistent_dir_" + QString::number(i)}}));
+    llm.script.append(textResponse(QStringLiteral("forced summary")));  // forced final
+    llm.script.append(textResponse(QStringLiteral("next answer")));     // next task
+
+    QSignalSpy spy(&agent, &AIAgent::responseReady);
+    agent.startTask(QStringLiteral("loop"));
+    QTRY_COMPARE_WITH_TIMEOUT(spy.count(), 1, 20000);
+
+    agent.startTask(QStringLiteral("next question"));
+    QTRY_COMPARE(spy.count(), 2);
+
+    const QJsonArray sent = llm.seenMessages.last();
+    for (const auto& entry : sent) {
+        QVERIFY2(!entry.toObject().value("content").toString()
+                      .contains(QStringLiteral("Step budget exhausted")),
+                 "forced-final control message leaked into the next request");
+    }
+    QVERIFY2(noDanglingToolCalls(sent),
+             "forced final + next turn left dangling tool_calls");
 }
 
 QTEST_GUILESS_MAIN(TestAgent)

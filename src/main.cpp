@@ -131,14 +131,19 @@ int main(int argc, char *argv[])
 
     // Restore previously imported documents in the background (embedding
     // may hit the network); the queued changed() signal updates the UI.
+    // Each step binds to the restore generation it started with: if the
+    // user clears/removes knowledge mid-restore, the remaining steps become
+    // no-ops instead of re-adding deleted documents.
     const QJsonObject savedDocs = memory->loadKnowledgeDocs();
     if (!savedDocs.isEmpty()) {
         qInfo() << "Restoring" << savedDocs.size() << "knowledge document(s)";
         auto ragPtr = rag;
         const auto docs = savedDocs.toVariantMap();
-        (void)QtConcurrent::run([ragPtr, docs]() {
+        const quint64 restoreGeneration = rag->restoreGeneration();
+        (void)QtConcurrent::run([ragPtr, docs, restoreGeneration]() {
             for (auto it = docs.constBegin(); it != docs.constEnd(); ++it)
-                ragPtr->ingestDocument(it.key(), it.value().toString());
+                ragPtr->ingestRestoredDocument(it.key(), it.value().toString(),
+                                               restoreGeneration);
         });
     }
 

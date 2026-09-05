@@ -78,24 +78,40 @@ public:
         return search(realVec, pseudoEmbed(query), k);
     }
 
-    // Search with pre-computed query vectors for both embedding modes; the
-    // vector matching this store's mode is used, with the pseudo vector as
-    // the dimension-stable fallback (realVec empty or of a drifted
-    // dimension, e.g. embedder offline or its model changed). Lets a caller
-    // like RagService embed the query once for all documents and keep the
-    // network round-trip outside its lock.
+    // Search with pre-computed query vectors for both embedding modes. The
+    // vector matching this store's mode is used; a real-mode store is only
+    // scored with a real vector of its own dimension.
+    //
+    // Relevance gate (FIX-301): below-threshold passages are dropped, so
+    // "no passages matched" is a reachable state. Real embeddings are gated
+    // at RealMinRelevanceScore (placeholder - calibrate per embedding model
+    // when vector persistence lands); pseudo-mode scores come from a
+    // positional character hash and are meaningless beyond "at least some
+    // overlap", so anything above zero passes.
+    //
+    // FIX-302: a missing (embedder offline) or dimension-drifted query
+    // vector against a real-mode store makes every cosine similarity 0 -
+    // returning the "top-k" of that would be arbitrary chunks, so the store
+    // degrades to no-match instead.
+    static constexpr double RealMinRelevanceScore = 0.15;
+
     QJsonArray search(const QVector<float>& realVec,
                       const QVector<float>& pseudoVec, int k = 5) const {
         if (m_store.size() == 0) return {};
 
-        QVector<float> queryVec = m_usesPseudo ? pseudoVec : realVec;
-        if (queryVec.isEmpty() || queryVec.size() != m_embeddingDim)
-            queryVec = pseudoVec;   // embedder unavailable or dimension drift
-
-        const auto results = m_store.search(queryVec, k);
         QJsonArray arr;
-        for (const auto& obj : results)
-            arr.append(obj);
+        if (m_usesPseudo) {
+            for (const auto& obj : m_store.search(pseudoVec, k))
+                if (obj.value("score").toDouble() > 0.0)
+                    arr.append(obj);
+            return arr;
+        }
+
+        if (realVec.isEmpty() || realVec.size() != m_embeddingDim)
+            return {};
+        for (const auto& obj : m_store.search(realVec, k))
+            if (obj.value("score").toDouble() >= RealMinRelevanceScore)
+                arr.append(obj);
         return arr;
     }
 

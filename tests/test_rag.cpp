@@ -1,5 +1,9 @@
 // RagService: multi-document ingest/search/remove with the offline
 // pseudo-embedding fallback, and the KnowledgeSearchTool surface.
+//
+// Every test owns its RagService instance (FIX-304): the tests previously
+// shared one fixture service, which made removeDocument/toolOnEmptyBase
+// depend on ingestions performed by earlier tests in declaration order.
 #include "core/rag/RagService.h"
 #include "core/rag/KnowledgeSearchTool.h"
 
@@ -35,14 +39,16 @@ private slots:
     void chineseDocumentChunked();
     void batchEmbedFailureFallsBackToPseudo();
     void batchEmbedSuccessKeepsRealVectors();
+    // Batch 3: retrieval correctness (FIX-301/302) and restore races (FIX-303)
+    void unrelatedOrWeakQueryReturnsNoMatch();
+    void dimensionMismatchQueryReturnsNoMatch();
+    void restoreGenerationCancelsStaleIngest();
     void oversizeDocumentRejected();
     void documentChunksListing();
-
-private:
-    RagService rag;
 };
 
 void TestRag::ingestAndListDocuments() {
+    RagService rag;
     const int chunks = rag.ingestDocument("doc1.txt", longDoc("one", 10));
     QVERIFY(chunks >= 2); // chunked into several passages
 
@@ -53,6 +59,7 @@ void TestRag::ingestAndListDocuments() {
 }
 
 void TestRag::searchReturnsScoredChunks() {
+    RagService rag;
     rag.ingestDocument("doc2.txt", longDoc("two", 8));
     const QJsonArray hits = rag.search("alpha beta", 4);
     QVERIFY(!hits.isEmpty());
@@ -60,13 +67,16 @@ void TestRag::searchReturnsScoredChunks() {
     for (const auto& entry : hits) {
         const QJsonObject hit = entry.toObject();
         QVERIFY(hit.contains("score"));
-        QVERIFY(hit.value("source").toString() == "doc1.txt"
-             || hit.value("source").toString() == "doc2.txt");
+        QCOMPARE(hit.value("source").toString(), QStringLiteral("doc2.txt"));
         QVERIFY(!hit.value("text").toString().isEmpty());
     }
 }
 
 void TestRag::removeDocument() {
+    RagService rag;
+    rag.ingestDocument("doc1.txt", longDoc("one", 6));
+    rag.ingestDocument("doc2.txt", longDoc("two", 6));
+
     QVERIFY(rag.removeDocument("doc1.txt"));
     const QJsonArray docs = rag.documents();
     QCOMPARE(docs.size(), 1);
@@ -78,14 +88,16 @@ void TestRag::removeDocument() {
 }
 
 void TestRag::replaceSameName() {
-    const int before = rag.documentCount();
-    QVERIFY(before > 0);
+    RagService rag;
+    rag.ingestDocument("doc2.txt", longDoc("two", 8));
+    QVERIFY(rag.documentCount() > 0);
     rag.ingestDocument("doc2.txt", longDoc("two-again", 8));
     const QJsonArray docs = rag.documents();
     QCOMPARE(docs.size(), 1); // replaced, not duplicated
 }
 
 void TestRag::emptyInputRejected() {
+    RagService rag;
     QCOMPARE(rag.ingestDocument("empty.txt", "   "), 0);
     QCOMPARE(rag.ingestDocument("", "content"), 0);
 }
@@ -96,13 +108,12 @@ void TestRag::toolOnEmptyBase() {
     const ToolResult r = tool.execute(QJsonObject{{"query", "anything"}});
     QVERIFY(r.success);
     QVERIFY(r.output.contains("empty"));
-
-    // the shared rag still holds its document(s)
-    QCOMPARE(rag.documents().size(), 1);
-    QVERIFY(rag.documentCount() > 0);
 }
 
 void TestRag::toolSearchResult() {
+    RagService rag;
+    rag.ingestDocument("doc2.txt", longDoc("two", 8));
+
     KnowledgeSearchTool tool(&rag);
     const ToolResult r = tool.execute(QJsonObject{{"query", "alpha"}});
     QVERIFY(r.success);
@@ -158,8 +169,12 @@ void TestRag::batchEmbedFailureFallsBackToPseudo() {
     QVERIFY(!hits.isEmpty()); // still searchable via pseudo embedding
 }
 
-// Successful batch embeddings keep the real vectors; a query whose embedder
-// returns a mismatched dimension must fall back instead of scoring 0.
+// Successful batch embeddings keep the real vectors. A query whose embedder
+// returns a MISMATCHED dimension must degrade to no-match: scoring a
+// real-mode store with a pseudo/fallback vector yields a similarity of 0
+// for every chunk, so the returned "top-k" would be arbitrary noise.
+// (Audit P1-4 / Batch 3 FIX-302 - this flips the previously codified
+// fallback behavior.)
 void TestRag::batchEmbedSuccessKeepsRealVectors() {
     RagService local;
     local.setEmbedder([](const QString& text) {
@@ -182,13 +197,89 @@ void TestRag::batchEmbedSuccessKeepsRealVectors() {
     QCOMPARE(local.documents().at(0).toObject().value("pseudo").toBool(), false);
     QVERIFY(!local.search("alpha", 3).isEmpty());
 
-    // Dimension drift (embedder replaced/changed model): query falls back
-    // to the pseudo embedding and still returns scored chunks.
+    // Dimension drift (embedder replaced/changed model): no-match, no noise.
     local.setEmbedder([](const QString&) {
         return QVector<float>(3, 1.0f);   // wrong dimension on purpose
     });
-    QVERIFY(!local.search("alpha", 3).isEmpty());
+    QVERIFY(local.search("alpha", 3).isEmpty());
 }
+
+// FIX-301: the relevance gate. A real-mode store must not return passages
+// whose similarity is orthogonal (score 0) or below the relevance threshold
+// - previously search() returned an unconditional top-k, so "No passages
+// matched" was unreachable for non-empty knowledge bases.
+void TestRag::unrelatedOrWeakQueryReturnsNoMatch() {
+    RagService local;
+    auto embed = [](const QString& text) {
+        QVector<float> v(8, 0.0f);
+        if (text.contains(QLatin1String("apple"))) v[0] += 1.0f;
+        if (text.contains(QLatin1String("quantum"))) v[1] += 1.0f;
+        if (text.contains(QLatin1String("weak"))) { v[0] += 0.1f; v[1] += 1.0f; }
+        return v;
+    };
+    local.setEmbedder(embed);
+    local.setBatchEmbedder([embed](const QStringList& texts) {
+        QVector<QVector<float>> out;
+        for (const QString& t : texts) out.append(embed(t));
+        return out;
+    });
+
+    QVERIFY(local.ingestDocument("apples.txt", longDoc("apple", 6)) >= 2);
+    QCOMPARE(local.documents().at(0).toObject().value("pseudo").toBool(), false);
+
+    QVERIFY(!local.search("apple", 3).isEmpty());   // strong match survives
+    QVERIFY(local.search("quantum", 3).isEmpty());  // orthogonal → no-match
+    QVERIFY(local.search("weak", 3).isEmpty());     // ~0.1 < threshold → no-match
+}
+
+// FIX-302: a real-mode store whose query vector is missing (embedder
+// offline) or dimension-drifted must return no-match instead of silently
+// switching to the pseudo vector (whose dimension cannot match - every
+// similarity would be 0 and the "top-k" would be arbitrary chunks).
+void TestRag::dimensionMismatchQueryReturnsNoMatch() {
+    RagService local;
+    local.setBatchEmbedder([](const QStringList& texts) {
+        QVector<QVector<float>> out;
+        for (int i = 0; i < texts.size(); ++i)
+            out.append(QVector<float>(8, 0.5f));
+        return out;
+    });
+    local.setEmbedder([](const QString&) {
+        return QVector<float>{};   // embedder offline at query time
+    });
+
+    QVERIFY(local.ingestDocument("doc6.txt", longDoc("six", 6)) >= 2);
+    QVERIFY(local.search("anything", 3).isEmpty());   // offline → no-match
+
+    local.setEmbedder([](const QString&) {
+        return QVector<float>(3, 1.0f);   // dimension drift
+    });
+    QVERIFY(local.search("anything", 3).isEmpty());   // drift → no-match
+}
+
+// FIX-303: a background restore must stop re-adding documents once the user
+// cleared or removed knowledge during the restore. clear()/removeDocument()
+// bump a restore generation; restore ingestion binds to the generation it
+// started with and becomes a no-op when superseded.
+void TestRag::restoreGenerationCancelsStaleIngest() {
+    RagService local;
+    const quint64 generation = local.restoreGeneration();
+
+    QCOMPARE(local.ingestRestoredDocument("a.txt", longDoc("a", 6), generation), 2);
+    QVERIFY(!local.isEmpty());
+
+    local.clear();   // user wiped the base mid-restore → generation bumped
+
+    QCOMPARE(local.ingestRestoredDocument("b.txt", longDoc("b", 6), generation), -2);
+    QVERIFY(local.isEmpty());   // stale restore step must not re-add content
+
+    // A fresh restore (new generation) works again after the clear.
+    QCOMPARE(local.ingestRestoredDocument("c.txt", longDoc("c", 6),
+                                          local.restoreGeneration()), 2);
+    QVERIFY(!local.isEmpty());
+}
+
+
 
 void TestRag::oversizeDocumentRejected() {
     RagService local;

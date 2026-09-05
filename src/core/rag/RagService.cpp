@@ -26,15 +26,20 @@ void RagService::dropDocumentLocked(const QString& sourceName) {
     }
 }
 
-int RagService::ingestDocument(const QString& sourceName, const QString& content) {
+std::unique_ptr<DocumentRetriever> RagService::buildRetriever(
+        const QString& sourceName, const QString& content, int* chunksOut) const {
+    *chunksOut = 0;
     const QString trimmed = content.trimmed();
-    if (sourceName.isEmpty() || trimmed.isEmpty()) return 0;
+    if (sourceName.isEmpty() || trimmed.isEmpty()) return nullptr;
 
     // Upper bound before any embedding work: reject pathologically large
     // inputs instead of spending minutes (or exhausting memory) on them.
     const int estimatedChunks = trimmed.size()
         / (DocumentRetriever::ChunkSize - DocumentRetriever::ChunkOverlap) + 1;
-    if (estimatedChunks > MaxChunksPerDocument) return -1;
+    if (estimatedChunks > MaxChunksPerDocument) {
+        *chunksOut = -1;
+        return nullptr;
+    }
 
     // Build the retriever (embedding = network IO) WITHOUT holding the
     // mutex; search/documents stay usable during a long import.
@@ -46,20 +51,55 @@ int RagService::ingestDocument(const QString& sourceName, const QString& content
     }
 
     if (!retriever->addDocument(trimmed, QJsonObject{{"source", sourceName}}))
-        return 0;
-    const int chunks = retriever->documentCount();
+        return nullptr;
+    *chunksOut = retriever->documentCount();
+    return retriever;
+}
+
+int RagService::ingestDocument(const QString& sourceName, const QString& content) {
+    int chunks = 0;
+    auto retriever = buildRetriever(sourceName, content, &chunks);
+    if (!retriever) return chunks;
 
     {
         QMutexLocker lock(&m_mutex);
         dropDocumentLocked(sourceName); // replace same-name doc (incl. races)
         Document doc;
         doc.name = sourceName;
-        doc.chars = trimmed.size();
+        doc.chars = content.trimmed().size();
         doc.retriever = std::move(retriever);
         m_docs.push_back(std::move(doc));
     }
     emit changed();
     return chunks;
+}
+
+int RagService::ingestRestoredDocument(const QString& sourceName, const QString& content,
+                                       quint64 generation) {
+    int chunks = 0;
+    auto retriever = buildRetriever(sourceName, content, &chunks);
+    if (!retriever) return chunks;
+
+    {
+        QMutexLocker lock(&m_mutex);
+        // The embedding round-trip above took a while: the user may have
+        // cleared/removed documents in the meantime. Superseded restores
+        // must not re-add what the user deleted.
+        if (generation != m_restoreGeneration) return -2;
+        dropDocumentLocked(sourceName);
+        Document doc;
+        doc.name = sourceName;
+        doc.chars = content.trimmed().size();
+        doc.retriever = std::move(retriever);
+        m_docs.push_back(std::move(doc));
+    }
+    emit changed();
+    return chunks;
+}
+
+quint64 RagService::restoreGeneration() const {
+    QMutexLocker lock(&m_mutex);
+    return m_restoreGeneration;
 }
 
 QJsonArray RagService::search(const QString& query, int k) const {
@@ -139,6 +179,7 @@ bool RagService::removeDocument(const QString& sourceName) {
     for (int i = 0; i < static_cast<int>(m_docs.size()); ++i) {
         if (m_docs[i].name == sourceName) {
             m_docs.erase(m_docs.begin() + i);
+            ++m_restoreGeneration;   // supersede in-flight restore steps
             lock.unlock();
             emit changed();
             return true;
@@ -149,6 +190,7 @@ bool RagService::removeDocument(const QString& sourceName) {
 
 void RagService::clear() {
     QMutexLocker lock(&m_mutex);
+    ++m_restoreGeneration;   // supersede in-flight restore steps
     m_docs.clear();
     lock.unlock();
     emit changed();
