@@ -39,6 +39,9 @@ private slots:
     void knowledgeSchemaV1Migrates();
     void knowledgeChunkPersistence();
     void knowledgeCascadeDelete();
+    // Batch 7: Conversation/Memory consistency
+    void sqliteConnectionNameCleanedUp();
+    void workspaceIdColumnReserved();
 };
 
 void TestMemory::messageRoundTrip() {
@@ -306,6 +309,119 @@ void TestMemory::knowledgeCascadeDelete() {
     memory.clearKnowledgeDocs();
     QVERIFY(memory.loadKnowledgeChunks("b.txt").isEmpty());
     QVERIFY(memory.loadKnowledgeDocRecords().isEmpty());
+}
+
+
+// ── Batch 7: Conversation/Memory consistency ──────────────
+
+// MEM-702: the constructor registers a UUID-named QSqlDatabase connection
+// but (pre-fix) never stored it in m_connName, so the destructor's
+// removeDatabase never ran - every instance leaked its connection for the
+// lifetime of the process.
+void TestMemory::sqliteConnectionNameCleanedUp() {
+    const int before = QSqlDatabase::connectionNames().size();
+    {
+        SqliteMemory a(":memory:");
+        SqliteMemory b(":memory:");
+        QCOMPARE(QSqlDatabase::connectionNames().size(), before + 2);
+
+        QJsonObject msg;
+        msg["role"] = QStringLiteral("user");
+        msg["content"] = QStringLiteral("x");
+        a.saveMessage(QStringLiteral("s"), msg);   // both instances usable
+        b.saveMessage(QStringLiteral("s"), msg);
+    }
+    QCOMPARE(QSqlDatabase::connectionNames().size(), before);  // destroyed → gone
+}
+
+// MEM-704: workspace_id is a forward-compatibility reservation (default
+// 'local', no multi-tenant behavior). Both paths must provide it:
+// migrated v1 tables (ALTER) and fresh v2 DDL.
+void TestMemory::workspaceIdColumnReserved() {
+    const QString dir = QStandardPaths::writableLocation(QStandardPaths::TempLocation)
+                        + "/nexusai-memtest-" + QString::number(QCoreApplication::applicationPid());
+    QDir().mkpath(dir);
+    const QString dbPath = dir + "/v1ws.db";
+    QFile::remove(dbPath);
+
+    {
+        // v1 schema: three tables WITHOUT workspace_id
+        QSqlDatabase db = QSqlDatabase::addDatabase("QSQLITE", "v1ws-raw");
+        db.setDatabaseName(dbPath);
+        QVERIFY(db.open());
+        QSqlQuery q(db);
+        QVERIFY(q.exec("CREATE TABLE messages (id INTEGER PRIMARY KEY AUTOINCREMENT, "
+                       "session_id TEXT NOT NULL, role TEXT NOT NULL, content TEXT NOT NULL, "
+                       "timestamp INTEGER NOT NULL, metadata TEXT)"));
+        QVERIFY(q.exec("CREATE TABLE audit_log (id INTEGER PRIMARY KEY AUTOINCREMENT, "
+                       "session_id TEXT NOT NULL, event TEXT NOT NULL, tool_name TEXT NOT NULL, "
+                       "arguments TEXT, success INTEGER NOT NULL, detail TEXT, "
+                       "timestamp INTEGER NOT NULL)"));
+        QVERIFY(q.exec("CREATE TABLE trace_nodes (session_id TEXT NOT NULL, "
+                       "node_id TEXT NOT NULL, node_order INTEGER NOT NULL, type TEXT NOT NULL, "
+                       "title TEXT NOT NULL, status TEXT NOT NULL, args TEXT NOT NULL, "
+                       "result TEXT NOT NULL, timestamp INTEGER NOT NULL, "
+                       "PRIMARY KEY (session_id, node_id))"));
+        db.close();
+    }
+    QSqlDatabase::removeDatabase("v1ws-raw");
+
+    SqliteMemory memory(dbPath);
+    QJsonObject msg;
+    msg["role"] = QStringLiteral("user");
+    msg["content"] = QStringLiteral("x");
+    memory.saveMessage(QStringLiteral("s1"), msg);
+    memory.logAudit(QStringLiteral("s1"), QStringLiteral("tool_execute"),
+                    QStringLiteral("read_file"), QStringLiteral("{}"), true,
+                    QStringLiteral("detail"));
+    QJsonObject node;
+    node["id"] = QStringLiteral("n1");
+    node["type"] = QStringLiteral("thinking");
+    node["title"] = QStringLiteral("t");
+    node["status"] = QStringLiteral("completed");
+    node["timestamp"] = 1234.0;
+    node["args"] = QString();
+    node["result"] = QString();
+    memory.saveTraceNode(QStringLiteral("s1"), node, 0);
+
+    // Inspect through an independent connection to the same file
+    {
+        QSqlDatabase check = QSqlDatabase::addDatabase("QSQLITE", "v1ws-check");
+        check.setDatabaseName(dbPath);
+        QVERIFY(check.open());
+        QSqlQuery q(check);
+        for (const auto* table : { "messages", "audit_log", "trace_nodes" }) {
+            QVERIFY2(q.exec(QString("SELECT workspace_id FROM %1").arg(table)),
+                     qPrintable(QString("workspace_id missing on %1").arg(table)));
+            while (q.next())
+                QCOMPARE(q.value(0).toString(), QStringLiteral("local"));
+        }
+        check.close();
+    }
+    QSqlDatabase::removeDatabase("v1ws-check");
+
+    // Fresh v2 database carries the column from the start
+    const QString freshPath = dir + "/v2ws.db";
+    QFile::remove(freshPath);
+    {
+        SqliteMemory fresh(freshPath);
+        fresh.saveMessage(QStringLiteral("s2"), msg);
+    }
+    {
+        QSqlDatabase check = QSqlDatabase::addDatabase("QSQLITE", "v2ws-check");
+        check.setDatabaseName(freshPath);
+        QVERIFY(check.open());
+        QSqlQuery q(check);
+        QVERIFY(q.exec("SELECT workspace_id FROM messages"));
+        QVERIFY(q.next());
+        QCOMPARE(q.value(0).toString(), QStringLiteral("local"));
+        check.close();
+    }
+    QSqlDatabase::removeDatabase("v2ws-check");
+
+    QFile::remove(dbPath);
+    QFile::remove(freshPath);
+    QDir(dir).removeRecursively();
 }
 
 QTEST_GUILESS_MAIN(TestMemory)

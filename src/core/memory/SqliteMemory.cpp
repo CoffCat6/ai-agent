@@ -46,8 +46,12 @@ SqliteMemory::SqliteMemory(const QString& dbPath) : m_dbPath(dbPath) {
         m_dbPath = dataDir + "/nexusai_memory.db";
     }
 
-    m_db = QSqlDatabase::addDatabase("QSQLITE",
-        QStringLiteral("nexus_memory_%1").arg(QUuid::createUuid().toString(QUuid::WithoutBraces)));
+    // Unique per-instance connection name; stored in m_connName so the
+    // destructor can removeDatabase it (MEM-702) - an unstored name leaked
+    // the connection for the lifetime of the process.
+    m_connName = QStringLiteral("nexus_memory_%1")
+                     .arg(QUuid::createUuid().toString(QUuid::WithoutBraces));
+    m_db = QSqlDatabase::addDatabase("QSQLITE", m_connName);
     m_db.setDatabaseName(m_dbPath);
 
     if (!m_db.open()) {
@@ -76,7 +80,8 @@ void SqliteMemory::initDatabase() {
 void SqliteMemory::createTables() {
     QSqlQuery query(m_db);
 
-    // Messages table
+    // Messages table (workspace_id: forward-compatibility reservation,
+    // Batch 7 MEM-704 - always 'local' until multi-tenant support)
     execDdl(query, R"(
         CREATE TABLE IF NOT EXISTS messages (
             id INTEGER PRIMARY KEY AUTOINCREMENT,
@@ -84,7 +89,8 @@ void SqliteMemory::createTables() {
             role TEXT NOT NULL,
             content TEXT NOT NULL,
             timestamp INTEGER NOT NULL,
-            metadata TEXT
+            metadata TEXT,
+            workspace_id TEXT NOT NULL DEFAULT 'local'
         )
     )", "create messages table");
 
@@ -142,7 +148,8 @@ void SqliteMemory::createTables() {
             arguments TEXT,
             success INTEGER NOT NULL,
             detail TEXT,
-            timestamp INTEGER NOT NULL
+            timestamp INTEGER NOT NULL,
+            workspace_id TEXT NOT NULL DEFAULT 'local'
         )
     )", "create audit_log table");
     execDdl(query, "CREATE INDEX IF NOT EXISTS idx_audit_ts ON audit_log(timestamp)",
@@ -170,6 +177,7 @@ void SqliteMemory::createTables() {
             args TEXT NOT NULL,
             result TEXT NOT NULL,
             timestamp INTEGER NOT NULL,
+            workspace_id TEXT NOT NULL DEFAULT 'local',
             PRIMARY KEY (session_id, node_id)
         )
     )", "create trace_nodes table");
@@ -201,6 +209,24 @@ void SqliteMemory::migrateKnowledgeSchema() {
         execDdl(query, "ALTER TABLE knowledge_documents "
                        "ADD COLUMN embedding_model TEXT NOT NULL DEFAULT ''",
                 "add knowledge_documents.embedding_model");
+
+    // MEM-704: workspace_id reservation on the three session tables
+    for (const QString& table : { QStringLiteral("messages"),
+                                  QStringLiteral("audit_log"),
+                                  QStringLiteral("trace_nodes") }) {
+        QSqlQuery wsColumns(m_db);
+        QStringList wsNames;
+        if (wsColumns.exec(QString("PRAGMA table_info(%1)").arg(table))) {
+            while (wsColumns.next())
+                wsNames << wsColumns.value(1).toString();
+        }
+        if (!wsNames.isEmpty() && !wsNames.contains("workspace_id")) {
+            QSqlQuery alter(m_db);
+            execDdl(alter, QString("ALTER TABLE %1 ADD COLUMN workspace_id "
+                                   "TEXT NOT NULL DEFAULT 'local'").arg(table),
+                    qPrintable(QString("add %1.workspace_id").arg(table)));
+        }
+    }
 
     execDdl(query, R"(
         CREATE TABLE IF NOT EXISTS knowledge_chunks (
@@ -377,8 +403,8 @@ QString SqliteMemory::loadKnowledgeDoc(const QString& name) const {
 
 void SqliteMemory::saveMessage(const QString& sessionId, const QJsonObject& msg) {
     QSqlQuery query(m_db);
-    query.prepare("INSERT INTO messages (session_id, role, content, timestamp, metadata) "
-                  "VALUES (?, ?, ?, ?, ?)");
+    query.prepare("INSERT INTO messages (session_id, role, content, timestamp, metadata, "
+                  "workspace_id) VALUES (?, ?, ?, ?, ?, 'local')");
     query.addBindValue(sessionId);
     query.addBindValue(msg.value("role").toString());
     query.addBindValue(msg.value("content").toString());
@@ -549,7 +575,8 @@ void SqliteMemory::saveTraceNode(const QString& sessionId, const QJsonObject& no
     // Upsert: position (node_order) is fixed by the first insert; later
     // saves of the same node id only refresh content/status.
     query.prepare("INSERT INTO trace_nodes (session_id, node_id, node_order, type, title, "
-                  "status, args, result, timestamp) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?) "
+                  "status, args, result, timestamp, workspace_id) "
+                  "VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, 'local') "
                   "ON CONFLICT(session_id, node_id) DO UPDATE SET type = excluded.type, "
                   "title = excluded.title, status = excluded.status, args = excluded.args, "
                   "result = excluded.result, timestamp = excluded.timestamp");
@@ -610,7 +637,8 @@ void SqliteMemory::logAudit(const QString& sessionId, const QString& event,
                             bool success, const QString& detail) {
     QSqlQuery query(m_db);
     query.prepare("INSERT INTO audit_log (session_id, event, tool_name, arguments, "
-                  "success, detail, timestamp) VALUES (?, ?, ?, ?, ?, ?, ?)");
+                  "success, detail, timestamp, workspace_id) "
+                  "VALUES (?, ?, ?, ?, ?, ?, ?, 'local')");
     query.addBindValue(sessionId);
     query.addBindValue(event);
     query.addBindValue(toolName);

@@ -267,6 +267,8 @@ private slots:
     // Batch 4: request-context architecture (ARCH-402/403)
     void switchServiceMidTaskTerminatesCleanly();
     void staleResponseFromSupersededRequestIgnored();
+    // Batch 7: resume semantics contract (MEM-701)
+    void resumeKeepsCleanHistoryAcrossTurns();
 };
 
 void TestAgent::directCompletion() {
@@ -919,6 +921,68 @@ void TestAgent::staleResponseFromSupersededRequestIgnored() {
     agent.stop();   // finish the fixture state cleanly
     QVERIFY2(noDanglingToolCalls(agent.messages()),
              "stale-response handling left dangling tool_calls");
+    agent.setMemory(nullptr);
+}
+
+
+// ── Batch 7: resume semantics contract (MEM-701) ──────────
+// Persisted history is clean user/assistant pairs; tool evidence lives in
+// trace_nodes for the UI and is NEVER re-injected into the LLM context.
+// resume → continue → re-resume must behave like an uninterrupted
+// conversation with the same visible text.
+void TestAgent::resumeKeepsCleanHistoryAcrossTurns() {
+    SqliteMemory memory(QStringLiteral(":memory:"));
+    agent.setMemory(&memory);
+
+    QTemporaryDir dir(testDirTemplate());
+    QVERIFY(dir.isValid());
+    const QString path = dir.filePath("memo.txt");
+    { QFile f(path); QVERIFY(f.open(QIODevice::WriteOnly)); f.write("payload"); f.close(); }
+
+    // Turn 1 with a tool round, then a final answer
+    llm.script.append(toolResponse("read_file", QJsonObject{{"path", path}}));
+    llm.script.append(textResponse(QStringLiteral("first done")));
+    QSignalSpy spy(&agent, &AIAgent::responseReady);
+    agent.startTask(QStringLiteral("first task"));
+    QTRY_COMPARE_WITH_TIMEOUT(spy.count(), 1, 15000);
+
+    const QString sessionId = agent.currentSessionId();
+    QVERIFY(!sessionId.isEmpty());
+    agent.resetSession();
+    agent.resumeSession(sessionId);
+    // resumed in-memory history: system + user1 + assistant1 (no tool round)
+    QCOMPARE(agent.messages().size(), 3);
+
+    // Turn 2 continues on the same session
+    llm.script.append(textResponse(QStringLiteral("second done")));
+    agent.startTask(QStringLiteral("second task"));
+    QTRY_COMPARE(spy.count(), 2);
+
+    const QJsonArray sent2 = llm.seenMessages.last();
+    for (const auto& entry : sent2) {
+        const QJsonObject msg = entry.toObject();
+        QVERIFY2(!msg.contains("tool_calls"),
+                 "tool_calls resurrected after resume");
+        QVERIFY2(msg.value("role").toString() != QStringLiteral("tool"),
+                 "tool result re-injected after resume");
+    }
+    QVERIFY2(noDanglingToolCalls(sent2), "resumed history illegal");
+
+    // Leave and re-resume, then continue again: sequence must stay equivalent
+    agent.resetSession();
+    agent.resumeSession(sessionId);
+
+    llm.script.append(textResponse(QStringLiteral("third done")));
+    agent.startTask(QStringLiteral("third task"));
+    QTRY_COMPARE(spy.count(), 3);
+
+    // system + user1 + assistant1 + user2 + assistant2 + user3
+    QCOMPARE(llm.seenMessages.last().size(), 6);
+    QCOMPARE(llm.seenMessages.last().at(1).toObject().value("content").toString(),
+             QStringLiteral("first task"));
+    QVERIFY2(noDanglingToolCalls(llm.seenMessages.last()),
+             "re-resumed history illegal");
+
     agent.setMemory(nullptr);
 }
 

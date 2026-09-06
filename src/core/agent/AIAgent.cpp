@@ -290,7 +290,13 @@ void AIAgent::resumeSession(const QString& sessionId) {
     sysMsg["content"] = systemPrompt();
     m_messages.append(sysMsg);
 
-    // Persisted history contains clean user/assistant pairs
+    // Persisted history contains clean user/assistant pairs.
+    //
+    // Resume contract (MEM-701): tool evidence is persisted in trace_nodes
+    // for the UI timeline ONLY and is deliberately NOT re-injected into the
+    // LLM context — resuming a session must be equivalent to continuing a
+    // fresh conversation with the same visible text (guarded by the
+    // resumeKeepsCleanHistoryAcrossTurns test).
     if (m_memory) {
         const QJsonArray history = m_memory->loadMessages(sessionId, 200);
         for (const auto& entry : history) {

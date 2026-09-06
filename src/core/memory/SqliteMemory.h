@@ -16,6 +16,10 @@ public:
     void saveMessage(const QString& sessionId, const QJsonObject& msg) override;
     QJsonArray loadMessages(const QString& sessionId, int limit = 50) override;
 
+    // Episodic memory (FTS5) — currently NOT wired into the agent.
+    // Decision recorded in docs/5-完善计划.md Batch 7 (MEM-703): 搁置,
+    // pending a summarization-strategy design; the future integration shape
+    // is a session summary injected into the system prompt.
     void saveEpisodic(const QString& sessionId, const QJsonObject& episode) override;
     QJsonArray searchEpisodic(const QString& query, int limit = 10) override;
 
