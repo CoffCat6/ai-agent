@@ -72,8 +72,6 @@ QJsonArray OllamaService::convertMessagesForOllama(const QJsonArray& messages) {
 }
 
 void OllamaService::chatComplete(const QJsonArray& messages, const QJsonArray& tools) {
-    resetStreamState();
-
     QNetworkRequest request;
     request.setUrl(QUrl(m_baseUrl + "/api/chat"));
     request.setHeader(QNetworkRequest::ContentTypeHeader, "application/json");
@@ -82,27 +80,23 @@ void OllamaService::chatComplete(const QJsonArray& messages, const QJsonArray& t
     startReply(request, QJsonDocument(buildRequestBody(messages, tools)).toJson());
 }
 
-// Request-scoped state: clear stale tool calls even when a request never
-// reaches its done=true line (the usual reassignment would not run).
-void OllamaService::resetStreamState() {
-    m_toolCalls.clear();
-    LLMServiceBase::resetStreamState();
+bool OllamaService::streamComplete(const LLMRequestContext& ctx) const {
+    return ctx.doneReceived;
 }
 
-bool OllamaService::streamComplete() const {
-    return m_doneReceived;
-}
-
-LLMResponse OllamaService::streamResult() const {
+LLMResponse OllamaService::streamResult(const LLMRequestContext& ctx) const {
+    const auto* state = static_cast<const OllamaRequestState*>(ctx.provider.data());
     LLMResponse response;
     response.success = true;
-    response.content = m_content;
-    response.toolCalls = m_toolCalls;
-    response.tokensUsed = m_tokensUsed;
+    response.content = ctx.content;
+    response.toolCalls = state->toolCalls;
+    response.tokensUsed = ctx.tokensUsed;
     return response;
 }
 
-QString OllamaService::extractApiError(const QJsonObject& json) const {
+QString OllamaService::extractApiError(const LLMRequestContext& ctx,
+                                       const QJsonObject& json) const {
+    Q_UNUSED(ctx);
     return json.contains("error") ? json.value("error").toString() : QString();
 }
 
@@ -110,7 +104,8 @@ bool OllamaService::isCompleteBody(const QJsonObject& json) const {
     return json.contains("message");
 }
 
-void OllamaService::processLine(const QByteArray& line) {
+void OllamaService::processLine(LLMRequestContext& ctx, const QByteArray& line) {
+    auto* state = static_cast<OllamaRequestState*>(ctx.provider.data());
     if (line.isEmpty()) return;
 
     QJsonParseError parseError;
@@ -121,7 +116,7 @@ void OllamaService::processLine(const QByteArray& line) {
 
     // Ollama error payload (model not found, etc.)
     if (json.contains("error")) {
-        m_errorEmitted = true;
+        ctx.errorEmitted = true;
         emit errorOccurred(QStringLiteral("Ollama error: %1")
             .arg(json.value("error").toString()));
         return;
@@ -132,15 +127,15 @@ void OllamaService::processLine(const QByteArray& line) {
     // Streamed content chunk
     const QString chunk = message.value("content").toString();
     if (!chunk.isEmpty()) {
-        m_content += chunk;
+        ctx.content += chunk;
         emit streamingChunk(chunk);
     }
 
     // Final line of a stream carries done=true (+ tool calls + usage)
     if (json.value("done").toBool()) {
-        m_doneReceived = true;
-        m_toolCalls = parseToolCalls(message);
-        m_tokensUsed = json.value("eval_count").toInt()
+        ctx.doneReceived = true;
+        state->toolCalls = parseToolCalls(message);
+        ctx.tokensUsed = json.value("eval_count").toInt()
                      + json.value("prompt_eval_count").toInt();
     }
 }

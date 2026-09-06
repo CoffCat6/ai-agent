@@ -29,10 +29,13 @@ public:
     QVector<QJsonArray> seenTools;
     QVector<LLMResponse> script;
     bool repeatLast{false};
+    quint64 requestCounter{0};          // requestStarted()/requestId echo
 
     void chatComplete(const QJsonArray& messages, const QJsonArray& tools) override {
         seenMessages.append(messages);
         seenTools.append(tools);
+        const quint64 requestId = ++requestCounter;
+        emit requestStarted(requestId);
 
         LLMResponse response;
         if (script.isEmpty()) {
@@ -40,6 +43,7 @@ public:
             return;
         }
         response = idx < script.size() ? script.at(idx) : script.last();
+        response.requestId = requestId;
         ++idx;
 
         if (response.success) emit responseReady(response);
@@ -57,6 +61,7 @@ public:
         script.clear();
         repeatLast = false;
         idx = 0;
+        requestCounter = 0;
     }
 
 private:
@@ -128,6 +133,23 @@ bool noDanglingToolCalls(const QJsonArray& messages) {
     return true;
 }
 
+// Every assistant-announced tool_call id must be unique across the whole
+// history: Ollama-style "call_0" fallbacks and agent-generated fallbacks
+// repeat across turns, and strict OpenAI-compatible proxies reject
+// duplicated tool_call_id sequences.
+bool noDuplicateToolCallIds(const QJsonArray& messages) {
+    QSet<QString> seen;
+    for (const auto& entry : messages) {
+        const QJsonArray calls = entry.toObject().value("tool_calls").toArray();
+        for (const auto& c : calls) {
+            const QString id = c.toObject().value("id").toString();
+            if (seen.contains(id)) return false;
+            seen.insert(id);
+        }
+    }
+    return true;
+}
+
 // Knowledge-base tool for the TEST-002 behavioral matrix (pseudo embedding,
 // no network). Registered lazily on first use - the earlier
 // dangerousToolsNotExposed test asserts the built-in-only tool count (4) and
@@ -193,6 +215,7 @@ class TestAgent : public QObject {
 
     AIAgent agent;
     FakeAIService llm;
+    FakeAIService otherLlm;   // fixture-owned: safe even when a test aborts early
 
 private slots:
     void initTestCase() {
@@ -233,6 +256,9 @@ private slots:
     void stopDuringExecutionSealsToolCalls();
     void toolExecutionBudgetForcesFinal();
     void forcedFinalControlMessageNotPersisted();
+    // Batch 4: request-context architecture (ARCH-402/403)
+    void switchServiceMidTaskTerminatesCleanly();
+    void staleResponseFromSupersededRequestIgnored();
 };
 
 void TestAgent::directCompletion() {
@@ -690,6 +716,8 @@ void TestAgent::knowledgeNormalKnowledgeSequence() {
     QCOMPARE(memory.auditLog(50).size(), 2); // one execution per KB task
     QVERIFY2(noDanglingToolCalls(llm.seenMessages.last()),
              "Knowledge->Normal->Knowledge left an illegal history");
+    QVERIFY2(noDuplicateToolCallIds(llm.seenMessages.last()),
+             "duplicate tool_call_id across turns (strict proxies reject these)");
 
     agent.setMemory(nullptr);
 }
@@ -807,6 +835,78 @@ void TestAgent::forcedFinalControlMessageNotPersisted() {
     }
     QVERIFY2(noDanglingToolCalls(sent),
              "forced final + next turn left dangling tool_calls");
+}
+
+// ── Batch 4: request-context architecture ─────────────────
+
+// Switching the LLM service while a task is mid-flight (provider profile
+// change) must terminate the active task cleanly - the previous behavior
+// disconnected the in-flight response's receiver and left the agent stuck
+// in ExecutingTool forever, unable to accept new tasks.
+void TestAgent::switchServiceMidTaskTerminatesCleanly() {
+    BlockingTool* blocking = registerBlockingTool();
+    llm.script.append(toolResponse("test_blocking", QJsonObject{}));
+
+    QSignalSpy spy(&agent, &AIAgent::responseReady);
+    agent.startTask(QStringLiteral("block"));
+    QTRY_VERIFY_WITH_TIMEOUT(traceHasRunningToolCall(agent.traceModel(),
+                                                    QStringLiteral("test_blocking")),
+                             5000);
+
+    agent.setLLMService(&otherLlm);   // must stop the active task first
+
+    QCOMPARE(agent.state(), AgentState::Idle);
+    blocking->release();              // let the parked worker finish
+    QTest::qWait(300);
+    QVERIFY2(noDanglingToolCalls(agent.messages()),
+             "mid-task service switch left dangling tool_calls");
+
+    // The agent is immediately usable on the new service.
+    otherLlm.script.append(textResponse(QStringLiteral("on new service")));
+    agent.startTask(QStringLiteral("again"));
+    QTRY_COMPARE_WITH_TIMEOUT(spy.count(), 1, 5000);
+    QCOMPARE(agent.lastResponse(), QStringLiteral("on new service"));
+    QCOMPARE(agent.state(), AgentState::Completed);
+
+    agent.setLLMService(&llm);        // restore the fixture default
+}
+
+// A response echoing a superseded request's id must be dropped instead of
+// being acted on. Here the agent sits in AwaitingToolConfirm for request 2
+// while a late reply from request 1 (with its own tool call) arrives.
+void TestAgent::staleResponseFromSupersededRequestIgnored() {
+    SqliteMemory memory(QStringLiteral(":memory:"));
+    agent.setMemory(&memory);
+
+    // Request 1 completes normally
+    llm.script.append(textResponse(QStringLiteral("first")));
+    QSignalSpy spy(&agent, &AIAgent::responseReady);
+    agent.startTask(QStringLiteral("hello"));
+    QTRY_COMPARE(spy.count(), 1);
+
+    // Request 2 dispatches and suspends on a confirmation
+    llm.script.append(toolResponse("write_file",
+        QJsonObject{{"path", QDir::temp().filePath("nx_stale.txt")}, {"content", "y"}}));
+    agent.startTask(QStringLiteral("second"));
+    QCOMPARE(llm.requestCounter, 2u);
+    QCOMPARE(agent.state(), AgentState::AwaitingToolConfirm);
+
+    // A late response from request 1 arrives: must be dropped wholesale.
+    LLMResponse stale;
+    stale.success = true;
+    stale.requestId = 1;
+    stale.toolCalls.append(ToolCallInfo{
+        QStringLiteral("call_stale"), QStringLiteral("read_file"),
+        QJsonObject{{"path", QDir::temp().filePath("nx_stale.txt")}}});
+    emit llm.responseReady(stale);
+
+    QCOMPARE(agent.state(), AgentState::AwaitingToolConfirm);   // unchanged
+    QCOMPARE(llm.seenMessages.size(), 2);                       // no new LLM call
+
+    agent.stop();   // finish the fixture state cleanly
+    QVERIFY2(noDanglingToolCalls(agent.messages()),
+             "stale-response handling left dangling tool_calls");
+    agent.setMemory(nullptr);
 }
 
 QTEST_GUILESS_MAIN(TestAgent)

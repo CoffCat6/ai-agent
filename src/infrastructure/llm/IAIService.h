@@ -30,6 +30,9 @@ public:
     virtual void setBaseUrl(const QString& url) = 0;
 
 signals:
+    // Emitted when a request is dispatched; responses echo the id so the
+    // agent can drop replies from superseded requests.
+    void requestStarted(quint64 requestId);
     void responseReady(const NexusAI::LLMResponse& response);
     void streamingChunk(const QString& chunk);
     void errorOccurred(const QString& error);

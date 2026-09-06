@@ -80,11 +80,16 @@ AIAgent::~AIAgent() = default;
 
 void AIAgent::setLLMService(IAIService* service) {
     if (m_llmService == service) return; // re-wiring the same service would duplicate connections
+    // Switching providers mid-task (settings profile change) terminates the
+    // active task cleanly - otherwise the in-flight response loses its
+    // receiver and the agent is stuck until restart.
+    if (m_active) stop();
     if (m_llmService) {
         disconnect(m_llmService, nullptr, this, nullptr);
     }
     m_llmService = service;
     if (m_llmService) {
+        connect(m_llmService, &IAIService::requestStarted, this, &AIAgent::onRequestStarted);
         connect(m_llmService, &IAIService::responseReady, this, &AIAgent::onLLMResponse);
         connect(m_llmService, &IAIService::errorOccurred, this, &AIAgent::onLLMError);
         connect(m_llmService, &IAIService::streamingChunk, this, &AIAgent::onStreamingChunk);
@@ -204,6 +209,7 @@ void AIAgent::startTask(const QString& userMessage) {
     if (fresh) {
         m_messages = QJsonArray();
         m_traceModel = QJsonArray();
+        m_usedToolCallIds.clear();   // fresh history: no recorded call ids
         m_sessionId = QUuid::createUuid().toString(QUuid::WithoutBraces);
 
         QJsonObject sysMsg;
@@ -260,6 +266,7 @@ void AIAgent::resetSession() {
     m_sessionId.clear();
     m_messages = QJsonArray();
     m_traceModel = QJsonArray();
+    m_usedToolCallIds.clear();
     m_lastResponse.clear();
     m_iteration = 0;
     m_lastToolSignature.clear();
@@ -276,6 +283,7 @@ void AIAgent::resumeSession(const QString& sessionId) {
 
     m_sessionId = sessionId;
     m_messages = QJsonArray();
+    m_usedToolCallIds.clear();   // resumed history carries no tool calls
 
     QJsonObject sysMsg;
     sysMsg["role"] = "system";
@@ -432,11 +440,24 @@ void AIAgent::applyContextBudget() {
         "completed");
 }
 
+void AIAgent::onRequestStarted(quint64 requestId) {
+    m_activeRequestId = requestId;
+}
+
 void AIAgent::onLLMResponse(const LLMResponse& response) {
     if (!m_active) return;
 
     // The forced-final control message rode along with this request only.
     m_forcedFinalPush.clear();
+
+    // A response echoing a superseded request's id carries results for a
+    // task that no longer exists - drop it wholesale (ARCH-402).
+    if (response.requestId != 0 && m_activeRequestId != 0
+            && response.requestId != m_activeRequestId) {
+        qWarning() << "Dropping response from superseded request"
+                   << response.requestId << "(active:" << m_activeRequestId << ")";
+        return;
+    }
 
     m_streamTimer.stop();
     if (!m_thinkingNodeId.isEmpty()) {
@@ -466,11 +487,15 @@ void AIAgent::onLLMResponse(const LLMResponse& response) {
     QVector<ToolCallInfo> calls;
     if (!response.toolCalls.isEmpty()) {
         QJsonArray callsArr;
-        int index = 0;
         for (const auto& call : response.toolCalls) {
             ToolCallInfo normalized = call;
-            if (normalized.id.isEmpty())
-                normalized.id = QStringLiteral("call_%1_%2").arg(m_iteration).arg(index);
+            // Empty provider ids and provider fallbacks that repeat across
+            // turns ("call_0") are regenerated from a process-global
+            // counter - duplicate tool_call_ids in one history are rejected
+            // by strict OpenAI-compatible proxies (FIX-401).
+            if (normalized.id.isEmpty() || m_usedToolCallIds.contains(normalized.id))
+                normalized.id = QStringLiteral("call_%1").arg(++m_toolCallSeq);
+            m_usedToolCallIds.insert(normalized.id);
             calls.append(normalized);
 
             QJsonObject c;
@@ -481,7 +506,6 @@ void AIAgent::onLLMResponse(const LLMResponse& response) {
             fn["arguments"] = argsToString(normalized.arguments);
             c["function"] = fn;
             callsArr.append(c);
-            ++index;
         }
         assistantMsg["tool_calls"] = callsArr;
     }

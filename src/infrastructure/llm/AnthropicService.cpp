@@ -181,8 +181,6 @@ void AnthropicService::chatComplete(const QJsonArray& messages, const QJsonArray
         return;
     }
 
-    resetStreamState();
-
     const ConvertedHistory history = convertMessages(messages);
     if (history.messages.isEmpty()) {
         emit errorOccurred("No convertible messages for the Anthropic request");
@@ -210,25 +208,18 @@ void AnthropicService::chatComplete(const QJsonArray& messages, const QJsonArray
     startReply(request, QJsonDocument(body).toJson());
 }
 
-// Request-scoped state: tool_use blocks must not survive into the next
-// request, or the previous response's calls are re-emitted with every
-// subsequent response on this instance (deterministic knowledge-tool
-// cross-talk).
-void AnthropicService::resetStreamState() {
-    m_toolUses.clear();
-    LLMServiceBase::resetStreamState();
+bool AnthropicService::streamComplete(const LLMRequestContext& ctx) const {
+    const auto* state = static_cast<const AnthropicRequestState*>(ctx.provider.data());
+    return ctx.doneReceived || !ctx.content.isEmpty() || !state->toolUses.isEmpty();
 }
 
-bool AnthropicService::streamComplete() const {
-    return m_doneReceived || !m_content.isEmpty() || !m_toolUses.isEmpty();
-}
-
-LLMResponse AnthropicService::streamResult() const {
+LLMResponse AnthropicService::streamResult(const LLMRequestContext& ctx) const {
+    const auto* state = static_cast<const AnthropicRequestState*>(ctx.provider.data());
     LLMResponse response;
     response.success = true;
-    response.content = m_content;
-    response.tokensUsed = m_tokensUsed;
-    for (const auto& tu : m_toolUses) {
+    response.content = ctx.content;
+    response.tokensUsed = ctx.tokensUsed;
+    for (const auto& tu : state->toolUses) {
         if (tu.name.isEmpty()) continue;
         ToolCallInfo info;
         info.id = tu.id;
@@ -247,7 +238,9 @@ LLMResponse AnthropicService::streamResult() const {
     return response;
 }
 
-QString AnthropicService::extractApiError(const QJsonObject& json) const {
+QString AnthropicService::extractApiError(const LLMRequestContext& ctx,
+                                          const QJsonObject& json) const {
+    Q_UNUSED(ctx);
     if (json.value("type").toString() != QLatin1String("error")
             && !json.contains("error"))
         return {};
@@ -258,7 +251,9 @@ bool AnthropicService::isCompleteBody(const QJsonObject& json) const {
     return json.contains("content");
 }
 
-void AnthropicService::processLine(const QByteArray& line) {
+void AnthropicService::processLine(LLMRequestContext& ctx, const QByteArray& line) {
+    auto* state = static_cast<AnthropicRequestState*>(ctx.provider.data());
+
     // Only "data:" events carry payload; "event:" lines are redundant here
     if (!line.startsWith("data:")) return;
 
@@ -272,13 +267,13 @@ void AnthropicService::processLine(const QByteArray& line) {
 
     if (type == QLatin1String("error")) {
         const QString msg = json.value("error").toObject().value("message").toString();
-        m_errorEmitted = true;
+        ctx.errorEmitted = true;
         emit errorOccurred(QStringLiteral("Anthropic error: %1").arg(msg));
         return;
     }
     if (type == QLatin1String("message_start")) {
         // input tokens arrive on the opening event
-        m_tokensUsed += json.value("message").toObject().value("usage")
+        ctx.tokensUsed += json.value("message").toObject().value("usage")
                             .toObject().value("input_tokens").toInt();
         return;
     }
@@ -288,7 +283,7 @@ void AnthropicService::processLine(const QByteArray& line) {
             StreamToolUse tu;
             tu.id = block.value("id").toString();
             tu.name = block.value("name").toString();
-            m_toolUses.append(tu);
+            state->toolUses.append(tu);
         }
         return;
     }
@@ -298,21 +293,21 @@ void AnthropicService::processLine(const QByteArray& line) {
         if (deltaType == QLatin1String("text_delta")) {
             const QString text = delta.value("text").toString();
             if (!text.isEmpty()) {
-                m_content += text;
+                ctx.content += text;
                 emit streamingChunk(text);
             }
         } else if (deltaType == QLatin1String("input_json_delta")) {
-            if (!m_toolUses.isEmpty())
-                m_toolUses.last().json += delta.value("partial_json").toString();
+            if (!state->toolUses.isEmpty())
+                state->toolUses.last().json += delta.value("partial_json").toString();
         }
         return;
     }
     if (type == QLatin1String("message_delta")) {
-        m_tokensUsed += json.value("usage").toObject().value("output_tokens").toInt();
+        ctx.tokensUsed += json.value("usage").toObject().value("output_tokens").toInt();
         return;
     }
     if (type == QLatin1String("message_stop")) {
-        m_doneReceived = true;
+        ctx.doneReceived = true;
     }
 }
 

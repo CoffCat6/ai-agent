@@ -3,6 +3,7 @@
 #include <QObject>
 #include <QJsonArray>
 #include <QJsonObject>
+#include <QSet>
 #include <QString>
 #include <QTimer>
 #include <QVector>
@@ -61,6 +62,7 @@ public:
     int contextLimit() const { return m_contextLimit; }
 
     AgentState state() const { return m_state; }
+    bool isActive() const { return m_active; }
     QJsonArray messages() const { return m_messages; }
     QJsonArray traceModel() const { return m_traceModel; }
     QString lastResponse() const { return m_lastResponse; }
@@ -100,6 +102,7 @@ private:
 
     void processIteration();
     void applyContextBudget();
+    void onRequestStarted(quint64 requestId);
     void onLLMResponse(const LLMResponse& response);
     void onLLMError(const QString& error);
     void onStreamingChunk(const QString& chunk);
@@ -177,6 +180,15 @@ private:
     IAIService* m_llmService{nullptr};
     ToolRegistry* m_toolRegistry{nullptr};
     IMemory* m_memory{nullptr};
+
+    // Request the LLM service last dispatched for us (requestStarted echo);
+    // responses carrying a different non-zero id are dropped (ARCH-402).
+    quint64 m_activeRequestId{0};
+    // Process-global tool_call_id fallback counter + session-scoped set of
+    // ids already in the history: agent-generated or provider-fallback ids
+    // ("call_0") repeat across turns, and strict proxies reject duplicates.
+    quint64 m_toolCallSeq{0};
+    QSet<QString> m_usedToolCallIds;
 };
 
 } // namespace NexusAI

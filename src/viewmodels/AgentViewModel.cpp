@@ -73,6 +73,11 @@ void AgentViewModel::persistPanelWidths() {
 
 void AgentViewModel::setAgent(AIAgent* agent) {
     if (m_agent == agent) return;
+    // Detaching or rewiring mid-task (simulation-mode toggle) terminates the
+    // active task cleanly - otherwise the running agent loses its UI bridge
+    // and stays busy until restart.
+    if (m_agent && m_agent->isActive())
+        m_agent->stop();
     if (m_agent) {
         disconnect(m_agent, nullptr, this, nullptr);
     }

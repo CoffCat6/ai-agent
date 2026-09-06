@@ -13,8 +13,8 @@ namespace NexusAI {
 //
 // Content deltas are forwarded via streamingChunk(); the fully assembled
 // response (content + tool calls) is emitted once via responseReady().
-// Request lifecycle / streaming accumulation / finished-reply fallback
-// ladder live in LLMServiceBase.
+// All request/stream state lives in the per-request LLMRequestContext; the
+// service object itself only carries configuration.
 class OpenAIService : public LLMServiceBase {
     Q_OBJECT
 public:
@@ -36,27 +36,30 @@ public:
     static QString accumulateArguments(const QString& acc, const QString& incoming);
 
 protected:
-    void resetStreamState() override;
-    void processLine(const QByteArray& line) override;
-    bool streamComplete() const override;
-    LLMResponse streamResult() const override;
-    QString providerLabel() const override { return QStringLiteral("API"); }
-    QString extractApiError(const QJsonObject& json) const override;
-    bool isCompleteBody(const QJsonObject& json) const override;
-    LLMResponse parseBody(const QJsonObject& json) const override
-    { return parseResponse(json); }
-
-private:
-    // Tool call fragments accumulated across SSE deltas
+    // Tool call fragments accumulated across SSE deltas of one request
     struct StreamToolCall {
         QString id;
         QString name;
         QString arguments; // accumulated JSON string fragments
     };
+    struct OpenAIRequestState : ProviderRequestState {
+        QVector<StreamToolCall> toolCalls;
+    };
 
+    ProviderRequestStatePtr createRequestState() const override
+    { return ProviderRequestStatePtr(new OpenAIRequestState()); }
+    void processLine(LLMRequestContext& ctx, const QByteArray& line) override;
+    bool streamComplete(const LLMRequestContext& ctx) const override;
+    LLMResponse streamResult(const LLMRequestContext& ctx) const override;
+    QString providerLabel() const override { return QStringLiteral("API"); }
+    QString extractApiError(const LLMRequestContext& ctx,
+                            const QJsonObject& json) const override;
+    bool isCompleteBody(const QJsonObject& json) const override;
+    LLMResponse parseBody(const QJsonObject& json) const override
+    { return parseResponse(json); }
+
+private:
     QJsonObject buildRequestBody(const QJsonArray& messages, const QJsonArray& tools);
-
-    QVector<StreamToolCall> m_toolCalls;
 };
 
 } // namespace NexusAI

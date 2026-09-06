@@ -40,8 +40,6 @@ void OpenAIService::chatComplete(const QJsonArray& messages, const QJsonArray& t
         return;
     }
 
-    resetStreamState();
-
     QNetworkRequest request;
     request.setUrl(QUrl(m_baseUrl + "/chat/completions"));
     request.setHeader(QNetworkRequest::ContentTypeHeader, "application/json");
@@ -52,24 +50,17 @@ void OpenAIService::chatComplete(const QJsonArray& messages, const QJsonArray& t
     startReply(request, QJsonDocument(buildRequestBody(messages, tools)).toJson());
 }
 
-// Request-scoped state: tool-call fragments must not survive into the next
-// request, or the previous response's calls are re-emitted with every
-// subsequent response on this instance (deterministic knowledge-tool
-// cross-talk).
-void OpenAIService::resetStreamState() {
-    m_toolCalls.clear();
-    LLMServiceBase::resetStreamState();
+bool OpenAIService::streamComplete(const LLMRequestContext& ctx) const {
+    const auto* state = static_cast<const OpenAIRequestState*>(ctx.provider.data());
+    return ctx.doneReceived || !ctx.content.isEmpty() || !state->toolCalls.isEmpty();
 }
 
-bool OpenAIService::streamComplete() const {
-    return m_doneReceived || !m_content.isEmpty() || !m_toolCalls.isEmpty();
-}
-
-LLMResponse OpenAIService::streamResult() const {
+LLMResponse OpenAIService::streamResult(const LLMRequestContext& ctx) const {
+    const auto* state = static_cast<const OpenAIRequestState*>(ctx.provider.data());
     LLMResponse response;
     response.success = true;
-    response.content = m_content;
-    for (const auto& tc : m_toolCalls) {
+    response.content = ctx.content;
+    for (const auto& tc : state->toolCalls) {
         if (tc.name.isEmpty()) continue;
         ToolCallInfo info;
         info.id = tc.id;
@@ -90,10 +81,11 @@ LLMResponse OpenAIService::streamResult() const {
     return response;
 }
 
-QString OpenAIService::extractApiError(const QJsonObject& json) const {
+QString OpenAIService::extractApiError(const LLMRequestContext& ctx,
+                                       const QJsonObject& json) const {
     if (!json.contains("error")) return {};
     QString msg = json.value("error").toObject().value("message").toString();
-    if (msg.isEmpty()) msg = QString::fromUtf8(m_rawBody);
+    if (msg.isEmpty()) msg = QString::fromUtf8(ctx.rawBody);
     return msg;
 }
 
@@ -132,13 +124,15 @@ QString OpenAIService::accumulateArguments(const QString& acc, const QString& in
     return acc + incoming;
 }
 
-void OpenAIService::processLine(const QByteArray& line) {
+void OpenAIService::processLine(LLMRequestContext& ctx, const QByteArray& line) {
+    auto* state = static_cast<OpenAIRequestState*>(ctx.provider.data());
+
     // SSE spec: only "data:" events carry payload
     if (!line.startsWith("data:")) return;
 
     const QString payload = QString::fromUtf8(line.mid(5).trimmed());
     if (payload == QLatin1String("[DONE]")) {
-        m_doneReceived = true;
+        ctx.doneReceived = true;
         return;
     }
 
@@ -151,7 +145,7 @@ void OpenAIService::processLine(const QByteArray& line) {
     // Some providers stream error objects mid-flight
     if (json.contains("error")) {
         const QString msg = json.value("error").toObject().value("message").toString();
-        m_errorEmitted = true;
+        ctx.errorEmitted = true;
         emit errorOccurred(QStringLiteral("API error: %1").arg(msg));
         return;
     }
@@ -166,7 +160,7 @@ void OpenAIService::processLine(const QByteArray& line) {
     // Content delta
     const QString content = delta.value("content").toString();
     if (!content.isEmpty()) {
-        m_content += content;
+        ctx.content += content;
         emit streamingChunk(content);
     }
 
@@ -176,18 +170,18 @@ void OpenAIService::processLine(const QByteArray& line) {
         const QJsonObject tcObj = tc.toObject();
         const int index = tcObj.value("index").toInt(-1);
         if (index < 0) continue;
-        while (m_toolCalls.size() <= index)
-            m_toolCalls.append(StreamToolCall{});
+        while (state->toolCalls.size() <= index)
+            state->toolCalls.append(StreamToolCall{});
 
         if (tcObj.contains("id"))
-            m_toolCalls[index].id = tcObj.value("id").toString();
+            state->toolCalls[index].id = tcObj.value("id").toString();
         const QJsonObject fn = tcObj.value("function").toObject();
         if (fn.contains("name"))
-            m_toolCalls[index].name =
-                accumulateName(m_toolCalls[index].name, fn.value("name").toString());
+            state->toolCalls[index].name =
+                accumulateName(state->toolCalls[index].name, fn.value("name").toString());
         if (fn.contains("arguments"))
-            m_toolCalls[index].arguments =
-                accumulateArguments(m_toolCalls[index].arguments,
+            state->toolCalls[index].arguments =
+                accumulateArguments(state->toolCalls[index].arguments,
                                     fn.value("arguments").toString());
     }
 }
