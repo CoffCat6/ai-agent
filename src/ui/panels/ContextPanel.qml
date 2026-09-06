@@ -93,7 +93,9 @@ Rectangle {
 
                 Text {
                     anchors.verticalCenter: parent.verticalCenter
-                    text: qsTr("导入中…")
+                    text: AgentVM.knowledgeEmbedTotal > 0
+                        ? qsTr("已嵌入 %1/%2").arg(AgentVM.knowledgeEmbedDone).arg(AgentVM.knowledgeEmbedTotal)
+                        : qsTr("导入中…")
                     color: Theme.brandPrimary
                     font.pixelSize: 10
                     font.family: Theme.fontSans

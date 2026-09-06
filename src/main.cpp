@@ -5,6 +5,7 @@
 #include <QNetworkProxyFactory>
 #include <QtConcurrent/QtConcurrentRun>
 #include <QQuickStyle>
+#include <QTranslator>
 
 #include "viewmodels/ThemeManager.h"
 #include "viewmodels/ThemeProvider.h"
@@ -62,6 +63,15 @@ int main(int argc, char *argv[])
 
     QNetworkProxyFactory::setApplicationProxyFactory(new LoopbackProxyFactory);
 
+    // FEAT-804: load the matching translation if one is bundled. Missing or
+    // untranslated strings fall back to their source text.
+    QTranslator translator;
+    if (translator.load(QLocale::system(), QStringLiteral("nexus_ai"),
+                        QStringLiteral("_"), QStringLiteral(":/i18n"))) {
+        app.installTranslator(&translator);
+        qInfo() << "Loaded translation:" << translator.filePath();
+    }
+
     // ── Logging: mirror all Qt messages to a rotating file ──
     // (windowed build has no console; see <AppLocalData>/logs/)
     Logger::install();
@@ -96,6 +106,9 @@ int main(int argc, char *argv[])
     rag->setBatchEmbedder([embedding](const QStringList& texts) {
         return embedding->embedBatch(texts);
     });
+    // Apply the configured embedding model BEFORE the restore snapshot: the
+    // persisted-chunk usability check compares against this identity.
+    embedding->setModel(settings->embeddingModel());
     rag->setEmbeddingModelName(embedding->model());
     // Expose the knowledge base to the model as a safe auto-executed tool
     ToolRegistry::instance().registerTool(std::make_unique<KnowledgeSearchTool>(rag));
@@ -239,6 +252,34 @@ int main(int argc, char *argv[])
     QObject::connect(settings, &SettingsService::activeProfileChanged, &app, [applySettings]() { applySettings(); });
     QObject::connect(settings, &SettingsService::contextTokensChanged, &app, [applySettings]() { applySettings(); });
     QObject::connect(settings, &SettingsService::allowFullDiskReadChanged, &app, [applySettings]() { applySettings(); });
+
+    // FEAT-801: switching the embedding model invalidates every stored
+    // chunk vector → full knowledge re-embed in the background (the new
+    // layout is written back via documentPersisted).
+    QObject::connect(settings, &SettingsService::embeddingModelChanged, &app,
+        [settings, embedding, rag, memory]() {
+            if (embedding->model() == settings->embeddingModel()) return;
+            embedding->setModel(settings->embeddingModel());
+            rag->setEmbeddingModelName(embedding->model());
+
+            struct ReembedItem { QString name; QString content; };
+            QVector<ReembedItem> items;
+            for (const auto& rec : memory->loadKnowledgeDocRecords())
+                items.append({rec.name, rec.content});
+            if (items.isEmpty()) return;
+
+            qInfo() << "Embedding model changed - re-embedding"
+                    << items.size() << "document(s)";
+            const quint64 gen = rag->restoreGeneration();
+            (void)QtConcurrent::run([rag, items, gen]() {
+                for (const ReembedItem& item : items)
+                    rag->ingestRestoredDocument(item.name, item.content, gen);
+            });
+        });
+
+    // FEAT-803: batch-embedding progress → knowledge panel
+    QObject::connect(embedding, &OllamaEmbedding::embedProgress,
+                     agentVM, &AgentViewModel::setEmbedProgress);
 
     // Live pipeline vs. built-in simulation
     const auto applyMode = [settings, agentVM, agent]() {

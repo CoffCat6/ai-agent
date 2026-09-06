@@ -19,13 +19,13 @@ src/
 ├── viewmodels/      # MVVM 层：AgentViewModel / SettingsService / ThemeManager
 ├── ui/              # QML 视图（main.qml + components / panels / pages）
 └── main.cpp         # 组装依赖链并暴露给 QML
-tests/               # QtTest 单测（9 个套件）
+tests/               # QtTest 单测（10 个套件）
 docs/                # 设计文档与技术路线
 ```
 
 ## 构建与运行
 
-要求：CMake ≥ 3.24、C++20 编译器、Qt ≥ 6.5（Core/Quick/Sql/Network/Concurrent/QuickControls2）。
+要求：CMake ≥ 3.24、C++20 编译器、Qt ≥ 6.5（Core/Quick/Sql/Network/Concurrent/QuickControls2/LinguistTools）。
 
 ```bash
 # Windows (MinGW) 示例：Qt 工具链需在 PATH 中
@@ -44,7 +44,7 @@ cmake --build build
 ctest --test-dir build --output-on-failure
 ```
 
-覆盖范围：沙箱策略、Token 估算、三家 LLM 响应解析、SQLite 记忆、RAG、ReAct 全流程、ViewModel、设置服务。
+覆盖范围：沙箱策略、Token 估算、三家 LLM 响应解析、SQLite 记忆、RAG、ReAct 全流程、嵌入分页与进度、ViewModel、设置服务。
 
 ## 配置与数据位置
 

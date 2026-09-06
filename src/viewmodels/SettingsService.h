@@ -30,6 +30,7 @@ class SettingsService : public QObject {
     Q_PROPERTY(int contextTokens READ contextTokens WRITE setContextTokens NOTIFY contextTokensChanged)
     Q_PROPERTY(bool simulationMode READ simulationMode WRITE setSimulationMode NOTIFY simulationModeChanged)
     Q_PROPERTY(bool allowFullDiskRead READ allowFullDiskRead WRITE setAllowFullDiskRead NOTIFY allowFullDiskReadChanged)
+    Q_PROPERTY(QString embeddingModel READ embeddingModel WRITE setEmbeddingModel NOTIFY embeddingModelChanged)
     Q_PROPERTY(QString appVersion READ appVersion CONSTANT)
 
 public:
@@ -54,6 +55,11 @@ public:
     // allowlist (audit P1-8). Opt-in, default off.
     bool allowFullDiskRead() const { return m_allowFullDiskRead; }
     void setAllowFullDiskRead(bool enabled);
+
+    // Knowledge-base embedding model (FEAT-801): identity for persisted
+    // chunk vectors; a change triggers a full knowledge re-embed.
+    QString embeddingModel() const { return m_embeddingModel; }
+    void setEmbeddingModel(const QString& model);
 
     static QString appVersion() { return QCoreApplication::applicationVersion(); }
 
@@ -81,6 +87,7 @@ signals:
     void contextTokensChanged();
     void simulationModeChanged();
     void allowFullDiskReadChanged();
+    void embeddingModelChanged();
 
 private:
     void load();
@@ -92,6 +99,7 @@ private:
     int m_contextTokens{8192};
     bool m_simulationMode{false};
     bool m_allowFullDiskRead{false};
+    QString m_embeddingModel{QStringLiteral("nomic-embed-text")};
 
     static SettingsService* s_instance;
 };

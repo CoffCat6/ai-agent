@@ -70,6 +70,13 @@ public:
     QJsonArray search(const QString& query, int k = 4) const;
 
     QJsonArray documents() const; // [{name, chunks, chars, pseudo}]
+
+    // FEAT-802: import-side duplicate/coexistence helpers
+    bool hasDocument(const QString& sourceName) const;
+    bool containsContentHash(const QString& contentHash) const;
+    // "a.txt" exists → "a (2).txt", "a (3).txt", ... (display-name dedupe;
+    // the DB primary key stays the unique display name)
+    QString uniqueDocumentName(const QString& baseName) const;
     // Chunk metadata of one document ordered by chunk_index (detail view);
     // empty when the document is unknown.
     QJsonArray documentChunks(const QString& sourceName) const;
@@ -91,10 +98,12 @@ private:
     struct Document {
         QString name;
         int chars{0};
+        QString contentHash;
         std::unique_ptr<DocumentRetriever> retriever;
     };
 
     void dropDocumentLocked(const QString& sourceName);
+    bool hasDocumentLocked(const QString& sourceName) const;
     // Chunk + embed outside the lock; nullptr with *chunksOut = 0 (empty) or
     // -1 (oversize). Shared by ingestDocument / ingestRestoredDocument.
     std::unique_ptr<DocumentRetriever> buildRetriever(const QString& sourceName,

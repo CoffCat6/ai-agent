@@ -127,6 +127,37 @@ private slots:
         QCOMPARE(s2.activeProfile().value("model").toString(), QStringLiteral("persisted-model-x"));
         QVERIFY(s2.activeProfile().value("models").toStringList().contains(QStringLiteral("persisted-model-x")));
     }
+
+    // FEAT-801: embedding model + Batch 5 full-disk-read persistence round trip
+    void embeddingModelAndReadPolicyPersistence() {
+        SettingsGuard guard;
+        {
+            QSettings s("NexusAI", "NexusAI");
+            s.remove("embedding/model");
+            s.remove("security/allowFullDiskRead");
+        }
+
+        {
+            SettingsService service(nullptr);
+            QCOMPARE(service.embeddingModel(), QStringLiteral("nomic-embed-text"));
+            QVERIFY(!service.allowFullDiskRead());
+
+            QSignalSpy modelSpy(&service, &SettingsService::embeddingModelChanged);
+            service.setEmbeddingModel(QStringLiteral("bge-m3"));
+            QCOMPARE(modelSpy.count(), 1);
+            service.setEmbeddingModel(QStringLiteral("bge-m3"));   // unchanged → silent
+            QCOMPARE(modelSpy.count(), 1);
+            service.setEmbeddingModel(QStringLiteral("   "));      // blank → ignored
+            QCOMPARE(service.embeddingModel(), QStringLiteral("bge-m3"));
+
+            service.setAllowFullDiskRead(true);
+        }
+        {
+            SettingsService service(nullptr);
+            QCOMPARE(service.embeddingModel(), QStringLiteral("bge-m3"));
+            QVERIFY(service.allowFullDiskRead());
+        }
+    }
 };
 
 int main(int argc, char *argv[]) {

@@ -8,7 +8,7 @@ set(CMAKE_AUTORCC ON)
 
 # ── Qt 6 ──────────────────────────────────────────────────
 find_package(Qt6 REQUIRED COMPONENTS
-    Core Qml Quick Sql Network Concurrent QuickControls2
+    Core Qml Quick Sql Network Concurrent QuickControls2 LinguistTools
 )
 
 qt_standard_project_setup(REQUIRES 6.5)
@@ -155,6 +155,16 @@ if(WIN32)
         WIN32_EXECUTABLE TRUE
     )
 endif()
+
+# ── Translations (Batch 8 FEAT-804) ───────────────────────
+# Infrastructure only: .ts is generated/merged by lupdate over the C++ and
+# QML sources; the .qm is embedded under :/i18n and loaded at startup when
+# it matches the system locale. Untranslated strings fall back to source.
+find_package(Qt6 REQUIRED COMPONENTS LinguistTools)
+qt_add_translations(nexus_ai
+    TS_FILES ${CMAKE_SOURCE_DIR}/translations/nexus_ai_zh_CN.ts
+    SOURCE_TARGETS nexus_core nexus_infra nexus_viewmodels nexus_ai
+)
 
 # ── Tests (optional) ──────────────────────────────────────
 option(BUILD_TESTS "Build unit tests" OFF)

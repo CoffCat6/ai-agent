@@ -2,10 +2,13 @@
 // clamping, debounced QSettings persistence and cross-instance restore.
 #include "viewmodels/AgentViewModel.h"
 #include "viewmodels/TraceModel.h"
+#include "core/rag/RagService.h"
 
 #include <QtTest>
 #include <QSignalSpy>
 #include <QSettings>
+#include <QStandardPaths>
+#include <QTemporaryDir>
 
 using namespace NexusAI;
 
@@ -172,6 +175,70 @@ private slots:
         AgentViewModel restored(nullptr);
         QCOMPARE(restored.sidebarWidth(), 420);
         QCOMPARE(restored.panelWidth(), 480);
+    }
+
+    // ── Batch 8: import dedupe / same-name coexistence (FEAT-802) ──
+    // Same content must be rejected with an explicit notice (not silently
+    // re-embedded), and same-name-different-content files must coexist under
+    // a deduplicated display name instead of overwriting each other.
+    void importDedupesAndCoexists() {
+        AgentViewModel vm(nullptr);
+        RagService rag;
+        vm.setRagService(&rag);
+
+        const QString base = QStandardPaths::writableLocation(QStandardPaths::DocumentsLocation);
+        QTemporaryDir dir(base + QStringLiteral("/nexusai-tests-XXXXXX"));
+        QVERIFY(dir.isValid());
+
+        auto writeFile = [&dir](const QString& name, const QString& content) {
+            const QString path = dir.filePath(name);
+            QFile f(path);
+            if (!f.open(QIODevice::WriteOnly | QIODevice::Text)) {
+                qWarning() << "test file open failed:" << path << f.errorString();
+                return QString();
+            }
+            f.write(content.toUtf8());
+            f.close();
+            return path;
+        };
+
+        const QString longContent = QStringLiteral("alpha beta gamma delta epsilon. ").repeated(40);
+        const QString pathA = writeFile("doc.txt", longContent);
+        QVERIFY(!pathA.isEmpty());
+        const QString pathB = writeFile("doc-dup.txt", longContent);              // same content
+        QVERIFY(!pathB.isEmpty());
+
+        QSignalSpy notices(&vm, &AgentViewModel::noticeOccurred);
+        QSignalSpy errors(&vm, &AgentViewModel::errorOccurred);
+
+        vm.importDocument(pathA);
+        QTRY_COMPARE_WITH_TIMEOUT(notices.count(), 1, 20000);
+        QCOMPARE(errors.count(), 0);
+        QTRY_COMPARE(rag.documents().size(), 1);
+
+        // Same content, different file name → rejected, no second document
+        vm.importDocument(pathB);
+        QTRY_VERIFY_WITH_TIMEOUT(notices.count() >= 2, 20000);
+        QVERIFY2(notices.last().first().toString().contains(QStringLiteral("已存在")),
+                 qPrintable(QStringLiteral("expected a duplicate notice, got: ")
+                                + notices.last().first().toString()));
+        QCOMPARE(rag.documents().size(), 1);
+
+        // Same name, different content → coexists under a deduplicated name
+        const QString pathC = writeFile("doc.txt",
+            QStringLiteral("zzz different payload. ").repeated(40));
+        vm.importDocument(pathC);
+        QTRY_COMPARE_WITH_TIMEOUT(rag.documents().size(), 2, 20000);
+        const QJsonArray docs = rag.documents();
+        QVERIFY(docs.at(0).toObject().value("name").toString()
+                    != docs.at(1).toObject().value("name").toString());
+        bool sawBase = false, sawVariant = false;
+        for (const auto& d : docs) {
+            const QString n = d.toObject().value("name").toString();
+            if (n == QStringLiteral("doc.txt")) sawBase = true;
+            if (n.startsWith(QStringLiteral("doc ("))) sawVariant = true;
+        }
+        QVERIFY2(sawBase && sawVariant, "deduplicated display name missing");
     }
 };
 

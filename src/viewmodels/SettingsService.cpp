@@ -210,6 +210,7 @@ void SettingsService::load() {
                              AIAgent::MaxContextTokens);
     m_simulationMode = settings.value("simulationMode", false).toBool();
     m_allowFullDiskRead = settings.value("security/allowFullDiskRead", false).toBool();
+    m_embeddingModel = settings.value("embedding/model", QStringLiteral("nomic-embed-text")).toString();
 }
 
 // Single-provider layout (pre-0.3): provider, apiKey, <provider>/baseUrl,
@@ -439,6 +440,14 @@ void SettingsService::setAllowFullDiskRead(bool enabled) {
     m_allowFullDiskRead = enabled;
     QSettings().setValue("security/allowFullDiskRead", enabled);
     emit allowFullDiskReadChanged();
+}
+
+void SettingsService::setEmbeddingModel(const QString& model) {
+    const QString trimmed = model.trimmed();
+    if (trimmed.isEmpty() || m_embeddingModel == trimmed) return;
+    m_embeddingModel = trimmed;
+    QSettings().setValue("embedding/model", trimmed);
+    emit embeddingModelChanged();
 }
 
 } // namespace NexusAI

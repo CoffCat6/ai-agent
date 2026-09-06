@@ -21,10 +21,13 @@ public:
     // Synchronous embedding call (blocks with QEventLoop)
     QVector<float> embed(const QString& text);
 
-    // Synchronous batch embedding via /api/embed (one request for all
-    // texts). Returns an empty container when the request failed so callers
-    // can fall back; must be called from a thread that may run an event
+    // Synchronous batch embedding via /api/embed, paged into requests of
+    // BatchSize texts (FEAT-803): progress is reported after every batch and
+    // any failed batch aborts with an empty container so the caller falls
+    // back wholesale. Must be called from a thread that may run an event
     // loop (document import runs on a QtConcurrent worker).
+    static constexpr int BatchSize = 32;
+    static QVector<QStringList> splitBatches(const QStringList& texts, int batchSize);
     QVector<QVector<float>> embedBatch(const QStringList& texts);
 
     // Asynchronous embedding call
@@ -33,6 +36,8 @@ public:
 signals:
     void embeddingReady(const QVector<float>& embedding);
     void errorOccurred(const QString& error);
+    // Texts embedded so far / total (after each successful batch)
+    void embedProgress(int done, int total);
 
 private:
     QString m_baseUrl{"http://localhost:11434"};

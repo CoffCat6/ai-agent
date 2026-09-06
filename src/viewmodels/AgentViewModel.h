@@ -80,6 +80,8 @@ class AgentViewModel : public QObject {
     // ── Knowledge Base ────────────────────────────────
     Q_PROPERTY(QVariantList knowledgeDocuments READ knowledgeDocuments NOTIFY knowledgeChanged FINAL)
     Q_PROPERTY(bool knowledgeBusy READ knowledgeBusy NOTIFY knowledgeBusyChanged FINAL)
+    Q_PROPERTY(int knowledgeEmbedDone READ knowledgeEmbedDone NOTIFY knowledgeEmbedProgressChanged)
+    Q_PROPERTY(int knowledgeEmbedTotal READ knowledgeEmbedTotal NOTIFY knowledgeEmbedProgressChanged)
 
     // ── Pipeline mode ─────────────────────────────────
     Q_PROPERTY(bool liveMode READ liveMode NOTIFY liveModeChanged FINAL)
@@ -96,6 +98,11 @@ public:
     // injection happens there); the engine picks the same object up through
     // create() when loading the UI.
     static AgentViewModel* instance();
+
+    // FEAT-803: batch-embedding progress (wired from OllamaEmbedding)
+    int knowledgeEmbedDone() const { return m_embedDone; }
+    int knowledgeEmbedTotal() const { return m_embedTotal; }
+    void setEmbedProgress(int done, int total);
     static AgentViewModel* create(QQmlEngine*, QJSEngine*);
 
     // Attach the real agent pipeline. Takes no ownership (agent outlives the VM).
@@ -204,6 +211,7 @@ signals:
     void currentSessionIdChanged();
     void knowledgeChanged();
     void knowledgeBusyChanged();
+    void knowledgeEmbedProgressChanged();
     void liveModeChanged();
     void toolConfirmRequired(const QString& id, const QString& name, const QVariantMap& args);
     void errorOccurred(const QString& error);
@@ -226,6 +234,7 @@ private:
     void refreshSessions();
     void refreshKnowledge();
     void setKnowledgeBusy(bool busy);
+
     // Runs ingestDocument on a worker thread; the outcome (busy flag, signals)
     // is handled back on the GUI thread via a QFutureWatcher.
     void startIngestion(const QString& name, const QString& content, bool reembed);
@@ -263,6 +272,8 @@ private:
     // ── Knowledge Base ────────────────────────────────
     QVariantList m_knowledgeDocuments;
     bool m_knowledgeBusy{false};
+    int m_embedDone{0};
+    int m_embedTotal{0};
 
     // ── Simulation ────────────────────────────────────
     QTimer m_simTimer;

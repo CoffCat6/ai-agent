@@ -1,5 +1,6 @@
 #include "RagService.h"
 
+#include <QFileInfo>
 #include <QJsonObject>
 #include <algorithm>
 
@@ -17,6 +18,43 @@ void RagService::setEmbedder(DocumentRetriever::EmbedFn fn) {
 void RagService::setBatchEmbedder(DocumentRetriever::BatchEmbedFn fn) {
     QMutexLocker lock(&m_mutex);
     m_batchEmbedFn = std::move(fn);
+}
+
+bool RagService::hasDocumentLocked(const QString& sourceName) const {
+    for (const auto& doc : m_docs) {
+        if (doc.name == sourceName) return true;
+    }
+    return false;
+}
+
+bool RagService::hasDocument(const QString& sourceName) const {
+    QMutexLocker lock(&m_mutex);
+    return hasDocumentLocked(sourceName);
+}
+
+bool RagService::containsContentHash(const QString& contentHash) const {
+    if (contentHash.isEmpty()) return false;
+    QMutexLocker lock(&m_mutex);
+    for (const auto& doc : m_docs) {
+        if (doc.contentHash == contentHash) return true;
+    }
+    return false;
+}
+
+QString RagService::uniqueDocumentName(const QString& baseName) const {
+    QMutexLocker lock(&m_mutex);
+    if (!hasDocumentLocked(baseName)) return baseName;
+
+    const QFileInfo info(baseName);
+    const QString stem = info.completeBaseName();
+    const QString suffix = info.suffix().isEmpty()
+        ? QString() : QStringLiteral(".") + info.suffix();
+    for (int i = 2; i < 1000; ++i) {
+        const QString candidate =
+            QStringLiteral("%1 (%2)%3").arg(stem).arg(i).arg(suffix);
+        if (!hasDocumentLocked(candidate)) return candidate;
+    }
+    return baseName;
 }
 
 void RagService::dropDocumentLocked(const QString& sourceName) {
@@ -71,6 +109,7 @@ int RagService::ingestDocument(const QString& sourceName, const QString& content
         Document doc;
         doc.name = sourceName;
         doc.chars = content.trimmed().size();
+        doc.contentHash = knowledgeContentHash(content);
         doc.retriever = std::move(retriever);
         m_docs.push_back(std::move(doc));
     }
@@ -101,6 +140,7 @@ int RagService::ingestRestoredDocument(const QString& sourceName, const QString&
         Document doc;
         doc.name = sourceName;
         doc.chars = content.trimmed().size();
+        doc.contentHash = knowledgeContentHash(content);
         doc.retriever = std::move(retriever);
         m_docs.push_back(std::move(doc));
     }

@@ -3,6 +3,7 @@
 #include "core/agent/AIAgent.h"
 #include "core/tools/ToolRegistry.h"
 #include "core/rag/RagService.h"
+#include "core/rag/KnowledgeChunk.h"
 #include "core/utils/Logger.h"
 #include "core/utils/TokenEstimator.h"
 
@@ -196,18 +197,26 @@ void AgentViewModel::importDocument(const QString& path) {
     const QString cleanPath = QUrl(path).isLocalFile() ? QUrl(path).toLocalFile() : path;
     const QFileInfo info(cleanPath);
     if (!info.isFile()) {
-        emit errorOccurred(QStringLiteral("无法读取文件：%1").arg(cleanPath));
+        emit errorOccurred(tr("无法读取文件：%1").arg(cleanPath));
         return;
     }
     QFile file(cleanPath);
     if (!file.open(QIODevice::ReadOnly | QIODevice::Text)) {
-        emit errorOccurred(QStringLiteral("无法打开文件：%1").arg(file.errorString()));
+        emit errorOccurred(tr("无法打开文件：%1").arg(file.errorString()));
         return;
     }
     const QString content = QString::fromUtf8(file.readAll());
     file.close();
 
-    const QString name = info.fileName();
+    // FEAT-802: duplicate content is rejected up front (before the expensive
+    // embedding); same-name-different-content files coexist under a
+    // deduplicated display name.
+    const QString hash = knowledgeContentHash(content);
+    if (m_rag->containsContentHash(hash)) {
+        emit noticeOccurred(tr("文档内容已存在，已跳过：%1").arg(info.fileName()));
+        return;
+    }
+    const QString name = m_rag->uniqueDocumentName(info.fileName());
     startIngestion(name, content, false);
 }
 
@@ -239,6 +248,7 @@ void AgentViewModel::reembedDocument(const QString& name) {
 
 void AgentViewModel::startIngestion(const QString& name, const QString& content, bool reembed) {
     setKnowledgeBusy(true);
+    setEmbedProgress(0, 0);
     auto* watcher = new QFutureWatcher<int>(this);
     connect(watcher, &QFutureWatcherBase::finished, this,
             [this, watcher, name, content, reembed]() {
@@ -247,17 +257,17 @@ void AgentViewModel::startIngestion(const QString& name, const QString& content,
         setKnowledgeBusy(false);
         if (reembed) {
             if (chunks > 0)
-                emit noticeOccurred(QStringLiteral("已重新嵌入 %1（%2 段）").arg(name).arg(chunks));
+                emit noticeOccurred(tr("已重新嵌入 %1（%2 段）").arg(name).arg(chunks));
             else
-                emit errorOccurred(QStringLiteral("重新嵌入失败：%1").arg(name));
+                emit errorOccurred(tr("重新嵌入失败：%1").arg(name));
             return;
         }
         if (chunks > 0) {
-            emit noticeOccurred(QStringLiteral("已导入 %1（%2 段）").arg(name).arg(chunks));
+            emit noticeOccurred(tr("已导入 %1（%2 段）").arg(name).arg(chunks));
         } else if (chunks == 0) {
-            emit errorOccurred(QStringLiteral("导入失败（文件为空或无法分块）：%1").arg(name));
+            emit errorOccurred(tr("导入失败（文件为空或无法分块）：%1").arg(name));
         } else {
-            emit errorOccurred(QStringLiteral("文件过大（超过单文档 %1 段上限）：%2")
+            emit errorOccurred(tr("文件过大（超过单文档 %1 段上限）：%2")
                 .arg(RagService::MaxChunksPerDocument).arg(name));
         }
     });
@@ -277,6 +287,13 @@ void AgentViewModel::setKnowledgeBusy(bool busy) {
     if (m_knowledgeBusy == busy) return;
     m_knowledgeBusy = busy;
     emit knowledgeBusyChanged();
+}
+
+void AgentViewModel::setEmbedProgress(int done, int total) {
+    if (m_embedDone == done && m_embedTotal == total) return;
+    m_embedDone = done;
+    m_embedTotal = total;
+    emit knowledgeEmbedProgressChanged();
 }
 
 // ── Session / audit management ───────────────────────────

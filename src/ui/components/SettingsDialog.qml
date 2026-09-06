@@ -595,6 +595,35 @@ Dialog {
                 Layout.fillWidth: true
                 wrapMode: Text.WordWrap
             }
+
+            ColumnLayout {
+                Layout.fillWidth: true
+                spacing: 4
+
+                Text {
+                    text: qsTr("知识库嵌入模型")
+                    color: Theme.textSecondary
+                    font.pixelSize: Theme.fontSizeCaption
+                    font.family: Theme.fontMono
+                }
+                ComboBox {
+                    id: embedModelBox
+                    Layout.fillWidth: true
+                    editable: true
+                    model: ["nomic-embed-text", "bge-m3", "mxbai-embed-large", "all-minilm"]
+                    editText: Settings.embeddingModel
+                    onActivated: function(index) { Settings.embeddingModel = currentText; }
+                    onAccepted: function() { Settings.embeddingModel = editText; }
+                }
+                Text {
+                    text: qsTr("更改后将对已导入文档重新嵌入（需要 Ollama 可用）")
+                    color: Theme.textSecondary
+                    font.pixelSize: 10
+                    font.family: Theme.fontSans
+                    Layout.fillWidth: true
+                    wrapMode: Text.WordWrap
+                }
+            }
         }
 
         // ── Divider ───────────────────────────────────

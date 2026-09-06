@@ -22,6 +22,12 @@ target_link_libraries(test_provider_lifecycle PRIVATE
     nexus_core nexus_infra Qt6::Test Qt6::Network)
 add_test(NAME test_provider_lifecycle COMMAND test_provider_lifecycle)
 
+# OllamaEmbedding batching/progress (FEAT-803), against a scripted local server
+add_executable(test_embedding test_embedding.cpp)
+target_link_libraries(test_embedding PRIVATE
+    nexus_core nexus_infra Qt6::Test Qt6::Network)
+add_test(NAME test_embedding COMMAND test_embedding)
+
 # Needs the viewmodels library (AgentViewModel, SettingsService) in addition to core & infra
 add_executable(test_viewmodel test_viewmodel.cpp)
 target_link_libraries(test_viewmodel PRIVATE nexus_core nexus_infra nexus_viewmodels Qt6::Test)
