@@ -36,6 +36,7 @@ private slots:
     void emptyInputRejected();
     void toolOnEmptyBase();
     void toolSearchResult();
+    void knowledgeToolDescriptionIsConditional();
     void chineseDocumentChunked();
     void batchEmbedFailureFallsBackToPseudo();
     void batchEmbedSuccessKeepsRealVectors();
@@ -119,9 +120,27 @@ void TestRag::toolSearchResult() {
     QVERIFY(r.success);
     QVERIFY(r.output.contains("doc2.txt"));
     QVERIFY(r.output.contains("score"));
+    // SEC-502: passages are wrapped as untrusted DATA, never bare text -
+    // a poisoned document must not read like model instructions.
+    QVERIFY(r.output.contains("<knowledge_passage"));
+    QVERIFY(r.output.contains("</knowledge_passage>"));
+    QVERIFY(r.output.contains("untrusted"));
 
     const ToolResult bad = tool.execute(QJsonObject{}); // no query
     QVERIFY(!bad.success);
+}
+
+// FIX-503: the description must invite conditional use, not mandate the
+// tool - "FIRST and REQUIRED" biased weak models into calling the KB on
+// every message.
+void TestRag::knowledgeToolDescriptionIsConditional() {
+    KnowledgeSearchTool tool(nullptr);
+    const ToolDefinition def = tool.definition();
+    QVERIFY2(!def.description.contains("FIRST"),
+             "description must not demand being called first");
+    QVERIFY2(!def.description.contains("REQUIRED"),
+             "description must not mark the call as required");
+    QVERIFY(def.description.contains("ONLY"));
 }
 
 // Chinese text has no spaces: the chunker must still split it into several

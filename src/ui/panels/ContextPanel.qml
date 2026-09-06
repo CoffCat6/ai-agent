@@ -59,6 +59,18 @@ Rectangle {
                 Layout.fillWidth: true
             }
 
+            Text {
+                // Privacy statement (audit P1-7): local storage/retrieval does
+                // NOT mean the content stays local - passages travel with the
+                // request to whichever model service is configured.
+                text: qsTr("文档内容会随提问发送给当前模型服务")
+                color: Theme.textSecondary
+                font.pixelSize: 10
+                font.family: Theme.fontSans
+                Layout.fillWidth: true
+                visible: AgentVM.knowledgeDocuments.length > 0
+            }
+
             // Import-in-progress indicator (embedding runs in background)
             Row {
                 visible: AgentVM.knowledgeBusy

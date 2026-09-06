@@ -29,6 +29,7 @@ class SettingsService : public QObject {
     Q_PROPERTY(QVariantMap activeProfile READ activeProfile NOTIFY activeProfileChanged)
     Q_PROPERTY(int contextTokens READ contextTokens WRITE setContextTokens NOTIFY contextTokensChanged)
     Q_PROPERTY(bool simulationMode READ simulationMode WRITE setSimulationMode NOTIFY simulationModeChanged)
+    Q_PROPERTY(bool allowFullDiskRead READ allowFullDiskRead WRITE setAllowFullDiskRead NOTIFY allowFullDiskReadChanged)
     Q_PROPERTY(QString appVersion READ appVersion CONSTANT)
 
 public:
@@ -48,6 +49,11 @@ public:
     bool simulationMode() const { return m_simulationMode; }
     void setContextTokens(int tokens);
     void setSimulationMode(bool enabled);
+
+    // Security: allow the agent to read files outside the user-directory
+    // allowlist (audit P1-8). Opt-in, default off.
+    bool allowFullDiskRead() const { return m_allowFullDiskRead; }
+    void setAllowFullDiskRead(bool enabled);
 
     static QString appVersion() { return QCoreApplication::applicationVersion(); }
 
@@ -74,6 +80,7 @@ signals:
     void activeProfileChanged();
     void contextTokensChanged();
     void simulationModeChanged();
+    void allowFullDiskReadChanged();
 
 private:
     void load();
@@ -84,6 +91,7 @@ private:
     QString m_activeId;
     int m_contextTokens{8192};
     bool m_simulationMode{false};
+    bool m_allowFullDiskRead{false};
 
     static SettingsService* s_instance;
 };

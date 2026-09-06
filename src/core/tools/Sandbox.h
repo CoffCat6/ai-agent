@@ -18,6 +18,16 @@ public:
         Write
     };
 
+    // Read policy (audit P1-8): UserDirectories restricts reads to the
+    // user-accessible allowlist; FullDisk restores the legacy behavior of
+    // only blocking system directories. Opt-in via settings, default off.
+    enum class ReadPolicy {
+        UserDirectories,
+        FullDisk
+    };
+    static void setReadPolicy(ReadPolicy policy) { s_readPolicy = policy; }
+    static ReadPolicy readPolicy() { return s_readPolicy; }
+
     // Validate that a file path is within allowed directories.
     // The path is canonicalized before matching, so ".." segments, relative
     // paths and (for existing files) symlinks cannot be used to escape the
@@ -39,28 +49,40 @@ public:
             }
         }
 
-        // For writes, only allow user-accessible directories
-        if (isWrite) {
-            static const QStringList allowedWriteDirs = []() {
-                QStringList dirs;
-                dirs << QStandardPaths::writableLocation(QStandardPaths::DocumentsLocation)
-                     << QStandardPaths::writableLocation(QStandardPaths::DownloadLocation)
-                     << QStandardPaths::writableLocation(QStandardPaths::DesktopLocation)
-                     << QStandardPaths::writableLocation(QStandardPaths::HomeLocation)
-                     << QStandardPaths::writableLocation(QStandardPaths::AppDataLocation);
-                return dirs;
-            }();
+        // User-accessible directories. READS use a narrower list than
+        // writes: allowing all of Home kept the audited exposure alive
+        // (e.g. ~/.ssh, browser profiles live under the home directory).
+        static const QStringList readDirs = []() {
+            QStringList dirs;
+            dirs << QStandardPaths::writableLocation(QStandardPaths::DocumentsLocation)
+                 << QStandardPaths::writableLocation(QStandardPaths::DownloadLocation)
+                 << QStandardPaths::writableLocation(QStandardPaths::DesktopLocation)
+                 << QStandardPaths::writableLocation(QStandardPaths::AppDataLocation);
+            return dirs;
+        }();
 
-            for (const auto& allowed : allowedWriteDirs) {
+        const auto withinUserDir = [](const QString& p, const QStringList& dirs) {
+            for (const auto& allowed : dirs) {
                 if (!allowed.isEmpty()
-                        && isWithin(normalizedPath, QDir::toNativeSeparators(allowed))) {
+                        && isWithin(p, QDir::toNativeSeparators(allowed))) {
                     return true;
                 }
             }
             return false;
+        };
+
+        if (isWrite) {
+            // Writes additionally allow the whole home directory (users may
+            // create files anywhere they own them).
+            QStringList writeDirs = readDirs;
+            writeDirs << QStandardPaths::writableLocation(QStandardPaths::HomeLocation);
+            return withinUserDir(normalizedPath, writeDirs);
         }
 
-        return true;
+        // Reads: user allowlist by default; the FullDisk opt-in restores the
+        // legacy behavior (system directories stay blocked either way).
+        if (s_readPolicy == ReadPolicy::FullDisk) return true;
+        return withinUserDir(normalizedPath, readDirs);
     }
 
     // Validate a tool call against sandbox policy
@@ -101,6 +123,8 @@ private:
         return next == '/' || next == '\\'
             || base.endsWith('/') || base.endsWith('\\');
     }
+
+    inline static ReadPolicy s_readPolicy{ReadPolicy::UserDirectories};
 };
 
 } // namespace NexusAI

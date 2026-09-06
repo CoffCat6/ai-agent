@@ -16,6 +16,9 @@ private slots:
     void boundaryAwarePrefixMatching();
     void blocksRelativeEscape();
     void validateToolCallPolicy();
+    // Batch 5: read policy (audit P1-8, SEC-501)
+    void readsRestrictedToUserDirectories();
+    void fullDiskReadPolicyOptIn();
 };
 
 void TestSandbox::allowsUserWrites() {
@@ -50,8 +53,10 @@ void TestSandbox::blocksSystemPaths() {
 
 void TestSandbox::boundaryAwarePrefixMatching() {
     // A sibling of a blocked directory must not be over-blocked by the
-    // naive prefix check ("C:\Program Files2" vs blocked "C:\Program Files")
-    QVERIFY(Sandbox::validatePath("C:\\Program Files2\\someapp\\data.txt", false));
+    // naive prefix check ("C:\Program Files2" vs blocked "C:\Program Files").
+    // READS outside the user allowlist are rejected by the default policy
+    // (audit P1-8) - only writes used to be rejected here.
+    QVERIFY(!Sandbox::validatePath("C:\\Program Files2\\someapp\\data.txt", false));
     // ...but writes outside user directories stay rejected regardless
     QVERIFY(!Sandbox::validatePath("C:\\Program Files2\\evil.txt", true));
 }
@@ -75,12 +80,42 @@ void TestSandbox::validateToolCallPolicy() {
     ToolDefinition read;
     read.name = "read_file";
     read.level = ToolLevel::Safe;
-    QVERIFY(Sandbox::validateToolCall(read, QJsonObject{{"path", "C:\\some\\file.txt"}}));
+    // Reads outside the user allowlist are rejected by the default policy
+    // (audit P1-8); only allowlisted reads pass.
+    QVERIFY(!Sandbox::validateToolCall(read, QJsonObject{{"path", "C:\\some\\file.txt"}}));
 
     ToolDefinition dangerous;
     dangerous.name = "rm_rf";
     dangerous.level = ToolLevel::Dangerous;
     QVERIFY(!Sandbox::validateToolCall(dangerous, {}));
+}
+
+// SEC-501: the default read policy restricts reads to the user allowlist.
+// Home-root-wide reads kept the audited exposure alive (e.g. ~/.ssh,
+// browser profiles live under the home directory), so reads use a NARROWER
+// allowlist than writes: Documents/Downloads/Desktop/app data - NOT all of
+// the home directory.
+void TestSandbox::readsRestrictedToUserDirectories() {
+    const QString docs = QStandardPaths::writableLocation(QStandardPaths::DocumentsLocation);
+    const QString home = QStandardPaths::writableLocation(QStandardPaths::HomeLocation);
+    const QString temp = QStandardPaths::writableLocation(QStandardPaths::TempLocation);
+
+    QVERIFY(Sandbox::validatePath(docs + "/notes.txt", false));      // allowlisted
+    QVERIFY(!Sandbox::validatePath(temp + "/other.txt", false));     // outside allowlist
+    QVERIFY(!Sandbox::validatePath(home + "/.ssh/id_rsa", false));   // sensitive, blocked
+    QVERIFY(!Sandbox::validatePath("C:\\ProgramData\\secret.txt", false));
+}
+
+// Opt-in full-disk reads restore the legacy behavior (system dirs stay
+// blocked); the test restores the default policy afterwards.
+void TestSandbox::fullDiskReadPolicyOptIn() {
+    Sandbox::setReadPolicy(Sandbox::ReadPolicy::FullDisk);
+    QVERIFY(Sandbox::validatePath("C:\\ProgramData\\secret.txt", false));
+    QVERIFY(Sandbox::validatePath(QStandardPaths::writableLocation(
+        QStandardPaths::TempLocation) + "/other.txt", false));
+    QVERIFY(!Sandbox::validatePath("C:\\Windows\\System32\\config", false)); // still blocked
+    Sandbox::setReadPolicy(Sandbox::ReadPolicy::UserDirectories);
+    QVERIFY(!Sandbox::validatePath("C:\\ProgramData\\secret.txt", false));
 }
 
 QTEST_GUILESS_MAIN(TestSandbox)

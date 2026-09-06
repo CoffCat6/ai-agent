@@ -707,8 +707,10 @@ void AIAgent::collapseOldToolRounds() {
         const Round round = rounds.at(r);
         QJsonObject note;
         note["role"] = "assistant";
+        // Tool-neutral on purpose (FIX-504): naming "e.g. search_knowledge_base"
+        // injected KB bias into every conversation, no matter which tools ran.
         note["content"] = QStringLiteral(
-            "[Earlier tool calls (e.g. search_knowledge_base) were executed here; "
+            "[Earlier tool calls were executed here; "
             "their results were already used in the answers that follow.]");
         for (int idx = round.to; idx >= round.from; --idx)
             m_messages.removeAt(idx);

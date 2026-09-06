@@ -578,6 +578,23 @@ Dialog {
                 font.pixelSize: Theme.fontSizeBody
                 font.family: Theme.fontSans
             }
+
+            CheckBox {
+                checked: Settings.allowFullDiskRead
+                onToggled: Settings.allowFullDiskRead = checked
+                text: qsTr("允许读取整个磁盘（危险，默认关闭：仅允许用户目录）")
+                font.pixelSize: Theme.fontSizeBody
+                font.family: Theme.fontSans
+            }
+
+            Text {
+                text: qsTr("隐私提示：知识库文档内容与工具结果会随请求发送给当前模型服务——选择云端 Provider（OpenAI/Anthropic 兼容接口）时，这些数据将离开本机。")
+                color: Theme.textSecondary
+                font.pixelSize: 10
+                font.family: Theme.fontSans
+                Layout.fillWidth: true
+                wrapMode: Text.WordWrap
+            }
         }
 
         // ── Divider ───────────────────────────────────

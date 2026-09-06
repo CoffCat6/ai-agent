@@ -14,6 +14,7 @@
 #include "core/agent/AIAgent.h"
 #include "core/memory/SqliteMemory.h"
 #include "core/tools/ToolRegistry.h"
+#include "core/tools/Sandbox.h"
 #include "core/rag/RagService.h"
 #include "core/rag/KnowledgeSearchTool.h"
 #include "core/utils/Logger.h"
@@ -174,6 +175,10 @@ int main(int argc, char *argv[])
         }
         agent->setContextLimit(settings->contextTokens());
 
+        // Read sandbox policy follows the (opt-in, default-off) setting
+        Sandbox::setReadPolicy(settings->allowFullDiskRead()
+            ? Sandbox::ReadPolicy::FullDisk : Sandbox::ReadPolicy::UserDirectories);
+
         if (provider.isEmpty()) {
             // No profile configured: the agent reports a helpful error
             agent->setLLMService(nullptr);
@@ -191,6 +196,7 @@ int main(int argc, char *argv[])
     // Reconfigure instantly when the active profile or global settings change
     QObject::connect(settings, &SettingsService::activeProfileChanged, &app, [applySettings]() { applySettings(); });
     QObject::connect(settings, &SettingsService::contextTokensChanged, &app, [applySettings]() { applySettings(); });
+    QObject::connect(settings, &SettingsService::allowFullDiskReadChanged, &app, [applySettings]() { applySettings(); });
 
     // Live pipeline vs. built-in simulation
     const auto applyMode = [settings, agentVM, agent]() {

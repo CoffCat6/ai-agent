@@ -209,6 +209,7 @@ void SettingsService::load() {
                              settings.value("contextTokens", 8192).toInt(),
                              AIAgent::MaxContextTokens);
     m_simulationMode = settings.value("simulationMode", false).toBool();
+    m_allowFullDiskRead = settings.value("security/allowFullDiskRead", false).toBool();
 }
 
 // Single-provider layout (pre-0.3): provider, apiKey, <provider>/baseUrl,
@@ -431,6 +432,13 @@ void SettingsService::setSimulationMode(bool enabled) {
     m_simulationMode = enabled;
     QSettings().setValue("simulationMode", enabled);
     emit simulationModeChanged();
+}
+
+void SettingsService::setAllowFullDiskRead(bool enabled) {
+    if (m_allowFullDiskRead == enabled) return;
+    m_allowFullDiskRead = enabled;
+    QSettings().setValue("security/allowFullDiskRead", enabled);
+    emit allowFullDiskReadChanged();
 }
 
 } // namespace NexusAI

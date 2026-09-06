@@ -208,6 +208,14 @@ bool traceHasRunningToolCall(const QJsonArray& trace, const QString& name) {
     return false;
 }
 
+// The default read sandbox only allows Documents/Downloads/Desktop/app data
+// (audit P1-8), so test fixtures create their temp dirs there - a plain
+// QTemporaryDir lands in TempLocation, which read_file must refuse.
+QString testDirTemplate() {
+    const QString base = QStandardPaths::writableLocation(QStandardPaths::DocumentsLocation);
+    return base + QStringLiteral("/nexusai-tests-XXXXXX");
+}
+
 } // namespace
 
 class TestAgent : public QObject {
@@ -281,7 +289,7 @@ void TestAgent::dangerousToolsNotExposed() {
 }
 
 void TestAgent::safeToolFeedbackLoop() {
-    QTemporaryDir dir;
+    QTemporaryDir dir(testDirTemplate());
     QVERIFY(dir.isValid());
     const QString path = dir.filePath("hello.txt");
     {
@@ -306,7 +314,7 @@ void TestAgent::safeToolFeedbackLoop() {
 }
 
 void TestAgent::confirmApproveWritesFile() {
-    QTemporaryDir dir;
+    QTemporaryDir dir(testDirTemplate());
     QVERIFY(dir.isValid());
     const QString path = dir.filePath("out.txt");
 
@@ -334,7 +342,7 @@ void TestAgent::confirmApproveWritesFile() {
 }
 
 void TestAgent::confirmDeclineFeedsRejection() {
-    QTemporaryDir dir;
+    QTemporaryDir dir(testDirTemplate());
     QVERIFY(dir.isValid());
     const QString path = dir.filePath("out.txt");
 
@@ -406,7 +414,7 @@ void TestAgent::repeatedCallWithAnswerFinishes() {
     SqliteMemory memory(QStringLiteral(":memory:"));
     agent.setMemory(&memory);
 
-    QTemporaryDir dir;
+    QTemporaryDir dir(testDirTemplate());
     QVERIFY(dir.isValid());
     const QString path = dir.filePath("doc.txt");
     QFile file(path);
@@ -450,7 +458,7 @@ void TestAgent::repeatedCallWithAnswerFinishes() {
 // valid - a long tail of tool_call/tool messages reads like an "always call
 // tools" script and made the model fire the tool on greetings.
 void TestAgent::oldToolRoundsCollapsed() {
-    QTemporaryDir dir;
+    QTemporaryDir dir(testDirTemplate());
     QVERIFY(dir.isValid());
 
     for (int i = 0; i < 4; ++i) {
@@ -474,15 +482,20 @@ void TestAgent::oldToolRoundsCollapsed() {
     // stay valid after the replacement.
     const QJsonArray last = llm.seenMessages.last();
     int toolMsgs = 0;
-    bool collapsedNote = false;
+    QString collapsedNote;
     for (const auto& entry : last) {
         const QJsonObject msg = entry.toObject();
         if (msg.value("role").toString() == QStringLiteral("tool")) ++toolMsgs;
         if (msg.value("content").toString().contains(QStringLiteral("Earlier tool calls")))
-            collapsedNote = true;
+            collapsedNote = msg.value("content").toString();
     }
     QCOMPARE(toolMsgs, 2);
-    QVERIFY(collapsedNote);
+    QVERIFY(!collapsedNote.isEmpty());
+    // FIX-504: the note must not name any specific tool - a hardcoded
+    // "e.g. search_knowledge_base" injects KB bias into every conversation
+    // no matter which tools were actually used.
+    QVERIFY2(!collapsedNote.contains(QStringLiteral("search_knowledge_base")),
+             "collapse note hardcodes the knowledge tool");
     QVERIFY2(noDanglingToolCalls(last), "collapse broke tool_call/tool pairing");
 
     // All four reads really executed before collapsing kicked in
@@ -493,7 +506,7 @@ void TestAgent::traceRestoredOnResume() {
     SqliteMemory memory(QStringLiteral(":memory:"));
     agent.setMemory(&memory);
 
-    QTemporaryDir dir;
+    QTemporaryDir dir(testDirTemplate());
     QVERIFY(dir.isValid());
     llm.script.append(toolResponse("list_dir", QJsonObject{{"path", dir.path()}}));
     llm.script.append(textResponse("done"));
@@ -525,7 +538,7 @@ void TestAgent::traceRestoredOnResume() {
 }
 
 void TestAgent::stopDuringConfirmationIsNoOp() {
-    QTemporaryDir dir;
+    QTemporaryDir dir(testDirTemplate());
     QVERIFY(dir.isValid());
     const QString path = dir.filePath("out.txt");
 
@@ -577,7 +590,7 @@ void TestAgent::auditTrailRecorded() {
     agent.setMemory(&memory);
 
     // Safe tool: auto-executed -> one tool_execute entry
-    QTemporaryDir dir;
+    QTemporaryDir dir(testDirTemplate());
     QVERIFY(dir.isValid());
     const QString path = dir.filePath("a.txt");
     llm.script.append(toolResponse("write_file",
@@ -728,7 +741,7 @@ void TestAgent::knowledgeNormalKnowledgeSequence() {
 // assistant's tool_calls - a dangling sequence is invalid for the wire
 // format and derails proxies on the next user turn.
 void TestAgent::stopDuringConfirmationSealsToolCalls() {
-    QTemporaryDir dir;
+    QTemporaryDir dir(testDirTemplate());
     QVERIFY(dir.isValid());
     const QString path = dir.filePath("out.txt");
 
@@ -775,7 +788,7 @@ void TestAgent::toolExecutionBudgetForcesFinal() {
     SqliteMemory memory(QStringLiteral(":memory:"));
     agent.setMemory(&memory);
 
-    QTemporaryDir dir;
+    QTemporaryDir dir(testDirTemplate());
     QVERIFY(dir.isValid());
     LLMResponse burst;
     burst.success = true;
