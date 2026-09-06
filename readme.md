@@ -19,7 +19,7 @@ src/
 ├── viewmodels/      # MVVM 层：AgentViewModel / SettingsService / ThemeManager
 ├── ui/              # QML 视图（main.qml + components / panels / pages）
 └── main.cpp         # 组装依赖链并暴露给 QML
-tests/               # QtTest 单测（8 个套件）
+tests/               # QtTest 单测（9 个套件）
 docs/                # 设计文档与技术路线
 ```
 
@@ -55,3 +55,11 @@ ctest --test-dir build --output-on-failure
 ## 更多文档
 
 架构与实施细节见 `docs/`（1-开发文档、2-技术路线、3-界面开发、4-MVP 实施计划）。
+
+**完整文档体系**（面向使用与二次开发）见 [`docs/read_files/`](docs/read_files/)：
+
+- [0-项目导读](docs/read_files/0-项目导读.md) —— 代码库阅读路线与端到端数据流
+- [1-设计文档](docs/read_files/1-设计文档.md) —— 架构、ReAct 循环机制、沙箱与 RAG 设计
+- [2-部署与个人使用指南](docs/read_files/2-部署与个人使用指南.md) —— 构建、配置、备份与故障排查
+- [3-接口与扩展开发指南](docs/read_files/3-接口与扩展开发指南.md) —— 新增工具 / Provider / 界面
+- [4-用户手册](docs/read_files/4-用户手册.md) —— 面向使用者的操作说明
