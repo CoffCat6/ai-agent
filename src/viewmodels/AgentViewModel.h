@@ -210,7 +210,6 @@ signals:
     // Non-error user feedback (import finished, etc.)
     void noticeOccurred(const QString& notice);
     // Emitted after a successful knowledge-base mutation, for persistence
-    void documentImported(const QString& name, const QString& content);
     void documentRemoved(const QString& name);
     void knowledgeCleared();
 

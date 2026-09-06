@@ -96,6 +96,7 @@ int main(int argc, char *argv[])
     rag->setBatchEmbedder([embedding](const QStringList& texts) {
         return embedding->embedBatch(texts);
     });
+    rag->setEmbeddingModelName(embedding->model());
     // Expose the knowledge base to the model as a safe auto-executed tool
     ToolRegistry::instance().registerTool(std::make_unique<KnowledgeSearchTool>(rag));
 
@@ -119,33 +120,74 @@ int main(int argc, char *argv[])
     connectionTester->setParent(&app);
 
     // ── Knowledge-base persistence ─────────────────────
-    // Import/remove/clear arrive from worker threads; the lambdas run on
-    // the GUI thread (&app context) so all SQLite access stays single-threaded.
-    QObject::connect(agentVM, &AgentViewModel::documentImported, &app,
-        [memory](const QString& name, const QString& content) {
-            memory->upsertKnowledgeDoc(name, content);
+    // Ingestion completes on worker threads; documentPersisted arrives
+    // queued on the GUI thread (&app context) so all SQLite access stays
+    // single-threaded. Covers import, re-embed AND the background restore.
+    auto* ragForPersist = rag;
+    QObject::connect(rag, &RagService::documentPersisted, &app,
+        [memory, ragForPersist](const QString& name, const QString& content,
+                                const QVector<KnowledgeChunk>& chunks) {
+            memory->upsertKnowledgeDoc(name, content,
+                                       knowledgeContentHash(content),
+                                       ragForPersist->embeddingModelName());
+            memory->replaceKnowledgeChunks(name, chunks);
         });
     QObject::connect(agentVM, &AgentViewModel::documentRemoved, &app,
         [memory](const QString& name) { memory->removeKnowledgeDoc(name); });
     QObject::connect(agentVM, &AgentViewModel::knowledgeCleared, &app,
         [memory]() { memory->clearKnowledgeDocs(); });
 
-    // Restore previously imported documents in the background (embedding
-    // may hit the network); the queued changed() signal updates the UI.
-    // Each step binds to the restore generation it started with: if the
-    // user clears/removes knowledge mid-restore, the remaining steps become
-    // no-ops instead of re-adding deleted documents.
-    const QJsonObject savedDocs = memory->loadKnowledgeDocs();
-    if (!savedDocs.isEmpty()) {
-        qInfo() << "Restoring" << savedDocs.size() << "knowledge document(s)";
-        auto ragPtr = rag;
-        const auto docs = savedDocs.toVariantMap();
-        const quint64 restoreGeneration = rag->restoreGeneration();
-        (void)QtConcurrent::run([ragPtr, docs, restoreGeneration]() {
-            for (auto it = docs.constBegin(); it != docs.constEnd(); ++it)
-                ragPtr->ingestRestoredDocument(it.key(), it.value().toString(),
-                                               restoreGeneration);
-        });
+    // Restore previously imported documents in the background (Batch 6).
+    // Snapshot records AND chunks on the GUI thread (the SQLite connection
+    // is single-threaded); the worker then picks per document:
+    //   - chunks usable (content hash unchanged + same embedding model):
+    //     rebuilt from stored vectors with ZERO embedding requests;
+    //   - otherwise: full re-ingest, writing the new chunk layout back via
+    //     documentPersisted (self-healing for upgraded/stale databases).
+    // Each step binds to the restore generation it started with: a
+    // clear/remove mid-restore supersedes the rest.
+    {
+        struct RestoreItem {
+            QString name;
+            QString content;
+            QString contentHash;
+            QString embeddingModel;
+            QVector<KnowledgeChunk> chunks;
+        };
+        QVector<RestoreItem> restoreItems;
+        for (const auto& rec : memory->loadKnowledgeDocRecords()) {
+            RestoreItem item;
+            item.name = rec.name;
+            item.content = rec.content;
+            item.contentHash = rec.contentHash;
+            item.embeddingModel = rec.embeddingModel;
+            item.chunks = memory->loadKnowledgeChunks(rec.name);
+            restoreItems.append(item);
+        }
+        if (!restoreItems.isEmpty()) {
+            qInfo() << "Restoring" << restoreItems.size() << "knowledge document(s)";
+            auto* ragPtr = rag;
+            const QString currentModel = rag->embeddingModelName();
+            const quint64 restoreGeneration = rag->restoreGeneration();
+            (void)QtConcurrent::run([ragPtr, restoreItems, currentModel,
+                                     restoreGeneration]() {
+                int fromChunks = 0, reEmbedded = 0;
+                for (const RestoreItem& item : restoreItems) {
+                    if (persistedChunksUsable(item.contentHash, item.embeddingModel,
+                                              item.content, currentModel)
+                            && ragPtr->restorePersistedDocument(
+                                   item.name, item.chunks, restoreGeneration)) {
+                        ++fromChunks;
+                        continue;
+                    }
+                    ++reEmbedded;
+                    ragPtr->ingestRestoredDocument(item.name, item.content,
+                                                   restoreGeneration);
+                }
+                qInfo() << "Knowledge restore:" << fromChunks
+                        << "from persisted chunks," << reEmbedded << "re-embedded";
+            });
+        }
     }
 
     // Apply the active model profile to the services and select the provider

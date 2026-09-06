@@ -1,5 +1,11 @@
 // SqliteMemory: message/session persistence and FTS5 episodic search.
 #include "core/memory/SqliteMemory.h"
+#include "core/rag/KnowledgeChunk.h"
+#include <QDir>
+#include <QStandardPaths>
+#include <QSqlDatabase>
+#include <QSqlQuery>
+#include <QFile>
 
 #include <QtTest>
 #include <QJsonArray>
@@ -29,6 +35,10 @@ private slots:
     void episodicFullTextSearch();
     void auditTrail();
     void traceNodeRoundTrip();
+    // Batch 6: knowledge persistence v2
+    void knowledgeSchemaV1Migrates();
+    void knowledgeChunkPersistence();
+    void knowledgeCascadeDelete();
 };
 
 void TestMemory::messageRoundTrip() {
@@ -178,6 +188,124 @@ void TestMemory::traceNodeRoundTrip() {
     QVERIFY(mem.loadTraceNodes("other").isEmpty());
     mem.deleteSession("s1");
     QVERIFY(mem.loadTraceNodes("s1").isEmpty());
+}
+
+
+// ── Batch 6: knowledge persistence v2 ─────────────────────
+
+// A v1 database (documents without hash/model columns, no chunk table)
+// must open cleanly: the migration adds the columns, keeps the rows, and
+// marks them stale (empty hash) so the first startup re-embeds them.
+void TestMemory::knowledgeSchemaV1Migrates() {
+    const QString dir = QStandardPaths::writableLocation(QStandardPaths::TempLocation)
+                        + "/nexusai-memtest-" + QString::number(QCoreApplication::applicationPid());
+    QDir().mkpath(dir);
+    const QString dbPath = dir + "/v1.db";
+    QFile::remove(dbPath);
+
+    {
+        // Build a v1-schema database by hand
+        QSqlDatabase db = QSqlDatabase::addDatabase("QSQLITE", "v1raw");
+        db.setDatabaseName(dbPath);
+        QVERIFY(db.open());
+        QSqlQuery q(db);
+        QVERIFY(q.exec("CREATE TABLE knowledge_documents (name TEXT PRIMARY KEY, "
+                       "content TEXT NOT NULL, imported_at INTEGER NOT NULL)"));
+        q.prepare("INSERT INTO knowledge_documents VALUES (?, ?, ?)");
+        q.addBindValue("old.txt");
+        q.addBindValue("legacy content");
+        q.addBindValue(123);
+        QVERIFY(q.exec());
+        db.close();
+    }
+    QSqlDatabase::removeDatabase("v1raw");
+
+    SqliteMemory memory(dbPath);
+    const auto records = memory.loadKnowledgeDocRecords();
+    QCOMPARE(records.size(), 1);
+    QCOMPARE(records.at(0).name, QStringLiteral("old.txt"));
+    QCOMPARE(records.at(0).content, QStringLiteral("legacy content"));
+    // Stale markers: migration must NOT fabricate a hash/model
+    QVERIFY(records.at(0).contentHash.isEmpty());
+    QVERIFY(records.at(0).embeddingModel.isEmpty());
+    QVERIFY(memory.loadKnowledgeChunks("old.txt").isEmpty());
+
+    QFile::remove(dbPath);
+    QDir(dir).removeRecursively();
+}
+
+// Chunk round trip: upsert + replaceKnowledgeChunks + load, then a stale
+// record set through a model change is visible on the record API.
+void TestMemory::knowledgeChunkPersistence() {
+    SqliteMemory memory(":memory:");
+
+    QVector<KnowledgeChunk> chunks;
+    for (int i = 0; i < 3; ++i) {
+        KnowledgeChunk c;
+        c.index = i;
+        c.total = 3;
+        c.text = QStringLiteral("chunk %1 text").arg(i);
+        c.embedding = QVector<float>{1.0f * i, 0.5f, -2.0f};
+        c.dim = 3;
+        c.pseudo = false;
+        chunks.append(c);
+    }
+
+    memory.upsertKnowledgeDoc("doc.txt", "full content",
+                              knowledgeContentHash("full content"), "m1");
+    memory.replaceKnowledgeChunks("doc.txt", chunks);
+
+    QCOMPARE(memory.loadKnowledgeChunks("doc.txt").size(), 3);
+    const auto loaded = memory.loadKnowledgeChunks("doc.txt").at(2);
+    QCOMPARE(loaded.index, 2);
+    QCOMPARE(loaded.total, 3);
+    QCOMPARE(loaded.text, QStringLiteral("chunk 2 text"));
+    QCOMPARE(loaded.dim, 3);
+    QCOMPARE(loaded.pseudo, false);
+    QVERIFY(loaded.embedding.size() == 3);
+    QCOMPARE(loaded.embedding.at(2), -2.0f);
+
+    // Replacement removes the previous rows
+    QVector<KnowledgeChunk> one;
+    KnowledgeChunk c;
+    c.index = 0; c.total = 1; c.text = "replaced";
+    c.embedding = QVector<float>{9.0f}; c.dim = 1; c.pseudo = false;
+    one.append(c);
+    memory.replaceKnowledgeChunks("doc.txt", one);
+    QCOMPARE(memory.loadKnowledgeChunks("doc.txt").size(), 1);
+    QCOMPARE(memory.loadKnowledgeChunks("doc.txt").at(0).text, QStringLiteral("replaced"));
+
+    // Model identity is exposed for staleness decisions
+    const auto records = memory.loadKnowledgeDocRecords();
+    QCOMPARE(records.size(), 1);
+    QCOMPARE(records.at(0).embeddingModel, QStringLiteral("m1"));
+    QCOMPARE(records.at(0).contentHash, knowledgeContentHash(QStringLiteral("full content")));
+}
+
+// Removing/clearing documents cascades to their chunks - no orphan vectors
+// may survive (a deleted document must not stay retrievable).
+void TestMemory::knowledgeCascadeDelete() {
+    SqliteMemory memory(":memory:");
+    QVector<KnowledgeChunk> chunks;
+    KnowledgeChunk c;
+    c.index = 0; c.total = 1; c.text = "x";
+    c.embedding = QVector<float>{1.0f}; c.dim = 1; c.pseudo = false;
+    chunks.append(c);
+
+    memory.upsertKnowledgeDoc("a.txt", "aaa",
+                              knowledgeContentHash("aaa"), "m1");
+    memory.upsertKnowledgeDoc("b.txt", "bbb",
+                              knowledgeContentHash("bbb"), "m1");
+    memory.replaceKnowledgeChunks("a.txt", chunks);
+    memory.replaceKnowledgeChunks("b.txt", chunks);
+
+    memory.removeKnowledgeDoc("a.txt");
+    QVERIFY(memory.loadKnowledgeChunks("a.txt").isEmpty());
+    QCOMPARE(memory.loadKnowledgeChunks("b.txt").size(), 1);
+
+    memory.clearKnowledgeDocs();
+    QVERIFY(memory.loadKnowledgeChunks("b.txt").isEmpty());
+    QVERIFY(memory.loadKnowledgeDocRecords().isEmpty());
 }
 
 QTEST_GUILESS_MAIN(TestMemory)

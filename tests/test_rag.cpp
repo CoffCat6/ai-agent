@@ -46,6 +46,14 @@ private slots:
     void restoreGenerationCancelsStaleIngest();
     void oversizeDocumentRejected();
     void documentChunksListing();
+    // Batch 6: persistence + calibration
+    void restoreFromPersistedChunksNeedsNoEmbedding();
+    void queryEmbeddingIsCached();
+    void retrievalCalibrationLabeledSet();
+    // Regression guard for the Batch 6 hotfix: the UI knowledge list is
+    // driven by changed(); ingestion lost that emission once already.
+    void ingestEmitsChanged();
+    void documentPersistedDeliversAcrossThreads();
 };
 
 void TestRag::ingestAndListDocuments() {
@@ -322,6 +330,222 @@ void TestRag::documentChunksListing() {
         QVERIFY(!chunk.value("text").toString().isEmpty());
     }
     QVERIFY(local.documentChunks("missing.txt").isEmpty());
+}
+
+
+// ── Batch 6: persistence + calibration ────────────────────
+
+// A document rebuilt from persisted chunks must be searchable with ZERO
+// embedding calls - that is the whole point of the chunk store. The embed
+// call counter must stay at 0 across restore AND search.
+void TestRag::restoreFromPersistedChunksNeedsNoEmbedding() {
+    int embedCalls = 0;
+    auto embed = [&embedCalls](const QString& text) {
+        ++embedCalls;
+        QVector<float> v(8, 0.0f);
+        for (QChar c : text) v[c.unicode() % 8] += 1.0f;
+        return v;
+    };
+
+    RagService source;
+    source.setEmbedder(embed);
+    source.setBatchEmbedder([embed](const QStringList& texts) {
+        QVector<QVector<float>> out;
+        for (const QString& t : texts) out.append(embed(t));
+        return out;
+    });
+    source.setEmbeddingModelName(QStringLiteral("m1"));
+    QVERIFY(source.ingestDocument("doc.txt", longDoc("persist", 6)) >= 2);
+
+    // The chunks round-trip through a float blob exactly (bit-consistent).
+    const QVector<KnowledgeChunk> chunks = source.exportPersistedChunks("doc.txt");
+    QVERIFY(chunks.size() >= 2);
+    QVERIFY(!chunks.first().pseudo);
+
+    RagService restored;   // fresh service, embedder ONLINE but must be unused
+    restored.setEmbedder(embed);
+    restored.setEmbeddingModelName(QStringLiteral("m1"));
+    const int callsBefore = embedCalls;
+    QVERIFY(restored.restorePersistedDocument(
+        "doc.txt", chunks, restored.restoreGeneration()));
+    QCOMPARE(embedCalls, callsBefore);        // restore: zero embedding IO
+
+    // Querying the restored REAL-mode store needs exactly one query
+    // embedding (restore itself was free; the query vector is then cached).
+    const QJsonArray hits = restored.search("persist alpha", 3);
+    QCOMPARE(embedCalls, callsBefore + 1);
+    QVERIFY(!hits.isEmpty());
+    QCOMPARE(hits.first().toObject().value("source").toString(), QStringLiteral("doc.txt"));
+    QVERIFY(!hits.first().toObject().value("text").toString().isEmpty());
+    restored.search("persist alpha", 3);      // repeat → served from cache
+    QCOMPARE(embedCalls, callsBefore + 1);
+}
+
+// KB-605: identical query texts reuse the cached embedding - one network
+// round-trip per unique query, not one per search call.
+void TestRag::queryEmbeddingIsCached() {
+    int embedCalls = 0;
+    RagService local;
+    local.setEmbedder([&embedCalls](const QString& text) {
+        ++embedCalls;
+        QVector<float> v(8, 0.0f);
+        for (QChar c : text) v[c.unicode() % 8] += 1.0f;
+        return v;
+    });
+    local.setBatchEmbedder([](const QStringList& texts) {
+        QVector<QVector<float>> out;
+        for (int i = 0; i < texts.size(); ++i)
+            out.append(QVector<float>(8, 0.5f));
+        return out;
+    });
+    QVERIFY(local.ingestDocument("doc.txt", longDoc("cache", 6)) >= 2);
+
+    local.search("alpha", 3);
+    const int afterFirst = embedCalls;
+    QVERIFY(afterFirst > 0);
+    local.search("alpha", 3);   // cache hit
+    local.search("alpha", 3);   // cache hit
+    QCOMPARE(embedCalls, afterFirst);
+    local.search("beta", 3);    // different text → new embedding
+    QVERIFY(embedCalls > afterFirst);
+}
+
+// KB-604: calibration harness over a labeled set (deterministic keyword-bag
+// embedder standing in for the real model). Relevant queries must hit their
+// topic's document above the relevance threshold; unrelated queries must
+// degrade to no-match. Guards the 0.15 placeholder against regressions.
+void TestRag::retrievalCalibrationLabeledSet() {
+    const QStringList topics = {
+        "apple banana fruit vitamin",          // topic 0
+        "quantum particle physics energy",     // topic 1
+        "decorator python function syntax",    // topic 2
+        "database index query latency",        // topic 3
+    };
+    auto embed = [&topics](const QString& text) {
+        QVector<float> v(topics.size(), 0.0f);
+        for (int t = 0; t < topics.size(); ++t) {
+            const QStringList words = topics.at(t).split(u' ');
+            for (const QString& w : words) {
+                if (text.contains(w, Qt::CaseInsensitive)) v[t] += 1.0f;
+            }
+        }
+        return v;
+    };
+
+    RagService local;
+    local.setEmbedder(embed);
+    local.setBatchEmbedder([embed](const QStringList& texts) {
+        QVector<QVector<float>> out;
+        for (const QString& t : texts) out.append(embed(t));
+        return out;
+    });
+
+    // two documents per topic, CJK+latin mixed content
+    QVERIFY(local.ingestDocument("apple-a.txt",
+        QStringLiteral("The apple banana fruit vitamin content explains "
+                       "nutrition and dietary fiber in detail. ")) >= 1);
+    const auto topicDoc = [](const QString& sentence) {
+        QString text;
+        for (int i = 0; i < 12; ++i) text += sentence;   // safely > 512 chars → 2+ chunks
+        return text;
+    };
+    QVERIFY(local.ingestDocument("apple-b.txt",
+        topicDoc(QStringLiteral("apple banana fruit vitamin studies "
+                                 "repeated in dietary research. "))) >= 2);
+    QVERIFY(local.ingestDocument("quantum-a.txt",
+        topicDoc(QStringLiteral("quantum particle physics energy levels "
+                                "explained by entanglement models. "))) >= 2);
+    QVERIFY(local.ingestDocument("python-a.txt",
+        topicDoc(QStringLiteral("decorator python function syntax wraps "
+                                "callables with examples. "))) >= 2);
+    QVERIFY(local.ingestDocument("database-a.txt",
+        topicDoc(QStringLiteral("database index query latency tuning guide "
+                                "with benchmarks. "))) >= 2);
+
+    struct Labeled { const char* query; const char* topic; }; // "" = no-match
+    const QVector<Labeled> labeled = {
+        {"apple fruit vitamin", "apple"},
+        {"banana fruit", "apple"},
+        {"quantum physics energy", "quantum"},
+        {"quantum particle", "quantum"},
+        {"python decorator function", "python"},
+        {"decorator syntax", "python"},
+        {"database index latency", "database"},
+        {"query latency", "database"},
+        {"weather forecast tomorrow", ""},          // unrelated → no-match
+        {"recipe pasta tomato", ""},                // unrelated → no-match
+    };
+
+    int relevantTop1 = 0, relevantTotal = 0, noMatchTotal = 0;
+    for (const Labeled& item : labeled) {
+        const QJsonArray hits = local.search(QString::fromLatin1(item.query), 2);
+        if (qstrlen(item.topic) == 0) {
+            ++noMatchTotal;
+            QVERIFY2(hits.isEmpty(),
+                     qPrintable(QStringLiteral("unrelated query '%1' returned results")
+                                    .arg(item.query)));
+            continue;
+        }
+        ++relevantTotal;
+        QVERIFY2(!hits.isEmpty(),
+                 qPrintable(QStringLiteral("relevant query '%1' returned nothing")
+                                .arg(item.query)));
+        const QString source = hits.first().toObject().value("source").toString();
+        if (source.startsWith(QString::fromLatin1(item.topic))) ++relevantTop1;
+    }
+    // Calibration bar: every relevant query lands in its topic, every
+    // unrelated query degrades to no-match.
+    QCOMPARE(relevantTop1, relevantTotal);
+    QVERIFY(relevantTotal >= 8);
+    QCOMPARE(noMatchTotal, 2);
+}
+
+
+// The ContextPanel knowledge list refreshes on RagService::changed().
+// Ingestion MUST keep emitting it (lost during the Batch 6 refactor, which
+// blanked the UI list on every import/restore).
+void TestRag::ingestEmitsChanged() {
+    RagService local;
+    QSignalSpy spy(&local, &RagService::changed);
+    QVERIFY(local.ingestDocument("doc.txt", longDoc("one", 6)) >= 2);
+    QVERIFY2(spy.count() >= 1, "ingestDocument no longer emits changed()");
+    QVERIFY(local.ingestDocument("doc.txt", longDoc("two", 6)) >= 2);
+    QVERIFY2(spy.count() >= 2, "re-ingest no longer emits changed()");
+}
+
+// documentPersisted crosses a thread boundary (ingest runs on the
+// QtConcurrent pool, persistence happens on the GUI thread) - the queued
+// delivery must survive with its custom QVector<KnowledgeChunk> payload.
+void TestRag::documentPersistedDeliversAcrossThreads() {
+    RagService local;
+    local.setBatchEmbedder([](const QStringList& texts) {
+        QVector<QVector<float>> out;
+        for (int i = 0; i < texts.size(); ++i)
+            out.append(QVector<float>(8, 0.5f));
+        return out;
+    });
+
+    QAtomicInt delivered{0};
+    QString deliveredName;
+    QString deliveredContent;
+    QVector<KnowledgeChunk> deliveredChunks;
+    QObject::connect(&local, &RagService::documentPersisted, &local,
+        [&](const QString& name, const QString& content,
+            const QVector<KnowledgeChunk>& chunks) {
+            delivered.fetchAndAddRelaxed(1);
+            deliveredName = name;
+            deliveredChunks = chunks;
+            deliveredContent = content;
+        }, Qt::QueuedConnection);
+
+    const int chunks = local.ingestDocument("doc.txt", longDoc("queue", 6));
+    QVERIFY(chunks >= 2);
+
+    QTRY_COMPARE_WITH_TIMEOUT(delivered.loadRelaxed(), 1, 5000);
+    QCOMPARE(deliveredName, QStringLiteral("doc.txt"));
+    QVERIFY(!deliveredContent.isEmpty());
+    QCOMPARE(deliveredChunks.size(), chunks);
+    QVERIFY(!deliveredChunks.first().embedding.isEmpty());
 }
 
 QTEST_GUILESS_MAIN(TestRag)

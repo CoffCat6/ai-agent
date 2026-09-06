@@ -10,6 +10,8 @@ RagService::RagService(QObject* parent) : QObject(parent) {}
 void RagService::setEmbedder(DocumentRetriever::EmbedFn fn) {
     QMutexLocker lock(&m_mutex);
     m_embedFn = std::move(fn);
+    m_queryCache.clear();   // query vectors belong to the previous embedder
+    m_queryCacheOrder.clear();
 }
 
 void RagService::setBatchEmbedder(DocumentRetriever::BatchEmbedFn fn) {
@@ -61,6 +63,8 @@ int RagService::ingestDocument(const QString& sourceName, const QString& content
     auto retriever = buildRetriever(sourceName, content, &chunks);
     if (!retriever) return chunks;
 
+    // Export before the retriever is moved into the document store.
+    const QVector<KnowledgeChunk> persisted = retriever->exportChunks();
     {
         QMutexLocker lock(&m_mutex);
         dropDocumentLocked(sourceName); // replace same-name doc (incl. races)
@@ -70,7 +74,13 @@ int RagService::ingestDocument(const QString& sourceName, const QString& content
         doc.retriever = std::move(retriever);
         m_docs.push_back(std::move(doc));
     }
+
+    // UI refresh signal: the knowledge list (and reembed flow) hangs off
+    // changed() - it must accompany EVERY document mutation (lost once in
+    // the Batch 6 refactor, which blanked the panel on import).
     emit changed();
+    // Persistence export (may run on a worker thread; consumers queue it).
+    emit documentPersisted(sourceName, content, persisted);
     return chunks;
 }
 
@@ -80,6 +90,7 @@ int RagService::ingestRestoredDocument(const QString& sourceName, const QString&
     auto retriever = buildRetriever(sourceName, content, &chunks);
     if (!retriever) return chunks;
 
+    const QVector<KnowledgeChunk> persisted = retriever->exportChunks();
     {
         QMutexLocker lock(&m_mutex);
         // The embedding round-trip above took a while: the user may have
@@ -93,8 +104,38 @@ int RagService::ingestRestoredDocument(const QString& sourceName, const QString&
         doc.retriever = std::move(retriever);
         m_docs.push_back(std::move(doc));
     }
-    emit changed();
+
+    emit changed();   // UI refresh (see ingestDocument)
+    emit documentPersisted(sourceName, content, persisted);
     return chunks;
+}
+
+bool RagService::restorePersistedDocument(const QString& sourceName,
+                                          const QVector<KnowledgeChunk>& chunks,
+                                          quint64 generation) {
+    if (chunks.isEmpty()) return false;
+
+    auto retriever = std::make_unique<DocumentRetriever>();
+    {
+        QMutexLocker lock(&m_mutex);
+        retriever->setEmbedFunction(m_embedFn);
+        retriever->setBatchEmbedFunction(m_batchEmbedFn);
+    }
+    if (!retriever->addPrecomputedDocument(sourceName, chunks)) return false;
+
+    {
+        QMutexLocker lock(&m_mutex);
+        if (generation != m_restoreGeneration) return false;
+        dropDocumentLocked(sourceName);
+        Document doc;
+        doc.name = sourceName;
+        doc.chars = 0;
+        for (const KnowledgeChunk& chunk : chunks) doc.chars += chunk.text.size();
+        doc.retriever = std::move(retriever);
+        m_docs.push_back(std::move(doc));
+    }
+    emit changed();
+    return true;
 }
 
 quint64 RagService::restoreGeneration() const {
@@ -102,31 +143,64 @@ quint64 RagService::restoreGeneration() const {
     return m_restoreGeneration;
 }
 
+QVector<KnowledgeChunk> RagService::exportPersistedChunks(const QString& sourceName) const {
+    QMutexLocker lock(&m_mutex);
+    for (const auto& doc : m_docs) {
+        if (doc.name == sourceName)
+            return doc.retriever->exportChunks();
+    }
+    return {};
+}
+
 QJsonArray RagService::search(const QString& query, int k) const {
     const QString trimmed = query.trimmed();
     if (trimmed.isEmpty()) return {};
 
-    // Snapshot the embedder under the lock, then release it before any
-    // network IO: the embedding round-trip must never block documents() /
-    // documentChunks(), which run on the GUI thread while the retrieval
-    // tool executes on a worker thread.
-    DocumentRetriever::EmbedFn embedFn;
     {
         QMutexLocker lock(&m_mutex);
         if (m_docs.empty()) return {};
-        embedFn = m_embedFn;
     }
 
     // ONE real embedding per search, shared by every real-mode document
     // (instead of one round-trip per document); the pseudo variant is local
-    // and always available.
-    const QVector<float> realVec = embedFn ? embedFn(trimmed) : QVector<float>{};
+    // and always available. Repeated queries (follow-up questions, the
+    // agent retrying a similar probe) reuse the cached vector (KB-605).
+    QVector<float> realVec;
+    {
+        QMutexLocker lock(&m_mutex);
+        const auto it = m_queryCache.constFind(trimmed);
+        if (it != m_queryCache.constEnd())
+            realVec = it.value();
+    }
+    if (realVec.isEmpty()) {
+        // Embed outside the lock: the network round-trip must never block
+        // documents()/documentChunks() on the GUI thread.
+        DocumentRetriever::EmbedFn embedFn;
+        {
+            QMutexLocker lock(&m_mutex);
+            embedFn = m_embedFn;
+        }
+        if (embedFn) realVec = embedFn(trimmed);
+
+        if (!realVec.isEmpty()) {
+            QMutexLocker lock(&m_mutex);
+            if (!m_queryCache.contains(trimmed)) {
+                if (m_queryCache.size() >= MaxQueryCacheEntries
+                        && !m_queryCacheOrder.isEmpty())
+                    m_queryCache.remove(m_queryCacheOrder.takeFirst());
+                m_queryCache.insert(trimmed, realVec);
+                m_queryCacheOrder.enqueue(trimmed);
+            }
+        }
+    }
+    return finishSearch(trimmed, realVec, k);
+}
+
+// Merged top-k across documents (embedding already done outside the lock).
+QJsonArray RagService::finishSearch(const QString& trimmed, const QVector<float>& realVec,
+                                    int k) const {
     const QVector<float> pseudoVec = DocumentRetriever::pseudoEmbed(trimmed);
 
-    // Merge scored passages from every document, keep the global top-k.
-    // Each document's retriever picks the query vector matching its own
-    // embedding mode, so scores are only compared within one mode -
-    // acceptable when a pseudo-mode document coexists with real-mode ones.
     QVector<QJsonObject> hits;
     {
         QMutexLocker lock(&m_mutex);

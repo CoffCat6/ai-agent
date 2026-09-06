@@ -65,6 +65,15 @@ public:
         return arr;
     }
 
+    // Stored entries in insertion order (persistence export, Batch 6)
+    QVector<QPair<QVector<float>, QJsonObject>> entries() const {
+        QVector<QPair<QVector<float>, QJsonObject>> out;
+        out.reserve(m_entries.size());
+        for (const auto& entry : m_entries)
+            out.append({entry.embedding, entry.metadata});
+        return out;
+    }
+
     int size() const { return m_entries.size(); }
     void clear() { m_entries.clear(); }
 

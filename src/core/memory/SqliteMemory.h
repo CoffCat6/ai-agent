@@ -1,6 +1,7 @@
 #pragma once
 
 #include "IMemory.h"
+#include "core/rag/KnowledgeChunk.h"
 
 #include <QSqlDatabase>
 #include <QString>
@@ -33,13 +34,26 @@ public:
                   bool success, const QString& detail) override;
     QJsonArray auditLog(int limit = 100) override;
 
-    // Knowledge-base persistence: imported documents survive restarts.
-    // Concrete extension (not part of IMemory); called on the GUI thread.
-    void upsertKnowledgeDoc(const QString& name, const QString& content);
+    // Knowledge-base persistence (v2): documents keep their content hash and
+    // the embedding model that produced the chunks, so startup restore can
+    // skip re-embedding entirely when nothing changed (Batch 6).
+    struct KnowledgeDocRecord {
+        QString name;
+        QString content;
+        QString contentHash;
+        QString embeddingModel;
+    };
+
+    void upsertKnowledgeDoc(const QString& name, const QString& content,
+                            const QString& contentHash, const QString& embeddingModel);
     bool removeKnowledgeDoc(const QString& name);
     void clearKnowledgeDocs();
-    QJsonObject loadKnowledgeDocs() const; // { name: content }
     QString loadKnowledgeDoc(const QString& name) const; // empty when unknown
+    QVector<KnowledgeDocRecord> loadKnowledgeDocRecords() const;
+    // Transactional chunk replacement (delete + insert for one document)
+    void replaceKnowledgeChunks(const QString& name,
+                                const QVector<KnowledgeChunk>& chunks);
+    QVector<KnowledgeChunk> loadKnowledgeChunks(const QString& name) const;
 
     // Trace view persistence (IMemory optional capability)
     void saveTraceNode(const QString& sessionId, const QJsonObject& node, int order) override;
@@ -48,6 +62,7 @@ public:
 private:
     void initDatabase();
     void createTables();
+    void migrateKnowledgeSchema();
 
     QSqlDatabase m_db;
     QString m_dbPath;

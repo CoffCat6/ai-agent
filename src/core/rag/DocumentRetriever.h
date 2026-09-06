@@ -1,6 +1,7 @@
 #pragma once
 
 #include "VectorStore.h"
+#include "KnowledgeChunk.h"
 
 #include <QString>
 #include <QStringList>
@@ -68,6 +69,30 @@ public:
         return true;
     }
 
+    // Rebuild a document from persisted chunks (Batch 6): no chunking, no
+    // embedding network IO. The vectors are inserted exactly as stored, so a
+    // restored real-mode store is bit-consistent with its ingested state and
+    // a pseudo-mode store stays searchable offline.
+    bool addPrecomputedDocument(const QString& sourceName,
+                                const QVector<KnowledgeChunk>& chunks) {
+        if (chunks.isEmpty()) return false;
+        m_usesPseudo = chunks.first().pseudo;
+        m_embeddingDim = chunks.first().dim;
+        for (int i = 0; i < chunks.size(); ++i) {
+            const KnowledgeChunk& chunk = chunks.at(i);
+            if (chunk.embedding.isEmpty()
+                    || (!m_usesPseudo && chunk.embedding.size() != m_embeddingDim))
+                return false;
+            QJsonObject chunkMeta;
+            chunkMeta["source"] = sourceName;
+            chunkMeta["chunk_index"] = chunk.index;
+            chunkMeta["chunk_total"] = chunk.total;
+            chunkMeta["text"] = chunk.text;
+            m_store.insert(chunk.embedding, chunkMeta);
+        }
+        return true;
+    }
+
     // Search for relevant document chunks
     QJsonArray search(const QString& query, int k = 5) const {
         if (m_store.size() == 0) return {};
@@ -113,6 +138,24 @@ public:
             if (obj.value("score").toDouble() >= RealMinRelevanceScore)
                 arr.append(obj);
         return arr;
+    }
+
+    // Persistence export (Batch 6): chunk text + the stored vector per
+    // chunk, in insertion order — no re-embedding, bit-exact round trip.
+    QVector<KnowledgeChunk> exportChunks() const {
+        QVector<KnowledgeChunk> chunks;
+        chunks.reserve(m_store.size());
+        for (const auto& entry : m_store.entries()) {
+            KnowledgeChunk chunk;
+            chunk.index = entry.second.value("chunk_index").toInt();
+            chunk.total = entry.second.value("chunk_total").toInt();
+            chunk.text = entry.second.value("text").toString();
+            chunk.embedding = entry.first;
+            chunk.dim = entry.first.size();
+            chunk.pseudo = m_usesPseudo;
+            chunks.append(chunk);
+        }
+        return chunks;
     }
 
     int documentCount() const { return m_store.size(); }

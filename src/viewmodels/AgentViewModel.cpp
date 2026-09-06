@@ -254,7 +254,6 @@ void AgentViewModel::startIngestion(const QString& name, const QString& content,
         }
         if (chunks > 0) {
             emit noticeOccurred(QStringLiteral("已导入 %1（%2 段）").arg(name).arg(chunks));
-            emit documentImported(name, content);
         } else if (chunks == 0) {
             emit errorOccurred(QStringLiteral("导入失败（文件为空或无法分块）：%1").arg(name));
         } else {

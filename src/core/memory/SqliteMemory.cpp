@@ -9,6 +9,7 @@
 #include <QDebug>
 #include <QDateTime>
 #include <QUuid>
+#include <cstring>
 
 namespace NexusAI {
 
@@ -69,6 +70,7 @@ SqliteMemory::~SqliteMemory() {
 
 void SqliteMemory::initDatabase() {
     createTables();
+    migrateKnowledgeSchema();
 }
 
 void SqliteMemory::createTables() {
@@ -176,25 +178,153 @@ void SqliteMemory::createTables() {
             "create trace_nodes index");
 }
 
-// ── Knowledge-base persistence ───────────────────────────
+// Schema v1→v2 (Batch 6): documents gain content-hash / embedding-model
+// columns and a chunk table stores the embedded vectors. Old rows keep
+// working: empty hash/model marks them stale, so the first startup after
+// the upgrade re-embeds them in the background (per the audited migration
+// plan) and the new layout is written back transparently.
+void SqliteMemory::migrateKnowledgeSchema() {
+    QSqlQuery pragma(m_db);
+    QStringList columns;
+    if (pragma.exec("PRAGMA table_info(knowledge_documents)")) {
+        while (pragma.next())
+            columns << pragma.value(1).toString();
+    }
 
-void SqliteMemory::upsertKnowledgeDoc(const QString& name, const QString& content) {
+    if (columns.isEmpty()) return; // table not created (fresh db: v2 DDL handles it)
     QSqlQuery query(m_db);
-    query.prepare("INSERT INTO knowledge_documents (name, content, imported_at) "
-                  "VALUES (?, ?, ?) "
+    if (!columns.contains("content_hash"))
+        execDdl(query, "ALTER TABLE knowledge_documents "
+                       "ADD COLUMN content_hash TEXT NOT NULL DEFAULT ''",
+                "add knowledge_documents.content_hash");
+    if (!columns.contains("embedding_model"))
+        execDdl(query, "ALTER TABLE knowledge_documents "
+                       "ADD COLUMN embedding_model TEXT NOT NULL DEFAULT ''",
+                "add knowledge_documents.embedding_model");
+
+    execDdl(query, R"(
+        CREATE TABLE IF NOT EXISTS knowledge_chunks (
+            doc_name TEXT NOT NULL,
+            chunk_index INTEGER NOT NULL,
+            chunk_total INTEGER NOT NULL,
+            text TEXT NOT NULL,
+            embedding BLOB NOT NULL,
+            dim INTEGER NOT NULL,
+            pseudo INTEGER NOT NULL,
+            PRIMARY KEY (doc_name, chunk_index)
+        )
+    )", "create knowledge_chunks table");
+}
+
+// ── Knowledge-base persistence (v2) ──────────────────────
+
+namespace {
+
+QByteArray embeddingToBlob(const QVector<float>& vec) {
+    QByteArray blob(reinterpret_cast<const char*>(vec.constData()),
+                    int(vec.size() * sizeof(float)));
+    return blob;
+}
+
+QVector<float> embeddingFromBlob(const QByteArray& blob) {
+    QVector<float> vec(blob.size() / int(sizeof(float)));
+    if (!vec.isEmpty())
+        std::memcpy(vec.data(), blob.constData(), size_t(vec.size()) * sizeof(float));
+    return vec;
+}
+
+} // namespace
+
+void SqliteMemory::upsertKnowledgeDoc(const QString& name, const QString& content,
+                                      const QString& contentHash,
+                                      const QString& embeddingModel) {
+    QSqlQuery query(m_db);
+    query.prepare("INSERT INTO knowledge_documents (name, content, imported_at, "
+                  "content_hash, embedding_model) VALUES (?, ?, ?, ?, ?) "
                   "ON CONFLICT(name) DO UPDATE SET content = excluded.content, "
-                  "imported_at = excluded.imported_at");
+                  "imported_at = excluded.imported_at, content_hash = excluded.content_hash, "
+                  "embedding_model = excluded.embedding_model");
     query.addBindValue(name);
     query.addBindValue(content);
     query.addBindValue(QDateTime::currentDateTime().toMSecsSinceEpoch());
+    query.addBindValue(contentHash);
+    query.addBindValue(embeddingModel);
 
     if (!query.exec()) {
         qWarning() << "Failed to save knowledge document:" << query.lastError().text();
     }
 }
 
+void SqliteMemory::replaceKnowledgeChunks(const QString& name,
+                                          const QVector<KnowledgeChunk>& chunks) {
+    QSqlQuery query(m_db);
+    if (!m_db.transaction()) {
+        qWarning() << "Failed to start chunk transaction:" << query.lastError().text();
+        return;
+    }
+
+    query.prepare("DELETE FROM knowledge_chunks WHERE doc_name = ?");
+    query.addBindValue(name);
+    if (!query.exec()) {
+        qWarning() << "Failed to clear chunks:" << query.lastError().text();
+        m_db.rollback();
+        return;
+    }
+
+    query.prepare("INSERT INTO knowledge_chunks (doc_name, chunk_index, chunk_total, "
+                  "text, embedding, dim, pseudo) VALUES (?, ?, ?, ?, ?, ?, ?)");
+    for (const KnowledgeChunk& chunk : chunks) {
+        query.addBindValue(name);
+        query.addBindValue(chunk.index);
+        query.addBindValue(chunk.total);
+        query.addBindValue(chunk.text);
+        query.addBindValue(embeddingToBlob(chunk.embedding));
+        query.addBindValue(chunk.dim);
+        query.addBindValue(chunk.pseudo ? 1 : 0);
+        if (!query.exec()) {
+            qWarning() << "Failed to save chunk:" << query.lastError().text();
+            m_db.rollback();
+            return;
+        }
+    }
+
+    if (!m_db.commit()) {
+        qWarning() << "Failed to commit chunks:" << query.lastError().text();
+        m_db.rollback();
+    }
+}
+
+QVector<KnowledgeChunk> SqliteMemory::loadKnowledgeChunks(const QString& name) const {
+    QSqlQuery query(m_db);
+    query.prepare("SELECT chunk_index, chunk_total, text, embedding, dim, pseudo "
+                  "FROM knowledge_chunks WHERE doc_name = ? ORDER BY chunk_index ASC");
+    query.addBindValue(name);
+
+    QVector<KnowledgeChunk> chunks;
+    if (query.exec()) {
+        while (query.next()) {
+            KnowledgeChunk chunk;
+            chunk.index = query.value(0).toInt();
+            chunk.total = query.value(1).toInt();
+            chunk.text = query.value(2).toString();
+            chunk.embedding = embeddingFromBlob(query.value(3).toByteArray());
+            chunk.dim = query.value(4).toInt();
+            chunk.pseudo = query.value(5).toInt() != 0;
+            chunks.append(chunk);
+        }
+    } else {
+        qWarning() << "Failed to load chunks:" << query.lastError().text();
+    }
+    return chunks;
+}
+
 bool SqliteMemory::removeKnowledgeDoc(const QString& name) {
     QSqlQuery query(m_db);
+    query.prepare("DELETE FROM knowledge_chunks WHERE doc_name = ?");
+    query.addBindValue(name);
+    if (!query.exec())
+        qWarning() << "Failed to remove chunks:" << query.lastError().text();
+
     query.prepare("DELETE FROM knowledge_documents WHERE name = ?");
     query.addBindValue(name);
     if (!query.exec()) {
@@ -206,9 +336,33 @@ bool SqliteMemory::removeKnowledgeDoc(const QString& name) {
 
 void SqliteMemory::clearKnowledgeDocs() {
     QSqlQuery query(m_db);
+    if (!query.exec("DELETE FROM knowledge_chunks")) {
+        qWarning() << "Failed to clear knowledge chunks:" << query.lastError().text();
+    }
     if (!query.exec("DELETE FROM knowledge_documents")) {
         qWarning() << "Failed to clear knowledge documents:" << query.lastError().text();
     }
+}
+
+QVector<SqliteMemory::KnowledgeDocRecord> SqliteMemory::loadKnowledgeDocRecords() const {
+    QSqlQuery query(m_db);
+    query.prepare("SELECT name, content, content_hash, embedding_model "
+                  "FROM knowledge_documents ORDER BY imported_at ASC");
+
+    QVector<KnowledgeDocRecord> records;
+    if (query.exec()) {
+        while (query.next()) {
+            KnowledgeDocRecord rec;
+            rec.name = query.value(0).toString();
+            rec.content = query.value(1).toString();
+            rec.contentHash = query.value(2).toString();
+            rec.embeddingModel = query.value(3).toString();
+            records.append(rec);
+        }
+    } else {
+        qWarning() << "Failed to load knowledge records:" << query.lastError().text();
+    }
+    return records;
 }
 
 QString SqliteMemory::loadKnowledgeDoc(const QString& name) const {
@@ -219,19 +373,6 @@ QString SqliteMemory::loadKnowledgeDoc(const QString& name) const {
     if (query.exec() && query.next())
         return query.value(0).toString();
     return QString();
-}
-
-QJsonObject SqliteMemory::loadKnowledgeDocs() const {
-    QSqlQuery query(m_db);
-    query.prepare("SELECT name, content FROM knowledge_documents ORDER BY imported_at ASC");
-
-    QJsonObject docs;
-    if (query.exec()) {
-        while (query.next()) {
-            docs.insert(query.value(0).toString(), query.value(1).toString());
-        }
-    }
-    return docs;
 }
 
 void SqliteMemory::saveMessage(const QString& sessionId, const QJsonObject& msg) {

@@ -15,6 +15,8 @@ public:
 
     void setBaseUrl(const QString& url) { m_baseUrl = url; }
     void setModel(const QString& model) { m_model = model; }
+    // Identity of the embedding model (persisted-chunk versioning, Batch 6)
+    QString model() const { return m_model; }
 
     // Synchronous embedding call (blocks with QEventLoop)
     QVector<float> embed(const QString& text);
