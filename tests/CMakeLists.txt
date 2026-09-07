@@ -33,9 +33,10 @@ add_test(NAME test_embedding COMMAND test_embedding)
 # (warning-level legacy noise is tolerated and printed).
 add_test(NAME qmllint_gate
     COMMAND ${CMAKE_COMMAND}
-        -DQMLLINT=${QT6_INSTALL_BINS}/qmllint.exe
+        -DQMLLINT=${QT6_INSTALL_FULL_BINS}/qmllint.exe
         -DRSP_DIR=${CMAKE_BINARY_DIR}/.rcc/qmllint
-        -P ${CMAKE_SOURCE_DIR}/cmake/QmllintGate.cmake)
+        -P ${CMAKE_SOURCE_DIR}/cmake/QmllintGate.cmake
+    WORKING_DIRECTORY ${CMAKE_BINARY_DIR})
 
 # Needs the viewmodels library (AgentViewModel, SettingsService) in addition to core & infra
 add_executable(test_viewmodel test_viewmodel.cpp)

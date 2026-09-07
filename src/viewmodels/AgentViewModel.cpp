@@ -5,6 +5,7 @@
 #include "core/rag/RagService.h"
 #include "core/rag/KnowledgeChunk.h"
 #include "core/utils/Logger.h"
+#include "core/utils/Activity.h"
 #include "core/utils/TokenEstimator.h"
 
 #include <QClipboard>
@@ -219,15 +220,18 @@ void AgentViewModel::importDocument(const QString& path) {
         return;
     }
     const QString name = m_rag->uniqueDocumentName(info.fileName());
+    Activity::usage(Activity::Kind::User, QStringLiteral("doc.import"), name);
     startIngestion(name, content, false);
 }
 
 void AgentViewModel::removeDocument(const QString& name) {
+    Activity::usage(Activity::Kind::User, QStringLiteral("doc.remove"), name);
     if (m_rag && m_rag->removeDocument(name))
         emit documentRemoved(name);
 }
 
 void AgentViewModel::clearKnowledge() {
+    Activity::usage(Activity::Kind::User, QStringLiteral("kb.clear"));
     if (!m_rag) return;
     m_rag->clear();
     emit knowledgeCleared();
@@ -239,6 +243,7 @@ QVariantList AgentViewModel::documentChunks(const QString& name) {
 
 void AgentViewModel::reembedDocument(const QString& name) {
     if (!m_rag || m_knowledgeBusy) return;
+    Activity::usage(Activity::Kind::User, QStringLiteral("doc.reembed"), name);
     const QString content = m_contentProvider ? m_contentProvider(name) : QString();
     if (content.trimmed().isEmpty()) {
         emit errorOccurred(QStringLiteral("未找到文档内容，无法重新嵌入：%1").arg(name));
@@ -304,10 +309,14 @@ void AgentViewModel::setEmbedProgress(int done, int total) {
 // ── Session / audit management ───────────────────────────
 
 void AgentViewModel::deleteSession(const QString& sessionId) {
+    Activity::usage(Activity::Kind::User, QStringLiteral("session.delete"),
+                    sessionId);
     if (m_agent) m_agent->deleteSession(sessionId);
 }
 
 void AgentViewModel::renameSession(const QString& sessionId, const QString& title) {
+    Activity::usage(Activity::Kind::User, QStringLiteral("session.rename"),
+                    sessionId);
     if (m_agent) m_agent->renameSession(sessionId, title);
 }
 
@@ -451,6 +460,8 @@ void AgentViewModel::updateLastNodeStatus(const QString& status) {
 
 void AgentViewModel::startTask(const QString& input) {
     if (isBusy()) return;
+    Activity::usage(Activity::Kind::User, QStringLiteral("task.start"),
+                    input.left(80));
 
     m_finalResponse.clear();
     emit responseReady();
@@ -476,6 +487,10 @@ void AgentViewModel::startTask(const QString& input) {
 }
 
 void AgentViewModel::approveToolCall(const QString& id, bool approved) {
+    Activity::usage(Activity::Kind::User,
+                    approved ? QStringLiteral("tool.approve")
+                             : QStringLiteral("tool.decline"),
+                    id);
     if (m_agent) {
         m_agent->approveToolCall(id, approved);
         return;
@@ -516,6 +531,7 @@ void AgentViewModel::approveToolCall(const QString& id, bool approved) {
 }
 
 void AgentViewModel::stop() {
+    Activity::usage(Activity::Kind::User, QStringLiteral("task.stop"));
     if (m_agent) {
         m_agent->stop();
         return;
@@ -530,6 +546,7 @@ void AgentViewModel::stop() {
 }
 
 void AgentViewModel::newChat() {
+    Activity::usage(Activity::Kind::User, QStringLiteral("session.new"));
     m_simTimer.stop();
     m_finalResponse.clear();
     emit responseReady();
@@ -548,6 +565,8 @@ void AgentViewModel::newChat() {
 
 void AgentViewModel::loadSession(const QString& sessionId) {
     if (!m_agent || isBusy()) return;
+    Activity::usage(Activity::Kind::User, QStringLiteral("session.resume"),
+                    sessionId);
     m_agent->resumeSession(sessionId);
     m_finalResponse = m_agent->lastResponse();
     emit responseReady();

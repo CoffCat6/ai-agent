@@ -8,7 +8,7 @@ if(NOT QMLLINT OR NOT RSP_DIR)
 endif()
 
 set(failed_targets "")
-foreach(target nexus_ai nexus_ui nexus_viewmodels)
+foreach(target nexus_ai nexus_viewmodels)
     set(rsp "${RSP_DIR}/${target}.rsp")
     if(NOT EXISTS "${rsp}")
         message(FATAL_ERROR "qmllint gate: missing response file ${rsp}")

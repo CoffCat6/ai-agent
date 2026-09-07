@@ -51,6 +51,8 @@ add_library(nexus_core STATIC
     src/core/utils/TokenEstimator.h
     src/core/utils/Logger.h
     src/core/utils/Logger.cpp
+    src/core/utils/Activity.h
+    src/core/utils/Activity.cpp
 )
 target_include_directories(nexus_core PUBLIC ${CMAKE_CURRENT_SOURCE_DIR}/src)
 target_link_libraries(nexus_core PUBLIC Qt6::Core Qt6::Sql Qt6::Concurrent)

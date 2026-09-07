@@ -1,6 +1,7 @@
 // Logger ring-buffer coverage (日志开发 doc 6 §6): eviction, level filter,
 // incremental snapshot, multi-threaded write smoke, snapshot consistency.
 #include "core/utils/Logger.h"
+#include "core/utils/Activity.h"
 
 #include <QtConcurrent/QtConcurrent>
 #include <QtTest>
@@ -130,11 +131,11 @@ private slots:
             QVERIFY2(!seqs.contains(e.seq), "duplicate seq in ring");
             seqs.insert(e.seq);
         }
-        // Ring keeps the newest `capacity`; with 2000 fresh writes all of
-        // them must still be there (capacity 1000 < 2000 → exactly the last
-        // 1000 survive, all unique).
-        QCOMPARE(mtCount, Logger::RingCapacity);
-        QCOMPARE(seqs.size(), Logger::RingCapacity);
+        // Ring capacity 5000 > the 2000 fresh writes: ALL of them survive,
+        // each with a unique seq (assertion is relative to the write count
+        // so a future capacity bump does not change the expectation).
+        QCOMPARE(mtCount, 2000);
+        QCOMPARE(seqs.size(), 2000);
     }
 
     // §6.5 snapshot consistency while writers keep pushing
@@ -161,6 +162,53 @@ private slots:
             QTest::qWait(10);
         }
         sync.waitForFinished();
+    }
+
+    // Batch 12 前日志增强: Activity facade
+    // Activity::report lands in the ring buffer under the mapped category,
+    // with the context id appended for keyword/correlation filtering.
+    void activityReportWritesCategorizedEntry() {
+        const quint64 rev0 = Logger::revision();
+        Activity::report(Activity::Kind::Network,
+                         QStringLiteral("activity-test-net"), QStringLiteral("req-42"));
+
+        const auto entries = Logger::entriesSince(rev0);
+        QVERIFY2(!entries.isEmpty(), "Activity::report produced no ring entry");
+        bool found = false;
+        for (const auto& e : entries) {
+            if (e.message.contains(QStringLiteral("activity-test-net"))) {
+                found = true;
+                QCOMPARE(e.category, QStringLiteral("nexus.network"));
+                QVERIFY(e.message.contains(QStringLiteral("[req-42]")));
+            }
+        }
+        QVERIFY2(found, "categorized entry not found in ring");
+    }
+
+    // The injected sink receives the structured usage fields (category,
+    // action, target, request id, detail) for persistent usage storage.
+    void usageSinkInvoked() {
+        QString sinkCategory, sinkAction, sinkTarget, sinkDetail;
+        quint64 sinkRequest = 0;
+        int calls = 0;
+        Activity::setUsageSink([&](const QString& category, const QString& action,
+                                   const QString& target, quint64 requestId,
+                                   const QString& detail) {
+            ++calls;
+            sinkCategory = category; sinkAction = action; sinkTarget = target;
+            sinkRequest = requestId; sinkDetail = detail;
+        });
+
+        Activity::usage(Activity::Kind::User, QStringLiteral("doc.import"),
+                        QStringLiteral("x.txt"), 7, QStringLiteral("detail-d"));
+
+        Activity::setUsageSink({});   // restore: no sink for other tests
+        QCOMPARE(calls, 1);
+        QCOMPARE(sinkCategory, QStringLiteral("nexus.user"));
+        QCOMPARE(sinkAction, QStringLiteral("doc.import"));
+        QCOMPARE(sinkTarget, QStringLiteral("x.txt"));
+        QCOMPARE(sinkRequest, 7u);
+        QCOMPARE(sinkDetail, QStringLiteral("detail-d"));
     }
 };
 

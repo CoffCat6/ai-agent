@@ -19,6 +19,7 @@
 #include "core/rag/RagService.h"
 #include "core/rag/KnowledgeSearchTool.h"
 #include "core/utils/Logger.h"
+#include "core/utils/Activity.h"
 #include "infrastructure/llm/IAIService.h"
 #include "infrastructure/llm/OpenAIService.h"
 #include "infrastructure/llm/OllamaService.h"
@@ -149,6 +150,29 @@ int main(int argc, char *argv[])
         [memory](const QString& name) { memory->removeKnowledgeDoc(name); });
     QObject::connect(agentVM, &AgentViewModel::knowledgeCleared, &app,
         [memory]() { memory->clearKnowledgeDocs(); });
+
+    // ── Usage trail sink (日志增强) ──────────────────────
+    // User operations / network outcomes flow through the Activity facade;
+    // persistence happens on the GUI thread (SQLite is single-threaded) via
+    // a queued invocation from whichever thread emitted the event.
+    auto* usageMemory = memory;
+    Activity::setUsageSink(
+        [usageMemory, &app](const QString& category, const QString& action,
+                            const QString& target, quint64 requestId,
+                            const QString& detail) {
+            // SqliteMemory is not a QObject; marshal onto the GUI thread via
+            // the application object (SQLite is single-threaded).
+            QMetaObject::invokeMethod(
+                &app,
+                [usageMemory, category, action, target, requestId, detail]() {
+                    usageMemory->addUsageEvent(category, action, target,
+                                               requestId, detail);
+                },
+                Qt::QueuedConnection);
+        });
+    const int pruned = memory->pruneUsage();
+    if (pruned > 0)
+        qInfo() << "Pruned" << pruned << "expired usage-log rows";
 
     // Restore previously imported documents in the background (Batch 6).
     // Snapshot records AND chunks on the GUI thread (the SQLite connection

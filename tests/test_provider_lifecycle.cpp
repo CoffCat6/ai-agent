@@ -25,11 +25,13 @@
 #include <QJsonArray>
 #include <QJsonObject>
 #include <QNetworkProxy>
+#include "core/utils/Logger.h"
 #include <QSet>
 #include <QSignalSpy>
 #include <QTcpServer>
 #include <QTcpSocket>
 
+#include "core/utils/Activity.h"
 #include "infrastructure/llm/AnthropicService.h"
 #include "infrastructure/llm/OllamaService.h"
 #include "infrastructure/llm/OpenAIService.h"
@@ -270,6 +272,9 @@ private slots:
         qRegisterMetaType<LLMResponse>("NexusAI::LLMResponse");
         // Never route loopback traffic through a system proxy (clash etc.)
         QNetworkProxy::setApplicationProxy(QNetworkProxy::NoProxy);
+        // Feed the ring buffer for the Activity/metadata assertions
+        Logger::install();
+        Logger::setMinLevel(QtInfoMsg);
     }
 
     // Isolation probe: raw QNetworkAccessManager GET vs. FakeSseServer.
@@ -399,6 +404,35 @@ private slots:
         const LLMResponse response = takeResponse(spy, 0);
         QCOMPARE(response.content, QStringLiteral("Hello"));
         QVERIFY(response.toolCalls.isEmpty());
+    }
+
+    // 日志增强 privacy red line: the network metadata events must never
+    // contain request/response body content — endpoint, status, sizes and
+    // ids only.
+    void networkLogsAreMetadataOnly() {
+        FakeSseServer server;
+        OpenAIService service;
+        service.setBaseUrl(server.baseUrl());
+        QSignalSpy spy(&service, &IAIService::responseReady);
+        const quint64 rev0 = Logger::revision();
+
+        const QString bodyMarker = QStringLiteral("SECRET-BODY-MARKER");
+        server.enqueue({openaiTextBody(), false,
+                        "\"content\":\"SECRET-BODY-MARKER\""});
+        service.chatComplete(userMessages(bodyMarker), {});
+        QVERIFY2(spy.wait(5000), "no response");
+
+        const auto entries = Logger::entriesSince(rev0);
+        QVERIFY2(!entries.isEmpty(), "no log entries captured");
+        bool sawNetwork = false;
+        for (const auto& e : entries) {
+            QVERIFY2(!e.message.contains(bodyMarker),
+                     qPrintable(QStringLiteral("body content leaked into log: %1")
+                                    .arg(e.message)));
+            if (e.category == QStringLiteral("nexus.network"))
+                sawNetwork = true;
+        }
+        QVERIFY2(sawNetwork, "no network category events logged");
     }
 
     // TEST-003: request A is superseded by request B before it completes;

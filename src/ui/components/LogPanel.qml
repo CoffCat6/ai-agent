@@ -44,20 +44,49 @@ Dialog {
             spacing: 8
 
             ComboBox {
+                id: categoryBox
+                Layout.preferredWidth: 110
+                // display strings for the user; values[] maps to the actual
+                // filter value — binding currentValue (display text) as the
+                // filter blanks the whole view (fixed bug, 日志增强二轮)
+                model: [
+                    qsTr("全部"),
+                    qsTr("用户操作"),
+                    qsTr("网络"),
+                    qsTr("Agent"),
+                    qsTr("工具"),
+                    qsTr("知识库"),
+                    qsTr("应用")
+                ]
+                property var categoryValues: ["", "nexus.user", "nexus.network",
+                                              "nexus.agent", "nexus.tool",
+                                              "nexus.rag", "nexus.app"]
+                currentIndex: 0
+                onActivated: function(index) {
+                    AgentVM.logModel.filterCategory = categoryValues[index]
+                }
+                Component.onCompleted: {
+                    const i = categoryValues.indexOf(AgentVM.logModel.filterCategory)
+                    currentIndex = Math.max(0, i)
+                }
+            }
+
+            ComboBox {
                 id: levelBox
                 Layout.preferredWidth: 150
                 model: [
-                    qsTr("调试 (Debug)"),
-                    qsTr("信息 (Info)"),
-                    qsTr("警告 (Warning)"),
-                    qsTr("严重 (Critical)")
+                    qsTr("全部 (All)"),        // index 0 → filterLevel -1 (no gate)
+                    qsTr("调试 (Debug)"),      // 1 → QtDebugMsg(0)
+                    qsTr("信息 (Info)"),       // 2 → QtInfoMsg(1)
+                    qsTr("警告 (Warning)"),    // 3 → QtWarningMsg(2)
+                    qsTr("严重 (Critical)")    // 4 → QtCriticalMsg(3)
                 ]
-                currentIndex: 1   // Info and above, matching the file default
+                currentIndex: 2   // Info and above, matching the file default
                 onActivated: function(index) {
-                    // display index → QtMsgType (Debug=0 .. Critical=3)
-                    AgentVM.logModel.filterLevel = index
+                    // display index 0 = ALL(-1); 1..4 → QtMsgType 0..3
+                    AgentVM.logModel.filterLevel = index - 1
                 }
-                Component.onCompleted: currentIndex = AgentVM.logModel.filterLevel
+                Component.onCompleted: currentIndex = AgentVM.logModel.filterLevel + 1
             }
 
             TextField {
@@ -121,6 +150,14 @@ Dialog {
                     font.bold: level === "WARN" || level === "CRIT" || level === "FATAL"
                 }
                 Text {
+                    Layout.preferredWidth: 56
+                    text: category ? String(category).replace("nexus.", "") : ""
+                    color: Theme.textSecondary
+                    font.pixelSize: 9
+                    font.family: Theme.fontMono
+                    elide: Text.ElideRight
+                }
+                Text {
                     Layout.fillWidth: true
                     text: message
                     color: Theme.textPrimary
@@ -134,9 +171,8 @@ Dialog {
         // Jump back to the live tail after scrolling away
         Button {
             id: jumpToBottom
-            anchors.right: parent.right
-            anchors.bottom: logList.bottom
-            anchors.margins: 12
+            Layout.alignment: Qt.AlignRight
+            Layout.rightMargin: 24
             visible: !logList.pinnedToBottom
             text: qsTr("回到底部")
             onClicked: {

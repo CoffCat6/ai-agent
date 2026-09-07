@@ -600,10 +600,14 @@ Dialog {
                 ComboBox {
                     id: logLevelBox
                     Layout.preferredWidth: 220
-                    model: ["debug", "info", "warning", "critical"]
+                    property var levelNames: ["debug", "info", "warning", "critical"]
+                    model: levelNames
                     onActivated: function(index) { Settings.logLevel = currentText; }
-                    Component.onCompleted: currentIndex = indexOf(Settings.logLevel) >= 0
-                        ? indexOf(Settings.logLevel) : 1
+                    Component.onCompleted: {
+                        // ComboBox has no indexOf in QML scope; resolve on the array
+                        const i = levelNames.indexOf(Settings.logLevel)
+                        currentIndex = i >= 0 ? i : 1
+                    }
                 }
             }
 

@@ -2,7 +2,10 @@
 // clamping, debounced QSettings persistence and cross-instance restore.
 #include "viewmodels/AgentViewModel.h"
 #include "viewmodels/TraceModel.h"
+#include "viewmodels/LogModel.h"
+#include "core/utils/Logger.h"
 #include "core/rag/RagService.h"
+#include "core/utils/Activity.h"
 
 #include <QtTest>
 #include <QSignalSpy>
@@ -239,6 +242,139 @@ private slots:
             if (n.startsWith(QStringLiteral("doc ("))) sawVariant = true;
         }
         QVERIFY2(sawBase && sawVariant, "deduplicated display name missing");
+    }
+
+    // ── 日志增强: user actions + category filter ──
+    // VM entry points report user actions through the Activity facade into
+    // the injected sink, and the LogPanel model can filter by category.
+    void userActionsFeedUsageSink() {
+        AgentViewModel vm(nullptr);
+        RagService rag;
+        vm.setRagService(&rag);
+
+        QVector<QString> actions;
+        Activity::setUsageSink([&](const QString& category, const QString& action,
+                                   const QString& target, quint64 requestId,
+                                   const QString& detail) {
+            Q_UNUSED(category); Q_UNUSED(target); Q_UNUSED(requestId); Q_UNUSED(detail);
+            actions.append(action);
+        });
+
+        vm.newChat();                     // session.new
+        vm.removeDocument(QStringLiteral("nope.txt"));   // doc.remove
+
+        Activity::setUsageSink({});
+        QVERIFY2(actions.contains(QStringLiteral("session.new")),
+                 "session.new not reported");
+        QVERIFY2(actions.contains(QStringLiteral("doc.remove")),
+                 "doc.remove not reported");
+    }
+
+    // 日志增强二轮: the panel view is an append-only session record —
+    // entries logged while the panel is CLOSED must still be there when it
+    // reopens, and ring evictions must NOT remove rows from the view
+    // (both were broken by the old eviction-mirroring pull).
+    void logViewPersistsAcrossPanelToggle() {
+        Logger::install();
+        Logger::setMinLevel(QtInfoMsg);
+
+        LogModel model;
+        model.setFilterCategory(QString());
+        model.setFilterLevel(-1);            // ALL
+        model.setPolling(true);              // panel "open"
+        QTest::qWait(250);
+        const int openRows = model.count();
+        model.setPolling(false);             // panel "closed"
+
+        // Logs happen while the panel is closed (this is the old data-loss
+        // window: the fast poller was stopped and ring eviction ate rows).
+        const quint64 revAtClose = Logger::revision();
+        for (int i = 0; i < 12; ++i)
+            Activity::usage(Activity::Kind::User,
+                            QStringLiteral("closed-window-%1").arg(i));
+        QVERIFY(Logger::revision() > revAtClose);
+
+        model.setPolling(true);              // panel reopened
+        QTest::qWait(250);
+        QVERIFY2(model.count() > openRows,
+                 "entries logged while the panel was closed were lost");
+
+        // The earliest closed-window entry must still be in the view.
+        bool sawEarliest = false;
+        for (int i = 0; i < model.count(); ++i) {
+            const QString msg = model.data(model.index(i, 0),
+                                           LogModel::MessageRole).toString();
+            if (msg.contains(QStringLiteral("closed-window-0"))) { sawEarliest = true; break; }
+        }
+        QVERIFY2(sawEarliest, "the first closed-window entry vanished");
+    }
+
+    // 分类往返契约锁：user 过滤只见 user 行，切回“全部”行数恢复且含 app 行
+    void logModelCategoryRoundTrip() {
+        Logger::install();
+        Logger::setMinLevel(QtInfoMsg);
+
+        Activity::usage(Activity::Kind::User, QStringLiteral("rt.user"));
+        Activity::report(Activity::Kind::App, QStringLiteral("rt.app"));
+
+        LogModel model;
+        model.setFilterCategory(QStringLiteral("nexus.user"));
+        model.setPolling(true);
+        QTest::qWait(300);
+        model.setPolling(false);
+        QVERIFY(model.count() > 0);
+        for (int i = 0; i < model.count(); ++i) {
+            const QString cat = model.data(model.index(i, 0),
+                                           LogModel::CategoryRole).toString();
+            QVERIFY2(cat.startsWith(QStringLiteral("nexus.user")),
+                     qPrintable(QStringLiteral("user filter leaked: %1").arg(cat)));
+        }
+        const int userRows = model.count();
+
+        model.setFilterCategory(QString());   // back to All
+        model.setPolling(true);
+        QTest::qWait(200);
+        model.setPolling(false);
+        QVERIFY2(model.count() > userRows,
+                 "returning to All did not restore the other categories");
+    }
+
+    void logModelCategoryFilter() {
+        // The message handler feeds the ring buffer — install it (the
+        // harness binaries each manage their own Logger lifetime).
+        Logger::install();
+        Logger::setMinLevel(QtInfoMsg);
+
+        // Seed the ring with user + app events, then check the filter
+        Activity::usage(Activity::Kind::User, QStringLiteral("filter.user"));
+        Activity::report(Activity::Kind::App, QStringLiteral("filter.app"));
+
+        LogModel model;
+        model.setFilterCategory(QStringLiteral("nexus.user"));
+        model.setPolling(true);
+        QTest::qWait(300);               // let the 100 ms poller catch up
+        model.setPolling(false);
+
+        QVERIFY(model.count() > 0);
+        for (int i = 0; i < model.count(); ++i) {
+            const QModelIndex idx = model.index(i, 0);
+            const QString cat = model.data(idx, LogModel::CategoryRole).toString();
+            QVERIFY2(cat.startsWith(QStringLiteral("nexus.user")),
+                     qPrintable(QStringLiteral("non-user row in filtered view: %1").arg(cat)));
+        }
+
+        // Switch to "all" → rows of other categories become visible
+        model.setFilterCategory(QString());
+        model.setPolling(true);
+        QTest::qWait(150);
+        model.setPolling(false);
+        bool sawApp = false;
+        for (int i = 0; i < model.count(); ++i) {
+            const QModelIndex idx = model.index(i, 0);
+            const QString cat = model.data(idx, LogModel::CategoryRole).toString();
+            if (cat == QStringLiteral("nexus.app") || cat.isEmpty()) sawApp = true;
+        }
+        QVERIFY2(sawApp, "app rows missing in unfiltered view");
     }
 };
 

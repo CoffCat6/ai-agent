@@ -29,8 +29,10 @@ public:
         QString message;
     };
 
-    // Ring capacity: oldest entries are evicted past it (≈200 KB memory cap).
-    static constexpr int RingCapacity = 1000;
+    // Ring capacity: oldest entries are evicted past it (≈1 MB memory cap).
+    // 5000 so the in-app panel's session view (MaxSessionRows = 5000) can
+    // capture everything the ring saw since startup.
+    static constexpr int RingCapacity = 5000;
 
     static void install();
 

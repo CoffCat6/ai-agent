@@ -1,5 +1,7 @@
 #include "LLMServiceBase.h"
+#include "core/utils/Activity.h"
 
+#include <QElapsedTimer>
 #include <QJsonDocument>
 #include <QJsonObject>
 #include <QNetworkRequest>
@@ -53,7 +55,18 @@ void LLMServiceBase::startReply(QNetworkRequest& request, const QByteArray& body
 void LLMServiceBase::postReply(const LLMRequestContextPtr& ctx) {
     QNetworkReply* reply = m_nam->post(ctx->request, ctx->requestBody);
     ctx->reply = reply;
+    ctx->startMs = m_elapsed.isValid() ? m_elapsed.elapsed() : 0;
+    if (!m_elapsed.isValid()) m_elapsed.start();
     m_current = ctx;
+
+    // OBS/Activity: network start metadata only (never the body) — the
+    // response-side outcome is logged in handleReplyFinished.
+    Activity::report(Activity::Kind::Network,
+                     QStringLiteral("llm request start %1 attempt %2 body %3 B")
+                         .arg(ctx->request.url().toString())
+                         .arg(ctx->attempt)
+                         .arg(ctx->requestBody.size()),
+                     QString::number(ctx->requestId));
 
     connect(reply, &QNetworkReply::readyRead, this, [this, ctx]() {
         if (ctx != m_current || ctx->cancelled) return;
@@ -127,6 +140,26 @@ void LLMServiceBase::handleReplyFinished(const LLMRequestContextPtr& ctx) {
                 << ") - retrying request" << ctx->requestId;
         postReply(ctx);
         return;
+    }
+
+    // Network outcome metadata (privacy: never the response body). Persisted
+    // via the usage sink so network health is traceable across restarts.
+    {
+        const qint64 durationMs = m_elapsed.isValid()
+            ? m_elapsed.elapsed() - ctx->startMs : -1;
+        const QString errorSummary = err == QNetworkReply::NoError
+            ? QString() : errString.left(120);
+        Activity::usage(Activity::Kind::Network,
+                        QStringLiteral("llm_result"),
+                        ctx->request.url().toString(), ctx->requestId,
+                        QStringLiteral("status=%1 duration_ms=%2 bytes=%3 attempt=%4%5")
+                            .arg(status)
+                            .arg(durationMs)
+                            .arg(ctx->rawBody.size())
+                            .arg(ctx->attempt)
+                            .arg(errorSummary.isEmpty()
+                                     ? QString()
+                                     : QStringLiteral(" err=%1").arg(errorSummary)));
     }
 
     // Assemble the streamed response when stream data was received

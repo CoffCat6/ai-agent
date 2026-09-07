@@ -1,4 +1,5 @@
 #include "SettingsService.h"
+#include "core/utils/Activity.h"
 
 #include "core/agent/AIAgent.h"
 #include "core/utils/Logger.h"
@@ -443,6 +444,8 @@ void SettingsService::setSimulationMode(bool enabled) {
 void SettingsService::setAllowFullDiskRead(bool enabled) {
     if (m_allowFullDiskRead == enabled) return;
     m_allowFullDiskRead = enabled;
+    Activity::usage(Activity::Kind::User, QStringLiteral("settings.allowFullDiskRead"),
+                    enabled ? QStringLiteral("on") : QStringLiteral("off"));
     QSettings().setValue("security/allowFullDiskRead", enabled);
     emit allowFullDiskReadChanged();
 }
@@ -451,6 +454,8 @@ void SettingsService::setEmbeddingModel(const QString& model) {
     const QString trimmed = model.trimmed();
     if (trimmed.isEmpty() || m_embeddingModel == trimmed) return;
     m_embeddingModel = trimmed;
+    Activity::usage(Activity::Kind::User, QStringLiteral("settings.embeddingModel"),
+                    trimmed);
     QSettings().setValue("embedding/model", trimmed);
     emit embeddingModelChanged();
 }

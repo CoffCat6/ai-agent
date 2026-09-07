@@ -42,6 +42,8 @@ private slots:
     // Batch 7: Conversation/Memory consistency
     void sqliteConnectionNameCleanedUp();
     void workspaceIdColumnReserved();
+    // 日志增强: usage trail persistence (Batch 12 前日志增强)
+    void usageLogRoundTripAndPrune();
 };
 
 void TestMemory::messageRoundTrip() {
@@ -422,6 +424,45 @@ void TestMemory::workspaceIdColumnReserved() {
     QFile::remove(dbPath);
     QFile::remove(freshPath);
     QDir(dir).removeRecursively();
+}
+
+
+// usage_log: add → load (newest first) → prune by row budget (newest kept).
+void TestMemory::usageLogRoundTripAndPrune() {
+    SqliteMemory memory(":memory:");
+    for (int i = 1; i <= 5; ++i) {
+        memory.addUsageEvent(QStringLiteral("nexus.user"),
+                             QStringLiteral("action%1").arg(i),
+                             QStringLiteral("target%1").arg(i),
+                             static_cast<quint64>(i),
+                             QStringLiteral("d%1").arg(i));
+    }
+
+    const auto events = memory.loadUsageEvents(10);
+    QCOMPARE(events.size(), 5);
+    QCOMPARE(events.at(0).toObject().value("action").toString(),
+             QStringLiteral("action5"));   // newest first
+    QCOMPARE(events.at(4).toObject().value("action").toString(),
+             QStringLiteral("action1"));
+    QCOMPARE(events.at(2).toObject().value("requestId").toDouble(), 3.0);
+    QCOMPARE(events.at(2).toObject().value("category").toString(),
+             QStringLiteral("nexus.user"));
+
+    // Row-budget prune keeps the newest 3
+    memory.pruneUsage(0, 3);
+    QCOMPARE(memory.loadUsageEvents(10).size(), 3);
+    QVERIFY(memory.loadUsageEvents(10).at(0).toObject().value("action")
+                .toString() == QStringLiteral("action5"));
+
+    // Empty detail/target must not violate the NOT NULL constraints
+    // (hotfix: empty QString bound as SQL NULL silently dropped rows —
+    // observed live as "Failed to write usage event" warnings)
+    const int before = memory.loadUsageEvents(100).size();
+    memory.addUsageEvent(QStringLiteral("nexus.network"), QStringLiteral("llm_result"),
+                         QStringLiteral("http://x"), 9, QString());
+    QCOMPARE(memory.loadUsageEvents(100).size(), before + 1);
+    QVERIFY(memory.loadUsageEvents(100).at(0).toObject().value("detail")
+                .toString().isEmpty());
 }
 
 QTEST_GUILESS_MAIN(TestMemory)

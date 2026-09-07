@@ -184,6 +184,22 @@ void SqliteMemory::createTables() {
     execDdl(query, "CREATE INDEX IF NOT EXISTS idx_trace_nodes_session "
                    "ON trace_nodes(session_id, node_order)",
             "create trace_nodes index");
+
+    // Cross-session usage trail (user operations / network outcomes). New
+    // table — no migration needed; retention is enforced by pruneUsage.
+    execDdl(query, R"(
+        CREATE TABLE IF NOT EXISTS usage_log (
+            id INTEGER PRIMARY KEY AUTOINCREMENT,
+            ts INTEGER NOT NULL,
+            category TEXT NOT NULL,
+            action TEXT NOT NULL,
+            target TEXT NOT NULL,
+            request_id INTEGER NOT NULL DEFAULT 0,
+            detail TEXT NOT NULL
+        )
+    )", "create usage_log table");
+    execDdl(query, "CREATE INDEX IF NOT EXISTS idx_usage_ts ON usage_log(ts)",
+            "create usage_log index");
 }
 
 // Schema v1→v2 (Batch 6): documents gain content-hash / embedding-model
@@ -645,6 +661,68 @@ QJsonArray SqliteMemory::loadTraceNodes(const QString& sessionId) {
         qWarning() << "Failed to load trace nodes:" << query.lastError().text();
     }
     return nodes;
+}
+
+// ── Usage trail ─────────────────────────────────────────
+
+void SqliteMemory::addUsageEvent(const QString& category, const QString& action,
+                                 const QString& target, quint64 requestId,
+                                 const QString& detail) {
+    QSqlQuery query(m_db);
+    query.prepare("INSERT INTO usage_log (ts, category, action, target, "
+                  "request_id, detail) VALUES (?, ?, ?, ?, ?, ?)");
+    query.addBindValue(QDateTime::currentDateTime().toMSecsSinceEpoch());
+    query.addBindValue(category);
+    query.addBindValue(action);
+    query.addBindValue(target);
+    query.addBindValue(static_cast<qint64>(requestId));
+    // Empty QString binds as SQL NULL; usage_log.detail is NOT NULL
+    query.addBindValue(detail.isNull() ? QStringLiteral("") : detail);
+    if (!query.exec())
+        qWarning() << "Failed to write usage event:" << query.lastError().text();
+}
+
+QJsonArray SqliteMemory::loadUsageEvents(int limit) const {
+    QSqlQuery query(m_db);
+    query.prepare("SELECT ts, category, action, target, request_id, detail "
+                  "FROM usage_log ORDER BY id DESC LIMIT ?");
+    query.addBindValue(limit);
+
+    QJsonArray entries;
+    if (query.exec()) {
+        while (query.next()) {
+            QJsonObject e;
+            e["timestamp"] = query.value(0).toLongLong();
+            e["category"] = query.value(1).toString();
+            e["action"] = query.value(2).toString();
+            e["target"] = query.value(3).toString();
+            e["requestId"] = static_cast<double>(query.value(4).toLongLong());
+            e["detail"] = query.value(5).toString();
+            entries.append(e);
+        }
+    } else {
+        qWarning() << "Failed to read usage events:" << query.lastError().text();
+    }
+    return entries;
+}
+
+int SqliteMemory::pruneUsage(int keepDays, int maxRows) {
+    QSqlQuery query(m_db);
+    int removed = 0;
+    if (keepDays > 0) {
+        const qint64 cutoff = QDateTime::currentMSecsSinceEpoch()
+                            - static_cast<qint64>(keepDays) * 86400 * 1000;
+        query.prepare("DELETE FROM usage_log WHERE ts < ?");
+        query.addBindValue(cutoff);
+        if (query.exec()) removed += query.numRowsAffected();
+    }
+    if (maxRows > 0) {
+        query.prepare("DELETE FROM usage_log WHERE id NOT IN "
+                      "(SELECT id FROM usage_log ORDER BY id DESC LIMIT ?)");
+        query.addBindValue(maxRows);
+        if (query.exec()) removed += query.numRowsAffected();
+    }
+    return removed;
 }
 
 void SqliteMemory::renameSession(const QString& sessionId, const QString& title) {

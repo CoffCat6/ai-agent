@@ -6,6 +6,7 @@
 #include <QNetworkAccessManager>
 #include <QNetworkReply>
 #include <QSharedPointer>
+#include <QElapsedTimer>
 #include <QString>
 
 class QNetworkRequest;
@@ -31,6 +32,7 @@ struct LLMRequestContext {
     QNetworkRequest request;
     QByteArray requestBody;
     int attempt{0};
+    qint64 startMs{0};   // monotonic ms at (re)post, for network latency logs
     // streaming accumulators
     QByteArray lineBuffer;   // trailing incomplete line
     QByteArray rawBody;      // full raw response (for error diagnostics)
@@ -113,6 +115,7 @@ private:
     QNetworkAccessManager* m_nam;
     LLMRequestContextPtr m_current;   // the only context allowed to accumulate/emit
     quint64 m_lastRequestId{0};
+    QElapsedTimer m_elapsed;   // network latency accounting (Activity logs)
 };
 
 } // namespace NexusAI

@@ -21,8 +21,21 @@ QString levelName(int level) {
 
 LogModel::LogModel(QObject* parent)
     : QAbstractListModel(parent) {
+    // Session capture runs for the whole process lifetime (1 s): rows logged
+    // while the panel is closed are still kept for later viewing.
+    m_captureTimer.setInterval(CaptureIntervalMs);
+    connect(&m_captureTimer, &QTimer::timeout, this, &LogModel::pull);
+    m_captureTimer.start();
+
+    // Panel-open polling accelerates the same pull for smooth live updates.
     m_pollTimer.setInterval(100);
     connect(&m_pollTimer, &QTimer::timeout, this, &LogModel::pull);
+}
+
+void LogModel::trimSessionMirror() {
+    const int excess = m_all.size() - MaxSessionRows;
+    if (excess <= 0) return;
+    m_all.remove(0, excess);
 }
 
 int LogModel::rowCount(const QModelIndex& parent) const {
@@ -70,6 +83,19 @@ void LogModel::setFilterLevel(int level) {
     emit countChanged();
 }
 
+void LogModel::setFilterCategory(const QString& category) {
+    if (m_filterCategory == category) return;
+    m_filterCategory = category;
+    emit filterChanged();
+    beginResetModel();
+    m_visible.clear();
+    for (const auto& entry : m_all) {
+        if (passesFilter(entry)) m_visible.append(entry);
+    }
+    endResetModel();
+    emit countChanged();
+}
+
 QString LogModel::filterText() const { return m_filterText; }
 
 void LogModel::setFilterText(const QString& text) {
@@ -94,6 +120,8 @@ void LogModel::setPolling(bool on) {
         pull();                       // catch up immediately on open
         m_pollTimer.start();
     } else {
+        // Capture keeps running at 1 s in the background — rows logged
+        // while the panel is closed are kept for the next open.
         m_pollTimer.stop();
     }
     emit pollingChanged();
@@ -123,8 +151,15 @@ QString LogModel::toClipboardText() const {
 }
 
 bool LogModel::passesFilter(const Logger::LogEntry& entry) const {
-    // "show this severity and above" (QtMsgType orders debug < info < …)
-    if (entry.level < m_filterLevel) return false;
+    // "show this severity and above" (QtMsgType orders debug < info < …);
+    // m_filterLevel < 0 means ALL — no severity gate.
+    if (m_filterLevel >= 0 && entry.level < m_filterLevel) return false;
+    if (!m_filterCategory.isEmpty()) {
+        // Legacy/general lines have no logging category → treat as "app".
+        const QString cat = entry.category.isEmpty()
+            ? QStringLiteral("nexus.app") : entry.category;
+        if (!cat.startsWith(m_filterCategory)) return false;
+    }
     if (!m_filterText.isEmpty()) {
         if (!entry.message.contains(m_filterText, Qt::CaseInsensitive)
                 && !entry.category.contains(m_filterText, Qt::CaseInsensitive))
@@ -147,23 +182,9 @@ void LogModel::pull() {
     if (fresh.isEmpty()) return;
     m_lastSeq = fresh.last().seq;
 
-    // Mirror ring evictions first: rows for entries the ring dropped must
-    // leave the view.
-    const quint64 oldestKept = fresh.first().seq;
-    bool removed = false;
-    while (!m_all.isEmpty() && m_all.first().seq < oldestKept) {
-        const int row = rowOfSeq(m_all.first().seq);
-        if (row >= 0) {
-            beginRemoveRows(QModelIndex(), row, row);
-            m_visible.removeAt(row);
-            endRemoveRows();
-        }
-        m_all.removeFirst();
-        removed = true;
-    }
-    if (removed) emit countChanged();
-
-    // Append new entries (and their filtered rows)
+    // Append-only session log (日志增强二轮): rows already in the view stay
+    // even when the ring evicts them — ring evictions no longer remove
+    // anything. The session mirror itself is capped for memory safety.
     int inserted = 0;
     for (const auto& entry : fresh) {
         m_all.append(entry);
@@ -175,6 +196,7 @@ void LogModel::pull() {
             ++inserted;
         }
     }
+    trimSessionMirror();
     if (inserted > 0) emit countChanged();
 }
 
