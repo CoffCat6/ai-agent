@@ -11,6 +11,7 @@
 #include <QtDebug>
 
 #include <cstdio>
+#include <vector>
 
 namespace NexusAI {
 
@@ -21,6 +22,12 @@ QFile g_file;
 QString g_filePath;
 QtMsgType g_minLevel = QtInfoMsg;
 
+// In-process ring buffer for the in-app log panel (doc 6 §3.1): bounded to
+// Logger::RingCapacity, guarded by g_mutex, filled AFTER the level filter
+// so filtered levels never consume ring space.
+std::vector<Logger::LogEntry> g_ring;
+quint64 g_nextSeq = 1;
+
 const char* levelName(QtMsgType type) {
     switch (type) {
     case QtDebugMsg:    return "DEBUG";
@@ -30,6 +37,21 @@ const char* levelName(QtMsgType type) {
     case QtFatalMsg:    return "FATAL";
     }
     return "LOG";
+}
+
+// Severity ranking: QtMsgType's declaration order is NOT a severity order
+// (QtInfoMsg = 4 ranks above QtFatalMsg = 3), so threshold comparisons must
+// go through this mapping. Exposed by the doc-6 log-panel tests: with
+// minLevel = Warning, qInfo lines passed `type < g_minLevel`.
+int severityRank(QtMsgType type) {
+    switch (type) {
+    case QtDebugMsg:    return 0;
+    case QtInfoMsg:     return 1;
+    case QtWarningMsg:  return 2;
+    case QtCriticalMsg: return 3;
+    case QtFatalMsg:    return 4;
+    }
+    return 4;
 }
 
 bool parseLevel(const QString& name, QtMsgType& out) {
@@ -52,8 +74,8 @@ void pruneOldLogs(const QDir& dir, int keep = 7) {
 }
 
 void messageHandler(QtMsgType type, const QMessageLogContext& context, const QString& message) {
-    // Level filter (Fatal can never be below the threshold)
-    if (type < g_minLevel) return;
+    // Level filter by severity rank (Fatal can never be below the threshold)
+    if (severityRank(type) < severityRank(g_minLevel)) return;
 
     QMutexLocker locker(&g_mutex);
 
@@ -65,6 +87,21 @@ void messageHandler(QtMsgType type, const QMessageLogContext& context, const QSt
     line += " " + message;
     if ((type == QtWarningMsg || type == QtCriticalMsg) && context.file)
         line += QString(" (%1:%2)").arg(context.file).arg(context.line);
+
+    // Ring buffer for the in-app log panel (doc 6 §3.1). Best effort for
+    // Fatal: the entry lands here before abort() below.
+    {
+        Logger::LogEntry entry;
+        entry.seq = g_nextSeq++;
+        entry.timestamp = QDateTime::currentMSecsSinceEpoch();
+        entry.level = static_cast<int>(type);
+        entry.category = (context.category && *context.category)
+            ? QString::fromLatin1(context.category) : QString();
+        entry.message = message;
+        g_ring.push_back(entry);
+        while (static_cast<int>(g_ring.size()) > Logger::RingCapacity)
+            g_ring.erase(g_ring.begin());
+    }
 
     // (Re)open the target file when the day changed or on first message.
     const QString dirPath = Logger::logDir();
@@ -110,6 +147,32 @@ QString Logger::logFilePath() {
 void Logger::setMinLevel(QtMsgType level) {
     QMutexLocker locker(&g_mutex);
     g_minLevel = level;
+}
+
+QtMsgType Logger::minLevel() {
+    QMutexLocker locker(&g_mutex);
+    return g_minLevel;
+}
+
+QtMsgType Logger::levelFromName(const QString& name, QtMsgType fallback) {
+    QtMsgType parsed = fallback;
+    parseLevel(name, parsed);
+    return parsed;
+}
+
+quint64 Logger::revision() {
+    QMutexLocker locker(&g_mutex);
+    return g_nextSeq - 1;
+}
+
+QVector<Logger::LogEntry> Logger::entriesSince(quint64 seq) {
+    QMutexLocker locker(&g_mutex);
+    QVector<LogEntry> out;
+    for (const auto& entry : g_ring) {
+        if (entry.seq > seq)
+            out.append(entry);
+    }
+    return out;
 }
 
 void Logger::install() {

@@ -8,6 +8,7 @@
 #include "core/utils/TokenEstimator.h"
 
 #include <QClipboard>
+#include <QDesktopServices>
 #include <QDateTime>
 #include <QFile>
 #include <QFileInfo>
@@ -39,7 +40,8 @@ AgentViewModel* AgentViewModel::create(QQmlEngine*, QJSEngine*) {
 }
 
 AgentViewModel::AgentViewModel(QObject* parent)
-    : QObject(parent) {
+    : QObject(parent)
+    , m_logModel(new LogModel(this)) {
     initToolRegistry();
     m_simTimer.setSingleShot(true);
     connect(&m_simTimer, &QTimer::timeout, this, &AgentViewModel::simulationStep);
@@ -266,6 +268,9 @@ void AgentViewModel::startIngestion(const QString& name, const QString& content,
             emit noticeOccurred(tr("已导入 %1（%2 段）").arg(name).arg(chunks));
         } else if (chunks == 0) {
             emit errorOccurred(tr("导入失败（文件为空或无法分块）：%1").arg(name));
+        } else if (chunks == -3) {
+            emit errorOccurred(tr("知识库总量已达上限（最多 %1 段），请先删除部分文档后再导入")
+                .arg(m_rag ? m_rag->maxTotalChunks() : RagService::MaxTotalChunks));
         } else {
             emit errorOccurred(tr("文件过大（超过单文档 %1 段上限）：%2")
                 .arg(RagService::MaxChunksPerDocument).arg(name));
@@ -555,6 +560,13 @@ void AgentViewModel::cancel() {
 void AgentViewModel::copyToClipboard(const QString& text) {
     if (!text.isEmpty())
         QGuiApplication::clipboard()->setText(text);
+}
+
+// 日志开发 doc 6 §3.3: open the rotating log directory at the current file
+void AgentViewModel::openLogFolder() {
+    const QString dir = Logger::logDir();
+    if (!dir.isEmpty())
+        QDesktopServices::openUrl(QUrl::fromLocalFile(dir));
 }
 
 // ── Simulation (fallback when no agent attached) ─────────

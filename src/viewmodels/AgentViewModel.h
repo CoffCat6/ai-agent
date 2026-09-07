@@ -10,6 +10,7 @@
 
 #include "core/agent/AgentState.h"
 #include "TraceModel.h"
+#include "LogModel.h"
 
 namespace NexusAI {
 
@@ -86,6 +87,9 @@ class AgentViewModel : public QObject {
     // ── Pipeline mode ─────────────────────────────────
     Q_PROPERTY(bool liveMode READ liveMode NOTIFY liveModeChanged FINAL)
 
+    // ── In-app log panel (日志开发 doc 6) ──────────────
+    Q_PROPERTY(LogModel* logModel READ logModel CONSTANT)
+
 public:
     // No default constructor on purpose: a default-constructible
     // QML_SINGLETON makes the engine prefer Constructor over the create()
@@ -98,6 +102,10 @@ public:
     // injection happens there); the engine picks the same object up through
     // create() when loading the UI.
     static AgentViewModel* instance();
+
+    // In-app log panel: live log model + log-directory opener (doc 6)
+    LogModel* logModel() const { return m_logModel; }
+    Q_INVOKABLE void openLogFolder();
 
     // FEAT-803: batch-embedding progress (wired from OllamaEmbedding)
     int knowledgeEmbedDone() const { return m_embedDone; }
@@ -274,6 +282,7 @@ private:
     bool m_knowledgeBusy{false};
     int m_embedDone{0};
     int m_embedTotal{0};
+    LogModel* m_logModel;
 
     // ── Simulation ────────────────────────────────────
     QTimer m_simTimer;

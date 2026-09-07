@@ -45,6 +45,7 @@ ApplicationWindow {
 
             onSettingsRequested: settingsDialog.open()
             onAuditRequested: auditDialog.open()
+            onLogsRequested: logPanel.open()
         }
 
         // ── Sidebar / Chat Splitter ────────────────────
@@ -224,6 +225,12 @@ ApplicationWindow {
     // ── Audit Log Dialog ──────────────────────────────
     AuditDialog {
         id: auditDialog
+        parent: Overlay.overlay
+    }
+
+    // ── Runtime Log Panel (日志开发 doc 6) ─────────────
+    LogPanel {
+        id: logPanel
         parent: Overlay.overlay
     }
 

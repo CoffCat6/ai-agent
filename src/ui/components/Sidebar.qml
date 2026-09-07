@@ -13,6 +13,7 @@ Rectangle {
 
     signal settingsRequested()
     signal auditRequested()
+    signal logsRequested()
 
     color: Theme.bgSecondary
     border.width: 0
@@ -332,6 +333,14 @@ Rectangle {
                 anchors.leftMargin: 12
                 anchors.rightMargin: 12
                 spacing: 4
+
+                // Runtime log panel (日志开发 doc 6): leftmost entry
+                IconButton {
+                    icon: "terminal"
+                    iconSize: 17
+                    tooltip: qsTr("日志")
+                    onClicked: root.logsRequested()
+                }
 
                 // Audit log button
                 IconButton {

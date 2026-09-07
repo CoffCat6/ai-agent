@@ -31,6 +31,7 @@ class SettingsService : public QObject {
     Q_PROPERTY(bool simulationMode READ simulationMode WRITE setSimulationMode NOTIFY simulationModeChanged)
     Q_PROPERTY(bool allowFullDiskRead READ allowFullDiskRead WRITE setAllowFullDiskRead NOTIFY allowFullDiskReadChanged)
     Q_PROPERTY(QString embeddingModel READ embeddingModel WRITE setEmbeddingModel NOTIFY embeddingModelChanged)
+    Q_PROPERTY(QString logLevel READ logLevel WRITE setLogLevel NOTIFY logLevelChanged)
     Q_PROPERTY(QString appVersion READ appVersion CONSTANT)
 
 public:
@@ -61,6 +62,12 @@ public:
     QString embeddingModel() const { return m_embeddingModel; }
     void setEmbeddingModel(const QString& model);
 
+    // Runtime-log minimum level (日志开发 doc 6 §3.5): reuses the
+    // logging/level key that Logger::install() reads at startup, applies
+    // immediately via Logger::setMinLevel. NEXUSAI_LOG_LEVEL still wins.
+    QString logLevel() const { return m_logLevel; }
+    void setLogLevel(const QString& level);
+
     static QString appVersion() { return QCoreApplication::applicationVersion(); }
 
     // ── Profile management (QML invokables) ───────────
@@ -88,6 +95,7 @@ signals:
     void simulationModeChanged();
     void allowFullDiskReadChanged();
     void embeddingModelChanged();
+    void logLevelChanged();
 
 private:
     void load();
@@ -100,6 +108,7 @@ private:
     bool m_simulationMode{false};
     bool m_allowFullDiskRead{false};
     QString m_embeddingModel{QStringLiteral("nomic-embed-text")};
+    QString m_logLevel{QStringLiteral("info")};
 
     static SettingsService* s_instance;
 };

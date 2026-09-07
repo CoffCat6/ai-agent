@@ -81,6 +81,8 @@ target_link_libraries(nexus_infra PUBLIC nexus_core Qt6::Network)
 add_library(nexus_viewmodels STATIC
     src/viewmodels/TraceModel.h
     src/viewmodels/TraceModel.cpp
+    src/viewmodels/LogModel.h
+    src/viewmodels/LogModel.cpp
 )
 qt_add_qml_module(nexus_viewmodels
     URI NexusAI.ViewModels
@@ -128,6 +130,7 @@ qt_add_qml_module(nexus_ai
         src/ui/components/IconButton.qml
         src/ui/components/SettingsDialog.qml
         src/ui/components/AuditDialog.qml
+    src/ui/components/LogPanel.qml
         src/ui/components/KnowledgeDocDialog.qml
         src/ui/components/AgentTraceNode.qml
         src/ui/components/InputConsole.qml

@@ -74,6 +74,17 @@ Canvas {
             polyline(c, [4.8, 19.2, 5.7, 15.8, 16, 5.5, 18.5, 8, 8.2, 18.3, 4.8, 19.2])
             line(c, 14.4, 7.1, 16.9, 9.6)
         },
+        "terminal": function(c) {
+            c.lineWidth = 1.6
+            c.strokeStyle = c.fillStyle
+            c.beginPath()
+            c.rect(3, 4, 18, 16)
+            c.stroke()
+            c.beginPath()
+            c.moveTo(7, 9); c.lineTo(10.5, 12); c.lineTo(7, 15)
+            c.moveTo(12.5, 15); c.lineTo(17, 15)
+            c.stroke()
+        },
         "shield": function(c) {
             filled(c, function(k) {
                 k.moveTo(12, 3.5); k.lineTo(18.5, 6); k.lineTo(18.5, 11.2)

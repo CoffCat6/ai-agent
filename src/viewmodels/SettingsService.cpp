@@ -1,6 +1,7 @@
 #include "SettingsService.h"
 
 #include "core/agent/AIAgent.h"
+#include "core/utils/Logger.h"
 
 #include <QJsonArray>
 #include <QJsonDocument>
@@ -211,6 +212,10 @@ void SettingsService::load() {
     m_simulationMode = settings.value("simulationMode", false).toBool();
     m_allowFullDiskRead = settings.value("security/allowFullDiskRead", false).toBool();
     m_embeddingModel = settings.value("embedding/model", QStringLiteral("nomic-embed-text")).toString();
+    // logging/level is Logger::install()'s key; the env override still wins
+    // there, so load() only mirrors the stored value (install() already
+    // applied the effective level before any UI exists).
+    m_logLevel = settings.value("logging/level", QStringLiteral("info")).toString();
 }
 
 // Single-provider layout (pre-0.3): provider, apiKey, <provider>/baseUrl,
@@ -448,6 +453,15 @@ void SettingsService::setEmbeddingModel(const QString& model) {
     m_embeddingModel = trimmed;
     QSettings().setValue("embedding/model", trimmed);
     emit embeddingModelChanged();
+}
+
+void SettingsService::setLogLevel(const QString& level) {
+    const QString normalized = level.trimmed().toLower();
+    if (normalized.isEmpty() || m_logLevel == normalized) return;
+    m_logLevel = normalized;
+    QSettings().setValue("logging/level", normalized);
+    Logger::setMinLevel(Logger::levelFromName(normalized, Logger::minLevel()));
+    emit logLevelChanged();
 }
 
 } // namespace NexusAI

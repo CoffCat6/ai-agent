@@ -63,3 +63,4 @@ ctest --test-dir build --output-on-failure
 - [2-部署与个人使用指南](docs/read_files/2-部署与个人使用指南.md) —— 构建、配置、备份与故障排查
 - [3-接口与扩展开发指南](docs/read_files/3-接口与扩展开发指南.md) —— 新增工具 / Provider / 界面
 - [4-用户手册](docs/read_files/4-用户手册.md) —— 面向使用者的操作说明
+- [6-日志开发](docs/6-日志开发.md) —— 日志信息可视化开发计划（规划中）

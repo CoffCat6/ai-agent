@@ -587,6 +587,26 @@ Dialog {
                 font.family: Theme.fontSans
             }
 
+            ColumnLayout {
+                Layout.fillWidth: true
+                spacing: 4
+
+                Text {
+                    text: qsTr("日志级别（即时生效；环境变量 NEXUSAI_LOG_LEVEL 优先）")
+                    color: Theme.textSecondary
+                    font.pixelSize: Theme.fontSizeCaption
+                    font.family: Theme.fontMono
+                }
+                ComboBox {
+                    id: logLevelBox
+                    Layout.preferredWidth: 220
+                    model: ["debug", "info", "warning", "critical"]
+                    onActivated: function(index) { Settings.logLevel = currentText; }
+                    Component.onCompleted: currentIndex = indexOf(Settings.logLevel) >= 0
+                        ? indexOf(Settings.logLevel) : 1
+                }
+            }
+
             Text {
                 text: qsTr("隐私提示：知识库文档内容与工具结果会随请求发送给当前模型服务——选择云端 Provider（OpenAI/Anthropic 兼容接口）时，这些数据将离开本机。")
                 color: Theme.textSecondary
