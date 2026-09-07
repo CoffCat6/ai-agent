@@ -18,6 +18,12 @@ public:
         QSettings s("NexusAI", "NexusAI");
         rawProfiles = s.value("modelProfiles");
         activeId = s.value("activeProfileId");
+        // Also guard the keys suites actually write; without this the tests
+        // leaked settings into the user's real app (e.g. logging/level,
+        // embedding/model, the security/allowFullDiskRead sandbox switch).
+        loggingLevel = s.value("logging/level");
+        embeddingModel = s.value("embedding/model");
+        allowFullDiskRead = s.value("security/allowFullDiskRead");
     }
     ~SettingsGuard() {
         QSettings s("NexusAI", "NexusAI");
@@ -25,9 +31,19 @@ public:
         else s.remove("modelProfiles");
         if (activeId.isValid()) s.setValue("activeProfileId", activeId);
         else s.remove("activeProfileId");
+        if (loggingLevel.isValid()) s.setValue("logging/level", loggingLevel);
+        else s.remove("logging/level");
+        if (embeddingModel.isValid()) s.setValue("embedding/model", embeddingModel);
+        else s.remove("embedding/model");
+        if (allowFullDiskRead.isValid())
+            s.setValue("security/allowFullDiskRead", allowFullDiskRead);
+        else s.remove("security/allowFullDiskRead");
     }
     QVariant rawProfiles;
     QVariant activeId;
+    QVariant loggingLevel;
+    QVariant embeddingModel;
+    QVariant allowFullDiskRead;
 };
 
 } // namespace

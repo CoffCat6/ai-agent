@@ -6,9 +6,12 @@
 
 - **ReAct 智能体管线**：思考 → 工具调用 → 结果回灌的完整循环，带步数预算、防重复调用守卫、流式输出与随时中止
 - **多模型多配置**：OpenAI 兼容 / Anthropic / Ollama 三种 Provider，多 profile 管理与主界面快速切换
-- **工具沙箱**：三级安全策略（直接执行 / 用户确认 / 永禁用），路径黑白名单 + 全量审计日志
-- **知识库 RAG**：中文友好分块、Ollama 向量嵌入（离线自动降级本地伪嵌入）、本地知识库管理与检索
+- **工具沙箱**：三级安全策略（直接执行 / 用户确认 / 永禁用），读取默认限制在用户目录（可设置中开启全盘读取），路径黑白名单 + 全量审计日志
+- **知识库 RAG**：中文友好分块、Ollama 向量嵌入（可配置模型，离线自动降级本地伪嵌入）、内容去重与同名共存、向量持久化（重启秒级恢复）、本地知识库管理与检索
 - **会话持久化**：SQLite 保存消息、思考轨迹、审计与知识库；重开应用恢复完整时间线
+- **可观测性**：内置实时日志面板（分类/级别/关键词筛选），审计链凭 request_id 串起 LLM 请求、工具执行与任务结果，使用与网络事件独立留存（usage_log，30 天/10000 行保留）
+- **稳定性**：网络瞬时失败自动重试一次、任务超时自动封口收敛、上下文预算计入工具调用与工具定义、知识库总量预算（默认 4096 段）
+- **日志面板**：侧栏入口打开实时日志视图，级别/分类/关键词三维筛选，一键复制与打开日志目录
 
 ## 目录结构
 
@@ -44,13 +47,13 @@ cmake --build build
 ctest --test-dir build --output-on-failure
 ```
 
-覆盖范围：沙箱策略、Token 估算、三家 LLM 响应解析、SQLite 记忆、RAG、ReAct 全流程、嵌入分页与进度、ViewModel、设置服务。
+覆盖范围：沙箱策略、Token 估算、三家 LLM 响应解析、SQLite 记忆、RAG、ReAct 全流程、嵌入分页与进度、ViewModel、设置服务、日志（环形缓冲/Activity 分类）、Provider 请求生命周期与并发隔离，共 12 套件约 160 用例。
 
 ## 配置与数据位置
 
 - 模型配置：QSettings（Windows 注册表 `HKCU\Software\NexusAI\NexusAI`），API Key 在 Windows 上经 DPAPI 按用户加密存储
 - 应用数据：`%APPDATA%\NexusAI\NexusAI\nexusai_memory.db`（消息 / 轨迹 / 审计 / 知识库）
-- 运行日志：`%APPDATA%\NexusAI\NexusAI\logs\`，按天轮转保留 7 天
+- 运行日志：`%LOCALAPPDATA%/NexusAI/NexusAI/logs/`，按天轮转保留 7 天；使用/网络事件另存 usage_log（同一数据库，保留 30 天/10000 行）
 
 ## 更多文档
 
@@ -63,4 +66,4 @@ ctest --test-dir build --output-on-failure
 - [2-部署与个人使用指南](docs/read_files/2-部署与个人使用指南.md) —— 构建、配置、备份与故障排查
 - [3-接口与扩展开发指南](docs/read_files/3-接口与扩展开发指南.md) —— 新增工具 / Provider / 界面
 - [4-用户手册](docs/read_files/4-用户手册.md) —— 面向使用者的操作说明
-- [6-日志开发](docs/6-日志开发.md) —— 日志信息可视化开发计划（规划中）
+- [6-日志开发](docs/6-日志开发.md) —— 日志信息可视化（已落地：环形缓冲/LogModel/LogPanel/分类事件流）；[5-完善计划](docs/5-完善计划.md) —— 架构审计与 Batch 0-12 执行实录
