@@ -49,6 +49,45 @@ private slots:
     void compressInsertsMarker();
     void compressGiantLastTurnBestEffort();
     void compressNoUserAnchorUnchanged();
+    // Batch 10 (REL-1002): token accounting must include assistant
+    // tool_calls arguments and the tools schema sent with each request.
+    void estimateCountsToolCallsAndSchema() {
+        QJsonObject plain;
+        plain["role"] = QStringLiteral("assistant");
+        plain["content"] = QStringLiteral("hello");
+        const int plainTokens = TokenEstimator::estimateTokens(plain);
+
+        QJsonObject withCalls;
+        withCalls["role"] = QStringLiteral("assistant");
+        withCalls["content"] = QJsonValue();   // null when only tool calls
+        QJsonArray calls;
+        QJsonObject call;
+        call["id"] = QStringLiteral("c1");
+        call["type"] = QStringLiteral("function");
+        QJsonObject fn;
+        fn["name"] = QStringLiteral("write_file");
+        fn["arguments"] = QString(800, u'a');   // long JSON arguments
+        call["function"] = fn;
+        calls.append(call);
+        withCalls["tool_calls"] = calls;
+        const int callTokens = TokenEstimator::estimateTokens(withCalls);
+
+        QVERIFY2(callTokens > plainTokens + 100,
+                 "tool_calls arguments are not counted");
+
+        QJsonArray tools;
+        QJsonObject tool;
+        tool["type"] = QStringLiteral("function");
+        QJsonObject tfn;
+        tfn["name"] = QStringLiteral("search_knowledge_base");
+        tfn["description"] = QString(600, u'd');
+        tfn["parameters"] = QJsonObject{{"type", QStringLiteral("object")}};
+        tool["function"] = tfn;
+        tools.append(tool);
+        QVERIFY2(TokenEstimator::estimateToolsSchema(tools) > 100,
+                 "tools schema is not counted");
+    }
+
 };
 
 void TestTokenEstimator::estimateBasics() {

@@ -39,12 +39,17 @@ public:
 
     // Audit trail for tool activity (optional capability; default no-ops).
     // events: tool_execute / tool_approved / tool_declined / tool_blocked /
-    // unknown_tool
+    // unknown_tool / llm_request / task_complete (Batch 11).
+    // Observability params (OBS-1102): requestId links every row of one
+    // request; latency/tokens/model annotate llm_request and task_complete.
     virtual void logAudit(const QString& sessionId, const QString& event,
                           const QString& toolName, const QString& arguments,
-                          bool success, const QString& detail) {
+                          bool success, const QString& detail,
+                          quint64 requestId = 0, qint64 latencyMs = -1,
+                          int tokens = 0, const QString& model = QString()) {
         Q_UNUSED(sessionId); Q_UNUSED(event); Q_UNUSED(toolName);
         Q_UNUSED(arguments); Q_UNUSED(success); Q_UNUSED(detail);
+        Q_UNUSED(requestId); Q_UNUSED(latencyMs); Q_UNUSED(tokens); Q_UNUSED(model);
     }
     virtual QJsonArray auditLog(int limit = 100) {
         Q_UNUSED(limit);

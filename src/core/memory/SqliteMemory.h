@@ -35,7 +35,9 @@ public:
     // Audit trail
     void logAudit(const QString& sessionId, const QString& event,
                   const QString& toolName, const QString& arguments,
-                  bool success, const QString& detail) override;
+                  bool success, const QString& detail,
+                  quint64 requestId = 0, qint64 latencyMs = -1,
+                  int tokens = 0, const QString& model = QString()) override;
     QJsonArray auditLog(int limit = 100) override;
 
     // Knowledge-base persistence (v2): documents keep their content hash and

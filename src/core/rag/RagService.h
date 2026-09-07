@@ -86,6 +86,13 @@ public:
     int documentCount() const; // total chunks across documents
 
     static constexpr int MaxChunksPerDocument = 512;
+    static constexpr int MaxTotalChunks = 4096;
+
+    // REL-1003: knowledge-base-wide chunk budget (ingest returns -3 past
+    // it; removal frees budget). Configurable for tests; the shipped
+    // default is MaxTotalChunks.
+    void setMaxTotalChunks(int cap);
+    int maxTotalChunks() const { return m_maxTotalChunks; }
 
 signals:
     void changed();
@@ -102,8 +109,9 @@ private:
         std::unique_ptr<DocumentRetriever> retriever;
     };
 
-    void dropDocumentLocked(const QString& sourceName);
+    int dropDocumentLocked(const QString& sourceName); // returns removed chunk count
     bool hasDocumentLocked(const QString& sourceName) const;
+    int totalChunksLocked() const;
     // Chunk + embed outside the lock; nullptr with *chunksOut = 0 (empty) or
     // -1 (oversize). Shared by ingestDocument / ingestRestoredDocument.
     std::unique_ptr<DocumentRetriever> buildRetriever(const QString& sourceName,
@@ -119,6 +127,7 @@ private:
     std::vector<Document> m_docs; // move-only elements -> std::vector
     mutable QMutex m_mutex; // ingest/remove/search may run on different threads
     quint64 m_restoreGeneration{0}; // bumped by clear()/removeDocument()
+    int m_maxTotalChunks{MaxTotalChunks};
 
     // Query-embedding cache (KB-605): one network round-trip per unique
     // query text; invalidated when the embedder changes. Keyed by text.

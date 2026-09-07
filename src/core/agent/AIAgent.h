@@ -61,8 +61,15 @@ public:
     void setContextLimit(int tokens);
     int contextLimit() const { return m_contextLimit; }
 
+    // REL-1001: hard wall-clock budget for one startTask. On expiry the
+    // task is sealed (pending/confirm/executing calls) and converges into a
+    // final response. 0 disables the timeout.
+    void setTaskTimeoutMs(int ms);
+    int taskTimeoutMs() const { return m_taskTimeoutMs; }
+
     AgentState state() const { return m_state; }
     bool isActive() const { return m_active; }
+    QString currentModel() const;   // configured model identity (audit rows)
     QJsonArray messages() const { return m_messages; }
     QJsonArray traceModel() const { return m_traceModel; }
     QString lastResponse() const { return m_lastResponse; }
@@ -101,7 +108,8 @@ private:
     void notifyTokens();
 
     void processIteration();
-    void applyContextBudget();
+    void applyContextBudget(int reservedTokens);
+    void onTaskTimeout();
     void onRequestStarted(quint64 requestId);
     void onLLMResponse(const LLMResponse& response);
     void onLLMError(const QString& error);
@@ -169,6 +177,10 @@ private:
     // chatComplete time; never becomes part of the conversation history.
     QString m_forcedFinalPush;
 
+    // REL-1001: task wall-clock budget
+    QTimer m_taskTimeoutTimer;
+    int m_taskTimeoutMs{300000};
+
     // Streaming display state
     QTimer m_streamTimer;
     QString m_streamText;
@@ -184,6 +196,12 @@ private:
     // Request the LLM service last dispatched for us (requestStarted echo);
     // responses carrying a different non-zero id are dropped (ARCH-402).
     quint64 m_activeRequestId{0};
+    // Observability (Batch 11): per-request latency/token accounting and the
+    // wall-clock start of the running task.
+    qint64 m_requestStartMs{-1};
+    qint64 m_lastLatencyMs{-1};
+    int m_lastTokensUsed{0};
+    qint64 m_taskStartMs{-1};
     // Process-global tool_call_id fallback counter + session-scoped set of
     // ids already in the history: agent-generated or provider-fallback ids
     // ("call_0") repeat across turns, and strict proxies reject duplicates.

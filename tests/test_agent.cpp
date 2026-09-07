@@ -54,6 +54,7 @@ public:
     void setApiKey(const QString&) override {}
     void setModel(const QString&) override {}
     void setBaseUrl(const QString&) override {}
+    QString model() const override { return QStringLiteral("fake-model"); }
 
     void reset() {
         seenMessages.clear();
@@ -197,6 +198,46 @@ BlockingTool* registerBlockingTool() {
     return tool;
 }
 
+// A Safe tool that can produce every anomaly the plan's Tool matrix lists,
+// driven by a "mode" argument (deterministic anomalies for TEST-903).
+class AnomalyTool : public ITool {
+public:
+    ToolDefinition definition() const override {
+        ToolDefinition def;
+        def.name = QStringLiteral("test_anomaly");
+        def.description = QStringLiteral("Test helper: mode-driven anomalies.");
+        def.level = ToolLevel::Safe;
+        def.parameters = QJsonObject{
+            {"type", "object"},
+            {"properties", QJsonObject{{"mode", QJsonObject{{"type", "string"}}}}},
+            {"required", QJsonArray{QJsonValue(QStringLiteral("mode"))}}};
+        return def;
+    }
+    ToolResult execute(const QJsonObject& args) override {
+        const QString mode = args.value("mode").toString();
+        if (mode == QStringLiteral("fail")) return ToolResult::fail(QStringLiteral("boom"));
+        if (mode == QStringLiteral("empty")) return ToolResult::ok(QString());
+        if (mode == QStringLiteral("huge")) return ToolResult::ok(QString(20000, u'x'));
+        return ToolResult::ok(QStringLiteral("fine"));
+    }
+};
+
+void registerAnomalyTool() {
+    if (!ToolRegistry::instance().isRegistered(QStringLiteral("test_anomaly"))) {
+        ToolRegistry::instance().registerTool(std::make_unique<AnomalyTool>());
+    }
+}
+
+// Batch 11: audit rows now include llm_request / task_complete observability
+// entries alongside the tool events — matrix tests count by EVENT TYPE.
+int auditCountByEvent(const QJsonArray& audit, const QString& event) {
+    int n = 0;
+    for (const auto& entry : audit) {
+        if (entry.toObject().value("event").toString() == event) ++n;
+    }
+    return n;
+}
+
 bool traceHasRunningToolCall(const QJsonArray& trace, const QString& name) {
     for (const auto& entry : trace) {
         const QJsonObject node = entry.toObject();
@@ -269,6 +310,14 @@ private slots:
     void staleResponseFromSupersededRequestIgnored();
     // Batch 7: resume semantics contract (MEM-701)
     void resumeKeepsCleanHistoryAcrossTurns();
+    // Batch 9: test-matrix completion (TEST-902/903)
+    void toolAnomalyPathsConverge();
+    void multipleDistinctToolCallsInOneResponse();
+    void concurrentAgentsStayIsolated();
+    // Batch 10: stability (REL-1001/1003)
+    void taskTimeoutSealsAndConverges();
+    // Batch 11: observability (OBS-1101/1102/1103)
+    void auditCarriesRequestContext();
 };
 
 void TestAgent::directCompletion() {
@@ -610,10 +659,24 @@ void TestAgent::auditTrailRecorded() {
     QCOMPARE(agent.state(), AgentState::Completed); // converged after rejection
 
     const QJsonArray audit = memory.auditLog(20);
-    QCOMPARE(audit.size(), 1);
-    QCOMPARE(audit.at(0).toObject().value("event").toString(), QStringLiteral("tool_declined"));
-    QCOMPARE(audit.at(0).toObject().value("toolName").toString(), QStringLiteral("write_file"));
-    QVERIFY(!audit.at(0).toObject().value("success").toBool());
+    // Batch 11: llm_request/task_complete rows join the tool events —
+    // count by event type, not by total rows.
+    QCOMPARE(auditCountByEvent(audit, QStringLiteral("tool_declined")), 1);
+    // The declined row carries the tool identity...
+    for (const auto& entry : audit) {
+        const QJsonObject row = entry.toObject();
+        if (row.value("event").toString() == QStringLiteral("tool_declined")) {
+            QCOMPARE(row.value("toolName").toString(), QStringLiteral("write_file"));
+            break;
+        }
+    }
+    // ...and the newest row closes the chain with the outcome.
+    // task_complete is a task-level event — toolName stays empty by design;
+    // success=true because the task converged (decline is a valid outcome).
+    QCOMPARE(audit.at(0).toObject().value("event").toString(),
+             QStringLiteral("task_complete"));
+    QVERIFY(audit.at(0).toObject().value("toolName").toString().isEmpty());
+    QVERIFY(audit.at(0).toObject().value("success").toBool());
 
     // Safe tool execution produces tool_execute entries (declined entry + execute)
     agent.resetSession();
@@ -626,10 +689,19 @@ void TestAgent::auditTrailRecorded() {
     QTRY_COMPARE_WITH_TIMEOUT(spy.count(), 1, 15000);
 
     const QJsonArray audit2 = memory.auditLog(20);
-    QCOMPARE(audit2.size(), 2);
-    QCOMPARE(audit2.at(0).toObject().value("event").toString(), QStringLiteral("tool_execute"));
-    QCOMPARE(audit2.at(0).toObject().value("toolName").toString(), QStringLiteral("read_file"));
-    QVERIFY(audit2.at(0).toObject().value("success").toBool());
+    QCOMPARE(auditCountByEvent(audit2, QStringLiteral("tool_execute")), 1);
+    // The read task's tool_execute row exists; the newest row (task_complete)
+    // closes the chain. Find tool_execute by event, not by position.
+    for (const auto& entry : audit2) {
+        const QJsonObject row = entry.toObject();
+        if (row.value("event").toString() == QStringLiteral("tool_execute")) {
+            QCOMPARE(row.value("toolName").toString(), QStringLiteral("read_file"));
+            QVERIFY(row.value("success").toBool());
+            break;
+        }
+    }
+    QCOMPARE(audit2.at(0).toObject().value("event").toString(),
+             QStringLiteral("task_complete"));
 
     agent.setMemory(nullptr);
 }
@@ -656,7 +728,7 @@ void TestAgent::knowledgeThenNormalQuestion() {
     QTRY_COMPARE_WITH_TIMEOUT(spy.count(), 1, 15000);
     QCOMPARE(agent.state(), AgentState::Completed);
     QCOMPARE(llm.seenMessages.size(), 2);    // tool round + final answer
-    QCOMPARE(memory.auditLog(50).size(), 1); // exactly one tool_execute
+    QCOMPARE(auditCountByEvent(memory.auditLog(50), QStringLiteral("tool_execute")), 1);
 
     // Task 2 (SAME session): ordinary question. A clean provider returns no
     // tool calls, so the agent must answer in a single LLM round and must
@@ -667,7 +739,7 @@ void TestAgent::knowledgeThenNormalQuestion() {
     agent.startTask(QStringLiteral("Python 装饰器是什么？"));
     QTRY_COMPARE(spy.count(), 2);
     QCOMPARE(llm.seenMessages.size(), callsBefore + 1);
-    QCOMPARE(memory.auditLog(50).size(), 1); // no new tool execution
+    QCOMPARE(auditCountByEvent(memory.auditLog(50), QStringLiteral("tool_execute")), 1);
     QVERIFY2(noDanglingToolCalls(llm.seenMessages.last()),
              "Knowledge->Normal left an illegal history");
 
@@ -693,7 +765,7 @@ void TestAgent::normalThenKnowledgeQuestion() {
     agent.startTask(QStringLiteral("查询知识库：孙曼是谁？"));
     QTRY_COMPARE_WITH_TIMEOUT(spy.count(), 2, 15000);
     QCOMPARE(llm.seenMessages.size(), 3);    // tool round + final answer
-    QCOMPARE(memory.auditLog(50).size(), 1);
+    QCOMPARE(auditCountByEvent(memory.auditLog(50), QStringLiteral("tool_execute")), 1);
     QVERIFY(toolMessageContent(llm.seenMessages.last(), "call_t0").size() > 0);
     QVERIFY2(noDanglingToolCalls(llm.seenMessages.last()),
              "Normal->Knowledge left an illegal history");
@@ -728,7 +800,7 @@ void TestAgent::knowledgeNormalKnowledgeSequence() {
     QTRY_COMPARE(spy.count(), 3);
 
     QCOMPARE(llm.seenMessages.size(), 2 + 1 + 2);
-    QCOMPARE(memory.auditLog(50).size(), 2); // one execution per KB task
+    QCOMPARE(auditCountByEvent(memory.auditLog(50), QStringLiteral("tool_execute")), 2);
     QVERIFY2(noDanglingToolCalls(llm.seenMessages.last()),
              "Knowledge->Normal->Knowledge left an illegal history");
     QVERIFY2(noDuplicateToolCallIds(llm.seenMessages.last()),
@@ -983,6 +1055,247 @@ void TestAgent::resumeKeepsCleanHistoryAcrossTurns() {
     QVERIFY2(noDanglingToolCalls(llm.seenMessages.last()),
              "re-resumed history illegal");
 
+    agent.setMemory(nullptr);
+}
+
+
+// ── Batch 9: TEST-903 Tool anomaly matrix ─────────────────
+// Every anomaly a tool can produce must feed back into the conversation and
+// converge — no path may wedge the loop or leave dangling tool_calls.
+void TestAgent::toolAnomalyPathsConverge() {
+    registerAnomalyTool();
+    SqliteMemory memory(QStringLiteral(":memory:"));
+    agent.setMemory(&memory);
+
+    LLMResponse burst;
+    burst.success = true;
+    const QVector<QPair<QString, QString>> modes = {
+        {"fail", "a"}, {"empty", "b"}, {"huge", "c"}};
+    int i = 0;
+    for (const auto& mode : modes) {
+        ToolCallInfo call;
+        call.id = QStringLiteral("call_anom%1").arg(i);
+        call.name = QStringLiteral("test_anomaly");
+        call.arguments = QJsonObject{{"mode", mode.first}};
+        burst.toolCalls.append(call);
+        ++i;
+    }
+    llm.script.append(burst);
+    llm.script.append(textResponse(QStringLiteral("anomalies handled")));
+
+    QSignalSpy spy(&agent, &AIAgent::responseReady);
+    agent.startTask(QStringLiteral("exercise anomalies"));
+    QTRY_COMPARE_WITH_TIMEOUT(spy.count(), 1, 20000);
+    QCOMPARE(agent.state(), AgentState::Completed);
+
+    int executions = 0;
+    for (const auto& entry : memory.auditLog(50)) {
+        if (entry.toObject().value("event").toString() == QStringLiteral("tool_execute"))
+            ++executions;
+    }
+    QCOMPARE(executions, 3);
+
+    const QJsonArray sent = llm.seenMessages.last();
+    QString failMsg, hugeMsg;
+    for (const auto& entry : sent) {
+        const QJsonObject msg = entry.toObject();
+        if (msg.value("role").toString() != QStringLiteral("tool")) continue;
+        if (msg.value("content").toString().contains(QStringLiteral("boom")))
+            failMsg = msg.value("content").toString();
+        if (msg.value("content").toString().contains(QStringLiteral("[truncated")))
+            hugeMsg = msg.value("content").toString();
+    }
+    QVERIFY2(failMsg.startsWith(QStringLiteral("Error: ")),
+             "failed tool result not fed back as an error");
+    QVERIFY2(!hugeMsg.isEmpty(), "huge tool output not truncated for the LLM");
+    QVERIFY2(noDanglingToolCalls(sent), "anomaly burst left dangling tool_calls");
+    agent.setMemory(nullptr);
+}
+
+
+// One response carrying several DIFFERENT tool calls dispatches all of them
+// in order and converges (complements the same-tool burst in
+// toolExecutionBudgetForcesFinal).
+void TestAgent::multipleDistinctToolCallsInOneResponse() {
+    SqliteMemory memory(QStringLiteral(":memory:"));
+    agent.setMemory(&memory);
+    registerAnomalyTool();
+
+    QTemporaryDir dir(testDirTemplate());
+    QVERIFY(dir.isValid());
+    const QString filePath = dir.filePath("a.txt");
+    { QFile f(filePath); QVERIFY(f.open(QIODevice::WriteOnly)); f.write("payload"); f.close(); }
+
+    LLMResponse mixed;
+    mixed.success = true;
+    ToolCallInfo readCall;
+    readCall.id = QStringLiteral("call_m0");
+    readCall.name = QStringLiteral("read_file");
+    readCall.arguments = QJsonObject{{"path", filePath}};
+    mixed.toolCalls.append(readCall);
+    ToolCallInfo anomalyCall;
+    anomalyCall.id = QStringLiteral("call_m1");
+    anomalyCall.name = QStringLiteral("test_anomaly");
+    anomalyCall.arguments = QJsonObject{{"mode", QStringLiteral("ok")}};
+    mixed.toolCalls.append(anomalyCall);
+    llm.script.append(mixed);
+    llm.script.append(textResponse(QStringLiteral("mixed handled")));
+
+    QSignalSpy spy(&agent, &AIAgent::responseReady);
+    agent.startTask(QStringLiteral("mixed tools"));
+    QTRY_COMPARE_WITH_TIMEOUT(spy.count(), 1, 20000);
+    QCOMPARE(agent.state(), AgentState::Completed);
+    QCOMPARE(llm.seenMessages.size(), 2);
+
+    const QJsonArray sent = llm.seenMessages.last();
+    int readPos = -1, anomalyPos = -1, idx = 0;
+    for (const auto& entry : sent) {
+        const QJsonObject msg = entry.toObject();
+        if (msg.value("role").toString() != QStringLiteral("tool")) { ++idx; continue; }
+        const QString content = msg.value("content").toString();
+        if (content.contains(QStringLiteral("payload"))) readPos = idx;
+        if (content.contains(QStringLiteral("fine"))) anomalyPos = idx;
+        ++idx;
+    }
+    QVERIFY(readPos >= 0 && anomalyPos > readPos);
+    QVERIFY2(noDanglingToolCalls(sent), "mixed burst left dangling tool_calls");
+    agent.setMemory(nullptr);
+}
+
+
+// ── Batch 9: TEST-902 concurrent-agent isolation ──────────
+// Three agents (users A/B/C) with independent memories and services share
+// only the stateless tool registry. Interleaved tasks must never leak
+// content or state across agents.
+void TestAgent::concurrentAgentsStayIsolated() {
+    BlockingTool* blocking = registerBlockingTool();
+
+    AIAgent agentA, agentB, agentC;
+    FakeAIService llmA, llmB, llmC;
+    SqliteMemory memA(QStringLiteral(":memory:")), memB(QStringLiteral(":memory:")),
+        memC(QStringLiteral(":memory:"));
+    agentA.setLLMService(&llmA);  agentA.setToolRegistry(&ToolRegistry::instance());  agentA.setMemory(&memA);
+    agentB.setLLMService(&llmB);  agentB.setToolRegistry(&ToolRegistry::instance());  agentB.setMemory(&memB);
+    agentC.setLLMService(&llmC);  agentC.setToolRegistry(&ToolRegistry::instance());  agentC.setMemory(&memC);
+
+    llmA.script.append(toolResponse("test_blocking", QJsonObject{}));
+    llmA.script.append(textResponse(QStringLiteral("A done")));
+    llmB.script.append(textResponse(QStringLiteral("B done")));
+    llmC.script.append(textResponse(QStringLiteral("C done")));
+
+    QSignalSpy spyA(&agentA, &AIAgent::responseReady);
+    QSignalSpy spyB(&agentB, &AIAgent::responseReady);
+    QSignalSpy spyC(&agentC, &AIAgent::responseReady);
+
+    agentA.startTask(QStringLiteral("A task"));
+    QTRY_VERIFY_WITH_TIMEOUT(traceHasRunningToolCall(agentA.traceModel(),
+                                                    QStringLiteral("test_blocking")),
+                             5000);
+
+    agentB.startTask(QStringLiteral("B task"));
+    QTRY_COMPARE_WITH_TIMEOUT(spyB.count(), 1, 5000);
+    agentC.startTask(QStringLiteral("C task"));
+    QTRY_COMPARE_WITH_TIMEOUT(spyC.count(), 1, 5000);
+
+    QVERIFY2(!agentB.lastResponse().contains(QStringLiteral("A done")),
+             "B received A's response");
+    QVERIFY2(!agentC.lastResponse().contains(QStringLiteral("A task")),
+             "C saw A's input");
+
+    blocking->release();
+    QTRY_COMPARE_WITH_TIMEOUT(spyA.count(), 1, 10000);
+    QCOMPARE(agentA.lastResponse(), QStringLiteral("A done"));
+    QCOMPARE(agentB.lastResponse(), QStringLiteral("B done"));
+    QCOMPARE(agentC.lastResponse(), QStringLiteral("C done"));
+
+    for (const auto& entry : agentB.messages()) {
+        QVERIFY2(!entry.toObject().value("content").toString()
+                        .contains(QStringLiteral("A task")),
+                 "A's input leaked into B's history");
+    }
+    QVERIFY2(noDanglingToolCalls(agentA.messages()),
+             "A's interleave left dangling tool_calls");
+}
+
+
+// ── Batch 10: REL-1001 task timeout ───────────────────────
+// A task parked beyond the configured timeout must terminate gracefully:
+// sealed tool calls, a final response, and no further processing when the
+// parked worker eventually returns.
+void TestAgent::taskTimeoutSealsAndConverges() {
+    BlockingTool* blocking = registerBlockingTool();
+    SqliteMemory memory(QStringLiteral(":memory:"));
+    agent.setMemory(&memory);
+    agent.setTaskTimeoutMs(300);   // fires while the tool is parked
+
+    llm.script.append(toolResponse("test_blocking", QJsonObject{}));
+    QSignalSpy spy(&agent, &AIAgent::responseReady);
+    agent.startTask(QStringLiteral("slow task"));
+
+    QTRY_COMPARE_WITH_TIMEOUT(spy.count(), 1, 10000);
+    QCOMPARE(agent.state(), AgentState::Completed);
+    QVERIFY2(agent.lastResponse().contains(QStringLiteral("timed out")),
+             qPrintable(QStringLiteral("unexpected final response: ")
+                            + agent.lastResponse()));
+    QVERIFY2(noDanglingToolCalls(agent.messages()),
+             "timeout left dangling tool_calls");
+
+    blocking->release();   // parked worker returns later: must be a no-op
+    QTest::qWait(300);
+    QCOMPARE(spy.count(), 1);
+    agent.setMemory(nullptr);
+}
+
+
+// ── Batch 11: observability chain (OBS-1101/1102/1103) ────
+// One tool-using task must produce audit rows linkable by request_id:
+// llm_request (per LLM call) → tool_execute → task_complete, each carrying
+// model/latency/tokens, plus a metrics trace node.
+void TestAgent::auditCarriesRequestContext() {
+    SqliteMemory memory(QStringLiteral(":memory:"));
+    agent.setMemory(&memory);
+
+    QTemporaryDir dir(testDirTemplate());
+    QVERIFY(dir.isValid());
+    const QString path = dir.filePath("a.txt");
+    { QFile f(path); QVERIFY(f.open(QIODevice::WriteOnly)); f.write("payload"); f.close(); }
+
+    llm.script.append(toolResponse("read_file", QJsonObject{{"path", path}}));
+    llm.script.append(textResponse(QStringLiteral("done answer")));
+    QSignalSpy spy(&agent, &AIAgent::responseReady);
+    agent.startTask(QStringLiteral("audit me"));
+    QTRY_COMPARE_WITH_TIMEOUT(spy.count(), 1, 15000);
+
+    const QJsonArray audit = memory.auditLog(50);
+    int llmRequests = 0, toolExecutes = 0, taskComplete = 0;
+    for (const auto& entry : audit) {
+        const QJsonObject row = entry.toObject();
+        QVERIFY2(row.value("requestId").toDouble() > 0,
+                 qPrintable(QStringLiteral("row without requestId: %1")
+                                .arg(row.value("event").toString())));
+        QVERIFY2(!row.value("model").toString().isEmpty(),
+                 "row without model identity");
+        const QString event = row.value("event").toString();
+        if (event == QStringLiteral("llm_request")) ++llmRequests;
+        if (event == QStringLiteral("tool_execute")) ++toolExecutes;
+        if (event == QStringLiteral("task_complete")) {
+            ++taskComplete;
+            QVERIFY(row.value("latencyMs").toDouble() >= 0);
+            QVERIFY(row.value("detail").toString()
+                        .contains(QStringLiteral("done answer")));
+        }
+    }
+    QCOMPARE(llmRequests, 2);        // one per LLM call
+    QCOMPARE(toolExecutes, 1);
+    if (taskComplete != 1) {
+        for (const auto& entry : audit)
+            qWarning() << "audit row:" << entry.toObject().value("event").toString()
+                       << entry.toObject().value("requestId").toDouble();
+    }
+    QCOMPARE(taskComplete, 1);
+
+    // OBS-1103: metrics trace node
+    QVERIFY(traceHas(agent.traceModel(), "metrics"));
     agent.setMemory(nullptr);
 }
 

@@ -50,6 +50,11 @@ private slots:
     void restoreFromPersistedChunksNeedsNoEmbedding();
     void queryEmbeddingIsCached();
     void retrievalCalibrationLabeledSet();
+    // Batch 9: RAG matrix (TEST-904)
+    void documentUpdateAndRemoveSearch();
+    void multiDocumentMergeHits();
+    // Batch 10: total-chunk governance (REL-1003)
+    void totalChunkCapGovernsIngest();
     // Regression guard for the Batch 6 hotfix: the UI knowledge list is
     // driven by changed(); ingestion lost that emission once already.
     void ingestEmitsChanged();
@@ -546,6 +551,100 @@ void TestRag::documentPersistedDeliversAcrossThreads() {
     QVERIFY(!deliveredContent.isEmpty());
     QCOMPARE(deliveredChunks.size(), chunks);
     QVERIFY(!deliveredChunks.first().embedding.isEmpty());
+}
+
+
+// ── Batch 9: TEST-904 RAG update/remove/merge ─────────────
+// Re-ingesting a name replaces its chunks: the old content must become
+// unreachable (no-match), the new content retrievable. Removing a document
+// makes its content unreachable too. Real-mode keyword embedder keeps the
+// assertions deterministic.
+void TestRag::documentUpdateAndRemoveSearch() {
+    RagService local;
+    auto embed = [](const QString& text) {
+        QVector<float> v(8, 0.0f);
+        if (text.contains(QLatin1String("penguin"))) v[0] += 1.0f;
+        if (text.contains(QLatin1String("otter"))) v[1] += 1.0f;
+        return v;
+    };
+    local.setEmbedder(embed);
+    local.setBatchEmbedder([embed](const QStringList& texts) {
+        QVector<QVector<float>> out;
+        for (const QString& t : texts) out.append(embed(t));
+        return out;
+    });
+
+    QVERIFY(local.ingestDocument("birds.txt",
+        QStringLiteral("penguin colony study. ").repeated(30)) >= 2);
+    QVERIFY(!local.search("penguin", 3).isEmpty());
+
+    // Update: same name, disjoint content → old vocabulary fully gone
+    QVERIFY(local.ingestDocument("birds.txt",
+        QStringLiteral("otter habitat survey. ").repeated(30)) >= 2);
+    const auto otterHits = local.search("otter", 3);
+    QVERIFY(!otterHits.isEmpty());
+    QCOMPARE(otterHits.first().toObject().value("source").toString(),
+             QStringLiteral("birds.txt"));
+    QVERIFY(local.search("penguin", 3).isEmpty());
+
+    // Remove → no-match at all
+    QVERIFY(local.removeDocument("birds.txt"));
+    QVERIFY(local.search("otter", 3).isEmpty());
+}
+
+// Global top-k merge: one query fans out over every document and the merged
+// result carries hits from BOTH matching sources.
+void TestRag::multiDocumentMergeHits() {
+    RagService local;
+    auto embed = [](const QString& text) {
+        QVector<float> v(8, 0.0f);
+        if (text.contains(QLatin1String("apple"))) v[0] += 1.0f;
+        return v;
+    };
+    local.setEmbedder(embed);
+    local.setBatchEmbedder([embed](const QStringList& texts) {
+        QVector<QVector<float>> out;
+        for (const QString& t : texts) out.append(embed(t));
+        return out;
+    });
+
+    QVERIFY(local.ingestDocument("apple-a.txt",
+        QStringLiteral("apple orchard report. ").repeated(30)) >= 2);
+    QVERIFY(local.ingestDocument("apple-b.txt",
+        QStringLiteral("apple harvest analysis. ").repeated(30)) >= 2);
+
+    const auto hits = local.search("apple", 4);
+    QVERIFY(hits.size() >= 2);
+    bool sawA = false, sawB = false;
+    for (const auto& h : hits) {
+        const QString src = h.toObject().value("source").toString();
+        if (src == QStringLiteral("apple-a.txt")) sawA = true;
+        if (src == QStringLiteral("apple-b.txt")) sawB = true;
+    }
+    QVERIFY2(sawA && sawB, "multi-document merge lost a source");
+}
+
+
+// REL-1003: the knowledge base enforces a configurable total-chunk cap.
+// Ingestion past the cap is rejected (-3) and frees up when documents are
+// removed.
+void TestRag::totalChunkCapGovernsIngest() {
+    RagService local;
+    local.setMaxTotalChunks(10);
+
+    const int a = local.ingestDocument("a.txt", longDoc("a", 10));
+    const int b = local.ingestDocument("b.txt", longDoc("b", 10));
+    QVERIFY(a >= 2 && b >= 2);
+
+    local.setMaxTotalChunks(a + b);   // exact fill → the next ingest rejects
+    QCOMPARE(local.ingestDocument("c.txt", longDoc("c", 10)), -3);
+    QVERIFY(!local.hasDocument("c.txt"));
+    QCOMPARE(local.documentCount(), a + b);
+
+    // Removing a document frees budget for new imports
+    local.setMaxTotalChunks(a + b + 12);
+    local.removeDocument("a.txt");
+    QVERIFY(local.ingestDocument("c.txt", longDoc("c", 10)) >= 2);
 }
 
 QTEST_GUILESS_MAIN(TestRag)

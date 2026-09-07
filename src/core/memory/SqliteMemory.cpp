@@ -210,6 +210,32 @@ void SqliteMemory::migrateKnowledgeSchema() {
                        "ADD COLUMN embedding_model TEXT NOT NULL DEFAULT ''",
                 "add knowledge_documents.embedding_model");
 
+    // OBS-1102: observability columns on audit_log (Batch 11)
+    {
+        QSqlQuery auditColumns(m_db);
+        QStringList auditNames;
+        if (auditColumns.exec("PRAGMA table_info(audit_log)")) {
+            while (auditColumns.next())
+                auditNames << auditColumns.value(1).toString();
+        }
+        if (!auditNames.isEmpty()) {
+            QSqlQuery alter(m_db);
+            const QVector<QPair<const char*, const char*>> auditCols = {
+                {"request_id", "INTEGER NOT NULL DEFAULT 0"},
+                {"latency_ms", "INTEGER NOT NULL DEFAULT -1"},
+                {"tokens", "INTEGER NOT NULL DEFAULT 0"},
+                {"model", "TEXT NOT NULL DEFAULT ''"},
+            };
+            for (const auto& col : auditCols) {
+                if (!auditNames.contains(col.first)) {
+                    execDdl(alter, QString("ALTER TABLE audit_log ADD COLUMN %1 %2")
+                                      .arg(col.first, col.second),
+                            qPrintable(QString("add audit_log.%1").arg(col.first)));
+                }
+            }
+        }
+    }
+
     // MEM-704: workspace_id reservation on the three session tables
     for (const QString& table : { QStringLiteral("messages"),
                                   QStringLiteral("audit_log"),
@@ -634,18 +660,24 @@ void SqliteMemory::renameSession(const QString& sessionId, const QString& title)
 
 void SqliteMemory::logAudit(const QString& sessionId, const QString& event,
                             const QString& toolName, const QString& arguments,
-                            bool success, const QString& detail) {
+                            bool success, const QString& detail,
+                            quint64 requestId, qint64 latencyMs,
+                            int tokens, const QString& model) {
     QSqlQuery query(m_db);
     query.prepare("INSERT INTO audit_log (session_id, event, tool_name, arguments, "
-                  "success, detail, timestamp, workspace_id) "
-                  "VALUES (?, ?, ?, ?, ?, ?, ?, 'local')");
+                  "success, detail, timestamp, workspace_id, request_id, latency_ms, "
+                  "tokens, model) VALUES (?, ?, ?, ?, ?, ?, ?, 'local', ?, ?, ?, ?)");
     query.addBindValue(sessionId);
     query.addBindValue(event);
-    query.addBindValue(toolName);
-    query.addBindValue(arguments);
+    query.addBindValue(toolName.isNull() ? QStringLiteral("") : toolName);
+    query.addBindValue(arguments.isNull() ? QStringLiteral("") : arguments);
     query.addBindValue(success ? 1 : 0);
-    query.addBindValue(detail);
+    query.addBindValue(detail.isNull() ? QStringLiteral("") : detail);
     query.addBindValue(QDateTime::currentDateTime().toMSecsSinceEpoch());
+    query.addBindValue(static_cast<qint64>(requestId));
+    query.addBindValue(static_cast<qint64>(latencyMs));
+    query.addBindValue(tokens);
+    query.addBindValue(model.isNull() ? QStringLiteral("") : model);
 
     if (!query.exec()) {
         qWarning() << "Failed to write audit entry:" << query.lastError().text();
@@ -655,7 +687,8 @@ void SqliteMemory::logAudit(const QString& sessionId, const QString& event,
 QJsonArray SqliteMemory::auditLog(int limit) {
     QSqlQuery query(m_db);
     query.prepare("SELECT session_id, event, tool_name, arguments, success, detail, "
-                  "timestamp FROM audit_log ORDER BY timestamp DESC, id DESC LIMIT ?");
+                  "timestamp, request_id, latency_ms, tokens, model FROM audit_log "
+                  "ORDER BY timestamp DESC, id DESC LIMIT ?");
     query.addBindValue(limit);
 
     QJsonArray entries;
@@ -669,6 +702,10 @@ QJsonArray SqliteMemory::auditLog(int limit) {
             entry["success"] = query.value(4).toInt() != 0;
             entry["detail"] = query.value(5).toString();
             entry["timestamp"] = query.value(6).toLongLong();
+            entry["requestId"] = static_cast<double>(query.value(7).toLongLong());
+            entry["latencyMs"] = query.value(8).toLongLong();
+            entry["tokens"] = query.value(9).toInt();
+            entry["model"] = query.value(10).toString();
             entries.append(entry);
         }
     } else {

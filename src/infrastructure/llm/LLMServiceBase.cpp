@@ -7,6 +7,21 @@
 
 namespace NexusAI {
 
+namespace {
+bool isTransientNetworkError(QNetworkReply::NetworkError err) {
+    switch (err) {
+    case QNetworkReply::TimeoutError:
+    case QNetworkReply::RemoteHostClosedError:
+    case QNetworkReply::TemporaryNetworkFailureError:
+    case QNetworkReply::NetworkSessionFailedError:
+    case QNetworkReply::UnknownNetworkError:
+        return true;
+    default:
+        return false;
+    }
+}
+} // namespace
+
 LLMServiceBase::LLMServiceBase(QObject* parent)
     : IAIService(parent), m_nam(new QNetworkAccessManager(this)) {}
 
@@ -28,10 +43,17 @@ void LLMServiceBase::startReply(QNetworkRequest& request, const QByteArray& body
     auto ctx = LLMRequestContextPtr::create();
     ctx->requestId = ++m_lastRequestId;
     ctx->provider = createRequestState();
-    QNetworkReply* reply = m_nam->post(request, body);
-    ctx->reply = reply;
+    ctx->request = request;
+    ctx->requestBody = body;
     m_current = ctx;
     emit requestStarted(ctx->requestId);
+    postReply(ctx);
+}
+
+void LLMServiceBase::postReply(const LLMRequestContextPtr& ctx) {
+    QNetworkReply* reply = m_nam->post(ctx->request, ctx->requestBody);
+    ctx->reply = reply;
+    m_current = ctx;
 
     connect(reply, &QNetworkReply::readyRead, this, [this, ctx]() {
         if (ctx != m_current || ctx->cancelled) return;
@@ -91,6 +113,21 @@ void LLMServiceBase::handleReplyFinished(const LLMRequestContextPtr& ctx) {
     }
 
     if (ctx->responseEmitted || ctx->errorEmitted) return;
+
+    // REL-1001: one transparent retry for transient failures (timeout /
+    // connection reset / HTTP 5xx / 429). Cancelled requests, already-retried
+    // attempts and anything that streamed output are not retried.
+    const bool transientStatus =
+        (status >= 500 || status == 429) && err != QNetworkReply::OperationCanceledError;
+    if (ctx->attempt == 0 && !ctx->cancelled
+            && (isTransientNetworkError(err) || transientStatus)) {
+        ctx->attempt = 1;
+        ctx->resetStreamState();
+        qInfo() << providerLabel() << "transient failure (HTTP" << status << err
+                << ") - retrying request" << ctx->requestId;
+        postReply(ctx);
+        return;
+    }
 
     // Assemble the streamed response when stream data was received
     if (streamComplete(*ctx)) {

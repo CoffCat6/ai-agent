@@ -2,6 +2,8 @@
 // addition, removal and persistence coverage.
 #include "viewmodels/SettingsService.h"
 
+#include "core/utils/Logger.h"
+
 #include <QtTest>
 #include <QSignalSpy>
 #include <QSettings>
@@ -126,6 +128,34 @@ private slots:
         SettingsService s2(nullptr);
         QCOMPARE(s2.activeProfile().value("model").toString(), QStringLiteral("persisted-model-x"));
         QVERIFY(s2.activeProfile().value("models").toStringList().contains(QStringLiteral("persisted-model-x")));
+    }
+
+    // Batch 8/日志开发: log level property (default, persistence, signal)
+    void logLevelPersistence() {
+        SettingsGuard guard;
+        {
+            QSettings s("NexusAI", "NexusAI");
+            s.remove("logging/level");
+        }
+
+        {
+            SettingsService service(nullptr);
+            QCOMPARE(service.logLevel(), QStringLiteral("info"));
+
+            QSignalSpy spy(&service, &SettingsService::logLevelChanged);
+            service.setLogLevel(QStringLiteral("DEBUG"));
+            QCOMPARE(spy.count(), 1);
+            QCOMPARE(service.logLevel(), QStringLiteral("debug"));   // normalized
+            service.setLogLevel(QStringLiteral(""));                  // blank → ignored
+            QCOMPARE(service.logLevel(), QStringLiteral("debug"));
+            // Instant effect on the logger itself (doc 6 §3.5)
+            QCOMPARE(Logger::minLevel(), QtDebugMsg);
+        }
+        {
+            SettingsService service(nullptr);
+            QCOMPARE(service.logLevel(), QStringLiteral("debug"));
+        }
+        Logger::setMinLevel(QtInfoMsg);   // restore suite default
     }
 
     // FEAT-801: embedding model + Batch 5 full-disk-read persistence round trip

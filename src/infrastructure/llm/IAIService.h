@@ -29,6 +29,10 @@ public:
     virtual void setModel(const QString& model) = 0;
     virtual void setBaseUrl(const QString& url) = 0;
 
+    // Identity of the configured model (observability: audit rows carry it;
+    // empty for fakes that don't track a model).
+    virtual QString model() const { return {}; }
+
 signals:
     // Emitted when a request is dispatched; responses echo the id so the
     // agent can drop replies from superseded requests.

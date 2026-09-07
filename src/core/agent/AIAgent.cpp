@@ -74,6 +74,26 @@ AIAgent::AIAgent(QObject* parent) : QObject(parent) {
     m_streamTimer.setSingleShot(true);
     m_streamTimer.setInterval(kStreamFlushMs);
     connect(&m_streamTimer, &QTimer::timeout, this, &AIAgent::flushStreamNode);
+
+    // REL-1001: hard wall-clock budget per task
+    m_taskTimeoutTimer.setSingleShot(true);
+    connect(&m_taskTimeoutTimer, &QTimer::timeout, this, &AIAgent::onTaskTimeout);
+}
+
+void AIAgent::setTaskTimeoutMs(int ms) {
+    m_taskTimeoutMs = qMax(0, ms);
+}
+
+// Fired while m_active: seal whatever is in flight (pending / awaiting
+// confirmation / executing) and converge into a final response so the UI
+// never waits forever on a wedged provider or tool.
+void AIAgent::onTaskTimeout() {
+    if (!m_active) return;
+    qWarning() << "Task timed out after" << m_taskTimeoutMs << "ms - sealing";
+    stop();   // seals pending/confirm/executing calls and cancels the service
+    finishTask(QStringLiteral(
+        "The task timed out and was stopped. The work completed so far is "
+        "summarized above - ask a follow-up to continue."));
 }
 
 AIAgent::~AIAgent() = default;
@@ -247,6 +267,8 @@ void AIAgent::startTask(const QString& userMessage) {
     notifyTokens();
 
     m_active = true;
+    m_taskStartMs = QDateTime::currentMSecsSinceEpoch();
+    if (m_taskTimeoutMs > 0) m_taskTimeoutTimer.start(m_taskTimeoutMs);
     processIteration();
 }
 
@@ -254,6 +276,7 @@ void AIAgent::resetSession() {
     const bool wasActive = m_active;
     m_active = false;
     ++m_epoch;
+    m_taskTimeoutTimer.stop();
     m_pendingToolCalls.clear();
     m_currentConfirmCall = ToolCallInfo{};
     m_currentExecutingCall = ToolCallInfo{};
@@ -396,14 +419,10 @@ void AIAgent::processIteration() {
     }
 
     collapseOldToolRounds();
-    applyContextBudget();
-    m_thinkingNodeId = appendTraceNode("thinking",
-                                       QStringLiteral("Reasoning (step %1)").arg(m_iteration),
-                                       "running");
-    setState(AgentState::Thinking);
 
     // Build tool definitions for the LLM; dangerous tools are never exposed.
-    // Withheld entirely on the forced final call.
+    // Withheld entirely on the forced final call. Built BEFORE the budget
+    // pass so the schema's cost can be reserved (REL-1002).
     QJsonArray toolsArray;
     if (m_toolRegistry && !m_forcedFinal) {
         for (const auto& def : m_toolRegistry->listAll()) {
@@ -419,6 +438,12 @@ void AIAgent::processIteration() {
         }
     }
 
+    applyContextBudget(TokenEstimator::estimateToolsSchema(toolsArray));
+    m_thinkingNodeId = appendTraceNode("thinking",
+                                       QStringLiteral("Reasoning (step %1)").arg(m_iteration),
+                                       "running");
+    setState(AgentState::Thinking);
+
     QJsonArray requestMessages = m_messages;
     if (!m_forcedFinalPush.isEmpty()) {
         QJsonObject pushMsg;
@@ -431,12 +456,15 @@ void AIAgent::processIteration() {
 
 // Compress the persisted history when it exceeds the context budget, so a
 // long session cannot silently blow past the model's context window.
-void AIAgent::applyContextBudget() {
+// reservedTokens: the per-request extras (tools schema) that share the
+// window but are not part of m_messages (REL-1002).
+void AIAgent::applyContextBudget(int reservedTokens) {
     if (m_contextLimit <= 0) return;
-    if (TokenEstimator::estimateTokens(m_messages) <= m_contextLimit) return;
+    const int effective = qMax(0, m_contextLimit - reservedTokens);
+    if (TokenEstimator::estimateTokens(m_messages) <= effective) return;
 
     const int before = m_messages.size();
-    m_messages = TokenEstimator::compressToFit(m_messages, m_contextLimit);
+    m_messages = TokenEstimator::compressToFit(m_messages, effective);
     if (m_messages.size() == before) return;
 
     notifyTokens();
@@ -446,8 +474,29 @@ void AIAgent::applyContextBudget() {
         "completed");
 }
 
+QString AIAgent::currentModel() const {
+    return m_llmService ? m_llmService->model() : QString();
+}
+
 void AIAgent::onRequestStarted(quint64 requestId) {
     m_activeRequestId = requestId;
+    m_requestStartMs = QDateTime::currentMSecsSinceEpoch();
+    m_lastLatencyMs = -1;
+    m_lastTokensUsed = 0;
+    // OBS-1102: one audit row per LLM call, linkable by request_id
+    if (m_memory && !m_sessionId.isEmpty()) {
+        QString snippet;
+        for (int i = m_messages.size() - 1; i >= 0; --i) {
+            const QJsonObject msg = m_messages.at(i).toObject();
+            if (msg.value("role").toString() == QLatin1String("user")) {
+                snippet = msg.value("content").toString().left(120);
+                break;
+            }
+        }
+        m_memory->logAudit(m_sessionId, QStringLiteral("llm_request"),
+                           currentModel(), snippet, true, QString(),
+                           requestId, -1, 0, currentModel());
+    }
 }
 
 void AIAgent::onLLMResponse(const LLMResponse& response) {
@@ -464,6 +513,13 @@ void AIAgent::onLLMResponse(const LLMResponse& response) {
                    << response.requestId << "(active:" << m_activeRequestId << ")";
         return;
     }
+
+    // Batch 11: per-request latency/token accounting for the audit chain
+    if (m_requestStartMs > 0)
+        m_lastLatencyMs = QDateTime::currentMSecsSinceEpoch() - m_requestStartMs;
+    m_lastTokensUsed = response.tokensUsed > 0
+        ? response.tokensUsed
+        : TokenEstimator::estimateTokens(m_messages);
 
     m_streamTimer.stop();
     if (!m_thinkingNodeId.isEmpty()) {
@@ -615,6 +671,7 @@ void AIAgent::stop() {
     if (!m_active) return;
     m_active = false;
     ++m_epoch;
+    m_taskTimeoutTimer.stop();
     // The assistant message may already be in the history announcing calls
     // that will now never run - seal ALL of them (still queued, awaiting
     // confirmation, and currently executing on the worker pool) or the next
@@ -757,7 +814,9 @@ void AIAgent::processNextToolCall() {
             if (m_memory)
                 m_memory->logAudit(m_sessionId, "unknown_tool", call.name,
                                    argsToString(call.arguments), false,
-                                   QStringLiteral("unregistered tool"));
+                                   QStringLiteral("unregistered tool"),
+                                   m_activeRequestId, m_lastLatencyMs,
+                                   m_lastTokensUsed, currentModel());
             continue;
         }
 
@@ -771,7 +830,9 @@ void AIAgent::processNextToolCall() {
             if (m_memory)
                 m_memory->logAudit(m_sessionId, "tool_blocked", call.name,
                                    argsToString(call.arguments), false,
-                                   QStringLiteral("sandbox policy"));
+                                   QStringLiteral("sandbox policy"),
+                                   m_activeRequestId, m_lastLatencyMs,
+                                   m_lastTokensUsed, currentModel());
             continue;
         }
 
@@ -880,7 +941,9 @@ void AIAgent::finishToolExecution(const ToolCallInfo& call, const QString& trace
     if (m_memory)
         m_memory->logAudit(m_sessionId, "tool_execute", call.name,
                            argsToString(call.arguments), result.success,
-                           truncateText(result.success ? result.output : result.error, 500));
+                           truncateText(result.success ? result.output : result.error, 500),
+                           m_activeRequestId, m_lastLatencyMs,
+                           m_lastTokensUsed, currentModel());
 
     processNextToolCall();
 }
@@ -909,7 +972,9 @@ void AIAgent::approveToolCall(const QString& id, bool approved) {
         if (m_memory)
             m_memory->logAudit(m_sessionId, "tool_declined", call.name,
                                argsToString(call.arguments), false,
-                               QStringLiteral("user declined execution"));
+                               QStringLiteral("user declined execution"),
+                               m_activeRequestId, m_lastLatencyMs,
+                               m_lastTokensUsed, currentModel());
         processNextToolCall();
         return;
     }
@@ -917,7 +982,9 @@ void AIAgent::approveToolCall(const QString& id, bool approved) {
     if (m_memory)
         m_memory->logAudit(m_sessionId, "tool_approved", call.name,
                            argsToString(call.arguments), true,
-                           QStringLiteral("user approved execution"));
+                           QStringLiteral("user approved execution"),
+                           m_activeRequestId, m_lastLatencyMs,
+                           m_lastTokensUsed, currentModel());
     dispatchToolExecution(call, nodeId);
 }
 
@@ -925,6 +992,25 @@ void AIAgent::approveToolCall(const QString& id, bool approved) {
 
 void AIAgent::finishTask(const QString& finalText, bool summaryTraced) {
     m_active = false;
+    m_taskTimeoutTimer.stop();
+
+    // Batch 11: close the observability chain — one audit row carrying the
+    // task-level latency/tokens, and a metrics trace node for the timeline.
+    const qint64 now = QDateTime::currentMSecsSinceEpoch();
+    const qint64 taskLatency = m_taskStartMs > 0 ? now - m_taskStartMs : -1;
+    if (m_memory && !m_sessionId.isEmpty()) {
+        m_memory->logAudit(m_sessionId, QStringLiteral("task_complete"),
+                           QString(), QString(), true,
+                           truncateText(finalText, 500),
+                           m_activeRequestId, taskLatency,
+                           m_lastTokensUsed, currentModel());
+    }
+    appendTraceNode("metrics",
+                    QStringLiteral("Task %1s · last request %2 ms · tokens %3")
+                        .arg(taskLatency / 1000.0, 0, 'f', 1)
+                        .arg(m_lastLatencyMs)
+                        .arg(m_lastTokensUsed),
+                    "completed");
     m_lastResponse = finalText;
 
     if (!finalText.isEmpty()) {
@@ -949,6 +1035,7 @@ void AIAgent::finishTask(const QString& finalText, bool summaryTraced) {
 
 void AIAgent::failTask(const QString& error) {
     m_active = false;
+    m_taskTimeoutTimer.stop();
     appendTraceNode("error", error, "failed");
     setState(AgentState::Error);
     emit errorOccurred(error);

@@ -27,6 +27,10 @@ using ProviderRequestStatePtr = QSharedPointer<ProviderRequestState>;
 struct LLMRequestContext {
     quint64 requestId{0};
     QNetworkReply* reply{nullptr};
+    // Retained so a transient failure can be retried transparently (REL-1001)
+    QNetworkRequest request;
+    QByteArray requestBody;
+    int attempt{0};
     // streaming accumulators
     QByteArray lineBuffer;   // trailing incomplete line
     QByteArray rawBody;      // full raw response (for error diagnostics)
@@ -37,6 +41,16 @@ struct LLMRequestContext {
     bool errorEmitted{false};
     bool cancelled{false};
     ProviderRequestStatePtr provider;
+
+    void resetStreamState() {
+        lineBuffer.clear();
+        rawBody.clear();
+        content.clear();
+        tokensUsed = 0;
+        doneReceived = false;
+        responseEmitted = false;
+        errorEmitted = false;
+    }
 };
 using LLMRequestContextPtr = QSharedPointer<LLMRequestContext>;
 
@@ -56,11 +70,15 @@ public:
     void setApiKey(const QString& key) override { m_apiKey = key; }
     void setModel(const QString& model) override { m_model = model; }
     void setBaseUrl(const QString& url) override { m_baseUrl = url; }
+    QString model() const override { return m_model; }
 
 protected:
     // POSTs the body as a NEW request context, emits requestStarted() and
     // wires readyRead/finished to identity-validated handlers.
     void startReply(QNetworkRequest& request, const QByteArray& body);
+
+    // (Re-)posts an existing context (REL-1001 retry path keeps requestId).
+    void postReply(const LLMRequestContextPtr& ctx);
 
     // ── Protocol hooks (operate on the request context) ──
     // Provider-specific per-request accumulation; default = none.

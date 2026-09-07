@@ -60,6 +60,7 @@ public:
         QByteArray body;
         bool hold = false;
         QByteArray match;
+        int status = 200;   // HTTP status for the response head (retry tests)
     };
 
     explicit FakeSseServer(QObject* parent = nullptr) : QObject(parent) {
@@ -100,7 +101,7 @@ public:
         QObject::connect(socket, &QTcpSocket::disconnected, this, [this, index]() {
             m_releasedClosed.insert(index);
         });
-        respond(socket, m_scripts.at(index).body);
+        respond(socket, m_scripts.at(index));
     }
 
     bool releasedClosed(int index) const { return m_releasedClosed.contains(index); }
@@ -134,7 +135,7 @@ private:
             m_held.insert(scriptIndex, socket);
             return;
         }
-        respond(socket, script.body);
+        respond(socket, script);
     }
 
     static QByteArray flatten(const QByteArray& raw) {
@@ -162,14 +163,14 @@ private:
         return buffer.size() - (headerEnd + 4) >= contentLength;
     }
 
-    void respond(QTcpSocket* socket, const QByteArray& body) {
+    void respond(QTcpSocket* socket, const Script& script) {
         // The full request was already consumed by onBytes(), so closing
         // after the response cannot RST unread inbound data.
-        socket->write("HTTP/1.1 200 OK\r\n"
+        socket->write("HTTP/1.1 " + QByteArray::number(script.status) + " OK\r\n"
                       "Content-Type: text/event-stream\r\n"
-                      "Content-Length: " + QByteArray::number(body.size()) + "\r\n"
+                      "Content-Length: " + QByteArray::number(script.body.size()) + "\r\n"
                       "Connection: close\r\n"
-                      "\r\n" + body);
+                      "\r\n" + script.body);
         socket->flush();
         socket->disconnectFromHost();
     }
@@ -376,6 +377,28 @@ private slots:
         QCOMPARE(second.content, QStringLiteral("Hello"));
         QVERIFY2(second.toolCalls.isEmpty(),
                  "request A's tool call leaked into request B's response");
+    }
+
+    // REL-1001: a transient server failure (HTTP 500) is retried once
+    // transparently — the caller sees exactly one clean response and no
+    // error signal.
+    void transientServerErrorRetriesOnce() {
+        FakeSseServer server;
+        OpenAIService service;
+        service.setBaseUrl(server.baseUrl());
+        QSignalSpy spy(&service, &IAIService::responseReady);
+        QSignalSpy errors(&service, &IAIService::errorOccurred);
+
+        server.enqueue({QByteArrayLiteral("{\"error\":{\"message\":\"server exploded\"}}"),
+                        false, kMatchA, 500});   // first attempt fails
+        server.enqueue({openaiTextBody(), false, kMatchA, 200});   // retry succeeds
+        service.chatComplete(userMessages(QStringLiteral("hi")), {});
+        QVERIFY2(spy.wait(5000), "no response after transient failure");
+        QCOMPARE(errors.count(), 0);
+        QCOMPARE(spy.count(), 1);
+        const LLMResponse response = takeResponse(spy, 0);
+        QCOMPARE(response.content, QStringLiteral("Hello"));
+        QVERIFY(response.toolCalls.isEmpty());
     }
 
     // TEST-003: request A is superseded by request B before it completes;

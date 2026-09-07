@@ -39,6 +39,27 @@ public:
         total += estimateTokens(msg.value("content").toString());
         // Overhead per message (~4 tokens for formatting)
         total += 4;
+        // REL-1002: assistant tool_calls carry a function name plus JSON
+        // arguments on the wire — previously uncounted, so tool-heavy
+        // conversations under-estimated their real context size.
+        for (const auto& tc : msg.value("tool_calls").toArray()) {
+            const QJsonObject fn = tc.toObject().value("function").toObject();
+            total += 8;   // per-call wire framing (id/type/keys)
+            total += estimateTokens(fn.value("name").toString());
+            total += estimateTokens(fn.value("arguments").toString());
+        }
+        return total;
+    }
+
+    // REL-1002: the tools schema travels with EVERY request — the budget
+    // must reserve room for it before compressing history.
+    static int estimateToolsSchema(const QJsonArray& tools) {
+        int total = 0;
+        for (const auto& t : tools) {
+            const QJsonDocument doc(t.toObject());
+            total += estimateTokens(
+                QString::fromUtf8(doc.toJson(QJsonDocument::Compact)));
+        }
         return total;
     }
 

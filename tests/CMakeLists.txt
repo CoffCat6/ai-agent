@@ -10,6 +10,7 @@ function(nexus_add_test name)
 endfunction()
 
 nexus_add_test(test_sandbox test_sandbox.cpp)
+nexus_add_test(test_logger test_logger.cpp)
 nexus_add_test(test_token_estimator test_token_estimator.cpp)
 nexus_add_test(test_llm_parsers test_llm_parsers.cpp)
 nexus_add_test(test_memory test_memory.cpp)
@@ -27,6 +28,14 @@ add_executable(test_embedding test_embedding.cpp)
 target_link_libraries(test_embedding PRIVATE
     nexus_core nexus_infra Qt6::Test Qt6::Network)
 add_test(NAME test_embedding COMMAND test_embedding)
+
+# TEST-905: qmllint gate — error-level findings fail the test run
+# (warning-level legacy noise is tolerated and printed).
+add_test(NAME qmllint_gate
+    COMMAND ${CMAKE_COMMAND}
+        -DQMLLINT=${QT6_INSTALL_BINS}/qmllint.exe
+        -DRSP_DIR=${CMAKE_BINARY_DIR}/.rcc/qmllint
+        -P ${CMAKE_SOURCE_DIR}/cmake/QmllintGate.cmake)
 
 # Needs the viewmodels library (AgentViewModel, SettingsService) in addition to core & infra
 add_executable(test_viewmodel test_viewmodel.cpp)

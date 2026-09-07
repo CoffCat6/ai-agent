@@ -20,6 +20,17 @@ void RagService::setBatchEmbedder(DocumentRetriever::BatchEmbedFn fn) {
     m_batchEmbedFn = std::move(fn);
 }
 
+void RagService::setMaxTotalChunks(int cap) {
+    m_maxTotalChunks = qMax(1, cap);
+}
+
+int RagService::totalChunksLocked() const {
+    int total = 0;
+    for (const auto& doc : m_docs)
+        total += doc.retriever->documentCount();
+    return total;
+}
+
 bool RagService::hasDocumentLocked(const QString& sourceName) const {
     for (const auto& doc : m_docs) {
         if (doc.name == sourceName) return true;
@@ -57,13 +68,15 @@ QString RagService::uniqueDocumentName(const QString& baseName) const {
     return baseName;
 }
 
-void RagService::dropDocumentLocked(const QString& sourceName) {
+int RagService::dropDocumentLocked(const QString& sourceName) {
     for (int i = 0; i < static_cast<int>(m_docs.size()); ++i) {
         if (m_docs[i].name == sourceName) {
+            const int chunks = m_docs[i].retriever->documentCount();
             m_docs.erase(m_docs.begin() + i);
-            break;
+            return chunks;
         }
     }
+    return 0;
 }
 
 std::unique_ptr<DocumentRetriever> RagService::buildRetriever(
@@ -105,7 +118,10 @@ int RagService::ingestDocument(const QString& sourceName, const QString& content
     const QVector<KnowledgeChunk> persisted = retriever->exportChunks();
     {
         QMutexLocker lock(&m_mutex);
-        dropDocumentLocked(sourceName); // replace same-name doc (incl. races)
+        // REL-1003: knowledge-base-wide budget (existing same-name chunks
+        // are replaced, so only the surplus counts against the cap)
+        const int current = totalChunksLocked() - dropDocumentLocked(sourceName);
+        if (current + chunks > m_maxTotalChunks) return -3;
         Document doc;
         doc.name = sourceName;
         doc.chars = content.trimmed().size();
@@ -136,7 +152,8 @@ int RagService::ingestRestoredDocument(const QString& sourceName, const QString&
         // cleared/removed documents in the meantime. Superseded restores
         // must not re-add what the user deleted.
         if (generation != m_restoreGeneration) return -2;
-        dropDocumentLocked(sourceName);
+        const int current = totalChunksLocked() - dropDocumentLocked(sourceName);
+        if (current + chunks > m_maxTotalChunks) return -3;
         Document doc;
         doc.name = sourceName;
         doc.chars = content.trimmed().size();
