@@ -17,6 +17,11 @@
 #include <QTemporaryDir>
 #include <QFile>
 #include <QStandardPaths>
+#include <QElapsedTimer>
+
+#include <atomic>
+#include <chrono>
+#include <thread>
 
 using namespace NexusAI;
 
@@ -218,14 +223,42 @@ public:
         if (mode == QStringLiteral("fail")) return ToolResult::fail(QStringLiteral("boom"));
         if (mode == QStringLiteral("empty")) return ToolResult::ok(QString());
         if (mode == QStringLiteral("huge")) return ToolResult::ok(QString(20000, u'x'));
+        if (mode == QStringLiteral("sleep")) {
+            // Batch 13: long-running execute, cancellable in slices. A hard
+            // sleep_for(30s) would keep the trace "running" until the pool
+            // thread returns (the cancelled-status assertion would be
+            // unreachable) and park a worker for the full duration.
+            // No entry reset of the flags: a cancel() that landed before
+            // execute() entered (queued on the pool) must be honored - same
+            // contract as ShellExecTool.
+            for (int i = 0; i < 300; ++i) {   // up to 30 s
+                if (m_cancelRequested.load())
+                    return ToolResult::fail(QStringLiteral("cancelled"));
+                std::this_thread::sleep_for(std::chrono::milliseconds(100));
+            }
+            return ToolResult::ok(QStringLiteral("slept"));
+        }
         return ToolResult::ok(QStringLiteral("fine"));
     }
+    // Batch 13 (SEC-1301): GUI thread; atomics only.
+    void cancel() override {
+        m_cancelCalled.store(true);
+        m_cancelRequested.store(true);
+    }
+    bool cancelCalled() const { return m_cancelCalled.load(); }
+private:
+    std::atomic<bool> m_cancelRequested{false};
+    std::atomic<bool> m_cancelCalled{false};
 };
 
-void registerAnomalyTool() {
+AnomalyTool* registerAnomalyTool() {
+    static AnomalyTool* tool = nullptr;
     if (!ToolRegistry::instance().isRegistered(QStringLiteral("test_anomaly"))) {
-        ToolRegistry::instance().registerTool(std::make_unique<AnomalyTool>());
+        auto owned = std::make_unique<AnomalyTool>();
+        tool = owned.get();
+        ToolRegistry::instance().registerTool(std::move(owned));
     }
+    return tool;
 }
 
 // Batch 11: audit rows now include llm_request / task_complete observability
@@ -247,6 +280,19 @@ bool traceHasRunningToolCall(const QJsonArray& trace, const QString& name) {
             return true;
     }
     return false;
+}
+
+// Batch 13: status of the newest tool_call node for the given tool name
+// (empty when the tool was never dispatched).
+QString lastToolCallStatus(const QJsonArray& trace, const QString& name) {
+    QString status;
+    for (const auto& entry : trace) {
+        const QJsonObject node = entry.toObject();
+        if (node.value("type").toString() == QStringLiteral("tool_call")
+                && node.value("title").toString() == name)
+            status = node.value("status").toString();
+    }
+    return status;
 }
 
 // The default read sandbox only allows Documents/Downloads/Desktop/app data
@@ -303,6 +349,9 @@ private slots:
     // Batch 2: agent tool-call lifecycle (FIX-201/202/203)
     void stopDuringConfirmationSealsToolCalls();
     void stopDuringExecutionSealsToolCalls();
+    // Batch 13: cooperative tool cancellation (SEC-1301..1304)
+    void toolCancelledOnStop();
+    void shellProcessKilledOnStop();
     void toolExecutionBudgetForcesFinal();
     void forcedFinalControlMessageNotPersisted();
     // Batch 4: request-context architecture (ARCH-402/403)
@@ -853,6 +902,77 @@ void TestAgent::stopDuringExecutionSealsToolCalls() {
              "stop during execution left dangling tool_calls");
     QTest::qWait(200);
     QCOMPARE(spy.count(), 0);       // the stopped task must not resume
+}
+
+// Batch 13 (SEC-1304): stop() must reach the tool itself, not only the LLM
+// stream - the sleeping execute observes the cancel flag, returns promptly,
+// and the epoch-drop path flips the trace node to "cancelled".
+void TestAgent::toolCancelledOnStop() {
+    AnomalyTool* anomaly = registerAnomalyTool();
+    llm.script.append(toolResponse("test_anomaly",
+        QJsonObject{{"mode", "sleep"}}));
+
+    QSignalSpy spy(&agent, &AIAgent::responseReady);
+    agent.startTask(QStringLiteral("sleep"));
+    QTRY_VERIFY_WITH_TIMEOUT(traceHasRunningToolCall(agent.traceModel(),
+                                                    QStringLiteral("test_anomaly")),
+                             5000);
+
+    QElapsedTimer clock;
+    clock.start();
+    agent.stop();
+    QTRY_VERIFY_WITH_TIMEOUT(anomaly->cancelCalled(), 2000);
+    // execute() returns within one 100 ms slice of the flag; the late
+    // watcher callback (epoch drop) flips the trace node.
+    QTRY_VERIFY_WITH_TIMEOUT(
+        lastToolCallStatus(agent.traceModel(), QStringLiteral("test_anomaly"))
+            == QStringLiteral("cancelled"), 2000);
+    QVERIFY2(clock.elapsed() < 2500, "tool cancel took longer than 2 s");
+    QVERIFY2(noDanglingToolCalls(agent.messages()),
+             "stop during sleeping tool left dangling tool_calls");
+    QVERIFY2(toolMessageContent(agent.messages(), QStringLiteral("call_t0"))
+                 .contains(QStringLiteral("Not executed")),
+             "cancelled call was not sealed with a tool result");
+    QCOMPARE(spy.count(), 0);       // the stopped task must not resume
+    QCOMPARE(agent.state(), AgentState::Idle);
+}
+
+// Batch 13 (SEC-1303/1304): the real child process must die when the task is
+// stopped. execute() tears down on the pool thread within one 200 ms slice
+// (Windows: tree-kill so the cmd.exe /c grandchild does not survive) and only
+// returns after the reaping, so the trace flip bounds the side effect.
+void TestAgent::shellProcessKilledOnStop() {
+    llm.script.append(toolResponse("shell_exec",
+        QJsonObject{{"command",
+#ifdef Q_OS_WIN
+            QStringLiteral("ping -n 31 127.0.0.1 > nul")
+#else
+            QStringLiteral("sleep 30")
+#endif
+        }}));
+
+    QSignalSpy confirmSpy(&agent, &AIAgent::toolConfirmRequired);
+    agent.startTask(QStringLiteral("run something long"));
+    QTRY_COMPARE_WITH_TIMEOUT(confirmSpy.count(), 1, 5000);
+    const QString id = confirmSpy.first().first().toString();
+    agent.approveToolCall(id, true);
+    QTRY_VERIFY_WITH_TIMEOUT(traceHasRunningToolCall(agent.traceModel(),
+                                                    QStringLiteral("shell_exec")),
+                             5000);
+
+    QElapsedTimer clock;
+    clock.start();
+    agent.stop();
+    QTRY_VERIFY_WITH_TIMEOUT(
+        lastToolCallStatus(agent.traceModel(), QStringLiteral("shell_exec"))
+            == QStringLiteral("cancelled"), 3000);
+    QVERIFY2(clock.elapsed() < 2500, "shell cancel took longer than 2 s");
+    QVERIFY2(noDanglingToolCalls(agent.messages()),
+             "stopped shell left dangling tool_calls");
+    QVERIFY2(toolMessageContent(agent.messages(), QStringLiteral("call_t0"))
+                 .contains(QStringLiteral("Not executed")),
+             "cancelled shell call was not sealed with a tool result");
+    QCOMPARE(agent.state(), AgentState::Idle);
 }
 
 // A single response announcing more tool calls than the execution budget

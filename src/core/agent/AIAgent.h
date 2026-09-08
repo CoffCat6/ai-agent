@@ -1,6 +1,7 @@
 #pragma once
 
 #include <QObject>
+#include <QHash>
 #include <QJsonArray>
 #include <QJsonObject>
 #include <QSet>
@@ -15,6 +16,7 @@ namespace NexusAI {
 
 // Forward declarations
 class IAIService;
+class ITool;
 class ToolRegistry;
 class IMemory;
 
@@ -159,6 +161,12 @@ private:
     // Dispatched to the worker pool but not finished yet: removed from the
     // pending queue, so stop() must seal it separately.
     ToolCallInfo m_currentExecutingCall;
+    // Batch 13 (SEC-1302): tools dispatched to the pool and not finished yet
+    // (call id -> registry-owned tool, no ownership). stop() walks this to
+    // invoke ITool::cancel() so side effects terminate instead of running to
+    // completion; entries are removed in the watcher callback on both the
+    // normal and the epoch-drop path. No ownership - never delete.
+    QHash<QString, ITool*> m_inFlightTools;
     QString m_confirmNodeId;  // trace node of the pending confirmation
     // Actual tool executions in the current request (kMaxToolExecutions cap;
     // kMaxIterations alone bounds LLM rounds, not the announced call count).

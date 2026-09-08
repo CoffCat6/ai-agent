@@ -9,6 +9,8 @@
 #include <QJsonDocument>
 #include <QProcess>
 
+#include <atomic>
+
 namespace NexusAI {
 
 namespace {
@@ -208,10 +210,39 @@ public:
         if (!proc.waitForStarted(3000))
             return ToolResult::fail("Failed to start process: " + proc.errorString());
 
-        if (!proc.waitForFinished(timeoutMs)) {
-            proc.kill();
-            proc.waitForFinished(2000);
-            return ToolResult::fail(QStringLiteral("Command timed out after %1 ms").arg(timeoutMs));
+        // Batch 13 (SEC-1303): sliced wait so a GUI-thread cancel() (atomic
+        // flag only - this QProcess must never be touched cross-thread) is
+        // observed within one slice and torn down HERE, on the pool thread
+        // that owns the QProcess.
+        constexpr int kSliceMs = 200;
+        int waitedMs = 0;
+        while (!proc.waitForFinished(kSliceMs)) {
+            if (m_cancelRequested.exchange(false)) {
+#ifdef Q_OS_WIN
+                // cmd.exe /c makes the long runner a grandchild; killing
+                // cmd alone orphans it - terminate the tree, then reap.
+                // (Two-arg execute: Qt 6 does NOT split a single-string
+                // command, and a silent failure here would orphan ping.)
+                if (proc.processId() > 0) {
+                    qint64 killExit = QProcess::execute(
+                        QStringLiteral("taskkill"),
+                        {QStringLiteral("/PID"),
+                         QString::number(proc.processId()),
+                         QStringLiteral("/T"), QStringLiteral("/F")});
+                    if (killExit != 0)
+                        qWarning() << "shell_exec cancel: taskkill exit" << killExit;
+                }
+#endif
+                proc.kill();
+                proc.waitForFinished(2000);
+                return ToolResult::fail(QStringLiteral("Command cancelled"));
+            }
+            waitedMs += kSliceMs;
+            if (waitedMs >= timeoutMs) {
+                proc.kill();
+                proc.waitForFinished(2000);
+                return ToolResult::fail(QStringLiteral("Command timed out after %1 ms").arg(timeoutMs));
+            }
         }
 
         const QString output = QString::fromUtf8(proc.readAllStandardOutput());
@@ -219,6 +250,14 @@ public:
         return ToolResult::ok(QStringLiteral("exit code: %1\n%2")
             .arg(exitCode).arg(truncateOutput(output, kMaxOutputChars)));
     }
+
+    // Batch 13 (SEC-1303): GUI thread only - flips the atomic flag the
+    // slicing execute() polls between wait slices; never touches the
+    // QProcess itself (it lives on the pool thread running execute).
+    void cancel() override { m_cancelRequested.store(true); }
+
+private:
+    std::atomic<bool> m_cancelRequested{false};
 };
 
 // ── Blocked Dangerous Tool (never exposed to the LLM) ─────

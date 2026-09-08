@@ -280,6 +280,7 @@ void AIAgent::resetSession() {
     m_pendingToolCalls.clear();
     m_currentConfirmCall = ToolCallInfo{};
     m_currentExecutingCall = ToolCallInfo{};
+    m_inFlightTools.clear();   // Batch 13: bookkeeping only; results are epoch-dropped
     m_toolExecutions = 0;
     m_forcedFinalPush.clear();
     m_confirmNodeId.clear();
@@ -672,6 +673,14 @@ void AIAgent::stop() {
     m_active = false;
     ++m_epoch;
     m_taskTimeoutTimer.stop();
+    // Batch 13 (SEC-1302): cooperatively cancel every tool already running on
+    // the worker pool - sealing the history alone left side effects (file
+    // writes, child processes) running to completion. cancel() only flips
+    // atomic flags inside the tools (GUI thread contract, ITool::cancel);
+    // after the epoch bump the late watcher callback drops the result.
+    for (auto it = m_inFlightTools.cbegin(); it != m_inFlightTools.cend(); ++it)
+        it.value()->cancel();
+    m_inFlightTools.clear();
     // The assistant message may already be in the history announcing calls
     // that will now never run - seal ALL of them (still queued, awaiting
     // confirmation, and currently executing on the worker pool) or the next
@@ -900,10 +909,13 @@ void AIAgent::dispatchToolExecution(const ToolCallInfo& call, const QString& tra
 
     ITool* tool = m_toolRegistry ? m_toolRegistry->find(call.name) : nullptr;
     const quint64 epoch = m_epoch;
+    if (tool)
+        m_inFlightTools.insert(call.id, tool);   // Batch 13: stop() reaches it
 
     auto* watcher = new QFutureWatcher<ToolResult>(this);
     connect(watcher, &QFutureWatcherBase::finished, this,
             [this, watcher, call, nodeId, epoch]() {
+        m_inFlightTools.remove(call.id);   // both paths: done is done
         const ToolResult result = watcher->result();
         watcher->deleteLater();
         if (epoch != m_epoch) {
@@ -993,6 +1005,7 @@ void AIAgent::approveToolCall(const QString& id, bool approved) {
 void AIAgent::finishTask(const QString& finalText, bool summaryTraced) {
     m_active = false;
     m_taskTimeoutTimer.stop();
+    m_inFlightTools.clear();   // Batch 13: normally empty here; belt-and-braces
 
     // Batch 11: close the observability chain — one audit row carrying the
     // task-level latency/tokens, and a metrics trace node for the timeline.
@@ -1036,6 +1049,7 @@ void AIAgent::finishTask(const QString& finalText, bool summaryTraced) {
 void AIAgent::failTask(const QString& error) {
     m_active = false;
     m_taskTimeoutTimer.stop();
+    m_inFlightTools.clear();   // Batch 13: belt-and-braces, mirrors finishTask
     appendTraceNode("error", error, "failed");
     setState(AgentState::Error);
     emit errorOccurred(error);

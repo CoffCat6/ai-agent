@@ -47,6 +47,14 @@ public:
     virtual ~ITool() = default;
     virtual ToolDefinition definition() const = 0;
     virtual ToolResult execute(const QJsonObject& args) = 0;
+    // Batch 13 (SEC-1301): cooperative cancellation. cancel() is invoked on
+    // the GUI thread while execute() runs on a QtConcurrent pool thread, so
+    // implementations may only flip atomic flags (or terminate child
+    // handles) - never block, never touch execute()'s non-atomic state from
+    // this thread. The pool thread running execute() observes the flag
+    // between wait slices and performs its own teardown. Default no-op:
+    // second-scale tools don't need it.
+    virtual void cancel() {}
 };
 
 } // namespace NexusAI
