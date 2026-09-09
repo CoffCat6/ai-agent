@@ -587,6 +587,14 @@ Dialog {
                 font.family: Theme.fontSans
             }
 
+            CheckBox {
+                checked: Settings.localOnlyMode
+                onToggled: Settings.localOnlyMode = checked
+                text: qsTr("仅本地模式（云端模型不可访问知识库，本地 Ollama 模型不受影响；文档内容不会发送到云端）")
+                font.pixelSize: Theme.fontSizeBody
+                font.family: Theme.fontSans
+            }
+
             ColumnLayout {
                 Layout.fillWidth: true
                 spacing: 4

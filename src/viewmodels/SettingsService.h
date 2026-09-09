@@ -30,6 +30,9 @@ class SettingsService : public QObject {
     Q_PROPERTY(int contextTokens READ contextTokens WRITE setContextTokens NOTIFY contextTokensChanged)
     Q_PROPERTY(bool simulationMode READ simulationMode WRITE setSimulationMode NOTIFY simulationModeChanged)
     Q_PROPERTY(bool allowFullDiskRead READ allowFullDiskRead WRITE setAllowFullDiskRead NOTIFY allowFullDiskReadChanged)
+    // Batch 14 (SEC-1401): when enabled, the knowledge-base tool is gated off
+    // for cloud providers - document content must not leave this machine.
+    Q_PROPERTY(bool localOnlyMode READ localOnlyMode WRITE setLocalOnlyMode NOTIFY localOnlyModeChanged)
     Q_PROPERTY(QString embeddingModel READ embeddingModel WRITE setEmbeddingModel NOTIFY embeddingModelChanged)
     Q_PROPERTY(QString logLevel READ logLevel WRITE setLogLevel NOTIFY logLevelChanged)
     Q_PROPERTY(QString appVersion READ appVersion CONSTANT)
@@ -56,6 +59,12 @@ public:
     // allowlist (audit P1-8). Opt-in, default off.
     bool allowFullDiskRead() const { return m_allowFullDiskRead; }
     void setAllowFullDiskRead(bool enabled);
+
+    // Security: keep knowledge-base content on this machine (FIX-505
+    // follow-up). Opt-in, default off; the wiring that actually gates the
+    // tool lives in main.cpp (applyLocalOnlyGate).
+    bool localOnlyMode() const { return m_localOnlyMode; }
+    void setLocalOnlyMode(bool enabled);
 
     // Knowledge-base embedding model (FEAT-801): identity for persisted
     // chunk vectors; a change triggers a full knowledge re-embed.
@@ -94,6 +103,7 @@ signals:
     void contextTokensChanged();
     void simulationModeChanged();
     void allowFullDiskReadChanged();
+    void localOnlyModeChanged();
     void embeddingModelChanged();
     void logLevelChanged();
 
@@ -107,6 +117,7 @@ private:
     int m_contextTokens{8192};
     bool m_simulationMode{false};
     bool m_allowFullDiskRead{false};
+    bool m_localOnlyMode{false};
     QString m_embeddingModel{QStringLiteral("nomic-embed-text")};
     QString m_logLevel{QStringLiteral("info")};
 

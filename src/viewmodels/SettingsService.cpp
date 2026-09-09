@@ -212,6 +212,7 @@ void SettingsService::load() {
                              AIAgent::MaxContextTokens);
     m_simulationMode = settings.value("simulationMode", false).toBool();
     m_allowFullDiskRead = settings.value("security/allowFullDiskRead", false).toBool();
+    m_localOnlyMode = settings.value("security/localOnlyMode", false).toBool();
     m_embeddingModel = settings.value("embedding/model", QStringLiteral("nomic-embed-text")).toString();
     // logging/level is Logger::install()'s key; the env override still wins
     // there, so load() only mirrors the stored value (install() already
@@ -448,6 +449,18 @@ void SettingsService::setAllowFullDiskRead(bool enabled) {
                     enabled ? QStringLiteral("on") : QStringLiteral("off"));
     QSettings().setValue("security/allowFullDiskRead", enabled);
     emit allowFullDiskReadChanged();
+}
+
+// Batch 14 (SEC-1401): same silent-repeat pattern as allowFullDiskRead.
+// The actual tool gating lives in main.cpp (applyLocalOnlyGate), wired to
+// localOnlyModeChanged for immediate effect.
+void SettingsService::setLocalOnlyMode(bool enabled) {
+    if (m_localOnlyMode == enabled) return;
+    m_localOnlyMode = enabled;
+    Activity::usage(Activity::Kind::User, QStringLiteral("settings.localOnlyMode"),
+                    enabled ? QStringLiteral("on") : QStringLiteral("off"));
+    QSettings().setValue("security/localOnlyMode", enabled);
+    emit localOnlyModeChanged();
 }
 
 void SettingsService::setEmbeddingModel(const QString& model) {

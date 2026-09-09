@@ -24,6 +24,7 @@ public:
         loggingLevel = s.value("logging/level");
         embeddingModel = s.value("embedding/model");
         allowFullDiskRead = s.value("security/allowFullDiskRead");
+        localOnlyMode = s.value("security/localOnlyMode");
     }
     ~SettingsGuard() {
         QSettings s("NexusAI", "NexusAI");
@@ -38,12 +39,16 @@ public:
         if (allowFullDiskRead.isValid())
             s.setValue("security/allowFullDiskRead", allowFullDiskRead);
         else s.remove("security/allowFullDiskRead");
+        if (localOnlyMode.isValid())
+            s.setValue("security/localOnlyMode", localOnlyMode);
+        else s.remove("security/localOnlyMode");
     }
     QVariant rawProfiles;
     QVariant activeId;
     QVariant loggingLevel;
     QVariant embeddingModel;
     QVariant allowFullDiskRead;
+    QVariant localOnlyMode;
 };
 
 } // namespace
@@ -175,18 +180,21 @@ private slots:
     }
 
     // FEAT-801: embedding model + Batch 5 full-disk-read persistence round trip
+    // + Batch 14 local-only-mode persistence round trip
     void embeddingModelAndReadPolicyPersistence() {
         SettingsGuard guard;
         {
             QSettings s("NexusAI", "NexusAI");
             s.remove("embedding/model");
             s.remove("security/allowFullDiskRead");
+            s.remove("security/localOnlyMode");
         }
 
         {
             SettingsService service(nullptr);
             QCOMPARE(service.embeddingModel(), QStringLiteral("nomic-embed-text"));
             QVERIFY(!service.allowFullDiskRead());
+            QVERIFY(!service.localOnlyMode());
 
             QSignalSpy modelSpy(&service, &SettingsService::embeddingModelChanged);
             service.setEmbeddingModel(QStringLiteral("bge-m3"));
@@ -197,11 +205,18 @@ private slots:
             QCOMPARE(service.embeddingModel(), QStringLiteral("bge-m3"));
 
             service.setAllowFullDiskRead(true);
+
+            QSignalSpy localOnlySpy(&service, &SettingsService::localOnlyModeChanged);
+            service.setLocalOnlyMode(true);
+            QCOMPARE(localOnlySpy.count(), 1);
+            service.setLocalOnlyMode(true);                        // unchanged → silent
+            QCOMPARE(localOnlySpy.count(), 1);
         }
         {
             SettingsService service(nullptr);
             QCOMPARE(service.embeddingModel(), QStringLiteral("bge-m3"));
             QVERIFY(service.allowFullDiskRead());
+            QVERIFY(service.localOnlyMode());
         }
     }
 };

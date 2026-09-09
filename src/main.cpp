@@ -114,6 +114,28 @@ int main(int argc, char *argv[])
     // Expose the knowledge base to the model as a safe auto-executed tool
     ToolRegistry::instance().registerTool(std::make_unique<KnowledgeSearchTool>(rag));
 
+    // ── Batch 14 (SEC-1401/1402): local-only mode gate ──
+    // When enabled, the knowledge-base tool is gated off for cloud providers:
+    // the model no longer sees the schema, and stale calls from history get
+    // a structured error instead of an execution (document content must not
+    // leave this machine). Local providers (ollama) keep the tool - content
+    // never leaves the machine there. Cloud detection is by provider type,
+    // not baseUrl: an OpenAI-compatible gateway on 127.0.0.1 still forwards
+    // to a cloud upstream, so it counts as cloud.
+    const auto applyLocalOnlyGate = [settings]() {
+        const bool cloud = settings->activeProfile().value("provider").toString()
+                           != QLatin1String("ollama");
+        ToolRegistry::instance().setToolEnabled(
+            QStringLiteral("search_knowledge_base"),
+            !(cloud && settings->localOnlyMode()));
+    };
+    QObject::connect(settings, &SettingsService::localOnlyModeChanged, &app,
+                     applyLocalOnlyGate);
+    // Profile switch may move between ollama and a cloud provider: re-apply.
+    QObject::connect(settings, &SettingsService::activeProfileChanged, &app,
+                     applyLocalOnlyGate);
+    applyLocalOnlyGate();
+
     auto* agent = new AIAgent(&app);
     agent->setToolRegistry(&ToolRegistry::instance());
     agent->setMemory(memory);

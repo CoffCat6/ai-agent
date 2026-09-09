@@ -102,6 +102,18 @@ QString toolMessageContent(const QJsonArray& messages, const QString& callId) {
     return QString();
 }
 
+// Batch 14: does the tools array passed to the LLM service expose the given
+// tool? Matches both flat {"name":...} and OpenAI {"function":{"name":...}}.
+bool toolsArrayContains(const QJsonArray& tools, const QString& name) {
+    for (const auto& entry : tools) {
+        const QJsonObject def = entry.toObject();
+        if (def.value("name").toString() == name) return true;
+        if (def.value("function").toObject().value("name").toString() == name)
+            return true;
+    }
+    return false;
+}
+
 bool traceHas(const QJsonArray& trace, const QString& type,
               const QString& textContains = QString()) {
     for (const auto& entry : trace) {
@@ -326,6 +338,15 @@ private slots:
         agent.resetSession();
     }
 
+    void cleanup() {
+        // Batch 14: the registry is a process-wide singleton shared by the
+        // whole suite - a local-only test that disabled the KB tool must not
+        // leak that state into the knowledge-base matrix tests (idempotent
+        // for tests that never disabled anything).
+        ToolRegistry::instance().setToolEnabled(
+            QStringLiteral("search_knowledge_base"), true);
+    }
+
     void directCompletion();
     void dangerousToolsNotExposed();
     void safeToolFeedbackLoop();
@@ -352,6 +373,11 @@ private slots:
     // Batch 13: cooperative tool cancellation (SEC-1301..1304)
     void toolCancelledOnStop();
     void shellProcessKilledOnStop();
+    // Batch 14: local-only mode knowledge-tool gating (SEC-1401..1404)
+    void localOnlyModeHidesKnowledgeTool();
+    void localOnlyModeRejectsResidualCall();
+    // Batch 14 review fix: isToolEnabled predicate semantics
+    void toolRegistryEnablementSemantics();
     void toolExecutionBudgetForcesFinal();
     void forcedFinalControlMessageNotPersisted();
     // Batch 4: request-context architecture (ARCH-402/403)
@@ -973,6 +999,93 @@ void TestAgent::shellProcessKilledOnStop() {
                  .contains(QStringLiteral("Not executed")),
              "cancelled shell call was not sealed with a tool result");
     QCOMPARE(agent.state(), AgentState::Idle);
+}
+
+// Batch 14 (SEC-1404): with the KB tool gated off, its schema must not reach
+// the wire at all - asserted at request level via FakeAIService.seenTools.
+void TestAgent::localOnlyModeHidesKnowledgeTool() {
+    registerKnowledgeTool();
+    auto* registry = &ToolRegistry::instance();
+    QVERIFY(registry->isRegistered(QStringLiteral("search_knowledge_base")));
+
+    // Baseline: enabled → schema present on the wire.
+    QSignalSpy spy(&agent, &AIAgent::responseReady);
+    llm.script.append(textResponse(QStringLiteral("kb available")));
+    agent.startTask(QStringLiteral("warmup"));
+    QTRY_COMPARE(spy.count(), 1);
+    QCOMPARE(llm.seenTools.size(), 1);
+    QVERIFY2(toolsArrayContains(llm.seenTools.first(),
+                                QStringLiteral("search_knowledge_base")),
+             "baseline: KB schema missing while the tool is enabled");
+
+    // Gated: schema gone from the request body.
+    registry->setToolEnabled(QStringLiteral("search_knowledge_base"), false);
+    QVERIFY(!registry->toolNamesForModel()
+                 .contains(QStringLiteral("search_knowledge_base")));
+    llm.script.append(textResponse(QStringLiteral("gated")));
+    agent.startTask(QStringLiteral("second"));
+    QTRY_COMPARE(spy.count(), 2);
+    QCOMPARE(llm.seenTools.size(), 2);
+    QVERIFY2(!toolsArrayContains(llm.seenTools.last(),
+                                 QStringLiteral("search_knowledge_base")),
+             "KB schema still exposed while the tool is disabled");
+    // cleanup() restores the singleton for the matrix tests.
+}
+
+// Batch 14 (SEC-1404): a stale/hallucinated call to the gated tool gets a
+// structured error fed back - never executed, pairing intact.
+void TestAgent::localOnlyModeRejectsResidualCall() {
+    registerKnowledgeTool();
+    auto* registry = &ToolRegistry::instance();
+    registry->setToolEnabled(QStringLiteral("search_knowledge_base"), false);
+
+    llm.script.append(toolResponse("search_knowledge_base",
+        QJsonObject{{"query", QStringLiteral("anything")}}));
+    llm.script.append(textResponse(QStringLiteral("final answer")));
+
+    QSignalSpy spy(&agent, &AIAgent::responseReady);
+    agent.startTask(QStringLiteral("residual kb call"));
+    QTRY_COMPARE(spy.count(), 1);
+    QCOMPARE(spy.first().first().toString(), QStringLiteral("final answer"));
+
+    QVERIFY2(toolMessageContent(agent.messages(), QStringLiteral("call_t0"))
+                 .contains(QStringLiteral("local-only")),
+             "disabled tool call was not rejected with a local-only error");
+    QVERIFY2(noDanglingToolCalls(agent.messages()),
+             "disabled-tool rejection left dangling tool_calls");
+    // Never executed: the call node failed, and no tool_result node exists.
+    QCOMPARE(lastToolCallStatus(agent.traceModel(),
+                                QStringLiteral("search_knowledge_base")),
+             QStringLiteral("failed"));
+    QVERIFY2(!traceHas(agent.traceModel(), QStringLiteral("tool_result"),
+                       QStringLiteral("search_knowledge_base")),
+             "gated KB tool was executed despite being disabled");
+    // cleanup() restores the singleton for the matrix tests.
+}
+
+// Batch 14 review fix: isToolEnabled must be false for unregistered names -
+// "enabled" only means something for a registered tool.
+void TestAgent::toolRegistryEnablementSemantics() {
+    auto* registry = &ToolRegistry::instance();
+    QVERIFY2(!registry->isToolEnabled(QStringLiteral("no_such_tool")),
+             "unregistered tool must not report enabled");
+
+    registerKnowledgeTool();
+    QVERIFY(registry->isToolEnabled(QStringLiteral("search_knowledge_base")));
+
+    registry->setToolEnabled(QStringLiteral("search_knowledge_base"), false);
+    QVERIFY(!registry->isToolEnabled(QStringLiteral("search_knowledge_base")));
+    QVERIFY(!registry->toolNamesForModel()
+                 .contains(QStringLiteral("search_knowledge_base")));
+    QVERIFY(registry->isRegistered(QStringLiteral("search_knowledge_base")));
+    bool inListAll = false;
+    for (const auto& def : registry->listAll())
+        if (def.name == QStringLiteral("search_knowledge_base")) inListAll = true;
+    QVERIFY2(inListAll, "disabled tool must stay in listAll() (UI visibility)");
+
+    registry->setToolEnabled(QStringLiteral("search_knowledge_base"), true);
+    QVERIFY(registry->isToolEnabled(QStringLiteral("search_knowledge_base")));
+    // cleanup() also restores the singleton for later tests.
 }
 
 // A single response announcing more tool calls than the execution budget

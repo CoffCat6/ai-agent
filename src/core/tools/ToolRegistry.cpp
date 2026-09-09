@@ -326,10 +326,24 @@ bool ToolRegistry::isRegistered(const QString& name) const {
 QStringList ToolRegistry::toolNamesForModel() const {
     QStringList names;
     for (const auto& tool : m_ownedTools) {
-        if (tool->definition().level != ToolLevel::Dangerous)
+        if (tool->definition().level != ToolLevel::Dangerous
+                && !m_disabledTools.contains(tool->definition().name))
             names.append(tool->definition().name);
     }
     return names;
+}
+
+void ToolRegistry::setToolEnabled(const QString& name, bool enabled) {
+    if (enabled) m_disabledTools.remove(name);
+    else m_disabledTools.insert(name);
+}
+
+bool ToolRegistry::isToolEnabled(const QString& name) const {
+    // Batch 14 review fix: "enabled" only means something for a registered
+    // tool - an unregistered name must not report enabled. Current call
+    // sites all find() first; this keeps the predicate honest if a future
+    // caller skips that step.
+    return m_tools.contains(name) && !m_disabledTools.contains(name);
 }
 
 } // namespace NexusAI

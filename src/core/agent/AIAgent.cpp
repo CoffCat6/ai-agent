@@ -428,6 +428,10 @@ void AIAgent::processIteration() {
     if (m_toolRegistry && !m_forcedFinal) {
         for (const auto& def : m_toolRegistry->listAll()) {
             if (def.level == ToolLevel::Dangerous) continue;
+            // Batch 14: disabled tools (local-only mode) must not even reach
+            // the wire - the acceptance criterion is that the request body
+            // contains no schema for the gated tool at all.
+            if (!m_toolRegistry->isToolEnabled(def.name)) continue;
             QJsonObject toolObj;
             toolObj["type"] = "function";
             QJsonObject fn;
@@ -824,6 +828,25 @@ void AIAgent::processNextToolCall() {
                 m_memory->logAudit(m_sessionId, "unknown_tool", call.name,
                                    argsToString(call.arguments), false,
                                    QStringLiteral("unregistered tool"),
+                                   m_activeRequestId, m_lastLatencyMs,
+                                   m_lastTokensUsed, currentModel());
+            continue;
+        }
+
+        // Batch 14 (SEC-1401): a tool can be registered yet disabled (e.g.
+        // search_knowledge_base under local-only mode). Reject stale/hallu-
+        // cinated calls with a structured error so tool_call/tool pairing
+        // stays intact - same shape as the unknown-tool path above.
+        if (m_toolRegistry && !m_toolRegistry->isToolEnabled(call.name)) {
+            appendTraceNode("tool_call", call.name, "failed",
+                            QJsonObject{{"args", argsToString(call.arguments)}});
+            appendToolResultMessage(call,
+                QStringLiteral("Error: tool '%1' is currently disabled by the "
+                               "local-only privacy mode").arg(call.name));
+            if (m_memory)
+                m_memory->logAudit(m_sessionId, "tool_disabled", call.name,
+                                   argsToString(call.arguments), false,
+                                   QStringLiteral("local-only mode"),
                                    m_activeRequestId, m_lastLatencyMs,
                                    m_lastTokensUsed, currentModel());
             continue;
