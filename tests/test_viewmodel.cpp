@@ -13,10 +13,12 @@
 #include <QSettings>
 #include <QStandardPaths>
 #include <QTemporaryDir>
+#include <QDir>
 #include <QFile>
 #include <QJsonArray>
 #include <QJsonDocument>
 #include <QJsonObject>
+#include <QUrl>
 
 using namespace NexusAI;
 
@@ -508,6 +510,48 @@ private slots:
         QVERIFY2(text.contains(QStringLiteral("## 过程摘要")), "missing trace summary section");
         QVERIFY2(text.contains(QStringLiteral("[success] tool_call · list_dir")),
                  "trace node line missing from the summary");
+    }
+
+    // QML FileDialog hands selectedFile over as a file:// URL (percent-encoded
+    // for spaces / non-ASCII): exercise the isLocalFile() -> toLocalFile()
+    // normalization branch with a non-ASCII, space-containing target path.
+    void exportSessionUrlPath() {
+        SqliteMemory memory(QStringLiteral(":memory:"));
+        memory.beginSession("s1", "Url export");
+        memory.saveMessage("s1", QJsonObject{{"role", "user"}, {"content", "q"}});
+        memory.saveMessage("s1", QJsonObject{{"role", "assistant"}, {"content", "a"}});
+
+        AgentViewModel vm(nullptr);
+        vm.setMemory(&memory);
+        QTemporaryDir dir;
+        QVERIFY(dir.isValid());
+        const QString subDir = dir.filePath(QStringLiteral("导出 测试"));
+        QVERIFY(QDir().mkpath(subDir));
+        const QString mdUrl = QUrl::fromLocalFile(
+            QDir(subDir).filePath(QStringLiteral("会话 导出.md"))).toString();
+        const QString jsonUrl = QUrl::fromLocalFile(
+            QDir(subDir).filePath(QStringLiteral("会话 导出.json"))).toString();
+
+        QSignalSpy notice(&vm, &AgentViewModel::noticeOccurred);
+        QSignalSpy error(&vm, &AgentViewModel::errorOccurred);
+        QVERIFY(vm.exportSession("s1", mdUrl, QStringLiteral("md")));
+        QCOMPARE(notice.count(), 1);
+        QCOMPARE(error.count(), 0);
+        QVERIFY(vm.exportSession("s1", jsonUrl, QStringLiteral("json")));
+        QCOMPARE(notice.count(), 2);
+        QCOMPARE(error.count(), 0);
+
+        QFile mdFile(QUrl(mdUrl).toLocalFile());
+        QVERIFY(mdFile.open(QIODevice::ReadOnly));
+        const QString text = QString::fromUtf8(mdFile.readAll());
+        QVERIFY2(text.contains(QStringLiteral("# NexusAI 会话导出")), "missing export header");
+        QVERIFY2(text.contains(QStringLiteral("- 会话 ID：s1")), "missing session id");
+
+        QFile jsonFile(QUrl(jsonUrl).toLocalFile());
+        QVERIFY(jsonFile.open(QIODevice::ReadOnly));
+        const QJsonDocument doc = QJsonDocument::fromJson(jsonFile.readAll());
+        QVERIFY(doc.isObject());
+        QCOMPARE(doc.object().value("messages").toArray().size(), 2);
     }
 };
 

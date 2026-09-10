@@ -572,6 +572,6 @@ Rectangle {
         nameFilters: [qsTr("Markdown (*.md)"), qsTr("JSON (*.json)")]
         onAccepted: AgentVM.exportSession(
             root.exportSessionId, selectedFile,
-            selectedNameFilterIndex === 1 ? "json" : "md")
+            selectedNameFilter.index === 0 ? "md" : "json")
     }
 }
