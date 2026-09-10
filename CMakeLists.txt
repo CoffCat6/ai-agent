@@ -55,7 +55,7 @@ add_library(nexus_core STATIC
     src/core/utils/Activity.cpp
 )
 target_include_directories(nexus_core PUBLIC ${CMAKE_CURRENT_SOURCE_DIR}/src)
-target_link_libraries(nexus_core PUBLIC Qt6::Core Qt6::Sql Qt6::Concurrent)
+target_link_libraries(nexus_core PUBLIC Qt6::Core Qt6::Sql Qt6::Concurrent Qt6::Network)  # Network: Batch 20 http_fetch
 
 # ── Infrastructure Library ────────────────────────────────
 add_library(nexus_infra STATIC

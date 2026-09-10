@@ -3,6 +3,7 @@
 #include "LLMServiceBase.h"
 
 #include <QString>
+#include <QVariant>
 #include <QVector>
 
 namespace NexusAI {
@@ -33,6 +34,11 @@ public:
     explicit AnthropicService(QObject* parent = nullptr);
 
     void chatComplete(const QJsonArray& messages, const QJsonArray& tools = {}) override;
+
+    // Batch 15 (FEAT-1502): opt-in sampling params from the active profile.
+    // max_tokens is REQUIRED by the Messages API: an unset override keeps
+    // the historical 4096 fallback. temperature is omitted when unset.
+    void setSamplingParams(const QVariant& temperature, const QVariant& maxOutputTokens);
 
     // Pure conversion / parsing helpers (no network state); exposed for tests.
     struct ConvertedHistory {
@@ -70,6 +76,7 @@ private:
     static QJsonArray convertTools(const QJsonArray& tools);
 
     int m_maxTokens{4096}; // Messages API requires an explicit output cap
+    QVariant m_temperature; // Batch 15: unset → field omitted
 };
 
 } // namespace NexusAI

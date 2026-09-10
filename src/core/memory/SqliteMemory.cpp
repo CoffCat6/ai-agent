@@ -15,15 +15,17 @@ namespace NexusAI {
 
 namespace {
 
-// Human-friendly relative timestamp for the session list
+// Human-friendly relative timestamp for the session list. UI-visible copy
+// (P3-9): routed through SqliteMemory::tr() so it lands in the .ts file.
+// "MM-dd" is a date-format string, not user-visible copy - kept untranslated.
 QString relativeTime(qint64 timestamp) {
     const QDateTime now = QDateTime::currentDateTime();
     const QDateTime t = QDateTime::fromMSecsSinceEpoch(timestamp);
     const qint64 secs = t.secsTo(now);
-    if (secs < 60) return QStringLiteral("刚刚");
-    if (secs < 3600) return QStringLiteral("%1 分钟前").arg(secs / 60);
-    if (secs < 86400) return QStringLiteral("%1 小时前").arg(secs / 3600);
-    if (secs < 172800) return QStringLiteral("昨天");
+    if (secs < 60) return SqliteMemory::tr("刚刚");
+    if (secs < 3600) return SqliteMemory::tr("%1 分钟前").arg(secs / 60);
+    if (secs < 86400) return SqliteMemory::tr("%1 小时前").arg(secs / 3600);
+    if (secs < 172800) return SqliteMemory::tr("昨天");
     return t.toString(QStringLiteral("MM-dd"));
 }
 
@@ -75,6 +77,43 @@ SqliteMemory::~SqliteMemory() {
 void SqliteMemory::initDatabase() {
     createTables();
     migrateKnowledgeSchema();
+    migrateMessagesFts();
+}
+
+// Batch 17 (FEAT-1701): messages FTS5 index for cross-session search.
+// Tokenizer choice from the recorded probe (SQLite 3.49.1, this repo's
+// bundled Qt): the default unicode61 tokenizer cannot substring-match CJK
+// text (a whole sentence becomes one token), while trigram answers
+// 3+ character CJK/ASCII substring queries. Keywords shorter than 3 chars
+// fall back to LIKE in searchMessages(). Idempotent self-heal (discipline
+// #8): everything is IF NOT EXISTS, and the backfill covers rows written
+// before this migration so old databases upgrade without a version bump.
+void SqliteMemory::migrateMessagesFts() {
+    QSqlQuery query(m_db);
+    execDdl(query, R"(
+        CREATE VIRTUAL TABLE IF NOT EXISTS messages_fts USING fts5(
+            content,
+            tokenize='trigram'
+        )
+    )", "create messages_fts table");
+    execDdl(query, R"(
+        CREATE TRIGGER IF NOT EXISTS messages_fts_ai AFTER INSERT ON messages BEGIN
+            INSERT INTO messages_fts(rowid, content) VALUES (new.id, new.content);
+        END
+    )", "create messages_fts insert trigger");
+    execDdl(query, R"(
+        CREATE TRIGGER IF NOT EXISTS messages_fts_ad AFTER DELETE ON messages BEGIN
+            DELETE FROM messages_fts WHERE rowid = old.id;
+        END
+    )", "create messages_fts delete trigger");
+    // Backfill rows that predate this migration (idempotent: only rows the
+    // index does not know about). Writes into messages_fts directly, so the
+    // messages INSERT trigger cannot double-fire.
+    execDdl(query, R"(
+        INSERT INTO messages_fts(rowid, content)
+            SELECT id, content FROM messages
+            WHERE id NOT IN (SELECT rowid FROM messages_fts)
+    )", "backfill messages_fts from messages");
 }
 
 void SqliteMemory::createTables() {
@@ -464,7 +503,7 @@ QJsonArray SqliteMemory::loadMessages(const QString& sessionId, int limit) {
     // the newest window (rowid breaks timestamp ties), the outer ASC
     // restores conversation order. A plain "ASC LIMIT ?" kept the OLDEST
     // messages and silently dropped the recent ones in long sessions.
-    query.prepare("SELECT role, content, metadata FROM ("
+    query.prepare("SELECT role, content, metadata, timestamp FROM ("
                   "SELECT role, content, metadata, timestamp, rowid FROM messages "
                   "WHERE session_id = ? "
                   "ORDER BY timestamp DESC, rowid DESC LIMIT ?"
@@ -479,10 +518,80 @@ QJsonArray SqliteMemory::loadMessages(const QString& sessionId, int limit) {
             msg["role"] = query.value(0).toString();
             msg["content"] = query.value(1).toString();
             msg["metadata"] = QJsonDocument::fromJson(query.value(2).toString().toUtf8()).object();
+            // Batch 18: msec epoch for export timestamps (consumers that
+            // don't need it simply ignore the extra key).
+            msg["timestamp"] = query.value(3).toDouble();
             messages.append(msg);
         }
     }
     return messages;
+}
+
+// Batch 17 (FEAT-1702): cross-session keyword search, newest first. The
+// trigram FTS path handles 3+ character keywords (quoted phrase → substring
+// match, CJK included); shorter keywords fall back to a LIKE scan because a
+// trigram index cannot answer sub-trigram queries. Snippets come from fts5
+// snippet() on the FTS path and a match-centered window on the LIKE path.
+QVariantList SqliteMemory::searchMessages(const QString& keyword, int limit) {
+    QVariantList out;
+    const QString kw = keyword.trimmed();
+    if (kw.isEmpty() || limit <= 0) return out;
+
+    QSqlQuery query(m_db);
+    const bool ftsPath = kw.length() >= 3;
+    if (ftsPath) {
+        QString match = kw;
+        match.replace(QLatin1String("\""), QLatin1String("\"\""));
+        query.prepare(QStringLiteral(
+            "SELECT m.id, m.session_id, m.role, m.timestamp, "
+            "snippet(messages_fts, 0, '[', ']', '…', 16), s.title "
+            "FROM messages_fts JOIN messages m ON m.id = messages_fts.rowid "
+            "LEFT JOIN sessions s ON s.id = m.session_id "
+            "WHERE messages_fts MATCH ? "
+            "ORDER BY m.timestamp DESC, m.id DESC LIMIT ?"));
+        query.addBindValue(QStringLiteral("\"%1\"").arg(match));
+    } else {
+        QString like = kw;
+        like.replace(QLatin1String("\\"), QLatin1String("\\\\"))
+            .replace(QLatin1String("%"), QLatin1String("\\%"))
+            .replace(QLatin1String("_"), QLatin1String("\\_"));
+        query.prepare(QStringLiteral(
+            "SELECT m.id, m.session_id, m.role, m.timestamp, m.content, s.title "
+            "FROM messages m LEFT JOIN sessions s ON s.id = m.session_id "
+            "WHERE m.content LIKE ? ESCAPE '\\' "
+            "ORDER BY m.timestamp DESC, m.id DESC LIMIT ?"));
+        query.addBindValue(QStringLiteral("%%1%").arg(like));
+    }
+    query.addBindValue(limit);
+    if (!query.exec()) {
+        qWarning() << "searchMessages failed:" << query.lastError().text();
+        return out;
+    }
+    while (query.next()) {
+        QVariantMap row;
+        row.insert(QStringLiteral("messageId"), query.value(0));
+        row.insert(QStringLiteral("sessionId"), query.value(1));
+        const QString role = query.value(2).toString();
+        const qint64 ts = query.value(3).toLongLong();
+        QString snippet = query.value(4).toString();
+        if (!ftsPath) {
+            // LIKE path: center a window on the first (case-insensitive) hit.
+            const int hit = snippet.indexOf(kw, 0, Qt::CaseInsensitive);
+            const int window = 48;
+            if (hit > window) {
+                const int start = hit - window / 2;
+                snippet = QStringLiteral("…") + snippet.mid(start, window + kw.length());
+            }
+            if (snippet.length() > window * 2 + kw.length())
+                snippet += QStringLiteral("…");
+        }
+        row.insert(QStringLiteral("snippet"), snippet);
+        row.insert(QStringLiteral("role"), role);
+        row.insert(QStringLiteral("timestamp"), ts);
+        row.insert(QStringLiteral("sessionTitle"), query.value(5));
+        out.append(row);
+    }
+    return out;
 }
 
 void SqliteMemory::saveEpisodic(const QString& sessionId, const QJsonObject& episode) {
@@ -622,14 +731,21 @@ void SqliteMemory::saveTraceNode(const QString& sessionId, const QJsonObject& no
                   "ON CONFLICT(session_id, node_id) DO UPDATE SET type = excluded.type, "
                   "title = excluded.title, status = excluded.status, args = excluded.args, "
                   "result = excluded.result, timestamp = excluded.timestamp");
+    // Batch 18 review: every text column is NOT NULL. An absent JSON key
+    // yields a null QString, and a null QString binds as SQL NULL — the same
+    // silent-drop trap as usage_log.detail (Batch 11). Normalize the bind.
+    const auto nz = [](const QJsonObject& object, const char* key) {
+        const QString value = object.value(key).toString();
+        return value.isNull() ? QString(QStringLiteral("")) : value;
+    };
     query.addBindValue(sessionId);
-    query.addBindValue(node.value("id").toString());
+    query.addBindValue(nz(node, "id"));
     query.addBindValue(order);
-    query.addBindValue(node.value("type").toString());
-    query.addBindValue(node.value("title").toString());
-    query.addBindValue(node.value("status").toString());
-    query.addBindValue(node.value("args").toString());
-    query.addBindValue(node.value("result").toString());
+    query.addBindValue(nz(node, "type"));
+    query.addBindValue(nz(node, "title"));
+    query.addBindValue(nz(node, "status"));
+    query.addBindValue(nz(node, "args"));
+    query.addBindValue(nz(node, "result"));
     query.addBindValue(static_cast<qint64>(node.value("timestamp").toDouble()));
 
     if (!query.exec()) {

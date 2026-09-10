@@ -39,6 +39,10 @@ Dialog {
         apiKeyField.text = p ? (p.apiKey || "") : ""
         baseUrlField.text = p ? (p.baseUrl || "") : ""
         modelField.text = p ? (p.model || "") : ""
+        // Batch 15: sampling params - absent/empty means "not set"
+        temperatureField.text = p && p.temperature !== undefined ? String(p.temperature) : ""
+        maxTokensField.text = p && p.maxOutputTokens !== undefined ? String(p.maxOutputTokens) : ""
+        numCtxField.text = p && p.numCtx !== undefined ? String(p.numCtx) : ""
     }
 
     background: DialogBackground {}
@@ -319,6 +323,107 @@ Dialog {
                 }
             }
 
+            // Batch 15 (FEAT-1503): per-profile sampling params
+            ColumnLayout {
+                Layout.fillWidth: true
+                spacing: 4
+
+                Text {
+                    text: qsTr("生成参数（留空 = 使用服务默认，不随请求发送）")
+                    color: Theme.textSecondary
+                    font.pixelSize: Theme.fontSizeCaption
+                    font.bold: true
+                    font.family: Theme.fontMono
+                }
+
+                RowLayout {
+                    Layout.fillWidth: true
+                    spacing: 8
+
+                    ColumnLayout {
+                        Layout.fillWidth: true
+                        spacing: 2
+                        Text {
+                            text: qsTr("temperature (0-2)")
+                            color: Theme.textSecondary
+                            font.pixelSize: Theme.fontSizeCaption
+                            font.family: Theme.fontMono
+                        }
+                        TextField {
+                            id: temperatureField
+                            Layout.fillWidth: true
+                            placeholderText: qsTr("留空 = 不发送")
+                            placeholderTextColor: Theme.textSecondary
+                            color: Theme.textPrimary
+                            font.pixelSize: Theme.fontSizeBody
+                            font.family: Theme.fontMono
+                            background: Rectangle {
+                                radius: 6
+                                color: Theme.bgPrimary
+                                border.width: temperatureField.activeFocus ? 2 : 1
+                                border.color: temperatureField.activeFocus ? Theme.brandPrimary : Theme.borderSubtle
+                            }
+                            onEditingFinished: dialog.submitField("temperature", text.trim())
+                        }
+                    }
+
+                    ColumnLayout {
+                        Layout.fillWidth: true
+                        spacing: 2
+                        Text {
+                            text: qsTr("最大输出 tokens")
+                            color: Theme.textSecondary
+                            font.pixelSize: Theme.fontSizeCaption
+                            font.family: Theme.fontMono
+                        }
+                        TextField {
+                            id: maxTokensField
+                            Layout.fillWidth: true
+                            placeholderText: qsTr("留空 = 服务默认")
+                            placeholderTextColor: Theme.textSecondary
+                            color: Theme.textPrimary
+                            font.pixelSize: Theme.fontSizeBody
+                            font.family: Theme.fontMono
+                            background: Rectangle {
+                                radius: 6
+                                color: Theme.bgPrimary
+                                border.width: maxTokensField.activeFocus ? 2 : 1
+                                border.color: maxTokensField.activeFocus ? Theme.brandPrimary : Theme.borderSubtle
+                            }
+                            onEditingFinished: dialog.submitField("maxOutputTokens", text.trim())
+                        }
+                    }
+
+                    ColumnLayout {
+                        Layout.fillWidth: true
+                        spacing: 2
+                        visible: dialog.editing && dialog.editing.provider === "ollama"
+                        Text {
+                            text: qsTr("num_ctx（上下文窗口）")
+                            color: Theme.textSecondary
+                            font.pixelSize: Theme.fontSizeCaption
+                            font.family: Theme.fontMono
+                        }
+                        TextField {
+                            id: numCtxField
+                            Layout.fillWidth: true
+                            placeholderText: qsTr("留空 = 不发送")
+                            placeholderTextColor: Theme.textSecondary
+                            color: Theme.textPrimary
+                            font.pixelSize: Theme.fontSizeBody
+                            font.family: Theme.fontMono
+                            background: Rectangle {
+                                radius: 6
+                                color: Theme.bgPrimary
+                                border.width: numCtxField.activeFocus ? 2 : 1
+                                border.color: numCtxField.activeFocus ? Theme.brandPrimary : Theme.borderSubtle
+                            }
+                            onEditingFinished: dialog.submitField("numCtx", text.trim())
+                        }
+                    }
+                }
+            }
+
             // Model
             ColumnLayout {
                 Layout.fillWidth: true
@@ -591,6 +696,14 @@ Dialog {
                 checked: Settings.localOnlyMode
                 onToggled: Settings.localOnlyMode = checked
                 text: qsTr("仅本地模式（云端模型不可访问知识库，本地 Ollama 模型不受影响；文档内容不会发送到云端）")
+                font.pixelSize: Theme.fontSizeBody
+                font.family: Theme.fontSans
+            }
+
+            CheckBox {
+                checked: Settings.allowLocalNetworkFetch
+                onToggled: Settings.allowLocalNetworkFetch = checked
+                text: qsTr("允许 http_fetch 访问本机与内网地址（危险，默认关闭：仅供本机网关等场景的逃生门）")
                 font.pixelSize: Theme.fontSizeBody
                 font.family: Theme.fontSans
             }

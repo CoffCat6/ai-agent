@@ -78,6 +78,17 @@ Rectangle {
 
         Item { Layout.fillWidth: true }
 
+        // ── Token Usage (Batch 15 / F5) ──────────────
+        // Bound to the pre-existing AgentViewModel counters; live updates
+        // arrive via tokenUsageChanged while a task is running.
+        Text {
+            text: qsTr("tokens: %1 / %2").arg(AgentVM.usedTokens).arg(AgentVM.maxTokens)
+            color: Theme.textSecondary
+            font.pixelSize: Theme.fontSizeCaption
+            font.family: Theme.fontMono
+            Layout.rightMargin: 8
+        }
+
         // ── Panel Toggle Button ──────────────────────
         IconButton {
             icon: AgentVM.isPanelVisible ? "chevron-right" : "chevron-left"

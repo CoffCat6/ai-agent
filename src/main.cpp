@@ -16,6 +16,7 @@
 #include "core/memory/SqliteMemory.h"
 #include "core/tools/ToolRegistry.h"
 #include "core/tools/Sandbox.h"
+#include "core/tools/NetworkFetchTool.h"
 #include "core/rag/RagService.h"
 #include "core/rag/KnowledgeSearchTool.h"
 #include "core/utils/Logger.h"
@@ -114,6 +115,12 @@ int main(int argc, char *argv[])
     // Expose the knowledge base to the model as a safe auto-executed tool
     ToolRegistry::instance().registerTool(std::make_unique<KnowledgeSearchTool>(rag));
 
+    // Batch 20 (FEAT-2001): web fetch tool; RequiresConfirm per call. The
+    // SSRF escape hatch (allowPrivateTargets) follows the settings below.
+    auto fetchOwned = std::make_unique<NetworkFetchTool>();
+    auto* fetchTool = fetchOwned.get();
+    ToolRegistry::instance().registerTool(std::move(fetchOwned));
+
     // ── Batch 14 (SEC-1401/1402): local-only mode gate ──
     // When enabled, the knowledge-base tool is gated off for cloud providers:
     // the model no longer sees the schema, and stale calls from history get
@@ -148,6 +155,8 @@ int main(int argc, char *argv[])
     auto* agentVM = AgentViewModel::instance();
     agentVM->setParent(&app);
     agentVM->setRagService(rag);
+    // Batch 17/18: persistence backend for session search and export.
+    agentVM->setMemory(memory);
     // Re-embedding pulls persisted content from SQLite (GUI thread, fast).
     agentVM->setKnowledgeContentProvider([memory](const QString& name) {
         return memory->loadKnowledgeDoc(name);
@@ -250,12 +259,27 @@ int main(int argc, char *argv[])
     }
 
     // Apply the active model profile to the services and select the provider
-    const auto applySettings = [settings, openai, anthropic, ollama, agent]() {
+    const auto applySettings = [settings, openai, anthropic, ollama, agent, fetchTool]() {
         const QVariantMap profile = settings->activeProfile();
         const QString provider = profile.value("provider").toString();
         const QString baseUrl = profile.value("baseUrl").toString();
         const QString apiKey = profile.value("apiKey").toString();
         const QString model = profile.value("model").toString();
+
+        // Batch 15 (FEAT-1501/1502): per-profile sampling params. An empty
+        // string (cleared field) or a missing key means "not set" - normalized
+        // to an invalid QVariant so the services omit the fields from the
+        // request JSON.
+        const auto param = [](const QVariant& v) -> QVariant {
+            if (!v.isValid()) return {};
+            if (v.metaType().id() == QMetaType::QString
+                    && v.toString().trimmed().isEmpty())
+                return {};
+            return v;
+        };
+        const QVariant temperature = param(profile.value("temperature"));
+        const QVariant maxOutputTokens = param(profile.value("maxOutputTokens"));
+        const QVariant numCtx = param(profile.value("numCtx"));
 
         // Only the active provider receives the profile: broadcasting one
         // profile's baseUrl to all services would corrupt the others
@@ -266,19 +290,26 @@ int main(int argc, char *argv[])
             anthropic->setApiKey(apiKey);
             anthropic->setBaseUrl(baseUrl);
             anthropic->setModel(model);
+            anthropic->setSamplingParams(temperature, maxOutputTokens);
         } else if (provider == QLatin1String("ollama")) {
             ollama->setBaseUrl(baseUrl);
             ollama->setModel(model);
+            ollama->setSamplingParams(temperature, numCtx);
         } else if (provider == QLatin1String("openai")) {
             openai->setApiKey(apiKey);
             openai->setBaseUrl(baseUrl);
             openai->setModel(model);
+            openai->setSamplingParams(temperature, maxOutputTokens);
         }
         agent->setContextLimit(settings->contextTokens());
 
         // Read sandbox policy follows the (opt-in, default-off) setting
         Sandbox::setReadPolicy(settings->allowFullDiskRead()
             ? Sandbox::ReadPolicy::FullDisk : Sandbox::ReadPolicy::UserDirectories);
+
+        // Batch 20: http_fetch SSRF escape hatch follows its (opt-in,
+        // default-off) setting; immediate effect on the next fetch.
+        fetchTool->setAllowPrivateTargets(settings->allowLocalNetworkFetch());
 
         if (provider.isEmpty()) {
             // No profile configured: the agent reports a helpful error
@@ -298,6 +329,7 @@ int main(int argc, char *argv[])
     QObject::connect(settings, &SettingsService::activeProfileChanged, &app, [applySettings]() { applySettings(); });
     QObject::connect(settings, &SettingsService::contextTokensChanged, &app, [applySettings]() { applySettings(); });
     QObject::connect(settings, &SettingsService::allowFullDiskReadChanged, &app, [applySettings]() { applySettings(); });
+    QObject::connect(settings, &SettingsService::allowLocalNetworkFetchChanged, &app, [applySettings]() { applySettings(); });
 
     // FEAT-801: switching the embedding model invalidates every stored
     // chunk vector → full knowledge re-embed in the background (the new

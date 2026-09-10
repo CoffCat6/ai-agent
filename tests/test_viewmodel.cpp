@@ -3,6 +3,7 @@
 #include "viewmodels/AgentViewModel.h"
 #include "viewmodels/TraceModel.h"
 #include "viewmodels/LogModel.h"
+#include "core/memory/SqliteMemory.h"
 #include "core/utils/Logger.h"
 #include "core/rag/RagService.h"
 #include "core/utils/Activity.h"
@@ -12,6 +13,10 @@
 #include <QSettings>
 #include <QStandardPaths>
 #include <QTemporaryDir>
+#include <QFile>
+#include <QJsonArray>
+#include <QJsonDocument>
+#include <QJsonObject>
 
 using namespace NexusAI;
 
@@ -375,6 +380,134 @@ private slots:
             if (cat == QStringLiteral("nexus.app") || cat.isEmpty()) sawApp = true;
         }
         QVERIFY2(sawApp, "app rows missing in unfiltered view");
+    }
+    // ── Batch 18: session export (FEAT-1801) ──────────
+
+    void exportSessionMarkdownRoundtrip() {
+        SqliteMemory memory(QStringLiteral(":memory:"));
+        memory.beginSession("s1", "Exported");
+        memory.saveMessage("s1", QJsonObject{{"role", "user"},
+            {"content", QStringLiteral("第一问：什么是 FTS5")}});
+        memory.saveMessage("s1", QJsonObject{{"role", "assistant"},
+            {"content", QStringLiteral("FTS5 是 SQLite 的全文检索扩展模块")}});
+
+        AgentViewModel vm(nullptr);
+        vm.setMemory(&memory);
+        QTemporaryDir dir;
+        QVERIFY(dir.isValid());
+        const QString path = dir.filePath("export.md");
+
+        QSignalSpy notice(&vm, &AgentViewModel::noticeOccurred);
+        QSignalSpy error(&vm, &AgentViewModel::errorOccurred);
+        QVERIFY(vm.exportSession("s1", path, QStringLiteral("md")));
+        QCOMPARE(notice.count(), 1);
+        QCOMPARE(error.count(), 0);
+
+        QFile f(path);
+        QVERIFY(f.open(QIODevice::ReadOnly));
+        const QString text = QString::fromUtf8(f.readAll());
+        QVERIFY2(text.contains(QStringLiteral("# NexusAI 会话导出")), "missing export header");
+        QVERIFY2(text.contains(QStringLiteral("- 会话 ID：s1")), "missing session id");
+        QVERIFY2(text.contains(QStringLiteral("## 用户 ·")), "missing user role header");
+        QVERIFY2(text.contains(QStringLiteral("第一问：什么是 FTS5")), "missing user content");
+        QVERIFY2(text.contains(QStringLiteral("## 助手 ·")), "missing assistant role header");
+        QVERIFY2(text.contains(QStringLiteral("FTS5 是 SQLite 的全文检索扩展模块")), "missing assistant content");
+        // No trace nodes stored → no trace summary section
+        QVERIFY2(!text.contains(QStringLiteral("## 过程摘要")), "trace section must be absent");
+    }
+
+    void exportSessionJsonRoundtrip() {
+        SqliteMemory memory(QStringLiteral(":memory:"));
+        memory.beginSession("s1", "Json");
+        memory.saveMessage("s1", QJsonObject{{"role", "user"}, {"content", "q"}});
+        memory.saveMessage("s1", QJsonObject{{"role", "assistant"}, {"content", "a"}});
+        QJsonObject node;
+        node["id"] = "n1";   // saveTraceNode binds the JSON key "id" (column node_id, NOT NULL)
+        node["type"] = "tool_call";
+        node["title"] = "read_file";
+        node["status"] = "success";
+        memory.saveTraceNode("s1", node, 0);
+
+        AgentViewModel vm(nullptr);
+        vm.setMemory(&memory);
+        QTemporaryDir dir;
+        QVERIFY(dir.isValid());
+        const QString path = dir.filePath("export.json");
+        QVERIFY(vm.exportSession("s1", path, QStringLiteral("json")));
+
+        QFile f(path);
+        QVERIFY(f.open(QIODevice::ReadOnly));
+        const QJsonDocument doc = QJsonDocument::fromJson(f.readAll());
+        QVERIFY(doc.isObject());
+        QCOMPARE(doc.object().value("sessionId").toString(), QStringLiteral("s1"));
+        QVERIFY(!doc.object().value("exportedAt").toString().isEmpty());
+        const QJsonArray messages = doc.object().value("messages").toArray();
+        QCOMPARE(messages.size(), 2);
+        QCOMPARE(messages.at(0).toObject().value("content").toString(), QStringLiteral("q"));
+        QVERIFY(messages.at(0).toObject().contains("timestamp"));   // Batch 18 loadMessages enrichment
+        const QJsonArray traceNodes = doc.object().value("traceNodes").toArray();
+        QCOMPARE(traceNodes.size(), 1);
+        QCOMPARE(traceNodes.at(0).toObject().value("title").toString(), QStringLiteral("read_file"));
+    }
+
+    // Empty session: no crash, a valid skeleton in both formats; unsupported
+    // format and a missing memory backend fail with an error signal.
+    void exportSessionEmptySession() {
+        SqliteMemory memory(QStringLiteral(":memory:"));
+        AgentViewModel vm(nullptr);
+        vm.setMemory(&memory);
+        QTemporaryDir dir;
+        QVERIFY(dir.isValid());
+
+        const QString jsonPath = dir.filePath("empty.json");
+        QVERIFY(vm.exportSession("empty", jsonPath, QStringLiteral("json")));
+        QFile f(jsonPath);
+        QVERIFY(f.open(QIODevice::ReadOnly));
+        const QJsonDocument doc = QJsonDocument::fromJson(f.readAll());
+        QVERIFY(doc.isObject());
+        QCOMPARE(doc.object().value("messages").toArray().size(), 0);
+        QCOMPARE(doc.object().value("traceNodes").toArray().size(), 0);
+
+        const QString mdPath = dir.filePath("empty.md");
+        QVERIFY(vm.exportSession("empty", mdPath, QStringLiteral("md")));
+        QVERIFY(QFile(mdPath).exists());
+
+        QSignalSpy error(&vm, &AgentViewModel::errorOccurred);
+        QVERIFY(!vm.exportSession("empty", dir.filePath("x.xml"), QStringLiteral("xml")));
+        QCOMPARE(error.count(), 1);
+        AgentViewModel noBackend(nullptr);
+        QSignalSpy error2(&noBackend, &AgentViewModel::errorOccurred);
+        QVERIFY(!noBackend.exportSession("empty", dir.filePath("y.json"), QStringLiteral("json")));
+        QCOMPARE(error2.count(), 1);
+    }
+
+    // Tool evidence lives only in trace_nodes (MEM-701 contract): the trace
+    // summary section appears in Markdown exports when nodes exist.
+    void exportSessionWithToolRounds() {
+        SqliteMemory memory(QStringLiteral(":memory:"));
+        memory.beginSession("s1", "With tools");
+        memory.saveMessage("s1", QJsonObject{{"role", "user"}, {"content", "list the dir"}});
+        memory.saveMessage("s1", QJsonObject{{"role", "assistant"}, {"content", "done"}});
+        QJsonObject node;
+        node["id"] = "n1";   // saveTraceNode binds the JSON key "id" (column node_id, NOT NULL)
+        node["type"] = "tool_call";
+        node["title"] = "list_dir";
+        node["status"] = "success";
+        memory.saveTraceNode("s1", node, 0);
+
+        AgentViewModel vm(nullptr);
+        vm.setMemory(&memory);
+        QTemporaryDir dir;
+        QVERIFY(dir.isValid());
+        const QString path = dir.filePath("tools.md");
+        QVERIFY(vm.exportSession("s1", path, QStringLiteral("md")));
+
+        QFile f(path);
+        QVERIFY(f.open(QIODevice::ReadOnly));
+        const QString text = QString::fromUtf8(f.readAll());
+        QVERIFY2(text.contains(QStringLiteral("## 过程摘要")), "missing trace summary section");
+        QVERIFY2(text.contains(QStringLiteral("[success] tool_call · list_dir")),
+                 "trace node line missing from the summary");
     }
 };
 

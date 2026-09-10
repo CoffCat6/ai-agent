@@ -44,6 +44,11 @@ private slots:
     void workspaceIdColumnReserved();
     // 日志增强: usage trail persistence (Batch 12 前日志增强)
     void usageLogRoundTripAndPrune();
+    // Batch 17: cross-session message search (FEAT-1701/1702)
+    void searchMessagesFindsAcrossSessions();
+    void searchMessagesSyncsOnDelete();
+    void searchMessagesShortKeywordLikeFallback();
+    void messagesFtsMigrationSelfHeals();
 };
 
 void TestMemory::messageRoundTrip() {
@@ -463,6 +468,106 @@ void TestMemory::usageLogRoundTripAndPrune() {
     QCOMPARE(memory.loadUsageEvents(100).size(), before + 1);
     QVERIFY(memory.loadUsageEvents(100).at(0).toObject().value("detail")
                 .toString().isEmpty());
+}
+
+// Batch 17: the trigram FTS path must answer 3+ char CJK/ASCII substring
+// queries across sessions, newest first, with session title enrichment.
+void TestMemory::searchMessagesFindsAcrossSessions() {
+    SqliteMemory mem(QStringLiteral(":memory:"));
+    mem.beginSession("s1", "明代研究");
+    mem.saveMessage("s1", msg("user", "帮我查一下明代的文献学资料"));
+    mem.beginSession("s2", "杂谈");
+    mem.saveMessage("s2", msg("assistant", "今天聊点别的，不谈学术"));
+    mem.saveMessage("s2", msg("user", "其实我对文献学也有兴趣"));
+
+    const QVariantList hits = mem.searchMessages(QStringLiteral("文献学"), 50);
+    QCOMPARE(hits.size(), 2);
+    // Newest first: s2's hit precedes s1's.
+    const QVariantMap first = hits.at(0).toMap();
+    QCOMPARE(first.value("sessionId").toString(), QStringLiteral("s2"));
+    QCOMPARE(first.value("role").toString(), QStringLiteral("user"));
+    QVERIFY(first.value("messageId").toLongLong() > 0);
+    QVERIFY(first.value("timestamp").toLongLong() > 0);
+    QVERIFY(first.value("snippet").toString().contains(QStringLiteral("文献学")));
+    // Grouping caption: the session title rides along.
+    const QVariantMap second = hits.at(1).toMap();
+    QCOMPARE(second.value("sessionId").toString(), QStringLiteral("s1"));
+    QCOMPARE(second.value("sessionTitle").toString(), QStringLiteral("明代研究"));
+
+    // Empty/blank keywords → empty results (sidebar treats it as "no search").
+    QVERIFY(mem.searchMessages(QString(), 50).isEmpty());
+    QVERIFY(mem.searchMessages(QStringLiteral("   "), 50).isEmpty());
+}
+
+// Deleting a session must remove its rows from the FTS index (DELETE trigger).
+void TestMemory::searchMessagesSyncsOnDelete() {
+    SqliteMemory mem(QStringLiteral(":memory:"));
+    mem.beginSession("s1", "To be deleted");
+    mem.saveMessage("s1", msg("user", "独一无二的检索锚点文本"));
+    QCOMPARE(mem.searchMessages(QStringLiteral("检索锚点"), 50).size(), 1);
+
+    mem.deleteSession("s1");
+    QVERIFY(mem.searchMessages(QStringLiteral("检索锚点"), 50).isEmpty());
+}
+
+// Keywords shorter than 3 characters cannot use the trigram index; they must
+// fall back to a LIKE scan (both CJK and ASCII).
+void TestMemory::searchMessagesShortKeywordLikeFallback() {
+    SqliteMemory mem(QStringLiteral(":memory:"));
+    mem.saveMessage("s1", msg("user", "明代史料汇编"));
+    mem.saveMessage("s1", msg("assistant", "rust async runtime notes"));
+
+    const QVariantList cjk = mem.searchMessages(QStringLiteral("明代"), 50);
+    QCOMPARE(cjk.size(), 1);
+    QVERIFY(cjk.at(0).toMap().value("snippet").toString()
+                .contains(QStringLiteral("明代")));
+
+    const QVariantList ascii = mem.searchMessages(QStringLiteral("async"), 50);
+    QCOMPARE(ascii.size(), 1);
+
+    QVERIFY(mem.searchMessages(QStringLiteral("zzz"), 50).isEmpty());
+}
+
+// Discipline #8: an old database without messages_fts must self-heal on
+// open - the FTS index is created and pre-existing rows are backfilled.
+void TestMemory::messagesFtsMigrationSelfHeals() {
+    const QString dir = QStandardPaths::writableLocation(QStandardPaths::TempLocation)
+                        + "/nexusai-memtest-" + QString::number(QCoreApplication::applicationPid());
+    QDir().mkpath(dir);
+    const QString dbPath = dir + "/pre17.db";
+    QFile::remove(dbPath);
+
+    {
+        // v2-era database: messages exist, messages_fts does not
+        QSqlDatabase db = QSqlDatabase::addDatabase("QSQLITE", "pre17-raw");
+        db.setDatabaseName(dbPath);
+        QVERIFY(db.open());
+        QSqlQuery q(db);
+        QVERIFY(q.exec("CREATE TABLE messages (id INTEGER PRIMARY KEY AUTOINCREMENT, "
+                       "session_id TEXT NOT NULL, role TEXT NOT NULL, content TEXT NOT NULL, "
+                       "timestamp INTEGER NOT NULL, metadata TEXT)"));
+        q.prepare("INSERT INTO messages (session_id, role, content, timestamp) "
+                  "VALUES (?, ?, ?, ?)");
+        q.addBindValue("old-session");
+        q.addBindValue("user");
+        q.addBindValue("旧库里沉睡的检索锚点");
+        q.addBindValue(1234567);
+        QVERIFY(q.exec());
+        db.close();
+    }
+    QSqlDatabase::removeDatabase("pre17-raw");
+
+    SqliteMemory memory(dbPath);
+    const QVariantList hits = memory.searchMessages(QStringLiteral("检索锚点"), 50);
+    QCOMPARE(hits.size(), 1);
+    QCOMPARE(hits.at(0).toMap().value("sessionId").toString(), QStringLiteral("old-session"));
+
+    // New writes keep flowing through the trigger after the migration.
+    memory.saveMessage("new-session", msg("user", "迁移之后新写入的检索锚点"));
+    QCOMPARE(memory.searchMessages(QStringLiteral("检索锚点"), 50).size(), 2);
+
+    QFile::remove(dbPath);
+    QDir(dir).removeRecursively();
 }
 
 QTEST_GUILESS_MAIN(TestMemory)

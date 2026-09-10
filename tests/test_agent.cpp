@@ -410,8 +410,9 @@ void TestAgent::dangerousToolsNotExposed() {
     QSignalSpy spy(&agent, &AIAgent::responseReady);
     agent.startTask("hi");
     QTRY_COMPARE(spy.count(), 1);
-    // 5 built-in tools are registered, but rm_rf (Dangerous) must be filtered
-    QCOMPARE(llm.seenTools.first().size(), 4);
+    // 6 built-in tools are registered (Batch 19 added edit_file), but
+    // rm_rf (Dangerous) must be filtered
+    QCOMPARE(llm.seenTools.first().size(), 5);
 }
 
 void TestAgent::safeToolFeedbackLoop() {

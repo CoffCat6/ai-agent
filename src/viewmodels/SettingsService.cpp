@@ -213,6 +213,7 @@ void SettingsService::load() {
     m_simulationMode = settings.value("simulationMode", false).toBool();
     m_allowFullDiskRead = settings.value("security/allowFullDiskRead", false).toBool();
     m_localOnlyMode = settings.value("security/localOnlyMode", false).toBool();
+    m_allowLocalNetworkFetch = settings.value("security/allowLocalNetworkFetch", false).toBool();
     m_embeddingModel = settings.value("embedding/model", QStringLiteral("nomic-embed-text")).toString();
     // logging/level is Logger::install()'s key; the env override still wins
     // there, so load() only mirrors the stored value (install() already
@@ -461,6 +462,18 @@ void SettingsService::setLocalOnlyMode(bool enabled) {
                     enabled ? QStringLiteral("on") : QStringLiteral("off"));
     QSettings().setValue("security/localOnlyMode", enabled);
     emit localOnlyModeChanged();
+}
+
+// Batch 20 (FEAT-2002): SSRF escape hatch for http_fetch - same silent-repeat
+// pattern as allowFullDiskRead. Consumed via main.cpp applySettings →
+// NetworkFetchTool::setAllowPrivateTargets.
+void SettingsService::setAllowLocalNetworkFetch(bool enabled) {
+    if (m_allowLocalNetworkFetch == enabled) return;
+    m_allowLocalNetworkFetch = enabled;
+    Activity::usage(Activity::Kind::User, QStringLiteral("settings.allowLocalNetworkFetch"),
+                    enabled ? QStringLiteral("on") : QStringLiteral("off"));
+    QSettings().setValue("security/allowLocalNetworkFetch", enabled);
+    emit allowLocalNetworkFetchChanged();
 }
 
 void SettingsService::setEmbeddingModel(const QString& model) {

@@ -1,6 +1,7 @@
 #include "AgentViewModel.h"
 
 #include "core/agent/AIAgent.h"
+#include "core/memory/IMemory.h"
 #include "core/tools/ToolRegistry.h"
 #include "core/rag/RagService.h"
 #include "core/rag/KnowledgeChunk.h"
@@ -15,6 +16,7 @@
 #include <QFileInfo>
 #include <QGuiApplication>
 #include <QSettings>
+#include <QSaveFile>
 #include <QUrl>
 #include <QUuid>
 #include <QJsonObject>
@@ -99,6 +101,102 @@ void AgentViewModel::setAgent(AIAgent* agent) {
         emit currentSessionIdChanged();
     }
     emit liveModeChanged();
+}
+
+// Batch 17: attach the persistence backend (search + Batch 18 export).
+// Takes no ownership; nullptr (simulation mode) disables those features.
+void AgentViewModel::setMemory(IMemory* memory) {
+    if (m_memory == memory) return;
+    m_memory = memory;
+}
+
+void AgentViewModel::searchMessages(const QString& keyword) {
+    const QVariantList results = m_memory
+        ? m_memory->searchMessages(keyword, 50) : QVariantList();
+    if (m_searchResults == results) return;
+    m_searchResults = results;
+    emit searchResultsChanged();
+}
+
+// Batch 18 (FEAT-1801): export one session as Markdown or JSON. Reads go
+// through the persistence backend attached in setMemory(); the file write is
+// atomic (QSaveFile) so a failed export never leaves a half-written file.
+// Metadata-only usage event: session id + format, never message content.
+bool AgentViewModel::exportSession(const QString& sessionId, const QString& path,
+                                   const QString& format) {
+    if (!m_memory) {
+        emit errorOccurred(tr("导出失败：未连接持久化后端"));
+        return false;
+    }
+    const bool markdown = format == QLatin1String("md");
+    if (!markdown && format != QLatin1String("json")) {
+        emit errorOccurred(tr("导出失败：不支持的格式“%1”（可选 md / json）").arg(format));
+        return false;
+    }
+    // QML FileDialog hands over a file:// URL; plain paths (tests) pass through.
+    const QUrl urlArg(path);
+    const QString localPath = urlArg.isLocalFile() ? urlArg.toLocalFile() : path;
+
+    const QJsonArray messages = m_memory->loadMessages(sessionId);
+    const QJsonArray traceNodes = m_memory->loadTraceNodes(sessionId);
+    const QString exportedAt =
+        QDateTime::currentDateTime().toString(Qt::ISODateWithMs);
+
+    QByteArray payload;
+    if (markdown) {
+        QString md;
+        md += QStringLiteral("# NexusAI 会话导出\n\n");
+        md += QStringLiteral("- 会话 ID：%1\n").arg(sessionId);
+        md += QStringLiteral("- 导出时间：%1\n").arg(exportedAt);
+        md += QStringLiteral("- 消息数：%1\n\n---\n\n").arg(messages.size());
+        for (const auto& entry : messages) {
+            const QJsonObject msg = entry.toObject();
+            const QString role = msg.value("role").toString();
+            const QString label = role == QLatin1String("user") ? QStringLiteral("用户")
+                                : role == QLatin1String("assistant") ? QStringLiteral("助手")
+                                : role;
+            const qint64 ts = msg.value("timestamp").toVariant().toLongLong();
+            md += QStringLiteral("## %1 · %2\n\n")
+                      .arg(label, QDateTime::fromMSecsSinceEpoch(ts)
+                                      .toString(QStringLiteral("yyyy-MM-dd HH:mm:ss")));
+            md += msg.value("content").toString() + QStringLiteral("\n\n");
+        }
+        if (!traceNodes.isEmpty()) {
+            md += QStringLiteral("---\n\n## 过程摘要\n\n");
+            for (const auto& entry : traceNodes) {
+                const QJsonObject node = entry.toObject();
+                md += QStringLiteral("- [%1] %2 · %3\n")
+                          .arg(node.value("status").toString(),
+                               node.value("type").toString(),
+                               node.value("title").toString());
+            }
+        }
+        payload = md.toUtf8();
+    } else {
+        QJsonObject root;
+        root["sessionId"] = sessionId;
+        root["exportedAt"] = exportedAt;
+        root["messages"] = messages;
+        root["traceNodes"] = traceNodes;
+        payload = QJsonDocument(root).toJson(QJsonDocument::Indented);
+    }
+
+    QSaveFile file(localPath);
+    if (!file.open(QIODevice::WriteOnly)) {
+        emit errorOccurred(tr("导出失败：无法写入 %1").arg(localPath));
+        return false;
+    }
+    file.write(payload);
+    if (!file.commit()) {
+        emit errorOccurred(tr("导出失败：写入未完成 %1").arg(localPath));
+        return false;
+    }
+
+    Activity::usage(Activity::Kind::User, QStringLiteral("user.export"),
+                    sessionId, 0, format);
+    emit noticeOccurred(tr("已导出会话（%1 条消息）：%2")
+                            .arg(messages.size()).arg(QFileInfo(localPath).fileName()));
+    return true;
 }
 
 void AgentViewModel::connectAgent(AIAgent* agent) {

@@ -1,6 +1,8 @@
 import QtQuick
 import QtQuick.Layouts
 import QtQuick.Controls
+import QtQuick.Dialogs
+import QtCore
 import NexusAI
 import NexusAI.ViewModels
 
@@ -18,6 +20,13 @@ Rectangle {
     color: Theme.bgSecondary
     border.width: 0
     clip: true
+
+    // Batch 17: while the search field has text the sidebar shows the
+    // cross-session search results instead of the session list.
+    readonly property bool searching: searchField.text.trim().length > 0
+    // Batch 18: session picked for export + chosen format ("md" / "json")
+    property string exportSessionId: ""
+    property string exportFormat: "md"
 
     // Fade the content out while collapsing so text never gets squeezed
     readonly property real contentFade: AgentVM.isSidebarExpanded ? 1.0 : 0.0
@@ -117,11 +126,58 @@ Rectangle {
             }
         }
 
+        // ── Search (Batch 17 / F1) ───────────────────
+        Rectangle {
+            Layout.fillWidth: true
+            Layout.leftMargin: 12
+            Layout.rightMargin: 12
+            Layout.topMargin: 8
+            Layout.preferredHeight: 32
+            radius: 6
+            color: Theme.bgPrimary
+            border.width: searchField.activeFocus ? 2 : 1
+            border.color: searchField.activeFocus ? Theme.brandPrimary : Theme.borderSubtle
+
+            Row {
+                anchors.fill: parent
+                anchors.leftMargin: 8
+                anchors.rightMargin: 8
+                spacing: 6
+
+                AppIcon {
+                    anchors.verticalCenter: parent.verticalCenter
+                    icon: "search"
+                    size: 14
+                    iconColor: Theme.textSecondary
+                }
+
+                TextField {
+                    id: searchField
+                    width: parent.width - parent.spacing - 14 - 16
+                    anchors.verticalCenter: parent.verticalCenter
+                    placeholderText: qsTr("搜索会话历史…")
+                    placeholderTextColor: Theme.textSecondary
+                    color: Theme.textPrimary
+                    font.pixelSize: Theme.fontSizeBody
+                    font.family: Theme.fontSans
+                    background: null
+                    selectByMouse: true
+                    onTextChanged: searchDebounce.restart()
+                }
+            }
+
+            Timer {
+                id: searchDebounce
+                interval: 200
+                onTriggered: AgentVM.searchMessages(searchField.text.trim())
+            }
+        }
+
         // ── Session History ──────────────────────────
         Text {
             Layout.topMargin: 16
             Layout.leftMargin: 20
-            text: "SESSIONS"
+            text: root.searching ? qsTr("搜索结果") : "SESSIONS"
             color: Theme.textSecondary
             font.pixelSize: 10
             font.family: Theme.fontMono
@@ -129,6 +185,7 @@ Rectangle {
         }
 
         ScrollView {
+            visible: !root.searching
             Layout.fillWidth: true
             Layout.fillHeight: true
             Layout.topMargin: 8
@@ -211,7 +268,7 @@ Rectangle {
                                 font.pixelSize: Theme.fontSizeBody
                                 font.family: Theme.fontSans
                                 elide: Text.ElideRight
-                                width: parent.width - (sessionDelegate.hovered ? 44 : 0)
+                                width: parent.width - (sessionDelegate.hovered ? 66 : 0)
                             }
 
                             Row {
@@ -219,6 +276,32 @@ Rectangle {
                                 anchors.verticalCenter: parent.verticalCenter
                                 anchors.right: parent.right
                                 spacing: 2
+
+                                // Export action (Batch 18)
+                                Rectangle {
+                                    width: 20
+                                    height: 20
+                                    radius: 4
+                                    color: exportMA.containsMouse ? Theme.surfaceHover : "transparent"
+
+                                    AppIcon {
+                                        anchors.centerIn: parent
+                                        icon: "export"
+                                        size: 12
+                                        iconColor: exportMA.containsMouse ? Theme.brandPrimary : Theme.textSecondary
+                                    }
+
+                                    MouseArea {
+                                        id: exportMA
+                                        anchors.fill: parent
+                                        hoverEnabled: true
+                                        cursorShape: Qt.PointingHandCursor
+                                        onClicked: {
+                                            root.exportSessionId = modelData.id
+                                            exportDialog.open()
+                                        }
+                                    }
+                                }
 
                                 // Rename action
                                 Rectangle {
@@ -315,6 +398,86 @@ Rectangle {
             }
         }
 
+        // ── Search Results (Batch 17 / F1) ───────────
+        // Grouped by session: the title caption renders on the first row of
+        // each group (previousSection != section). Click restores the whole
+        // session; in-message scroll positioning is a declared enhancement.
+        ScrollView {
+            visible: root.searching
+            Layout.fillWidth: true
+            Layout.fillHeight: true
+            Layout.topMargin: 8
+            clip: true
+
+            ListView {
+                id: searchResultsList
+                model: AgentVM.searchResults
+                spacing: 2
+                clip: true
+                section.property: "sessionId"
+
+                Text {
+                    anchors.centerIn: parent
+                    visible: searchResultsList.count === 0
+                    text: qsTr("无匹配结果")
+                    color: Theme.textSecondary
+                    font.pixelSize: Theme.fontSizeCaption
+                    font.family: Theme.fontSans
+                }
+
+                delegate: ItemDelegate {
+                    id: resultDelegate
+                    width: searchResultsList.width
+                    height: (ListView.previousSection !== ListView.section ? 62 : 44)
+
+                    background: Rectangle {
+                        color: resultDelegate.hovered ? Theme.surfaceHover : "transparent"
+                    }
+
+                    ColumnLayout {
+                        anchors.fill: parent
+                        anchors.leftMargin: 20
+                        anchors.rightMargin: 12
+                        spacing: 2
+
+                        Text {
+                            visible: ListView.previousSection !== ListView.section
+                            text: modelData.sessionTitle && modelData.sessionTitle.length > 0
+                                ? modelData.sessionTitle : qsTr("新会话")
+                            color: Theme.brandPrimary
+                            font.pixelSize: Theme.fontSizeCaption
+                            font.weight: Font.DemiBold
+                            font.family: Theme.fontSans
+                            elide: Text.ElideRight
+                            width: parent.width
+                        }
+
+                        Text {
+                            text: modelData.snippet
+                            color: Theme.textPrimary
+                            font.pixelSize: Theme.fontSizeCaption
+                            font.family: Theme.fontSans
+                            elide: Text.ElideRight
+                            Layout.fillWidth: true
+                        }
+
+                        Text {
+                            text: modelData.role === "user" ? qsTr("用户")
+                                : modelData.role === "assistant" ? qsTr("助手") : modelData.role
+                            color: Theme.textSecondary
+                            font.pixelSize: 10
+                            font.family: Theme.fontMono
+                        }
+                    }
+
+                    onClicked: {
+                        searchField.text = ""          // back to the session list
+                        AgentVM.loadSession(modelData.sessionId)
+                    }
+                }
+            }
+        }
+
         // ── Bottom Bar: Audit + Settings + Theme ─────
         Rectangle {
             Layout.fillWidth: true
@@ -397,5 +560,18 @@ Rectangle {
                 }
             }
         }
+    }
+
+    // ── Export dialog (Batch 18 / F2) ─────────────────
+    // SaveFile with both format filters; the selected filter row decides the
+    // export format. main.qml surfaces the VM's noticeOccurred as a toast.
+    FileDialog {
+        id: exportDialog
+        fileMode: FileDialog.SaveFile
+        currentFolder: StandardPaths.writableLocation(StandardPaths.DocumentsLocation)
+        nameFilters: [qsTr("Markdown (*.md)"), qsTr("JSON (*.json)")]
+        onAccepted: AgentVM.exportSession(
+            root.exportSessionId, selectedFile,
+            selectedNameFilterIndex === 1 ? "json" : "md")
     }
 }

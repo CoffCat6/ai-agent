@@ -174,6 +174,14 @@ LLMResponse AnthropicService::parseResponse(const QJsonObject& json) {
     return response;
 }
 
+// Batch 15 (FEAT-1502): max_tokens is required by the Messages API, so an
+// unset profile value keeps the historical 4096; temperature stays optional.
+void AnthropicService::setSamplingParams(const QVariant& temperature,
+                                         const QVariant& maxOutputTokens) {
+    m_maxTokens = maxOutputTokens.isValid() ? qMax(1, maxOutputTokens.toInt()) : 4096;
+    m_temperature = temperature;
+}
+
 void AnthropicService::chatComplete(const QJsonArray& messages, const QJsonArray& tools) {
     if (m_apiKey.isEmpty()) {
         emit errorOccurred("API key not set. Configure it in settings or via the "
@@ -190,6 +198,8 @@ void AnthropicService::chatComplete(const QJsonArray& messages, const QJsonArray
     QJsonObject body;
     body["model"] = m_model;
     body["max_tokens"] = m_maxTokens;
+    if (m_temperature.isValid())
+        body["temperature"] = m_temperature.toDouble();
     body["stream"] = true;
     body["messages"] = history.messages;
     if (!history.system.isEmpty())

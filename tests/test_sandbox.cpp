@@ -1,8 +1,13 @@
 // Sandbox path policy: traversal/bypass resistance and boundary correctness.
 #include "core/tools/Sandbox.h"
+#include "core/tools/ToolRegistry.h"
 
 #include <QtTest>
 #include <QStandardPaths>
+#include <QTemporaryDir>
+#include <QFile>
+#include <QJsonDocument>
+#include <QJsonObject>
 
 using namespace NexusAI;
 
@@ -19,6 +24,13 @@ private slots:
     // Batch 5: read policy (audit P1-8, SEC-501)
     void readsRestrictedToUserDirectories();
     void fullDiskReadPolicyOptIn();
+    // Batch 19: edit_file tool (FEAT-1901/1903) - driven through the
+    // registry because tool classes are internal to ToolRegistry.cpp
+    void editFileUniqueReplace();
+    void editFileMultipleMatchRejected();
+    void editFileNotFound();
+    void editFileOutsideWhitelistRejected();
+    void editFileCrlfBoundary();
 };
 
 void TestSandbox::allowsUserWrites() {
@@ -116,6 +128,120 @@ void TestSandbox::fullDiskReadPolicyOptIn() {
     QVERIFY(!Sandbox::validatePath("C:\\Windows\\System32\\config", false)); // still blocked
     Sandbox::setReadPolicy(Sandbox::ReadPolicy::UserDirectories);
     QVERIFY(!Sandbox::validatePath("C:\\ProgramData\\secret.txt", false));
+}
+
+// ── Batch 19: edit_file tool ──────────────────────────────
+// Tool classes are internal to ToolRegistry.cpp, so tests drive execute()
+// through the registry singleton. Temp dirs are created under Documents -
+// a plain QTemporaryDir lands in TempLocation, which the sandbox refuses.
+
+namespace {
+
+QTemporaryDir sandboxTempDir() {
+    const QString docs = QStandardPaths::writableLocation(QStandardPaths::DocumentsLocation);
+    return QTemporaryDir(docs + QStringLiteral("/nexusai-sandboxtests-XXXXXX"));
+}
+
+ToolResult runEdit(const QString& path, const QString& oldString, const QString& newString) {
+    ITool* tool = ToolRegistry::instance().find(QStringLiteral("edit_file"));
+    if (!tool) return ToolResult::fail("edit_file not registered");
+    return tool->execute(QJsonObject{{"path", path},
+                                     {"old_string", oldString},
+                                     {"new_string", newString}});
+}
+
+QString readFileText(const QString& path) {
+    QFile f(path);
+    if (!f.open(QIODevice::ReadOnly)) return QString();
+    return QString::fromUtf8(f.readAll());
+}
+
+} // namespace
+
+void TestSandbox::editFileUniqueReplace() {
+    QTemporaryDir dir = sandboxTempDir();
+    QVERIFY(dir.isValid());
+    const QString path = dir.filePath("edit.txt");
+    QFile f(path);
+    QVERIFY(f.open(QIODevice::WriteOnly));
+    f.write("alpha\nbeta\ngamma\n");
+    f.close();
+
+    const ToolResult r = runEdit(path, QStringLiteral("beta"), QStringLiteral("BETA"));
+    QVERIFY(r.success);
+    QVERIFY(r.output.contains(QStringLiteral("Replaced 1 occurrence")));
+    QCOMPARE(readFileText(path), QStringLiteral("alpha\nBETA\ngamma\n"));
+}
+
+void TestSandbox::editFileMultipleMatchRejected() {
+    QTemporaryDir dir = sandboxTempDir();
+    QVERIFY(dir.isValid());
+    const QString path = dir.filePath("multi.txt");
+    QFile f(path);
+    QVERIFY(f.open(QIODevice::WriteOnly));
+    f.write("x one x two x");
+    f.close();
+
+    const ToolResult r = runEdit(path, QStringLiteral("x"), QStringLiteral("y"));
+    QVERIFY(!r.success);
+    QVERIFY2(r.error.contains(QStringLiteral("matches 3 locations")),
+             qPrintable(r.error));
+    QCOMPARE(readFileText(path), QStringLiteral("x one x two x"));   // untouched
+}
+
+void TestSandbox::editFileNotFound() {
+    QTemporaryDir dir = sandboxTempDir();
+    QVERIFY(dir.isValid());
+    const QString path = dir.filePath("nf.txt");
+    QFile f(path);
+    QVERIFY(f.open(QIODevice::WriteOnly));
+    f.write("abc");
+    f.close();
+
+    const ToolResult r = runEdit(path, QStringLiteral("zzz"), QStringLiteral("y"));
+    QVERIFY(!r.success);
+    QVERIFY2(r.error.contains(QStringLiteral("old_string not found")), qPrintable(r.error));
+    QCOMPARE(readFileText(path), QStringLiteral("abc"));             // untouched
+}
+
+void TestSandbox::editFileOutsideWhitelistRejected() {
+    // Writes allow user directories (including the whole home), so the
+    // rejection test needs a system path - the tool must refuse BEFORE
+    // touching the filesystem (no file created). Platform-appropriate path,
+    // same convention as blocksSystemPaths().
+#ifdef Q_OS_WIN
+    const QString path = QStringLiteral("C:\\Windows\\Temp\\nexusai-edit-blocked.txt");
+#else
+    const QString path = QStringLiteral("/etc/nexusai-edit-blocked.txt");
+#endif
+
+    const ToolResult r = runEdit(path, QStringLiteral("secret"), QStringLiteral("nope"));
+    QVERIFY(!r.success);
+    QVERIFY2(r.error.contains(QStringLiteral("sandbox policy")), qPrintable(r.error));
+    QVERIFY2(!QFile::exists(path), "blocked edit must not create the file");
+}
+
+// Exact-match semantics: line endings are NOT normalized, so an LF old_string
+// cannot hit a CRLF file; a CRLF old_string replaces and preserves the rest.
+void TestSandbox::editFileCrlfBoundary() {
+    QTemporaryDir dir = sandboxTempDir();
+    QVERIFY(dir.isValid());
+    const QString path = dir.filePath("crlf.txt");
+    QFile f(path);
+    QVERIFY(f.open(QIODevice::WriteOnly));
+    f.write("line1\r\nline2\r\nline3\r\n");
+    f.close();
+
+    const ToolResult lfMiss = runEdit(path, QStringLiteral("line1\nline2"),
+                                      QStringLiteral("replaced"));
+    QVERIFY(!lfMiss.success);
+    QVERIFY2(lfMiss.error.contains(QStringLiteral("old_string not found")),
+             qPrintable(lfMiss.error));
+
+    const ToolResult crlfHit = runEdit(path, QStringLiteral("line1\r\nline2"),
+                                       QStringLiteral("LINE1"));
+    QVERIFY(crlfHit.success);
+    QCOMPARE(readFileText(path), QStringLiteral("LINE1\r\nline3\r\n"));
 }
 
 QTEST_GUILESS_MAIN(TestSandbox)

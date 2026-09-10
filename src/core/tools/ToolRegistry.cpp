@@ -126,6 +126,79 @@ public:
     }
 };
 
+// ── Built-in File Edit Tool (RequiresConfirm) ─────────────
+// Batch 19 (FEAT-1901): search/replace edit for existing files - safer and
+// more precise than a full write_file rewrite. Exact-match semantics: line
+// endings are NOT normalized, so an old_string that differs from the file's
+// CRLF bytes is reported as not-found (pinned by editFileCrlfBoundary).
+class EditFileTool : public ITool {
+public:
+    ToolDefinition definition() const override {
+        ToolDefinition def;
+        def.name = "edit_file";
+        def.description = "Replace an exact, unique occurrence of old_string in "
+                          "an existing file with new_string. Prefer this over "
+                          "write_file when only part of an existing file changes.";
+        def.level = ToolLevel::RequiresConfirm;
+        QJsonObject props;
+        props["path"] = stringParam("Absolute path to the file to edit.");
+        props["old_string"] = stringParam("Exact text to replace (must occur exactly once).");
+        props["new_string"] = stringParam("Replacement text (may be empty to delete text).");
+        def.parameters = buildParams(props, QJsonArray{"path", "old_string", "new_string"});
+        return def;
+    }
+
+    ToolResult execute(const QJsonObject& args) override {
+        const QString path = args.value("path").toString();
+        const QString oldString = args.value("old_string").toString();
+        const QString newString = args.value("new_string").toString();
+
+        if (path.isEmpty())
+            return ToolResult::fail("Path is required");
+        if (oldString.isEmpty())
+            return ToolResult::fail("old_string is required (use write_file to create new content)");
+
+        if (!Sandbox::validatePath(path, true))
+            return ToolResult::fail("Path blocked by sandbox policy: writes are only "
+                                    "allowed in user directories");
+
+        QFile file(path);
+        if (!file.open(QIODevice::ReadOnly))
+            return ToolResult::fail("Cannot open file for reading: " + file.errorString());
+        const QString content = QString::fromUtf8(file.readAll());
+        file.close();
+        if (content.contains(QChar::ReplacementCharacter))
+            return ToolResult::fail("File is not valid UTF-8 text");
+
+        int count = 0;
+        int pos = -1;
+        for (int at = content.indexOf(oldString); at >= 0;
+             at = content.indexOf(oldString, at + oldString.length())) {
+            if (count == 0) pos = at;
+            ++count;
+        }
+        if (count == 0)
+            return ToolResult::fail("old_string not found");
+        if (count > 1)
+            return ToolResult::fail(QStringLiteral("old_string matches %1 locations, need unique")
+                                        .arg(count));
+
+        QString updated = content;
+        updated.replace(pos, oldString.length(), newString);
+
+        // Raw (non-Text) mode: bytes in, bytes out - no newline translation,
+        // so the untouched parts of the file survive byte-for-byte.
+        if (!file.open(QIODevice::WriteOnly | QIODevice::Truncate))
+            return ToolResult::fail("Cannot open file for writing: " + file.errorString());
+        const QByteArray bytes = updated.toUtf8();
+        file.write(bytes);
+        file.close();
+
+        return ToolResult::ok(QStringLiteral("Replaced 1 occurrence at offset %1; file now %2 bytes")
+                                  .arg(pos).arg(bytes.size()));
+    }
+};
+
 // ── Built-in Directory Listing Tool (Safe) ────────────────
 class ListDirTool : public ITool {
 public:
@@ -293,6 +366,7 @@ void ToolRegistry::registerBuiltins() {
     registerTool(std::make_unique<FileReadTool>());
     registerTool(std::make_unique<ListDirTool>());
     registerTool(std::make_unique<FileWriteTool>());
+    registerTool(std::make_unique<EditFileTool>());   // Batch 19 (FEAT-1901)
     registerTool(std::make_unique<ShellExecTool>());
     registerTool(std::make_unique<RmRfTool>());
 }

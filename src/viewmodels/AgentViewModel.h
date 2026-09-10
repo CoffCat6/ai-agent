@@ -15,6 +15,7 @@
 namespace NexusAI {
 
 class AIAgent;
+class IMemory;
 class RagService;
 
 // Main ViewModel for the Agent chat interface.
@@ -74,6 +75,9 @@ class AgentViewModel : public QObject {
     Q_PROPERTY(int sidebarWidth READ sidebarWidth WRITE setSidebarWidth NOTIFY sidebarWidthChanged FINAL)
     Q_PROPERTY(QVariantList sessionList READ sessionList NOTIFY sessionListChanged FINAL)
     Q_PROPERTY(QString currentSessionId READ currentSessionId NOTIFY currentSessionIdChanged FINAL)
+    // Batch 17 (FEAT-1702): cross-session message search results; each entry
+    // is {sessionId, sessionTitle, messageId, snippet, role, timestamp}.
+    Q_PROPERTY(QVariantList searchResults READ searchResults NOTIFY searchResultsChanged FINAL)
 
     // ── Tool Registry ─────────────────────────────────
     Q_PROPERTY(QVariantList toolRegistryModel READ toolRegistryModel CONSTANT FINAL)
@@ -115,6 +119,9 @@ public:
 
     // Attach the real agent pipeline. Takes no ownership (agent outlives the VM).
     void setAgent(AIAgent* agent);
+    // Batch 17: attach the persistence backend for search/export. Takes no
+    // ownership; nullptr disables those features (simulation mode).
+    void setMemory(IMemory* memory);
     // Attach the knowledge-base service (optional). Takes no ownership.
     void setRagService(RagService* rag);
     // Provide persisted knowledge document content (used by re-embedding).
@@ -166,6 +173,8 @@ public:
     // Sessions
     QVariantList sessionList() const { return m_sessionList; }
     QString currentSessionId() const { return m_currentSessionId; }
+    // Batch 17: message-search results (set via the searchMessages invokable)
+    QVariantList searchResults() const { return m_searchResults; }
 
     // Token management
     double tokenUsageRate() const;
@@ -187,6 +196,13 @@ public:
     Q_INVOKABLE void loadSession(const QString& sessionId);
     Q_INVOKABLE void deleteSession(const QString& sessionId);
     Q_INVOKABLE void renameSession(const QString& sessionId, const QString& title);
+    // Batch 17: refresh searchResults from the memory backend (empty keyword
+    // → empty results, which the sidebar treats as "back to session list").
+    Q_INVOKABLE void searchMessages(const QString& keyword);
+    // Batch 18: export a session's messages (+ trace nodes) as Markdown or
+    // JSON. Returns false (and emits errorOccurred) on failure.
+    Q_INVOKABLE bool exportSession(const QString& sessionId, const QString& path,
+                                   const QString& format);
     Q_INVOKABLE void cancel();               // alias of newChat
     Q_INVOKABLE void togglePanel();
     Q_INVOKABLE void toggleSidebar();
@@ -217,6 +233,7 @@ signals:
     void tokenUsageChanged();
     void sessionListChanged();
     void currentSessionIdChanged();
+    void searchResultsChanged();
     void knowledgeChanged();
     void knowledgeBusyChanged();
     void knowledgeEmbedProgressChanged();
@@ -252,6 +269,8 @@ private:
     // ── State ──────────────────────────────────────────
     AIAgent* m_agent{nullptr};
     RagService* m_rag{nullptr};
+    IMemory* m_memory{nullptr};   // Batch 17/18: search + export backend (no ownership)
+    QVariantList m_searchResults;
     std::function<QString(const QString&)> m_contentProvider;
     AgentState m_state{AgentState::Idle};
     TraceModel m_trace;

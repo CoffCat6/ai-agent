@@ -3,6 +3,7 @@
 #include "LLMServiceBase.h"
 
 #include <QString>
+#include <QVariant>
 #include <QVector>
 
 namespace NexusAI {
@@ -21,6 +22,11 @@ public:
     explicit OpenAIService(QObject* parent = nullptr);
 
     void chatComplete(const QJsonArray& messages, const QJsonArray& tools = {}) override;
+
+    // Batch 15 (FEAT-1502): opt-in sampling params from the active profile.
+    // Invalid/empty variants mean "not set" - the field is omitted from the
+    // request JSON (strict proxies reject empty fields).
+    void setSamplingParams(const QVariant& temperature, const QVariant& maxOutputTokens);
 
     // Pure parser over a non-streamed response body (no network state);
     // exposed for unit tests.
@@ -60,6 +66,10 @@ protected:
 
 private:
     QJsonObject buildRequestBody(const QJsonArray& messages, const QJsonArray& tools);
+
+    // Batch 15: unset = invalid QVariant → field omitted from the request.
+    QVariant m_temperature;
+    QVariant m_maxOutputTokens;
 };
 
 } // namespace NexusAI

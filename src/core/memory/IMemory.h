@@ -3,6 +3,7 @@
 #include <QJsonArray>
 #include <QJsonObject>
 #include <QString>
+#include <QVariant>
 
 namespace NexusAI {
 
@@ -66,6 +67,15 @@ public:
     }
     virtual QJsonArray loadTraceNodes(const QString& sessionId) {
         Q_UNUSED(sessionId);
+        return {};
+    }
+
+    // Batch 17 (FEAT-1702): cross-session keyword search over the message
+    // history (optional capability; default no-ops). Each result is a map
+    // {sessionId, sessionTitle, messageId, snippet, role, timestamp}, newest
+    // first. Empty/blank keywords return an empty list.
+    virtual QVariantList searchMessages(const QString& keyword, int limit = 50) {
+        Q_UNUSED(keyword); Q_UNUSED(limit);
         return {};
     }
 };

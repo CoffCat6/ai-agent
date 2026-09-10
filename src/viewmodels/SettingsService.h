@@ -66,6 +66,12 @@ public:
     bool localOnlyMode() const { return m_localOnlyMode; }
     void setLocalOnlyMode(bool enabled);
 
+    // Security: SSRF escape hatch for http_fetch (Batch 20) - allows the
+    // tool to reach loopback/private targets (e.g. the local 8317 gateway).
+    // Opt-in, default off; consumed by NetworkFetchTool via main.cpp.
+    bool allowLocalNetworkFetch() const { return m_allowLocalNetworkFetch; }
+    void setAllowLocalNetworkFetch(bool enabled);
+
     // Knowledge-base embedding model (FEAT-801): identity for persisted
     // chunk vectors; a change triggers a full knowledge re-embed.
     QString embeddingModel() const { return m_embeddingModel; }
@@ -104,6 +110,7 @@ signals:
     void simulationModeChanged();
     void allowFullDiskReadChanged();
     void localOnlyModeChanged();
+    void allowLocalNetworkFetchChanged();
     void embeddingModelChanged();
     void logLevelChanged();
 
@@ -118,6 +125,7 @@ private:
     bool m_simulationMode{false};
     bool m_allowFullDiskRead{false};
     bool m_localOnlyMode{false};
+    bool m_allowLocalNetworkFetch{false};
     QString m_embeddingModel{QStringLiteral("nomic-embed-text")};
     QString m_logLevel{QStringLiteral("info")};
 

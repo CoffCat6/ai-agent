@@ -35,6 +35,10 @@
 #include "infrastructure/llm/AnthropicService.h"
 #include "infrastructure/llm/OllamaService.h"
 #include "infrastructure/llm/OpenAIService.h"
+#include "core/tools/NetworkFetchTool.h"
+
+#include <QElapsedTimer>
+#include <QtConcurrent/QtConcurrentRun>
 
 using namespace NexusAI;
 
@@ -92,6 +96,10 @@ public:
 
     int heldCount() const { return m_held.size(); }
 
+    // Batch 15: flattened (whitespace-stripped) body of the most recent
+    // complete request - for request-level sampling-param assertions.
+    QByteArray lastFlatBody() const { return m_lastFlat; }
+
     // Respond to a held connection; releasedClosed(index) turns true once the
     // client finished processing the reply and closed its side (server sent
     // Connection: close, so the client's QNAM always closes afterwards). This
@@ -119,6 +127,7 @@ private:
         // body indented (QJsonDocument::toJson defaults to Indented), so the
         // match runs against a whitespace-stripped copy.
         const QByteArray flat = flatten(buffer);
+        m_lastFlat = flat;
 
         int scriptIndex = -1;
         for (int i = 0; i < m_scripts.size(); ++i) {
@@ -184,6 +193,7 @@ private:
     QHash<QTcpSocket*, QByteArray> m_buffers;
     QHash<int, QTcpSocket*> m_held;
     QSet<int> m_releasedClosed;
+    QByteArray m_lastFlat;
 };
 
 QJsonArray userMessages(const QString& text) {
@@ -382,6 +392,202 @@ private slots:
         QCOMPARE(second.content, QStringLiteral("Hello"));
         QVERIFY2(second.toolCalls.isEmpty(),
                  "request A's tool call leaked into request B's response");
+    }
+
+    // Batch 15 (FEAT-1502): profile sampling params reach the wire only when
+    // set - asserted against the flattened request body.
+    void profileParamsAppearInRequestBody() {
+        FakeSseServer server;
+        OpenAIService service;
+        service.setBaseUrl(server.baseUrl());
+        service.setSamplingParams(0.3, QVariant());   // temperature only
+
+        QSignalSpy spy(&service, &IAIService::responseReady);
+        server.enqueue({openaiTextBody(), false, kMatchA});
+        service.chatComplete(userMessages(QStringLiteral("hi")), {});
+        QVERIFY2(spy.wait(5000), "no response");
+
+        const QByteArray body = server.lastFlatBody();
+        QVERIFY2(body.contains("\"temperature\":0.3"),
+                 "profile temperature missing from the request body");
+        QVERIFY2(!body.contains("\"max_tokens\""),
+                 "max_tokens present although unset");
+    }
+
+    void anthropicMaxTokensFromProfile() {
+        FakeSseServer server;
+        AnthropicService service;
+        service.setApiKey(QStringLiteral("test-key"));
+        service.setBaseUrl(server.baseUrl());
+        service.setSamplingParams(QVariant(), 8192);   // max_tokens only
+
+        QSignalSpy spy(&service, &IAIService::responseReady);
+        server.enqueue({anthropicTextBody(), false, kMatchA});
+        service.chatComplete(userMessages(QStringLiteral("hi")), {});
+        QVERIFY2(spy.wait(5000), "no response");
+
+        QVERIFY2(server.lastFlatBody().contains("\"max_tokens\":8192"),
+                 "profile maxOutputTokens not applied to the request body");
+        QVERIFY2(!server.lastFlatBody().contains("\"temperature\""),
+                 "temperature present although unset");
+    }
+
+    // Defaults: no sampling fields reach the wire; Anthropic keeps its
+    // REQUIRED max_tokens at the historical 4096 fallback.
+    void emptyParamsOmitted() {
+        {
+            FakeSseServer server;
+            OpenAIService service;
+            service.setBaseUrl(server.baseUrl());
+            QSignalSpy spy(&service, &IAIService::responseReady);
+            server.enqueue({openaiTextBody(), false, kMatchA});
+            service.chatComplete(userMessages(QStringLiteral("hi")), {});
+            QVERIFY2(spy.wait(5000), "no response (openai)");
+            QVERIFY2(!server.lastFlatBody().contains("\"temperature\""),
+                     "openai temperature leaked into the request body");
+            QVERIFY2(!server.lastFlatBody().contains("\"max_tokens\""),
+                     "openai max_tokens leaked into the request body");
+        }
+        {
+            FakeSseServer server;
+            AnthropicService service;
+            service.setApiKey(QStringLiteral("test-key"));
+            service.setBaseUrl(server.baseUrl());
+            QSignalSpy spy(&service, &IAIService::responseReady);
+            server.enqueue({anthropicTextBody(), false, kMatchA});
+            service.chatComplete(userMessages(QStringLiteral("hi")), {});
+            QVERIFY2(spy.wait(5000), "no response (anthropic)");
+            QVERIFY2(server.lastFlatBody().contains("\"max_tokens\":4096"),
+                     "anthropic 4096 fallback lost");
+            QVERIFY2(!server.lastFlatBody().contains("\"temperature\""),
+                     "anthropic temperature leaked into the request body");
+        }
+        {
+            FakeSseServer server;
+            OllamaService service;
+            service.setBaseUrl(server.baseUrl());
+            QSignalSpy spy(&service, &IAIService::responseReady);
+            server.enqueue({ollamaTextBody(), false, kMatchA});
+            service.chatComplete(userMessages(QStringLiteral("hi")), {});
+            QVERIFY2(spy.wait(5000), "no response (ollama)");
+            QVERIFY2(!server.lastFlatBody().contains("\"options\""),
+                     "ollama options leaked into the request body");
+        }
+    }
+
+    void ollamaSamplingParamsInRequestBody() {
+        FakeSseServer server;
+        OllamaService service;
+        service.setBaseUrl(server.baseUrl());
+        service.setSamplingParams(0.7, 4096);
+
+        QSignalSpy spy(&service, &IAIService::responseReady);
+        server.enqueue({ollamaTextBody(), false, kMatchA});
+        service.chatComplete(userMessages(QStringLiteral("hi")), {});
+        QVERIFY2(spy.wait(5000), "no response");
+
+        const QByteArray body = server.lastFlatBody();
+        QVERIFY2(body.contains("\"options\":{"),
+                 "ollama options object missing from the request body");
+        QVERIFY2(body.contains("\"temperature\":0.7"),
+                 "options.temperature missing from the request body");
+        QVERIFY2(body.contains("\"num_ctx\":4096"),
+                 "options.num_ctx missing from the request body");
+    }
+
+    // ── Batch 20: http_fetch (FEAT-2001/2002) ─────────
+    // The test server lives on 127.0.0.1, so the happy path needs the SSRF
+    // escape hatch; the rejection tests run with defaults (guard on).
+
+    void httpFetchHappyPath() {
+        FakeSseServer server;
+        NetworkFetchTool tool;
+        tool.setAllowPrivateTargets(true);
+        server.enqueue({QByteArrayLiteral(
+                            "<html><body>hello fetch world</body></html>"),
+                        false, "/fetch-ok"});
+
+        const ToolResult r = tool.execute(QJsonObject{
+            {"url", server.baseUrl() + QStringLiteral("/fetch-ok")}});
+        QVERIFY2(r.success, qPrintable(r.error));
+        QVERIFY2(r.output.contains(QStringLiteral("hello fetch world")),
+                 qPrintable(r.output));
+        QVERIFY2(!r.output.contains(QStringLiteral("<html>")), "HTML tags not stripped");
+    }
+
+    void httpFetchSsrfLoopbackRejected() {
+        NetworkFetchTool tool;   // defaults: private targets rejected
+        const ToolResult r = tool.execute(QJsonObject{
+            {"url", QStringLiteral("http://127.0.0.1:9/nope")}});
+        QVERIFY2(!r.success, "loopback fetch must be rejected by default");
+        QVERIFY2(r.error.contains(QStringLiteral("rejected")), qPrintable(r.error));
+    }
+
+    // Literal private IP: QHostInfo short-circuits (no DNS), so the guard
+    // fires before any connection - testable fully offline.
+    void httpFetchPrivateNetworkRejected() {
+        NetworkFetchTool tool;
+        const ToolResult r = tool.execute(QJsonObject{
+            {"url", QStringLiteral("http://10.255.0.1/nope")}});
+        QVERIFY2(!r.success, "private-network fetch must be rejected by default");
+        QVERIFY2(r.error.contains(QStringLiteral("rejected")), qPrintable(r.error));
+    }
+
+    void httpFetchTimeout() {
+        FakeSseServer server;
+        NetworkFetchTool tool;
+        tool.setAllowPrivateTargets(true);
+        server.enqueue({QByteArrayLiteral("late"), true, "/fetch-timeout"});   // held
+
+        const ToolResult r = tool.execute(QJsonObject{
+            {"url", server.baseUrl() + QStringLiteral("/fetch-timeout")},
+            {"timeout_ms", 1000}});
+        QVERIFY2(!r.success, "held request must time out");
+        QVERIFY2(r.error.contains(QStringLiteral("timed out")), qPrintable(r.error));
+    }
+
+    void httpFetchSizeCapTruncates() {
+        FakeSseServer server;
+        NetworkFetchTool tool;
+        tool.setAllowPrivateTargets(true);
+        QByteArray big(2 * 1024 * 1024, 'a');   // 2 MB > the 1 MB wire cap
+        server.enqueue({big, false, "/fetch-big"});
+
+        const ToolResult r = tool.execute(QJsonObject{
+            {"url", server.baseUrl() + QStringLiteral("/fetch-big")}});
+        QVERIFY2(r.success, qPrintable(r.error));
+        QVERIFY2(r.output.contains(QStringLiteral("[truncated: response exceeded")),
+                 qPrintable(r.output));
+        QVERIFY2(r.output.size() <= 6100, "result must respect the 6000-char layer");
+    }
+
+    // Cooperative cancellation (Batch 13 contract): cancel() flips the
+    // atomic flag; the sliced execute aborts on the pool thread within a
+    // slice and reports a cancelled failure.
+    void httpFetchCancelledOnStop() {
+        FakeSseServer server;
+        NetworkFetchTool tool;
+        tool.setAllowPrivateTargets(true);
+        server.enqueue({QByteArrayLiteral("never"), true, "/fetch-held"});
+
+        QElapsedTimer clock;
+        clock.start();
+        auto future = QtConcurrent::run([&tool, &server] {
+            return tool.execute(QJsonObject{
+                {"url", server.baseUrl() + QStringLiteral("/fetch-held")}});
+        });
+        QTest::qWait(300);              // let the request spin up
+        tool.cancel();
+        int waited = 0;
+        while (!future.isFinished() && waited < 3000) {
+            QTest::qWait(50);
+            waited += 50;
+        }
+        QVERIFY2(future.isFinished(), "cancelled fetch did not return in time");
+        QVERIFY2(clock.elapsed() < 2500, "cancel took longer than 2 s");
+        const ToolResult r = future.result();
+        QVERIFY2(!r.success, qPrintable(r.error));
+        QVERIFY2(r.error.contains(QStringLiteral("cancelled")), qPrintable(r.error));
     }
 
     // REL-1001: a transient server failure (HTTP 500) is retried once

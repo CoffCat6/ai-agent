@@ -3,6 +3,7 @@
 #include "LLMServiceBase.h"
 
 #include <QString>
+#include <QVariant>
 #include <QVector>
 
 namespace NexusAI {
@@ -19,6 +20,11 @@ public:
     explicit OllamaService(QObject* parent = nullptr);
 
     void chatComplete(const QJsonArray& messages, const QJsonArray& tools = {}) override;
+
+    // Batch 15 (FEAT-1502): opt-in sampling params from the active profile.
+    // Invalid/empty variants mean "not set" - the ollama "options" object is
+    // omitted from the request JSON entirely when nothing is configured.
+    void setSamplingParams(const QVariant& temperature, const QVariant& numCtx);
 
     // Pure parsers over response payloads (no network state); exposed for
     // unit tests.
@@ -46,6 +52,10 @@ private:
     static QJsonArray convertMessagesForOllama(const QJsonArray& messages);
 
     QJsonObject buildRequestBody(const QJsonArray& messages, const QJsonArray& tools);
+
+    // Batch 15: unset = invalid QVariant → options object omitted.
+    QVariant m_temperature;
+    QVariant m_numCtx;
 };
 
 } // namespace NexusAI

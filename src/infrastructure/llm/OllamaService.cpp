@@ -32,7 +32,23 @@ QJsonObject OllamaService::buildRequestBody(const QJsonArray& messages, const QJ
         body["tools"] = ollamaTools;
     }
 
+    // Batch 15: sampling params are opt-in - the options object is only
+    // present when the active profile set at least one of them.
+    if (m_temperature.isValid() || m_numCtx.isValid()) {
+        QJsonObject options;
+        if (m_temperature.isValid())
+            options["temperature"] = m_temperature.toDouble();
+        if (m_numCtx.isValid())
+            options["num_ctx"] = m_numCtx.toInt();
+        body["options"] = options;
+    }
+
     return body;
+}
+
+void OllamaService::setSamplingParams(const QVariant& temperature, const QVariant& numCtx) {
+    m_temperature = temperature;
+    m_numCtx = numCtx;
 }
 
 QJsonArray OllamaService::convertMessagesForOllama(const QJsonArray& messages) {

@@ -21,12 +21,25 @@ QJsonObject OpenAIService::buildRequestBody(const QJsonArray& messages, const QJ
     body["messages"] = messages;
     body["stream"] = true; // SSE streaming
 
+    // Batch 15: sampling params are opt-in - absent from the JSON unless the
+    // active profile sets them (strict proxies reject empty fields).
+    if (m_temperature.isValid())
+        body["temperature"] = m_temperature.toDouble();
+    if (m_maxOutputTokens.isValid())
+        body["max_tokens"] = m_maxOutputTokens.toInt();
+
     if (!tools.isEmpty()) {
         body["tools"] = tools;
         body["tool_choice"] = "auto";
     }
 
     return body;
+}
+
+void OpenAIService::setSamplingParams(const QVariant& temperature,
+                                      const QVariant& maxOutputTokens) {
+    m_temperature = temperature;
+    m_maxOutputTokens = maxOutputTokens;
 }
 
 void OpenAIService::chatComplete(const QJsonArray& messages, const QJsonArray& tools) {

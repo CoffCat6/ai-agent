@@ -3,18 +3,30 @@
 #include "IMemory.h"
 #include "core/rag/KnowledgeChunk.h"
 
+#include <QCoreApplication>
 #include <QSqlDatabase>
 #include <QString>
+#include <QVariant>
 
 namespace NexusAI {
 
 class SqliteMemory : public IMemory {
+    // Batch 16 (P3-9 follow-up): the session list's relative timestamps
+    // ("刚刚"/"%1 分钟前"...) are UI-visible copy produced here, so this
+    // non-QObject class needs tr() plumbing for lupdate/zh_CN.
+    Q_DECLARE_TR_FUNCTIONS(SqliteMemory)
+
 public:
     explicit SqliteMemory(const QString& dbPath = QString());
     ~SqliteMemory() override;
 
     void saveMessage(const QString& sessionId, const QJsonObject& msg) override;
     QJsonArray loadMessages(const QString& sessionId, int limit = 50) override;
+
+    // Batch 17 (FEAT-1702): cross-session keyword search (trigram FTS5 with
+    // a LIKE fallback for keywords shorter than 3 characters - the trigram
+    // index cannot answer shorter queries).
+    QVariantList searchMessages(const QString& keyword, int limit = 50) override;
 
     // Episodic memory (FTS5) — currently NOT wired into the agent.
     // Decision recorded in docs/5-完善计划.md Batch 7 (MEM-703): 搁置,
@@ -80,6 +92,7 @@ private:
     void initDatabase();
     void createTables();
     void migrateKnowledgeSchema();
+    void migrateMessagesFts();
 
     QSqlDatabase m_db;
     QString m_dbPath;

@@ -172,6 +172,16 @@ Canvas {
                 k.quadraticCurveTo(8.4, 16.6, 8.4, 15.6); k.lineTo(8.4, 9.4)
                 k.quadraticCurveTo(8.4, 8.4, 9.4, 8.4)
             })
+        },
+        "search": function(c) {
+            c.beginPath()
+            c.arc(10.8, 10.8, 5.8, 0, 2 * Math.PI, false); c.stroke()
+            line(c, 15.2, 15.2, 20, 20)
+        },
+        "export": function(c) {
+            line(c, 12, 4, 12, 14.5)
+            polyline(c, [8, 8.5, 12, 4.2, 16, 8.5])
+            polyline(c, [5.5, 13.5, 5.5, 18.5, 18.5, 18.5, 18.5, 13.5])
         }
     })
 
