@@ -77,6 +77,12 @@ public:
     void saveTraceNode(const QString& sessionId, const QJsonObject& node, int order) override;
     QJsonArray loadTraceNodes(const QString& sessionId) override;
 
+#ifdef NEXUSAI_TESTING
+    // Test-only: direct access for constructing deterministic fixtures
+    // (controlled timestamps, bulk inserts). Not part of the runtime API.
+    QSqlDatabase databaseForTest() const { return m_db; }
+#endif
+
     // ── Usage trail (跨会话用户操作与网络事件, Batch 12 前日志增强) ──
     // Structured usage events (Activity facade → this sink). Retained under
     // the 30-day / 10000-row policy enforced by pruneUsage at startup.

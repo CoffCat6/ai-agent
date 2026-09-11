@@ -428,10 +428,16 @@ Rectangle {
                 delegate: ItemDelegate {
                     id: resultDelegate
                     width: searchResultsList.width
-                    height: (ListView.previousSection !== ListView.section ? 62 : 44)
+                    // Batch 21 (B4): a backend notice row (too many messages
+                    // for the LIKE scan) renders as a single wrapped caption.
+                    readonly property bool isNotice:
+                        modelData.sessionId === "__search_notice__"
+                    height: isNotice ? 48
+                        : (ListView.previousSection !== ListView.section ? 62 : 44)
 
                     background: Rectangle {
-                        color: resultDelegate.hovered ? Theme.surfaceHover : "transparent"
+                        color: resultDelegate.hovered && !resultDelegate.isNotice
+                            ? Theme.surfaceHover : "transparent"
                     }
 
                     ColumnLayout {
@@ -441,7 +447,8 @@ Rectangle {
                         spacing: 2
 
                         Text {
-                            visible: ListView.previousSection !== ListView.section
+                            visible: !resultDelegate.isNotice
+                                && ListView.previousSection !== ListView.section
                             text: modelData.sessionTitle && modelData.sessionTitle.length > 0
                                 ? modelData.sessionTitle : qsTr("新会话")
                             color: Theme.brandPrimary
@@ -453,15 +460,18 @@ Rectangle {
                         }
 
                         Text {
-                            text: modelData.snippet
-                            color: Theme.textPrimary
+                            text: resultDelegate.isNotice ? modelData.notice : modelData.snippet
+                            color: resultDelegate.isNotice
+                                ? Theme.statusWarning : Theme.textPrimary
                             font.pixelSize: Theme.fontSizeCaption
                             font.family: Theme.fontSans
-                            elide: Text.ElideRight
+                            elide: resultDelegate.isNotice ? Text.ElideNone : Text.ElideRight
+                            wrapMode: resultDelegate.isNotice ? Text.WordWrap : Text.NoWrap
                             Layout.fillWidth: true
                         }
 
                         Text {
+                            visible: !resultDelegate.isNotice
                             text: modelData.role === "user" ? qsTr("用户")
                                 : modelData.role === "assistant" ? qsTr("助手") : modelData.role
                             color: Theme.textSecondary
@@ -471,6 +481,7 @@ Rectangle {
                     }
 
                     onClicked: {
+                        if (resultDelegate.isNotice) return   // informational, not a session
                         searchField.text = ""          // back to the session list
                         AgentVM.loadSession(modelData.sessionId)
                     }
@@ -517,7 +528,7 @@ Rectangle {
                 IconButton {
                     icon: "settings"
                     iconSize: 17
-                    tooltip: qsTr("设置 (Ctrl+,)")
+                    tooltip: qsTr("模型配置 (Ctrl+,)")
                     onClicked: root.settingsRequested()
                 }
 

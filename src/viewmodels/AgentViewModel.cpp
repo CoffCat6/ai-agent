@@ -163,12 +163,20 @@ bool AgentViewModel::exportSession(const QString& sessionId, const QString& path
         }
         if (!traceNodes.isEmpty()) {
             md += QStringLiteral("---\n\n## 过程摘要\n\n");
+            // Batch 21 (C2): node fields are emitted on a single bullet line,
+            // so embedded CR/LF (from tool names/titles or model output) must
+            // be flattened or the Markdown list structure breaks.
+            auto oneLine = [](const QString& s) {
+                return QString(s).remove(QLatin1Char('\r'))
+                                 .replace(QLatin1Char('\n'), QLatin1Char(' '))
+                                 .trimmed();
+            };
             for (const auto& entry : traceNodes) {
                 const QJsonObject node = entry.toObject();
                 md += QStringLiteral("- [%1] %2 · %3\n")
-                          .arg(node.value("status").toString(),
-                               node.value("type").toString(),
-                               node.value("title").toString());
+                          .arg(oneLine(node.value("status").toString()),
+                               oneLine(node.value("type").toString()),
+                               oneLine(node.value("title").toString()));
             }
         }
         payload = md.toUtf8();

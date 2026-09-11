@@ -357,6 +357,9 @@ Dialog {
                             color: Theme.textPrimary
                             font.pixelSize: Theme.fontSizeBody
                             font.family: Theme.fontMono
+                            // C locale: matches the server-side parser, which
+                            // only accepts an ASCII decimal point.
+                            validator: DoubleValidator { locale: Qt.locale("C"); bottom: 0; decimals: 2 }
                             background: Rectangle {
                                 radius: 6
                                 color: Theme.bgPrimary
@@ -384,6 +387,7 @@ Dialog {
                             color: Theme.textPrimary
                             font.pixelSize: Theme.fontSizeBody
                             font.family: Theme.fontMono
+                            validator: IntValidator { bottom: 1 }
                             background: Rectangle {
                                 radius: 6
                                 color: Theme.bgPrimary
@@ -412,6 +416,7 @@ Dialog {
                             color: Theme.textPrimary
                             font.pixelSize: Theme.fontSizeBody
                             font.family: Theme.fontMono
+                            validator: IntValidator { bottom: 1 }
                             background: Rectangle {
                                 radius: 6
                                 color: Theme.bgPrimary

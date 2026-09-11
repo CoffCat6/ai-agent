@@ -67,6 +67,8 @@ public:
         bool hold = false;
         QByteArray match;
         int status = 200;   // HTTP status for the response head (retry tests)
+        // Batch 21: extra response headers (e.g. Location for 3xx tests).
+        QByteArray extraHeaders;
     };
 
     explicit FakeSseServer(QObject* parent = nullptr) : QObject(parent) {
@@ -177,9 +179,14 @@ private:
     void respond(QTcpSocket* socket, const Script& script) {
         // The full request was already consumed by onBytes(), so closing
         // after the response cannot RST unread inbound data.
-        socket->write("HTTP/1.1 " + QByteArray::number(script.status) + " OK\r\n"
+        const char* reason = "OK";
+        if (script.status >= 300 && script.status < 400) reason = "Found";
+        else if (script.status >= 400) reason = "Error";
+        socket->write("HTTP/1.1 " + QByteArray::number(script.status) + " "
+                          + reason + "\r\n"
                       "Content-Type: text/event-stream\r\n"
                       "Content-Length: " + QByteArray::number(script.body.size()) + "\r\n"
+                      + script.extraHeaders +
                       "Connection: close\r\n"
                       "\r\n" + script.body);
         socket->flush();
@@ -588,6 +595,49 @@ private slots:
         const ToolResult r = future.result();
         QVERIFY2(!r.success, qPrintable(r.error));
         QVERIFY2(r.error.contains(QStringLiteral("cancelled")), qPrintable(r.error));
+    }
+
+    // Batch 21 (B1): a 3xx under ManualRedirectPolicy finishes with NoError
+    // but no body; the tool must surface it as a failure and echo Location.
+    void httpFetchRedirectSurfacedAsFailure() {
+        FakeSseServer server;
+        NetworkFetchTool tool;
+        tool.setAllowPrivateTargets(true);
+        FakeSseServer::Script script;
+        script.match = "/fetch-moved";
+        script.status = 302;
+        script.body = QByteArrayLiteral("");
+        script.extraHeaders =
+            QByteArrayLiteral("Location: /new-home\r\n");
+        server.enqueue(script);
+
+        const ToolResult r = tool.execute(QJsonObject{
+            {"url", server.baseUrl() + QStringLiteral("/fetch-moved")}});
+        QVERIFY2(!r.success, "3xx must not be treated as success");
+        QVERIFY2(r.error.contains(QStringLiteral("redirect (302)")), qPrintable(r.error));
+        QVERIFY2(r.error.contains(QStringLiteral("/new-home")),
+                 "Location must be echoed so the model can refetch");
+    }
+
+    // Batch 21 (C1): CGNAT, multicast and limited-broadcast ranges are also
+    // internal/non-routable and must be rejected before connecting.
+    void httpFetchAdditionalPrivateRangesRejected() {
+        const QStringList hosts = {
+            QStringLiteral("http://100.64.0.1/"),       // CGNAT
+            QStringLiteral("http://100.127.255.254/"), // CGNAT far edge
+            QStringLiteral("http://224.0.0.1/"),       // multicast
+            QStringLiteral("http://255.255.255.255/"), // limited broadcast
+        };
+        for (const QString& url : hosts) {
+            NetworkFetchTool tool;
+            const ToolResult r = tool.execute(QJsonObject{{"url", url}});
+            QVERIFY2(!r.success, qPrintable(url));
+            QVERIFY2(r.error.contains(QStringLiteral("rejected")),
+                     qPrintable(url + " -> " + r.error));
+        }
+        // No "outside the range" negative case here: connecting to such an
+        // address would actually hit the network (SYN timeout) and stall the
+        // suite; mask boundaries are covered by the four literal rejects.
     }
 
     // REL-1001: a transient server failure (HTTP 500) is retried once

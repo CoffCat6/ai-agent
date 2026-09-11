@@ -12,6 +12,7 @@
 #include <QNetworkAccessManager>
 #include <QNetworkReply>
 #include <QNetworkRequest>
+#include <QObject>
 #include <QRegularExpression>
 #include <QTimer>
 #include <QUrl>
@@ -71,6 +72,11 @@ public:
     void cancel() override { m_cancelRequested.store(true); }
 
     ToolResult execute(const QJsonObject& args) override {
+        // Batch 21 (B3): clear any stale cancel from a previous call. cancel()
+        // can land between two execute() invocations; without this reset the
+        // first slice of the NEXT task would observe the leftover flag.
+        m_cancelRequested.store(false);
+
         const QString urlText = args.value("url").toString().trimmed();
         if (urlText.isEmpty())
             return ToolResult::fail("url is required");
@@ -83,13 +89,15 @@ public:
         int timeoutMs = args.value("timeout_ms").toInt(15000);
         timeoutMs = qBound(1000, timeoutMs, 60000);
 
-        // SSRF guard: reject BEFORE any connection is attempted. Literal IP
-        // hosts short-circuit in QHostInfo (no DNS round-trip); hostnames
-        // resolve on this (pool) thread.
-        if (!m_allowPrivateTargets.load() && isPrivateHost(url.host()))
-            return ToolResult::fail(QStringLiteral(
-                "rejected: internal network address (SSRF guard; enable "
-                "'allow local network fetch' in settings to override)"));
+        // SSRF guard: reject BEFORE any connection is attempted. The lookup is
+        // asynchronous (Batch 21 / B2) so a slow resolver can neither block
+        // past timeout_ms nor defeat cancel(); the guard still completes
+        // before any network request is issued.
+        if (!m_allowPrivateTargets.load()) {
+            QString guardError;
+            if (!hostIsAllowed(url.host(), timeoutMs, guardError))
+                return ToolResult::fail(guardError);
+        }
 
         QNetworkAccessManager nam;
         QNetworkRequest request(url);
@@ -139,6 +147,27 @@ public:
 
         const qint64 status = reply->attribute(
             QNetworkRequest::HttpStatusCodeAttribute).toLongLong();
+        // Batch 21 (B1): with ManualRedirectPolicy a 3xx finishes "successfully"
+        // (NoError) but carries no useful body - returning an empty success
+        // would hide the move from the model. Surface it as a failure and echo
+        // the Location so the model can refetch the new address.
+        if (outcome == Outcome::Finished && status >= 300 && status < 400) {
+            // Prefer the raw Location response header (exactly what the
+            // server sent); fall back to Qt's parsed/resolved attribute.
+            QString location =
+                QString::fromUtf8(reply->rawHeader("Location")).trimmed();
+            if (location.isEmpty()) {
+                const QVariant target = reply->attribute(
+                    QNetworkRequest::RedirectionTargetAttribute);
+                if (target.isValid() && target.toUrl().isValid())
+                    location = target.toUrl().toString();
+            }
+            if (location.isEmpty())
+                location = QStringLiteral("<no Location header>");
+            return ToolResult::fail(QStringLiteral(
+                "Fetch redirect (%1) at %2; resource moved to: %3")
+                    .arg(status).arg(url.host()).arg(location));
+        }
         if (outcome == Outcome::Finished && (status == 0 || status >= 400)) {
             const QString err = reply->error() != QNetworkReply::NoError
                 ? reply->errorString()
@@ -166,7 +195,9 @@ private:
     static constexpr int kMaxBodyBytes = 1024 * 1024;   // 1 MB wire cap
     static constexpr int kMaxResultChars = 6000;        // matches tool-result layering
 
-    // Loopback / private (10/8, 172.16/12, 192.168/16) / link-local, IPv4+IPv6.
+    // Non-routable / internal address ranges, IPv4+IPv6: loopback &
+    // link-local via Qt, plus RFC1918, CGNAT (100.64/10), this-host 0.0.0.0,
+    // limited broadcast 255.255.255.255 and IPv4 multicast (224/4).
     static bool isPrivateAddress(const QHostAddress& address) {
         if (address.isLoopback() || address.isLinkLocal()) return true;
         if (address.protocol() == QAbstractSocket::IPv4Protocol) {
@@ -174,7 +205,10 @@ private:
             return (v4 & 0xFF000000u) == 0x0A000000u      // 10/8
                 || (v4 & 0xFFF00000u) == 0xAC100000u      // 172.16/12
                 || (v4 & 0xFFFF0000u) == 0xC0A80000u      // 192.168/16
-                || v4 == 0;                               // 0.0.0.0
+                || (v4 & 0xFFC00000u) == 0x64400000u      // 100.64/10 CGNAT
+                || (v4 & 0xF0000000u) == 0xE0000000u      // 224/4 multicast
+                || v4 == 0                                // 0.0.0.0
+                || v4 == 0xFFFFFFFFu;                     // 255.255.255.255
         }
         if (address.protocol() == QAbstractSocket::IPv6Protocol) {
             const Q_IPV6ADDR v6 = address.toIPv6Address();
@@ -183,12 +217,87 @@ private:
         return false;
     }
 
-    static bool isPrivateHost(const QString& host) {
-        const QHostInfo info = QHostInfo::fromName(host);
-        if (info.error() != QHostInfo::NoError) return false;   // unresolvable → request fails on its own
-        for (const QHostAddress& address : info.addresses())
-            if (isPrivateAddress(address)) return true;
-        return false;
+    // Batch 21 (B2): asynchronous SSRF pre-check. Replaces the blocking
+    // QHostInfo::fromName() - a slow resolver used to stall execute() (and
+    // ignore both timeout_ms and cancel()) before the first network slice.
+    // The lookup runs in an inner QEventLoop sliced by a timer so the existing
+    // cancel/timeout contract applies to DNS too. Fails closed on private
+    // targets, DNS failure or timeout.
+    bool hostIsAllowed(const QString& host, int timeoutMs, QString& errorOut) {
+        // Literal IPv4/IPv6 addresses short-circuit with NO DNS round-trip
+        // (matches the old QHostInfo::fromName behavior). This keeps the
+        // reject instant and avoids feeding a dotted-quad to an async
+        // resolver backend that can stall until the timeout.
+        QHostAddress literal;
+        if (literal.setAddress(host)) {
+            if (isPrivateAddress(literal)) {
+                errorOut = QStringLiteral(
+                    "rejected: internal network address (SSRF guard; enable "
+                    "'allow local network fetch' in settings to override)");
+                return false;
+            }
+            return true;
+        }
+
+        QEventLoop dnsLoop;
+        QHostInfo info;
+        bool done = false;
+
+        // ITool is not a QObject, so give the async lookup its own context
+        // object (lives on this pool thread for the duration of the call).
+        QObject context;
+        const int lookupId = QHostInfo::lookupHost(host, &context,
+            [&](const QHostInfo& result) {
+                info = result;
+                done = true;
+                dnsLoop.quit();
+            });
+
+        QElapsedTimer dnsClock;
+        dnsClock.start();
+        QTimer dnsSlicer;
+        dnsSlicer.setInterval(kSliceMs);
+        bool cancelled = false;
+        bool timedOut = false;
+        QObject::connect(&dnsSlicer, &QTimer::timeout, &dnsLoop, [&] {
+            if (m_cancelRequested.exchange(false)) {
+                cancelled = true;
+                QHostInfo::abortHostLookup(lookupId);
+                dnsLoop.quit();
+                return;
+            }
+            if (dnsClock.elapsed() >= timeoutMs) {
+                timedOut = true;
+                QHostInfo::abortHostLookup(lookupId);
+                dnsLoop.quit();
+            }
+        });
+        dnsSlicer.start();
+        if (!done) dnsLoop.exec();
+        dnsSlicer.stop();
+
+        if (cancelled) {
+            errorOut = QStringLiteral("Fetch cancelled during DNS resolution");
+            return false;
+        }
+        if (timedOut) {
+            errorOut = QStringLiteral("DNS resolution timed out after %1 ms").arg(timeoutMs);
+            return false;
+        }
+        if (info.error() != QHostInfo::NoError || info.addresses().isEmpty()) {
+            errorOut = QStringLiteral("DNS resolution failed for %1: %2")
+                           .arg(host, info.errorString());
+            return false;
+        }
+        for (const QHostAddress& address : info.addresses()) {
+            if (isPrivateAddress(address)) {
+                errorOut = QStringLiteral(
+                    "rejected: internal network address (SSRF guard; enable "
+                    "'allow local network fetch' in settings to override)");
+                return false;
+            }
+        }
+        return true;
     }
 
     // Minimal HTML → text: drop script/style blocks, strip tags, decode the

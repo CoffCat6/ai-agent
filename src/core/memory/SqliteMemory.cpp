@@ -15,6 +15,11 @@ namespace NexusAI {
 
 namespace {
 
+// Batch 21 (B4): row ceiling for the unindexed LIKE fallback scan. With a
+// local desktop DB below this size a '%kw%' scan stays fast enough for the
+// GUI thread; larger libraries must use the trigram FTS path (3+ chars).
+constexpr qint64 kLikeScanMaxMessages = 50000;
+
 // Human-friendly relative timestamp for the session list. UI-visible copy
 // (P3-9): routed through SqliteMemory::tr() so it lands in the .ts file.
 // "MM-dd" is a date-format string, not user-visible copy - kept untranslated.
@@ -539,16 +544,57 @@ QVariantList SqliteMemory::searchMessages(const QString& keyword, int limit) {
 
     QSqlQuery query(m_db);
     const bool ftsPath = kw.length() >= 3;
+    if (!ftsPath) {
+        // Batch 21 (B4): the LIKE '%kw%' fallback cannot use any index
+        // (leading wildcard) and turns into a full table scan on the GUI
+        // thread. Guard it with a message-count ceiling: below it the scan on
+        // a local desktop DB stays in the tens of ms; above it, hand the user
+        // a notice asking for a 3+ character keyword (which uses the trigram
+        // FTS index) instead of stalling the UI. COUNT(*) is cheap (SQLite
+        // keeps statistics; worst case a quick index/table count).
+        QSqlQuery countQuery(m_db);
+        if (countQuery.exec(QStringLiteral("SELECT COUNT(*) FROM messages"))
+                && countQuery.next()
+                && countQuery.value(0).toLongLong() > kLikeScanMaxMessages) {
+            qWarning() << "searchMessages: LIKE fallback suppressed - message"
+                          " table exceeds" << kLikeScanMaxMessages << "rows";
+            QVariantMap notice;
+            notice.insert(QStringLiteral("sessionId"),
+                          QStringLiteral("__search_notice__"));
+            notice.insert(QStringLiteral("notice"),
+                SqliteMemory::tr("消息库超过 %1 条：少于 3 个字符的关键词只能全表扫描，"
+                                 "请输入至少 3 个字符以使用全文索引。")
+                    .arg(kLikeScanMaxMessages));
+            out.append(notice);
+            return out;
+        }
+    }
+    // Batch 21 (A3): results are grouped by session for the Sidebar section
+    // headers (section.property = "sessionId"), so identical session ids must
+    // be CONTIGUOUS. Order by the group's newest hit first, then by timestamp
+    // inside the group - a plain timestamp DESC interleaved sessions and made
+    // the same group header render repeatedly. The window functions live in
+    // an OUTER query: FTS5's snippet() is an auxiliary function bound to the
+    // virtual-table scan and is illegal once a window function forces
+    // materialization at the same level ("unable to use function snippet in
+    // the requested context"), so the inner query resolves snippet() to a
+    // plain column first.
+    const QString groupOrder = QStringLiteral(
+        "ORDER BY MAX(timestamp) OVER (PARTITION BY session_id) DESC, "
+        "MAX(id) OVER (PARTITION BY session_id) DESC, "
+        "timestamp DESC, id DESC");
     if (ftsPath) {
         QString match = kw;
         match.replace(QLatin1String("\""), QLatin1String("\"\""));
         query.prepare(QStringLiteral(
-            "SELECT m.id, m.session_id, m.role, m.timestamp, "
-            "snippet(messages_fts, 0, '[', ']', '…', 16), s.title "
+            "SELECT id, session_id, role, timestamp, snip, title FROM ("
+            "SELECT m.id AS id, m.session_id AS session_id, m.role AS role, "
+            "m.timestamp AS timestamp, "
+            "snippet(messages_fts, 0, '[', ']', '…', 16) AS snip, s.title AS title "
             "FROM messages_fts JOIN messages m ON m.id = messages_fts.rowid "
             "LEFT JOIN sessions s ON s.id = m.session_id "
-            "WHERE messages_fts MATCH ? "
-            "ORDER BY m.timestamp DESC, m.id DESC LIMIT ?"));
+            "WHERE messages_fts MATCH ?"
+            ") %1 LIMIT ?").arg(groupOrder));
         query.addBindValue(QStringLiteral("\"%1\"").arg(match));
     } else {
         QString like = kw;
@@ -556,10 +602,12 @@ QVariantList SqliteMemory::searchMessages(const QString& keyword, int limit) {
             .replace(QLatin1String("%"), QLatin1String("\\%"))
             .replace(QLatin1String("_"), QLatin1String("\\_"));
         query.prepare(QStringLiteral(
-            "SELECT m.id, m.session_id, m.role, m.timestamp, m.content, s.title "
+            "SELECT id, session_id, role, timestamp, content AS snip, title FROM ("
+            "SELECT m.id AS id, m.session_id AS session_id, m.role AS role, "
+            "m.timestamp AS timestamp, m.content AS content, s.title AS title "
             "FROM messages m LEFT JOIN sessions s ON s.id = m.session_id "
-            "WHERE m.content LIKE ? ESCAPE '\\' "
-            "ORDER BY m.timestamp DESC, m.id DESC LIMIT ?"));
+            "WHERE m.content LIKE ? ESCAPE '\\'"
+            ") %1 LIMIT ?").arg(groupOrder));
         query.addBindValue(QStringLiteral("%%1%").arg(like));
     }
     query.addBindValue(limit);

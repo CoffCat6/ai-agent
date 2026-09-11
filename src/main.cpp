@@ -21,6 +21,7 @@
 #include "core/rag/KnowledgeSearchTool.h"
 #include "core/utils/Logger.h"
 #include "core/utils/Activity.h"
+#include "core/utils/SamplingParams.h"
 #include "infrastructure/llm/IAIService.h"
 #include "infrastructure/llm/OpenAIService.h"
 #include "infrastructure/llm/OllamaService.h"
@@ -269,17 +270,14 @@ int main(int argc, char *argv[])
         // Batch 15 (FEAT-1501/1502): per-profile sampling params. An empty
         // string (cleared field) or a missing key means "not set" - normalized
         // to an invalid QVariant so the services omit the fields from the
-        // request JSON.
-        const auto param = [](const QVariant& v) -> QVariant {
-            if (!v.isValid()) return {};
-            if (v.metaType().id() == QMetaType::QString
-                    && v.toString().trimmed().isEmpty())
-                return {};
-            return v;
-        };
-        const QVariant temperature = param(profile.value("temperature"));
-        const QVariant maxOutputTokens = param(profile.value("maxOutputTokens"));
-        const QVariant numCtx = param(profile.value("numCtx"));
+        // request JSON. Batch 21 (A1): non-numeric values (e.g. "abc") are
+        // normalized the same way instead of silently becoming 0 / 1.
+        const QVariant temperature =
+            SamplingParams::optionalDouble(profile.value("temperature"));
+        const QVariant maxOutputTokens =
+            SamplingParams::optionalPositiveInt(profile.value("maxOutputTokens"));
+        const QVariant numCtx =
+            SamplingParams::optionalPositiveInt(profile.value("numCtx"));
 
         // Only the active provider receives the profile: broadcasting one
         // profile's baseUrl to all services would corrupt the others

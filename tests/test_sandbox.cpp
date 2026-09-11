@@ -31,6 +31,7 @@ private slots:
     void editFileNotFound();
     void editFileOutsideWhitelistRejected();
     void editFileCrlfBoundary();
+    void editFileDirectoryTargetFailsCleanly();
 };
 
 void TestSandbox::allowsUserWrites() {
@@ -242,6 +243,22 @@ void TestSandbox::editFileCrlfBoundary() {
                                        QStringLiteral("LINE1"));
     QVERIFY(crlfHit.success);
     QCOMPARE(readFileText(path), QStringLiteral("LINE1\r\nline3\r\n"));
+}
+
+// Batch 21 (A2) related: a directory target must fail cleanly. Note the
+// failure surfaces at the pre-write read step (open(ReadOnly) on a directory
+// fails on most platforms), NOT at the QSaveFile commit step - commit/short-
+// write failures are not injectable without an injectable write seam, so the
+// atomic-write path itself stays covered only by code review. What this test
+// pins: the tool must fail and never report a successful replace.
+void TestSandbox::editFileDirectoryTargetFailsCleanly() {
+    QTemporaryDir dir = sandboxTempDir();
+    QVERIFY(dir.isValid());
+    const QString target = dir.filePath("targetdir");
+    QVERIFY(QDir().mkpath(target));
+
+    const ToolResult r = runEdit(target, QStringLiteral("x"), QStringLiteral("y"));
+    QVERIFY2(!r.success, qPrintable(r.error));
 }
 
 QTEST_GUILESS_MAIN(TestSandbox)

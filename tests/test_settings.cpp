@@ -235,6 +235,10 @@ private slots:
     }
 };
 
+// Sampling-param normalization lives in test_sampling_params (separate
+// executable): Qt documents qExec as single-call per test application, and
+// two calls made CLI options / XML output ambiguous.
+
 int main(int argc, char *argv[]) {
     QCoreApplication::setOrganizationName("NexusAI");
     QCoreApplication::setApplicationName("NexusAI");

@@ -3,6 +3,7 @@
 
 #include <QFile>
 #include <QFileInfo>
+#include <QSaveFile>
 #include <QTextStream>
 #include <QDir>
 #include <QJsonArray>
@@ -188,11 +189,22 @@ public:
 
         // Raw (non-Text) mode: bytes in, bytes out - no newline translation,
         // so the untouched parts of the file survive byte-for-byte.
-        if (!file.open(QIODevice::WriteOnly | QIODevice::Truncate))
-            return ToolResult::fail("Cannot open file for writing: " + file.errorString());
+        // Batch 21 (A2): atomic write. A plain open(WriteOnly|Truncate) had
+        // already truncated the original by the time a short write or close
+        // error surfaced; edit_file targets an EXISTING file, so corruption is
+        // costlier than write_file. QSaveFile stages in a temp file and only
+        // renames over the target on commit() (same pattern as
+        // AgentViewModel::exportSession).
         const QByteArray bytes = updated.toUtf8();
-        file.write(bytes);
-        file.close();
+        QSaveFile out(path);
+        if (!out.open(QIODevice::WriteOnly))
+            return ToolResult::fail("Cannot open file for writing: " + out.errorString());
+        if (out.write(bytes) != bytes.size()) {
+            out.cancelWriting();
+            return ToolResult::fail("Short write (disk full/quota?): " + out.errorString());
+        }
+        if (!out.commit())
+            return ToolResult::fail("Failed to commit atomic write: " + out.errorString());
 
         return ToolResult::ok(QStringLiteral("Replaced 1 occurrence at offset %1; file now %2 bytes")
                                   .arg(pos).arg(bytes.size()));
@@ -266,6 +278,10 @@ public:
     }
 
     ToolResult execute(const QJsonObject& args) override {
+        // Batch 21 (B3): drop a cancel left over from a previous call, so a
+        // cancel() landing between two executions can't kill the next task.
+        m_cancelRequested.store(false);
+
         const QString command = args.value("command").toString();
         if (command.isEmpty())
             return ToolResult::fail("Command is required");

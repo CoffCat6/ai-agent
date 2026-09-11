@@ -512,6 +512,45 @@ private slots:
                  "trace node line missing from the summary");
     }
 
+    // Batch 21 (C2): embedded CR/LF in a trace node's status/type/title must
+    // be flattened onto the single bullet line, or the Markdown list breaks.
+    void exportSessionFlattensTraceNewlines() {
+        SqliteMemory memory(QStringLiteral(":memory:"));
+        memory.beginSession("s1", "Newlines");
+        memory.saveMessage("s1", QJsonObject{{"role", "user"}, {"content", "q"}});
+        QJsonObject node;
+        node["id"] = "n1";
+        node["type"] = "tool_call";
+        // Embedded LF (incl. CRLF) must not leak a second list line.
+        node["title"] = QStringLiteral("read_file\r\n/evil\npath");
+        node["status"] = QStringLiteral("failed\nbroken");
+        memory.saveTraceNode("s1", node, 0);
+
+        AgentViewModel vm(nullptr);
+        vm.setMemory(&memory);
+        QTemporaryDir dir;
+        QVERIFY(dir.isValid());
+        const QString path = dir.filePath("newlines.md");
+        QVERIFY(vm.exportSession("s1", path, QStringLiteral("md")));
+
+        QFile f(path);
+        QVERIFY(f.open(QIODevice::ReadOnly));
+        const QStringList lines = QString::fromUtf8(f.readAll()).split('\n');
+        int bulletLines = 0;
+        QString bullet;
+        for (const QString& line : lines) {
+            if (line.startsWith(QStringLiteral("- ["))) {
+                ++bulletLines;
+                bullet = line;
+                QVERIFY2(!line.contains('\r'), "CR must be stripped from trace bullet");
+            }
+        }
+        QCOMPARE(bulletLines, 1);   // one node -> exactly one bullet line
+        // LF (also the LF of CRLF after CR removal) becomes a single space.
+        QCOMPARE(bullet,
+                 QStringLiteral("- [failed broken] tool_call · read_file /evil path"));
+    }
+
     // QML FileDialog hands selectedFile over as a file:// URL (percent-encoded
     // for spaces / non-ASCII): exercise the isLocalFile() -> toLocalFile()
     // normalization branch with a non-ASCII, space-containing target path.

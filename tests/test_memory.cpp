@@ -4,6 +4,7 @@
 #include <QDir>
 #include <QStandardPaths>
 #include <QSqlDatabase>
+#include <QSqlError>
 #include <QSqlQuery>
 #include <QFile>
 
@@ -49,6 +50,9 @@ private slots:
     void searchMessagesSyncsOnDelete();
     void searchMessagesShortKeywordLikeFallback();
     void messagesFtsMigrationSelfHeals();
+    // Batch 21: session-grouped ordering (A3) and LIKE guard (B4)
+    void searchMessagesGroupsBySession();
+    void searchMessagesLikeGuardSuppressesLargeTables();
 };
 
 void TestMemory::messageRoundTrip() {
@@ -526,6 +530,80 @@ void TestMemory::searchMessagesShortKeywordLikeFallback() {
     QCOMPARE(ascii.size(), 1);
 
     QVERIFY(mem.searchMessages(QStringLiteral("zzz"), 50).isEmpty());
+}
+
+// Batch 21 (A3): hits interleaved by timestamp across sessions must still be
+// returned in contiguous session groups (Sidebar section headers require it),
+// ordered by the group's newest hit; within a group, newest first.
+void TestMemory::searchMessagesGroupsBySession() {
+    SqliteMemory mem(QStringLiteral(":memory:"));
+    mem.beginSession("sA", "Session A");
+    mem.beginSession("sB", "Session B");
+
+    // Insert directly so timestamps are deterministic (saveMessage stamps now).
+    // Time order of matching messages: B1(400), A1(300), B2(200), A2(100).
+    // Session A's newest hit (300) is newer than B's newest (400)? No - B's
+    // group max is 400, so B leads; within B: 400 then 200; then A: 300, 100.
+    QSqlQuery insert(mem.databaseForTest());
+    QVERIFY(insert.prepare(
+        "INSERT INTO messages (session_id, role, content, timestamp) "
+        "VALUES (?, ?, ?, ?)"));
+    auto addRow = [&](const QString& session, const QString& content, qint64 ts) {
+        insert.bindValue(0, session);
+        insert.bindValue(1, QStringLiteral("user"));
+        insert.bindValue(2, content);
+        insert.bindValue(3, ts);
+        QVERIFY2(insert.exec(), qPrintable(insert.lastError().text()));
+    };
+    addRow("sA", QStringLiteral("分组关键词-A-old"), 100);
+    addRow("sB", QStringLiteral("分组关键词-B-old"), 200);
+    addRow("sA", QStringLiteral("分组关键词-A-new"), 300);
+    addRow("sB", QStringLiteral("分组关键词-B-new"), 400);
+
+    const QVariantList hits = mem.searchMessages(QStringLiteral("分组关键词"), 50);
+    QCOMPARE(hits.size(), 4);
+    QCOMPARE(hits.at(0).toMap().value("sessionId").toString(), QStringLiteral("sB"));
+    QVERIFY(hits.at(0).toMap().value("snippet").toString().contains(QStringLiteral("B-new")));
+    QCOMPARE(hits.at(1).toMap().value("sessionId").toString(), QStringLiteral("sB"));
+    QVERIFY(hits.at(1).toMap().value("snippet").toString().contains(QStringLiteral("B-old")));
+    QCOMPARE(hits.at(2).toMap().value("sessionId").toString(), QStringLiteral("sA"));
+    QVERIFY(hits.at(2).toMap().value("snippet").toString().contains(QStringLiteral("A-new")));
+    QCOMPARE(hits.at(3).toMap().value("sessionId").toString(), QStringLiteral("sA"));
+    QVERIFY(hits.at(3).toMap().value("snippet").toString().contains(QStringLiteral("A-old")));
+}
+
+// Batch 21 (B4): past the LIKE row ceiling, a sub-trigram keyword must NOT run
+// the full scan; instead exactly one notice row is returned.
+void TestMemory::searchMessagesLikeGuardSuppressesLargeTables() {
+    SqliteMemory mem(QStringLiteral(":memory:"));
+    mem.beginSession("s1", "Large library");
+
+    // Bulk-insert just over the 50000-row ceiling via a single transaction.
+    {
+        QSqlQuery q(mem.databaseForTest());
+        QVERIFY(q.exec("BEGIN"));
+        QVERIFY(q.prepare(
+            "INSERT INTO messages (session_id, role, content, timestamp) "
+            "VALUES ('s1', 'user', ?, ?)"));
+        for (int i = 0; i < 50005; ++i) {
+            q.bindValue(0, QStringLiteral("padding-row-%1").arg(i));
+            q.bindValue(1, static_cast<qint64>(i));
+            QVERIFY2(q.exec(), qPrintable(q.lastError().text()));
+        }
+        QVERIFY(q.exec("COMMIT"));
+    }
+
+    const QVariantList guarded = mem.searchMessages(QStringLiteral("ab"), 50);
+    QCOMPARE(guarded.size(), 1);
+    const QVariantMap notice = guarded.at(0).toMap();
+    QCOMPARE(notice.value("sessionId").toString(),
+             QStringLiteral("__search_notice__"));
+    QVERIFY(notice.value("notice").toString().contains(QStringLiteral("全文索引")));
+
+    // The FTS path (3+ chars) is unaffected by the guard. Use saveMessage so
+    // the content goes through the normal path.
+    mem.saveMessage("s1", msg("user", "可索引的独特关键词锚点"));
+    QCOMPARE(mem.searchMessages(QStringLiteral("独特关键词"), 50).size(), 1);
 }
 
 // Discipline #8: an old database without messages_fts must self-heal on
