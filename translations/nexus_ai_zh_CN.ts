@@ -246,7 +246,32 @@
         <translation>知识库嵌入模型</translation>
     </message>
     <message>
-        <location filename="../src/ui/pages/GeneralPage.qml" line="157"/>
+        <location filename="../src/ui/pages/GeneralPage.qml" line="145"/>
+        <source>智能体</source>
+        <translation>智能体</translation>
+    </message>
+    <message>
+        <location filename="../src/ui/pages/GeneralPage.qml" line="148"/>
+        <source>自定义系统提示词：留空使用内置提示词；修改即时生效，内容随请求发送给当前模型服务</source>
+        <translation>自定义系统提示词：留空使用内置提示词；修改即时生效，内容随请求发送给当前模型服务</translation>
+    </message>
+    <message>
+        <location filename="../src/ui/pages/GeneralPage.qml" line="162"/>
+        <source>留空 = 内置提示词</source>
+        <translation>留空 = 内置提示词</translation>
+    </message>
+    <message>
+        <location filename="../src/ui/pages/GeneralPage.qml" line="177"/>
+        <source>%1 字符</source>
+        <translation>%1 字符</translation>
+    </message>
+    <message>
+        <location filename="../src/ui/pages/GeneralPage.qml" line="184"/>
+        <source>恢复默认提示词</source>
+        <translation>恢复默认提示词</translation>
+    </message>
+    <message>
+        <location filename="../src/ui/pages/GeneralPage.qml" line="215"/>
         <source>本地智能体桌面应用 · 多模型提供商 · 工具调用 · 本地知识库</source>
         <translation>本地智能体桌面应用 · 多模型提供商 · 工具调用 · 本地知识库</translation>
     </message>

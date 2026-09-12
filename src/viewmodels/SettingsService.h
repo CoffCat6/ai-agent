@@ -36,6 +36,8 @@ class SettingsService : public QObject {
     Q_PROPERTY(bool localOnlyMode READ localOnlyMode WRITE setLocalOnlyMode NOTIFY localOnlyModeChanged)
     Q_PROPERTY(QString embeddingModel READ embeddingModel WRITE setEmbeddingModel NOTIFY embeddingModelChanged)
     Q_PROPERTY(QString logLevel READ logLevel WRITE setLogLevel NOTIFY logLevelChanged)
+    // Batch 22 (F8): user-editable system prompt; empty string = built-in.
+    Q_PROPERTY(QString systemPromptOverride READ systemPromptOverride WRITE setSystemPromptOverride NOTIFY systemPromptOverrideChanged)
     Q_PROPERTY(QString appVersion READ appVersion CONSTANT)
 
 public:
@@ -77,6 +79,8 @@ public:
     // chunk vectors; a change triggers a full knowledge re-embed.
     QString embeddingModel() const { return m_embeddingModel; }
     void setEmbeddingModel(const QString& model);
+    QString systemPromptOverride() const { return m_systemPromptOverride; }
+    void setSystemPromptOverride(const QString& prompt);
 
     // Runtime-log minimum level (日志开发 doc 6 §3.5): reuses the
     // logging/level key that Logger::install() reads at startup, applies
@@ -114,6 +118,7 @@ signals:
     void allowLocalNetworkFetchChanged();
     void embeddingModelChanged();
     void logLevelChanged();
+    void systemPromptOverrideChanged();
 
 private:
     void load();
@@ -129,6 +134,7 @@ private:
     bool m_allowLocalNetworkFetch{false};
     QString m_embeddingModel{QStringLiteral("nomic-embed-text")};
     QString m_logLevel{QStringLiteral("info")};
+    QString m_systemPromptOverride;
 
     static SettingsService* s_instance;
 };

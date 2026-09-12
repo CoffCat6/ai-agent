@@ -131,6 +131,16 @@ void AIAgent::setContextLimit(int tokens) {
     emit contextLimitChanged();
 }
 
+void AIAgent::setSystemPromptOverride(const QString& prompt) {
+    const QString trimmed = prompt.trimmed();
+    if (m_systemPromptOverride == trimmed) return;
+    m_systemPromptOverride = trimmed;
+}
+
+QString AIAgent::effectiveSystemPrompt() const {
+    return m_systemPromptOverride.isEmpty() ? systemPrompt() : m_systemPromptOverride;
+}
+
 // ── Trace helpers ─────────────────────────────────────────
 
 void AIAgent::persistTraceNode(const QJsonObject& node, int order) {
@@ -234,7 +244,7 @@ void AIAgent::startTask(const QString& userMessage) {
 
         QJsonObject sysMsg;
         sysMsg["role"] = "system";
-        sysMsg["content"] = systemPrompt();
+        sysMsg["content"] = effectiveSystemPrompt();
         m_messages.append(sysMsg);
 
         if (m_memory) m_memory->beginSession(m_sessionId, userMessage.left(60));
@@ -311,7 +321,7 @@ void AIAgent::resumeSession(const QString& sessionId) {
 
     QJsonObject sysMsg;
     sysMsg["role"] = "system";
-    sysMsg["content"] = systemPrompt();
+    sysMsg["content"] = effectiveSystemPrompt();
     m_messages.append(sysMsg);
 
     // Persisted history contains clean user/assistant pairs.

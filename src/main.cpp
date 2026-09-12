@@ -405,6 +405,13 @@ int main(int argc, char *argv[])
     QObject::connect(settings, &SettingsService::allowFullDiskReadChanged, &app, [applySettings]() { applySettings(); });
     QObject::connect(settings, &SettingsService::allowLocalNetworkFetchChanged, &app, [applySettings]() { applySettings(); });
 
+    // Batch 22 (F8): user-editable system prompt (empty = built-in)
+    const auto applySystemPrompt = [agent, settings]() {
+        agent->setSystemPromptOverride(settings->systemPromptOverride());
+    };
+    applySystemPrompt();
+    QObject::connect(settings, &SettingsService::systemPromptOverrideChanged, &app, applySystemPrompt);
+
     // FEAT-801: switching the embedding model invalidates every stored
     // chunk vector → full knowledge re-embed in the background (the new
     // layout is written back via documentPersisted).

@@ -63,6 +63,10 @@ public:
     void setContextLimit(int tokens);
     int contextLimit() const { return m_contextLimit; }
 
+    // Batch 22 (F8): user-editable system prompt; empty (after trim) clears
+    // the override and falls back to the built-in prompt.
+    void setSystemPromptOverride(const QString& prompt);
+
     // REL-1001: hard wall-clock budget for one startTask. On expiry the
     // task is sealed (pending/confirm/executing calls) and converges into a
     // final response. 0 disables the timeout.
@@ -102,6 +106,7 @@ signals:
 
 private:
     void setState(AgentState state);
+    QString effectiveSystemPrompt() const;
     QString appendTraceNode(const QString& type, const QString& title,
                             const QString& status, const QJsonObject& extra = {});
     void updateLastNodeStatus(const QString& status);
@@ -178,6 +183,7 @@ private:
     // of burning the step budget on redundant executions.
     QString m_lastToolSignature;
     int m_repeatToolCount{0};
+    QString m_systemPromptOverride;   // empty = built-in prompt
     // Step budget exhausted: one final LLM call with tools withheld so the
     // gathered information turns into an answer instead of an error.
     bool m_forcedFinal{false};

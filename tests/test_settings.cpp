@@ -26,6 +26,7 @@ public:
         allowFullDiskRead = s.value("security/allowFullDiskRead");
         localOnlyMode = s.value("security/localOnlyMode");
         allowLocalNetworkFetch = s.value("security/allowLocalNetworkFetch");
+        systemPromptOverride = s.value("agent/systemPromptOverride");
     }
     ~SettingsGuard() {
         QSettings s("NexusAI", "NexusAI");
@@ -46,6 +47,9 @@ public:
         if (allowLocalNetworkFetch.isValid())
             s.setValue("security/allowLocalNetworkFetch", allowLocalNetworkFetch);
         else s.remove("security/allowLocalNetworkFetch");
+        if (systemPromptOverride.isValid())
+            s.setValue("agent/systemPromptOverride", systemPromptOverride);
+        else s.remove("agent/systemPromptOverride");
     }
     QVariant rawProfiles;
     QVariant activeId;
@@ -54,6 +58,7 @@ public:
     QVariant allowFullDiskRead;
     QVariant localOnlyMode;
     QVariant allowLocalNetworkFetch;
+    QVariant systemPromptOverride;
 };
 
 } // namespace
@@ -182,6 +187,41 @@ private slots:
             QCOMPARE(service.logLevel(), QStringLiteral("debug"));
         }
         Logger::setMinLevel(QtInfoMsg);   // restore suite default
+    }
+
+    // Batch 22 (F8): user-editable system prompt; empty (after trim) clears
+    // the override instead of being ignored.
+    void systemPromptOverridePersistence() {
+        SettingsGuard guard;
+        {
+            QSettings s("NexusAI", "NexusAI");
+            s.remove("agent/systemPromptOverride");
+        }
+
+        {
+            SettingsService service(nullptr);
+            QCOMPARE(service.systemPromptOverride(), QString());
+
+            QSignalSpy spy(&service, &SettingsService::systemPromptOverrideChanged);
+            service.setSystemPromptOverride(QStringLiteral("  自定义提示词  "));
+            QCOMPARE(spy.count(), 1);
+            QCOMPARE(service.systemPromptOverride(), QStringLiteral("自定义提示词"));  // trimmed
+
+            service.setSystemPromptOverride(QStringLiteral("自定义提示词"));          // no-op write
+            QCOMPARE(spy.count(), 1);
+
+            service.setSystemPromptOverride(QStringLiteral("   "));                   // blank clears
+            QCOMPARE(spy.count(), 2);
+            QCOMPARE(service.systemPromptOverride(), QString());
+        }
+        {
+            SettingsService service(nullptr);
+            service.setSystemPromptOverride(QStringLiteral("persisted prompt"));
+        }
+        {
+            SettingsService service(nullptr);
+            QCOMPARE(service.systemPromptOverride(), QStringLiteral("persisted prompt"));
+        }
     }
 
     // FEAT-801: embedding model + Batch 5 full-disk-read persistence round trip

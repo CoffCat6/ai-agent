@@ -139,6 +139,64 @@ Item {
             ColumnLayout {
                 Layout.leftMargin: 24
                 Layout.rightMargin: 24
+                Layout.fillWidth: true
+                spacing: 8
+
+                Text { text: qsTr("智能体"); color: Theme.textSecondary; font.pixelSize: Theme.fontSizeCaption; font.bold: true; font.family: Theme.fontMono }
+
+                Text {
+                    text: qsTr("自定义系统提示词：留空使用内置提示词；修改即时生效，内容随请求发送给当前模型服务")
+                    color: Theme.textSecondary
+                    font.pixelSize: 10
+                    font.family: Theme.fontSans
+                    opacity: 0.8
+                    wrapMode: Text.Wrap
+                    Layout.fillWidth: true
+                }
+
+                TextArea {
+                    id: promptField
+                    Layout.fillWidth: true
+                    Layout.preferredHeight: 132
+                    text: Settings.systemPromptOverride
+                    placeholderText: qsTr("留空 = 内置提示词")
+                    placeholderTextColor: Theme.textSecondary
+                    color: Theme.textPrimary
+                    selectionColor: Theme.brandPrimary; selectedTextColor: "#ffffff"
+                    wrapMode: TextArea.Wrap
+                    font.pixelSize: Theme.fontSizeBody; font.family: Theme.fontMono
+                    background: Rectangle { radius: 6; color: Theme.bgPrimary; border.width: promptField.activeFocus ? 2 : 1; border.color: promptField.activeFocus ? Theme.brandPrimary : Theme.borderSubtle }
+                    onEditingFinished: Settings.systemPromptOverride = text
+                }
+
+                RowLayout {
+                    Layout.fillWidth: true
+                    spacing: 8
+
+                    Text {
+                        text: qsTr("%1 字符").arg(promptField.text.length)
+                        color: Theme.textSecondary
+                        font.pixelSize: 10
+                        font.family: Theme.fontMono
+                    }
+                    Item { Layout.fillWidth: true }
+                    AppButton {
+                        text: qsTr("恢复默认提示词")
+                        enabled: promptField.text.length > 0
+                        opacity: enabled ? 1.0 : 0.4
+                        onClicked: {
+                            Settings.systemPromptOverride = ""
+                            promptField.text = ""
+                        }
+                    }
+                }
+            }
+
+            Rectangle { Layout.fillWidth: true; Layout.leftMargin: 24; Layout.rightMargin: 24; height: 1; color: Theme.borderSubtle }
+
+            ColumnLayout {
+                Layout.leftMargin: 24
+                Layout.rightMargin: 24
                 Layout.bottomMargin: 16
                 Layout.fillWidth: true
                 spacing: 6

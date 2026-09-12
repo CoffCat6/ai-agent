@@ -393,6 +393,8 @@ private slots:
     void taskTimeoutSealsAndConverges();
     // Batch 11: observability (OBS-1101/1102/1103)
     void auditCarriesRequestContext();
+    // Batch 22 (F8): user-editable system prompt
+    void systemPromptOverrideReachesRequest();
 };
 
 void TestAgent::directCompletion() {
@@ -1531,6 +1533,36 @@ void TestAgent::auditCarriesRequestContext() {
     // OBS-1103: metrics trace node
     QVERIFY(traceHas(agent.traceModel(), "metrics"));
     agent.setMemory(nullptr);
+}
+
+
+// Batch 22 (F8): a non-empty override replaces the built-in system prompt on
+// the wire; clearing it (trim-to-empty) restores the built-in.
+void TestAgent::systemPromptOverrideReachesRequest() {
+    llm.reset();
+    llm.script.append(textResponse(QStringLiteral("ok")));
+    QSignalSpy spy(&agent, &AIAgent::responseReady);
+
+    agent.setSystemPromptOverride(QStringLiteral("  CUSTOM SYSTEM PROMPT  "));
+    agent.startTask(QStringLiteral("hello"));
+    QTRY_COMPARE(spy.count(), 1);
+    QCOMPARE(llm.seenMessages.size(), 1);
+    const QJsonObject sysMsg = llm.seenMessages.first().first().toObject();
+    QCOMPARE(sysMsg.value("role").toString(), QStringLiteral("system"));
+    QCOMPARE(sysMsg.value("content").toString(), QStringLiteral("CUSTOM SYSTEM PROMPT"));  // trimmed
+
+    // Clearing restores the built-in prompt for the next session
+    agent.setSystemPromptOverride(QStringLiteral("   "));
+    agent.resetSession();
+    llm.reset();
+    llm.script.append(textResponse(QStringLiteral("ok")));
+    QSignalSpy spy2(&agent, &AIAgent::responseReady);
+    agent.startTask(QStringLiteral("hello again"));
+    QTRY_COMPARE(spy2.count(), 1);
+    const QString content = llm.seenMessages.first().first().toObject()
+                                .value("content").toString();
+    QVERIFY(content.contains(QStringLiteral("You are NexusAI")));
+    agent.setSystemPromptOverride(QString());   // leave the fixture clean
 }
 
 QTEST_GUILESS_MAIN(TestAgent)

@@ -215,6 +215,7 @@ void SettingsService::load() {
     m_localOnlyMode = settings.value("security/localOnlyMode", false).toBool();
     m_allowLocalNetworkFetch = settings.value("security/allowLocalNetworkFetch", false).toBool();
     m_embeddingModel = settings.value("embedding/model", QStringLiteral("nomic-embed-text")).toString();
+    m_systemPromptOverride = settings.value("agent/systemPromptOverride", QString()).toString();
     // logging/level is Logger::install()'s key; the env override still wins
     // there, so load() only mirrors the stored value (install() already
     // applied the effective level before any UI exists).
@@ -484,6 +485,19 @@ void SettingsService::setEmbeddingModel(const QString& model) {
                     trimmed);
     QSettings().setValue("embedding/model", trimmed);
     emit embeddingModelChanged();
+}
+
+// Empty (after trim) clears the override and falls back to the built-in
+// prompt - unlike embeddingModel, empty is a meaningful value here.
+void SettingsService::setSystemPromptOverride(const QString& prompt) {
+    const QString trimmed = prompt.trimmed();
+    if (m_systemPromptOverride == trimmed) return;
+    m_systemPromptOverride = trimmed;
+    Activity::usage(Activity::Kind::User, QStringLiteral("settings.systemPromptOverride"),
+                    trimmed.isEmpty() ? QStringLiteral("(cleared)")
+                                      : QStringLiteral("%1 chars").arg(trimmed.size()));
+    QSettings().setValue("agent/systemPromptOverride", trimmed);
+    emit systemPromptOverrideChanged();
 }
 
 void SettingsService::setLogLevel(const QString& level) {
