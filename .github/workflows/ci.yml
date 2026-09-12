@@ -1,0 +1,60 @@
+name: CI
+
+# Batch 21 (G7): one-click Windows build + regression + deployment artifact.
+# NOTE: this repo currently has no remote - the workflow activates once the
+# repository is pushed to GitHub (see README "Build / Deployment / CI").
+
+on:
+  push:
+  pull_request:
+
+jobs:
+  windows-mingw:
+    runs-on: windows-latest
+    env:
+      QT_VERSION: 6.9.0
+      QT_DIR: ${{ github.workspace }}/Qt
+    steps:
+      - uses: actions/checkout@v4
+
+      - uses: actions/setup-python@v5
+        with:
+          python-version: '3.x'
+
+      - name: Install Qt (MinGW) via aqtinstall
+        shell: pwsh
+        run: |
+          python -m pip install aqtinstall
+          aqt install-qt windows desktop $env:QT_VERSION win64_mingw --output-dir $env:QT_DIR
+          # MinGW 13.1 toolchain bundled by Qt (same as the local dev setup)
+          aqt install-tool windows desktop tools_mingw1310 qt.tools.win64_mingw1310 --output-dir $env:QT_DIR
+
+      - name: Locate MinGW toolchain
+        shell: pwsh
+        run: |
+          $gpp = Get-ChildItem "$env:QT_DIR/Tools" -Recurse -Filter "g++.exe" | Select-Object -First 1
+          if (-not $gpp) { throw "MinGW g++.exe not found under Qt/Tools" }
+          Add-Content $env:GITHUB_PATH "$($gpp.DirectoryName)"
+          Add-Content $env:GITHUB_PATH "$env:QT_DIR/$env:QT_VERSION/win64_mingw/bin"
+          "CMAKE_PREFIX_PATH=$env:QT_DIR/$env:QT_VERSION/win64_mingw" | Out-File -FilePath $env:GITHUB_ENV -Append
+
+      - name: Configure
+        shell: pwsh
+        run: cmake -B build -G Ninja -DBUILD_TESTS=ON
+
+      - name: Build
+        shell: pwsh
+        run: cmake --build build
+
+      - name: Test
+        shell: pwsh
+        run: ctest --test-dir build --output-on-failure
+
+      - name: Deploy
+        shell: pwsh
+        run: ./scripts/deploy.ps1 -OutDir deploy
+
+      - uses: actions/upload-artifact@v4
+        with:
+          name: nexusai-win64-deploy
+          path: deploy/
