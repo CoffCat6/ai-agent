@@ -22,10 +22,8 @@ public:
 
     QString currentLocale() const { return m_currentLocale; }
     QStringList availableLocales() const;
-    double coverage(const QString& locale) const;
 
     Q_INVOKABLE void applyLocale(const QString& locale);
-    Q_INVOKABLE double localeCoverage(const QString& locale) const { return coverage(locale); }
 
 signals:
     void localeChanged(const QString& locale);

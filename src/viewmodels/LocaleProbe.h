@@ -18,7 +18,6 @@ public:
     static LocaleProbe* create(QQmlEngine*, QJSEngine*);
 
     Q_INVOKABLE QStringList availableLocales() const;
-    Q_INVOKABLE double coverage(const QString& locale) const;
 
 private:
     static LocaleProbe* s_instance;

@@ -144,7 +144,6 @@ qt_add_qml_module(nexus_ai
         src/ui/components/CopyButton.qml
         src/ui/components/DialogBackground.qml
         src/ui/components/IconButton.qml
-        src/ui/components/SettingsDialog.qml
         src/ui/components/SettingsCenterDialog.qml
         src/ui/components/CategoryNav.qml
         src/ui/components/PreferenceControl.qml

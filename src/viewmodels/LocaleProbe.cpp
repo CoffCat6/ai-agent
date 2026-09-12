@@ -41,12 +41,4 @@ QStringList LocaleProbe::availableLocales() const {
     return locales;
 }
 
-double LocaleProbe::coverage(const QString& locale) const {
-    if (locale == QStringLiteral("en"))
-        return 1.0;
-    if (locale == QStringLiteral("zh-CN"))
-        return 0.95;
-    return 0.5;
-}
-
 } // namespace NexusAI

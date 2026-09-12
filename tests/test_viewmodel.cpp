@@ -32,6 +32,13 @@ public:
         QSettings s("NexusAI", "NexusAI");
         sidebar = s.value("ui/sidebarWidth");
         panel = s.value("ui/panelWidth");
+        // Layout defaults now seed the panel restore fallback (General
+        // Settings); without clearing them a user-saved default would leak
+        // into the fresh-VM expectations below.
+        defSidebar = s.value("prefs/v1/ui.defaultSidebarWidth");
+        defPanel = s.value("prefs/v1/ui.defaultPanelWidth");
+        s.remove("prefs/v1/ui.defaultSidebarWidth");
+        s.remove("prefs/v1/ui.defaultPanelWidth");
     }
     ~WidthSettingsGuard() {
         QSettings s("NexusAI", "NexusAI");
@@ -39,9 +46,15 @@ public:
         else s.remove("ui/sidebarWidth");
         if (panel.isValid()) s.setValue("ui/panelWidth", panel);
         else s.remove("ui/panelWidth");
+        if (defSidebar.isValid()) s.setValue("prefs/v1/ui.defaultSidebarWidth", defSidebar);
+        else s.remove("prefs/v1/ui.defaultSidebarWidth");
+        if (defPanel.isValid()) s.setValue("prefs/v1/ui.defaultPanelWidth", defPanel);
+        else s.remove("prefs/v1/ui.defaultPanelWidth");
     }
     QVariant sidebar;
     QVariant panel;
+    QVariant defSidebar;
+    QVariant defPanel;
 };
 
 } // namespace

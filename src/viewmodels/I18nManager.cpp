@@ -77,10 +77,6 @@ QStringList I18nManager::availableLocales() const {
     return LocaleProbe::instance()->availableLocales();
 }
 
-double I18nManager::coverage(const QString& locale) const {
-    return LocaleProbe::instance()->coverage(locale);
-}
-
 void I18nManager::applyLocale(const QString& locale) {
     QString target = locale;
     if (target.isEmpty() || target == QLatin1String("auto"))

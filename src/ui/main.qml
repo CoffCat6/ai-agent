@@ -65,7 +65,7 @@ ApplicationWindow {
                 NumberAnimation { duration: 220; easing.type: Easing.OutQuad }
             }
 
-            onSettingsRequested: settingsDialog.open()
+            onSettingsRequested: settingsCenterDialog.openCategory("model")
             onAuditRequested: auditDialog.open()
             onLogsRequested: logPanel.open()
         }
@@ -94,7 +94,7 @@ ApplicationWindow {
         AgentChatPage {
             Layout.fillWidth: true
             Layout.fillHeight: true
-            onSettingsRequested: settingsDialog.open()
+            onSettingsRequested: settingsCenterDialog.openCategory("model")
         }
 
         // ── Chat / Context Panel Splitter ──────────────
@@ -236,13 +236,6 @@ ApplicationWindow {
     ToolConfirmDialog {
         id: toolConfirmDialog
         parent: Overlay.overlay
-    }
-
-    // ── Settings Dialog ───────────────────────────────
-    SettingsDialog {
-        id: settingsDialog
-        parent: Overlay.overlay
-        onOpenRequested: (category) => settingsCenterDialog.openCategory(category)
     }
 
     // ── Settings Center Dialog (General Settings) ─────
