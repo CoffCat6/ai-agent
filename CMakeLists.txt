@@ -99,6 +99,20 @@ qt_add_qml_module(nexus_viewmodels
         src/viewmodels/ConnectionTester.cpp
         src/viewmodels/AgentViewModel.h
         src/viewmodels/AgentViewModel.cpp
+        src/viewmodels/PreferenceRegistry.h
+        src/viewmodels/PreferenceRegistry.cpp
+        src/viewmodels/ChangeBus.h
+        src/viewmodels/ChangeBus.cpp
+        src/viewmodels/PreferenceStore.h
+        src/viewmodels/PreferenceStore.cpp
+        src/viewmodels/FontProbe.h
+        src/viewmodels/FontProbe.cpp
+        src/viewmodels/LocaleProbe.h
+        src/viewmodels/LocaleProbe.cpp
+        src/viewmodels/I18nManager.h
+        src/viewmodels/I18nManager.cpp
+        src/viewmodels/EditBuffer.h
+        src/viewmodels/EditBuffer.cpp
 )
 target_include_directories(nexus_viewmodels PUBLIC
     ${CMAKE_CURRENT_SOURCE_DIR}/src
@@ -131,6 +145,9 @@ qt_add_qml_module(nexus_ai
         src/ui/components/DialogBackground.qml
         src/ui/components/IconButton.qml
         src/ui/components/SettingsDialog.qml
+        src/ui/components/SettingsCenterDialog.qml
+        src/ui/components/CategoryNav.qml
+        src/ui/components/PreferenceControl.qml
         src/ui/components/AuditDialog.qml
     src/ui/components/LogPanel.qml
         src/ui/components/KnowledgeDocDialog.qml
@@ -143,6 +160,9 @@ qt_add_qml_module(nexus_ai
         src/ui/components/ToolConfirmDialog.qml
         src/ui/panels/ContextPanel.qml
         src/ui/pages/AgentChatPage.qml
+        src/ui/pages/GeneralPage.qml
+        src/ui/pages/InterfacePage.qml
+        src/ui/pages/ModelConfigPage.qml
 )
 
 target_link_libraries(nexus_ai PRIVATE

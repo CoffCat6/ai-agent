@@ -8,6 +8,9 @@
 #include "core/utils/Logger.h"
 #include "core/utils/Activity.h"
 #include "core/utils/TokenEstimator.h"
+#include "PreferenceRegistry.h"
+#include "PreferenceStore.h"
+#include "ChangeBus.h"
 
 #include <QClipboard>
 #include <QDesktopServices>
@@ -15,6 +18,7 @@
 #include <QFile>
 #include <QFileInfo>
 #include <QGuiApplication>
+#include <QScreen>
 #include <QSettings>
 #include <QSaveFile>
 #include <QUrl>
@@ -49,18 +53,100 @@ AgentViewModel::AgentViewModel(QObject* parent)
     m_simTimer.setSingleShot(true);
     connect(&m_simTimer, &QTimer::timeout, this, &AgentViewModel::simulationStep);
 
-    // Restore last UI layout (sidebar / context panel visibility + widths)
+    // Layout defaults (General Settings) must load first: they seed the
+    // fallbacks of the panel restore below.
+    registerLayoutPreferences();
+    loadLayoutDefaults();
+    subscribeLayoutChanges();
+
+    // Restore last UI layout (sidebar / context panel visibility + widths),
+    // falling back to the configured defaults when nothing was persisted.
     const QSettings uiSettings("NexusAI", "NexusAI");
-    m_isPanelVisible = uiSettings.value("ui/panelVisible", true).toBool();
-    m_isSidebarExpanded = uiSettings.value("ui/sidebarExpanded", true).toBool();
-    m_panelWidth = uiSettings.value("ui/panelWidth", m_panelWidth).toInt();
-    m_sidebarWidth = uiSettings.value("ui/sidebarWidth", m_sidebarWidth).toInt();
+    m_isPanelVisible = uiSettings.value("ui/panelVisible", m_defaultPanelVisible).toBool();
+    m_isSidebarExpanded = uiSettings.value("ui/sidebarExpanded", m_defaultSidebarExpanded).toBool();
+    m_panelWidth = uiSettings.value("ui/panelWidth", m_defaultPanelWidth).toInt();
+    m_sidebarWidth = uiSettings.value("ui/sidebarWidth", m_defaultSidebarWidth).toInt();
 
     // Splitter drags update the width per mouse move; coalesce the writes
     m_uiPersistTimer.setSingleShot(true);
     m_uiPersistTimer.setInterval(400);
     connect(&m_uiPersistTimer, &QTimer::timeout, this,
             &AgentViewModel::persistPanelWidths);
+}
+
+void AgentViewModel::registerLayoutPreferences() {
+    auto* reg = PreferenceRegistry::instance();
+    if (!reg) return;
+    if (reg->hasPreference(QStringLiteral("ui.defaultSidebarWidth"))) return;
+
+    auto registerInt = [&](const QString& key, const QString& display,
+                           int def, int min, int max) {
+        PreferenceMeta meta;
+        meta.key = key;
+        meta.categoryId = QStringLiteral("interface");
+        meta.displayName = display;
+        meta.defaultValue = def;
+        meta.type = PreferenceType::Int;
+        meta.constraint.min = min;
+        meta.constraint.max = max;
+        meta.constraint.hasRange = true;
+        reg->registerPreference(meta);
+    };
+
+    auto registerBool = [&](const QString& key, const QString& display, bool def) {
+        PreferenceMeta meta;
+        meta.key = key;
+        meta.categoryId = QStringLiteral("interface");
+        meta.displayName = display;
+        meta.defaultValue = def;
+        meta.type = PreferenceType::Bool;
+        reg->registerPreference(meta);
+    };
+
+    registerInt(QStringLiteral("ui.defaultSidebarWidth"), QStringLiteral("侧边栏默认宽度"), 260, 180, 560);
+    registerInt(QStringLiteral("ui.defaultPanelWidth"), QStringLiteral("面板默认宽度"), 300, 220, 640);
+    registerBool(QStringLiteral("ui.defaultSidebarExpanded"), QStringLiteral("侧边栏默认展开"), true);
+    registerBool(QStringLiteral("ui.defaultPanelVisible"), QStringLiteral("面板默认展开"), true);
+    registerBool(QStringLiteral("ui.restoreWindowOnStartup"), QStringLiteral("启动时恢复窗口"), true);
+}
+
+void AgentViewModel::loadLayoutDefaults() {
+    auto* store = PreferenceStore::instance();
+    if (!store) return;
+
+    const QVariant sw = store->load(QStringLiteral("ui.defaultSidebarWidth"));
+    if (sw.isValid()) m_defaultSidebarWidth = sw.toInt();
+    const QVariant pw = store->load(QStringLiteral("ui.defaultPanelWidth"));
+    if (pw.isValid()) m_defaultPanelWidth = pw.toInt();
+    const QVariant se = store->load(QStringLiteral("ui.defaultSidebarExpanded"));
+    if (se.isValid()) m_defaultSidebarExpanded = se.toBool();
+    const QVariant pv = store->load(QStringLiteral("ui.defaultPanelVisible"));
+    if (pv.isValid()) m_defaultPanelVisible = pv.toBool();
+    const QVariant rw = store->load(QStringLiteral("ui.restoreWindowOnStartup"));
+    if (rw.isValid()) m_restoreWindowOnStartup = rw.toBool();
+}
+
+void AgentViewModel::subscribeLayoutChanges() {
+    auto* bus = ChangeBus::instance();
+    if (!bus) return;
+    connect(bus, &ChangeBus::changed, this, [this](const QString& key, const QVariant& value) {
+        if (key == QStringLiteral("ui.defaultSidebarWidth")) {
+            m_defaultSidebarWidth = value.toInt();
+            emit defaultSidebarWidthChanged();
+        } else if (key == QStringLiteral("ui.defaultPanelWidth")) {
+            m_defaultPanelWidth = value.toInt();
+            emit defaultPanelWidthChanged();
+        } else if (key == QStringLiteral("ui.defaultSidebarExpanded")) {
+            m_defaultSidebarExpanded = value.toBool();
+            emit defaultSidebarExpandedChanged();
+        } else if (key == QStringLiteral("ui.defaultPanelVisible")) {
+            m_defaultPanelVisible = value.toBool();
+            emit defaultPanelVisibleChanged();
+        } else if (key == QStringLiteral("ui.restoreWindowOnStartup")) {
+            m_restoreWindowOnStartup = value.toBool();
+            emit restoreWindowOnStartupChanged();
+        }
+    });
 }
 
 AgentViewModel::~AgentViewModel() {
@@ -511,6 +597,81 @@ void AgentViewModel::setSidebarWidth(int width) {
 
 void AgentViewModel::toggleSidebar() {
     setIsSidebarExpanded(!m_isSidebarExpanded);
+}
+
+void AgentViewModel::setDefaultSidebarWidth(int width) {
+    const int clamped = qBound(180, width, 560);
+    if (m_defaultSidebarWidth == clamped) return;
+    m_defaultSidebarWidth = clamped;
+    PreferenceStore::instance()->save(QStringLiteral("ui.defaultSidebarWidth"), clamped);
+    emit defaultSidebarWidthChanged();
+}
+
+void AgentViewModel::setDefaultPanelWidth(int width) {
+    const int clamped = qBound(220, width, 640);
+    if (m_defaultPanelWidth == clamped) return;
+    m_defaultPanelWidth = clamped;
+    PreferenceStore::instance()->save(QStringLiteral("ui.defaultPanelWidth"), clamped);
+    emit defaultPanelWidthChanged();
+}
+
+void AgentViewModel::setDefaultSidebarExpanded(bool expanded) {
+    if (m_defaultSidebarExpanded == expanded) return;
+    m_defaultSidebarExpanded = expanded;
+    PreferenceStore::instance()->save(QStringLiteral("ui.defaultSidebarExpanded"), expanded);
+    emit defaultSidebarExpandedChanged();
+}
+
+void AgentViewModel::setDefaultPanelVisible(bool visible) {
+    if (m_defaultPanelVisible == visible) return;
+    m_defaultPanelVisible = visible;
+    PreferenceStore::instance()->save(QStringLiteral("ui.defaultPanelVisible"), visible);
+    emit defaultPanelVisibleChanged();
+}
+
+void AgentViewModel::setRestoreWindowOnStartup(bool restore) {
+    if (m_restoreWindowOnStartup == restore) return;
+    m_restoreWindowOnStartup = restore;
+    PreferenceStore::instance()->save(QStringLiteral("ui.restoreWindowOnStartup"), restore);
+    emit restoreWindowOnStartupChanged();
+}
+
+QVariantMap AgentViewModel::loadWindowGeometry() const {
+    const QSettings s("NexusAI", "NexusAI");
+    if (!s.contains("ui/windowX")) return {};
+
+    const double x = s.value("ui/windowX").toDouble();
+    const double y = s.value("ui/windowY").toDouble();
+
+    QVariantMap geo;
+    // Reject a position that landed off every screen (e.g. an unplugged
+    // monitor): the window would restore out of the user's reach.
+    const QPoint pos(static_cast<int>(x), static_cast<int>(y));
+    bool onScreen = false;
+    const QList<QScreen*> screens = QGuiApplication::screens();
+    for (const QScreen* screen : screens) {
+        if (screen->availableGeometry().adjusted(-40, -40, 40, 40).contains(pos)) {
+            onScreen = true;
+            break;
+        }
+    }
+
+    geo.insert(QStringLiteral("valid"), onScreen);
+    geo.insert(QStringLiteral("x"), x);
+    geo.insert(QStringLiteral("y"), y);
+    geo.insert(QStringLiteral("width"), s.value("ui/windowWidth").toDouble());
+    geo.insert(QStringLiteral("height"), s.value("ui/windowHeight").toDouble());
+    geo.insert(QStringLiteral("maximized"), s.value("ui/windowMaximized", false).toBool());
+    return geo;
+}
+
+void AgentViewModel::saveWindowGeometry(double x, double y, double width, double height, bool maximized) {
+    QSettings s("NexusAI", "NexusAI");
+    s.setValue("ui/windowX", x);
+    s.setValue("ui/windowY", y);
+    s.setValue("ui/windowWidth", width);
+    s.setValue("ui/windowHeight", height);
+    s.setValue("ui/windowMaximized", maximized);
 }
 
 // ── Token ────────────────────────────────────────────────

@@ -1,0 +1,113 @@
+#include "I18nManager.h"
+#include "PreferenceRegistry.h"
+#include "PreferenceStore.h"
+#include "ChangeBus.h"
+#include "LocaleProbe.h"
+
+#include <QGuiApplication>
+#include <QLocale>
+#include <QLoggingCategory>
+
+Q_LOGGING_CATEGORY(lcI18n, "nexus.i18n")
+
+namespace NexusAI {
+
+I18nManager* I18nManager::s_instance = nullptr;
+
+I18nManager* I18nManager::instance() {
+    if (!s_instance) s_instance = new I18nManager(nullptr);
+    return s_instance;
+}
+
+I18nManager* I18nManager::create(QQmlEngine*, QJSEngine*) {
+    QJSEngine::setObjectOwnership(instance(), QJSEngine::CppOwnership);
+    return instance();
+}
+
+I18nManager::I18nManager(QObject* parent)
+    : QObject(parent) {
+    registerPreference();
+    m_currentLocale = detectInitialLocale();
+    subscribeChanges();
+}
+
+void I18nManager::registerPreference() {
+    auto* reg = PreferenceRegistry::instance();
+    if (!reg) return;
+
+    PreferenceMeta meta;
+    meta.key = QStringLiteral("ui.locale");
+    meta.categoryId = QStringLiteral("interface");
+    meta.displayName = QStringLiteral("界面语言");
+    // Empty/"auto" means "follow the system locale" - detectInitialLocale()
+    // resolves it once and applyLocale() persists an explicit choice.
+    meta.defaultValue = QString();
+    meta.type = PreferenceType::Enum;
+    meta.constraint.options = { QStringLiteral("auto"),
+                                QStringLiteral("zh-CN"),
+                                QStringLiteral("en") };
+    reg->registerPreference(meta);
+}
+
+QString I18nManager::detectInitialLocale() const {
+    auto* store = PreferenceStore::instance();
+    if (store) {
+        const QVariant val = store->load(QStringLiteral("ui.locale"));
+        const QString stored = val.toString();
+        if (val.isValid() && !stored.isEmpty() && stored != QLatin1String("auto"))
+            return stored;
+    }
+
+    const QLocale sys = QLocale::system();
+    if (sys.language() == QLocale::Chinese)
+        return QStringLiteral("zh-CN");
+    return QStringLiteral("en");
+}
+
+void I18nManager::subscribeChanges() {
+    auto* bus = ChangeBus::instance();
+    if (!bus) return;
+    connect(bus, &ChangeBus::changed, this, [this](const QString& key, const QVariant& value) {
+        if (key == QStringLiteral("ui.locale"))
+            applyLocale(value.toString());
+    });
+}
+
+QStringList I18nManager::availableLocales() const {
+    return LocaleProbe::instance()->availableLocales();
+}
+
+double I18nManager::coverage(const QString& locale) const {
+    return LocaleProbe::instance()->coverage(locale);
+}
+
+void I18nManager::applyLocale(const QString& locale) {
+    QString target = locale;
+    if (target.isEmpty() || target == QLatin1String("auto"))
+        target = QLocale::system().language() == QLocale::Chinese
+            ? QStringLiteral("zh-CN") : QStringLiteral("en");
+
+    if (m_translatorInstalled) {
+        QGuiApplication::removeTranslator(&m_translator);
+        m_translatorInstalled = false;
+    }
+
+    if (target != QStringLiteral("en")) {
+        if (m_translator.load(target, QStringLiteral("nexus_ai"),
+                              QStringLiteral("_"), QStringLiteral(":/i18n"))) {
+            QGuiApplication::installTranslator(&m_translator);
+            m_translatorInstalled = true;
+            qCInfo(lcI18n) << "Loaded translation:" << target;
+        } else {
+            qCWarning(lcI18n) << "Translation resource missing for" << target
+                              << "- falling back to English";
+            target = QStringLiteral("en");
+        }
+    }
+
+    if (m_currentLocale == target) return;
+    m_currentLocale = target;
+    emit localeChanged(target);
+}
+
+} // namespace NexusAI

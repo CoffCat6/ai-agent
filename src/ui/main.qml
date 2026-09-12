@@ -15,6 +15,28 @@ ApplicationWindow {
     title: "NexusAI"
     color: Theme.bgPrimary
 
+    // ── Window geometry persistence (启动时恢复窗口) ─────
+    // Restore only when the preference allows it; AgentVM.loadWindowGeometry
+    // already drops positions that are off every screen.
+    Component.onCompleted: {
+        if (!AgentVM.restoreWindowOnStartup) return
+        const geo = AgentVM.loadWindowGeometry()
+        if (!geo.valid) return
+        if (geo.maximized) {
+            mainWindow.visibility = Window.Maximized
+        } else {
+            x = geo.x
+            y = geo.y
+            width = geo.width
+            height = geo.height
+        }
+    }
+    onClosing: (close) => {
+        AgentVM.saveWindowGeometry(x, y, width, height,
+                                   visibility === Window.Maximized)
+        close.accept()
+    }
+
     // Width always kept free of the two side panels when resizing them
     readonly property int chatMinWidth: 320
 
@@ -220,6 +242,15 @@ ApplicationWindow {
     SettingsDialog {
         id: settingsDialog
         parent: Overlay.overlay
+        onOpenRequested: (category) => settingsCenterDialog.openCategory(category)
+    }
+
+    // ── Settings Center Dialog (General Settings) ─────
+    SettingsCenterDialog {
+        id: settingsCenterDialog
+        parent: Overlay.overlay
+        onSettingsSaved: noticeToast.show(qsTr("设置已保存"))
+        onSettingsError: (message) => errorToast.show(message)
     }
 
     // ── Audit Log Dialog ──────────────────────────────
@@ -283,7 +314,7 @@ ApplicationWindow {
     // ── Keyboard Shortcuts ─────────────────────────────
     Shortcut {
         sequence: "Ctrl+,"
-        onActivated: settingsDialog.open()
+        onActivated: settingsCenterDialog.open()
     }
 
     Shortcut {

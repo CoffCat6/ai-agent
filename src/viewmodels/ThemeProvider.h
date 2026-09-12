@@ -8,8 +8,6 @@
 
 namespace NexusAI {
 
-// C++ Theme provider - exposes all theme colors as Q_PROPERTY
-// Registered as the QML singleton "Theme", accessible everywhere in QML
 class ThemeProvider : public QObject {
     Q_OBJECT
     QML_SINGLETON
@@ -20,9 +18,11 @@ public:
         connect(m_manager, &ThemeManager::themeChanged, this, [this]() {
             emit themeChanged();
         });
+        connect(m_manager, &ThemeManager::fontChanged, this, [this]() {
+            emit themeChanged();
+        });
     }
 
-    // QML singleton plumbing: bound to the ThemeManager singleton
     static ThemeProvider* instance() {
         if (!s_instance) s_instance = new ThemeProvider(ThemeManager::instance());
         return s_instance;
@@ -35,7 +35,6 @@ public:
     Q_PROPERTY(bool isDark READ isDark NOTIFY themeChanged FINAL)
     bool isDark() const { return m_manager->isDark(); }
 
-    // ── Background Colors ──────────────────────────────
     Q_PROPERTY(QColor bgPrimary READ bgPrimary NOTIFY themeChanged FINAL)
     QColor bgPrimary() const {
         return m_manager->isDark() ? "#0A0A0F" : "#F5F7FA";
@@ -51,13 +50,11 @@ public:
         return m_manager->isDark() ? "#1C1C26" : "#EBEDF0";
     }
 
-    // ── Borders ────────────────────────────────────────
     Q_PROPERTY(QColor borderSubtle READ borderSubtle NOTIFY themeChanged FINAL)
     QColor borderSubtle() const {
         return m_manager->isDark() ? "#2A2A3A" : "#E5E8EB";
     }
 
-    // ── Text Colors ────────────────────────────────────
     Q_PROPERTY(QColor textPrimary READ textPrimary NOTIFY themeChanged FINAL)
     QColor textPrimary() const {
         return m_manager->isDark() ? "#E4E4ED" : "#1F2329";
@@ -68,7 +65,6 @@ public:
         return m_manager->isDark() ? "#8A8A9F" : "#8F959E";
     }
 
-    // ── Brand & Status Colors ──────────────────────────
     Q_PROPERTY(QColor brandPrimary READ brandPrimary NOTIFY themeChanged FINAL)
     QColor brandPrimary() const {
         return m_manager->isDark() ? "#00F0FF" : "#0052D9";
@@ -89,7 +85,6 @@ public:
         return m_manager->isDark() ? "#FF3B30" : "#F5222D";
     }
 
-    // ── Elevation / Shadow ─────────────────────────────
     Q_PROPERTY(int elevationRadius READ elevationRadius NOTIFY themeChanged FINAL)
     int elevationRadius() const {
         return m_manager->isDark() ? 0 : 4;
@@ -100,24 +95,23 @@ public:
         return m_manager->isDark() ? QColor("transparent") : QColor("#10000000");
     }
 
-    // ── Typography ─────────────────────────────────────
-    Q_PROPERTY(QString fontMono READ fontMono CONSTANT FINAL)
-    QString fontMono() const { return QStringLiteral("JetBrains Mono"); }
+    Q_PROPERTY(QString fontMono READ fontMono NOTIFY themeChanged FINAL)
+    QString fontMono() const { return m_manager->fontMono(); }
 
-    Q_PROPERTY(QString fontSans READ fontSans CONSTANT FINAL)
-    QString fontSans() const { return QStringLiteral("Inter"); }
+    Q_PROPERTY(QString fontSans READ fontSans NOTIFY themeChanged FINAL)
+    QString fontSans() const { return m_manager->fontSans(); }
 
-    Q_PROPERTY(int fontSizeH1 READ fontSizeH1 CONSTANT FINAL)
-    int fontSizeH1() const { return 20; }
+    Q_PROPERTY(int fontSizeH1 READ fontSizeH1 NOTIFY themeChanged FINAL)
+    int fontSizeH1() const { return m_manager->baseFontSize() + 6; }
 
-    Q_PROPERTY(int fontSizeH2 READ fontSizeH2 CONSTANT FINAL)
-    int fontSizeH2() const { return 16; }
+    Q_PROPERTY(int fontSizeH2 READ fontSizeH2 NOTIFY themeChanged FINAL)
+    int fontSizeH2() const { return m_manager->baseFontSize() + 2; }
 
-    Q_PROPERTY(int fontSizeBody READ fontSizeBody CONSTANT FINAL)
-    int fontSizeBody() const { return 14; }
+    Q_PROPERTY(int fontSizeBody READ fontSizeBody NOTIFY themeChanged FINAL)
+    int fontSizeBody() const { return m_manager->baseFontSize(); }
 
-    Q_PROPERTY(int fontSizeCaption READ fontSizeCaption CONSTANT FINAL)
-    int fontSizeCaption() const { return 12; }
+    Q_PROPERTY(int fontSizeCaption READ fontSizeCaption NOTIFY themeChanged FINAL)
+    int fontSizeCaption() const { return m_manager->baseFontSize() - 2; }
 
 signals:
     void themeChanged();

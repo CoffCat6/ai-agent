@@ -528,7 +528,7 @@ Rectangle {
                 IconButton {
                     icon: "settings"
                     iconSize: 17
-                    tooltip: qsTr("模型配置 (Ctrl+,)")
+                    tooltip: qsTr("设置 (Ctrl+,)")
                     onClicked: root.settingsRequested()
                 }
 

@@ -3,6 +3,7 @@
 #include <QQmlContext>
 #include <QJsonObject>
 #include <QNetworkProxyFactory>
+#include <QPalette>
 #include <QtConcurrent/QtConcurrentRun>
 #include <QQuickStyle>
 #include <QTranslator>
@@ -12,6 +13,12 @@
 #include "viewmodels/AgentViewModel.h"
 #include "viewmodels/SettingsService.h"
 #include "viewmodels/ConnectionTester.h"
+#include "viewmodels/PreferenceRegistry.h"
+#include "viewmodels/PreferenceStore.h"
+#include "viewmodels/ChangeBus.h"
+#include "viewmodels/FontProbe.h"
+#include "viewmodels/LocaleProbe.h"
+#include "viewmodels/I18nManager.h"
 #include "core/agent/AIAgent.h"
 #include "core/memory/SqliteMemory.h"
 #include "core/tools/ToolRegistry.h"
@@ -68,18 +75,51 @@ int main(int argc, char *argv[])
 
     // FEAT-804: load the matching translation if one is bundled. Missing or
     // untranslated strings fall back to their source text.
-    QTranslator translator;
-    if (translator.load(QLocale::system(), QStringLiteral("nexus_ai"),
-                        QStringLiteral("_"), QStringLiteral(":/i18n"))) {
-        app.installTranslator(&translator);
-        qInfo() << "Loaded translation:" << translator.filePath();
-    }
+    // I18nManager is fully wired after the preference infrastructure below;
+    // this early translator covers the gap before the engine loads.
 
     // ── Logging: mirror all Qt messages to a rotating file ──
     // (windowed build has no console; see <AppLocalData>/logs/)
     Logger::install();
     qInfo() << "NexusAI" << app.applicationVersion() << "starting";
     qInfo() << "Log file:" << Logger::logFilePath();
+
+    // ── Preference infrastructure (Batch: General Settings) ──
+    // Must be initialized before SettingsService and ThemeManager so
+    // downstream services can register preferences and subscribe to
+    // changes on startup.
+    auto* prefRegistry = PreferenceRegistry::instance();
+    prefRegistry->setParent(&app);
+    auto* changeBus = ChangeBus::instance();
+    changeBus->setParent(&app);
+    auto* prefStore = PreferenceStore::instance();
+    prefStore->setParent(&app);
+    prefStore->setChangeBus(changeBus);
+    auto* fontProbe = FontProbe::instance();
+    fontProbe->setParent(&app);
+    auto* localeProbe = LocaleProbe::instance();
+    localeProbe->setParent(&app);
+
+    // I18n manager: runtime language switching, persisted preference
+    auto* i18n = I18nManager::instance();
+    i18n->setParent(&app);
+    i18n->applyLocale(i18n->currentLocale());
+
+    // Register setting categories (order determines nav display order)
+    prefRegistry->registerCategory(QStringLiteral("model"), QStringLiteral("模型配置"), 1);
+    prefRegistry->registerCategory(QStringLiteral("interface"), QStringLiteral("界面设置"), 2);
+    prefRegistry->registerCategory(QStringLiteral("general"), QStringLiteral("通用设置"), 3);
+
+    // Internal UI state (not shown in any category panel; categoryId empty)
+    {
+        PreferenceMeta lastCategory;
+        lastCategory.key = QStringLiteral("settings.lastCategory");
+        lastCategory.categoryId = QString();
+        lastCategory.displayName = QStringLiteral("上次访问分类");
+        lastCategory.defaultValue = QStringLiteral("model");
+        lastCategory.type = PreferenceType::String;
+        prefRegistry->registerPreference(lastCategory);
+    }
 
     // ── Settings (QSettings + env fallbacks) ──────────
     // QML singletons are lazily created through their static factories;
@@ -153,6 +193,42 @@ int main(int argc, char *argv[])
     themeManager->setParent(&app);
     auto* themeProvider = ThemeProvider::instance();
     themeProvider->setParent(&app);
+
+    // Basic-style controls (ComboBox/SpinBox/Switch/Slider…) take their
+    // colors from the application palette, not from the themed QML
+    // properties - keep the palette in sync with dark/light so they don't
+    // render with the system's (light) palette inside a dark UI.
+    const auto applyControlPalette = [themeProvider]() {
+        QPalette pal;
+        const bool dark = themeProvider->isDark();
+        const QColor surface = themeProvider->bgSecondary();
+        const QColor text = themeProvider->textPrimary();
+        const QColor textDim = themeProvider->textSecondary();
+        const QColor border = themeProvider->borderSubtle();
+        const QColor brand = themeProvider->brandPrimary();
+
+        pal.setColor(QPalette::Window, surface);
+        pal.setColor(QPalette::WindowText, text);
+        pal.setColor(QPalette::Base, themeProvider->bgPrimary());
+        pal.setColor(QPalette::AlternateBase, surface);
+        pal.setColor(QPalette::Text, text);
+        pal.setColor(QPalette::PlaceholderText, textDim);
+        pal.setColor(QPalette::Button, surface);
+        pal.setColor(QPalette::ButtonText, text);
+        pal.setColor(QPalette::Mid, border);
+        pal.setColor(QPalette::Dark, border);
+        pal.setColor(QPalette::Highlight, brand);
+        pal.setColor(QPalette::HighlightedText, dark ? QColor("#0A0A0F") : QColor("#FFFFFF"));
+        pal.setColor(QPalette::ToolTipBase, surface);
+        pal.setColor(QPalette::ToolTipText, text);
+        pal.setColor(QPalette::Disabled, QPalette::WindowText, textDim);
+        pal.setColor(QPalette::Disabled, QPalette::Text, textDim);
+        pal.setColor(QPalette::Disabled, QPalette::ButtonText, textDim);
+        QGuiApplication::setPalette(pal);
+    };
+    applyControlPalette();
+    QObject::connect(themeManager, &ThemeManager::themeChanged, &app, applyControlPalette);
+
     auto* agentVM = AgentViewModel::instance();
     agentVM->setParent(&app);
     agentVM->setRagService(rag);

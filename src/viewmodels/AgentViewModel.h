@@ -79,6 +79,13 @@ class AgentViewModel : public QObject {
     // is {sessionId, sessionTitle, messageId, snippet, role, timestamp}.
     Q_PROPERTY(QVariantList searchResults READ searchResults NOTIFY searchResultsChanged FINAL)
 
+    // ── Layout defaults (General Settings) ─────────────
+    Q_PROPERTY(int defaultSidebarWidth READ defaultSidebarWidth WRITE setDefaultSidebarWidth NOTIFY defaultSidebarWidthChanged FINAL)
+    Q_PROPERTY(int defaultPanelWidth READ defaultPanelWidth WRITE setDefaultPanelWidth NOTIFY defaultPanelWidthChanged FINAL)
+    Q_PROPERTY(bool defaultSidebarExpanded READ defaultSidebarExpanded WRITE setDefaultSidebarExpanded NOTIFY defaultSidebarExpandedChanged FINAL)
+    Q_PROPERTY(bool defaultPanelVisible READ defaultPanelVisible WRITE setDefaultPanelVisible NOTIFY defaultPanelVisibleChanged FINAL)
+    Q_PROPERTY(bool restoreWindowOnStartup READ restoreWindowOnStartup WRITE setRestoreWindowOnStartup NOTIFY restoreWindowOnStartupChanged FINAL)
+
     // ── Tool Registry ─────────────────────────────────
     Q_PROPERTY(QVariantList toolRegistryModel READ toolRegistryModel CONSTANT FINAL)
 
@@ -170,6 +177,24 @@ public:
     int sidebarWidth() const { return m_sidebarWidth; }
     void setSidebarWidth(int width);
 
+    // Layout defaults
+    int defaultSidebarWidth() const { return m_defaultSidebarWidth; }
+    void setDefaultSidebarWidth(int width);
+    int defaultPanelWidth() const { return m_defaultPanelWidth; }
+    void setDefaultPanelWidth(int width);
+    bool defaultSidebarExpanded() const { return m_defaultSidebarExpanded; }
+    void setDefaultSidebarExpanded(bool expanded);
+    bool defaultPanelVisible() const { return m_defaultPanelVisible; }
+    void setDefaultPanelVisible(bool visible);
+    bool restoreWindowOnStartup() const { return m_restoreWindowOnStartup; }
+    void setRestoreWindowOnStartup(bool restore);
+
+    // Window geometry persistence (启动时恢复窗口). The QML window saves on
+    // close and restores on startup; loadWindowGeometry returns an empty map
+    // when nothing was saved and valid=false for off-screen positions.
+    Q_INVOKABLE QVariantMap loadWindowGeometry() const;
+    Q_INVOKABLE void saveWindowGeometry(double x, double y, double width, double height, bool maximized);
+
     // Sessions
     QVariantList sessionList() const { return m_sessionList; }
     QString currentSessionId() const { return m_currentSessionId; }
@@ -230,6 +255,11 @@ signals:
     void panelWidthChanged();
     void sidebarExpandedChanged();
     void sidebarWidthChanged();
+    void defaultSidebarWidthChanged();
+    void defaultPanelWidthChanged();
+    void defaultSidebarExpandedChanged();
+    void defaultPanelVisibleChanged();
+    void restoreWindowOnStartupChanged();
     void tokenUsageChanged();
     void sessionListChanged();
     void currentSessionIdChanged();
@@ -266,6 +296,10 @@ private:
     void persistPanelWidths();
     bool isBusy() const;
 
+    void registerLayoutPreferences();
+    void loadLayoutDefaults();
+    void subscribeLayoutChanges();
+
     // ── State ──────────────────────────────────────────
     AIAgent* m_agent{nullptr};
     RagService* m_rag{nullptr};
@@ -288,6 +322,13 @@ private:
     QTimer m_uiPersistTimer;
     QVariantList m_sessionList;
     QString m_currentSessionId;
+
+    // ── Layout defaults ────────────────────────────────
+    int m_defaultSidebarWidth{260};
+    int m_defaultPanelWidth{300};
+    bool m_defaultSidebarExpanded{true};
+    bool m_defaultPanelVisible{true};
+    bool m_restoreWindowOnStartup{true};
 
     // ── Token ─────────────────────────────────────────
     int m_usedTokens{0};

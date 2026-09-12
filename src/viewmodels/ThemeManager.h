@@ -6,33 +6,51 @@
 
 namespace NexusAI {
 
-// Theme manager - persists user's dark/light preference
+class ChangeBus;
+
 class ThemeManager : public QObject {
     Q_OBJECT
     QML_SINGLETON
     QML_NAMED_ELEMENT(ThemeManager)
     Q_PROPERTY(bool isDark READ isDark WRITE setIsDark NOTIFY themeChanged FINAL)
+    Q_PROPERTY(QString fontSans READ fontSans WRITE setFontSans NOTIFY fontChanged FINAL)
+    Q_PROPERTY(QString fontMono READ fontMono WRITE setFontMono NOTIFY fontChanged FINAL)
+    Q_PROPERTY(int baseFontSize READ baseFontSize WRITE setBaseFontSize NOTIFY fontChanged FINAL)
 public:
-    // No default constructor on purpose (see AgentViewModel: the engine
-    // would prefer Constructor over the create() factory).
     explicit ThemeManager(QObject* parent);
 
-    // QML singleton plumbing (same pattern as AgentViewModel)
     static ThemeManager* instance();
     static ThemeManager* create(QQmlEngine*, QJSEngine*);
 
     bool isDark() const { return m_isDark; }
     void setIsDark(bool dark);
 
+    QString fontSans() const { return m_fontSans; }
+    void setFontSans(const QString& family);
+
+    QString fontMono() const { return m_fontMono; }
+    void setFontMono(const QString& family);
+
+    int baseFontSize() const { return m_baseFontSize; }
+    void setBaseFontSize(int size);
+
 signals:
     void themeChanged();
+    void fontChanged();
 
 private:
     void loadTheme();
     void saveTheme(bool dark);
+    void loadFontPrefs();
+    void registerPreferences();
+    void subscribeChanges();
 
     bool m_isDark{true};
+    QString m_fontSans{QStringLiteral("Inter")};
+    QString m_fontMono{QStringLiteral("JetBrains Mono")};
+    int m_baseFontSize{14};
     QSettings m_settings;
+    ChangeBus* m_changeBus{nullptr};
 
     static ThemeManager* s_instance;
 };
