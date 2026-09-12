@@ -131,6 +131,13 @@ qt_add_executable(nexus_ai
     src/main.cpp
 )
 
+# Windows VERSIONINFO resource: single source of truth is project(VERSION)
+if(WIN32)
+    configure_file(src/app.rc.in ${CMAKE_CURRENT_BINARY_DIR}/app.rc @ONLY)
+    target_sources(nexus_ai PRIVATE ${CMAKE_CURRENT_BINARY_DIR}/app.rc)
+    target_compile_definitions(nexus_ai PRIVATE APP_VERSION="${PROJECT_VERSION}")
+endif()
+
 # QML module with singleton Theme
 qt_add_qml_module(nexus_ai
     URI NexusAI
@@ -178,6 +185,22 @@ if(WIN32)
     set_target_properties(nexus_ai PROPERTIES
         WIN32_EXECUTABLE TRUE
     )
+endif()
+
+# ── Install / deployment (Batch 21, G7) ───────────────────
+# `cmake --install build --prefix <dir>` produces a self-contained folder:
+# the exe plus Qt runtime dependencies resolved by the generated deploy
+# script (windeployqt equivalent). scripts/deploy.ps1 wraps this.
+if(WIN32)
+    # exe must live in bin/ next to the Qt runtime: the generated deploy
+    # script places DLLs and bin/qt.conf (Prefix=..) under the install
+    # prefix's bin directory, and Windows DLL search starts at the exe dir.
+    install(TARGETS nexus_ai RUNTIME DESTINATION bin)
+    qt_generate_deploy_qml_app_script(
+        TARGET nexus_ai
+        OUTPUT_SCRIPT nexus_ai_deploy_script
+    )
+    install(SCRIPT ${nexus_ai_deploy_script})
 endif()
 
 # ── Translations (Batch 8 FEAT-804) ───────────────────────

@@ -63,7 +63,7 @@ int main(int argc, char *argv[])
     QGuiApplication app(argc, argv);
     app.setOrganizationName("NexusAI");
     app.setApplicationName("NexusAI");
-    app.setApplicationVersion("0.2.0");
+    app.setApplicationVersion(QStringLiteral(APP_VERSION));
 
     // Non-native control style: the UI customizes TextField/Dialog
     // backgrounds everywhere, which the native (windows) style forbids -

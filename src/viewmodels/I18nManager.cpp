@@ -89,7 +89,11 @@ void I18nManager::applyLocale(const QString& locale) {
     }
 
     if (target != QStringLiteral("en")) {
-        if (m_translator.load(target, QStringLiteral("nexus_ai"),
+        // Must use the QLocale overload: the QString overload treats its
+        // first argument as the FILE name, so passing the locale there
+        // silently resolves to load("zh_CN" as file, dir="nexus_ai", ...) -
+        // always failing with "Translation resource missing".
+        if (m_translator.load(QLocale(target), QStringLiteral("nexus_ai"),
                               QStringLiteral("_"), QStringLiteral(":/i18n"))) {
             QGuiApplication::installTranslator(&m_translator);
             m_translatorInstalled = true;

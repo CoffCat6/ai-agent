@@ -39,6 +39,20 @@ cmake --build build
 
 未配置后端时 UI 自带内置演示管线（模拟模式），可在设置中切换。
 
+## 部署与 CI
+
+```powershell
+# 一键产出自包含部署目录（构建 + cmake --install + Qt 依赖收集 + 完整性检查）
+powershell -ExecutionPolicy Bypass -File scripts\deploy.ps1 -OutDir deploy
+
+# 追加产出 NexusAI-<version>-win64.zip
+powershell -ExecutionPolicy Bypass -File scripts\deploy.ps1 -OutDir deploy -Zip
+```
+
+产物布局：`deploy/bin/nexus_ai.exe`（与 Qt DLL、qt.conf 同目录，双击即启动），`qml/`、`plugins/`、`translations/` 为运行时资源。exe 内嵌 VERSIONINFO（版本号单一来源为 CMakeLists 的 `project(VERSION)`）。
+
+CI（`.github/workflows/ci.yml`）：GitHub Actions `windows-latest` 单 job——aqtinstall 安装 Qt 6.9.0 MinGW 工具链 → Ninja 构建（BUILD_TESTS=ON）→ 全量 ctest（含 qmllint 门禁）→ 调 deploy.ps1 并上传部署产物 artifact。当前仓库尚无远端：**推送到 GitHub 后工作流即生效**；「非开发机可启动」验收需在第二台 Windows 机器解压 zip 直接运行。
+
 ## 测试
 
 ```bash
