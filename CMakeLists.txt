@@ -93,6 +93,8 @@ qt_add_qml_module(nexus_viewmodels
         src/viewmodels/ThemeProvider.h
         src/viewmodels/ThemeManager.h
         src/viewmodels/ThemeManager.cpp
+        src/viewmodels/CodeHighlighter.h
+        src/viewmodels/CodeHighlighter.cpp
         src/viewmodels/SettingsService.h
         src/viewmodels/SettingsService.cpp
         src/viewmodels/ConnectionTester.h

@@ -48,5 +48,11 @@ add_executable(test_settings test_settings.cpp)
 target_link_libraries(test_settings PRIVATE nexus_core nexus_infra nexus_viewmodels Qt6::Test)
 add_test(NAME test_settings COMMAND test_settings)
 
+# Batch 23 F11: syntax highlighting — needs QQuickTextDocument (QtQuick)
+add_executable(test_highlighter test_highlighter.cpp)
+target_link_libraries(test_highlighter PRIVATE
+    nexus_core nexus_infra nexus_viewmodels Qt6::Test Qt6::Quick Qt6::Qml)
+add_test(NAME test_highlighter COMMAND test_highlighter)
+
 # Sampling-param normalizer (header-only, no service dependencies)
 nexus_add_test(test_sampling_params test_sampling_params.cpp)

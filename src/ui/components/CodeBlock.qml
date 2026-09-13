@@ -4,7 +4,9 @@ import NexusAI
 import NexusAI.ViewModels
 
 // Code block display component for showing JSON, code, tool arguments.
-// Hover reveals a copy button.
+// Hover reveals a copy button. Batch 23 (F11): a read-only TextEdit hosts
+// the CodeHighlighter so code gets theme-aware coloring; the highlighter
+// falls back to plain text on unknown languages and oversized blocks.
 Rectangle {
     id: root
 
@@ -13,7 +15,8 @@ Rectangle {
     property color textColor: Theme.textSecondary
     property bool copyable: true
 
-    implicitHeight: codeText.implicitHeight + 16
+    // TextEdit has no auto implicit height for wrapped content
+    implicitHeight: codeText.contentHeight + 16
     radius: 4
     color: bgColor
 
@@ -30,18 +33,28 @@ Rectangle {
         id: codeHover
     }
 
-    Text {
+    TextEdit {
         id: codeText
         anchors.fill: parent
         anchors.margins: 8
         anchors.leftMargin: 12
         text: root.text
+        readOnly: true
+        cursorVisible: false
+        activeFocusOnPress: false
+        activeFocusOnTab: false
+        selectByMouse: true
         color: textColor
         font.family: Theme.fontMono
         font.pixelSize: Theme.fontSizeCaption
-        wrapMode: Text.WrapAnywhere
-        renderType: Text.NativeRendering
-        textFormat: Text.PlainText
+        wrapMode: TextEdit.WrapAnywhere
+        renderType: TextEdit.NativeRendering
+        textFormat: TextEdit.PlainText
+
+        CodeHighlighter {
+            document: codeText.textDocument
+            text: root.text
+        }
     }
 
     CopyButton {
