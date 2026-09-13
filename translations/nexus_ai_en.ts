@@ -1,6 +1,4 @@
-<?xml version="1.0" encoding="utf-8"?>
-<!DOCTYPE TS>
-<TS version="2.1" language="en_US" sourcelanguage="zh_CN">
+<?xml version="1.0" ?><!DOCTYPE TS><TS version="2.1" language="en_US" sourcelanguage="zh_CN">
 <context>
     <name>AgentChatPage</name>
     <message>
@@ -125,7 +123,7 @@
     <message>
         <location filename="../src/ui/panels/ContextPanel.qml" line="68"/>
         <source>文档内容会随提问发送给当前模型服务；如需阻止，请在设置中开启“仅本地模式”</source>
-        <translation>Document content is sent to the current model service with your questions; to prevent this, enable &quot;Local-only mode&quot; in Settings</translation>
+        <translation>Document content is sent to the current model service with your questions; to prevent this, enable "Local-only mode" in Settings</translation>
     </message>
     <message>
         <location filename="../src/ui/panels/ContextPanel.qml" line="100"/>
@@ -198,7 +196,7 @@ and the model can retrieve their content to answer questions</translation>
     <message>
         <location filename="../src/ui/pages/GeneralPage.qml" line="41"/>
         <source>本页修改实时保存，不受底部「保存 / 取消」影响</source>
-        <translation>Changes on this page save instantly and are not affected by the &quot;Save / Cancel&quot; buttons below</translation>
+        <translation>Changes on this page save instantly and are not affected by the "Save / Cancel" buttons below</translation>
     </message>
     <message>
         <location filename="../src/ui/pages/GeneralPage.qml" line="58"/>
@@ -536,133 +534,143 @@ and the model can retrieve their content to answer questions</translation>
 <context>
     <name>ModelConfigPage</name>
     <message>
-        <location filename="../src/ui/pages/ModelConfigPage.qml" line="62"/>
+        <location filename="../src/ui/pages/ModelConfigPage.qml" line="67"/>
         <source>模型服务配置</source>
         <translation>Model Configuration</translation>
     </message>
     <message>
-        <location filename="../src/ui/pages/ModelConfigPage.qml" line="72"/>
+        <location filename="../src/ui/pages/ModelConfigPage.qml" line="77"/>
         <source>可保存多个模型配置，点击芯片切换编辑，「启用」后立即生效</source>
-        <translation>Save multiple model profiles and click a chip to edit it; &quot;Enable&quot; takes effect immediately</translation>
+        <translation>Save multiple model profiles and click a chip to edit it; "Enable" takes effect immediately</translation>
     </message>
     <message>
-        <location filename="../src/ui/pages/ModelConfigPage.qml" line="84"/>
+        <location filename="../src/ui/pages/ModelConfigPage.qml" line="89"/>
         <source>本页修改实时保存，不受底部「保存 / 取消」影响</source>
-        <translation>Changes on this page save instantly and are not affected by the &quot;Save / Cancel&quot; buttons below</translation>
+        <translation>Changes on this page save instantly and are not affected by the "Save / Cancel" buttons below</translation>
     </message>
     <message>
-        <location filename="../src/ui/pages/ModelConfigPage.qml" line="145"/>
+        <location filename="../src/ui/pages/ModelConfigPage.qml" line="150"/>
         <source>+ 添加</source>
         <translation>+ Add</translation>
     </message>
     <message>
-        <location filename="../src/ui/pages/ModelConfigPage.qml" line="170"/>
+        <location filename="../src/ui/pages/ModelConfigPage.qml" line="175"/>
         <source>显示名称</source>
         <translation>Display Name</translation>
     </message>
     <message>
-        <location filename="../src/ui/pages/ModelConfigPage.qml" line="174"/>
+        <location filename="../src/ui/pages/ModelConfigPage.qml" line="179"/>
         <source>例如：工作用 GPT、本地 qwen…</source>
         <translation>e.g. Work GPT, local qwen…</translation>
     </message>
     <message>
-        <location filename="../src/ui/pages/ModelConfigPage.qml" line="186"/>
+        <location filename="../src/ui/pages/ModelConfigPage.qml" line="191"/>
         <source>提供商</source>
         <translation>Provider</translation>
     </message>
     <message>
-        <location filename="../src/ui/pages/ModelConfigPage.qml" line="189"/>
+        <location filename="../src/ui/pages/ModelConfigPage.qml" line="194"/>
         <source>OpenAI 兼容</source>
         <translation>OpenAI Compatible</translation>
     </message>
     <message>
-        <location filename="../src/ui/pages/ModelConfigPage.qml" line="190"/>
+        <location filename="../src/ui/pages/ModelConfigPage.qml" line="195"/>
         <source>Claude</source>
         <translation>Claude</translation>
     </message>
     <message>
-        <location filename="../src/ui/pages/ModelConfigPage.qml" line="191"/>
+        <location filename="../src/ui/pages/ModelConfigPage.qml" line="196"/>
         <source>Ollama 本地</source>
         <translation>Ollama (Local)</translation>
     </message>
     <message>
-        <location filename="../src/ui/pages/ModelConfigPage.qml" line="200"/>
+        <location filename="../src/ui/pages/ModelConfigPage.qml" line="205"/>
         <source>API Key</source>
         <translation>API Key</translation>
     </message>
     <message>
-        <location filename="../src/ui/pages/ModelConfigPage.qml" line="205"/>
+        <location filename="../src/ui/pages/ModelConfigPage.qml" line="210"/>
         <source>sk-...（或设置环境变量 OPENAI_API_KEY）</source>
         <translation>sk-... (or set the OPENAI_API_KEY environment variable)</translation>
     </message>
     <message>
-        <location filename="../src/ui/pages/ModelConfigPage.qml" line="217"/>
+        <location filename="../src/ui/pages/ModelConfigPage.qml" line="222"/>
         <source>服务地址 Base URL</source>
         <translation>Base URL</translation>
     </message>
     <message>
-        <location filename="../src/ui/pages/ModelConfigPage.qml" line="233"/>
+        <location filename="../src/ui/pages/ModelConfigPage.qml" line="238"/>
         <source>当前模型</source>
         <translation>Current Model</translation>
     </message>
     <message>
-        <location filename="../src/ui/pages/ModelConfigPage.qml" line="251"/>
+        <location filename="../src/ui/pages/ModelConfigPage.qml" line="258"/>
+        <source>模型列表</source>
+        <translation>Model List</translation>
+    </message>
+    <message>
+        <location filename="../src/ui/pages/ModelConfigPage.qml" line="325"/>
+        <source>添加模型…</source>
+        <translation>Add model…</translation>
+    </message>
+    <message>
+        <location filename="../src/ui/pages/ModelConfigPage.qml" line="346"/>
         <source>生成参数（留空 = 使用服务默认，不随请求发送）</source>
         <translation>Sampling Parameters (leave empty to use service defaults; not sent with requests)</translation>
     </message>
     <message>
-        <location filename="../src/ui/pages/ModelConfigPage.qml" line="266"/>
+        <location filename="../src/ui/pages/ModelConfigPage.qml" line="361"/>
         <source>temperature (0-2)</source>
         <translation>temperature (0-2)</translation>
     </message>
     <message>
-        <location filename="../src/ui/pages/ModelConfigPage.qml" line="274"/>
-        <location filename="../src/ui/pages/ModelConfigPage.qml" line="331"/>
+        <location filename="../src/ui/pages/ModelConfigPage.qml" line="369"/>
+        <location filename="../src/ui/pages/ModelConfigPage.qml" line="426"/>
         <source>留空 = 不发送</source>
         <translation>Empty = not sent</translation>
     </message>
     <message>
-        <location filename="../src/ui/pages/ModelConfigPage.qml" line="294"/>
+        <location filename="../src/ui/pages/ModelConfigPage.qml" line="389"/>
         <source>最大输出 tokens</source>
         <translation>Max Output Tokens</translation>
     </message>
     <message>
-        <location filename="../src/ui/pages/ModelConfigPage.qml" line="302"/>
+        <location filename="../src/ui/pages/ModelConfigPage.qml" line="397"/>
         <source>留空 = 服务默认</source>
         <translation>Empty = service default</translation>
     </message>
     <message>
-        <location filename="../src/ui/pages/ModelConfigPage.qml" line="323"/>
+        <location filename="../src/ui/pages/ModelConfigPage.qml" line="418"/>
         <source>num_ctx（上下文窗口）</source>
         <translation>num_ctx (context window)</translation>
     </message>
     <message>
-        <location filename="../src/ui/pages/ModelConfigPage.qml" line="353"/>
+        <location filename="../src/ui/pages/ModelConfigPage.qml" line="448"/>
         <source>✓ 使用中</source>
         <translation>✓ In Use</translation>
     </message>
     <message>
-        <location filename="../src/ui/pages/ModelConfigPage.qml" line="353"/>
+        <location filename="../src/ui/pages/ModelConfigPage.qml" line="448"/>
         <source>启用此配置</source>
         <translation>Enable This Profile</translation>
     </message>
     <message>
-        <location filename="../src/ui/pages/ModelConfigPage.qml" line="360"/>
+        <location filename="../src/ui/pages/ModelConfigPage.qml" line="455"/>
         <source>删除</source>
         <translation>Delete</translation>
     </message>
     <message>
-        <location filename="../src/ui/pages/ModelConfigPage.qml" line="375"/>
+        <location filename="../src/ui/pages/ModelConfigPage.qml" line="470"/>
         <source>正在连接…</source>
         <translation>Connecting…</translation>
     </message>
     <message>
-        <location filename="../src/ui/pages/ModelConfigPage.qml" line="382"/>
+        <location filename="../src/ui/pages/ModelConfigPage.qml" line="477"/>
         <source>测试中…</source>
         <translation>Testing…</translation>
     </message>
     <message>
-        <location filename="../src/ui/pages/ModelConfigPage.qml" line="382"/>
+        <location filename="../src/ui/pages/ModelConfigPage.qml" line="477"/>
         <source>测试连接</source>
         <translation>Test Connection</translation>
     </message>
@@ -798,7 +806,7 @@ and the model can retrieve their content to answer questions</translation>
     <message>
         <location filename="../src/viewmodels/AgentViewModel.cpp" line="349"/>
         <source>导出失败：不支持的格式“%1”（可选 md / json）</source>
-        <translation>Export failed: unsupported format &quot;%1&quot; (md / json)</translation>
+        <translation>Export failed: unsupported format "%1" (md / json)</translation>
     </message>
     <message>
         <location filename="../src/viewmodels/AgentViewModel.cpp" line="364"/>

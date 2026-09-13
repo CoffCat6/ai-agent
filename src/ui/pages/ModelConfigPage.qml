@@ -34,7 +34,12 @@ ScrollView {
     }
 
     function submitField(key, value) {
-        if (editing) Settings.updateProfile(editing.id, { [key]: value })
+        if (!editing) return
+        Settings.updateProfile(editing.id, { [key]: value })
+        // A newly typed model name joins the profile's model list too, so
+        // the list below (and the chat-side model picker) stays complete.
+        if (key === "model" && value.trim() !== "")
+            Settings.addModelToProfile(editing.id, value.trim())
     }
     function submitFields(map) {
         if (editing) Settings.updateProfile(editing.id, map)
@@ -240,6 +245,96 @@ ScrollView {
                     font.pixelSize: Theme.fontSizeBody; font.family: Theme.fontSans
                     background: Rectangle { radius: 6; color: Theme.bgPrimary; border.width: modelField.activeFocus ? 2 : 1; border.color: modelField.activeFocus ? Theme.brandPrimary : Theme.borderSubtle }
                     onEditingFinished: page.submitField("model", text)
+                }
+            }
+
+            // ── Model list of this profile ─────────────────────
+            // The chat-side model picker lists profile.models; this section
+            // surfaces the same list in the editor (click = make current,
+            // × = remove, type + Enter = add).
+            ColumnLayout {
+                Layout.fillWidth: true
+                spacing: 6
+                Text { text: qsTr("模型列表"); color: Theme.textSecondary; font.pixelSize: Theme.fontSizeCaption; font.bold: true; font.family: Theme.fontMono }
+                Flow {
+                    Layout.fillWidth: true
+                    spacing: 6
+
+                    Repeater {
+                        model: page.editing ? (page.editing.models || []) : []
+
+                        delegate: Rectangle {
+                            width: modelChipRow.implicitWidth + 22
+                            height: 26
+                            radius: 4
+                            readonly property bool isCurrent: page.editing && modelData === page.editing.model
+                            color: isCurrent ? Qt.rgba(Theme.brandPrimary.r, Theme.brandPrimary.g, Theme.brandPrimary.b, 0.15) : Theme.bgPrimary
+                            border.width: 1
+                            border.color: isCurrent ? Theme.brandPrimary : Theme.borderSubtle
+
+                            MouseArea {
+                                id: chipMA
+                                anchors.fill: parent
+                                hoverEnabled: true
+                                cursorShape: Qt.PointingHandCursor
+                                // Click anywhere on the chip to make this the
+                                // current model; the × zone removes it.
+                                onClicked: Settings.selectModelForProfile(page.editingId, modelData)
+                            }
+
+                            Row {
+                                id: modelChipRow
+                                anchors.centerIn: parent
+                                spacing: 6
+
+                                Text {
+                                    text: modelData
+                                    color: isCurrent ? Theme.brandPrimary : Theme.textPrimary
+                                    font.pixelSize: Theme.fontSizeCaption
+                                    font.family: Theme.fontMono
+                                    anchors.verticalCenter: parent.verticalCenter
+                                }
+
+                                Item {
+                                    width: 14
+                                    height: parent.height
+
+                                    Text {
+                                        anchors.centerIn: parent
+                                        text: "×"
+                                        color: removeMA.containsMouse ? Theme.statusDanger : Theme.textSecondary
+                                        font.pixelSize: 12
+                                    }
+
+                                    MouseArea {
+                                        id: removeMA
+                                        anchors.fill: parent
+                                        hoverEnabled: true
+                                        cursorShape: Qt.PointingHandCursor
+                                        onClicked: Settings.removeModelFromProfile(page.editingId, modelData)
+                                    }
+                                }
+                            }
+                        }
+                    }
+
+                    TextField {
+                        id: addModelField
+                        width: 150
+                        height: 26
+                        placeholderText: qsTr("添加模型…")
+                        placeholderTextColor: Theme.textSecondary
+                        color: Theme.textPrimary
+                        selectionColor: Theme.brandPrimary; selectedTextColor: "#ffffff"
+                        font.pixelSize: Theme.fontSizeCaption; font.family: Theme.fontMono
+                        background: Rectangle { radius: 4; color: Theme.bgPrimary; border.width: addModelField.activeFocus ? 2 : 1; border.color: addModelField.activeFocus ? Theme.brandPrimary : Theme.borderSubtle }
+                        onAccepted: {
+                            if (text.trim() !== "" && page.editing) {
+                                Settings.addModelToProfile(page.editingId, text.trim())
+                                text = ""
+                            }
+                        }
+                    }
                 }
             }
 
