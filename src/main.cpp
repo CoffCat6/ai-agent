@@ -244,6 +244,92 @@ int main(int argc, char *argv[])
     agentVM->setKnowledgeContentProvider([memory](const QString& name) {
         return memory->loadKnowledgeDoc(name);
     });
+    // Batch 29 (F7): every session tab gets its own agent with its own
+    // SQLite connection (same database file — busy_timeout serializes
+    // concurrent writes) AND its own provider-service group.
+    //
+    // Per-tab services are load-bearing, not an optimization: LLMServiceBase
+    // keeps ONE in-flight request context per service instance and streams
+    // through signals broadcast to every attached agent, so two tabs sharing
+    // a group would abort each other's streams and leak chunks across
+    // traces. The tab agents are destroyed with their tab (services are
+    // parented to the agent), and tabProviderSets drops the entry on
+    // destroyed so provider re-configuration never touches dead agents.
+    struct ProviderSet {
+        OpenAIService* openai;
+        AnthropicService* anthropic;
+        OllamaService* ollama;
+    };
+    const auto applyProfileTo = [settings](const ProviderSet& set) {
+        const QVariantMap profile = settings->activeProfile();
+        const QString provider = profile.value("provider").toString();
+        const QString baseUrl = profile.value("baseUrl").toString();
+        const QString apiKey = profile.value("apiKey").toString();
+        const QString model = profile.value("model").toString();
+
+        // Batch 15 (FEAT-1501/1502): per-profile sampling params. An empty
+        // string (cleared field) or a missing key means "not set" - normalized
+        // to an invalid QVariant so the services omit the fields from the
+        // request JSON. Batch 21 (A1): non-numeric values (e.g. "abc") are
+        // normalized the same way instead of silently becoming 0 / 1.
+        const QVariant temperature =
+            SamplingParams::optionalDouble(profile.value("temperature"));
+        const QVariant maxOutputTokens =
+            SamplingParams::optionalPositiveInt(profile.value("maxOutputTokens"));
+        const QVariant numCtx =
+            SamplingParams::optionalPositiveInt(profile.value("numCtx"));
+
+        // Only the active provider receives the profile: broadcasting one
+        // profile's baseUrl to all services would corrupt the others
+        // (e.g. an OpenAI-compatible proxy URL ending in /v1 turned into
+        // /v1/v1/messages on the Anthropic path). Each service is configured
+        // here right before it becomes the active one.
+        if (provider == QLatin1String("anthropic")) {
+            set.anthropic->setApiKey(apiKey);
+            set.anthropic->setBaseUrl(baseUrl);
+            set.anthropic->setModel(model);
+            set.anthropic->setSamplingParams(temperature, maxOutputTokens);
+        } else if (provider == QLatin1String("ollama")) {
+            set.ollama->setBaseUrl(baseUrl);
+            set.ollama->setModel(model);
+            set.ollama->setSamplingParams(temperature, numCtx);
+        } else if (provider == QLatin1String("openai")) {
+            set.openai->setApiKey(apiKey);
+            set.openai->setBaseUrl(baseUrl);
+            set.openai->setModel(model);
+            set.openai->setSamplingParams(temperature, maxOutputTokens);
+        }
+    };
+    const auto pickActive = [](const ProviderSet& set,
+                               const QString& provider) -> IAIService* {
+        if (provider == QLatin1String("ollama"))
+            return static_cast<IAIService*>(set.ollama);
+        if (provider == QLatin1String("anthropic"))
+            return static_cast<IAIService*>(set.anthropic);
+        if (provider == QLatin1String("openai"))
+            return static_cast<IAIService*>(set.openai);
+        return nullptr;   // no profile configured: the agent reports it
+    };
+
+    QHash<AIAgent*, ProviderSet> tabProviderSets;
+    agentVM->setAgentFactory([&app, settings, applyProfileTo, pickActive,
+                              &tabProviderSets]() -> AIAgent* {
+        auto* tabAgent = new AIAgent(&app);
+        tabAgent->setToolRegistry(&ToolRegistry::instance());
+        tabAgent->setMemory(new SqliteMemory());
+        tabAgent->setContextLimit(settings->contextTokens());
+
+        const ProviderSet set{new OpenAIService(tabAgent),
+                              new AnthropicService(tabAgent),
+                              new OllamaService(tabAgent)};
+        applyProfileTo(set);
+        tabProviderSets.insert(tabAgent, set);
+        QObject::connect(tabAgent, &QObject::destroyed, &app,
+            [&tabProviderSets, tabAgent]() { tabProviderSets.remove(tabAgent); });
+        tabAgent->setLLMService(pickActive(
+            set, settings->activeProfile().value("provider").toString()));
+        return tabAgent;
+    });
     auto* connectionTester = ConnectionTester::instance();
     connectionTester->setParent(&app);
 
@@ -342,46 +428,33 @@ int main(int argc, char *argv[])
     }
 
     // Apply the active model profile to the services and select the provider
-    const auto applySettings = [settings, openai, anthropic, ollama, agent, fetchTool]() {
-        const QVariantMap profile = settings->activeProfile();
-        const QString provider = profile.value("provider").toString();
-        const QString baseUrl = profile.value("baseUrl").toString();
-        const QString apiKey = profile.value("apiKey").toString();
-        const QString model = profile.value("model").toString();
+    // for every tab: the template agent uses the process-lifetime group, each
+    // factory-built tab its own group (see the factory comment above).
+    const ProviderSet templateSet{openai, anthropic, ollama};
+    const auto applySettings = [settings, agentVM, agent, fetchTool, templateSet,
+                                applyProfileTo, pickActive, &tabProviderSets]() {
+        applyProfileTo(templateSet);
+        for (auto it = tabProviderSets.begin(); it != tabProviderSets.end(); ++it)
+            applyProfileTo(it.value());
 
-        // Batch 15 (FEAT-1501/1502): per-profile sampling params. An empty
-        // string (cleared field) or a missing key means "not set" - normalized
-        // to an invalid QVariant so the services omit the fields from the
-        // request JSON. Batch 21 (A1): non-numeric values (e.g. "abc") are
-        // normalized the same way instead of silently becoming 0 / 1.
-        const QVariant temperature =
-            SamplingParams::optionalDouble(profile.value("temperature"));
-        const QVariant maxOutputTokens =
-            SamplingParams::optionalPositiveInt(profile.value("maxOutputTokens"));
-        const QVariant numCtx =
-            SamplingParams::optionalPositiveInt(profile.value("numCtx"));
+        const QString provider =
+            settings->activeProfile().value("provider").toString();
 
-        // Only the active provider receives the profile: broadcasting one
-        // profile's baseUrl to all services would corrupt the others
-        // (e.g. an OpenAI-compatible proxy URL ending in /v1 turned into
-        // /v1/v1/messages on the Anthropic path). Each service is configured
-        // here right before it becomes the active one.
-        if (provider == QLatin1String("anthropic")) {
-            anthropic->setApiKey(apiKey);
-            anthropic->setBaseUrl(baseUrl);
-            anthropic->setModel(model);
-            anthropic->setSamplingParams(temperature, maxOutputTokens);
-        } else if (provider == QLatin1String("ollama")) {
-            ollama->setBaseUrl(baseUrl);
-            ollama->setModel(model);
-            ollama->setSamplingParams(temperature, numCtx);
-        } else if (provider == QLatin1String("openai")) {
-            openai->setApiKey(apiKey);
-            openai->setBaseUrl(baseUrl);
-            openai->setModel(model);
-            openai->setSamplingParams(temperature, maxOutputTokens);
-        }
+        // The template agent may not be attached to any tab yet (the first
+        // applySettings() call runs before applyMode's setAgent), and
+        // applyToAgents only reaches tab-attached agents — configure it
+        // directly or tab 0 would fail with "No LLM service configured"
+        // until a settings change re-runs this lambda.
         agent->setContextLimit(settings->contextTokens());
+        agent->setLLMService(pickActive(templateSet, provider));
+
+        agentVM->applyToAgents([&](AIAgent* tabAgent) {
+            tabAgent->setContextLimit(settings->contextTokens());
+            const ProviderSet& set = tabAgent == agent
+                ? templateSet
+                : tabProviderSets.value(tabAgent, templateSet);
+            tabAgent->setLLMService(pickActive(set, provider));
+        });
 
         // Read sandbox policy follows the (opt-in, default-off) setting
         Sandbox::setReadPolicy(settings->allowFullDiskRead()
@@ -390,18 +463,6 @@ int main(int argc, char *argv[])
         // Batch 20: http_fetch SSRF escape hatch follows its (opt-in,
         // default-off) setting; immediate effect on the next fetch.
         fetchTool->setAllowPrivateTargets(settings->allowLocalNetworkFetch());
-
-        if (provider.isEmpty()) {
-            // No profile configured: the agent reports a helpful error
-            agent->setLLMService(nullptr);
-            return;
-        }
-        IAIService* active = provider == QLatin1String("ollama")
-            ? static_cast<IAIService*>(ollama)
-            : provider == QLatin1String("anthropic")
-            ? static_cast<IAIService*>(anthropic)
-            : static_cast<IAIService*>(openai);
-        agent->setLLMService(active);
     };
     applySettings();
 

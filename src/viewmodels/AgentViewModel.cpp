@@ -1,33 +1,32 @@
-#include "AgentViewModel.h"
+#include "viewmodels/AgentViewModel.h"
 
+#include "viewmodels/PreferenceRegistry.h"
+#include "viewmodels/PreferenceStore.h"
+#include "viewmodels/ChangeBus.h"
 #include "core/agent/AIAgent.h"
 #include "core/memory/IMemory.h"
-#include "core/tools/ToolRegistry.h"
 #include "core/rag/RagService.h"
 #include "core/rag/KnowledgeChunk.h"
+#include "core/tools/ToolRegistry.h"
 #include "core/utils/Logger.h"
 #include "core/utils/Activity.h"
-#include "core/utils/TokenEstimator.h"
-#include "PreferenceRegistry.h"
-#include "PreferenceStore.h"
-#include "ChangeBus.h"
 
 #include <QClipboard>
-#include <QDesktopServices>
+#include <QCoreApplication>
 #include <QDateTime>
-#include <QFile>
+#include <QDesktopServices>
+#include <QDir>
+#include <QFutureWatcher>
 #include <QFileInfo>
 #include <QGuiApplication>
-#include <QScreen>
-#include <QSettings>
-#include <QSaveFile>
-#include <QUrl>
-#include <QUuid>
-#include <QJsonObject>
 #include <QJsonArray>
 #include <QJsonDocument>
-#include <QDebug>
-#include <QFutureWatcher>
+#include <QJsonObject>
+#include <QSaveFile>
+#include <QScreen>
+#include <QSettings>
+#include <QStandardPaths>
+#include <QUrl>
 #include <QtConcurrent/QtConcurrentRun>
 
 namespace NexusAI {
@@ -40,8 +39,6 @@ AgentViewModel* AgentViewModel::instance() {
 }
 
 AgentViewModel* AgentViewModel::create(QQmlEngine*, QJSEngine*) {
-    // main.cpp keeps its own reference and wires dependencies; the engine
-    // must not garbage-collect the singleton behind its back.
     QJSEngine::setObjectOwnership(instance(), QJSEngine::CppOwnership);
     return instance();
 }
@@ -50,8 +47,6 @@ AgentViewModel::AgentViewModel(QObject* parent)
     : QObject(parent)
     , m_logModel(new LogModel(this)) {
     initToolRegistry();
-    m_simTimer.setSingleShot(true);
-    connect(&m_simTimer, &QTimer::timeout, this, &AgentViewModel::simulationStep);
 
     // Layout defaults (General Settings) must load first: they seed the
     // fallbacks of the panel restore below.
@@ -72,6 +67,21 @@ AgentViewModel::AgentViewModel(QObject* parent)
     m_uiPersistTimer.setInterval(400);
     connect(&m_uiPersistTimer, &QTimer::timeout, this,
             &AgentViewModel::persistPanelWidths);
+
+    // The UI always has at least one session tab (Batch 29).
+    ensureTab();
+}
+
+AgentViewModel::~AgentViewModel() {
+    if (m_uiPersistTimer.isActive()) {
+        m_uiPersistTimer.stop();
+        persistPanelWidths();
+    }
+}
+
+void AgentViewModel::persistPanelWidths() {
+    QSettings("NexusAI", "NexusAI").setValue("ui/sidebarWidth", m_sidebarWidth);
+    QSettings("NexusAI", "NexusAI").setValue("ui/panelWidth", m_panelWidth);
 }
 
 void AgentViewModel::registerLayoutPreferences() {
@@ -149,44 +159,164 @@ void AgentViewModel::subscribeLayoutChanges() {
     });
 }
 
-AgentViewModel::~AgentViewModel() {
-    if (m_uiPersistTimer.isActive()) {
-        m_uiPersistTimer.stop();
-        persistPanelWidths();
-    }
+// ── Session tabs (Batch 29) ──────────────────────────────
+
+ChatSessionController* AgentViewModel::active() const {
+    return m_tabs.at(m_activeTab);
 }
 
-void AgentViewModel::persistPanelWidths() {
-    QSettings("NexusAI", "NexusAI").setValue("ui/sidebarWidth", m_sidebarWidth);
-    QSettings("NexusAI", "NexusAI").setValue("ui/panelWidth", m_panelWidth);
+ChatSessionController* AgentViewModel::ensureTab() {
+    auto* controller = new ChatSessionController(this);
+
+    // Active-tab forwarding: the facade signal is re-emitted only when the
+    // change happened in the tab the UI is looking at.
+    connect(controller, &ChatSessionController::stateChanged, this, [this, controller] {
+        if (controller == active()) emit stateChanged();
+        emit tabsChanged();   // tab busy indicator
+    });
+    connect(controller, &ChatSessionController::traceChanged, this, [this, controller] {
+        if (controller == active()) emit traceChanged();
+    });
+    connect(controller, &ChatSessionController::responseReady, this, [this, controller] {
+        if (controller == active()) emit responseReady();
+    });
+    connect(controller, &ChatSessionController::draftTextChanged, this, [this, controller] {
+        if (controller == active()) emit draftTextChanged();
+    });
+    connect(controller, &ChatSessionController::tokenUsageChanged, this, [this, controller] {
+        if (controller == active()) emit tokenUsageChanged();
+    });
+    connect(controller, &ChatSessionController::currentSessionIdChanged, this, [this, controller] {
+        if (controller == active()) emit currentSessionIdChanged();
+        emit tabsChanged();   // tab title follows the session
+    });
+
+    // Surfaced no matter which tab they happened in: errors and tool
+    // confirmations are global UX (the confirm dialog routes the decision
+    // back to the waiting tab through approveToolCall).
+    connect(controller, &ChatSessionController::toolConfirmRequired, this,
+            &AgentViewModel::toolConfirmRequired);
+    connect(controller, &ChatSessionController::errorOccurred, this,
+            &AgentViewModel::errorOccurred);
+    // Session history is shared (every tab agent reads the same database).
+    connect(controller, &ChatSessionController::sessionHistoryChanged, this,
+            &AgentViewModel::refreshSessions);
+
+    m_tabs.append(controller);
+
+    // A fresh tab picks up its own agent from the factory when the real
+    // pipeline is active; otherwise (and whenever no factory is installed,
+    // e.g. unit tests driving one shared agent) it runs the simulation.
+    if (m_agentFactory && m_templateAgent)
+        controller->attachAgent(m_agentFactory(), true);
+
+    emit tabsChanged();
+    return controller;
+}
+
+void AgentViewModel::openTab() {
+    ensureTab();
+    activateTab(m_tabs.size() - 1);
+}
+
+void AgentViewModel::activateTab(int index) {
+    if (index < 0 || index >= m_tabs.size() || index == m_activeTab) return;
+    m_activeTab = index;
+    // Every forwarded conversation property changed with the tab.
+    emit stateChanged();
+    emit traceChanged();
+    emit responseReady();
+    emit draftTextChanged();
+    emit tokenUsageChanged();
+    emit currentSessionIdChanged();
+    emit activeTabChanged();
+    emit tabsChanged();
+}
+
+void AgentViewModel::closeTab(int index) {
+    if (index < 0 || index >= m_tabs.size() || m_tabs.size() <= 1) return;
+    ChatSessionController* controller = m_tabs.at(index);
+    // Stop first: a running task gets aborted and its unanswered tool calls
+    // sealed by the agent, so nothing keeps writing after the tab is gone.
+    controller->stop();
+    m_tabs.removeAt(index);
+    controller->deleteLater();
+
+    if (m_activeTab >= m_tabs.size())
+        m_activeTab = m_tabs.size() - 1;
+    else if (index < m_activeTab)
+        --m_activeTab;
+
+    emit stateChanged();
+    emit traceChanged();
+    emit responseReady();
+    emit draftTextChanged();
+    emit tokenUsageChanged();
+    emit currentSessionIdChanged();
+    emit activeTabChanged();
+    emit tabsChanged();
+    refreshSessions();
+}
+
+QVariantList AgentViewModel::tabModel() const {
+    QVariantList model;
+    for (int i = 0; i < m_tabs.size(); ++i) {
+        const ChatSessionController* controller = m_tabs.at(i);
+        const QString sessionId = controller->currentSessionId();
+        QString title;
+        for (const auto& entry : m_sessionList) {
+            const QVariantMap session = entry.toMap();
+            if (session.value("id").toString() == sessionId) {
+                title = session.value("title").toString();
+                break;
+            }
+        }
+        if (title.isEmpty()) title = tr("新会话");
+
+        QVariantMap tab;
+        tab["index"] = i;
+        tab["sessionId"] = sessionId;
+        tab["title"] = title;
+        tab["busy"] = controller->isBusy();
+        tab["active"] = i == m_activeTab;
+        model.append(tab);
+    }
+    return model;
 }
 
 // ── Real agent pipeline ──────────────────────────────────
 
 void AgentViewModel::setAgent(AIAgent* agent) {
-    if (m_agent == agent) return;
-    // Detaching or rewiring mid-task (simulation-mode toggle) terminates the
-    // active task cleanly - otherwise the running agent loses its UI bridge
-    // and stays busy until restart.
-    if (m_agent && m_agent->isActive())
-        m_agent->stop();
-    if (m_agent) {
-        disconnect(m_agent, nullptr, this, nullptr);
-    }
-    m_agent = agent;
-    if (m_agent) {
-        connectAgent(m_agent);
-    } else {
-        // Detached: fall back to simulation state
-        setState(AgentState::Idle);
-        m_trace.clearNodes();
-        emit traceChanged();
-        m_sessionList.clear();
-        emit sessionListChanged();
-        m_currentSessionId.clear();
-        emit currentSessionIdChanged();
+    if (m_templateAgent == agent) return;
+    m_templateAgent = agent;
+
+    // Tab 0 carries the shared template agent (unowned). Simulation mode
+    // (nullptr) detaches every tab; switching back to live re-arms tab 0
+    // with the shared agent and rebuilds the other tabs' agents through the
+    // factory. Detaching mid-task terminates it cleanly (the controller
+    // stops the agent before dropping it).
+    for (int i = 0; i < m_tabs.size(); ++i) {
+        if (i == 0 && agent) {
+            m_tabs[0]->attachAgent(agent, false);
+        } else if (agent && m_agentFactory) {
+            m_tabs[i]->attachAgent(m_agentFactory(), true);
+        } else {
+            m_tabs[i]->attachAgent(nullptr, false);
+        }
     }
     emit liveModeChanged();
+    emit tabsChanged();
+    refreshSessions();
+}
+
+void AgentViewModel::setAgentFactory(std::function<AIAgent*()> factory) {
+    m_agentFactory = std::move(factory);
+}
+
+void AgentViewModel::applyToAgents(const std::function<void(AIAgent*)>& fn) {
+    for (ChatSessionController* controller : m_tabs) {
+        if (controller->agent()) fn(controller->agent());
+    }
 }
 
 // Batch 17: attach the persistence backend (search + Batch 18 export).
@@ -293,70 +423,24 @@ bool AgentViewModel::exportSession(const QString& sessionId, const QString& path
     return true;
 }
 
-void AgentViewModel::connectAgent(AIAgent* agent) {
-    connect(agent, &AIAgent::stateChanged, this, [this](AgentState state) {
-        setState(state);
-    });
-
-    connect(agent, &AIAgent::traceChanged, this, [this, agent]() {
-        m_trace.applyDelta(agent->traceModel().toVariantList());
-        emit traceChanged();
-    });
-
-    connect(agent, &AIAgent::responseReady, this, [this, agent](const QString& response) {
-        m_finalResponse = response;
-        emit responseReady();
-    });
-
-    connect(agent, &AIAgent::toolConfirmRequired, this,
-            [this](const QString& id, const QString& name, const QJsonObject& args) {
-        emit toolConfirmRequired(id, name, args.toVariantMap());
-    });
-
-    connect(agent, &AIAgent::errorOccurred, this, &AgentViewModel::errorOccurred);
-
-    connect(agent, &AIAgent::tokensChanged, this, [this](int usedTokens) {
-        m_usedTokens = usedTokens;
-        emit tokenUsageChanged();
-    });
-
-    connect(agent, &AIAgent::contextLimitChanged, this, [this]() {
-        emit tokenUsageChanged();
-    });
-
-    connect(agent, &AIAgent::sessionsChanged, this, [this]() {
-        refreshSessions();
-    });
-
-    connect(agent, &AIAgent::sessionChanged, this, [this](const QString& sessionId) {
-        if (m_currentSessionId != sessionId) {
-            m_currentSessionId = sessionId;
-            emit currentSessionIdChanged();
-        }
-        refreshSessions();
-    });
-
-    // Initial sync with the agent's state
-    m_state = agent->state();
-    emit stateChanged();
-    m_trace.applyDelta(agent->traceModel().toVariantList());
-    emit traceChanged();
-    m_finalResponse = agent->lastResponse();
-    emit responseReady();
-    m_usedTokens = TokenEstimator::estimateTokens(agent->messages());
-    emit tokenUsageChanged();
-    m_currentSessionId = agent->currentSessionId();
-    emit currentSessionIdChanged();
-    refreshSessions();
+ChatSessionController* AgentViewModel::controllerWithAgent() const {
+    if (active()->agent()) return active();
+    for (ChatSessionController* controller : m_tabs) {
+        if (controller->agent()) return controller;
+    }
+    return nullptr;
 }
 
 void AgentViewModel::refreshSessions() {
-    const QVariantList sessions = m_agent
-        ? m_agent->sessionList().toVariantList()
-        : QVariantList{};
+    // Every tab agent reads the same database, so pulling the history from
+    // any attached one yields the shared list.
+    ChatSessionController* controller = controllerWithAgent();
+    const QVariantList sessions = controller
+        ? controller->agent()->sessionList().toVariantList() : QVariantList{};
     if (m_sessionList == sessions) return;
     m_sessionList = sessions;
     emit sessionListChanged();
+    emit tabsChanged();   // tab titles may resolve now
 }
 
 // ── Knowledge base (RAG) ─────────────────────────────────
@@ -499,64 +583,109 @@ void AgentViewModel::setEmbedProgress(int done, int total) {
 }
 
 // ── Session / audit management ───────────────────────────
+// Global operations route through any attached agent (all tab agents read
+// the same database).
 
 void AgentViewModel::deleteSession(const QString& sessionId) {
     Activity::usage(Activity::Kind::User, QStringLiteral("session.delete"),
                     sessionId);
-    if (m_agent) m_agent->deleteSession(sessionId);
+    if (ChatSessionController* controller = controllerWithAgent())
+        controller->deleteSession(sessionId);
 }
 
 void AgentViewModel::renameSession(const QString& sessionId, const QString& title) {
     Activity::usage(Activity::Kind::User, QStringLiteral("session.rename"),
                     sessionId);
-    if (m_agent) m_agent->renameSession(sessionId, title);
+    if (ChatSessionController* controller = controllerWithAgent())
+        controller->renameSession(sessionId, title);
 }
 
 QVariantList AgentViewModel::auditLog(int limit) {
-    return m_agent ? m_agent->auditLog(limit).toVariantList() : QVariantList{};
+    ChatSessionController* controller = controllerWithAgent();
+    return controller ? controller->auditLog(limit) : QVariantList{};
 }
 
 QString AgentViewModel::logFilePath() const {
     return Logger::logFilePath();
 }
 
-// ── State Management ─────────────────────────────────────
+// ── Token ────────────────────────────────────────────────
 
-void AgentViewModel::setState(AgentState state) {
-    if (m_state == state) return;
-    m_state = state;
-    emit stateChanged();
+double AgentViewModel::tokenUsageRate() const {
+    const int max = maxTokens();
+    if (max == 0) return 0.0;
+    return static_cast<double>(usedTokens()) / static_cast<double>(max);
 }
 
-QString AgentViewModel::stateText() const {
-    switch (m_state) {
-    case AgentState::Idle:               return "Ready";
-    case AgentState::Thinking:           return "Thinking...";
-    case AgentState::AwaitingToolConfirm:return "Awaiting Confirmation";
-    case AgentState::ExecutingTool:      return "Executing Tool";
-    case AgentState::Summarizing:        return "Summarizing";
-    case AgentState::Completed:          return "Completed";
-    case AgentState::Error:              return "Error";
+// ── Tool Registry Init ────────────────────────────────────
+
+void AgentViewModel::initToolRegistry() {
+    const auto defs = ToolRegistry::instance().listAll();
+    for (const auto& def : defs) {
+        QVariantMap tool;
+        tool["name"] = def.name;
+        tool["description"] = def.description;
+        tool["level"] = def.level == ToolLevel::Safe ? "safe"
+                      : def.level == ToolLevel::RequiresConfirm ? "requires_confirm"
+                      : "dangerous";
+        m_toolRegistryModel.append(tool);
     }
-    return "Unknown";
 }
 
-bool AgentViewModel::isBusy() const {
-    return m_state == AgentState::Thinking
-        || m_state == AgentState::ExecutingTool
-        || m_state == AgentState::AwaitingToolConfirm
-        || m_state == AgentState::Summarizing;
+// ── QML Actions ───────────────────────────────────────────
+
+void AgentViewModel::startTask(const QString& input) {
+    active()->startTask(input);
+}
+
+void AgentViewModel::approveToolCall(const QString& id, bool approved) {
+    // Route to whichever tab is waiting for this confirmation — the dialog
+    // is global, so it may belong to a background tab.
+    for (ChatSessionController* controller : m_tabs) {
+        if (controller->state() == AgentState::AwaitingToolConfirm) {
+            controller->approveToolCall(id, approved);
+            return;
+        }
+    }
+}
+
+void AgentViewModel::stop() {
+    active()->stop();
+}
+
+void AgentViewModel::newChat() {
+    active()->newChat();
+}
+
+void AgentViewModel::loadSession(const QString& sessionId) {
+    // Never interrupt a running task: when the active tab is busy the
+    // session opens in a fresh tab instead.
+    if (active()->isBusy())
+        openTab();
+    active()->loadSession(sessionId);
+}
+
+void AgentViewModel::cancel() {
+    newChat();
+}
+
+void AgentViewModel::copyToClipboard(const QString& text) {
+    if (!text.isEmpty())
+        QGuiApplication::clipboard()->setText(text);
+}
+
+// 日志开发 doc 6 §3.3: open the rotating log directory at the current file
+void AgentViewModel::openLogFolder() {
+    const QString dir = Logger::logDir();
+    if (!dir.isEmpty())
+        QDesktopServices::openUrl(QUrl::fromLocalFile(dir));
 }
 
 // ── Draft Text ───────────────────────────────────────────
 
 void AgentViewModel::setDraftText(const QString& text) {
-    if (m_draftText == text) return;
-    m_draftText = text;
-    emit draftTextChanged();
+    active()->setDraftText(text);
 }
-
-// ── Panel ────────────────────────────────────────────────
 
 void AgentViewModel::setIsPanelVisible(bool visible) {
     if (m_isPanelVisible == visible) return;
@@ -565,20 +694,17 @@ void AgentViewModel::setIsPanelVisible(bool visible) {
     emit panelVisibleChanged();
 }
 
-void AgentViewModel::setPanelWidth(int width) {
-    // Generous clamp; the QML drag handler applies the window-aware limit
-    const int clamped = qBound(220, width, 640);
-    if (m_panelWidth == clamped) return;
-    m_panelWidth = clamped;
-    m_uiPersistTimer.start();
-    emit panelWidthChanged();
-}
-
 void AgentViewModel::togglePanel() {
     setIsPanelVisible(!m_isPanelVisible);
 }
 
-// ── Sidebar ───────────────────────────────────────────────
+void AgentViewModel::setPanelWidth(int width) {
+    width = qBound(220, width, 640);
+    if (m_panelWidth == width) return;
+    m_panelWidth = width;
+    emit panelWidthChanged();
+    m_uiPersistTimer.start();
+}
 
 void AgentViewModel::setIsSidebarExpanded(bool expanded) {
     if (m_isSidebarExpanded == expanded) return;
@@ -587,31 +713,31 @@ void AgentViewModel::setIsSidebarExpanded(bool expanded) {
     emit sidebarExpandedChanged();
 }
 
-void AgentViewModel::setSidebarWidth(int width) {
-    const int clamped = qBound(180, width, 560);
-    if (m_sidebarWidth == clamped) return;
-    m_sidebarWidth = clamped;
-    m_uiPersistTimer.start();
-    emit sidebarWidthChanged();
-}
-
 void AgentViewModel::toggleSidebar() {
     setIsSidebarExpanded(!m_isSidebarExpanded);
 }
 
+void AgentViewModel::setSidebarWidth(int width) {
+    width = qBound(180, width, 560);
+    if (m_sidebarWidth == width) return;
+    m_sidebarWidth = width;
+    emit sidebarWidthChanged();
+    m_uiPersistTimer.start();
+}
+
+// ── Layout defaults ──────────────────────────────────────
+
 void AgentViewModel::setDefaultSidebarWidth(int width) {
-    const int clamped = qBound(180, width, 560);
-    if (m_defaultSidebarWidth == clamped) return;
-    m_defaultSidebarWidth = clamped;
-    PreferenceStore::instance()->save(QStringLiteral("ui.defaultSidebarWidth"), clamped);
+    if (m_defaultSidebarWidth == width) return;
+    m_defaultSidebarWidth = width;
+    PreferenceStore::instance()->save(QStringLiteral("ui.defaultSidebarWidth"), width);
     emit defaultSidebarWidthChanged();
 }
 
 void AgentViewModel::setDefaultPanelWidth(int width) {
-    const int clamped = qBound(220, width, 640);
-    if (m_defaultPanelWidth == clamped) return;
-    m_defaultPanelWidth = clamped;
-    PreferenceStore::instance()->save(QStringLiteral("ui.defaultPanelWidth"), clamped);
+    if (m_defaultPanelWidth == width) return;
+    m_defaultPanelWidth = width;
+    PreferenceStore::instance()->save(QStringLiteral("ui.defaultPanelWidth"), width);
     emit defaultPanelWidthChanged();
 }
 
@@ -635,6 +761,8 @@ void AgentViewModel::setRestoreWindowOnStartup(bool restore) {
     PreferenceStore::instance()->save(QStringLiteral("ui.restoreWindowOnStartup"), restore);
     emit restoreWindowOnStartupChanged();
 }
+
+// ── Window geometry ──────────────────────────────────────
 
 QVariantMap AgentViewModel::loadWindowGeometry() const {
     const QSettings s("NexusAI", "NexusAI");
@@ -672,272 +800,6 @@ void AgentViewModel::saveWindowGeometry(double x, double y, double width, double
     s.setValue("ui/windowWidth", width);
     s.setValue("ui/windowHeight", height);
     s.setValue("ui/windowMaximized", maximized);
-}
-
-// ── Token ────────────────────────────────────────────────
-
-double AgentViewModel::tokenUsageRate() const {
-    if (m_maxTokens == 0) return 0.0;
-    return static_cast<double>(m_usedTokens) / static_cast<double>(maxTokens());
-}
-
-int AgentViewModel::maxTokens() const {
-    return m_agent ? m_agent->contextLimit() : m_maxTokens;
-}
-
-// ── Tool Registry Init ────────────────────────────────────
-
-void AgentViewModel::initToolRegistry() {
-    const auto defs = ToolRegistry::instance().listAll();
-    for (const auto& def : defs) {
-        QVariantMap tool;
-        tool["name"] = def.name;
-        tool["description"] = def.description;
-        tool["level"] = def.level == ToolLevel::Safe ? "safe"
-                      : def.level == ToolLevel::RequiresConfirm ? "requires_confirm"
-                      : "dangerous";
-        m_toolRegistryModel.append(tool);
-    }
-}
-
-// ── Trace Node Helpers (simulation path) ─────────────────
-
-void AgentViewModel::appendTraceNode(const QString& type, const QString& title,
-                                       const QString& status,
-                                       const QString& args, const QString& result) {
-    QVariantMap node;
-    node["id"] = QUuid::createUuid().toString(QUuid::WithoutBraces);
-    node["type"] = type;
-    node["title"] = title;
-    node["status"] = status;
-    node["timestamp"] = QDateTime::currentDateTime().toMSecsSinceEpoch();
-    node["args"] = args;
-    node["result"] = result;
-
-    m_trace.appendNode(node);
-    emit traceChanged();
-}
-
-void AgentViewModel::updateLastNodeStatus(const QString& status) {
-    m_trace.updateLastNode({{"status", status}});
-    emit traceChanged();
-}
-
-// ── QML Actions ───────────────────────────────────────────
-
-void AgentViewModel::startTask(const QString& input) {
-    if (isBusy()) return;
-    Activity::usage(Activity::Kind::User, QStringLiteral("task.start"),
-                    input.left(80));
-
-    m_finalResponse.clear();
-    emit responseReady();
-
-    if (m_agent) {
-        // Real LLM pipeline (agent rebuilds the trace itself)
-        m_agent->startTask(input);
-        return;
-    }
-
-    // Simulation fallback
-    m_trace.clearNodes();
-    emit traceChanged();
-    m_simStep = 0;
-    m_simInput = input;
-    m_usedTokens = 0;
-    emit tokenUsageChanged();
-    appendTraceNode("user_message", input, "completed");
-    m_usedTokens = input.length() / 4;
-    emit tokenUsageChanged();
-    setState(AgentState::Thinking);
-    startSimulation();
-}
-
-void AgentViewModel::approveToolCall(const QString& id, bool approved) {
-    Activity::usage(Activity::Kind::User,
-                    approved ? QStringLiteral("tool.approve")
-                             : QStringLiteral("tool.decline"),
-                    id);
-    if (m_agent) {
-        m_agent->approveToolCall(id, approved);
-        return;
-    }
-
-    // Simulation path
-    const int row = m_trace.rowOfId(id);
-    if (row < 0) return;
-
-    if (approved) {
-        m_trace.updateNode(row, {{"status", "running"}});
-        emit traceChanged();
-
-        QTimer::singleShot(1000, this, [this, row]() {
-            if (row < m_trace.count()) {
-                m_trace.updateNode(row, {{"status", "success"}});
-                emit traceChanged();
-            }
-
-            appendTraceNode("tool_result", "File written successfully", "success",
-                "", "Written 256 bytes to /home/user/output.txt");
-            m_usedTokens += 100;
-            emit tokenUsageChanged();
-
-            setState(AgentState::Thinking);
-            m_simTimer.start(1500);
-        });
-    } else {
-        m_trace.updateNode(row, {{"status", "cancelled"}});
-        emit traceChanged();
-
-        m_finalResponse = "Tool call was rejected by the user. "
-                          "I cannot complete the task without writing the output file.";
-        appendTraceNode("summary", m_finalResponse, "completed");
-        setState(AgentState::Completed);
-        emit responseReady();
-    }
-}
-
-void AgentViewModel::stop() {
-    Activity::usage(Activity::Kind::User, QStringLiteral("task.stop"));
-    if (m_agent) {
-        m_agent->stop();
-        return;
-    }
-
-    // Simulation path
-    m_simTimer.stop();
-    if (m_trace.count() > 0
-            && m_trace.nodeAt(m_trace.count() - 1).value("status").toString() == "running")
-        updateLastNodeStatus("cancelled");
-    setState(AgentState::Idle);
-}
-
-void AgentViewModel::newChat() {
-    Activity::usage(Activity::Kind::User, QStringLiteral("session.new"));
-    m_simTimer.stop();
-    m_finalResponse.clear();
-    emit responseReady();
-
-    if (m_agent) {
-        m_agent->resetSession();
-        return;
-    }
-
-    setState(AgentState::Idle);
-    m_trace.clearNodes();
-    emit traceChanged();
-    m_currentSessionId.clear();
-    emit currentSessionIdChanged();
-}
-
-void AgentViewModel::loadSession(const QString& sessionId) {
-    if (!m_agent || isBusy()) return;
-    Activity::usage(Activity::Kind::User, QStringLiteral("session.resume"),
-                    sessionId);
-    m_agent->resumeSession(sessionId);
-    m_finalResponse = m_agent->lastResponse();
-    emit responseReady();
-}
-
-void AgentViewModel::cancel() {
-    newChat();
-}
-
-void AgentViewModel::copyToClipboard(const QString& text) {
-    if (!text.isEmpty())
-        QGuiApplication::clipboard()->setText(text);
-}
-
-// 日志开发 doc 6 §3.3: open the rotating log directory at the current file
-void AgentViewModel::openLogFolder() {
-    const QString dir = Logger::logDir();
-    if (!dir.isEmpty())
-        QDesktopServices::openUrl(QUrl::fromLocalFile(dir));
-}
-
-// ── Simulation (fallback when no agent attached) ─────────
-
-void AgentViewModel::startSimulation() {
-    m_simStep = 0;
-    m_simTimer.start(1500);
-}
-
-void AgentViewModel::simulationStep() {
-    switch (m_simStep) {
-    case 0:
-        appendTraceNode("thinking", "Analyzing request...", "running");
-        m_simTimer.start(2000);
-        break;
-
-    case 1:
-        updateLastNodeStatus("completed");
-        appendTraceNode("thinking", "Planning tool calls...", "running");
-        m_simTimer.start(1500);
-        break;
-
-    case 2:
-        updateLastNodeStatus("completed");
-        appendTraceNode("tool_call", "read_file", "running",
-            QString::fromUtf8(QJsonDocument(QJsonObject{
-                {"path", "/home/user/document.txt"}
-            }).toJson(QJsonDocument::Compact)));
-        m_simTimer.start(1200);
-        break;
-
-    case 3:
-        updateLastNodeStatus("success");
-        appendTraceNode("tool_result", "File contents loaded", "success",
-            "", "Lorem ipsum dolor sit amet, consectetur adipiscing elit...");
-        m_usedTokens += 250;
-        emit tokenUsageChanged();
-        m_simTimer.start(1500);
-        break;
-
-    case 4:
-        appendTraceNode("tool_call", "write_file", "waiting_confirm",
-            QString::fromUtf8(QJsonDocument(QJsonObject{
-                {"path", "/home/user/output.txt"},
-                {"content", "Processed output data..."}
-            }).toJson(QJsonDocument::Compact)));
-
-        if (m_trace.count() > 0) {
-            m_pendingToolCallId =
-                m_trace.nodeAt(m_trace.count() - 1).value("id").toString();
-
-            QVariantMap args;
-            args["path"] = "/home/user/output.txt";
-            args["content"] = "Processed output data...";
-            emit toolConfirmRequired(m_pendingToolCallId, "write_file", args);
-        }
-
-        setState(AgentState::AwaitingToolConfirm);
-        break;
-
-    case 5:
-        appendTraceNode("thinking", "Synthesizing response...", "running");
-        m_simTimer.start(2000);
-        break;
-
-    case 6:
-        updateLastNodeStatus("completed");
-        m_finalResponse = QString("I've analyzed your request: \"%1\"\n\n"
-            "I read the file `/home/user/document.txt` and successfully wrote "
-            "the processed output to `/home/user/output.txt`.\n\n"
-            "Here's a summary of what I did:\n"
-            "1. Read the input document\n"
-            "2. Processed the content\n"
-            "3. Saved the results to the output file\n\n"
-            "The task is now complete.").arg(m_simInput);
-
-        appendTraceNode("summary", m_finalResponse, "completed");
-        m_usedTokens += 500;
-        emit tokenUsageChanged();
-        setState(AgentState::Completed);
-        emit responseReady();
-        break;
-    }
-
-    m_simStep++;
 }
 
 } // namespace NexusAI

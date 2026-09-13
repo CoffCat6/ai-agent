@@ -85,6 +85,8 @@ add_library(nexus_viewmodels STATIC
     src/viewmodels/TraceModel.cpp
     src/viewmodels/LogModel.h
     src/viewmodels/LogModel.cpp
+    src/viewmodels/ChatSessionController.h
+    src/viewmodels/ChatSessionController.cpp
 )
 qt_add_qml_module(nexus_viewmodels
     URI NexusAI.ViewModels
@@ -163,6 +165,7 @@ qt_add_qml_module(nexus_ai
         src/ui/components/InputConsole.qml
         src/ui/components/ModelSelector.qml
         src/ui/components/Sidebar.qml
+        src/ui/components/SessionTabs.qml
         src/ui/components/SplitBar.qml
         src/ui/components/TopBar.qml
         src/ui/components/ToolConfirmDialog.qml

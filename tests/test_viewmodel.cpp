@@ -1,6 +1,7 @@
 // AgentViewModel UI-layout property coverage: sidebar / context panel width
 // clamping, debounced QSettings persistence and cross-instance restore.
 #include "viewmodels/AgentViewModel.h"
+#include "core/agent/AIAgent.h"
 #include "viewmodels/TraceModel.h"
 #include "viewmodels/LogModel.h"
 #include "viewmodels/I18nManager.h"
@@ -20,6 +21,7 @@
 #include <QJsonDocument>
 #include <QJsonObject>
 #include <QLocale>
+#include <QPointer>
 #include <QTranslator>
 #include <QUrl>
 
@@ -645,6 +647,115 @@ private slots:
 
         i18n->applyLocale(original);   // restore for the rest of the suite
         QCOMPARE(i18n->currentLocale(), original);
+    }
+
+    // Batch 29 (F7): parallel session tabs. Simulation path (no agent) —
+    // the timers are intentionally not driven to completion; the point is
+    // that starting a task in another tab never touches the first one.
+    void parallelTabsStayIndependent() {
+        AgentViewModel vm(nullptr);
+        QCOMPARE(vm.tabModel().size(), 1);
+        QCOMPARE(vm.activeTabIndex(), 0);
+
+        vm.startTask(QStringLiteral("task A"));   // tab 0 begins (simulation)
+        QVERIFY(vm.stateBusy());
+
+        vm.openTab();                             // tab 1 + activate
+        QCOMPARE(vm.activeTabIndex(), 1);
+        QCOMPARE(vm.tabModel().size(), 2);
+        QVERIFY(!vm.stateBusy());                 // fresh tab is idle
+
+        vm.startTask(QStringLiteral("task B"));   // tab 1 begins
+        QVERIFY(vm.stateBusy());
+
+        // Switching back: tab 0 is still running its own task, with its own
+        // trace — the two tabs share nothing.
+        vm.activateTab(0);
+        QVERIFY(vm.stateBusy());
+        QCOMPARE(vm.traceCount(), 1);             // "task A" user message only
+        vm.activateTab(1);
+        QCOMPARE(vm.traceCount(), 1);             // "task B" user message only
+
+        // Stopping tab 1 does not touch tab 0's task.
+        vm.stop();
+        vm.activateTab(0);
+        QVERIFY(vm.stateBusy());
+
+        // Tab titles start as "新会话" until a session id exists.
+        const QVariantList tabs = vm.tabModel();
+        QCOMPARE(tabs.size(), 2);
+        QVERIFY(tabs.at(0).toMap().value("busy").toBool());
+    }
+
+    // Closing a running tab stops its task and drops it from the model; the
+    // last remaining tab cannot be closed.
+    void closeRunningTabStopsItsTask() {
+        AgentViewModel vm(nullptr);
+        vm.startTask(QStringLiteral("task A"));   // tab 0 busy
+        vm.openTab();
+        vm.activateTab(1);
+        vm.startTask(QStringLiteral("task B"));   // tab 1 busy
+
+        vm.closeTab(1);
+        QCOMPARE(vm.tabModel().size(), 1);
+        QCOMPARE(vm.activeTabIndex(), 0);
+        QVERIFY(vm.stateBusy());                  // tab 0 unaffected
+
+        vm.closeTab(0);                           // guard: last tab stays
+        QCOMPARE(vm.tabModel().size(), 1);
+    }
+
+    // Batch 29 fix: each tab's factory agent is a separate instance with a
+    // separate LLM service — two tabs sharing one service instance abort
+    // each other's streams (LLMServiceBase keeps a single in-flight
+    // context) and broadcast streaming chunks into the sibling trace.
+    void factoryCreatesIndependentAgents() {
+        AgentViewModel vm(nullptr);
+        AIAgent templateAgent(&vm);
+        QVector<AIAgent*> created;
+        vm.setAgentFactory([&created, &vm]() -> AIAgent* {
+            auto* agent = new AIAgent(&vm);
+            created.append(agent);
+            return agent;
+        });
+        vm.setAgent(&templateAgent);
+
+        vm.openTab();                         // factory agent #1
+        vm.openTab();                         // factory agent #2
+        QCOMPARE(created.size(), 2);
+        QVERIFY(created[0] != created[1]);
+
+        QVector<AIAgent*> seen;
+        vm.applyToAgents([&seen](AIAgent* a) { seen.append(a); });
+        QCOMPARE(seen.size(), 3);             // template + two factory agents
+        QVERIFY(seen.contains(&templateAgent));
+        QVERIFY(seen.contains(created[0]));
+        QVERIFY(seen.contains(created[1]));
+
+        QPointer<AIAgent> firstGuard = created[0];
+        vm.closeTab(1);                       // destroys tab agent #1
+        QTRY_VERIFY(firstGuard.isNull());
+
+        seen.clear();
+        vm.applyToAgents([&seen](AIAgent* a) { seen.append(a); });
+        QCOMPARE(seen.size(), 2);             // template + surviving agent
+    }
+
+    // Loading a session while the active tab is busy opens a new tab for it
+    // instead of interrupting (or silently ignoring) the request.
+    void busyTabLoadSessionOpensNewTab() {
+        AgentViewModel vm(nullptr);
+        vm.startTask(QStringLiteral("task A"));   // tab 0 busy
+        const int tabsBefore = vm.tabModel().size();
+
+        vm.loadSession(QStringLiteral("session-x"));
+        QCOMPARE(vm.tabModel().size(), tabsBefore + 1);
+        QCOMPARE(vm.activeTabIndex(), tabsBefore);
+        QVERIFY(!vm.stateBusy());                 // the fresh tab is idle
+
+        // An idle active tab loads in place.
+        vm.loadSession(QStringLiteral("session-y"));
+        QCOMPARE(vm.tabModel().size(), tabsBefore + 1);
     }
 };
 

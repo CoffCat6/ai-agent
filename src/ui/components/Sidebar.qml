@@ -122,7 +122,9 @@ Rectangle {
                 anchors.fill: parent
                 hoverEnabled: true
                 cursorShape: Qt.PointingHandCursor
-                onClicked: AgentVM.newChat()
+                // Batch 29 (F7): a new session now opens as a new parallel
+                // tab, so starting one never stops a task running elsewhere.
+                onClicked: AgentVM.openTab()
             }
         }
 

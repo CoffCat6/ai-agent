@@ -66,6 +66,12 @@ SqliteMemory::SqliteMemory(const QString& dbPath) : m_dbPath(dbPath) {
         return;
     }
 
+    // Batch 29: parallel session tabs each own a connection to the same
+    // database file; the wait bounds concurrent-write failures with
+    // SQLITE_BUSY instead of failing the write outright.
+    QSqlQuery busy(m_db);
+    busy.exec("PRAGMA busy_timeout = 5000");
+
     initDatabase();
 }
 

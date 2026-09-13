@@ -20,6 +20,12 @@ Item {
             Layout.preferredHeight: 40
         }
 
+        // ── Session Tabs (Batch 29, F7) ────────────────
+        SessionTabs {
+            Layout.fillWidth: true
+            Layout.preferredHeight: 34
+        }
+
         // ── Trace View (scrollable) ────────────────────
         Item {
             Layout.fillWidth: true

@@ -6,9 +6,11 @@
 #include <QJsonObject>
 #include <QString>
 #include <QTimer>
+#include <QVector>
 #include <functional>
 
 #include "core/agent/AgentState.h"
+#include "ChatSessionController.h"
 #include "TraceModel.h"
 #include "LogModel.h"
 
@@ -18,8 +20,14 @@ class AIAgent;
 class IMemory;
 class RagService;
 
-// Main ViewModel for the Agent chat interface.
-// Bridges C++ core logic with QML UI.
+// Main ViewModel for the Agent chat interface (QML singleton facade).
+// Batch 29 (F7): owns the open session tabs — every tab is a
+// ChatSessionController with a dedicated AIAgent, so parallel sessions run
+// independently and switching tabs never interrupts a running task. The
+// QML-facing conversation properties are forwarded to the active tab (their
+// notifications are re-emitted on every tab switch); the knowledge base,
+// layout persistence and cross-session search stay global.
+//
 // When a real AIAgent is attached via setAgent(), all actions are delegated
 // to it (real LLM pipeline). Otherwise the built-in simulation runs, which
 // allows UI demonstration without a configured backend.
@@ -101,6 +109,12 @@ class AgentViewModel : public QObject {
     // ── In-app log panel (日志开发 doc 6) ──────────────
     Q_PROPERTY(LogModel* logModel READ logModel CONSTANT)
 
+    // ── Session tabs (Batch 29, F7) ───────────────────
+    // [{index, sessionId, title, busy, active}] for the tab bar; title falls
+    // back to "新会话" until the tab has a session.
+    Q_PROPERTY(QVariantList tabModel READ tabModel NOTIFY tabsChanged FINAL)
+    Q_PROPERTY(int activeTabIndex READ activeTabIndex NOTIFY activeTabChanged FINAL)
+
 public:
     // No default constructor on purpose: a default-constructible
     // QML_SINGLETON makes the engine prefer Constructor over the create()
@@ -124,8 +138,15 @@ public:
     void setEmbedProgress(int done, int total);
     static AgentViewModel* create(QQmlEngine*, QJSEngine*);
 
-    // Attach the real agent pipeline. Takes no ownership (agent outlives the VM).
+    // Attach the shared real-pipeline agent (tab 0 + template). Takes no
+    // ownership (agent outlives the VM). nullptr = simulation for every tab.
     void setAgent(AIAgent* agent);
+    // Batch 29: factory building a fresh AIAgent (+ own SQLite connection)
+    // for every additional tab. When unset, additional tabs run simulation.
+    void setAgentFactory(std::function<AIAgent*()> factory);
+    // Batch 29: apply to every attached agent — provider switches call this
+    // with setLLMService, since the service instances are shared across tabs.
+    void applyToAgents(const std::function<void(AIAgent*)>& fn);
     // Batch 17: attach the persistence backend for search/export. Takes no
     // ownership; nullptr disables those features (simulation mode).
     void setMemory(IMemory* memory);
@@ -134,12 +155,12 @@ public:
     // Provide persisted knowledge document content (used by re-embedding).
     // Called on the GUI thread; return empty when the document is unknown.
     void setKnowledgeContentProvider(std::function<QString(const QString&)> provider);
-    bool liveMode() const { return m_agent != nullptr; }
+    bool liveMode() const { return m_templateAgent != nullptr; }
 
-    // State accessors
-    int stateAsInt() const { return static_cast<int>(m_state); }
-    AgentState state() const { return m_state; }
-    QString stateText() const;
+    // State accessors (active tab)
+    int stateAsInt() const { return static_cast<int>(active()->state()); }
+    AgentState state() const { return active()->state(); }
+    QString stateText() const { return active()->stateText(); }
 
     // Named enum constants for QML (see the Q_PROPERTY block above)
     int stateIdle() const { return static_cast<int>(AgentState::Idle); }
@@ -149,20 +170,18 @@ public:
     int stateSummarizing() const { return static_cast<int>(AgentState::Summarizing); }
     int stateCompleted() const { return static_cast<int>(AgentState::Completed); }
     int stateError() const { return static_cast<int>(AgentState::Error); }
-    bool stateBusy() const {
-        return m_state >= AgentState::Thinking && m_state <= AgentState::Summarizing;
-    }
+    bool stateBusy() const { return active()->isBusy(); }
 
-    // Trace model
-    QAbstractListModel* traceModel() { return &m_trace; }
-    int traceCount() const { return m_trace.count(); }
-    int intermediateCount() const { return m_trace.intermediateCount(); }
+    // Trace model (active tab)
+    QAbstractListModel* traceModel() { return active()->trace(); }
+    int traceCount() const { return active()->traceCount(); }
+    int intermediateCount() const { return active()->intermediateCount(); }
 
-    // Response
-    QString finalResponse() const { return m_finalResponse; }
+    // Response (active tab)
+    QString finalResponse() const { return active()->finalResponse(); }
 
-    // Draft text
-    QString draftText() const { return m_draftText; }
+    // Draft text (active tab)
+    QString draftText() const { return active()->draftText(); }
     void setDraftText(const QString& text);
 
     // Panel
@@ -197,14 +216,14 @@ public:
 
     // Sessions
     QVariantList sessionList() const { return m_sessionList; }
-    QString currentSessionId() const { return m_currentSessionId; }
+    QString currentSessionId() const { return active()->currentSessionId(); }
     // Batch 17: message-search results (set via the searchMessages invokable)
     QVariantList searchResults() const { return m_searchResults; }
 
-    // Token management
+    // Token management (active tab)
     double tokenUsageRate() const;
-    int usedTokens() const { return m_usedTokens; }
-    int maxTokens() const;
+    int usedTokens() const { return active()->usedTokens(); }
+    int maxTokens() const { return active()->maxTokens(); }
 
     // Tool registry
     QVariantList toolRegistryModel() const { return m_toolRegistryModel; }
@@ -213,11 +232,22 @@ public:
     QVariantList knowledgeDocuments() const { return m_knowledgeDocuments; }
     bool knowledgeBusy() const { return m_knowledgeBusy; }
 
+    // ── Session tabs (Batch 29) ───────────────────────
+    QVariantList tabModel() const;
+    int activeTabIndex() const { return m_activeTab; }
+    Q_INVOKABLE void openTab();
+    // Closing a running tab stops its task (the agent seals unanswered tool
+    // calls); the last remaining tab cannot be closed.
+    Q_INVOKABLE void closeTab(int index);
+    Q_INVOKABLE void activateTab(int index);
+
     // ── QML-invokable actions ─────────────────────────
     Q_INVOKABLE void startTask(const QString& input);
     Q_INVOKABLE void approveToolCall(const QString& id, bool approved);
     Q_INVOKABLE void stop();                 // abort generation, keep trace
     Q_INVOKABLE void newChat();              // reset to a fresh session
+    // Loads into the active tab; when the active tab is busy a new tab is
+    // opened for the session instead — switching never interrupts a task.
     Q_INVOKABLE void loadSession(const QString& sessionId);
     Q_INVOKABLE void deleteSession(const QString& sessionId);
     Q_INVOKABLE void renameSession(const QString& sessionId, const QString& title);
@@ -275,18 +305,17 @@ signals:
     // Emitted after a successful knowledge-base mutation, for persistence
     void documentRemoved(const QString& name);
     void knowledgeCleared();
+    void tabsChanged();
+    void activeTabChanged();
 
 private:
-    void setState(AgentState state);
-    void appendTraceNode(const QString& type, const QString& title,
-                         const QString& status, const QString& args = "",
-                         const QString& result = "");
-    void updateLastNodeStatus(const QString& status);
-    void initToolRegistry();
-    void startSimulation();
-    void simulationStep();
-    void connectAgent(AIAgent* agent);
+    ChatSessionController* active() const;
+    ChatSessionController* ensureTab();
+    // First controller with an attached agent (active tab preferred) — used
+    // for global session-list operations (delete/rename/audit/history pull).
+    ChatSessionController* controllerWithAgent() const;
     void refreshSessions();
+    void initToolRegistry();
     void refreshKnowledge();
     void setKnowledgeBusy(bool busy);
 
@@ -294,22 +323,23 @@ private:
     // is handled back on the GUI thread via a QFutureWatcher.
     void startIngestion(const QString& name, const QString& content, bool reembed);
     void persistPanelWidths();
-    bool isBusy() const;
 
     void registerLayoutPreferences();
     void loadLayoutDefaults();
     void subscribeLayoutChanges();
 
-    // ── State ──────────────────────────────────────────
-    AIAgent* m_agent{nullptr};
+    // ── Tabs (Batch 29) ───────────────────────────────
+    QVector<ChatSessionController*> m_tabs;
+    int m_activeTab{0};
+    std::function<AIAgent*()> m_agentFactory;
+    AIAgent* m_templateAgent{nullptr};
+
+    // ── Global services ───────────────────────────────
     RagService* m_rag{nullptr};
     IMemory* m_memory{nullptr};   // Batch 17/18: search + export backend (no ownership)
     QVariantList m_searchResults;
     std::function<QString(const QString&)> m_contentProvider;
-    AgentState m_state{AgentState::Idle};
-    TraceModel m_trace;
-    QString m_finalResponse;
-    QString m_draftText;
+    QVariantList m_sessionList;
 
     // ── Panel ──────────────────────────────────────────
     bool m_isPanelVisible{true};
@@ -320,8 +350,6 @@ private:
     int m_sidebarWidth{260};
     // Debounces QSettings writes while the user drags a splitter
     QTimer m_uiPersistTimer;
-    QVariantList m_sessionList;
-    QString m_currentSessionId;
 
     // ── Layout defaults ────────────────────────────────
     int m_defaultSidebarWidth{260};
@@ -329,10 +357,6 @@ private:
     bool m_defaultSidebarExpanded{true};
     bool m_defaultPanelVisible{true};
     bool m_restoreWindowOnStartup{true};
-
-    // ── Token ─────────────────────────────────────────
-    int m_usedTokens{0};
-    int m_maxTokens{8192};
 
     // ── Tool Registry ──────────────────────────────────
     QVariantList m_toolRegistryModel;
@@ -343,12 +367,6 @@ private:
     int m_embedDone{0};
     int m_embedTotal{0};
     LogModel* m_logModel;
-
-    // ── Simulation ────────────────────────────────────
-    QTimer m_simTimer;
-    int m_simStep{0};
-    QString m_simInput;
-    QString m_pendingToolCallId;
 
     static AgentViewModel* s_instance;
 };

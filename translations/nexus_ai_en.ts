@@ -4,27 +4,27 @@
 <context>
     <name>AgentChatPage</name>
     <message>
-        <location filename="../src/ui/pages/AgentChatPage.qml" line="129"/>
+        <location filename="../src/ui/pages/AgentChatPage.qml" line="135"/>
         <source>折叠过程</source>
         <translation>Collapse process</translation>
     </message>
     <message>
-        <location filename="../src/ui/pages/AgentChatPage.qml" line="130"/>
+        <location filename="../src/ui/pages/AgentChatPage.qml" line="136"/>
         <source>思考过程 · %1</source>
         <translation>Thinking · %1</translation>
     </message>
     <message>
-        <location filename="../src/ui/pages/AgentChatPage.qml" line="149"/>
+        <location filename="../src/ui/pages/AgentChatPage.qml" line="155"/>
         <source>隐藏思考与工具调用过程</source>
         <translation>Hide thinking and tool calls</translation>
     </message>
     <message>
-        <location filename="../src/ui/pages/AgentChatPage.qml" line="149"/>
+        <location filename="../src/ui/pages/AgentChatPage.qml" line="155"/>
         <source>显示思考与工具调用过程</source>
         <translation>Show thinking and tool calls</translation>
     </message>
     <message>
-        <location filename="../src/ui/pages/AgentChatPage.qml" line="185"/>
+        <location filename="../src/ui/pages/AgentChatPage.qml" line="191"/>
         <source>回到底部</source>
         <translation>Scroll to bottom</translation>
     </message>
@@ -246,42 +246,42 @@ and the model can retrieve their content to answer questions</translation>
         <translation>Knowledge Base Embedding Model</translation>
     </message>
     <message>
-        <location filename="../src/ui/pages/GeneralPage.qml" line="142"/>
+        <location filename="../src/ui/pages/GeneralPage.qml" line="148"/>
         <source>嵌入服务地址</source>
         <translation>Embedding Endpoint</translation>
     </message>
     <message>
-        <location filename="../src/ui/pages/GeneralPage.qml" line="146"/>
+        <location filename="../src/ui/pages/GeneralPage.qml" line="152"/>
         <source>http://localhost:11434</source>
         <translation>http://localhost:11434</translation>
     </message>
     <message>
-        <location filename="../src/ui/pages/GeneralPage.qml" line="161"/>
+        <location filename="../src/ui/pages/GeneralPage.qml" line="167"/>
         <source>智能体</source>
         <translation>Agent</translation>
     </message>
     <message>
-        <location filename="../src/ui/pages/GeneralPage.qml" line="164"/>
+        <location filename="../src/ui/pages/GeneralPage.qml" line="170"/>
         <source>自定义系统提示词：留空使用内置提示词；修改即时生效，内容随请求发送给当前模型服务</source>
         <translation>Custom system prompt: leave empty to use the built-in prompt; changes take effect immediately and are sent to the current model service</translation>
     </message>
     <message>
-        <location filename="../src/ui/pages/GeneralPage.qml" line="178"/>
+        <location filename="../src/ui/pages/GeneralPage.qml" line="184"/>
         <source>留空 = 内置提示词</source>
         <translation>Empty = built-in prompt</translation>
     </message>
     <message>
-        <location filename="../src/ui/pages/GeneralPage.qml" line="193"/>
+        <location filename="../src/ui/pages/GeneralPage.qml" line="199"/>
         <source>%1 字符</source>
         <translation>%1 chars</translation>
     </message>
     <message>
-        <location filename="../src/ui/pages/GeneralPage.qml" line="200"/>
+        <location filename="../src/ui/pages/GeneralPage.qml" line="206"/>
         <source>恢复默认提示词</source>
         <translation>Restore Default Prompt</translation>
     </message>
     <message>
-        <location filename="../src/ui/pages/GeneralPage.qml" line="231"/>
+        <location filename="../src/ui/pages/GeneralPage.qml" line="237"/>
         <source>本地智能体桌面应用 · 多模型提供商 · 工具调用 · 本地知识库</source>
         <translation>Local agent desktop app · Multiple model providers · Tool calling · Local knowledge base</translation>
     </message>
@@ -713,27 +713,27 @@ and the model can retrieve their content to answer questions</translation>
         <translation>Base Font Size</translation>
     </message>
     <message>
-        <location filename="../src/viewmodels/AgentViewModel.cpp" line="106"/>
+        <location filename="../src/viewmodels/AgentViewModel.cpp" line="116"/>
         <source>侧边栏默认宽度</source>
         <translation>Default Sidebar Width</translation>
     </message>
     <message>
-        <location filename="../src/viewmodels/AgentViewModel.cpp" line="107"/>
+        <location filename="../src/viewmodels/AgentViewModel.cpp" line="117"/>
         <source>面板默认宽度</source>
         <translation>Default Panel Width</translation>
     </message>
     <message>
-        <location filename="../src/viewmodels/AgentViewModel.cpp" line="108"/>
+        <location filename="../src/viewmodels/AgentViewModel.cpp" line="118"/>
         <source>侧边栏默认展开</source>
         <translation>Expand Sidebar by Default</translation>
     </message>
     <message>
-        <location filename="../src/viewmodels/AgentViewModel.cpp" line="109"/>
+        <location filename="../src/viewmodels/AgentViewModel.cpp" line="119"/>
         <source>面板默认展开</source>
         <translation>Expand Panel by Default</translation>
     </message>
     <message>
-        <location filename="../src/viewmodels/AgentViewModel.cpp" line="110"/>
+        <location filename="../src/viewmodels/AgentViewModel.cpp" line="120"/>
         <source>启动时恢复窗口</source>
         <translation>Restore Window on Startup</translation>
     </message>
@@ -786,17 +786,22 @@ and the model can retrieve their content to answer questions</translation>
         <translation type="vanished">Restore Window on Startup</translation>
     </message>
     <message>
-        <location filename="../src/viewmodels/AgentViewModel.cpp" line="214"/>
+        <location filename="../src/viewmodels/AgentViewModel.cpp" line="274"/>
+        <source>新会话</source>
+        <translation>New Session</translation>
+    </message>
+    <message>
+        <location filename="../src/viewmodels/AgentViewModel.cpp" line="344"/>
         <source>导出失败：未连接持久化后端</source>
         <translation>Export failed: no persistent backend connected</translation>
     </message>
     <message>
-        <location filename="../src/viewmodels/AgentViewModel.cpp" line="219"/>
+        <location filename="../src/viewmodels/AgentViewModel.cpp" line="349"/>
         <source>导出失败：不支持的格式“%1”（可选 md / json）</source>
         <translation>Export failed: unsupported format &quot;%1&quot; (md / json)</translation>
     </message>
     <message>
-        <location filename="../src/viewmodels/AgentViewModel.cpp" line="234"/>
+        <location filename="../src/viewmodels/AgentViewModel.cpp" line="364"/>
         <source># NexusAI 会话导出
 
 </source>
@@ -805,21 +810,21 @@ and the model can retrieve their content to answer questions</translation>
 </translation>
     </message>
     <message>
-        <location filename="../src/viewmodels/AgentViewModel.cpp" line="235"/>
+        <location filename="../src/viewmodels/AgentViewModel.cpp" line="365"/>
         <source>- 会话 ID：%1
 </source>
         <translation>- Session ID: %1
 </translation>
     </message>
     <message>
-        <location filename="../src/viewmodels/AgentViewModel.cpp" line="236"/>
+        <location filename="../src/viewmodels/AgentViewModel.cpp" line="366"/>
         <source>- 导出时间：%1
 </source>
         <translation>- Exported at: %1
 </translation>
     </message>
     <message>
-        <location filename="../src/viewmodels/AgentViewModel.cpp" line="237"/>
+        <location filename="../src/viewmodels/AgentViewModel.cpp" line="367"/>
         <source>- 消息数：%1
 
 ---
@@ -832,17 +837,17 @@ and the model can retrieve their content to answer questions</translation>
 </translation>
     </message>
     <message>
-        <location filename="../src/viewmodels/AgentViewModel.cpp" line="241"/>
+        <location filename="../src/viewmodels/AgentViewModel.cpp" line="371"/>
         <source>用户</source>
         <translation>User</translation>
     </message>
     <message>
-        <location filename="../src/viewmodels/AgentViewModel.cpp" line="242"/>
+        <location filename="../src/viewmodels/AgentViewModel.cpp" line="372"/>
         <source>助手</source>
         <translation>Assistant</translation>
     </message>
     <message>
-        <location filename="../src/viewmodels/AgentViewModel.cpp" line="251"/>
+        <location filename="../src/viewmodels/AgentViewModel.cpp" line="381"/>
         <source>---
 
 ## 过程摘要
@@ -855,67 +860,67 @@ and the model can retrieve their content to answer questions</translation>
 </translation>
     </message>
     <message>
-        <location filename="../src/viewmodels/AgentViewModel.cpp" line="280"/>
+        <location filename="../src/viewmodels/AgentViewModel.cpp" line="410"/>
         <source>导出失败：无法写入 %1</source>
         <translation>Export failed: cannot write %1</translation>
     </message>
     <message>
-        <location filename="../src/viewmodels/AgentViewModel.cpp" line="285"/>
+        <location filename="../src/viewmodels/AgentViewModel.cpp" line="415"/>
         <source>导出失败：写入未完成 %1</source>
         <translation>Export failed: write incomplete %1</translation>
     </message>
     <message>
-        <location filename="../src/viewmodels/AgentViewModel.cpp" line="291"/>
+        <location filename="../src/viewmodels/AgentViewModel.cpp" line="421"/>
         <source>已导出会话（%1 条消息）：%2</source>
         <translation>Session exported (%1 messages): %2</translation>
     </message>
     <message>
-        <location filename="../src/viewmodels/AgentViewModel.cpp" line="395"/>
+        <location filename="../src/viewmodels/AgentViewModel.cpp" line="479"/>
         <source>无法读取文件：%1</source>
         <translation>Cannot read file: %1</translation>
     </message>
     <message>
-        <location filename="../src/viewmodels/AgentViewModel.cpp" line="400"/>
+        <location filename="../src/viewmodels/AgentViewModel.cpp" line="484"/>
         <source>无法打开文件：%1</source>
         <translation>Cannot open file: %1</translation>
     </message>
     <message>
-        <location filename="../src/viewmodels/AgentViewModel.cpp" line="411"/>
+        <location filename="../src/viewmodels/AgentViewModel.cpp" line="495"/>
         <source>文档内容已存在，已跳过：%1</source>
         <translation>Document content already exists, skipped: %1</translation>
     </message>
     <message>
-        <location filename="../src/viewmodels/AgentViewModel.cpp" line="441"/>
+        <location filename="../src/viewmodels/AgentViewModel.cpp" line="525"/>
         <source>未找到文档内容，无法重新嵌入：%1</source>
         <translation>Document content not found, cannot re-embed: %1</translation>
     </message>
     <message>
-        <location filename="../src/viewmodels/AgentViewModel.cpp" line="459"/>
+        <location filename="../src/viewmodels/AgentViewModel.cpp" line="543"/>
         <source>已重新嵌入 %1（%2 段）</source>
         <translation>Re-embedded %1 (%2 chunks)</translation>
     </message>
     <message>
-        <location filename="../src/viewmodels/AgentViewModel.cpp" line="461"/>
+        <location filename="../src/viewmodels/AgentViewModel.cpp" line="545"/>
         <source>重新嵌入失败：%1</source>
         <translation>Re-embedding failed: %1</translation>
     </message>
     <message>
-        <location filename="../src/viewmodels/AgentViewModel.cpp" line="465"/>
+        <location filename="../src/viewmodels/AgentViewModel.cpp" line="549"/>
         <source>已导入 %1（%2 段）</source>
         <translation>Imported %1 (%2 chunks)</translation>
     </message>
     <message>
-        <location filename="../src/viewmodels/AgentViewModel.cpp" line="467"/>
+        <location filename="../src/viewmodels/AgentViewModel.cpp" line="551"/>
         <source>导入失败（文件为空或无法分块）：%1</source>
         <translation>Import failed (file is empty or cannot be chunked): %1</translation>
     </message>
     <message>
-        <location filename="../src/viewmodels/AgentViewModel.cpp" line="469"/>
+        <location filename="../src/viewmodels/AgentViewModel.cpp" line="553"/>
         <source>知识库总量已达上限（最多 %1 段），请先删除部分文档后再导入</source>
         <translation>Knowledge base has reached its limit (max %1 chunks); delete some documents before importing</translation>
     </message>
     <message>
-        <location filename="../src/viewmodels/AgentViewModel.cpp" line="472"/>
+        <location filename="../src/viewmodels/AgentViewModel.cpp" line="556"/>
         <source>文件过大（超过单文档 %1 段上限）：%2</source>
         <translation>File too large (exceeds the per-document limit of %1 chunks): %2</translation>
     </message>
@@ -1069,68 +1074,68 @@ and the model can retrieve their content to answer questions</translation>
     <name>Sidebar</name>
     <message>
         <location filename="../src/ui/components/Sidebar.qml" line="113"/>
-        <location filename="../src/ui/components/Sidebar.qml" line="266"/>
-        <location filename="../src/ui/components/Sidebar.qml" line="453"/>
+        <location filename="../src/ui/components/Sidebar.qml" line="268"/>
+        <location filename="../src/ui/components/Sidebar.qml" line="455"/>
         <source>新会话</source>
         <translation>New Session</translation>
     </message>
     <message>
-        <location filename="../src/ui/components/Sidebar.qml" line="158"/>
+        <location filename="../src/ui/components/Sidebar.qml" line="160"/>
         <source>搜索会话历史…</source>
         <translation>Search session history…</translation>
     </message>
     <message>
-        <location filename="../src/ui/components/Sidebar.qml" line="180"/>
+        <location filename="../src/ui/components/Sidebar.qml" line="182"/>
         <source>搜索结果</source>
         <translation>Search Results</translation>
     </message>
     <message>
-        <location filename="../src/ui/components/Sidebar.qml" line="204"/>
+        <location filename="../src/ui/components/Sidebar.qml" line="206"/>
         <source>暂无历史会话</source>
         <translation>No sessions yet</translation>
     </message>
     <message>
-        <location filename="../src/ui/components/Sidebar.qml" line="352"/>
+        <location filename="../src/ui/components/Sidebar.qml" line="354"/>
         <source>确认?</source>
         <translation>Confirm?</translation>
     </message>
     <message>
-        <location filename="../src/ui/components/Sidebar.qml" line="422"/>
+        <location filename="../src/ui/components/Sidebar.qml" line="424"/>
         <source>无匹配结果</source>
         <translation>No matches</translation>
     </message>
     <message>
-        <location filename="../src/ui/components/Sidebar.qml" line="475"/>
+        <location filename="../src/ui/components/Sidebar.qml" line="477"/>
         <source>用户</source>
         <translation>User</translation>
     </message>
     <message>
-        <location filename="../src/ui/components/Sidebar.qml" line="476"/>
+        <location filename="../src/ui/components/Sidebar.qml" line="478"/>
         <source>助手</source>
         <translation>Assistant</translation>
     </message>
     <message>
-        <location filename="../src/ui/components/Sidebar.qml" line="515"/>
+        <location filename="../src/ui/components/Sidebar.qml" line="517"/>
         <source>日志</source>
         <translation>Logs</translation>
     </message>
     <message>
-        <location filename="../src/ui/components/Sidebar.qml" line="523"/>
+        <location filename="../src/ui/components/Sidebar.qml" line="525"/>
         <source>审计日志</source>
         <translation>Audit Log</translation>
     </message>
     <message>
-        <location filename="../src/ui/components/Sidebar.qml" line="531"/>
+        <location filename="../src/ui/components/Sidebar.qml" line="533"/>
         <source>设置 (Ctrl+,)</source>
         <translation>Settings (Ctrl+,)</translation>
     </message>
     <message>
-        <location filename="../src/ui/components/Sidebar.qml" line="583"/>
+        <location filename="../src/ui/components/Sidebar.qml" line="585"/>
         <source>Markdown (*.md)</source>
         <translation>Markdown (*.md)</translation>
     </message>
     <message>
-        <location filename="../src/ui/components/Sidebar.qml" line="583"/>
+        <location filename="../src/ui/components/Sidebar.qml" line="585"/>
         <source>JSON (*.json)</source>
         <translation>JSON (*.json)</translation>
     </message>
@@ -1166,7 +1171,7 @@ and the model can retrieve their content to answer questions</translation>
         <translation>Yesterday</translation>
     </message>
     <message>
-        <location filename="../src/core/memory/SqliteMemory.cpp" line="565"/>
+        <location filename="../src/core/memory/SqliteMemory.cpp" line="571"/>
         <source>消息库超过 %1 条：少于 3 个字符的关键词只能全表扫描，请输入至少 3 个字符以使用全文索引。</source>
         <translation>The message store exceeds %1 rows: keywords shorter than 3 characters fall back to a full table scan. Enter at least 3 characters to use the full-text index.</translation>
     </message>
