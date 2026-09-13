@@ -167,6 +167,24 @@ private slots:
         QVERIFY(result.isEmpty());
         QVERIFY(progress.isEmpty());   // nothing completed → nothing reported
     }
+
+    // Batch 25 (G11): setBaseUrl redirects subsequent requests to the
+    // configured endpoint (the settings-level switch never re-embeds, so a
+    // live redirect must be enough for the next request to land there).
+    void customEndpointReceivesRequests() {
+        FakeEmbedServer first(8);
+        FakeEmbedServer second(8);
+        OllamaEmbedding embed;
+
+        embed.setBaseUrl(first.baseUrl());
+        QCOMPARE(embed.embedBatch(makeTexts(2)).size(), 2);
+        QCOMPARE(first.requests(), 1);
+
+        embed.setBaseUrl(second.baseUrl());
+        QCOMPARE(embed.embedBatch(makeTexts(2)).size(), 2);
+        QCOMPARE(first.requests(), 1);   // no new traffic to the old endpoint
+        QCOMPARE(second.requests(), 1);
+    }
 };
 
 QTEST_GUILESS_MAIN(TestEmbedding)

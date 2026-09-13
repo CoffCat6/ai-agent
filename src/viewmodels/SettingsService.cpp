@@ -217,6 +217,7 @@ void SettingsService::load() {
     m_localOnlyMode = settings.value("security/localOnlyMode", false).toBool();
     m_allowLocalNetworkFetch = settings.value("security/allowLocalNetworkFetch", false).toBool();
     m_embeddingModel = settings.value("embedding/model", QStringLiteral("nomic-embed-text")).toString();
+    m_embeddingBaseUrl = settings.value("embedding/baseUrl", QStringLiteral("http://localhost:11434")).toString();
     m_systemPromptOverride = settings.value("agent/systemPromptOverride", QString()).toString();
     // logging/level is Logger::install()'s key; the env override still wins
     // there, so load() only mirrors the stored value (install() already
@@ -493,6 +494,18 @@ void SettingsService::setEmbeddingModel(const QString& model) {
                     trimmed);
     QSettings().setValue("embedding/model", trimmed);
     emit embeddingModelChanged();
+}
+
+// Batch 25 (G11): endpoint for the embedding requests; vectors depend on
+// the model only, so a change here never triggers a re-embed.
+void SettingsService::setEmbeddingBaseUrl(const QString& url) {
+    const QString trimmed = url.trimmed();
+    if (trimmed.isEmpty() || m_embeddingBaseUrl == trimmed) return;
+    m_embeddingBaseUrl = trimmed;
+    Activity::usage(Activity::Kind::User, QStringLiteral("settings.embeddingBaseUrl"),
+                    trimmed);
+    QSettings().setValue("embedding/baseUrl", trimmed);
+    emit embeddingBaseUrlChanged();
 }
 
 // Empty (after trim) clears the override and falls back to the built-in

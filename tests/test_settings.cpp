@@ -23,6 +23,7 @@ public:
         // embedding/model, the security/allowFullDiskRead sandbox switch).
         loggingLevel = s.value("logging/level");
         embeddingModel = s.value("embedding/model");
+        embeddingBaseUrl = s.value("embedding/baseUrl");
         allowFullDiskRead = s.value("security/allowFullDiskRead");
         localOnlyMode = s.value("security/localOnlyMode");
         allowLocalNetworkFetch = s.value("security/allowLocalNetworkFetch");
@@ -38,6 +39,8 @@ public:
         else s.remove("logging/level");
         if (embeddingModel.isValid()) s.setValue("embedding/model", embeddingModel);
         else s.remove("embedding/model");
+        if (embeddingBaseUrl.isValid()) s.setValue("embedding/baseUrl", embeddingBaseUrl);
+        else s.remove("embedding/baseUrl");
         if (allowFullDiskRead.isValid())
             s.setValue("security/allowFullDiskRead", allowFullDiskRead);
         else s.remove("security/allowFullDiskRead");
@@ -55,6 +58,7 @@ public:
     QVariant activeId;
     QVariant loggingLevel;
     QVariant embeddingModel;
+    QVariant embeddingBaseUrl;
     QVariant allowFullDiskRead;
     QVariant localOnlyMode;
     QVariant allowLocalNetworkFetch;
@@ -231,6 +235,7 @@ private slots:
         {
             QSettings s("NexusAI", "NexusAI");
             s.remove("embedding/model");
+            s.remove("embedding/baseUrl");
             s.remove("security/allowFullDiskRead");
             s.remove("security/localOnlyMode");
             s.remove("security/allowLocalNetworkFetch");
@@ -239,6 +244,7 @@ private slots:
         {
             SettingsService service(nullptr);
             QCOMPARE(service.embeddingModel(), QStringLiteral("nomic-embed-text"));
+            QCOMPARE(service.embeddingBaseUrl(), QStringLiteral("http://localhost:11434"));
             QVERIFY(!service.allowFullDiskRead());
             QVERIFY(!service.localOnlyMode());
             QVERIFY(!service.allowLocalNetworkFetch());
@@ -250,6 +256,16 @@ private slots:
             QCOMPARE(modelSpy.count(), 1);
             service.setEmbeddingModel(QStringLiteral("   "));      // blank → ignored
             QCOMPARE(service.embeddingModel(), QStringLiteral("bge-m3"));
+
+            // Batch 25 (G11): embedding endpoint persistence round trip.
+            QSignalSpy urlSpy(&service, &SettingsService::embeddingBaseUrlChanged);
+            service.setEmbeddingBaseUrl(QStringLiteral(" http://192.168.1.10:11434 "));
+            QCOMPARE(urlSpy.count(), 1);
+            QCOMPARE(service.embeddingBaseUrl(), QStringLiteral("http://192.168.1.10:11434"));
+            service.setEmbeddingBaseUrl(QStringLiteral("http://192.168.1.10:11434"));  // unchanged → silent
+            QCOMPARE(urlSpy.count(), 1);
+            service.setEmbeddingBaseUrl(QStringLiteral("   "));    // blank → ignored
+            QCOMPARE(service.embeddingBaseUrl(), QStringLiteral("http://192.168.1.10:11434"));
 
             service.setAllowFullDiskRead(true);
 
@@ -268,6 +284,7 @@ private slots:
         {
             SettingsService service(nullptr);
             QCOMPARE(service.embeddingModel(), QStringLiteral("bge-m3"));
+            QCOMPARE(service.embeddingBaseUrl(), QStringLiteral("http://192.168.1.10:11434"));
             QVERIFY(service.allowFullDiskRead());
             QVERIFY(service.localOnlyMode());
             QVERIFY(service.allowLocalNetworkFetch());

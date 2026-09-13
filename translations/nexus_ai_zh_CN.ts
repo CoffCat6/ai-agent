@@ -123,54 +123,54 @@
         <translation>知识库</translation>
     </message>
     <message>
-        <location filename="../src/ui/panels/ContextPanel.qml" line="67"/>
+        <location filename="../src/ui/panels/ContextPanel.qml" line="68"/>
         <source>文档内容会随提问发送给当前模型服务；如需阻止，请在设置中开启“仅本地模式”</source>
         <translation>文档内容会随提问发送给当前模型服务；如需阻止，请在设置中开启“仅本地模式”</translation>
     </message>
     <message>
-        <location filename="../src/ui/panels/ContextPanel.qml" line="98"/>
+        <location filename="../src/ui/panels/ContextPanel.qml" line="100"/>
         <source>已嵌入 %1/%2</source>
         <translation>已嵌入 %1/%2</translation>
     </message>
     <message>
-        <location filename="../src/ui/panels/ContextPanel.qml" line="99"/>
+        <location filename="../src/ui/panels/ContextPanel.qml" line="101"/>
         <source>导入中…</source>
         <translation>导入中…</translation>
     </message>
     <message>
-        <location filename="../src/ui/panels/ContextPanel.qml" line="115"/>
+        <location filename="../src/ui/panels/ContextPanel.qml" line="117"/>
         <source>导入文档</source>
         <translation>导入文档</translation>
     </message>
     <message>
-        <location filename="../src/ui/panels/ContextPanel.qml" line="122"/>
+        <location filename="../src/ui/panels/ContextPanel.qml" line="124"/>
         <source>导入文本文件（.txt / .md …），
 模型即可检索其内容回答问题</source>
         <translation>导入文本文件（.txt / .md …），
 模型即可检索其内容回答问题</translation>
     </message>
     <message>
-        <location filename="../src/ui/panels/ContextPanel.qml" line="203"/>
+        <location filename="../src/ui/panels/ContextPanel.qml" line="205"/>
         <source>降级</source>
         <translation>降级</translation>
     </message>
     <message>
-        <location filename="../src/ui/panels/ContextPanel.qml" line="217"/>
+        <location filename="../src/ui/panels/ContextPanel.qml" line="219"/>
         <source>导入时嵌入服务不可用，已使用本地降级嵌入，检索质量有限。可点击右侧刷新按钮重新嵌入。</source>
         <translation>导入时嵌入服务不可用，已使用本地降级嵌入，检索质量有限。可点击右侧刷新按钮重新嵌入。</translation>
     </message>
     <message>
-        <location filename="../src/ui/panels/ContextPanel.qml" line="222"/>
+        <location filename="../src/ui/panels/ContextPanel.qml" line="224"/>
         <source> 段 · </source>
         <translation> 段 · </translation>
     </message>
     <message>
-        <location filename="../src/ui/panels/ContextPanel.qml" line="222"/>
+        <location filename="../src/ui/panels/ContextPanel.qml" line="224"/>
         <source> 字符</source>
         <translation> 字符</translation>
     </message>
     <message>
-        <location filename="../src/ui/panels/ContextPanel.qml" line="240"/>
+        <location filename="../src/ui/panels/ContextPanel.qml" line="242"/>
         <source>重新嵌入</source>
         <translation>重新嵌入</translation>
     </message>
@@ -246,32 +246,42 @@
         <translation>知识库嵌入模型</translation>
     </message>
     <message>
-        <location filename="../src/ui/pages/GeneralPage.qml" line="151"/>
+        <location filename="../src/ui/pages/GeneralPage.qml" line="142"/>
+        <source>嵌入服务地址</source>
+        <translation>嵌入服务地址</translation>
+    </message>
+    <message>
+        <location filename="../src/ui/pages/GeneralPage.qml" line="146"/>
+        <source>http://localhost:11434</source>
+        <translation>http://localhost:11434</translation>
+    </message>
+    <message>
+        <location filename="../src/ui/pages/GeneralPage.qml" line="161"/>
         <source>智能体</source>
         <translation>智能体</translation>
     </message>
     <message>
-        <location filename="../src/ui/pages/GeneralPage.qml" line="154"/>
+        <location filename="../src/ui/pages/GeneralPage.qml" line="164"/>
         <source>自定义系统提示词：留空使用内置提示词；修改即时生效，内容随请求发送给当前模型服务</source>
         <translation>自定义系统提示词：留空使用内置提示词；修改即时生效，内容随请求发送给当前模型服务</translation>
     </message>
     <message>
-        <location filename="../src/ui/pages/GeneralPage.qml" line="168"/>
+        <location filename="../src/ui/pages/GeneralPage.qml" line="178"/>
         <source>留空 = 内置提示词</source>
         <translation>留空 = 内置提示词</translation>
     </message>
     <message>
-        <location filename="../src/ui/pages/GeneralPage.qml" line="183"/>
+        <location filename="../src/ui/pages/GeneralPage.qml" line="193"/>
         <source>%1 字符</source>
         <translation>%1 字符</translation>
     </message>
     <message>
-        <location filename="../src/ui/pages/GeneralPage.qml" line="190"/>
+        <location filename="../src/ui/pages/GeneralPage.qml" line="200"/>
         <source>恢复默认提示词</source>
         <translation>恢复默认提示词</translation>
     </message>
     <message>
-        <location filename="../src/ui/pages/GeneralPage.qml" line="221"/>
+        <location filename="../src/ui/pages/GeneralPage.qml" line="231"/>
         <source>本地智能体桌面应用 · 多模型提供商 · 工具调用 · 本地知识库</source>
         <translation>本地智能体桌面应用 · 多模型提供商 · 工具调用 · 本地知识库</translation>
     </message>
@@ -966,22 +976,22 @@
 <context>
     <name>NexusAI::SettingsService</name>
     <message>
-        <location filename="../src/viewmodels/SettingsService.cpp" line="279"/>
+        <location filename="../src/viewmodels/SettingsService.cpp" line="280"/>
         <source>新配置</source>
         <translation>新配置</translation>
     </message>
     <message>
-        <location filename="../src/viewmodels/SettingsService.cpp" line="427"/>
+        <location filename="../src/viewmodels/SettingsService.cpp" line="428"/>
         <source>OpenAI 兼容</source>
         <translation>OpenAI 兼容</translation>
     </message>
     <message>
-        <location filename="../src/viewmodels/SettingsService.cpp" line="428"/>
+        <location filename="../src/viewmodels/SettingsService.cpp" line="429"/>
         <source>Ollama 本地</source>
         <translation>Ollama 本地</translation>
     </message>
     <message>
-        <location filename="../src/viewmodels/SettingsService.cpp" line="429"/>
+        <location filename="../src/viewmodels/SettingsService.cpp" line="430"/>
         <source>Claude</source>
         <translation>Claude</translation>
     </message>

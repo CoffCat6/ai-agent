@@ -157,6 +157,8 @@ int main(int argc, char *argv[])
     // persisted-chunk usability check compares against this identity.
     embedding->setModel(settings->embeddingModel());
     rag->setEmbeddingModelName(embedding->model());
+    // Batch 25 (G11): endpoint too — Ollama may live on another host/port.
+    embedding->setBaseUrl(settings->embeddingBaseUrl());
     // Expose the knowledge base to the model as a safe auto-executed tool
     ToolRegistry::instance().registerTool(std::make_unique<KnowledgeSearchTool>(rag));
 
@@ -438,6 +440,14 @@ int main(int argc, char *argv[])
                 for (const ReembedItem& item : items)
                     rag->ingestRestoredDocument(item.name, item.content, gen);
             });
+        });
+
+    // Batch 25 (G11): endpoint changes only redirect future requests —
+    // stored vectors depend on the embedding model, not the service address,
+    // so unlike the model switch above there is no re-embed.
+    QObject::connect(settings, &SettingsService::embeddingBaseUrlChanged, &app,
+        [settings, embedding]() {
+            embedding->setBaseUrl(settings->embeddingBaseUrl());
         });
 
     // FEAT-803: batch-embedding progress → knowledge panel

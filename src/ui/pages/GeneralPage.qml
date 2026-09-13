@@ -136,6 +136,22 @@ Item {
                         editText: Settings.embeddingModel
                         onActivated: Settings.embeddingModel = currentText
                         onAccepted: Settings.embeddingModel = editText
+                        // Editable combos only fire accepted() on Enter;
+                        // commit on focus loss too so a freely typed model
+                        // name survives clicking elsewhere (same semantics
+                        // as the Base URL field below). Blank is rejected by
+                        // the setter.
+                        onFocusChanged: if (!focus) Settings.embeddingModel = editText
+                    }
+                    // Batch 25 (G11): Ollama endpoint; empty input keeps the
+                    // current value (the setter rejects blank after trim).
+                    Text { text: qsTr("嵌入服务地址"); color: Theme.textSecondary; font.pixelSize: Theme.fontSizeCaption; font.family: Theme.fontMono }
+                    TextField {
+                        Layout.fillWidth: true
+                        text: Settings.embeddingBaseUrl
+                        placeholderText: qsTr("http://localhost:11434")
+                        onEditingFinished: Settings.embeddingBaseUrl = text
+                        selectByMouse: true
                     }
                 }
             }

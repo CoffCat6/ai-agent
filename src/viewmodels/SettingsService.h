@@ -35,6 +35,9 @@ class SettingsService : public QObject {
     // for cloud providers - document content must not leave this machine.
     Q_PROPERTY(bool localOnlyMode READ localOnlyMode WRITE setLocalOnlyMode NOTIFY localOnlyModeChanged)
     Q_PROPERTY(QString embeddingModel READ embeddingModel WRITE setEmbeddingModel NOTIFY embeddingModelChanged)
+    // Batch 25 (G11): Ollama endpoint for knowledge-base embeddings; the
+    // protocol stays /api/embed(dings) - only the host:port is configurable.
+    Q_PROPERTY(QString embeddingBaseUrl READ embeddingBaseUrl WRITE setEmbeddingBaseUrl NOTIFY embeddingBaseUrlChanged)
     Q_PROPERTY(QString logLevel READ logLevel WRITE setLogLevel NOTIFY logLevelChanged)
     // Batch 22 (F8): user-editable system prompt; empty string = built-in.
     Q_PROPERTY(QString systemPromptOverride READ systemPromptOverride WRITE setSystemPromptOverride NOTIFY systemPromptOverrideChanged)
@@ -79,6 +82,10 @@ public:
     // chunk vectors; a change triggers a full knowledge re-embed.
     QString embeddingModel() const { return m_embeddingModel; }
     void setEmbeddingModel(const QString& model);
+    // Knowledge-base embedding endpoint (G11): unlike the model, a change
+    // does NOT re-embed - stored vectors depend on the model only.
+    QString embeddingBaseUrl() const { return m_embeddingBaseUrl; }
+    void setEmbeddingBaseUrl(const QString& url);
     QString systemPromptOverride() const { return m_systemPromptOverride; }
     void setSystemPromptOverride(const QString& prompt);
 
@@ -119,6 +126,7 @@ signals:
     void localOnlyModeChanged();
     void allowLocalNetworkFetchChanged();
     void embeddingModelChanged();
+    void embeddingBaseUrlChanged();
     void logLevelChanged();
     void systemPromptOverrideChanged();
 
@@ -135,6 +143,7 @@ private:
     bool m_localOnlyMode{false};
     bool m_allowLocalNetworkFetch{false};
     QString m_embeddingModel{QStringLiteral("nomic-embed-text")};
+    QString m_embeddingBaseUrl{QStringLiteral("http://localhost:11434")};
     QString m_logLevel{QStringLiteral("info")};
     QString m_systemPromptOverride;
 
