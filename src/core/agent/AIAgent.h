@@ -84,7 +84,11 @@ public:
     QJsonArray auditLog(int limit = 100) const;
 
 public slots:
-    void startTask(const QString& userMessage);
+    // Batch 30 (F6): images are compressed data URLs ("data:image/jpeg;
+    // base64,..."); files are {name, content} text attachments folded into
+    // the request text (the persisted message keeps them as a field).
+    void startTask(const QString& userMessage, const QStringList& images = {},
+                   const QJsonArray& files = {});
     void approveToolCall(const QString& id, bool approved);
     void stop();                                    // abort generation, keep trace
     void resetSession();                            // clear everything, fresh session

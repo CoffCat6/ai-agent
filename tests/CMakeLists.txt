@@ -75,3 +75,6 @@ add_test(NAME test_highlighter COMMAND test_highlighter)
 
 # Sampling-param normalizer (header-only, no service dependencies)
 nexus_add_test(test_sampling_params test_sampling_params.cpp)
+
+# Batch 30 (F6): multimodal data-URL parsing (pure string helpers)
+nexus_add_test(test_data_url_utils test_data_url_utils.cpp)

@@ -6,6 +6,7 @@
 
 #include <QDateTime>
 #include <QJsonArray>
+#include <QJsonArray>
 #include <QJsonDocument>
 #include <QJsonObject>
 #include <QUuid>
@@ -170,7 +171,8 @@ void ChatSessionController::updateLastNodeStatus(const QString& status) {
 
 // ── QML actions ──────────────────────────────────────────
 
-void ChatSessionController::startTask(const QString& input) {
+void ChatSessionController::startTask(const QString& input, const QStringList& images,
+                                      const QJsonArray& files) {
     if (isBusy()) return;
     Activity::usage(Activity::Kind::User, QStringLiteral("task.start"),
                     input.left(80));
@@ -179,7 +181,7 @@ void ChatSessionController::startTask(const QString& input) {
     emit responseReady();
 
     if (m_agent) {
-        m_agent->startTask(input);
+        m_agent->startTask(input, images, files);
         return;
     }
 
@@ -190,7 +192,22 @@ void ChatSessionController::startTask(const QString& input) {
     m_simInput = input;
     m_usedTokens = 0;
     emit tokenUsageChanged();
-    appendTraceNode("user_message", input, "completed");
+
+    QJsonObject userNode;
+    userNode["id"] = QUuid::createUuid().toString(QUuid::WithoutBraces);
+    userNode["type"] = "user_message";
+    userNode["title"] = input;
+    userNode["status"] = "completed";
+    userNode["timestamp"] = QDateTime::currentMSecsSinceEpoch();
+    userNode["args"] = QString();
+    userNode["result"] = QString();
+    if (!images.isEmpty())
+        userNode["images"] = QJsonArray::fromStringList(images);
+    if (!files.isEmpty())
+        userNode["files"] = files;
+    m_trace.appendNode(userNode.toVariantMap());
+    emit traceChanged();
+
     m_usedTokens = input.length() / 4;
     emit tokenUsageChanged();
     setState(AgentState::Thinking);

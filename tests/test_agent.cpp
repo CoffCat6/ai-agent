@@ -325,6 +325,37 @@ class TestAgent : public QObject {
     FakeAIService otherLlm;   // fixture-owned: safe even when a test aborts early
 
 private slots:
+    // Batch 30 (F6): text attachments fold into the request copy of the user
+    // message as "[Attached file: ...]" sections; images ride on the message.
+    void textAttachmentsFoldIntoRequest() {
+        SqliteMemory memory(QStringLiteral(":memory:"));
+        agent.setMemory(&memory);
+
+        QJsonArray files;
+        QJsonObject file;
+        file["name"] = "notes.txt";
+        file["content"] = "the launch code is 1234";
+        files.append(file);
+        agent.startTask(QStringLiteral("summarize the attachment"), {}, files);
+
+        QTRY_VERIFY(!llm.seenMessages.isEmpty());
+        const QJsonArray last = llm.seenMessages.last();
+        bool found = false;
+        for (const auto& entry : last) {
+            const QJsonObject msg = entry.toObject();
+            if (msg.value("role").toString() == "user"
+                    && msg.value("content").toString()
+                           .contains("the launch code is 1234")) {
+                found = true;
+                QVERIFY(msg.value("content").toString()
+                            .contains("--- Attached file: notes.txt ---"));
+                QVERIFY(!msg.contains("files"));   // stripped from the request
+            }
+        }
+        QVERIFY(found);
+        agent.setMemory(nullptr);
+    }
+
     void initTestCase() {
         agent.setLLMService(&llm);
         agent.setToolRegistry(&ToolRegistry::instance());

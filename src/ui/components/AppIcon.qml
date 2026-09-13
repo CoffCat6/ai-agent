@@ -66,6 +66,12 @@ Canvas {
         "add": function(c) {
             line(c, 12, 5.5, 12, 18.5); line(c, 5.5, 12, 18.5, 12)
         },
+        "image": function(c) {
+            roundedRect(c, 4, 5, 16, 14, 2)
+            polyline(c, [4.5, 15.5, 9, 11.5, 12.5, 14.5])
+            polyline(c, [11.5, 14, 16, 9.5, 19.5, 12.5])
+            circle(c, 9, 8.5, 1.2)
+        },
         "chevron-left": function(c) { polyline(c, [14.5, 5.5, 8, 12, 14.5, 18.5]) },
         "chevron-right": function(c) { polyline(c, [9.5, 5.5, 16, 12, 9.5, 18.5]) },
         "chevron-up": function(c) { polyline(c, [5.5, 14.5, 12, 8, 18.5, 14.5]) },

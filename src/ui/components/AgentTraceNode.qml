@@ -198,6 +198,66 @@ Item {
             renderType: Text.NativeRendering
         }
 
+        // Attached images & text files (Batch 30, F6)
+        Row {
+            visible: modelData.type === "user_message"
+                     && (modelData.images !== undefined
+                         || modelData.files !== undefined)
+            Layout.fillWidth: true
+            spacing: 6
+
+            Repeater {
+                model: modelData.images !== undefined ? modelData.images : []
+
+                delegate: Rectangle {
+                    width: 96
+                    height: 72
+                    radius: 6
+                    color: Theme.surfaceHover
+                    clip: true
+
+                    Image {
+                        anchors.fill: parent
+                        source: modelData
+                        fillMode: Image.PreserveAspectCrop
+                        asynchronous: true
+                    }
+                }
+            }
+
+            Repeater {
+                model: modelData.files !== undefined ? modelData.files : []
+
+                delegate: Rectangle {
+                    width: fileChip.width + 16
+                    height: 28
+                    radius: 4
+                    color: Theme.surfaceHover
+
+                    Row {
+                        id: fileChip
+                        anchors.centerIn: parent
+                        spacing: 4
+
+                        AppIcon {
+                            anchors.verticalCenter: parent.verticalCenter
+                            icon: "export"
+                            size: 12
+                            iconColor: Theme.textSecondary
+                        }
+
+                        Text {
+                            text: modelData.name
+                            color: Theme.textPrimary
+                            font.pixelSize: Theme.fontSizeCaption
+                            font.family: Theme.fontSans
+                            anchors.verticalCenter: parent.verticalCenter
+                        }
+                    }
+                }
+            }
+        }
+
         // Markdown-rendered response (summary nodes) with copy button
         Item {
             visible: modelData.type === "summary"

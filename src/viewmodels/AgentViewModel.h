@@ -242,7 +242,17 @@ public:
     Q_INVOKABLE void activateTab(int index);
 
     // ── QML-invokable actions ─────────────────────────
-    Q_INVOKABLE void startTask(const QString& input);
+    // Batch 30 (F6): images are compressed data URLs; files are
+    // {kind:"file", name, content} text attachments folded into the request.
+    Q_INVOKABLE void startTask(const QString& input, const QStringList& images = {},
+                               const QVariantList& files = {});
+    // Compressed data URL of the clipboard image (empty when none).
+    Q_INVOKABLE QString clipboardImageDataUrl() const;
+    // Compressed data URL of an image file picked in QML (empty when unreadable).
+    Q_INVOKABLE QString loadImageDataUrl(const QString& path) const;
+    // {kind:"file", name, content} for a text attachment; empty map on
+    // rejection (too large / binary).
+    Q_INVOKABLE QVariantMap loadTextFileAttachment(const QString& path);
     Q_INVOKABLE void approveToolCall(const QString& id, bool approved);
     Q_INVOKABLE void stop();                 // abort generation, keep trace
     Q_INVOKABLE void newChat();              // reset to a fresh session
@@ -369,6 +379,10 @@ private:
     LogModel* m_logModel;
 
     static AgentViewModel* s_instance;
+
+    // Batch 30 (F6): upper bound for one text attachment (kept modest so a
+    // mis-picked binary does not blow up the context budget).
+    static constexpr int MaxTextAttachmentBytes = 512 * 1024;
 };
 
 } // namespace NexusAI

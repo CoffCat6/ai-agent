@@ -41,6 +41,10 @@ public:
     static QString accumulateName(const QString& acc, const QString& incoming);
     static QString accumulateArguments(const QString& acc, const QString& incoming);
 
+    // Batch 30 (F6): images-carrying user messages become multipart content
+    // arrays; public static so the request format is directly testable.
+    static QJsonArray convertMessagesForOpenAI(const QJsonArray& messages);
+
 protected:
     // Tool call fragments accumulated across SSE deltas of one request
     struct StreamToolCall {

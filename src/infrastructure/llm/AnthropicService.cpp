@@ -1,5 +1,7 @@
 #include "AnthropicService.h"
 
+#include "core/utils/DataUrlUtils.h"
+
 #include <QNetworkRequest>
 #include <QJsonDocument>
 #include <QJsonArray>
@@ -124,6 +126,32 @@ AnthropicService::convertMessages(const QJsonArray& messages) {
         }
 
         if (role == "user") {
+            // Batch 30 (F6): a turn carrying images becomes content blocks
+            // (images + text) and is never merged with plain-text neighbors.
+            const QJsonArray images = msg.value("images").toArray();
+            if (!images.isEmpty()) {
+                QJsonArray blocks;
+                for (const auto& image : images) {
+                    const auto parsed = DataUrlUtils::parseDataUrl(image.toString());
+                    if (!parsed.ok) continue;
+                    blocks.append(QJsonObject{
+                        {"type", "image"},
+                        {"source", QJsonObject{
+                            {"type", "base64"},
+                            {"media_type", parsed.mimeType},
+                            {"data", QString::fromUtf8(parsed.base64)}
+                        }}
+                    });
+                }
+                const QString text = msg.value("content").toString();
+                if (!text.isEmpty())
+                    blocks.append(QJsonObject{{"type", "text"}, {"text", text}});
+                QJsonObject m;
+                m["role"] = "user";
+                m["content"] = blocks;
+                out.messages.append(m);
+                continue;
+            }
             const QString content = msg.value("content").toString();
             if (!content.isEmpty()) appendMerged("user", content);
         }

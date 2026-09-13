@@ -29,6 +29,32 @@ class TestMemory : public QObject {
     Q_OBJECT
 
 private slots:
+    // Batch 30 (F6): attached images persist through the metadata column
+    // and are promoted back to the message top level on load.
+    void imageMessagesRoundTrip() {
+        SqliteMemory memory(":memory:");
+
+        const QJsonArray images{
+            QStringLiteral("data:image/jpeg;base64,QUJD")};
+        QJsonObject msg{
+            {"role", "user"},
+            {"content", "what is in this picture?"},
+            {"images", images}};
+        memory.saveMessage(QStringLiteral("s-img"), msg);
+        memory.saveMessage(QStringLiteral("s-img"), QJsonObject{
+            {"role", "assistant"}, {"content", "a red square"}});
+
+        const QJsonArray loaded = memory.loadMessages(QStringLiteral("s-img"));
+        QCOMPARE(loaded.size(), 2);
+        const QJsonObject userMsg = loaded.at(0).toObject();
+        QCOMPARE(userMsg.value("role").toString(), QStringLiteral("user"));
+        QVERIFY(userMsg.contains("images"));
+        QCOMPARE(userMsg.value("images").toArray().size(), 1);
+        QCOMPARE(userMsg.value("images").toArray().at(0).toString(),
+                 QStringLiteral("data:image/jpeg;base64,QUJD"));
+        QVERIFY(!loaded.at(1).toObject().contains("images"));
+    }
+
     void messageRoundTrip();
     void loadMessagesKeepsNewest();
     void sessionBookkeepingAndClear();

@@ -35,12 +35,12 @@
         <translation>Collapsed · %1 chars, click to expand</translation>
     </message>
     <message>
-        <location filename="../src/ui/components/AgentTraceNode.qml" line="254"/>
+        <location filename="../src/ui/components/AgentTraceNode.qml" line="314"/>
         <source>拒绝</source>
         <translation>Deny</translation>
     </message>
     <message>
-        <location filename="../src/ui/components/AgentTraceNode.qml" line="262"/>
+        <location filename="../src/ui/components/AgentTraceNode.qml" line="322"/>
         <source>允许</source>
         <translation>Allow</translation>
     </message>
@@ -287,9 +287,47 @@ and the model can retrieve their content to answer questions</translation>
 <context>
     <name>InputConsole</name>
     <message>
-        <location filename="../src/ui/components/InputConsole.qml" line="63"/>
+        <source>图片将随消息发送给当前模型服务</source>
+        <translation type="vanished">Images are sent to the current model service with your message</translation>
+    </message>
+    <message>
+        <location filename="../src/ui/components/InputConsole.qml" line="189"/>
+        <source>附件将随消息发送给当前模型服务</source>
+        <translation>Attachments are sent to the current model service with your message</translation>
+    </message>
+    <message>
+        <location filename="../src/ui/components/InputConsole.qml" line="223"/>
         <source>输入消息... (Enter 发送, Shift+Enter 换行)</source>
         <translation>Type a message... (Enter to send, Shift+Enter for newline)</translation>
+    </message>
+    <message>
+        <location filename="../src/ui/components/InputConsole.qml" line="350"/>
+        <source>上传图片</source>
+        <translation>Upload image</translation>
+    </message>
+    <message>
+        <location filename="../src/ui/components/InputConsole.qml" line="354"/>
+        <source>上传文件</source>
+        <translation>Upload file</translation>
+    </message>
+    <message>
+        <location filename="../src/ui/components/InputConsole.qml" line="368"/>
+        <source>文本文件 (*.txt *.md *.json *.csv *.log *.xml *.yml *.yaml *.ini *.cpp *.h *.py *.js *.ts)</source>
+        <translation type="unfinished"/>
+    </message>
+    <message>
+        <source>图片与文本 (*.png *.jpg *.jpeg *.webp *.bmp *.gif *.txt *.md *.json *.csv *.log *.xml *.yml *.yaml *.ini *.cpp *.h *.py *.js *.ts)</source>
+        <translation type="vanished">Images &amp; text (*.png *.jpg *.jpeg *.webp *.bmp *.gif *.txt *.md *.json *.csv *.log *.xml *.yml *.yaml *.ini *.cpp *.h *.py *.js *.ts)</translation>
+    </message>
+    <message>
+        <location filename="../src/ui/components/InputConsole.qml" line="369"/>
+        <source>全部文件 (*)</source>
+        <translation>All files (*)</translation>
+    </message>
+    <message>
+        <location filename="../src/ui/components/InputConsole.qml" line="361"/>
+        <source>图片文件 (*.png *.jpg *.jpeg *.webp *.bmp *.gif)</source>
+        <translation>Image files (*.png *.jpg *.jpeg *.webp *.bmp *.gif)</translation>
     </message>
 </context>
 <context>
@@ -721,27 +759,27 @@ and the model can retrieve their content to answer questions</translation>
         <translation>Base Font Size</translation>
     </message>
     <message>
-        <location filename="../src/viewmodels/AgentViewModel.cpp" line="116"/>
+        <location filename="../src/viewmodels/AgentViewModel.cpp" line="121"/>
         <source>侧边栏默认宽度</source>
         <translation>Default Sidebar Width</translation>
     </message>
     <message>
-        <location filename="../src/viewmodels/AgentViewModel.cpp" line="117"/>
+        <location filename="../src/viewmodels/AgentViewModel.cpp" line="122"/>
         <source>面板默认宽度</source>
         <translation>Default Panel Width</translation>
     </message>
     <message>
-        <location filename="../src/viewmodels/AgentViewModel.cpp" line="118"/>
+        <location filename="../src/viewmodels/AgentViewModel.cpp" line="123"/>
         <source>侧边栏默认展开</source>
         <translation>Expand Sidebar by Default</translation>
     </message>
     <message>
-        <location filename="../src/viewmodels/AgentViewModel.cpp" line="119"/>
+        <location filename="../src/viewmodels/AgentViewModel.cpp" line="124"/>
         <source>面板默认展开</source>
         <translation>Expand Panel by Default</translation>
     </message>
     <message>
-        <location filename="../src/viewmodels/AgentViewModel.cpp" line="120"/>
+        <location filename="../src/viewmodels/AgentViewModel.cpp" line="125"/>
         <source>启动时恢复窗口</source>
         <translation>Restore Window on Startup</translation>
     </message>
@@ -794,22 +832,22 @@ and the model can retrieve their content to answer questions</translation>
         <translation type="vanished">Restore Window on Startup</translation>
     </message>
     <message>
-        <location filename="../src/viewmodels/AgentViewModel.cpp" line="274"/>
+        <location filename="../src/viewmodels/AgentViewModel.cpp" line="279"/>
         <source>新会话</source>
         <translation>New Session</translation>
     </message>
     <message>
-        <location filename="../src/viewmodels/AgentViewModel.cpp" line="344"/>
+        <location filename="../src/viewmodels/AgentViewModel.cpp" line="349"/>
         <source>导出失败：未连接持久化后端</source>
         <translation>Export failed: no persistent backend connected</translation>
     </message>
     <message>
-        <location filename="../src/viewmodels/AgentViewModel.cpp" line="349"/>
+        <location filename="../src/viewmodels/AgentViewModel.cpp" line="354"/>
         <source>导出失败：不支持的格式“%1”（可选 md / json）</source>
         <translation>Export failed: unsupported format "%1" (md / json)</translation>
     </message>
     <message>
-        <location filename="../src/viewmodels/AgentViewModel.cpp" line="364"/>
+        <location filename="../src/viewmodels/AgentViewModel.cpp" line="369"/>
         <source># NexusAI 会话导出
 
 </source>
@@ -818,21 +856,21 @@ and the model can retrieve their content to answer questions</translation>
 </translation>
     </message>
     <message>
-        <location filename="../src/viewmodels/AgentViewModel.cpp" line="365"/>
+        <location filename="../src/viewmodels/AgentViewModel.cpp" line="370"/>
         <source>- 会话 ID：%1
 </source>
         <translation>- Session ID: %1
 </translation>
     </message>
     <message>
-        <location filename="../src/viewmodels/AgentViewModel.cpp" line="366"/>
+        <location filename="../src/viewmodels/AgentViewModel.cpp" line="371"/>
         <source>- 导出时间：%1
 </source>
         <translation>- Exported at: %1
 </translation>
     </message>
     <message>
-        <location filename="../src/viewmodels/AgentViewModel.cpp" line="367"/>
+        <location filename="../src/viewmodels/AgentViewModel.cpp" line="372"/>
         <source>- 消息数：%1
 
 ---
@@ -845,17 +883,17 @@ and the model can retrieve their content to answer questions</translation>
 </translation>
     </message>
     <message>
-        <location filename="../src/viewmodels/AgentViewModel.cpp" line="371"/>
+        <location filename="../src/viewmodels/AgentViewModel.cpp" line="376"/>
         <source>用户</source>
         <translation>User</translation>
     </message>
     <message>
-        <location filename="../src/viewmodels/AgentViewModel.cpp" line="372"/>
+        <location filename="../src/viewmodels/AgentViewModel.cpp" line="377"/>
         <source>助手</source>
         <translation>Assistant</translation>
     </message>
     <message>
-        <location filename="../src/viewmodels/AgentViewModel.cpp" line="381"/>
+        <location filename="../src/viewmodels/AgentViewModel.cpp" line="386"/>
         <source>---
 
 ## 过程摘要
@@ -868,69 +906,79 @@ and the model can retrieve their content to answer questions</translation>
 </translation>
     </message>
     <message>
-        <location filename="../src/viewmodels/AgentViewModel.cpp" line="410"/>
+        <location filename="../src/viewmodels/AgentViewModel.cpp" line="415"/>
         <source>导出失败：无法写入 %1</source>
         <translation>Export failed: cannot write %1</translation>
     </message>
     <message>
-        <location filename="../src/viewmodels/AgentViewModel.cpp" line="415"/>
+        <location filename="../src/viewmodels/AgentViewModel.cpp" line="420"/>
         <source>导出失败：写入未完成 %1</source>
         <translation>Export failed: write incomplete %1</translation>
     </message>
     <message>
-        <location filename="../src/viewmodels/AgentViewModel.cpp" line="421"/>
+        <location filename="../src/viewmodels/AgentViewModel.cpp" line="426"/>
         <source>已导出会话（%1 条消息）：%2</source>
         <translation>Session exported (%1 messages): %2</translation>
     </message>
     <message>
-        <location filename="../src/viewmodels/AgentViewModel.cpp" line="479"/>
+        <location filename="../src/viewmodels/AgentViewModel.cpp" line="484"/>
         <source>无法读取文件：%1</source>
         <translation>Cannot read file: %1</translation>
     </message>
     <message>
-        <location filename="../src/viewmodels/AgentViewModel.cpp" line="484"/>
+        <location filename="../src/viewmodels/AgentViewModel.cpp" line="489"/>
         <source>无法打开文件：%1</source>
         <translation>Cannot open file: %1</translation>
     </message>
     <message>
-        <location filename="../src/viewmodels/AgentViewModel.cpp" line="495"/>
+        <location filename="../src/viewmodels/AgentViewModel.cpp" line="500"/>
         <source>文档内容已存在，已跳过：%1</source>
         <translation>Document content already exists, skipped: %1</translation>
     </message>
     <message>
-        <location filename="../src/viewmodels/AgentViewModel.cpp" line="525"/>
+        <location filename="../src/viewmodels/AgentViewModel.cpp" line="530"/>
         <source>未找到文档内容，无法重新嵌入：%1</source>
         <translation>Document content not found, cannot re-embed: %1</translation>
     </message>
     <message>
-        <location filename="../src/viewmodels/AgentViewModel.cpp" line="543"/>
+        <location filename="../src/viewmodels/AgentViewModel.cpp" line="548"/>
         <source>已重新嵌入 %1（%2 段）</source>
         <translation>Re-embedded %1 (%2 chunks)</translation>
     </message>
     <message>
-        <location filename="../src/viewmodels/AgentViewModel.cpp" line="545"/>
+        <location filename="../src/viewmodels/AgentViewModel.cpp" line="550"/>
         <source>重新嵌入失败：%1</source>
         <translation>Re-embedding failed: %1</translation>
     </message>
     <message>
-        <location filename="../src/viewmodels/AgentViewModel.cpp" line="549"/>
+        <location filename="../src/viewmodels/AgentViewModel.cpp" line="554"/>
         <source>已导入 %1（%2 段）</source>
         <translation>Imported %1 (%2 chunks)</translation>
     </message>
     <message>
-        <location filename="../src/viewmodels/AgentViewModel.cpp" line="551"/>
+        <location filename="../src/viewmodels/AgentViewModel.cpp" line="556"/>
         <source>导入失败（文件为空或无法分块）：%1</source>
         <translation>Import failed (file is empty or cannot be chunked): %1</translation>
     </message>
     <message>
-        <location filename="../src/viewmodels/AgentViewModel.cpp" line="553"/>
+        <location filename="../src/viewmodels/AgentViewModel.cpp" line="558"/>
         <source>知识库总量已达上限（最多 %1 段），请先删除部分文档后再导入</source>
         <translation>Knowledge base has reached its limit (max %1 chunks); delete some documents before importing</translation>
     </message>
     <message>
-        <location filename="../src/viewmodels/AgentViewModel.cpp" line="556"/>
+        <location filename="../src/viewmodels/AgentViewModel.cpp" line="561"/>
         <source>文件过大（超过单文档 %1 段上限）：%2</source>
         <translation>File too large (exceeds the per-document limit of %1 chunks): %2</translation>
+    </message>
+    <message>
+        <location filename="../src/viewmodels/AgentViewModel.cpp" line="701"/>
+        <source>文件过大（附件上限 %1 KB）：%2</source>
+        <translation type="unfinished"/>
+    </message>
+    <message>
+        <location filename="../src/viewmodels/AgentViewModel.cpp" line="706"/>
+        <source>暂不支持二进制文件作为附件：%1</source>
+        <translation type="unfinished"/>
     </message>
 </context>
 <context>
@@ -1179,7 +1227,7 @@ and the model can retrieve their content to answer questions</translation>
         <translation>Yesterday</translation>
     </message>
     <message>
-        <location filename="../src/core/memory/SqliteMemory.cpp" line="571"/>
+        <location filename="../src/core/memory/SqliteMemory.cpp" line="587"/>
         <source>消息库超过 %1 条：少于 3 个字符的关键词只能全表扫描，请输入至少 3 个字符以使用全文索引。</source>
         <translation>The message store exceeds %1 rows: keywords shorter than 3 characters fall back to a full table scan. Enter at least 3 characters to use the full-text index.</translation>
     </message>

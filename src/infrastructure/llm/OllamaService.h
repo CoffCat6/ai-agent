@@ -17,6 +17,10 @@ namespace NexusAI {
 class OllamaService : public LLMServiceBase {
     Q_OBJECT
 public:
+    // Batch 30 (F6): Ollama expects bare base64 payloads in "images";
+    // public static so the conversion is directly testable.
+    static QJsonArray convertMessagesForOllama(const QJsonArray& messages);
+
     explicit OllamaService(QObject* parent = nullptr);
 
     void chatComplete(const QJsonArray& messages, const QJsonArray& tools = {}) override;
@@ -49,8 +53,6 @@ protected:
     { return parseResponse(json); }
 
 private:
-    static QJsonArray convertMessagesForOllama(const QJsonArray& messages);
-
     QJsonObject buildRequestBody(const QJsonArray& messages, const QJsonArray& tools);
 
     // Batch 15: unset = invalid QVariant → options object omitted.

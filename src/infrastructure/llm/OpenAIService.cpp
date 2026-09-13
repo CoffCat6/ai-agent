@@ -15,10 +15,42 @@ OpenAIService::OpenAIService(QObject* parent)
     m_baseUrl = QStringLiteral("https://api.openai.com/v1");
 }
 
+// Batch 30 (F6): user messages carrying images become multipart content
+// arrays ([text, image_url, ...]); messages without images keep the plain
+// string content — strict OpenAI-compatible gateways must not see arrays
+// where they expect strings. The non-standard "images" field is stripped.
+QJsonArray OpenAIService::convertMessagesForOpenAI(const QJsonArray& messages) {
+    QJsonArray out;
+    for (const auto& entry : messages) {
+        QJsonObject msg = entry.toObject();
+        const QJsonArray images = msg.value("images").toArray();
+        if (msg.value("role").toString() != "user" || images.isEmpty()) {
+            msg.remove("images");
+            out.append(msg);
+            continue;
+        }
+
+        QJsonArray content;
+        const QString text = msg.value("content").toString();
+        if (!text.isEmpty())
+            content.append(QJsonObject{{"type", "text"}, {"text", text}});
+        for (const auto& image : images) {
+            content.append(QJsonObject{
+                {"type", "image_url"},
+                {"image_url", QJsonObject{{"url", image.toString()}}}
+            });
+        }
+        msg["content"] = content;
+        msg.remove("images");
+        out.append(msg);
+    }
+    return out;
+}
+
 QJsonObject OpenAIService::buildRequestBody(const QJsonArray& messages, const QJsonArray& tools) {
     QJsonObject body;
     body["model"] = m_model;
-    body["messages"] = messages;
+    body["messages"] = convertMessagesForOpenAI(messages);
     body["stream"] = true; // SSE streaming
 
     // Batch 15: sampling params are opt-in - absent from the JSON unless the

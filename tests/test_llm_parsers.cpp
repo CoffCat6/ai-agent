@@ -3,6 +3,7 @@
 #include "infrastructure/llm/OpenAIService.h"
 #include "infrastructure/llm/OllamaService.h"
 #include "infrastructure/llm/AnthropicService.h"
+#include "core/utils/DataUrlUtils.h"
 
 #include <QtTest>
 #include <QJsonDocument>
@@ -24,6 +25,63 @@ class TestLlmParsers : public QObject {
     Q_OBJECT
 
 private slots:
+    // Batch 30 (F6): images-carrying user messages convert to the provider
+    // vision formats; messages without images stay untouched.
+    void multimodalMessageConversion() {
+        const QJsonObject user{
+            {"role", "user"},
+            {"content", "what is in this picture?"},
+            {"images", QJsonArray{
+                QStringLiteral("data:image/jpeg;base64,QUJD")}
+            }};
+
+        // OpenAI: multipart content array, non-standard field stripped.
+        const QJsonArray openai = OpenAIService::convertMessagesForOpenAI({user});
+        QCOMPARE(openai.size(), 1);
+        const QJsonObject oMsg = openai.at(0).toObject();
+        QVERIFY(!oMsg.contains("images"));
+        const QJsonArray oContent = oMsg.value("content").toArray();
+        QCOMPARE(oContent.size(), 2);
+        QCOMPARE(oContent.at(0).toObject().value("type").toString(),
+                 QStringLiteral("text"));
+        QCOMPARE(oContent.at(1).toObject().value("type").toString(),
+                 QStringLiteral("image_url"));
+        QCOMPARE(oContent.at(1).toObject().value("image_url").toObject()
+                     .value("url").toString(),
+                 QStringLiteral("data:image/jpeg;base64,QUJD"));
+
+        // Plain messages keep the string content form.
+        const QJsonObject plain{{"role", "user"}, {"content", "hi"}};
+        const QJsonArray openaiPlain =
+            OpenAIService::convertMessagesForOpenAI({plain});
+        QVERIFY(openaiPlain.at(0).toObject().value("content").isString());
+
+        // Anthropic: image block with base64 source + text block.
+        const auto anthropic = AnthropicService::convertMessages({user});
+        QCOMPARE(anthropic.messages.size(), 1);
+        const QJsonArray aContent =
+            anthropic.messages.at(0).toObject().value("content").toArray();
+        QCOMPARE(aContent.size(), 2);
+        QCOMPARE(aContent.at(0).toObject().value("type").toString(),
+                 QStringLiteral("image"));
+        QCOMPARE(aContent.at(0).toObject().value("source").toObject()
+                     .value("media_type").toString(),
+                 QStringLiteral("image/jpeg"));
+        QCOMPARE(aContent.at(0).toObject().value("source").toObject()
+                     .value("data").toString(),
+                 QStringLiteral("QUJD"));
+        QCOMPARE(aContent.at(1).toObject().value("type").toString(),
+                 QStringLiteral("text"));
+
+        // Ollama: bare base64 payloads in "images".
+        const QJsonArray ollama = OllamaService::convertMessagesForOllama({user});
+        const QJsonArray bare = ollama.at(0).toObject().value("images").toArray();
+        QCOMPARE(bare.size(), 1);
+        QCOMPARE(bare.at(0).toString(), QStringLiteral("QUJD"));
+        QCOMPARE(ollama.at(0).toObject().value("content").toString(),
+                 QStringLiteral("what is in this picture?"));
+    }
+
     // ── OpenAI-compatible ─────────────────────────────
     void openaiPlainText();
     void openaiToolCalls();

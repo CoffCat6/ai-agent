@@ -1,5 +1,7 @@
 #include "OllamaService.h"
 
+#include "core/utils/DataUrlUtils.h"
+
 #include <QNetworkRequest>
 #include <QJsonDocument>
 #include <QJsonArray>
@@ -56,6 +58,17 @@ QJsonArray OllamaService::convertMessagesForOllama(const QJsonArray& messages) {
     for (const auto& entry : messages) {
         QJsonObject msg = entry.toObject();
         const QString role = msg.value("role").toString();
+
+        // Batch 30 (F6): Ollama expects bare base64 payloads in "images".
+        const QJsonArray images = msg.value("images").toArray();
+        if (!images.isEmpty()) {
+            QJsonArray bare;
+            for (const auto& image : images) {
+                const auto parsed = DataUrlUtils::parseDataUrl(image.toString());
+                bare.append(QString::fromUtf8(parsed.base64));
+            }
+            msg["images"] = bare;
+        }
 
         if (role == "assistant") {
             // Ollama rejects null content

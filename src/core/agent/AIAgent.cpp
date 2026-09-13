@@ -165,6 +165,8 @@ QString AIAgent::appendTraceNode(const QString& type, const QString& title,
     node["timestamp"] = QDateTime::currentDateTime().toMSecsSinceEpoch();
     node["args"] = extra.value("args").toString();
     node["result"] = extra.value("result").toString();
+    if (extra.contains("images"))
+        node["images"] = extra.value("images");
 
     m_traceModel.append(node);
     persistTraceNode(node, m_traceModel.size() - 1);
@@ -232,7 +234,8 @@ void AIAgent::renameSession(const QString& sessionId, const QString& title) {
     emit sessionsChanged();
 }
 
-void AIAgent::startTask(const QString& userMessage) {
+void AIAgent::startTask(const QString& userMessage, const QStringList& images,
+                        const QJsonArray& files) {
     if (m_active) return;
 
     const bool fresh = m_sessionId.isEmpty();
@@ -270,10 +273,35 @@ void AIAgent::startTask(const QString& userMessage) {
     QJsonObject userMsg;
     userMsg["role"] = "user";
     userMsg["content"] = userMessage;
+    // Batch 30 (F6): images arrive as compressed data URLs (the viewmodel
+    // downsizes before calling in — nexus_core must not link QtGui).
+    if (!images.isEmpty()) {
+        QJsonArray imageUrls;
+        for (const QString& dataUrl : images)
+            if (!dataUrl.isEmpty())
+                imageUrls.append(dataUrl);
+        if (!imageUrls.isEmpty()) {
+            userMsg["images"] = imageUrls;
+            userMsg["metadata"] = QJsonObject{{"images", imageUrls}};
+        }
+    }
+    // Text attachments ride as a separate field; the request-time folding
+    // into the message text happens in processIteration.
+    if (!files.isEmpty()) {
+        userMsg["files"] = files;
+        QJsonObject metadata = userMsg.value("metadata").toObject();
+        metadata["files"] = files;
+        userMsg["metadata"] = metadata;
+    }
     m_messages.append(userMsg);
     if (m_memory) m_memory->saveMessage(m_sessionId, userMsg);
 
-    appendTraceNode("user_message", userMessage, "completed");
+    QJsonObject extra;
+    if (userMsg.contains("images"))
+        extra["images"] = userMsg.value("images");
+    if (userMsg.contains("files"))
+        extra["files"] = userMsg.value("files");
+    appendTraceNode("user_message", userMessage, "completed", extra);
     notifyTokens();
 
     m_active = true;
@@ -362,7 +390,20 @@ void AIAgent::resumeSession(const QString& sessionId) {
             const QJsonObject msg = entry.toObject();
             const QString role = msg.value("role").toString();
             if (role == "user") {
-                appendTraceNode("user_message", msg.value("content").toString(), "completed");
+                QJsonObject userNode;
+                userNode["id"] = QUuid::createUuid().toString(QUuid::WithoutBraces);
+                userNode["type"] = "user_message";
+                userNode["title"] = msg.value("content").toString();
+                userNode["status"] = "completed";
+                userNode["timestamp"] = QDateTime::currentMSecsSinceEpoch();
+                userNode["args"] = QString();
+                userNode["result"] = QString();
+                // Batch 30: images survive in message metadata (loadMessages
+                // promotes them back to the top level).
+                if (msg.contains("images"))
+                    userNode["images"] = msg.value("images");
+                m_traceModel.append(userNode);
+                emit traceChanged();
             } else if (role == "assistant") {
                 const QString content = msg.value("content").toString();
                 appendTraceNode("summary", content, "completed");
@@ -460,6 +501,24 @@ void AIAgent::processIteration() {
     setState(AgentState::Thinking);
 
     QJsonArray requestMessages = m_messages;
+    // Batch 30 (F6): fold text attachments into the request copy of the user
+    // message — every provider gets them as plain text, while the persisted
+    // message keeps them as a structured field. Images stay on the message
+    // for the provider vision converters.
+    for (int i = 0; i < requestMessages.size(); ++i) {
+        QJsonObject msg = requestMessages.at(i).toObject();
+        const QJsonArray files = msg.value("files").toArray();
+        if (files.isEmpty()) continue;
+        QString content = msg.value("content").toString();
+        for (const auto& file : files) {
+            const QJsonObject f = file.toObject();
+            content += QStringLiteral("\n\n--- Attached file: %1 ---\n%2\n--- End of %1 ---")
+                .arg(f.value("name").toString(), f.value("content").toString());
+        }
+        msg["content"] = content;
+        msg.remove("files");
+        requestMessages.replace(i, msg);
+    }
     if (!m_forcedFinalPush.isEmpty()) {
         QJsonObject pushMsg;
         pushMsg["role"] = "user";

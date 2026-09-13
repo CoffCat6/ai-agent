@@ -68,7 +68,7 @@ public:
         QByteArray match;
         int status = 200;   // HTTP status for the response head (retry tests)
         // Batch 21: extra response headers (e.g. Location for 3xx tests).
-        QByteArray extraHeaders;
+        QByteArray extraHeaders{};
     };
 
     explicit FakeSseServer(QObject* parent = nullptr) : QObject(parent) {

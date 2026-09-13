@@ -37,6 +37,14 @@ public:
         int total = 0;
         total += estimateTokens(msg.value("role").toString());
         total += estimateTokens(msg.value("content").toString());
+        // Batch 30 (F6): attached images travel as vision payload. A flat
+        // 1000 tokens per image is a deliberately conservative middle ground
+        // (real cost varies with resolution); no resolution grading yet.
+        const QJsonArray images = msg.value("images").toArray();
+        total += images.size() * 1000;
+        // Batch 30 (F6): text attachments fold into the request text.
+        for (const auto& file : msg.value("files").toArray())
+            total += estimateTokens(file.toObject().value("content").toString());
         // Overhead per message (~4 tokens for formatting)
         total += 4;
         // REL-1002: assistant tool_calls carry a function name plus JSON

@@ -9,6 +9,11 @@
 #include "core/rag/KnowledgeChunk.h"
 #include "core/tools/ToolRegistry.h"
 #include "core/utils/Logger.h"
+#include "core/utils/DataUrlUtils.h"
+
+#include <QBuffer>
+#include <QClipboard>
+#include <QImage>
 #include "core/utils/Activity.h"
 
 #include <QClipboard>
@@ -634,8 +639,109 @@ void AgentViewModel::initToolRegistry() {
 
 // ── QML Actions ───────────────────────────────────────────
 
-void AgentViewModel::startTask(const QString& input) {
-    active()->startTask(input);
+namespace {
+
+// Batch 30 (F6): decode → downscale so the longest edge fits maxEdge →
+// re-encode JPEG. Lives in the viewmodels layer because QImage needs QtGui,
+// which nexus_core deliberately does not link.
+QString compressedImageDataUrl(const QString& raw, int maxEdge = 1568, int quality = 85) {
+    const auto parsed = DataUrlUtils::parseDataUrl(raw);
+    if (!parsed.ok) return {};
+
+    QImage image;
+    if (!image.loadFromData(QByteArray::fromBase64(parsed.base64))) return {};
+
+    if (image.width() > maxEdge || image.height() > maxEdge)
+        image = image.scaled(maxEdge, maxEdge, Qt::KeepAspectRatio,
+                             Qt::SmoothTransformation);
+
+    QByteArray bytes;
+    QBuffer buffer(&bytes);
+    buffer.open(QIODevice::WriteOnly);
+    if (!image.save(&buffer, "JPEG", quality)) return {};
+
+    return QStringLiteral("data:image/jpeg;base64,")
+        + QString::fromLatin1(bytes.toBase64());
+}
+
+} // namespace
+
+void AgentViewModel::startTask(const QString& input, const QStringList& images,
+                               const QVariantList& files) {
+    QStringList compressed;
+    compressed.reserve(images.size());
+    for (const QString& raw : images) {
+        const QString dataUrl = compressedImageDataUrl(raw);
+        if (!dataUrl.isEmpty())
+            compressed.append(dataUrl);
+    }
+    // Text attachments: {kind:"file", name, content} maps → JSON array.
+    QJsonArray fileArray;
+    for (const QVariant& file : files) {
+        const QVariantMap f = file.toMap();
+        if (f.value("kind").toString() != QLatin1String("file")) continue;
+        fileArray.append(QJsonObject{
+            {"name", f.value("name").toString()},
+            {"content", f.value("content").toString()},
+        });
+    }
+    active()->startTask(input, compressed, fileArray);
+}
+
+// Batch 30 (F6): read a text file as a chat attachment. Binary content
+// (embedded NULs) and oversized files are rejected via noticeOccurred; the
+// QML side just skips adding when the map comes back empty.
+QVariantMap AgentViewModel::loadTextFileAttachment(const QString& path) {
+    const QUrl urlArg(path);
+    const QString localPath = urlArg.isLocalFile() ? urlArg.toLocalFile() : path;
+    QFile file(localPath);
+    if (!file.open(QIODevice::ReadOnly)) return {};
+    const QByteArray bytes = file.readAll();
+    if (bytes.size() > MaxTextAttachmentBytes) {
+        emit noticeOccurred(tr("文件过大（附件上限 %1 KB）：%2")
+            .arg(MaxTextAttachmentBytes / 1024).arg(QFileInfo(localPath).fileName()));
+        return {};
+    }
+    if (bytes.contains('\0')) {
+        emit noticeOccurred(tr("暂不支持二进制文件作为附件：%1")
+            .arg(QFileInfo(localPath).fileName()));
+        return {};
+    }
+    return QVariantMap{
+        {"kind", "file"},
+        {"name", QFileInfo(localPath).fileName()},
+        {"content", QString::fromUtf8(bytes)},
+    };
+}
+
+// Batch 30 (F6): compressed data URL of an image file chosen in QML (empty
+// when unreadable). QML cannot reach QImage, so the conversion and
+// downsizing happen here.
+QString AgentViewModel::loadImageDataUrl(const QString& path) const {
+    const QUrl urlArg(path);
+    const QString localPath = urlArg.isLocalFile() ? urlArg.toLocalFile() : path;
+    QFile file(localPath);
+    if (!file.open(QIODevice::ReadOnly)) return {};
+    // NB: the header must match "data:image/<mime>;base64,..." or
+    // DataUrlUtils::parseDataUrl rejects it (this broke file uploads once).
+    return compressedImageDataUrl(
+        QStringLiteral("data:image/png;base64,")
+            + QString::fromLatin1(file.readAll().toBase64()));
+}
+
+// Batch 30 (F6): compressed data URL of the clipboard image (empty when the
+// clipboard holds no image). QML cannot reach QImage, so the conversion and
+// downsizing happen here.
+QString AgentViewModel::clipboardImageDataUrl() const {
+    const QImage image = QGuiApplication::clipboard()->image();
+    if (image.isNull()) return {};
+    QByteArray png;
+    QBuffer buffer(&png);
+    buffer.open(QIODevice::WriteOnly);
+    image.save(&buffer, "PNG");
+    return compressedImageDataUrl(
+        QStringLiteral("data:image/png;base64,")
+            + QString::fromLatin1(png.toBase64()));
 }
 
 void AgentViewModel::approveToolCall(const QString& id, bool approved) {

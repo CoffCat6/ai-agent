@@ -1,8 +1,10 @@
 #pragma once
 
+#include <QJsonArray>
 #include <QObject>
 #include <QString>
 #include <QTimer>
+#include <QVariantList>
 #include <QVariantMap>
 
 #include "core/agent/AgentState.h"
@@ -46,7 +48,11 @@ public:
     int usedTokens() const { return m_usedTokens; }
     int maxTokens() const;
 
-    void startTask(const QString& input);
+    // Batch 30 (F6): images are compressed data URLs from the viewmodel;
+    // files are {name, content} text attachments (folded into the request
+    // text by the agent).
+    void startTask(const QString& input, const QStringList& images = {},
+                   const QJsonArray& files = {});
     void approveToolCall(const QString& id, bool approved);
     void stop();
     void newChat();

@@ -501,7 +501,16 @@ void SqliteMemory::saveMessage(const QString& sessionId, const QJsonObject& msg)
     query.addBindValue(msg.value("role").toString());
     query.addBindValue(msg.value("content").toString());
     query.addBindValue(QDateTime::currentDateTime().toMSecsSinceEpoch());
-    query.addBindValue(QJsonDocument(msg.value("metadata").toObject()).toJson(QJsonDocument::Compact));
+    // Batch 30 (F6): attached images ride in the metadata JSON column (no
+    // schema migration); loadMessages promotes them back to the top level.
+    QJsonObject metadata = msg.value("metadata").toObject();
+    const QJsonArray images = msg.value("images").toArray();
+    if (!images.isEmpty())
+        metadata["images"] = images;
+    const QJsonArray files = msg.value("files").toArray();
+    if (!files.isEmpty())
+        metadata["files"] = files;
+    query.addBindValue(QJsonDocument(metadata).toJson(QJsonDocument::Compact));
 
     if (!query.exec()) {
         qWarning() << "Failed to save message:" << query.lastError().text();
@@ -529,6 +538,13 @@ QJsonArray SqliteMemory::loadMessages(const QString& sessionId, int limit) {
             msg["role"] = query.value(0).toString();
             msg["content"] = query.value(1).toString();
             msg["metadata"] = QJsonDocument::fromJson(query.value(2).toString().toUtf8()).object();
+            // Batch 30 (F6): promote attached images back to the top level so
+            // the provider converters and the trace rebuild see them.
+            const QJsonObject metadata = msg.value("metadata").toObject();
+            if (metadata.contains("images"))
+                msg["images"] = metadata.value("images");
+            if (metadata.contains("files"))
+                msg["files"] = metadata.value("files");
             // Batch 18: msec epoch for export timestamps (consumers that
             // don't need it simply ignore the extra key).
             msg["timestamp"] = query.value(3).toDouble();

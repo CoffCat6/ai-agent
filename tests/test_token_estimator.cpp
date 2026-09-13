@@ -40,6 +40,21 @@ class TestTokenEstimator : public QObject {
     Q_OBJECT
 
 private slots:
+    // Batch 30 (F6): attached images count a flat 1000 tokens each.
+    void imagesCostFlatPerImage() {
+        const QJsonObject plain{
+            {"role", "user"}, {"content", "hello world"}};
+        const int withoutImages = TokenEstimator::estimateTokens(plain);
+
+        QJsonObject withImages = plain;
+        withImages["images"] = QJsonArray{
+            QStringLiteral("data:image/jpeg;base64,QUJD"),
+            QStringLiteral("data:image/jpeg;base64,REVG")};
+        const int withTwo = TokenEstimator::estimateTokens(withImages);
+
+        QCOMPARE(withTwo - withoutImages, 2 * 1000);
+    }
+
     void estimateBasics();
     void estimateCjkWeighted();
     void compressFittingHistoryUnchanged();
