@@ -20,19 +20,21 @@ namespace NexusAI {
 namespace {
 
 struct ProviderDefaults {
-    QString displayName;
     QString baseUrl;
     QString model;
     QStringList models;
 };
 
+// No displayName in the static table: a translated name must be resolved
+// through tr() at query time (providerDisplayName) so a runtime language
+// switch is reflected; a static-initialized string would be frozen.
 const QHash<QString, ProviderDefaults>& providerDefaults() {
     static const QHash<QString, ProviderDefaults> defaults = {
-        {"openai",    {QStringLiteral("OpenAI 兼容"), QStringLiteral("https://api.openai.com/v1"),  QStringLiteral("gpt-4o-mini"),
+        {"openai",    {QStringLiteral("https://api.openai.com/v1"),  QStringLiteral("gpt-4o-mini"),
                        {QStringLiteral("gpt-4o-mini"), QStringLiteral("gpt-4o"), QStringLiteral("gpt-4-turbo"), QStringLiteral("o3-mini")}}},
-        {"anthropic", {QStringLiteral("Claude"),      QStringLiteral("https://api.anthropic.com"), QStringLiteral("claude-sonnet-4-5"),
+        {"anthropic", {QStringLiteral("https://api.anthropic.com"), QStringLiteral("claude-sonnet-4-5"),
                        {QStringLiteral("claude-sonnet-4-5"), QStringLiteral("claude-3-5-haiku-20241022"), QStringLiteral("claude-3-5-sonnet-20241022"), QStringLiteral("claude-3-opus-20240229")}}},
-        {"ollama",    {QStringLiteral("Ollama 本地"), QStringLiteral("http://localhost:11434"),     QStringLiteral("qwen2.5:7b"),
+        {"ollama",    {QStringLiteral("http://localhost:11434"),     QStringLiteral("qwen2.5:7b"),
                        {QStringLiteral("qwen2.5:7b"), QStringLiteral("llama3.1:8b"), QStringLiteral("deepseek-r1:7b")}}},
     };
     return defaults;
@@ -242,14 +244,14 @@ QVariantList SettingsService::migrateLegacy() {
         const ProviderDefaults& defaults = providerDefaults().value(provider);
         out.append(makeProfile(
             provider,
-            defaults.displayName,
+            providerDisplayName(provider),
             settings.value(provider + "/baseUrl", defaults.baseUrl).toString(),
             settings.value(provider + "/model", defaults.model).toString(),
             provider == QLatin1String("ollama") ? QString() : legacyKey));
     }
     if (out.isEmpty()) {
         const ProviderDefaults& defaults = providerDefaults().value(legacyProvider);
-        out.append(makeProfile(legacyProvider, defaults.displayName,
+        out.append(makeProfile(legacyProvider, providerDisplayName(legacyProvider),
                                defaults.baseUrl, defaults.model, legacyKey));
     }
 
@@ -274,7 +276,7 @@ void SettingsService::persist() {
 QString SettingsService::addProfile() {
     const ProviderDefaults& defaults = providerDefaults().value(QStringLiteral("openai"));
     const QVariantMap profile = makeProfile(QStringLiteral("openai"),
-        QStringLiteral("新配置"), defaults.baseUrl, defaults.model, QString());
+        tr("新配置"), defaults.baseUrl, defaults.model, QString());
 
     const QString id = profile.value("id").toString();
     m_profiles.append(profile);
@@ -419,6 +421,12 @@ void SettingsService::removeModelFromProfile(const QString& id, const QString& m
         }
         return;
     }
+}
+
+QString SettingsService::providerDisplayName(const QString& provider) const {
+    if (provider == QLatin1String("openai")) return tr("OpenAI 兼容");
+    if (provider == QLatin1String("ollama")) return tr("Ollama 本地");
+    return tr("Claude");
 }
 
 QVariantMap SettingsService::defaultEndpoint(const QString& provider) const {

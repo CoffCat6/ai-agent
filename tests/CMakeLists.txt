@@ -42,6 +42,25 @@ add_test(NAME qmllint_gate
 # Needs the viewmodels library (AgentViewModel, SettingsService) in addition to core & infra
 add_executable(test_viewmodel test_viewmodel.cpp)
 target_link_libraries(test_viewmodel PRIVATE nexus_core nexus_infra nexus_viewmodels Qt6::Test)
+# Batch 24 G9: the i18n tests load ":/i18n/nexus_ai_*.qm" — embed the app's
+# generated .qm files into this test binary too (the app's own resource
+# bundle lives in the nexus_ai target, unreachable from here). The lrelease
+# dependency guarantees the .qm files exist before rcc runs.
+add_dependencies(test_viewmodel NexusAI_lrelease)
+# QT_RESOURCE_ALIAS must name the file under the PREFIX; absolute build-tree
+# paths are rejected by qt_add_resources otherwise.
+set_source_files_properties(${CMAKE_BINARY_DIR}/nexus_ai_zh_CN.qm PROPERTIES
+    GENERATED TRUE
+    QT_RESOURCE_ALIAS "nexus_ai_zh_CN.qm")
+set_source_files_properties(${CMAKE_BINARY_DIR}/nexus_ai_en.qm PROPERTIES
+    GENERATED TRUE
+    QT_RESOURCE_ALIAS "nexus_ai_en.qm")
+qt_add_resources(test_viewmodel "i18n_test"
+    PREFIX "/i18n"
+    FILES
+        ${CMAKE_BINARY_DIR}/nexus_ai_zh_CN.qm
+        ${CMAKE_BINARY_DIR}/nexus_ai_en.qm
+)
 add_test(NAME test_viewmodel COMMAND test_viewmodel)
 
 add_executable(test_settings test_settings.cpp)

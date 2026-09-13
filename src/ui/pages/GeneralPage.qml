@@ -68,7 +68,13 @@ Item {
                     delegate: PreferenceControl {
                         Layout.fillWidth: true
                         prefKey: modelData
-                        displayName: PreferenceRegistry.displayName(modelData)
+                        // Reading currentLocale re-evaluates this binding on
+                        // a language switch; displayName resolves the stored
+                        // QT_TRANSLATE_NOOP source at query time.
+                        displayName: {
+                            I18n.currentLocale
+                            return PreferenceRegistry.displayName(modelData)
+                        }
                     }
                 }
             }

@@ -206,72 +206,72 @@
         <translation>偏好</translation>
     </message>
     <message>
-        <location filename="../src/ui/pages/GeneralPage.qml" line="84"/>
+        <location filename="../src/ui/pages/GeneralPage.qml" line="90"/>
         <source>应用行为</source>
         <translation>应用行为</translation>
     </message>
     <message>
-        <location filename="../src/ui/pages/GeneralPage.qml" line="89"/>
+        <location filename="../src/ui/pages/GeneralPage.qml" line="95"/>
         <source>上下文窗口 (Tokens)</source>
         <translation>上下文窗口 (Tokens)</translation>
     </message>
     <message>
-        <location filename="../src/ui/pages/GeneralPage.qml" line="104"/>
+        <location filename="../src/ui/pages/GeneralPage.qml" line="110"/>
         <source>仿真演示模式（不调用真实 LLM）</source>
         <translation>仿真演示模式（不调用真实 LLM）</translation>
     </message>
     <message>
-        <location filename="../src/ui/pages/GeneralPage.qml" line="105"/>
+        <location filename="../src/ui/pages/GeneralPage.qml" line="111"/>
         <source>允许读取整个磁盘</source>
         <translation>允许读取整个磁盘</translation>
     </message>
     <message>
-        <location filename="../src/ui/pages/GeneralPage.qml" line="106"/>
+        <location filename="../src/ui/pages/GeneralPage.qml" line="112"/>
         <source>仅本地模式</source>
         <translation>仅本地模式</translation>
     </message>
     <message>
-        <location filename="../src/ui/pages/GeneralPage.qml" line="107"/>
+        <location filename="../src/ui/pages/GeneralPage.qml" line="113"/>
         <source>允许 http_fetch 访问本机与内网地址</source>
         <translation>允许 http_fetch 访问本机与内网地址</translation>
     </message>
     <message>
-        <location filename="../src/ui/pages/GeneralPage.qml" line="112"/>
+        <location filename="../src/ui/pages/GeneralPage.qml" line="118"/>
         <source>日志级别</source>
         <translation>日志级别</translation>
     </message>
     <message>
-        <location filename="../src/ui/pages/GeneralPage.qml" line="125"/>
+        <location filename="../src/ui/pages/GeneralPage.qml" line="131"/>
         <source>知识库嵌入模型</source>
         <translation>知识库嵌入模型</translation>
     </message>
     <message>
-        <location filename="../src/ui/pages/GeneralPage.qml" line="145"/>
+        <location filename="../src/ui/pages/GeneralPage.qml" line="151"/>
         <source>智能体</source>
         <translation>智能体</translation>
     </message>
     <message>
-        <location filename="../src/ui/pages/GeneralPage.qml" line="148"/>
+        <location filename="../src/ui/pages/GeneralPage.qml" line="154"/>
         <source>自定义系统提示词：留空使用内置提示词；修改即时生效，内容随请求发送给当前模型服务</source>
         <translation>自定义系统提示词：留空使用内置提示词；修改即时生效，内容随请求发送给当前模型服务</translation>
     </message>
     <message>
-        <location filename="../src/ui/pages/GeneralPage.qml" line="162"/>
+        <location filename="../src/ui/pages/GeneralPage.qml" line="168"/>
         <source>留空 = 内置提示词</source>
         <translation>留空 = 内置提示词</translation>
     </message>
     <message>
-        <location filename="../src/ui/pages/GeneralPage.qml" line="177"/>
+        <location filename="../src/ui/pages/GeneralPage.qml" line="183"/>
         <source>%1 字符</source>
         <translation>%1 字符</translation>
     </message>
     <message>
-        <location filename="../src/ui/pages/GeneralPage.qml" line="184"/>
+        <location filename="../src/ui/pages/GeneralPage.qml" line="190"/>
         <source>恢复默认提示词</source>
         <translation>恢复默认提示词</translation>
     </message>
     <message>
-        <location filename="../src/ui/pages/GeneralPage.qml" line="215"/>
+        <location filename="../src/ui/pages/GeneralPage.qml" line="221"/>
         <source>本地智能体桌面应用 · 多模型提供商 · 工具调用 · 本地知识库</source>
         <translation>本地智能体桌面应用 · 多模型提供商 · 工具调用 · 本地知识库</translation>
     </message>
@@ -541,6 +541,11 @@
         <translation>本页修改实时保存，不受底部「保存 / 取消」影响</translation>
     </message>
     <message>
+        <location filename="../src/ui/pages/ModelConfigPage.qml" line="145"/>
+        <source>+ 添加</source>
+        <translation>+ 添加</translation>
+    </message>
+    <message>
         <location filename="../src/ui/pages/ModelConfigPage.qml" line="170"/>
         <source>显示名称</source>
         <translation>显示名称</translation>
@@ -574,6 +579,11 @@
         <location filename="../src/ui/pages/ModelConfigPage.qml" line="200"/>
         <source>API Key</source>
         <translation>API Key</translation>
+    </message>
+    <message>
+        <location filename="../src/ui/pages/ModelConfigPage.qml" line="205"/>
+        <source>sk-...（或设置环境变量 OPENAI_API_KEY）</source>
+        <translation>sk-...（或设置环境变量 OPENAI_API_KEY）</translation>
     </message>
     <message>
         <location filename="../src/ui/pages/ModelConfigPage.qml" line="217"/>
@@ -671,7 +681,100 @@
     </message>
 </context>
 <context>
+    <name>NexusAI</name>
+    <message>
+        <location filename="../src/viewmodels/ThemeManager.cpp" line="49"/>
+        <source>主题模式</source>
+        <translation>主题模式</translation>
+    </message>
+    <message>
+        <location filename="../src/viewmodels/ThemeManager.cpp" line="60"/>
+        <source>正文字体</source>
+        <translation>正文字体</translation>
+    </message>
+    <message>
+        <location filename="../src/viewmodels/ThemeManager.cpp" line="69"/>
+        <source>等宽字体</source>
+        <translation>等宽字体</translation>
+    </message>
+    <message>
+        <location filename="../src/viewmodels/ThemeManager.cpp" line="78"/>
+        <source>基础字号</source>
+        <translation>基础字号</translation>
+    </message>
+    <message>
+        <location filename="../src/viewmodels/AgentViewModel.cpp" line="106"/>
+        <source>侧边栏默认宽度</source>
+        <translation>侧边栏默认宽度</translation>
+    </message>
+    <message>
+        <location filename="../src/viewmodels/AgentViewModel.cpp" line="107"/>
+        <source>面板默认宽度</source>
+        <translation>面板默认宽度</translation>
+    </message>
+    <message>
+        <location filename="../src/viewmodels/AgentViewModel.cpp" line="108"/>
+        <source>侧边栏默认展开</source>
+        <translation>侧边栏默认展开</translation>
+    </message>
+    <message>
+        <location filename="../src/viewmodels/AgentViewModel.cpp" line="109"/>
+        <source>面板默认展开</source>
+        <translation>面板默认展开</translation>
+    </message>
+    <message>
+        <location filename="../src/viewmodels/AgentViewModel.cpp" line="110"/>
+        <source>启动时恢复窗口</source>
+        <translation>启动时恢复窗口</translation>
+    </message>
+    <message>
+        <location filename="../src/viewmodels/I18nManager.cpp" line="41"/>
+        <source>界面语言</source>
+        <translation>界面语言</translation>
+    </message>
+    <message>
+        <location filename="../src/main.cpp" line="110"/>
+        <source>模型配置</source>
+        <translation>模型配置</translation>
+    </message>
+    <message>
+        <location filename="../src/main.cpp" line="112"/>
+        <source>界面设置</source>
+        <translation>界面设置</translation>
+    </message>
+    <message>
+        <location filename="../src/main.cpp" line="114"/>
+        <source>通用设置</source>
+        <translation>通用设置</translation>
+    </message>
+    <message>
+        <location filename="../src/main.cpp" line="122"/>
+        <source>上次访问分类</source>
+        <translation>上次访问分类</translation>
+    </message>
+</context>
+<context>
     <name>NexusAI::AgentViewModel</name>
+    <message>
+        <source>侧边栏默认宽度</source>
+        <translation type="vanished">侧边栏默认宽度</translation>
+    </message>
+    <message>
+        <source>面板默认宽度</source>
+        <translation type="vanished">面板默认宽度</translation>
+    </message>
+    <message>
+        <source>侧边栏默认展开</source>
+        <translation type="vanished">侧边栏默认展开</translation>
+    </message>
+    <message>
+        <source>面板默认展开</source>
+        <translation type="vanished">面板默认展开</translation>
+    </message>
+    <message>
+        <source>启动时恢复窗口</source>
+        <translation type="vanished">启动时恢复窗口</translation>
+    </message>
     <message>
         <location filename="../src/viewmodels/AgentViewModel.cpp" line="214"/>
         <source>导出失败：未连接持久化后端</source>
@@ -681,6 +784,65 @@
         <location filename="../src/viewmodels/AgentViewModel.cpp" line="219"/>
         <source>导出失败：不支持的格式“%1”（可选 md / json）</source>
         <translation>导出失败：不支持的格式“%1”（可选 md / json）</translation>
+    </message>
+    <message>
+        <location filename="../src/viewmodels/AgentViewModel.cpp" line="234"/>
+        <source># NexusAI 会话导出
+
+</source>
+        <translation># NexusAI 会话导出
+
+</translation>
+    </message>
+    <message>
+        <location filename="../src/viewmodels/AgentViewModel.cpp" line="235"/>
+        <source>- 会话 ID：%1
+</source>
+        <translation>- 会话 ID：%1
+</translation>
+    </message>
+    <message>
+        <location filename="../src/viewmodels/AgentViewModel.cpp" line="236"/>
+        <source>- 导出时间：%1
+</source>
+        <translation>- 导出时间：%1
+</translation>
+    </message>
+    <message>
+        <location filename="../src/viewmodels/AgentViewModel.cpp" line="237"/>
+        <source>- 消息数：%1
+
+---
+
+</source>
+        <translation>- 消息数：%1
+
+---
+
+</translation>
+    </message>
+    <message>
+        <location filename="../src/viewmodels/AgentViewModel.cpp" line="241"/>
+        <source>用户</source>
+        <translation>用户</translation>
+    </message>
+    <message>
+        <location filename="../src/viewmodels/AgentViewModel.cpp" line="242"/>
+        <source>助手</source>
+        <translation>助手</translation>
+    </message>
+    <message>
+        <location filename="../src/viewmodels/AgentViewModel.cpp" line="251"/>
+        <source>---
+
+## 过程摘要
+
+</source>
+        <translation>---
+
+## 过程摘要
+
+</translation>
     </message>
     <message>
         <location filename="../src/viewmodels/AgentViewModel.cpp" line="280"/>
@@ -713,6 +875,11 @@
         <translation>文档内容已存在，已跳过：%1</translation>
     </message>
     <message>
+        <location filename="../src/viewmodels/AgentViewModel.cpp" line="441"/>
+        <source>未找到文档内容，无法重新嵌入：%1</source>
+        <translation>未找到文档内容，无法重新嵌入：%1</translation>
+    </message>
+    <message>
         <location filename="../src/viewmodels/AgentViewModel.cpp" line="459"/>
         <source>已重新嵌入 %1（%2 段）</source>
         <translation>已重新嵌入 %1（%2 段）</translation>
@@ -741,6 +908,101 @@
         <location filename="../src/viewmodels/AgentViewModel.cpp" line="472"/>
         <source>文件过大（超过单文档 %1 段上限）：%2</source>
         <translation>文件过大（超过单文档 %1 段上限）：%2</translation>
+    </message>
+</context>
+<context>
+    <name>NexusAI::ConnectionTester</name>
+    <message>
+        <location filename="../src/viewmodels/ConnectionTester.cpp" line="50"/>
+        <source>连接成功</source>
+        <translation>连接成功</translation>
+    </message>
+    <message>
+        <location filename="../src/viewmodels/ConnectionTester.cpp" line="50"/>
+        <source>连接成功：%1</source>
+        <translation>连接成功：%1</translation>
+    </message>
+    <message>
+        <location filename="../src/viewmodels/ConnectionTester.cpp" line="72"/>
+        <source>连接超时（20 秒）</source>
+        <translation>连接超时（20 秒）</translation>
+    </message>
+</context>
+<context>
+    <name>NexusAI::EditBuffer</name>
+    <message>
+        <location filename="../src/viewmodels/EditBuffer.cpp" line="72"/>
+        <source>值必须是整数</source>
+        <translation>值必须是整数</translation>
+    </message>
+    <message>
+        <location filename="../src/viewmodels/EditBuffer.cpp" line="76"/>
+        <source>值必须在 %1-%2 之间</source>
+        <translation>值必须在 %1-%2 之间</translation>
+    </message>
+    <message>
+        <location filename="../src/viewmodels/EditBuffer.cpp" line="83"/>
+        <source>值必须是以下之一: </source>
+        <translation>值必须是以下之一: </translation>
+    </message>
+    <message>
+        <location filename="../src/viewmodels/EditBuffer.cpp" line="89"/>
+        <source>此字段为必填</source>
+        <translation>此字段为必填</translation>
+    </message>
+    <message>
+        <location filename="../src/viewmodels/EditBuffer.cpp" line="93"/>
+        <source>长度不能超过 %1 个字符</source>
+        <translation>长度不能超过 %1 个字符</translation>
+    </message>
+</context>
+<context>
+    <name>NexusAI::I18nManager</name>
+    <message>
+        <source>界面语言</source>
+        <translation type="vanished">界面语言</translation>
+    </message>
+</context>
+<context>
+    <name>NexusAI::SettingsService</name>
+    <message>
+        <location filename="../src/viewmodels/SettingsService.cpp" line="279"/>
+        <source>新配置</source>
+        <translation>新配置</translation>
+    </message>
+    <message>
+        <location filename="../src/viewmodels/SettingsService.cpp" line="427"/>
+        <source>OpenAI 兼容</source>
+        <translation>OpenAI 兼容</translation>
+    </message>
+    <message>
+        <location filename="../src/viewmodels/SettingsService.cpp" line="428"/>
+        <source>Ollama 本地</source>
+        <translation>Ollama 本地</translation>
+    </message>
+    <message>
+        <location filename="../src/viewmodels/SettingsService.cpp" line="429"/>
+        <source>Claude</source>
+        <translation>Claude</translation>
+    </message>
+</context>
+<context>
+    <name>NexusAI::ThemeManager</name>
+    <message>
+        <source>主题模式</source>
+        <translation type="vanished">主题模式</translation>
+    </message>
+    <message>
+        <source>正文字体</source>
+        <translation type="vanished">正文字体</translation>
+    </message>
+    <message>
+        <source>等宽字体</source>
+        <translation type="vanished">等宽字体</translation>
+    </message>
+    <message>
+        <source>基础字号</source>
+        <translation type="vanished">基础字号</translation>
     </message>
 </context>
 <context>
@@ -1148,6 +1410,22 @@
         <location filename="../src/ui/main.qml" line="245"/>
         <source>设置已保存</source>
         <translation>设置已保存</translation>
+    </message>
+    <message>
+        <source>模型配置</source>
+        <translation type="vanished">模型配置</translation>
+    </message>
+    <message>
+        <source>界面设置</source>
+        <translation type="vanished">界面设置</translation>
+    </message>
+    <message>
+        <source>通用设置</source>
+        <translation type="vanished">通用设置</translation>
+    </message>
+    <message>
+        <source>上次访问分类</source>
+        <translation type="vanished">上次访问分类</translation>
     </message>
 </context>
 </TS>

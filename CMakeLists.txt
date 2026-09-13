@@ -212,6 +212,7 @@ endif()
 find_package(Qt6 REQUIRED COMPONENTS LinguistTools)
 qt_add_translations(nexus_ai
     TS_FILES ${CMAKE_SOURCE_DIR}/translations/nexus_ai_zh_CN.ts
+             ${CMAKE_SOURCE_DIR}/translations/nexus_ai_en.ts
     SOURCE_TARGETS nexus_core nexus_infra nexus_viewmodels nexus_ai
 )
 

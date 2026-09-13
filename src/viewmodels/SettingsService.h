@@ -107,6 +107,8 @@ public:
     // {baseUrl, model, models} defaults for a provider type (used when the editor
     // switches the provider of a profile).
     Q_INVOKABLE QVariantMap defaultEndpoint(const QString& provider) const;
+    // Localized display name for a provider key (legacy profile migration).
+    QString providerDisplayName(const QString& provider) const;
 
 signals:
     void profilesChanged();

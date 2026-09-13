@@ -47,7 +47,7 @@ void ConnectionTester::test(const QString& provider, const QString& baseUrl,
         m_done = true;
         const QString detail = response.content.trimmed().left(60);
         finish(true, detail.isEmpty()
-            ? QStringLiteral("连接成功") : QStringLiteral("连接成功：%1").arg(detail));
+            ? tr("连接成功") : tr("连接成功：%1").arg(detail));
         service->deleteLater();
     });
     connect(service, &IAIService::errorOccurred, this,
@@ -69,7 +69,7 @@ void ConnectionTester::test(const QString& provider, const QString& baseUrl,
             m_service->deleteLater();
             m_service.clear();
         }
-        finish(false, QStringLiteral("连接超时（20 秒）"));
+        finish(false, tr("连接超时（20 秒）"));
     });
     m_timeout.start(20000);
 

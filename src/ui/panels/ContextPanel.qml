@@ -56,7 +56,6 @@ Rectangle {
                 font.pixelSize: Theme.fontSizeCaption
                 font.bold: true
                 font.family: Theme.fontMono
-                Layout.fillWidth: true
             }
 
             Text {
@@ -64,11 +63,14 @@ Rectangle {
                 // NOT mean the content stays local - passages travel with the
                 // request to whichever model service is configured. Batch 14:
                 // point at the local-only mode switch that gates this off.
+                // Elide instead of fillWidth: two stretching Texts in one
+                // RowLayout overlap their paint areas on long translations.
                 text: qsTr("文档内容会随提问发送给当前模型服务；如需阻止，请在设置中开启“仅本地模式”")
                 color: Theme.textSecondary
                 font.pixelSize: 10
                 font.family: Theme.fontSans
                 Layout.fillWidth: true
+                elide: Text.ElideRight
                 visible: AgentVM.knowledgeDocuments.length > 0
             }
 

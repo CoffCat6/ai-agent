@@ -1,10 +1,22 @@
 #include "PreferenceRegistry.h"
 
+#include <QCoreApplication>
 #include <QLoggingCategory>
 
 Q_LOGGING_CATEGORY(lcPrefReg, "nexus.preferences.registry")
 
 namespace NexusAI {
+
+namespace {
+
+// Display names are registered as QT_TRANSLATE_NOOP("NexusAI", ...) sources;
+// resolving them at query time keeps a runtime language switch effective
+// (a name translated at registration would be frozen for the session).
+QString translated(const QString& source) {
+    return QCoreApplication::translate("NexusAI", source.toUtf8().constData());
+}
+
+} // namespace
 
 PreferenceRegistry* PreferenceRegistry::s_instance = nullptr;
 
@@ -61,7 +73,7 @@ QVariant PreferenceRegistry::defaultValue(const QString& key) const {
 QString PreferenceRegistry::displayName(const QString& key) const {
     auto it = m_preferences.constFind(key);
     if (it == m_preferences.constEnd()) return {};
-    return it->displayName;
+    return translated(it->displayName);
 }
 
 QVariantMap PreferenceRegistry::preferenceMeta(const QString& key) const {
@@ -119,7 +131,7 @@ QStringList PreferenceRegistry::categories() const {
 QString PreferenceRegistry::categoryName(const QString& id) const {
     auto it = m_categories.constFind(id);
     if (it == m_categories.constEnd()) return {};
-    return it->name;
+    return translated(it->name);
 }
 
 int PreferenceRegistry::categoryOrder(const QString& id) const {

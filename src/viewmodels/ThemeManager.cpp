@@ -46,7 +46,7 @@ void ThemeManager::registerPreferences() {
         PreferenceMeta meta;
         meta.key = QStringLiteral("ui.themeMode");
         meta.categoryId = QStringLiteral("interface");
-        meta.displayName = QStringLiteral("主题模式");
+        meta.displayName = QT_TRANSLATE_NOOP("NexusAI", "主题模式");
         meta.defaultValue = QStringLiteral("dark");
         meta.type = PreferenceType::Enum;
         meta.constraint.options = { QStringLiteral("dark"), QStringLiteral("light") };
@@ -57,7 +57,7 @@ void ThemeManager::registerPreferences() {
         PreferenceMeta meta;
         meta.key = QStringLiteral("ui.fontSans");
         meta.categoryId = QStringLiteral("interface");
-        meta.displayName = QStringLiteral("正文字体");
+        meta.displayName = QT_TRANSLATE_NOOP("NexusAI", "正文字体");
         meta.defaultValue = sansDefault;
         meta.type = PreferenceType::String;
         reg->registerPreference(meta);
@@ -66,7 +66,7 @@ void ThemeManager::registerPreferences() {
         PreferenceMeta meta;
         meta.key = QStringLiteral("ui.fontMono");
         meta.categoryId = QStringLiteral("interface");
-        meta.displayName = QStringLiteral("等宽字体");
+        meta.displayName = QT_TRANSLATE_NOOP("NexusAI", "等宽字体");
         meta.defaultValue = monoDefault;
         meta.type = PreferenceType::String;
         reg->registerPreference(meta);
@@ -75,7 +75,7 @@ void ThemeManager::registerPreferences() {
         PreferenceMeta meta;
         meta.key = QStringLiteral("ui.baseFontSize");
         meta.categoryId = QStringLiteral("interface");
-        meta.displayName = QStringLiteral("基础字号");
+        meta.displayName = QT_TRANSLATE_NOOP("NexusAI", "基础字号");
         meta.defaultValue = 14;
         meta.type = PreferenceType::Int;
         meta.constraint.min = 10;

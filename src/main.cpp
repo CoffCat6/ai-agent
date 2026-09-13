@@ -106,16 +106,20 @@ int main(int argc, char *argv[])
     i18n->applyLocale(i18n->currentLocale());
 
     // Register setting categories (order determines nav display order)
-    prefRegistry->registerCategory(QStringLiteral("model"), QStringLiteral("模型配置"), 1);
-    prefRegistry->registerCategory(QStringLiteral("interface"), QStringLiteral("界面设置"), 2);
-    prefRegistry->registerCategory(QStringLiteral("general"), QStringLiteral("通用设置"), 3);
+    prefRegistry->registerCategory(QStringLiteral("model"),
+        QT_TRANSLATE_NOOP("NexusAI", "模型配置"), 1);
+    prefRegistry->registerCategory(QStringLiteral("interface"),
+        QT_TRANSLATE_NOOP("NexusAI", "界面设置"), 2);
+    prefRegistry->registerCategory(QStringLiteral("general"),
+        QT_TRANSLATE_NOOP("NexusAI", "通用设置"), 3);
 
     // Internal UI state (not shown in any category panel; categoryId empty)
     {
         PreferenceMeta lastCategory;
         lastCategory.key = QStringLiteral("settings.lastCategory");
         lastCategory.categoryId = QString();
-        lastCategory.displayName = QStringLiteral("上次访问分类");
+        lastCategory.displayName =
+            QT_TRANSLATE_NOOP("NexusAI", "上次访问分类");
         lastCategory.defaultValue = QStringLiteral("model");
         lastCategory.type = PreferenceType::String;
         prefRegistry->registerPreference(lastCategory);
@@ -465,6 +469,14 @@ int main(int argc, char *argv[])
 
     if (engine.rootObjects().isEmpty())
         return -1;
+
+    // Language switches install/remove translators (I18nManager), but the
+    // QML engine does not reliably re-evaluate every qsTr binding on the
+    // LanguageChange event alone (sidebar buttons, settings dialog buttons
+    // and the context-panel notice were observed lagging). Force a full
+    // re-evaluation of translation bindings after each switch.
+    QObject::connect(i18n, &I18nManager::localeChanged, &engine,
+                     &QQmlApplicationEngine::retranslate);
 
     return app.exec();
 }

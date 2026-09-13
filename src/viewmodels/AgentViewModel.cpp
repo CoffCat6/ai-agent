@@ -103,11 +103,11 @@ void AgentViewModel::registerLayoutPreferences() {
         reg->registerPreference(meta);
     };
 
-    registerInt(QStringLiteral("ui.defaultSidebarWidth"), QStringLiteral("侧边栏默认宽度"), 260, 180, 560);
-    registerInt(QStringLiteral("ui.defaultPanelWidth"), QStringLiteral("面板默认宽度"), 300, 220, 640);
-    registerBool(QStringLiteral("ui.defaultSidebarExpanded"), QStringLiteral("侧边栏默认展开"), true);
-    registerBool(QStringLiteral("ui.defaultPanelVisible"), QStringLiteral("面板默认展开"), true);
-    registerBool(QStringLiteral("ui.restoreWindowOnStartup"), QStringLiteral("启动时恢复窗口"), true);
+    registerInt(QStringLiteral("ui.defaultSidebarWidth"), QT_TRANSLATE_NOOP("NexusAI", "侧边栏默认宽度"), 260, 180, 560);
+    registerInt(QStringLiteral("ui.defaultPanelWidth"), QT_TRANSLATE_NOOP("NexusAI", "面板默认宽度"), 300, 220, 640);
+    registerBool(QStringLiteral("ui.defaultSidebarExpanded"), QT_TRANSLATE_NOOP("NexusAI", "侧边栏默认展开"), true);
+    registerBool(QStringLiteral("ui.defaultPanelVisible"), QT_TRANSLATE_NOOP("NexusAI", "面板默认展开"), true);
+    registerBool(QStringLiteral("ui.restoreWindowOnStartup"), QT_TRANSLATE_NOOP("NexusAI", "启动时恢复窗口"), true);
 }
 
 void AgentViewModel::loadLayoutDefaults() {
@@ -231,15 +231,15 @@ bool AgentViewModel::exportSession(const QString& sessionId, const QString& path
     QByteArray payload;
     if (markdown) {
         QString md;
-        md += QStringLiteral("# NexusAI 会话导出\n\n");
-        md += QStringLiteral("- 会话 ID：%1\n").arg(sessionId);
-        md += QStringLiteral("- 导出时间：%1\n").arg(exportedAt);
-        md += QStringLiteral("- 消息数：%1\n\n---\n\n").arg(messages.size());
+        md += tr("# NexusAI 会话导出\n\n");
+        md += tr("- 会话 ID：%1\n").arg(sessionId);
+        md += tr("- 导出时间：%1\n").arg(exportedAt);
+        md += tr("- 消息数：%1\n\n---\n\n").arg(messages.size());
         for (const auto& entry : messages) {
             const QJsonObject msg = entry.toObject();
             const QString role = msg.value("role").toString();
-            const QString label = role == QLatin1String("user") ? QStringLiteral("用户")
-                                : role == QLatin1String("assistant") ? QStringLiteral("助手")
+            const QString label = role == QLatin1String("user") ? tr("用户")
+                                : role == QLatin1String("assistant") ? tr("助手")
                                 : role;
             const qint64 ts = msg.value("timestamp").toVariant().toLongLong();
             md += QStringLiteral("## %1 · %2\n\n")
@@ -248,7 +248,7 @@ bool AgentViewModel::exportSession(const QString& sessionId, const QString& path
             md += msg.value("content").toString() + QStringLiteral("\n\n");
         }
         if (!traceNodes.isEmpty()) {
-            md += QStringLiteral("---\n\n## 过程摘要\n\n");
+            md += tr("---\n\n## 过程摘要\n\n");
             // Batch 21 (C2): node fields are emitted on a single bullet line,
             // so embedded CR/LF (from tool names/titles or model output) must
             // be flattened or the Markdown list structure breaks.
@@ -438,7 +438,7 @@ void AgentViewModel::reembedDocument(const QString& name) {
     Activity::usage(Activity::Kind::User, QStringLiteral("doc.reembed"), name);
     const QString content = m_contentProvider ? m_contentProvider(name) : QString();
     if (content.trimmed().isEmpty()) {
-        emit errorOccurred(QStringLiteral("未找到文档内容，无法重新嵌入：%1").arg(name));
+        emit errorOccurred(tr("未找到文档内容，无法重新嵌入：%1").arg(name));
         return;
     }
 

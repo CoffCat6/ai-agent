@@ -142,7 +142,7 @@ ScrollView {
                 Text {
                     id: addChipText
                     anchors.centerIn: parent
-                    text: "+ 添加"
+                    text: qsTr("+ 添加")
                     color: addChipMA.containsMouse ? Theme.brandPrimary : Theme.textSecondary
                     font.pixelSize: Theme.fontSizeCaption
                     font.family: Theme.fontSans
@@ -202,7 +202,7 @@ ScrollView {
                     id: apiKeyField
                     Layout.fillWidth: true
                     echoMode: TextInput.Password
-                    placeholderText: page.editing && page.editing.provider === "anthropic" ? "sk-ant-..." : "sk-...（或设置环境变量 OPENAI_API_KEY）"
+                    placeholderText: page.editing && page.editing.provider === "anthropic" ? "sk-ant-..." : qsTr("sk-...（或设置环境变量 OPENAI_API_KEY）")
                     placeholderTextColor: Theme.textSecondary
                     color: Theme.textPrimary; selectionColor: Theme.brandPrimary; selectedTextColor: "#ffffff"
                     font.pixelSize: Theme.fontSizeBody; font.family: Theme.fontSans

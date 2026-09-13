@@ -50,7 +50,13 @@ Rectangle {
                     anchors.left: parent.left
                     anchors.leftMargin: 20
                     anchors.verticalCenter: parent.verticalCenter
-                    text: PreferenceRegistry.categoryName(modelData)
+                    // Reading currentLocale re-evaluates this binding on a
+                    // language switch; categoryName resolves the stored
+                    // QT_TRANSLATE_NOOP source at query time.
+                    text: {
+                        I18n.currentLocale
+                        return PreferenceRegistry.categoryName(modelData)
+                    }
                     color: parent.isActive ? Theme.brandPrimary : Theme.textPrimary
                     font.pixelSize: Theme.fontSizeBody
                     font.family: Theme.fontSans

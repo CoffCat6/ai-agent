@@ -3,6 +3,7 @@
 #include "viewmodels/AgentViewModel.h"
 #include "viewmodels/TraceModel.h"
 #include "viewmodels/LogModel.h"
+#include "viewmodels/I18nManager.h"
 #include "core/memory/SqliteMemory.h"
 #include "core/utils/Logger.h"
 #include "core/rag/RagService.h"
@@ -18,6 +19,8 @@
 #include <QJsonArray>
 #include <QJsonDocument>
 #include <QJsonObject>
+#include <QLocale>
+#include <QTranslator>
 #include <QUrl>
 
 using namespace NexusAI;
@@ -604,6 +607,44 @@ private slots:
         const QJsonDocument doc = QJsonDocument::fromJson(jsonFile.readAll());
         QVERIFY(doc.isObject());
         QCOMPARE(doc.object().value("messages").toArray().size(), 2);
+    }
+
+    // Batch 24 (G9): the embedded English .qm carries real translations for
+    // known sources (the .qm files are also linked into this test binary via
+    // qt_add_resources in tests/CMakeLists.txt).
+    void englishQmTranslatesKnownStrings() {
+        QTranslator translator;
+        QVERIFY(translator.load(QLocale(QLocale::English), QStringLiteral("nexus_ai"),
+                                QStringLiteral("_"), QStringLiteral(":/i18n")));
+        QCOMPARE(translator.translate("AgentChatPage", "折叠过程"),
+                 QStringLiteral("Collapse process"));
+        QCOMPARE(translator.translate("InterfacePage", "跟随系统"),
+                 QStringLiteral("Follow System"));
+        QCOMPARE(translator.translate("SqliteMemory", "刚刚"),
+                 QStringLiteral("Just now"));
+        QCOMPARE(translator.translate("SqliteMemory", "%1 分钟前"),
+                 QStringLiteral("%1 minutes ago"));
+        // Language entries stay untranslated by design (native names).
+        QCOMPARE(translator.translate("InterfacePage", "简体中文"),
+                 QStringLiteral("简体中文"));
+    }
+
+    // The switch path: en now loads a translator instead of skipping it, and
+    // switching back / to "auto" keeps currentLocale in sync with the signal.
+    void applyLocaleSwitchesBothWays() {
+        I18nManager* i18n = I18nManager::instance();
+        const QString original = i18n->currentLocale();
+        QSignalSpy spy(i18n, &I18nManager::localeChanged);
+
+        i18n->applyLocale(QStringLiteral("en"));
+        QCOMPARE(i18n->currentLocale(), QStringLiteral("en"));
+        QCOMPARE(spy.count(), original == QStringLiteral("en") ? 0 : 1);
+
+        i18n->applyLocale(QStringLiteral("zh-CN"));
+        QCOMPARE(i18n->currentLocale(), QStringLiteral("zh-CN"));
+
+        i18n->applyLocale(original);   // restore for the rest of the suite
+        QCOMPARE(i18n->currentLocale(), original);
     }
 };
 

@@ -69,28 +69,28 @@ bool EditBuffer::validateOne(const QString& key, const QVariant& value, QString&
         bool ok = false;
         const int v = value.toInt(&ok);
         if (!ok) {
-            error = QStringLiteral("值必须是整数");
+            error = tr("值必须是整数");
             return false;
         }
         if (v < meta->constraint.min || v > meta->constraint.max) {
-            error = QStringLiteral("值必须在 %1-%2 之间").arg(meta->constraint.min).arg(meta->constraint.max);
+            error = tr("值必须在 %1-%2 之间").arg(meta->constraint.min).arg(meta->constraint.max);
             return false;
         }
     } else if (meta->type == PreferenceType::Enum) {
         if (!meta->constraint.options.isEmpty()) {
             const QString v = value.toString();
             if (!meta->constraint.options.contains(v)) {
-                error = QStringLiteral("值必须是以下之一: ") + meta->constraint.options.join(", ");
+                error = tr("值必须是以下之一: ") + meta->constraint.options.join(", ");
                 return false;
             }
         }
     } else if (meta->type == PreferenceType::String) {
         if (meta->constraint.required && value.toString().isEmpty()) {
-            error = QStringLiteral("此字段为必填");
+            error = tr("此字段为必填");
             return false;
         }
         if (meta->constraint.maxLength > 0 && value.toString().length() > meta->constraint.maxLength) {
-            error = QStringLiteral("长度不能超过 %1 个字符").arg(meta->constraint.maxLength);
+            error = tr("长度不能超过 %1 个字符").arg(meta->constraint.maxLength);
             return false;
         }
     }
