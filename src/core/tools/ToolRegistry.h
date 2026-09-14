@@ -17,6 +17,10 @@ public:
 
     void registerTool(std::unique_ptr<ITool> tool);
     ITool* find(const QString& name) const;
+    // Batch 31a: removes the tool and transfers ownership to the caller —
+    // dynamic MCP tools must outlive their registry entry while an in-flight
+    // execute() may still be running on a pool thread.
+    std::unique_ptr<ITool> takeTool(const QString& name);
     QVector<ToolDefinition> listAll() const;
     bool isRegistered(const QString& name) const;
     // Names of the tools the model is allowed to call (Dangerous excluded) -

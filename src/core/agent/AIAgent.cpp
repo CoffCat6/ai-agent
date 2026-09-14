@@ -1042,12 +1042,27 @@ void AIAgent::finishToolExecution(const ToolCallInfo& call, const QString& trace
                        : QStringLiteral("Error: %1").arg(result.error),
         kMaxToolResultChars));
 
-    if (m_memory)
+    if (m_memory) {
+        // Batch 31a: surface the originating MCP server in the audit trail
+        // for mcp__<server>__<tool> dynamic tools.
+        QString auditDetail = truncateText(
+            result.success ? result.output : result.error, 500);
+        if (call.name.startsWith(QStringLiteral("mcp__"))) {
+            const QStringList parts = call.name.split(QStringLiteral("__"));
+            if (parts.size() >= 3) {
+                const QJsonObject detail{
+                    {"output", auditDetail},
+                    {"mcp_server", parts.at(1)}};
+                auditDetail = QString::fromUtf8(
+                    QJsonDocument(detail).toJson(QJsonDocument::Compact));
+            }
+        }
         m_memory->logAudit(m_sessionId, "tool_execute", call.name,
                            argsToString(call.arguments), result.success,
-                           truncateText(result.success ? result.output : result.error, 500),
+                           auditDetail,
                            m_activeRequestId, m_lastLatencyMs,
                            m_lastTokensUsed, currentModel());
+    }
 
     processNextToolCall();
 }

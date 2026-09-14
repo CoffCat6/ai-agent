@@ -78,3 +78,12 @@ nexus_add_test(test_sampling_params test_sampling_params.cpp)
 
 # Batch 30 (F6): multimodal data-URL parsing (pure string helpers)
 nexus_add_test(test_data_url_utils test_data_url_utils.cpp)
+
+# Batch 31a (F9): fake MCP stdio server + client tests. The fake server is
+# a separate executable the transport spawns as a child process.
+add_executable(fake_mcp_server fake_mcp_server_main.cpp)
+target_link_libraries(fake_mcp_server PRIVATE Qt6::Core)
+add_executable(test_mcp test_mcp.cpp)
+target_link_libraries(test_mcp PRIVATE nexus_core nexus_infra Qt6::Test)
+add_dependencies(test_mcp fake_mcp_server)
+add_test(NAME test_mcp COMMAND test_mcp)

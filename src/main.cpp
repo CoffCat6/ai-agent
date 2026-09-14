@@ -11,6 +11,9 @@
 #include "viewmodels/ThemeManager.h"
 #include "viewmodels/ThemeProvider.h"
 #include "viewmodels/AgentViewModel.h"
+#include "core/mcp/McpClient.h"
+#include "core/mcp/McpToolAdapter.h"
+#include "core/mcp/McpConfig.h"
 #include "viewmodels/SettingsService.h"
 #include "viewmodels/ConnectionTester.h"
 #include "viewmodels/PreferenceRegistry.h"
@@ -350,6 +353,45 @@ int main(int argc, char *argv[])
         [memory](const QString& name) { memory->removeKnowledgeDoc(name); });
     QObject::connect(agentVM, &AgentViewModel::knowledgeCleared, &app,
         [memory]() { memory->clearKnowledgeDocs(); });
+
+    // ── Batch 31a: MCP servers (stdio) ─────────────────
+    // Load mcp_servers.json and connect every enabled stdio server. Tools
+    // register into the shared ToolRegistry on connect (first handshake
+    // only — crash restarts reuse the already-registered adapters) and are
+    // taken out on explicit disconnect. HTTP transport arrives in 31b.
+    {
+        const auto mcpServers = McpConfig::load();
+        for (const auto& server : mcpServers) {
+            if (!server.value("enabled").toBool()) continue;
+            if (server.value("transport").toString()
+                    != QLatin1String("stdio"))
+                continue;   // 31b: Streamable HTTP
+
+            McpServerConfig config;
+            config.name = server.value("name").toString();
+            config.transport = QStringLiteral("stdio");
+            config.command = server.value("command").toString();
+            for (const QVariant& arg : server.value("args").toList())
+                config.args << arg.toString();
+            config.env = server.value("env").toMap();
+
+            auto* client = new McpClient(config, &app);
+            QObject::connect(client, &McpClient::connected, &app, [client]() {
+                for (const auto& tool : client->tools())
+                    ToolRegistry::instance().registerTool(
+                        std::make_unique<McpToolAdapter>(
+                            client, client->serverName(), tool.name,
+                            tool.description, tool.inputSchema));
+            });
+            QObject::connect(client, &McpClient::disconnected, &app, [client]() {
+                for (const auto& tool : client->tools())
+                    ToolRegistry::instance().takeTool(
+                        McpToolAdapter::registryNameFor(client->serverName(),
+                                                        tool.name));
+            });
+            client->connectToServer();
+        }
+    }
 
     // ── Usage trail sink (日志增强) ──────────────────────
     // User operations / network outcomes flow through the Activity facade;

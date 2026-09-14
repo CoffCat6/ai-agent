@@ -55,6 +55,16 @@ add_library(nexus_core STATIC
     src/core/utils/Activity.cpp
     src/core/utils/DataUrlUtils.h
     src/core/utils/DataUrlUtils.cpp
+    src/core/mcp/McpTransport.h
+    src/core/mcp/McpTransport.cpp
+    src/core/mcp/StdioTransport.h
+    src/core/mcp/StdioTransport.cpp
+    src/core/mcp/McpClient.h
+    src/core/mcp/McpClient.cpp
+    src/core/mcp/McpToolAdapter.h
+    src/core/mcp/McpToolAdapter.cpp
+    src/core/mcp/McpConfig.h
+    src/core/mcp/McpConfig.cpp
 )
 target_include_directories(nexus_core PUBLIC ${CMAKE_CURRENT_SOURCE_DIR}/src)
 target_link_libraries(nexus_core PUBLIC Qt6::Core Qt6::Sql Qt6::Concurrent Qt6::Network)  # Network: Batch 20 http_fetch

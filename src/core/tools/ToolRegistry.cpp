@@ -394,6 +394,19 @@ void ToolRegistry::registerTool(std::unique_ptr<ITool> tool) {
     m_ownedTools.push_back(std::move(tool));
 }
 
+std::unique_ptr<ITool> ToolRegistry::takeTool(const QString& name) {
+    for (auto it = m_ownedTools.begin(); it != m_ownedTools.end(); ++it) {
+        if ((*it)->definition().name == name) {
+            std::unique_ptr<ITool> taken = std::move(*it);
+            m_ownedTools.erase(it);
+            m_tools.remove(name);      // keep the name index in sync
+            m_disabledTools.remove(name);
+            return taken;
+        }
+    }
+    return nullptr;
+}
+
 ITool* ToolRegistry::find(const QString& name) const {
     auto it = m_tools.find(name);
     if (it != m_tools.end())

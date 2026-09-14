@@ -1,4 +1,6 @@
-<?xml version="1.0" ?><!DOCTYPE TS><TS version="2.1" language="en_US" sourcelanguage="zh_CN">
+<?xml version="1.0" encoding="utf-8"?>
+<!DOCTYPE TS>
+<TS version="2.1" language="en_US" sourcelanguage="zh_CN">
 <context>
     <name>AgentChatPage</name>
     <message>
@@ -123,7 +125,7 @@
     <message>
         <location filename="../src/ui/panels/ContextPanel.qml" line="68"/>
         <source>文档内容会随提问发送给当前模型服务；如需阻止，请在设置中开启“仅本地模式”</source>
-        <translation>Document content is sent to the current model service with your questions; to prevent this, enable "Local-only mode" in Settings</translation>
+        <translation>Document content is sent to the current model service with your questions; to prevent this, enable &quot;Local-only mode&quot; in Settings</translation>
     </message>
     <message>
         <location filename="../src/ui/panels/ContextPanel.qml" line="100"/>
@@ -196,7 +198,7 @@ and the model can retrieve their content to answer questions</translation>
     <message>
         <location filename="../src/ui/pages/GeneralPage.qml" line="41"/>
         <source>本页修改实时保存，不受底部「保存 / 取消」影响</source>
-        <translation>Changes on this page save instantly and are not affected by the "Save / Cancel" buttons below</translation>
+        <translation>Changes on this page save instantly and are not affected by the &quot;Save / Cancel&quot; buttons below</translation>
     </message>
     <message>
         <location filename="../src/ui/pages/GeneralPage.qml" line="58"/>
@@ -301,31 +303,31 @@ and the model can retrieve their content to answer questions</translation>
         <translation>Type a message... (Enter to send, Shift+Enter for newline)</translation>
     </message>
     <message>
-        <location filename="../src/ui/components/InputConsole.qml" line="350"/>
+        <location filename="../src/ui/components/InputConsole.qml" line="404"/>
         <source>上传图片</source>
         <translation>Upload image</translation>
     </message>
     <message>
-        <location filename="../src/ui/components/InputConsole.qml" line="354"/>
+        <location filename="../src/ui/components/InputConsole.qml" line="409"/>
         <source>上传文件</source>
         <translation>Upload file</translation>
     </message>
     <message>
-        <location filename="../src/ui/components/InputConsole.qml" line="368"/>
+        <location filename="../src/ui/components/InputConsole.qml" line="423"/>
         <source>文本文件 (*.txt *.md *.json *.csv *.log *.xml *.yml *.yaml *.ini *.cpp *.h *.py *.js *.ts)</source>
-        <translation type="unfinished"/>
+        <translation type="unfinished"></translation>
     </message>
     <message>
         <source>图片与文本 (*.png *.jpg *.jpeg *.webp *.bmp *.gif *.txt *.md *.json *.csv *.log *.xml *.yml *.yaml *.ini *.cpp *.h *.py *.js *.ts)</source>
         <translation type="vanished">Images &amp; text (*.png *.jpg *.jpeg *.webp *.bmp *.gif *.txt *.md *.json *.csv *.log *.xml *.yml *.yaml *.ini *.cpp *.h *.py *.js *.ts)</translation>
     </message>
     <message>
-        <location filename="../src/ui/components/InputConsole.qml" line="369"/>
+        <location filename="../src/ui/components/InputConsole.qml" line="424"/>
         <source>全部文件 (*)</source>
         <translation>All files (*)</translation>
     </message>
     <message>
-        <location filename="../src/ui/components/InputConsole.qml" line="361"/>
+        <location filename="../src/ui/components/InputConsole.qml" line="416"/>
         <source>图片文件 (*.png *.jpg *.jpeg *.webp *.bmp *.gif)</source>
         <translation>Image files (*.png *.jpg *.jpeg *.webp *.bmp *.gif)</translation>
     </message>
@@ -579,12 +581,12 @@ and the model can retrieve their content to answer questions</translation>
     <message>
         <location filename="../src/ui/pages/ModelConfigPage.qml" line="77"/>
         <source>可保存多个模型配置，点击芯片切换编辑，「启用」后立即生效</source>
-        <translation>Save multiple model profiles and click a chip to edit it; "Enable" takes effect immediately</translation>
+        <translation>Save multiple model profiles and click a chip to edit it; &quot;Enable&quot; takes effect immediately</translation>
     </message>
     <message>
         <location filename="../src/ui/pages/ModelConfigPage.qml" line="89"/>
         <source>本页修改实时保存，不受底部「保存 / 取消」影响</source>
-        <translation>Changes on this page save instantly and are not affected by the "Save / Cancel" buttons below</translation>
+        <translation>Changes on this page save instantly and are not affected by the &quot;Save / Cancel&quot; buttons below</translation>
     </message>
     <message>
         <location filename="../src/ui/pages/ModelConfigPage.qml" line="150"/>
@@ -789,22 +791,22 @@ and the model can retrieve their content to answer questions</translation>
         <translation>Interface Language</translation>
     </message>
     <message>
-        <location filename="../src/main.cpp" line="110"/>
+        <location filename="../src/main.cpp" line="113"/>
         <source>模型配置</source>
         <translation>Model Configuration</translation>
     </message>
     <message>
-        <location filename="../src/main.cpp" line="112"/>
+        <location filename="../src/main.cpp" line="115"/>
         <source>界面设置</source>
         <translation>Interface</translation>
     </message>
     <message>
-        <location filename="../src/main.cpp" line="114"/>
+        <location filename="../src/main.cpp" line="117"/>
         <source>通用设置</source>
         <translation>General</translation>
     </message>
     <message>
-        <location filename="../src/main.cpp" line="122"/>
+        <location filename="../src/main.cpp" line="125"/>
         <source>上次访问分类</source>
         <translation>Last Visited Category</translation>
     </message>
@@ -844,7 +846,7 @@ and the model can retrieve their content to answer questions</translation>
     <message>
         <location filename="../src/viewmodels/AgentViewModel.cpp" line="354"/>
         <source>导出失败：不支持的格式“%1”（可选 md / json）</source>
-        <translation>Export failed: unsupported format "%1" (md / json)</translation>
+        <translation>Export failed: unsupported format &quot;%1&quot; (md / json)</translation>
     </message>
     <message>
         <location filename="../src/viewmodels/AgentViewModel.cpp" line="369"/>
@@ -973,12 +975,12 @@ and the model can retrieve their content to answer questions</translation>
     <message>
         <location filename="../src/viewmodels/AgentViewModel.cpp" line="701"/>
         <source>文件过大（附件上限 %1 KB）：%2</source>
-        <translation type="unfinished"/>
+        <translation type="unfinished"></translation>
     </message>
     <message>
         <location filename="../src/viewmodels/AgentViewModel.cpp" line="706"/>
         <source>暂不支持二进制文件作为附件：%1</source>
-        <translation type="unfinished"/>
+        <translation type="unfinished"></translation>
     </message>
 </context>
 <context>
