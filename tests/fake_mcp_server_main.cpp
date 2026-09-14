@@ -16,12 +16,16 @@ namespace {
 
 QTextStream qin(stdin, QIODevice::ReadOnly);
 QTextStream qerr(stderr, QIODevice::WriteOnly);
-QTextStream qout(stdout, QIODevice::WriteOnly);
 int handledRequests = 0;
 
 void sendLine(const QJsonObject& message) {
-    qout << QJsonDocument(message).toJson(QJsonDocument::Compact) << "\n";
-    qout.flush();
+    // C stdio + explicit flush: the static QTextStream(stdout) built before
+    // QCoreApplication proved unreliable when several fake instances ran in
+    // one test process (responses never reached the client).
+    const QByteArray line =
+        QJsonDocument(message).toJson(QJsonDocument::Compact) + '\n';
+    fwrite(line.constData(), 1, line.size(), stdout);
+    fflush(stdout);
 }
 
 void sendResult(quint64 id, const QJsonObject& result) {

@@ -315,7 +315,7 @@ and the model can retrieve their content to answer questions</translation>
     <message>
         <location filename="../src/ui/components/InputConsole.qml" line="423"/>
         <source>文本文件 (*.txt *.md *.json *.csv *.log *.xml *.yml *.yaml *.ini *.cpp *.h *.py *.js *.ts)</source>
-        <translation type="unfinished"></translation>
+        <translation>Text files (*.txt *.md *.json *.csv *.log *.xml *.yml *.yaml *.ini *.cpp *.h *.py *.js *.ts)</translation>
     </message>
     <message>
         <source>图片与文本 (*.png *.jpg *.jpeg *.webp *.bmp *.gif *.txt *.md *.json *.csv *.log *.xml *.yml *.yaml *.ini *.cpp *.h *.py *.js *.ts)</source>
@@ -572,6 +572,84 @@ and the model can retrieve their content to answer questions</translation>
     </message>
 </context>
 <context>
+    <name>McpPage</name>
+    <message>
+        <location filename="../src/ui/pages/McpPage.qml" line="21"/>
+        <source>MCP 服务器</source>
+        <translation>MCP Servers</translation>
+    </message>
+    <message>
+        <location filename="../src/ui/pages/McpPage.qml" line="30"/>
+        <source>接入外部工具服务器；其工具经确认后由智能体调用。修改即时生效。</source>
+        <translation>Connect external tool servers; their tools are called by the agent after confirmation. Changes take effect immediately.</translation>
+    </message>
+    <message>
+        <location filename="../src/ui/pages/McpPage.qml" line="104"/>
+        <source>%1 个工具</source>
+        <translation>%1 tools</translation>
+    </message>
+    <message>
+        <location filename="../src/ui/pages/McpPage.qml" line="143"/>
+        <source>移除服务器 %1？</source>
+        <translation>Remove server %1?</translation>
+    </message>
+    <message>
+        <location filename="../src/ui/pages/McpPage.qml" line="153"/>
+        <source>取消</source>
+        <translation>Cancel</translation>
+    </message>
+    <message>
+        <location filename="../src/ui/pages/McpPage.qml" line="157"/>
+        <source>移除</source>
+        <translation>Remove</translation>
+    </message>
+    <message>
+        <location filename="../src/ui/pages/McpPage.qml" line="210"/>
+        <source>添加服务器</source>
+        <translation>Add Server</translation>
+    </message>
+    <message>
+        <location filename="../src/ui/pages/McpPage.qml" line="223"/>
+        <source>名称</source>
+        <translation>Name</translation>
+    </message>
+    <message>
+        <location filename="../src/ui/pages/McpPage.qml" line="227"/>
+        <source>my-server</source>
+        <translation>my-server</translation>
+    </message>
+    <message>
+        <location filename="../src/ui/pages/McpPage.qml" line="238"/>
+        <source>类型</source>
+        <translation>Type</translation>
+    </message>
+    <message>
+        <location filename="../src/ui/pages/McpPage.qml" line="250"/>
+        <source>命令与参数（空格分隔）</source>
+        <translation>Command and arguments (space-separated)</translation>
+    </message>
+    <message>
+        <location filename="../src/ui/pages/McpPage.qml" line="254"/>
+        <source>npx -y @modelcontextprotocol/server-filesystem D:/docs</source>
+        <translation>npx -y @modelcontextprotocol/server-filesystem D:/docs</translation>
+    </message>
+    <message>
+        <location filename="../src/ui/pages/McpPage.qml" line="267"/>
+        <source>服务端点 URL</source>
+        <translation>Endpoint URL</translation>
+    </message>
+    <message>
+        <location filename="../src/ui/pages/McpPage.qml" line="271"/>
+        <source>https://mcp.example.com/mcp</source>
+        <translation>https://mcp.example.com/mcp</translation>
+    </message>
+    <message>
+        <location filename="../src/ui/pages/McpPage.qml" line="286"/>
+        <source>添加并连接</source>
+        <translation>Add &amp; Connect</translation>
+    </message>
+</context>
+<context>
     <name>ModelConfigPage</name>
     <message>
         <location filename="../src/ui/pages/ModelConfigPage.qml" line="67"/>
@@ -791,22 +869,27 @@ and the model can retrieve their content to answer questions</translation>
         <translation>Interface Language</translation>
     </message>
     <message>
-        <location filename="../src/main.cpp" line="113"/>
+        <location filename="../src/main.cpp" line="112"/>
         <source>模型配置</source>
         <translation>Model Configuration</translation>
     </message>
     <message>
-        <location filename="../src/main.cpp" line="115"/>
+        <location filename="../src/main.cpp" line="114"/>
         <source>界面设置</source>
         <translation>Interface</translation>
     </message>
     <message>
-        <location filename="../src/main.cpp" line="117"/>
+        <location filename="../src/main.cpp" line="116"/>
         <source>通用设置</source>
         <translation>General</translation>
     </message>
     <message>
-        <location filename="../src/main.cpp" line="125"/>
+        <location filename="../src/main.cpp" line="118"/>
+        <source>MCP 服务器</source>
+        <translation>MCP Servers</translation>
+    </message>
+    <message>
+        <location filename="../src/main.cpp" line="126"/>
         <source>上次访问分类</source>
         <translation>Last Visited Category</translation>
     </message>
@@ -975,12 +1058,12 @@ and the model can retrieve their content to answer questions</translation>
     <message>
         <location filename="../src/viewmodels/AgentViewModel.cpp" line="701"/>
         <source>文件过大（附件上限 %1 KB）：%2</source>
-        <translation type="unfinished"></translation>
+        <translation>File too large (attachment limit %1 KB): %2</translation>
     </message>
     <message>
         <location filename="../src/viewmodels/AgentViewModel.cpp" line="706"/>
         <source>暂不支持二进制文件作为附件：%1</source>
-        <translation type="unfinished"></translation>
+        <translation>Binary files are not supported as attachments yet: %1</translation>
     </message>
 </context>
 <context>
@@ -1086,44 +1169,44 @@ and the model can retrieve their content to answer questions</translation>
         <translation>Settings</translation>
     </message>
     <message>
-        <location filename="../src/ui/components/SettingsCenterDialog.qml" line="145"/>
-        <location filename="../src/ui/components/SettingsCenterDialog.qml" line="257"/>
+        <location filename="../src/ui/components/SettingsCenterDialog.qml" line="152"/>
+        <location filename="../src/ui/components/SettingsCenterDialog.qml" line="264"/>
         <source>恢复默认</source>
         <translation>Restore Defaults</translation>
     </message>
     <message>
-        <location filename="../src/ui/components/SettingsCenterDialog.qml" line="156"/>
-        <location filename="../src/ui/components/SettingsCenterDialog.qml" line="253"/>
+        <location filename="../src/ui/components/SettingsCenterDialog.qml" line="163"/>
+        <location filename="../src/ui/components/SettingsCenterDialog.qml" line="260"/>
         <source>取消</source>
         <translation>Cancel</translation>
     </message>
     <message>
-        <location filename="../src/ui/components/SettingsCenterDialog.qml" line="163"/>
+        <location filename="../src/ui/components/SettingsCenterDialog.qml" line="170"/>
         <source>保存</source>
         <translation>Save</translation>
     </message>
     <message>
-        <location filename="../src/ui/components/SettingsCenterDialog.qml" line="174"/>
+        <location filename="../src/ui/components/SettingsCenterDialog.qml" line="181"/>
         <source>保存失败，请检查输入</source>
         <translation>Save failed, please check your input</translation>
     </message>
     <message>
-        <location filename="../src/ui/components/SettingsCenterDialog.qml" line="195"/>
+        <location filename="../src/ui/components/SettingsCenterDialog.qml" line="202"/>
         <source>有未保存的修改，确认放弃？</source>
         <translation>You have unsaved changes. Discard them?</translation>
     </message>
     <message>
-        <location filename="../src/ui/components/SettingsCenterDialog.qml" line="210"/>
+        <location filename="../src/ui/components/SettingsCenterDialog.qml" line="217"/>
         <source>继续编辑</source>
         <translation>Keep Editing</translation>
     </message>
     <message>
-        <location filename="../src/ui/components/SettingsCenterDialog.qml" line="214"/>
+        <location filename="../src/ui/components/SettingsCenterDialog.qml" line="221"/>
         <source>放弃</source>
         <translation>Discard</translation>
     </message>
     <message>
-        <location filename="../src/ui/components/SettingsCenterDialog.qml" line="238"/>
+        <location filename="../src/ui/components/SettingsCenterDialog.qml" line="245"/>
         <source>确认将当前分类的配置项恢复为默认值？</source>
         <translation>Restore the settings in this category to their defaults?</translation>
     </message>

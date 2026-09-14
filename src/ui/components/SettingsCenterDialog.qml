@@ -117,6 +117,13 @@ Dialog {
                     visible: active
                     source: "qrc:/qt/qml/NexusAI/src/ui/pages/GeneralPage.qml"
                 }
+
+                Loader {
+                    anchors.fill: parent
+                    active: dialog.currentCategory === "mcp"
+                    visible: active
+                    source: "qrc:/qt/qml/NexusAI/src/ui/pages/McpPage.qml"
+                }
             }
         }
 

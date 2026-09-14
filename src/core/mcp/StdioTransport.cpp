@@ -19,7 +19,7 @@ StdioTransport::StdioTransport(const Config& config, QObject* parent)
     });
     connect(&m_process, &QProcess::started, this, [this]() {
         // The pipe is live; the MCP handshake runs at the client layer.
-        setState(State::Connected);
+            setState(State::Connected);
     });
     connect(&m_process, &QProcess::finished, this, &StdioTransport::onFinished);
     connect(&m_process, &QProcess::errorOccurred, this,
@@ -92,6 +92,7 @@ void StdioTransport::sendMessage(const QJsonObject& message) {
 }
 
 void StdioTransport::onReadyRead() {
+
     m_lineBuffer += m_process.readAllStandardOutput();
     int newline = 0;
     while ((newline = m_lineBuffer.indexOf('\n')) >= 0) {

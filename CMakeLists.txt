@@ -59,6 +59,8 @@ add_library(nexus_core STATIC
     src/core/mcp/McpTransport.cpp
     src/core/mcp/StdioTransport.h
     src/core/mcp/StdioTransport.cpp
+    src/core/mcp/HttpTransport.h
+    src/core/mcp/HttpTransport.cpp
     src/core/mcp/McpClient.h
     src/core/mcp/McpClient.cpp
     src/core/mcp/McpToolAdapter.h
@@ -129,6 +131,8 @@ qt_add_qml_module(nexus_viewmodels
         src/viewmodels/I18nManager.cpp
         src/viewmodels/EditBuffer.h
         src/viewmodels/EditBuffer.cpp
+        src/viewmodels/McpManager.h
+        src/viewmodels/McpManager.cpp
 )
 target_include_directories(nexus_viewmodels PUBLIC
     ${CMAKE_CURRENT_SOURCE_DIR}/src
@@ -186,6 +190,7 @@ qt_add_qml_module(nexus_ai
         src/ui/pages/GeneralPage.qml
         src/ui/pages/InterfacePage.qml
         src/ui/pages/ModelConfigPage.qml
+        src/ui/pages/McpPage.qml
 )
 
 target_link_libraries(nexus_ai PRIVATE

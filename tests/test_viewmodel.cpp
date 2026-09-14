@@ -5,6 +5,11 @@
 #include "viewmodels/TraceModel.h"
 #include "viewmodels/LogModel.h"
 #include "viewmodels/I18nManager.h"
+#include "viewmodels/McpManager.h"
+#include "core/mcp/McpClient.h"
+#include "core/mcp/McpConfig.h"
+#include "core/mcp/McpToolAdapter.h"
+#include "core/tools/ToolRegistry.h"
 #include "core/memory/SqliteMemory.h"
 #include "core/utils/Logger.h"
 #include "core/rag/RagService.h"
@@ -756,6 +761,64 @@ private slots:
         // An idle active tab loads in place.
         vm.loadSession(QStringLiteral("session-y"));
         QCOMPARE(vm.tabModel().size(), tabsBefore + 1);
+    }
+
+    // Batch 31b: McpManager add/remove round trip. The user's real
+    // mcp_servers.json is backed up and restored around the test.
+    void mcpManagerAddRemoveRoundTrip() {
+        const QString configPath = McpConfig::configFilePath();
+        QFile configFile(configPath);
+        const bool hadConfig = configFile.exists();
+        QByteArray originalConfig;
+        if (hadConfig && configFile.open(QIODevice::ReadOnly)) {
+            originalConfig = configFile.readAll();
+            configFile.close();
+        }
+        auto restore = [&]() {
+            if (hadConfig) {
+                QFile out(configPath);
+                out.open(QIODevice::WriteOnly);
+                out.write(originalConfig);
+            } else {
+                QFile::remove(configPath);
+            }
+        };
+        // Clean slate for the test.
+        QFile::remove(configPath);
+
+        auto* manager = McpManager::instance();
+        const QString fakeExe = QCoreApplication::applicationDirPath()
+            + QStringLiteral("/fake_mcp_server");
+
+        manager->addServer(QVariantMap{
+            {"name", QStringLiteral("t-fake")},
+            {"transport", QStringLiteral("stdio")},
+            {"command", fakeExe},
+            {"enabled", true}});
+
+        // Tools register on connect (name via the real normalization rule:
+        // '-' is a legal character and is kept).
+        const QString toolName =
+            McpToolAdapter::registryNameFor(QStringLiteral("t-fake"),
+                                            QStringLiteral("echo"));
+        QTRY_VERIFY(ToolRegistry::instance().find(toolName) != nullptr);
+
+        const QVariantList servers = manager->servers();
+        QCOMPARE(servers.size(), 1);
+        QCOMPARE(servers.at(0).toMap().value("name").toString(),
+                 QStringLiteral("t-fake"));
+        QCOMPARE(servers.at(0).toMap().value("state").toInt(),
+                 static_cast<int>(McpClient::SessionState::Connected));
+        QCOMPARE(servers.at(0).toMap().value("toolCount").toInt(), 1);
+
+        // Persisted to mcp_servers.json.
+        QVERIFY(QFile::exists(configPath));
+
+        manager->removeServer(QStringLiteral("t-fake"));
+        QTRY_VERIFY(ToolRegistry::instance().find(toolName) == nullptr);
+        QCOMPARE(manager->servers().size(), 0);
+
+        restore();
     }
 };
 

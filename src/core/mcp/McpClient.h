@@ -19,6 +19,7 @@ struct McpServerConfig {
     QStringList args;
     QVariantMap env;
     QString url;
+    QVariantMap headers;   // Batch 31b: static HTTP headers (e.g. Authorization)
     bool enabled{true};
 };
 

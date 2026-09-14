@@ -1,5 +1,6 @@
 #include "core/mcp/McpClient.h"
 
+#include "core/mcp/HttpTransport.h"
 #include "core/mcp/StdioTransport.h"
 
 #include <QJsonDocument>
@@ -15,6 +16,12 @@ McpClient::McpClient(const McpServerConfig& config, QObject* parent)
         transportConfig.args = m_config.args;
         transportConfig.env = m_config.env;
         m_transport = std::make_unique<StdioTransport>(transportConfig, this);
+    } else if (m_config.transport == QLatin1String("http")) {
+        // Streamable HTTP (31b): static headers ride on every POST.
+        HttpTransport::Config transportConfig;
+        transportConfig.url = m_config.url;
+        transportConfig.headers = m_config.headers;
+        m_transport = std::make_unique<HttpTransport>(transportConfig, this);
     }
 
     if (m_transport) {
@@ -47,10 +54,12 @@ void McpClient::connectToServer() {
 
 void McpClient::disconnectFromServer() {
     setSessionState(SessionState::Disconnected);
-    m_tools.clear();
     if (m_transport)
         m_transport->stop();
+    // Emit BEFORE clearing: consumers (McpManager) unregister the tools
+    // from the registry by walking tools() in their disconnected handler.
     emit disconnected();
+    m_tools.clear();
 }
 
 void McpClient::onTransportStateChanged(McpTransport::State state) {

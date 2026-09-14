@@ -1,18 +1,142 @@
 // Batch 31a (F9): MCP client coverage against a scripted stdio server —
 // handshake, tool registration naming, call round trip, error mapping,
 // cancel, crash restart and concurrent id correlation.
+// Batch 31b (F9): Streamable HTTP transport coverage.
 #include "core/mcp/McpClient.h"
 #include "core/mcp/McpToolAdapter.h"
 #include "core/tools/ToolRegistry.h"
 
 #include <QCoreApplication>
+#include <QHash>
 #include <QSignalSpy>
+#include <QTcpServer>
 #include <QTemporaryDir>
 #include <QtTest>
 
 using namespace NexusAI;
 
 namespace {
+
+// Batch 31b: minimal Streamable-HTTP MCP server (JSON responses, session
+// header). Records whether later requests carried Mcp-Session-Id.
+class HttpFakeMcpServer : public QObject {
+    Q_OBJECT
+
+public:
+    explicit HttpFakeMcpServer(QObject* parent = nullptr) : QObject(parent) {
+        connect(&m_server, &QTcpServer::newConnection, this, [this]() {
+            while (auto* socket = m_server.nextPendingConnection()) {
+                connect(socket, &QTcpSocket::disconnected, socket,
+                        &QTcpSocket::deleteLater);
+                connect(socket, &QTcpSocket::readyRead, this, [this, socket]() {
+                    QByteArray& buffer = m_buffer[socket];
+                    buffer += socket->readAll();
+                    const int headerEnd = buffer.indexOf("\r\n\r\n");
+                    if (headerEnd < 0) return;
+
+                    // Session header: required on every request after
+                    // initialize issued one.
+                    const QByteArray headers = buffer.left(headerEnd);
+                    // HTTP header names are case-insensitive; QNAM
+                    // lowercases them on the wire.
+                    const bool hadSession =
+                        headers.toLower().contains("mcp-session-id:");
+                    if (hadSession) m_sessionHeaderSeen = true;
+
+                    int contentLength = 0;
+                    const QList<QByteArray> lines = headers.split('\n');
+                    for (const QByteArray& line : lines) {
+                        if (line.toLower().startsWith("content-length:")) {
+                            contentLength = line.mid(15).trimmed().toInt();
+                            break;
+                        }
+                    }
+                    if (buffer.size() - (headerEnd + 4) < contentLength)
+                        return;
+                    const QByteArray body =
+                        buffer.mid(headerEnd + 4, contentLength);
+                    buffer.remove(0, headerEnd + 4 + contentLength);
+
+                    handleRequest(socket,
+                                  QJsonDocument::fromJson(body).object());
+                });
+            }
+        });
+        if (!m_server.listen(QHostAddress::LocalHost))
+            qWarning() << "HttpFakeMcpServer listen failed:"
+                       << m_server.errorString();
+    }
+
+    QString baseUrl() const {
+        return QStringLiteral("http://127.0.0.1:%1/mcp")
+            .arg(m_server.serverPort());
+    }
+    void setSseMode(bool on) { m_sse = on; }
+    bool sessionHeaderSeen() const { return m_sessionHeaderSeen; }
+
+private:
+    void handleRequest(QTcpSocket* socket, const QJsonObject& request) {
+        const quint64 id = static_cast<quint64>(
+            request.value("id").toVariant().toLongLong());
+        const QString method = request.value("method").toString();
+
+        if (method == QLatin1String("initialize")) {
+            respond(socket, id, QJsonObject{
+                {"protocolVersion", QStringLiteral("2025-03-26")},
+                {"capabilities", QJsonObject{
+                    {"tools", QJsonObject{{"listChanged", false}}}}},
+                {"serverInfo", QJsonObject{
+                    {"name", QStringLiteral("fake-http")},
+                    {"version", QStringLiteral("1.0")}}},
+            });
+            return;
+        }
+        if (method == QLatin1String("tools/list")) {
+            respond(socket, id, QJsonObject{
+                {"tools", QJsonArray{QJsonObject{
+                    {"name", QStringLiteral("echo")},
+                    {"description", QStringLiteral("fake http tool")},
+                    {"inputSchema", QJsonObject{{"type", "object"}}}}}}});
+            return;
+        }
+        if (method == QLatin1String("tools/call")) {
+            respond(socket, id, QJsonObject{
+                {"content", QJsonArray{QJsonObject{
+                    {"type", "text"},
+                    {"text", QStringLiteral("http echo")}}}}});
+            return;
+        }
+        respond(socket, id, QJsonObject{});
+    }
+
+    void respond(QTcpSocket* socket, quint64 id, const QJsonObject& result) {
+        const QJsonObject response{
+            {"jsonrpc", QStringLiteral("2.0")},
+            {"id", static_cast<qint64>(id)},
+            {"result", result}};
+        const QByteArray body =
+            QJsonDocument(response).toJson(QJsonDocument::Compact);
+
+        QByteArray head =
+            "HTTP/1.1 200 OK\r\nMcp-Session-Id: test-session-1\r\n";
+        if (m_sse) {
+            head += "Content-Type: text/event-stream\r\n\r\n";
+            socket->write(head);
+            socket->write("event: message\r\ndata: " + body + "\r\n\r\n");
+        } else {
+            head += "Content-Type: application/json\r\n";
+            head += "Content-Length: " + QByteArray::number(body.size())
+                    + "\r\n\r\n";
+            socket->write(head + body);
+        }
+        socket->flush();
+    }
+
+    QTcpServer m_server;
+    QHash<QTcpSocket*, QByteArray> m_buffer;
+    bool m_sse{false};
+    bool m_sessionHeaderSeen{false};
+};
 
 QString fakeServerExe() {
     return QCoreApplication::applicationDirPath()
@@ -210,6 +334,78 @@ private slots:
                 });
         }
         QTRY_COMPARE(done, 5);
+        client.disconnectFromServer();
+    }
+
+    // ── Batch 31b: Streamable HTTP ─────────────────────
+
+    // Handshake, tools/list and tools/call over the POST-only transport
+    // (JSON response path).
+    void httpHandshakeAndToolCall() {
+        HttpFakeMcpServer http;
+        McpServerConfig config;
+        config.name = QStringLiteral("http-fake");
+        config.transport = QStringLiteral("http");
+        config.url = http.baseUrl();
+
+        McpClient client(config);
+        client.connectToServer();
+        QTRY_COMPARE(client.sessionState(),
+                     McpClient::SessionState::Connected);
+        QCOMPARE(client.tools().size(), 1);
+
+        bool handlerRan = false;
+        client.callTool(QStringLiteral("echo"), {},
+                        [&handlerRan](bool isError, const QString& text,
+                                      const QString&) {
+            handlerRan = true;
+            QVERIFY(!isError);
+            QCOMPARE(text, QStringLiteral("http echo"));
+        });
+        QTRY_VERIFY(handlerRan);
+        client.disconnectFromServer();
+    }
+
+    // SSE-framed responses parse into the same message stream.
+    void httpSseResponse() {
+        HttpFakeMcpServer http;
+        http.setSseMode(true);
+        McpServerConfig config;
+        config.name = QStringLiteral("http-fake");
+        config.transport = QStringLiteral("http");
+        config.url = http.baseUrl();
+
+        McpClient client(config);
+        client.connectToServer();
+        QTRY_COMPARE(client.sessionState(),
+                     McpClient::SessionState::Connected);
+
+        bool handlerRan = false;
+        client.callTool(QStringLiteral("echo"), {},
+                        [&handlerRan](bool isError, const QString& text,
+                                      const QString&) {
+            handlerRan = true;
+            QVERIFY(!isError);
+            QCOMPARE(text, QStringLiteral("http echo"));
+        });
+        QTRY_VERIFY(handlerRan);
+        client.disconnectFromServer();
+    }
+
+    // The Mcp-Session-Id issued at initialize must ride on later requests.
+    void sessionHeaderMaintained() {
+        HttpFakeMcpServer http;
+        McpServerConfig config;
+        config.name = QStringLiteral("http-fake");
+        config.transport = QStringLiteral("http");
+        config.url = http.baseUrl();
+
+        McpClient client(config);
+        client.connectToServer();
+        QTRY_COMPARE(client.sessionState(),
+                     McpClient::SessionState::Connected);
+        // tools/list ran after initialize — the header was required.
+        QVERIFY(http.sessionHeaderSeen());
         client.disconnectFromServer();
     }
 };
