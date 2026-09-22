@@ -133,6 +133,14 @@ Item {
                         Layout.fillWidth: true
                         editable: true
                         model: ["nomic-embed-text", "bge-m3", "mxbai-embed-large", "all-minilm"]
+                        // QQuickComboBox::componentComplete() resets an editable
+                        // combo's editText to currentText (the first item), which
+                        // wiped the binding below on every page build — the saved
+                        // model showed up as the default again (persisted value
+                        // was fine, only the echo failed). Selecting the persisted
+                        // index keeps currentText in sync with the saved value;
+                        // setEditText() no-ops when the text already matches.
+                        currentIndex: model.indexOf(Settings.embeddingModel)
                         editText: Settings.embeddingModel
                         onActivated: Settings.embeddingModel = currentText
                         onAccepted: Settings.embeddingModel = editText
@@ -142,6 +150,11 @@ Item {
                         // as the Base URL field below). Blank is rejected by
                         // the setter.
                         onFocusChanged: if (!focus) Settings.embeddingModel = editText
+                        // A saved value outside the model list completes with
+                        // textAt(-1) == ""; re-apply the persisted text once
+                        // creation has finished.
+                        Component.onCompleted: if (editText !== Settings.embeddingModel)
+                            editText = Settings.embeddingModel
                     }
                     // Batch 25 (G11): Ollama endpoint; empty input keeps the
                     // current value (the setter rejects blank after trim).

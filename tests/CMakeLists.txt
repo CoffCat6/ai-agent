@@ -64,7 +64,8 @@ qt_add_resources(test_viewmodel "i18n_test"
 add_test(NAME test_viewmodel COMMAND test_viewmodel)
 
 add_executable(test_settings test_settings.cpp)
-target_link_libraries(test_settings PRIVATE nexus_core nexus_infra nexus_viewmodels Qt6::Test)
+# Qt6::Quick/Qt6::Qml: the combo-echo regression loads QtQuick.Controls items
+target_link_libraries(test_settings PRIVATE nexus_core nexus_infra nexus_viewmodels Qt6::Test Qt6::Qml Qt6::Quick)
 add_test(NAME test_settings COMMAND test_settings)
 
 # Batch 23 F11: syntax highlighting — needs QQuickTextDocument (QtQuick)

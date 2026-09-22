@@ -5,8 +5,13 @@
 #include "core/utils/Logger.h"
 
 #include <QtTest>
+#include <QGuiApplication>
+#include <QQmlComponent>
+#include <QQmlEngine>
 #include <QSignalSpy>
 #include <QSettings>
+
+#include <memory>
 
 using namespace NexusAI;
 
@@ -290,6 +295,84 @@ private slots:
             QVERIFY(service.allowLocalNetworkFetch());
         }
     }
+
+    // Regression (BUG settings-echo): GeneralPage's embedding-model combo
+    // showed the default item again on every page rebuild while the value
+    // itself was persisted correctly. Root cause (Qt 6.9 qquickcombobox.cpp):
+    // componentComplete() calls updateCurrentText(), which force-writes
+    // currentText (first item) over an editable combo's editText and thereby
+    // wipes the `editText: Settings.embeddingModel` binding — unless
+    // hasCurrentIndex is set. These cases lock the QML-side contract:
+    //   - the pre-fix pattern must reproduce the default-echo defect
+    //     (if a future Qt stops resetting editText, this workaround pair
+    //     in GeneralPage.qml can be dropped together with this test);
+    //   - the fixed pattern (currentIndex bound to the persisted index)
+    //     must echo the saved value;
+    //   - a persisted value outside the model list must still echo through
+    //     the Component.onCompleted fallback.
+    void embeddingModelComboEcho() {
+        // Pre-fix layout: binding only, no currentIndex — Qt resets editText
+        // to currentText (the first item) during component completion.
+        static const char* kBeforeFix = R"QML(
+import QtQuick
+import QtQuick.Controls
+ComboBox {
+    editable: true
+    model: ["nomic-embed-text", "bge-m3", "mxbai-embed-large", "all-minilm"]
+    property string savedModel: "bge-m3"
+    editText: savedModel
+}
+)QML";
+        // Fixed layout: select the persisted index so componentComplete's
+        // updateCurrentText() writes the same text (setEditText no-ops).
+        static const char* kAfterFix = R"QML(
+import QtQuick
+import QtQuick.Controls
+ComboBox {
+    editable: true
+    model: ["nomic-embed-text", "bge-m3", "mxbai-embed-large", "all-minilm"]
+    property string savedModel: "bge-m3"
+    currentIndex: model.indexOf(savedModel)
+    editText: savedModel
+    Component.onCompleted: if (editText !== savedModel) editText = savedModel
+}
+)QML";
+        // Persisted value outside the model list: indexOf is -1, so the echo
+        // relies on the onCompleted fallback after textAt(-1) == "".
+        static const char* kCustomValue = R"QML(
+import QtQuick
+import QtQuick.Controls
+ComboBox {
+    editable: true
+    model: ["nomic-embed-text", "bge-m3", "mxbai-embed-large", "all-minilm"]
+    property string savedModel: "custom-embed"
+    currentIndex: model.indexOf(savedModel)
+    editText: savedModel
+    Component.onCompleted: if (editText !== savedModel) editText = savedModel
+}
+)QML";
+
+        const auto editTextAfterBuild = [](const char* qml) -> QString {
+            QQmlEngine engine;
+            QQmlComponent component(&engine);
+            component.setData(QByteArray(qml), QUrl());
+            if (!component.isReady())
+                return component.errorString();
+            std::unique_ptr<QObject> item(component.create());
+            if (!item)
+                return component.errorString();
+            return item->property("editText").toString();
+        };
+
+        // Defect reproduction: the pre-fix combo echoed the default item.
+        QCOMPARE(editTextAfterBuild(kBeforeFix), QStringLiteral("nomic-embed-text"));
+
+        // The fixed combo echoes the persisted model.
+        QCOMPARE(editTextAfterBuild(kAfterFix), QStringLiteral("bge-m3"));
+
+        // Out-of-list persisted values fall back to the raw saved text.
+        QCOMPARE(editTextAfterBuild(kCustomValue), QStringLiteral("custom-embed"));
+    }
 };
 
 // Sampling-param normalization lives in test_sampling_params (separate
@@ -299,6 +382,9 @@ private slots:
 int main(int argc, char *argv[]) {
     QCoreApplication::setOrganizationName("NexusAI");
     QCoreApplication::setApplicationName("NexusAI");
+    // QML combo-echo tests instantiate QtQuick items: QGuiApplication is
+    // required (QCoreApplication would abort on item creation).
+    QGuiApplication app(argc, argv);
     TestSettingsService tc;
     return QTest::qExec(&tc, argc, argv);
 }
