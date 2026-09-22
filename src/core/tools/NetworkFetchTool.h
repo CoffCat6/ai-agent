@@ -304,7 +304,12 @@ private:
     // handful of entities that matter. NOT a full HTML parser - good enough
     // for model-context readability, declared in docs/7 Batch 20.
     static QString processBody(const QByteArray& body) {
+        // Try UTF-8 first; if the byte sequence is not valid UTF-8, fall
+        // back to the system locale encoding so non-UTF-8 pages (e.g.
+        // GBK on zh-CN Windows) are readable instead of mojibake.
         QString text = QString::fromUtf8(body);
+        if (text.contains(QChar::ReplacementCharacter))
+            text = QString::fromLocal8Bit(body);
         text.remove(QRegularExpression(QStringLiteral(
             "<(script|style)\\b[^>]*>.*?</\\1>"),
             QRegularExpression::CaseInsensitiveOption

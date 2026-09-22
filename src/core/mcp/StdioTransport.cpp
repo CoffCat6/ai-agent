@@ -220,8 +220,12 @@ QString StdioTransport::formatError(const QString& reason) const {
     if (trimmed.isEmpty())
         return reason;
     // Cap the inlined tail so a single log line stays readable; the full
-    // buffer is already bounded to 64KB in appendStderr.
-    QString tail = QString::fromLocal8Bit(trimmed);
+    // buffer is already bounded to 64KB in appendStderr. Prefer UTF-8
+    // (most MCP servers - Node.js/Python - emit UTF-8 stderr); fall back
+    // to the system locale encoding if the bytes are not valid UTF-8.
+    QString tail = QString::fromUtf8(trimmed);
+    if (tail.contains(QChar::ReplacementCharacter))
+        tail = QString::fromLocal8Bit(trimmed);
     if (tail.size() > 2000)
         tail = QStringLiteral("…") + tail.right(2000);
     return reason + QStringLiteral(" | stderr: ") + tail;

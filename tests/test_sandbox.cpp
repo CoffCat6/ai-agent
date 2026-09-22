@@ -32,6 +32,9 @@ private slots:
     void editFileOutsideWhitelistRejected();
     void editFileCrlfBoundary();
     void editFileDirectoryTargetFailsCleanly();
+    // Encoding fallback: read_file must handle non-UTF-8 files gracefully
+    void readFileUtf8RoundTrip();
+    void readFileNonUtf8FallsBackToLocal();
 };
 
 void TestSandbox::allowsUserWrites() {
@@ -259,6 +262,53 @@ void TestSandbox::editFileDirectoryTargetFailsCleanly() {
 
     const ToolResult r = runEdit(target, QStringLiteral("x"), QStringLiteral("y"));
     QVERIFY2(!r.success, qPrintable(r.error));
+}
+
+// ── Encoding fallback: read_file ───────────────────────────
+// read_file tries UTF-8 first, then falls back to the system locale
+// encoding so non-UTF-8 text files are readable instead of mojibake.
+
+void TestSandbox::readFileUtf8RoundTrip() {
+    QTemporaryDir dir = sandboxTempDir();
+    QVERIFY(dir.isValid());
+    const QString path = dir.filePath("utf8.txt");
+    QFile f(path);
+    QVERIFY(f.open(QIODevice::WriteOnly));
+    f.write(QStringLiteral("你好世界\nplain ascii\n").toUtf8());
+    f.close();
+
+    ITool* tool = ToolRegistry::instance().find(QStringLiteral("read_file"));
+    QVERIFY(tool);
+    const ToolResult r = tool->execute(QJsonObject{{"path", path}});
+    QVERIFY2(r.success, qPrintable(r.error));
+    QVERIFY2(r.output.contains(QStringLiteral("你好世界")),
+             qPrintable(r.output));
+    QVERIFY2(!r.output.contains(QChar::ReplacementCharacter),
+             "UTF-8 file must not produce replacement characters");
+}
+
+void TestSandbox::readFileNonUtf8FallsBackToLocal() {
+#ifdef Q_OS_WIN
+    QTemporaryDir dir = sandboxTempDir();
+    QVERIFY(dir.isValid());
+    const QString path = dir.filePath("gbk.txt");
+    QFile f(path);
+    QVERIFY(f.open(QIODevice::WriteOnly));
+    // "中文" in GBK/CP936: D6 D0 CE C4 — not valid UTF-8.
+    f.write(QByteArray::fromHex("d6d0cec4"));
+    f.close();
+
+    ITool* tool = ToolRegistry::instance().find(QStringLiteral("read_file"));
+    QVERIFY(tool);
+    const ToolResult r = tool->execute(QJsonObject{{"path", path}});
+    QVERIFY2(r.success, qPrintable(r.error));
+    QVERIFY2(!r.output.contains(QChar::ReplacementCharacter),
+             "GBK file should fall back to local encoding, not mojibake");
+    QVERIFY2(r.output.contains(QStringLiteral("中文")),
+             qPrintable(QStringLiteral("expected 中文, got: %1").arg(r.output)));
+#else
+    QSKIP("GBK fallback is Windows-specific (local encoding is CP936)");
+#endif
 }
 
 QTEST_GUILESS_MAIN(TestSandbox)

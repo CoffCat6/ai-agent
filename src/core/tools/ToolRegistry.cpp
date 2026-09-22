@@ -72,9 +72,15 @@ public:
         if (!file.open(QIODevice::ReadOnly | QIODevice::Text))
             return ToolResult::fail("Cannot open file: " + file.errorString());
 
-        QTextStream stream(&file);
-        const QString content = stream.readAll();
+        // Try UTF-8 first (Qt 6 default); if the byte sequence is not valid
+        // UTF-8, fall back to the system locale encoding so non-UTF-8 text
+        // files (e.g. GBK on zh-CN Windows) are readable instead of showing
+        // replacement characters (mojibake).
+        const QByteArray raw = file.readAll();
         file.close();
+        QString content = QString::fromUtf8(raw);
+        if (content.contains(QChar::ReplacementCharacter))
+            content = QString::fromLocal8Bit(raw);
 
         if (content.size() > kMaxFileChars) {
             return ToolResult::ok(truncateOutput(content, kMaxFileChars)
@@ -338,7 +344,14 @@ public:
             }
         }
 
-        const QString output = QString::fromUtf8(proc.readAllStandardOutput());
+        // Try UTF-8 first; if the byte sequence is not valid UTF-8, fall
+        // back to the system locale encoding so non-UTF-8 output (e.g.
+        // cmd.exe CP936/GBK on zh-CN Windows) is readable instead of
+        // showing replacement characters (mojibake).
+        const QByteArray rawOutput = proc.readAllStandardOutput();
+        QString output = QString::fromUtf8(rawOutput);
+        if (output.contains(QChar::ReplacementCharacter))
+            output = QString::fromLocal8Bit(rawOutput);
         const int exitCode = proc.exitCode();
         return ToolResult::ok(QStringLiteral("exit code: %1\n%2")
             .arg(exitCode).arg(truncateOutput(output, kMaxOutputChars)));

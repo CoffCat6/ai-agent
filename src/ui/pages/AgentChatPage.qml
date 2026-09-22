@@ -48,8 +48,31 @@ Item {
                         const distance = contentHeight - contentY - height
                         pinnedToBottom = distance < 80
                     }
-                    onContentHeightChanged: if (pinnedToBottom)
-                        Qt.callLater(positionViewAtEnd)
+
+                    // Request a deferred scroll-to-bottom. The callback
+                    // re-checks pinnedToBottom when it actually runs, so a
+                    // scroll queued during streaming is dropped if the user
+                    // scrolled away between the request and the next frame.
+                    function requestScrollToBottom() {
+                        Qt.callLater(function() {
+                            if (pinnedToBottom)
+                                positionViewAtEnd()
+                        })
+                    }
+
+                    // True while a show/hide-process toggle is propagating
+                    // (delegate heights go 0/non-zero over multiple frames).
+                    // During this window we force-scroll to bottom so the
+                    // view never blanks; afterwards the user scrolls freely.
+                    property bool processTogglePending: false
+
+                    onContentHeightChanged: {
+                        if (processTogglePending) {
+                            Qt.callLater(positionViewAtEnd)
+                        } else if (pinnedToBottom) {
+                            requestScrollToBottom()
+                        }
+                    }
 
                     // Expand/collapse state of node detail blocks. Lives on
                     // the view (not the delegate) so it survives the full
@@ -72,7 +95,14 @@ Item {
 
                     function toggleProcess() {
                         showProcess = !showProcess
-                        if (pinnedToBottom) Qt.callLater(positionViewAtEnd)
+                        // Force-scroll to bottom across the multi-frame
+                        // contentHeight transition, then release so the
+                        // user can scroll freely afterwards.
+                        processTogglePending = true
+                        Qt.callLater(function() {
+                            processTogglePending = false
+                            positionViewAtEnd()
+                        })
                     }
 
                     // Computed in C++ (TraceModel); the JS scan over the
@@ -199,9 +229,7 @@ Item {
             target: AgentVM
             function onTraceChanged() {
                 if (traceListView.pinnedToBottom)
-                    Qt.callLater(function() {
-                        traceListView.positionViewAtEnd()
-                    })
+                    traceListView.requestScrollToBottom()
             }
         }
 
