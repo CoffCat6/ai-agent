@@ -17,6 +17,23 @@ QString levelName(int level) {
     }
     return QStringLiteral("LOG");
 }
+
+// Severity ranking: QtMsgType's declaration order is NOT a severity order
+// (Qt 6: QtInfoMsg = 4 ranks above QtFatalMsg = 3), so threshold comparisons
+// must go through this mapping. Same semantics as Logger.cpp::severityRank,
+// duplicated here because that helper lives in an anonymous namespace and
+// is not exposed via Logger.h. m_filterLevel stores this rank (0..4), not
+// the raw QtMsgType value.
+int severityRank(int level) {
+    switch (static_cast<QtMsgType>(level)) {
+    case QtDebugMsg:    return 0;
+    case QtInfoMsg:     return 1;
+    case QtWarningMsg:  return 2;
+    case QtCriticalMsg: return 3;
+    case QtFatalMsg:    return 4;
+    }
+    return 4;
+}
 } // namespace
 
 LogModel::LogModel(QObject* parent)
@@ -151,9 +168,11 @@ QString LogModel::toClipboardText() const {
 }
 
 bool LogModel::passesFilter(const Logger::LogEntry& entry) const {
-    // "show this severity and above" (QtMsgType orders debug < info < …);
+    // "show only this severity": m_filterLevel is a severity rank
+    // (0=Debug..4=Fatal), NOT a raw QtMsgType (whose declaration order is
+    // not a severity order — QtInfoMsg=4 > QtFatalMsg=3 in Qt 6).
     // m_filterLevel < 0 means ALL — no severity gate.
-    if (m_filterLevel >= 0 && entry.level < m_filterLevel) return false;
+    if (m_filterLevel >= 0 && severityRank(entry.level) != m_filterLevel) return false;
     if (!m_filterCategory.isEmpty()) {
         // Legacy/general lines have no logging category → treat as "app".
         const QString cat = entry.category.isEmpty()

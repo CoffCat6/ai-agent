@@ -76,14 +76,14 @@ Dialog {
                 Layout.preferredWidth: 150
                 model: [
                     qsTr("全部 (All)"),        // index 0 → filterLevel -1 (no gate)
-                    qsTr("调试 (Debug)"),      // 1 → QtDebugMsg(0)
-                    qsTr("信息 (Info)"),       // 2 → QtInfoMsg(1)
-                    qsTr("警告 (Warning)"),    // 3 → QtWarningMsg(2)
-                    qsTr("严重 (Critical)")    // 4 → QtCriticalMsg(3)
+                    qsTr("调试 (Debug)"),      // 1 → severity rank 0
+                    qsTr("信息 (Info)"),       // 2 → severity rank 1
+                    qsTr("警告 (Warning)"),    // 3 → severity rank 2
+                    qsTr("严重 (Critical)")    // 4 → severity rank 3
                 ]
-                currentIndex: 2   // Info and above, matching the file default
+                currentIndex: 0   // All (matches the file default)
                 onActivated: function(index) {
-                    // display index 0 = ALL(-1); 1..4 → QtMsgType 0..3
+                    // display index 0 = ALL(-1); 1..4 → severity rank 0..3
                     AgentVM.logModel.filterLevel = index - 1
                 }
                 Component.onCompleted: currentIndex = AgentVM.logModel.filterLevel + 1

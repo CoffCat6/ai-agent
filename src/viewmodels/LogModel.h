@@ -16,7 +16,9 @@ namespace NexusAI {
 // the ring evicted them. Capture runs on a low-frequency timer for the
 // whole process lifetime (logs logged while the panel is closed are still
 // kept); UI row notifications only matter while the panel is visible.
-// filterLevel shows the given severity and above (-1 = all), filterText is
+// filterLevel shows only the given severity (-1 = all); it stores a
+// severity RANK (0=Debug..4=Fatal), NOT a raw QtMsgType (whose declaration
+// order is not a severity order in Qt 6). filterText is
 // a case-insensitive substring over message+category, filterCategory a
 // prefix match on the logging category. Filter changes rebuild the view
 // (modelReset); appends are mirrored as row inserts.
@@ -50,7 +52,9 @@ public:
     QVariant data(const QModelIndex& index, int role) const override;
     QHash<int, QByteArray> roleNames() const override;
 
-    // Severity gate: -1 = show ALL (no severity filter)
+    // Severity gate: -1 = show ALL (no severity filter); otherwise a
+    // severity rank (0=Debug,1=Info,2=Warning,3=Critical,4=Fatal) — only
+    // entries whose rank == filterLevel are shown. NOT a raw QtMsgType value.
     int filterLevel() const;
     void setFilterLevel(int level);
     QString filterText() const;
@@ -90,7 +94,7 @@ private:
     quint64 m_lastSeq{0};
     QVector<Logger::LogEntry> m_all;      // session mirror (append-only, capped)
     QVector<Logger::LogEntry> m_visible;  // filtered rows, seq-ordered
-    int m_filterLevel{QtInfoMsg};
+    int m_filterLevel{-1};  // severity rank: -1 = ALL (default: show every level)
     QString m_filterText;
     QString m_filterCategory;
     bool m_polling{false};

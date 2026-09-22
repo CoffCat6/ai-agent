@@ -20,6 +20,7 @@
 #include <QSettings>
 #include <QStandardPaths>
 #include <QTemporaryDir>
+#include <QDateTime>
 #include <QDir>
 #include <QFile>
 #include <QJsonArray>
@@ -405,6 +406,61 @@ private slots:
             if (cat == QStringLiteral("nexus.app") || cat.isEmpty()) sawApp = true;
         }
         QVERIFY2(sawApp, "app rows missing in unfiltered view");
+    }
+
+    // 等级筛选回归：filterLevel 是 severity rank（0=Debug..4=Fatal），不是
+    // QtMsgType 原始值（Qt 6 中 QtInfoMsg=4 > QtFatalMsg=3）。语义为"仅显示
+    // 该级别"（精确匹配 rank），m_filterLevel=-1 为全部。
+    void logModelLevelFilter() {
+        Logger::install();
+        Logger::setMinLevel(QtDebugMsg);   // 让 Debug 进 ring
+
+        const QString tag = QStringLiteral("lvlfilt-%1")
+            .arg(QDateTime::currentMSecsSinceEpoch());
+        qDebug()    << (tag + "-debug");
+        qInfo()     << (tag + "-info");
+        qWarning()  << (tag + "-warn");
+        qCritical() << (tag + "-crit");
+
+        LogModel model;
+        model.setFilterCategory(QString());
+        model.setFilterText(tag);          // 只看本次发的 4 行
+        model.setPolling(true);
+        QTest::qWait(300);
+        model.setPolling(false);
+
+        struct Case { int rank; QStringList expected; };
+        const Case cases[] = {
+            {0, QStringList{"DEBUG"}},
+            {1, QStringList{"INFO"}},
+            {2, QStringList{"WARN"}},
+            {3, QStringList{"CRIT"}},
+        };
+        for (const auto& c : cases) {
+            model.setFilterLevel(c.rank);
+            QTest::qWait(150);
+            QStringList levels;
+            for (int i = 0; i < model.count(); ++i)
+                levels << model.data(model.index(i, 0),
+                                     LogModel::LevelRole).toString();
+            levels.sort();
+            QStringList expected = c.expected;
+            expected.sort();          // order-independent compare
+            QVERIFY2(levels == expected,
+                     qPrintable(QStringLiteral("rank=%1 got [%2] want [%3]")
+                        .arg(c.rank)
+                        .arg(levels.join(","))
+                        .arg(expected.join(","))));
+        }
+
+        // ALL: 全部 4 行可见
+        model.setFilterLevel(-1);
+        QTest::qWait(150);
+        QVERIFY2(model.count() >= 4,
+                 qPrintable(QStringLiteral("ALL filter lost rows: %1")
+                    .arg(model.count())));
+
+        Logger::setMinLevel(QtInfoMsg);    // 恢复全局默认
     }
     // ── Batch 18: session export (FEAT-1801) ──────────
 
