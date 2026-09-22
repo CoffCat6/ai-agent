@@ -51,7 +51,9 @@ AgentViewModel* AgentViewModel::create(QQmlEngine*, QJSEngine*) {
 AgentViewModel::AgentViewModel(QObject* parent)
     : QObject(parent)
     , m_logModel(new LogModel(this)) {
-    initToolRegistry();
+    refreshToolRegistry();
+    connect(&ToolRegistry::instance(), &ToolRegistry::toolsChanged,
+            this, &AgentViewModel::refreshToolRegistry);
 
     // Layout defaults (General Settings) must load first: they seed the
     // fallbacks of the panel restore below.
@@ -624,7 +626,8 @@ double AgentViewModel::tokenUsageRate() const {
 
 // ── Tool Registry Init ────────────────────────────────────
 
-void AgentViewModel::initToolRegistry() {
+void AgentViewModel::refreshToolRegistry() {
+    m_toolRegistryModel.clear();
     const auto defs = ToolRegistry::instance().listAll();
     for (const auto& def : defs) {
         QVariantMap tool;
@@ -633,8 +636,17 @@ void AgentViewModel::initToolRegistry() {
         tool["level"] = def.level == ToolLevel::Safe ? "safe"
                       : def.level == ToolLevel::RequiresConfirm ? "requires_confirm"
                       : "dangerous";
+        tool["enabled"] = ToolRegistry::instance().isToolEnabled(def.name);
+        tool["source"] = def.name.startsWith(QLatin1String("mcp__"))
+                       ? QStringLiteral("MCP") : QStringLiteral("builtin");
         m_toolRegistryModel.append(tool);
     }
+    emit toolRegistryModelChanged();
+}
+
+void AgentViewModel::setToolEnabled(const QString& name, bool enabled) {
+    ToolRegistry::instance().setToolEnabled(name, enabled);
+    // toolsChanged → refreshToolRegistry fires automatically.
 }
 
 // ── QML Actions ───────────────────────────────────────────

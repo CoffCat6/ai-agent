@@ -9,6 +9,7 @@
 #include <QJsonArray>
 #include <QJsonDocument>
 #include <QProcess>
+#include <QSettings>
 
 #include <atomic>
 
@@ -376,6 +377,7 @@ ToolRegistry& ToolRegistry::instance() {
 
 ToolRegistry::ToolRegistry() {
     registerBuiltins();
+    loadDisabledFromSettings();
 }
 
 void ToolRegistry::registerBuiltins() {
@@ -392,6 +394,7 @@ void ToolRegistry::registerTool(std::unique_ptr<ITool> tool) {
     QString name = tool->definition().name;
     m_tools.insert(name, tool.get());
     m_ownedTools.push_back(std::move(tool));
+    emit toolsChanged();
 }
 
 std::unique_ptr<ITool> ToolRegistry::takeTool(const QString& name) {
@@ -401,6 +404,7 @@ std::unique_ptr<ITool> ToolRegistry::takeTool(const QString& name) {
             m_ownedTools.erase(it);
             m_tools.remove(name);      // keep the name index in sync
             m_disabledTools.remove(name);
+            emit toolsChanged();
             return taken;
         }
     }
@@ -429,8 +433,7 @@ bool ToolRegistry::isRegistered(const QString& name) const {
 QStringList ToolRegistry::toolNamesForModel() const {
     QStringList names;
     for (const auto& tool : m_ownedTools) {
-        if (tool->definition().level != ToolLevel::Dangerous
-                && !m_disabledTools.contains(tool->definition().name))
+        if (!m_disabledTools.contains(tool->definition().name))
             names.append(tool->definition().name);
     }
     return names;
@@ -439,6 +442,8 @@ QStringList ToolRegistry::toolNamesForModel() const {
 void ToolRegistry::setToolEnabled(const QString& name, bool enabled) {
     if (enabled) m_disabledTools.remove(name);
     else m_disabledTools.insert(name);
+    saveDisabledToSettings();
+    emit toolsChanged();
 }
 
 bool ToolRegistry::isToolEnabled(const QString& name) const {
@@ -447,6 +452,25 @@ bool ToolRegistry::isToolEnabled(const QString& name) const {
     // sites all find() first; this keeps the predicate honest if a future
     // caller skips that step.
     return m_tools.contains(name) && !m_disabledTools.contains(name);
+}
+
+void ToolRegistry::loadDisabledFromSettings() {
+    QSettings s("NexusAI", "NexusAI");
+    if (s.contains("tools/disabled")) {
+        const QStringList disabled = s.value("tools/disabled").toStringList();
+        for (const QString& name : disabled)
+            if (m_tools.contains(name))
+                m_disabledTools.insert(name);
+    } else {
+        // First run: dangerous tools default to disabled for safety.
+        m_disabledTools.insert(QStringLiteral("rm_rf"));
+    }
+}
+
+void ToolRegistry::saveDisabledToSettings() {
+    QSettings s("NexusAI", "NexusAI");
+    s.setValue("tools/disabled", QStringList(m_disabledTools.begin(),
+                                             m_disabledTools.end()));
 }
 
 } // namespace NexusAI

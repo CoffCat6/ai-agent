@@ -1,6 +1,7 @@
 // SettingsService multi-model profiles, defaults completion, model switching,
 // addition, removal and persistence coverage.
 #include "viewmodels/SettingsService.h"
+#include "core/tools/ToolRegistry.h"
 
 #include "core/utils/Logger.h"
 
@@ -33,6 +34,7 @@ public:
         localOnlyMode = s.value("security/localOnlyMode");
         allowLocalNetworkFetch = s.value("security/allowLocalNetworkFetch");
         systemPromptOverride = s.value("agent/systemPromptOverride");
+        toolsDisabled = s.value("tools/disabled");
     }
     ~SettingsGuard() {
         QSettings s("NexusAI", "NexusAI");
@@ -58,6 +60,9 @@ public:
         if (systemPromptOverride.isValid())
             s.setValue("agent/systemPromptOverride", systemPromptOverride);
         else s.remove("agent/systemPromptOverride");
+        if (toolsDisabled.isValid())
+            s.setValue("tools/disabled", toolsDisabled);
+        else s.remove("tools/disabled");
     }
     QVariant rawProfiles;
     QVariant activeId;
@@ -68,6 +73,7 @@ public:
     QVariant localOnlyMode;
     QVariant allowLocalNetworkFetch;
     QVariant systemPromptOverride;
+    QVariant toolsDisabled;
 };
 
 } // namespace
@@ -372,6 +378,54 @@ ComboBox {
 
         // Out-of-list persisted values fall back to the raw saved text.
         QCOMPARE(editTextAfterBuild(kCustomValue), QStringLiteral("custom-embed"));
+    }
+
+    void toolRegistryEmitsToolsChanged() {
+        SettingsGuard guard;
+        auto& reg = ToolRegistry::instance();
+        QSignalSpy spy(&reg, &ToolRegistry::toolsChanged);
+        QVERIFY(spy.isValid());
+
+        reg.setToolEnabled("read_file", false);
+        QCOMPARE(spy.count(), 1);
+        reg.setToolEnabled("read_file", true);
+        QCOMPARE(spy.count(), 2);
+
+        spy.clear();
+        auto taken = reg.takeTool("list_dir");
+        QVERIFY(taken != nullptr);
+        QCOMPARE(spy.count(), 1);
+        reg.registerTool(std::move(taken));
+        QCOMPARE(spy.count(), 2);
+    }
+
+    void toolDisabledStatePersists() {
+        SettingsGuard guard;
+        auto& reg = ToolRegistry::instance();
+
+        reg.setToolEnabled("read_file", false);
+        {
+            QSettings s("NexusAI", "NexusAI");
+            QVERIFY(s.value("tools/disabled").toStringList().contains("read_file"));
+        }
+        reg.setToolEnabled("read_file", true);
+        {
+            QSettings s("NexusAI", "NexusAI");
+            QVERIFY(!s.value("tools/disabled").toStringList().contains("read_file"));
+        }
+    }
+
+    void dangerousToolIsMarkedDangerous() {
+        auto& reg = ToolRegistry::instance();
+        const auto defs = reg.listAll();
+        bool found = false;
+        for (const auto& def : defs) {
+            if (def.name == "rm_rf") {
+                found = true;
+                QCOMPARE(def.level, ToolLevel::Dangerous);
+            }
+        }
+        QVERIFY(found);
     }
 };
 

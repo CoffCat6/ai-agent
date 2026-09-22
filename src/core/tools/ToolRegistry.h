@@ -3,6 +3,7 @@
 #include "ITool.h"
 
 #include <QHash>
+#include <QObject>
 #include <QSet>
 #include <QStringList>
 #include <QVector>
@@ -11,7 +12,8 @@
 
 namespace NexusAI {
 
-class ToolRegistry {
+class ToolRegistry : public QObject {
+    Q_OBJECT
 public:
     static ToolRegistry& instance();
 
@@ -35,9 +37,16 @@ public:
     void setToolEnabled(const QString& name, bool enabled);
     bool isToolEnabled(const QString& name) const;
 
+signals:
+    // Fired on register/take/setEnabled — lets the UI refresh its tool
+    // list when MCP servers connect/disconnect or the user toggles a switch.
+    void toolsChanged();
+
 private:
     ToolRegistry();
     void registerBuiltins();
+    void loadDisabledFromSettings();
+    void saveDisabledToSettings();
 
     // Store tools with unique ownership; use raw pointers for lookup
     std::vector<std::unique_ptr<ITool>> m_ownedTools;

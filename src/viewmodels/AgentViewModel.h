@@ -95,7 +95,7 @@ class AgentViewModel : public QObject {
     Q_PROPERTY(bool restoreWindowOnStartup READ restoreWindowOnStartup WRITE setRestoreWindowOnStartup NOTIFY restoreWindowOnStartupChanged FINAL)
 
     // ── Tool Registry ─────────────────────────────────
-    Q_PROPERTY(QVariantList toolRegistryModel READ toolRegistryModel CONSTANT FINAL)
+    Q_PROPERTY(QVariantList toolRegistryModel READ toolRegistryModel NOTIFY toolRegistryModelChanged FINAL)
 
     // ── Knowledge Base ────────────────────────────────
     Q_PROPERTY(QVariantList knowledgeDocuments READ knowledgeDocuments NOTIFY knowledgeChanged FINAL)
@@ -254,6 +254,7 @@ public:
     // rejection (too large / binary).
     Q_INVOKABLE QVariantMap loadTextFileAttachment(const QString& path);
     Q_INVOKABLE void approveToolCall(const QString& id, bool approved);
+    Q_INVOKABLE void setToolEnabled(const QString& name, bool enabled);
     Q_INVOKABLE void stop();                 // abort generation, keep trace
     Q_INVOKABLE void newChat();              // reset to a fresh session
     // Loads into the active tab; when the active tab is busy a new tab is
@@ -309,6 +310,7 @@ signals:
     void knowledgeEmbedProgressChanged();
     void liveModeChanged();
     void toolConfirmRequired(const QString& id, const QString& name, const QVariantMap& args);
+    void toolRegistryModelChanged();
     void errorOccurred(const QString& error);
     // Non-error user feedback (import finished, etc.)
     void noticeOccurred(const QString& notice);
@@ -325,7 +327,7 @@ private:
     // for global session-list operations (delete/rename/audit/history pull).
     ChatSessionController* controllerWithAgent() const;
     void refreshSessions();
-    void initToolRegistry();
+    void refreshToolRegistry();
     void refreshKnowledge();
     void setKnowledgeBusy(bool busy);
 

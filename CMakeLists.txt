@@ -191,6 +191,7 @@ qt_add_qml_module(nexus_ai
         src/ui/pages/InterfacePage.qml
         src/ui/pages/ModelConfigPage.qml
         src/ui/pages/McpPage.qml
+        src/ui/pages/ToolsPage.qml
 )
 
 target_link_libraries(nexus_ai PRIVATE

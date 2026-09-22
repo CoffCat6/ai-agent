@@ -116,6 +116,8 @@ int main(int argc, char *argv[])
         QT_TRANSLATE_NOOP("NexusAI", "通用设置"), 3);
     prefRegistry->registerCategory(QStringLiteral("mcp"),
         QT_TRANSLATE_NOOP("NexusAI", "MCP 服务器"), 4);
+    prefRegistry->registerCategory(QStringLiteral("tools"),
+        QT_TRANSLATE_NOOP("NexusAI", "工具管理"), 5);
 
     // Internal UI state (not shown in any category panel; categoryId empty)
     {

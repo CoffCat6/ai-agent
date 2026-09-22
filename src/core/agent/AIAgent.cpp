@@ -478,7 +478,6 @@ void AIAgent::processIteration() {
     QJsonArray toolsArray;
     if (m_toolRegistry && !m_forcedFinal) {
         for (const auto& def : m_toolRegistry->listAll()) {
-            if (def.level == ToolLevel::Dangerous) continue;
             // Batch 14: disabled tools (local-only mode) must not even reach
             // the wire - the acceptance criterion is that the request body
             // contains no schema for the gated tool at all.
@@ -923,21 +922,8 @@ void AIAgent::processNextToolCall() {
 
         const ToolDefinition def = tool->definition();
 
-        if (def.level == ToolLevel::Dangerous) {
-            appendTraceNode("tool_call", call.name, "failed",
-                            QJsonObject{{"args", argsToString(call.arguments)}});
-            appendToolResultMessage(call,
-                QStringLiteral("Error: tool '%1' is blocked by sandbox policy").arg(call.name));
-            if (m_memory)
-                m_memory->logAudit(m_sessionId, "tool_blocked", call.name,
-                                   argsToString(call.arguments), false,
-                                   QStringLiteral("sandbox policy"),
-                                   m_activeRequestId, m_lastLatencyMs,
-                                   m_lastTokensUsed, currentModel());
-            continue;
-        }
-
-        if (def.level == ToolLevel::RequiresConfirm) {
+        if (def.level == ToolLevel::RequiresConfirm
+                || def.level == ToolLevel::Dangerous) {
             // Suspend the loop and ask the user. The confirmation handle is
             // the trace node id, matching what the QML timeline buttons send.
             m_confirmNodeId = appendTraceNode("tool_call", call.name, "waiting_confirm",
