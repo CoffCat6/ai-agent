@@ -40,6 +40,10 @@ private:
     void onFinished(int exitCode, QProcess::ExitStatus status);
     void scheduleRestart();
     void appendStderr(const QByteArray& chunk);
+    // Append the retained stderr tail to a transport error so users can see
+    // *why* a server exited (e.g. missing API key, package install failure)
+    // without having to rerun the command by hand.
+    QString formatError(const QString& reason) const;
 
     Config m_config;
     QProcess m_process;

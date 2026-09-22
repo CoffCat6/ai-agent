@@ -1,8 +1,40 @@
 #include "core/mcp/StdioTransport.h"
 
 #include <QJsonDocument>
+#include <QStandardPaths>
 
 namespace NexusAI {
+
+#ifdef Q_OS_WIN
+namespace {
+// Quote a single token for cmd.exe's command line. A token is wrapped in
+// double quotes when it contains a space, tab, or quote; embedded quotes
+// are doubled (cmd's escape rule). Used to build the inner command line
+// passed to `cmd /d /s /c "..."` via QProcess::setNativeArguments, which
+// bypasses QProcess's own quoting that would conflict with cmd /s.
+QString quoteForCmd(const QString& s) {
+    if (s.isEmpty())
+        return QStringLiteral("\"\"");
+    const bool needQuote = s.contains(QLatin1Char(' '))
+                        || s.contains(QLatin1Char('\t'))
+                        || s.contains(QLatin1Char('"'));
+    if (!needQuote)
+        return s;
+    QString out;
+    out.reserve(s.size() + 2);
+    out += QLatin1Char('"');
+    for (int i = 0; i < s.size(); ++i) {
+        const QChar c = s.at(i);
+        if (c == QLatin1Char('"'))
+            out += QLatin1String("\"\"");
+        else
+            out += c;
+    }
+    out += QLatin1Char('"');
+    return out;
+}
+} // namespace
+#endif
 
 StdioTransport::StdioTransport(const Config& config, QObject* parent)
     : McpTransport(parent)
@@ -24,10 +56,11 @@ StdioTransport::StdioTransport(const Config& config, QObject* parent)
     connect(&m_process, &QProcess::finished, this, &StdioTransport::onFinished);
     connect(&m_process, &QProcess::errorOccurred, this,
             [this](QProcess::ProcessError error) {
-        if (error == QProcess::FailedToStart) {
+            if (error == QProcess::FailedToStart) {
             // The command never ran: no point in restarting.
-            emit errorOccurred(QStringLiteral("Failed to start MCP server: ")
-                + m_config.command);
+            emit errorOccurred(formatError(
+                QStringLiteral("Failed to start MCP server: ")
+                + m_config.command));
             setState(State::Failed);
         }
         // Crashed / Timedout paths are handled in onFinished.
@@ -48,10 +81,56 @@ void StdioTransport::start() {
     if (m_process.state() != QProcess::NotRunning) return;
 
     m_stopping = false;
+    m_stderrBuffer.clear();   // fresh run: don't carry the previous stderr tail
     setState(State::Connecting);
 
+#ifdef Q_OS_WIN
+    // Windows: commands like npx / uvx are .cmd/.bat wrapper scripts, while
+    // QProcess (CreateProcessW) only auto-appends .exe — spawning "npx"
+    // directly fails with FailedToStart even though it runs fine from a
+    // shell. Resolve the bare name through PATH+PATHEXT (findExecutable)
+    // and route batch wrappers through cmd.exe, the same shim every
+    // stdio MCP client on Windows needs. /d skips AutoRun scripts, /s
+    // enables sane quoting for a resolved path that may contain spaces.
+    QString program = m_config.command;
+    QStringList args = m_config.args;
+    QString nativeArgs;   // set for batch wrappers only
+    if (!program.isEmpty()) {
+        const QString resolved = QStandardPaths::findExecutable(program);
+        const bool batch = resolved.endsWith(QLatin1String(".cmd"),
+                                             Qt::CaseInsensitive)
+                        || resolved.endsWith(QLatin1String(".bat"),
+                                             Qt::CaseInsensitive);
+        if (batch) {
+            // Build the inner command line manually and pass it via
+            // setNativeArguments to bypass QProcess's own quoting,
+            // which conflicts with cmd /s /c's quote-stripping rules.
+            // cmd /s removes exactly one leading and one trailing
+            // quote from the /c argument, so wrap the whole inner
+            // line in an extra quote pair to preserve embedded quotes
+            // (e.g. a resolved path under "Program Files").
+            QString inner = quoteForCmd(resolved);
+            for (int i = 0; i < args.size(); ++i)
+                inner += QLatin1Char(' ') + quoteForCmd(args.at(i));
+            program = QStringLiteral("cmd.exe");
+            nativeArgs = QStringLiteral("/d /s /c \"") + inner
+                       + QLatin1Char('"');
+        } else if (!resolved.isEmpty()) {
+            program = resolved;
+        }
+        // Unresolved (not installed): keep the raw command so QProcess
+        // fails with its regular FailedToStart diagnostics below.
+    }
+    m_process.setProgram(program);
+    if (!nativeArgs.isEmpty())
+        m_process.setNativeArguments(nativeArgs);
+    else
+        m_process.setArguments(args);
+#else
     m_process.setProgram(m_config.command);
     m_process.setArguments(m_config.args);
+#endif
+
     // QProcessEnvironment is value-based: insert into a local copy first —
     // chaining onto processEnvironment() edits a temporary and the child
     // never sees the extra variables.
@@ -115,9 +194,10 @@ void StdioTransport::onFinished(int exitCode, QProcess::ExitStatus status) {
     // Abnormal exit (crash or non-zero): schedule a bounded restart. The
     // client re-runs its handshake over the fresh process.
     const bool abnormal = status == QProcess::CrashExit;
-    emit errorOccurred(QStringLiteral("MCP server exited (code %1, %2)")
-        .arg(exitCode).arg(abnormal ? QStringLiteral("crashed")
-                                    : QStringLiteral("exited")));
+    emit errorOccurred(formatError(
+        QStringLiteral("MCP server exited (code %1, %2)")
+            .arg(exitCode).arg(abnormal ? QStringLiteral("crashed")
+                                        : QStringLiteral("exited"))));
 
     if (m_restarts >= MaxRestarts) {
         setState(State::Failed);
@@ -133,6 +213,18 @@ void StdioTransport::appendStderr(const QByteArray& chunk) {
     m_stderrBuffer += chunk;
     if (m_stderrBuffer.size() > 64 * 1024)
         m_stderrBuffer = m_stderrBuffer.right(32 * 1024);
+}
+
+QString StdioTransport::formatError(const QString& reason) const {
+    const QByteArray trimmed = m_stderrBuffer.trimmed();
+    if (trimmed.isEmpty())
+        return reason;
+    // Cap the inlined tail so a single log line stays readable; the full
+    // buffer is already bounded to 64KB in appendStderr.
+    QString tail = QString::fromLocal8Bit(trimmed);
+    if (tail.size() > 2000)
+        tail = QStringLiteral("…") + tail.right(2000);
+    return reason + QStringLiteral(" | stderr: ") + tail;
 }
 
 } // namespace NexusAI

@@ -134,6 +134,14 @@ void handleRequest(const QJsonObject& request) {
 int main(int argc, char* argv[]) {
     QCoreApplication app(argc, argv);
 
+    // Test hook: simulate a server that fails at boot (writes stderr then
+    // exits with non-zero), mirroring real MCP servers that misconfigure
+    // themselves (missing API key, package install failure, ...).
+    if (qEnvironmentVariableIsSet("MCP_FAKE_BOOT_FAIL")) {
+        qerr << "simulated boot failure\n";
+        return 1;
+    }
+
     const int crashAfter =
         qEnvironmentVariableIntValue("MCP_FAKE_CRASH", nullptr);
 

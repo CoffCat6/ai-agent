@@ -4,13 +4,18 @@
 // Batch 31b (F9): Streamable HTTP transport coverage.
 #include "core/mcp/McpClient.h"
 #include "core/mcp/McpToolAdapter.h"
+#include "core/mcp/StdioTransport.h"
 #include "core/tools/ToolRegistry.h"
 
 #include <QCoreApplication>
+#include <QDir>
+#include <QFile>
 #include <QHash>
+#include <QProcessEnvironment>
 #include <QSignalSpy>
 #include <QTcpServer>
 #include <QTemporaryDir>
+#include <QTextStream>
 #include <QtTest>
 
 using namespace NexusAI;
@@ -407,6 +412,144 @@ private slots:
         // tools/list ran after initialize — the header was required.
         QVERIFY(http.sessionHeaderSeen());
         client.disconnectFromServer();
+    }
+
+    // ── Windows .cmd wrapper compatibility + diagnostic透传 ──────────
+
+    // A failed connection must surface the transport's real reason
+    // (e.g. "Failed to start MCP server: <cmd>"), not just the generic
+    // "MCP server connection failed" that previously hid the cause.
+    void connectionFailureCarriesDiagnostic() {
+        McpServerConfig config = makeConfig({"echo"});
+        config.command = QStringLiteral("definitely-not-a-real-mcp-exe-xyz");
+        McpClient client(config);
+        QSignalSpy failedSpy(&client, &McpClient::connectionFailed);
+
+        client.connectToServer();
+        QTRY_VERIFY(failedSpy.count() > 0);
+
+        const QString error = failedSpy.first().first().toString();
+        QVERIFY(error.contains(QStringLiteral("Failed to start")));
+        QVERIFY(error.contains(QStringLiteral("definitely-not-a-real-mcp-exe-xyz")));
+    }
+
+    // Windows: bare commands that resolve to .cmd/.bat wrappers (npx, uvx)
+    // must start through cmd.exe instead of failing with FailedToStart.
+    // Reproduced with a throwaway .cmd script discovered via PATH.
+    void windowsCmdWrapperStartsViaCmd() {
+#ifndef Q_OS_WIN
+        QSKIP("Windows-specific QProcess/PATHEXT behavior");
+#endif
+        QTemporaryDir dir;
+        QVERIFY(dir.isValid());
+
+        // A .cmd that stays alive briefly so QProcess::started fires and
+        // the transport reaches Connected before the child exits.
+        const QString scriptPath =
+            dir.filePath(QStringLiteral("nexus-mcp-cmd-fake.cmd"));
+        {
+            QFile file(scriptPath);
+            QVERIFY(file.open(QIODevice::WriteOnly | QIODevice::Text));
+            QTextStream(&file) << "@echo off\r\n"
+                               << "ping -n 4 127.0.0.1 >nul\r\n";
+        }
+
+        // findExecutable() reads PATH from the environment; prepend the
+        // temp dir so the bare name resolves to our .cmd. Restore on exit.
+        const QString originalPath =
+            QProcessEnvironment::systemEnvironment().value(QStringLiteral("PATH"));
+        qputenv("PATH",
+                QByteArray((dir.path() + QLatin1Char(';') + originalPath)
+                               .toLocal8Bit()));
+        struct PathRestore {
+            QByteArray oldPath;
+            ~PathRestore() { qputenv("PATH", oldPath); }
+        } restore{originalPath.toLocal8Bit()};
+
+        StdioTransport::Config cfg;
+        cfg.command = QStringLiteral("nexus-mcp-cmd-fake");
+        StdioTransport transport(cfg);
+        QSignalSpy errorSpy(&transport, &McpTransport::errorOccurred);
+
+        transport.start();
+        // QProcess::started → setState(Connected). If the .cmd wrapper
+        // path were broken we'd see "Failed to start" instead.
+        QTRY_COMPARE(transport.state(), McpTransport::State::Connected);
+
+        for (int i = 0; i < errorSpy.count(); ++i)
+            QVERIFY(!errorSpy.at(i).first().toString()
+                         .contains(QStringLiteral("Failed to start")));
+
+        transport.stop();
+    }
+
+    // Windows: a .cmd resolved under a path containing spaces (e.g.
+    // "D:\Program Files\nodejs\npx.cmd") must still start. cmd /s /c's
+    // quote stripping used to split the path at the space and fail with
+    // "'D:/Program' is not recognized as an internal or external command".
+    void windowsCmdWrapperHandlesSpacedPath() {
+#ifndef Q_OS_WIN
+        QSKIP("Windows-specific cmd /s /c quoting behavior");
+#endif
+        const QString base = QDir::tempPath()
+                           + QStringLiteral("/nexus mcp spaced test");
+        QVERIFY(QDir().mkpath(base));
+
+        const QString scriptPath =
+            base + QStringLiteral("/nexus-mcp-spaced-fake.cmd");
+        {
+            QFile file(scriptPath);
+            QVERIFY(file.open(QIODevice::WriteOnly | QIODevice::Text));
+            QTextStream(&file) << "@echo off\r\n"
+                               << "ping -n 4 127.0.0.1 >nul\r\n";
+        }
+
+        const QString originalPath =
+            QProcessEnvironment::systemEnvironment()
+                .value(QStringLiteral("PATH"));
+        qputenv("PATH",
+                QByteArray((base + QLatin1Char(';') + originalPath)
+                               .toLocal8Bit()));
+        struct PathRestore {
+            QByteArray oldPath;
+            ~PathRestore() { qputenv("PATH", oldPath); }
+        } restore{originalPath.toLocal8Bit()};
+
+        StdioTransport::Config cfg;
+        cfg.command = QStringLiteral("nexus-mcp-spaced-fake");
+        StdioTransport transport(cfg);
+        QSignalSpy errorSpy(&transport, &McpTransport::errorOccurred);
+
+        transport.start();
+        QTRY_COMPARE(transport.state(), McpTransport::State::Connected);
+
+        for (int i = 0; i < errorSpy.count(); ++i)
+            QVERIFY(!errorSpy.at(i).first().toString()
+                         .contains(QStringLiteral("Failed to start")));
+
+        transport.stop();
+        QDir(base).removeRecursively();
+    }
+
+    // When a server exits non-zero, its stderr tail must be inlined into
+    // the transport error so users see the real cause (missing API key,
+    // package install failure, ...) in the log instead of just an exit code.
+    void stderrSurfacedOnExit() {
+        StdioTransport::Config cfg;
+        cfg.command = fakeServerExe();
+        cfg.env.insert(QStringLiteral("MCP_FAKE_BOOT_FAIL"),
+                       QStringLiteral("1"));
+        StdioTransport transport(cfg);
+        QSignalSpy errorSpy(&transport, &McpTransport::errorOccurred);
+
+        transport.start();
+        QTRY_VERIFY_WITH_TIMEOUT(errorSpy.count() > 0, 5000);
+
+        const QString error = errorSpy.first().first().toString();
+        QVERIFY(error.contains(QStringLiteral("MCP server exited (code 1")));
+        QVERIFY(error.contains(QStringLiteral("simulated boot failure")));
+
+        transport.stop();
     }
 };
 

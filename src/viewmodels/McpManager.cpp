@@ -81,6 +81,13 @@ void McpManager::connectClient(McpClient* client) {
         }
         refreshServers();
     });
+    // Transport diagnostics (FailedToStart, server stderr, exit codes) flow
+    // through `diagnostic`; mirror them to the log so users can see *why* a
+    // connection failed even when the UI shows the summarized lastError.
+    connect(client, &McpClient::diagnostic, this, [client](const QString& error) {
+        qWarning().noquote()
+            << "MCP server" << client->serverName() << ':' << error;
+    });
     connect(client, &McpClient::toolsChanged, this,
             [this]() { refreshServers(); });
 }

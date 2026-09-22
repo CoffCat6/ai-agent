@@ -30,7 +30,14 @@ McpClient::McpClient(const McpServerConfig& config, QObject* parent)
         connect(m_transport.get(), &McpTransport::stateChanged,
                 this, &McpClient::onTransportStateChanged);
         connect(m_transport.get(), &McpTransport::errorOccurred,
-                this, [this](const QString& error) { emit diagnostic(error); });
+                this, [this](const QString& error) {
+            // Keep the latest transport error so the Failed-state
+            // connectionFailed signal can carry the real reason (e.g.
+            // "Failed to start MCP server: npx") instead of a generic
+            // "MCP server connection failed" that hides the cause.
+            m_lastDiagnostic = error;
+            emit diagnostic(error);
+        });
     }
 }
 
@@ -76,7 +83,10 @@ void McpClient::onTransportStateChanged(McpTransport::State state) {
         }
         m_pending.clear();
         setSessionState(SessionState::Failed);
-        emit connectionFailed(QStringLiteral("MCP server connection failed"));
+        emit connectionFailed(m_lastDiagnostic.isEmpty()
+            ? QStringLiteral("MCP server connection failed")
+            : QStringLiteral("MCP server connection failed: %1")
+                  .arg(m_lastDiagnostic));
     } else if (state == McpTransport::State::Disconnected) {
         if (m_sessionState != SessionState::Disconnected) {
             setSessionState(SessionState::Disconnected);

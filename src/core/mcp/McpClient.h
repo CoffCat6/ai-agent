@@ -91,6 +91,7 @@ private:
     SessionState m_sessionState{SessionState::Disconnected};
     quint64 m_nextId{1};
     QList<ToolInfo> m_tools;
+    QString m_lastDiagnostic;   // most recent transport error (for connectionFailed detail)
 
     struct PendingRequest {
         std::function<void(const QJsonObject& result, const QJsonObject& error)> handler;
