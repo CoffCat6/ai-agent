@@ -265,7 +265,10 @@ public:
         ToolDefinition def;
         def.name = "shell_exec";
         def.description = "Execute a shell command on the user's machine and return "
-                          "its combined stdout/stderr and exit code.";
+                          "its combined stdout/stderr and exit code. Avoid nested "
+                          "quotes (e.g. python -c \"...\") - they break on Windows; "
+                          "prefer dedicated tools (http_fetch for web requests) "
+                          "instead of reimplementing them via shell.";
         def.level = ToolLevel::RequiresConfirm;
         QJsonObject cmdProp = stringParam("The shell command to execute.");
         QJsonObject timeoutProp;
