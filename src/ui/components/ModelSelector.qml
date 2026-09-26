@@ -20,6 +20,12 @@ Item {
     implicitWidth: selectorRow.implicitWidth + 20
     implicitHeight: 28
 
+    Accessible.role: Accessible.ComboBox
+    Accessible.name: qsTr("模型选择器")
+    Accessible.description: hasProfile
+        ? (activeProfile.displayName || activeProfile.provider) + " · " + (activeProfile.model || "")
+        : qsTr("未配置模型")
+
     // Trigger pill button
     Rectangle {
         id: selectorBox

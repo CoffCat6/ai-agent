@@ -37,6 +37,11 @@ public:
     void setToolEnabled(const QString& name, bool enabled);
     bool isToolEnabled(const QString& name) const;
 
+    // T14 (REQ-T14-04): batch-enable/disable all tools whose name starts with
+    // the given prefix (e.g. "mcp__" for all MCP tools). Used by the
+    // local-only mode gate to disable all MCP tools at once.
+    void setToolsEnabledByPrefix(const QString& prefix, bool enabled);
+
 signals:
     // Fired on register/take/setEnabled — lets the UI refresh its tool
     // list when MCP servers connect/disconnect or the user toggles a switch.

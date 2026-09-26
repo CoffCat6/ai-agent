@@ -11,6 +11,8 @@ ScrollView {
     id: page
     clip: true
 
+    Accessible.name: qsTr("MCP 服务器管理页")
+
     ColumnLayout {
         width: page.availableWidth
         spacing: 12

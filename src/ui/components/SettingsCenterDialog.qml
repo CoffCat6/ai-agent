@@ -18,6 +18,9 @@ Dialog {
     signal settingsSaved()
     signal settingsError(string message)
 
+    Accessible.name: qsTr("设置中心")
+    Accessible.description: qsTr("配置模型、界面、工具、MCP 服务器等应用选项")
+
     function openCategory(id) {
         currentCategory = id
         open()

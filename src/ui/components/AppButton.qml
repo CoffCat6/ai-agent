@@ -52,4 +52,8 @@ Rectangle {
         cursorShape: Qt.PointingHandCursor
         onClicked: root.clicked()
     }
+
+    Accessible.role: Accessible.Button
+    Accessible.name: root.text
+    Accessible.onPressAction: root.clicked()
 }

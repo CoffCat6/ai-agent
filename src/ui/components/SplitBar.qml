@@ -59,4 +59,8 @@ Item {
     ToolTip.visible: dragArea.containsMouse && !root.dragActive
     ToolTip.delay: 600
     ToolTip.text: qsTr("拖动调节宽度 · 双击复位")
+
+    Accessible.role: Accessible.Separator
+    Accessible.name: qsTr("面板分隔条")
+    Accessible.description: qsTr("拖动调节面板宽度，双击复位")
 }

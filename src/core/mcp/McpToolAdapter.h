@@ -18,13 +18,11 @@ class McpClient;
 // The adapter is registered as `mcp__<server>__<tool>` with a forced
 // RequiresConfirm level and executes by issuing tools/call over its McpClient.
 //
-// Threading: execute() runs on a QtConcurrent pool thread (AIAgent's tool
-// dispatch); the MCP response arrives on the GUI thread. The adapter waits
-// on a mutex/condition pair with cancel-sliced waits — the same contract as
-// shell_exec (ITool::cancel may only flip atomic flags; the pool thread
-// observes them between slices).
 class McpToolAdapter : public ITool {
 public:
+    // T14 (REQ-T14-02): max characters of tool description exposed to the model.
+    // Untrusted third-party text is hard-capped before it enters the context.
+    static constexpr int MaxDescriptionChars = 1024;
     McpToolAdapter(McpClient* client, const QString& serverName,
                    const QString& toolName, const QString& description,
                    const QJsonObject& inputSchema);

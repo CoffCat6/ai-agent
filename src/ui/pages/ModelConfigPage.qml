@@ -8,6 +8,8 @@ ScrollView {
     id: page
     clip: true
 
+    Accessible.name: qsTr("模型配置页")
+
     property string editingId: Settings.activeProfileId
     property var editing: {
         const list = Settings.profiles

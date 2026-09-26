@@ -13,6 +13,7 @@ class ThemeManager : public QObject {
     QML_SINGLETON
     QML_NAMED_ELEMENT(ThemeManager)
     Q_PROPERTY(bool isDark READ isDark WRITE setIsDark NOTIFY themeChanged FINAL)
+    Q_PROPERTY(QString themeMode READ themeMode WRITE setThemeMode NOTIFY themeModeChanged FINAL)
     Q_PROPERTY(QString fontSans READ fontSans WRITE setFontSans NOTIFY fontChanged FINAL)
     Q_PROPERTY(QString fontMono READ fontMono WRITE setFontMono NOTIFY fontChanged FINAL)
     Q_PROPERTY(int baseFontSize READ baseFontSize WRITE setBaseFontSize NOTIFY fontChanged FINAL)
@@ -25,6 +26,9 @@ public:
     bool isDark() const { return m_isDark; }
     void setIsDark(bool dark);
 
+    QString themeMode() const { return m_themeMode; }
+    void setThemeMode(const QString& mode);
+
     QString fontSans() const { return m_fontSans; }
     void setFontSans(const QString& family);
 
@@ -36,6 +40,7 @@ public:
 
 signals:
     void themeChanged();
+    void themeModeChanged();
     void fontChanged();
 
 private:
@@ -44,8 +49,11 @@ private:
     void loadFontPrefs();
     void registerPreferences();
     void subscribeChanges();
+    bool resolveSystemDark() const;
+    void applySystemColorScheme();
 
     bool m_isDark{true};
+    QString m_themeMode{QStringLiteral("auto")};
     QString m_fontSans{QStringLiteral("Inter")};
     QString m_fontMono{QStringLiteral("JetBrains Mono")};
     int m_baseFontSize{14};

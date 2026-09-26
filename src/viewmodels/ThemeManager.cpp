@@ -4,6 +4,9 @@
 #include "ChangeBus.h"
 #include "FontProbe.h"
 
+#include <QGuiApplication>
+#include <QStyleHints>
+
 namespace NexusAI {
 
 ThemeManager* ThemeManager::s_instance = nullptr;
@@ -26,6 +29,15 @@ ThemeManager::ThemeManager(QObject* parent)
     loadTheme();
     loadFontPrefs();
     subscribeChanges();
+
+    // REQ-T5-02: follow the OS light/dark scheme live while the preference
+    // is "auto". Explicit dark/light choices ignore system changes.
+    if (qApp) {
+        if (auto* hints = QGuiApplication::styleHints()) {
+            connect(hints, &QStyleHints::colorSchemeChanged, this,
+                    [this](Qt::ColorScheme) { applySystemColorScheme(); });
+        }
+    }
 }
 
 void ThemeManager::registerPreferences() {
@@ -47,9 +59,9 @@ void ThemeManager::registerPreferences() {
         meta.key = QStringLiteral("ui.themeMode");
         meta.categoryId = QStringLiteral("interface");
         meta.displayName = QT_TRANSLATE_NOOP("NexusAI", "主题模式");
-        meta.defaultValue = QStringLiteral("dark");
+        meta.defaultValue = QStringLiteral("auto");
         meta.type = PreferenceType::Enum;
-        meta.constraint.options = { QStringLiteral("dark"), QStringLiteral("light") };
+        meta.constraint.options = { QStringLiteral("auto"), QStringLiteral("dark"), QStringLiteral("light") };
         meta.legacyKeys = { QStringLiteral("theme/dark") };
         reg->registerPreference(meta);
     }
@@ -87,11 +99,17 @@ void ThemeManager::registerPreferences() {
 
 void ThemeManager::loadTheme() {
     const QVariant val = PreferenceStore::instance()->load(QStringLiteral("ui.themeMode"));
-    if (val.isValid()) {
-        m_isDark = (val.toString() != QStringLiteral("light"));
-    } else {
-        m_isDark = m_settings.value("theme/dark", true).toBool();
+    m_themeMode = val.toString();
+    // Defensive: a corrupt/unknown token must not leave the UI in a mode the
+    // settings combo cannot name - fall back to the auto default.
+    if (m_themeMode != QStringLiteral("auto") &&
+        m_themeMode != QStringLiteral("dark") &&
+        m_themeMode != QStringLiteral("light")) {
+        m_themeMode = QStringLiteral("auto");
     }
+    m_isDark = (m_themeMode == QStringLiteral("auto"))
+        ? resolveSystemDark()
+        : (m_themeMode == QStringLiteral("dark"));
 }
 
 void ThemeManager::loadFontPrefs() {
@@ -122,11 +140,18 @@ void ThemeManager::subscribeChanges() {
         // ignore those so a save neither rewrites the same value nor
         // re-emits the change signals.
         if (key == QStringLiteral("ui.themeMode")) {
-            const bool dark = value.toString() != QStringLiteral("light");
-            if (dark == m_isDark) return;
-            m_isDark = dark;
+            const QString mode = value.toString();
+            if (mode == m_themeMode) return;
+            m_themeMode = mode;
+            const bool dark = (mode == QStringLiteral("auto"))
+                ? resolveSystemDark()
+                : (mode == QStringLiteral("dark"));
             saveTheme(dark);
-            emit themeChanged();
+            emit themeModeChanged();
+            if (dark != m_isDark) {
+                m_isDark = dark;
+                emit themeChanged();
+            }
         } else if (key == QStringLiteral("ui.fontSans")) {
             const QString family = value.toString();
             if (family == m_fontSans) return;
@@ -152,12 +177,54 @@ void ThemeManager::saveTheme(bool dark) {
 }
 
 void ThemeManager::setIsDark(bool dark) {
-    if (m_isDark == dark) return;
+    // REQ-T5-04: an explicit toggle (settings or Ctrl+D) always upgrades an
+    // "auto" preference to a concrete mode so the user's choice survives a
+    // later OS scheme change.
+    const QString explicitMode = dark ? QStringLiteral("dark") : QStringLiteral("light");
+    if (m_isDark == dark && m_themeMode == explicitMode) return;
     m_isDark = dark;
+    const bool modeChanged = (m_themeMode != explicitMode);
+    if (modeChanged) m_themeMode = explicitMode;
     // Persist through the preference store (single source of truth); the
     // bus echo lands back in subscribeChanges and is skipped there.
-    PreferenceStore::instance()->save(QStringLiteral("ui.themeMode"),
-                                      dark ? QStringLiteral("dark") : QStringLiteral("light"));
+    PreferenceStore::instance()->save(QStringLiteral("ui.themeMode"), explicitMode);
+    if (modeChanged) emit themeModeChanged();
+    emit themeChanged();
+}
+
+void ThemeManager::setThemeMode(const QString& mode) {
+    // REQ-T5-01/03: "auto" follows the system; "dark"/"light" are explicit.
+    const QString normalized = (mode == QStringLiteral("dark") ||
+                                mode == QStringLiteral("light"))
+        ? mode
+        : QStringLiteral("auto");
+    if (m_themeMode == normalized) return;
+    m_themeMode = normalized;
+    PreferenceStore::instance()->save(QStringLiteral("ui.themeMode"), normalized);
+    const bool dark = (normalized == QStringLiteral("auto"))
+        ? resolveSystemDark()
+        : (normalized == QStringLiteral("dark"));
+    emit themeModeChanged();
+    if (dark != m_isDark) {
+        m_isDark = dark;
+        emit themeChanged();
+    }
+}
+
+bool ThemeManager::resolveSystemDark() const {
+    if (!qApp) return true;   // no GUI app: keep the historical dark default
+    const Qt::ColorScheme scheme = QGuiApplication::styleHints()->colorScheme();
+    // Unknown (an OS that cannot report a scheme) keeps the dark default so
+    // the look never flips without the user asking.
+    return scheme != Qt::ColorScheme::Light;
+}
+
+void ThemeManager::applySystemColorScheme() {
+    // REQ-T5-03: explicit dark/light choices are immune to system changes.
+    if (m_themeMode != QStringLiteral("auto")) return;
+    const bool dark = resolveSystemDark();
+    if (dark == m_isDark) return;
+    m_isDark = dark;
     emit themeChanged();
 }
 

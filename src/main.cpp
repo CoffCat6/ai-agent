@@ -23,9 +23,11 @@
 #include "viewmodels/I18nManager.h"
 #include "core/agent/AIAgent.h"
 #include "core/memory/SqliteMemory.h"
+#include "core/agent/EpisodicService.h"
 #include "core/tools/ToolRegistry.h"
 #include "core/tools/Sandbox.h"
 #include "core/tools/NetworkFetchTool.h"
+#include "core/tools/WebSearchTool.h"
 #include "core/rag/RagService.h"
 #include "core/rag/KnowledgeSearchTool.h"
 #include "core/utils/Logger.h"
@@ -82,8 +84,11 @@ int main(int argc, char *argv[])
 
     // ── Logging: mirror all Qt messages to a rotating file ──
     // (windowed build has no console; see <AppLocalData>/logs/)
-    Logger::install();
-    qInfo() << "NexusAI" << app.applicationVersion() << "starting";
+Logger::install();
+// T9 (REQ-T9-01): backfill log history from previous session for the in-app
+// log panel. Non-blocking; failures return 0 and never prevent startup.
+Logger::backfillFromFile();
+qInfo() << "NexusAI" << app.applicationVersion() << "starting";
     qInfo() << "Log file:" << Logger::logFilePath();
 
     // ── Preference infrastructure (Batch: General Settings) ──
@@ -171,8 +176,14 @@ int main(int argc, char *argv[])
     // Batch 20 (FEAT-2001): web fetch tool; RequiresConfirm per call. The
     // SSRF escape hatch (allowPrivateTargets) follows the settings below.
     auto fetchOwned = std::make_unique<NetworkFetchTool>();
-    auto* fetchTool = fetchOwned.get();
+    auto* fetchPtr = fetchOwned.get();
     ToolRegistry::instance().registerTool(std::move(fetchOwned));
+
+    // T6 (F3): web search tool - wired with the configured provider and
+    // API key (DPAPI-encrypted). The key is injected after applySettings.
+    auto webOwned = std::make_unique<WebSearchTool>();
+    auto* webPtr = webOwned.get();
+    ToolRegistry::instance().registerTool(std::move(webOwned));
 
     // ── Batch 14 (SEC-1401/1402): local-only mode gate ──
     // When enabled, the knowledge-base tool is gated off for cloud providers:
@@ -188,6 +199,16 @@ int main(int argc, char *argv[])
         ToolRegistry::instance().setToolEnabled(
             QStringLiteral("search_knowledge_base"),
             !(cloud && settings->localOnlyMode()));
+    // T6 (F3-04): web_search also leaks queries to the cloud - gate it
+    // the same way. Disabled tools never reach toolNamesForModel().
+    ToolRegistry::instance().setToolEnabled(
+        QStringLiteral("web_search"),
+        !(cloud && settings->localOnlyMode()));
+    // T14 (REQ-T14-04): local-only mode disables ALL MCP tools (mcp__*)
+    // — they connect to external servers that may forward data off-machine.
+    ToolRegistry::instance().setToolsEnabledByPrefix(
+        QStringLiteral("mcp__"),
+        !(cloud && settings->localOnlyMode()));
     };
     QObject::connect(settings, &SettingsService::localOnlyModeChanged, &app,
                      applyLocalOnlyGate);
@@ -199,6 +220,11 @@ int main(int argc, char *argv[])
     auto* agent = new AIAgent(&app);
     agent->setToolRegistry(&ToolRegistry::instance());
     agent->setMemory(memory);
+
+    // T8 (F4): episodic long-term memory service.
+    auto* episodicService = new EpisodicService(&app);
+    episodicService->setMemory(memory);
+    agent->setEpisodicService(episodicService);
 
     // ── ViewModels (QML singletons, owned by the app) ──
     auto* themeManager = ThemeManager::instance();
@@ -446,8 +472,9 @@ int main(int argc, char *argv[])
     // for every tab: the template agent uses the process-lifetime group, each
     // factory-built tab its own group (see the factory comment above).
     const ProviderSet templateSet{openai, anthropic, ollama};
-    const auto applySettings = [settings, agentVM, agent, fetchTool, templateSet,
-                                applyProfileTo, pickActive, &tabProviderSets]() {
+    const auto applySettings = [settings, agentVM, agent, fetchPtr, webPtr,
+                                episodicService,
+                                templateSet, applyProfileTo, pickActive, &tabProviderSets]() {
         applyProfileTo(templateSet);
         for (auto it = tabProviderSets.begin(); it != tabProviderSets.end(); ++it)
             applyProfileTo(it.value());
@@ -477,7 +504,14 @@ int main(int argc, char *argv[])
 
         // Batch 20: http_fetch SSRF escape hatch follows its (opt-in,
         // default-off) setting; immediate effect on the next fetch.
-        fetchTool->setAllowPrivateTargets(settings->allowLocalNetworkFetch());
+        fetchPtr->setAllowPrivateTargets(settings->allowLocalNetworkFetch());
+
+        // T6 (F3): inject the current web search API key (DPAPI-decrypted).
+        webPtr->setApiKey(settings->webSearchApiKey());
+
+        // T8 (F4): sync episodic memory toggle and LLM service.
+        episodicService->setEnabled(settings->episodicMemoryEnabled());
+        episodicService->setLlmService(pickActive(templateSet, provider));
     };
     applySettings();
 
@@ -486,6 +520,7 @@ int main(int argc, char *argv[])
     QObject::connect(settings, &SettingsService::contextTokensChanged, &app, [applySettings]() { applySettings(); });
     QObject::connect(settings, &SettingsService::allowFullDiskReadChanged, &app, [applySettings]() { applySettings(); });
     QObject::connect(settings, &SettingsService::allowLocalNetworkFetchChanged, &app, [applySettings]() { applySettings(); });
+    QObject::connect(settings, &SettingsService::episodicMemoryEnabledChanged, &app, [applySettings]() { applySettings(); });
 
     // Batch 22 (F8): user-editable system prompt (empty = built-in)
     const auto applySystemPrompt = [agent, settings]() {

@@ -7,6 +7,8 @@ import NexusAI.ViewModels
 Item {
     id: page
 
+    Accessible.name: qsTr("界面设置页")
+
     // Current value of a preference = staged edit if any, else stored value.
     // Reads the `staged` map property (NOTIFY stagedChanged) so bindings
     // refresh on stage/rollback/reset - a Q_INVOKABLE-only binding would
@@ -27,6 +29,21 @@ Item {
         families.sort()
         return families
     }
+
+    // Enum values are stable tokens; the theme combo shows a localized label.
+    function themeModeLabel(value) {
+        switch (value) {
+        case "auto":  return qsTr("跟随系统")
+        case "dark":  return qsTr("深色")
+        case "light": return qsTr("浅色")
+        default:      return value
+        }
+    }
+
+    // Options come from the registry metadata (single source of truth), paired
+    // with localized labels - the enum values stay stable tokens.
+    readonly property var themeModeOptions: PreferenceRegistry.preferenceMeta("ui.themeMode").options.map(
+        function(v) { return { value: v, label: page.themeModeLabel(v) } })
 
     Flickable {
         id: flick
@@ -71,15 +88,25 @@ Item {
                 spacing: 12
 
                 Text {
-                    text: qsTr("深色模式")
+                    text: qsTr("主题模式")
                     color: Theme.textPrimary
                     font.pixelSize: Theme.fontSizeBody
                     font.family: Theme.fontSans
                     Layout.fillWidth: true
                 }
-                Switch {
-                    checked: page.pref("ui.themeMode") === "dark"
-                    onToggled: EditBuffer.stage("ui.themeMode", checked ? "dark" : "light")
+                ComboBox {
+                    id: themeModeCombo
+                    Layout.preferredWidth: 200
+                    model: page.themeModeOptions
+                    textRole: "label"
+                    valueRole: "value"
+                    currentIndex: {
+                        const cur = page.pref("ui.themeMode")
+                        for (let i = 0; i < model.length; ++i)
+                            if (model[i].value === cur) return i
+                        return 0
+                    }
+                    onActivated: EditBuffer.stage("ui.themeMode", currentValue)
                 }
             }
 

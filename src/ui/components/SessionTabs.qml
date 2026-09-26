@@ -37,6 +37,9 @@ Rectangle {
                     radius: 4
                     color: model.modelData.active ? Theme.surfaceHover : "transparent"
 
+                    Accessible.role: Accessible.PageTab
+                    Accessible.name: model.modelData.title
+
                     MouseArea {
                         anchors.fill: parent
                         onClicked: AgentVM.activateTab(model.modelData.index)
@@ -111,5 +114,9 @@ Rectangle {
             cursorShape: Qt.PointingHandCursor
             onClicked: AgentVM.openTab()
         }
+
+        Accessible.role: Accessible.Button
+        Accessible.name: qsTr("新建会话标签页")
+        Accessible.onPressAction: AgentVM.openTab()
     }
 }

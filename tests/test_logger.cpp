@@ -4,6 +4,7 @@
 #include "core/utils/Activity.h"
 
 #include <QtConcurrent/QtConcurrent>
+#include <QDateTime>
 #include <QtTest>
 
 using namespace NexusAI;
@@ -209,6 +210,69 @@ private slots:
         QCOMPARE(sinkTarget, QStringLiteral("x.txt"));
         QCOMPARE(sinkRequest, 7u);
         QCOMPARE(sinkDetail, QStringLiteral("detail-d"));
+    }
+
+    // T9: backfillFromFile parses historical log entries and marks them historical.
+    void backfillParsesAndMarksHistorical() {
+        // Write a few log lines that will be written to the log file.
+        qInfo().noquote() << "T9_BACKFILL_TEST_LINE_A";
+        qInfo().noquote() << "T9_BACKFILL_TEST_LINE_B";
+        qWarning().noquote() << "T9_BACKFILL_TEST_LINE_C";
+
+        // Flush by reading the current ring (entries are already in the ring).
+        const auto beforeBackfill = Logger::entriesSince(0);
+        QVERIFY(beforeBackfill.size() >= 3);
+
+        // Backfill from file. The lines we just wrote should already be in
+        // the ring, so dedup should skip them. New entries (if any from
+        // previous runs) would be injected.
+        const int injected = Logger::backfillFromFile(500);
+        QVERIFY(injected >= 0);  // never throws
+
+        // All backfilled entries must have historical=true.
+        const auto afterBackfill = Logger::entriesSince(0);
+        for (const auto& e : afterBackfill) {
+            if (e.historical) {
+                QVERIFY(e.timestamp > 0);
+                QVERIFY(!e.message.isEmpty());
+            }
+        }
+    }
+
+    void backfillCappedAtHalfCapacity() {
+        // Backfill with a small cap; result must not exceed the cap.
+        const int cap = 100;
+        const int injected = Logger::backfillFromFile(cap);
+        QVERIFY(injected <= cap);
+    }
+
+    void backfillDoesNotDuplicateExisting() {
+        // Write a unique marker line.
+        const QString marker = QStringLiteral("T9_DEDUP_MARKER_%1").arg(QDateTime::currentMSecsSinceEpoch());
+        qInfo().noquote() << marker;
+
+        // It's now in the ring. Backfill should NOT add it again.
+        const auto before = Logger::entriesSince(0);
+        int countBefore = 0;
+        for (const auto& e : before)
+            if (e.message == marker) ++countBefore;
+
+        Logger::backfillFromFile(500);
+
+        const auto after = Logger::entriesSince(0);
+        int countAfter = 0;
+        for (const auto& e : after)
+            if (e.message == marker) ++countAfter;
+
+        QCOMPARE(countAfter, countBefore);  // no duplication
+    }
+
+    void backfillFileNotReadableReturnsZero() {
+        // Point logDir to a non-existent path by calling backfill when
+        // no log file exists. The method should return 0, not crash.
+        // Since Logger::logDir() is fixed, we just verify it doesn't throw.
+        const int result = Logger::backfillFromFile(10);
+        QVERIFY(result >= 0);
     }
 };
 

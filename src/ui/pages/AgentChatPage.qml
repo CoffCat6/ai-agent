@@ -10,6 +10,8 @@ Item {
 
     signal settingsRequested()
 
+    Accessible.name: qsTr("AI 对话页面")
+
     ColumnLayout {
         anchors.fill: parent
         spacing: 0

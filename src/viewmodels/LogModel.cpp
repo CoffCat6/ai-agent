@@ -69,6 +69,7 @@ QVariant LogModel::data(const QModelIndex& index, int role) const {
     case CategoryRole:  return entry.category;
     case MessageRole:   return entry.message;
     case SeqRole:       return qulonglong(entry.seq);
+    case HistoricalRole: return entry.historical;
     }
     return {};
 }
@@ -80,6 +81,7 @@ QHash<int, QByteArray> LogModel::roleNames() const {
         {CategoryRole,  "category"},
         {MessageRole,   "message"},
         {SeqRole,       "seq"},
+        {HistoricalRole, "historical"},
     };
     return roles;
 }

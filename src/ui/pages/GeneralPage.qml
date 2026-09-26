@@ -7,6 +7,8 @@ import NexusAI.ViewModels
 Item {
     id: page
 
+    Accessible.name: qsTr("通用设置页")
+
     // Future "general" preferences registered in PreferenceRegistry render
     // here; today the category is empty and the section stays hidden.
     property var preferenceKeys: PreferenceRegistry.preferencesInCategory("general")

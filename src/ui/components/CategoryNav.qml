@@ -70,6 +70,13 @@ Rectangle {
                     cursorShape: Qt.PointingHandCursor
                     onClicked: nav.categorySelected(modelData)
                 }
+
+                Accessible.role: Accessible.ListItem
+                Accessible.name: {
+                    I18n.currentLocale
+                    return PreferenceRegistry.categoryName(modelData)
+                }
+                Accessible.description: isActive ? qsTr("当前选中") : ""
             }
         }
     }

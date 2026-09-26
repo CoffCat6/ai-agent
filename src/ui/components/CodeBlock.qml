@@ -66,4 +66,8 @@ Rectangle {
         bgColor: root.bgColor
         z: 1
     }
+
+    Accessible.role: Accessible.StaticText
+    Accessible.name: qsTr("代码块")
+    Accessible.description: root.text.left(80)
 }

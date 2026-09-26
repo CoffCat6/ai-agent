@@ -202,4 +202,7 @@ Canvas {
         ctx.lineJoin = "round"
         def(ctx)
     }
+
+    Accessible.role: Accessible.Graphic
+    Accessible.name: root.icon
 }

@@ -88,3 +88,13 @@ add_executable(test_mcp test_mcp.cpp)
 target_link_libraries(test_mcp PRIVATE nexus_core nexus_infra Qt6::Test)
 add_dependencies(test_mcp fake_mcp_server)
 add_test(NAME test_mcp COMMAND test_mcp)
+
+# T6 (F3): web search tool. Uses a fake backend for deterministic results.
+add_executable(test_web_search test_web_search.cpp)
+target_link_libraries(test_web_search PRIVATE nexus_core nexus_infra Qt6::Test)
+add_test(NAME test_web_search COMMAND test_web_search)
+
+# T8 (F4): episodic memory service.
+add_executable(test_episodic test_episodic.cpp)
+target_link_libraries(test_episodic PRIVATE nexus_core nexus_infra Qt6::Test)
+add_test(NAME test_episodic COMMAND test_episodic)

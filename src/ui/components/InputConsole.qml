@@ -226,6 +226,9 @@ Rectangle {
             renderType: Text.NativeRendering
             clip: true
 
+            Accessible.name: qsTr("消息输入框")
+            Accessible.description: qsTr("输入消息后按 Enter 发送，Shift+Enter 换行")
+
             // Custom cursor
             cursorDelegate: Rectangle {
                 visible: textArea.activeFocus
@@ -301,6 +304,11 @@ Rectangle {
                 cursorShape: Qt.PointingHandCursor
                 onClicked: attachMenu.popup(attachButton, 0, -attachMenu.implicitHeight - 8)
             }
+
+            Accessible.role: Accessible.Button
+            Accessible.name: qsTr("添加附件")
+            Accessible.description: qsTr("上传图片或文件附件")
+            Accessible.onPressAction: attachMenu.popup(attachButton, 0, -attachMenu.implicitHeight - 8)
         }
 
         // Send (idle) / stop (busy) button on the right.
@@ -338,6 +346,13 @@ Rectangle {
             }
 
             Behavior on color { ColorAnimation { duration: 150 } }
+
+            Accessible.role: Accessible.Button
+            Accessible.name: root.isBusy ? qsTr("停止") : qsTr("发送")
+            Accessible.onPressAction: {
+                if (root.isBusy) AgentVM.stop()
+                else textArea.sendCurrentText()
+            }
         }
     }
 

@@ -470,6 +470,27 @@ bool ToolRegistry::isToolEnabled(const QString& name) const {
     return m_tools.contains(name) && !m_disabledTools.contains(name);
 }
 
+void ToolRegistry::setToolsEnabledByPrefix(const QString& prefix, bool enabled) {
+    bool changed = false;
+    for (const auto& tool : m_ownedTools) {
+        const QString name = tool->definition().name;
+        if (name.startsWith(prefix)) {
+            if (enabled) {
+                if (m_disabledTools.remove(name)) changed = true;
+            } else {
+                if (!m_disabledTools.contains(name)) {
+                    m_disabledTools.insert(name);
+                    changed = true;
+                }
+            }
+        }
+    }
+    if (changed) {
+        saveDisabledToSettings();
+        emit toolsChanged();
+    }
+}
+
 void ToolRegistry::loadDisabledFromSettings() {
     QSettings s("NexusAI", "NexusAI");
     if (s.contains("tools/disabled")) {

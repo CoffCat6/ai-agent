@@ -50,4 +50,8 @@ Rectangle {
         interval: 1500
         onTriggered: root.copied = false
     }
+
+    Accessible.role: Accessible.Button
+    Accessible.name: root.copied ? qsTr("已复制") : qsTr("复制")
+    Accessible.onPressAction: copyMA.clicked()
 }

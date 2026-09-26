@@ -13,6 +13,8 @@ Rectangle {
 
     signal documentDetailsRequested(string name)
 
+    Accessible.name: qsTr("上下文面板")
+
     color: Theme.bgSecondary
     border.width: 0
     clip: true

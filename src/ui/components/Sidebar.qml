@@ -126,6 +126,10 @@ Rectangle {
                 // tab, so starting one never stops a task running elsewhere.
                 onClicked: AgentVM.openTab()
             }
+
+            Accessible.role: Accessible.Button
+            Accessible.name: qsTr("新会话")
+            Accessible.onPressAction: AgentVM.openTab()
         }
 
         // ── Search (Batch 17 / F1) ───────────────────
@@ -165,6 +169,8 @@ Rectangle {
                     background: null
                     selectByMouse: true
                     onTextChanged: searchDebounce.restart()
+
+                    Accessible.name: qsTr("搜索会话历史")
                 }
             }
 
@@ -213,6 +219,10 @@ Rectangle {
                     id: sessionDelegate
                     width: sessionList.width
                     height: 48
+
+                    Accessible.name: modelData.title && modelData.title.length > 0
+                        ? modelData.title : qsTr("新会话")
+                    Accessible.description: modelData.timeText || ""
 
                     readonly property bool isActive: AgentVM.currentSessionId === modelData.id
                     property bool renaming: false

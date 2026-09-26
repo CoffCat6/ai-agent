@@ -18,6 +18,9 @@ Item {
 
     required property var modelData
 
+    Accessible.name: modelData.type || qsTr("追踪节点")
+    Accessible.description: modelData.label || ""
+
     // ── Process visibility (page-level toggle) ─────────
     readonly property bool intermediate: modelData.type === "thinking"
         || modelData.type === "tool_call"

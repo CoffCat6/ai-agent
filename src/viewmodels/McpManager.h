@@ -18,6 +18,10 @@ namespace NexusAI {
 class McpManager : public QObject {
     Q_OBJECT
     QML_SINGLETON
+public:
+    // T14 (REQ-T14-05): tool count safety caps.
+    static constexpr int kMaxToolsPerServer = 32;
+    static constexpr int kMaxGlobalMcpTools = 64;
     QML_NAMED_ELEMENT(McpManager)
 
     // [{name, transport, endpoint, enabled, state, toolCount}]

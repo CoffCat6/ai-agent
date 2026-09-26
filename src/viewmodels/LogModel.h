@@ -44,6 +44,7 @@ public:
         CategoryRole,
         MessageRole,
         SeqRole,
+        HistoricalRole,
     };
 
     explicit LogModel(QObject* parent = nullptr);

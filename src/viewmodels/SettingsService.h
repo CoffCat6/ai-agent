@@ -41,6 +41,12 @@ class SettingsService : public QObject {
     Q_PROPERTY(QString logLevel READ logLevel WRITE setLogLevel NOTIFY logLevelChanged)
     // Batch 22 (F8): user-editable system prompt; empty string = built-in.
     Q_PROPERTY(QString systemPromptOverride READ systemPromptOverride WRITE setSystemPromptOverride NOTIFY systemPromptOverrideChanged)
+    // T6 (F3): web search provider and API key (encrypted at rest via DPAPI).
+    Q_PROPERTY(QString webSearchProvider READ webSearchProvider WRITE setWebSearchProvider NOTIFY webSearchProviderChanged)
+    Q_PROPERTY(QString webSearchApiKey READ webSearchApiKey WRITE setWebSearchApiKey NOTIFY webSearchApiKeyChanged)
+    // T8 (F4): episodic long-term memory; when enabled, session summaries
+    // are generated on task completion and injected into new sessions.
+    Q_PROPERTY(bool episodicMemoryEnabled READ episodicMemoryEnabled WRITE setEpisodicMemoryEnabled NOTIFY episodicMemoryEnabledChanged)
     Q_PROPERTY(QString appVersion READ appVersion CONSTANT)
 
 public:
@@ -82,18 +88,22 @@ public:
     // chunk vectors; a change triggers a full knowledge re-embed.
     QString embeddingModel() const { return m_embeddingModel; }
     void setEmbeddingModel(const QString& model);
-    // Knowledge-base embedding endpoint (G11): unlike the model, a change
-    // does NOT re-embed - stored vectors depend on the model only.
     QString embeddingBaseUrl() const { return m_embeddingBaseUrl; }
     void setEmbeddingBaseUrl(const QString& url);
+    QString logLevel() const { return m_logLevel; }
+    void setLogLevel(const QString& level);
     QString systemPromptOverride() const { return m_systemPromptOverride; }
     void setSystemPromptOverride(const QString& prompt);
 
-    // Runtime-log minimum level (日志开发 doc 6 §3.5): reuses the
-    // logging/level key that Logger::install() reads at startup, applies
-    // immediately via Logger::setMinLevel. NEXUSAI_LOG_LEVEL still wins.
-    QString logLevel() const { return m_logLevel; }
-    void setLogLevel(const QString& level);
+    // T6 (F3): search provider ("tavily" | …) and encrypted API key.
+    QString webSearchProvider() const { return m_webSearchProvider; }
+    void setWebSearchProvider(const QString& provider);
+    QString webSearchApiKey() const { return {}; }   // masked getter
+    void setWebSearchApiKey(const QString& key);
+
+    // T8 (F4): episodic memory toggle (default off).
+    bool episodicMemoryEnabled() const { return m_episodicMemoryEnabled; }
+    void setEpisodicMemoryEnabled(bool enabled);
 
     static QString appVersion() { return QCoreApplication::applicationVersion(); }
 
@@ -129,6 +139,9 @@ signals:
     void embeddingBaseUrlChanged();
     void logLevelChanged();
     void systemPromptOverrideChanged();
+    void webSearchProviderChanged();
+    void webSearchApiKeyChanged();
+    void episodicMemoryEnabledChanged();
 
 private:
     void load();
@@ -146,6 +159,9 @@ private:
     QString m_embeddingBaseUrl{QStringLiteral("http://localhost:11434")};
     QString m_logLevel{QStringLiteral("info")};
     QString m_systemPromptOverride;
+    QString m_webSearchProvider{QStringLiteral("tavily")};
+    QString m_webSearchApiKey;
+    bool m_episodicMemoryEnabled{false};
 
     static SettingsService* s_instance;
 };

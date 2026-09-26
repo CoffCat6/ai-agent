@@ -6,6 +6,7 @@
 #include <QFileInfo>
 #include <QMutex>
 #include <QMutexLocker>
+#include <QRegularExpression>
 #include <QSettings>
 #include <QStandardPaths>
 #include <QtDebug>
@@ -187,6 +188,87 @@ void Logger::install() {
     g_minLevel = level;
 
     qInstallMessageHandler(messageHandler);
+}
+
+int Logger::backfillFromFile(int maxEntries) {
+    if (maxEntries <= 0)
+        maxEntries = RingCapacity / 2;  // DFX: cap at 50% (2500)
+
+    const QString dirPath = logDir();
+    QDir dir(dirPath);
+    if (!dir.exists())
+        return 0;
+
+    // Collect log files sorted by name (newest last — nexus-YYYYMMDD.log).
+    const QFileInfoList files = dir.entryInfoList(
+        QStringList() << "nexus-*.log", QDir::Files, QDir::Name);
+
+    // Read from the newest file(s) backwards until we have enough entries.
+    QVector<LogEntry> parsed;
+    for (int fi = files.size() - 1; fi >= 0 && parsed.size() < maxEntries; --fi) {
+        QFile file(files[fi].absoluteFilePath());
+        if (!file.open(QIODevice::ReadOnly | QIODevice::Text))
+            continue;
+
+        // Read tail of file to avoid loading huge files entirely.
+        // Seek to the last 256 KB (sufficient for ~2500 entries).
+        const qint64 tailSize = 256 * 1024;
+        if (file.size() > tailSize)
+            file.seek(file.size() - tailSize);
+
+        const QStringList lines = QString::fromUtf8(file.readAll()).split('\n');
+        file.close();
+
+        // Parse lines in reverse order (newest first), prepend to parsed.
+        for (int li = lines.size() - 1; li >= 0 && parsed.size() < maxEntries; --li) {
+            const QString& line = lines[li].trimmed();
+            if (line.isEmpty()) continue;
+
+            // Format: [yyyy-MM-dd hh:mm:ss.zzz] [LEVEL] [category] message
+            // Minimal regex: extract timestamp, level, optional category, message.
+            static const QRegularExpression re(
+                QStringLiteral("^\\[(\\d{4}-\\d{2}-\\d{2} \\d{2}:\\d{2}:\\d{2}\\.\\d{3})\\] "
+                               "\\[(DEBUG|INFO|WARN|CRIT|FATAL)\\]"
+                               "(?: \\[([^\\]]+)\\])?"
+                               " (.+)$"));
+            const QRegularExpressionMatch m = re.match(line);
+            if (!m.hasMatch()) continue;
+
+            LogEntry entry;
+            entry.timestamp = QDateTime::fromString(
+                m.captured(1), QStringLiteral("yyyy-MM-dd hh:mm:ss.zzz")).toMSecsSinceEpoch();
+            entry.level = levelFromName(m.captured(2), QtInfoMsg);
+            entry.category = m.captured(3);
+            entry.message = m.captured(4);
+            entry.historical = true;
+            parsed.prepend(entry);
+        }
+    }
+
+    if (parsed.isEmpty())
+        return 0;
+
+    // Inject into ring buffer with dedup (skip if message already present).
+    QMutexLocker locker(&g_mutex);
+    QSet<QString> existingMessages;
+    for (const auto& e : g_ring)
+        existingMessages.insert(e.message);
+
+    int injected = 0;
+    for (const auto& entry : parsed) {
+        if (existingMessages.contains(entry.message))
+            continue;
+        LogEntry e = entry;
+        e.seq = g_nextSeq++;
+        g_ring.push_back(e);
+        ++injected;
+    }
+
+    // Trim ring to capacity.
+    while (static_cast<int>(g_ring.size()) > RingCapacity)
+        g_ring.erase(g_ring.begin());
+
+    return injected;
 }
 
 } // namespace NexusAI

@@ -27,6 +27,7 @@ public:
         int level{0};          // QtMsgType value
         QString category;      // qLoggingCategory (may be empty)
         QString message;
+        bool historical{false}; // T9: backfilled from a previous session log
     };
 
     // Ring capacity: oldest entries are evicted past it (≈1 MB memory cap).
@@ -59,6 +60,12 @@ public:
     static quint64 revision();
     // Buffered entries with seq > |seq|, oldest first (≤ RingCapacity).
     static QVector<LogEntry> entriesSince(quint64 seq);
+
+    // T9 (REQ-T9-01..04): backfill the ring buffer from the most recent log
+    // file(s) so the in-app log panel shows history across restarts. Entries
+    // are marked historical=true and capped at 50% of RingCapacity (2500).
+    // Returns the number of entries backfilled. Never throws.
+    static int backfillFromFile(int maxEntries = 0);
 };
 
 } // namespace NexusAI

@@ -5,6 +5,7 @@ import NexusAI
 import NexusAI.ViewModels
 
 Item {
+    Accessible.name: qsTr("工具管理页")
     Flickable {
         anchors.fill: parent
         clip: true

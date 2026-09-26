@@ -18,6 +18,9 @@ Dialog {
     property string arguments: "{}"
     property string pendingToolCallId: ""
 
+    Accessible.name: qsTr("工具执行确认对话框")
+    Accessible.description: qsTr("AI 请求执行高危操作 %1，请选择允许或拒绝").arg(toolName)
+
     // Wire the dialog verdict back into the agent pipeline
     onAccepted: {
         if (pendingToolCallId !== "")

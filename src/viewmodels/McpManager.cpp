@@ -5,6 +5,10 @@
 #include "core/tools/ToolRegistry.h"
 #include "core/utils/Activity.h"
 
+#include <QLoggingCategory>
+
+Q_LOGGING_CATEGORY(lcMcp, "nexus.mcp")
+
 namespace NexusAI {
 
 namespace {
@@ -60,11 +64,32 @@ void McpManager::connectClient(McpClient* client) {
     // Tools register on the first successful handshake; crash restarts reuse
     // the already-registered adapters (same client, fresh transport).
     connect(client, &McpClient::connected, this, [this, client]() {
-        for (const auto& tool : client->tools())
+        const auto& tools = client->tools();
+        // T14 (REQ-T14-05): per-server tool count cap (≤32).
+        int registered = 0;
+        for (const auto& tool : tools) {
+            if (registered >= kMaxToolsPerServer) {
+                qCWarning(lcMcp) << "Server" << client->serverName()
+                                 << "exceeded per-server tool limit"
+                                 << kMaxToolsPerServer << "- skipping"
+                                 << (tools.size() - registered) << "tools";
+                break;
+            }
             ToolRegistry::instance().registerTool(
                 std::make_unique<McpToolAdapter>(
                     client, client->serverName(), tool.name,
                     tool.description, tool.inputSchema));
+            ++registered;
+        }
+        // T14 (REQ-T14-05): global MCP tool count cap (≤64).
+        const QStringList allTools = ToolRegistry::instance().toolNamesForModel();
+        int globalMcpTools = 0;
+        for (const QString& n : allTools)
+            if (n.startsWith(QStringLiteral("mcp__"))) ++globalMcpTools;
+        if (globalMcpTools > kMaxGlobalMcpTools) {
+            qCWarning(lcMcp) << "Global MCP tool count" << globalMcpTools
+                             << "exceeds limit" << kMaxGlobalMcpTools;
+        }
         refreshServers();
     });
     connect(client, &McpClient::disconnected, this, [this, client]() {

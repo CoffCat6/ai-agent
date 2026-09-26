@@ -223,6 +223,10 @@ void SettingsService::load() {
     // there, so load() only mirrors the stored value (install() already
     // applied the effective level before any UI exists).
     m_logLevel = settings.value("logging/level", QStringLiteral("info")).toString();
+    m_webSearchProvider = settings.value("webSearch/provider", QStringLiteral("tavily")).toString();
+    // API key is stored encrypted (DPAPI) - empty if not set or decryption failed.
+    m_webSearchApiKey = unprotectApiKey(settings.value("webSearch/apiKey", QString()).toString());
+    m_episodicMemoryEnabled = settings.value("memory/episodicMemoryEnabled", false).toBool();
 }
 
 // Single-provider layout (pre-0.3): provider, apiKey, <provider>/baseUrl,
@@ -528,6 +532,40 @@ void SettingsService::setLogLevel(const QString& level) {
     QSettings().setValue("logging/level", normalized);
     Logger::setMinLevel(Logger::levelFromName(normalized, Logger::minLevel()));
     emit logLevelChanged();
+}
+
+// T6 (F3): search provider ("tavily" | …). Clamped to known providers.
+void SettingsService::setWebSearchProvider(const QString& provider) {
+    const QString trimmed = provider.trimmed();
+    if (trimmed.isEmpty() || m_webSearchProvider == trimmed) return;
+    m_webSearchProvider = trimmed;
+    QSettings().setValue("webSearch/provider", trimmed);
+    Activity::usage(Activity::Kind::User, QStringLiteral("settings.webSearchProvider"),
+                    trimmed);
+    emit webSearchProviderChanged();
+}
+
+// API key is encrypted at rest via DPAPI. Empty string drops the stored key.
+void SettingsService::setWebSearchApiKey(const QString& key) {
+    const QString trimmed = key.trimmed();
+    if (m_webSearchApiKey == trimmed) return;
+    m_webSearchApiKey = trimmed;
+    // REQ-T6-05: encrypt on persistence; never log the key.
+    const QString stored = protectApiKey(trimmed);
+    QSettings().setValue("webSearch/apiKey", stored.isEmpty() ? QString() : stored);
+    Activity::usage(Activity::Kind::User, QStringLiteral("settings.webSearchApiKey"),
+                    trimmed.isEmpty() ? QStringLiteral("(cleared)") : QStringLiteral("(set)"));
+    emit webSearchApiKeyChanged();
+}
+
+// T8 (F4): episodic memory toggle - same 5-step pattern as localOnlyMode.
+void SettingsService::setEpisodicMemoryEnabled(bool enabled) {
+    if (m_episodicMemoryEnabled == enabled) return;
+    m_episodicMemoryEnabled = enabled;
+    Activity::usage(Activity::Kind::User, QStringLiteral("settings.episodicMemoryEnabled"),
+                    enabled ? QStringLiteral("on") : QStringLiteral("off"));
+    QSettings().setValue("memory/episodicMemoryEnabled", enabled);
+    emit episodicMemoryEnabledChanged();
 }
 
 } // namespace NexusAI

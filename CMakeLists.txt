@@ -36,6 +36,8 @@ add_library(nexus_core STATIC
     src/core/agent/LLMTypes.h
     src/core/agent/AIAgent.h
     src/core/agent/AIAgent.cpp
+    src/core/agent/EpisodicService.h
+    src/core/agent/EpisodicService.cpp
     src/core/memory/IMemory.h
     src/core/memory/SqliteMemory.h
     src/core/memory/SqliteMemory.cpp
@@ -43,6 +45,9 @@ add_library(nexus_core STATIC
     src/core/tools/ToolRegistry.h
     src/core/tools/ToolRegistry.cpp
     src/core/tools/Sandbox.h
+    src/core/tools/WebSearchBackend.h
+    src/core/tools/WebSearchBackend.cpp
+    src/core/tools/WebSearchTool.h
     src/core/rag/VectorStore.h
     src/core/rag/DocumentRetriever.h
     src/core/rag/RagService.h

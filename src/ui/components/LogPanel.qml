@@ -21,6 +21,9 @@ Dialog {
     onAboutToShow: AgentVM.logModel.polling = true
     onAboutToHide: AgentVM.logModel.polling = false
 
+    Accessible.name: qsTr("运行日志面板")
+    Accessible.description: qsTr("查看应用运行日志，支持按类别、级别和关键词筛选")
+
     background: DialogBackground {}
 
     contentItem: ColumnLayout {
@@ -136,18 +139,20 @@ Dialog {
                 Text {
                     Layout.preferredWidth: 118
                     text: Qt.formatDateTime(new Date(timestamp), "hh:mm:ss.zzz")
-                    color: Theme.textSecondary
+                    color: historical ? Theme.textSecondary : Theme.textSecondary
                     font.pixelSize: 10
                     font.family: Theme.fontMono
+                    font.italic: historical
                 }
                 Text {
                     Layout.preferredWidth: 46
-                    text: level
-                    color: level === "WARN" || level === "CRIT" || level === "FATAL"
-                           ? Theme.brandPrimary : Theme.textSecondary
+                    text: historical ? qsTr("历史") : level
+                    color: historical ? Theme.textSecondary
+                        : (level === "WARN" || level === "CRIT" || level === "FATAL"
+                           ? Theme.brandPrimary : Theme.textSecondary)
                     font.pixelSize: 10
                     font.family: Theme.fontMono
-                    font.bold: level === "WARN" || level === "CRIT" || level === "FATAL"
+                    font.bold: !historical && (level === "WARN" || level === "CRIT" || level === "FATAL")
                 }
                 Text {
                     Layout.preferredWidth: 56

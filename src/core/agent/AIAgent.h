@@ -19,6 +19,7 @@ class IAIService;
 class ITool;
 class ToolRegistry;
 class IMemory;
+class EpisodicService;
 
 // The agent core: runs the ReAct loop
 //   user message -> LLM -> (tool calls -> results -> LLM)* -> final answer
@@ -57,6 +58,7 @@ public:
     void setLLMService(IAIService* service);
     void setToolRegistry(ToolRegistry* registry);
     void setMemory(IMemory* memory);
+    void setEpisodicService(EpisodicService* service);
 
     // Token budget for the LLM context window; history is compressed to fit
     // before each request. 0 disables compression.
@@ -210,6 +212,7 @@ private:
     IAIService* m_llmService{nullptr};
     ToolRegistry* m_toolRegistry{nullptr};
     IMemory* m_memory{nullptr};
+    EpisodicService* m_episodicService{nullptr};
 
     // Request the LLM service last dispatched for us (requestStarted echo);
     // responses carrying a different non-zero id are dropped (ARCH-402).

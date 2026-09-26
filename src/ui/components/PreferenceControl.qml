@@ -24,6 +24,8 @@ Item {
 
     implicitHeight: layout.implicitHeight
 
+    Accessible.name: control.displayName
+
     function stage(value) {
         EditBuffer.stage(prefKey, value)
     }

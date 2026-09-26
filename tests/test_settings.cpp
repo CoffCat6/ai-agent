@@ -1,12 +1,14 @@
 // SettingsService multi-model profiles, defaults completion, model switching,
 // addition, removal and persistence coverage.
 #include "viewmodels/SettingsService.h"
+#include "viewmodels/ThemeManager.h"
 #include "core/tools/ToolRegistry.h"
 
 #include "core/utils/Logger.h"
 
 #include <QtTest>
 #include <QGuiApplication>
+#include <QStyleHints>
 #include <QQmlComponent>
 #include <QQmlEngine>
 #include <QSignalSpy>
@@ -35,6 +37,8 @@ public:
         allowLocalNetworkFetch = s.value("security/allowLocalNetworkFetch");
         systemPromptOverride = s.value("agent/systemPromptOverride");
         toolsDisabled = s.value("tools/disabled");
+        webSearchProvider = s.value("webSearch/provider");
+        webSearchApiKey = s.value("webSearch/apiKey");
     }
     ~SettingsGuard() {
         QSettings s("NexusAI", "NexusAI");
@@ -63,6 +67,12 @@ public:
         if (toolsDisabled.isValid())
             s.setValue("tools/disabled", toolsDisabled);
         else s.remove("tools/disabled");
+        if (webSearchProvider.isValid())
+            s.setValue("webSearch/provider", webSearchProvider);
+        else s.remove("webSearch/provider");
+        if (webSearchApiKey.isValid())
+            s.setValue("webSearch/apiKey", webSearchApiKey);
+        else s.remove("webSearch/apiKey");
     }
     QVariant rawProfiles;
     QVariant activeId;
@@ -74,6 +84,8 @@ public:
     QVariant allowLocalNetworkFetch;
     QVariant systemPromptOverride;
     QVariant toolsDisabled;
+    QVariant webSearchProvider;
+    QVariant webSearchApiKey;
 };
 
 } // namespace
@@ -426,6 +438,76 @@ ComboBox {
             }
         }
         QVERIFY(found);
+    }
+
+    // ── T5 theme mode (auto / dark / light) ─────────────────────────
+    void themeModeDefaultsToAuto() {
+        SettingsGuard guard;
+        clearThemeKeys();
+        ThemeManager tm(nullptr);
+        QCOMPARE(tm.themeMode(), QStringLiteral("auto"));
+    }
+
+    void themeModeExplicitPersistsAndReadsBack() {
+        SettingsGuard guard;
+        clearThemeKeys();
+        {
+            ThemeManager tm(nullptr);
+            tm.setThemeMode(QStringLiteral("light"));
+            QCOMPARE(tm.themeMode(), QStringLiteral("light"));
+            QCOMPARE(tm.isDark(), false);
+        }
+        {
+            QSettings s("NexusAI", "NexusAI");
+            QCOMPARE(s.value("prefs/v1/ui.themeMode").toString(), QStringLiteral("light"));
+        }
+        // A fresh instance reads the persisted explicit choice back.
+        ThemeManager tm2(nullptr);
+        QCOMPARE(tm2.themeMode(), QStringLiteral("light"));
+        QCOMPARE(tm2.isDark(), false);
+    }
+
+    void themeModeAutoUpgradesOnExplicitToggle() {
+        SettingsGuard guard;
+        clearThemeKeys();
+        ThemeManager tm(nullptr);
+        QCOMPARE(tm.themeMode(), QStringLiteral("auto"));
+        // REQ-T5-04: an explicit toggle must upgrade "auto" to a concrete mode.
+        tm.setIsDark(false);
+        QCOMPARE(tm.themeMode(), QStringLiteral("light"));
+        {
+            QSettings s("NexusAI", "NexusAI");
+            QCOMPARE(s.value("prefs/v1/ui.themeMode").toString(), QStringLiteral("light"));
+        }
+    }
+
+    void themeModeLegacyDarkKeyCompat() {
+        SettingsGuard guard;
+        {
+            QSettings s("NexusAI", "NexusAI");
+            s.remove("prefs/v1/ui.themeMode");
+            s.setValue("theme/dark", false);   // legacy light preference
+        }
+        ThemeManager tm(nullptr);
+        QCOMPARE(tm.themeMode(), QStringLiteral("light"));
+        QCOMPARE(tm.isDark(), false);
+    }
+
+    void themeModeAutoResolvesSystemScheme() {
+        SettingsGuard guard;
+        clearThemeKeys();
+        ThemeManager tm(nullptr);
+        QCOMPARE(tm.themeMode(), QStringLiteral("auto"));
+        // auto follows the OS scheme; Unknown keeps the historical dark look.
+        const Qt::ColorScheme scheme = QGuiApplication::styleHints()->colorScheme();
+        QCOMPARE(tm.isDark(), scheme != Qt::ColorScheme::Light);
+    }
+
+private:
+    static void clearThemeKeys() {
+        QSettings s("NexusAI", "NexusAI");
+        s.remove("prefs/v1/ui.themeMode");
+        s.remove("theme/dark");
     }
 };
 

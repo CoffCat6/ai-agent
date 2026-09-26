@@ -54,7 +54,7 @@ ToolDefinition McpToolAdapter::definition() const {
     def.name = m_registryName;
     // Untrusted third-party text: hard length cap before it reaches the
     // model context (docs/10 §2.4).
-    def.description = m_description.left(1024);
+    def.description = m_description.left(MaxDescriptionChars);
     def.parameters = m_inputSchema;
     def.level = ToolLevel::RequiresConfirm;   // forced for MCP tools
     return def;

@@ -43,4 +43,9 @@ Rectangle {
     ToolTip.visible: root.tooltip.length > 0 && controlArea.containsMouse
     ToolTip.delay: 600
     ToolTip.text: root.tooltip
+
+    Accessible.role: Accessible.Button
+    Accessible.name: root.tooltip.length > 0 ? root.tooltip : root.icon
+    Accessible.description: root.tooltip
+    Accessible.onPressAction: root.clicked()
 }

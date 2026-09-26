@@ -59,4 +59,7 @@ Rectangle {
         cursorShape: Qt.PointingHandCursor
         onClicked: root.opacity = 0
     }
+
+    Accessible.role: Accessible.Notification
+    Accessible.name: root.message
 }
