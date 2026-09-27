@@ -68,6 +68,41 @@ Item {
             }
         }
 
+        // ── 长期记忆开关 ───────────────────────────────
+        RowLayout {
+            Layout.fillWidth: true
+            Layout.leftMargin: 24
+            Layout.rightMargin: 24
+            Layout.bottomMargin: 8
+            spacing: 8
+
+            ColumnLayout {
+                Layout.fillWidth: true
+                spacing: 2
+
+                Text {
+                    text: qsTr("启用长期记忆")
+                    color: Theme.textPrimary
+                    font.pixelSize: Theme.fontSizeBody
+                    font.family: Theme.fontSans
+                }
+                Text {
+                    text: qsTr("开启后，每次任务结束会生成会话摘要并在新会话中注入相关历史，帮助模型记住此前聊过的内容。")
+                    color: Theme.textSecondary
+                    font.pixelSize: 10
+                    font.family: Theme.fontSans
+                    opacity: 0.8
+                    wrapMode: Text.Wrap
+                    Layout.fillWidth: true
+                }
+            }
+            Switch {
+                checked: Settings.episodicMemoryEnabled
+                onToggled: Settings.episodicMemoryEnabled = checked
+                Accessible.name: qsTr("启用长期记忆")
+            }
+        }
+
         // ── 搜索 + 清空 ─────────────────────────────────
         RowLayout {
             Layout.fillWidth: true
@@ -206,7 +241,7 @@ Item {
                 visible: page.episodeCount === 0
                 text: searchField.text.trim().length > 0
                       ? qsTr("没有匹配的记忆")
-                      : qsTr("暂无长期记忆。开启「工具与记忆」中的长期记忆后，完成对话会自动生成摘要。")
+                      : qsTr("暂无长期记忆。开启上方的长期记忆开关后，完成对话会自动生成摘要。")
                 color: Theme.textSecondary
                 font.pixelSize: Theme.fontSizeBody
                 font.family: Theme.fontSans

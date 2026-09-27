@@ -788,67 +788,82 @@
         <translation>长期记忆摘要由会话自动生成，可在新会话中检索注入；删除后不可恢复。</translation>
     </message>
     <message>
-        <location filename="../src/ui/pages/MemoryPage.qml" line="82"/>
+        <location filename="../src/ui/pages/MemoryPage.qml" line="84"/>
+        <location filename="../src/ui/pages/MemoryPage.qml" line="102"/>
+        <source>启用长期记忆</source>
+        <translation >启用长期记忆</translation>
+    </message>
+    <message>
+        <location filename="../src/ui/pages/MemoryPage.qml" line="90"/>
+        <source>开启后，每次任务结束会生成会话摘要并在新会话中注入相关历史，帮助模型记住此前聊过的内容。</source>
+        <translation >开启后，每次任务结束会生成会话摘要并在新会话中注入相关历史，帮助模型记住此前聊过的内容。</translation>
+    </message>
+    <message>
+        <location filename="../src/ui/pages/MemoryPage.qml" line="117"/>
         <source>搜索记忆内容…</source>
         <translation>搜索记忆内容…</translation>
     </message>
     <message>
-        <location filename="../src/ui/pages/MemoryPage.qml" line="95"/>
+        <location filename="../src/ui/pages/MemoryPage.qml" line="130"/>
         <source>搜索记忆内容</source>
         <translation>搜索记忆内容</translation>
     </message>
     <message>
-        <location filename="../src/ui/pages/MemoryPage.qml" line="100"/>
+        <location filename="../src/ui/pages/MemoryPage.qml" line="135"/>
         <source>清空全部</source>
         <translation>清空全部</translation>
     </message>
     <message>
-        <location filename="../src/ui/pages/MemoryPage.qml" line="104"/>
+        <location filename="../src/ui/pages/MemoryPage.qml" line="139"/>
         <source>清空全部长期记忆</source>
         <translation>清空全部长期记忆</translation>
     </message>
     <message>
-        <location filename="../src/ui/pages/MemoryPage.qml" line="113"/>
+        <location filename="../src/ui/pages/MemoryPage.qml" line="148"/>
         <source>共 %1 条记忆</source>
         <translation>共 %1 条记忆</translation>
     </message>
     <message>
-        <location filename="../src/ui/pages/MemoryPage.qml" line="161"/>
+        <location filename="../src/ui/pages/MemoryPage.qml" line="196"/>
         <source>(空摘要)</source>
         <translation>(空摘要)</translation>
     </message>
     <message>
-        <location filename="../src/ui/pages/MemoryPage.qml" line="194"/>
+        <location filename="../src/ui/pages/MemoryPage.qml" line="229"/>
         <source>遗忘</source>
         <translation>遗忘</translation>
     </message>
     <message>
-        <location filename="../src/ui/pages/MemoryPage.qml" line="196"/>
+        <location filename="../src/ui/pages/MemoryPage.qml" line="231"/>
         <source>遗忘这条记忆</source>
         <translation>遗忘这条记忆</translation>
     </message>
     <message>
-        <location filename="../src/ui/pages/MemoryPage.qml" line="208"/>
+        <location filename="../src/ui/pages/MemoryPage.qml" line="243"/>
         <source>没有匹配的记忆</source>
         <translation>没有匹配的记忆</translation>
     </message>
     <message>
-        <location filename="../src/ui/pages/MemoryPage.qml" line="209"/>
-        <source>暂无长期记忆。开启「工具与记忆」中的长期记忆后，完成对话会自动生成摘要。</source>
-        <translation>暂无长期记忆。开启「工具与记忆」中的长期记忆后，完成对话会自动生成摘要。</translation>
+        <location filename="../src/ui/pages/MemoryPage.qml" line="244"/>
+        <source>暂无长期记忆。开启上方的长期记忆开关后，完成对话会自动生成摘要。</source>
+        <translation>暂无长期记忆。开启上方的长期记忆开关后，完成对话会自动生成摘要。</translation>
     </message>
     <message>
-        <location filename="../src/ui/pages/MemoryPage.qml" line="233"/>
+        <source>暂无长期记忆。开启「工具与记忆」中的长期记忆后，完成对话会自动生成摘要。</source>
+        <translation type="vanished">暂无长期记忆。开启「工具与记忆」中的长期记忆后，完成对话会自动生成摘要。</translation>
+    </message>
+    <message>
+        <location filename="../src/ui/pages/MemoryPage.qml" line="268"/>
         <source>确认清空全部长期记忆？此操作不可恢复。</source>
         <translation>确认清空全部长期记忆？此操作不可恢复。</translation>
     </message>
     <message>
-        <location filename="../src/ui/pages/MemoryPage.qml" line="251"/>
+        <location filename="../src/ui/pages/MemoryPage.qml" line="286"/>
         <source>取消</source>
         <translation>取消</translation>
     </message>
     <message>
-        <location filename="../src/ui/pages/MemoryPage.qml" line="255"/>
+        <location filename="../src/ui/pages/MemoryPage.qml" line="290"/>
         <source>清空</source>
         <translation>清空</translation>
     </message>
@@ -1113,22 +1128,21 @@
         <translation>工具管理</translation>
     </message>
     <message>
-        <location filename="../src/main.cpp" line="129"/>
         <source>工具与记忆</source>
-        <translation>工具与记忆</translation>
+        <translation type="vanished">工具与记忆</translation>
     </message>
     <message>
-        <location filename="../src/main.cpp" line="132"/>
+        <location filename="../src/main.cpp" line="128"/>
         <source>记忆管理</source>
         <translation>记忆管理</translation>
     </message>
     <message>
-        <location filename="../src/main.cpp" line="135"/>
+        <location filename="../src/main.cpp" line="131"/>
         <source>用量统计</source>
         <translation>用量统计</translation>
     </message>
     <message>
-        <location filename="../src/main.cpp" line="143"/>
+        <location filename="../src/main.cpp" line="139"/>
         <source>上次访问分类</source>
         <translation>上次访问分类</translation>
     </message>
@@ -1380,44 +1394,44 @@
         <translation>设置</translation>
     </message>
     <message>
-        <location filename="../src/ui/components/SettingsCenterDialog.qml" line="183"/>
-        <location filename="../src/ui/components/SettingsCenterDialog.qml" line="295"/>
+        <location filename="../src/ui/components/SettingsCenterDialog.qml" line="176"/>
+        <location filename="../src/ui/components/SettingsCenterDialog.qml" line="288"/>
         <source>恢复默认</source>
         <translation>恢复默认</translation>
     </message>
     <message>
-        <location filename="../src/ui/components/SettingsCenterDialog.qml" line="194"/>
-        <location filename="../src/ui/components/SettingsCenterDialog.qml" line="291"/>
+        <location filename="../src/ui/components/SettingsCenterDialog.qml" line="187"/>
+        <location filename="../src/ui/components/SettingsCenterDialog.qml" line="284"/>
         <source>取消</source>
         <translation>取消</translation>
     </message>
     <message>
-        <location filename="../src/ui/components/SettingsCenterDialog.qml" line="201"/>
+        <location filename="../src/ui/components/SettingsCenterDialog.qml" line="194"/>
         <source>保存</source>
         <translation>保存</translation>
     </message>
     <message>
-        <location filename="../src/ui/components/SettingsCenterDialog.qml" line="212"/>
+        <location filename="../src/ui/components/SettingsCenterDialog.qml" line="205"/>
         <source>保存失败，请检查输入</source>
         <translation>保存失败，请检查输入</translation>
     </message>
     <message>
-        <location filename="../src/ui/components/SettingsCenterDialog.qml" line="233"/>
+        <location filename="../src/ui/components/SettingsCenterDialog.qml" line="226"/>
         <source>有未保存的修改，确认放弃？</source>
         <translation>有未保存的修改，确认放弃？</translation>
     </message>
     <message>
-        <location filename="../src/ui/components/SettingsCenterDialog.qml" line="248"/>
+        <location filename="../src/ui/components/SettingsCenterDialog.qml" line="241"/>
         <source>继续编辑</source>
         <translation>继续编辑</translation>
     </message>
     <message>
-        <location filename="../src/ui/components/SettingsCenterDialog.qml" line="252"/>
+        <location filename="../src/ui/components/SettingsCenterDialog.qml" line="245"/>
         <source>放弃</source>
         <translation>放弃</translation>
     </message>
     <message>
-        <location filename="../src/ui/components/SettingsCenterDialog.qml" line="276"/>
+        <location filename="../src/ui/components/SettingsCenterDialog.qml" line="269"/>
         <source>确认将当前分类的配置项恢复为默认值？</source>
         <translation>确认将当前分类的配置项恢复为默认值？</translation>
     </message>
@@ -1586,82 +1600,64 @@
 <context>
     <name>ToolsMemoryPage</name>
     <message>
-        <location filename="../src/ui/pages/ToolsMemoryPage.qml" line="14"/>
         <source>工具与记忆设置页</source>
-        <translation>工具与记忆设置页</translation>
+        <translation type="vanished">工具与记忆设置页</translation>
     </message>
     <message>
-        <location filename="../src/ui/pages/ToolsMemoryPage.qml" line="15"/>
         <source>配置联网搜索与长期记忆</source>
-        <translation>配置联网搜索与长期记忆</translation>
+        <translation type="vanished">配置联网搜索与长期记忆</translation>
     </message>
     <message>
-        <location filename="../src/ui/pages/ToolsMemoryPage.qml" line="34"/>
         <source>工具与记忆</source>
-        <translation>工具与记忆</translation>
+        <translation type="vanished">工具与记忆</translation>
     </message>
     <message>
-        <location filename="../src/ui/pages/ToolsMemoryPage.qml" line="44"/>
         <source>本页修改实时保存，不受底部「保存 / 取消」影响</source>
-        <translation>本页修改实时保存，不受底部「保存 / 取消」影响</translation>
+        <translation type="vanished">本页修改实时保存，不受底部「保存 / 取消」影响</translation>
     </message>
     <message>
-        <location filename="../src/ui/pages/ToolsMemoryPage.qml" line="61"/>
         <source>长期记忆</source>
-        <translation>长期记忆</translation>
+        <translation type="vanished">长期记忆</translation>
     </message>
     <message>
-        <location filename="../src/ui/pages/ToolsMemoryPage.qml" line="69"/>
         <source>开启后，每次任务结束会生成会话摘要并在新会话中注入相关历史，帮助模型记住此前聊过的内容。</source>
-        <translation>开启后，每次任务结束会生成会话摘要并在新会话中注入相关历史，帮助模型记住此前聊过的内容。</translation>
+        <translation type="vanished">开启后，每次任务结束会生成会话摘要并在新会话中注入相关历史，帮助模型记住此前聊过的内容。</translation>
     </message>
     <message>
-        <location filename="../src/ui/pages/ToolsMemoryPage.qml" line="83"/>
-        <location filename="../src/ui/pages/ToolsMemoryPage.qml" line="92"/>
         <source>启用长期记忆</source>
-        <translation>启用长期记忆</translation>
+        <translation type="vanished">启用长期记忆</translation>
     </message>
     <message>
-        <location filename="../src/ui/pages/ToolsMemoryPage.qml" line="108"/>
         <source>联网搜索</source>
-        <translation>联网搜索</translation>
+        <translation type="vanished">联网搜索</translation>
     </message>
     <message>
-        <location filename="../src/ui/pages/ToolsMemoryPage.qml" line="116"/>
         <source>启用后模型可调用 web_search 获取实时信息。搜索查询会发送至所配置的搜索服务商，请勿在查询中包含敏感信息。</source>
-        <translation>启用后模型可调用 web_search 获取实时信息。搜索查询会发送至所配置的搜索服务商，请勿在查询中包含敏感信息。</translation>
+        <translation type="vanished">启用后模型可调用 web_search 获取实时信息。搜索查询会发送至所配置的搜索服务商，请勿在查询中包含敏感信息。</translation>
     </message>
     <message>
-        <location filename="../src/ui/pages/ToolsMemoryPage.qml" line="130"/>
-        <location filename="../src/ui/pages/ToolsMemoryPage.qml" line="145"/>
         <source>搜索服务</source>
-        <translation>搜索服务</translation>
+        <translation type="vanished">搜索服务</translation>
     </message>
     <message>
-        <location filename="../src/ui/pages/ToolsMemoryPage.qml" line="154"/>
-        <location filename="../src/ui/pages/ToolsMemoryPage.qml" line="183"/>
         <source>搜索 API Key</source>
-        <translation>搜索 API Key</translation>
+        <translation type="vanished">搜索 API Key</translation>
     </message>
     <message>
-        <location filename="../src/ui/pages/ToolsMemoryPage.qml" line="169"/>
         <source>已配置（输入新值可覆盖，留空不修改）</source>
-        <translation>已配置（输入新值可覆盖，留空不修改）</translation>
+        <translation type="vanished">已配置（输入新值可覆盖，留空不修改）</translation>
     </message>
     <message>
-        <location filename="../src/ui/pages/ToolsMemoryPage.qml" line="170"/>
         <source>未配置</source>
-        <translation>未配置</translation>
+        <translation type="vanished">未配置</translation>
     </message>
     <message>
-        <location filename="../src/ui/pages/ToolsMemoryPage.qml" line="195"/>
         <source>清除密钥</source>
-        <translation>清除密钥</translation>
+        <translation type="vanished">清除密钥</translation>
     </message>
     <message>
-        <location filename="../src/ui/pages/ToolsMemoryPage.qml" line="199"/>
         <source>清除搜索 API Key</source>
-        <translation>清除搜索 API Key</translation>
+        <translation type="vanished">清除搜索 API Key</translation>
     </message>
 </context>
 <context>
@@ -1700,6 +1696,48 @@
         <location filename="../src/ui/pages/ToolsPage.qml" line="82"/>
         <source>危险</source>
         <translation>危险</translation>
+    </message>
+    <message>
+        <location filename="../src/ui/pages/ToolsPage.qml" line="119"/>
+        <source>联网搜索</source>
+        <translation >联网搜索</translation>
+    </message>
+    <message>
+        <location filename="../src/ui/pages/ToolsPage.qml" line="127"/>
+        <source>启用后模型可调用 web_search 获取实时信息。搜索查询会发送至所配置的搜索服务商，请勿在查询中包含敏感信息。</source>
+        <translation >启用后模型可调用 web_search 获取实时信息。搜索查询会发送至所配置的搜索服务商，请勿在查询中包含敏感信息。</translation>
+    </message>
+    <message>
+        <location filename="../src/ui/pages/ToolsPage.qml" line="141"/>
+        <location filename="../src/ui/pages/ToolsPage.qml" line="156"/>
+        <source>搜索服务</source>
+        <translation >搜索服务</translation>
+    </message>
+    <message>
+        <location filename="../src/ui/pages/ToolsPage.qml" line="165"/>
+        <location filename="../src/ui/pages/ToolsPage.qml" line="194"/>
+        <source>搜索 API Key</source>
+        <translation >搜索 API Key</translation>
+    </message>
+    <message>
+        <location filename="../src/ui/pages/ToolsPage.qml" line="180"/>
+        <source>已配置（输入新值可覆盖，留空不修改）</source>
+        <translation >已配置（输入新值可覆盖，留空不修改）</translation>
+    </message>
+    <message>
+        <location filename="../src/ui/pages/ToolsPage.qml" line="181"/>
+        <source>未配置</source>
+        <translation >未配置</translation>
+    </message>
+    <message>
+        <location filename="../src/ui/pages/ToolsPage.qml" line="204"/>
+        <source>清除密钥</source>
+        <translation >清除密钥</translation>
+    </message>
+    <message>
+        <location filename="../src/ui/pages/ToolsPage.qml" line="208"/>
+        <source>清除搜索 API Key</source>
+        <translation >清除搜索 API Key</translation>
     </message>
 </context>
 <context>

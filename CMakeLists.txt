@@ -199,7 +199,6 @@ qt_add_qml_module(nexus_ai
         src/ui/pages/ModelConfigPage.qml
         src/ui/pages/McpPage.qml
         src/ui/pages/ToolsPage.qml
-        src/ui/pages/ToolsMemoryPage.qml
         src/ui/pages/MemoryPage.qml
         src/ui/pages/UsageStatsPage.qml
 )

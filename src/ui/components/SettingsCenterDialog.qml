@@ -137,13 +137,6 @@ Dialog {
 
                 Loader {
                     anchors.fill: parent
-                    active: dialog.currentCategory === "tools_memory"
-                    visible: active
-                    source: "qrc:/qt/qml/NexusAI/src/ui/pages/ToolsMemoryPage.qml"
-                }
-
-                Loader {
-                    anchors.fill: parent
                     active: dialog.currentCategory === "memory"
                     visible: active
                     source: "qrc:/qt/qml/NexusAI/src/ui/pages/MemoryPage.qml"

@@ -123,16 +123,12 @@ qInfo() << "NexusAI" << app.applicationVersion() << "starting";
         QT_TRANSLATE_NOOP("NexusAI", "MCP 服务器"), 4);
     prefRegistry->registerCategory(QStringLiteral("tools"),
         QT_TRANSLATE_NOOP("NexusAI", "工具管理"), 5);
-    // L1: web search + episodic memory settings (both bound directly to
-    // SettingsService, saved in real time).
-    prefRegistry->registerCategory(QStringLiteral("tools_memory"),
-        QT_TRANSLATE_NOOP("NexusAI", "工具与记忆"), 6);
     // M1: browse / search / forget long-term episodic memory summaries.
     prefRegistry->registerCategory(QStringLiteral("memory"),
-        QT_TRANSLATE_NOOP("NexusAI", "记忆管理"), 7);
+        QT_TRANSLATE_NOOP("NexusAI", "记忆管理"), 6);
     // M1 (stats): token / cost usage aggregation.
     prefRegistry->registerCategory(QStringLiteral("usage"),
-        QT_TRANSLATE_NOOP("NexusAI", "用量统计"), 8);
+        QT_TRANSLATE_NOOP("NexusAI", "用量统计"), 7);
 
     // Internal UI state (not shown in any category panel; categoryId empty)
     {

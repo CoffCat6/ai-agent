@@ -104,6 +104,112 @@ Item {
                     }
                 }
             }
+
+            Rectangle { Layout.fillWidth: true; Layout.leftMargin: 24; Layout.rightMargin: 24; height: 1; color: Theme.borderSubtle }
+
+            // ── 联网搜索 ──────────────────────────────
+            ColumnLayout {
+                Layout.leftMargin: 24
+                Layout.rightMargin: 24
+                Layout.bottomMargin: 16
+                Layout.fillWidth: true
+                spacing: 8
+
+                Text {
+                    text: qsTr("联网搜索")
+                    color: Theme.textSecondary
+                    font.pixelSize: Theme.fontSizeCaption
+                    font.bold: true
+                    font.family: Theme.fontMono
+                }
+
+                Text {
+                    text: qsTr("启用后模型可调用 web_search 获取实时信息。搜索查询会发送至所配置的搜索服务商，请勿在查询中包含敏感信息。")
+                    color: Theme.textSecondary
+                    font.pixelSize: 10
+                    font.family: Theme.fontSans
+                    opacity: 0.8
+                    wrapMode: Text.Wrap
+                    Layout.fillWidth: true
+                }
+
+                RowLayout {
+                    Layout.fillWidth: true
+                    spacing: 8
+
+                    Text {
+                        text: qsTr("搜索服务")
+                        color: Theme.textPrimary
+                        font.pixelSize: Theme.fontSizeBody
+                        font.family: Theme.fontSans
+                        Layout.fillWidth: true
+                    }
+                    ComboBox {
+                        id: providerCombo
+                        Layout.preferredWidth: 200
+                        model: Settings.webSearchProviders
+                        currentIndex: {
+                            const i = Settings.webSearchProviders.indexOf(Settings.webSearchProvider)
+                            return i >= 0 ? i : 0
+                        }
+                        onActivated: Settings.webSearchProvider = currentText
+                        Accessible.name: qsTr("搜索服务")
+                    }
+                }
+
+                ColumnLayout {
+                    Layout.fillWidth: true
+                    spacing: 4
+
+                    Text {
+                        text: qsTr("搜索 API Key")
+                        color: Theme.textSecondary
+                        font.pixelSize: Theme.fontSizeCaption
+                        font.family: Theme.fontMono
+                    }
+
+                    RowLayout {
+                        Layout.fillWidth: true
+                        spacing: 8
+
+                        TextField {
+                            id: apiKeyField
+                            Layout.fillWidth: true
+                            echoMode: TextInput.Password
+                            placeholderText: Settings.webSearchApiKeySet
+                                             ? qsTr("已配置（输入新值可覆盖，留空不修改）")
+                                             : qsTr("未配置")
+                            placeholderTextColor: Theme.textSecondary
+                            color: Theme.textPrimary
+                            selectionColor: Theme.brandPrimary
+                            selectedTextColor: "#ffffff"
+                            font.pixelSize: Theme.fontSizeBody
+                            font.family: Theme.fontSans
+                            background: Rectangle {
+                                radius: 6
+                                color: Theme.bgPrimary
+                                border.width: apiKeyField.activeFocus ? 2 : 1
+                                border.color: apiKeyField.activeFocus ? Theme.brandPrimary : Theme.borderSubtle
+                            }
+                            Accessible.name: qsTr("搜索 API Key")
+                            onEditingFinished: {
+                                if (text.length > 0) {
+                                    Settings.webSearchApiKey = text
+                                    text = ""
+                                }
+                            }
+                        }
+
+                        AppButton {
+                            text: qsTr("清除密钥")
+                            enabled: Settings.webSearchApiKeySet
+                            opacity: enabled ? 1.0 : 0.4
+                            onClicked: Settings.webSearchApiKey = ""
+                            Accessible.name: qsTr("清除搜索 API Key")
+                        }
+                    }
+                }
+            }
         }
     }
 }
