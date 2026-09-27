@@ -35,6 +35,14 @@ public:
     void saveEpisodic(const QString& sessionId, const QJsonObject& episode) override;
     QJsonArray searchEpisodic(const QString& query, int limit = 10) override;
 
+    // M1: long-term memory management (browse / forget / wipe).
+    QJsonArray listEpisodic(int limit = 200) override;
+    bool deleteEpisodic(qint64 id) override;
+    int deleteAllEpisodic() override;
+
+    // M1 (stats): token/cost aggregation from audit_log task_complete rows.
+    QVariantMap tokenStats(int recentDays = 30) override;
+
     void clear(const QString& sessionId) override;
 
     // Session bookkeeping
@@ -99,6 +107,9 @@ private:
     void createTables();
     void migrateKnowledgeSchema();
     void migrateMessagesFts();
+    // L3: upgrade episodic_fts to the trigram tokenizer (matches messages_fts).
+    // Idempotent: no-op when the table already uses trigram.
+    void migrateEpisodicFts();
 
     QSqlDatabase m_db;
     QString m_dbPath;

@@ -1,6 +1,7 @@
 // SettingsService multi-model profiles, defaults completion, model switching,
 // addition, removal and persistence coverage.
 #include "viewmodels/SettingsService.h"
+#include "viewmodels/SettingsSchema.h"
 #include "viewmodels/ThemeManager.h"
 #include "core/tools/ToolRegistry.h"
 
@@ -39,6 +40,7 @@ public:
         toolsDisabled = s.value("tools/disabled");
         webSearchProvider = s.value("webSearch/provider");
         webSearchApiKey = s.value("webSearch/apiKey");
+        schemaVersion = s.value("schemaVersion");
     }
     ~SettingsGuard() {
         QSettings s("NexusAI", "NexusAI");
@@ -73,6 +75,9 @@ public:
         if (webSearchApiKey.isValid())
             s.setValue("webSearch/apiKey", webSearchApiKey);
         else s.remove("webSearch/apiKey");
+        if (schemaVersion.isValid())
+            s.setValue("schemaVersion", schemaVersion);
+        else s.remove("schemaVersion");
     }
     QVariant rawProfiles;
     QVariant activeId;
@@ -86,6 +91,7 @@ public:
     QVariant toolsDisabled;
     QVariant webSearchProvider;
     QVariant webSearchApiKey;
+    QVariant schemaVersion;
 };
 
 } // namespace
@@ -501,6 +507,46 @@ ComboBox {
         // auto follows the OS scheme; Unknown keeps the historical dark look.
         const Qt::ColorScheme scheme = QGuiApplication::styleHints()->colorScheme();
         QCOMPARE(tm.isDark(), scheme != Qt::ColorScheme::Light);
+    }
+
+    // L4: setWebSearchProvider rejects unknown provider keys — the setting
+    // stays at its default and no signal fires.
+    void webSearchProviderRejectsUnknownKey() {
+        SettingsGuard guard;
+        SettingsService svc(nullptr);
+        QSignalSpy spy(&svc, &SettingsService::webSearchProviderChanged);
+        svc.setWebSearchProvider(QStringLiteral("google"));
+        QCOMPARE(spy.count(), 0);
+        QCOMPARE(svc.webSearchProvider(), QStringLiteral("tavily"));
+    }
+
+    // L2: SettingsSchema key registry is populated and contains known keys.
+    void schemaHasKeyRegistry() {
+        const auto& keys = SettingsSchema::registeredKeys();
+        QVERIFY(!keys.isEmpty());
+        bool foundProvider = false;
+        bool foundApiKey = false;
+        for (const auto& k : keys) {
+            if (k.key == QStringLiteral("webSearch/provider")) foundProvider = true;
+            if (k.key == QStringLiteral("webSearch/apiKey")) {
+                foundApiKey = true;
+                QVERIFY(k.encrypted);
+            }
+        }
+        QVERIFY(foundProvider);
+        QVERIFY(foundApiKey);
+    }
+
+    // L2: load() stamps the schema version into QSettings.
+    void schemaVersionStampedOnLoad() {
+        SettingsGuard guard;
+        {
+            QSettings s("NexusAI", "NexusAI");
+            s.remove("schemaVersion");
+        }
+        SettingsService svc(nullptr);
+        QSettings s("NexusAI", "NexusAI");
+        QCOMPARE(s.value("schemaVersion").toInt(), SettingsSchema::kSchemaVersion);
     }
 
 private:

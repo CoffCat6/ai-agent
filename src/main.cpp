@@ -123,6 +123,16 @@ qInfo() << "NexusAI" << app.applicationVersion() << "starting";
         QT_TRANSLATE_NOOP("NexusAI", "MCP 服务器"), 4);
     prefRegistry->registerCategory(QStringLiteral("tools"),
         QT_TRANSLATE_NOOP("NexusAI", "工具管理"), 5);
+    // L1: web search + episodic memory settings (both bound directly to
+    // SettingsService, saved in real time).
+    prefRegistry->registerCategory(QStringLiteral("tools_memory"),
+        QT_TRANSLATE_NOOP("NexusAI", "工具与记忆"), 6);
+    // M1: browse / search / forget long-term episodic memory summaries.
+    prefRegistry->registerCategory(QStringLiteral("memory"),
+        QT_TRANSLATE_NOOP("NexusAI", "记忆管理"), 7);
+    // M1 (stats): token / cost usage aggregation.
+    prefRegistry->registerCategory(QStringLiteral("usage"),
+        QT_TRANSLATE_NOOP("NexusAI", "用量统计"), 8);
 
     // Internal UI state (not shown in any category panel; categoryId empty)
     {
@@ -184,6 +194,19 @@ qInfo() << "NexusAI" << app.applicationVersion() << "starting";
     auto webOwned = std::make_unique<WebSearchTool>();
     auto* webPtr = webOwned.get();
     ToolRegistry::instance().registerTool(std::move(webOwned));
+
+    // L4: web search backend factory. Maps the provider key from settings to
+    // a concrete WebSearchBackend. Unknown keys fall back to Tavily with a
+    // warning (the setting is also clamped in SettingsService, but this is a
+    // defense-in-depth fallback for corrupted configs).
+    const auto createWebSearchBackend = [](const QString& providerKey)
+        -> std::unique_ptr<WebSearchBackend> {
+        if (providerKey == QLatin1String("tavily"))
+            return std::make_unique<TavilyBackend>();
+        qWarning() << "Unknown web search provider:" << providerKey
+                   << "- falling back to tavily";
+        return std::make_unique<TavilyBackend>();
+    };
 
     // ── Batch 14 (SEC-1401/1402): local-only mode gate ──
     // When enabled, the knowledge-base tool is gated off for cloud providers:
@@ -473,7 +496,7 @@ qInfo() << "NexusAI" << app.applicationVersion() << "starting";
     // factory-built tab its own group (see the factory comment above).
     const ProviderSet templateSet{openai, anthropic, ollama};
     const auto applySettings = [settings, agentVM, agent, fetchPtr, webPtr,
-                                episodicService,
+                                episodicService, createWebSearchBackend,
                                 templateSet, applyProfileTo, pickActive, &tabProviderSets]() {
         applyProfileTo(templateSet);
         for (auto it = tabProviderSets.begin(); it != tabProviderSets.end(); ++it)
@@ -507,7 +530,10 @@ qInfo() << "NexusAI" << app.applicationVersion() << "starting";
         fetchPtr->setAllowPrivateTargets(settings->allowLocalNetworkFetch());
 
         // T6 (F3): inject the current web search API key (DPAPI-decrypted).
+        // L4: also (re)create the backend for the configured provider — this
+        // was a dead setting before (always Tavily regardless of provider).
         webPtr->setApiKey(settings->webSearchApiKey());
+        webPtr->setBackend(createWebSearchBackend(settings->webSearchProvider()));
 
         // T8 (F4): sync episodic memory toggle and LLM service.
         episodicService->setEnabled(settings->episodicMemoryEnabled());
@@ -521,6 +547,8 @@ qInfo() << "NexusAI" << app.applicationVersion() << "starting";
     QObject::connect(settings, &SettingsService::allowFullDiskReadChanged, &app, [applySettings]() { applySettings(); });
     QObject::connect(settings, &SettingsService::allowLocalNetworkFetchChanged, &app, [applySettings]() { applySettings(); });
     QObject::connect(settings, &SettingsService::episodicMemoryEnabledChanged, &app, [applySettings]() { applySettings(); });
+    // L4: provider switch rebuilds the web search backend immediately.
+    QObject::connect(settings, &SettingsService::webSearchProviderChanged, &app, [applySettings]() { applySettings(); });
 
     // Batch 22 (F8): user-editable system prompt (empty = built-in)
     const auto applySystemPrompt = [agent, settings]() {

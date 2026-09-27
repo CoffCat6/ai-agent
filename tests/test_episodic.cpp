@@ -100,7 +100,7 @@ private slots:
             mem->saveEpisodic(QStringLiteral("session-%1").arg(i), episode);
         }
 
-        const QString result = svc.retrieveRelevantSummaries(QStringLiteral("test budget"), 20);
+        const QString result = svc.retrieveRelevantSummaries(QStringLiteral("test"), 20);
         QVERIFY(!result.isEmpty());
 
         // Verify the result is within budget (1500 tokens + header overhead).
@@ -199,6 +199,101 @@ private slots:
         QCOMPARE(mem->searchEpisodic(QStringLiteral("test"), 10).size(), 0);
 
         delete llm;
+        delete mem;
+    }
+
+    void trigramMatchesCjkSubstring() {
+        auto* mem = makeMemory();
+        QJsonObject episode;
+        episode["summary"] = QStringLiteral("用户询问了 Qt 信号槽机制的工作原理");
+        episode["tags"] = QStringLiteral("Qt,信号槽");
+        mem->saveEpisodic(QStringLiteral("session-1"), episode);
+
+        // 3-char CJK query: trigram tokenizer should substring-match.
+        const QJsonArray results = mem->searchEpisodic(QStringLiteral("信号槽"), 10);
+        QCOMPARE(results.size(), 1);
+        QVERIFY(results.at(0).toObject().value("summary").toString()
+                    .contains(QStringLiteral("信号槽")));
+
+        delete mem;
+    }
+
+    void shortQueryFallsBackToLike() {
+        auto* mem = makeMemory();
+        QJsonObject episode;
+        episode["summary"] = QStringLiteral("讨论了信号槽的连接方式");
+        episode["tags"] = QStringLiteral("Qt");
+        mem->saveEpisodic(QStringLiteral("s1"), episode);
+
+        // 2-char query: trigram cannot answer, LIKE fallback should hit.
+        const QJsonArray results = mem->searchEpisodic(QStringLiteral("信号"), 10);
+        QCOMPARE(results.size(), 1);
+        QVERIFY(results.at(0).toObject().value("summary").toString()
+                    .contains(QStringLiteral("信号槽")));
+
+        delete mem;
+    }
+
+    void specialCharsDoNotCrashSearch() {
+        auto* mem = makeMemory();
+        QJsonObject episode;
+        episode["summary"] = QStringLiteral("normal summary text");
+        episode["tags"] = QStringLiteral("tag");
+        mem->saveEpisodic(QStringLiteral("s1"), episode);
+
+        // FTS5 special characters in the query must not cause a syntax error
+        // (the quoting in searchEpisodic should neutralize them).
+        const QJsonArray results = mem->searchEpisodic(QStringLiteral("a*b(c)"), 10);
+        QVERIFY(results.size() == 0); // no match, but no crash either
+
+        delete mem;
+    }
+
+    // M1: listEpisodic enumerates all stored episodes, newest first.
+    void listEpisodicReturnsNewestFirst() {
+        auto* mem = makeMemory();
+        for (int i = 0; i < 3; ++i) {
+            QJsonObject episode;
+            episode["summary"] = QStringLiteral("summary %1").arg(i);
+            episode["tags"] = QStringLiteral("t%1").arg(i);
+            mem->saveEpisodic(QStringLiteral("s%1").arg(i), episode);
+        }
+        const QJsonArray all = mem->listEpisodic(200);
+        QCOMPARE(all.size(), 3);
+        QCOMPARE(all.at(0).toObject().value("summary").toString(),
+                 QStringLiteral("summary 2"));
+        delete mem;
+    }
+
+    // M1: deleteEpisodic forgets exactly one entry (and returns false for a
+    // missing id).
+    void deleteEpisodicForgetsOne() {
+        auto* mem = makeMemory();
+        QJsonObject episode;
+        episode["summary"] = QStringLiteral("keep me");
+        mem->saveEpisodic(QStringLiteral("s1"), episode);
+        episode["summary"] = QStringLiteral("forget me");
+        mem->saveEpisodic(QStringLiteral("s1"), episode);
+
+        const QJsonArray before = mem->listEpisodic(200);
+        QCOMPARE(before.size(), 2);
+        const qint64 id = before.at(0).toObject().value("id").toInt();
+        QVERIFY(mem->deleteEpisodic(id));
+        QCOMPARE(mem->listEpisodic(200).size(), 1);
+        QVERIFY(!mem->deleteEpisodic(id)); // already gone
+        delete mem;
+    }
+
+    // M1: deleteAllEpisodic wipes the store and reports the row count.
+    void deleteAllEpisodicWipesStore() {
+        auto* mem = makeMemory();
+        for (int i = 0; i < 3; ++i) {
+            QJsonObject episode;
+            episode["summary"] = QStringLiteral("s%1").arg(i);
+            mem->saveEpisodic(QStringLiteral("sess"), episode);
+        }
+        QCOMPARE(mem->deleteAllEpisodic(), 3);
+        QCOMPARE(mem->listEpisodic(200).size(), 0);
         delete mem;
     }
 

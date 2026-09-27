@@ -612,6 +612,60 @@ QVariantList AgentViewModel::auditLog(int limit) {
     return controller ? controller->auditLog(limit) : QVariantList{};
 }
 
+// M1: convert a QJsonArray of episodes (snake_case DB fields) into the
+// camelCase QVariantList the QML delegate consumes.
+namespace {
+QVariantList episodesToVariantList(const QJsonArray& arr) {
+    QVariantList out;
+    out.reserve(arr.size());
+    for (const QJsonValue& v : arr) {
+        const QJsonObject o = v.toObject();
+        out.append(QVariantMap{
+            {QStringLiteral("id"), o.value(QStringLiteral("id")).toVariant()},
+            {QStringLiteral("sessionId"), o.value(QStringLiteral("session_id")).toString()},
+            {QStringLiteral("summary"), o.value(QStringLiteral("summary")).toString()},
+            {QStringLiteral("tags"), o.value(QStringLiteral("tags")).toString()},
+            {QStringLiteral("timestamp"), o.value(QStringLiteral("timestamp")).toVariant()},
+        });
+    }
+    return out;
+}
+} // namespace
+
+QVariantList AgentViewModel::listEpisodic(int limit) {
+    if (!m_memory) return {};
+    return episodesToVariantList(m_memory->listEpisodic(limit));
+}
+
+QVariantList AgentViewModel::searchEpisodic(const QString& keyword, int limit) {
+    if (!m_memory) return {};
+    return episodesToVariantList(m_memory->searchEpisodic(keyword, limit));
+}
+
+bool AgentViewModel::removeEpisodic(qint64 id) {
+    if (!m_memory) return false;
+    const bool ok = m_memory->deleteEpisodic(id);
+    if (ok)
+        Activity::usage(Activity::Kind::User,
+                        QStringLiteral("memory.episodic.delete"),
+                        QString::number(id));
+    return ok;
+}
+
+int AgentViewModel::clearEpisodic() {
+    if (!m_memory) return 0;
+    const int removed = m_memory->deleteAllEpisodic();
+    if (removed > 0)
+        Activity::usage(Activity::Kind::User,
+                        QStringLiteral("memory.episodic.clear"),
+                        QString::number(removed));
+    return removed;
+}
+
+QVariantMap AgentViewModel::tokenStats(int recentDays) {
+    return m_memory ? m_memory->tokenStats(recentDays) : QVariantMap{};
+}
+
 QString AgentViewModel::logFilePath() const {
     return Logger::logFilePath();
 }

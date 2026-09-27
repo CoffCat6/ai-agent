@@ -118,6 +118,8 @@ qt_add_qml_module(nexus_viewmodels
         src/viewmodels/CodeHighlighter.cpp
         src/viewmodels/SettingsService.h
         src/viewmodels/SettingsService.cpp
+        src/viewmodels/SettingsSchema.h
+        src/viewmodels/SettingsSchema.cpp
         src/viewmodels/ConnectionTester.h
         src/viewmodels/ConnectionTester.cpp
         src/viewmodels/AgentViewModel.h
@@ -197,6 +199,9 @@ qt_add_qml_module(nexus_ai
         src/ui/pages/ModelConfigPage.qml
         src/ui/pages/McpPage.qml
         src/ui/pages/ToolsPage.qml
+        src/ui/pages/ToolsMemoryPage.qml
+        src/ui/pages/MemoryPage.qml
+        src/ui/pages/UsageStatsPage.qml
 )
 
 target_link_libraries(nexus_ai PRIVATE

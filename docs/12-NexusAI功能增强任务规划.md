@@ -747,7 +747,7 @@
 | L3 | **FTS5 中文分词限制** | FTS5 默认 tokenizer（unicode61）中文分词有限，episodic 中文关键词检索召回率可能偏低；当前测试用英文摘要规避 | 评估 ICU / jieba 分词扩展，或检索侧加中文 n-gram 兜底 |
 | L4 | **搜索后端仅 Tavily** | `webSearchProvider` 目前只有 `tavily` 一个合法值 | 按需新增 `WebSearchBackend` 子类并扩展合法枚举 |
 | L5 | **GUI 冒烟未完成** | T5 系统主题实时跟随、T6 真实 key 调用、T7 讲述人走查、T8 记忆相关性、T9 重启回填、T14 真实 MCP 门控等需真机验证 | 由用户在 Windows 真机按各任务冒烟清单逐项验证 |
-| L6 | **日志目录路径文档不一致** | README 记 `%LOCALAPPDATA%/NexusAI/NexusAI/logs/`，用户手册记 `%APPDATA%/NexusAI/NexusAI/logs` | 以 `Logger::logDir()` 实现为准统一文档口径 |
+| L6 | **日志目录路径文档不一致** ✅ 已修复（2026-09-26） | 根因：日志走 `QStandardPaths::AppLocalDataLocation`（`%LOCALAPPDATA%`），数据库走 `AppDataLocation`（`%APPDATA%`，Roaming），二者本就不同 | 已统一：部署指南 §6/§8、用户手册 FAQ、设计文档 §6.1 改为日志 `%LOCALAPPDATA%`、数据库 `%APPDATA%`；详见 `docs/14-L1-L6遗留事项修复方案.md` §3.6 |
 
 ---
 

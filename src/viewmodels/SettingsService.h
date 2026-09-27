@@ -44,6 +44,12 @@ class SettingsService : public QObject {
     // T6 (F3): web search provider and API key (encrypted at rest via DPAPI).
     Q_PROPERTY(QString webSearchProvider READ webSearchProvider WRITE setWebSearchProvider NOTIFY webSearchProviderChanged)
     Q_PROPERTY(QString webSearchApiKey READ webSearchApiKey WRITE setWebSearchApiKey NOTIFY webSearchApiKeyChanged)
+    // L1: whether a search API key is stored (the key itself is never echoed
+    // to QML; the getter returns a masked empty string).
+    Q_PROPERTY(bool webSearchApiKeySet READ webSearchApiKeySet NOTIFY webSearchApiKeyChanged)
+    // L1: legal search provider keys for the settings UI (single source of
+    // truth shared with the backend factory, L4).
+    Q_PROPERTY(QStringList webSearchProviders READ webSearchProviders CONSTANT)
     // T8 (F4): episodic long-term memory; when enabled, session summaries
     // are generated on task completion and injected into new sessions.
     Q_PROPERTY(bool episodicMemoryEnabled READ episodicMemoryEnabled WRITE setEpisodicMemoryEnabled NOTIFY episodicMemoryEnabledChanged)
@@ -100,6 +106,10 @@ public:
     void setWebSearchProvider(const QString& provider);
     QString webSearchApiKey() const { return {}; }   // masked getter
     void setWebSearchApiKey(const QString& key);
+    // L1: true when a non-empty search API key is stored.
+    bool webSearchApiKeySet() const { return !m_webSearchApiKey.isEmpty(); }
+    // L1: legal provider keys for the settings UI.
+    QStringList webSearchProviders() const;
 
     // T8 (F4): episodic memory toggle (default off).
     bool episodicMemoryEnabled() const { return m_episodicMemoryEnabled; }

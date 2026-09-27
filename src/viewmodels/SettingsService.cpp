@@ -1,4 +1,5 @@
 #include "SettingsService.h"
+#include "SettingsSchema.h"
 #include "core/utils/Activity.h"
 
 #include "core/agent/AIAgent.h"
@@ -157,6 +158,15 @@ QVariantMap SettingsService::activeProfile() const {
 
 void SettingsService::load() {
     QSettings settings;
+
+    // L2: schema migration hook. Runs once per schema version bump; v0→v1
+    // is a no-op, but the version stamp is written so future migrations
+    // can detect the starting point.
+    const int storedVersion = settings.value("schemaVersion", 0).toInt();
+    if (storedVersion < SettingsSchema::kSchemaVersion) {
+        SettingsSchema::migrate(storedVersion);
+        settings.setValue("schemaVersion", SettingsSchema::kSchemaVersion);
+    }
 
     // ── Profiles (JSON list; apiKeys re-encrypted on persist) ──
     const QByteArray raw = settings.value(kProfilesKey).toString().toUtf8();
@@ -534,10 +544,24 @@ void SettingsService::setLogLevel(const QString& level) {
     emit logLevelChanged();
 }
 
+// L1: legal search provider keys for the settings UI. Kept in sync with the
+// backend factory (L4); currently only Tavily is implemented.
+QStringList SettingsService::webSearchProviders() const {
+    return {QStringLiteral("tavily")};
+}
+
 // T6 (F3): search provider ("tavily" | …). Clamped to known providers.
 void SettingsService::setWebSearchProvider(const QString& provider) {
     const QString trimmed = provider.trimmed();
     if (trimmed.isEmpty() || m_webSearchProvider == trimmed) return;
+    // L4: reject unknown provider keys — keeps the setting in sync with the
+    // backend factory (webSearchProviders()). Without this guard the setting
+    // would persist a value no backend matches, and the factory would silently
+    // fall back to Tavily, making the UI show a phantom provider.
+    if (!webSearchProviders().contains(trimmed)) {
+        qWarning() << "Unknown web search provider:" << trimmed;
+        return;
+    }
     m_webSearchProvider = trimmed;
     QSettings().setValue("webSearch/provider", trimmed);
     Activity::usage(Activity::Kind::User, QStringLiteral("settings.webSearchProvider"),

@@ -84,6 +84,26 @@ private slots:
         QCOMPARE(def.level, ToolLevel::RequiresConfirm);
         QVERIFY(!def.parameters.isEmpty());
     }
+
+    // L4: setBackend swaps the search backend at runtime.
+    void setBackendSwapsBackend() {
+        WebSearchTool tool; // default = TavilyBackend
+        tool.setApiKey(QStringLiteral("dummy-key"));
+        tool.setBackend(std::make_unique<FakeBackend>());
+        const ToolResult r = tool.execute({{"query", "test"}, {"max_results", 2}});
+        QVERIFY(r.success);
+        QVERIFY(r.output.contains(QStringLiteral("example.com")));
+    }
+
+    // L4: setBackend(nullptr) is ignored — the tool keeps its current backend.
+    void setBackendNullptrIsIgnored() {
+        WebSearchTool tool(std::make_unique<FakeBackend>());
+        tool.setApiKey(QStringLiteral("dummy-key"));
+        tool.setBackend(nullptr);
+        const ToolResult r = tool.execute({{"query", "test"}, {"max_results", 1}});
+        QVERIFY(r.success);
+        QVERIFY(r.output.contains(QStringLiteral("example.com")));
+    }
 };
 
 QTEST_MAIN(TestWebSearch)

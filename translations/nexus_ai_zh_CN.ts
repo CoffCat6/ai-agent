@@ -1,4 +1,4 @@
-﻿<?xml version="1.0" encoding="utf-8"?>
+<?xml version="1.0" encoding="utf-8"?>
 <!DOCTYPE TS>
 <TS version="2.1" language="zh_CN">
 <context>
@@ -766,6 +766,94 @@
     </message>
 </context>
 <context>
+    <name>MemoryPage</name>
+    <message>
+        <location filename="../src/ui/pages/MemoryPage.qml" line="13"/>
+        <source>记忆管理页</source>
+        <translation>记忆管理页</translation>
+    </message>
+    <message>
+        <location filename="../src/ui/pages/MemoryPage.qml" line="14"/>
+        <source>浏览、搜索和删除长期记忆摘要</source>
+        <translation>浏览、搜索和删除长期记忆摘要</translation>
+    </message>
+    <message>
+        <location filename="../src/ui/pages/MemoryPage.qml" line="53"/>
+        <source>记忆管理</source>
+        <translation>记忆管理</translation>
+    </message>
+    <message>
+        <location filename="../src/ui/pages/MemoryPage.qml" line="60"/>
+        <source>长期记忆摘要由会话自动生成，可在新会话中检索注入；删除后不可恢复。</source>
+        <translation>长期记忆摘要由会话自动生成，可在新会话中检索注入；删除后不可恢复。</translation>
+    </message>
+    <message>
+        <location filename="../src/ui/pages/MemoryPage.qml" line="82"/>
+        <source>搜索记忆内容…</source>
+        <translation>搜索记忆内容…</translation>
+    </message>
+    <message>
+        <location filename="../src/ui/pages/MemoryPage.qml" line="95"/>
+        <source>搜索记忆内容</source>
+        <translation>搜索记忆内容</translation>
+    </message>
+    <message>
+        <location filename="../src/ui/pages/MemoryPage.qml" line="100"/>
+        <source>清空全部</source>
+        <translation>清空全部</translation>
+    </message>
+    <message>
+        <location filename="../src/ui/pages/MemoryPage.qml" line="104"/>
+        <source>清空全部长期记忆</source>
+        <translation>清空全部长期记忆</translation>
+    </message>
+    <message>
+        <location filename="../src/ui/pages/MemoryPage.qml" line="113"/>
+        <source>共 %1 条记忆</source>
+        <translation>共 %1 条记忆</translation>
+    </message>
+    <message>
+        <location filename="../src/ui/pages/MemoryPage.qml" line="161"/>
+        <source>(空摘要)</source>
+        <translation>(空摘要)</translation>
+    </message>
+    <message>
+        <location filename="../src/ui/pages/MemoryPage.qml" line="194"/>
+        <source>遗忘</source>
+        <translation>遗忘</translation>
+    </message>
+    <message>
+        <location filename="../src/ui/pages/MemoryPage.qml" line="196"/>
+        <source>遗忘这条记忆</source>
+        <translation>遗忘这条记忆</translation>
+    </message>
+    <message>
+        <location filename="../src/ui/pages/MemoryPage.qml" line="208"/>
+        <source>没有匹配的记忆</source>
+        <translation>没有匹配的记忆</translation>
+    </message>
+    <message>
+        <location filename="../src/ui/pages/MemoryPage.qml" line="209"/>
+        <source>暂无长期记忆。开启「工具与记忆」中的长期记忆后，完成对话会自动生成摘要。</source>
+        <translation>暂无长期记忆。开启「工具与记忆」中的长期记忆后，完成对话会自动生成摘要。</translation>
+    </message>
+    <message>
+        <location filename="../src/ui/pages/MemoryPage.qml" line="233"/>
+        <source>确认清空全部长期记忆？此操作不可恢复。</source>
+        <translation>确认清空全部长期记忆？此操作不可恢复。</translation>
+    </message>
+    <message>
+        <location filename="../src/ui/pages/MemoryPage.qml" line="251"/>
+        <source>取消</source>
+        <translation>取消</translation>
+    </message>
+    <message>
+        <location filename="../src/ui/pages/MemoryPage.qml" line="255"/>
+        <source>清空</source>
+        <translation>清空</translation>
+    </message>
+</context>
+<context>
     <name>ModelConfigPage</name>
     <message>
         <location filename="../src/ui/pages/ModelConfigPage.qml" line="11"/>
@@ -1025,7 +1113,22 @@
         <translation>工具管理</translation>
     </message>
     <message>
-        <location filename="../src/main.cpp" line="133"/>
+        <location filename="../src/main.cpp" line="129"/>
+        <source>工具与记忆</source>
+        <translation>工具与记忆</translation>
+    </message>
+    <message>
+        <location filename="../src/main.cpp" line="132"/>
+        <source>记忆管理</source>
+        <translation>记忆管理</translation>
+    </message>
+    <message>
+        <location filename="../src/main.cpp" line="135"/>
+        <source>用量统计</source>
+        <translation>用量统计</translation>
+    </message>
+    <message>
+        <location filename="../src/main.cpp" line="143"/>
         <source>上次访问分类</source>
         <translation>上次访问分类</translation>
     </message>
@@ -1172,12 +1275,12 @@
         <translation>文件过大（超过单文档 %1 段上限）：%2</translation>
     </message>
     <message>
-        <location filename="../src/viewmodels/AgentViewModel.cpp" line="713"/>
+        <location filename="../src/viewmodels/AgentViewModel.cpp" line="767"/>
         <source>文件过大（附件上限 %1 KB）：%2</source>
         <translation>文件过大（附件上限 %1 KB）：%2</translation>
     </message>
     <message>
-        <location filename="../src/viewmodels/AgentViewModel.cpp" line="718"/>
+        <location filename="../src/viewmodels/AgentViewModel.cpp" line="772"/>
         <source>暂不支持二进制文件作为附件：%1</source>
         <translation>暂不支持二进制文件作为附件：%1</translation>
     </message>
@@ -1231,22 +1334,22 @@
 <context>
     <name>NexusAI::SettingsService</name>
     <message>
-        <location filename="../src/viewmodels/SettingsService.cpp" line="284"/>
+        <location filename="../src/viewmodels/SettingsService.cpp" line="294"/>
         <source>新配置</source>
         <translation>新配置</translation>
     </message>
     <message>
-        <location filename="../src/viewmodels/SettingsService.cpp" line="432"/>
+        <location filename="../src/viewmodels/SettingsService.cpp" line="442"/>
         <source>OpenAI 兼容</source>
         <translation>OpenAI 兼容</translation>
     </message>
     <message>
-        <location filename="../src/viewmodels/SettingsService.cpp" line="433"/>
+        <location filename="../src/viewmodels/SettingsService.cpp" line="443"/>
         <source>Ollama 本地</source>
         <translation>Ollama 本地</translation>
     </message>
     <message>
-        <location filename="../src/viewmodels/SettingsService.cpp" line="434"/>
+        <location filename="../src/viewmodels/SettingsService.cpp" line="444"/>
         <source>Claude</source>
         <translation>Claude</translation>
     </message>
@@ -1277,44 +1380,44 @@
         <translation>设置</translation>
     </message>
     <message>
-        <location filename="../src/ui/components/SettingsCenterDialog.qml" line="162"/>
-        <location filename="../src/ui/components/SettingsCenterDialog.qml" line="274"/>
+        <location filename="../src/ui/components/SettingsCenterDialog.qml" line="183"/>
+        <location filename="../src/ui/components/SettingsCenterDialog.qml" line="295"/>
         <source>恢复默认</source>
         <translation>恢复默认</translation>
     </message>
     <message>
-        <location filename="../src/ui/components/SettingsCenterDialog.qml" line="173"/>
-        <location filename="../src/ui/components/SettingsCenterDialog.qml" line="270"/>
+        <location filename="../src/ui/components/SettingsCenterDialog.qml" line="194"/>
+        <location filename="../src/ui/components/SettingsCenterDialog.qml" line="291"/>
         <source>取消</source>
         <translation>取消</translation>
     </message>
     <message>
-        <location filename="../src/ui/components/SettingsCenterDialog.qml" line="180"/>
+        <location filename="../src/ui/components/SettingsCenterDialog.qml" line="201"/>
         <source>保存</source>
         <translation>保存</translation>
     </message>
     <message>
-        <location filename="../src/ui/components/SettingsCenterDialog.qml" line="191"/>
+        <location filename="../src/ui/components/SettingsCenterDialog.qml" line="212"/>
         <source>保存失败，请检查输入</source>
         <translation>保存失败，请检查输入</translation>
     </message>
     <message>
-        <location filename="../src/ui/components/SettingsCenterDialog.qml" line="212"/>
+        <location filename="../src/ui/components/SettingsCenterDialog.qml" line="233"/>
         <source>有未保存的修改，确认放弃？</source>
         <translation>有未保存的修改，确认放弃？</translation>
     </message>
     <message>
-        <location filename="../src/ui/components/SettingsCenterDialog.qml" line="227"/>
+        <location filename="../src/ui/components/SettingsCenterDialog.qml" line="248"/>
         <source>继续编辑</source>
         <translation>继续编辑</translation>
     </message>
     <message>
-        <location filename="../src/ui/components/SettingsCenterDialog.qml" line="231"/>
+        <location filename="../src/ui/components/SettingsCenterDialog.qml" line="252"/>
         <source>放弃</source>
         <translation>放弃</translation>
     </message>
     <message>
-        <location filename="../src/ui/components/SettingsCenterDialog.qml" line="255"/>
+        <location filename="../src/ui/components/SettingsCenterDialog.qml" line="276"/>
         <source>确认将当前分类的配置项恢复为默认值？</source>
         <translation>确认将当前分类的配置项恢复为默认值？</translation>
     </message>
@@ -1437,7 +1540,7 @@
         <translation>昨天</translation>
     </message>
     <message>
-        <location filename="../src/core/memory/SqliteMemory.cpp" line="587"/>
+        <location filename="../src/core/memory/SqliteMemory.cpp" line="637"/>
         <source>消息库超过 %1 条：少于 3 个字符的关键词只能全表扫描，请输入至少 3 个字符以使用全文索引。</source>
         <translation>消息库超过 %1 条：少于 3 个字符的关键词只能全表扫描，请输入至少 3 个字符以使用全文索引。</translation>
     </message>
@@ -1478,6 +1581,87 @@
         <location filename="../src/ui/components/ToolConfirmDialog.qml" line="143"/>
         <source>允许执行</source>
         <translation>允许执行</translation>
+    </message>
+</context>
+<context>
+    <name>ToolsMemoryPage</name>
+    <message>
+        <location filename="../src/ui/pages/ToolsMemoryPage.qml" line="14"/>
+        <source>工具与记忆设置页</source>
+        <translation>工具与记忆设置页</translation>
+    </message>
+    <message>
+        <location filename="../src/ui/pages/ToolsMemoryPage.qml" line="15"/>
+        <source>配置联网搜索与长期记忆</source>
+        <translation>配置联网搜索与长期记忆</translation>
+    </message>
+    <message>
+        <location filename="../src/ui/pages/ToolsMemoryPage.qml" line="34"/>
+        <source>工具与记忆</source>
+        <translation>工具与记忆</translation>
+    </message>
+    <message>
+        <location filename="../src/ui/pages/ToolsMemoryPage.qml" line="44"/>
+        <source>本页修改实时保存，不受底部「保存 / 取消」影响</source>
+        <translation>本页修改实时保存，不受底部「保存 / 取消」影响</translation>
+    </message>
+    <message>
+        <location filename="../src/ui/pages/ToolsMemoryPage.qml" line="61"/>
+        <source>长期记忆</source>
+        <translation>长期记忆</translation>
+    </message>
+    <message>
+        <location filename="../src/ui/pages/ToolsMemoryPage.qml" line="69"/>
+        <source>开启后，每次任务结束会生成会话摘要并在新会话中注入相关历史，帮助模型记住此前聊过的内容。</source>
+        <translation>开启后，每次任务结束会生成会话摘要并在新会话中注入相关历史，帮助模型记住此前聊过的内容。</translation>
+    </message>
+    <message>
+        <location filename="../src/ui/pages/ToolsMemoryPage.qml" line="83"/>
+        <location filename="../src/ui/pages/ToolsMemoryPage.qml" line="92"/>
+        <source>启用长期记忆</source>
+        <translation>启用长期记忆</translation>
+    </message>
+    <message>
+        <location filename="../src/ui/pages/ToolsMemoryPage.qml" line="108"/>
+        <source>联网搜索</source>
+        <translation>联网搜索</translation>
+    </message>
+    <message>
+        <location filename="../src/ui/pages/ToolsMemoryPage.qml" line="116"/>
+        <source>启用后模型可调用 web_search 获取实时信息。搜索查询会发送至所配置的搜索服务商，请勿在查询中包含敏感信息。</source>
+        <translation>启用后模型可调用 web_search 获取实时信息。搜索查询会发送至所配置的搜索服务商，请勿在查询中包含敏感信息。</translation>
+    </message>
+    <message>
+        <location filename="../src/ui/pages/ToolsMemoryPage.qml" line="130"/>
+        <location filename="../src/ui/pages/ToolsMemoryPage.qml" line="145"/>
+        <source>搜索服务</source>
+        <translation>搜索服务</translation>
+    </message>
+    <message>
+        <location filename="../src/ui/pages/ToolsMemoryPage.qml" line="154"/>
+        <location filename="../src/ui/pages/ToolsMemoryPage.qml" line="183"/>
+        <source>搜索 API Key</source>
+        <translation>搜索 API Key</translation>
+    </message>
+    <message>
+        <location filename="../src/ui/pages/ToolsMemoryPage.qml" line="169"/>
+        <source>已配置（输入新值可覆盖，留空不修改）</source>
+        <translation>已配置（输入新值可覆盖，留空不修改）</translation>
+    </message>
+    <message>
+        <location filename="../src/ui/pages/ToolsMemoryPage.qml" line="170"/>
+        <source>未配置</source>
+        <translation>未配置</translation>
+    </message>
+    <message>
+        <location filename="../src/ui/pages/ToolsMemoryPage.qml" line="195"/>
+        <source>清除密钥</source>
+        <translation>清除密钥</translation>
+    </message>
+    <message>
+        <location filename="../src/ui/pages/ToolsMemoryPage.qml" line="199"/>
+        <source>清除搜索 API Key</source>
+        <translation>清除搜索 API Key</translation>
     </message>
 </context>
 <context>
@@ -1544,6 +1728,123 @@
         <location filename="../src/ui/components/TopBar.qml" line="100"/>
         <source>展开上下文面板 (Ctrl+B)</source>
         <translation>展开上下文面板 (Ctrl+B)</translation>
+    </message>
+</context>
+<context>
+    <name>UsageStatsPage</name>
+    <message>
+        <location filename="../src/ui/pages/UsageStatsPage.qml" line="12"/>
+        <source>用量统计页</source>
+        <translation>用量统计页</translation>
+    </message>
+    <message>
+        <location filename="../src/ui/pages/UsageStatsPage.qml" line="13"/>
+        <source>查看模型调用次数、Token 消耗与延迟统计</source>
+        <translation>查看模型调用次数、Token 消耗与延迟统计</translation>
+    </message>
+    <message>
+        <location filename="../src/ui/pages/UsageStatsPage.qml" line="27"/>
+        <source>—</source>
+        <translation>—</translation>
+    </message>
+    <message>
+        <location filename="../src/ui/pages/UsageStatsPage.qml" line="28"/>
+        <source>%1 ms</source>
+        <translation>%1 ms</translation>
+    </message>
+    <message>
+        <location filename="../src/ui/pages/UsageStatsPage.qml" line="29"/>
+        <source>%1 s</source>
+        <translation>%1 s</translation>
+    </message>
+    <message>
+        <location filename="../src/ui/pages/UsageStatsPage.qml" line="50"/>
+        <source>用量统计</source>
+        <translation>用量统计</translation>
+    </message>
+    <message>
+        <location filename="../src/ui/pages/UsageStatsPage.qml" line="57"/>
+        <source>统计已完成任务的模型调用次数、Token 消耗与平均延迟。</source>
+        <translation>统计已完成任务的模型调用次数、Token 消耗与平均延迟。</translation>
+    </message>
+    <message>
+        <location filename="../src/ui/pages/UsageStatsPage.qml" line="77"/>
+        <location filename="../src/ui/pages/UsageStatsPage.qml" line="91"/>
+        <source>统计范围</source>
+        <translation>统计范围</translation>
+    </message>
+    <message>
+        <location filename="../src/ui/pages/UsageStatsPage.qml" line="85"/>
+        <source>近 7 天</source>
+        <translation>近 7 天</translation>
+    </message>
+    <message>
+        <location filename="../src/ui/pages/UsageStatsPage.qml" line="85"/>
+        <source>近 30 天</source>
+        <translation>近 30 天</translation>
+    </message>
+    <message>
+        <location filename="../src/ui/pages/UsageStatsPage.qml" line="85"/>
+        <source>近 90 天</source>
+        <translation>近 90 天</translation>
+    </message>
+    <message>
+        <location filename="../src/ui/pages/UsageStatsPage.qml" line="95"/>
+        <source>刷新</source>
+        <translation>刷新</translation>
+    </message>
+    <message>
+        <location filename="../src/ui/pages/UsageStatsPage.qml" line="97"/>
+        <source>刷新用量统计</source>
+        <translation>刷新用量统计</translation>
+    </message>
+    <message>
+        <location filename="../src/ui/pages/UsageStatsPage.qml" line="111"/>
+        <source>任务次数</source>
+        <translation>任务次数</translation>
+    </message>
+    <message>
+        <location filename="../src/ui/pages/UsageStatsPage.qml" line="112"/>
+        <source>累计 Token</source>
+        <translation>累计 Token</translation>
+    </message>
+    <message>
+        <location filename="../src/ui/pages/UsageStatsPage.qml" line="113"/>
+        <source>平均延迟</source>
+        <translation>平均延迟</translation>
+    </message>
+    <message>
+        <location filename="../src/ui/pages/UsageStatsPage.qml" line="174"/>
+        <source>按模型</source>
+        <translation>按模型</translation>
+    </message>
+    <message>
+        <location filename="../src/ui/pages/UsageStatsPage.qml" line="183"/>
+        <location filename="../src/ui/pages/UsageStatsPage.qml" line="255"/>
+        <source>该范围内暂无数据</source>
+        <translation>该范围内暂无数据</translation>
+    </message>
+    <message>
+        <location filename="../src/ui/pages/UsageStatsPage.qml" line="210"/>
+        <source>(未知)</source>
+        <translation>(未知)</translation>
+    </message>
+    <message>
+        <location filename="../src/ui/pages/UsageStatsPage.qml" line="218"/>
+        <location filename="../src/ui/pages/UsageStatsPage.qml" line="288"/>
+        <source>%1 次</source>
+        <translation>%1 次</translation>
+    </message>
+    <message>
+        <location filename="../src/ui/pages/UsageStatsPage.qml" line="224"/>
+        <location filename="../src/ui/pages/UsageStatsPage.qml" line="294"/>
+        <source>%1 tokens</source>
+        <translation>%1 tokens</translation>
+    </message>
+    <message>
+        <location filename="../src/ui/pages/UsageStatsPage.qml" line="246"/>
+        <source>按天</source>
+        <translation>按天</translation>
     </message>
 </context>
 <context>

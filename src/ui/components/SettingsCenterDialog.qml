@@ -134,6 +134,27 @@ Dialog {
                     visible: active
                     source: "qrc:/qt/qml/NexusAI/src/ui/pages/ToolsPage.qml"
                 }
+
+                Loader {
+                    anchors.fill: parent
+                    active: dialog.currentCategory === "tools_memory"
+                    visible: active
+                    source: "qrc:/qt/qml/NexusAI/src/ui/pages/ToolsMemoryPage.qml"
+                }
+
+                Loader {
+                    anchors.fill: parent
+                    active: dialog.currentCategory === "memory"
+                    visible: active
+                    source: "qrc:/qt/qml/NexusAI/src/ui/pages/MemoryPage.qml"
+                }
+
+                Loader {
+                    anchors.fill: parent
+                    active: dialog.currentCategory === "usage"
+                    visible: active
+                    source: "qrc:/qt/qml/NexusAI/src/ui/pages/UsageStatsPage.qml"
+                }
             }
         }
 

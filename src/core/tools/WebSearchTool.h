@@ -53,6 +53,12 @@ public:
     }
 
     void setApiKey(const QString& key) { m_apiKey = key; }
+    // L4: swap the search backend at runtime (driven by webSearchProvider).
+    // A nullptr is ignored so a failed factory call never leaves the tool
+    // without a backend.
+    void setBackend(std::unique_ptr<WebSearchBackend> backend) {
+        if (backend) m_backend = std::move(backend);
+    }
     void setTimeoutMs(int ms) { m_timeoutMs = qBound(5000, ms, 60000); }
 
     void cancel() override { m_cancelRequested.store(true); }

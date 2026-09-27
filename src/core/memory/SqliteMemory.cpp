@@ -89,6 +89,7 @@ void SqliteMemory::initDatabase() {
     createTables();
     migrateKnowledgeSchema();
     migrateMessagesFts();
+    migrateEpisodicFts();
 }
 
 // Batch 17 (FEAT-1701): messages FTS5 index for cross-session search.
@@ -127,6 +128,50 @@ void SqliteMemory::migrateMessagesFts() {
     )", "backfill messages_fts from messages");
 }
 
+// L3: upgrade episodic_fts from the default unicode61 tokenizer to trigram.
+// Idempotent: no-op when the table already uses trigram (fresh databases get
+// it from createTables; this handles old databases upgraded in place). The
+// table is an external-content FTS5 (content='episodic'), so after recreating
+// it we issue the 'rebuild' command to repopulate from the episodic table.
+void SqliteMemory::migrateEpisodicFts() {
+    QSqlQuery check(m_db);
+    check.prepare("SELECT sql FROM sqlite_master "
+                  "WHERE type='table' AND name='episodic_fts'");
+    if (!check.exec() || !check.next()) return; // table absent — createTables owns it
+    const QString sql = check.value(0).toString();
+    if (sql.contains(QStringLiteral("tokenize='trigram'"), Qt::CaseInsensitive))
+        return; // already upgraded
+
+    // Old table without trigram: drop triggers first (they reference
+    // episodic_fts) to avoid dangling-trigger errors on the next episodic
+    // INSERT, then drop and recreate the virtual table + triggers, and
+    // finally repopulate from the external content table.
+    QSqlQuery query(m_db);
+    execDdl(query, "DROP TRIGGER IF EXISTS episodic_ai", "drop old episodic_ai");
+    execDdl(query, "DROP TRIGGER IF EXISTS episodic_ad", "drop old episodic_ad");
+    execDdl(query, "DROP TABLE IF EXISTS episodic_fts", "drop old episodic_fts");
+    execDdl(query, R"(
+        CREATE VIRTUAL TABLE episodic_fts USING fts5(
+            summary, tags, content='episodic', content_rowid='id',
+            tokenize='trigram'
+        )
+    )", "recreate episodic_fts with trigram");
+    execDdl(query, R"(
+        CREATE TRIGGER episodic_ai AFTER INSERT ON episodic BEGIN
+            INSERT INTO episodic_fts(rowid, summary, tags)
+            VALUES (new.id, new.summary, new.tags);
+        END
+    )", "recreate episodic_ai trigger");
+    execDdl(query, R"(
+        CREATE TRIGGER episodic_ad AFTER DELETE ON episodic BEGIN
+            INSERT INTO episodic_fts(episodic_fts, rowid, summary, tags)
+            VALUES('delete', old.id, old.summary, old.tags);
+        END
+    )", "recreate episodic_ad trigger");
+    execDdl(query, "INSERT INTO episodic_fts(episodic_fts) VALUES('rebuild')",
+            "rebuild episodic_fts index");
+}
+
 void SqliteMemory::createTables() {
     QSqlQuery query(m_db);
 
@@ -156,10 +201,15 @@ void SqliteMemory::createTables() {
         )
     )", "create episodic table");
 
-    // FTS5 virtual table for full-text search
+    // FTS5 virtual table for full-text search. tokenize='trigram' (L3):
+    // the default unicode61 tokenizer cannot substring-match CJK text — a
+    // whole Chinese sentence collapses into one token. trigram answers 3+
+    // character CJK/ASCII substring queries; shorter queries fall back to
+    // LIKE in searchEpisodic().
     execDdl(query, R"(
         CREATE VIRTUAL TABLE IF NOT EXISTS episodic_fts USING fts5(
-            summary, tags, content='episodic', content_rowid='id'
+            summary, tags, content='episodic', content_rowid='id',
+            tokenize='trigram'
         )
     )", "create episodic_fts table");
 
@@ -680,26 +730,177 @@ void SqliteMemory::saveEpisodic(const QString& sessionId, const QJsonObject& epi
 }
 
 QJsonArray SqliteMemory::searchEpisodic(const QString& query, int limit) {
+    QJsonArray results;
+    const QString kw = query.trimmed();
+    if (kw.isEmpty() || limit <= 0) return results;
+
     QSqlQuery sqlQuery(m_db);
-    sqlQuery.prepare("SELECT e.id, e.session_id, e.summary, e.tags, e.timestamp "
-                     "FROM episodic_fts f JOIN episodic e ON f.rowid = e.id "
-                     "WHERE episodic_fts MATCH ? ORDER BY rank LIMIT ?");
-    sqlQuery.addBindValue(query);
+    const bool ftsPath = kw.length() >= 3;
+    if (ftsPath) {
+        // Trigram FTS path (3+ chars). Wrap the keyword in double quotes
+        // (doubling embedded quotes) so FTS5 treats it as a phrase, avoiding
+        // syntax errors on special characters like '*' or '('.
+        QString match = kw;
+        match.replace(QLatin1String("\""), QLatin1String("\"\""));
+        sqlQuery.prepare(QStringLiteral(
+            "SELECT e.id, e.session_id, e.summary, e.tags, e.timestamp "
+            "FROM episodic_fts f JOIN episodic e ON f.rowid = e.id "
+            "WHERE episodic_fts MATCH ? ORDER BY rank LIMIT ?"));
+        sqlQuery.addBindValue(QStringLiteral("\"%1\"").arg(match));
+    } else {
+        // Sub-trigram query: trigram cannot answer, fall back to LIKE on
+        // summary + tags. Escape LIKE wildcards so user input is literal.
+        QString like = kw;
+        like.replace(QLatin1String("\\"), QLatin1String("\\\\"))
+            .replace(QLatin1String("%"), QLatin1String("\\%"))
+            .replace(QLatin1String("_"), QLatin1String("\\_"));
+        sqlQuery.prepare(QStringLiteral(
+            "SELECT e.id, e.session_id, e.summary, e.tags, e.timestamp "
+            "FROM episodic e "
+            "WHERE e.summary LIKE ? ESCAPE '\\' OR e.tags LIKE ? ESCAPE '\\' "
+            "ORDER BY e.timestamp DESC LIMIT ?"));
+        sqlQuery.addBindValue(QStringLiteral("%%1%").arg(like));
+        sqlQuery.addBindValue(QStringLiteral("%%1%").arg(like));
+    }
     sqlQuery.addBindValue(limit);
 
-    QJsonArray results;
-    if (sqlQuery.exec()) {
-        while (sqlQuery.next()) {
-            QJsonObject episode;
-            episode["id"] = sqlQuery.value(0).toInt();
-            episode["session_id"] = sqlQuery.value(1).toString();
-            episode["summary"] = sqlQuery.value(2).toString();
-            episode["tags"] = sqlQuery.value(3).toString();
-            episode["timestamp"] = sqlQuery.value(4).toLongLong();
-            results.append(episode);
-        }
+    if (!sqlQuery.exec()) {
+        qWarning() << "searchEpisodic failed:" << sqlQuery.lastError().text();
+        return results;
+    }
+    while (sqlQuery.next()) {
+        QJsonObject episode;
+        episode["id"] = sqlQuery.value(0).toInt();
+        episode["session_id"] = sqlQuery.value(1).toString();
+        episode["summary"] = sqlQuery.value(2).toString();
+        episode["tags"] = sqlQuery.value(3).toString();
+        episode["timestamp"] = sqlQuery.value(4).toLongLong();
+        results.append(episode);
     }
     return results;
+}
+
+// M1: enumerate every stored episode, newest first. searchEpisodic cannot do
+// this (it needs a non-empty keyword), and the memory-management UI needs the
+// full list to browse and forget entries.
+QJsonArray SqliteMemory::listEpisodic(int limit) {
+    QJsonArray results;
+    if (limit <= 0) return results;
+    QSqlQuery query(m_db);
+    query.prepare("SELECT id, session_id, summary, tags, timestamp FROM episodic "
+                  "ORDER BY timestamp DESC, id DESC LIMIT ?");
+    query.addBindValue(limit);
+    if (!query.exec()) {
+        qWarning() << "listEpisodic failed:" << query.lastError().text();
+        return results;
+    }
+    while (query.next()) {
+        QJsonObject episode;
+        episode["id"] = query.value(0).toInt();
+        episode["session_id"] = query.value(1).toString();
+        episode["summary"] = query.value(2).toString();
+        episode["tags"] = query.value(3).toString();
+        episode["timestamp"] = query.value(4).toLongLong();
+        results.append(episode);
+    }
+    return results;
+}
+
+// M1: forget one episode. The episodic_ad FTS trigger keeps the index in sync.
+bool SqliteMemory::deleteEpisodic(qint64 id) {
+    QSqlQuery query(m_db);
+    query.prepare("DELETE FROM episodic WHERE id = ?");
+    query.addBindValue(id);
+    if (!query.exec()) {
+        qWarning() << "deleteEpisodic failed:" << query.lastError().text();
+        return false;
+    }
+    return query.numRowsAffected() > 0;
+}
+
+// M1: wipe the whole episodic store. Returns the number of rows removed.
+int SqliteMemory::deleteAllEpisodic() {
+    QSqlQuery query(m_db);
+    if (!query.exec(QStringLiteral("DELETE FROM episodic"))) {
+        qWarning() << "deleteAllEpisodic failed:" << query.lastError().text();
+        return 0;
+    }
+    return qMax(0, query.numRowsAffected());
+}
+
+// Token/cost statistics (M1): audit_log's task_complete rows are the only
+// place real token counts land (llm_request writes 0 - the count is unknown
+// at request start). Aggregate over the trailing window by model and by
+// local day.
+QVariantMap SqliteMemory::tokenStats(int recentDays) {
+    QVariantMap out;
+    out["totalCalls"] = 0;
+    out["totalTokens"] = 0;
+    out["avgLatencyMs"] = 0;
+    out["byModel"] = QVariantList{};
+    out["byDay"] = QVariantList{};
+    if (recentDays <= 0) recentDays = 30;
+
+    const qint64 cutoff = QDateTime::currentDateTime().addDays(-recentDays)
+                              .toMSecsSinceEpoch();
+
+    QSqlQuery total(m_db);
+    total.prepare(QStringLiteral(
+        "SELECT COUNT(*), COALESCE(SUM(tokens),0), COALESCE(AVG(latency_ms),0) "
+        "FROM audit_log WHERE event='task_complete' AND timestamp >= ?"));
+    total.addBindValue(cutoff);
+    if (total.exec() && total.next()) {
+        out["totalCalls"] = total.value(0).toInt();
+        out["totalTokens"] = total.value(1).toLongLong();
+        out["avgLatencyMs"] = total.value(2).toInt();
+    } else {
+        qWarning() << "tokenStats totals failed:" << total.lastError().text();
+    }
+
+    QVariantList byModel;
+    QSqlQuery modelQ(m_db);
+    modelQ.prepare(QStringLiteral(
+        "SELECT model, COUNT(*), COALESCE(SUM(tokens),0), "
+        "CAST(COALESCE(AVG(latency_ms),0) AS INTEGER) "
+        "FROM audit_log WHERE event='task_complete' AND timestamp >= ? "
+        "GROUP BY model ORDER BY SUM(tokens) DESC"));
+    modelQ.addBindValue(cutoff);
+    if (modelQ.exec()) {
+        while (modelQ.next()) {
+            byModel.append(QVariantMap{
+                {QStringLiteral("model"), modelQ.value(0).toString()},
+                {QStringLiteral("calls"), modelQ.value(1).toInt()},
+                {QStringLiteral("tokens"), modelQ.value(2).toLongLong()},
+                {QStringLiteral("avgLatencyMs"), modelQ.value(3).toInt()},
+            });
+        }
+    } else {
+        qWarning() << "tokenStats byModel failed:" << modelQ.lastError().text();
+    }
+    out["byModel"] = byModel;
+
+    QVariantList byDay;
+    QSqlQuery dayQ(m_db);
+    dayQ.prepare(QStringLiteral(
+        "SELECT date(timestamp/1000, 'unixepoch', 'localtime') AS d, "
+        "COUNT(*), COALESCE(SUM(tokens),0) "
+        "FROM audit_log WHERE event='task_complete' AND timestamp >= ? "
+        "GROUP BY d ORDER BY d DESC LIMIT 31"));
+    dayQ.addBindValue(cutoff);
+    if (dayQ.exec()) {
+        while (dayQ.next()) {
+            byDay.append(QVariantMap{
+                {QStringLiteral("day"), dayQ.value(0).toString()},
+                {QStringLiteral("calls"), dayQ.value(1).toInt()},
+                {QStringLiteral("tokens"), dayQ.value(2).toLongLong()},
+            });
+        }
+    } else {
+        qWarning() << "tokenStats byDay failed:" << dayQ.lastError().text();
+    }
+    out["byDay"] = byDay;
+
+    return out;
 }
 
 void SqliteMemory::clear(const QString& sessionId) {

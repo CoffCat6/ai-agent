@@ -285,6 +285,13 @@ public:
     // embedding service came back online.
     Q_INVOKABLE void reembedDocument(const QString& name);
     Q_INVOKABLE QVariantList auditLog(int limit = 200);
+    // M1: long-term episodic memory management (browse / search / forget).
+    Q_INVOKABLE QVariantList listEpisodic(int limit = 200);
+    Q_INVOKABLE QVariantList searchEpisodic(const QString& keyword, int limit = 50);
+    Q_INVOKABLE bool removeEpisodic(qint64 id);
+    Q_INVOKABLE int clearEpisodic();
+    // M1 (stats): token/cost aggregation for the usage page.
+    Q_INVOKABLE QVariantMap tokenStats(int recentDays = 30);
     Q_INVOKABLE QString logFilePath() const;   // runtime log file path (for the audit dialog)
 
 signals:

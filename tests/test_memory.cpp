@@ -61,6 +61,8 @@ private slots:
     void sessionDeleteAndRename();
     void episodicFullTextSearch();
     void auditTrail();
+    void tokenStatsAggregate();
+    void tokenStatsEmptyWhenNoData();
     void traceNodeRoundTrip();
     // Batch 6: knowledge persistence v2
     void knowledgeSchemaV1Migrates();
@@ -170,6 +172,42 @@ void TestMemory::auditTrail() {
     QVERIFY(entries.at(1).toObject().contains("timestamp"));
 
     QCOMPARE(mem.auditLog(1).size(), 1);
+}
+
+// M1 (stats): tokenStats aggregates task_complete rows by model / day and
+// ignores llm_request rows (their token count is 0 - unknown at request start).
+void TestMemory::tokenStatsAggregate() {
+    SqliteMemory mem(QStringLiteral(":memory:"));
+    mem.logAudit("s1", "llm_request", "", "", true, "", 1, 100, 0, "gpt-4o-mini");
+    mem.logAudit("s1", "task_complete", "", "", true, "done", 1, 500, 120, "gpt-4o-mini");
+    mem.logAudit("s2", "task_complete", "", "", true, "done", 2, 300, 800, "qwen2.5");
+    mem.logAudit("s2", "task_complete", "", "", true, "done", 3, 200, 700, "qwen2.5");
+
+    const QVariantMap stats = mem.tokenStats(30);
+    QCOMPARE(stats.value("totalCalls").toInt(), 3);
+    QCOMPARE(stats.value("totalTokens").toInt(), 120 + 800 + 700);
+
+    const QVariantList byModel = stats.value("byModel").toList();
+    QCOMPARE(byModel.size(), 2);
+    // ordered by total tokens DESC: qwen2.5 (1500) then gpt-4o-mini (120)
+    QCOMPARE(byModel.at(0).toMap().value("model").toString(), QStringLiteral("qwen2.5"));
+    QCOMPARE(byModel.at(0).toMap().value("tokens").toInt(), 1500);
+    QCOMPARE(byModel.at(1).toMap().value("model").toString(), QStringLiteral("gpt-4o-mini"));
+    QCOMPARE(byModel.at(1).toMap().value("tokens").toInt(), 120);
+
+    const QVariantList byDay = stats.value("byDay").toList();
+    QVERIFY(!byDay.isEmpty());
+    QVERIFY(byDay.at(0).toMap().contains("day"));
+    QCOMPARE(byDay.at(0).toMap().value("tokens").toInt(), 120 + 800 + 700);
+}
+
+void TestMemory::tokenStatsEmptyWhenNoData() {
+    SqliteMemory mem(QStringLiteral(":memory:"));
+    const QVariantMap stats = mem.tokenStats(30);
+    QCOMPARE(stats.value("totalCalls").toInt(), 0);
+    QCOMPARE(stats.value("totalTokens").toInt(), 0);
+    QVERIFY(stats.value("byModel").toList().isEmpty());
+    QVERIFY(stats.value("byDay").toList().isEmpty());
 }
 
 void TestMemory::episodicFullTextSearch() {

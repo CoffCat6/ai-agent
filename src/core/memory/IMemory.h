@@ -78,6 +78,32 @@ public:
         Q_UNUSED(keyword); Q_UNUSED(limit);
         return {};
     }
+
+    // M1: long-term memory management (optional capability; default no-ops).
+    // listEpisodic enumerates every stored episode, newest first — needed
+    // because searchEpisodic requires a non-empty keyword and therefore
+    // cannot list. deleteEpisodic forgets one episode by id; deleteAllEpisodic
+    // wipes the store and returns the number of rows removed.
+    virtual QJsonArray listEpisodic(int limit = 200) {
+        Q_UNUSED(limit);
+        return {};
+    }
+    virtual bool deleteEpisodic(qint64 id) {
+        Q_UNUSED(id);
+        return false;
+    }
+    virtual int deleteAllEpisodic() {
+        return 0;
+    }
+
+    // M1 (stats): aggregate token/cost statistics from the audit trail
+    // (optional capability; default empty). The task_complete audit rows are
+    // the only place real token counts land. Returns a map with
+    // {totalCalls, totalTokens, avgLatencyMs, byModel: [...], byDay: [...]}.
+    virtual QVariantMap tokenStats(int recentDays = 30) {
+        Q_UNUSED(recentDays);
+        return {};
+    }
 };
 
 } // namespace NexusAI
