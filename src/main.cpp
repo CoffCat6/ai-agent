@@ -199,6 +199,8 @@ qInfo() << "NexusAI" << app.applicationVersion() << "starting";
         -> std::unique_ptr<WebSearchBackend> {
         if (providerKey == QLatin1String("tavily"))
             return std::make_unique<TavilyBackend>();
+        if (providerKey == QLatin1String("duckduckgo"))
+            return std::make_unique<DuckDuckGoBackend>();
         qWarning() << "Unknown web search provider:" << providerKey
                    << "- falling back to tavily";
         return std::make_unique<TavilyBackend>();

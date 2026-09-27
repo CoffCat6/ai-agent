@@ -160,6 +160,7 @@ Item {
                 ColumnLayout {
                     Layout.fillWidth: true
                     spacing: 4
+                    visible: Settings.webSearchProvider !== "duckduckgo"
 
                     Text {
                         text: qsTr("搜索 API Key")

@@ -26,6 +26,24 @@ public:
     }
 };
 
+class FakeNoKeyBackend : public WebSearchBackend {
+public:
+    QString providerKey() const override { return QStringLiteral("fake_nokey"); }
+    bool requiresApiKey() const override { return false; }
+
+    QList<WebSearchResult> search(const QString& query, int,
+                                  const QString&, int) const override {
+        QList<WebSearchResult> out;
+        if (query.isEmpty()) return out;
+        WebSearchResult r;
+        r.title = query;
+        r.url = QStringLiteral("https://example.com/ddg");
+        r.snippet = QStringLiteral("no-key result");
+        out.append(r);
+        return out;
+    }
+};
+
 class TestWebSearch : public QObject {
     Q_OBJECT
 private slots:
@@ -101,6 +119,22 @@ private slots:
         tool.setApiKey(QStringLiteral("dummy-key"));
         tool.setBackend(nullptr);
         const ToolResult r = tool.execute({{"query", "test"}, {"max_results", 1}});
+        QVERIFY(r.success);
+        QVERIFY(r.output.contains(QStringLiteral("example.com")));
+    }
+
+    // DuckDuckGo backend: providerKey and requiresApiKey properties.
+    void duckduckgoBackendProperties() {
+        DuckDuckGoBackend backend;
+        QCOMPARE(backend.providerKey(), QStringLiteral("duckduckgo"));
+        QVERIFY(!backend.requiresApiKey());
+    }
+
+    // Backends with requiresApiKey()=false skip the API key check.
+    void noKeyBackendSkipsApiKeyCheck() {
+        WebSearchTool tool(std::make_unique<FakeNoKeyBackend>());
+        tool.setApiKey(QString());
+        const ToolResult r = tool.execute({{"query", "hello"}});
         QVERIFY(r.success);
         QVERIFY(r.output.contains(QStringLiteral("example.com")));
     }

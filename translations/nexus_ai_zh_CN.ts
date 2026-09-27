@@ -791,12 +791,12 @@
         <location filename="../src/ui/pages/MemoryPage.qml" line="84"/>
         <location filename="../src/ui/pages/MemoryPage.qml" line="102"/>
         <source>启用长期记忆</source>
-        <translation >启用长期记忆</translation>
+        <translation>启用长期记忆</translation>
     </message>
     <message>
         <location filename="../src/ui/pages/MemoryPage.qml" line="90"/>
         <source>开启后，每次任务结束会生成会话摘要并在新会话中注入相关历史，帮助模型记住此前聊过的内容。</source>
-        <translation >开启后，每次任务结束会生成会话摘要并在新会话中注入相关历史，帮助模型记住此前聊过的内容。</translation>
+        <translation>开启后，每次任务结束会生成会话摘要并在新会话中注入相关历史，帮助模型记住此前聊过的内容。</translation>
     </message>
     <message>
         <location filename="../src/ui/pages/MemoryPage.qml" line="117"/>
@@ -1700,44 +1700,44 @@
     <message>
         <location filename="../src/ui/pages/ToolsPage.qml" line="119"/>
         <source>联网搜索</source>
-        <translation >联网搜索</translation>
+        <translation>联网搜索</translation>
     </message>
     <message>
         <location filename="../src/ui/pages/ToolsPage.qml" line="127"/>
         <source>启用后模型可调用 web_search 获取实时信息。搜索查询会发送至所配置的搜索服务商，请勿在查询中包含敏感信息。</source>
-        <translation >启用后模型可调用 web_search 获取实时信息。搜索查询会发送至所配置的搜索服务商，请勿在查询中包含敏感信息。</translation>
+        <translation>启用后模型可调用 web_search 获取实时信息。搜索查询会发送至所配置的搜索服务商，请勿在查询中包含敏感信息。</translation>
     </message>
     <message>
         <location filename="../src/ui/pages/ToolsPage.qml" line="141"/>
         <location filename="../src/ui/pages/ToolsPage.qml" line="156"/>
         <source>搜索服务</source>
-        <translation >搜索服务</translation>
+        <translation>搜索服务</translation>
     </message>
     <message>
-        <location filename="../src/ui/pages/ToolsPage.qml" line="165"/>
-        <location filename="../src/ui/pages/ToolsPage.qml" line="194"/>
+        <location filename="../src/ui/pages/ToolsPage.qml" line="166"/>
+        <location filename="../src/ui/pages/ToolsPage.qml" line="195"/>
         <source>搜索 API Key</source>
-        <translation >搜索 API Key</translation>
-    </message>
-    <message>
-        <location filename="../src/ui/pages/ToolsPage.qml" line="180"/>
-        <source>已配置（输入新值可覆盖，留空不修改）</source>
-        <translation >已配置（输入新值可覆盖，留空不修改）</translation>
+        <translation>搜索 API Key</translation>
     </message>
     <message>
         <location filename="../src/ui/pages/ToolsPage.qml" line="181"/>
+        <source>已配置（输入新值可覆盖，留空不修改）</source>
+        <translation>已配置（输入新值可覆盖，留空不修改）</translation>
+    </message>
+    <message>
+        <location filename="../src/ui/pages/ToolsPage.qml" line="182"/>
         <source>未配置</source>
-        <translation >未配置</translation>
+        <translation>未配置</translation>
     </message>
     <message>
-        <location filename="../src/ui/pages/ToolsPage.qml" line="204"/>
+        <location filename="../src/ui/pages/ToolsPage.qml" line="205"/>
         <source>清除密钥</source>
-        <translation >清除密钥</translation>
+        <translation>清除密钥</translation>
     </message>
     <message>
-        <location filename="../src/ui/pages/ToolsPage.qml" line="208"/>
+        <location filename="../src/ui/pages/ToolsPage.qml" line="209"/>
         <source>清除搜索 API Key</source>
-        <translation >清除搜索 API Key</translation>
+        <translation>清除搜索 API Key</translation>
     </message>
 </context>
 <context>

@@ -791,12 +791,12 @@ and the model can retrieve their content to answer questions</translation>
         <location filename="../src/ui/pages/MemoryPage.qml" line="84"/>
         <location filename="../src/ui/pages/MemoryPage.qml" line="102"/>
         <source>启用长期记忆</source>
-        <translation >Enable long-term memory</translation>
+        <translation>Enable long-term memory</translation>
     </message>
     <message>
         <location filename="../src/ui/pages/MemoryPage.qml" line="90"/>
         <source>开启后，每次任务结束会生成会话摘要并在新会话中注入相关历史，帮助模型记住此前聊过的内容。</source>
-        <translation >When enabled, a session summary is generated after each task and relevant history is injected into new sessions, helping the model remember what was discussed before.</translation>
+        <translation>When enabled, a session summary is generated after each task and relevant history is injected into new sessions, helping the model remember what was discussed before.</translation>
     </message>
     <message>
         <location filename="../src/ui/pages/MemoryPage.qml" line="117"/>
@@ -1700,44 +1700,44 @@ and the model can retrieve their content to answer questions</translation>
     <message>
         <location filename="../src/ui/pages/ToolsPage.qml" line="119"/>
         <source>联网搜索</source>
-        <translation >Web Search</translation>
+        <translation>Web Search</translation>
     </message>
     <message>
         <location filename="../src/ui/pages/ToolsPage.qml" line="127"/>
         <source>启用后模型可调用 web_search 获取实时信息。搜索查询会发送至所配置的搜索服务商，请勿在查询中包含敏感信息。</source>
-        <translation >When enabled, the model can call web_search to fetch real-time information. Search queries are sent to the configured search provider; do not include sensitive information in your queries.</translation>
+        <translation>When enabled, the model can call web_search to fetch real-time information. Search queries are sent to the configured search provider; do not include sensitive information in your queries.</translation>
     </message>
     <message>
         <location filename="../src/ui/pages/ToolsPage.qml" line="141"/>
         <location filename="../src/ui/pages/ToolsPage.qml" line="156"/>
         <source>搜索服务</source>
-        <translation >Search provider</translation>
+        <translation>Search provider</translation>
     </message>
     <message>
-        <location filename="../src/ui/pages/ToolsPage.qml" line="165"/>
-        <location filename="../src/ui/pages/ToolsPage.qml" line="194"/>
+        <location filename="../src/ui/pages/ToolsPage.qml" line="166"/>
+        <location filename="../src/ui/pages/ToolsPage.qml" line="195"/>
         <source>搜索 API Key</source>
-        <translation >Search API key</translation>
-    </message>
-    <message>
-        <location filename="../src/ui/pages/ToolsPage.qml" line="180"/>
-        <source>已配置（输入新值可覆盖，留空不修改）</source>
-        <translation >Configured (enter a new value to overwrite, leave blank to keep)</translation>
+        <translation>Search API key</translation>
     </message>
     <message>
         <location filename="../src/ui/pages/ToolsPage.qml" line="181"/>
+        <source>已配置（输入新值可覆盖，留空不修改）</source>
+        <translation>Configured (enter a new value to overwrite, leave blank to keep)</translation>
+    </message>
+    <message>
+        <location filename="../src/ui/pages/ToolsPage.qml" line="182"/>
         <source>未配置</source>
-        <translation >Not configured</translation>
+        <translation>Not configured</translation>
     </message>
     <message>
-        <location filename="../src/ui/pages/ToolsPage.qml" line="204"/>
+        <location filename="../src/ui/pages/ToolsPage.qml" line="205"/>
         <source>清除密钥</source>
-        <translation >Clear key</translation>
+        <translation>Clear key</translation>
     </message>
     <message>
-        <location filename="../src/ui/pages/ToolsPage.qml" line="208"/>
+        <location filename="../src/ui/pages/ToolsPage.qml" line="209"/>
         <source>清除搜索 API Key</source>
-        <translation >Clear search API key</translation>
+        <translation>Clear search API key</translation>
     </message>
 </context>
 <context>

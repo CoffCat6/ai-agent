@@ -514,6 +514,7 @@ ComboBox {
     void webSearchProviderRejectsUnknownKey() {
         SettingsGuard guard;
         SettingsService svc(nullptr);
+        svc.setWebSearchProvider(QStringLiteral("tavily"));
         QSignalSpy spy(&svc, &SettingsService::webSearchProviderChanged);
         svc.setWebSearchProvider(QStringLiteral("google"));
         QCOMPARE(spy.count(), 0);

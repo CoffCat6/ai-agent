@@ -547,7 +547,7 @@ void SettingsService::setLogLevel(const QString& level) {
 // L1: legal search provider keys for the settings UI. Kept in sync with the
 // backend factory (L4); currently only Tavily is implemented.
 QStringList SettingsService::webSearchProviders() const {
-    return {QStringLiteral("tavily")};
+    return {QStringLiteral("tavily"), QStringLiteral("duckduckgo")};
 }
 
 // T6 (F3): search provider ("tavily" | …). Clamped to known providers.

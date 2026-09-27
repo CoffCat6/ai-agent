@@ -70,7 +70,7 @@ public:
         if (query.isEmpty())
             return ToolResult::fail(QStringLiteral("query is required"));
 
-        if (m_apiKey.isEmpty())
+        if (m_backend->requiresApiKey() && m_apiKey.isEmpty())
             return ToolResult::fail(QStringLiteral("未配置搜索 API key（请在设置中心配置 web_search 密钥）"));
 
         int maxResults = args.value(QStringLiteral("max_results")).toInt(5);
@@ -83,7 +83,9 @@ public:
             return ToolResult::fail(QStringLiteral("Search cancelled"));
 
         if (results.isEmpty())
-            return ToolResult::fail(QStringLiteral("未找到搜索结果（请检查 API key 或网络连接）"));
+            return ToolResult::fail(m_backend->requiresApiKey()
+                ? QStringLiteral("未找到搜索结果（请检查 API key 或网络连接）")
+                : QStringLiteral("未找到搜索结果（请检查网络连接）"));
 
         // Format results as a numbered list and cap total characters.
         QStringList lines;
