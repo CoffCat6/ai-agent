@@ -24,6 +24,7 @@ struct ProviderDefaults {
     QString baseUrl;
     QString model;
     QStringList models;
+    QHash<QString, int> contextWindows;  // model name → context window (tokens)
 };
 
 // No displayName in the static table: a translated name must be resolved
@@ -32,11 +33,22 @@ struct ProviderDefaults {
 const QHash<QString, ProviderDefaults>& providerDefaults() {
     static const QHash<QString, ProviderDefaults> defaults = {
         {"openai",    {QStringLiteral("https://api.openai.com/v1"),  QStringLiteral("gpt-4o-mini"),
-                       {QStringLiteral("gpt-4o-mini"), QStringLiteral("gpt-4o"), QStringLiteral("gpt-4-turbo"), QStringLiteral("o3-mini")}}},
+                       {QStringLiteral("gpt-4o-mini"), QStringLiteral("gpt-4o"), QStringLiteral("gpt-4-turbo"), QStringLiteral("o3-mini")},
+                       {{QStringLiteral("gpt-4o-mini"), 128000},
+                        {QStringLiteral("gpt-4o"), 128000},
+                        {QStringLiteral("gpt-4-turbo"), 128000},
+                        {QStringLiteral("o3-mini"), 200000}}}},
         {"anthropic", {QStringLiteral("https://api.anthropic.com"), QStringLiteral("claude-sonnet-4-5"),
-                       {QStringLiteral("claude-sonnet-4-5"), QStringLiteral("claude-3-5-haiku-20241022"), QStringLiteral("claude-3-5-sonnet-20241022"), QStringLiteral("claude-3-opus-20240229")}}},
+                       {QStringLiteral("claude-sonnet-4-5"), QStringLiteral("claude-3-5-haiku-20241022"), QStringLiteral("claude-3-5-sonnet-20241022"), QStringLiteral("claude-3-opus-20240229")},
+                       {{QStringLiteral("claude-sonnet-4-5"), 200000},
+                        {QStringLiteral("claude-3-5-haiku-20241022"), 200000},
+                        {QStringLiteral("claude-3-5-sonnet-20241022"), 200000},
+                        {QStringLiteral("claude-3-opus-20240229"), 200000}}}},
         {"ollama",    {QStringLiteral("http://localhost:11434"),     QStringLiteral("qwen2.5:7b"),
-                       {QStringLiteral("qwen2.5:7b"), QStringLiteral("llama3.1:8b"), QStringLiteral("deepseek-r1:7b")}}},
+                       {QStringLiteral("qwen2.5:7b"), QStringLiteral("llama3.1:8b"), QStringLiteral("deepseek-r1:7b")},
+                       {{QStringLiteral("qwen2.5:7b"), 32768},
+                        {QStringLiteral("llama3.1:8b"), 128000},
+                        {QStringLiteral("deepseek-r1:7b"), 65536}}}},
     };
     return defaults;
 }
@@ -590,6 +602,44 @@ void SettingsService::setEpisodicMemoryEnabled(bool enabled) {
                     enabled ? QStringLiteral("on") : QStringLiteral("off"));
     QSettings().setValue("memory/episodicMemoryEnabled", enabled);
     emit episodicMemoryEnabledChanged();
+}
+
+// Capability-table lookup: returns the context window for a provider+model,
+// or 0 when either is unknown so the caller can fall back to the global
+// contextTokens. providerDefaults() lives in the anonymous namespace above
+// but is visible to these member definitions within the same TU.
+int SettingsService::modelContextWindow(const QString& provider,
+                                        const QString& model) const {
+    const auto it = providerDefaults().constFind(provider);
+    if (it == providerDefaults().constEnd()) return 0;
+    const auto wit = it.value().contextWindows.constFind(model);
+    if (wit == it.value().contextWindows.constEnd()) return 0;
+    return wit.value();
+}
+
+// Three-level priority resolution for the active profile's context budget:
+//   1. Profile-level "contextLength" override (highest)
+//   2. Capability-table contextWindow (default per model)
+//   3. Global contextTokens (fallback for unknown models)
+int SettingsService::resolveContextLimit() const {
+    const QVariantMap profile = activeProfile();
+    const QString provider = profile.value("provider").toString();
+    const QString model = profile.value("model").toString();
+
+    // Priority 1: Profile-level contextLength override.
+    const QVariant profileOverride = profile.value("contextLength");
+    if (profileOverride.isValid() && !profileOverride.toString().isEmpty()) {
+        bool ok = false;
+        const int v = profileOverride.toInt(&ok);
+        if (ok && v > 0) return v;
+    }
+
+    // Priority 2: capability-table contextWindow.
+    const int tableValue = modelContextWindow(provider, model);
+    if (tableValue > 0) return tableValue;
+
+    // Priority 3: global contextTokens (fallback).
+    return m_contextTokens;
 }
 
 } // namespace NexusAI

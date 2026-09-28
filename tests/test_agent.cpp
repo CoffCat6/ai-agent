@@ -9,6 +9,7 @@
 #include "core/rag/RagService.h"
 #include "core/rag/KnowledgeSearchTool.h"
 #include "infrastructure/llm/IAIService.h"
+#include "core/utils/TokenEstimator.h"
 
 #include <QSet>
 #include <QSemaphore>
@@ -453,6 +454,12 @@ private slots:
     void auditCarriesRequestContext();
     // Batch 22 (F8): user-editable system prompt
     void systemPromptOverrideReachesRequest();
+
+    // docs/15 §6.1.2: model-switch context-window adaptation
+    void testSwitchToLargerWindowRestoresHistory();
+    void testSwitchToSmallerWindowCompressesImmediately();
+    void testResumeSessionAdaptsToContextLimit();
+    void testNoAdaptationDuringActiveTask();
 };
 
 void TestAgent::directCompletion() {
@@ -1633,6 +1640,136 @@ void TestAgent::systemPromptOverrideReachesRequest() {
                                 .value("content").toString();
     QVERIFY(content.contains(QStringLiteral("You are NexusAI")));
     agent.setSystemPromptOverride(QString());   // leave the fixture clean
+}
+
+// ── docs/15 §6.1.2: model-switch context-window adaptation ──
+
+// (4) Switching to a larger window restores previously compressed history
+// from SQLite (scenario B in docs/15 §4.1).
+void TestAgent::testSwitchToLargerWindowRestoresHistory() {
+    SqliteMemory memory(QStringLiteral(":memory:"));
+    agent.setMemory(&memory);
+
+    // Start with a small window so the second turn's history overflows and
+    // gets compressed (system + omission marker + newest user turn). Each
+    // reply is ~3000 tokens; two turns exceed the 4096 budget even after
+    // subtracting the reserved tools-schema tokens, and the compressed
+    // suffix (user2 + assistant2) stays under 4096.
+    agent.setContextLimit(4096);
+    llm.script.append(textResponse(QString(12000, 'a')));
+    llm.script.append(textResponse(QString(12000, 'b')));
+    QSignalSpy spy(&agent, &AIAgent::responseReady);
+    agent.startTask(QStringLiteral("first question"));
+    QTRY_COMPARE(spy.count(), 1);
+    agent.startTask(QStringLiteral("second question"));
+    QTRY_COMPARE(spy.count(), 2);
+
+    const int compressedSize = agent.messages().size();
+
+    // Switch to a larger window: onContextLimitChanged restores the full
+    // history from SQLite.
+    agent.setContextLimit(128000);
+    const int restoredSize = agent.messages().size();
+
+    QVERIFY2(restoredSize > compressedSize,
+             "History should be restored after switching to larger window");
+    agent.setMemory(nullptr);
+}
+
+// (5) Switching to a smaller window compresses the history immediately
+// (scenario A in docs/15 §4.1).
+void TestAgent::testSwitchToSmallerWindowCompressesImmediately() {
+    SqliteMemory memory(QStringLiteral(":memory:"));
+    agent.setMemory(&memory);
+
+    // Start with a large window and build a history that fits comfortably.
+    // Each reply is ~3000 tokens; two turns give ~6000 tokens, well above
+    // the 4096 small-window budget.
+    agent.setContextLimit(128000);
+    llm.script.append(textResponse(QString(12000, 'a')));
+    llm.script.append(textResponse(QString(12000, 'b')));
+    QSignalSpy spy(&agent, &AIAgent::responseReady);
+    agent.startTask(QStringLiteral("first question"));
+    QTRY_COMPARE(spy.count(), 1);
+    agent.startTask(QStringLiteral("second question"));
+    QTRY_COMPARE(spy.count(), 2);
+
+    const int beforeSwitch = agent.messages().size();
+
+    // Switch to a small window: onContextLimitChanged compresses immediately.
+    agent.setContextLimit(4096);
+    const int afterSwitch = agent.messages().size();
+
+    QVERIFY2(afterSwitch < beforeSwitch,
+             "History should be compressed immediately after switching to smaller window");
+    agent.setMemory(nullptr);
+}
+
+// (6) resumeSession loads persisted history and adapts it to the current
+// (small) context window (docs/15 §4.2.4).
+void TestAgent::testResumeSessionAdaptsToContextLimit() {
+    SqliteMemory memory(QStringLiteral(":memory:"));
+    agent.setMemory(&memory);
+
+    // Build a large history with a big window and persist it. Each reply is
+    // ~3000 tokens; two turns give ~6000 tokens, well above the 4096 budget.
+    agent.setContextLimit(128000);
+    llm.script.append(textResponse(QString(12000, 'a')));
+    llm.script.append(textResponse(QString(12000, 'b')));
+    QSignalSpy spy(&agent, &AIAgent::responseReady);
+    agent.startTask(QStringLiteral("first question"));
+    QTRY_COMPARE(spy.count(), 1);
+    agent.startTask(QStringLiteral("second question"));
+    QTRY_COMPARE(spy.count(), 2);
+
+    const QString sessionId = agent.currentSessionId();
+    QVERIFY(!sessionId.isEmpty());
+
+    // Switch to a small window, then resume the session. resumeSession loads
+    // the full history from SQLite and compresses it to fit.
+    agent.resetSession();
+    agent.setContextLimit(4096);
+    agent.resumeSession(sessionId);
+
+    // The resumed history must have been compressed to fit the small window.
+    QVERIFY2(TokenEstimator::estimateTokens(agent.messages()) <= 4096,
+             "Resumed history should be compressed to fit the small context window");
+    agent.setMemory(nullptr);
+}
+
+// (7) While a task is active (m_active == true), switching the context window
+// must not trigger immediate adaptation (risk #6 in docs/15 §8).
+void TestAgent::testNoAdaptationDuringActiveTask() {
+    SqliteMemory memory(QStringLiteral(":memory:"));
+    agent.setMemory(&memory);
+
+    // Build a history with a large window.
+    agent.setContextLimit(128000);
+    llm.script.append(textResponse(QString(9600, 'a')));
+    QSignalSpy spy(&agent, &AIAgent::responseReady);
+    agent.startTask(QStringLiteral("first question"));
+    QTRY_COMPARE(spy.count(), 1);
+
+    // Start a task that blocks so m_active stays true during the switch.
+    BlockingTool* blocking = registerBlockingTool();
+    llm.script.append(toolResponse("test_blocking", QJsonObject{}));
+    agent.startTask(QStringLiteral("block"));
+    QTRY_VERIFY_WITH_TIMEOUT(traceHasRunningToolCall(agent.traceModel(),
+                                                    QStringLiteral("test_blocking")),
+                             5000);
+    QVERIFY(agent.isActive());
+
+    const int beforeSwitch = agent.messages().size();
+
+    // Switch to a small window while the task is active: onContextLimitChanged
+    // must not compress.
+    agent.setContextLimit(4096);
+    QCOMPARE(agent.messages().size(), beforeSwitch);
+
+    agent.stop();
+    blocking->release();
+    QTest::qWait(300);
+    agent.setMemory(nullptr);
 }
 
 QTEST_GUILESS_MAIN(TestAgent)

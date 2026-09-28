@@ -107,6 +107,13 @@ Item {
                         background: Rectangle { radius: 6; color: Theme.bgPrimary; border.width: contextField.activeFocus ? 2 : 1; border.color: contextField.activeFocus ? Theme.brandPrimary : Theme.borderSubtle }
                         onEditingFinished: { const parsed = parseInt(text); Settings.contextTokens = isNaN(parsed) ? 8192 : parsed; text = Settings.contextTokens }
                     }
+                    Text {
+                        text: qsTr("默认值。按模型能力表自动适配时，此项作为未知模型的 fallback。")
+                        color: Theme.textSecondary
+                        font.pixelSize: 10
+                        wrapMode: Text.Wrap
+                        Layout.fillWidth: true
+                    }
                 }
 
                 CheckBox { checked: Settings.simulationMode; onToggled: Settings.simulationMode = checked; text: qsTr("仿真演示模式（不调用真实 LLM）"); font.pixelSize: Theme.fontSizeBody; font.family: Theme.fontSans }

@@ -82,6 +82,7 @@ void ChatSessionController::connectAgent(AIAgent* agent) {
     });
 
     connect(agent, &AIAgent::contextLimitChanged, this, [this]() {
+        emit contextLimitChanged();
         emit tokenUsageChanged();
     });
 

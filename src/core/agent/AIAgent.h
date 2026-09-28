@@ -122,6 +122,9 @@ private:
 
     void processIteration();
     void applyContextBudget(int reservedTokens);
+    void onContextLimitChanged(int oldLimit, int newLimit);
+    void restoreFullHistoryIfAvailable();
+    int estimateReservedTokensForNextRequest() const;
     void onTaskTimeout();
     void onRequestStarted(quint64 requestId);
     void onLLMResponse(const LLMResponse& response);

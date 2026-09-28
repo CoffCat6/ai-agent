@@ -264,72 +264,77 @@ and the model can retrieve their content to answer questions</translation>
         <translation>Context Window (Tokens)</translation>
     </message>
     <message>
-        <location filename="../src/ui/pages/GeneralPage.qml" line="112"/>
+        <location filename="../src/ui/pages/GeneralPage.qml" line="111"/>
+        <source>默认值。按模型能力表自动适配时，此项作为未知模型的 fallback。</source>
+        <translation>Default value. When auto-adapting by model capability, this is the fallback for unknown models.</translation>
+    </message>
+    <message>
+        <location filename="../src/ui/pages/GeneralPage.qml" line="119"/>
         <source>仿真演示模式（不调用真实 LLM）</source>
         <translation>Simulation demo mode (no real LLM calls)</translation>
     </message>
     <message>
-        <location filename="../src/ui/pages/GeneralPage.qml" line="113"/>
+        <location filename="../src/ui/pages/GeneralPage.qml" line="120"/>
         <source>允许读取整个磁盘</source>
         <translation>Allow reading the entire disk</translation>
     </message>
     <message>
-        <location filename="../src/ui/pages/GeneralPage.qml" line="114"/>
+        <location filename="../src/ui/pages/GeneralPage.qml" line="121"/>
         <source>仅本地模式</source>
         <translation>Local-only mode</translation>
     </message>
     <message>
-        <location filename="../src/ui/pages/GeneralPage.qml" line="115"/>
+        <location filename="../src/ui/pages/GeneralPage.qml" line="122"/>
         <source>允许 http_fetch 访问本机与内网地址</source>
         <translation>Allow http_fetch to access localhost and intranet addresses</translation>
     </message>
     <message>
-        <location filename="../src/ui/pages/GeneralPage.qml" line="120"/>
+        <location filename="../src/ui/pages/GeneralPage.qml" line="127"/>
         <source>日志级别</source>
         <translation>Log Level</translation>
     </message>
     <message>
-        <location filename="../src/ui/pages/GeneralPage.qml" line="133"/>
+        <location filename="../src/ui/pages/GeneralPage.qml" line="140"/>
         <source>知识库嵌入模型</source>
         <translation>Knowledge Base Embedding Model</translation>
     </message>
     <message>
-        <location filename="../src/ui/pages/GeneralPage.qml" line="163"/>
+        <location filename="../src/ui/pages/GeneralPage.qml" line="170"/>
         <source>嵌入服务地址</source>
         <translation>Embedding Endpoint</translation>
     </message>
     <message>
-        <location filename="../src/ui/pages/GeneralPage.qml" line="167"/>
+        <location filename="../src/ui/pages/GeneralPage.qml" line="174"/>
         <source>http://localhost:11434</source>
         <translation>http://localhost:11434</translation>
     </message>
     <message>
-        <location filename="../src/ui/pages/GeneralPage.qml" line="182"/>
+        <location filename="../src/ui/pages/GeneralPage.qml" line="189"/>
         <source>智能体</source>
         <translation>Agent</translation>
     </message>
     <message>
-        <location filename="../src/ui/pages/GeneralPage.qml" line="185"/>
+        <location filename="../src/ui/pages/GeneralPage.qml" line="192"/>
         <source>自定义系统提示词：留空使用内置提示词；修改即时生效，内容随请求发送给当前模型服务</source>
         <translation>Custom system prompt: leave empty to use the built-in prompt; changes take effect immediately and are sent to the current model service</translation>
     </message>
     <message>
-        <location filename="../src/ui/pages/GeneralPage.qml" line="199"/>
+        <location filename="../src/ui/pages/GeneralPage.qml" line="206"/>
         <source>留空 = 内置提示词</source>
         <translation>Empty = built-in prompt</translation>
     </message>
     <message>
-        <location filename="../src/ui/pages/GeneralPage.qml" line="214"/>
+        <location filename="../src/ui/pages/GeneralPage.qml" line="221"/>
         <source>%1 字符</source>
         <translation>%1 chars</translation>
     </message>
     <message>
-        <location filename="../src/ui/pages/GeneralPage.qml" line="221"/>
+        <location filename="../src/ui/pages/GeneralPage.qml" line="228"/>
         <source>恢复默认提示词</source>
         <translation>Restore Default Prompt</translation>
     </message>
     <message>
-        <location filename="../src/ui/pages/GeneralPage.qml" line="252"/>
+        <location filename="../src/ui/pages/GeneralPage.qml" line="259"/>
         <source>本地智能体桌面应用 · 多模型提供商 · 工具调用 · 本地知识库</source>
         <translation>Local agent desktop app · Multiple model providers · Tool calling · Local knowledge base</translation>
     </message>
@@ -876,143 +881,163 @@ and the model can retrieve their content to answer questions</translation>
         <translation>Model configuration page</translation>
     </message>
     <message>
-        <location filename="../src/ui/pages/ModelConfigPage.qml" line="69"/>
+        <location filename="../src/ui/pages/ModelConfigPage.qml" line="71"/>
         <source>模型服务配置</source>
         <translation>Model Configuration</translation>
     </message>
     <message>
-        <location filename="../src/ui/pages/ModelConfigPage.qml" line="79"/>
+        <location filename="../src/ui/pages/ModelConfigPage.qml" line="81"/>
         <source>可保存多个模型配置，点击芯片切换编辑，「启用」后立即生效</source>
         <translation>Save multiple model profiles and click a chip to edit it; &quot;Enable&quot; takes effect immediately</translation>
     </message>
     <message>
-        <location filename="../src/ui/pages/ModelConfigPage.qml" line="91"/>
+        <location filename="../src/ui/pages/ModelConfigPage.qml" line="93"/>
         <source>本页修改实时保存，不受底部「保存 / 取消」影响</source>
         <translation>Changes on this page save instantly and are not affected by the &quot;Save / Cancel&quot; buttons below</translation>
     </message>
     <message>
-        <location filename="../src/ui/pages/ModelConfigPage.qml" line="152"/>
+        <location filename="../src/ui/pages/ModelConfigPage.qml" line="154"/>
         <source>+ 添加</source>
         <translation>+ Add</translation>
     </message>
     <message>
-        <location filename="../src/ui/pages/ModelConfigPage.qml" line="177"/>
+        <location filename="../src/ui/pages/ModelConfigPage.qml" line="179"/>
         <source>显示名称</source>
         <translation>Display Name</translation>
     </message>
     <message>
-        <location filename="../src/ui/pages/ModelConfigPage.qml" line="181"/>
+        <location filename="../src/ui/pages/ModelConfigPage.qml" line="183"/>
         <source>例如：工作用 GPT、本地 qwen…</source>
         <translation>e.g. Work GPT, local qwen…</translation>
     </message>
     <message>
-        <location filename="../src/ui/pages/ModelConfigPage.qml" line="193"/>
+        <location filename="../src/ui/pages/ModelConfigPage.qml" line="195"/>
         <source>提供商</source>
         <translation>Provider</translation>
     </message>
     <message>
-        <location filename="../src/ui/pages/ModelConfigPage.qml" line="196"/>
+        <location filename="../src/ui/pages/ModelConfigPage.qml" line="198"/>
         <source>OpenAI 兼容</source>
         <translation>OpenAI Compatible</translation>
     </message>
     <message>
-        <location filename="../src/ui/pages/ModelConfigPage.qml" line="197"/>
+        <location filename="../src/ui/pages/ModelConfigPage.qml" line="199"/>
         <source>Claude</source>
         <translation>Claude</translation>
     </message>
     <message>
-        <location filename="../src/ui/pages/ModelConfigPage.qml" line="198"/>
+        <location filename="../src/ui/pages/ModelConfigPage.qml" line="200"/>
         <source>Ollama 本地</source>
         <translation>Ollama (Local)</translation>
     </message>
     <message>
-        <location filename="../src/ui/pages/ModelConfigPage.qml" line="207"/>
+        <location filename="../src/ui/pages/ModelConfigPage.qml" line="209"/>
         <source>API Key</source>
         <translation>API Key</translation>
     </message>
     <message>
-        <location filename="../src/ui/pages/ModelConfigPage.qml" line="212"/>
+        <location filename="../src/ui/pages/ModelConfigPage.qml" line="214"/>
         <source>sk-...（或设置环境变量 OPENAI_API_KEY）</source>
         <translation>sk-... (or set the OPENAI_API_KEY environment variable)</translation>
     </message>
     <message>
-        <location filename="../src/ui/pages/ModelConfigPage.qml" line="224"/>
+        <location filename="../src/ui/pages/ModelConfigPage.qml" line="226"/>
         <source>服务地址 Base URL</source>
         <translation>Base URL</translation>
     </message>
     <message>
-        <location filename="../src/ui/pages/ModelConfigPage.qml" line="240"/>
+        <location filename="../src/ui/pages/ModelConfigPage.qml" line="242"/>
         <source>当前模型</source>
         <translation>Current Model</translation>
     </message>
     <message>
-        <location filename="../src/ui/pages/ModelConfigPage.qml" line="260"/>
+        <location filename="../src/ui/pages/ModelConfigPage.qml" line="262"/>
         <source>模型列表</source>
         <translation>Model List</translation>
     </message>
     <message>
-        <location filename="../src/ui/pages/ModelConfigPage.qml" line="327"/>
+        <location filename="../src/ui/pages/ModelConfigPage.qml" line="306"/>
+        <source>%1K</source>
+        <translation>%1K</translation>
+    </message>
+    <message>
+        <location filename="../src/ui/pages/ModelConfigPage.qml" line="307"/>
+        <source>未知</source>
+        <translation>Unknown</translation>
+    </message>
+    <message>
+        <location filename="../src/ui/pages/ModelConfigPage.qml" line="342"/>
         <source>添加模型…</source>
         <translation>Add model…</translation>
     </message>
     <message>
-        <location filename="../src/ui/pages/ModelConfigPage.qml" line="348"/>
+        <location filename="../src/ui/pages/ModelConfigPage.qml" line="363"/>
         <source>生成参数（留空 = 使用服务默认，不随请求发送）</source>
         <translation>Sampling Parameters (leave empty to use service defaults; not sent with requests)</translation>
     </message>
     <message>
-        <location filename="../src/ui/pages/ModelConfigPage.qml" line="363"/>
+        <location filename="../src/ui/pages/ModelConfigPage.qml" line="378"/>
         <source>temperature (0-2)</source>
         <translation>temperature (0-2)</translation>
     </message>
     <message>
-        <location filename="../src/ui/pages/ModelConfigPage.qml" line="371"/>
-        <location filename="../src/ui/pages/ModelConfigPage.qml" line="428"/>
+        <location filename="../src/ui/pages/ModelConfigPage.qml" line="386"/>
+        <location filename="../src/ui/pages/ModelConfigPage.qml" line="443"/>
         <source>留空 = 不发送</source>
         <translation>Empty = not sent</translation>
     </message>
     <message>
-        <location filename="../src/ui/pages/ModelConfigPage.qml" line="391"/>
+        <location filename="../src/ui/pages/ModelConfigPage.qml" line="406"/>
         <source>最大输出 tokens</source>
         <translation>Max Output Tokens</translation>
     </message>
     <message>
-        <location filename="../src/ui/pages/ModelConfigPage.qml" line="399"/>
+        <location filename="../src/ui/pages/ModelConfigPage.qml" line="414"/>
         <source>留空 = 服务默认</source>
         <translation>Empty = service default</translation>
     </message>
     <message>
-        <location filename="../src/ui/pages/ModelConfigPage.qml" line="420"/>
+        <location filename="../src/ui/pages/ModelConfigPage.qml" line="435"/>
         <source>num_ctx（上下文窗口）</source>
         <translation>num_ctx (context window)</translation>
     </message>
     <message>
-        <location filename="../src/ui/pages/ModelConfigPage.qml" line="450"/>
+        <location filename="../src/ui/pages/ModelConfigPage.qml" line="464"/>
+        <source>上下文预算覆盖（留空 = 按模型能力表自动）</source>
+        <translation>Context budget override (empty = auto by model capability)</translation>
+    </message>
+    <message>
+        <location filename="../src/ui/pages/ModelConfigPage.qml" line="472"/>
+        <source>留空 = 自动</source>
+        <translation>Empty = auto</translation>
+    </message>
+    <message>
+        <location filename="../src/ui/pages/ModelConfigPage.qml" line="494"/>
         <source>✓ 使用中</source>
         <translation>✓ In Use</translation>
     </message>
     <message>
-        <location filename="../src/ui/pages/ModelConfigPage.qml" line="450"/>
+        <location filename="../src/ui/pages/ModelConfigPage.qml" line="494"/>
         <source>启用此配置</source>
         <translation>Enable This Profile</translation>
     </message>
     <message>
-        <location filename="../src/ui/pages/ModelConfigPage.qml" line="457"/>
+        <location filename="../src/ui/pages/ModelConfigPage.qml" line="501"/>
         <source>删除</source>
         <translation>Delete</translation>
     </message>
     <message>
-        <location filename="../src/ui/pages/ModelConfigPage.qml" line="472"/>
+        <location filename="../src/ui/pages/ModelConfigPage.qml" line="516"/>
         <source>正在连接…</source>
         <translation>Connecting…</translation>
     </message>
     <message>
-        <location filename="../src/ui/pages/ModelConfigPage.qml" line="479"/>
+        <location filename="../src/ui/pages/ModelConfigPage.qml" line="523"/>
         <source>测试中…</source>
         <translation>Testing…</translation>
     </message>
     <message>
-        <location filename="../src/ui/pages/ModelConfigPage.qml" line="479"/>
+        <location filename="../src/ui/pages/ModelConfigPage.qml" line="523"/>
         <source>测试连接</source>
         <translation>Test Connection</translation>
     </message>
@@ -1020,32 +1045,42 @@ and the model can retrieve their content to answer questions</translation>
 <context>
     <name>ModelSelector</name>
     <message>
-        <location filename="../src/ui/components/ModelSelector.qml" line="24"/>
+        <location filename="../src/ui/components/ModelSelector.qml" line="31"/>
+        <source>上下文窗口：%1K</source>
+        <translation>Context window: %1K</translation>
+    </message>
+    <message>
+        <location filename="../src/ui/components/ModelSelector.qml" line="32"/>
+        <source>上下文窗口：未知（使用全局默认）</source>
+        <translation>Context window: unknown (using global default)</translation>
+    </message>
+    <message>
+        <location filename="../src/ui/components/ModelSelector.qml" line="40"/>
         <source>模型选择器</source>
         <translation>Model selector</translation>
     </message>
     <message>
-        <location filename="../src/ui/components/ModelSelector.qml" line="27"/>
+        <location filename="../src/ui/components/ModelSelector.qml" line="43"/>
         <source>未配置模型</source>
         <translation>No model configured</translation>
     </message>
     <message>
-        <location filename="../src/ui/components/ModelSelector.qml" line="61"/>
+        <location filename="../src/ui/components/ModelSelector.qml" line="77"/>
         <source>未配置模型 · 点击设置</source>
         <translation>No model configured · Click to set up</translation>
     </message>
     <message>
-        <location filename="../src/ui/components/ModelSelector.qml" line="117"/>
+        <location filename="../src/ui/components/ModelSelector.qml" line="133"/>
         <source>模型 · %1</source>
         <translation>Model · %1</translation>
     </message>
     <message>
-        <location filename="../src/ui/components/ModelSelector.qml" line="200"/>
+        <location filename="../src/ui/components/ModelSelector.qml" line="217"/>
         <source>配置 · 共 %1 个</source>
         <translation>Profiles · %1 total</translation>
     </message>
     <message>
-        <location filename="../src/ui/components/ModelSelector.qml" line="303"/>
+        <location filename="../src/ui/components/ModelSelector.qml" line="321"/>
         <source>管理模型配置…</source>
         <translation>Manage Model Profiles…</translation>
     </message>
@@ -1348,22 +1383,22 @@ and the model can retrieve their content to answer questions</translation>
 <context>
     <name>NexusAI::SettingsService</name>
     <message>
-        <location filename="../src/viewmodels/SettingsService.cpp" line="294"/>
+        <location filename="../src/viewmodels/SettingsService.cpp" line="306"/>
         <source>新配置</source>
         <translation>New Profile</translation>
     </message>
     <message>
-        <location filename="../src/viewmodels/SettingsService.cpp" line="442"/>
+        <location filename="../src/viewmodels/SettingsService.cpp" line="454"/>
         <source>OpenAI 兼容</source>
         <translation>OpenAI Compatible</translation>
     </message>
     <message>
-        <location filename="../src/viewmodels/SettingsService.cpp" line="443"/>
+        <location filename="../src/viewmodels/SettingsService.cpp" line="455"/>
         <source>Ollama 本地</source>
         <translation>Ollama (Local)</translation>
     </message>
     <message>
-        <location filename="../src/viewmodels/SettingsService.cpp" line="444"/>
+        <location filename="../src/viewmodels/SettingsService.cpp" line="456"/>
         <source>Claude</source>
         <translation>Claude</translation>
     </message>

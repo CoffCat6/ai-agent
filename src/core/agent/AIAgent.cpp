@@ -143,8 +143,10 @@ void AIAgent::setEpisodicService(EpisodicService* service) {
 void AIAgent::setContextLimit(int tokens) {
     const int clamped = qBound(MinContextTokens, tokens, MaxContextTokens);
     if (m_contextLimit == clamped) return;
+    const int oldLimit = m_contextLimit;
     m_contextLimit = clamped;
     emit contextLimitChanged();
+    onContextLimitChanged(oldLimit, clamped);
 }
 
 void AIAgent::setSystemPromptOverride(const QString& prompt) {
@@ -447,6 +449,16 @@ void AIAgent::resumeSession(const QString& sessionId) {
     m_confirmNodeId.clear();
     clearStreamState();
 
+    // Model-switch adaptation (docs/15 §4.2.4): after loading the history and
+    // rebuilding the trace, check whether the restored messages exceed the
+    // current contextLimit and compress immediately so the resumed session
+    // matches the active model's window.
+    const int reserved = estimateReservedTokensForNextRequest();
+    const int effective = qMax(0, m_contextLimit - reserved);
+    if (TokenEstimator::estimateTokens(m_messages) > effective) {
+        applyContextBudget(reserved);
+    }
+
     setState(AgentState::Idle);
     emit traceChanged();
     emit sessionChanged(m_sessionId);
@@ -569,6 +581,103 @@ void AIAgent::applyContextBudget(int reservedTokens) {
         QStringLiteral("History compressed: %1 → %2 messages to fit the %3 token budget")
             .arg(before).arg(m_messages.size()).arg(m_contextLimit),
         "completed");
+}
+
+// Model-switch adaptation (docs/15 §4.2.2): react to a contextLimit change
+// immediately instead of waiting for the next LLM request. Larger window ->
+// restore previously compressed history; smaller window -> compress now.
+// m_active guards against interfering with a running task (risk #6): the
+// next request's applyContextBudget will adapt naturally once it ends.
+void AIAgent::onContextLimitChanged(int oldLimit, int newLimit) {
+    if (m_messages.isEmpty() || oldLimit == newLimit) return;
+    if (m_active) return;  // task in progress - do not interfere
+
+    const int currentTokens = TokenEstimator::estimateTokens(m_messages);
+    const int reserved = estimateReservedTokensForNextRequest();
+    const int effective = qMax(0, newLimit - reserved);
+
+    if (newLimit > oldLimit && currentTokens <= effective) {
+        // Scenario B: switched to a larger window and the current history
+        // fits the new budget - try to restore previously compressed history.
+        restoreFullHistoryIfAvailable();
+    } else if (currentTokens > effective) {
+        // Scenario A or C: history exceeds the new budget - compress now.
+        // applyContextBudget inserts its own trace node on actual compression.
+        applyContextBudget(reserved);
+    }
+    // else: history fits the new budget, nothing to do.
+}
+
+// Estimate the reserved tokens (tools schema) for the next LLM request so the
+// effective budget can be computed. Mirrors the toolsArray built in
+// processIteration (dangerous and disabled tools are excluded).
+int AIAgent::estimateReservedTokensForNextRequest() const {
+    if (!m_toolRegistry) return 0;
+    QJsonArray toolsArray;
+    for (const auto& def : m_toolRegistry->listAll()) {
+        if (def.level == ToolLevel::Dangerous) continue;
+        if (!m_toolRegistry->isToolEnabled(def.name)) continue;
+        QJsonObject toolObj;
+        toolObj["type"] = "function";
+        QJsonObject fn;
+        fn["name"] = def.name;
+        fn["description"] = def.description;
+        fn["parameters"] = def.parameters;
+        toolObj["function"] = fn;
+        toolsArray.append(toolObj);
+    }
+    return TokenEstimator::estimateToolsSchema(toolsArray);
+}
+
+// Model-switch adaptation (docs/15 §4.2.3): after switching to a larger
+// context window, reload the full history from SQLite (up to 2000 messages,
+// vs the 200 used by resumeSession) so previously compressed messages are
+// recovered. If the restored history still exceeds the window it is
+// compressed, but more history is kept than before.
+void AIAgent::restoreFullHistoryIfAvailable() {
+    if (!m_memory || m_sessionId.isEmpty()) return;
+
+    // Load the full history from SQLite (raise the cap to cover long sessions).
+    const QJsonArray fullHistory = m_memory->loadMessages(m_sessionId, 2000);
+    if (fullHistory.size() <= m_messages.size() - 1) return;  // -1 for system prompt
+
+    // Rebuild m_messages: keep the current system prompt + full user/assistant history.
+    QJsonArray restored;
+    if (!m_messages.isEmpty()
+            && m_messages.first().toObject().value("role") == "system") {
+        restored.append(m_messages.first());
+    }
+
+    for (const auto& entry : fullHistory) {
+        const QJsonObject msg = entry.toObject();
+        const QString role = msg.value("role").toString();
+        if (role != "user" && role != "assistant") continue;
+        if (role == "assistant" && msg.value("content").toString().isEmpty())
+            continue;
+        restored.append(msg);
+    }
+
+    const int restoredTokens = TokenEstimator::estimateTokens(restored);
+    const int reserved = estimateReservedTokensForNextRequest();
+    const int effective = qMax(0, m_contextLimit - reserved);
+
+    if (restoredTokens > effective) {
+        // Restored history still exceeds the new window - compress (but we
+        // restored more history than before regardless).
+        m_messages = restored;
+        applyContextBudget(reserved);
+    } else {
+        const int added = restored.size() - m_messages.size();
+        if (added > 0) {
+            m_messages = restored;
+            appendTraceNode("context",
+                QStringLiteral("History restored: %1 messages reloaded "
+                               "after switching to a larger context window")
+                    .arg(added),
+                "completed");
+            notifyTokens();
+        }
+    }
 }
 
 QString AIAgent::currentModel() const {

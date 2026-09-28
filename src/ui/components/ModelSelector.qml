@@ -17,6 +17,22 @@ Item {
     readonly property var currentModels: hasProfile
         ? (activeProfile.models || [activeProfile.model]) : []
 
+    // docs/15 §4.3.2: brief hint of the new context window after switching
+    // models so the user perceives the budget change (optional enhancement).
+    ToolTip {
+        id: windowHint
+        parent: selectorBox
+        font.pixelSize: 10
+        font.family: Theme.fontMono
+    }
+    function showWindowHint(provider, model) {
+        const cw = Settings.modelContextWindow(provider, model)
+        const hint = cw > 0
+            ? qsTr("上下文窗口：%1K").arg(Math.round(cw / 1000))
+            : qsTr("上下文窗口：未知（使用全局默认）")
+        windowHint.show(hint, 2500)
+    }
+
     implicitWidth: selectorRow.implicitWidth + 20
     implicitHeight: 28
 
@@ -180,6 +196,7 @@ Item {
                                 Settings.selectModelForProfile(
                                     root.activeProfile.id, modelData)
                                 menuPopup.close()
+                                root.showWindowHint(root.activeProfile.provider, modelData)
                             }
                         }
                     }
@@ -259,6 +276,7 @@ Item {
                             onClicked: {
                                 Settings.setActiveProfile(modelData.id)
                                 menuPopup.close()
+                                root.showWindowHint(modelData.provider, modelData.model)
                             }
                         }
                     }

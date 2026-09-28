@@ -370,7 +370,7 @@ qInfo() << "NexusAI" << app.applicationVersion() << "starting";
         auto* tabAgent = new AIAgent(&app);
         tabAgent->setToolRegistry(&ToolRegistry::instance());
         tabAgent->setMemory(new SqliteMemory());
-        tabAgent->setContextLimit(settings->contextTokens());
+        tabAgent->setContextLimit(settings->resolveContextLimit());
 
         const ProviderSet set{new OpenAIService(tabAgent),
                               new AnthropicService(tabAgent),
@@ -508,11 +508,11 @@ qInfo() << "NexusAI" << app.applicationVersion() << "starting";
         // applyToAgents only reaches tab-attached agents — configure it
         // directly or tab 0 would fail with "No LLM service configured"
         // until a settings change re-runs this lambda.
-        agent->setContextLimit(settings->contextTokens());
+        agent->setContextLimit(settings->resolveContextLimit());
         agent->setLLMService(pickActive(templateSet, provider));
 
         agentVM->applyToAgents([&](AIAgent* tabAgent) {
-            tabAgent->setContextLimit(settings->contextTokens());
+            tabAgent->setContextLimit(settings->resolveContextLimit());
             const ProviderSet& set = tabAgent == agent
                 ? templateSet
                 : tabProviderSets.value(tabAgent, templateSet);

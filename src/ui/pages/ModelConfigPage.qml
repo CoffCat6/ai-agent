@@ -33,6 +33,8 @@ ScrollView {
         temperatureField.text = p && p.temperature !== undefined ? String(p.temperature) : ""
         maxTokensField.text = p && p.maxOutputTokens !== undefined ? String(p.maxOutputTokens) : ""
         numCtxField.text = p && p.numCtx !== undefined ? String(p.numCtx) : ""
+        contextLengthField.text = p && p.contextLength !== undefined
+            ? String(p.contextLength) : ""
     }
 
     function submitField(key, value) {
@@ -297,6 +299,19 @@ ScrollView {
                                     anchors.verticalCenter: parent.verticalCenter
                                 }
 
+                                Text {
+                                    text: {
+                                        const cw = Settings.modelContextWindow(
+                                            page.editing.provider, modelData)
+                                        return cw > 0 ? qsTr("%1K").arg(Math.round(cw / 1000))
+                                                      : qsTr("未知")
+                                    }
+                                    color: Theme.textSecondary
+                                    font.pixelSize: 10
+                                    font.family: Theme.fontMono
+                                    anchors.verticalCenter: parent.verticalCenter
+                                }
+
                                 Item {
                                     width: 14
                                     height: parent.height
@@ -439,6 +454,35 @@ ScrollView {
                             }
                             onEditingFinished: page.submitField("numCtx", text.trim())
                         }
+                    }
+                }
+
+                ColumnLayout {
+                    Layout.fillWidth: true
+                    spacing: 2
+                    Text {
+                        text: qsTr("上下文预算覆盖（留空 = 按模型能力表自动）")
+                        color: Theme.textSecondary
+                        font.pixelSize: Theme.fontSizeCaption
+                        font.family: Theme.fontMono
+                    }
+                    TextField {
+                        id: contextLengthField
+                        Layout.fillWidth: true
+                        placeholderText: qsTr("留空 = 自动")
+                        placeholderTextColor: Theme.textSecondary
+                        color: Theme.textPrimary
+                        font.pixelSize: Theme.fontSizeBody
+                        font.family: Theme.fontMono
+                        validator: IntValidator { bottom: 2048; top: 1048576 }
+                        background: Rectangle {
+                            radius: 6
+                            color: Theme.bgPrimary
+                            border.width: contextLengthField.activeFocus ? 2 : 1
+                            border.color: contextLengthField.activeFocus
+                                ? Theme.brandPrimary : Theme.borderSubtle
+                        }
+                        onEditingFinished: page.submitField("contextLength", text.trim())
                     }
                 }
             }

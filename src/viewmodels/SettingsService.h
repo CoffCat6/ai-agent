@@ -137,6 +137,18 @@ public:
     // Localized display name for a provider key (legacy profile migration).
     QString providerDisplayName(const QString& provider) const;
 
+    // Query the capability-table context window for a given provider+model.
+    // Returns 0 when the provider or model is unknown (caller should fall
+    // back to the global contextTokens). Invoked from QML (ModelConfigPage)
+    // to render the per-model window chip.
+    Q_INVOKABLE int modelContextWindow(const QString& provider, const QString& model) const;
+
+    // Resolve the effective context budget for the active profile using a
+    // three-level priority: Profile-level "contextLength" override >
+    // capability-table contextWindow > global contextTokens. Consumed by
+    // main.cpp when wiring AIAgent::setContextLimit.
+    int resolveContextLimit() const;
+
 signals:
     void profilesChanged();
     void activeProfileChanged();

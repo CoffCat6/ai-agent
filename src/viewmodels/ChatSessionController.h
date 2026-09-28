@@ -67,6 +67,7 @@ signals:
     void responseReady();
     void draftTextChanged();
     void tokenUsageChanged();
+    void contextLimitChanged();
     void currentSessionIdChanged();
     // Surfaced regardless of which tab is active: the confirm dialog is
     // global and approveToolCall routes back to the waiting controller.

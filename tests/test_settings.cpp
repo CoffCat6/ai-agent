@@ -547,6 +547,64 @@ ComboBox {
         QCOMPARE(s.value("schemaVersion").toInt(), SettingsSchema::kSchemaVersion);
     }
 
+    // docs/15 §6.1.1: modelContextWindow capability-table lookup for known
+    // models across all three providers (openai / anthropic / ollama).
+    void testModelContextWindowKnownModel() {
+        SettingsGuard guard;
+        SettingsService service(nullptr);
+        QCOMPARE(service.modelContextWindow(QStringLiteral("openai"), QStringLiteral("gpt-4o")), 128000);
+        QCOMPARE(service.modelContextWindow(QStringLiteral("anthropic"), QStringLiteral("claude-sonnet-4-5")), 200000);
+        QCOMPARE(service.modelContextWindow(QStringLiteral("ollama"), QStringLiteral("qwen2.5:7b")), 32768);
+    }
+
+    // docs/15 §6.1.1: modelContextWindow returns 0 for unknown provider or
+    // model so the caller falls back to the global contextTokens.
+    void testModelContextWindowUnknownModel() {
+        SettingsGuard guard;
+        SettingsService service(nullptr);
+        QCOMPARE(service.modelContextWindow(QStringLiteral("openai"), QStringLiteral("nonexistent-model")), 0);
+        QCOMPARE(service.modelContextWindow(QStringLiteral("unknown-provider"), QStringLiteral("any")), 0);
+    }
+
+    // docs/15 §6.1.1: resolveContextLimit three-level priority:
+    //   1. Profile-level contextLength override (highest)
+    //   2. Capability-table contextWindow (default per model)
+    //   3. Global contextTokens (fallback for unknown models)
+    void testResolveContextLimitPriority() {
+        SettingsGuard guard;
+        {
+            QSettings s("NexusAI", "NexusAI");
+            s.remove("modelProfiles");
+            s.remove("activeProfileId");
+            s.remove("contextTokens");
+            // Clear legacy provider-scoped keys so migrateLegacy picks the
+            // capability-table defaults (openai/gpt-4o-mini → 128000).
+            for (const QString& p : {QStringLiteral("openai"),
+                                     QStringLiteral("anthropic"),
+                                     QStringLiteral("ollama")}) {
+                s.remove(p + QStringLiteral("/model"));
+                s.remove(p + QStringLiteral("/baseUrl"));
+                s.remove(p + QStringLiteral("/apiKey"));
+            }
+        }
+        SettingsService service(nullptr);
+        const QString profileId = service.activeProfileId();
+        QVERIFY(!profileId.isEmpty());
+
+        // Priority 1: Profile-level contextLength override.
+        service.updateProfile(profileId, QVariantMap{{QStringLiteral("contextLength"), 99999}});
+        QCOMPARE(service.resolveContextLimit(), 99999);
+
+        // Priority 2: capability table (after clearing the override). The
+        // default active profile is openai/gpt-4o-mini → 128000.
+        service.updateProfile(profileId, QVariantMap{{QStringLiteral("contextLength"), QVariant()}});
+        QCOMPARE(service.resolveContextLimit(), 128000);
+
+        // Priority 3: global fallback (unknown model, no override).
+        service.updateProfile(profileId, QVariantMap{{QStringLiteral("model"), QStringLiteral("unknown-model")}});
+        QCOMPARE(service.resolveContextLimit(), service.contextTokens());
+    }
+
 private:
     static void clearThemeKeys() {
         QSettings s("NexusAI", "NexusAI");
