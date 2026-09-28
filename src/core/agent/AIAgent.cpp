@@ -501,6 +501,7 @@ void AIAgent::processIteration() {
     QJsonArray toolsArray;
     if (m_toolRegistry && !m_forcedFinal) {
         for (const auto& def : m_toolRegistry->listAll()) {
+            if (def.level == ToolLevel::Dangerous) continue;
             // Batch 14: disabled tools (local-only mode) must not even reach
             // the wire - the acceptance criterion is that the request body
             // contains no schema for the gated tool at all.

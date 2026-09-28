@@ -366,25 +366,6 @@ private:
     std::atomic<bool> m_cancelRequested{false};
 };
 
-// ── Blocked Dangerous Tool (never exposed to the LLM) ─────
-class RmRfTool : public ITool {
-public:
-    ToolDefinition definition() const override {
-        ToolDefinition def;
-        def.name = "rm_rf";
-        def.description = "Recursively delete files and directories. "
-                          "Blocked by the sandbox and never offered to the model.";
-        def.level = ToolLevel::Dangerous;
-        def.parameters = buildParams(
-            QJsonObject{{"path", stringParam("Target path.")}}, QJsonArray{"path"});
-        return def;
-    }
-
-    ToolResult execute(const QJsonObject&) override {
-        return ToolResult::fail("This tool is blocked by the sandbox and can never be executed.");
-    }
-};
-
 // ── ToolRegistry Implementation ──────────────────────────
 ToolRegistry& ToolRegistry::instance() {
     static ToolRegistry registry;
@@ -402,7 +383,6 @@ void ToolRegistry::registerBuiltins() {
     registerTool(std::make_unique<FileWriteTool>());
     registerTool(std::make_unique<EditFileTool>());   // Batch 19 (FEAT-1901)
     registerTool(std::make_unique<ShellExecTool>());
-    registerTool(std::make_unique<RmRfTool>());
 }
 
 void ToolRegistry::registerTool(std::unique_ptr<ITool> tool) {
@@ -449,7 +429,8 @@ bool ToolRegistry::isRegistered(const QString& name) const {
 QStringList ToolRegistry::toolNamesForModel() const {
     QStringList names;
     for (const auto& tool : m_ownedTools) {
-        if (!m_disabledTools.contains(tool->definition().name))
+        if (tool->definition().level != ToolLevel::Dangerous
+                && !m_disabledTools.contains(tool->definition().name))
             names.append(tool->definition().name);
     }
     return names;
@@ -493,15 +474,11 @@ void ToolRegistry::setToolsEnabledByPrefix(const QString& prefix, bool enabled) 
 
 void ToolRegistry::loadDisabledFromSettings() {
     QSettings s("NexusAI", "NexusAI");
-    if (s.contains("tools/disabled")) {
-        const QStringList disabled = s.value("tools/disabled").toStringList();
-        for (const QString& name : disabled)
-            if (m_tools.contains(name))
-                m_disabledTools.insert(name);
-    } else {
-        // First run: dangerous tools default to disabled for safety.
-        m_disabledTools.insert(QStringLiteral("rm_rf"));
-    }
+    if (!s.contains("tools/disabled")) return;
+    const QStringList disabled = s.value("tools/disabled").toStringList();
+    for (const QString& name : disabled)
+        if (m_tools.contains(name))
+            m_disabledTools.insert(name);
 }
 
 void ToolRegistry::saveDisabledToSettings() {

@@ -433,17 +433,14 @@ ComboBox {
         }
     }
 
-    void dangerousToolIsMarkedDangerous() {
+    // Built-in tools must not carry the Dangerous level: destructive work
+    // goes through the confirm-gated shell_exec instead (the rm_rf sentinel
+    // was removed). Re-adding a Dangerous built-in must be a conscious act.
+    void noBuiltinToolIsDangerous() {
         auto& reg = ToolRegistry::instance();
-        const auto defs = reg.listAll();
-        bool found = false;
-        for (const auto& def : defs) {
-            if (def.name == "rm_rf") {
-                found = true;
-                QCOMPARE(def.level, ToolLevel::Dangerous);
-            }
+        for (const auto& def : reg.listAll()) {
+            QVERIFY2(def.level != ToolLevel::Dangerous, qPrintable(def.name));
         }
-        QVERIFY(found);
     }
 
     // ── T5 theme mode (auto / dark / light) ─────────────────────────

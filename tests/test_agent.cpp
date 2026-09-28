@@ -215,6 +215,33 @@ BlockingTool* registerBlockingTool() {
     return tool;
 }
 
+// Dangerous-level probe: proves the registry withholds Dangerous tools from
+// the model's schema. No built-in tool carries this level anymore, so the
+// dangerousToolsNotExposed test registers its own.
+class DangerousProbeTool : public ITool {
+public:
+    ToolDefinition definition() const override {
+        ToolDefinition def;
+        def.name = QStringLiteral("test_dangerous");
+        def.description = QStringLiteral("Test helper: must never be exposed.");
+        def.level = ToolLevel::Dangerous;
+        def.parameters = QJsonObject{
+            {"type", "object"}, {"properties", QJsonObject{}}, {"required", QJsonArray{}}};
+        return def;
+    }
+    ToolResult execute(const QJsonObject&) override {
+        return ToolResult::fail(QStringLiteral("must never execute"));
+    }
+};
+
+// Removes the probe when the test scope ends - also on QCOMPARE failure,
+// which returns early from the test function.
+struct DangerousProbeGuard {
+    ~DangerousProbeGuard() {
+        ToolRegistry::instance().takeTool(QStringLiteral("test_dangerous"));
+    }
+};
+
 // A Safe tool that can produce every anomaly the plan's Tool matrix lists,
 // driven by a "mode" argument (deterministic anomalies for TEST-903).
 class AnomalyTool : public ITool {
@@ -439,13 +466,25 @@ void TestAgent::directCompletion() {
 }
 
 void TestAgent::dangerousToolsNotExposed() {
+    // Built-ins carry no Dangerous level anymore (destructive work goes
+    // through the confirm-gated shell_exec), so the filter is exercised
+    // with a probe tool instead.
+    DangerousProbeGuard guard;
+    ToolRegistry::instance().registerTool(std::make_unique<DangerousProbeTool>());
+
     llm.script.append(textResponse("ok"));
     QSignalSpy spy(&agent, &AIAgent::responseReady);
     agent.startTask("hi");
     QTRY_COMPARE(spy.count(), 1);
-    // 6 built-in tools are registered (Batch 19 added edit_file), but
-    // rm_rf (Dangerous) must be filtered
-    QCOMPARE(llm.seenTools.first().size(), 5);
+
+    // The 5 Safe/RequiresConfirm built-ins are exposed; the Dangerous probe
+    // must be withheld from the schema entirely.
+    const auto seen = llm.seenTools.first();
+    QCOMPARE(seen.size(), 5);
+    for (const auto& entry : seen) {
+        QVERIFY(entry.toObject().value("function").toObject().value("name").toString()
+                    != QStringLiteral("test_dangerous"));
+    }
 }
 
 void TestAgent::safeToolFeedbackLoop() {
