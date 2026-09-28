@@ -249,6 +249,12 @@ void SettingsService::load() {
     // API key is stored encrypted (DPAPI) - empty if not set or decryption failed.
     m_webSearchApiKey = unprotectApiKey(settings.value("webSearch/apiKey", QString()).toString());
     m_episodicMemoryEnabled = settings.value("memory/episodicMemoryEnabled", false).toBool();
+    // docs/16 §7.3: quota settings (flat keys; 0 = unlimited for int quotas).
+    m_dailyTokenQuota = qMax(0, settings.value("dailyTokenQuota", 0).toInt());
+    m_dailyCostQuotaCents = qMax(0, settings.value("dailyCostQuotaCents", 0).toInt());
+    m_monthlyTokenQuota = qMax(0, settings.value("monthlyTokenQuota", 0).toInt());
+    m_monthlyCostQuotaCents = qMax(0, settings.value("monthlyCostQuotaCents", 0).toInt());
+    m_strictQuotaMode = settings.value("strictQuotaMode", false).toBool();
 }
 
 // Single-provider layout (pre-0.3): provider, apiKey, <provider>/baseUrl,
@@ -602,6 +608,48 @@ void SettingsService::setEpisodicMemoryEnabled(bool enabled) {
                     enabled ? QStringLiteral("on") : QStringLiteral("off"));
     QSettings().setValue("memory/episodicMemoryEnabled", enabled);
     emit episodicMemoryEnabledChanged();
+}
+
+// docs/16 §7.3: quota setters. Int quotas are clamped to >= 0 (0 = unlimited);
+// same 4-step pattern as setContextTokens/setSimulationMode. Flat QSettings keys
+// match the SettingsSchema registration (no prefix).
+void SettingsService::setDailyTokenQuota(int v) {
+    const int clamped = qMax(0, v);
+    if (m_dailyTokenQuota == clamped) return;
+    m_dailyTokenQuota = clamped;
+    QSettings().setValue("dailyTokenQuota", m_dailyTokenQuota);
+    emit dailyTokenQuotaChanged();
+}
+
+void SettingsService::setDailyCostQuotaCents(int v) {
+    const int clamped = qMax(0, v);
+    if (m_dailyCostQuotaCents == clamped) return;
+    m_dailyCostQuotaCents = clamped;
+    QSettings().setValue("dailyCostQuotaCents", m_dailyCostQuotaCents);
+    emit dailyCostQuotaCentsChanged();
+}
+
+void SettingsService::setMonthlyTokenQuota(int v) {
+    const int clamped = qMax(0, v);
+    if (m_monthlyTokenQuota == clamped) return;
+    m_monthlyTokenQuota = clamped;
+    QSettings().setValue("monthlyTokenQuota", m_monthlyTokenQuota);
+    emit monthlyTokenQuotaChanged();
+}
+
+void SettingsService::setMonthlyCostQuotaCents(int v) {
+    const int clamped = qMax(0, v);
+    if (m_monthlyCostQuotaCents == clamped) return;
+    m_monthlyCostQuotaCents = clamped;
+    QSettings().setValue("monthlyCostQuotaCents", m_monthlyCostQuotaCents);
+    emit monthlyCostQuotaCentsChanged();
+}
+
+void SettingsService::setStrictQuotaMode(bool v) {
+    if (m_strictQuotaMode == v) return;
+    m_strictQuotaMode = v;
+    QSettings().setValue("strictQuotaMode", v);
+    emit strictQuotaModeChanged();
 }
 
 // Capability-table lookup: returns the context window for a provider+model,

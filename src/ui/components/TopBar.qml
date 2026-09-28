@@ -78,15 +78,50 @@ Rectangle {
 
         Item { Layout.fillWidth: true }
 
-        // ── Token Usage (Batch 15 / F5) ──────────────
+        // ── Token Usage (Batch 15 / F5 + docs/16 §8.2) ───
         // Bound to the pre-existing AgentViewModel counters; live updates
-        // arrive via tokenUsageChanged while a task is running.
-        Text {
-            text: qsTr("tokens: %1 / %2").arg(AgentVM.usedTokens).arg(AgentVM.maxTokens)
-            color: Theme.textSecondary
-            font.pixelSize: Theme.fontSizeCaption
-            font.family: Theme.fontMono
+        // arrive via tokenUsageChanged while a task is running. A mini
+        // progress bar visualizes usedTokens/maxTokens and the per-request
+        // cost (lastCostCents) is shown alongside.
+        RowLayout {
+            spacing: 6
             Layout.rightMargin: 8
+
+            // Mini progress bar: usedTokens / maxTokens
+            Rectangle {
+                Layout.preferredWidth: 60
+                Layout.preferredHeight: 4
+                radius: 2
+                color: Theme.bgPrimary
+                border.width: 1
+                border.color: Theme.borderSubtle
+                Rectangle {
+                    width: Math.max(0, Math.min(parent.width,
+                        AgentVM.maxTokens > 0
+                            ? parent.width * Math.min(1.0, AgentVM.usedTokens / AgentVM.maxTokens)
+                            : 0))
+                    height: parent.height
+                    radius: parent.radius
+                    color: AgentVM.tokenUsageRate >= 0.9
+                        ? Theme.statusDanger : Theme.brandPrimary
+                }
+            }
+
+            Text {
+                text: qsTr("tokens: %1 / %2").arg(AgentVM.usedTokens).arg(AgentVM.maxTokens)
+                color: Theme.textSecondary
+                font.pixelSize: Theme.fontSizeCaption
+                font.family: Theme.fontMono
+            }
+
+            // docs/16 §8.2: per-request cost (only shown when non-zero)
+            Text {
+                visible: AgentVM.lastCostCents > 0
+                text: qsTr("¥%1/轮").arg((AgentVM.lastCostCents / 100.0).toFixed(2))
+                color: Theme.textSecondary
+                font.pixelSize: Theme.fontSizeCaption
+                font.family: Theme.fontMono
+            }
         }
 
         // ── Panel Toggle Button ──────────────────────

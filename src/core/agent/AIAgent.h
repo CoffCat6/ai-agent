@@ -84,6 +84,8 @@ public:
     QString currentSessionId() const { return m_sessionId; }
     QJsonArray sessionList() const;
     QJsonArray auditLog(int limit = 100) const;
+    // docs/16 §8: read-only access for aggregate query wrappers.
+    IMemory* memory() const { return m_memory; }
 
 public slots:
     // Batch 30 (F6): images are compressed data URLs ("data:image/jpeg;
@@ -109,6 +111,10 @@ signals:
     void contextLimitChanged();
     void sessionChanged(const QString& sessionId);
     void sessionsChanged();
+    // docs/16 §12.4: 配额超限警告 (quotaType ∈ dailyToken/dailyCost/
+    // monthlyToken/monthlyCost, used=已消耗, quota=上限) 与单次请求费用变化。
+    void quotaWarning(const QString& quotaType, qint64 used, qint64 quota);
+    void costChanged(qint64 costCents);
 
 private:
     void setState(AgentState state);
@@ -125,6 +131,10 @@ private:
     void onContextLimitChanged(int oldLimit, int newLimit);
     void restoreFullHistoryIfAvailable();
     int estimateReservedTokensForNextRequest() const;
+    // docs/16 §7.2: 配额检查，返回 false 表示 strict 模式下拒绝请求。
+    bool checkQuota();
+    // docs/16 §5.2.2: 采集单次请求的 token 分类明细并持久化。
+    void recordTokenUsage(const LLMResponse& response);
     void onTaskTimeout();
     void onRequestStarted(quint64 requestId);
     void onLLMResponse(const LLMResponse& response);

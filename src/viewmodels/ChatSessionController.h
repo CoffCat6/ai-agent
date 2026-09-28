@@ -61,6 +61,14 @@ public:
     void renameSession(const QString& sessionId, const QString& title);
     QVariantList auditLog(int limit) const;
 
+    // docs/16 §8: QML-facing wrappers around IMemory aggregate queries.
+    // The viewmodel (AgentVM) forwards these so UsageStatsPage can call
+    // AgentVM.tokenStatsDetailed / costStats / quotaStatus directly.
+    Q_INVOKABLE QVariantMap tokenStatsDetailed(int recentDays = 30) const;
+    Q_INVOKABLE QVariantList tokenStatsBySource(int recentDays = 30) const;
+    Q_INVOKABLE QVariantMap costStats(int recentDays = 30) const;
+    Q_INVOKABLE QVariantMap quotaStatus() const;
+
 signals:
     void stateChanged();
     void traceChanged();
@@ -76,6 +84,10 @@ signals:
     void errorOccurred(const QString& error);
     // Session data behind the global history list changed.
     void sessionHistoryChanged();
+    // docs/16 §6/§7: forwarded from AIAgent so the UI can show per-request
+    // cost and quota threshold warnings.
+    void costChanged(qint64 costCents);
+    void quotaWarning(const QString& quotaType, qint64 used, qint64 quota);
 
 private:
     void setState(AgentState state);

@@ -17,6 +17,7 @@
 #include <QSignalSpy>
 #include <QTemporaryDir>
 #include <QFile>
+#include <QSettings>
 #include <QStandardPaths>
 #include <QElapsedTimer>
 
@@ -460,6 +461,10 @@ private slots:
     void testSwitchToSmallerWindowCompressesImmediately();
     void testResumeSessionAdaptsToContextLimit();
     void testNoAdaptationDuringActiveTask();
+    // docs/16 §13 AC-2/AC-4: token_usage 采集埋点（response 有分类 token 时正确采集）
+    void testRecordTokenUsage();
+    // docs/16 §13 AC-7: 配额检查（超限 emit quotaWarning，strict 模式拒绝）
+    void testCheckQuota();
 };
 
 void TestAgent::directCompletion() {
@@ -1769,6 +1774,111 @@ void TestAgent::testNoAdaptationDuringActiveTask() {
     agent.stop();
     blocking->release();
     QTest::qWait(300);
+    agent.setMemory(nullptr);
+}
+
+// docs/16 §13 AC-2/AC-4: AIAgent 采集埋点 —— response 携带分类 token 时
+// recordTokenUsage 正确采集并持久化到 token_usage 表，来源拆分总和 = 输入合计。
+// recordTokenUsage/checkQuota 是 private 方法，通过 startTask 驱动 FakeAIService
+// 发射 responseReady 间接触发 onLLMResponse → recordTokenUsage。
+void TestAgent::testRecordTokenUsage() {
+    SqliteMemory memory(QStringLiteral(":memory:"));
+    agent.setMemory(&memory);
+
+    LLMResponse resp = textResponse(QStringLiteral("final answer"));
+    resp.promptTokens = 100;
+    resp.completionTokens = 50;
+    resp.cachedTokens = 10;
+    llm.script.append(resp);
+
+    QSignalSpy costSpy(&agent, &AIAgent::costChanged);
+    QSignalSpy responseSpy(&agent, &AIAgent::responseReady);
+    agent.startTask(QStringLiteral("hello"));
+    QTRY_COMPARE(responseSpy.count(), 1);
+
+    // AC-2: API 返回分类 token 时正确采集
+    const QVariantMap stats = memory.tokenStatsDetailed(30);
+    QCOMPARE(stats.value("totalCalls").toInt(), 1);
+    QCOMPARE(stats.value("totalInputTokens").toLongLong(), qint64(100));
+    QCOMPARE(stats.value("totalOutputTokens").toLongLong(), qint64(50));
+    QCOMPARE(stats.value("totalCacheHitTokens").toLongLong(), qint64(10));
+
+    // AC-4: 来源拆分总和 = 输入合计
+    const qint64 sourceSum =
+          stats.value("totalInputSystemPrompt").toLongLong()
+        + stats.value("totalInputConversation").toLongLong()
+        + stats.value("totalInputToolCall").toLongLong()
+        + stats.value("totalInputMcp").toLongLong()
+        + stats.value("totalInputSkill").toLongLong()
+        + stats.value("totalInputImage").toLongLong()
+        + stats.value("totalInputOther").toLongLong();
+    QCOMPARE(sourceSum, stats.value("totalInputTokens").toLongLong());
+
+    // AC-5: costChanged 触发（fake-model 未知定价 → 0 分，docs/16 §6.2）
+    QCOMPARE(costSpy.count(), 1);
+    QCOMPARE(costSpy.at(0).at(0).toLongLong(), qint64(0));
+
+    agent.setMemory(nullptr);
+}
+
+// docs/16 §13 AC-7: 配额检查 —— 超限时 emit quotaWarning，strict 模式拒绝请求，
+// 非 strict 模式仅警告后任务继续。checkQuota 在 startTask 开头同步调用。
+void TestAgent::testCheckQuota() {
+    // checkQuota 用 QSettings() 默认构造读取配额上限，需对齐组织/应用名。
+    QCoreApplication::setOrganizationName("NexusAI");
+    QCoreApplication::setApplicationName("NexusAI");
+    QSettings settings;
+    // 清理可能残留的配额键，确保起点干净
+    settings.remove("dailyTokenQuota");
+    settings.remove("dailyCostQuotaCents");
+    settings.remove("monthlyTokenQuota");
+    settings.remove("monthlyCostQuotaCents");
+    settings.remove("strictQuotaMode");
+
+    SqliteMemory memory(QStringLiteral(":memory:"));
+    agent.setMemory(&memory);
+
+    // 预置当日已消耗 1000 token（超额）
+    QVariantMap rec;
+    rec["requestId"] = quint64(1);
+    rec["sessionId"] = QStringLiteral("s1");
+    rec["model"] = QStringLiteral("gpt-4o");
+    rec["inputTokens"] = 600;
+    rec["outputTokens"] = 400;
+    memory.logTokenUsage(rec);
+
+    // strict 模式 + 日 token 配额 10（已消耗 1000 超额）
+    settings.setValue("dailyTokenQuota", 10);
+    settings.setValue("strictQuotaMode", true);
+
+    llm.script.append(textResponse(QStringLiteral("ok")));
+    QSignalSpy quotaSpy(&agent, &AIAgent::quotaWarning);
+    QSignalSpy responseSpy(&agent, &AIAgent::responseReady);
+    agent.startTask(QStringLiteral("hi"));
+    QTest::qWait(100);
+
+    // AC-7: 超限触发警告
+    QVERIFY(quotaSpy.count() >= 1);
+    QCOMPARE(quotaSpy.at(0).at(0).toString(), QStringLiteral("dailyToken"));
+    QVERIFY(quotaSpy.at(0).at(1).toLongLong() >= quotaSpy.at(0).at(2).toLongLong());
+    // strict 模式拒绝请求：LLM 未被调用，无 responseReady
+    QCOMPARE(responseSpy.count(), 0);
+
+    // 切换非 strict 模式：仅警告，任务继续完成
+    settings.setValue("strictQuotaMode", false);
+    quotaSpy.clear();
+    responseSpy.clear();
+    agent.resetSession();
+    agent.startTask(QStringLiteral("hi again"));
+    QTRY_COMPARE(responseSpy.count(), 1);
+    QVERIFY(quotaSpy.count() >= 1);
+
+    // 清理配额设置避免泄漏
+    settings.remove("dailyTokenQuota");
+    settings.remove("dailyCostQuotaCents");
+    settings.remove("monthlyTokenQuota");
+    settings.remove("monthlyCostQuotaCents");
+    settings.remove("strictQuotaMode");
     agent.setMemory(nullptr);
 }
 

@@ -1,6 +1,7 @@
 #include "viewmodels/ChatSessionController.h"
 
 #include "core/agent/AIAgent.h"
+#include "core/memory/IMemory.h"
 #include "core/utils/Activity.h"
 #include "core/utils/TokenEstimator.h"
 
@@ -85,6 +86,10 @@ void ChatSessionController::connectAgent(AIAgent* agent) {
         emit contextLimitChanged();
         emit tokenUsageChanged();
     });
+
+    // docs/16 §6/§7: forward cost/quota signals to the UI.
+    connect(agent, &AIAgent::costChanged, this, &ChatSessionController::costChanged);
+    connect(agent, &AIAgent::quotaWarning, this, &ChatSessionController::quotaWarning);
 
     // Session history is global (same SQLite file for every tab); the facade
     // refreshes the shared list whenever any tab reports a change.
@@ -315,6 +320,29 @@ void ChatSessionController::renameSession(const QString& sessionId, const QStrin
 
 QVariantList ChatSessionController::auditLog(int limit) const {
     return m_agent ? m_agent->auditLog(limit).toVariantList() : QVariantList{};
+}
+
+// docs/16 §8: QML-facing wrappers. Delegate to the agent's IMemory backend
+// (SqliteMemory) which implements the aggregate queries. Return empty when
+// no agent is attached (simulation mode) so the UI falls back to zeros.
+QVariantMap ChatSessionController::tokenStatsDetailed(int recentDays) const {
+    if (!m_agent || !m_agent->memory()) return {};
+    return m_agent->memory()->tokenStatsDetailed(recentDays);
+}
+
+QVariantList ChatSessionController::tokenStatsBySource(int recentDays) const {
+    if (!m_agent || !m_agent->memory()) return {};
+    return m_agent->memory()->tokenStatsBySource(recentDays);
+}
+
+QVariantMap ChatSessionController::costStats(int recentDays) const {
+    if (!m_agent || !m_agent->memory()) return {};
+    return m_agent->memory()->costStats(recentDays);
+}
+
+QVariantMap ChatSessionController::quotaStatus() const {
+    if (!m_agent || !m_agent->memory()) return {};
+    return m_agent->memory()->quotaStatus();
 }
 
 // ── Simulation (fallback when no agent attached) ─────────

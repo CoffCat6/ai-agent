@@ -5,7 +5,9 @@
 #include "viewmodels/ThemeManager.h"
 #include "core/tools/ToolRegistry.h"
 
+#include "core/memory/SqliteMemory.h"
 #include "core/utils/Logger.h"
+#include "core/utils/PricingCalculator.h"
 
 #include <QtTest>
 #include <QGuiApplication>
@@ -603,6 +605,194 @@ ComboBox {
         // Priority 3: global fallback (unknown model, no override).
         service.updateProfile(profileId, QVariantMap{{QStringLiteral("model"), QStringLiteral("unknown-model")}});
         QCOMPARE(service.resolveContextLimit(), service.contextTokens());
+    }
+
+    // docs/16 §13 AC-1: token_usage 表正确创建。SqliteMemory 构造后
+    // token_usage 表可写入并聚合查询，证明 DDL 执行成功且列结构匹配。
+    void testTokenUsageTableCreated() {
+        SqliteMemory memory(QStringLiteral(":memory:"));
+        QVariantMap rec;
+        rec["requestId"] = quint64(1);
+        rec["sessionId"] = QStringLiteral("s1");
+        rec["model"] = QStringLiteral("gpt-4o");
+        rec["inputTokens"] = 100;
+        rec["outputTokens"] = 50;
+        memory.logTokenUsage(rec);
+        const QVariantMap stats = memory.tokenStatsDetailed(30);
+        QCOMPARE(stats.value("totalCalls").toInt(), 1);
+        QCOMPARE(stats.value("totalInputTokens").toLongLong(), qint64(100));
+        QCOMPARE(stats.value("totalOutputTokens").toLongLong(), qint64(50));
+    }
+
+    // docs/16 §13 AC-9: logTokenUsage 写入分类明细，聚合查询回读一致
+    // （现有 tokenStats 向后兼容，新明细表独立聚合）。
+    void testLogTokenUsage() {
+        SqliteMemory memory(QStringLiteral(":memory:"));
+        QVariantMap rec;
+        rec["requestId"] = quint64(1);
+        rec["sessionId"] = QStringLiteral("s1");
+        rec["model"] = QStringLiteral("gpt-4o");
+        rec["inputTokens"] = 200;
+        rec["outputTokens"] = 80;
+        rec["cacheHitTokens"] = 20;
+        rec["inputSystemPrompt"] = 50;
+        rec["inputConversation"] = 100;
+        rec["inputToolCall"] = 30;
+        rec["inputOther"] = 20;
+        rec["outputConversation"] = 60;
+        rec["outputToolCall"] = 20;
+        rec["cacheHitSystemPrompt"] = 10;
+        rec["cacheHitConversation"] = 10;
+        rec["costCents"] = qint64(15);
+        rec["latencyMs"] = qint64(120);
+        memory.logTokenUsage(rec);
+        const QVariantMap stats = memory.tokenStatsDetailed(30);
+        QCOMPARE(stats.value("totalCalls").toInt(), 1);
+        QCOMPARE(stats.value("totalInputTokens").toLongLong(), qint64(200));
+        QCOMPARE(stats.value("totalOutputTokens").toLongLong(), qint64(80));
+        QCOMPARE(stats.value("totalCacheHitTokens").toLongLong(), qint64(20));
+        QCOMPARE(stats.value("totalInputSystemPrompt").toLongLong(), qint64(50));
+        QCOMPARE(stats.value("totalInputConversation").toLongLong(), qint64(100));
+        QCOMPARE(stats.value("totalInputToolCall").toLongLong(), qint64(30));
+        QCOMPARE(stats.value("totalInputOther").toLongLong(), qint64(20));
+        QCOMPARE(stats.value("totalOutputConversation").toLongLong(), qint64(60));
+        QCOMPARE(stats.value("totalOutputToolCall").toLongLong(), qint64(20));
+        QCOMPARE(stats.value("totalCacheHitSystemPrompt").toLongLong(), qint64(10));
+        QCOMPARE(stats.value("totalCacheHitConversation").toLongLong(), qint64(10));
+    }
+
+    // docs/16 §13 AC-4: 来源拆分总和 = 输入合计（方向/来源拆分一致）。
+    void testTokenStatsDetailed() {
+        SqliteMemory memory(QStringLiteral(":memory:"));
+        for (int i = 0; i < 2; ++i) {
+            QVariantMap rec;
+            rec["requestId"] = quint64(i + 1);
+            rec["sessionId"] = QStringLiteral("s1");
+            rec["model"] = QStringLiteral("gpt-4o");
+            rec["inputTokens"] = 100;
+            rec["inputSystemPrompt"] = 30;
+            rec["inputConversation"] = 50;
+            rec["inputToolCall"] = 20;
+            rec["outputTokens"] = 40;
+            rec["outputConversation"] = 40;
+            memory.logTokenUsage(rec);
+        }
+        const QVariantMap stats = memory.tokenStatsDetailed(30);
+        QCOMPARE(stats.value("totalCalls").toInt(), 2);
+        QCOMPARE(stats.value("totalInputTokens").toLongLong(), qint64(200));
+        // AC-4: 输入来源拆分总和 = 输入合计
+        const qint64 sourceSum =
+              stats.value("totalInputSystemPrompt").toLongLong()
+            + stats.value("totalInputConversation").toLongLong()
+            + stats.value("totalInputToolCall").toLongLong()
+            + stats.value("totalInputMcp").toLongLong()
+            + stats.value("totalInputSkill").toLongLong()
+            + stats.value("totalInputImage").toLongLong()
+            + stats.value("totalInputOther").toLongLong();
+        QCOMPARE(sourceSum, stats.value("totalInputTokens").toLongLong());
+        // tokenStatsBySource 各行 inputTokens 之和同样等于输入合计
+        const QVariantList bySource = memory.tokenStatsBySource(30);
+        qint64 sourceInputSum = 0;
+        for (const auto& entry : bySource)
+            sourceInputSum += entry.toMap().value("inputTokens").toLongLong();
+        QCOMPARE(sourceInputSum, stats.value("totalInputTokens").toLongLong());
+    }
+
+    // docs/16 §13 AC-6: 成本核算正确（按模型定价计算）。
+    void testCostStats() {
+        SqliteMemory memory(QStringLiteral(":memory:"));
+        // gpt-4o 预置定价: input 250 / output 1000 / cacheHit 125 (分/1M token)
+        int inP = 0, outP = 0, chP = 0;
+        PricingCalculator::getPricing(QStringLiteral("gpt-4o"), inP, outP, chP);
+        QCOMPARE(inP, 250);
+        QCOMPARE(outP, 1000);
+        QCOMPARE(chP, 125);
+        // 1M 输入 + 0.5M 输出 + 0 缓存 → 250 + 500 = 750 分
+        const qint64 cost = PricingCalculator::calculateCost(
+            QStringLiteral("gpt-4o"), 1000000, 500000, 0, inP, outP, chP);
+        QCOMPARE(cost, qint64(750));
+        // 含缓存命中: 1M 输入(含 0.2M 缓存) + 0.5M 输出
+        // → (1M-0.2M)*250/1M + 0.2M*125/1M + 0.5M*1000/1M = 200 + 25 + 500 = 725
+        const qint64 costCache = PricingCalculator::calculateCost(
+            QStringLiteral("gpt-4o"), 1000000, 500000, 200000, inP, outP, chP);
+        QCOMPARE(costCache, qint64(725));
+
+        QVariantMap rec;
+        rec["requestId"] = quint64(1);
+        rec["sessionId"] = QStringLiteral("s1");
+        rec["model"] = QStringLiteral("gpt-4o");
+        rec["inputTokens"] = 1000000;
+        rec["outputTokens"] = 500000;
+        rec["cacheHitTokens"] = 0;
+        rec["costCents"] = cost;
+        memory.logTokenUsage(rec);
+        const QVariantMap cs = memory.costStats(30);
+        QCOMPARE(cs.value("totalCostCents").toLongLong(), qint64(750));
+        const QVariantList byModel = cs.value("byModel").toList();
+        QVERIFY(!byModel.isEmpty());
+        QCOMPARE(byModel.at(0).toMap().value("model").toString(), QStringLiteral("gpt-4o"));
+        QCOMPARE(byModel.at(0).toMap().value("costCents").toLongLong(), qint64(750));
+        // 本地模型定价 0（docs/16 §6.2）—— 仍统计 token，但不产生费用
+        int ollamaIn = 1, ollamaOut = 1, ollamaCh = 1;
+        PricingCalculator::getPricing(QStringLiteral("qwen2.5:7b"),
+                                      ollamaIn, ollamaOut, ollamaCh);
+        QCOMPARE(ollamaIn, 0);
+        QCOMPARE(ollamaOut, 0);
+        QCOMPARE(ollamaCh, 0);
+    }
+
+    // docs/16 §13 AC-7: 配额设置属性读写 + 信号 + 持久化。
+    void testQuotaSettings() {
+        SettingsGuard guard;
+        {
+            QSettings s("NexusAI", "NexusAI");
+            s.remove("dailyTokenQuota");
+            s.remove("dailyCostQuotaCents");
+            s.remove("monthlyTokenQuota");
+            s.remove("monthlyCostQuotaCents");
+            s.remove("strictQuotaMode");
+        }
+        {
+            SettingsService service(nullptr);
+            QCOMPARE(service.dailyTokenQuota(), 0);
+            QCOMPARE(service.dailyCostQuotaCents(), 0);
+            QCOMPARE(service.monthlyTokenQuota(), 0);
+            QCOMPARE(service.monthlyCostQuotaCents(), 0);
+            QCOMPARE(service.strictQuotaMode(), false);
+
+            QSignalSpy tokenSpy(&service, &SettingsService::dailyTokenQuotaChanged);
+            QSignalSpy strictSpy(&service, &SettingsService::strictQuotaModeChanged);
+            service.setDailyTokenQuota(50000);
+            QCOMPARE(tokenSpy.count(), 1);
+            QCOMPARE(service.dailyTokenQuota(), 50000);
+            service.setDailyCostQuotaCents(2000);
+            QCOMPARE(service.dailyCostQuotaCents(), 2000);
+            service.setMonthlyTokenQuota(500000);
+            QCOMPARE(service.monthlyTokenQuota(), 500000);
+            service.setMonthlyCostQuotaCents(20000);
+            QCOMPARE(service.monthlyCostQuotaCents(), 20000);
+            service.setStrictQuotaMode(true);
+            QCOMPARE(strictSpy.count(), 1);
+            QCOMPARE(service.strictQuotaMode(), true);
+        }
+        // 持久化跨实例
+        {
+            SettingsService s2(nullptr);
+            QCOMPARE(s2.dailyTokenQuota(), 50000);
+            QCOMPARE(s2.dailyCostQuotaCents(), 2000);
+            QCOMPARE(s2.monthlyTokenQuota(), 500000);
+            QCOMPARE(s2.monthlyCostQuotaCents(), 20000);
+            QCOMPARE(s2.strictQuotaMode(), true);
+        }
+        // 清理：guard 不覆盖这些新键，手动清除避免泄漏到后续套件
+        {
+            QSettings s("NexusAI", "NexusAI");
+            s.remove("dailyTokenQuota");
+            s.remove("dailyCostQuotaCents");
+            s.remove("monthlyTokenQuota");
+            s.remove("monthlyCostQuotaCents");
+            s.remove("strictQuotaMode");
+        }
     }
 
 private:

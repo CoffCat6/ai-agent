@@ -104,6 +104,34 @@ public:
         Q_UNUSED(recentDays);
         return {};
     }
+
+    // docs/16 §4.4: 记录单次 token 使用明细（分类统计）
+    virtual void logTokenUsage(const QVariantMap& record) {
+        Q_UNUSED(record);
+    }
+
+    // docs/16 §4.4: 详细聚合统计（含方向/来源拆分）
+    virtual QVariantMap tokenStatsDetailed(int recentDays = 30) {
+        Q_UNUSED(recentDays);
+        return {};
+    }
+
+    // docs/16 §4.4: 按来源聚合统计
+    virtual QVariantList tokenStatsBySource(int recentDays = 30) {
+        Q_UNUSED(recentDays);
+        return {};
+    }
+
+    // docs/16 §4.4: 成本核算统计
+    virtual QVariantMap costStats(int recentDays = 30) {
+        Q_UNUSED(recentDays);
+        return {};
+    }
+
+    // docs/16 §4.4: 配额状态查询
+    virtual QVariantMap quotaStatus() {
+        return {};
+    }
 };
 
 } // namespace NexusAI

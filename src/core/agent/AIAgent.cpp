@@ -11,7 +11,17 @@
 #include <QJsonDocument>
 #include <QUuid>
 #include <QSysInfo>
+#include <QSettings>
 #include <QtConcurrent/QtConcurrentRun>
+
+// docs/16 §6: PricingCalculator 由 T7 提供。__has_include 保护使本文件在
+// T7 完成前也能独立编译（costCents 退化为 0），完成后自动接入真实定价。
+#if __has_include("core/utils/PricingCalculator.h")
+#include "core/utils/PricingCalculator.h"
+#define NEXUSAI_HAS_PRICING 1
+#else
+#define NEXUSAI_HAS_PRICING 0
+#endif
 
 namespace NexusAI {
 
@@ -225,7 +235,14 @@ bool AIAgent::updateTraceNodeStatusById(const QString& id, const QString& status
 }
 
 void AIAgent::notifyTokens() {
-    emit tokensChanged(TokenEstimator::estimateTokens(m_messages));
+    const int estimated = TokenEstimator::estimateTokens(m_messages);
+    // Clamp display value to contextLimit to avoid > 100% in UI.
+    // Real compression happens in processIteration/applyContextBudget;
+    // the transient over-estimate between message append and next
+    // iteration is cosmetic only (e.g. assistant reply with tool_calls
+    // cannot be compressed until tools execute).
+    const int display = (m_contextLimit > 0) ? qMin(estimated, m_contextLimit) : estimated;
+    emit tokensChanged(display);
 }
 
 // ── Session management ────────────────────────────────────
@@ -255,6 +272,9 @@ void AIAgent::renameSession(const QString& sessionId, const QString& title) {
 void AIAgent::startTask(const QString& userMessage, const QStringList& images,
                         const QJsonArray& files) {
     if (m_active) return;
+
+    // docs/16 §7.2: 配额检查（strict 模式下超额拒绝请求）。
+    if (!checkQuota()) return;
 
     const bool fresh = m_sessionId.isEmpty();
     if (fresh) {
@@ -327,6 +347,17 @@ void AIAgent::startTask(const QString& userMessage, const QStringList& images,
     if (userMsg.contains("files"))
         extra["files"] = userMsg.value("files");
     appendTraceNode("user_message", userMessage, "completed", extra);
+    // Pre-notify compression: ensure m_messages is within budget before
+    // emitting tokensChanged, so the UI never shows > 100% after the
+    // user sends a large message (compression was previously deferred
+    // to processIteration, causing a transient over-100% window).
+    {
+        const int reserved = estimateReservedTokensForNextRequest();
+        const int effective = qMax(0, m_contextLimit - reserved);
+        if (TokenEstimator::estimateTokens(m_messages) > effective) {
+            applyContextBudget(reserved);
+        }
+    }
     notifyTokens();
 
     m_active = true;
@@ -462,6 +493,7 @@ void AIAgent::resumeSession(const QString& sessionId) {
     setState(AgentState::Idle);
     emit traceChanged();
     emit sessionChanged(m_sessionId);
+    notifyTokens();
 }
 
 // ── Task lifecycle ────────────────────────────────────────
@@ -726,6 +758,10 @@ void AIAgent::onLLMResponse(const LLMResponse& response) {
     m_lastTokensUsed = response.tokensUsed > 0
         ? response.tokensUsed
         : TokenEstimator::estimateTokens(m_messages);
+
+    // docs/16 §5.2.2: 采集分类 token 明细 + 计费 + 持久化。向后兼容
+    // m_lastTokensUsed（仍用于 audit_log），此处不影响现有流程。
+    recordTokenUsage(response);
 
     m_streamTimer.stop();
     if (!m_thinkingNodeId.isEmpty()) {
@@ -1285,6 +1321,163 @@ void AIAgent::failTask(const QString& error) {
     appendTraceNode("error", error, "failed");
     setState(AgentState::Error);
     emit errorOccurred(error);
+}
+
+// docs/16 §5.2.2: 响应接收时采集分类 token 明细 + 计费 + 持久化。
+// 严格按文档 §5.2.2 实施：来源拆分（估算）→ API 真实值校准（按比例缩放）
+// → 缓存命中分摊 → 计费 → logTokenUsage → emit costChanged。
+// 不改 m_lastTokensUsed（保持现有 audit_log 流程，向后兼容）。
+void AIAgent::recordTokenUsage(const LLMResponse& response) {
+    if (!m_memory || m_sessionId.isEmpty()) return;
+
+    // ── 来源拆分·输入（估算，文档 §5.2.1）──
+    int inputSystemPrompt = TokenEstimator::estimateTokens(effectiveSystemPrompt());
+    int inputConversation = 0;
+    int inputToolCall = estimateReservedTokensForNextRequest();  // tools schema
+    int inputImage = 0;
+    for (const auto& entry : m_messages) {
+        const QJsonObject msg = entry.toObject();
+        const QString role = msg.value("role").toString();
+        if (role == QLatin1String("user") || role == QLatin1String("assistant")) {
+            inputConversation += TokenEstimator::estimateTokens(msg);
+        } else if (role == QLatin1String("tool")) {
+            inputToolCall += TokenEstimator::estimateTokens(msg);
+        }
+        // 图片附件 token（perImageTokens=1000，与 TokenEstimator 一致）
+        inputImage += msg.value("images").toArray().size() * 1000;
+    }
+    // MCP / 技能来源由各自模块单独统计，此处为 0。
+    const int inputMcp = 0;
+    const int inputSkill = 0;
+
+    // ── 方向维度合计（优先 API 真实值，文档 §5.2.2）──
+    const int inputTokens = response.promptTokens > 0
+        ? response.promptTokens
+        : TokenEstimator::estimateTokens(m_messages);
+    const int outputTokens = response.completionTokens > 0
+        ? response.completionTokens
+        : TokenEstimator::estimateTokens(response.content);
+    const int cacheHitTokens = response.cachedTokens + response.cacheReadTokens;
+
+    // ── 来源拆分·输出 ──
+    int outputConversation = TokenEstimator::estimateTokens(response.content);
+    int outputToolCall = 0;
+    for (const auto& call : response.toolCalls) {
+        outputToolCall += TokenEstimator::estimateTokens(call.name);
+        outputToolCall += TokenEstimator::estimateTokens(
+            QString::fromUtf8(QJsonDocument(call.arguments).toJson(QJsonDocument::Compact)));
+    }
+    int outputOther = outputTokens - outputConversation - outputToolCall;
+    if (outputOther < 0) outputOther = 0;
+
+    // ── API 真实值校准：按比例缩放输入来源拆分（文档 §2.3）──
+    if (response.promptTokens > 0) {
+        const int estimatedInput = inputSystemPrompt + inputConversation
+                                 + inputToolCall + inputMcp + inputSkill + inputImage;
+        if (estimatedInput > 0) {
+            const double scale = static_cast<double>(response.promptTokens) / estimatedInput;
+            inputSystemPrompt = static_cast<int>(inputSystemPrompt * scale);
+            inputConversation = static_cast<int>(inputConversation * scale);
+            inputToolCall     = static_cast<int>(inputToolCall * scale);
+            inputImage        = static_cast<int>(inputImage * scale);
+        }
+    }
+    int inputOther = inputTokens - inputSystemPrompt - inputConversation
+                   - inputToolCall - inputMcp - inputSkill - inputImage;
+    if (inputOther < 0) inputOther = 0;
+
+    // ── 缓存命中拆分（按输入来源比例分摊，文档 §5.2.2）──
+    int cacheHitSystemPrompt = 0, cacheHitConversation = 0, cacheHitToolCall = 0;
+    if (cacheHitTokens > 0 && inputTokens > 0) {
+        const double cacheRatio = static_cast<double>(cacheHitTokens) / inputTokens;
+        cacheHitSystemPrompt = static_cast<int>(inputSystemPrompt * cacheRatio);
+        cacheHitConversation = static_cast<int>(inputConversation * cacheRatio);
+        cacheHitToolCall     = static_cast<int>(inputToolCall * cacheRatio);
+    }
+
+    // ── 计费（文档 §6.1）──
+    qint64 costCents = 0;
+#if NEXUSAI_HAS_PRICING
+    // 先查模型定价（分/1M token），再按 §6.1 修正公式核算：
+    // (input-cacheHit)×inputPrice + cacheHit×cachePrice + output×outputPrice。
+    // 本地/未知模型定价为 0（docs/16 §6.2）—— 仍统计 token，但不产生费用。
+    int inputPrice = 0, outputPrice = 0, cacheHitPrice = 0;
+    PricingCalculator::getPricing(currentModel(), inputPrice, outputPrice, cacheHitPrice);
+    costCents = PricingCalculator::calculateCost(currentModel(),
+        inputTokens, outputTokens, cacheHitTokens,
+        inputPrice, outputPrice, cacheHitPrice);
+#endif
+
+    // ── 持久化（文档 §5.2.2）──
+    const qint64 latencyMs = m_lastLatencyMs > 0 ? m_lastLatencyMs : -1;
+    QVariantMap rec;
+    rec["requestId"] = static_cast<quint64>(m_activeRequestId);
+    rec["sessionId"] = m_sessionId;
+    rec["model"] = currentModel();
+    rec["timestamp"] = QDateTime::currentMSecsSinceEpoch();
+    rec["inputTokens"] = inputTokens;
+    rec["outputTokens"] = outputTokens;
+    rec["cacheHitTokens"] = cacheHitTokens;
+    rec["totalTokens"] = inputTokens + outputTokens;
+    rec["inputSystemPrompt"] = inputSystemPrompt;
+    rec["inputConversation"] = inputConversation;
+    rec["inputToolCall"] = inputToolCall;
+    rec["inputMcp"] = inputMcp;
+    rec["inputSkill"] = inputSkill;
+    rec["inputImage"] = inputImage;
+    rec["inputOther"] = inputOther;
+    rec["outputConversation"] = outputConversation;
+    rec["outputToolCall"] = outputToolCall;
+    rec["outputMcp"] = 0;
+    rec["outputSkill"] = 0;
+    rec["outputOther"] = outputOther;
+    rec["cacheHitSystemPrompt"] = cacheHitSystemPrompt;
+    rec["cacheHitConversation"] = cacheHitConversation;
+    rec["cacheHitToolCall"] = cacheHitToolCall;
+    rec["costCents"] = costCents;
+    rec["latencyMs"] = latencyMs;
+    m_memory->logTokenUsage(rec);
+
+    emit costChanged(costCents);
+}
+
+// docs/16 §7.2: 配额检查流程。查询当日/当月已消耗（m_memory->quotaStatus）
+// 与 Settings 配额上限（QSettings 扁平键），超限 emit quotaWarning；
+// strictQuotaMode=true 时拒绝请求（返回 false），否则仅警告。
+// 上限 0 = 不限制。quotaStatus 未实现（返回空）时已消耗按 0 处理，不阻塞。
+bool AIAgent::checkQuota() {
+    if (!m_memory) return true;
+
+    const QVariantMap stats = m_memory->quotaStatus();
+    // quotaStatus 字段名兼容多种命名（T7 实现确定后可收敛）。
+    const auto used = [&](const char* primary, const char* fallback) -> qint64 {
+        if (stats.contains(primary)) return stats.value(primary).toLongLong();
+        if (stats.contains(fallback)) return stats.value(fallback).toLongLong();
+        return 0;
+    };
+    const qint64 dailyTokensUsed = used("dailyTokensUsed", "daily_tokens_used");
+    const qint64 dailyCostUsed = used("dailyCostCentsUsed", "daily_cost_cents_used");
+    const qint64 monthlyTokensUsed = used("monthlyTokensUsed", "monthly_tokens_used");
+    const qint64 monthlyCostUsed = used("monthlyCostCentsUsed", "monthly_cost_cents_used");
+
+    const QSettings settings;
+    const qint64 dailyTokenQuota = qMax(Q_INT64_C(0), settings.value("dailyTokenQuota", 0).toLongLong());
+    const qint64 dailyCostQuota = qMax(Q_INT64_C(0), settings.value("dailyCostQuotaCents", 0).toLongLong());
+    const qint64 monthlyTokenQuota = qMax(Q_INT64_C(0), settings.value("monthlyTokenQuota", 0).toLongLong());
+    const qint64 monthlyCostQuota = qMax(Q_INT64_C(0), settings.value("monthlyCostQuotaCents", 0).toLongLong());
+    const bool strict = settings.value("strictQuotaMode", false).toBool();
+
+    bool ok = true;
+    const auto check = [&](const QString& type, qint64 usedVal, qint64 quotaVal) {
+        if (quotaVal <= 0 || usedVal < quotaVal) return;
+        emit quotaWarning(type, usedVal, quotaVal);
+        if (strict) ok = false;
+    };
+    check(QStringLiteral("dailyToken"), dailyTokensUsed, dailyTokenQuota);
+    check(QStringLiteral("dailyCost"), dailyCostUsed, dailyCostQuota);
+    check(QStringLiteral("monthlyToken"), monthlyTokensUsed, monthlyTokenQuota);
+    check(QStringLiteral("monthlyCost"), monthlyCostUsed, monthlyCostQuota);
+    return ok;
 }
 
 } // namespace NexusAI

@@ -211,6 +211,9 @@ LLMResponse OllamaService::parseResponse(const QJsonObject& json) {
     // Token usage reported on the final non-streamed message
     response.tokensUsed = json.value("eval_count").toInt()
                         + json.value("prompt_eval_count").toInt();
+    // docs/16 §5.1 / 附录 A: 分类 token 计数（Ollama 不支持缓存）
+    response.promptTokens = json.value("prompt_eval_count").toInt();
+    response.completionTokens = json.value("eval_count").toInt();
 
     return response;
 }

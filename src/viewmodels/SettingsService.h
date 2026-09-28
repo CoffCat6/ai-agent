@@ -53,6 +53,13 @@ class SettingsService : public QObject {
     // T8 (F4): episodic long-term memory; when enabled, session summaries
     // are generated on task completion and injected into new sessions.
     Q_PROPERTY(bool episodicMemoryEnabled READ episodicMemoryEnabled WRITE setEpisodicMemoryEnabled NOTIFY episodicMemoryEnabledChanged)
+    // docs/16 §7.3: quota control. All quotas default to 0 = unlimited;
+    // strictQuotaMode true = reject on exceed, false = warn only.
+    Q_PROPERTY(int dailyTokenQuota READ dailyTokenQuota WRITE setDailyTokenQuota NOTIFY dailyTokenQuotaChanged)
+    Q_PROPERTY(int dailyCostQuotaCents READ dailyCostQuotaCents WRITE setDailyCostQuotaCents NOTIFY dailyCostQuotaCentsChanged)
+    Q_PROPERTY(int monthlyTokenQuota READ monthlyTokenQuota WRITE setMonthlyTokenQuota NOTIFY monthlyTokenQuotaChanged)
+    Q_PROPERTY(int monthlyCostQuotaCents READ monthlyCostQuotaCents WRITE setMonthlyCostQuotaCents NOTIFY monthlyCostQuotaCentsChanged)
+    Q_PROPERTY(bool strictQuotaMode READ strictQuotaMode WRITE setStrictQuotaMode NOTIFY strictQuotaModeChanged)
     Q_PROPERTY(QString appVersion READ appVersion CONSTANT)
 
 public:
@@ -115,6 +122,18 @@ public:
     bool episodicMemoryEnabled() const { return m_episodicMemoryEnabled; }
     void setEpisodicMemoryEnabled(bool enabled);
 
+    // docs/16 §7.3: quota settings. 0 = unlimited for the int quotas.
+    int dailyTokenQuota() const { return m_dailyTokenQuota; }
+    void setDailyTokenQuota(int v);
+    int dailyCostQuotaCents() const { return m_dailyCostQuotaCents; }
+    void setDailyCostQuotaCents(int v);
+    int monthlyTokenQuota() const { return m_monthlyTokenQuota; }
+    void setMonthlyTokenQuota(int v);
+    int monthlyCostQuotaCents() const { return m_monthlyCostQuotaCents; }
+    void setMonthlyCostQuotaCents(int v);
+    bool strictQuotaMode() const { return m_strictQuotaMode; }
+    void setStrictQuotaMode(bool v);
+
     static QString appVersion() { return QCoreApplication::applicationVersion(); }
 
     // ── Profile management (QML invokables) ───────────
@@ -164,6 +183,11 @@ signals:
     void webSearchProviderChanged();
     void webSearchApiKeyChanged();
     void episodicMemoryEnabledChanged();
+    void dailyTokenQuotaChanged();
+    void dailyCostQuotaCentsChanged();
+    void monthlyTokenQuotaChanged();
+    void monthlyCostQuotaCentsChanged();
+    void strictQuotaModeChanged();
 
 private:
     void load();
@@ -184,6 +208,12 @@ private:
     QString m_webSearchProvider{QStringLiteral("tavily")};
     QString m_webSearchApiKey;
     bool m_episodicMemoryEnabled{false};
+    // docs/16 §7.3: quota control state (0 = unlimited for int quotas).
+    int m_dailyTokenQuota{0};
+    int m_dailyCostQuotaCents{0};
+    int m_monthlyTokenQuota{0};
+    int m_monthlyCostQuotaCents{0};
+    bool m_strictQuotaMode{false};
 
     static SettingsService* s_instance;
 };

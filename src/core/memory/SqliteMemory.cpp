@@ -9,7 +9,11 @@
 #include <QDebug>
 #include <QDateTime>
 #include <QUuid>
+#include <QDate>
+#include <QTime>
 #include <cstring>
+
+#include "core/utils/PricingCalculator.h"
 
 namespace NexusAI {
 
@@ -19,6 +23,9 @@ namespace {
 // local desktop DB below this size a '%kw%' scan stays fast enough for the
 // GUI thread; larger libraries must use the trigram FTS path (3+ chars).
 constexpr qint64 kLikeScanMaxMessages = 50000;
+
+// docs/16 §6.1: 价格单位为"分/1M token"，1M 基准用于整数计费换算。
+constexpr qint64 kPerMillion = 1000000;
 
 // Human-friendly relative timestamp for the session list. UI-visible copy
 // (P3-9): routed through SqliteMemory::tr() so it lands in the .ts file.
@@ -90,6 +97,10 @@ void SqliteMemory::initDatabase() {
     migrateKnowledgeSchema();
     migrateMessagesFts();
     migrateEpisodicFts();
+    // docs/16 §4.2/§6.2: 预置公开定价（不覆盖用户自定义），并载入
+    // PricingCalculator 进程级缓存，供 costStats 等聚合查询使用。
+    seedModelPricing();
+    PricingCalculator::refreshCache(m_db);
 }
 
 // Batch 17 (FEAT-1701): messages FTS5 index for cross-session search.
@@ -300,6 +311,62 @@ void SqliteMemory::createTables() {
     )", "create usage_log table");
     execDdl(query, "CREATE INDEX IF NOT EXISTS idx_usage_ts ON usage_log(ts)",
             "create usage_log index");
+
+    // docs/16 §4.1: token_usage 明细表 —— 每次 LLM 请求一行，3 方向 × 7 来源
+    // 的分类 token + 费用 + 延迟。audit_log.tokens 保持不变（向后兼容），
+    // 本表是新增的精确明细，tokenStatsDetailed 等从此聚合。
+    execDdl(query, R"(
+        CREATE TABLE IF NOT EXISTS token_usage (
+            id              INTEGER PRIMARY KEY AUTOINCREMENT,
+            request_id      INTEGER NOT NULL,
+            session_id      TEXT NOT NULL,
+            model           TEXT NOT NULL,
+            timestamp       INTEGER NOT NULL,
+            input_tokens        INTEGER NOT NULL DEFAULT 0,
+            output_tokens       INTEGER NOT NULL DEFAULT 0,
+            cache_hit_tokens    INTEGER NOT NULL DEFAULT 0,
+            input_system_prompt INTEGER NOT NULL DEFAULT 0,
+            input_conversation  INTEGER NOT NULL DEFAULT 0,
+            input_tool_call     INTEGER NOT NULL DEFAULT 0,
+            input_mcp           INTEGER NOT NULL DEFAULT 0,
+            input_skill         INTEGER NOT NULL DEFAULT 0,
+            input_image         INTEGER NOT NULL DEFAULT 0,
+            input_other         INTEGER NOT NULL DEFAULT 0,
+            output_conversation INTEGER NOT NULL DEFAULT 0,
+            output_tool_call    INTEGER NOT NULL DEFAULT 0,
+            output_mcp          INTEGER NOT NULL DEFAULT 0,
+            output_skill        INTEGER NOT NULL DEFAULT 0,
+            output_other        INTEGER NOT NULL DEFAULT 0,
+            cache_hit_system_prompt INTEGER NOT NULL DEFAULT 0,
+            cache_hit_conversation  INTEGER NOT NULL DEFAULT 0,
+            cache_hit_tool_call     INTEGER NOT NULL DEFAULT 0,
+            cost_cents       INTEGER NOT NULL DEFAULT 0,
+            latency_ms       INTEGER NOT NULL DEFAULT -1,
+            workspace_id     TEXT NOT NULL DEFAULT 'local'
+        )
+    )", "create token_usage table");
+    execDdl(query, "CREATE INDEX IF NOT EXISTS idx_token_usage_ts "
+                   "ON token_usage(timestamp)",
+            "create token_usage timestamp index");
+    execDdl(query, "CREATE INDEX IF NOT EXISTS idx_token_usage_model "
+                   "ON token_usage(model)",
+            "create token_usage model index");
+    execDdl(query, "CREATE INDEX IF NOT EXISTS idx_token_usage_session "
+                   "ON token_usage(session_id)",
+            "create token_usage session index");
+
+    // docs/16 §4.2: model_pricing 定价表 —— 每 1M token 价格（分）。
+    // 预置数据由 seedModelPricing() 在 initDatabase 末尾写入。
+    execDdl(query, R"(
+        CREATE TABLE IF NOT EXISTS model_pricing (
+            model                   TEXT PRIMARY KEY,
+            input_price_cents       INTEGER NOT NULL,
+            output_price_cents      INTEGER NOT NULL,
+            cache_hit_price_cents   INTEGER NOT NULL DEFAULT 0,
+            effective_date          INTEGER NOT NULL,
+            notes                   TEXT
+        )
+    )", "create model_pricing table");
 }
 
 // Schema v1→v2 (Batch 6): documents gain content-hash / embedding-model
@@ -1177,6 +1244,431 @@ QJsonArray SqliteMemory::auditLog(int limit) {
         qWarning() << "Failed to read audit log:" << query.lastError().text();
     }
     return entries;
+}
+
+// ── docs/16 §4.2: 预置 11 个模型的公开定价 ───────────────
+// INSERT OR IGNORE：首次启动写入，后续不覆盖用户自定义价格（用户可在
+// 设置中改价，重启后保留）。本地 Ollama 模型定价 0，仍统计 token。
+void SqliteMemory::seedModelPricing() {
+    QSqlQuery query(m_db);
+    query.prepare(QStringLiteral(
+        "INSERT OR IGNORE INTO model_pricing "
+        "(model, input_price_cents, output_price_cents, cache_hit_price_cents, "
+        "effective_date, notes) VALUES (?, ?, ?, ?, ?, ?)"));
+    const qint64 now = QDateTime::currentDateTime().toMSecsSinceEpoch();
+    // 价格单位：分/1M token（docs/16 §4.2 表格，2026 年公开价格）。
+    const struct { const char* model; int inP, outP, chP; const char* notes; } presets[] = {
+        {"gpt-4o",              250, 1000, 125, "OpenAI GPT-4o"},
+        {"gpt-4o-mini",          15,   60,   8, "OpenAI GPT-4o-mini"},
+        {"gpt-4-turbo",        1000, 3000, 500, "OpenAI GPT-4 Turbo"},
+        {"o3-mini",             110,  440,  55, "OpenAI o3-mini"},
+        {"claude-sonnet-4-5",   300, 1500,  30, "Anthropic Claude Sonnet 4.5"},
+        {"claude-3-5-haiku",     80,  400,   8, "Anthropic Claude 3.5 Haiku"},
+        {"claude-3-5-sonnet",   300, 1500,  30, "Anthropic Claude 3.5 Sonnet"},
+        {"claude-3-opus",      1500, 7500, 150, "Anthropic Claude 3 Opus"},
+        {"qwen2.5:7b",            0,    0,   0, "Ollama local model"},
+        {"llama3.1:8b",           0,    0,   0, "Ollama local model"},
+        {"deepseek-r1:7b",        0,    0,   0, "Ollama local model"},
+    };
+    for (const auto& p : presets) {
+        query.addBindValue(QString::fromLatin1(p.model));
+        query.addBindValue(p.inP);
+        query.addBindValue(p.outP);
+        query.addBindValue(p.chP);
+        query.addBindValue(now);
+        query.addBindValue(QString::fromLatin1(p.notes));
+        if (!query.exec()) {
+            qWarning() << "Failed to seed model_pricing for" << p.model
+                       << ":" << query.lastError().text();
+        }
+    }
+}
+
+// ── docs/16 §4.4/§5.2: token_usage 明细写入 ─────────────
+// record 字段名（驼峰）：requestId/sessionId/model/timestamp/inputTokens/
+// outputTokens/cacheHitTokens/inputSystemPrompt.../costCents/latencyMs/
+// workspaceId。缺失字段按 0/默认处理，timestamp 缺失用当前时间。
+void SqliteMemory::logTokenUsage(const QVariantMap& record) {
+    QSqlQuery query(m_db);
+    query.prepare(QStringLiteral(
+        "INSERT INTO token_usage ("
+        "request_id, session_id, model, timestamp, "
+        "input_tokens, output_tokens, cache_hit_tokens, "
+        "input_system_prompt, input_conversation, input_tool_call, "
+        "input_mcp, input_skill, input_image, input_other, "
+        "output_conversation, output_tool_call, output_mcp, "
+        "output_skill, output_other, "
+        "cache_hit_system_prompt, cache_hit_conversation, cache_hit_tool_call, "
+        "cost_cents, latency_ms, workspace_id"
+        ") VALUES (?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?)"));
+    const auto getInt = [&](const char* key) {
+        return record.value(QLatin1String(key)).toInt();
+    };
+    qint64 timestamp = record.value(QStringLiteral("timestamp")).toLongLong();
+    if (timestamp <= 0) timestamp = QDateTime::currentDateTime().toMSecsSinceEpoch();
+    QString ws = record.value(QStringLiteral("workspaceId")).toString();
+    if (ws.isEmpty()) ws = QStringLiteral("local");
+
+    query.addBindValue(static_cast<qint64>(record.value(QStringLiteral("requestId")).toLongLong()));
+    query.addBindValue(record.value(QStringLiteral("sessionId")).toString());
+    query.addBindValue(record.value(QStringLiteral("model")).toString());
+    query.addBindValue(timestamp);
+    query.addBindValue(getInt("inputTokens"));
+    query.addBindValue(getInt("outputTokens"));
+    query.addBindValue(getInt("cacheHitTokens"));
+    query.addBindValue(getInt("inputSystemPrompt"));
+    query.addBindValue(getInt("inputConversation"));
+    query.addBindValue(getInt("inputToolCall"));
+    query.addBindValue(getInt("inputMcp"));
+    query.addBindValue(getInt("inputSkill"));
+    query.addBindValue(getInt("inputImage"));
+    query.addBindValue(getInt("inputOther"));
+    query.addBindValue(getInt("outputConversation"));
+    query.addBindValue(getInt("outputToolCall"));
+    query.addBindValue(getInt("outputMcp"));
+    query.addBindValue(getInt("outputSkill"));
+    query.addBindValue(getInt("outputOther"));
+    query.addBindValue(getInt("cacheHitSystemPrompt"));
+    query.addBindValue(getInt("cacheHitConversation"));
+    query.addBindValue(getInt("cacheHitToolCall"));
+    query.addBindValue(static_cast<qint64>(record.value(QStringLiteral("costCents")).toLongLong()));
+    query.addBindValue(static_cast<qint64>(record.value(QStringLiteral("latencyMs")).toLongLong()));
+    query.addBindValue(ws);
+
+    if (!query.exec()) {
+        qWarning() << "Failed to log token usage:" << query.lastError().text();
+    }
+}
+
+// ── docs/16 §9.2: 详细聚合统计（L3+L4+L6）─────────────
+// 返回方向维度累计 + 来源维度累计 + 调用统计 + byModel + byDay。
+QVariantMap SqliteMemory::tokenStatsDetailed(int recentDays) {
+    QVariantMap out;
+    if (recentDays <= 0) recentDays = 30;
+    const qint64 cutoff = QDateTime::currentDateTime().addDays(-recentDays)
+                              .toMSecsSinceEpoch();
+
+    QSqlQuery total(m_db);
+    total.prepare(QStringLiteral(
+        "SELECT COUNT(*), "
+        "COALESCE(SUM(input_tokens),0), COALESCE(SUM(output_tokens),0), "
+        "COALESCE(SUM(cache_hit_tokens),0), "
+        "COALESCE(SUM(input_system_prompt),0), COALESCE(SUM(input_conversation),0), "
+        "COALESCE(SUM(input_tool_call),0), COALESCE(SUM(input_mcp),0), "
+        "COALESCE(SUM(input_skill),0), COALESCE(SUM(input_image),0), "
+        "COALESCE(SUM(input_other),0), "
+        "COALESCE(SUM(output_conversation),0), COALESCE(SUM(output_tool_call),0), "
+        "COALESCE(SUM(output_mcp),0), COALESCE(SUM(output_skill),0), "
+        "COALESCE(SUM(output_other),0), "
+        "COALESCE(SUM(cache_hit_system_prompt),0), COALESCE(SUM(cache_hit_conversation),0), "
+        "COALESCE(SUM(cache_hit_tool_call),0), "
+        "COALESCE(SUM(cost_cents),0), CAST(COALESCE(AVG(latency_ms),0) AS INTEGER) "
+        "FROM token_usage WHERE timestamp >= ?"));
+    total.addBindValue(cutoff);
+    qint64 totalInput = 0, totalOutput = 0, totalCacheHit = 0, totalCost = 0;
+    int totalCalls = 0, avgLatency = 0;
+    if (total.exec() && total.next()) {
+        totalCalls    = total.value(0).toInt();
+        totalInput    = total.value(1).toLongLong();
+        totalOutput   = total.value(2).toLongLong();
+        totalCacheHit = total.value(3).toLongLong();
+        out["totalInputSystemPrompt"]    = total.value(4).toLongLong();
+        out["totalInputConversation"]    = total.value(5).toLongLong();
+        out["totalInputToolCall"]        = total.value(6).toLongLong();
+        out["totalInputMcp"]             = total.value(7).toLongLong();
+        out["totalInputSkill"]           = total.value(8).toLongLong();
+        out["totalInputImage"]           = total.value(9).toLongLong();
+        out["totalInputOther"]           = total.value(10).toLongLong();
+        out["totalOutputConversation"]   = total.value(11).toLongLong();
+        out["totalOutputToolCall"]       = total.value(12).toLongLong();
+        out["totalOutputMcp"]            = total.value(13).toLongLong();
+        out["totalOutputSkill"]          = total.value(14).toLongLong();
+        out["totalOutputOther"]          = total.value(15).toLongLong();
+        out["totalCacheHitSystemPrompt"] = total.value(16).toLongLong();
+        out["totalCacheHitConversation"] = total.value(17).toLongLong();
+        out["totalCacheHitToolCall"]     = total.value(18).toLongLong();
+        totalCost   = total.value(19).toLongLong();
+        avgLatency = total.value(20).toInt();
+    } else {
+        qWarning() << "tokenStatsDetailed totals failed:" << total.lastError().text();
+    }
+    out["totalCalls"]        = totalCalls;
+    out["totalInputTokens"]  = totalInput;
+    out["totalOutputTokens"] = totalOutput;
+    out["totalCacheHitTokens"] = totalCacheHit;
+    out["totalTokens"]       = totalInput + totalOutput;
+    out["totalCostCents"]    = totalCost;
+    out["avgLatencyMs"]      = avgLatency;
+    out["cacheHitRate"]      = totalInput > 0
+        ? static_cast<double>(totalCacheHit) / static_cast<double>(totalInput)
+        : 0.0;
+
+    QVariantList byModel;
+    QSqlQuery modelQ(m_db);
+    modelQ.prepare(QStringLiteral(
+        "SELECT model, COUNT(*), "
+        "COALESCE(SUM(input_tokens),0), COALESCE(SUM(output_tokens),0), "
+        "COALESCE(SUM(cache_hit_tokens),0), COALESCE(SUM(cost_cents),0), "
+        "CAST(COALESCE(AVG(latency_ms),0) AS INTEGER) "
+        "FROM token_usage WHERE timestamp >= ? GROUP BY model "
+        "ORDER BY SUM(input_tokens)+SUM(output_tokens) DESC"));
+    modelQ.addBindValue(cutoff);
+    if (modelQ.exec()) {
+        while (modelQ.next()) {
+            byModel.append(QVariantMap{
+                {QStringLiteral("model"),          modelQ.value(0).toString()},
+                {QStringLiteral("calls"),          modelQ.value(1).toInt()},
+                {QStringLiteral("inputTokens"),    modelQ.value(2).toLongLong()},
+                {QStringLiteral("outputTokens"),   modelQ.value(3).toLongLong()},
+                {QStringLiteral("cacheHitTokens"), modelQ.value(4).toLongLong()},
+                {QStringLiteral("costCents"),      modelQ.value(5).toLongLong()},
+                {QStringLiteral("avgLatencyMs"),   modelQ.value(6).toInt()},
+            });
+        }
+    } else {
+        qWarning() << "tokenStatsDetailed byModel failed:" << modelQ.lastError().text();
+    }
+    out["byModel"] = byModel;
+
+    QVariantList byDay;
+    QSqlQuery dayQ(m_db);
+    dayQ.prepare(QStringLiteral(
+        "SELECT date(timestamp/1000,'unixepoch','localtime') AS d, COUNT(*), "
+        "COALESCE(SUM(input_tokens),0), COALESCE(SUM(output_tokens),0), "
+        "COALESCE(SUM(cache_hit_tokens),0), COALESCE(SUM(cost_cents),0) "
+        "FROM token_usage WHERE timestamp >= ? GROUP BY d ORDER BY d DESC LIMIT 31"));
+    dayQ.addBindValue(cutoff);
+    if (dayQ.exec()) {
+        while (dayQ.next()) {
+            byDay.append(QVariantMap{
+                {QStringLiteral("day"),            dayQ.value(0).toString()},
+                {QStringLiteral("calls"),          dayQ.value(1).toInt()},
+                {QStringLiteral("inputTokens"),    dayQ.value(2).toLongLong()},
+                {QStringLiteral("outputTokens"),   dayQ.value(3).toLongLong()},
+                {QStringLiteral("cacheHitTokens"), dayQ.value(4).toLongLong()},
+                {QStringLiteral("costCents"),      dayQ.value(5).toLongLong()},
+            });
+        }
+    } else {
+        qWarning() << "tokenStatsDetailed byDay failed:" << dayQ.lastError().text();
+    }
+    out["byDay"] = byDay;
+
+    return out;
+}
+
+// ── docs/16 §9.2: 按来源聚合（L5）─────────────────────
+// 7 个来源各返回 {source, inputTokens, outputTokens, cacheHitTokens, costCents}。
+// costCents 按来源 token 占总 token 比例分摊（明细表只存整次请求总费用）。
+QVariantList SqliteMemory::tokenStatsBySource(int recentDays) {
+    QVariantList out;
+    if (recentDays <= 0) recentDays = 30;
+    const qint64 cutoff = QDateTime::currentDateTime().addDays(-recentDays)
+                              .toMSecsSinceEpoch();
+
+    QSqlQuery q(m_db);
+    q.prepare(QStringLiteral(
+        "SELECT "
+        "COALESCE(SUM(input_system_prompt),0), COALESCE(SUM(input_conversation),0), "
+        "COALESCE(SUM(input_tool_call),0), COALESCE(SUM(input_mcp),0), "
+        "COALESCE(SUM(input_skill),0), COALESCE(SUM(input_image),0), "
+        "COALESCE(SUM(input_other),0), "
+        "COALESCE(SUM(output_conversation),0), COALESCE(SUM(output_tool_call),0), "
+        "COALESCE(SUM(output_mcp),0), COALESCE(SUM(output_skill),0), "
+        "COALESCE(SUM(output_other),0), "
+        "COALESCE(SUM(cache_hit_system_prompt),0), COALESCE(SUM(cache_hit_conversation),0), "
+        "COALESCE(SUM(cache_hit_tool_call),0), "
+        "COALESCE(SUM(cost_cents),0), "
+        "COALESCE(SUM(input_tokens),0)+COALESCE(SUM(output_tokens),0) "
+        "FROM token_usage WHERE timestamp >= ?"));
+    q.addBindValue(cutoff);
+    if (!q.exec() || !q.next()) {
+        qWarning() << "tokenStatsBySource failed:" << q.lastError().text();
+        return out;
+    }
+    const qint64 inSp     = q.value(0).toLongLong();
+    const qint64 inConv   = q.value(1).toLongLong();
+    const qint64 inTool   = q.value(2).toLongLong();
+    const qint64 inMcp    = q.value(3).toLongLong();
+    const qint64 inSkill  = q.value(4).toLongLong();
+    const qint64 inImg    = q.value(5).toLongLong();
+    const qint64 inOther  = q.value(6).toLongLong();
+    const qint64 outConv  = q.value(7).toLongLong();
+    const qint64 outTool  = q.value(8).toLongLong();
+    const qint64 outMcp   = q.value(9).toLongLong();
+    const qint64 outSkill = q.value(10).toLongLong();
+    const qint64 outOther = q.value(11).toLongLong();
+    const qint64 chSp     = q.value(12).toLongLong();
+    const qint64 chConv   = q.value(13).toLongLong();
+    const qint64 chTool   = q.value(14).toLongLong();
+    const qint64 totalCost   = q.value(15).toLongLong();
+    const qint64 totalTokens = q.value(16).toLongLong();
+
+    // 费用按 token 占比分摊到各来源（整数除法，余数归入最大来源可接受）。
+    const auto share = [totalTokens, totalCost](qint64 srcTokens) -> qint64 {
+        if (totalTokens <= 0) return 0;
+        return totalCost * srcTokens / totalTokens;
+    };
+    const struct { const char* name; qint64 inT, outT, chT; } rows[] = {
+        {"system_prompt", inSp,    0,       chSp},
+        {"conversation",  inConv,  outConv, chConv},
+        {"tool_call",     inTool,  outTool, chTool},
+        {"mcp",           inMcp,   outMcp,  0},
+        {"skill",         inSkill, outSkill, 0},
+        {"image",         inImg,   0,       0},
+        {"other",         inOther, outOther, 0},
+    };
+    for (const auto& r : rows) {
+        QVariantMap m;
+        m[QStringLiteral("source")]         = QString::fromLatin1(r.name);
+        m[QStringLiteral("inputTokens")]    = r.inT;
+        m[QStringLiteral("outputTokens")]   = r.outT;
+        m[QStringLiteral("cacheHitTokens")] = r.chT;
+        m[QStringLiteral("costCents")]      = share(r.inT + r.outT + r.chT);
+        out.append(m);
+    }
+    return out;
+}
+
+// ── docs/16 §6.3: 成本核算聚合 ─────────────────────────
+// totalCostCents 取已存储的 SUM(cost_cents)；input/output/cacheHit 费用
+// 按各模型定价重新拆分（明细表只存总费用）。projectedMonthlyCents 按当月
+// 日均推算。
+QVariantMap SqliteMemory::costStats(int recentDays) {
+    QVariantMap out;
+    if (recentDays <= 0) recentDays = 30;
+    const qint64 cutoff = QDateTime::currentDateTime().addDays(-recentDays)
+                              .toMSecsSinceEpoch();
+
+    QSqlQuery modelQ(m_db);
+    modelQ.prepare(QStringLiteral(
+        "SELECT model, COUNT(*), "
+        "COALESCE(SUM(input_tokens),0), COALESCE(SUM(output_tokens),0), "
+        "COALESCE(SUM(cache_hit_tokens),0), COALESCE(SUM(cost_cents),0) "
+        "FROM token_usage WHERE timestamp >= ? GROUP BY model "
+        "ORDER BY SUM(cost_cents) DESC"));
+    modelQ.addBindValue(cutoff);
+
+    qint64 totalCost = 0, inputCost = 0, outputCost = 0, cacheHitCost = 0;
+    QVariantList byModel;
+    if (modelQ.exec()) {
+        while (modelQ.next()) {
+            const QString model = modelQ.value(0).toString();
+            const int calls     = modelQ.value(1).toInt();
+            const qint64 inT    = modelQ.value(2).toLongLong();
+            const qint64 outT   = modelQ.value(3).toLongLong();
+            const qint64 chT    = modelQ.value(4).toLongLong();
+            const qint64 storedCost = modelQ.value(5).toLongLong();
+            // 按模型定价拆分各方向费用（分），与 calculateCost 同公式。
+            int inP = 0, outP = 0, chP = 0;
+            PricingCalculator::getPricing(model, inP, outP, chP);
+            const qint64 billableInput = qMax(qint64(0), inT - chT);
+            const qint64 mInput  = (billableInput * inP  + kPerMillion - 1) / kPerMillion;
+            const qint64 mCache  = (qMax(qint64(0), chT) * chP + kPerMillion - 1) / kPerMillion;
+            const qint64 mOutput = (outT * outP + kPerMillion - 1) / kPerMillion;
+            inputCost    += mInput;
+            cacheHitCost += mCache;
+            outputCost   += mOutput;
+            totalCost    += storedCost;
+            byModel.append(QVariantMap{
+                {QStringLiteral("model"),     model},
+                {QStringLiteral("calls"),     calls},
+                {QStringLiteral("tokens"),    inT + outT},
+                {QStringLiteral("costCents"), storedCost},
+            });
+        }
+    } else {
+        qWarning() << "costStats byModel failed:" << modelQ.lastError().text();
+    }
+    out["totalCostCents"]    = totalCost;
+    out["inputCostCents"]    = inputCost;
+    out["outputCostCents"]   = outputCost;
+    out["cacheHitCostCents"] = cacheHitCost;
+    out["byModel"]           = byModel;
+
+    QVariantList byDay;
+    QSqlQuery dayQ(m_db);
+    dayQ.prepare(QStringLiteral(
+        "SELECT date(timestamp/1000,'unixepoch','localtime') AS d, COUNT(*), "
+        "COALESCE(SUM(input_tokens),0)+COALESCE(SUM(output_tokens),0), "
+        "COALESCE(SUM(cost_cents),0) "
+        "FROM token_usage WHERE timestamp >= ? GROUP BY d ORDER BY d DESC LIMIT 31"));
+    dayQ.addBindValue(cutoff);
+    if (dayQ.exec()) {
+        while (dayQ.next()) {
+            byDay.append(QVariantMap{
+                {QStringLiteral("day"),       dayQ.value(0).toString()},
+                {QStringLiteral("calls"),     dayQ.value(1).toInt()},
+                {QStringLiteral("tokens"),    dayQ.value(2).toLongLong()},
+                {QStringLiteral("costCents"), dayQ.value(3).toLongLong()},
+            });
+        }
+    } else {
+        qWarning() << "costStats byDay failed:" << dayQ.lastError().text();
+    }
+    out["byDay"] = byDay;
+
+    // 预估月费用：当月已消耗 / 已过天数 × 当月总天数。
+    const QDate today      = QDate::currentDate();
+    const QDate monthStart(today.year(), today.month(), 1);
+    const int daysElapsed = monthStart.daysTo(today) + 1;
+    qint64 monthlyUsed = 0;
+    {
+        const qint64 monthCutoff = QDateTime(monthStart, QTime(0, 0)).toMSecsSinceEpoch();
+        QSqlQuery mq(m_db);
+        mq.prepare(QStringLiteral(
+            "SELECT COALESCE(SUM(cost_cents),0) FROM token_usage WHERE timestamp >= ?"));
+        mq.addBindValue(monthCutoff);
+        if (mq.exec() && mq.next()) monthlyUsed = mq.value(0).toLongLong();
+    }
+    const int daysInMonth = today.daysInMonth();
+    out["projectedMonthlyCents"] = daysElapsed > 0
+        ? monthlyUsed * daysInMonth / daysElapsed
+        : 0;
+
+    return out;
+}
+
+// ── docs/16 §7.2: 配额状态查询 ─────────────────────────
+// 返回当日/当月已消耗 token 与费用（分），供 AIAgent::checkQuota 判断。
+QVariantMap SqliteMemory::quotaStatus() {
+    QVariantMap out;
+    const QDate today      = QDate::currentDate();
+    const QDate monthStart(today.year(), today.month(), 1);
+    const qint64 dayCutoff   = QDateTime(today,      QTime(0, 0)).toMSecsSinceEpoch();
+    const qint64 monthCutoff = QDateTime(monthStart, QTime(0, 0)).toMSecsSinceEpoch();
+
+    QSqlQuery q(m_db);
+    // 当日
+    q.prepare(QStringLiteral(
+        "SELECT COALESCE(SUM(input_tokens),0)+COALESCE(SUM(output_tokens),0), "
+        "COALESCE(SUM(cost_cents),0) FROM token_usage WHERE timestamp >= ?"));
+    q.addBindValue(dayCutoff);
+    qint64 dailyTokens = 0, dailyCost = 0;
+    if (q.exec() && q.next()) {
+        dailyTokens = q.value(0).toLongLong();
+        dailyCost   = q.value(1).toLongLong();
+    } else {
+        qWarning() << "quotaStatus daily failed:" << q.lastError().text();
+    }
+    // 当月
+    q.prepare(QStringLiteral(
+        "SELECT COALESCE(SUM(input_tokens),0)+COALESCE(SUM(output_tokens),0), "
+        "COALESCE(SUM(cost_cents),0) FROM token_usage WHERE timestamp >= ?"));
+    q.addBindValue(monthCutoff);
+    qint64 monthlyTokens = 0, monthlyCost = 0;
+    if (q.exec() && q.next()) {
+        monthlyTokens = q.value(0).toLongLong();
+        monthlyCost   = q.value(1).toLongLong();
+    } else {
+        qWarning() << "quotaStatus monthly failed:" << q.lastError().text();
+    }
+
+    out["dailyTokensUsed"]      = dailyTokens;
+    out["dailyCostCentsUsed"]   = dailyCost;
+    out["monthlyTokensUsed"]    = monthlyTokens;
+    out["monthlyCostCentsUsed"] = monthlyCost;
+    return out;
 }
 
 } // namespace NexusAI

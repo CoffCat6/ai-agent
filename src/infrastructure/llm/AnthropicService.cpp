@@ -199,6 +199,11 @@ LLMResponse AnthropicService::parseResponse(const QJsonObject& json) {
     const QJsonObject usage = json.value("usage").toObject();
     response.tokensUsed = usage.value("input_tokens").toInt()
                         + usage.value("output_tokens").toInt();
+    // docs/16 §5.1 / 附录 A: 分类 token 计数（来自 API usage 对象）
+    response.promptTokens = usage.value("input_tokens").toInt();
+    response.completionTokens = usage.value("output_tokens").toInt();
+    response.cacheReadTokens = usage.value("cache_read_input_tokens").toInt();
+    response.cacheCreationTokens = usage.value("cache_creation_input_tokens").toInt();
     return response;
 }
 

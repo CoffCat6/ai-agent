@@ -54,6 +54,8 @@ add_library(nexus_core STATIC
     src/core/rag/RagService.cpp
     src/core/rag/KnowledgeSearchTool.h
     src/core/utils/TokenEstimator.h
+    src/core/utils/PricingCalculator.h
+    src/core/utils/PricingCalculator.cpp
     src/core/utils/Logger.h
     src/core/utils/Logger.cpp
     src/core/utils/Activity.h

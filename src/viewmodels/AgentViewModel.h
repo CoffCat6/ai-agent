@@ -76,6 +76,8 @@ class AgentViewModel : public QObject {
     // Follows the live agent's context limit when attached (needs refresh
     // notifications, hence not CONSTANT).
     Q_PROPERTY(int maxTokens READ maxTokens NOTIFY tokenUsageChanged FINAL)
+    // docs/16 §8: per-request cost (cents) for the TopBar live display.
+    Q_PROPERTY(qint64 lastCostCents READ lastCostCents NOTIFY costChanged FINAL)
 
     // ── Sidebar ───────────────────────────────────────
     Q_PROPERTY(bool isSidebarExpanded READ isSidebarExpanded WRITE setIsSidebarExpanded NOTIFY sidebarExpandedChanged FINAL)
@@ -224,6 +226,8 @@ public:
     double tokenUsageRate() const;
     int usedTokens() const { return active()->usedTokens(); }
     int maxTokens() const { return active()->maxTokens(); }
+    // docs/16 §8: last per-request cost (cents), updated via costChanged.
+    qint64 lastCostCents() const { return m_lastCostCents; }
 
     // Tool registry
     QVariantList toolRegistryModel() const { return m_toolRegistryModel; }
@@ -292,6 +296,11 @@ public:
     Q_INVOKABLE int clearEpisodic();
     // M1 (stats): token/cost aggregation for the usage page.
     Q_INVOKABLE QVariantMap tokenStats(int recentDays = 30);
+    // docs/16 §8: detailed aggregates for the extended usage page.
+    Q_INVOKABLE QVariantMap tokenStatsDetailed(int recentDays = 30);
+    Q_INVOKABLE QVariantList tokenStatsBySource(int recentDays = 30);
+    Q_INVOKABLE QVariantMap costStats(int recentDays = 30);
+    Q_INVOKABLE QVariantMap quotaStatus();
     Q_INVOKABLE QString logFilePath() const;   // runtime log file path (for the audit dialog)
 
 signals:
@@ -309,6 +318,8 @@ signals:
     void defaultPanelVisibleChanged();
     void restoreWindowOnStartupChanged();
     void tokenUsageChanged();
+    // docs/16 §8: per-request cost changed (cents).
+    void costChanged(qint64 costCents);
     void sessionListChanged();
     void currentSessionIdChanged();
     void searchResultsChanged();
@@ -352,6 +363,8 @@ private:
     int m_activeTab{0};
     std::function<AIAgent*()> m_agentFactory;
     AIAgent* m_templateAgent{nullptr};
+    // docs/16 §8: last per-request cost for the TopBar display.
+    qint64 m_lastCostCents{0};
 
     // ── Global services ───────────────────────────────
     RagService* m_rag{nullptr};

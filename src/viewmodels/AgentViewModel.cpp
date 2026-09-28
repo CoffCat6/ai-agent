@@ -193,6 +193,13 @@ ChatSessionController* AgentViewModel::ensureTab() {
     connect(controller, &ChatSessionController::tokenUsageChanged, this, [this, controller] {
         if (controller == active()) emit tokenUsageChanged();
     });
+    // docs/16 §8: forward per-request cost to the TopBar live display.
+    connect(controller, &ChatSessionController::costChanged, this, [this, controller](qint64 costCents) {
+        if (controller == active()) {
+            m_lastCostCents = costCents;
+            emit costChanged(costCents);
+        }
+    });
     connect(controller, &ChatSessionController::currentSessionIdChanged, this, [this, controller] {
         if (controller == active()) emit currentSessionIdChanged();
         emit tabsChanged();   // tab title follows the session
@@ -235,6 +242,7 @@ void AgentViewModel::activateTab(int index) {
     emit responseReady();
     emit draftTextChanged();
     emit tokenUsageChanged();
+    emit costChanged(m_lastCostCents);
     emit currentSessionIdChanged();
     emit activeTabChanged();
     emit tabsChanged();
@@ -664,6 +672,24 @@ int AgentViewModel::clearEpisodic() {
 
 QVariantMap AgentViewModel::tokenStats(int recentDays) {
     return m_memory ? m_memory->tokenStats(recentDays) : QVariantMap{};
+}
+
+// docs/16 §8: forward to IMemory (SqliteMemory) so QML can call
+// AgentVM.tokenStatsDetailed / costStats / quotaStatus directly.
+QVariantMap AgentViewModel::tokenStatsDetailed(int recentDays) {
+    return m_memory ? m_memory->tokenStatsDetailed(recentDays) : QVariantMap{};
+}
+
+QVariantList AgentViewModel::tokenStatsBySource(int recentDays) {
+    return m_memory ? m_memory->tokenStatsBySource(recentDays) : QVariantList{};
+}
+
+QVariantMap AgentViewModel::costStats(int recentDays) {
+    return m_memory ? m_memory->costStats(recentDays) : QVariantMap{};
+}
+
+QVariantMap AgentViewModel::quotaStatus() {
+    return m_memory ? m_memory->quotaStatus() : QVariantMap{};
 }
 
 QString AgentViewModel::logFilePath() const {

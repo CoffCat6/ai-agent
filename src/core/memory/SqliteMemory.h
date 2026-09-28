@@ -43,6 +43,13 @@ public:
     // M1 (stats): token/cost aggregation from audit_log task_complete rows.
     QVariantMap tokenStats(int recentDays = 30) override;
 
+    // docs/16 §4.4: 分类 token 明细与聚合查询（token_usage 表）。
+    void logTokenUsage(const QVariantMap& record) override;
+    QVariantMap tokenStatsDetailed(int recentDays = 30) override;
+    QVariantList tokenStatsBySource(int recentDays = 30) override;
+    QVariantMap costStats(int recentDays = 30) override;
+    QVariantMap quotaStatus() override;
+
     void clear(const QString& sessionId) override;
 
     // Session bookkeeping
@@ -110,6 +117,9 @@ private:
     // L3: upgrade episodic_fts to the trigram tokenizer (matches messages_fts).
     // Idempotent: no-op when the table already uses trigram.
     void migrateEpisodicFts();
+    // docs/16 §4.2: 首次启动预置 11 个模型的公开定价（INSERT OR IGNORE，
+    // 不覆盖用户自定义）。刷新 PricingCalculator 缓存在 initDatabase 末尾。
+    void seedModelPricing();
 
     QSqlDatabase m_db;
     QString m_dbPath;
