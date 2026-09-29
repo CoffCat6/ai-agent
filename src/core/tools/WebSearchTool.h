@@ -37,6 +37,7 @@ public:
             "configured search provider; only use it when the current user "
             "message needs live web content that the model cannot answer.";
         def.level = ToolLevel::RequiresConfirm;
+        def.autoEditSafe = true;   // 会话"自动编辑"模式放行
         def.parameters = QJsonObject{
             {"type", "object"},
             {"properties", QJsonObject{

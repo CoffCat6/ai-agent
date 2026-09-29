@@ -255,6 +255,8 @@ void SettingsService::load() {
     m_monthlyTokenQuota = qMax(0, settings.value("monthlyTokenQuota", 0).toInt());
     m_monthlyCostQuotaCents = qMax(0, settings.value("monthlyCostQuotaCents", 0).toInt());
     m_strictQuotaMode = settings.value("strictQuotaMode", false).toBool();
+    m_defaultPermissionMode = settings.value("agent/defaultPermissionMode",
+                                             QStringLiteral("confirm")).toString();
 }
 
 // Single-provider layout (pre-0.3): provider, apiKey, <provider>/baseUrl,
@@ -650,6 +652,17 @@ void SettingsService::setStrictQuotaMode(bool v) {
     m_strictQuotaMode = v;
     QSettings().setValue("strictQuotaMode", v);
     emit strictQuotaModeChanged();
+}
+
+void SettingsService::setDefaultPermissionMode(const QString& v) {
+    // 只接受 PermissionMode 的三种字符串形式；未知值回落 confirm。
+    if (v != QLatin1String("confirm") && v != QLatin1String("auto_edit")
+            && v != QLatin1String("full_access"))
+        return;
+    if (m_defaultPermissionMode == v) return;
+    m_defaultPermissionMode = v;
+    QSettings().setValue("agent/defaultPermissionMode", v);
+    emit defaultPermissionModeChanged();
 }
 
 // Capability-table lookup: returns the context window for a provider+model,

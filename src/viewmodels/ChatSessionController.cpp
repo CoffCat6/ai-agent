@@ -53,6 +53,31 @@ void ChatSessionController::attachAgent(AIAgent* agent, bool owned) {
         m_currentSessionId.clear();
         emit currentSessionIdChanged();
     }
+    if (m_agent) {
+        // The controller mirror is authoritative for UX continuity (the
+        // mode survives simulation toggles); push it into the freshly
+        // attached agent. Detached phases leave the mirror unchanged.
+        m_agent->setPermissionMode(static_cast<PermissionMode>(m_permissionMode));
+    }
+}
+
+void ChatSessionController::setPermissionMode(int mode) {
+    if (mode < 0 || mode > 2 || mode == m_permissionMode) return;
+    m_permissionMode = mode;
+    m_permissionModeOverridden = true;
+    if (m_agent)
+        m_agent->setPermissionMode(static_cast<PermissionMode>(mode));
+    emit permissionModeChanged();
+}
+
+void ChatSessionController::applyDefaultPermissionMode(int mode) {
+    if (mode < 0 || mode > 2 || m_permissionModeOverridden
+            || mode == m_permissionMode)
+        return;
+    m_permissionMode = mode;
+    if (m_agent)
+        m_agent->setPermissionMode(static_cast<PermissionMode>(mode));
+    emit permissionModeChanged();
 }
 
 void ChatSessionController::connectAgent(AIAgent* agent) {

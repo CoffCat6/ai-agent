@@ -12,6 +12,7 @@
 
 #include "AgentState.h"
 #include "LLMTypes.h"
+#include "PermissionMode.h"
 
 namespace NexusAI {
 
@@ -69,6 +70,12 @@ public:
     // docs/16 §8.3: 实时上下文构成（按 role 拆分的 token 桶 + tools schema
     // 预留），供 TopBar 容量占比浮层展示。
     QVariantMap contextComposition() const;
+
+    // 会话级权限模式（变更确认/自动编辑/完全访问）。决定确认级工具是否
+    // 逐次人工确认；任务进行中切换立即对下一个工具调用生效。内存态，
+    // 不持久化——新会话由调用方注入全局默认（SettingsService）。
+    void setPermissionMode(PermissionMode mode);
+    PermissionMode permissionMode() const { return m_permissionMode; }
 
     // Batch 22 (F8): user-editable system prompt; empty (after trim) clears
     // the override and falls back to the built-in prompt.
@@ -167,9 +174,10 @@ private:
     void persistTraceNode(const QJsonObject& node, int order);
     // traceNodeId: existing tool_call node to flip to "running" (approval
     // path), or empty to append a fresh one (auto-execution path).
-    void dispatchToolExecution(const ToolCallInfo& call, const QString& traceNodeId);
+    void dispatchToolExecution(const ToolCallInfo& call, const QString& traceNodeId,
+                               bool autoApproved = false);
     void finishToolExecution(const ToolCallInfo& call, const QString& traceNodeId,
-                             const ToolResult& result);
+                             const ToolResult& result, bool autoApproved = false);
     void appendToolResultMessage(const ToolCallInfo& call, const QString& content);
     void finishTask(const QString& finalText, bool summaryTraced = false);
     void failTask(const QString& error);
@@ -226,6 +234,8 @@ private:
     QString m_thinkingNodeId;
 
     int m_contextLimit{8192};
+
+    PermissionMode m_permissionMode{PermissionMode::ConfirmChanges};
 
     IAIService* m_llmService{nullptr};
     ToolRegistry* m_toolRegistry{nullptr};

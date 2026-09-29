@@ -22,6 +22,7 @@
 #include "viewmodels/LocaleProbe.h"
 #include "viewmodels/I18nManager.h"
 #include "core/agent/AIAgent.h"
+#include "core/agent/PermissionMode.h"
 #include "core/memory/SqliteMemory.h"
 #include "core/agent/EpisodicService.h"
 #include "core/tools/ToolRegistry.h"
@@ -554,6 +555,16 @@ qInfo() << "NexusAI" << app.applicationVersion() << "starting";
     };
     applySystemPrompt();
     QObject::connect(settings, &SettingsService::systemPromptOverrideChanged, &app, applySystemPrompt);
+
+    // 会话权限模式的全局默认：注入 VM，新 tab 继承；未被用户显式切换过的
+    // 既有 tab 追补生效。
+    const auto applyPermissionMode = [agentVM, settings]() {
+        agentVM->setDefaultPermissionMode(static_cast<int>(
+            permissionModeFromString(settings->defaultPermissionMode())));
+    };
+    applyPermissionMode();
+    QObject::connect(settings, &SettingsService::defaultPermissionModeChanged,
+                     &app, applyPermissionMode);
 
     // FEAT-801: switching the embedding model invalidates every stored
     // chunk vector → full knowledge re-embed in the background (the new

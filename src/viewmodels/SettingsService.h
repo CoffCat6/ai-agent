@@ -60,6 +60,9 @@ class SettingsService : public QObject {
     Q_PROPERTY(int monthlyTokenQuota READ monthlyTokenQuota WRITE setMonthlyTokenQuota NOTIFY monthlyTokenQuotaChanged)
     Q_PROPERTY(int monthlyCostQuotaCents READ monthlyCostQuotaCents WRITE setMonthlyCostQuotaCents NOTIFY monthlyCostQuotaCentsChanged)
     Q_PROPERTY(bool strictQuotaMode READ strictQuotaMode WRITE setStrictQuotaMode NOTIFY strictQuotaModeChanged)
+    // 会话权限模式的"全局默认"：新会话/tab 的初始模式。取值
+    // "confirm"/"auto_edit"/"full_access"（PermissionMode 字符串形式）。
+    Q_PROPERTY(QString defaultPermissionMode READ defaultPermissionMode WRITE setDefaultPermissionMode NOTIFY defaultPermissionModeChanged)
     Q_PROPERTY(QString appVersion READ appVersion CONSTANT)
 
 public:
@@ -134,6 +137,9 @@ public:
     bool strictQuotaMode() const { return m_strictQuotaMode; }
     void setStrictQuotaMode(bool v);
 
+    QString defaultPermissionMode() const { return m_defaultPermissionMode; }
+    void setDefaultPermissionMode(const QString& v);
+
     static QString appVersion() { return QCoreApplication::applicationVersion(); }
 
     // ── Profile management (QML invokables) ───────────
@@ -188,6 +194,7 @@ signals:
     void monthlyTokenQuotaChanged();
     void monthlyCostQuotaCentsChanged();
     void strictQuotaModeChanged();
+    void defaultPermissionModeChanged();
 
 private:
     void load();
@@ -214,6 +221,7 @@ private:
     int m_monthlyTokenQuota{0};
     int m_monthlyCostQuotaCents{0};
     bool m_strictQuotaMode{false};
+    QString m_defaultPermissionMode{QStringLiteral("confirm")};
 
     static SettingsService* s_instance;
 };

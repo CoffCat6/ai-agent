@@ -48,6 +48,16 @@ public:
     int usedTokens() const { return m_usedTokens; }
     int maxTokens() const;
 
+    // 会话级权限模式（0=变更确认 1=自动编辑 2=完全访问）。QML 经
+    // AgentViewModel 写入，转发给本 tab 的 agent；镜像成员在 agent 未挂接
+    // （模拟模式）期间也保持可读。内存态，不持久化。
+    int permissionMode() const { return m_permissionMode; }
+    // 用户显式切换：标记 overridden，此后全局默认变更不再影响本 tab。
+    void setPermissionMode(int mode);
+    // 全局默认下发：只作用于尚未被用户显式切换过的 tab（含 VM 构造时
+    // 尚未注入默认值的首个 tab）。
+    void applyDefaultPermissionMode(int mode);
+
     // Batch 30 (F6): images are compressed data URLs from the viewmodel;
     // files are {name, content} text attachments (folded into the request
     // text by the agent).
@@ -91,6 +101,9 @@ signals:
     // cost and quota threshold warnings.
     void costChanged(qint64 costCents);
     void quotaWarning(const QString& quotaType, qint64 used, qint64 quota);
+    // Session permission mode changed (AgentViewModel re-emits for the
+    // active tab; SessionTabs reads it via tabModel for background tabs).
+    void permissionModeChanged();
 
 private:
     void setState(AgentState state);
@@ -110,6 +123,8 @@ private:
     QString m_draftText;
     QString m_currentSessionId;
     int m_usedTokens{0};
+    int m_permissionMode{0};            // PermissionMode as int; 0 = ConfirmChanges
+    bool m_permissionModeOverridden{false};
 
     QTimer m_simTimer;
     int m_simStep{0};

@@ -395,6 +395,9 @@ private slots:
         llm.reset();
         agent.setContextLimit(8192);
         agent.setMemory(nullptr);
+        // 权限模式用例会改动本实例（QtTest 全程共用一个测试对象），
+        // 每个用例前回落默认，防止泄漏到后续用例。
+        agent.setPermissionMode(PermissionMode::ConfirmChanges);
         agent.resetSession();
     }
 
@@ -412,6 +415,10 @@ private slots:
     void safeToolFeedbackLoop();
     void confirmApproveWritesFile();
     void confirmDeclineFeedsRejection();
+    // 会话权限模式：AutoEdit/FullAccess 审批旁路矩阵
+    void autoEditBypassesFileTools();
+    void autoEditStillConfirmsShell();
+    void fullAccessBypassesShellButNotDangerous();
     void unknownToolFeedsError();
     void maxIterationsStops();
     void repeatedCallWithAnswerFinishes();
@@ -573,6 +580,90 @@ void TestAgent::confirmDeclineFeedsRejection() {
     QVERIFY(!QFile::exists(path));
     QVERIFY(toolMessageContent(llm.seenMessages.last(), "call_t0")
         .contains("User declined"));
+}
+
+// 自动编辑模式：write_file 免确认直接执行；确认框不出现。
+void TestAgent::autoEditBypassesFileTools() {
+    agent.setPermissionMode(PermissionMode::AutoEdit);
+    QCOMPARE(agent.permissionMode(), PermissionMode::AutoEdit);
+
+    QTemporaryDir dir(testDirTemplate());
+    QVERIFY(dir.isValid());
+    const QString path = dir.filePath("auto.txt");
+
+    llm.script.append(toolResponse("write_file",
+        QJsonObject{{"path", path}, {"content", "auto"}}));
+    llm.script.append(textResponse("done"));
+
+    QSignalSpy confirmSpy(&agent, &AIAgent::toolConfirmRequired);
+    QSignalSpy spy(&agent, &AIAgent::responseReady);
+    agent.startTask(QStringLiteral("write it"));
+    QTRY_COMPARE_WITH_TIMEOUT(spy.count(), 1, 15000);
+    QCOMPARE(confirmSpy.count(), 0);
+
+    QFile written(path);
+    QVERIFY(written.exists());
+    QVERIFY(written.open(QIODevice::ReadOnly));
+    QCOMPARE(QString::fromUtf8(written.readAll()), QStringLiteral("auto"));
+    written.close();
+}
+
+// 自动编辑模式：shell_exec 未声明 autoEditSafe，仍走逐次确认。
+void TestAgent::autoEditStillConfirmsShell() {
+    agent.setPermissionMode(PermissionMode::AutoEdit);
+
+    llm.script.append(toolResponse("shell_exec",
+        QJsonObject{{"command", "echo hi"}}));
+    llm.script.append(textResponse("fine"));
+
+    QSignalSpy confirmSpy(&agent, &AIAgent::toolConfirmRequired);
+    agent.startTask(QStringLiteral("run it"));
+    QTRY_COMPARE(confirmSpy.count(), 1);
+    QCOMPARE(agent.state(), AgentState::AwaitingToolConfirm);
+
+    QSignalSpy spy(&agent, &AIAgent::responseReady);
+    agent.approveToolCall(confirmSpy.first().first().toString(), false);
+    QTRY_COMPARE(spy.count(), 1);
+    QVERIFY(toolMessageContent(llm.seenMessages.last(), "call_t0")
+        .contains("User declined"));
+}
+
+// 完全访问：shell_exec 免确认；Dangerous 工具任何模式下仍落入确认分支。
+void TestAgent::fullAccessBypassesShellButNotDangerous() {
+    agent.setPermissionMode(PermissionMode::FullAccess);
+
+    llm.script.append(toolResponse("shell_exec",
+        QJsonObject{{"command", "echo nexus_full_access"}}));
+    llm.script.append(textResponse("done"));
+
+    QSignalSpy confirmSpy(&agent, &AIAgent::toolConfirmRequired);
+    QSignalSpy spy(&agent, &AIAgent::responseReady);
+    agent.startTask(QStringLiteral("run it"));
+    QTRY_COMPARE_WITH_TIMEOUT(spy.count(), 1, 15000);
+    QCOMPARE(confirmSpy.count(), 0);
+    QVERIFY(traceHas(agent.traceModel(), "tool_result", "shell_exec"));
+
+    // Dangerous probe：不进 schema 的工具被幻觉调用时，完全访问模式下
+    // 也必须等待人工确认（然后拒绝，不真正执行）。
+    DangerousProbeGuard guard;
+    ToolRegistry::instance().registerTool(std::make_unique<DangerousProbeTool>());
+    llm.script.append(toolResponse("test_dangerous", QJsonObject{}));
+    llm.script.append(textResponse("ok"));
+
+    agent.startTask(QStringLiteral("try it"));
+    QTRY_COMPARE(confirmSpy.count(), 1);
+    QCOMPARE(agent.state(), AgentState::AwaitingToolConfirm);
+    QSignalSpy spy2(&agent, &AIAgent::responseReady);
+    agent.approveToolCall(confirmSpy.first().first().toString(), false);
+    QTRY_COMPARE(spy2.count(), 1);
+    // 两个阶段共享 call_t0，取最后一条 tool 消息（本次拒绝的回执）。
+    QString declined;
+    for (const auto& entry : llm.seenMessages.last()) {
+        const QJsonObject msg = entry.toObject();
+        if (msg.value("role").toString() == QLatin1String("tool"))
+            declined = msg.value("content").toString();
+    }
+    QVERIFY2(declined.contains("User declined"), qPrintable(declined));
 }
 
 void TestAgent::unknownToolFeedsError() {

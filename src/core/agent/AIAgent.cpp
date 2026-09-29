@@ -255,6 +255,12 @@ QVariantMap AIAgent::contextComposition() const {
     return out;
 }
 
+// 会话级权限模式。纯状态切换：不打断进行中的任务，已在等待确认的调用
+// 不受影响（仍需人工决定），下一次 processNextToolCall 按新模式判定。
+void AIAgent::setPermissionMode(PermissionMode mode) {
+    m_permissionMode = mode;
+}
+
 // ── Session management ────────────────────────────────────
 
 QJsonArray AIAgent::sessionList() const {
@@ -1101,8 +1107,17 @@ void AIAgent::processNextToolCall() {
 
         const ToolDefinition def = tool->definition();
 
-        if (def.level == ToolLevel::RequiresConfirm
-                || def.level == ToolLevel::Dangerous) {
+        // 会话权限模式判定：Safe 恒直通；完全访问放行全部确认级工具；
+        // 自动编辑只放行声明 autoEditSafe 的工具（文件编辑/搜索抓取）。
+        // Dangerous 任何模式下都不自动执行——永远落入确认分支兜底。
+        const bool autoApproved =
+            def.level == ToolLevel::Safe
+            || (def.level == ToolLevel::RequiresConfirm
+                && (m_permissionMode == PermissionMode::FullAccess
+                    || (m_permissionMode == PermissionMode::AutoEdit
+                        && def.autoEditSafe)));
+
+        if (!autoApproved) {
             // Suspend the loop and ask the user. The confirmation handle is
             // the trace node id, matching what the QML timeline buttons send.
             m_confirmNodeId = appendTraceNode("tool_call", call.name, "waiting_confirm",
@@ -1113,7 +1128,7 @@ void AIAgent::processNextToolCall() {
             return; // resumes in approveToolCall()
         }
 
-        dispatchToolExecution(call, QString());
+        dispatchToolExecution(call, QString(), def.level != ToolLevel::Safe);
         return; // resumes in finishToolExecution()
     }
 
@@ -1123,7 +1138,8 @@ void AIAgent::processNextToolCall() {
 
 // ── Tool execution (worker thread) ────────────────────────
 
-void AIAgent::dispatchToolExecution(const ToolCallInfo& call, const QString& traceNodeId) {
+void AIAgent::dispatchToolExecution(const ToolCallInfo& call, const QString& traceNodeId,
+                                    bool autoApproved) {
     // Redundant-call detection lives in onLLMResponse (round-level, before
     // dispatch) - by the time we get here the call is worth executing.
 
@@ -1171,7 +1187,7 @@ void AIAgent::dispatchToolExecution(const ToolCallInfo& call, const QString& tra
 
     auto* watcher = new QFutureWatcher<ToolResult>(this);
     connect(watcher, &QFutureWatcherBase::finished, this,
-            [this, watcher, call, nodeId, epoch]() {
+            [this, watcher, call, nodeId, epoch, autoApproved]() {
         m_inFlightTools.remove(call.id);   // both paths: done is done
         const ToolResult result = watcher->result();
         watcher->deleteLater();
@@ -1181,7 +1197,7 @@ void AIAgent::dispatchToolExecution(const ToolCallInfo& call, const QString& tra
             updateTraceNodeStatusById(nodeId, "cancelled");
             return;
         }
-        finishToolExecution(call, nodeId, result);
+        finishToolExecution(call, nodeId, result, autoApproved);
     });
 
     // Tools are stateless; running them here keeps shell_exec / large file
@@ -1193,7 +1209,7 @@ void AIAgent::dispatchToolExecution(const ToolCallInfo& call, const QString& tra
 }
 
 void AIAgent::finishToolExecution(const ToolCallInfo& call, const QString& traceNodeId,
-                                  const ToolResult& result) {
+                                  const ToolResult& result, bool autoApproved) {
     m_currentExecutingCall = ToolCallInfo{};
     updateTraceNodeStatusById(traceNodeId, result.success ? "success" : "failed");
 
@@ -1212,6 +1228,7 @@ void AIAgent::finishToolExecution(const ToolCallInfo& call, const QString& trace
         // for mcp__<server>__<tool> dynamic tools.
         QString auditDetail = truncateText(
             result.success ? result.output : result.error, 500);
+        bool detailIsJson = false;
         if (call.name.startsWith(QStringLiteral("mcp__"))) {
             const QStringList parts = call.name.split(QStringLiteral("__"));
             if (parts.size() >= 3) {
@@ -1220,6 +1237,20 @@ void AIAgent::finishToolExecution(const ToolCallInfo& call, const QString& trace
                     {"mcp_server", parts.at(1)}};
                 auditDetail = QString::fromUtf8(
                     QJsonDocument(detail).toJson(QJsonDocument::Compact));
+                detailIsJson = true;
+            }
+        }
+        // 会话权限模式自动放行的确认级工具：审计行可追溯（标注模式）。
+        if (autoApproved) {
+            if (detailIsJson) {
+                QJsonObject detail = QJsonDocument::fromJson(
+                    auditDetail.toUtf8()).object();
+                detail["auto_approved"] = permissionModeToString(m_permissionMode);
+                auditDetail = QString::fromUtf8(
+                    QJsonDocument(detail).toJson(QJsonDocument::Compact));
+            } else {
+                auditDetail = QStringLiteral("[auto-approved:%1] %2")
+                    .arg(permissionModeToString(m_permissionMode), auditDetail);
             }
         }
         m_memory->logAudit(m_sessionId, "tool_execute", call.name,

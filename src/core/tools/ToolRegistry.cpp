@@ -99,6 +99,7 @@ public:
         def.description = "Write content to a file on the local filesystem. "
                           "Creates the file if it does not exist.";
         def.level = ToolLevel::RequiresConfirm;
+        def.autoEditSafe = true;   // 会话"自动编辑"模式放行；沙箱写策略仍生效
         QJsonObject props;
         props["path"] = stringParam("Absolute path to the file to write.");
         props["content"] = stringParam("Content to write to the file.");
@@ -148,6 +149,7 @@ public:
                           "an existing file with new_string. Prefer this over "
                           "write_file when only part of an existing file changes.";
         def.level = ToolLevel::RequiresConfirm;
+        def.autoEditSafe = true;   // 会话"自动编辑"模式放行；沙箱写策略仍生效
         QJsonObject props;
         props["path"] = stringParam("Absolute path to the file to edit.");
         props["old_string"] = stringParam("Exact text to replace (must occur exactly once).");

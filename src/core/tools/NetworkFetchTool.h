@@ -52,6 +52,7 @@ public:
             "content will be sent to the current model service. Only use it "
             "when the current user message actually needs live web content.";
         def.level = ToolLevel::RequiresConfirm;
+        def.autoEditSafe = true;   // 会话"自动编辑"模式放行
         def.parameters = QJsonObject{
             {"type", "object"},
             {"properties", QJsonObject{

@@ -25,6 +25,8 @@ const QVector<SettingsKeyDef>& SettingsSchema::registeredKeys() {
         {"monthlyTokenQuota",             0,                                  false},
         {"monthlyCostQuotaCents",         0,                                  false},
         {"strictQuotaMode",               false,                             false},
+        // 会话权限模式全局默认（confirm/auto_edit/full_access），新 tab 初始值。
+        {"agent/defaultPermissionMode",   QStringLiteral("confirm"),         false},
         {"ui/sidebarWidth",               QVariant(),                        false},
         {"ui/panelWidth",                 QVariant(),                        false},
         {"ui/panelVisible",               QVariant(),                        false},

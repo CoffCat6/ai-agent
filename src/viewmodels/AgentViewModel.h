@@ -10,6 +10,7 @@
 #include <functional>
 
 #include "core/agent/AgentState.h"
+#include "core/agent/PermissionMode.h"
 #include "ChatSessionController.h"
 #include "TraceModel.h"
 #include "LogModel.h"
@@ -66,6 +67,13 @@ class AgentViewModel : public QObject {
 
     // ── Input ─────────────────────────────────────────
     Q_PROPERTY(QString draftText READ draftText WRITE setDraftText NOTIFY draftTextChanged FINAL)
+
+    // ── Session permission mode (active tab) ──────────
+    // 0=变更确认 1=自动编辑 2=完全访问；常量属性供 QML 选择器建立模型。
+    Q_PROPERTY(int permissionMode READ permissionMode WRITE setPermissionMode NOTIFY permissionModeChanged FINAL)
+    Q_PROPERTY(int permissionModeConfirmChanges READ permissionModeConfirmChanges CONSTANT FINAL)
+    Q_PROPERTY(int permissionModeAutoEdit READ permissionModeAutoEdit CONSTANT FINAL)
+    Q_PROPERTY(int permissionModeFullAccess READ permissionModeFullAccess CONSTANT FINAL)
 
     // ── Context Panel ─────────────────────────────────
     Q_PROPERTY(bool isPanelVisible READ isPanelVisible WRITE setIsPanelVisible NOTIFY panelVisibleChanged FINAL)
@@ -169,6 +177,18 @@ public:
     int stateThinking() const { return static_cast<int>(AgentState::Thinking); }
     int stateAwaitingToolConfirm() const { return static_cast<int>(AgentState::AwaitingToolConfirm); }
     int stateExecutingTool() const { return static_cast<int>(AgentState::ExecutingTool); }
+
+    // Session permission mode of the ACTIVE tab (draftText pattern): the
+    // controller is authoritative per tab; switching tabs re-notifies.
+    int permissionMode() const { return active()->permissionMode(); }
+    void setPermissionMode(int mode);
+    int permissionModeConfirmChanges() const { return static_cast<int>(PermissionMode::ConfirmChanges); }
+    int permissionModeAutoEdit() const { return static_cast<int>(PermissionMode::AutoEdit); }
+    int permissionModeFullAccess() const { return static_cast<int>(PermissionMode::FullAccess); }
+    // Global default (from SettingsService) applied to newly created tabs;
+    // main.cpp injects it and re-injects when the setting changes. Also
+    // retro-applies to tabs the user has not explicitly switched.
+    void setDefaultPermissionMode(int mode);
     int stateSummarizing() const { return static_cast<int>(AgentState::Summarizing); }
     int stateCompleted() const { return static_cast<int>(AgentState::Completed); }
     int stateError() const { return static_cast<int>(AgentState::Error); }
@@ -327,6 +347,8 @@ signals:
     void costChanged(qint64 costCents);
     void sessionListChanged();
     void currentSessionIdChanged();
+    // Active tab's session permission mode changed (switch or tab switch).
+    void permissionModeChanged();
     void searchResultsChanged();
     void knowledgeChanged();
     void knowledgeBusyChanged();
@@ -370,6 +392,8 @@ private:
     AIAgent* m_templateAgent{nullptr};
     // docs/16 §8: last per-request cost for the TopBar display.
     qint64 m_lastCostCents{0};
+    // 全局默认权限模式（设置键 agent/defaultPermissionMode），仅用于新 tab。
+    int m_defaultPermissionMode{0};
 
     // ── Global services ───────────────────────────────
     RagService* m_rag{nullptr};

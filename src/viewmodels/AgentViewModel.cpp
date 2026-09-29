@@ -204,6 +204,10 @@ ChatSessionController* AgentViewModel::ensureTab() {
         if (controller == active()) emit currentSessionIdChanged();
         emit tabsChanged();   // tab title follows the session
     });
+    connect(controller, &ChatSessionController::permissionModeChanged, this, [this, controller] {
+        if (controller == active()) emit permissionModeChanged();
+        emit tabsChanged();   // background tabs show the mode badge
+    });
 
     // Surfaced no matter which tab they happened in: errors and tool
     // confirmations are global UX (the confirm dialog routes the decision
@@ -223,6 +227,11 @@ ChatSessionController* AgentViewModel::ensureTab() {
     // e.g. unit tests driving one shared agent) it runs the simulation.
     if (m_agentFactory && m_templateAgent)
         controller->attachAgent(m_agentFactory(), true);
+
+    // New tabs start at the configured global default permission mode
+    // (no-op for ConfirmChanges; also covers the initial tab created
+    // before main.cpp injected the setting).
+    controller->applyDefaultPermissionMode(m_defaultPermissionMode);
 
     emit tabsChanged();
     return controller;
@@ -244,6 +253,7 @@ void AgentViewModel::activateTab(int index) {
     emit tokenUsageChanged();
     emit costChanged(m_lastCostCents);
     emit currentSessionIdChanged();
+    emit permissionModeChanged();
     emit activeTabChanged();
     emit tabsChanged();
 }
@@ -294,6 +304,7 @@ QVariantList AgentViewModel::tabModel() const {
         tab["title"] = title;
         tab["busy"] = controller->isBusy();
         tab["active"] = i == m_activeTab;
+        tab["permissionMode"] = controller->permissionMode();
         model.append(tab);
     }
     return model;
@@ -897,6 +908,22 @@ void AgentViewModel::openLogFolder() {
 
 void AgentViewModel::setDraftText(const QString& text) {
     active()->setDraftText(text);
+}
+
+// ── Session permission mode ─────────────────────────────
+
+// QML 切换器的写入点：只作用于当前激活 tab，标记 overridden。
+void AgentViewModel::setPermissionMode(int mode) {
+    active()->setPermissionMode(mode);
+}
+
+void AgentViewModel::setDefaultPermissionMode(int mode) {
+    if (mode == m_defaultPermissionMode) return;
+    m_defaultPermissionMode = mode;
+    // 追补：VM 构造早于设置注入（首个 tab 已存在），且用户可能改了
+    // 默认值——未显式切换过的 tab 跟随新默认。
+    for (ChatSessionController* controller : m_tabs)
+        controller->applyDefaultPermissionMode(mode);
 }
 
 void AgentViewModel::setIsPanelVisible(bool visible) {

@@ -259,6 +259,15 @@ Item {
                 anchors.leftMargin: 4
                 onSettingsRequested: root.settingsRequested()
             }
+
+            // Session permission mode (confirm / auto-edit / full access)
+            PermissionModeSelector {
+                id: permissionBadge
+                anchors.top: inputConsole.bottom
+                anchors.topMargin: 4
+                anchors.left: modelBadge.right
+                anchors.leftMargin: 8
+            }
         }
     }
 }

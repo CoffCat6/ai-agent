@@ -1138,27 +1138,27 @@ and the model can retrieve their content to answer questions</translation>
         <translation>Interface Language</translation>
     </message>
     <message>
-        <location filename="../src/main.cpp" line="117"/>
+        <location filename="../src/main.cpp" line="118"/>
         <source>模型配置</source>
         <translation>Model Configuration</translation>
     </message>
     <message>
-        <location filename="../src/main.cpp" line="119"/>
+        <location filename="../src/main.cpp" line="120"/>
         <source>界面设置</source>
         <translation>Interface</translation>
     </message>
     <message>
-        <location filename="../src/main.cpp" line="121"/>
+        <location filename="../src/main.cpp" line="122"/>
         <source>通用设置</source>
         <translation>General</translation>
     </message>
     <message>
-        <location filename="../src/main.cpp" line="123"/>
+        <location filename="../src/main.cpp" line="124"/>
         <source>MCP 服务器</source>
         <translation>MCP Servers</translation>
     </message>
     <message>
-        <location filename="../src/main.cpp" line="125"/>
+        <location filename="../src/main.cpp" line="126"/>
         <source>工具管理</source>
         <translation>Tool management</translation>
     </message>
@@ -1167,17 +1167,17 @@ and the model can retrieve their content to answer questions</translation>
         <translation type="vanished">Tools &amp; Memory</translation>
     </message>
     <message>
-        <location filename="../src/main.cpp" line="128"/>
+        <location filename="../src/main.cpp" line="129"/>
         <source>记忆管理</source>
         <translation>Memory Management</translation>
     </message>
     <message>
-        <location filename="../src/main.cpp" line="131"/>
+        <location filename="../src/main.cpp" line="132"/>
         <source>用量统计</source>
         <translation>Usage Statistics</translation>
     </message>
     <message>
-        <location filename="../src/main.cpp" line="139"/>
+        <location filename="../src/main.cpp" line="140"/>
         <source>上次访问分类</source>
         <translation>Last Visited Category</translation>
     </message>
@@ -1185,22 +1185,22 @@ and the model can retrieve their content to answer questions</translation>
 <context>
     <name>NexusAI::AgentViewModel</name>
     <message>
-        <location filename="../src/viewmodels/AgentViewModel.cpp" line="289"/>
+        <location filename="../src/viewmodels/AgentViewModel.cpp" line="299"/>
         <source>新会话</source>
         <translation>New Session</translation>
     </message>
     <message>
-        <location filename="../src/viewmodels/AgentViewModel.cpp" line="359"/>
+        <location filename="../src/viewmodels/AgentViewModel.cpp" line="370"/>
         <source>导出失败：未连接持久化后端</source>
         <translation>Export failed: no persistent backend connected</translation>
     </message>
     <message>
-        <location filename="../src/viewmodels/AgentViewModel.cpp" line="364"/>
+        <location filename="../src/viewmodels/AgentViewModel.cpp" line="375"/>
         <source>导出失败：不支持的格式“%1”（可选 md / json）</source>
         <translation>Export failed: unsupported format &quot;%1&quot; (md / json)</translation>
     </message>
     <message>
-        <location filename="../src/viewmodels/AgentViewModel.cpp" line="379"/>
+        <location filename="../src/viewmodels/AgentViewModel.cpp" line="390"/>
         <source># NexusAI 会话导出
 
 </source>
@@ -1209,21 +1209,21 @@ and the model can retrieve their content to answer questions</translation>
 </translation>
     </message>
     <message>
-        <location filename="../src/viewmodels/AgentViewModel.cpp" line="380"/>
+        <location filename="../src/viewmodels/AgentViewModel.cpp" line="391"/>
         <source>- 会话 ID：%1
 </source>
         <translation>- Session ID: %1
 </translation>
     </message>
     <message>
-        <location filename="../src/viewmodels/AgentViewModel.cpp" line="381"/>
+        <location filename="../src/viewmodels/AgentViewModel.cpp" line="392"/>
         <source>- 导出时间：%1
 </source>
         <translation>- Exported at: %1
 </translation>
     </message>
     <message>
-        <location filename="../src/viewmodels/AgentViewModel.cpp" line="382"/>
+        <location filename="../src/viewmodels/AgentViewModel.cpp" line="393"/>
         <source>- 消息数：%1
 
 ---
@@ -1236,17 +1236,17 @@ and the model can retrieve their content to answer questions</translation>
 </translation>
     </message>
     <message>
-        <location filename="../src/viewmodels/AgentViewModel.cpp" line="386"/>
+        <location filename="../src/viewmodels/AgentViewModel.cpp" line="397"/>
         <source>用户</source>
         <translation>User</translation>
     </message>
     <message>
-        <location filename="../src/viewmodels/AgentViewModel.cpp" line="387"/>
+        <location filename="../src/viewmodels/AgentViewModel.cpp" line="398"/>
         <source>助手</source>
         <translation>Assistant</translation>
     </message>
     <message>
-        <location filename="../src/viewmodels/AgentViewModel.cpp" line="396"/>
+        <location filename="../src/viewmodels/AgentViewModel.cpp" line="407"/>
         <source>---
 
 ## 过程摘要
@@ -1259,77 +1259,77 @@ and the model can retrieve their content to answer questions</translation>
 </translation>
     </message>
     <message>
-        <location filename="../src/viewmodels/AgentViewModel.cpp" line="425"/>
+        <location filename="../src/viewmodels/AgentViewModel.cpp" line="436"/>
         <source>导出失败：无法写入 %1</source>
         <translation>Export failed: cannot write %1</translation>
     </message>
     <message>
-        <location filename="../src/viewmodels/AgentViewModel.cpp" line="430"/>
+        <location filename="../src/viewmodels/AgentViewModel.cpp" line="441"/>
         <source>导出失败：写入未完成 %1</source>
         <translation>Export failed: write incomplete %1</translation>
     </message>
     <message>
-        <location filename="../src/viewmodels/AgentViewModel.cpp" line="436"/>
+        <location filename="../src/viewmodels/AgentViewModel.cpp" line="447"/>
         <source>已导出会话（%1 条消息）：%2</source>
         <translation>Session exported (%1 messages): %2</translation>
     </message>
     <message>
-        <location filename="../src/viewmodels/AgentViewModel.cpp" line="494"/>
+        <location filename="../src/viewmodels/AgentViewModel.cpp" line="505"/>
         <source>无法读取文件：%1</source>
         <translation>Cannot read file: %1</translation>
     </message>
     <message>
-        <location filename="../src/viewmodels/AgentViewModel.cpp" line="499"/>
+        <location filename="../src/viewmodels/AgentViewModel.cpp" line="510"/>
         <source>无法打开文件：%1</source>
         <translation>Cannot open file: %1</translation>
     </message>
     <message>
-        <location filename="../src/viewmodels/AgentViewModel.cpp" line="510"/>
+        <location filename="../src/viewmodels/AgentViewModel.cpp" line="521"/>
         <source>文档内容已存在，已跳过：%1</source>
         <translation>Document content already exists, skipped: %1</translation>
     </message>
     <message>
-        <location filename="../src/viewmodels/AgentViewModel.cpp" line="540"/>
+        <location filename="../src/viewmodels/AgentViewModel.cpp" line="551"/>
         <source>未找到文档内容，无法重新嵌入：%1</source>
         <translation>Document content not found, cannot re-embed: %1</translation>
     </message>
     <message>
-        <location filename="../src/viewmodels/AgentViewModel.cpp" line="558"/>
+        <location filename="../src/viewmodels/AgentViewModel.cpp" line="569"/>
         <source>已重新嵌入 %1（%2 段）</source>
         <translation>Re-embedded %1 (%2 chunks)</translation>
     </message>
     <message>
-        <location filename="../src/viewmodels/AgentViewModel.cpp" line="560"/>
+        <location filename="../src/viewmodels/AgentViewModel.cpp" line="571"/>
         <source>重新嵌入失败：%1</source>
         <translation>Re-embedding failed: %1</translation>
     </message>
     <message>
-        <location filename="../src/viewmodels/AgentViewModel.cpp" line="564"/>
+        <location filename="../src/viewmodels/AgentViewModel.cpp" line="575"/>
         <source>已导入 %1（%2 段）</source>
         <translation>Imported %1 (%2 chunks)</translation>
     </message>
     <message>
-        <location filename="../src/viewmodels/AgentViewModel.cpp" line="566"/>
+        <location filename="../src/viewmodels/AgentViewModel.cpp" line="577"/>
         <source>导入失败（文件为空或无法分块）：%1</source>
         <translation>Import failed (file is empty or cannot be chunked): %1</translation>
     </message>
     <message>
-        <location filename="../src/viewmodels/AgentViewModel.cpp" line="568"/>
+        <location filename="../src/viewmodels/AgentViewModel.cpp" line="579"/>
         <source>知识库总量已达上限（最多 %1 段），请先删除部分文档后再导入</source>
         <translation>Knowledge base has reached its limit (max %1 chunks); delete some documents before importing</translation>
     </message>
     <message>
-        <location filename="../src/viewmodels/AgentViewModel.cpp" line="571"/>
+        <location filename="../src/viewmodels/AgentViewModel.cpp" line="582"/>
         <source>文件过大（超过单文档 %1 段上限）：%2</source>
         <translation>File too large (exceeds the per-document limit of %1 chunks): %2</translation>
     </message>
     <message>
-        <location filename="../src/viewmodels/AgentViewModel.cpp" line="807"/>
+        <location filename="../src/viewmodels/AgentViewModel.cpp" line="818"/>
         <source>文件过大（附件上限 %1 KB）：%2</source>
         <translation>File too large (attachment limit %1 KB): %2</translation>
     </message>
     <message>
-        <location filename="../src/viewmodels/AgentViewModel.cpp" line="812"/>
+        <location filename="../src/viewmodels/AgentViewModel.cpp" line="823"/>
         <source>暂不支持二进制文件作为附件：%1</source>
         <translation>Binary files are not supported as attachments yet: %1</translation>
     </message>
@@ -1383,24 +1383,90 @@ and the model can retrieve their content to answer questions</translation>
 <context>
     <name>NexusAI::SettingsService</name>
     <message>
-        <location filename="../src/viewmodels/SettingsService.cpp" line="312"/>
+        <location filename="../src/viewmodels/SettingsService.cpp" line="314"/>
         <source>新配置</source>
         <translation>New Profile</translation>
     </message>
     <message>
-        <location filename="../src/viewmodels/SettingsService.cpp" line="460"/>
+        <location filename="../src/viewmodels/SettingsService.cpp" line="462"/>
         <source>OpenAI 兼容</source>
         <translation>OpenAI Compatible</translation>
     </message>
     <message>
-        <location filename="../src/viewmodels/SettingsService.cpp" line="461"/>
+        <location filename="../src/viewmodels/SettingsService.cpp" line="463"/>
         <source>Ollama 本地</source>
         <translation>Ollama (Local)</translation>
     </message>
     <message>
-        <location filename="../src/viewmodels/SettingsService.cpp" line="462"/>
+        <location filename="../src/viewmodels/SettingsService.cpp" line="464"/>
         <source>Claude</source>
         <translation>Claude</translation>
+    </message>
+</context>
+<context>
+    <name>PermissionModeSelector</name>
+    <message>
+        <location filename="../src/ui/components/PermissionModeSelector.qml" line="28"/>
+        <location filename="../src/ui/components/PermissionModeSelector.qml" line="116"/>
+        <source>完全访问</source>
+        <translation>Full Access</translation>
+    </message>
+    <message>
+        <location filename="../src/ui/components/PermissionModeSelector.qml" line="29"/>
+        <location filename="../src/ui/components/PermissionModeSelector.qml" line="111"/>
+        <source>自动编辑</source>
+        <translation>Auto Edit</translation>
+    </message>
+    <message>
+        <location filename="../src/ui/components/PermissionModeSelector.qml" line="30"/>
+        <location filename="../src/ui/components/PermissionModeSelector.qml" line="106"/>
+        <source>变更确认</source>
+        <translation>Confirm Changes</translation>
+    </message>
+    <message>
+        <location filename="../src/ui/components/PermissionModeSelector.qml" line="33"/>
+        <source>会话权限模式</source>
+        <translation>Session Permission Mode</translation>
+    </message>
+    <message>
+        <location filename="../src/ui/components/PermissionModeSelector.qml" line="107"/>
+        <source>敏感工具执行前逐次询问（默认）</source>
+        <translation>Ask before every sensitive tool call (default)</translation>
+    </message>
+    <message>
+        <location filename="../src/ui/components/PermissionModeSelector.qml" line="112"/>
+        <source>自动执行文件编辑与搜索抓取；命令与 MCP 工具仍询问</source>
+        <translation>Auto-run file edits, web search and fetch; shell and MCP tools still ask</translation>
+    </message>
+    <message>
+        <location filename="../src/ui/components/PermissionModeSelector.qml" line="117"/>
+        <source>所有工具自动执行，不再询问</source>
+        <translation>Run every tool automatically without asking</translation>
+    </message>
+    <message>
+        <location filename="../src/ui/components/PermissionModeSelector.qml" line="218"/>
+        <source>启用完全访问？</source>
+        <translation>Enable Full Access?</translation>
+    </message>
+    <message>
+        <location filename="../src/ui/components/PermissionModeSelector.qml" line="226"/>
+        <source>本会话中所有工具（包括 shell 命令、文件写入、MCP 工具）</source>
+        <translation>In this session every tool (including shell commands, file writes, MCP tools)</translation>
+    </message>
+    <message>
+        <location filename="../src/ui/components/PermissionModeSelector.qml" line="227"/>
+        <source>都将不经逐次确认自动执行，仅在会话内生效，重启后回落到默认模式。确定继续吗？</source>
+        <translation>will run automatically without per-call approval. This lasts for the session only and resets to the default after restart. Continue?</translation>
+    </message>
+    <message>
+        <location filename="../src/ui/components/PermissionModeSelector.qml" line="239"/>
+        <source>取消</source>
+        <translation>Cancel</translation>
+    </message>
+    <message>
+        <location filename="../src/ui/components/PermissionModeSelector.qml" line="243"/>
+        <source>启用完全访问</source>
+        <translation>Enable Full Access</translation>
     </message>
 </context>
 <context>
@@ -1773,6 +1839,41 @@ and the model can retrieve their content to answer questions</translation>
         <location filename="../src/ui/pages/ToolsPage.qml" line="209"/>
         <source>清除搜索 API Key</source>
         <translation>Clear search API key</translation>
+    </message>
+    <message>
+        <location filename="../src/ui/pages/ToolsPage.qml" line="224"/>
+        <source>会话权限模式</source>
+        <translation>Session Permission Mode</translation>
+    </message>
+    <message>
+        <location filename="../src/ui/pages/ToolsPage.qml" line="232"/>
+        <source>新会话默认使用的工具审批级别。可在会话内随时通过输入框旁的模式选择器更改，仅对当前会话生效。</source>
+        <translation>Default tool-approval level for new sessions. Change anytime per session via the mode selector next to the input box; applies to that session only.</translation>
+    </message>
+    <message>
+        <location filename="../src/ui/pages/ToolsPage.qml" line="246"/>
+        <source>默认模式</source>
+        <translation>Default Mode</translation>
+    </message>
+    <message>
+        <location filename="../src/ui/pages/ToolsPage.qml" line="257"/>
+        <source>变更确认</source>
+        <translation>Confirm Changes</translation>
+    </message>
+    <message>
+        <location filename="../src/ui/pages/ToolsPage.qml" line="258"/>
+        <source>自动编辑</source>
+        <translation>Auto Edit</translation>
+    </message>
+    <message>
+        <location filename="../src/ui/pages/ToolsPage.qml" line="259"/>
+        <source>完全访问</source>
+        <translation>Full Access</translation>
+    </message>
+    <message>
+        <location filename="../src/ui/pages/ToolsPage.qml" line="268"/>
+        <source>默认权限模式</source>
+        <translation>Default Permission Mode</translation>
     </message>
 </context>
 <context>

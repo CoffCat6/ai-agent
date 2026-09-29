@@ -211,6 +211,64 @@ Item {
                     }
                 }
             }
+
+            // ── 会话权限模式 ──────────────────────────
+            ColumnLayout {
+                Layout.leftMargin: 24
+                Layout.rightMargin: 24
+                Layout.bottomMargin: 16
+                Layout.fillWidth: true
+                spacing: 8
+
+                Text {
+                    text: qsTr("会话权限模式")
+                    color: Theme.textSecondary
+                    font.pixelSize: Theme.fontSizeCaption
+                    font.bold: true
+                    font.family: Theme.fontMono
+                }
+
+                Text {
+                    text: qsTr("新会话默认使用的工具审批级别。可在会话内随时通过输入框旁的模式选择器更改，仅对当前会话生效。")
+                    color: Theme.textSecondary
+                    font.pixelSize: 10
+                    font.family: Theme.fontSans
+                    opacity: 0.8
+                    wrapMode: Text.Wrap
+                    Layout.fillWidth: true
+                }
+
+                RowLayout {
+                    Layout.fillWidth: true
+                    spacing: 8
+
+                    Text {
+                        text: qsTr("默认模式")
+                        color: Theme.textPrimary
+                        font.pixelSize: Theme.fontSizeBody
+                        font.family: Theme.fontSans
+                        Layout.fillWidth: true
+                    }
+                    ComboBox {
+                        id: permissionCombo
+                        Layout.preferredWidth: 200
+                        textRole: "label"
+                        model: [
+                            { key: "confirm",     label: qsTr("变更确认") },
+                            { key: "auto_edit",   label: qsTr("自动编辑") },
+                            { key: "full_access", label: qsTr("完全访问") }
+                        ]
+                        currentIndex: {
+                            const keys = ["confirm", "auto_edit", "full_access"]
+                            const i = keys.indexOf(Settings.defaultPermissionMode)
+                            return i >= 0 ? i : 0
+                        }
+                        onActivated: Settings.defaultPermissionMode =
+                            ["confirm", "auto_edit", "full_access"][currentIndex]
+                        Accessible.name: qsTr("默认权限模式")
+                    }
+                }
+            }
         }
     }
 }

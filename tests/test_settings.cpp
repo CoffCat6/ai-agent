@@ -43,6 +43,7 @@ public:
         webSearchProvider = s.value("webSearch/provider");
         webSearchApiKey = s.value("webSearch/apiKey");
         schemaVersion = s.value("schemaVersion");
+        defaultPermissionMode = s.value("agent/defaultPermissionMode");
     }
     ~SettingsGuard() {
         QSettings s("NexusAI", "NexusAI");
@@ -80,6 +81,9 @@ public:
         if (schemaVersion.isValid())
             s.setValue("schemaVersion", schemaVersion);
         else s.remove("schemaVersion");
+        if (defaultPermissionMode.isValid())
+            s.setValue("agent/defaultPermissionMode", defaultPermissionMode);
+        else s.remove("agent/defaultPermissionMode");
     }
     QVariant rawProfiles;
     QVariant activeId;
@@ -94,6 +98,7 @@ public:
     QVariant webSearchProvider;
     QVariant webSearchApiKey;
     QVariant schemaVersion;
+    QVariant defaultPermissionMode;
 };
 
 } // namespace
@@ -123,6 +128,40 @@ private slots:
         QVERIFY(models.contains(active.value("model").toString()));
     }
 
+    // 会话权限模式全局默认：默认 confirm；非法值被拒绝；合法值持久化。
+    void defaultPermissionModeSetting() {
+        SettingsGuard guard;
+        {
+            QSettings s("NexusAI", "NexusAI");
+            s.remove("agent/defaultPermissionMode");
+        }
+
+        SettingsService service(nullptr);
+        QCOMPARE(service.defaultPermissionMode(), QStringLiteral("confirm"));
+
+        QSignalSpy spy(&service, &SettingsService::defaultPermissionModeChanged);
+
+        service.setDefaultPermissionMode(QStringLiteral("auto_edit"));
+        QCOMPARE(service.defaultPermissionMode(), QStringLiteral("auto_edit"));
+        QCOMPARE(spy.count(), 1);
+
+        service.setDefaultPermissionMode(QStringLiteral("full_access"));
+        QCOMPARE(service.defaultPermissionMode(), QStringLiteral("full_access"));
+
+        // 非法值：拒绝且不发信号
+        service.setDefaultPermissionMode(QStringLiteral("yolo"));
+        QCOMPARE(service.defaultPermissionMode(), QStringLiteral("full_access"));
+        QCOMPARE(spy.count(), 2);
+
+        // 重启语义：新实例从 QSettings 读回
+        {
+            QSettings s("NexusAI", "NexusAI");
+            s.setValue("agent/defaultPermissionMode", QStringLiteral("auto_edit"));
+        }
+        SettingsService reloaded(nullptr);
+        QCOMPARE(reloaded.defaultPermissionMode(), QStringLiteral("auto_edit"));
+    }
+
     void modelSelectionAndSignals() {
         SettingsGuard guard;
         {
@@ -135,7 +174,6 @@ private slots:
         const QVariantMap active = service.activeProfile();
         const QString activeId = active.value("id").toString();
         const QString currentModel = active.value("model").toString();
-
         QSignalSpy activeProfileSpy(&service, &SettingsService::activeProfileChanged);
         QSignalSpy profilesSpy(&service, &SettingsService::profilesChanged);
 

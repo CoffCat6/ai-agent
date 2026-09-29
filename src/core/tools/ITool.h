@@ -18,6 +18,10 @@ struct ToolDefinition {
     QString description;
     QJsonObject parameters;  // JSON Schema for arguments
     ToolLevel level{ToolLevel::Safe};
+    // 会话权限模式（PermissionMode::AutoEdit）下可自动放行的工具：文件
+    // 编辑类与搜索/抓取类声明为 true；shell_exec、MCP 工具与一切未声明者
+    // 在任何自动模式下仍逐次确认。Dangerous 不受影响。
+    bool autoEditSafe{false};
 };
 
 // Tool execution result
