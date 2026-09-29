@@ -28,6 +28,11 @@ Rectangle {
     property string exportSessionId: ""
     property string exportFormat: "md"
 
+    // docs/17 树状共存: 项目节点展开状态（id → bool）。对象键变更不触发
+    // 绑定重算，expansionEpoch 作为失效标记强制刷新。
+    property var expandedProjects: ({})
+    property int expansionEpoch: 0
+
     // Fade the content out while collapsing so text never gets squeezed
     readonly property real contentFade: AgentVM.isSidebarExpanded ? 1.0 : 0.0
 
@@ -132,211 +137,322 @@ Rectangle {
             Accessible.onPressAction: AgentVM.openTab()
         }
 
-        // ── Projects (docs/17 A0: 项目级会话) ─────────
-        // 两区布局：项目在上、会话在下，各自可新建。新建项目 =
-        // FolderDialog 选目录；项目激活时会话列表只显示该项目会话。
-        Text {
-            Layout.topMargin: 16
-            Layout.leftMargin: 20
-            Layout.rightMargin: 12
-            text: "PROJECTS"
-            color: Theme.textSecondary
-            font.pixelSize: 10
-            font.family: Theme.fontMono
-            font.weight: Font.DemiBold
-        }
-
-        ColumnLayout {
-            visible: AgentVM.projects.length > 0
+        // ── Tree sidebar（docs/17 树状共存）──────────────
+        // 项目树与对话树共存：所有会话始终可见。点击项目行 = 激活
+        // 该项目（沙箱 + 新会话归属）并展开它；点击「对话」头 = 回到
+        // 本地对话模式。旧"切换视图互相隐藏"的交互废弃。
+        ScrollView {
+            id: treeScroll
+            visible: !root.searching
             Layout.fillWidth: true
-            Layout.leftMargin: 12
-            Layout.rightMargin: 12
-            Layout.topMargin: 6
-            spacing: 2
+            Layout.fillHeight: true
+            Layout.topMargin: 8
+            clip: true
 
-            Repeater {
-                model: AgentVM.projects
+            ColumnLayout {
+                id: treeCol
+                width: treeScroll.width
+                spacing: 2
 
-                delegate: Rectangle {
-                    id: projectDelegate
-                    required property var modelData
-                    readonly property bool isActive:
-                        AgentVM.activeProjectId === modelData.id
+                // ── 项目树头 ──────────────────────────────
+                RowLayout {
                     Layout.fillWidth: true
+                    Layout.leftMargin: 20
+                    Layout.rightMargin: 12
+                    Layout.topMargin: 8
+
+                    Text {
+                        text: "PROJECTS"
+                        color: Theme.textSecondary
+                        font.pixelSize: 10
+                        font.family: Theme.fontMono
+                        font.weight: Font.DemiBold
+                    }
+                    Item { Layout.fillWidth: true }
+
+                    Rectangle {
+                        width: 22; height: 22; radius: 4
+                        color: importMA.containsMouse
+                            ? Theme.surfaceHover : "transparent"
+                        AppIcon {
+                            anchors.centerIn: parent
+                            icon: "add"
+                            size: 12
+                            iconColor: importMA.containsMouse
+                                ? Theme.brandPrimary : Theme.textSecondary
+                        }
+                        MouseArea {
+                            id: importMA
+                            anchors.fill: parent
+                            hoverEnabled: true
+                            cursorShape: Qt.PointingHandCursor
+                            onClicked: importProjectDialog.open()
+                        }
+                        Accessible.role: Accessible.Button
+                        Accessible.name: qsTr("导入项目")
+                    }
+                }
+
+                Repeater {
+                    model: AgentVM.projects
+
+                    delegate: ColumnLayout {
+                        id: projectNode
+                        required property var modelData
+                        readonly property bool isActive:
+                            AgentVM.activeProjectId === modelData.id
+                        readonly property bool expanded:
+                            isActive
+                            || (root.expandedProjects[modelData.id] === true
+                                && root.expansionEpoch >= 0)
+                        readonly property var projectSessions: {
+                            root.expansionEpoch   // 失效标记：强制重算
+                            return AgentVM.sessionList.filter(function(s) {
+                                return s.projectId === projectNode.modelData.id
+                            })
+                        }
+                        Layout.fillWidth: true
+                        spacing: 2
+
+                        // 项目头行：点击 = 激活 + 展开（不再 toggle 退出）
+                        Rectangle {
+                            id: projectHeader
+                            property bool confirmDelete: false
+                            Layout.fillWidth: true
+                            Layout.preferredHeight: 32
+                            radius: 6
+                            color: projectMA.containsMouse || projectNode.isActive
+                                ? Theme.surfaceHover : "transparent"
+
+                            Row {
+                                anchors.fill: parent
+                                anchors.leftMargin: 8
+                                anchors.rightMargin: 32
+                                spacing: 6
+
+                                AppIcon {
+                                    anchors.verticalCenter: parent.verticalCenter
+                                    icon: projectNode.expanded
+                                        ? "chevron-down" : "chevron-right"
+                                    size: 11
+                                    iconColor: Theme.textSecondary
+                                }
+                                AppIcon {
+                                    anchors.verticalCenter: parent.verticalCenter
+                                    icon: "folder"
+                                    size: 13
+                                    iconColor: projectNode.isActive
+                                        ? Theme.brandPrimary : Theme.textSecondary
+                                }
+                                Text {
+                                    anchors.verticalCenter: parent.verticalCenter
+                                    width: parent.width - parent.spacing * 2 - 24
+                                    text: projectNode.modelData.name
+                                    color: projectNode.isActive
+                                        ? Theme.brandPrimary : Theme.textPrimary
+                                    font.pixelSize: Theme.fontSizeCaption
+                                    font.family: Theme.fontSans
+                                    elide: Text.ElideRight
+                                }
+                            }
+
+                            // 删除项目（两步确认；会话保留为本地会话）
+                            Rectangle {
+                                width: 20; height: 20; radius: 4
+                                anchors.verticalCenter: parent.verticalCenter
+                                anchors.right: parent.right
+                                anchors.rightMargin: 8
+                                visible: projectMA.containsMouse
+                                color: projectDeleteMA.containsMouse
+                                    || projectHeader.confirmDelete
+                                    ? Qt.rgba(Theme.statusDanger.r,
+                                              Theme.statusDanger.g,
+                                              Theme.statusDanger.b, 0.15)
+                                    : "transparent"
+                                AppIcon {
+                                    anchors.centerIn: parent
+                                    visible: !projectHeader.confirmDelete
+                                    icon: "close"
+                                    size: 11
+                                    iconColor: projectDeleteMA.containsMouse
+                                        ? Theme.statusDanger : Theme.textSecondary
+                                }
+                                Text {
+                                    anchors.centerIn: parent
+                                    visible: projectHeader.confirmDelete
+                                    text: qsTr("确认?")
+                                    color: Theme.statusDanger
+                                    font.pixelSize: 8
+                                    font.bold: true
+                                }
+                                MouseArea {
+                                    id: projectDeleteMA
+                                    anchors.fill: parent
+                                    hoverEnabled: true
+                                    cursorShape: Qt.PointingHandCursor
+                                    onClicked: {
+                                        if (!projectHeader.confirmDelete) {
+                                            projectHeader.confirmDelete = true
+                                            projectConfirmReset.restart()
+                                        } else {
+                                            projectConfirmReset.stop()
+                                            projectHeader.confirmDelete = false
+                                            AgentVM.removeProject(
+                                                projectNode.modelData.id)
+                                        }
+                                    }
+                                }
+                            }
+
+                            Timer {
+                                id: projectConfirmReset
+                                interval: 2500
+                                onTriggered: projectHeader.confirmDelete = false
+                            }
+
+                            MouseArea {
+                                id: projectMA
+                                anchors.fill: parent
+                                hoverEnabled: true
+                                cursorShape: Qt.PointingHandCursor
+                                onClicked: {
+                                    // 激活该项目（沙箱/归属跟随）并展开；
+                                    // 已激活时仅切换展开——退出走「对话」头。
+                                    if (!projectNode.isActive)
+                                        AgentVM.setActiveProjectId(
+                                            projectNode.modelData.id)
+                                    root.expandedProjects[projectNode.modelData.id]
+                                        = !projectNode.expanded
+                                    root.expansionEpoch++
+                                }
+                            }
+                        }
+
+                        // 展开的会话（缩进显示）
+                        ColumnLayout {
+                            visible: projectNode.expanded
+                            Layout.fillWidth: true
+                            Layout.leftMargin: 14
+                            spacing: 2
+
+                            Repeater {
+                                model: projectNode.projectSessions
+                                delegate: sessionRow
+                            }
+                        }
+                    }
+                }
+
+                // ── 对话树头（本地模式入口）────────────────
+                Rectangle {
+                    id: localHeader
+                    readonly property bool isActive:
+                        AgentVM.activeProjectId === ""
+                    Layout.fillWidth: true
+                    Layout.leftMargin: 12
+                    Layout.rightMargin: 12
+                    Layout.topMargin: 10
                     Layout.preferredHeight: 32
                     radius: 6
-                    color: projectMA.containsMouse || isActive
+                    color: localMA.containsMouse || localHeader.isActive
                         ? Theme.surfaceHover : "transparent"
 
                     Row {
                         anchors.fill: parent
                         anchors.leftMargin: 8
-                        anchors.rightMargin: 8
+                        anchors.rightMargin: 36
                         spacing: 6
 
                         AppIcon {
                             anchors.verticalCenter: parent.verticalCenter
-                            icon: "folder"
+                            icon: "message"
                             size: 13
-                            iconColor: isActive ? Theme.brandPrimary
-                                                : Theme.textSecondary
+                            iconColor: localHeader.isActive
+                                ? Theme.brandPrimary : Theme.textSecondary
                         }
-
                         Text {
                             anchors.verticalCenter: parent.verticalCenter
-                            Layout.fillWidth: true
-                            text: projectDelegate.modelData.name
-                            color: projectDelegate.isActive
+                            text: qsTr("对话")
+                            color: localHeader.isActive
                                 ? Theme.brandPrimary : Theme.textPrimary
                             font.pixelSize: Theme.fontSizeCaption
                             font.family: Theme.fontSans
-                            elide: Text.ElideRight
                         }
                     }
 
-                    // 退出项目（仅活动项显示）
+                    // 本地归属下新建会话
                     Rectangle {
-                        width: 20; height: 20; radius: 4
-                        anchors.verticalCenter: parent.verticalCenter
-                        anchors.right: parent.right
-                        anchors.rightMargin: projectDelegate.isActive ? 30 : 8
-                        visible: projectMA.containsMouse
-                                  && projectDelegate.isActive
-                        color: exitMA.containsMouse ? Theme.surfaceHover : "transparent"
-                        AppIcon {
-                            anchors.centerIn: parent
-                            icon: "close"
-                            size: 11
-                            iconColor: exitMA.containsMouse
-                                ? Theme.statusWarning : Theme.textSecondary
-                        }
-                        MouseArea {
-                            id: exitMA
-                            anchors.fill: parent
-                            hoverEnabled: true
-                            cursorShape: Qt.PointingHandCursor
-                            onClicked: AgentVM.setActiveProjectId("")
-                        }
-                    }
-
-                    // 删除项目（两步确认；会话保留为本地会话）
-                    Rectangle {
-                        width: 20; height: 20; radius: 4
+                        width: 22; height: 22; radius: 4
                         anchors.verticalCenter: parent.verticalCenter
                         anchors.right: parent.right
                         anchors.rightMargin: 8
-                        visible: projectMA.containsMouse
-                                  && !projectDelegate.isActive
-                        color: projectDeleteMA.containsMouse
-                            ? Qt.rgba(Theme.statusDanger.r,
-                                      Theme.statusDanger.g,
-                                      Theme.statusDanger.b, 0.15)
-                            : "transparent"
+                        color: localNewMA.containsMouse
+                            ? Theme.surfaceHover : "transparent"
                         AppIcon {
                             anchors.centerIn: parent
-                            visible: !projectDelegate.confirmDelete
-                            icon: "close"
-                            size: 11
-                            iconColor: projectDeleteMA.containsMouse
-                                ? Theme.statusDanger : Theme.textSecondary
-                        }
-                        Text {
-                            anchors.centerIn: parent
-                            visible: projectDelegate.confirmDelete
-                            text: qsTr("确认?")
-                            color: Theme.statusDanger
-                            font.pixelSize: 8
-                            font.bold: true
+                            icon: "add"
+                            size: 12
+                            iconColor: localNewMA.containsMouse
+                                ? Theme.brandPrimary : Theme.textSecondary
                         }
                         MouseArea {
-                            id: projectDeleteMA
+                            id: localNewMA
                             anchors.fill: parent
                             hoverEnabled: true
                             cursorShape: Qt.PointingHandCursor
                             onClicked: {
-                                if (!projectDelegate.confirmDelete) {
-                                    projectDelegate.confirmDelete = true
-                                    projectConfirmResetTimer.restart()
-                                } else {
-                                    projectConfirmResetTimer.stop()
-                                    projectDelegate.confirmDelete = false
-                                    AgentVM.removeProject(
-                                        projectDelegate.modelData.id)
-                                }
+                                AgentVM.setActiveProjectId("")
+                                AgentVM.openTab()
                             }
                         }
-                    }
-
-                    property bool confirmDelete: false
-                    Timer {
-                        id: projectConfirmResetTimer
-                        interval: 2500
-                        onTriggered: projectDelegate.confirmDelete = false
+                        Accessible.role: Accessible.Button
+                        Accessible.name: qsTr("新建本地对话")
                     }
 
                     MouseArea {
-                        id: projectMA
+                        id: localMA
                         anchors.fill: parent
                         hoverEnabled: true
                         cursorShape: Qt.PointingHandCursor
-                        onClicked: {
-                            AgentVM.setActiveProjectId(
-                                projectDelegate.isActive
-                                    ? "" : projectDelegate.modelData.id)
-                        }
+                        onClicked: AgentVM.setActiveProjectId("")
                     }
+
+                    Accessible.role: Accessible.Button
+                    Accessible.name: qsTr("本地对话")
                 }
-            }
-        }
 
-        // 项目区"新建"入口（导入项目 = FolderDialog 选目录）
-        Rectangle {
-            Layout.fillWidth: true
-            Layout.leftMargin: 12
-            Layout.rightMargin: 12
-            Layout.topMargin: 4
-            Layout.preferredHeight: 30
-            radius: 6
-            border.width: 1
-            border.color: Theme.borderSubtle
-            color: importMA.containsMouse ? Theme.surfaceHover : "transparent"
+                // 本地会话（缩进）
+                ColumnLayout {
+                    Layout.fillWidth: true
+                    Layout.leftMargin: 14
+                    spacing: 2
 
-            Row {
-                anchors.centerIn: parent
-                spacing: 6
-
-                AppIcon {
-                    anchors.verticalCenter: parent.verticalCenter
-                    icon: "add"
-                    size: 13
-                    iconColor: Theme.textSecondary
+                    Repeater {
+                        model: {
+                            root.expansionEpoch
+                            return AgentVM.sessionList.filter(function(s) {
+                                return !s.projectId
+                            })
+                        }
+                        delegate: sessionRow
+                    }
                 }
 
                 Text {
-                    anchors.verticalCenter: parent.verticalCenter
-                    text: qsTr("导入项目…")
+                    visible: {
+                        root.expansionEpoch
+                        return AgentVM.sessionList.filter(function(s) {
+                            return !s.projectId
+                        }).length === 0
+                    }
+                    text: qsTr("暂无历史会话")
                     color: Theme.textSecondary
                     font.pixelSize: Theme.fontSizeCaption
                     font.family: Theme.fontSans
+                    Layout.leftMargin: 24
+                    Layout.topMargin: 4
                 }
             }
-
-            MouseArea {
-                id: importMA
-                anchors.fill: parent
-                hoverEnabled: true
-                cursorShape: Qt.PointingHandCursor
-                onClicked: importProjectDialog.open()
-            }
-
-            FolderDialog {
-                id: importProjectDialog
-                title: qsTr("选择项目文件夹")
-                onAccepted: AgentVM.importProject(selectedFolder)
-            }
-
-            Accessible.role: Accessible.Button
-            Accessible.name: qsTr("导入项目")
         }
 
         // ── Search (Batch 17 / F1) ───────────────────
@@ -388,239 +504,205 @@ Rectangle {
             }
         }
 
-        // ── Session History ──────────────────────────
-        Text {
-            Layout.topMargin: 16
-            Layout.leftMargin: 20
-            text: {
-                if (root.searching) return qsTr("搜索结果")
-                // docs/17 A0: 会话区标题随视图切换（项目 / 本地会话）。
-                for (let i = 0; i < AgentVM.projects.length; ++i) {
-                    if (AgentVM.projects[i].id === AgentVM.activeProjectId)
-                        return AgentVM.projects[i].name
-                }
-                return "SESSIONS"
-            }
-            color: Theme.textSecondary
-            font.pixelSize: 10
-            font.family: Theme.fontMono
-            font.weight: Font.DemiBold
+        FolderDialog {
+            id: importProjectDialog
+            title: qsTr("选择项目文件夹")
+            onAccepted: AgentVM.importProject(selectedFolder)
         }
 
-        ScrollView {
-            visible: !root.searching
-            Layout.fillWidth: true
-            Layout.fillHeight: true
-            Layout.topMargin: 8
-            clip: true
+        // 共用的会话行 delegate（项目树 / 本地树两处复用）
+        Component {
+            id: sessionRow
+            ItemDelegate {
+                id: sessionDelegate
+                width: parent.width
+                height: 48
 
-            ListView {
-                id: sessionList
-                model: AgentVM.sessionList
-                spacing: 2
-                clip: true
+                Accessible.name: modelData.title && modelData.title.length > 0
+                    ? modelData.title : qsTr("新会话")
+                Accessible.description: modelData.timeText || ""
 
-                // Empty state
-                Text {
-                    anchors.centerIn: parent
-                    visible: sessionList.count === 0
-                    text: qsTr("暂无历史会话")
-                    color: Theme.textSecondary
-                    font.pixelSize: Theme.fontSizeCaption
-                    font.family: Theme.fontSans
+                readonly property bool isActive: AgentVM.currentSessionId === modelData.id
+                property bool renaming: false
+                property bool confirmDelete: false
+
+                background: Rectangle {
+                    color: hovered ? Theme.surfaceHover : "transparent"
+                    Rectangle {
+                        width: 3
+                        height: parent.height
+                        color: Theme.brandPrimary
+                        visible: isActive
+                    }
                 }
 
-                delegate: ItemDelegate {
-                    id: sessionDelegate
-                    width: sessionList.width
-                    height: 48
+                ColumnLayout {
+                    anchors.fill: parent
+                    anchors.leftMargin: 20
+                    anchors.rightMargin: 12
+                    spacing: 2
 
-                    Accessible.name: modelData.title && modelData.title.length > 0
-                        ? modelData.title : qsTr("新会话")
-                    Accessible.description: modelData.timeText || ""
+                    // Title row: inline editor / label / hover actions
+                    Item {
+                        Layout.fillWidth: true
+                        height: 20
 
-                    readonly property bool isActive: AgentVM.currentSessionId === modelData.id
-                    property bool renaming: false
-                    property bool confirmDelete: false
-
-                    background: Rectangle {
-                        color: hovered ? Theme.surfaceHover : "transparent"
-                        Rectangle {
-                            width: 3
-                            height: parent.height
-                            color: Theme.brandPrimary
-                            visible: isActive
-                        }
-                    }
-
-                    ColumnLayout {
-                        anchors.fill: parent
-                        anchors.leftMargin: 20
-                        anchors.rightMargin: 12
-                        spacing: 2
-
-                        // Title row: inline editor / label / hover actions
-                        Item {
-                            Layout.fillWidth: true
-                            height: 20
-
-                            TextInput {
-                                id: renameInput
-                                visible: sessionDelegate.renaming
-                                anchors.verticalCenter: parent.verticalCenter
-                                width: parent.width - 8
-                                text: modelData.title
-                                color: Theme.textPrimary
-                                font.pixelSize: Theme.fontSizeBody
-                                font.family: Theme.fontSans
-                                selectByMouse: true
-                                clip: true
-                                onAccepted: {
-                                    if (text.trimmed().length > 0)
-                                        AgentVM.renameSession(modelData.id, text)
-                                    sessionDelegate.renaming = false
-                                }
-                                onFocusChanged: if (!focus && sessionDelegate.renaming)
-                                    sessionDelegate.renaming = false
-
-                                Component.onCompleted: if (sessionDelegate.renaming) forceActiveFocus()
+                        TextInput {
+                            id: renameInput
+                            visible: sessionDelegate.renaming
+                            anchors.verticalCenter: parent.verticalCenter
+                            width: parent.width - 8
+                            text: modelData.title
+                            color: Theme.textPrimary
+                            font.pixelSize: Theme.fontSizeBody
+                            font.family: Theme.fontSans
+                            selectByMouse: true
+                            clip: true
+                            onAccepted: {
+                                if (text.trimmed().length > 0)
+                                    AgentVM.renameSession(modelData.id, text)
+                                sessionDelegate.renaming = false
                             }
+                            onFocusChanged: if (!focus && sessionDelegate.renaming)
+                                sessionDelegate.renaming = false
 
-                            Text {
-                                visible: !sessionDelegate.renaming
-                                anchors.verticalCenter: parent.verticalCenter
-                                text: modelData.title && modelData.title.length > 0
-                                    ? modelData.title : qsTr("新会话")
-                                color: Theme.textPrimary
-                                font.pixelSize: Theme.fontSizeBody
-                                font.family: Theme.fontSans
-                                elide: Text.ElideRight
-                                width: parent.width - (sessionDelegate.hovered ? 66 : 0)
-                            }
-
-                            Row {
-                                visible: sessionDelegate.hovered && !sessionDelegate.renaming
-                                anchors.verticalCenter: parent.verticalCenter
-                                anchors.right: parent.right
-                                spacing: 2
-
-                                // Export action (Batch 18)
-                                Rectangle {
-                                    width: 20
-                                    height: 20
-                                    radius: 4
-                                    color: exportMA.containsMouse ? Theme.surfaceHover : "transparent"
-
-                                    AppIcon {
-                                        anchors.centerIn: parent
-                                        icon: "export"
-                                        size: 12
-                                        iconColor: exportMA.containsMouse ? Theme.brandPrimary : Theme.textSecondary
-                                    }
-
-                                    MouseArea {
-                                        id: exportMA
-                                        anchors.fill: parent
-                                        hoverEnabled: true
-                                        cursorShape: Qt.PointingHandCursor
-                                        onClicked: {
-                                            root.exportSessionId = modelData.id
-                                            exportDialog.open()
-                                        }
-                                    }
-                                }
-
-                                // Rename action
-                                Rectangle {
-                                    width: 20
-                                    height: 20
-                                    radius: 4
-                                    color: renameMA.containsMouse ? Theme.surfaceHover : "transparent"
-
-                                    AppIcon {
-                                        anchors.centerIn: parent
-                                        icon: "edit"
-                                        size: 12
-                                        iconColor: renameMA.containsMouse ? Theme.brandPrimary : Theme.textSecondary
-                                    }
-
-                                    MouseArea {
-                                        id: renameMA
-                                        anchors.fill: parent
-                                        hoverEnabled: true
-                                        cursorShape: Qt.PointingHandCursor
-                                        onClicked: {
-                                            sessionDelegate.confirmDelete = false
-                                            sessionDelegate.renaming = true
-                                        }
-                                    }
-                                }
-
-                                // Delete action (two-step confirm)
-                                Rectangle {
-                                    width: 20
-                                    height: 20
-                                    radius: 4
-                                    color: deleteMA.containsMouse || sessionDelegate.confirmDelete
-                                        ? Qt.rgba(Theme.statusDanger.r, Theme.statusDanger.g,
-                                                  Theme.statusDanger.b, 0.15) : "transparent"
-
-                                    AppIcon {
-                                        anchors.centerIn: parent
-                                        visible: !sessionDelegate.confirmDelete
-                                        icon: "close"
-                                        size: 12
-                                        iconColor: deleteMA.containsMouse ? Theme.statusDanger : Theme.textSecondary
-                                    }
-
-                                    Text {
-                                        anchors.centerIn: parent
-                                        visible: sessionDelegate.confirmDelete
-                                        text: qsTr("确认?")
-                                        color: Theme.statusDanger
-                                        font.pixelSize: 9
-                                        font.bold: true
-                                    }
-
-                                    MouseArea {
-                                        id: deleteMA
-                                        anchors.fill: parent
-                                        hoverEnabled: true
-                                        cursorShape: Qt.PointingHandCursor
-                                        onClicked: {
-                                            if (!sessionDelegate.confirmDelete) {
-                                                sessionDelegate.confirmDelete = true
-                                                confirmResetTimer.restart()
-                                            } else {
-                                                confirmResetTimer.stop()
-                                                sessionDelegate.confirmDelete = false
-                                                AgentVM.deleteSession(modelData.id)
-                                            }
-                                        }
-                                    }
-                                }
-                            }
-
-                            Timer {
-                                id: confirmResetTimer
-                                interval: 2500
-                                onTriggered: sessionDelegate.confirmDelete = false
-                            }
+                            Component.onCompleted: if (sessionDelegate.renaming) forceActiveFocus()
                         }
 
                         Text {
-                            text: modelData.timeText ? modelData.timeText : ""
-                            color: Theme.textSecondary
-                            font.pixelSize: Theme.fontSizeCaption
+                            visible: !sessionDelegate.renaming
+                            anchors.verticalCenter: parent.verticalCenter
+                            text: modelData.title && modelData.title.length > 0
+                                ? modelData.title : qsTr("新会话")
+                            color: Theme.textPrimary
+                            font.pixelSize: Theme.fontSizeBody
                             font.family: Theme.fontSans
+                            elide: Text.ElideRight
+                            width: parent.width - (sessionDelegate.hovered ? 66 : 0)
+                        }
+
+                        Row {
+                            visible: sessionDelegate.hovered && !sessionDelegate.renaming
+                            anchors.verticalCenter: parent.verticalCenter
+                            anchors.right: parent.right
+                            spacing: 2
+
+                            // Export action (Batch 18)
+                            Rectangle {
+                                width: 20
+                                height: 20
+                                radius: 4
+                                color: exportMA.containsMouse ? Theme.surfaceHover : "transparent"
+
+                                AppIcon {
+                                    anchors.centerIn: parent
+                                    icon: "export"
+                                    size: 12
+                                    iconColor: exportMA.containsMouse ? Theme.brandPrimary : Theme.textSecondary
+                                }
+
+                                MouseArea {
+                                    id: exportMA
+                                    anchors.fill: parent
+                                    hoverEnabled: true
+                                    cursorShape: Qt.PointingHandCursor
+                                    onClicked: {
+                                        root.exportSessionId = modelData.id
+                                        exportDialog.open()
+                                    }
+                                }
+                            }
+
+                            // Rename action
+                            Rectangle {
+                                width: 20
+                                height: 20
+                                radius: 4
+                                color: renameMA.containsMouse ? Theme.surfaceHover : "transparent"
+
+                                AppIcon {
+                                    anchors.centerIn: parent
+                                    icon: "edit"
+                                    size: 12
+                                    iconColor: renameMA.containsMouse ? Theme.brandPrimary : Theme.textSecondary
+                                }
+
+                                MouseArea {
+                                    id: renameMA
+                                    anchors.fill: parent
+                                    hoverEnabled: true
+                                    cursorShape: Qt.PointingHandCursor
+                                    onClicked: {
+                                        sessionDelegate.confirmDelete = false
+                                        sessionDelegate.renaming = true
+                                    }
+                                }
+                            }
+
+                            // Delete action (two-step confirm)
+                            Rectangle {
+                                width: 20
+                                height: 20
+                                radius: 4
+                                color: deleteMA.containsMouse || sessionDelegate.confirmDelete
+                                    ? Qt.rgba(Theme.statusDanger.r, Theme.statusDanger.g,
+                                              Theme.statusDanger.b, 0.15) : "transparent"
+
+                                AppIcon {
+                                    anchors.centerIn: parent
+                                    visible: !sessionDelegate.confirmDelete
+                                    icon: "close"
+                                    size: 12
+                                    iconColor: deleteMA.containsMouse ? Theme.statusDanger : Theme.textSecondary
+                                }
+
+                                Text {
+                                    anchors.centerIn: parent
+                                    visible: sessionDelegate.confirmDelete
+                                    text: qsTr("确认?")
+                                    color: Theme.statusDanger
+                                    font.pixelSize: 9
+                                    font.bold: true
+                                }
+
+                                MouseArea {
+                                    id: deleteMA
+                                    anchors.fill: parent
+                                    hoverEnabled: true
+                                    cursorShape: Qt.PointingHandCursor
+                                    onClicked: {
+                                        if (!sessionDelegate.confirmDelete) {
+                                            sessionDelegate.confirmDelete = true
+                                            confirmResetTimer.restart()
+                                        } else {
+                                            confirmResetTimer.stop()
+                                            sessionDelegate.confirmDelete = false
+                                            AgentVM.deleteSession(modelData.id)
+                                        }
+                                    }
+                                }
+                            }
+                        }
+
+                        Timer {
+                            id: confirmResetTimer
+                            interval: 2500
+                            onTriggered: sessionDelegate.confirmDelete = false
                         }
                     }
 
-                    onClicked: {
-                        if (sessionDelegate.renaming) return
-                        sessionDelegate.confirmDelete = false
-                        AgentVM.loadSession(modelData.id)
+                    Text {
+                        text: modelData.timeText ? modelData.timeText : ""
+                        color: Theme.textSecondary
+                        font.pixelSize: Theme.fontSizeCaption
+                        font.family: Theme.fontSans
                     }
+                }
+
+                onClicked: {
+                    if (sessionDelegate.renaming) return
+                    sessionDelegate.confirmDelete = false
+                    AgentVM.loadSession(modelData.id)
                 }
             }
         }

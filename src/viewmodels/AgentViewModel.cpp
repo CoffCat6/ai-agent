@@ -18,6 +18,7 @@
 
 #include <QBuffer>
 #include <QClipboard>
+#include <QDebug>
 #include <QImage>
 #include "core/utils/Activity.h"
 
@@ -338,6 +339,11 @@ void AgentViewModel::setAgent(AIAgent* agent) {
         } else {
             m_tabs[i]->attachAgent(nullptr, false);
         }
+        // docs/17 A0: 挂接发生在启动回灌（main.cpp 的 setActiveProjectId
+        // 先于 setAgent）之后——此处补推活动项目，重启后新建的会话才能
+        // 正确归属项目。
+        if (m_tabs[i]->agent() && !m_activeProjectId.isEmpty())
+            m_tabs[i]->agent()->setActiveProjectId(m_activeProjectId);
     }
     emit liveModeChanged();
     emit tabsChanged();
@@ -386,6 +392,10 @@ void AgentViewModel::setActiveProjectId(const QString& id) {
         }
     }
     Sandbox::setProjectDir(projectRoot);
+    // 排查日志：读取被拒时对照"激活 id → 沙箱项目根"是否一致。
+    if (!id.isEmpty())
+        qWarning() << "[projects] active project" << id
+                   << "sandbox projectDir:" << projectRoot;
     // 持久化（M4 直写先例）：重启后由 main.cpp 从设置回灌。
     QSettings("NexusAI", "NexusAI").setValue("projects/activeId", id);
     // 推给全部 tab agent 与模板 agent：新会话按此标记归属。
@@ -546,14 +556,10 @@ void AgentViewModel::refreshSessions() {
     ChatSessionController* controller = controllerWithAgent();
     const QVariantList all = controller
         ? controller->agent()->sessionList().toVariantList() : QVariantList{};
-    // docs/17 A0: 侧栏按当前视图过滤——活动项目只显示其会话；本地视图
-    // 只显示 project_id 为空的会话（SqliteMemory 对 NULL 回空串）。
-    QVariantList sessions;
-    for (const QVariant& entry : all) {
-        const QVariantMap s = entry.toMap();
-        if (s.value("projectId").toString() == m_activeProjectId)
-            sessions.append(entry);
-    }
+    // docs/17（树状共存）: 返回全量会话（每项带 projectId），侧栏按
+    // 项目/本地分组展示，不再按活动视图过滤——所有会话始终可见，
+    // "回到本地对话"不再依赖切换。
+    const QVariantList sessions = all;
     if (m_sessionList == sessions) return;
     m_sessionList = sessions;
     emit sessionListChanged();
