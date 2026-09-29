@@ -20,7 +20,13 @@ private slots:
     void blocksSystemPaths();
     void boundaryAwarePrefixMatching();
     void blocksRelativeEscape();
-    void validateToolCallPolicy();
+    // docs/17 A1/A4: validateToolCall removed (dead code) - the policy
+    // is now asserted directly on validatePath incl. the reason out-param.
+    void denyReasonsAreDistinguishable();
+    void projectDirExtendsReadAllowlist();
+    void userDenyListBlocksReadsAndWrites();
+    void denyListPrecedesFullDiskAndProject();
+    void defaultDenyListEntries();
     // Batch 5: read policy (audit P1-8, SEC-501)
     void readsRestrictedToUserDirectories();
     void fullDiskReadPolicyOptIn();
@@ -83,27 +89,34 @@ void TestSandbox::blocksRelativeEscape() {
     QVERIFY(!Sandbox::validatePath("..\\..\\Windows\\evil.dll", true));
 }
 
-void TestSandbox::validateToolCallPolicy() {
-    ToolDefinition write;
-    write.name = "write_file";
-    write.level = ToolLevel::RequiresConfirm;
-    QVERIFY(!Sandbox::validateToolCall(write,
-        QJsonObject{{"path", "C:\\Windows\\evil.dll"}}));
-    QVERIFY(Sandbox::validateToolCall(write,
-        QJsonObject{{"path",
-            QStandardPaths::writableLocation(QStandardPaths::DocumentsLocation) + "/ok.txt"}}));
+// docs/17 A4/A5: the reason out-param must tell the layers apart so the
+// tool error message can point the user at the right escape hatch.
+void TestSandbox::denyReasonsAreDistinguishable() {
+    Sandbox::DenyReason reason = Sandbox::DenyReason::None;
 
-    ToolDefinition read;
-    read.name = "read_file";
-    read.level = ToolLevel::Safe;
-    // Reads outside the user allowlist are rejected by the default policy
-    // (audit P1-8); only allowlisted reads pass.
-    QVERIFY(!Sandbox::validateToolCall(read, QJsonObject{{"path", "C:\\some\\file.txt"}}));
+    // System directories: hard-blocked, own reason.
+    QVERIFY(!Sandbox::validatePath(QStringLiteral("C:\\Windows\\evil.dll"),
+                                   true, &reason));
+    QCOMPARE(reason, Sandbox::DenyReason::SystemPath);
+    QVERIFY(!Sandbox::denialHint(reason).isEmpty());
 
-    ToolDefinition dangerous;
-    dangerous.name = "rm_rf";
-    dangerous.level = ToolLevel::Dangerous;
-    QVERIFY(!Sandbox::validateToolCall(dangerous, {}));
+    // Read outside every allow layer (default read policy).
+    QVERIFY(!Sandbox::validatePath(QStringLiteral("C:\\some\\file.txt"),
+                                   false, &reason));
+    QCOMPARE(reason, Sandbox::DenyReason::ReadPolicy);
+
+    // Write outside the write allowlist (Temp lives under Home, so use a
+    // non-existent path off the home tree; canonicalize falls back to the
+    // lexical absolute form for validation).
+    QVERIFY(!Sandbox::validatePath(QStringLiteral("Q:/nexusai_nowhere/x.txt"),
+                                   true, &reason));
+    QCOMPARE(reason, Sandbox::DenyReason::WritePolicy);
+
+    // Allowlisted read reports None.
+    const QString docs =
+        QStandardPaths::writableLocation(QStandardPaths::DocumentsLocation);
+    QVERIFY(Sandbox::validatePath(docs + "/notes.txt", false, &reason));
+    QCOMPARE(reason, Sandbox::DenyReason::None);
 }
 
 // SEC-501: the default read policy restricts reads to the user allowlist.
@@ -132,6 +145,130 @@ void TestSandbox::fullDiskReadPolicyOptIn() {
     QVERIFY(!Sandbox::validatePath("C:\\Windows\\System32\\config", false)); // still blocked
     Sandbox::setReadPolicy(Sandbox::ReadPolicy::UserDirectories);
     QVERIFY(!Sandbox::validatePath("C:\\ProgramData\\secret.txt", false));
+}
+
+// docs/17 A0/A1: the active project's root enters the READ allow layer
+// (writes stay untouched - project dirs are read-only for the model).
+void TestSandbox::projectDirExtendsReadAllowlist() {
+    // Home-off virtual project dir (need not exist: canonicalize falls back
+    // to the lexical absolute form). QTemporaryDir would land under Temp,
+    // which is inside Home and thus already write-allowlisted.
+    const QString root = QStringLiteral("Q:/nexusai_proj_test");
+
+    // Baseline: outside the user allowlist -> rejected.
+    QVERIFY(!Sandbox::validatePath(root + "/src/a.txt", false));
+
+    Sandbox::setProjectDir(root);
+    QVERIFY(Sandbox::validatePath(root + "/src/a.txt", false));
+    QVERIFY(Sandbox::validatePath(root, false));
+    // Sibling boundary: project does not authorize its siblings.
+    QVERIFY(!Sandbox::validatePath(root + "2/a.txt", false));
+    // Project dirs are READ-ONLY for the model: write policy unchanged.
+    Sandbox::DenyReason reason;
+    QVERIFY(!Sandbox::validatePath(root + "/src/a.txt", true, &reason));
+    QCOMPARE(reason, Sandbox::DenyReason::WritePolicy);
+
+    Sandbox::setProjectDir(QString());
+    QVERIFY(!Sandbox::validatePath(root + "/src/a.txt", false));
+}
+
+// docs/17 A1: the user-configured deny list is an absolute denial layer -
+// both reads AND writes go through it, globs match file names
+// (case-insensitive on Windows), directory entries cover their subtree.
+void TestSandbox::userDenyListBlocksReadsAndWrites() {
+    const QString docs =
+        QStandardPaths::writableLocation(QStandardPaths::DocumentsLocation);
+
+    // Baseline: inside the allowlist -> allowed.
+    QVERIFY(Sandbox::validatePath(docs + "/notes.txt", false));
+
+    Sandbox::setUserDenyList({QStringLiteral("*.env"),
+                              QStringLiteral("mysecrets")});
+    // Glob on the file name (case-insensitive on Windows).
+    QVERIFY(!Sandbox::validatePath(docs + "/config.ENV", false));
+    // Glob also matches the full path form.
+    QVERIFY(!Sandbox::validatePath(docs + "/deep/dir/run.env", false));
+    // Directory entry covers its subtree (input is canonicalized).
+    QVERIFY(!Sandbox::validatePath(docs + "/mysecrets/vault.txt", false));
+    // Boundary-aware: a sibling directory with a shared prefix survives.
+    QVERIFY(Sandbox::validatePath(docs + "/mysecrets2/vault.txt", false));
+    // Non-matching allowlisted file still passes.
+    QVERIFY(Sandbox::validatePath(docs + "/notes.txt", false));
+    // Writes go through the deny list too.
+    QVERIFY(!Sandbox::validatePath(docs + "/run.env", true));
+    // Relative-name entries hit the directory segment at ANY depth.
+    QVERIFY(!Sandbox::validatePath(docs + "/deep/nested/mysecrets/x",
+                                   false));
+    // Outside the allowlist the read policy still rejects (reason intact).
+    Sandbox::DenyReason reason;
+    QVERIFY(!Sandbox::validatePath(QStringLiteral("Q:/nexusai_nowhere/x"),
+                                   false, &reason));
+
+    Sandbox::setUserDenyList({});
+    QVERIFY(Sandbox::validatePath(docs + "/config.ENV", false));
+}
+
+// Precedence: system block > deny list > allow layers (incl. FullDisk and
+// the project directory - "import the whole disk as a project" must not
+// resurrect ~/.ssh).
+void TestSandbox::denyListPrecedesFullDiskAndProject() {
+    const QString home =
+        QStandardPaths::writableLocation(QStandardPaths::HomeLocation);
+    const QString temp =
+        QStandardPaths::writableLocation(QStandardPaths::TempLocation);
+
+    QTemporaryDir project;
+    QVERIFY(project.isValid());
+    const QString root = QDir::toNativeSeparators(project.path());
+
+    // Project dir alone: temp file inside it is readable.
+    Sandbox::setProjectDir(root);
+    QVERIFY(Sandbox::validatePath(root + "/data.txt", false));
+
+    // A deny entry INSIDE the project dir wins over the project allow.
+    Sandbox::setUserDenyList({QStringLiteral("*.kdbx")});
+    Sandbox::DenyReason reason;
+    QVERIFY(!Sandbox::validatePath(root + "/vault.kdbx", false, &reason));
+    QCOMPARE(reason, Sandbox::DenyReason::DenyList);
+
+    // FullDisk opens everything EXCEPT the deny list and system dirs.
+    Sandbox::setReadPolicy(Sandbox::ReadPolicy::FullDisk);
+    QVERIFY(Sandbox::validatePath(temp + "/other.txt", false));
+    QVERIFY(Sandbox::validatePath(root + "/data.txt", false));
+    QVERIFY(!Sandbox::validatePath(root + "/vault.kdbx", false, &reason));
+    QCOMPARE(reason, Sandbox::DenyReason::DenyList);
+    // Default deny list (~/.ssh) still applies under FullDisk.
+    QVERIFY(!Sandbox::validatePath(home + "/.ssh/id_rsa", false, &reason));
+    QCOMPARE(reason, Sandbox::DenyReason::DenyList);
+    QVERIFY(!Sandbox::validatePath(QStringLiteral("C:\\Windows\\System32\\config"),
+                                   false, &reason));
+    QCOMPARE(reason, Sandbox::DenyReason::SystemPath);
+
+    // Restore global state for the other tests.
+    Sandbox::setReadPolicy(Sandbox::ReadPolicy::UserDirectories);
+    Sandbox::setUserDenyList({});
+    Sandbox::setProjectDir(QString());
+    QVERIFY(!Sandbox::validatePath(temp + "/other.txt", false));
+}
+
+// docs/17 A1: the built-in conservative deny list (credentials & key files)
+// is always active, independent of the user list.
+void TestSandbox::defaultDenyListEntries() {
+    const QString home =
+        QStandardPaths::writableLocation(QStandardPaths::HomeLocation);
+    const QString docs =
+        QStandardPaths::writableLocation(QStandardPaths::DocumentsLocation);
+
+    QVERIFY(!Sandbox::validatePath(home + "/.ssh/id_rsa", false));
+    QVERIFY(!Sandbox::validatePath(home + "/.gnupg/secring.gpg", false));
+    QVERIFY(!Sandbox::validatePath(home + "/.aws/credentials", false));
+    // Key-file globs match anywhere - including inside the user allowlist.
+    QVERIFY(!Sandbox::validatePath(docs + "/server.pem", false));
+    QVERIFY(!Sandbox::validatePath(docs + "/certs/CA.key", false));
+    QVERIFY(!Sandbox::validatePath(docs + "/vault.kdbx", false));
+    QVERIFY(!Sandbox::validatePath(docs + "/tunnel.ppk", false));
+    // Non-matching files stay readable.
+    QVERIFY(Sandbox::validatePath(docs + "/report.txt", false));
 }
 
 // ── Batch 19: edit_file tool ──────────────────────────────
@@ -221,7 +358,7 @@ void TestSandbox::editFileOutsideWhitelistRejected() {
 
     const ToolResult r = runEdit(path, QStringLiteral("secret"), QStringLiteral("nope"));
     QVERIFY(!r.success);
-    QVERIFY2(r.error.contains(QStringLiteral("sandbox policy")), qPrintable(r.error));
+    QVERIFY2(r.error.contains(QStringLiteral("Path blocked")), qPrintable(r.error));
     QVERIFY2(!QFile::exists(path), "blocked edit must not create the file");
 }
 

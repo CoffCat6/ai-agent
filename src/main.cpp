@@ -120,16 +120,19 @@ qInfo() << "NexusAI" << app.applicationVersion() << "starting";
         QT_TRANSLATE_NOOP("NexusAI", "界面设置"), 2);
     prefRegistry->registerCategory(QStringLiteral("general"),
         QT_TRANSLATE_NOOP("NexusAI", "通用设置"), 3);
+    // docs/17 A6: 独立安全分类（沙箱/黑名单/隐私门）。
+    prefRegistry->registerCategory(QStringLiteral("security"),
+        QT_TRANSLATE_NOOP("NexusAI", "安全"), 4);
     prefRegistry->registerCategory(QStringLiteral("mcp"),
-        QT_TRANSLATE_NOOP("NexusAI", "MCP 服务器"), 4);
+        QT_TRANSLATE_NOOP("NexusAI", "MCP 服务器"), 5);
     prefRegistry->registerCategory(QStringLiteral("tools"),
-        QT_TRANSLATE_NOOP("NexusAI", "工具管理"), 5);
+        QT_TRANSLATE_NOOP("NexusAI", "工具管理"), 6);
     // M1: browse / search / forget long-term episodic memory summaries.
     prefRegistry->registerCategory(QStringLiteral("memory"),
-        QT_TRANSLATE_NOOP("NexusAI", "记忆管理"), 6);
+        QT_TRANSLATE_NOOP("NexusAI", "记忆管理"), 7);
     // M1 (stats): token / cost usage aggregation.
     prefRegistry->registerCategory(QStringLiteral("usage"),
-        QT_TRANSLATE_NOOP("NexusAI", "用量统计"), 7);
+        QT_TRANSLATE_NOOP("NexusAI", "用量统计"), 8);
 
     // Internal UI state (not shown in any category panel; categoryId empty)
     {
@@ -528,6 +531,11 @@ qInfo() << "NexusAI" << app.applicationVersion() << "starting";
         // Read sandbox policy follows the (opt-in, default-off) setting
         Sandbox::setReadPolicy(settings->allowFullDiskRead()
             ? Sandbox::ReadPolicy::FullDisk : Sandbox::ReadPolicy::UserDirectories);
+        // docs/17 A1: 用户自定义黑名单（与内置默认清单合并生效）。
+        QStringList denyList;
+        for (const QVariant& entry : settings->readDenyList())
+            denyList.append(entry.toString());
+        Sandbox::setUserDenyList(denyList);
 
         // Batch 20: http_fetch SSRF escape hatch follows its (opt-in,
         // default-off) setting; immediate effect on the next fetch.
@@ -544,6 +552,11 @@ qInfo() << "NexusAI" << app.applicationVersion() << "starting";
         episodicService->setLlmService(pickActive(templateSet, provider));
     };
     applySettings();
+
+    // docs/17 A1: 黑名单变更即时生效。
+    QObject::connect(settings, &SettingsService::readDenyListChanged, &app, [applySettings]() {
+        applySettings();
+    });
 
     // Reconfigure instantly when the active profile or global settings change
     QObject::connect(settings, &SettingsService::activeProfileChanged, &app, [applySettings]() { applySettings(); });

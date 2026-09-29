@@ -63,8 +63,9 @@ public:
         if (path.isEmpty())
             return ToolResult::fail("Path is required");
 
-        if (!Sandbox::validatePath(path, false))
-            return ToolResult::fail("Path blocked by sandbox policy");
+        Sandbox::DenyReason reason;
+        if (!Sandbox::validatePath(path, false, &reason))
+            return ToolResult::fail(Sandbox::denialHint(reason));
 
         QFile file(path);
         if (!file.exists())
@@ -114,9 +115,9 @@ public:
         if (path.isEmpty())
             return ToolResult::fail("Path is required");
 
-        if (!Sandbox::validatePath(path, true))
-            return ToolResult::fail("Path blocked by sandbox policy: writes are only "
-                                    "allowed in user directories");
+        Sandbox::DenyReason reason;
+        if (!Sandbox::validatePath(path, true, &reason))
+            return ToolResult::fail(Sandbox::denialHint(reason));
 
         // Ensure parent directory exists
         QDir().mkpath(QFileInfo(path).absolutePath());
@@ -168,9 +169,9 @@ public:
         if (oldString.isEmpty())
             return ToolResult::fail("old_string is required (use write_file to create new content)");
 
-        if (!Sandbox::validatePath(path, true))
-            return ToolResult::fail("Path blocked by sandbox policy: writes are only "
-                                    "allowed in user directories");
+        Sandbox::DenyReason reason;
+        if (!Sandbox::validatePath(path, true, &reason))
+            return ToolResult::fail(Sandbox::denialHint(reason));
 
         QFile file(path);
         if (!file.open(QIODevice::ReadOnly))
@@ -239,8 +240,9 @@ public:
         if (path.isEmpty())
             return ToolResult::fail("Path is required");
 
-        if (!Sandbox::validatePath(path, false))
-            return ToolResult::fail("Path blocked by sandbox policy");
+        Sandbox::DenyReason reason;
+        if (!Sandbox::validatePath(path, false, &reason))
+            return ToolResult::fail(Sandbox::denialHint(reason));
 
         QDir dir(path);
         if (!dir.exists())

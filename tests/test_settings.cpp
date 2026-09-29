@@ -45,6 +45,7 @@ public:
         webSearchApiKey = s.value("webSearch/apiKey");
         schemaVersion = s.value("schemaVersion");
         defaultPermissionMode = s.value("agent/defaultPermissionMode");
+        readDenyList = s.value("security/readDenyList");
     }
     ~SettingsGuard() {
         QSettings s("NexusAI", "NexusAI");
@@ -85,6 +86,9 @@ public:
         if (defaultPermissionMode.isValid())
             s.setValue("agent/defaultPermissionMode", defaultPermissionMode);
         else s.remove("agent/defaultPermissionMode");
+        if (readDenyList.isValid())
+            s.setValue("security/readDenyList", readDenyList);
+        else s.remove("security/readDenyList");
     }
     QVariant rawProfiles;
     QVariant activeId;
@@ -100,6 +104,7 @@ public:
     QVariant webSearchApiKey;
     QVariant schemaVersion;
     QVariant defaultPermissionMode;
+    QVariant readDenyList;
 };
 
 } // namespace
@@ -172,15 +177,22 @@ private slots:
         // 先全部调到非默认值
         svc.setContextTokens(4096);
         svc.setSimulationMode(true);
-        svc.setAllowFullDiskRead(true);
-        svc.setLocalOnlyMode(true);
-        svc.setAllowLocalNetworkFetch(true);
         svc.setLogLevel(QStringLiteral("debug"));
         svc.setEmbeddingModel(QStringLiteral("bge-m3"));
         svc.setEmbeddingBaseUrl(QStringLiteral("http://localhost:12345"));
         svc.setSystemPromptOverride(QStringLiteral("custom prompt"));
 
+        // docs/17 A6: 安全键已迁"安全"页——通用页重置不得触碰它们。
+        svc.setAllowFullDiskRead(true);
+        svc.setLocalOnlyMode(true);
+        svc.setAllowLocalNetworkFetch(true);
+
         svc.resetGeneralToDefaults();
+
+        // 安全三键保持原值（属于安全页语义，不随通用页重置）。
+        QVERIFY(svc.allowFullDiskRead());
+        QVERIFY(svc.localOnlyMode());
+        QVERIFY(svc.allowLocalNetworkFetch());
 
         QVariantMap defaults;
         for (const auto& k : SettingsSchema::registeredKeys())
@@ -190,12 +202,6 @@ private slots:
                  defaults.value("contextTokens").toInt());
         QCOMPARE(svc.simulationMode(),
                  defaults.value("simulationMode").toBool());
-        QCOMPARE(svc.allowFullDiskRead(),
-                 defaults.value("security/allowFullDiskRead").toBool());
-        QCOMPARE(svc.localOnlyMode(),
-                 defaults.value("security/localOnlyMode").toBool());
-        QCOMPARE(svc.allowLocalNetworkFetch(),
-                 defaults.value("security/allowLocalNetworkFetch").toBool());
         QCOMPARE(svc.logLevel(), defaults.value("logging/level").toString());
         QCOMPARE(svc.embeddingModel(),
                  defaults.value("embedding/model").toString());
@@ -229,6 +235,9 @@ private slots:
             "prefs/v1/ui.restoreWindowOnStartup",
             // M2 内部键
             "settings.lastCategory",
+            // docs/17 A0/A1
+            "projects/activeId",
+            "security/readDenyList",
         };
         for (const QString& key : expected) {
             QVERIFY2(registered.contains(key), qPrintable(

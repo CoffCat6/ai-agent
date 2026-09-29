@@ -8,6 +8,7 @@
 #include "core/rag/RagService.h"
 #include "core/rag/KnowledgeChunk.h"
 #include "core/tools/ToolRegistry.h"
+#include "core/tools/Sandbox.h"
 #include "core/utils/Logger.h"
 #include "core/utils/DataUrlUtils.h"
 
@@ -375,6 +376,16 @@ void AgentViewModel::refreshProjects() {
 void AgentViewModel::setActiveProjectId(const QString& id) {
     if (m_activeProjectId == id) return;
     m_activeProjectId = id;
+    // docs/17 A1: 项目沙箱跟随活动项目（root_path 进入读取允许层）。
+    QString projectRoot;
+    for (const QVariant& entry : std::as_const(m_projects)) {
+        const QVariantMap p = entry.toMap();
+        if (p.value("id").toString() == id) {
+            projectRoot = p.value("rootPath").toString();
+            break;
+        }
+    }
+    Sandbox::setProjectDir(projectRoot);
     // 持久化（M4 直写先例）：重启后由 main.cpp 从设置回灌。
     QSettings("NexusAI", "NexusAI").setValue("projects/activeId", id);
     // 推给全部 tab agent 与模板 agent：新会话按此标记归属。

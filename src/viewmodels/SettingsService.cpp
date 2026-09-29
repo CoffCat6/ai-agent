@@ -258,6 +258,7 @@ void SettingsService::load() {
     m_defaultPermissionMode = settings.value("agent/defaultPermissionMode",
                                              QStringLiteral("confirm")).toString();
     m_activeProjectId = settings.value("projects/activeId").toString();
+    m_readDenyList = settings.value("security/readDenyList").toList();
 }
 
 // Single-provider layout (pre-0.3): provider, apiKey, <provider>/baseUrl,
@@ -655,6 +656,13 @@ void SettingsService::setStrictQuotaMode(bool v) {
     emit strictQuotaModeChanged();
 }
 
+void SettingsService::setReadDenyList(const QVariantList& v) {
+    if (m_readDenyList == v) return;
+    m_readDenyList = v;
+    QSettings().setValue("security/readDenyList", v);
+    emit readDenyListChanged();
+}
+
 void SettingsService::setActiveProjectId(const QString& id) {
     if (m_activeProjectId == id) return;
     m_activeProjectId = id;
@@ -665,11 +673,10 @@ void SettingsService::setActiveProjectId(const QString& id) {
 void SettingsService::resetGeneralToDefaults() {
     // 键集合与 GeneralPage 呈现项一一对应；默认值与 SettingsSchema 保持
     // 一致（test_settings::resetGeneralDefaultsMatchesSchema 锁定）。
+    // docs/17 A6: 安全三键（allowFullDiskRead/localOnlyMode/
+    // allowLocalNetworkFetch）已迁往"安全"页，不在本页重置范围内。
     setContextTokens(8192);
     setSimulationMode(false);
-    setAllowFullDiskRead(false);
-    setLocalOnlyMode(false);
-    setAllowLocalNetworkFetch(false);
     setLogLevel(QStringLiteral("info"));
     setEmbeddingModel(QStringLiteral("nomic-embed-text"));
     setEmbeddingBaseUrl(QStringLiteral("http://localhost:11434"));

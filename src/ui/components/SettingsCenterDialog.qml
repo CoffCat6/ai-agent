@@ -123,6 +123,13 @@ Dialog {
 
                 Loader {
                     anchors.fill: parent
+                    active: dialog.currentCategory === "security"
+                    visible: active
+                    source: "qrc:/qt/qml/NexusAI/src/ui/pages/SecurityPage.qml"
+                }
+
+                Loader {
+                    anchors.fill: parent
                     active: dialog.currentCategory === "mcp"
                     visible: active
                     source: "qrc:/qt/qml/NexusAI/src/ui/pages/McpPage.qml"

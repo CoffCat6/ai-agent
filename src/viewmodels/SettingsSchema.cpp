@@ -53,6 +53,9 @@ const QVector<SettingsKeyDef>& SettingsSchema::registeredKeys() {
         {"settings.lastCategory",         QVariant(),                        false},
         // docs/17 A0: 当前活动项目 id（空 = 无项目，本地会话）。
         {"projects/activeId",             QString(),                         false},
+        // docs/17 A1: 读取黑名单用户追加项（目录或 glob；内置默认清单
+        // 在 Sandbox::defaultDenyList，不在此存储）。
+        {"security/readDenyList",         QVariant(),                        false},
     };
     return keys;
 }

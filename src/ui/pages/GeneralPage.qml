@@ -13,14 +13,10 @@ Item {
     // here; today the category is empty and the section stays hidden.
     property var preferenceKeys: PreferenceRegistry.preferencesInCategory("general")
 
-    // docs/17 B2: 恢复默认会重置安全开关（全盘读取/仅本地模式/内网访问），
-    // 必须二次确认后才执行。
+    // docs/17 B2/A6: 恢复默认只覆盖本页键（安全开关已迁往"安全"页，
+    // 其重置由该页语义决定——黑名单/读策略不在"默认化"范围内）。
     function requestResetDefaults() {
-        if (Settings.allowFullDiskRead || Settings.localOnlyMode
-                || Settings.allowLocalNetworkFetch)
-            resetConfirmDialog.open()
-        else
-            Settings.resetGeneralToDefaults()
+        Settings.resetGeneralToDefaults()
     }
 
     Flickable {
@@ -97,61 +93,6 @@ Item {
                             I18n.currentLocale
                             return PreferenceRegistry.displayName(modelData)
                         }
-                    }
-                }
-            }
-
-            // ── 安全与隐私（docs/17 B5）────────────────────
-            ColumnLayout {
-                Layout.leftMargin: 24
-                Layout.rightMargin: 24
-                Layout.fillWidth: true
-                spacing: 8
-
-                Text { text: qsTr("安全与隐私"); color: Theme.textSecondary; font.pixelSize: Theme.fontSizeCaption; font.bold: true; font.family: Theme.fontMono }
-
-                ColumnLayout {
-                    Layout.fillWidth: true
-                    spacing: 2
-                    CheckBox { checked: Settings.allowFullDiskRead; onToggled: Settings.allowFullDiskRead = checked; text: qsTr("允许读取整个磁盘"); font.pixelSize: Theme.fontSizeBody; font.family: Theme.fontSans }
-                    Text {
-                        text: qsTr("关闭时文件读取仅限文档/下载/桌面/应用目录；开启后除系统目录外全部可读，模型读到的内容可能发送给云端模型。")
-                        color: Theme.textSecondary
-                        font.pixelSize: 10
-                        wrapMode: Text.Wrap
-                        Layout.fillWidth: true
-                        opacity: 0.8
-                        Layout.leftMargin: 32
-                    }
-                }
-
-                ColumnLayout {
-                    Layout.fillWidth: true
-                    spacing: 2
-                    CheckBox { checked: Settings.localOnlyMode; onToggled: Settings.localOnlyMode = checked; text: qsTr("仅本地模式"); font.pixelSize: Theme.fontSizeBody; font.family: Theme.fontSans }
-                    Text {
-                        text: qsTr("使用云端模型时拦截知识库搜索、联网搜索与全部 MCP 工具（工具页会显示拦截徽标）；本地模型不受影响。")
-                        color: Theme.textSecondary
-                        font.pixelSize: 10
-                        wrapMode: Text.Wrap
-                        Layout.fillWidth: true
-                        opacity: 0.8
-                        Layout.leftMargin: 32
-                    }
-                }
-
-                ColumnLayout {
-                    Layout.fillWidth: true
-                    spacing: 2
-                    CheckBox { checked: Settings.allowLocalNetworkFetch; onToggled: Settings.allowLocalNetworkFetch = checked; text: qsTr("允许 http_fetch 访问本机与内网地址"); font.pixelSize: Theme.fontSizeBody; font.family: Theme.fontSans }
-                    Text {
-                        text: qsTr("关闭时 http_fetch 拒绝本机/内网目标（防 SSRF）；仅在确有访问内网服务的需求时开启。")
-                        color: Theme.textSecondary
-                        font.pixelSize: 10
-                        wrapMode: Text.Wrap
-                        Layout.fillWidth: true
-                        opacity: 0.8
-                        Layout.leftMargin: 32
                     }
                 }
             }
@@ -329,54 +270,4 @@ Item {
         }
     }
 
-    // docs/17 B2: 恢复默认的二次确认——安全开关一并回落。
-    Dialog {
-        id: resetConfirmDialog
-        parent: Overlay.overlay
-        anchors.centerIn: parent
-        width: 380
-        modal: true
-        closePolicy: Popup.CloseOnEscape
-
-        background: DialogBackground {}
-
-        contentItem: ColumnLayout {
-            spacing: 10
-
-            Text {
-                text: qsTr("恢复通用设置默认值？")
-                color: Theme.textPrimary
-                font.pixelSize: Theme.fontSizeBody
-                font.bold: true
-                font.family: Theme.fontSans
-            }
-            Text {
-                Layout.fillWidth: true
-                text: qsTr("将重置上下文窗口、系统提示词、日志级别、嵌入配置，")
-                      + qsTr("并关闭「允许读取整个磁盘」「仅本地模式」「允许内网访问」三个安全开关。确定继续吗？")
-                color: Theme.textSecondary
-                font.pixelSize: Theme.fontSizeCaption
-                font.family: Theme.fontSans
-                wrapMode: Text.WordWrap
-            }
-
-            RowLayout {
-                Layout.alignment: Qt.AlignRight
-                spacing: 8
-
-                AppButton {
-                    text: qsTr("取消")
-                    onClicked: resetConfirmDialog.close()
-                }
-                AppButton {
-                    text: qsTr("恢复默认")
-                    highlighted: true
-                    onClicked: {
-                        resetConfirmDialog.close()
-                        Settings.resetGeneralToDefaults()
-                    }
-                }
-            }
-        }
-    }
 }

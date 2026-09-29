@@ -143,6 +143,11 @@ public:
     QString activeProjectId() const { return m_activeProjectId; }
     void setActiveProjectId(const QString& id);
 
+    // docs/17 A1: 读取黑名单用户追加项（QVariantList of QString）。
+    Q_PROPERTY(QVariantList readDenyList READ readDenyList WRITE setReadDenyList NOTIFY readDenyListChanged FINAL)
+    QVariantList readDenyList() const { return m_readDenyList; }
+    void setReadDenyList(const QVariantList& v);
+
     // docs/17 A0: 当前活动项目 id 的持久化（运行时真值在 AgentViewModel，
     // main.cpp 双向桥接）。空 = 无项目。
     Q_PROPERTY(QString activeProjectId READ activeProjectId WRITE setActiveProjectId NOTIFY activeProjectIdChanged FINAL)
@@ -207,6 +212,7 @@ signals:
     void strictQuotaModeChanged();
     void defaultPermissionModeChanged();
     void activeProjectIdChanged();
+    void readDenyListChanged();
 
 private:
     void load();
@@ -235,6 +241,7 @@ private:
     bool m_strictQuotaMode{false};
     QString m_defaultPermissionMode{QStringLiteral("confirm")};
     QString m_activeProjectId;
+    QVariantList m_readDenyList;
 
     static SettingsService* s_instance;
 };

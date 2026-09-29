@@ -1,0 +1,285 @@
+import QtQuick
+import QtQuick.Layouts
+import QtQuick.Controls
+import NexusAI
+import NexusAI.ViewModels
+
+// docs/17 A6: 独立"安全"分类。M1 直连（即时保存）。
+// 内容：读取沙箱（读策略 + 用户黑名单）与隐私门（仅本地模式、内网访问）。
+// 项目目录的授权入口在侧栏"导入项目"，不在设置页。
+Item {
+    id: page
+
+    Accessible.name: qsTr("安全设置页")
+
+    Flickable {
+        id: flick
+        anchors.fill: parent
+        clip: true
+        contentWidth: width
+        contentHeight: contentCol.implicitHeight + 24
+
+        ScrollBar.vertical: ScrollBar {}
+
+        ColumnLayout {
+            id: contentCol
+            width: flick.width
+            spacing: 16
+
+            Item { Layout.preferredHeight: 4 }
+
+            Text {
+                text: qsTr("安全")
+                color: Theme.textPrimary
+                font.pixelSize: Theme.fontSizeH2
+                font.bold: true
+                font.family: Theme.fontSans
+                Layout.leftMargin: 24
+                Layout.rightMargin: 24
+            }
+
+            Text {
+                text: qsTr("本页修改实时保存。判定顺序：系统目录封锁 → 黑名单 → 允许层（用户目录 ∪ 当前项目）。")
+                color: Theme.textSecondary
+                font.pixelSize: 10
+                font.family: Theme.fontSans
+                opacity: 0.8
+                wrapMode: Text.Wrap
+                Layout.fillWidth: true
+                Layout.leftMargin: 24
+                Layout.rightMargin: 24
+            }
+
+            // ── 文件读取沙箱 ──────────────────────────────
+            ColumnLayout {
+                Layout.leftMargin: 24
+                Layout.rightMargin: 24
+                Layout.fillWidth: true
+                spacing: 8
+
+                Text { text: qsTr("文件读取沙箱"); color: Theme.textSecondary; font.pixelSize: Theme.fontSizeCaption; font.bold: true; font.family: Theme.fontMono }
+
+                ColumnLayout {
+                    Layout.fillWidth: true
+                    spacing: 2
+                    CheckBox {
+                        checked: Settings.allowFullDiskRead
+                        onToggled: Settings.allowFullDiskRead = checked
+                        text: qsTr("允许读取整个磁盘")
+                        font.pixelSize: Theme.fontSizeBody
+                        font.family: Theme.fontSans
+                        Accessible.name: text
+                    }
+                    Text {
+                        text: qsTr("关闭时读取仅限文档/下载/桌面/应用目录与当前项目；开启后除系统目录与黑名单外全部可读，模型读到的内容可能发送给云端模型。")
+                        color: Theme.textSecondary
+                        font.pixelSize: 10
+                        wrapMode: Text.Wrap
+                        Layout.fillWidth: true
+                        opacity: 0.8
+                        Layout.leftMargin: 32
+                    }
+                }
+
+                // ── 用户黑名单编辑器 ──
+                Text {
+                    text: qsTr("黑名单（始终拒绝，优先于一切允许规则）")
+                    color: Theme.textSecondary
+                    font.pixelSize: Theme.fontSizeCaption
+                    font.family: Theme.fontMono
+                    Layout.topMargin: 4
+                }
+                Text {
+                    text: qsTr("内置默认拦截：~/.ssh、~/.gnupg、~/.aws 及 *.pem / *.key / *.ppk / *.kdbx。以下为追加项，支持目录（或目录名，命中任意层级）与通配模式如 *.env。")
+                    color: Theme.textSecondary
+                    font.pixelSize: 10
+                    wrapMode: Text.Wrap
+                    Layout.fillWidth: true
+                    opacity: 0.8
+                }
+
+                ListView {
+                    id: denyListView
+                    Layout.fillWidth: true
+                    Layout.preferredHeight: Math.min(contentHeight, 160)
+                    clip: true
+                    spacing: 2
+                    model: Settings.readDenyList
+
+                    delegate: Rectangle {
+                        required property var modelData
+                        required property int index
+                        width: denyListView.width
+                        height: 30
+                        radius: 6
+                        color: Theme.bgPrimary
+                        border.width: 1
+                        border.color: Theme.borderSubtle
+
+                        RowLayout {
+                            anchors.fill: parent
+                            anchors.leftMargin: 8
+                            anchors.rightMargin: 4
+                            spacing: 6
+
+                            AppIcon {
+                                Layout.preferredWidth: 12
+                                Layout.preferredHeight: 12
+                                icon: "shield"
+                                size: 12
+                                iconColor: Theme.statusDanger
+                            }
+                            Text {
+                                Layout.fillWidth: true
+                                text: modelData
+                                color: Theme.textPrimary
+                                font.pixelSize: Theme.fontSizeCaption
+                                font.family: Theme.fontMono
+                                elide: Text.ElideRight
+                            }
+                            Rectangle {
+                                width: 20; height: 20; radius: 4
+                                color: denyDelMA.containsMouse ? Theme.surfaceHover : "transparent"
+                                AppIcon {
+                                    anchors.centerIn: parent
+                                    icon: "close"
+                                    size: 11
+                                    iconColor: denyDelMA.containsMouse
+                                        ? Theme.statusDanger : Theme.textSecondary
+                                }
+                                MouseArea {
+                                    id: denyDelMA
+                                    anchors.fill: parent
+                                    hoverEnabled: true
+                                    cursorShape: Qt.PointingHandCursor
+                                    onClicked: {
+                                        const list = Settings.readDenyList.slice()
+                                        list.splice(index, 1)
+                                        Settings.readDenyList = list
+                                    }
+                                }
+                            }
+                        }
+                    }
+
+                    Text {
+                        anchors.centerIn: parent
+                        visible: denyListView.count === 0
+                        text: qsTr("暂无追加项")
+                        color: Theme.textSecondary
+                        font.pixelSize: Theme.fontSizeCaption
+                        font.family: Theme.fontSans
+                    }
+                }
+
+                RowLayout {
+                    Layout.fillWidth: true
+                    spacing: 8
+
+                    TextField {
+                        id: denyInput
+                        Layout.fillWidth: true
+                        placeholderText: qsTr("目录路径、目录名或通配模式（如 D:\\secrets、.git、*.env）")
+                        placeholderTextColor: Theme.textSecondary
+                        color: Theme.textPrimary
+                        selectionColor: Theme.brandPrimary
+                        selectedTextColor: "#ffffff"
+                        font.pixelSize: Theme.fontSizeBody
+                        font.family: Theme.fontMono
+                        background: Rectangle {
+                            radius: 6
+                            color: Theme.bgPrimary
+                            border.width: denyInput.activeFocus ? 2 : 1
+                            border.color: denyInput.activeFocus
+                                ? Theme.brandPrimary : Theme.borderSubtle
+                        }
+                        Accessible.name: qsTr("新增黑名单条目")
+                        onAccepted: denyAddButton.addEntry()
+                    }
+
+                    AppButton {
+                        id: denyAddButton
+                        text: qsTr("添加")
+                        enabled: denyInput.text.trim().length > 0
+                        onClicked: addEntry()
+
+                        function addEntry() {
+                            const entry = denyInput.text.trim()
+                            if (entry.length === 0) return
+                            const list = Settings.readDenyList.slice()
+                            // 去重（大小写不敏感，Windows 语义）。
+                            for (let i = 0; i < list.length; ++i) {
+                                if (String(list[i]).toLowerCase() === entry.toLowerCase()) {
+                                    denyInput.text = ""
+                                    return
+                                }
+                            }
+                            list.push(entry)
+                            Settings.readDenyList = list
+                            denyInput.text = ""
+                        }
+                    }
+                }
+            }
+
+            Rectangle { Layout.fillWidth: true; height: 1; color: Theme.borderSubtle }
+
+            // ── 隐私门 ────────────────────────────────────
+            ColumnLayout {
+                Layout.leftMargin: 24
+                Layout.rightMargin: 24
+                Layout.bottomMargin: 16
+                Layout.fillWidth: true
+                spacing: 8
+
+                Text { text: qsTr("隐私门"); color: Theme.textSecondary; font.pixelSize: Theme.fontSizeCaption; font.bold: true; font.family: Theme.fontMono }
+
+                ColumnLayout {
+                    Layout.fillWidth: true
+                    spacing: 2
+                    CheckBox {
+                        checked: Settings.localOnlyMode
+                        onToggled: Settings.localOnlyMode = checked
+                        text: qsTr("仅本地模式")
+                        font.pixelSize: Theme.fontSizeBody
+                        font.family: Theme.fontSans
+                        Accessible.name: text
+                    }
+                    Text {
+                        text: qsTr("使用云端模型时拦截知识库搜索、联网搜索与全部 MCP 工具（工具页会显示拦截徽标）；本地模型不受影响。")
+                        color: Theme.textSecondary
+                        font.pixelSize: 10
+                        wrapMode: Text.Wrap
+                        Layout.fillWidth: true
+                        opacity: 0.8
+                        Layout.leftMargin: 32
+                    }
+                }
+
+                ColumnLayout {
+                    Layout.fillWidth: true
+                    spacing: 2
+                    CheckBox {
+                        checked: Settings.allowLocalNetworkFetch
+                        onToggled: Settings.allowLocalNetworkFetch = checked
+                        text: qsTr("允许 http_fetch 访问本机与内网地址")
+                        font.pixelSize: Theme.fontSizeBody
+                        font.family: Theme.fontSans
+                        Accessible.name: text
+                    }
+                    Text {
+                        text: qsTr("关闭时 http_fetch 拒绝本机/内网目标（防 SSRF）；仅在确有访问内网服务的需求时开启。")
+                        color: Theme.textSecondary
+                        font.pixelSize: 10
+                        wrapMode: Text.Wrap
+                        Layout.fillWidth: true
+                        opacity: 0.8
+                        Layout.leftMargin: 32
+                    }
+                }
+            }
+
+            Item { Layout.fillHeight: true }
+        }
+    }
+}
