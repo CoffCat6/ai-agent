@@ -201,10 +201,12 @@ Rectangle {
                         required property var modelData
                         readonly property bool isActive:
                             AgentVM.activeProjectId === modelData.id
-                        readonly property bool expanded:
-                            isActive
-                            || (root.expandedProjects[modelData.id] === true
-                                && root.expansionEpoch >= 0)
+                        // 展开与激活解耦：只由点击状态表决定（点击取反，
+                        // epoch 作绑定失效标记）。激活中的项目同样可收起。
+                        readonly property bool expanded: {
+                            root.expansionEpoch
+                            return root.expandedProjects[modelData.id] === true
+                        }
                         readonly property var projectSessions: {
                             root.expansionEpoch   // 失效标记：强制重算
                             return AgentVM.sessionList.filter(function(s) {
@@ -317,12 +319,17 @@ Rectangle {
                                 cursorShape: Qt.PointingHandCursor
                                 onClicked: {
                                     // 激活该项目（沙箱/归属跟随）并展开；
-                                    // 已激活时仅切换展开——退出走「对话」头。
-                                    if (!projectNode.isActive)
+                                    // 已激活时点击 = 切换折叠（退出走「对话」头）。
+                                    if (!projectNode.isActive) {
                                         AgentVM.setActiveProjectId(
                                             projectNode.modelData.id)
-                                    root.expandedProjects[projectNode.modelData.id]
-                                        = !projectNode.expanded
+                                        root.expandedProjects[
+                                            projectNode.modelData.id] = true
+                                    } else {
+                                        root.expandedProjects[
+                                            projectNode.modelData.id]
+                                            = !projectNode.expanded
+                                    }
                                     root.expansionEpoch++
                                 }
                             }
