@@ -103,6 +103,45 @@ private slots:
                  "tools schema is not counted");
     }
 
+    // docs/16 §8.3: splitContextTokens buckets the live context by role.
+    // Invariants: buckets are exclusive, sum == estimateTokens(messages),
+    // and image payloads are broken out of their host message.
+    void splitContextTokensBuckets() {
+        QJsonObject sys = msg("system", QString(400, u's'));
+        QJsonObject user = msg("user", QString(200, u'u'));
+        QJsonArray userImgs;
+        userImgs.append(QStringLiteral("data:image/jpeg;base64,QUJD"));
+        user["images"] = userImgs;   // host message carries an image payload
+        QJsonObject assistant = msg("assistant", QString(300, u'a'));
+        QJsonObject tool = msg("tool", QString(500, u't'));
+
+        QJsonArray messages;
+        messages.append(sys);
+        messages.append(user);
+        messages.append(assistant);
+        messages.append(tool);
+
+        const QVariantMap split =
+            TokenEstimator::splitContextTokens(messages, 777);
+        QVERIFY(split.value("systemPrompt").toLongLong() > 0);
+        QVERIFY(split.value("conversation").toLongLong() > 0);
+        QVERIFY(split.value("toolResults").toLongLong() > 0);
+        QCOMPARE(split.value("images").toLongLong(), 1000);
+        QCOMPARE(split.value("toolsSchema").toLongLong(), 777);
+
+        // usedTokens uses the existing array口径; total adds the schema.
+        const qint64 used = split.value("usedTokens").toLongLong();
+        QCOMPARE(used, static_cast<qint64>(TokenEstimator::estimateTokens(messages)));
+        QCOMPARE(split.value("totalTokens").toLongLong(), used + 777);
+
+        // Exclusivity: buckets must add up to the used total exactly.
+        const qint64 buckets = split.value("systemPrompt").toLongLong()
+                             + split.value("conversation").toLongLong()
+                             + split.value("toolResults").toLongLong()
+                             + split.value("images").toLongLong();
+        QCOMPARE(buckets, used);
+    }
+
 };
 
 void TestTokenEstimator::estimateBasics() {

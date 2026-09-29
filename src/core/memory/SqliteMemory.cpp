@@ -1530,6 +1530,68 @@ QVariantList SqliteMemory::tokenStatsBySource(int recentDays) {
     return out;
 }
 
+// ── docs/16 §8.3: 会话级 token 细节聚合（TopBar 悬停浮层）──
+// 对单个会话的 token_usage 行做方向/来源拆分汇总。注意这是会话累计口径：
+// 各次请求会重复计入重叠的历史上下文，输出/费用类指标只有累计有意义。
+QVariantMap SqliteMemory::sessionTokenBreakdown(const QString& sessionId) {
+    QVariantMap out;
+    if (sessionId.isEmpty()) return out;
+
+    QSqlQuery q(m_db);
+    q.prepare(QStringLiteral(
+        "SELECT COUNT(*), "
+        "COALESCE(SUM(input_tokens),0), COALESCE(SUM(output_tokens),0), "
+        "COALESCE(SUM(cache_hit_tokens),0), "
+        "COALESCE(SUM(input_system_prompt),0), COALESCE(SUM(input_conversation),0), "
+        "COALESCE(SUM(input_tool_call),0), COALESCE(SUM(input_mcp),0), "
+        "COALESCE(SUM(input_skill),0), COALESCE(SUM(input_image),0), "
+        "COALESCE(SUM(input_other),0), "
+        "COALESCE(SUM(output_conversation),0), COALESCE(SUM(output_tool_call),0), "
+        "COALESCE(SUM(output_mcp),0), COALESCE(SUM(output_skill),0), "
+        "COALESCE(SUM(output_other),0), "
+        "COALESCE(SUM(cost_cents),0) "
+        "FROM token_usage WHERE session_id = ?"));
+    q.addBindValue(sessionId);
+    if (!q.exec() || !q.next()) {
+        qWarning() << "sessionTokenBreakdown failed:" << q.lastError().text();
+        return out;
+    }
+    const qint64 inSp    = q.value(4).toLongLong();
+    const qint64 inConv  = q.value(5).toLongLong();
+    const qint64 inTool  = q.value(6).toLongLong();
+    const qint64 inMcp   = q.value(7).toLongLong();
+    const qint64 inSkill = q.value(8).toLongLong();
+    const qint64 inImg   = q.value(9).toLongLong();
+    const qint64 inOther = q.value(10).toLongLong();
+    const qint64 totalInput  = q.value(1).toLongLong();
+    const qint64 totalOutput = q.value(2).toLongLong();
+    const qint64 totalCache  = q.value(3).toLongLong();
+
+    out["totalCalls"]           = q.value(0).toInt();
+    out["totalInputTokens"]     = totalInput;
+    out["totalOutputTokens"]    = totalOutput;
+    out["totalCacheHitTokens"]  = totalCache;
+    out["totalTokens"]          = totalInput + totalOutput;
+    out["totalCostCents"]       = q.value(16).toLongLong();
+    out["inputSystemPrompt"]    = inSp;
+    out["inputConversation"]    = inConv;
+    out["inputToolCall"]        = inTool;
+    out["inputMcp"]             = inMcp;
+    out["inputSkill"]           = inSkill;
+    out["inputImage"]           = inImg;
+    out["inputOther"]           = inOther;
+    out["outputConversation"]   = q.value(11).toLongLong();
+    out["outputToolCall"]       = q.value(12).toLongLong();
+    out["outputMcp"]            = q.value(13).toLongLong();
+    out["outputSkill"]          = q.value(14).toLongLong();
+    out["outputOther"]          = q.value(15).toLongLong();
+    // 缓存命中率：缓存命中相对输入合计的占比。
+    out["cacheHitRate"]         = totalInput > 0
+        ? static_cast<double>(totalCache) / static_cast<double>(totalInput)
+        : 0.0;
+    return out;
+}
+
 // ── docs/16 §6.3: 成本核算聚合 ─────────────────────────
 // totalCostCents 取已存储的 SUM(cost_cents)；input/output/cacheHit 费用
 // 按各模型定价重新拆分（明细表只存总费用）。projectedMonthlyCents 按当月

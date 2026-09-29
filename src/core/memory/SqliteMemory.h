@@ -49,6 +49,7 @@ public:
     QVariantList tokenStatsBySource(int recentDays = 30) override;
     QVariantMap costStats(int recentDays = 30) override;
     QVariantMap quotaStatus() override;
+    QVariantMap sessionTokenBreakdown(const QString& sessionId) override;
 
     void clear(const QString& sessionId) override;
 

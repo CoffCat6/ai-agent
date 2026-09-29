@@ -692,6 +692,20 @@ QVariantMap AgentViewModel::quotaStatus() {
     return m_memory ? m_memory->quotaStatus() : QVariantMap{};
 }
 
+// docs/16 §8.3: TopBar 悬停浮层的数据源。取当前激活 tab 的会话 id 做
+// 会话级聚合；浮层每次打开时重新调用，天然跟随会话切换与请求完成刷新。
+QVariantMap AgentViewModel::sessionTokenBreakdown() const {
+    const QString sessionId = active()->currentSessionId();
+    if (sessionId.isEmpty() || !m_memory) return QVariantMap{};
+    return m_memory->sessionTokenBreakdown(sessionId);
+}
+
+// docs/16 §8.3: TopBar 容量占比浮层。取激活 tab 的实时上下文构成；
+// 每次打开浮层时重新查询，跟随会话切换与任务进行刷新。
+QVariantMap AgentViewModel::contextComposition() const {
+    return active()->contextComposition();
+}
+
 QString AgentViewModel::logFilePath() const {
     return Logger::logFilePath();
 }

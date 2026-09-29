@@ -3,6 +3,7 @@
 #include <QString>
 #include <QJsonArray>
 #include <QJsonObject>
+#include <QVariant>
 #include <QVector>
 
 namespace NexusAI {
@@ -142,6 +143,40 @@ public:
         for (int i = keepFrom; i < messages.size(); ++i)
             out.append(messages.at(i));
         return out;
+    }
+
+    // 上下文构成拆分（TopBar 容量占比浮层，docs/16 §8.3）：把当前消息数组
+    // 按 role 拆成互斥的 token 桶。system → systemPrompt；user/assistant →
+    // conversation；tool → toolResults；图片负载从宿主消息中单列（避免与
+    // conversation 重复计入）。`reservedTokens` 是下一次请求的 tools schema
+    // 预留——不属于消息数组，单独成桶。约定：四桶之和 == estimateTokens(
+    // messages)（即现有 usedTokens 口径），加 reserved 即窗口真实占用。
+    static QVariantMap splitContextTokens(const QJsonArray& messages,
+                                          int reservedTokens) {
+        qint64 systemPrompt = 0, conversation = 0, toolResults = 0, images = 0;
+        for (const auto& entry : messages) {
+            const QJsonObject msg = entry.toObject();
+            const int img = msg.value("images").toArray().size() * 1000;
+            images += img;
+            const int est = estimateTokens(msg);
+            const QString role = msg.value("role").toString();
+            if (role == QLatin1String("system"))
+                systemPrompt += est;
+            else if (role == QLatin1String("tool"))
+                toolResults += est;
+            else
+                conversation += est - img;
+        }
+        const int used = estimateTokens(messages);
+        return QVariantMap{
+            {QStringLiteral("systemPrompt"), systemPrompt},
+            {QStringLiteral("conversation"), conversation},
+            {QStringLiteral("toolResults"),  toolResults},
+            {QStringLiteral("images"),       images},
+            {QStringLiteral("toolsSchema"),  reservedTokens},
+            {QStringLiteral("usedTokens"),   used},
+            {QStringLiteral("totalTokens"),  used + reservedTokens},
+        };
     }
 };
 

@@ -245,6 +245,16 @@ void AIAgent::notifyTokens() {
     emit tokensChanged(display);
 }
 
+// docs/16 §8.3: 实时上下文构成。桶来自当前消息数组（system prompt 是
+// 数组首条，与 usedTokens 同口径），tools schema 预留单独成桶——它随
+// 下一次请求发出、占用窗口，但不在 m_messages 里。
+QVariantMap AIAgent::contextComposition() const {
+    QVariantMap out = TokenEstimator::splitContextTokens(
+        m_messages, estimateReservedTokensForNextRequest());
+    out["maxTokens"] = m_contextLimit;
+    return out;
+}
+
 // ── Session management ────────────────────────────────────
 
 QJsonArray AIAgent::sessionList() const {

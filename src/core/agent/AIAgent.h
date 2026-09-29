@@ -7,6 +7,7 @@
 #include <QSet>
 #include <QString>
 #include <QTimer>
+#include <QVariant>
 #include <QVector>
 
 #include "AgentState.h"
@@ -64,6 +65,10 @@ public:
     // before each request. 0 disables compression.
     void setContextLimit(int tokens);
     int contextLimit() const { return m_contextLimit; }
+
+    // docs/16 §8.3: 实时上下文构成（按 role 拆分的 token 桶 + tools schema
+    // 预留），供 TopBar 容量占比浮层展示。
+    QVariantMap contextComposition() const;
 
     // Batch 22 (F8): user-editable system prompt; empty (after trim) clears
     // the override and falls back to the built-in prompt.

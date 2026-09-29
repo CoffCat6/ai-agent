@@ -132,6 +132,13 @@ public:
     virtual QVariantMap quotaStatus() {
         return {};
     }
+
+    // docs/16 §8.3: 会话级 token 细节聚合（TopBar 悬停浮层）。对单个会话的
+    // token_usage 行做方向/来源拆分汇总；无记录时 totalCalls 为 0。
+    virtual QVariantMap sessionTokenBreakdown(const QString& sessionId) {
+        Q_UNUSED(sessionId);
+        return {};
+    }
 };
 
 } // namespace NexusAI

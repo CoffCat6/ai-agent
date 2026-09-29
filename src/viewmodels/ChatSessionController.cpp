@@ -322,6 +322,12 @@ QVariantList ChatSessionController::auditLog(int limit) const {
     return m_agent ? m_agent->auditLog(limit).toVariantList() : QVariantList{};
 }
 
+// docs/16 §8.3: live per-tab context composition. Empty when no agent is
+// attached yet (fresh tab before first task) - the UI shows the empty state.
+QVariantMap ChatSessionController::contextComposition() const {
+    return m_agent ? m_agent->contextComposition() : QVariantMap{};
+}
+
 // docs/16 §8: QML-facing wrappers. Delegate to the agent's IMemory backend
 // (SqliteMemory) which implements the aggregate queries. Return empty when
 // no agent is attached (simulation mode) so the UI falls back to zeros.

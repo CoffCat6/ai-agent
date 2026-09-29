@@ -60,6 +60,9 @@ public:
     void deleteSession(const QString& sessionId);
     void renameSession(const QString& sessionId, const QString& title);
     QVariantList auditLog(int limit) const;
+    // docs/16 §8.3: live context composition of this tab's agent (TopBar
+    // capacity popup). Empty map when no agent is attached yet.
+    Q_INVOKABLE QVariantMap contextComposition() const;
 
     // docs/16 §8: QML-facing wrappers around IMemory aggregate queries.
     // The viewmodel (AgentVM) forwards these so UsageStatsPage can call

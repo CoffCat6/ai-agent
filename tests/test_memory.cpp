@@ -63,6 +63,8 @@ private slots:
     void auditTrail();
     void tokenStatsAggregate();
     void tokenStatsEmptyWhenNoData();
+    // docs/16 §8.3: session-scoped token breakdown (TopBar hover popup).
+    void sessionTokenBreakdown();
     void traceNodeRoundTrip();
     // Batch 6: knowledge persistence v2
     void knowledgeSchemaV1Migrates();
@@ -208,6 +210,73 @@ void TestMemory::tokenStatsEmptyWhenNoData() {
     QCOMPARE(stats.value("totalTokens").toInt(), 0);
     QVERIFY(stats.value("byModel").toList().isEmpty());
     QVERIFY(stats.value("byDay").toList().isEmpty());
+}
+
+// docs/16 §8.3: sessionTokenBreakdown aggregates one session's token_usage
+// rows per direction/source; other sessions and empty sessions stay out.
+void TestMemory::sessionTokenBreakdown() {
+    SqliteMemory mem(QStringLiteral(":memory:"));
+
+    // 7 input sources sum to 100; 3 output sources to 50; cache hits to 40.
+    QVariantMap rec;
+    rec["sessionId"] = "s1";
+    rec["model"] = "gpt-4o";
+    rec["requestId"] = 1;
+    rec["inputTokens"] = 100;
+    rec["outputTokens"] = 50;
+    rec["cacheHitTokens"] = 40;
+    rec["inputSystemPrompt"] = 30;
+    rec["inputConversation"] = 20;
+    rec["inputToolCall"] = 10;
+    rec["inputMcp"] = 15;
+    rec["inputSkill"] = 5;
+    rec["inputImage"] = 12;
+    rec["inputOther"] = 8;
+    rec["outputConversation"] = 20;
+    rec["outputToolCall"] = 15;
+    rec["outputOther"] = 15;
+    rec["cacheHitSystemPrompt"] = 25;
+    rec["cacheHitConversation"] = 10;
+    rec["cacheHitToolCall"] = 5;
+    rec["costCents"] = 7;
+    mem.logTokenUsage(rec);
+
+    // A second session must not leak into s1's breakdown.
+    QVariantMap other = rec;
+    other["sessionId"] = "s2";
+    other["inputTokens"] = 1000;
+    other["outputTokens"] = 1000;
+    other["costCents"] = 999;
+    mem.logTokenUsage(other);
+
+    const QVariantMap b = mem.sessionTokenBreakdown("s1");
+    QCOMPARE(b.value("totalCalls").toInt(), 1);
+    QCOMPARE(b.value("totalInputTokens").toLongLong(), 100);
+    QCOMPARE(b.value("totalOutputTokens").toLongLong(), 50);
+    QCOMPARE(b.value("totalCacheHitTokens").toLongLong(), 40);
+    QCOMPARE(b.value("totalTokens").toLongLong(), 150);
+    QCOMPARE(b.value("totalCostCents").toLongLong(), 7);
+    QCOMPARE(b.value("inputSystemPrompt").toLongLong(), 30);
+    QCOMPARE(b.value("inputMcp").toLongLong(), 15);
+    QCOMPARE(b.value("inputSkill").toLongLong(), 5);
+    QCOMPARE(b.value("inputImage").toLongLong(), 12);
+    QCOMPARE(b.value("inputOther").toLongLong(), 8);
+    QCOMPARE(b.value("outputConversation").toLongLong(), 20);
+    QCOMPARE(b.value("outputToolCall").toLongLong(), 15);
+    QCOMPARE(b.value("outputOther").toLongLong(), 15);
+    QCOMPARE(b.value("outputMcp").toLongLong(), 0);
+    QCOMPARE(b.value("outputSkill").toLongLong(), 0);
+    // cacheHitRate = 40 / 100
+    QVERIFY(qFuzzyCompare(b.value("cacheHitRate").toDouble(), 0.4));
+
+    // Session with no requests: empty aggregate (UI shows the empty state).
+    const QVariantMap empty = mem.sessionTokenBreakdown("s-none");
+    QCOMPARE(empty.value("totalCalls").toInt(), 0);
+    QCOMPARE(empty.value("totalTokens").toLongLong(), 0);
+    QCOMPARE(empty.value("cacheHitRate").toDouble(), 0.0);
+
+    // Blank id: defensive no-op rather than a full-table scan.
+    QVERIFY(mem.sessionTokenBreakdown(QString()).isEmpty());
 }
 
 void TestMemory::episodicFullTextSearch() {

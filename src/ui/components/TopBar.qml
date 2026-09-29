@@ -83,7 +83,10 @@ Rectangle {
         // arrive via tokenUsageChanged while a task is running. A mini
         // progress bar visualizes usedTokens/maxTokens and the per-request
         // cost (lastCostCents) is shown alongside.
+        // docs/16 §8.3: hovering opens a popup with the current session's
+        // token breakdown (per-source input/output splits, cache share).
         RowLayout {
+            id: tokenArea
             spacing: 6
             Layout.rightMargin: 8
 
@@ -121,6 +124,237 @@ Rectangle {
                 color: Theme.textSecondary
                 font.pixelSize: Theme.fontSizeCaption
                 font.family: Theme.fontMono
+            }
+
+            // Hover detector: opens the breakdown popup after a short dwell
+            // so a passing cursor doesn't flash the popup. HoverHandler is a
+            // non-Item, so the RowLayout doesn't try to manage its geometry.
+            // Both timers are condition-driven (no imperative start/stop,
+            // which would break their running bindings).
+            HoverHandler { id: tokenHover }
+
+            Timer {
+                id: hoverOpenTimer
+                interval: 350
+                running: tokenHover.hovered && !tokenPopup.opened
+                onTriggered: tokenPopup.refreshAndOpen()
+            }
+            // Auto-close once neither the trigger nor the popup is hovered;
+            // the interval doubles as a grace period for moving between them.
+            Timer {
+                id: hoverCloseTimer
+                interval: 300
+                running: tokenPopup.opened && !tokenHover.hovered
+                         && !tokenPopupHover.hovered
+                onTriggered: tokenPopup.close()
+            }
+        }
+
+        // docs/16 §8.3: context-capacity composition popup. Both sources are
+        // queried at open time: the live per-role token buckets from the
+        // active agent (composition) and the session cumulative totals for
+        // the one-line footer (sessionTotals).
+        Popup {
+            id: tokenPopup
+            parent: tokenArea
+            x: tokenArea.width - width      // right-aligned with the trigger
+            y: tokenArea.height + 8
+            width: 300
+            padding: 10
+            closePolicy: Popup.CloseOnEscape | Popup.CloseOnPressOutside
+
+            background: DialogBackground {}
+
+            property var composition: ({})
+            property var sessionTotals: ({})
+
+            function refreshAndOpen() {
+                composition = AgentVM.contextComposition()
+                sessionTotals = AgentVM.sessionTokenBreakdown()
+                open()
+            }
+
+            readonly property int totalTokens: composition.totalTokens || 0
+            readonly property int maxTokens: composition.maxTokens || 0
+
+            // Non-zero buckets in capacity order; colors match the stacked
+            // bar segments. Percentages are shares of the window capacity.
+            readonly property var segments: {
+                const c = composition
+                const defs = [
+                    ["systemPrompt", qsTr("系统提示词"), Theme.textSecondary],
+                    ["toolsSchema",  qsTr("工具定义"),   Theme.statusWarning],
+                    ["conversation", qsTr("对话"),       Theme.brandPrimary],
+                    ["toolResults",  qsTr("工具结果"),   Theme.statusSuccess],
+                    ["images",       qsTr("图片"),       Theme.statusDanger]
+                ]
+                const rows = []
+                for (let i = 0; i < defs.length; ++i) {
+                    const v = c[defs[i][0]] || 0
+                    if (v > 0)
+                        rows.push({ label: defs[i][1], tokens: v, color: defs[i][2] })
+                }
+                return rows
+            }
+            function windowPct(tokens) {
+                return maxTokens > 0 ? Math.round(tokens * 100 / maxTokens) : 0
+            }
+
+            contentItem: ColumnLayout {
+                spacing: 3
+
+                // Keep the popup open while the cursor is over it (paired
+                // with hoverCloseTimer on the trigger).
+                HoverHandler { id: tokenPopupHover }
+
+                // Empty state: no agent attached (fresh tab, no task yet).
+                Text {
+                    visible: tokenPopup.segments.length === 0
+                             && tokenPopup.totalTokens === 0
+                    text: qsTr("暂无数据")
+                    color: Theme.textSecondary
+                    font.pixelSize: Theme.fontSizeCaption
+                    font.family: Theme.fontMono
+                    Layout.alignment: Qt.AlignHCenter
+                }
+
+                Text {
+                    visible: tokenPopup.segments.length > 0
+                    text: tokenPopup.maxTokens > 0
+                        ? qsTr("上下文构成 · %1 / %2 · %3%").arg(
+                              tokenPopup.totalTokens).arg(tokenPopup.maxTokens)
+                              .arg(tokenPopup.windowPct(tokenPopup.totalTokens))
+                        : qsTr("上下文构成 · %1").arg(tokenPopup.totalTokens)
+                    color: Theme.textSecondary
+                    font.pixelSize: Theme.fontSizeCaption
+                    font.bold: true
+                    font.family: Theme.fontMono
+                }
+
+                // ── Stacked capacity bar: full width = context window,
+                //    each segment sized by its share, remainder = free ──
+                Rectangle {
+                    visible: tokenPopup.segments.length > 0
+                             && tokenPopup.maxTokens > 0
+                    Layout.fillWidth: true
+                    Layout.topMargin: 2
+                    Layout.preferredHeight: 8
+                    radius: 4
+                    color: Theme.bgPrimary
+                    border.width: 1
+                    border.color: Theme.borderSubtle
+                    clip: true
+
+                    Row {
+                        anchors.verticalCenter: parent.verticalCenter
+                        height: parent.height
+                        Repeater {
+                            model: tokenPopup.segments
+                            delegate: Rectangle {
+                                required property var modelData
+                                width: parent.width * Math.min(1.0,
+                                    modelData.tokens / Math.max(1, tokenPopup.maxTokens))
+                                height: parent.height
+                                color: modelData.color
+                            }
+                        }
+                    }
+                }
+
+                // ── Legend: color dot + label + tokens + share of window ──
+                Repeater {
+                    model: tokenPopup.segments
+                    delegate: RowLayout {
+                        required property var modelData
+                        Layout.fillWidth: true
+
+                        Rectangle {
+                            Layout.preferredWidth: 7
+                            Layout.preferredHeight: 7
+                            radius: 2
+                            color: modelData.color
+                        }
+                        Text {
+                            Layout.fillWidth: true
+                            text: modelData.label
+                            color: Theme.textPrimary
+                            font.pixelSize: Theme.fontSizeCaption
+                            font.family: Theme.fontMono
+                            elide: Text.ElideRight
+                        }
+                        Text {
+                            text: modelData.tokens
+                            color: Theme.textSecondary
+                            font.pixelSize: Theme.fontSizeCaption
+                            font.family: Theme.fontMono
+                        }
+                        Text {
+                            text: tokenPopup.windowPct(modelData.tokens) + "%"
+                            color: Theme.textSecondary
+                            font.pixelSize: Theme.fontSizeCaption
+                            font.family: Theme.fontMono
+                            Layout.preferredWidth: 36
+                            horizontalAlignment: Text.AlignRight
+                        }
+                    }
+                }
+
+                // ── Free capacity row ──
+                RowLayout {
+                    visible: tokenPopup.segments.length > 0
+                             && tokenPopup.maxTokens > 0
+                             && tokenPopup.maxTokens > tokenPopup.totalTokens
+                    Layout.fillWidth: true
+
+                    Item {
+                        Layout.preferredWidth: 7
+                        Layout.preferredHeight: 7
+                    }
+                    Text {
+                        Layout.fillWidth: true
+                        text: qsTr("剩余可用")
+                        color: Theme.textSecondary
+                        font.pixelSize: Theme.fontSizeCaption
+                        font.family: Theme.fontMono
+                    }
+                    Text {
+                        text: tokenPopup.maxTokens - tokenPopup.totalTokens
+                        color: Theme.textSecondary
+                        font.pixelSize: Theme.fontSizeCaption
+                        font.family: Theme.fontMono
+                    }
+                    Text {
+                        text: tokenPopup.windowPct(
+                                  tokenPopup.maxTokens - tokenPopup.totalTokens) + "%"
+                        color: Theme.textSecondary
+                        font.pixelSize: Theme.fontSizeCaption
+                        font.family: Theme.fontMono
+                        Layout.preferredWidth: 36
+                        horizontalAlignment: Text.AlignRight
+                    }
+                }
+
+                // ── Footer: session cumulative (kept from the old view) ──
+                Rectangle {
+                    visible: (tokenPopup.sessionTotals.totalCalls || 0) > 0
+                    Layout.fillWidth: true
+                    Layout.topMargin: 4
+                    Layout.bottomMargin: 2
+                    Layout.preferredHeight: 1
+                    color: Theme.borderSubtle
+                }
+                Text {
+                    visible: (tokenPopup.sessionTotals.totalCalls || 0) > 0
+                    text: (tokenPopup.sessionTotals.totalCostCents > 0)
+                        ? qsTr("本会话累计 %1 次请求 · ¥%2")
+                            .arg(tokenPopup.sessionTotals.totalCalls || 0)
+                            .arg(((tokenPopup.sessionTotals.totalCostCents || 0) / 100.0).toFixed(2))
+                        : qsTr("本会话累计 %1 次请求")
+                            .arg(tokenPopup.sessionTotals.totalCalls || 0)
+                    color: Theme.textSecondary
+                    font.pixelSize: Theme.fontSizeCaption
+                    font.family: Theme.fontMono
+                }
             }
         }
 

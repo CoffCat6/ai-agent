@@ -301,6 +301,11 @@ public:
     Q_INVOKABLE QVariantList tokenStatsBySource(int recentDays = 30);
     Q_INVOKABLE QVariantMap costStats(int recentDays = 30);
     Q_INVOKABLE QVariantMap quotaStatus();
+    // docs/16 §8.3: 当前激活会话的 token 来源拆分（TopBar 悬停浮层）。
+    // 无激活会话 id 时返回空 map，QML 据此显示空态。
+    Q_INVOKABLE QVariantMap sessionTokenBreakdown() const;
+    // docs/16 §8.3: 激活 tab 的实时上下文构成（容量占比浮层数据源）。
+    Q_INVOKABLE QVariantMap contextComposition() const;
     Q_INVOKABLE QString logFilePath() const;   // runtime log file path (for the audit dialog)
 
 signals:
