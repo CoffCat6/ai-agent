@@ -19,6 +19,33 @@ QJsonArray arrayOf(const char* raw) {
     return QJsonDocument::fromJson(QByteArray(raw)).array();
 }
 
+// Expose the protected streaming entry points so tests can drive one
+// request's processLine sequence by hand and inspect streamResult.
+class TestableOpenAI : public OpenAIService {
+public:
+    using OpenAIService::OpenAIService;
+    void feed(LLMRequestContext& ctx, const QByteArray& line) { processLine(ctx, line); }
+    LLMResponse result(const LLMRequestContext& ctx) const { return streamResult(ctx); }
+    ProviderRequestStatePtr newState() const { return createRequestState(); }
+    QJsonObject bodyFor(const QJsonArray& messages) { return buildRequestBody(messages, {}); }
+};
+
+class TestableOllama : public OllamaService {
+public:
+    using OllamaService::OllamaService;
+    void feed(LLMRequestContext& ctx, const QByteArray& line) { processLine(ctx, line); }
+    LLMResponse result(const LLMRequestContext& ctx) const { return streamResult(ctx); }
+    ProviderRequestStatePtr newState() const { return createRequestState(); }
+};
+
+class TestableAnthropic : public AnthropicService {
+public:
+    using AnthropicService::AnthropicService;
+    void feed(LLMRequestContext& ctx, const QByteArray& line) { processLine(ctx, line); }
+    LLMResponse result(const LLMRequestContext& ctx) const { return streamResult(ctx); }
+    ProviderRequestStatePtr newState() const { return createRequestState(); }
+};
+
 } // namespace
 
 class TestLlmParsers : public QObject {
@@ -89,12 +116,16 @@ private slots:
     void openaiStreamingAccumulation();
     void openaiNoChoices();
     void openaiErrorBodyHasNoChoices();
+    // docs/16 §5.1: usage captured on the streaming path (include_usage)
+    void openaiStreamingUsageCapture();
+    void openaiRequestBodyIncludesStreamOptions();
 
     // ── Ollama ────────────────────────────────────────
     void ollamaPlainText();
     void ollamaNestedToolCalls();
     void ollamaLegacyToolCalls();
     void ollamaToolCallIdFallback();
+    void ollamaStreamingUsageCapture();
 
     // ── Anthropic ─────────────────────────────────────
     void anthropicPlainText();
@@ -103,6 +134,7 @@ private slots:
     void anthropicConvertToolCalls();
     void anthropicConvertDropsLeadingAssistant();
     void anthropicParseToolUse();
+    void anthropicStreamingUsageCapture();
 };
 
 void TestLlmParsers::openaiPlainText() {
@@ -196,6 +228,40 @@ void TestLlmParsers::openaiErrorBodyHasNoChoices() {
     const LLMResponse r = OpenAIService::parseResponse(jsonOf(
         R"({"error": {"message": "invalid api key", "type": "auth_error"}})"));
     QVERIFY(!r.success);
+}
+
+// docs/16 §5.1: with stream_options.include_usage the final chunk (empty
+// choices) carries the usage object; it must survive the empty-choices
+// guard and land on the streamed LLMResponse.
+void TestLlmParsers::openaiStreamingUsageCapture() {
+    TestableOpenAI svc;
+    LLMRequestContext ctx;
+    ctx.provider = svc.newState();
+
+    svc.feed(ctx, QByteArrayLiteral(
+        "data: {\"choices\":[{\"delta\":{\"content\":\"Hi\"}}]}"));
+    svc.feed(ctx, QByteArrayLiteral(
+        "data: {\"choices\":[],\"usage\":{\"prompt_tokens\":120,"
+        "\"completion_tokens\":34,\"total_tokens\":154,"
+        "\"prompt_tokens_details\":{\"cached_tokens\":40}}}"));
+    svc.feed(ctx, QByteArrayLiteral("data: [DONE]"));
+
+    QVERIFY(ctx.doneReceived);
+    const LLMResponse r = svc.result(ctx);
+    QVERIFY(r.success);
+    QCOMPARE(r.content, QStringLiteral("Hi"));
+    QCOMPARE(r.promptTokens, 120);
+    QCOMPARE(r.completionTokens, 34);
+    QCOMPARE(r.cachedTokens, 40);
+}
+
+void TestLlmParsers::openaiRequestBodyIncludesStreamOptions() {
+    TestableOpenAI svc;
+    const QJsonArray msgs{QJsonObject{{"role", "user"}, {"content", "hi"}}};
+    const QJsonObject body = svc.bodyFor(msgs);
+    QCOMPARE(body.value("stream").toBool(), true);
+    QCOMPARE(body.value("stream_options").toObject()
+                 .value("include_usage").toBool(), true);
 }
 
 void TestLlmParsers::ollamaPlainText() {
@@ -336,6 +402,55 @@ void TestLlmParsers::anthropicConvertDropsLeadingAssistant() {
 
 // Non-streamed tool use: content blocks carry tool_use entries whose input
 // is already a JSON object.
+// docs/16 §5.1: the done=true final line carries the eval counts; they must
+// land on the streamed LLMResponse as the direction split.
+void TestLlmParsers::ollamaStreamingUsageCapture() {
+    TestableOllama svc;
+    LLMRequestContext ctx;
+    ctx.provider = svc.newState();
+
+    svc.feed(ctx, QByteArrayLiteral(
+        "{\"message\":{\"content\":\"你好\"},\"done\":false}"));
+    svc.feed(ctx, QByteArrayLiteral(
+        "{\"message\":{},\"done\":true,\"prompt_eval_count\":100,\"eval_count\":25}"));
+
+    QVERIFY(ctx.doneReceived);
+    const LLMResponse r = svc.result(ctx);
+    QVERIFY(r.success);
+    QCOMPARE(r.content, QStringLiteral("你好"));
+    QCOMPARE(r.promptTokens, 100);
+    QCOMPARE(r.completionTokens, 25);
+    QCOMPARE(r.tokensUsed, 125);
+}
+
+// docs/16 §5.1: message_start carries input + cache split, message_delta
+// the cumulative output count; both must reach streamResult.
+void TestLlmParsers::anthropicStreamingUsageCapture() {
+    TestableAnthropic svc;
+    LLMRequestContext ctx;
+    ctx.provider = svc.newState();
+
+    svc.feed(ctx, QByteArrayLiteral(
+        "data: {\"type\":\"message_start\",\"message\":{\"usage\":"
+        "{\"input_tokens\":150,\"cache_read_input_tokens\":60,"
+        "\"cache_creation_input_tokens\":10}}}"));
+    svc.feed(ctx, QByteArrayLiteral(
+        "data: {\"type\":\"content_block_delta\",\"delta\":"
+        "{\"type\":\"text_delta\",\"text\":\"Hi\"}}"));
+    svc.feed(ctx, QByteArrayLiteral(
+        "data: {\"type\":\"message_delta\",\"usage\":{\"output_tokens\":45}}"));
+    svc.feed(ctx, QByteArrayLiteral("data: {\"type\":\"message_stop\"}"));
+
+    QVERIFY(ctx.doneReceived);
+    const LLMResponse r = svc.result(ctx);
+    QVERIFY(r.success);
+    QCOMPARE(r.content, QStringLiteral("Hi"));
+    QCOMPARE(r.promptTokens, 150);
+    QCOMPARE(r.completionTokens, 45);
+    QCOMPARE(r.cacheReadTokens, 60);
+    QCOMPARE(r.cacheCreationTokens, 10);
+}
+
 void TestLlmParsers::anthropicParseToolUse() {
     const LLMResponse r = AnthropicService::parseResponse(jsonOf(R"({
         "type": "message",

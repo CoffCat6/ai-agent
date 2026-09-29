@@ -262,6 +262,12 @@ LLMResponse AnthropicService::streamResult(const LLMRequestContext& ctx) const {
     response.success = true;
     response.content = ctx.content;
     response.tokensUsed = ctx.tokensUsed;
+    // docs/16 §5.1: direction split captured from message_start/message_delta.
+    // Zero when the stream ended early - the agent then estimates.
+    response.promptTokens = state->promptTokens;
+    response.completionTokens = state->completionTokens;
+    response.cacheReadTokens = state->cacheReadTokens;
+    response.cacheCreationTokens = state->cacheCreationTokens;
     for (const auto& tu : state->toolUses) {
         if (tu.name.isEmpty()) continue;
         ToolCallInfo info;
@@ -315,9 +321,16 @@ void AnthropicService::processLine(LLMRequestContext& ctx, const QByteArray& lin
         return;
     }
     if (type == QLatin1String("message_start")) {
-        // input tokens arrive on the opening event
-        ctx.tokensUsed += json.value("message").toObject().value("usage")
-                            .toObject().value("input_tokens").toInt();
+        // input tokens (+ cache split) arrive on the opening event
+        const QJsonObject usage = json.value("message").toObject()
+                                      .value("usage").toObject();
+        ctx.tokensUsed += usage.value("input_tokens").toInt();
+        // docs/16 §5.1: keep the direction split for AIAgent calibration
+        // and billing instead of collapsing it into tokensUsed.
+        state->promptTokens = usage.value("input_tokens").toInt();
+        state->cacheReadTokens = usage.value("cache_read_input_tokens").toInt();
+        state->cacheCreationTokens =
+            usage.value("cache_creation_input_tokens").toInt();
         return;
     }
     if (type == QLatin1String("content_block_start")) {
@@ -346,7 +359,12 @@ void AnthropicService::processLine(LLMRequestContext& ctx, const QByteArray& lin
         return;
     }
     if (type == QLatin1String("message_delta")) {
-        ctx.tokensUsed += json.value("usage").toObject().value("output_tokens").toInt();
+        // output_tokens arrives cumulatively - the final event carries the
+        // full completion count.
+        const int outputTokens =
+            json.value("usage").toObject().value("output_tokens").toInt();
+        ctx.tokensUsed += outputTokens;
+        state->completionTokens = outputTokens;
         return;
     }
     if (type == QLatin1String("message_stop")) {

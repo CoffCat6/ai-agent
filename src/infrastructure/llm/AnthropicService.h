@@ -58,6 +58,12 @@ protected:
     };
     struct AnthropicRequestState : ProviderRequestState {
         QVector<StreamToolUse> toolUses;
+        // docs/16 §5.1: usage split captured from message_start (input +
+        // cache) and message_delta (output), mapped in streamResult.
+        int promptTokens{0};
+        int completionTokens{0};
+        int cacheReadTokens{0};
+        int cacheCreationTokens{0};
     };
 
     ProviderRequestStatePtr createRequestState() const override

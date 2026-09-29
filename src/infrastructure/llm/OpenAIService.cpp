@@ -8,6 +8,20 @@
 
 namespace NexusAI {
 
+namespace {
+// docs/16 §5.1: map an OpenAI usage object onto LLMResponse. Shared by the
+// non-streamed parseResponse and the include_usage streaming chunk so the
+// two paths never drift apart.
+void applyUsage(LLMResponse& response, const QJsonObject& usage) {
+    if (usage.isEmpty()) return;
+    response.tokensUsed = usage.value("total_tokens").toInt();
+    response.promptTokens = usage.value("prompt_tokens").toInt();
+    response.completionTokens = usage.value("completion_tokens").toInt();
+    response.cachedTokens = usage.value("prompt_tokens_details").toObject()
+                                .value("cached_tokens").toInt();
+}
+} // namespace
+
 OpenAIService::OpenAIService(QObject* parent)
     : LLMServiceBase(parent)
 {
@@ -52,6 +66,13 @@ QJsonObject OpenAIService::buildRequestBody(const QJsonArray& messages, const QJ
     body["model"] = m_model;
     body["messages"] = convertMessagesForOpenAI(messages);
     body["stream"] = true; // SSE streaming
+
+    // docs/16 §5.1: request per-request token accounting on the stream.
+    // Spec-defined field; endpoints that predate it simply ignore it, and
+    // streamResult then falls back to the estimate path (usage stays empty).
+    QJsonObject streamOptions;
+    streamOptions["include_usage"] = true;
+    body["stream_options"] = streamOptions;
 
     // Batch 15: sampling params are opt-in - absent from the JSON unless the
     // active profile sets them (strict proxies reject empty fields).
@@ -121,8 +142,9 @@ LLMResponse OpenAIService::streamResult(const LLMRequestContext& ctx) const {
         info.arguments = argsDoc.object();
         response.toolCalls.append(info);
     }
-    // Token usage is not reported on streaming responses (would require
-    // stream_options.include_usage); the agent estimates the context size.
+    // docs/16 §5.1: map the captured include_usage chunk (empty when the
+    // endpoint ignored stream_options - the agent then estimates).
+    applyUsage(response, state->usage);
     return response;
 }
 
@@ -193,6 +215,13 @@ void OpenAIService::processLine(LLMRequestContext& ctx, const QByteArray& line) 
         ctx.errorEmitted = true;
         emit errorOccurred(QStringLiteral("API error: %1").arg(msg));
         return;
+    }
+
+    // stream_options.include_usage: the final chunk (empty "choices") carries
+    // the usage object - capture it before the empty-choices guard returns.
+    if (json.contains("usage")) {
+        const QJsonObject usage = json.value("usage").toObject();
+        if (!usage.isEmpty()) state->usage = usage;
     }
 
     // Some providers send keep-alive / empty choices frames; indexing into
@@ -267,13 +296,9 @@ LLMResponse OpenAIService::parseResponse(const QJsonObject& json) {
     }
 
     const QJsonObject usage = json.value("usage").toObject();
-    response.tokensUsed = usage.value("total_tokens").toInt();
 
     // docs/16 §5.1 / 附录 A: 分类 token 计数（来自 API usage 对象）
-    response.promptTokens = usage.value("prompt_tokens").toInt();
-    response.completionTokens = usage.value("completion_tokens").toInt();
-    response.cachedTokens = usage.value("prompt_tokens_details").toObject()
-                                .value("cached_tokens").toInt();
+    applyUsage(response, usage);
 
     return response;
 }

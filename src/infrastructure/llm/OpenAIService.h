@@ -54,6 +54,9 @@ protected:
     };
     struct OpenAIRequestState : ProviderRequestState {
         QVector<StreamToolCall> toolCalls;
+        // docs/16 §5.1: usage object from the include_usage final chunk
+        // (empty "choices"), mapped onto LLMResponse in streamResult.
+        QJsonObject usage;
     };
 
     ProviderRequestStatePtr createRequestState() const override
@@ -68,7 +71,9 @@ protected:
     LLMResponse parseBody(const QJsonObject& json) const override
     { return parseResponse(json); }
 
-private:
+protected:
+    // Protected (not private) so tests can assert the wire format directly,
+    // mirroring convertMessagesForOpenAI.
     QJsonObject buildRequestBody(const QJsonArray& messages, const QJsonArray& tools);
 
     // Batch 15: unset = invalid QVariant → field omitted from the request.

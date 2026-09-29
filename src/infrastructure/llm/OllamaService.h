@@ -38,6 +38,9 @@ public:
 protected:
     struct OllamaRequestState : ProviderRequestState {
         QVector<ToolCallInfo> toolCalls;
+        // docs/16 §5.1: eval counts from the done=true final line.
+        int promptTokens{0};
+        int completionTokens{0};
     };
 
     ProviderRequestStatePtr createRequestState() const override

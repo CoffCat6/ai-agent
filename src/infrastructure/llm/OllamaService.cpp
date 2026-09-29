@@ -120,6 +120,10 @@ LLMResponse OllamaService::streamResult(const LLMRequestContext& ctx) const {
     response.content = ctx.content;
     response.toolCalls = state->toolCalls;
     response.tokensUsed = ctx.tokensUsed;
+    // docs/16 §5.1: eval counts from the done=true line (0 on aborted
+    // streams - the agent then estimates).
+    response.promptTokens = state->promptTokens;
+    response.completionTokens = state->completionTokens;
     return response;
 }
 
@@ -164,8 +168,11 @@ void OllamaService::processLine(LLMRequestContext& ctx, const QByteArray& line) 
     if (json.value("done").toBool()) {
         ctx.doneReceived = true;
         state->toolCalls = parseToolCalls(message);
-        ctx.tokensUsed = json.value("eval_count").toInt()
-                     + json.value("prompt_eval_count").toInt();
+        // docs/16 §5.1: keep the direction split for AIAgent calibration
+        // and billing instead of collapsing it into tokensUsed.
+        state->promptTokens = json.value("prompt_eval_count").toInt();
+        state->completionTokens = json.value("eval_count").toInt();
+        ctx.tokensUsed = state->completionTokens + state->promptTokens;
     }
 }
 
