@@ -10,6 +10,7 @@
 #include "core/utils/PricingCalculator.h"
 
 #include <QtTest>
+#include <QSet>
 #include <QGuiApplication>
 #include <QStyleHints>
 #include <QQmlComponent>
@@ -160,6 +161,79 @@ private slots:
         }
         SettingsService reloaded(nullptr);
         QCOMPARE(reloaded.defaultPermissionMode(), QStringLiteral("auto_edit"));
+    }
+
+    // docs/17 B2: resetGeneralToDefaults 把通用页 9 个键回写为 schema
+    // 登记的默认值（硬编码的 reset 列表与 schema 默认值靠本测试锁定同步）。
+    void resetGeneralDefaultsMatchesSchema() {
+        SettingsGuard guard;
+        SettingsService svc(nullptr);
+
+        // 先全部调到非默认值
+        svc.setContextTokens(4096);
+        svc.setSimulationMode(true);
+        svc.setAllowFullDiskRead(true);
+        svc.setLocalOnlyMode(true);
+        svc.setAllowLocalNetworkFetch(true);
+        svc.setLogLevel(QStringLiteral("debug"));
+        svc.setEmbeddingModel(QStringLiteral("bge-m3"));
+        svc.setEmbeddingBaseUrl(QStringLiteral("http://localhost:12345"));
+        svc.setSystemPromptOverride(QStringLiteral("custom prompt"));
+
+        svc.resetGeneralToDefaults();
+
+        QVariantMap defaults;
+        for (const auto& k : SettingsSchema::registeredKeys())
+            if (k.defaultValue.isValid())
+                defaults.insert(k.key, k.defaultValue);
+        QCOMPARE(svc.contextTokens(),
+                 defaults.value("contextTokens").toInt());
+        QCOMPARE(svc.simulationMode(),
+                 defaults.value("simulationMode").toBool());
+        QCOMPARE(svc.allowFullDiskRead(),
+                 defaults.value("security/allowFullDiskRead").toBool());
+        QCOMPARE(svc.localOnlyMode(),
+                 defaults.value("security/localOnlyMode").toBool());
+        QCOMPARE(svc.allowLocalNetworkFetch(),
+                 defaults.value("security/allowLocalNetworkFetch").toBool());
+        QCOMPARE(svc.logLevel(), defaults.value("logging/level").toString());
+        QCOMPARE(svc.embeddingModel(),
+                 defaults.value("embedding/model").toString());
+        QCOMPARE(svc.embeddingBaseUrl(),
+                 defaults.value("embedding/baseUrl").toString());
+        QCOMPARE(svc.systemPromptOverride(),
+                 defaults.value("agent/systemPromptOverride").toString());
+    }
+
+    // docs/17 B3: 账本完整性——三类旁路写入方（ToolRegistry/AgentViewModel/
+    // PreferenceStore）的键必须全部登记进 schema，防止"唯一事实源"再漂移。
+    void schemaCoversBypassWriters() {
+        const auto& keys = SettingsSchema::registeredKeys();
+        QSet<QString> registered;
+        for (const auto& k : keys) registered.insert(k.key);
+
+        const QStringList expected = {
+            // M3: ToolRegistry 用户禁用清单
+            "tools/disabled",
+            // 迁移钩子（load() 写入，无静态默认）
+            "schemaVersion",
+            // M4: 运行时布局（AgentViewModel 直写）
+            "ui/sidebarWidth", "ui/panelWidth",
+            "ui/panelVisible", "ui/sidebarExpanded",
+            // M2: PreferenceStore 物理键（prefs/v1/<key>）
+            "prefs/v1/ui.themeMode", "prefs/v1/ui.fontSans",
+            "prefs/v1/ui.fontMono", "prefs/v1/ui.baseFontSize",
+            "prefs/v1/ui.locale",
+            "prefs/v1/ui.defaultSidebarWidth", "prefs/v1/ui.defaultPanelWidth",
+            "prefs/v1/ui.defaultSidebarExpanded", "prefs/v1/ui.defaultPanelVisible",
+            "prefs/v1/ui.restoreWindowOnStartup",
+            // M2 内部键
+            "settings.lastCategory",
+        };
+        for (const QString& key : expected) {
+            QVERIFY2(registered.contains(key), qPrintable(
+                QStringLiteral("settings key not in schema ledger: %1").arg(key)));
+        }
     }
 
     void modelSelectionAndSignals() {

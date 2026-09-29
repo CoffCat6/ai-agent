@@ -400,6 +400,18 @@ Item {
                         onToggled: EditBuffer.stage("ui.restoreWindowOnStartup", checked)
                     }
                 }
+
+                Text {
+                    // docs/17 B7: 这些键只影响下次启动的初始布局，当前窗口
+                    // 以拖拽为准（运行时拖拽写入 ui/sidebarWidth 等覆盖键）。
+                    text: qsTr("以上默认值在下次启动时生效；当前窗口布局以手动拖拽为准。")
+                    color: Theme.textSecondary
+                    font.pixelSize: 10
+                    font.family: Theme.fontSans
+                    opacity: 0.8
+                    wrapMode: Text.Wrap
+                    Layout.fillWidth: true
+                }
             }
         }
     }

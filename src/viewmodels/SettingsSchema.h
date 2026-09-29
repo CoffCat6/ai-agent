@@ -11,6 +11,11 @@ namespace NexusAI {
 // keys, test SettingsGuard backs them up, and future migrations reference
 // this list. B档 (decision D1=B): registry + schemaVersion + migration hook,
 // no import/export.
+//
+// docs/17 B3: 账本范围 = 所有 QSettings("NexusAI","NexusAI") 键，含三类旁路
+// 写入方（ToolRegistry 的 tools/disabled、AgentViewModel 的运行时布局键、
+// PreferenceStore 的 prefs/v1/* 物理键）。MCP 服务器配置（mcp_servers.json）
+// 为文件存储，不属于本账本。账本完整性由 test_settings 强制。
 struct SettingsKeyDef {
     QString key;
     QVariant defaultValue;

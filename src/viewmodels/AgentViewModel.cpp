@@ -742,6 +742,10 @@ void AgentViewModel::refreshToolRegistry() {
                       : def.level == ToolLevel::RequiresConfirm ? "requires_confirm"
                       : "dangerous";
         tool["enabled"] = ToolRegistry::instance().isToolEnabled(def.name);
+        // docs/17 B1: 策略拦截与用户禁用分离展示——被拦截时 Switch 仍反映
+        // 用户层状态，页面据此显示"仅本地模式拦截"徽标。
+        tool["blockedByPolicy"] =
+            ToolRegistry::instance().isPolicyBlocked(def.name);
         tool["source"] = def.name.startsWith(QLatin1String("mcp__"))
                        ? QStringLiteral("MCP") : QStringLiteral("builtin");
         m_toolRegistryModel.append(tool);

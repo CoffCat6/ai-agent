@@ -664,7 +664,7 @@ int AIAgent::estimateReservedTokensForNextRequest() const {
     QJsonArray toolsArray;
     for (const auto& def : m_toolRegistry->listAll()) {
         if (def.level == ToolLevel::Dangerous) continue;
-        if (!m_toolRegistry->isToolEnabled(def.name)) continue;
+        if (!m_toolRegistry->isToolUsable(def.name)) continue;
         QJsonObject toolObj;
         toolObj["type"] = "function";
         QJsonObject fn;
@@ -1086,20 +1086,24 @@ void AIAgent::processNextToolCall() {
             continue;
         }
 
-        // Batch 14 (SEC-1401): a tool can be registered yet disabled (e.g.
-        // search_knowledge_base under local-only mode). Reject stale/hallu-
-        // cinated calls with a structured error so tool_call/tool pairing
-        // stays intact - same shape as the unknown-tool path above.
-        if (m_toolRegistry && !m_toolRegistry->isToolEnabled(call.name)) {
+        // Batch 14 (SEC-1401): a tool can be registered yet unusable — the
+        // user disabled it, or a privacy policy (local-only mode) blocks it
+        // (docs/17 B1: separate layers). Reject stale/hallucinated calls
+        // with a structured error so tool_call/tool pairing stays intact -
+        // same shape as the unknown-tool path above.
+        if (m_toolRegistry && !m_toolRegistry->isToolUsable(call.name)) {
+            const QString reason =
+                m_toolRegistry->isPolicyBlocked(call.name)
+                    ? QStringLiteral("blocked by the local-only privacy mode")
+                    : QStringLiteral("disabled by the user in tool settings");
             appendTraceNode("tool_call", call.name, "failed",
                             QJsonObject{{"args", argsToString(call.arguments)}});
             appendToolResultMessage(call,
-                QStringLiteral("Error: tool '%1' is currently disabled by the "
-                               "local-only privacy mode").arg(call.name));
+                QStringLiteral("Error: tool '%1' is currently %2").arg(call.name, reason));
             if (m_memory)
                 m_memory->logAudit(m_sessionId, "tool_disabled", call.name,
                                    argsToString(call.arguments), false,
-                                   QStringLiteral("local-only mode"),
+                                   reason,
                                    m_activeRequestId, m_lastLatencyMs,
                                    m_lastTokensUsed, currentModel());
             continue;

@@ -168,18 +168,29 @@ Dialog {
                 anchors.leftMargin: 20
                 anchors.rightMargin: 20
 
+                // docs/17 B2: 保存/取消只对走 EditBuffer 暂存的分类有意义；
+                // 即时保存分类（通用/工具/记忆…）不再显示误导性按钮——但若
+                // 界面设置页有未提交的编辑（dirty 跨分类保持），仍要给出
+                // 提交入口。
+                readonly property bool pageUsesEditBuffer:
+                    PreferenceRegistry.preferencesInCategory(
+                        dialog.currentCategory).length > 0
+                readonly property bool showSaveCancel:
+                    pageUsesEditBuffer || EditBuffer.dirty
+
                 RowLayout {
                     anchors.fill: parent
                     spacing: 8
+                    visible: parent.showSaveCancel
 
                     AppButton {
                         text: qsTr("恢复默认")
+                        visible: parent.parent.pageUsesEditBuffer
                         // Categories without registered preferences (e.g. 模型配置,
                         // which saves through SettingsService instead) have
                         // nothing this button could reset.
                         enabled: PreferenceRegistry.preferencesInCategory(
                                      dialog.currentCategory).length > 0
-                        opacity: enabled ? 1.0 : 0.4
                         onClicked: confirmResetDialog.open()
                     }
                     Item { Layout.fillWidth: true }
@@ -206,6 +217,16 @@ Dialog {
                             }
                         }
                     }
+                }
+
+                Text {
+                    anchors.centerIn: parent
+                    visible: !parent.showSaveCancel
+                    text: qsTr("此页修改即时保存")
+                    color: Theme.textSecondary
+                    font.pixelSize: 10
+                    font.family: Theme.fontSans
+                    opacity: 0.8
                 }
             }
         }

@@ -32,6 +32,25 @@ const QVector<SettingsKeyDef>& SettingsSchema::registeredKeys() {
         {"ui/panelVisible",               QVariant(),                        false},
         {"ui/sidebarExpanded",            QVariant(),                        false},
         {"prefs/v1/ui.themeMode",         QStringLiteral("auto"),            false},
+
+        // ── docs/17 B3: 账本收编——此前"唯一事实源"漏登记的键 ──
+        // M3: ToolRegistry 直写（用户禁用清单，QStringList）。
+        {"tools/disabled",                QVariant(),                        false},
+        // 迁移钩子自持（load() 写入 kSchemaVersion），无静态默认。
+        {"schemaVersion",                 QVariant(),                        false},
+        // M2: PreferenceStore 物理键（prefs/v1/<key>）。字体默认值取自
+        // 系统探测（ThemeManager），无静态默认；空 locale = 跟随系统。
+        {"prefs/v1/ui.fontSans",          QVariant(),                        false},
+        {"prefs/v1/ui.fontMono",          QVariant(),                        false},
+        {"prefs/v1/ui.baseFontSize",      14,                                false},
+        {"prefs/v1/ui.locale",            QVariant(),                        false},
+        {"prefs/v1/ui.defaultSidebarWidth",  260,                            false},
+        {"prefs/v1/ui.defaultPanelWidth",    300,                            false},
+        {"prefs/v1/ui.defaultSidebarExpanded", true,                         false},
+        {"prefs/v1/ui.defaultPanelVisible",  true,                           false},
+        {"prefs/v1/ui.restoreWindowOnStartup", true,                         false},
+        // M2 内部键：设置中心记住上次访问分类。
+        {"settings.lastCategory",         QVariant(),                        false},
     };
     return keys;
 }

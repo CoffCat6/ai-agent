@@ -1210,10 +1210,12 @@ void TestAgent::localOnlyModeHidesKnowledgeTool() {
 
 // Batch 14 (SEC-1404): a stale/hallucinated call to the gated tool gets a
 // structured error fed back - never executed, pairing intact.
+// docs/17 B1: the gate now goes through the POLICY layer; the user's
+// tools/disabled persistence must stay untouched.
 void TestAgent::localOnlyModeRejectsResidualCall() {
     registerKnowledgeTool();
     auto* registry = &ToolRegistry::instance();
-    registry->setToolEnabled(QStringLiteral("search_knowledge_base"), false);
+    registry->setPolicyBlocked(QStringList{QStringLiteral("search_knowledge_base")}, true);
 
     llm.script.append(toolResponse("search_knowledge_base",
         QJsonObject{{"query", QStringLiteral("anything")}}));
@@ -1226,16 +1228,21 @@ void TestAgent::localOnlyModeRejectsResidualCall() {
 
     QVERIFY2(toolMessageContent(agent.messages(), QStringLiteral("call_t0"))
                  .contains(QStringLiteral("local-only")),
-             "disabled tool call was not rejected with a local-only error");
+             "policy-blocked tool call was not rejected with a local-only error");
     QVERIFY2(noDanglingToolCalls(agent.messages()),
-             "disabled-tool rejection left dangling tool_calls");
+             "blocked-tool rejection left dangling tool_calls");
     // Never executed: the call node failed, and no tool_result node exists.
     QCOMPARE(lastToolCallStatus(agent.traceModel(),
                                 QStringLiteral("search_knowledge_base")),
              QStringLiteral("failed"));
     QVERIFY2(!traceHas(agent.traceModel(), QStringLiteral("tool_result"),
                        QStringLiteral("search_knowledge_base")),
-             "gated KB tool was executed despite being disabled");
+             "gated KB tool was executed despite being blocked");
+    // P0-1 回归：策略拦截只写内存层，用户使能状态不被触碰；
+    // 解除拦截后工具立即恢复可用（等价于 localOnly 关闭）。
+    QVERIFY(registry->isToolEnabled(QStringLiteral("search_knowledge_base")));
+    registry->setPolicyBlocked(QStringList{QStringLiteral("search_knowledge_base")}, false);
+    QVERIFY(registry->isToolUsable(QStringLiteral("search_knowledge_base")));
     // cleanup() restores the singleton for the matrix tests.
 }
 
@@ -1261,6 +1268,28 @@ void TestAgent::toolRegistryEnablementSemantics() {
 
     registry->setToolEnabled(QStringLiteral("search_knowledge_base"), true);
     QVERIFY(registry->isToolEnabled(QStringLiteral("search_knowledge_base")));
+
+    // docs/17 B1: 双层组合矩阵。策略层拦截不改用户层；两任一为不可用即不可用。
+    QSignalSpy changedSpy(registry, &ToolRegistry::toolsChanged);
+    registry->setPolicyBlocked(QStringList{QStringLiteral("search_knowledge_base")}, true);
+    QCOMPARE(changedSpy.count(), 1);            // UI（徽标）依赖 toolsChanged
+    QVERIFY(registry->isPolicyBlocked(QStringLiteral("search_knowledge_base")));
+    QVERIFY(registry->isToolEnabled(QStringLiteral("search_knowledge_base")));
+    QVERIFY(!registry->isToolUsable(QStringLiteral("search_knowledge_base")));
+    QVERIFY(!registry->toolNamesForModel()
+                 .contains(QStringLiteral("search_knowledge_base")));
+
+    // 策略解除后恢复可用（用户层从未被动过）。
+    registry->setPolicyBlocked(QStringList{QStringLiteral("search_knowledge_base")}, false);
+    QVERIFY(registry->isToolUsable(QStringLiteral("search_knowledge_base")));
+
+    // 用户禁用 + 策略解除：仍不可用（P0-1 语义——策略绝不重开用户禁用的工具）。
+    registry->setToolEnabled(QStringLiteral("search_knowledge_base"), false);
+    registry->setPolicyBlocked(QStringList{QStringLiteral("search_knowledge_base")}, true);
+    registry->setPolicyBlocked(QStringList{QStringLiteral("search_knowledge_base")}, false);
+    QVERIFY(!registry->isToolUsable(QStringLiteral("search_knowledge_base")));
+    registry->setToolEnabled(QStringLiteral("search_knowledge_base"), true);
+
     // cleanup() also restores the singleton for later tests.
 }
 

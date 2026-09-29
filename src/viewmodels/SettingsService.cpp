@@ -654,6 +654,20 @@ void SettingsService::setStrictQuotaMode(bool v) {
     emit strictQuotaModeChanged();
 }
 
+void SettingsService::resetGeneralToDefaults() {
+    // 键集合与 GeneralPage 呈现项一一对应；默认值与 SettingsSchema 保持
+    // 一致（test_settings::resetGeneralDefaultsMatchesSchema 锁定）。
+    setContextTokens(8192);
+    setSimulationMode(false);
+    setAllowFullDiskRead(false);
+    setLocalOnlyMode(false);
+    setAllowLocalNetworkFetch(false);
+    setLogLevel(QStringLiteral("info"));
+    setEmbeddingModel(QStringLiteral("nomic-embed-text"));
+    setEmbeddingBaseUrl(QStringLiteral("http://localhost:11434"));
+    setSystemPromptOverride(QString());
+}
+
 void SettingsService::setDefaultPermissionMode(const QString& v) {
     // 只接受 PermissionMode 的三种字符串形式；未知值回落 confirm。
     if (v != QLatin1String("confirm") && v != QLatin1String("auto_edit")

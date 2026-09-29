@@ -139,6 +139,115 @@ Item {
             }
         }
 
+        // ── 配额设置（docs/17 B4：P1-3——配额键此前无任何编辑入口）──
+        Rectangle {
+            Layout.fillWidth: true
+            Layout.leftMargin: 24
+            Layout.rightMargin: 24
+            Layout.bottomMargin: 16
+            implicitHeight: quotaCol.implicitHeight + 20
+            radius: 8
+            color: Theme.bgPrimary
+            border.width: 1
+            border.color: Theme.borderSubtle
+
+            ColumnLayout {
+                id: quotaCol
+                anchors.fill: parent
+                anchors.margins: 10
+                spacing: 8
+
+                RowLayout {
+                    Layout.fillWidth: true
+                    Text {
+                        text: qsTr("配额设置")
+                        color: Theme.textSecondary
+                        font.pixelSize: Theme.fontSizeCaption
+                        font.bold: true
+                        font.family: Theme.fontMono
+                    }
+                    Item { Layout.fillWidth: true }
+                    CheckBox {
+                        id: strictQuota
+                        checked: Settings.strictQuotaMode
+                        onToggled: Settings.strictQuotaMode = checked
+                        text: qsTr("超限时直接拒绝请求（默认仅警告）")
+                        font.pixelSize: Theme.fontSizeCaption
+                        font.family: Theme.fontSans
+                        Accessible.name: text
+                    }
+                }
+
+                RowLayout {
+                    Layout.fillWidth: true
+                    spacing: 16
+
+                    ColumnLayout {
+                        Layout.fillWidth: true
+                        spacing: 2
+                        Text { text: qsTr("每日 Token 上限"); color: Theme.textSecondary; font.pixelSize: 10; font.family: Theme.fontSans }
+                        SpinBox {
+                            id: dailyTokenSpin
+                            Layout.fillWidth: true
+                            from: 0; to: 100000000; stepSize: 1000; editable: true
+                            Component.onCompleted: value = Settings.dailyTokenQuota
+                            onValueModified: Settings.dailyTokenQuota = value
+                            Accessible.name: qsTr("每日 Token 上限")
+                        }
+                    }
+                    ColumnLayout {
+                        Layout.fillWidth: true
+                        spacing: 2
+                        Text { text: qsTr("每月 Token 上限"); color: Theme.textSecondary; font.pixelSize: 10; font.family: Theme.fontSans }
+                        SpinBox {
+                            id: monthlyTokenSpin
+                            Layout.fillWidth: true
+                            from: 0; to: 1000000000; stepSize: 10000; editable: true
+                            Component.onCompleted: value = Settings.monthlyTokenQuota
+                            onValueModified: Settings.monthlyTokenQuota = value
+                            Accessible.name: qsTr("每月 Token 上限")
+                        }
+                    }
+                    ColumnLayout {
+                        Layout.fillWidth: true
+                        spacing: 2
+                        Text { text: qsTr("每日费用上限（元）"); color: Theme.textSecondary; font.pixelSize: 10; font.family: Theme.fontSans }
+                        SpinBox {
+                            id: dailyCostSpin
+                            Layout.fillWidth: true
+                            from: 0; to: 1000000; stepSize: 1; editable: true
+                            Component.onCompleted: value = Math.round(Settings.dailyCostQuotaCents / 100)
+                            onValueModified: Settings.dailyCostQuotaCents = value * 100
+                            Accessible.name: qsTr("每日费用上限 元")
+                        }
+                    }
+                    ColumnLayout {
+                        Layout.fillWidth: true
+                        spacing: 2
+                        Text { text: qsTr("每月费用上限（元）"); color: Theme.textSecondary; font.pixelSize: 10; font.family: Theme.fontSans }
+                        SpinBox {
+                            id: monthlyCostSpin
+                            Layout.fillWidth: true
+                            from: 0; to: 10000000; stepSize: 1; editable: true
+                            Component.onCompleted: value = Math.round(Settings.monthlyCostQuotaCents / 100)
+                            onValueModified: Settings.monthlyCostQuotaCents = value * 100
+                            Accessible.name: qsTr("每月费用上限 元")
+                        }
+                    }
+                }
+
+                Text {
+                    text: qsTr("0 = 不限制。费用按已计费请求累计（本地模型不计费）。")
+                    color: Theme.textSecondary
+                    font.pixelSize: 10
+                    font.family: Theme.fontSans
+                    opacity: 0.8
+                    wrapMode: Text.Wrap
+                    Layout.fillWidth: true
+                }
+            }
+        }
+
         // ── 概览卡片（§8.1.1：任务次数 / 累计 Token / 累计费用 / 平均延迟）──
         RowLayout {
             Layout.fillWidth: true

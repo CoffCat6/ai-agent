@@ -432,7 +432,7 @@ QStringList ToolRegistry::toolNamesForModel() const {
     QStringList names;
     for (const auto& tool : m_ownedTools) {
         if (tool->definition().level != ToolLevel::Dangerous
-                && !m_disabledTools.contains(tool->definition().name))
+                && isToolUsable(tool->definition().name))
             names.append(tool->definition().name);
     }
     return names;
@@ -453,25 +453,28 @@ bool ToolRegistry::isToolEnabled(const QString& name) const {
     return m_tools.contains(name) && !m_disabledTools.contains(name);
 }
 
-void ToolRegistry::setToolsEnabledByPrefix(const QString& prefix, bool enabled) {
+// docs/17 B1: 策略拦截层。只改内存集合，不落盘——与用户禁用彻底分层。
+void ToolRegistry::setPolicyBlocked(const QStringList& names, bool blocked) {
     bool changed = false;
-    for (const auto& tool : m_ownedTools) {
-        const QString name = tool->definition().name;
-        if (name.startsWith(prefix)) {
-            if (enabled) {
-                if (m_disabledTools.remove(name)) changed = true;
-            } else {
-                if (!m_disabledTools.contains(name)) {
-                    m_disabledTools.insert(name);
-                    changed = true;
-                }
+    for (const QString& name : names) {
+        if (blocked) {
+            if (!m_policyBlocked.contains(name)) {
+                m_policyBlocked.insert(name);
+                changed = true;
             }
+        } else {
+            if (m_policyBlocked.remove(name)) changed = true;
         }
     }
-    if (changed) {
-        saveDisabledToSettings();
-        emit toolsChanged();
-    }
+    if (changed) emit toolsChanged();
+}
+
+bool ToolRegistry::isPolicyBlocked(const QString& name) const {
+    return m_policyBlocked.contains(name);
+}
+
+bool ToolRegistry::isToolUsable(const QString& name) const {
+    return isToolEnabled(name) && !m_policyBlocked.contains(name);
 }
 
 void ToolRegistry::loadDisabledFromSettings() {

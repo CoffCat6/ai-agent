@@ -149,6 +149,10 @@ public:
     // into the profile; unknown fields are ignored.
     Q_INVOKABLE void updateProfile(const QString& id, const QVariantMap& fields);
     Q_INVOKABLE void removeProfile(const QString& id);
+    // docs/17 B2: 把通用设置页的 9 个键回写 schema 默认值（安全开关回滚
+    // 由调用方二次确认）。逐键走既有 setter，保证持久化与 NOTIFY 一致。
+    Q_INVOKABLE void resetGeneralToDefaults();
+
     Q_INVOKABLE void setActiveProfile(const QString& id);
     // Switch active model for a specific profile (or active profile if id is empty)
     Q_INVOKABLE void selectModelForProfile(const QString& id, const QString& model);

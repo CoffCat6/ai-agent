@@ -34,17 +34,23 @@ public:
     // tools stay in listAll() (UI can still show they exist) but disappear
     // from toolNamesForModel() (no schema exposure) and calls that arrive
     // for them (e.g. stale history) are rejected with a structured error.
+    // 这是"用户禁用"层：持久化到 tools/disabled（QSettings）。
     void setToolEnabled(const QString& name, bool enabled);
     bool isToolEnabled(const QString& name) const;
 
-    // T14 (REQ-T14-04): batch-enable/disable all tools whose name starts with
-    // the given prefix (e.g. "mcp__" for all MCP tools). Used by the
-    // local-only mode gate to disable all MCP tools at once.
-    void setToolsEnabledByPrefix(const QString& prefix, bool enabled);
+    // docs/17 B1: 策略拦截层（内存态，不持久化）——与用户禁用分离。
+    // localOnly 等隐私门控写这里，绝不触碰 tools/disabled 持久层，
+    // 策略启停因此不会覆写用户手动禁用的开关。
+    void setPolicyBlocked(const QStringList& names, bool blocked);
+    bool isPolicyBlocked(const QString& name) const;
+    // 最终可用性：用户未禁用 且 未被策略拦截。模型 schema 暴露与调用
+    // 分支一律以本判定为准。
+    bool isToolUsable(const QString& name) const;
 
 signals:
-    // Fired on register/take/setEnabled — lets the UI refresh its tool
-    // list when MCP servers connect/disconnect or the user toggles a switch.
+    // Fired on register/take/setEnabled/policy change — lets the UI refresh
+    // its tool list when MCP servers connect/disconnect or the user toggles
+    // a switch.
     void toolsChanged();
 
 private:
@@ -57,6 +63,7 @@ private:
     std::vector<std::unique_ptr<ITool>> m_ownedTools;
     QHash<QString, ITool*> m_tools;
     QSet<QString> m_disabledTools;
+    QSet<QString> m_policyBlocked;   // docs/17 B1: 运行时策略拦截，不落盘
 };
 
 } // namespace NexusAI

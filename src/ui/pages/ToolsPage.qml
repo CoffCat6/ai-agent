@@ -84,6 +84,16 @@ Item {
                                     font.pixelSize: 10
                                     font.family: Theme.fontSans
                                 }
+                                // docs/17 B1: 策略拦截徽标——Switch 只反映用户层，
+                                // 被仅本地模式等策略拦截时在此可见。
+                                Text {
+                                    visible: modelData.blockedByPolicy === true
+                                    text: "· " + qsTr("仅本地模式拦截")
+                                    color: Theme.statusWarning
+                                    font.pixelSize: 10
+                                    font.bold: true
+                                    font.family: Theme.fontSans
+                                }
                             }
 
                             Text {

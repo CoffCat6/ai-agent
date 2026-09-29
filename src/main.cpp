@@ -215,22 +215,27 @@ qInfo() << "NexusAI" << app.applicationVersion() << "starting";
     // never leaves the machine there. Cloud detection is by provider type,
     // not baseUrl: an OpenAI-compatible gateway on 127.0.0.1 still forwards
     // to a cloud upstream, so it counts as cloud.
+    // docs/17 B1: local-only gating writes the RUNTIME policy layer, never
+    // the user's tools/disabled persistence — toggling the mode or switching
+    // profiles no longer resets user-disabled switches. Local providers
+    // (ollama) keep everything - content never leaves the machine there.
+    // Cloud detection is by provider type, not baseUrl: an OpenAI-compatible
+    // gateway on 127.0.0.1 still forwards to a cloud upstream, so it counts
+    // as cloud.
     const auto applyLocalOnlyGate = [settings]() {
-        const bool cloud = settings->activeProfile().value("provider").toString()
-                           != QLatin1String("ollama");
-        ToolRegistry::instance().setToolEnabled(
-            QStringLiteral("search_knowledge_base"),
-            !(cloud && settings->localOnlyMode()));
-    // T6 (F3-04): web_search also leaks queries to the cloud - gate it
-    // the same way. Disabled tools never reach toolNamesForModel().
-    ToolRegistry::instance().setToolEnabled(
-        QStringLiteral("web_search"),
-        !(cloud && settings->localOnlyMode()));
-    // T14 (REQ-T14-04): local-only mode disables ALL MCP tools (mcp__*)
-    // — they connect to external servers that may forward data off-machine.
-    ToolRegistry::instance().setToolsEnabledByPrefix(
-        QStringLiteral("mcp__"),
-        !(cloud && settings->localOnlyMode()));
+        const bool gate = settings->localOnlyMode()
+                          && settings->activeProfile().value("provider").toString()
+                                 != QLatin1String("ollama");
+        QStringList gated{QStringLiteral("search_knowledge_base"),
+                          QStringLiteral("web_search")};
+        // T14 (REQ-T14-04): every MCP tool (mcp__*) may reach external
+        // servers that forward data off-machine.
+        const auto all = ToolRegistry::instance().listAll();
+        for (const auto& def : all) {
+            if (def.name.startsWith(QStringLiteral("mcp__")))
+                gated.append(def.name);
+        }
+        ToolRegistry::instance().setPolicyBlocked(gated, gate);
     };
     QObject::connect(settings, &SettingsService::localOnlyModeChanged, &app,
                      applyLocalOnlyGate);
