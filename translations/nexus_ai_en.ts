@@ -1443,27 +1443,27 @@ and the model can retrieve their content to answer questions</translation>
 <context>
     <name>NexusAI::EditBuffer</name>
     <message>
-        <location filename="../src/viewmodels/EditBuffer.cpp" line="72"/>
+        <location filename="../src/viewmodels/EditBuffer.cpp" line="89"/>
         <source>值必须是整数</source>
         <translation>Value must be an integer</translation>
     </message>
     <message>
-        <location filename="../src/viewmodels/EditBuffer.cpp" line="76"/>
+        <location filename="../src/viewmodels/EditBuffer.cpp" line="93"/>
         <source>值必须在 %1-%2 之间</source>
         <translation>Value must be between %1-%2</translation>
     </message>
     <message>
-        <location filename="../src/viewmodels/EditBuffer.cpp" line="83"/>
+        <location filename="../src/viewmodels/EditBuffer.cpp" line="100"/>
         <source>值必须是以下之一: </source>
         <translation>Value must be one of: </translation>
     </message>
     <message>
-        <location filename="../src/viewmodels/EditBuffer.cpp" line="89"/>
+        <location filename="../src/viewmodels/EditBuffer.cpp" line="106"/>
         <source>此字段为必填</source>
         <translation>This field is required</translation>
     </message>
     <message>
-        <location filename="../src/viewmodels/EditBuffer.cpp" line="93"/>
+        <location filename="../src/viewmodels/EditBuffer.cpp" line="110"/>
         <source>长度不能超过 %1 个字符</source>
         <translation>Length cannot exceed %1 characters</translation>
     </message>
@@ -1583,49 +1583,47 @@ and the model can retrieve their content to answer questions</translation>
         <translation>Settings</translation>
     </message>
     <message>
-        <location filename="../src/ui/components/SettingsCenterDialog.qml" line="187"/>
-        <location filename="../src/ui/components/SettingsCenterDialog.qml" line="309"/>
+        <location filename="../src/ui/components/SettingsCenterDialog.qml" line="178"/>
+        <location filename="../src/ui/components/SettingsCenterDialog.qml" line="230"/>
         <source>恢复默认</source>
         <translation>Restore Defaults</translation>
     </message>
     <message>
-        <location filename="../src/ui/components/SettingsCenterDialog.qml" line="198"/>
-        <location filename="../src/ui/components/SettingsCenterDialog.qml" line="305"/>
+        <location filename="../src/ui/components/SettingsCenterDialog.qml" line="188"/>
+        <source>关闭</source>
+        <translation>Close</translation>
+    </message>
+    <message>
+        <location filename="../src/ui/components/SettingsCenterDialog.qml" line="226"/>
         <source>取消</source>
         <translation>Cancel</translation>
     </message>
     <message>
-        <location filename="../src/ui/components/SettingsCenterDialog.qml" line="205"/>
         <source>保存</source>
-        <translation>Save</translation>
+        <translation type="vanished">Save</translation>
     </message>
     <message>
-        <location filename="../src/ui/components/SettingsCenterDialog.qml" line="216"/>
         <source>保存失败，请检查输入</source>
-        <translation>Save failed, please check your input</translation>
+        <translation type="vanished">Save failed, please check your input</translation>
     </message>
     <message>
-        <location filename="../src/ui/components/SettingsCenterDialog.qml" line="225"/>
         <source>此页修改即时保存</source>
-        <translation>Changes on this page are saved instantly</translation>
+        <translation type="vanished">Changes on this page are saved instantly</translation>
     </message>
     <message>
-        <location filename="../src/ui/components/SettingsCenterDialog.qml" line="247"/>
         <source>有未保存的修改，确认放弃？</source>
-        <translation>You have unsaved changes. Discard them?</translation>
+        <translation type="vanished">You have unsaved changes. Discard them?</translation>
     </message>
     <message>
-        <location filename="../src/ui/components/SettingsCenterDialog.qml" line="262"/>
         <source>继续编辑</source>
-        <translation>Keep Editing</translation>
+        <translation type="vanished">Keep Editing</translation>
     </message>
     <message>
-        <location filename="../src/ui/components/SettingsCenterDialog.qml" line="266"/>
         <source>放弃</source>
-        <translation>Discard</translation>
+        <translation type="vanished">Discard</translation>
     </message>
     <message>
-        <location filename="../src/ui/components/SettingsCenterDialog.qml" line="290"/>
+        <location filename="../src/ui/components/SettingsCenterDialog.qml" line="211"/>
         <source>确认将当前分类的配置项恢复为默认值？</source>
         <translation>Restore the settings in this category to their defaults?</translation>
     </message>
@@ -2134,65 +2132,94 @@ and the model can retrieve their content to answer questions</translation>
         <translation type="vanished">Statistics on model call counts, token usage and average latency for completed tasks.</translation>
     </message>
     <message>
-        <location filename="../src/ui/pages/UsageStatsPage.qml" line="118"/>
-        <location filename="../src/ui/pages/UsageStatsPage.qml" line="132"/>
+        <location filename="../src/ui/pages/UsageStatsPage.qml" line="134"/>
+        <location filename="../src/ui/pages/UsageStatsPage.qml" line="148"/>
         <source>统计范围</source>
         <translation>Time Range</translation>
     </message>
     <message>
-        <location filename="../src/ui/pages/UsageStatsPage.qml" line="126"/>
+        <location filename="../src/ui/pages/UsageStatsPage.qml" line="142"/>
         <source>近 7 天</source>
         <translation>Last 7 days</translation>
     </message>
     <message>
-        <location filename="../src/ui/pages/UsageStatsPage.qml" line="126"/>
+        <location filename="../src/ui/pages/UsageStatsPage.qml" line="142"/>
         <source>近 30 天</source>
         <translation>Last 30 days</translation>
     </message>
     <message>
-        <location filename="../src/ui/pages/UsageStatsPage.qml" line="126"/>
+        <location filename="../src/ui/pages/UsageStatsPage.qml" line="142"/>
         <source>近 90 天</source>
         <translation>Last 90 days</translation>
     </message>
     <message>
-        <location filename="../src/ui/pages/UsageStatsPage.qml" line="136"/>
+        <location filename="../src/ui/pages/UsageStatsPage.qml" line="152"/>
         <source>刷新</source>
         <translation>Refresh</translation>
     </message>
     <message>
-        <location filename="../src/ui/pages/UsageStatsPage.qml" line="138"/>
+        <location filename="../src/ui/pages/UsageStatsPage.qml" line="154"/>
         <source>刷新用量统计</source>
         <translation>Refresh usage statistics</translation>
     </message>
     <message>
-        <location filename="../src/ui/pages/UsageStatsPage.qml" line="261"/>
+        <source>日</source>
+        <translation type="vanished">Day</translation>
+    </message>
+    <message>
+        <source>月</source>
+        <translation type="vanished">Month</translation>
+    </message>
+    <message>
+        <source>日¥</source>
+        <translation type="vanished">Day ¥</translation>
+    </message>
+    <message>
+        <source>月¥</source>
+        <translation type="vanished">Month ¥</translation>
+    </message>
+    <message>
+        <source>超限拒绝</source>
+        <translation type="vanished">Hard-stop at limit</translation>
+    </message>
+    <message>
+        <source>达到上限时直接拒绝请求（默认仅警告）</source>
+        <translation type="vanished">Reject requests once the limit is reached (warn-only by default)</translation>
+    </message>
+    <message>
+        <location filename="../src/ui/pages/UsageStatsPage.qml" line="205"/>
+        <source>超限时直接拒绝请求</source>
+        <translation>Reject requests when quota exceeded</translation>
+    </message>
+    <message>
+        <location filename="../src/ui/pages/UsageStatsPage.qml" line="262"/>
         <source>任务次数</source>
         <translation>Task Count</translation>
     </message>
     <message>
-        <location filename="../src/ui/pages/UsageStatsPage.qml" line="262"/>
+        <location filename="../src/ui/pages/UsageStatsPage.qml" line="263"/>
         <source>累计 Token</source>
         <translation>Total Tokens</translation>
     </message>
     <message>
-        <location filename="../src/ui/pages/UsageStatsPage.qml" line="264"/>
+        <location filename="../src/ui/pages/UsageStatsPage.qml" line="265"/>
         <source>平均延迟</source>
         <translation>Avg Latency</translation>
     </message>
     <message>
-        <location filename="../src/ui/pages/UsageStatsPage.qml" line="762"/>
+        <location filename="../src/ui/pages/UsageStatsPage.qml" line="744"/>
         <source>按模型</source>
         <translation>By Model</translation>
     </message>
     <message>
-        <location filename="../src/ui/pages/UsageStatsPage.qml" line="771"/>
-        <location filename="../src/ui/pages/UsageStatsPage.qml" line="844"/>
+        <location filename="../src/ui/pages/UsageStatsPage.qml" line="753"/>
+        <location filename="../src/ui/pages/UsageStatsPage.qml" line="826"/>
         <source>该范围内暂无数据</source>
         <translation>No data in this range</translation>
     </message>
     <message>
-        <location filename="../src/ui/pages/UsageStatsPage.qml" line="592"/>
-        <location filename="../src/ui/pages/UsageStatsPage.qml" line="798"/>
+        <location filename="../src/ui/pages/UsageStatsPage.qml" line="574"/>
+        <location filename="../src/ui/pages/UsageStatsPage.qml" line="780"/>
         <source>(未知)</source>
         <translation>(unknown)</translation>
     </message>
@@ -2257,185 +2284,206 @@ and the model can retrieve their content to answer questions</translation>
         <translation>Statistics of completed task model calls, token usage, cost and quota status.</translation>
     </message>
     <message>
-        <location filename="../src/ui/pages/UsageStatsPage.qml" line="163"/>
+        <source>配额</source>
+        <translation type="vanished">Quotas</translation>
+    </message>
+    <message>
+        <source>0 = 不限制。费用按已计费请求累计（本地模型不计费）。勾选“超限拒绝”后达到上限直接拒绝请求，默认仅警告。</source>
+        <translation type="vanished">0 = unlimited. Cost accrues from billed requests only (local models are free). With hard-stop enabled, requests are rejected once the limit is reached; warn-only by default.</translation>
+    </message>
+    <message>
+        <location filename="../src/ui/pages/UsageStatsPage.qml" line="180"/>
         <source>配额设置</source>
         <translation>Quota Settings</translation>
     </message>
     <message>
-        <location filename="../src/ui/pages/UsageStatsPage.qml" line="174"/>
         <source>超限时直接拒绝请求（默认仅警告）</source>
-        <translation>Reject requests when exceeded (warn only by default)</translation>
+        <translation type="vanished">Reject requests when exceeded (warn only by default)</translation>
     </message>
     <message>
-        <location filename="../src/ui/pages/UsageStatsPage.qml" line="188"/>
-        <location filename="../src/ui/pages/UsageStatsPage.qml" line="195"/>
+        <location filename="../src/ui/pages/UsageStatsPage.qml" line="215"/>
+        <location filename="../src/ui/pages/UsageStatsPage.qml" line="222"/>
         <source>每日 Token 上限</source>
         <translation>Daily Token Limit</translation>
     </message>
     <message>
-        <location filename="../src/ui/pages/UsageStatsPage.qml" line="201"/>
-        <location filename="../src/ui/pages/UsageStatsPage.qml" line="208"/>
+        <location filename="../src/ui/pages/UsageStatsPage.qml" line="224"/>
+        <location filename="../src/ui/pages/UsageStatsPage.qml" line="231"/>
         <source>每月 Token 上限</source>
         <translation>Monthly Token Limit</translation>
     </message>
     <message>
-        <location filename="../src/ui/pages/UsageStatsPage.qml" line="214"/>
+        <location filename="../src/ui/pages/UsageStatsPage.qml" line="233"/>
         <source>每日费用上限（元）</source>
         <translation>Daily cost limit (CNY)</translation>
     </message>
     <message>
-        <location filename="../src/ui/pages/UsageStatsPage.qml" line="221"/>
+        <location filename="../src/ui/pages/UsageStatsPage.qml" line="240"/>
         <source>每日费用上限 元</source>
         <translation>Daily Cost Limit (CNY)</translation>
     </message>
     <message>
-        <location filename="../src/ui/pages/UsageStatsPage.qml" line="227"/>
+        <location filename="../src/ui/pages/UsageStatsPage.qml" line="242"/>
         <source>每月费用上限（元）</source>
         <translation>Monthly cost limit (CNY)</translation>
     </message>
     <message>
-        <location filename="../src/ui/pages/UsageStatsPage.qml" line="234"/>
+        <location filename="../src/ui/pages/UsageStatsPage.qml" line="249"/>
         <source>每月费用上限 元</source>
         <translation>Monthly Cost Limit (CNY)</translation>
     </message>
     <message>
-        <location filename="../src/ui/pages/UsageStatsPage.qml" line="240"/>
         <source>0 = 不限制。费用按已计费请求累计（本地模型不计费）。</source>
-        <translation>0 = unlimited. Cost accrues from billed requests only (local models are free).</translation>
+        <translation type="vanished">0 = unlimited. Cost accrues from billed requests only (local models are free).</translation>
     </message>
     <message>
-        <location filename="../src/ui/pages/UsageStatsPage.qml" line="263"/>
+        <location filename="../src/ui/pages/UsageStatsPage.qml" line="187"/>
+        <source>0 = 不限制 · 本地模型不计费</source>
+        <translation>0 = unlimited · local models are free</translation>
+    </message>
+    <message>
+        <location filename="../src/ui/pages/UsageStatsPage.qml" line="197"/>
+        <source>费用按已计费请求累计。勾选“超限拒绝”后达到上限直接拒绝请求，默认仅警告。</source>
+        <translation>Cost accrues from billed requests only. With hard-stop enabled, requests are rejected once the limit is reached; warn-only by default.</translation>
+    </message>
+    <message>
+        <location filename="../src/ui/pages/UsageStatsPage.qml" line="202"/>
+        <source>超限拒绝请求</source>
+        <translation>Reject at limit</translation>
+    </message>
+    <message>
+        <location filename="../src/ui/pages/UsageStatsPage.qml" line="264"/>
         <source>累计费用</source>
         <translation>Total Cost</translation>
     </message>
     <message>
-        <location filename="../src/ui/pages/UsageStatsPage.qml" line="325"/>
+        <location filename="../src/ui/pages/UsageStatsPage.qml" line="307"/>
         <source>Token 构成</source>
         <translation>Token Composition</translation>
     </message>
     <message>
-        <location filename="../src/ui/pages/UsageStatsPage.qml" line="349"/>
-        <location filename="../src/ui/pages/UsageStatsPage.qml" line="448"/>
+        <location filename="../src/ui/pages/UsageStatsPage.qml" line="331"/>
+        <location filename="../src/ui/pages/UsageStatsPage.qml" line="430"/>
         <source>输入</source>
         <translation>Input</translation>
     </message>
     <message>
-        <location filename="../src/ui/pages/UsageStatsPage.qml" line="350"/>
-        <location filename="../src/ui/pages/UsageStatsPage.qml" line="456"/>
+        <location filename="../src/ui/pages/UsageStatsPage.qml" line="332"/>
+        <location filename="../src/ui/pages/UsageStatsPage.qml" line="438"/>
         <source>输出</source>
         <translation>Output</translation>
     </message>
     <message>
-        <location filename="../src/ui/pages/UsageStatsPage.qml" line="351"/>
+        <location filename="../src/ui/pages/UsageStatsPage.qml" line="333"/>
         <source>缓存命中</source>
         <translation>Cache Hit</translation>
     </message>
     <message>
-        <location filename="../src/ui/pages/UsageStatsPage.qml" line="399"/>
+        <location filename="../src/ui/pages/UsageStatsPage.qml" line="381"/>
         <source>缓存命中率: %1</source>
         <translation>Cache hit rate: %1</translation>
     </message>
     <message>
-        <location filename="../src/ui/pages/UsageStatsPage.qml" line="414"/>
+        <location filename="../src/ui/pages/UsageStatsPage.qml" line="396"/>
         <source>按来源拆分</source>
         <translation>By Source</translation>
     </message>
     <message>
-        <location filename="../src/ui/pages/UsageStatsPage.qml" line="440"/>
+        <location filename="../src/ui/pages/UsageStatsPage.qml" line="422"/>
         <source>来源</source>
         <translation>Source</translation>
     </message>
     <message>
-        <location filename="../src/ui/pages/UsageStatsPage.qml" line="464"/>
+        <location filename="../src/ui/pages/UsageStatsPage.qml" line="446"/>
         <source>占比</source>
         <translation>Share</translation>
     </message>
     <message>
-        <location filename="../src/ui/pages/UsageStatsPage.qml" line="523"/>
+        <location filename="../src/ui/pages/UsageStatsPage.qml" line="505"/>
         <source>费用明细</source>
         <translation>Cost Details</translation>
     </message>
     <message>
-        <location filename="../src/ui/pages/UsageStatsPage.qml" line="549"/>
+        <location filename="../src/ui/pages/UsageStatsPage.qml" line="531"/>
         <source>模型</source>
         <translation>Model</translation>
     </message>
     <message>
-        <location filename="../src/ui/pages/UsageStatsPage.qml" line="557"/>
+        <location filename="../src/ui/pages/UsageStatsPage.qml" line="539"/>
         <source>调用</source>
         <translation>Calls</translation>
     </message>
     <message>
-        <location filename="../src/ui/pages/UsageStatsPage.qml" line="565"/>
+        <location filename="../src/ui/pages/UsageStatsPage.qml" line="547"/>
         <source>Token</source>
         <translation>Token</translation>
     </message>
     <message>
-        <location filename="../src/ui/pages/UsageStatsPage.qml" line="573"/>
+        <location filename="../src/ui/pages/UsageStatsPage.qml" line="555"/>
         <source>费用</source>
         <translation>Cost</translation>
     </message>
     <message>
-        <location filename="../src/ui/pages/UsageStatsPage.qml" line="633"/>
+        <location filename="../src/ui/pages/UsageStatsPage.qml" line="615"/>
         <source>合计</source>
         <translation>Total</translation>
     </message>
     <message>
-        <location filename="../src/ui/pages/UsageStatsPage.qml" line="665"/>
+        <location filename="../src/ui/pages/UsageStatsPage.qml" line="647"/>
         <source>预估月费用: %1</source>
         <translation>Projected monthly cost: %1</translation>
     </message>
     <message>
-        <location filename="../src/ui/pages/UsageStatsPage.qml" line="681"/>
+        <location filename="../src/ui/pages/UsageStatsPage.qml" line="663"/>
         <source>配额状态</source>
         <translation>Quota Status</translation>
     </message>
     <message>
-        <location filename="../src/ui/pages/UsageStatsPage.qml" line="705"/>
+        <location filename="../src/ui/pages/UsageStatsPage.qml" line="687"/>
         <source>日 Token</source>
         <translation>Daily Tokens</translation>
     </message>
     <message>
-        <location filename="../src/ui/pages/UsageStatsPage.qml" line="706"/>
+        <location filename="../src/ui/pages/UsageStatsPage.qml" line="688"/>
         <source>日费用</source>
         <translation>Daily Cost</translation>
     </message>
     <message>
-        <location filename="../src/ui/pages/UsageStatsPage.qml" line="707"/>
+        <location filename="../src/ui/pages/UsageStatsPage.qml" line="689"/>
         <source>月 Token</source>
         <translation>Monthly Tokens</translation>
     </message>
     <message>
-        <location filename="../src/ui/pages/UsageStatsPage.qml" line="708"/>
+        <location filename="../src/ui/pages/UsageStatsPage.qml" line="690"/>
         <source>月费用</source>
         <translation>Monthly Cost</translation>
     </message>
     <message>
-        <location filename="../src/ui/pages/UsageStatsPage.qml" line="725"/>
-        <location filename="../src/ui/pages/UsageStatsPage.qml" line="727"/>
+        <location filename="../src/ui/pages/UsageStatsPage.qml" line="707"/>
+        <location filename="../src/ui/pages/UsageStatsPage.qml" line="709"/>
         <source>%1 / %2</source>
         <translation>%1 / %2</translation>
     </message>
     <message>
-        <location filename="../src/ui/pages/UsageStatsPage.qml" line="726"/>
-        <location filename="../src/ui/pages/UsageStatsPage.qml" line="728"/>
+        <location filename="../src/ui/pages/UsageStatsPage.qml" line="708"/>
+        <location filename="../src/ui/pages/UsageStatsPage.qml" line="710"/>
         <source>不限</source>
         <translation>unlimited</translation>
     </message>
     <message>
-        <location filename="../src/ui/pages/UsageStatsPage.qml" line="806"/>
-        <location filename="../src/ui/pages/UsageStatsPage.qml" line="877"/>
+        <location filename="../src/ui/pages/UsageStatsPage.qml" line="788"/>
+        <location filename="../src/ui/pages/UsageStatsPage.qml" line="859"/>
         <source>%1 次</source>
         <translation>%1 calls</translation>
     </message>
     <message>
-        <location filename="../src/ui/pages/UsageStatsPage.qml" line="812"/>
-        <location filename="../src/ui/pages/UsageStatsPage.qml" line="883"/>
+        <location filename="../src/ui/pages/UsageStatsPage.qml" line="794"/>
+        <location filename="../src/ui/pages/UsageStatsPage.qml" line="865"/>
         <source>%1 tokens</source>
         <translation>%1 tokens</translation>
     </message>
     <message>
-        <location filename="../src/ui/pages/UsageStatsPage.qml" line="835"/>
+        <location filename="../src/ui/pages/UsageStatsPage.qml" line="817"/>
         <source>按天</source>
         <translation>By Day</translation>
     </message>

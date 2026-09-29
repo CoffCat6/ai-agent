@@ -1443,27 +1443,27 @@
 <context>
     <name>NexusAI::EditBuffer</name>
     <message>
-        <location filename="../src/viewmodels/EditBuffer.cpp" line="72"/>
+        <location filename="../src/viewmodels/EditBuffer.cpp" line="89"/>
         <source>值必须是整数</source>
         <translation>值必须是整数</translation>
     </message>
     <message>
-        <location filename="../src/viewmodels/EditBuffer.cpp" line="76"/>
+        <location filename="../src/viewmodels/EditBuffer.cpp" line="93"/>
         <source>值必须在 %1-%2 之间</source>
         <translation>值必须在 %1-%2 之间</translation>
     </message>
     <message>
-        <location filename="../src/viewmodels/EditBuffer.cpp" line="83"/>
+        <location filename="../src/viewmodels/EditBuffer.cpp" line="100"/>
         <source>值必须是以下之一: </source>
         <translation>值必须是以下之一: </translation>
     </message>
     <message>
-        <location filename="../src/viewmodels/EditBuffer.cpp" line="89"/>
+        <location filename="../src/viewmodels/EditBuffer.cpp" line="106"/>
         <source>此字段为必填</source>
         <translation>此字段为必填</translation>
     </message>
     <message>
-        <location filename="../src/viewmodels/EditBuffer.cpp" line="93"/>
+        <location filename="../src/viewmodels/EditBuffer.cpp" line="110"/>
         <source>长度不能超过 %1 个字符</source>
         <translation>长度不能超过 %1 个字符</translation>
     </message>
@@ -1583,49 +1583,47 @@
         <translation>设置</translation>
     </message>
     <message>
-        <location filename="../src/ui/components/SettingsCenterDialog.qml" line="187"/>
-        <location filename="../src/ui/components/SettingsCenterDialog.qml" line="309"/>
+        <location filename="../src/ui/components/SettingsCenterDialog.qml" line="178"/>
+        <location filename="../src/ui/components/SettingsCenterDialog.qml" line="230"/>
         <source>恢复默认</source>
         <translation>恢复默认</translation>
     </message>
     <message>
-        <location filename="../src/ui/components/SettingsCenterDialog.qml" line="198"/>
-        <location filename="../src/ui/components/SettingsCenterDialog.qml" line="305"/>
+        <location filename="../src/ui/components/SettingsCenterDialog.qml" line="188"/>
+        <source>关闭</source>
+        <translation>关闭</translation>
+    </message>
+    <message>
+        <location filename="../src/ui/components/SettingsCenterDialog.qml" line="226"/>
         <source>取消</source>
         <translation>取消</translation>
     </message>
     <message>
-        <location filename="../src/ui/components/SettingsCenterDialog.qml" line="205"/>
         <source>保存</source>
-        <translation>保存</translation>
+        <translation type="vanished">保存</translation>
     </message>
     <message>
-        <location filename="../src/ui/components/SettingsCenterDialog.qml" line="216"/>
         <source>保存失败，请检查输入</source>
-        <translation>保存失败，请检查输入</translation>
+        <translation type="vanished">保存失败，请检查输入</translation>
     </message>
     <message>
-        <location filename="../src/ui/components/SettingsCenterDialog.qml" line="225"/>
         <source>此页修改即时保存</source>
-        <translation>此页修改即时保存</translation>
+        <translation type="vanished">此页修改即时保存</translation>
     </message>
     <message>
-        <location filename="../src/ui/components/SettingsCenterDialog.qml" line="247"/>
         <source>有未保存的修改，确认放弃？</source>
-        <translation>有未保存的修改，确认放弃？</translation>
+        <translation type="vanished">有未保存的修改，确认放弃？</translation>
     </message>
     <message>
-        <location filename="../src/ui/components/SettingsCenterDialog.qml" line="262"/>
         <source>继续编辑</source>
-        <translation>继续编辑</translation>
+        <translation type="vanished">继续编辑</translation>
     </message>
     <message>
-        <location filename="../src/ui/components/SettingsCenterDialog.qml" line="266"/>
         <source>放弃</source>
-        <translation>放弃</translation>
+        <translation type="vanished">放弃</translation>
     </message>
     <message>
-        <location filename="../src/ui/components/SettingsCenterDialog.qml" line="290"/>
+        <location filename="../src/ui/components/SettingsCenterDialog.qml" line="211"/>
         <source>确认将当前分类的配置项恢复为默认值？</source>
         <translation>确认将当前分类的配置项恢复为默认值？</translation>
     </message>
@@ -2134,65 +2132,94 @@
         <translation type="vanished">统计已完成任务的模型调用次数、Token 消耗与平均延迟。</translation>
     </message>
     <message>
-        <location filename="../src/ui/pages/UsageStatsPage.qml" line="118"/>
-        <location filename="../src/ui/pages/UsageStatsPage.qml" line="132"/>
+        <location filename="../src/ui/pages/UsageStatsPage.qml" line="134"/>
+        <location filename="../src/ui/pages/UsageStatsPage.qml" line="148"/>
         <source>统计范围</source>
         <translation>统计范围</translation>
     </message>
     <message>
-        <location filename="../src/ui/pages/UsageStatsPage.qml" line="126"/>
+        <location filename="../src/ui/pages/UsageStatsPage.qml" line="142"/>
         <source>近 7 天</source>
         <translation>近 7 天</translation>
     </message>
     <message>
-        <location filename="../src/ui/pages/UsageStatsPage.qml" line="126"/>
+        <location filename="../src/ui/pages/UsageStatsPage.qml" line="142"/>
         <source>近 30 天</source>
         <translation>近 30 天</translation>
     </message>
     <message>
-        <location filename="../src/ui/pages/UsageStatsPage.qml" line="126"/>
+        <location filename="../src/ui/pages/UsageStatsPage.qml" line="142"/>
         <source>近 90 天</source>
         <translation>近 90 天</translation>
     </message>
     <message>
-        <location filename="../src/ui/pages/UsageStatsPage.qml" line="136"/>
+        <location filename="../src/ui/pages/UsageStatsPage.qml" line="152"/>
         <source>刷新</source>
         <translation>刷新</translation>
     </message>
     <message>
-        <location filename="../src/ui/pages/UsageStatsPage.qml" line="138"/>
+        <location filename="../src/ui/pages/UsageStatsPage.qml" line="154"/>
         <source>刷新用量统计</source>
         <translation>刷新用量统计</translation>
     </message>
     <message>
-        <location filename="../src/ui/pages/UsageStatsPage.qml" line="261"/>
+        <source>日</source>
+        <translation type="vanished">日</translation>
+    </message>
+    <message>
+        <source>月</source>
+        <translation type="vanished">月</translation>
+    </message>
+    <message>
+        <source>日¥</source>
+        <translation type="vanished">日¥</translation>
+    </message>
+    <message>
+        <source>月¥</source>
+        <translation type="vanished">月¥</translation>
+    </message>
+    <message>
+        <source>超限拒绝</source>
+        <translation type="vanished">超限拒绝</translation>
+    </message>
+    <message>
+        <source>达到上限时直接拒绝请求（默认仅警告）</source>
+        <translation type="vanished">达到上限时直接拒绝请求（默认仅警告）</translation>
+    </message>
+    <message>
+        <location filename="../src/ui/pages/UsageStatsPage.qml" line="205"/>
+        <source>超限时直接拒绝请求</source>
+        <translation>超限时直接拒绝请求</translation>
+    </message>
+    <message>
+        <location filename="../src/ui/pages/UsageStatsPage.qml" line="262"/>
         <source>任务次数</source>
         <translation>任务次数</translation>
     </message>
     <message>
-        <location filename="../src/ui/pages/UsageStatsPage.qml" line="262"/>
+        <location filename="../src/ui/pages/UsageStatsPage.qml" line="263"/>
         <source>累计 Token</source>
         <translation>累计 Token</translation>
     </message>
     <message>
-        <location filename="../src/ui/pages/UsageStatsPage.qml" line="264"/>
+        <location filename="../src/ui/pages/UsageStatsPage.qml" line="265"/>
         <source>平均延迟</source>
         <translation>平均延迟</translation>
     </message>
     <message>
-        <location filename="../src/ui/pages/UsageStatsPage.qml" line="762"/>
+        <location filename="../src/ui/pages/UsageStatsPage.qml" line="744"/>
         <source>按模型</source>
         <translation>按模型</translation>
     </message>
     <message>
-        <location filename="../src/ui/pages/UsageStatsPage.qml" line="771"/>
-        <location filename="../src/ui/pages/UsageStatsPage.qml" line="844"/>
+        <location filename="../src/ui/pages/UsageStatsPage.qml" line="753"/>
+        <location filename="../src/ui/pages/UsageStatsPage.qml" line="826"/>
         <source>该范围内暂无数据</source>
         <translation>该范围内暂无数据</translation>
     </message>
     <message>
-        <location filename="../src/ui/pages/UsageStatsPage.qml" line="592"/>
-        <location filename="../src/ui/pages/UsageStatsPage.qml" line="798"/>
+        <location filename="../src/ui/pages/UsageStatsPage.qml" line="574"/>
+        <location filename="../src/ui/pages/UsageStatsPage.qml" line="780"/>
         <source>(未知)</source>
         <translation>(未知)</translation>
     </message>
@@ -2257,185 +2284,206 @@
         <translation>统计已完成任务的模型调用次数、Token 消耗、费用与配额状态。</translation>
     </message>
     <message>
-        <location filename="../src/ui/pages/UsageStatsPage.qml" line="163"/>
+        <source>配额</source>
+        <translation type="vanished">配额</translation>
+    </message>
+    <message>
+        <source>0 = 不限制。费用按已计费请求累计（本地模型不计费）。勾选“超限拒绝”后达到上限直接拒绝请求，默认仅警告。</source>
+        <translation type="vanished">0 = 不限制。费用按已计费请求累计（本地模型不计费）。勾选“超限拒绝”后达到上限直接拒绝请求，默认仅警告。</translation>
+    </message>
+    <message>
+        <location filename="../src/ui/pages/UsageStatsPage.qml" line="180"/>
         <source>配额设置</source>
         <translation>配额设置</translation>
     </message>
     <message>
-        <location filename="../src/ui/pages/UsageStatsPage.qml" line="174"/>
         <source>超限时直接拒绝请求（默认仅警告）</source>
-        <translation>超限时直接拒绝请求（默认仅警告）</translation>
+        <translation type="vanished">超限时直接拒绝请求（默认仅警告）</translation>
     </message>
     <message>
-        <location filename="../src/ui/pages/UsageStatsPage.qml" line="188"/>
-        <location filename="../src/ui/pages/UsageStatsPage.qml" line="195"/>
+        <location filename="../src/ui/pages/UsageStatsPage.qml" line="215"/>
+        <location filename="../src/ui/pages/UsageStatsPage.qml" line="222"/>
         <source>每日 Token 上限</source>
         <translation>每日 Token 上限</translation>
     </message>
     <message>
-        <location filename="../src/ui/pages/UsageStatsPage.qml" line="201"/>
-        <location filename="../src/ui/pages/UsageStatsPage.qml" line="208"/>
+        <location filename="../src/ui/pages/UsageStatsPage.qml" line="224"/>
+        <location filename="../src/ui/pages/UsageStatsPage.qml" line="231"/>
         <source>每月 Token 上限</source>
         <translation>每月 Token 上限</translation>
     </message>
     <message>
-        <location filename="../src/ui/pages/UsageStatsPage.qml" line="214"/>
+        <location filename="../src/ui/pages/UsageStatsPage.qml" line="233"/>
         <source>每日费用上限（元）</source>
         <translation>每日费用上限（元）</translation>
     </message>
     <message>
-        <location filename="../src/ui/pages/UsageStatsPage.qml" line="221"/>
+        <location filename="../src/ui/pages/UsageStatsPage.qml" line="240"/>
         <source>每日费用上限 元</source>
         <translation>每日费用上限 元</translation>
     </message>
     <message>
-        <location filename="../src/ui/pages/UsageStatsPage.qml" line="227"/>
+        <location filename="../src/ui/pages/UsageStatsPage.qml" line="242"/>
         <source>每月费用上限（元）</source>
         <translation>每月费用上限（元）</translation>
     </message>
     <message>
-        <location filename="../src/ui/pages/UsageStatsPage.qml" line="234"/>
+        <location filename="../src/ui/pages/UsageStatsPage.qml" line="249"/>
         <source>每月费用上限 元</source>
         <translation>每月费用上限 元</translation>
     </message>
     <message>
-        <location filename="../src/ui/pages/UsageStatsPage.qml" line="240"/>
         <source>0 = 不限制。费用按已计费请求累计（本地模型不计费）。</source>
-        <translation>0 = 不限制。费用按已计费请求累计（本地模型不计费）。</translation>
+        <translation type="vanished">0 = 不限制。费用按已计费请求累计（本地模型不计费）。</translation>
     </message>
     <message>
-        <location filename="../src/ui/pages/UsageStatsPage.qml" line="263"/>
+        <location filename="../src/ui/pages/UsageStatsPage.qml" line="187"/>
+        <source>0 = 不限制 · 本地模型不计费</source>
+        <translation>0 = 不限制 · 本地模型不计费</translation>
+    </message>
+    <message>
+        <location filename="../src/ui/pages/UsageStatsPage.qml" line="197"/>
+        <source>费用按已计费请求累计。勾选“超限拒绝”后达到上限直接拒绝请求，默认仅警告。</source>
+        <translation>费用按已计费请求累计。勾选“超限拒绝”后达到上限直接拒绝请求，默认仅警告。</translation>
+    </message>
+    <message>
+        <location filename="../src/ui/pages/UsageStatsPage.qml" line="202"/>
+        <source>超限拒绝请求</source>
+        <translation>超限拒绝请求</translation>
+    </message>
+    <message>
+        <location filename="../src/ui/pages/UsageStatsPage.qml" line="264"/>
         <source>累计费用</source>
         <translation>累计费用</translation>
     </message>
     <message>
-        <location filename="../src/ui/pages/UsageStatsPage.qml" line="325"/>
+        <location filename="../src/ui/pages/UsageStatsPage.qml" line="307"/>
         <source>Token 构成</source>
         <translation>Token 构成</translation>
     </message>
     <message>
-        <location filename="../src/ui/pages/UsageStatsPage.qml" line="349"/>
-        <location filename="../src/ui/pages/UsageStatsPage.qml" line="448"/>
+        <location filename="../src/ui/pages/UsageStatsPage.qml" line="331"/>
+        <location filename="../src/ui/pages/UsageStatsPage.qml" line="430"/>
         <source>输入</source>
         <translation>输入</translation>
     </message>
     <message>
-        <location filename="../src/ui/pages/UsageStatsPage.qml" line="350"/>
-        <location filename="../src/ui/pages/UsageStatsPage.qml" line="456"/>
+        <location filename="../src/ui/pages/UsageStatsPage.qml" line="332"/>
+        <location filename="../src/ui/pages/UsageStatsPage.qml" line="438"/>
         <source>输出</source>
         <translation>输出</translation>
     </message>
     <message>
-        <location filename="../src/ui/pages/UsageStatsPage.qml" line="351"/>
+        <location filename="../src/ui/pages/UsageStatsPage.qml" line="333"/>
         <source>缓存命中</source>
         <translation>缓存命中</translation>
     </message>
     <message>
-        <location filename="../src/ui/pages/UsageStatsPage.qml" line="399"/>
+        <location filename="../src/ui/pages/UsageStatsPage.qml" line="381"/>
         <source>缓存命中率: %1</source>
         <translation>缓存命中率: %1</translation>
     </message>
     <message>
-        <location filename="../src/ui/pages/UsageStatsPage.qml" line="414"/>
+        <location filename="../src/ui/pages/UsageStatsPage.qml" line="396"/>
         <source>按来源拆分</source>
         <translation>按来源拆分</translation>
     </message>
     <message>
-        <location filename="../src/ui/pages/UsageStatsPage.qml" line="440"/>
+        <location filename="../src/ui/pages/UsageStatsPage.qml" line="422"/>
         <source>来源</source>
         <translation>来源</translation>
     </message>
     <message>
-        <location filename="../src/ui/pages/UsageStatsPage.qml" line="464"/>
+        <location filename="../src/ui/pages/UsageStatsPage.qml" line="446"/>
         <source>占比</source>
         <translation>占比</translation>
     </message>
     <message>
-        <location filename="../src/ui/pages/UsageStatsPage.qml" line="523"/>
+        <location filename="../src/ui/pages/UsageStatsPage.qml" line="505"/>
         <source>费用明细</source>
         <translation>费用明细</translation>
     </message>
     <message>
-        <location filename="../src/ui/pages/UsageStatsPage.qml" line="549"/>
+        <location filename="../src/ui/pages/UsageStatsPage.qml" line="531"/>
         <source>模型</source>
         <translation>模型</translation>
     </message>
     <message>
-        <location filename="../src/ui/pages/UsageStatsPage.qml" line="557"/>
+        <location filename="../src/ui/pages/UsageStatsPage.qml" line="539"/>
         <source>调用</source>
         <translation>调用</translation>
     </message>
     <message>
-        <location filename="../src/ui/pages/UsageStatsPage.qml" line="565"/>
+        <location filename="../src/ui/pages/UsageStatsPage.qml" line="547"/>
         <source>Token</source>
         <translation>Token</translation>
     </message>
     <message>
-        <location filename="../src/ui/pages/UsageStatsPage.qml" line="573"/>
+        <location filename="../src/ui/pages/UsageStatsPage.qml" line="555"/>
         <source>费用</source>
         <translation>费用</translation>
     </message>
     <message>
-        <location filename="../src/ui/pages/UsageStatsPage.qml" line="633"/>
+        <location filename="../src/ui/pages/UsageStatsPage.qml" line="615"/>
         <source>合计</source>
         <translation>合计</translation>
     </message>
     <message>
-        <location filename="../src/ui/pages/UsageStatsPage.qml" line="665"/>
+        <location filename="../src/ui/pages/UsageStatsPage.qml" line="647"/>
         <source>预估月费用: %1</source>
         <translation>预估月费用: %1</translation>
     </message>
     <message>
-        <location filename="../src/ui/pages/UsageStatsPage.qml" line="681"/>
+        <location filename="../src/ui/pages/UsageStatsPage.qml" line="663"/>
         <source>配额状态</source>
         <translation>配额状态</translation>
     </message>
     <message>
-        <location filename="../src/ui/pages/UsageStatsPage.qml" line="705"/>
+        <location filename="../src/ui/pages/UsageStatsPage.qml" line="687"/>
         <source>日 Token</source>
         <translation>日 Token</translation>
     </message>
     <message>
-        <location filename="../src/ui/pages/UsageStatsPage.qml" line="706"/>
+        <location filename="../src/ui/pages/UsageStatsPage.qml" line="688"/>
         <source>日费用</source>
         <translation>日费用</translation>
     </message>
     <message>
-        <location filename="../src/ui/pages/UsageStatsPage.qml" line="707"/>
+        <location filename="../src/ui/pages/UsageStatsPage.qml" line="689"/>
         <source>月 Token</source>
         <translation>月 Token</translation>
     </message>
     <message>
-        <location filename="../src/ui/pages/UsageStatsPage.qml" line="708"/>
+        <location filename="../src/ui/pages/UsageStatsPage.qml" line="690"/>
         <source>月费用</source>
         <translation>月费用</translation>
     </message>
     <message>
-        <location filename="../src/ui/pages/UsageStatsPage.qml" line="725"/>
-        <location filename="../src/ui/pages/UsageStatsPage.qml" line="727"/>
+        <location filename="../src/ui/pages/UsageStatsPage.qml" line="707"/>
+        <location filename="../src/ui/pages/UsageStatsPage.qml" line="709"/>
         <source>%1 / %2</source>
         <translation>%1 / %2</translation>
     </message>
     <message>
-        <location filename="../src/ui/pages/UsageStatsPage.qml" line="726"/>
-        <location filename="../src/ui/pages/UsageStatsPage.qml" line="728"/>
+        <location filename="../src/ui/pages/UsageStatsPage.qml" line="708"/>
+        <location filename="../src/ui/pages/UsageStatsPage.qml" line="710"/>
         <source>不限</source>
         <translation>不限</translation>
     </message>
     <message>
-        <location filename="../src/ui/pages/UsageStatsPage.qml" line="806"/>
-        <location filename="../src/ui/pages/UsageStatsPage.qml" line="877"/>
+        <location filename="../src/ui/pages/UsageStatsPage.qml" line="788"/>
+        <location filename="../src/ui/pages/UsageStatsPage.qml" line="859"/>
         <source>%1 次</source>
         <translation>%1 次</translation>
     </message>
     <message>
-        <location filename="../src/ui/pages/UsageStatsPage.qml" line="812"/>
-        <location filename="../src/ui/pages/UsageStatsPage.qml" line="883"/>
+        <location filename="../src/ui/pages/UsageStatsPage.qml" line="794"/>
+        <location filename="../src/ui/pages/UsageStatsPage.qml" line="865"/>
         <source>%1 tokens</source>
         <translation>%1 tokens</translation>
     </message>
     <message>
-        <location filename="../src/ui/pages/UsageStatsPage.qml" line="835"/>
+        <location filename="../src/ui/pages/UsageStatsPage.qml" line="817"/>
         <source>按天</source>
         <translation>按天</translation>
     </message>

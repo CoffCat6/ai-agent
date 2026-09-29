@@ -16,9 +16,14 @@ struct ValidationResult {
     QString errorMessage;
 };
 
-// Staging area between the settings pages and PreferenceStore. QML controls
-// must bind against the `staged` map property - Q_INVOKABLE reads carry no
-// change notification, so bindings on them evaluate exactly once.
+// Validated write-through between the settings pages and PreferenceStore.
+// docs/17（设置统一最终决策）: the settings center no longer batches edits —
+// stage() validates against the registry constraints and persists
+// immediately, so `dirty` is only ever true transiently (a failed
+// validation keeps the rejected value staged for the field's error label;
+// the dialog's onClosed rollback discards it). The QML controls bind against
+// the `staged` map property — Q_INVOKABLE reads carry no change
+// notification, so bindings on them would evaluate exactly once.
 class EditBuffer : public QObject {
     Q_OBJECT
     QML_SINGLETON

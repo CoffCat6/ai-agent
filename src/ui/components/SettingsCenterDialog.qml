@@ -168,113 +168,34 @@ Dialog {
                 anchors.leftMargin: 20
                 anchors.rightMargin: 20
 
-                // docs/17 B2: 保存/取消只对走 EditBuffer 暂存的分类有意义；
-                // 即时保存分类（通用/工具/记忆…）不再显示误导性按钮——但若
-                // 界面设置页有未提交的编辑（dirty 跨分类保持），仍要给出
-                // 提交入口。
-                readonly property bool pageUsesEditBuffer:
-                    PreferenceRegistry.preferencesInCategory(
-                        dialog.currentCategory).length > 0
-                readonly property bool showSaveCancel:
-                    pageUsesEditBuffer || EditBuffer.dirty
-
+                // docs/17（设置统一最终决策）: 所有分类均为即时保存，底栏
+                // 只保留"恢复默认"（仅声明式偏好分类可用）与"关闭"。
                 RowLayout {
                     anchors.fill: parent
                     spacing: 8
-                    visible: parent.showSaveCancel
 
                     AppButton {
                         text: qsTr("恢复默认")
-                        visible: parent.parent.pageUsesEditBuffer
                         // Categories without registered preferences (e.g. 模型配置,
                         // which saves through SettingsService instead) have
                         // nothing this button could reset.
-                        enabled: PreferenceRegistry.preferencesInCategory(
+                        visible: PreferenceRegistry.preferencesInCategory(
                                      dialog.currentCategory).length > 0
                         onClicked: confirmResetDialog.open()
                     }
                     Item { Layout.fillWidth: true }
                     AppButton {
-                        text: qsTr("取消")
-                        onClicked: {
-                            if (EditBuffer.dirty) confirmCancelDialog.open()
-                            else dialog.close()
-                        }
-                    }
-                    AppButton {
-                        text: qsTr("保存")
+                        text: qsTr("关闭")
                         highlighted: true
-                        enabled: EditBuffer.dirty
-                        onClicked: {
-                            if (EditBuffer.commit()) {
-                                dialog.settingsSaved()
-                                dialog.close()
-                            } else {
-                                dialog.settingsError(
-                                    EditBuffer.validationError.length > 0
-                                        ? EditBuffer.validationError
-                                        : qsTr("保存失败，请检查输入"))
-                            }
-                        }
-                    }
-                }
-
-                Text {
-                    anchors.centerIn: parent
-                    visible: !parent.showSaveCancel
-                    text: qsTr("此页修改即时保存")
-                    color: Theme.textSecondary
-                    font.pixelSize: 10
-                    font.family: Theme.fontSans
-                    opacity: 0.8
-                }
-            }
-        }
-    }
-
-    Dialog {
-        id: confirmCancelDialog
-        parent: Overlay.overlay
-        modal: true
-        anchors.centerIn: parent
-        width: 360
-        height: 160
-
-        background: DialogBackground {}
-        contentItem: ColumnLayout {
-            spacing: 12
-            Text {
-                text: qsTr("有未保存的修改，确认放弃？")
-                color: Theme.textPrimary
-                font.pixelSize: Theme.fontSizeBody
-                font.family: Theme.fontSans
-                Layout.leftMargin: 20
-                Layout.topMargin: 20
-            }
-            Item { Layout.fillHeight: true }
-            RowLayout {
-                Layout.fillWidth: true
-                Layout.rightMargin: 20
-                Layout.bottomMargin: 16
-                spacing: 8
-                Item { Layout.fillWidth: true }
-                AppButton {
-                    text: qsTr("继续编辑")
-                    onClicked: confirmCancelDialog.close()
-                }
-                AppButton {
-                    text: qsTr("放弃")
-                    highlighted: true
-                    onClicked: {
-                        EditBuffer.rollback()
-                        confirmCancelDialog.close()
-                        dialog.close()
+                        onClicked: dialog.close()
                     }
                 }
             }
         }
     }
 
+    // docs/17: 即时保存后不再有"放弃修改"路径；confirmCancelDialog 已移除，
+    // onClosed 的 rollback 仅兜底丢弃校验失败遗留的 staged 残值。
     Dialog {
         id: confirmResetDialog
         parent: Overlay.overlay

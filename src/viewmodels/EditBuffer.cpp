@@ -49,7 +49,24 @@ void EditBuffer::stage(const QString& key, const QVariant& value) {
         emit dirtyChanged();
         return;
     }
-    m_staged[key] = coerced;
+
+    // docs/17（设置统一最终决策）: 即时保存语义——校验通过立即写穿，设置
+    // 中心不再有"保存/取消"批次。校验失败时保留 staged 供字段级错误显示，
+    // 对话框关闭时 onClosed 的 rollback 兜底丢弃。
+    QString error;
+    if (!validateOne(key, coerced, error)) {
+        m_firstInvalidKey = key;
+        m_validationError = error;
+        m_staged[key] = coerced;
+        emit validationErrorChanged();
+        emit staged(key, coerced);
+        emit stagedChanged();
+        emit dirtyChanged();
+        qCWarning(lcEditBuffer) << "stage: validation failed -" << error;
+        return;
+    }
+    PreferenceStore::instance()->saveBatch({{key, coerced}});
+    m_staged.remove(key);
     emit staged(key, coerced);
     emit stagedChanged();
     emit dirtyChanged();
@@ -144,12 +161,17 @@ void EditBuffer::rollback() {
     emit dirtyChanged();
 }
 
+// docs/17: 重置同样立即写穿——把默认值批量落盘并清空暂存。
 void EditBuffer::resetToDefault(const QStringList& keys) {
     auto* reg = PreferenceRegistry::instance();
     if (!reg) return;
-    clearValidationError();
+    QVariantMap batch;
     for (const QString& key : keys)
-        m_staged[key] = reg->defaultValue(key);
+        batch[key] = reg->defaultValue(key);
+    clearValidationError();
+    if (!batch.isEmpty())
+        PreferenceStore::instance()->saveBatch(batch);
+    m_staged.clear();
     emit stagedChanged();
     emit dirtyChanged();
 }
@@ -157,12 +179,15 @@ void EditBuffer::resetToDefault(const QStringList& keys) {
 void EditBuffer::resetAllToDefault() {
     auto* reg = PreferenceRegistry::instance();
     if (!reg) return;
-    m_staged.clear();
-    clearValidationError();
+    QVariantMap batch;
     for (const QString& catId : reg->categories()) {
         for (const QString& key : reg->preferencesInCategory(catId))
-            m_staged[key] = reg->defaultValue(key);
+            batch[key] = reg->defaultValue(key);
     }
+    clearValidationError();
+    if (!batch.isEmpty())
+        PreferenceStore::instance()->saveBatch(batch);
+    m_staged.clear();
     emit stagedChanged();
     emit dirtyChanged();
 }

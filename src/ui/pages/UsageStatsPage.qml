@@ -106,12 +106,28 @@ Item {
             }
         }
 
-        // ── 时间窗 ──────────────────────────────────────
-        RowLayout {
+        // ── 明细 ────────────────────────────────────────
+        Flickable {
+            id: flick
             Layout.fillWidth: true
+            Layout.fillHeight: true
             Layout.leftMargin: 24
             Layout.rightMargin: 24
             Layout.bottomMargin: 12
+            clip: true
+            contentWidth: width
+            contentHeight: detailCol.implicitHeight
+
+            ScrollBar.vertical: ScrollBar {}
+
+            ColumnLayout {
+                id: detailCol
+                width: flick.width
+                spacing: 16
+
+        // ── 时间窗 ──────────────────────────────────────
+        RowLayout {
+            Layout.fillWidth: true
             spacing: 8
 
             Text {
@@ -140,25 +156,26 @@ Item {
         }
 
         // ── 配额设置（docs/17 B4：P1-3——配额键此前无任何编辑入口）──
+        // 2×2 网格 + 完整标签：整页滚动后垂直空间不再稀缺，宽度紧张时
+        // 仍能完整显示（单行四列在内容区 ~560px 下必然截断）。
         Rectangle {
             Layout.fillWidth: true
-            Layout.leftMargin: 24
-            Layout.rightMargin: 24
-            Layout.bottomMargin: 16
-            implicitHeight: quotaCol.implicitHeight + 20
+            implicitHeight: quotaSettingsCol.implicitHeight + 20
             radius: 8
             color: Theme.bgPrimary
             border.width: 1
             border.color: Theme.borderSubtle
 
             ColumnLayout {
-                id: quotaCol
+                id: quotaSettingsCol
                 anchors.fill: parent
                 anchors.margins: 10
                 spacing: 8
 
                 RowLayout {
                     Layout.fillWidth: true
+                    spacing: 8
+
                     Text {
                         text: qsTr("配额设置")
                         color: Theme.textSecondary
@@ -166,84 +183,71 @@ Item {
                         font.bold: true
                         font.family: Theme.fontMono
                     }
-                    Item { Layout.fillWidth: true }
-                    CheckBox {
-                        id: strictQuota
+                    Text {
+                        text: qsTr("0 = 不限制 · 本地模型不计费")
+                        color: Theme.textSecondary
+                        font.pixelSize: 10
+                        font.family: Theme.fontSans
+                        opacity: 0.8
+                        elide: Text.ElideRight
+                        Layout.fillWidth: true
+                        HoverHandler { id: quotaTipHover }
+                        ToolTip.visible: quotaTipHover.hovered
+                        ToolTip.delay: 400
+                        ToolTip.text: qsTr("费用按已计费请求累计。勾选“超限拒绝”后达到上限直接拒绝请求，默认仅警告。")
+                    }
+                    Switch {
                         checked: Settings.strictQuotaMode
                         onToggled: Settings.strictQuotaMode = checked
-                        text: qsTr("超限时直接拒绝请求（默认仅警告）")
+                        text: qsTr("超限拒绝请求")
                         font.pixelSize: Theme.fontSizeCaption
                         font.family: Theme.fontSans
-                        Accessible.name: text
+                        Accessible.name: qsTr("超限时直接拒绝请求")
                     }
                 }
 
-                RowLayout {
+                GridLayout {
                     Layout.fillWidth: true
-                    spacing: 16
+                    columns: 2
+                    columnSpacing: 16
+                    rowSpacing: 6
 
-                    ColumnLayout {
+                    Text { text: qsTr("每日 Token 上限"); color: Theme.textSecondary; font.pixelSize: 10; font.family: Theme.fontSans; Layout.preferredWidth: 104 }
+                    SpinBox {
+                        id: dailyTokenSpin
                         Layout.fillWidth: true
-                        spacing: 2
-                        Text { text: qsTr("每日 Token 上限"); color: Theme.textSecondary; font.pixelSize: 10; font.family: Theme.fontSans }
-                        SpinBox {
-                            id: dailyTokenSpin
-                            Layout.fillWidth: true
-                            from: 0; to: 100000000; stepSize: 1000; editable: true
-                            Component.onCompleted: value = Settings.dailyTokenQuota
-                            onValueModified: Settings.dailyTokenQuota = value
-                            Accessible.name: qsTr("每日 Token 上限")
-                        }
+                        from: 0; to: 100000000; stepSize: 1000; editable: true
+                        Component.onCompleted: value = Settings.dailyTokenQuota
+                        onValueModified: Settings.dailyTokenQuota = value
+                        Accessible.name: qsTr("每日 Token 上限")
                     }
-                    ColumnLayout {
+                    Text { text: qsTr("每月 Token 上限"); color: Theme.textSecondary; font.pixelSize: 10; font.family: Theme.fontSans; Layout.preferredWidth: 104 }
+                    SpinBox {
+                        id: monthlyTokenSpin
                         Layout.fillWidth: true
-                        spacing: 2
-                        Text { text: qsTr("每月 Token 上限"); color: Theme.textSecondary; font.pixelSize: 10; font.family: Theme.fontSans }
-                        SpinBox {
-                            id: monthlyTokenSpin
-                            Layout.fillWidth: true
-                            from: 0; to: 1000000000; stepSize: 10000; editable: true
-                            Component.onCompleted: value = Settings.monthlyTokenQuota
-                            onValueModified: Settings.monthlyTokenQuota = value
-                            Accessible.name: qsTr("每月 Token 上限")
-                        }
+                        from: 0; to: 1000000000; stepSize: 10000; editable: true
+                        Component.onCompleted: value = Settings.monthlyTokenQuota
+                        onValueModified: Settings.monthlyTokenQuota = value
+                        Accessible.name: qsTr("每月 Token 上限")
                     }
-                    ColumnLayout {
+                    Text { text: qsTr("每日费用上限（元）"); color: Theme.textSecondary; font.pixelSize: 10; font.family: Theme.fontSans; Layout.preferredWidth: 104 }
+                    SpinBox {
+                        id: dailyCostSpin
                         Layout.fillWidth: true
-                        spacing: 2
-                        Text { text: qsTr("每日费用上限（元）"); color: Theme.textSecondary; font.pixelSize: 10; font.family: Theme.fontSans }
-                        SpinBox {
-                            id: dailyCostSpin
-                            Layout.fillWidth: true
-                            from: 0; to: 1000000; stepSize: 1; editable: true
-                            Component.onCompleted: value = Math.round(Settings.dailyCostQuotaCents / 100)
-                            onValueModified: Settings.dailyCostQuotaCents = value * 100
-                            Accessible.name: qsTr("每日费用上限 元")
-                        }
+                        from: 0; to: 1000000; stepSize: 1; editable: true
+                        Component.onCompleted: value = Math.round(Settings.dailyCostQuotaCents / 100)
+                        onValueModified: Settings.dailyCostQuotaCents = value * 100
+                        Accessible.name: qsTr("每日费用上限 元")
                     }
-                    ColumnLayout {
+                    Text { text: qsTr("每月费用上限（元）"); color: Theme.textSecondary; font.pixelSize: 10; font.family: Theme.fontSans; Layout.preferredWidth: 104 }
+                    SpinBox {
+                        id: monthlyCostSpin
                         Layout.fillWidth: true
-                        spacing: 2
-                        Text { text: qsTr("每月费用上限（元）"); color: Theme.textSecondary; font.pixelSize: 10; font.family: Theme.fontSans }
-                        SpinBox {
-                            id: monthlyCostSpin
-                            Layout.fillWidth: true
-                            from: 0; to: 10000000; stepSize: 1; editable: true
-                            Component.onCompleted: value = Math.round(Settings.monthlyCostQuotaCents / 100)
-                            onValueModified: Settings.monthlyCostQuotaCents = value * 100
-                            Accessible.name: qsTr("每月费用上限 元")
-                        }
+                        from: 0; to: 10000000; stepSize: 1; editable: true
+                        Component.onCompleted: value = Math.round(Settings.monthlyCostQuotaCents / 100)
+                        onValueModified: Settings.monthlyCostQuotaCents = value * 100
+                        Accessible.name: qsTr("每月费用上限 元")
                     }
-                }
-
-                Text {
-                    text: qsTr("0 = 不限制。费用按已计费请求累计（本地模型不计费）。")
-                    color: Theme.textSecondary
-                    font.pixelSize: 10
-                    font.family: Theme.fontSans
-                    opacity: 0.8
-                    wrapMode: Text.Wrap
-                    Layout.fillWidth: true
                 }
             }
         }
@@ -251,9 +255,6 @@ Item {
         // ── 概览卡片（§8.1.1：任务次数 / 累计 Token / 累计费用 / 平均延迟）──
         RowLayout {
             Layout.fillWidth: true
-            Layout.leftMargin: 24
-            Layout.rightMargin: 24
-            Layout.bottomMargin: 16
             spacing: 12
 
             Repeater {
@@ -296,25 +297,6 @@ Item {
                 }
             }
         }
-
-        // ── 明细 ────────────────────────────────────────
-        Flickable {
-            id: flick
-            Layout.fillWidth: true
-            Layout.fillHeight: true
-            Layout.leftMargin: 24
-            Layout.rightMargin: 24
-            Layout.bottomMargin: 12
-            clip: true
-            contentWidth: width
-            contentHeight: detailCol.implicitHeight
-
-            ScrollBar.vertical: ScrollBar {}
-
-            ColumnLayout {
-                id: detailCol
-                width: flick.width
-                spacing: 16
 
                 // ── 方向维度卡片（§8.1.2：Token 构成）──────────
                 ColumnLayout {
