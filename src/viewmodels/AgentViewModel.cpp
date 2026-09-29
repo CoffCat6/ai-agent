@@ -11,6 +11,10 @@
 #include "core/utils/Logger.h"
 #include "core/utils/DataUrlUtils.h"
 
+#include <QFileInfo>
+#include <QSettings>
+#include <QUrl>
+
 #include <QBuffer>
 #include <QClipboard>
 #include <QImage>
@@ -228,6 +232,10 @@ ChatSessionController* AgentViewModel::ensureTab() {
     if (m_agentFactory && m_templateAgent)
         controller->attachAgent(m_agentFactory(), true);
 
+    // docs/17 A0: 新 tab 的会话归属跟随当前活动项目。
+    if (controller->agent() && !m_activeProjectId.isEmpty())
+        controller->agent()->setActiveProjectId(m_activeProjectId);
+
     // New tabs start at the configured global default permission mode
     // (no-op for ConfirmChanges; also covers the initial tab created
     // before main.cpp injected the setting).
@@ -350,6 +358,70 @@ void AgentViewModel::applyToAgents(const std::function<void(AIAgent*)>& fn) {
 void AgentViewModel::setMemory(IMemory* memory) {
     if (m_memory == memory) return;
     m_memory = memory;
+    // docs/17 A0: 记忆后端就绪后拉取项目列表（VM 早于 main.cpp 注入构建）。
+    refreshProjects();
+}
+
+// ── docs/17 A0: 项目级会话 ─────────────────────────────
+
+void AgentViewModel::refreshProjects() {
+    const QVariantList projects = m_memory ? m_memory->listProjects()
+                                          : QVariantList{};
+    if (m_projects == projects) return;
+    m_projects = projects;
+    emit projectsChanged();
+}
+
+void AgentViewModel::setActiveProjectId(const QString& id) {
+    if (m_activeProjectId == id) return;
+    m_activeProjectId = id;
+    // 持久化（M4 直写先例）：重启后由 main.cpp 从设置回灌。
+    QSettings("NexusAI", "NexusAI").setValue("projects/activeId", id);
+    // 推给全部 tab agent 与模板 agent：新会话按此标记归属。
+    applyToAgents([&](AIAgent* agent) { agent->setActiveProjectId(id); });
+    if (m_templateAgent) m_templateAgent->setActiveProjectId(id);
+    emit activeProjectIdChanged();
+    refreshSessions();   // 会话列表按活动项目过滤
+}
+
+QString AgentViewModel::importProject(const QString& path) {
+    // FolderDialog 传来的可能是 file:/// URL；归一为本地路径。
+    QString local = path;
+    if (local.startsWith(QLatin1String("file://")))
+        local = QUrl(local).toLocalFile();
+    const QFileInfo info(local);
+    const QString canonical = info.canonicalFilePath();
+    if (!info.isDir() || canonical.isEmpty()) {
+        emit noticeOccurred(QStringLiteral("导入项目失败：目录不存在或不可访问"));
+        return QString();
+    }
+    const QString root = QDir::toNativeSeparators(canonical);
+    // 同一路径重复导入：直接激活已有项目而不是建第二条记录。
+    for (const QVariant& entry : std::as_const(m_projects)) {
+        const QVariantMap p = entry.toMap();
+        if (p.value("rootPath").toString() == root) {
+            setActiveProjectId(p.value("id").toString());
+            return p.value("id").toString();
+        }
+    }
+    const QString id = m_memory
+        ? m_memory->createProject(info.fileName(), root) : QString();
+    if (id.isEmpty()) {
+        emit noticeOccurred(QStringLiteral("导入项目失败：无法写入项目记录"));
+        return QString();
+    }
+    refreshProjects();
+    setActiveProjectId(id);
+    return id;
+}
+
+void AgentViewModel::removeProject(const QString& projectId) {
+    if (!m_memory) return;
+    m_memory->removeProject(projectId);   // 会话保留（project_id 置 NULL）
+    if (m_activeProjectId == projectId)
+        setActiveProjectId(QString());
+    refreshProjects();
+    refreshSessions();
 }
 
 void AgentViewModel::searchMessages(const QString& keyword) {
@@ -461,8 +533,16 @@ void AgentViewModel::refreshSessions() {
     // Every tab agent reads the same database, so pulling the history from
     // any attached one yields the shared list.
     ChatSessionController* controller = controllerWithAgent();
-    const QVariantList sessions = controller
+    const QVariantList all = controller
         ? controller->agent()->sessionList().toVariantList() : QVariantList{};
+    // docs/17 A0: 侧栏按当前视图过滤——活动项目只显示其会话；本地视图
+    // 只显示 project_id 为空的会话（SqliteMemory 对 NULL 回空串）。
+    QVariantList sessions;
+    for (const QVariant& entry : all) {
+        const QVariantMap s = entry.toMap();
+        if (s.value("projectId").toString() == m_activeProjectId)
+            sessions.append(entry);
+    }
     if (m_sessionList == sessions) return;
     m_sessionList = sessions;
     emit sessionListChanged();

@@ -140,6 +140,13 @@ public:
     QString defaultPermissionMode() const { return m_defaultPermissionMode; }
     void setDefaultPermissionMode(const QString& v);
 
+    QString activeProjectId() const { return m_activeProjectId; }
+    void setActiveProjectId(const QString& id);
+
+    // docs/17 A0: 当前活动项目 id 的持久化（运行时真值在 AgentViewModel，
+    // main.cpp 双向桥接）。空 = 无项目。
+    Q_PROPERTY(QString activeProjectId READ activeProjectId WRITE setActiveProjectId NOTIFY activeProjectIdChanged FINAL)
+
     static QString appVersion() { return QCoreApplication::applicationVersion(); }
 
     // ── Profile management (QML invokables) ───────────
@@ -199,6 +206,7 @@ signals:
     void monthlyCostQuotaCentsChanged();
     void strictQuotaModeChanged();
     void defaultPermissionModeChanged();
+    void activeProjectIdChanged();
 
 private:
     void load();
@@ -226,6 +234,7 @@ private:
     int m_monthlyCostQuotaCents{0};
     bool m_strictQuotaMode{false};
     QString m_defaultPermissionMode{QStringLiteral("confirm")};
+    QString m_activeProjectId;
 
     static SettingsService* s_instance;
 };

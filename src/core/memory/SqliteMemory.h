@@ -60,6 +60,13 @@ public:
     void deleteSession(const QString& sessionId) override;
     void renameSession(const QString& sessionId, const QString& title) override;
 
+    // docs/17 A0: 项目级会话。projects 表 + sessions.project_id（NULL=本地）。
+    // 删除项目时会话保留（project_id 置 NULL），不级联删除。
+    QString createProject(const QString& name, const QString& rootPath) override;
+    void removeProject(const QString& projectId) override;
+    QVariantList listProjects() override;
+    void setSessionProject(const QString& sessionId, const QString& projectId) override;
+
     // Audit trail
     void logAudit(const QString& sessionId, const QString& event,
                   const QString& toolName, const QString& arguments,
@@ -113,6 +120,8 @@ public:
 private:
     void initDatabase();
     void createTables();
+    // docs/17 A0: sessions.project_id 列补齐（受控 ALTER，幂等）。
+    void migrateSessionProjectColumn();
     void migrateKnowledgeSchema();
     void migrateMessagesFts();
     // L3: upgrade episodic_fts to the trigram tokenizer (matches messages_fts).

@@ -567,7 +567,10 @@ qInfo() << "NexusAI" << app.applicationVersion() << "starting";
         agentVM->setDefaultPermissionMode(static_cast<int>(
             permissionModeFromString(settings->defaultPermissionMode())));
     };
-    applyPermissionMode();
+    // docs/17 A0: 恢复上次的活动项目（会话归属与侧栏过滤的数据源）。
+    // 运行时 VM 为真值源并直写 QSettings（M4 先例），无需反向桥接。
+    agentVM->setActiveProjectId(settings->activeProjectId());
+        applyPermissionMode();
     QObject::connect(settings, &SettingsService::defaultPermissionModeChanged,
                      &app, applyPermissionMode);
 

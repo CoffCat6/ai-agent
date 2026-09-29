@@ -257,6 +257,7 @@ void SettingsService::load() {
     m_strictQuotaMode = settings.value("strictQuotaMode", false).toBool();
     m_defaultPermissionMode = settings.value("agent/defaultPermissionMode",
                                              QStringLiteral("confirm")).toString();
+    m_activeProjectId = settings.value("projects/activeId").toString();
 }
 
 // Single-provider layout (pre-0.3): provider, apiKey, <provider>/baseUrl,
@@ -652,6 +653,13 @@ void SettingsService::setStrictQuotaMode(bool v) {
     m_strictQuotaMode = v;
     QSettings().setValue("strictQuotaMode", v);
     emit strictQuotaModeChanged();
+}
+
+void SettingsService::setActiveProjectId(const QString& id) {
+    if (m_activeProjectId == id) return;
+    m_activeProjectId = id;
+    QSettings().setValue("projects/activeId", id);
+    emit activeProjectIdChanged();
 }
 
 void SettingsService::resetGeneralToDefaults() {

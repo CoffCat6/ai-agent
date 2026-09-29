@@ -70,6 +70,23 @@ public:
         return {};
     }
 
+    // docs/17 A0: 项目级会话（optional capability; default no-ops）。
+    // 项目 = 导入的文件夹；删除项目时会话保留（project_id 置 NULL）。
+    virtual QString createProject(const QString& name, const QString& rootPath) {
+        Q_UNUSED(name); Q_UNUSED(rootPath);
+        return {};
+    }
+    virtual void removeProject(const QString& projectId) {
+        Q_UNUSED(projectId);
+    }
+    virtual QVariantList listProjects() {
+        return {};
+    }
+    // 会话归属：projectId 为空串表示脱离项目（置 NULL）。
+    virtual void setSessionProject(const QString& sessionId, const QString& projectId) {
+        Q_UNUSED(sessionId); Q_UNUSED(projectId);
+    }
+
     // Batch 17 (FEAT-1702): cross-session keyword search over the message
     // history (optional capability; default no-ops). Each result is a map
     // {sessionId, sessionTitle, messageId, snippet, role, timestamp}, newest

@@ -65,6 +65,8 @@ private slots:
     void tokenStatsEmptyWhenNoData();
     // docs/16 §8.3: session-scoped token breakdown (TopBar hover popup).
     void sessionTokenBreakdown();
+    // docs/17 A0: projects + session ownership
+    void projectSessionLifecycle();
     void traceNodeRoundTrip();
     // Batch 6: knowledge persistence v2
     void knowledgeSchemaV1Migrates();
@@ -210,6 +212,54 @@ void TestMemory::tokenStatsEmptyWhenNoData() {
     QCOMPARE(stats.value("totalTokens").toInt(), 0);
     QVERIFY(stats.value("byModel").toList().isEmpty());
     QVERIFY(stats.value("byDay").toList().isEmpty());
+}
+
+// docs/17 A0: 项目 CRUD、会话归属与删除项目时的会话保留语义。
+void TestMemory::projectSessionLifecycle() {
+    SqliteMemory mem(QStringLiteral(":memory:"));
+
+    const QString pid = mem.createProject(QStringLiteral("demo"),
+                                          QStringLiteral("D:\work\demo"));
+    QVERIFY(!pid.isEmpty());
+
+    QVariantList projects = mem.listProjects();
+    QCOMPARE(projects.size(), 1);
+    QCOMPARE(projects.first().toMap().value("name").toString(),
+             QStringLiteral("demo"));
+    QCOMPARE(projects.first().toMap().value("rootPath").toString(),
+             QStringLiteral("D:\work\demo"));
+
+    // 会话归属：标记后 listSessions 携带 projectId。
+    mem.beginSession("s1", "project session");
+    mem.setSessionProject("s1", pid);
+    mem.beginSession("s2", "local session");
+    QJsonArray sessions = mem.listSessions(10);
+    QCOMPARE(sessions.size(), 2);
+    for (const auto& entry : sessions) {
+        const QJsonObject s = entry.toObject();
+        if (s.value("id").toString() == QLatin1String("s1"))
+            QCOMPARE(s.value("projectId").toString(), pid);
+        if (s.value("id").toString() == QLatin1String("s2"))
+            QCOMPARE(s.value("projectId").toString(), QString());
+    }
+
+    // 脱离项目（空串 → NULL）。
+    mem.setSessionProject("s1", QString());
+    sessions = mem.listSessions(10);
+    for (const auto& entry : sessions) {
+        const QJsonObject s = entry.toObject();
+        if (s.value("id").toString() == QLatin1String("s1"))
+            QVERIFY(s.value("projectId").toString().isEmpty());
+    }
+
+    // 删除项目：项目记录消失，其会话保留（已脱离，仍存在）。
+    mem.setSessionProject("s2", pid);
+    mem.removeProject(pid);
+    QVERIFY(mem.listProjects().isEmpty());
+    sessions = mem.listSessions(10);
+    QCOMPARE(sessions.size(), 2);   // 两个会话都还在
+    for (const auto& entry : sessions)
+        QVERIFY(entry.toObject().value("projectId").toString().isEmpty());
 }
 
 // docs/16 §8.3: sessionTokenBreakdown aggregates one session's token_usage

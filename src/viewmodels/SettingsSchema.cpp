@@ -51,6 +51,8 @@ const QVector<SettingsKeyDef>& SettingsSchema::registeredKeys() {
         {"prefs/v1/ui.restoreWindowOnStartup", true,                         false},
         // M2 内部键：设置中心记住上次访问分类。
         {"settings.lastCategory",         QVariant(),                        false},
+        // docs/17 A0: 当前活动项目 id（空 = 无项目，本地会话）。
+        {"projects/activeId",             QString(),                         false},
     };
     return keys;
 }

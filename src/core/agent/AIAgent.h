@@ -94,6 +94,10 @@ public:
     QJsonArray traceModel() const { return m_traceModel; }
     QString lastResponse() const { return m_lastResponse; }
     QString currentSessionId() const { return m_sessionId; }
+
+    // docs/17 A0: 活动项目 id（全局单活动项目，main.cpp 随 VM 变更推送）。
+    // 新建会话在 beginSession 后标记归属；空串 = 无项目（本地会话）。
+    void setActiveProjectId(const QString& id) { m_activeProjectId = id; }
     QJsonArray sessionList() const;
     QJsonArray auditLog(int limit = 100) const;
     // docs/16 §8: read-only access for aggregate query wrappers.
@@ -191,6 +195,7 @@ private:
     quint64 m_epoch{0};   // bumped on start/stop/reset; stale tool results are dropped
 
     QString m_sessionId;
+    QString m_activeProjectId;   // docs/17 A0: 活动项目（空 = 本地）
     QString m_lastResponse;
 
     QVector<ToolCallInfo> m_pendingToolCalls;

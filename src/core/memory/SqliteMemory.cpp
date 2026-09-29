@@ -94,6 +94,8 @@ SqliteMemory::~SqliteMemory() {
 
 void SqliteMemory::initDatabase() {
     createTables();
+    // docs/17 A0: sessions.project_id 列补齐（projects 表在 createTables 里）。
+    migrateSessionProjectColumn();
     migrateKnowledgeSchema();
     migrateMessagesFts();
     migrateEpisodicFts();
@@ -249,6 +251,16 @@ void SqliteMemory::createTables() {
         )
     )", "create sessions table");
 
+    // docs/17 A0: 项目级会话——导入的文件夹作为一个项目。
+    execDdl(query, R"(
+        CREATE TABLE IF NOT EXISTS projects (
+            id TEXT PRIMARY KEY,
+            name TEXT NOT NULL,
+            root_path TEXT NOT NULL,
+            created_at INTEGER NOT NULL
+        )
+    )", "create projects table");
+
     // Audit trail for tool activity
     execDdl(query, R"(
         CREATE TABLE IF NOT EXISTS audit_log (
@@ -374,6 +386,27 @@ void SqliteMemory::createTables() {
 // working: empty hash/model marks them stale, so the first startup after
 // the upgrade re-embeds them in the background (per the audited migration
 // plan) and the new layout is written back transparently.
+// docs/17 A0: 老库补齐 sessions.project_id 列（PRAGMA 检查 + 受控 ALTER，
+// 幂等——重复调用在列已存在时为 no-op）。
+void SqliteMemory::migrateSessionProjectColumn() {
+    QSqlQuery q(m_db);
+    if (!q.exec("PRAGMA table_info(sessions)")) {
+        qWarning() << "PRAGMA table_info(sessions) failed:"
+                   << q.lastError().text();
+        return;
+    }
+    bool hasColumn = false;
+    while (q.next()) {
+        if (q.value(1).toString() == QLatin1String("project_id")) {
+            hasColumn = true;
+            break;
+        }
+    }
+    if (!hasColumn)
+        execDdl(q, "ALTER TABLE sessions ADD COLUMN project_id TEXT",
+                "add sessions.project_id column");
+}
+
 void SqliteMemory::migrateKnowledgeSchema() {
     QSqlQuery pragma(m_db);
     QStringList columns;
@@ -1011,7 +1044,7 @@ void SqliteMemory::touchSession(const QString& sessionId) {
 
 QJsonArray SqliteMemory::listSessions(int limit) {
     QSqlQuery query(m_db);
-    query.prepare("SELECT id, title, updated_at FROM sessions "
+    query.prepare("SELECT id, title, updated_at, project_id FROM sessions "
                   "ORDER BY updated_at DESC LIMIT ?");
     query.addBindValue(limit);
 
@@ -1024,12 +1057,75 @@ QJsonArray SqliteMemory::listSessions(int limit) {
             const qint64 updated = query.value(2).toLongLong();
             session["updatedAt"] = static_cast<double>(updated);
             session["timeText"] = relativeTime(updated);
+            session["projectId"] = query.value(3).toString();
             sessions.append(session);
         }
     } else {
         qWarning() << "Failed to list sessions:" << query.lastError().text();
     }
     return sessions;
+}
+
+// ── docs/17 A0: 项目级会话 ────────────────────────────
+QString SqliteMemory::createProject(const QString& name, const QString& rootPath) {
+    const QString id = QUuid::createUuid().toString(QUuid::WithoutBraces);
+    QSqlQuery q(m_db);
+    q.prepare("INSERT INTO projects (id, name, root_path, created_at) "
+              "VALUES (?, ?, ?, ?)");
+    q.addBindValue(id);
+    q.addBindValue(name);
+    q.addBindValue(rootPath);
+    q.addBindValue(QDateTime::currentMSecsSinceEpoch());
+    if (!q.exec()) {
+        qWarning() << "Failed to create project:" << q.lastError().text();
+        return QString();
+    }
+    return id;
+}
+
+void SqliteMemory::removeProject(const QString& projectId) {
+    // 会话保留：project_id 置 NULL（不级联删除）。
+    QSqlQuery detach(m_db);
+    detach.prepare("UPDATE sessions SET project_id = NULL WHERE project_id = ?");
+    detach.addBindValue(projectId);
+    if (!detach.exec())
+        qWarning() << "Failed to detach project sessions:"
+                   << detach.lastError().text();
+
+    QSqlQuery q(m_db);
+    q.prepare("DELETE FROM projects WHERE id = ?");
+    q.addBindValue(projectId);
+    if (!q.exec())
+        qWarning() << "Failed to remove project:" << q.lastError().text();
+}
+
+QVariantList SqliteMemory::listProjects() {
+    QVariantList out;
+    QSqlQuery q(m_db);
+    q.prepare("SELECT id, name, root_path FROM projects ORDER BY created_at ASC");
+    if (q.exec()) {
+        while (q.next()) {
+            out.append(QVariantMap{
+                {"id",       q.value(0).toString()},
+                {"name",     q.value(1).toString()},
+                {"rootPath", q.value(2).toString()},
+            });
+        }
+    } else {
+        qWarning() << "Failed to list projects:" << q.lastError().text();
+    }
+    return out;
+}
+
+void SqliteMemory::setSessionProject(const QString& sessionId,
+                                     const QString& projectId) {
+    QSqlQuery q(m_db);
+    q.prepare("UPDATE sessions SET project_id = ? WHERE id = ?");
+    // 空串绑定为 SQL NULL（脱离项目）。
+    q.addBindValue(projectId.isEmpty() ? QVariant() : QVariant(projectId));
+    q.addBindValue(sessionId);
+    if (!q.exec())
+        qWarning() << "Failed to set session project:" << q.lastError().text();
 }
 
 void SqliteMemory::deleteSession(const QString& sessionId) {

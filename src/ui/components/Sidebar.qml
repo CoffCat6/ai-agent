@@ -132,6 +132,213 @@ Rectangle {
             Accessible.onPressAction: AgentVM.openTab()
         }
 
+        // ── Projects (docs/17 A0: 项目级会话) ─────────
+        // 两区布局：项目在上、会话在下，各自可新建。新建项目 =
+        // FolderDialog 选目录；项目激活时会话列表只显示该项目会话。
+        Text {
+            Layout.topMargin: 16
+            Layout.leftMargin: 20
+            Layout.rightMargin: 12
+            text: "PROJECTS"
+            color: Theme.textSecondary
+            font.pixelSize: 10
+            font.family: Theme.fontMono
+            font.weight: Font.DemiBold
+        }
+
+        ColumnLayout {
+            visible: AgentVM.projects.length > 0
+            Layout.fillWidth: true
+            Layout.leftMargin: 12
+            Layout.rightMargin: 12
+            Layout.topMargin: 6
+            spacing: 2
+
+            Repeater {
+                model: AgentVM.projects
+
+                delegate: Rectangle {
+                    id: projectDelegate
+                    required property var modelData
+                    readonly property bool isActive:
+                        AgentVM.activeProjectId === modelData.id
+                    Layout.fillWidth: true
+                    Layout.preferredHeight: 32
+                    radius: 6
+                    color: projectMA.containsMouse || isActive
+                        ? Theme.surfaceHover : "transparent"
+
+                    Row {
+                        anchors.fill: parent
+                        anchors.leftMargin: 8
+                        anchors.rightMargin: 8
+                        spacing: 6
+
+                        AppIcon {
+                            anchors.verticalCenter: parent.verticalCenter
+                            icon: "folder"
+                            size: 13
+                            iconColor: isActive ? Theme.brandPrimary
+                                                : Theme.textSecondary
+                        }
+
+                        Text {
+                            anchors.verticalCenter: parent.verticalCenter
+                            Layout.fillWidth: true
+                            text: projectDelegate.modelData.name
+                            color: projectDelegate.isActive
+                                ? Theme.brandPrimary : Theme.textPrimary
+                            font.pixelSize: Theme.fontSizeCaption
+                            font.family: Theme.fontSans
+                            elide: Text.ElideRight
+                        }
+                    }
+
+                    // 退出项目（仅活动项显示）
+                    Rectangle {
+                        width: 20; height: 20; radius: 4
+                        anchors.verticalCenter: parent.verticalCenter
+                        anchors.right: parent.right
+                        anchors.rightMargin: projectDelegate.isActive ? 30 : 8
+                        visible: projectMA.containsMouse
+                                  && projectDelegate.isActive
+                        color: exitMA.containsMouse ? Theme.surfaceHover : "transparent"
+                        AppIcon {
+                            anchors.centerIn: parent
+                            icon: "close"
+                            size: 11
+                            iconColor: exitMA.containsMouse
+                                ? Theme.statusWarning : Theme.textSecondary
+                        }
+                        MouseArea {
+                            id: exitMA
+                            anchors.fill: parent
+                            hoverEnabled: true
+                            cursorShape: Qt.PointingHandCursor
+                            onClicked: AgentVM.setActiveProjectId("")
+                        }
+                    }
+
+                    // 删除项目（两步确认；会话保留为本地会话）
+                    Rectangle {
+                        width: 20; height: 20; radius: 4
+                        anchors.verticalCenter: parent.verticalCenter
+                        anchors.right: parent.right
+                        anchors.rightMargin: 8
+                        visible: projectMA.containsMouse
+                                  && !projectDelegate.isActive
+                        color: projectDeleteMA.containsMouse
+                            ? Qt.rgba(Theme.statusDanger.r,
+                                      Theme.statusDanger.g,
+                                      Theme.statusDanger.b, 0.15)
+                            : "transparent"
+                        AppIcon {
+                            anchors.centerIn: parent
+                            visible: !projectDelegate.confirmDelete
+                            icon: "close"
+                            size: 11
+                            iconColor: projectDeleteMA.containsMouse
+                                ? Theme.statusDanger : Theme.textSecondary
+                        }
+                        Text {
+                            anchors.centerIn: parent
+                            visible: projectDelegate.confirmDelete
+                            text: qsTr("确认?")
+                            color: Theme.statusDanger
+                            font.pixelSize: 8
+                            font.bold: true
+                        }
+                        MouseArea {
+                            id: projectDeleteMA
+                            anchors.fill: parent
+                            hoverEnabled: true
+                            cursorShape: Qt.PointingHandCursor
+                            onClicked: {
+                                if (!projectDelegate.confirmDelete) {
+                                    projectDelegate.confirmDelete = true
+                                    projectConfirmResetTimer.restart()
+                                } else {
+                                    projectConfirmResetTimer.stop()
+                                    projectDelegate.confirmDelete = false
+                                    AgentVM.removeProject(
+                                        projectDelegate.modelData.id)
+                                }
+                            }
+                        }
+                    }
+
+                    property bool confirmDelete: false
+                    Timer {
+                        id: projectConfirmResetTimer
+                        interval: 2500
+                        onTriggered: projectDelegate.confirmDelete = false
+                    }
+
+                    MouseArea {
+                        id: projectMA
+                        anchors.fill: parent
+                        hoverEnabled: true
+                        cursorShape: Qt.PointingHandCursor
+                        onClicked: {
+                            AgentVM.setActiveProjectId(
+                                projectDelegate.isActive
+                                    ? "" : projectDelegate.modelData.id)
+                        }
+                    }
+                }
+            }
+        }
+
+        // 项目区"新建"入口（导入项目 = FolderDialog 选目录）
+        Rectangle {
+            Layout.fillWidth: true
+            Layout.leftMargin: 12
+            Layout.rightMargin: 12
+            Layout.topMargin: 4
+            Layout.preferredHeight: 30
+            radius: 6
+            border.width: 1
+            border.color: Theme.borderSubtle
+            color: importMA.containsMouse ? Theme.surfaceHover : "transparent"
+
+            Row {
+                anchors.centerIn: parent
+                spacing: 6
+
+                AppIcon {
+                    anchors.verticalCenter: parent.verticalCenter
+                    icon: "add"
+                    size: 13
+                    iconColor: Theme.textSecondary
+                }
+
+                Text {
+                    anchors.verticalCenter: parent.verticalCenter
+                    text: qsTr("导入项目…")
+                    color: Theme.textSecondary
+                    font.pixelSize: Theme.fontSizeCaption
+                    font.family: Theme.fontSans
+                }
+            }
+
+            MouseArea {
+                id: importMA
+                anchors.fill: parent
+                hoverEnabled: true
+                cursorShape: Qt.PointingHandCursor
+                onClicked: importProjectDialog.open()
+            }
+
+            FolderDialog {
+                id: importProjectDialog
+                title: qsTr("选择项目文件夹")
+                onAccepted: AgentVM.importProject(selectedFolder)
+            }
+
+            Accessible.role: Accessible.Button
+            Accessible.name: qsTr("导入项目")
+        }
+
         // ── Search (Batch 17 / F1) ───────────────────
         Rectangle {
             Layout.fillWidth: true
@@ -185,7 +392,15 @@ Rectangle {
         Text {
             Layout.topMargin: 16
             Layout.leftMargin: 20
-            text: root.searching ? qsTr("搜索结果") : "SESSIONS"
+            text: {
+                if (root.searching) return qsTr("搜索结果")
+                // docs/17 A0: 会话区标题随视图切换（项目 / 本地会话）。
+                for (let i = 0; i < AgentVM.projects.length; ++i) {
+                    if (AgentVM.projects[i].id === AgentVM.activeProjectId)
+                        return AgentVM.projects[i].name
+                }
+                return "SESSIONS"
+            }
             color: Theme.textSecondary
             font.pixelSize: 10
             font.family: Theme.fontMono

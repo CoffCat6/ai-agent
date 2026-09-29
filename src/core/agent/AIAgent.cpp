@@ -311,7 +311,12 @@ void AIAgent::startTask(const QString& userMessage, const QStringList& images,
         sysMsg["content"] = prompt;
         m_messages.append(sysMsg);
 
-        if (m_memory) m_memory->beginSession(m_sessionId, userMessage.left(60));
+        if (m_memory) {
+            m_memory->beginSession(m_sessionId, userMessage.left(60));
+            // docs/17 A0: 活动项目激活期间新建的会话标记归属。
+            if (!m_activeProjectId.isEmpty())
+                m_memory->setSessionProject(m_sessionId, m_activeProjectId);
+        }
         emit sessionChanged(m_sessionId);
         emit sessionsChanged();
     }

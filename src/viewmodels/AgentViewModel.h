@@ -93,6 +93,10 @@ class AgentViewModel : public QObject {
     Q_PROPERTY(int sidebarWidth READ sidebarWidth WRITE setSidebarWidth NOTIFY sidebarWidthChanged FINAL)
     Q_PROPERTY(QVariantList sessionList READ sessionList NOTIFY sessionListChanged FINAL)
     Q_PROPERTY(QString currentSessionId READ currentSessionId NOTIFY currentSessionIdChanged FINAL)
+    // docs/17 A0: 项目级会话。projects = 已导入项目列表；activeProjectId
+    // 为空表示"本地对话"视图（只显示 project_id 为 NULL 的会话）。
+    Q_PROPERTY(QVariantList projects READ projects NOTIFY projectsChanged FINAL)
+    Q_PROPERTY(QString activeProjectId READ activeProjectId WRITE setActiveProjectId NOTIFY activeProjectIdChanged FINAL)
     // Batch 17 (FEAT-1702): cross-session message search results; each entry
     // is {sessionId, sessionTitle, messageId, snippet, role, timestamp}.
     Q_PROPERTY(QVariantList searchResults READ searchResults NOTIFY searchResultsChanged FINAL)
@@ -238,6 +242,18 @@ public:
 
     // Sessions
     QVariantList sessionList() const { return m_sessionList; }
+
+    // docs/17 A0: 项目级会话。projects 为已导入项目列表
+    // [{id, name, rootPath}]；activeProjectId 为空 = 本地对话视图。
+    QVariantList projects() const { return m_projects; }
+    QString activeProjectId() const { return m_activeProjectId; }
+    void setActiveProjectId(const QString& id);
+    // FolderDialog 的本地路径导入为项目（canonicalize，项目名取目录名），
+    // 成功后自动激活并返回项目 id（失败返回空串 + noticeOccurred）。
+    Q_INVOKABLE QString importProject(const QString& path);
+    // 删除项目：其会话保留为本地会话（project_id 置 NULL）。活动中的
+    // 项目被删除时回落本地视图。
+    Q_INVOKABLE void removeProject(const QString& projectId);
     QString currentSessionId() const { return active()->currentSessionId(); }
     // Batch 17: message-search results (set via the searchMessages invokable)
     QVariantList searchResults() const { return m_searchResults; }
@@ -346,6 +362,9 @@ signals:
     // docs/16 §8: per-request cost changed (cents).
     void costChanged(qint64 costCents);
     void sessionListChanged();
+    // docs/17 A0: 项目列表 / 活动项目变化（侧栏两区数据源）。
+    void projectsChanged();
+    void activeProjectIdChanged();
     void currentSessionIdChanged();
     // Active tab's session permission mode changed (switch or tab switch).
     void permissionModeChanged();
@@ -372,6 +391,8 @@ private:
     // for global session-list operations (delete/rename/audit/history pull).
     ChatSessionController* controllerWithAgent() const;
     void refreshSessions();
+    // docs/17 A0: 从记忆后端重拉项目列表并 NOTIFY（去重刷新）。
+    void refreshProjects();
     void refreshToolRegistry();
     void refreshKnowledge();
     void setKnowledgeBusy(bool busy);
@@ -401,6 +422,8 @@ private:
     QVariantList m_searchResults;
     std::function<QString(const QString&)> m_contentProvider;
     QVariantList m_sessionList;
+    QVariantList m_projects;         // docs/17 A0: 已导入项目
+    QString m_activeProjectId;       // 空 = 本地对话视图
 
     // ── Panel ──────────────────────────────────────────
     bool m_isPanelVisible{true};
