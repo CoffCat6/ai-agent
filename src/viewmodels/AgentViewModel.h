@@ -247,7 +247,9 @@ public:
     // [{id, name, rootPath}]；activeProjectId 为空 = 本地对话视图。
     QVariantList projects() const { return m_projects; }
     QString activeProjectId() const { return m_activeProjectId; }
-    void setActiveProjectId(const QString& id);
+    // Q_INVOKABLE：侧栏树（项目行/「对话」头）经 QML 直接调用切换活动
+    // 项目；同时作为 activeProjectId 属性的 WRITE 端。
+    Q_INVOKABLE void setActiveProjectId(const QString& id);
     // FolderDialog 的本地路径导入为项目（canonicalize，项目名取目录名），
     // 成功后自动激活并返回项目 id（失败返回空串 + noticeOccurred）。
     Q_INVOKABLE QString importProject(const QString& path);

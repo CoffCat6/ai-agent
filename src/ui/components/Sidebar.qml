@@ -515,8 +515,11 @@ Rectangle {
             id: sessionRow
             ItemDelegate {
                 id: sessionDelegate
-                width: parent.width
-                height: 48
+                // docs/17: 布局子项（ColumnLayout 内）必须用附加属性——
+                // 显式 width/height 会被布局忽略，热区缩成 implicitWidth
+                // 窄条（点击"无法切换"的根因）。
+                Layout.fillWidth: true
+                Layout.preferredHeight: 48
 
                 Accessible.name: modelData.title && modelData.title.length > 0
                     ? modelData.title : qsTr("新会话")
