@@ -1266,22 +1266,22 @@
 <context>
     <name>NexusAI::AgentViewModel</name>
     <message>
-        <location filename="../src/viewmodels/AgentViewModel.cpp" line="309"/>
+        <location filename="../src/viewmodels/AgentViewModel.cpp" line="334"/>
         <source>新会话</source>
         <translation>新会话</translation>
     </message>
     <message>
-        <location filename="../src/viewmodels/AgentViewModel.cpp" line="463"/>
+        <location filename="../src/viewmodels/AgentViewModel.cpp" line="543"/>
         <source>导出失败：未连接持久化后端</source>
         <translation>导出失败：未连接持久化后端</translation>
     </message>
     <message>
-        <location filename="../src/viewmodels/AgentViewModel.cpp" line="468"/>
+        <location filename="../src/viewmodels/AgentViewModel.cpp" line="548"/>
         <source>导出失败：不支持的格式“%1”（可选 md / json）</source>
         <translation>导出失败：不支持的格式“%1”（可选 md / json）</translation>
     </message>
     <message>
-        <location filename="../src/viewmodels/AgentViewModel.cpp" line="483"/>
+        <location filename="../src/viewmodels/AgentViewModel.cpp" line="563"/>
         <source># NexusAI 会话导出
 
 </source>
@@ -1290,21 +1290,21 @@
 </translation>
     </message>
     <message>
-        <location filename="../src/viewmodels/AgentViewModel.cpp" line="484"/>
+        <location filename="../src/viewmodels/AgentViewModel.cpp" line="564"/>
         <source>- 会话 ID：%1
 </source>
         <translation>- 会话 ID：%1
 </translation>
     </message>
     <message>
-        <location filename="../src/viewmodels/AgentViewModel.cpp" line="485"/>
+        <location filename="../src/viewmodels/AgentViewModel.cpp" line="565"/>
         <source>- 导出时间：%1
 </source>
         <translation>- 导出时间：%1
 </translation>
     </message>
     <message>
-        <location filename="../src/viewmodels/AgentViewModel.cpp" line="486"/>
+        <location filename="../src/viewmodels/AgentViewModel.cpp" line="566"/>
         <source>- 消息数：%1
 
 ---
@@ -1317,17 +1317,17 @@
 </translation>
     </message>
     <message>
-        <location filename="../src/viewmodels/AgentViewModel.cpp" line="490"/>
+        <location filename="../src/viewmodels/AgentViewModel.cpp" line="570"/>
         <source>用户</source>
         <translation>用户</translation>
     </message>
     <message>
-        <location filename="../src/viewmodels/AgentViewModel.cpp" line="491"/>
+        <location filename="../src/viewmodels/AgentViewModel.cpp" line="571"/>
         <source>助手</source>
         <translation>助手</translation>
     </message>
     <message>
-        <location filename="../src/viewmodels/AgentViewModel.cpp" line="500"/>
+        <location filename="../src/viewmodels/AgentViewModel.cpp" line="580"/>
         <source>---
 
 ## 过程摘要
@@ -1340,77 +1340,77 @@
 </translation>
     </message>
     <message>
-        <location filename="../src/viewmodels/AgentViewModel.cpp" line="529"/>
+        <location filename="../src/viewmodels/AgentViewModel.cpp" line="609"/>
         <source>导出失败：无法写入 %1</source>
         <translation>导出失败：无法写入 %1</translation>
     </message>
     <message>
-        <location filename="../src/viewmodels/AgentViewModel.cpp" line="534"/>
+        <location filename="../src/viewmodels/AgentViewModel.cpp" line="614"/>
         <source>导出失败：写入未完成 %1</source>
         <translation>导出失败：写入未完成 %1</translation>
     </message>
     <message>
-        <location filename="../src/viewmodels/AgentViewModel.cpp" line="540"/>
+        <location filename="../src/viewmodels/AgentViewModel.cpp" line="620"/>
         <source>已导出会话（%1 条消息）：%2</source>
         <translation>已导出会话（%1 条消息）：%2</translation>
     </message>
     <message>
-        <location filename="../src/viewmodels/AgentViewModel.cpp" line="602"/>
+        <location filename="../src/viewmodels/AgentViewModel.cpp" line="682"/>
         <source>无法读取文件：%1</source>
         <translation>无法读取文件：%1</translation>
     </message>
     <message>
-        <location filename="../src/viewmodels/AgentViewModel.cpp" line="607"/>
+        <location filename="../src/viewmodels/AgentViewModel.cpp" line="687"/>
         <source>无法打开文件：%1</source>
         <translation>无法打开文件：%1</translation>
     </message>
     <message>
-        <location filename="../src/viewmodels/AgentViewModel.cpp" line="618"/>
+        <location filename="../src/viewmodels/AgentViewModel.cpp" line="698"/>
         <source>文档内容已存在，已跳过：%1</source>
         <translation>文档内容已存在，已跳过：%1</translation>
     </message>
     <message>
-        <location filename="../src/viewmodels/AgentViewModel.cpp" line="648"/>
+        <location filename="../src/viewmodels/AgentViewModel.cpp" line="728"/>
         <source>未找到文档内容，无法重新嵌入：%1</source>
         <translation>未找到文档内容，无法重新嵌入：%1</translation>
     </message>
     <message>
-        <location filename="../src/viewmodels/AgentViewModel.cpp" line="666"/>
+        <location filename="../src/viewmodels/AgentViewModel.cpp" line="746"/>
         <source>已重新嵌入 %1（%2 段）</source>
         <translation>已重新嵌入 %1（%2 段）</translation>
     </message>
     <message>
-        <location filename="../src/viewmodels/AgentViewModel.cpp" line="668"/>
+        <location filename="../src/viewmodels/AgentViewModel.cpp" line="748"/>
         <source>重新嵌入失败：%1</source>
         <translation>重新嵌入失败：%1</translation>
     </message>
     <message>
-        <location filename="../src/viewmodels/AgentViewModel.cpp" line="672"/>
+        <location filename="../src/viewmodels/AgentViewModel.cpp" line="752"/>
         <source>已导入 %1（%2 段）</source>
         <translation>已导入 %1（%2 段）</translation>
     </message>
     <message>
-        <location filename="../src/viewmodels/AgentViewModel.cpp" line="674"/>
+        <location filename="../src/viewmodels/AgentViewModel.cpp" line="754"/>
         <source>导入失败（文件为空或无法分块）：%1</source>
         <translation>导入失败（文件为空或无法分块）：%1</translation>
     </message>
     <message>
-        <location filename="../src/viewmodels/AgentViewModel.cpp" line="676"/>
+        <location filename="../src/viewmodels/AgentViewModel.cpp" line="756"/>
         <source>知识库总量已达上限（最多 %1 段），请先删除部分文档后再导入</source>
         <translation>知识库总量已达上限（最多 %1 段），请先删除部分文档后再导入</translation>
     </message>
     <message>
-        <location filename="../src/viewmodels/AgentViewModel.cpp" line="679"/>
+        <location filename="../src/viewmodels/AgentViewModel.cpp" line="759"/>
         <source>文件过大（超过单文档 %1 段上限）：%2</source>
         <translation>文件过大（超过单文档 %1 段上限）：%2</translation>
     </message>
     <message>
-        <location filename="../src/viewmodels/AgentViewModel.cpp" line="919"/>
+        <location filename="../src/viewmodels/AgentViewModel.cpp" line="999"/>
         <source>文件过大（附件上限 %1 KB）：%2</source>
         <translation>文件过大（附件上限 %1 KB）：%2</translation>
     </message>
     <message>
-        <location filename="../src/viewmodels/AgentViewModel.cpp" line="924"/>
+        <location filename="../src/viewmodels/AgentViewModel.cpp" line="1004"/>
         <source>暂不支持二进制文件作为附件：%1</source>
         <translation>暂不支持二进制文件作为附件：%1</translation>
     </message>
@@ -1464,22 +1464,22 @@
 <context>
     <name>NexusAI::SettingsService</name>
     <message>
-        <location filename="../src/viewmodels/SettingsService.cpp" line="316"/>
+        <location filename="../src/viewmodels/SettingsService.cpp" line="317"/>
         <source>新配置</source>
         <translation>新配置</translation>
     </message>
     <message>
-        <location filename="../src/viewmodels/SettingsService.cpp" line="464"/>
+        <location filename="../src/viewmodels/SettingsService.cpp" line="465"/>
         <source>OpenAI 兼容</source>
         <translation>OpenAI 兼容</translation>
     </message>
     <message>
-        <location filename="../src/viewmodels/SettingsService.cpp" line="465"/>
+        <location filename="../src/viewmodels/SettingsService.cpp" line="466"/>
         <source>Ollama 本地</source>
         <translation>Ollama 本地</translation>
     </message>
     <message>
-        <location filename="../src/viewmodels/SettingsService.cpp" line="466"/>
+        <location filename="../src/viewmodels/SettingsService.cpp" line="467"/>
         <source>Claude</source>
         <translation>Claude</translation>
     </message>
@@ -1583,57 +1583,67 @@
         <translation>关闭时读取仅限文档/下载/桌面/应用目录与当前项目；开启后除系统目录与黑名单外全部可读，模型读到的内容可能发送给云端模型。</translation>
     </message>
     <message>
-        <location filename="../src/ui/pages/SecurityPage.qml" line="86"/>
+        <location filename="../src/ui/pages/SecurityPage.qml" line="91"/>
+        <source>允许写入当前项目目录</source>
+        <translation>允许写入当前项目目录</translation>
+    </message>
+    <message>
+        <location filename="../src/ui/pages/SecurityPage.qml" line="97"/>
+        <source>默认项目目录只读，写入仅限用户目录；开启后模型可以修改当前项目中的文件（写入类工具仍受会话权限模式约束，黑名单始终优先）。</source>
+        <translation>默认项目目录只读，写入仅限用户目录；开启后模型可以修改当前项目中的文件（写入类工具仍受会话权限模式约束，黑名单始终优先）。</translation>
+    </message>
+    <message>
+        <location filename="../src/ui/pages/SecurityPage.qml" line="109"/>
         <source>黑名单（始终拒绝，优先于一切允许规则）</source>
         <translation>黑名单（始终拒绝，优先于一切允许规则）</translation>
     </message>
     <message>
-        <location filename="../src/ui/pages/SecurityPage.qml" line="93"/>
+        <location filename="../src/ui/pages/SecurityPage.qml" line="116"/>
         <source>内置默认拦截：~/.ssh、~/.gnupg、~/.aws 及 *.pem / *.key / *.ppk / *.kdbx。以下为追加项，支持目录（或目录名，命中任意层级）与通配模式如 *.env。</source>
         <translation>内置默认拦截：~/.ssh、~/.gnupg、~/.aws 及 *.pem / *.key / *.ppk / *.kdbx。以下为追加项，支持目录（或目录名，命中任意层级）与通配模式如 *.env。</translation>
     </message>
     <message>
-        <location filename="../src/ui/pages/SecurityPage.qml" line="168"/>
+        <location filename="../src/ui/pages/SecurityPage.qml" line="191"/>
         <source>暂无追加项</source>
         <translation>暂无追加项</translation>
     </message>
     <message>
-        <location filename="../src/ui/pages/SecurityPage.qml" line="182"/>
+        <location filename="../src/ui/pages/SecurityPage.qml" line="205"/>
         <source>目录路径、目录名或通配模式（如 D:secrets、.git、*.env）</source>
         <translation>目录路径、目录名或通配模式（如 D:secrets、.git、*.env）</translation>
     </message>
     <message>
-        <location filename="../src/ui/pages/SecurityPage.qml" line="196"/>
+        <location filename="../src/ui/pages/SecurityPage.qml" line="219"/>
         <source>新增黑名单条目</source>
         <translation>新增黑名单条目</translation>
     </message>
     <message>
-        <location filename="../src/ui/pages/SecurityPage.qml" line="202"/>
+        <location filename="../src/ui/pages/SecurityPage.qml" line="225"/>
         <source>添加</source>
         <translation>添加</translation>
     </message>
     <message>
-        <location filename="../src/ui/pages/SecurityPage.qml" line="235"/>
+        <location filename="../src/ui/pages/SecurityPage.qml" line="258"/>
         <source>隐私门</source>
         <translation>隐私门</translation>
     </message>
     <message>
-        <location filename="../src/ui/pages/SecurityPage.qml" line="243"/>
+        <location filename="../src/ui/pages/SecurityPage.qml" line="266"/>
         <source>仅本地模式</source>
         <translation>仅本地模式</translation>
     </message>
     <message>
-        <location filename="../src/ui/pages/SecurityPage.qml" line="249"/>
+        <location filename="../src/ui/pages/SecurityPage.qml" line="272"/>
         <source>使用云端模型时拦截知识库搜索、联网搜索与全部 MCP 工具（工具页会显示拦截徽标）；本地模型不受影响。</source>
         <translation>使用云端模型时拦截知识库搜索、联网搜索与全部 MCP 工具（工具页会显示拦截徽标）；本地模型不受影响。</translation>
     </message>
     <message>
-        <location filename="../src/ui/pages/SecurityPage.qml" line="265"/>
+        <location filename="../src/ui/pages/SecurityPage.qml" line="288"/>
         <source>允许 http_fetch 访问本机与内网地址</source>
         <translation>允许 http_fetch 访问本机与内网地址</translation>
     </message>
     <message>
-        <location filename="../src/ui/pages/SecurityPage.qml" line="271"/>
+        <location filename="../src/ui/pages/SecurityPage.qml" line="294"/>
         <source>关闭时 http_fetch 拒绝本机/内网目标（防 SSRF）；仅在确有访问内网服务的需求时开启。</source>
         <translation>关闭时 http_fetch 拒绝本机/内网目标（防 SSRF）；仅在确有访问内网服务的需求时开启。</translation>
     </message>
@@ -1641,9 +1651,13 @@
 <context>
     <name>SessionTabs</name>
     <message>
-        <location filename="../src/ui/components/SessionTabs.qml" line="119"/>
         <source>新建会话标签页</source>
-        <translation>新建会话标签页</translation>
+        <translation type="vanished">新建会话标签页</translation>
+    </message>
+    <message>
+        <location filename="../src/ui/components/SessionTabs.qml" line="120"/>
+        <source>新建对话标签页</source>
+        <translation>新建对话标签页</translation>
     </message>
 </context>
 <context>
@@ -1712,21 +1726,19 @@
 <context>
     <name>Sidebar</name>
     <message>
-        <location filename="../src/ui/components/Sidebar.qml" line="118"/>
-        <location filename="../src/ui/components/Sidebar.qml" line="136"/>
-        <location filename="../src/ui/components/Sidebar.qml" line="522"/>
-        <location filename="../src/ui/components/Sidebar.qml" line="576"/>
-        <location filename="../src/ui/components/Sidebar.qml" line="762"/>
+        <location filename="../src/ui/components/Sidebar.qml" line="735"/>
+        <location filename="../src/ui/components/Sidebar.qml" line="795"/>
+        <location filename="../src/ui/components/Sidebar.qml" line="981"/>
         <source>新会话</source>
         <translation>新会话</translation>
     </message>
     <message>
-        <location filename="../src/ui/components/Sidebar.qml" line="487"/>
+        <location filename="../src/ui/components/Sidebar.qml" line="697"/>
         <source>搜索会话历史…</source>
         <translation>搜索会话历史…</translation>
     </message>
     <message>
-        <location filename="../src/ui/components/Sidebar.qml" line="496"/>
+        <location filename="../src/ui/components/Sidebar.qml" line="706"/>
         <source>搜索会话历史</source>
         <translation>搜索会话历史</translation>
     </message>
@@ -1735,13 +1747,13 @@
         <translation type="vanished">搜索结果</translation>
     </message>
     <message>
-        <location filename="../src/ui/components/Sidebar.qml" line="448"/>
+        <location filename="../src/ui/components/Sidebar.qml" line="658"/>
         <source>暂无历史会话</source>
         <translation>暂无历史会话</translation>
     </message>
     <message>
-        <location filename="../src/ui/components/Sidebar.qml" line="283"/>
-        <location filename="../src/ui/components/Sidebar.qml" line="662"/>
+        <location filename="../src/ui/components/Sidebar.qml" line="475"/>
+        <location filename="../src/ui/components/Sidebar.qml" line="881"/>
         <source>确认?</source>
         <translation>确认?</translation>
     </message>
@@ -1750,67 +1762,93 @@
         <translation type="vanished">导入项目…</translation>
     </message>
     <message>
-        <location filename="../src/ui/components/Sidebar.qml" line="509"/>
+        <location filename="../src/ui/components/Sidebar.qml" line="719"/>
         <source>选择项目文件夹</source>
         <translation>选择项目文件夹</translation>
     </message>
     <message>
-        <location filename="../src/ui/components/Sidebar.qml" line="192"/>
+        <location filename="../src/ui/components/Sidebar.qml" line="251"/>
         <source>导入项目</source>
         <translation>导入项目</translation>
     </message>
     <message>
-        <location filename="../src/ui/components/Sidebar.qml" line="375"/>
+        <location filename="../src/ui/components/Sidebar.qml" line="171"/>
+        <location filename="../src/ui/components/Sidebar.qml" line="190"/>
+        <source>新对话</source>
+        <translation>新对话</translation>
+    </message>
+    <message>
+        <location filename="../src/ui/components/Sidebar.qml" line="418"/>
+        <source>在此项目下新建会话</source>
+        <translation>在此项目下新建会话</translation>
+    </message>
+    <message>
+        <location filename="../src/ui/components/Sidebar.qml" line="448"/>
+        <source>重命名项目</source>
+        <translation>重命名项目</translation>
+    </message>
+    <message>
+        <location filename="../src/ui/components/Sidebar.qml" line="523"/>
+        <source>暂无会话</source>
+        <translation>暂无会话</translation>
+    </message>
+    <message>
+        <location filename="../src/ui/components/Sidebar.qml" line="537"/>
+        <source>暂无项目。点上方 + 选择文件夹导入</source>
+        <translation>暂无项目。点上方 + 选择文件夹导入</translation>
+    </message>
+    <message>
+        <location filename="../src/ui/components/Sidebar.qml" line="604"/>
         <source>对话</source>
         <translation>对话</translation>
     </message>
     <message>
-        <location filename="../src/ui/components/Sidebar.qml" line="409"/>
+        <location filename="../src/ui/components/Sidebar.qml" line="635"/>
         <source>新建本地对话</source>
         <translation>新建本地对话</translation>
     </message>
     <message>
-        <location filename="../src/ui/components/Sidebar.qml" line="421"/>
+        <location filename="../src/ui/components/Sidebar.qml" line="639"/>
         <source>本地对话</source>
         <translation>本地对话</translation>
     </message>
     <message>
-        <location filename="../src/ui/components/Sidebar.qml" line="731"/>
+        <location filename="../src/ui/components/Sidebar.qml" line="950"/>
         <source>无匹配结果</source>
         <translation>无匹配结果</translation>
     </message>
     <message>
-        <location filename="../src/ui/components/Sidebar.qml" line="784"/>
+        <location filename="../src/ui/components/Sidebar.qml" line="1003"/>
         <source>用户</source>
         <translation>用户</translation>
     </message>
     <message>
-        <location filename="../src/ui/components/Sidebar.qml" line="785"/>
+        <location filename="../src/ui/components/Sidebar.qml" line="1004"/>
         <source>助手</source>
         <translation>助手</translation>
     </message>
     <message>
-        <location filename="../src/ui/components/Sidebar.qml" line="824"/>
+        <location filename="../src/ui/components/Sidebar.qml" line="1043"/>
         <source>日志</source>
         <translation>日志</translation>
     </message>
     <message>
-        <location filename="../src/ui/components/Sidebar.qml" line="832"/>
+        <location filename="../src/ui/components/Sidebar.qml" line="1051"/>
         <source>审计日志</source>
         <translation>审计日志</translation>
     </message>
     <message>
-        <location filename="../src/ui/components/Sidebar.qml" line="840"/>
+        <location filename="../src/ui/components/Sidebar.qml" line="1059"/>
         <source>设置 (Ctrl+,)</source>
         <translation>设置 (Ctrl+,)</translation>
     </message>
     <message>
-        <location filename="../src/ui/components/Sidebar.qml" line="892"/>
+        <location filename="../src/ui/components/Sidebar.qml" line="1111"/>
         <source>Markdown (*.md)</source>
         <translation>Markdown (*.md)</translation>
     </message>
     <message>
-        <location filename="../src/ui/components/Sidebar.qml" line="892"/>
+        <location filename="../src/ui/components/Sidebar.qml" line="1111"/>
         <source>JSON (*.json)</source>
         <translation>JSON (*.json)</translation>
     </message>
@@ -2095,57 +2133,83 @@
         <translation>展开侧边栏 (Ctrl+[)</translation>
     </message>
     <message>
-        <location filename="../src/ui/components/TopBar.qml" line="114"/>
+        <location filename="../src/ui/components/TopBar.qml" line="87"/>
+        <location filename="../src/ui/components/TopBar.qml" line="119"/>
+        <source>选择项目</source>
+        <translation>选择项目</translation>
+    </message>
+    <message>
+        <location filename="../src/ui/components/TopBar.qml" line="118"/>
+        <source>当前项目：%1（点击更换）</source>
+        <translation>当前项目：%1（点击更换）</translation>
+    </message>
+    <message>
+        <location filename="../src/ui/components/TopBar.qml" line="120"/>
+        <source>当前项目：%1</source>
+        <translation>当前项目：%1</translation>
+    </message>
+    <message>
+        <location filename="../src/ui/components/TopBar.qml" line="144"/>
+        <source>无项目（本地对话）</source>
+        <translation>无项目（本地对话）</translation>
+    </message>
+    <message>
+        <location filename="../src/ui/components/TopBar.qml" line="145"/>
+        <source>普通对话，不关联任何文件夹</source>
+        <translation>普通对话，不关联任何文件夹</translation>
+    </message>
+    <message>
+        <location filename="../src/ui/components/TopBar.qml" line="307"/>
         <source>tokens: %1 / %2</source>
         <translation>tokens: %1 / %2</translation>
     </message>
     <message>
-        <location filename="../src/ui/components/TopBar.qml" line="123"/>
+        <location filename="../src/ui/components/TopBar.qml" line="316"/>
         <source>¥%1/轮</source>
         <translation>¥%1/轮</translation>
     </message>
     <message>
-        <location filename="../src/ui/components/TopBar.qml" line="185"/>
+        <location filename="../src/ui/components/TopBar.qml" line="378"/>
         <source>系统提示词</source>
         <translation>系统提示词</translation>
     </message>
     <message>
-        <location filename="../src/ui/components/TopBar.qml" line="186"/>
+        <location filename="../src/ui/components/TopBar.qml" line="379"/>
         <source>工具定义</source>
         <translation>工具定义</translation>
     </message>
     <message>
-        <location filename="../src/ui/components/TopBar.qml" line="187"/>
+        <location filename="../src/ui/components/TopBar.qml" line="380"/>
         <source>对话</source>
         <translation>对话</translation>
     </message>
     <message>
-        <location filename="../src/ui/components/TopBar.qml" line="188"/>
+        <location filename="../src/ui/components/TopBar.qml" line="381"/>
         <source>工具结果</source>
         <translation>工具结果</translation>
     </message>
     <message>
-        <location filename="../src/ui/components/TopBar.qml" line="224"/>
+        <location filename="../src/ui/components/TopBar.qml" line="417"/>
         <source>上下文构成 · %1 / %2 · %3%</source>
         <translation>上下文构成 · %1 / %2 · %3%</translation>
     </message>
     <message>
-        <location filename="../src/ui/components/TopBar.qml" line="227"/>
+        <location filename="../src/ui/components/TopBar.qml" line="420"/>
         <source>上下文构成 · %1</source>
         <translation>上下文构成 · %1</translation>
     </message>
     <message>
-        <location filename="../src/ui/components/TopBar.qml" line="315"/>
+        <location filename="../src/ui/components/TopBar.qml" line="508"/>
         <source>剩余可用</source>
         <translation>剩余可用</translation>
     </message>
     <message>
-        <location filename="../src/ui/components/TopBar.qml" line="349"/>
+        <location filename="../src/ui/components/TopBar.qml" line="542"/>
         <source>本会话累计 %1 次请求 · ¥%2</source>
         <translation>本会话累计 %1 次请求 · ¥%2</translation>
     </message>
     <message>
-        <location filename="../src/ui/components/TopBar.qml" line="352"/>
+        <location filename="../src/ui/components/TopBar.qml" line="545"/>
         <source>本会话累计 %1 次请求</source>
         <translation>本会话累计 %1 次请求</translation>
     </message>
@@ -2162,7 +2226,7 @@
         <translation type="vanished">Skill</translation>
     </message>
     <message>
-        <location filename="../src/ui/components/TopBar.qml" line="189"/>
+        <location filename="../src/ui/components/TopBar.qml" line="382"/>
         <source>图片</source>
         <translation>图片</translation>
     </message>
@@ -2171,7 +2235,7 @@
         <translation type="vanished">其他</translation>
     </message>
     <message>
-        <location filename="../src/ui/components/TopBar.qml" line="214"/>
+        <location filename="../src/ui/components/TopBar.qml" line="407"/>
         <source>暂无数据</source>
         <translation>暂无数据</translation>
     </message>
@@ -2196,12 +2260,12 @@
         <translation type="vanished">合计</translation>
     </message>
     <message>
-        <location filename="../src/ui/components/TopBar.qml" line="369"/>
+        <location filename="../src/ui/components/TopBar.qml" line="562"/>
         <source>收起上下文面板 (Ctrl+B)</source>
         <translation>收起上下文面板 (Ctrl+B)</translation>
     </message>
     <message>
-        <location filename="../src/ui/components/TopBar.qml" line="369"/>
+        <location filename="../src/ui/components/TopBar.qml" line="562"/>
         <source>展开上下文面板 (Ctrl+B)</source>
         <translation>展开上下文面板 (Ctrl+B)</translation>
     </message>
@@ -2601,27 +2665,27 @@
 <context>
     <name>main</name>
     <message>
-        <location filename="../src/ui/main.qml" line="182"/>
+        <location filename="../src/ui/main.qml" line="184"/>
         <source>收起侧边栏 (Ctrl+[)</source>
         <translation>收起侧边栏 (Ctrl+[)</translation>
     </message>
     <message>
-        <location filename="../src/ui/main.qml" line="182"/>
+        <location filename="../src/ui/main.qml" line="184"/>
         <source>展开侧边栏 (Ctrl+[)</source>
         <translation>展开侧边栏 (Ctrl+[)</translation>
     </message>
     <message>
-        <location filename="../src/ui/main.qml" line="231"/>
+        <location filename="../src/ui/main.qml" line="233"/>
         <source>收起上下文面板 (Ctrl+B)</source>
         <translation>收起上下文面板 (Ctrl+B)</translation>
     </message>
     <message>
-        <location filename="../src/ui/main.qml" line="231"/>
+        <location filename="../src/ui/main.qml" line="233"/>
         <source>展开上下文面板 (Ctrl+B)</source>
         <translation>展开上下文面板 (Ctrl+B)</translation>
     </message>
     <message>
-        <location filename="../src/ui/main.qml" line="245"/>
+        <location filename="../src/ui/main.qml" line="247"/>
         <source>设置已保存</source>
         <translation>设置已保存</translation>
     </message>

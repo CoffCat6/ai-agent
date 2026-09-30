@@ -458,6 +458,53 @@ private slots:
         agent.resetSession();
     }
 
+    // docs/18 T5: 归属在**发出首条消息**时落定——空标签先选好目标，首条消息
+    // 创建的会话就归属该项目。这正是徽标"空标签可点选目标"的落点。
+    void firstMessageLandsInSelectedProject() {
+        SqliteMemory memory(QStringLiteral(":memory:"));
+        const QString projectId = memory.createProject(QStringLiteral("demo"),
+                                                       QStringLiteral("D:/work/demo"));
+        QVERIFY(!projectId.isEmpty());
+        agent.setMemory(&memory);
+
+        // 按 id 精确取会话归属，不依赖 updated_at 排序（同毫秒可能并列）
+        auto projectOf = [&memory](const QString& sessionId) {
+            const QJsonArray all = memory.listSessions(50);
+            for (const auto& entry : all) {
+                const QJsonObject o = entry.toObject();
+                if (o.value("id").toString() == sessionId)
+                    return o.value("projectId").toString();
+            }
+            return QStringLiteral("<missing>");
+        };
+
+        // 目标 = 项目 demo → 首条消息的会话归属该项目
+        agent.setActiveProject(projectId, QStringLiteral("demo"),
+                               QStringLiteral("D:/work/demo"));
+        llm.script.append(textResponse(QStringLiteral("ok")));
+        agent.startTask(QStringLiteral("hello"));
+        QTRY_VERIFY(!llm.seenMessages.isEmpty());
+        const QString projectSession = agent.currentSessionId();
+        QVERIFY(!projectSession.isEmpty());
+        QCOMPARE(projectOf(projectSession), projectId);
+
+        // 目标 = 本地 → 新会话不归属任何项目（projectId 空串 = NULL）
+        agent.setActiveProject(QString(), QString(), QString());
+        agent.resetSession();
+        llm.reset();
+        llm.script.append(textResponse(QStringLiteral("ok2")));
+        agent.startTask(QStringLiteral("hello2"));
+        QTRY_VERIFY(llm.seenMessages.size() == 1);
+        const QString localSession = agent.currentSessionId();
+        QVERIFY(!localSession.isEmpty());
+        QVERIFY(localSession != projectSession);
+        QCOMPARE(projectOf(localSession), QString());
+
+        agent.setActiveProject(QString(), QString(), QString());
+        agent.setMemory(nullptr);
+        agent.resetSession();
+    }
+
     void directCompletion();
     void dangerousToolsNotExposed();
     void safeToolFeedbackLoop();

@@ -34,30 +34,39 @@ Rectangle {
             onClicked: AgentVM.toggleSidebar()
         }
 
-        // ── Active project badge (docs/17 P2) ────────
-        // 当前活动项目徽标：项目级会话的归属与沙箱都以它为准。点击 =
-        // 回到本地对话（与侧栏「对话」头同义）。
+        // ── 会话归属徽标（docs/18 §2.3）──────────────
+        // 归属按标签持有，这里显示的永远是**当前标签**的项目，因此不可能
+        // 与其他标签不一致。两种形态：
+        //  · 标签还没有会话 → 可点击切换目标（把"归属不确定"收敛到发首条
+        //    消息之前这个唯一需要它的时刻）
+        //  · 已有会话 → 只读指示，点击不改变归属（避免它又变成一个隐藏开关）
         Rectangle {
+            id: projectBadge
+            readonly property string projectId: AgentVM.activeProjectId
+            readonly property bool hasSession: AgentVM.currentSessionId.length > 0
+            readonly property bool editable: !hasSession
             readonly property string projectName: {
-                const pid = AgentVM.activeProjectId
+                const pid = projectBadge.projectId
                 if (!pid) return ""
                 const list = AgentVM.projects
                 for (let i = 0; i < list.length; ++i)
                     if (list[i].id === pid) return list[i].name
                 return ""
             }
-            visible: projectName.length > 0
+            // 已有会话且归属本地 → 无需任何指示，直接隐藏。
+            visible: editable || projectName.length > 0
             // RowLayout 取 implicitWidth；Row 是定位器只会包住子项，
             // 不会反向撑开 parent，这里必须显式给。
             implicitWidth: badgeRow.implicitWidth + 16
             implicitHeight: 22
             Layout.preferredHeight: 22
             Layout.leftMargin: 10
-            Layout.maximumWidth: 220
+            Layout.maximumWidth: 240
             radius: 4
-            color: projectBadgeMA.containsMouse ? Theme.surfaceHover : "transparent"
+            color: projectBadgeMA.containsMouse && editable
+                ? Theme.surfaceHover : "transparent"
             border.width: 1
-            border.color: Theme.borderSubtle
+            border.color: projectPopup.opened ? Theme.brandPrimary : Theme.borderSubtle
 
             Row {
                 id: badgeRow
@@ -68,29 +77,154 @@ Rectangle {
                     anchors.verticalCenter: parent.verticalCenter
                     icon: "folder"
                     size: 11
-                    iconColor: Theme.brandPrimary
+                    iconColor: projectBadge.projectName.length > 0
+                        ? Theme.brandPrimary : Theme.textSecondary
                 }
                 Text {
                     anchors.verticalCenter: parent.verticalCenter
-                    width: Math.min(implicitWidth, 180)
-                    text: projectName
-                    color: Theme.textPrimary
+                    width: Math.min(implicitWidth, 160)
+                    text: projectBadge.projectName.length > 0
+                        ? projectBadge.projectName : qsTr("选择项目")
+                    color: projectBadge.projectName.length > 0
+                        ? Theme.textPrimary : Theme.textSecondary
                     font.pixelSize: Theme.fontSizeCaption
                     font.family: Theme.fontSans
                     elide: Text.ElideRight
+                }
+                // 可切换时才给出"可展开"的提示；只读形态不显示。
+                AppIcon {
+                    anchors.verticalCenter: parent.verticalCenter
+                    visible: projectBadge.editable
+                    icon: projectPopup.opened ? "chevron-up" : "chevron-down"
+                    size: 11
+                    iconColor: Theme.textSecondary
                 }
             }
 
             MouseArea {
                 id: projectBadgeMA
                 anchors.fill: parent
+                // 只读形态下整体不可交互：没有悬停反馈、不换光标、点击无效。
+                enabled: projectBadge.editable
                 hoverEnabled: true
-                cursorShape: Qt.PointingHandCursor
-                onClicked: AgentVM.setActiveProjectId("")
+                cursorShape: projectBadge.editable
+                    ? Qt.PointingHandCursor : Qt.ArrowCursor
+                onClicked: projectPopup.opened ? projectPopup.close() : projectPopup.open()
             }
 
             Accessible.role: Accessible.Button
-            Accessible.name: qsTr("当前项目：%1（点击回到本地对话）").arg(projectName)
+            Accessible.name: projectBadge.editable
+                ? (projectBadge.projectName.length > 0
+                   ? qsTr("当前项目：%1（点击更换）").arg(projectBadge.projectName)
+                   : qsTr("选择项目"))
+                : qsTr("当前项目：%1").arg(projectBadge.projectName)
+
+            // 项目选择器：空标签上把归属定下来。发出首条消息后归属即落定，
+            // 徽标随之转为只读。
+            Popup {
+                id: projectPopup
+                x: 0
+                y: projectBadge.height + 6
+                width: 280
+                height: projectContent.implicitHeight + 12
+                padding: 6
+                closePolicy: Popup.CloseOnEscape | Popup.CloseOnPressOutside
+
+                background: DialogBackground {}
+
+                contentItem: ColumnLayout {
+                    id: projectContent
+                    spacing: 2
+
+                    Repeater {
+                        // 首项固定为"本地对话"，其后是已导入项目。
+                        model: {
+                            const entries = [{
+                                id: "",
+                                label: qsTr("无项目（本地对话）"),
+                                desc: qsTr("普通对话，不关联任何文件夹")
+                            }]
+                            const list = AgentVM.projects
+                            for (let i = 0; i < list.length; ++i)
+                                entries.push({
+                                    id: list[i].id,
+                                    label: list[i].name,
+                                    desc: list[i].rootPath
+                                })
+                            return entries
+                        }
+
+                        delegate: Rectangle {
+                            id: projectItem
+                            required property var modelData
+                            readonly property bool isSelected:
+                                modelData.id === projectBadge.projectId
+                            Layout.fillWidth: true
+                            Layout.leftMargin: 2
+                            Layout.rightMargin: 2
+                            Layout.preferredHeight: 34
+                            radius: 5
+                            color: projectItemMA.containsMouse
+                                ? Theme.surfaceHover : "transparent"
+
+                            RowLayout {
+                                anchors.fill: parent
+                                anchors.leftMargin: 8
+                                anchors.rightMargin: 8
+                                spacing: 6
+
+                                AppIcon {
+                                    Layout.preferredWidth: 12
+                                    Layout.preferredHeight: 12
+                                    icon: "check"
+                                    size: 12
+                                    iconColor: Theme.brandPrimary
+                                    visible: projectItem.isSelected
+                                }
+                                Item {
+                                    Layout.preferredWidth: 12
+                                    Layout.preferredHeight: 12
+                                    visible: !projectItem.isSelected
+                                }
+
+                                ColumnLayout {
+                                    Layout.fillWidth: true
+                                    spacing: 0
+
+                                    Text {
+                                        Layout.fillWidth: true
+                                        text: modelData.label
+                                        color: projectItem.isSelected
+                                            ? Theme.brandPrimary : Theme.textPrimary
+                                        font.pixelSize: Theme.fontSizeCaption
+                                        font.family: Theme.fontSans
+                                        elide: Text.ElideRight
+                                    }
+                                    Text {
+                                        Layout.fillWidth: true
+                                        text: modelData.desc
+                                        color: Theme.textSecondary
+                                        font.pixelSize: 10
+                                        font.family: Theme.fontMono
+                                        elide: Text.ElideMiddle
+                                    }
+                                }
+                            }
+
+                            MouseArea {
+                                id: projectItemMA
+                                anchors.fill: parent
+                                hoverEnabled: true
+                                cursorShape: Qt.PointingHandCursor
+                                onClicked: {
+                                    projectPopup.close()
+                                    AgentVM.setActiveProjectId(modelData.id)
+                                }
+                            }
+                        }
+                    }
+                }
+            }
         }
 
         // ── Spacer ────────────────────────────────────

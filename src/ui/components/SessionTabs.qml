@@ -117,7 +117,7 @@ Rectangle {
         }
 
         Accessible.role: Accessible.Button
-        Accessible.name: qsTr("新建会话标签页")
+        Accessible.name: qsTr("新建对话标签页")
         Accessible.onPressAction: AgentVM.newLocalChat()
     }
 }

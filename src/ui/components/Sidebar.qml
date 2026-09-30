@@ -166,7 +166,9 @@ Rectangle {
 
                 Text {
                     anchors.verticalCenter: parent.verticalCenter
-                    text: qsTr("新会话")
+                    // docs/18: 这是"新建普通对话"的入口（项目会话从项目行的
+                    // 「+」建），文案与会话行里"未命名会话"的兜底标题区分开。
+                    text: qsTr("新对话")
                     color: Theme.textPrimary
                     font.pixelSize: Theme.fontSizeBody
                     font.family: Theme.fontSans
@@ -185,7 +187,7 @@ Rectangle {
             }
 
             Accessible.role: Accessible.Button
-            Accessible.name: qsTr("新会话")
+            Accessible.name: qsTr("新对话")
             Accessible.onPressAction: AgentVM.newLocalChat()
         }
 
