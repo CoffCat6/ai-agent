@@ -180,12 +180,13 @@ Rectangle {
                 cursorShape: Qt.PointingHandCursor
                 // Batch 29 (F7): a new session now opens as a new parallel
                 // tab, so starting one never stops a task running elsewhere.
-                onClicked: AgentVM.openTab()
+                // docs/17: 默认新建"普通对话"——项目会话只从项目行的「+」建。
+                onClicked: AgentVM.newLocalChat()
             }
 
             Accessible.role: Accessible.Button
             Accessible.name: qsTr("新会话")
-            Accessible.onPressAction: AgentVM.openTab()
+            Accessible.onPressAction: AgentVM.newLocalChat()
         }
 
         // ── Tree sidebar（docs/17 树状共存）──────────────
@@ -407,11 +408,9 @@ Rectangle {
                                     anchors.fill: parent
                                     hoverEnabled: true
                                     cursorShape: Qt.PointingHandCursor
-                                    onClicked: {
-                                        AgentVM.setActiveProjectId(
-                                            projectNode.modelData.id)
-                                        AgentVM.openTab()
-                                    }
+                                    // 项目会话的唯一入口：项目行的「+」。
+                                    onClicked: AgentVM.newProjectChat(
+                                        projectNode.modelData.id)
                                 }
                                 Accessible.role: Accessible.Button
                                 Accessible.name: qsTr("在此项目下新建会话")
@@ -628,10 +627,7 @@ Rectangle {
                             anchors.fill: parent
                             hoverEnabled: true
                             cursorShape: Qt.PointingHandCursor
-                            onClicked: {
-                                AgentVM.setActiveProjectId("")
-                                AgentVM.openTab()
-                            }
+                            onClicked: AgentVM.newLocalChat()
                         }
                         Accessible.role: Accessible.Button
                         Accessible.name: qsTr("新建本地对话")

@@ -862,6 +862,50 @@ private slots:
         else settings.remove("projects/activeId");
     }
 
+    // docs/17: 新建会话的默认归属 = 普通对话（本地）。只有项目行的「+」
+    // （newProjectChat）才创建项目会话——顶部「新会话」与标签栏「+」都走
+    // newLocalChat。回归点：这两个入口此前直接调 openTab()，新 tab 会继承
+    // 当前活动项目，于是"在项目里点新会话"拿到的是项目会话而非普通对话。
+    void newChatDefaultsToLocalUnlessProjectRequested() {
+        QSettings settings("NexusAI", "NexusAI");
+        const QVariant savedActive = settings.value("projects/activeId");
+
+        SqliteMemory memory(QStringLiteral(":memory:"));
+        const QString projectId = memory.createProject(QStringLiteral("demo"),
+                                                       QStringLiteral("D:/work/demo"));
+        QVERIFY(!projectId.isEmpty());
+
+        AgentViewModel vm(nullptr);
+        AIAgent agent(&vm);
+        agent.setMemory(&memory);
+        vm.setMemory(&memory);
+        vm.setAgent(&agent);
+
+        // 起点：已经在一个项目里
+        vm.setActiveProjectId(projectId);
+        QCOMPARE(vm.activeProjectId(), projectId);
+
+        // 顶部「新会话」/ 标签栏「+」→ 普通对话：必须回到本地
+        vm.newLocalChat();
+        QCOMPARE(vm.activeProjectId(), QString());
+
+        // 项目行的「+」→ 项目会话
+        vm.newProjectChat(projectId);
+        QCOMPARE(vm.activeProjectId(), projectId);
+
+        // 空 id 退化为普通对话
+        vm.newProjectChat(QString());
+        QCOMPARE(vm.activeProjectId(), QString());
+
+        // 已是本地时再点「新会话」仍是本地（setActiveProjectId 的 no-op 分支）
+        vm.newLocalChat();
+        QCOMPARE(vm.activeProjectId(), QString());
+
+        vm.setActiveProjectId(QString());   // 复位全局沙箱指向
+        if (savedActive.isValid()) settings.setValue("projects/activeId", savedActive);
+        else settings.remove("projects/activeId");
+    }
+
     // Batch 31b: McpManager add/remove round trip. The user's real
     // mcp_servers.json is backed up and restored around the test.
     void mcpManagerAddRemoveRoundTrip() {

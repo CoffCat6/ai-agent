@@ -251,6 +251,23 @@ void AgentViewModel::openTab() {
     activateTab(m_tabs.size() - 1);
 }
 
+// docs/17: 新建会话的默认归属 = 普通对话（本地）。新 tab 的项目由 ensureTab
+// 从当前活动项目继承，因此必须先回到本地再开 tab，否则新会话会落进当前项目。
+void AgentViewModel::newLocalChat() {
+    setActiveProjectId(QString());   // 已是本地时为 no-op
+    openTab();
+}
+
+// 在指定项目下新建会话（侧栏项目行的「+」）。空 id 退化为普通对话。
+void AgentViewModel::newProjectChat(const QString& projectId) {
+    if (projectId.isEmpty()) {
+        newLocalChat();
+        return;
+    }
+    setActiveProjectId(projectId);   // 已在该项目时为 no-op
+    openTab();
+}
+
 void AgentViewModel::activateTab(int index) {
     if (index < 0 || index >= m_tabs.size() || index == m_activeTab) return;
     m_activeTab = index;

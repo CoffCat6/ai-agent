@@ -281,6 +281,13 @@ public:
     QVariantList tabModel() const;
     int activeTabIndex() const { return m_activeTab; }
     Q_INVOKABLE void openTab();
+    // docs/17: 新建会话的归属规则集中在 VM —— 默认新建的是**普通对话**
+    // （本地，不带项目），只有项目行提供的「+」（newProjectChat）才创建
+    // 项目会话。新 tab 的归属由 ensureTab 从"当前活动项目"继承，所以这里
+    // 必须先切活动项目再开 tab；把这一步收进 VM 可避免每个 UI 入口各自
+    // 记得顺序、漏一处就落进当前项目。
+    Q_INVOKABLE void newLocalChat();
+    Q_INVOKABLE void newProjectChat(const QString& projectId);
     // Closing a running tab stops its task (the agent seals unanswered tool
     // calls); the last remaining tab cannot be closed.
     Q_INVOKABLE void closeTab(int index);

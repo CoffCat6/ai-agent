@@ -112,11 +112,12 @@ Rectangle {
             anchors.fill: parent
             hoverEnabled: true
             cursorShape: Qt.PointingHandCursor
-            onClicked: AgentVM.openTab()
+            // docs/17: 标签栏「+」同样默认新建普通对话；项目会话只从项目行「+」建。
+            onClicked: AgentVM.newLocalChat()
         }
 
         Accessible.role: Accessible.Button
         Accessible.name: qsTr("新建会话标签页")
-        Accessible.onPressAction: AgentVM.openTab()
+        Accessible.onPressAction: AgentVM.newLocalChat()
     }
 }
