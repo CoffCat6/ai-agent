@@ -105,6 +105,11 @@ public:
         m_activeProjectName = name;
         m_activeProjectRoot = rootPath;
     }
+    // docs/18: 只读访问器。归属已改为**按标签**持有（每个 tab 一个 agent），
+    // AgentViewModel 的 activeProjectId 由这些 getter 派生，不再有全局状态。
+    QString activeProjectId() const { return m_activeProjectId; }
+    QString activeProjectName() const { return m_activeProjectName; }
+    QString activeProjectRoot() const { return m_activeProjectRoot; }
     QJsonArray sessionList() const;
     QJsonArray auditLog(int limit = 100) const;
     // docs/16 §8: read-only access for aggregate query wrappers.

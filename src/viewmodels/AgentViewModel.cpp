@@ -234,8 +234,7 @@ ChatSessionController* AgentViewModel::ensureTab() {
     if (m_agentFactory && m_templateAgent)
         controller->attachAgent(m_agentFactory(), true);
 
-    // docs/17 A0: 新 tab 的会话归属跟随当前活动项目。
-    pushActiveProject(controller->agent());
+    // docs/18: 归属由 addTab 显式指定——ensureTab 不再从任何全局状态继承。
 
     // New tabs start at the configured global default permission mode
     // (no-op for ConfirmChanges; also covers the initial tab created
@@ -246,30 +245,36 @@ ChatSessionController* AgentViewModel::ensureTab() {
     return controller;
 }
 
-void AgentViewModel::openTab() {
-    ensureTab();
+// docs/18: 新建标签并**显式**指定归属，随后激活。归属只作用于这个新标签——
+// 其他标签的沙箱指向与项目上下文完全不受影响（旧模型会把全局值广播给所有
+// 标签，这正是"点新会话把别人的项目清空"的根因）。
+ChatSessionController* AgentViewModel::addTab(const QString& projectId) {
+    ChatSessionController* controller = ensureTab();
+    applyProjectTo(controller->agent(), projectId);
     activateTab(m_tabs.size() - 1);
+    return controller;
 }
 
-// docs/17: 新建会话的默认归属 = 普通对话（本地）。新 tab 的项目由 ensureTab
-// 从当前活动项目继承，因此必须先回到本地再开 tab，否则新会话会落进当前项目。
+// 低层入口：新建一个本地（无项目）标签。
+void AgentViewModel::openTab() {
+    addTab(QString());
+}
+
+// docs/17/18: 新建会话的默认归属 = 普通对话（本地）。项目会话只能由
+// newProjectChat（侧栏项目行的「+」）创建。
 void AgentViewModel::newLocalChat() {
-    setActiveProjectId(QString());   // 已是本地时为 no-op
     openTab();
 }
 
 // 在指定项目下新建会话（侧栏项目行的「+」）。空 id 退化为普通对话。
 void AgentViewModel::newProjectChat(const QString& projectId) {
-    if (projectId.isEmpty()) {
-        newLocalChat();
-        return;
-    }
-    setActiveProjectId(projectId);   // 已在该项目时为 no-op
-    openTab();
+    addTab(projectId);
 }
 
 void AgentViewModel::activateTab(int index) {
     if (index < 0 || index >= m_tabs.size() || index == m_activeTab) return;
+    // docs/18: activeProjectId 是派生值，切标签会改变它——先取旧值用于比对。
+    const QString projectBefore = activeProjectId();
     m_activeTab = index;
     // Every forwarded conversation property changed with the tab.
     emit stateChanged();
@@ -282,6 +287,10 @@ void AgentViewModel::activateTab(int index) {
     emit permissionModeChanged();
     emit activeTabChanged();
     emit tabsChanged();
+    // 沙箱镜像随活动标签走；派生值确实变了才通知。
+    syncSandboxMirror();
+    if (projectBefore != activeProjectId())
+        emit activeProjectIdChanged();
 }
 
 void AgentViewModel::closeTab(int index) {
@@ -348,6 +357,10 @@ void AgentViewModel::setAgent(AIAgent* agent) {
     // factory. Detaching mid-task terminates it cleanly (the controller
     // stops the agent before dropping it).
     for (int i = 0; i < m_tabs.size(); ++i) {
+        // docs/18: 挂接会换掉 agent（新 agent 无归属），先记下本标签的归属，
+        // 挂接后原样还原——不能再拿"全局活动项目"覆盖，否则会把其他标签
+        // 的项目一并冲掉。
+        const QString tabProject = m_tabs[i]->activeProjectId();
         if (i == 0 && agent) {
             m_tabs[0]->attachAgent(agent, false);
         } else if (agent && m_agentFactory) {
@@ -355,13 +368,18 @@ void AgentViewModel::setAgent(AIAgent* agent) {
         } else {
             m_tabs[i]->attachAgent(nullptr, false);
         }
-        // docs/17 A0: 挂接发生在启动回灌（main.cpp 的 setActiveProjectId
-        // 先于 setAgent）之后——此处补推活动项目，重启后新建的会话才能
-        // 正确归属项目。
-        pushActiveProject(m_tabs[i]->agent());
+        // 首次挂接（本标签尚无归属）时应用启动回灌的暂存项目；
+        // m_pendingProjectId 用后即清，故只影响启动这一次。
+        QString target = tabProject;
+        if (target.isEmpty() && !m_pendingProjectId.isEmpty())
+            target = m_pendingProjectId;
+        applyProjectTo(m_tabs[i]->agent(), target);
     }
+    m_pendingProjectId.clear();
     emit liveModeChanged();
     emit tabsChanged();
+    syncSandboxMirror();
+    emit activeProjectIdChanged();
     refreshSessions();
 }
 
@@ -394,53 +412,54 @@ void AgentViewModel::refreshProjects() {
     emit projectsChanged();
 }
 
-void AgentViewModel::setActiveProjectId(const QString& id) {
-    if (m_activeProjectId == id) return;
-    m_activeProjectId = id;
-    // docs/17 A1: 项目沙箱跟随活动项目（root_path 进入读取允许层）。
-    // P0-1: 同时取出 name/root，随 id 一起推给 agent——系统提示的项目
-    // 上下文与工具的相对路径锚定都依赖 rootPath。
-    QString projectName, projectRoot;
-    if (!id.isEmpty()) {
-        for (const QVariant& entry : std::as_const(m_projects)) {
-            const QVariantMap p = entry.toMap();
-            if (p.value("id").toString() == id) {
-                projectName = p.value("name").toString();
-                projectRoot = p.value("rootPath").toString();
-                break;
-            }
-        }
-    }
-    Sandbox::setProjectDir(projectRoot);
-    // 持久化（M4 直写先例）：重启后由 main.cpp 从设置回灌。
-    QSettings("NexusAI", "NexusAI").setValue("projects/activeId", id);
-    // 推给全部 tab agent 与模板 agent：归属标记 + 系统提示项目上下文。
-    applyToAgents([&](AIAgent* agent) {
-        agent->setActiveProject(id, projectName, projectRoot);
-    });
-    if (m_templateAgent)
-        m_templateAgent->setActiveProject(id, projectName, projectRoot);
-    emit activeProjectIdChanged();
-    refreshSessions();   // 会话列表按活动项目过滤
+// docs/18: 派生值——活动标签的 agent 持有的归属。不存在全局活动项目，因此
+// 这个值天然不可能与其他标签不一致（徽标"撒谎"从结构上被消除）。
+QString AgentViewModel::activeProjectId() const {
+    return active()->activeProjectId();
 }
 
-// 把当前活动项目（id+name+root）推给一个 agent。m_projects 里查不到
-// （尚未加载或已被删）时 name/root 为空——此时仅标记归属，不注入路径
-// 上下文，工具的相对路径锚定保持关闭。
-void AgentViewModel::pushActiveProject(AIAgent* agent) const {
+void AgentViewModel::setActiveProjectId(const QString& id) {
+    // docs/18: 只作用于**活动标签**。旧实现把 id 广播给所有标签，是"点新会话
+    // 把别人的项目清空"与"切标签徽标撒谎"的共同根因。
+    ChatSessionController* controller = active();
+    if (controller->activeProjectId() == id) return;
+    if (!controller->agent()) {
+        // 启动回灌：main.cpp 在 setAgent 之前调用（此时活动标签还没有 agent）。
+        // 先暂存，首次挂接时由 setAgent 应用。
+        m_pendingProjectId = id;
+        return;
+    }
+    applyProjectTo(controller->agent(), id);
+    // 持久化（M4 直写先例）：重启后由 main.cpp 回灌。docs/18 之后它记录的
+    // 语义是"上次浏览位置"，期 3 会改由侧栏写入。
+    QSettings("NexusAI", "NexusAI").setValue("projects/activeId", id);
+    syncSandboxMirror();
+    emit activeProjectIdChanged();
+}
+
+// docs/18: 把指定项目（id+name+root）推给一个 agent。id 为空 → 推空（本地）。
+// m_projects 里查不到（尚未加载或已被删）时 name/root 为空——此时仅标记归属，
+// 不注入路径上下文，工具的相对路径锚定保持关闭。
+void AgentViewModel::applyProjectTo(AIAgent* agent, const QString& projectId) const {
     if (!agent) return;
     QString projectName, projectRoot;
-    if (!m_activeProjectId.isEmpty()) {
+    if (!projectId.isEmpty()) {
         for (const QVariant& entry : std::as_const(m_projects)) {
             const QVariantMap p = entry.toMap();
-            if (p.value("id").toString() == m_activeProjectId) {
+            if (p.value("id").toString() == projectId) {
                 projectName = p.value("name").toString();
                 projectRoot = p.value("rootPath").toString();
                 break;
             }
         }
     }
-    agent->setActiveProject(m_activeProjectId, projectName, projectRoot);
+    agent->setActiveProject(projectId, projectName, projectRoot);
+}
+
+// docs/18: 全局沙箱基准 = 活动标签的镜像。工具执行实际读的是 ExecutionScope
+// 的 per-agent 快照（docs/17 P1-5），这里只为无快照的读取路径兜底。
+void AgentViewModel::syncSandboxMirror() {
+    Sandbox::setProjectDir(active()->activeProjectRoot());
 }
 
 QString AgentViewModel::importProject(const QString& path) {
@@ -477,22 +496,32 @@ QString AgentViewModel::importProject(const QString& path) {
 void AgentViewModel::removeProject(const QString& projectId) {
     if (!m_memory) return;
     m_memory->removeProject(projectId);   // 会话保留（project_id 置 NULL）
-    if (m_activeProjectId == projectId)
-        setActiveProjectId(QString());
+    // docs/18: 归属按标签持有，被删项目可能同时被多个标签引用——逐标签清理，
+    // 不能只清"活动项目"那一个（旧模型下所有标签共享同一值，清一次就够）。
+    bool activeCleared = false;
+    for (ChatSessionController* controller : std::as_const(m_tabs)) {
+        if (controller->activeProjectId() != projectId) continue;
+        applyProjectTo(controller->agent(), QString());
+        if (controller == active()) activeCleared = true;
+    }
     refreshProjects();
     refreshSessions();
+    if (activeCleared) {
+        syncSandboxMirror();
+        emit activeProjectIdChanged();
+    }
 }
 
-// P2: 项目重命名（侧栏项目行内联编辑）。活动中的项目改名后重推给全部
-// agent，系统提示里的项目名随之更新。
+// P2: 项目重命名（侧栏项目行内联编辑）。归属该项目的标签都要刷新系统提示里
+// 的项目名——旧实现只处理"活动项目"，其他标签会留着旧名字。
 void AgentViewModel::renameProject(const QString& projectId, const QString& name) {
     const QString trimmed = name.trimmed();
     if (!m_memory || projectId.isEmpty() || trimmed.isEmpty()) return;
     m_memory->renameProject(projectId, trimmed.left(80));
-    refreshProjects();
-    if (projectId == m_activeProjectId) {
-        applyToAgents([&](AIAgent* agent) { pushActiveProject(agent); });
-        pushActiveProject(m_templateAgent);
+    refreshProjects();   // 先刷新，下面重新查表才能取到新名字
+    for (ChatSessionController* controller : std::as_const(m_tabs)) {
+        if (controller->activeProjectId() == projectId)
+            applyProjectTo(controller->agent(), projectId);
     }
 }
 
@@ -1033,25 +1062,28 @@ void AgentViewModel::newChat() {
 }
 
 void AgentViewModel::loadSession(const QString& sessionId) {
-    // docs/17 P0-3: 会话与项目联动，必须**双向对称**。侧栏树全量展示会话，
-    // 点开某条会话后活动项目要与其归属一致：项目会话 → 激活该项目；本地
-    // 会话 → 回到本地（空）。
-    // 此前只处理"激活"分支：点本地会话时活动项目保持不变，于是 TopBar 项目
-    // 徽标、沙箱指向、侧栏高亮会停在上一个项目上，与刚打开的会话内容不一致
-    // （表现为"点开普通对话，顶栏仍带项目标识"）。
+    // docs/17 P0-3 + docs/18: 会话与项目联动，且只作用于**承载它的那个标签**
+    // （旧实现改的是全局活动项目，会连带影响其他标签）。项目会话 → 该标签
+    // 归属其项目；本地会话 → 该标签回到本地（空）。
+    QString target;
+    bool found = false;
     for (const QVariant& entry : std::as_const(m_sessionList)) {
         const QVariantMap s = entry.toMap();
         if (s.value("id").toString() == sessionId) {
-            const QString projectId = s.value("projectId").toString();
-            if (projectId != m_activeProjectId)
-                setActiveProjectId(projectId);
+            target = s.value("projectId").toString();
+            found = true;
             break;
         }
     }
-    // Never interrupt a running task: when the active tab is busy the
-    // session opens in a fresh tab instead.
+    // 会话不在列表里（列表陈旧）时保持当前归属，不要误清成空。
+    if (!found)
+        target = activeProjectId();
+    // Never interrupt a running task: when the active tab is busy the session
+    // opens in a fresh tab instead——新标签的归属直接就是该会话的归属。
     if (active()->isBusy())
-        openTab();
+        addTab(target);
+    else
+        setActiveProjectId(target);
     active()->loadSession(sessionId);
 }
 

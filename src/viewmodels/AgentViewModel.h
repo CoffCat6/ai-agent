@@ -246,9 +246,10 @@ public:
     // docs/17 A0: 项目级会话。projects 为已导入项目列表
     // [{id, name, rootPath}]；activeProjectId 为空 = 本地对话视图。
     QVariantList projects() const { return m_projects; }
-    QString activeProjectId() const { return m_activeProjectId; }
-    // Q_INVOKABLE：侧栏树（项目行/「对话」头）经 QML 直接调用切换活动
-    // 项目；同时作为 activeProjectId 属性的 WRITE 端。
+    // docs/18: 派生自**活动标签**的 agent —— 不存在全局活动项目。
+    QString activeProjectId() const;
+    // 设置**活动标签**的项目归属（不再广播给所有标签）；同时作为
+    // activeProjectId 属性的 WRITE 端。
     Q_INVOKABLE void setActiveProjectId(const QString& id);
     // FolderDialog 的本地路径导入为项目（canonicalize，项目名取目录名），
     // 成功后自动激活并返回项目 id（失败返回空串 + noticeOccurred）。
@@ -398,16 +399,25 @@ signals:
 
 private:
     ChatSessionController* active() const;
+    // 低层：新建一个标签并挂接 agent（不决定归属）。
     ChatSessionController* ensureTab();
+    // docs/18: 新建标签并**显式**指定归属（projectId 空 = 本地），随后激活。
+    // 归属不再从任何全局状态继承。
+    ChatSessionController* addTab(const QString& projectId);
     // First controller with an attached agent (active tab preferred) — used
     // for global session-list operations (delete/rename/audit/history pull).
     ChatSessionController* controllerWithAgent() const;
     void refreshSessions();
     // docs/17 A0: 从记忆后端重拉项目列表并 NOTIFY（去重刷新）。
     void refreshProjects();
-    // P0-1: 把活动项目（id+name+root）推给一个 agent；m_projects 未加载
-    // 时只推 id（root 为空 → 不注入提示上下文、不锚定相对路径）。
-    void pushActiveProject(AIAgent* agent) const;
+    // docs/18: 把指定项目（id+name+root）推给一个 agent；id 为空 → 推空
+    // （本地）。m_projects 未加载或查不到时 name/root 为空——此时仅标记
+    // 归属，不注入提示上下文、不锚定相对路径。
+    void applyProjectTo(AIAgent* agent, const QString& projectId) const;
+    // docs/18: 把全局沙箱基准同步为"活动标签的镜像"。工具执行实际用的是
+    // ExecutionScope 的 per-agent 快照（docs/17 P1-5），此处的全局写入只为
+    // 无快照的读取路径兜底。
+    void syncSandboxMirror();
     void refreshToolRegistry();
     void refreshKnowledge();
     void setKnowledgeBusy(bool busy);
@@ -438,7 +448,10 @@ private:
     std::function<QString(const QString&)> m_contentProvider;
     QVariantList m_sessionList;
     QVariantList m_projects;         // docs/17 A0: 已导入项目
-    QString m_activeProjectId;       // 空 = 本地对话视图
+    // docs/18: 归属按标签持有，故不再有全局活动项目成员。此成员仅服务启动
+    // 回灌：main.cpp 在 setAgent 之前调用 setActiveProjectId（此时活动标签
+    // 还没有 agent），先暂存、首次挂接时应用，随后清空。
+    QString m_pendingProjectId;
 
     // ── Panel ──────────────────────────────────────────
     bool m_isPanelVisible{true};

@@ -322,6 +322,15 @@ void ChatSessionController::newChat() {
     emit currentSessionIdChanged();
 }
 
+// docs/18: 归属按标签持有——直接读本标签的 agent，不再经过全局状态。
+QString ChatSessionController::activeProjectId() const {
+    return m_agent ? m_agent->activeProjectId() : QString();
+}
+
+QString ChatSessionController::activeProjectRoot() const {
+    return m_agent ? m_agent->activeProjectRoot() : QString();
+}
+
 void ChatSessionController::loadSession(const QString& sessionId) {
     if (!m_agent || isBusy()) return;
     Activity::usage(Activity::Kind::User, QStringLiteral("session.resume"),

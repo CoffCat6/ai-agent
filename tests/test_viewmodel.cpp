@@ -879,6 +879,13 @@ private slots:
         AIAgent agent(&vm);
         agent.setMemory(&memory);
         vm.setMemory(&memory);
+        // docs/18: 归属按标签持有，新标签必须有自己的 agent 才能承接归属
+        // （无工厂时新标签跑模拟、没有 agent，归属无处可推）。
+        vm.setAgentFactory([&vm, &memory]() -> AIAgent* {
+            auto* a = new AIAgent(&vm);
+            a->setMemory(&memory);
+            return a;
+        });
         vm.setAgent(&agent);
 
         // 起点：已经在一个项目里
@@ -902,6 +909,102 @@ private slots:
         QCOMPARE(vm.activeProjectId(), QString());
 
         vm.setActiveProjectId(QString());   // 复位全局沙箱指向
+        if (savedActive.isValid()) settings.setValue("projects/activeId", savedActive);
+        else settings.remove("projects/activeId");
+    }
+
+    // docs/18 T1: activeProjectId 是**派生值**（活动标签的归属）——切标签即变。
+    // 旧模型下它是全局值，切标签不会变，这正是"徽标撒谎"的根因。
+    void activeProjectIdDerivesFromActiveTab() {
+        QSettings settings("NexusAI", "NexusAI");
+        const QVariant savedActive = settings.value("projects/activeId");
+
+        SqliteMemory memory(QStringLiteral(":memory:"));
+        const QString pA = memory.createProject(QStringLiteral("A"), QStringLiteral("D:/work/a"));
+        const QString pB = memory.createProject(QStringLiteral("B"), QStringLiteral("D:/work/b"));
+        QVERIFY(!pA.isEmpty() && !pB.isEmpty());
+
+        AgentViewModel vm(nullptr);
+        AIAgent templateAgent(&vm);
+        templateAgent.setMemory(&memory);
+        vm.setMemory(&memory);
+        vm.setAgentFactory([&vm, &memory]() -> AIAgent* {
+            auto* a = new AIAgent(&vm);
+            a->setMemory(&memory);
+            return a;
+        });
+        vm.setAgent(&templateAgent);
+
+        vm.newProjectChat(pA);                 // 标签 1 → 项目 A
+        const int aTab = vm.activeTabIndex();
+        QCOMPARE(vm.activeProjectId(), pA);
+        vm.newProjectChat(pB);                 // 标签 2 → 项目 B
+        const int bTab = vm.activeTabIndex();
+        QCOMPARE(vm.activeProjectId(), pB);
+
+        // 切标签 → 派生值随活动标签变化（旧模型下始终是最后写入的全局值）
+        vm.activateTab(aTab);
+        QCOMPARE(vm.activeProjectId(), pA);
+        vm.activateTab(bTab);
+        QCOMPARE(vm.activeProjectId(), pB);
+
+        vm.setActiveProjectId(QString());
+        if (savedActive.isValid()) settings.setValue("projects/activeId", savedActive);
+        else settings.remove("projects/activeId");
+    }
+
+    // docs/18 T3+T4: 归属按标签隔离——新建本地对话、或打开一条会话，都只影响
+    // 当前标签；其他标签的项目归属不被广播式清空/覆盖（旧模型的核心缺陷）。
+    void tabProjectOwnershipIsIsolated() {
+        QSettings settings("NexusAI", "NexusAI");
+        const QVariant savedActive = settings.value("projects/activeId");
+
+        SqliteMemory memory(QStringLiteral(":memory:"));
+        const QString pA = memory.createProject(QStringLiteral("A"), QStringLiteral("D:/work/a"));
+        const QString pB = memory.createProject(QStringLiteral("B"), QStringLiteral("D:/work/b"));
+        QVERIFY(!pA.isEmpty() && !pB.isEmpty());
+        memory.beginSession(QStringLiteral("sess-a"), QStringLiteral("A 的会话"));
+        memory.setSessionProject(QStringLiteral("sess-a"), pA);
+
+        AgentViewModel vm(nullptr);
+        AIAgent templateAgent(&vm);
+        templateAgent.setMemory(&memory);
+        vm.setMemory(&memory);
+        vm.setAgentFactory([&vm, &memory]() -> AIAgent* {
+            auto* a = new AIAgent(&vm);
+            a->setMemory(&memory);
+            return a;
+        });
+        vm.setAgent(&templateAgent);
+
+        // 各标签的归属（applyToAgents 按 m_tabs 顺序遍历）
+        auto tabProjects = [&vm]() {
+            QStringList out;
+            vm.applyToAgents([&out](AIAgent* a) { out.append(a->activeProjectId()); });
+            return out;
+        };
+
+        vm.newProjectChat(pB);                 // 标签 1 → 项目 B
+        const int bTab = vm.activeTabIndex();
+        QCOMPARE(vm.activeProjectId(), pB);
+
+        // T3：新建本地对话 → 只有新标签是本地，标签 1 仍是 B
+        vm.newLocalChat();
+        const int localTab = vm.activeTabIndex();
+        QCOMPARE(vm.activeProjectId(), QString());
+        QStringList projects = tabProjects();
+        QCOMPARE(projects.size(), 3);
+        QCOMPARE(projects.at(bTab), pB);       // 旧模型这里会被广播清空
+        QCOMPARE(projects.at(localTab), QString());
+
+        // T4：在本地标签里打开项目 A 的会话 → 只有该标签变成 A，标签 1 仍是 B
+        vm.loadSession(QStringLiteral("sess-a"));
+        QCOMPARE(vm.activeProjectId(), pA);
+        projects = tabProjects();
+        QCOMPARE(projects.at(localTab), pA);
+        QCOMPARE(projects.at(bTab), pB);       // 旧模型这里会被改成 A
+
+        vm.setActiveProjectId(QString());
         if (savedActive.isValid()) settings.setValue("projects/activeId", savedActive);
         else settings.remove("projects/activeId");
     }
