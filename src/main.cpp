@@ -583,9 +583,10 @@ qInfo() << "NexusAI" << app.applicationVersion() << "starting";
         agentVM->setDefaultPermissionMode(static_cast<int>(
             permissionModeFromString(settings->defaultPermissionMode())));
     };
-    // docs/17 A0: 恢复上次的活动项目（会话归属与侧栏过滤的数据源）。
-    // 运行时 VM 为真值源并直写 QSettings（M4 先例），无需反向桥接。
-    agentVM->setActiveProjectId(settings->activeProjectId());
+    // docs/18 期 3: 不再把"上次的项目"回灌到启动标签上——归属按标签持有，
+    // 空标签默认本地（普通对话），回灌会与这条默认规则冲突。
+    // projects/activeId 降级为"侧栏上次浏览位置"：由 Sidebar 读取以恢复
+    // 展开态，不再驱动任何会话归属。
         applyPermissionMode();
     QObject::connect(settings, &SettingsService::defaultPermissionModeChanged,
                      &app, applyPermissionMode);

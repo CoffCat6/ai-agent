@@ -368,14 +368,8 @@ void AgentViewModel::setAgent(AIAgent* agent) {
         } else {
             m_tabs[i]->attachAgent(nullptr, false);
         }
-        // 首次挂接（本标签尚无归属）时应用启动回灌的暂存项目；
-        // m_pendingProjectId 用后即清，故只影响启动这一次。
-        QString target = tabProject;
-        if (target.isEmpty() && !m_pendingProjectId.isEmpty())
-            target = m_pendingProjectId;
-        applyProjectTo(m_tabs[i]->agent(), target);
+        applyProjectTo(m_tabs[i]->agent(), tabProject);
     }
-    m_pendingProjectId.clear();
     emit liveModeChanged();
     emit tabsChanged();
     syncSandboxMirror();
@@ -423,12 +417,10 @@ void AgentViewModel::setActiveProjectId(const QString& id) {
     // 把别人的项目清空"与"切标签徽标撒谎"的共同根因。
     ChatSessionController* controller = active();
     if (controller->activeProjectId() == id) return;
-    if (!controller->agent()) {
-        // 启动回灌：main.cpp 在 setAgent 之前调用（此时活动标签还没有 agent）。
-        // 先暂存，首次挂接时由 setAgent 应用。
-        m_pendingProjectId = id;
-        return;
-    }
+    // 活动标签还没有 agent（模拟模式，或启动早期）时无处可推，直接忽略。
+    // 不暂存：空标签的默认归属就是本地，暂存会在挂接时把项目套上去，与
+    // "新建默认普通对话"冲突（docs/18 期 3 移除了原 m_pendingProjectId）。
+    if (!controller->agent()) return;
     applyProjectTo(controller->agent(), id);
     // 持久化（M4 直写先例）：重启后由 main.cpp 回灌。docs/18 之后它记录的
     // 语义是"上次浏览位置"，期 3 会改由侧栏写入。

@@ -1009,6 +1009,27 @@ private slots:
         else settings.remove("projects/activeId");
     }
 
+    // docs/18 期 3: 启动**不再把"上次的项目"回灌到启动标签上**——归属按标签
+    // 持有，空标签默认本地（普通对话）。旧实现会把它暂存并在 setAgent 时套用，
+    // 于是"刚打开应用的新标签"莫名带上了一个项目。侧栏的浏览位置改由 QML 读
+    // Settings.activeProjectId 恢复展开态，与归属无关。
+    void freshTabDefaultsToLocalOnStartup() {
+        QSettings settings("NexusAI", "NexusAI");
+        const QVariant savedActive = settings.value("projects/activeId");
+
+        AgentViewModel vm(nullptr);
+        // 复现启动序列：挂接 agent 之前先设过项目
+        vm.setActiveProjectId(QStringLiteral("stale-project"));
+
+        AIAgent agent(&vm);
+        vm.setAgent(&agent);
+        QCOMPARE(vm.activeProjectId(), QString());   // 启动标签仍是本地
+
+        vm.setActiveProjectId(QString());
+        if (savedActive.isValid()) settings.setValue("projects/activeId", savedActive);
+        else settings.remove("projects/activeId");
+    }
+
     // Batch 31b: McpManager add/remove round trip. The user's real
     // mcp_servers.json is backed up and restored around the test.
     void mcpManagerAddRemoveRoundTrip() {

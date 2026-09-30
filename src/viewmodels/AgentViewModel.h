@@ -448,10 +448,7 @@ private:
     std::function<QString(const QString&)> m_contentProvider;
     QVariantList m_sessionList;
     QVariantList m_projects;         // docs/17 A0: 已导入项目
-    // docs/18: 归属按标签持有，故不再有全局活动项目成员。此成员仅服务启动
-    // 回灌：main.cpp 在 setAgent 之前调用 setActiveProjectId（此时活动标签
-    // 还没有 agent），先暂存、首次挂接时应用，随后清空。
-    QString m_pendingProjectId;
+    // docs/18: 归属按标签持有，故这里没有全局活动项目成员。
 
     // ── Panel ──────────────────────────────────────────
     bool m_isPanelVisible{true};

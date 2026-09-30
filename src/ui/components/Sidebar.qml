@@ -60,13 +60,14 @@ Rectangle {
     // 共享的空数组：引用稳定，避免 Repeater 因「新数组身份」反复重建。
     readonly property var noSessions: []
 
-    // 启动时展开活动项目：main.cpp 在 QML 引擎加载之前就已回灌
-    // activeProjectId（见其 setActiveProjectId 调用点），
-    // onActiveProjectIdChanged 因此不会触发——不补这一步，重启后活动项目
-    // 会停在折叠态，用户看不到自己项目的会话。
+    // 启动时恢复"上次浏览位置"：展开上次所在的项目节点，重启后能直接看到
+    // 自己项目的会话。这里**只恢复浏览态**——归属按标签持有，启动标签默认
+    // 本地（普通对话），不再把任何项目套到它上面（docs/18 期 3）。
+    // projects/activeId 由 AgentViewModel 在归属变化时直写（M4 先例）。
     Component.onCompleted: {
-        if (AgentVM.activeProjectId.length > 0) {
-            root.expandedProjects[AgentVM.activeProjectId] = true
+        const last = Settings.activeProjectId
+        if (last.length > 0) {
+            root.expandedProjects[last] = true
             root.expansionEpoch++
         }
     }
