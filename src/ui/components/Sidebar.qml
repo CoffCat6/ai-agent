@@ -32,6 +32,44 @@ Rectangle {
     // 绑定重算，expansionEpoch 作为失效标记强制刷新。
     property var expandedProjects: ({})
     property int expansionEpoch: 0
+    // 本地对话树展开状态。与项目树对称，默认展开——它是主视图。
+    property bool localExpanded: true
+
+    // 会话按项目分组（键 = projectId；"__local__" = 无归属的本地会话）。
+    // 一次 O(会话数) 遍历，供两棵树共用。原先每个项目节点各自 filter 全量
+    // 列表，复杂度是 O(项目数 × 会话数)，且展开/收起都会触发重算。
+    // 只依赖 AgentVM.sessionList / projects 的通知重算——不再挂
+    // expansionEpoch，避免每次折叠都把所有 Repeater 的 delegate 重建一遍。
+    readonly property var sessionGroups: {
+        const map = ({})
+        map["__local__"] = []
+        const projects = AgentVM.projects
+        for (let i = 0; i < projects.length; ++i)
+            map[projects[i].id] = []
+        const list = AgentVM.sessionList
+        for (let j = 0; j < list.length; ++j) {
+            const session = list[j]
+            const pid = session.projectId
+            if (pid && map[pid]) map[pid].push(session)
+            else if (!pid) map["__local__"].push(session)
+        }
+        return map
+    }
+    // 本地会话（无 projectId）——列表与空态两处共用，避免重复过滤。
+    readonly property var localSessions: root.sessionGroups["__local__"]
+    // 共享的空数组：引用稳定，避免 Repeater 因「新数组身份」反复重建。
+    readonly property var noSessions: []
+
+    // 启动时展开活动项目：main.cpp 在 QML 引擎加载之前就已回灌
+    // activeProjectId（见其 setActiveProjectId 调用点），
+    // onActiveProjectIdChanged 因此不会触发——不补这一步，重启后活动项目
+    // 会停在折叠态，用户看不到自己项目的会话。
+    Component.onCompleted: {
+        if (AgentVM.activeProjectId.length > 0) {
+            root.expandedProjects[AgentVM.activeProjectId] = true
+            root.expansionEpoch++
+        }
+    }
 
     // Fade the content out while collapsing so text never gets squeezed
     readonly property real contentFade: AgentVM.isSidebarExpanded ? 1.0 : 0.0
@@ -79,8 +117,8 @@ Rectangle {
 
                 // Logo mark
                 Rectangle {
-                    width: 24
-                    height: 24
+                    Layout.preferredWidth: 24
+                    Layout.preferredHeight: 24
                     radius: 4
                     color: Theme.brandPrimary
 
@@ -184,7 +222,12 @@ Rectangle {
                     Item { Layout.fillWidth: true }
 
                     Rectangle {
-                        width: 22; height: 22; radius: 4
+                        // Layout.preferred* 而非 width/height：本行是
+                        // RowLayout，直接写尺寸属未定义行为，且行高会按
+                        // 文本(10px)塌陷、按钮 22px 溢出。
+                        Layout.preferredWidth: 22
+                        Layout.preferredHeight: 22
+                        radius: 4
                         color: importMA.containsMouse
                             ? Theme.surfaceHover : "transparent"
                         AppIcon {
@@ -221,11 +264,11 @@ Rectangle {
                             root.expansionEpoch
                             return root.expandedProjects[modelData.id] === true
                         }
+                        // 直接取分组结果（见 root.sessionGroups），不再各自
+                        // filter 全量列表；分组对象未覆盖时回落共享空数组。
                         readonly property var projectSessions: {
-                            root.expansionEpoch   // 失效标记：强制重算
-                            return AgentVM.sessionList.filter(function(s) {
-                                return s.projectId === projectNode.modelData.id
-                            })
+                            const grouped = root.sessionGroups[projectNode.modelData.id]
+                            return grouped !== undefined ? grouped : root.noSessions
                         }
                         Layout.fillWidth: true
                         spacing: 2
@@ -235,10 +278,45 @@ Rectangle {
                             id: projectHeader
                             property bool confirmDelete: false
                             Layout.fillWidth: true
+                            // 与「新会话」按钮 / 搜索框 / 「对话」头对齐的内缩。
+                            Layout.leftMargin: 12
+                            Layout.rightMargin: 12
                             Layout.preferredHeight: 32
                             radius: 6
-                            color: projectMA.containsMouse || projectNode.isActive
+                            color: headerHover.hovered || projectNode.isActive
                                 ? Theme.surfaceHover : "transparent"
+
+                            // 整行悬停判定用 HoverHandler 而非铺满整行的
+                            // MouseArea：Handler 不是 Item、不参与命中测试，
+                            // 因此不会遮挡右侧操作按钮。已实测确认父级
+                            // HoverHandler 在子项 MouseArea 被悬停时仍上报
+                            // hovered，故按钮自身高亮与整行悬停可共存。
+                            HoverHandler { id: headerHover }
+
+                            // 点击层必须声明在按钮之前（= 位于下层）。此前它
+                            // 铺满整行且声明在最后，把新建/重命名/删除三个按钮
+                            // 的点击全部吞掉（childAt 命中测试证实）。
+                            MouseArea {
+                                id: projectMA
+                                anchors.fill: parent
+                                cursorShape: Qt.PointingHandCursor
+                                onClicked: {
+                                    if (projectNode.renaming) return
+                                    // 激活该项目（沙箱/归属跟随）并展开；
+                                    // 已激活时点击 = 切换折叠（退出走「对话」头）。
+                                    if (!projectNode.isActive) {
+                                        AgentVM.setActiveProjectId(
+                                            projectNode.modelData.id)
+                                        root.expandedProjects[
+                                            projectNode.modelData.id] = true
+                                    } else {
+                                        root.expandedProjects[
+                                            projectNode.modelData.id]
+                                            = !projectNode.expanded
+                                    }
+                                    root.expansionEpoch++
+                                }
+                            }
 
                             Row {
                                 anchors.fill: parent
@@ -285,16 +363,25 @@ Rectangle {
                                     font.family: Theme.fontSans
                                     selectByMouse: true
                                     clip: true
+                                    // 必须用 JS 的 trim()：QML 字符串没有
+                                    // QString.trimmed()，调用会抛 TypeError 并
+                                    // 中断 onAccepted —— 重命名静默失效。
                                     onAccepted: {
-                                        if (text.trimmed().length > 0)
+                                        if (text.trim().length > 0)
                                             AgentVM.renameProject(
                                                 projectNode.modelData.id, text)
                                         projectNode.renaming = false
                                     }
                                     onFocusChanged: if (!focus && projectNode.renaming)
                                         projectNode.renaming = false
-
-                                    Component.onCompleted: if (projectNode.renaming) forceActiveFocus()
+                                    // 聚焦必须在「可见」时触发：Component.
+                                    // onCompleted 只在创建时执行一次，之后
+                                    // renaming 变 true 不会重放，输入框会显示
+                                    // 但不聚焦。
+                                    onVisibleChanged: if (visible) {
+                                        forceActiveFocus()
+                                        selectAll()
+                                    }
                                 }
                             }
 
@@ -305,7 +392,7 @@ Rectangle {
                                 anchors.verticalCenter: parent.verticalCenter
                                 anchors.right: parent.right
                                 anchors.rightMargin: 56
-                                visible: projectMA.containsMouse
+                                visible: headerHover.hovered
                                 color: projectNewMA.containsMouse
                                     ? Theme.surfaceHover : "transparent"
                                 AppIcon {
@@ -336,7 +423,7 @@ Rectangle {
                                 anchors.verticalCenter: parent.verticalCenter
                                 anchors.right: parent.right
                                 anchors.rightMargin: 32
-                                visible: projectMA.containsMouse
+                                visible: headerHover.hovered
                                 color: projectRenameMA.containsMouse
                                     ? Theme.surfaceHover : "transparent"
                                 AppIcon {
@@ -366,7 +453,7 @@ Rectangle {
                                 anchors.verticalCenter: parent.verticalCenter
                                 anchors.right: parent.right
                                 anchors.rightMargin: 8
-                                visible: projectMA.containsMouse
+                                visible: headerHover.hovered
                                 color: projectDeleteMA.containsMouse
                                     || projectHeader.confirmDelete
                                     ? Qt.rgba(Theme.statusDanger.r,
@@ -414,43 +501,47 @@ Rectangle {
                                 onTriggered: projectHeader.confirmDelete = false
                             }
 
-                            MouseArea {
-                                id: projectMA
-                                anchors.fill: parent
-                                hoverEnabled: true
-                                cursorShape: Qt.PointingHandCursor
-                                onClicked: {
-                                    if (projectNode.renaming) return
-                                    // 激活该项目（沙箱/归属跟随）并展开；
-                                    // 已激活时点击 = 切换折叠（退出走「对话」头）。
-                                    if (!projectNode.isActive) {
-                                        AgentVM.setActiveProjectId(
-                                            projectNode.modelData.id)
-                                        root.expandedProjects[
-                                            projectNode.modelData.id] = true
-                                    } else {
-                                        root.expandedProjects[
-                                            projectNode.modelData.id]
-                                            = !projectNode.expanded
-                                    }
-                                    root.expansionEpoch++
-                                }
-                            }
                         }
 
-                        // 展开的会话（缩进显示）
+                        // 展开的会话（缩进显示，与项目行形成可见层级）
                         ColumnLayout {
                             visible: projectNode.expanded
                             Layout.fillWidth: true
-                            Layout.leftMargin: 14
+                            Layout.leftMargin: 26
+                            Layout.rightMargin: 12
                             spacing: 2
 
                             Repeater {
                                 model: projectNode.projectSessions
                                 delegate: sessionRow
                             }
+
+                            // 项目下暂无会话的空态（缩进与会话标题对齐）
+                            Text {
+                                visible: projectNode.projectSessions.length === 0
+                                text: qsTr("暂无会话")
+                                color: Theme.textSecondary
+                                font.pixelSize: Theme.fontSizeCaption
+                                font.family: Theme.fontSans
+                                Layout.leftMargin: 20
+                                Layout.topMargin: 2
+                            }
                         }
                     }
+                }
+
+                // 项目列表为空时的空态与导入指引
+                Text {
+                    visible: AgentVM.projects.length === 0
+                    text: qsTr("暂无项目。点上方 + 选择文件夹导入")
+                    color: Theme.textSecondary
+                    font.pixelSize: Theme.fontSizeCaption
+                    font.family: Theme.fontSans
+                    wrapMode: Text.WordWrap
+                    Layout.fillWidth: true
+                    Layout.leftMargin: 20
+                    Layout.rightMargin: 12
+                    Layout.topMargin: 2
                 }
 
                 // ── 对话树头（本地模式入口）────────────────
@@ -464,8 +555,28 @@ Rectangle {
                     Layout.topMargin: 10
                     Layout.preferredHeight: 32
                     radius: 6
-                    color: localMA.containsMouse || localHeader.isActive
+                    color: localHover.hovered || localHeader.isActive
                         ? Theme.surfaceHover : "transparent"
+
+                    // 与项目头同构：Handler 负责整行悬停，点击层下沉到按钮
+                    // 之下，否则右侧「新建本地对话」按钮会被整行点击层吞掉。
+                    HoverHandler { id: localHover }
+
+                    MouseArea {
+                        id: localMA
+                        anchors.fill: parent
+                        cursorShape: Qt.PointingHandCursor
+                        onClicked: {
+                            // 与项目行同语义：未激活 = 激活并展开；已激活 =
+                            // 切换折叠（与项目树对称）。
+                            if (!localHeader.isActive) {
+                                AgentVM.setActiveProjectId("")
+                                root.localExpanded = true
+                            } else {
+                                root.localExpanded = !root.localExpanded
+                            }
+                        }
+                    }
 
                     Row {
                         anchors.fill: parent
@@ -473,6 +584,13 @@ Rectangle {
                         anchors.rightMargin: 36
                         spacing: 6
 
+                        AppIcon {
+                            anchors.verticalCenter: parent.verticalCenter
+                            icon: root.localExpanded
+                                ? "chevron-down" : "chevron-right"
+                            size: 11
+                            iconColor: Theme.textSecondary
+                        }
                         AppIcon {
                             anchors.verticalCenter: parent.verticalCenter
                             icon: "message"
@@ -519,47 +637,31 @@ Rectangle {
                         Accessible.name: qsTr("新建本地对话")
                     }
 
-                    MouseArea {
-                        id: localMA
-                        anchors.fill: parent
-                        hoverEnabled: true
-                        cursorShape: Qt.PointingHandCursor
-                        onClicked: AgentVM.setActiveProjectId("")
-                    }
-
                     Accessible.role: Accessible.Button
                     Accessible.name: qsTr("本地对话")
                 }
 
-                // 本地会话（缩进）
+                // 本地会话（缩进，随「对话」头折叠）
                 ColumnLayout {
+                    visible: root.localExpanded
                     Layout.fillWidth: true
-                    Layout.leftMargin: 14
+                    Layout.leftMargin: 26
+                    Layout.rightMargin: 12
                     spacing: 2
 
                     Repeater {
-                        model: {
-                            root.expansionEpoch
-                            return AgentVM.sessionList.filter(function(s) {
-                                return !s.projectId
-                            })
-                        }
+                        model: root.localSessions
                         delegate: sessionRow
                     }
                 }
 
                 Text {
-                    visible: {
-                        root.expansionEpoch
-                        return AgentVM.sessionList.filter(function(s) {
-                            return !s.projectId
-                        }).length === 0
-                    }
+                    visible: root.localExpanded && root.localSessions.length === 0
                     text: qsTr("暂无历史会话")
                     color: Theme.textSecondary
                     font.pixelSize: Theme.fontSizeCaption
                     font.family: Theme.fontSans
-                    Layout.leftMargin: 24
+                    Layout.leftMargin: 46
                     Layout.topMargin: 4
                 }
             }
@@ -658,7 +760,7 @@ Rectangle {
                     // Title row: inline editor / label / hover actions
                     Item {
                         Layout.fillWidth: true
-                        height: 20
+                        Layout.preferredHeight: 20
 
                         TextInput {
                             id: renameInput
@@ -671,15 +773,21 @@ Rectangle {
                             font.family: Theme.fontSans
                             selectByMouse: true
                             clip: true
+                            // 用 JS 的 trim()：QML 字符串没有 QString.trimmed()，
+                            // 调用会抛 TypeError 并中断 onAccepted。
                             onAccepted: {
-                                if (text.trimmed().length > 0)
+                                if (text.trim().length > 0)
                                     AgentVM.renameSession(modelData.id, text)
                                 sessionDelegate.renaming = false
                             }
                             onFocusChanged: if (!focus && sessionDelegate.renaming)
                                 sessionDelegate.renaming = false
-
-                            Component.onCompleted: if (sessionDelegate.renaming) forceActiveFocus()
+                            // 聚焦改由「可见」触发（Component.onCompleted
+                            // 只在创建时跑一次，不会在 renaming 变 true 时重放）。
+                            onVisibleChanged: if (visible) {
+                                forceActiveFocus()
+                                selectAll()
+                            }
                         }
 
                         Text {
@@ -878,7 +986,7 @@ Rectangle {
                             font.weight: Font.DemiBold
                             font.family: Theme.fontSans
                             elide: Text.ElideRight
-                            width: parent.width
+                            Layout.fillWidth: true
                         }
 
                         Text {
@@ -958,8 +1066,8 @@ Rectangle {
 
                 // Theme toggle switch: knob carries the mode icon
                 Rectangle {
-                    width: 48
-                    height: 24
+                    Layout.preferredWidth: 48
+                    Layout.preferredHeight: 24
                     radius: 12
                     color: ThemeManager.isDark ? Theme.brandPrimary : Theme.surfaceHover
                     border.width: 1
