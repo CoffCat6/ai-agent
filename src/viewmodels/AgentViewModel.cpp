@@ -1016,16 +1016,17 @@ void AgentViewModel::newChat() {
 }
 
 void AgentViewModel::loadSession(const QString& sessionId) {
-    // docs/17 P0-3: 会话与项目联动。侧栏树全量展示会话，点击一个项目 A
-    // 的会话而活动项目是 B（或本地）时，沙箱指向与对话内容会错位——
-    // 续聊时读 A 的文件被拒。此处按会话归属自动激活其项目（沙箱、归属、
-    // 侧栏高亮一次对齐）。本地会话不反向退出项目：新 tab 还没首条消息
-    // 时点开一条本地旧会话参考，不应把用户正在使用的项目悄悄切走。
+    // docs/17 P0-3: 会话与项目联动，必须**双向对称**。侧栏树全量展示会话，
+    // 点开某条会话后活动项目要与其归属一致：项目会话 → 激活该项目；本地
+    // 会话 → 回到本地（空）。
+    // 此前只处理"激活"分支：点本地会话时活动项目保持不变，于是 TopBar 项目
+    // 徽标、沙箱指向、侧栏高亮会停在上一个项目上，与刚打开的会话内容不一致
+    // （表现为"点开普通对话，顶栏仍带项目标识"）。
     for (const QVariant& entry : std::as_const(m_sessionList)) {
         const QVariantMap s = entry.toMap();
         if (s.value("id").toString() == sessionId) {
             const QString projectId = s.value("projectId").toString();
-            if (!projectId.isEmpty() && projectId != m_activeProjectId)
+            if (projectId != m_activeProjectId)
                 setActiveProjectId(projectId);
             break;
         }

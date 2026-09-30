@@ -819,6 +819,49 @@ private slots:
         QCOMPARE(vm.tabModel().size(), tabsBefore + 1);
     }
 
+    // docs/17 P0-3: 会话与项目联动必须**双向对称**。回归点：此前只处理
+    // "激活项目"分支，点开本地会话时活动项目保持不变，于是 TopBar 项目徽标、
+    // 沙箱指向、侧栏高亮会停在上一个项目上，与刚打开的会话内容不一致。
+    void loadSessionSyncsActiveProjectBothWays() {
+        // setActiveProjectId 直写 QSettings（M4 先例）并改全局沙箱指向，
+        // 用例结束后必须还原，避免污染用户配置与后续用例。
+        QSettings settings("NexusAI", "NexusAI");
+        const QVariant savedActive = settings.value("projects/activeId");
+
+        SqliteMemory memory(QStringLiteral(":memory:"));
+        const QString projectId = memory.createProject(QStringLiteral("demo"),
+                                                       QStringLiteral("D:/work/demo"));
+        QVERIFY(!projectId.isEmpty());
+        memory.beginSession(QStringLiteral("proj-session"), QStringLiteral("项目会话"));
+        memory.setSessionProject(QStringLiteral("proj-session"), projectId);
+        memory.beginSession(QStringLiteral("local-session"), QStringLiteral("本地会话"));
+
+        AgentViewModel vm(nullptr);
+        AIAgent agent(&vm);
+        agent.setMemory(&memory);
+        vm.setMemory(&memory);
+        vm.setAgent(&agent);
+        // 会话列表来自 agent 的记忆后端，先确认两条会话都在（否则下面的
+        // 归属查找会静默落空、用例变成假绿）。
+        QCOMPARE(vm.sessionList().size(), 2);
+
+        // 项目会话 → 激活其项目
+        vm.loadSession(QStringLiteral("proj-session"));
+        QCOMPARE(vm.activeProjectId(), projectId);
+
+        // 本地会话 → 回到本地（空）：本次修复的核心断言
+        vm.loadSession(QStringLiteral("local-session"));
+        QCOMPARE(vm.activeProjectId(), QString());
+
+        // 再点回项目会话，双向都要生效
+        vm.loadSession(QStringLiteral("proj-session"));
+        QCOMPARE(vm.activeProjectId(), projectId);
+
+        vm.setActiveProjectId(QString());   // 复位全局沙箱指向
+        if (savedActive.isValid()) settings.setValue("projects/activeId", savedActive);
+        else settings.remove("projects/activeId");
+    }
+
     // Batch 31b: McpManager add/remove round trip. The user's real
     // mcp_servers.json is backed up and restored around the test.
     void mcpManagerAddRemoveRoundTrip() {
