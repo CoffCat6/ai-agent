@@ -34,7 +34,9 @@ ApplicationWindow {
     onClosing: (close) => {
         AgentVM.saveWindowGeometry(x, y, width, height,
                                    visibility === Window.Maximized)
-        close.accept()
+        // Qt6 的 QQuickCloseEvent 只有 accepted 布尔属性（默认 true），没有
+        // Qt5 QCloseEvent 的 accept() 方法——调用它会抛 TypeError。
+        close.accepted = true
     }
 
     // Width always kept free of the two side panels when resizing them
