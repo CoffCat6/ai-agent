@@ -69,6 +69,19 @@ public:
     // Top-k passages across all documents, sorted by score
     QJsonArray search(const QString& query, int k = 4) const;
 
+    // 检索结果 + 失败原因。search() 只返回 passages；工具层用 searchDetailed()
+    // 区分"确实没有匹配"与"检索根本没跑起来"——后者在**真实向量**库上等价于
+    // 嵌入服务（Ollama）离线：查询向量取不到，与任何真实向量的相似度都算不出来，
+    // 于是按 DocumentRetriever 的 FIX-302 降级为 no-match。
+    // 不暴露这个状态的话，工具只能回 "No passages matched"，让"服务没启动"
+    // 看起来像"知识库里没有"——用户会以为文档白导了。
+    struct SearchOutcome {
+        QJsonArray passages;
+        bool hasDocuments{false};          // 知识库非空
+        bool embeddingUnavailable{false};  // 有真实向量文档，但查询向量取不到
+    };
+    SearchOutcome searchDetailed(const QString& query, int k = 4) const;
+
     QJsonArray documents() const; // [{name, chunks, chars, pseudo}]
 
     // FEAT-802: import-side duplicate/coexistence helpers

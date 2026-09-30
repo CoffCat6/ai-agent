@@ -35,6 +35,7 @@ private slots:
     void replaceSameName();
     void emptyInputRejected();
     void toolOnEmptyBase();
+    void toolReportsOfflineEmbedder();
     void toolSearchResult();
     void knowledgeToolDescriptionIsConditional();
     void chineseDocumentChunked();
@@ -122,6 +123,36 @@ void TestRag::toolOnEmptyBase() {
     const ToolResult r = tool.execute(QJsonObject{{"query", "anything"}});
     QVERIFY(r.success);
     QVERIFY(r.output.contains("empty"));
+}
+
+// 嵌入服务离线（Ollama 没启动）时，工具必须**失败并说明原因**，而不是回
+// "No passages matched"——后者会被模型和用户理解成"文档里没有"，于是
+// "服务没启动"看起来像"知识库白导了"。这正是"文档已导入但模型找不到"的成因。
+void TestRag::toolReportsOfflineEmbedder() {
+    RagService local;
+    bool online = true;
+    const auto vec = [&online]() {
+        return online ? QVector<float>(8, 0.5f) : QVector<float>{};
+    };
+    local.setBatchEmbedder([&vec](const QStringList& texts) {
+        QVector<QVector<float>> out;
+        for (int i = 0; i < texts.size(); ++i) out.append(vec());
+        return out;
+    });
+    local.setEmbedder([&vec](const QString&) { return vec(); });
+    QVERIFY(local.ingestDocument("doc9.txt", longDoc("offline", 6)) >= 2);
+
+    KnowledgeSearchTool tool(&local);
+    QVERIFY(tool.execute(QJsonObject{{"query", "offline"}}).success);   // 在线：正常
+
+    online = false;   // Ollama 掉线
+    // 换一个**未被缓存**的 query：已算好的向量依然有效（服务掉线不影响缓存），
+    // 只有新查询才真正走不到嵌入。
+    const ToolResult down = tool.execute(QJsonObject{{"query", "offline second probe"}});
+    QVERIFY2(!down.success,
+             "offline embedder must FAIL, not silently report no-match");
+    QVERIFY2(down.error.contains(QStringLiteral("embedding service")),
+             qPrintable(down.error));
 }
 
 void TestRag::toolSearchResult() {
@@ -283,10 +314,29 @@ void TestRag::dimensionMismatchQueryReturnsNoMatch() {
     QVERIFY(local.ingestDocument("doc6.txt", longDoc("six", 6)) >= 2);
     QVERIFY(local.search("anything", 3).isEmpty());   // offline → no-match
 
+    // searchDetailed 必须把"检索根本没跑起来"与"确实没有匹配"区分开：
+    // 两者对 search() 都是空数组，但前者意味着嵌入服务（Ollama）没启动，
+    // 工具层要把这个原因报给模型和用户，否则会被理解成"文档里没有"。
+    {
+        const RagService::SearchOutcome offline = local.searchDetailed("anything", 3);
+        QVERIFY(offline.hasDocuments);
+        QVERIFY(offline.embeddingUnavailable);
+        QVERIFY(offline.passages.isEmpty());
+    }
+
     local.setEmbedder([](const QString&) {
         return QVector<float>(3, 1.0f);   // dimension drift
     });
     QVERIFY(local.search("anything", 3).isEmpty());   // drift → no-match
+
+    // 维度漂移同样是"查询向量对不上真实向量库"，归入同一降级状态。
+    QVERIFY(local.searchDetailed("anything", 3).embeddingUnavailable);
+
+    // 嵌入恢复可用后不再是降级状态（维度与入库时一致）。
+    local.setEmbedder([](const QString&) {
+        return QVector<float>(8, 0.5f);
+    });
+    QVERIFY(!local.searchDetailed("anything", 3).embeddingUnavailable);
 }
 
 // FIX-303: a background restore must stop re-adding documents once the user

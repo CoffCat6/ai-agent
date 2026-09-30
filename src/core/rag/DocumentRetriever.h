@@ -165,6 +165,13 @@ public:
     // (embedder was unavailable during import) - retrieval quality is
     // lexical at best and the UI should hint at it.
     bool usesPseudoEmbedding() const { return m_usesPseudo; }
+    // 真实模式下，这个查询向量能否用于本库：**离线（空向量）与维度漂移
+    // 都会让相似度全部算不出来**，检索注定为空。伪模式恒可用（本地哈希，
+    // 不依赖网络）。上层据此区分"确实没有匹配"与"检索根本没跑起来"。
+    bool acceptsQueryVector(const QVector<float>& realVec) const {
+        if (m_usesPseudo) return true;
+        return !realVec.isEmpty() && realVec.size() == m_embeddingDim;
+    }
     void clear() {
         m_store.clear();
         m_embeddingDim = 0;

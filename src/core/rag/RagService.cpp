@@ -210,12 +210,18 @@ QVector<KnowledgeChunk> RagService::exportPersistedChunks(const QString& sourceN
 }
 
 QJsonArray RagService::search(const QString& query, int k) const {
+    return searchDetailed(query, k).passages;
+}
+
+RagService::SearchOutcome RagService::searchDetailed(const QString& query, int k) const {
+    SearchOutcome outcome;
     const QString trimmed = query.trimmed();
-    if (trimmed.isEmpty()) return {};
+    if (trimmed.isEmpty()) return outcome;
 
     {
         QMutexLocker lock(&m_mutex);
-        if (m_docs.empty()) return {};
+        if (m_docs.empty()) return outcome;
+        outcome.hasDocuments = true;
     }
 
     // ONE real embedding per search, shared by every real-mode document
@@ -250,7 +256,21 @@ QJsonArray RagService::search(const QString& query, int k) const {
             }
         }
     }
-    return finishSearch(trimmed, realVec, k);
+    // 存在真实向量文档、但查询向量对它不可用（离线取不到 / 维度漂移）时，
+    // 检索注定为空。用检索器自己的可用性规则判断，显式记下来，供工具层区分
+    // "没匹配"与"没跑起来"。
+    {
+        QMutexLocker lock(&m_mutex);
+        for (const auto& doc : m_docs) {
+            if (doc.retriever->usesPseudoEmbedding()) continue;
+            if (!doc.retriever->acceptsQueryVector(realVec)) {
+                outcome.embeddingUnavailable = true;
+                break;
+            }
+        }
+    }
+    outcome.passages = finishSearch(trimmed, realVec, k);
+    return outcome;
 }
 
 // Merged top-k across documents (embedding already done outside the lock).

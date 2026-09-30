@@ -51,9 +51,25 @@ public:
         int k = args.value("k").toInt(4);
         k = qBound(1, k, 10);
 
-        const QJsonArray results = m_rag->search(query, k);
-        if (results.isEmpty())
+        const RagService::SearchOutcome outcome = m_rag->searchDetailed(query, k);
+        const QJsonArray results = outcome.passages;
+        if (results.isEmpty()) {
+            // 关键区分：知识库里有真实向量文档，但查询向量取不到 —— 也就是
+            // 嵌入服务（Ollama）没在跑。这时检索**根本没执行**，必须让模型和
+            // 用户都看到，否则 "No passages matched" 会被理解成"文档里没有"。
+            if (outcome.embeddingUnavailable) {
+                return ToolResult::fail(QStringLiteral(
+                    "Knowledge-base search did NOT run: the embedding service is "
+                    "unreachable, so the query could not be vectorised. The base "
+                    "holds %1 chunk(s) stored with real embeddings, which cannot be "
+                    "searched while that service is down. Tell the user to start the "
+                    "local embedding service (Ollama, model '%2') and retry; do NOT "
+                    "conclude that the imported documents lack the answer.")
+                    .arg(m_rag->documentCount())
+                    .arg(m_rag->embeddingModelName()));
+            }
             return ToolResult::ok(QStringLiteral("No passages matched '%1'.").arg(query));
+        }
 
         // SEC-502: passages are untrusted DATA (a poisoned document must not
         // read like model instructions) - wrap each one in explicit
