@@ -380,6 +380,7 @@ qInfo() << "NexusAI" << app.applicationVersion() << "starting";
         tabAgent->setToolRegistry(&ToolRegistry::instance());
         tabAgent->setMemory(new SqliteMemory());
         tabAgent->setContextLimit(settings->resolveContextLimit());
+        tabAgent->setMaxIterations(settings->maxSteps());
 
         const ProviderSet set{new OpenAIService(tabAgent),
                               new AnthropicService(tabAgent),
@@ -518,10 +519,13 @@ qInfo() << "NexusAI" << app.applicationVersion() << "starting";
         // directly or tab 0 would fail with "No LLM service configured"
         // until a settings change re-runs this lambda.
         agent->setContextLimit(settings->resolveContextLimit());
+        // 步数预算（agent/maxSteps）：模板 agent 与各标签 agent 用同一个值。
+        agent->setMaxIterations(settings->maxSteps());
         agent->setLLMService(pickActive(templateSet, provider));
 
         agentVM->applyToAgents([&](AIAgent* tabAgent) {
             tabAgent->setContextLimit(settings->resolveContextLimit());
+            tabAgent->setMaxIterations(settings->maxSteps());
             const ProviderSet& set = tabAgent == agent
                 ? templateSet
                 : tabProviderSets.value(tabAgent, templateSet);
@@ -563,6 +567,8 @@ qInfo() << "NexusAI" << app.applicationVersion() << "starting";
     // Reconfigure instantly when the active profile or global settings change
     QObject::connect(settings, &SettingsService::activeProfileChanged, &app, [applySettings]() { applySettings(); });
     QObject::connect(settings, &SettingsService::contextTokensChanged, &app, [applySettings]() { applySettings(); });
+    // 步数预算改动即时生效（含已在跑的标签）。
+    QObject::connect(settings, &SettingsService::maxStepsChanged, &app, [applySettings]() { applySettings(); });
     QObject::connect(settings, &SettingsService::allowFullDiskReadChanged, &app, [applySettings]() { applySettings(); });
     QObject::connect(settings, &SettingsService::allowProjectWriteChanged, &app, [applySettings]() { applySettings(); });
     QObject::connect(settings, &SettingsService::allowLocalNetworkFetchChanged, &app, [applySettings]() { applySettings(); });

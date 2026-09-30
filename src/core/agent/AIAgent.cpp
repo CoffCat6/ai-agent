@@ -50,7 +50,8 @@ QString argsToString(const QJsonObject& args) {
     return QString::fromUtf8(QJsonDocument(args).toJson(QJsonDocument::Compact));
 }
 
-QString systemPrompt() {
+// 步数预算由调用方传入：本函数是匿名命名空间里的自由函数，拿不到成员。
+QString systemPrompt(int maxIterations) {
     return QStringLiteral(
         "You are NexusAI, a desktop AI assistant running on the user's machine (OS: %1).\n"
         "\n"
@@ -88,7 +89,7 @@ QString systemPrompt() {
         "talk, or needs no fresh information, reply directly - earlier tool usage in "
         "this conversation does not make a tool call appropriate now.\n"
         "Always reply in the same language the user writes in."
-    ).arg(QSysInfo::productType()).arg(AIAgent::kMaxIterations);
+    ).arg(QSysInfo::productType()).arg(maxIterations);
 }
 
 } // namespace
@@ -151,6 +152,16 @@ void AIAgent::setEpisodicService(EpisodicService* service) {
     m_episodicService = service;
 }
 
+void AIAgent::setMaxIterations(int steps) {
+    const int clamped = qBound(kMinMaxIterations, steps, kIterationCeiling);
+    if (m_maxIterations == clamped) return;
+    m_maxIterations = clamped;
+    // 一轮回复可以声明多个工具调用，只放宽轮数会让"工具执行上限"先被撞到
+    // （旧实现固定 16，配 10 步时经常比轮数先耗尽）。按 2×步数 缩放，
+    // 且不低于原来的固定值。
+    m_maxToolExecutions = qMax(kMinToolExecutions, clamped * 2);
+}
+
 void AIAgent::setContextLimit(int tokens) {
     const int clamped = qBound(MinContextTokens, tokens, MaxContextTokens);
     if (m_contextLimit == clamped) return;
@@ -168,7 +179,7 @@ void AIAgent::setSystemPromptOverride(const QString& prompt) {
 
 QString AIAgent::effectiveSystemPrompt() const {
     QString prompt = m_systemPromptOverride.isEmpty()
-        ? systemPrompt() : m_systemPromptOverride;
+        ? systemPrompt(m_maxIterations) : m_systemPromptOverride;
     // P0 项目上下文：附加在基础提示之后（用户自定义 override 也附加），
     // startTask 与 resumeSession 都经此处组装，续聊同样携带项目信息。
     const QString project = projectContextBlock();
@@ -1183,7 +1194,7 @@ void AIAgent::dispatchToolExecution(const ToolCallInfo& call, const QString& tra
     // Redundant-call detection lives in onLLMResponse (round-level, before
     // dispatch) - by the time we get here the call is worth executing.
 
-    if (m_toolExecutions >= kMaxToolExecutions) {
+    if (m_toolExecutions >= m_maxToolExecutions) {
         // Execution budget exhausted: refuse this call, seal everything still
         // queued, and force one final no-tools answer from what was gathered.
         if (!traceNodeId.isEmpty())
@@ -1193,7 +1204,7 @@ void AIAgent::dispatchToolExecution(const ToolCallInfo& call, const QString& tra
                             QJsonObject{{"args", argsToString(call.arguments)}});
         appendTraceNode("context",
             QStringLiteral("Tool execution budget (%1) exhausted - forcing a "
-                           "final answer").arg(kMaxToolExecutions),
+                           "final answer").arg(m_maxToolExecutions),
             "completed");
         appendToolResultMessage(call,
             QStringLiteral("[Not executed] Tool execution budget exhausted."));

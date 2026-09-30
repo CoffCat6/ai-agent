@@ -8,6 +8,10 @@
 #include <QVariantList>
 #include <QVariantMap>
 
+// 步数预算的默认值与钳制边界都定义在 core 层（AIAgent），此处引用同一常量，
+// 避免两处各写一个字面量后漂移。
+#include "core/agent/AIAgent.h"
+
 namespace NexusAI {
 
 // Application settings persisted via QSettings.
@@ -28,6 +32,9 @@ class SettingsService : public QObject {
     Q_PROPERTY(QString activeProfileId READ activeProfileId NOTIFY activeProfileChanged)
     Q_PROPERTY(QVariantMap activeProfile READ activeProfile NOTIFY activeProfileChanged)
     Q_PROPERTY(int contextTokens READ contextTokens WRITE setContextTokens NOTIFY contextTokensChanged)
+    // 每轮任务的步数预算（LLM 往返轮数）。曾硬编码为 10，普通多步任务经常
+    // 还没得出结论就耗尽，只能拿已有信息拼一个"我无法确认"的答复。
+    Q_PROPERTY(int maxSteps READ maxSteps WRITE setMaxSteps NOTIFY maxStepsChanged)
     Q_PROPERTY(bool simulationMode READ simulationMode WRITE setSimulationMode NOTIFY simulationModeChanged)
     Q_PROPERTY(bool allowFullDiskRead READ allowFullDiskRead WRITE setAllowFullDiskRead NOTIFY allowFullDiskReadChanged)
     // docs/17 P1-4: 项目目录写入放行（默认关，安全页）。
@@ -84,6 +91,9 @@ public:
     bool simulationMode() const { return m_simulationMode; }
     void setContextTokens(int tokens);
     void setSimulationMode(bool enabled);
+
+    int maxSteps() const { return m_maxSteps; }
+    void setMaxSteps(int steps);
 
     // Security: allow the agent to read files outside the user-directory
     // allowlist (audit P1-8). Opt-in, default off.
@@ -202,6 +212,7 @@ signals:
     void profilesChanged();
     void activeProfileChanged();
     void contextTokensChanged();
+    void maxStepsChanged();
     void simulationModeChanged();
     void allowFullDiskReadChanged();
     void allowProjectWriteChanged();
@@ -231,6 +242,7 @@ private:
     QVariantList m_profiles;   // each entry: {id, displayName, provider, baseUrl, apiKey, model}
     QString m_activeId;
     int m_contextTokens{8192};
+    int m_maxSteps{AIAgent::kDefaultMaxIterations};
     bool m_simulationMode{false};
     bool m_allowFullDiskRead{false};
     bool m_allowProjectWrite{false};   // docs/17 P1-4: 项目目录写入放行

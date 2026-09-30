@@ -46,6 +46,7 @@ public:
         schemaVersion = s.value("schemaVersion");
         defaultPermissionMode = s.value("agent/defaultPermissionMode");
         readDenyList = s.value("security/readDenyList");
+        maxSteps = s.value("agent/maxSteps");
     }
     ~SettingsGuard() {
         QSettings s("NexusAI", "NexusAI");
@@ -89,6 +90,8 @@ public:
         if (readDenyList.isValid())
             s.setValue("security/readDenyList", readDenyList);
         else s.remove("security/readDenyList");
+        if (maxSteps.isValid()) s.setValue("agent/maxSteps", maxSteps);
+        else s.remove("agent/maxSteps");
     }
     QVariant rawProfiles;
     QVariant activeId;
@@ -105,6 +108,7 @@ public:
     QVariant schemaVersion;
     QVariant defaultPermissionMode;
     QVariant readDenyList;
+    QVariant maxSteps;
 };
 
 } // namespace
@@ -176,6 +180,7 @@ private slots:
 
         // 先全部调到非默认值
         svc.setContextTokens(4096);
+        svc.setMaxSteps(99);
         svc.setSimulationMode(true);
         svc.setLogLevel(QStringLiteral("debug"));
         svc.setEmbeddingModel(QStringLiteral("bge-m3"));
@@ -200,6 +205,7 @@ private slots:
                 defaults.insert(k.key, k.defaultValue);
         QCOMPARE(svc.contextTokens(),
                  defaults.value("contextTokens").toInt());
+        QCOMPARE(svc.maxSteps(), defaults.value("agent/maxSteps").toInt());
         QCOMPARE(svc.simulationMode(),
                  defaults.value("simulationMode").toBool());
         QCOMPARE(svc.logLevel(), defaults.value("logging/level").toString());
@@ -209,6 +215,24 @@ private slots:
                  defaults.value("embedding/baseUrl").toString());
         QCOMPARE(svc.systemPromptOverride(),
                  defaults.value("agent/systemPromptOverride").toString());
+    }
+
+    // 步数预算（agent/maxSteps）：钳制到 [kMinMaxIterations, kIterationCeiling]，
+    // 改动即时持久化。默认 30 取代了原先硬编码的 10。
+    void maxStepsClampsAndPersists() {
+        SettingsGuard guard;
+        SettingsService svc(nullptr);
+
+        QCOMPARE(svc.maxSteps(), AIAgent::kDefaultMaxIterations);
+
+        svc.setMaxSteps(0);
+        QCOMPARE(svc.maxSteps(), AIAgent::kMinMaxIterations);
+        svc.setMaxSteps(9999);
+        QCOMPARE(svc.maxSteps(), AIAgent::kIterationCeiling);
+
+        svc.setMaxSteps(42);
+        QCOMPARE(svc.maxSteps(), 42);
+        QCOMPARE(QSettings("NexusAI", "NexusAI").value("agent/maxSteps").toInt(), 42);
     }
 
     // docs/17 B3: 账本完整性——三类旁路写入方（ToolRegistry/AgentViewModel/

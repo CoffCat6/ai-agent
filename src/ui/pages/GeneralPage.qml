@@ -136,6 +136,32 @@ Item {
                     }
                 }
 
+                ColumnLayout {
+                    Layout.fillWidth: true
+                    spacing: 4
+                    Text { text: qsTr("单次任务步数预算"); color: Theme.textSecondary; font.pixelSize: Theme.fontSizeCaption; font.bold: true; font.family: Theme.fontMono }
+                    TextField {
+                        id: maxStepsField
+                        Layout.fillWidth: true
+                        text: Settings.maxSteps
+                        placeholderText: "30"
+                        placeholderTextColor: Theme.textSecondary
+                        color: Theme.textPrimary; selectionColor: Theme.brandPrimary; selectedTextColor: "#ffffff"
+                        font.pixelSize: Theme.fontSizeBody; font.family: Theme.fontSans
+                        validator: IntValidator { bottom: 3; top: 200 }
+                        background: Rectangle { radius: 6; color: Theme.bgPrimary; border.width: maxStepsField.activeFocus ? 2 : 1; border.color: maxStepsField.activeFocus ? Theme.brandPrimary : Theme.borderSubtle }
+                        onEditingFinished: { const parsed = parseInt(text); Settings.maxSteps = isNaN(parsed) ? 30 : parsed; text = Settings.maxSteps }
+                        Accessible.name: qsTr("单次任务步数预算")
+                    }
+                    Text {
+                        text: qsTr("一次任务里模型最多进行多少轮「思考 → 工具调用」。用完会强制基于已有信息作答，因此多文件排查、多步检索这类长任务需要更大的值；调小更省 token。")
+                        color: Theme.textSecondary
+                        font.pixelSize: 10
+                        wrapMode: Text.Wrap
+                        Layout.fillWidth: true
+                    }
+                }
+
                 Text {
                     text: qsTr("自定义系统提示词：留空使用内置提示词；修改即时生效，内容随请求发送给当前模型服务")
                     color: Theme.textSecondary

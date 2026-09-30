@@ -234,6 +234,10 @@ void SettingsService::load() {
     m_contextTokens = qBound(AIAgent::MinContextTokens,
                              settings.value("contextTokens", 8192).toInt(),
                              AIAgent::MaxContextTokens);
+    m_maxSteps = qBound(AIAgent::kMinMaxIterations,
+                        settings.value("agent/maxSteps",
+                                       AIAgent::kDefaultMaxIterations).toInt(),
+                        AIAgent::kIterationCeiling);
     m_simulationMode = settings.value("simulationMode", false).toBool();
     m_allowFullDiskRead = settings.value("security/allowFullDiskRead", false).toBool();
     m_allowProjectWrite = settings.value("security/allowProjectWrite", false).toBool();
@@ -483,6 +487,17 @@ void SettingsService::setContextTokens(int tokens) {
     emit contextTokensChanged();
 }
 
+// 步数预算：即时保存；生效路径在 main.cpp（maxStepsChanged → applySettings
+// 把值推给模板 agent 与各标签 agent）。
+void SettingsService::setMaxSteps(int steps) {
+    const int clamped = qBound(AIAgent::kMinMaxIterations, steps,
+                               AIAgent::kIterationCeiling);
+    if (m_maxSteps == clamped) return;
+    m_maxSteps = clamped;
+    QSettings().setValue("agent/maxSteps", m_maxSteps);
+    emit maxStepsChanged();
+}
+
 void SettingsService::setSimulationMode(bool enabled) {
     if (m_simulationMode == enabled) return;
     m_simulationMode = enabled;
@@ -688,6 +703,7 @@ void SettingsService::resetGeneralToDefaults() {
     // docs/17 A6: 安全三键（allowFullDiskRead/localOnlyMode/
     // allowLocalNetworkFetch）已迁往"安全"页，不在本页重置范围内。
     setContextTokens(8192);
+    setMaxSteps(AIAgent::kDefaultMaxIterations);
     setSimulationMode(false);
     setLogLevel(QStringLiteral("info"));
     setEmbeddingModel(QStringLiteral("nomic-embed-text"));

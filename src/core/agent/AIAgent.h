@@ -42,12 +42,18 @@ class EpisodicService;
 class AIAgent : public QObject {
     Q_OBJECT
 public:
-    // Hard per-request tool-use step budget (shared with the system prompt)
-    static constexpr int kMaxIterations = 10;
-    // Hard per-request cap on ACTUAL tool executions (one response can
-    // announce arbitrarily many calls; kMaxIterations alone does not bound
-    // the total work).
-    static constexpr int kMaxToolExecutions = 16;
+    // Per-request step budget = LLM round-trips (the system prompt tells the
+    // model about it). Configurable via Settings → agent/maxSteps; these three
+    // are the default and the clamp bounds. 10 used to be hard-coded and was
+    // routinely exhausted by ordinary multi-step tasks before an answer formed.
+    static constexpr int kDefaultMaxIterations = 30;
+    static constexpr int kMinMaxIterations = 3;
+    static constexpr int kIterationCeiling = 200;
+    // Lower bound for the cap on ACTUAL tool executions (one response can
+    // announce arbitrarily many calls, so the round budget alone does not
+    // bound the total work). The effective cap scales with the step budget -
+    // see setMaxIterations().
+    static constexpr int kMinToolExecutions = 16;
 
     // Bounds for the context-window budget (setContextLimit clamps to these;
     // SettingsService applies the same window in its editor)
@@ -66,6 +72,14 @@ public:
     // before each request. 0 disables compression.
     void setContextLimit(int tokens);
     int contextLimit() const { return m_contextLimit; }
+
+    // 每轮任务的步数预算（LLM 往返轮数）。钳制到
+    // [kMinMaxIterations, kIterationCeiling]；同时把工具执行上限按
+    // 2×步数 缩放（不低于 kMinToolExecutions）——一轮回复可以声明多个调用，
+    // 只放宽轮数会让执行上限先被撞到。
+    void setMaxIterations(int steps);
+    int maxIterations() const { return m_maxIterations; }
+    int maxToolExecutions() const { return m_maxToolExecutions; }
 
     // docs/16 §8.3: 实时上下文构成（按 role 拆分的 token 桶 + tools schema
     // 预留），供 TopBar 容量占比浮层展示。
@@ -206,7 +220,9 @@ private:
     QJsonArray m_messages;
     QJsonArray m_traceModel;
     int m_iteration{0};
-    int m_maxIterations{kMaxIterations};
+    int m_maxIterations{kDefaultMaxIterations};
+    // 实际工具执行上限，由 setMaxIterations 按 2×步数 缩放
+    int m_maxToolExecutions{kMinToolExecutions};
     bool m_active{false};
     quint64 m_epoch{0};   // bumped on start/stop/reset; stale tool results are dropped
 
@@ -229,8 +245,8 @@ private:
     // normal and the epoch-drop path. No ownership - never delete.
     QHash<QString, ITool*> m_inFlightTools;
     QString m_confirmNodeId;  // trace node of the pending confirmation
-    // Actual tool executions in the current request (kMaxToolExecutions cap;
-    // kMaxIterations alone bounds LLM rounds, not the announced call count).
+    // Actual tool executions in the current request (m_maxToolExecutions cap;
+    // the round budget alone bounds LLM rounds, not the announced call count).
     int m_toolExecutions{0};
 
     // Loop guard (round-level, checked in onLLMResponse): an identical

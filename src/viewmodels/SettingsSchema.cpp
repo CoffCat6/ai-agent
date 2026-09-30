@@ -7,6 +7,8 @@ const QVector<SettingsKeyDef>& SettingsSchema::registeredKeys() {
         {"modelProfiles",                 QVariant(),                        false},
         {"activeProfileId",               QVariant(),                        false},
         {"contextTokens",                 8192,                              false},
+        // 每轮任务的步数预算（LLM 往返轮数）；默认与钳制边界见 AIAgent。
+        {"agent/maxSteps",                30,                                false},
         {"simulationMode",                false,                             false},
         {"security/allowFullDiskRead",    false,                             false},
         // docs/17 P1-4: 项目目录写入放行（默认只读，安全页开关）。

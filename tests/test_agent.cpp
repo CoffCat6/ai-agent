@@ -775,6 +775,11 @@ void TestAgent::unknownToolFeedsError() {
 }
 
 void TestAgent::maxIterationsStops() {
+    // 预算已可配置（agent/maxSteps，默认 30），本用例断言的是"预算耗尽"这条
+    // 路径本身，所以显式钉一个 10，与脚本长度对齐——否则脚本第 11 轮起会重复
+    // 最后一条响应，被"同轮重复调用"守卫提前收尾，测不到预算耗尽。
+    agent.setMaxIterations(10);
+
     // Each round probes a DIFFERENT directory: the identical-round loop
     // terminator (finishes early on repeated calls) must not kick in, so
     // the hard step budget is what actually stops the task.
@@ -799,6 +804,8 @@ void TestAgent::maxIterationsStops() {
     QVERIFY(lastCall.last().toObject().value("content")
         .toString().contains("Step budget exhausted"));
     QVERIFY(llm.seenTools.last().isEmpty());
+
+    agent.setMaxIterations(AIAgent::kDefaultMaxIterations);   // 还原共享 agent
 }
 
 // Switching conversations must restore the full visual timeline (thinking /
@@ -1398,6 +1405,10 @@ void TestAgent::toolExecutionBudgetForcesFinal() {
     SqliteMemory memory(QStringLiteral(":memory:"));
     agent.setMemory(&memory);
 
+    // 工具执行上限随步数预算缩放（max(16, 2×步数)）。钉一个小预算，让上限(16)
+    // 低于本轮声明的 20 个调用，才测得到"执行预算耗尽"这条路径。
+    agent.setMaxIterations(AIAgent::kMinMaxIterations);
+
     QTemporaryDir dir(testDirTemplate());
     QVERIFY(dir.isValid());
     LLMResponse burst;
@@ -1424,11 +1435,14 @@ void TestAgent::toolExecutionBudgetForcesFinal() {
         if (entry.toObject().value("event").toString() == QStringLiteral("tool_execute"))
             ++executions;
     }
-    QCOMPARE(executions, AIAgent::kMaxToolExecutions);
+    // 断言实际生效的上限（而不是某个常量），上限与步数预算的换算关系变了
+    // 这条用例仍然成立。
+    QCOMPARE(executions, agent.maxToolExecutions());
     QVERIFY(traceHas(agent.traceModel(), "context", "budget"));
     QVERIFY2(noDanglingToolCalls(llm.seenMessages.last()),
              "budget path left dangling tool_calls");
 
+    agent.setMaxIterations(AIAgent::kDefaultMaxIterations);   // 还原共享 agent
     agent.setMemory(nullptr);
 }
 
@@ -1436,6 +1450,9 @@ void TestAgent::toolExecutionBudgetForcesFinal() {
 // final answer but belongs to the REQUEST, not the conversation: it must be
 // injected into the forced call and must never leak into later turns.
 void TestAgent::forcedFinalControlMessageNotPersisted() {
+    // 脚本按 10 轮预算写；钉住预算，否则第 11 轮起会重复最后一条响应，被
+    // "同轮重复调用"守卫提前收尾，测不到"预算耗尽后的强制收尾"这条路径。
+    agent.setMaxIterations(10);
     const QString home = QStandardPaths::writableLocation(QStandardPaths::HomeLocation);
     for (int i = 0; i < 10; ++i)
         llm.script.append(toolResponse("list_dir",
@@ -1458,6 +1475,8 @@ void TestAgent::forcedFinalControlMessageNotPersisted() {
     }
     QVERIFY2(noDanglingToolCalls(sent),
              "forced final + next turn left dangling tool_calls");
+
+    agent.setMaxIterations(AIAgent::kDefaultMaxIterations);   // 还原共享 agent
 }
 
 // ── Batch 4: request-context architecture ─────────────────
