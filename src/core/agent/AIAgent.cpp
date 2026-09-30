@@ -3,6 +3,7 @@
 #include "EpisodicService.h"
 #include "infrastructure/llm/IAIService.h"
 #include "core/tools/ToolRegistry.h"
+#include "core/tools/Sandbox.h"
 #include "core/memory/IMemory.h"
 #include "core/utils/TokenEstimator.h"
 
@@ -166,7 +167,34 @@ void AIAgent::setSystemPromptOverride(const QString& prompt) {
 }
 
 QString AIAgent::effectiveSystemPrompt() const {
-    return m_systemPromptOverride.isEmpty() ? systemPrompt() : m_systemPromptOverride;
+    QString prompt = m_systemPromptOverride.isEmpty()
+        ? systemPrompt() : m_systemPromptOverride;
+    // P0 项目上下文：附加在基础提示之后（用户自定义 override 也附加），
+    // startTask 与 resumeSession 都经此处组装，续聊同样携带项目信息。
+    const QString project = projectContextBlock();
+    if (!project.isEmpty())
+        prompt += project;
+    return prompt;
+}
+
+// 项目上下文块。模型此前完全不知道活动项目的存在：工具参数要求绝对
+// 路径，模型只能猜路径或给出按进程 CWD 解析的相对路径——这就是项目
+// 会话"读不到正确信息"的主因。rootPath 为空（沙箱未联动）时不注入，
+// 避免模型把 CWD 下的同名文件当成项目文件。
+QString AIAgent::projectContextBlock() const {
+    if (m_activeProjectId.isEmpty() || m_activeProjectRoot.isEmpty())
+        return QString();
+    const QString name = m_activeProjectName.isEmpty()
+        ? QStringLiteral("(unnamed)") : m_activeProjectName;
+    return QStringLiteral(
+        "\n\nActive project: \"%1\" (root: %2).\n"
+        "- Paths the user mentions are relative to this project root by "
+        "default; read_file / list_dir / write_file / edit_file anchor "
+        "relative paths here automatically.\n"
+        "- When the exact path of a file is unknown, list_dir the project "
+        "root (or the relevant subfolder) before reading.\n"
+        "- Stay inside this project root unless the user names another "
+        "location.").arg(name, m_activeProjectRoot);
 }
 
 // ── Trace helpers ─────────────────────────────────────────
@@ -264,7 +292,10 @@ void AIAgent::setPermissionMode(PermissionMode mode) {
 // ── Session management ────────────────────────────────────
 
 QJsonArray AIAgent::sessionList() const {
-    return m_memory ? m_memory->listSessions(50) : QJsonArray();
+    // P1-6: 侧栏树把全部会话按项目分组展示，50 条全局配额会让旧项目会话
+    // 静默消失；桌面场景万级以内，一次拉 500 条成本可忽略。分页按项目
+    // 查询留待会话量成为真实问题时再做。
+    return m_memory ? m_memory->listSessions(500) : QJsonArray();
 }
 
 QJsonArray AIAgent::auditLog(int limit) const {
@@ -1211,7 +1242,12 @@ void AIAgent::dispatchToolExecution(const ToolCallInfo& call, const QString& tra
 
     // Tools are stateless; running them here keeps shell_exec / large file
     // reads from freezing the GUI thread.
-    watcher->setFuture(QtConcurrent::run([tool, call]() -> ToolResult {
+    // P1-5: 项目根随任务快照。Sandbox 的项目目录是全局量，用户在任务
+    // 进行中切换活动项目会波及所有 tab；执行域把它钉在派发时的值上
+    // （线程局部，只覆盖本次工具执行），后台任务不再被前台切换打断。
+    const QString projectRoot = m_activeProjectRoot;
+    watcher->setFuture(QtConcurrent::run([tool, call, projectRoot]() -> ToolResult {
+        const Sandbox::ExecutionScope scope(projectRoot);
         return tool ? tool->execute(call.arguments)
                     : ToolResult::fail(QStringLiteral("Tool not found"));
     }));

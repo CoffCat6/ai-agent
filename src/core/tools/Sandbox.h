@@ -8,6 +8,7 @@
 #include <QDirIterator>
 #include <QFileInfo>
 #include <QStandardPaths>
+#include <QThreadStorage>
 
 namespace NexusAI {
 
@@ -18,13 +19,19 @@ namespace NexusAI {
 //   2. 黑名单 = 绝对拒绝层：命中即拒，优先于一切允许规则（含 FullDisk
 //      与项目目录）——防止"导入整个盘当项目"把 ~/.ssh 暴露给模型；
 //   3. 允许层（读）= 用户目录白名单 ∪ 当前项目目录（∪ FullDisk 全盘）；
-//      允许层（写）= 白名单 ∪ Home（项目目录只读，不进写允许层）。
+//      允许层（写）= 白名单 ∪ Home（∪ 项目目录，仅在安全页显式开启
+//      projectWrite 后——默认项目只读）。
 //
 // 黑名单条目两种形态：目录前缀（native 路径，含其子树）与 glob 模式
 //（QDir::match 语义，如 *.kdbx，对完整路径与文件名都尝试）。匹配统一在
 // canonicalize 之后进行（validatePath 入口已做），".." 与 symlink 无法
 // 绕过。默认黑名单编译期内置（保守清单，用户已确认）；设置键
 // security/readDenyList 只存用户追加项。
+//
+// "当前项目目录"的生效值（currentProjectDir）：工具执行线程上的快照
+//（ExecutionScope，AIAgent 派发工具时钉住任务开始时的根）优先，回落到
+// 全局活动项目（AgentViewModel 切换时写入）。后者供无任务上下文的调用
+// 方（测试、非工具路径）使用。
 class Sandbox {
 public:
     enum class AccessMode {
@@ -43,13 +50,55 @@ public:
     static ReadPolicy readPolicy() { return s_readPolicy; }
 
     // docs/17 A1: 项目目录（当前活动项目的 root_path；空 = 无项目）。
-    // 只影响读取允许层；写策略不因项目而扩大。
+    // 只影响读取允许层；写策略仅在 projectWrite 开启时扩大。
     static void setProjectDir(const QString& path) {
         s_projectDir = path.isEmpty()
             ? QString()
             : QDir::toNativeSeparators(path);
     }
     static QString projectDir() { return s_projectDir; }
+
+    // docs/17 P1-5: 工具执行域。构造时把 projectRoot 钉到当前线程的
+    // 局部槽上，析构清除；必须构造在执行工具的那个池线程里（AIAgent 的
+    // QtConcurrent lambda 内）。任务进行中用户切换活动项目不再影响
+    // 进行中的工具调用。
+    class ExecutionScope {
+    public:
+        explicit ExecutionScope(const QString& projectRoot) {
+            s_execProjectDir.setLocalData(projectRoot.isEmpty()
+                ? QString()
+                : QDir::toNativeSeparators(projectRoot));
+        }
+        ~ExecutionScope() { s_execProjectDir.setLocalData(QString()); }
+        ExecutionScope(const ExecutionScope&) = delete;
+        ExecutionScope& operator=(const ExecutionScope&) = delete;
+    };
+
+    // 当前生效的项目目录：执行线程快照（非空时）优先，否则全局活动项目。
+    static QString currentProjectDir() {
+        if (s_execProjectDir.hasLocalData()) {
+            const QString snapshot = s_execProjectDir.localData();
+            if (!snapshot.isEmpty()) return snapshot;
+        }
+        return s_projectDir;
+    }
+
+    // docs/17 P1-4: 项目目录写入放行开关（安全页 security/allowProjectWrite，
+    // 默认关——A1 的"项目只读"默认语义保留）。
+    static void setProjectWriteEnabled(bool enabled) { s_projectWrite = enabled; }
+    static bool projectWriteEnabled() { return s_projectWrite; }
+
+    // docs/17 P0-2: 相对路径锚定。项目激活时相对路径以项目根为基准解析，
+    // 否则保持原语义（QFile/QDir 按进程 CWD 解析——模型给相对路径时读到
+    // 的往往是应用启动目录下的同名文件，"读不到正确信息"的直接来源）。
+    // 工具层与 validatePath 统一走这里；返回值再经 cleanPath canonicalize，
+    // ".." 与 symlink 无法借道绕过沙箱。
+    static QString resolvePath(const QString& path) {
+        const QString root = currentProjectDir();
+        if (!path.isEmpty() && !root.isEmpty() && QDir::isRelativePath(path))
+            return QDir(root).absoluteFilePath(path);
+        return path;
+    }
 
     // docs/17 A1: 用户自定义黑名单（与内置默认清单合并生效）。
     static void setUserDenyList(const QStringList& entries) {
@@ -85,7 +134,8 @@ public:
         if (path.isEmpty()) return deny(isWrite ? DenyReason::WritePolicy
                                                 : DenyReason::ReadPolicy);
 
-        const QString normalizedPath = cleanPath(path);
+        // P0-2: 先锚定相对路径（项目激活时以项目根为基准），再 canonicalize。
+        const QString normalizedPath = cleanPath(resolvePath(path));
 
         // ── 1. 系统目录硬封锁 ──
         static const QStringList blockedPaths = {
@@ -126,9 +176,14 @@ public:
         // ── 3. 允许层 ──
         if (isWrite) {
             // Writes additionally allow the whole home directory (users may
-            // create files anywhere they own them). 项目目录只读：不进写层。
+            // create files anywhere they own them). 项目目录默认只读；
+            // 仅当安全页显式开启 projectWrite（P1-4）才进入写允许层。
             QStringList writeDirs = readDirs;
             writeDirs << QStandardPaths::writableLocation(QStandardPaths::HomeLocation);
+            if (s_projectWrite) {
+                const QString project = currentProjectDir();
+                if (!project.isEmpty()) writeDirs << project;
+            }
             if (withinUserDir(normalizedPath, writeDirs)) {
                 if (reason) *reason = DenyReason::None;
                 return true;
@@ -142,9 +197,10 @@ public:
             if (reason) *reason = DenyReason::None;
             return true;
         }
+        const QString activeProject = currentProjectDir();
         if (withinUserDir(normalizedPath, readDirs)
-                || (!s_projectDir.isEmpty()
-                    && isWithin(normalizedPath, s_projectDir))) {
+                || (!activeProject.isEmpty()
+                    && isWithin(normalizedPath, activeProject))) {
             if (reason) *reason = DenyReason::None;
             return true;
         }
@@ -170,7 +226,8 @@ public:
         case DenyReason::WritePolicy:
             return QStringLiteral(
                 "Path blocked by sandbox policy: writes are only allowed in "
-                "user directories");
+                "user directories. Enable project writes under Settings > "
+                "Security if the file belongs to the active project");
         case DenyReason::None:
             break;
         }
@@ -252,7 +309,10 @@ private:
 
     inline static ReadPolicy s_readPolicy{ReadPolicy::UserDirectories};
     inline static QString s_projectDir;
+    inline static bool s_projectWrite{false};   // docs/17 P1-4: 项目目录写入放行
     inline static QStringList s_userDenyList;
+    // P1-5: 每工具执行线程的快照槽（ExecutionScope 写入/清除）。
+    inline static QThreadStorage<QString> s_execProjectDir;
 };
 
 } // namespace NexusAI

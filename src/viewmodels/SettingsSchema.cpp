@@ -9,6 +9,8 @@ const QVector<SettingsKeyDef>& SettingsSchema::registeredKeys() {
         {"contextTokens",                 8192,                              false},
         {"simulationMode",                false,                             false},
         {"security/allowFullDiskRead",    false,                             false},
+        // docs/17 P1-4: 项目目录写入放行（默认只读，安全页开关）。
+        {"security/allowProjectWrite",    false,                             false},
         {"security/localOnlyMode",        false,                             false},
         {"security/allowLocalNetworkFetch", false,                           false},
         {"embedding/model",               QStringLiteral("nomic-embed-text"), false},

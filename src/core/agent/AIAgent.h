@@ -95,13 +95,24 @@ public:
     QString lastResponse() const { return m_lastResponse; }
     QString currentSessionId() const { return m_sessionId; }
 
-    // docs/17 A0: 活动项目 id（全局单活动项目，main.cpp 随 VM 变更推送）。
-    // 新建会话在 beginSession 后标记归属；空串 = 无项目（本地会话）。
-    void setActiveProjectId(const QString& id) { m_activeProjectId = id; }
+    // docs/17 A0: 活动项目（全局单活动项目，AgentViewModel 随切换推送）。
+    // 用途：① 新建会话在 beginSession 后标记归属；② P0 项目上下文——
+    // name/rootPath 进入系统提示，工具把相对路径锚定到 rootPath。没有
+    // 这两项，模型不知道项目根在哪，读文件只能靠猜路径。空 id = 本地。
+    void setActiveProject(const QString& id, const QString& name,
+                          const QString& rootPath) {
+        m_activeProjectId = id;
+        m_activeProjectName = name;
+        m_activeProjectRoot = rootPath;
+    }
     QJsonArray sessionList() const;
     QJsonArray auditLog(int limit = 100) const;
     // docs/16 §8: read-only access for aggregate query wrappers.
     IMemory* memory() const { return m_memory; }
+
+    // Base prompt (override or built-in) plus the project context block.
+    // Public so tests can assert the injected project root.
+    QString effectiveSystemPrompt() const;
 
 public slots:
     // Batch 30 (F6): images are compressed data URLs ("data:image/jpeg;
@@ -134,7 +145,7 @@ signals:
 
 private:
     void setState(AgentState state);
-    QString effectiveSystemPrompt() const;
+    QString projectContextBlock() const;
     QString appendTraceNode(const QString& type, const QString& title,
                             const QString& status, const QJsonObject& extra = {});
     void updateLastNodeStatus(const QString& status);
@@ -196,6 +207,9 @@ private:
 
     QString m_sessionId;
     QString m_activeProjectId;   // docs/17 A0: 活动项目（空 = 本地）
+    // P0 项目上下文：随 id 一起推送，进入系统提示（见 projectContextBlock）。
+    QString m_activeProjectName;
+    QString m_activeProjectRoot;
     QString m_lastResponse;
 
     QVector<ToolCallInfo> m_pendingToolCalls;

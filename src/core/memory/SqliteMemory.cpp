@@ -1117,6 +1117,16 @@ QVariantList SqliteMemory::listProjects() {
     return out;
 }
 
+// P2: 项目重命名（仅显示名，root_path 不变）。
+void SqliteMemory::renameProject(const QString& projectId, const QString& name) {
+    QSqlQuery q(m_db);
+    q.prepare("UPDATE projects SET name = ? WHERE id = ?");
+    q.addBindValue(name);
+    q.addBindValue(projectId);
+    if (!q.exec())
+        qWarning() << "Failed to rename project:" << q.lastError().text();
+}
+
 void SqliteMemory::setSessionProject(const QString& sessionId,
                                      const QString& projectId) {
     QSqlQuery q(m_db);

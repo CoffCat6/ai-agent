@@ -64,6 +64,7 @@ public:
     // 删除项目时会话保留（project_id 置 NULL），不级联删除。
     QString createProject(const QString& name, const QString& rootPath) override;
     void removeProject(const QString& projectId) override;
+    void renameProject(const QString& projectId, const QString& name) override;
     QVariantList listProjects() override;
     void setSessionProject(const QString& sessionId, const QString& projectId) override;
 

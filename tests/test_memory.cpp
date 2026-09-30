@@ -67,6 +67,8 @@ private slots:
     void sessionTokenBreakdown();
     // docs/17 A0: projects + session ownership
     void projectSessionLifecycle();
+    // docs/17 P2: project rename (display name only)
+    void projectRename();
     void traceNodeRoundTrip();
     // Batch 6: knowledge persistence v2
     void knowledgeSchemaV1Migrates();
@@ -260,6 +262,28 @@ void TestMemory::projectSessionLifecycle() {
     QCOMPARE(sessions.size(), 2);   // 两个会话都还在
     for (const auto& entry : sessions)
         QVERIFY(entry.toObject().value("projectId").toString().isEmpty());
+}
+
+// docs/17 P2: renameProject 只改显示名，root_path 与会话归属不动。
+void TestMemory::projectRename() {
+    SqliteMemory mem(QStringLiteral(":memory:"));
+
+    const QString pid = mem.createProject(QStringLiteral("demo"),
+                                          QStringLiteral("D:/work/demo"));
+    QVERIFY(!pid.isEmpty());
+
+    mem.renameProject(pid, QStringLiteral("renamed demo"));
+    QVariantList projects = mem.listProjects();
+    QCOMPARE(projects.size(), 1);
+    QCOMPARE(projects.first().toMap().value("name").toString(),
+             QStringLiteral("renamed demo"));
+    QCOMPARE(projects.first().toMap().value("rootPath").toString(),
+             QStringLiteral("D:/work/demo"));
+
+    // 未知 id：静默无操作，列表不变。
+    mem.renameProject(QStringLiteral("no-such-id"), QStringLiteral("ghost"));
+    QCOMPARE(mem.listProjects().first().toMap().value("name").toString(),
+             QStringLiteral("renamed demo"));
 }
 
 // docs/16 §8.3: sessionTokenBreakdown aggregates one session's token_usage

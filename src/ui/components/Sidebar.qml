@@ -36,6 +36,19 @@ Rectangle {
     // Fade the content out while collapsing so text never gets squeezed
     readonly property real contentFade: AgentVM.isSidebarExpanded ? 1.0 : 0.0
 
+    // docs/17 P0-3: 项目被程序化激活（如点击一条项目会话自动联动）时，
+    // 与点击项目行一样自动展开该节点。
+    Connections {
+        target: AgentVM
+        function onActiveProjectIdChanged() {
+            if (AgentVM.activeProjectId.length > 0
+                    && root.expandedProjects[AgentVM.activeProjectId] !== true) {
+                root.expandedProjects[AgentVM.activeProjectId] = true
+                root.expansionEpoch++
+            }
+        }
+    }
+
     // Right border separator
     Rectangle {
         width: 1
@@ -201,6 +214,7 @@ Rectangle {
                         required property var modelData
                         readonly property bool isActive:
                             AgentVM.activeProjectId === modelData.id
+                        property bool renaming: false
                         // 展开与激活解耦：只由点击状态表决定（点击取反，
                         // epoch 作绑定失效标记）。激活中的项目同样可收起。
                         readonly property bool expanded: {
@@ -229,7 +243,8 @@ Rectangle {
                             Row {
                                 anchors.fill: parent
                                 anchors.leftMargin: 8
-                                anchors.rightMargin: 32
+                                // 右侧留三个悬浮按钮的宽度（新建/重命名/删除）。
+                                anchors.rightMargin: 68
                                 spacing: 6
 
                                 AppIcon {
@@ -249,6 +264,7 @@ Rectangle {
                                 Text {
                                     anchors.verticalCenter: parent.verticalCenter
                                     width: parent.width - parent.spacing * 2 - 24
+                                    visible: !projectNode.renaming
                                     text: projectNode.modelData.name
                                     color: projectNode.isActive
                                         ? Theme.brandPrimary : Theme.textPrimary
@@ -256,6 +272,92 @@ Rectangle {
                                     font.family: Theme.fontSans
                                     elide: Text.ElideRight
                                 }
+                                // P2: 项目行内重命名（与会话行同交互：回车
+                                // 提交，失焦取消）。
+                                TextInput {
+                                    id: projectRenameInput
+                                    visible: projectNode.renaming
+                                    anchors.verticalCenter: parent.verticalCenter
+                                    width: parent.width - parent.spacing * 2 - 24
+                                    text: projectNode.modelData.name
+                                    color: Theme.textPrimary
+                                    font.pixelSize: Theme.fontSizeCaption
+                                    font.family: Theme.fontSans
+                                    selectByMouse: true
+                                    clip: true
+                                    onAccepted: {
+                                        if (text.trimmed().length > 0)
+                                            AgentVM.renameProject(
+                                                projectNode.modelData.id, text)
+                                        projectNode.renaming = false
+                                    }
+                                    onFocusChanged: if (!focus && projectNode.renaming)
+                                        projectNode.renaming = false
+
+                                    Component.onCompleted: if (projectNode.renaming) forceActiveFocus()
+                                }
+                            }
+
+                            // P2: 在该项目下新建会话（先激活再开新 tab，
+                            // 新会话归属与沙箱随激活生效）。
+                            Rectangle {
+                                width: 20; height: 20; radius: 4
+                                anchors.verticalCenter: parent.verticalCenter
+                                anchors.right: parent.right
+                                anchors.rightMargin: 56
+                                visible: projectMA.containsMouse
+                                color: projectNewMA.containsMouse
+                                    ? Theme.surfaceHover : "transparent"
+                                AppIcon {
+                                    anchors.centerIn: parent
+                                    icon: "add"
+                                    size: 11
+                                    iconColor: projectNewMA.containsMouse
+                                        ? Theme.brandPrimary : Theme.textSecondary
+                                }
+                                MouseArea {
+                                    id: projectNewMA
+                                    anchors.fill: parent
+                                    hoverEnabled: true
+                                    cursorShape: Qt.PointingHandCursor
+                                    onClicked: {
+                                        AgentVM.setActiveProjectId(
+                                            projectNode.modelData.id)
+                                        AgentVM.openTab()
+                                    }
+                                }
+                                Accessible.role: Accessible.Button
+                                Accessible.name: qsTr("在此项目下新建会话")
+                            }
+
+                            // P2: 项目重命名入口（行内编辑）。
+                            Rectangle {
+                                width: 20; height: 20; radius: 4
+                                anchors.verticalCenter: parent.verticalCenter
+                                anchors.right: parent.right
+                                anchors.rightMargin: 32
+                                visible: projectMA.containsMouse
+                                color: projectRenameMA.containsMouse
+                                    ? Theme.surfaceHover : "transparent"
+                                AppIcon {
+                                    anchors.centerIn: parent
+                                    icon: "edit"
+                                    size: 11
+                                    iconColor: projectRenameMA.containsMouse
+                                        ? Theme.brandPrimary : Theme.textSecondary
+                                }
+                                MouseArea {
+                                    id: projectRenameMA
+                                    anchors.fill: parent
+                                    hoverEnabled: true
+                                    cursorShape: Qt.PointingHandCursor
+                                    onClicked: {
+                                        projectHeader.confirmDelete = false
+                                        projectNode.renaming = true
+                                    }
+                                }
+                                Accessible.role: Accessible.Button
+                                Accessible.name: qsTr("重命名项目")
                             }
 
                             // 删除项目（两步确认；会话保留为本地会话）
@@ -318,6 +420,7 @@ Rectangle {
                                 hoverEnabled: true
                                 cursorShape: Qt.PointingHandCursor
                                 onClicked: {
+                                    if (projectNode.renaming) return
                                     // 激活该项目（沙箱/归属跟随）并展开；
                                     // 已激活时点击 = 切换折叠（退出走「对话」头）。
                                     if (!projectNode.isActive) {

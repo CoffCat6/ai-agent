@@ -79,6 +79,10 @@ public:
     virtual void removeProject(const QString& projectId) {
         Q_UNUSED(projectId);
     }
+    // P2: 项目重命名（显示名；root_path 不变）。
+    virtual void renameProject(const QString& projectId, const QString& name) {
+        Q_UNUSED(projectId); Q_UNUSED(name);
+    }
     virtual QVariantList listProjects() {
         return {};
     }

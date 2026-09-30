@@ -24,6 +24,11 @@ private slots:
     // is now asserted directly on validatePath incl. the reason out-param.
     void denyReasonsAreDistinguishable();
     void projectDirExtendsReadAllowlist();
+    // docs/17 P0-2/P1-4/P1-5: relative-path anchoring, project write gate,
+    // per-task execution snapshot.
+    void relativePathsAnchorToProjectRoot();
+    void projectWriteGate();
+    void executionScopePinsProjectDir();
     void userDenyListBlocksReadsAndWrites();
     void denyListPrecedesFullDiskAndProject();
     void defaultDenyListEntries();
@@ -170,6 +175,77 @@ void TestSandbox::projectDirExtendsReadAllowlist() {
 
     Sandbox::setProjectDir(QString());
     QVERIFY(!Sandbox::validatePath(root + "/src/a.txt", false));
+}
+
+// docs/17 P0-2: relative paths anchor to the active project root (they used
+// to fall through to the process CWD - the "reads the wrong file" bug).
+// Traversal stays rejected: the anchored path is canonicalized like any other.
+void TestSandbox::relativePathsAnchorToProjectRoot() {
+    const QString root = QStringLiteral("Q:/nexusai_proj_test");
+
+    // No active project: resolvePath is a no-op.
+    Sandbox::setProjectDir(QString());
+    QCOMPARE(Sandbox::resolvePath(QStringLiteral("src/a.txt")),
+             QStringLiteral("src/a.txt"));
+
+    Sandbox::setProjectDir(root);
+    QCOMPARE(Sandbox::resolvePath(QStringLiteral("src/a.txt")),
+             QDir(root).absoluteFilePath(QStringLiteral("src/a.txt")));
+    // Anchored relative path now passes the read policy (project subtree).
+    QVERIFY(Sandbox::validatePath(QStringLiteral("src/a.txt"), false));
+    // Escape via ".." still rejected (lands outside the project).
+    Sandbox::DenyReason reason;
+    QVERIFY(!Sandbox::validatePath(QStringLiteral("../../evil.txt"), false, &reason));
+    QCOMPARE(reason, Sandbox::DenyReason::ReadPolicy);
+    // Absolute paths pass through untouched.
+    QCOMPARE(Sandbox::resolvePath(root + "/abs.txt"), root + "/abs.txt");
+
+    Sandbox::setProjectDir(QString());
+}
+
+// docs/17 P1-4: project dirs are read-only unless the security-page gate
+// (security/allowProjectWrite) lifts it; the deny list still wins.
+void TestSandbox::projectWriteGate() {
+    const QString root = QStringLiteral("Q:/nexusai_proj_test");
+
+    Sandbox::setProjectDir(root);
+    QVERIFY(!Sandbox::validatePath(root + "/src/a.txt", true));
+
+    Sandbox::setProjectWriteEnabled(true);
+    QVERIFY(Sandbox::validatePath(root + "/src/a.txt", true));
+    QVERIFY(Sandbox::validatePath(root + "/deep/dir/b.txt", true));
+
+    Sandbox::setUserDenyList({QStringLiteral("*.env")});
+    QVERIFY(!Sandbox::validatePath(root + "/config.env", true));
+    Sandbox::setUserDenyList({});
+
+    Sandbox::setProjectWriteEnabled(false);
+    QVERIFY(!Sandbox::validatePath(root + "/src/a.txt", true));
+    Sandbox::setProjectDir(QString());
+}
+
+// docs/17 P1-5: the execution scope pins the project dir on the calling
+// thread, so switching the global active project mid-task cannot redirect a
+// running tool to another project's subtree.
+void TestSandbox::executionScopePinsProjectDir() {
+    const QString globalRoot = QStringLiteral("Q:/nexusai_proj_global");
+    const QString taskRoot = QStringLiteral("Q:/nexusai_proj_task");
+
+    Sandbox::setProjectDir(globalRoot);
+    QCOMPARE(Sandbox::currentProjectDir(), QDir::toNativeSeparators(globalRoot));
+
+    {
+        const Sandbox::ExecutionScope scope(taskRoot);
+        QCOMPARE(Sandbox::currentProjectDir(),
+                 QDir::toNativeSeparators(taskRoot));
+        // Reads resolve against the snapshot, not the global root.
+        QVERIFY(Sandbox::validatePath(taskRoot + "/a.txt", false));
+        QVERIFY(!Sandbox::validatePath(globalRoot + "/a.txt", false));
+    }
+
+    // Scope destroyed: back to the global value.
+    QCOMPARE(Sandbox::currentProjectDir(), QDir::toNativeSeparators(globalRoot));
+    Sandbox::setProjectDir(QString());
 }
 
 // docs/17 A1: the user-configured deny list is an absolute denial layer -

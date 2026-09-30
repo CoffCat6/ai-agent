@@ -531,6 +531,8 @@ qInfo() << "NexusAI" << app.applicationVersion() << "starting";
         // Read sandbox policy follows the (opt-in, default-off) setting
         Sandbox::setReadPolicy(settings->allowFullDiskRead()
             ? Sandbox::ReadPolicy::FullDisk : Sandbox::ReadPolicy::UserDirectories);
+        // docs/17 P1-4: 项目目录写入放行（默认只读）。
+        Sandbox::setProjectWriteEnabled(settings->allowProjectWrite());
         // docs/17 A1: 用户自定义黑名单（与内置默认清单合并生效）。
         QStringList denyList;
         for (const QVariant& entry : settings->readDenyList())
@@ -562,6 +564,7 @@ qInfo() << "NexusAI" << app.applicationVersion() << "starting";
     QObject::connect(settings, &SettingsService::activeProfileChanged, &app, [applySettings]() { applySettings(); });
     QObject::connect(settings, &SettingsService::contextTokensChanged, &app, [applySettings]() { applySettings(); });
     QObject::connect(settings, &SettingsService::allowFullDiskReadChanged, &app, [applySettings]() { applySettings(); });
+    QObject::connect(settings, &SettingsService::allowProjectWriteChanged, &app, [applySettings]() { applySettings(); });
     QObject::connect(settings, &SettingsService::allowLocalNetworkFetchChanged, &app, [applySettings]() { applySettings(); });
     QObject::connect(settings, &SettingsService::episodicMemoryEnabledChanged, &app, [applySettings]() { applySettings(); });
     // L4: provider switch rebuilds the web search backend immediately.

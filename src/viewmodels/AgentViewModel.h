@@ -256,6 +256,9 @@ public:
     // 删除项目：其会话保留为本地会话（project_id 置 NULL）。活动中的
     // 项目被删除时回落本地视图。
     Q_INVOKABLE void removeProject(const QString& projectId);
+    // P2: 项目重命名（侧栏行内编辑），上限 80 字符；活动项目改名后
+    // 系统提示里的项目名同步更新。
+    Q_INVOKABLE void renameProject(const QString& projectId, const QString& name);
     QString currentSessionId() const { return active()->currentSessionId(); }
     // Batch 17: message-search results (set via the searchMessages invokable)
     QVariantList searchResults() const { return m_searchResults; }
@@ -395,6 +398,9 @@ private:
     void refreshSessions();
     // docs/17 A0: 从记忆后端重拉项目列表并 NOTIFY（去重刷新）。
     void refreshProjects();
+    // P0-1: 把活动项目（id+name+root）推给一个 agent；m_projects 未加载
+    // 时只推 id（root 为空 → 不注入提示上下文、不锚定相对路径）。
+    void pushActiveProject(AIAgent* agent) const;
     void refreshToolRegistry();
     void refreshKnowledge();
     void setKnowledgeBusy(bool busy);

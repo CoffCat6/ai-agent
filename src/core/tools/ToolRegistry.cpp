@@ -53,13 +53,16 @@ public:
         def.description = "Read the contents of a file from the local filesystem.";
         def.level = ToolLevel::Safe;
         QJsonObject props;
-        props["path"] = stringParam("Absolute path to the file to read.");
+        props["path"] = stringParam("Path to the file. Relative paths are "
+            "resolved against the active project root when a project is "
+            "active, otherwise against the current working directory.");
         def.parameters = buildParams(props, QJsonArray{"path"});
         return def;
     }
 
     ToolResult execute(const QJsonObject& args) override {
-        const QString path = args.value("path").toString();
+        // P0-2: 相对路径锚定到项目根（未激活项目时保持 CWD 语义）。
+        const QString path = Sandbox::resolvePath(args.value("path").toString());
         if (path.isEmpty())
             return ToolResult::fail("Path is required");
 
@@ -102,14 +105,17 @@ public:
         def.level = ToolLevel::RequiresConfirm;
         def.autoEditSafe = true;   // 会话"自动编辑"模式放行；沙箱写策略仍生效
         QJsonObject props;
-        props["path"] = stringParam("Absolute path to the file to write.");
+        props["path"] = stringParam("Path to the file to write. Relative "
+            "paths are resolved against the active project root when a "
+            "project is active, otherwise against the current working "
+            "directory.");
         props["content"] = stringParam("Content to write to the file.");
         def.parameters = buildParams(props, QJsonArray{"path", "content"});
         return def;
     }
 
     ToolResult execute(const QJsonObject& args) override {
-        const QString path = args.value("path").toString();
+        const QString path = Sandbox::resolvePath(args.value("path").toString());
         const QString content = args.value("content").toString();
 
         if (path.isEmpty())
@@ -152,7 +158,10 @@ public:
         def.level = ToolLevel::RequiresConfirm;
         def.autoEditSafe = true;   // 会话"自动编辑"模式放行；沙箱写策略仍生效
         QJsonObject props;
-        props["path"] = stringParam("Absolute path to the file to edit.");
+        props["path"] = stringParam("Path to the file to edit. Relative "
+            "paths are resolved against the active project root when a "
+            "project is active, otherwise against the current working "
+            "directory.");
         props["old_string"] = stringParam("Exact text to replace (must occur exactly once).");
         props["new_string"] = stringParam("Replacement text (may be empty to delete text).");
         def.parameters = buildParams(props, QJsonArray{"path", "old_string", "new_string"});
@@ -160,7 +169,7 @@ public:
     }
 
     ToolResult execute(const QJsonObject& args) override {
-        const QString path = args.value("path").toString();
+        const QString path = Sandbox::resolvePath(args.value("path").toString());
         const QString oldString = args.value("old_string").toString();
         const QString newString = args.value("new_string").toString();
 
@@ -230,13 +239,16 @@ public:
         def.description = "List the entries of a directory on the local filesystem.";
         def.level = ToolLevel::Safe;
         QJsonObject props;
-        props["path"] = stringParam("Absolute path to the directory to list.");
+        props["path"] = stringParam("Path to the directory to list. Relative "
+            "paths are resolved against the active project root when a "
+            "project is active, otherwise against the current working "
+            "directory.");
         def.parameters = buildParams(props, QJsonArray{"path"});
         return def;
     }
 
     ToolResult execute(const QJsonObject& args) override {
-        const QString path = args.value("path").toString();
+        const QString path = Sandbox::resolvePath(args.value("path").toString());
         if (path.isEmpty())
             return ToolResult::fail("Path is required");
 
@@ -305,6 +317,11 @@ public:
 
         QProcess proc;
         proc.setProcessChannelMode(QProcess::MergedChannels);
+        // P0-2: 项目激活时命令在项目根执行——"dir" "type" 等才落在用户
+        // 语境中的目录上，而不是应用启动目录。
+        const QString projectRoot = Sandbox::currentProjectDir();
+        if (!projectRoot.isEmpty())
+            proc.setWorkingDirectory(projectRoot);
 #ifdef Q_OS_WIN
         proc.start("cmd.exe", {"/c", command});
 #else

@@ -81,6 +81,29 @@ Item {
                     }
                 }
 
+                // docs/17 P1-4: 项目目录写入放行（默认只读）。
+                ColumnLayout {
+                    Layout.fillWidth: true
+                    spacing: 2
+                    CheckBox {
+                        checked: Settings.allowProjectWrite
+                        onToggled: Settings.allowProjectWrite = checked
+                        text: qsTr("允许写入当前项目目录")
+                        font.pixelSize: Theme.fontSizeBody
+                        font.family: Theme.fontSans
+                        Accessible.name: text
+                    }
+                    Text {
+                        text: qsTr("默认项目目录只读，写入仅限用户目录；开启后模型可以修改当前项目中的文件（写入类工具仍受会话权限模式约束，黑名单始终优先）。")
+                        color: Theme.textSecondary
+                        font.pixelSize: 10
+                        wrapMode: Text.Wrap
+                        Layout.fillWidth: true
+                        opacity: 0.8
+                        Layout.leftMargin: 32
+                    }
+                }
+
                 // ── 用户黑名单编辑器 ──
                 Text {
                     text: qsTr("黑名单（始终拒绝，优先于一切允许规则）")

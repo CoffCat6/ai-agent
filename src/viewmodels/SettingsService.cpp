@@ -236,6 +236,7 @@ void SettingsService::load() {
                              AIAgent::MaxContextTokens);
     m_simulationMode = settings.value("simulationMode", false).toBool();
     m_allowFullDiskRead = settings.value("security/allowFullDiskRead", false).toBool();
+    m_allowProjectWrite = settings.value("security/allowProjectWrite", false).toBool();
     m_localOnlyMode = settings.value("security/localOnlyMode", false).toBool();
     m_allowLocalNetworkFetch = settings.value("security/allowLocalNetworkFetch", false).toBool();
     m_embeddingModel = settings.value("embedding/model", QStringLiteral("nomic-embed-text")).toString();
@@ -496,6 +497,17 @@ void SettingsService::setAllowFullDiskRead(bool enabled) {
                     enabled ? QStringLiteral("on") : QStringLiteral("off"));
     QSettings().setValue("security/allowFullDiskRead", enabled);
     emit allowFullDiskReadChanged();
+}
+
+// docs/17 P1-4: 项目目录写入放行。即时生效路径在 main.cpp（applySettings
+// 订阅 allowProjectWriteChanged → Sandbox::setProjectWriteEnabled）。
+void SettingsService::setAllowProjectWrite(bool enabled) {
+    if (m_allowProjectWrite == enabled) return;
+    m_allowProjectWrite = enabled;
+    Activity::usage(Activity::Kind::User, QStringLiteral("settings.allowProjectWrite"),
+                    enabled ? QStringLiteral("on") : QStringLiteral("off"));
+    QSettings().setValue("security/allowProjectWrite", enabled);
+    emit allowProjectWriteChanged();
 }
 
 // Batch 14 (SEC-1401): same silent-repeat pattern as allowFullDiskRead.

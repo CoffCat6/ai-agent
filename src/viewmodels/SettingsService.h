@@ -30,6 +30,8 @@ class SettingsService : public QObject {
     Q_PROPERTY(int contextTokens READ contextTokens WRITE setContextTokens NOTIFY contextTokensChanged)
     Q_PROPERTY(bool simulationMode READ simulationMode WRITE setSimulationMode NOTIFY simulationModeChanged)
     Q_PROPERTY(bool allowFullDiskRead READ allowFullDiskRead WRITE setAllowFullDiskRead NOTIFY allowFullDiskReadChanged)
+    // docs/17 P1-4: 项目目录写入放行（默认关，安全页）。
+    Q_PROPERTY(bool allowProjectWrite READ allowProjectWrite WRITE setAllowProjectWrite NOTIFY allowProjectWriteChanged FINAL)
     Q_PROPERTY(bool allowLocalNetworkFetch READ allowLocalNetworkFetch WRITE setAllowLocalNetworkFetch NOTIFY allowLocalNetworkFetchChanged)
     // Batch 14 (SEC-1401): when enabled, the knowledge-base tool is gated off
     // for cloud providers - document content must not leave this machine.
@@ -87,6 +89,12 @@ public:
     // allowlist (audit P1-8). Opt-in, default off.
     bool allowFullDiskRead() const { return m_allowFullDiskRead; }
     void setAllowFullDiskRead(bool enabled);
+
+    // docs/17 P1-4: allow the agent to write into the active project
+    // directory (A1 keeps project dirs read-only by default). Opt-in,
+    // default off; consumed by Sandbox via main.cpp applySettings.
+    bool allowProjectWrite() const { return m_allowProjectWrite; }
+    void setAllowProjectWrite(bool enabled);
 
     // Security: keep knowledge-base content on this machine (FIX-505
     // follow-up). Opt-in, default off; the wiring that actually gates the
@@ -196,6 +204,7 @@ signals:
     void contextTokensChanged();
     void simulationModeChanged();
     void allowFullDiskReadChanged();
+    void allowProjectWriteChanged();
     void localOnlyModeChanged();
     void allowLocalNetworkFetchChanged();
     void embeddingModelChanged();
@@ -224,6 +233,7 @@ private:
     int m_contextTokens{8192};
     bool m_simulationMode{false};
     bool m_allowFullDiskRead{false};
+    bool m_allowProjectWrite{false};   // docs/17 P1-4: 项目目录写入放行
     bool m_localOnlyMode{false};
     bool m_allowLocalNetworkFetch{false};
     QString m_embeddingModel{QStringLiteral("nomic-embed-text")};

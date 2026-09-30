@@ -235,8 +235,7 @@ ChatSessionController* AgentViewModel::ensureTab() {
         controller->attachAgent(m_agentFactory(), true);
 
     // docs/17 A0: 新 tab 的会话归属跟随当前活动项目。
-    if (controller->agent() && !m_activeProjectId.isEmpty())
-        controller->agent()->setActiveProjectId(m_activeProjectId);
+    pushActiveProject(controller->agent());
 
     // New tabs start at the configured global default permission mode
     // (no-op for ConfirmChanges; also covers the initial tab created
@@ -342,8 +341,7 @@ void AgentViewModel::setAgent(AIAgent* agent) {
         // docs/17 A0: 挂接发生在启动回灌（main.cpp 的 setActiveProjectId
         // 先于 setAgent）之后——此处补推活动项目，重启后新建的会话才能
         // 正确归属项目。
-        if (m_tabs[i]->agent() && !m_activeProjectId.isEmpty())
-            m_tabs[i]->agent()->setActiveProjectId(m_activeProjectId);
+        pushActiveProject(m_tabs[i]->agent());
     }
     emit liveModeChanged();
     emit tabsChanged();
@@ -383,26 +381,49 @@ void AgentViewModel::setActiveProjectId(const QString& id) {
     if (m_activeProjectId == id) return;
     m_activeProjectId = id;
     // docs/17 A1: 项目沙箱跟随活动项目（root_path 进入读取允许层）。
-    QString projectRoot;
-    for (const QVariant& entry : std::as_const(m_projects)) {
-        const QVariantMap p = entry.toMap();
-        if (p.value("id").toString() == id) {
-            projectRoot = p.value("rootPath").toString();
-            break;
+    // P0-1: 同时取出 name/root，随 id 一起推给 agent——系统提示的项目
+    // 上下文与工具的相对路径锚定都依赖 rootPath。
+    QString projectName, projectRoot;
+    if (!id.isEmpty()) {
+        for (const QVariant& entry : std::as_const(m_projects)) {
+            const QVariantMap p = entry.toMap();
+            if (p.value("id").toString() == id) {
+                projectName = p.value("name").toString();
+                projectRoot = p.value("rootPath").toString();
+                break;
+            }
         }
     }
     Sandbox::setProjectDir(projectRoot);
-    // 排查日志：读取被拒时对照"激活 id → 沙箱项目根"是否一致。
-    if (!id.isEmpty())
-        qWarning() << "[projects] active project" << id
-                   << "sandbox projectDir:" << projectRoot;
     // 持久化（M4 直写先例）：重启后由 main.cpp 从设置回灌。
     QSettings("NexusAI", "NexusAI").setValue("projects/activeId", id);
-    // 推给全部 tab agent 与模板 agent：新会话按此标记归属。
-    applyToAgents([&](AIAgent* agent) { agent->setActiveProjectId(id); });
-    if (m_templateAgent) m_templateAgent->setActiveProjectId(id);
+    // 推给全部 tab agent 与模板 agent：归属标记 + 系统提示项目上下文。
+    applyToAgents([&](AIAgent* agent) {
+        agent->setActiveProject(id, projectName, projectRoot);
+    });
+    if (m_templateAgent)
+        m_templateAgent->setActiveProject(id, projectName, projectRoot);
     emit activeProjectIdChanged();
     refreshSessions();   // 会话列表按活动项目过滤
+}
+
+// 把当前活动项目（id+name+root）推给一个 agent。m_projects 里查不到
+// （尚未加载或已被删）时 name/root 为空——此时仅标记归属，不注入路径
+// 上下文，工具的相对路径锚定保持关闭。
+void AgentViewModel::pushActiveProject(AIAgent* agent) const {
+    if (!agent) return;
+    QString projectName, projectRoot;
+    if (!m_activeProjectId.isEmpty()) {
+        for (const QVariant& entry : std::as_const(m_projects)) {
+            const QVariantMap p = entry.toMap();
+            if (p.value("id").toString() == m_activeProjectId) {
+                projectName = p.value("name").toString();
+                projectRoot = p.value("rootPath").toString();
+                break;
+            }
+        }
+    }
+    agent->setActiveProject(m_activeProjectId, projectName, projectRoot);
 }
 
 QString AgentViewModel::importProject(const QString& path) {
@@ -443,6 +464,19 @@ void AgentViewModel::removeProject(const QString& projectId) {
         setActiveProjectId(QString());
     refreshProjects();
     refreshSessions();
+}
+
+// P2: 项目重命名（侧栏项目行内联编辑）。活动中的项目改名后重推给全部
+// agent，系统提示里的项目名随之更新。
+void AgentViewModel::renameProject(const QString& projectId, const QString& name) {
+    const QString trimmed = name.trimmed();
+    if (!m_memory || projectId.isEmpty() || trimmed.isEmpty()) return;
+    m_memory->renameProject(projectId, trimmed.left(80));
+    refreshProjects();
+    if (projectId == m_activeProjectId) {
+        applyToAgents([&](AIAgent* agent) { pushActiveProject(agent); });
+        pushActiveProject(m_templateAgent);
+    }
 }
 
 void AgentViewModel::searchMessages(const QString& keyword) {
@@ -982,6 +1016,20 @@ void AgentViewModel::newChat() {
 }
 
 void AgentViewModel::loadSession(const QString& sessionId) {
+    // docs/17 P0-3: 会话与项目联动。侧栏树全量展示会话，点击一个项目 A
+    // 的会话而活动项目是 B（或本地）时，沙箱指向与对话内容会错位——
+    // 续聊时读 A 的文件被拒。此处按会话归属自动激活其项目（沙箱、归属、
+    // 侧栏高亮一次对齐）。本地会话不反向退出项目：新 tab 还没首条消息
+    // 时点开一条本地旧会话参考，不应把用户正在使用的项目悄悄切走。
+    for (const QVariant& entry : std::as_const(m_sessionList)) {
+        const QVariantMap s = entry.toMap();
+        if (s.value("id").toString() == sessionId) {
+            const QString projectId = s.value("projectId").toString();
+            if (!projectId.isEmpty() && projectId != m_activeProjectId)
+                setActiveProjectId(projectId);
+            break;
+        }
+    }
     // Never interrupt a running task: when the active tab is busy the
     // session opens in a fresh tab instead.
     if (active()->isBusy())

@@ -410,6 +410,54 @@ private slots:
             QStringLiteral("search_knowledge_base"), true);
     }
 
+    // docs/17 P0-1: the active project enters the system prompt — the model's
+    // only anchor for resolving user-mentioned relative paths.
+    void projectContextBlockContent() {
+        agent.setSystemPromptOverride(QString());
+        agent.setActiveProject(QString(), QString(), QString());
+        QVERIFY(!agent.effectiveSystemPrompt()
+                     .contains(QStringLiteral("Active project")));
+
+        agent.setActiveProject(QStringLiteral("p1"), QStringLiteral("Demo"),
+                               QStringLiteral("D:/work/demo"));
+        const QString prompt = agent.effectiveSystemPrompt();
+        QVERIFY2(prompt.contains(QStringLiteral("Active project: \"Demo\"")),
+                 qPrintable(prompt.right(400)));
+        QVERIFY(prompt.contains(QStringLiteral("root: D:/work/demo")));
+
+        // User override prompts get the block appended too, otherwise a
+        // custom prompt would blind the model to the project again.
+        agent.setSystemPromptOverride(QStringLiteral("You are a pirate."));
+        QVERIFY(agent.effectiveSystemPrompt()
+                    .startsWith(QStringLiteral("You are a pirate.")));
+        QVERIFY(agent.effectiveSystemPrompt()
+                    .contains(QStringLiteral("D:/work/demo")));
+
+        agent.setSystemPromptOverride(QString());
+        agent.setActiveProject(QString(), QString(), QString());
+    }
+
+    // startTask must carry the project root in the request's system message
+    // (resumeSession shares effectiveSystemPrompt and needs no extra path).
+    void projectContextEntersRequestSystemMessage() {
+        agent.setActiveProject(QStringLiteral("p1"), QStringLiteral("Demo"),
+                               QStringLiteral("D:/work/demo"));
+        agent.startTask(QStringLiteral("hello"));
+        QTRY_VERIFY(!llm.seenMessages.isEmpty());
+        bool found = false;
+        for (const auto& entry : llm.seenMessages.last()) {
+            const QJsonObject msg = entry.toObject();
+            if (msg.value("role").toString() == "system") {
+                QVERIFY(msg.value("content").toString()
+                            .contains(QStringLiteral("D:/work/demo")));
+                found = true;
+            }
+        }
+        QVERIFY(found);
+        agent.setActiveProject(QString(), QString(), QString());
+        agent.resetSession();
+    }
+
     void directCompletion();
     void dangerousToolsNotExposed();
     void safeToolFeedbackLoop();

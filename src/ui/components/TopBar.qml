@@ -34,6 +34,65 @@ Rectangle {
             onClicked: AgentVM.toggleSidebar()
         }
 
+        // ── Active project badge (docs/17 P2) ────────
+        // 当前活动项目徽标：项目级会话的归属与沙箱都以它为准。点击 =
+        // 回到本地对话（与侧栏「对话」头同义）。
+        Rectangle {
+            readonly property string projectName: {
+                const pid = AgentVM.activeProjectId
+                if (!pid) return ""
+                const list = AgentVM.projects
+                for (let i = 0; i < list.length; ++i)
+                    if (list[i].id === pid) return list[i].name
+                return ""
+            }
+            visible: projectName.length > 0
+            // RowLayout 取 implicitWidth；Row 是定位器只会包住子项，
+            // 不会反向撑开 parent，这里必须显式给。
+            implicitWidth: badgeRow.implicitWidth + 16
+            implicitHeight: 22
+            Layout.preferredHeight: 22
+            Layout.leftMargin: 10
+            Layout.maximumWidth: 220
+            radius: 4
+            color: projectBadgeMA.containsMouse ? Theme.surfaceHover : "transparent"
+            border.width: 1
+            border.color: Theme.borderSubtle
+
+            Row {
+                id: badgeRow
+                anchors.centerIn: parent
+                spacing: 4
+
+                AppIcon {
+                    anchors.verticalCenter: parent.verticalCenter
+                    icon: "folder"
+                    size: 11
+                    iconColor: Theme.brandPrimary
+                }
+                Text {
+                    anchors.verticalCenter: parent.verticalCenter
+                    width: Math.min(implicitWidth, 180)
+                    text: projectName
+                    color: Theme.textPrimary
+                    font.pixelSize: Theme.fontSizeCaption
+                    font.family: Theme.fontSans
+                    elide: Text.ElideRight
+                }
+            }
+
+            MouseArea {
+                id: projectBadgeMA
+                anchors.fill: parent
+                hoverEnabled: true
+                cursorShape: Qt.PointingHandCursor
+                onClicked: AgentVM.setActiveProjectId("")
+            }
+
+            Accessible.role: Accessible.Button
+            Accessible.name: qsTr("当前项目：%1（点击回到本地对话）").arg(projectName)
+        }
+
         // ── Spacer ────────────────────────────────────
         Item { Layout.fillWidth: true }
 
