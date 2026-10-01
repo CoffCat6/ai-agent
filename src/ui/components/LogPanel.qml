@@ -96,6 +96,44 @@ Dialog {
                 Component.onCompleted: currentIndex = AgentVM.logModel.filterLevel + 1
             }
 
+            // Date scope. The entries are the days actually present in the
+            // session mirror (plus "all"), so no date-picker widget is needed
+            // and an empty day can never be offered. LogModel keeps the
+            // selected day listed even after its rows are gone.
+            ComboBox {
+                id: dateBox
+                Layout.preferredWidth: 132
+                model: {
+                    const out = [qsTr("全部日期")]
+                    const days = AgentVM.logModel.availableDates
+                    for (let i = 0; i < days.length; ++i)
+                        out.push(days[i])
+                    return out
+                }
+                // Index-based on purpose: binding the *display text* as the
+                // filter value blanked the view once already (see categoryBox).
+                function syncIndex() {
+                    const cur = AgentVM.logModel.filterDate
+                    const i = cur.length === 0
+                        ? -1 : AgentVM.logModel.availableDates.indexOf(cur)
+                    currentIndex = i < 0 ? 0 : i + 1
+                }
+                Component.onCompleted: syncIndex()
+                onActivated: function(index) {
+                    const days = AgentVM.logModel.availableDates
+                    logList.applyFilterChange(function() {
+                        AgentVM.logModel.filterDate =
+                            index === 0 ? "" : days[index - 1]
+                    })
+                }
+                Connections {
+                    target: AgentVM.logModel
+                    // A new day rolled in (or the selection got re-listed):
+                    // keep the shown item on the actual filter value.
+                    function onAvailableDatesChanged() { dateBox.syncIndex() }
+                }
+            }
+
             TextField {
                 id: keywordField
                 Layout.fillWidth: true
@@ -166,43 +204,88 @@ Dialog {
 
             ScrollBar.vertical: ScrollBar {}
 
-            delegate: RowLayout {
+            // One entry per band. With wrapped messages the rows ran together
+            // and there was no way to see where an entry stopped, so each row
+            // now carries a hairline separator (borderSubtle — the same token
+            // the rest of the app uses for its hairline dividers) and a hover
+            // highlight for tracking a long line across the message column.
+            // Zebra striping was considered and rejected: the only fill light
+            // enough (bgPrimary) sits ~4% off the dialog surface and is not
+            // readable as a stripe, while surfaceHover is already the hover
+            // feedback — reusing it for stripes would erase the hover.
+            delegate: Item {
+                id: logRow
                 width: logList.width
-                spacing: 8
+                height: rowLayout.implicitHeight + 6
 
-                Text {
-                    Layout.preferredWidth: 118
-                    text: Qt.formatDateTime(new Date(timestamp), "hh:mm:ss.zzz")
-                    color: historical ? Theme.textSecondary : Theme.textSecondary
-                    font.pixelSize: 10
-                    font.family: Theme.fontMono
-                    font.italic: historical
+                Rectangle {
+                    anchors.fill: parent
+                    color: rowHover.hovered ? Theme.surfaceHover : "transparent"
                 }
-                Text {
-                    Layout.preferredWidth: 46
-                    text: historical ? qsTr("历史") : level
-                    color: historical ? Theme.textSecondary
-                        : (level === "WARN" || level === "CRIT" || level === "FATAL"
-                           ? Theme.brandPrimary : Theme.textSecondary)
-                    font.pixelSize: 10
-                    font.family: Theme.fontMono
-                    font.bold: !historical && (level === "WARN" || level === "CRIT" || level === "FATAL")
+                Rectangle {
+                    anchors.left: parent.left
+                    anchors.right: parent.right
+                    anchors.bottom: parent.bottom
+                    height: 1
+                    color: Theme.borderSubtle
                 }
-                Text {
-                    Layout.preferredWidth: 56
-                    text: category ? String(category).replace("nexus.", "") : ""
-                    color: Theme.textSecondary
-                    font.pixelSize: 9
-                    font.family: Theme.fontMono
-                    elide: Text.ElideRight
-                }
-                Text {
-                    Layout.fillWidth: true
-                    text: message
-                    color: Theme.textPrimary
-                    font.pixelSize: 11
-                    font.family: Theme.fontMono
-                    wrapMode: Text.WrapAnywhere
+                HoverHandler { id: rowHover }
+
+                RowLayout {
+                    id: rowLayout
+                    anchors.left: parent.left
+                    anchors.right: parent.right
+                    anchors.top: parent.top
+                    anchors.topMargin: 3
+                    spacing: 8
+
+                    // Local calendar day included: without it rows from
+                    // different days were indistinguishable (backfill spans
+                    // several days). Second precision only — millisecond digits
+                    // are noise when scanning (AuditDialog uses the same
+                    // granularity). The file on disk keeps ms:
+                    // backfillFromFile parses that exact format.
+                    //
+                    // Backfilled rows (T9) carry no marker of their own: a lone
+                    // glyph parked left of the clock was read as part of the
+                    // timestamp, and a self-explanatory word would need a column
+                    // plus a header row. They are signalled by the italic
+                    // typeface alone. What must never come back is the old
+                    // build's trick of printing "历史" IN the level column,
+                    // which swallowed the severity of every backfilled row.
+                    Text {
+                        Layout.preferredWidth: 108
+                        text: Qt.formatDateTime(new Date(timestamp), "MM-dd hh:mm:ss")
+                        color: Theme.textSecondary
+                        font.pixelSize: 10
+                        font.family: Theme.fontMono
+                        font.italic: historical
+                    }
+                    Text {
+                        Layout.preferredWidth: 46
+                        text: level
+                        color: (level === "WARN" || level === "CRIT" || level === "FATAL")
+                            ? Theme.brandPrimary : Theme.textSecondary
+                        font.pixelSize: 10
+                        font.family: Theme.fontMono
+                        font.bold: level === "WARN" || level === "CRIT" || level === "FATAL"
+                    }
+                    Text {
+                        Layout.preferredWidth: 56
+                        text: category ? String(category).replace("nexus.", "") : ""
+                        color: Theme.textSecondary
+                        font.pixelSize: 9
+                        font.family: Theme.fontMono
+                        elide: Text.ElideRight
+                    }
+                    Text {
+                        Layout.fillWidth: true
+                        text: message
+                        color: Theme.textPrimary
+                        font.pixelSize: 11
+                        font.family: Theme.fontMono
+                        wrapMode: Text.WrapAnywhere
+                    }
                 }
             }
         }

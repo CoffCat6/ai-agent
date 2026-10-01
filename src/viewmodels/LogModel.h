@@ -5,6 +5,7 @@
 #include <QAbstractListModel>
 #include <QString>
 #include <QTimer>
+#include <QVariantList>
 #include <QVector>
 
 namespace NexusAI {
@@ -34,6 +35,13 @@ class LogModel : public QAbstractListModel {
     // otherwise entries whose category starts with the value (empty
     // category counts as "nexus.app").
     Q_PROPERTY(QString filterCategory READ filterCategory WRITE setFilterCategory NOTIFY filterChanged)
+    // Local-calendar day filter ("yyyy-MM-dd"); "" shows every day. Days are
+    // compared in LOCAL time, matching how the panel formats each row.
+    Q_PROPERTY(QString filterDate READ filterDate WRITE setFilterDate NOTIFY filterChanged)
+    // Distinct days present in the session mirror, newest first — the panel's
+    // date picker lists these. The active filterDate is always included so the
+    // selection stays representable after the rows behind it are discarded.
+    Q_PROPERTY(QVariantList availableDates READ availableDates NOTIFY availableDatesChanged)
     Q_PROPERTY(bool polling READ polling WRITE setPolling NOTIFY pollingChanged)
     Q_PROPERTY(int count READ count NOTIFY countChanged)
 
@@ -62,6 +70,9 @@ public:
     void setFilterText(const QString& text);
     QString filterCategory() const { return m_filterCategory; }
     void setFilterCategory(const QString& category);
+    QString filterDate() const { return m_filterDate; }
+    void setFilterDate(const QString& date);
+    QVariantList availableDates() const { return m_availableDates; }
 
     bool polling() const;
     void setPolling(bool on);
@@ -77,6 +88,7 @@ public:
 
 signals:
     void filterChanged();
+    void availableDatesChanged();
     void pollingChanged();
     void countChanged();
 
@@ -87,6 +99,8 @@ private:
     bool passesFilter(const Logger::LogEntry& entry) const;
     // Row of |seq| inside the filtered view (-1 when filtered out).
     int rowOfSeq(quint64 seq) const;
+    // Recompute the day list; NOTIFY only when it actually changed.
+    void refreshAvailableDates();
 
     // Append-only session capture: low-frequency timer runs for the whole
     // process lifetime (panel-open polling just accelerates it for the UI).
@@ -98,6 +112,8 @@ private:
     int m_filterLevel{-1};  // severity rank: -1 = ALL (default: show every level)
     QString m_filterText;
     QString m_filterCategory;
+    QString m_filterDate;
+    QVariantList m_availableDates;
     bool m_polling{false};
 
     static constexpr int MaxSessionRows = 5000;

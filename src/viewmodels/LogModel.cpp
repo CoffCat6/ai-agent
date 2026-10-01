@@ -1,6 +1,8 @@
 #include "LogModel.h"
 
 #include <QDateTime>
+#include <QSet>
+#include <QStringList>
 
 #include <algorithm>
 
@@ -33,6 +35,14 @@ int severityRank(int level) {
     case QtFatalMsg:    return 4;
     }
     return 4;
+}
+
+// Local calendar day of a timestamp. LOCAL time on purpose: the panel formats
+// each row with the same clock, so a filter and the visible dates cannot
+// disagree about which day a line belongs to.
+QString dateKey(qint64 msSinceEpoch) {
+    return QDateTime::fromMSecsSinceEpoch(msSinceEpoch)
+        .toString(QStringLiteral("yyyy-MM-dd"));
 }
 } // namespace
 
@@ -115,6 +125,42 @@ void LogModel::setFilterCategory(const QString& category) {
     emit countChanged();
 }
 
+void LogModel::setFilterDate(const QString& date) {
+    if (m_filterDate == date) return;
+    m_filterDate = date;
+    emit filterChanged();
+    beginResetModel();
+    m_visible.clear();
+    for (const auto& entry : m_all) {
+        if (passesFilter(entry)) m_visible.append(entry);
+    }
+    endResetModel();
+    emit countChanged();
+    // The selected day must stay listed even when no row behind it survives.
+    refreshAvailableDates();
+}
+
+void LogModel::refreshAvailableDates() {
+    QSet<QString> unique;
+    unique.reserve(m_all.size() / 8 + 8);
+    for (const auto& entry : m_all)
+        unique.insert(dateKey(entry.timestamp));
+
+    QStringList days(unique.cbegin(), unique.cend());
+    std::sort(days.begin(), days.end(),
+              [](const QString& a, const QString& b) { return a > b; });  // newest first
+    if (!m_filterDate.isEmpty() && !unique.contains(m_filterDate))
+        days.append(m_filterDate);
+
+    QVariantList list;
+    list.reserve(days.size());
+    for (const QString& day : days)
+        list.append(day);
+    if (list == m_availableDates) return;
+    m_availableDates = list;
+    emit availableDatesChanged();
+}
+
 QString LogModel::filterText() const { return m_filterText; }
 
 void LogModel::setFilterText(const QString& text) {
@@ -152,6 +198,7 @@ void LogModel::clearView() {
     m_visible.clear();
     m_lastSeq = Logger::revision();
     endResetModel();
+    refreshAvailableDates();
     emit countChanged();
 }
 
@@ -175,6 +222,7 @@ bool LogModel::passesFilter(const Logger::LogEntry& entry) const {
     // not a severity order — QtInfoMsg=4 > QtFatalMsg=3 in Qt 6).
     // m_filterLevel < 0 means ALL — no severity gate.
     if (m_filterLevel >= 0 && severityRank(entry.level) != m_filterLevel) return false;
+    if (!m_filterDate.isEmpty() && dateKey(entry.timestamp) != m_filterDate) return false;
     if (!m_filterCategory.isEmpty()) {
         // Legacy/general lines have no logging category → treat as "app".
         const QString cat = entry.category.isEmpty()
@@ -218,6 +266,7 @@ void LogModel::pull() {
         }
     }
     trimSessionMirror();
+    refreshAvailableDates();   // a new day may have appeared
     if (inserted > 0) emit countChanged();
 }
 

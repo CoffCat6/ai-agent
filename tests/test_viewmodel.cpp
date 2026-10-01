@@ -462,6 +462,65 @@ private slots:
 
         Logger::setMinLevel(QtInfoMsg);    // 恢复全局默认
     }
+
+    // 日期筛选（面板按日过滤）：本进程写下的条目都属"今天"，因此可确定性断言
+    // ——今天保留全部、不存在的日期为空、列表含今天且最新在前；并且被选中但
+    // 已无行的日期仍留在列表里（否则下拉框会出现空白选中项）。
+    void logModelDateFilter() {
+        Logger::install();
+        Logger::setMinLevel(QtInfoMsg);
+
+        const QString tag = QStringLiteral("datefilt-%1")
+            .arg(QDateTime::currentMSecsSinceEpoch());
+        const QString today = QDate::currentDate()
+            .toString(QStringLiteral("yyyy-MM-dd"));
+
+        qInfo() << (tag + "-a");
+        qInfo() << (tag + "-b");
+
+        LogModel model;
+        model.setFilterCategory(QString());
+        model.setFilterLevel(-1);
+        model.setFilterText(tag);          // 只看本次发的两行
+        model.setPolling(true);
+        QTest::qWait(300);
+        model.setPolling(false);
+
+        const int allRows = model.count();
+        QVERIFY2(allRows >= 2, qPrintable(QStringLiteral("seeded rows missing: %1")
+            .arg(allRows)));
+
+        // 今天：全部保留
+        model.setFilterDate(today);
+        QCOMPARE(model.count(), allRows);
+
+        // 不存在的日期：清空，但仍可被选中
+        const QString missing = QStringLiteral("1970-01-01");
+        model.setFilterDate(missing);
+        QCOMPARE(model.count(), 0);
+        QVERIFY2(model.availableDates().contains(missing),
+                 "selected day dropped from the picker list");
+
+        // 回到全部
+        model.setFilterDate(QString());
+        QCOMPARE(model.count(), allRows);
+
+        // 列表含今天，且最新在前
+        const QVariantList days = model.availableDates();
+        QVERIFY(!days.isEmpty());
+        QCOMPARE(days.first().toString(), today);
+
+        // 日期与其余筛选是 AND 关系：级别过滤后按今天仍全中
+        model.setFilterLevel(1);           // INFO
+        model.setFilterDate(today);
+        QVERIFY2(model.count() >= 2,
+                 "date + level filters did not compose");
+        model.setFilterLevel(-1);
+        model.setFilterDate(QString());
+
+        Logger::setMinLevel(QtInfoMsg);    // 恢复全局默认
+    }
+
     // ── Batch 18: session export (FEAT-1801) ──────────
 
     void exportSessionMarkdownRoundtrip() {
