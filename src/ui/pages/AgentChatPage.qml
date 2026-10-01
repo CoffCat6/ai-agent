@@ -43,18 +43,29 @@ Item {
                     spacing: 0
                     clip: true
 
-                    // Stick-to-bottom only while the user is already near
-                    // the end; scrolling up to read pauses the auto-scroll.
-                    // The second term rejects a *stranded* offset: when the
-                    // view is parked well past the end of a shrunken content,
-                    // `contentHeight - contentY - height` is deeply negative
-                    // and would otherwise read as "at the bottom", keeping the
-                    // auto-scroll armed and re-asserting the bad offset so that
-                    // scrolling up appears impossible.
+                    // Stick-to-bottom only while the user is already near the
+                    // end; scrolling up to read pauses the auto-scroll.
+                    //
+                    // The gap is measured from the TRUE content end. ListView
+                    // reports contentHeight relative to originY (the estimated
+                    // extent of the rows above that are not instantiated yet),
+                    // so `contentHeight - contentY - height` under-reports the
+                    // gap by exactly originY — hundreds of px at the tail of a
+                    // long trace. That inflated the unpin threshold by the same
+                    // amount and made the guard below misfire.
+                    //
+                    // The second term rejects a *stranded* offset (view parked
+                    // far past the end after the content shrank): read as "at
+                    // the bottom" it keeps the auto-scroll armed and
+                    // re-asserting the bad offset, so scrolling up appears
+                    // impossible.
+                    function bottomGap() {
+                        return originY + contentHeight - contentY - height
+                    }
                     property bool pinnedToBottom: true
                     onContentYChanged: {
-                        const distance = contentHeight - contentY - height
-                        pinnedToBottom = distance < 80 && distance > -height
+                        const gap = bottomGap()
+                        pinnedToBottom = gap < 80 && gap > -height
                     }
 
                     // Request a deferred scroll-to-bottom. The callback

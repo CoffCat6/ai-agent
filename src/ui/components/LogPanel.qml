@@ -66,7 +66,9 @@ Dialog {
                                               "nexus.rag", "nexus.app"]
                 currentIndex: 0
                 onActivated: function(index) {
-                    AgentVM.logModel.filterCategory = categoryValues[index]
+                    logList.applyFilterChange(function() {
+                        AgentVM.logModel.filterCategory = categoryValues[index]
+                    })
                 }
                 Component.onCompleted: {
                     const i = categoryValues.indexOf(AgentVM.logModel.filterCategory)
@@ -87,7 +89,9 @@ Dialog {
                 currentIndex: 0   // All (matches the file default)
                 onActivated: function(index) {
                     // display index 0 = ALL(-1); 1..4 → severity rank 0..3
-                    AgentVM.logModel.filterLevel = index - 1
+                    logList.applyFilterChange(function() {
+                        AgentVM.logModel.filterLevel = index - 1
+                    })
                 }
                 Component.onCompleted: currentIndex = AgentVM.logModel.filterLevel + 1
             }
@@ -103,7 +107,9 @@ Dialog {
                 Timer {
                     id: keywordDebounce
                     interval: 200
-                    onTriggered: AgentVM.logModel.filterText = keywordField.text
+                    onTriggered: logList.applyFilterChange(function() {
+                        AgentVM.logModel.filterText = keywordField.text
+                    })
                 }
                 onTextChanged: keywordDebounce.restart()
             }
@@ -122,13 +128,41 @@ Dialog {
 
             // Stick to the bottom while the user is already near it;
             // scrolling up pauses auto-scroll (AgentChatPage pattern).
+            //
+            // The gap is measured from the TRUE content end. ListView reports
+            // contentHeight relative to originY (the estimated extent of the
+            // rows above that are not instantiated yet), so
+            // `contentHeight - contentY - height` under-reports the gap by
+            // exactly originY — several hundred px at the tail of a long log,
+            // which inflated the unpin threshold by the same amount (the user
+            // had to scroll up ~originY + 80 px before auto-scroll let go).
+            function bottomGap() {
+                return originY + contentHeight - contentY - height
+            }
             property bool pinnedToBottom: true
             onContentYChanged: {
-                const distance = contentHeight - contentY - height
-                pinnedToBottom = distance < 80
+                const gap = bottomGap()
+                pinnedToBottom = gap < 80 && gap > -height
             }
             onCountChanged: if (pinnedToBottom)
                 Qt.callLater(positionViewAtEnd)
+
+            // Every filter change is a model reset (LogModel::setFilter*), and
+            // a reset drops the view to the top and clears pinnedToBottom — so
+            // the panel silently stopped following the live tail after any
+            // filter interaction, including each debounced keystroke in the
+            // keyword field. Capture the intent first and restore it once the
+            // rebuilt rows are laid out.
+            function applyFilterChange(change) {
+                const wasPinned = pinnedToBottom
+                change()
+                if (wasPinned) {
+                    Qt.callLater(function() {
+                        pinnedToBottom = true
+                        positionViewAtEnd()
+                    })
+                }
+            }
 
             ScrollBar.vertical: ScrollBar {}
 
@@ -208,7 +242,13 @@ Dialog {
 
             Button {
                 text: qsTr("清除视图")
-                onClicked: AgentVM.logModel.clearView()
+                onClicked: {
+                    // The view is being emptied, so there is no reading position
+                    // to preserve — always resume following the live tail.
+                    logList.pinnedToBottom = true
+                    AgentVM.logModel.clearView()
+                    logList.positionViewAtEnd()
+                }
             }
         }
     }
