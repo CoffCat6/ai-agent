@@ -45,10 +45,16 @@ Item {
 
                     // Stick-to-bottom only while the user is already near
                     // the end; scrolling up to read pauses the auto-scroll.
+                    // The second term rejects a *stranded* offset: when the
+                    // view is parked well past the end of a shrunken content,
+                    // `contentHeight - contentY - height` is deeply negative
+                    // and would otherwise read as "at the bottom", keeping the
+                    // auto-scroll armed and re-asserting the bad offset so that
+                    // scrolling up appears impossible.
                     property bool pinnedToBottom: true
                     onContentYChanged: {
                         const distance = contentHeight - contentY - height
-                        pinnedToBottom = distance < 80
+                        pinnedToBottom = distance < 80 && distance > -height
                     }
 
                     // Request a deferred scroll-to-bottom. The callback
@@ -62,19 +68,15 @@ Item {
                         })
                     }
 
-                    // True while a show/hide-process toggle is propagating
-                    // (delegate heights go 0/non-zero over multiple frames).
-                    // During this window we force-scroll to bottom so the
-                    // view never blanks; afterwards the user scrolls freely.
-                    property bool processTogglePending: false
-
                     onContentHeightChanged: {
-                        if (processTogglePending) {
-                            Qt.callLater(positionViewAtEnd)
-                        } else if (pinnedToBottom) {
+                        if (pinnedToBottom)
                             requestScrollToBottom()
-                        }
                     }
+
+                    // True only while toggleProcess() is swapping the model
+                    // over; count transiently reads 0 during the swap and the
+                    // empty-state hint must not flash.
+                    property bool rebuildingDelegates: false
 
                     // Expand/collapse state of node detail blocks. Lives on
                     // the view (not the delegate) so it survives the full
@@ -96,15 +98,25 @@ Item {
                     }
 
                     function toggleProcess() {
+                        const wasPinned = pinnedToBottom
                         showProcess = !showProcess
-                        // Force-scroll to bottom across the multi-frame
-                        // contentHeight transition, then release so the
-                        // user can scroll freely afterwards.
-                        processTogglePending = true
-                        Qt.callLater(function() {
-                            processTogglePending = false
-                            positionViewAtEnd()
-                        })
+                        // Folding changes every intermediate delegate's height
+                        // at once. ListView keeps only the delegates inside
+                        // cacheBuffer instantiated; the released ones retain the
+                        // height they had while hidden (0). Afterwards
+                        // contentHeight is under-reported and contentY is left
+                        // stranded past the real end, so the viewport sits in
+                        // empty space and the stick-to-bottom re-check undoes
+                        // every scroll-up. Rebuilding the delegate set makes all
+                        // of them re-measure. Only the explicit toggle pays this
+                        // cost; streaming keeps the incremental model updates.
+                        rebuildingDelegates = true
+                        const m = model
+                        model = null
+                        model = m
+                        Qt.callLater(function() { rebuildingDelegates = false })
+                        if (wasPinned)
+                            Qt.callLater(positionViewAtEnd)
                     }
 
                     // Computed in C++ (TraceModel); the JS scan over the
@@ -115,6 +127,7 @@ Item {
                     Text {
                         anchors.centerIn: parent
                         visible: traceListView.count === 0
+                                 && !traceListView.rebuildingDelegates
                         text: "Send a message to start chatting with NexusAI"
                         color: Theme.textSecondary
                         font.pixelSize: Theme.fontSizeBody
