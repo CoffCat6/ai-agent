@@ -429,6 +429,15 @@ void AgentViewModel::setActiveProjectId(const QString& id) {
     emit activeProjectIdChanged();
 }
 
+// docs/18 G5：归属落定后只读。浏览、导入这类**非归属动作**不应改写已经承载
+// 会话的标签的归属——否则标签归属与它正在显示的会话脱钩：顶栏徽标会"撒谎"，
+// 系统提示与工具沙箱根也会指向另一个目录。判据与 TopBar 徽标的 editable 一致
+// （活动标签尚无会话 = 归属未定，此时才允许写入）。
+void AgentViewModel::assignProjectIfActiveTabUnbound(const QString& projectId) {
+    if (!active()->currentSessionId().isEmpty()) return;
+    setActiveProjectId(projectId);
+}
+
 // docs/18: 把指定项目（id+name+root）推给一个 agent。id 为空 → 推空（本地）。
 // m_projects 里查不到（尚未加载或已被删）时 name/root 为空——此时仅标记归属，
 // 不注入路径上下文，工具的相对路径锚定保持关闭。
@@ -466,11 +475,11 @@ QString AgentViewModel::importProject(const QString& path) {
         return QString();
     }
     const QString root = QDir::toNativeSeparators(canonical);
-    // 同一路径重复导入：直接激活已有项目而不是建第二条记录。
+    // 同一路径重复导入：复用已有记录而不是建第二条。
     for (const QVariant& entry : std::as_const(m_projects)) {
         const QVariantMap p = entry.toMap();
         if (p.value("rootPath").toString() == root) {
-            setActiveProjectId(p.value("id").toString());
+            assignProjectIfActiveTabUnbound(p.value("id").toString());
             return p.value("id").toString();
         }
     }
@@ -481,7 +490,7 @@ QString AgentViewModel::importProject(const QString& path) {
         return QString();
     }
     refreshProjects();
-    setActiveProjectId(id);
+    assignProjectIfActiveTabUnbound(id);
     return id;
 }
 

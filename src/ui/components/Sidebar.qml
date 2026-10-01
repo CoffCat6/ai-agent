@@ -192,10 +192,15 @@ Rectangle {
             Accessible.onPressAction: AgentVM.newLocalChat()
         }
 
-        // ── Tree sidebar（docs/17 树状共存）──────────────
-        // 项目树与对话树共存：所有会话始终可见。点击项目行 = 激活
-        // 该项目（沙箱 + 新会话归属）并展开它；点击「对话」头 = 回到
-        // 本地对话模式。旧"切换视图互相隐藏"的交互废弃。
+        // ── Tree sidebar（docs/17 树状共存 / docs/18 归属按标签）────
+        // 项目树与对话树共存：所有会话始终可见。点击项目行 = **纯浏览**
+        // （展开/收起该项目的会话列表），不改写归属；点击「对话」头 =
+        // 回到本地对话模式。旧"切换视图互相隐藏"的交互废弃。
+        //
+        // docs/18：旧实现的"点击项目行 = 激活该项目"来自"全局单活动项目"
+        // 模型，该模型已被取代。归属按标签持有，改写它的合法入口只有：
+        // 顶栏徽标（仅空标签可点选）、项目行的「+」、点击「对话」头，
+        // 以及打开一条旧会话时的同步。侧栏不再承担"激活项目"。
         ScrollView {
             id: treeScroll
             visible: !root.searching
@@ -277,7 +282,7 @@ Rectangle {
                         Layout.fillWidth: true
                         spacing: 2
 
-                        // 项目头行：点击 = 激活 + 展开（不再 toggle 退出）
+                        // 项目头行：点击 = 展开/收起（纯浏览，不改归属）
                         Rectangle {
                             id: projectHeader
                             property bool confirmDelete: false
@@ -306,18 +311,15 @@ Rectangle {
                                 cursorShape: Qt.PointingHandCursor
                                 onClicked: {
                                     if (projectNode.renaming) return
-                                    // 激活该项目（沙箱/归属跟随）并展开；
-                                    // 已激活时点击 = 切换折叠（退出走「对话」头）。
-                                    if (!projectNode.isActive) {
-                                        AgentVM.setActiveProjectId(
-                                            projectNode.modelData.id)
-                                        root.expandedProjects[
-                                            projectNode.modelData.id] = true
-                                    } else {
-                                        root.expandedProjects[
-                                            projectNode.modelData.id]
-                                            = !projectNode.expanded
-                                    }
+                                    // docs/18 §2.2/§3.6：点击项目行是**纯浏览**，
+                                    // 只切换该项目会话列表的展开态，不改写归属。
+                                    // 旧实现此处调 setActiveProjectId，会在活动
+                                    // 标签已有会话时把它静默改写到该项目上：
+                                    // 顶栏徽标随之切换，且该标签的沙箱/系统提示
+                                    // 与其正在显示的会话脱钩。
+                                    root.expandedProjects[
+                                        projectNode.modelData.id]
+                                        = !projectNode.expanded
                                     root.expansionEpoch++
                                 }
                             }

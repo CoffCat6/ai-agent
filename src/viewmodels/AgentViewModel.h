@@ -252,7 +252,8 @@ public:
     // activeProjectId 属性的 WRITE 端。
     Q_INVOKABLE void setActiveProjectId(const QString& id);
     // FolderDialog 的本地路径导入为项目（canonicalize，项目名取目录名），
-    // 成功后自动激活并返回项目 id（失败返回空串 + noticeOccurred）。
+    // 返回项目 id（失败返回空串 + noticeOccurred）。**仅当活动标签归属未定**
+    // （尚无会话）时才顺带把它设为该标签的目标——docs/18 G5：归属落定后只读。
     Q_INVOKABLE QString importProject(const QString& path);
     // 删除项目：其会话保留为本地会话（project_id 置 NULL）。活动中的
     // 项目被删除时回落本地视图。
@@ -414,6 +415,11 @@ private:
     // （本地）。m_projects 未加载或查不到时 name/root 为空——此时仅标记
     // 归属，不注入提示上下文、不锚定相对路径。
     void applyProjectTo(AIAgent* agent, const QString& projectId) const;
+    // docs/18 G5：归属与"活动标签是否已有会话"绑定——尚无会话时归属未定，
+    // 可被设置；已有会话后归属落定且只读。导入这类**非归属动作**只在未定
+    // 阶段写入，避免把已承载会话的标签改写掉（表现为顶栏徽标切换、且沙箱与
+    // 系统提示指向的目录与该标签正在显示的会话脱钩）。
+    void assignProjectIfActiveTabUnbound(const QString& projectId);
     // docs/18: 把全局沙箱基准同步为"活动标签的镜像"。工具执行实际用的是
     // ExecutionScope 的 per-agent 快照（docs/17 P1-5），此处的全局写入只为
     // 无快照的读取路径兜底。

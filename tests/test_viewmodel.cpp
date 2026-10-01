@@ -1030,6 +1030,56 @@ private slots:
         else settings.remove("projects/activeId");
     }
 
+    // docs/18 G5: 归属落定（活动标签已有会话）后为只读。导入项目属于"非归属
+    // 动作"，不得把已承载会话的标签改写到新项目上——旧行为会连带切换顶栏徽标，
+    // 并把该标签的沙箱与系统提示指向新项目，而它显示的仍是旧会话。
+    void importProjectLeavesBoundTabUntouched() {
+        QSettings settings("NexusAI", "NexusAI");
+        const QVariant savedActive = settings.value("projects/activeId");
+
+        QTemporaryDir dir;
+        QVERIFY(dir.isValid());
+
+        SqliteMemory memory(QStringLiteral(":memory:"));
+        const QString pA = memory.createProject(QStringLiteral("A"),
+                                                QStringLiteral("D:/work/a"));
+        QVERIFY(!pA.isEmpty());
+        memory.beginSession(QStringLiteral("sess-a"), QStringLiteral("A 的会话"));
+        memory.setSessionProject(QStringLiteral("sess-a"), pA);
+
+        AgentViewModel vm(nullptr);
+        AIAgent templateAgent(&vm);
+        templateAgent.setMemory(&memory);
+        vm.setMemory(&memory);
+        vm.setAgentFactory([&vm, &memory]() -> AIAgent* {
+            auto* a = new AIAgent(&vm);
+            a->setMemory(&memory);
+            return a;
+        });
+        vm.setAgent(&templateAgent);
+
+        // 活动标签：归属 A，且已承载一条会话 → 归属落定
+        vm.newProjectChat(pA);
+        vm.loadSession(QStringLiteral("sess-a"));
+        QCOMPARE(vm.activeProjectId(), pA);
+        QVERIFY(!vm.currentSessionId().isEmpty());
+
+        // 导入全新目录：项目记录建立，但已落定的归属不得被改写
+        const QString imported = vm.importProject(dir.path());
+        QVERIFY(!imported.isEmpty());
+        QCOMPARE(vm.activeProjectId(), pA);      // 旧行为这里会变成 imported
+
+        // 归属未定（空标签）时，导入才顺带把它设为该标签的目标
+        vm.newLocalChat();
+        QCOMPARE(vm.activeProjectId(), QString());
+        QCOMPARE(vm.importProject(dir.path()), imported);   // 同路径 → 复用记录
+        QCOMPARE(vm.activeProjectId(), imported);
+
+        vm.setActiveProjectId(QString());
+        if (savedActive.isValid()) settings.setValue("projects/activeId", savedActive);
+        else settings.remove("projects/activeId");
+    }
+
     // Batch 31b: McpManager add/remove round trip. The user's real
     // mcp_servers.json is backed up and restored around the test.
     void mcpManagerAddRemoveRoundTrip() {
