@@ -274,14 +274,14 @@ bool AIAgent::updateTraceNodeStatusById(const QString& id, const QString& status
 }
 
 void AIAgent::notifyTokens() {
-    const int estimated = TokenEstimator::estimateTokens(m_messages);
-    // Clamp display value to contextLimit to avoid > 100% in UI.
-    // Real compression happens in processIteration/applyContextBudget;
-    // the transient over-estimate between message append and next
-    // iteration is cosmetic only (e.g. assistant reply with tool_calls
-    // cannot be compressed until tools execute).
-    const int display = (m_contextLimit > 0) ? qMin(estimated, m_contextLimit) : estimated;
-    emit tokensChanged(display);
+    // docs/16 §8.2/§8.3: 窗口占用 = 当前消息 + 下次请求将发出的 tools schema。
+    // 必须与 contextComposition().totalTokens 同口径（含工具定义、不截断），
+    // 否则 TopBar 小字/进度条与容量浮层头部两个数字会打架。
+    // 不在此处 clamp：超限由 UI（进度条 Math.min(1.0)、告警色）处理，
+    // 截断会让这里的值小于浮层值，重新制造不一致。
+    const int estimated = TokenEstimator::estimateTokens(m_messages)
+                        + estimateReservedTokensForNextRequest();
+    emit tokensChanged(estimated);
 }
 
 // docs/16 §8.3: 实时上下文构成。桶来自当前消息数组（system prompt 是
@@ -1448,12 +1448,24 @@ void AIAgent::recordTokenUsage(const LLMResponse& response) {
     const int inputSkill = 0;
 
     // ── 方向维度合计（优先 API 真实值，文档 §5.2.2）──
-    const int inputTokens = response.promptTokens > 0
+    // 回退口径必须与来源拆分一致：来源里的 inputToolCall 已预置 tools
+    // schema（它确实是本次请求的输入），而 estimateTokens(m_messages) 不含
+    // schema。若回退只取 estimateTokens(m_messages)，sourceSum 会比
+    // inputTokens 多出一个 schema，导致 UI 来源占比 > 100%。
+    const int reservedSchema = estimateReservedTokensForNextRequest();
+    const int inputTokens = (response.promptTokens > 0
         ? response.promptTokens
-        : TokenEstimator::estimateTokens(m_messages);
+        : TokenEstimator::estimateTokens(m_messages) + reservedSchema)
+        // docs/16 §5.1: Anthropic 的 input_tokens 不含缓存 token，缓存写入
+        // （cache_creation）属于“未命中的输入”，按输入侧计入（否则被解析后
+        // 静默丢弃）；缓存读取归 cacheHit 桶。不能把写入并入 cacheHit，
+        // 那会把写入按命中低价计费。
+        + response.cacheCreationTokens;
     const int outputTokens = response.completionTokens > 0
         ? response.completionTokens
         : TokenEstimator::estimateTokens(response.content);
+    // 缓存命中 = 真正命中缓存的输入（OpenAI cached_tokens / Anthropic
+    // cache_read）。缓存写入不计入。
     const int cacheHitTokens = response.cachedTokens + response.cacheReadTokens;
 
     // ── 来源拆分·输出 ──

@@ -136,7 +136,9 @@ void ChatSessionController::connectAgent(AIAgent* agent) {
     emit traceChanged();
     m_finalResponse = agent->lastResponse();
     emit responseReady();
-    m_usedTokens = TokenEstimator::estimateTokens(agent->messages());
+    // 与 AIAgent::notifyTokens / contextComposition 同口径（含 tools schema），
+    // 保证初始同步值也和后续 tokensChanged 一致。
+    m_usedTokens = agent->contextComposition().value("totalTokens").toInt();
     emit tokenUsageChanged();
     m_currentSessionId = agent->currentSessionId();
     emit currentSessionIdChanged();

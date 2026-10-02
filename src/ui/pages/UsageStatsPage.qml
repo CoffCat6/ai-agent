@@ -328,9 +328,9 @@ Item {
                             // 输入 / 输出 / 缓存命中 三行进度条
                             Repeater {
                                 model: [
-                                    { label: qsTr("输入"), tokens: page.stats.totalInputTokens, color: Theme.brandPrimary },
-                                    { label: qsTr("输出"), tokens: page.stats.totalOutputTokens, color: Theme.statusSuccess },
-                                    { label: qsTr("缓存命中"), tokens: page.stats.totalCacheHitTokens, color: Theme.statusWarning }
+                                    { label: qsTr("输入(未命中)"), tokens: Math.max(0, page.stats.totalInputTokens - page.stats.totalCacheHitTokens), color: Theme.brandPrimary },
+                                    { label: qsTr("缓存命中"), tokens: page.stats.totalCacheHitTokens, color: Theme.statusWarning },
+                                    { label: qsTr("输出"), tokens: page.stats.totalOutputTokens, color: Theme.statusSuccess }
                                 ]
 
                                 delegate: RowLayout {
@@ -343,7 +343,7 @@ Item {
                                         color: Theme.textPrimary
                                         font.pixelSize: Theme.fontSizeCaption
                                         font.family: Theme.fontSans
-                                        Layout.preferredWidth: 60
+                                        Layout.preferredWidth: 84
                                     }
                                     Text {
                                         text: page.fmtNumber(modelData.tokens)
