@@ -199,6 +199,9 @@ ChatSessionController* AgentViewModel::ensureTab() {
     connect(controller, &ChatSessionController::tokenUsageChanged, this, [this, controller] {
         if (controller == active()) emit tokenUsageChanged();
     });
+    connect(controller, &ChatSessionController::sessionTokensChanged, this, [this, controller] {
+        if (controller == active()) emit sessionTokensChanged();
+    });
     // docs/16 §8: forward per-request cost to the TopBar live display.
     connect(controller, &ChatSessionController::costChanged, this, [this, controller](qint64 costCents) {
         if (controller == active()) {
@@ -282,6 +285,7 @@ void AgentViewModel::activateTab(int index) {
     emit responseReady();
     emit draftTextChanged();
     emit tokenUsageChanged();
+    emit sessionTokensChanged();
     emit costChanged(m_lastCostCents);
     emit currentSessionIdChanged();
     emit permissionModeChanged();
@@ -312,6 +316,7 @@ void AgentViewModel::closeTab(int index) {
     emit responseReady();
     emit draftTextChanged();
     emit tokenUsageChanged();
+    emit sessionTokensChanged();
     emit currentSessionIdChanged();
     emit activeTabChanged();
     emit tabsChanged();

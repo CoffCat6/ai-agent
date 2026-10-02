@@ -565,8 +565,12 @@ private slots:
     void testNoAdaptationDuringActiveTask();
     // docs/16 §13 AC-2/AC-4: token_usage 采集埋点（response 有分类 token 时正确采集）
     void testRecordTokenUsage();
+    // docs/16 §8.2: 会话累计 token（逐请求累加 / 清零 / 续会话恢复）
+    void testSessionTokensUsed();
     // docs/16 §13 AC-7: 配额检查（超限 emit quotaWarning，strict 模式拒绝）
     void testCheckQuota();
+    // docs/16 §3.3: 估算器滚动校准（API 真实 promptTokens 反馈 → EWMA 系数）
+    void testEstimateScaleCalibration();
 };
 
 void TestAgent::directCompletion() {
@@ -2056,6 +2060,105 @@ void TestAgent::testRecordTokenUsage() {
     QCOMPARE(costSpy.at(0).at(0).toLongLong(), qint64(0));
 
     agent.setMemory(nullptr);
+}
+
+// docs/16 §8.2: 会话累计 token —— 每次请求累加 input+output，多轮任务
+// 持续增长；resetSession 清零；resumeSession 从 token_usage 恢复基数。
+void TestAgent::testSessionTokensUsed() {
+    SqliteMemory memory(QStringLiteral(":memory:"));
+    agent.setMemory(&memory);
+
+    QSignalSpy sessionTokensSpy(&agent, &AIAgent::sessionTokensChanged);
+    QSignalSpy responseSpy(&agent, &AIAgent::responseReady);
+
+    // 第一轮：promptTokens=100 / completion=50 → 累计 150
+    LLMResponse first = textResponse(QStringLiteral("answer one"));
+    first.promptTokens = 100;
+    first.completionTokens = 50;
+    llm.script.append(first);
+    agent.startTask(QStringLiteral("hello"));
+    QTRY_COMPARE(responseSpy.count(), 1);
+    QCOMPARE(agent.sessionTokensUsed(), qint64(150));
+    QVERIFY(sessionTokensSpy.count() >= 1);
+    QCOMPARE(sessionTokensSpy.last().at(0).toLongLong(), qint64(150));
+
+    // 第二轮（同一会话）：累加 100+100+25 = 累计 375
+    LLMResponse second = textResponse(QStringLiteral("answer two"));
+    second.promptTokens = 200;
+    second.completionTokens = 25;
+    llm.script.append(second);
+    agent.startTask(QStringLiteral("hello again"));
+    QTRY_COMPARE(responseSpy.count(), 2);
+    QCOMPARE(agent.sessionTokensUsed(), qint64(375));
+
+    const QString sessionId = agent.currentSessionId();
+    QVERIFY(!sessionId.isEmpty());
+
+    // resetSession → 清零
+    agent.resetSession();
+    QCOMPARE(agent.sessionTokensUsed(), qint64(0));
+    QCOMPARE(sessionTokensSpy.last().at(0).toLongLong(), qint64(0));
+
+    // resumeSession → 从 DB 恢复累计基数（375 = 两轮 input+output 之和）
+    agent.resumeSession(sessionId);
+    QCOMPARE(agent.sessionTokensUsed(), qint64(375));
+    QCOMPARE(sessionTokensSpy.last().at(0).toLongLong(), qint64(375));
+
+    agent.setMemory(nullptr);
+}
+
+// docs/16 §3.3: 估算器滚动校准 —— 响应携带 API 真实 promptTokens 时，
+// recordTokenUsage 以 promptTokens / 原始估算（消息 + tools schema）观测
+// 校准系数（EWMA α=0.3，钳制 [0.5, 3.0]）；notifyTokens / contextComposition
+// 的窗口占用乘该系数。无 usage 的响应不更新系数（保持 1.0 基线）。
+// recordTokenUsage 为 private，经 startTask → onLLMResponse 间接触发。
+void TestAgent::testEstimateScaleCalibration() {
+    QSignalSpy tokensSpy(&agent, &AIAgent::tokensChanged);
+    QSignalSpy responseSpy(&agent, &AIAgent::responseReady);
+
+    // ── 基线：无 usage 的响应，估算保持原始公式（scale = 1.0）──
+    llm.script.append(textResponse(QStringLiteral("no usage here")));
+    agent.startTask(QStringLiteral("你好，请回答"));
+    QTRY_COMPARE(responseSpy.count(), 1);
+    const int baseline = tokensSpy.last().at(0).toInt();
+    QVERIFY(baseline > 0);
+    // 无观测时 notifyTokens 与 contextComposition().totalTokens 同为原始口径。
+    const QVariantMap baseComp = agent.contextComposition();
+    QCOMPARE(baseComp.value("totalTokens").toLongLong(),
+             static_cast<qint64>(baseline));
+    // 消息段 = 总占用 - tools schema 预留（后者保持原始估算口径）。
+    const int rawBefore = baseline
+        - static_cast<int>(baseComp.value("toolsSchema").toLongLong());
+    QVERIFY(rawBefore > 0);
+
+    // ── 校准生效：API 报告的 promptTokens = 2× 原始消息估算 → 系数 2.0
+    // （在 [0.5, 3.0] 钳制内）。下一次 tokensChanged 的消息部分被放大，
+    // 但 tools schema 部分保持原始口径，增幅应小于 2×。
+    LLMResponse cal = textResponse(QStringLiteral("calibrated"));
+    cal.promptTokens = rawBefore * 2;
+    cal.completionTokens = 10;
+    llm.script.append(cal);
+    agent.startTask(QStringLiteral("第二轮"));
+    QTRY_COMPARE(responseSpy.count(), 2);
+    const int scaled = tokensSpy.last().at(0).toInt();
+    QVERIFY(scaled > baseline);         // 系数生效，总占用变大
+    QVERIFY(scaled < baseline * 2 + 1); // schema 未同步放大，增幅 < 2×
+
+    // contextComposition 与 notifyTokens 同口径；校准只重分配桶，
+    // 不破坏“桶之和 == usedTokens”的合同。
+    const QVariantMap comp = agent.contextComposition();
+    QCOMPARE(comp.value("totalTokens").toLongLong(),
+             static_cast<qint64>(scaled));
+    QCOMPARE(comp.value("systemPrompt").toLongLong()
+           + comp.value("conversation").toLongLong()
+           + comp.value("toolResults").toLongLong()
+           + comp.value("images").toLongLong(),
+             comp.value("usedTokens").toLongLong());
+    // resetSession 清零系数，新会话回到基线口径。
+    agent.resetSession();
+    QCOMPARE(static_cast<int>(agent.contextComposition().value("totalTokens").toLongLong()),
+             static_cast<int>(TokenEstimator::estimateTokens(agent.messages())
+                              + static_cast<int>(comp.value("toolsSchema").toLongLong())));
 }
 
 // docs/16 §13 AC-7: 配额检查 —— 超限时 emit quotaWarning，strict 模式拒绝请求，

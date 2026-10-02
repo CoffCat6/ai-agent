@@ -279,9 +279,24 @@ void AIAgent::notifyTokens() {
     // 否则 TopBar 小字/进度条与容量浮层头部两个数字会打架。
     // 不在此处 clamp：超限由 UI（进度条 Math.min(1.0)、告警色）处理，
     // 截断会让这里的值小于浮层值，重新制造不一致。
-    const int estimated = TokenEstimator::estimateTokens(m_messages)
+    // 原始估算乘以滚动校准系数：启发式公式对中文/代码/JSON 系统性偏小
+    // （实测 cl100k 中文 ~1.16 tok/字，估算只给 0.667），首个请求拿到
+    // API 真实 prompt_tokens 后即可自愈。
+    const int estimated = static_cast<int>(TokenEstimator::estimateTokens(m_messages)
+                                               * tokenEstimateScale())
                         + estimateReservedTokensForNextRequest();
     emit tokensChanged(estimated);
+}
+
+// 估算校准系数（docs/16 §3.3）：≥1，无观测时 1.0。m_estimateScale 由
+// recordTokenUsage 用 API 真实 promptTokens / 原始估算 EWMA 更新。
+double AIAgent::tokenEstimateScale() const {
+    return m_estimateScale > 0.0 ? m_estimateScale : 1.0;
+}
+
+int AIAgent::calibratedMessageTokens() const {
+    return static_cast<int>(TokenEstimator::estimateTokens(m_messages)
+                            * tokenEstimateScale());
 }
 
 // docs/16 §8.3: 实时上下文构成。桶来自当前消息数组（system prompt 是
@@ -290,6 +305,23 @@ void AIAgent::notifyTokens() {
 QVariantMap AIAgent::contextComposition() const {
     QVariantMap out = TokenEstimator::splitContextTokens(
         m_messages, estimateReservedTokensForNextRequest());
+    // 与 notifyTokens 同一校准口径：消息桶整体乘 scale，tools schema 保持
+    // 原始估算（它有自己的估算误差，不应借用消息侧的系数）。桶之和仍等于
+    // usedTokens，TopBar 浮层的分段条与头部数字保持一致。
+    if (const double scale = tokenEstimateScale(); scale != 1.0) {
+        qint64 scaledUsed = 0;
+        for (const QString& key : {QStringLiteral("systemPrompt"),
+                                    QStringLiteral("conversation"),
+                                    QStringLiteral("toolResults"),
+                                    QStringLiteral("images")}) {
+            const qint64 v = static_cast<qint64>(out.value(key).toLongLong() * scale);
+            out[key] = v;
+            scaledUsed += v;
+        }
+        out["usedTokens"] = scaledUsed;
+        out["totalTokens"] = scaledUsed
+            + static_cast<qint64>(out.value("toolsSchema").toLongLong());
+    }
     out["maxTokens"] = m_contextLimit;
     return out;
 }
@@ -361,6 +393,8 @@ void AIAgent::startTask(const QString& userMessage, const QStringList& images,
         }
         emit sessionChanged(m_sessionId);
         emit sessionsChanged();
+        m_sessionTokensUsed = 0;   // 全新会话从零累计
+        emit sessionTokensChanged(0);
     }
 
     m_iteration = 0;
@@ -417,7 +451,7 @@ void AIAgent::startTask(const QString& userMessage, const QStringList& images,
     {
         const int reserved = estimateReservedTokensForNextRequest();
         const int effective = qMax(0, m_contextLimit - reserved);
-        if (TokenEstimator::estimateTokens(m_messages) > effective) {
+        if (calibratedMessageTokens() > effective) {
             applyContextBudget(reserved);
         }
     }
@@ -448,6 +482,12 @@ void AIAgent::resetSession() {
     m_messages = QJsonArray();
     m_traceModel = QJsonArray();
     m_usedToolCallIds.clear();
+    // 新会话：累计清零（recordTokenUsage 重新累加）。
+    m_sessionTokensUsed = 0;
+    emit sessionTokensChanged(0);
+    // 校准系数随会话失效：语言/内容构成改变后旧系数不再适用，
+    // 新会话从 1.0 重新观测。
+    m_estimateScale = 0.0;
     m_lastResponse.clear();
     m_iteration = 0;
     m_lastToolSignature.clear();
@@ -549,13 +589,19 @@ void AIAgent::resumeSession(const QString& sessionId) {
     // matches the active model's window.
     const int reserved = estimateReservedTokensForNextRequest();
     const int effective = qMax(0, m_contextLimit - reserved);
-    if (TokenEstimator::estimateTokens(m_messages) > effective) {
+    if (calibratedMessageTokens() > effective) {
         applyContextBudget(reserved);
     }
 
     setState(AgentState::Idle);
     emit traceChanged();
     emit sessionChanged(m_sessionId);
+    // 续聊历史本身不重放请求（resume 契约 MEM-701），token_usage 里属于本
+    // 会话的历史消耗直接恢复为累计基数，TopBar 从打开会话起就显示完整累计。
+    m_sessionTokensUsed = m_memory
+        ? m_memory->sessionTokenBreakdown(sessionId).value("totalTokens").toLongLong()
+        : 0;
+    emit sessionTokensChanged(m_sessionTokensUsed);
     notifyTokens();
 }
 
@@ -664,7 +710,11 @@ void AIAgent::processIteration() {
 // window but are not part of m_messages (REL-1002).
 void AIAgent::applyContextBudget(int reservedTokens) {
     if (m_contextLimit <= 0) return;
-    const int effective = qMax(0, m_contextLimit - reservedTokens);
+    // 压缩目标与显示同口径：校准后的消息占用 = 原始估算 × scale，所以把
+    // 可用预算除回 scale 后再交给 compressToFit（其内部用原始估算对比）。
+    // scale==1.0 时行为与旧版完全一致。
+    const int capacity = qMax(0, m_contextLimit - reservedTokens);
+    const int effective = static_cast<int>(capacity / tokenEstimateScale());
     if (TokenEstimator::estimateTokens(m_messages) <= effective) return;
 
     const int before = m_messages.size();
@@ -687,7 +737,7 @@ void AIAgent::onContextLimitChanged(int oldLimit, int newLimit) {
     if (m_messages.isEmpty() || oldLimit == newLimit) return;
     if (m_active) return;  // task in progress - do not interfere
 
-    const int currentTokens = TokenEstimator::estimateTokens(m_messages);
+    const int currentTokens = calibratedMessageTokens();
     const int reserved = estimateReservedTokensForNextRequest();
     const int effective = qMax(0, newLimit - reserved);
 
@@ -752,7 +802,8 @@ void AIAgent::restoreFullHistoryIfAvailable() {
         restored.append(msg);
     }
 
-    const int restoredTokens = TokenEstimator::estimateTokens(restored);
+    const int restoredTokens = static_cast<int>(
+        TokenEstimator::estimateTokens(restored) * tokenEstimateScale());
     const int reserved = estimateReservedTokensForNextRequest();
     const int effective = qMax(0, m_contextLimit - reserved);
 
@@ -1490,6 +1541,19 @@ void AIAgent::recordTokenUsage(const LLMResponse& response) {
             inputToolCall     = static_cast<int>(inputToolCall * scale);
             inputImage        = static_cast<int>(inputImage * scale);
         }
+        // ── 估算器滚动校准（docs/16 §3.3）──
+        // 分子用与 inputTokens 同口径的 API 输入（含缓存写入），分母用与
+        // notifyTokens 同口径的原始估算（消息 + tools schema）。EWMA α=0.3
+        // 平滑单次请求的异常；钳制到 [0.5, 3.0] 防御脏数据把系数带飞。
+        const double rawEstimate = static_cast<double>(
+            TokenEstimator::estimateTokens(m_messages) + reservedSchema);
+        if (rawEstimate > 0) {
+            const double observed = static_cast<double>(inputTokens) / rawEstimate;
+            const double clamped = qBound(0.5, observed, 3.0);
+            m_estimateScale = m_estimateScale > 0.0
+                ? 0.7 * m_estimateScale + 0.3 * clamped
+                : clamped;
+        }
     }
     int inputOther = inputTokens - inputSystemPrompt - inputConversation
                    - inputToolCall - inputMcp - inputSkill - inputImage;
@@ -1546,6 +1610,10 @@ void AIAgent::recordTokenUsage(const LLMResponse& response) {
     rec["costCents"] = costCents;
     rec["latencyMs"] = latencyMs;
     m_memory->logTokenUsage(rec);
+
+    // 会话累计（input+output，与 token_usage 逐行一致），供 TopBar 显示。
+    m_sessionTokensUsed += inputTokens + outputTokens;
+    emit sessionTokensChanged(m_sessionTokensUsed);
 
     emit costChanged(costCents);
 }

@@ -86,6 +86,8 @@ class AgentViewModel : public QObject {
     Q_PROPERTY(int maxTokens READ maxTokens NOTIFY tokenUsageChanged FINAL)
     // docs/16 §8: per-request cost (cents) for the TopBar live display.
     Q_PROPERTY(qint64 lastCostCents READ lastCostCents NOTIFY costChanged FINAL)
+    // docs/16 §8.2: 本会话累计消耗（input+output，跨任务累加）。
+    Q_PROPERTY(qint64 sessionTokensUsed READ sessionTokensUsed NOTIFY sessionTokensChanged FINAL)
 
     // ── Sidebar ───────────────────────────────────────
     Q_PROPERTY(bool isSidebarExpanded READ isSidebarExpanded WRITE setIsSidebarExpanded NOTIFY sidebarExpandedChanged FINAL)
@@ -271,6 +273,8 @@ public:
     int maxTokens() const { return active()->maxTokens(); }
     // docs/16 §8: last per-request cost (cents), updated via costChanged.
     qint64 lastCostCents() const { return m_lastCostCents; }
+    // docs/16 §8.2: 会话累计 token（active tab 的 AIAgent 计数器）。
+    qint64 sessionTokensUsed() const { return active()->sessionTokensUsed(); }
 
     // Tool registry
     QVariantList toolRegistryModel() const { return m_toolRegistryModel; }
@@ -375,6 +379,8 @@ signals:
     void tokenUsageChanged();
     // docs/16 §8: per-request cost changed (cents).
     void costChanged(qint64 costCents);
+    // 会话累计 token 变化（新请求记账 / 换会话恢复 / 新会话清零）。
+    void sessionTokensChanged();
     void sessionListChanged();
     // docs/17 A0: 项目列表 / 活动项目变化（侧栏两区数据源）。
     void projectsChanged();

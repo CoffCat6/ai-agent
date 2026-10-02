@@ -84,6 +84,9 @@ public:
     // docs/16 §8.3: 实时上下文构成（按 role 拆分的 token 桶 + tools schema
     // 预留），供 TopBar 容量占比浮层展示。
     QVariantMap contextComposition() const;
+    // 本会话累计消耗（input+output，token_usage 逐条累加）。TopBar 显示用：
+    // 会话中途换 Tab/续聊后仍可从 DB 恢复，语义与「窗口占用」正交。
+    Q_INVOKABLE qint64 sessionTokensUsed() const { return m_sessionTokensUsed; }
 
     // 会话级权限模式（变更确认/自动编辑/完全访问）。决定确认级工具是否
     // 逐次人工确认；任务进行中切换立即对下一个工具调用生效。内存态，
@@ -161,6 +164,8 @@ signals:
     // monthlyToken/monthlyCost, used=已消耗, quota=上限) 与单次请求费用变化。
     void quotaWarning(const QString& quotaType, qint64 used, qint64 quota);
     void costChanged(qint64 costCents);
+    // 会话累计 token 变化（新请求记账 / 换会话恢复 / 新会话清零）。
+    void sessionTokensChanged(qint64 sessionTokens);
 
 private:
     void setState(AgentState state);
@@ -171,6 +176,10 @@ private:
     void updateLastNodeTitle(const QString& title);
     bool updateTraceNodeStatusById(const QString& id, const QString& status);
     void notifyTokens();
+    // 估算校准系数（≥1，无观测 1.0），由 recordTokenUsage 滚动更新。
+    double tokenEstimateScale() const;
+    // 消息数组估算 × 校准系数（与 notifyTokens 同口径），供预算判断用。
+    int calibratedMessageTokens() const;
 
     void processIteration();
     void applyContextBudget(int reservedTokens);
@@ -290,7 +299,16 @@ private:
     qint64 m_requestStartMs{-1};
     qint64 m_lastLatencyMs{-1};
     int m_lastTokensUsed{0};
+    // 本会话累计消耗（input+output）。新会话清零、续会话从 token_usage
+    // 恢复、recordTokenUsage 逐请求累加 —— 与 m_lastTokensUsed（单请求）
+    // 区分，供 TopBar 显示跨任务累计。
+    qint64 m_sessionTokensUsed{0};
     qint64 m_taskStartMs{-1};
+    // 估算器滚动校准（docs/16 §3.3）：真实 prompt_tokens / 原始启发式估算
+    // 的 EWMA（recordTokenUsage 采集）。实测中文/代码/JSON 场景原始公式
+    // 系统性偏小（cl100k 中文 ~1.16 tok/字，估算只给 0.667），实时占用
+    // 显示必须乘此系数才贴近真实窗口占用。0 = 尚无观测。
+    double m_estimateScale{0.0};
     // Process-global tool_call_id fallback counter + session-scoped set of
     // ids already in the history: agent-generated or provider-fallback ids
     // ("call_0") repeat across turns, and strict proxies reject duplicates.

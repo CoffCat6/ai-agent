@@ -50,6 +50,8 @@ public:
     QString activeProjectId() const;
     QString activeProjectRoot() const;
     int usedTokens() const { return m_usedTokens; }
+    // 本会话累计消耗（input+output）；agent 未挂接（模拟模式）时为 0。
+    qint64 sessionTokensUsed() const { return m_sessionTokensUsed; }
     int maxTokens() const;
 
     // 会话级权限模式（0=变更确认 1=自动编辑 2=完全访问）。QML 经
@@ -92,6 +94,7 @@ signals:
     void responseReady();
     void draftTextChanged();
     void tokenUsageChanged();
+    void sessionTokensChanged();
     void contextLimitChanged();
     void currentSessionIdChanged();
     // Surfaced regardless of which tab is active: the confirm dialog is
@@ -127,6 +130,7 @@ private:
     QString m_draftText;
     QString m_currentSessionId;
     int m_usedTokens{0};
+    qint64 m_sessionTokensUsed{0};   // AIAgent::sessionTokensUsed 镜像
     int m_permissionMode{0};            // PermissionMode as int; 0 = ConfirmChanges
     bool m_permissionModeOverridden{false};
 

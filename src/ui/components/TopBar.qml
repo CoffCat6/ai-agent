@@ -10,6 +10,16 @@ Rectangle {
 
     color: Theme.bgSecondary
 
+    // 紧凑 token 计数（TopBar 小字用）：1234 → 1.2k，56000 → 56k。
+    function formatTokens(n) {
+        if (n >= 1000000) return (n / 1000000).toFixed(1) + "M";
+        if (n >= 1000) {
+            const k = n / 1000;
+            return (k >= 100 ? Math.round(k) : k.toFixed(1)) + "k";
+        }
+        return String(n);
+    }
+
     // Bottom border
     Rectangle {
         width: parent.width
@@ -290,7 +300,10 @@ Rectangle {
             spacing: 6
             Layout.rightMargin: 8
 
-            // Mini progress bar: usedTokens / maxTokens
+            // Mini progress bar (docs/16 §8.2/§8.3): 上下文窗口占用
+            // (usedTokens/maxTokens)。会话累计是无上限计数器，不借用窗口
+            // 容量画条（同刻度并排会显得比占用条还长，误导占用判断），
+            // 只以文字显示，明细见悬浮浮层。点击或悬停弹出占用细节。
             Rectangle {
                 Layout.preferredWidth: 60
                 Layout.preferredHeight: 4
@@ -317,6 +330,17 @@ Rectangle {
                 font.family: Theme.fontMono
             }
 
+            // docs/16 §8.2: 会话累计消耗（input+output，跨任务累加）。
+            // 区别于左侧的窗口占用 usedTokens/maxTokens —— 那是下一次
+            // 请求的 prompt 规模，不会随历史重发而"翻倍增长"。
+            Text {
+                visible: AgentVM.sessionTokensUsed > 0
+                text: qsTr("累计 %1").arg(formatTokens(AgentVM.sessionTokensUsed))
+                color: Theme.textSecondary
+                font.pixelSize: Theme.fontSizeCaption
+                font.family: Theme.fontMono
+            }
+
             // docs/16 §8.2: per-request cost (only shown when non-zero)
             Text {
                 visible: AgentVM.lastCostCents > 0
@@ -332,6 +356,13 @@ Rectangle {
             // Both timers are condition-driven (no imperative start/stop,
             // which would break their running bindings).
             HoverHandler { id: tokenHover }
+
+            // 点击计数区/进度条同样打开细节浮层（再点关闭）；悬停逻辑
+            // 由上方 timer 驱动，点击则立即生效。
+            TapHandler {
+                onTapped: tokenPopup.opened
+                    ? tokenPopup.close() : tokenPopup.refreshAndOpen()
+            }
 
             Timer {
                 id: hoverOpenTimer
@@ -398,6 +429,64 @@ Rectangle {
             }
             function windowPct(tokens) {
                 return maxTokens > 0 ? Math.round(tokens * 100 / maxTokens) : 0
+            }
+
+            readonly property bool hasSessionTotals:
+                (sessionTotals.totalCalls || 0) > 0
+
+            // 会话累计摘要行：总额 + 输入/输出/命中率，同统计页口径。
+            readonly property string sessionSummary: {
+                const t = sessionTotals
+                const total = t.totalTokens || 0
+                const rate = t.cacheHitRate || 0
+                return qsTr("会话累计 · %1 tokens · 命中率 %2%")
+                    .arg(total).arg(Math.round(rate * 100))
+            }
+
+            // 输入(未命中)/缓存命中/输出：与统计页方向卡同一互斥口径。
+            readonly property var sessionDirectionRows: {
+                const t = sessionTotals
+                const total = t.totalTokens || 0
+                const inHit = t.totalCacheHitTokens || 0
+                const inMiss = Math.max(0, (t.totalInputTokens || 0) - inHit)
+                const rows = [
+                    [qsTr("输入（未命中）"), inMiss],
+                    [qsTr("缓存命中"), inHit],
+                    [qsTr("输出"), t.totalOutputTokens || 0]
+                ]
+                const out = []
+                for (let i = 0; i < rows.length; ++i) {
+                    if (rows[i][1] > 0)
+                        out.push({ label: rows[i][0], tokens: rows[i][1],
+                                   pct: total > 0
+                                       ? Math.round(rows[i][1] * 100 / total) : 0 })
+                }
+                return out
+            }
+
+            // 来源拆分（输入侧）：只列非零项，按占比降序。
+            readonly property var sessionSourceRows: {
+                const t = sessionTotals
+                const total = t.totalInputTokens || 0
+                const defs = [
+                    ["inputSystemPrompt", qsTr("系统提示词")],
+                    ["inputConversation", qsTr("对话")],
+                    ["inputToolCall",     qsTr("工具调用")],
+                    ["inputMcp",          qsTr("MCP")],
+                    ["inputSkill",        qsTr("技能")],
+                    ["inputImage",        qsTr("图片")],
+                    ["inputOther",        qsTr("其他")]
+                ]
+                const rows = []
+                for (let i = 0; i < defs.length; ++i) {
+                    const v = t[defs[i][0]] || 0
+                    if (v > 0)
+                        rows.push({ label: defs[i][1], tokens: v,
+                                    pct: total > 0
+                                        ? Math.round(v * 100 / total) : 0 })
+                }
+                rows.sort(function(a, b) { return b.tokens - a.tokens })
+                return rows
             }
 
             contentItem: ColumnLayout {
@@ -534,9 +623,11 @@ Rectangle {
                     }
                 }
 
-                // ── Footer: session cumulative (kept from the old view) ──
+                // ── Session cumulative section (per docs/16 §8.3):
+                //    合计 + 输入(未命中)/缓存命中/输出 互斥口径，再按来源
+                //    拆分系统提示词/对话/工具调用/图片等 —— 与统计页一致。 ──
                 Rectangle {
-                    visible: (tokenPopup.sessionTotals.totalCalls || 0) > 0
+                    visible: tokenPopup.hasSessionTotals
                     Layout.fillWidth: true
                     Layout.topMargin: 4
                     Layout.bottomMargin: 2
@@ -544,7 +635,96 @@ Rectangle {
                     color: Theme.borderSubtle
                 }
                 Text {
-                    visible: (tokenPopup.sessionTotals.totalCalls || 0) > 0
+                    visible: tokenPopup.hasSessionTotals
+                    text: tokenPopup.sessionSummary
+                    color: Theme.textSecondary
+                    font.bold: true
+                    font.pixelSize: Theme.fontSizeCaption
+                    font.family: Theme.fontMono
+                }
+
+                // 输入(未命中)/缓存命中/输出：三项互斥，和恰为累计总额。
+                Repeater {
+                    model: tokenPopup.sessionTotals.totalCalls > 0
+                        ? tokenPopup.sessionDirectionRows : []
+                    delegate: RowLayout {
+                        required property var modelData
+                        Layout.fillWidth: true
+
+                        Item {
+                            Layout.preferredWidth: 7
+                            Layout.preferredHeight: 7
+                        }
+                        Text {
+                            Layout.fillWidth: true
+                            text: modelData.label
+                            color: Theme.textPrimary
+                            font.pixelSize: Theme.fontSizeCaption
+                            font.family: Theme.fontMono
+                            elide: Text.ElideRight
+                        }
+                        Text {
+                            text: modelData.tokens
+                            color: Theme.textSecondary
+                            font.pixelSize: Theme.fontSizeCaption
+                            font.family: Theme.fontMono
+                        }
+                        Text {
+                            text: modelData.pct + "%"
+                            color: Theme.textSecondary
+                            font.pixelSize: Theme.fontSizeCaption
+                            font.family: Theme.fontMono
+                            Layout.preferredWidth: 36
+                            horizontalAlignment: Text.AlignRight
+                        }
+                    }
+                }
+
+                // 来源拆分：系统提示词/对话/工具调用/图片等累计占比。
+                Repeater {
+                    model: tokenPopup.sessionSourceRows
+                    delegate: RowLayout {
+                        required property var modelData
+                        Layout.fillWidth: true
+
+                        Item {
+                            Layout.preferredWidth: 7
+                            Layout.preferredHeight: 7
+                        }
+                        Rectangle {
+                            Layout.preferredWidth: 4
+                            Layout.preferredHeight: 4
+                            radius: 1
+                            color: Theme.textSecondary
+                        }
+                        Text {
+                            Layout.fillWidth: true
+                            text: modelData.label
+                            color: Theme.textPrimary
+                            font.pixelSize: Theme.fontSizeCaption
+                            font.family: Theme.fontMono
+                            elide: Text.ElideRight
+                        }
+                        Text {
+                            text: modelData.tokens
+                            color: Theme.textSecondary
+                            font.pixelSize: Theme.fontSizeCaption
+                            font.family: Theme.fontMono
+                        }
+                        Text {
+                            text: modelData.pct + "%"
+                            color: Theme.textSecondary
+                            font.pixelSize: Theme.fontSizeCaption
+                            font.family: Theme.fontMono
+                            Layout.preferredWidth: 36
+                            horizontalAlignment: Text.AlignRight
+                        }
+                    }
+                }
+
+                // ── Footer: request count + cost (kept from the old view) ──
+                Text {
+                    visible: tokenPopup.hasSessionTotals
                     text: (tokenPopup.sessionTotals.totalCostCents > 0)
                         ? qsTr("本会话累计 %1 次请求 · ¥%2")
                             .arg(tokenPopup.sessionTotals.totalCalls || 0)

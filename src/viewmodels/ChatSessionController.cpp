@@ -107,6 +107,12 @@ void ChatSessionController::connectAgent(AIAgent* agent) {
         emit tokenUsageChanged();
     });
 
+    // docs/16 §8.2: 会话累计 token（跨任务累加，区别于窗口占用）。
+    connect(agent, &AIAgent::sessionTokensChanged, this, [this](qint64 tokens) {
+        m_sessionTokensUsed = tokens;
+        emit sessionTokensChanged();
+    });
+
     connect(agent, &AIAgent::contextLimitChanged, this, [this]() {
         emit contextLimitChanged();
         emit tokenUsageChanged();
