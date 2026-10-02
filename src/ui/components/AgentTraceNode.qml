@@ -276,24 +276,32 @@ Item {
             }
         }
 
-        // Markdown-rendered response (summary nodes) with copy button
+        // Markdown-rendered response (summary nodes) with copy button.
+        // Hosted in a read-only TextEdit so users can also click-drag to
+        // select and Ctrl+C any portion of the reply; `Text` cannot be
+        // selected. persistentSelection keeps the highlight visible while
+        // the user moves to the copy button.
         Item {
             visible: modelData.type === "summary"
             Layout.fillWidth: true
-            implicitHeight: mdText.implicitHeight
+            // TextEdit has no auto implicit height for wrapped content
+            implicitHeight: mdText.contentHeight
 
-            Text {
+            TextEdit {
                 id: mdText
                 anchors.left: parent.left
                 anchors.right: parent.right
                 anchors.rightMargin: 56
                 text: modelData.title
-                textFormat: Text.MarkdownText
+                textFormat: TextEdit.MarkdownText
+                readOnly: true
+                selectByMouse: true
+                persistentSelection: true
+                activeFocusOnTab: false
                 color: Theme.textPrimary
-                linkColor: Theme.brandPrimary
                 font.pixelSize: Theme.fontSizeBody
                 font.family: Theme.fontSans
-                wrapMode: Text.Wrap
+                wrapMode: TextEdit.Wrap
                 onLinkActivated: function(link) { Qt.openUrlExternally(link) }
             }
 

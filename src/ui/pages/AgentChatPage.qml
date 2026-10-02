@@ -63,24 +63,52 @@ Item {
                         return originY + contentHeight - contentY - height
                     }
                     property bool pinnedToBottom: true
+                    // True for a short window after every contentHeight
+                    // change. While huge expanded blocks instantiate lazily,
+                    // ListView couples each height correction with a contentY
+                    // shift that keeps the viewport visually stable; that
+                    // shift reads as DOWNWARD movement and the gap check then
+                    // re-arms auto-scroll and yanks the view back to the
+                    // bottom mid-scroll-up. Re-pinning from the gap is
+                    // suppressed until heights have stopped changing.
+                    property bool contentSettling: false
+                    Timer {
+                        id: settleTimer
+                        interval: 200
+                        onTriggered: traceListView.contentSettling = false
+                    }
+                    property real lastContentY: 0
                     onContentYChanged: {
                         const gap = bottomGap()
-                        pinnedToBottom = gap < 80 && gap > -height
+                        // Mouse-wheel scrolling never sets `moving`, so the
+                        // upward check must not be gated on it: ANY upward
+                        // shift of the viewport unconditionally unpins; the
+                        // gap check only handles downward/programmatic
+                        // movement.
+                        if (contentY < lastContentY)
+                            pinnedToBottom = false
+                        else if (!contentSettling)
+                            pinnedToBottom = gap < 80 && gap > -height
+                        lastContentY = contentY
                     }
 
                     // Request a deferred scroll-to-bottom. The callback
                     // re-checks pinnedToBottom when it actually runs, so a
                     // scroll queued during streaming is dropped if the user
                     // scrolled away between the request and the next frame.
+                    // `!moving` keeps a queued reposition from fighting an
+                    // in-progress drag or flick.
                     function requestScrollToBottom() {
                         Qt.callLater(function() {
-                            if (pinnedToBottom)
+                            if (pinnedToBottom && !moving)
                                 positionViewAtEnd()
                         })
                     }
 
                     onContentHeightChanged: {
-                        if (pinnedToBottom)
+                        contentSettling = true
+                        settleTimer.restart()
+                        if (pinnedToBottom && !moving)
                             requestScrollToBottom()
                     }
 
