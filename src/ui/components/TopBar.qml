@@ -236,6 +236,7 @@ Rectangle {
 
             // Status dot
             Rectangle {
+                id: stateDot
                 width: 8
                 height: 8
                 radius: 4
@@ -252,13 +253,19 @@ Rectangle {
                     return Theme.textSecondary
                 }
 
-                // Pulsing animation for active states
-                SequentialAnimation on opacity {
+                // Pulsing animation for active states. Drives an intermediate
+                // property instead of opacity itself: `Animation on <property>`
+                // destroys the declarative binding and leaves the value stranded
+                // at the last frame when the animation stops, so the indicator
+                // would stay dimmed after a task ends.
+                property real pulse: 1.0
+                SequentialAnimation {
                     running: AgentVM.stateBusy
                     loops: Animation.Infinite
-                    NumberAnimation { from: 1.0; to: 0.3; duration: 800 }
-                    NumberAnimation { from: 0.3; to: 1.0; duration: 800 }
+                    NumberAnimation { target: stateDot; property: "pulse"; from: 1.0; to: 0.3; duration: 800 }
+                    NumberAnimation { target: stateDot; property: "pulse"; from: 0.3; to: 1.0; duration: 800 }
                 }
+                opacity: AgentVM.stateBusy ? pulse : 1.0
             }
 
             Text {

@@ -441,8 +441,6 @@ Rectangle {
         onAccepted: root.addTextFile(selectedFile)
     }
 
-    // Smooth height animation
-    Behavior on height {
-        NumberAnimation { duration: 200; easing.type: Easing.OutQuad }
-    }
+    // No height animation: the console resizes on every wrapped line while
+    // typing, and animating that makes the text trail the cursor.
 }

@@ -297,6 +297,9 @@ ApplicationWindow {
         duration: 3500
         // Slide below the error toast while both are on screen
         anchors.topMargin: errorToast.visible ? 64 : 24
+        // Animate the margin so the reflow doesn't jump when the error
+        // toast appears or disappears underneath.
+        Behavior on anchors.topMargin { NumberAnimation { duration: 150 } }
     }
 
     Connections {

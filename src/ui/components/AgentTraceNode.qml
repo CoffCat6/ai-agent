@@ -17,6 +17,7 @@ Item {
     id: root
 
     required property var modelData
+    required property int index
 
     Accessible.name: modelData.type || qsTr("追踪节点")
     Accessible.description: modelData.label || ""
@@ -37,7 +38,11 @@ Item {
     readonly property bool hasDetail: detailText !== "" && modelData.type !== "summary"
     readonly property string detailKey: (modelData.id || "") !== ""
         ? modelData.id
-        : modelData.type + ":" + detailText.substring(0, 48)
+        // Nodes without an id (streaming intermediates) fall back to a
+        // content-derived key; the index keeps identical-looking nodes
+        // (e.g. repeated tool calls with the same first 48 chars) from
+        // sharing one fold state.
+        : modelData.type + ":" + index + ":" + detailText.substring(0, 48)
     // Short details start open; walls of tool output start collapsed.
     readonly property bool detailDefault: detailText.length <= 400
     readonly property bool detailExpanded: hasDetail
@@ -81,30 +86,40 @@ Item {
         border.color: root.nodeColor
         border.width: 2
 
-        // Breathing animation when running
-        SequentialAnimation on opacity {
+        // Breathing animation when running. Drives an intermediate property
+        // instead of opacity itself: `Animation on <property>` destroys the
+        // declarative binding and leaves the value stranded at the last frame
+        // when the animation stops, so the dot would stay dimmed forever.
+        property real pulse: 1.0
+        SequentialAnimation {
             running: modelData.status === "running"
             loops: Animation.Infinite
-            NumberAnimation { from: 1.0; to: 0.3; duration: 800 }
-            NumberAnimation { from: 0.3; to: 1.0; duration: 800 }
+            NumberAnimation { target: statusDot; property: "pulse"; from: 1.0; to: 0.3; duration: 800 }
+            NumberAnimation { target: statusDot; property: "pulse"; from: 0.3; to: 1.0; duration: 800 }
         }
+        opacity: modelData.status === "running" ? pulse : 1.0
 
-        // Glow effect for running state (dark mode only)
+        // Glow effect for running state (dark mode only). Same pattern as
+        // the dot above: the animation targets `pulse`, and Theme.isDark only
+        // gates the opacity binding so a mid-run theme switch cannot strand
+        // the glow at a non-zero opacity.
         Rectangle {
+            id: statusGlow
             anchors.centerIn: parent
             width: parent.width + 8
             height: parent.height + 8
             radius: width / 2
             color: root.nodeColor
-            opacity: modelData.status === "running" && Theme.isDark ? 0.2 : 0.0
             z: -1
 
-            SequentialAnimation on opacity {
-                running: modelData.status === "running" && Theme.isDark
+            property real pulse: 0.3
+            SequentialAnimation {
+                running: modelData.status === "running"
                 loops: Animation.Infinite
-                NumberAnimation { from: 0.3; to: 0.05; duration: 800 }
-                NumberAnimation { from: 0.05; to: 0.3; duration: 800 }
+                NumberAnimation { target: statusGlow; property: "pulse"; from: 0.3; to: 0.05; duration: 800 }
+                NumberAnimation { target: statusGlow; property: "pulse"; from: 0.05; to: 0.3; duration: 800 }
             }
+            opacity: modelData.status === "running" && Theme.isDark ? pulse : 0.0
         }
     }
 
