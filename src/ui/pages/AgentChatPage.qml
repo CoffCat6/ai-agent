@@ -312,12 +312,23 @@ Item {
                 onSettingsRequested: root.settingsRequested()
             }
 
+            // Thinking effort of the active model profile (docs: 随 profile 持久)
+            ThinkingEffortSelector {
+                id: effortBadge
+                anchors.top: inputConsole.bottom
+                anchors.topMargin: 4
+                anchors.left: modelBadge.right
+                anchors.leftMargin: 8
+            }
+
             // Session permission mode (confirm / auto-edit / full access)
             PermissionModeSelector {
                 id: permissionBadge
                 anchors.top: inputConsole.bottom
                 anchors.topMargin: 4
-                anchors.left: modelBadge.right
+                // 锚点必须跟着右移：仍挂在 modelBadge.right 会和思考强度
+                // 选择框完全重叠。
+                anchors.left: effortBadge.right
                 anchors.leftMargin: 8
             }
         }

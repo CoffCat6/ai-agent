@@ -40,6 +40,16 @@ public:
     // the historical 4096 fallback. temperature is omitted when unset.
     void setSamplingParams(const QVariant& temperature, const QVariant& maxOutputTokens);
 
+    // 思考强度档位("low"|"medium"|"high";"off"/未设置 = 不启用)。Anthropic 的
+    // 扩展思考用 budget_tokens 表达强度,而预算是从 max_tokens 那一池里扣的,
+    // 所以档位要按当前输出上限折算。
+    void setReasoningEffort(const QVariant& effort);
+
+    // 档位 -> budget_tokens,0 表示不启用思考。纯函数,供测试直接断言:
+    // API 要求 1024 <= budget_tokens < max_tokens,折算不下时返回 0
+    // (宁可退回无思考,也不能让请求被 400 拒掉)。
+    static int thinkingBudgetTokens(const QString& level, int maxTokens);
+
     // Pure conversion / parsing helpers (no network state); exposed for tests.
     struct ConvertedHistory {
         QString system;
@@ -83,6 +93,7 @@ private:
 
     int m_maxTokens{4096}; // Messages API requires an explicit output cap
     QVariant m_temperature; // Batch 15: unset → field omitted
+    QVariant m_reasoningEffort; // 思考强度档位;unset = 不发 thinking 字段
 };
 
 } // namespace NexusAI

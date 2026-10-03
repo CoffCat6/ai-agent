@@ -114,7 +114,11 @@ private slots:
     void summaryGenerationFiresWhenEnabled() {
         auto* mem = makeMemory();
         auto* llm = new FakeLLM;
-        llm->script.append({QStringLiteral("Session about Qt signal slot mechanism"), {}, 10, true, {}, 0});
+        LLMResponse scripted;
+        scripted.content = QStringLiteral("Session about Qt signal slot mechanism");
+        scripted.tokensUsed = 10;
+        scripted.success = true;
+        llm->script.append(scripted);
 
         EpisodicService svc;
         svc.setMemory(mem);

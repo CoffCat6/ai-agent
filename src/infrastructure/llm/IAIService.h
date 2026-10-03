@@ -39,6 +39,10 @@ signals:
     void requestStarted(quint64 requestId);
     void responseReady(const NexusAI::LLMResponse& response);
     void streamingChunk(const QString& chunk);
+    // Chain-of-thought deltas on a channel of their own: reusing
+    // streamingChunk would land the model's private reasoning inside the
+    // answer node the agent is still building.
+    void reasoningChunk(const QString& chunk);
     void errorOccurred(const QString& error);
 };
 

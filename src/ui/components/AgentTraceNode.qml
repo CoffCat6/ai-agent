@@ -32,9 +32,11 @@ Item {
     readonly property bool processHidden: intermediate
         && !traceListView.showProcess && modelData.status !== "waiting_confirm"
 
-    // ── Detail block (args / result) ───────────────────
-    readonly property string detailText: (modelData.args || "") !== ""
-        ? modelData.args : (modelData.result || "")
+    // ── Detail block (args / result / thinking text) ─────
+    // thinking 节点的展开区装的是思考正文，与工具参数/结果分属不同字段。
+    readonly property string detailText: modelData.type === "thinking"
+        ? (modelData.reasoning || "")
+        : ((modelData.args || "") !== "" ? modelData.args : (modelData.result || ""))
     readonly property bool hasDetail: detailText !== "" && modelData.type !== "summary"
     readonly property string detailKey: (modelData.id || "") !== ""
         ? modelData.id
@@ -328,6 +330,16 @@ Item {
                      && (modelData.result || "") !== "" && root.detailExpanded
             text: modelData.result
             textColor: Theme.statusSuccess
+        }
+
+        // Chain-of-thought of this reasoning step (only present when the
+        // model streams thinking text; never fed back to the model).
+        CodeBlock {
+            Layout.fillWidth: true
+            visible: modelData.type === "thinking"
+                     && (modelData.reasoning || "") !== "" && root.detailExpanded
+            text: modelData.reasoning
+            textColor: Theme.textSecondary
         }
 
         // Confirmation buttons (for waiting_confirm status)

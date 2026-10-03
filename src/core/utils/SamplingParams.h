@@ -61,5 +61,18 @@ inline QVariant optionalPositiveInt(const QVariant& v) {
     return static_cast<int>(value);
 }
 
+// 思考强度档位。profile 里存的是字符串，取值集合是四档枚举；任何其他值
+// （空、缺失、手改注册表写进去的陌生档位）都归一化为 INVALID QVariant，
+// 含义是"未设置"——各 Provider 随即省略思考字段，退回模型自身默认。
+// 档位语义与 Provider 映射无关：off=明确关闭，low/medium/high=按家折算。
+inline QVariant optionalReasoningLevel(const QVariant& v) {
+    if (!v.isValid() || v.metaType().id() != QMetaType::QString) return {};
+    const QString text = v.toString().trimmed().toLower();
+    if (text == QLatin1String("off") || text == QLatin1String("low")
+            || text == QLatin1String("medium") || text == QLatin1String("high"))
+        return text;
+    return {};
+}
+
 } // namespace SamplingParams
 } // namespace NexusAI

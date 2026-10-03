@@ -178,12 +178,18 @@ LLMResponse AnthropicService::parseResponse(const QJsonObject& json) {
     }
 
     QString text;
+    QString thinking;
     const QJsonArray content = json.value("content").toArray();
     for (const auto& block : content) {
         const QJsonObject b = block.toObject();
         const QString type = b.value("type").toString();
         if (type == QLatin1String("text")) {
             text += b.value("text").toString();
+        } else if (type == QLatin1String("thinking")) {
+            // Extended thinking block: deliberation text stays out of the
+            // answer (the signature field is for the API's own integrity
+            // check when echoing history back, which we never do).
+            thinking += b.value("thinking").toString();
         } else if (type == QLatin1String("tool_use")) {
             ToolCallInfo info;
             info.id = b.value("id").toString();
@@ -194,6 +200,7 @@ LLMResponse AnthropicService::parseResponse(const QJsonObject& json) {
         }
     }
     response.content = text;
+    response.reasoning = thinking;
     response.success = true;
 
     const QJsonObject usage = json.value("usage").toObject();
@@ -215,6 +222,29 @@ void AnthropicService::setSamplingParams(const QVariant& temperature,
     m_temperature = temperature;
 }
 
+void AnthropicService::setReasoningEffort(const QVariant& effort) {
+    m_reasoningEffort = effort;
+}
+
+int AnthropicService::thinkingBudgetTokens(const QString& level, int maxTokens) {
+    int budget = 0;
+    if (level == QLatin1String("low")) budget = 2048;
+    else if (level == QLatin1String("medium")) budget = 8192;
+    else if (level == QLatin1String("high")) budget = 16384;
+    else return 0;                       // "off" / 未设置 / 未知档位
+
+    // 预算与输出共享同一个 max_tokens 池:超出会让 API 直接 400。
+    constexpr int kMinBudgetTokens = 1024;   // API 下限
+    constexpr int kMinAnswerTokens = 1024;   // 留给正式回答的下限
+    const int ceiling = maxTokens - kMinAnswerTokens;
+    if (ceiling < kMinBudgetTokens) {
+        qWarning() << "Anthropic: output cap" << maxTokens
+                   << "too small for a thinking budget, sending without thinking";
+        return 0;
+    }
+    return qMin(budget, ceiling);
+}
+
 void AnthropicService::chatComplete(const QJsonArray& messages, const QJsonArray& tools) {
     if (m_apiKey.isEmpty()) {
         emit errorOccurred("API key not set. Configure it in settings or via the "
@@ -231,8 +261,17 @@ void AnthropicService::chatComplete(const QJsonArray& messages, const QJsonArray
     QJsonObject body;
     body["model"] = m_model;
     body["max_tokens"] = m_maxTokens;
-    if (m_temperature.isValid())
+    const int thinkingBudget = m_reasoningEffort.isValid()
+        ? thinkingBudgetTokens(m_reasoningEffort.toString(), m_maxTokens) : 0;
+    if (thinkingBudget > 0) {
+        body["thinking"] = QJsonObject{
+            {"type", "enabled"},
+            {"budget_tokens", thinkingBudget},
+        };
+        // 扩展思考下 temperature 只能是 1,配置值一律不发。
+    } else if (m_temperature.isValid()) {
         body["temperature"] = m_temperature.toDouble();
+    }
     body["stream"] = true;
     body["messages"] = history.messages;
     if (!history.system.isEmpty())
@@ -261,6 +300,7 @@ LLMResponse AnthropicService::streamResult(const LLMRequestContext& ctx) const {
     LLMResponse response;
     response.success = true;
     response.content = ctx.content;
+    response.reasoning = ctx.reasoning;
     response.tokensUsed = ctx.tokensUsed;
     // docs/16 §5.1: direction split captured from message_start/message_delta.
     // Zero when the stream ended early - the agent then estimates.
@@ -351,6 +391,14 @@ void AnthropicService::processLine(LLMRequestContext& ctx, const QByteArray& lin
             if (!text.isEmpty()) {
                 ctx.content += text;
                 emit streamingChunk(text);
+            }
+        } else if (deltaType == QLatin1String("thinking_delta")) {
+            // Extended thinking streams on its own channel; "signature_delta"
+            // (the cryptographic proof) is display-irrelevant and skipped.
+            const QString thinking = delta.value("thinking").toString();
+            if (!thinking.isEmpty()) {
+                ctx.reasoning += thinking;
+                emit reasoningChunk(thinking);
             }
         } else if (deltaType == QLatin1String("input_json_delta")) {
             if (!state->toolUses.isEmpty())

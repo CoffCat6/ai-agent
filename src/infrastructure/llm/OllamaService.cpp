@@ -34,6 +34,13 @@ QJsonObject OllamaService::buildRequestBody(const QJsonArray& messages, const QJ
         body["tools"] = ollamaTools;
     }
 
+    // 思考开关是顶层字段（不在 options 里）；档位未设置时整个字段不发。
+    if (m_reasoningEffort.isValid()) {
+        const QVariant think = thinkFlagForLevel(m_reasoningEffort.toString());
+        if (think.isValid())
+            body["think"] = think.toBool();
+    }
+
     // Batch 15: sampling params are opt-in - the options object is only
     // present when the active profile set at least one of them.
     if (m_temperature.isValid() || m_numCtx.isValid()) {
@@ -51,6 +58,18 @@ QJsonObject OllamaService::buildRequestBody(const QJsonArray& messages, const QJ
 void OllamaService::setSamplingParams(const QVariant& temperature, const QVariant& numCtx) {
     m_temperature = temperature;
     m_numCtx = numCtx;
+}
+
+void OllamaService::setReasoningEffort(const QVariant& effort) {
+    m_reasoningEffort = effort;
+}
+
+QVariant OllamaService::thinkFlagForLevel(const QString& level) {
+    if (level == QLatin1String("off")) return false;
+    if (level == QLatin1String("low") || level == QLatin1String("medium")
+            || level == QLatin1String("high"))
+        return true;
+    return {};   // 未设置 / 未知档位：字段不发，退回模型默认
 }
 
 QJsonArray OllamaService::convertMessagesForOllama(const QJsonArray& messages) {
@@ -118,6 +137,7 @@ LLMResponse OllamaService::streamResult(const LLMRequestContext& ctx) const {
     LLMResponse response;
     response.success = true;
     response.content = ctx.content;
+    response.reasoning = ctx.reasoning;
     response.toolCalls = state->toolCalls;
     response.tokensUsed = ctx.tokensUsed;
     // docs/16 §5.1: eval counts from the done=true line (0 on aborted
@@ -156,6 +176,13 @@ void OllamaService::processLine(LLMRequestContext& ctx, const QByteArray& line) 
     }
 
     const QJsonObject message = json.value("message").toObject();
+
+    // 思考正文走 message.thinking，与 content 完全分开（流式与整块同构）
+    const QString thinking = message.value("thinking").toString();
+    if (!thinking.isEmpty()) {
+        ctx.reasoning += thinking;
+        emit reasoningChunk(thinking);
+    }
 
     // Streamed content chunk
     const QString chunk = message.value("content").toString();
@@ -212,6 +239,7 @@ LLMResponse OllamaService::parseResponse(const QJsonObject& json) {
 
     const QJsonObject message = json.value("message").toObject();
     response.content = message.value("content").toString();
+    response.reasoning = message.value("thinking").toString();
     response.success = true;
     response.toolCalls = parseToolCalls(message);
 

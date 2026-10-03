@@ -37,6 +37,7 @@ struct LLMRequestContext {
     QByteArray lineBuffer;   // trailing incomplete line
     QByteArray rawBody;      // full raw response (for error diagnostics)
     QString content;
+    QString reasoning;   // chain-of-thought accumulated on its own channel
     int tokensUsed{0};
     bool doneReceived{false};
     bool responseEmitted{false};
@@ -48,6 +49,7 @@ struct LLMRequestContext {
         lineBuffer.clear();
         rawBody.clear();
         content.clear();
+        reasoning.clear();
         tokensUsed = 0;
         doneReceived = false;
         responseEmitted = false;

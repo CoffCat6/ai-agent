@@ -175,6 +175,9 @@ private:
     void updateLastNodeStatus(const QString& status);
     void updateLastNodeTitle(const QString& title);
     bool updateTraceNodeStatusById(const QString& id, const QString& status);
+    // 把思考正文写进指定 thinking 节点（流式期间按 100ms 节流回灌，结束时
+    // 用 Provider 给的完整正文定稿）。节点里没有该字段时不产生任何变化。
+    bool updateTraceNodeReasoningById(const QString& id, const QString& text);
     void notifyTokens();
     // 估算校准系数（≥1，无观测 1.0），由 recordTokenUsage 滚动更新。
     double tokenEstimateScale() const;
@@ -195,6 +198,7 @@ private:
     void onLLMResponse(const LLMResponse& response);
     void onLLMError(const QString& error);
     void onStreamingChunk(const QString& chunk);
+    void onReasoningChunk(const QString& chunk);
     void flushStreamNode();
     void clearStreamState();
 
@@ -279,6 +283,8 @@ private:
     // Streaming display state
     QTimer m_streamTimer;
     QString m_streamText;
+    // 本轮 thinking 节点已收到的思考正文（每轮 processIteration 开始时清零）
+    QString m_reasoningText;
     bool m_streamNodeActive{false};
     QString m_thinkingNodeId;
 

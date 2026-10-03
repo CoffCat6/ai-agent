@@ -96,6 +96,7 @@ void SqliteMemory::initDatabase() {
     createTables();
     // docs/17 A0: sessions.project_id 列补齐（projects 表在 createTables 里）。
     migrateSessionProjectColumn();
+    migrateTraceNodeReasoningColumn();
     migrateKnowledgeSchema();
     migrateMessagesFts();
     migrateEpisodicFts();
@@ -299,6 +300,7 @@ void SqliteMemory::createTables() {
             status TEXT NOT NULL,
             args TEXT NOT NULL,
             result TEXT NOT NULL,
+            reasoning TEXT NOT NULL DEFAULT '',
             timestamp INTEGER NOT NULL,
             workspace_id TEXT NOT NULL DEFAULT 'local',
             PRIMARY KEY (session_id, node_id)
@@ -405,6 +407,23 @@ void SqliteMemory::migrateSessionProjectColumn() {
     if (!hasColumn)
         execDdl(q, "ALTER TABLE sessions ADD COLUMN project_id TEXT",
                 "add sessions.project_id column");
+}
+
+// 思考正文按列存（trace_nodes 是列映射表，不是整节点 JSON 大字段）：老库
+// 缺列就补，新库由建表 DDL 带上。缺了这一步，重启恢复会话时思考正文会静默
+// 消失——save/load 绑不上也查不到该列。
+void SqliteMemory::migrateTraceNodeReasoningColumn() {
+    QSqlQuery pragma(m_db);
+    QStringList columns;
+    if (pragma.exec("PRAGMA table_info(trace_nodes)")) {
+        while (pragma.next())
+            columns << pragma.value(1).toString();
+    }
+    if (columns.isEmpty()) return;   // 表还没建（新库由 DDL 负责）
+    if (!columns.contains(QLatin1String("reasoning")))
+        execDdl(pragma, "ALTER TABLE trace_nodes ADD COLUMN reasoning "
+                        "TEXT NOT NULL DEFAULT ''",
+                "add trace_nodes.reasoning column");
 }
 
 void SqliteMemory::migrateKnowledgeSchema() {
@@ -1170,11 +1189,12 @@ void SqliteMemory::saveTraceNode(const QString& sessionId, const QJsonObject& no
     // Upsert: position (node_order) is fixed by the first insert; later
     // saves of the same node id only refresh content/status.
     query.prepare("INSERT INTO trace_nodes (session_id, node_id, node_order, type, title, "
-                  "status, args, result, timestamp, workspace_id) "
-                  "VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, 'local') "
+                  "status, args, result, reasoning, timestamp, workspace_id) "
+                  "VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, 'local') "
                   "ON CONFLICT(session_id, node_id) DO UPDATE SET type = excluded.type, "
                   "title = excluded.title, status = excluded.status, args = excluded.args, "
-                  "result = excluded.result, timestamp = excluded.timestamp");
+                  "result = excluded.result, reasoning = excluded.reasoning, "
+                  "timestamp = excluded.timestamp");
     // Batch 18 review: every text column is NOT NULL. An absent JSON key
     // yields a null QString, and a null QString binds as SQL NULL — the same
     // silent-drop trap as usage_log.detail (Batch 11). Normalize the bind.
@@ -1190,6 +1210,7 @@ void SqliteMemory::saveTraceNode(const QString& sessionId, const QJsonObject& no
     query.addBindValue(nz(node, "status"));
     query.addBindValue(nz(node, "args"));
     query.addBindValue(nz(node, "result"));
+    query.addBindValue(nz(node, "reasoning"));
     query.addBindValue(static_cast<qint64>(node.value("timestamp").toDouble()));
 
     if (!query.exec()) {
@@ -1199,7 +1220,8 @@ void SqliteMemory::saveTraceNode(const QString& sessionId, const QJsonObject& no
 
 QJsonArray SqliteMemory::loadTraceNodes(const QString& sessionId) {
     QSqlQuery query(m_db);
-    query.prepare("SELECT node_id, type, title, status, args, result, timestamp, node_order "
+    query.prepare("SELECT node_id, type, title, status, args, result, reasoning, timestamp, "
+                  "node_order "
                   "FROM trace_nodes WHERE session_id = ? ORDER BY node_order ASC");
     query.addBindValue(sessionId);
 
@@ -1213,8 +1235,13 @@ QJsonArray SqliteMemory::loadTraceNodes(const QString& sessionId) {
             node["status"] = query.value(3).toString();
             node["args"] = query.value(4).toString();
             node["result"] = query.value(5).toString();
-            node["timestamp"] = query.value(6).toLongLong();
-            node["order"] = query.value(7).toInt();
+            // 空值不写键：与运行期 appendTraceNode 的白名单形状保持一致，
+            // 否则恢复出来的节点会多出一个 reasoning: ""。
+            const QString reasoning = query.value(6).toString();
+            if (!reasoning.isEmpty())
+                node["reasoning"] = reasoning;
+            node["timestamp"] = query.value(7).toLongLong();
+            node["order"] = query.value(8).toInt();
             nodes.append(node);
         }
     } else {

@@ -340,6 +340,11 @@ qInfo() << "NexusAI" << app.applicationVersion() << "starting";
             SamplingParams::optionalPositiveInt(profile.value("maxOutputTokens"));
         const QVariant numCtx =
             SamplingParams::optionalPositiveInt(profile.value("numCtx"));
+        // 思考强度档位：与采样参数同一套"未设置就不发字段"的语义，由各
+        // Provider 负责把档位折算成自己的协议字段（reasoning_effort /
+        // thinking.budget_tokens / think）。
+        const QVariant reasoningLevel =
+            SamplingParams::optionalReasoningLevel(profile.value("reasoningEffort"));
 
         // Only the active provider receives the profile: broadcasting one
         // profile's baseUrl to all services would corrupt the others
@@ -351,15 +356,18 @@ qInfo() << "NexusAI" << app.applicationVersion() << "starting";
             set.anthropic->setBaseUrl(baseUrl);
             set.anthropic->setModel(model);
             set.anthropic->setSamplingParams(temperature, maxOutputTokens);
+            set.anthropic->setReasoningEffort(reasoningLevel);
         } else if (provider == QLatin1String("ollama")) {
             set.ollama->setBaseUrl(baseUrl);
             set.ollama->setModel(model);
             set.ollama->setSamplingParams(temperature, numCtx);
+            set.ollama->setReasoningEffort(reasoningLevel);
         } else if (provider == QLatin1String("openai")) {
             set.openai->setApiKey(apiKey);
             set.openai->setBaseUrl(baseUrl);
             set.openai->setModel(model);
             set.openai->setSamplingParams(temperature, maxOutputTokens);
+            set.openai->setReasoningEffort(reasoningLevel);
         }
     };
     const auto pickActive = [](const ProviderSet& set,

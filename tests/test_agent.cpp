@@ -519,6 +519,8 @@ private slots:
     void repeatedCallWithAnswerFinishes();
     void oldToolRoundsCollapsed();
     void traceRestoredOnResume();
+    // 思考强度：思考正文只落 thinking 节点，不混进答案、不回灌模型、可恢复
+    void reasoningTextLandsOnThinkingNode();
     void stopDuringConfirmationIsNoOp();
     void contextBudgetCompressesHistory();
     void auditTrailRecorded();
@@ -941,6 +943,51 @@ void TestAgent::traceRestoredOnResume() {
     QVERIFY(traceHas(agent.traceModel(), "tool_result"));
     QVERIFY(traceHas(agent.traceModel(), "summary", "done"));
     QCOMPARE(agent.lastResponse(), QStringLiteral("done"));
+
+    agent.setMemory(nullptr);
+}
+
+// 思考正文的三条硬要求：落进 thinking 节点供展示、不混进答案文本、不回灌给
+// 模型（多数 API 会拒收陌生字段），并且重开会话后仍在。
+void TestAgent::reasoningTextLandsOnThinkingNode() {
+    SqliteMemory memory(QStringLiteral(":memory:"));
+    agent.setMemory(&memory);
+
+    LLMResponse withThinking;
+    withThinking.success = true;
+    withThinking.content = QStringLiteral("the answer");
+    withThinking.reasoning = QStringLiteral("weighed two options then chose");
+    llm.script.append(withThinking);
+
+    QSignalSpy spy(&agent, &AIAgent::responseReady);
+    agent.startTask(QStringLiteral("why"));
+    QTRY_COMPARE(spy.count(), 1);
+
+    QString reasoning;
+    for (const auto& entry : agent.traceModel()) {
+        const QJsonObject node = entry.toObject();
+        if (node.value("type").toString() == QLatin1String("thinking"))
+            reasoning = node.value("reasoning").toString();
+    }
+    QCOMPARE(reasoning, QStringLiteral("weighed two options then chose"));
+    QVERIFY(traceHas(agent.traceModel(), "summary", "the answer"));
+
+    // 回灌的历史里一处思考正文都不许出现
+    for (const auto& entry : llm.seenMessages.last()) {
+        const QJsonValue content = entry.toObject().value("content");
+        QVERIFY(!content.toString().contains(QStringLiteral("weighed two options")));
+    }
+
+    const QString sessionId = agent.currentSessionId();
+    agent.resetSession();
+    agent.resumeSession(sessionId);
+    QString restored;
+    for (const auto& entry : agent.traceModel()) {
+        const QJsonObject node = entry.toObject();
+        if (node.value("type").toString() == QLatin1String("thinking"))
+            restored = node.value("reasoning").toString();
+    }
+    QCOMPARE(restored, QStringLiteral("weighed two options then chose"));
 
     agent.setMemory(nullptr);
 }

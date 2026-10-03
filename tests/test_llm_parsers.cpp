@@ -135,6 +135,15 @@ private slots:
     void anthropicConvertDropsLeadingAssistant();
     void anthropicParseToolUse();
     void anthropicStreamingUsageCapture();
+
+    // ── 思考强度：请求字段映射与思考正文分离 ──────────────
+    void openaiReasoningEffortOmittedWhenUnset();
+    void openaiReasoningEffortSentPerLevel();
+    void openaiStreamingKeepsReasoningOutOfContent();
+    void anthropicThinkingBudgetMapping();
+    void anthropicStreamingThinkingBlockStaysOutOfContent();
+    void ollamaThinkFlagMapping();
+    void ollamaStreamingKeepsThinkingOutOfContent();
 };
 
 void TestLlmParsers::openaiPlainText() {
@@ -469,6 +478,140 @@ void TestLlmParsers::anthropicParseToolUse() {
     QCOMPARE(r.toolCalls.first().id, QStringLiteral("toolu_1"));
     QCOMPARE(r.toolCalls.first().name, QStringLiteral("list_dir"));
     QCOMPARE(r.toolCalls.first().arguments.value("path").toString(), QStringLiteral("/x"));
+}
+
+// ── 思考强度：请求字段映射 + 思考正文与答案分离 ──────────────
+
+void TestLlmParsers::openaiReasoningEffortOmittedWhenUnset() {
+    TestableOpenAI svc;
+    const QJsonArray msgs{QJsonObject{{"role", "user"}, {"content", "hi"}}};
+    const QJsonObject body = svc.bodyFor(msgs);
+    // 档位未设置时必须整个字段不发：默认配置的行为不能因为这个功能存在而改变
+    QVERIFY2(!body.contains("reasoning_effort"),
+             "reasoning_effort must be absent when no level is configured");
+}
+
+void TestLlmParsers::openaiReasoningEffortSentPerLevel() {
+    const QJsonArray msgs{QJsonObject{{"role", "user"}, {"content", "hi"}}};
+    TestableOpenAI svc;
+    svc.setSamplingParams(0.7, {});
+    svc.setReasoningEffort(QStringLiteral("high"));
+    const QJsonObject body = svc.bodyFor(msgs);
+    QCOMPARE(body.value("reasoning_effort").toString(), QStringLiteral("high"));
+    // 两个字段各自独立 opt-in，设了思考档位不该把 temperature 挤掉
+    QCOMPARE(body.value("temperature").toDouble(), 0.7);
+}
+
+void TestLlmParsers::openaiStreamingKeepsReasoningOutOfContent() {
+    TestableOpenAI svc;
+    LLMRequestContext ctx;
+    ctx.provider = svc.newState();
+    QSignalSpy answer(&svc, &IAIService::streamingChunk);
+    QSignalSpy thought(&svc, &IAIService::reasoningChunk);
+
+    svc.feed(ctx, QByteArrayLiteral(
+        "data: {\"choices\":[{\"delta\":{\"reasoning_content\":\"Let me think\"}}]}"));
+    svc.feed(ctx, QByteArrayLiteral(
+        "data: {\"choices\":[{\"delta\":{\"content\":\"42\"}}]}"));
+    svc.feed(ctx, QByteArrayLiteral("data: [DONE]"));
+
+    const LLMResponse r = svc.result(ctx);
+    QCOMPARE(r.reasoning, QStringLiteral("Let me think"));
+    QCOMPARE(r.content, QStringLiteral("42"));
+    // 通道分离是硬要求：思考增量漏一个进 streamingChunk，就会被当成最终答案
+    // 写进 summary 节点
+    QCOMPARE(answer.count(), 1);
+    QCOMPARE(answer.at(0).at(0).toString(), QStringLiteral("42"));
+    QCOMPARE(thought.count(), 1);
+    QCOMPARE(thought.at(0).at(0).toString(), QStringLiteral("Let me think"));
+}
+
+void TestLlmParsers::anthropicThinkingBudgetMapping() {
+    QCOMPARE(AnthropicService::thinkingBudgetTokens(QString(), 4096), 0);
+    QCOMPARE(AnthropicService::thinkingBudgetTokens(QStringLiteral("off"), 4096), 0);
+    QCOMPARE(AnthropicService::thinkingBudgetTokens(QStringLiteral("bogus"), 4096), 0);
+    QCOMPARE(AnthropicService::thinkingBudgetTokens(QStringLiteral("low"), 4096), 2048);
+    // 思考预算与正文共享 max_tokens 这一池，档位大于余量时折算到上限——
+    // 宁可少给预算，也不能发出会被 400 拒掉的报文
+    QCOMPARE(AnthropicService::thinkingBudgetTokens(QStringLiteral("medium"), 4096), 3072);
+    QCOMPARE(AnthropicService::thinkingBudgetTokens(QStringLiteral("high"), 32768), 16384);
+    // 输出上限小得连最低预算都留不出来时退回"不思考"
+    QCOMPARE(AnthropicService::thinkingBudgetTokens(QStringLiteral("low"), 1500), 0);
+}
+
+void TestLlmParsers::anthropicStreamingThinkingBlockStaysOutOfContent() {
+    TestableAnthropic svc;
+    LLMRequestContext ctx;
+    ctx.provider = svc.newState();
+    QSignalSpy answer(&svc, &IAIService::streamingChunk);
+    QSignalSpy thought(&svc, &IAIService::reasoningChunk);
+
+    svc.feed(ctx, QByteArrayLiteral(
+        "data: {\"type\":\"content_block_start\","
+        "\"content_block\":{\"type\":\"thinking\"}}"));
+    svc.feed(ctx, QByteArrayLiteral(
+        "data: {\"type\":\"content_block_delta\",\"delta\":"
+        "{\"type\":\"thinking_delta\",\"thinking\":\"considering\"}}"));
+    // signature 是 API 自校验用的签名，与展示无关，必须被忽略
+    svc.feed(ctx, QByteArrayLiteral(
+        "data: {\"type\":\"content_block_delta\",\"delta\":"
+        "{\"type\":\"signature_delta\",\"signature\":\"sig_1\"}}"));
+    svc.feed(ctx, QByteArrayLiteral(
+        "data: {\"type\":\"content_block_delta\",\"delta\":"
+        "{\"type\":\"text_delta\",\"text\":\"done\"}}"));
+
+    const LLMResponse r = svc.result(ctx);
+    QCOMPARE(r.reasoning, QStringLiteral("considering"));
+    QCOMPARE(r.content, QStringLiteral("done"));
+    QCOMPARE(thought.count(), 1);
+    QCOMPARE(answer.count(), 1);
+    QCOMPARE(answer.at(0).at(0).toString(), QStringLiteral("done"));
+
+    const LLMResponse full = AnthropicService::parseResponse(jsonOf(R"({
+        "type": "message", "role": "assistant",
+        "content": [{"type": "thinking", "thinking": "step by step"},
+                    {"type": "text", "text": "answer"}],
+        "usage": {"input_tokens": 3, "output_tokens": 4}
+    })"));
+    QCOMPARE(full.reasoning, QStringLiteral("step by step"));
+    QCOMPARE(full.content, QStringLiteral("answer"));
+}
+
+void TestLlmParsers::ollamaThinkFlagMapping() {
+    // 未设置/陌生档位 → invalid QVariant，think 字段不发，退回模型默认
+    QVERIFY(!OllamaService::thinkFlagForLevel(QString()).isValid());
+    QVERIFY(!OllamaService::thinkFlagForLevel(QStringLiteral("bogus")).isValid());
+    QCOMPARE(OllamaService::thinkFlagForLevel(QStringLiteral("off")).toBool(), false);
+    // Ollama 只有开/关，没有强度分级：低中高统一落到 think=true
+    QCOMPARE(OllamaService::thinkFlagForLevel(QStringLiteral("low")).toBool(), true);
+    QCOMPARE(OllamaService::thinkFlagForLevel(QStringLiteral("medium")).toBool(), true);
+    QCOMPARE(OllamaService::thinkFlagForLevel(QStringLiteral("high")).toBool(), true);
+}
+
+void TestLlmParsers::ollamaStreamingKeepsThinkingOutOfContent() {
+    TestableOllama svc;
+    LLMRequestContext ctx;
+    ctx.provider = svc.newState();
+    QSignalSpy answer(&svc, &IAIService::streamingChunk);
+    QSignalSpy thought(&svc, &IAIService::reasoningChunk);
+
+    svc.feed(ctx, QByteArrayLiteral(
+        "{\"message\":{\"role\":\"assistant\",\"thinking\":\"hmm\"}}"));
+    svc.feed(ctx, QByteArrayLiteral(
+        "{\"message\":{\"role\":\"assistant\",\"content\":\"ok\"}}"));
+    svc.feed(ctx, QByteArrayLiteral("{\"message\":{},\"done\":true}"));
+
+    const LLMResponse r = svc.result(ctx);
+    QCOMPARE(r.reasoning, QStringLiteral("hmm"));
+    QCOMPARE(r.content, QStringLiteral("ok"));
+    QCOMPARE(thought.count(), 1);
+    QCOMPARE(answer.count(), 1);
+
+    const LLMResponse full = OllamaService::parseResponse(jsonOf(R"({
+        "message": {"role": "assistant", "thinking": "because", "content": "42"}
+    })"));
+    QCOMPARE(full.reasoning, QStringLiteral("because"));
+    QCOMPARE(full.content, QStringLiteral("42"));
 }
 
 QTEST_GUILESS_MAIN(TestLlmParsers)

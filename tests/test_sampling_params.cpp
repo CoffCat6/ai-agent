@@ -38,6 +38,29 @@ private slots:
         QCOMPARE(optionalPositiveInt(QVariant(QStringLiteral("4096"))).toInt(), 4096);
         QCOMPARE(optionalPositiveInt(QVariant(8192)).toInt(), 8192);
     }
+
+    // 思考强度档位：只认这四档，其他一律归一化成"未设置"（字段不发）。
+    void optionalReasoningLevelNormalizes() {
+        using namespace NexusAI::SamplingParams;
+        QCOMPARE(optionalReasoningLevel(QVariant(QStringLiteral("low")))
+                     .toString(), QStringLiteral("low"));
+        QCOMPARE(optionalReasoningLevel(QVariant(QStringLiteral("off")))
+                     .toString(), QStringLiteral("off"));
+        QCOMPARE(optionalReasoningLevel(QVariant(QStringLiteral("medium")))
+                     .toString(), QStringLiteral("medium"));
+        QCOMPARE(optionalReasoningLevel(QVariant(QStringLiteral("high")))
+                     .toString(), QStringLiteral("high"));
+        // 大小写与空白不影响识别（QML 写回的是固定字面量，但注册表可能被手改）
+        QCOMPARE(optionalReasoningLevel(QVariant(QStringLiteral(" HIGH ")))
+                     .toString(), QStringLiteral("high"));
+        // 空串 = 用户选了"跟随默认"；陌生档位 = 手改坏数据。两者都必须归到
+        // "不发字段"，绝不能把垃圾值原样发给 API。
+        QVERIFY(!optionalReasoningLevel(QVariant(QStringLiteral(""))).isValid());
+        QVERIFY(!optionalReasoningLevel(QVariant(QStringLiteral("xhigh"))).isValid());
+        QVERIFY(!optionalReasoningLevel(QVariant(QStringLiteral("auto"))).isValid());
+        QVERIFY(!optionalReasoningLevel(QVariant(3)).isValid());
+        QVERIFY(!optionalReasoningLevel(QVariant()).isValid());
+    }
 };
 
 QTEST_GUILESS_MAIN(TestSamplingParams)

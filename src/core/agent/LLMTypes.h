@@ -24,6 +24,12 @@ struct LLMResponse {
     int cachedTokens{0};           // 缓存命中 token（OpenAI: prompt_tokens_details.cached_tokens）
     int cacheReadTokens{0};        // 缓存读取（Anthropic: cache_read_input_tokens）
     int cacheCreationTokens{0};    // 缓存写入（Anthropic: cache_creation_input_tokens）
+
+    // 思考正文：Provider 与答案分开回报的推理链（Anthropic thinking 块、
+    // Ollama message.thinking、OpenAI 兼容的 reasoning_content）。它不属于
+    // content、也永不回灌模型，只用于轨迹展示。
+    // 追加在结构体末尾：既有代码里存在按位置的聚合初始化，插在中间会错位。
+    QString reasoning;
 };
 
 } // namespace NexusAI

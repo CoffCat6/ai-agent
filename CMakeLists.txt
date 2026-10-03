@@ -194,6 +194,7 @@ qt_add_qml_module(nexus_ai
         src/ui/components/SessionTabs.qml
         src/ui/components/SplitBar.qml
         src/ui/components/TopBar.qml
+        src/ui/components/ThinkingEffortSelector.qml
         src/ui/components/ToolConfirmDialog.qml
         src/ui/panels/ContextPanel.qml
         src/ui/pages/AgentChatPage.qml

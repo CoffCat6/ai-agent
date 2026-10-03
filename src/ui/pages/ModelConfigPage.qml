@@ -457,6 +457,66 @@ ScrollView {
                     }
                 }
 
+                // ── 思考强度 ─────────────────────────────────────
+                // 与聊天输入区的快捷选择框读写同一个 profile 字段，不存在
+                // 第二份真相。档位由各 Provider 折算：OpenAI → reasoning_effort，
+                // Anthropic → thinking.budget_tokens，Ollama → 布尔 think。
+                ColumnLayout {
+                    id: effortSection
+                    Layout.fillWidth: true
+                    spacing: 4
+                    readonly property string effort:
+                        page.editing ? (page.editing.reasoningEffort || "") : ""
+
+                    Text {
+                        text: qsTr("思考强度（留默认 = 不随请求发送思考参数）")
+                        color: Theme.textSecondary
+                        font.pixelSize: Theme.fontSizeCaption
+                        font.bold: true
+                        font.family: Theme.fontMono
+                    }
+
+                    RowLayout {
+                        spacing: 8
+                        AppButton {
+                            text: qsTr("默认")
+                            highlighted: effortSection.effort === ""
+                            onClicked: page.submitField("reasoningEffort", "")
+                        }
+                        AppButton {
+                            text: qsTr("关闭")
+                            highlighted: effortSection.effort === "off"
+                            onClicked: page.submitField("reasoningEffort", "off")
+                        }
+                        AppButton {
+                            text: qsTr("低")
+                            highlighted: effortSection.effort === "low"
+                            onClicked: page.submitField("reasoningEffort", "low")
+                        }
+                        AppButton {
+                            text: qsTr("中")
+                            highlighted: effortSection.effort === "medium"
+                            onClicked: page.submitField("reasoningEffort", "medium")
+                        }
+                        AppButton {
+                            text: qsTr("高")
+                            highlighted: effortSection.effort === "high"
+                            onClicked: page.submitField("reasoningEffort", "high")
+                        }
+                        Item { Layout.fillWidth: true }
+                    }
+
+                    Text {
+                        Layout.fillWidth: true
+                        text: qsTr("OpenAI 兼容按档位发送 reasoning_effort；Claude 折算为思考预算（需输出上限留得住预算，否则自动退回不思考）；Ollama 只有开/关，低中高均按开处理。")
+                        color: Theme.textSecondary
+                        opacity: 0.8
+                        font.pixelSize: 10
+                        font.family: Theme.fontSans
+                        wrapMode: Text.WordWrap
+                    }
+                }
+
                 ColumnLayout {
                     Layout.fillWidth: true
                     spacing: 2

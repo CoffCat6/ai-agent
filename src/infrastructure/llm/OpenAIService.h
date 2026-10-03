@@ -28,6 +28,11 @@ public:
     // request JSON (strict proxies reject empty fields).
     void setSamplingParams(const QVariant& temperature, const QVariant& maxOutputTokens);
 
+    // 思考强度:归一化后的档位字符串("none"|"minimal"|"low"|"medium"|"high"
+    // |"xhigh"|"max")。无效 QVariant = 未设置,请求体不出现 reasoning_effort,
+    // 与 temperature 同一套"不发即默认"语义。
+    void setReasoningEffort(const QVariant& effort);
+
     // Pure parser over a non-streamed response body (no network state);
     // exposed for unit tests.
     static LLMResponse parseResponse(const QJsonObject& json);
@@ -79,6 +84,7 @@ protected:
     // Batch 15: unset = invalid QVariant → field omitted from the request.
     QVariant m_temperature;
     QVariant m_maxOutputTokens;
+    QVariant m_reasoningEffort;
 };
 
 } // namespace NexusAI

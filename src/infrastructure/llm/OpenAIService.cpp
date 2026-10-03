@@ -80,6 +80,8 @@ QJsonObject OpenAIService::buildRequestBody(const QJsonArray& messages, const QJ
         body["temperature"] = m_temperature.toDouble();
     if (m_maxOutputTokens.isValid())
         body["max_tokens"] = m_maxOutputTokens.toInt();
+    if (m_reasoningEffort.isValid())
+        body["reasoning_effort"] = m_reasoningEffort.toString();
 
     if (!tools.isEmpty()) {
         body["tools"] = tools;
@@ -93,6 +95,10 @@ void OpenAIService::setSamplingParams(const QVariant& temperature,
                                       const QVariant& maxOutputTokens) {
     m_temperature = temperature;
     m_maxOutputTokens = maxOutputTokens;
+}
+
+void OpenAIService::setReasoningEffort(const QVariant& effort) {
+    m_reasoningEffort = effort;
 }
 
 void OpenAIService::chatComplete(const QJsonArray& messages, const QJsonArray& tools) {
@@ -126,6 +132,7 @@ LLMResponse OpenAIService::streamResult(const LLMRequestContext& ctx) const {
     LLMResponse response;
     response.success = true;
     response.content = ctx.content;
+    response.reasoning = ctx.reasoning;
     for (const auto& tc : state->toolCalls) {
         if (tc.name.isEmpty()) continue;
         ToolCallInfo info;
@@ -238,6 +245,16 @@ void OpenAIService::processLine(LLMRequestContext& ctx, const QByteArray& line) 
         emit streamingChunk(content);
     }
 
+    // Reasoning delta: not part of the OpenAI schema, but the de-facto field
+    // every OpenAI-compatible reasoning endpoint (DeepSeek, Qwen, vLLM,
+    // llama.cpp) streams chain-of-thought under. Kept off `content` so the
+    // answer never carries the model's private deliberation.
+    const QString reasoning = delta.value("reasoning_content").toString();
+    if (!reasoning.isEmpty()) {
+        ctx.reasoning += reasoning;
+        emit reasoningChunk(reasoning);
+    }
+
     // Tool call fragments: {index, id?, function: {name?, arguments?}}
     const QJsonArray toolCalls = delta.value("tool_calls").toArray();
     for (const auto& tc : toolCalls) {
@@ -272,6 +289,7 @@ LLMResponse OpenAIService::parseResponse(const QJsonObject& json) {
 
     const QJsonObject message = choices.first().toObject().value("message").toObject();
     response.content = message.value("content").toString();
+    response.reasoning = message.value("reasoning_content").toString();
     response.success = true;
 
     const QJsonArray toolCalls = message.value("tool_calls").toArray();

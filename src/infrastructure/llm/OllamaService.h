@@ -30,6 +30,13 @@ public:
     // omitted from the request JSON entirely when nothing is configured.
     void setSamplingParams(const QVariant& temperature, const QVariant& numCtx);
 
+    // 思考强度:Ollama 只有一个顶层布尔 "think"(true 请求思考 / false 明确不要 /
+    // 字段缺失=模型默认),没有强度分级,所以低/中/高三档都落到 true。
+    void setReasoningEffort(const QVariant& effort);
+
+    // 档位 -> think 字段值;invalid QVariant 表示不发该字段。纯函数供测试断言。
+    static QVariant thinkFlagForLevel(const QString& level);
+
     // Pure parsers over response payloads (no network state); exposed for
     // unit tests.
     static LLMResponse parseResponse(const QJsonObject& json);
@@ -61,6 +68,7 @@ private:
     // Batch 15: unset = invalid QVariant → options object omitted.
     QVariant m_temperature;
     QVariant m_numCtx;
+    QVariant m_reasoningEffort; // 思考强度档位;unset = 不发 think 字段
 };
 
 } // namespace NexusAI

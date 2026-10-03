@@ -124,6 +124,8 @@ private:
     // docs/17 A0: sessions.project_id 列补齐（受控 ALTER，幂等）。
     void migrateSessionProjectColumn();
     void migrateKnowledgeSchema();
+    // trace_nodes.reasoning：思考正文列，老库补列（新库由建表 DDL 带上）
+    void migrateTraceNodeReasoningColumn();
     void migrateMessagesFts();
     // L3: upgrade episodic_fts to the trigram tokenizer (matches messages_fts).
     // Idempotent: no-op when the table already uses trigram.

@@ -30,6 +30,10 @@ namespace {
 
 constexpr int kMaxTraceChars = 1500;      // cap for tool args/results shown in UI
 constexpr int kMaxToolResultChars = 6000; // cap fed back to the LLM
+// 思考正文比工具输出更值得看全（推理链被腰斩就没有可读性可言），所以不复用
+// kMaxTraceChars 的 1500；同时它只落进轨迹节点供展示，永不回灌模型，上限只为
+// 防止单节点 JSON 在 SQLite 里无限膨胀。
+constexpr int kMaxReasoningChars = 4000;
 constexpr int kStreamFlushMs = 100;       // trace flush throttle while streaming
 // An interim assistant answer this long counts as the final result when the
 // model keeps re-issuing an identical tool call instead of stopping.
@@ -137,6 +141,7 @@ void AIAgent::setLLMService(IAIService* service) {
         connect(m_llmService, &IAIService::responseReady, this, &AIAgent::onLLMResponse);
         connect(m_llmService, &IAIService::errorOccurred, this, &AIAgent::onLLMError);
         connect(m_llmService, &IAIService::streamingChunk, this, &AIAgent::onStreamingChunk);
+        connect(m_llmService, &IAIService::reasoningChunk, this, &AIAgent::onReasoningChunk);
     }
 }
 
@@ -234,6 +239,10 @@ QString AIAgent::appendTraceNode(const QString& type, const QString& title,
     node["result"] = extra.value("result").toString();
     if (extra.contains("images"))
         node["images"] = extra.value("images");
+    // 字段是白名单式的：不在这里放行的 key 根本进不了节点（也就不会被
+    // persistTraceNode 整节点写进 trace_nodes）。
+    if (extra.contains("reasoning"))
+        node["reasoning"] = extra.value("reasoning");
 
     m_traceModel.append(node);
     persistTraceNode(node, m_traceModel.size() - 1);
@@ -269,6 +278,26 @@ bool AIAgent::updateTraceNodeStatusById(const QString& id, const QString& status
             emit traceChanged();
             return true;
         }
+    }
+    return false;
+}
+
+bool AIAgent::updateTraceNodeReasoningById(const QString& id, const QString& text) {
+    if (id.isEmpty() || text.isEmpty()) return false;
+    for (int i = 0; i < m_traceModel.size(); ++i) {
+        QJsonObject node = m_traceModel.at(i).toObject();
+        if (node.value("id").toString() != id) continue;
+        const QString capped = text.size() > kMaxReasoningChars
+            ? text.left(kMaxReasoningChars) + QStringLiteral("…")
+            : text;
+        // 流式期间每 100ms 就会重放一次同一段文本，内容没变就不要落库、
+        // 也不要触发 model 重置。
+        if (node.value("reasoning").toString() == capped) return false;
+        node["reasoning"] = capped;
+        m_traceModel.replace(i, node);
+        persistTraceNode(node, i);
+        emit traceChanged();
+        return true;
     }
     return false;
 }
@@ -671,6 +700,9 @@ void AIAgent::processIteration() {
     }
 
     applyContextBudget(TokenEstimator::estimateToolsSchema(toolsArray));
+    // 每轮一个新的 thinking 节点，思考正文必须同时重新计数，否则上一轮的
+    // 推理会被写进这一轮的节点里。
+    m_reasoningText.clear();
     m_thinkingNodeId = appendTraceNode("thinking",
                                        QStringLiteral("Reasoning (step %1)").arg(m_iteration),
                                        "running");
@@ -879,6 +911,10 @@ void AIAgent::onLLMResponse(const LLMResponse& response) {
 
     m_streamTimer.stop();
     if (!m_thinkingNodeId.isEmpty()) {
+        // 定稿优先用 Provider 给的完整思考正文（非流式路径根本不会来
+        // reasoningChunk 增量）；为空时保留流式期间已累积的那份。
+        if (!response.reasoning.isEmpty())
+            updateTraceNodeReasoningById(m_thinkingNodeId, response.reasoning);
         updateTraceNodeStatusById(m_thinkingNodeId, "completed");
         m_thinkingNodeId.clear();
     }
@@ -1091,7 +1127,19 @@ void AIAgent::onStreamingChunk(const QString& chunk) {
         m_streamTimer.start();
 }
 
+void AIAgent::onReasoningChunk(const QString& chunk) {
+    if (!m_active || chunk.isEmpty()) return;
+    // 思考增量走独立通道：streamingChunk 会就地造出 "summary"（最终答案）
+    // 节点，把推理链写进那条通道就等于把思考当答案吐给用户。
+    m_reasoningText += chunk;
+    if (!m_streamTimer.isActive())
+        m_streamTimer.start();
+}
+
 void AIAgent::flushStreamNode() {
+    // 推理模型常常先只吐思考、正文还没开始，此时 m_streamNodeActive 仍是
+    // false，所以思考的节流刷新必须放在那句提前返回之前。
+    updateTraceNodeReasoningById(m_thinkingNodeId, m_reasoningText);
     if (!m_streamNodeActive) return;
     updateLastNodeTitle(m_streamText);
 }
@@ -1099,6 +1147,7 @@ void AIAgent::flushStreamNode() {
 void AIAgent::clearStreamState() {
     m_streamTimer.stop();
     m_streamText.clear();
+    m_reasoningText.clear();
     m_streamNodeActive = false;
     m_thinkingNodeId.clear();
 }
