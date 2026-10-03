@@ -17,6 +17,21 @@ ScrollView {
             if (list[i].id === editingId) return list[i]
         return list.length > 0 ? list[0] : null
     }
+    // 主流长度档位。上下文按 1024 进制取整（1M 与 AIAgent::MaxContextTokens
+    // 的天花板对齐），最大输出同理；标签给人看的写法，值给机器算的写法。
+    readonly property var contextPresets: [
+        { v: 131072,  label: "128K" },
+        { v: 262144,  label: "256K" },
+        { v: 307200,  label: "300K" },
+        { v: 1048576, label: "1M" }
+    ]
+    readonly property var outputPresets: [
+        { v: 32768,  label: "32K" },
+        { v: 65536,  label: "64K" },
+        { v: 131072, label: "128K" },
+        { v: 262144, label: "256K" }
+    ]
+
     onEditingChanged: syncFields()
     Component.onCompleted: syncFields()
     Connections {
@@ -425,6 +440,15 @@ ScrollView {
                             }
                             onEditingFinished: page.submitField("maxOutputTokens", text.trim())
                         }
+                        SizePresetRow {
+                            Layout.fillWidth: true
+                            entries: page.outputPresets
+                            currentValue: parseInt(maxTokensField.text) || 0
+                            onChosen: (value) => {
+                                maxTokensField.text = value === "" ? "" : String(value)
+                                page.submitField("maxOutputTokens", maxTokensField.text)
+                            }
+                        }
                     }
 
                     ColumnLayout {
@@ -453,6 +477,16 @@ ScrollView {
                                 border.color: numCtxField.activeFocus ? Theme.brandPrimary : Theme.borderSubtle
                             }
                             onEditingFinished: page.submitField("numCtx", text.trim())
+                        }
+                        // Ollama 的"上下文长度"就是 num_ctx，用同一批档位
+                        SizePresetRow {
+                            Layout.fillWidth: true
+                            entries: page.contextPresets
+                            currentValue: parseInt(numCtxField.text) || 0
+                            onChosen: (value) => {
+                                numCtxField.text = value === "" ? "" : String(value)
+                                page.submitField("numCtx", numCtxField.text)
+                            }
                         }
                     }
                 }
@@ -543,6 +577,15 @@ ScrollView {
                                 ? Theme.brandPrimary : Theme.borderSubtle
                         }
                         onEditingFinished: page.submitField("contextLength", text.trim())
+                    }
+                    SizePresetRow {
+                        Layout.fillWidth: true
+                        entries: page.contextPresets
+                        currentValue: parseInt(contextLengthField.text) || 0
+                        onChosen: (value) => {
+                            contextLengthField.text = value === "" ? "" : String(value)
+                            page.submitField("contextLength", contextLengthField.text)
+                        }
                     }
                 }
             }
