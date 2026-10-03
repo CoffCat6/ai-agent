@@ -33,6 +33,11 @@ public:
     // 与 temperature 同一套"不发即默认"语义。
     void setReasoningEffort(const QVariant& effort);
 
+    // 内部档位 -> 线上取值。内部用四档（off/low/medium/high）描述意图，OpenAI
+    // 的枚举里没有 "off"（关闭是 "none"），原样发出去会被严格端点当非法取值拒
+    // 掉。纯函数供测试断言；未知/空返回空串表示不发该字段。
+    static QString reasoningEffortParam(const QString& level);
+
     // Pure parser over a non-streamed response body (no network state);
     // exposed for unit tests.
     static LLMResponse parseResponse(const QJsonObject& json);

@@ -500,6 +500,13 @@ void TestLlmParsers::openaiReasoningEffortSentPerLevel() {
     QCOMPARE(body.value("reasoning_effort").toString(), QStringLiteral("high"));
     // 两个字段各自独立 opt-in，设了思考档位不该把 temperature 挤掉
     QCOMPARE(body.value("temperature").toDouble(), 0.7);
+
+    // "off" 只是内部意图，OpenAI 的枚举里没有这个值（关闭叫 "none"）。
+    // 原样发出去会被严格端点当非法取值拒掉，选"关闭"就整条请求报错。
+    svc.setReasoningEffort(QStringLiteral("off"));
+    QCOMPARE(svc.bodyFor(msgs).value("reasoning_effort").toString(),
+             QStringLiteral("none"));
+    QVERIFY(OpenAIService::reasoningEffortParam(QStringLiteral("bogus")).isEmpty());
 }
 
 void TestLlmParsers::openaiStreamingKeepsReasoningOutOfContent() {

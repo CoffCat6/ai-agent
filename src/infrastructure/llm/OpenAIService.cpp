@@ -80,8 +80,11 @@ QJsonObject OpenAIService::buildRequestBody(const QJsonArray& messages, const QJ
         body["temperature"] = m_temperature.toDouble();
     if (m_maxOutputTokens.isValid())
         body["max_tokens"] = m_maxOutputTokens.toInt();
-    if (m_reasoningEffort.isValid())
-        body["reasoning_effort"] = m_reasoningEffort.toString();
+    if (m_reasoningEffort.isValid()) {
+        const QString effort = reasoningEffortParam(m_reasoningEffort.toString());
+        if (!effort.isEmpty())
+            body["reasoning_effort"] = effort;
+    }
 
     if (!tools.isEmpty()) {
         body["tools"] = tools;
@@ -99,6 +102,14 @@ void OpenAIService::setSamplingParams(const QVariant& temperature,
 
 void OpenAIService::setReasoningEffort(const QVariant& effort) {
     m_reasoningEffort = effort;
+}
+
+QString OpenAIService::reasoningEffortParam(const QString& level) {
+    if (level == QLatin1String("off")) return QStringLiteral("none");
+    if (level == QLatin1String("low") || level == QLatin1String("medium")
+            || level == QLatin1String("high"))
+        return level;
+    return {};   // 未设置 / 陌生档位：不发该字段
 }
 
 void OpenAIService::chatComplete(const QJsonArray& messages, const QJsonArray& tools) {
