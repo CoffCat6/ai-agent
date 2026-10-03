@@ -32,6 +32,12 @@ ScrollView {
         { v: 262144, label: "256K" }
     ]
 
+    // 当前编辑 profile 所属厂商可选的线协议（各自带默认端点）。同一个厂商可以
+    // 有多条协议（OpenAI 兼容 = Chat Completions / Responses），协议决定报文
+    // 格式与请求路径，厂商只决定默认值。
+    readonly property var protocolOptions: editing
+        ? Settings.endpointOptions(editing.provider) : []
+
     onEditingChanged: syncFields()
     Component.onCompleted: syncFields()
     Connections {
@@ -141,7 +147,17 @@ ScrollView {
                             color: Theme.brandPrimary
                         }
                         Text {
-                            text: modelData.displayName || modelData.provider
+                            // 同一厂商的两条协议（Chat Completions / Responses）光看
+                            // 厂商名分不出来，所以在列表里带上协议标签。
+                            text: {
+                                const name = modelData.displayName || modelData.provider
+                                const opts = Settings.endpointOptions(modelData.provider)
+                                if (opts.length < 2) return name
+                                for (let i = 0; i < opts.length; ++i)
+                                    if (opts[i].apiProtocol === modelData.apiProtocol)
+                                        return name + " · " + opts[i].label
+                                return name
+                            }
                             color: isActive ? Theme.brandPrimary : Theme.textPrimary
                             font.pixelSize: Theme.fontSizeCaption
                             font.family: Theme.fontSans
@@ -214,6 +230,37 @@ ScrollView {
                     AppButton { text: qsTr("Claude"); highlighted: page.editing && page.editing.provider === "anthropic"; onClicked: { const d = Settings.defaultEndpoint("anthropic"); page.submitFields({"provider": "anthropic", "baseUrl": d.baseUrl, "model": d.model}) } }
                     AppButton { text: qsTr("Ollama 本地"); highlighted: page.editing && page.editing.provider === "ollama"; onClicked: { const d = Settings.defaultEndpoint("ollama"); page.submitFields({"provider": "ollama", "baseUrl": d.baseUrl, "model": d.model}) } }
                     Item { Layout.fillWidth: true }
+                }
+            }
+
+            // 接口协议：厂商确定默认值，协议才确定报文格式与请求路径。只有一个
+            // 协议的厂商不显示这一行，避免无意义的单选。
+            ColumnLayout {
+                visible: page.protocolOptions.length > 1
+                Layout.fillWidth: true
+                spacing: 4
+                Text { text: qsTr("接口协议"); color: Theme.textSecondary; font.pixelSize: Theme.fontSizeCaption; font.bold: true; font.family: Theme.fontMono }
+                RowLayout {
+                    spacing: 8
+                    Repeater {
+                        model: page.protocolOptions
+                        AppButton {
+                            text: modelData.label
+                            highlighted: page.editing && page.editing.apiProtocol === modelData.apiProtocol
+                            onClicked: page.submitFields({"apiProtocol": modelData.apiProtocol,
+                                                          "baseUrl": modelData.baseUrl,
+                                                          "model": modelData.model})
+                        }
+                    }
+                    Item { Layout.fillWidth: true }
+                }
+                Text {
+                    visible: page.editing && page.editing.apiProtocol === "openai-responses"
+                    Layout.fillWidth: true
+                    text: qsTr("Responses 需要端点显式实现 /responses；多数“OpenAI 兼容”网关只提供 Chat Completions。")
+                    color: Theme.textSecondary
+                    font.pixelSize: 10; font.family: Theme.fontSans
+                    wrapMode: Text.WordWrap
                 }
             }
 
@@ -317,7 +364,7 @@ ScrollView {
                                 Text {
                                     text: {
                                         const cw = Settings.modelContextWindow(
-                                            page.editing.provider, modelData)
+                                            page.editing.apiProtocol, modelData)
                                         return cw > 0 ? qsTr("%1K").arg(Math.round(cw / 1000))
                                                       : qsTr("未知")
                                     }
@@ -628,7 +675,7 @@ ScrollView {
                     onClicked: {
                         page.testing = true
                         page.testResult = ""
-                        ConnectionTester.test(page.editing.provider, page.editing.baseUrl, page.editing.apiKey, page.editing.model)
+                        ConnectionTester.test(page.editing.apiProtocol, page.editing.baseUrl, page.editing.apiKey, page.editing.model)
                     }
                 }
             }

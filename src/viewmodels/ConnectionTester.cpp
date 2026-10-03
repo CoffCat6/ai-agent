@@ -1,8 +1,6 @@
 #include "ConnectionTester.h"
 
-#include "infrastructure/llm/OpenAIService.h"
-#include "infrastructure/llm/OllamaService.h"
-#include "infrastructure/llm/AnthropicService.h"
+#include "infrastructure/llm/LlmProtocolRegistry.h"
 
 #include <QTimer>
 
@@ -22,24 +20,23 @@ ConnectionTester* ConnectionTester::create(QQmlEngine*, QJSEngine*) {
 
 ConnectionTester::ConnectionTester(QObject* parent) : QObject(parent) {}
 
-void ConnectionTester::test(const QString& provider, const QString& baseUrl,
+void ConnectionTester::test(const QString& apiProtocol, const QString& baseUrl,
                             const QString& apiKey, const QString& model) {
     if (!m_done) return; // a test is already in flight
-    m_done = false;
 
-    IAIService* service;
-    if (provider == QLatin1String("ollama")) {
-        service = new OllamaService(this);
-    } else if (provider == QLatin1String("anthropic")) {
-        service = new AnthropicService(this);
-    } else {
-        service = new OpenAIService(this);
+    IAIService* service = LlmProtocolRegistry::createService(apiProtocol, this);
+    if (!service) {
+        finish(false, tr("未知的模型接口协议：%1").arg(apiProtocol));
+        return;
     }
+    m_done = false;
     m_service = service;
 
-    service->setBaseUrl(baseUrl);
-    service->setApiKey(apiKey);
-    service->setModel(model);
+    LlmProfileConfig cfg;
+    cfg.baseUrl = baseUrl;
+    cfg.apiKey = apiKey;
+    cfg.model = model;
+    service->configure(cfg);
 
     connect(service, &IAIService::responseReady, this,
             [this, service](const LLMResponse& response) {

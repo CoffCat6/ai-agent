@@ -4,10 +4,25 @@
 #include <QJsonArray>
 #include <QJsonObject>
 #include <QString>
+#include <QVariant>
 
 #include "core/agent/LLMTypes.h"
 
 namespace NexusAI {
+
+// 当前活动 model profile 的归一化配置快照，由装配层（main.cpp）从 profile map
+// 组装，再交给 LLMServiceBase::configure。这里刻意只放"已清洗过的值"：字段
+// 缺失/清空就是无效 QVariant，语义是"请求体里不发该字段"，各协议自己决定
+// 消费哪几个（输出上限 / 上下文长度 / 思考档位在不同协议里不是同一个东西）。
+struct LlmProfileConfig {
+    QString baseUrl;
+    QString apiKey;
+    QString model;
+    QVariant temperature;
+    QVariant maxOutputTokens;   // openai / anthropic 的输出上限
+    QVariant numCtx;            // ollama 的上下文长度
+    QVariant reasoningEffort;   // 思考强度档位
+};
 
 // Abstract AI service interface for LLM providers
 class IAIService : public QObject {
@@ -28,6 +43,10 @@ public:
     virtual void setApiKey(const QString& key) = 0;
     virtual void setModel(const QString& model) = 0;
     virtual void setBaseUrl(const QString& url) = 0;
+
+    // Apply the active profile in one shot. Default no-op: test doubles and
+    // any service that takes no profile configuration stay as they are.
+    virtual void configure(const LlmProfileConfig&) {}
 
     // Identity of the configured model (observability: audit rows carry it;
     // empty for fakes that don't track a model).

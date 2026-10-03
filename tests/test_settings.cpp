@@ -12,6 +12,9 @@
 #include <QtTest>
 #include <QSet>
 #include <QGuiApplication>
+#include <QJsonArray>
+#include <QJsonDocument>
+#include <QJsonObject>
 #include <QStyleHints>
 #include <QQmlComponent>
 #include <QQmlEngine>
@@ -136,6 +139,151 @@ private slots:
         const QStringList models = active.value("models").toStringList();
         QVERIFY(!models.isEmpty());
         QVERIFY(models.contains(active.value("model").toString()));
+    }
+
+    // apiProtocol 轴：0.3 之前持久化的 profile 只有 provider，加载时必须按
+    // 厂商补齐协议，运行侧（main.cpp）才能直接按协议取服务。
+    void legacyProfileGainsApiProtocolOnLoad() {
+        SettingsGuard guard;
+        {
+            QSettings s("NexusAI", "NexusAI");
+            QJsonArray arr;
+            QJsonObject legacy;
+            legacy["id"] = QStringLiteral("legacy-1");
+            legacy["displayName"] = QStringLiteral("旧配置");
+            legacy["provider"] = QStringLiteral("anthropic");
+            legacy["baseUrl"] = QStringLiteral("https://example.test");
+            legacy["model"] = QStringLiteral("claude-sonnet-4-5");
+            arr.append(legacy);
+            s.setValue("modelProfiles", QString::fromUtf8(
+                QJsonDocument(arr).toJson(QJsonDocument::Compact)));
+            s.setValue("activeProfileId", QStringLiteral("legacy-1"));
+        }
+
+        SettingsService service(nullptr);
+        const QVariantMap active = service.activeProfile();
+        QCOMPARE(active.value("provider").toString(), QStringLiteral("anthropic"));
+        QCOMPARE(active.value("apiProtocol").toString(),
+                 QStringLiteral("anthropic-messages"));
+        // 补齐不能动用户已经配好的端点
+        QCOMPARE(active.value("baseUrl").toString(), QStringLiteral("https://example.test"));
+    }
+
+    // 协议比厂商更具体：两者冲突时以协议为准回填厂商；协议本身没注册过
+    // （手改坏的配置）则回落该厂商的默认协议。
+    void endpointPairIsNormalizedOnLoad() {
+        SettingsGuard guard;
+        {
+            QSettings s("NexusAI", "NexusAI");
+            QJsonArray arr;
+            QJsonObject conflict;
+            conflict["id"] = QStringLiteral("c1");
+            conflict["provider"] = QStringLiteral("openai");
+            conflict["apiProtocol"] = QStringLiteral("ollama-chat");
+            arr.append(conflict);
+            QJsonObject bogus;
+            bogus["id"] = QStringLiteral("b1");
+            bogus["provider"] = QStringLiteral("ollama");
+            bogus["apiProtocol"] = QStringLiteral("ollama-messages");   // 没注册过的协议
+            arr.append(bogus);
+            s.setValue("modelProfiles", QString::fromUtf8(
+                QJsonDocument(arr).toJson(QJsonDocument::Compact)));
+            s.setValue("activeProfileId", QStringLiteral("c1"));
+        }
+
+        SettingsService service(nullptr);
+        const QVariantList profiles = service.profiles();
+        QCOMPARE(profiles.size(), 2);
+        const QVariantMap first = profiles.at(0).toMap();
+        QCOMPARE(first.value("apiProtocol").toString(), QStringLiteral("ollama-chat"));
+        QCOMPARE(first.value("provider").toString(), QStringLiteral("ollama"));
+        const QVariantMap second = profiles.at(1).toMap();
+        QCOMPARE(second.value("apiProtocol").toString(), QStringLiteral("ollama-chat"));
+        QCOMPARE(second.value("provider").toString(), QStringLiteral("ollama"));
+    }
+
+    // 协议轴自洽性：同一厂商的两条协议各自查自己的能力表，未注册的协议值必须
+    // 被忽略。
+    void responsesProtocolKeepsVendorAndOwnsCapabilityTable() {
+        SettingsGuard guard;
+        {
+            QSettings s("NexusAI", "NexusAI");
+            s.remove("modelProfiles");
+            s.remove("activeProfileId");
+        }
+
+        SettingsService service(nullptr);
+        const QString id = service.activeProfileId();   // 默认 openai + openai-chat
+        QCOMPARE(service.activeProfile().value("apiProtocol").toString(),
+                 QStringLiteral("openai-chat"));
+
+        service.updateProfile(id, {{QStringLiteral("apiProtocol"),
+                                    QStringLiteral("openai-responses")}});
+        QVariantMap profile = service.activeProfile();
+        QCOMPARE(profile.value("apiProtocol").toString(), QStringLiteral("openai-responses"));
+        // 换协议不能把厂商改掉
+        QCOMPARE(profile.value("provider").toString(), QStringLiteral("openai"));
+
+        // gpt-4.1 只在 Responses 的能力表里；Chat 协议查它是 0。
+        QCOMPARE(service.modelContextWindow(QStringLiteral("openai-responses"),
+                                            QStringLiteral("gpt-4.1")), 1000000);
+        QCOMPARE(service.modelContextWindow(QStringLiteral("openai-chat"),
+                                            QStringLiteral("gpt-4.1")), 0);
+
+        // 陌生协议值被拒绝，profile 保持在 Responses 上
+        service.updateProfile(id, {{QStringLiteral("apiProtocol"),
+                                    QStringLiteral("openai-whatever")}});
+        QCOMPARE(service.activeProfile().value("apiProtocol").toString(),
+                 QStringLiteral("openai-responses"));
+
+        // 设置页的协议选择行就绑这个列表（只有一条时不显示）：内容、顺序、
+        // 默认端点都要齐，否则按钮点出空白 profile。
+        const QVariantList openaiOptions = service.endpointOptions(QStringLiteral("openai"));
+        QCOMPARE(openaiOptions.size(), 2);
+        for (const QVariant& option : openaiOptions) {
+            const QVariantMap map = option.toMap();
+            QVERIFY(!map.value("label").toString().isEmpty());
+            QVERIFY(!map.value("baseUrl").toString().isEmpty());
+            QVERIFY(!map.value("model").toString().isEmpty());
+        }
+        QCOMPARE(openaiOptions.at(0).toMap().value("apiProtocol").toString(),
+                 QStringLiteral("openai-chat"));
+        QCOMPARE(openaiOptions.at(1).toMap().value("apiProtocol").toString(),
+                 QStringLiteral("openai-responses"));
+        QCOMPARE(service.endpointOptions(QStringLiteral("ollama")).size(), 1);
+        // 陌生厂商按 openai 兜底，不给空列表（空列表会让协议行消失）
+        QCOMPARE(service.endpointOptions(QStringLiteral("mistral")).size(), 2);
+    }
+
+    // UI 上换厂商（三个按钮之一）只提交 provider，协议要跟着重置成该厂商的
+    // 默认协议；未注册的协议值必须被忽略。
+    void updateProfileKeepsEndpointPairConsistent() {
+        SettingsGuard guard;
+        {
+            QSettings s("NexusAI", "NexusAI");
+            s.remove("modelProfiles");
+            s.remove("activeProfileId");
+        }
+
+        SettingsService service(nullptr);
+        const QString id = service.activeProfileId();
+        service.updateProfile(id, {{QStringLiteral("provider"), QStringLiteral("ollama")}});
+        QVariantMap profile = service.activeProfile();
+        QCOMPARE(profile.value("id").toString(), id);
+        QCOMPARE(profile.value("apiProtocol").toString(), QStringLiteral("ollama-chat"));
+
+        service.updateProfile(id, {{QStringLiteral("apiProtocol"), QStringLiteral("nope")}});
+        QCOMPARE(service.activeProfile().value("apiProtocol").toString(),
+                 QStringLiteral("ollama-chat"));
+
+        service.updateProfile(id, {{QStringLiteral("provider"), QStringLiteral("bogus-vendor")}});
+        QCOMPARE(service.activeProfile().value("provider").toString(),
+                 QStringLiteral("ollama"));
+
+        // defaultEndpoint 现在也带出协议，编辑器据此回填一对自洽的值
+        QCOMPARE(service.defaultEndpoint(QStringLiteral("anthropic"))
+                     .value("apiProtocol").toString(),
+                 QStringLiteral("anthropic-messages"));
     }
 
     // 会话权限模式全局默认：默认 confirm；非法值被拒绝；合法值持久化。
@@ -694,23 +842,26 @@ ComboBox {
         QCOMPARE(s.value("schemaVersion").toInt(), SettingsSchema::kSchemaVersion);
     }
 
-    // docs/15 §6.1.1: modelContextWindow capability-table lookup for known
-    // models across all three providers (openai / anthropic / ollama).
+    // docs/15 §6.1.1: modelContextWindow capability-table lookup by API
+    // protocol (the table lives on the protocol, not the vendor: OpenAI 厂商的
+    // Chat 与 Responses 两条协议可用模型不同).
     void testModelContextWindowKnownModel() {
         SettingsGuard guard;
         SettingsService service(nullptr);
-        QCOMPARE(service.modelContextWindow(QStringLiteral("openai"), QStringLiteral("gpt-4o")), 128000);
-        QCOMPARE(service.modelContextWindow(QStringLiteral("anthropic"), QStringLiteral("claude-sonnet-4-5")), 200000);
-        QCOMPARE(service.modelContextWindow(QStringLiteral("ollama"), QStringLiteral("qwen2.5:7b")), 32768);
+        QCOMPARE(service.modelContextWindow(QStringLiteral("openai-chat"), QStringLiteral("gpt-4o")), 128000);
+        QCOMPARE(service.modelContextWindow(QStringLiteral("anthropic-messages"), QStringLiteral("claude-sonnet-4-5")), 200000);
+        QCOMPARE(service.modelContextWindow(QStringLiteral("ollama-chat"), QStringLiteral("qwen2.5:7b")), 32768);
     }
 
-    // docs/15 §6.1.1: modelContextWindow returns 0 for unknown provider or
-    // model so the caller falls back to the global contextTokens.
+    // docs/15 §6.1.1: modelContextWindow returns 0 for an unknown protocol or
+    // model so the caller falls back to the global contextTokens. 厂商名不是协议
+    // 键，同样返回 0（调用方必须传 profile 的 apiProtocol）。
     void testModelContextWindowUnknownModel() {
         SettingsGuard guard;
         SettingsService service(nullptr);
-        QCOMPARE(service.modelContextWindow(QStringLiteral("openai"), QStringLiteral("nonexistent-model")), 0);
-        QCOMPARE(service.modelContextWindow(QStringLiteral("unknown-provider"), QStringLiteral("any")), 0);
+        QCOMPARE(service.modelContextWindow(QStringLiteral("openai-chat"), QStringLiteral("nonexistent-model")), 0);
+        QCOMPARE(service.modelContextWindow(QStringLiteral("unknown-protocol"), QStringLiteral("any")), 0);
+        QCOMPARE(service.modelContextWindow(QStringLiteral("openai"), QStringLiteral("gpt-4o")), 0);
     }
 
     // docs/15 §6.1.1: resolveContextLimit three-level priority:

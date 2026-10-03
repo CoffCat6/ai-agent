@@ -41,6 +41,13 @@ void LLMServiceBase::cancel() {
     }
 }
 
+void LLMServiceBase::configure(const LlmProfileConfig& cfg) {
+    m_baseUrl = cfg.baseUrl;
+    m_apiKey = cfg.apiKey;
+    m_model = cfg.model;
+    applyProfileParams(cfg);
+}
+
 void LLMServiceBase::startReply(QNetworkRequest& request, const QByteArray& body) {
     auto ctx = LLMRequestContextPtr::create();
     ctx->requestId = ++m_lastRequestId;

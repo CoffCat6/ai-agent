@@ -26,7 +26,8 @@ public:
     static ConnectionTester* instance();
     static ConnectionTester* create(QQmlEngine*, QJSEngine*);
 
-    Q_INVOKABLE void test(const QString& provider, const QString& baseUrl,
+    // 按线协议（profile 的 apiProtocol）建一次性服务打一发最小请求。
+    Q_INVOKABLE void test(const QString& apiProtocol, const QString& baseUrl,
                           const QString& apiKey, const QString& model);
 
 signals:

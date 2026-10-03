@@ -16,11 +16,16 @@ namespace NexusAI {
 
 // Application settings persisted via QSettings.
 //
-// Model access is organized as named profiles: each profile binds a provider
-// type ("openai" | "anthropic" | "ollama") to an endpoint (baseUrl / model /
-// apiKey) plus a display name. Any number of profiles can coexist and the
-// active one drives the live agent pipeline; switching is instant. The
-// legacy single-provider keys are migrated into profiles on first load.
+// Model access is organized as named profiles. Each profile carries two
+// orthogonal axes: a vendor ("openai" | "anthropic" | "ollama", which decides
+// the endpoint defaults) and an API protocol ("openai-chat" |
+// "anthropic-messages" | "ollama-chat", which decides the wire format and the
+// service implementation — see infrastructure/llm/LlmProtocolRegistry), plus
+// baseUrl / model / apiKey and a display name. Any number of profiles can
+// coexist and the active one drives the live agent pipeline; switching is
+// instant. Profiles persisted before the protocol axis existed are normalized
+// on load (protocol inferred from vendor), and the legacy single-provider
+// keys are migrated into profiles on first load.
 //
 // API keys are encrypted at rest on Windows (DPAPI, per-user).
 class SettingsService : public QObject {
@@ -175,8 +180,12 @@ public:
     // ── Profile management (QML invokables) ───────────
     // Create a profile with provider defaults; returns its id.
     Q_INVOKABLE QString addProfile();
-    // Merge the given fields (displayName/provider/baseUrl/apiKey/model/models)
-    // into the profile; unknown fields are ignored.
+    // Merge the given fields (displayName/provider/apiProtocol/baseUrl/apiKey/
+    // model/models) into the profile; unknown fields are ignored. provider and
+    // apiProtocol are validated against the protocol registry (an unregistered
+    // value is dropped) and kept consistent as a pair: submitting only a vendor
+    // resets the protocol to that vendor's default, submitting a protocol
+    // rewrites the vendor to the one that speaks it.
     Q_INVOKABLE void updateProfile(const QString& id, const QVariantMap& fields);
     Q_INVOKABLE void removeProfile(const QString& id);
     // docs/17 B2: 把通用设置页的 9 个键回写 schema 默认值（安全开关回滚
@@ -190,17 +199,20 @@ public:
     Q_INVOKABLE void addModelToProfile(const QString& id, const QString& model);
     // Remove a model name from a profile's model list
     Q_INVOKABLE void removeModelFromProfile(const QString& id, const QString& model);
-    // {baseUrl, model, models} defaults for a provider type (used when the editor
-    // switches the provider of a profile).
+    // {apiProtocol, baseUrl, model, models} defaults for the default protocol
+    // of a provider (used when the editor switches the provider of a profile).
     Q_INVOKABLE QVariantMap defaultEndpoint(const QString& provider) const;
+    // 某厂商的全部可选协议（{apiProtocol, label, baseUrl, model}）。只有一条时
+    // UI 不显示协议选择行——anthropic / ollama 目前就是如此。
+    Q_INVOKABLE QVariantList endpointOptions(const QString& provider) const;
     // Localized display name for a provider key (legacy profile migration).
     QString providerDisplayName(const QString& provider) const;
 
-    // Query the capability-table context window for a given provider+model.
-    // Returns 0 when the provider or model is unknown (caller should fall
-    // back to the global contextTokens). Invoked from QML (ModelConfigPage)
-    // to render the per-model window chip.
-    Q_INVOKABLE int modelContextWindow(const QString& provider, const QString& model) const;
+    // Query the capability-table context window for a given protocol+model.
+    // Returns 0 when the protocol or model is unknown (caller should fall
+    // back to the global contextTokens). 按协议查：同一厂商的两条协议可用的
+    // 模型集合不一样。Invoked from QML (ModelConfigPage / ModelSelector).
+    Q_INVOKABLE int modelContextWindow(const QString& apiProtocol, const QString& model) const;
 
     // Resolve the effective context budget for the active profile using a
     // three-level priority: Profile-level "contextLength" override >
@@ -239,7 +251,7 @@ private:
     QVariantList migrateLegacy();
     void persist();
 
-    QVariantList m_profiles;   // each entry: {id, displayName, provider, baseUrl, apiKey, model}
+    QVariantList m_profiles;   // each entry: {id, displayName, provider, apiProtocol, baseUrl, apiKey, model}
     QString m_activeId;
     int m_contextTokens{8192};
     int m_maxSteps{AIAgent::kDefaultMaxIterations};

@@ -88,6 +88,13 @@ protected:
     LLMResponse parseBody(const QJsonObject& json) const override
     { return parseResponse(json); }
 
+    // Messages API 用 max_tokens 而非上下文长度，故只读输出上限与思考档位。
+    void applyProfileParams(const LlmProfileConfig& cfg) override
+    {
+        setSamplingParams(cfg.temperature, cfg.maxOutputTokens);
+        setReasoningEffort(cfg.reasoningEffort);
+    }
+
 private:
     static QJsonArray convertTools(const QJsonArray& tools);
 

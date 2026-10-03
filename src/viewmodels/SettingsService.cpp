@@ -4,6 +4,7 @@
 
 #include "core/agent/AIAgent.h"
 #include "core/utils/Logger.h"
+#include "infrastructure/llm/LlmProtocolRegistry.h"
 
 #include <QJsonArray>
 #include <QJsonDocument>
@@ -20,62 +21,41 @@ namespace NexusAI {
 
 namespace {
 
-struct ProviderDefaults {
-    QString baseUrl;
-    QString model;
-    QStringList models;
-    QHash<QString, int> contextWindows;  // model name → context window (tokens)
-};
-
-// No displayName in the static table: a translated name must be resolved
-// through tr() at query time (providerDisplayName) so a runtime language
-// switch is reflected; a static-initialized string would be frozen.
-const QHash<QString, ProviderDefaults>& providerDefaults() {
-    static const QHash<QString, ProviderDefaults> defaults = {
-        {"openai",    {QStringLiteral("https://api.openai.com/v1"),  QStringLiteral("gpt-4o-mini"),
-                       {QStringLiteral("gpt-4o-mini"), QStringLiteral("gpt-4o"), QStringLiteral("gpt-4-turbo"), QStringLiteral("o3-mini")},
-                       {{QStringLiteral("gpt-4o-mini"), 128000},
-                        {QStringLiteral("gpt-4o"), 128000},
-                        {QStringLiteral("gpt-4-turbo"), 128000},
-                        {QStringLiteral("o3-mini"), 200000}}}},
-        {"anthropic", {QStringLiteral("https://api.anthropic.com"), QStringLiteral("claude-sonnet-4-5"),
-                       {QStringLiteral("claude-sonnet-4-5"), QStringLiteral("claude-3-5-haiku-20241022"), QStringLiteral("claude-3-5-sonnet-20241022"), QStringLiteral("claude-3-opus-20240229")},
-                       {{QStringLiteral("claude-sonnet-4-5"), 200000},
-                        {QStringLiteral("claude-3-5-haiku-20241022"), 200000},
-                        {QStringLiteral("claude-3-5-sonnet-20241022"), 200000},
-                        {QStringLiteral("claude-3-opus-20240229"), 200000}}}},
-        {"ollama",    {QStringLiteral("http://localhost:11434"),     QStringLiteral("qwen2.5:7b"),
-                       {QStringLiteral("qwen2.5:7b"), QStringLiteral("llama3.1:8b"), QStringLiteral("deepseek-r1:7b")},
-                       {{QStringLiteral("qwen2.5:7b"), 32768},
-                        {QStringLiteral("llama3.1:8b"), 128000},
-                        {QStringLiteral("deepseek-r1:7b"), 65536}}}},
-    };
-    return defaults;
-}
-
-const QStringList kKnownProviders = {QStringLiteral("openai"),
-                                     QStringLiteral("anthropic"),
-                                     QStringLiteral("ollama")};
-
 constexpr auto kProfilesKey = "modelProfiles";
 constexpr auto kActiveKey = "activeProfileId";
+
+// 厂商默认端点/模型表来自协议注册表：一个厂商目前就一条协议，所以取该厂商
+// 默认协议的描述符。新增协议（例如 OpenAI Responses）只需要改那张表。
+const LlmProtocolDescriptor* defaultsForProvider(const QString& provider) {
+    return LlmProtocolRegistry::resolve(QString(), provider);
+}
+
+// provider 与 apiProtocol 必须成对自洽：以协议为准回填厂商（协议决定线格式，
+// 也决定要不要 key、读哪个环境变量）；协议缺失或陌生（旧 profile 根本没这个
+// 字段）则回落该厂商的默认协议。
+const LlmProtocolDescriptor* normalizeEndpoint(QVariantMap& profile) {
+    const auto* d = LlmProtocolRegistry::resolve(
+        profile.value("apiProtocol").toString(),
+        profile.value("provider").toString());
+    profile["provider"] = d->provider;
+    profile["apiProtocol"] = d->key;
+    return d;
+}
 
 QVariantMap makeProfile(const QString& provider, const QString& displayName,
                         const QString& baseUrl, const QString& model,
                         const QString& apiKey, const QStringList& models = {}) {
+    const LlmProtocolDescriptor* defaults = defaultsForProvider(provider);
     QVariantMap p;
     p["id"] = QUuid::createUuid().toString(QUuid::WithoutBraces);
     p["displayName"] = displayName;
-    const QString validProvider = kKnownProviders.contains(provider) ? provider : QStringLiteral("openai");
-    p["provider"] = validProvider;
+    p["provider"] = defaults->provider;
+    p["apiProtocol"] = defaults->key;
     p["baseUrl"] = baseUrl;
     p["model"] = model;
     p["apiKey"] = apiKey;
-    
-    QStringList mList = models;
-    if (mList.isEmpty()) {
-        mList = providerDefaults().value(validProvider).models;
-    }
+
+    QStringList mList = models.isEmpty() ? defaults->models : models;
     if (!model.isEmpty() && !mList.contains(model)) {
         mList.prepend(model);
     }
@@ -188,14 +168,17 @@ void SettingsService::load() {
         for (const auto& entry : doc.array()) {
             QVariantMap p = entry.toObject().toVariantMap();
             p["apiKey"] = unprotectApiKey(p.value("apiKey").toString());
-            const QString provider = p.value("provider").toString();
-            // Drop profiles with an unknown provider type
-            if (!kKnownProviders.contains(provider)) continue;
+            // 厂商与协议都不认识的 profile 是损坏数据，沿用旧行为直接丢弃。
+            if (!LlmProtocolRegistry::isKnownProvider(p.value("provider").toString())
+                    && !LlmProtocolRegistry::find(p.value("apiProtocol").toString()))
+                continue;
+            // 旧 profile 没有 apiProtocol：在这里按厂商补齐，之后运行侧只认这个键。
+            const LlmProtocolDescriptor* endpoint = normalizeEndpoint(p);
 
             // Ensure "models" field is populated
             QStringList models = p.value("models").toStringList();
             if (models.isEmpty()) {
-                models = providerDefaults().value(provider).models;
+                models = endpoint->models;
             }
             const QString model = p.value("model").toString();
             if (!model.isEmpty() && !models.contains(model)) {
@@ -215,11 +198,15 @@ void SettingsService::load() {
 
     // Legacy env fallback for the active profile's key
     QVariantMap active = activeProfile();
-    if (!active.isEmpty() && active.value("apiKey").toString().isEmpty()
-            && active.value("provider").toString() != QLatin1String("ollama")) {
-        const QString envKey = qEnvironmentVariable(
-            active.value("provider").toString() == QLatin1String("anthropic")
-                ? "ANTHROPIC_API_KEY" : "OPENAI_API_KEY");
+    if (!active.isEmpty() && active.value("apiKey").toString().isEmpty()) {
+        // 要不要读环境变量、读哪一个，都由协议描述符给出（本地协议没有
+        // key 概念，envApiKeyVar 为空即跳过）。
+        const QString envVar = LlmProtocolRegistry::resolve(
+            active.value("apiProtocol").toString(),
+            active.value("provider").toString())->envApiKeyVar;
+        const QString envKey = envVar.isEmpty()
+            ? QString()
+            : qEnvironmentVariable(envVar.toUtf8().constData());
         if (!envKey.isEmpty()) {
             active["apiKey"] = envKey;
             for (int i = 0; i < m_profiles.size(); ++i) {
@@ -273,28 +260,28 @@ QVariantList SettingsService::migrateLegacy() {
 
     const QString legacyProvider = [&]() {
         const QString p = settings.value("provider", "openai").toString();
-        return kKnownProviders.contains(p) ? p : QStringLiteral("openai");
+        return LlmProtocolRegistry::isKnownProvider(p) ? p : QStringLiteral("openai");
     }();
     const QString legacyKey = unprotectApiKey(settings.value("apiKey").toString());
 
     QVariantList out;
-    for (const QString& provider : kKnownProviders) {
+    for (const QString& provider : LlmProtocolRegistry::providers()) {
         const bool isActiveProvider = (provider == legacyProvider);
         const bool hasScopedValues = settings.contains(provider + "/baseUrl");
         if (!isActiveProvider && !hasScopedValues) continue;
 
-        const ProviderDefaults& defaults = providerDefaults().value(provider);
+        const LlmProtocolDescriptor* defaults = defaultsForProvider(provider);
         out.append(makeProfile(
             provider,
             providerDisplayName(provider),
-            settings.value(provider + "/baseUrl", defaults.baseUrl).toString(),
-            settings.value(provider + "/model", defaults.model).toString(),
-            provider == QLatin1String("ollama") ? QString() : legacyKey));
+            settings.value(provider + "/baseUrl", defaults->defaultBaseUrl).toString(),
+            settings.value(provider + "/model", defaults->defaultModel).toString(),
+            defaults->local ? QString() : legacyKey));
     }
     if (out.isEmpty()) {
-        const ProviderDefaults& defaults = providerDefaults().value(legacyProvider);
+        const LlmProtocolDescriptor* defaults = defaultsForProvider(legacyProvider);
         out.append(makeProfile(legacyProvider, providerDisplayName(legacyProvider),
-                               defaults.baseUrl, defaults.model, legacyKey));
+                               defaults->defaultBaseUrl, defaults->defaultModel, legacyKey));
     }
 
     qInfo() << "Migrated legacy provider settings into" << out.size() << "model profile(s)";
@@ -316,9 +303,9 @@ void SettingsService::persist() {
 }
 
 QString SettingsService::addProfile() {
-    const ProviderDefaults& defaults = providerDefaults().value(QStringLiteral("openai"));
+    const LlmProtocolDescriptor* defaults = defaultsForProvider(QStringLiteral("openai"));
     const QVariantMap profile = makeProfile(QStringLiteral("openai"),
-        tr("新配置"), defaults.baseUrl, defaults.model, QString());
+        tr("新配置"), defaults->defaultBaseUrl, defaults->defaultModel, QString());
 
     const QString id = profile.value("id").toString();
     m_profiles.append(profile);
@@ -340,10 +327,21 @@ void SettingsService::updateProfile(const QString& id, const QVariantMap& fields
         for (auto it = fields.constBegin(); it != fields.constEnd(); ++it) {
             if (it.key() == QLatin1String("id")) continue; // id is immutable
             if (it.key() == QLatin1String("provider")
-                    && !kKnownProviders.contains(it.value().toString()))
+                    && !LlmProtocolRegistry::isKnownProvider(it.value().toString()))
                 continue;
+            if (it.key() == QLatin1String("apiProtocol")
+                    && !LlmProtocolRegistry::find(it.value().toString()))
+                continue;   // 未注册的协议不接受
             p[it.key()] = it.value();
         }
+        // 两个轴的优先级要看这次提交了什么：UI 的厂商按钮只发 provider，此时
+        // 协议要跟着重置成该厂商的默认协议（否则协议字段会反过来把厂商改写回
+        // 去，换厂商就成了空操作）；显式换协议时则以协议为准回填厂商。
+        if (!fields.contains(QStringLiteral("apiProtocol"))
+                && fields.contains(QStringLiteral("provider"))) {
+            p["apiProtocol"] = defaultsForProvider(p.value("provider").toString())->key;
+        }
+        normalizeEndpoint(p);
         m_profiles[i] = p;
 
         persist();
@@ -472,11 +470,12 @@ QString SettingsService::providerDisplayName(const QString& provider) const {
 }
 
 QVariantMap SettingsService::defaultEndpoint(const QString& provider) const {
-    const ProviderDefaults& defaults =
-        providerDefaults().value(kKnownProviders.contains(provider) ? provider : QStringLiteral("openai"));
-    return {{QStringLiteral("baseUrl"), defaults.baseUrl},
-            {QStringLiteral("model"), defaults.model},
-            {QStringLiteral("models"), defaults.models}};
+    const LlmProtocolDescriptor* defaults = defaultsForProvider(
+        LlmProtocolRegistry::isKnownProvider(provider) ? provider : QStringLiteral("openai"));
+    return {{QStringLiteral("apiProtocol"), defaults->key},
+            {QStringLiteral("baseUrl"), defaults->defaultBaseUrl},
+            {QStringLiteral("model"), defaults->defaultModel},
+            {QStringLiteral("models"), defaults->models}};
 }
 
 void SettingsService::setContextTokens(int tokens) {
@@ -722,17 +721,30 @@ void SettingsService::setDefaultPermissionMode(const QString& v) {
     emit defaultPermissionModeChanged();
 }
 
-// Capability-table lookup: returns the context window for a provider+model,
+// Capability-table lookup: returns the context window for a protocol+model,
 // or 0 when either is unknown so the caller can fall back to the global
-// contextTokens. providerDefaults() lives in the anonymous namespace above
-// but is visible to these member definitions within the same TU.
-int SettingsService::modelContextWindow(const QString& provider,
+// contextTokens. 能力表住在协议注册表的描述符里，按协议取——同一个厂商的两条
+// 协议可用的模型集合不一样。
+int SettingsService::modelContextWindow(const QString& apiProtocol,
                                         const QString& model) const {
-    const auto it = providerDefaults().constFind(provider);
-    if (it == providerDefaults().constEnd()) return 0;
-    const auto wit = it.value().contextWindows.constFind(model);
-    if (wit == it.value().contextWindows.constEnd()) return 0;
-    return wit.value();
+    const auto* d = LlmProtocolRegistry::find(apiProtocol);
+    if (!d) return 0;
+    return d->contextWindows.value(model, 0);
+}
+
+// 某厂商可选的协议（UI 的协议选择行）：{apiProtocol, label, baseUrl, model}。
+// 只有一个协议时 UI 不显示这一行。
+QVariantList SettingsService::endpointOptions(const QString& provider) const {
+    QVariantList out;
+    const QString vendor = LlmProtocolRegistry::isKnownProvider(provider)
+        ? provider : QStringLiteral("openai");
+    for (const auto& d : LlmProtocolRegistry::protocolsOfProvider(vendor)) {
+        out.append(QVariantMap{{QStringLiteral("apiProtocol"), d.key},
+                               {QStringLiteral("label"), d.label},
+                               {QStringLiteral("baseUrl"), d.defaultBaseUrl},
+                               {QStringLiteral("model"), d.defaultModel}});
+    }
+    return out;
 }
 
 // Three-level priority resolution for the active profile's context budget:
@@ -752,8 +764,11 @@ int SettingsService::resolveContextLimit() const {
         if (ok && v > 0) return v;
     }
 
-    // Priority 2: capability-table contextWindow.
-    const int tableValue = modelContextWindow(provider, model);
+    // Priority 2: capability-table contextWindow（按协议查，同厂商两条协议的
+    // 可用模型集合不同）。apiProtocol 未经 load 归一的调用方按厂商兜底。
+    const QString apiProtocol = LlmProtocolRegistry::resolve(
+        profile.value("apiProtocol").toString(), provider)->key;
+    const int tableValue = modelContextWindow(apiProtocol, model);
     if (tableValue > 0) return tableValue;
 
     // Priority 3: global contextTokens (fallback).

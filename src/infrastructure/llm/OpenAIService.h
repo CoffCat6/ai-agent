@@ -81,6 +81,14 @@ protected:
     LLMResponse parseBody(const QJsonObject& json) const override
     { return parseResponse(json); }
 
+    // Chat Completions 消费 profile 的输出上限与思考档位；ollama 的 numCtx 在
+    // 这条协议里没有对应字段，所以不读。
+    void applyProfileParams(const LlmProfileConfig& cfg) override
+    {
+        setSamplingParams(cfg.temperature, cfg.maxOutputTokens);
+        setReasoningEffort(cfg.reasoningEffort);
+    }
+
 protected:
     // Protected (not private) so tests can assert the wire format directly,
     // mirroring convertMessagesForOpenAI.

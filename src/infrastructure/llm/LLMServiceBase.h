@@ -76,7 +76,14 @@ public:
     void setBaseUrl(const QString& url) override { m_baseUrl = url; }
     QString model() const override { return m_model; }
 
+    // 端点三件套统一在这里落，协议差异全交给 applyProfileParams 这一个钩子，
+    // 所以装配层（main.cpp）不需要再按协议字符串分支设参。
+    void configure(const LlmProfileConfig& cfg) override;
+
 protected:
+    // 各协议从 profile 里取自己那部分参数；基类实现到此为止什么都不做。
+    virtual void applyProfileParams(const LlmProfileConfig&) {}
+
     // POSTs the body as a NEW request context, emits requestStarted() and
     // wires readyRead/finished to identity-validated handlers.
     void startReply(QNetworkRequest& request, const QByteArray& body);

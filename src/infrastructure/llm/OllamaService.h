@@ -62,6 +62,13 @@ protected:
     LLMResponse parseBody(const QJsonObject& json) const override
     { return parseResponse(json); }
 
+    // Ollama 的"上下文长度"就是 num_ctx，输出上限在这条协议上没有对应字段。
+    void applyProfileParams(const LlmProfileConfig& cfg) override
+    {
+        setSamplingParams(cfg.temperature, cfg.numCtx);
+        setReasoningEffort(cfg.reasoningEffort);
+    }
+
 private:
     QJsonObject buildRequestBody(const QJsonArray& messages, const QJsonArray& tools);
 

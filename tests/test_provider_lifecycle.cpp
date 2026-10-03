@@ -34,6 +34,7 @@
 #include "core/utils/Activity.h"
 #include "infrastructure/llm/AnthropicService.h"
 #include "infrastructure/llm/OllamaService.h"
+#include "infrastructure/llm/OpenAIResponsesService.h"
 #include "infrastructure/llm/OpenAIService.h"
 #include "core/tools/NetworkFetchTool.h"
 
@@ -275,6 +276,40 @@ QByteArray ollamaTextBody() {
     return QByteArrayLiteral("{\"message\":{\"content\":\"Hello\"},\"done\":true}\n");
 }
 
+// OpenAI Responses API SSE：命名事件靠 data 里的 "type" 判别（不读 event: 行）。
+// 工具调用分三段：output_item.added 给 name/call_id，arguments 增量分片，最后
+// output_item.done 带完整值（要能折叠掉已累积的分片而不是拼两遍）。
+// 用 QByteArrayLiteral 拼接而非裸字符串字面量：与文件里其他脚本一致，也避开
+// 多个 raw string 混用时 moc 解析不到后面测试类的问题。
+QByteArray responsesToolBody() {
+    return QByteArrayLiteral(
+        "data: {\"type\":\"response.created\",\"response\":{\"id\":\"resp_1\",\"status\":\"in_progress\"}}\n\n"
+        "data: {\"type\":\"response.output_item.added\",\"output_index\":0,\"item\":{\"type\":\"function_call\","
+        "\"id\":\"fc_1\",\"call_id\":\"call_1\",\"name\":\"search_knowledge_base\",\"arguments\":\"\"}}\n\n"
+        "data: {\"type\":\"response.function_call_arguments.delta\",\"item_id\":\"fc_1\",\"output_index\":0,"
+        "\"delta\":\"{\\\"query\\\":\\\"孙\"}\n\n"
+        "data: {\"type\":\"response.function_call_arguments.delta\",\"item_id\":\"fc_1\",\"output_index\":0,"
+        "\"delta\":\"曼\\\"}\"}\n\n"
+        "data: {\"type\":\"response.output_item.done\",\"output_index\":0,\"item\":{\"type\":\"function_call\","
+        "\"id\":\"fc_1\",\"call_id\":\"call_1\",\"name\":\"search_knowledge_base\","
+        "\"arguments\":\"{\\\"query\\\":\\\"孙曼\\\"}\"}}\n\n"
+        "data: {\"type\":\"response.completed\",\"response\":{\"id\":\"resp_1\",\"status\":\"completed\","
+        "\"usage\":{\"input_tokens\":120,\"input_tokens_details\":{\"cached_tokens\":40},"
+        "\"output_tokens\":30,\"output_tokens_details\":{\"reasoning_tokens\":10},\"total_tokens\":150}}}\n\n"
+        "data: [DONE]\n\n");
+}
+
+// 第二个请求的脚本：纯文本 + 终止事件，用来验证第一次的 function_call 没有漏进
+// 第二次的响应（同一条 stream 状态机跨请求复用）。
+QByteArray responsesTextBody() {
+    return QByteArrayLiteral(
+        "data: {\"type\":\"response.output_text.delta\",\"item_id\":\"msg_1\",\"output_index\":0,"
+        "\"delta\":\"Hello\"}\n\n"
+        "data: {\"type\":\"response.completed\",\"response\":{\"id\":\"resp_2\",\"status\":\"completed\","
+        "\"usage\":{\"input_tokens\":5,\"output_tokens\":1,\"total_tokens\":6}}}\n\n"
+        "data: [DONE]\n\n");
+}
+
 } // namespace
 
 class TestProviderLifecycle : public QObject {
@@ -351,6 +386,90 @@ private slots:
         QCOMPARE(second.content, QStringLiteral("Hello"));
         QVERIFY2(second.toolCalls.isEmpty(),
                  "request A's tool call leaked into request B's response");
+    }
+
+    // TEST-001 (OpenAI Responses): 同一实例上先工具调用、后纯文本，第二次的
+    // 响应不能带上第一次的 function_call；顺带钉住 usage 映射与 done 事件对
+    // 已累积参数分片的折叠。
+    void responsesToolStateClearedBetweenRequests() {
+        FakeSseServer server;
+        OpenAIResponsesService service;
+        service.setApiKey(QStringLiteral("test-key"));
+        service.setBaseUrl(server.baseUrl());
+        QSignalSpy spy(&service, &IAIService::responseReady);
+
+        server.enqueue({responsesToolBody(), false, kMatchA});
+        service.chatComplete(userMessages(QStringLiteral("hi")), {});
+        QVERIFY2(spy.wait(5000), "no response for request A");
+        const LLMResponse first = takeResponse(spy, 0);
+        QVERIFY2(first.success, qPrintable(first.error));
+        QCOMPARE(first.toolCalls.size(), 1);
+        QCOMPARE(first.toolCalls.first().name, QStringLiteral("search_knowledge_base"));
+        // id 必须是 call_id：下一轮按它回传 function_call_output
+        QCOMPARE(first.toolCalls.first().id, QStringLiteral("call_1"));
+        QCOMPARE(first.toolCalls.first().arguments.value(QStringLiteral("query")).toString(),
+                 QString::fromUtf8("孙曼"));
+        QCOMPARE(first.promptTokens, 120);
+        QCOMPARE(first.completionTokens, 30);
+        QCOMPARE(first.cachedTokens, 40);
+        QCOMPARE(first.tokensUsed, 150);
+        // Responses 的 input_tokens 已含缓存，另两个桶必须留空（AIAgent 会相加）
+        QCOMPARE(first.cacheReadTokens, 0);
+        QCOMPARE(first.cacheCreationTokens, 0);
+
+        server.enqueue({responsesTextBody(), false, kMatchB});
+        service.chatComplete(userMessages(QStringLiteral("hi2")), {});
+        QVERIFY2(spy.wait(5000), "no response for request B");
+        const LLMResponse second = takeResponse(spy, 1);
+        QVERIFY(second.success);
+        QCOMPARE(second.content, QStringLiteral("Hello"));
+        QVERIFY2(second.toolCalls.isEmpty(),
+                 "request A's function_call leaked into request B's response");
+    }
+
+    // 有些兼容网关不发 output_item.added，只在 done 里给完整 item：name/call_id
+    // 必须能从 done 单独成槽，否则工具调用会被静默丢掉。
+    void responsesToolCallFromDoneItemOnly() {
+        FakeSseServer server;
+        OpenAIResponsesService service;
+        service.setApiKey(QStringLiteral("test-key"));
+        service.setBaseUrl(server.baseUrl());
+        QSignalSpy spy(&service, &IAIService::responseReady);
+
+        server.enqueue({QByteArrayLiteral(
+            "data: {\"type\":\"response.output_item.done\",\"output_index\":0,"
+            "\"item\":{\"type\":\"function_call\",\"id\":\"fc_9\",\"call_id\":\"call_9\","
+            "\"name\":\"lookup\",\"arguments\":\"{\\\"q\\\":1}\"}}\n\n"
+            "data: {\"type\":\"response.completed\",\"response\":{\"status\":\"completed\"}}\n\n"
+            "data: [DONE]\n\n"), false, "/responses"});
+        service.chatComplete(userMessages(QStringLiteral("hi")), {});
+        QVERIFY2(spy.wait(5000), "no response for the done-only tool call");
+        const LLMResponse parsed = takeResponse(spy, 0);
+        QVERIFY2(parsed.success, qPrintable(parsed.error));
+        QCOMPARE(parsed.toolCalls.size(), 1);
+        QCOMPARE(parsed.toolCalls.first().id, QStringLiteral("call_9"));
+        QCOMPARE(parsed.toolCalls.first().name, QStringLiteral("lookup"));
+        QCOMPARE(parsed.toolCalls.first().arguments.value(QStringLiteral("q")).toInt(), 1);
+    }
+
+    // 流中 error 事件（顶层 code/message，不套 error 对象）必须转成一次
+    // errorOccurred，而不是伪装成一个空答案。
+    void responsesMidStreamErrorEmitsError() {
+        FakeSseServer server;
+        OpenAIResponsesService service;
+        service.setApiKey(QStringLiteral("test-key"));
+        service.setBaseUrl(server.baseUrl());
+        QSignalSpy responseSpy(&service, &IAIService::responseReady);
+        QSignalSpy errorSpy(&service, &IAIService::errorOccurred);
+
+        server.enqueue({QByteArrayLiteral(
+            "data: {\"type\":\"response.output_text.delta\",\"delta\":\"半句\"}\n\n"
+            "data: {\"type\":\"error\",\"code\":\"server_error\","
+            "\"message\":\"上游断了\"}\n\n"), false, "/responses"});
+        service.chatComplete(userMessages(QStringLiteral("hi")), {});
+        QVERIFY2(errorSpy.wait(5000), "the stream error event never surfaced");
+        QCOMPARE(responseSpy.count(), 0);
+        QVERIFY(errorSpy.at(0).at(0).toString().contains(QStringLiteral("上游断了")));
     }
 
     // TEST-001 (Anthropic): same contract on the Messages API stream.

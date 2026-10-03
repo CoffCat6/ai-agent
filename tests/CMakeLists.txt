@@ -14,6 +14,10 @@ nexus_add_test(test_sandbox test_sandbox.cpp)
 nexus_add_test(test_logger test_logger.cpp)
 nexus_add_test(test_token_estimator test_token_estimator.cpp)
 nexus_add_test(test_llm_parsers test_llm_parsers.cpp)
+# 协议注册表：描述符完整性与 profile 归一化回退
+nexus_add_test(test_protocol_registry test_protocol_registry.cpp)
+# OpenAI Responses 协议的报文转换与非流式解析
+nexus_add_test(test_openai_responses test_openai_responses.cpp)
 nexus_add_test(test_memory test_memory.cpp)
 nexus_add_test(test_rag test_rag.cpp)
 nexus_add_test(test_agent test_agent.cpp)

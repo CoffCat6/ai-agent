@@ -1,6 +1,7 @@
 #include <QGuiApplication>
 #include <QQmlApplicationEngine>
 #include <QQmlContext>
+#include <QHash>
 #include <QJsonObject>
 #include <QNetworkProxyFactory>
 #include <QPalette>
@@ -35,9 +36,7 @@
 #include "core/utils/Activity.h"
 #include "core/utils/SamplingParams.h"
 #include "infrastructure/llm/IAIService.h"
-#include "infrastructure/llm/OpenAIService.h"
-#include "infrastructure/llm/OllamaService.h"
-#include "infrastructure/llm/AnthropicService.h"
+#include "infrastructure/llm/LlmProtocolRegistry.h"
 #include "infrastructure/embed/OllamaEmbedding.h"
 
 #include <memory>
@@ -60,6 +59,26 @@ public:
         return systemProxyForQuery(query);
     }
 };
+
+// 一套按协议键索引的 LLM 服务集合：进程级一份 + 每个会话 tab 一份。
+using ProviderSet = QHash<QString, IAIService*>;
+
+// profile map → 服务配置快照。清洗沿用 SamplingParams 的"未设置/清空/非数字
+// 都不发该字段"语义（Batch 15 FEAT-1501/1502、Batch 21 A1）；哪个协议消费哪
+// 几个字段由各 Service 的 applyProfileParams 决定，装配层不再按协议分支。
+LlmProfileConfig profileConfigOf(const QVariantMap& profile) {
+    LlmProfileConfig cfg;
+    cfg.baseUrl = profile.value("baseUrl").toString();
+    cfg.apiKey = profile.value("apiKey").toString();
+    cfg.model = profile.value("model").toString();
+    cfg.temperature = SamplingParams::optionalDouble(profile.value("temperature"));
+    cfg.maxOutputTokens = SamplingParams::optionalPositiveInt(
+        profile.value("maxOutputTokens"));
+    cfg.numCtx = SamplingParams::optionalPositiveInt(profile.value("numCtx"));
+    cfg.reasoningEffort = SamplingParams::optionalReasoningLevel(
+        profile.value("reasoningEffort"));
+    return cfg;
+}
 
 } // namespace
 
@@ -154,11 +173,9 @@ qInfo() << "NexusAI" << app.applicationVersion() << "starting";
     settings->setParent(&app);
 
     // ── LLM services ───────────────────────────────────
-    // All three are instantiated; the active one is selected by provider and
-    // can be swapped at runtime when the user changes settings.
-    auto* openai = new OpenAIService(&app);
-    auto* anthropic = new AnthropicService(&app);
-    auto* ollama = new OllamaService(&app);
+    // 每个已注册协议一个实例（表在 LlmProtocolRegistry）；活动 profile 的
+    // apiProtocol 决定用哪个，改设置时即时换绑。
+    const ProviderSet templateSet = LlmProtocolRegistry::createServiceSet(&app);
 
     // ── Agent core (real ReAct pipeline) ──────────────
     // Process-lifetime memory backend (SQLite, app-data location).
@@ -226,9 +243,13 @@ qInfo() << "NexusAI" << app.applicationVersion() << "starting";
     // gateway on 127.0.0.1 still forwards to a cloud upstream, so it counts
     // as cloud.
     const auto applyLocalOnlyGate = [settings]() {
-        const bool gate = settings->localOnlyMode()
-                          && settings->activeProfile().value("provider").toString()
-                                 != QLatin1String("ollama");
+        const QVariantMap profile = settings->activeProfile();
+        // 本地与否取自协议注册表的 local 标记：厂商字符串比的是"ollama"，
+        // 而真正决定内容出不出机器的是这条线协议走本地还是云端。
+        const bool local = LlmProtocolRegistry::isLocal(
+            profile.value("apiProtocol").toString(),
+            profile.value("provider").toString());
+        const bool gate = settings->localOnlyMode() && !local;
         QStringList gated{QStringLiteral("search_knowledge_base"),
                           QStringLiteral("web_search")};
         // T14 (REQ-T14-04): every MCP tool (mcp__*) may reach external
@@ -308,7 +329,7 @@ qInfo() << "NexusAI" << app.applicationVersion() << "starting";
     });
     // Batch 29 (F7): every session tab gets its own agent with its own
     // SQLite connection (same database file — busy_timeout serializes
-    // concurrent writes) AND its own provider-service group.
+    // concurrent writes) AND its own full set of protocol services.
     //
     // Per-tab services are load-bearing, not an optimization: LLMServiceBase
     // keeps ONE in-flight request context per service instance and streams
@@ -316,73 +337,22 @@ qInfo() << "NexusAI" << app.applicationVersion() << "starting";
     // a group would abort each other's streams and leak chunks across
     // traces. The tab agents are destroyed with their tab (services are
     // parented to the agent), and tabProviderSets drops the entry on
-    // destroyed so provider re-configuration never touches dead agents.
-    struct ProviderSet {
-        OpenAIService* openai;
-        AnthropicService* anthropic;
-        OllamaService* ollama;
-    };
+    // destroyed so profile re-configuration never touches dead agents.
     const auto applyProfileTo = [settings](const ProviderSet& set) {
         const QVariantMap profile = settings->activeProfile();
-        const QString provider = profile.value("provider").toString();
-        const QString baseUrl = profile.value("baseUrl").toString();
-        const QString apiKey = profile.value("apiKey").toString();
-        const QString model = profile.value("model").toString();
-
-        // Batch 15 (FEAT-1501/1502): per-profile sampling params. An empty
-        // string (cleared field) or a missing key means "not set" - normalized
-        // to an invalid QVariant so the services omit the fields from the
-        // request JSON. Batch 21 (A1): non-numeric values (e.g. "abc") are
-        // normalized the same way instead of silently becoming 0 / 1.
-        const QVariant temperature =
-            SamplingParams::optionalDouble(profile.value("temperature"));
-        const QVariant maxOutputTokens =
-            SamplingParams::optionalPositiveInt(profile.value("maxOutputTokens"));
-        const QVariant numCtx =
-            SamplingParams::optionalPositiveInt(profile.value("numCtx"));
-        // 思考强度档位：与采样参数同一套"未设置就不发字段"的语义，由各
-        // Provider 负责把档位折算成自己的协议字段（reasoning_effort /
-        // thinking.budget_tokens / think）。
-        const QVariant reasoningLevel =
-            SamplingParams::optionalReasoningLevel(profile.value("reasoningEffort"));
-
-        // Only the active provider receives the profile: broadcasting one
-        // profile's baseUrl to all services would corrupt the others
-        // (e.g. an OpenAI-compatible proxy URL ending in /v1 turned into
-        // /v1/v1/messages on the Anthropic path). Each service is configured
-        // here right before it becomes the active one.
-        if (provider == QLatin1String("anthropic")) {
-            set.anthropic->setApiKey(apiKey);
-            set.anthropic->setBaseUrl(baseUrl);
-            set.anthropic->setModel(model);
-            set.anthropic->setSamplingParams(temperature, maxOutputTokens);
-            set.anthropic->setReasoningEffort(reasoningLevel);
-        } else if (provider == QLatin1String("ollama")) {
-            set.ollama->setBaseUrl(baseUrl);
-            set.ollama->setModel(model);
-            set.ollama->setSamplingParams(temperature, numCtx);
-            set.ollama->setReasoningEffort(reasoningLevel);
-        } else if (provider == QLatin1String("openai")) {
-            set.openai->setApiKey(apiKey);
-            set.openai->setBaseUrl(baseUrl);
-            set.openai->setModel(model);
-            set.openai->setSamplingParams(temperature, maxOutputTokens);
-            set.openai->setReasoningEffort(reasoningLevel);
-        }
+        // 只有当前 profile 命中的那一条协议会被配置：把 baseUrl 广播给全部服务
+        // 会互相污染（例如以 /v1 结尾的 OpenAI 兼容代理地址被 Anthropic 那条
+        // 协议拼成 /v1/v1/messages）。每个服务都在成为活动服务前配置好。
+        if (IAIService* service = set.value(profile.value("apiProtocol").toString()))
+            service->configure(profileConfigOf(profile));
     };
-    const auto pickActive = [](const ProviderSet& set,
-                               const QString& provider) -> IAIService* {
-        if (provider == QLatin1String("ollama"))
-            return static_cast<IAIService*>(set.ollama);
-        if (provider == QLatin1String("anthropic"))
-            return static_cast<IAIService*>(set.anthropic);
-        if (provider == QLatin1String("openai"))
-            return static_cast<IAIService*>(set.openai);
-        return nullptr;   // no profile configured: the agent reports it
+    const auto activeService = [settings](const ProviderSet& set) -> IAIService* {
+        // 未配置的 profile 返回 nullptr，由 agent 报"未配置模型服务"。
+        return set.value(settings->activeProfile().value("apiProtocol").toString());
     };
 
     QHash<AIAgent*, ProviderSet> tabProviderSets;
-    agentVM->setAgentFactory([&app, settings, applyProfileTo, pickActive,
+    agentVM->setAgentFactory([&app, settings, applyProfileTo, activeService,
                               &tabProviderSets]() -> AIAgent* {
         auto* tabAgent = new AIAgent(&app);
         tabAgent->setToolRegistry(&ToolRegistry::instance());
@@ -390,15 +360,12 @@ qInfo() << "NexusAI" << app.applicationVersion() << "starting";
         tabAgent->setContextLimit(settings->resolveContextLimit());
         tabAgent->setMaxIterations(settings->maxSteps());
 
-        const ProviderSet set{new OpenAIService(tabAgent),
-                              new AnthropicService(tabAgent),
-                              new OllamaService(tabAgent)};
+        const ProviderSet set = LlmProtocolRegistry::createServiceSet(tabAgent);
         applyProfileTo(set);
         tabProviderSets.insert(tabAgent, set);
         QObject::connect(tabAgent, &QObject::destroyed, &app,
             [&tabProviderSets, tabAgent]() { tabProviderSets.remove(tabAgent); });
-        tabAgent->setLLMService(pickActive(
-            set, settings->activeProfile().value("provider").toString()));
+        tabAgent->setLLMService(activeService(set));
         return tabAgent;
     });
     auto* connectionTester = ConnectionTester::instance();
@@ -507,19 +474,17 @@ qInfo() << "NexusAI" << app.applicationVersion() << "starting";
         }
     }
 
-    // Apply the active model profile to the services and select the provider
-    // for every tab: the template agent uses the process-lifetime group, each
-    // factory-built tab its own group (see the factory comment above).
-    const ProviderSet templateSet{openai, anthropic, ollama};
+    // Apply the active model profile to the services and select the active
+    // protocol service for every tab: the template agent uses the
+    // process-lifetime service set, each factory-built tab its own (see the
+    // factory comment above).
     const auto applySettings = [settings, agentVM, agent, fetchPtr, webPtr,
                                 episodicService, createWebSearchBackend,
-                                templateSet, applyProfileTo, pickActive, &tabProviderSets]() {
+                                templateSet, applyProfileTo, activeService,
+                                &tabProviderSets]() {
         applyProfileTo(templateSet);
         for (auto it = tabProviderSets.begin(); it != tabProviderSets.end(); ++it)
             applyProfileTo(it.value());
-
-        const QString provider =
-            settings->activeProfile().value("provider").toString();
 
         // The template agent may not be attached to any tab yet (the first
         // applySettings() call runs before applyMode's setAgent), and
@@ -529,15 +494,15 @@ qInfo() << "NexusAI" << app.applicationVersion() << "starting";
         agent->setContextLimit(settings->resolveContextLimit());
         // 步数预算（agent/maxSteps）：模板 agent 与各标签 agent 用同一个值。
         agent->setMaxIterations(settings->maxSteps());
-        agent->setLLMService(pickActive(templateSet, provider));
+        agent->setLLMService(activeService(templateSet));
 
         agentVM->applyToAgents([&](AIAgent* tabAgent) {
             tabAgent->setContextLimit(settings->resolveContextLimit());
             tabAgent->setMaxIterations(settings->maxSteps());
-            const ProviderSet& set = tabAgent == agent
+            const ProviderSet set = tabAgent == agent
                 ? templateSet
                 : tabProviderSets.value(tabAgent, templateSet);
-            tabAgent->setLLMService(pickActive(set, provider));
+            tabAgent->setLLMService(activeService(set));
         });
 
         // Read sandbox policy follows the (opt-in, default-off) setting
@@ -563,7 +528,7 @@ qInfo() << "NexusAI" << app.applicationVersion() << "starting";
 
         // T8 (F4): sync episodic memory toggle and LLM service.
         episodicService->setEnabled(settings->episodicMemoryEnabled());
-        episodicService->setLlmService(pickActive(templateSet, provider));
+        episodicService->setLlmService(activeService(templateSet));
     };
     applySettings();
 

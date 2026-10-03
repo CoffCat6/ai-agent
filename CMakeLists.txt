@@ -83,8 +83,12 @@ add_library(nexus_infra STATIC
     src/infrastructure/llm/IAIService.h
     src/infrastructure/llm/LLMServiceBase.h
     src/infrastructure/llm/LLMServiceBase.cpp
+    src/infrastructure/llm/LlmProtocolRegistry.h
+    src/infrastructure/llm/LlmProtocolRegistry.cpp
     src/infrastructure/llm/OpenAIService.h
     src/infrastructure/llm/OpenAIService.cpp
+    src/infrastructure/llm/OpenAIResponsesService.h
+    src/infrastructure/llm/OpenAIResponsesService.cpp
     src/infrastructure/llm/OllamaService.h
     src/infrastructure/llm/OllamaService.cpp
     src/infrastructure/llm/AnthropicService.h
