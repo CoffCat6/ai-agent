@@ -114,6 +114,15 @@ public:
     QVariant maxSteps;
 };
 
+// profile 列表按 id 取一项；找不到返回空 map（测试里用来断言刚建出来的 profile）。
+QVariantMap profileById(const SettingsService& service, const QString& id) {
+    for (const QVariant& entry : service.profiles()) {
+        const QVariantMap p = entry.toMap();
+        if (p.value("id").toString() == id) return p;
+    }
+    return {};
+}
+
 } // namespace
 
 class TestSettingsService : public QObject {
@@ -243,8 +252,7 @@ private slots:
         for (const QVariant& option : openaiOptions) {
             const QVariantMap map = option.toMap();
             QVERIFY(!map.value("label").toString().isEmpty());
-            QVERIFY(!map.value("baseUrl").toString().isEmpty());
-            QVERIFY(!map.value("model").toString().isEmpty());
+            QVERIFY(!map.value("apiProtocol").toString().isEmpty());
         }
         QCOMPARE(openaiOptions.at(0).toMap().value("apiProtocol").toString(),
                  QStringLiteral("openai-chat"));
@@ -253,6 +261,276 @@ private slots:
         QCOMPARE(service.endpointOptions(QStringLiteral("ollama")).size(), 1);
         // 陌生厂商按 openai 兜底，不给空列表（空列表会让协议行消失）
         QCOMPARE(service.endpointOptions(QStringLiteral("mistral")).size(), 2);
+    }
+
+    // 换厂商 = 换端点：baseUrl、当前模型、模型列表整份换成新端点的，但生成参数
+    // 不属于端点，必须原样留下。UI 只提交被点的厂商键。
+    void vendorSwitchRewritesEndpointOwnedFields() {
+        SettingsGuard guard;
+        {
+            QSettings s("NexusAI", "NexusAI");
+            s.remove("modelProfiles");
+            s.remove("activeProfileId");
+        }
+
+        SettingsService service(nullptr);
+        const QString id = service.activeProfileId();
+        service.updateProfile(id, {{QStringLiteral("baseUrl"), QStringLiteral("http://my-proxy/v1")},
+                                   {QStringLiteral("model"), QStringLiteral("gpt-4o")},
+                                   {QStringLiteral("temperature"), QStringLiteral("0.4")},
+                                   {QStringLiteral("maxOutputTokens"), QStringLiteral("32768")}});
+        service.addModelToProfile(id, QStringLiteral("my-chat-model"));
+
+        service.updateProfile(id, {{QStringLiteral("provider"), QStringLiteral("anthropic")}});
+        const QVariantMap p = service.activeProfile();
+        QCOMPARE(p.value("apiProtocol").toString(), QStringLiteral("anthropic-messages"));
+        QCOMPARE(p.value("baseUrl").toString(), QStringLiteral("https://api.anthropic.com"));
+        // 旧厂商的模型在新厂商用不了，退回该端点的默认模型
+        QCOMPARE(p.value("model").toString(), QStringLiteral("claude-sonnet-4-5"));
+        const QStringList models = p.value("models").toStringList();
+        QVERIFY2(models.contains(QStringLiteral("claude-sonnet-4-5")), qPrintable(models.join(',')));
+        QVERIFY(!models.contains(QStringLiteral("gpt-4o")));
+        QVERIFY(!models.contains(QStringLiteral("my-chat-model")));
+        // 生成参数与端点无关
+        QCOMPARE(p.value("temperature").toString(), QStringLiteral("0.4"));
+        QCOMPARE(p.value("maxOutputTokens").toString(), QStringLiteral("32768"));
+    }
+
+    // 同厂商换协议：还是同一个网关，baseUrl 与用户自己加的模型都不能丢；新协议
+    // 的预设要并进来（否则列表里看不到只有 Responses 支持的模型）。
+    void protocolSwitchWithinVendorMergesInsteadOfReplacing() {
+        SettingsGuard guard;
+        {
+            QSettings s("NexusAI", "NexusAI");
+            s.remove("modelProfiles");
+            s.remove("activeProfileId");
+        }
+
+        SettingsService service(nullptr);
+        const QString id = service.activeProfileId();
+        service.updateProfile(id, {{QStringLiteral("baseUrl"), QStringLiteral("http://gw.local/v1")},
+                                   {QStringLiteral("model"), QStringLiteral("gpt-4o")}});
+        service.addModelToProfile(id, QStringLiteral("my-gateway-model"));
+
+        service.updateProfile(id, {{QStringLiteral("apiProtocol"),
+                                    QStringLiteral("openai-responses")}});
+        const QVariantMap p = service.activeProfile();
+        QCOMPARE(p.value("provider").toString(), QStringLiteral("openai"));
+        QCOMPARE(p.value("apiProtocol").toString(), QStringLiteral("openai-responses"));
+        QCOMPARE(p.value("baseUrl").toString(), QStringLiteral("http://gw.local/v1"));
+        QCOMPARE(p.value("model").toString(), QStringLiteral("gpt-4o"));   // 两条协议都支持
+        const QStringList models = p.value("models").toStringList();
+        QVERIFY2(models.contains(QStringLiteral("gpt-4.1")),        // 新协议预设并进来了
+                 qPrintable(models.join(',')));
+        QVERIFY2(models.contains(QStringLiteral("my-gateway-model")),
+                 "同厂商换协议不能丢用户自己加的模型");
+        QVERIFY(models.contains(QStringLiteral("gpt-4o")));
+    }
+
+    // 自定义网关是一条 kind=custom 的 openai/openai-chat 配置，新建时端点三项
+    // （baseUrl / model / models）全空——接第三方服务时预填官方值只会让人先删后填。
+    void customProfileStartsBlank() {
+        SettingsGuard guard;
+        {
+            QSettings s("NexusAI", "NexusAI");
+            s.remove("modelProfiles");
+            s.remove("activeProfileId");
+        }
+
+        SettingsService service(nullptr);
+        const int before = service.profiles().size();
+        const QString id = service.addProfile(QStringLiteral("custom"));
+        QCOMPARE(service.profiles().size(), before + 1);
+
+        const QVariantMap p = profileById(service, id);
+        QVERIFY2(!p.isEmpty(), qPrintable(id));
+        QCOMPARE(p.value("kind").toString(), QStringLiteral("custom"));
+        // 仍走 openai-chat：自定义不是第五种线协议，门控与能力表照旧按厂商/协议判
+        QCOMPARE(p.value("provider").toString(), QStringLiteral("openai"));
+        QCOMPARE(p.value("apiProtocol").toString(), QStringLiteral("openai-chat"));
+        QVERIFY(p.value("baseUrl").toString().isEmpty());
+        QVERIFY(p.value("model").toString().isEmpty());
+        QVERIFY(p.value("models").toStringList().isEmpty());
+    }
+
+    // 自定义配置填好网关之后，换协议或点厂商来源芯片都不能把用户值换成官方默认值
+    // （旧逻辑在 endpointChanged / vendorChanged 两处都会回填）。
+    void customProfileIgnoresEndpointRefills() {
+        SettingsGuard guard;
+        {
+            QSettings s("NexusAI", "NexusAI");
+            s.remove("modelProfiles");
+            s.remove("activeProfileId");
+        }
+
+        SettingsService service(nullptr);
+        const QString id = service.addProfile(QStringLiteral("custom"));
+        service.updateProfile(id, {{QStringLiteral("baseUrl"), QStringLiteral("http://gw.local/v1")},
+                                   {QStringLiteral("model"), QStringLiteral("glm-4")}});
+
+        // 同厂商换协议：Responses 的预设里没有 glm-4，回填会把模型名换成 gpt-4o-mini
+        service.updateProfile(id, {{QStringLiteral("apiProtocol"),
+                                    QStringLiteral("openai-responses")}});
+        QVariantMap p = profileById(service, id);
+        QCOMPARE(p.value("apiProtocol").toString(), QStringLiteral("openai-responses"));
+        QCOMPARE(p.value("baseUrl").toString(), QStringLiteral("http://gw.local/v1"));
+        QCOMPARE(p.value("model").toString(), QStringLiteral("glm-4"));
+        QStringList models = p.value("models").toStringList();
+        QVERIFY2(models.contains(QStringLiteral("glm-4")), qPrintable(models.join(',')));
+        QVERIFY(!models.contains(QStringLiteral("gpt-4o-mini")));
+        QVERIFY(!models.contains(QStringLiteral("gpt-4.1")));
+
+        // 点回「OpenAI 兼容」来源芯片：回到预设轨道，列表该重新带上官方模型，
+        // 但网关上真实在跑的模型名不能被换成 gpt-4o-mini。
+        service.updateProfile(id, {{QStringLiteral("kind"), QStringLiteral("openai")}});
+        p = profileById(service, id);
+        QCOMPARE(p.value("kind").toString(), QStringLiteral("openai"));
+        QCOMPARE(p.value("apiProtocol").toString(), QStringLiteral("openai-chat"));
+        QCOMPARE(p.value("baseUrl").toString(), QStringLiteral("http://gw.local/v1"));
+        QCOMPARE(p.value("model").toString(), QStringLiteral("glm-4"));
+        models = p.value("models").toStringList();
+        QVERIFY2(models.contains(QStringLiteral("glm-4")), qPrintable(models.join(',')));
+        QVERIFY2(models.contains(QStringLiteral("gpt-4o-mini")),
+                 "离开自定义后应重新拿到厂商预设");
+    }
+
+    // 未登记的 kind 会被丢弃（保持原 kind），旧 profile 缺 kind 时按厂商推断。
+    void unknownKindIsIgnoredAndLegacyKindIsInferred() {
+        SettingsGuard guard;
+        {
+            QSettings s("NexusAI", "NexusAI");
+            QJsonArray arr;
+            QJsonObject legacy;
+            legacy["id"] = QStringLiteral("legacy-kind");
+            legacy["displayName"] = QStringLiteral("旧配置");
+            legacy["provider"] = QStringLiteral("ollama");
+            legacy["baseUrl"] = QStringLiteral("http://localhost:11434");
+            legacy["model"] = QStringLiteral("qwen2.5:7b");
+            arr.append(legacy);
+            s.remove("activeProfileId");
+            s.setValue("modelProfiles",
+                       QString::fromUtf8(QJsonDocument(arr).toJson(QJsonDocument::Compact)));
+        }
+
+        SettingsService service(nullptr);
+        QVariantMap p = profileById(service, QStringLiteral("legacy-kind"));
+        QVERIFY2(!p.isEmpty(), "旧 profile 应被加载");
+        QCOMPARE(p.value("kind").toString(), QStringLiteral("ollama"));
+
+        service.updateProfile(p.value("id").toString(),
+                             {{QStringLiteral("kind"), QStringLiteral("not-a-kind")}});
+        p = profileById(service, QStringLiteral("legacy-kind"));
+        QCOMPARE(p.value("kind").toString(), QStringLiteral("ollama"));
+        QCOMPARE(p.value("provider").toString(), QStringLiteral("ollama"));
+    }
+
+    // 重新 load（模拟重启）时，空的自定义 profile 不得被厂商预设模型列表灌满。
+    void customProfileStaysBlankAcrossReload() {
+        SettingsGuard guard;
+        {
+            QSettings s("NexusAI", "NexusAI");
+            s.remove("modelProfiles");
+            s.remove("activeProfileId");
+        }
+
+        QString id;
+        {
+            SettingsService s1(nullptr);
+            id = s1.addProfile(QStringLiteral("custom"));
+        }
+
+        SettingsService s2(nullptr);
+        const QVariantMap p = profileById(s2, id);
+        QVERIFY2(!p.isEmpty(), qPrintable(id));
+        QCOMPARE(p.value("kind").toString(), QStringLiteral("custom"));
+        QVERIFY(p.value("baseUrl").toString().isEmpty());
+        QVERIFY(p.value("model").toString().isEmpty());
+        QVERIFY(p.value("models").toStringList().isEmpty());
+    }
+
+    // 厂商来源照旧预填；未知来源回落 openai（addProfile 从来没有测试覆盖过）。
+    void addProfilePresetsVendorDefaults() {
+        SettingsGuard guard;
+        {
+            QSettings s("NexusAI", "NexusAI");
+            s.remove("modelProfiles");
+            s.remove("activeProfileId");
+        }
+
+        SettingsService service(nullptr);
+        const QVariantMap ollama = profileById(service, service.addProfile(QStringLiteral("ollama")));
+        QCOMPARE(ollama.value("kind").toString(), QStringLiteral("ollama"));
+        QCOMPARE(ollama.value("apiProtocol").toString(), QStringLiteral("ollama-chat"));
+        QCOMPARE(ollama.value("baseUrl").toString(), QStringLiteral("http://localhost:11434"));
+        QCOMPARE(ollama.value("model").toString(), QStringLiteral("qwen2.5:7b"));
+        QVERIFY(ollama.value("models").toStringList().contains(QStringLiteral("qwen2.5:7b")));
+
+        const QVariantMap fallback = profileById(service, service.addProfile(QStringLiteral("nope")));
+        QCOMPARE(fallback.value("kind").toString(), QStringLiteral("openai"));
+        QCOMPARE(fallback.value("baseUrl").toString(), QStringLiteral("https://api.openai.com/v1"));
+    }
+
+    // 调用方显式给了 baseUrl / model / models，就以它为准，不再自动回填。
+    void explicitEndpointValuesWin() {
+        SettingsGuard guard;
+        {
+            QSettings s("NexusAI", "NexusAI");
+            s.remove("modelProfiles");
+            s.remove("activeProfileId");
+        }
+
+        SettingsService service(nullptr);
+        const QString id = service.activeProfileId();
+        service.updateProfile(id, {{QStringLiteral("provider"), QStringLiteral("ollama")},
+                                   {QStringLiteral("baseUrl"), QStringLiteral("http://10.0.0.9:11434")},
+                                   {QStringLiteral("model"), QStringLiteral("mistral:7b")}});
+        const QVariantMap p = service.activeProfile();
+        QCOMPARE(p.value("baseUrl").toString(), QStringLiteral("http://10.0.0.9:11434"));
+        QCOMPARE(p.value("model").toString(), QStringLiteral("mistral:7b"));
+        const QStringList models = p.value("models").toStringList();
+        QVERIFY(models.contains(QStringLiteral("mistral:7b")));
+        QVERIFY(models.contains(QStringLiteral("qwen2.5:7b")));
+        QVERIFY(!models.contains(QStringLiteral("gpt-4o-mini")));
+    }
+
+    // 重复点当前厂商/当前协议的按钮不能把人改过的 baseUrl 和模型抹掉。
+    void repeatEndpointSubmitIsHarmless() {
+        SettingsGuard guard;
+        {
+            QSettings s("NexusAI", "NexusAI");
+            s.remove("modelProfiles");
+            s.remove("activeProfileId");
+        }
+
+        SettingsService service(nullptr);
+        const QString id = service.activeProfileId();
+        service.updateProfile(id, {{QStringLiteral("baseUrl"), QStringLiteral("http://keep/v1")},
+                                   {QStringLiteral("model"), QStringLiteral("deepseek-chat")}});
+        service.updateProfile(id, {{QStringLiteral("provider"), QStringLiteral("openai")}});
+        service.updateProfile(id, {{QStringLiteral("apiProtocol"), QStringLiteral("openai-chat")}});
+        const QVariantMap p = service.activeProfile();
+        QCOMPARE(p.value("baseUrl").toString(), QStringLiteral("http://keep/v1"));
+        QCOMPARE(p.value("model").toString(), QStringLiteral("deepseek-chat"));
+        QVERIFY(p.value("models").toStringList().contains(QStringLiteral("deepseek-chat")));
+    }
+
+    // 当前模型永远在模型列表里；模型名两侧空格在写入时去掉（否则列表项与
+    // 当前模型对不上，chip 高亮和聊天侧选择器都会错位）。
+    void currentModelAlwaysListedAndTrimmed() {
+        SettingsGuard guard;
+        {
+            QSettings s("NexusAI", "NexusAI");
+            s.remove("modelProfiles");
+            s.remove("activeProfileId");
+        }
+
+        SettingsService service(nullptr);
+        const QString id = service.activeProfileId();
+        service.updateProfile(id, {{QStringLiteral("model"), QStringLiteral("  spaced-model  ")}});
+        const QVariantMap p = service.activeProfile();
+        QCOMPARE(p.value("model").toString(), QStringLiteral("spaced-model"));
+        QVERIFY(p.value("models").toStringList().contains(QStringLiteral("spaced-model")));
+        QVERIFY(!p.value("models").toStringList().contains(QStringLiteral("  spaced-model  ")));
     }
 
     // UI 上换厂商（三个按钮之一）只提交 provider，协议要跟着重置成该厂商的
@@ -280,9 +558,10 @@ private slots:
         QCOMPARE(service.activeProfile().value("provider").toString(),
                  QStringLiteral("ollama"));
 
-        // defaultEndpoint 现在也带出协议，编辑器据此回填一对自洽的值
-        QCOMPARE(service.defaultEndpoint(QStringLiteral("anthropic"))
-                     .value("apiProtocol").toString(),
+        // 单协议厂商：选项只有一条，UI 据此不显示协议行
+        const QVariantList anthropicOptions = service.endpointOptions(QStringLiteral("anthropic"));
+        QCOMPARE(anthropicOptions.size(), 1);
+        QCOMPARE(anthropicOptions.at(0).toMap().value("apiProtocol").toString(),
                  QStringLiteral("anthropic-messages"));
     }
 

@@ -14,8 +14,10 @@ Item {
     readonly property var activeProfile: Settings.activeProfile
     readonly property bool hasProfile: activeProfile
         && activeProfile.provider !== undefined && activeProfile.provider !== ""
-    readonly property var currentModels: hasProfile
-        ? (activeProfile.models || [activeProfile.model]) : []
+    // 自定义网关可以在填模型名之前就被选中，列表里的空串会让选择器出现一行空白项。
+    readonly property var currentModels: root.hasProfile
+        ? (root.activeProfile.models || []).filter(function (m) { return String(m) !== "" })
+        : []
 
     // docs/15 §4.3.2: brief hint of the new context window after switching
     // models so the user perceives the budget change (optional enhancement).
@@ -77,7 +79,7 @@ Item {
                     if (!root.hasProfile) return qsTr("未配置模型 · 点击设置")
                     const p = root.activeProfile
                     return (p.displayName ? p.displayName : p.provider)
-                        + " · " + (p.model || "")
+                        + " · " + (p.model ? p.model : qsTr("未指定模型"))
                 }
                 color: selectorMA.containsMouse || menuPopup.opened
                     ? Theme.brandPrimary : Theme.textSecondary
@@ -202,6 +204,18 @@ Item {
                     }
                 }
 
+                Text {
+                    visible: root.hasProfile && root.currentModels.length === 0
+                    Layout.fillWidth: true
+                    Layout.leftMargin: 8
+                    Layout.rightMargin: 8
+                    text: qsTr("这条配置还没有可选模型：先在「管理模型配置…」里填写模型名。")
+                    color: Theme.textSecondary
+                    font.pixelSize: 10
+                    font.family: Theme.fontSans
+                    wrapMode: Text.WordWrap
+                }
+
                 Rectangle {
                     Layout.fillWidth: true
                     Layout.leftMargin: 4
@@ -259,7 +273,8 @@ Item {
                             Text {
                                 Layout.fillWidth: true
                                 text: (modelData.displayName || modelData.provider)
-                                    + " · " + (modelData.model || "")
+                                    + " · " + (modelData.model
+                                               ? modelData.model : qsTr("未指定模型"))
                                 color: profileItem.isCurrent
                                     ? Theme.brandPrimary : Theme.textPrimary
                                 font.pixelSize: Theme.fontSizeCaption

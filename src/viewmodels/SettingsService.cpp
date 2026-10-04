@@ -30,6 +30,28 @@ const LlmProtocolDescriptor* defaultsForProvider(const QString& provider) {
     return LlmProtocolRegistry::resolve(QString(), provider);
 }
 
+// kind 是设置页的"这条配置是从哪个预设来的"轴："openai" | "anthropic" |
+// "ollama" | "custom"。它只决定要不要给用户预填端点与模型列表，不参与线格式、
+// local-only 门控与能力表——那三件事仍然只看 provider / apiProtocol。
+// 因此"自定义网关"是 kind=custom 的 openai 配置，而不是第五种协议。
+bool isKnownKind(const QString& kind) {
+    return kind == QLatin1String("custom") || LlmProtocolRegistry::isKnownProvider(kind);
+}
+
+// kind 缺失（0.3 前的旧 profile 根本没这个键）时按厂商推断：自定义不可能来自
+// 旧数据，所以旧数据一律归到它的厂商。
+QString kindOf(const QVariantMap& profile) {
+    const QString kind = profile.value("kind").toString();
+    if (!kind.isEmpty()) return kind;
+    const QString provider = profile.value("provider").toString();
+    return LlmProtocolRegistry::isKnownProvider(provider)
+        ? provider : QStringLiteral("openai");
+}
+
+bool isCustomProfile(const QVariantMap& profile) {
+    return kindOf(profile) == QLatin1String("custom");
+}
+
 // provider 与 apiProtocol 必须成对自洽：以协议为准回填厂商（协议决定线格式，
 // 也决定要不要 key、读哪个环境变量）；协议缺失或陌生（旧 profile 根本没这个
 // 字段）则回落该厂商的默认协议。
@@ -49,6 +71,7 @@ QVariantMap makeProfile(const QString& provider, const QString& displayName,
     QVariantMap p;
     p["id"] = QUuid::createUuid().toString(QUuid::WithoutBraces);
     p["displayName"] = displayName;
+    p["kind"] = defaults->provider;
     p["provider"] = defaults->provider;
     p["apiProtocol"] = defaults->key;
     p["baseUrl"] = baseUrl;
@@ -60,6 +83,24 @@ QVariantMap makeProfile(const QString& provider, const QString& displayName,
         mList.prepend(model);
     }
     p["models"] = mList;
+    return p;
+}
+
+// 空白配置：一条 OpenAI 兼容（openai-chat）但完全不预填端点与模型的 profile。
+// 与 makeProfile 分开的理由就是"不预设"——任何一处复用 makeProfile 都会把
+// api.openai.com 和四个官方模型带回来。
+QVariantMap makeCustomProfile(const QString& displayName) {
+    const LlmProtocolDescriptor* defaults = defaultsForProvider(QStringLiteral("openai"));
+    QVariantMap p;
+    p["id"] = QUuid::createUuid().toString(QUuid::WithoutBraces);
+    p["displayName"] = displayName;
+    p["kind"] = QStringLiteral("custom");
+    p["provider"] = defaults->provider;
+    p["apiProtocol"] = defaults->key;
+    p["baseUrl"] = QString();
+    p["model"] = QString();
+    p["apiKey"] = QString();
+    p["models"] = QStringList();
     return p;
 }
 
@@ -174,10 +215,12 @@ void SettingsService::load() {
                 continue;
             // 旧 profile 没有 apiProtocol：在这里按厂商补齐，之后运行侧只认这个键。
             const LlmProtocolDescriptor* endpoint = normalizeEndpoint(p);
+            // kind 同理补齐（放在归一之后：normalizeEndpoint 可能按协议改写厂商）。
+            p["kind"] = kindOf(p);
 
             // Ensure "models" field is populated
             QStringList models = p.value("models").toStringList();
-            if (models.isEmpty()) {
+            if (models.isEmpty() && !isCustomProfile(p)) {
                 models = endpoint->models;
             }
             const QString model = p.value("model").toString();
@@ -302,10 +345,17 @@ void SettingsService::persist() {
     settings.sync();
 }
 
-QString SettingsService::addProfile() {
-    const LlmProtocolDescriptor* defaults = defaultsForProvider(QStringLiteral("openai"));
-    const QVariantMap profile = makeProfile(QStringLiteral("openai"),
-        tr("新配置"), defaults->defaultBaseUrl, defaults->defaultModel, QString());
+QString SettingsService::addProfile(const QString& kind) {
+    QVariantMap profile;
+    if (kind == QLatin1String("custom")) {
+        profile = makeCustomProfile(tr("自定义网关"));
+    } else {
+        const QString vendor = LlmProtocolRegistry::isKnownProvider(kind)
+            ? kind : QStringLiteral("openai");
+        const LlmProtocolDescriptor* defaults = defaultsForProvider(vendor);
+        profile = makeProfile(vendor, tr("新配置"),
+            defaults->defaultBaseUrl, defaults->defaultModel, QString());
+    }
 
     const QString id = profile.value("id").toString();
     m_profiles.append(profile);
@@ -324,24 +374,100 @@ void SettingsService::updateProfile(const QString& id, const QVariantMap& fields
         QVariantMap p = m_profiles.at(i).toMap();
         if (p.value("id").toString() != id) continue;
 
+        const QString protocolBefore = p.value("apiProtocol").toString();
+        const QString providerBefore = p.value("provider").toString();
+        // 进入本次更新前是不是自定义配置：离开自定义（点回某个厂商）时用户依然
+        // 会拿到该厂商的预设模型列表，但他填过的模型名不能被换成预设默认值。
+        const bool kindWasCustom = isCustomProfile(p);
+
         for (auto it = fields.constBegin(); it != fields.constEnd(); ++it) {
             if (it.key() == QLatin1String("id")) continue; // id is immutable
             if (it.key() == QLatin1String("provider")
                     && !LlmProtocolRegistry::isKnownProvider(it.value().toString()))
                 continue;
+            if (it.key() == QLatin1String("kind") && !isKnownKind(it.value().toString()))
+                continue;   // 未登记的来源标记不接受，避免脏 kind 让预设回填失焦
             if (it.key() == QLatin1String("apiProtocol")
                     && !LlmProtocolRegistry::find(it.value().toString()))
                 continue;   // 未注册的协议不接受
+            if (it.key() == QLatin1String("model")) {
+                // 模型名带空格会让"当前模型"和列表项对不上（列表项是 trim 过的），
+                // chip 高亮与聊天侧选择器都会错位。
+                p[it.key()] = it.value().toString().trimmed();
+                continue;
+            }
             p[it.key()] = it.value();
         }
-        // 两个轴的优先级要看这次提交了什么：UI 的厂商按钮只发 provider，此时
-        // 协议要跟着重置成该厂商的默认协议（否则协议字段会反过来把厂商改写回
-        // 去，换厂商就成了空操作）；显式换协议时则以协议为准回填厂商。
+        // 设置页的厂商芯片统一提交 kind（"openai" | "anthropic" | "ollama" |
+        // "custom"）：非 custom 时 kind 就是厂商键，custom 归到 openai 厂商——
+        // 自定义网关骑在 openai-chat 上，不是第五种线协议。UI 因此不必再各自
+        // 记一份"点这个芯片意味着哪个厂商"。
+        const QString submittedKind = fields.value(QStringLiteral("kind")).toString();
+        if (submittedKind == QLatin1String("custom"))
+            p["provider"] = QStringLiteral("openai");
+        else if (isKnownKind(submittedKind))
+            p["provider"] = submittedKind;
+
+        // 两个轴的优先级要看这次提交了什么：UI 的来源芯片只发 kind（或旧调用
+        // 发 provider），此时协议要跟着重置成该厂商的默认协议（否则协议字段会
+        // 反过来把厂商改写回去，换厂商就成了空操作）；显式换协议时则以协议为准
+        // 回填厂商。被上面丢弃的非法值不算一次提交，不能顺带重置协议。
+        const bool kindSubmitted = isKnownKind(submittedKind);
         if (!fields.contains(QStringLiteral("apiProtocol"))
-                && fields.contains(QStringLiteral("provider"))) {
+                && (fields.contains(QStringLiteral("provider")) || kindSubmitted)) {
             p["apiProtocol"] = defaultsForProvider(p.value("provider").toString())->key;
         }
-        normalizeEndpoint(p);
+        const LlmProtocolDescriptor* endpoint = normalizeEndpoint(p);
+
+        // 端点拥有的三项：baseUrl、当前模型、模型列表。以前由 UI 反查
+        // defaultEndpoint() 后回填，于是两种丢值：列表留着上一家的模型（当前模型
+        // 在列表里找不到，看起来像"改完又丢了"），以及重复点当前端点也会把自定义
+        // 端点重置回默认值。现在由这里单点决定，UI 只提交被改的那个键。
+        const bool endpointChanged = endpoint->key != protocolBefore;
+        const bool vendorChanged = endpoint->provider != providerBefore;
+        // 自定义配置是"这三项归用户，不归端点"的那一类：任何预设回填都会把用户
+        // 填的网关地址和模型名换成 OpenAI 官方值，所以整段跳过。
+        const bool customProfile = isCustomProfile(p);
+
+        // baseUrl 只在换厂商时重置：同厂商换协议通常还是同一个网关（例如同时代理
+        // 两条端点的自建网关），把用户填的网关地址抹掉只会让人重新输一遍。
+        if (vendorChanged && !customProfile && !fields.contains(QStringLiteral("baseUrl")))
+            p["baseUrl"] = endpoint->defaultBaseUrl;
+
+        if (endpointChanged && !customProfile && !fields.contains(QStringLiteral("models"))) {
+            const QString current = p.value("model").toString();
+            // 显式提交过模型就以它为准（自建端点跑的模型名基本都不在预设里）；
+            // 沿用到新端点、而新端点用不了的旧模型，才退回新端点的默认模型。
+            // 默认模型回填只发生在"预设 → 预设"的端点切换上：自定义配置（无论是
+            // 现在还是刚才）带着用户自己写的模型名，换成 gpt-4o-mini 只会让人重填。
+            if (!kindWasCustom && !fields.contains(QStringLiteral("model"))
+                    && (current.isEmpty() || !endpoint->models.contains(current)))
+                p["model"] = endpoint->defaultModel;
+
+            QStringList rebuilt = endpoint->models;
+            if (vendorChanged) {
+                // 换了厂商：旧列表里的模型属于上一家，整份丢掉（下面补当前模型）
+                p["models"] = rebuilt;
+            } else {
+                // 同厂商换协议：新旧列表同源，把新协议的预设并进来即可，用户自己
+                // 加过的模型不能因为点了协议按钮就消失。
+                for (const QString& model : p.value("models").toStringList()) {
+                    if (!rebuilt.contains(model)) rebuilt.append(model);
+                }
+                p["models"] = rebuilt;
+            }
+        }
+
+        // 不变量：当前模型必须在模型列表里。设置页的列表与聊天侧的模型选择器
+        // 读同一份，缺了项就等于把用户刚选的模型藏起来了。
+        if (!fields.contains(QStringLiteral("models"))) {
+            const QString current = p.value("model").toString();
+            QStringList models = p.value("models").toStringList();
+            if (!current.isEmpty() && !models.contains(current)) {
+                models.prepend(current);
+                p["models"] = models;
+            }
+        }
         m_profiles[i] = p;
 
         persist();
@@ -467,15 +593,6 @@ QString SettingsService::providerDisplayName(const QString& provider) const {
     if (provider == QLatin1String("openai")) return tr("OpenAI 兼容");
     if (provider == QLatin1String("ollama")) return tr("Ollama 本地");
     return tr("Claude");
-}
-
-QVariantMap SettingsService::defaultEndpoint(const QString& provider) const {
-    const LlmProtocolDescriptor* defaults = defaultsForProvider(
-        LlmProtocolRegistry::isKnownProvider(provider) ? provider : QStringLiteral("openai"));
-    return {{QStringLiteral("apiProtocol"), defaults->key},
-            {QStringLiteral("baseUrl"), defaults->defaultBaseUrl},
-            {QStringLiteral("model"), defaults->defaultModel},
-            {QStringLiteral("models"), defaults->models}};
 }
 
 void SettingsService::setContextTokens(int tokens) {
@@ -732,17 +849,16 @@ int SettingsService::modelContextWindow(const QString& apiProtocol,
     return d->contextWindows.value(model, 0);
 }
 
-// 某厂商可选的协议（UI 的协议选择行）：{apiProtocol, label, baseUrl, model}。
-// 只有一个协议时 UI 不显示这一行。
+// 某厂商可选的协议（UI 的协议选择行与列表标签）：{apiProtocol, label}。
+// 只有一个协议时 UI 不显示这一行。默认端点与模型不从这里外发——切换端点后的
+// 回填由 updateProfile 单点负责，两处各给一份默认值迟早会漂移。
 QVariantList SettingsService::endpointOptions(const QString& provider) const {
     QVariantList out;
     const QString vendor = LlmProtocolRegistry::isKnownProvider(provider)
         ? provider : QStringLiteral("openai");
     for (const auto& d : LlmProtocolRegistry::protocolsOfProvider(vendor)) {
         out.append(QVariantMap{{QStringLiteral("apiProtocol"), d.key},
-                               {QStringLiteral("label"), d.label},
-                               {QStringLiteral("baseUrl"), d.defaultBaseUrl},
-                               {QStringLiteral("model"), d.defaultModel}});
+                               {QStringLiteral("label"), d.label}});
     }
     return out;
 }

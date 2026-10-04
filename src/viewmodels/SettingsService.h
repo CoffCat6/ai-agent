@@ -27,6 +27,14 @@ namespace NexusAI {
 // on load (protocol inferred from vendor), and the legacy single-provider
 // keys are migrated into profiles on first load.
 //
+// A profile additionally carries "kind" — where its defaults came from
+// ("openai" | "anthropic" | "ollama" | "custom"). It is a settings-page axis
+// only: kind="custom" means an openai / openai-chat profile whose baseUrl,
+// model and model list are never pre-filled, and it gates the endpoint-owned
+// refills in updateProfile() and load(). Wire format, local-only gating and
+// the capability table keep reading provider / apiProtocol, so a custom
+// profile is still an OpenAI-compatible one.
+//
 // API keys are encrypted at rest on Windows (DPAPI, per-user).
 class SettingsService : public QObject {
     Q_OBJECT
@@ -178,14 +186,19 @@ public:
     static QString appVersion() { return QCoreApplication::applicationVersion(); }
 
     // ── Profile management (QML invokables) ───────────
-    // Create a profile with provider defaults; returns its id.
-    Q_INVOKABLE QString addProfile();
-    // Merge the given fields (displayName/provider/apiProtocol/baseUrl/apiKey/
-    // model/models) into the profile; unknown fields are ignored. provider and
-    // apiProtocol are validated against the protocol registry (an unregistered
-    // value is dropped) and kept consistent as a pair: submitting only a vendor
-    // resets the protocol to that vendor's default, submitting a protocol
-    // rewrites the vendor to the one that speaks it.
+    // Create a profile of the given kind and return its id. 合法 kind 是各厂商
+    // 键加 "custom"；"custom" 得到一条空白的 OpenAI 兼容配置（baseUrl / model /
+    // models 都不预填，供自建与第三方网关用），其余 kind 按厂商默认端点预填。
+    // 未知 kind 回落 "openai"。
+    Q_INVOKABLE QString addProfile(const QString& kind);
+    // Merge the given fields (displayName/kind/provider/apiProtocol/baseUrl/
+    // apiKey/model/models) into the profile; unknown fields and unregistered
+    // kind/provider/apiProtocol values are ignored. provider and apiProtocol are
+    // validated against the protocol registry and kept consistent as a pair:
+    // submitting a vendor resets the protocol to that vendor's default,
+    // submitting a protocol rewrites the vendor to the one that speaks it, and
+    // submitting kind="custom" moves the vendor axis to openai (custom rides
+    // openai-chat — it is a UI axis, not a fifth wire protocol).
     Q_INVOKABLE void updateProfile(const QString& id, const QVariantMap& fields);
     Q_INVOKABLE void removeProfile(const QString& id);
     // docs/17 B2: 把通用设置页的 9 个键回写 schema 默认值（安全开关回滚
@@ -199,11 +212,9 @@ public:
     Q_INVOKABLE void addModelToProfile(const QString& id, const QString& model);
     // Remove a model name from a profile's model list
     Q_INVOKABLE void removeModelFromProfile(const QString& id, const QString& model);
-    // {apiProtocol, baseUrl, model, models} defaults for the default protocol
-    // of a provider (used when the editor switches the provider of a profile).
-    Q_INVOKABLE QVariantMap defaultEndpoint(const QString& provider) const;
     // 某厂商的全部可选协议（{apiProtocol, label, baseUrl, model}）。只有一条时
-    // UI 不显示协议选择行——anthropic / ollama 目前就是如此。
+    // UI 不显示协议选择行——anthropic / ollama 目前就是如此。切换端点后的
+    // baseUrl / 当前模型 / 模型列表由 updateProfile 单点重算，UI 不反查默认值。
     Q_INVOKABLE QVariantList endpointOptions(const QString& provider) const;
     // Localized display name for a provider key (legacy profile migration).
     QString providerDisplayName(const QString& provider) const;
@@ -251,7 +262,7 @@ private:
     QVariantList migrateLegacy();
     void persist();
 
-    QVariantList m_profiles;   // each entry: {id, displayName, provider, apiProtocol, baseUrl, apiKey, model}
+    QVariantList m_profiles;   // each entry: {id, displayName, kind, provider, apiProtocol, baseUrl, apiKey, model, models}
     QString m_activeId;
     int m_contextTokens{8192};
     int m_maxSteps{AIAgent::kDefaultMaxIterations};

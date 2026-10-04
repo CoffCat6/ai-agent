@@ -34,6 +34,11 @@ Item {
         { value: "high",     label: qsTr("思考·高"),   desc: qsTr("最大推理投入，慢且贵，适合难题") }
     ]
 
+    // 自定义网关刚建好时活动配置还没有模型名，此时思考档位既不会随请求发出也没有
+    // 任何效果——与其让人点了没反应，不如显式禁用并说明原因。
+    readonly property bool usable: Settings.activeProfileId !== ""
+        && String(Settings.activeProfile.model || "") !== ""
+
     readonly property string currentLabel: {
         for (var i = 0; i < levels.length; ++i)
             if (levels[i].value === current) return levels[i].label
@@ -61,6 +66,7 @@ Item {
         id: triggerBox
         anchors.fill: parent
         radius: 6
+        opacity: root.usable ? 1.0 : 0.5
         color: triggerMA.containsMouse || effortPopup.opened
             ? Theme.surfaceHover : "transparent"
         border.width: 1
@@ -84,8 +90,8 @@ Item {
 
             Text {
                 anchors.verticalCenter: parent.verticalCenter
-                text: root.currentLabel
-                color: triggerMA.containsMouse || effortPopup.opened
+                text: root.usable ? root.currentLabel : qsTr("思考·未配置模型")
+                color: root.usable && (triggerMA.containsMouse || effortPopup.opened)
                     ? Theme.brandPrimary : Theme.textSecondary
                 font.pixelSize: 10
                 font.family: Theme.fontMono
@@ -104,6 +110,7 @@ Item {
             id: triggerMA
             anchors.fill: parent
             anchors.margins: -4
+            enabled: root.usable
             hoverEnabled: true
             cursorShape: Qt.PointingHandCursor
             onClicked: effortPopup.opened ? effortPopup.close() : effortPopup.open()

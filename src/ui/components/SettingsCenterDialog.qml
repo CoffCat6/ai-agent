@@ -10,8 +10,10 @@ Dialog {
     modal: true
     anchors.centerIn: parent
     padding: 0
-    width: 760
-    height: 560
+    // 860×620：模型配置页改成卡片分组后，560 高的视口里主操作（启用/测试连接）会
+    // 被挤出屏幕；580 宽的内容区又放不下"标签 + 输入框 + 一排档位芯片"。
+    width: 860
+    height: 620
 
     property string currentCategory: "model"
 
