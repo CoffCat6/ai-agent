@@ -29,6 +29,17 @@ Item {
     property bool testOk: false
     property string savedHint: ""
 
+    // 连接测试用哪个模型：默认当前模型，用户可从本配置的模型列表里换一个
+    // （典型场景：刚加进来的新模型名还不确定，想单独验证它能不能通，又不想把
+    // 当前模型改掉）。列表为空时按钮直接禁用，见下方说明文案。
+    readonly property var testModels: page.editing !== null
+        ? (page.editing.models || []).filter((m) => String(m).trim() !== "") : []
+    property string testModel: ""
+    // 用户是否在下拉里亲手选过（选过就不再跟着当前模型走）；下面两个属性记录
+    // 上次同步落哪条配置上，换配置时重置。
+    property bool testModelPinned: false
+    property string testModelProfileId: ""
+
     // 档位取十进制，和协议能力表同源（gpt-4o 的窗口是 128000 而不是 131072）。
     // 按 1024 进制取整的话，点「128K」写进 profile 的值既与模型真实窗口不符，
     // 也不会让芯片亮起来（比较的是 131072）。
@@ -52,12 +63,13 @@ Item {
         { kind: "ollama",    label: qsTr("Ollama 本地") },
         { kind: "custom",    label: qsTr("自定义网关") }
     ]
-    readonly property var effortOptions: [
-        { value: "",         label: qsTr("默认") },
-        { value: "off",      label: qsTr("关闭") },
-        { value: "low",      label: qsTr("低") },
-        { value: "medium",   label: qsTr("中") },
-        { value: "high",     label: qsTr("高") }
+    // 下拉选项只写单位与档位名，不加解释（解释在字段自身的灰色 placeholder 或
+    // 卡片副标题里）。
+    readonly property var effortPresets: [
+        { v: "off",      label: qsTr("关闭") },
+        { v: "low",      label: qsTr("低") },
+        { v: "medium",   label: qsTr("中") },
+        { v: "high",     label: qsTr("高") }
     ]
     readonly property var fieldLabels: ({
         displayName: qsTr("显示名称"),
@@ -147,9 +159,28 @@ Item {
         page.setField(urlRow.input, p ? p.baseUrl : "")
         page.setField(modelRow.input, p ? p.model : "")
         page.setField(tempRow.input, p ? p.temperature : "")
-        page.setField(outRow.input, p ? p.maxOutputTokens : "")
-        page.setField(numCtxRow.input, p ? p.numCtx : "")
-        page.setField(contextLengthRow.input, p ? p.contextLength : "")
+        page.syncTestModel()
+    }
+
+    // 测试用模型：默认当前模型；不在了或刚换了配置就重新推断。
+    function syncTestModel() {
+        const p = page.editing
+        const models = page.testModels
+        if (p === null || models.length === 0) {
+            page.testModel = ""
+            page.testModelProfileId = ""
+            page.testModelPinned = false
+            return
+        }
+        if (page.testModelProfileId !== p.id) {
+            page.testModelProfileId = p.id
+            page.testModelPinned = false
+        }
+        if (page.testModelPinned && models.indexOf(page.testModel) >= 0)
+            return
+        page.testModelPinned = false
+        const current = String(p.model || "")
+        page.testModel = models.indexOf(current) >= 0 ? current : models[0]
     }
 
     function submitField(key, value) {
@@ -242,7 +273,7 @@ Item {
             SettingCard {
                 Layout.fillWidth: true
                 title: qsTr("配置来源")
-                subtitle: qsTr("一条配置对应一个可用服务。厂商决定默认值，接口协议才决定报文格式。")
+                subtitle: qsTr("一条配置对应一个可用服务。厂商决定默认地址，接口协议决定报文格式；模型由你自己填。")
 
                 Flow {
                     Layout.fillWidth: true
@@ -468,17 +499,44 @@ Item {
 
                     AppButton {
                         text: page.testing ? qsTr("测试中…") : qsTr("测试连接")
+                        // 模型列表为空时无从选起：与其用空模型名去撞 404，不如直接禁用
+                        // 并把原因写在旁边（下面那行）。
                         enabled: !page.testing && page.ready
+                                 && page.testModels.length > 0
                         onClicked: {
                             page.testing = true
                             page.testResult = ""
                             ConnectionTester.test(page.editing.apiProtocol,
                                                   page.editing.baseUrl,
                                                   page.editing.apiKey,
-                                                  page.editing.model)
+                                                  page.testModel)
+                        }
+                    }
+
+                    ComboBox {
+                        id: testModelCombo
+                        visible: page.testModels.length > 0
+                        Layout.preferredWidth: 200
+                        model: page.testModels
+                        currentIndex: page.testModels.indexOf(page.testModel)
+                        Accessible.name: qsTr("测试用模型")
+                        onActivated: (index) => {
+                            page.testModel = currentText
+                            page.testModelPinned = true
                         }
                     }
                     Item { Layout.fillWidth: true }
+                }
+
+                Text {
+                    Layout.fillWidth: true
+                    text: page.testModels.length > 0
+                        ? qsTr("测试用模型只影响本次请求，不会改写当前模型。")
+                        : qsTr("模型列表为空，没东西可测：先在上方「模型」卡片里添加一个模型名。")
+                    color: Theme.textSecondary
+                    font.pixelSize: 10
+                    font.family: Theme.fontSans
+                    wrapMode: Text.WordWrap
                 }
 
                 Text {
@@ -498,7 +556,7 @@ Item {
             SettingCard {
                 Layout.fillWidth: true
                 title: qsTr("模型")
-                subtitle: qsTr("列表里的模型会同时出现在聊天输入区的选择器里；点芯片设为当前模型，× 移出列表。")
+                subtitle: qsTr("模型名不再按厂商预填：在下面的输入框里自己添加，列表会同步到聊天输入区的选择器。")
 
                 SettingsField {
                     id: modelRow
@@ -628,9 +686,7 @@ Item {
                     visible: page.editing !== null
                         && (page.editing.models || []).length === 0
                     Layout.fillWidth: true
-                    text: page.isCustom
-                        ? qsTr("列表还是空的：自定义配置不带预设，在右边输入网关上的模型名后回车。")
-                        : qsTr("列表还是空的：在右边输入模型名回车即可加回来。")
+                    text: qsTr("列表还是空的：模型名不再自动预填，在右边输入一个名字回车即可。")
                     color: Theme.textSecondary
                     font.pixelSize: 10
                     font.family: Theme.fontSans
@@ -654,27 +710,14 @@ Item {
                     onSubmitted: (value) => page.submitField("temperature", value.trim())
                 }
 
-                ColumnLayout {
-                    Layout.fillWidth: true
-                    spacing: 4
-
-                    SettingsField {
-                        id: outRow
-                        label: qsTr("最大输出 tokens")
-                        placeholderText: qsTr("留空 = 服务默认")
-                        validator: IntValidator { bottom: 1 }
-                        onSubmitted: (value) => page.submitField("maxOutputTokens", value.trim())
-                    }
-
-                    SizePresetRow {
-                        Layout.fillWidth: true
-                        entries: page.outputPresets
-                        currentValue: parseInt(outRow.input.text) || 0
-                        onChosen: (value) => {
-                            outRow.input.text = value === "" ? "" : String(value)
-                            page.submitField("maxOutputTokens", outRow.input.text)
-                        }
-                    }
+                ParamSelectRow {
+                    id: outRow
+                    label: qsTr("最大输出 tokens")
+                    entries: page.outputPresets
+                    currentValue: page.editing !== null ? (page.editing.maxOutputTokens || "") : ""
+                    placeholderText: qsTr("自定义上限，留空 = 服务默认")
+                    validator: IntValidator { bottom: 1 }
+                    onSubmitted: (value) => page.submitField("maxOutputTokens", value)
                 }
 
                 ColumnLayout {
@@ -689,22 +732,14 @@ Item {
                         font.family: Theme.fontSans
                     }
 
-                    SettingsField {
+                    ParamSelectRow {
                         id: numCtxRow
                         label: qsTr("num_ctx")
-                        placeholderText: qsTr("留空 = 不发送")
-                        validator: IntValidator { bottom: 1 }
-                        onSubmitted: (value) => page.submitField("numCtx", value.trim())
-                    }
-
-                    SizePresetRow {
-                        Layout.fillWidth: true
                         entries: page.contextPresets
-                        currentValue: parseInt(numCtxRow.input.text) || 0
-                        onChosen: (value) => {
-                            numCtxRow.input.text = value === "" ? "" : String(value)
-                            page.submitField("numCtx", numCtxRow.input.text)
-                        }
+                        currentValue: page.editing !== null ? (page.editing.numCtx || "") : ""
+                        placeholderText: qsTr("自定义窗口，留空 = 不发送")
+                        validator: IntValidator { bottom: 1 }
+                        onSubmitted: (value) => page.submitField("numCtx", value)
                     }
                 }
             }
@@ -715,21 +750,14 @@ Item {
                 title: qsTr("思考与上下文")
                 subtitle: qsTr("思考强度存在这条配置上；聊天输入区的快捷选择框读写的是当前启用的配置。")
 
-                RowLayout {
-                    Layout.fillWidth: true
-                    spacing: 8
-
-                    Repeater {
-                        model: page.effortOptions
-
-                        delegate: AppButton {
-                            required property var modelData
-                            text: modelData.label
-                            highlighted: page.editingEffort === modelData.value
-                            onClicked: page.submitField("reasoningEffort", modelData.value)
-                        }
-                    }
-                    Item { Layout.fillWidth: true }
+                ParamSelectRow {
+                    id: effortRow
+                    label: qsTr("思考强度")
+                    entries: page.effortPresets
+                    currentValue: page.editingEffort
+                    allowCustom: false
+                    autoLabel: qsTr("默认")
+                    onSubmitted: (value) => page.submitField("reasoningEffort", value)
                 }
 
                 Text {
@@ -746,22 +774,14 @@ Item {
                     Layout.fillWidth: true
                     spacing: 4
 
-                    SettingsField {
+                    ParamSelectRow {
                         id: contextLengthRow
                         label: qsTr("上下文预算覆盖")
-                        placeholderText: qsTr("留空 = 按模型能力表自动")
-                        validator: IntValidator { bottom: 2048; top: 1048576 }
-                        onSubmitted: (value) => page.submitField("contextLength", value.trim())
-                    }
-
-                    SizePresetRow {
-                        Layout.fillWidth: true
                         entries: page.contextPresets
-                        currentValue: page.effectiveContext
-                        onChosen: (value) => {
-                            contextLengthRow.input.text = value === "" ? "" : String(value)
-                            page.submitField("contextLength", contextLengthRow.input.text)
-                        }
+                        currentValue: page.editing !== null ? (page.editing.contextLength || "") : ""
+                        placeholderText: qsTr("自定义预算，留空 = 按能力表")
+                        validator: IntValidator { bottom: 2048; top: 1048576 }
+                        onSubmitted: (value) => page.submitField("contextLength", value)
                     }
 
                     Text {
@@ -915,7 +935,7 @@ Item {
 
             Text {
                 Layout.fillWidth: true
-                text: qsTr("厂商配置会带上官方默认地址与模型；「自定义网关」两项都留空，由你自己填。")
+                text: qsTr("厂商配置会带上默认地址，模型名一律留空由你自己填——预填的官方模型列表未必是你实际调用的那个。")
                 color: Theme.textSecondary
                 font.pixelSize: 10
                 font.family: Theme.fontSans

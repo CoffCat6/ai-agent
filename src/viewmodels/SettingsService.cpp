@@ -78,7 +78,9 @@ QVariantMap makeProfile(const QString& provider, const QString& displayName,
     p["model"] = model;
     p["apiKey"] = apiKey;
 
-    QStringList mList = models.isEmpty() ? defaults->models : models;
+    // 模型列表不再按厂商预设回填：只保留调用方显式给出的模型。用户手填的模型
+    // 是唯一来源，预填官方列表只会让人先删后填。
+    QStringList mList = models;
     if (!model.isEmpty() && !mList.contains(model)) {
         mList.prepend(model);
     }
@@ -102,6 +104,26 @@ QVariantMap makeCustomProfile(const QString& displayName) {
     p["apiKey"] = QString();
     p["models"] = QStringList();
     return p;
+}
+
+// v1 → v2：模型列表改由用户手动维护，升级时清空存量 profile 的模型列表与当前
+// 模型，让每条配置都回到「需手填模型」的空态。只改 blob 里的这两个键，apiKey
+// 仍是加密态、不经过本进程解密；由 load() 依版本号调用，只跑一次。
+void clearProfileModelsOnUpgrade(QSettings& settings) {
+    const QByteArray raw = settings.value(kProfilesKey).toString().toUtf8();
+    QJsonParseError parseError{};
+    const QJsonDocument doc = QJsonDocument::fromJson(raw, &parseError);
+    if (parseError.error != QJsonParseError::NoError || !doc.isArray()) return;
+
+    QJsonArray arr = doc.array();
+    for (int i = 0; i < arr.size(); ++i) {
+        QJsonObject profile = arr.at(i).toObject();
+        profile["models"] = QJsonArray();
+        profile["model"] = QString();
+        arr[i] = profile;
+    }
+    settings.setValue(kProfilesKey,
+        QString::fromUtf8(QJsonDocument(arr).toJson(QJsonDocument::Compact)));
 }
 
 #ifdef Q_OS_WIN
@@ -198,6 +220,9 @@ void SettingsService::load() {
     const int storedVersion = settings.value("schemaVersion", 0).toInt();
     if (storedVersion < SettingsSchema::kSchemaVersion) {
         SettingsSchema::migrate(storedVersion);
+        // profile 存在 modelProfiles blob 里（不在顶层键注册表），清空存量模型的
+        // 迁移因此落在这里，与 SettingsSchema::migrate 的分工一起生效。
+        if (storedVersion < 2) clearProfileModelsOnUpgrade(settings);
         settings.setValue("schemaVersion", SettingsSchema::kSchemaVersion);
     }
 
@@ -214,21 +239,12 @@ void SettingsService::load() {
                     && !LlmProtocolRegistry::find(p.value("apiProtocol").toString()))
                 continue;
             // 旧 profile 没有 apiProtocol：在这里按厂商补齐，之后运行侧只认这个键。
-            const LlmProtocolDescriptor* endpoint = normalizeEndpoint(p);
+            normalizeEndpoint(p);
             // kind 同理补齐（放在归一之后：normalizeEndpoint 可能按协议改写厂商）。
             p["kind"] = kindOf(p);
 
-            // Ensure "models" field is populated
-            QStringList models = p.value("models").toStringList();
-            if (models.isEmpty() && !isCustomProfile(p)) {
-                models = endpoint->models;
-            }
-            const QString model = p.value("model").toString();
-            if (!model.isEmpty() && !models.contains(model)) {
-                models.prepend(model);
-            }
-            p["models"] = models;
-
+            // 模型列表完全由用户维护：这里既不按厂商预设回填，也不把当前模型塞
+            // 进列表——否则刚清空的列表会被立刻灌回一项。
             m_profiles.append(p);
         }
     }
@@ -318,13 +334,13 @@ QVariantList SettingsService::migrateLegacy() {
             provider,
             providerDisplayName(provider),
             settings.value(provider + "/baseUrl", defaults->defaultBaseUrl).toString(),
-            settings.value(provider + "/model", defaults->defaultModel).toString(),
+            settings.value(provider + "/model", QString()).toString(),
             defaults->local ? QString() : legacyKey));
     }
     if (out.isEmpty()) {
         const LlmProtocolDescriptor* defaults = defaultsForProvider(legacyProvider);
         out.append(makeProfile(legacyProvider, providerDisplayName(legacyProvider),
-                               defaults->defaultBaseUrl, defaults->defaultModel, legacyKey));
+                               defaults->defaultBaseUrl, QString(), legacyKey));
     }
 
     qInfo() << "Migrated legacy provider settings into" << out.size() << "model profile(s)";
@@ -354,7 +370,7 @@ QString SettingsService::addProfile(const QString& kind) {
             ? kind : QStringLiteral("openai");
         const LlmProtocolDescriptor* defaults = defaultsForProvider(vendor);
         profile = makeProfile(vendor, tr("新配置"),
-            defaults->defaultBaseUrl, defaults->defaultModel, QString());
+            defaults->defaultBaseUrl, QString(), QString());
     }
 
     const QString id = profile.value("id").toString();
@@ -374,11 +390,7 @@ void SettingsService::updateProfile(const QString& id, const QVariantMap& fields
         QVariantMap p = m_profiles.at(i).toMap();
         if (p.value("id").toString() != id) continue;
 
-        const QString protocolBefore = p.value("apiProtocol").toString();
         const QString providerBefore = p.value("provider").toString();
-        // 进入本次更新前是不是自定义配置：离开自定义（点回某个厂商）时用户依然
-        // 会拿到该厂商的预设模型列表，但他填过的模型名不能被换成预设默认值。
-        const bool kindWasCustom = isCustomProfile(p);
 
         for (auto it = fields.constBegin(); it != fields.constEnd(); ++it) {
             if (it.key() == QLatin1String("id")) continue; // id is immutable
@@ -419,48 +431,29 @@ void SettingsService::updateProfile(const QString& id, const QVariantMap& fields
         }
         const LlmProtocolDescriptor* endpoint = normalizeEndpoint(p);
 
-        // 端点拥有的三项：baseUrl、当前模型、模型列表。以前由 UI 反查
-        // defaultEndpoint() 后回填，于是两种丢值：列表留着上一家的模型（当前模型
-        // 在列表里找不到，看起来像"改完又丢了"），以及重复点当前端点也会把自定义
-        // 端点重置回默认值。现在由这里单点决定，UI 只提交被改的那个键。
-        const bool endpointChanged = endpoint->key != protocolBefore;
+        // 端点拥有的两项：baseUrl 与厂商归属。当前模型与模型列表不再由端点回填
+        // （那是用户在列表里手填和维护的），唯一例外是换厂商时清空二者——上一家的
+        // 模型名在新端点上用不了，留着只会让每次请求都撞服务端报错。
         const bool vendorChanged = endpoint->provider != providerBefore;
-        // 自定义配置是"这三项归用户，不归端点"的那一类：任何预设回填都会把用户
-        // 填的网关地址和模型名换成 OpenAI 官方值，所以整段跳过。
+        // 自定义配置是"端点三项归用户"的那一类：任何预设回填都会把用户填的网关
+        // 地址换成 OpenAI 官方值，所以 baseUrl 重置整段跳过。
         const bool customProfile = isCustomProfile(p);
 
-        // baseUrl 只在换厂商时重置：同厂商换协议通常还是同一个网关（例如同时代理
-        // 两条端点的自建网关），把用户填的网关地址抹掉只会让人重新输一遍。
-        if (vendorChanged && !customProfile && !fields.contains(QStringLiteral("baseUrl")))
-            p["baseUrl"] = endpoint->defaultBaseUrl;
-
-        if (endpointChanged && !customProfile && !fields.contains(QStringLiteral("models"))) {
-            const QString current = p.value("model").toString();
-            // 显式提交过模型就以它为准（自建端点跑的模型名基本都不在预设里）；
-            // 沿用到新端点、而新端点用不了的旧模型，才退回新端点的默认模型。
-            // 默认模型回填只发生在"预设 → 预设"的端点切换上：自定义配置（无论是
-            // 现在还是刚才）带着用户自己写的模型名，换成 gpt-4o-mini 只会让人重填。
-            if (!kindWasCustom && !fields.contains(QStringLiteral("model"))
-                    && (current.isEmpty() || !endpoint->models.contains(current)))
-                p["model"] = endpoint->defaultModel;
-
-            QStringList rebuilt = endpoint->models;
-            if (vendorChanged) {
-                // 换了厂商：旧列表里的模型属于上一家，整份丢掉（下面补当前模型）
-                p["models"] = rebuilt;
-            } else {
-                // 同厂商换协议：新旧列表同源，把新协议的预设并进来即可，用户自己
-                // 加过的模型不能因为点了协议按钮就消失。
-                for (const QString& model : p.value("models").toStringList()) {
-                    if (!rebuilt.contains(model)) rebuilt.append(model);
-                }
-                p["models"] = rebuilt;
-            }
+        // 换厂商 = 换端点家族：上一家的当前模型与模型列表在新端点上都用不了，
+        // 又不再有预设可回填，于是清空让用户重填（页脚会提示还需填写模型名）。
+        // 同一厂商换协议不动模型与列表：仍是同一个网关，手填的名字照旧有效。
+        if (vendorChanged && !customProfile) {
+            if (!fields.contains(QStringLiteral("baseUrl")))
+                p["baseUrl"] = endpoint->defaultBaseUrl;
+            // 本次显式提交的字段不覆盖，只清掉上一家的遗留（模型与列表一起）。
+            if (!fields.contains(QStringLiteral("model"))) p["model"] = QString();
+            if (!fields.contains(QStringLiteral("models"))) p["models"] = QStringList();
         }
 
-        // 不变量：当前模型必须在模型列表里。设置页的列表与聊天侧的模型选择器
-        // 读同一份，缺了项就等于把用户刚选的模型藏起来了。
-        if (!fields.contains(QStringLiteral("models"))) {
+        // 显式提交模型名时把它并入列表：聊天侧模型选择器读的是 models，缺了项就
+        // 等于把刚选的模型藏起来。不做无条件补写——否则清空后的列表会被立刻灌回
+        // 当前模型，等于把"不再预填"又绕过去了。
+        if (fields.contains(QStringLiteral("model"))) {
             const QString current = p.value("model").toString();
             QStringList models = p.value("models").toStringList();
             if (!current.isEmpty() && !models.contains(current)) {
@@ -547,6 +540,11 @@ void SettingsService::addModelToProfile(const QString& id, const QString& model)
         if (!models.contains(trimmedModel)) {
             models.append(trimmedModel);
             p["models"] = models;
+            // 列表从此不再预填，新建配置的当前模型是空的：刚加进来的第一个模型
+            // 就是唯一可用的那个，顺手设为当前，免得用户加完还卡在"还需填写：模型名"。
+            // 这是用户自己敲进来的值，不是厂商预设。
+            if (p.value("model").toString().isEmpty())
+                p["model"] = trimmedModel;
             m_profiles[i] = p;
 
             persist();

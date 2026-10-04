@@ -25,8 +25,9 @@ struct SettingsKeyDef {
 class SettingsSchema {
 public:
     // Bumped when a migration renames/removes keys. v0 = pre-schema (all
-    // keys had defaults; no structural change at v1).
-    static constexpr int kSchemaVersion = 1;
+    // keys had defaults); v1 = 初版结构化 schema；v2 = 模型列表改为用户手动
+    // 维护（存量 profile 的 model/models 在 SettingsService::load 里清空）。
+    static constexpr int kSchemaVersion = 2;
 
     // All registered settings keys (global + UI + theme). Profile-internal
     // keys (provider/apiKey/model/baseUrl inside the modelProfiles JSON) are
@@ -35,8 +36,9 @@ public:
     static const QVector<SettingsKeyDef>& registeredKeys();
 
     // Migration hook: called at startup with the stored schema version.
-    // v0 → v1 is a no-op (keys already have defaults); future schema bumps
-    // perform renames/removals here.
+    // v0 → v1 is a no-op (keys already have defaults); v1 → v2 需要改写
+    // modelProfiles blob（不在本表的顶层键范围内），因此由
+    // SettingsService::load() 依同一个 storedVersion 完成。
     static void migrate(int fromVersion);
 };
 

@@ -208,7 +208,8 @@ public:
     Q_INVOKABLE void setActiveProfile(const QString& id);
     // Switch active model for a specific profile (or active profile if id is empty)
     Q_INVOKABLE void selectModelForProfile(const QString& id, const QString& model);
-    // Add a model name to a profile's model list if not present
+    // Add a model name to a profile's model list if not present. 当前模型为空时
+    // （新建配置没有预填）顺手把它设为当前模型，省得用户加完还卡在需填模型。
     Q_INVOKABLE void addModelToProfile(const QString& id, const QString& model);
     // Remove a model name from a profile's model list
     Q_INVOKABLE void removeModelFromProfile(const QString& id, const QString& model);

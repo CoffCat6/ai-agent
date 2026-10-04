@@ -50,6 +50,11 @@ public:
         defaultPermissionMode = s.value("agent/defaultPermissionMode");
         readDenyList = s.value("security/readDenyList");
         maxSteps = s.value("agent/maxSteps");
+        // 测试开始时把 schema 版本顶到最新：否则每个用例里第一次构造
+        // SettingsService 都会跑一次 v1→v2 迁移（清空 modelProfiles 里的模型），
+        // 让“先写 profile 再 load”的用例看到被迁移改过的数据。迁移本身由
+        // schemaV1ProfilesLoseModelsOnUpgrade 单独覆盖。
+        s.setValue("schemaVersion", SettingsSchema::kSchemaVersion);
     }
     ~SettingsGuard() {
         QSettings s("NexusAI", "NexusAI");
@@ -129,7 +134,9 @@ class TestSettingsService : public QObject {
     Q_OBJECT
 
 private slots:
-    void defaultProfilesAndModelList() {
+    // 全新安装：没有任何厂商预设模型，当前模型也留空，用户手填。厂商默认地址
+    // 仍会预填（那是端点的一部分，不是模型）。
+    void freshInstallStartsWithBlankModelList() {
         SettingsGuard guard;
         {
             QSettings s("NexusAI", "NexusAI");
@@ -145,9 +152,9 @@ private slots:
         QVERIFY(!active.isEmpty());
         QVERIFY(active.contains("models"));
 
-        const QStringList models = active.value("models").toStringList();
-        QVERIFY(!models.isEmpty());
-        QVERIFY(models.contains(active.value("model").toString()));
+        QVERIFY(active.value("model").toString().isEmpty());
+        QVERIFY(active.value("models").toStringList().isEmpty());
+        QVERIFY(!active.value("baseUrl").toString().isEmpty());
     }
 
     // apiProtocol 轴：0.3 之前持久化的 profile 只有 provider，加载时必须按
@@ -263,9 +270,9 @@ private slots:
         QCOMPARE(service.endpointOptions(QStringLiteral("mistral")).size(), 2);
     }
 
-    // 换厂商 = 换端点：baseUrl、当前模型、模型列表整份换成新端点的，但生成参数
-    // 不属于端点，必须原样留下。UI 只提交被点的厂商键。
-    void vendorSwitchRewritesEndpointOwnedFields() {
+    // 换厂商 = 换端点：baseUrl 换成新厂商的默认地址，当前模型与模型列表清空
+    // （不再有预设可回填），生成参数不属于端点，必须原样留下。UI 只提交被点的厂商键。
+    void vendorSwitchClearsModelAndRewritesBaseUrl() {
         SettingsGuard guard;
         {
             QSettings s("NexusAI", "NexusAI");
@@ -285,20 +292,16 @@ private slots:
         const QVariantMap p = service.activeProfile();
         QCOMPARE(p.value("apiProtocol").toString(), QStringLiteral("anthropic-messages"));
         QCOMPARE(p.value("baseUrl").toString(), QStringLiteral("https://api.anthropic.com"));
-        // 旧厂商的模型在新厂商用不了，退回该端点的默认模型
-        QCOMPARE(p.value("model").toString(), QStringLiteral("claude-sonnet-4-5"));
-        const QStringList models = p.value("models").toStringList();
-        QVERIFY2(models.contains(QStringLiteral("claude-sonnet-4-5")), qPrintable(models.join(',')));
-        QVERIFY(!models.contains(QStringLiteral("gpt-4o")));
-        QVERIFY(!models.contains(QStringLiteral("my-chat-model")));
+        // 旧厂商的模型在新厂商用不了，又没有预设可回填，于是清空等用户重填
+        QVERIFY(p.value("model").toString().isEmpty());
+        QVERIFY(p.value("models").toStringList().isEmpty());
         // 生成参数与端点无关
         QCOMPARE(p.value("temperature").toString(), QStringLiteral("0.4"));
         QCOMPARE(p.value("maxOutputTokens").toString(), QStringLiteral("32768"));
     }
 
-    // 同厂商换协议：还是同一个网关，baseUrl 与用户自己加的模型都不能丢；新协议
-    // 的预设要并进来（否则列表里看不到只有 Responses 支持的模型）。
-    void protocolSwitchWithinVendorMergesInsteadOfReplacing() {
+    // 同厂商换协议：还是同一个网关，baseUrl 与用户列表原样保留（不再合并预设模型）。
+    void protocolSwitchWithinVendorKeepsUserModels() {
         SettingsGuard guard;
         {
             QSettings s("NexusAI", "NexusAI");
@@ -318,13 +321,13 @@ private slots:
         QCOMPARE(p.value("provider").toString(), QStringLiteral("openai"));
         QCOMPARE(p.value("apiProtocol").toString(), QStringLiteral("openai-responses"));
         QCOMPARE(p.value("baseUrl").toString(), QStringLiteral("http://gw.local/v1"));
-        QCOMPARE(p.value("model").toString(), QStringLiteral("gpt-4o"));   // 两条协议都支持
+        QCOMPARE(p.value("model").toString(), QStringLiteral("gpt-4o"));
         const QStringList models = p.value("models").toStringList();
-        QVERIFY2(models.contains(QStringLiteral("gpt-4.1")),        // 新协议预设并进来了
-                 qPrintable(models.join(',')));
+        QVERIFY(models.contains(QStringLiteral("gpt-4o")));
         QVERIFY2(models.contains(QStringLiteral("my-gateway-model")),
                  "同厂商换协议不能丢用户自己加的模型");
-        QVERIFY(models.contains(QStringLiteral("gpt-4o")));
+        // 换协议不再把新协议的预设模型并进列表
+        QVERIFY2(!models.contains(QStringLiteral("gpt-4.1")), qPrintable(models.join(',')));
     }
 
     // 自定义网关是一条 kind=custom 的 openai/openai-chat 配置，新建时端点三项
@@ -380,8 +383,8 @@ private slots:
         QVERIFY(!models.contains(QStringLiteral("gpt-4o-mini")));
         QVERIFY(!models.contains(QStringLiteral("gpt-4.1")));
 
-        // 点回「OpenAI 兼容」来源芯片：回到预设轨道，列表该重新带上官方模型，
-        // 但网关上真实在跑的模型名不能被换成 gpt-4o-mini。
+        // 点回「OpenAI 兼容」来源芯片：厂商没变（自定义也骑在 openai 上），
+        // 所以什么都不清，网关地址与手填模型名原样保留；也不会冒出预设模型。
         service.updateProfile(id, {{QStringLiteral("kind"), QStringLiteral("openai")}});
         p = profileById(service, id);
         QCOMPARE(p.value("kind").toString(), QStringLiteral("openai"));
@@ -390,8 +393,7 @@ private slots:
         QCOMPARE(p.value("model").toString(), QStringLiteral("glm-4"));
         models = p.value("models").toStringList();
         QVERIFY2(models.contains(QStringLiteral("glm-4")), qPrintable(models.join(',')));
-        QVERIFY2(models.contains(QStringLiteral("gpt-4o-mini")),
-                 "离开自定义后应重新拿到厂商预设");
+        QVERIFY2(!models.contains(QStringLiteral("gpt-4o-mini")), qPrintable(models.join(',')));
     }
 
     // 未登记的 kind 会被丢弃（保持原 kind），旧 profile 缺 kind 时按厂商推断。
@@ -424,7 +426,7 @@ private slots:
         QCOMPARE(p.value("provider").toString(), QStringLiteral("ollama"));
     }
 
-    // 重新 load（模拟重启）时，空的自定义 profile 不得被厂商预设模型列表灌满。
+    // 重新 load（模拟重启）时，空的自定义/任意 profile 不得被厂商预设模型列表灌满。
     void customProfileStaysBlankAcrossReload() {
         SettingsGuard guard;
         {
@@ -448,8 +450,8 @@ private slots:
         QVERIFY(p.value("models").toStringList().isEmpty());
     }
 
-    // 厂商来源照旧预填；未知来源回落 openai（addProfile 从来没有测试覆盖过）。
-    void addProfilePresetsVendorDefaults() {
+    // 厂商来源也不再预填模型（地址照旧预填）；未知来源回落 openai。
+    void addProfileLeavesModelBlank() {
         SettingsGuard guard;
         {
             QSettings s("NexusAI", "NexusAI");
@@ -462,12 +464,17 @@ private slots:
         QCOMPARE(ollama.value("kind").toString(), QStringLiteral("ollama"));
         QCOMPARE(ollama.value("apiProtocol").toString(), QStringLiteral("ollama-chat"));
         QCOMPARE(ollama.value("baseUrl").toString(), QStringLiteral("http://localhost:11434"));
-        QCOMPARE(ollama.value("model").toString(), QStringLiteral("qwen2.5:7b"));
-        QVERIFY(ollama.value("models").toStringList().contains(QStringLiteral("qwen2.5:7b")));
+        QVERIFY(ollama.value("model").toString().isEmpty());
+        QVERIFY(ollama.value("models").toStringList().isEmpty());
+
+        const QVariantMap openai = profileById(service, service.addProfile(QStringLiteral("openai")));
+        QVERIFY(openai.value("model").toString().isEmpty());
+        QVERIFY(openai.value("models").toStringList().isEmpty());
 
         const QVariantMap fallback = profileById(service, service.addProfile(QStringLiteral("nope")));
         QCOMPARE(fallback.value("kind").toString(), QStringLiteral("openai"));
         QCOMPARE(fallback.value("baseUrl").toString(), QStringLiteral("https://api.openai.com/v1"));
+        QVERIFY(fallback.value("model").toString().isEmpty());
     }
 
     // 调用方显式给了 baseUrl / model / models，就以它为准，不再自动回填。
@@ -488,9 +495,7 @@ private slots:
         QCOMPARE(p.value("baseUrl").toString(), QStringLiteral("http://10.0.0.9:11434"));
         QCOMPARE(p.value("model").toString(), QStringLiteral("mistral:7b"));
         const QStringList models = p.value("models").toStringList();
-        QVERIFY(models.contains(QStringLiteral("mistral:7b")));
-        QVERIFY(models.contains(QStringLiteral("qwen2.5:7b")));
-        QVERIFY(!models.contains(QStringLiteral("gpt-4o-mini")));
+        QCOMPARE(models, QStringList{QStringLiteral("mistral:7b")});
     }
 
     // 重复点当前厂商/当前协议的按钮不能把人改过的 baseUrl 和模型抹掉。
@@ -1121,6 +1126,59 @@ ComboBox {
         QCOMPARE(s.value("schemaVersion").toInt(), SettingsSchema::kSchemaVersion);
     }
 
+    // v1 → v2：模型列表改由用户手填，存量 profile 的 model/models 在 load 时清空；
+    // 其余字段（地址、密钥、生成参数）与当前激活项不能动，而且迁移只跑一次（版本
+    // 已顶到最新后再 load 不能把用户新填的模型又清掉）。
+    void schemaV1ProfilesLoseModelsOnUpgrade() {
+        SettingsGuard guard;
+        {
+            QSettings s("NexusAI", "NexusAI");
+            QJsonArray arr;
+            QJsonObject legacy;
+            legacy["id"] = QStringLiteral("v1-profile");
+            legacy["displayName"] = QStringLiteral("旧配置");
+            legacy["provider"] = QStringLiteral("openai");
+            legacy["kind"] = QStringLiteral("openai");
+            legacy["apiProtocol"] = QStringLiteral("openai-chat");
+            legacy["baseUrl"] = QStringLiteral("https://api.openai.com/v1");
+            // 明文旧密钥：迁移不该碰 apiKey（加密串要能解开才能断言，明文同样
+            // 能验证"只动模型两项"）。
+            legacy["apiKey"] = QStringLiteral("legacy-plain-key");
+            legacy["model"] = QStringLiteral("gpt-4o");
+            legacy["models"] = QJsonArray{QStringLiteral("gpt-4o"), QStringLiteral("gpt-4o-mini")};
+            legacy["temperature"] = QStringLiteral("0.3");
+            arr.append(legacy);
+            s.setValue("modelProfiles",
+                       QString::fromUtf8(QJsonDocument(arr).toJson(QJsonDocument::Compact)));
+            s.setValue("activeProfileId", QStringLiteral("v1-profile"));
+            s.setValue("schemaVersion", 1);
+        }
+
+        {
+            SettingsService service(nullptr);
+            const QVariantMap p = profileById(service, QStringLiteral("v1-profile"));
+            QVERIFY2(!p.isEmpty(), "迁移不能丢掉 profile");
+            QVERIFY(p.value("model").toString().isEmpty());
+            QVERIFY(p.value("models").toStringList().isEmpty());
+            // 迁移只碰模型两项：地址、加密串、生成参数原样保留
+            QCOMPARE(p.value("baseUrl").toString(), QStringLiteral("https://api.openai.com/v1"));
+            QCOMPARE(p.value("apiKey").toString(), QStringLiteral("legacy-plain-key"));
+            QCOMPARE(p.value("temperature").toString(), QStringLiteral("0.3"));
+            QCOMPARE(service.activeProfileId(), QStringLiteral("v1-profile"));
+
+            // 迁移是一次性的：版本已到最新后再 load 不得再清空（此时加回来的模型
+            // 是用户填的，重启后必须还在，顺带被设为当前模型）。
+            service.addModelToProfile(QStringLiteral("v1-profile"), QStringLiteral("user-model"));
+        }
+        {
+            SettingsService service(nullptr);
+            QCOMPARE(service.activeProfile().value("models").toStringList(),
+                     QStringList{QStringLiteral("user-model")});
+            QCOMPARE(service.activeProfile().value("model").toString(),
+                     QStringLiteral("user-model"));
+        }
+    }
+
     // docs/15 §6.1.1: modelContextWindow capability-table lookup by API
     // protocol (the table lives on the protocol, not the vendor: OpenAI 厂商的
     // Chat 与 Responses 两条协议可用模型不同).
@@ -1154,8 +1212,8 @@ ComboBox {
             s.remove("modelProfiles");
             s.remove("activeProfileId");
             s.remove("contextTokens");
-            // Clear legacy provider-scoped keys so migrateLegacy picks the
-            // capability-table defaults (openai/gpt-4o-mini → 128000).
+            // Clear legacy provider-scoped keys so migrateLegacy falls back to
+            // the protocol's default baseUrl (no model is preset any more).
             for (const QString& p : {QStringLiteral("openai"),
                                      QStringLiteral("anthropic"),
                                      QStringLiteral("ollama")}) {
@@ -1172,9 +1230,10 @@ ComboBox {
         service.updateProfile(profileId, QVariantMap{{QStringLiteral("contextLength"), 99999}});
         QCOMPARE(service.resolveContextLimit(), 99999);
 
-        // Priority 2: capability table (after clearing the override). The
-        // default active profile is openai/gpt-4o-mini → 128000.
-        service.updateProfile(profileId, QVariantMap{{QStringLiteral("contextLength"), QVariant()}});
+        // Priority 2: capability table (after clearing the override). 模型不再
+        // 预填，所以用已知模型把能力表那一条跑出来（gpt-4o → 128000）。
+        service.updateProfile(profileId, QVariantMap{{QStringLiteral("contextLength"), QVariant()},
+                                                     {QStringLiteral("model"), QStringLiteral("gpt-4o")}});
         QCOMPARE(service.resolveContextLimit(), 128000);
 
         // Priority 3: global fallback (unknown model, no override).
