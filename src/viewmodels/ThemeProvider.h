@@ -62,7 +62,9 @@ public:
 
     Q_PROPERTY(QColor textSecondary READ textSecondary NOTIFY themeChanged FINAL)
     QColor textSecondary() const {
-        return m_manager->isDark() ? "#8A8A9F" : "#8F959E";
+        // 亮色侧旧值 #8F959E 在白底上仅 3.02:1，不达 WCAG AA（docs/19 D12）；
+        // 下调为 #5C6673（白底 5.83:1、bgPrimary 5.43:1、卡片头 4.96:1）。
+        return m_manager->isDark() ? QColor("#8A8A9F") : QColor("#5C6673");
     }
 
     Q_PROPERTY(QColor brandPrimary READ brandPrimary NOTIFY themeChanged FINAL)
@@ -85,13 +87,19 @@ public:
         return m_manager->isDark() ? "#FF3B30" : "#F5222D";
     }
 
+    // 阴影参数（docs/19 §5.4 / D10）：当前未接入渲染。
+    // 曾计划用 QtQuick.Effects 给气泡/卡片画轻阴影，因开闭项需 FBO 纹理缓存、
+    // 且 RectangularShadow 仅 Qt 6.9+（项目下限 6.5），暂不采用，改用
+    // 「边框 + 底色分层」的零特效方案（见 docs/19 §5.4）。
+    // 令牌保留，供日后确有阴影需求时直接取用。
     Q_PROPERTY(int elevationRadius READ elevationRadius NOTIFY themeChanged FINAL)
     int elevationRadius() const {
-        return m_manager->isDark() ? 0 : 4;
+        return m_manager->isDark() ? 0 : 8;
     }
 
     Q_PROPERTY(QColor elevationColor READ elevationColor NOTIFY themeChanged FINAL)
     QColor elevationColor() const {
+        // #AARRGGBB：暗色全透明；亮色约 6% 黑
         return m_manager->isDark() ? QColor("transparent") : QColor("#10000000");
     }
 
