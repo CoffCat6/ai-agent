@@ -26,6 +26,8 @@ class CodeHighlighter : public QSyntaxHighlighter {
     //   CodeHighlighter { document: textEdit.textDocument; text: codeText }
     Q_PROPERTY(QQuickTextDocument* document READ document WRITE setDocument)
     Q_PROPERTY(QString text READ text WRITE setText)
+    // docs/19 §5.2: 派生的语言标签（"JSON"/"Python"/...），未知语言为空串。
+    Q_PROPERTY(QString languageName READ languageName NOTIFY languageNameChanged)
 
 public:
     explicit CodeHighlighter(QObject* parent = nullptr);
@@ -41,6 +43,13 @@ public:
     // own; a full rehighlight only happens when language/threshold flips.
     QString text() const { return m_text; }
     void setText(const QString& text);
+
+    // 供代码块标题栏显示的语言名；Unknown → 空串（调用方据此隐藏标题栏）。
+    QString languageName() const { return languageDisplayName(m_language); }
+
+signals:
+    // 仅在检测出的语言真正翻转时发出，避免流式期间标题栏反复重绑。
+    void languageNameChanged();
 
 protected:
     void highlightBlock(const QString& text) override;
@@ -66,6 +75,8 @@ private:
 
     static Language detectLanguage(const QString& text);
     static const QVector<Rule>& rulesFor(Language language);
+    // 标题栏用的稳定语言名；Unknown → 空串。
+    static QString languageDisplayName(Language language);
 
     void rebuildFormats();
     void init();

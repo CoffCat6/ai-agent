@@ -40,7 +40,24 @@ void CodeHighlighter::setText(const QString& text) {
     // Content-only edits already rehighlight incrementally through the
     // document change signals; a full pass is only needed when the active
     // language (or the plain-text fallback) flips.
-    if (m_language != previous) rehighlight();
+    if (m_language != previous) {
+        rehighlight();
+        emit languageNameChanged();
+    }
+}
+
+QString CodeHighlighter::languageDisplayName(Language language) {
+    switch (language) {
+    case Json:     return QStringLiteral("JSON");
+    case Python:   return QStringLiteral("Python");
+    case Cpp:      return QStringLiteral("C++");
+    case XmlHtml:  return QStringLiteral("HTML");
+    case Css:      return QStringLiteral("CSS");
+    case Bash:     return QStringLiteral("Shell");
+    case JsTs:     return QStringLiteral("JS/TS");
+    case Markdown: return QStringLiteral("Markdown");
+    default:       return QString();
+    }
 }
 
 // Heuristics over the whole text; order matters — the most distinctive
