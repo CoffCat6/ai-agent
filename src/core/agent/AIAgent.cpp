@@ -239,6 +239,11 @@ QString AIAgent::appendTraceNode(const QString& type, const QString& title,
     node["result"] = extra.value("result").toString();
     if (extra.contains("images"))
         node["images"] = extra.value("images");
+    // docs/19 D16: 用户消息的附件（文本文件芯片）之前被白名单漏掉，导致真实
+    // 模型路径下用户附件不渲染（模拟路径直接写模型绕过了这里，所以只有真实
+    // 管线复现）。与 images 同样放行。
+    if (extra.contains("files"))
+        node["files"] = extra.value("files");
     // 字段是白名单式的：不在这里放行的 key 根本进不了节点（也就不会被
     // persistTraceNode 整节点写进 trace_nodes）。
     if (extra.contains("reasoning"))
@@ -590,6 +595,9 @@ void AIAgent::resumeSession(const QString& sessionId) {
                 // promotes them back to the top level).
                 if (msg.contains("images"))
                     userNode["images"] = msg.value("images");
+                // docs/19 D16: 与运行期白名单一致，回放旧会话时同样恢复附件。
+                if (msg.contains("files"))
+                    userNode["files"] = msg.value("files");
                 m_traceModel.append(userNode);
                 emit traceChanged();
             } else if (role == "assistant") {

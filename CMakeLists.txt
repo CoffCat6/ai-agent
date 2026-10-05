@@ -190,7 +190,13 @@ qt_add_qml_module(nexus_ai
         src/ui/components/AuditDialog.qml
     src/ui/components/LogPanel.qml
         src/ui/components/KnowledgeDocDialog.qml
-        src/ui/components/AgentTraceNode.qml
+        src/ui/components/TraceNodeRouter.qml
+        src/ui/components/UserMessageBubble.qml
+        src/ui/components/AssistantMessage.qml
+        src/ui/components/ProcessCard.qml
+        src/ui/components/MetricsLine.qml
+        src/ui/components/ErrorCard.qml
+        src/ui/components/AttachmentChip.qml
         src/ui/components/InputConsole.qml
         src/ui/components/ModelSelector.qml
         src/ui/components/PermissionModeSelector.qml

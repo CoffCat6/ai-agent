@@ -35,7 +35,7 @@ QHash<int, QByteArray> TraceModel::roleNames() const {
         {ArgsRole,      "args"},
         {ResultRole,    "result"},
         {TimestampRole, "timestamp"},
-        {ModelDataRole, "modelData"}, // AgentTraceNode's required property
+        {ModelDataRole, "modelData"}, // TraceNodeRouter 子组件的 required property
     };
 }
 

@@ -167,19 +167,24 @@ Item {
                         anchors.centerIn: parent
                         visible: traceListView.count === 0
                                  && !traceListView.rebuildingDelegates
-                        text: "Send a message to start chatting with NexusAI"
-                        color: Theme.textSecondary
+                        text: qsTr("发送一条消息，开始与 NexusAI 对话")
+                        color: Theme.textTertiary
                         font.pixelSize: Theme.fontSizeBody
                         font.family: Theme.fontSans
                     }
 
-                    delegate: AgentTraceNode {
+                    delegate: TraceNodeRouter {
                         width: traceListView.width
-                        // No explicit modelData binding here: AgentTraceNode's
-                        // required property is auto-filled by the view from the
-                        // list model context. Binding "modelData: modelData"
-                        // would self-reference and evaluate to undefined,
-                        // blanking every trace node.
+                        showProcess: traceListView.showProcess
+                        // 用词法闭包而非直接传函数引用：确保回调始终落在本
+                        // ListView 上，不依赖 delegate 的上下文解析规则。
+                        detailExpandedFn: function(key, def) {
+                            return traceListView.detailExpanded(key, def)
+                        }
+                        toggleDetailFn: function(key, def) {
+                            traceListView.toggleDetail(key, def)
+                        }
+                        // modelData / index 由视图从 list model 上下文自动注入。
                     }
                 }
             }
