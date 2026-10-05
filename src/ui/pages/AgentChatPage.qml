@@ -162,15 +162,45 @@ Item {
                     // whole model on every binding evaluation is gone
                     readonly property int intermediateCount: AgentVM.intermediateCount
 
-                    // Empty state
-                    Text {
+                    // Empty state（docs/19 §6）：品牌标识 + 引导文案。
+                    Column {
+                        id: emptyState
                         anchors.centerIn: parent
+                        // 固定宽度：既避免与 emptyText 的宽度循环绑定，
+                        // 也让长文案能按固定行宽居中折行。
+                        width: 260
+                        spacing: Theme.spaceMd
                         visible: traceListView.count === 0
                                  && !traceListView.rebuildingDelegates
-                        text: qsTr("发送一条消息，开始与 NexusAI 对话")
-                        color: Theme.textTertiary
-                        font.pixelSize: Theme.fontSizeBody
-                        font.family: Theme.fontSans
+
+                        Rectangle {
+                            x: (emptyState.width - width) / 2
+                            width: 48
+                            height: 48
+                            radius: Theme.radiusMd
+                            color: Theme.brandPrimary
+                            opacity: 0.92
+
+                            Text {
+                                anchors.centerIn: parent
+                                text: "N"
+                                color: Theme.bgPrimary
+                                font.pixelSize: 26
+                                font.bold: true
+                                font.family: Theme.fontMono
+                            }
+                        }
+
+                        Text {
+                            id: emptyText
+                            width: parent.width
+                            text: qsTr("发送一条消息，开始与 NexusAI 对话")
+                            color: Theme.textTertiary
+                            font.pixelSize: Theme.fontSizeBody
+                            font.family: Theme.fontSans
+                            horizontalAlignment: Text.AlignHCenter
+                            wrapMode: Text.WordWrap
+                        }
                     }
 
                     delegate: TraceNodeRouter {
@@ -199,10 +229,10 @@ Item {
                 z: 5
                 width: processRow.implicitWidth + 20
                 height: 26
-                radius: 13
-                color: processMA.containsMouse ? Theme.surfaceHover : Theme.bgSecondary
+                radius: height / 2
+                color: processMA.containsMouse ? Theme.surfaceHover : Theme.cardBackground
                 border.width: 1
-                border.color: Theme.borderSubtle
+                border.color: Theme.cardBorder
                 opacity: 0.94
 
                 Row {
@@ -254,10 +284,10 @@ Item {
                 z: 5
                 width: 32
                 height: 32
-                radius: 16
-                color: Theme.bgSecondary
+                radius: width / 2
+                color: Theme.cardBackground
                 border.width: 1
-                border.color: Theme.borderSubtle
+                border.color: Theme.cardBorder
                 opacity: 0.94
 
                 AppIcon {

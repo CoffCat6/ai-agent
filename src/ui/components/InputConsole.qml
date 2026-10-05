@@ -31,8 +31,8 @@ Rectangle {
     implicitHeight: (previewVisible ? previewBar.height + 6 : 0)
                     + inputRow.height + 16
     height: implicitHeight
-    color: Theme.bgSecondary
-    radius: 8
+    color: Theme.cardBackground
+    radius: Theme.radiusMd
 
     readonly property bool previewVisible: pendingAttachments.length > 0
 
@@ -65,7 +65,7 @@ Rectangle {
 
     // Focus border emphasis
     border.width: textArea.activeFocus ? 2 : 1
-    border.color: textArea.activeFocus ? Theme.brandPrimary : Theme.borderSubtle
+    border.color: textArea.activeFocus ? Theme.brandPrimary : Theme.cardBorder
 
     // Subtle glow rectangle (dark mode only)
     Rectangle {
@@ -87,7 +87,7 @@ Rectangle {
         onClicked: textArea.forceActiveFocus()
     }
 
-    // ── Attachment preview strip (Batch 30) ────────────
+    // ── Attachment preview strip (Batch 30 / docs/19 §6) ──
     Rectangle {
         id: previewBar
         visible: root.previewVisible
@@ -97,7 +97,7 @@ Rectangle {
         anchors.margins: 8
         height: 72
         color: Theme.bgPrimary
-        radius: 6
+        radius: Theme.radiusSm
 
         Row {
             id: thumbs
@@ -109,73 +109,16 @@ Rectangle {
             Repeater {
                 model: root.pendingAttachments
 
-                delegate: Rectangle {
-                    width: modelData.kind === "image" ? 56
-                         : (fileNameText.width + 20)
-                    height: 56
-                    radius: 4
-                    color: Theme.surfaceHover
-                    clip: true
-
-                    Image {
-                        visible: modelData.kind === "image"
-                        anchors.fill: parent
-                        source: modelData.kind === "image" ? modelData.dataUrl : ""
-                        fillMode: Image.PreserveAspectCrop
-                        asynchronous: true
-                    }
-
-                    Row {
-                        id: fileNameText
-                        visible: modelData.kind === "file"
-                        anchors.centerIn: parent
-                        width: Math.min(implicitWidth, 140)
-                        spacing: 4
-
-                        AppIcon {
-                            anchors.verticalCenter: parent.verticalCenter
-                            icon: "export"
-                            size: 13
-                            iconColor: Theme.textSecondary
-                        }
-
-                        Text {
-                            text: modelData.kind === "file" ? modelData.name : ""
-                            color: Theme.textPrimary
-                            font.pixelSize: Theme.fontSizeCaption
-                            font.family: Theme.fontSans
-                            elide: Text.ElideRight
-                            width: parent.width - 17
-                            anchors.verticalCenter: parent.verticalCenter
-                        }
-                    }
-
-                    Rectangle {
-                        anchors.top: parent.top
-                        anchors.right: parent.right
-                        anchors.margins: 2
-                        width: 16
-                        height: 16
-                        radius: 8
-                        color: removeArea.containsMouse ? Theme.statusDanger : Theme.bgPrimary
-                        opacity: 0.9
-
-                        Text {
-                            anchors.centerIn: parent
-                            text: "\u00d7"
-                            color: "#ffffff"
-                            font.pixelSize: 11
-                        }
-
-                        MouseArea {
-                            id: removeArea
-                            anchors.fill: parent
-                            hoverEnabled: true
-                            cursorShape: Qt.PointingHandCursor
-                            onClicked: root.pendingAttachments =
-                                root.pendingAttachments.filter((_, i) => i !== index)
-                        }
-                    }
+                // 与气泡内附件共用 AttachmentChip：仅尺寸更小并打开删除按钮。
+                delegate: AttachmentChip {
+                    kind: modelData.kind === "image" ? "image" : "file"
+                    source: modelData.kind === "image" ? modelData.dataUrl : ""
+                    name: modelData.kind === "file" ? modelData.name : ""
+                    imageWidth: 56
+                    imageHeight: 56
+                    removable: true
+                    onRemoveRequested: root.pendingAttachments =
+                        root.pendingAttachments.filter((_, i) => i !== index)
                 }
             }
         }
@@ -316,26 +259,32 @@ Rectangle {
             id: actionButton
             width: 32
             height: 32
-            radius: 16
+            radius: width / 2
             anchors.right: parent.right
             anchors.verticalCenter: parent.verticalCenter
 
-            color: actionMA.containsMouse ? Theme.surfaceHover :
-                   (root.canSend ? Theme.brandPrimary : Theme.borderSubtle)
-            opacity: root.canSend ? 1.0 : 0.5
+            // 停止态（busy）用危险色；可发送用品牌主色；否则置灰。
+            readonly property bool stopMode: root.isBusy
+            readonly property color baseColor: stopMode ? Theme.statusDanger
+                : (root.canSend ? Theme.brandPrimary : Theme.borderSubtle)
+
+            color: actionMA.containsMouse ? Qt.lighter(baseColor, 1.15) : baseColor
+            opacity: (root.canSend || stopMode) ? 1.0 : 0.5
 
             AppIcon {
                 anchors.centerIn: parent
-                icon: root.isBusy ? "stop" : "send"
-                size: root.isBusy ? 15 : 16
-                iconColor: root.isBusy ? "#ffffff" : Theme.bgPrimary
+                icon: stopMode ? "stop" : "send"
+                size: stopMode ? 15 : 16
+                iconColor: stopMode ? "#ffffff"
+                    : (root.canSend ? Theme.bgPrimary : Theme.textSecondary)
             }
 
             MouseArea {
                 id: actionMA
                 anchors.fill: parent
                 hoverEnabled: true
-                cursorShape: root.canSend ? Qt.PointingHandCursor : Qt.ArrowCursor
+                cursorShape: (root.canSend || root.isBusy)
+                    ? Qt.PointingHandCursor : Qt.ArrowCursor
                 onClicked: {
                     if (root.isBusy) {
                         AgentVM.stop()
