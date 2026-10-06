@@ -43,6 +43,21 @@ Item {
                     spacing: 0
                     clip: true
 
+                    // Pre-instantiate rows up to ~2000px beyond the viewport.
+                    // Delegate heights here vary by an order of magnitude
+                    // (one-line metrics vs. multi-thousand-px thinking/
+                    // code blocks), so the default estimate-only layout makes
+                    // maxYExtent/minYExtent lurch on every instantiation
+                    // while scrolling. The attached ScrollBar drives
+                    // contentY from those extents (scrollVertical ->
+                    // setContentY) and visibleArea feeds the result back into
+                    // the thumb position/size, so every estimate correction
+                    // shows up as thumb-length flicker and as contentY jumps
+                    // that fight the drag. Keeping a wide band of rows
+                    // instantiated makes the extents mostly real and the
+                    // control loop stable.
+                    cacheBuffer: 2000
+
                     // Stick-to-bottom only while the user is already near the
                     // end; scrolling up to read pauses the auto-scroll.
                     //
@@ -63,6 +78,32 @@ Item {
                         return originY + contentHeight - contentY - height
                     }
                     property bool pinnedToBottom: true
+
+                    // True while the user is actively driving the view.
+                    // Dragging the attached scrollbar does NOT set `moving`
+                    // (QQuickScrollBarPrivate::handleMove calls setPosition
+                    // directly), so `moving` alone cannot freeze automatic
+                    // repositioning: while streaming, every trace change
+                    // fires requestScrollToBottom which repositions the view
+                    // under the user's dragging finger. ScrollBar.vertical
+                    // can be briefly null during component setup, hence the
+                    // guard.
+                    readonly property bool userDragging:
+                        moving || (ScrollBar.vertical
+                                   ? ScrollBar.vertical.pressed : false)
+                    onUserDraggingChanged: {
+                        if (jumpPending && userDragging) {
+                            // The user grabbed the view mid-jump: hand over.
+                            jumpPending = false
+                            pinnedToBottom = false
+                        } else if (!userDragging && !jumpPending) {
+                            // Re-derive intent when the gesture ends, so
+                            // releasing the scrollbar at the tail re-arms the
+                            // follow instead of leaving it parked unpinned.
+                            const gap = bottomGap()
+                            pinnedToBottom = gap < 80 && gap > -height
+                        }
+                    }
                     // True for a short window after every contentHeight
                     // change. While huge expanded blocks instantiate lazily,
                     // ListView couples each height correction with a contentY
@@ -72,23 +113,60 @@ Item {
                     // bottom mid-scroll-up. Re-pinning from the gap is
                     // suppressed until heights have stopped changing.
                     property bool contentSettling: false
+
+                    // True while a jump-to-bottom is converging.
+                    // positionViewAtEnd() is one-shot against the ESTIMATED
+                    // content extent (QQuickItemViewPrivate::
+                    // positionViewAtIndex clamps to calculatedMaxExtent, which
+                    // is derived from the estimate when the tail rows are not
+                    // instantiated). After the jump instantiates the tail,
+                    // the real extent replaces the estimate and the viewport
+                    // is left short of the true end. While this flag is set,
+                    // every contentHeight change re-asserts the end position
+                    // until heights have been stable for settleTimer.interval.
+                    property bool jumpPending: false
+
                     Timer {
                         id: settleTimer
                         interval: 200
-                        onTriggered: traceListView.contentSettling = false
+                        onTriggered: {
+                            if (traceListView.jumpPending) {
+                                traceListView.jumpPending = false
+                                traceListView.positionViewAtEnd()
+                                const gap = traceListView.bottomGap()
+                                traceListView.pinnedToBottom =
+                                    gap < 80 && gap > -traceListView.height
+                            }
+                            traceListView.contentSettling = false
+                        }
                     }
+
                     property real lastContentY: 0
                     onContentYChanged: {
-                        const gap = bottomGap()
-                        // Mouse-wheel scrolling never sets `moving`, so the
-                        // upward check must not be gated on it: ANY upward
-                        // shift of the viewport unconditionally unpins; the
-                        // gap check only handles downward/programmatic
-                        // movement.
-                        if (contentY < lastContentY)
-                            pinnedToBottom = false
-                        else if (!contentSettling)
-                            pinnedToBottom = gap < 80 && gap > -height
+                        if (jumpPending) {
+                            // Programmatic convergence only moves the viewport
+                            // DOWN; an upward move is the user taking over
+                            // (wheel / drag mid-jump). The 0.5px threshold
+                            // filters sub-pixel jitter from estimate
+                            // corrections, which would otherwise read as a
+                            // user scroll-up and abort the jump.
+                            if (contentY < lastContentY - 0.5) {
+                                jumpPending = false
+                                pinnedToBottom = false
+                            }
+                        } else {
+                            // Mouse-wheel scrolling never sets `moving`, so the
+                            // upward check must not be gated on it: ANY upward
+                            // shift of the viewport unconditionally unpins; the
+                            // gap check only handles downward/programmatic
+                            // movement.
+                            if (contentY < lastContentY - 0.5) {
+                                pinnedToBottom = false
+                            } else if (!contentSettling && !userDragging) {
+                                const gap = bottomGap()
+                                pinnedToBottom = gap < 80 && gap > -height
+                            }
+                        }
                         lastContentY = contentY
                     }
 
@@ -96,19 +174,31 @@ Item {
                     // re-checks pinnedToBottom when it actually runs, so a
                     // scroll queued during streaming is dropped if the user
                     // scrolled away between the request and the next frame.
-                    // `!moving` keeps a queued reposition from fighting an
-                    // in-progress drag or flick.
+                    // `userDragging` keeps a queued reposition from fighting
+                    // an in-progress scrollbar drag (which never sets
+                    // `moving`).
                     function requestScrollToBottom() {
                         Qt.callLater(function() {
-                            if (pinnedToBottom && !moving)
+                            if (pinnedToBottom && !userDragging)
                                 positionViewAtEnd()
                         })
+                    }
+
+                    // Convergent jump-to-bottom (floating button).
+                    function jumpToBottom() {
+                        pinnedToBottom = true
+                        jumpPending = true
+                        contentSettling = true
+                        settleTimer.restart()
+                        positionViewAtEnd()
                     }
 
                     onContentHeightChanged: {
                         contentSettling = true
                         settleTimer.restart()
-                        if (pinnedToBottom && !moving)
+                        if (jumpPending)
+                            Qt.callLater(positionViewAtEnd)
+                        else if (pinnedToBottom && !userDragging)
                             requestScrollToBottom()
                     }
 
@@ -154,6 +244,11 @@ Item {
                         model = null
                         model = m
                         Qt.callLater(function() { rebuildingDelegates = false })
+                        // The swap resets contentY toward 0, whose decrease
+                        // reads as a user scroll-up and unpins; restore the
+                        // pre-toggle intent so a fold that started on the tail
+                        // lands back there and keeps following.
+                        pinnedToBottom = wasPinned
                         if (wasPinned)
                             Qt.callLater(positionViewAtEnd)
                     }
@@ -302,7 +397,7 @@ Item {
                     anchors.fill: parent
                     hoverEnabled: true
                     cursorShape: Qt.PointingHandCursor
-                    onClicked: traceListView.positionViewAtEnd()
+                    onClicked: traceListView.jumpToBottom()
                 }
 
                 ToolTip.visible: jumpMA.containsMouse
