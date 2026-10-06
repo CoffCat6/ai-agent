@@ -10,14 +10,14 @@ Item {
 
     signal settingsRequested()
 
-    // 轨迹视图滚动意图的中转站：InputConsole 深埋在布局里，直接引用
-    // traceListView 会造出脆弱的 id 长链；经此对象转发，双向解耦。
+    // Sending can synchronously insert the user row before requestFollow().
+    // Forward the intent immediately instead of waiting for another count change.
     QtObject {
         id: traceJumpImpl
+        signal followRequested()
         function requestFollow() {
-            pendingFollow = true
+            followRequested()
         }
-        property bool pendingFollow: false
     }
     readonly property alias traceJump: traceJumpImpl
 
@@ -27,343 +27,98 @@ Item {
         anchors.fill: parent
         spacing: 0
 
-        // ── Top Bar ────────────────────────────────────
         TopBar {
             Layout.fillWidth: true
             Layout.preferredHeight: 40
         }
 
-        // ── Session Tabs (Batch 29, F7) ────────────────
         SessionTabs {
             Layout.fillWidth: true
             Layout.preferredHeight: 34
         }
 
-        // ── Trace View (scrollable) ────────────────────
         Item {
             Layout.fillWidth: true
             Layout.fillHeight: true
 
-            ScrollView {
-                id: chatScroll
+            TranscriptViewport {
+                id: transcript
                 anchors.fill: parent
-                clip: true
+                model: AgentVM.traceModel
+                scrollBarColor: Theme.textSecondary
 
-                // 长会话下 heightRatio 会小到滑块难以抓取，且拖动沿途的
-                // 估算修正会让它不停伸缩（闪烁）。minimumSize 钳住视觉
-                // 长度：真实比例低于该值后滑块保持恒定长度；Qt 会同步
-                // 等比缩放滑块行程（visualPos = position/(1-size)·
-                // (1-minimumSize)），拖到轨道底仍精确对应内容底部，
-                // 拖动映射不受影响。短内容（size > minimumSize）时
-                // 不生效，滑块长度继续反映视口占比。
-                //
-                // 注意：attached 声明会整体替换样式模板（Basic/
-                // ScrollView.qml）提供的实例，模板里的几何绑定
-                // （parent/x/y/height）必须在此重述，否则滚动条退化成
-                // 6×6px、opacity 0 的隐形点。Qt 不会代为设置几何：
-                // QQuickScrollBarAttachedPrivate::layoutVertical 仅在
-                // 滚动条的 parentItem 恰为 Flickable 本体时才接管。
-                ScrollBar.vertical: ScrollBar {
-                    parent: chatScroll
-                    x: chatScroll.mirrored ? 0 : chatScroll.width - width
-                    y: chatScroll.topPadding
-                    height: chatScroll.availableHeight
-                    minimumSize: 0.06
+                // Keep detail state outside delegates so resets/session changes
+                // do not discard the user's expand/collapse choices.
+                property var detailState: ({})
+                property bool showProcess: true
+                readonly property int intermediateCount: AgentVM.intermediateCount
+
+                function detailExpanded(key, defaultExpanded) {
+                    return key in detailState ? detailState[key] : defaultExpanded
                 }
 
-                ListView {
-                    id: traceListView
-                    model: AgentVM.traceModel
-                    spacing: 0
-                    clip: true
+                function toggleDetail(key, defaultExpanded) {
+                    const next = Object.assign({}, detailState)
+                    next[key] = !(key in next ? next[key] : defaultExpanded)
+                    detailState = next
+                }
 
-                    // Pre-instantiate rows up to ~2000px beyond the viewport.
-                    // Delegate heights here vary by an order of magnitude
-                    // (one-line metrics vs. multi-thousand-px thinking/
-                    // code blocks), so the default estimate-only layout makes
-                    // maxYExtent/minYExtent lurch on every instantiation
-                    // while scrolling. The attached ScrollBar drives
-                    // contentY from those extents (scrollVertical ->
-                    // setContentY) and visibleArea feeds the result back into
-                    // the thumb position/size, so every estimate correction
-                    // shows up as thumb-length flicker and as contentY jumps
-                    // that fight the drag. Keeping a wide band of rows
-                    // instantiated makes the extents mostly real and the
-                    // control loop stable.
-                    cacheBuffer: 2000
+                function toggleProcess() {
+                    showProcess = !showProcess
+                    requestScrollToBottom()
+                }
 
-                    // Stick-to-bottom only while the user is already near the
-                    // end; scrolling up to read pauses the auto-scroll.
-                    //
-                    // The gap is measured from the TRUE content end. ListView
-                    // reports contentHeight relative to originY (the estimated
-                    // extent of the rows above that are not instantiated yet),
-                    // so `contentHeight - contentY - height` under-reports the
-                    // gap by exactly originY — hundreds of px at the tail of a
-                    // long trace. That inflated the unpin threshold by the same
-                    // amount and made the guard below misfire.
-                    //
-                    // The second term rejects a *stranded* offset (view parked
-                    // far past the end after the content shrank): read as "at
-                    // the bottom" it keeps the auto-scroll armed and
-                    // re-asserting the bad offset, so scrolling up appears
-                    // impossible.
-                    function bottomGap() {
-                        return originY + contentHeight - contentY - height
+                delegate: TraceNodeRouter {
+                    width: transcript.availableWidth
+                    showProcess: transcript.showProcess
+                    detailExpandedFn: function(key, def) {
+                        return transcript.detailExpanded(key, def)
                     }
-                    property bool pinnedToBottom: true
-
-                    // True while the user is actively driving the view.
-                    // Dragging the scrollbar does NOT set `moving`
-                    // (QQuickScrollBarPrivate::handleMove calls setPosition
-                    // directly), so `moving` alone cannot freeze automatic
-                    // repositioning: while streaming, every trace change
-                    // fires requestScrollToBottom which repositions the view
-                    // under the user's dragging finger.
-                    // NOTE: attached properties are per-object. The scrollbar
-                    // is declared on the wrapping ScrollView (chatScroll), so
-                    // a bare `ScrollBar.vertical` here would resolve against
-                    // the ListView's OWN attached object and read null —
-                    // the guard would silently never engage.
-                    readonly property bool userDragging:
-                        moving || (chatScroll.ScrollBar.vertical
-                                   ? chatScroll.ScrollBar.vertical.pressed
-                                   : false)
-                    onUserDraggingChanged: {
-                        if (jumpPending && userDragging) {
-                            // The user grabbed the view mid-jump: hand over.
-                            jumpPending = false
-                            pinnedToBottom = false
-                        } else if (!userDragging && !jumpPending) {
-                            // Re-derive intent when the gesture ends, so
-                            // releasing the scrollbar at the tail re-arms the
-                            // follow instead of leaving it parked unpinned.
-                            const gap = bottomGap()
-                            pinnedToBottom = gap < 80 && gap > -height
-                        }
-                    }
-                    // True for a short window after every contentHeight
-                    // change. While huge expanded blocks instantiate lazily,
-                    // ListView couples each height correction with a contentY
-                    // shift that keeps the viewport visually stable; that
-                    // shift reads as DOWNWARD movement and the gap check then
-                    // re-arms auto-scroll and yanks the view back to the
-                    // bottom mid-scroll-up. Re-pinning from the gap is
-                    // suppressed until heights have stopped changing.
-                    property bool contentSettling: false
-
-                    // True while a jump-to-bottom is converging.
-                    // positionViewAtEnd() is one-shot against the ESTIMATED
-                    // content extent (QQuickItemViewPrivate::
-                    // positionViewAtIndex clamps to calculatedMaxExtent, which
-                    // is derived from the estimate when the tail rows are not
-                    // instantiated). After the jump instantiates the tail,
-                    // the real extent replaces the estimate and the viewport
-                    // is left short of the true end. While this flag is set,
-                    // every contentHeight change re-asserts the end position
-                    // until heights have been stable for settleTimer.interval.
-                    property bool jumpPending: false
-
-                    Timer {
-                        id: settleTimer
-                        interval: 200
-                        onTriggered: {
-                            if (traceListView.jumpPending) {
-                                traceListView.jumpPending = false
-                                traceListView.positionViewAtEnd()
-                                const gap = traceListView.bottomGap()
-                                traceListView.pinnedToBottom =
-                                    gap < 80 && gap > -traceListView.height
-                            }
-                            traceListView.contentSettling = false
-                        }
-                    }
-
-                    property real lastContentY: 0
-                    onContentYChanged: {
-                        if (jumpPending) {
-                            // Programmatic convergence only moves the viewport
-                            // DOWN; an upward move is the user taking over
-                            // (wheel / drag mid-jump). The 0.5px threshold
-                            // filters sub-pixel jitter from estimate
-                            // corrections, which would otherwise read as a
-                            // user scroll-up and abort the jump.
-                            if (contentY < lastContentY - 0.5) {
-                                jumpPending = false
-                                pinnedToBottom = false
-                            }
-                        } else {
-                            // Mouse-wheel scrolling never sets `moving`, so the
-                            // upward check must not be gated on it: ANY upward
-                            // shift of the viewport unconditionally unpins; the
-                            // gap check only handles downward/programmatic
-                            // movement.
-                            if (contentY < lastContentY - 0.5) {
-                                pinnedToBottom = false
-                            } else if (!contentSettling && !userDragging) {
-                                const gap = bottomGap()
-                                pinnedToBottom = gap < 80 && gap > -height
-                            }
-                        }
-                        lastContentY = contentY
-                    }
-
-                    // Request a deferred scroll-to-bottom. The callback
-                    // re-checks pinnedToBottom when it actually runs, so a
-                    // scroll queued during streaming is dropped if the user
-                    // scrolled away between the request and the next frame.
-                    // `userDragging` keeps a queued reposition from fighting
-                    // an in-progress scrollbar drag (which never sets
-                    // `moving`).
-                    function requestScrollToBottom() {
-                        Qt.callLater(function() {
-                            if (pinnedToBottom && !userDragging)
-                                positionViewAtEnd()
-                        })
-                    }
-
-                    // Convergent jump-to-bottom (floating button).
-                    function jumpToBottom() {
-                        pinnedToBottom = true
-                        jumpPending = true
-                        contentSettling = true
-                        settleTimer.restart()
-                        positionViewAtEnd()
-                    }
-
-                    // 发送新消息后由 traceJump 转发置位：无条件恢复跟随。
-                    // 在 Component.onCompleted 后每帧检查一次即可，成本低。
-                    onCountChanged: {
-                        if (root.traceJump && root.traceJump.pendingFollow) {
-                            root.traceJump.pendingFollow = false
-                            jumpToBottom()
-                        }
-                    }
-
-                    onContentHeightChanged: {
-                        contentSettling = true
-                        settleTimer.restart()
-                        if (jumpPending)
-                            Qt.callLater(positionViewAtEnd)
-                        else if (pinnedToBottom && !userDragging)
-                            requestScrollToBottom()
-                    }
-
-                    // True only while toggleProcess() is swapping the model
-                    // over; count transiently reads 0 during the swap and the
-                    // empty-state hint must not flash.
-                    property bool rebuildingDelegates: false
-
-                    // Expand/collapse state of node detail blocks. Lives on
-                    // the view (not the delegate) so it survives the full
-                    // trace model resets that follow session switches.
-                    property var detailState: ({})
-
-                    // Whether the intermediate agent steps (thinking / tool
-                    // calls / results) are shown at all.
-                    property bool showProcess: true
-
-                    function detailExpanded(key, defaultExpanded) {
-                        return key in detailState ? detailState[key] : defaultExpanded
-                    }
-
-                    function toggleDetail(key, defaultExpanded) {
-                        const next = Object.assign({}, detailState)
-                        next[key] = !(key in next ? next[key] : defaultExpanded)
-                        detailState = next
-                    }
-
-                    function toggleProcess() {
-                        const wasPinned = pinnedToBottom
-                        showProcess = !showProcess
-                        // Folding changes every intermediate delegate's height
-                        // at once. ListView keeps only the delegates inside
-                        // cacheBuffer instantiated; the released ones retain the
-                        // height they had while hidden (0). Afterwards
-                        // contentHeight is under-reported and contentY is left
-                        // stranded past the real end, so the viewport sits in
-                        // empty space and the stick-to-bottom re-check undoes
-                        // every scroll-up. Rebuilding the delegate set makes all
-                        // of them re-measure. Only the explicit toggle pays this
-                        // cost; streaming keeps the incremental model updates.
-                        rebuildingDelegates = true
-                        const m = model
-                        model = null
-                        model = m
-                        Qt.callLater(function() { rebuildingDelegates = false })
-                        // The swap resets contentY toward 0, whose decrease
-                        // reads as a user scroll-up and unpins; restore the
-                        // pre-toggle intent so a fold that started on the tail
-                        // lands back there and keeps following.
-                        pinnedToBottom = wasPinned
-                        if (wasPinned)
-                            Qt.callLater(positionViewAtEnd)
-                    }
-
-                    // Computed in C++ (TraceModel); the JS scan over the
-                    // whole model on every binding evaluation is gone
-                    readonly property int intermediateCount: AgentVM.intermediateCount
-
-                    // Empty state（docs/19 §6）：品牌标识 + 引导文案。
-                    Column {
-                        id: emptyState
-                        anchors.centerIn: parent
-                        // 固定宽度：既避免与 emptyText 的宽度循环绑定，
-                        // 也让长文案能按固定行宽居中折行。
-                        width: 260
-                        spacing: Theme.spaceMd
-                        visible: traceListView.count === 0
-                                 && !traceListView.rebuildingDelegates
-
-                        Rectangle {
-                            x: (emptyState.width - width) / 2
-                            width: 48
-                            height: 48
-                            radius: Theme.radiusMd
-                            color: Theme.brandPrimary
-                            opacity: 0.92
-
-                            Text {
-                                anchors.centerIn: parent
-                                text: "N"
-                                color: Theme.bgPrimary
-                                font.pixelSize: 26
-                                font.bold: true
-                                font.family: Theme.fontMono
-                            }
-                        }
-
-                        Text {
-                            id: emptyText
-                            width: parent.width
-                            text: qsTr("发送一条消息，开始与 NexusAI 对话")
-                            color: Theme.textTertiary
-                            font.pixelSize: Theme.fontSizeBody
-                            font.family: Theme.fontSans
-                            horizontalAlignment: Text.AlignHCenter
-                            wrapMode: Text.WordWrap
-                        }
-                    }
-
-                    delegate: TraceNodeRouter {
-                        width: traceListView.width
-                        showProcess: traceListView.showProcess
-                        // 用词法闭包而非直接传函数引用：确保回调始终落在本
-                        // ListView 上，不依赖 delegate 的上下文解析规则。
-                        detailExpandedFn: function(key, def) {
-                            return traceListView.detailExpanded(key, def)
-                        }
-                        toggleDetailFn: function(key, def) {
-                            traceListView.toggleDetail(key, def)
-                        }
-                        // modelData / index 由视图从 list model 上下文自动注入。
+                    toggleDetailFn: function(key, def) {
+                        transcript.toggleDetail(key, def)
                     }
                 }
             }
 
-            // ── Process visibility toggle (floating, top right) ──
+            Column {
+                id: emptyState
+                anchors.centerIn: parent
+                width: 260
+                spacing: Theme.spaceMd
+                visible: transcript.count === 0
+
+                Rectangle {
+                    x: (emptyState.width - width) / 2
+                    width: 48
+                    height: 48
+                    radius: Theme.radiusMd
+                    color: Theme.brandPrimary
+                    opacity: 0.92
+
+                    Text {
+                        anchors.centerIn: parent
+                        text: "N"
+                        color: Theme.bgPrimary
+                        font.pixelSize: 26
+                        font.bold: true
+                        font.family: Theme.fontMono
+                    }
+                }
+
+                Text {
+                    id: emptyText
+                    width: parent.width
+                    text: qsTr("发送一条消息，开始与 NexusAI 对话")
+                    color: Theme.textTertiary
+                    font.pixelSize: Theme.fontSizeBody
+                    font.family: Theme.fontSans
+                    horizontalAlignment: Text.AlignHCenter
+                    wrapMode: Text.WordWrap
+                }
+            }
+
             Rectangle {
-                visible: traceListView.intermediateCount > 0
+                visible: transcript.intermediateCount > 0
                 anchors.top: parent.top
                 anchors.topMargin: 8
                 anchors.right: parent.right
@@ -384,7 +139,7 @@ Item {
 
                     AppIcon {
                         anchors.verticalCenter: parent.verticalCenter
-                        icon: traceListView.showProcess ? "chevron-up" : "chevron-down"
+                        icon: transcript.showProcess ? "chevron-up" : "chevron-down"
                         size: 11
                         iconColor: processMA.containsMouse
                             ? Theme.brandPrimary : Theme.textSecondary
@@ -392,9 +147,9 @@ Item {
 
                     Text {
                         anchors.verticalCenter: parent.verticalCenter
-                        text: traceListView.showProcess
+                        text: transcript.showProcess
                             ? qsTr("折叠过程")
-                            : qsTr("思考过程 · %1").arg(traceListView.intermediateCount)
+                            : qsTr("思考过程 · %1").arg(transcript.intermediateCount)
                         color: processMA.containsMouse
                             ? Theme.brandPrimary : Theme.textSecondary
                         font.pixelSize: 10
@@ -407,18 +162,17 @@ Item {
                     anchors.fill: parent
                     hoverEnabled: true
                     cursorShape: Qt.PointingHandCursor
-                    onClicked: traceListView.toggleProcess()
+                    onClicked: transcript.toggleProcess()
                 }
 
                 ToolTip.visible: processMA.containsMouse
                 ToolTip.delay: 600
-                ToolTip.text: traceListView.showProcess
+                ToolTip.text: transcript.showProcess
                     ? qsTr("隐藏思考与工具调用过程") : qsTr("显示思考与工具调用过程")
             }
 
-            // ── Jump to bottom (floating, bottom) ─────────
             Rectangle {
-                visible: !traceListView.pinnedToBottom
+                visible: !transcript.pinnedToBottom && transcript.maximumOffset > 0
                 anchors.bottom: parent.bottom
                 anchors.bottomMargin: 12
                 anchors.right: parent.right
@@ -444,7 +198,7 @@ Item {
                     anchors.fill: parent
                     hoverEnabled: true
                     cursorShape: Qt.PointingHandCursor
-                    onClicked: traceListView.jumpToBottom()
+                    onClicked: transcript.jumpToBottom()
                 }
 
                 ToolTip.visible: jumpMA.containsMouse
@@ -453,27 +207,20 @@ Item {
             }
         }
 
-        // Auto-scroll the trace view as content updates
-        // (streaming responses, new nodes, session loading) - only while
-        // the user has not scrolled away to read earlier content.
         Connections {
-            target: AgentVM
-            function onTraceChanged() {
-                if (traceListView.pinnedToBottom)
-                    traceListView.requestScrollToBottom()
-            }
-
-            // 打开/切换历史会话：模型重置后视图默认落在顶部，这里
-            // 无条件收敛跳底 —— 用户点开一个会话想看的是最近的对话，
-            // 不是开头。AgentVM.currentSessionIdChanged 由 AIAgent::
-            // sessionChanged 转发而来（resumeSession 末尾发出，标签页
-            // 切换与侧栏点开历史会话都走这条链）。
-            function onCurrentSessionIdChanged() {
-                traceListView.jumpToBottom()
+            target: root.traceJump
+            function onFollowRequested() {
+                transcript.jumpToBottom()
             }
         }
 
-        // ── Input Console ──────────────────────────────
+        Connections {
+            target: AgentVM
+            function onCurrentSessionIdChanged() {
+                transcript.jumpToBottom()
+            }
+        }
+
         Item {
             Layout.fillWidth: true
             Layout.preferredHeight: inputConsole.height + 52
@@ -489,7 +236,6 @@ Item {
                 traceJump: root.traceJump
             }
 
-            // Active model selector dropdown
             ModelSelector {
                 id: modelBadge
                 anchors.top: inputConsole.bottom
@@ -499,7 +245,6 @@ Item {
                 onSettingsRequested: root.settingsRequested()
             }
 
-            // Thinking effort of the active model profile (docs: 随 profile 持久)
             ThinkingEffortSelector {
                 id: effortBadge
                 anchors.top: inputConsole.bottom
@@ -508,13 +253,10 @@ Item {
                 anchors.leftMargin: 8
             }
 
-            // Session permission mode (confirm / auto-edit / full access)
             PermissionModeSelector {
                 id: permissionBadge
                 anchors.top: inputConsole.bottom
                 anchors.topMargin: 4
-                // 锚点必须跟着右移：仍挂在 modelBadge.right 会和思考强度
-                // 选择框完全重叠。
                 anchors.left: effortBadge.right
                 anchors.leftMargin: 8
             }

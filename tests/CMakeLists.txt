@@ -43,6 +43,12 @@ add_test(NAME qmllint_gate
         -P ${CMAKE_SOURCE_DIR}/cmake/QmllintGate.cmake
     WORKING_DIRECTORY ${CMAKE_BINARY_DIR})
 
+# Exercise transcript scrolling with real QML geometry and pointer/wheel input.
+add_test(NAME test_transcript_scroll
+    COMMAND $<TARGET_FILE:Qt6::qmltestrunner>
+        -input ${CMAKE_CURRENT_SOURCE_DIR}/qml
+        -platform offscreen)
+
 # Needs the viewmodels library (AgentViewModel, SettingsService) in addition to core & infra
 add_executable(test_viewmodel test_viewmodel.cpp)
 target_link_libraries(test_viewmodel PRIVATE nexus_core nexus_infra nexus_viewmodels Qt6::Test)

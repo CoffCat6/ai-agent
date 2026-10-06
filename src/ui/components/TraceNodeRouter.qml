@@ -66,6 +66,8 @@ Item {
 
     Loader {
         id: loader
+        // Folded process rows need neither layout nor their heavy text blocks.
+        active: !root.processHidden
         // 按类型只加载命中的组件（未知类型走 fallbackComp）。
         sourceComponent: {
             if (nodeType === "user_message") return userComp

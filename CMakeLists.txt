@@ -191,6 +191,7 @@ qt_add_qml_module(nexus_ai
     src/ui/components/LogPanel.qml
         src/ui/components/KnowledgeDocDialog.qml
         src/ui/components/TraceNodeRouter.qml
+        src/ui/components/TranscriptViewport.qml
         src/ui/components/UserMessageBubble.qml
         src/ui/components/AssistantMessage.qml
         src/ui/components/ProcessCard.qml
