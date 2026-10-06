@@ -34,8 +34,31 @@ Item {
             Layout.fillHeight: true
 
             ScrollView {
+                id: chatScroll
                 anchors.fill: parent
                 clip: true
+
+                // 长会话下 heightRatio 会小到滑块难以抓取，且拖动沿途的
+                // 估算修正会让它不停伸缩（闪烁）。minimumSize 钳住视觉
+                // 长度：真实比例低于该值后滑块保持恒定长度；Qt 会同步
+                // 等比缩放滑块行程（visualPos = position/(1-size)·
+                // (1-minimumSize)），拖到轨道底仍精确对应内容底部，
+                // 拖动映射不受影响。短内容（size > minimumSize）时
+                // 不生效，滑块长度继续反映视口占比。
+                //
+                // 注意：attached 声明会整体替换样式模板（Basic/
+                // ScrollView.qml）提供的实例，模板里的几何绑定
+                // （parent/x/y/height）必须在此重述，否则滚动条退化成
+                // 6×6px、opacity 0 的隐形点。Qt 不会代为设置几何：
+                // QQuickScrollBarAttachedPrivate::layoutVertical 仅在
+                // 滚动条的 parentItem 恰为 Flickable 本体时才接管。
+                ScrollBar.vertical: ScrollBar {
+                    parent: chatScroll
+                    x: chatScroll.mirrored ? 0 : chatScroll.width - width
+                    y: chatScroll.topPadding
+                    height: chatScroll.availableHeight
+                    minimumSize: 0.06
+                }
 
                 ListView {
                     id: traceListView
@@ -80,17 +103,21 @@ Item {
                     property bool pinnedToBottom: true
 
                     // True while the user is actively driving the view.
-                    // Dragging the attached scrollbar does NOT set `moving`
+                    // Dragging the scrollbar does NOT set `moving`
                     // (QQuickScrollBarPrivate::handleMove calls setPosition
                     // directly), so `moving` alone cannot freeze automatic
                     // repositioning: while streaming, every trace change
                     // fires requestScrollToBottom which repositions the view
-                    // under the user's dragging finger. ScrollBar.vertical
-                    // can be briefly null during component setup, hence the
-                    // guard.
+                    // under the user's dragging finger.
+                    // NOTE: attached properties are per-object. The scrollbar
+                    // is declared on the wrapping ScrollView (chatScroll), so
+                    // a bare `ScrollBar.vertical` here would resolve against
+                    // the ListView's OWN attached object and read null —
+                    // the guard would silently never engage.
                     readonly property bool userDragging:
-                        moving || (ScrollBar.vertical
-                                   ? ScrollBar.vertical.pressed : false)
+                        moving || (chatScroll.ScrollBar.vertical
+                                   ? chatScroll.ScrollBar.vertical.pressed
+                                   : false)
                     onUserDraggingChanged: {
                         if (jumpPending && userDragging) {
                             // The user grabbed the view mid-jump: hand over.
