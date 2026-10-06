@@ -50,6 +50,10 @@ public:
     int count() const { return m_nodes.size(); }
     const QVariantMap& nodeAt(int row) const { return m_nodes.at(row); }
     int rowOfId(const QString& id) const;
+    // 该类型的最后一行（无命中返回 -1）。docs/20 §3.1/§3.2：消息级操作按钮
+    // 只应在「该类型的最后一条」上显示 —— finishTask 会在助手回复（summary）
+    // 之后追加 metrics 节点，所以整表末行恒为 metrics，不能用 index==count-1。
+    int lastIndexOfType(const QString& type) const;
     // Nodes hidden by the "fold process" toggle in the chat page
     int intermediateCount() const;
 

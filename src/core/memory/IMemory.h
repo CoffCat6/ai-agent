@@ -14,6 +14,24 @@ public:
     virtual void saveMessage(const QString& sessionId, const QJsonObject& msg) = 0;
     virtual QJsonArray loadMessages(const QString& sessionId, int limit = 50) = 0;
 
+    // docs/20 §3.1/§3.2（FORK-701）：重新生成/编辑重发的持久层支撑。删除
+    // 会话中 id >= fromId 的全部消息（messages 表 AUTOINCREMENT 主键保证
+    // 单调），FTS 影子表经 AFTER DELETE 触发器自动同步。audit_log 不动 ——
+    // 重新生成是正常行为，保留完整审计链。可选能力，默认 no-op 返回 0。
+    // 返回删除的行数。
+    virtual int deleteMessagesFrom(const QString& sessionId, qint64 fromId) {
+        Q_UNUSED(sessionId); Q_UNUSED(fromId);
+        return 0;
+    }
+
+    // docs/20 §3.1（FORK-701）：会话内最后一条 user 消息的主键（AUTOINCREMENT
+    // id），供重新生成定位删除阈值。空会话或无 user 消息时返回 0。可选能力，
+    // 默认 no-op。
+    virtual qint64 lastUserMessageId(const QString& sessionId) {
+        Q_UNUSED(sessionId);
+        return 0;
+    }
+
     virtual void saveEpisodic(const QString& sessionId, const QJsonObject& episode) = 0;
     virtual QJsonArray searchEpisodic(const QString& query, int limit = 10) = 0;
 

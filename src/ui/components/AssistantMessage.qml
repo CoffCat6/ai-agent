@@ -17,9 +17,18 @@ Item {
     id: root
 
     required property var modelData
+    required property int index
 
     readonly property string body: modelData.title !== undefined ? modelData.title : ""
     readonly property bool streaming: modelData.status === "running"
+    // docs/20 §3.1（FORK-701）：末条助手回复（summary 类型）且非流式时可重新生成。
+    // 注意不能用 index === traceCount-1：finishTask 会在 summary 之后追加
+    // metrics 节点，整表末行恒为 metrics。traceCount 是 NOTIFY 属性（traceChanged），
+    // 引用它使绑定随 trace 变化重新求值（Q_INVOKABLE 本身不建立依赖）。
+    readonly property bool canRegenerate:
+        !streaming && AgentVM.traceCount > 0
+        && index === AgentVM.lastTraceIndexOfType("summary")
+        && !AgentVM.stateBusy
 
     // 96 = 反引号。拼出三连标记，避免在源码里写裸反引号。
     readonly property string fenceTick: {
@@ -218,9 +227,46 @@ Item {
             anchors.left: parent.left
             anchors.verticalCenter: parent.verticalCenter
             spacing: Theme.spaceXs
-            visible: rootHover.hovered
+            visible: rootHover.hovered || regenerateBtn.visible
 
             CopyButton { text: root.body }
+
+            // docs/20 §3.1：重新生成（末条回复、非流式、非 busy）。
+            Rectangle {
+                id: regenerateBtn
+                visible: root.canRegenerate && rootHover.hovered
+                width: regenLabel.implicitWidth + 16
+                height: 22
+                radius: 4
+                color: regenMA.containsMouse ? Theme.surfaceHover : "transparent"
+                border.width: 1
+                border.color: Theme.borderSubtle
+                opacity: regenMA.containsMouse ? 1.0 : 0.55
+
+                Behavior on opacity { NumberAnimation { duration: 150 } }
+
+                Text {
+                    id: regenLabel
+                    anchors.centerIn: parent
+                    text: qsTr("重新生成")
+                    color: Theme.textSecondary
+                    font.pixelSize: 10
+                    font.family: Theme.fontMono
+                }
+
+                MouseArea {
+                    id: regenMA
+                    anchors.fill: parent
+                    hoverEnabled: true
+                    cursorShape: Qt.PointingHandCursor
+                    onClicked: AgentVM.regenerate()
+                }
+
+                Accessible.role: Accessible.Button
+                Accessible.name: qsTr("重新生成")
+                Accessible.description: qsTr("丢弃当前回答并重新生成")
+                Accessible.onPressAction: regenMA.clicked()
+            }
         }
     }
 

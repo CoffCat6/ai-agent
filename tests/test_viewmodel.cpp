@@ -136,6 +136,26 @@ private slots:
         QCOMPARE(m.count(), 0);
     }
 
+    // docs/20 §3.1/§3.2：lastIndexOfType 定位类型末行。finishTask 会在助手
+    // 回复（summary）之后追加 metrics 节点，所以整表末行恒为 metrics ——
+    // 消息级操作按钮必须用类型末行，而非整表末行。
+    void traceModelLastIndexOfType() {
+        TraceModel m;
+        m.resetNodes({
+            QVariantMap{{"id", "u1"}, {"type", "user_message"}},
+            QVariantMap{{"id", "s1"}, {"type", "summary"}},
+            QVariantMap{{"id", "m1"}, {"type", "metrics"}},
+            QVariantMap{{"id", "u2"}, {"type", "user_message"}},
+            QVariantMap{{"id", "s2"}, {"type", "summary"}},
+            QVariantMap{{"id", "m2"}, {"type", "metrics"}},
+        });
+        // 类型末行： summary 在 4（非整表末行 5），user_message 在 3。
+        QCOMPARE(m.lastIndexOfType(QStringLiteral("summary")), 4);
+        QCOMPARE(m.lastIndexOfType(QStringLiteral("user_message")), 3);
+        QCOMPARE(m.lastIndexOfType(QStringLiteral("metrics")), 5);
+        QCOMPARE(m.lastIndexOfType(QStringLiteral("nope")), -1);
+    }
+
     // Named AgentState constants exposed to QML must mirror the core enum
     // (QML compares AgentVM.state against them instead of magic numbers).
     void namedStateConstants() {
@@ -522,6 +542,39 @@ private slots:
     }
 
     // ── Batch 18: session export (FEAT-1801) ──────────
+
+    // docs/20 §3.2（FORK-701）：编辑重发 —— 删除持久层最后一条 user 行及
+    // 之后全部消息，以新文本重新发起。
+    void editAndResendReplacesLastUserTurn() {
+        SqliteMemory memory(QStringLiteral(":memory:"));
+        memory.beginSession("s-edit", "Edit");
+        memory.saveMessage("s-edit", QJsonObject{{"role", "user"},
+            {"content", QStringLiteral("旧问题")}});
+        memory.saveMessage("s-edit", QJsonObject{{"role", "assistant"},
+            {"content", QStringLiteral("旧回答")}});
+
+        AgentViewModel vm(nullptr);
+        vm.setMemory(&memory);
+        AIAgent agent;
+        vm.setAgent(&agent);
+        agent.setMemory(&memory);
+
+        // 通过 startTask 先让 agent 获得会话（空脚本 → 无响应，不阻塞）。
+        agent.startTask(QStringLiteral("旧问题"));
+        QVERIFY(!vm.currentSessionId().isEmpty());
+
+        vm.editAndResend(QStringLiteral("新问题"));
+
+        // 持久层：旧 user+assistant 两行被删，新 user 行已存。
+        const QJsonArray loaded = memory.loadMessages(vm.currentSessionId(), 200);
+        QCOMPARE(loaded.size(), 1);
+        QCOMPARE(loaded.at(0).toObject().value("role").toString(),
+                 QStringLiteral("user"));
+        QCOMPARE(loaded.at(0).toObject().value("content").toString(),
+                 QStringLiteral("新问题"));
+
+        vm.setAgent(nullptr);
+    }
 
     void exportSessionMarkdownRoundtrip() {
         SqliteMemory memory(QStringLiteral(":memory:"));
@@ -1195,6 +1248,33 @@ private slots:
         QCOMPARE(manager->servers().size(), 0);
 
         restore();
+    }
+
+    // docs/20 §3.2：编辑重发守卫 —— 空文本 / 纯空白 / 无 agent 都是 no-op。
+    void editAndResendGuards() {
+        SqliteMemory memory(QStringLiteral(":memory:"));
+        memory.beginSession("s-guard", "Guard");
+        memory.saveMessage("s-guard", QJsonObject{{"role", "user"},
+            {"content", QStringLiteral("既有消息")}});
+
+        AgentViewModel vm(nullptr);
+        vm.setMemory(&memory);
+
+        // 无 agent（模拟模式）：无持久层可删，不伪造。
+        vm.editAndResend(QStringLiteral("新问题"));
+        QCOMPARE(memory.loadMessages("s-guard", 200).size(), 1);
+
+        // 空文本 / 纯空白：无 agent 时本来就走不到删除，这里验证不崩溃。
+        AIAgent agent;
+        vm.setAgent(&agent);
+        agent.setMemory(&memory);
+        agent.startTask(QStringLiteral("既有消息"));
+        const int before = memory.loadMessages("s-guard", 200).size();
+        vm.editAndResend(QString());
+        vm.editAndResend(QStringLiteral("   "));
+        QCOMPARE(memory.loadMessages("s-guard", 200).size(), before);
+
+        vm.setAgent(nullptr);
     }
 };
 

@@ -138,6 +138,12 @@ int TraceModel::rowOfId(const QString& id) const {
     return -1;
 }
 
+int TraceModel::lastIndexOfType(const QString& type) const {
+    for (int i = m_nodes.size() - 1; i >= 0; --i)
+        if (m_nodes.at(i).value("type").toString() == type) return i;
+    return -1;
+}
+
 int TraceModel::intermediateCount() const {
     int count = 0;
     for (const auto& node : m_nodes)

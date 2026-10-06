@@ -149,6 +149,10 @@ public slots:
     void cancel() { resetSession(); }               // legacy alias
     void deleteSession(const QString& sessionId);   // remove persisted session
     void renameSession(const QString& sessionId, const QString& title);
+    // docs/20 §3.1（FORK-701）：重新生成。丢弃最后一条 assistant 回答（含末
+    // 轮工具消息），从最后一条 user 消息重新发起请求。持久层同步删除回答
+    // （audit_log 不动）。无历史或无 agent 挂接时静默返回。busy 时拒绝。
+    void regenerateLast();
 
 signals:
     void stateChanged(AgentState state);

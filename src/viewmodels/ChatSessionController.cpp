@@ -312,6 +312,26 @@ void ChatSessionController::stop() {
     setState(AgentState::Idle);
 }
 
+// docs/20 §3.1（FORK-701）：重新生成。busy 时拒绝（与 stop 的前置守卫
+// 一致）；无 agent（模拟模式）时清空回复重播模拟；真实管线转发 agent。
+void ChatSessionController::regenerate() {
+    if (isBusy()) return;
+    Activity::usage(Activity::Kind::User, QStringLiteral("task.regenerate"));
+
+    if (m_agent) {
+        m_agent->regenerateLast();
+        return;
+    }
+
+    // Simulation fallback: replay the last user message.
+    if (m_simInput.isEmpty()) return;
+    m_finalResponse.clear();
+    emit responseReady();
+    m_simStep = 0;
+    setState(AgentState::Thinking);
+    startSimulation();
+}
+
 void ChatSessionController::newChat() {
     Activity::usage(Activity::Kind::User, QStringLiteral("session.new"));
     m_simTimer.stop();

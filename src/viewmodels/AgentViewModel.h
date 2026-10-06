@@ -204,6 +204,9 @@ public:
     QAbstractListModel* traceModel() { return active()->trace(); }
     int traceCount() const { return active()->traceCount(); }
     int intermediateCount() const { return active()->intermediateCount(); }
+    // docs/20 §3.1/§3.2：该类型 trace 节点的最后一行（消息级操作按钮用）。
+    Q_INVOKABLE int lastTraceIndexOfType(const QString& type) const
+    { return active()->lastIndexOfType(type); }
 
     // Response (active tab)
     QString finalResponse() const { return active()->finalResponse(); }
@@ -314,6 +317,10 @@ public:
     Q_INVOKABLE void approveToolCall(const QString& id, bool approved);
     Q_INVOKABLE void setToolEnabled(const QString& name, bool enabled);
     Q_INVOKABLE void stop();                 // abort generation, keep trace
+    // docs/20 §3.1（FORK-701）：重新生成最后一条回答（活动标签）。
+    Q_INVOKABLE void regenerate();
+    // docs/20 §3.2（FORK-701）：替换最后一条 user 消息并重发（活动标签）。
+    Q_INVOKABLE void editAndResend(const QString& newText);
     Q_INVOKABLE void newChat();              // reset to a fresh session
     // Loads into the active tab; when the active tab is busy a new tab is
     // opened for the session instead — switching never interrupts a task.

@@ -723,6 +723,37 @@ QJsonArray SqliteMemory::loadMessages(const QString& sessionId, int limit) {
     return messages;
 }
 
+// docs/20 §3.1/§3.2（FORK-701）：重新生成/编辑重发的持久层支撑。按主键
+// 阈值删除（AUTOINCREMENT 保证 id 单调），FTS 影子表经 AFTER DELETE 触发器
+// 自动同步（messages_fts_ad）。audit_log / trace_nodes 不动：重新生成是
+// 正常行为，审计链保留；trace 展示层由 AIAgent 在重建时自行收缩。
+int SqliteMemory::deleteMessagesFrom(const QString& sessionId, qint64 fromId) {
+    if (sessionId.isEmpty() || fromId <= 0) return 0;
+    QSqlQuery query(m_db);
+    query.prepare("DELETE FROM messages WHERE session_id = ? AND id >= ?");
+    query.addBindValue(sessionId);
+    query.addBindValue(fromId);
+    if (!query.exec()) {
+        qWarning() << "Failed to delete messages from:" << query.lastError().text();
+        return 0;
+    }
+    return query.numRowsAffected();
+}
+
+// docs/20 §3.1（FORK-701）：会话内最后一条 user 消息的主键。AUTOINCREMENT
+// id 单调，MAX(id) 即最后一条；限定 role='user' 过滤掉尾部 assistant 行。
+qint64 SqliteMemory::lastUserMessageId(const QString& sessionId) {
+    if (sessionId.isEmpty()) return 0;
+    QSqlQuery query(m_db);
+    query.prepare("SELECT MAX(id) FROM messages WHERE session_id = ? AND role = 'user'");
+    query.addBindValue(sessionId);
+    if (!query.exec()) {
+        qWarning() << "Failed to find last user message:" << query.lastError().text();
+        return 0;
+    }
+    return query.next() ? query.value(0).toLongLong() : 0;
+}
+
 // Batch 17 (FEAT-1702): cross-session keyword search, newest first. The
 // trigram FTS path handles 3+ character keywords (quoted phrase → substring
 // match, CJK included); shorter keywords fall back to a LIKE scan because a

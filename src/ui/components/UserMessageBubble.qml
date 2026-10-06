@@ -9,11 +9,24 @@ Item {
     id: root
 
     required property var modelData
+    required property int index
 
     readonly property string body: modelData.title !== undefined ? modelData.title : ""
     readonly property var images: modelData.images !== undefined ? modelData.images : []
     readonly property var files: modelData.files !== undefined ? modelData.files : []
     readonly property bool hasAttachments: images.length > 0 || files.length > 0
+    // docs/20 §3.2（FORK-701）：内联编辑态与可编辑性（末条、非 busy、无附件
+    // —— 编辑重发不保留附件，有附件时隐藏入口避免误导）。
+    property bool editing: false
+    readonly property bool canEdit:
+        !AgentVM.stateBusy
+        && AgentVM.traceCount > 0
+        && index === AgentVM.lastTraceIndexOfType("user_message")
+        && !hasAttachments
+        && nodeType === "user_message"
+    readonly property string nodeType: modelData.type || ""
+    // 内联编辑草稿：进入编辑态时初始化为当前正文。
+    property string editDraft: body
     // 气泡最大宽 = 本 delegate 宽 × 比例；正文可用宽再扣掉水平内边距。
     readonly property real maxBubbleWidth: Math.max(120, width * Theme.bubbleMaxRatio)
     readonly property real maxContentWidth: Math.max(80, maxBubbleWidth - Theme.spaceMd * 2)
@@ -47,16 +60,65 @@ Item {
             width: root.contentWidth
             spacing: Theme.spaceSm
 
-            Text {
+            TextEdit {
                 id: bodyText
-                text: root.body
+                text: root.editing ? editDraft : root.body
                 color: Theme.textPrimary
                 font.pixelSize: Theme.fontSizeBody
                 font.family: Theme.fontSans
-                wrapMode: Text.Wrap
+                wrapMode: TextEdit.Wrap
                 renderType: Text.NativeRendering
-                textFormat: Text.PlainText
+                textFormat: TextEdit.PlainText
                 width: parent.width
+                // docs/20 §3.2：编辑态可写，阅读态只读不选中（与气泡语义
+                // 一致——用户消息无需选中复制，操作条已有复制按钮）。
+                readOnly: !root.editing
+                visible: !root.editing
+            }
+
+            // docs/20 §3.2：内联编辑框（替换气泡正文）。
+            TextArea {
+                id: editArea
+                visible: root.editing
+                width: parent.width
+                text: root.editing ? editDraft : ""
+                color: Theme.textPrimary
+                font.pixelSize: Theme.fontSizeBody
+                font.family: Theme.fontSans
+                wrapMode: TextArea.Wrap
+                selectByMouse: true
+                background: null
+                onTextChanged: if (root.editing) editDraft = text
+                Keys.onEscapePressed: {
+                    root.editing = false
+                    editDraft = root.body
+                }
+            }
+
+            // 编辑态操作行：发送 / 取消。
+            Row {
+                visible: root.editing
+                spacing: Theme.spaceXs
+                layoutDirection: Qt.RightToLeft
+                anchors.right: parent.right
+
+                AppButton {
+                    text: qsTr("发送")
+                    enabled: editDraft.trim().length > 0
+                        && editDraft.trim() !== root.body
+                    onClicked: {
+                        const next = editDraft.trim()
+                        root.editing = false
+                        AgentVM.editAndResend(next)
+                    }
+                }
+                AppButton {
+                    text: qsTr("取消")
+                    onClicked: {
+                        root.editing = false
+                        editDraft = root.body
+                    }
+                }
             }
 
             Row {
@@ -108,9 +170,50 @@ Item {
             anchors.right: parent.right
             anchors.verticalCenter: parent.verticalCenter
             spacing: Theme.spaceXs
-            visible: rootHover.hovered
+            visible: rootHover.hovered && !root.editing
 
             CopyButton { text: root.body }
+
+            // docs/20 §3.2：编辑重发（末条 user 消息、非 busy、无附件）。
+            Rectangle {
+                id: editBtn
+                visible: root.canEdit && rootHover.hovered
+                width: editLabel.implicitWidth + 16
+                height: 22
+                radius: 4
+                color: editMA.containsMouse ? Theme.surfaceHover : "transparent"
+                border.width: 1
+                border.color: Theme.borderSubtle
+                opacity: editMA.containsMouse ? 1.0 : 0.55
+
+                Behavior on opacity { NumberAnimation { duration: 150 } }
+
+                Text {
+                    id: editLabel
+                    anchors.centerIn: parent
+                    text: qsTr("编辑")
+                    color: Theme.textSecondary
+                    font.pixelSize: 10
+                    font.family: Theme.fontMono
+                }
+
+                MouseArea {
+                    id: editMA
+                    anchors.fill: parent
+                    hoverEnabled: true
+                    cursorShape: Qt.PointingHandCursor
+                    onClicked: {
+                        root.editDraft = root.body
+                        root.editing = true
+                        editArea.forceActiveFocus()
+                    }
+                }
+
+                Accessible.role: Accessible.Button
+                Accessible.name: qsTr("编辑并重发")
+                Accessible.description: qsTr("修改这条消息并重新发送")
+                Accessible.onPressAction: editMA.clicked()
+            }
         }
     }
 

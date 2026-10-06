@@ -89,6 +89,7 @@ Item {
         UserMessageBubble {
             width: loader.width
             modelData: root.modelData
+            index: root.index
         }
     }
 
@@ -97,6 +98,7 @@ Item {
         AssistantMessage {
             width: loader.width
             modelData: root.modelData
+            index: root.index
         }
     }
 

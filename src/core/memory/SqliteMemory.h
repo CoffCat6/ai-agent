@@ -23,6 +23,11 @@ public:
     void saveMessage(const QString& sessionId, const QJsonObject& msg) override;
     QJsonArray loadMessages(const QString& sessionId, int limit = 50) override;
 
+    // docs/20 §3.1/§3.2（FORK-701）：按主键阈值删除，供重新生成/编辑重发。
+    int deleteMessagesFrom(const QString& sessionId, qint64 fromId) override;
+    // docs/20 §3.1（FORK-701）：会话内最后一条 user 消息的主键。
+    qint64 lastUserMessageId(const QString& sessionId) override;
+
     // Batch 17 (FEAT-1702): cross-session keyword search (trigram FTS5 with
     // a LIKE fallback for keywords shorter than 3 characters - the trigram
     // index cannot answer shorter queries).

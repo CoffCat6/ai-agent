@@ -1121,6 +1121,96 @@ void AIAgent::stop() {
     if (m_memory && !m_sessionId.isEmpty()) m_memory->touchSession(m_sessionId);
 }
 
+// docs/20 §3.1（FORK-701）：重新生成。丢弃最后一条 assistant 回答（含末轮
+// 工具消息），从最后一条 user 消息重新发起请求。
+//
+// 与 MEM-701 resume 契约一致：工具证据仅存 trace_nodes（展示层），持久层
+// 消息表只保留 user/assistant 对白。所以这里的同步语义是：
+//
+//   1. 内存上下文：从最后一条 user 消息处截断（该消息保留 —— 它是重发的
+//      锚点），其后的 tool/assistant 全部移除；
+//   2. 持久层：删除该 user 消息之后的全部行（stop 残留的 tool/assistant
+//      对白），audit_log 不动（重新生成是正常行为，保留完整审计链）；
+//   3. trace 展示层：从最后一个 user_message 节点处截断，后续节点由本次
+//      请求重新写入（节点 id 全新，与旧节点无冲突）；
+//   4. 从 processIteration 重新发起 —— 沿用 startTask 尾部的活跃态与
+//      预算逻辑，不重新组装 system/episodic（上下文里已有）。
+//
+// 伪嵌入/stop 残留的 dangling tool_calls 已随截断一并消失，不需要 seal。
+void AIAgent::regenerateLast() {
+    if (m_active) return;
+    if (m_llmService == nullptr) return;   // 无管线（模拟模式由上层回退）
+
+    // 1. 找最后一条 user 消息在内存上下文中的位置（跳过 system）。截断点
+    //    = 该 user 消息本身（保留），其后全部移除。
+    int lastUserIdx = -1;
+    for (int i = m_messages.size() - 1; i >= 1; --i) {
+        if (m_messages.at(i).toObject().value("role").toString()
+                == QLatin1String("user")) {
+            lastUserIdx = i;
+            break;
+        }
+    }
+    if (lastUserIdx < 0) return;   // 无历史（fresh/system-only）：无可重发
+
+    // 2. 截断内存上下文（保留 user 消息本体）。
+    while (m_messages.size() > lastUserIdx + 1) m_messages.removeLast();
+
+    // 3. 同步持久层：删除最后一条 user 行之后的全部行（stop 残留的
+    //    tool/assistant 对白、finishTask 收口的 assistant 回答）。持久层
+    //    尾部形状只可能是 ...user, assistant 或 ...user，两种情况下删除
+    //    点都是「最后一条 user 行之后」。audit_log 不动：重新生成是正常
+    //    行为，保留完整审计链。
+    if (m_memory && !m_sessionId.isEmpty()) {
+        const qint64 userId = m_memory->lastUserMessageId(m_sessionId);
+        if (userId > 0)
+            m_memory->deleteMessagesFrom(m_sessionId, userId + 1);
+    }
+
+    // 4. 截断 trace 展示层：从最后一个 user_message 节点处截断（该节点
+    //    保留 —— 与持久层 user 消息锚点一致）。旧库恢复路径可能没有
+    //    user_message 节点（纯文本 summary 回放），此时不动 trace。
+    for (int i = m_traceModel.size() - 1; i >= 0; --i) {
+        if (m_traceModel.at(i).toObject().value("type").toString()
+                == QLatin1String("user_message")) {
+            while (m_traceModel.size() > i + 1) m_traceModel.removeLast();
+            break;
+        }
+    }
+
+    // 5. 重置轮次状态并重新发起请求（沿用 startTask 尾部的活跃态逻辑）。
+    m_iteration = 0;
+    m_lastToolSignature.clear();
+    m_repeatToolCount = 0;
+    m_forcedFinal = false;
+    m_pendingToolCalls.clear();
+    m_currentConfirmCall = ToolCallInfo{};
+    m_confirmNodeId.clear();
+    m_lastResponse.clear();
+    m_currentExecutingCall = ToolCallInfo{};
+    m_toolExecutions = 0;
+    m_forcedFinalPush.clear();
+    m_thinkingNodeId.clear();
+    clearStreamState();
+
+    ++m_epoch;   // invalidate results from any previous task
+
+    // 发起前的预压缩：与 startTask 同口径，保证 UI 不闪 >100%。
+    {
+        const int reserved = estimateReservedTokensForNextRequest();
+        const int effective = qMax(0, m_contextLimit - reserved);
+        if (calibratedMessageTokens() > effective) {
+            applyContextBudget(reserved);
+        }
+    }
+    notifyTokens();
+
+    m_active = true;
+    m_taskStartMs = QDateTime::currentMSecsSinceEpoch();
+    if (m_taskTimeoutMs > 0) m_taskTimeoutTimer.start(m_taskTimeoutMs);
+    processIteration();
+}
+
 // ── Streaming display ─────────────────────────────────────
 
 void AIAgent::onStreamingChunk(const QString& chunk) {

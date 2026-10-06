@@ -41,6 +41,8 @@ public:
     TraceModel* trace() { return &m_trace; }
     int traceCount() const { return m_trace.count(); }
     int intermediateCount() const { return m_trace.intermediateCount(); }
+    // docs/20 §3.1/§3.2：该类型的最后一行（供消息级操作按钮定位末条）。
+    int lastIndexOfType(const QString& type) const { return m_trace.lastIndexOfType(type); }
     QString finalResponse() const { return m_finalResponse; }
     QString draftText() const { return m_draftText; }
     void setDraftText(const QString& text);
@@ -71,6 +73,9 @@ public:
                    const QJsonArray& files = {});
     void approveToolCall(const QString& id, bool approved);
     void stop();
+    // docs/20 §3.1（FORK-701）：重新生成。真实管线 → agent->regenerateLast；
+    // 模拟模式 → 清空回复重播模拟。busy 时拒绝。
+    void regenerate();
     void newChat();
     void loadSession(const QString& sessionId);
     void deleteSession(const QString& sessionId);

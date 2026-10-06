@@ -87,6 +87,9 @@ private slots:
     // Batch 21: session-grouped ordering (A3) and LIKE guard (B4)
     void searchMessagesGroupsBySession();
     void searchMessagesLikeGuardSuppressesLargeTables();
+    // docs/20 §3.1/§3.2（FORK-701）：重新生成/编辑重发的持久层支撑
+    void deleteMessagesFromRemovesTail();
+    void lastUserMessageIdFindsLastUserRow();
 };
 
 void TestMemory::messageRoundTrip() {
@@ -853,6 +856,70 @@ void TestMemory::messagesFtsMigrationSelfHeals() {
 
     QFile::remove(dbPath);
     QDir(dir).removeRecursively();
+}
+
+// docs/20 §3.1/§3.2（FORK-701）：按主键阈值删除尾部消息，FTS 影子表经
+// AFTER DELETE 触发器同步；audit_log 独立不受影响。
+void TestMemory::deleteMessagesFromRemovesTail() {
+    SqliteMemory memory(QStringLiteral(":memory:"));
+
+    memory.saveMessage("s-regen", msg("user", "question"));
+    memory.saveMessage("s-regen", msg("assistant", "bad answer"));
+    memory.saveMessage("s-regen", msg("user", "follow up"));
+    memory.saveMessage("s-regen", msg("assistant", "another answer"));
+
+    // 重复提问（同内容）不干扰：按主键阈值，不按内容匹配。
+    memory.saveMessage("s-regen", msg("user", "question"));
+    memory.saveMessage("s-regen", msg("assistant", "regenerated"));
+
+    memory.logAudit("s-regen", QStringLiteral("task_complete"),
+                    QString(), QString(), true, QStringLiteral("x"));
+
+    // 删除最后一条 user 行（id=5）及其后的 assistant 行。
+    const qint64 userId = memory.lastUserMessageId(QStringLiteral("s-regen"));
+    QVERIFY(userId > 0);
+    const int removed = memory.deleteMessagesFrom(QStringLiteral("s-regen"), userId);
+    QCOMPARE(removed, 2);
+
+    // 前四条（含早先重复提问）保留，尾部两条删除。
+    const QJsonArray loaded = memory.loadMessages(QStringLiteral("s-regen"), 200);
+    QCOMPARE(loaded.size(), 4);
+    QCOMPARE(loaded.at(3).toObject().value("content").toString(),
+             QStringLiteral("another answer"));
+
+    // FTS 影子表经触发器同步：被删内容不再命中。
+    QCOMPARE(memory.searchMessages(QStringLiteral("regenerated"), 50).size(), 0);
+    // 保留的消息仍可检索。
+    QCOMPARE(memory.searchMessages(QStringLiteral("follow up"), 50).size(), 1);
+    // audit_log 不动（重新生成是正常行为，保留完整审计链）。
+    QVERIFY(memory.auditLog(100).size() >= 1);
+
+    // 边界：空会话 / 非法阈值 / 不存在会话。
+    QCOMPARE(memory.deleteMessagesFrom(QString(), userId), 0);
+    QCOMPARE(memory.deleteMessagesFrom(QStringLiteral("s-regen"), 0), 0);
+    QCOMPARE(memory.deleteMessagesFrom(QStringLiteral("no-such"), 1), 0);
+}
+
+// docs/20 §3.1（FORK-701）：会话内最后一条 user 消息的主键。
+void TestMemory::lastUserMessageIdFindsLastUserRow() {
+    SqliteMemory memory(QStringLiteral(":memory:"));
+
+    // 空会话 / 未知会话。
+    QCOMPARE(memory.lastUserMessageId(QString()), 0);
+    QCOMPARE(memory.lastUserMessageId(QStringLiteral("s-id")), 0);
+
+    memory.saveMessage("s-id", msg("user", "q1"));
+    memory.saveMessage("s-id", msg("assistant", "a1"));
+    memory.saveMessage("s-id", msg("user", "q2"));
+    memory.saveMessage("s-id", msg("assistant", "a2"));
+
+    // 尾部是 assistant：MAX(id) 过滤 role='user' 后仍指回最后一条 user。
+    QCOMPARE(memory.lastUserMessageId(QStringLiteral("s-id")),
+             static_cast<qint64>(3));
+
+    // 纯 assistant 会话（异常形状）。
+    memory.saveMessage("s-id2", msg("assistant", "only"));
+    QCOMPARE(memory.lastUserMessageId(QStringLiteral("s-id2")), 0);
 }
 
 QTEST_GUILESS_MAIN(TestMemory)

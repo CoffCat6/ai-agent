@@ -565,6 +565,9 @@ private slots:
     void testSwitchToSmallerWindowCompressesImmediately();
     void testResumeSessionAdaptsToContextLimit();
     void testNoAdaptationDuringActiveTask();
+    // docs/20 §3.1（FORK-701）：重新生成
+    void regenerateDropsLastAnswerAndResends();
+    void regenerateWithoutHistoryOrBusyIsNoop();
     // docs/16 §13 AC-2/AC-4: token_usage 采集埋点（response 有分类 token 时正确采集）
     void testRecordTokenUsage();
     // docs/16 §8.2: 会话累计 token（逐请求累加 / 清零 / 续会话恢复）
@@ -2266,6 +2269,131 @@ void TestAgent::testCheckQuota() {
     settings.remove("monthlyTokenQuota");
     settings.remove("monthlyCostQuotaCents");
     settings.remove("strictQuotaMode");
+    agent.setMemory(nullptr);
+}
+
+// docs/20 §3.1（FORK-701）：重新生成。丢弃最后一条 assistant 回答（含末轮
+// 工具消息），从最后一条 user 消息重新发起请求；持久层同步删除回答，
+// audit_log 不动。
+void TestAgent::regenerateDropsLastAnswerAndResends() {
+    SqliteMemory memory(QStringLiteral(":memory:"));
+    agent.setMemory(&memory);
+
+    // 第一轮：带工具调用的完整回合（tool → final）。
+    llm.reset();
+    QTemporaryDir dir(testDirTemplate());
+    QVERIFY(dir.isValid());
+    const QString path = dir.filePath("memo.txt");
+    { QFile f(path); QVERIFY(f.open(QIODevice::WriteOnly)); f.write("payload"); f.close(); }
+    llm.script.append(toolResponse("read_file", QJsonObject{{"path", path}}));
+    llm.script.append(textResponse(QStringLiteral("first answer")));
+    QSignalSpy spy(&agent, &AIAgent::responseReady);
+    agent.startTask(QStringLiteral("first question"));
+    QTRY_COMPARE_WITH_TIMEOUT(spy.count(), 1, 15000);
+
+    const QString sessionId = agent.currentSessionId();
+    QVERIFY(!sessionId.isEmpty());
+    const int requestsBefore = llm.seenMessages.size();
+
+    // 第二轮：普通一问一答。
+    llm.script.append(textResponse(QStringLiteral("second answer")));
+    agent.startTask(QStringLiteral("second question"));
+    QTRY_COMPARE(spy.count(), 2);
+
+    // 重新生成：丢弃第二条回答，从第二条 user 消息重新发起。
+    llm.script.append(textResponse(QStringLiteral("regenerated answer")));
+    agent.regenerateLast();
+    QTRY_COMPARE(spy.count(), 3);
+
+    // 新请求的 history：末条回答被丢弃 —— 最后一轮请求应是
+    // system + user1 + assistant(tool_calls) + tool + assistant1 + user2
+    //（第一轮带工具回合；不含 old assistant2）。
+    const QJsonArray sent = llm.seenMessages.last();
+    QCOMPARE(sent.size(), 6);
+    QCOMPARE(sent.at(1).toObject().value("content").toString(),
+             QStringLiteral("first question"));
+    QCOMPARE(sent.at(5).toObject().value("content").toString(),
+             QStringLiteral("second question"));
+    // 末条请求不含旧回答。
+    for (const auto& entry : sent) {
+        const QJsonObject msg = entry.toObject();
+        QVERIFY2(msg.value("role").toString() != QStringLiteral("assistant")
+                 || msg.value("content").toString()
+                    != QStringLiteral("second answer"),
+                 "old answer survived regeneration");
+    }
+    QVERIFY2(noDanglingToolCalls(sent), "regenerated history illegal");
+
+    // 持久层：重新生成完成后重新收口 —— user1, assistant1, user2, 新回答。
+    //（旧 assistant2 被删，新回答由本轮 finishTask 保存。）
+    const QJsonArray persisted = memory.loadMessages(sessionId, 200);
+    QCOMPARE(persisted.size(), 4);
+    QCOMPARE(persisted.at(2).toObject().value("content").toString(),
+             QStringLiteral("second question"));
+    QCOMPARE(persisted.at(3).toObject().value("content").toString(),
+             QStringLiteral("regenerated answer"));
+
+    // trace 展示层：最后一个 user_message 节点保留，回答节点被本轮重新写入。
+    const QJsonArray trace = agent.traceModel();
+    int lastUserIdx = -1;
+    for (int i = trace.size() - 1; i >= 0; --i) {
+        if (trace.at(i).toObject().value("type").toString() == "user_message") {
+            lastUserIdx = i;
+            break;
+        }
+    }
+    QVERIFY(lastUserIdx >= 0);
+    QCOMPARE(trace.at(lastUserIdx).toObject().value("title").toString(),
+             QStringLiteral("second question"));
+
+    Q_UNUSED(requestsBefore);
+    agent.setMemory(nullptr);
+}
+
+// docs/20 §3.1：重新生成的守卫 —— 无历史 / busy / 无管线都是 no-op。
+void TestAgent::regenerateWithoutHistoryOrBusyIsNoop() {
+    SqliteMemory memory(QStringLiteral(":memory:"));
+    agent.setMemory(&memory);
+    llm.reset();
+
+    // 无历史（fresh）：不发起请求。
+    agent.regenerateLast();
+    QTest::qWait(50);
+    QCOMPARE(llm.seenMessages.size(), 0);
+
+    // busy 中重生成：拒绝。test_blocking 工具在 worker 线程真实执行
+    //（停在信号量上），任务保持活跃，regenerateLast 被拒后任务照常完成。
+    BlockingTool* blocking = registerBlockingTool();
+    llm.script.append(toolResponse("test_blocking", QJsonObject{}));
+    QSignalSpy spy(&agent, &AIAgent::responseReady);
+    agent.startTask(QStringLiteral("busy q"));
+    QTRY_VERIFY_WITH_TIMEOUT(traceHasRunningToolCall(agent.traceModel(),
+                                                    QStringLiteral("test_blocking")),
+                             5000);
+    const int requests = llm.seenMessages.size();
+    agent.regenerateLast();   // busy：应被拒绝
+    QTest::qWait(100);
+    QCOMPARE(llm.seenMessages.size(), requests);
+    QCOMPARE(agent.state(), AgentState::ExecutingTool);   // 任务未被中断
+
+    // 放行工具，原任务照常完成。
+    blocking->release();
+    llm.script.append(textResponse(QStringLiteral("done")));
+    QTRY_COMPARE_WITH_TIMEOUT(spy.count(), 1, 5000);
+
+    // 完成后重新生成：合法路径 —— 丢弃回答并重发。
+    llm.script.append(textResponse(QStringLiteral("regenerated")));
+    QSignalSpy spy2(&agent, &AIAgent::responseReady);
+    agent.regenerateLast();
+    QTRY_COMPARE(spy2.count(), 1);
+    // 新请求不含旧回答与 stop 残留（干净对白，末条是 user 消息）。
+    const QJsonArray sent = llm.seenMessages.last();
+    QCOMPARE(sent.at(sent.size() - 1).toObject().value("role").toString(),
+             QStringLiteral("user"));
+    QCOMPARE(sent.at(sent.size() - 1).toObject().value("content").toString(),
+             QStringLiteral("busy q"));
+    QVERIFY2(noDanglingToolCalls(sent), "regenerated history illegal");
+
     agent.setMemory(nullptr);
 }
 

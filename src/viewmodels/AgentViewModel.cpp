@@ -1063,6 +1063,33 @@ void AgentViewModel::stop() {
     active()->stop();
 }
 
+// docs/20 §3.1（FORK-701）：重新生成最后一条回答（活动标签）。busy 时由
+// Controller 拒绝；模拟模式由 Controller 回退重播。
+void AgentViewModel::regenerate() {
+    active()->regenerate();
+}
+
+// docs/20 §3.2（FORK-701）：编辑重发。等价于「对最后一条 user 消息执行
+// regenerate + 替换内容」：删除持久层最后一条 user 行及之后全部消息，
+// 以 newText 重新发起。图片/文件附件不保留（与 resume 契约一致：干净
+// 对白历史）。空文本/无历史/无 agent（模拟模式）时静默返回。
+void AgentViewModel::editAndResend(const QString& newText) {
+    const QString trimmed = newText.trimmed();
+    if (trimmed.isEmpty()) return;
+    ChatSessionController* controller = active();
+    if (controller->isBusy()) return;
+    AIAgent* agent = controller->agent();
+    if (agent == nullptr) return;   // 模拟模式：无持久层可删，不伪造
+
+    const qint64 userId = agent->memory()
+                              ? agent->memory()->lastUserMessageId(
+                                    controller->currentSessionId())
+                              : 0;
+    if (userId > 0)
+        agent->memory()->deleteMessagesFrom(controller->currentSessionId(), userId);
+    controller->startTask(trimmed);
+}
+
 void AgentViewModel::newChat() {
     active()->newChat();
 }
