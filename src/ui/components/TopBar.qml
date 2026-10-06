@@ -300,12 +300,19 @@ Rectangle {
             spacing: 6
             Layout.rightMargin: 8
 
+            // 窗口占用色阶：占用条与百分比文字同源，≥80% 转警示色、
+            // ≥90% 转危险色，一眼可读，无需数字细节。
+            readonly property color usageColor:
+                AgentVM.tokenUsageRate >= 0.9 ? Theme.statusDanger
+                : AgentVM.tokenUsageRate >= 0.8 ? Theme.statusWarning
+                : Theme.brandPrimary
+
             // Mini progress bar (docs/16 §8.2/§8.3): 上下文窗口占用
             // (usedTokens/maxTokens)。会话累计是无上限计数器，不借用窗口
             // 容量画条（同刻度并排会显得比占用条还长，误导占用判断），
-            // 只以文字显示，明细见悬浮浮层。点击或悬停弹出占用细节。
+            // 只以图标+数值显示，明细见悬浮浮层。点击或悬停弹出占用细节。
             Rectangle {
-                Layout.preferredWidth: 60
+                Layout.preferredWidth: 48
                 Layout.preferredHeight: 4
                 radius: 2
                 color: Theme.bgPrimary
@@ -318,27 +325,42 @@ Rectangle {
                             : 0))
                     height: parent.height
                     radius: parent.radius
-                    color: AgentVM.tokenUsageRate >= 0.9
-                        ? Theme.statusDanger : Theme.brandPrimary
+                    color: tokenArea.usageColor
                 }
             }
 
+            // 上下文占用只显示百分比（精确值悬停可见，明细在浮层）；
+            // 颜色跟占用色阶走。maxTokens 为 0（无任务）时不显示。
             Text {
-                text: qsTr("tokens: %1 / %2").arg(AgentVM.usedTokens).arg(AgentVM.maxTokens)
-                color: Theme.textSecondary
+                visible: AgentVM.maxTokens > 0
+                text: Math.round(AgentVM.tokenUsageRate * 100) + "%"
+                color: tokenArea.usageColor
                 font.pixelSize: Theme.fontSizeCaption
                 font.family: Theme.fontMono
+                font.bold: AgentVM.tokenUsageRate >= 0.8
             }
 
             // docs/16 §8.2: 会话累计消耗（input+output，跨任务累加）。
             // 区别于左侧的窗口占用 usedTokens/maxTokens —— 那是下一次
-            // 请求的 prompt 规模，不会随历史重发而"翻倍增长"。
-            Text {
+            // 请求的 prompt 规模，不会随历史重发而"翻倍增长"。用层叠
+            // 图标替代"累计"文字前缀，数值走紧凑格式。
+            Row {
                 visible: AgentVM.sessionTokensUsed > 0
-                text: qsTr("累计 %1").arg(formatTokens(AgentVM.sessionTokensUsed))
-                color: Theme.textSecondary
-                font.pixelSize: Theme.fontSizeCaption
-                font.family: Theme.fontMono
+                spacing: 3
+
+                AppIcon {
+                    anchors.verticalCenter: parent.verticalCenter
+                    icon: "layers"
+                    size: 12
+                    iconColor: Theme.textSecondary
+                }
+                Text {
+                    anchors.verticalCenter: parent.verticalCenter
+                    text: formatTokens(AgentVM.sessionTokensUsed)
+                    color: Theme.textSecondary
+                    font.pixelSize: Theme.fontSizeCaption
+                    font.family: Theme.fontMono
+                }
             }
 
             // docs/16 §8.2: per-request cost (only shown when non-zero)
@@ -358,7 +380,10 @@ Rectangle {
             HoverHandler { id: tokenHover }
 
             // 点击计数区/进度条同样打开细节浮层（再点关闭）；悬停逻辑
-            // 由上方 timer 驱动，点击则立即生效。
+            // 由上方 timer 驱动，点击则立即生效。条上只留百分比后，
+            // 精确值仍由明细浮层提供（"上下文构成 · x / y · z%"），
+            // 不另设 ToolTip：hoverOpenTimer 350ms 先开浮层，ToolTip
+            // 只会在浮层上叠一层，纯干扰。
             TapHandler {
                 onTapped: tokenPopup.opened
                     ? tokenPopup.close() : tokenPopup.refreshAndOpen()
