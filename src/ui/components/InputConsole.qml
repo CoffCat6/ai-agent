@@ -16,6 +16,8 @@ Rectangle {
     property int maxHeight: 240
     // Batch 30 (F6): [{kind:"image", dataUrl}, {kind:"file", name, content}]
     property var pendingAttachments: []
+    // 由 AgentChatPage 注入：发送后请求轨迹视图跳底并恢复跟随。
+    property var traceJump: null
 
     // Sending is allowed while Idle, after completion, or after an error,
     // with text or at least one attached file.
@@ -60,6 +62,13 @@ Rectangle {
             AgentVM.startTask(textArea.text, images, files)
             textArea.text = ""
             root.pendingAttachments = []
+            // 发送即「要看新回复」的明确意图：强制解除上一轮的已解钉状
+            // 态并重置吸底意图。否则长会话里用户曾上滑回看后，视图停在
+            // 顶部，pinnedToBottom=false 会让整个生成期间的跟随滚动
+            // （onTraceChanged → requestScrollToBottom）全程失效，新回复
+            // 在视口外默默生长。
+            if (traceJump !== null && traceJump.requestFollow !== undefined)
+                traceJump.requestFollow()
         }
     }
 

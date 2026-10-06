@@ -10,6 +10,17 @@ Item {
 
     signal settingsRequested()
 
+    // 轨迹视图滚动意图的中转站：InputConsole 深埋在布局里，直接引用
+    // traceListView 会造出脆弱的 id 长链；经此对象转发，双向解耦。
+    QtObject {
+        id: traceJumpImpl
+        function requestFollow() {
+            pendingFollow = true
+        }
+        property bool pendingFollow: false
+    }
+    readonly property alias traceJump: traceJumpImpl
+
     Accessible.name: qsTr("AI 对话页面")
 
     ColumnLayout {
@@ -218,6 +229,15 @@ Item {
                         contentSettling = true
                         settleTimer.restart()
                         positionViewAtEnd()
+                    }
+
+                    // 发送新消息后由 traceJump 转发置位：无条件恢复跟随。
+                    // 在 Component.onCompleted 后每帧检查一次即可，成本低。
+                    onCountChanged: {
+                        if (root.traceJump && root.traceJump.pendingFollow) {
+                            root.traceJump.pendingFollow = false
+                            jumpToBottom()
+                        }
                     }
 
                     onContentHeightChanged: {
@@ -442,6 +462,15 @@ Item {
                 if (traceListView.pinnedToBottom)
                     traceListView.requestScrollToBottom()
             }
+
+            // 打开/切换历史会话：模型重置后视图默认落在顶部，这里
+            // 无条件收敛跳底 —— 用户点开一个会话想看的是最近的对话，
+            // 不是开头。AgentVM.currentSessionIdChanged 由 AIAgent::
+            // sessionChanged 转发而来（resumeSession 末尾发出，标签页
+            // 切换与侧栏点开历史会话都走这条链）。
+            function onCurrentSessionIdChanged() {
+                traceListView.jumpToBottom()
+            }
         }
 
         // ── Input Console ──────────────────────────────
@@ -457,6 +486,7 @@ Item {
                 anchors.topMargin: 14
                 anchors.leftMargin: 20
                 anchors.rightMargin: 20
+                traceJump: root.traceJump
             }
 
             // Active model selector dropdown

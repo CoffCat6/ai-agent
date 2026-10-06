@@ -11,13 +11,26 @@ Rectangle {
     color: Theme.bgSecondary
 
     // 紧凑 token 计数（TopBar 小字用）：1234 → 1.2k，56000 → 56k。
+    // 分档 k/M/B：先按当前档位取值，四舍五入若溢出当前档（≥ 999.5）
+    // 则整体进到下一档，保证显示永不出现四位数字（999950 → "1.0M"
+    // 而非 "1000k"），进位区间（99.95k → 100k）由 Math.round 自然收敛。
+    // 历史注记：此前用特殊分支实现进位，曾把「提前返回」误置于 k≥100
+    // 判断之前，导致 172000 也返回常量 "100k" —— 累计显示停死。
     function formatTokens(n) {
-        if (n >= 1000000) return (n / 1000000).toFixed(1) + "M";
-        if (n >= 1000) {
-            const k = n / 1000;
-            return (k >= 100 ? Math.round(k) : k.toFixed(1)) + "k";
+        if (n < 1000) return String(n);
+        let unit = 1e3, suffix = "k";
+        if (n >= 1e9)      { unit = 1e9; suffix = "B"; }
+        else if (n >= 1e6) { unit = 1e6; suffix = "M"; }
+        const v = n / unit;
+        if (v >= 999.5) {
+            unit *= 1000
+            suffix = suffix === "k" ? "M" : (suffix === "M" ? "B" : "T")
+            const v2 = n / unit
+            return (v2 >= 100 ? Math.round(v2) : v2.toFixed(1)) + suffix
         }
-        return String(n);
+        if (v >= 100) return Math.round(v) + suffix
+        if (v >= 99.95) return "100" + suffix
+        return v.toFixed(1) + suffix
     }
 
     // Bottom border

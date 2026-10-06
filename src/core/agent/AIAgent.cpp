@@ -33,7 +33,10 @@ constexpr int kMaxToolResultChars = 6000; // cap fed back to the LLM
 // 思考正文比工具输出更值得看全（推理链被腰斩就没有可读性可言），所以不复用
 // kMaxTraceChars 的 1500；同时它只落进轨迹节点供展示，永不回灌模型，上限只为
 // 防止单节点 JSON 在 SQLite 里无限膨胀。
-constexpr int kMaxReasoningChars = 4000;
+// 历史 bug：此前为 4000，流式超限后截断串恒定不变，updateTraceNodeReasoningById
+// 的「内容没变就跳过」短路，表现为思考文本到 4001 字符处永久冻结。现对齐
+// CodeHighlighter::MaxChars（64k），深度推理长文也可完整展示，且仍保有上界。
+constexpr int kMaxReasoningChars = 64 * 1024;
 constexpr int kStreamFlushMs = 100;       // trace flush throttle while streaming
 // An interim assistant answer this long counts as the final result when the
 // model keeps re-issuing an identical tool call instead of stopping.
