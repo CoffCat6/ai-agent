@@ -181,6 +181,30 @@ void ChatSessionController::setDraftText(const QString& text) {
     emit draftTextChanged();
 }
 
+// docs/20 §3.3：输入历史回溯。游标从 size() 开始（未浏览）；↑ 前移一位并
+// 返回该条目，已到最旧时保持在最旧（返回首条，幂等）；无历史返回空串。
+// ↓ 后移，回到 size() 时返回空串（表示回到最新/草稿态）。
+QString ChatSessionController::historyPrev() {
+    if (m_inputHistory.isEmpty()) return QString();
+    if (m_historyCursor > m_inputHistory.size())
+        m_historyCursor = m_inputHistory.size();
+    if (m_historyCursor > 0)
+        --m_historyCursor;
+    return m_inputHistory.at(m_historyCursor);
+}
+
+QString ChatSessionController::historyNext() {
+    if (m_inputHistory.isEmpty()) return QString();
+    if (m_historyCursor >= m_inputHistory.size()) return QString();   // 已最新
+    ++m_historyCursor;
+    if (m_historyCursor >= m_inputHistory.size()) return QString();   // 回到草稿态
+    return m_inputHistory.at(m_historyCursor);
+}
+
+void ChatSessionController::resetHistoryCursor() {
+    m_historyCursor = m_inputHistory.size();
+}
+
 void ChatSessionController::setState(AgentState state) {
     if (m_state == state) return;
     m_state = state;
@@ -213,6 +237,16 @@ void ChatSessionController::updateLastNodeStatus(const QString& status) {
 void ChatSessionController::startTask(const QString& input, const QStringList& images,
                                       const QJsonArray& files) {
     if (isBusy()) return;
+    // docs/20 §3.3：成功发起的非空输入入历史环（相邻重复不入队），并复位
+    // 浏览游标。仅本标签内存态，不持久化。
+    const QString trimmedInput = input.trimmed();
+    if (!trimmedInput.isEmpty()
+            && (m_inputHistory.isEmpty() || m_inputHistory.last() != trimmedInput)) {
+        m_inputHistory.append(trimmedInput);
+        if (m_inputHistory.size() > kMaxHistory)
+            m_inputHistory.removeFirst();
+    }
+    m_historyCursor = m_inputHistory.size();
     Activity::usage(Activity::Kind::User, QStringLiteral("task.start"),
                     input.left(80));
 

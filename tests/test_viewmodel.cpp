@@ -156,6 +156,48 @@ private slots:
         QCOMPARE(m.lastIndexOfType(QStringLiteral("nope")), -1);
     }
 
+    // docs/20 §3.3：输入历史环（进程内、相邻去重、↑ 前移 / ↓ 后移）。
+    // 模拟模式下 startTask 同样入队（入队在 agent/simulation 分支之前）。
+    void inputHistoryNavigateAndDedupe() {
+        AgentViewModel vm(nullptr);
+
+        // 空历史：两个方向都返回空串。
+        QCOMPARE(vm.historyPrev(), QString());
+        QCOMPARE(vm.historyNext(), QString());
+
+        vm.startTask(QStringLiteral("第一条"));
+        vm.stop();
+        vm.startTask(QStringLiteral("第二条"));
+        vm.stop();
+        vm.startTask(QStringLiteral("第二条"));   // 相邻重复不入队
+        vm.stop();
+
+        // ↑ 回溯：第二条 → 第一条 → 已到最旧仍返回第一条。
+        QCOMPARE(vm.historyPrev(), QStringLiteral("第二条"));
+        QCOMPARE(vm.historyPrev(), QStringLiteral("第一条"));
+        QCOMPARE(vm.historyPrev(), QStringLiteral("第一条"));
+
+        // ↓ 后移：第二条 → 回到草稿态（空串）。
+        QCOMPARE(vm.historyNext(), QStringLiteral("第二条"));
+        QCOMPARE(vm.historyNext(), QString());
+        QCOMPARE(vm.historyNext(), QString());
+
+        // resetInputHistory 后再 ↑ 回到最新一条。
+        vm.historyPrev();
+        vm.resetInputHistory();
+        QCOMPARE(vm.historyPrev(), QStringLiteral("第二条"));
+    }
+
+    // docs/20 §3.3：空白输入不入历史。
+    void inputHistorySkipsBlank() {
+        AgentViewModel vm(nullptr);
+        vm.startTask(QStringLiteral("   "));
+        vm.stop();
+        vm.startTask(QString());
+        vm.stop();
+        QCOMPARE(vm.historyPrev(), QString());
+    }
+
     // Named AgentState constants exposed to QML must mirror the core enum
     // (QML compares AgentVM.state against them instead of magic numbers).
     void namedStateConstants() {

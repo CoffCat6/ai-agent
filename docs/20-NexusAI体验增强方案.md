@@ -5,7 +5,9 @@
 > SqliteMemory::deleteMessagesFrom / lastUserMessageId → AIAgent::regenerateLast →
 > ChatSessionController::regenerate → AgentViewModel.regenerate / editAndResend，
 > QML 侧 AssistantMessage 重新生成按钮 + UserMessageBubble 内联编辑；
-> test_memory/test_agent/test_viewmodel 新增用例全绿）。第 2 批（A3/A4/D9）待实施。
+> test_memory/test_agent/test_viewmodel 新增用例全绿）。
+> **A3 输入历史已实施**（ChatSessionController 输入环 + historyPrev/historyNext，
+> InputConsole ↑/↓ 回溯；test_viewmodel 新增用例全绿）。A4 拖拽附件、D9 快捷键速查待实施。
 > **创建日期**：2026-10-06
 > **依赖文档**：docs/14（L1–L6 遗留修复）、docs/17（沙箱与设置体系）、docs/18（会话归属模型）、docs/19（对话界面视觉完善）
 > **涉及模块**：AgentViewModel / ChatSessionController / AIAgent / SqliteMemory / main.cpp / AgentChatPage / AssistantMessage / InputConsole / Sidebar / SettingsSchema

@@ -214,6 +214,11 @@ public:
     // Draft text (active tab)
     QString draftText() const { return active()->draftText(); }
     void setDraftText(const QString& text);
+    // docs/20 §3.3：输入历史回溯（活动标签）。↑ 返回上一条历史，↓ 返回下一条；
+    // 无更多历史或已回到草稿态时返回空串。编辑后调用 resetInputHistory 复位游标。
+    Q_INVOKABLE QString historyPrev() { return active()->historyPrev(); }
+    Q_INVOKABLE QString historyNext() { return active()->historyNext(); }
+    Q_INVOKABLE void resetInputHistory() { active()->resetHistoryCursor(); }
 
     // Panel
     bool isPanelVisible() const { return m_isPanelVisible; }

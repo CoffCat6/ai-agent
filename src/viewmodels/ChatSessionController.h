@@ -46,6 +46,13 @@ public:
     QString finalResponse() const { return m_finalResponse; }
     QString draftText() const { return m_draftText; }
     void setDraftText(const QString& text);
+    // docs/20 §3.3：本标签的输入历史环（进程内保留最近 50 条，不持久化）。
+    // historyPrev/historyNext 返回对应历史条目；无更多历史时返回空串。
+    // 正在编辑（非原始态）时由 QML 侧提前退出，不进入浏览。
+    QString historyPrev();
+    QString historyNext();
+    // 复位浏览游标到最新（用户编辑后再次开始浏览时调用）。
+    void resetHistoryCursor();
     QString currentSessionId() const { return m_currentSessionId; }
     // docs/18: 本标签的项目归属（转发自 agent；无 agent 时为空 = 本地）。
     // 归属按标签持有，AgentViewModel 的派生属性与沙箱镜像都从这里读。
@@ -143,6 +150,12 @@ private:
     int m_simStep{0};
     QString m_simInput;
     QString m_pendingToolCallId;
+
+    // docs/20 §3.3：输入历史环。仅内存态（进程内），相邻重复不入队；
+    // m_historyCursor 指向浏览位置（size() = 未浏览/最新之外）。
+    static constexpr int kMaxHistory = 50;
+    QStringList m_inputHistory;
+    int m_historyCursor{0};
 };
 
 } // namespace NexusAI

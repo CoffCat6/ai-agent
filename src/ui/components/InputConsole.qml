@@ -18,6 +18,10 @@ Rectangle {
     property var pendingAttachments: []
     // 由 AgentChatPage 注入：发送后请求轨迹视图跳底并恢复跟随。
     property var traceJump: null
+    // docs/20 §3.3：输入历史浏览态。applyingHistory 用于区分「程序设值」与
+    // 「用户编辑」，只在用户编辑时退出浏览并复位游标。
+    property bool historyBrowsing: false
+    property bool applyingHistory: false
 
     // Sending is allowed while Idle, after completion, or after an error,
     // with text or at least one attached file.
@@ -62,6 +66,8 @@ Rectangle {
             AgentVM.startTask(textArea.text, images, files)
             textArea.text = ""
             root.pendingAttachments = []
+            // docs/20 §3.3：发送后退出历史浏览态（游标已在 startTask 内复位）。
+            root.historyBrowsing = false
             // 发送即「要看新回复」的明确意图：强制解除上一轮的已解钉状
             // 态并重置吸底意图。否则长会话里用户曾上滑回看后，视图停在
             // 顶部，pinnedToBottom=false 会让整个生成期间的跟随滚动
@@ -194,7 +200,71 @@ Rectangle {
                 }
             }
 
-            onTextChanged: AgentVM.draftText = text
+            onTextChanged: {
+                AgentVM.draftText = text
+                // 用户手动编辑（非历史程序设值）时退出浏览并复位游标。
+                if (!root.applyingHistory && root.historyBrowsing) {
+                    root.historyBrowsing = false
+                    AgentVM.resetInputHistory()
+                }
+            }
+
+            // docs/20 §3.3：输入历史浏览。↑ 前移（更旧），↓ 后移（更新）。
+            // Shift+↑/↓ 保持默认（多行光标移动，不进入历史）。仅在无显式编辑
+            // 且光标处于首/末行时接管，避免干扰多行编辑。用户一旦手动编辑，
+            // 退出浏览并复位游标（applyHistoryText 中设 applyingHistory 抑制）。
+            function applyHistoryText(next) {
+                root.applyingHistory = true
+                textArea.text = next
+                textArea.cursorPosition = textArea.length
+                root.applyingHistory = false
+                AgentVM.draftText = next
+            }
+
+            Keys.onUpPressed: function(event) {
+                if (event.modifiers & Qt.ShiftModifier) {
+                    event.accepted = false
+                    return
+                }
+                // 仅在空输入框或已处于历史浏览态时接管；否则保留用户已输入的
+                // 草稿（不覆盖）并让光标正常上移。多行时只在首行才进入历史。
+                if (!root.historyBrowsing && textArea.text !== "") {
+                    event.accepted = false
+                    return
+                }
+                const before = textArea.text.substring(0, textArea.cursorPosition)
+                if (before.indexOf("\n") !== -1) {
+                    event.accepted = false
+                    return
+                }
+                const prev = AgentVM.historyPrev()
+                if (prev !== "") {
+                    root.historyBrowsing = true
+                    applyHistoryText(prev)
+                }
+                event.accepted = true
+            }
+
+            Keys.onDownPressed: function(event) {
+                if (event.modifiers & Qt.ShiftModifier || !root.historyBrowsing) {
+                    event.accepted = false
+                    return
+                }
+                // 多行时仅在末行才继续下滑历史。
+                const after = textArea.text.substring(textArea.cursorPosition)
+                if (after.indexOf("\n") !== -1) {
+                    event.accepted = false
+                    return
+                }
+                const next = AgentVM.historyNext()
+                if (next === "") {
+                    root.historyBrowsing = false
+                    applyHistoryText("")
+                } else {
+                    applyHistoryText(next)
+                }
+                event.accepted = true
+            }
 
             // Batch 30 (F6): Ctrl+V first tries the clipboard image; plain
             // text falls through to the default paste.
