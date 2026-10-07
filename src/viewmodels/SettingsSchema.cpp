@@ -82,10 +82,10 @@ void SettingsSchema::migrate(int fromVersion) {
     // (dailyTokenQuota/dailyCostQuotaCents/monthlyTokenQuota/monthlyCostQuotaCents/
     // strictQuotaMode); they carry defaults (0/unlimited, false/warn-only) so
     // existing installs pick them up on next load without a data migration.
-    // v2 → v3: contextTokens 旧默认值上调（8192 → 300000）。改写的是顶层
-    // QSettings 键而非本表结构，因此与 v1 → v2 一样由 SettingsService::load()
+    // v2 → v3/v4: contextTokens 默认值调整（8192 → 300000 → 128000）。改写的是
+    // 顶层 QSettings 键而非本表结构，因此与 v1 → v2 一样由 SettingsService::load()
     // 依 storedVersion 落地（upgradeContextTokenDefault），此处保持 no-op。
-    // Future: if (fromVersion < 4) { ... rename old keys ... }
+    // Future: if (fromVersion < 5) { ... rename old keys ... }
     (void)fromVersion;
 }
 

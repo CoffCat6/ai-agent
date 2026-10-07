@@ -61,12 +61,14 @@ public:
     static constexpr int MaxContextTokens = 1048576;
     // Default context-window budget. Used as the fallback when neither the
     // profile's contextLength override nor the capability table knows the
-    // model (docs/15 §6.1.1 priority 3). 300k rather than the old 8192: modern
-    // hosted models all carry >=128k windows, so 8192 truncated ordinary
-    // conversations almost immediately. Intelligence lives in
-    // SettingsSchema::registeredKeys() + SettingsService::load() as well —
-    // keep all three in sync (test_settings locks the ledger entry).
-    static constexpr int kDefaultContextTokens = 300000;
+    // model (docs/15 §6.1.1 priority 3). Deliberately conservative 128k: the
+    // budget drives history compression on a char-based token estimate, so an
+    // oversized default silently overruns models whose real window is smaller
+    // (the server 400s before compression ever kicks in). Known models get
+    // their true window from the capability table; 128000 is only the floor for
+    // models we know nothing about. Keep SettingsSchema::registeredKeys() and
+    // SettingsService in sync (test_settings locks the ledger entry).
+    static constexpr int kDefaultContextTokens = 128000;
 
     explicit AIAgent(QObject* parent = nullptr);
     ~AIAgent() override;

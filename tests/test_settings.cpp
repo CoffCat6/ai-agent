@@ -1218,8 +1218,9 @@ ComboBox {
         s.sync();
     }
 
-    // v2 → v3：contextTokens 旧默认值（8192）随新默认上调到 300000，而用户的
-    // 自定义值必须原样保留——通用页输入框已移除，不能把用户的主动设置抹掉。
+    // v2 → v3/v4：contextTokens 旧默认值（8192、以及短暂存在过的 300000）归一
+    // 为当前的保守默认 128000，而用户的自定义值必须原样保留——通用页输入框已
+    // 移除，不能把用户的主动设置抹掉。
     void schemaV3UpgradesContextTokenDefault() {
         auto clean = [] {
             QSettings s("NexusAI", "NexusAI");
@@ -1228,7 +1229,7 @@ ComboBox {
         };
         clean();
 
-        // 存量值 = 旧默认 8192 → 应上调。
+        // 存量值 = 旧默认 8192 → 归一。
         {
             QSettings s("NexusAI", "NexusAI");
             s.setValue("contextTokens", 8192);
@@ -1240,7 +1241,19 @@ ComboBox {
             QCOMPARE(svc.contextTokens(), AIAgent::kDefaultContextTokens);
         }
 
-        // 用户自定义值（≠ 旧默认）→ 保持不动。
+        // 中间版本的默认 300000（已升到 v3 的库）→ 同样归一。
+        {
+            QSettings s("NexusAI", "NexusAI");
+            s.setValue("contextTokens", 300000);
+            s.setValue("schemaVersion", 3);
+            s.sync();
+        }
+        {
+            SettingsService svc(nullptr);
+            QCOMPARE(svc.contextTokens(), AIAgent::kDefaultContextTokens);
+        }
+
+        // 用户自定义值（≠ 任一旧默认）→ 保持不动。
         {
             QSettings s("NexusAI", "NexusAI");
             s.setValue("contextTokens", 65536);
@@ -1269,7 +1282,8 @@ ComboBox {
             if (k.key == QStringLiteral("contextTokens")) ledger = k.defaultValue;
         QVERIFY2(ledger.isValid(), "contextTokens missing from schema ledger");
         QCOMPARE(ledger.toInt(), AIAgent::kDefaultContextTokens);
-        QCOMPARE(AIAgent::kDefaultContextTokens, 300000);
+        // 保守取值：未知模型按 128k 兜底，避免用超大默认值撑爆小窗口模型。
+        QCOMPARE(AIAgent::kDefaultContextTokens, 128000);
     }
 
     // L2: load() stamps the schema version into QSettings.

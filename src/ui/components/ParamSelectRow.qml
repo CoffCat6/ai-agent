@@ -32,6 +32,9 @@ RowLayout {
     property alias validator: field.validator
     // 选中「自定义…」后为 true：输入框露出
     property bool customMode: false
+    // 宿主页被销毁（切换设置分类）时把自定义输入补一次提交。与 SettingsField 同因：
+    // Loader 切 active 不触发 editingFinished，编辑中的自定义预算/输出上限会丢。
+    property bool commitOnDestroy: false
 
     signal submitted(var value)
 
@@ -148,6 +151,17 @@ RowLayout {
                 root.refresh()
                 return
             }
+            root.submitted(value)
+        }
+        // 页面销毁兜底：仅在"自定义模式 + 输入非空 + 与当前生效值不同"时补交，
+        // 否则页面重建会把预设值当自定义值写回去。
+        Component.onDestruction: {
+            if (!root.commitOnDestroy || !root.customMode) return
+            const value = field.text.trim()
+            if (value === "") return
+            const current = (root.currentValue === undefined || root.currentValue === null)
+                ? "" : String(root.currentValue)
+            if (value === current) return
             root.submitted(value)
         }
     }

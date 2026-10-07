@@ -5,5 +5,8 @@
 /txt
 /deploy
 NexusAI-*-win64.zip
-!/.github
+# lupdate leaves *.ts.bak snapshots next to the .ts it rewrites. The .ts is the
+# single source of truth; the backup must never land in the repo.
+translations/*.ts.bak
+!/github
 !.gitattributes

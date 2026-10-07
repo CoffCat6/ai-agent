@@ -203,12 +203,18 @@ Item {
                                 border.color: apiKeyField.activeFocus ? Theme.brandPrimary : Theme.borderSubtle
                             }
                             Accessible.name: qsTr("搜索 API Key")
-                            onEditingFinished: {
-                                if (text.length > 0) {
-                                    Settings.webSearchApiKey = text
-                                    text = ""
-                                }
+                            // 提交时机：失焦/回车立即写入；本页挂在设置中心的
+                            // Loader 上，切换分类会销毁页面且不触发 editingFinished，
+                            // 所以补一条销毁兜底——"填了 Key 却直接切走"最难察觉。
+                            // 读取 text（不是 displayText）：密文字段的 displayText
+                            // 是掩码点，写进去等于把密钥毁掉。
+                            function commitKey() {
+                                if (text.length === 0) return
+                                Settings.webSearchApiKey = text
+                                text = ""
                             }
+                            onEditingFinished: commitKey()
+                            Component.onDestruction: commitKey()
                         }
 
                         AppButton {

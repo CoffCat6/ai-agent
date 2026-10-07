@@ -69,7 +69,7 @@ cmake --build build
 ctest --test-dir build --output-on-failure
 ```
 
-覆盖范围：沙箱策略、Token 估算、三家 LLM 响应解析、SQLite 记忆、RAG、ReAct 全流程、嵌入分页与进度、ViewModel、设置服务、日志（环形缓冲/Activity 分类/历史回填）、Provider 请求生命周期与并发隔离、Web 搜索、Episodic 记忆、消息重新生成/编辑重发（FORK-701）、附件类型分派与拖放边界（A4）、偏好键账本与开机自启（B）、设置项编辑生命周期（Loader 销毁不丢值）与 schema v3 迁移，共 24 套件约 255 用例。
+覆盖范围：沙箱策略、Token 估算、三家 LLM 响应解析、SQLite 记忆、RAG、ReAct 全流程、嵌入分页与进度、ViewModel、设置服务、日志（环形缓冲/Activity 分类/历史回填）、Provider 请求生命周期与并发隔离、Web 搜索、Episodic 记忆、消息重新生成/编辑重发（FORK-701）、附件类型分派与拖放边界（A4）、偏好键账本与开机自启（B）、设置项编辑生命周期（Loader 销毁不丢值，含可复用字段行/销毁掉真实文本两条守卫）、schema v3/v4 迁移与保守 128000 默认，共 24 套件约 260 用例。双语 .ts 已补齐全部 581 条译文（0 unfinished）。
 
 ## 配置与数据位置
 

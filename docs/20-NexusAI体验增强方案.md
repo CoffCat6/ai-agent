@@ -21,7 +21,12 @@
 > 修两个实测缺陷——①`qt_add_resources` 未加 `BASE` 导致 qrc 别名带源目录
 > 前缀、`QIcon` 静默变空 → 托盘无图标（§4.1）；②设置分类页挂在 Loader 上，
 > 切换分类销毁页面时不触发 `editingFinished`，通用页文本框的编辑静默丢失
-> （§3.6）。上下文 Tokens 从通用页移除、统一归口模型配置（§3.7）。
+> （§3.6）。上下文 Tokens 从通用页移除、统一归口模型配置（§3.7），默认值定为
+> 保守的 128000。
+> **二次完善**（同一批用户反馈）：把丢值缺陷的修法下沉到可复用组件
+> （`SettingsField` / `ParamSelectRow` / `ToolsPage` 的 `commitOnDestroy`），
+> 覆盖"模型配置"页十来个字段与搜索 API Key——"填了 Key 却直接切走"最难察觉。
+> 双语 .ts 补齐全部译文（581 条，0 unfinished）。
 > **创建日期**：2026-10-06
 > **依赖文档**：docs/14（L1–L6 遗留修复）、docs/17（沙箱与设置体系）、docs/18（会话归属模型）、docs/19（对话界面视觉完善）
 > **涉及模块**：AgentViewModel / ChatSessionController / AIAgent / SqliteMemory / main.cpp / AgentChatPage / AssistantMessage / InputConsole / Sidebar / SettingsSchema
@@ -232,14 +237,30 @@ delivery agent，验证 enter/move/drop 三者被接受、urls 原样送达 C++ 
 active=false，`editingFinished` 触发计数为 **0**，值丢失。
 CheckBox/ComboBox 走 `onToggled`/`onActivated`，改的瞬间就写盘，所以不受影响。
 
-**修法**（`GeneralPage.qml`）：每个设置文本框三条提交路径——
+**修法**：每个设置文本框三条提交路径——
 1. `onEditingFinished`（回车 / 失焦，原行为）；
 2. `onTextEdited` + 400ms 防抖 Timer（覆盖"停手但不停焦"，也避免逐键写盘）；
 3. `Component.onDestruction`（覆盖"编辑中页面就被销毁"）。
 
+**通用组件也要能自保**：`SettingsField` / `ParamSelectRow` 提供
+`commitOnDestroy`（默认关），并配 `noteValue()` 基线与 `commitIfDirty()`——
+**只有真被改过才提交**。否则页面每次重建都会把原值再写一遍（多余
+profilesChanged；对"当前模型"字段还会被 `updateProfile` 把当前模型重复插进
+models 列表，见 SettingsService.cpp:473）。反向探针另证实：子组件的
+`onDestruction` **能**触达父页面的 handler（父先销毁、子后销毁，但连接仍有效）。
+
+**注意 `commitIfDirty` 必须读 `text` 而不是 `displayText`**：密文字段的
+`displayText` 是掩码点，写进去等于把密钥毁掉。
+
 **测试**：`tests/test_settings_edit_lifecycle.cpp` 驱动同一 Loader 生命周期，
-断言防抖 + 销毁提交能把值送达 sink；并反向锁定"仅 editingFinished 时确实丢"
-（防止前一条断言因场景失效而变成空断言）。
+正向断言防抖 + 销毁提交能把值送达；反向锁定"仅 editingFinished 时确实丢"
+（防止断言失效）；另有干净行不提交、密文字段提交真实文本而非掩码两条守卫。
+
+**本轮（SettingsField / ToolsPage）实测踩坑**：最初把测试夹具改成"嵌套 Loader +
+外部 lambda 连接"，`commitIfDirty` 明明执行了却收不到提交——**夹具结构与生产
+不一致**。改成"直接实例化 + 父页面 `Connections`"（生产里 SettingsField 在
+ModelConfigPage 中的真实用法）后 7/7 全过。教训：**测生命周期就用生产的挂载
+方式**，不要自造结构。
 
 ### 3.7 上下文 Tokens 归口模型配置
 
@@ -254,17 +275,22 @@ profile 管理（该页早有"上下文预算覆盖"下拉 + 能力表 + 生效�
 - 模型配置页在无能力表命中时显示的"当前生效 N tokens（来源：全局默认）"
   即该兜底值，出处仍可追溯。
 
-**默认值上调 8192 → 300000**：现代托管模型窗口普遍 ≥128k，8192 会在普通对话
-刚开始时就触发压缩。收口为 `AIAgent::kDefaultContextTokens` 具名常量，
-账本（SettingsSchema）、`SettingsService` 成员初值与 `load()` 兜底、无 agent
-时的 `ChatSessionController::maxTokens()` 全部引用它，避免四处各写数字漂移
-（`defaultContextTokensMatchesAgentConstant` 锁定）。
+**默认值保守定为 128000**（三级默认的最终答案：旧 8192 → 曾试 300000 → 128k）：
 
-**存量迁移（schema v2 → v3）**：注册表里已存的 `contextTokens` 若**正好等于旧
-默认 8192** 就随之上调——那不是用户的主动选择，而且通用页入口已移除、用户再也
-改不到；真正的自定义值（≠8192）原样保留，不覆盖用户意图。`SettingsSchema::
-kSchemaVersion` 升到 3，`upgradeContextTokenDefault()` 由 `load()` 依版本号
-只跑一次（`schemaV3UpgradesContextTokenDefault` 覆盖三种情形）。
+- 8192 太低：普通对话刚开就触发压缩；
+- 300000 过高：token 预估算子按字符加权，超大默认会在真实窗口更小的模型上
+  **静默超限**（服务端 400 之后才有机会回退，压缩来不及救场）；
+- 128000 是"未知模型"的稳妥取值——已知模型本来就走能力表（gpt-4o → 128000
+  即与默认同值），128000 只对情报为零的模型生效。
+
+收口为 `AIAgent::kDefaultContextTokens` 具名常量，账本、成员初值、`load()`
+兜底、无 agent 时的 `ChatSessionController::maxTokens()` 全部引用它
+（`defaultContextTokensMatchesAgentConstant` 锁定一致性）。
+
+**存量迁移（schema v2 → v3/v4）**：`upgradeContextTokenDefault()` 把任一版
+"旧默认"（8192、短暂存在的 300000）归一为当前默认，用户自定义值原样保留；
+`kSchemaVersion` 现为 4，迁移只跑一次（`schemaV3UpgradesContextTokenDefault`
+覆盖三种存量 + 未写过共四种情形）。
 
 ---
 

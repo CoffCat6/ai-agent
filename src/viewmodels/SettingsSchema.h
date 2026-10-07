@@ -27,9 +27,10 @@ public:
     // Bumped when a migration renames/removes keys. v0 = pre-schema (all
     // keys had defaults); v1 = 初版结构化 schema；v2 = 模型列表改为用户手动
     // 维护（存量 profile 的 model/models 在 SettingsService::load 里清空）；
-    // v3 = contextTokens 默认值 8192 → 300000（存量等于旧默认的值随之上调，
-    // 见 SettingsService::upgradeContextTokenDefault）。
-    static constexpr int kSchemaVersion = 3;
+    // v3 = contextTokens 默认值 8192 → 300000；v4 = 该默认收敛为保守的 128000
+    // （v3 只在本地短暂存在过，v4 同时把存量 300000 归一，见
+    // SettingsService::upgradeContextTokenDefault）。
+    static constexpr int kSchemaVersion = 4;
 
     // All registered settings keys (global + UI + theme). Profile-internal
     // keys (provider/apiKey/model/baseUrl inside the modelProfiles JSON) are

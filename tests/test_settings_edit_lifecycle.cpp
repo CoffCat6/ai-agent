@@ -69,8 +69,7 @@ private slots:
     // Guard the negative case: with no commit hook the edit is lost, which is
     // what the bug looked like. This keeps the test honest — if the harness
     // ever stopped reproducing the loss, the assertion above would be vacuous.
-    void editingFinishedAloneDoesNotFireOnDestruction() {
-        QQmlEngine engine;
+    void editingFinishedAloneDoesNotFireOnDestruction() {        QQmlEngine engine;
         QQmlComponent component(&engine,
             QUrl::fromLocalFile(QStringLiteral(NEXUS_TEST_QML_DIR "/SettingsEditHarness.qml")));
         QVERIFY2(component.isReady(), qPrintable(component.errorString()));
@@ -96,6 +95,98 @@ private slots:
         // Documented Qt behaviour: destruction must not be relied upon to emit
         // editingFinished (verified against Qt 6.9).
         QCOMPARE(fired.toInt(), 0);
+    }
+
+    // SettingsField-style row: the reusable CHILD commits on destruction and
+    // the PARENT page's handler still receives it (verified: parent handlers
+    // stay connected while children are being torn down).
+    void childRowCommitsOnPageDestruction() {
+        QQmlEngine engine;
+        QQmlComponent component(&engine,
+            QUrl::fromLocalFile(QStringLiteral(NEXUS_TEST_QML_DIR "/SettingsEditHarness.qml")));
+        QVERIFY2(component.isReady(), qPrintable(component.errorString()));
+
+        std::unique_ptr<QObject> root(component.create());
+        QVERIFY2(root, qPrintable(component.errorString()));
+        auto* win = qobject_cast<QQuickWindow*>(root.get());
+        QVERIFY(win);
+        win->resize(600, 400);
+        win->show();
+        QVERIFY(QTest::qWaitForWindowExposed(win));
+
+        QObject* loader = win->findChild<QObject*>(QStringLiteral("pageLoader"));
+        QVERIFY(loader);
+        QObject* row = win->findChild<QObject*>(QStringLiteral("settingsRow"));
+        QVERIFY2(row, "settingsRow not found in harness");
+        QObject* input = win->findChild<QObject*>(QStringLiteral("settingsRowInput"));
+        QVERIFY(input);
+
+        const QString typed = QStringLiteral("gpt-4o-mini");
+        QMetaObject::invokeMethod(input, "insert", Q_ARG(int, 0), Q_ARG(QString, typed));
+        loader->setProperty("active", false);
+
+        QVariant sink;
+        QMetaObject::invokeMethod(root.get(), "readRowSink", Q_RETURN_ARG(QVariant, sink));
+        QCOMPARE(sink.toString(), typed);
+    }
+
+    // A clean row (never edited) must NOT submit on destruction: otherwise
+    // every page rebuild rewrites the stored value (spurious profilesChanged,
+    // and for the model field it would re-add the current model to the list).
+    void cleanRowDoesNotSubmitOnDestruction() {
+        QQmlEngine engine;
+        QQmlComponent component(&engine,
+            QUrl::fromLocalFile(QStringLiteral(NEXUS_TEST_QML_DIR "/SettingsEditHarness.qml")));
+        QVERIFY2(component.isReady(), qPrintable(component.errorString()));
+
+        std::unique_ptr<QObject> root(component.create());
+        QVERIFY(root);
+        auto* win = qobject_cast<QQuickWindow*>(root.get());
+        QVERIFY(win);
+        win->resize(600, 400);
+        win->show();
+        QVERIFY(QTest::qWaitForWindowExposed(win));
+
+        QObject* loader = win->findChild<QObject*>(QStringLiteral("pageLoader"));
+        QVERIFY(loader);
+        loader->setProperty("active", false);
+
+        QVariant count;
+        QMetaObject::invokeMethod(root.get(), "readRowSubmitCount", Q_RETURN_ARG(QVariant, count));
+        QCOMPARE(count.toInt(), 0);
+    }
+
+    // Password echo must commit the REAL text, not the bullet mask.
+    void secretRowCommitsRealTextNotMask() {
+        QQmlEngine engine;
+        QQmlComponent component(&engine,
+            QUrl::fromLocalFile(QStringLiteral(NEXUS_TEST_QML_DIR "/SettingsEditHarness.qml")));
+        QVERIFY2(component.isReady(), qPrintable(component.errorString()));
+
+        std::unique_ptr<QObject> root(component.create());
+        QVERIFY(root);
+        auto* win = qobject_cast<QQuickWindow*>(root.get());
+        QVERIFY(win);
+        win->resize(600, 400);
+        win->show();
+        QVERIFY(QTest::qWaitForWindowExposed(win));
+
+        QObject* loader = win->findChild<QObject*>(QStringLiteral("pageLoader"));
+        QVERIFY(loader);
+        QObject* row = win->findChild<QObject*>(QStringLiteral("secretRow"));
+        QVERIFY(row);
+        QObject* input = win->findChild<QObject*>(QStringLiteral("secretRowInput"));
+        QVERIFY(input);
+
+        const QString key = QStringLiteral("sk-secret-value");
+        QMetaObject::invokeMethod(input, "insert", Q_ARG(int, 0), Q_ARG(QString, key));
+        loader->setProperty("active", false);
+
+        QVariant sink;
+        QMetaObject::invokeMethod(root.get(), "readSecretSink", Q_RETURN_ARG(QVariant, sink));
+        QCOMPARE(sink.toString(), key);
+        QVERIFY2(!sink.toString().contains(QChar(0x2022)),
+                 "committed the Password echo mask instead of the real text");
     }
 };
 

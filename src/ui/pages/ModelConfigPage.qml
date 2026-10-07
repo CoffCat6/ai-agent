@@ -152,13 +152,22 @@ Item {
         field.text = (value === undefined || value === null) ? "" : String(value)
     }
 
+    // 同步字段文本并刷新「已知值」基线：SettingsField 销毁时只在文本与基线不同
+    // 才补一次提交，基线不跟着走的话页面每次重建都会把原值再写一遍。
+    function setRow(row, value) {
+        if (row === undefined || row === null) return
+        const text = (value === undefined || value === null) ? "" : String(value)
+        page.setField(row.input, text)
+        if (!row.input.activeFocus) row.noteValue(text)
+    }
+
     function syncFields() {
         const p = page.editing
-        page.setField(nameRow.input, p ? p.displayName : "")
-        page.setField(keyRow.input, p ? p.apiKey : "")
-        page.setField(urlRow.input, p ? p.baseUrl : "")
-        page.setField(modelRow.input, p ? p.model : "")
-        page.setField(tempRow.input, p ? p.temperature : "")
+        page.setRow(nameRow, p ? p.displayName : "")
+        page.setRow(keyRow, p ? p.apiKey : "")
+        page.setRow(urlRow, p ? p.baseUrl : "")
+        page.setRow(modelRow, p ? p.model : "")
+        page.setRow(tempRow, p ? p.temperature : "")
         page.syncTestModel()
     }
 
@@ -381,6 +390,9 @@ Item {
                     id: nameRow
                     label: qsTr("显示名称")
                     placeholderText: qsTr("例如：工作用 GPT、本地 qwen…")
+                    // 切换设置分类会销毁本页且不触发 editingFinished，编辑中的值
+                    // 原本静默丢失（docs/20 §3.6 同类缺陷）。
+                    commitOnDestroy: true
                     onSubmitted: (value) => page.submitField("displayName", value)
                 }
 
@@ -469,6 +481,7 @@ Item {
                     id: urlRow
                     label: qsTr("服务地址")
                     placeholderText: page.baseUrlPlaceholder
+                    commitOnDestroy: true
                     onSubmitted: (value) => page.submitField("baseUrl", value.trim())
                 }
 
@@ -478,6 +491,9 @@ Item {
                     label: qsTr("API Key")
                     secret: true
                     placeholderText: page.apiKeyPlaceholder
+                    // 填了 Key 又直接切分类/关设置最容易踩："填了却没保存"最难
+                    // 察觉，这里补一次销毁提交（commitIfDirty 读 text 而非掩码）。
+                    commitOnDestroy: true
                     onSubmitted: (value) => page.submitField("apiKey", value.trim())
                 }
 
@@ -562,6 +578,9 @@ Item {
                     id: modelRow
                     label: qsTr("当前模型")
                     placeholderText: page.modelPlaceholder
+                    // 只在销毁时补一次（不是逐键），提交的是敲完的名字；逐键提交
+                    // 才会把 "g"/"gp" 这类半截名字灌进 models 列表。
+                    commitOnDestroy: true
                     onSubmitted: (value) => page.submitField("model", value)
                 }
 
@@ -707,6 +726,7 @@ Item {
                     label: qsTr("temperature")
                     placeholderText: qsTr("0 - 2，留空不发送")
                     validator: DoubleValidator { locale: "C"; bottom: 0; top: 2; decimals: 2 }
+                    commitOnDestroy: true
                     onSubmitted: (value) => page.submitField("temperature", value.trim())
                 }
 
@@ -717,6 +737,7 @@ Item {
                     currentValue: page.editing !== null ? (page.editing.maxOutputTokens || "") : ""
                     placeholderText: qsTr("自定义上限，留空 = 服务默认")
                     validator: IntValidator { bottom: 1 }
+                    commitOnDestroy: true
                     onSubmitted: (value) => page.submitField("maxOutputTokens", value)
                 }
 
@@ -739,6 +760,7 @@ Item {
                         currentValue: page.editing !== null ? (page.editing.numCtx || "") : ""
                         placeholderText: qsTr("自定义窗口，留空 = 不发送")
                         validator: IntValidator { bottom: 1 }
+                        commitOnDestroy: true
                         onSubmitted: (value) => page.submitField("numCtx", value)
                     }
                 }
@@ -781,6 +803,7 @@ Item {
                         currentValue: page.editing !== null ? (page.editing.contextLength || "") : ""
                         placeholderText: qsTr("自定义预算，留空 = 按能力表")
                         validator: IntValidator { bottom: 2048; top: 1048576 }
+                        commitOnDestroy: true
                         onSubmitted: (value) => page.submitField("contextLength", value)
                     }
 

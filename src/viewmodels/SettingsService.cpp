@@ -131,13 +131,16 @@ void clearProfileModelsOnUpgrade(QSettings& settings) {
         QString::fromUtf8(QJsonDocument(arr).toJson(QJsonDocument::Compact)));
 }
 
-// v2 → v3：contextTokens 默认值从 8192 上调到 300000。存量配置里如果是**旧
-// 默认值本身**（8192）就跟着上调——这类值不是用户的主动选择，而且通用页的输入
-// 框已移除、用户再也改不到它；真正的自定义值（≠8192）原样保留，不覆盖用户意图。
+// v2 → v3/v4：contextTokens 默认值先由 8192 上调、再收敛为保守的 128000。存量
+// 配置里若正好是**某一版旧默认值**（8192 或短暂存在的 300000）就归一到当前默认
+// ——这类值不是用户的主动选择，而且通用页的输入框已移除、用户再也改不到它；
+// 真正的自定义值（其它任何数字）原样保留，不覆盖用户意图。
 void upgradeContextTokenDefault(QSettings& settings) {
     const QVariant stored = settings.value("contextTokens");
     if (!stored.isValid()) return;                    // 未写过：新默认自然生效
-    if (stored.toInt() != 8192) return;               // 用户自定义值：不动
+    const int value = stored.toInt();
+    const bool wasSomeDefault = (value == 8192 || value == 300000);
+    if (!wasSomeDefault) return;                      // 用户自定义值：不动
     settings.setValue("contextTokens", AIAgent::kDefaultContextTokens);
 }
 
@@ -238,8 +241,8 @@ void SettingsService::load() {
         // profile 存在 modelProfiles blob 里（不在顶层键注册表），清空存量模型的
         // 迁移因此落在这里，与 SettingsSchema::migrate 的分工一起生效。
         if (storedVersion < 2) clearProfileModelsOnUpgrade(settings);
-        // v3：contextTokens 旧默认值 8192 → 300000（只动等于旧默认的值）。
-        if (storedVersion < 3) upgradeContextTokenDefault(settings);
+        // v3/v4：contextTokens 旧默认值（8192 / 短暂的 300000）归一为当前默认。
+        if (storedVersion < 4) upgradeContextTokenDefault(settings);
         settings.setValue("schemaVersion", SettingsSchema::kSchemaVersion);
     }
 
