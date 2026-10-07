@@ -9,13 +9,18 @@
 #include <QJsonArray>
 #include <QJsonDocument>
 #include <QJsonObject>
+#include <QLoggingCategory>
 #include <QSettings>
+#include <QCoreApplication>
+#include <QDir>
 #include <QUuid>
 
 #ifdef Q_OS_WIN
 #include <windows.h>
 #include <dpapi.h>
 #endif
+
+Q_LOGGING_CATEGORY(lcSettings, "nexus.settings")
 
 namespace NexusAI {
 
@@ -835,6 +840,88 @@ void SettingsService::setDefaultPermissionMode(const QString& v) {
     QSettings().setValue("agent/defaultPermissionMode", v);
     emit defaultPermissionModeChanged();
 }
+
+namespace {
+
+// docs/20 §4.3（D8）：HKCU\...\Run 键的默认实现（Windows 专属）。
+// 只写 HKCU（用户级，无需管理员）；值 = exe 全路径，卸载/换机时清键即可。
+// 非 Windows 平台 no-op（docs/20 的 Windows 优先策略，预留扩展点）。
+class RegistryAutoStart : public SettingsService::AutoStartBackend {
+public:
+    static constexpr const wchar_t* kRunKey =
+        L"Software\\Microsoft\\Windows\\CurrentVersion\\Run";
+    static constexpr const wchar_t* kValueName = L"NexusAI";
+
+    bool isEnabled() const override {
+#ifdef Q_OS_WIN
+        HKEY key = nullptr;
+        if (RegOpenKeyExW(HKEY_CURRENT_USER, kRunKey, 0, KEY_QUERY_VALUE, &key)
+                != ERROR_SUCCESS)
+            return false;
+        DWORD type = 0, size = 0;
+        const LSTATUS rc = RegQueryValueExW(key, kValueName, nullptr, &type,
+                                            nullptr, &size);
+        RegCloseKey(key);
+        return rc == ERROR_SUCCESS;
+#else
+        return false;
+#endif
+    }
+
+    bool setEnabled(bool enabled, const QString& exePath) override {
+#ifdef Q_OS_WIN
+        HKEY key = nullptr;
+        const REGSAM access = enabled ? KEY_SET_VALUE : KEY_SET_VALUE;
+        if (RegOpenKeyExW(HKEY_CURRENT_USER, kRunKey, 0, access, &key)
+                != ERROR_SUCCESS)
+            return false;
+        LSTATUS rc;
+        if (enabled) {
+            const QString native = QDir::toNativeSeparators(exePath);
+            // 引号包裹：Program Files 这类带空格的路径不加引号会被 Run 键
+            // 解析成错误的可执行名 + 参数。
+            const QString quoted = QStringLiteral("\"%1\"").arg(native);
+            rc = RegSetValueExW(key, kValueName, 0, REG_SZ,
+                reinterpret_cast<const BYTE*>(quoted.utf16()),
+                static_cast<DWORD>((quoted.size() + 1) * sizeof(wchar_t)));
+        } else {
+            rc = RegDeleteValueW(key, kValueName);
+            // 键本就不存在 = 已是目标状态，视为成功。
+            if (rc == ERROR_FILE_NOT_FOUND) rc = ERROR_SUCCESS;
+        }
+        RegCloseKey(key);
+        return rc == ERROR_SUCCESS;
+#else
+        Q_UNUSED(enabled); Q_UNUSED(exePath);
+        return false;
+#endif
+    }
+};
+
+} // namespace
+
+bool SettingsService::autoStart() const {
+    if (m_autoStart) return m_autoStart->isEnabled();
+    static RegistryAutoStart defaultBackend;
+    return defaultBackend.isEnabled();
+}
+
+void SettingsService::setAutoStart(bool enabled) {
+    if (autoStart() == enabled) return;
+    const bool ok = m_autoStart
+        ? m_autoStart->setEnabled(enabled, QCoreApplication::applicationFilePath())
+        : RegistryAutoStart().setEnabled(enabled, QCoreApplication::applicationFilePath());
+    if (!ok) {
+        qCWarning(lcSettings) << "autoStart: registry write failed for" << enabled;
+        return;
+    }
+    emit autoStartChanged();
+}
+
+void SettingsService::setAutoStartBackend(AutoStartBackend* backend) {
+    m_autoStart = backend;
+}
+
 
 // Capability-table lookup: returns the context window for a protocol+model,
 // or 0 when either is unknown so the caller can fall back to the global

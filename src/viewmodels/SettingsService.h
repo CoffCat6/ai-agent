@@ -86,6 +86,9 @@ class SettingsService : public QObject {
     // "confirm"/"auto_edit"/"full_access"（PermissionMode 字符串形式）。
     Q_PROPERTY(QString defaultPermissionMode READ defaultPermissionMode WRITE setDefaultPermissionMode NOTIFY defaultPermissionModeChanged)
     Q_PROPERTY(QString appVersion READ appVersion CONSTANT)
+    // docs/20 §4.3（D8）：开机自启（HKCU Run 键）。Windows 专属；
+    // 非 Windows 平台读写都返回 false（预留扩展点）。
+    Q_PROPERTY(bool autoStart READ autoStart WRITE setAutoStart NOTIFY autoStartChanged FINAL)
 
 public:
     // No default constructor on purpose (see AgentViewModel: the engine
@@ -174,6 +177,11 @@ public:
     QString activeProjectId() const { return m_activeProjectId; }
     void setActiveProjectId(const QString& id);
 
+    // docs/20 §4.3（D8）：开机自启。实现为 HKCU\...\Run 的 "NexusAI" 键
+    // （值 = exe 全路径）。Windows 之外的实现为 no-op（false）。
+    bool autoStart() const;
+    void setAutoStart(bool enabled);
+
     // docs/17 A1: 读取黑名单用户追加项（QVariantList of QString）。
     Q_PROPERTY(QVariantList readDenyList READ readDenyList WRITE setReadDenyList NOTIFY readDenyListChanged FINAL)
     QVariantList readDenyList() const { return m_readDenyList; }
@@ -232,6 +240,17 @@ public:
     // main.cpp when wiring AIAgent::setContextLimit.
     int resolveContextLimit() const;
 
+    // docs/20 §4.3：开机自启的注册表读写封装（可注入，test_settings 用它
+    // 在不碰真实 Run 键的前提下校验读写路径）。默认实现（nullptr）为
+    // HKCU\...\Run 键的读写；非 Windows 平台恒 false。
+    class AutoStartBackend {
+    public:
+        virtual ~AutoStartBackend() = default;
+        virtual bool isEnabled() const = 0;
+        virtual bool setEnabled(bool enabled, const QString& exePath) = 0;
+    };
+    void setAutoStartBackend(AutoStartBackend* backend);
+
 signals:
     void profilesChanged();
     void activeProfileChanged();
@@ -257,6 +276,7 @@ signals:
     void defaultPermissionModeChanged();
     void activeProjectIdChanged();
     void readDenyListChanged();
+    void autoStartChanged();
 
 private:
     void load();
@@ -288,6 +308,8 @@ private:
     QString m_defaultPermissionMode{QStringLiteral("confirm")};
     QString m_activeProjectId;
     QVariantList m_readDenyList;
+
+    AutoStartBackend* m_autoStart{nullptr};   // null = platform default
 
     static SettingsService* s_instance;
 };

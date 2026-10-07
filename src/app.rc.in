@@ -7,6 +7,13 @@
 #define VER_MINOR @PROJECT_VERSION_MINOR@
 #define VER_PATCH @PROJECT_VERSION_PATCH@
 
+// Application icon (taskbar / explorer / alt-tab). IDI_ICON1 must stay the
+// FIRST icon resource: Windows picks the lowest id as the file icon.
+// assets/icons/nexus.ai.ico carries 16..256 px so small sizes stay crisp.
+// windres resolves the path relative to the build dir (the rc step runs
+// there), so CMake hands us a build-dir-relative path — see CMakeLists.
+1 ICON "@NEXUS_ICON_RC_PATH@"
+
 VS_VERSION_INFO VERSIONINFO
  FILEVERSION    VER_MAJOR, VER_MINOR, VER_PATCH, 0
  PRODUCTVERSION VER_MAJOR, VER_MINOR, VER_PATCH, 0

@@ -60,6 +60,12 @@ const QVector<SettingsKeyDef>& SettingsSchema::registeredKeys() {
         // docs/17 A1: 读取黑名单用户追加项（目录或 glob；内置默认清单
         // 在 Sandbox::defaultDenyList，不在此存储）。
         {"security/readDenyList",         QVariant(),                        false},
+        // ── docs/20 工作流 B（桌面集成）偏好键 ──
+        // B1（D10）：关闭按钮最小化到托盘（默认 false = 直接退出）。
+        {"prefs/v1/window.closeToTray",   false,                             false},
+        // B3（D8）：开机自启（真值在 HKCU Run 键，这里记 UI 选择以便
+        // GeneralPage 回显与"恢复默认"能覆盖）。
+        {"prefs/v1/general.autoStart",    false,                             false},
     };
     return keys;
 }

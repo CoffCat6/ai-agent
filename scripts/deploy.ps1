@@ -47,7 +47,7 @@ Write-Host "== Sanity checks ==" -ForegroundColor Cyan
 # Qt deploy layout: exe + Qt DLLs + qt.conf all live in <OutDir>/bin
 $exe = Join-Path $OutDir "bin\nexus_ai.exe"
 if (-not (Test-Path $exe)) { throw "bin\nexus_ai.exe missing in $OutDir" }
-foreach ($dll in @("Qt6Core.dll", "Qt6Gui.dll", "Qt6Qml.dll", "Qt6Quick.dll")) {
+foreach ($dll in @("Qt6Core.dll", "Qt6Gui.dll", "Qt6Qml.dll", "Qt6Quick.dll", "Qt6Widgets.dll")) {
     if (-not (Test-Path (Join-Path $OutDir "bin\$dll"))) {
         throw "bin\$dll missing in $OutDir - deploy script did not collect Qt runtime"
     }

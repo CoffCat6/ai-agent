@@ -13,7 +13,10 @@
 > test_attachment_classifier、test_viewmodel 与 test_droparea 全绿）。
 > 实现期踩过两坑：①QML 的 url 对象没有 toLocalFile()，路径解析必须放 C++；
 > ②拖拽是否可用取决于进程启动方式（UIPI 丢消息），须在窗口创建后放行三条
-> OLE 握手消息。详见 §3.4 的"关键约束"与"启动方式约束"。D9 快捷键速查待实施。
+> OLE 握手消息。详见 §3.4 的"关键约束"与"启动方式约束"。
+> **工作流 B（桌面集成）已实施**（单实例锁、开机自启、快捷键速查表、系统托盘
+> + 后台任务完成通知 + closeToTray 偏好键；test_settings 新增用例全绿），
+> 详见 §4 各节。D9 快捷键速查随 B4 落地。
 > **创建日期**：2026-10-06
 > **依赖文档**：docs/14（L1–L6 遗留修复）、docs/17（沙箱与设置体系）、docs/18（会话归属模型）、docs/19（对话界面视觉完善）
 > **涉及模块**：AgentViewModel / ChatSessionController / AIAgent / SqliteMemory / main.cpp / AgentChatPage / AssistantMessage / InputConsole / Sidebar / SettingsSchema
@@ -217,49 +220,79 @@ delivery agent，验证 enter/move/drop 三者被接受、urls 原样送达 C++ 
 
 **设计**：
 
-- `main.cpp` 构造 `QSystemTrayIcon`（图标复用应用图标资源）：
-  - 菜单：显示/隐藏主窗、新建会话、退出（退出走 `engine.quit()` 前先停全部
-    busy tab——沿用"关 tab 停任务"封口语义）；
-  - **通知**：`ChatSessionController::stateChanged` 汇聚到 VM 后，主窗不可见且
-    任务从 Busy→Idle 时 `showMessage`（标题带会话名，复用 sessionTitle）。
+- `main.cpp` 构造 `QSystemTrayIcon`：
+  - **图标**：无 .ico 资源（app.rc 只带 VERSIONINFO），用 QPainter 画主题色
+    "N" 圆角方块（与启动页品牌块同款视觉），零外部资源；
+  - 菜单：显示/隐藏主窗、新建会话、退出（退出先 `AgentVM.stop()` 停全部
+    busy tab——沿用"关 tab 停任务"封口语义，再 `QCoreApplication::quit()`）；
+    双击托盘 = 显示/隐藏主窗（系统托盘惯用交互）；
+  - **通知**：AgentViewModel 新增 `taskFinished(sessionTitle, success)` 信号
+    （任意 tab 的 Busy→非 Busy 边沿都发，标题走 tabModel 同一解析逻辑），
+    main.cpp 在**主窗不可见**时 `showMessage`（成功=Information、否则 Warning）；
   - 关闭行为：新增偏好键 `prefs/v1/window.closeToTray`（默认 false = 直接退出）。
-- **键登记**：`window.closeToTray` 与 `window.startMinimized` 登记进
-  SettingsSchema（encrypted=false），InterfacePage 增加 Switch。
+    **QQuickCloseEvent 没有公共头文件**（qquickwindow.h 只前置声明），C++ 侧
+    无法可靠拦截 → 在 main.qml 的 `onClosing` 里按同一偏好键分支（accepted=false
+    + hide），托盘菜单"退出"是唯一真正退出路径。
+- **应用基类**：从 `QGuiApplication` 换成 `QApplication` + 链接 `Qt6::Widgets`
+  （QSystemTrayIcon / QMenu 住在 QtWidgets；Qt Quick + QApplication 是官方
+  支持的组合，事件分发/输入管线不受影响）。
+- **键登记**：`prefs/v1/window.closeToTray` 与 `prefs/v1/general.autoStart`
+  登记进 SettingsSchema（encrypted=false）；GeneralPage 通过
+  `PreferenceControl` 自动呈现（Bool → Switch），无需手改 UI。
 
-**测试**：冒烟为主（QSystemTrayIcon 无 headless 断言价值）；键登记进
-test_settings 账本完整性用例。
+**测试**：`test_settings` 新增——`schemaHasKeyRegistry` 断言两个新键进账本、
+`closeToTrayPreferenceRoundTrips`（Bool 归一回归：QSettings 的 REG_SZ
+"true"/"false" 必须还原成真 bool，否则 QML 的 `=== true` 严格比较静默失效）；
+托盘本体冒烟为主（QSystemTrayIcon 无 headless 断言价值）。
 
 ### 4.2 单实例锁（修 D7，量级 S）
 
-**设计**：`main.cpp` 启动最前（QApplication 构造后）：
+**实施**：`main.cpp` 启动最前（Logger::install 之前——第二个实例不能先写
+日志/回填历史）：
 
 ```cpp
-QLockFile lock(QDir::temp().absoluteFilePath("NexusAI.lock"));
-if (!lock.tryLock(100)) return 0;   // 已有实例在跑，静默退出
+QLockFile instanceLock(QDir::temp().absoluteFilePath("NexusAI.instance.lock"));
+if (!instanceLock.tryLock(100)) { qInfo() << "..."; return 0; }   // 静默退出
 ```
 
+- 锁做成 main 的局部变量：析构即释放，退出不会泄漏；
+- 崩溃残留由 QLockFile 的陈旧锁检测（进程存在性）自动清掉；
+- 实测：第一个实例跑起来后启动第二个，进程数保持 1，第二个实例不做任何
+  副作用（不写日志/不碰 DB/不开托盘）。
 - 二期可选：第二个实例通过本地 socket 唤起已有实例（`QLocalServer`），本期
   仅静默退出（量级 S 不膨胀）。
 
-**测试**：`test_*` 新增最小用例——锁文件竞争时 tryLock 失败路径。
-
 ### 4.3 开机自启（修 D8，量级 S）
 
-**设计**：`SettingsService` 新增 `Q_INVOKABLE bool autoStart()` /
-`setAutoStart(bool)`，实现为注册表 `HKCU\Software\Microsoft\Windows\CurrentVersion\Run`
-`NexusAI` 键（值 = exe 全路径，`QCoreApplication::applicationFilePath()`）。
+**实施**：`SettingsService` 新增 `autoStart()` / `setAutoStart(bool)` +
+可注入接口 `AutoStartBackend`（`setAutoStartBackend`），默认实现为
+`HKCU\Software\Microsoft\Windows\CurrentVersion\Run` 的 `NexusAI` 键：
 
-- UI：GeneralPage「应用行为」区 Switch（实时保存，M1 语义）。
-- 键登记：`general.autoStart` 进 schema。**非 Windows 平台直接返回 false**
-  （Windows 优先策略，预留扩展点）。
+- 值 = **引号包裹**的 exe 全路径（Program Files 这类带空格的路径不加引号
+  会被 Run 键解析成错误的可执行名 + 参数）；
+- 只写 HKCU（用户级，无需管理员）；删除时 `ERROR_FILE_NOT_FOUND` 视为
+  已达目标状态（幂等）；
+- **写入失败时不发 autoStartChanged**（状态不变，UI 开关保持原样，用户能
+  看出没成功），并记 `nexus.settings` 告警；
+- 非 Windows 平台读写都返回 false（Windows 优先策略，预留扩展点）。
+- **桥接**：GeneralPage 的开关写 `prefs/v1/general.autoStart`（经 ChangeBus），
+  main.cpp 订阅该键调用 `setAutoStart`（真值在注册表）；启动时对齐一次
+  ——偏好键为 true 但注册表没有 = 上次写失败/被清理，重写一次恢复意图；
+  注册表为真 = 拉回 UI 回显。
+- 键登记：`prefs/v1/general.autoStart` 进 schema。**非 Windows 平台直接
+  返回 false**（预留扩展点）。
 
-**测试**：`test_settings` mock 路径校验（读写 Run 键封装为可注入接口）。
+**测试**：`test_settings::autoStartTogglesViaInjectedBackend`——注入假
+backend 在不碰真实 Run 键的前提下校验：翻转/幂等 no-op/exe 全路径/
+写入失败不发信号。
 
 ### 4.4 快捷键速查表（修 D9，量级 S）
 
-**设计**：`main.qml` 新增 Shortcut（`?`，即 Ctrl+/ 的常见布局）打开
-`ShortcutsDialog.qml`：静态两列列表（现有 5 个 + 本批新增），文案走 qsTr 双语。
-设置中心 InterfacePage 加入口按钮。
+**实施**：`main.qml` 新增 Shortcut（`Ctrl+/`，即 Ctrl+, 的常见键位布局）
+打开 `ShortcutsDialog.qml`：静态两列列表（快捷键 chip + 动作），文案走
+qsTr 双语 + 令牌。**清单是唯一事实源**——main.qml 的 Shortcut 与表内条目
+一一对应（含 Enter/Shift+Enter/↑↓/Ctrl+V 这些输入框行为），新增快捷键时
+两处必须同步。
 
 **测试**：qmllint + 冒烟。
 

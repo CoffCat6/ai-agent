@@ -20,6 +20,9 @@
 #include <QQmlEngine>
 #include <QSignalSpy>
 #include <QSettings>
+#include <QCoreApplication>
+#include "viewmodels/PreferenceStore.h"
+#include "viewmodels/PreferenceRegistry.h"
 
 #include <memory>
 
@@ -1103,15 +1106,108 @@ ComboBox {
         QVERIFY(!keys.isEmpty());
         bool foundProvider = false;
         bool foundApiKey = false;
+        // docs/20 工作流 B（桌面集成）：新偏好键必须登记进账本。
+        bool foundCloseToTray = false;
+        bool foundAutoStart = false;
         for (const auto& k : keys) {
             if (k.key == QStringLiteral("webSearch/provider")) foundProvider = true;
             if (k.key == QStringLiteral("webSearch/apiKey")) {
                 foundApiKey = true;
                 QVERIFY(k.encrypted);
             }
+            if (k.key == QStringLiteral("prefs/v1/window.closeToTray"))
+                foundCloseToTray = true;
+            if (k.key == QStringLiteral("prefs/v1/general.autoStart"))
+                foundAutoStart = true;
         }
         QVERIFY(foundProvider);
         QVERIFY(foundApiKey);
+        // 键登记纪律（docs/17 B3）：漏登记会让"恢复默认"/账本完整性静默失效。
+        QVERIFY2(foundCloseToTray, "prefs/v1/window.closeToTray missing from schema");
+        QVERIFY2(foundAutoStart, "prefs/v1/general.autoStart missing from schema");
+    }
+
+    // docs/20 §4.3（D8）：开机自启。注入假 backend，在不碰真实 HKCU Run 键
+    // 的前提下校验：开关状态翻转 + 未成功写入时不发信号（UI 不误报）。
+    void autoStartTogglesViaInjectedBackend() {
+        SettingsGuard guard;
+        SettingsService svc(nullptr);
+
+        struct FakeBackend final : public SettingsService::AutoStartBackend {
+            bool enabled{false};
+            bool fail{false};
+            QString lastPath;
+            bool isEnabled() const override { return enabled; }
+            bool setEnabled(bool on, const QString& exePath) override {
+                if (fail) return false;
+                enabled = on;
+                lastPath = exePath;
+                return true;
+            }
+        };
+        FakeBackend backend;
+        svc.setAutoStartBackend(&backend);
+
+        QCOMPARE(svc.autoStart(), false);
+        QSignalSpy spy(&svc, &SettingsService::autoStartChanged);
+
+        svc.setAutoStart(true);
+        QCOMPARE(svc.autoStart(), true);
+        QCOMPARE(spy.count(), 1);
+        // 值必须是 exe 全路径（Run 键需要完整路径才能开机拉起）。
+        QCOMPARE(backend.lastPath, QCoreApplication::applicationFilePath());
+
+        // 幂等：同值再设不发信号（与其它 setter 的 no-op 语义一致）。
+        spy.clear();
+        svc.setAutoStart(true);
+        QCOMPARE(spy.count(), 0);
+
+        svc.setAutoStart(false);
+        QCOMPARE(svc.autoStart(), false);
+        QCOMPARE(spy.count(), 1);
+
+        // 写入失败：状态不变、不发信号（UI 的开关保持原样，用户能看出没成）。
+        backend.fail = true;
+        spy.clear();
+        svc.setAutoStart(true);
+        QCOMPARE(svc.autoStart(), false);
+        QCOMPARE(spy.count(), 0);
+        backend.fail = false;
+        svc.setAutoStartBackend(nullptr);   // 还原默认 backend
+    }
+
+    // docs/20 §4.1（B1）：closeToTray 偏好键经 PreferenceStore 走 Bool 归一
+    // （QSettings 的 REG_SZ "true"/"false" 必须还原成真正的 bool）。
+    void closeToTrayPreferenceRoundTrips() {
+        // SettingsGuard 只保护固定键清单，不含新的 prefs/v1/* 键——这里
+        // 自行清理（前后各一次），避免把测试值泄漏进用户真实配置。
+        QSettings s("NexusAI", "NexusAI");
+        s.remove("prefs/v1/window.closeToTray");
+        s.sync();
+
+        // PreferenceStore.load 依赖 PreferenceRegistry 的元数据（键在 main.cpp
+        // 注册），测试里补登同一份定义，与生产一致。
+        PreferenceMeta meta;
+        meta.key = QStringLiteral("window.closeToTray");
+        meta.categoryId = QStringLiteral("general");
+        meta.displayName = QT_TRANSLATE_NOOP("NexusAI", "关闭时最小化到系统托盘");
+        meta.defaultValue = false;
+        meta.type = PreferenceType::Bool;
+        PreferenceRegistry::instance()->registerPreference(meta);
+
+        PreferenceStore store(nullptr);
+        QCOMPARE(store.load("window.closeToTray"), QVariant(false));
+
+        QVERIFY(store.save("window.closeToTray", true));
+        // 真值必须还原为 bool true（而不是字符串 "true"），否则 QML 的
+        // `=== true` 严格比较静默失败、关窗永远走退出分支。
+        QCOMPARE(store.load("window.closeToTray"), QVariant(true));
+
+        QVERIFY(store.reset("window.closeToTray"));
+        QCOMPARE(store.load("window.closeToTray"), QVariant(false));
+
+        s.remove("prefs/v1/window.closeToTray");
+        s.sync();
     }
 
     // L2: load() stamps the schema version into QSettings.

@@ -8,7 +8,7 @@ set(CMAKE_AUTORCC ON)
 
 # ── Qt 6 ──────────────────────────────────────────────────
 find_package(Qt6 REQUIRED COMPONENTS
-    Core Qml Quick Sql Network Concurrent QuickControls2 LinguistTools
+    Core Qml Quick Sql Network Concurrent QuickControls2 LinguistTools Widgets
 )
 
 qt_standard_project_setup(REQUIRES 6.5)
@@ -168,6 +168,11 @@ qt_add_executable(nexus_ai
 
 # Windows VERSIONINFO resource: single source of truth is project(VERSION)
 if(WIN32)
+    # windres cannot take absolute paths with spaces/blanks reliably; it
+    # resolves relative paths against the build dir (where app.rc lives), so
+    # hand it a build-dir-relative path to the icon.
+    file(RELATIVE_PATH NEXUS_ICON_RC_PATH
+        "${CMAKE_CURRENT_BINARY_DIR}" "${CMAKE_CURRENT_SOURCE_DIR}/assets/icons/nexus.ai.ico")
     configure_file(src/app.rc.in ${CMAKE_CURRENT_BINARY_DIR}/app.rc @ONLY)
     target_sources(nexus_ai PRIVATE ${CMAKE_CURRENT_BINARY_DIR}/app.rc)
     target_compile_definitions(nexus_ai PRIVATE APP_VERSION="${PROJECT_VERSION}")
@@ -212,6 +217,7 @@ qt_add_qml_module(nexus_ai
         src/ui/components/TopBar.qml
         src/ui/components/ThinkingEffortSelector.qml
         src/ui/components/ToolConfirmDialog.qml
+        src/ui/components/ShortcutsDialog.qml
         src/ui/panels/ContextPanel.qml
         src/ui/pages/AgentChatPage.qml
         src/ui/pages/GeneralPage.qml
@@ -224,6 +230,19 @@ qt_add_qml_module(nexus_ai
         src/ui/pages/UsageStatsPage.qml
 )
 
+# docs/20 §4.1: app icon PNGs under :/icons/ for the window icon and the
+# system tray (QIcon(":/icons/nexus-64.png")). Master asset: assets/icons/
+# nexus-512.png; the exe-embedded .ico is generated from the same master.
+set(NEXUS_ICON_SIZES 16 24 32 48 64 128 256)
+set(NEXUS_ICON_FILES)
+foreach(size IN LISTS NEXUS_ICON_SIZES)
+    list(APPEND NEXUS_ICON_FILES "assets/icons/nexus-${size}.png")
+endforeach()
+qt_add_resources(nexus_ai "app_icons"
+    PREFIX "/icons"
+    FILES ${NEXUS_ICON_FILES}
+)
+
 target_link_libraries(nexus_ai PRIVATE
     nexus_core
     nexus_infra
@@ -231,6 +250,7 @@ target_link_libraries(nexus_ai PRIVATE
     nexus_viewmodelsplugin   # QML module registration for NexusAI.ViewModels
     Qt6::Quick
     Qt6::QuickControls2
+    Qt6::Widgets             # docs/20 §4.1: QSystemTrayIcon / QMenu (tray)
 )
 
 # ── Windows deploy ────────────────────────────────────────

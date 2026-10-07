@@ -1,4 +1,4 @@
-#include <QGuiApplication>
+#include <QApplication>
 #include <QQmlApplicationEngine>
 #include <QQmlContext>
 #include <QHash>
@@ -8,6 +8,10 @@
 #include <QtConcurrent/QtConcurrentRun>
 #include <QQuickStyle>
 #include <QTranslator>
+
+// docs/20 §4.1（D6/D10）：QSystemTrayIcon / QMenu 住在 QtWidgets；应用基类
+// 相应从 QGuiApplication 换成 QApplication（Qt Quick + QApplication 是官方
+// 支持的组合，事件分发/输入管线不受影响）。托盘是唯一需要 widgets 的点。
 
 #include "viewmodels/ThemeManager.h"
 #include "viewmodels/ThemeProvider.h"
@@ -41,6 +45,8 @@
 
 #include <memory>
 
+#include <QDir>
+#include <QLockFile>
 #ifdef Q_OS_WIN
 #include <QTimer>
 #include <QQuickWindow>
@@ -48,6 +54,11 @@
 #define WIN32_LEAN_AND_MEAN
 #include <windows.h>
 #endif
+#include <QCloseEvent>
+#include <QMenu>
+#include <QPainter>
+#include <QPixmap>
+#include <QSystemTrayIcon>
 
 // docs/20 §3.4（A4 拖拽附件）：拖放由 main.qml 的窗口根级 DropArea 处理
 // （QML DropArea 是 Qt 向平台注册拖拽目标、使光标变“允许”的途径），
@@ -139,10 +150,26 @@ LlmProfileConfig profileConfigOf(const QVariantMap& profile) {
 
 int main(int argc, char *argv[])
 {
-    QGuiApplication app(argc, argv);
+    QApplication app(argc, argv);
     app.setOrganizationName("NexusAI");
     app.setApplicationName("NexusAI");
     app.setApplicationVersion(QStringLiteral(APP_VERSION));
+
+    // docs/20 §4.2（D7 单实例锁）：第二个实例直接静默退出。
+    //
+    // 双写风险是真实的：SQLite 打开时若已有实例在写会拿到
+    // "database table is locked"（每次启动日志里的 episodic_fts 告警就是
+    // 两个实例同时建 FTS 表的痕迹），重复启动还会双写 QSettings、开两个
+    // 托盘。锁文件放在用户临时目录，崩溃残留也会被 QLockFile 的陈旧锁
+    // 检测（进程存在性）自动清掉。作用域必须在 main 内——QLockFile 在
+    // 析构时释放锁，做成局部变量可保证退出即释放。
+    QLockFile instanceLock(QDir::temp().absoluteFilePath(
+        QStringLiteral("NexusAI.instance.lock")));
+    if (!instanceLock.tryLock(100)) {
+        // 已有实例在跑：静默退出（二期可通过 QLocalServer 唤起已有实例）。
+        qInfo() << "Another NexusAI instance is already running; exiting.";
+        return 0;
+    }
 
     // Non-native control style: the UI customizes TextField/Dialog
     // backgrounds everywhere, which the native (windows) style forbids -
@@ -218,6 +245,29 @@ qInfo() << "NexusAI" << app.applicationVersion() << "starting";
         lastCategory.defaultValue = QStringLiteral("model");
         lastCategory.type = PreferenceType::String;
         prefRegistry->registerPreference(lastCategory);
+    }
+
+    // ── docs/20 工作流 B（桌面集成）：通用设置页的偏好键 ──
+    // 键登记纪律（docs/17 B3 账本）：Physical 键 = prefs/v1/<key>，必须
+    // 同步登记进 SettingsSchema::registeredKeys()，test_settings 断言完整性。
+    {
+        // B1（D10）：关闭按钮最小化到托盘而不是退出（默认 false = 直接退出）。
+        PreferenceMeta closeToTray;
+        closeToTray.key = QStringLiteral("window.closeToTray");
+        closeToTray.categoryId = QStringLiteral("general");
+        closeToTray.displayName = QT_TRANSLATE_NOOP("NexusAI", "关闭时最小化到系统托盘");
+        closeToTray.defaultValue = false;
+        closeToTray.type = PreferenceType::Bool;
+        prefRegistry->registerPreference(closeToTray);
+
+        // B3（D8）：开机自启（Windows Run 键，用户级）。
+        PreferenceMeta autoStart;
+        autoStart.key = QStringLiteral("general.autoStart");
+        autoStart.categoryId = QStringLiteral("general");
+        autoStart.displayName = QT_TRANSLATE_NOOP("NexusAI", "开机自启动");
+        autoStart.defaultValue = false;
+        autoStart.type = PreferenceType::Bool;
+        prefRegistry->registerPreference(autoStart);
     }
 
     // ── Settings (QSettings + env fallbacks) ──────────
@@ -668,6 +718,26 @@ qInfo() << "NexusAI" << app.applicationVersion() << "starting";
     applyMode();
     QObject::connect(settings, &SettingsService::simulationModeChanged, &app, [applyMode]() { applyMode(); });
 
+    // ── docs/20 工作流 B（桌面集成）：偏好键 → 真实系统行为的桥接 ──
+    // PreferenceControl 直接写 prefs/v1/<key>（经 ChangeBus 通知），真值在
+    // 系统侧的键在这里桥接：
+    //   - general.autoStart → HKCU Run 键（SettingsService::setAutoStart）；
+    //   - window.closeToTray → main.qml 的 onClosing 直接读偏好键，无需桥接。
+    QObject::connect(changeBus, &ChangeBus::changed, &app,
+        [settings](const QString& key, const QVariant& value) {
+            if (key != QLatin1String("general.autoStart")) return;
+            settings->setAutoStart(value.toBool());
+        });
+    // 启动时对齐一次：注册表真值与偏好键不一致时以注册表为准（用户可能
+    // 手工删过 Run 键），把 UI 回显拉回真值。若偏好键为 true 但注册表没有，
+    // 说明上次写失败/被清理——重写一次以恢复意图。
+    {
+        const bool prefOn = prefStore->load(QStringLiteral("general.autoStart")).toBool();
+        const bool realOn = settings->autoStart();
+        if (prefOn && !realOn)
+            settings->setAutoStart(true);
+    }
+
     // ── QML Engine ─────────────────────────────────────
     // Theme/ThemeManager/AgentVM/Settings/ConnectionTester resolve to the
     // NexusAI.ViewModels QML singletons above (create() returns the very
@@ -687,13 +757,92 @@ qInfo() << "NexusAI" << app.applicationVersion() << "starting";
     if (engine.rootObjects().isEmpty())
         return -1;
 
+    auto* mainWindow = qobject_cast<QQuickWindow*>(engine.rootObjects().first());
+    if (!mainWindow)
+        return -1;
+
 #ifdef Q_OS_WIN
     // A4 拖拽附件：从 VSCode 终端 / 管理员启动时，UIPI 会静默丢弃来自
     // 中等完整性 Explorer 的 OLE 拖放握手消息，导致光标一直 🚫。这里把
     // 三条握手消息放行，让拖拽在任意启动方式下都可用（见上方说明）。
-    if (auto* window = qobject_cast<QQuickWindow*>(engine.rootObjects().first()))
-        allowDragDropFromLowerIntegrity(window);
+    allowDragDropFromLowerIntegrity(mainWindow);
 #endif
+
+    // ── docs/20 §4.1（D6/D10）：系统托盘 + 后台任务完成通知 ──
+    // 图标：assets/icons/nexus.ai.ico 嵌进 exe（任务栏/资源管理器/Alt-Tab），
+    // 同一素材的 PNG 走 Qt 资源 :/icons/（窗口 + 托盘），小尺寸清晰。
+    const QIcon appIcon(QStringLiteral(":/icons/nexus-64.png"));
+    mainWindow->setIcon(appIcon);
+
+    auto* tray = new QSystemTrayIcon(appIcon, &app);
+    tray->setToolTip(QStringLiteral("NexusAI v%1").arg(APP_VERSION));
+    auto* trayMenu = new QMenu();
+    QAction* showAction = trayMenu->addAction(QObject::tr("显示/隐藏主窗"));
+    QAction* newChatAction = trayMenu->addAction(QObject::tr("新建会话"));
+    trayMenu->addSeparator();
+    QAction* quitAction = trayMenu->addAction(QObject::tr("退出"));
+    tray->setContextMenu(trayMenu);
+    tray->show();
+
+    // 显示/隐藏主窗（切走窗口后靠托盘召回）。
+    QObject::connect(showAction, &QAction::triggered, &app, [mainWindow]() {
+        if (mainWindow->isVisible() && mainWindow->isActive())
+            mainWindow->hide();
+        else {
+            mainWindow->show();
+            mainWindow->raise();
+            mainWindow->requestActivate();
+        }
+    });
+    // 新建会话：唤起主窗并触发 VM 的 newChat（沿用现有封口语义）。
+    QObject::connect(newChatAction, &QAction::triggered, &app, [mainWindow, agentVM]() {
+        mainWindow->show();
+        mainWindow->raise();
+        mainWindow->requestActivate();
+        agentVM->newChat();
+    });
+    // 退出：先停全部 busy tab（沿用"关 tab 停任务"封口语义），再退出。
+    QObject::connect(quitAction, &QAction::triggered, &app, [&app, agentVM, tray, trayMenu]() {
+        tray->hide();
+        delete trayMenu;
+        agentVM->stop();
+        QCoreApplication::quit();
+    });
+    // 双击托盘 = 显示/隐藏主窗（系统托盘的惯用交互）。
+    QObject::connect(tray, &QSystemTrayIcon::activated, &app,
+        [mainWindow](QSystemTrayIcon::ActivationReason reason) {
+            if (reason != QSystemTrayIcon::DoubleClick) return;
+            if (mainWindow->isVisible() && mainWindow->isActive())
+                mainWindow->hide();
+            else {
+                mainWindow->show();
+                mainWindow->raise();
+                mainWindow->requestActivate();
+            }
+        });
+
+    // D10：任务从 Busy→Idle 时弹气泡通知（标题带会话名）。
+    // 仅当窗口**可见且激活**（用户正在看）时才静默——最小化（minimized 时
+    // isVisible() 仍为 true）与藏进托盘都要通知，否则切走窗口就收不到。
+    QObject::connect(agentVM, &AgentViewModel::taskFinished, &app,
+        [mainWindow, tray, prefStore](const QString& sessionTitle, bool success) {
+            if (mainWindow->isVisible() && mainWindow->isActive()) return;
+            const bool closeToTray = prefStore->load(
+                QStringLiteral("window.closeToTray")).toBool();
+            if (!closeToTray && !QSystemTrayIcon::isSystemTrayAvailable())
+                return;
+            tray->showMessage(
+                success ? QObject::tr("任务完成") : QObject::tr("任务结束"),
+                sessionTitle.isEmpty() ? QObject::tr("会话已回复")
+                                       : sessionTitle,
+                success ? QSystemTrayIcon::Information
+                        : QSystemTrayIcon::Warning, 6000);
+        });
+
+    // 关闭行为：prefs/v1/window.closeToTray（默认 false = 直接退出）。
+    // QQuickCloseEvent 没有公共头文件（qquickwindow.h 只前置声明），C++ 侧
+    // 无法可靠拦截 → 在 main.qml 的 onClosing 里按同一偏好键分支，托盘菜单
+    // 的"退出"动作是唯一真正退出路径（先停全部 busy tab）。
 
     // Language switches install/remove translators (I18nManager), but the
     // QML engine does not reliably re-evaluate every qsTr binding on the

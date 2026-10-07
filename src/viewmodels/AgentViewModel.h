@@ -8,6 +8,7 @@
 #include <QStringList>
 #include <QUrl>
 #include <QTimer>
+#include <QHash>
 #include <QVector>
 #include <functional>
 
@@ -430,6 +431,10 @@ signals:
     void knowledgeCleared();
     void tabsChanged();
     void activeTabChanged();
+    // docs/20 §4.1（D10）：某个 tab 的任务从 Busy 变为非 Busy 时发射（携带
+    // 会话标题与结果状态）。**任意 tab** 都发（不是仅活动 tab）——切走窗口
+    // 后后台长任务完成时，托盘通知靠它。UI 不消费；main.cpp 联动托盘。
+    void taskFinished(const QString& sessionTitle, bool success);
 
 private:
     ChatSessionController* active() const;
@@ -475,6 +480,10 @@ private:
     int m_activeTab{0};
     std::function<AIAgent*()> m_agentFactory;
     AIAgent* m_templateAgent{nullptr};
+    // docs/20 §4.1（D10）：每个 tab 上一轮的 busy 状态，用于识别 Busy→非 Busy
+    // 边沿（后台任务完成通知）。键随 controller 生命周期增长，但 controller
+    // 数量与 tab 数一致（关 tab 即销毁），不会无限增长。
+    QHash<const ChatSessionController*, bool> m_prevBusy;
     // docs/16 §8: last per-request cost for the TopBar display.
     qint64 m_lastCostCents{0};
     // 全局默认权限模式（设置键 agent/defaultPermissionMode），仅用于新 tab。

@@ -36,6 +36,14 @@ ApplicationWindow {
                                    visibility === Window.Maximized)
         // Qt6 的 QQuickCloseEvent 只有 accepted 布尔属性（默认 true），没有
         // Qt5 QCloseEvent 的 accept() 方法——调用它会抛 TypeError。
+        // docs/20 §4.1（D10）：开启"关闭时最小化到托盘"后不再真正关窗，
+        // 只把窗口藏起来（托盘图标仍在，双击召回）；真正的退出走托盘菜单。
+        const closeToTray = PreferenceStore.load("window.closeToTray") === true
+        if (closeToTray) {
+            close.accepted = false
+            mainWindow.hide()
+            return
+        }
         close.accepted = true
     }
 
@@ -361,5 +369,17 @@ ApplicationWindow {
     Shortcut {
         sequence: "Ctrl+D"
         onActivated: ThemeManager.isDark = !ThemeManager.isDark
+    }
+
+    // docs/20 §4.4（D9 快捷键速查表）：Ctrl+/（与 Ctrl+, 同键位的常见布局）
+    // 打开速查表，让新用户能发现功能。
+    Shortcut {
+        sequence: "Ctrl+/"
+        onActivated: shortcutsDialog.open()
+    }
+
+    ShortcutsDialog {
+        id: shortcutsDialog
+        parent: Overlay.overlay
     }
 }

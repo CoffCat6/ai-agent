@@ -185,6 +185,23 @@ ChatSessionController* AgentViewModel::ensureTab() {
     // Active-tab forwarding: the facade signal is re-emitted only when the
     // change happened in the tab the UI is looking at.
     connect(controller, &ChatSessionController::stateChanged, this, [this, controller] {
+        // docs/20 §4.1（D10）：Busy → 非 Busy 边沿 = 一次任务结束。任意 tab
+        // 都发（后台任务完成也要通知），标题走 tabModel 的同一解析逻辑。
+        const bool busy = controller->isBusy();
+        if (m_prevBusy.contains(controller) && m_prevBusy.value(controller) && !busy) {
+            QString title;
+            for (const auto& entry : m_sessionList) {
+                const QVariantMap session = entry.toMap();
+                if (session.value("id").toString() == controller->currentSessionId()) {
+                    title = session.value("title").toString();
+                    break;
+                }
+            }
+            if (title.isEmpty()) title = tr("新会话");
+            emit taskFinished(title,
+                controller->state() == AgentState::Completed);
+        }
+        m_prevBusy[controller] = busy;
         if (controller == active()) emit stateChanged();
         emit tabsChanged();   // tab busy indicator
     });
