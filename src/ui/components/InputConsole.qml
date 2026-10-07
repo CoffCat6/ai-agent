@@ -54,6 +54,15 @@ Rectangle {
         root.pendingAttachments = root.pendingAttachments.concat([file])
     }
 
+    // docs/20 §3.4（A4 拖拽附件）：把 C++ 侧解析好的附件描述符追加到预览。
+    // 描述符为 {kind:"image", dataUrl} 或 {kind:"file", name, content}，
+    // 与 addImageDataUrl / addTextFile 同形。路径解析（含 url 解码）在
+    // AgentViewModel::handleDroppedFiles 完成，QML 只负责入列。
+    function appendAttachments(attachments) {
+        for (let i = 0; i < attachments.length; ++i)
+            root.pendingAttachments = root.pendingAttachments.concat([attachments[i]])
+    }
+
     function sendCurrentText() {
         if (root.canSend) {
             const images = []
@@ -101,6 +110,12 @@ Rectangle {
         anchors.fill: parent
         onClicked: textArea.forceActiveFocus()
     }
+
+    // docs/20 §3.4（A4 拖拽附件）：拖放由 main.qml 的窗口根级 DropArea 处理
+    // （组件内部再放一个 DropArea 不会收到事件：QML 的拖放分派只把事件交给
+    // 首个接受它的 item，根级已铺满整窗）。解析在 C++ 完成，经 AgentVM 的
+    // attachmentsDropped 信号调用本组件的 appendAttachments。
+    // 注意：QML 的 url 对象没有 toLocalFile()，路径解析必须交给 C++。
 
     // ── Attachment preview strip (Batch 30 / docs/19 §6) ──
     Rectangle {
@@ -352,9 +367,13 @@ Rectangle {
 
             AppIcon {
                 anchors.centerIn: parent
-                icon: stopMode ? "stop" : "send"
-                size: stopMode ? 15 : 16
-                iconColor: stopMode ? "#ffffff"
+                // 必须以 id 限定：AppIcon 是独立组件，QML 的非限定名解析只
+                // 走组件作用域（id/组件根/上下文），不会沿父 item 的属性链
+                // 找到 actionButton.stopMode——未限定写法会抛 ReferenceError，
+                // 三个绑定全部失效（停止态图标/尺寸/颜色不生效）。
+                icon: actionButton.stopMode ? "stop" : "send"
+                size: actionButton.stopMode ? 15 : 16
+                iconColor: actionButton.stopMode ? "#ffffff"
                     : (root.canSend ? Theme.bgPrimary : Theme.textSecondary)
             }
 
@@ -420,7 +439,10 @@ Rectangle {
                 color: menuItem.highlighted ? Theme.textPrimary : Theme.textSecondary
                 font.pixelSize: Theme.fontSizeCaption
                 font.family: Theme.fontSans
-                anchors.verticalCenter: parent.verticalCenter
+                // RowLayout 管理子项的几何：在受管 item 上写 anchors 是未定义
+                // 行为（每次启动告警 "Detected anchors on an item that is
+                // managed by a layout"），用 Layout.alignment 垂直居中。
+                Layout.alignment: Qt.AlignVCenter
             }
         }
 

@@ -89,6 +89,25 @@ nexus_add_test(test_sampling_params test_sampling_params.cpp)
 
 # Batch 30 (F6): multimodal data-URL parsing (pure string helpers)
 nexus_add_test(test_data_url_utils test_data_url_utils.cpp)
+nexus_add_test(test_attachment_classifier test_attachment_classifier.cpp)
+
+# docs/20 §3.4（A4）：拖放边界回归。QML 的 url 对象没有 toLocalFile()，
+# 在 QML 里转路径会抛 TypeError 让拖拽静默失效；本用例用真实拖放事件走
+# 一遍 delivery agent，锁住"urls 原样交给 C++ 的 QList<QUrl>"这一契约。
+# 需要 Qt Quick 与 offscreen 平台（无真实显示也能投递合成拖放事件）。
+add_executable(test_droparea test_droparea.cpp)
+target_link_libraries(test_droparea PRIVATE Qt6::Test Qt6::Gui Qt6::Qml Qt6::Quick)
+# QML fixtures (DropAreaHarness.qml / UrlApiProbe.qml) are loaded by path.
+target_compile_definitions(test_droparea PRIVATE
+    NEXUS_TEST_QML_DIR="${CMAKE_CURRENT_SOURCE_DIR}/qml")
+# Use offscreen like test_transcript_scroll so the suite stays headless. The
+# build tree only deploys qwindows.dll, so point Qt at the SDK's plugin dir
+# (QT6_INSTALL_PREFIX is the Qt root; QT6_INSTALL_PLUGINS is relative to it).
+# test_droparea itself forces contentItem geometry, which offscreen never sizes.
+add_test(NAME test_droparea
+    COMMAND ${CMAKE_COMMAND} -E env
+        "QT_QPA_PLATFORM_PLUGIN_PATH=${QT6_INSTALL_PREFIX}/${QT6_INSTALL_PLUGINS}/platforms"
+        $<TARGET_FILE:test_droparea> -platform offscreen)
 
 # Batch 31a (F9): fake MCP stdio server + client tests. The fake server is
 # a separate executable the transport spawns as a child process.

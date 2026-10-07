@@ -7,7 +7,13 @@
 > QML 侧 AssistantMessage 重新生成按钮 + UserMessageBubble 内联编辑；
 > test_memory/test_agent/test_viewmodel 新增用例全绿）。
 > **A3 输入历史已实施**（ChatSessionController 输入环 + historyPrev/historyNext，
-> InputConsole ↑/↓ 回溯；test_viewmodel 新增用例全绿）。A4 拖拽附件、D9 快捷键速查待实施。
+> InputConsole ↑/↓ 回溯；test_viewmodel 新增用例全绿）。
+> **A4 拖拽附件已实施**（AttachmentClassifier 扩展名分派纯函数 + AgentViewModel
+> handleDroppedFiles、main.qml 窗口根级 DropArea 与 attachmentsDropped 信号；
+> test_attachment_classifier、test_viewmodel 与 test_droparea 全绿）。
+> 实现期踩过两坑：①QML 的 url 对象没有 toLocalFile()，路径解析必须放 C++；
+> ②拖拽是否可用取决于进程启动方式（UIPI 丢消息），须在窗口创建后放行三条
+> OLE 握手消息。详见 §3.4 的"关键约束"与"启动方式约束"。D9 快捷键速查待实施。
 > **创建日期**：2026-10-06
 > **依赖文档**：docs/14（L1–L6 遗留修复）、docs/17（沙箱与设置体系）、docs/18（会话归属模型）、docs/19（对话界面视觉完善）
 > **涉及模块**：AgentViewModel / ChatSessionController / AIAgent / SqliteMemory / main.cpp / AgentChatPage / AssistantMessage / InputConsole / Sidebar / SettingsSchema
@@ -152,14 +158,50 @@ LLM 请求含新文本不含旧对白。
 
 ### 3.4 拖拽创建附件（修 D5，量级 S）
 
-**设计**：`InputConsole.qml` 根节点接 `DropArea`：
+**实施**（与设计稿的差异已回写本节）：
 
-- `urls` 全为图片扩展名 → 逐个 `AgentVM.loadImageDataUrl(localFile)` 压缩入列；
-- 含文本扩展名 → `AgentVM.loadTextFile` 生成 `{name, content}` 附件；
-- 混合拖拽按扩展名逐个分派；不支持的扩展名 toast 提示（复用 `AppToast`）。
+- `main.qml` **窗口根级**接 `DropArea`（铺满整窗、声明在内容之后即最上层）。
+  组件内部另放 DropArea 收不到事件：QML 拖放分派只把事件交给首个接受它的
+  item，而 `QQuickItem::ItemAcceptsDrops` 只有 DropArea 会设置。
+- `onDropped` **把 `drop.urls` 原样交给 C++**（`AgentVM.handleDroppedFiles`），
+  分类压缩/读文本都在 C++ 做，结果经 `attachmentsDropped` 信号回推
+  `InputConsole.appendAttachments` 入列。
+- 分类是纯函数 `AttachmentClassifier::classify(扩展名)`（图片 / 文本 /
+  不支持），不支持的计数后 toast 提示（复用 `AppToast`）。
 
-**测试**：QMl 层冒烟 + `test_data_url_utils` 补扩展名分派纯函数用例
-（分派逻辑抽为可测纯函数 `classifyDropUrls()`）。
+**关键约束（A4 首版失效的根因，务必保留）**：`drop.urls` 的元素是 QML 的
+URL 包装对象，原型上**只有 `toString`/`valueOf`，没有 `toLocalFile()`**
+（`qv4urlobject.cpp` 只注册了 Web URL 标准成员）。在 QML 里写
+`u.toLocalFile()` 会抛 `TypeError`，`paths` 恒为空 → 拖放看起来"完全没反应"
+（光标可正常变"允许"，因为 `onEntered` 的 accept 是生效的）。路径转换必须
+收 `QList<QUrl>` 在 C++ 用 `QUrl::isLocalFile()/toLocalFile()` 完成（含
+percent-encoding 解码，空格/中文路径依赖这一步）。
+
+**启动方式约束（第二个坑，实测发现）**：拖拽是否可用**取决于进程的启动
+方式**。资源管理器（Explorer.exe）以**中等完整性（Medium IL）**运行，而从
+VSCode 的 CMake 终端、或以管理员身份（Run as Administrator）启动的进程完
+整性更高——UIPI（User Interface Privilege Isolation）会**静默丢弃**从低完
+整性进程发往高完整性进程的窗口消息，OLE 拖放握手正是靠这些消息完成的：
+`RegisterDragDrop` 明明成功、DragEnter 却一次都到不了 Qt，光标一直 🚫。
+直接双击 exe（与 Explorer 同完整性）则一切正常。
+官方说明：https://learn.microsoft.com/archive/blogs/patricka/q-why-doesnt-drag-and-drop-work-when-my-application-is-running-elevated-a-mandatory-integrity-control-and-uipi
+
+修法（`main.cpp` 的 `allowDragDropFromLowerIntegrity`）：在窗口创建后用
+`ChangeWindowMessageFilterEx(hwnd, msg, MSGFLT_ALLOW, ...)` 放行 OLE 拖放
+依赖的三条消息——`WM_DROPFILES`(0x0233)、`WM_COPYDATA`(0x004A)、
+`WM_COPYGLOBALDATA`(0x0049)。两个注意点：
+1. 必须在**原生窗口创建之后**才能拿到 HWND（`winId()` 强制创建），而 QML
+   窗口在 `engine.load` 之后才存在；
+2. 首次 `winId()` 偶发拿到中间值 → 用单次 `QTimer::singleShot(0, ...)`
+   延后到事件循环里再挂，并挂在 window 上保证窗口存活。
+
+**测试**：`test_attachment_classifier`（扩展名分派纯函数）+
+`test_viewmodel` 的两个用例：`handleDroppedFilesClassifiesAndEmits`
+（混拖/全不支持/空列表的信号契约）与 `handleDroppedFilesDecodesLocalUrls`
+（percent-encoded 中文空格路径还原 + 非 file: URL 不被读盘）+
+`test_droparea`（跨 QML/C++ 边界：用真实 QDragEnter/DragMove/Drop 事件走
+delivery agent，验证 enter/move/drop 三者被接受、urls 原样送达 C++ 并解码，
+且专门有一条用例锁定"QML 的 url 没有 toLocalFile()"这个根因前提）。
 
 ### 3.5 本工作流不做：会话分支（D4）
 

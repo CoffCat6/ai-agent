@@ -41,6 +41,61 @@
 
 #include <memory>
 
+#ifdef Q_OS_WIN
+#include <QTimer>
+#include <QQuickWindow>
+#include <QWindow>
+#define WIN32_LEAN_AND_MEAN
+#include <windows.h>
+#endif
+
+// docs/20 §3.4（A4 拖拽附件）：拖放由 main.qml 的窗口根级 DropArea 处理
+// （QML DropArea 是 Qt 向平台注册拖拽目标、使光标变“允许”的途径），
+// 路径解析在 AgentViewModel::handleDroppedFiles 完成（QML 的 url 对象没有
+// toLocalFile()，转换只能在 C++ 做），经 attachmentsDropped 推给输入区。
+
+#ifdef Q_OS_WIN
+// A4 拖拽附件的第二个坑：**拖拽是否可用取决于进程的启动方式**。
+//
+// 资源管理器（Explorer.exe）以中等完整性（Medium Integrity Level）运行，
+// 而从 VSCode 的 CMake 终端、或以管理员身份（Run as Administrator）启动的
+// 进程完整性更高（VSCode 终端会话继承了提升的令牌）。Windows 的 UIPI
+// （User Interface Privilege Isolation）会静默丢弃从低完整性进程发往高
+// 完整性进程的窗口消息，OLE 拖放握手正是靠这些消息完成的——于是
+// RegisterDragDrop 明明成功了，DragEnter 却一次都到不了 Qt，光标一直是
+// 🚫，_dropEvent/DropArea 永远不触发。直接双击 exe（与 Explorer 同完整性）
+// 则一切正常。微软的官方说明见
+// https://learn.microsoft.com/archive/blogs/patricka/q-why-doesnt-drag-and-drop-work-when-my-application-is-running-elevated-a-mandatory-integrity-control-and-uipi
+//
+// 修法：在窗口创建后，用 ChangeWindowMessageFilterEx 把 OLE 拖放依赖的
+// 消息显式放行（MSGFLT_ALLOW），让低完整性来源也能发进来。Qt 的 OLE 拖放
+// 走 IDropTarget（RegisterDragDrop），跨完整性握手需要这三条消息：
+//   WM_DROPFILES (0x0233)、WM_COPYDATA (0x004A)、WM_COPYGLOBALDATA (0x0049)。
+//
+// 注意：必须在原生窗口创建之后才能拿到 HWND（winId() 会强制创建），而
+// QML 窗口在 engine.load 后才存在，且首次 winId() 偶发拿到中间值——所以
+// 用单次 QTimer 延后到事件循环里再挂。
+void allowDragDropFromLowerIntegrity(QQuickWindow* window) {
+    if (!window)
+        return;
+    // 单次触发：确保原生 HWND 已就绪（QML 窗口在 show 后才创建平台窗口）。
+    QTimer::singleShot(0, window, [window]() {
+        const HWND hwnd = reinterpret_cast<HWND>(window->winId());
+        if (!hwnd)
+            return;
+        // MSGFLT_ALLOW = 1：允许任意完整性级别（含 Medium 的 Explorer）发送。
+        constexpr DWORD kMsgFltAllow = 1;
+        ChangeWindowMessageFilterEx(hwnd, WM_DROPFILES, kMsgFltAllow, nullptr);
+        ChangeWindowMessageFilterEx(hwnd, WM_COPYDATA, kMsgFltAllow, nullptr);
+        // WM_COPYGLOBALDATA：OLE 拖放握手的核心消息，未放行则一直 🚫。
+        ChangeWindowMessageFilterEx(hwnd, 0x0049, kMsgFltAllow, nullptr);
+        qInfo() << "Drag & drop message filter relaxed for lower-integrity"
+                << "sources (WM_DROPFILES/WM_COPYDATA/0x0049)";
+    });
+}
+#endif
+
+
 using namespace NexusAI;
 
 namespace {
@@ -631,6 +686,14 @@ qInfo() << "NexusAI" << app.applicationVersion() << "starting";
 
     if (engine.rootObjects().isEmpty())
         return -1;
+
+#ifdef Q_OS_WIN
+    // A4 拖拽附件：从 VSCode 终端 / 管理员启动时，UIPI 会静默丢弃来自
+    // 中等完整性 Explorer 的 OLE 拖放握手消息，导致光标一直 🚫。这里把
+    // 三条握手消息放行，让拖拽在任意启动方式下都可用（见上方说明）。
+    if (auto* window = qobject_cast<QQuickWindow*>(engine.rootObjects().first()))
+        allowDragDropFromLowerIntegrity(window);
+#endif
 
     // Language switches install/remove translators (I18nManager), but the
     // QML engine does not reliably re-evaluate every qsTr binding on the

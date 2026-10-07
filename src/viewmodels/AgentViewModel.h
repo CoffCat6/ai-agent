@@ -5,6 +5,8 @@
 #include <QJsonArray>
 #include <QJsonObject>
 #include <QString>
+#include <QStringList>
+#include <QUrl>
 #include <QTimer>
 #include <QVector>
 #include <functional>
@@ -319,6 +321,16 @@ public:
     // {kind:"file", name, content} for a text attachment; empty map on
     // rejection (too large / binary).
     Q_INVOKABLE QVariantMap loadTextFileAttachment(const QString& path);
+    // docs/20 §3.4：拖入 N 个不支持的文件时统一提示（QML 无法直接 emit
+    // noticeOccurred，经此转发）。
+    Q_INVOKABLE void notifyUnsupportedDrop(int count);
+    // docs/20 §3.4：处理窗口级拖放的 URL 列表（由 main.qml 的根级 DropArea
+    // 直接传入 drop.urls）。**必须收 QUrl/URL 原始值而非 QML 侧解析好的
+    // 路径**：QML 的 url 对象没有 toLocalFile()，在 QML 里转路径会抛
+    // TypeError 并让整个拖放静默失效（A4 首版即栽在这里）。这里用 QUrl
+    // 做 isLocalFile/toLocalFile（含百分号解码），再逐个分类 → 图片压缩 /
+    // 文本读取 → 汇总为附件描述符，经 attachmentsDropped 通知 QML。
+    Q_INVOKABLE void handleDroppedFiles(const QList<QUrl>& urls);
     Q_INVOKABLE void approveToolCall(const QString& id, bool approved);
     Q_INVOKABLE void setToolEnabled(const QString& name, bool enabled);
     Q_INVOKABLE void stop();                 // abort generation, keep trace
@@ -410,6 +422,9 @@ signals:
     void errorOccurred(const QString& error);
     // Non-error user feedback (import finished, etc.)
     void noticeOccurred(const QString& notice);
+    // docs/20 §3.4（A4）：窗口级拖放解析完成，携带附件描述符列表
+    // （图片 {kind:"image", dataUrl} / 文本 {kind:"file", name, content}）。
+    void attachmentsDropped(const QVariantList& attachments);
     // Emitted after a successful knowledge-base mutation, for persistence
     void documentRemoved(const QString& name);
     void knowledgeCleared();

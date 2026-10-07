@@ -23,6 +23,7 @@
 #include <QDateTime>
 #include <QDir>
 #include <QFile>
+#include <QFileInfo>
 #include <QJsonArray>
 #include <QJsonDocument>
 #include <QJsonObject>
@@ -196,6 +197,102 @@ private slots:
         vm.startTask(QString());
         vm.stop();
         QCOMPARE(vm.historyPrev(), QString());
+    }
+
+    // docs/20 §3.4（A4 拖拽附件）：窗口级拖放解析。文本文件 → file 附件
+    // 描述符经 attachmentsDropped 发射；不支持的类型仅计数提示、不发射。
+    void handleDroppedFilesClassifiesAndEmits() {
+        AgentViewModel vm(nullptr);
+        QTemporaryDir dir;
+        QVERIFY(dir.isValid());
+
+        const QString textPath = dir.filePath("note.txt");
+        { QFile f(textPath); QVERIFY(f.open(QIODevice::WriteOnly));
+          f.write("hello attachment"); }
+        const QString binPath = dir.filePath("archive.zip");
+        { QFile f(binPath); QVERIFY(f.open(QIODevice::WriteOnly));
+          f.write("PK"); }
+
+        QSignalSpy dropped(&vm, &AgentViewModel::attachmentsDropped);
+        QSignalSpy notice(&vm, &AgentViewModel::noticeOccurred);
+
+        vm.handleDroppedFiles({QUrl::fromLocalFile(textPath),
+                               QUrl::fromLocalFile(binPath)});
+        QCOMPARE(dropped.count(), 1);
+        const QVariantList atts = dropped.at(0).at(0).toList();
+        QCOMPARE(atts.size(), 1);
+        const QVariantMap file = atts.at(0).toMap();
+        QCOMPARE(file.value("kind").toString(), QStringLiteral("file"));
+        QCOMPARE(file.value("name").toString(), QStringLiteral("note.txt"));
+        QCOMPARE(file.value("content").toString(), QStringLiteral("hello attachment"));
+        // zip 不支持：计数提示但不进附件列表。
+        QCOMPARE(notice.count(), 1);
+
+        // 全为不支持类型：不发射 attachmentsDropped，仅提示。
+        dropped.clear();
+        notice.clear();
+        vm.handleDroppedFiles({QUrl::fromLocalFile(binPath)});
+        QCOMPARE(dropped.count(), 0);
+        QCOMPARE(notice.count(), 1);
+
+        // 空列表：无任何信号。
+        dropped.clear();
+        notice.clear();
+        vm.handleDroppedFiles({});
+        QCOMPARE(dropped.count(), 0);
+        QCOMPARE(notice.count(), 0);
+    }
+
+    // docs/20 §3.4（A4）回归：QML 的 url 对象没有 toLocalFile()，路径转换
+    // 必须在 C++ 用 QUrl 完成。这里锁定三条边界：
+    //  1) 含空格/中文/URL 保留字符（# %）的真实文件必须能还原原名并读盘，
+    //     否则拖拽会静默丢附件或读到错误路径；
+    //  2) 键为 toEncoded()（percent-encoded）的 URL 也要还原——QML 侧若
+    //     用 toString() 取路径再传字符串就会踩到未解码的坑；
+    //  3) 非 file: URL（http 等）不得被当成文件读取，计为不支持。
+    void handleDroppedFilesDecodesLocalUrls() {
+        AgentViewModel vm(nullptr);
+        QTemporaryDir dir;
+        QVERIFY(dir.isValid());
+
+        // 空格 + 中文 + '#'/'%'（两者在 URL 里必须转义，否则路径被截断）。
+        const QString tricky = dir.filePath(QStringLiteral("my note 报告 #1%.txt"));
+        { QFile f(tricky); QVERIFY(f.open(QIODevice::WriteOnly));
+          f.write("tricky content"); }
+        QVERIFY(QFileInfo::exists(tricky));
+
+        const QUrl encoded = QUrl::fromLocalFile(tricky);
+        // toString() 是「漂亮」形式，保留字符才转义；toEncoded() 才是全转义。
+        QVERIFY(encoded.toEncoded().contains('%'));
+
+        QSignalSpy dropped(&vm, &AgentViewModel::attachmentsDropped);
+        QSignalSpy notice(&vm, &AgentViewModel::noticeOccurred);
+
+        vm.handleDroppedFiles({encoded});
+        QCOMPARE(dropped.count(), 1);
+        const QVariantMap file = dropped.at(0).at(0).toList().at(0).toMap();
+        QCOMPARE(file.value("kind").toString(), QStringLiteral("file"));
+        QCOMPARE(file.value("name").toString(),
+                 QStringLiteral("my note 报告 #1%.txt"));
+        QCOMPARE(file.value("content").toString(), QStringLiteral("tricky content"));
+        QCOMPARE(notice.count(), 0);
+
+        // 用 toEncoded() 构造（等价于从 percent-encoded 字符串重建）仍要正确。
+        dropped.clear();
+        notice.clear();
+        vm.handleDroppedFiles({QUrl::fromEncoded(encoded.toEncoded())});
+        QCOMPARE(dropped.count(), 1);
+        const QVariantMap again = dropped.at(0).at(0).toList().at(0).toMap();
+        QCOMPARE(again.value("name").toString(),
+                 QStringLiteral("my note 报告 #1%.txt"));
+        QCOMPARE(again.value("content").toString(), QStringLiteral("tricky content"));
+
+        // 非本地 URL：不读盘，计为不支持并提示。
+        dropped.clear();
+        notice.clear();
+        vm.handleDroppedFiles({QUrl(QStringLiteral("https://example.com/a.txt"))});
+        QCOMPARE(dropped.count(), 0);
+        QCOMPARE(notice.count(), 1);
     }
 
     // Named AgentState constants exposed to QML must mirror the core enum

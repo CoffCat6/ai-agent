@@ -262,4 +262,13 @@ Item {
             }
         }
     }
+
+    // docs/20 §3.4（A4 拖拽附件）：窗口根级 DropArea（main.qml）解析完成后经
+    // attachmentsDropped 信号把附件描述符推给输入区预览。
+    Connections {
+        target: AgentVM
+        function onAttachmentsDropped(attachments) {
+            inputConsole.appendAttachments(attachments)
+        }
+    }
 }

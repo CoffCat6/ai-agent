@@ -260,6 +260,34 @@ ApplicationWindow {
         parent: Overlay.overlay
     }
 
+    // docs/20 §3.4（A4 拖拽附件）：窗口级文件拖放。
+    //
+    // 为什么是 QML 根级 DropArea：QQuickWindow 的拖放事件经 delivery agent
+    // 分派给带 ItemAcceptsDrops 的 item，而只有 DropArea 会设置该 flag；
+    // 纯 C++ 事件过滤器无法让平台“接受”（光标始终是禁止形状）。
+    // 为什么放在最后声明：DropArea 是透明命中层，声明在内容之后即为
+    // contentItem 最上层子项，铺满整窗且不受 RowLayout 锚定约束。
+    //
+    // 关键契约：`drop.urls` 里的 url 元素是 QML 的 URL 包装对象，只有
+    // toString()/valueOf()，**没有 toLocalFile()**（QML 侧调用会抛
+    // TypeError，导致 paths 恒为空、drop 静默失效）。因此这里必须把
+    // 原始 urls 交给 C++，由 AgentViewModel::handleDroppedFiles 用
+    // QUrl 转成真实本地路径（含百分号解码）。不要在 QML 里解析路径。
+    DropArea {
+        id: windowDrop
+        anchors.fill: parent
+        onEntered: function(drag) {
+            // 显式接受含文件 URL 的拖拽（光标变“允许”）；否则不干预默认行为。
+            if (drag.hasUrls)
+                drag.acceptProposedAction()
+        }
+        onDropped: function(drop) {
+            if (!drop.hasUrls) return
+            AgentVM.handleDroppedFiles(drop.urls)
+            drop.acceptProposedAction()
+        }
+    }
+
     // ── Knowledge Document Detail Dialog ──────────────
     KnowledgeDocDialog {
         id: knowledgeDocDialog

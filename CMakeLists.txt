@@ -62,6 +62,8 @@ add_library(nexus_core STATIC
     src/core/utils/Activity.cpp
     src/core/utils/DataUrlUtils.h
     src/core/utils/DataUrlUtils.cpp
+    src/core/utils/AttachmentClassifier.h
+    src/core/utils/AttachmentClassifier.cpp
     src/core/mcp/McpTransport.h
     src/core/mcp/McpTransport.cpp
     src/core/mcp/StdioTransport.h

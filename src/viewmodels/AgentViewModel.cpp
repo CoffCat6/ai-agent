@@ -11,6 +11,7 @@
 #include "core/tools/Sandbox.h"
 #include "core/utils/Logger.h"
 #include "core/utils/DataUrlUtils.h"
+#include "core/utils/AttachmentClassifier.h"
 
 #include <QFileInfo>
 #include <QSettings>
@@ -1016,6 +1017,50 @@ QVariantMap AgentViewModel::loadTextFileAttachment(const QString& path) {
         {"name", QFileInfo(localPath).fileName()},
         {"content", QString::fromUtf8(bytes)},
     };
+}
+
+void AgentViewModel::notifyUnsupportedDrop(int count) {
+    if (count <= 0) return;
+    emit noticeOccurred(tr("已忽略 %1 个不支持的文件类型（仅支持图片与文本文件）")
+                            .arg(count));
+}
+
+// docs/20 §3.4（A4）：窗口级拖放解析。入参是 QML DropArea 的 drop.urls
+// 原始值——QML 的 url 对象没有 toLocalFile()，路径转换只能在 C++ 做
+// （见头文件与 main.qml 的契约注释）。逐个分类 → 图片压缩 / 文本读取，
+// 汇总为附件描述符后经 attachmentsDropped 通知 QML。
+void AgentViewModel::handleDroppedFiles(const QList<QUrl>& urls) {
+    QVariantList attachments;
+    int unsupported = 0;
+    for (const QUrl& url : urls) {
+        // 只处理本地文件；非 file: 的 URL（http 等）计入不支持。
+        if (!url.isLocalFile()) {
+            ++unsupported;
+            continue;
+        }
+        const QString path = url.toLocalFile();
+        switch (AttachmentClassifier::classify(path)) {
+        case AttachmentClassifier::Kind::Image: {
+            const QString dataUrl = loadImageDataUrl(path);
+            if (!dataUrl.isEmpty())
+                attachments.append(QVariantMap{{"kind", "image"}, {"dataUrl", dataUrl}});
+            break;
+        }
+        case AttachmentClassifier::Kind::Text: {
+            const QVariantMap file = loadTextFileAttachment(path);
+            if (!file.isEmpty())
+                attachments.append(file);
+            break;
+        }
+        case AttachmentClassifier::Kind::Unsupported:
+            ++unsupported;
+            break;
+        }
+    }
+    if (!attachments.isEmpty())
+        emit attachmentsDropped(attachments);
+    if (unsupported > 0)
+        notifyUnsupportedDrop(unsupported);
 }
 
 // Batch 30 (F6): compressed data URL of an image file chosen in QML (empty
