@@ -268,6 +268,16 @@ qInfo() << "NexusAI" << app.applicationVersion() << "starting";
         autoStart.defaultValue = false;
         autoStart.type = PreferenceType::Bool;
         prefRegistry->registerPreference(autoStart);
+
+        // B1 补充：任务完成/结束的系统气泡通知总开关（默认开）。托盘不可用时
+        // showMessage 本身是 no-op，因此这里只管"要不要打扰"的语义。
+        PreferenceMeta noticeEnabled;
+        noticeEnabled.key = QStringLiteral("notice.enabled");
+        noticeEnabled.categoryId = QStringLiteral("general");
+        noticeEnabled.displayName = QT_TRANSLATE_NOOP("NexusAI", "系统通知");
+        noticeEnabled.defaultValue = true;
+        noticeEnabled.type = PreferenceType::Bool;
+        prefRegistry->registerPreference(noticeEnabled);
     }
 
     // ── Settings (QSettings + env fallbacks) ──────────
@@ -744,6 +754,13 @@ qInfo() << "NexusAI" << app.applicationVersion() << "starting";
     // instances wired up here).
     QQmlApplicationEngine engine;
 
+    // docs/20 §4.1（D10 完善）：把托盘可用性注入根对象。close-to-tray 必须
+    // 先看它——托盘不可用时藏窗口等于让应用失踪（用户只能去任务管理器结束）。
+    // 静态查询，创建托盘图标之前即可求值。
+    engine.setInitialProperties({
+        {QStringLiteral("trayAvailable"), QVariant(QSystemTrayIcon::isSystemTrayAvailable())},
+    });
+
     // Load main QML
     const QUrl url(QStringLiteral("qrc:/qt/qml/NexusAI/src/ui/main.qml"));
 
@@ -771,7 +788,16 @@ qInfo() << "NexusAI" << app.applicationVersion() << "starting";
     // ── docs/20 §4.1（D6/D10）：系统托盘 + 后台任务完成通知 ──
     // 图标：assets/icons/nexus.ai.ico 嵌进 exe（任务栏/资源管理器/Alt-Tab），
     // 同一素材的 PNG 走 Qt 资源 :/icons/（窗口 + 托盘），小尺寸清晰。
-    const QIcon appIcon(QStringLiteral(":/icons/nexus-64.png"));
+    // QIcon 允许失败（资源路径写错时静默变空图标 = 托盘看起来"没反应"），
+    // 这里显式断言并在缺失时退回 exe 内嵌图标，避免再次静默退化。
+    QIcon appIcon(QStringLiteral(":/icons/nexus-64.png"));
+    if (appIcon.isNull()) {
+        qWarning() << "tray: :/icons/nexus-64.png missing from the resource bundle;"
+                      " falling back to the exe icon";
+        appIcon = QIcon(QStringLiteral(":/icons/nexus-256.png"));
+    }
+    if (appIcon.isNull())
+        appIcon = QApplication::windowIcon();
     mainWindow->setIcon(appIcon);
 
     auto* tray = new QSystemTrayIcon(appIcon, &app);
@@ -824,8 +850,10 @@ qInfo() << "NexusAI" << app.applicationVersion() << "starting";
     // D10：任务从 Busy→Idle 时弹气泡通知（标题带会话名）。
     // 仅当窗口**可见且激活**（用户正在看）时才静默——最小化（minimized 时
     // isVisible() 仍为 true）与藏进托盘都要通知，否则切走窗口就收不到。
+    // 「系统通知」开关（prefs/v1/notice.enabled，默认开）关闭后一律不打扰。
     QObject::connect(agentVM, &AgentViewModel::taskFinished, &app,
         [mainWindow, tray, prefStore](const QString& sessionTitle, bool success) {
+            if (!prefStore->load(QStringLiteral("notice.enabled")).toBool()) return;
             if (mainWindow->isVisible() && mainWindow->isActive()) return;
             const bool closeToTray = prefStore->load(
                 QStringLiteral("window.closeToTray")).toBool();

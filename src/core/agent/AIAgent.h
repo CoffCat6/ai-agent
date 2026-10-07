@@ -59,6 +59,14 @@ public:
     // SettingsService applies the same window in its editor)
     static constexpr int MinContextTokens = 2048;
     static constexpr int MaxContextTokens = 1048576;
+    // Default context-window budget. Used as the fallback when neither the
+    // profile's contextLength override nor the capability table knows the
+    // model (docs/15 §6.1.1 priority 3). 300k rather than the old 8192: modern
+    // hosted models all carry >=128k windows, so 8192 truncated ordinary
+    // conversations almost immediately. Intelligence lives in
+    // SettingsSchema::registeredKeys() + SettingsService::load() as well —
+    // keep all three in sync (test_settings locks the ledger entry).
+    static constexpr int kDefaultContextTokens = 300000;
 
     explicit AIAgent(QObject* parent = nullptr);
     ~AIAgent() override;
@@ -292,7 +300,7 @@ private:
     bool m_streamNodeActive{false};
     QString m_thinkingNodeId;
 
-    int m_contextLimit{8192};
+    int m_contextLimit{kDefaultContextTokens};
 
     PermissionMode m_permissionMode{PermissionMode::ConfirmChanges};
 

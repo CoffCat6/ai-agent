@@ -9,8 +9,8 @@ Item {
 
     Accessible.name: qsTr("通用设置页")
 
-    // Future "general" preferences registered in PreferenceRegistry render
-    // here; today the category is empty and the section stays hidden.
+    // docs/20 工作流 B: "general" 分类下登记的偏好键（托盘/通知/自启等）
+    // 自动渲染为开关；模型相关的上下文预算已迁往"模型配置"页。
     property var preferenceKeys: PreferenceRegistry.preferencesInCategory("general")
 
     // docs/17 B2/A6: 恢复默认只覆盖本页键（安全开关已迁往"安全"页，
@@ -113,32 +113,6 @@ Item {
                 ColumnLayout {
                     Layout.fillWidth: true
                     spacing: 4
-                    Text { text: qsTr("上下文窗口 (Tokens)"); color: Theme.textSecondary; font.pixelSize: Theme.fontSizeCaption; font.bold: true; font.family: Theme.fontMono }
-                    TextField {
-                        id: contextField
-                        Layout.fillWidth: true
-                        text: Settings.contextTokens
-                        placeholderText: "8192"
-                        placeholderTextColor: Theme.textSecondary
-                        color: Theme.textPrimary; selectionColor: Theme.brandPrimary; selectedTextColor: "#ffffff"
-                        font.pixelSize: Theme.fontSizeBody; font.family: Theme.fontSans
-                        validator: IntValidator { bottom: 2048; top: 1048576 }
-                        background: Rectangle { radius: 6; color: Theme.bgPrimary; border.width: contextField.activeFocus ? 2 : 1; border.color: contextField.activeFocus ? Theme.brandPrimary : Theme.borderSubtle }
-                        onEditingFinished: { const parsed = parseInt(text); Settings.contextTokens = isNaN(parsed) ? 8192 : parsed; text = Settings.contextTokens }
-                        Accessible.name: qsTr("上下文窗口 Tokens")
-                    }
-                    Text {
-                        text: qsTr("默认值。按模型能力表自动适配时，此项作为未知模型的 fallback。")
-                        color: Theme.textSecondary
-                        font.pixelSize: 10
-                        wrapMode: Text.Wrap
-                        Layout.fillWidth: true
-                    }
-                }
-
-                ColumnLayout {
-                    Layout.fillWidth: true
-                    spacing: 4
                     Text { text: qsTr("单次任务步数预算"); color: Theme.textSecondary; font.pixelSize: Theme.fontSizeCaption; font.bold: true; font.family: Theme.fontMono }
                     TextField {
                         id: maxStepsField
@@ -150,7 +124,23 @@ Item {
                         font.pixelSize: Theme.fontSizeBody; font.family: Theme.fontSans
                         validator: IntValidator { bottom: 3; top: 200 }
                         background: Rectangle { radius: 6; color: Theme.bgPrimary; border.width: maxStepsField.activeFocus ? 2 : 1; border.color: maxStepsField.activeFocus ? Theme.brandPrimary : Theme.borderSubtle }
-                        onEditingFinished: { const parsed = parseInt(text); Settings.maxSteps = isNaN(parsed) ? 30 : parsed; text = Settings.maxSteps }
+                        // 保存时机：失焦/回车立即提交，另加两条兜底——本页由
+                        // SettingsCenterDialog 的 Loader 按 active 切换分类，编辑中
+                        // 切走会直接销毁本页，editingFinished 不触发（实测），改过的
+                        // 值原本静默丢失。防抖定时器覆盖"停手不停焦"，onDestruction
+                        // 覆盖"编辑中就被销毁"。
+                        function commit() {
+                            const parsed = parseInt(text)
+                            Settings.maxSteps = isNaN(parsed) ? 30 : parsed
+                        }
+                        onTextEdited: commitTimer.restart()
+                        onEditingFinished: { commit(); text = Settings.maxSteps }
+                        Component.onDestruction: commit()
+                        Timer {
+                            id: commitTimer
+                            interval: 400
+                            onTriggered: maxStepsField.commit()
+                        }
                         Accessible.name: qsTr("单次任务步数预算")
                     }
                     Text {
@@ -184,7 +174,17 @@ Item {
                     wrapMode: TextArea.Wrap
                     font.pixelSize: Theme.fontSizeBody; font.family: Theme.fontMono
                     background: Rectangle { radius: 6; color: Theme.bgPrimary; border.width: promptField.activeFocus ? 2 : 1; border.color: promptField.activeFocus ? Theme.brandPrimary : Theme.borderSubtle }
-                    onEditingFinished: Settings.systemPromptOverride = text
+                    // 同 maxStepsField：长文本按 400ms 防抖提交（避免每次按键都
+                    // 记一条审计并写盘），切换分类导致的销毁由 onDestruction 兜底。
+                    function commit() { Settings.systemPromptOverride = text }
+                    onTextEdited: promptCommitTimer.restart()
+                    onEditingFinished: commit()
+                    Component.onDestruction: commit()
+                    Timer {
+                        id: promptCommitTimer
+                        interval: 400
+                        onTriggered: promptField.commit()
+                    }
                     Accessible.name: qsTr("自定义系统提示词")
                 }
 
@@ -260,10 +260,20 @@ Item {
                 // current value (the setter rejects blank after trim).
                 Text { text: qsTr("嵌入服务地址"); color: Theme.textSecondary; font.pixelSize: Theme.fontSizeCaption; font.family: Theme.fontMono }
                 TextField {
+                    id: embeddingUrlField
                     Layout.fillWidth: true
                     text: Settings.embeddingBaseUrl
                     placeholderText: qsTr("http://localhost:11434")
-                    onEditingFinished: Settings.embeddingBaseUrl = text
+                    // 同 maxStepsField：Loader 销毁不触发 editingFinished。
+                    function commit() { Settings.embeddingBaseUrl = text }
+                    onTextEdited: urlCommitTimer.restart()
+                    onEditingFinished: commit()
+                    Component.onDestruction: commit()
+                    Timer {
+                        id: urlCommitTimer
+                        interval: 400
+                        onTriggered: embeddingUrlField.commit()
+                    }
                     selectByMouse: true
                     Accessible.name: qsTr("嵌入服务地址")
                 }

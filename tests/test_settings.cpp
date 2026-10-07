@@ -607,14 +607,14 @@ private slots:
         QCOMPARE(reloaded.defaultPermissionMode(), QStringLiteral("auto_edit"));
     }
 
-    // docs/17 B2: resetGeneralToDefaults 把通用页 9 个键回写为 schema
-    // 登记的默认值（硬编码的 reset 列表与 schema 默认值靠本测试锁定同步）。
+    // docs/17 B2: resetGeneralToDefaults 把通用页的键回写为 schema 登记的
+    // 默认值（硬编码的 reset 列表与 schema 默认值靠本测试锁定同步）。
+    // 上下文 Tokens 已迁往"模型配置"页按 profile 管理，不在通用页复位范围。
     void resetGeneralDefaultsMatchesSchema() {
         SettingsGuard guard;
         SettingsService svc(nullptr);
 
         // 先全部调到非默认值
-        svc.setContextTokens(4096);
         svc.setMaxSteps(99);
         svc.setSimulationMode(true);
         svc.setLogLevel(QStringLiteral("debug"));
@@ -638,8 +638,6 @@ private slots:
         for (const auto& k : SettingsSchema::registeredKeys())
             if (k.defaultValue.isValid())
                 defaults.insert(k.key, k.defaultValue);
-        QCOMPARE(svc.contextTokens(),
-                 defaults.value("contextTokens").toInt());
         QCOMPARE(svc.maxSteps(), defaults.value("agent/maxSteps").toInt());
         QCOMPARE(svc.simulationMode(),
                  defaults.value("simulationMode").toBool());
@@ -692,6 +690,9 @@ private slots:
             "prefs/v1/ui.defaultSidebarWidth", "prefs/v1/ui.defaultPanelWidth",
             "prefs/v1/ui.defaultSidebarExpanded", "prefs/v1/ui.defaultPanelVisible",
             "prefs/v1/ui.restoreWindowOnStartup",
+            // docs/20 工作流 B（桌面集成）偏好键
+            "prefs/v1/window.closeToTray", "prefs/v1/general.autoStart",
+            "prefs/v1/notice.enabled",
             // M2 内部键
             "settings.lastCategory",
             // docs/17 A0/A1
@@ -1109,6 +1110,7 @@ ComboBox {
         // docs/20 工作流 B（桌面集成）：新偏好键必须登记进账本。
         bool foundCloseToTray = false;
         bool foundAutoStart = false;
+        bool foundNoticeEnabled = false;
         for (const auto& k : keys) {
             if (k.key == QStringLiteral("webSearch/provider")) foundProvider = true;
             if (k.key == QStringLiteral("webSearch/apiKey")) {
@@ -1119,12 +1121,18 @@ ComboBox {
                 foundCloseToTray = true;
             if (k.key == QStringLiteral("prefs/v1/general.autoStart"))
                 foundAutoStart = true;
+            if (k.key == QStringLiteral("prefs/v1/notice.enabled")) {
+                foundNoticeEnabled = true;
+                // 默认开：通知是既有行为，升级用户不该被静默关掉。
+                QCOMPARE(k.defaultValue.toBool(), true);
+            }
         }
         QVERIFY(foundProvider);
         QVERIFY(foundApiKey);
         // 键登记纪律（docs/17 B3）：漏登记会让"恢复默认"/账本完整性静默失效。
         QVERIFY2(foundCloseToTray, "prefs/v1/window.closeToTray missing from schema");
         QVERIFY2(foundAutoStart, "prefs/v1/general.autoStart missing from schema");
+        QVERIFY2(foundNoticeEnabled, "prefs/v1/notice.enabled missing from schema");
     }
 
     // docs/20 §4.3（D8）：开机自启。注入假 backend，在不碰真实 HKCU Run 键
@@ -1208,6 +1216,60 @@ ComboBox {
 
         s.remove("prefs/v1/window.closeToTray");
         s.sync();
+    }
+
+    // v2 → v3：contextTokens 旧默认值（8192）随新默认上调到 300000，而用户的
+    // 自定义值必须原样保留——通用页输入框已移除，不能把用户的主动设置抹掉。
+    void schemaV3UpgradesContextTokenDefault() {
+        auto clean = [] {
+            QSettings s("NexusAI", "NexusAI");
+            s.remove("contextTokens");
+            s.sync();
+        };
+        clean();
+
+        // 存量值 = 旧默认 8192 → 应上调。
+        {
+            QSettings s("NexusAI", "NexusAI");
+            s.setValue("contextTokens", 8192);
+            s.setValue("schemaVersion", 2);
+            s.sync();
+        }
+        {
+            SettingsService svc(nullptr);
+            QCOMPARE(svc.contextTokens(), AIAgent::kDefaultContextTokens);
+        }
+
+        // 用户自定义值（≠ 旧默认）→ 保持不动。
+        {
+            QSettings s("NexusAI", "NexusAI");
+            s.setValue("contextTokens", 65536);
+            s.setValue("schemaVersion", 2);
+            s.sync();
+        }
+        {
+            SettingsService svc(nullptr);
+            QCOMPARE(svc.contextTokens(), 65536);
+        }
+
+        // 未写过该键 → 直接拿到新默认（不需要迁移参与）。
+        clean();
+        {
+            SettingsService svc(nullptr);
+            QCOMPARE(svc.contextTokens(), AIAgent::kDefaultContextTokens);
+        }
+        clean();
+    }
+
+    // 默认值自检：账本登记的默认与 AIAgent 的常量必须一致（三处单一事实源的
+    // 收口点；漂移会让 UI 显示与运行侧兜底对不上）。
+    void defaultContextTokensMatchesAgentConstant() {
+        QVariant ledger;
+        for (const auto& k : SettingsSchema::registeredKeys())
+            if (k.key == QStringLiteral("contextTokens")) ledger = k.defaultValue;
+        QVERIFY2(ledger.isValid(), "contextTokens missing from schema ledger");
+        QCOMPARE(ledger.toInt(), AIAgent::kDefaultContextTokens);
+        QCOMPARE(AIAgent::kDefaultContextTokens, 300000);
     }
 
     // L2: load() stamps the schema version into QSettings.

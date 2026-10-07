@@ -1,12 +1,16 @@
 #include "SettingsSchema.h"
 
+// contextTokens 的默认值取自 AIAgent::kDefaultContextTokens（单一事实源），
+// 避免账本、SettingsService 初值与 load 兜底三处各写一个数字而漂移。
+#include "core/agent/AIAgent.h"
+
 namespace NexusAI {
 
 const QVector<SettingsKeyDef>& SettingsSchema::registeredKeys() {
     static const QVector<SettingsKeyDef> keys = {
         {"modelProfiles",                 QVariant(),                        false},
         {"activeProfileId",               QVariant(),                        false},
-        {"contextTokens",                 8192,                              false},
+        {"contextTokens",                 AIAgent::kDefaultContextTokens,     false},
         // 每轮任务的步数预算（LLM 往返轮数）；默认与钳制边界见 AIAgent。
         {"agent/maxSteps",                30,                                false},
         {"simulationMode",                false,                             false},
@@ -66,6 +70,8 @@ const QVector<SettingsKeyDef>& SettingsSchema::registeredKeys() {
         // B3（D8）：开机自启（真值在 HKCU Run 键，这里记 UI 选择以便
         // GeneralPage 回显与"恢复默认"能覆盖）。
         {"prefs/v1/general.autoStart",    false,                             false},
+        // B1 补充：任务完成系统气泡通知总开关（默认开）。
+        {"prefs/v1/notice.enabled",       true,                              false},
     };
     return keys;
 }
@@ -76,7 +82,10 @@ void SettingsSchema::migrate(int fromVersion) {
     // (dailyTokenQuota/dailyCostQuotaCents/monthlyTokenQuota/monthlyCostQuotaCents/
     // strictQuotaMode); they carry defaults (0/unlimited, false/warn-only) so
     // existing installs pick them up on next load without a data migration.
-    // Future: if (fromVersion < 2) { ... rename old keys ... }
+    // v2 → v3: contextTokens 旧默认值上调（8192 → 300000）。改写的是顶层
+    // QSettings 键而非本表结构，因此与 v1 → v2 一样由 SettingsService::load()
+    // 依 storedVersion 落地（upgradeContextTokenDefault），此处保持 no-op。
+    // Future: if (fromVersion < 4) { ... rename old keys ... }
     (void)fromVersion;
 }
 

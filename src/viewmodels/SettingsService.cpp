@@ -131,6 +131,16 @@ void clearProfileModelsOnUpgrade(QSettings& settings) {
         QString::fromUtf8(QJsonDocument(arr).toJson(QJsonDocument::Compact)));
 }
 
+// v2 → v3：contextTokens 默认值从 8192 上调到 300000。存量配置里如果是**旧
+// 默认值本身**（8192）就跟着上调——这类值不是用户的主动选择，而且通用页的输入
+// 框已移除、用户再也改不到它；真正的自定义值（≠8192）原样保留，不覆盖用户意图。
+void upgradeContextTokenDefault(QSettings& settings) {
+    const QVariant stored = settings.value("contextTokens");
+    if (!stored.isValid()) return;                    // 未写过：新默认自然生效
+    if (stored.toInt() != 8192) return;               // 用户自定义值：不动
+    settings.setValue("contextTokens", AIAgent::kDefaultContextTokens);
+}
+
 #ifdef Q_OS_WIN
 
 // API keys are encrypted at rest with the Windows DPAPI (per-user) instead
@@ -228,6 +238,8 @@ void SettingsService::load() {
         // profile 存在 modelProfiles blob 里（不在顶层键注册表），清空存量模型的
         // 迁移因此落在这里，与 SettingsSchema::migrate 的分工一起生效。
         if (storedVersion < 2) clearProfileModelsOnUpgrade(settings);
+        // v3：contextTokens 旧默认值 8192 → 300000（只动等于旧默认的值）。
+        if (storedVersion < 3) upgradeContextTokenDefault(settings);
         settings.setValue("schemaVersion", SettingsSchema::kSchemaVersion);
     }
 
@@ -283,7 +295,7 @@ void SettingsService::load() {
     }
 
     m_contextTokens = qBound(AIAgent::MinContextTokens,
-                             settings.value("contextTokens", 8192).toInt(),
+                             settings.value("contextTokens", AIAgent::kDefaultContextTokens).toInt(),
                              AIAgent::MaxContextTokens);
     m_maxSteps = qBound(AIAgent::kMinMaxIterations,
                         settings.value("agent/maxSteps",
@@ -821,7 +833,7 @@ void SettingsService::resetGeneralToDefaults() {
     // 一致（test_settings::resetGeneralDefaultsMatchesSchema 锁定）。
     // docs/17 A6: 安全三键（allowFullDiskRead/localOnlyMode/
     // allowLocalNetworkFetch）已迁往"安全"页，不在本页重置范围内。
-    setContextTokens(8192);
+    // 上下文 Tokens 已迁"模型配置"页（按 profile 管理），不在此复位。
     setMaxSteps(AIAgent::kDefaultMaxIterations);
     setSimulationMode(false);
     setLogLevel(QStringLiteral("info"));

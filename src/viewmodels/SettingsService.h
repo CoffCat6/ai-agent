@@ -285,7 +285,7 @@ private:
 
     QVariantList m_profiles;   // each entry: {id, displayName, kind, provider, apiProtocol, baseUrl, apiKey, model, models}
     QString m_activeId;
-    int m_contextTokens{8192};
+    int m_contextTokens{AIAgent::kDefaultContextTokens};
     int m_maxSteps{AIAgent::kDefaultMaxIterations};
     bool m_simulationMode{false};
     bool m_allowFullDiskRead{false};

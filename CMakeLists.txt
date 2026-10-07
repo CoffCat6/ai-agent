@@ -233,6 +233,13 @@ qt_add_qml_module(nexus_ai
 # docs/20 §4.1: app icon PNGs under :/icons/ for the window icon and the
 # system tray (QIcon(":/icons/nexus-64.png")). Master asset: assets/icons/
 # nexus-512.png; the exe-embedded .ico is generated from the same master.
+#
+# BASE is required: without it the resource alias keeps the FILES path
+# (assets/icons/nexus-64.png) under the prefix, so the runtime path becomes
+# :/icons/assets/icons/nexus-64.png — QIcon(":/icons/nexus-64.png") then
+# resolves to a null icon and the tray shows nothing. A build-time check
+# (cmake/CheckIconResources.cmake) pins the exact runtime paths so this
+# cannot regress silently again.
 set(NEXUS_ICON_SIZES 16 24 32 48 64 128 256)
 set(NEXUS_ICON_FILES)
 foreach(size IN LISTS NEXUS_ICON_SIZES)
@@ -240,8 +247,30 @@ foreach(size IN LISTS NEXUS_ICON_SIZES)
 endforeach()
 qt_add_resources(nexus_ai "app_icons"
     PREFIX "/icons"
+    BASE "assets/icons"
     FILES ${NEXUS_ICON_FILES}
 )
+
+# Configure-time guard (docs/20 §4.1): the runtime looks icons up as
+# :/icons/nexus-<size>.png. Without BASE the alias keeps its source-relative
+# path and QIcon silently resolves to null → the tray shows no icon and
+# close-to-tray looks broken. Assert the generated .qrc actually carries the
+# expected aliases instead of trusting the API to keep behaving.
+set(NEXUS_EXPECTED_ICON_ALIASES "")
+foreach(size IN LISTS NEXUS_ICON_SIZES)
+    list(APPEND NEXUS_EXPECTED_ICON_ALIASES "alias=\"nexus-${size}.png\"")
+endforeach()
+set(NEXUS_ICON_QRC "${CMAKE_CURRENT_BINARY_DIR}/.qt/rcc/app_icons.qrc")
+add_custom_target(nexus_icon_qrc_check ALL
+    COMMAND ${CMAKE_COMMAND}
+        -DQRC_FILE=${NEXUS_ICON_QRC}
+        -DEXPECTED_ALIASES=${NEXUS_EXPECTED_ICON_ALIASES}
+        -P ${CMAKE_SOURCE_DIR}/cmake/CheckIconResources.cmake
+    COMMENT "Verifying :/icons/ resource aliases"
+    VERBATIM)
+# The .qrc only exists once nexus_ai's resources have been generated, so gate
+# the check behind the app target (no cycle: nexus_ai does not depend on it).
+add_dependencies(nexus_icon_qrc_check nexus_ai)
 
 target_link_libraries(nexus_ai PRIVATE
     nexus_core

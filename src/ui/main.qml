@@ -15,6 +15,10 @@ ApplicationWindow {
     title: "NexusAI"
     color: Theme.bgPrimary
 
+    // Injected by main.cpp via engine.setInitialProperties: whether the OS
+    // really has a tray area. Close-to-tray is only safe when it does.
+    property bool trayAvailable: true
+
     // ── Window geometry persistence (启动时恢复窗口) ─────
     // Restore only when the preference allows it; AgentVM.loadWindowGeometry
     // already drops positions that are off every screen.
@@ -38,7 +42,10 @@ ApplicationWindow {
         // Qt5 QCloseEvent 的 accept() 方法——调用它会抛 TypeError。
         // docs/20 §4.1（D10）：开启"关闭时最小化到托盘"后不再真正关窗，
         // 只把窗口藏起来（托盘图标仍在，双击召回）；真正的退出走托盘菜单。
+        // 托盘不可用时绝不能藏：否则窗口消失又没有任何召回入口，只能去
+        // 任务管理器结束进程（trayAvailable 由 main.cpp 注入）。
         const closeToTray = PreferenceStore.load("window.closeToTray") === true
+                           && mainWindow.trayAvailable
         if (closeToTray) {
             close.accepted = false
             mainWindow.hide()

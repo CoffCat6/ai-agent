@@ -109,6 +109,20 @@ add_test(NAME test_droparea
         "QT_QPA_PLATFORM_PLUGIN_PATH=${QT6_INSTALL_PREFIX}/${QT6_INSTALL_PLUGINS}/platforms"
         $<TARGET_FILE:test_droparea> -platform offscreen)
 
+# docs/20 §4.1：设置项"改完没保存"回归。分类页挂在 Loader 上，切换分类会销毁
+# 页面，而销毁不触发 editingFinished —— 通用页三个文本框的编辑因此静默丢失。
+# 本用例驱动同一生命周期，断言防抖 + Component.onDestruction 能把值送达 sink，
+# 并反向锁定"editingFinished 单独存在时确实会丢"（防止断言失去意义）。
+add_executable(test_settings_edit_lifecycle test_settings_edit_lifecycle.cpp)
+target_link_libraries(test_settings_edit_lifecycle PRIVATE
+    Qt6::Test Qt6::Gui Qt6::Qml Qt6::Quick)
+target_compile_definitions(test_settings_edit_lifecycle PRIVATE
+    NEXUS_TEST_QML_DIR="${CMAKE_CURRENT_SOURCE_DIR}/qml")
+add_test(NAME test_settings_edit_lifecycle
+    COMMAND ${CMAKE_COMMAND} -E env
+        "QT_QPA_PLATFORM_PLUGIN_PATH=${QT6_INSTALL_PREFIX}/${QT6_INSTALL_PLUGINS}/platforms"
+        $<TARGET_FILE:test_settings_edit_lifecycle> -platform offscreen)
+
 # Batch 31a (F9): fake MCP stdio server + client tests. The fake server is
 # a separate executable the transport spawns as a child process.
 add_executable(fake_mcp_server fake_mcp_server_main.cpp)

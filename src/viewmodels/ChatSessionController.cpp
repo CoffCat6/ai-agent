@@ -172,7 +172,7 @@ bool ChatSessionController::isBusy() const {
 }
 
 int ChatSessionController::maxTokens() const {
-    return m_agent ? m_agent->contextLimit() : 8192;
+    return m_agent ? m_agent->contextLimit() : AIAgent::kDefaultContextTokens;
 }
 
 void ChatSessionController::setDraftText(const QString& text) {

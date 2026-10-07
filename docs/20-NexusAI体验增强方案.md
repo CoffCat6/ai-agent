@@ -15,8 +15,13 @@
 > ②拖拽是否可用取决于进程启动方式（UIPI 丢消息），须在窗口创建后放行三条
 > OLE 握手消息。详见 §3.4 的"关键约束"与"启动方式约束"。
 > **工作流 B（桌面集成）已实施**（单实例锁、开机自启、快捷键速查表、系统托盘
-> + 后台任务完成通知 + closeToTray 偏好键；test_settings 新增用例全绿），
+> + 后台任务完成通知 + closeToTray/notice 偏好键；test_settings 新增用例全绿），
 > 详见 §4 各节。D9 快捷键速查随 B4 落地。
+> **B 后续完善**（用户反馈驱动）：新增"系统通知"总开关（`notice.enabled`）；
+> 修两个实测缺陷——①`qt_add_resources` 未加 `BASE` 导致 qrc 别名带源目录
+> 前缀、`QIcon` 静默变空 → 托盘无图标（§4.1）；②设置分类页挂在 Loader 上，
+> 切换分类销毁页面时不触发 `editingFinished`，通用页文本框的编辑静默丢失
+> （§3.6）。上下文 Tokens 从通用页移除、统一归口模型配置（§3.7）。
 > **创建日期**：2026-10-06
 > **依赖文档**：docs/14（L1–L6 遗留修复）、docs/17（沙箱与设置体系）、docs/18（会话归属模型）、docs/19（对话界面视觉完善）
 > **涉及模块**：AgentViewModel / ChatSessionController / AIAgent / SqliteMemory / main.cpp / AgentChatPage / AssistantMessage / InputConsole / Sidebar / SettingsSchema
@@ -212,38 +217,102 @@ delivery agent，验证 enter/move/drop 三者被接受、urls 原样送达 C++ 
 且与 docs/18 分树心智模型有交互设计冲突（分支挂在项目树还是会话列表）。
 **决策：暂缓**，登记为候选，待 A1–A4 验证后再评估。
 
+### 3.6 设置项"改完没保存"的根因（实测，务必保留）
+
+**现象**：通用设置里改文本框（步数预算 / 系统提示词 / 嵌入地址）后重开应用，
+值回到旧值；而 CheckBox（仿真模式）、下拉框（嵌入模型）的改动却能存住。
+注册表 dump 也印证：`simulationMode`、`embedding/model` 有值，
+`agent/maxSteps`、`agent/systemPromptOverride` **一个都没有**。
+
+**根因（探针实测，非推断）**：设置中心的每个分类页都挂在 `Loader` 上，
+`SettingsCenterDialog` 靠 `active: dialog.currentCategory === "<id>"` 切换。
+`active` 转 false 会**直接销毁**该页，而 Qt 在销毁时**不会**触发
+`TextField/TextArea::editingFinished`——只在两种情况下触发：回车，或焦点移到
+别的控件。最小 QML 探针复现：往字段里插值（不回车、不挪焦点）后把 Loader 置为
+active=false，`editingFinished` 触发计数为 **0**，值丢失。
+CheckBox/ComboBox 走 `onToggled`/`onActivated`，改的瞬间就写盘，所以不受影响。
+
+**修法**（`GeneralPage.qml`）：每个设置文本框三条提交路径——
+1. `onEditingFinished`（回车 / 失焦，原行为）；
+2. `onTextEdited` + 400ms 防抖 Timer（覆盖"停手但不停焦"，也避免逐键写盘）；
+3. `Component.onDestruction`（覆盖"编辑中页面就被销毁"）。
+
+**测试**：`tests/test_settings_edit_lifecycle.cpp` 驱动同一 Loader 生命周期，
+断言防抖 + 销毁提交能把值送达 sink；并反向锁定"仅 editingFinished 时确实丢"
+（防止前一条断言因场景失效而变成空断言）。
+
+### 3.7 上下文 Tokens 归口模型配置
+
+**决策**：通用设置页删除"上下文窗口 (Tokens)"输入框，统一由"模型配置"页按
+profile 管理（该页早有"上下文预算覆盖"下拉 + 能力表 + 生效值来源提示，三级
+优先级：profile `contextLength` > 能力表 > 全局 `contextTokens`）。
+
+- `contextTokens` 仍保留为**能力表未覆盖模型的兜底值**（`resolveContextLimit`
+  的 Priority 3），因此键、属性、默认值都不删——只是不再有独立 UI 入口；
+- `resetGeneralToDefaults()` 不再复位它（`resetGeneralDefaultsMatchesSchema`
+  已同步移除该断言），避免"在模型页设好、去通用页点恢复默认被偷偷改掉"；
+- 模型配置页在无能力表命中时显示的"当前生效 N tokens（来源：全局默认）"
+  即该兜底值，出处仍可追溯。
+
+**默认值上调 8192 → 300000**：现代托管模型窗口普遍 ≥128k，8192 会在普通对话
+刚开始时就触发压缩。收口为 `AIAgent::kDefaultContextTokens` 具名常量，
+账本（SettingsSchema）、`SettingsService` 成员初值与 `load()` 兜底、无 agent
+时的 `ChatSessionController::maxTokens()` 全部引用它，避免四处各写数字漂移
+（`defaultContextTokensMatchesAgentConstant` 锁定）。
+
+**存量迁移（schema v2 → v3）**：注册表里已存的 `contextTokens` 若**正好等于旧
+默认 8192** 就随之上调——那不是用户的主动选择，而且通用页入口已移除、用户再也
+改不到；真正的自定义值（≠8192）原样保留，不覆盖用户意图。`SettingsSchema::
+kSchemaVersion` 升到 3，`upgradeContextTokenDefault()` 由 `load()` 依版本号
+只跑一次（`schemaV3UpgradesContextTokenDefault` 覆盖三种情形）。
+
 ---
 
 ## 4. 工作流 B：桌面集成（第二批实施）
 
 ### 4.1 系统托盘 + 任务完成通知（修 D6/D10，量级 S）
 
-**设计**：
+**实施**：
 
 - `main.cpp` 构造 `QSystemTrayIcon`：
-  - **图标**：无 .ico 资源（app.rc 只带 VERSIONINFO），用 QPainter 画主题色
-    "N" 圆角方块（与启动页品牌块同款视觉），零外部资源；
+  - **图标**：正式素材链——`assets/icons/nexus.ai.ico` 嵌进 exe（任务栏/
+    资源管理器/Alt-Tab），同一素材的 PNG 走 Qt 资源 `:/icons/`（窗口 + 托盘）；
   - 菜单：显示/隐藏主窗、新建会话、退出（退出先 `AgentVM.stop()` 停全部
     busy tab——沿用"关 tab 停任务"封口语义，再 `QCoreApplication::quit()`）；
     双击托盘 = 显示/隐藏主窗（系统托盘惯用交互）；
   - **通知**：AgentViewModel 新增 `taskFinished(sessionTitle, success)` 信号
     （任意 tab 的 Busy→非 Busy 边沿都发，标题走 tabModel 同一解析逻辑），
-    main.cpp 在**主窗不可见**时 `showMessage`（成功=Information、否则 Warning）；
-  - 关闭行为：新增偏好键 `prefs/v1/window.closeToTray`（默认 false = 直接退出）。
+    main.cpp 在**主窗不处于前台激活**时 `showMessage`（成功=Information、
+    否则 Warning）——最小化（`isVisible()` 仍为 true）与藏进托盘都会通知，
+    只有"用户正盯着窗口"才静默；
+  - **通知总开关**：`prefs/v1/notice.enabled`（默认 true）关掉后一律不打扰；
+  - 关闭行为：`prefs/v1/window.closeToTray`（默认 false = 直接退出）。
     **QQuickCloseEvent 没有公共头文件**（qquickwindow.h 只前置声明），C++ 侧
     无法可靠拦截 → 在 main.qml 的 `onClosing` 里按同一偏好键分支（accepted=false
-    + hide），托盘菜单"退出"是唯一真正退出路径。
+    + hide），托盘菜单"退出"是唯一真正退出路径。分支还要求
+    `mainWindow.trayAvailable`（main.cpp 经 `engine.setInitialProperties`
+    注入 `QSystemTrayIcon::isSystemTrayAvailable()`）：托盘不可用时藏窗口等于
+    让应用失踪，只能去任务管理器结束进程。
 - **应用基类**：从 `QGuiApplication` 换成 `QApplication` + 链接 `Qt6::Widgets`
   （QSystemTrayIcon / QMenu 住在 QtWidgets；Qt Quick + QApplication 是官方
   支持的组合，事件分发/输入管线不受影响）。
-- **键登记**：`prefs/v1/window.closeToTray` 与 `prefs/v1/general.autoStart`
-  登记进 SettingsSchema（encrypted=false）；GeneralPage 通过
-  `PreferenceControl` 自动呈现（Bool → Switch），无需手改 UI。
+- **键登记**：`prefs/v1/window.closeToTray`、`prefs/v1/general.autoStart`、
+  `prefs/v1/notice.enabled` 登记进 SettingsSchema（encrypted=false）；
+  GeneralPage 通过 `PreferenceControl` 自动呈现（Bool → Switch），无需手改 UI。
 
-**测试**：`test_settings` 新增——`schemaHasKeyRegistry` 断言两个新键进账本、
-`closeToTrayPreferenceRoundTrips`（Bool 归一回归：QSettings 的 REG_SZ
-"true"/"false" 必须还原成真 bool，否则 QML 的 `=== true` 严格比较静默失效）；
-托盘本体冒烟为主（QSystemTrayIcon 无 headless 断言价值）。
+**图标资源路径陷阱（实测踩坑）**：`qt_add_resources(... PREFIX "/icons" FILES
+assets/icons/nexus-64.png)` 生成的别名会保留 FILES 的路径段，运行时路径变成
+`:/icons/assets/icons/nexus-64.png`——`QIcon(":/icons/nexus-64.png")` 静默返回
+**空图标**，托盘看起来"没反应"，全链路无任何报错。必须加 `BASE "assets/icons"`
+剥掉源目录前缀。为防再犯：CMakeLists 增加 `nexus_icon_qrc_check` 目标
+（cmake/CheckIconResources.cmake）在每次构建校验生成 .qrc 的别名，main.cpp
+对空图标显式告警并回退到 exe 内嵌图标。
+
+**测试**：`test_settings` 新增——`schemaHasKeyRegistry` 断言三个新键进账本
+（并锁定 notice.enabled 默认 true）、`closeToTrayPreferenceRoundTrips`
+（Bool 归一回归：QSettings 的 REG_SZ "true"/"false" 必须还原成真 bool，否则
+QML 的 `=== true` 严格比较静默失效）；托盘本体冒烟为主（QSystemTrayIcon 无
+headless 断言价值）。
 
 ### 4.2 单实例锁（修 D7，量级 S）
 
