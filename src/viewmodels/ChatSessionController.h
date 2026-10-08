@@ -3,7 +3,7 @@
 #include <QJsonArray>
 #include <QObject>
 #include <QString>
-#include <QTimer>
+
 #include <QVariantList>
 #include <QVariantMap>
 
@@ -16,7 +16,7 @@ class AIAgent;
 
 // One open session tab (Batch 29, F7): a dedicated AIAgent instance plus the
 // conversation state belonging to it (trace / response / draft / session id /
-// token usage / simulation fallback). Parallel tabs each run their own
+// token usage). Parallel tabs each run their own
 // controller, so a task running in a background tab keeps executing and
 // updating its own trace while the user works in another tab.
 //
@@ -59,13 +59,12 @@ public:
     QString activeProjectId() const;
     QString activeProjectRoot() const;
     int usedTokens() const { return m_usedTokens; }
-    // 本会话累计消耗（input+output）；agent 未挂接（模拟模式）时为 0。
+    // 本会话累计消耗（input+output）；agent 尚未挂接时为 0。
     qint64 sessionTokensUsed() const { return m_sessionTokensUsed; }
     int maxTokens() const;
 
     // 会话级权限模式（0=变更确认 1=自动编辑 2=完全访问）。QML 经
-    // AgentViewModel 写入，转发给本 tab 的 agent；镜像成员在 agent 未挂接
-    // （模拟模式）期间也保持可读。内存态，不持久化。
+    // AgentViewModel 写入并转发给本 tab 的 agent。内存态，不持久化。
     int permissionMode() const { return m_permissionMode; }
     // 用户显式切换：标记 overridden，此后全局默认变更不再影响本 tab。
     void setPermissionMode(int mode);
@@ -80,8 +79,7 @@ public:
                    const QJsonArray& files = {});
     void approveToolCall(const QString& id, bool approved);
     void stop();
-    // docs/20 §3.1（FORK-701）：重新生成。真实管线 → agent->regenerateLast；
-    // 模拟模式 → 清空回复重播模拟。busy 时拒绝。
+    // docs/20 §3.1（FORK-701）：重新生成。busy 时拒绝。
     void regenerate();
     void newChat();
     void loadSession(const QString& sessionId);
@@ -127,12 +125,6 @@ signals:
 private:
     void setState(AgentState state);
     void connectAgent(AIAgent* agent);
-    void appendTraceNode(const QString& type, const QString& title,
-                         const QString& status, const QString& args = "",
-                         const QString& result = "");
-    void updateLastNodeStatus(const QString& status);
-    void startSimulation();
-    void simulationStep();
 
     AIAgent* m_agent{nullptr};
     bool m_ownedAgent{false};
@@ -146,10 +138,6 @@ private:
     int m_permissionMode{0};            // PermissionMode as int; 0 = ConfirmChanges
     bool m_permissionModeOverridden{false};
 
-    QTimer m_simTimer;
-    int m_simStep{0};
-    QString m_simInput;
-    QString m_pendingToolCallId;
 
     // docs/20 §3.3：输入历史环。仅内存态（进程内），相邻重复不入队；
     // m_historyCursor 指向浏览位置（size() = 未浏览/最新之外）。

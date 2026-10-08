@@ -153,6 +153,13 @@ Dialog {
 
                 Loader {
                     anchors.fill: parent
+                    active: dialog.currentCategory === "backup"
+                    visible: active
+                    source: "qrc:/qt/qml/NexusAI/src/ui/pages/SettingsBackupPage.qml"
+                }
+
+                Loader {
+                    anchors.fill: parent
                     // 绑定 opened：关闭即销毁，下次打开重建并重新查询，
                     // 避免 stats 停留在首次加载时的旧值（统计不涨的假象）。
                     active: dialog.currentCategory === "usage" && dialog.opened

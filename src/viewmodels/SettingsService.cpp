@@ -13,6 +13,7 @@
 #include <QSettings>
 #include <QCoreApplication>
 #include <QDir>
+#include <QUrl>
 #include <QUuid>
 
 #ifdef Q_OS_WIN
@@ -304,7 +305,9 @@ void SettingsService::load() {
                         settings.value("agent/maxSteps",
                                        AIAgent::kDefaultMaxIterations).toInt(),
                         AIAgent::kIterationCeiling);
-    m_simulationMode = settings.value("simulationMode", false).toBool();
+    m_taskTimeoutMinutes = qBound(1, settings.value("agent/taskTimeoutMinutes",
+        AIAgent::kDefaultTaskTimeoutMs / 60000).toInt(), 60);
+
     m_allowFullDiskRead = settings.value("security/allowFullDiskRead", false).toBool();
     m_allowProjectWrite = settings.value("security/allowProjectWrite", false).toBool();
     m_localOnlyMode = settings.value("security/localOnlyMode", false).toBool();
@@ -315,7 +318,13 @@ void SettingsService::load() {
     // logging/level is Logger::install()'s key; the env override still wins
     // there, so load() only mirrors the stored value (install() already
     // applied the effective level before any UI exists).
-    m_logLevel = settings.value("logging/level", QStringLiteral("info")).toString();
+    m_logLevel = settings.value("logging/level", QStringLiteral("info")).toString().trimmed().toLower();
+    if (m_logLevel != QLatin1String("debug") && m_logLevel != QLatin1String("info")
+            && m_logLevel != QLatin1String("warning") && m_logLevel != QLatin1String("critical"))
+        m_logLevel = QStringLiteral("info");
+    m_logDirectory = settings.value("logging/directory").toString().trimmed();
+    m_logMaxFileSizeMb = qBound(1, settings.value("logging/maxFileSizeMb", 10).toInt(), 1024);
+    m_logRetentionFiles = qBound(1, settings.value("logging/retentionFiles", 14).toInt(), 100);
     m_webSearchProvider = settings.value("webSearch/provider", QStringLiteral("tavily")).toString();
     // API key is stored encrypted (DPAPI) - empty if not set or decryption failed.
     m_webSearchApiKey = unprotectApiKey(settings.value("webSearch/apiKey", QString()).toString());
@@ -379,6 +388,8 @@ void SettingsService::persist() {
                       QString::fromUtf8(QJsonDocument(arr).toJson(QJsonDocument::Compact)));
     settings.setValue(kActiveKey, m_activeId);
     settings.sync();
+    if (settings.status() != QSettings::NoError)
+        qCWarning(lcSettings) << "Failed to persist model profiles";
 }
 
 QString SettingsService::addProfile(const QString& kind) {
@@ -632,12 +643,14 @@ void SettingsService::setMaxSteps(int steps) {
     emit maxStepsChanged();
 }
 
-void SettingsService::setSimulationMode(bool enabled) {
-    if (m_simulationMode == enabled) return;
-    m_simulationMode = enabled;
-    QSettings().setValue("simulationMode", enabled);
-    emit simulationModeChanged();
+void SettingsService::setTaskTimeoutMinutes(int minutes) {
+    const int clamped = qBound(1, minutes, 60);
+    if (m_taskTimeoutMinutes == clamped) return;
+    m_taskTimeoutMinutes = clamped;
+    QSettings().setValue("agent/taskTimeoutMinutes", clamped);
+    emit taskTimeoutMinutesChanged();
 }
+
 
 void SettingsService::setAllowFullDiskRead(bool enabled) {
     if (m_allowFullDiskRead == enabled) return;
@@ -720,11 +733,49 @@ void SettingsService::setSystemPromptOverride(const QString& prompt) {
 
 void SettingsService::setLogLevel(const QString& level) {
     const QString normalized = level.trimmed().toLower();
-    if (normalized.isEmpty() || m_logLevel == normalized) return;
+    if (normalized != QLatin1String("debug") && normalized != QLatin1String("info")
+            && normalized != QLatin1String("warning")
+            && normalized != QLatin1String("critical"))
+        return;
+    if (m_logLevel == normalized) return;
     m_logLevel = normalized;
     QSettings().setValue("logging/level", normalized);
     Logger::setMinLevel(Logger::levelFromName(normalized, Logger::minLevel()));
     emit logLevelChanged();
+}
+
+QString SettingsService::logDirectory() const {
+    return Logger::logDir();
+}
+
+void SettingsService::setLogDirectory(const QString& directory) {
+    QString normalized = directory.trimmed();
+    if (normalized.startsWith(QLatin1String("file://")))
+        normalized = QUrl(normalized).toLocalFile();
+    if (!normalized.isEmpty()) normalized = QDir::cleanPath(normalized);
+    if (m_logDirectory == normalized) return;
+    m_logDirectory = normalized;
+    QSettings().setValue("logging/directory", normalized);
+    Logger::setLogDirectory(normalized);
+    emit logDirectoryChanged();
+}
+
+void SettingsService::setLogMaxFileSizeMb(int sizeMb) {
+    const int clamped = qBound(1, sizeMb, 1024);
+    if (m_logMaxFileSizeMb == clamped) return;
+    m_logMaxFileSizeMb = clamped;
+    QSettings().setValue("logging/maxFileSizeMb", clamped);
+    Logger::setMaxFileSizeMb(clamped);
+    emit logMaxFileSizeMbChanged();
+}
+
+void SettingsService::setLogRetentionFiles(int count) {
+    const int clamped = qBound(1, count, 100);
+    if (m_logRetentionFiles == clamped) return;
+    m_logRetentionFiles = clamped;
+    QSettings().setValue("logging/retentionFiles", clamped);
+    Logger::setRetentionFiles(clamped);
+    emit logRetentionFilesChanged();
 }
 
 // L1: legal search provider keys for the settings UI. Kept in sync with the
@@ -776,7 +827,7 @@ void SettingsService::setEpisodicMemoryEnabled(bool enabled) {
 }
 
 // docs/16 §7.3: quota setters. Int quotas are clamped to >= 0 (0 = unlimited);
-// same 4-step pattern as setContextTokens/setSimulationMode. Flat QSettings keys
+// same 4-step pattern as setContextTokens. Flat QSettings keys
 // match the SettingsSchema registration (no prefix).
 void SettingsService::setDailyTokenQuota(int v) {
     const int clamped = qMax(0, v);
@@ -832,14 +883,17 @@ void SettingsService::setActiveProjectId(const QString& id) {
 }
 
 void SettingsService::resetGeneralToDefaults() {
-    // 键集合与 GeneralPage 呈现项一一对应；默认值与 SettingsSchema 保持
-    // 一致（test_settings::resetGeneralDefaultsMatchesSchema 锁定）。
+    // SettingsService 管理的本页设置键与 SettingsSchema 保持一致
+    //（test_settings::resetGeneralDefaultsMatchesSchema 锁定）；偏好项由页面层复位。
     // docs/17 A6: 安全三键（allowFullDiskRead/localOnlyMode/
     // allowLocalNetworkFetch）已迁往"安全"页，不在本页重置范围内。
     // 上下文 Tokens 已迁"模型配置"页（按 profile 管理），不在此复位。
     setMaxSteps(AIAgent::kDefaultMaxIterations);
-    setSimulationMode(false);
+    setTaskTimeoutMinutes(AIAgent::kDefaultTaskTimeoutMs / 60000);
     setLogLevel(QStringLiteral("info"));
+    setLogDirectory(QString());
+    setLogMaxFileSizeMb(10);
+    setLogRetentionFiles(14);
     setEmbeddingModel(QStringLiteral("nomic-embed-text"));
     setEmbeddingBaseUrl(QStringLiteral("http://localhost:11434"));
     setSystemPromptOverride(QString());

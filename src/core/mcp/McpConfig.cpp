@@ -6,6 +6,7 @@
 #include <QJsonArray>
 #include <QJsonDocument>
 #include <QJsonObject>
+#include <QSaveFile>
 #include <QStandardPaths>
 
 namespace NexusAI {
@@ -32,6 +33,7 @@ QVector<QVariantMap> load() {
         server["command"] = obj.value("command").toString();
         server["args"] = obj.value("args").toArray().toVariantList();
         server["env"] = obj.value("env").toObject().toVariantMap();
+        server["headers"] = obj.value("headers").toObject().toVariantMap();
         server["url"] = obj.value("url").toString();
         server["enabled"] = obj.value("enabled").toBool(true);
         if (!server["name"].toString().isEmpty())
@@ -40,9 +42,9 @@ QVector<QVariantMap> load() {
     return out;
 }
 
-void save(const QVariantList& servers) {
+bool save(const QVariantList& servers) {
     const QString path = configFilePath();
-    QDir().mkpath(QFileInfo(path).absolutePath());
+    if (!QDir().mkpath(QFileInfo(path).absolutePath())) return false;
 
     QJsonArray array;
     for (const QVariant& entry : servers) {
@@ -53,17 +55,19 @@ void save(const QVariantList& servers) {
         obj["command"] = server.value("command").toString();
         obj["args"] = QJsonArray::fromVariantList(
             server.value("args").toList());
-        obj["env"] = server.value("env").toMap().isEmpty()
-            ? QJsonObject() : QJsonObject::fromVariantMap(server.value("env").toMap());
+        obj["env"] = QJsonObject::fromVariantMap(server.value("env").toMap());
+        obj["headers"] = QJsonObject::fromVariantMap(server.value("headers").toMap());
         obj["url"] = server.value("url").toString();
         obj["enabled"] = server.value("enabled").toBool();
         array.append(obj);
     }
 
-    QFile file(path);
-    if (file.open(QIODevice::WriteOnly))
-        file.write(QJsonDocument(QJsonObject{{"servers", array}})
-                       .toJson(QJsonDocument::Indented));
+    QSaveFile file(path);
+    if (!file.open(QIODevice::WriteOnly)) return false;
+    const QByteArray data = QJsonDocument(QJsonObject{{"servers", array}})
+                                .toJson(QJsonDocument::Indented);
+    if (file.write(data) != data.size()) return false;
+    return file.commit();
 }
 
 } // namespace McpConfig

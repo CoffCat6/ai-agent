@@ -8,9 +8,11 @@
 #include <QMutexLocker>
 #include <QRegularExpression>
 #include <QSettings>
+#include <QSet>
 #include <QStandardPaths>
 #include <QtDebug>
 
+#include <algorithm>
 #include <cstdio>
 #include <vector>
 
@@ -22,6 +24,9 @@ QMutex g_mutex;
 QFile g_file;
 QString g_filePath;
 QtMsgType g_minLevel = QtInfoMsg;
+QString g_logDirectory;
+int g_maxFileSizeMb = 10;
+int g_retentionFiles = 14;
 
 // In-process ring buffer for the in-app log panel (doc 6 §3.1): bounded to
 // Logger::RingCapacity, guarded by g_mutex, filled AFTER the level filter
@@ -65,20 +70,64 @@ bool parseLevel(const QString& name, QtMsgType& out) {
     return false;
 }
 
-// Daily rotation keeps name order == time order; drop everything but the
-// newest files so the log directory cannot grow without bound.
-void pruneOldLogs(const QDir& dir, int keep = 7) {
+QString defaultLogDir() {
+    return QStandardPaths::writableLocation(QStandardPaths::AppLocalDataLocation)
+        + QStringLiteral("/logs");
+}
+
+QString configuredLogDir() {
+    return g_logDirectory.trimmed().isEmpty() ? defaultLogDir() : g_logDirectory;
+}
+
+qint64 maxFileBytes() {
+    return static_cast<qint64>(g_maxFileSizeMb) * 1024 * 1024;
+}
+
+int nextLogIndex(const QDir& dir, const QString& date) {
     const QFileInfoList files = dir.entryInfoList(
-        QStringList() << "nexus-*.log", QDir::Files, QDir::Name | QDir::Reversed);
-    for (int i = keep; i < files.size(); ++i)
-        QFile::remove(files.at(i).absoluteFilePath());
+        QStringList() << QStringLiteral("nexus-%1-*.log").arg(date), QDir::Files);
+    int maxIndex = 0;
+    static const QRegularExpression indexedName(QStringLiteral("-(\\d+)\\.log$"));
+    for (const QFileInfo& info : files) {
+        const auto match = indexedName.match(info.fileName());
+        if (match.hasMatch())
+            maxIndex = qMax(maxIndex, match.captured(1).toInt());
+    }
+    return maxIndex + 1;
+}
+
+QString indexedLogPath(const QDir& dir, const QString& date, int index) {
+    return dir.filePath(QStringLiteral("nexus-%1-%2.log")
+                            .arg(date, 4, QLatin1Char('0'))
+                            .arg(index, 4, 10, QLatin1Char('0')));
+}
+
+void pruneOldLogs(const QDir& dir) {
+    QFileInfoList files = dir.entryInfoList(
+        QStringList() << "nexus-*.log", QDir::Files);
+    std::sort(files.begin(), files.end(), [](const QFileInfo& a, const QFileInfo& b) {
+        return a.lastModified() > b.lastModified();
+    });
+    QSet<QString> retained;
+    for (int i = 0; i < qMin(g_retentionFiles, files.size()); ++i)
+        retained.insert(files.at(i).absoluteFilePath());
+    const QString activePath = QFileInfo(g_filePath).absoluteFilePath();
+    if (!g_filePath.isEmpty() && !retained.contains(activePath)) {
+        if (retained.size() >= g_retentionFiles && !files.isEmpty())
+            retained.remove(files.at(qMin(g_retentionFiles, files.size()) - 1).absoluteFilePath());
+        retained.insert(activePath);
+    }
+    for (const QFileInfo& file : files) {
+        if (!retained.contains(file.absoluteFilePath()))
+            QFile::remove(file.absoluteFilePath());
+    }
 }
 
 void messageHandler(QtMsgType type, const QMessageLogContext& context, const QString& message) {
-    // Level filter by severity rank (Fatal can never be below the threshold)
-    if (severityRank(type) < severityRank(g_minLevel)) return;
-
     QMutexLocker locker(&g_mutex);
+    // QtMsgType is not ordered by severity. Check while holding the same lock
+    // used by setMinLevel() to avoid a data race during live settings changes.
+    if (severityRank(type) < severityRank(g_minLevel)) return;
 
     QString line = QString("[%1] [%2]")
         .arg(QDateTime::currentDateTime().toString("yyyy-MM-dd hh:mm:ss.zzz"),
@@ -104,26 +153,55 @@ void messageHandler(QtMsgType type, const QMessageLogContext& context, const QSt
             g_ring.erase(g_ring.begin());
     }
 
-    // (Re)open the target file when the day changed or on first message.
-    const QString dirPath = Logger::logDir();
-    const QString wanted = dirPath + "/nexus-" + QDateTime::currentDateTime().toString("yyyyMMdd") + ".log";
-    if (g_filePath != wanted) {
-        if (g_file.isOpen())
-            g_file.close();
+    const QString dirPath = configuredLogDir();
+    const QString date = QDateTime::currentDateTime().toString("yyyyMMdd");
+    const QString dailyPath = QDir(dirPath).filePath(QStringLiteral("nexus-%1.log").arg(date));
+    QByteArray bytes = line.toUtf8() + '\n';
+    if (bytes.size() > maxFileBytes())
+        bytes = bytes.left(static_cast<int>(maxFileBytes()));
+
+    if (g_filePath.isEmpty() || QFileInfo(g_filePath).absolutePath() != QDir(dirPath).absolutePath()
+            || !QFileInfo(g_filePath).fileName().startsWith(QStringLiteral("nexus-%1").arg(date))) {
+        if (g_file.isOpen()) g_file.close();
         QDir().mkpath(dirPath);
+
+        QDir logDirectory(dirPath);
+        QString wanted = dailyPath;
+        const int latestIndex = nextLogIndex(logDirectory, date) - 1;
+        if (latestIndex > 0)
+            wanted = indexedLogPath(logDirectory, date, latestIndex);
+        else if (QFileInfo::exists(dailyPath)
+                 && QFileInfo(dailyPath).size() >= maxFileBytes())
+            wanted = indexedLogPath(logDirectory, date, 1);
+
+        if (QFileInfo(wanted).exists() && QFileInfo(wanted).size() >= maxFileBytes())
+            wanted = indexedLogPath(logDirectory, date, nextLogIndex(logDirectory, date));
         g_file.setFileName(wanted);
         if (g_file.open(QIODevice::WriteOnly | QIODevice::Append | QIODevice::Text)) {
             g_filePath = wanted;
-            pruneOldLogs(QDir(dirPath));
+            pruneOldLogs(logDirectory);
         } else {
             g_filePath.clear();
         }
     }
 
     if (g_file.isOpen()) {
-        g_file.write(line.toUtf8());
-        g_file.write("\n");
-        g_file.flush();
+        if (g_file.size() > 0 && g_file.size() + bytes.size() > maxFileBytes()) {
+            g_file.close();
+            const QString nextPath = indexedLogPath(QDir(dirPath), date,
+                                                    nextLogIndex(QDir(dirPath), date));
+            g_file.setFileName(nextPath);
+            if (g_file.open(QIODevice::WriteOnly | QIODevice::Append | QIODevice::Text)) {
+                g_filePath = nextPath;
+                pruneOldLogs(QDir(dirPath));
+            } else {
+                g_filePath.clear();
+            }
+        }
+        if (g_file.isOpen()) {
+            g_file.write(bytes);
+            g_file.flush();
+        }
     }
 
     // Mirror to stderr so terminal runs and CI still show live output.
@@ -137,7 +215,40 @@ void messageHandler(QtMsgType type, const QMessageLogContext& context, const QSt
 } // namespace
 
 QString Logger::logDir() {
-    return QStandardPaths::writableLocation(QStandardPaths::AppLocalDataLocation) + "/logs";
+    QMutexLocker locker(&g_mutex);
+    return configuredLogDir();
+}
+
+void Logger::setLogDirectory(const QString& directory) {
+    QString normalized = QDir::cleanPath(directory.trimmed());
+    if (directory.trimmed().isEmpty()) normalized.clear();
+    QMutexLocker locker(&g_mutex);
+    if (g_logDirectory == normalized) return;
+    if (g_file.isOpen()) g_file.close();
+    g_filePath.clear();
+    g_logDirectory = normalized;
+}
+
+int Logger::maxFileSizeMb() {
+    QMutexLocker locker(&g_mutex);
+    return g_maxFileSizeMb;
+}
+
+void Logger::setMaxFileSizeMb(int sizeMb) {
+    QMutexLocker locker(&g_mutex);
+    g_maxFileSizeMb = qBound(1, sizeMb, 1024);
+}
+
+int Logger::retentionFiles() {
+    QMutexLocker locker(&g_mutex);
+    return g_retentionFiles;
+}
+
+void Logger::setRetentionFiles(int count) {
+    QMutexLocker locker(&g_mutex);
+    g_retentionFiles = qBound(1, count, 100);
+    const QString dir = configuredLogDir();
+    if (QDir(dir).exists()) pruneOldLogs(QDir(dir));
 }
 
 QString Logger::logFilePath() {
@@ -177,16 +288,20 @@ QVector<Logger::LogEntry> Logger::entriesSince(quint64 seq) {
 }
 
 void Logger::install() {
-    // Minimum level from settings (logging/level: debug|info|warning|critical,
-    // default "info"), overridable per run via the NEXUSAI_LOG_LEVEL env var.
+    // Values are loaded before any Qt messages are redirected to this handler.
     QSettings settings(QStringLiteral("NexusAI"), QStringLiteral("NexusAI"));
     QtMsgType level = QtInfoMsg;
     parseLevel(settings.value("logging/level", QStringLiteral("info")).toString(), level);
     const QString env = qEnvironmentVariable("NEXUSAI_LOG_LEVEL");
-    if (!env.isEmpty())
-        parseLevel(env, level);
-    g_minLevel = level;
+    if (!env.isEmpty()) parseLevel(env, level);
 
+    QMutexLocker locker(&g_mutex);
+    g_minLevel = level;
+    g_logDirectory = settings.value("logging/directory").toString().trimmed();
+    if (!g_logDirectory.isEmpty()) g_logDirectory = QDir::cleanPath(g_logDirectory);
+    g_maxFileSizeMb = qBound(1, settings.value("logging/maxFileSizeMb", 10).toInt(), 1024);
+    g_retentionFiles = qBound(1, settings.value("logging/retentionFiles", 14).toInt(), 100);
+    locker.unlock();
     qInstallMessageHandler(messageHandler);
 }
 

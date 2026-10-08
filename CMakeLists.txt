@@ -128,6 +128,8 @@ qt_add_qml_module(nexus_viewmodels
         src/viewmodels/SettingsService.cpp
         src/viewmodels/SettingsSchema.h
         src/viewmodels/SettingsSchema.cpp
+        src/viewmodels/SettingsBackup.h
+        src/viewmodels/SettingsBackup.cpp
         src/viewmodels/ConnectionTester.h
         src/viewmodels/ConnectionTester.cpp
         src/viewmodels/AgentViewModel.h
@@ -228,6 +230,7 @@ qt_add_qml_module(nexus_ai
         src/ui/pages/ToolsPage.qml
         src/ui/pages/MemoryPage.qml
         src/ui/pages/UsageStatsPage.qml
+        src/ui/pages/SettingsBackupPage.qml
 )
 
 # docs/20 §4.1: app icon PNGs under :/icons/ for the window icon and the

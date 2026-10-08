@@ -32,9 +32,8 @@ class RagService;
 // notifications are re-emitted on every tab switch); the knowledge base,
 // layout persistence and cross-session search stay global.
 //
-// When a real AIAgent is attached via setAgent(), all actions are delegated
-// to it (real LLM pipeline). Otherwise the built-in simulation runs, which
-// allows UI demonstration without a configured backend.
+// When an AIAgent is attached via setAgent(), task actions are delegated to
+// its real LLM pipeline. A task is rejected while no agent is configured.
 class AgentViewModel : public QObject {
     Q_OBJECT
     QML_SINGLETON
@@ -122,8 +121,6 @@ class AgentViewModel : public QObject {
     Q_PROPERTY(int knowledgeEmbedDone READ knowledgeEmbedDone NOTIFY knowledgeEmbedProgressChanged)
     Q_PROPERTY(int knowledgeEmbedTotal READ knowledgeEmbedTotal NOTIFY knowledgeEmbedProgressChanged)
 
-    // ── Pipeline mode ─────────────────────────────────
-    Q_PROPERTY(bool liveMode READ liveMode NOTIFY liveModeChanged FINAL)
 
     // ── In-app log panel (日志开发 doc 6) ──────────────
     Q_PROPERTY(LogModel* logModel READ logModel CONSTANT)
@@ -157,24 +154,24 @@ public:
     void setEmbedProgress(int done, int total);
     static AgentViewModel* create(QQmlEngine*, QJSEngine*);
 
-    // Attach the shared real-pipeline agent (tab 0 + template). Takes no
-    // ownership (agent outlives the VM). nullptr = simulation for every tab.
+    // Attach the shared agent (tab 0 + template). Takes no ownership
+    // (agent outlives the VM); nullptr detaches the current pipeline.
     void setAgent(AIAgent* agent);
     // Batch 29: factory building a fresh AIAgent (+ own SQLite connection)
-    // for every additional tab. When unset, additional tabs run simulation.
+    // for every additional tab.
     void setAgentFactory(std::function<AIAgent*()> factory);
     // Batch 29: apply to every attached agent — provider switches call this
     // with setLLMService, since the service instances are shared across tabs.
     void applyToAgents(const std::function<void(AIAgent*)>& fn);
     // Batch 17: attach the persistence backend for search/export. Takes no
-    // ownership; nullptr disables those features (simulation mode).
+    // ownership; nullptr disables those features.
     void setMemory(IMemory* memory);
     // Attach the knowledge-base service (optional). Takes no ownership.
     void setRagService(RagService* rag);
     // Provide persisted knowledge document content (used by re-embedding).
     // Called on the GUI thread; return empty when the document is unknown.
     void setKnowledgeContentProvider(std::function<QString(const QString&)> provider);
-    bool liveMode() const { return m_templateAgent != nullptr; }
+
 
     // State accessors (active tab)
     int stateAsInt() const { return static_cast<int>(active()->state()); }
@@ -417,7 +414,7 @@ signals:
     void knowledgeChanged();
     void knowledgeBusyChanged();
     void knowledgeEmbedProgressChanged();
-    void liveModeChanged();
+
     void toolConfirmRequired(const QString& id, const QString& name, const QVariantMap& args);
     void toolRegistryModelChanged();
     void errorOccurred(const QString& error);

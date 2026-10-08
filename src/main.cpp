@@ -234,6 +234,8 @@ qInfo() << "NexusAI" << app.applicationVersion() << "starting";
     // M1 (stats): token / cost usage aggregation.
     prefRegistry->registerCategory(QStringLiteral("usage"),
         QT_TRANSLATE_NOOP("NexusAI", "用量统计"), 8);
+    prefRegistry->registerCategory(QStringLiteral("backup"),
+        QT_TRANSLATE_NOOP("NexusAI", "设置与备份"), 9);
 
     // Internal UI state (not shown in any category panel; categoryId empty)
     {
@@ -474,6 +476,7 @@ qInfo() << "NexusAI" << app.applicationVersion() << "starting";
         tabAgent->setMemory(new SqliteMemory());
         tabAgent->setContextLimit(settings->resolveContextLimit());
         tabAgent->setMaxIterations(settings->maxSteps());
+        tabAgent->setTaskTimeoutMs(settings->taskTimeoutMinutes() * 60 * 1000);
 
         const ProviderSet set = LlmProtocolRegistry::createServiceSet(tabAgent);
         applyProfileTo(set);
@@ -609,11 +612,13 @@ qInfo() << "NexusAI" << app.applicationVersion() << "starting";
         agent->setContextLimit(settings->resolveContextLimit());
         // 步数预算（agent/maxSteps）：模板 agent 与各标签 agent 用同一个值。
         agent->setMaxIterations(settings->maxSteps());
+        agent->setTaskTimeoutMs(settings->taskTimeoutMinutes() * 60 * 1000);
         agent->setLLMService(activeService(templateSet));
 
         agentVM->applyToAgents([&](AIAgent* tabAgent) {
             tabAgent->setContextLimit(settings->resolveContextLimit());
             tabAgent->setMaxIterations(settings->maxSteps());
+            tabAgent->setTaskTimeoutMs(settings->taskTimeoutMinutes() * 60 * 1000);
             const ProviderSet set = tabAgent == agent
                 ? templateSet
                 : tabProviderSets.value(tabAgent, templateSet);
@@ -657,6 +662,7 @@ qInfo() << "NexusAI" << app.applicationVersion() << "starting";
     QObject::connect(settings, &SettingsService::contextTokensChanged, &app, [applySettings]() { applySettings(); });
     // 步数预算改动即时生效（含已在跑的标签）。
     QObject::connect(settings, &SettingsService::maxStepsChanged, &app, [applySettings]() { applySettings(); });
+    QObject::connect(settings, &SettingsService::taskTimeoutMinutesChanged, &app, [applySettings]() { applySettings(); });
     QObject::connect(settings, &SettingsService::allowFullDiskReadChanged, &app, [applySettings]() { applySettings(); });
     QObject::connect(settings, &SettingsService::allowProjectWriteChanged, &app, [applySettings]() { applySettings(); });
     QObject::connect(settings, &SettingsService::allowLocalNetworkFetchChanged, &app, [applySettings]() { applySettings(); });
@@ -721,12 +727,9 @@ qInfo() << "NexusAI" << app.applicationVersion() << "starting";
     QObject::connect(embedding, &OllamaEmbedding::embedProgress,
                      agentVM, &AgentViewModel::setEmbedProgress);
 
-    // Live pipeline vs. built-in simulation
-    const auto applyMode = [settings, agentVM, agent]() {
-        agentVM->setAgent(settings->simulationMode() ? nullptr : agent);
-    };
-    applyMode();
-    QObject::connect(settings, &SettingsService::simulationModeChanged, &app, [applyMode]() { applyMode(); });
+    // The application always uses the configured model pipeline; no demo
+    // simulation mode is exposed or wired into task execution.
+    agentVM->setAgent(agent);
 
     // ── docs/20 工作流 B（桌面集成）：偏好键 → 真实系统行为的桥接 ──
     // PreferenceControl 直接写 prefs/v1/<key>（经 ChangeBus 通知），真值在

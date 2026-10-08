@@ -5,6 +5,9 @@
 
 #include <QtConcurrent/QtConcurrent>
 #include <QDateTime>
+#include <QDir>
+#include <QFileInfo>
+#include <QTemporaryDir>
 #include <QtTest>
 
 using namespace NexusAI;
@@ -273,6 +276,34 @@ private slots:
         // Since Logger::logDir() is fixed, we just verify it doesn't throw.
         const int result = Logger::backfillFromFile(10);
         QVERIFY(result >= 0);
+    }
+
+    void rotatesBySizeAndPrunesToConfiguredFileCount() {
+        QTemporaryDir dir;
+        QVERIFY(dir.isValid());
+        const QString previousDir = Logger::logDir();
+        const int previousSize = Logger::maxFileSizeMb();
+        const int previousRetention = Logger::retentionFiles();
+        const QtMsgType previousLevel = Logger::minLevel();
+
+        Logger::setLogDirectory(dir.path());
+        Logger::setMaxFileSizeMb(1);
+        Logger::setRetentionFiles(2);
+        Logger::setMinLevel(QtInfoMsg);
+        const QString payload(600 * 1024, QLatin1Char('x'));
+        for (int i = 0; i < 4; ++i)
+            qInfo().noquote() << payload;
+
+        const QFileInfoList files = QDir(dir.path()).entryInfoList(
+            QStringList() << QStringLiteral("nexus-*.log"), QDir::Files);
+        QCOMPARE(files.size(), 2);
+        QVERIFY(QFileInfo::exists(Logger::logFilePath()));
+        QVERIFY(QFileInfo(Logger::logFilePath()).size() <= 1024 * 1024);
+
+        Logger::setLogDirectory(previousDir);
+        Logger::setMaxFileSizeMb(previousSize);
+        Logger::setRetentionFiles(previousRetention);
+        Logger::setMinLevel(previousLevel);
     }
 };
 

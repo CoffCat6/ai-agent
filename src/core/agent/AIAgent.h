@@ -47,8 +47,9 @@ public:
     // are the default and the clamp bounds. 10 used to be hard-coded and was
     // routinely exhausted by ordinary multi-step tasks before an answer formed.
     static constexpr int kDefaultMaxIterations = 30;
+    static constexpr int kDefaultTaskTimeoutMs = 300000;
     static constexpr int kMinMaxIterations = 3;
-    static constexpr int kIterationCeiling = 200;
+    static constexpr int kIterationCeiling = 1000;
     // Lower bound for the cap on ACTUAL tool executions (one response can
     // announce arbitrarily many calls, so the round budget alone does not
     // bound the total work). The effective cap scales with the step budget -
@@ -292,7 +293,7 @@ private:
 
     // REL-1001: task wall-clock budget
     QTimer m_taskTimeoutTimer;
-    int m_taskTimeoutMs{300000};
+    int m_taskTimeoutMs{kDefaultTaskTimeoutMs};
 
     // Streaming display state
     QTimer m_streamTimer;

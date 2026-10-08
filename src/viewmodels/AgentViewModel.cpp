@@ -249,9 +249,7 @@ ChatSessionController* AgentViewModel::ensureTab() {
 
     m_tabs.append(controller);
 
-    // A fresh tab picks up its own agent from the factory when the real
-    // pipeline is active; otherwise (and whenever no factory is installed,
-    // e.g. unit tests driving one shared agent) it runs the simulation.
+    // A fresh tab picks up its own agent when the pipeline is configured.
     if (m_agentFactory && m_templateAgent)
         controller->attachAgent(m_agentFactory(), true);
 
@@ -374,11 +372,8 @@ void AgentViewModel::setAgent(AIAgent* agent) {
     if (m_templateAgent == agent) return;
     m_templateAgent = agent;
 
-    // Tab 0 carries the shared template agent (unowned). Simulation mode
-    // (nullptr) detaches every tab; switching back to live re-arms tab 0
-    // with the shared agent and rebuilds the other tabs' agents through the
-    // factory. Detaching mid-task terminates it cleanly (the controller
-    // stops the agent before dropping it).
+    // Tab 0 carries the shared template agent (unowned); other tabs receive
+    // factory-built agents. Detaching mid-task terminates it cleanly.
     for (int i = 0; i < m_tabs.size(); ++i) {
         // docs/18: 挂接会换掉 agent（新 agent 无归属），先记下本标签的归属，
         // 挂接后原样还原——不能再拿"全局活动项目"覆盖，否则会把其他标签
@@ -393,7 +388,7 @@ void AgentViewModel::setAgent(AIAgent* agent) {
         }
         applyProjectTo(m_tabs[i]->agent(), tabProject);
     }
-    emit liveModeChanged();
+
     emit tabsChanged();
     syncSandboxMirror();
     emit activeProjectIdChanged();
@@ -411,7 +406,7 @@ void AgentViewModel::applyToAgents(const std::function<void(AIAgent*)>& fn) {
 }
 
 // Batch 17: attach the persistence backend (search + Batch 18 export).
-// Takes no ownership; nullptr (simulation mode) disables those features.
+// Takes no ownership; nullptr disables those features.
 void AgentViewModel::setMemory(IMemory* memory) {
     if (m_memory == memory) return;
     m_memory = memory;
@@ -440,7 +435,7 @@ void AgentViewModel::setActiveProjectId(const QString& id) {
     // 把别人的项目清空"与"切标签徽标撒谎"的共同根因。
     ChatSessionController* controller = active();
     if (controller->activeProjectId() == id) return;
-    // 活动标签还没有 agent（模拟模式，或启动早期）时无处可推，直接忽略。
+    // 活动标签尚未挂接 agent（例如启动早期）时无处可推，直接忽略。
     // 不暂存：空标签的默认归属就是本地，暂存会在挂接时把项目套上去，与
     // "新建默认普通对话"冲突（docs/18 期 3 移除了原 m_pendingProjectId）。
     if (!controller->agent()) return;
@@ -1126,7 +1121,7 @@ void AgentViewModel::stop() {
 }
 
 // docs/20 §3.1（FORK-701）：重新生成最后一条回答（活动标签）。busy 时由
-// Controller 拒绝；模拟模式由 Controller 回退重播。
+// Controller 拒绝；agent 缺失时不执行。
 void AgentViewModel::regenerate() {
     active()->regenerate();
 }
@@ -1134,14 +1129,14 @@ void AgentViewModel::regenerate() {
 // docs/20 §3.2（FORK-701）：编辑重发。等价于「对最后一条 user 消息执行
 // regenerate + 替换内容」：删除持久层最后一条 user 行及之后全部消息，
 // 以 newText 重新发起。图片/文件附件不保留（与 resume 契约一致：干净
-// 对白历史）。空文本/无历史/无 agent（模拟模式）时静默返回。
+// 白。空文本/无历史/无 agent 时静默返回。
 void AgentViewModel::editAndResend(const QString& newText) {
     const QString trimmed = newText.trimmed();
     if (trimmed.isEmpty()) return;
     ChatSessionController* controller = active();
     if (controller->isBusy()) return;
     AIAgent* agent = controller->agent();
-    if (agent == nullptr) return;   // 模拟模式：无持久层可删，不伪造
+    if (agent == nullptr) return;   // 无持久层可修改
 
     const qint64 userId = agent->memory()
                               ? agent->memory()->lastUserMessageId(

@@ -3,6 +3,7 @@
 // cancel, crash restart and concurrent id correlation.
 // Batch 31b (F9): Streamable HTTP transport coverage.
 #include "core/mcp/McpClient.h"
+#include "core/mcp/McpConfig.h"
 #include "core/mcp/McpToolAdapter.h"
 #include "core/mcp/StdioTransport.h"
 #include "core/tools/ToolRegistry.h"
@@ -10,9 +11,11 @@
 #include <QCoreApplication>
 #include <QDir>
 #include <QFile>
+#include <QFileInfo>
 #include <QHash>
 #include <QProcessEnvironment>
 #include <QSignalSpy>
+#include <QStandardPaths>
 #include <QTcpServer>
 #include <QTemporaryDir>
 #include <QTextStream>
@@ -21,6 +24,26 @@
 using namespace NexusAI;
 
 namespace {
+
+// Each config test gets its own app-data directory; never touch the user's config.
+struct ConfigTestPath {
+    QTemporaryDir uniqueName;
+    QString previousName = QCoreApplication::applicationName();
+    QString dataDir;
+
+    ConfigTestPath() {
+        if (uniqueName.isValid()) {
+            QCoreApplication::setApplicationName(
+                QFileInfo(uniqueName.path()).fileName());
+            dataDir = QFileInfo(McpConfig::configFilePath()).absolutePath();
+        }
+    }
+
+    ~ConfigTestPath() {
+        if (!dataDir.isEmpty()) QDir(dataDir).removeRecursively();
+        QCoreApplication::setApplicationName(previousName);
+    }
+};
 
 // Batch 31b: minimal Streamable-HTTP MCP server (JSON responses, session
 // header). Records whether later requests carried Mcp-Session-Id.
@@ -171,6 +194,49 @@ private slots:
     void init() {
         qputenv("MCP_FAKE_MODE", "echo");
         qunsetenv("MCP_FAKE_CRASH");
+    }
+
+    void configRoundTrip() {
+        ConfigTestPath path;
+        QVERIFY(path.uniqueName.isValid());
+
+        const QVariantMap env{{"API_KEY", QStringLiteral("test-secret")}};
+        const QVariantMap headers{
+            {"Authorization", QStringLiteral("Bearer test-secret")},
+            {"X-Custom", QStringLiteral("example")}};
+        const QVariantMap server{
+            {"name", QStringLiteral("http-test")},
+            {"transport", QStringLiteral("http")},
+            {"url", QStringLiteral("https://example.invalid/mcp")},
+            {"headers", headers},
+            {"env", env},
+            {"enabled", true}};
+        QVERIFY(McpConfig::save(QVariantList{server}));
+
+        const auto loaded = McpConfig::load();
+        QCOMPARE(loaded.size(), 1);
+        QVERIFY(loaded.first().value("headers").toMap() == headers);
+        QVERIFY(loaded.first().value("env").toMap() == env);
+        QCOMPARE(loaded.first().value("name"), server.value("name"));
+        QCOMPARE(loaded.first().value("url"), server.value("url"));
+
+        // A second save must retain fields loaded from disk, too.
+        QVERIFY(McpConfig::save(QVariantList{loaded.first()}));
+        const auto reloaded = McpConfig::load();
+        QCOMPARE(reloaded.size(), 1);
+        QVERIFY(reloaded.first().value("headers").toMap() == headers);
+        QVERIFY(reloaded.first().value("env").toMap() == env);
+    }
+
+    void configSaveFailure() {
+        ConfigTestPath path;
+        QVERIFY(path.uniqueName.isValid());
+        QVERIFY(QDir().mkpath(path.dataDir));
+        // A directory in place of the target file must make QSaveFile fail.
+        QVERIFY(QDir().mkpath(McpConfig::configFilePath()));
+        QVERIFY(!McpConfig::save(QVariantList{
+            QVariantMap{{"name", QStringLiteral("unwritable")}}}));
+        QVERIFY(QFileInfo(McpConfig::configFilePath()).isDir());
     }
 
     // Handshake completes and tools/list results surface via toolsChanged.
@@ -556,6 +622,7 @@ private slots:
 int main(int argc, char* argv[]) {
     QCoreApplication::setOrganizationName("NexusAI");
     QCoreApplication::setApplicationName("NexusAI");
+    QStandardPaths::setTestModeEnabled(true);
     QCoreApplication app(argc, argv);
     TestMcp tc;
     return QTest::qExec(&tc, argc, argv);

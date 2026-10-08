@@ -52,8 +52,14 @@ public:
     // message or when the log directory is not writable).
     static QString logFilePath();
 
-    // Directory holding the rotated log files.
+    // Directory holding the rotated log files. An empty configured path uses
+    // the platform's writable application-local data directory.
     static QString logDir();
+    static void setLogDirectory(const QString& directory);
+    static int maxFileSizeMb();
+    static void setMaxFileSizeMb(int sizeMb);
+    static int retentionFiles();
+    static void setRetentionFiles(int count);
 
     // ── Ring-buffer snapshot API (thread-safe) ────────────
     // Highest seq assigned so far; 0 before the first buffered line.

@@ -3,22 +3,11 @@
 #include "core/agent/AIAgent.h"
 #include "core/memory/IMemory.h"
 #include "core/utils/Activity.h"
-#include "core/utils/TokenEstimator.h"
-
-#include <QDateTime>
-#include <QJsonArray>
-#include <QJsonArray>
-#include <QJsonDocument>
-#include <QJsonObject>
-#include <QUuid>
 
 namespace NexusAI {
 
 ChatSessionController::ChatSessionController(QObject* parent)
-    : QObject(parent) {
-    m_simTimer.setSingleShot(true);
-    connect(&m_simTimer, &QTimer::timeout, this, &ChatSessionController::simulationStep);
-}
+    : QObject(parent) {}
 
 ChatSessionController::~ChatSessionController() {
     if (m_agent && m_agent->isActive())
@@ -31,9 +20,7 @@ ChatSessionController::~ChatSessionController() {
 
 void ChatSessionController::attachAgent(AIAgent* agent, bool owned) {
     if (m_agent == agent && m_ownedAgent == owned) return;
-    // Rewiring mid-task (simulation-mode toggle) terminates the active task
-    // cleanly — the running agent would otherwise lose its bridge and stay
-    // busy forever.
+    // Replacing or detaching an active agent terminates its task cleanly.
     if (m_agent && m_agent->isActive())
         m_agent->stop();
     if (m_agent) {
@@ -46,7 +33,8 @@ void ChatSessionController::attachAgent(AIAgent* agent, bool owned) {
     if (m_agent) {
         connectAgent(m_agent);
     } else {
-        // Detached: fall back to simulation state.
+        // Detached state is idle; the caller must attach a configured agent
+        // before accepting tasks.
         setState(AgentState::Idle);
         m_trace.clearNodes();
         emit traceChanged();
@@ -54,9 +42,8 @@ void ChatSessionController::attachAgent(AIAgent* agent, bool owned) {
         emit currentSessionIdChanged();
     }
     if (m_agent) {
-        // The controller mirror is authoritative for UX continuity (the
-        // mode survives simulation toggles); push it into the freshly
-        // attached agent. Detached phases leave the mirror unchanged.
+        // The controller mirror is authoritative for UX continuity; push it
+        // into the newly attached agent.
         m_agent->setPermissionMode(static_cast<PermissionMode>(m_permissionMode));
     }
 }
@@ -90,7 +77,7 @@ void ChatSessionController::connectAgent(AIAgent* agent) {
         emit traceChanged();
     });
 
-    connect(agent, &AIAgent::responseReady, this, [this, agent](const QString& response) {
+    connect(agent, &AIAgent::responseReady, this, [this](const QString& response) {
         m_finalResponse = response;
         emit responseReady();
     });
@@ -211,26 +198,6 @@ void ChatSessionController::setState(AgentState state) {
     emit stateChanged();
 }
 
-void ChatSessionController::appendTraceNode(const QString& type, const QString& title,
-                                            const QString& status,
-                                            const QString& args, const QString& result) {
-    QVariantMap node;
-    node["id"] = QUuid::createUuid().toString(QUuid::WithoutBraces);
-    node["type"] = type;
-    node["title"] = title;
-    node["status"] = status;
-    node["timestamp"] = QDateTime::currentDateTime().toMSecsSinceEpoch();
-    node["args"] = args;
-    node["result"] = result;
-
-    m_trace.appendNode(node);
-    emit traceChanged();
-}
-
-void ChatSessionController::updateLastNodeStatus(const QString& status) {
-    m_trace.updateLastNode({{"status", status}});
-    emit traceChanged();
-}
 
 // ── QML actions ──────────────────────────────────────────
 
@@ -249,42 +216,15 @@ void ChatSessionController::startTask(const QString& input, const QStringList& i
     m_historyCursor = m_inputHistory.size();
     Activity::usage(Activity::Kind::User, QStringLiteral("task.start"),
                     input.left(80));
+    if (!m_agent) {
+        emit errorOccurred(tr("No model agent is configured. Configure a model and try again."));
+        return;
+    }
 
     m_finalResponse.clear();
     emit responseReady();
 
-    if (m_agent) {
-        m_agent->startTask(input, images, files);
-        return;
-    }
-
-    // Simulation fallback.
-    m_trace.clearNodes();
-    emit traceChanged();
-    m_simStep = 0;
-    m_simInput = input;
-    m_usedTokens = 0;
-    emit tokenUsageChanged();
-
-    QJsonObject userNode;
-    userNode["id"] = QUuid::createUuid().toString(QUuid::WithoutBraces);
-    userNode["type"] = "user_message";
-    userNode["title"] = input;
-    userNode["status"] = "completed";
-    userNode["timestamp"] = QDateTime::currentMSecsSinceEpoch();
-    userNode["args"] = QString();
-    userNode["result"] = QString();
-    if (!images.isEmpty())
-        userNode["images"] = QJsonArray::fromStringList(images);
-    if (!files.isEmpty())
-        userNode["files"] = files;
-    m_trace.appendNode(userNode.toVariantMap());
-    emit traceChanged();
-
-    m_usedTokens = input.length() / 4;
-    emit tokenUsageChanged();
-    setState(AgentState::Thinking);
-    startSimulation();
+    m_agent->startTask(input, images, files);
 }
 
 void ChatSessionController::approveToolCall(const QString& id, bool approved) {
@@ -292,83 +232,26 @@ void ChatSessionController::approveToolCall(const QString& id, bool approved) {
                     approved ? QStringLiteral("tool.approve")
                              : QStringLiteral("tool.decline"),
                     id);
-    if (m_agent) {
-        m_agent->approveToolCall(id, approved);
-        return;
-    }
-
-    // Simulation path.
-    const int row = m_trace.rowOfId(id);
-    if (row < 0) return;
-
-    if (approved) {
-        m_trace.updateNode(row, {{"status", "running"}});
-        emit traceChanged();
-
-        QTimer::singleShot(1000, this, [this, row]() {
-            if (row < m_trace.count()) {
-                m_trace.updateNode(row, {{"status", "success"}});
-                emit traceChanged();
-            }
-
-            appendTraceNode("tool_result", "File written successfully", "success",
-                "", "Written 256 bytes to /home/user/output.txt");
-            m_usedTokens += 100;
-            emit tokenUsageChanged();
-
-            setState(AgentState::Thinking);
-            m_simTimer.start(1500);
-        });
-    } else {
-        m_trace.updateNode(row, {{"status", "cancelled"}});
-        emit traceChanged();
-
-        m_finalResponse = "Tool call was rejected by the user. "
-                          "I cannot complete the task without writing the output file.";
-        appendTraceNode("summary", m_finalResponse, "completed");
-        setState(AgentState::Completed);
-        emit responseReady();
-    }
+    if (m_agent) m_agent->approveToolCall(id, approved);
 }
 
 void ChatSessionController::stop() {
     Activity::usage(Activity::Kind::User, QStringLiteral("task.stop"));
-    if (m_agent) {
-        m_agent->stop();
-        return;
-    }
-
-    // Simulation path.
-    m_simTimer.stop();
-    if (m_trace.count() > 0
-            && m_trace.nodeAt(m_trace.count() - 1).value("status").toString() == "running")
-        updateLastNodeStatus("cancelled");
-    setState(AgentState::Idle);
+    if (m_agent) m_agent->stop();
 }
 
 // docs/20 §3.1（FORK-701）：重新生成。busy 时拒绝（与 stop 的前置守卫
-// 一致）；无 agent（模拟模式）时清空回复重播模拟；真实管线转发 agent。
+// 一致），有 agent 时转发给真实管线。
 void ChatSessionController::regenerate() {
     if (isBusy()) return;
     Activity::usage(Activity::Kind::User, QStringLiteral("task.regenerate"));
 
-    if (m_agent) {
-        m_agent->regenerateLast();
-        return;
-    }
-
-    // Simulation fallback: replay the last user message.
-    if (m_simInput.isEmpty()) return;
-    m_finalResponse.clear();
-    emit responseReady();
-    m_simStep = 0;
-    setState(AgentState::Thinking);
-    startSimulation();
+    if (m_agent) m_agent->regenerateLast();
 }
 
 void ChatSessionController::newChat() {
     Activity::usage(Activity::Kind::User, QStringLiteral("session.new"));
-    m_simTimer.stop();
+
     m_finalResponse.clear();
     emit responseReady();
 
@@ -426,7 +309,7 @@ QVariantMap ChatSessionController::contextComposition() const {
 
 // docs/16 §8: QML-facing wrappers. Delegate to the agent's IMemory backend
 // (SqliteMemory) which implements the aggregate queries. Return empty when
-// no agent is attached (simulation mode) so the UI falls back to zeros.
+// no agent is attached yet so the UI falls back to zeros.
 QVariantMap ChatSessionController::tokenStatsDetailed(int recentDays) const {
     if (!m_agent || !m_agent->memory()) return {};
     return m_agent->memory()->tokenStatsDetailed(recentDays);
@@ -447,89 +330,5 @@ QVariantMap ChatSessionController::quotaStatus() const {
     return m_agent->memory()->quotaStatus();
 }
 
-// ── Simulation (fallback when no agent attached) ─────────
-
-void ChatSessionController::startSimulation() {
-    m_simStep = 0;
-    m_simTimer.start(1500);
-}
-
-void ChatSessionController::simulationStep() {
-    switch (m_simStep) {
-    case 0:
-        appendTraceNode("thinking", "Analyzing request...", "running");
-        m_simTimer.start(2000);
-        break;
-
-    case 1:
-        updateLastNodeStatus("completed");
-        appendTraceNode("thinking", "Planning tool calls...", "running");
-        m_simTimer.start(1500);
-        break;
-
-    case 2:
-        updateLastNodeStatus("completed");
-        appendTraceNode("tool_call", "read_file", "running",
-            QString::fromUtf8(QJsonDocument(QJsonObject{
-                {"path", "/home/user/document.txt"}
-            }).toJson(QJsonDocument::Compact)));
-        m_simTimer.start(1200);
-        break;
-
-    case 3:
-        updateLastNodeStatus("success");
-        appendTraceNode("tool_result", "File contents loaded", "success",
-            "", "Lorem ipsum dolor sit amet, consectetur adipiscing elit...");
-        m_usedTokens += 250;
-        emit tokenUsageChanged();
-        m_simTimer.start(1500);
-        break;
-
-    case 4:
-        appendTraceNode("tool_call", "write_file", "waiting_confirm",
-            QString::fromUtf8(QJsonDocument(QJsonObject{
-                {"path", "/home/user/output.txt"},
-                {"content", "Processed output data..."}
-            }).toJson(QJsonDocument::Compact)));
-
-        if (m_trace.count() > 0) {
-            m_pendingToolCallId =
-                m_trace.nodeAt(m_trace.count() - 1).value("id").toString();
-
-            QVariantMap args;
-            args["path"] = "/home/user/output.txt";
-            args["content"] = "Processed output data...";
-            emit toolConfirmRequired(m_pendingToolCallId, "write_file", args);
-        }
-
-        setState(AgentState::AwaitingToolConfirm);
-        break;
-
-    case 5:
-        appendTraceNode("thinking", "Synthesizing response...", "running");
-        m_simTimer.start(2000);
-        break;
-
-    case 6:
-        updateLastNodeStatus("completed");
-        m_finalResponse = QString("I've analyzed your request: \"%1\"\n\n"
-            "I read the file `/home/user/document.txt` and successfully wrote "
-            "the processed output to `/home/user/output.txt`.\n\n"
-            "Here's a summary of what I did:\n"
-            "1. Read the input document\n"
-            "2. Processed the content\n"
-            "3. Saved the results to the output file\n\n"
-            "The task is now complete.").arg(m_simInput);
-
-        appendTraceNode("summary", m_finalResponse, "completed");
-        m_usedTokens += 500;
-        emit tokenUsageChanged();
-        setState(AgentState::Completed);
-        emit responseReady();
-        break;
-    }
-
-    m_simStep++;
-}
 
 } // namespace NexusAI

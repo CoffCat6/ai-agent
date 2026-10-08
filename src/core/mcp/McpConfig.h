@@ -17,8 +17,9 @@ namespace McpConfig {
 // an empty list (never a hard failure — a broken config must not stop the
 // app from starting).
 QVector<QVariantMap> load();
-// Persists the list (31b management page); best effort.
-void save(const QVariantList& servers);
+// Atomically persists the list; returns false if directory creation, write,
+// or commit fails.
+bool save(const QVariantList& servers);
 
 QString configFilePath();
 

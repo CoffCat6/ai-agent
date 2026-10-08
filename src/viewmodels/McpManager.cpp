@@ -6,6 +6,7 @@
 #include "core/utils/Activity.h"
 
 #include <QLoggingCategory>
+#include <utility>
 
 Q_LOGGING_CATEGORY(lcMcp, "nexus.mcp")
 
@@ -51,6 +52,20 @@ void McpManager::loadAndConnectAll() {
         connectClient(client);
         client->connectToServer();
     }
+    refreshServers();
+}
+
+void McpManager::applyRestoredConfigs(const QVariantList& servers) {
+    for (McpClient* client : std::as_const(m_clients)) {
+        QObject::disconnect(client, nullptr, this, nullptr);
+        for (const auto& tool : client->tools())
+            ToolRegistry::instance().takeTool(
+                McpToolAdapter::registryNameFor(client->serverName(), tool.name));
+        client->disconnectFromServer();
+        client->deleteLater();
+    }
+    m_clients.clear();
+    m_configs = servers;
     refreshServers();
 }
 
@@ -160,7 +175,11 @@ void McpManager::addServer(const QVariantMap& server) {
         normalized["enabled"] = true;
 
     m_configs.append(normalized);
-    McpConfig::save(m_configs);
+    if (!McpConfig::save(m_configs)) {
+        qCWarning(lcMcp) << "Failed to save MCP server configuration";
+        m_lastError = QStringLiteral("Failed to save MCP server configuration");
+        emit lastErrorChanged(m_lastError);
+    }
     Activity::usage(Activity::Kind::User, QStringLiteral("mcp.server.add"), name);
 
     if (!normalized.value("enabled").toBool()) {
@@ -203,7 +222,11 @@ void McpManager::removeServer(const QString& name) {
             break;
         }
     }
-    McpConfig::save(m_configs);
+    if (!McpConfig::save(m_configs)) {
+        qCWarning(lcMcp) << "Failed to save MCP server configuration";
+        m_lastError = QStringLiteral("Failed to save MCP server configuration");
+        emit lastErrorChanged(m_lastError);
+    }
     Activity::usage(Activity::Kind::User, QStringLiteral("mcp.server.remove"),
                     name);
     refreshServers();
@@ -218,7 +241,11 @@ void McpManager::setEnabled(const QString& name, bool enabled) {
         m_configs[i] = config;
         break;
     }
-    McpConfig::save(m_configs);
+    if (!McpConfig::save(m_configs)) {
+        qCWarning(lcMcp) << "Failed to save MCP server configuration";
+        m_lastError = QStringLiteral("Failed to save MCP server configuration");
+        emit lastErrorChanged(m_lastError);
+    }
     Activity::usage(Activity::Kind::User,
                     enabled ? QStringLiteral("mcp.server.enable")
                             : QStringLiteral("mcp.server.disable"), name);

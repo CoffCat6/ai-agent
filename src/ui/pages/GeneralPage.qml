@@ -1,6 +1,7 @@
 import QtQuick
 import QtQuick.Layouts
 import QtQuick.Controls
+import QtQuick.Dialogs
 import NexusAI
 import NexusAI.ViewModels
 
@@ -13,10 +14,11 @@ Item {
     // 自动渲染为开关；模型相关的上下文预算已迁往"模型配置"页。
     property var preferenceKeys: PreferenceRegistry.preferencesInCategory("general")
 
-    // docs/17 B2/A6: 恢复默认只覆盖本页键（安全开关已迁往"安全"页，
-    // 其重置由该页语义决定——黑名单/读策略不在"默认化"范围内）。
+    // General preferences and service-backed settings live in separate stores;
+    // reset both here so the page-level action really restores the whole page.
     function requestResetDefaults() {
         Settings.resetGeneralToDefaults()
+        PreferenceStore.resetBatch(page.preferenceKeys)
     }
 
     Flickable {
@@ -108,7 +110,6 @@ Item {
 
                 Text { text: qsTr("模型行为"); color: Theme.textSecondary; font.pixelSize: Theme.fontSizeCaption; font.bold: true; font.family: Theme.fontMono }
 
-                CheckBox { checked: Settings.simulationMode; onToggled: Settings.simulationMode = checked; text: qsTr("仿真演示模式（不调用真实 LLM）"); font.pixelSize: Theme.fontSizeBody; font.family: Theme.fontSans }
 
                 ColumnLayout {
                     Layout.fillWidth: true
@@ -122,29 +123,40 @@ Item {
                         placeholderTextColor: Theme.textSecondary
                         color: Theme.textPrimary; selectionColor: Theme.brandPrimary; selectedTextColor: "#ffffff"
                         font.pixelSize: Theme.fontSizeBody; font.family: Theme.fontSans
-                        validator: IntValidator { bottom: 3; top: 200 }
+                        validator: IntValidator { bottom: 3; top: 1000 }
                         background: Rectangle { radius: 6; color: Theme.bgPrimary; border.width: maxStepsField.activeFocus ? 2 : 1; border.color: maxStepsField.activeFocus ? Theme.brandPrimary : Theme.borderSubtle }
-                        // 保存时机：失焦/回车立即提交，另加两条兜底——本页由
-                        // SettingsCenterDialog 的 Loader 按 active 切换分类，编辑中
-                        // 切走会直接销毁本页，editingFinished 不触发（实测），改过的
-                        // 值原本静默丢失。防抖定时器覆盖"停手不停焦"，onDestruction
-                        // 覆盖"编辑中就被销毁"。
+                        // 未完成编辑期间不持久化（例如清空后输入 1000 的中间态）；
+                        // 失焦或 Loader 销毁时只提交有效整数。
                         function commit() {
-                            const parsed = parseInt(text)
-                            Settings.maxSteps = isNaN(parsed) ? 30 : parsed
+                            if (!acceptableInput) return
+                            Settings.maxSteps = parseInt(text)
                         }
-                        onTextEdited: commitTimer.restart()
                         onEditingFinished: { commit(); text = Settings.maxSteps }
                         Component.onDestruction: commit()
-                        Timer {
-                            id: commitTimer
-                            interval: 400
-                            onTriggered: maxStepsField.commit()
-                        }
                         Accessible.name: qsTr("单次任务步数预算")
                     }
                     Text {
-                        text: qsTr("一次任务里模型最多进行多少轮「思考 → 工具调用」。用完会强制基于已有信息作答，因此多文件排查、多步检索这类长任务需要更大的值；调小更省 token。")
+                        text: qsTr("一次任务里模型最多进行多少轮「思考 → 工具调用」（3–1000）。用完会强制基于已有信息作答；复杂任务可调高，但通常会增加耗时和 token 消耗。")
+                        color: Theme.textSecondary
+                        font.pixelSize: 10
+                        wrapMode: Text.Wrap
+                        Layout.fillWidth: true
+                    }
+                    RowLayout {
+                        Layout.fillWidth: true
+                        Text { text: qsTr("单次任务超时（分钟）"); color: Theme.textSecondary; font.pixelSize: Theme.fontSizeCaption; font.family: Theme.fontMono }
+                        Item { Layout.fillWidth: true }
+                        SpinBox {
+                            from: 1
+                            to: 60
+                            value: Settings.taskTimeoutMinutes
+                            editable: true
+                            onValueModified: Settings.taskTimeoutMinutes = value
+                            Accessible.name: qsTr("单次任务超时，分钟")
+                        }
+                    }
+                    Text {
+                        text: qsTr("任务运行超过此时长会停止并基于已收集的信息作答。较难或需要多次网络调用的任务可以适当调高。")
                         color: Theme.textSecondary
                         font.pixelSize: 10
                         wrapMode: Text.Wrap
@@ -198,22 +210,89 @@ Item {
 
             Rectangle { Layout.fillWidth: true; Layout.leftMargin: 24; Layout.rightMargin: 24; height: 1; color: Theme.borderSubtle }
 
-            // ── 诊断 ──────────────────────────────────────
+            // ── 日志 ──────────────────────────────────────
             ColumnLayout {
                 Layout.leftMargin: 24
                 Layout.rightMargin: 24
                 Layout.fillWidth: true
                 spacing: 4
 
-                Text { text: qsTr("诊断"); color: Theme.textSecondary; font.pixelSize: Theme.fontSizeCaption; font.bold: true; font.family: Theme.fontMono }
+                Text { text: qsTr("日志"); color: Theme.textSecondary; font.pixelSize: Theme.fontSizeCaption; font.bold: true; font.family: Theme.fontMono }
+                Text { text: qsTr("最低记录级别"); color: Theme.textSecondary; font.pixelSize: Theme.fontSizeCaption; font.family: Theme.fontMono }
                 ComboBox {
                     id: logLevelCombo
                     Layout.preferredWidth: 220
                     property var levelNames: ["debug", "info", "warning", "critical"]
                     model: levelNames
                     onActivated: Settings.logLevel = currentText
-                    Component.onCompleted: { const i = levelNames.indexOf(Settings.logLevel); currentIndex = i >= 0 ? i : 1 }
+                    Connections {
+                        target: Settings
+                        function onLogLevelChanged() {
+                            const index = logLevelCombo.levelNames.indexOf(Settings.logLevel)
+                            logLevelCombo.currentIndex = index >= 0 ? index : 1
+                        }
+                    }
+                    Component.onCompleted: {
+                        const index = levelNames.indexOf(Settings.logLevel)
+                        currentIndex = index >= 0 ? index : 1
+                    }
                     Accessible.name: qsTr("日志级别")
+                }
+
+                Text { text: qsTr("日志目录"); color: Theme.textSecondary; font.pixelSize: Theme.fontSizeCaption; font.family: Theme.fontMono }
+                Text {
+                    Layout.fillWidth: true
+                    text: Settings.logDirectory
+                    color: Theme.textPrimary
+                    font.pixelSize: Theme.fontSizeCaption
+                    font.family: Theme.fontMono
+                    wrapMode: Text.WrapAnywhere
+                    Accessible.name: qsTr("当前日志目录")
+                }
+                RowLayout {
+                    Layout.fillWidth: true
+                    AppButton { text: qsTr("选择目录"); onClicked: logDirectoryDialog.open() }
+                    AppButton { text: qsTr("恢复默认目录"); onClicked: Settings.logDirectory = "" }
+                    AppButton { text: qsTr("打开目录"); onClicked: AgentVM.openLogFolder() }
+                }
+                FolderDialog {
+                    id: logDirectoryDialog
+                    title: qsTr("选择日志保存目录")
+                    onAccepted: Settings.logDirectory = selectedFolder.toString()
+                }
+
+                RowLayout {
+                    Layout.fillWidth: true
+                    Text { text: qsTr("单个日志文件上限（MB）"); color: Theme.textSecondary; font.pixelSize: Theme.fontSizeCaption; font.family: Theme.fontMono }
+                    Item { Layout.fillWidth: true }
+                    SpinBox {
+                        from: 1
+                        to: 1024
+                        value: Settings.logMaxFileSizeMb
+                        editable: true
+                        onValueModified: Settings.logMaxFileSizeMb = value
+                        Accessible.name: qsTr("单个日志文件大小上限，兆字节")
+                    }
+                }
+                RowLayout {
+                    Layout.fillWidth: true
+                    Text { text: qsTr("保留日志文件数"); color: Theme.textSecondary; font.pixelSize: Theme.fontSizeCaption; font.family: Theme.fontMono }
+                    Item { Layout.fillWidth: true }
+                    SpinBox {
+                        from: 1
+                        to: 100
+                        value: Settings.logRetentionFiles
+                        editable: true
+                        onValueModified: Settings.logRetentionFiles = value
+                        Accessible.name: qsTr("保留日志文件数")
+                    }
+                }
+                Text {
+                    text: qsTr("达到单文件大小上限后自动轮转；只保留最新的指定数量文件。日志可能包含本地路径和错误上下文，请选择安全的保存位置。")
+                    color: Theme.textSecondary
+                    font.pixelSize: 10
+                    wrapMode: Text.Wrap
+                    Layout.fillWidth: true
                 }
             }
 

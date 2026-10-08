@@ -77,6 +77,10 @@ ctest --test-dir build --output-on-failure
 - 应用数据：`%APPDATA%\NexusAI\NexusAI\nexusai_memory.db`（消息 / 轨迹 / 审计 / 知识库）
 - 运行日志：`%LOCALAPPDATA%/NexusAI/NexusAI/logs/`，按天轮转保留 7 天；使用/网络事件另存 usage_log（同一数据库，保留 30 天/10000 行）
 
+### 设置导出与恢复
+
+设置中心的「设置与备份」可导出 JSON 并预览后恢复。该文件仅用于同一设置 schema 版本的迁移；不包含 SQLite 会话/知识库、日志、已知 API Key 或 MCP 环境变量/请求头。MCP 服务器恢复时默认禁用；安全权限、工具开关及开机自启不会被恢复，需用户自行确认。模型密钥需要重新填写。自定义提示词、MCP 命令参数和 URL 等自由文本可能含有用户自行填写的敏感信息，分享文件前请检查。恢复成功后需要重启应用才能完整生效；这不是数据库的完整备份。
+
 ## MCP 安全注意事项
 
 NexusAI 对 MCP 服务器接入采取多层安全防护策略：

@@ -157,8 +157,8 @@ private slots:
         QCOMPARE(m.lastIndexOfType(QStringLiteral("nope")), -1);
     }
 
-    // docs/20 §3.3：输入历史环（进程内、相邻去重、↑ 前移 / ↓ 后移）。
-    // 模拟模式下 startTask 同样入队（入队在 agent/simulation 分支之前）。
+    // docs/20 §3.3：输入历史环（进程内、相邻去重、↑ 前移 / ↓ 后移）；
+    // 无 agent 时尝试发送也保留输入，便于配置模型后重试。
     void inputHistoryNavigateAndDedupe() {
         AgentViewModel vm(nullptr);
 
@@ -961,59 +961,48 @@ private slots:
         QCOMPARE(i18n->currentLocale(), original);
     }
 
-    // Batch 29 (F7): parallel session tabs. Simulation path (no agent) —
-    // the timers are intentionally not driven to completion; the point is
-    // that starting a task in another tab never touches the first one.
+    // Parallel tab state remains independent even before an agent is attached.
     void parallelTabsStayIndependent() {
         AgentViewModel vm(nullptr);
         QCOMPARE(vm.tabModel().size(), 1);
         QCOMPARE(vm.activeTabIndex(), 0);
 
-        vm.startTask(QStringLiteral("task A"));   // tab 0 begins (simulation)
-        QVERIFY(vm.stateBusy());
-
-        vm.openTab();                             // tab 1 + activate
+        vm.setDraftText(QStringLiteral("draft A"));
+        vm.openTab();
         QCOMPARE(vm.activeTabIndex(), 1);
         QCOMPARE(vm.tabModel().size(), 2);
-        QVERIFY(!vm.stateBusy());                 // fresh tab is idle
+        QCOMPARE(vm.draftText(), QString());
+        vm.setDraftText(QStringLiteral("draft B"));
 
-        vm.startTask(QStringLiteral("task B"));   // tab 1 begins
-        QVERIFY(vm.stateBusy());
-
-        // Switching back: tab 0 is still running its own task, with its own
-        // trace — the two tabs share nothing.
         vm.activateTab(0);
-        QVERIFY(vm.stateBusy());
-        QCOMPARE(vm.traceCount(), 1);             // "task A" user message only
+        QCOMPARE(vm.draftText(), QStringLiteral("draft A"));
         vm.activateTab(1);
-        QCOMPARE(vm.traceCount(), 1);             // "task B" user message only
+        QCOMPARE(vm.draftText(), QStringLiteral("draft B"));
 
-        // Stopping tab 1 does not touch tab 0's task.
-        vm.stop();
-        vm.activateTab(0);
-        QVERIFY(vm.stateBusy());
-
-        // Tab titles start as "新会话" until a session id exists.
         const QVariantList tabs = vm.tabModel();
         QCOMPARE(tabs.size(), 2);
-        QVERIFY(tabs.at(0).toMap().value("busy").toBool());
+        QVERIFY(!tabs.at(0).toMap().value("busy").toBool());
+        QVERIFY(!tabs.at(1).toMap().value("busy").toBool());
     }
 
-    // Closing a running tab stops its task and drops it from the model; the
-    // last remaining tab cannot be closed.
-    void closeRunningTabStopsItsTask() {
+    void agentlessTaskIsRejected() {
         AgentViewModel vm(nullptr);
-        vm.startTask(QStringLiteral("task A"));   // tab 0 busy
-        vm.openTab();
-        vm.activateTab(1);
-        vm.startTask(QStringLiteral("task B"));   // tab 1 busy
+        QSignalSpy errors(&vm, &AgentViewModel::errorOccurred);
+        vm.startTask(QStringLiteral("task without model"));
+        QCOMPARE(errors.count(), 1);
+        QVERIFY(!vm.stateBusy());
+        QCOMPARE(vm.traceCount(), 0);
+    }
 
+    // Closing a tab drops it from the model; the last remaining tab is guarded.
+    void closingTabDropsItFromModel() {
+        AgentViewModel vm(nullptr);
+        vm.openTab();
         vm.closeTab(1);
         QCOMPARE(vm.tabModel().size(), 1);
         QCOMPARE(vm.activeTabIndex(), 0);
-        QVERIFY(vm.stateBusy());                  // tab 0 unaffected
 
-        vm.closeTab(0);                           // guard: last tab stays
+        vm.closeTab(0);
         QCOMPARE(vm.tabModel().size(), 1);
     }
 
@@ -1053,21 +1042,15 @@ private slots:
         QCOMPARE(seen.size(), 2);             // template + surviving agent
     }
 
-    // Loading a session while the active tab is busy opens a new tab for it
-    // instead of interrupting (or silently ignoring) the request.
-    void busyTabLoadSessionOpensNewTab() {
+    // Loading a session without an attached agent is a no-op and does not
+    // silently create a demo conversation.
+    void loadSessionWithoutAgentIsNoOp() {
         AgentViewModel vm(nullptr);
-        vm.startTask(QStringLiteral("task A"));   // tab 0 busy
         const int tabsBefore = vm.tabModel().size();
-
         vm.loadSession(QStringLiteral("session-x"));
-        QCOMPARE(vm.tabModel().size(), tabsBefore + 1);
-        QCOMPARE(vm.activeTabIndex(), tabsBefore);
-        QVERIFY(!vm.stateBusy());                 // the fresh tab is idle
-
-        // An idle active tab loads in place.
-        vm.loadSession(QStringLiteral("session-y"));
-        QCOMPARE(vm.tabModel().size(), tabsBefore + 1);
+        QCOMPARE(vm.tabModel().size(), tabsBefore);
+        QCOMPARE(vm.activeTabIndex(), 0);
+        QVERIFY(!vm.stateBusy());
     }
 
     // docs/17 P0-3: 会话与项目联动必须**双向对称**。回归点：此前只处理
@@ -1131,7 +1114,7 @@ private slots:
         agent.setMemory(&memory);
         vm.setMemory(&memory);
         // docs/18: 归属按标签持有，新标签必须有自己的 agent 才能承接归属
-        // （无工厂时新标签跑模拟、没有 agent，归属无处可推）。
+        // （无工厂时新标签还没有 agent，归属无处可推）。
         vm.setAgentFactory([&vm, &memory]() -> AIAgent* {
             auto* a = new AIAgent(&vm);
             a->setMemory(&memory);
@@ -1399,7 +1382,7 @@ private slots:
         AgentViewModel vm(nullptr);
         vm.setMemory(&memory);
 
-        // 无 agent（模拟模式）：无持久层可删，不伪造。
+        // 无 agent：无持久层可修改，不伪造。
         vm.editAndResend(QStringLiteral("新问题"));
         QCOMPARE(memory.loadMessages("s-guard", 200).size(), 1);
 

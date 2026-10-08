@@ -21,6 +21,9 @@
 #include <QSignalSpy>
 #include <QSettings>
 #include <QCoreApplication>
+#include <QDir>
+#include <QTemporaryDir>
+#include <QStandardPaths>
 #include "viewmodels/PreferenceStore.h"
 #include "viewmodels/PreferenceRegistry.h"
 
@@ -40,6 +43,9 @@ public:
         // leaked settings into the user's real app (e.g. logging/level,
         // embedding/model, the security/allowFullDiskRead sandbox switch).
         loggingLevel = s.value("logging/level");
+        loggingDirectory = s.value("logging/directory");
+        loggingMaxFileSizeMb = s.value("logging/maxFileSizeMb");
+        loggingRetentionFiles = s.value("logging/retentionFiles");
         embeddingModel = s.value("embedding/model");
         embeddingBaseUrl = s.value("embedding/baseUrl");
         allowFullDiskRead = s.value("security/allowFullDiskRead");
@@ -53,6 +59,7 @@ public:
         defaultPermissionMode = s.value("agent/defaultPermissionMode");
         readDenyList = s.value("security/readDenyList");
         maxSteps = s.value("agent/maxSteps");
+        taskTimeoutMinutes = s.value("agent/taskTimeoutMinutes");
         // 测试开始时把 schema 版本顶到最新：否则每个用例里第一次构造
         // SettingsService 都会跑一次 v1→v2 迁移（清空 modelProfiles 里的模型），
         // 让“先写 profile 再 load”的用例看到被迁移改过的数据。迁移本身由
@@ -67,6 +74,12 @@ public:
         else s.remove("activeProfileId");
         if (loggingLevel.isValid()) s.setValue("logging/level", loggingLevel);
         else s.remove("logging/level");
+        if (loggingDirectory.isValid()) s.setValue("logging/directory", loggingDirectory);
+        else s.remove("logging/directory");
+        if (loggingMaxFileSizeMb.isValid()) s.setValue("logging/maxFileSizeMb", loggingMaxFileSizeMb);
+        else s.remove("logging/maxFileSizeMb");
+        if (loggingRetentionFiles.isValid()) s.setValue("logging/retentionFiles", loggingRetentionFiles);
+        else s.remove("logging/retentionFiles");
         if (embeddingModel.isValid()) s.setValue("embedding/model", embeddingModel);
         else s.remove("embedding/model");
         if (embeddingBaseUrl.isValid()) s.setValue("embedding/baseUrl", embeddingBaseUrl);
@@ -103,10 +116,23 @@ public:
         else s.remove("security/readDenyList");
         if (maxSteps.isValid()) s.setValue("agent/maxSteps", maxSteps);
         else s.remove("agent/maxSteps");
+        if (taskTimeoutMinutes.isValid()) s.setValue("agent/taskTimeoutMinutes", taskTimeoutMinutes);
+        else s.remove("agent/taskTimeoutMinutes");
+        Logger::setLogDirectory(loggingDirectory.isValid()
+            ? loggingDirectory.toString() : QString());
+        Logger::setMaxFileSizeMb(loggingMaxFileSizeMb.isValid()
+            ? loggingMaxFileSizeMb.toInt() : 10);
+        Logger::setRetentionFiles(loggingRetentionFiles.isValid()
+            ? loggingRetentionFiles.toInt() : 14);
+        Logger::setMinLevel(Logger::levelFromName(
+            loggingLevel.isValid() ? loggingLevel.toString() : QStringLiteral("info"), QtInfoMsg));
     }
     QVariant rawProfiles;
     QVariant activeId;
     QVariant loggingLevel;
+    QVariant loggingDirectory;
+    QVariant loggingMaxFileSizeMb;
+    QVariant loggingRetentionFiles;
     QVariant embeddingModel;
     QVariant embeddingBaseUrl;
     QVariant allowFullDiskRead;
@@ -120,6 +146,7 @@ public:
     QVariant defaultPermissionMode;
     QVariant readDenyList;
     QVariant maxSteps;
+    QVariant taskTimeoutMinutes;
 };
 
 // profile 列表按 id 取一项；找不到返回空 map（测试里用来断言刚建出来的 profile）。
@@ -616,8 +643,11 @@ private slots:
 
         // 先全部调到非默认值
         svc.setMaxSteps(99);
-        svc.setSimulationMode(true);
+        svc.setTaskTimeoutMinutes(12);
         svc.setLogLevel(QStringLiteral("debug"));
+        svc.setLogDirectory(QStringLiteral("/tmp/nexus-test-logs"));
+        svc.setLogMaxFileSizeMb(32);
+        svc.setLogRetentionFiles(30);
         svc.setEmbeddingModel(QStringLiteral("bge-m3"));
         svc.setEmbeddingBaseUrl(QStringLiteral("http://localhost:12345"));
         svc.setSystemPromptOverride(QStringLiteral("custom prompt"));
@@ -639,9 +669,11 @@ private slots:
             if (k.defaultValue.isValid())
                 defaults.insert(k.key, k.defaultValue);
         QCOMPARE(svc.maxSteps(), defaults.value("agent/maxSteps").toInt());
-        QCOMPARE(svc.simulationMode(),
-                 defaults.value("simulationMode").toBool());
+        QCOMPARE(svc.taskTimeoutMinutes(), defaults.value("agent/taskTimeoutMinutes").toInt());
         QCOMPARE(svc.logLevel(), defaults.value("logging/level").toString());
+        QCOMPARE(svc.logMaxFileSizeMb(), defaults.value("logging/maxFileSizeMb").toInt());
+        QCOMPARE(svc.logRetentionFiles(), defaults.value("logging/retentionFiles").toInt());
+        QCOMPARE(QSettings("NexusAI", "NexusAI").value("logging/directory").toString(), QString());
         QCOMPARE(svc.embeddingModel(),
                  defaults.value("embedding/model").toString());
         QCOMPARE(svc.embeddingBaseUrl(),
@@ -654,6 +686,7 @@ private slots:
     // 改动即时持久化。默认 30 取代了原先硬编码的 10。
     void maxStepsClampsAndPersists() {
         SettingsGuard guard;
+        QSettings("NexusAI", "NexusAI").remove("agent/maxSteps");
         SettingsService svc(nullptr);
 
         QCOMPARE(svc.maxSteps(), AIAgent::kDefaultMaxIterations);
@@ -666,6 +699,20 @@ private slots:
         svc.setMaxSteps(42);
         QCOMPARE(svc.maxSteps(), 42);
         QCOMPARE(QSettings("NexusAI", "NexusAI").value("agent/maxSteps").toInt(), 42);
+    }
+
+    void taskTimeoutClampsAndPersists() {
+        SettingsGuard guard;
+        QSettings("NexusAI", "NexusAI").remove("agent/taskTimeoutMinutes");
+        SettingsService service(nullptr);
+        QCOMPARE(service.taskTimeoutMinutes(), AIAgent::kDefaultTaskTimeoutMs / 60000);
+
+        service.setTaskTimeoutMinutes(0);
+        QCOMPARE(service.taskTimeoutMinutes(), 1);
+        service.setTaskTimeoutMinutes(99);
+        QCOMPARE(service.taskTimeoutMinutes(), 60);
+        service.setTaskTimeoutMinutes(20);
+        QCOMPARE(QSettings("NexusAI", "NexusAI").value("agent/taskTimeoutMinutes").toInt(), 20);
     }
 
     // docs/17 B3: 账本完整性——三类旁路写入方（ToolRegistry/AgentViewModel/
@@ -693,8 +740,8 @@ private slots:
             // docs/20 工作流 B（桌面集成）偏好键
             "prefs/v1/window.closeToTray", "prefs/v1/general.autoStart",
             "prefs/v1/notice.enabled",
-            // M2 内部键
-            "settings.lastCategory",
+            // M2 内部键：PreferenceStore 写入的物理路径
+            "prefs/v1/settings.lastCategory",
             // docs/17 A0/A1
             "projects/activeId",
             "security/readDenyList",
@@ -797,12 +844,37 @@ private slots:
             QCOMPARE(service.logLevel(), QStringLiteral("debug"));
             // Instant effect on the logger itself (doc 6 §3.5)
             QCOMPARE(Logger::minLevel(), QtDebugMsg);
+            service.setLogLevel(QStringLiteral("not-a-level"));
+            QCOMPARE(service.logLevel(), QStringLiteral("debug"));
         }
         {
             SettingsService service(nullptr);
             QCOMPARE(service.logLevel(), QStringLiteral("debug"));
         }
         Logger::setMinLevel(QtInfoMsg);   // restore suite default
+    }
+
+    void logRotationSettingsPersistAndClamp() {
+        SettingsGuard guard;
+        SettingsService service(nullptr);
+        QCOMPARE(service.logMaxFileSizeMb(), 10);
+        QCOMPARE(service.logRetentionFiles(), 14);
+
+        service.setLogMaxFileSizeMb(0);
+        QCOMPARE(service.logMaxFileSizeMb(), 1);
+        service.setLogMaxFileSizeMb(2048);
+        QCOMPARE(service.logMaxFileSizeMb(), 1024);
+        service.setLogRetentionFiles(-2);
+        QCOMPARE(service.logRetentionFiles(), 1);
+        service.setLogRetentionFiles(1000);
+        QCOMPARE(service.logRetentionFiles(), 100);
+
+        QTemporaryDir dir;
+        QVERIFY(dir.isValid());
+        service.setLogDirectory(dir.path());
+        QCOMPARE(service.logDirectory(), QDir::cleanPath(dir.path()));
+        QCOMPARE(QSettings("NexusAI", "NexusAI").value("logging/directory").toString(),
+                 QDir::cleanPath(dir.path()));
     }
 
     // Batch 22 (F8): user-editable system prompt; empty (after trim) clears
@@ -1619,6 +1691,7 @@ int main(int argc, char *argv[]) {
     // QML combo-echo tests instantiate QtQuick items: QGuiApplication is
     // required (QCoreApplication would abort on item creation).
     QGuiApplication app(argc, argv);
+    QStandardPaths::setTestModeEnabled(true);
     TestSettingsService tc;
     return QTest::qExec(&tc, argc, argv);
 }

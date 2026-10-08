@@ -48,7 +48,8 @@ class SettingsService : public QObject {
     // 每轮任务的步数预算（LLM 往返轮数）。曾硬编码为 10，普通多步任务经常
     // 还没得出结论就耗尽，只能拿已有信息拼一个"我无法确认"的答复。
     Q_PROPERTY(int maxSteps READ maxSteps WRITE setMaxSteps NOTIFY maxStepsChanged)
-    Q_PROPERTY(bool simulationMode READ simulationMode WRITE setSimulationMode NOTIFY simulationModeChanged)
+    Q_PROPERTY(int taskTimeoutMinutes READ taskTimeoutMinutes WRITE setTaskTimeoutMinutes NOTIFY taskTimeoutMinutesChanged)
+
     Q_PROPERTY(bool allowFullDiskRead READ allowFullDiskRead WRITE setAllowFullDiskRead NOTIFY allowFullDiskReadChanged)
     // docs/17 P1-4: 项目目录写入放行（默认关，安全页）。
     Q_PROPERTY(bool allowProjectWrite READ allowProjectWrite WRITE setAllowProjectWrite NOTIFY allowProjectWriteChanged FINAL)
@@ -61,6 +62,9 @@ class SettingsService : public QObject {
     // protocol stays /api/embed(dings) - only the host:port is configurable.
     Q_PROPERTY(QString embeddingBaseUrl READ embeddingBaseUrl WRITE setEmbeddingBaseUrl NOTIFY embeddingBaseUrlChanged)
     Q_PROPERTY(QString logLevel READ logLevel WRITE setLogLevel NOTIFY logLevelChanged)
+    Q_PROPERTY(QString logDirectory READ logDirectory WRITE setLogDirectory NOTIFY logDirectoryChanged)
+    Q_PROPERTY(int logMaxFileSizeMb READ logMaxFileSizeMb WRITE setLogMaxFileSizeMb NOTIFY logMaxFileSizeMbChanged)
+    Q_PROPERTY(int logRetentionFiles READ logRetentionFiles WRITE setLogRetentionFiles NOTIFY logRetentionFilesChanged)
     // Batch 22 (F8): user-editable system prompt; empty string = built-in.
     Q_PROPERTY(QString systemPromptOverride READ systemPromptOverride WRITE setSystemPromptOverride NOTIFY systemPromptOverrideChanged)
     // T6 (F3): web search provider and API key (encrypted at rest via DPAPI).
@@ -104,12 +108,12 @@ public:
     QVariantMap activeProfile() const;
 
     int contextTokens() const { return m_contextTokens; }
-    bool simulationMode() const { return m_simulationMode; }
     void setContextTokens(int tokens);
-    void setSimulationMode(bool enabled);
 
     int maxSteps() const { return m_maxSteps; }
     void setMaxSteps(int steps);
+    int taskTimeoutMinutes() const { return m_taskTimeoutMinutes; }
+    void setTaskTimeoutMinutes(int minutes);
 
     // Security: allow the agent to read files outside the user-directory
     // allowlist (audit P1-8). Opt-in, default off.
@@ -142,6 +146,12 @@ public:
     void setEmbeddingBaseUrl(const QString& url);
     QString logLevel() const { return m_logLevel; }
     void setLogLevel(const QString& level);
+    QString logDirectory() const;
+    void setLogDirectory(const QString& directory);
+    int logMaxFileSizeMb() const { return m_logMaxFileSizeMb; }
+    void setLogMaxFileSizeMb(int sizeMb);
+    int logRetentionFiles() const { return m_logRetentionFiles; }
+    void setLogRetentionFiles(int count);
     QString systemPromptOverride() const { return m_systemPromptOverride; }
     void setSystemPromptOverride(const QString& prompt);
 
@@ -209,8 +219,9 @@ public:
     // openai-chat — it is a UI axis, not a fifth wire protocol).
     Q_INVOKABLE void updateProfile(const QString& id, const QVariantMap& fields);
     Q_INVOKABLE void removeProfile(const QString& id);
-    // docs/17 B2: 把通用设置页的 9 个键回写 schema 默认值（安全开关回滚
-    // 由调用方二次确认）。逐键走既有 setter，保证持久化与 NOTIFY 一致。
+    // 通用设置页中由 SettingsService 管理的 9 项回写 schema 默认值；偏好
+    // 存储项由 GeneralPage 另行通过 PreferenceStore.resetBatch() 复位。
+    // 逐项走既有 setter，保证持久化与 NOTIFY 一致。
     Q_INVOKABLE void resetGeneralToDefaults();
 
     Q_INVOKABLE void setActiveProfile(const QString& id);
@@ -256,7 +267,8 @@ signals:
     void activeProfileChanged();
     void contextTokensChanged();
     void maxStepsChanged();
-    void simulationModeChanged();
+    void taskTimeoutMinutesChanged();
+
     void allowFullDiskReadChanged();
     void allowProjectWriteChanged();
     void localOnlyModeChanged();
@@ -264,6 +276,9 @@ signals:
     void embeddingModelChanged();
     void embeddingBaseUrlChanged();
     void logLevelChanged();
+    void logDirectoryChanged();
+    void logMaxFileSizeMbChanged();
+    void logRetentionFilesChanged();
     void systemPromptOverrideChanged();
     void webSearchProviderChanged();
     void webSearchApiKeyChanged();
@@ -287,7 +302,8 @@ private:
     QString m_activeId;
     int m_contextTokens{AIAgent::kDefaultContextTokens};
     int m_maxSteps{AIAgent::kDefaultMaxIterations};
-    bool m_simulationMode{false};
+    int m_taskTimeoutMinutes{AIAgent::kDefaultTaskTimeoutMs / 60000};
+
     bool m_allowFullDiskRead{false};
     bool m_allowProjectWrite{false};   // docs/17 P1-4: 项目目录写入放行
     bool m_localOnlyMode{false};
@@ -295,6 +311,9 @@ private:
     QString m_embeddingModel{QStringLiteral("nomic-embed-text")};
     QString m_embeddingBaseUrl{QStringLiteral("http://localhost:11434")};
     QString m_logLevel{QStringLiteral("info")};
+    QString m_logDirectory;
+    int m_logMaxFileSizeMb{10};
+    int m_logRetentionFiles{14};
     QString m_systemPromptOverride;
     QString m_webSearchProvider{QStringLiteral("tavily")};
     QString m_webSearchApiKey;

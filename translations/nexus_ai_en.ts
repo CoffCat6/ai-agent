@@ -310,11 +310,7 @@ and the model can retrieve their content to answer questions</translation>
         <source>默认值。按模型能力表自动适配时，此项作为未知模型的 fallback。</source>
         <translation type="vanished">Default value. When auto-adapting by model capability, this is the fallback for unknown models.</translation>
     </message>
-    <message>
-        <location filename="../src/ui/pages/GeneralPage.qml" line="111" />
-        <source>仿真演示模式（不调用真实 LLM）</source>
-        <translation>Simulation demo mode (no real LLM calls)</translation>
-    </message>
+
     <message>
         <location filename="../src/ui/pages/GeneralPage.qml" line="52" />
         <source>恢复本页默认</source>
@@ -370,8 +366,8 @@ and the model can retrieve their content to answer questions</translation>
     </message>
     <message>
         <location filename="../src/ui/pages/GeneralPage.qml" line="147" />
-        <source>一次任务里模型最多进行多少轮「思考 → 工具调用」。用完会强制基于已有信息作答，因此多文件排查、多步检索这类长任务需要更大的值；调小更省 token。</source>
-        <translation>Maximum "think -&gt; tool call" rounds per task. When the budget runs out the model is forced to answer from what it has gathered, so long tasks (multi-file investigation, multi-step retrieval) need a larger value; a smaller value saves tokens.</translation>
+        <source>一次任务里模型最多进行多少轮「思考 → 工具调用」（3–1000）。用完会强制基于已有信息作答；复杂任务可调高，但通常会增加耗时和 token 消耗。</source>
+        <translation>Maximum "think -&gt; tool call" rounds per task (3–1000). When the budget runs out, the model must answer from what it has gathered. Increase it for difficult tasks, noting this may increase latency and token use.</translation>
     </message>
     <message>
         <location filename="../src/ui/pages/GeneralPage.qml" line="188" />
@@ -380,13 +376,69 @@ and the model can retrieve their content to answer questions</translation>
     </message>
     <message>
         <location filename="../src/ui/pages/GeneralPage.qml" line="208" />
-        <source>诊断</source>
-        <translation>Diagnostics</translation>
+        <source>日志</source>
+        <translation>Logging</translation>
     </message>
     <message>
         <location filename="../src/ui/pages/GeneralPage.qml" line="216" />
         <source>日志级别</source>
         <translation>Log Level</translation>
+    </message>
+    <message>
+        <source>最低记录级别</source>
+        <translation>Minimum log level</translation>
+    </message>
+    <message>
+        <source>日志目录</source>
+        <translation>Log directory</translation>
+    </message>
+    <message>
+        <source>当前日志目录</source>
+        <translation>Current log directory</translation>
+    </message>
+    <message>
+        <source>选择目录</source>
+        <translation>Choose directory</translation>
+    </message>
+    <message>
+        <source>恢复默认目录</source>
+        <translation>Restore default directory</translation>
+    </message>
+    <message>
+        <source>打开目录</source>
+        <translation>Open directory</translation>
+    </message>
+    <message>
+        <source>选择日志保存目录</source>
+        <translation>Choose log directory</translation>
+    </message>
+    <message>
+        <source>单个日志文件上限（MB）</source>
+        <translation>Maximum size per log file (MB)</translation>
+    </message>
+    <message>
+        <source>单个日志文件大小上限，兆字节</source>
+        <translation>Maximum log file size in megabytes</translation>
+    </message>
+    <message>
+        <source>保留日志文件数</source>
+        <translation>Number of log files to keep</translation>
+    </message>
+    <message>
+        <source>达到单文件大小上限后自动轮转；只保留最新的指定数量文件。日志可能包含本地路径和错误上下文，请选择安全的保存位置。</source>
+        <translation>Files rotate when they reach the size limit; only the newest configured number are kept. Logs may contain local paths and error context, so choose a secure location.</translation>
+    </message>
+    <message>
+        <source>单次任务超时（分钟）</source>
+        <translation>Task timeout (minutes)</translation>
+    </message>
+    <message>
+        <source>单次任务超时，分钟</source>
+        <translation>Task timeout in minutes</translation>
+    </message>
+    <message>
+        <source>任务运行超过此时长会停止并基于已收集的信息作答。较难或需要多次网络调用的任务可以适当调高。</source>
+        <translation>Tasks stop after this duration and answer using the information collected so far. Increase it for difficult tasks or tasks requiring multiple network calls.</translation>
     </message>
     <message>
         <location filename="../src/ui/pages/GeneralPage.qml" line="228" />
@@ -1906,6 +1958,172 @@ and the model can retrieve their content to answer questions</translation>
     </message>
 </context>
 <context>
+    <name>NexusAI::SettingsBackup</name>
+    <message>
+        <location filename="../src/viewmodels/SettingsBackup.cpp" line="122" />
+        <source>无法读取当前设置</source>
+        <translation>Unable to read current settings</translation>
+    </message>
+    <message>
+        <location filename="../src/viewmodels/SettingsBackup.cpp" line="146" />
+        <source>模型配置已损坏，无法安全导出</source>
+        <translation>Model profiles are corrupted and cannot be exported safely</translation>
+    </message>
+    <message>
+        <location filename="../src/viewmodels/SettingsBackup.cpp" line="151" />
+        <source>模型配置包含无效条目</source>
+        <translation>Model profiles contain an invalid entry</translation>
+    </message>
+    <message>
+        <location filename="../src/viewmodels/SettingsBackup.cpp" line="165" />
+        <source>无法读取 MCP 服务器配置</source>
+        <translation>Unable to read MCP server configuration</translation>
+    </message>
+    <message>
+        <location filename="../src/viewmodels/SettingsBackup.cpp" line="172" />
+        <source>MCP 服务器配置已损坏</source>
+        <translation>MCP server configuration is corrupted</translation>
+    </message>
+    <message>
+        <location filename="../src/viewmodels/SettingsBackup.cpp" line="177" />
+        <source>MCP 服务器配置包含无效条目</source>
+        <translation>MCP server configuration contains an invalid entry</translation>
+    </message>
+    <message>
+        <location filename="../src/viewmodels/SettingsBackup.cpp" line="193" />
+        <source>无法创建导出文件：%1</source>
+        <translation>Unable to create export file: %1</translation>
+    </message>
+    <message>
+        <location filename="../src/viewmodels/SettingsBackup.cpp" line="198" />
+        <source>导出文件写入失败：%1</source>
+        <translation>Failed to write export file: %1</translation>
+    </message>
+    <message>
+        <location filename="../src/viewmodels/SettingsBackup.cpp" line="210" />
+        <source>无法读取备份文件：%1</source>
+        <translation>Unable to read backup file: %1</translation>
+    </message>
+    <message>
+        <location filename="../src/viewmodels/SettingsBackup.cpp" line="211" />
+        <source>备份文件超过 2 MB 限制</source>
+        <translation>Backup file exceeds the 2 MB limit</translation>
+    </message>
+    <message>
+        <location filename="../src/viewmodels/SettingsBackup.cpp" line="215" />
+        <source>备份文件不是有效的 JSON 对象</source>
+        <translation>Backup file is not a valid JSON object</translation>
+    </message>
+    <message>
+        <location filename="../src/viewmodels/SettingsBackup.cpp" line="219" />
+        <source>不支持的设置备份格式或版本</source>
+        <translation>Unsupported settings backup format or version</translation>
+    </message>
+    <message>
+        <location filename="../src/viewmodels/SettingsBackup.cpp" line="221" />
+        <source>设置版本不匹配，请使用兼容版本的应用恢复</source>
+        <translation>Settings version mismatch; restore with a compatible version of the app</translation>
+    </message>
+    <message>
+        <location filename="../src/viewmodels/SettingsBackup.cpp" line="225" />
+        <source>备份缺少设置、模型或 MCP 数据段</source>
+        <translation>Backup is missing settings, model profiles, or MCP server data</translation>
+    </message>
+    <message>
+        <location filename="../src/viewmodels/SettingsBackup.cpp" line="231" />
+        <source>备份包含不允许恢复或类型错误的设置项：%1</source>
+        <translation>Backup contains a setting that cannot be restored or has the wrong type: %1</translation>
+    </message>
+    <message>
+        <location filename="../src/viewmodels/SettingsBackup.cpp" line="238" />
+        <source>模型配置格式错误</source>
+        <translation>Invalid model profile format</translation>
+    </message>
+    <message>
+        <location filename="../src/viewmodels/SettingsBackup.cpp" line="240" />
+        <source>备份包含密钥字段，拒绝恢复</source>
+        <translation>Backup contains a secret field; restore refused</translation>
+    </message>
+    <message>
+        <location filename="../src/viewmodels/SettingsBackup.cpp" line="245" />
+        <source>模型配置 ID 或协议无效</source>
+        <translation>Invalid model profile ID or protocol</translation>
+    </message>
+    <message>
+        <location filename="../src/viewmodels/SettingsBackup.cpp" line="252" />
+        <source>活动模型 ID 未出现在模型列表中</source>
+        <translation>Active model ID is not in the model profile list</translation>
+    </message>
+    <message>
+        <location filename="../src/viewmodels/SettingsBackup.cpp" line="257" />
+        <source>MCP 配置格式错误</source>
+        <translation>Invalid MCP configuration format</translation>
+    </message>
+    <message>
+        <location filename="../src/viewmodels/SettingsBackup.cpp" line="260" />
+        <source>备份包含 MCP 凭据字段，拒绝恢复</source>
+        <translation>Backup contains MCP credential fields; restore refused</translation>
+    </message>
+    <message>
+        <location filename="../src/viewmodels/SettingsBackup.cpp" line="266" />
+        <source>MCP 服务器名称或传输方式无效</source>
+        <translation>Invalid MCP server name or transport</translation>
+    </message>
+    <message>
+        <location filename="../src/viewmodels/SettingsBackup.cpp" line="270" />
+        <source>应用设置（%1 项）</source>
+        <translation>App settings (%1 items)</translation>
+    </message>
+    <message>
+        <location filename="../src/viewmodels/SettingsBackup.cpp" line="271" />
+        <source>模型配置（%1 条）</source>
+        <translation>Model profiles (%1)</translation>
+    </message>
+    <message>
+        <location filename="../src/viewmodels/SettingsBackup.cpp" line="272" />
+        <source>MCP 服务器（%1 条，恢复后保持禁用）</source>
+        <translation>MCP servers (%1, remain disabled after restore)</translation>
+    </message>
+    <message>
+        <location filename="../src/viewmodels/SettingsBackup.cpp" line="273" />
+        <source>安全权限、工具启用状态、开机自启及运行时布局不会恢复。</source>
+        <translation>Security permissions, tool enablement, launch at startup, and runtime layout will not be restored.</translation>
+    </message>
+    <message>
+        <source>相同模型端点和 MCP 服务的本机凭据将保留；其他配置不会从备份恢复凭据。</source>
+        <translation>Local credentials for matching model endpoints and MCP servers are retained; other configurations do not receive credentials from the backup.</translation>
+    </message>
+    <message>
+        <location filename="../src/viewmodels/SettingsBackup.cpp" line="274" />
+        <source>MCP 命令参数、服务地址或自定义文本可能包含自行填写的敏感信息，请检查备份文件。</source>
+        <translation>MCP command arguments, server addresses, or custom text may contain sensitive information you entered. Review the backup file.</translation>
+    </message>
+    <message>
+        <location filename="../src/viewmodels/SettingsBackup.cpp" line="275" />
+        <source>恢复后需要重启应用；会话和知识库数据库不在此备份内。</source>
+        <translation>Restart the app after restoring; chats and knowledge base databases are not included in this backup.</translation>
+    </message>
+    <message>
+        <location filename="../src/viewmodels/SettingsBackup.cpp" line="300" />
+        <source>无法读取当前设置，恢复已取消</source>
+        <translation>Unable to read current settings; restore canceled</translation>
+    </message>
+    <message>
+        <source>当前模型配置已损坏，恢复已取消</source>
+        <translation>Current model profiles are corrupted; restore canceled</translation>
+    </message>
+    <message>
+        <location filename="../src/viewmodels/SettingsBackup.cpp" line="326" />
+        <source>恢复失败，原有设置已保留</source>
+        <translation>Restore failed; existing settings were preserved</translation>
+    </message>
+    <message>
+        <location filename="../src/viewmodels/SettingsBackup.cpp" line="327" />
+        <source>恢复失败且回滚未完成，请检查当前设置</source>
+        <translation>Restore failed and rollback was incomplete; check your current settings</translation>
+    </message>
+</context>
+<context>
     <name>NexusAI::SettingsService</name>
     <message>
         <location filename="../src/viewmodels/SettingsService.cpp" line="387" />
@@ -2274,6 +2492,136 @@ and the model can retrieve their content to answer questions</translation>
         <location filename="../src/ui/components/SettingsCenterDialog.qml" line="222" />
         <source>确认将当前分类的配置项恢复为默认值？</source>
         <translation>Restore the settings in this category to their defaults?</translation>
+    </message>
+</context>
+<context>
+    <name>SettingsBackupPage</name>
+    <message>
+        <location filename="../src/ui/pages/SettingsBackupPage.qml" line="11" />
+        <source>设置与备份页</source>
+        <translation>Settings and backup page</translation>
+    </message>
+    <message>
+        <location filename="../src/ui/pages/SettingsBackupPage.qml" line="35" />
+        <source>设置与备份</source>
+        <translation>Settings and Backup</translation>
+    </message>
+    <message>
+        <location filename="../src/ui/pages/SettingsBackupPage.qml" line="44" />
+        <source>将应用设置保存为 JSON 文件，或从备份文件恢复。已知密钥字段和 SQLite 数据（如聊天记录与长期记忆）不包含在内；自由文本及 MCP 命令参数可能含有敏感内容。</source>
+        <translation>Save app settings to a JSON file or restore them from a backup. Known secret fields and SQLite data (such as chat history and long-term memory) are excluded; free-form text and MCP command arguments may contain sensitive information.</translation>
+    </message>
+    <message>
+        <location filename="../src/ui/pages/SettingsBackupPage.qml" line="73" />
+        <location filename="../src/ui/pages/SettingsBackupPage.qml" line="151" />
+        <source>导出设置</source>
+        <translation>Export Settings</translation>
+    </message>
+    <message>
+        <location filename="../src/ui/pages/SettingsBackupPage.qml" line="80" />
+        <source>选择保存位置，生成可用于迁移设置的 JSON 备份。请妥善保管备份文件。</source>
+        <translation>Choose where to save a JSON backup for migrating your settings. Keep the backup file safe.</translation>
+    </message>
+    <message>
+        <location filename="../src/ui/pages/SettingsBackupPage.qml" line="88" />
+        <source>导出 JSON…</source>
+        <translation>Export JSON…</translation>
+    </message>
+    <message>
+        <location filename="../src/ui/pages/SettingsBackupPage.qml" line="113" />
+        <source>从备份恢复</source>
+        <translation>Restore from Backup</translation>
+    </message>
+    <message>
+        <location filename="../src/ui/pages/SettingsBackupPage.qml" line="120" />
+        <source>先预览将恢复的设置，再确认导入；高风险权限及开机自启需在恢复后重新确认。建议恢复后重启应用。</source>
+        <translation>Preview the settings to be restored before confirming the import. Review high-risk permissions and launch at startup again afterward. Restarting the app is recommended.</translation>
+    </message>
+    <message>
+        <location filename="../src/ui/pages/SettingsBackupPage.qml" line="128" />
+        <source>选择 JSON 备份…</source>
+        <translation>Select JSON Backup…</translation>
+    </message>
+    <message>
+        <location filename="../src/ui/pages/SettingsBackupPage.qml" line="154" />
+        <location filename="../src/ui/pages/SettingsBackupPage.qml" line="167" />
+        <source>JSON 文件 (*.json)</source>
+        <translation>JSON files (*.json)</translation>
+    </message>
+    <message>
+        <location filename="../src/ui/pages/SettingsBackupPage.qml" line="158" />
+        <source>导出失败。</source>
+        <translation>Export failed.</translation>
+    </message>
+    <message>
+        <location filename="../src/ui/pages/SettingsBackupPage.qml" line="159" />
+        <source>设置已导出。已知密钥字段已过滤；请检查自由文本和 MCP 命令参数。</source>
+        <translation>Settings exported. Known secret fields have been filtered out; review free-form text and MCP command arguments.</translation>
+    </message>
+    <message>
+        <location filename="../src/ui/pages/SettingsBackupPage.qml" line="165" />
+        <source>选择设置备份</source>
+        <translation>Select Settings Backup</translation>
+    </message>
+    <message>
+        <location filename="../src/ui/pages/SettingsBackupPage.qml" line="176" />
+        <source>无法预览此备份文件。</source>
+        <translation>Unable to preview this backup file.</translation>
+    </message>
+    <message>
+        <location filename="../src/ui/pages/SettingsBackupPage.qml" line="199" />
+        <source>确认恢复设置？</source>
+        <translation>Restore settings?</translation>
+    </message>
+    <message>
+        <location filename="../src/ui/pages/SettingsBackupPage.qml" line="216" />
+        <source>即将恢复的分类：%1</source>
+        <translation>Categories to restore: %1</translation>
+    </message>
+    <message>
+        <location filename="../src/ui/pages/SettingsBackupPage.qml" line="218" />
+        <source>无</source>
+        <translation>None</translation>
+    </message>
+    <message>
+        <location filename="../src/ui/pages/SettingsBackupPage.qml" line="227" />
+        <source>备份不含以下密钥：%1</source>
+        <translation>Secrets not included in the backup: %1</translation>
+    </message>
+    <message>
+        <location filename="../src/ui/pages/SettingsBackupPage.qml" line="237" />
+        <source>备份提示：%1</source>
+        <translation>Backup notes: %1</translation>
+    </message>
+    <message>
+        <location filename="../src/ui/pages/SettingsBackupPage.qml" line="246" />
+        <source>匹配相同端点的本机密钥会保留；新端点需要重新配置密钥。SQLite 数据不会恢复。恢复会覆盖相应设置，MCP 服务立即禁用；请重启应用并重新确认高风险权限和开机自启。</source>
+        <translation>Local secrets for matching endpoints are retained; configure secrets again for new endpoints. SQLite data is not restored. Settings are overwritten and MCP servers are disabled immediately. Restart the app and review high-risk permissions and launch at startup.</translation>
+    </message>
+    <message>
+        <location filename="../src/ui/pages/SettingsBackupPage.qml" line="261" />
+        <source>取消</source>
+        <translation>Cancel</translation>
+    </message>
+    <message>
+        <location filename="../src/ui/pages/SettingsBackupPage.qml" line="265" />
+        <source>确认恢复</source>
+        <translation>Confirm Restore</translation>
+    </message>
+    <message>
+        <location filename="../src/ui/pages/SettingsBackupPage.qml" line="276" />
+        <source>恢复失败。</source>
+        <translation>Restore failed.</translation>
+    </message>
+    <message>
+        <location filename="../src/ui/pages/SettingsBackupPage.qml" line="278" />
+        <source>设置已恢复，请重启应用后检查高风险权限和开机自启。</source>
+        <translation>Settings restored. Restart the app, then check high-risk permissions and launch at startup.</translation>
+    </message>
+    <message>
+        <location filename="../src/ui/pages/SettingsBackupPage.qml" line="279" />
+        <source>设置已恢复，建议重启应用并重新确认高风险权限和开机自启。</source>
+        <translation>Settings restored. Restarting the app and reviewing high-risk permissions and launch at startup are recommended.</translation>
     </message>
 </context>
 <context>

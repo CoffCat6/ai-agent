@@ -242,9 +242,8 @@ QString AIAgent::appendTraceNode(const QString& type, const QString& title,
     node["result"] = extra.value("result").toString();
     if (extra.contains("images"))
         node["images"] = extra.value("images");
-    // docs/19 D16: 用户消息的附件（文本文件芯片）之前被白名单漏掉，导致真实
-    // 模型路径下用户附件不渲染（模拟路径直接写模型绕过了这里，所以只有真实
-    // 管线复现）。与 images 同样放行。
+    // docs/19 D16: 用户消息的附件（文本文件芯片）之前被白名单漏掉，导致
+    // 用户附件不渲染；与 images 同样放行。
     if (extra.contains("files"))
         node["files"] = extra.value("files");
     // 字段是白名单式的：不在这里放行的 key 根本进不了节点（也就不会被
@@ -1139,7 +1138,7 @@ void AIAgent::stop() {
 // 伪嵌入/stop 残留的 dangling tool_calls 已随截断一并消失，不需要 seal。
 void AIAgent::regenerateLast() {
     if (m_active) return;
-    if (m_llmService == nullptr) return;   // 无管线（模拟模式由上层回退）
+    if (m_llmService == nullptr) return;
 
     // 1. 找最后一条 user 消息在内存上下文中的位置（跳过 system）。截断点
     //    = 该 user 消息本身（保留），其后全部移除。

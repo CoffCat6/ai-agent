@@ -36,6 +36,9 @@ public:
 
     // Startup: read mcp_servers.json and connect every enabled server.
     void loadAndConnectAll();
+    // Called only after a backup has been persisted successfully. Imported
+    // servers remain disabled until explicitly enabled again.
+    void applyRestoredConfigs(const QVariantList& servers);
 
     QVariantList servers() const;
     QString lastError() const { return m_lastError; }

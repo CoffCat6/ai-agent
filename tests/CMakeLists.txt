@@ -78,6 +78,11 @@ add_executable(test_settings test_settings.cpp)
 target_link_libraries(test_settings PRIVATE nexus_core nexus_infra nexus_viewmodels Qt6::Test Qt6::Qml Qt6::Quick)
 add_test(NAME test_settings COMMAND test_settings)
 
+add_executable(test_settings_backup test_settings_backup.cpp)
+target_link_libraries(test_settings_backup PRIVATE
+    nexus_core nexus_infra nexus_viewmodels Qt6::Test Qt6::Qml)
+add_test(NAME test_settings_backup COMMAND test_settings_backup)
+
 # Batch 23 F11: syntax highlighting — needs QQuickTextDocument (QtQuick)
 add_executable(test_highlighter test_highlighter.cpp)
 target_link_libraries(test_highlighter PRIVATE

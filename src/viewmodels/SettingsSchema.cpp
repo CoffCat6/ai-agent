@@ -12,8 +12,9 @@ const QVector<SettingsKeyDef>& SettingsSchema::registeredKeys() {
         {"activeProfileId",               QVariant(),                        false},
         {"contextTokens",                 AIAgent::kDefaultContextTokens,     false},
         // 每轮任务的步数预算（LLM 往返轮数）；默认与钳制边界见 AIAgent。
-        {"agent/maxSteps",                30,                                false},
-        {"simulationMode",                false,                             false},
+        {"agent/maxSteps",                AIAgent::kDefaultMaxIterations,     false},
+        {"agent/taskTimeoutMinutes",       AIAgent::kDefaultTaskTimeoutMs / 60000, false},
+
         {"security/allowFullDiskRead",    false,                             false},
         // docs/17 P1-4: 项目目录写入放行（默认只读，安全页开关）。
         {"security/allowProjectWrite",    false,                             false},
@@ -23,6 +24,9 @@ const QVector<SettingsKeyDef>& SettingsSchema::registeredKeys() {
         {"embedding/baseUrl",             QStringLiteral("http://localhost:11434"), false},
         {"agent/systemPromptOverride",    QString(),                         false},
         {"logging/level",                 QStringLiteral("info"),            false},
+        {"logging/directory",              QString(),                         false},
+        {"logging/maxFileSizeMb",          10,                                 false},
+        {"logging/retentionFiles",         14,                                 false},
         {"webSearch/provider",            QStringLiteral("tavily"),           false},
         {"webSearch/apiKey",              QString(),                         true},  // DPAPI
         {"memory/episodicMemoryEnabled",  false,                             false},
@@ -58,7 +62,7 @@ const QVector<SettingsKeyDef>& SettingsSchema::registeredKeys() {
         {"prefs/v1/ui.defaultPanelVisible",  true,                           false},
         {"prefs/v1/ui.restoreWindowOnStartup", true,                         false},
         // M2 内部键：设置中心记住上次访问分类。
-        {"settings.lastCategory",         QVariant(),                        false},
+        {"prefs/v1/settings.lastCategory", QVariant(),                        false},
         // docs/17 A0: 当前活动项目 id（空 = 无项目，本地会话）。
         {"projects/activeId",             QString(),                         false},
         // docs/17 A1: 读取黑名单用户追加项（目录或 glob；内置默认清单
