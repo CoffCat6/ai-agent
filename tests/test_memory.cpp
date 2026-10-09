@@ -224,7 +224,7 @@ void TestMemory::projectSessionLifecycle() {
     SqliteMemory mem(QStringLiteral(":memory:"));
 
     const QString pid = mem.createProject(QStringLiteral("demo"),
-                                          QStringLiteral("D:\work\demo"));
+                                          QStringLiteral("D:\\work\\demo"));
     QVERIFY(!pid.isEmpty());
 
     QVariantList projects = mem.listProjects();
@@ -232,7 +232,7 @@ void TestMemory::projectSessionLifecycle() {
     QCOMPARE(projects.first().toMap().value("name").toString(),
              QStringLiteral("demo"));
     QCOMPARE(projects.first().toMap().value("rootPath").toString(),
-             QStringLiteral("D:\work\demo"));
+             QStringLiteral("D:\\work\\demo"));
 
     // 会话归属：标记后 listSessions 携带 projectId。
     mem.beginSession("s1", "project session");
