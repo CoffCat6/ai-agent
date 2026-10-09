@@ -7,6 +7,7 @@
 #include "core/memory/IMemory.h"
 #include "core/rag/RagService.h"
 #include "core/rag/KnowledgeChunk.h"
+#include "viewmodels/PdfTextExtractor.h"
 #include "core/tools/ToolRegistry.h"
 #include "core/tools/Sandbox.h"
 #include "core/utils/Logger.h"
@@ -701,6 +702,23 @@ void AgentViewModel::importDocument(const QString& path) {
         emit errorOccurred(tr("无法读取文件：%1").arg(cleanPath));
         return;
     }
+
+    // docs/20 §5.2 (C2): PDFs are extracted through QPdfDocument (text layer,
+    // page by page); every other suffix keeps the plain text read. The rest of
+    // the chain - content hash → uniqueDocumentName → startIngestion - is
+    // identical for both paths, so PDF only swaps the "content extraction" step.
+    //
+    // The PDF parse itself is NOT cheap (QPdfDocument::load + getAllText over
+    // every page) and this entry point is a Q_INVOKABLE hit straight from the
+    // FileDialog's onAccepted on the GUI thread. Reading a .txt/.md could
+    // stay synchronous because it is a single readAll(); a 100+ page PDF
+    // would freeze the UI for seconds, so the parse runs on a worker thread
+    // and the (cheap) dedup/ingestion steps happen when it reports back.
+    if (info.suffix().compare(QLatin1String("pdf"), Qt::CaseInsensitive) == 0) {
+        startPdfImport(cleanPath, info);
+        return;
+    }
+
     QFile file(cleanPath);
     if (!file.open(QIODevice::ReadOnly | QIODevice::Text)) {
         emit errorOccurred(tr("无法打开文件：%1").arg(file.errorString()));
@@ -709,9 +727,56 @@ void AgentViewModel::importDocument(const QString& path) {
     const QString content = QString::fromUtf8(file.readAll());
     file.close();
 
-    // FEAT-802: duplicate content is rejected up front (before the expensive
-    // embedding); same-name-different-content files coexist under a
-    // deduplicated display name.
+    importExtractedText(info, content);
+}
+
+// docs/20 §5.2 (C2): PDF 提取的后台化。与 startIngestion 同一套
+// QFutureWatcher 模式：worker lambda 只捕获值（绝不捕获 this），watcher
+// 挂在 this 上，结果回到 GUI 线程后才触碰 busy 标志与信号——导入中途销毁
+// view model 不会悬垂。
+void AgentViewModel::startPdfImport(const QString& path, const QFileInfo& info) {
+    setKnowledgeBusy(true);
+    setEmbedProgress(0, 0);
+
+    auto* watcher = new QFutureWatcher<PdfExtractResult>(this);
+    connect(watcher, &QFutureWatcherBase::finished, this, [this, watcher, info]() {
+        const PdfExtractResult pdf = watcher->result();
+        watcher->deleteLater();
+        if (!pdf.ok()) {
+            QString message;
+            switch (pdf.status) {
+            case PdfExtractStatus::Encrypted:
+                message = tr("PDF 已加密或需要密码，无法导入：%1");
+                break;
+            case PdfExtractStatus::Corrupted:
+                message = tr("PDF 文件已损坏或格式无效，无法导入：%1");
+                break;
+            case PdfExtractStatus::NoText:
+                message = tr("未能从 PDF 中提取到文本（可能是扫描件，没有文本层）：%1");
+                break;
+            case PdfExtractStatus::OpenFailed:
+            case PdfExtractStatus::Ok:   // unreachable: !ok() excludes it
+                message = tr("无法读取 PDF 文件：%1");
+                break;
+            }
+            // detail 是未翻译的技术原因（"incorrect password" 等），只进日志：
+            // 用户看分类后的中文提示，排障时从日志拿到根因。
+            qWarning() << "PDF import rejected:" << info.fileName()
+                       << "status" << int(pdf.status) << pdf.detail;
+            emit errorOccurred(message.arg(info.fileName()));
+            setKnowledgeBusy(false);
+            return;
+        }
+        importExtractedText(info, pdf.text);
+    });
+
+    watcher->setFuture(QtConcurrent::run([path]() { return extractPdfText(path); }));
+}
+
+// FEAT-802: duplicate content is rejected up front (before the expensive
+// embedding); same-name-different-content files coexist under a
+// deduplicated display name. 文本路径与 PDF 提取完成后的回调都走这里。
+void AgentViewModel::importExtractedText(const QFileInfo& info, const QString& content) {
     const QString hash = knowledgeContentHash(content);
     if (m_rag->containsContentHash(hash)) {
         emit noticeOccurred(tr("文档内容已存在，已跳过：%1").arg(info.fileName()));
@@ -720,6 +785,11 @@ void AgentViewModel::importDocument(const QString& path) {
     const QString name = m_rag->uniqueDocumentName(info.fileName());
     Activity::usage(Activity::Kind::User, QStringLiteral("doc.import"), name);
     startIngestion(name, content, false);
+}
+
+void AgentViewModel::openKnowledgeDocument(const QString& name) {
+    if (name.isEmpty()) return;
+    emit knowledgeDocumentOpenRequested(name);
 }
 
 void AgentViewModel::removeDocument(const QString& name) {

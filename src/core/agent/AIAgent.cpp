@@ -5,6 +5,7 @@
 #include "core/tools/ToolRegistry.h"
 #include "core/tools/Sandbox.h"
 #include "core/memory/IMemory.h"
+#include "core/rag/KnowledgeSearchTool.h"
 #include "core/utils/TokenEstimator.h"
 
 #include <QDateTime>
@@ -55,6 +56,17 @@ QString truncateText(const QString& text, int maxChars) {
 
 QString argsToString(const QJsonObject& args) {
     return QString::fromUtf8(QJsonDocument(args).toJson(QJsonDocument::Compact));
+}
+
+// CITE-801 (docs/20 §5.1): 知识库非空判定。系统提示词里的引用溯源约定
+// 只在库里真有文档时才注入（空库注入纯属浪费 token）。判定经注册的
+// search_knowledge_base 工具实例回查 RagService —— AIAgent 不直接持有
+// RagService，工具是两者之间唯一的既有接线点。
+bool knowledgeBaseNonEmpty(ToolRegistry* registry) {
+    if (!registry) return false;
+    const ITool* tool = registry->find(QStringLiteral("search_knowledge_base"));
+    const auto* kbTool = dynamic_cast<const KnowledgeSearchTool*>(tool);
+    return kbTool != nullptr && kbTool->knowledgeBaseNonEmpty();
 }
 
 // 步数预算由调用方传入：本函数是匿名命名空间里的自由函数，拿不到成员。
@@ -193,6 +205,14 @@ QString AIAgent::effectiveSystemPrompt() const {
     const QString project = projectContextBlock();
     if (!project.isEmpty())
         prompt += project;
+    // CITE-801 (docs/20 §5.1): 回答侧约定 —— 知识库非空时才追加引用格式
+    // 指令，让模型在句子末尾标 [文档名]，UI 据此渲染可点击溯源徽标。
+    // 用户自定义 override 提示不注入：override 表示"完全接管系统提示"，
+    // test_agent 的 systemPromptOverrideReachesRequest 锁定了该语义
+    // （override 内容必须原样到达请求），且设计未要求改写用户提示。
+    if (m_systemPromptOverride.isEmpty() && knowledgeBaseNonEmpty(m_toolRegistry))
+        prompt += QStringLiteral(
+            "\n\n引用知识库内容时，在句子末尾以 [文档名] 标注来源。");
     return prompt;
 }
 

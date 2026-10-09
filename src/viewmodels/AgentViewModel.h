@@ -4,6 +4,7 @@
 #include <QQmlEngine>
 #include <QJsonArray>
 #include <QJsonObject>
+#include <QFileInfo>
 #include <QString>
 #include <QStringList>
 #include <QUrl>
@@ -357,6 +358,12 @@ public:
     // Knowledge base management (file import happens on a worker thread;
     // knowledgeChanged notifies on completion)
     Q_INVOKABLE void importDocument(const QString& path);
+    // docs/20 §5.1 (CITE-801): 打开知识库文档详情。AssistantMessage 的引用
+    // 徽标点击后调用它；main.qml 把 knowledgeDocumentOpenRequested 连到
+    // KnowledgeDocDialog.openFor。由 view model 中转而不是让组件去窗口里
+    // 反射找对话框：显式信号链有编译期保护，也不会因对话框改名/换父级而
+    // 静默失效。
+    Q_INVOKABLE void openKnowledgeDocument(const QString& name);
     Q_INVOKABLE void removeDocument(const QString& name);
     Q_INVOKABLE void clearKnowledge();
     // Chunk metadata of one imported document (document detail dialog)
@@ -412,6 +419,8 @@ signals:
     void permissionModeChanged();
     void searchResultsChanged();
     void knowledgeChanged();
+    // docs/20 §5.1 (CITE-801): 引用徽标要求打开某文档的详情。
+    void knowledgeDocumentOpenRequested(const QString& name);
     void knowledgeBusyChanged();
     void knowledgeEmbedProgressChanged();
 
@@ -466,6 +475,13 @@ private:
     // Runs ingestDocument on a worker thread; the outcome (busy flag, signals)
     // is handled back on the GUI thread via a QFutureWatcher.
     void startIngestion(const QString& name, const QString& content, bool reembed);
+    // docs/20 §5.2 (C2): 与 importDocument 的文本路径共用「提取后」步骤。
+    // PDF 的后台提取（startPdfImport）完成后也汇到这里，再按内容去重、
+    // 取唯一显示名并交给 startIngestion。
+    void importExtractedText(const QFileInfo& info, const QString& content);
+    // docs/20 §5.2 (C2): PDF 文本提取的后台化（QPdfDocument 解析不在
+    // GUI 线程跑，避免大文件冻结界面）。
+    void startPdfImport(const QString& path, const QFileInfo& info);
     void persistPanelWidths();
 
     void registerLayoutPreferences();

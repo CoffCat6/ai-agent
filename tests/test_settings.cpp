@@ -55,6 +55,8 @@ public:
         toolsDisabled = s.value("tools/disabled");
         webSearchProvider = s.value("webSearch/provider");
         webSearchApiKey = s.value("webSearch/apiKey");
+        // docs/20 §5.3 (C3): SearXNG 地址键同样进守卫（键登记纪律）。
+        searxBaseUrl = s.value("webSearch/searxBaseUrl");
         schemaVersion = s.value("schemaVersion");
         defaultPermissionMode = s.value("agent/defaultPermissionMode");
         readDenyList = s.value("security/readDenyList");
@@ -105,6 +107,9 @@ public:
         if (webSearchApiKey.isValid())
             s.setValue("webSearch/apiKey", webSearchApiKey);
         else s.remove("webSearch/apiKey");
+        if (searxBaseUrl.isValid())
+            s.setValue("webSearch/searxBaseUrl", searxBaseUrl);
+        else s.remove("webSearch/searxBaseUrl");
         if (schemaVersion.isValid())
             s.setValue("schemaVersion", schemaVersion);
         else s.remove("schemaVersion");
@@ -142,6 +147,7 @@ public:
     QVariant toolsDisabled;
     QVariant webSearchProvider;
     QVariant webSearchApiKey;
+    QVariant searxBaseUrl;
     QVariant schemaVersion;
     QVariant defaultPermissionMode;
     QVariant readDenyList;
@@ -1179,6 +1185,8 @@ ComboBox {
         QVERIFY(!keys.isEmpty());
         bool foundProvider = false;
         bool foundApiKey = false;
+        // docs/20 §5.3 (C3): SearXNG 地址键必须进账本（键登记纪律）。
+        bool foundSearxBaseUrl = false;
         // docs/20 工作流 B（桌面集成）：新偏好键必须登记进账本。
         bool foundCloseToTray = false;
         bool foundAutoStart = false;
@@ -1188,6 +1196,11 @@ ComboBox {
             if (k.key == QStringLiteral("webSearch/apiKey")) {
                 foundApiKey = true;
                 QVERIFY(k.encrypted);
+            }
+            if (k.key == QStringLiteral("webSearch/searxBaseUrl")) {
+                foundSearxBaseUrl = true;
+                // 地址非密钥：明文存储，不得挂 DPAPI。
+                QVERIFY(!k.encrypted);
             }
             if (k.key == QStringLiteral("prefs/v1/window.closeToTray"))
                 foundCloseToTray = true;
@@ -1202,6 +1215,7 @@ ComboBox {
         QVERIFY(foundProvider);
         QVERIFY(foundApiKey);
         // 键登记纪律（docs/17 B3）：漏登记会让"恢复默认"/账本完整性静默失效。
+        QVERIFY2(foundSearxBaseUrl, "webSearch/searxBaseUrl missing from schema");
         QVERIFY2(foundCloseToTray, "prefs/v1/window.closeToTray missing from schema");
         QVERIFY2(foundAutoStart, "prefs/v1/general.autoStart missing from schema");
         QVERIFY2(foundNoticeEnabled, "prefs/v1/notice.enabled missing from schema");

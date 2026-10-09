@@ -21,7 +21,8 @@ constexpr char kTavilyUrl[] = "https://api.tavily.com/search";
 QList<WebSearchResult> TavilyBackend::search(const QString& query,
                                              int maxResults,
                                              const QString& apiKey,
-                                             int timeoutMs) const {
+                                             int timeoutMs,
+                                             QString* errorReason) const {
     if (query.trimmed().isEmpty() || apiKey.isEmpty())
         return {};
 
@@ -55,19 +56,33 @@ QList<WebSearchResult> TavilyBackend::search(const QString& query,
 
     if (timedOut) {
         reply->deleteLater();
+        if (errorReason) *errorReason = QStringLiteral("请求超时");
         return {};
     }
 
     const QByteArray body = reply->readAll();
     const int status = reply->attribute(QNetworkRequest::HttpStatusCodeAttribute).toInt();
+    const QNetworkReply::NetworkError netErr = reply->error();
+    const QString netErrText = reply->errorString();
     reply->deleteLater();
 
-    if (status < 200 || status >= 300)
+    // 传输层错误（DNS / 连接被拒 / TLS）优先于 HTTP 状态码报告：此时
+    // status 往往是 0，单独看状态码会得到「HTTP 0」这种无意义诊断。
+    if (netErr != QNetworkReply::NoError) {
+        if (errorReason) *errorReason = QStringLiteral("请求失败：%1").arg(netErrText);
         return {};
+    }
+
+    if (status < 200 || status >= 300) {
+        if (errorReason) *errorReason = QStringLiteral("HTTP %1").arg(status);
+        return {};
+    }
 
     const QJsonDocument doc = QJsonDocument::fromJson(body);
-    if (!doc.isObject())
+    if (!doc.isObject()) {
+        if (errorReason) *errorReason = QStringLiteral("响应不是合法的 JSON 对象");
         return {};
+    }
 
     const QJsonArray results = doc.object().value(QStringLiteral("results")).toArray();
     QList<WebSearchResult> out;
@@ -104,7 +119,8 @@ QString stripHtml(const QString& s) {
 QList<WebSearchResult> DuckDuckGoBackend::search(const QString& query,
                                                   int maxResults,
                                                   const QString& /*apiKey*/,
-                                                  int timeoutMs) const {
+                                                  int timeoutMs,
+                                                  QString* errorReason) const {
     if (query.trimmed().isEmpty())
         return {};
 
@@ -136,16 +152,25 @@ QList<WebSearchResult> DuckDuckGoBackend::search(const QString& query,
 
     if (timedOut) {
         reply->deleteLater();
+        if (errorReason) *errorReason = QStringLiteral("请求超时");
         return {};
     }
 
     const QByteArray body = reply->readAll();
     const int status = reply->attribute(QNetworkRequest::HttpStatusCodeAttribute).toInt();
+    const QNetworkReply::NetworkError netErr = reply->error();
+    const QString netErrText = reply->errorString();
     reply->deleteLater();
 
-    if (status < 200 || status >= 300)
+    if (netErr != QNetworkReply::NoError) {
+        if (errorReason) *errorReason = QStringLiteral("请求失败：%1").arg(netErrText);
         return {};
+    }
 
+    if (status < 200 || status >= 300) {
+        if (errorReason) *errorReason = QStringLiteral("HTTP %1").arg(status);
+        return {};
+    }
     const QString html = QString::fromUtf8(body);
 
     static const QRegularExpression linkRe(
@@ -183,6 +208,131 @@ QList<WebSearchResult> DuckDuckGoBackend::search(const QString& query,
         out.append(r);
     }
 
+    return out;
+}
+
+// docs/20 §5.3: SearXNG (self-hosted, GET + JSON format). The parsing rules
+// mirror TavilyBackend::search — same {title,url,content} mapping, same
+// qBound(1, maxResults, 10) clamp, empty-URL entries dropped, missing title
+// falls back to the URL — so callers see identical result semantics.
+QUrl SearxBackend::buildSearchUrl(const QString& baseUrl, const QString& query) {
+    QString base = baseUrl.trimmed();
+    while (base.endsWith(QLatin1Char('/'))) base.chop(1);
+    QUrl url(base + QStringLiteral("/search"));
+    QUrlQuery params;
+    params.addQueryItem(QStringLiteral("q"), query.trimmed());
+    params.addQueryItem(QStringLiteral("format"), QStringLiteral("json"));
+    url.setQuery(params);
+    return url;
+}
+
+QList<WebSearchResult> SearxBackend::parseResponse(const QByteArray& json,
+                                                    int maxResults) {
+    maxResults = qBound(1, maxResults, 10);
+
+    const QJsonDocument doc = QJsonDocument::fromJson(json);
+    if (!doc.isObject())
+        return {};
+
+    const QJsonArray results = doc.object().value(QStringLiteral("results")).toArray();
+    QList<WebSearchResult> out;
+    for (const auto& v : results) {
+        if (out.size() >= maxResults) break;
+        if (!v.isObject()) continue;
+        const QJsonObject o = v.toObject();
+        WebSearchResult r;
+        r.title = o.value(QStringLiteral("title")).toString().trimmed();
+        r.url = o.value(QStringLiteral("url")).toString().trimmed();
+        r.snippet = o.value(QStringLiteral("content")).toString().trimmed();
+        if (r.url.isEmpty()) continue;
+        if (r.title.isEmpty()) r.title = r.url;
+        out.append(r);
+    }
+    return out;
+}
+
+QList<WebSearchResult> SearxBackend::search(const QString& query,
+                                              int maxResults,
+                                              const QString& /*apiKey*/,
+                                              int timeoutMs,
+                                              QString* errorReason) const {
+    // 未配置实例地址不是「没搜到」，工具层会先读 notReadyReason() 报出来；
+    // 这里仍留一道兜底（直接 new 出后端、没走设置链路的调用方）。
+    if (m_baseUrl.isEmpty()) {
+        if (errorReason) *errorReason = notReadyReason();
+        return {};
+    }
+    if (query.trimmed().isEmpty())
+        return {};
+
+    const QUrl url = buildSearchUrl(m_baseUrl, query);
+    // scheme 必须是 http/https：QUrl 的宽容模式会把 "localhost:8080" 解析成
+    // scheme="localhost"，isValid()/isRelative() 都拦不住，最后变成一次注定
+    // 失败的怪异请求。这里显式收敛到两种可接受 scheme。
+    if (!url.isValid() || url.isRelative()
+        || (url.scheme() != QLatin1String("http")
+            && url.scheme() != QLatin1String("https"))) {
+        if (errorReason) {
+            *errorReason = QStringLiteral(
+                "无效的 SearXNG 地址（需以 http:// 或 https:// 开头）：%1").arg(m_baseUrl);
+        }
+        return {};
+    }
+
+    QNetworkAccessManager nam;
+    QNetworkRequest req(url);
+    req.setHeader(QNetworkRequest::UserAgentHeader, QStringLiteral("NexusAI/1.0"));
+
+    QNetworkReply* reply = nam.get(req);
+
+    QTimer timeout;
+    bool timedOut = false;
+    QEventLoop loop;
+    QObject::connect(&timeout, &QTimer::timeout, &loop, [&] {
+        timedOut = true;
+        reply->abort();
+        loop.quit();
+    });
+    timeout.setSingleShot(true);
+    timeout.start(qBound(5000, timeoutMs, 60000));
+    QObject::connect(reply, &QNetworkReply::finished, &loop, &QEventLoop::quit);
+    loop.exec();
+
+    if (timedOut) {
+        reply->deleteLater();
+        if (errorReason) *errorReason = QStringLiteral("请求超时");
+        return {};
+    }
+
+    const QByteArray body = reply->readAll();
+    const int status = reply->attribute(QNetworkRequest::HttpStatusCodeAttribute).toInt();
+    const QNetworkReply::NetworkError netErr = reply->error();
+    const QString netErrText = reply->errorString();
+    reply->deleteLater();
+
+    // SearXNG 默认在 settings.yml 里关闭 JSON 输出（search.formats: [html]），
+    // 请求 format=json 会拿到 403/400 的 HTML 错误页——这属于「实例没开
+    // JSON API」，单独报出来用户才知道要去改 SearXNG 配置，而不是怀疑网络。
+    if (netErr != QNetworkReply::NoError) {
+        if (errorReason) *errorReason = QStringLiteral("请求失败：%1").arg(netErrText);
+        return {};
+    }
+    if (status < 200 || status >= 300) {
+        if (errorReason) {
+            *errorReason = QStringLiteral("HTTP %1（请确认该 SearXNG 实例已启用 JSON API："
+                                          "search.formats 需包含 json）").arg(status);
+        }
+        return {};
+    }
+
+    const QList<WebSearchResult> out = parseResponse(body, maxResults);
+    if (out.isEmpty() && errorReason) {
+        // 200 且 JSON 合法但一条结果都没有：把「实例返回了空结果集」与
+        // 「响应不是预期结构」分开。
+        const QJsonDocument doc = QJsonDocument::fromJson(body);
+        if (!doc.isObject())
+            *errorReason = QStringLiteral("响应不是预期的 JSON 对象");
+    }
     return out;
 }
 

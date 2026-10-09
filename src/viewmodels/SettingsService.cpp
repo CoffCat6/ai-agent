@@ -328,6 +328,9 @@ void SettingsService::load() {
     m_webSearchProvider = settings.value("webSearch/provider", QStringLiteral("tavily")).toString();
     // API key is stored encrypted (DPAPI) - empty if not set or decryption failed.
     m_webSearchApiKey = unprotectApiKey(settings.value("webSearch/apiKey", QString()).toString());
+    // docs/20 §5.3 (C3): SearXNG instance URL; plain text (not a secret),
+    // empty = not configured.
+    m_webSearchSearxBaseUrl = settings.value("webSearch/searxBaseUrl", QString()).toString().trimmed();
     m_episodicMemoryEnabled = settings.value("memory/episodicMemoryEnabled", false).toBool();
     // docs/16 §7.3: quota settings (flat keys; 0 = unlimited for int quotas).
     m_dailyTokenQuota = qMax(0, settings.value("dailyTokenQuota", 0).toInt());
@@ -779,9 +782,10 @@ void SettingsService::setLogRetentionFiles(int count) {
 }
 
 // L1: legal search provider keys for the settings UI. Kept in sync with the
-// backend factory (L4); currently only Tavily is implemented.
+// backend factory (L4); searxng was enabled by docs/20 §5.3 (C3).
 QStringList SettingsService::webSearchProviders() const {
-    return {QStringLiteral("tavily"), QStringLiteral("duckduckgo")};
+    return {QStringLiteral("tavily"), QStringLiteral("duckduckgo"),
+            QStringLiteral("searxng")};
 }
 
 // T6 (F3): search provider ("tavily" | …). Clamped to known providers.
@@ -814,6 +818,19 @@ void SettingsService::setWebSearchApiKey(const QString& key) {
     Activity::usage(Activity::Kind::User, QStringLiteral("settings.webSearchApiKey"),
                     trimmed.isEmpty() ? QStringLiteral("(cleared)") : QStringLiteral("(set)"));
     emit webSearchApiKeyChanged();
+}
+
+// docs/20 §5.3 (C3): SearXNG instance base URL. Unlike the API key, empty
+// is meaningful (clears the setting → "not configured") and the value is
+// not secret, so the usage event records it as-is.
+void SettingsService::setWebSearchSearxBaseUrl(const QString& url) {
+    const QString trimmed = url.trimmed();
+    if (m_webSearchSearxBaseUrl == trimmed) return;
+    m_webSearchSearxBaseUrl = trimmed;
+    QSettings().setValue("webSearch/searxBaseUrl", trimmed);
+    Activity::usage(Activity::Kind::User, QStringLiteral("settings.webSearchSearxBaseUrl"),
+                    trimmed.isEmpty() ? QStringLiteral("(cleared)") : trimmed);
+    emit webSearchSearxBaseUrlChanged();
 }
 
 // T8 (F4): episodic memory toggle - same 5-step pattern as localOnlyMode.

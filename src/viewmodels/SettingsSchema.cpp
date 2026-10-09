@@ -29,6 +29,9 @@ const QVector<SettingsKeyDef>& SettingsSchema::registeredKeys() {
         {"logging/retentionFiles",         14,                                 false},
         {"webSearch/provider",            QStringLiteral("tavily"),           false},
         {"webSearch/apiKey",              QString(),                         true},  // DPAPI
+        // docs/20 §5.3（C3）：自托管 SearXNG 服务地址（provider=searxng 时
+        // 必填；默认空 = 未配置，searxng 后端会返回空结果并由工具层报错）。
+        {"webSearch/searxBaseUrl",        QString(),                         false},
         {"memory/episodicMemoryEnabled",  false,                             false},
         // docs/16 §7.4: quota control keys (flat, no prefix). Int quotas
         // default to 0 = unlimited; strictQuotaMode default false = warn only.

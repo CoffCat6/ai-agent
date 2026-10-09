@@ -6,7 +6,13 @@
 // depend on ingestions performed by earlier tests in declaration order.
 #include "core/rag/RagService.h"
 #include "core/rag/KnowledgeSearchTool.h"
+#include "viewmodels/PdfTextExtractor.h"
 
+#include <QFile>
+#include <QRegularExpression>
+#include <QTemporaryDir>
+#include <QFuture>
+#include <QtConcurrent/QtConcurrentRun>
 #include <QtTest>
 
 using namespace NexusAI;
@@ -38,6 +44,8 @@ private slots:
     void toolReportsOfflineEmbedder();
     void toolSearchResult();
     void knowledgeToolDescriptionIsConditional();
+    void toolResultCarriesCitationMarkers();
+    void citationMarkerWithBracketInName();
     void chineseDocumentChunked();
     void batchEmbedFailureFallsBackToPseudo();
     void batchEmbedSuccessKeepsRealVectors();
@@ -60,6 +68,11 @@ private slots:
     // driven by changed(); ingestion lost that emission once already.
     void ingestEmitsChanged();
     void documentPersistedDeliversAcrossThreads();
+    // docs/20 §5.2 (C2): PDF import — text extraction step
+    void extractPdfTextFromSamplePages();
+    void extractPdfTextRejectsNonPdfFile();
+    void extractPdfTextMissingFile();
+    void extractPdfTextFromWorkerThread();
 };
 
 void TestRag::ingestAndListDocuments() {
@@ -185,6 +198,99 @@ void TestRag::knowledgeToolDescriptionIsConditional() {
     QVERIFY2(!def.description.contains("REQUIRED"),
              "description must not mark the call as required");
     QVERIFY(def.description.contains("ONLY"));
+}
+
+// CITE-801 (docs/20 §5.1): every hit is prefixed with a machine-readable
+// provenance marker [doc:name#chunkId] so the model can cite sources and the
+// UI can turn "[文档名]" into a clickable chip.
+void TestRag::toolResultCarriesCitationMarkers() {
+    // Hostile-ish name: quotes/angle brackets are SEC-502-escaped in the
+    // <knowledge_passage source="..."> attribute, but the marker must keep
+    // the RAW name — the model copies it verbatim into [文档名] and the UI
+    // resolves it against the raw document list.
+    const QString rawName = QStringLiteral("cite q\"1<x>.txt");
+
+    RagService empty;
+    KnowledgeSearchTool emptyTool(&empty);
+    QVERIFY(!emptyTool.knowledgeBaseNonEmpty());   // empty base: no prompt injection
+
+    RagService rag;
+    QVERIFY(rag.ingestDocument(rawName, longDoc("cite", 8)) >= 2);
+    KnowledgeSearchTool tool(&rag);
+    QVERIFY(tool.knowledgeBaseNonEmpty());
+
+    const ToolResult r = tool.execute(QJsonObject{{"query", "alpha"}});
+    QVERIFY2(r.success, qPrintable(r.error));
+
+    const QStringList blocks = r.output.split(QStringLiteral("\n---\n"));
+    QVERIFY2(blocks.size() >= 3,
+             qPrintable(QStringLiteral("expected header + several hits, got %1 blocks")
+                            .arg(blocks.size())));
+    // blocks[0] is the SEC-502 framing header, entries follow.
+    QVERIFY2(blocks.first().contains(QStringLiteral("untrusted")),
+             qPrintable(blocks.first()));
+
+    static const QRegularExpression markerRe(
+        QStringLiteral("^\\[doc:(.*)#(\\d+)\\]"));
+    int rawMarkerCount = 0;
+    for (int b = 1; b < blocks.size(); ++b) {
+        const QString& block = blocks.at(b);
+        // Marker first, then the score/chunk line, then the passage wrapper.
+        const int markerEnd = block.indexOf(QLatin1Char(']'));
+        QVERIFY2(markerEnd > 0,
+                 qPrintable(QStringLiteral("block lacks [doc:...#...] marker:\n%1").arg(block)));
+        const QRegularExpressionMatch m = markerRe.match(block);
+        QVERIFY2(m.hasMatch(), qPrintable(block));
+        if (m.captured(1) == rawName) ++rawMarkerCount;
+
+        // chunkId is 0-based chunk_index; the human line shows 1-based N.
+        const QString chunkField =
+            QStringLiteral(", chunk %1/").arg(m.captured(2).toInt() + 1);
+        QVERIFY2(block.contains(chunkField),
+                 qPrintable(QStringLiteral("chunkId %1 not consistent with '%2' in:\n%3")
+                                .arg(m.captured(2), chunkField, block)));
+
+        QVERIFY2(block.contains(QStringLiteral("<knowledge_passage")),
+                 qPrintable(block));
+    }
+    // Raw-name fidelity: markers carried the unescaped name, while the
+    // source attribute stayed SEC-502-escaped.
+    QCOMPARE(rawMarkerCount, blocks.size() - 1);   // header block excluded
+    QVERIFY2(!r.output.contains(QStringLiteral("[doc:cite q'1(x).txt#")),
+             "marker must use the raw name, not the SEC-502-escaped one");
+    QVERIFY2(r.output.contains(QStringLiteral("source=\"cite q'1(x).txt\"")),
+             qPrintable(r.output));
+
+    // Every <knowledge_passage> sits behind a marker (split parity already
+    // proves one marker per block; this guards the ordering).
+    int passages = r.output.count(QStringLiteral("<knowledge_passage"));
+    int markers = 0;
+    for (int pos = 0; (pos = r.output.indexOf(QStringLiteral("[doc:"), pos)) >= 0; pos += 5)
+        ++markers;
+    QCOMPARE(markers, passages);
+    QCOMPARE(passages, blocks.size() - 1);   // header block excluded
+}
+
+// CITE-801 边界：文档名含 ']' 时记号会提前闭合，模型照抄出的名字与真实
+// 文档名对不上。这是 [文档名] 记号语法本身的固有限制（不是转义能修的——
+// 转义会破坏"原始名往返"契约）。锁住实际行为：标记仍然携带完整原始名
+// （模型能读到），而不会错认成另一个文档。
+void TestRag::citationMarkerWithBracketInName() {
+    const QString name = QStringLiteral("weird]name.txt");
+    RagService rag;
+    QVERIFY(rag.ingestDocument(name, longDoc("bracket", 6)) >= 2);
+    KnowledgeSearchTool tool(&rag);
+    const ToolResult r = tool.execute(QJsonObject{{"query", "alpha"}});
+    QVERIFY2(r.success, qPrintable(r.error));
+
+    // 原始名完整出现在输出里（模型可见），SEC-502 属性侧同样保留原名。
+    QVERIFY2(r.output.contains(QStringLiteral("[doc:weird]name.txt#")),
+             qPrintable(r.output));
+    // 每个 chunk 都有自己的标记 + 一个人类可读的 chunk N/M 行。
+    const QStringList blocks = r.output.split(QStringLiteral("\n---\n"));
+    for (int b = 1; b < blocks.size(); ++b)
+        QVERIFY2(blocks.at(b).contains(QStringLiteral("<knowledge_passage")),
+                 qPrintable(blocks.at(b)));
 }
 
 // Chinese text has no spaces: the chunker must still split it into several
@@ -695,6 +801,89 @@ void TestRag::totalChunkCapGovernsIngest() {
     local.setMaxTotalChunks(a + b + 12);
     local.removeDocument("a.txt");
     QVERIFY(local.ingestDocument("c.txt", longDoc("c", 10)) >= 2);
+}
+
+// ── docs/20 §5.2 (workflow C2): PDF knowledge import ──────
+// importDocument swaps ONLY the content-extraction step for .pdf files;
+// these cases cover that step (dedup/naming/ingest stay where they were).
+
+// Two-page sample (tests/resources/sample.pdf, generated by
+// generate_sample_pdf.py): every page's text must come back, in order, and
+// be directly ingestible by the unchanged RagService pipeline.
+void TestRag::extractPdfTextFromSamplePages() {
+    const QString path = QStringLiteral(NEXUS_TEST_RESOURCES_DIR "/sample.pdf");
+    QVERIFY2(QFile::exists(path), qPrintable(path));
+
+    const PdfExtractResult pdf = extractPdfText(path);
+    QVERIFY2(pdf.ok(), qPrintable(pdf.detail));
+    QVERIFY2(pdf.text.contains(QStringLiteral("NexusAI PDF import sample")),
+             qPrintable(pdf.text));
+    QVERIFY2(pdf.text.contains(QStringLiteral("page one")), qPrintable(pdf.text));
+    QVERIFY2(pdf.text.contains(QStringLiteral("page two")), qPrintable(pdf.text));
+    // Page 1 precedes page 2 (the per-page getAllText() loop keeps order).
+    QVERIFY2(pdf.text.indexOf(QStringLiteral("page one"))
+                 < pdf.text.indexOf(QStringLiteral("page two")),
+             qPrintable(pdf.text));
+
+    // End-to-end: the extracted text still flows through ingest unchanged.
+    RagService rag;
+    QVERIFY2(rag.ingestDocument("sample.pdf", pdf.text) >= 1, "extracted text unusable");
+    QCOMPARE(rag.documents().size(), 1);
+}
+
+// A .pdf that is not a PDF must fail with a status, not crash and not
+// silently produce garbage content for the knowledge base.
+void TestRag::extractPdfTextRejectsNonPdfFile() {
+    QTemporaryDir dir;
+    QVERIFY(dir.isValid());
+    const QString path = dir.filePath("garbage.pdf");
+    QFile file(path);
+    QVERIFY(file.open(QIODevice::WriteOnly));
+    file.write("this is definitely not a pdf document\n");
+    file.close();
+
+    const PdfExtractResult pdf = extractPdfText(path);
+    QVERIFY(!pdf.ok());
+    QVERIFY(pdf.text.isEmpty());
+    QVERIFY2(!pdf.detail.isEmpty(), "failure must carry a reason");
+    QVERIFY(pdf.status == PdfExtractStatus::Corrupted
+            || pdf.status == PdfExtractStatus::NoText);
+}
+
+// Missing file → OpenFailed (AgentViewModel reports its own message on top).
+void TestRag::extractPdfTextMissingFile() {
+    const PdfExtractResult pdf =
+        extractPdfText(QStringLiteral("no/such/file.pdf"));
+    QVERIFY(!pdf.ok());
+    QCOMPARE(pdf.status, PdfExtractStatus::OpenFailed);
+    QVERIFY(pdf.text.isEmpty());
+}
+
+// AgentViewModel::importDocument 现在把 PDF 提取放到 QtConcurrent 的 worker
+// 线程（docs/20 §5.2 修复：同步解析大 PDF 会冻结 GUI）。QPdfDocument 属于
+// Qt6::Pdf（链接 Qt6::Gui），"文本提取是否真的能在非 GUI 线程跑"不能靠猜 ——
+// 这里用真实 QThread 锁住该属性：若哪天换了个需要 GUI 线程的解析后端，
+// 导入会在生产里直接崩或返回垃圾。
+void TestRag::extractPdfTextFromWorkerThread() {
+    const QString path = QStringLiteral(NEXUS_TEST_RESOURCES_DIR "/sample.pdf");
+    QVERIFY2(QFile::exists(path), qPrintable(path));
+
+    // 与生产路径完全一致：AgentViewModel::startPdfImport 用
+    // QtConcurrent::run + QFutureWatcher<PdfExtractResult> 把解析放到 worker
+    // 线程。QPdfDocument 属于 Qt6::Pdf（链接 Qt6::Gui），"文本提取是否真能在
+    // 非 GUI 线程跑"不能靠猜 —— 这里锁住该属性：若哪天换了个需要 GUI 线程的
+    // 解析后端，导入会在生产里崩或返回垃圾。
+    QFuture<PdfExtractResult> future =
+        QtConcurrent::run([path]() { return extractPdfText(path); });
+    QVERIFY2(future.isStarted(), "QtConcurrent::run did not start");
+    future.waitForFinished();
+    QVERIFY2(future.isFinished(), "worker future never finished");
+
+    const PdfExtractResult fromThread = future.result();
+    QVERIFY2(fromThread.ok(), qPrintable(fromThread.detail));
+    // 与主线程结果逐字节一致：证明解析不依赖线程局部状态。
+    QCOMPARE(fromThread.text, extractPdfText(path).text);
+    QCOMPARE(fromThread.status, PdfExtractStatus::Ok);
 }
 
 QTEST_GUILESS_MAIN(TestRag)

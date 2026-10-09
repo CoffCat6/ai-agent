@@ -333,12 +333,15 @@ qInfo() << "NexusAI" << app.applicationVersion() << "starting";
     // a concrete WebSearchBackend. Unknown keys fall back to Tavily with a
     // warning (the setting is also clamped in SettingsService, but this is a
     // defense-in-depth fallback for corrupted configs).
-    const auto createWebSearchBackend = [](const QString& providerKey)
+    // docs/20 §5.3 (C3): "searxng" reads its required baseUrl from settings.
+    const auto createWebSearchBackend = [settings](const QString& providerKey)
         -> std::unique_ptr<WebSearchBackend> {
         if (providerKey == QLatin1String("tavily"))
             return std::make_unique<TavilyBackend>();
         if (providerKey == QLatin1String("duckduckgo"))
             return std::make_unique<DuckDuckGoBackend>();
+        if (providerKey == QLatin1String("searxng"))
+            return std::make_unique<SearxBackend>(settings->webSearchSearxBaseUrl());
         qWarning() << "Unknown web search provider:" << providerKey
                    << "- falling back to tavily";
         return std::make_unique<TavilyBackend>();
@@ -669,6 +672,8 @@ qInfo() << "NexusAI" << app.applicationVersion() << "starting";
     QObject::connect(settings, &SettingsService::episodicMemoryEnabledChanged, &app, [applySettings]() { applySettings(); });
     // L4: provider switch rebuilds the web search backend immediately.
     QObject::connect(settings, &SettingsService::webSearchProviderChanged, &app, [applySettings]() { applySettings(); });
+    // docs/20 §5.3 (C3): baseUrl changes rebuild the SearXNG backend too.
+    QObject::connect(settings, &SettingsService::webSearchSearxBaseUrlChanged, &app, [applySettings]() { applySettings(); });
 
     // Batch 22 (F8): user-editable system prompt (empty = built-in)
     const auto applySystemPrompt = [agent, settings]() {

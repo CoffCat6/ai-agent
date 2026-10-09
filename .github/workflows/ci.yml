@@ -25,7 +25,8 @@ jobs:
         shell: pwsh
         run: |
           python -m pip install aqtinstall
-          aqt install-qt windows desktop $env:QT_VERSION win64_mingw --output-dir $env:QT_DIR
+          # qtpdf: docs/20 §5.2 PDF 导入（QPdfDocument 文本提取），不在基础包里
+          aqt install-qt windows desktop $env:QT_VERSION win64_mingw -m qtpdf --output-dir $env:QT_DIR
           # MinGW 13.1 toolchain bundled by Qt (same as the local dev setup)
           aqt install-tool windows desktop tools_mingw1310 qt.tools.win64_mingw1310 --output-dir $env:QT_DIR
 

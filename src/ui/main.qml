@@ -148,6 +148,16 @@ ApplicationWindow {
 
             onDocumentDetailsRequested: knowledgeDocDialog.openFor(name)
         }
+
+        // docs/20 §5.1 (CITE-801): 引用徽标 → 文档详情。AssistantMessage 不
+        // 直接引用对话框 id（拿不到），改为走 AgentVM 的显式信号链，这里统一
+        // 接到同一个 KnowledgeDocDialog 实例。
+        Connections {
+            target: AgentVM
+            function onKnowledgeDocumentOpenRequested(name) {
+                knowledgeDocDialog.openFor(name)
+            }
+        }
     }
 
     // ── Sidebar Toggle Handle ──────────────────────────

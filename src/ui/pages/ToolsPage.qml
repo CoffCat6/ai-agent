@@ -170,7 +170,10 @@ Item {
                 ColumnLayout {
                     Layout.fillWidth: true
                     spacing: 4
+                    // duckduckgo 与 searxng 均为无密钥后端（requiresApiKey
+                    // = false），不显示 API Key 字段。
                     visible: Settings.webSearchProvider !== "duckduckgo"
+                             && Settings.webSearchProvider !== "searxng"
 
                     Text {
                         text: qsTr("搜索 API Key")
@@ -224,6 +227,61 @@ Item {
                             onClicked: Settings.webSearchApiKey = ""
                             Accessible.name: qsTr("清除搜索 API Key")
                         }
+                    }
+                }
+
+                // docs/20 §5.3（C3）：searxng 的必填项——自托管实例地址。
+                // 仅选中 searxng 时可见；无需 API Key（空值 = 未配置，
+                // 工具层搜索时返回明确错误而不是把请求发去空地址）。
+                ColumnLayout {
+                    Layout.fillWidth: true
+                    spacing: 4
+                    visible: Settings.webSearchProvider === "searxng"
+
+                    Text {
+                        text: qsTr("SearXNG 服务地址")
+                        color: Theme.textSecondary
+                        font.pixelSize: Theme.fontSizeCaption
+                        font.family: Theme.fontMono
+                    }
+
+                    TextField {
+                        id: searxBaseUrlField
+                        Layout.fillWidth: true
+                        text: Settings.webSearchSearxBaseUrl
+                        placeholderText: qsTr("例如 http://localhost:8080")
+                        placeholderTextColor: Theme.textSecondary
+                        color: Theme.textPrimary
+                        selectionColor: Theme.brandPrimary
+                        selectedTextColor: "#ffffff"
+                        font.pixelSize: Theme.fontSizeBody
+                        font.family: Theme.fontSans
+                        background: Rectangle {
+                            radius: 6
+                            color: Theme.bgPrimary
+                            border.width: searxBaseUrlField.activeFocus ? 2 : 1
+                            border.color: searxBaseUrlField.activeFocus ? Theme.brandPrimary : Theme.borderSubtle
+                        }
+                        // 同 apiKeyField：切分类销毁页面不触发 editingFinished，
+                        // 补销毁兜底。与密钥不同：空值是有效输入（清除地址），
+                        // 直接写入。
+                        function commitBaseUrl() {
+                            if (text === Settings.webSearchSearxBaseUrl) return
+                            Settings.webSearchSearxBaseUrl = text
+                        }
+                        onEditingFinished: commitBaseUrl()
+                        Component.onDestruction: commitBaseUrl()
+                        Accessible.name: qsTr("SearXNG 服务地址")
+                    }
+
+                    Text {
+                        text: qsTr("自托管 SearXNG 实例地址（无需 API Key），搜索查询会发送至该实例。")
+                        color: Theme.textSecondary
+                        font.pixelSize: 10
+                        font.family: Theme.fontSans
+                        opacity: 0.8
+                        wrapMode: Text.Wrap
+                        Layout.fillWidth: true
                     }
                 }
             }

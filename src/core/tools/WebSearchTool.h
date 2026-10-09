@@ -74,14 +74,27 @@ public:
         if (m_backend->requiresApiKey() && m_apiKey.isEmpty())
             return ToolResult::fail(QStringLiteral("未配置搜索 API key（请在设置中心配置 web_search 密钥）"));
 
+        // docs/20 §5.3: 后端自报的未就绪原因（如 searxng 缺 baseUrl）优先于
+        // 网络诊断——否则用户只会看到「请检查网络连接」而被指错方向。
+        const QString notReady = m_backend->notReadyReason();
+        if (!notReady.isEmpty())
+            return ToolResult::fail(notReady);
+
         int maxResults = args.value(QStringLiteral("max_results")).toInt(5);
         maxResults = qBound(1, maxResults, 10);
 
+        // docs/20 §5.3: 把「请求根本没成功」与「请求成功但零结果」分开报。
+        // 空结果列表本身无法区分这两者，而把前者说成「没找到结果」会让人
+        // 误以为是查询词的问题。
+        QString failureReason;
         const QList<WebSearchResult> results =
-            m_backend->search(query, maxResults, m_apiKey, m_timeoutMs);
+            m_backend->search(query, maxResults, m_apiKey, m_timeoutMs, &failureReason);
 
         if (m_cancelRequested.exchange(false))
             return ToolResult::fail(QStringLiteral("Search cancelled"));
+
+        if (!failureReason.isEmpty())
+            return ToolResult::fail(failureReason);
 
         if (results.isEmpty())
             return ToolResult::fail(m_backend->requiresApiKey()

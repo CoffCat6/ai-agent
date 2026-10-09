@@ -27,6 +27,27 @@
 > （`SettingsField` / `ParamSelectRow` / `ToolsPage` 的 `commitOnDestroy`），
 > 覆盖"模型配置"页十来个字段与搜索 API Key——"填了 Key 却直接切走"最难察觉。
 > 双语 .ts 补齐全部译文（581 条，0 unfinished）。
+> **工作流 C（RAG 可信度）已实施**（C1 引用溯源：KnowledgeSearchTool 命中项带
+> `[doc:文档名#chunkId]` 标记、AIAgent 系统提示注入引用约定，AssistantMessage 把
+> `[文档名]` 记号渲染为可点击徽标 chip，复用 KnowledgeDocDialog 按名打开；C2 PDF
+> 导入：PdfTextExtractor 用 Qt6Pdf 逐页提取接入 importDocument，ContextPanel
+> nameFilters 与空态提示补 `*.pdf`，AgentViewModel 给出加密/损坏/无文本层/读取
+> 失败四类错误提示；C3 SearXNG：WebSearchBackend 新增无密钥 searxng 后端与
+> `webSearch/searxBaseUrl` 设置键，ToolsPage 联网搜索区可切换后端并填实例地址）。
+> 验收：双语 .ts 共 662 条 0 unfinished、lrelease 已生成 .qm、ctest 26/26 全绿
+> （test_rag 扩至 32 用例、新增 test_citation_qml）、构建零警告。
+>
+> **代码审查后修订**（2026-10-09）：C1 的 `[文档名]` 切分规则原本在
+> CitationParser.h（C++）与 AssistantMessage.qml（JS 镜像）各存一份，已改为
+> **单一事实源** —— C++ 侧注册为 NexusAI.ViewModels 的 `CitationParser` 单例，
+> QML 直接调用，JS 镜像删除；并补 `test_citation_qml`（真实 QML 引擎驱动）
+> 把守「类型注册成功、键名一致」。该用例随即抓出并被修掉一个真实缺陷：
+> markdown 引用定义 `[ref][def]` 的第二组会被误判成引用（旧 C++ 用例的
+> `only()` 辅助函数只断言"不是单个引用片段"，恰好放过），现已按规则 4 整组
+> 跳过，`[a] [b]` 这类空格分隔的独立记号不受影响。另：C2 的 PDF 提取改为
+> 后台线程（`QtConcurrent` + `QFutureWatcher`，不再冻结界面）；C3 的 searxng
+> 在未填 `webSearch/searxBaseUrl` 时给出明确错误（原来只有"请检查网络连接"），
+> 并把 HTTP/解析失败与"真的没结果"分开报。
 > **创建日期**：2026-10-06
 > **依赖文档**：docs/14（L1–L6 遗留修复）、docs/17（沙箱与设置体系）、docs/18（会话归属模型）、docs/19（对话界面视觉完善）
 > **涉及模块**：AgentViewModel / ChatSessionController / AIAgent / SqliteMemory / main.cpp / AgentChatPage / AssistantMessage / InputConsole / Sidebar / SettingsSchema
@@ -395,6 +416,9 @@ qsTr 双语 + 令牌。**清单是唯一事实源**——main.qml 的 Shortcut �
 
 ## 5. 工作流 C：RAG 可信度（第三批实施）
 
+> **状态**：5.1 引用溯源（C1）、5.2 PDF 导入（C2）、5.3 SearXNG（C3）
+> **已实施**（三条 lane 已合入，验收见 §8 第 3 条与文档状态头）；5.4 维持暂缓。
+
 ### 5.1 引用溯源（修 D11，量级 M）
 
 **设计**（数据契约 **CITE-801**）：
@@ -509,9 +533,9 @@ Ollama Embedding 接口化需要抽象 `IEmbeddingBackend` + 分页/进度/降�
 | **1** | A1 重新生成 + A2 编辑重发 | ChatSessionController、AIAgent、SqliteMemory、AgentViewModel、AssistantMessage、UserMessageBubble | test_agent / test_memory / test_viewmodel 扩展 | M |
 | **2** | A3 输入历史 + A4 拖拽附件 + D9 快捷键速查 | InputConsole、ChatSessionController、main.qml、ShortcutsDialog（新） | test_viewmodel 扩展 + 冒烟 | S |
 | **3** | B1 托盘/通知 + B2 单实例 + B3 开机自启 | main.cpp、SettingsService、SettingsSchema、GeneralPage、InterfacePage | test_settings + 冒烟 | S |
-| **4** | C1 引用溯源 + C2 PDF 导入 | KnowledgeSearchTool、AIAgent(系统提示)、AssistantMessage、importDocument、CMakeLists、CI | test_rag / test_highlighter 扩展 | M |
+| **4** | C1 引用溯源 + C2 PDF 导入（已实施） | KnowledgeSearchTool、AIAgent(系统提示)、AssistantMessage、importDocument、CMakeLists、CI | test_rag / test_highlighter 扩展 | M |
 | **5** | D1 配置导出导入 + D2 DB 备份 | SettingsSchema、SettingsService、GeneralPage、main.cpp | test_settings / test_memory 扩展 | M |
-| **6** | C3 SearXNG + D3 会话置顶归档 | WebSearchBackend（新子类）、SqliteMemory、Sidebar、ToolsPage | test_web_search / test_memory 扩展 | M |
+| **6** | C3 SearXNG（已实施） + D3 会话置顶归档 | WebSearchBackend（新子类）、SqliteMemory、Sidebar、ToolsPage | test_web_search / test_memory 扩展 | M |
 
 每批完成后：ctest 全绿 + qmllint 门禁通过 + 双语 .ts 收口 0 unfinished +
 构建零警告；更新本文档状态行与根 readme.md 功能特性列表。

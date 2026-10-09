@@ -13,6 +13,11 @@ import NexusAI.ViewModels
 //   围栏标记一律用 String.fromCharCode(96) 动态拼出。
 // 另外仅在「非流式」时才拆分：流式期间维持单 TextEdit 的增量更新，
 // 既避免每 token 重建片段，也躲开未闭合围栏的半成品状态。
+//
+// CITE-801（docs/20 §5.1 引用溯源）：非流式散文里的 [文档名] 记号渲染为
+// 可点击徽标 chip，点击按名打开知识库文档详情。记号的切分规则只有一份实现
+// ——src/viewmodels/CitationParser.h（注册为 NexusAI.ViewModels 的
+// CitationParser 单例），单测见 tests/test_highlighter.cpp。
 Item {
     id: root
 
@@ -40,8 +45,43 @@ Item {
     // 是否含围栏（纯字符串查找，无正则）。
     readonly property bool hasFence:
         body.indexOf(fenceTick) !== -1 || body.indexOf(fenceTilde) !== -1
-    // 是否走「散文 / 代码」拆分路径。
-    readonly property bool splitMode: hasFence && !streaming
+    // CITE-801: 便宜的前置探测（只找方括号，无正则），命中才走拆分路径；
+    // 真正的记号识别与文档存在性过滤由 CitationParser.parse +
+    // isKnownCitation 负责。
+    readonly property bool mayHaveCitation:
+        body.indexOf("[") !== -1 && body.indexOf("]") !== -1
+    // 是否走「散文 / 代码」拆分路径（引用徽标也复用这条交替结构）。
+    readonly property bool splitMode: (hasFence || mayHaveCitation) && !streaming
+
+    // ── CITE-801: [文档名] 记号解析 ──
+    // 唯一实现在 src/viewmodels/CitationParser.h（注册为 NexusAI.ViewModels
+    // 的 CitationParser 单例），单测见 tests/test_highlighter.cpp。QML 侧
+    // 不再保留 JS 镜像，规则改动只需改一处。
+
+    // 当前知识库文档名（knowledgeChanged 驱动重算）—— 记号只有指向真实
+    // 文档才渲染成徽标，[1]/[TODO] 之类普通方括号保持原样。
+    readonly property var knownCitationNames: {
+        const docs = AgentVM.knowledgeDocuments
+        const names = []
+        for (let k = 0; k < docs.length; ++k)
+            names.push(docs[k].name)
+        return names
+    }
+    function isKnownCitation(name) {
+        const names = knownCitationNames
+        for (let k = 0; k < names.length; ++k)
+            if (names[k] === name)
+                return true
+        return false
+    }
+
+    // 点击徽标 → 打开知识库文档详情。走 AgentVM 的显式入口
+    // （openKnowledgeDocument），由 main.qml 连接到 KnowledgeDocDialog；
+    // 不再按 contentData 反射式探测窗口子对象——那种写法会在对话框改名、
+    // 换父级或换成非 ApplicationWindow 时静默失效，且没有编译期保护。
+    function openCitation(name) {
+        AgentVM.openKnowledgeDocument(name)
+    }
 
     // 逐行扫描，切成 {kind:"text"|"code", text/lang/code} 片段。
     readonly property var segments: {
@@ -181,13 +221,29 @@ Item {
                     id: segItem
                     width: segmentCol.width
                     readonly property bool isCode: modelData.kind === "code"
+                    // CITE-801: 散文段先按 [文档名] 记号切片（C++ 单例，唯一
+                    // 实现）；含真实文档的记号才进徽标流布局，普通方括号维持
+                    // 原单 TextEdit 渲染。
+                    readonly property var citeParts:
+                        isCode ? [] : CitationParser.parse(modelData.text)
+                    readonly property bool citeMode: {
+                        if (isCode)
+                            return false
+                        for (let c = 0; c < citeParts.length; ++c) {
+                            const p = citeParts[c]
+                            if (p.citation && root.isKnownCitation(p.name))
+                                return true
+                        }
+                        return false
+                    }
                     implicitHeight: isCode
                         ? codeSeg.implicitHeight
-                        : Math.max(1, textSeg.contentHeight)
+                        : (citeMode ? citeFlow.implicitHeight
+                                    : Math.max(1, textSeg.contentHeight))
 
                     TextEdit {
                         id: textSeg
-                        visible: !segItem.isCode
+                        visible: !segItem.isCode && !segItem.citeMode
                         width: parent.width
                         text: segItem.isCode ? "" : modelData.text
                         textFormat: TextEdit.MarkdownText
@@ -200,6 +256,91 @@ Item {
                         font.family: Theme.fontSans
                         wrapMode: TextEdit.Wrap
                         onLinkActivated: function(link) { Qt.openUrlExternally(link) }
+                    }
+
+                    // CITE-801: 引用徽标流 —— 文本片段与可点击 chip 交替。
+                    // 文本片段宽度取「自然宽 clamp 到流宽」：短片段与 chip
+                    // 同行，长片段在流宽内换行（TextEdit.implicitWidth 是
+                    // 自然宽、不随 width 变化，与 width 绑定不会成环）。
+                    Flow {
+                        id: citeFlow
+                        visible: !segItem.isCode && segItem.citeMode
+                        width: parent.width
+                        spacing: 4
+
+                        Repeater {
+                            model: segItem.citeMode ? segItem.citeParts : []
+
+                            delegate: Item {
+                                id: piece
+                                readonly property bool isChip:
+                                    modelData.citation
+                                    && root.isKnownCitation(modelData.name)
+                                width: isChip ? chipBg.width
+                                              : Math.min(prosePiece.implicitWidth,
+                                                         citeFlow.width)
+                                height: isChip ? chipBg.height
+                                               : Math.max(1, prosePiece.contentHeight)
+
+                                TextEdit {
+                                    id: prosePiece
+                                    visible: !piece.isChip
+                                    width: piece.width
+                                    text: modelData.text
+                                    textFormat: TextEdit.MarkdownText
+                                    readOnly: true
+                                    selectByMouse: rootHover.hovered
+                                    persistentSelection: true
+                                    activeFocusOnTab: false
+                                    color: Theme.textPrimary
+                                    font.pixelSize: Theme.fontSizeBody
+                                    font.family: Theme.fontSans
+                                    wrapMode: TextEdit.Wrap
+                                    onLinkActivated: function(link) { Qt.openUrlExternally(link) }
+                                }
+
+                                // 徽标 chip：淡品牌底 + 描边 + 圆角，点击按名
+                                // 打开知识库文档详情。宽度 = 自然宽 + 内边距
+                                // （clamp 到流宽），超长文档名中间省略。
+                                Rectangle {
+                                    id: chipBg
+                                    visible: piece.isChip
+                                    radius: height / 2
+                                    color: Qt.rgba(Theme.brandPrimary.r,
+                                                   Theme.brandPrimary.g,
+                                                   Theme.brandPrimary.b, 0.12)
+                                    border.width: 1
+                                    border.color: Theme.brandPrimary
+                                    width: Math.min(chipLabel.implicitWidth + 16,
+                                                    citeFlow.width)
+                                    height: chipLabel.implicitHeight + 8
+
+                                    Text {
+                                        id: chipLabel
+                                        anchors.centerIn: parent
+                                        width: Math.max(0, chipBg.width - 16)
+                                        text: modelData.name
+                                        color: Theme.brandPrimary
+                                        elide: Text.ElideMiddle
+                                        font.pixelSize: 10
+                                        font.family: Theme.fontMono
+                                    }
+
+                                    MouseArea {
+                                        id: chipMA
+                                        anchors.fill: parent
+                                        hoverEnabled: true
+                                        cursorShape: Qt.PointingHandCursor
+                                        onClicked: root.openCitation(modelData.name)
+                                    }
+
+                                    Accessible.role: Accessible.Button
+                                    Accessible.name: qsTr("打开引用文档 %1")
+                                        .arg(modelData.name)
+                                    Accessible.onPressAction: chipMA.clicked()
+                                }
+                            }
+                        }
                     }
 
                     CodeBlock {

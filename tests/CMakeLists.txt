@@ -19,7 +19,17 @@ nexus_add_test(test_protocol_registry test_protocol_registry.cpp)
 # OpenAI Responses 协议的报文转换与非流式解析
 nexus_add_test(test_openai_responses test_openai_responses.cpp)
 nexus_add_test(test_memory test_memory.cpp)
-nexus_add_test(test_rag test_rag.cpp)
+# docs/20 §5.2 (C2): PDF text extraction (PdfTextExtractor) lives in
+# nexus_viewmodels, not nexus_core - Qt6::Pdf pulls Qt6::Gui along and core
+# must stay UI-free (docs/13 §4.1). test_rag therefore links the viewmodels
+# library; tests/resources/sample.pdf lives in the source tree.
+add_executable(test_rag test_rag.cpp)
+target_link_libraries(test_rag PRIVATE
+    nexus_core nexus_infra nexus_viewmodels Qt6::Test Qt6::Qml)
+target_compile_definitions(test_rag PRIVATE
+    NEXUS_TEST_RESOURCES_DIR="${CMAKE_CURRENT_SOURCE_DIR}/resources")
+add_test(NAME test_rag COMMAND test_rag)
+
 nexus_add_test(test_agent test_agent.cpp)
 
 # Provider lifecycle tests drive real HTTP through a scripted loopback server
@@ -88,6 +98,23 @@ add_executable(test_highlighter test_highlighter.cpp)
 target_link_libraries(test_highlighter PRIVATE
     nexus_core nexus_infra nexus_viewmodels Qt6::Test Qt6::Quick Qt6::Qml)
 add_test(NAME test_highlighter COMMAND test_highlighter)
+
+# docs/20 §5.1 (CITE-801): CitationParser 的 QML 通道回归。用真实
+# QQmlApplicationEngine 加载 import NexusAI.ViewModels 的夹具 —— 类型没注册
+# 成功时 AssistantMessage 的引用 chip 会静默不渲染，没有任何报错，故必须
+# 有一条真跑 QML 的用例把守。
+add_executable(test_citation_qml test_citation_qml.cpp)
+target_link_libraries(test_citation_qml PRIVATE
+    nexus_core nexus_infra nexus_viewmodels nexus_viewmodelsplugin
+    Qt6::Test Qt6::Qml Qt6::Quick)
+target_compile_definitions(test_citation_qml PRIVATE
+    NEXUS_TEST_QML_DIR="${CMAKE_CURRENT_SOURCE_DIR}/qml")
+add_test(NAME test_citation_qml COMMAND test_citation_qml)
+# offscreen：CI 无显示器，而本用例要建真实 QQuickWindow。与 test_droparea /
+# test_settings_edit_lifecycle 同一套 env（构建树只部署 qwindows.dll，需指向
+# SDK 的 platform 插件目录）。
+set_tests_properties(test_citation_qml PROPERTIES
+    ENVIRONMENT "QT_QPA_PLATFORM_PLUGIN_PATH=${QT6_INSTALL_PREFIX}/${QT6_INSTALL_PLUGINS}/platforms")
 
 # Sampling-param normalizer (header-only, no service dependencies)
 nexus_add_test(test_sampling_params test_sampling_params.cpp)

@@ -11,6 +11,10 @@ find_package(Qt6 REQUIRED COMPONENTS
     Core Qml Quick Sql Network Concurrent QuickControls2 LinguistTools Widgets
 )
 
+# docs/20 §5.2 (workflow C2): PDF import — QPdfDocument text-layer extraction
+# (QPdfDocument lives in the Pdf module, Qt 6.4+; the project requires 6.5+).
+find_package(Qt6 COMPONENTS Pdf REQUIRED)
+
 qt_standard_project_setup(REQUIRES 6.5)
 
 # qmlcachegen / qmllint: resolve the NexusAI.ViewModels module types. The
@@ -79,6 +83,10 @@ add_library(nexus_core STATIC
 )
 target_include_directories(nexus_core PUBLIC ${CMAKE_CURRENT_SOURCE_DIR}/src)
 target_link_libraries(nexus_core PUBLIC Qt6::Core Qt6::Sql Qt6::Concurrent Qt6::Network)  # Network: Batch 20 http_fetch
+# NOTE (code-review fix): QPdfDocument (docs/20 §5.2) lives in Qt6::Pdf, which
+# transitively depends on Qt6::Gui - that would break the "core 层零 UI 依赖"
+# constraint (docs/13 §4.1). PdfTextExtractor therefore lives in
+# nexus_viewmodels below, not here; nexus_core stays Gui-free.
 
 # ── Infrastructure Library ────────────────────────────────
 add_library(nexus_infra STATIC
@@ -142,6 +150,9 @@ qt_add_qml_module(nexus_viewmodels
         src/viewmodels/PreferenceStore.cpp
         src/viewmodels/FontProbe.h
         src/viewmodels/FontProbe.cpp
+        # docs/20 §5.1 (CITE-801): [文档名] 记号解析的唯一实现。注册成 QML
+        # 单例，AssistantMessage.qml 直接调用，不再保留 JS 镜像。
+        src/viewmodels/CitationParser.h
         src/viewmodels/LocaleProbe.h
         src/viewmodels/LocaleProbe.cpp
         src/viewmodels/I18nManager.h
@@ -150,6 +161,11 @@ qt_add_qml_module(nexus_viewmodels
         src/viewmodels/EditBuffer.cpp
         src/viewmodels/McpManager.h
         src/viewmodels/McpManager.cpp
+    # docs/20 §5.2 (C2): PDF text extraction via QPdfDocument. Deliberately in
+    # nexus_viewmodels, not nexus_core: Qt6::Pdf depends on Qt6::Gui, and core
+    # must stay UI-free (docs/13 §4.1).
+    src/viewmodels/PdfTextExtractor.h
+    src/viewmodels/PdfTextExtractor.cpp
 )
 target_include_directories(nexus_viewmodels PUBLIC
     ${CMAKE_CURRENT_SOURCE_DIR}/src
@@ -158,6 +174,9 @@ target_include_directories(nexus_viewmodels PUBLIC
     ${CMAKE_CURRENT_SOURCE_DIR}/src/viewmodels
 )
 target_link_libraries(nexus_viewmodels PUBLIC nexus_core nexus_infra Qt6::Quick Qt6::Qml)
+# docs/20 §5.2 (C2): QPdfDocument for knowledge-base PDF import. Only
+# nexus_viewmodels (already Gui-dependent) links it - nexus_core stays Gui-free.
+target_link_libraries(nexus_viewmodels PUBLIC Qt6::Pdf)
 if(WIN32)
     # DPAPI (CryptProtectData) for encrypted API key storage
     target_link_libraries(nexus_viewmodels PUBLIC crypt32)

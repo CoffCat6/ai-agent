@@ -25,7 +25,7 @@ Rectangle {
     // Document import dialog (handled off-GUI-thread by AgentViewModel)
     FileDialog {
         id: kbFileDialog
-        nameFilters: [qsTr("文本文件 (*.txt *.md *.json *.csv *.log)"), qsTr("所有文件 (*)")]
+        nameFilters: [qsTr("支持的文件 (*.txt *.md *.json *.csv *.log *.pdf)"), qsTr("所有文件 (*)")]
         onAccepted: AgentVM.importDocument(selectedFile)
     }
 
@@ -123,7 +123,7 @@ Rectangle {
 
         Text {
             visible: AgentVM.knowledgeDocuments.length === 0
-            text: qsTr("导入文本文件（.txt / .md …），\n模型即可检索其内容回答问题")
+            text: qsTr("导入文本或 PDF 文件（.txt / .md / .pdf …），\n模型即可检索其内容回答问题")
             color: Theme.textSecondary
             font.pixelSize: 10
             font.family: Theme.fontSans

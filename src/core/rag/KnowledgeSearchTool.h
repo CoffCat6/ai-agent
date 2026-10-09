@@ -23,7 +23,8 @@ public:
             "knowledge, coding questions and small talk must be answered directly "
             "without any tool call. The base is stored inside the app - do NOT use "
             "file or shell tools to look for it on disk. Returns scored text chunks "
-            "with their source document.";
+            "with their source document; every hit starts with a "
+            "[doc:name#chunkId] provenance marker.";
         def.level = ToolLevel::Safe;
         QJsonObject props;
         props["query"] = stringParam("The search query.");
@@ -82,17 +83,40 @@ public:
             const QJsonObject r = entry.toObject();
             const QString source = QString(r.value("source").toString())
                 .replace('"', '\'').replace('<', '(').replace('>', ')');
-            lines << QStringLiteral("[score %1 | %2, chunk %3/%4]\n"
+            // CITE-801 (docs/20 §5.1): 机器可读的溯源标记前缀
+            // [doc:文档名#chunkId]，chunkId = 0 基 chunk_index。文档名取原始值
+            // （只压掉换行）而非 SEC-502 转义值，保证模型照抄出的 [文档名]
+            // 能与 UI 的按名定位严格对上；标记用字符串拼接而非 .arg()，
+            // 避免名字里的 %N 被后续占位符替换吃掉。
+            //
+            // 已知边界：文档名若含 ']'，记号会提前闭合（[doc:a]b.txt#0]），
+            // 模型照抄出的 [a]b.txt 无法与真实文档名对上——这类引用会静默退化为
+            // 纯文本（不渲染 chip），不会错认成别的文档。**不要**为修它而转义
+            // ']'：那会破坏"原始名往返"这一核心契约（UI 按名精确匹配），
+            // 代价大于收益。含 '#' 无此问题（chunkId 取最后一个 '#' 后的数字）。
+            // Windows 文件名不允许 <>:"/\|?*，但允许 ] 与 #，故该边界可达。
+            const QString markerName = QString(r.value("source").toString())
+                                            .replace('\n', ' ').replace('\r', ' ');
+            const QString marker = QStringLiteral("[doc:") + markerName
+                + QLatin1Char('#') + QString::number(r.value("chunk_index").toInt())
+                + QLatin1Char(']');
+            lines << marker + QStringLiteral(
+                                    " [score %1 | %2, chunk %3/%4]\n"
                                     "<knowledge_passage source=\"%5\">\n%6\n</knowledge_passage>")
-                .arg(r.value("score").toDouble(), 0, 'f', 3)
-                .arg(r.value("source").toString())
-                .arg(r.value("chunk_index").toInt() + 1)
-                .arg(r.value("chunk_total").toInt())
-                .arg(source)
-                .arg(r.value("text").toString());
+                                    .arg(r.value("score").toDouble(), 0, 'f', 3)
+                                    .arg(r.value("source").toString())
+                                    .arg(r.value("chunk_index").toInt() + 1)
+                                    .arg(r.value("chunk_total").toInt())
+                                    .arg(source)
+                                    .arg(r.value("text").toString());
         }
         return ToolResult::ok(lines.join(QStringLiteral("\n---\n")));
     }
+
+    // CITE-801: 系统提示词的注入闸门（AIAgent 通过注册的工具实例查询）。
+    // 仅当工具持有真实服务且库中有文档时才返回 true —— 空库不注入引用
+    // 约定，避免浪费 token。
+    bool knowledgeBaseNonEmpty() const { return m_rag && !m_rag->isEmpty(); }
 
 private:
     static QJsonObject stringParam(const QString& description) {

@@ -73,6 +73,9 @@ class SettingsService : public QObject {
     // L1: whether a search API key is stored (the key itself is never echoed
     // to QML; the getter returns a masked empty string).
     Q_PROPERTY(bool webSearchApiKeySet READ webSearchApiKeySet NOTIFY webSearchApiKeyChanged)
+    // docs/20 §5.3 (C3): self-hosted SearXNG base URL (required when the
+    // provider is "searxng"; not a secret, stored in plain text).
+    Q_PROPERTY(QString webSearchSearxBaseUrl READ webSearchSearxBaseUrl WRITE setWebSearchSearxBaseUrl NOTIFY webSearchSearxBaseUrlChanged)
     // L1: legal search provider keys for the settings UI (single source of
     // truth shared with the backend factory, L4).
     Q_PROPERTY(QStringList webSearchProviders READ webSearchProviders CONSTANT)
@@ -164,6 +167,9 @@ public:
     bool webSearchApiKeySet() const { return !m_webSearchApiKey.isEmpty(); }
     // L1: legal provider keys for the settings UI.
     QStringList webSearchProviders() const;
+    // docs/20 §5.3 (C3): self-hosted SearXNG base URL ("" = not configured).
+    QString webSearchSearxBaseUrl() const { return m_webSearchSearxBaseUrl; }
+    void setWebSearchSearxBaseUrl(const QString& url);
 
     // T8 (F4): episodic memory toggle (default off).
     bool episodicMemoryEnabled() const { return m_episodicMemoryEnabled; }
@@ -282,6 +288,7 @@ signals:
     void systemPromptOverrideChanged();
     void webSearchProviderChanged();
     void webSearchApiKeyChanged();
+    void webSearchSearxBaseUrlChanged();
     void episodicMemoryEnabledChanged();
     void dailyTokenQuotaChanged();
     void dailyCostQuotaCentsChanged();
@@ -317,6 +324,7 @@ private:
     QString m_systemPromptOverride;
     QString m_webSearchProvider{QStringLiteral("tavily")};
     QString m_webSearchApiKey;
+    QString m_webSearchSearxBaseUrl;   // docs/20 §5.3: SearXNG instance URL
     bool m_episodicMemoryEnabled{false};
     // docs/16 §7.3: quota control state (0 = unlimited for int quotas).
     int m_dailyTokenQuota{0};
