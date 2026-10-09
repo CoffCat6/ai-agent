@@ -62,6 +62,11 @@ add_library(nexus_core STATIC
     src/core/utils/PricingCalculator.cpp
     src/core/utils/Logger.h
     src/core/utils/Logger.cpp
+    src/core/utils/SettingsRepository.h
+    src/core/utils/SettingsRepository.cpp
+    src/core/utils/SettingsDefinition.h
+    src/core/utils/SettingsSchema.h
+    src/core/utils/SettingsSchema.cpp
     src/core/utils/Activity.h
     src/core/utils/Activity.cpp
     src/core/utils/DataUrlUtils.h
@@ -134,8 +139,6 @@ qt_add_qml_module(nexus_viewmodels
         src/viewmodels/CodeHighlighter.cpp
         src/viewmodels/SettingsService.h
         src/viewmodels/SettingsService.cpp
-        src/viewmodels/SettingsSchema.h
-        src/viewmodels/SettingsSchema.cpp
         src/viewmodels/SettingsBackup.h
         src/viewmodels/SettingsBackup.cpp
         src/viewmodels/ConnectionTester.h

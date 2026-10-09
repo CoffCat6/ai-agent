@@ -484,7 +484,6 @@ private:
     void startPdfImport(const QString& path, const QFileInfo& info);
     void persistPanelWidths();
 
-    void registerLayoutPreferences();
     void loadLayoutDefaults();
     void subscribeLayoutChanges();
 
@@ -512,21 +511,21 @@ private:
     // docs/18: 归属按标签持有，故这里没有全局活动项目成员。
 
     // ── Panel ──────────────────────────────────────────
-    bool m_isPanelVisible{true};
-    int m_panelWidth{300};
+    bool m_isPanelVisible{};
+    int m_panelWidth{};
 
     // ── Sidebar ────────────────────────────────────────
-    bool m_isSidebarExpanded{true};
-    int m_sidebarWidth{260};
+    bool m_isSidebarExpanded{};
+    int m_sidebarWidth{};
     // Debounces QSettings writes while the user drags a splitter
     QTimer m_uiPersistTimer;
 
     // ── Layout defaults ────────────────────────────────
-    int m_defaultSidebarWidth{260};
-    int m_defaultPanelWidth{300};
-    bool m_defaultSidebarExpanded{true};
-    bool m_defaultPanelVisible{true};
-    bool m_restoreWindowOnStartup{true};
+    int m_defaultSidebarWidth{};
+    int m_defaultPanelWidth{};
+    bool m_defaultSidebarExpanded{};
+    bool m_defaultPanelVisible{};
+    bool m_restoreWindowOnStartup{};
 
     // ── Tool Registry ──────────────────────────────────
     QVariantList m_toolRegistryModel;

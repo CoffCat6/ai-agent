@@ -214,73 +214,9 @@ qInfo() << "NexusAI" << app.applicationVersion() << "starting";
     i18n->setParent(&app);
     i18n->applyLocale(i18n->currentLocale());
 
-    // Register setting categories (order determines nav display order)
-    prefRegistry->registerCategory(QStringLiteral("model"),
-        QT_TRANSLATE_NOOP("NexusAI", "模型配置"), 1);
-    prefRegistry->registerCategory(QStringLiteral("interface"),
-        QT_TRANSLATE_NOOP("NexusAI", "界面设置"), 2);
-    prefRegistry->registerCategory(QStringLiteral("general"),
-        QT_TRANSLATE_NOOP("NexusAI", "通用设置"), 3);
-    // docs/17 A6: 独立安全分类（沙箱/黑名单/隐私门）。
-    prefRegistry->registerCategory(QStringLiteral("security"),
-        QT_TRANSLATE_NOOP("NexusAI", "安全"), 4);
-    prefRegistry->registerCategory(QStringLiteral("mcp"),
-        QT_TRANSLATE_NOOP("NexusAI", "MCP 服务器"), 5);
-    prefRegistry->registerCategory(QStringLiteral("tools"),
-        QT_TRANSLATE_NOOP("NexusAI", "工具管理"), 6);
-    // M1: browse / search / forget long-term episodic memory summaries.
-    prefRegistry->registerCategory(QStringLiteral("memory"),
-        QT_TRANSLATE_NOOP("NexusAI", "记忆管理"), 7);
-    // M1 (stats): token / cost usage aggregation.
-    prefRegistry->registerCategory(QStringLiteral("usage"),
-        QT_TRANSLATE_NOOP("NexusAI", "用量统计"), 8);
-    prefRegistry->registerCategory(QStringLiteral("backup"),
-        QT_TRANSLATE_NOOP("NexusAI", "设置与备份"), 9);
-
-    // Internal UI state (not shown in any category panel; categoryId empty)
-    {
-        PreferenceMeta lastCategory;
-        lastCategory.key = QStringLiteral("settings.lastCategory");
-        lastCategory.categoryId = QString();
-        lastCategory.displayName =
-            QT_TRANSLATE_NOOP("NexusAI", "上次访问分类");
-        lastCategory.defaultValue = QStringLiteral("model");
-        lastCategory.type = PreferenceType::String;
-        prefRegistry->registerPreference(lastCategory);
-    }
-
-    // ── docs/20 工作流 B（桌面集成）：通用设置页的偏好键 ──
-    // 键登记纪律（docs/17 B3 账本）：Physical 键 = prefs/v1/<key>，必须
-    // 同步登记进 SettingsSchema::registeredKeys()，test_settings 断言完整性。
-    {
-        // B1（D10）：关闭按钮最小化到托盘而不是退出（默认 false = 直接退出）。
-        PreferenceMeta closeToTray;
-        closeToTray.key = QStringLiteral("window.closeToTray");
-        closeToTray.categoryId = QStringLiteral("general");
-        closeToTray.displayName = QT_TRANSLATE_NOOP("NexusAI", "关闭时最小化到系统托盘");
-        closeToTray.defaultValue = false;
-        closeToTray.type = PreferenceType::Bool;
-        prefRegistry->registerPreference(closeToTray);
-
-        // B3（D8）：开机自启（Windows Run 键，用户级）。
-        PreferenceMeta autoStart;
-        autoStart.key = QStringLiteral("general.autoStart");
-        autoStart.categoryId = QStringLiteral("general");
-        autoStart.displayName = QT_TRANSLATE_NOOP("NexusAI", "开机自启动");
-        autoStart.defaultValue = false;
-        autoStart.type = PreferenceType::Bool;
-        prefRegistry->registerPreference(autoStart);
-
-        // B1 补充：任务完成/结束的系统气泡通知总开关（默认开）。托盘不可用时
-        // showMessage 本身是 no-op，因此这里只管"要不要打扰"的语义。
-        PreferenceMeta noticeEnabled;
-        noticeEnabled.key = QStringLiteral("notice.enabled");
-        noticeEnabled.categoryId = QStringLiteral("general");
-        noticeEnabled.displayName = QT_TRANSLATE_NOOP("NexusAI", "系统通知");
-        noticeEnabled.defaultValue = true;
-        noticeEnabled.type = PreferenceType::Bool;
-        prefRegistry->registerPreference(noticeEnabled);
-    }
+    // Categories and preference metadata are loaded from SettingsSchema by
+    // PreferenceRegistry; runtime services only supply environment-dependent
+    // defaults such as the system's available font families.
 
     // ── Settings (QSettings + env fallbacks) ──────────
     // QML singletons are lazily created through their static factories;
@@ -746,15 +682,21 @@ qInfo() << "NexusAI" << app.applicationVersion() << "starting";
             if (key != QLatin1String("general.autoStart")) return;
             settings->setAutoStart(value.toBool());
         });
-    // 启动时对齐一次：注册表真值与偏好键不一致时以注册表为准（用户可能
-    // 手工删过 Run 键），把 UI 回显拉回真值。若偏好键为 true 但注册表没有，
-    // 说明上次写失败/被清理——重写一次以恢复意图。
+    // 已保存的偏好是期望状态，Windows Run 项是实际状态。若偏好键尚不存在，
+    // 先从旧版/外部已有的 Run 项迁入，避免升级时误删用户原有的自启动配置；
+    // 否则按明确保存的偏好双向协调。非 Windows 上后端不受支持。
+#ifdef Q_OS_WIN
     {
-        const bool prefOn = prefStore->load(QStringLiteral("general.autoStart")).toBool();
-        const bool realOn = settings->autoStart();
-        if (prefOn && !realOn)
-            settings->setAutoStart(true);
+        const QString autoStartKey = QStringLiteral("general.autoStart");
+        const bool hasPreference = prefStore->hasStoredValue(autoStartKey);
+        const bool preferred = prefStore->load(autoStartKey).toBool();
+        const bool registered = settings->autoStart();
+        if (!hasPreference && registered)
+            prefStore->save(autoStartKey, true);
+        else if (hasPreference && preferred != registered)
+            settings->setAutoStart(preferred);
     }
+#endif
 
     // ── QML Engine ─────────────────────────────────────
     // Theme/ThemeManager/AgentVM/Settings/ConnectionTester resolve to the

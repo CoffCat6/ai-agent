@@ -1,5 +1,7 @@
 #include "ToolRegistry.h"
 #include "Sandbox.h"
+#include "core/utils/SettingsRepository.h"
+#include "core/utils/SettingsSchema.h"
 
 #include <QFile>
 #include <QFileInfo>
@@ -9,7 +11,6 @@
 #include <QJsonArray>
 #include <QJsonDocument>
 #include <QProcess>
-#include <QSettings>
 
 #include <atomic>
 
@@ -497,18 +498,21 @@ bool ToolRegistry::isToolUsable(const QString& name) const {
 }
 
 void ToolRegistry::loadDisabledFromSettings() {
-    QSettings s("NexusAI", "NexusAI");
-    if (!s.contains("tools/disabled")) return;
-    const QStringList disabled = s.value("tools/disabled").toStringList();
+    if (!SettingsRepository::contains(QStringLiteral("tools/disabled"))) return;
+    const QStringList disabled = SettingsRepository::value(
+        QStringLiteral("tools/disabled"),
+        SettingsSchema::defaultValue(QStringLiteral("tools/disabled"))).toStringList();
     for (const QString& name : disabled)
         if (m_tools.contains(name))
             m_disabledTools.insert(name);
 }
 
 void ToolRegistry::saveDisabledToSettings() {
-    QSettings s("NexusAI", "NexusAI");
-    s.setValue("tools/disabled", QStringList(m_disabledTools.begin(),
-                                             m_disabledTools.end()));
+    QString error;
+    if (!SettingsRepository::writeValue(
+            QStringLiteral("tools/disabled"),
+            QStringList(m_disabledTools.begin(), m_disabledTools.end()), &error))
+        qWarning() << "Failed to persist disabled tool list:" << error;
 }
 
 } // namespace NexusAI

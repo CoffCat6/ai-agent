@@ -1,9 +1,10 @@
 #include "SettingsBackup.h"
 
-#include "SettingsSchema.h"
+#include "core/utils/SettingsSchema.h"
 #include "core/mcp/McpConfig.h"
 #include "infrastructure/llm/LlmProtocolRegistry.h"
 #include "McpManager.h"
+#include "core/utils/SettingsRepository.h"
 
 #include <QDateTime>
 #include <QFile>
@@ -13,7 +14,6 @@
 #include <QJsonParseError>
 #include <QMap>
 #include <QSaveFile>
-#include <QSettings>
 #include <QSet>
 #include <QUrl>
 #include <climits>
@@ -34,7 +34,7 @@ QString localPath(const QString& path) {
 // permissions, system integration, volatile layout, or credentials implicitly.
 bool portableKey(const SettingsKeyDef& def) {
     const QString& key = def.key;
-    if (def.encrypted || key == QLatin1String("modelProfiles")
+    if (def.encrypted || def.legacy || key == QLatin1String("modelProfiles")
         || key == QLatin1String("schemaVersion")
         || key == QLatin1String("tools/disabled")
         || key == QLatin1String("agent/defaultPermissionMode")
@@ -47,25 +47,48 @@ bool portableKey(const SettingsKeyDef& def) {
     return true;
 }
 
-QMap<QString, QVariant> portableKeys() {
-    QMap<QString, QVariant> keys;
-    for (const auto& def : SettingsSchema::registeredKeys())
-        if (portableKey(def)) keys.insert(def.key, def.defaultValue);
+QMap<QString, SettingsKeyDef> portableKeys() {
+    QMap<QString, SettingsKeyDef> keys;
+    for (const SettingsKeyDef& def : SettingsSchema::registeredKeys())
+        if (portableKey(def)) keys.insert(def.key, def);
     return keys;
 }
 
-bool validValue(const QString& key, const QJsonValue& value, const QVariant& def) {
-    if (key == QLatin1String("activeProfileId")
-        || key.startsWith(QLatin1String("prefs/v1/ui.font")))
-        return value.isString();
-    if (def.metaType().id() == QMetaType::Bool) return value.isBool();
-    if (def.metaType().id() == QMetaType::Int)
-        return value.isDouble() && std::isfinite(value.toDouble())
-            && value.toDouble() >= 0 && value.toDouble() <= INT_MAX
-            && std::floor(value.toDouble()) == value.toDouble();
-    if (def.metaType().id() == QMetaType::QString) return value.isString();
-    if (key == QLatin1String("prefs/v1/ui.locale")) return value.isString();
-    return false;
+bool validValue(const SettingsKeyDef& def, const QJsonValue& value) {
+    bool valid = false;
+    switch (def.type) {
+    case SettingValueType::Any:
+        return false;
+    case SettingValueType::Bool:
+        valid = value.isBool();
+        break;
+    case SettingValueType::Int:
+        valid = value.isDouble() && std::isfinite(value.toDouble())
+            && std::floor(value.toDouble()) == value.toDouble()
+            && (!def.constraint.hasRange
+                || (value.toDouble() >= def.constraint.min
+                    && value.toDouble() <= def.constraint.max));
+        break;
+    case SettingValueType::Double:
+        valid = value.isDouble() && std::isfinite(value.toDouble());
+        break;
+    case SettingValueType::String:
+        valid = value.isString();
+        if (valid && def.constraint.required) valid = !value.toString().isEmpty();
+        if (valid && def.constraint.maxLength > 0)
+            valid = value.toString().size() <= def.constraint.maxLength;
+        if (valid && !def.constraint.options.isEmpty())
+            valid = def.constraint.options.contains(value.toString());
+        break;
+    case SettingValueType::StringList:
+        valid = value.isArray();
+        if (valid) {
+            for (const QJsonValue& item : value.toArray())
+                if (!item.isString()) return false;
+        }
+        break;
+    }
+    return valid;
 }
 
 // An explicit field list also prevents unknown future profile fields from
@@ -118,32 +141,38 @@ void SettingsBackup::setError(const QString& error) {
 
 bool SettingsBackup::exportSettings(const QString& path) {
     setError({});
-    QSettings s;
-    s.sync();
-    if (s.status() != QSettings::NoError) {
-        setError(tr("无法读取当前设置"));
-        return false;
-    }
     QJsonObject settings;
     const auto keys = portableKeys();
+    QStringList keysToRead = keys.keys();
+    keysToRead.append(QStringLiteral("modelProfiles"));
+    QVariantMap storedValues;
+    QStringList presentKeys;
+    QString readError;
+    if (!SettingsRepository::readBatch(keysToRead, &storedValues, &presentKeys,
+                                       &readError)) {
+        setError(tr("无法读取当前设置：%1").arg(readError));
+        return false;
+    }
     for (auto it = keys.cbegin(); it != keys.cend(); ++it) {
-        if (!s.contains(it.key())) continue;
-        QVariant value = s.value(it.key());
-        if (it.value().metaType().id() == QMetaType::Bool) value = value.toBool();
-        else if (it.value().metaType().id() == QMetaType::Int) value = value.toInt();
-        else if (it.value().metaType().id() == QMetaType::QString) value = value.toString();
-        else if (it.key().startsWith(QLatin1String("prefs/v1/ui.font"))
-                 || it.key() == QLatin1String("prefs/v1/ui.locale")
-                 || it.key() == QLatin1String("activeProfileId")) value = value.toString();
-        if (!validValue(it.key(), QJsonValue::fromVariant(value), it.value())) continue;
+        if (!presentKeys.contains(it.key())) continue;
+        QVariant value = storedValues.value(it.key());
+        switch (it.value().type) {
+        case SettingValueType::Bool: value = value.toBool(); break;
+        case SettingValueType::Int: value = value.toInt(); break;
+        case SettingValueType::Double: value = value.toDouble(); break;
+        case SettingValueType::String: value = value.toString(); break;
+        case SettingValueType::StringList: value = value.toStringList(); break;
+        case SettingValueType::Any: break;
+        }
+        if (!validValue(it.value(), QJsonValue::fromVariant(value))) continue;
         settings.insert(it.key(), QJsonValue::fromVariant(value));
     }
 
     QJsonArray profiles;
-    if (s.contains(QStringLiteral("modelProfiles"))) {
+    if (presentKeys.contains(QStringLiteral("modelProfiles"))) {
         QJsonParseError error;
         const QJsonDocument doc = QJsonDocument::fromJson(
-            s.value(QStringLiteral("modelProfiles")).toString().toUtf8(), &error);
+            storedValues.value(QStringLiteral("modelProfiles")).toString().toUtf8(), &error);
         if (error.error != QJsonParseError::NoError || !doc.isArray()) {
             setError(tr("模型配置已损坏，无法安全导出"));
             return false;
@@ -229,7 +258,7 @@ QVariantMap SettingsBackup::parseImport(const QString& path, QVariantMap* settin
     const QJsonObject saved = root.value(QStringLiteral("settings")).toObject();
     settings->clear();
     for (auto it = saved.begin(); it != saved.end(); ++it) {
-        if (!keys.contains(it.key()) || !validValue(it.key(), it.value(), keys.value(it.key())))
+        if (!keys.contains(it.key()) || !validValue(keys.value(it.key()), it.value()))
             return fail(tr("备份包含不允许恢复或类型错误的设置项：%1").arg(it.key()));
         settings->insert(it.key(), it.value().toVariant());
     }
@@ -299,18 +328,21 @@ bool SettingsBackup::importSettings(const QString& path) {
         setError(preview.value(QStringLiteral("error")).toString());
         return false;
     }
-    QSettings s;
-    s.sync();
-    if (s.status() != QSettings::NoError) {
-        setError(tr("无法读取当前设置，恢复已取消"));
+    QVariantMap currentSettings;
+    QStringList currentPresentKeys;
+    QString readError;
+    if (!SettingsRepository::readBatch({QStringLiteral("modelProfiles")},
+                                       &currentSettings, &currentPresentKeys,
+                                       &readError)) {
+        setError(tr("无法读取当前设置，恢复已取消：%1").arg(readError));
         return false;
     }
     // Carry credentials forward only for an identical local endpoint. A backup
     // from another machine must never attach local credentials to a new target.
     QJsonParseError profileError;
     const QJsonDocument currentProfiles = QJsonDocument::fromJson(
-        s.value(QStringLiteral("modelProfiles")).toString().toUtf8(), &profileError);
-    if (s.contains(QStringLiteral("modelProfiles"))
+        currentSettings.value(QStringLiteral("modelProfiles")).toString().toUtf8(), &profileError);
+    if (currentPresentKeys.contains(QStringLiteral("modelProfiles"))
         && (profileError.error != QJsonParseError::NoError || !currentProfiles.isArray())) {
         setError(tr("当前模型配置已损坏，恢复已取消"));
         return false;
@@ -349,27 +381,31 @@ bool SettingsBackup::importSettings(const QString& path) {
     }
     // Snapshot exactly the keys to be changed; an absent key must remain
     // absent if a later step fails.
-    QMap<QString, QVariant> previous;
-    QSet<QString> present;
-    for (auto it = imported.cbegin(); it != imported.cend(); ++it) {
-        if (s.contains(it.key())) {
-            previous.insert(it.key(), s.value(it.key()));
-            present.insert(it.key());
-        }
-        s.setValue(it.key(), it.value());
+    const QStringList importedKeys = imported.keys();
+    QVariantMap previous;
+    QStringList presentKeys;
+    if (!SettingsRepository::readBatch(importedKeys, &previous, &presentKeys,
+                                       &readError)) {
+        setError(tr("无法读取当前设置，恢复已取消：%1").arg(readError));
+        return false;
     }
-    s.sync();
-    const bool settingsOk = s.status() == QSettings::NoError;
-    const bool mcpOk = settingsOk && McpConfig::save(servers);
-    if (!mcpOk) {
-        for (auto it = imported.cbegin(); it != imported.cend(); ++it) {
-            if (present.contains(it.key())) s.setValue(it.key(), previous.value(it.key()));
-            else s.remove(it.key());
-        }
-        s.sync();
-        setError(s.status() == QSettings::NoError
+
+    QString writeError;
+    if (!SettingsRepository::writeBatch(imported, &writeError)) {
+        setError(tr("设置写入失败，恢复已取消：%1").arg(writeError));
+        return false;
+    }
+    if (!McpConfig::save(servers)) {
+        QString rollbackError;
+        bool settingsRolledBack = SettingsRepository::writeBatch(previous, &rollbackError);
+        QStringList absentKeys;
+        for (const QString& key : importedKeys)
+            if (!presentKeys.contains(key)) absentKeys.append(key);
+        if (!SettingsRepository::removeBatch(absentKeys, &rollbackError))
+            settingsRolledBack = false;
+        setError(settingsRolledBack
                      ? tr("恢复失败，原有设置已保留")
-                     : tr("恢复失败且回滚未完成，请检查当前设置"));
+                     : tr("恢复失败且设置回滚未完成，请检查当前设置：%1").arg(rollbackError));
         return false;
     }
     McpManager::instance()->applyRestoredConfigs(servers);

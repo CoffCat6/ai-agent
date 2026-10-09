@@ -29,7 +29,6 @@ signals:
     void localeChanged(const QString& locale);
 
 private:
-    void registerPreference();
     void subscribeChanges();
     QString detectInitialLocale() const;
 

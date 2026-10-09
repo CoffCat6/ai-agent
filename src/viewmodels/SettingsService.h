@@ -269,6 +269,7 @@ public:
     void setAutoStartBackend(AutoStartBackend* backend);
 
 signals:
+    void persistenceError(const QString& message);
     void profilesChanged();
     void activeProfileChanged();
     void contextTokensChanged();
@@ -301,38 +302,39 @@ signals:
     void autoStartChanged();
 
 private:
+    bool persistValue(const QString& key, const QVariant& value);
     void load();
     QVariantList migrateLegacy();
-    void persist();
+    bool persist();
 
     QVariantList m_profiles;   // each entry: {id, displayName, kind, provider, apiProtocol, baseUrl, apiKey, model, models}
     QString m_activeId;
-    int m_contextTokens{AIAgent::kDefaultContextTokens};
-    int m_maxSteps{AIAgent::kDefaultMaxIterations};
-    int m_taskTimeoutMinutes{AIAgent::kDefaultTaskTimeoutMs / 60000};
+    int m_contextTokens{};
+    int m_maxSteps{};
+    int m_taskTimeoutMinutes{};
 
-    bool m_allowFullDiskRead{false};
-    bool m_allowProjectWrite{false};   // docs/17 P1-4: 项目目录写入放行
-    bool m_localOnlyMode{false};
-    bool m_allowLocalNetworkFetch{false};
-    QString m_embeddingModel{QStringLiteral("nomic-embed-text")};
-    QString m_embeddingBaseUrl{QStringLiteral("http://localhost:11434")};
-    QString m_logLevel{QStringLiteral("info")};
+    bool m_allowFullDiskRead{};
+    bool m_allowProjectWrite{};   // docs/17 P1-4: 项目目录写入放行
+    bool m_localOnlyMode{};
+    bool m_allowLocalNetworkFetch{};
+    QString m_embeddingModel;
+    QString m_embeddingBaseUrl;
+    QString m_logLevel;
     QString m_logDirectory;
-    int m_logMaxFileSizeMb{10};
-    int m_logRetentionFiles{14};
+    int m_logMaxFileSizeMb{};
+    int m_logRetentionFiles{};
     QString m_systemPromptOverride;
-    QString m_webSearchProvider{QStringLiteral("tavily")};
+    QString m_webSearchProvider;
     QString m_webSearchApiKey;
     QString m_webSearchSearxBaseUrl;   // docs/20 §5.3: SearXNG instance URL
-    bool m_episodicMemoryEnabled{false};
+    bool m_episodicMemoryEnabled{};
     // docs/16 §7.3: quota control state (0 = unlimited for int quotas).
-    int m_dailyTokenQuota{0};
-    int m_dailyCostQuotaCents{0};
-    int m_monthlyTokenQuota{0};
-    int m_monthlyCostQuotaCents{0};
-    bool m_strictQuotaMode{false};
-    QString m_defaultPermissionMode{QStringLiteral("confirm")};
+    int m_dailyTokenQuota{};
+    int m_dailyCostQuotaCents{};
+    int m_monthlyTokenQuota{};
+    int m_monthlyCostQuotaCents{};
+    bool m_strictQuotaMode{};
+    QString m_defaultPermissionMode;
     QString m_activeProjectId;
     QVariantList m_readDenyList;
 

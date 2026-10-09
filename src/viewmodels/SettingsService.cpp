@@ -1,6 +1,7 @@
 #include "SettingsService.h"
-#include "SettingsSchema.h"
+#include "core/utils/SettingsSchema.h"
 #include "core/utils/Activity.h"
+#include "core/utils/SettingsRepository.h"
 
 #include "core/agent/AIAgent.h"
 #include "core/utils/Logger.h"
@@ -10,7 +11,6 @@
 #include <QJsonDocument>
 #include <QJsonObject>
 #include <QLoggingCategory>
-#include <QSettings>
 #include <QCoreApplication>
 #include <QDir>
 #include <QUrl>
@@ -115,8 +115,8 @@ QVariantMap makeCustomProfile(const QString& displayName) {
 // v1 → v2：模型列表改由用户手动维护，升级时清空存量 profile 的模型列表与当前
 // 模型，让每条配置都回到「需手填模型」的空态。只改 blob 里的这两个键，apiKey
 // 仍是加密态、不经过本进程解密；由 load() 依版本号调用，只跑一次。
-void clearProfileModelsOnUpgrade(QSettings& settings) {
-    const QByteArray raw = settings.value(kProfilesKey).toString().toUtf8();
+void clearProfileModelsOnUpgrade() {
+    const QByteArray raw = SettingsRepository::value(kProfilesKey).toString().toUtf8();
     QJsonParseError parseError{};
     const QJsonDocument doc = QJsonDocument::fromJson(raw, &parseError);
     if (parseError.error != QJsonParseError::NoError || !doc.isArray()) return;
@@ -128,21 +128,28 @@ void clearProfileModelsOnUpgrade(QSettings& settings) {
         profile["model"] = QString();
         arr[i] = profile;
     }
-    settings.setValue(kProfilesKey,
-        QString::fromUtf8(QJsonDocument(arr).toJson(QJsonDocument::Compact)));
+    QString error;
+    if (!SettingsRepository::writeValue(
+            kProfilesKey,
+            QString::fromUtf8(QJsonDocument(arr).toJson(QJsonDocument::Compact)),
+            &error))
+        qCWarning(lcSettings) << "Failed to migrate model profile list:" << error;
 }
 
 // v2 → v3/v4：contextTokens 默认值先由 8192 上调、再收敛为保守的 128000。存量
 // 配置里若正好是**某一版旧默认值**（8192 或短暂存在的 300000）就归一到当前默认
 // ——这类值不是用户的主动选择，而且通用页的输入框已移除、用户再也改不到它；
 // 真正的自定义值（其它任何数字）原样保留，不覆盖用户意图。
-void upgradeContextTokenDefault(QSettings& settings) {
-    const QVariant stored = settings.value("contextTokens");
+void upgradeContextTokenDefault() {
+    const QVariant stored = SettingsRepository::value("contextTokens");
     if (!stored.isValid()) return;                    // 未写过：新默认自然生效
     const int value = stored.toInt();
     const bool wasSomeDefault = (value == 8192 || value == 300000);
     if (!wasSomeDefault) return;                      // 用户自定义值：不动
-    settings.setValue("contextTokens", AIAgent::kDefaultContextTokens);
+    QString error;
+    if (!SettingsRepository::writeValue("contextTokens", AIAgent::kDefaultContextTokens,
+                                        &error))
+        qCWarning(lcSettings) << "Failed to migrate context token default:" << error;
 }
 
 #ifdef Q_OS_WIN
@@ -230,25 +237,36 @@ QVariantMap SettingsService::activeProfile() const {
     return {};
 }
 
-void SettingsService::load() {
-    QSettings settings;
+bool SettingsService::persistValue(const QString& key, const QVariant& value) {
+    QString error;
+    if (SettingsRepository::writeValue(key, value, &error)) return true;
 
+    qCWarning(lcSettings) << "Failed to persist setting" << key << error;
+    emit persistenceError(tr("设置未能保存，请检查存储权限或磁盘空间后重试。"));
+    return false;
+}
+
+void SettingsService::load() {
     // L2: schema migration hook. Runs once per schema version bump; v0→v1
     // is a no-op, but the version stamp is written so future migrations
     // can detect the starting point.
-    const int storedVersion = settings.value("schemaVersion", 0).toInt();
+    const int storedVersion = SettingsRepository::value(QStringLiteral("schemaVersion"),
+        SettingsSchema::defaultValue(QStringLiteral("schemaVersion"))).toInt();
     if (storedVersion < SettingsSchema::kSchemaVersion) {
         SettingsSchema::migrate(storedVersion);
         // profile 存在 modelProfiles blob 里（不在顶层键注册表），清空存量模型的
         // 迁移因此落在这里，与 SettingsSchema::migrate 的分工一起生效。
-        if (storedVersion < 2) clearProfileModelsOnUpgrade(settings);
+        if (storedVersion < 2) clearProfileModelsOnUpgrade();
         // v3/v4：contextTokens 旧默认值（8192 / 短暂的 300000）归一为当前默认。
-        if (storedVersion < 4) upgradeContextTokenDefault(settings);
-        settings.setValue("schemaVersion", SettingsSchema::kSchemaVersion);
+        if (storedVersion < 4) upgradeContextTokenDefault();
+        QString error;
+        if (!SettingsRepository::writeValue("schemaVersion", SettingsSchema::kSchemaVersion,
+                                            &error))
+            qCWarning(lcSettings) << "Failed to persist settings schema version:" << error;
     }
 
     // ── Profiles (JSON list; apiKeys re-encrypted on persist) ──
-    const QByteArray raw = settings.value(kProfilesKey).toString().toUtf8();
+    const QByteArray raw = SettingsRepository::value(kProfilesKey).toString().toUtf8();
     QJsonParseError parseError{};
     const QJsonDocument doc = QJsonDocument::fromJson(raw, &parseError);
     if (parseError.error == QJsonParseError::NoError && doc.isArray()) {
@@ -272,7 +290,7 @@ void SettingsService::load() {
     if (m_profiles.isEmpty())
         m_profiles = migrateLegacy();
 
-    m_activeId = settings.value(kActiveKey).toString();
+    m_activeId = SettingsRepository::value(kActiveKey).toString();
     if (activeProfile().isEmpty() && !m_profiles.isEmpty())
         m_activeId = m_profiles.first().toMap().value("id").toString();
 
@@ -298,75 +316,117 @@ void SettingsService::load() {
         }
     }
 
-    m_contextTokens = qBound(AIAgent::MinContextTokens,
-                             settings.value("contextTokens", AIAgent::kDefaultContextTokens).toInt(),
-                             AIAgent::MaxContextTokens);
-    m_maxSteps = qBound(AIAgent::kMinMaxIterations,
-                        settings.value("agent/maxSteps",
-                                       AIAgent::kDefaultMaxIterations).toInt(),
-                        AIAgent::kIterationCeiling);
-    m_taskTimeoutMinutes = qBound(1, settings.value("agent/taskTimeoutMinutes",
-        AIAgent::kDefaultTaskTimeoutMs / 60000).toInt(), 60);
+    m_contextTokens = SettingsSchema::clampInt(
+        QStringLiteral("contextTokens"),
+        SettingsRepository::value(QStringLiteral("contextTokens"),
+            SettingsSchema::defaultValue(QStringLiteral("contextTokens"))).toInt());
+    m_maxSteps = SettingsSchema::clampInt(
+        QStringLiteral("agent/maxSteps"),
+        SettingsRepository::value(QStringLiteral("agent/maxSteps"),
+            SettingsSchema::defaultValue(QStringLiteral("agent/maxSteps"))).toInt());
+    m_taskTimeoutMinutes = SettingsSchema::clampInt(
+        QStringLiteral("agent/taskTimeoutMinutes"),
+        SettingsRepository::value(QStringLiteral("agent/taskTimeoutMinutes"),
+            SettingsSchema::defaultValue(QStringLiteral("agent/taskTimeoutMinutes"))).toInt());
 
-    m_allowFullDiskRead = settings.value("security/allowFullDiskRead", false).toBool();
-    m_allowProjectWrite = settings.value("security/allowProjectWrite", false).toBool();
-    m_localOnlyMode = settings.value("security/localOnlyMode", false).toBool();
-    m_allowLocalNetworkFetch = settings.value("security/allowLocalNetworkFetch", false).toBool();
-    m_embeddingModel = settings.value("embedding/model", QStringLiteral("nomic-embed-text")).toString();
-    m_embeddingBaseUrl = settings.value("embedding/baseUrl", QStringLiteral("http://localhost:11434")).toString();
-    m_systemPromptOverride = settings.value("agent/systemPromptOverride", QString()).toString();
+    m_allowFullDiskRead = SettingsRepository::value(QStringLiteral("security/allowFullDiskRead"),
+        SettingsSchema::defaultValue(QStringLiteral("security/allowFullDiskRead"))).toBool();
+    m_allowProjectWrite = SettingsRepository::value(QStringLiteral("security/allowProjectWrite"),
+        SettingsSchema::defaultValue(QStringLiteral("security/allowProjectWrite"))).toBool();
+    m_localOnlyMode = SettingsRepository::value(QStringLiteral("security/localOnlyMode"),
+        SettingsSchema::defaultValue(QStringLiteral("security/localOnlyMode"))).toBool();
+    m_allowLocalNetworkFetch = SettingsRepository::value(
+        QStringLiteral("security/allowLocalNetworkFetch"),
+        SettingsSchema::defaultValue(QStringLiteral("security/allowLocalNetworkFetch"))).toBool();
+    m_embeddingModel = SettingsRepository::value(QStringLiteral("embedding/model"),
+        SettingsSchema::defaultValue(QStringLiteral("embedding/model"))).toString();
+    m_embeddingBaseUrl = SettingsRepository::value(QStringLiteral("embedding/baseUrl"),
+        SettingsSchema::defaultValue(QStringLiteral("embedding/baseUrl"))).toString();
+    m_systemPromptOverride = SettingsRepository::value(
+        QStringLiteral("agent/systemPromptOverride"),
+        SettingsSchema::defaultValue(QStringLiteral("agent/systemPromptOverride"))).toString();
     // logging/level is Logger::install()'s key; the env override still wins
     // there, so load() only mirrors the stored value (install() already
     // applied the effective level before any UI exists).
-    m_logLevel = settings.value("logging/level", QStringLiteral("info")).toString().trimmed().toLower();
-    if (m_logLevel != QLatin1String("debug") && m_logLevel != QLatin1String("info")
-            && m_logLevel != QLatin1String("warning") && m_logLevel != QLatin1String("critical"))
-        m_logLevel = QStringLiteral("info");
-    m_logDirectory = settings.value("logging/directory").toString().trimmed();
-    m_logMaxFileSizeMb = qBound(1, settings.value("logging/maxFileSizeMb", 10).toInt(), 1024);
-    m_logRetentionFiles = qBound(1, settings.value("logging/retentionFiles", 14).toInt(), 100);
-    m_webSearchProvider = settings.value("webSearch/provider", QStringLiteral("tavily")).toString();
+    m_logLevel = SettingsRepository::value(QStringLiteral("logging/level"),
+        SettingsSchema::defaultValue(QStringLiteral("logging/level"))).toString().trimmed().toLower();
+    if (!SettingsSchema::options(QStringLiteral("logging/level")).contains(m_logLevel))
+        m_logLevel = SettingsSchema::defaultValue(QStringLiteral("logging/level")).toString();
+    m_logDirectory = SettingsRepository::value(QStringLiteral("logging/directory"),
+        SettingsSchema::defaultValue(QStringLiteral("logging/directory"))).toString().trimmed();
+    m_logMaxFileSizeMb = SettingsSchema::clampInt(QStringLiteral("logging/maxFileSizeMb"),
+        SettingsRepository::value(QStringLiteral("logging/maxFileSizeMb"),
+            SettingsSchema::defaultValue(QStringLiteral("logging/maxFileSizeMb"))).toInt());
+    m_logRetentionFiles = SettingsSchema::clampInt(QStringLiteral("logging/retentionFiles"),
+        SettingsRepository::value(QStringLiteral("logging/retentionFiles"),
+            SettingsSchema::defaultValue(QStringLiteral("logging/retentionFiles"))).toInt());
+    m_webSearchProvider = SettingsRepository::value(QStringLiteral("webSearch/provider"),
+        SettingsSchema::defaultValue(QStringLiteral("webSearch/provider"))).toString();
+    if (!SettingsSchema::options(QStringLiteral("webSearch/provider"))
+             .contains(m_webSearchProvider))
+        m_webSearchProvider = SettingsSchema::defaultValue(
+            QStringLiteral("webSearch/provider")).toString();
     // API key is stored encrypted (DPAPI) - empty if not set or decryption failed.
-    m_webSearchApiKey = unprotectApiKey(settings.value("webSearch/apiKey", QString()).toString());
+    m_webSearchApiKey = unprotectApiKey(SettingsRepository::value(
+        QStringLiteral("webSearch/apiKey"),
+        SettingsSchema::defaultValue(QStringLiteral("webSearch/apiKey"))).toString());
     // docs/20 §5.3 (C3): SearXNG instance URL; plain text (not a secret),
     // empty = not configured.
-    m_webSearchSearxBaseUrl = settings.value("webSearch/searxBaseUrl", QString()).toString().trimmed();
-    m_episodicMemoryEnabled = settings.value("memory/episodicMemoryEnabled", false).toBool();
+    m_webSearchSearxBaseUrl = SettingsRepository::value(
+        QStringLiteral("webSearch/searxBaseUrl"),
+        SettingsSchema::defaultValue(QStringLiteral("webSearch/searxBaseUrl"))).toString().trimmed();
+    m_episodicMemoryEnabled = SettingsRepository::value(
+        QStringLiteral("memory/episodicMemoryEnabled"),
+        SettingsSchema::defaultValue(QStringLiteral("memory/episodicMemoryEnabled"))).toBool();
     // docs/16 §7.3: quota settings (flat keys; 0 = unlimited for int quotas).
-    m_dailyTokenQuota = qMax(0, settings.value("dailyTokenQuota", 0).toInt());
-    m_dailyCostQuotaCents = qMax(0, settings.value("dailyCostQuotaCents", 0).toInt());
-    m_monthlyTokenQuota = qMax(0, settings.value("monthlyTokenQuota", 0).toInt());
-    m_monthlyCostQuotaCents = qMax(0, settings.value("monthlyCostQuotaCents", 0).toInt());
-    m_strictQuotaMode = settings.value("strictQuotaMode", false).toBool();
-    m_defaultPermissionMode = settings.value("agent/defaultPermissionMode",
-                                             QStringLiteral("confirm")).toString();
-    m_activeProjectId = settings.value("projects/activeId").toString();
-    m_readDenyList = settings.value("security/readDenyList").toList();
+    m_dailyTokenQuota = SettingsSchema::clampInt(QStringLiteral("dailyTokenQuota"),
+        SettingsRepository::value(QStringLiteral("dailyTokenQuota"),
+            SettingsSchema::defaultValue(QStringLiteral("dailyTokenQuota"))).toInt());
+    m_dailyCostQuotaCents = SettingsSchema::clampInt(QStringLiteral("dailyCostQuotaCents"),
+        SettingsRepository::value(QStringLiteral("dailyCostQuotaCents"),
+            SettingsSchema::defaultValue(QStringLiteral("dailyCostQuotaCents"))).toInt());
+    m_monthlyTokenQuota = SettingsSchema::clampInt(QStringLiteral("monthlyTokenQuota"),
+        SettingsRepository::value(QStringLiteral("monthlyTokenQuota"),
+            SettingsSchema::defaultValue(QStringLiteral("monthlyTokenQuota"))).toInt());
+    m_monthlyCostQuotaCents = SettingsSchema::clampInt(QStringLiteral("monthlyCostQuotaCents"),
+        SettingsRepository::value(QStringLiteral("monthlyCostQuotaCents"),
+            SettingsSchema::defaultValue(QStringLiteral("monthlyCostQuotaCents"))).toInt());
+    m_strictQuotaMode = SettingsRepository::value(QStringLiteral("strictQuotaMode"),
+        SettingsSchema::defaultValue(QStringLiteral("strictQuotaMode"))).toBool();
+    m_defaultPermissionMode = SettingsRepository::value(
+        QStringLiteral("agent/defaultPermissionMode"),
+        SettingsSchema::defaultValue(QStringLiteral("agent/defaultPermissionMode"))).toString();
+    if (!SettingsSchema::options(QStringLiteral("agent/defaultPermissionMode"))
+             .contains(m_defaultPermissionMode))
+        m_defaultPermissionMode = SettingsSchema::defaultValue(
+            QStringLiteral("agent/defaultPermissionMode")).toString();
+    m_activeProjectId = SettingsRepository::value(QStringLiteral("projects/activeId"),
+        SettingsSchema::defaultValue(QStringLiteral("projects/activeId"))).toString();
+    m_readDenyList = SettingsRepository::value(QStringLiteral("security/readDenyList"),
+        SettingsSchema::defaultValue(QStringLiteral("security/readDenyList"))).toList();
 }
 
 // Single-provider layout (pre-0.3): provider, apiKey, <provider>/baseUrl,
 // <provider>/model -> one profile per provider that carried configuration.
 QVariantList SettingsService::migrateLegacy() {
-    QSettings settings;
-
     const QString legacyProvider = [&]() {
-        const QString p = settings.value("provider", "openai").toString();
+        const QString p = SettingsRepository::value("provider", "openai").toString();
         return LlmProtocolRegistry::isKnownProvider(p) ? p : QStringLiteral("openai");
     }();
-    const QString legacyKey = unprotectApiKey(settings.value("apiKey").toString());
+    const QString legacyKey = unprotectApiKey(SettingsRepository::value("apiKey").toString());
 
     QVariantList out;
     for (const QString& provider : LlmProtocolRegistry::providers()) {
         const bool isActiveProvider = (provider == legacyProvider);
-        const bool hasScopedValues = settings.contains(provider + "/baseUrl");
+        const bool hasScopedValues = SettingsRepository::contains(provider + "/baseUrl");
         if (!isActiveProvider && !hasScopedValues) continue;
 
         const LlmProtocolDescriptor* defaults = defaultsForProvider(provider);
         out.append(makeProfile(
             provider,
             providerDisplayName(provider),
-            settings.value(provider + "/baseUrl", defaults->defaultBaseUrl).toString(),
-            settings.value(provider + "/model", QString()).toString(),
+            SettingsRepository::value(provider + "/baseUrl", defaults->defaultBaseUrl).toString(),
+            SettingsRepository::value(provider + "/model", QString()).toString(),
             defaults->local ? QString() : legacyKey));
     }
     if (out.isEmpty()) {
@@ -379,20 +439,31 @@ QVariantList SettingsService::migrateLegacy() {
     return out;
 }
 
-void SettingsService::persist() {
+bool SettingsService::persist() {
     QJsonArray arr;
     for (const QVariant& entry : m_profiles) {
         QVariantMap p = entry.toMap();
-        p["apiKey"] = protectApiKey(p.value("apiKey").toString());
+        const QString apiKey = p.value("apiKey").toString();
+        const QString protectedKey = protectApiKey(apiKey);
+        if (!apiKey.isEmpty() && protectedKey.isEmpty()) {
+            emit persistenceError(tr("API 密钥加密失败，模型配置未保存。"));
+            return false;
+        }
+        p["apiKey"] = protectedKey;
         arr.append(QJsonObject::fromVariantMap(p));
     }
-    QSettings settings;
-    settings.setValue(kProfilesKey,
-                      QString::fromUtf8(QJsonDocument(arr).toJson(QJsonDocument::Compact)));
-    settings.setValue(kActiveKey, m_activeId);
-    settings.sync();
-    if (settings.status() != QSettings::NoError)
-        qCWarning(lcSettings) << "Failed to persist model profiles";
+
+    const QVariantMap entries = {
+        {QString::fromLatin1(kProfilesKey),
+         QString::fromUtf8(QJsonDocument(arr).toJson(QJsonDocument::Compact))},
+        {QString::fromLatin1(kActiveKey), m_activeId}
+    };
+    QString error;
+    if (SettingsRepository::writeBatch(entries, &error)) return true;
+
+    qCWarning(lcSettings) << "Failed to persist model profiles:" << error;
+    emit persistenceError(tr("模型配置未能保存。请检查设置存储权限或磁盘空间后重试。"));
+    return false;
 }
 
 QString SettingsService::addProfile(const QString& kind) {
@@ -407,12 +478,18 @@ QString SettingsService::addProfile(const QString& kind) {
             defaults->defaultBaseUrl, QString(), QString());
     }
 
+    const QVariantList previousProfiles = m_profiles;
+    const QString previousActiveId = m_activeId;
     const QString id = profile.value("id").toString();
     m_profiles.append(profile);
     if (m_profiles.size() == 1)
         m_activeId = id;
 
-    persist();
+    if (!persist()) {
+        m_profiles = previousProfiles;
+        m_activeId = previousActiveId;
+        return {};
+    }
     emit profilesChanged();
     if (m_activeId == id)
         emit activeProfileChanged();
@@ -495,9 +572,12 @@ void SettingsService::updateProfile(const QString& id, const QVariantMap& fields
                 p["models"] = models;
             }
         }
+        const QVariantList previousProfiles = m_profiles;
         m_profiles[i] = p;
-
-        persist();
+        if (!persist()) {
+            m_profiles = previousProfiles;
+            return;
+        }
         emit profilesChanged();
         if (id == m_activeId)
             emit activeProfileChanged();
@@ -509,12 +589,18 @@ void SettingsService::removeProfile(const QString& id) {
     for (int i = 0; i < m_profiles.size(); ++i) {
         if (m_profiles.at(i).toMap().value("id").toString() != id) continue;
 
+        const QVariantList previousProfiles = m_profiles;
+        const QString previousActiveId = m_activeId;
         m_profiles.removeAt(i);
         if (m_activeId == id) {
             m_activeId = m_profiles.isEmpty()
                 ? QString() : m_profiles.first().toMap().value("id").toString();
         }
-        persist();
+        if (!persist()) {
+            m_profiles = previousProfiles;
+            m_activeId = previousActiveId;
+            return;
+        }
         emit profilesChanged();
         emit activeProfileChanged();
         return;
@@ -529,8 +615,12 @@ void SettingsService::setActiveProfile(const QString& id) {
     }
     if (!found) return;
 
+    const QString previousActiveId = m_activeId;
     m_activeId = id;
-    persist();
+    if (!persist()) {
+        m_activeId = previousActiveId;
+        return;
+    }
     emit activeProfileChanged();
 }
 
@@ -550,9 +640,12 @@ void SettingsService::selectModelForProfile(const QString& id, const QString& mo
             models.prepend(model);
             p["models"] = models;
         }
+        const QVariantList previousProfiles = m_profiles;
         m_profiles[i] = p;
-
-        persist();
+        if (!persist()) {
+            m_profiles = previousProfiles;
+            return;
+        }
         emit profilesChanged();
         if (targetId == m_activeId) {
             emit activeProfileChanged();
@@ -579,9 +672,12 @@ void SettingsService::addModelToProfile(const QString& id, const QString& model)
             // 这是用户自己敲进来的值，不是厂商预设。
             if (p.value("model").toString().isEmpty())
                 p["model"] = trimmedModel;
+            const QVariantList previousProfiles = m_profiles;
             m_profiles[i] = p;
-
-            persist();
+            if (!persist()) {
+                m_profiles = previousProfiles;
+                return;
+            }
             emit profilesChanged();
             if (targetId == m_activeId) {
                 emit activeProfileChanged();
@@ -609,9 +705,12 @@ void SettingsService::removeModelFromProfile(const QString& id, const QString& m
                 p["model"] = models.isEmpty() ? QString() : models.first();
             }
 
+            const QVariantList previousProfiles = m_profiles;
             m_profiles[i] = p;
-
-            persist();
+            if (!persist()) {
+                m_profiles = previousProfiles;
+                return;
+            }
             emit profilesChanged();
             if (targetId == m_activeId) {
                 emit activeProfileChanged();
@@ -628,50 +727,50 @@ QString SettingsService::providerDisplayName(const QString& provider) const {
 }
 
 void SettingsService::setContextTokens(int tokens) {
-    const int clamped = qBound(AIAgent::MinContextTokens, tokens, AIAgent::MaxContextTokens);
-    if (m_contextTokens == clamped) return;
+    const int clamped = SettingsSchema::clampInt(QStringLiteral("contextTokens"), tokens);
+    if (m_contextTokens == clamped || !persistValue(QStringLiteral("contextTokens"), clamped))
+        return;
     m_contextTokens = clamped;
-    QSettings().setValue("contextTokens", m_contextTokens);
     emit contextTokensChanged();
 }
 
 // 步数预算：即时保存；生效路径在 main.cpp（maxStepsChanged → applySettings
 // 把值推给模板 agent 与各标签 agent）。
 void SettingsService::setMaxSteps(int steps) {
-    const int clamped = qBound(AIAgent::kMinMaxIterations, steps,
-                               AIAgent::kIterationCeiling);
-    if (m_maxSteps == clamped) return;
+    const int clamped = SettingsSchema::clampInt(QStringLiteral("agent/maxSteps"), steps);
+    if (m_maxSteps == clamped
+            || !persistValue(QStringLiteral("agent/maxSteps"), clamped)) return;
     m_maxSteps = clamped;
-    QSettings().setValue("agent/maxSteps", m_maxSteps);
     emit maxStepsChanged();
 }
 
 void SettingsService::setTaskTimeoutMinutes(int minutes) {
-    const int clamped = qBound(1, minutes, 60);
-    if (m_taskTimeoutMinutes == clamped) return;
+    const int clamped = SettingsSchema::clampInt(
+        QStringLiteral("agent/taskTimeoutMinutes"), minutes);
+    if (m_taskTimeoutMinutes == clamped
+            || !persistValue(QStringLiteral("agent/taskTimeoutMinutes"), clamped)) return;
     m_taskTimeoutMinutes = clamped;
-    QSettings().setValue("agent/taskTimeoutMinutes", clamped);
     emit taskTimeoutMinutesChanged();
 }
 
 
 void SettingsService::setAllowFullDiskRead(bool enabled) {
-    if (m_allowFullDiskRead == enabled) return;
+    if (m_allowFullDiskRead == enabled
+            || !persistValue(QStringLiteral("security/allowFullDiskRead"), enabled)) return;
     m_allowFullDiskRead = enabled;
     Activity::usage(Activity::Kind::User, QStringLiteral("settings.allowFullDiskRead"),
                     enabled ? QStringLiteral("on") : QStringLiteral("off"));
-    QSettings().setValue("security/allowFullDiskRead", enabled);
     emit allowFullDiskReadChanged();
 }
 
 // docs/17 P1-4: 项目目录写入放行。即时生效路径在 main.cpp（applySettings
 // 订阅 allowProjectWriteChanged → Sandbox::setProjectWriteEnabled）。
 void SettingsService::setAllowProjectWrite(bool enabled) {
-    if (m_allowProjectWrite == enabled) return;
+    if (m_allowProjectWrite == enabled
+            || !persistValue(QStringLiteral("security/allowProjectWrite"), enabled)) return;
     m_allowProjectWrite = enabled;
     Activity::usage(Activity::Kind::User, QStringLiteral("settings.allowProjectWrite"),
                     enabled ? QStringLiteral("on") : QStringLiteral("off"));
-    QSettings().setValue("security/allowProjectWrite", enabled);
     emit allowProjectWriteChanged();
 }
 
@@ -679,11 +778,11 @@ void SettingsService::setAllowProjectWrite(bool enabled) {
 // The actual tool gating lives in main.cpp (applyLocalOnlyGate), wired to
 // localOnlyModeChanged for immediate effect.
 void SettingsService::setLocalOnlyMode(bool enabled) {
-    if (m_localOnlyMode == enabled) return;
+    if (m_localOnlyMode == enabled
+            || !persistValue(QStringLiteral("security/localOnlyMode"), enabled)) return;
     m_localOnlyMode = enabled;
     Activity::usage(Activity::Kind::User, QStringLiteral("settings.localOnlyMode"),
                     enabled ? QStringLiteral("on") : QStringLiteral("off"));
-    QSettings().setValue("security/localOnlyMode", enabled);
     emit localOnlyModeChanged();
 }
 
@@ -691,21 +790,21 @@ void SettingsService::setLocalOnlyMode(bool enabled) {
 // pattern as allowFullDiskRead. Consumed via main.cpp applySettings →
 // NetworkFetchTool::setAllowPrivateTargets.
 void SettingsService::setAllowLocalNetworkFetch(bool enabled) {
-    if (m_allowLocalNetworkFetch == enabled) return;
+    if (m_allowLocalNetworkFetch == enabled
+            || !persistValue(QStringLiteral("security/allowLocalNetworkFetch"), enabled)) return;
     m_allowLocalNetworkFetch = enabled;
     Activity::usage(Activity::Kind::User, QStringLiteral("settings.allowLocalNetworkFetch"),
                     enabled ? QStringLiteral("on") : QStringLiteral("off"));
-    QSettings().setValue("security/allowLocalNetworkFetch", enabled);
     emit allowLocalNetworkFetchChanged();
 }
 
 void SettingsService::setEmbeddingModel(const QString& model) {
     const QString trimmed = model.trimmed();
-    if (trimmed.isEmpty() || m_embeddingModel == trimmed) return;
+    if (trimmed.isEmpty() || m_embeddingModel == trimmed
+            || !persistValue(QStringLiteral("embedding/model"), trimmed)) return;
     m_embeddingModel = trimmed;
     Activity::usage(Activity::Kind::User, QStringLiteral("settings.embeddingModel"),
                     trimmed);
-    QSettings().setValue("embedding/model", trimmed);
     emit embeddingModelChanged();
 }
 
@@ -713,11 +812,11 @@ void SettingsService::setEmbeddingModel(const QString& model) {
 // the model only, so a change here never triggers a re-embed.
 void SettingsService::setEmbeddingBaseUrl(const QString& url) {
     const QString trimmed = url.trimmed();
-    if (trimmed.isEmpty() || m_embeddingBaseUrl == trimmed) return;
+    if (trimmed.isEmpty() || m_embeddingBaseUrl == trimmed
+            || !persistValue(QStringLiteral("embedding/baseUrl"), trimmed)) return;
     m_embeddingBaseUrl = trimmed;
     Activity::usage(Activity::Kind::User, QStringLiteral("settings.embeddingBaseUrl"),
                     trimmed);
-    QSettings().setValue("embedding/baseUrl", trimmed);
     emit embeddingBaseUrlChanged();
 }
 
@@ -725,24 +824,22 @@ void SettingsService::setEmbeddingBaseUrl(const QString& url) {
 // prompt - unlike embeddingModel, empty is a meaningful value here.
 void SettingsService::setSystemPromptOverride(const QString& prompt) {
     const QString trimmed = prompt.trimmed();
-    if (m_systemPromptOverride == trimmed) return;
+    if (m_systemPromptOverride == trimmed
+            || !persistValue(QStringLiteral("agent/systemPromptOverride"), trimmed)) return;
     m_systemPromptOverride = trimmed;
     Activity::usage(Activity::Kind::User, QStringLiteral("settings.systemPromptOverride"),
                     trimmed.isEmpty() ? QStringLiteral("(cleared)")
                                       : QStringLiteral("%1 chars").arg(trimmed.size()));
-    QSettings().setValue("agent/systemPromptOverride", trimmed);
     emit systemPromptOverrideChanged();
 }
 
 void SettingsService::setLogLevel(const QString& level) {
     const QString normalized = level.trimmed().toLower();
-    if (normalized != QLatin1String("debug") && normalized != QLatin1String("info")
-            && normalized != QLatin1String("warning")
-            && normalized != QLatin1String("critical"))
+    if (!SettingsSchema::options(QStringLiteral("logging/level")).contains(normalized))
         return;
-    if (m_logLevel == normalized) return;
+    if (m_logLevel == normalized
+            || !persistValue(QStringLiteral("logging/level"), normalized)) return;
     m_logLevel = normalized;
-    QSettings().setValue("logging/level", normalized);
     Logger::setMinLevel(Logger::levelFromName(normalized, Logger::minLevel()));
     emit logLevelChanged();
 }
@@ -756,27 +853,27 @@ void SettingsService::setLogDirectory(const QString& directory) {
     if (normalized.startsWith(QLatin1String("file://")))
         normalized = QUrl(normalized).toLocalFile();
     if (!normalized.isEmpty()) normalized = QDir::cleanPath(normalized);
-    if (m_logDirectory == normalized) return;
+    if (m_logDirectory == normalized
+            || !persistValue(QStringLiteral("logging/directory"), normalized)) return;
     m_logDirectory = normalized;
-    QSettings().setValue("logging/directory", normalized);
     Logger::setLogDirectory(normalized);
     emit logDirectoryChanged();
 }
 
 void SettingsService::setLogMaxFileSizeMb(int sizeMb) {
-    const int clamped = qBound(1, sizeMb, 1024);
-    if (m_logMaxFileSizeMb == clamped) return;
+    const int clamped = SettingsSchema::clampInt(QStringLiteral("logging/maxFileSizeMb"), sizeMb);
+    if (m_logMaxFileSizeMb == clamped
+            || !persistValue(QStringLiteral("logging/maxFileSizeMb"), clamped)) return;
     m_logMaxFileSizeMb = clamped;
-    QSettings().setValue("logging/maxFileSizeMb", clamped);
     Logger::setMaxFileSizeMb(clamped);
     emit logMaxFileSizeMbChanged();
 }
 
 void SettingsService::setLogRetentionFiles(int count) {
-    const int clamped = qBound(1, count, 100);
-    if (m_logRetentionFiles == clamped) return;
+    const int clamped = SettingsSchema::clampInt(QStringLiteral("logging/retentionFiles"), count);
+    if (m_logRetentionFiles == clamped
+            || !persistValue(QStringLiteral("logging/retentionFiles"), clamped)) return;
     m_logRetentionFiles = clamped;
-    QSettings().setValue("logging/retentionFiles", clamped);
     Logger::setRetentionFiles(clamped);
     emit logRetentionFilesChanged();
 }
@@ -784,8 +881,7 @@ void SettingsService::setLogRetentionFiles(int count) {
 // L1: legal search provider keys for the settings UI. Kept in sync with the
 // backend factory (L4); searxng was enabled by docs/20 §5.3 (C3).
 QStringList SettingsService::webSearchProviders() const {
-    return {QStringLiteral("tavily"), QStringLiteral("duckduckgo"),
-            QStringLiteral("searxng")};
+    return SettingsSchema::options(QStringLiteral("webSearch/provider"));
 }
 
 // T6 (F3): search provider ("tavily" | …). Clamped to known providers.
@@ -800,8 +896,8 @@ void SettingsService::setWebSearchProvider(const QString& provider) {
         qWarning() << "Unknown web search provider:" << trimmed;
         return;
     }
+    if (!persistValue(QStringLiteral("webSearch/provider"), trimmed)) return;
     m_webSearchProvider = trimmed;
-    QSettings().setValue("webSearch/provider", trimmed);
     Activity::usage(Activity::Kind::User, QStringLiteral("settings.webSearchProvider"),
                     trimmed);
     emit webSearchProviderChanged();
@@ -811,10 +907,14 @@ void SettingsService::setWebSearchProvider(const QString& provider) {
 void SettingsService::setWebSearchApiKey(const QString& key) {
     const QString trimmed = key.trimmed();
     if (m_webSearchApiKey == trimmed) return;
-    m_webSearchApiKey = trimmed;
     // REQ-T6-05: encrypt on persistence; never log the key.
     const QString stored = protectApiKey(trimmed);
-    QSettings().setValue("webSearch/apiKey", stored.isEmpty() ? QString() : stored);
+    if (!trimmed.isEmpty() && stored.isEmpty()) {
+        emit persistenceError(tr("搜索 API 密钥加密失败，未保存更改。"));
+        return;
+    }
+    if (!persistValue(QStringLiteral("webSearch/apiKey"), stored)) return;
+    m_webSearchApiKey = trimmed;
     Activity::usage(Activity::Kind::User, QStringLiteral("settings.webSearchApiKey"),
                     trimmed.isEmpty() ? QStringLiteral("(cleared)") : QStringLiteral("(set)"));
     emit webSearchApiKeyChanged();
@@ -825,9 +925,9 @@ void SettingsService::setWebSearchApiKey(const QString& key) {
 // not secret, so the usage event records it as-is.
 void SettingsService::setWebSearchSearxBaseUrl(const QString& url) {
     const QString trimmed = url.trimmed();
-    if (m_webSearchSearxBaseUrl == trimmed) return;
+    if (m_webSearchSearxBaseUrl == trimmed
+            || !persistValue(QStringLiteral("webSearch/searxBaseUrl"), trimmed)) return;
     m_webSearchSearxBaseUrl = trimmed;
-    QSettings().setValue("webSearch/searxBaseUrl", trimmed);
     Activity::usage(Activity::Kind::User, QStringLiteral("settings.webSearchSearxBaseUrl"),
                     trimmed.isEmpty() ? QStringLiteral("(cleared)") : trimmed);
     emit webSearchSearxBaseUrlChanged();
@@ -835,11 +935,11 @@ void SettingsService::setWebSearchSearxBaseUrl(const QString& url) {
 
 // T8 (F4): episodic memory toggle - same 5-step pattern as localOnlyMode.
 void SettingsService::setEpisodicMemoryEnabled(bool enabled) {
-    if (m_episodicMemoryEnabled == enabled) return;
+    if (m_episodicMemoryEnabled == enabled
+            || !persistValue(QStringLiteral("memory/episodicMemoryEnabled"), enabled)) return;
     m_episodicMemoryEnabled = enabled;
     Activity::usage(Activity::Kind::User, QStringLiteral("settings.episodicMemoryEnabled"),
                     enabled ? QStringLiteral("on") : QStringLiteral("off"));
-    QSettings().setValue("memory/episodicMemoryEnabled", enabled);
     emit episodicMemoryEnabledChanged();
 }
 
@@ -847,83 +947,79 @@ void SettingsService::setEpisodicMemoryEnabled(bool enabled) {
 // same 4-step pattern as setContextTokens. Flat QSettings keys
 // match the SettingsSchema registration (no prefix).
 void SettingsService::setDailyTokenQuota(int v) {
-    const int clamped = qMax(0, v);
-    if (m_dailyTokenQuota == clamped) return;
+    const int clamped = SettingsSchema::clampInt(QStringLiteral("dailyTokenQuota"), v);
+    if (m_dailyTokenQuota == clamped
+            || !persistValue(QStringLiteral("dailyTokenQuota"), clamped)) return;
     m_dailyTokenQuota = clamped;
-    QSettings().setValue("dailyTokenQuota", m_dailyTokenQuota);
     emit dailyTokenQuotaChanged();
 }
 
 void SettingsService::setDailyCostQuotaCents(int v) {
-    const int clamped = qMax(0, v);
-    if (m_dailyCostQuotaCents == clamped) return;
+    const int clamped = SettingsSchema::clampInt(QStringLiteral("dailyCostQuotaCents"), v);
+    if (m_dailyCostQuotaCents == clamped
+            || !persistValue(QStringLiteral("dailyCostQuotaCents"), clamped)) return;
     m_dailyCostQuotaCents = clamped;
-    QSettings().setValue("dailyCostQuotaCents", m_dailyCostQuotaCents);
     emit dailyCostQuotaCentsChanged();
 }
 
 void SettingsService::setMonthlyTokenQuota(int v) {
-    const int clamped = qMax(0, v);
-    if (m_monthlyTokenQuota == clamped) return;
+    const int clamped = SettingsSchema::clampInt(QStringLiteral("monthlyTokenQuota"), v);
+    if (m_monthlyTokenQuota == clamped
+            || !persistValue(QStringLiteral("monthlyTokenQuota"), clamped)) return;
     m_monthlyTokenQuota = clamped;
-    QSettings().setValue("monthlyTokenQuota", m_monthlyTokenQuota);
     emit monthlyTokenQuotaChanged();
 }
 
 void SettingsService::setMonthlyCostQuotaCents(int v) {
-    const int clamped = qMax(0, v);
-    if (m_monthlyCostQuotaCents == clamped) return;
+    const int clamped = SettingsSchema::clampInt(QStringLiteral("monthlyCostQuotaCents"), v);
+    if (m_monthlyCostQuotaCents == clamped
+            || !persistValue(QStringLiteral("monthlyCostQuotaCents"), clamped)) return;
     m_monthlyCostQuotaCents = clamped;
-    QSettings().setValue("monthlyCostQuotaCents", m_monthlyCostQuotaCents);
     emit monthlyCostQuotaCentsChanged();
 }
 
 void SettingsService::setStrictQuotaMode(bool v) {
-    if (m_strictQuotaMode == v) return;
+    if (m_strictQuotaMode == v
+            || !persistValue(QStringLiteral("strictQuotaMode"), v)) return;
     m_strictQuotaMode = v;
-    QSettings().setValue("strictQuotaMode", v);
     emit strictQuotaModeChanged();
 }
 
 void SettingsService::setReadDenyList(const QVariantList& v) {
-    if (m_readDenyList == v) return;
+    if (m_readDenyList == v
+            || !persistValue(QStringLiteral("security/readDenyList"), v)) return;
     m_readDenyList = v;
-    QSettings().setValue("security/readDenyList", v);
     emit readDenyListChanged();
 }
 
 void SettingsService::setActiveProjectId(const QString& id) {
-    if (m_activeProjectId == id) return;
+    if (m_activeProjectId == id
+            || !persistValue(QStringLiteral("projects/activeId"), id)) return;
     m_activeProjectId = id;
-    QSettings().setValue("projects/activeId", id);
     emit activeProjectIdChanged();
 }
 
 void SettingsService::resetGeneralToDefaults() {
-    // SettingsService 管理的本页设置键与 SettingsSchema 保持一致
-    //（test_settings::resetGeneralDefaultsMatchesSchema 锁定）；偏好项由页面层复位。
-    // docs/17 A6: 安全三键（allowFullDiskRead/localOnlyMode/
-    // allowLocalNetworkFetch）已迁往"安全"页，不在本页重置范围内。
-    // 上下文 Tokens 已迁"模型配置"页（按 profile 管理），不在此复位。
-    setMaxSteps(AIAgent::kDefaultMaxIterations);
-    setTaskTimeoutMinutes(AIAgent::kDefaultTaskTimeoutMs / 60000);
-    setLogLevel(QStringLiteral("info"));
-    setLogDirectory(QString());
-    setLogMaxFileSizeMb(10);
-    setLogRetentionFiles(14);
-    setEmbeddingModel(QStringLiteral("nomic-embed-text"));
-    setEmbeddingBaseUrl(QStringLiteral("http://localhost:11434"));
-    setSystemPromptOverride(QString());
+    // Preference items are reset by their page through PreferenceRegistry.
+    setMaxSteps(SettingsSchema::defaultValue(QStringLiteral("agent/maxSteps")).toInt());
+    setTaskTimeoutMinutes(SettingsSchema::defaultValue(
+        QStringLiteral("agent/taskTimeoutMinutes")).toInt());
+    setLogLevel(SettingsSchema::defaultValue(QStringLiteral("logging/level")).toString());
+    setLogDirectory(SettingsSchema::defaultValue(QStringLiteral("logging/directory")).toString());
+    setLogMaxFileSizeMb(SettingsSchema::defaultValue(QStringLiteral("logging/maxFileSizeMb")).toInt());
+    setLogRetentionFiles(SettingsSchema::defaultValue(QStringLiteral("logging/retentionFiles")).toInt());
+    setEmbeddingModel(SettingsSchema::defaultValue(QStringLiteral("embedding/model")).toString());
+    setEmbeddingBaseUrl(SettingsSchema::defaultValue(QStringLiteral("embedding/baseUrl")).toString());
+    setSystemPromptOverride(SettingsSchema::defaultValue(
+        QStringLiteral("agent/systemPromptOverride")).toString());
 }
 
 void SettingsService::setDefaultPermissionMode(const QString& v) {
-    // 只接受 PermissionMode 的三种字符串形式；未知值回落 confirm。
-    if (v != QLatin1String("confirm") && v != QLatin1String("auto_edit")
-            && v != QLatin1String("full_access"))
+    if (!SettingsSchema::options(QStringLiteral("agent/defaultPermissionMode")).contains(v))
         return;
-    if (m_defaultPermissionMode == v) return;
+    if (m_defaultPermissionMode == v
+            || !persistValue(QStringLiteral("agent/defaultPermissionMode"), v)) return;
     m_defaultPermissionMode = v;
-    QSettings().setValue("agent/defaultPermissionMode", v);
     emit defaultPermissionModeChanged();
 }
 
@@ -999,6 +1095,7 @@ void SettingsService::setAutoStart(bool enabled) {
         : RegistryAutoStart().setEnabled(enabled, QCoreApplication::applicationFilePath());
     if (!ok) {
         qCWarning(lcSettings) << "autoStart: registry write failed for" << enabled;
+        emit persistenceError(tr("无法更新 Windows 开机自启动设置。"));
         return;
     }
     emit autoStartChanged();

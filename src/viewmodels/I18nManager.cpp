@@ -1,5 +1,4 @@
 #include "I18nManager.h"
-#include "PreferenceRegistry.h"
 #include "PreferenceStore.h"
 #include "ChangeBus.h"
 #include "LocaleProbe.h"
@@ -26,29 +25,10 @@ I18nManager* I18nManager::create(QQmlEngine*, QJSEngine*) {
 
 I18nManager::I18nManager(QObject* parent)
     : QObject(parent) {
-    registerPreference();
     m_currentLocale = detectInitialLocale();
     subscribeChanges();
 }
 
-void I18nManager::registerPreference() {
-    auto* reg = PreferenceRegistry::instance();
-    if (!reg) return;
-
-    PreferenceMeta meta;
-    meta.key = QStringLiteral("ui.locale");
-    meta.categoryId = QStringLiteral("interface");
-    meta.displayName = QT_TRANSLATE_NOOP("NexusAI", "界面语言");
-    // Empty/"auto" means "follow the system locale" - detectInitialLocale()
-    // resolves it once; persistence happens in the UI save flow (the change
-    // bus applies explicit choices back through applyLocale()).
-    meta.defaultValue = QString();
-    meta.type = PreferenceType::Enum;
-    meta.constraint.options = { QStringLiteral("auto"),
-                                QStringLiteral("zh-CN"),
-                                QStringLiteral("en") };
-    reg->registerPreference(meta);
-}
 
 QString I18nManager::detectInitialLocale() const {
     auto* store = PreferenceStore::instance();

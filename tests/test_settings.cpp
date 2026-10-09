@@ -1,7 +1,7 @@
 // SettingsService multi-model profiles, defaults completion, model switching,
 // addition, removal and persistence coverage.
 #include "viewmodels/SettingsService.h"
-#include "viewmodels/SettingsSchema.h"
+#include "core/utils/SettingsSchema.h"
 #include "viewmodels/ThemeManager.h"
 #include "core/tools/ToolRegistry.h"
 
@@ -11,6 +11,7 @@
 
 #include <QtTest>
 #include <QSet>
+#include <QHash>
 #include <QGuiApplication>
 #include <QJsonArray>
 #include <QJsonDocument>
@@ -26,6 +27,7 @@
 #include <QStandardPaths>
 #include "viewmodels/PreferenceStore.h"
 #include "viewmodels/PreferenceRegistry.h"
+#include "core/utils/SettingsRepository.h"
 
 #include <memory>
 
@@ -729,13 +731,25 @@ private slots:
         for (const auto& k : keys) registered.insert(k.key);
 
         const QStringList expected = {
-            // M3: ToolRegistry 用户禁用清单
-            "tools/disabled",
-            // 迁移钩子（load() 写入，无静态默认）
-            "schemaVersion",
-            // M4: 运行时布局（AgentViewModel 直写）
+            // SettingsService-owned values
+            "modelProfiles", "activeProfileId", "contextTokens",
+            "agent/maxSteps", "agent/taskTimeoutMinutes",
+            "security/allowFullDiskRead", "security/allowProjectWrite",
+            "security/localOnlyMode", "security/allowLocalNetworkFetch",
+            "security/readDenyList", "projects/activeId",
+            "embedding/model", "embedding/baseUrl", "agent/systemPromptOverride",
+            "logging/level", "logging/directory", "logging/maxFileSizeMb",
+            "logging/retentionFiles", "webSearch/provider", "webSearch/apiKey",
+            "webSearch/searxBaseUrl", "memory/episodicMemoryEnabled",
+            "dailyTokenQuota", "dailyCostQuotaCents", "monthlyTokenQuota",
+            "monthlyCostQuotaCents", "strictQuotaMode", "agent/defaultPermissionMode",
+            // ToolRegistry and schema migration
+            "tools/disabled", "schemaVersion", "theme/dark",
+            // AgentViewModel runtime layout
             "ui/sidebarWidth", "ui/panelWidth",
             "ui/panelVisible", "ui/sidebarExpanded",
+            "ui/windowX", "ui/windowY", "ui/windowWidth", "ui/windowHeight",
+            "ui/windowMaximized",
             // M2: PreferenceStore 物理键（prefs/v1/<key>）
             "prefs/v1/ui.themeMode", "prefs/v1/ui.fontSans",
             "prefs/v1/ui.fontMono", "prefs/v1/ui.baseFontSize",
@@ -748,14 +762,83 @@ private slots:
             "prefs/v1/notice.enabled",
             // M2 内部键：PreferenceStore 写入的物理路径
             "prefs/v1/settings.lastCategory",
+            // Legacy dark-mode migration key remains in the catalog.
+            "theme/dark",
             // docs/17 A0/A1
             "projects/activeId",
             "security/readDenyList",
         };
+        QSet<QString> expectedSet;
         for (const QString& key : expected) {
+            expectedSet.insert(key);
             QVERIFY2(registered.contains(key), qPrintable(
                 QStringLiteral("settings key not in schema ledger: %1").arg(key)));
         }
+        QVERIFY2(registered == expectedSet,
+                 "schema ledger has keys missing from the audited key list");
+    }
+
+    void preferenceAndStorageMetadataShareOneSchema() {
+        const auto* registry = PreferenceRegistry::instance();
+        QVERIFY(registry);
+        QCOMPARE(registry->categories().size(), SettingsSchema::categories().size());
+
+        auto storageType = [](PreferenceType type) {
+            switch (type) {
+            case PreferenceType::Bool: return SettingValueType::Bool;
+            case PreferenceType::Int: return SettingValueType::Int;
+            case PreferenceType::Enum:
+            case PreferenceType::String: return SettingValueType::String;
+            }
+            return SettingValueType::Any;
+        };
+        for (const PreferenceMeta& preference : SettingsSchema::preferences()) {
+            const PreferenceMeta* registered = registry->meta(preference.key);
+            QVERIFY2(registered, qPrintable(QStringLiteral("unregistered preference: %1")
+                                                .arg(preference.key)));
+            QCOMPARE(registered->categoryId, preference.categoryId);
+            QCOMPARE(registered->displayName, preference.displayName);
+            QCOMPARE(registered->type, preference.type);
+            QCOMPARE(registered->constraint.options, preference.constraint.options);
+            QCOMPARE(registered->constraint.min, preference.constraint.min);
+            QCOMPARE(registered->constraint.max, preference.constraint.max);
+            QCOMPARE(registered->constraint.hasRange, preference.constraint.hasRange);
+
+            const SettingsKeyDef* persisted = SettingsSchema::definition(
+                QStringLiteral("prefs/v1/") + preference.key);
+            QVERIFY(persisted);
+            QCOMPARE(persisted->type, storageType(preference.type));
+            if (preference.defaultValue.isValid())
+                QCOMPARE(persisted->defaultValue, preference.defaultValue);
+        }
+
+        QSet<QString> uniqueKeys;
+        for (const SettingsKeyDef& definition : SettingsSchema::registeredKeys()) {
+            QVERIFY2(!uniqueKeys.contains(definition.key), qPrintable(
+                QStringLiteral("duplicate settings key: %1").arg(definition.key)));
+            uniqueKeys.insert(definition.key);
+        }
+        QCOMPARE(SettingsSchema::clampInt(QStringLiteral("prefs/v1/ui.baseFontSize"), 100), 24);
+        QCOMPARE(SettingsSchema::defaultValue(QStringLiteral("logging/maxFileSizeMb")).toInt(),
+                 SettingsSchema::kDefaultLogMaxFileSizeMb);
+        QCOMPARE(SettingsSchema::defaultValue(QStringLiteral("logging/retentionFiles")).toInt(),
+                 SettingsSchema::kDefaultLogRetentionFiles);
+        QCOMPARE(SettingsSchema::clampInt(QStringLiteral("logging/maxFileSizeMb"), 0), 1);
+        QVERIFY(SettingsSchema::isValidValue(QStringLiteral("logging/maxFileSizeMb"), 10));
+        QVERIFY(!SettingsSchema::isValidValue(QStringLiteral("logging/maxFileSizeMb"),
+                                              QStringLiteral("10")));
+        QVERIFY(!SettingsSchema::isValidValue(QStringLiteral("logging/maxFileSizeMb"), 10.5));
+        QVERIFY(!SettingsSchema::isValidValue(QStringLiteral("logging/maxFileSizeMb"), 0));
+        QVERIFY(SettingsSchema::isValidValue(QStringLiteral("prefs/v1/ui.locale"), QString()));
+        QVERIFY(!SettingsSchema::isValidValue(QStringLiteral("prefs/v1/ui.locale"),
+                                              QStringLiteral("fr")));
+        QString validationError;
+        QVERIFY(!SettingsRepository::writeValue(QStringLiteral("logging/maxFileSizeMb"),
+                                                 QStringLiteral("10"), &validationError));
+        QVERIFY(!validationError.isEmpty());
+        QCOMPARE(SettingsSchema::options(QStringLiteral("webSearch/provider")),
+                 QStringList({QStringLiteral("tavily"), QStringLiteral("duckduckgo"),
+                              QStringLiteral("searxng")}));
     }
 
     void modelSelectionAndSignals() {
@@ -1244,6 +1327,7 @@ ComboBox {
 
         QCOMPARE(svc.autoStart(), false);
         QSignalSpy spy(&svc, &SettingsService::autoStartChanged);
+        QSignalSpy persistenceErrorSpy(&svc, &SettingsService::persistenceError);
 
         svc.setAutoStart(true);
         QCOMPARE(svc.autoStart(), true);
@@ -1266,42 +1350,103 @@ ComboBox {
         svc.setAutoStart(true);
         QCOMPARE(svc.autoStart(), false);
         QCOMPARE(spy.count(), 0);
+        QCOMPARE(persistenceErrorSpy.count(), 1);
         backend.fail = false;
         svc.setAutoStartBackend(nullptr);   // 还原默认 backend
     }
 
-    // docs/20 §4.1（B1）：closeToTray 偏好键经 PreferenceStore 走 Bool 归一
-    // （QSettings 的 REG_SZ "true"/"false" 必须还原成真正的 bool）。
-    void closeToTrayPreferenceRoundTrips() {
-        // SettingsGuard 只保护固定键清单，不含新的 prefs/v1/* 键——这里
-        // 自行清理（前后各一次），避免把测试值泄漏进用户真实配置。
-        QSettings s("NexusAI", "NexusAI");
-        s.remove("prefs/v1/window.closeToTray");
-        s.sync();
+    void settingsRepositoryUsesSharedApplicationStore() {
+        const QStringList keys = {
+            QStringLiteral("test/settingsRepository/first"),
+            QStringLiteral("test/settingsRepository/second")};
+        struct KeyGuard {
+            QStringList keys;
+            QHash<QString, QVariant> values;
+            QSet<QString> existing;
+            explicit KeyGuard(const QStringList& guardedKeys) : keys(guardedKeys) {
+                for (const QString& key : keys) {
+                    if (SettingsRepository::contains(key)) {
+                        existing.insert(key);
+                        values.insert(key, SettingsRepository::value(key));
+                    }
+                }
+            }
+            ~KeyGuard() {
+                for (const QString& key : keys) {
+                    if (existing.contains(key))
+                        SettingsRepository::writeValue(key, values.value(key));
+                    else
+                        SettingsRepository::removeBatch({key});
+                }
+            }
+        } guard(keys);
 
-        // PreferenceStore.load 依赖 PreferenceRegistry 的元数据（键在 main.cpp
-        // 注册），测试里补登同一份定义，与生产一致。
-        PreferenceMeta meta;
-        meta.key = QStringLiteral("window.closeToTray");
-        meta.categoryId = QStringLiteral("general");
-        meta.displayName = QT_TRANSLATE_NOOP("NexusAI", "关闭时最小化到系统托盘");
-        meta.defaultValue = false;
-        meta.type = PreferenceType::Bool;
-        PreferenceRegistry::instance()->registerPreference(meta);
+        QVERIFY(SettingsRepository::writeBatch({
+            {keys.at(0), QStringLiteral("one")}, {keys.at(1), 2}}));
+        QCOMPARE(SettingsRepository::value(keys.at(0)).toString(), QStringLiteral("one"));
+        QCOMPARE(SettingsRepository::value(keys.at(1)).toInt(), 2);
+        QVariantMap snapshot;
+        QStringList presentKeys;
+        QString error;
+        QVERIFY2(SettingsRepository::readBatch(keys, &snapshot, &presentKeys, &error),
+                 qPrintable(error));
+        QCOMPARE(snapshot.value(keys.at(0)).toString(), QStringLiteral("one"));
+        QCOMPARE(presentKeys.size(), 2);
+        QVERIFY(SettingsRepository::removeBatch(keys));
+        QVERIFY(!SettingsRepository::contains(keys.at(0)));
+        QVERIFY(!SettingsRepository::contains(keys.at(1)));
+    }
+
+    // PreferenceStore 写入及批量重置：同时锁定 bool 类型回读和测试数据隔离。
+    void closeToTrayPreferenceRoundTrips() {
+        struct KeyGuard {
+            QSettings settings{"NexusAI", "NexusAI"};
+            QStringList keys;
+            QHash<QString, QVariant> values;
+            QSet<QString> existing;
+
+            explicit KeyGuard(const QStringList& guardedKeys) : keys(guardedKeys) {
+                for (const QString& key : keys) {
+                    if (settings.contains(key)) {
+                        existing.insert(key);
+                        values.insert(key, settings.value(key));
+                    }
+                }
+            }
+            ~KeyGuard() {
+                for (const QString& key : keys) {
+                    if (existing.contains(key)) settings.setValue(key, values.value(key));
+                    else settings.remove(key);
+                }
+                settings.sync();
+            }
+        } guard({QStringLiteral("prefs/v1/window.closeToTray"),
+                 QStringLiteral("prefs/v1/notice.enabled")});
+
+        const QStringList keys = {
+            QStringLiteral("prefs/v1/window.closeToTray"),
+            QStringLiteral("prefs/v1/notice.enabled")};
+        for (const QString& key : keys) guard.settings.remove(key);
+        guard.settings.sync();
+
 
         PreferenceStore store(nullptr);
         QCOMPARE(store.load("window.closeToTray"), QVariant(false));
-
-        QVERIFY(store.save("window.closeToTray", true));
-        // 真值必须还原为 bool true（而不是字符串 "true"），否则 QML 的
-        // `=== true` 严格比较静默失败、关窗永远走退出分支。
-        QCOMPARE(store.load("window.closeToTray"), QVariant(true));
-
-        QVERIFY(store.reset("window.closeToTray"));
+        QVERIFY(!store.hasStoredValue("window.closeToTray"));
+        QVERIFY(!store.saveBatch({{QStringLiteral("window.closeToTray"), true},
+                                 {QStringLiteral("not.registered"), true}}));
         QCOMPARE(store.load("window.closeToTray"), QVariant(false));
+        QVERIFY(store.saveBatch({{QStringLiteral("window.closeToTray"), true},
+                                 {QStringLiteral("notice.enabled"), false}}));
+        QCOMPARE(store.load("window.closeToTray"), QVariant(true));
+        QCOMPARE(store.load("notice.enabled"), QVariant(false));
+        QVERIFY(store.hasStoredValue("window.closeToTray"));
 
-        s.remove("prefs/v1/window.closeToTray");
-        s.sync();
+        QVERIFY(store.resetBatch({QStringLiteral("window.closeToTray"),
+                                  QStringLiteral("notice.enabled")}));
+        QCOMPARE(store.load("window.closeToTray"), QVariant(false));
+        QCOMPARE(store.load("notice.enabled"), QVariant(true));
+        QVERIFY(!store.hasStoredValue("window.closeToTray"));
     }
 
     // v2 → v3/v4：contextTokens 旧默认值（8192、以及短暂存在过的 300000）归一

@@ -6,6 +6,7 @@
 
 #include <QDir>
 #include <QFile>
+#include <QFileInfo>
 #include <QJsonArray>
 #include <QJsonDocument>
 #include <QJsonObject>
@@ -25,7 +26,9 @@ private slots:
         QSettings::setDefaultFormat(QSettings::IniFormat);
         QSettings::setPath(QSettings::IniFormat, QSettings::UserScope, directory.path());
         QCoreApplication::setOrganizationName(QStringLiteral("NexusAIBackupTests"));
-        QCoreApplication::setApplicationName(QStringLiteral("NexusAIBackupTests"));
+        QCoreApplication::setApplicationName(
+            QStringLiteral("NexusAIBackupTests_%1")
+                .arg(QFileInfo(directory.path()).fileName()));
         QStandardPaths::setTestModeEnabled(true);
 
         const QString mcpPath = McpConfig::configFilePath();
@@ -37,7 +40,8 @@ private slots:
             previous = original.readAll();
         }
 
-        QSettings settings;
+        QSettings settings(QSettings::IniFormat, QSettings::UserScope,
+                           QStringLiteral("NexusAI"), QStringLiteral("NexusAI"));
         settings.setValue(QStringLiteral("schemaVersion"), 4);
         settings.setValue(QStringLiteral("embedding/model"), QStringLiteral("my-embed"));
         settings.setValue(QStringLiteral("security/allowFullDiskRead"), true);
@@ -53,6 +57,7 @@ private slots:
         settings.setValue(QStringLiteral("activeProfileId"), QStringLiteral("profile-1"));
         settings.sync();
         QCOMPARE(settings.status(), QSettings::NoError);
+
         QVERIFY(McpConfig::save({QVariantMap{
             {QStringLiteral("name"), QStringLiteral("example")},
             {QStringLiteral("transport"), QStringLiteral("stdio")},

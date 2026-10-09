@@ -40,6 +40,16 @@ Dialog {
         if (EditBuffer.dirty) EditBuffer.rollback()
     }
 
+    Connections {
+        target: PreferenceStore
+        function onPersistenceError(message) { dialog.settingsError(message) }
+    }
+
+    Connections {
+        target: Settings
+        function onPersistenceError(message) { dialog.settingsError(message) }
+    }
+
     contentItem: ColumnLayout {
         spacing: 0
 
@@ -117,6 +127,7 @@ Dialog {
                 }
 
                 Loader {
+                    id: generalPageLoader
                     anchors.fill: parent
                     active: dialog.currentCategory === "general"
                     visible: active
@@ -197,8 +208,9 @@ Dialog {
                         // Categories without registered preferences (e.g. 模型配置,
                         // which saves through SettingsService instead) have
                         // nothing this button could reset.
-                        visible: PreferenceRegistry.preferencesInCategory(
-                                     dialog.currentCategory).length > 0
+                        visible: dialog.currentCategory === "general"
+                                 || PreferenceRegistry.preferencesInCategory(
+                                        dialog.currentCategory).length > 0
                         onClicked: confirmResetDialog.open()
                     }
                     Item { Layout.fillWidth: true }
@@ -248,8 +260,13 @@ Dialog {
                     text: qsTr("恢复默认")
                     highlighted: true
                     onClicked: {
-                        EditBuffer.resetToDefault(
-                            PreferenceRegistry.preferencesInCategory(dialog.currentCategory))
+                        if (dialog.currentCategory === "general") {
+                            if (generalPageLoader.item)
+                                generalPageLoader.item.requestResetDefaults()
+                        } else {
+                            EditBuffer.resetToDefault(
+                                PreferenceRegistry.preferencesInCategory(dialog.currentCategory))
+                        }
                         confirmResetDialog.close()
                     }
                 }

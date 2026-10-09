@@ -26,23 +26,13 @@ EditBuffer::EditBuffer(QObject* parent)
 
 void EditBuffer::stage(const QString& key, const QVariant& value) {
     clearValidationError();
-    // Coerce to the declared preference type: QML numbers arrive as doubles
-    // while the store keeps ints, and QVariant equality is type-sensitive -
-    // without coercion, staging the stored value would never un-dirty.
-    QVariant coerced = value;
-    if (const auto* reg = PreferenceRegistry::instance()) {
-        if (const auto* meta = reg->meta(key)) {
-            switch (meta->type) {
-            case PreferenceType::Int:    coerced = value.toInt(); break;
-            case PreferenceType::Bool:   coerced = value.toBool(); break;
-            case PreferenceType::Enum:   // fall through
-            case PreferenceType::String: coerced = value.toString(); break;
-            }
-        }
-    }
+    // Normalize using the same type metadata used for persistence and reset.
+    auto* registry = PreferenceRegistry::instance();
+    const QVariant coerced = registry ? registry->normalizeValue(key, value) : value;
     // Staging the value that is already stored un-dirties the buffer instead
     // of keeping a no-op entry alive (e.g. +/- clicked back to the original).
-    if (coerced == PreferenceStore::instance()->load(key)) {
+    if (!m_staged.contains(key)
+            && coerced == PreferenceStore::instance()->load(key)) {
         if (m_staged.remove(key) > 0)
             emit stagedChanged();
         emit staged(key, coerced);
@@ -65,7 +55,13 @@ void EditBuffer::stage(const QString& key, const QVariant& value) {
         qCWarning(lcEditBuffer) << "stage: validation failed -" << error;
         return;
     }
-    PreferenceStore::instance()->saveBatch({{key, coerced}});
+    if (!PreferenceStore::instance()->saveBatch({{key, coerced}})) {
+        m_staged[key] = coerced;
+        emit staged(key, coerced);
+        emit stagedChanged();
+        emit dirtyChanged();
+        return;
+    }
     m_staged.remove(key);
     emit staged(key, coerced);
     emit stagedChanged();
@@ -77,41 +73,8 @@ bool EditBuffer::isDirty() const {
 }
 
 bool EditBuffer::validateOne(const QString& key, const QVariant& value, QString& error) const {
-    const auto* reg = PreferenceRegistry::instance();
-    if (!reg) return true;
-    const auto* meta = reg->meta(key);
-    if (!meta) return true;
-
-    if (meta->type == PreferenceType::Int && meta->constraint.hasRange) {
-        bool ok = false;
-        const int v = value.toInt(&ok);
-        if (!ok) {
-            error = tr("值必须是整数");
-            return false;
-        }
-        if (v < meta->constraint.min || v > meta->constraint.max) {
-            error = tr("值必须在 %1-%2 之间").arg(meta->constraint.min).arg(meta->constraint.max);
-            return false;
-        }
-    } else if (meta->type == PreferenceType::Enum) {
-        if (!meta->constraint.options.isEmpty()) {
-            const QString v = value.toString();
-            if (!meta->constraint.options.contains(v)) {
-                error = tr("值必须是以下之一: ") + meta->constraint.options.join(", ");
-                return false;
-            }
-        }
-    } else if (meta->type == PreferenceType::String) {
-        if (meta->constraint.required && value.toString().isEmpty()) {
-            error = tr("此字段为必填");
-            return false;
-        }
-        if (meta->constraint.maxLength > 0 && value.toString().length() > meta->constraint.maxLength) {
-            error = tr("长度不能超过 %1 个字符").arg(meta->constraint.maxLength);
-            return false;
-        }
-    }
-    return true;
+    const auto* registry = PreferenceRegistry::instance();
+    return !registry || registry->validateValue(key, value, error);
 }
 
 QVariantMap EditBuffer::validate() const {
@@ -169,8 +132,12 @@ void EditBuffer::resetToDefault(const QStringList& keys) {
     for (const QString& key : keys)
         batch[key] = reg->defaultValue(key);
     clearValidationError();
-    if (!batch.isEmpty())
-        PreferenceStore::instance()->saveBatch(batch);
+    if (!batch.isEmpty() && !PreferenceStore::instance()->saveBatch(batch)) {
+        m_staged = batch;
+        emit stagedChanged();
+        emit dirtyChanged();
+        return;
+    }
     m_staged.clear();
     emit stagedChanged();
     emit dirtyChanged();
@@ -185,8 +152,12 @@ void EditBuffer::resetAllToDefault() {
             batch[key] = reg->defaultValue(key);
     }
     clearValidationError();
-    if (!batch.isEmpty())
-        PreferenceStore::instance()->saveBatch(batch);
+    if (!batch.isEmpty() && !PreferenceStore::instance()->saveBatch(batch)) {
+        m_staged = batch;
+        emit stagedChanged();
+        emit dirtyChanged();
+        return;
+    }
     m_staged.clear();
     emit stagedChanged();
     emit dirtyChanged();

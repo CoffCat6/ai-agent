@@ -3,11 +3,20 @@
 #include "PreferenceStore.h"
 #include "ChangeBus.h"
 #include "FontProbe.h"
+#include "core/utils/SettingsRepository.h"
+#include "core/utils/SettingsSchema.h"
 
 #include <QGuiApplication>
 #include <QStyleHints>
 
 namespace NexusAI {
+namespace {
+
+QString automaticThemeMode() {
+    return SettingsSchema::defaultValue(QStringLiteral("prefs/v1/ui.themeMode")).toString();
+}
+
+} // namespace
 
 ThemeManager* ThemeManager::s_instance = nullptr;
 
@@ -22,7 +31,7 @@ ThemeManager* ThemeManager::create(QQmlEngine*, QJSEngine*) {
 }
 
 ThemeManager::ThemeManager(QObject* parent)
-    : QObject(parent), m_settings("NexusAI", "NexusAI") {
+    : QObject(parent) {
     m_changeBus = ChangeBus::instance();
 
     registerPreferences();
@@ -43,58 +52,16 @@ ThemeManager::ThemeManager(QObject* parent)
 void ThemeManager::registerPreferences() {
     auto* reg = PreferenceRegistry::instance();
     if (!reg) return;
-    if (reg->hasPreference(QStringLiteral("ui.themeMode"))) return;
 
-    // Font defaults fall back to the platform family when the brand font is
-    // not installed - a missing default would render via silent fallback
-    // while the settings combo shows a blank selection.
+    // These defaults depend on installed fonts; all other preference metadata
+    // is loaded centrally from SettingsSchema.
     auto* probe = FontProbe::instance();
     const QString sansDefault = probe->isAvailable(QStringLiteral("Inter"))
         ? QStringLiteral("Inter") : probe->systemDefaultSans();
     const QString monoDefault = probe->isAvailable(QStringLiteral("JetBrains Mono"))
         ? QStringLiteral("JetBrains Mono") : probe->systemDefaultMono();
-
-    {
-        PreferenceMeta meta;
-        meta.key = QStringLiteral("ui.themeMode");
-        meta.categoryId = QStringLiteral("interface");
-        meta.displayName = QT_TRANSLATE_NOOP("NexusAI", "主题模式");
-        meta.defaultValue = QStringLiteral("auto");
-        meta.type = PreferenceType::Enum;
-        meta.constraint.options = { QStringLiteral("auto"), QStringLiteral("dark"), QStringLiteral("light") };
-        meta.legacyKeys = { QStringLiteral("theme/dark") };
-        reg->registerPreference(meta);
-    }
-    {
-        PreferenceMeta meta;
-        meta.key = QStringLiteral("ui.fontSans");
-        meta.categoryId = QStringLiteral("interface");
-        meta.displayName = QT_TRANSLATE_NOOP("NexusAI", "正文字体");
-        meta.defaultValue = sansDefault;
-        meta.type = PreferenceType::String;
-        reg->registerPreference(meta);
-    }
-    {
-        PreferenceMeta meta;
-        meta.key = QStringLiteral("ui.fontMono");
-        meta.categoryId = QStringLiteral("interface");
-        meta.displayName = QT_TRANSLATE_NOOP("NexusAI", "等宽字体");
-        meta.defaultValue = monoDefault;
-        meta.type = PreferenceType::String;
-        reg->registerPreference(meta);
-    }
-    {
-        PreferenceMeta meta;
-        meta.key = QStringLiteral("ui.baseFontSize");
-        meta.categoryId = QStringLiteral("interface");
-        meta.displayName = QT_TRANSLATE_NOOP("NexusAI", "基础字号");
-        meta.defaultValue = 14;
-        meta.type = PreferenceType::Int;
-        meta.constraint.min = 10;
-        meta.constraint.max = 24;
-        meta.constraint.hasRange = true;
-        reg->registerPreference(meta);
-    }
+    reg->setDefaultValue(QStringLiteral("ui.fontSans"), sansDefault);
+    reg->setDefaultValue(QStringLiteral("ui.fontMono"), monoDefault);
 }
 
 void ThemeManager::loadTheme() {
@@ -102,12 +69,11 @@ void ThemeManager::loadTheme() {
     m_themeMode = val.toString();
     // Defensive: a corrupt/unknown token must not leave the UI in a mode the
     // settings combo cannot name - fall back to the auto default.
-    if (m_themeMode != QStringLiteral("auto") &&
-        m_themeMode != QStringLiteral("dark") &&
-        m_themeMode != QStringLiteral("light")) {
-        m_themeMode = QStringLiteral("auto");
-    }
-    m_isDark = (m_themeMode == QStringLiteral("auto"))
+    if (!SettingsSchema::options(QStringLiteral("prefs/v1/ui.themeMode"))
+             .contains(m_themeMode))
+        m_themeMode = SettingsSchema::defaultValue(
+            QStringLiteral("prefs/v1/ui.themeMode")).toString();
+    m_isDark = (m_themeMode == automaticThemeMode())
         ? resolveSystemDark()
         : (m_themeMode == QStringLiteral("dark"));
 }
@@ -143,7 +109,7 @@ void ThemeManager::subscribeChanges() {
             const QString mode = value.toString();
             if (mode == m_themeMode) return;
             m_themeMode = mode;
-            const bool dark = (mode == QStringLiteral("auto"))
+            const bool dark = (mode == automaticThemeMode())
                 ? resolveSystemDark()
                 : (mode == QStringLiteral("dark"));
             saveTheme(dark);
@@ -172,8 +138,9 @@ void ThemeManager::subscribeChanges() {
 }
 
 void ThemeManager::saveTheme(bool dark) {
-    m_settings.setValue("theme/dark", dark);
-    m_settings.sync();
+    QString error;
+    if (!SettingsRepository::writeValue(QStringLiteral("theme/dark"), dark, &error))
+        qWarning() << "Failed to persist legacy theme state:" << error;
 }
 
 void ThemeManager::setIsDark(bool dark) {
@@ -194,14 +161,15 @@ void ThemeManager::setIsDark(bool dark) {
 
 void ThemeManager::setThemeMode(const QString& mode) {
     // REQ-T5-01/03: "auto" follows the system; "dark"/"light" are explicit.
-    const QString normalized = (mode == QStringLiteral("dark") ||
-                                mode == QStringLiteral("light"))
+    const QStringList allowedModes = SettingsSchema::options(
+        QStringLiteral("prefs/v1/ui.themeMode"));
+    const QString normalized = allowedModes.contains(mode)
         ? mode
-        : QStringLiteral("auto");
+        : automaticThemeMode();
     if (m_themeMode == normalized) return;
     m_themeMode = normalized;
     PreferenceStore::instance()->save(QStringLiteral("ui.themeMode"), normalized);
-    const bool dark = (normalized == QStringLiteral("auto"))
+    const bool dark = (normalized == automaticThemeMode())
         ? resolveSystemDark()
         : (normalized == QStringLiteral("dark"));
     emit themeModeChanged();
@@ -221,7 +189,7 @@ bool ThemeManager::resolveSystemDark() const {
 
 void ThemeManager::applySystemColorScheme() {
     // REQ-T5-03: explicit dark/light choices are immune to system changes.
-    if (m_themeMode != QStringLiteral("auto")) return;
+    if (m_themeMode != automaticThemeMode()) return;
     const bool dark = resolveSystemDark();
     if (dark == m_isDark) return;
     m_isDark = dark;
@@ -243,7 +211,7 @@ void ThemeManager::setFontMono(const QString& family) {
 }
 
 void ThemeManager::setBaseFontSize(int size) {
-    size = std::max(10, std::min(24, size));
+    size = SettingsSchema::clampInt(QStringLiteral("prefs/v1/ui.baseFontSize"), size);
     if (m_baseFontSize == size) return;
     m_baseFontSize = size;
     PreferenceStore::instance()->save(QStringLiteral("ui.baseFontSize"), size);

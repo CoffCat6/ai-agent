@@ -7,13 +7,14 @@
 #include "core/memory/IMemory.h"
 #include "core/rag/KnowledgeSearchTool.h"
 #include "core/utils/TokenEstimator.h"
+#include "core/utils/SettingsRepository.h"
+#include "core/utils/SettingsSchema.h"
 
 #include <QDateTime>
 #include <QFutureWatcher>
 #include <QJsonDocument>
 #include <QUuid>
 #include <QSysInfo>
-#include <QSettings>
 #include <QtConcurrent/QtConcurrentRun>
 
 // docs/16 §6: PricingCalculator 由 T7 提供。__has_include 保护使本文件在
@@ -1806,12 +1807,20 @@ bool AIAgent::checkQuota() {
     const qint64 monthlyTokensUsed = used("monthlyTokensUsed", "monthly_tokens_used");
     const qint64 monthlyCostUsed = used("monthlyCostCentsUsed", "monthly_cost_cents_used");
 
-    const QSettings settings;
-    const qint64 dailyTokenQuota = qMax(Q_INT64_C(0), settings.value("dailyTokenQuota", 0).toLongLong());
-    const qint64 dailyCostQuota = qMax(Q_INT64_C(0), settings.value("dailyCostQuotaCents", 0).toLongLong());
-    const qint64 monthlyTokenQuota = qMax(Q_INT64_C(0), settings.value("monthlyTokenQuota", 0).toLongLong());
-    const qint64 monthlyCostQuota = qMax(Q_INT64_C(0), settings.value("monthlyCostQuotaCents", 0).toLongLong());
-    const bool strict = settings.value("strictQuotaMode", false).toBool();
+    const qint64 dailyTokenQuota = SettingsSchema::clampInt(QStringLiteral("dailyTokenQuota"),
+        SettingsRepository::value(QStringLiteral("dailyTokenQuota"),
+            SettingsSchema::defaultValue(QStringLiteral("dailyTokenQuota"))).toInt());
+    const qint64 dailyCostQuota = SettingsSchema::clampInt(QStringLiteral("dailyCostQuotaCents"),
+        SettingsRepository::value(QStringLiteral("dailyCostQuotaCents"),
+            SettingsSchema::defaultValue(QStringLiteral("dailyCostQuotaCents"))).toInt());
+    const qint64 monthlyTokenQuota = SettingsSchema::clampInt(QStringLiteral("monthlyTokenQuota"),
+        SettingsRepository::value(QStringLiteral("monthlyTokenQuota"),
+            SettingsSchema::defaultValue(QStringLiteral("monthlyTokenQuota"))).toInt());
+    const qint64 monthlyCostQuota = SettingsSchema::clampInt(QStringLiteral("monthlyCostQuotaCents"),
+        SettingsRepository::value(QStringLiteral("monthlyCostQuotaCents"),
+            SettingsSchema::defaultValue(QStringLiteral("monthlyCostQuotaCents"))).toInt());
+    const bool strict = SettingsRepository::value(QStringLiteral("strictQuotaMode"),
+        SettingsSchema::defaultValue(QStringLiteral("strictQuotaMode"))).toBool();
 
     bool ok = true;
     const auto check = [&](const QString& type, qint64 usedVal, qint64 quotaVal) {

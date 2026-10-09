@@ -7,39 +7,9 @@
 #include <QVariant>
 #include <QQmlEngine>
 
+#include "core/utils/SettingsDefinition.h"
+
 namespace NexusAI {
-
-enum class PreferenceType {
-    Bool,
-    Enum,
-    Int,
-    String
-};
-
-struct PreferenceConstraint {
-    int min{0};
-    int max{0};
-    QStringList options;
-    int maxLength{0};
-    bool required{false};
-    bool hasRange{false};
-};
-
-struct PreferenceMeta {
-    QString key;
-    QString categoryId;
-    QString displayName;
-    QVariant defaultValue;
-    PreferenceType type{PreferenceType::String};
-    PreferenceConstraint constraint;
-    QStringList legacyKeys;
-};
-
-struct CategoryMeta {
-    QString id;
-    QString name;
-    int order{0};
-};
 
 class PreferenceRegistry : public QObject {
     Q_OBJECT
@@ -51,8 +21,10 @@ public:
     static PreferenceRegistry* instance();
     static PreferenceRegistry* create(QQmlEngine*, QJSEngine*);
 
-    void registerCategory(const QString& id, const QString& name, int order);
-    void registerPreference(const PreferenceMeta& meta);
+    bool setDefaultValue(const QString& key, const QVariant& value);
+    QVariant normalizeValue(const QString& key, const QVariant& value) const;
+    QVariant coerceStoredValue(const QString& key, const QVariant& value) const;
+    bool validateValue(const QString& key, const QVariant& value, QString& error) const;
 
     Q_INVOKABLE bool hasPreference(const QString& key) const;
     Q_INVOKABLE QVariant defaultValue(const QString& key) const;
@@ -70,6 +42,9 @@ public:
     const CategoryMeta* category(const QString& id) const;
 
 private:
+    void registerCategory(const QString& id, const QString& name, int order);
+    void registerPreference(const PreferenceMeta& meta);
+
     QHash<QString, PreferenceMeta> m_preferences;
     QHash<QString, CategoryMeta> m_categories;
 

@@ -44,7 +44,10 @@ QVector<QVariantMap> load() {
 
 bool save(const QVariantList& servers) {
     const QString path = configFilePath();
-    if (!QDir().mkpath(QFileInfo(path).absolutePath())) return false;
+    if (!QDir().mkpath(QFileInfo(path).absolutePath())) {
+        qWarning() << "Failed to create MCP config directory for" << path;
+        return false;
+    }
 
     QJsonArray array;
     for (const QVariant& entry : servers) {
@@ -63,11 +66,21 @@ bool save(const QVariantList& servers) {
     }
 
     QSaveFile file(path);
-    if (!file.open(QIODevice::WriteOnly)) return false;
+    if (!file.open(QIODevice::WriteOnly)) {
+        qWarning() << "Failed to open MCP config for writing:" << path << file.errorString();
+        return false;
+    }
     const QByteArray data = QJsonDocument(QJsonObject{{"servers", array}})
                                 .toJson(QJsonDocument::Indented);
-    if (file.write(data) != data.size()) return false;
-    return file.commit();
+    if (file.write(data) != data.size()) {
+        qWarning() << "Failed to write MCP config:" << path << file.errorString();
+        return false;
+    }
+    if (!file.commit()) {
+        qWarning() << "Failed to commit MCP config:" << path << file.errorString();
+        return false;
+    }
+    return true;
 }
 
 } // namespace McpConfig

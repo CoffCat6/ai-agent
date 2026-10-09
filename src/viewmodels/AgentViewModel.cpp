@@ -1,6 +1,5 @@
 #include "viewmodels/AgentViewModel.h"
 
-#include "viewmodels/PreferenceRegistry.h"
 #include "viewmodels/PreferenceStore.h"
 #include "viewmodels/ChangeBus.h"
 #include "core/agent/AIAgent.h"
@@ -13,9 +12,10 @@
 #include "core/utils/Logger.h"
 #include "core/utils/DataUrlUtils.h"
 #include "core/utils/AttachmentClassifier.h"
+#include "core/utils/SettingsRepository.h"
+#include "core/utils/SettingsSchema.h"
 
 #include <QFileInfo>
-#include <QSettings>
 #include <QUrl>
 
 #include <QBuffer>
@@ -37,12 +37,26 @@
 #include <QJsonObject>
 #include <QSaveFile>
 #include <QScreen>
-#include <QSettings>
 #include <QStandardPaths>
 #include <QUrl>
 #include <QtConcurrent/QtConcurrentRun>
 
 namespace NexusAI {
+namespace {
+
+void persistSettingsValue(const QString& key, const QVariant& value) {
+    QString error;
+    if (!SettingsRepository::writeValue(key, value, &error))
+        qWarning() << "Failed to persist setting" << key << error;
+}
+
+void persistSettingsBatch(const QVariantMap& values) {
+    QString error;
+    if (!SettingsRepository::writeBatch(values, &error))
+        qWarning() << "Failed to persist settings" << values.keys() << error;
+}
+
+} // namespace
 
 AgentViewModel* AgentViewModel::s_instance = nullptr;
 
@@ -63,19 +77,16 @@ AgentViewModel::AgentViewModel(QObject* parent)
     connect(&ToolRegistry::instance(), &ToolRegistry::toolsChanged,
             this, &AgentViewModel::refreshToolRegistry);
 
-    // Layout defaults (General Settings) must load first: they seed the
-    // fallbacks of the panel restore below.
-    registerLayoutPreferences();
+    // Layout defaults must load first: they seed the panel restore below.
     loadLayoutDefaults();
     subscribeLayoutChanges();
 
     // Restore last UI layout (sidebar / context panel visibility + widths),
     // falling back to the configured defaults when nothing was persisted.
-    const QSettings uiSettings("NexusAI", "NexusAI");
-    m_isPanelVisible = uiSettings.value("ui/panelVisible", m_defaultPanelVisible).toBool();
-    m_isSidebarExpanded = uiSettings.value("ui/sidebarExpanded", m_defaultSidebarExpanded).toBool();
-    m_panelWidth = uiSettings.value("ui/panelWidth", m_defaultPanelWidth).toInt();
-    m_sidebarWidth = uiSettings.value("ui/sidebarWidth", m_defaultSidebarWidth).toInt();
+    m_isPanelVisible = SettingsRepository::value("ui/panelVisible", m_defaultPanelVisible).toBool();
+    m_isSidebarExpanded = SettingsRepository::value("ui/sidebarExpanded", m_defaultSidebarExpanded).toBool();
+    m_panelWidth = SettingsRepository::value("ui/panelWidth", m_defaultPanelWidth).toInt();
+    m_sidebarWidth = SettingsRepository::value("ui/sidebarWidth", m_defaultSidebarWidth).toInt();
 
     // Splitter drags update the width per mouse move; coalesce the writes
     m_uiPersistTimer.setSingleShot(true);
@@ -95,45 +106,11 @@ AgentViewModel::~AgentViewModel() {
 }
 
 void AgentViewModel::persistPanelWidths() {
-    QSettings("NexusAI", "NexusAI").setValue("ui/sidebarWidth", m_sidebarWidth);
-    QSettings("NexusAI", "NexusAI").setValue("ui/panelWidth", m_panelWidth);
+    persistSettingsBatch({
+        {QStringLiteral("ui/sidebarWidth"), m_sidebarWidth},
+        {QStringLiteral("ui/panelWidth"), m_panelWidth}});
 }
 
-void AgentViewModel::registerLayoutPreferences() {
-    auto* reg = PreferenceRegistry::instance();
-    if (!reg) return;
-    if (reg->hasPreference(QStringLiteral("ui.defaultSidebarWidth"))) return;
-
-    auto registerInt = [&](const QString& key, const QString& display,
-                           int def, int min, int max) {
-        PreferenceMeta meta;
-        meta.key = key;
-        meta.categoryId = QStringLiteral("interface");
-        meta.displayName = display;
-        meta.defaultValue = def;
-        meta.type = PreferenceType::Int;
-        meta.constraint.min = min;
-        meta.constraint.max = max;
-        meta.constraint.hasRange = true;
-        reg->registerPreference(meta);
-    };
-
-    auto registerBool = [&](const QString& key, const QString& display, bool def) {
-        PreferenceMeta meta;
-        meta.key = key;
-        meta.categoryId = QStringLiteral("interface");
-        meta.displayName = display;
-        meta.defaultValue = def;
-        meta.type = PreferenceType::Bool;
-        reg->registerPreference(meta);
-    };
-
-    registerInt(QStringLiteral("ui.defaultSidebarWidth"), QT_TRANSLATE_NOOP("NexusAI", "侧边栏默认宽度"), 260, 180, 560);
-    registerInt(QStringLiteral("ui.defaultPanelWidth"), QT_TRANSLATE_NOOP("NexusAI", "面板默认宽度"), 300, 220, 640);
-    registerBool(QStringLiteral("ui.defaultSidebarExpanded"), QT_TRANSLATE_NOOP("NexusAI", "侧边栏默认展开"), true);
-    registerBool(QStringLiteral("ui.defaultPanelVisible"), QT_TRANSLATE_NOOP("NexusAI", "面板默认展开"), true);
-    registerBool(QStringLiteral("ui.restoreWindowOnStartup"), QT_TRANSLATE_NOOP("NexusAI", "启动时恢复窗口"), true);
-}
 
 void AgentViewModel::loadLayoutDefaults() {
     auto* store = PreferenceStore::instance();
@@ -443,7 +420,7 @@ void AgentViewModel::setActiveProjectId(const QString& id) {
     applyProjectTo(controller->agent(), id);
     // 持久化（M4 直写先例）：重启后由 main.cpp 回灌。docs/18 之后它记录的
     // 语义是"上次浏览位置"，期 3 会改由侧栏写入。
-    QSettings("NexusAI", "NexusAI").setValue("projects/activeId", id);
+    persistSettingsValue(QStringLiteral("projects/activeId"), id);
     syncSandboxMirror();
     emit activeProjectIdChanged();
 }
@@ -1288,7 +1265,7 @@ void AgentViewModel::setDefaultPermissionMode(int mode) {
 void AgentViewModel::setIsPanelVisible(bool visible) {
     if (m_isPanelVisible == visible) return;
     m_isPanelVisible = visible;
-    QSettings("NexusAI", "NexusAI").setValue("ui/panelVisible", visible);
+    persistSettingsValue(QStringLiteral("ui/panelVisible"), visible);
     emit panelVisibleChanged();
 }
 
@@ -1297,7 +1274,7 @@ void AgentViewModel::togglePanel() {
 }
 
 void AgentViewModel::setPanelWidth(int width) {
-    width = qBound(220, width, 640);
+    width = SettingsSchema::clampInt(QStringLiteral("ui/panelWidth"), width);
     if (m_panelWidth == width) return;
     m_panelWidth = width;
     emit panelWidthChanged();
@@ -1307,7 +1284,7 @@ void AgentViewModel::setPanelWidth(int width) {
 void AgentViewModel::setIsSidebarExpanded(bool expanded) {
     if (m_isSidebarExpanded == expanded) return;
     m_isSidebarExpanded = expanded;
-    QSettings("NexusAI", "NexusAI").setValue("ui/sidebarExpanded", expanded);
+    persistSettingsValue(QStringLiteral("ui/sidebarExpanded"), expanded);
     emit sidebarExpandedChanged();
 }
 
@@ -1316,7 +1293,7 @@ void AgentViewModel::toggleSidebar() {
 }
 
 void AgentViewModel::setSidebarWidth(int width) {
-    width = qBound(180, width, 560);
+    width = SettingsSchema::clampInt(QStringLiteral("ui/sidebarWidth"), width);
     if (m_sidebarWidth == width) return;
     m_sidebarWidth = width;
     emit sidebarWidthChanged();
@@ -1326,6 +1303,7 @@ void AgentViewModel::setSidebarWidth(int width) {
 // ── Layout defaults ──────────────────────────────────────
 
 void AgentViewModel::setDefaultSidebarWidth(int width) {
+    width = SettingsSchema::clampInt(QStringLiteral("prefs/v1/ui.defaultSidebarWidth"), width);
     if (m_defaultSidebarWidth == width) return;
     m_defaultSidebarWidth = width;
     PreferenceStore::instance()->save(QStringLiteral("ui.defaultSidebarWidth"), width);
@@ -1333,6 +1311,7 @@ void AgentViewModel::setDefaultSidebarWidth(int width) {
 }
 
 void AgentViewModel::setDefaultPanelWidth(int width) {
+    width = SettingsSchema::clampInt(QStringLiteral("prefs/v1/ui.defaultPanelWidth"), width);
     if (m_defaultPanelWidth == width) return;
     m_defaultPanelWidth = width;
     PreferenceStore::instance()->save(QStringLiteral("ui.defaultPanelWidth"), width);
@@ -1363,11 +1342,10 @@ void AgentViewModel::setRestoreWindowOnStartup(bool restore) {
 // ── Window geometry ──────────────────────────────────────
 
 QVariantMap AgentViewModel::loadWindowGeometry() const {
-    const QSettings s("NexusAI", "NexusAI");
-    if (!s.contains("ui/windowX")) return {};
+    if (!SettingsRepository::contains(QStringLiteral("ui/windowX"))) return {};
 
-    const double x = s.value("ui/windowX").toDouble();
-    const double y = s.value("ui/windowY").toDouble();
+    const double x = SettingsRepository::value(QStringLiteral("ui/windowX")).toDouble();
+    const double y = SettingsRepository::value(QStringLiteral("ui/windowY")).toDouble();
 
     QVariantMap geo;
     // Reject a position that landed off every screen (e.g. an unplugged
@@ -1385,19 +1363,20 @@ QVariantMap AgentViewModel::loadWindowGeometry() const {
     geo.insert(QStringLiteral("valid"), onScreen);
     geo.insert(QStringLiteral("x"), x);
     geo.insert(QStringLiteral("y"), y);
-    geo.insert(QStringLiteral("width"), s.value("ui/windowWidth").toDouble());
-    geo.insert(QStringLiteral("height"), s.value("ui/windowHeight").toDouble());
-    geo.insert(QStringLiteral("maximized"), s.value("ui/windowMaximized", false).toBool());
+    geo.insert(QStringLiteral("width"), SettingsRepository::value(QStringLiteral("ui/windowWidth")).toDouble());
+    geo.insert(QStringLiteral("height"), SettingsRepository::value(QStringLiteral("ui/windowHeight")).toDouble());
+    geo.insert(QStringLiteral("maximized"), SettingsRepository::value(
+        QStringLiteral("ui/windowMaximized"), false).toBool());
     return geo;
 }
 
 void AgentViewModel::saveWindowGeometry(double x, double y, double width, double height, bool maximized) {
-    QSettings s("NexusAI", "NexusAI");
-    s.setValue("ui/windowX", x);
-    s.setValue("ui/windowY", y);
-    s.setValue("ui/windowWidth", width);
-    s.setValue("ui/windowHeight", height);
-    s.setValue("ui/windowMaximized", maximized);
+    persistSettingsBatch({
+        {QStringLiteral("ui/windowX"), x},
+        {QStringLiteral("ui/windowY"), y},
+        {QStringLiteral("ui/windowWidth"), width},
+        {QStringLiteral("ui/windowHeight"), height},
+        {QStringLiteral("ui/windowMaximized"), maximized}});
 }
 
 } // namespace NexusAI

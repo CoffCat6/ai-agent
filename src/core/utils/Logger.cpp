@@ -1,4 +1,6 @@
 #include "Logger.h"
+#include "SettingsRepository.h"
+#include "SettingsSchema.h"
 
 #include <QDateTime>
 #include <QDir>
@@ -7,7 +9,6 @@
 #include <QMutex>
 #include <QMutexLocker>
 #include <QRegularExpression>
-#include <QSettings>
 #include <QSet>
 #include <QStandardPaths>
 #include <QtDebug>
@@ -25,8 +26,8 @@ QFile g_file;
 QString g_filePath;
 QtMsgType g_minLevel = QtInfoMsg;
 QString g_logDirectory;
-int g_maxFileSizeMb = 10;
-int g_retentionFiles = 14;
+int g_maxFileSizeMb = SettingsSchema::kDefaultLogMaxFileSizeMb;
+int g_retentionFiles = SettingsSchema::kDefaultLogRetentionFiles;
 
 // In-process ring buffer for the in-app log panel (doc 6 §3.1): bounded to
 // Logger::RingCapacity, guarded by g_mutex, filled AFTER the level filter
@@ -236,7 +237,7 @@ int Logger::maxFileSizeMb() {
 
 void Logger::setMaxFileSizeMb(int sizeMb) {
     QMutexLocker locker(&g_mutex);
-    g_maxFileSizeMb = qBound(1, sizeMb, 1024);
+    g_maxFileSizeMb = SettingsSchema::clampInt(QStringLiteral("logging/maxFileSizeMb"), sizeMb);
 }
 
 int Logger::retentionFiles() {
@@ -246,7 +247,7 @@ int Logger::retentionFiles() {
 
 void Logger::setRetentionFiles(int count) {
     QMutexLocker locker(&g_mutex);
-    g_retentionFiles = qBound(1, count, 100);
+    g_retentionFiles = SettingsSchema::clampInt(QStringLiteral("logging/retentionFiles"), count);
     const QString dir = configuredLogDir();
     if (QDir(dir).exists()) pruneOldLogs(QDir(dir));
 }
@@ -289,18 +290,23 @@ QVector<Logger::LogEntry> Logger::entriesSince(quint64 seq) {
 
 void Logger::install() {
     // Values are loaded before any Qt messages are redirected to this handler.
-    QSettings settings(QStringLiteral("NexusAI"), QStringLiteral("NexusAI"));
     QtMsgType level = QtInfoMsg;
-    parseLevel(settings.value("logging/level", QStringLiteral("info")).toString(), level);
+    parseLevel(SettingsRepository::value(QStringLiteral("logging/level"),
+        SettingsSchema::defaultValue(QStringLiteral("logging/level"))).toString(), level);
     const QString env = qEnvironmentVariable("NEXUSAI_LOG_LEVEL");
     if (!env.isEmpty()) parseLevel(env, level);
 
     QMutexLocker locker(&g_mutex);
     g_minLevel = level;
-    g_logDirectory = settings.value("logging/directory").toString().trimmed();
+    g_logDirectory = SettingsRepository::value(QStringLiteral("logging/directory"),
+        SettingsSchema::defaultValue(QStringLiteral("logging/directory"))).toString().trimmed();
     if (!g_logDirectory.isEmpty()) g_logDirectory = QDir::cleanPath(g_logDirectory);
-    g_maxFileSizeMb = qBound(1, settings.value("logging/maxFileSizeMb", 10).toInt(), 1024);
-    g_retentionFiles = qBound(1, settings.value("logging/retentionFiles", 14).toInt(), 100);
+    g_maxFileSizeMb = SettingsSchema::clampInt(QStringLiteral("logging/maxFileSizeMb"),
+        SettingsRepository::value(QStringLiteral("logging/maxFileSizeMb"),
+            SettingsSchema::defaultValue(QStringLiteral("logging/maxFileSizeMb"))).toInt());
+    g_retentionFiles = SettingsSchema::clampInt(QStringLiteral("logging/retentionFiles"),
+        SettingsRepository::value(QStringLiteral("logging/retentionFiles"),
+            SettingsSchema::defaultValue(QStringLiteral("logging/retentionFiles"))).toInt());
     locker.unlock();
     qInstallMessageHandler(messageHandler);
 }

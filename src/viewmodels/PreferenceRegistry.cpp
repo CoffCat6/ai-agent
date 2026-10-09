@@ -1,4 +1,5 @@
 #include "PreferenceRegistry.h"
+#include "core/utils/SettingsSchema.h"
 
 #include <QCoreApplication>
 #include <QLoggingCategory>
@@ -32,6 +33,10 @@ PreferenceRegistry* PreferenceRegistry::create(QQmlEngine*, QJSEngine*) {
 
 PreferenceRegistry::PreferenceRegistry(QObject* parent)
     : QObject(parent) {
+    for (const CategoryMeta& category : SettingsSchema::categories())
+        registerCategory(category.id, category.name, category.order);
+    for (const PreferenceMeta& preference : SettingsSchema::preferences())
+        registerPreference(preference);
 }
 
 void PreferenceRegistry::registerCategory(const QString& id, const QString& name, int order) {
@@ -40,7 +45,8 @@ void PreferenceRegistry::registerCategory(const QString& id, const QString& name
         return;
     }
     if (m_categories.contains(id)) {
-        qCWarning(lcPrefReg) << "registerCategory: duplicate id" << id << "- overwriting";
+        qCWarning(lcPrefReg) << "registerCategory: duplicate id" << id << "- ignoring";
+        return;
     }
     CategoryMeta cat;
     cat.id = id;
@@ -55,9 +61,102 @@ void PreferenceRegistry::registerPreference(const PreferenceMeta& meta) {
         return;
     }
     if (m_preferences.contains(meta.key)) {
-        qCWarning(lcPrefReg) << "registerPreference: duplicate key" << meta.key << "- overwriting";
+        qCWarning(lcPrefReg) << "registerPreference: duplicate key" << meta.key << "- ignoring";
+        return;
     }
     m_preferences.insert(meta.key, meta);
+}
+
+bool PreferenceRegistry::setDefaultValue(const QString& key, const QVariant& value) {
+    auto it = m_preferences.find(key);
+    if (it == m_preferences.end()) return false;
+    it->defaultValue = value;
+    return true;
+}
+
+QVariant PreferenceRegistry::normalizeValue(const QString& key, const QVariant& value) const {
+    const PreferenceMeta* m = meta(key);
+    if (!m) return value;
+
+    switch (m->type) {
+    case PreferenceType::Bool:
+        if (value.typeId() == QMetaType::Bool) return value;
+        if (value.typeId() == QMetaType::QString) {
+            const QString text = value.toString().trimmed().toLower();
+            if (text == QLatin1String("true") || text == QLatin1String("1"))
+                return true;
+            if (text == QLatin1String("false") || text == QLatin1String("0"))
+                return false;
+        }
+        return value;
+    case PreferenceType::Int: {
+        bool ok = false;
+        const int integer = value.toInt(&ok);
+        return ok ? QVariant(integer) : value;
+    }
+    case PreferenceType::Enum:
+    case PreferenceType::String:
+        return value.typeId() == QMetaType::QString ? value : QVariant(value.toString());
+    }
+    return value;
+}
+
+QVariant PreferenceRegistry::coerceStoredValue(const QString& key, const QVariant& value) const {
+    const QVariant normalized = normalizeValue(key, value);
+    QString error;
+    return validateValue(key, normalized, error) ? normalized : defaultValue(key);
+}
+
+bool PreferenceRegistry::validateValue(const QString& key, const QVariant& value,
+                                       QString& error) const {
+    const PreferenceMeta* m = meta(key);
+    if (!m) return true;
+
+    switch (m->type) {
+    case PreferenceType::Bool:
+        if (value.typeId() != QMetaType::Bool) {
+            error = QCoreApplication::translate("EditBuffer", "值必须是布尔值");
+            return false;
+        }
+        break;
+    case PreferenceType::Int: {
+        bool ok = false;
+        const int integer = value.toInt(&ok);
+        if (!ok) {
+            error = QCoreApplication::translate("EditBuffer", "值必须是整数");
+            return false;
+        }
+        if (m->constraint.hasRange
+                && (integer < m->constraint.min || integer > m->constraint.max)) {
+            error = QCoreApplication::translate("EditBuffer", "值必须在 %1-%2 之间")
+                        .arg(m->constraint.min).arg(m->constraint.max);
+            return false;
+        }
+        break;
+    }
+    case PreferenceType::Enum:
+        if (!m->constraint.options.isEmpty()
+                && value.toString() != m->defaultValue.toString()
+                && !m->constraint.options.contains(value.toString())) {
+            error = QCoreApplication::translate("EditBuffer", "值必须是以下之一: ")
+                + m->constraint.options.join(", ");
+            return false;
+        }
+        break;
+    case PreferenceType::String:
+        if (m->constraint.required && value.toString().isEmpty()) {
+            error = QCoreApplication::translate("EditBuffer", "此字段为必填");
+            return false;
+        }
+        if (m->constraint.maxLength > 0
+                && value.toString().length() > m->constraint.maxLength) {
+            error = QCoreApplication::translate("EditBuffer", "长度不能超过 %1 个字符")
+                        .arg(m->constraint.maxLength);
+            return false;
+        }
+        break;
+    }
+    return true;
 }
 
 bool PreferenceRegistry::hasPreference(const QString& key) const {

@@ -2,7 +2,7 @@
 
 #include <QQmlEngine>
 #include <QObject>
-#include <QSettings>
+
 
 namespace NexusAI {
 
@@ -53,11 +53,11 @@ private:
     void applySystemColorScheme();
 
     bool m_isDark{true};
-    QString m_themeMode{QStringLiteral("auto")};
-    QString m_fontSans{QStringLiteral("Inter")};
-    QString m_fontMono{QStringLiteral("JetBrains Mono")};
-    int m_baseFontSize{14};
-    QSettings m_settings;
+    QString m_themeMode;
+    QString m_fontSans;
+    QString m_fontMono;
+    int m_baseFontSize{};
+
     ChangeBus* m_changeBus{nullptr};
 
     static ThemeManager* s_instance;

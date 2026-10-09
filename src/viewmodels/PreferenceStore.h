@@ -1,9 +1,7 @@
 #pragma once
 
 #include <QObject>
-#include <QSettings>
 #include <QVariant>
-#include <QHash>
 #include <QQmlEngine>
 
 #include "PreferenceRegistry.h"
@@ -23,6 +21,7 @@ public:
     static PreferenceStore* create(QQmlEngine*, QJSEngine*);
 
     Q_INVOKABLE QVariant load(const QString& key) const;
+    Q_INVOKABLE bool hasStoredValue(const QString& key) const;
     Q_INVOKABLE bool save(const QString& key, const QVariant& value);
     Q_INVOKABLE bool saveBatch(const QVariantMap& entries);
     Q_INVOKABLE bool reset(const QString& key);
@@ -30,12 +29,14 @@ public:
 
     void setChangeBus(ChangeBus* bus);
 
+signals:
+    void persistenceError(const QString& message);
+
 private:
     QVariant loadWithLegacy(const QString& key) const;
     QVariant coerce(const QString& key, const QVariant& value) const;
     QVariant convertLegacyValue(const QString& key, const QVariant& value) const;
 
-    QSettings m_settings;
     ChangeBus* m_changeBus{nullptr};
 
     static PreferenceStore* s_instance;
