@@ -310,7 +310,7 @@ target_link_libraries(nexus_ai PRIVATE
 # ── Windows deploy ────────────────────────────────────────
 if(WIN32)
     set_target_properties(nexus_ai PROPERTIES
-        WIN32_EXECUTABLE TRUE
+        WIN32_EXECUTABLE FALSE
     )
 endif()
 

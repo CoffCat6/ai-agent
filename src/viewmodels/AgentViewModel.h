@@ -10,6 +10,7 @@
 #include <QUrl>
 #include <QTimer>
 #include <QHash>
+#include <QPointer>
 #include <QVector>
 #include <functional>
 
@@ -70,6 +71,10 @@ class AgentViewModel : public QObject {
 
     // ── Input ─────────────────────────────────────────
     Q_PROPERTY(QString draftText READ draftText WRITE setDraftText NOTIFY draftTextChanged FINAL)
+    Q_PROPERTY(QVariantList draftAttachments READ draftAttachments WRITE setDraftAttachments NOTIFY draftAttachmentsChanged FINAL)
+    Q_PROPERTY(QVariantMap pendingConfirmation READ pendingConfirmation NOTIFY pendingConfirmationsChanged FINAL)
+    Q_PROPERTY(QVariantMap chatModelProfile READ chatModelProfile NOTIFY chatModelChanged FINAL)
+    Q_PROPERTY(bool modelConfigured READ modelConfigured NOTIFY chatModelChanged FINAL)
 
     // ── Session permission mode (active tab) ──────────
     // 0=变更确认 1=自动编辑 2=完全访问；常量属性供 QML 选择器建立模型。
@@ -161,8 +166,15 @@ public:
     // Batch 29: factory building a fresh AIAgent (+ own SQLite connection)
     // for every additional tab.
     void setAgentFactory(std::function<AIAgent*()> factory);
-    // Batch 29: apply to every attached agent — provider switches call this
-    // with setLLMService, since the service instances are shared across tabs.
+    void setModelConfigurator(std::function<void(AIAgent*, const QVariantMap&)> configure);
+    void updateModelProfiles(const QVariantList& profiles, const QVariantMap& defaultProfile);
+    QVariantMap chatModelProfile() const;
+    bool modelConfigured() const;
+    Q_INVOKABLE void selectChatModel(const QString& profileId, const QString& model = QString());
+    Q_INVOKABLE void setChatReasoningEffort(const QString& effort);
+    Q_INVOKABLE void openModelSettings() { emit modelSettingsRequested(); }
+    // Apply global runtime preferences to attached agents. Model profiles
+    // are configured separately per controller and frozen while busy.
     void applyToAgents(const std::function<void(AIAgent*)>& fn);
     // Batch 17: attach the persistence backend for search/export. Takes no
     // ownership; nullptr disables those features.
@@ -215,6 +227,9 @@ public:
     // Draft text (active tab)
     QString draftText() const { return active()->draftText(); }
     void setDraftText(const QString& text);
+    QVariantList draftAttachments() const { return active()->draftAttachments(); }
+    void setDraftAttachments(const QVariantList& attachments) { active()->setDraftAttachments(attachments); }
+    QVariantMap pendingConfirmation() const;
     // docs/20 §3.3：输入历史回溯（活动标签）。↑ 返回上一条历史，↓ 返回下一条；
     // 无更多历史或已回到草稿态时返回空串。编辑后调用 resetInputHistory 复位游标。
     Q_INVOKABLE QString historyPrev() { return active()->historyPrev(); }
@@ -311,7 +326,7 @@ public:
     // ── QML-invokable actions ─────────────────────────
     // Batch 30 (F6): images are compressed data URLs; files are
     // {kind:"file", name, content} text attachments folded into the request.
-    Q_INVOKABLE void startTask(const QString& input, const QStringList& images = {},
+    Q_INVOKABLE bool startTask(const QString& input, const QStringList& images = {},
                                const QVariantList& files = {});
     // Compressed data URL of the clipboard image (empty when none).
     Q_INVOKABLE QString clipboardImageDataUrl() const;
@@ -336,16 +351,18 @@ public:
     // docs/20 §3.1（FORK-701）：重新生成最后一条回答（活动标签）。
     Q_INVOKABLE void regenerate();
     // docs/20 §3.2（FORK-701）：替换最后一条 user 消息并重发（活动标签）。
-    Q_INVOKABLE void editAndResend(const QString& newText);
+    Q_INVOKABLE bool editAndResend(const QString& newText);
     Q_INVOKABLE void newChat();              // reset to a fresh session
     // Loads into the active tab; when the active tab is busy a new tab is
     // opened for the session instead — switching never interrupts a task.
     Q_INVOKABLE void loadSession(const QString& sessionId);
     Q_INVOKABLE void deleteSession(const QString& sessionId);
     Q_INVOKABLE void renameSession(const QString& sessionId, const QString& title);
+    Q_INVOKABLE void setSessionPinned(const QString& sessionId, bool pinned);
+    Q_INVOKABLE void setSessionArchived(const QString& sessionId, bool archived);
     // Batch 17: refresh searchResults from the memory backend (empty keyword
     // → empty results, which the sidebar treats as "back to session list").
-    Q_INVOKABLE void searchMessages(const QString& keyword);
+    Q_INVOKABLE void searchMessages(const QString& keyword, bool includeArchived = false);
     // Batch 18: export a session's messages (+ trace nodes) as Markdown or
     // JSON. Returns false (and emits errorOccurred) on failure.
     Q_INVOKABLE bool exportSession(const QString& sessionId, const QString& path,
@@ -396,6 +413,10 @@ signals:
     void traceChanged();
     void responseReady();
     void draftTextChanged();
+    void draftAttachmentsChanged();
+    void pendingConfirmationsChanged();
+    void chatModelChanged();
+    void modelSettingsRequested();
     void panelVisibleChanged();
     void panelWidthChanged();
     void sidebarExpandedChanged();
@@ -443,6 +464,18 @@ signals:
     void taskFinished(const QString& sessionTitle, bool success);
 
 private:
+    struct Confirmation {
+        QPointer<ChatSessionController> controller;
+        QString id;
+        QString name;
+        QVariantMap arguments;
+    };
+    QList<Confirmation> m_confirmations;
+    void pruneConfirmations();
+    void configureModel(ChatSessionController* controller);
+    QVariantList m_availableProfiles;
+    QVariantMap m_defaultProfile;
+    std::function<void(AIAgent*, const QVariantMap&)> m_configureModel;
     ChatSessionController* active() const;
     // 低层：新建一个标签并挂接 agent（不决定归属）。
     ChatSessionController* ensureTab();

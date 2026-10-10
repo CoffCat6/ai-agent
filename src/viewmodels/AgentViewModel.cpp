@@ -163,6 +163,7 @@ ChatSessionController* AgentViewModel::ensureTab() {
     // Active-tab forwarding: the facade signal is re-emitted only when the
     // change happened in the tab the UI is looking at.
     connect(controller, &ChatSessionController::stateChanged, this, [this, controller] {
+        pruneConfirmations();
         // docs/20 §4.1（D10）：Busy → 非 Busy 边沿 = 一次任务结束。任意 tab
         // 都发（后台任务完成也要通知），标题走 tabModel 的同一解析逻辑。
         const bool busy = controller->isBusy();
@@ -192,6 +193,9 @@ ChatSessionController* AgentViewModel::ensureTab() {
     connect(controller, &ChatSessionController::draftTextChanged, this, [this, controller] {
         if (controller == active()) emit draftTextChanged();
     });
+    connect(controller, &ChatSessionController::draftAttachmentsChanged, this, [this, controller] {
+        if (controller == active()) emit draftAttachmentsChanged();
+    });
     connect(controller, &ChatSessionController::tokenUsageChanged, this, [this, controller] {
         if (controller == active()) emit tokenUsageChanged();
     });
@@ -218,7 +222,15 @@ ChatSessionController* AgentViewModel::ensureTab() {
     // confirmations are global UX (the confirm dialog routes the decision
     // back to the waiting tab through approveToolCall).
     connect(controller, &ChatSessionController::toolConfirmRequired, this,
-            &AgentViewModel::toolConfirmRequired);
+            [this, controller](const QString& id, const QString& name, const QVariantMap& args) {
+        m_confirmations.append({controller, id, name, args});
+        emit pendingConfirmationsChanged();
+        emit toolConfirmRequired(id, name, args);
+    });
+    connect(controller, &QObject::destroyed, this, [this, controller] {
+        m_prevBusy.remove(controller);
+        pruneConfirmations();
+    });
     connect(controller, &ChatSessionController::errorOccurred, this,
             &AgentViewModel::errorOccurred);
     // Session history is shared (every tab agent reads the same database).
@@ -230,6 +242,7 @@ ChatSessionController* AgentViewModel::ensureTab() {
     // A fresh tab picks up its own agent when the pipeline is configured.
     if (m_agentFactory && m_templateAgent)
         controller->attachAgent(m_agentFactory(), true);
+    configureModel(controller);
 
     // docs/18: 归属由 addTab 显式指定——ensureTab 不再从任何全局状态继承。
 
@@ -278,6 +291,8 @@ void AgentViewModel::activateTab(int index) {
     emit traceChanged();
     emit responseReady();
     emit draftTextChanged();
+    emit draftAttachmentsChanged();
+    emit chatModelChanged();
     emit tokenUsageChanged();
     emit sessionTokensChanged();
     emit costChanged(m_lastCostCents);
@@ -309,6 +324,8 @@ void AgentViewModel::closeTab(int index) {
     emit traceChanged();
     emit responseReady();
     emit draftTextChanged();
+    emit draftAttachmentsChanged();
+    emit chatModelChanged();
     emit tokenUsageChanged();
     emit sessionTokensChanged();
     emit currentSessionIdChanged();
@@ -365,6 +382,7 @@ void AgentViewModel::setAgent(AIAgent* agent) {
             m_tabs[i]->attachAgent(nullptr, false);
         }
         applyProjectTo(m_tabs[i]->agent(), tabProject);
+        configureModel(m_tabs[i]);
     }
 
     emit tabsChanged();
@@ -375,6 +393,72 @@ void AgentViewModel::setAgent(AIAgent* agent) {
 
 void AgentViewModel::setAgentFactory(std::function<AIAgent*()> factory) {
     m_agentFactory = std::move(factory);
+}
+
+void AgentViewModel::setModelConfigurator(std::function<void(AIAgent*, const QVariantMap&)> configure) {
+    m_configureModel = std::move(configure);
+}
+
+void AgentViewModel::updateModelProfiles(const QVariantList& profiles, const QVariantMap& defaultProfile) {
+    m_availableProfiles = profiles;
+    m_defaultProfile = defaultProfile;
+    for (auto* controller : m_tabs) configureModel(controller);
+}
+
+void AgentViewModel::configureModel(ChatSessionController* controller) {
+    if (!m_configureModel || controller->isBusy()) return;
+    QVariantMap profile;
+    const QString id = controller->modelProfile.value("id").toString();
+    if (id.isEmpty() || (!controller->modelSelected && controller->currentSessionId().isEmpty())) {
+        profile = m_defaultProfile;
+    } else {
+        for (const auto& entry : m_availableProfiles) {
+            if (entry.toMap().value("id").toString() == id) {
+                profile = entry.toMap();
+                break;
+            }
+        }
+    }
+    if (!controller->selectedModel.isEmpty()) profile["model"] = controller->selectedModel;
+    if (controller->selectedReasoning.isValid()) profile["reasoningEffort"] = controller->selectedReasoning;
+    controller->modelProfile = profile;
+    if (controller->agent()) m_configureModel(controller->agent(), profile);
+    if (controller == active()) emit chatModelChanged();
+}
+
+QVariantMap AgentViewModel::chatModelProfile() const {
+    auto profile = active()->modelProfile;
+    profile.remove("apiKey");
+    return profile;
+}
+
+bool AgentViewModel::modelConfigured() const {
+    return active()->agent() && active()->agent()->hasModelService()
+        && (!m_configureModel || !active()->modelProfile.value("model").toString().trimmed().isEmpty());
+}
+
+void AgentViewModel::selectChatModel(const QString& profileId, const QString& model) {
+    if (active()->isBusy()) {
+        emit noticeOccurred(tr("请等待当前任务完成，或停止后切换模型。"));
+        return;
+    }
+    for (const auto& entry : m_availableProfiles) {
+        const auto profile = entry.toMap();
+        if (profile.value("id").toString() != profileId) continue;
+        active()->modelProfile = profile;
+        active()->modelSelected = true;
+        active()->selectedModel = model;
+        active()->selectedReasoning = QVariant();
+        configureModel(active());
+        return;
+    }
+}
+
+void AgentViewModel::setChatReasoningEffort(const QString& effort) {
+    if (active()->isBusy()) return;
+    if (!QStringList{"", "off", "low", "medium", "high"}.contains(effort)) return;
+    active()->selectedReasoning = effort;
+    configureModel(active());
 }
 
 void AgentViewModel::applyToAgents(const std::function<void(AIAgent*)>& fn) {
@@ -522,9 +606,26 @@ void AgentViewModel::renameProject(const QString& projectId, const QString& name
     }
 }
 
-void AgentViewModel::searchMessages(const QString& keyword) {
+void AgentViewModel::setSessionPinned(const QString& sessionId, bool pinned) {
+    if (!m_memory || !m_memory->setSessionPinned(sessionId, pinned)) {
+        emit errorOccurred(tr("无法更新会话置顶状态，请重试。"));
+        return;
+    }
+    refreshSessions();
+}
+
+void AgentViewModel::setSessionArchived(const QString& sessionId, bool archived) {
+    if (!m_memory || !m_memory->setSessionArchived(sessionId, archived)) {
+        emit errorOccurred(tr("无法更新会话归档状态，请重试。"));
+        return;
+    }
+    refreshSessions();
+    emit noticeOccurred(archived ? tr("会话已归档，可在“包含已归档”中恢复。") : tr("会话已恢复。"));
+}
+
+void AgentViewModel::searchMessages(const QString& keyword, bool includeArchived) {
     const QVariantList results = m_memory
-        ? m_memory->searchMessages(keyword, 50) : QVariantList();
+        ? m_memory->searchMessages(keyword, 50, includeArchived) : QVariantList();
     if (m_searchResults == results) return;
     m_searchResults = results;
     emit searchResultsChanged();
@@ -1030,8 +1131,9 @@ QString compressedImageDataUrl(const QString& raw, int maxEdge = 1568, int quali
 
 } // namespace
 
-void AgentViewModel::startTask(const QString& input, const QStringList& images,
+bool AgentViewModel::startTask(const QString& input, const QStringList& images,
                                const QVariantList& files) {
+    configureModel(active());
     QStringList compressed;
     compressed.reserve(images.size());
     for (const QString& raw : images) {
@@ -1049,7 +1151,7 @@ void AgentViewModel::startTask(const QString& input, const QStringList& images,
             {"content", f.value("content").toString()},
         });
     }
-    active()->startTask(input, compressed, fileArray);
+    return active()->startTask(input, compressed, fileArray);
 }
 
 // Batch 30 (F6): read a text file as a chat attachment. Binary content
@@ -1153,14 +1255,41 @@ QString AgentViewModel::clipboardImageDataUrl() const {
 }
 
 void AgentViewModel::approveToolCall(const QString& id, bool approved) {
-    // Route to whichever tab is waiting for this confirmation — the dialog
-    // is global, so it may belong to a background tab.
-    for (ChatSessionController* controller : m_tabs) {
-        if (controller->state() == AgentState::AwaitingToolConfirm) {
-            controller->approveToolCall(id, approved);
-            return;
+    for (qsizetype i = 0; i < m_confirmations.size(); ++i) {
+        if (m_confirmations.at(i).id != id) continue;
+        const auto request = m_confirmations.takeAt(i);
+        emit pendingConfirmationsChanged();
+        if (request.controller && request.controller->agent()
+                && request.controller->agent()->pendingConfirmationId() == id)
+            request.controller->approveToolCall(id, approved);
+        return;
+    }
+}
+
+void AgentViewModel::pruneConfirmations() {
+    const auto removed = m_confirmations.removeIf([](const Confirmation& request) {
+        return !request.controller || !request.controller->agent()
+            || request.controller->state() != AgentState::AwaitingToolConfirm
+            || request.controller->agent()->pendingConfirmationId() != request.id;
+    });
+    if (removed) emit pendingConfirmationsChanged();
+}
+
+QVariantMap AgentViewModel::pendingConfirmation() const {
+    if (m_confirmations.isEmpty()) return {};
+    const auto& request = m_confirmations.first();
+    if (!request.controller) return {};
+    const QString sessionId = request.controller->currentSessionId();
+    QString title = tr("新会话");
+    for (const auto& entry : m_sessionList) {
+        const auto session = entry.toMap();
+        if (session.value("id").toString() == sessionId) {
+            title = session.value("title").toString();
+            break;
         }
     }
+    return {{"id", request.id}, {"name", request.name}, {"arguments", request.arguments},
+            {"sessionId", sessionId}, {"sessionTitle", title}, {"count", m_confirmations.size()}};
 }
 
 void AgentViewModel::stop() {
@@ -1170,28 +1299,19 @@ void AgentViewModel::stop() {
 // docs/20 §3.1（FORK-701）：重新生成最后一条回答（活动标签）。busy 时由
 // Controller 拒绝；agent 缺失时不执行。
 void AgentViewModel::regenerate() {
+    configureModel(active());
     active()->regenerate();
 }
 
-// docs/20 §3.2（FORK-701）：编辑重发。等价于「对最后一条 user 消息执行
-// regenerate + 替换内容」：删除持久层最后一条 user 行及之后全部消息，
-// 以 newText 重新发起。图片/文件附件不保留（与 resume 契约一致：干净
-// 白。空文本/无历史/无 agent 时静默返回。
-void AgentViewModel::editAndResend(const QString& newText) {
+// The agent replaces one complete turn, including live and persisted state.
+bool AgentViewModel::editAndResend(const QString& newText) {
+    configureModel(active());
     const QString trimmed = newText.trimmed();
-    if (trimmed.isEmpty()) return;
+    if (trimmed.isEmpty()) return false;
     ChatSessionController* controller = active();
-    if (controller->isBusy()) return;
+    if (controller->isBusy()) return false;
     AIAgent* agent = controller->agent();
-    if (agent == nullptr) return;   // 无持久层可修改
-
-    const qint64 userId = agent->memory()
-                              ? agent->memory()->lastUserMessageId(
-                                    controller->currentSessionId())
-                              : 0;
-    if (userId > 0)
-        agent->memory()->deleteMessagesFrom(controller->currentSessionId(), userId);
-    controller->startTask(trimmed);
+    return agent && agent->editLastUserMessage(trimmed);
 }
 
 void AgentViewModel::newChat() {

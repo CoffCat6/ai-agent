@@ -20,8 +20,6 @@ Dialog {
     property var entries: []
     property string filter: "all"   // all | execute | approved | denied
 
-    Accessible.name: qsTr("审计日志对话框")
-    Accessible.description: qsTr("查看工具执行审计记录，支持筛选与复制")
 
     readonly property var filtered: entries.filter(function(e) {
         if (filter === "all") return true
@@ -56,6 +54,8 @@ Dialog {
     background: DialogBackground {}
 
     contentItem: ColumnLayout {
+        Accessible.name: qsTr("审计日志对话框")
+        Accessible.description: qsTr("查看工具执行审计记录，支持筛选与复制")
         spacing: 12
 
         Text {

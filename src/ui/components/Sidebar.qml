@@ -27,6 +27,7 @@ Rectangle {
     // Batch 18: session picked for export + chosen format ("md" / "json")
     property string exportSessionId: ""
     property string exportFormat: "md"
+    property bool includeArchived: false
 
     // docs/17 树状共存: 项目节点展开状态（id → bool）。对象键变更不触发
     // 绑定重算，expansionEpoch 作为失效标记强制刷新。
@@ -49,6 +50,7 @@ Rectangle {
         const list = AgentVM.sessionList
         for (let j = 0; j < list.length; ++j) {
             const session = list[j]
+            if (session.archived && !root.includeArchived) continue
             const pid = session.projectId
             if (pid && map[pid]) map[pid].push(session)
             else if (!pid) map["__local__"].push(session)
@@ -713,7 +715,41 @@ Rectangle {
             Timer {
                 id: searchDebounce
                 interval: 200
-                onTriggered: AgentVM.searchMessages(searchField.text.trim())
+                onTriggered: AgentVM.searchMessages(searchField.text.trim(), root.includeArchived)
+            }
+        }
+
+        CheckBox {
+            id: archivedToggle
+            text: qsTr("包含已归档")
+            Layout.leftMargin: 12
+            checked: root.includeArchived
+            indicator: Rectangle {
+                x: 6
+                y: (archivedToggle.height - height) / 2
+                width: 16
+                height: 16
+                radius: 3
+                color: archivedToggle.checked ? Theme.brandPrimary : Theme.bgPrimary
+                border.color: archivedToggle.activeFocus ? Theme.brandPrimary : Theme.borderSubtle
+                Text {
+                    anchors.centerIn: parent
+                    text: archivedToggle.checked ? "✓" : ""
+                    color: Theme.bgPrimary
+                    font.pixelSize: 12
+                }
+            }
+            contentItem: Text {
+                leftPadding: 30
+                text: archivedToggle.text
+                color: Theme.textSecondary
+                font.pixelSize: Theme.fontSizeCaption
+                font.family: Theme.fontSans
+                verticalAlignment: Text.AlignVCenter
+            }
+            onToggled: {
+                root.includeArchived = checked
+                searchDebounce.restart()
             }
         }
 
@@ -741,6 +777,25 @@ Rectangle {
                 readonly property bool isActive: AgentVM.currentSessionId === modelData.id
                 property bool renaming: false
                 property bool confirmDelete: false
+
+                // 右键菜单：同一组操作（与 hover 按钮等价，供习惯右键的用户）。
+                TapHandler {
+                    acceptedButtons: Qt.RightButton
+                    onTapped: sessionMenu.popup()
+                }
+
+                Menu {
+                    id: sessionMenu
+                    parent: Overlay.overlay
+                    MenuItem {
+                        text: modelData.pinned ? qsTr("取消置顶") : qsTr("置顶会话")
+                        onTriggered: AgentVM.setSessionPinned(modelData.id, !modelData.pinned)
+                    }
+                    MenuItem {
+                        text: modelData.archived ? qsTr("恢复会话") : qsTr("归档会话")
+                        onTriggered: AgentVM.setSessionArchived(modelData.id, !modelData.archived)
+                    }
+                }
 
                 background: Rectangle {
                     color: hovered ? Theme.surfaceHover : "transparent"
@@ -776,18 +831,41 @@ Rectangle {
                             clip: true
                             // 用 JS 的 trim()：QML 字符串没有 QString.trimmed()，
                             // 调用会抛 TypeError 并中断 onAccepted。
+                            // 自动保存：内容变更即提交（去抖 600ms），Enter 立即
+                            // 提交并退出编辑，失焦也保存——不等按 Enter。
+                            onTextChanged: {
+                                renameCommitTimer.restart()
+                            }
                             onAccepted: {
+                                renameCommitTimer.stop()
                                 if (text.trim().length > 0)
                                     AgentVM.renameSession(modelData.id, text)
                                 sessionDelegate.renaming = false
                             }
-                            onFocusChanged: if (!focus && sessionDelegate.renaming)
+                            onFocusChanged: if (!focus && sessionDelegate.renaming) {
+                                renameCommitTimer.stop()
+                                if (text.trim().length > 0
+                                        && text !== modelData.title)
+                                    AgentVM.renameSession(modelData.id, text)
                                 sessionDelegate.renaming = false
+                            }
                             // 聚焦改由「可见」触发（Component.onCompleted
                             // 只在创建时跑一次，不会在 renaming 变 true 时重放）。
                             onVisibleChanged: if (visible) {
                                 forceActiveFocus()
                                 selectAll()
+                            }
+
+                            Timer {
+                                id: renameCommitTimer
+                                interval: 600
+                                onTriggered: {
+                                    if (!sessionDelegate.renaming) return
+                                    const trimmed = renameInput.text.trim()
+                                    // 空串或与原标题相同不提交，避免清空标题/空写库。
+                                    if (trimmed.length > 0 && trimmed !== modelData.title)
+                                        AgentVM.renameSession(modelData.id, trimmed)
+                                }
                             }
                         }
 
@@ -800,14 +878,73 @@ Rectangle {
                             font.pixelSize: Theme.fontSizeBody
                             font.family: Theme.fontSans
                             elide: Text.ElideRight
-                            width: parent.width - (sessionDelegate.hovered ? 66 : 0)
+                            width: parent.width - (sessionDelegate.hovered ? 132 : 0)
                         }
 
+                        // Hover 操作行：置顶 / 归档 / 导出 / 重命名 / 删除。
+                        // 全部用直连 MouseArea 的 Rectangle，不再用 Popup Menu——
+                        // Menu 在 Repeater delegate 内弹出会被焦点抢占秒关，
+                        // 置顶/归档因此从未生效（bug 修复：改为直连按钮）。
                         Row {
                             visible: sessionDelegate.hovered && !sessionDelegate.renaming
                             anchors.verticalCenter: parent.verticalCenter
                             anchors.right: parent.right
                             spacing: 2
+
+                            // 置顶 / 取消置顶
+                            Rectangle {
+                                width: 20
+                                height: 20
+                                radius: 4
+                                color: pinMA.containsMouse ? Theme.surfaceHover : "transparent"
+
+                                AppIcon {
+                                    anchors.centerIn: parent
+                                    icon: "pin"
+                                    size: 12
+                                    rotation: modelData.pinned ? 45 : 0
+                                    iconColor: modelData.pinned || pinMA.containsMouse
+                                        ? Theme.brandPrimary : Theme.textSecondary
+                                }
+
+                                MouseArea {
+                                    id: pinMA
+                                    anchors.fill: parent
+                                    hoverEnabled: true
+                                    cursorShape: Qt.PointingHandCursor
+                                    onClicked: AgentVM.setSessionPinned(modelData.id, !modelData.pinned)
+                                }
+                                Accessible.role: Accessible.Button
+                                Accessible.name: modelData.pinned ? qsTr("取消置顶") : qsTr("置顶会话")
+                                Accessible.onPressAction: AgentVM.setSessionPinned(modelData.id, !modelData.pinned)
+                            }
+
+                            // 归档 / 恢复
+                            Rectangle {
+                                width: 20
+                                height: 20
+                                radius: 4
+                                color: archiveMA.containsMouse ? Theme.surfaceHover : "transparent"
+
+                                AppIcon {
+                                    anchors.centerIn: parent
+                                    icon: "archive"
+                                    size: 12
+                                    iconColor: modelData.archived || archiveMA.containsMouse
+                                        ? Theme.statusWarning : Theme.textSecondary
+                                }
+
+                                MouseArea {
+                                    id: archiveMA
+                                    anchors.fill: parent
+                                    hoverEnabled: true
+                                    cursorShape: Qt.PointingHandCursor
+                                    onClicked: AgentVM.setSessionArchived(modelData.id, !modelData.archived)
+                                }
+                                Accessible.role: Accessible.Button
+                                Accessible.name: modelData.archived ? qsTr("恢复会话") : qsTr("归档会话")
+                                Accessible.onPressAction: AgentVM.setSessionArchived(modelData.id, !modelData.archived)
+                            }
 
                             // Export action (Batch 18)
                             Rectangle {
@@ -914,7 +1051,9 @@ Rectangle {
                     }
 
                     Text {
-                        text: modelData.timeText ? modelData.timeText : ""
+                        text: (modelData.pinned ? qsTr("已置顶 · ") : "")
+                            + (modelData.archived ? qsTr("已归档 · ") : "")
+                            + (modelData.timeText || "")
                         color: Theme.textSecondary
                         font.pixelSize: Theme.fontSizeCaption
                         font.family: Theme.fontSans

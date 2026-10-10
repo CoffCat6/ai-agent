@@ -16,6 +16,27 @@ Rectangle {
     property int maxHeight: 240
     // Batch 30 (F6): [{kind:"image", dataUrl}, {kind:"file", name, content}]
     property var pendingAttachments: []
+    property bool restoringDraft: false
+    onPendingAttachmentsChanged: {
+        if (!restoringDraft) AgentVM.draftAttachments = pendingAttachments
+    }
+
+    function restoreDraft() {
+        restoringDraft = true
+        textArea.text = AgentVM.draftText
+        pendingAttachments = AgentVM.draftAttachments
+        historyBrowsing = false
+        restoringDraft = false
+    }
+    Component.onCompleted: restoreDraft()
+    Connections {
+        target: AgentVM
+        function onActiveTabChanged() { root.restoreDraft() }
+        function onDraftTextChanged() {
+            if (textArea.text !== AgentVM.draftText) root.restoreDraft()
+        }
+        function onDraftAttachmentsChanged() { root.restoreDraft() }
+    }
     // 由 AgentChatPage 注入：发送后请求轨迹视图跳底并恢复跟随。
     property var traceJump: null
     // docs/20 §3.3：输入历史浏览态。applyingHistory 用于区分「程序设值」与
@@ -70,9 +91,9 @@ Rectangle {
             for (let i = 0; i < root.pendingAttachments.length; ++i) {
                 const a = root.pendingAttachments[i]
                 if (a.kind === "image") images.push(a.dataUrl)
-                else files.push({name: a.name, content: a.content})
+                else files.push({kind: "file", name: a.name, content: a.content})
             }
-            AgentVM.startTask(textArea.text, images, files)
+            if (!AgentVM.startTask(textArea.text, images, files)) return
             textArea.text = ""
             root.pendingAttachments = []
             // docs/20 §3.3：发送后退出历史浏览态（游标已在 startTask 内复位）。
@@ -182,6 +203,7 @@ Rectangle {
         // (the text area scrolls internally past it).
         TextArea {
             id: textArea
+            objectName: "messageInput"
             anchors.left: parent.left
             anchors.leftMargin: 36
             anchors.right: parent.right
@@ -216,9 +238,9 @@ Rectangle {
             }
 
             onTextChanged: {
-                AgentVM.draftText = text
+                if (!root.restoringDraft) AgentVM.draftText = text
                 // 用户手动编辑（非历史程序设值）时退出浏览并复位游标。
-                if (!root.applyingHistory && root.historyBrowsing) {
+                if (!root.restoringDraft && !root.applyingHistory && root.historyBrowsing) {
                     root.historyBrowsing = false
                     AgentVM.resetInputHistory()
                 }

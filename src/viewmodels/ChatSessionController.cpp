@@ -168,6 +168,12 @@ void ChatSessionController::setDraftText(const QString& text) {
     emit draftTextChanged();
 }
 
+void ChatSessionController::setDraftAttachments(const QVariantList& attachments) {
+    if (m_draftAttachments == attachments) return;
+    m_draftAttachments = attachments;
+    emit draftAttachmentsChanged();
+}
+
 // docs/20 §3.3：输入历史回溯。游标从 size() 开始（未浏览）；↑ 前移一位并
 // 返回该条目，已到最旧时保持在最旧（返回首条，幂等）；无历史返回空串。
 // ↓ 后移，回到 size() 时返回空串（表示回到最新/草稿态）。
@@ -201,9 +207,9 @@ void ChatSessionController::setState(AgentState state) {
 
 // ── QML actions ──────────────────────────────────────────
 
-void ChatSessionController::startTask(const QString& input, const QStringList& images,
+bool ChatSessionController::startTask(const QString& input, const QStringList& images,
                                       const QJsonArray& files) {
-    if (isBusy()) return;
+    if (isBusy()) return false;
     // docs/20 §3.3：成功发起的非空输入入历史环（相邻重复不入队），并复位
     // 浏览游标。仅本标签内存态，不持久化。
     const QString trimmedInput = input.trimmed();
@@ -218,13 +224,13 @@ void ChatSessionController::startTask(const QString& input, const QStringList& i
                     input.left(80));
     if (!m_agent) {
         emit errorOccurred(tr("No model agent is configured. Configure a model and try again."));
-        return;
+        return false;
     }
 
     m_finalResponse.clear();
     emit responseReady();
 
-    m_agent->startTask(input, images, files);
+    return m_agent->startTask(input, images, files);
 }
 
 void ChatSessionController::approveToolCall(const QString& id, bool approved) {

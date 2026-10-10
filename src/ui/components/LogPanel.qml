@@ -21,12 +21,12 @@ Dialog {
     onAboutToShow: AgentVM.logModel.polling = true
     onAboutToHide: AgentVM.logModel.polling = false
 
-    Accessible.name: qsTr("运行日志面板")
-    Accessible.description: qsTr("查看应用运行日志，支持按类别、级别和关键词筛选")
 
     background: DialogBackground {}
 
     contentItem: ColumnLayout {
+        Accessible.name: qsTr("运行日志面板")
+        Accessible.description: qsTr("查看应用运行日志，支持按类别、级别和关键词筛选")
         spacing: 10
 
         Text {

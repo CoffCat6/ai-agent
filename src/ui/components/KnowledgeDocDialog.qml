@@ -19,8 +19,6 @@ Dialog {
     property var chunks: []   // [{chunk_index, chunk_total, text, ...}]
     property var meta: null   // entry of AgentVM.knowledgeDocuments
 
-    Accessible.name: qsTr("知识库文档详情")
-    Accessible.description: qsTr("查看文档 %1 的分块预览与统计信息").arg(docName)
 
     function openFor(name) {
         docName = name
@@ -48,6 +46,8 @@ Dialog {
     background: DialogBackground {}
 
     contentItem: ColumnLayout {
+        Accessible.name: qsTr("知识库文档详情")
+        Accessible.description: qsTr("查看文档 %1 的分块预览与统计信息").arg(dialog.docName)
         spacing: 12
 
         // ── Header: icon + name + degraded badge ──────

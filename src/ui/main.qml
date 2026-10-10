@@ -319,16 +319,6 @@ ApplicationWindow {
         parent: Overlay.overlay
     }
 
-    // ── Connect tool confirmation signal ───────────────
-    Connections {
-        target: AgentVM
-        function onToolConfirmRequired(id, name, args) {
-            toolConfirmDialog.pendingToolCallId = id
-            toolConfirmDialog.toolName = name
-            toolConfirmDialog.arguments = JSON.stringify(args, null, 2)
-            toolConfirmDialog.open()
-        }
-    }
 
     // ── Error / Notice Toasts ───────────────────────────
     AppToast {
@@ -341,6 +331,9 @@ ApplicationWindow {
         target: AgentVM
         function onErrorOccurred(message) {
             errorToast.show(message)
+        }
+        function onModelSettingsRequested() {
+            settingsCenterDialog.openCategory("model")
         }
     }
 

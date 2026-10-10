@@ -46,6 +46,14 @@ public:
     QString finalResponse() const { return m_finalResponse; }
     QString draftText() const { return m_draftText; }
     void setDraftText(const QString& text);
+    QVariantList draftAttachments() const { return m_draftAttachments; }
+    void setDraftAttachments(const QVariantList& attachments);
+    // Private to the application layer; the facade strips credentials
+    // before exposing this configuration snapshot to QML.
+    QVariantMap modelProfile;
+    QString selectedModel;
+    QVariant selectedReasoning;
+    bool modelSelected = false;
     // docs/20 §3.3：本标签的输入历史环（进程内保留最近 50 条，不持久化）。
     // historyPrev/historyNext 返回对应历史条目；无更多历史时返回空串。
     // 正在编辑（非原始态）时由 QML 侧提前退出，不进入浏览。
@@ -75,7 +83,7 @@ public:
     // Batch 30 (F6): images are compressed data URLs from the viewmodel;
     // files are {name, content} text attachments (folded into the request
     // text by the agent).
-    void startTask(const QString& input, const QStringList& images = {},
+    bool startTask(const QString& input, const QStringList& images = {},
                    const QJsonArray& files = {});
     void approveToolCall(const QString& id, bool approved);
     void stop();
@@ -103,6 +111,7 @@ signals:
     void traceChanged();
     void responseReady();
     void draftTextChanged();
+    void draftAttachmentsChanged();
     void tokenUsageChanged();
     void sessionTokensChanged();
     void contextLimitChanged();
@@ -132,6 +141,7 @@ private:
     TraceModel m_trace;
     QString m_finalResponse;
     QString m_draftText;
+    QVariantList m_draftAttachments;
     QString m_currentSessionId;
     int m_usedTokens{0};
     qint64 m_sessionTokensUsed{0};   // AIAgent::sessionTokensUsed 镜像

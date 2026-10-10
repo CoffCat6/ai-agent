@@ -32,6 +32,13 @@ public:
         return 0;
     }
 
+    // Atomically remove the last turn's dialogue and display trace. Keep
+    // the user message for regeneration; remove it for editing.
+    virtual bool truncateLastTurn(const QString& sessionId, bool removeUser) {
+        Q_UNUSED(sessionId); Q_UNUSED(removeUser);
+        return false;
+    }
+
     virtual void saveEpisodic(const QString& sessionId, const QJsonObject& episode) = 0;
     virtual QJsonArray searchEpisodic(const QString& query, int limit = 10) = 0;
 
@@ -44,8 +51,8 @@ public:
     virtual void touchSession(const QString& sessionId) {
         Q_UNUSED(sessionId);
     }
-    virtual QJsonArray listSessions(int limit = 50) {
-        Q_UNUSED(limit);
+    virtual QJsonArray listSessions(int limit = 50, bool includeArchived = false) {
+        Q_UNUSED(limit); Q_UNUSED(includeArchived);
         return {};
     }
     // Remove a session together with its messages and episodes
@@ -54,6 +61,12 @@ public:
     }
     virtual void renameSession(const QString& sessionId, const QString& title) {
         Q_UNUSED(sessionId); Q_UNUSED(title);
+    }
+    virtual bool setSessionPinned(const QString& id, bool pinned) {
+        Q_UNUSED(id); Q_UNUSED(pinned); return false;
+    }
+    virtual bool setSessionArchived(const QString& id, bool archived) {
+        Q_UNUSED(id); Q_UNUSED(archived); return false;
     }
 
     // Audit trail for tool activity (optional capability; default no-ops).
@@ -113,8 +126,8 @@ public:
     // history (optional capability; default no-ops). Each result is a map
     // {sessionId, sessionTitle, messageId, snippet, role, timestamp}, newest
     // first. Empty/blank keywords return an empty list.
-    virtual QVariantList searchMessages(const QString& keyword, int limit = 50) {
-        Q_UNUSED(keyword); Q_UNUSED(limit);
+    virtual QVariantList searchMessages(const QString& keyword, int limit = 50, bool includeArchived = false) {
+        Q_UNUSED(keyword); Q_UNUSED(limit); Q_UNUSED(includeArchived);
         return {};
     }
 

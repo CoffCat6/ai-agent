@@ -15,14 +15,12 @@ Item {
     readonly property var images: modelData.images !== undefined ? modelData.images : []
     readonly property var files: modelData.files !== undefined ? modelData.files : []
     readonly property bool hasAttachments: images.length > 0 || files.length > 0
-    // docs/20 §3.2（FORK-701）：内联编辑态与可编辑性（末条、非 busy、无附件
-    // —— 编辑重发不保留附件，有附件时隐藏入口避免误导）。
+    // Edit the last user turn while idle, retaining its existing attachments.
     property bool editing: false
     readonly property bool canEdit:
         !AgentVM.stateBusy
         && AgentVM.traceCount > 0
         && index === AgentVM.lastTraceIndexOfType("user_message")
-        && !hasAttachments
         && nodeType === "user_message"
     readonly property string nodeType: modelData.type || ""
     // 内联编辑草稿：进入编辑态时初始化为当前正文。
@@ -108,7 +106,7 @@ Item {
                         && editDraft.trim() !== root.body
                     onClicked: {
                         const next = editDraft.trim()
-                        root.editing = false
+                        // Success replaces this delegate; failure keeps the edit draft.
                         AgentVM.editAndResend(next)
                     }
                 }

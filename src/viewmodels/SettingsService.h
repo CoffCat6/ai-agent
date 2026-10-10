@@ -256,6 +256,7 @@ public:
     // capability-table contextWindow > global contextTokens. Consumed by
     // main.cpp when wiring AIAgent::setContextLimit.
     int resolveContextLimit() const;
+    int resolveContextLimitForProfile(const QVariantMap& profile) const;
 
     // docs/20 §4.3：开机自启的注册表读写封装（可注入，test_settings 用它
     // 在不碰真实 Run 键的前提下校验读写路径）。默认实现（nullptr）为

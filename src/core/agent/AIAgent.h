@@ -9,6 +9,8 @@
 #include <QTimer>
 #include <QVariant>
 #include <QVector>
+#include <atomic>
+#include <memory>
 
 #include "AgentState.h"
 #include "LLMTypes.h"
@@ -118,6 +120,10 @@ public:
     AgentState state() const { return m_state; }
     bool isActive() const { return m_active; }
     QString currentModel() const;   // configured model identity (audit rows)
+    bool hasModelService() const { return m_llmService != nullptr; }
+    void setModelLocal(bool local) { m_modelLocal = local; }
+    void setLocalOnlyMode(bool enabled) { m_localOnly = enabled; }
+    QString pendingConfirmationId() const { return m_confirmNodeId; }
     QJsonArray messages() const { return m_messages; }
     QJsonArray traceModel() const { return m_traceModel; }
     QString lastResponse() const { return m_lastResponse; }
@@ -151,7 +157,7 @@ public slots:
     // Batch 30 (F6): images are compressed data URLs ("data:image/jpeg;
     // base64,..."); files are {name, content} text attachments folded into
     // the request text (the persisted message keeps them as a field).
-    void startTask(const QString& userMessage, const QStringList& images = {},
+    bool startTask(const QString& userMessage, const QStringList& images = {},
                    const QJsonArray& files = {});
     void approveToolCall(const QString& id, bool approved);
     void stop();                                    // abort generation, keep trace
@@ -164,6 +170,7 @@ public slots:
     // 轮工具消息），从最后一条 user 消息重新发起请求。持久层同步删除回答
     // （audit_log 不动）。无历史或无 agent 挂接时静默返回。busy 时拒绝。
     void regenerateLast();
+    bool editLastUserMessage(const QString& text);
 
 signals:
     void stateChanged(AgentState state);
@@ -200,6 +207,8 @@ private:
     int calibratedMessageTokens() const;
 
     void processIteration();
+    bool rewindLastTurn(bool removeUser);
+    bool toolAllowedForModel(const QString& name) const;
     void applyContextBudget(int reservedTokens);
     void onContextLimitChanged(int oldLimit, int newLimit);
     void restoreFullHistoryIfAvailable();
@@ -252,6 +261,8 @@ private:
     // 实际工具执行上限，由 setMaxIterations 按 2×步数 缩放
     int m_maxToolExecutions{kMinToolExecutions};
     bool m_active{false};
+    bool m_modelLocal{false};
+    bool m_localOnly{false};
     quint64 m_epoch{0};   // bumped on start/stop/reset; stale tool results are dropped
 
     QString m_sessionId;
@@ -272,6 +283,7 @@ private:
     // completion; entries are removed in the watcher callback on both the
     // normal and the epoch-drop path. No ownership - never delete.
     QHash<QString, ITool*> m_inFlightTools;
+    QHash<QString, std::shared_ptr<std::atomic<bool>>> m_toolCancellations;
     QString m_confirmNodeId;  // trace node of the pending confirmation
     // Actual tool executions in the current request (m_maxToolExecutions cap;
     // the round budget alone bounds LLM rounds, not the announced call count).

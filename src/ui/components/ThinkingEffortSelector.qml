@@ -4,15 +4,8 @@ import QtQuick.Controls
 import NexusAI
 import NexusAI.ViewModels
 
-// 思考强度选择器（跟随默认 / 关闭 / 低 / 中 / 高）。
-//
-// 归属与"模型配置"一致：读写活动 profile 的 reasoningEffort 字段，切换即
-// 写回 QSettings 并触发 Settings.activeProfileChanged，由 main.cpp 的
-// applySettings 推给模板 agent 与每个标签的 ProviderSet——对新建会话与正在
-// 跑的会话都立即生效，不需要重启。
-//
-// 档位是"意图"而不是线协议字段：OpenAI 落到 reasoning_effort、Anthropic 折
-// 算成 thinking.budget_tokens、Ollama 退化成布尔 think，映射各家自理。
+// Reasoning effort belongs to the current conversation. Running tasks
+// keep their configuration snapshot; changes here do not edit defaults.
 Item {
     id: root
 
@@ -20,7 +13,7 @@ Item {
     implicitHeight: 28
 
     readonly property string current: {
-        const v = Settings.activeProfile.reasoningEffort
+        const v = AgentVM.chatModelProfile.reasoningEffort
         return v === undefined ? "" : String(v)
     }
 
@@ -36,8 +29,7 @@ Item {
 
     // 自定义网关刚建好时活动配置还没有模型名，此时思考档位既不会随请求发出也没有
     // 任何效果——与其让人点了没反应，不如显式禁用并说明原因。
-    readonly property bool usable: Settings.activeProfileId !== ""
-        && String(Settings.activeProfile.model || "") !== ""
+    readonly property bool usable: AgentVM.modelConfigured && !AgentVM.stateBusy
 
     readonly property string currentLabel: {
         for (var i = 0; i < levels.length; ++i)
@@ -57,9 +49,7 @@ Item {
     }
 
     function selectLevel(value) {
-        const id = Settings.activeProfileId
-        if (!id) return
-        Settings.updateProfile(id, { reasoningEffort: value })
+        AgentVM.setChatReasoningEffort(value)
     }
 
     Rectangle {
@@ -134,7 +124,7 @@ Item {
             spacing: 2
 
             Text {
-                text: qsTr("思考强度 · 保存到当前模型配置")
+                text: qsTr("思考强度 · 当前会话")
                 color: Theme.textSecondary
                 font.pixelSize: 10
                 font.bold: true

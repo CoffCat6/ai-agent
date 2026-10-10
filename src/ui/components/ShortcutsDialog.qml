@@ -16,12 +16,12 @@ Dialog {
     width: 520
     height: 460
 
-    Accessible.name: qsTr("快捷键速查对话框")
-    Accessible.description: qsTr("查看全部快捷键")
 
     background: DialogBackground {}
 
     contentItem: ColumnLayout {
+        Accessible.name: qsTr("快捷键速查对话框")
+        Accessible.description: qsTr("查看全部快捷键")
         spacing: 12
 
         Text {

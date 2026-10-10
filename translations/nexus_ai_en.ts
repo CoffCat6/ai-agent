@@ -9,32 +9,42 @@
         <translation>AI chat page</translation>
     </message>
     <message>
-        <location filename="../src/ui/pages/AgentChatPage.qml" line="111"/>
+        <location filename="../src/ui/pages/AgentChatPage.qml" line="112"/>
         <source>发送一条消息，开始与 NexusAI 对话</source>
         <translation>Send a message to start chatting with NexusAI</translation>
     </message>
     <message>
-        <location filename="../src/ui/pages/AgentChatPage.qml" line="151"/>
+        <location filename="../src/ui/pages/AgentChatPage.qml" line="113"/>
+        <source>先连接一个模型，即可开始对话。你的输入会保留在这里。</source>
+        <translation>Connect a model to start chatting. Your draft will stay here.</translation>
+    </message>
+    <message>
+        <location filename="../src/ui/pages/AgentChatPage.qml" line="124"/>
+        <source>配置模型</source>
+        <translation>Configure model</translation>
+    </message>
+    <message>
+        <location filename="../src/ui/pages/AgentChatPage.qml" line="161"/>
         <source>折叠过程</source>
         <translation>Collapse process</translation>
     </message>
     <message>
-        <location filename="../src/ui/pages/AgentChatPage.qml" line="152"/>
+        <location filename="../src/ui/pages/AgentChatPage.qml" line="162"/>
         <source>思考过程 · %1</source>
         <translation>Thinking · %1</translation>
     </message>
     <message>
-        <location filename="../src/ui/pages/AgentChatPage.qml" line="171"/>
+        <location filename="../src/ui/pages/AgentChatPage.qml" line="181"/>
         <source>隐藏思考与工具调用过程</source>
         <translation>Hide thinking and tool calls</translation>
     </message>
     <message>
-        <location filename="../src/ui/pages/AgentChatPage.qml" line="171"/>
+        <location filename="../src/ui/pages/AgentChatPage.qml" line="181"/>
         <source>显示思考与工具调用过程</source>
         <translation>Show thinking and tool calls</translation>
     </message>
     <message>
-        <location filename="../src/ui/pages/AgentChatPage.qml" line="206"/>
+        <location filename="../src/ui/pages/AgentChatPage.qml" line="216"/>
         <source>回到底部</source>
         <translation>Scroll to bottom</translation>
     </message>
@@ -61,23 +71,23 @@
 <context>
     <name>AssistantMessage</name>
     <message>
-        <location filename="../src/ui/components/AssistantMessage.qml" line="406"/>
+        <location filename="../src/ui/components/AssistantMessage.qml" line="338"/>
         <source>打开引用文档 %1</source>
         <translation>Open cited document %1</translation>
     </message>
     <message>
-        <location filename="../src/ui/components/AssistantMessage.qml" line="460"/>
-        <location filename="../src/ui/components/AssistantMessage.qml" line="475"/>
+        <location filename="../src/ui/components/AssistantMessage.qml" line="400"/>
+        <location filename="../src/ui/components/AssistantMessage.qml" line="415"/>
         <source>重新生成</source>
         <translation>Regenerate</translation>
     </message>
     <message>
-        <location filename="../src/ui/components/AssistantMessage.qml" line="476"/>
+        <location filename="../src/ui/components/AssistantMessage.qml" line="416"/>
         <source>丢弃当前回答并重新生成</source>
         <translation>Discard the current answer and regenerate</translation>
     </message>
     <message>
-        <location filename="../src/ui/components/AssistantMessage.qml" line="485"/>
+        <location filename="../src/ui/components/AssistantMessage.qml" line="425"/>
         <source>助手回复</source>
         <translation>Assistant reply</translation>
     </message>
@@ -285,9 +295,52 @@ and the model can retrieve their content to answer questions</translation>
     </message>
 </context>
 <context>
+    <name>EditBuffer</name>
+    <message>
+        <location filename="../src/viewmodels/PreferenceRegistry.cpp" line="118"/>
+        <source>值必须是布尔值</source>
+        <translation>Value must be a boolean</translation>
+    </message>
+    <message>
+        <location filename="../src/viewmodels/PreferenceRegistry.cpp" line="126"/>
+        <source>值必须是整数</source>
+        <translation>Value must be an integer</translation>
+    </message>
+    <message>
+        <location filename="../src/viewmodels/PreferenceRegistry.cpp" line="131"/>
+        <source>值必须在 %1-%2 之间</source>
+        <translation>Value must be between %1 and %2</translation>
+    </message>
+    <message>
+        <location filename="../src/viewmodels/PreferenceRegistry.cpp" line="141"/>
+        <source>值必须是以下之一: </source>
+        <translation>Value must be one of: </translation>
+    </message>
+    <message>
+        <location filename="../src/viewmodels/PreferenceRegistry.cpp" line="148"/>
+        <source>此字段为必填</source>
+        <translation>This field is required</translation>
+    </message>
+    <message>
+        <location filename="../src/viewmodels/PreferenceRegistry.cpp" line="153"/>
+        <source>长度不能超过 %1 个字符</source>
+        <translation>Must not exceed %1 characters</translation>
+    </message>
+</context>
+<context>
     <name>ErrorCard</name>
     <message>
-        <location filename="../src/ui/components/ErrorCard.qml" line="64"/>
+        <location filename="../src/ui/components/ErrorCard.qml" line="47"/>
+        <source>重试本轮</source>
+        <translation>Retry this turn</translation>
+    </message>
+    <message>
+        <location filename="../src/ui/components/ErrorCard.qml" line="52"/>
+        <source>模型设置</source>
+        <translation>Model settings</translation>
+    </message>
+    <message>
+        <location filename="../src/ui/components/ErrorCard.qml" line="60"/>
         <source>错误</source>
         <translation>Error</translation>
     </message>
@@ -548,67 +601,67 @@ and the model can retrieve their content to answer questions</translation>
 <context>
     <name>InputConsole</name>
     <message>
-        <location filename="../src/ui/components/InputConsole.qml" line="162"/>
+        <location filename="../src/ui/components/InputConsole.qml" line="183"/>
         <source>附件将随消息发送给当前模型服务</source>
         <translation>Attachments are sent to the current model service with your message</translation>
     </message>
     <message>
-        <location filename="../src/ui/components/InputConsole.qml" line="196"/>
+        <location filename="../src/ui/components/InputConsole.qml" line="218"/>
         <source>输入消息... (Enter 发送, Shift+Enter 换行)</source>
         <translation>Type a message... (Enter to send, Shift+Enter for newline)</translation>
     </message>
     <message>
-        <location filename="../src/ui/components/InputConsole.qml" line="202"/>
+        <location filename="../src/ui/components/InputConsole.qml" line="224"/>
         <source>消息输入框</source>
         <translation>Message input field</translation>
     </message>
     <message>
-        <location filename="../src/ui/components/InputConsole.qml" line="203"/>
+        <location filename="../src/ui/components/InputConsole.qml" line="225"/>
         <source>输入消息后按 Enter 发送，Shift+Enter 换行</source>
         <translation>Type a message and press Enter to send, Shift+Enter for new line</translation>
     </message>
     <message>
-        <location filename="../src/ui/components/InputConsole.qml" line="346"/>
+        <location filename="../src/ui/components/InputConsole.qml" line="368"/>
         <source>添加附件</source>
         <translation>Add attachment</translation>
     </message>
     <message>
-        <location filename="../src/ui/components/InputConsole.qml" line="347"/>
+        <location filename="../src/ui/components/InputConsole.qml" line="369"/>
         <source>上传图片或文件附件</source>
         <translation>Upload image or file attachment</translation>
     </message>
     <message>
-        <location filename="../src/ui/components/InputConsole.qml" line="398"/>
+        <location filename="../src/ui/components/InputConsole.qml" line="420"/>
         <source>停止</source>
         <translation>Stop</translation>
     </message>
     <message>
-        <location filename="../src/ui/components/InputConsole.qml" line="398"/>
+        <location filename="../src/ui/components/InputConsole.qml" line="420"/>
         <source>发送</source>
         <translation>Send</translation>
     </message>
     <message>
-        <location filename="../src/ui/components/InputConsole.qml" line="469"/>
+        <location filename="../src/ui/components/InputConsole.qml" line="491"/>
         <source>上传图片</source>
         <translation>Upload image</translation>
     </message>
     <message>
-        <location filename="../src/ui/components/InputConsole.qml" line="474"/>
+        <location filename="../src/ui/components/InputConsole.qml" line="496"/>
         <source>上传文件</source>
         <translation>Upload file</translation>
     </message>
     <message>
-        <location filename="../src/ui/components/InputConsole.qml" line="488"/>
+        <location filename="../src/ui/components/InputConsole.qml" line="510"/>
         <source>文本文件 (*.txt *.md *.json *.csv *.log *.xml *.yml *.yaml *.ini *.cpp *.h *.py *.js *.ts)</source>
         <translation>Text files (*.txt *.md *.json *.csv *.log *.xml *.yml *.yaml *.ini *.cpp *.h *.py *.js *.ts)</translation>
     </message>
     <message>
-        <location filename="../src/ui/components/InputConsole.qml" line="489"/>
+        <location filename="../src/ui/components/InputConsole.qml" line="511"/>
         <source>全部文件 (*)</source>
         <translation>All files (*)</translation>
     </message>
     <message>
-        <location filename="../src/ui/components/InputConsole.qml" line="481"/>
+        <location filename="../src/ui/components/InputConsole.qml" line="503"/>
         <source>图片文件 (*.png *.jpg *.jpeg *.webp *.bmp *.gif)</source>
         <translation>Image files (*.png *.jpg *.jpeg *.webp *.bmp *.gif)</translation>
     </message>
@@ -1664,102 +1717,102 @@ and the model can retrieve their content to answer questions</translation>
 <context>
     <name>NexusAI</name>
     <message>
-        <location filename="../src/viewmodels/ThemeManager.cpp" line="61"/>
+        <location filename="../src/core/utils/SettingsSchema.cpp" line="80"/>
         <source>主题模式</source>
         <translation>Theme Mode</translation>
     </message>
     <message>
-        <location filename="../src/viewmodels/ThemeManager.cpp" line="72"/>
+        <location filename="../src/core/utils/SettingsSchema.cpp" line="87"/>
         <source>正文字体</source>
         <translation>Body Font</translation>
     </message>
     <message>
-        <location filename="../src/viewmodels/ThemeManager.cpp" line="81"/>
+        <location filename="../src/core/utils/SettingsSchema.cpp" line="90"/>
         <source>等宽字体</source>
         <translation>Monospace Font</translation>
     </message>
     <message>
-        <location filename="../src/viewmodels/ThemeManager.cpp" line="90"/>
+        <location filename="../src/core/utils/SettingsSchema.cpp" line="93"/>
         <source>基础字号</source>
         <translation>Base Font Size</translation>
     </message>
     <message>
-        <location filename="../src/viewmodels/AgentViewModel.cpp" line="131"/>
+        <location filename="../src/core/utils/SettingsSchema.cpp" line="101"/>
         <source>侧边栏默认宽度</source>
         <translation>Default Sidebar Width</translation>
     </message>
     <message>
-        <location filename="../src/viewmodels/AgentViewModel.cpp" line="132"/>
+        <location filename="../src/core/utils/SettingsSchema.cpp" line="104"/>
         <source>面板默认宽度</source>
         <translation>Default Panel Width</translation>
     </message>
     <message>
-        <location filename="../src/viewmodels/AgentViewModel.cpp" line="133"/>
+        <location filename="../src/core/utils/SettingsSchema.cpp" line="107"/>
         <source>侧边栏默认展开</source>
         <translation>Expand Sidebar by Default</translation>
     </message>
     <message>
-        <location filename="../src/viewmodels/AgentViewModel.cpp" line="134"/>
+        <location filename="../src/core/utils/SettingsSchema.cpp" line="110"/>
         <source>面板默认展开</source>
         <translation>Expand Panel by Default</translation>
     </message>
     <message>
-        <location filename="../src/viewmodels/AgentViewModel.cpp" line="135"/>
+        <location filename="../src/core/utils/SettingsSchema.cpp" line="113"/>
         <source>启动时恢复窗口</source>
         <translation>Restore Window on Startup</translation>
     </message>
     <message>
-        <location filename="../src/viewmodels/I18nManager.cpp" line="41"/>
+        <location filename="../src/core/utils/SettingsSchema.cpp" line="96"/>
         <source>界面语言</source>
         <translation>Interface Language</translation>
     </message>
     <message>
-        <location filename="../src/main.cpp" line="219"/>
+        <location filename="../src/core/utils/SettingsSchema.cpp" line="61"/>
         <source>模型配置</source>
         <translation>Model Configuration</translation>
     </message>
     <message>
-        <location filename="../src/main.cpp" line="221"/>
+        <location filename="../src/core/utils/SettingsSchema.cpp" line="62"/>
         <source>界面设置</source>
         <translation>Interface</translation>
     </message>
     <message>
-        <location filename="../src/main.cpp" line="223"/>
+        <location filename="../src/core/utils/SettingsSchema.cpp" line="63"/>
         <source>通用设置</source>
         <translation>General</translation>
     </message>
     <message>
-        <location filename="../src/main.cpp" line="226"/>
+        <location filename="../src/core/utils/SettingsSchema.cpp" line="64"/>
         <source>安全</source>
         <translation>Security</translation>
     </message>
     <message>
-        <location filename="../src/main.cpp" line="228"/>
+        <location filename="../src/core/utils/SettingsSchema.cpp" line="65"/>
         <source>MCP 服务器</source>
         <translation>MCP Servers</translation>
     </message>
     <message>
-        <location filename="../src/main.cpp" line="230"/>
+        <location filename="../src/core/utils/SettingsSchema.cpp" line="66"/>
         <source>工具管理</source>
         <translation>Tool management</translation>
     </message>
     <message>
-        <location filename="../src/main.cpp" line="238"/>
+        <location filename="../src/core/utils/SettingsSchema.cpp" line="69"/>
         <source>设置与备份</source>
         <translation>Settings and Backup</translation>
     </message>
     <message>
-        <location filename="../src/main.cpp" line="260"/>
+        <location filename="../src/core/utils/SettingsSchema.cpp" line="116"/>
         <source>关闭时最小化到系统托盘</source>
         <translation>Minimize to system tray on close</translation>
     </message>
     <message>
-        <location filename="../src/main.cpp" line="269"/>
+        <location filename="../src/core/utils/SettingsSchema.cpp" line="119"/>
         <source>开机自启动</source>
         <translation>Start with Windows</translation>
     </message>
     <message>
-        <location filename="../src/main.cpp" line="279"/>
+        <location filename="../src/core/utils/SettingsSchema.cpp" line="122"/>
         <source>系统通知</source>
         <translation>System notifications</translation>
     </message>
@@ -1768,41 +1821,80 @@ and the model can retrieve their content to answer questions</translation>
         <translation type="vanished">Tools &amp; Memory</translation>
     </message>
     <message>
-        <location filename="../src/main.cpp" line="233"/>
+        <location filename="../src/core/utils/SettingsSchema.cpp" line="67"/>
         <source>记忆管理</source>
         <translation>Memory Management</translation>
     </message>
     <message>
-        <location filename="../src/main.cpp" line="236"/>
+        <location filename="../src/core/utils/SettingsSchema.cpp" line="68"/>
         <source>用量统计</source>
         <translation>Usage Statistics</translation>
     </message>
     <message>
-        <location filename="../src/main.cpp" line="246"/>
+        <location filename="../src/core/utils/SettingsSchema.cpp" line="77"/>
         <source>上次访问分类</source>
         <translation>Last Visited Category</translation>
     </message>
 </context>
 <context>
+    <name>NexusAI::AIAgent</name>
+    <message>
+        <location filename="../src/core/agent/AIAgent.cpp" line="425"/>
+        <source>请先配置并启用模型，再发送消息。</source>
+        <translation>Configure and enable a model before sending a message.</translation>
+    </message>
+    <message>
+        <location filename="../src/core/agent/AIAgent.cpp" line="1217"/>
+        <source>无法更新会话记录，原消息已保留，请重试。</source>
+        <translation>Could not update the conversation. Original messages were kept. Please retry.</translation>
+    </message>
+</context>
+<context>
     <name>NexusAI::AgentViewModel</name>
     <message>
-        <location filename="../src/viewmodels/AgentViewModel.cpp" line="201"/>
-        <location filename="../src/viewmodels/AgentViewModel.cpp" line="356"/>
+        <location filename="../src/viewmodels/AgentViewModel.cpp" line="179"/>
+        <location filename="../src/viewmodels/AgentViewModel.cpp" line="350"/>
+        <location filename="../src/viewmodels/AgentViewModel.cpp" line="1283"/>
         <source>新会话</source>
         <translation>New Session</translation>
     </message>
     <message>
-        <location filename="../src/viewmodels/AgentViewModel.cpp" line="563"/>
+        <location filename="../src/viewmodels/AgentViewModel.cpp" line="442"/>
+        <source>请等待当前任务完成，或停止后切换模型。</source>
+        <translation>Wait for the current task to finish, or stop it before switching models.</translation>
+    </message>
+    <message>
+        <location filename="../src/viewmodels/AgentViewModel.cpp" line="611"/>
+        <source>无法更新会话置顶状态，请重试。</source>
+        <translation>Could not update the pinned state. Please retry.</translation>
+    </message>
+    <message>
+        <location filename="../src/viewmodels/AgentViewModel.cpp" line="619"/>
+        <source>无法更新会话归档状态，请重试。</source>
+        <translation>Could not update the archive state. Please retry.</translation>
+    </message>
+    <message>
+        <location filename="../src/viewmodels/AgentViewModel.cpp" line="623"/>
+        <source>会话已归档，可在“包含已归档”中恢复。</source>
+        <translation>Conversation archived. Enable “Include archived” to restore it.</translation>
+    </message>
+    <message>
+        <location filename="../src/viewmodels/AgentViewModel.cpp" line="623"/>
+        <source>会话已恢复。</source>
+        <translation>Conversation restored.</translation>
+    </message>
+    <message>
+        <location filename="../src/viewmodels/AgentViewModel.cpp" line="641"/>
         <source>导出失败：未连接持久化后端</source>
         <translation>Export failed: no persistent backend connected</translation>
     </message>
     <message>
-        <location filename="../src/viewmodels/AgentViewModel.cpp" line="568"/>
+        <location filename="../src/viewmodels/AgentViewModel.cpp" line="646"/>
         <source>导出失败：不支持的格式“%1”（可选 md / json）</source>
         <translation>Export failed: unsupported format &quot;%1&quot; (md / json)</translation>
     </message>
     <message>
-        <location filename="../src/viewmodels/AgentViewModel.cpp" line="583"/>
+        <location filename="../src/viewmodels/AgentViewModel.cpp" line="661"/>
         <source># NexusAI 会话导出
 
 </source>
@@ -1811,21 +1903,21 @@ and the model can retrieve their content to answer questions</translation>
 </translation>
     </message>
     <message>
-        <location filename="../src/viewmodels/AgentViewModel.cpp" line="584"/>
+        <location filename="../src/viewmodels/AgentViewModel.cpp" line="662"/>
         <source>- 会话 ID：%1
 </source>
         <translation>- Session ID: %1
 </translation>
     </message>
     <message>
-        <location filename="../src/viewmodels/AgentViewModel.cpp" line="585"/>
+        <location filename="../src/viewmodels/AgentViewModel.cpp" line="663"/>
         <source>- 导出时间：%1
 </source>
         <translation>- Exported at: %1
 </translation>
     </message>
     <message>
-        <location filename="../src/viewmodels/AgentViewModel.cpp" line="586"/>
+        <location filename="../src/viewmodels/AgentViewModel.cpp" line="664"/>
         <source>- 消息数：%1
 
 ---
@@ -1838,17 +1930,17 @@ and the model can retrieve their content to answer questions</translation>
 </translation>
     </message>
     <message>
-        <location filename="../src/viewmodels/AgentViewModel.cpp" line="590"/>
+        <location filename="../src/viewmodels/AgentViewModel.cpp" line="668"/>
         <source>用户</source>
         <translation>User</translation>
     </message>
     <message>
-        <location filename="../src/viewmodels/AgentViewModel.cpp" line="591"/>
+        <location filename="../src/viewmodels/AgentViewModel.cpp" line="669"/>
         <source>助手</source>
         <translation>Assistant</translation>
     </message>
     <message>
-        <location filename="../src/viewmodels/AgentViewModel.cpp" line="600"/>
+        <location filename="../src/viewmodels/AgentViewModel.cpp" line="678"/>
         <source>---
 
 ## 过程摘要
@@ -1861,102 +1953,102 @@ and the model can retrieve their content to answer questions</translation>
 </translation>
     </message>
     <message>
-        <location filename="../src/viewmodels/AgentViewModel.cpp" line="629"/>
+        <location filename="../src/viewmodels/AgentViewModel.cpp" line="707"/>
         <source>导出失败：无法写入 %1</source>
         <translation>Export failed: cannot write %1</translation>
     </message>
     <message>
-        <location filename="../src/viewmodels/AgentViewModel.cpp" line="634"/>
+        <location filename="../src/viewmodels/AgentViewModel.cpp" line="712"/>
         <source>导出失败：写入未完成 %1</source>
         <translation>Export failed: write incomplete %1</translation>
     </message>
     <message>
-        <location filename="../src/viewmodels/AgentViewModel.cpp" line="640"/>
+        <location filename="../src/viewmodels/AgentViewModel.cpp" line="718"/>
         <source>已导出会话（%1 条消息）：%2</source>
         <translation>Session exported (%1 messages): %2</translation>
     </message>
     <message>
-        <location filename="../src/viewmodels/AgentViewModel.cpp" line="702"/>
+        <location filename="../src/viewmodels/AgentViewModel.cpp" line="780"/>
         <source>无法读取文件：%1</source>
         <translation>Cannot read file: %1</translation>
     </message>
     <message>
-        <location filename="../src/viewmodels/AgentViewModel.cpp" line="717"/>
+        <location filename="../src/viewmodels/AgentViewModel.cpp" line="827"/>
         <source>PDF 已加密或需要密码，无法导入：%1</source>
         <translation>PDF is encrypted or password-protected, cannot import: %1</translation>
     </message>
     <message>
-        <location filename="../src/viewmodels/AgentViewModel.cpp" line="720"/>
+        <location filename="../src/viewmodels/AgentViewModel.cpp" line="830"/>
         <source>PDF 文件已损坏或格式无效，无法导入：%1</source>
         <translation>PDF file is corrupted or has an invalid format, cannot import: %1</translation>
     </message>
     <message>
-        <location filename="../src/viewmodels/AgentViewModel.cpp" line="723"/>
+        <location filename="../src/viewmodels/AgentViewModel.cpp" line="833"/>
         <source>未能从 PDF 中提取到文本（可能是扫描件，没有文本层）：%1</source>
         <translation>No text could be extracted from the PDF (it may be a scan without a text layer): %1</translation>
     </message>
     <message>
-        <location filename="../src/viewmodels/AgentViewModel.cpp" line="727"/>
+        <location filename="../src/viewmodels/AgentViewModel.cpp" line="837"/>
         <source>无法读取 PDF 文件：%1</source>
         <translation>Cannot read PDF file: %1</translation>
     </message>
     <message>
-        <location filename="../src/viewmodels/AgentViewModel.cpp" line="737"/>
+        <location filename="../src/viewmodels/AgentViewModel.cpp" line="802"/>
         <source>无法打开文件：%1</source>
         <translation>Cannot open file: %1</translation>
     </message>
     <message>
-        <location filename="../src/viewmodels/AgentViewModel.cpp" line="749"/>
+        <location filename="../src/viewmodels/AgentViewModel.cpp" line="860"/>
         <source>文档内容已存在，已跳过：%1</source>
         <translation>Document content already exists, skipped: %1</translation>
     </message>
     <message>
-        <location filename="../src/viewmodels/AgentViewModel.cpp" line="779"/>
+        <location filename="../src/viewmodels/AgentViewModel.cpp" line="895"/>
         <source>未找到文档内容，无法重新嵌入：%1</source>
         <translation>Document content not found, cannot re-embed: %1</translation>
     </message>
     <message>
-        <location filename="../src/viewmodels/AgentViewModel.cpp" line="797"/>
+        <location filename="../src/viewmodels/AgentViewModel.cpp" line="913"/>
         <source>已重新嵌入 %1（%2 段）</source>
         <translation>Re-embedded %1 (%2 chunks)</translation>
     </message>
     <message>
-        <location filename="../src/viewmodels/AgentViewModel.cpp" line="799"/>
+        <location filename="../src/viewmodels/AgentViewModel.cpp" line="915"/>
         <source>重新嵌入失败：%1</source>
         <translation>Re-embedding failed: %1</translation>
     </message>
     <message>
-        <location filename="../src/viewmodels/AgentViewModel.cpp" line="803"/>
+        <location filename="../src/viewmodels/AgentViewModel.cpp" line="919"/>
         <source>已导入 %1（%2 段）</source>
         <translation>Imported %1 (%2 chunks)</translation>
     </message>
     <message>
-        <location filename="../src/viewmodels/AgentViewModel.cpp" line="805"/>
+        <location filename="../src/viewmodels/AgentViewModel.cpp" line="921"/>
         <source>导入失败（文件为空或无法分块）：%1</source>
         <translation>Import failed (file is empty or cannot be chunked): %1</translation>
     </message>
     <message>
-        <location filename="../src/viewmodels/AgentViewModel.cpp" line="807"/>
+        <location filename="../src/viewmodels/AgentViewModel.cpp" line="923"/>
         <source>知识库总量已达上限（最多 %1 段），请先删除部分文档后再导入</source>
         <translation>Knowledge base has reached its limit (max %1 chunks); delete some documents before importing</translation>
     </message>
     <message>
-        <location filename="../src/viewmodels/AgentViewModel.cpp" line="810"/>
+        <location filename="../src/viewmodels/AgentViewModel.cpp" line="926"/>
         <source>文件过大（超过单文档 %1 段上限）：%2</source>
         <translation>File too large (exceeds the per-document limit of %1 chunks): %2</translation>
     </message>
     <message>
-        <location filename="../src/viewmodels/AgentViewModel.cpp" line="1050"/>
+        <location filename="../src/viewmodels/AgentViewModel.cpp" line="1167"/>
         <source>文件过大（附件上限 %1 KB）：%2</source>
         <translation>File too large (attachment limit %1 KB): %2</translation>
     </message>
     <message>
-        <location filename="../src/viewmodels/AgentViewModel.cpp" line="1055"/>
+        <location filename="../src/viewmodels/AgentViewModel.cpp" line="1172"/>
         <source>暂不支持二进制文件作为附件：%1</source>
         <translation>Binary files are not supported as attachments yet: %1</translation>
     </message>
     <message>
-        <location filename="../src/viewmodels/AgentViewModel.cpp" line="1068"/>
+        <location filename="../src/viewmodels/AgentViewModel.cpp" line="1185"/>
         <source>已忽略 %1 个不支持的文件类型（仅支持图片与文本文件）</source>
         <translation>Ignored %1 file(s) of unsupported types (images and text files only)</translation>
     </message>
@@ -1964,7 +2056,7 @@ and the model can retrieve their content to answer questions</translation>
 <context>
     <name>NexusAI::ChatSessionController</name>
     <message>
-        <location filename="../src/viewmodels/ChatSessionController.cpp" line="220"/>
+        <location filename="../src/viewmodels/ChatSessionController.cpp" line="226"/>
         <source>No model agent is configured. Configure a model and try again.</source>
         <translation>No model agent is configured. Configure a model and try again.</translation>
     </message>
@@ -1995,225 +2087,286 @@ and the model can retrieve their content to answer questions</translation>
 <context>
     <name>NexusAI::EditBuffer</name>
     <message>
-        <location filename="../src/viewmodels/EditBuffer.cpp" line="89"/>
         <source>值必须是整数</source>
-        <translation>Value must be an integer</translation>
+        <translation type="vanished">Value must be an integer</translation>
     </message>
     <message>
-        <location filename="../src/viewmodels/EditBuffer.cpp" line="93"/>
         <source>值必须在 %1-%2 之间</source>
-        <translation>Value must be between %1-%2</translation>
+        <translation type="vanished">Value must be between %1-%2</translation>
     </message>
     <message>
-        <location filename="../src/viewmodels/EditBuffer.cpp" line="100"/>
         <source>值必须是以下之一: </source>
-        <translation>Value must be one of: </translation>
+        <translation type="vanished">Value must be one of: </translation>
     </message>
     <message>
-        <location filename="../src/viewmodels/EditBuffer.cpp" line="106"/>
         <source>此字段为必填</source>
-        <translation>This field is required</translation>
+        <translation type="vanished">This field is required</translation>
     </message>
     <message>
-        <location filename="../src/viewmodels/EditBuffer.cpp" line="110"/>
         <source>长度不能超过 %1 个字符</source>
-        <translation>Length cannot exceed %1 characters</translation>
+        <translation type="vanished">Length cannot exceed %1 characters</translation>
+    </message>
+</context>
+<context>
+    <name>NexusAI::PreferenceStore</name>
+    <message>
+        <location filename="../src/viewmodels/PreferenceStore.cpp" line="84"/>
+        <source>无法保存未登记的设置项：%1</source>
+        <translation>Cannot save an unregistered setting: %1</translation>
+    </message>
+    <message>
+        <location filename="../src/viewmodels/PreferenceStore.cpp" line="99"/>
+        <source>设置未能保存。请检查存储权限或磁盘空间后重试。</source>
+        <translation>Settings could not be saved. Check storage permissions or disk space and retry.</translation>
+    </message>
+    <message>
+        <location filename="../src/viewmodels/PreferenceStore.cpp" line="120"/>
+        <source>无法重置未登记的设置项：%1</source>
+        <translation>Cannot reset an unregistered setting: %1</translation>
+    </message>
+    <message>
+        <location filename="../src/viewmodels/PreferenceStore.cpp" line="129"/>
+        <source>设置未能重置。请检查存储权限或磁盘空间后重试。</source>
+        <translation>Settings could not be reset. Check storage permissions or disk space and retry.</translation>
     </message>
 </context>
 <context>
     <name>NexusAI::SettingsBackup</name>
     <message>
-        <location filename="../src/viewmodels/SettingsBackup.cpp" line="124"/>
         <source>无法读取当前设置</source>
-        <translation>Unable to read current settings</translation>
+        <translation type="vanished">Unable to read current settings</translation>
     </message>
     <message>
-        <location filename="../src/viewmodels/SettingsBackup.cpp" line="148"/>
+        <location filename="../src/viewmodels/SettingsBackup.cpp" line="177"/>
         <source>模型配置已损坏，无法安全导出</source>
         <translation>Model profiles are corrupted and cannot be exported safely</translation>
     </message>
     <message>
-        <location filename="../src/viewmodels/SettingsBackup.cpp" line="153"/>
+        <location filename="../src/viewmodels/SettingsBackup.cpp" line="182"/>
         <source>模型配置包含无效条目</source>
         <translation>Model profiles contain an invalid entry</translation>
     </message>
     <message>
-        <location filename="../src/viewmodels/SettingsBackup.cpp" line="167"/>
+        <location filename="../src/viewmodels/SettingsBackup.cpp" line="196"/>
         <source>无法读取 MCP 服务器配置</source>
         <translation>Unable to read MCP server configuration</translation>
     </message>
     <message>
-        <location filename="../src/viewmodels/SettingsBackup.cpp" line="174"/>
+        <location filename="../src/viewmodels/SettingsBackup.cpp" line="203"/>
         <source>MCP 服务器配置已损坏</source>
         <translation>MCP server configuration is corrupted</translation>
     </message>
     <message>
-        <location filename="../src/viewmodels/SettingsBackup.cpp" line="179"/>
+        <location filename="../src/viewmodels/SettingsBackup.cpp" line="208"/>
         <source>MCP 服务器配置包含无效条目</source>
         <translation>MCP server configuration contains an invalid entry</translation>
     </message>
     <message>
-        <location filename="../src/viewmodels/SettingsBackup.cpp" line="195"/>
+        <location filename="../src/viewmodels/SettingsBackup.cpp" line="224"/>
         <source>无法创建导出文件：%1</source>
         <translation>Unable to create export file: %1</translation>
     </message>
     <message>
-        <location filename="../src/viewmodels/SettingsBackup.cpp" line="200"/>
+        <location filename="../src/viewmodels/SettingsBackup.cpp" line="229"/>
         <source>导出文件写入失败：%1</source>
         <translation>Failed to write export file: %1</translation>
     </message>
     <message>
-        <location filename="../src/viewmodels/SettingsBackup.cpp" line="212"/>
+        <location filename="../src/viewmodels/SettingsBackup.cpp" line="241"/>
         <source>无法读取备份文件：%1</source>
         <translation>Unable to read backup file: %1</translation>
     </message>
     <message>
-        <location filename="../src/viewmodels/SettingsBackup.cpp" line="213"/>
+        <location filename="../src/viewmodels/SettingsBackup.cpp" line="242"/>
         <source>备份文件超过 2 MB 限制</source>
         <translation>Backup file exceeds the 2 MB limit</translation>
     </message>
     <message>
-        <location filename="../src/viewmodels/SettingsBackup.cpp" line="217"/>
+        <location filename="../src/viewmodels/SettingsBackup.cpp" line="246"/>
         <source>备份文件不是有效的 JSON 对象</source>
         <translation>Backup file is not a valid JSON object</translation>
     </message>
     <message>
-        <location filename="../src/viewmodels/SettingsBackup.cpp" line="221"/>
+        <location filename="../src/viewmodels/SettingsBackup.cpp" line="250"/>
         <source>不支持的设置备份格式或版本</source>
         <translation>Unsupported settings backup format or version</translation>
     </message>
     <message>
-        <location filename="../src/viewmodels/SettingsBackup.cpp" line="223"/>
+        <location filename="../src/viewmodels/SettingsBackup.cpp" line="252"/>
         <source>设置版本不匹配，请使用兼容版本的应用恢复</source>
         <translation>Settings version mismatch; restore with a compatible version of the app</translation>
     </message>
     <message>
-        <location filename="../src/viewmodels/SettingsBackup.cpp" line="227"/>
+        <location filename="../src/viewmodels/SettingsBackup.cpp" line="256"/>
         <source>备份缺少设置、模型或 MCP 数据段</source>
         <translation>Backup is missing settings, model profiles, or MCP server data</translation>
     </message>
     <message>
-        <location filename="../src/viewmodels/SettingsBackup.cpp" line="233"/>
+        <location filename="../src/viewmodels/SettingsBackup.cpp" line="262"/>
         <source>备份包含不允许恢复或类型错误的设置项：%1</source>
         <translation>Backup contains a setting that cannot be restored or has the wrong type: %1</translation>
     </message>
     <message>
-        <location filename="../src/viewmodels/SettingsBackup.cpp" line="240"/>
+        <location filename="../src/viewmodels/SettingsBackup.cpp" line="269"/>
         <source>模型配置格式错误</source>
         <translation>Invalid model profile format</translation>
     </message>
     <message>
-        <location filename="../src/viewmodels/SettingsBackup.cpp" line="242"/>
+        <location filename="../src/viewmodels/SettingsBackup.cpp" line="271"/>
         <source>备份包含密钥字段，拒绝恢复</source>
         <translation>Backup contains a secret field; restore refused</translation>
     </message>
     <message>
-        <location filename="../src/viewmodels/SettingsBackup.cpp" line="249"/>
+        <location filename="../src/viewmodels/SettingsBackup.cpp" line="278"/>
         <source>模型配置 ID 或协议无效</source>
         <translation>Invalid model profile ID or protocol</translation>
     </message>
     <message>
-        <location filename="../src/viewmodels/SettingsBackup.cpp" line="256"/>
+        <location filename="../src/viewmodels/SettingsBackup.cpp" line="285"/>
         <source>活动模型 ID 未出现在模型列表中</source>
         <translation>Active model ID is not in the model profile list</translation>
     </message>
     <message>
-        <location filename="../src/viewmodels/SettingsBackup.cpp" line="261"/>
+        <location filename="../src/viewmodels/SettingsBackup.cpp" line="290"/>
         <source>MCP 配置格式错误</source>
         <translation>Invalid MCP configuration format</translation>
     </message>
     <message>
-        <location filename="../src/viewmodels/SettingsBackup.cpp" line="264"/>
+        <location filename="../src/viewmodels/SettingsBackup.cpp" line="293"/>
         <source>备份包含 MCP 凭据字段，拒绝恢复</source>
         <translation>Backup contains MCP credential fields; restore refused</translation>
     </message>
     <message>
-        <location filename="../src/viewmodels/SettingsBackup.cpp" line="270"/>
+        <location filename="../src/viewmodels/SettingsBackup.cpp" line="299"/>
         <source>MCP 服务器名称或传输方式无效</source>
         <translation>Invalid MCP server name or transport</translation>
     </message>
     <message>
-        <location filename="../src/viewmodels/SettingsBackup.cpp" line="274"/>
+        <location filename="../src/viewmodels/SettingsBackup.cpp" line="303"/>
         <source>应用设置（%1 项）</source>
         <translation>App settings (%1 items)</translation>
     </message>
     <message>
-        <location filename="../src/viewmodels/SettingsBackup.cpp" line="275"/>
+        <location filename="../src/viewmodels/SettingsBackup.cpp" line="304"/>
         <source>模型配置（%1 条）</source>
         <translation>Model profiles (%1)</translation>
     </message>
     <message>
-        <location filename="../src/viewmodels/SettingsBackup.cpp" line="276"/>
+        <location filename="../src/viewmodels/SettingsBackup.cpp" line="305"/>
         <source>MCP 服务器（%1 条，恢复后保持禁用）</source>
         <translation>MCP servers (%1, remain disabled after restore)</translation>
     </message>
     <message>
-        <location filename="../src/viewmodels/SettingsBackup.cpp" line="278"/>
+        <location filename="../src/viewmodels/SettingsBackup.cpp" line="307"/>
         <source>安全权限、工具启用状态、开机自启及运行时布局不会恢复。</source>
         <translation>Security permissions, tool enablement, launch at startup, and runtime layout will not be restored.</translation>
     </message>
     <message>
-        <location filename="../src/viewmodels/SettingsBackup.cpp" line="277"/>
+        <location filename="../src/viewmodels/SettingsBackup.cpp" line="337"/>
+        <location filename="../src/viewmodels/SettingsBackup.cpp" line="389"/>
+        <source>无法读取当前设置，恢复已取消：%1</source>
+        <translation>Could not read current settings. Restore cancelled: %1</translation>
+    </message>
+    <message>
+        <location filename="../src/viewmodels/SettingsBackup.cpp" line="408"/>
+        <source>恢复失败且设置回滚未完成，请检查当前设置：%1</source>
+        <translation>Restore failed and rollback is incomplete. Check your current settings: %1</translation>
+    </message>
+    <message>
+        <location filename="../src/viewmodels/SettingsBackup.cpp" line="306"/>
         <source>相同模型端点和 MCP 服务的本机凭据将保留；其他配置不会从备份恢复凭据。</source>
         <translation>Local credentials for matching model endpoints and MCP servers are retained; other configurations do not receive credentials from the backup.</translation>
     </message>
     <message>
-        <location filename="../src/viewmodels/SettingsBackup.cpp" line="279"/>
+        <location filename="../src/viewmodels/SettingsBackup.cpp" line="153"/>
+        <source>无法读取当前设置：%1</source>
+        <translation>Could not read current settings: %1</translation>
+    </message>
+    <message>
+        <location filename="../src/viewmodels/SettingsBackup.cpp" line="308"/>
         <source>MCP 命令参数、服务地址或自定义文本可能包含自行填写的敏感信息，请检查备份文件。</source>
         <translation>MCP command arguments, server addresses, or custom text may contain sensitive information you entered. Review the backup file.</translation>
     </message>
     <message>
-        <location filename="../src/viewmodels/SettingsBackup.cpp" line="280"/>
+        <location filename="../src/viewmodels/SettingsBackup.cpp" line="309"/>
         <source>恢复后需要重启应用；会话和知识库数据库不在此备份内。</source>
         <translation>Restart the app after restoring; chats and knowledge base databases are not included in this backup.</translation>
     </message>
     <message>
-        <location filename="../src/viewmodels/SettingsBackup.cpp" line="305"/>
         <source>无法读取当前设置，恢复已取消</source>
-        <translation>Unable to read current settings; restore canceled</translation>
+        <translation type="vanished">Unable to read current settings; restore canceled</translation>
     </message>
     <message>
-        <location filename="../src/viewmodels/SettingsBackup.cpp" line="315"/>
+        <location filename="../src/viewmodels/SettingsBackup.cpp" line="347"/>
         <source>当前模型配置已损坏，恢复已取消</source>
         <translation>Current model profiles are corrupted; restore canceled</translation>
     </message>
     <message>
-        <location filename="../src/viewmodels/SettingsBackup.cpp" line="371"/>
+        <location filename="../src/viewmodels/SettingsBackup.cpp" line="395"/>
+        <source>设置写入失败，恢复已取消：%1</source>
+        <translation>Could not write settings. Restore cancelled: %1</translation>
+    </message>
+    <message>
+        <location filename="../src/viewmodels/SettingsBackup.cpp" line="407"/>
         <source>恢复失败，原有设置已保留</source>
         <translation>Restore failed; existing settings were preserved</translation>
     </message>
     <message>
-        <location filename="../src/viewmodels/SettingsBackup.cpp" line="372"/>
         <source>恢复失败且回滚未完成，请检查当前设置</source>
-        <translation>Restore failed and rollback was incomplete; check your current settings</translation>
+        <translation type="vanished">Restore failed and rollback was incomplete; check your current settings</translation>
     </message>
 </context>
 <context>
     <name>NexusAI::SettingsService</name>
     <message>
-        <location filename="../src/viewmodels/SettingsService.cpp" line="401"/>
+        <location filename="../src/viewmodels/SettingsService.cpp" line="245"/>
+        <source>设置未能保存，请检查存储权限或磁盘空间后重试。</source>
+        <translation>Settings could not be saved. Check storage permissions or disk space and retry.</translation>
+    </message>
+    <message>
+        <location filename="../src/viewmodels/SettingsService.cpp" line="449"/>
+        <source>API 密钥加密失败，模型配置未保存。</source>
+        <translation>API key encryption failed. Model configuration was not saved.</translation>
+    </message>
+    <message>
+        <location filename="../src/viewmodels/SettingsService.cpp" line="465"/>
+        <source>模型配置未能保存。请检查设置存储权限或磁盘空间后重试。</source>
+        <translation>Model configuration could not be saved. Check storage permissions or disk space and retry.</translation>
+    </message>
+    <message>
+        <location filename="../src/viewmodels/SettingsService.cpp" line="472"/>
         <source>自定义网关</source>
         <translation>Custom Gateway</translation>
     </message>
     <message>
-        <location filename="../src/viewmodels/SettingsService.cpp" line="406"/>
+        <location filename="../src/viewmodels/SettingsService.cpp" line="477"/>
         <source>新配置</source>
         <translation>New Profile</translation>
     </message>
     <message>
-        <location filename="../src/viewmodels/SettingsService.cpp" line="625"/>
+        <location filename="../src/viewmodels/SettingsService.cpp" line="724"/>
         <source>OpenAI 兼容</source>
         <translation>OpenAI Compatible</translation>
     </message>
     <message>
-        <location filename="../src/viewmodels/SettingsService.cpp" line="626"/>
+        <location filename="../src/viewmodels/SettingsService.cpp" line="725"/>
         <source>Ollama 本地</source>
         <translation>Ollama (Local)</translation>
     </message>
     <message>
-        <location filename="../src/viewmodels/SettingsService.cpp" line="627"/>
+        <location filename="../src/viewmodels/SettingsService.cpp" line="726"/>
         <source>Claude</source>
         <translation>Claude</translation>
+    </message>
+    <message>
+        <location filename="../src/viewmodels/SettingsService.cpp" line="913"/>
+        <source>搜索 API 密钥加密失败，未保存更改。</source>
+        <translation>Search API key encryption failed. Changes were not saved.</translation>
+    </message>
+    <message>
+        <location filename="../src/viewmodels/SettingsService.cpp" line="1098"/>
+        <source>无法更新 Windows 开机自启动设置。</source>
+        <translation>Could not update Windows startup settings.</translation>
     </message>
 </context>
 <context>
@@ -2356,32 +2509,32 @@ and the model can retrieve their content to answer questions</translation>
 <context>
     <name>QObject</name>
     <message>
-        <location filename="../src/main.cpp" line="814"/>
+        <location filename="../src/main.cpp" line="738"/>
         <source>显示/隐藏主窗</source>
         <translation>Show / hide main window</translation>
     </message>
     <message>
-        <location filename="../src/main.cpp" line="815"/>
+        <location filename="../src/main.cpp" line="739"/>
         <source>新建会话</source>
         <translation>New session</translation>
     </message>
     <message>
-        <location filename="../src/main.cpp" line="817"/>
+        <location filename="../src/main.cpp" line="741"/>
         <source>退出</source>
         <translation>Quit</translation>
     </message>
     <message>
-        <location filename="../src/main.cpp" line="871"/>
+        <location filename="../src/main.cpp" line="795"/>
         <source>任务完成</source>
         <translation>Task finished</translation>
     </message>
     <message>
-        <location filename="../src/main.cpp" line="871"/>
+        <location filename="../src/main.cpp" line="795"/>
         <source>任务结束</source>
         <translation>Task ended</translation>
     </message>
     <message>
-        <location filename="../src/main.cpp" line="872"/>
+        <location filename="../src/main.cpp" line="796"/>
         <source>会话已回复</source>
         <translation>The session has replied</translation>
     </message>
@@ -2629,33 +2782,33 @@ and the model can retrieve their content to answer questions</translation>
 <context>
     <name>SettingsCenterDialog</name>
     <message>
-        <location filename="../src/ui/components/SettingsCenterDialog.qml" line="23"/>
+        <location filename="../src/ui/components/SettingsCenterDialog.qml" line="24"/>
         <source>设置中心</source>
         <translation>Settings center</translation>
     </message>
     <message>
-        <location filename="../src/ui/components/SettingsCenterDialog.qml" line="24"/>
+        <location filename="../src/ui/components/SettingsCenterDialog.qml" line="25"/>
         <source>配置模型、界面、工具、MCP 服务器等应用选项</source>
         <translation>Configure model, interface, tools, MCP servers and other application options</translation>
     </message>
     <message>
-        <location filename="../src/ui/components/SettingsCenterDialog.qml" line="61"/>
+        <location filename="../src/ui/components/SettingsCenterDialog.qml" line="74"/>
         <source>设置</source>
         <translation>Settings</translation>
     </message>
     <message>
-        <location filename="../src/ui/components/SettingsCenterDialog.qml" line="196"/>
-        <location filename="../src/ui/components/SettingsCenterDialog.qml" line="248"/>
+        <location filename="../src/ui/components/SettingsCenterDialog.qml" line="210"/>
+        <location filename="../src/ui/components/SettingsCenterDialog.qml" line="263"/>
         <source>恢复默认</source>
         <translation>Restore Defaults</translation>
     </message>
     <message>
-        <location filename="../src/ui/components/SettingsCenterDialog.qml" line="206"/>
+        <location filename="../src/ui/components/SettingsCenterDialog.qml" line="221"/>
         <source>关闭</source>
         <translation>Close</translation>
     </message>
     <message>
-        <location filename="../src/ui/components/SettingsCenterDialog.qml" line="244"/>
+        <location filename="../src/ui/components/SettingsCenterDialog.qml" line="259"/>
         <source>取消</source>
         <translation>Cancel</translation>
     </message>
@@ -2684,7 +2837,7 @@ and the model can retrieve their content to answer questions</translation>
         <translation type="vanished">Discard</translation>
     </message>
     <message>
-        <location filename="../src/ui/components/SettingsCenterDialog.qml" line="229"/>
+        <location filename="../src/ui/components/SettingsCenterDialog.qml" line="244"/>
         <source>确认将当前分类的配置项恢复为默认值？</source>
         <translation>Restore the settings in this category to their defaults?</translation>
     </message>
@@ -2788,19 +2941,19 @@ and the model can retrieve their content to answer questions</translation>
 <context>
     <name>Sidebar</name>
     <message>
-        <location filename="../src/ui/components/Sidebar.qml" line="738"/>
-        <location filename="../src/ui/components/Sidebar.qml" line="798"/>
-        <location filename="../src/ui/components/Sidebar.qml" line="984"/>
+        <location filename="../src/ui/components/Sidebar.qml" line="750"/>
+        <location filename="../src/ui/components/Sidebar.qml" line="827"/>
+        <location filename="../src/ui/components/Sidebar.qml" line="1024"/>
         <source>新会话</source>
         <translation>New Session</translation>
     </message>
     <message>
-        <location filename="../src/ui/components/Sidebar.qml" line="700"/>
+        <location filename="../src/ui/components/Sidebar.qml" line="702"/>
         <source>搜索会话历史…</source>
         <translation>Search session history…</translation>
     </message>
     <message>
-        <location filename="../src/ui/components/Sidebar.qml" line="709"/>
+        <location filename="../src/ui/components/Sidebar.qml" line="711"/>
         <source>搜索会话历史</source>
         <translation>Search session history</translation>
     </message>
@@ -2809,13 +2962,13 @@ and the model can retrieve their content to answer questions</translation>
         <translation type="vanished">Search Results</translation>
     </message>
     <message>
-        <location filename="../src/ui/components/Sidebar.qml" line="661"/>
+        <location filename="../src/ui/components/Sidebar.qml" line="663"/>
         <source>暂无历史会话</source>
         <translation>No sessions yet</translation>
     </message>
     <message>
-        <location filename="../src/ui/components/Sidebar.qml" line="478"/>
-        <location filename="../src/ui/components/Sidebar.qml" line="884"/>
+        <location filename="../src/ui/components/Sidebar.qml" line="480"/>
+        <location filename="../src/ui/components/Sidebar.qml" line="922"/>
         <source>确认?</source>
         <translation>Confirm?</translation>
     </message>
@@ -2824,93 +2977,133 @@ and the model can retrieve their content to answer questions</translation>
         <translation type="vanished">Import Project…</translation>
     </message>
     <message>
-        <location filename="../src/ui/components/Sidebar.qml" line="722"/>
+        <location filename="../src/ui/components/Sidebar.qml" line="734"/>
         <source>选择项目文件夹</source>
         <translation>Choose Project Folder</translation>
     </message>
     <message>
-        <location filename="../src/ui/components/Sidebar.qml" line="257"/>
+        <location filename="../src/ui/components/Sidebar.qml" line="259"/>
         <source>导入项目</source>
         <translation>Import Project</translation>
     </message>
     <message>
-        <location filename="../src/ui/components/Sidebar.qml" line="172"/>
-        <location filename="../src/ui/components/Sidebar.qml" line="191"/>
+        <location filename="../src/ui/components/Sidebar.qml" line="174"/>
+        <location filename="../src/ui/components/Sidebar.qml" line="193"/>
         <source>新对话</source>
         <translation>New Chat</translation>
     </message>
     <message>
-        <location filename="../src/ui/components/Sidebar.qml" line="421"/>
+        <location filename="../src/ui/components/Sidebar.qml" line="423"/>
         <source>在此项目下新建会话</source>
         <translation>New session in this project</translation>
     </message>
     <message>
-        <location filename="../src/ui/components/Sidebar.qml" line="451"/>
+        <location filename="../src/ui/components/Sidebar.qml" line="453"/>
         <source>重命名项目</source>
         <translation>Rename Project</translation>
     </message>
     <message>
-        <location filename="../src/ui/components/Sidebar.qml" line="526"/>
+        <location filename="../src/ui/components/Sidebar.qml" line="528"/>
         <source>暂无会话</source>
         <translation>No sessions yet</translation>
     </message>
     <message>
-        <location filename="../src/ui/components/Sidebar.qml" line="540"/>
+        <location filename="../src/ui/components/Sidebar.qml" line="542"/>
         <source>暂无项目。点上方 + 选择文件夹导入</source>
         <translation>No projects yet. Click + above to import a folder</translation>
     </message>
     <message>
-        <location filename="../src/ui/components/Sidebar.qml" line="607"/>
+        <location filename="../src/ui/components/Sidebar.qml" line="609"/>
         <source>对话</source>
         <translation>Chats</translation>
     </message>
     <message>
-        <location filename="../src/ui/components/Sidebar.qml" line="638"/>
+        <location filename="../src/ui/components/Sidebar.qml" line="640"/>
         <source>新建本地对话</source>
         <translation>New Local Chat</translation>
     </message>
     <message>
-        <location filename="../src/ui/components/Sidebar.qml" line="642"/>
+        <location filename="../src/ui/components/Sidebar.qml" line="644"/>
         <source>本地对话</source>
         <translation>Local Chats</translation>
     </message>
     <message>
-        <location filename="../src/ui/components/Sidebar.qml" line="953"/>
+        <location filename="../src/ui/components/Sidebar.qml" line="723"/>
+        <source>包含已归档</source>
+        <translation>Include archived</translation>
+    </message>
+    <message>
+        <location filename="../src/ui/components/Sidebar.qml" line="761"/>
+        <source>取消置顶</source>
+        <translation>Unpin</translation>
+    </message>
+    <message>
+        <location filename="../src/ui/components/Sidebar.qml" line="761"/>
+        <source>置顶会话</source>
+        <translation>Pin conversation</translation>
+    </message>
+    <message>
+        <location filename="../src/ui/components/Sidebar.qml" line="765"/>
+        <source>恢复会话</source>
+        <translation>Restore conversation</translation>
+    </message>
+    <message>
+        <location filename="../src/ui/components/Sidebar.qml" line="765"/>
+        <source>归档会话</source>
+        <translation>Archive conversation</translation>
+    </message>
+    <message>
+        <location filename="../src/ui/components/Sidebar.qml" line="846"/>
+        <source>会话操作</source>
+        <translation>Conversation actions</translation>
+    </message>
+    <message>
+        <location filename="../src/ui/components/Sidebar.qml" line="955"/>
+        <source>已置顶 · </source>
+        <translation>Pinned · </translation>
+    </message>
+    <message>
+        <location filename="../src/ui/components/Sidebar.qml" line="956"/>
+        <source>已归档 · </source>
+        <translation>Archived · </translation>
+    </message>
+    <message>
+        <location filename="../src/ui/components/Sidebar.qml" line="993"/>
         <source>无匹配结果</source>
         <translation>No matches</translation>
     </message>
     <message>
-        <location filename="../src/ui/components/Sidebar.qml" line="1006"/>
+        <location filename="../src/ui/components/Sidebar.qml" line="1046"/>
         <source>用户</source>
         <translation>User</translation>
     </message>
     <message>
-        <location filename="../src/ui/components/Sidebar.qml" line="1007"/>
+        <location filename="../src/ui/components/Sidebar.qml" line="1047"/>
         <source>助手</source>
         <translation>Assistant</translation>
     </message>
     <message>
-        <location filename="../src/ui/components/Sidebar.qml" line="1046"/>
+        <location filename="../src/ui/components/Sidebar.qml" line="1086"/>
         <source>日志</source>
         <translation>Logs</translation>
     </message>
     <message>
-        <location filename="../src/ui/components/Sidebar.qml" line="1054"/>
+        <location filename="../src/ui/components/Sidebar.qml" line="1094"/>
         <source>审计日志</source>
         <translation>Audit Log</translation>
     </message>
     <message>
-        <location filename="../src/ui/components/Sidebar.qml" line="1062"/>
+        <location filename="../src/ui/components/Sidebar.qml" line="1102"/>
         <source>设置 (Ctrl+,)</source>
         <translation>Settings (Ctrl+,)</translation>
     </message>
     <message>
-        <location filename="../src/ui/components/Sidebar.qml" line="1114"/>
+        <location filename="../src/ui/components/Sidebar.qml" line="1154"/>
         <source>Markdown (*.md)</source>
         <translation>Markdown (*.md)</translation>
     </message>
     <message>
-        <location filename="../src/ui/components/Sidebar.qml" line="1114"/>
+        <location filename="../src/ui/components/Sidebar.qml" line="1154"/>
         <source>JSON (*.json)</source>
         <translation>JSON (*.json)</translation>
     </message>
@@ -2963,7 +3156,7 @@ and the model can retrieve their content to answer questions</translation>
         <translation>Yesterday</translation>
     </message>
     <message>
-        <location filename="../src/core/memory/SqliteMemory.cpp" line="787"/>
+        <location filename="../src/core/memory/SqliteMemory.cpp" line="825"/>
         <source>消息库超过 %1 条：少于 3 个字符的关键词只能全表扫描，请输入至少 3 个字符以使用全文索引。</source>
         <translation>The message store exceeds %1 rows: keywords shorter than 3 characters fall back to a full table scan. Enter at least 3 characters to use the full-text index.</translation>
     </message>
@@ -2972,7 +3165,7 @@ and the model can retrieve their content to answer questions</translation>
     <name>ThinkingEffortSelector</name>
     <message>
         <location filename="../src/ui/components/ThinkingEffortSelector.qml" line="30"/>
-        <location filename="../src/ui/components/ThinkingEffortSelector.qml" line="45"/>
+        <location filename="../src/ui/components/ThinkingEffortSelector.qml" line="44"/>
         <source>思考·默认</source>
         <translation>Thinking - Default</translation>
     </message>
@@ -3022,55 +3215,68 @@ and the model can retrieve their content to answer questions</translation>
         <translation>Maximum reasoning effort; slow and costly, for hard problems</translation>
     </message>
     <message>
-        <location filename="../src/ui/components/ThinkingEffortSelector.qml" line="52"/>
+        <location filename="../src/ui/components/ThinkingEffortSelector.qml" line="51"/>
         <source>思考强度</source>
         <translation>Thinking effort</translation>
     </message>
     <message>
-        <location filename="../src/ui/components/ThinkingEffortSelector.qml" line="93"/>
+        <location filename="../src/ui/components/ThinkingEffortSelector.qml" line="90"/>
         <source>思考·未配置模型</source>
         <translation>Effort · no model set</translation>
     </message>
     <message>
-        <location filename="../src/ui/components/ThinkingEffortSelector.qml" line="137"/>
+        <location filename="../src/ui/components/ThinkingEffortSelector.qml" line="134"/>
+        <source>思考强度 · 当前会话</source>
+        <translation>Reasoning effort · This conversation</translation>
+    </message>
+    <message>
         <source>思考强度 · 保存到当前模型配置</source>
-        <translation>Thinking effort - saved to the current model profile</translation>
+        <translation type="vanished">Thinking effort - saved to the current model profile</translation>
     </message>
 </context>
 <context>
     <name>ToolConfirmDialog</name>
     <message>
-        <location filename="../src/ui/components/ToolConfirmDialog.qml" line="21"/>
+        <location filename="../src/ui/components/ToolConfirmDialog.qml" line="44"/>
         <source>工具执行确认对话框</source>
         <translation>Tool execution confirmation dialog</translation>
     </message>
     <message>
-        <location filename="../src/ui/components/ToolConfirmDialog.qml" line="22"/>
+        <location filename="../src/ui/components/ToolConfirmDialog.qml" line="45"/>
         <source>AI 请求执行高危操作 %1，请选择允许或拒绝</source>
         <translation>AI requests to execute high-risk operation %1, please choose allow or deny</translation>
     </message>
     <message>
-        <location filename="../src/ui/components/ToolConfirmDialog.qml" line="77"/>
         <source>AI 请求执行高危操作</source>
-        <translation>The AI requests to run a high-risk operation</translation>
+        <translation type="vanished">The AI requests to run a high-risk operation</translation>
     </message>
     <message>
-        <location filename="../src/ui/components/ToolConfirmDialog.qml" line="92"/>
+        <location filename="../src/ui/components/ToolConfirmDialog.qml" line="98"/>
+        <source>确认工具操作</source>
+        <translation>Confirm tool action</translation>
+    </message>
+    <message>
+        <location filename="../src/ui/components/ToolConfirmDialog.qml" line="110"/>
+        <source>来自会话：%1 · 待处理 %2 项</source>
+        <translation>Conversation: %1 · %2 pending</translation>
+    </message>
+    <message>
+        <location filename="../src/ui/components/ToolConfirmDialog.qml" line="123"/>
         <source>工具名称:</source>
         <translation>Tool Name:</translation>
     </message>
     <message>
-        <location filename="../src/ui/components/ToolConfirmDialog.qml" line="111"/>
+        <location filename="../src/ui/components/ToolConfirmDialog.qml" line="142"/>
         <source>调用参数:</source>
         <translation>Arguments:</translation>
     </message>
     <message>
-        <location filename="../src/ui/components/ToolConfirmDialog.qml" line="137"/>
+        <location filename="../src/ui/components/ToolConfirmDialog.qml" line="168"/>
         <source>拒绝</source>
         <translation>Deny</translation>
     </message>
     <message>
-        <location filename="../src/ui/components/ToolConfirmDialog.qml" line="143"/>
+        <location filename="../src/ui/components/ToolConfirmDialog.qml" line="174"/>
         <source>允许执行</source>
         <translation>Allow Execution</translation>
     </message>
@@ -3849,32 +4055,32 @@ and the model can retrieve their content to answer questions</translation>
 <context>
     <name>UserMessageBubble</name>
     <message>
-        <location filename="../src/ui/components/UserMessageBubble.qml" line="106"/>
+        <location filename="../src/ui/components/UserMessageBubble.qml" line="105"/>
         <source>发送</source>
         <translation>Send</translation>
     </message>
     <message>
-        <location filename="../src/ui/components/UserMessageBubble.qml" line="116"/>
+        <location filename="../src/ui/components/UserMessageBubble.qml" line="115"/>
         <source>取消</source>
         <translation>Cancel</translation>
     </message>
     <message>
-        <location filename="../src/ui/components/UserMessageBubble.qml" line="194"/>
+        <location filename="../src/ui/components/UserMessageBubble.qml" line="193"/>
         <source>编辑</source>
         <translation>Edit</translation>
     </message>
     <message>
-        <location filename="../src/ui/components/UserMessageBubble.qml" line="213"/>
+        <location filename="../src/ui/components/UserMessageBubble.qml" line="212"/>
         <source>编辑并重发</source>
         <translation>Edit and resend</translation>
     </message>
     <message>
-        <location filename="../src/ui/components/UserMessageBubble.qml" line="214"/>
+        <location filename="../src/ui/components/UserMessageBubble.qml" line="213"/>
         <source>修改这条消息并重新发送</source>
         <translation>Edit this message and send it again</translation>
     </message>
     <message>
-        <location filename="../src/ui/components/UserMessageBubble.qml" line="223"/>
+        <location filename="../src/ui/components/UserMessageBubble.qml" line="222"/>
         <source>你的消息</source>
         <translation>Your message</translation>
     </message>
@@ -3882,27 +4088,27 @@ and the model can retrieve their content to answer questions</translation>
 <context>
     <name>main</name>
     <message>
-        <location filename="../src/ui/main.qml" line="199"/>
+        <location filename="../src/ui/main.qml" line="209"/>
         <source>收起侧边栏 (Ctrl+[)</source>
         <translation>Collapse Sidebar (Ctrl+[)</translation>
     </message>
     <message>
-        <location filename="../src/ui/main.qml" line="199"/>
+        <location filename="../src/ui/main.qml" line="209"/>
         <source>展开侧边栏 (Ctrl+[)</source>
         <translation>Expand Sidebar (Ctrl+[)</translation>
     </message>
     <message>
-        <location filename="../src/ui/main.qml" line="248"/>
+        <location filename="../src/ui/main.qml" line="258"/>
         <source>收起上下文面板 (Ctrl+B)</source>
         <translation>Collapse Context Panel (Ctrl+B)</translation>
     </message>
     <message>
-        <location filename="../src/ui/main.qml" line="248"/>
+        <location filename="../src/ui/main.qml" line="258"/>
         <source>展开上下文面板 (Ctrl+B)</source>
         <translation>Expand Context Panel (Ctrl+B)</translation>
     </message>
     <message>
-        <location filename="../src/ui/main.qml" line="262"/>
+        <location filename="../src/ui/main.qml" line="272"/>
         <source>设置已保存</source>
         <translation>Settings saved</translation>
     </message>

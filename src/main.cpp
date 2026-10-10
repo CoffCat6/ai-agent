@@ -299,15 +299,10 @@ qInfo() << "NexusAI" << app.applicationVersion() << "starting";
     // gateway on 127.0.0.1 still forwards to a cloud upstream, so it counts
     // as cloud.
     const auto applyLocalOnlyGate = [settings]() {
-        const QVariantMap profile = settings->activeProfile();
-        // 本地与否取自协议注册表的 local 标记：厂商字符串比的是"ollama"，
-        // 而真正决定内容出不出机器的是这条线协议走本地还是云端。
-        const bool local = LlmProtocolRegistry::isLocal(
-            profile.value("apiProtocol").toString(),
-            profile.value("provider").toString());
-        const bool gate = settings->localOnlyMode() && !local;
-        QStringList gated{QStringLiteral("search_knowledge_base"),
-                          QStringLiteral("web_search")};
+        // Network tools are global policy; knowledge access is evaluated
+        // against each agent's own model snapshot.
+        const bool gate = settings->localOnlyMode();
+        QStringList gated{QStringLiteral("web_search")};
         // T14 (REQ-T14-04): every MCP tool (mcp__*) may reach external
         // servers that forward data off-machine.
         const auto all = ToolRegistry::instance().listAll();
@@ -394,35 +389,54 @@ qInfo() << "NexusAI" << app.applicationVersion() << "starting";
     // traces. The tab agents are destroyed with their tab (services are
     // parented to the agent), and tabProviderSets drops the entry on
     // destroyed so profile re-configuration never touches dead agents.
-    const auto applyProfileTo = [settings](const ProviderSet& set) {
-        const QVariantMap profile = settings->activeProfile();
-        // 只有当前 profile 命中的那一条协议会被配置：把 baseUrl 广播给全部服务
-        // 会互相污染（例如以 /v1 结尾的 OpenAI 兼容代理地址被 Anthropic 那条
-        // 协议拼成 /v1/v1/messages）。每个服务都在成为活动服务前配置好。
-        if (IAIService* service = set.value(profile.value("apiProtocol").toString()))
-            service->configure(profileConfigOf(profile));
-    };
-    const auto activeService = [settings](const ProviderSet& set) -> IAIService* {
-        // 未配置的 profile 返回 nullptr，由 agent 报"未配置模型服务"。
-        return set.value(settings->activeProfile().value("apiProtocol").toString());
-    };
-
-    QHash<AIAgent*, ProviderSet> tabProviderSets;
-    agentVM->setAgentFactory([&app, settings, applyProfileTo, activeService,
-                              &tabProviderSets]() -> AIAgent* {
+    auto tabProviderSets = std::make_shared<QHash<AIAgent*, ProviderSet>>();
+    auto tabMemories = std::make_shared<QHash<AIAgent*, EpisodicService*>>();
+    auto summaryProviders = std::make_shared<QHash<AIAgent*, ProviderSet>>();
+    tabMemories->insert(agent, episodicService);
+    summaryProviders->insert(agent, LlmProtocolRegistry::createServiceSet(episodicService));
+    agentVM->setModelConfigurator([settings, agent, templateSet, tabProviderSets, tabMemories, summaryProviders](
+            AIAgent* target, const QVariantMap& profile) {
+        const ProviderSet set = target == agent ? templateSet : tabProviderSets->value(target);
+        IAIService* service = set.value(profile.value("apiProtocol").toString());
+        if (profile.value("model").toString().trimmed().isEmpty()
+                || profile.value("baseUrl").toString().trimmed().isEmpty())
+            service = nullptr;
+        if (service) service->configure(profileConfigOf(profile));
+        target->setLLMService(service);
+        // Long-term summaries use the same chosen model through a separate
+        // service, so neither foreground streams nor other tabs are touched.
+        if (auto* summaries = tabMemories->value(target)) {
+            auto* summaryService = service
+                ? summaryProviders->value(target).value(profile.value("apiProtocol").toString()) : nullptr;
+            if (summaryService) summaryService->configure(profileConfigOf(profile));
+            summaries->setLlmService(summaryService);
+        }
+        target->setContextLimit(settings->resolveContextLimitForProfile(profile));
+        target->setModelLocal(LlmProtocolRegistry::isLocal(
+            profile.value("apiProtocol").toString(), profile.value("provider").toString()));
+    });
+    agentVM->setAgentFactory([&app, settings,
+                              tabProviderSets, tabMemories, summaryProviders]() -> AIAgent* {
         auto* tabAgent = new AIAgent(&app);
         tabAgent->setToolRegistry(&ToolRegistry::instance());
         tabAgent->setMemory(new SqliteMemory());
-        tabAgent->setContextLimit(settings->resolveContextLimit());
         tabAgent->setMaxIterations(settings->maxSteps());
         tabAgent->setTaskTimeoutMs(settings->taskTimeoutMinutes() * 60 * 1000);
-
-        const ProviderSet set = LlmProtocolRegistry::createServiceSet(tabAgent);
-        applyProfileTo(set);
-        tabProviderSets.insert(tabAgent, set);
+        tabAgent->setSystemPromptOverride(settings->systemPromptOverride());
+        tabAgent->setLocalOnlyMode(settings->localOnlyMode());
+        auto* summaries = new EpisodicService(tabAgent);
+        summaries->setMemory(tabAgent->memory());
+        summaries->setEnabled(settings->episodicMemoryEnabled());
+        tabAgent->setEpisodicService(summaries);
+        tabMemories->insert(tabAgent, summaries);
+        summaryProviders->insert(tabAgent, LlmProtocolRegistry::createServiceSet(summaries));
+        tabProviderSets->insert(tabAgent, LlmProtocolRegistry::createServiceSet(tabAgent));
         QObject::connect(tabAgent, &QObject::destroyed, &app,
-            [&tabProviderSets, tabAgent]() { tabProviderSets.remove(tabAgent); });
-        tabAgent->setLLMService(activeService(set));
+            [tabProviderSets, tabMemories, summaryProviders, tabAgent]() {
+                tabProviderSets->remove(tabAgent);
+                tabMemories->remove(tabAgent);
+                summaryProviders->remove(tabAgent);
+            });
         return tabAgent;
     });
     auto* connectionTester = ConnectionTester::instance();
@@ -531,38 +545,18 @@ qInfo() << "NexusAI" << app.applicationVersion() << "starting";
         }
     }
 
-    // Apply the active model profile to the services and select the active
-    // protocol service for every tab: the template agent uses the
-    // process-lifetime service set, each factory-built tab its own (see the
-    // factory comment above).
+    // Summaries have a separate provider: changing defaults must never
+    // reconfigure a service used by a running conversation.
     const auto applySettings = [settings, agentVM, agent, fetchPtr, webPtr,
-                                episodicService, createWebSearchBackend,
-                                templateSet, applyProfileTo, activeService,
-                                &tabProviderSets]() {
-        applyProfileTo(templateSet);
-        for (auto it = tabProviderSets.begin(); it != tabProviderSets.end(); ++it)
-            applyProfileTo(it.value());
-
-        // The template agent may not be attached to any tab yet (the first
-        // applySettings() call runs before applyMode's setAgent), and
-        // applyToAgents only reaches tab-attached agents — configure it
-        // directly or tab 0 would fail with "No LLM service configured"
-        // until a settings change re-runs this lambda.
-        agent->setContextLimit(settings->resolveContextLimit());
-        // 步数预算（agent/maxSteps）：模板 agent 与各标签 agent 用同一个值。
-        agent->setMaxIterations(settings->maxSteps());
-        agent->setTaskTimeoutMs(settings->taskTimeoutMinutes() * 60 * 1000);
-        agent->setLLMService(activeService(templateSet));
-
-        agentVM->applyToAgents([&](AIAgent* tabAgent) {
-            tabAgent->setContextLimit(settings->resolveContextLimit());
-            tabAgent->setMaxIterations(settings->maxSteps());
-            tabAgent->setTaskTimeoutMs(settings->taskTimeoutMinutes() * 60 * 1000);
-            const ProviderSet set = tabAgent == agent
-                ? templateSet
-                : tabProviderSets.value(tabAgent, templateSet);
-            tabAgent->setLLMService(activeService(set));
-        });
+                                tabMemories, createWebSearchBackend]() {
+        agentVM->updateModelProfiles(settings->profiles(), settings->activeProfile());
+        const auto applyRuntime = [settings](AIAgent* target) {
+            target->setMaxIterations(settings->maxSteps());
+            target->setTaskTimeoutMs(settings->taskTimeoutMinutes() * 60 * 1000);
+            target->setLocalOnlyMode(settings->localOnlyMode());
+        };
+        applyRuntime(agent);
+        agentVM->applyToAgents(applyRuntime);
 
         // Read sandbox policy follows the (opt-in, default-off) setting
         Sandbox::setReadPolicy(settings->allowFullDiskRead()
@@ -586,8 +580,8 @@ qInfo() << "NexusAI" << app.applicationVersion() << "starting";
         webPtr->setBackend(createWebSearchBackend(settings->webSearchProvider()));
 
         // T8 (F4): sync episodic memory toggle and LLM service.
-        episodicService->setEnabled(settings->episodicMemoryEnabled());
-        episodicService->setLlmService(activeService(templateSet));
+        for (auto* summaries : std::as_const(*tabMemories))
+            summaries->setEnabled(settings->episodicMemoryEnabled());
     };
     applySettings();
 
@@ -596,7 +590,9 @@ qInfo() << "NexusAI" << app.applicationVersion() << "starting";
         applySettings();
     });
 
-    // Reconfigure instantly when the active profile or global settings change
+    QObject::connect(settings, &SettingsService::profilesChanged, &app, [applySettings]() { applySettings(); });
+    QObject::connect(settings, &SettingsService::localOnlyModeChanged, &app, [applySettings]() { applySettings(); });
+    // Defaults and idle tabs refresh; active tasks keep their model snapshots.
     QObject::connect(settings, &SettingsService::activeProfileChanged, &app, [applySettings]() { applySettings(); });
     QObject::connect(settings, &SettingsService::contextTokensChanged, &app, [applySettings]() { applySettings(); });
     // 步数预算改动即时生效（含已在跑的标签）。
@@ -612,8 +608,11 @@ qInfo() << "NexusAI" << app.applicationVersion() << "starting";
     QObject::connect(settings, &SettingsService::webSearchSearxBaseUrlChanged, &app, [applySettings]() { applySettings(); });
 
     // Batch 22 (F8): user-editable system prompt (empty = built-in)
-    const auto applySystemPrompt = [agent, settings]() {
+    const auto applySystemPrompt = [agent, agentVM, settings]() {
         agent->setSystemPromptOverride(settings->systemPromptOverride());
+        agentVM->applyToAgents([settings](AIAgent* target) {
+            target->setSystemPromptOverride(settings->systemPromptOverride());
+        });
     };
     applySystemPrompt();
     QObject::connect(settings, &SettingsService::systemPromptOverrideChanged, &app, applySystemPrompt);

@@ -12,25 +12,44 @@ Dialog {
     anchors.centerIn: parent
     padding: 0
     width: 440
-    height: 380
+    height: Math.min(460, parent ? parent.height - 24 : 460)
 
     property string toolName: ""
     property string arguments: "{}"
     property string pendingToolCallId: ""
+    property string sessionTitle: ""
+    property int pendingCount: 0
 
-    Accessible.name: qsTr("工具执行确认对话框")
-    Accessible.description: qsTr("AI 请求执行高危操作 %1，请选择允许或拒绝").arg(toolName)
+    function syncRequest() {
+        const request = AgentVM.pendingConfirmation
+        if (!request.id) {
+            pendingToolCallId = ""
+            close()
+            return
+        }
+        pendingToolCallId = request.id
+        toolName = request.name
+        arguments = JSON.stringify(request.arguments, null, 2)
+        sessionTitle = request.sessionTitle
+        pendingCount = request.count
+        if (!visible) open()
+    }
+    Component.onCompleted: Qt.callLater(syncRequest)
+    Connections {
+        target: AgentVM
+        function onPendingConfirmationsChanged() { Qt.callLater(dialog.syncRequest) }
+    }
+    onClosed: Qt.callLater(syncRequest)
+
 
     // Wire the dialog verdict back into the agent pipeline
     onAccepted: {
         if (pendingToolCallId !== "")
             AgentVM.approveToolCall(pendingToolCallId, true)
-        pendingToolCallId = ""
     }
     onRejected: {
         if (pendingToolCallId !== "")
             AgentVM.approveToolCall(pendingToolCallId, false)
-        pendingToolCallId = ""
     }
 
     background: DialogBackground {
@@ -56,6 +75,8 @@ Dialog {
     }
 
     contentItem: ColumnLayout {
+        Accessible.name: qsTr("工具执行确认对话框")
+        Accessible.description: qsTr("AI 请求执行高危操作 %1，请选择允许或拒绝").arg(dialog.toolName)
         spacing: 12
 
         // Title
@@ -74,12 +95,22 @@ Dialog {
 
             Text {
                 Layout.fillWidth: true
-                text: qsTr("AI 请求执行高危操作")
+                text: qsTr("确认工具操作")
                 color: Theme.textPrimary
                 font.pixelSize: Theme.fontSizeH2
                 font.bold: true
                 font.family: Theme.fontSans
             }
+        }
+
+        Text {
+            Layout.fillWidth: true
+            Layout.leftMargin: 20
+            Layout.rightMargin: 20
+            text: qsTr("来自会话：%1 · 待处理 %2 项").arg(dialog.sessionTitle).arg(dialog.pendingCount)
+            color: Theme.textSecondary
+            font.pixelSize: Theme.fontSizeCaption
+            wrapMode: Text.Wrap
         }
 
         // Tool name

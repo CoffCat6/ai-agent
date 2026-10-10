@@ -12,18 +12,18 @@ Dialog {
     padding: 0
     // 860×620：模型配置页改成卡片分组后，560 高的视口里主操作（启用/测试连接）会
     // 被挤出屏幕；580 宽的内容区又放不下"标签 + 输入框 + 一排档位芯片"。
-    width: 860
-    height: 620
+    width: Math.min(860, parent ? parent.width - 24 : 860)
+    height: Math.min(620, parent ? parent.height - 24 : 620)
 
     property string currentCategory: "model"
+    property bool explicitCategory: false
 
     signal settingsSaved()
     signal settingsError(string message)
 
-    Accessible.name: qsTr("设置中心")
-    Accessible.description: qsTr("配置模型、界面、工具、MCP 服务器等应用选项")
 
     function openCategory(id) {
+        explicitCategory = true
         currentCategory = id
         open()
     }
@@ -32,8 +32,9 @@ Dialog {
 
     onOpened: {
         const last = PreferenceStore.load("settings.lastCategory")
-        if (last && PreferenceRegistry.categories().indexOf(last) >= 0)
+        if (!explicitCategory && last && PreferenceRegistry.categories().indexOf(last) >= 0)
             currentCategory = last
+        explicitCategory = false
     }
 
     onClosed: {
@@ -51,6 +52,8 @@ Dialog {
     }
 
     contentItem: ColumnLayout {
+        Accessible.name: qsTr("设置中心")
+        Accessible.description: qsTr("配置模型、界面、工具、MCP 服务器等应用选项")
         spacing: 0
 
         Rectangle {

@@ -1,16 +1,17 @@
 import QtQuick
+import QtQuick.Layouts
 import NexusAI
 import NexusAI.ViewModels
 
-// 错误告示卡（docs/19 §4.3）：危险色左边框 + 浅红底 + 警告图标 + 正文。
 Item {
     id: root
-
     required property var modelData
-    readonly property string text: modelData.title !== undefined ? modelData.title : ""
-
-    implicitHeight: card.height
-    height: implicitHeight
+    required property int index
+    readonly property string text: modelData.title || ""
+    readonly property bool latest: AgentVM.traceCount > 0
+        && index === AgentVM.lastTraceIndexOfType("error")
+        && AgentVM.state === AgentVM.stateError
+    implicitHeight: card.implicitHeight
 
     Rectangle {
         id: card
@@ -21,46 +22,41 @@ Item {
         color: Theme.statusDangerSurface
         border.width: 1
         border.color: Theme.statusDanger
-        height: errorCol.implicitHeight + Theme.spaceSm * 2
+        implicitHeight: content.implicitHeight + Theme.spaceMd * 2
 
-        Rectangle {
+        ColumnLayout {
+            id: content
             anchors.left: parent.left
+            anchors.right: parent.right
             anchors.top: parent.top
-            anchors.bottom: parent.bottom
-            width: 3
-            color: Theme.statusDanger
-            topLeftRadius: parent.radius
-            bottomLeftRadius: parent.radius
-        }
-
-        Row {
-            id: errorCol
-            anchors.fill: parent
-            anchors.margins: Theme.spaceSm
-            anchors.leftMargin: Theme.spaceSm + 3
+            anchors.margins: Theme.spaceMd
             spacing: Theme.spaceSm
-
-            AppIcon {
-                anchors.verticalCenter: parent.verticalCenter
-                icon: "warning"
-                size: 16
-                iconColor: Theme.statusDanger
-            }
-
             Text {
-                anchors.verticalCenter: parent.verticalCenter
-                width: parent.width - 16 - Theme.spaceSm
+                Layout.fillWidth: true
                 text: root.text
                 color: Theme.textPrimary
                 font.pixelSize: Theme.fontSizeBody
                 font.family: Theme.fontSans
                 wrapMode: Text.Wrap
-                renderType: Text.NativeRendering
+            }
+            Flow {
+                Layout.fillWidth: true
+                spacing: Theme.spaceSm
+                AppButton {
+                    visible: root.latest
+                    text: qsTr("重试本轮")
+                    enabled: AgentVM.modelConfigured && !AgentVM.stateBusy
+                    onClicked: AgentVM.regenerate()
+                }
+                AppButton {
+                    text: qsTr("模型设置")
+                    onClicked: AgentVM.openModelSettings()
+                }
+                CopyButton { text: root.text }
             }
         }
     }
-
     Accessible.role: Accessible.Alert
     Accessible.name: qsTr("错误")
-    Accessible.description: root.text.substring(0, 80)
+    Accessible.description: root.text
 }

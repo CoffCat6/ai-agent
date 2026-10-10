@@ -203,6 +203,9 @@ public:
         return ToolResult::ok(QStringLiteral("released"));
     }
     void release() { m_gate.release(); }
+    // A queued invocation can now be cancelled before execute() enters.
+    // Its test's release must not let the next invocation bypass its park.
+    void resetGate() { m_gate.tryAcquire(m_gate.available()); }
 private:
     QSemaphore m_gate;
 };
@@ -214,6 +217,7 @@ BlockingTool* registerBlockingTool() {
         tool = owned.get();
         ToolRegistry::instance().registerTool(std::move(owned));
     }
+    tool->resetGate();
     return tool;
 }
 
@@ -1300,12 +1304,15 @@ void TestAgent::toolCancelledOnStop() {
 // (Windows: tree-kill so the cmd.exe /c grandchild does not survive) and only
 // returns after the reaping, so the trace flip bounds the side effect.
 void TestAgent::shellProcessKilledOnStop() {
+    QTemporaryDir directory(testDirTemplate());
+    QVERIFY(directory.isValid());
+    const QString marker = directory.filePath("shell-started.txt");
     llm.script.append(toolResponse("shell_exec",
         QJsonObject{{"command",
 #ifdef Q_OS_WIN
-            QStringLiteral("ping -n 31 127.0.0.1 > nul")
+            QStringLiteral("echo started > \"%1\" & ping -n 31 127.0.0.1 > nul").arg(marker)
 #else
-            QStringLiteral("sleep 30")
+            QStringLiteral("echo started > \"%1\"; sleep 30").arg(marker)
 #endif
         }}));
 
@@ -1317,6 +1324,9 @@ void TestAgent::shellProcessKilledOnStop() {
     QTRY_VERIFY_WITH_TIMEOUT(traceHasRunningToolCall(agent.traceModel(),
                                                     QStringLiteral("shell_exec")),
                              5000);
+    // Separately from queued cancellation, this case must stop a command
+    // that really launched, not merely a displayed "running" trace node.
+    QTRY_VERIFY_WITH_TIMEOUT(QFileInfo::exists(marker), 5000);
 
     QElapsedTimer clock;
     clock.start();

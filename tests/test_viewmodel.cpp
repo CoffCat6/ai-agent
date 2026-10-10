@@ -684,7 +684,7 @@ private slots:
 
     // docs/20 §3.2（FORK-701）：编辑重发 —— 删除持久层最后一条 user 行及
     // 之后全部消息，以新文本重新发起。
-    void editAndResendReplacesLastUserTurn() {
+    void editAndResendWithoutProviderKeepsLastTurn() {
         SqliteMemory memory(QStringLiteral(":memory:"));
         memory.beginSession("s-edit", "Edit");
         memory.saveMessage("s-edit", QJsonObject{{"role", "user"},
@@ -698,19 +698,19 @@ private slots:
         vm.setAgent(&agent);
         agent.setMemory(&memory);
 
-        // 通过 startTask 先让 agent 获得会话（空脚本 → 无响应，不阻塞）。
-        agent.startTask(QStringLiteral("旧问题"));
+        agent.resumeSession("s-edit");
         QVERIFY(!vm.currentSessionId().isEmpty());
 
-        vm.editAndResend(QStringLiteral("新问题"));
+        QVERIFY(!vm.editAndResend(QStringLiteral("新问题")));
 
-        // 持久层：旧 user+assistant 两行被删，新 user 行已存。
+        // 未配置模型时不能破坏已有对话；成功替换由 test_chat_workflows
+        // 验证请求、界面轨迹和持久层三者一致。
         const QJsonArray loaded = memory.loadMessages(vm.currentSessionId(), 200);
-        QCOMPARE(loaded.size(), 1);
+        QCOMPARE(loaded.size(), 2);
         QCOMPARE(loaded.at(0).toObject().value("role").toString(),
                  QStringLiteral("user"));
         QCOMPARE(loaded.at(0).toObject().value("content").toString(),
-                 QStringLiteral("新问题"));
+                  QStringLiteral("旧问题"));
 
         vm.setAgent(nullptr);
     }

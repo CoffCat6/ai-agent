@@ -1136,7 +1136,10 @@ QVariantList SettingsService::endpointOptions(const QString& provider) const {
 //   2. Capability-table contextWindow (default per model)
 //   3. Global contextTokens (fallback for unknown models)
 int SettingsService::resolveContextLimit() const {
-    const QVariantMap profile = activeProfile();
+    return resolveContextLimitForProfile(activeProfile());
+}
+
+int SettingsService::resolveContextLimitForProfile(const QVariantMap& profile) const {
     const QString provider = profile.value("provider").toString();
     const QString model = profile.value("model").toString();
 

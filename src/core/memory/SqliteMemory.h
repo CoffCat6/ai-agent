@@ -27,11 +27,14 @@ public:
     int deleteMessagesFrom(const QString& sessionId, qint64 fromId) override;
     // docs/20 §3.1（FORK-701）：会话内最后一条 user 消息的主键。
     qint64 lastUserMessageId(const QString& sessionId) override;
+    bool truncateLastTurn(const QString& sessionId, bool removeUser) override;
+    bool setSessionPinned(const QString& id, bool pinned) override;
+    bool setSessionArchived(const QString& id, bool archived) override;
 
     // Batch 17 (FEAT-1702): cross-session keyword search (trigram FTS5 with
     // a LIKE fallback for keywords shorter than 3 characters - the trigram
     // index cannot answer shorter queries).
-    QVariantList searchMessages(const QString& keyword, int limit = 50) override;
+    QVariantList searchMessages(const QString& keyword, int limit = 50, bool includeArchived = false) override;
 
     // Episodic memory (FTS5) — currently NOT wired into the agent.
     // Decision recorded in docs/5-完善计划.md Batch 7 (MEM-703): 搁置,
@@ -61,7 +64,7 @@ public:
     // Session bookkeeping
     void beginSession(const QString& sessionId, const QString& title) override;
     void touchSession(const QString& sessionId) override;
-    QJsonArray listSessions(int limit = 50) override;
+    QJsonArray listSessions(int limit = 50, bool includeArchived = false) override;
     void deleteSession(const QString& sessionId) override;
     void renameSession(const QString& sessionId, const QString& title) override;
 

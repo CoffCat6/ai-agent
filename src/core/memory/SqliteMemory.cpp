@@ -407,6 +407,15 @@ void SqliteMemory::migrateSessionProjectColumn() {
     if (!hasColumn)
         execDdl(q, "ALTER TABLE sessions ADD COLUMN project_id TEXT",
                 "add sessions.project_id column");
+    QStringList columns;
+    if (!q.exec("PRAGMA table_info(sessions)")) return;
+    while (q.next()) columns.append(q.value(1).toString());
+    if (!columns.contains("pinned"))
+        execDdl(q, "ALTER TABLE sessions ADD COLUMN pinned INTEGER NOT NULL DEFAULT 0",
+                "add sessions.pinned column");
+    if (!columns.contains("archived"))
+        execDdl(q, "ALTER TABLE sessions ADD COLUMN archived INTEGER NOT NULL DEFAULT 0",
+                "add sessions.archived column");
 }
 
 // 思考正文按列存（trace_nodes 是列映射表，不是整节点 JSON 大字段）：老库
@@ -424,6 +433,9 @@ void SqliteMemory::migrateTraceNodeReasoningColumn() {
         execDdl(pragma, "ALTER TABLE trace_nodes ADD COLUMN reasoning "
                         "TEXT NOT NULL DEFAULT ''",
                 "add trace_nodes.reasoning column");
+    if (!columns.contains(QLatin1String("metadata")))
+        execDdl(pragma, "ALTER TABLE trace_nodes ADD COLUMN metadata TEXT NOT NULL DEFAULT '{}'",
+                "add trace_nodes.metadata column");
 }
 
 void SqliteMemory::migrateKnowledgeSchema() {
@@ -742,6 +754,32 @@ int SqliteMemory::deleteMessagesFrom(const QString& sessionId, qint64 fromId) {
 
 // docs/20 §3.1（FORK-701）：会话内最后一条 user 消息的主键。AUTOINCREMENT
 // id 单调，MAX(id) 即最后一条；限定 role='user' 过滤掉尾部 assistant 行。
+bool SqliteMemory::truncateLastTurn(const QString& sessionId, bool removeUser) {
+    if (sessionId.isEmpty() || !m_db.transaction()) return false;
+    QSqlQuery query(m_db);
+    const qint64 userId = lastUserMessageId(sessionId);
+    bool ok = userId > 0;
+    if (ok) {
+        query.prepare("DELETE FROM messages WHERE session_id = ? AND id >= ?");
+        query.addBindValue(sessionId);
+        query.addBindValue(userId + (removeUser ? 0 : 1));
+        ok = query.exec();
+    }
+    if (ok) {
+        query.prepare("DELETE FROM trace_nodes WHERE session_id = ? AND node_order >= "
+                      "(SELECT MAX(node_order) + ? FROM trace_nodes "
+                      "WHERE session_id = ? AND type = 'user_message')");
+        query.addBindValue(sessionId);
+        query.addBindValue(removeUser ? 0 : 1);
+        query.addBindValue(sessionId);
+        ok = query.exec();
+    }
+    if (ok && m_db.commit()) return true;
+    qWarning() << "Failed to truncate conversation turn:" << query.lastError().text();
+    m_db.rollback();
+    return false;
+}
+
 qint64 SqliteMemory::lastUserMessageId(const QString& sessionId) {
     if (sessionId.isEmpty()) return 0;
     QSqlQuery query(m_db);
@@ -759,7 +797,7 @@ qint64 SqliteMemory::lastUserMessageId(const QString& sessionId) {
 // match, CJK included); shorter keywords fall back to a LIKE scan because a
 // trigram index cannot answer sub-trigram queries. Snippets come from fts5
 // snippet() on the FTS path and a match-centered window on the LIKE path.
-QVariantList SqliteMemory::searchMessages(const QString& keyword, int limit) {
+QVariantList SqliteMemory::searchMessages(const QString& keyword, int limit, bool includeArchived) {
     QVariantList out;
     const QString kw = keyword.trimmed();
     if (kw.isEmpty() || limit <= 0) return out;
@@ -815,7 +853,7 @@ QVariantList SqliteMemory::searchMessages(const QString& keyword, int limit) {
             "snippet(messages_fts, 0, '[', ']', '…', 16) AS snip, s.title AS title "
             "FROM messages_fts JOIN messages m ON m.id = messages_fts.rowid "
             "LEFT JOIN sessions s ON s.id = m.session_id "
-            "WHERE messages_fts MATCH ?"
+            "WHERE messages_fts MATCH ? AND (? OR COALESCE(s.archived, 0) = 0)"
             ") %1 LIMIT ?").arg(groupOrder));
         query.addBindValue(QStringLiteral("\"%1\"").arg(match));
     } else {
@@ -828,10 +866,11 @@ QVariantList SqliteMemory::searchMessages(const QString& keyword, int limit) {
             "SELECT m.id AS id, m.session_id AS session_id, m.role AS role, "
             "m.timestamp AS timestamp, m.content AS content, s.title AS title "
             "FROM messages m LEFT JOIN sessions s ON s.id = m.session_id "
-            "WHERE m.content LIKE ? ESCAPE '\\'"
+            "WHERE m.content LIKE ? ESCAPE '\\' AND (? OR COALESCE(s.archived, 0) = 0)"
             ") %1 LIMIT ?").arg(groupOrder));
         query.addBindValue(QStringLiteral("%%1%").arg(like));
     }
+    query.addBindValue(includeArchived);
     query.addBindValue(limit);
     if (!query.exec()) {
         qWarning() << "searchMessages failed:" << query.lastError().text();
@@ -1092,10 +1131,27 @@ void SqliteMemory::touchSession(const QString& sessionId) {
     }
 }
 
-QJsonArray SqliteMemory::listSessions(int limit) {
+bool SqliteMemory::setSessionPinned(const QString& id, bool pinned) {
     QSqlQuery query(m_db);
-    query.prepare("SELECT id, title, updated_at, project_id FROM sessions "
-                  "ORDER BY updated_at DESC LIMIT ?");
+    query.prepare("UPDATE sessions SET pinned = ? WHERE id = ?");
+    query.addBindValue(pinned);
+    query.addBindValue(id);
+    return query.exec() && query.numRowsAffected() == 1;
+}
+
+bool SqliteMemory::setSessionArchived(const QString& id, bool archived) {
+    QSqlQuery query(m_db);
+    query.prepare("UPDATE sessions SET archived = ? WHERE id = ?");
+    query.addBindValue(archived);
+    query.addBindValue(id);
+    return query.exec() && query.numRowsAffected() == 1;
+}
+
+QJsonArray SqliteMemory::listSessions(int limit, bool includeArchived) {
+    QSqlQuery query(m_db);
+    query.prepare("SELECT id, title, updated_at, project_id, pinned, archived FROM sessions "
+                  "WHERE (? OR archived = 0) ORDER BY pinned DESC, updated_at DESC, id DESC LIMIT ?");
+    query.addBindValue(includeArchived);
     query.addBindValue(limit);
 
     QJsonArray sessions;
@@ -1108,6 +1164,8 @@ QJsonArray SqliteMemory::listSessions(int limit) {
             session["updatedAt"] = static_cast<double>(updated);
             session["timeText"] = relativeTime(updated);
             session["projectId"] = query.value(3).toString();
+            session["pinned"] = query.value(4).toBool();
+            session["archived"] = query.value(5).toBool();
             sessions.append(session);
         }
     } else {
@@ -1220,12 +1278,12 @@ void SqliteMemory::saveTraceNode(const QString& sessionId, const QJsonObject& no
     // Upsert: position (node_order) is fixed by the first insert; later
     // saves of the same node id only refresh content/status.
     query.prepare("INSERT INTO trace_nodes (session_id, node_id, node_order, type, title, "
-                  "status, args, result, reasoning, timestamp, workspace_id) "
-                  "VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, 'local') "
+                  "status, args, result, reasoning, timestamp, metadata, workspace_id) "
+                  "VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, 'local') "
                   "ON CONFLICT(session_id, node_id) DO UPDATE SET type = excluded.type, "
                   "title = excluded.title, status = excluded.status, args = excluded.args, "
                   "result = excluded.result, reasoning = excluded.reasoning, "
-                  "timestamp = excluded.timestamp");
+                  "timestamp = excluded.timestamp, metadata = excluded.metadata");
     // Batch 18 review: every text column is NOT NULL. An absent JSON key
     // yields a null QString, and a null QString binds as SQL NULL — the same
     // silent-drop trap as usage_log.detail (Batch 11). Normalize the bind.
@@ -1243,6 +1301,10 @@ void SqliteMemory::saveTraceNode(const QString& sessionId, const QJsonObject& no
     query.addBindValue(nz(node, "result"));
     query.addBindValue(nz(node, "reasoning"));
     query.addBindValue(static_cast<qint64>(node.value("timestamp").toDouble()));
+    QJsonObject metadata;
+    for (const char* key : {"images", "files", "model"})
+        if (node.contains(QLatin1String(key))) metadata[key] = node.value(QLatin1String(key));
+    query.addBindValue(QString::fromUtf8(QJsonDocument(metadata).toJson(QJsonDocument::Compact)));
 
     if (!query.exec()) {
         qWarning() << "Failed to save trace node:" << query.lastError().text();
@@ -1252,7 +1314,7 @@ void SqliteMemory::saveTraceNode(const QString& sessionId, const QJsonObject& no
 QJsonArray SqliteMemory::loadTraceNodes(const QString& sessionId) {
     QSqlQuery query(m_db);
     query.prepare("SELECT node_id, type, title, status, args, result, reasoning, timestamp, "
-                  "node_order "
+                  "node_order, metadata "
                   "FROM trace_nodes WHERE session_id = ? ORDER BY node_order ASC");
     query.addBindValue(sessionId);
 
@@ -1273,6 +1335,9 @@ QJsonArray SqliteMemory::loadTraceNodes(const QString& sessionId) {
                 node["reasoning"] = reasoning;
             node["timestamp"] = query.value(7).toLongLong();
             node["order"] = query.value(8).toInt();
+            const auto metadata = QJsonDocument::fromJson(query.value(9).toByteArray()).object();
+            for (const char* key : {"images", "files", "model"})
+                if (metadata.contains(QLatin1String(key))) node[key] = metadata.value(QLatin1String(key));
             nodes.append(node);
         }
     } else {

@@ -3,6 +3,18 @@
 
 enable_testing()
 
+add_executable(test_chat_workflows test_chat_workflows.cpp)
+target_link_libraries(test_chat_workflows PRIVATE
+    nexus_core nexus_infra nexus_viewmodels nexus_viewmodelsplugin
+    Qt6::Test Qt6::Qml Qt6::Quick)
+target_compile_definitions(test_chat_workflows PRIVATE NEXUSAI_TESTING NEXUS_SOURCE_DIR="${CMAKE_SOURCE_DIR}")
+file(GLOB_RECURSE NEXUS_WORKFLOW_QML CONFIGURE_DEPENDS "${CMAKE_SOURCE_DIR}/src/ui/*.qml")
+qt_add_resources(test_chat_workflows "workflow_ui"
+    PREFIX "/qt/qml/NexusAI" BASE "${CMAKE_SOURCE_DIR}" FILES ${NEXUS_WORKFLOW_QML})
+add_test(NAME test_chat_workflows COMMAND test_chat_workflows -platform offscreen)
+set_tests_properties(test_chat_workflows PROPERTIES
+    ENVIRONMENT "QT_QPA_PLATFORM_PLUGIN_PATH=${QT6_INSTALL_PREFIX}/${QT6_INSTALL_PLUGINS}/platforms")
+
 function(nexus_add_test name)
     add_executable(${name} ${ARGN})
     target_link_libraries(${name} PRIVATE nexus_core nexus_infra Qt6::Test)

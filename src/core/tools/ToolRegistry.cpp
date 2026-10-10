@@ -308,6 +308,14 @@ public:
         // Batch 21 (B3): drop a cancel left over from a previous call, so a
         // cancel() landing between two executions can't kill the next task.
         m_cancelRequested.store(false);
+        return execute(args, {});
+    }
+
+    ToolResult execute(const QJsonObject& args, const Cancellation& cancelled) override {
+        const auto isCancelled = [&]() {
+            return cancelled ? cancelled->load() : m_cancelRequested.load();
+        };
+        if (isCancelled()) return ToolResult::fail("Command cancelled");
 
         const QString command = args.value("command").toString();
         if (command.isEmpty())
@@ -324,7 +332,11 @@ public:
         if (!projectRoot.isEmpty())
             proc.setWorkingDirectory(projectRoot);
 #ifdef Q_OS_WIN
-        proc.start("cmd.exe", {"/c", command});
+        // cmd.exe uses its own quoting rules, not the C-runtime argv rules
+        // applied by QProcess to a QStringList. Preserve quoted paths.
+        proc.setProgram(QStringLiteral("cmd.exe"));
+        proc.setNativeArguments(QStringLiteral("/d /s /c \"") + command + QLatin1Char('"'));
+        proc.start();
 #else
         proc.start("/bin/sh", {"-c", command});
 #endif
@@ -338,7 +350,7 @@ public:
         constexpr int kSliceMs = 200;
         int waitedMs = 0;
         while (!proc.waitForFinished(kSliceMs)) {
-            if (m_cancelRequested.exchange(false)) {
+            if (isCancelled()) {
 #ifdef Q_OS_WIN
                 // cmd.exe /c makes the long runner a grandchild; killing
                 // cmd alone orphans it - terminate the tree, then reap.
@@ -383,6 +395,10 @@ public:
     // slicing execute() polls between wait slices; never touches the
     // QProcess itself (it lives on the pool thread running execute).
     void cancel() override { m_cancelRequested.store(true); }
+    void cancel(const Cancellation& cancelled) override {
+        if (cancelled) cancelled->store(true);
+        else cancel();
+    }
 
 private:
     std::atomic<bool> m_cancelRequested{false};

@@ -8,10 +8,12 @@ import NexusAI.ViewModels
 // opens UPWARD because the trigger sits near the window bottom edge.
 Item {
     id: root
+    enabled: !AgentVM.stateBusy
+    opacity: enabled ? 1.0 : 0.6
 
     signal settingsRequested()
 
-    readonly property var activeProfile: Settings.activeProfile
+    readonly property var activeProfile: AgentVM.chatModelProfile
     readonly property bool hasProfile: activeProfile
         && activeProfile.provider !== undefined && activeProfile.provider !== ""
     // 自定义网关可以在填模型名之前就被选中，列表里的空串会让选择器出现一行空白项。
@@ -195,7 +197,7 @@ Item {
                             hoverEnabled: true
                             cursorShape: Qt.PointingHandCursor
                             onClicked: {
-                                Settings.selectModelForProfile(
+                                AgentVM.selectChatModel(
                                     root.activeProfile.id, modelData)
                                 menuPopup.close()
                                 root.showWindowHint(root.activeProfile.apiProtocol, modelData)
@@ -241,7 +243,7 @@ Item {
 
                     delegate: Rectangle {
                         id: profileItem
-                        readonly property bool isCurrent: modelData.id === Settings.activeProfileId
+                        readonly property bool isCurrent: modelData.id === root.activeProfile.id
                         Layout.fillWidth: true
                         Layout.leftMargin: 2
                         Layout.rightMargin: 2
@@ -289,7 +291,7 @@ Item {
                             hoverEnabled: true
                             cursorShape: Qt.PointingHandCursor
                             onClicked: {
-                                Settings.setActiveProfile(modelData.id)
+                                AgentVM.selectChatModel(modelData.id)
                                 menuPopup.close()
                                 root.showWindowHint(modelData.apiProtocol, modelData.model)
                             }

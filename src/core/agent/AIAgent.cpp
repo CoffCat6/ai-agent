@@ -256,6 +256,7 @@ QString AIAgent::appendTraceNode(const QString& type, const QString& title,
     const QString id = QUuid::createUuid().toString(QUuid::WithoutBraces);
     node["id"] = id;
     node["type"] = type;
+    if (type == QLatin1String("summary")) node["model"] = currentModel();
     node["title"] = title;
     node["status"] = status;
     node["timestamp"] = QDateTime::currentDateTime().toMSecsSinceEpoch();
@@ -395,7 +396,7 @@ QJsonArray AIAgent::sessionList() const {
     // P1-6: 侧栏树把全部会话按项目分组展示，50 条全局配额会让旧项目会话
     // 静默消失；桌面场景万级以内，一次拉 500 条成本可忽略。分页按项目
     // 查询留待会话量成为真实问题时再做。
-    return m_memory ? m_memory->listSessions(500) : QJsonArray();
+    return m_memory ? m_memory->listSessions(500, true) : QJsonArray();
 }
 
 QJsonArray AIAgent::auditLog(int limit) const {
@@ -416,12 +417,17 @@ void AIAgent::renameSession(const QString& sessionId, const QString& title) {
     emit sessionsChanged();
 }
 
-void AIAgent::startTask(const QString& userMessage, const QStringList& images,
+bool AIAgent::startTask(const QString& userMessage, const QStringList& images,
                         const QJsonArray& files) {
-    if (m_active) return;
+    if (m_active) return false;
+    if (userMessage.trimmed().isEmpty() && images.isEmpty() && files.isEmpty()) return false;
+    if (!m_llmService) {
+        emit errorOccurred(tr("请先配置并启用模型，再发送消息。"));
+        return false;
+    }
 
     // docs/16 §7.2: 配额检查（strict 模式下超额拒绝请求）。
-    if (!checkQuota()) return;
+    if (!checkQuota()) return false;
 
     const bool fresh = m_sessionId.isEmpty();
     if (fresh) {
@@ -518,9 +524,11 @@ void AIAgent::startTask(const QString& userMessage, const QStringList& images,
     m_taskStartMs = QDateTime::currentMSecsSinceEpoch();
     if (m_taskTimeoutMs > 0) m_taskTimeoutTimer.start(m_taskTimeoutMs);
     processIteration();
+    return true;
 }
 
 void AIAgent::resetSession() {
+    if (m_active) stop();
     const bool wasActive = m_active;
     m_active = false;
     ++m_epoch;
@@ -718,7 +726,7 @@ void AIAgent::processIteration() {
             // Batch 14: disabled tools (local-only mode) must not even reach
             // the wire - the acceptance criterion is that the request body
             // contains no schema for the gated tool at all.
-            if (!m_toolRegistry->isToolEnabled(def.name)) continue;
+            if (!m_toolRegistry->isToolUsable(def.name) || !toolAllowedForModel(def.name)) continue;
             QJsonObject toolObj;
             toolObj["type"] = "function";
             QJsonObject fn;
@@ -824,7 +832,7 @@ int AIAgent::estimateReservedTokensForNextRequest() const {
     QJsonArray toolsArray;
     for (const auto& def : m_toolRegistry->listAll()) {
         if (def.level == ToolLevel::Dangerous) continue;
-        if (!m_toolRegistry->isToolUsable(def.name)) continue;
+        if (!m_toolRegistry->isToolUsable(def.name) || !toolAllowedForModel(def.name)) continue;
         QJsonObject toolObj;
         toolObj["type"] = "function";
         QJsonObject fn;
@@ -1101,8 +1109,9 @@ void AIAgent::stop() {
     // atomic flags inside the tools (GUI thread contract, ITool::cancel);
     // after the epoch bump the late watcher callback drops the result.
     for (auto it = m_inFlightTools.cbegin(); it != m_inFlightTools.cend(); ++it)
-        it.value()->cancel();
+        it.value()->cancel(m_toolCancellations.value(it.key()));
     m_inFlightTools.clear();
+    m_toolCancellations.clear();
     // The assistant message may already be in the history announcing calls
     // that will now never run - seal ALL of them (still queued, awaiting
     // confirmation, and currently executing on the worker pool) or the next
@@ -1160,43 +1169,7 @@ void AIAgent::stop() {
 void AIAgent::regenerateLast() {
     if (m_active) return;
     if (m_llmService == nullptr) return;
-
-    // 1. 找最后一条 user 消息在内存上下文中的位置（跳过 system）。截断点
-    //    = 该 user 消息本身（保留），其后全部移除。
-    int lastUserIdx = -1;
-    for (int i = m_messages.size() - 1; i >= 1; --i) {
-        if (m_messages.at(i).toObject().value("role").toString()
-                == QLatin1String("user")) {
-            lastUserIdx = i;
-            break;
-        }
-    }
-    if (lastUserIdx < 0) return;   // 无历史（fresh/system-only）：无可重发
-
-    // 2. 截断内存上下文（保留 user 消息本体）。
-    while (m_messages.size() > lastUserIdx + 1) m_messages.removeLast();
-
-    // 3. 同步持久层：删除最后一条 user 行之后的全部行（stop 残留的
-    //    tool/assistant 对白、finishTask 收口的 assistant 回答）。持久层
-    //    尾部形状只可能是 ...user, assistant 或 ...user，两种情况下删除
-    //    点都是「最后一条 user 行之后」。audit_log 不动：重新生成是正常
-    //    行为，保留完整审计链。
-    if (m_memory && !m_sessionId.isEmpty()) {
-        const qint64 userId = m_memory->lastUserMessageId(m_sessionId);
-        if (userId > 0)
-            m_memory->deleteMessagesFrom(m_sessionId, userId + 1);
-    }
-
-    // 4. 截断 trace 展示层：从最后一个 user_message 节点处截断（该节点
-    //    保留 —— 与持久层 user 消息锚点一致）。旧库恢复路径可能没有
-    //    user_message 节点（纯文本 summary 回放），此时不动 trace。
-    for (int i = m_traceModel.size() - 1; i >= 0; --i) {
-        if (m_traceModel.at(i).toObject().value("type").toString()
-                == QLatin1String("user_message")) {
-            while (m_traceModel.size() > i + 1) m_traceModel.removeLast();
-            break;
-        }
-    }
+    if (!checkQuota() || !rewindLastTurn(false)) return;
 
     // 5. 重置轮次状态并重新发起请求（沿用 startTask 尾部的活跃态逻辑）。
     m_iteration = 0;
@@ -1229,6 +1202,52 @@ void AIAgent::regenerateLast() {
     m_taskStartMs = QDateTime::currentMSecsSinceEpoch();
     if (m_taskTimeoutMs > 0) m_taskTimeoutTimer.start(m_taskTimeoutMs);
     processIteration();
+}
+
+bool AIAgent::rewindLastTurn(bool removeUser) {
+    int lastUser = -1;
+    for (int i = m_messages.size() - 1; i >= 1; --i) {
+        if (m_messages.at(i).toObject().value("role") == QLatin1String("user")) {
+            lastUser = i;
+            break;
+        }
+    }
+    if (lastUser < 0) return false;
+    // Commit before changing the live conversation; a failed disk write
+    // must leave both the visible answer and the request context intact.
+    if (m_memory && !m_memory->truncateLastTurn(m_sessionId, removeUser)) {
+        emit errorOccurred(tr("无法更新会话记录，原消息已保留，请重试。"));
+        return false;
+    }
+    while (m_messages.size() > lastUser + (removeUser ? 0 : 1))
+        m_messages.removeLast();
+    for (int i = m_traceModel.size() - 1; i >= 0; --i) {
+        if (m_traceModel.at(i).toObject().value("type") == QLatin1String("user_message")) {
+            while (m_traceModel.size() > i + (removeUser ? 0 : 1))
+                m_traceModel.removeLast();
+            break;
+        }
+    }
+    emit traceChanged();
+    return true;
+}
+
+bool AIAgent::editLastUserMessage(const QString& text) {
+    if (m_active || !m_llmService || text.trimmed().isEmpty()) return false;
+    if (!checkQuota()) return false;
+    QJsonObject original;
+    for (int i = m_messages.size() - 1; i >= 1; --i) {
+        const auto message = m_messages.at(i).toObject();
+        if (message.value("role") == QLatin1String("user")) {
+            original = message;
+            break;
+        }
+    }
+    if (original.isEmpty() || !rewindLastTurn(true)) return false;
+    QStringList images;
+    for (const auto& image : original.value("images").toArray())
+        images.append(image.toString());
+    return startTask(text.trimmed(), images, original.value("files").toArray());
 }
 
 // ── Streaming display ─────────────────────────────────────
@@ -1327,6 +1346,12 @@ void AIAgent::sealUnansweredToolCalls(const QVector<ToolCallInfo>& calls,
     }
 }
 
+bool AIAgent::toolAllowedForModel(const QString& name) const {
+    if (!m_localOnly) return true;
+    if (name == QLatin1String("search_knowledge_base")) return m_modelLocal;
+    return name != QLatin1String("web_search") && !name.startsWith(QLatin1String("mcp__"));
+}
+
 void AIAgent::processNextToolCall() {
     if (!m_active) return;
 
@@ -1359,9 +1384,9 @@ void AIAgent::processNextToolCall() {
         // (docs/17 B1: separate layers). Reject stale/hallucinated calls
         // with a structured error so tool_call/tool pairing stays intact -
         // same shape as the unknown-tool path above.
-        if (m_toolRegistry && !m_toolRegistry->isToolUsable(call.name)) {
+        if (m_toolRegistry && (!m_toolRegistry->isToolUsable(call.name) || !toolAllowedForModel(call.name))) {
             const QString reason =
-                m_toolRegistry->isPolicyBlocked(call.name)
+                (m_toolRegistry->isPolicyBlocked(call.name) || !toolAllowedForModel(call.name))
                     ? QStringLiteral("blocked by the local-only privacy mode")
                     : QStringLiteral("disabled by the user in tool settings");
             appendTraceNode("tool_call", call.name, "failed",
@@ -1412,6 +1437,12 @@ void AIAgent::processNextToolCall() {
 
 void AIAgent::dispatchToolExecution(const ToolCallInfo& call, const QString& traceNodeId,
                                     bool autoApproved) {
+    if (!toolAllowedForModel(call.name) || (m_toolRegistry && !m_toolRegistry->isToolUsable(call.name))) {
+        updateTraceNodeStatusById(traceNodeId, "cancelled");
+        appendToolResultMessage(call, QStringLiteral("Tool is no longer allowed by current settings."));
+        processNextToolCall();
+        return;
+    }
     // Redundant-call detection lives in onLLMResponse (round-level, before
     // dispatch) - by the time we get here the call is worth executing.
 
@@ -1454,13 +1485,18 @@ void AIAgent::dispatchToolExecution(const ToolCallInfo& call, const QString& tra
 
     ITool* tool = m_toolRegistry ? m_toolRegistry->find(call.name) : nullptr;
     const quint64 epoch = m_epoch;
+    const auto cancelled = std::make_shared<std::atomic<bool>>(false);
+    m_toolCancellations.insert(call.id, cancelled);
     if (tool)
         m_inFlightTools.insert(call.id, tool);   // Batch 13: stop() reaches it
 
     auto* watcher = new QFutureWatcher<ToolResult>(this);
     connect(watcher, &QFutureWatcherBase::finished, this,
-            [this, watcher, call, nodeId, epoch, autoApproved]() {
-        m_inFlightTools.remove(call.id);   // both paths: done is done
+            [this, watcher, call, nodeId, epoch, autoApproved, cancelled]() {
+        if (m_toolCancellations.value(call.id) == cancelled) {
+            m_toolCancellations.remove(call.id);
+            m_inFlightTools.remove(call.id);
+        }
         const ToolResult result = watcher->result();
         watcher->deleteLater();
         if (epoch != m_epoch) {
@@ -1478,9 +1514,9 @@ void AIAgent::dispatchToolExecution(const ToolCallInfo& call, const QString& tra
     // 进行中切换活动项目会波及所有 tab；执行域把它钉在派发时的值上
     // （线程局部，只覆盖本次工具执行），后台任务不再被前台切换打断。
     const QString projectRoot = m_activeProjectRoot;
-    watcher->setFuture(QtConcurrent::run([tool, call, projectRoot]() -> ToolResult {
+    watcher->setFuture(QtConcurrent::run([tool, call, projectRoot, cancelled]() -> ToolResult {
         const Sandbox::ExecutionScope scope(projectRoot);
-        return tool ? tool->execute(call.arguments)
+        return tool ? tool->execute(call.arguments, cancelled)
                     : ToolResult::fail(QStringLiteral("Tool not found"));
     }));
 }

@@ -372,6 +372,14 @@ Item {
 
             CopyButton { text: root.body }
 
+            Text {
+                anchors.verticalCenter: parent.verticalCenter
+                text: root.modelData.model || ""
+                color: Theme.textSecondary
+                font.pixelSize: Theme.fontSizeCaption
+                font.family: Theme.fontMono
+            }
+
             // docs/20 §3.1：重新生成（末条回复、非流式、非 busy）。
             Rectangle {
                 id: regenerateBtn

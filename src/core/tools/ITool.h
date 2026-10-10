@@ -2,6 +2,8 @@
 
 #include <QJsonObject>
 #include <QString>
+#include <atomic>
+#include <memory>
 
 namespace NexusAI {
 
@@ -48,9 +50,16 @@ struct ToolCallInfo {
 // Abstract tool interface
 class ITool {
 public:
+    using Cancellation = std::shared_ptr<std::atomic<bool>>;
     virtual ~ITool() = default;
     virtual ToolDefinition definition() const = 0;
     virtual ToolResult execute(const QJsonObject& args) = 0;
+    // Created before dispatch, so cancellation survives queueing and is
+    // scoped to one invocation even when multiple tabs share the tool.
+    virtual ToolResult execute(const QJsonObject& args, const Cancellation& cancelled) {
+        if (cancelled && cancelled->load()) return ToolResult::fail("Tool cancelled");
+        return execute(args);
+    }
     // Batch 13 (SEC-1301): cooperative cancellation. cancel() is invoked on
     // the GUI thread while execute() runs on a QtConcurrent pool thread, so
     // implementations may only flip atomic flags (or terminate child
@@ -59,6 +68,10 @@ public:
     // between wait slices and performs its own teardown. Default no-op:
     // second-scale tools don't need it.
     virtual void cancel() {}
+    virtual void cancel(const Cancellation& cancelled) {
+        if (cancelled) cancelled->store(true);
+        cancel();
+    }
 };
 
 } // namespace NexusAI

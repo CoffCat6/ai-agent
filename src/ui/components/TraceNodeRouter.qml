@@ -128,6 +128,7 @@ Item {
         ErrorCard {
             width: loader.width
             modelData: root.modelData
+            index: root.index
         }
     }
 

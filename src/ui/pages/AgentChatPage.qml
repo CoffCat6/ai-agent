@@ -108,12 +108,22 @@ Item {
                 Text {
                     id: emptyText
                     width: parent.width
-                    text: qsTr("发送一条消息，开始与 NexusAI 对话")
+                    text: AgentVM.modelConfigured
+                        ? qsTr("发送一条消息，开始与 NexusAI 对话")
+                        : qsTr("先连接一个模型，即可开始对话。你的输入会保留在这里。")
                     color: Theme.textTertiary
                     font.pixelSize: Theme.fontSizeBody
                     font.family: Theme.fontSans
                     horizontalAlignment: Text.AlignHCenter
                     wrapMode: Text.WordWrap
+                }
+
+                AppButton {
+                    anchors.horizontalCenter: parent.horizontalCenter
+                    visible: !AgentVM.modelConfigured
+                    text: qsTr("配置模型")
+                    highlighted: true
+                    onClicked: root.settingsRequested()
                 }
             }
 
@@ -223,7 +233,7 @@ Item {
 
         Item {
             Layout.fillWidth: true
-            Layout.preferredHeight: inputConsole.height + 52
+            Layout.preferredHeight: inputConsole.height + modelOptions.implicitHeight + 24
 
             InputConsole {
                 id: inputConsole
@@ -236,29 +246,19 @@ Item {
                 traceJump: root.traceJump
             }
 
-            ModelSelector {
-                id: modelBadge
+            Flow {
+                id: modelOptions
                 anchors.top: inputConsole.bottom
                 anchors.topMargin: 4
                 anchors.left: inputConsole.left
+                anchors.right: inputConsole.right
                 anchors.leftMargin: 4
-                onSettingsRequested: root.settingsRequested()
-            }
-
-            ThinkingEffortSelector {
-                id: effortBadge
-                anchors.top: inputConsole.bottom
-                anchors.topMargin: 4
-                anchors.left: modelBadge.right
-                anchors.leftMargin: 8
-            }
-
-            PermissionModeSelector {
-                id: permissionBadge
-                anchors.top: inputConsole.bottom
-                anchors.topMargin: 4
-                anchors.left: effortBadge.right
-                anchors.leftMargin: 8
+                spacing: 4
+                ModelSelector {
+                    onSettingsRequested: root.settingsRequested()
+                }
+                ThinkingEffortSelector {}
+                PermissionModeSelector {}
             }
         }
     }
