@@ -7,6 +7,7 @@
 #include <QDir>
 #include <QDirIterator>
 #include <QFileInfo>
+#include <QReadWriteLock>
 #include <QStandardPaths>
 #include <QThreadStorage>
 
@@ -55,17 +56,27 @@ public:
         UserDirectories,
         FullDisk
     };
-    static void setReadPolicy(ReadPolicy policy) { s_readPolicy = policy; }
-    static ReadPolicy readPolicy() { return s_readPolicy; }
+    static void setReadPolicy(ReadPolicy policy) {
+        QWriteLocker lock(&s_policyLock);   // docs/24 H8
+        s_readPolicy = policy;
+    }
+    static ReadPolicy readPolicy() {
+        QReadLocker lock(&s_policyLock);
+        return s_readPolicy;
+    }
 
     // docs/17 A1: 项目目录（当前活动项目的 root_path；空 = 无项目）。
     // 只影响读取允许层；写策略仅在 projectWrite 开启时扩大。
     static void setProjectDir(const QString& path) {
+        QWriteLocker lock(&s_policyLock);
         s_projectDir = path.isEmpty()
             ? QString()
             : QDir::toNativeSeparators(path);
     }
-    static QString projectDir() { return s_projectDir; }
+    static QString projectDir() {
+        QReadLocker lock(&s_policyLock);
+        return s_projectDir;
+    }
 
     // docs/17 P1-5: 工具执行域。构造时把 projectRoot 钉到当前线程的
     // 局部槽上，析构清除；必须构造在执行工具的那个池线程里（AIAgent 的
@@ -85,6 +96,9 @@ public:
 
     // 当前生效的项目目录：执行线程快照（非空时）优先，否则全局活动项目。
     static QString currentProjectDir() {
+        // docs/24 H8: 读写 s_projectDir 需持锁；s_execProjectDir 是本线程
+        // 槽，无需同步。（validatePath 持读锁进入后递归到此——锁为递归模式。）
+        QReadLocker lock(&s_policyLock);
         if (s_execProjectDir.hasLocalData()) {
             const QString snapshot = s_execProjectDir.localData();
             if (!snapshot.isEmpty()) return snapshot;
@@ -94,8 +108,14 @@ public:
 
     // docs/17 P1-4: 项目目录写入放行开关（安全页 security/allowProjectWrite，
     // 默认关——A1 的"项目只读"默认语义保留）。
-    static void setProjectWriteEnabled(bool enabled) { s_projectWrite = enabled; }
-    static bool projectWriteEnabled() { return s_projectWrite; }
+    static void setProjectWriteEnabled(bool enabled) {
+        QWriteLocker lock(&s_policyLock);
+        s_projectWrite = enabled;
+    }
+    static bool projectWriteEnabled() {
+        QReadLocker lock(&s_policyLock);
+        return s_projectWrite;
+    }
 
     // docs/17 P0-2: 相对路径锚定。项目激活时相对路径以项目根为基准解析，
     // 否则保持原语义（QFile/QDir 按进程 CWD 解析——模型给相对路径时读到
@@ -103,6 +123,7 @@ public:
     // 工具层与 validatePath 统一走这里；返回值再经 cleanPath canonicalize，
     // ".." 与 symlink 无法借道绕过沙箱。
     static QString resolvePath(const QString& path) {
+        // docs/24 H8: 读 currentProjectDir()（内部持锁，递归模式安全）。
         const QString root = currentProjectDir();
         if (!path.isEmpty() && !root.isEmpty() && QDir::isRelativePath(path))
             return QDir(root).absoluteFilePath(path);
@@ -111,6 +132,7 @@ public:
 
     // docs/17 A1: 用户自定义黑名单（与内置默认清单合并生效）。
     static void setUserDenyList(const QStringList& entries) {
+        QWriteLocker lock(&s_policyLock);
         s_userDenyList.clear();
         for (const QString& entry : entries) {
             const QString trimmed = entry.trimmed();
@@ -142,6 +164,11 @@ public:
         };
         if (path.isEmpty()) return deny(isWrite ? DenyReason::WritePolicy
                                                 : DenyReason::ReadPolicy);
+
+        // docs/24 H8: 一次读锁覆盖整次判定——四个策略静态量由 GUI 线程写、
+        // 池线程读，此前是无同步的裸静态（递归模式允许内部辅助再入读锁）。
+        // 锁内包含文件系统解析（cleanPath），毫秒级；setter 稀少，无争用。
+        QReadLocker policyLock(&s_policyLock);
 
         // docs/22 F4: device / extended-length prefixes bypass every
         // normalization Qt can perform (canonical or ancestor resolution
@@ -272,6 +299,7 @@ private:
     // 黑名单匹配：目录条目做边界感知前缀匹配；glob 条目用 QDir::match
     // 同时尝试完整路径与文件名（Windows 下大小写不敏感）。
     static bool isDenied(const QString& normalizedPath) {
+        QReadLocker lock(&s_policyLock);   // docs/24 H8: s_userDenyList
         QStringList entries = defaultDenyList();
         entries.append(s_userDenyList);
         const QString fileName =
@@ -378,6 +406,10 @@ private:
     inline static QString s_projectDir;
     inline static bool s_projectWrite{false};   // docs/17 P1-4: 项目目录写入放行
     inline static QStringList s_userDenyList;
+    // docs/24 H8: 上述四个策略静态量由 GUI 线程写、池线程（工具执行/
+    // RAG 导入）读——递归读写锁同步（validatePath 持读锁后内部辅助
+    // 再入读锁）。
+    inline static QReadWriteLock s_policyLock{QReadWriteLock::RecursionMode::Recursive};
     // P1-5: 每工具执行线程的快照槽（ExecutionScope 写入/清除）。
     inline static QThreadStorage<QString> s_execProjectDir;
 };
