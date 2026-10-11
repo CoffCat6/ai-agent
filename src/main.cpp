@@ -419,7 +419,10 @@ qInfo() << "NexusAI" << app.applicationVersion() << "starting";
                               tabProviderSets, tabMemories, summaryProviders]() -> AIAgent* {
         auto* tabAgent = new AIAgent(&app);
         tabAgent->setToolRegistry(&ToolRegistry::instance());
-        tabAgent->setMemory(new SqliteMemory());
+        // docs/22 F2: the tab agent owns its per-tab SQLite connection and
+        // releases it (close + removeDatabase) in its destructor — closing
+        // a tab no longer leaks the connection until process exit.
+        tabAgent->setOwnedMemory(std::make_unique<SqliteMemory>());
         tabAgent->setMaxIterations(settings->maxSteps());
         tabAgent->setTaskTimeoutMs(settings->taskTimeoutMinutes() * 60 * 1000);
         tabAgent->setSystemPromptOverride(settings->systemPromptOverride());

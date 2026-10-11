@@ -1042,6 +1042,38 @@ private slots:
         QCOMPARE(seen.size(), 2);             // template + surviving agent
     }
 
+    // docs/22 F2: a per-tab memory adopted via setOwnedMemory must be
+    // released with the agent — closing a tab no longer leaks the SQLite
+    // connection (registered QSqlDatabase + file handle) until process exit.
+    void ownedMemoryReleasedWithAgent() {
+        const int baseline = QSqlDatabase::connectionNames().size();
+
+        // Direct mechanism: the adopted memory dies with the agent.
+        {
+            AIAgent agent(nullptr);
+            agent.setOwnedMemory(
+                std::make_unique<SqliteMemory>(QStringLiteral(":memory:")));
+            QCOMPARE(QSqlDatabase::connectionNames().size(), baseline + 1);
+        }
+        QTRY_COMPARE(QSqlDatabase::connectionNames().size(), baseline);
+
+        // End-to-end through the tab lifecycle (main.cpp wires its factory
+        // with setOwnedMemory): open → close → connection released.
+        AgentViewModel vm(nullptr);
+        AIAgent templateAgent(&vm);
+        vm.setAgent(&templateAgent);
+        vm.setAgentFactory([&vm]() -> AIAgent* {
+            auto* agent = new AIAgent(&vm);
+            agent->setOwnedMemory(
+                std::make_unique<SqliteMemory>(QStringLiteral(":memory:")));
+            return agent;
+        });
+        vm.openTab();
+        QCOMPARE(QSqlDatabase::connectionNames().size(), baseline + 1);
+        vm.closeTab(1);   // the factory tab (same index the test above proves)
+        QTRY_COMPARE(QSqlDatabase::connectionNames().size(), baseline);
+    }
+
     // Loading a session without an attached agent is a no-op and does not
     // silently create a demo conversation.
     void loadSessionWithoutAgentIsNoOp() {

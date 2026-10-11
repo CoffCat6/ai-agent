@@ -79,6 +79,11 @@ public:
     void setLLMService(IAIService* service);
     void setToolRegistry(ToolRegistry* registry);
     void setMemory(IMemory* memory);
+    // Owning variant for per-tab memories (docs/22 F2): the agent takes
+    // exclusive ownership and releases it in its destructor — after
+    // detaching the episodic service that shares the instance. The primary
+    // agent keeps setMemory(): its memory is a shared process-level object.
+    void setOwnedMemory(std::unique_ptr<IMemory> memory);
     void setEpisodicService(EpisodicService* service);
 
     // Token budget for the LLM context window; history is compressed to fit
@@ -324,6 +329,8 @@ private:
     IAIService* m_llmService{nullptr};
     ToolRegistry* m_toolRegistry{nullptr};
     IMemory* m_memory{nullptr};
+    // Non-null only when the memory was adopted via setOwnedMemory().
+    std::unique_ptr<IMemory> m_ownedMemory;
     EpisodicService* m_episodicService{nullptr};
 
     // Request the LLM service last dispatched for us (requestStarted echo);

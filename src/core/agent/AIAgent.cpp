@@ -140,7 +140,15 @@ void AIAgent::onTaskTimeout() {
         "summarized above - ask a follow-up to continue."));
 }
 
-AIAgent::~AIAgent() = default;
+AIAgent::~AIAgent() {
+    // docs/22 F2: an adopted (per-tab) memory is released here, before the
+    // QObject base destroys the children. The episodic service shares the
+    // instance and outlives this point as a child, so detach it first — it
+    // has no destructor of its own, this keeps that invariant explicit.
+    if (m_episodicService)
+        m_episodicService->setMemory(nullptr);
+    m_ownedMemory.reset();
+}
 
 void AIAgent::setLLMService(IAIService* service) {
     if (m_llmService == service) return; // re-wiring the same service would duplicate connections
@@ -167,6 +175,11 @@ void AIAgent::setToolRegistry(ToolRegistry* registry) {
 
 void AIAgent::setMemory(IMemory* memory) {
     m_memory = memory;
+}
+
+void AIAgent::setOwnedMemory(std::unique_ptr<IMemory> memory) {
+    m_ownedMemory = std::move(memory);
+    m_memory = m_ownedMemory.get();
 }
 
 void AIAgent::setEpisodicService(EpisodicService* service) {
