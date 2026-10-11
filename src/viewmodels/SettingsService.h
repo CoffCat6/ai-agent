@@ -184,6 +184,14 @@ public:
     int tokenRetentionDays() const { return m_tokenRetentionDays; }
     void setTokenRetentionDays(int days);
 
+    // docs/23 D1: startup auto-backup (VACUUM INTO snapshot) + rotation.
+    Q_PROPERTY(bool backupOnStartup READ backupOnStartup WRITE setBackupOnStartup NOTIFY backupOnStartupChanged)
+    Q_PROPERTY(int backupKeepCount READ backupKeepCount WRITE setBackupKeepCount NOTIFY backupKeepCountChanged)
+    bool backupOnStartup() const { return m_backupOnStartup; }
+    void setBackupOnStartup(bool enabled);
+    int backupKeepCount() const { return m_backupKeepCount; }
+    void setBackupKeepCount(int count);
+
     // docs/16 §7.3: quota settings. 0 = unlimited for the int quotas.
     int dailyTokenQuota() const { return m_dailyTokenQuota; }
     void setDailyTokenQuota(int v);
@@ -303,6 +311,8 @@ signals:
     void episodicMemoryEnabledChanged();
     void auditRetentionDaysChanged();
     void tokenRetentionDaysChanged();
+    void backupOnStartupChanged();
+    void backupKeepCountChanged();
     void dailyTokenQuotaChanged();
     void dailyCostQuotaCentsChanged();
     void monthlyTokenQuotaChanged();
@@ -343,6 +353,9 @@ private:
     // docs/23 G3: retention state (0 = keep forever).
     int m_auditRetentionDays{};
     int m_tokenRetentionDays{};
+    // docs/23 D1: backup state.
+    bool m_backupOnStartup{};
+    int m_backupKeepCount{};
     // docs/16 §7.3: quota control state (0 = unlimited for int quotas).
     int m_dailyTokenQuota{};
     int m_dailyCostQuotaCents{};

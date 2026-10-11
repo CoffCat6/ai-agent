@@ -385,6 +385,13 @@ void SettingsService::load() {
     m_tokenRetentionDays = SettingsSchema::clampInt(QStringLiteral("memory/tokenRetentionDays"),
         SettingsRepository::value(QStringLiteral("memory/tokenRetentionDays"),
             SettingsSchema::defaultValue(QStringLiteral("memory/tokenRetentionDays"))).toInt());
+    // docs/23 D1: startup auto-backup + rotation.
+    m_backupOnStartup = SettingsRepository::value(
+        QStringLiteral("memory/backupOnStartup"),
+        SettingsSchema::defaultValue(QStringLiteral("memory/backupOnStartup"))).toBool();
+    m_backupKeepCount = SettingsSchema::clampInt(QStringLiteral("memory/backupKeepCount"),
+        SettingsRepository::value(QStringLiteral("memory/backupKeepCount"),
+            SettingsSchema::defaultValue(QStringLiteral("memory/backupKeepCount"))).toInt());
     // docs/16 §7.3: quota settings (flat keys; 0 = unlimited for int quotas).
     m_dailyTokenQuota = SettingsSchema::clampInt(QStringLiteral("dailyTokenQuota"),
         SettingsRepository::value(QStringLiteral("dailyTokenQuota"),
@@ -966,6 +973,22 @@ void SettingsService::setTokenRetentionDays(int days) {
             || !persistValue(QStringLiteral("memory/tokenRetentionDays"), clamped)) return;
     m_tokenRetentionDays = clamped;
     emit tokenRetentionDaysChanged();
+}
+
+// docs/23 D1: backup settings — same 4-step pattern as the retention keys.
+void SettingsService::setBackupOnStartup(bool enabled) {
+    if (m_backupOnStartup == enabled
+            || !persistValue(QStringLiteral("memory/backupOnStartup"), enabled)) return;
+    m_backupOnStartup = enabled;
+    emit backupOnStartupChanged();
+}
+
+void SettingsService::setBackupKeepCount(int count) {
+    const int clamped = SettingsSchema::clampInt(QStringLiteral("memory/backupKeepCount"), count);
+    if (m_backupKeepCount == clamped
+            || !persistValue(QStringLiteral("memory/backupKeepCount"), clamped)) return;
+    m_backupKeepCount = clamped;
+    emit backupKeepCountChanged();
 }
 
 // docs/16 §7.3: quota setters. Int quotas are clamped to >= 0 (0 = unlimited);

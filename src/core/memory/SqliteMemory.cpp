@@ -6,6 +6,10 @@
 #include <QJsonDocument>
 #include <QStandardPaths>
 #include <QDir>
+#include <QDirIterator>
+#include <QFile>
+#include <QFileInfo>
+#include <algorithm>
 #include <QDebug>
 #include <QDateTime>
 #include <QUuid>
@@ -2094,6 +2098,114 @@ QVariantMap SqliteMemory::quotaStatus() {
     out["dailyCostCentsUsed"]   = dailyCost;
     out["monthlyTokensUsed"]    = monthlyTokens;
     out["monthlyCostCentsUsed"] = monthlyCost;
+    return out;
+}
+
+// ── docs/23 D1: database backup ─────────────────────────────────
+
+QString SqliteMemory::defaultBackupsDir() {
+    return QStandardPaths::writableLocation(QStandardPaths::AppDataLocation)
+        + QStringLiteral("/backups");
+}
+
+bool SqliteMemory::createBackupFile(const QString& dbPath, const QString& targetPath) {
+    // Self-contained connection: created, used and dropped on the calling
+    // thread (Qt SQL rule) — the GUI-thread instances are never touched.
+    const QString connName = QStringLiteral("nexus_backup_%1")
+        .arg(QUuid::createUuid().toString(QUuid::WithoutBraces));
+    {
+        QSqlDatabase db = QSqlDatabase::addDatabase("QSQLITE", connName);
+        db.setDatabaseName(dbPath);
+        db.setConnectOptions(QStringLiteral("QSQLITE_OPEN_READONLY"));
+        if (!db.open()) {
+            qWarning() << "Backup: cannot open source database:"
+                       << db.lastError().text();
+            QSqlDatabase::removeDatabase(connName);
+            return false;
+        }
+        QSqlQuery query(db);
+        query.setForwardOnly(true);
+        // busy_timeout guards the rare overlap with a GUI-thread write;
+        // under WAL the snapshot's read transaction never blocks it.
+        query.exec("PRAGMA busy_timeout = 5000");
+        query.prepare("VACUUM INTO ?");
+        query.addBindValue(QDir::toNativeSeparators(targetPath));
+        if (!query.exec()) {
+            qWarning() << "Backup failed (VACUUM INTO):"
+                       << query.lastError().text();
+            db.close();
+            QSqlDatabase::removeDatabase(connName);
+            // A half-written snapshot is worse than none.
+            QFile::remove(targetPath);
+            return false;
+        }
+        db.close();
+    }
+    QSqlDatabase::removeDatabase(connName);
+    return true;
+}
+
+int SqliteMemory::rotateAutoBackups(const QString& backupsDir, int keepCount) {
+    if (keepCount <= 0) return 0;
+    QDir dir(backupsDir);
+    const QFileInfoList autos = dir.entryInfoList(
+        {QStringLiteral("auto_*.db")}, QDir::Files);
+    // Explicit newest-first sort by name: the timestamps inside the file
+    // names sort lexically by age (manual_* snapshots are never matched).
+    QFileInfoList sorted = autos;
+    std::sort(sorted.begin(), sorted.end(),
+              [](const QFileInfo& a, const QFileInfo& b) {
+                  return a.fileName() > b.fileName();
+              });
+    int removed = 0;
+    for (int i = keepCount; i < sorted.size(); ++i) {
+        if (QFile::remove(sorted.at(i).absoluteFilePath())) ++removed;
+    }
+    return removed;
+}
+
+QVariantMap SqliteMemory::inspectBackupFile(const QString& backupPath) {
+    QVariantMap out;
+    if (!QFileInfo(backupPath).isFile()) {
+        out[QStringLiteral("error")] = QStringLiteral("file not found");
+        return out;
+    }
+    const QString connName = QStringLiteral("nexus_backup_preview_%1")
+        .arg(QUuid::createUuid().toString(QUuid::WithoutBraces));
+    {
+        QSqlDatabase db = QSqlDatabase::addDatabase("QSQLITE", connName);
+        db.setDatabaseName(backupPath);
+        db.setConnectOptions(QStringLiteral("QSQLITE_OPEN_READONLY"));
+        if (!db.open()) {
+            out[QStringLiteral("error")] = db.lastError().text();
+            QSqlDatabase::removeDatabase(connName);
+            return out;
+        }
+        QSqlQuery query(db);
+        query.setForwardOnly(true);
+        const auto scalar = [&query](const char* sql, qint64* value) {
+            if (!query.exec(QString::fromLatin1(sql)) || !query.next())
+                return false;
+            *value = query.value(0).toLongLong();
+            return true;
+        };
+        qint64 sessions = 0, messages = 0, docs = 0, newest = 0;
+        scalar("SELECT count(*) FROM sessions", &sessions);
+        scalar("SELECT count(*) FROM messages", &messages);
+        scalar("SELECT count(*) FROM knowledge_documents", &docs);
+        scalar("SELECT COALESCE(MAX(timestamp), 0) FROM messages", &newest);
+        out[QStringLiteral("sessions")] = sessions;
+        out[QStringLiteral("messages")] = messages;
+        out[QStringLiteral("knowledgeDocs")] = docs;
+        out[QStringLiteral("newestTimestamp")] = double(newest);
+        // A corrupt snapshot must be visible in the preview, not on
+        // restore day.
+        query.exec("PRAGMA quick_check");
+        out[QStringLiteral("integrityOk")] =
+            query.next() && query.value(0).toString() == QLatin1String("ok");
+        db.close();
+    }
+    QSqlDatabase::removeDatabase(connName);
     return out;
 }
 

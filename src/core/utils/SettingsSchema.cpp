@@ -173,6 +173,10 @@ const QVector<SettingsKeyDef>& SettingsSchema::registeredKeys() {
                    intRange(0, 3650)),
             keyDef(QStringLiteral("memory/tokenRetentionDays"), 90, SettingValueType::Int,
                    intRange(0, 3650)),
+            // docs/23 D1: startup auto-backup (VACUUM INTO) and rotation.
+            keyDef(QStringLiteral("memory/backupOnStartup"), true, SettingValueType::Bool),
+            keyDef(QStringLiteral("memory/backupKeepCount"), 3, SettingValueType::Int,
+                   intRange(1, 20)),
             keyDef(QStringLiteral("dailyTokenQuota"), 0, SettingValueType::Int,
                    intRange(0, INT_MAX)),
             keyDef(QStringLiteral("dailyCostQuotaCents"), 0, SettingValueType::Int,

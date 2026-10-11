@@ -75,6 +75,8 @@ private slots:
     void loadMessagesFailureIsLoggedNotSilent();
     // docs/23 G7: soft delete → hidden from list/search → undo → purge.
     void deletedSessionRoundTrip();
+    // docs/23 D1: VACUUM INTO snapshot round-trip, rotation, read-only peek.
+    void backupRoundTripInspectAndRotate();
     void episodicFullTextSearch();
     void auditTrail();
     void tokenStatsAggregate();
@@ -1130,6 +1132,56 @@ void TestMemory::deletedSessionRoundTrip() {
     QCOMPARE(q.value(0).toInt(), 0);
     QVERIFY(q.exec("SELECT count(*) FROM audit_log") && q.next());
     QCOMPARE(q.value(0).toInt(), 1);
+}
+
+// docs/23 D1: the VACUUM INTO snapshot opens as a fully working database
+// with identical row counts, passes quick_check, and the auto_* rotation
+// keeps only the newest N files (manual_* untouched).
+void TestMemory::backupRoundTripInspectAndRotate() {
+    QTemporaryDir dir;
+    QVERIFY(dir.isValid());
+    const QString dbPath = dir.filePath(QStringLiteral("source.db"));
+    {
+        SqliteMemory memory(dbPath);
+        memory.beginSession("s1", "Backed up");
+        memory.saveMessage("s1", msg("user", "snapshot me"));
+    }
+
+    const QString backupsDir = dir.filePath(QStringLiteral("backups"));
+    QVERIFY(QDir().mkpath(backupsDir));
+    const QString target = backupsDir + QStringLiteral("/auto_20260101_000000.db");
+    QVERIFY(SqliteMemory::createBackupFile(dbPath, target));
+
+    // The snapshot is a live database: counts match, integrity ok.
+    const QVariantMap info = SqliteMemory::inspectBackupFile(target);
+    QCOMPARE(info.value("error").toString(), QString());
+    QCOMPARE(info.value("sessions").toLongLong(), 1LL);
+    QCOMPARE(info.value("messages").toLongLong(), 1LL);
+    QVERIFY(info.value("integrityOk").toBool());
+
+    {
+        SqliteMemory fromBackup(target);
+        QCOMPARE(fromBackup.listSessions(10).size(), 1);
+        QCOMPARE(fromBackup.loadMessages("s1", 10).size(), 1);
+    }
+
+    // Rotation: five auto snapshots + one manual → newest 3 autos survive.
+    for (int i = 2; i <= 6; ++i) {
+        QFile f(backupsDir + QStringLiteral("/auto_20260101_00000%1.db").arg(i));
+        QVERIFY(f.open(QIODevice::WriteOnly));
+        f.write("x");
+    }
+    QFile manual(backupsDir + QStringLiteral("/manual_20260101_000000.db"));
+    QVERIFY(manual.open(QIODevice::WriteOnly));
+    manual.write("keep me");
+    manual.close();
+
+    QCOMPARE(SqliteMemory::rotateAutoBackups(backupsDir, 3), 3);
+    QVERIFY(QFile::exists(backupsDir + QStringLiteral("/auto_20260101_000004.db")));
+    QVERIFY(QFile::exists(backupsDir + QStringLiteral("/auto_20260101_000005.db")));
+    QVERIFY(QFile::exists(backupsDir + QStringLiteral("/auto_20260101_000006.db")));
+    QVERIFY(!QFile::exists(backupsDir + QStringLiteral("/auto_20260101_000003.db")));
+    QVERIFY(manual.exists());   // manual snapshots are never rotated
 }
 
 // docs/23 G5: dropping the messages table makes loadMessages' exec fail —

@@ -6,6 +6,7 @@
 #include <QNetworkProxyFactory>
 #include <QPalette>
 #include <QtConcurrent/QtConcurrentRun>
+#include <QDateTime>
 #include <QQuickStyle>
 #include <QTranslator>
 
@@ -512,6 +513,26 @@ qInfo() << "NexusAI" << app.applicationVersion() << "starting";
     pruneTimer->setInterval(6 * 60 * 60 * 1000);
     QObject::connect(pruneTimer, &QTimer::timeout, &app, runPrunes);
     pruneTimer->start();
+
+    // docs/23 D1: startup auto-backup — a VACUUM INTO consistency snapshot
+    // (WAL-safe) plus rotation of the auto_* series. The worker is fully
+    // self-contained (own short-lived SQLite connection, value captures
+    // only): it never touches GUI-thread objects, so an exit mid-backup
+    // cannot dangle (docs/22 lesson). Failure is logged, never fatal.
+    if (settings->backupOnStartup()) {
+        const QString dbPath = memory->databasePath();
+        const QString backupDir = SqliteMemory::defaultBackupsDir();
+        const int keep = settings->backupKeepCount();
+        QtConcurrent::run([dbPath, backupDir, keep]() {
+            QDir().mkpath(backupDir);
+            const QString target = backupDir
+                + QStringLiteral("/auto_%1.db")
+                      .arg(QDateTime::currentDateTime().toString(
+                          QStringLiteral("yyyyMMdd_HHmmss")));
+            if (SqliteMemory::createBackupFile(dbPath, target))
+                SqliteMemory::rotateAutoBackups(backupDir, keep);
+        });
+    }
 
     // Restore previously imported documents in the background (Batch 6).
     // Snapshot records AND chunks on the GUI thread (the SQLite connection

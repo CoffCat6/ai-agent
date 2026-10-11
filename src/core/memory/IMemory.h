@@ -70,6 +70,9 @@ public:
         Q_UNUSED(deletedBefore);
         return 0;
     }
+    // docs/23 D1: absolute path of the backing SQLite file (empty for
+    // backends without one) — the backup feature keys off it.
+    virtual QString databasePath() const { return {}; }
     virtual void renameSession(const QString& sessionId, const QString& title) {
         Q_UNUSED(sessionId); Q_UNUSED(title);
     }

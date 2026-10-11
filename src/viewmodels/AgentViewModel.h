@@ -359,6 +359,15 @@ public:
     Q_INVOKABLE void deleteSession(const QString& sessionId);
     // docs/23 G7: undo a soft-deleted session within the toast window.
     Q_INVOKABLE bool undoDeleteSession(const QString& sessionId);
+    // docs/23 D1: write a manual VACUUM INTO snapshot into the backups
+    // directory. Empty string = success, otherwise a user-facing error.
+    Q_INVOKABLE QString backupDatabaseNow();
+    // docs/23 D1: read-only peek into a backup file for the preview
+    // dialog: {sessions, messages, knowledgeDocs, newestTimestamp,
+    // integrityOk, error?}.
+    Q_INVOKABLE QVariantMap previewDatabaseBackup(const QString& path);
+    // docs/23 D1: newest snapshot in the backups directory (status line).
+    Q_INVOKABLE QString lastDatabaseBackupPath() const;
     Q_INVOKABLE void renameSession(const QString& sessionId, const QString& title);
     Q_INVOKABLE void setSessionPinned(const QString& sessionId, bool pinned);
     Q_INVOKABLE void setSessionArchived(const QString& sessionId, bool archived);

@@ -136,6 +136,25 @@ public:
     int pruneAudit(int keepDays);
     int pruneTokenUsage(int keepDays);
 
+    // ── docs/23 D1: database backup ─────────────────────────────
+    // The SQLite file this instance is bound to (default: the app-data
+    // nexusai_memory.db).
+    QString databasePath() const { return m_dbPath; }
+    // <app-data>/backups — the automatic/manual backup directory.
+    static QString defaultBackupsDir();
+    // Write a consistent snapshot of dbPath via VACUUM INTO from a
+    // short-lived self-contained connection (WAL-safe: the read transaction
+    // never blocks a concurrent GUI-thread writer). Self-contained on
+    // purpose — usable from a worker thread without touching any
+    // GUI-thread object (docs/22 exit-race lesson).
+    static bool createBackupFile(const QString& dbPath, const QString& targetPath);
+    // Remove oldest auto_*.db snapshots beyond keepCount (manual_* files
+    // are never touched). Returns files removed.
+    static int rotateAutoBackups(const QString& backupsDir, int keepCount);
+    // Read-only peek into a backup file: {sessions, messages, knowledgeDocs,
+    // newestTimestamp, error?} — powers the restore preview dialog (D2).
+    static QVariantMap inspectBackupFile(const QString& backupPath);
+
 private:
     void initDatabase();
     void createTables();

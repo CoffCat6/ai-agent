@@ -4,6 +4,7 @@
 #include "viewmodels/ChangeBus.h"
 #include "core/agent/AIAgent.h"
 #include "core/memory/IMemory.h"
+#include "core/memory/SqliteMemory.h"
 #include "core/rag/RagService.h"
 #include "core/rag/KnowledgeChunk.h"
 #include "viewmodels/PdfTextExtractor.h"
@@ -972,6 +973,34 @@ bool AgentViewModel::undoDeleteSession(const QString& sessionId) {
         Activity::usage(Activity::Kind::User,
                         QStringLiteral("session.delete_undo"), sessionId);
     return ok;
+}
+
+// ── docs/23 D1: database backup & restore preview ────────────
+
+QString AgentViewModel::backupDatabaseNow() {
+    const QString dbPath = m_memory ? m_memory->databasePath() : QString();
+    if (dbPath.isEmpty()) return tr("数据库未就绪");
+    QDir().mkpath(SqliteMemory::defaultBackupsDir());
+    const QString target = SqliteMemory::defaultBackupsDir()
+        + QStringLiteral("/manual_%1.db")
+              .arg(QDateTime::currentDateTime().toString(
+                  QStringLiteral("yyyyMMdd_HHmmss")));
+    if (!SqliteMemory::createBackupFile(dbPath, target))
+        return tr("备份失败，详见日志");
+    Activity::usage(Activity::Kind::User, QStringLiteral("db.backup"), target);
+    return QString();   // empty = success
+}
+
+QVariantMap AgentViewModel::previewDatabaseBackup(const QString& path) {
+    return SqliteMemory::inspectBackupFile(path);
+}
+
+QString AgentViewModel::lastDatabaseBackupPath() const {
+    const QDir dir(SqliteMemory::defaultBackupsDir());
+    const QFileInfoList files = dir.entryInfoList(
+        {QStringLiteral("auto_*.db"), QStringLiteral("manual_*.db")},
+        QDir::Files, QDir::Time);
+    return files.isEmpty() ? QString() : files.first().absoluteFilePath();
 }
 
 void AgentViewModel::renameSession(const QString& sessionId, const QString& title) {

@@ -131,6 +131,60 @@ Item {
                 }
             }
 
+            // ── docs/23 D1: 数据库备份 ──────────────────────
+            Rectangle {
+                Layout.fillWidth: true
+                Layout.leftMargin: 24
+                Layout.rightMargin: 24
+                implicitHeight: dbBackupCol.implicitHeight + 32
+                color: Theme.bgSecondary
+                border.width: 1
+                border.color: Theme.borderSubtle
+
+                ColumnLayout {
+                    id: dbBackupCol
+                    anchors.left: parent.left
+                    anchors.right: parent.right
+                    anchors.top: parent.top
+                    anchors.margins: 16
+                    spacing: 8
+
+                    Text {
+                        text: qsTr("数据库备份")
+                        color: Theme.textPrimary
+                        font.pixelSize: Theme.fontSizeBody
+                        font.bold: true
+                        font.family: Theme.fontSans
+                    }
+                    Text {
+                        text: qsTr("聊天记录、思考轨迹与知识库保存在 SQLite 数据库中，设置 JSON 备份不包含它们。启动时会自动备份并保留最近 %1 份；此处可随时手动备份，或预览任一备份文件的内容概况。").arg(Settings.backupKeepCount)
+                        color: Theme.textSecondary
+                        font.pixelSize: Theme.fontSizeCaption
+                        font.family: Theme.fontSans
+                        wrapMode: Text.Wrap
+                        Layout.fillWidth: true
+                    }
+                    RowLayout {
+                        spacing: 8
+                        AppButton {
+                            text: qsTr("立即备份")
+                            onClicked: {
+                                const err = AgentVM.backupDatabaseNow()
+                                page.statusIsError = err.length > 0
+                                page.statusMessage = err.length > 0
+                                    ? err
+                                    : qsTr("数据库已备份到 %1。").arg(
+                                          AgentVM.lastDatabaseBackupPath())
+                            }
+                        }
+                        AppButton {
+                            text: qsTr("预览备份文件…")
+                            onClicked: previewDialog.open()
+                        }
+                    }
+                }
+            }
+
             Text {
                 visible: page.statusMessage.length > 0
                 text: page.statusMessage
@@ -179,6 +233,33 @@ Item {
             page.importPath = path
             page.importPreview = preview
             confirmImportDialog.open()
+        }
+    }
+
+    // docs/23 D1: read-only peek into a SQLite backup snapshot.
+    FileDialog {
+        id: previewDialog
+        title: qsTr("选择数据库备份")
+        fileMode: FileDialog.OpenFile
+        nameFilters: [qsTr("SQLite 数据库 (*.db)")]
+        onAccepted: {
+            const info = AgentVM.previewDatabaseBackup(selectedFile.toString())
+            if (info.error) {
+                page.statusIsError = true
+                page.statusMessage = qsTr("无法读取该备份文件：%1").arg(info.error)
+                return
+            }
+            page.statusIsError = !info.integrityOk
+            page.statusMessage = qsTr("会话 %1 个，消息 %2 条，知识库文档 %3 份，最新消息时间 %4%5")
+                .arg(info.sessions)
+                .arg(info.messages)
+                .arg(info.knowledgeDocs)
+                .arg(info.newestTimestamp > 0
+                     ? new Date(info.newestTimestamp).toLocaleString()
+                     : qsTr("（无消息）"))
+                .arg(info.integrityOk
+                     ? ""
+                     : qsTr("；警告：完整性检查未通过，可能已损坏"))
         }
     }
 
