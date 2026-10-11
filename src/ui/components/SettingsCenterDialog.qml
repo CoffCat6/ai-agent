@@ -3,6 +3,7 @@ import QtQuick.Layouts
 import QtQuick.Controls
 import NexusAI
 import NexusAI.ViewModels
+import "settings-search.js" as SettingsSearch
 
 Dialog {
     id: dialog
@@ -17,6 +18,8 @@ Dialog {
 
     property string currentCategory: "model"
     property bool explicitCategory: false
+    // docs/17 B6: 非空 = 搜索态——内容区由分类页切换为搜索结果列表。
+    readonly property bool searching: searchField.text.trim().length > 0
 
     signal settingsSaved()
     signal settingsError(string message)
@@ -26,6 +29,42 @@ Dialog {
         explicitCategory = true
         currentCategory = id
         open()
+    }
+
+    // docs/17 B6: 点击结果跳转对应分类并退出搜索态。
+    function jumpToCategory(categoryId) {
+        searchField.clear()
+        currentCategory = categoryId
+        PreferenceStore.save("settings.lastCategory", categoryId)
+    }
+
+    // docs/17 B6: 合并数据源——声明式偏好（PreferenceRegistry 自带
+    // displayName/category）+ 手工索引表（settings-search.js）。分类名与
+    // 顺序在此解析，JS 侧保持纯数据进出（tests/qml 可直接驱动）。
+    function searchSettings(query) {
+        const registryEntries = []
+        const categoryOrder = {}
+        const categoryNames = {}
+        const cats = PreferenceRegistry.categories()
+        for (let i = 0; i < cats.length; ++i) {
+            const id = cats[i]
+            categoryOrder[id] = PreferenceRegistry.categoryOrder(id)
+            const categoryName = PreferenceRegistry.categoryName(id)
+            categoryNames[id] = categoryName
+            const keys = PreferenceRegistry.preferencesInCategory(id)
+            for (let k = 0; k < keys.length; ++k) {
+                const name = PreferenceRegistry.displayName(keys[k])
+                if (name.length === 0) continue
+                registryEntries.push({
+                    title: name,
+                    category: id,
+                    categoryName: categoryName,
+                    keywords: keys[k]
+                })
+            }
+        }
+        return SettingsSearch.search(query, registryEntries, categoryOrder,
+                                     categoryNames)
     }
 
     background: DialogBackground {}
@@ -77,6 +116,35 @@ Dialog {
                         font.bold: true
                         font.family: Theme.fontSans
                     }
+                    // docs/17 B6: 顶部搜索框——输入即切换到结果列表。
+                    TextField {
+                        id: searchField
+                        Layout.preferredWidth: 280
+                        Layout.alignment: Qt.AlignVCenter
+                        placeholderText: qsTr("搜索设置…")
+                        placeholderTextColor: Theme.textSecondary
+                        color: Theme.textPrimary
+                        selectionColor: Theme.brandPrimary
+                        selectedTextColor: "#ffffff"
+                        font.pixelSize: Theme.fontSizeBody
+                        font.family: Theme.fontSans
+                        selectByMouse: true
+                        background: Rectangle {
+                            radius: 6
+                            color: Theme.bgPrimary
+                            border.width: searchField.activeFocus ? 2 : 1
+                            border.color: searchField.activeFocus
+                                ? Theme.brandPrimary : Theme.borderSubtle
+                        }
+                        Accessible.name: qsTr("搜索设置")
+                    }
+                    IconButton {
+                        visible: searchField.text.length > 0
+                        icon: "x"
+                        iconSize: 12
+                        Accessible.name: qsTr("清除搜索")
+                        onClicked: searchField.clear()
+                    }
                     Item { Layout.fillWidth: true }
                     IconButton {
                         icon: "x"
@@ -115,12 +183,93 @@ Dialog {
                 Layout.fillHeight: true
                 color: Theme.bgPrimary
 
-                Loader {
+                // docs/17 B6: 搜索态把内容区切换为结果列表；分类页只是
+                // 隐藏（Loader 状态保留），跳转后原位恢复。
+                ListView {
+                    id: searchResults
                     anchors.fill: parent
-                    active: dialog.currentCategory === "model"
-                    visible: active
-                    source: "qrc:/qt/qml/NexusAI/src/ui/pages/ModelConfigPage.qml"
+                    anchors.margins: 12
+                    visible: dialog.searching
+                    clip: true
+                    model: dialog.searchSettings(searchField.text)
+                    spacing: 4
+
+                    delegate: Rectangle {
+                        width: searchResults.width
+                        height: 52
+                        radius: 6
+                        color: resultMa.containsMouse
+                            ? Theme.bgSecondary : Theme.bgPrimary
+                        border.width: 1
+                        border.color: Theme.borderSubtle
+
+                        RowLayout {
+                            anchors.fill: parent
+                            anchors.leftMargin: 12
+                            anchors.rightMargin: 12
+                            spacing: 8
+
+                            ColumnLayout {
+                                Layout.fillWidth: true
+                                spacing: 2
+                                Text {
+                                    text: modelData.title
+                                    color: Theme.textPrimary
+                                    font.pixelSize: Theme.fontSizeBody
+                                    font.family: Theme.fontSans
+                                    elide: Text.ElideRight
+                                    Layout.fillWidth: true
+                                }
+                                Text {
+                                    text: modelData.categoryName
+                                    color: Theme.textSecondary
+                                    font.pixelSize: Theme.fontSizeCaption
+                                    font.family: Theme.fontSans
+                                }
+                            }
+                            Text {
+                                text: qsTr("跳转")
+                                color: Theme.textSecondary
+                                font.pixelSize: Theme.fontSizeCaption
+                                font.family: Theme.fontSans
+                                visible: resultMa.containsMouse
+                            }
+                        }
+
+                        MouseArea {
+                            id: resultMa
+                            anchors.fill: parent
+                            hoverEnabled: true
+                            cursorShape: Qt.PointingHandCursor
+                            onClicked: dialog.jumpToCategory(modelData.category)
+                        }
+
+                        Accessible.role: Accessible.ListItem
+                        Accessible.name: modelData.title + " (" + modelData.categoryName + ")"
+                        Accessible.onPressAction: dialog.jumpToCategory(modelData.category)
+                    }
+
+                    // 空态：无匹配设置。
+                    Text {
+                        anchors.centerIn: parent
+                        visible: searchResults.count === 0
+                        text: qsTr("没有匹配「%1」的设置").arg(searchField.text.trim())
+                        color: Theme.textSecondary
+                        font.pixelSize: Theme.fontSizeBody
+                        font.family: Theme.fontSans
+                    }
                 }
+
+                Item {
+                    anchors.fill: parent
+                    visible: !dialog.searching
+
+                    Loader {
+                        anchors.fill: parent
+                        active: dialog.currentCategory === "model"
+                        visible: active
+                        source: "qrc:/qt/qml/NexusAI/src/ui/pages/ModelConfigPage.qml"
+                    }
 
                 Loader {
                     anchors.fill: parent
@@ -180,6 +329,7 @@ Dialog {
                     visible: active
                     source: "qrc:/qt/qml/NexusAI/src/ui/pages/UsageStatsPage.qml"
                 }
+                }   // ── 分类页包裹层（搜索时隐藏）──
             }
         }
 

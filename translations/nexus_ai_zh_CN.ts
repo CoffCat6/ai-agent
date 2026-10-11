@@ -2372,47 +2372,47 @@
         <translation>设置未能保存，请检查存储权限或磁盘空间后重试。</translation>
     </message>
     <message>
-        <location filename="../src/viewmodels/SettingsService.cpp" line="463"/>
+        <location filename="../src/viewmodels/SettingsService.cpp" line="469"/>
         <source>API 密钥加密失败，模型配置未保存。</source>
         <translation>API 密钥加密失败，模型配置未保存。</translation>
     </message>
     <message>
-        <location filename="../src/viewmodels/SettingsService.cpp" line="479"/>
+        <location filename="../src/viewmodels/SettingsService.cpp" line="485"/>
         <source>模型配置未能保存。请检查设置存储权限或磁盘空间后重试。</source>
         <translation>模型配置未能保存。请检查设置存储权限或磁盘空间后重试。</translation>
     </message>
     <message>
-        <location filename="../src/viewmodels/SettingsService.cpp" line="486"/>
+        <location filename="../src/viewmodels/SettingsService.cpp" line="492"/>
         <source>自定义网关</source>
         <translation>自定义网关</translation>
     </message>
     <message>
-        <location filename="../src/viewmodels/SettingsService.cpp" line="491"/>
+        <location filename="../src/viewmodels/SettingsService.cpp" line="497"/>
         <source>新配置</source>
         <translation>新配置</translation>
     </message>
     <message>
-        <location filename="../src/viewmodels/SettingsService.cpp" line="738"/>
+        <location filename="../src/viewmodels/SettingsService.cpp" line="744"/>
         <source>OpenAI 兼容</source>
         <translation>OpenAI 兼容</translation>
     </message>
     <message>
-        <location filename="../src/viewmodels/SettingsService.cpp" line="739"/>
+        <location filename="../src/viewmodels/SettingsService.cpp" line="745"/>
         <source>Ollama 本地</source>
         <translation>Ollama 本地</translation>
     </message>
     <message>
-        <location filename="../src/viewmodels/SettingsService.cpp" line="740"/>
+        <location filename="../src/viewmodels/SettingsService.cpp" line="746"/>
         <source>Claude</source>
         <translation>Claude</translation>
     </message>
     <message>
-        <location filename="../src/viewmodels/SettingsService.cpp" line="927"/>
+        <location filename="../src/viewmodels/SettingsService.cpp" line="933"/>
         <source>搜索 API 密钥加密失败，未保存更改。</source>
         <translation>搜索 API 密钥加密失败，未保存更改。</translation>
     </message>
     <message>
-        <location filename="../src/viewmodels/SettingsService.cpp" line="1146"/>
+        <location filename="../src/viewmodels/SettingsService.cpp" line="1152"/>
         <source>无法更新 Windows 开机自启动设置。</source>
         <translation>无法更新 Windows 开机自启动设置。</translation>
     </message>
@@ -2557,32 +2557,32 @@
 <context>
     <name>QObject</name>
     <message>
-        <location filename="../src/main.cpp" line="809"/>
+        <location filename="../src/main.cpp" line="816"/>
         <source>显示/隐藏主窗</source>
         <translation>显示/隐藏主窗</translation>
     </message>
     <message>
-        <location filename="../src/main.cpp" line="810"/>
+        <location filename="../src/main.cpp" line="817"/>
         <source>新建会话</source>
         <translation>新建会话</translation>
     </message>
     <message>
-        <location filename="../src/main.cpp" line="812"/>
+        <location filename="../src/main.cpp" line="819"/>
         <source>退出</source>
         <translation>退出</translation>
     </message>
     <message>
-        <location filename="../src/main.cpp" line="866"/>
+        <location filename="../src/main.cpp" line="873"/>
         <source>任务完成</source>
         <translation>任务完成</translation>
     </message>
     <message>
-        <location filename="../src/main.cpp" line="866"/>
+        <location filename="../src/main.cpp" line="873"/>
         <source>任务结束</source>
         <translation>任务结束</translation>
     </message>
     <message>
-        <location filename="../src/main.cpp" line="867"/>
+        <location filename="../src/main.cpp" line="874"/>
         <source>会话已回复</source>
         <translation>会话已回复</translation>
     </message>
@@ -2906,33 +2906,58 @@
 <context>
     <name>SettingsCenterDialog</name>
     <message>
-        <location filename="../src/ui/components/SettingsCenterDialog.qml" line="55"/>
+        <location filename="../src/ui/components/SettingsCenterDialog.qml" line="94"/>
         <source>设置中心</source>
         <translation>设置中心</translation>
     </message>
     <message>
-        <location filename="../src/ui/components/SettingsCenterDialog.qml" line="56"/>
+        <location filename="../src/ui/components/SettingsCenterDialog.qml" line="95"/>
         <source>配置模型、界面、工具、MCP 服务器等应用选项</source>
         <translation>配置模型、界面、工具、MCP 服务器等应用选项</translation>
     </message>
     <message>
-        <location filename="../src/ui/components/SettingsCenterDialog.qml" line="74"/>
+        <location filename="../src/ui/components/SettingsCenterDialog.qml" line="113"/>
         <source>设置</source>
         <translation>设置</translation>
     </message>
     <message>
-        <location filename="../src/ui/components/SettingsCenterDialog.qml" line="210"/>
-        <location filename="../src/ui/components/SettingsCenterDialog.qml" line="263"/>
+        <location filename="../src/ui/components/SettingsCenterDialog.qml" line="124"/>
+        <source>搜索设置…</source>
+        <translation>搜索设置…</translation>
+    </message>
+    <message>
+        <location filename="../src/ui/components/SettingsCenterDialog.qml" line="139"/>
+        <source>搜索设置</source>
+        <translation>搜索设置</translation>
+    </message>
+    <message>
+        <location filename="../src/ui/components/SettingsCenterDialog.qml" line="145"/>
+        <source>清除搜索</source>
+        <translation>清除搜索</translation>
+    </message>
+    <message>
+        <location filename="../src/ui/components/SettingsCenterDialog.qml" line="231"/>
+        <source>跳转</source>
+        <translation>跳转</translation>
+    </message>
+    <message>
+        <location filename="../src/ui/components/SettingsCenterDialog.qml" line="256"/>
+        <source>没有匹配「%1」的设置</source>
+        <translation>没有匹配「%1」的设置</translation>
+    </message>
+    <message>
+        <location filename="../src/ui/components/SettingsCenterDialog.qml" line="360"/>
+        <location filename="../src/ui/components/SettingsCenterDialog.qml" line="413"/>
         <source>恢复默认</source>
         <translation>恢复默认</translation>
     </message>
     <message>
-        <location filename="../src/ui/components/SettingsCenterDialog.qml" line="221"/>
+        <location filename="../src/ui/components/SettingsCenterDialog.qml" line="371"/>
         <source>关闭</source>
         <translation>关闭</translation>
     </message>
     <message>
-        <location filename="../src/ui/components/SettingsCenterDialog.qml" line="259"/>
+        <location filename="../src/ui/components/SettingsCenterDialog.qml" line="409"/>
         <source>取消</source>
         <translation>取消</translation>
     </message>
@@ -2961,7 +2986,7 @@
         <translation type="vanished">放弃</translation>
     </message>
     <message>
-        <location filename="../src/ui/components/SettingsCenterDialog.qml" line="244"/>
+        <location filename="../src/ui/components/SettingsCenterDialog.qml" line="394"/>
         <source>确认将当前分类的配置项恢复为默认值？</source>
         <translation>确认将当前分类的配置项恢复为默认值？</translation>
     </message>
