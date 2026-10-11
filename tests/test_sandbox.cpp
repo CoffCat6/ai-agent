@@ -57,6 +57,8 @@ private slots:
     void writeFileToDirectoryFailsWithOpenError();
     // docs/24 H3: read_file refuses oversized files before reading
     void readFileOversizeRefusedBeforeRead();
+    // docs/24 H7: credential-shaped env vars never reach the child process
+    void shellExecStripsSensitiveEnvironment();
 };
 
 void TestSandbox::allowsUserWrites() {
@@ -682,6 +684,26 @@ void TestSandbox::readFileOversizeRefusedBeforeRead() {
     const ToolResult ok = tool->execute(QJsonObject{{"path", small}});
     QVERIFY(ok.success);
     QCOMPARE(ok.output, QStringLiteral("tiny"));
+}
+
+// docs/24 H7: credential-shaped environment variables are stripped before
+// the child process inherits them — `echo %VAR%` prints the unexpanded
+// literal instead of the secret value.
+void TestSandbox::shellExecStripsSensitiveEnvironment() {
+#ifdef Q_OS_WIN
+    qputenv("NEXUS_PROBE_API_KEY", "nx-probe-secret-9137");
+
+    ITool* tool = ToolRegistry::instance().find(QStringLiteral("shell_exec"));
+    QVERIFY(tool);
+    const ToolResult r = tool->execute(QJsonObject{
+        {"command", QStringLiteral("echo %NEXUS_PROBE_API_KEY%")}});
+    QVERIFY2(r.success, qPrintable(r.error));
+    QVERIFY2(!r.output.contains(QStringLiteral("nx-probe-secret-9137")),
+             qPrintable(r.output));
+    qunsetenv("NEXUS_PROBE_API_KEY");
+#else
+    QSKIP("cmd.exe %VAR% probing is Windows-specific");
+#endif
 }
 
 QTEST_GUILESS_MAIN(TestSandbox)

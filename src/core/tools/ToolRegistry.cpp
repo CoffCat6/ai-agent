@@ -348,6 +348,23 @@ public:
 
         QProcess proc;
         proc.setProcessChannelMode(QProcess::MergedChannels);
+        // docs/24 H7: the child inherits the parent environment by default,
+        // and the model could read credential-shaped variables into the
+        // tool output (`set` / `env`) — i.e. exfiltrate keys into the
+        // context. Strip them before execution.
+        QProcessEnvironment env = QProcessEnvironment::systemEnvironment();
+        const QStringList envKeys = env.keys();
+        for (const QString& key : envKeys) {
+            const QString upper = key.toUpper();
+            if (upper.contains(QLatin1String("API_KEY"))
+                    || upper.contains(QLatin1String("APIKEY"))
+                    || upper.contains(QLatin1String("TOKEN"))
+                    || upper.contains(QLatin1String("SECRET"))
+                    || upper.contains(QLatin1String("PASSWORD"))) {
+                env.remove(key);
+            }
+        }
+        proc.setProcessEnvironment(env);
         // P0-2: 项目激活时命令在项目根执行——"dir" "type" 等才落在用户
         // 语境中的目录上，而不是应用启动目录。
         const QString projectRoot = Sandbox::currentProjectDir();
