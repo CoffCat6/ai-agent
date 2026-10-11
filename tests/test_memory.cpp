@@ -64,6 +64,8 @@ private slots:
     // stamp gates the FTS backfill to the upgrade path.
     void sessionQueriesUseIndexes();
     void oldDatabaseUpgradeRestampsAndBackfills();
+    // docs/23 G2: WAL + NORMAL durability for the multi-connection topology.
+    void walJournalModeActive();
     void episodicFullTextSearch();
     void auditTrail();
     void tokenStatsAggregate();
@@ -989,6 +991,20 @@ void TestMemory::oldDatabaseUpgradeRestampsAndBackfills() {
         QVERIFY(fts.next());
         QCOMPARE(fts.value(0).toInt(), 1);   // backfill restored the row
     }
+}
+
+// docs/23 G2: the WAL journal mode is the correctness basis for the
+// multi-tab connection topology (readers never block the writer) and for
+// VACUUM INTO backups (raw .db copies are invalid under WAL). WAL needs a
+// file-backed database — :memory: silently keeps the "memory" journal.
+void TestMemory::walJournalModeActive() {
+    QTemporaryDir dir;
+    QVERIFY(dir.isValid());
+    SqliteMemory memory(dir.filePath(QStringLiteral("wal.db")));
+    QSqlQuery pragma(memory.databaseForTest());
+    QVERIFY(pragma.exec("PRAGMA journal_mode"));
+    QVERIFY(pragma.next());
+    QCOMPARE(pragma.value(0).toString(), QStringLiteral("wal"));
 }
 
 QTEST_GUILESS_MAIN(TestMemory)

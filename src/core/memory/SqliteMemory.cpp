@@ -79,6 +79,18 @@ SqliteMemory::SqliteMemory(const QString& dbPath) : m_dbPath(dbPath) {
     QSqlQuery busy(m_db);
     busy.exec("PRAGMA busy_timeout = 5000");
 
+    // docs/23 G2: WAL — readers no longer block on a concurrent writer
+    // (per-tab GUI threads read while another tab streams writes), and
+    // synchronous=NORMAL (the SQLite-recommended WAL pairing) defers
+    // fsync to checkpoint time; a power cut may lose the last committed
+    // transaction but never corrupts the database. Idempotent per
+    // connection: journal_mode is a persistent property of the file.
+    // Note: WAL sidecar files make raw .db copies invalid — database
+    // backups must go through VACUUM INTO (docs/23 D1).
+    QSqlQuery wal(m_db);
+    wal.exec("PRAGMA journal_mode = WAL");
+    wal.exec("PRAGMA synchronous = NORMAL");
+
     initDatabase();
 }
 
