@@ -128,6 +128,18 @@ private:
             return;
         }
         if (method == QLatin1String("tools/call")) {
+            // docs/24 H1: an oversized result body drives the transport's
+            // accumulation cap (the client aborts the reply).
+            if (request.value("params").toObject().value("arguments")
+                    .toObject().value("marker").toString()
+                == QLatin1String("huge")) {
+                QJsonObject huge{
+                    {"content", QJsonArray{QJsonObject{
+                        {"type", "text"},
+                        {"text", QString(33 * 1024 * 1024, QLatin1Char('x'))}}}}};
+                respond(socket, id, huge);
+                return;
+            }
             respond(socket, id, QJsonObject{
                 {"content", QJsonArray{QJsonObject{
                     {"type", "text"},
@@ -483,8 +495,7 @@ private slots:
     }
 
     // SSE-framed responses parse into the same message stream.
-    void httpSseResponse() {
-        HttpFakeMcpServer http;
+    void httpSseResponse() {        HttpFakeMcpServer http;
         http.setSseMode(true);
         McpServerConfig config;
         config.name = QStringLiteral("http-fake");
@@ -506,6 +517,54 @@ private slots:
         });
         QTRY_VERIFY(handlerRan);
         client.disconnectFromServer();
+    }
+
+    // docs/24 H1: an oversized response body trips the transport's
+    // accumulation cap — the reply is aborted and the failure surfaces
+    // through the normal error path instead of unbounded memory growth.
+    void httpOversizeResponseAborts() {
+        HttpFakeMcpServer http;
+        McpServerConfig config;
+        config.name = QStringLiteral("http-fake");
+        config.transport = QStringLiteral("http");
+        config.url = http.baseUrl();
+
+        McpClient client(config);
+        client.connectToServer();
+        QTRY_COMPARE(client.sessionState(),
+                     McpClient::SessionState::Connected);
+
+        bool handlerRan = false;
+        client.callTool(QStringLiteral("echo"),
+                        QJsonObject{{"marker", QStringLiteral("huge")}},
+                        [&handlerRan](bool isError, const QString&,
+                                      const QString&) {
+            handlerRan = true;
+            QVERIFY(isError);
+        });
+        // Without the cap this call would hang until the 35s client
+        // timeout — QTRY's 5s default is the regression tripwire.
+        QTRY_VERIFY(handlerRan);
+        client.disconnectFromServer();
+    }
+
+    // docs/24 H2: a newline-less flood trips the stdout line-buffer cap —
+    // the transport kills the server, so the pending call fails fast
+    // instead of hanging until the client timeout.
+    void stdioFloodKillsServer() {
+        McpClient client(makeConfig({"echo"}, "flood"));
+        client.connectToServer();
+        QTRY_COMPARE(client.sessionState(),
+                     McpClient::SessionState::Connected);
+
+        bool handlerRan = false;
+        client.callTool(QStringLiteral("echo"), {},
+                        [&handlerRan](bool isError, const QString&,
+                                      const QString&) {
+            handlerRan = true;
+            QVERIFY(isError);
+        });
+        QTRY_VERIFY(handlerRan);
     }
 
     // The Mcp-Session-Id issued at initialize must ride on later requests.

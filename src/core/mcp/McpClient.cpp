@@ -77,7 +77,10 @@ void McpClient::onTransportStateChanged(McpTransport::State state) {
             runHandshake();
     } else if (state == McpTransport::State::Failed) {
         for (auto it = m_pending.begin(); it != m_pending.end(); ++it) {
-            if (it->toolHandler) it->toolHandler(false, QString(),
+            // docs/24 H1/H2: a transport-level failure is a tool FAILURE —
+            // reporting isError=false made McpToolAdapter return an empty
+            // SUCCESS for a call that never completed.
+            if (it->toolHandler) it->toolHandler(true, QString(),
                 QStringLiteral("MCP server connection failed"));
             if (it->timeout) it->timeout->deleteLater();
         }
@@ -158,7 +161,7 @@ quint64 McpClient::callTool(const QString& tool, const QJsonObject& args,
         QJsonObject{{"name", tool}, {"arguments", args}}, nullptr);
     if (id == 0) {
         // Request could not be sent (transport down).
-        if (handler) handler(false, QString(),
+        if (handler) handler(true, QString(),
             QStringLiteral("MCP server not connected"));
         return 0;
     }
@@ -172,7 +175,7 @@ void McpClient::cancelRequest(quint64 id) {
                          QJsonObject{{"requestId", static_cast<qint64>(id)}});
         if (auto it = m_pending.find(id); it != m_pending.end()) {
             if (it->toolHandler)
-                it->toolHandler(false, QString(), QStringLiteral("cancelled"));
+                it->toolHandler(true, QString(), QStringLiteral("cancelled"));
             if (it->timeout) it->timeout->deleteLater();
             m_pending.erase(it);
         }

@@ -4,6 +4,11 @@
 
 namespace NexusAI {
 
+namespace {
+// docs/24 H1: per-reply accumulation bound (JSON bodies and SSE framing).
+constexpr int kMaxResponseBytes = 32 * 1024 * 1024;
+} // namespace
+
 HttpTransport::HttpTransport(const Config& config, QObject* parent)
     : McpTransport(parent)
     , m_config(config)
@@ -44,7 +49,8 @@ void HttpTransport::sendMessage(const QJsonObject& message) {
     connect(reply, &QNetworkReply::readyRead, this,
             [this, reply]() { onSseChunk(reply, reply->readAll()); });
     connect(reply, &QNetworkReply::finished, this, [this, reply]() {
-        onReplyFinished(reply, reply->readAll());
+        onReplyFinished(reply,
+                        reply->isOpen() ? reply->readAll() : QByteArray());
         reply->deleteLater();
         m_sseBuffers.remove(reply);
     });
@@ -98,16 +104,34 @@ void HttpTransport::onSseChunk(QNetworkReply* reply, const QByteArray& chunk) {
 
     const QByteArray contentType =
         reply->header(QNetworkRequest::ContentTypeHeader).toByteArray();
+
+    // docs/24 H1: bound the per-reply accumulation — a malicious or broken
+    // server must not be able to inflate memory without limit inside the
+    // request window (the MCP client timeout is the only other bound).
+    // Aborting fires finished, where the standard cleanup runs.
+    QByteArray& buffer = m_sseBuffers[reply];
+    if (buffer.size() + chunk.size() > kMaxResponseBytes) {
+        qWarning() << "MCP HTTP response exceeded" << kMaxResponseBytes
+                   << "bytes — aborting the reply";
+        emit errorOccurred(QStringLiteral(
+            "MCP HTTP response exceeded the 32 MiB transport limit"));
+        // Fail the transport: the client immediately fails every pending
+        // request (an aborted reply would otherwise leave them hanging
+        // until their 35s timeouts). A server that answers with 32 MiB
+        // responses is broken — no auto-recovery.
+        setState(State::Failed);
+        reply->abort();
+        return;
+    }
+    buffer += chunk;
+
     if (!contentType.contains("text/event-stream")) {
         // application/json: accumulate; parsed once on finished (where the
         // buffer and the trailing read are merged).
-        m_sseBuffers[reply] += chunk;
         return;
     }
 
     // SSE framing: "data: <payload>" lines, events separated by a blank line.
-    QByteArray& buffer = m_sseBuffers[reply];
-    buffer += chunk;
     QByteArray dataPayload;
     int newline = 0;
     while ((newline = buffer.indexOf('\n')) >= 0) {

@@ -36,6 +36,13 @@ QString quoteForCmd(const QString& s) {
 } // namespace
 #endif
 
+namespace {
+// docs/24 H2: bound for the stdout line reassembly buffer — a server
+// streaming bytes without any newline must not grow it without bound
+// (stderr already has a 64 KiB tail cap).
+constexpr int kMaxLineBufferBytes = 8 * 1024 * 1024;
+} // namespace
+
 StdioTransport::StdioTransport(const Config& config, QObject* parent)
     : McpTransport(parent)
     , m_config(config) {
@@ -173,6 +180,25 @@ void StdioTransport::sendMessage(const QJsonObject& message) {
 void StdioTransport::onReadyRead() {
 
     m_lineBuffer += m_process.readAllStandardOutput();
+
+    // docs/24 H2: a server streaming bytes without any newline would grow
+    // this buffer without bound. Treat it as a protocol violation: fail the
+    // transport (the client fails every pending request immediately) and
+    // kill the process — no auto-restart for a server that cannot speak
+    // the protocol.
+    if (m_lineBuffer.size() > kMaxLineBufferBytes
+            && !m_lineBuffer.contains('\n')) {
+        qWarning() << "MCP stdio server produced" << m_lineBuffer.size()
+                   << "bytes without a newline — killing it";
+        emit errorOccurred(QStringLiteral(
+            "MCP stdio server produced >8 MiB without a newline — "
+            "protocol violation"));
+        m_violationKilled = true;
+        setState(State::Failed);
+        m_process.kill();
+        return;
+    }
+
     int newline = 0;
     while ((newline = m_lineBuffer.indexOf('\n')) >= 0) {
         const QByteArray line = m_lineBuffer.left(newline).trimmed();
@@ -185,6 +211,13 @@ void StdioTransport::onReadyRead() {
 void StdioTransport::onFinished(int exitCode, QProcess::ExitStatus status) {
     m_lineBuffer.clear();
     appendStderr(m_process.readAllStandardError());
+
+    // docs/24 H2: killed for a protocol violation — Failed is already set
+    // and reported; do not schedule the crash-restart.
+    if (m_violationKilled) {
+        m_violationKilled = false;
+        return;
+    }
 
     if (m_stopping) {
         setState(State::Disconnected);

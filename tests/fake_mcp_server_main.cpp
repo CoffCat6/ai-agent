@@ -87,6 +87,18 @@ void handleToolsCall(quint64 id, const QJsonObject& params) {
         });
         return;
     }
+    if (mode == QLatin1String("flood")) {
+        // docs/24 H2: dump 12 MiB of newline-less bytes — the client's
+        // stdout line-buffer cap must kill this server instead of growing
+        // the buffer without bound.
+        const QByteArray chunk(1024 * 1024, 'x');
+        for (int i = 0; i < 12; ++i) {
+            fwrite(chunk.constData(), 1, chunk.size(), stdout);
+            fflush(stdout);
+        }
+        // Stay alive; the client is expected to terminate us.
+        return;
+    }
     if (mode == QLatin1String("error")) {
         sendTextResult(id, QStringLiteral("fake tool failure"), true);
         return;

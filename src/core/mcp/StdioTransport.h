@@ -52,6 +52,9 @@ private:
     QTimer m_restartTimer;
     int m_restarts{0};
     bool m_stopping{false};
+    // docs/24 H2: the process was killed for a protocol violation (stdout
+    // flood) — onFinished must not schedule the crash-restart for it.
+    bool m_violationKilled{false};
 
     static constexpr int MaxRestarts = 3;
 };
