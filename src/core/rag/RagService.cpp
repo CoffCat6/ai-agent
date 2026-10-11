@@ -212,6 +212,11 @@ quint64 RagService::restoreGeneration() const {
     return m_restoreGeneration;
 }
 
+void RagService::bumpRestoreGeneration() {
+    QMutexLocker lock(&m_mutex);
+    ++m_restoreGeneration;   // supersede in-flight restore steps (docs/24 R2)
+}
+
 QVector<KnowledgeChunk> RagService::exportPersistedChunks(const QString& sourceName) const {
     QMutexLocker lock(&m_mutex);
     for (const auto& doc : m_docs) {

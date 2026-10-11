@@ -147,6 +147,54 @@ LlmProfileConfig profileConfigOf(const QVariantMap& profile) {
     return cfg;
 }
 
+// docs/24 R2: knowledge-base restore — extracted verbatim from the startup
+// wiring so the database-restore flow (AgentViewModel::databaseRestored)
+// can re-run it against the swapped file. Snapshots the persisted documents
+// on the GUI thread (single-threaded SQLite), then hands off to the worker
+// pool; each step binds to the generation it started with, so a
+// clear/remove/bump mid-restore supersedes the rest.
+void startKnowledgeRestore(SqliteMemory* memory, RagService* rag) {
+    struct RestoreItem {
+        QString name;
+        QString content;
+        QString contentHash;
+        QString embeddingModel;
+        QVector<KnowledgeChunk> chunks;
+    };
+    QVector<RestoreItem> restoreItems;
+    for (const auto& rec : memory->loadKnowledgeDocRecords()) {
+        RestoreItem item;
+        item.name = rec.name;
+        item.content = rec.content;
+        item.contentHash = rec.contentHash;
+        item.embeddingModel = rec.embeddingModel;
+        item.chunks = memory->loadKnowledgeChunks(rec.name);
+        restoreItems.append(item);
+    }
+    if (restoreItems.isEmpty()) return;
+    qInfo() << "Restoring" << restoreItems.size() << "knowledge document(s)";
+    const QString currentModel = rag->embeddingModelName();
+    const quint64 restoreGeneration = rag->restoreGeneration();
+    (void)QtConcurrent::run([rag, restoreItems, currentModel,
+                             restoreGeneration]() {
+        int fromChunks = 0, reEmbedded = 0;
+        for (const RestoreItem& item : restoreItems) {
+            if (persistedChunksUsable(item.contentHash, item.embeddingModel,
+                                      item.content, currentModel)
+                    && rag->restorePersistedDocument(
+                           item.name, item.chunks, restoreGeneration)) {
+                ++fromChunks;
+                continue;
+            }
+            ++reEmbedded;
+            rag->ingestRestoredDocument(item.name, item.content,
+                                        restoreGeneration);
+        }
+        qInfo() << "Knowledge restore:" << fromChunks
+                << "from persisted chunks," << reEmbedded << "re-embedded";
+    });
+}
+
 } // namespace
 
 int main(int argc, char *argv[])
@@ -541,51 +589,9 @@ qInfo() << "NexusAI" << app.applicationVersion() << "starting";
     //     rebuilt from stored vectors with ZERO embedding requests;
     //   - otherwise: full re-ingest, writing the new chunk layout back via
     //     documentPersisted (self-healing for upgraded/stale databases).
-    // Each step binds to the restore generation it started with: a
-    // clear/remove mid-restore supersedes the rest.
-    {
-        struct RestoreItem {
-            QString name;
-            QString content;
-            QString contentHash;
-            QString embeddingModel;
-            QVector<KnowledgeChunk> chunks;
-        };
-        QVector<RestoreItem> restoreItems;
-        for (const auto& rec : memory->loadKnowledgeDocRecords()) {
-            RestoreItem item;
-            item.name = rec.name;
-            item.content = rec.content;
-            item.contentHash = rec.contentHash;
-            item.embeddingModel = rec.embeddingModel;
-            item.chunks = memory->loadKnowledgeChunks(rec.name);
-            restoreItems.append(item);
-        }
-        if (!restoreItems.isEmpty()) {
-            qInfo() << "Restoring" << restoreItems.size() << "knowledge document(s)";
-            auto* ragPtr = rag;
-            const QString currentModel = rag->embeddingModelName();
-            const quint64 restoreGeneration = rag->restoreGeneration();
-            (void)QtConcurrent::run([ragPtr, restoreItems, currentModel,
-                                     restoreGeneration]() {
-                int fromChunks = 0, reEmbedded = 0;
-                for (const RestoreItem& item : restoreItems) {
-                    if (persistedChunksUsable(item.contentHash, item.embeddingModel,
-                                              item.content, currentModel)
-                            && ragPtr->restorePersistedDocument(
-                                   item.name, item.chunks, restoreGeneration)) {
-                        ++fromChunks;
-                        continue;
-                    }
-                    ++reEmbedded;
-                    ragPtr->ingestRestoredDocument(item.name, item.content,
-                                                   restoreGeneration);
-                }
-                qInfo() << "Knowledge restore:" << fromChunks
-                        << "from persisted chunks," << reEmbedded << "re-embedded";
-            });
-        }
-    }
+    // docs/24 R2: block extracted into startKnowledgeRestore() so the
+    // database-restore flow can re-run it against the swapped file.
+    startKnowledgeRestore(memory, rag);
 
     // Summaries have a separate provider: changing defaults must never
     // reconfigure a service used by a running conversation.

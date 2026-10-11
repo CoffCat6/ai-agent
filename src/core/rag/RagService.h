@@ -106,6 +106,10 @@ public:
     // default is MaxTotalChunks.
     void setMaxTotalChunks(int cap);
     int maxTotalChunks() const { return m_maxTotalChunks; }
+    // docs/24 R2: invalidate every in-flight restore step — the database
+    // restore flow bumps this before re-running the restore against the
+    // swapped file.
+    void bumpRestoreGeneration();
 
 signals:
     void changed();
