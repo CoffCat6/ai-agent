@@ -167,6 +167,12 @@ const QVector<SettingsKeyDef>& SettingsSchema::registeredKeys() {
                    {}, true),
             keyDef(QStringLiteral("webSearch/searxBaseUrl"), QString(), SettingValueType::String),
             keyDef(QStringLiteral("memory/episodicMemoryEnabled"), false, SettingValueType::Bool),
+            // docs/23 G3: audit/token retention in days. 0 = keep forever;
+            // capped at 10 years to keep the clamp honest.
+            keyDef(QStringLiteral("memory/auditRetentionDays"), 30, SettingValueType::Int,
+                   intRange(0, 3650)),
+            keyDef(QStringLiteral("memory/tokenRetentionDays"), 90, SettingValueType::Int,
+                   intRange(0, 3650)),
             keyDef(QStringLiteral("dailyTokenQuota"), 0, SettingValueType::Int,
                    intRange(0, INT_MAX)),
             keyDef(QStringLiteral("dailyCostQuotaCents"), 0, SettingValueType::Int,

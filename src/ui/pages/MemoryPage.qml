@@ -103,6 +103,79 @@ Item {
             }
         }
 
+        // ── 数据保留（docs/23 G3）────────────────────────
+        RowLayout {
+            Layout.fillWidth: true
+            Layout.leftMargin: 24
+            Layout.rightMargin: 24
+            Layout.bottomMargin: 8
+            spacing: 8
+
+            ColumnLayout {
+                Layout.fillWidth: true
+                spacing: 2
+
+                Text {
+                    text: qsTr("审计日志保留天数")
+                    color: Theme.textPrimary
+                    font.pixelSize: Theme.fontSizeBody
+                    font.family: Theme.fontSans
+                }
+                Text {
+                    text: qsTr("工具执行审计链的保留天数，0 表示永久保留。到期记录在启动与每 6 小时的例行清理中删除。")
+                    color: Theme.textSecondary
+                    font.pixelSize: 10
+                    font.family: Theme.fontSans
+                    opacity: 0.8
+                    wrapMode: Text.Wrap
+                    Layout.fillWidth: true
+                }
+            }
+            SpinBox {
+                from: 0
+                to: 3650
+                value: Settings.auditRetentionDays
+                onValueModified: Settings.auditRetentionDays = value
+                Accessible.name: qsTr("审计日志保留天数")
+            }
+        }
+
+        RowLayout {
+            Layout.fillWidth: true
+            Layout.leftMargin: 24
+            Layout.rightMargin: 24
+            Layout.bottomMargin: 8
+            spacing: 8
+
+            ColumnLayout {
+                Layout.fillWidth: true
+                spacing: 2
+
+                Text {
+                    text: qsTr("Token 用量保留天数")
+                    color: Theme.textPrimary
+                    font.pixelSize: Theme.fontSizeBody
+                    font.family: Theme.fontSans
+                }
+                Text {
+                    text: qsTr("每次模型请求的用量明细（token 与费用统计的数据源）的保留天数，0 表示永久保留。")
+                    color: Theme.textSecondary
+                    font.pixelSize: 10
+                    font.family: Theme.fontSans
+                    opacity: 0.8
+                    wrapMode: Text.Wrap
+                    Layout.fillWidth: true
+                }
+            }
+            SpinBox {
+                from: 0
+                to: 3650
+                value: Settings.tokenRetentionDays
+                onValueModified: Settings.tokenRetentionDays = value
+                Accessible.name: qsTr("Token 用量保留天数")
+            }
+        }
+
         // ── 搜索 + 清空 ─────────────────────────────────
         RowLayout {
             Layout.fillWidth: true

@@ -741,6 +741,7 @@ private slots:
             "logging/level", "logging/directory", "logging/maxFileSizeMb",
             "logging/retentionFiles", "webSearch/provider", "webSearch/apiKey",
             "webSearch/searxBaseUrl", "memory/episodicMemoryEnabled",
+            "memory/auditRetentionDays", "memory/tokenRetentionDays",
             "dailyTokenQuota", "dailyCostQuotaCents", "monthlyTokenQuota",
             "monthlyCostQuotaCents", "strictQuotaMode", "agent/defaultPermissionMode",
             // ToolRegistry and schema migration

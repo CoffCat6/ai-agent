@@ -378,6 +378,13 @@ void SettingsService::load() {
     m_episodicMemoryEnabled = SettingsRepository::value(
         QStringLiteral("memory/episodicMemoryEnabled"),
         SettingsSchema::defaultValue(QStringLiteral("memory/episodicMemoryEnabled"))).toBool();
+    // docs/23 G3: retention days (0 = keep forever), clamped by the schema.
+    m_auditRetentionDays = SettingsSchema::clampInt(QStringLiteral("memory/auditRetentionDays"),
+        SettingsRepository::value(QStringLiteral("memory/auditRetentionDays"),
+            SettingsSchema::defaultValue(QStringLiteral("memory/auditRetentionDays"))).toInt());
+    m_tokenRetentionDays = SettingsSchema::clampInt(QStringLiteral("memory/tokenRetentionDays"),
+        SettingsRepository::value(QStringLiteral("memory/tokenRetentionDays"),
+            SettingsSchema::defaultValue(QStringLiteral("memory/tokenRetentionDays"))).toInt());
     // docs/16 §7.3: quota settings (flat keys; 0 = unlimited for int quotas).
     m_dailyTokenQuota = SettingsSchema::clampInt(QStringLiteral("dailyTokenQuota"),
         SettingsRepository::value(QStringLiteral("dailyTokenQuota"),
@@ -941,6 +948,24 @@ void SettingsService::setEpisodicMemoryEnabled(bool enabled) {
     Activity::usage(Activity::Kind::User, QStringLiteral("settings.episodicMemoryEnabled"),
                     enabled ? QStringLiteral("on") : QStringLiteral("off"));
     emit episodicMemoryEnabledChanged();
+}
+
+// docs/23 G3: retention setters — clamp via the schema range, persist,
+// emit. 0 = keep forever; the prune timer in main reads these live.
+void SettingsService::setAuditRetentionDays(int days) {
+    const int clamped = SettingsSchema::clampInt(QStringLiteral("memory/auditRetentionDays"), days);
+    if (m_auditRetentionDays == clamped
+            || !persistValue(QStringLiteral("memory/auditRetentionDays"), clamped)) return;
+    m_auditRetentionDays = clamped;
+    emit auditRetentionDaysChanged();
+}
+
+void SettingsService::setTokenRetentionDays(int days) {
+    const int clamped = SettingsSchema::clampInt(QStringLiteral("memory/tokenRetentionDays"), days);
+    if (m_tokenRetentionDays == clamped
+            || !persistValue(QStringLiteral("memory/tokenRetentionDays"), clamped)) return;
+    m_tokenRetentionDays = clamped;
+    emit tokenRetentionDaysChanged();
 }
 
 // docs/16 §7.3: quota setters. Int quotas are clamped to >= 0 (0 = unlimited);

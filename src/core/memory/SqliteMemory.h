@@ -125,6 +125,10 @@ public:
     // Delete rows older than keepDays OR beyond maxRows (newest kept).
     // Returns the number of rows removed.
     int pruneUsage(int keepDays = 30, int maxRows = 10000);
+    // docs/23 G3: time-based retention for the audit tables that previously
+    // grew unbounded. keepDays <= 0 = keep forever. Returns rows removed.
+    int pruneAudit(int keepDays);
+    int pruneTokenUsage(int keepDays);
 
 private:
     void initDatabase();

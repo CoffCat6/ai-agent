@@ -175,6 +175,15 @@ public:
     bool episodicMemoryEnabled() const { return m_episodicMemoryEnabled; }
     void setEpisodicMemoryEnabled(bool enabled);
 
+    // docs/23 G3: audit/token-log retention in days (0 = keep forever).
+    // Enforced by the periodic prune timer in main.
+    Q_PROPERTY(int auditRetentionDays READ auditRetentionDays WRITE setAuditRetentionDays NOTIFY auditRetentionDaysChanged)
+    Q_PROPERTY(int tokenRetentionDays READ tokenRetentionDays WRITE setTokenRetentionDays NOTIFY tokenRetentionDaysChanged)
+    int auditRetentionDays() const { return m_auditRetentionDays; }
+    void setAuditRetentionDays(int days);
+    int tokenRetentionDays() const { return m_tokenRetentionDays; }
+    void setTokenRetentionDays(int days);
+
     // docs/16 §7.3: quota settings. 0 = unlimited for the int quotas.
     int dailyTokenQuota() const { return m_dailyTokenQuota; }
     void setDailyTokenQuota(int v);
@@ -292,6 +301,8 @@ signals:
     void webSearchApiKeyChanged();
     void webSearchSearxBaseUrlChanged();
     void episodicMemoryEnabledChanged();
+    void auditRetentionDaysChanged();
+    void tokenRetentionDaysChanged();
     void dailyTokenQuotaChanged();
     void dailyCostQuotaCentsChanged();
     void monthlyTokenQuotaChanged();
@@ -329,6 +340,9 @@ private:
     QString m_webSearchApiKey;
     QString m_webSearchSearxBaseUrl;   // docs/20 §5.3: SearXNG instance URL
     bool m_episodicMemoryEnabled{};
+    // docs/23 G3: retention state (0 = keep forever).
+    int m_auditRetentionDays{};
+    int m_tokenRetentionDays{};
     // docs/16 §7.3: quota control state (0 = unlimited for int quotas).
     int m_dailyTokenQuota{};
     int m_dailyCostQuotaCents{};

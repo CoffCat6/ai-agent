@@ -1454,6 +1454,37 @@ int SqliteMemory::pruneUsage(int keepDays, int maxRows) {
     return removed;
 }
 
+// docs/23 G3: time-based retention for the two audit-domain tables that
+// previously had none. Both DELETEs ride their existing timestamp indexes
+// (idx_audit_ts / idx_token_usage_ts); keepDays <= 0 keeps rows forever.
+int SqliteMemory::pruneAudit(int keepDays) {
+    if (keepDays <= 0) return 0;
+    QSqlQuery query(m_db);
+    const qint64 cutoff = QDateTime::currentMSecsSinceEpoch()
+                        - static_cast<qint64>(keepDays) * 86400 * 1000;
+    query.prepare("DELETE FROM audit_log WHERE timestamp < ?");
+    query.addBindValue(cutoff);
+    if (!query.exec()) {
+        qWarning() << "Failed to prune audit log:" << query.lastError().text();
+        return 0;
+    }
+    return query.numRowsAffected();
+}
+
+int SqliteMemory::pruneTokenUsage(int keepDays) {
+    if (keepDays <= 0) return 0;
+    QSqlQuery query(m_db);
+    const qint64 cutoff = QDateTime::currentMSecsSinceEpoch()
+                        - static_cast<qint64>(keepDays) * 86400 * 1000;
+    query.prepare("DELETE FROM token_usage WHERE timestamp < ?");
+    query.addBindValue(cutoff);
+    if (!query.exec()) {
+        qWarning() << "Failed to prune token usage:" << query.lastError().text();
+        return 0;
+    }
+    return query.numRowsAffected();
+}
+
 void SqliteMemory::renameSession(const QString& sessionId, const QString& title) {
     QSqlQuery query(m_db);
     query.prepare("UPDATE sessions SET title = ?, updated_at = ? WHERE id = ?");

@@ -491,9 +491,23 @@ qInfo() << "NexusAI" << app.applicationVersion() << "starting";
                 },
                 Qt::QueuedConnection);
         });
-    const int pruned = memory->pruneUsage();
-    if (pruned > 0)
-        qInfo() << "Pruned" << pruned << "expired usage-log rows";
+    // docs/23 G3: 定期收敛 usage_log / audit_log / token_usage。托盘常驻
+    // 进程可能数天不重启，仅靠启动清理会让保留策略形同虚设。超时回调在
+    // GUI 线程触发（QTimer 归属 app），SQLite 单线程纪律保持成立。
+    const auto runPrunes = [usageMemory, settings]() {
+        const int usage = usageMemory->pruneUsage();
+        const int audit = usageMemory->pruneAudit(settings->auditRetentionDays());
+        const int tokens = usageMemory->pruneTokenUsage(settings->tokenRetentionDays());
+        if (usage + audit + tokens > 0)
+            qInfo() << "Pruned rows: usage" << usage << "audit" << audit
+                    << "token_usage" << tokens;
+    };
+    runPrunes();
+
+    auto* pruneTimer = new QTimer(&app);
+    pruneTimer->setInterval(6 * 60 * 60 * 1000);
+    QObject::connect(pruneTimer, &QTimer::timeout, &app, runPrunes);
+    pruneTimer->start();
 
     // Restore previously imported documents in the background (Batch 6).
     // Snapshot records AND chunks on the GUI thread (the SQLite connection

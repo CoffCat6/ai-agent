@@ -1,6 +1,7 @@
 // SqliteMemory: message/session persistence and FTS5 episodic search.
 #include "core/memory/SqliteMemory.h"
 #include "core/rag/KnowledgeChunk.h"
+#include <QDateTime>
 #include <QDir>
 #include <QStandardPaths>
 #include <QSqlDatabase>
@@ -66,6 +67,8 @@ private slots:
     void oldDatabaseUpgradeRestampsAndBackfills();
     // docs/23 G2: WAL + NORMAL durability for the multi-connection topology.
     void walJournalModeActive();
+    // docs/23 G3: time-based retention for audit_log / token_usage.
+    void retentionPrunesAuditAndTokenUsage();
     void episodicFullTextSearch();
     void auditTrail();
     void tokenStatsAggregate();
@@ -1005,6 +1008,51 @@ void TestMemory::walJournalModeActive() {
     QVERIFY(pragma.exec("PRAGMA journal_mode"));
     QVERIFY(pragma.next());
     QCOMPARE(pragma.value(0).toString(), QStringLiteral("wal"));
+}
+
+// docs/23 G3: audit_log / token_usage prune by age — boundary rows straddle
+// the cutoff; keepDays <= 0 is "keep forever" and must be a no-op.
+void TestMemory::retentionPrunesAuditAndTokenUsage() {
+    SqliteMemory mem(QStringLiteral(":memory:"));
+    QSqlDatabase db = mem.databaseForTest();
+    const qint64 now = QDateTime::currentDateTime().toMSecsSinceEpoch();
+    const qint64 day = 86400 * 1000;
+
+    const auto insertAudit = [&](qint64 ts) {
+        QSqlQuery q(db);
+        QVERIFY(q.prepare("INSERT INTO audit_log(session_id, event, tool_name, "
+                          "arguments, success, detail, timestamp) "
+                          "VALUES('s', 'tool_execute', 'read_file', '', 1, '', ?)"));
+        q.addBindValue(ts);
+        QVERIFY(q.exec());
+    };
+    const auto insertToken = [&](qint64 ts) {
+        QSqlQuery q(db);
+        QVERIFY(q.prepare("INSERT INTO token_usage(request_id, session_id, model, "
+                          "timestamp) VALUES(1, 's', 'm', ?)"));
+        q.addBindValue(ts);
+        QVERIFY(q.exec());
+    };
+    insertAudit(now - 40 * day);   // expired by a 30-day policy
+    insertAudit(now - 29 * day);   // inside the window
+    insertAudit(now);
+    insertToken(now - 100 * day);  // expired by a 90-day policy
+    insertToken(now - 89 * day);
+    insertToken(now);
+
+    QCOMPARE(mem.pruneAudit(30), 1);
+    QCOMPARE(mem.pruneTokenUsage(90), 1);
+
+    QSqlQuery audit(db);
+    QVERIFY(audit.exec("SELECT count(*) FROM audit_log") && audit.next());
+    QCOMPARE(audit.value(0).toInt(), 2);
+    QSqlQuery tokens(db);
+    QVERIFY(tokens.exec("SELECT count(*) FROM token_usage") && tokens.next());
+    QCOMPARE(tokens.value(0).toInt(), 2);
+
+    // keepDays <= 0 = keep forever: nothing removed, nothing touched.
+    QCOMPARE(mem.pruneAudit(0), 0);
+    QCOMPARE(mem.pruneTokenUsage(-1), 0);
 }
 
 QTEST_GUILESS_MAIN(TestMemory)
