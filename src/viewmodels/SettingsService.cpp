@@ -449,6 +449,12 @@ QVariantList SettingsService::migrateLegacy() {
                                defaults->defaultBaseUrl, QString(), legacyKey));
     }
 
+    // docs/24 H10: the legacy top-level apiKey was stored in PLAINTEXT —
+    // once it has been folded into an encrypted profile, nothing may remain
+    // in the registry. "provider" folded into the profile too.
+    SettingsRepository::removeBatch({QStringLiteral("apiKey"),
+                                     QStringLiteral("provider")});
+
     qInfo() << "Migrated legacy provider settings into" << out.size() << "model profile(s)";
     return out;
 }

@@ -1584,6 +1584,28 @@ ComboBox {
         }
     }
 
+    // docs/24 H10: the pre-0.3 top-level apiKey is stored in PLAINTEXT —
+    // after it is folded into an encrypted profile, the registry must not
+    // keep the residue.
+    void legacyPlaintextApiKeyRemovedAfterMigration() {
+        SettingsGuard guard;
+        {
+            QSettings s("NexusAI", "NexusAI");
+            s.remove("modelProfiles");
+            s.setValue("provider", QStringLiteral("openai"));
+            s.setValue("apiKey", QStringLiteral("legacy-plain-key"));
+            s.sync();
+        }
+        QVERIFY(SettingsRepository::contains(QStringLiteral("apiKey")));
+
+        SettingsService service(nullptr);
+        // The key migrated into a (still readable) profile…
+        QVERIFY(!service.profiles().isEmpty());
+        // …and the plaintext residue is gone from the registry.
+        QVERIFY(!SettingsRepository::contains(QStringLiteral("apiKey")));
+        QVERIFY(!SettingsRepository::contains(QStringLiteral("provider")));
+    }
+
     // docs/15 §6.1.1: modelContextWindow capability-table lookup by API
     // protocol (the table lives on the protocol, not the vendor: OpenAI 厂商的
     // Chat 与 Responses 两条协议可用模型不同).
