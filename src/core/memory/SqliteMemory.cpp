@@ -93,17 +93,46 @@ SqliteMemory::~SqliteMemory() {
 }
 
 void SqliteMemory::initDatabase() {
+    // docs/23 G1: schema 版本标记（lite）。0 = 老库升级或新库首建：本轮
+    // 执行完整迁移 + FTS 回填，末尾 ANALYZE 后落 user_version=1；此后
+    // 启动跳过回填与 ANALYZE（触发器已保证 FTS 同步，稳态回填是对
+    // messages 的 O(n) 纯扫描）。
+    QSqlQuery versionQuery(m_db);
+    int userVersion = 0;
+    if (versionQuery.exec("PRAGMA user_version") && versionQuery.next())
+        userVersion = versionQuery.value(0).toInt();
+
     createTables();
     // docs/17 A0: sessions.project_id 列补齐（projects 表在 createTables 里）。
     migrateSessionProjectColumn();
     migrateTraceNodeReasoningColumn();
     migrateKnowledgeSchema();
-    migrateMessagesFts();
+    migrateMessagesFts(/*backfillRows=*/userVersion == 0);
     migrateEpisodicFts();
     // docs/16 §4.2/§6.2: 预置公开定价（不覆盖用户自定义），并载入
     // PricingCalculator 进程级缓存，供 costStats 等聚合查询使用。
     seedModelPricing();
     PricingCalculator::refreshCache(m_db);
+
+    // docs/23 G1: 两个最高频查询路径的索引。messages 是唯一随使用量
+    // 无界增长且按 session_id 过滤的主表（loadMessages/deleteMessagesFrom/
+    // lastUserMessageId 等），sessions 的侧栏排序按 pinned/updated_at。
+    // 索引条目隐式以 rowid 结尾，(session_id, timestamp) 直接支撑
+    // ORDER BY timestamp DESC, rowid DESC 的反序扫描。
+    // sessions.pinned 由上面的补列迁移引入，索引必须在其之后创建。
+    execDdl(versionQuery,
+            "CREATE INDEX IF NOT EXISTS idx_messages_session_ts "
+            "ON messages(session_id, timestamp)",
+            "create idx_messages_session_ts");
+    execDdl(versionQuery,
+            "CREATE INDEX IF NOT EXISTS idx_sessions_pinned_updated "
+            "ON sessions(pinned, updated_at)",
+            "create idx_sessions_pinned_updated");
+
+    if (userVersion == 0) {
+        execDdl(versionQuery, "ANALYZE", "analyze for the query planner");
+        execDdl(versionQuery, "PRAGMA user_version = 1", "stamp user_version");
+    }
 }
 
 // Batch 17 (FEAT-1701): messages FTS5 index for cross-session search.
@@ -112,9 +141,13 @@ void SqliteMemory::initDatabase() {
 // text (a whole sentence becomes one token), while trigram answers
 // 3+ character CJK/ASCII substring queries. Keywords shorter than 3 chars
 // fall back to LIKE in searchMessages(). Idempotent self-heal (discipline
-// #8): everything is IF NOT EXISTS, and the backfill covers rows written
-// before this migration so old databases upgrade without a version bump.
-void SqliteMemory::migrateMessagesFts() {
+// #8): everything is IF NOT EXISTS; the one-shot backfill covers rows
+// written before this migration.
+// docs/23 G1: backfillRows gates the O(messages) NOT-IN backfill to the
+// upgrade/first-create path (user_version==0) — on a stamped database the
+// triggers already keep the index in sync, so the steady-state scan is
+// pure waste on every startup.
+void SqliteMemory::migrateMessagesFts(bool backfillRows) {
     QSqlQuery query(m_db);
     execDdl(query, R"(
         CREATE VIRTUAL TABLE IF NOT EXISTS messages_fts USING fts5(
@@ -132,6 +165,7 @@ void SqliteMemory::migrateMessagesFts() {
             DELETE FROM messages_fts WHERE rowid = old.id;
         END
     )", "create messages_fts delete trigger");
+    if (!backfillRows) return;
     // Backfill rows that predate this migration (idempotent: only rows the
     // index does not know about). Writes into messages_fts directly, so the
     // messages INSERT trigger cannot double-fire.

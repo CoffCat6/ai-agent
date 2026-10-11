@@ -6,6 +6,7 @@
 #include <QSqlDatabase>
 #include <QSqlError>
 #include <QSqlQuery>
+#include <QTemporaryDir>
 #include <QFile>
 
 #include <QtTest>
@@ -59,6 +60,10 @@ private slots:
     void loadMessagesKeepsNewest();
     void sessionBookkeepingAndClear();
     void sessionDeleteAndRename();
+    // docs/23 G1: high-frequency paths stay index-backed; the user_version
+    // stamp gates the FTS backfill to the upgrade path.
+    void sessionQueriesUseIndexes();
+    void oldDatabaseUpgradeRestampsAndBackfills();
     void episodicFullTextSearch();
     void auditTrail();
     void tokenStatsAggregate();
@@ -920,6 +925,70 @@ void TestMemory::lastUserMessageIdFindsLastUserRow() {
     // 纯 assistant 会话（异常形状）。
     memory.saveMessage("s-id2", msg("assistant", "only"));
     QCOMPARE(memory.lastUserMessageId(QStringLiteral("s-id2")), 0);
+}
+
+// docs/23 G1: the two highest-frequency query paths must stay index-backed —
+// pins the query plan against a future schema change silently dropping them.
+void TestMemory::sessionQueriesUseIndexes() {
+    SqliteMemory memory(":memory:");
+    QSqlDatabase db = memory.databaseForTest();
+
+    const auto planUses = [&db](const QString& sql, const QString& index) -> bool {
+        QSqlQuery plan(db);
+        if (!plan.exec(QStringLiteral("EXPLAIN QUERY PLAN %1").arg(sql)))
+            return false;
+        while (plan.next()) {
+            if (plan.value(3).toString().contains(index)) return true;
+        }
+        return false;
+    };
+
+    QVERIFY(planUses(QStringLiteral(
+        "SELECT role FROM messages WHERE session_id = 's' "
+        "ORDER BY timestamp DESC, rowid DESC"),
+        QStringLiteral("idx_messages_session_ts")));
+    QVERIFY(planUses(QStringLiteral(
+        "SELECT id FROM sessions ORDER BY pinned DESC, updated_at DESC"),
+        QStringLiteral("idx_sessions_pinned_updated")));
+}
+
+// docs/23 G1: a pre-stamp database (user_version=0) upgrades in place —
+// indexes are recreated, the one-shot FTS backfill runs, user_version
+// lands on 1 (subsequent opens skip the O(messages) backfill).
+void TestMemory::oldDatabaseUpgradeRestampsAndBackfills() {
+    QTemporaryDir dir;
+    QVERIFY(dir.isValid());
+    const QString path = dir.filePath(QStringLiteral("upgrade.db"));
+    {
+        SqliteMemory memory(path);
+        QSqlDatabase db = memory.databaseForTest();
+        QSqlQuery insert(db);
+        QVERIFY(insert.exec(
+            "INSERT INTO messages(session_id, role, content, timestamp) "
+            "VALUES('s1', 'user', 'backfill me', 123)"));
+        // Simulate the pre-stamp state: desync FTS, drop the new index.
+        QVERIFY(db.exec("DELETE FROM messages_fts").isActive());
+        QVERIFY(db.exec("DROP INDEX IF EXISTS idx_messages_session_ts").isActive());
+        QVERIFY(db.exec("PRAGMA user_version = 0").isActive());
+    }
+    {
+        SqliteMemory memory(path);
+        QSqlDatabase db = memory.databaseForTest();
+
+        QSqlQuery version(db);
+        QVERIFY(version.exec("PRAGMA user_version") && version.next());
+        QCOMPARE(version.value(0).toInt(), 1);
+
+        QSqlQuery index(db);
+        QVERIFY(index.exec("SELECT name FROM sqlite_master "
+                           "WHERE type='index' AND name='idx_messages_session_ts'"));
+        QVERIFY(index.next());
+
+        QSqlQuery fts(db);
+        QVERIFY(fts.exec("SELECT count(*) FROM messages_fts"));
+        QVERIFY(fts.next());
+        QCOMPARE(fts.value(0).toInt(), 1);   // backfill restored the row
+    }
 }
 
 QTEST_GUILESS_MAIN(TestMemory)

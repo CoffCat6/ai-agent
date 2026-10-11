@@ -134,7 +134,9 @@ private:
     void migrateKnowledgeSchema();
     // trace_nodes.reasoning：思考正文列，老库补列（新库由建表 DDL 带上）
     void migrateTraceNodeReasoningColumn();
-    void migrateMessagesFts();
+    // backfillRows（docs/23 G1）：仅 user_version==0（老库升级/新库首建）
+    // 时执行 O(messages) 的 FTS 回填；稳态启动由触发器保证同步，跳过。
+    void migrateMessagesFts(bool backfillRows);
     // L3: upgrade episodic_fts to the trigram tokenizer (matches messages_fts).
     // Idempotent: no-op when the table already uses trigram.
     void migrateEpisodicFts();
