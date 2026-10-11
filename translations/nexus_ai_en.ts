@@ -1875,48 +1875,48 @@ and the model can retrieve their content to answer questions</translation>
     <name>NexusAI::AgentViewModel</name>
     <message>
         <location filename="../src/viewmodels/AgentViewModel.cpp" line="180"/>
-        <location filename="../src/viewmodels/AgentViewModel.cpp" line="351"/>
-        <location filename="../src/viewmodels/AgentViewModel.cpp" line="1323"/>
+        <location filename="../src/viewmodels/AgentViewModel.cpp" line="366"/>
+        <location filename="../src/viewmodels/AgentViewModel.cpp" line="1387"/>
         <source>新会话</source>
         <translation>New Session</translation>
     </message>
     <message>
-        <location filename="../src/viewmodels/AgentViewModel.cpp" line="443"/>
+        <location filename="../src/viewmodels/AgentViewModel.cpp" line="458"/>
         <source>请等待当前任务完成，或停止后切换模型。</source>
         <translation>Wait for the current task to finish, or stop it before switching models.</translation>
     </message>
     <message>
-        <location filename="../src/viewmodels/AgentViewModel.cpp" line="612"/>
+        <location filename="../src/viewmodels/AgentViewModel.cpp" line="627"/>
         <source>无法更新会话置顶状态，请重试。</source>
         <translation>Could not update the pinned state. Please retry.</translation>
     </message>
     <message>
-        <location filename="../src/viewmodels/AgentViewModel.cpp" line="620"/>
+        <location filename="../src/viewmodels/AgentViewModel.cpp" line="635"/>
         <source>无法更新会话归档状态，请重试。</source>
         <translation>Could not update the archive state. Please retry.</translation>
     </message>
     <message>
-        <location filename="../src/viewmodels/AgentViewModel.cpp" line="624"/>
+        <location filename="../src/viewmodels/AgentViewModel.cpp" line="639"/>
         <source>会话已归档，可在“包含已归档”中恢复。</source>
         <translation>Conversation archived. Enable “Include archived” to restore it.</translation>
     </message>
     <message>
-        <location filename="../src/viewmodels/AgentViewModel.cpp" line="624"/>
+        <location filename="../src/viewmodels/AgentViewModel.cpp" line="639"/>
         <source>会话已恢复。</source>
         <translation>Conversation restored.</translation>
     </message>
     <message>
-        <location filename="../src/viewmodels/AgentViewModel.cpp" line="642"/>
+        <location filename="../src/viewmodels/AgentViewModel.cpp" line="657"/>
         <source>导出失败：未连接持久化后端</source>
         <translation>Export failed: no persistent backend connected</translation>
     </message>
     <message>
-        <location filename="../src/viewmodels/AgentViewModel.cpp" line="647"/>
+        <location filename="../src/viewmodels/AgentViewModel.cpp" line="662"/>
         <source>导出失败：不支持的格式“%1”（可选 md / json）</source>
         <translation>Export failed: unsupported format &quot;%1&quot; (md / json)</translation>
     </message>
     <message>
-        <location filename="../src/viewmodels/AgentViewModel.cpp" line="662"/>
+        <location filename="../src/viewmodels/AgentViewModel.cpp" line="677"/>
         <source># NexusAI 会话导出
 
 </source>
@@ -1925,21 +1925,21 @@ and the model can retrieve their content to answer questions</translation>
 </translation>
     </message>
     <message>
-        <location filename="../src/viewmodels/AgentViewModel.cpp" line="663"/>
+        <location filename="../src/viewmodels/AgentViewModel.cpp" line="678"/>
         <source>- 会话 ID：%1
 </source>
         <translation>- Session ID: %1
 </translation>
     </message>
     <message>
-        <location filename="../src/viewmodels/AgentViewModel.cpp" line="664"/>
+        <location filename="../src/viewmodels/AgentViewModel.cpp" line="679"/>
         <source>- 导出时间：%1
 </source>
         <translation>- Exported at: %1
 </translation>
     </message>
     <message>
-        <location filename="../src/viewmodels/AgentViewModel.cpp" line="665"/>
+        <location filename="../src/viewmodels/AgentViewModel.cpp" line="680"/>
         <source>- 消息数：%1
 
 ---
@@ -1952,17 +1952,17 @@ and the model can retrieve their content to answer questions</translation>
 </translation>
     </message>
     <message>
-        <location filename="../src/viewmodels/AgentViewModel.cpp" line="669"/>
+        <location filename="../src/viewmodels/AgentViewModel.cpp" line="684"/>
         <source>用户</source>
         <translation>User</translation>
     </message>
     <message>
-        <location filename="../src/viewmodels/AgentViewModel.cpp" line="670"/>
+        <location filename="../src/viewmodels/AgentViewModel.cpp" line="685"/>
         <source>助手</source>
         <translation>Assistant</translation>
     </message>
     <message>
-        <location filename="../src/viewmodels/AgentViewModel.cpp" line="679"/>
+        <location filename="../src/viewmodels/AgentViewModel.cpp" line="694"/>
         <source>---
 
 ## 过程摘要
@@ -1975,112 +1975,128 @@ and the model can retrieve their content to answer questions</translation>
 </translation>
     </message>
     <message>
-        <location filename="../src/viewmodels/AgentViewModel.cpp" line="708"/>
+        <location filename="../src/viewmodels/AgentViewModel.cpp" line="723"/>
         <source>导出失败：无法写入 %1</source>
         <translation>Export failed: cannot write %1</translation>
     </message>
     <message>
-        <location filename="../src/viewmodels/AgentViewModel.cpp" line="713"/>
+        <location filename="../src/viewmodels/AgentViewModel.cpp" line="728"/>
         <source>导出失败：写入未完成 %1</source>
         <translation>Export failed: write incomplete %1</translation>
     </message>
     <message>
-        <location filename="../src/viewmodels/AgentViewModel.cpp" line="719"/>
+        <location filename="../src/viewmodels/AgentViewModel.cpp" line="734"/>
         <source>已导出会话（%1 条消息）：%2</source>
         <translation>Session exported (%1 messages): %2</translation>
     </message>
     <message>
-        <location filename="../src/viewmodels/AgentViewModel.cpp" line="781"/>
+        <location filename="../src/viewmodels/AgentViewModel.cpp" line="796"/>
         <source>无法读取文件：%1</source>
         <translation>Cannot read file: %1</translation>
     </message>
     <message>
-        <location filename="../src/viewmodels/AgentViewModel.cpp" line="828"/>
+        <location filename="../src/viewmodels/AgentViewModel.cpp" line="843"/>
         <source>PDF 已加密或需要密码，无法导入：%1</source>
         <translation>PDF is encrypted or password-protected, cannot import: %1</translation>
     </message>
     <message>
-        <location filename="../src/viewmodels/AgentViewModel.cpp" line="831"/>
+        <location filename="../src/viewmodels/AgentViewModel.cpp" line="846"/>
         <source>PDF 文件已损坏或格式无效，无法导入：%1</source>
         <translation>PDF file is corrupted or has an invalid format, cannot import: %1</translation>
     </message>
     <message>
-        <location filename="../src/viewmodels/AgentViewModel.cpp" line="834"/>
+        <location filename="../src/viewmodels/AgentViewModel.cpp" line="849"/>
         <source>未能从 PDF 中提取到文本（可能是扫描件，没有文本层）：%1</source>
         <translation>No text could be extracted from the PDF (it may be a scan without a text layer): %1</translation>
     </message>
     <message>
-        <location filename="../src/viewmodels/AgentViewModel.cpp" line="838"/>
+        <location filename="../src/viewmodels/AgentViewModel.cpp" line="853"/>
         <source>无法读取 PDF 文件：%1</source>
         <translation>Cannot read PDF file: %1</translation>
     </message>
     <message>
-        <location filename="../src/viewmodels/AgentViewModel.cpp" line="803"/>
+        <location filename="../src/viewmodels/AgentViewModel.cpp" line="818"/>
         <source>无法打开文件：%1</source>
         <translation>Cannot open file: %1</translation>
     </message>
     <message>
-        <location filename="../src/viewmodels/AgentViewModel.cpp" line="861"/>
+        <location filename="../src/viewmodels/AgentViewModel.cpp" line="876"/>
         <source>文档内容已存在，已跳过：%1</source>
         <translation>Document content already exists, skipped: %1</translation>
     </message>
     <message>
-        <location filename="../src/viewmodels/AgentViewModel.cpp" line="896"/>
+        <location filename="../src/viewmodels/AgentViewModel.cpp" line="911"/>
         <source>未找到文档内容，无法重新嵌入：%1</source>
         <translation>Document content not found, cannot re-embed: %1</translation>
     </message>
     <message>
-        <location filename="../src/viewmodels/AgentViewModel.cpp" line="914"/>
+        <location filename="../src/viewmodels/AgentViewModel.cpp" line="929"/>
         <source>已重新嵌入 %1（%2 段）</source>
         <translation>Re-embedded %1 (%2 chunks)</translation>
     </message>
     <message>
-        <location filename="../src/viewmodels/AgentViewModel.cpp" line="916"/>
+        <location filename="../src/viewmodels/AgentViewModel.cpp" line="931"/>
         <source>重新嵌入失败：%1</source>
         <translation>Re-embedding failed: %1</translation>
     </message>
     <message>
-        <location filename="../src/viewmodels/AgentViewModel.cpp" line="920"/>
+        <location filename="../src/viewmodels/AgentViewModel.cpp" line="935"/>
         <source>已导入 %1（%2 段）</source>
         <translation>Imported %1 (%2 chunks)</translation>
     </message>
     <message>
-        <location filename="../src/viewmodels/AgentViewModel.cpp" line="922"/>
+        <location filename="../src/viewmodels/AgentViewModel.cpp" line="937"/>
         <source>导入失败（文件为空或无法分块）：%1</source>
         <translation>Import failed (file is empty or cannot be chunked): %1</translation>
     </message>
     <message>
-        <location filename="../src/viewmodels/AgentViewModel.cpp" line="924"/>
+        <location filename="../src/viewmodels/AgentViewModel.cpp" line="939"/>
         <source>知识库总量已达上限（最多 %1 段），请先删除部分文档后再导入</source>
         <translation>Knowledge base has reached its limit (max %1 chunks); delete some documents before importing</translation>
     </message>
     <message>
-        <location filename="../src/viewmodels/AgentViewModel.cpp" line="927"/>
+        <location filename="../src/viewmodels/AgentViewModel.cpp" line="942"/>
         <source>文件过大（超过单文档 %1 段上限）：%2</source>
         <translation>File too large (exceeds the per-document limit of %1 chunks): %2</translation>
     </message>
     <message>
-        <location filename="../src/viewmodels/AgentViewModel.cpp" line="982"/>
+        <location filename="../src/viewmodels/AgentViewModel.cpp" line="1005"/>
+        <location filename="../src/viewmodels/AgentViewModel.cpp" line="1035"/>
         <source>数据库未就绪</source>
         <translation>Database not ready</translation>
     </message>
     <message>
-        <location filename="../src/viewmodels/AgentViewModel.cpp" line="989"/>
+        <location filename="../src/viewmodels/AgentViewModel.cpp" line="1012"/>
         <source>备份失败，详见日志</source>
         <translation>Backup failed; see the log for details</translation>
     </message>
     <message>
-        <location filename="../src/viewmodels/AgentViewModel.cpp" line="1207"/>
+        <location filename="../src/viewmodels/AgentViewModel.cpp" line="1040"/>
+        <source>无法读取该备份文件：%1</source>
+        <translation>Cannot read this backup file: %1</translation>
+    </message>
+    <message>
+        <location filename="../src/viewmodels/AgentViewModel.cpp" line="1042"/>
+        <source>备份完整性检查未通过，已取消恢复</source>
+        <translation>Backup failed the integrity check — restore cancelled</translation>
+    </message>
+    <message>
+        <location filename="../src/viewmodels/AgentViewModel.cpp" line="1057"/>
+        <source>恢复失败，原数据库已还原</source>
+        <translation>Restore failed; the original database was kept</translation>
+    </message>
+    <message>
+        <location filename="../src/viewmodels/AgentViewModel.cpp" line="1271"/>
         <source>文件过大（附件上限 %1 KB）：%2</source>
         <translation>File too large (attachment limit %1 KB): %2</translation>
     </message>
     <message>
-        <location filename="../src/viewmodels/AgentViewModel.cpp" line="1212"/>
+        <location filename="../src/viewmodels/AgentViewModel.cpp" line="1276"/>
         <source>暂不支持二进制文件作为附件：%1</source>
         <translation>Binary files are not supported as attachments yet: %1</translation>
     </message>
     <message>
-        <location filename="../src/viewmodels/AgentViewModel.cpp" line="1225"/>
+        <location filename="../src/viewmodels/AgentViewModel.cpp" line="1289"/>
         <source>已忽略 %1 个不支持的文件类型（仅支持图片与文本文件）</source>
         <translation>Ignored %1 file(s) of unsupported types (images and text files only)</translation>
     </message>
@@ -2541,32 +2557,32 @@ and the model can retrieve their content to answer questions</translation>
 <context>
     <name>QObject</name>
     <message>
-        <location filename="../src/main.cpp" line="797"/>
+        <location filename="../src/main.cpp" line="809"/>
         <source>显示/隐藏主窗</source>
         <translation>Show / hide main window</translation>
     </message>
     <message>
-        <location filename="../src/main.cpp" line="798"/>
+        <location filename="../src/main.cpp" line="810"/>
         <source>新建会话</source>
         <translation>New session</translation>
     </message>
     <message>
-        <location filename="../src/main.cpp" line="800"/>
+        <location filename="../src/main.cpp" line="812"/>
         <source>退出</source>
         <translation>Quit</translation>
     </message>
     <message>
-        <location filename="../src/main.cpp" line="854"/>
+        <location filename="../src/main.cpp" line="866"/>
         <source>任务完成</source>
         <translation>Task finished</translation>
     </message>
     <message>
-        <location filename="../src/main.cpp" line="854"/>
+        <location filename="../src/main.cpp" line="866"/>
         <source>任务结束</source>
         <translation>Task ended</translation>
     </message>
     <message>
-        <location filename="../src/main.cpp" line="855"/>
+        <location filename="../src/main.cpp" line="867"/>
         <source>会话已回复</source>
         <translation>The session has replied</translation>
     </message>
@@ -2689,179 +2705,200 @@ and the model can retrieve their content to answer questions</translation>
         <translation>Settings and backup page</translation>
     </message>
     <message>
-        <location filename="../src/ui/pages/SettingsBackupPage.qml" line="35"/>
+        <location filename="../src/ui/pages/SettingsBackupPage.qml" line="38"/>
         <source>设置与备份</source>
         <translation>Settings and Backup</translation>
     </message>
     <message>
-        <location filename="../src/ui/pages/SettingsBackupPage.qml" line="44"/>
+        <location filename="../src/ui/pages/SettingsBackupPage.qml" line="47"/>
         <source>将应用设置保存为 JSON 文件，或从备份文件恢复。已知密钥字段和 SQLite 数据（如聊天记录与长期记忆）不包含在内；自由文本及 MCP 命令参数可能含有敏感内容。</source>
         <translation>Save app settings to a JSON file or restore them from a backup. Known secret fields and SQLite data (such as chat history and long-term memory) are excluded; free-form text and MCP command arguments may contain sensitive information.</translation>
     </message>
     <message>
-        <location filename="../src/ui/pages/SettingsBackupPage.qml" line="73"/>
-        <location filename="../src/ui/pages/SettingsBackupPage.qml" line="205"/>
+        <location filename="../src/ui/pages/SettingsBackupPage.qml" line="76"/>
+        <location filename="../src/ui/pages/SettingsBackupPage.qml" line="208"/>
         <source>导出设置</source>
         <translation>Export Settings</translation>
     </message>
     <message>
-        <location filename="../src/ui/pages/SettingsBackupPage.qml" line="80"/>
+        <location filename="../src/ui/pages/SettingsBackupPage.qml" line="83"/>
         <source>选择保存位置，生成可用于迁移设置的 JSON 备份。请妥善保管备份文件。</source>
         <translation>Choose where to save a JSON backup for migrating your settings. Keep the backup file safe.</translation>
     </message>
     <message>
-        <location filename="../src/ui/pages/SettingsBackupPage.qml" line="88"/>
+        <location filename="../src/ui/pages/SettingsBackupPage.qml" line="91"/>
         <source>导出 JSON…</source>
         <translation>Export JSON…</translation>
     </message>
     <message>
-        <location filename="../src/ui/pages/SettingsBackupPage.qml" line="113"/>
+        <location filename="../src/ui/pages/SettingsBackupPage.qml" line="116"/>
         <source>从备份恢复</source>
         <translation>Restore from Backup</translation>
     </message>
     <message>
-        <location filename="../src/ui/pages/SettingsBackupPage.qml" line="120"/>
+        <location filename="../src/ui/pages/SettingsBackupPage.qml" line="123"/>
         <source>先预览将恢复的设置，再确认导入；高风险权限及开机自启需在恢复后重新确认。建议恢复后重启应用。</source>
         <translation>Preview the settings to be restored before confirming the import. Review high-risk permissions and launch at startup again afterward. Restarting the app is recommended.</translation>
     </message>
     <message>
-        <location filename="../src/ui/pages/SettingsBackupPage.qml" line="128"/>
+        <location filename="../src/ui/pages/SettingsBackupPage.qml" line="131"/>
         <source>选择 JSON 备份…</source>
         <translation>Select JSON Backup…</translation>
     </message>
     <message>
-        <location filename="../src/ui/pages/SettingsBackupPage.qml" line="153"/>
+        <location filename="../src/ui/pages/SettingsBackupPage.qml" line="156"/>
         <source>数据库备份</source>
         <translation>Database backup</translation>
     </message>
     <message>
-        <location filename="../src/ui/pages/SettingsBackupPage.qml" line="160"/>
+        <location filename="../src/ui/pages/SettingsBackupPage.qml" line="163"/>
         <source>聊天记录、思考轨迹与知识库保存在 SQLite 数据库中，设置 JSON 备份不包含它们。启动时会自动备份并保留最近 %1 份；此处可随时手动备份，或预览任一备份文件的内容概况。</source>
         <translation>Chats, thinking traces and the knowledge base live in the SQLite database and are not covered by the settings JSON backup. A backup is taken at startup and the latest %1 are kept; back up manually here at any time, or preview the contents of any backup file.</translation>
     </message>
     <message>
-        <location filename="../src/ui/pages/SettingsBackupPage.qml" line="170"/>
+        <location filename="../src/ui/pages/SettingsBackupPage.qml" line="173"/>
         <source>立即备份</source>
         <translation>Back up now</translation>
     </message>
     <message>
-        <location filename="../src/ui/pages/SettingsBackupPage.qml" line="176"/>
+        <location filename="../src/ui/pages/SettingsBackupPage.qml" line="179"/>
         <source>数据库已备份到 %1。</source>
         <translation>Database backed up to %1.</translation>
     </message>
     <message>
-        <location filename="../src/ui/pages/SettingsBackupPage.qml" line="181"/>
+        <location filename="../src/ui/pages/SettingsBackupPage.qml" line="184"/>
         <source>预览备份文件…</source>
         <translation>Preview a backup file…</translation>
     </message>
     <message>
-        <location filename="../src/ui/pages/SettingsBackupPage.qml" line="208"/>
-        <location filename="../src/ui/pages/SettingsBackupPage.qml" line="221"/>
+        <location filename="../src/ui/pages/SettingsBackupPage.qml" line="211"/>
+        <location filename="../src/ui/pages/SettingsBackupPage.qml" line="224"/>
         <source>JSON 文件 (*.json)</source>
         <translation>JSON files (*.json)</translation>
     </message>
     <message>
-        <location filename="../src/ui/pages/SettingsBackupPage.qml" line="212"/>
+        <location filename="../src/ui/pages/SettingsBackupPage.qml" line="215"/>
         <source>导出失败。</source>
         <translation>Export failed.</translation>
     </message>
     <message>
-        <location filename="../src/ui/pages/SettingsBackupPage.qml" line="213"/>
+        <location filename="../src/ui/pages/SettingsBackupPage.qml" line="216"/>
         <source>设置已导出。已知密钥字段已过滤；请检查自由文本和 MCP 命令参数。</source>
         <translation>Settings exported. Known secret fields have been filtered out; review free-form text and MCP command arguments.</translation>
     </message>
     <message>
-        <location filename="../src/ui/pages/SettingsBackupPage.qml" line="219"/>
+        <location filename="../src/ui/pages/SettingsBackupPage.qml" line="222"/>
         <source>选择设置备份</source>
         <translation>Select Settings Backup</translation>
     </message>
     <message>
-        <location filename="../src/ui/pages/SettingsBackupPage.qml" line="230"/>
+        <location filename="../src/ui/pages/SettingsBackupPage.qml" line="233"/>
         <source>无法预览此备份文件。</source>
         <translation>Unable to preview this backup file.</translation>
     </message>
     <message>
-        <location filename="../src/ui/pages/SettingsBackupPage.qml" line="242"/>
+        <location filename="../src/ui/pages/SettingsBackupPage.qml" line="245"/>
         <source>选择数据库备份</source>
         <translation>Choose database backup</translation>
     </message>
     <message>
-        <location filename="../src/ui/pages/SettingsBackupPage.qml" line="244"/>
+        <location filename="../src/ui/pages/SettingsBackupPage.qml" line="247"/>
         <source>SQLite 数据库 (*.db)</source>
         <translation>SQLite database (*.db)</translation>
     </message>
     <message>
-        <location filename="../src/ui/pages/SettingsBackupPage.qml" line="249"/>
+        <location filename="../src/ui/pages/SettingsBackupPage.qml" line="252"/>
         <source>无法读取该备份文件：%1</source>
         <translation>Cannot read this backup file: %1</translation>
     </message>
     <message>
-        <location filename="../src/ui/pages/SettingsBackupPage.qml" line="253"/>
+        <location filename="../src/ui/pages/SettingsBackupPage.qml" line="258"/>
         <source>会话 %1 个，消息 %2 条，知识库文档 %3 份，最新消息时间 %4%5</source>
         <translation>%1 sessions, %2 messages, %3 knowledge documents; newest message at %4%5</translation>
     </message>
     <message>
-        <location filename="../src/ui/pages/SettingsBackupPage.qml" line="259"/>
+        <location filename="../src/ui/pages/SettingsBackupPage.qml" line="264"/>
         <source>（无消息）</source>
         <translation>(no messages)</translation>
     </message>
     <message>
-        <location filename="../src/ui/pages/SettingsBackupPage.qml" line="262"/>
+        <location filename="../src/ui/pages/SettingsBackupPage.qml" line="267"/>
         <source>；警告：完整性检查未通过，可能已损坏</source>
         <translation>; warning: integrity check failed, the file may be corrupted</translation>
     </message>
     <message>
-        <location filename="../src/ui/pages/SettingsBackupPage.qml" line="280"/>
+        <location filename="../src/ui/pages/SettingsBackupPage.qml" line="290"/>
+        <source>恢复数据库</source>
+        <translation>Restore database</translation>
+    </message>
+    <message>
+        <location filename="../src/ui/pages/SettingsBackupPage.qml" line="297"/>
+        <source>将把当前数据库替换为该备份：会话 %1 个、消息 %2 条。恢复会关闭全部标签并停止在跑任务，期间界面会短暂无响应。当前未备份的新数据将丢失（启动自动备份仍可用）。</source>
+        <translation>This replaces the current database with the backup: %1 sessions, %2 messages. Restoring closes all tabs and stops running tasks; the UI is briefly unresponsive. New data not backed up yet is lost (startup automatic backups remain available).</translation>
+    </message>
+    <message>
+        <location filename="../src/ui/pages/SettingsBackupPage.qml" line="313"/>
+        <source>恢复</source>
+        <translation>Restore</translation>
+    </message>
+    <message>
+        <location filename="../src/ui/pages/SettingsBackupPage.qml" line="322"/>
+        <source>数据库已恢复，知识库正在重新装载。</source>
+        <translation>Database restored; the knowledge base is reloading.</translation>
+    </message>
+    <message>
+        <location filename="../src/ui/pages/SettingsBackupPage.qml" line="343"/>
         <source>确认恢复设置？</source>
         <translation>Restore settings?</translation>
     </message>
     <message>
-        <location filename="../src/ui/pages/SettingsBackupPage.qml" line="297"/>
+        <location filename="../src/ui/pages/SettingsBackupPage.qml" line="360"/>
         <source>即将恢复的分类：%1</source>
         <translation>Categories to restore: %1</translation>
     </message>
     <message>
-        <location filename="../src/ui/pages/SettingsBackupPage.qml" line="299"/>
+        <location filename="../src/ui/pages/SettingsBackupPage.qml" line="362"/>
         <source>无</source>
         <translation>None</translation>
     </message>
     <message>
-        <location filename="../src/ui/pages/SettingsBackupPage.qml" line="308"/>
+        <location filename="../src/ui/pages/SettingsBackupPage.qml" line="371"/>
         <source>备份不含以下密钥：%1</source>
         <translation>Secrets not included in the backup: %1</translation>
     </message>
     <message>
-        <location filename="../src/ui/pages/SettingsBackupPage.qml" line="318"/>
+        <location filename="../src/ui/pages/SettingsBackupPage.qml" line="381"/>
         <source>备份提示：%1</source>
         <translation>Backup notes: %1</translation>
     </message>
     <message>
-        <location filename="../src/ui/pages/SettingsBackupPage.qml" line="327"/>
+        <location filename="../src/ui/pages/SettingsBackupPage.qml" line="390"/>
         <source>匹配相同端点的本机密钥会保留；新端点需要重新配置密钥。SQLite 数据不会恢复。恢复会覆盖相应设置，MCP 服务立即禁用；请重启应用并重新确认高风险权限和开机自启。</source>
         <translation>Local secrets for matching endpoints are retained; configure secrets again for new endpoints. SQLite data is not restored. Settings are overwritten and MCP servers are disabled immediately. Restart the app and review high-risk permissions and launch at startup.</translation>
     </message>
     <message>
-        <location filename="../src/ui/pages/SettingsBackupPage.qml" line="342"/>
+        <location filename="../src/ui/pages/SettingsBackupPage.qml" line="309"/>
+        <location filename="../src/ui/pages/SettingsBackupPage.qml" line="405"/>
         <source>取消</source>
         <translation>Cancel</translation>
     </message>
     <message>
-        <location filename="../src/ui/pages/SettingsBackupPage.qml" line="346"/>
+        <location filename="../src/ui/pages/SettingsBackupPage.qml" line="409"/>
         <source>确认恢复</source>
         <translation>Confirm Restore</translation>
     </message>
     <message>
-        <location filename="../src/ui/pages/SettingsBackupPage.qml" line="357"/>
+        <location filename="../src/ui/pages/SettingsBackupPage.qml" line="420"/>
         <source>恢复失败。</source>
         <translation>Restore failed.</translation>
     </message>
     <message>
-        <location filename="../src/ui/pages/SettingsBackupPage.qml" line="359"/>
+        <location filename="../src/ui/pages/SettingsBackupPage.qml" line="422"/>
         <source>设置已恢复，请重启应用后检查高风险权限和开机自启。</source>
         <translation>Settings restored. Restart the app, then check high-risk permissions and launch at startup.</translation>
     </message>
     <message>
-        <location filename="../src/ui/pages/SettingsBackupPage.qml" line="360"/>
+        <location filename="../src/ui/pages/SettingsBackupPage.qml" line="423"/>
         <source>设置已恢复，建议重启应用并重新确认高风险权限和开机自启。</source>
         <translation>Settings restored. Restarting the app and reviewing high-risk permissions and launch at startup are recommended.</translation>
     </message>
@@ -3246,7 +3283,7 @@ and the model can retrieve their content to answer questions</translation>
         <translation>Yesterday</translation>
     </message>
     <message>
-        <location filename="../src/core/memory/SqliteMemory.cpp" line="883"/>
+        <location filename="../src/core/memory/SqliteMemory.cpp" line="890"/>
         <source>消息库超过 %1 条：少于 3 个字符的关键词只能全表扫描，请输入至少 3 个字符以使用全文索引。</source>
         <translation>The message store exceeds %1 rows: keywords shorter than 3 characters fall back to a full table scan. Enter at least 3 characters to use the full-text index.</translation>
     </message>
@@ -4205,7 +4242,7 @@ and the model can retrieve their content to answer questions</translation>
     <message>
         <location filename="../src/ui/main.qml" line="378"/>
         <source>已删除会话「%1」，可撤销</source>
-        <translation>Session "%1" deleted — undo available</translation>
+        <translation>Session &quot;%1&quot; deleted — undo available</translation>
     </message>
     <message>
         <location filename="../src/ui/main.qml" line="379"/>
