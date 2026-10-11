@@ -17,12 +17,21 @@ class ToolRegistry : public QObject {
 public:
     static ToolRegistry& instance();
 
-    void registerTool(std::unique_ptr<ITool> tool);
+    // Accepts shared ownership; a unique_ptr converts implicitly, so the
+    // existing make_unique call sites compile unchanged (docs/22 F1).
+    void registerTool(std::shared_ptr<ITool> tool);
     ITool* find(const QString& name) const;
-    // Batch 31a: removes the tool and transfers ownership to the caller —
-    // dynamic MCP tools must outlive their registry entry while an in-flight
-    // execute() may still be running on a pool thread.
-    std::unique_ptr<ITool> takeTool(const QString& name);
+    // Strong-reference lookup for the dispatch path: the caller (AIAgent)
+    // keeps this shared_ptr alive across the pool-thread execute(), so the
+    // tool survives being unregistered mid-flight (MCP server disconnect,
+    // docs/22 F1).
+    std::shared_ptr<ITool> findShared(const QString& name) const;
+    // docs/22 F1: removes the tool from the registry and hands back the
+    // registry's shared reference. Whether the caller keeps or discards the
+    // return value, a tool still executing on a pool thread stays alive —
+    // the dispatcher holds its own reference for exactly that window and
+    // the object dies when the last reference drops.
+    std::shared_ptr<ITool> takeTool(const QString& name);
     QVector<ToolDefinition> listAll() const;
     bool isRegistered(const QString& name) const;
     // Names of the tools the model is allowed to call (Dangerous excluded) -
@@ -59,9 +68,10 @@ private:
     void loadDisabledFromSettings();
     void saveDisabledToSettings();
 
-    // Store tools with unique ownership; use raw pointers for lookup
-    std::vector<std::unique_ptr<ITool>> m_ownedTools;
-    QHash<QString, ITool*> m_tools;
+    // Shared ownership: registry entries and in-flight pool dispatches
+    // co-own the tool; the last reference releases it (docs/22 F1).
+    std::vector<std::shared_ptr<ITool>> m_ownedTools;
+    QHash<QString, std::shared_ptr<ITool>> m_tools;
     QSet<QString> m_disabledTools;
     QSet<QString> m_policyBlocked;   // docs/17 B1: 运行时策略拦截，不落盘
 };

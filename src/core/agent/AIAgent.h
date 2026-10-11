@@ -278,11 +278,13 @@ private:
     // pending queue, so stop() must seal it separately.
     ToolCallInfo m_currentExecutingCall;
     // Batch 13 (SEC-1302): tools dispatched to the pool and not finished yet
-    // (call id -> registry-owned tool, no ownership). stop() walks this to
+    // (call id -> tool, strong shared reference). stop() walks this to
     // invoke ITool::cancel() so side effects terminate instead of running to
     // completion; entries are removed in the watcher callback on both the
-    // normal and the epoch-drop path. No ownership - never delete.
-    QHash<QString, ITool*> m_inFlightTools;
+    // normal and the epoch-drop path. The shared reference keeps the tool
+    // alive when it is unregistered mid-flight (MCP server disconnect,
+    // docs/22 F1) while a pool thread is still inside execute().
+    QHash<QString, std::shared_ptr<ITool>> m_inFlightTools;
     QHash<QString, std::shared_ptr<std::atomic<bool>>> m_toolCancellations;
     QString m_confirmNodeId;  // trace node of the pending confirmation
     // Actual tool executions in the current request (m_maxToolExecutions cap;

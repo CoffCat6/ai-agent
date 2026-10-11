@@ -209,7 +209,8 @@ void McpManager::addServer(const QVariantMap& server) {
 void McpManager::removeServer(const QString& name) {
     if (McpClient* client = clientFor(name)) {
         client->disconnectFromServer();
-        // takeTool first (disconnected already did), then drop the client.
+        // Unregister the tools; discarding the shared_ptr return is safe —
+        // in-flight executes hold their own reference (docs/22 F1).
         for (const auto& tool : client->tools())
             ToolRegistry::instance().takeTool(
                 McpToolAdapter::registryNameFor(client->serverName(), tool.name));

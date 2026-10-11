@@ -5,6 +5,7 @@
 #include <QJsonArray>
 #include <QJsonObject>
 #include <QMutex>
+#include <QPointer>
 #include <QWaitCondition>
 #include <atomic>
 
@@ -36,7 +37,10 @@ public:
     void cancel() override;
 
 private:
-    McpClient* m_client{nullptr};
+    // Guarded: an in-flight execute() on the pool thread can outlive the
+    // client (server removed mid-call, docs/22 F1) — the tool itself stays
+    // alive via the dispatch shared_ptr, the client must be checked.
+    QPointer<McpClient> m_client{nullptr};
     QString m_serverName;
     QString m_toolName;
     QString m_description;

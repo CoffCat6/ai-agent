@@ -1483,7 +1483,11 @@ void AIAgent::dispatchToolExecution(const ToolCallInfo& call, const QString& tra
     ++m_toolExecutions;
     m_currentExecutingCall = call;
 
-    ITool* tool = m_toolRegistry ? m_toolRegistry->find(call.name) : nullptr;
+    // docs/22 F1: dispatch holds a strong reference — the tool stays alive
+    // for the whole pool-thread execute() even if the registry entry is
+    // removed mid-flight (MCP server disconnect / disable).
+    const std::shared_ptr<ITool> tool =
+        m_toolRegistry ? m_toolRegistry->findShared(call.name) : nullptr;
     const quint64 epoch = m_epoch;
     const auto cancelled = std::make_shared<std::atomic<bool>>(false);
     m_toolCancellations.insert(call.id, cancelled);

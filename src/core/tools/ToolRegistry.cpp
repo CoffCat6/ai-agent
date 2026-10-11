@@ -423,18 +423,18 @@ void ToolRegistry::registerBuiltins() {
     registerTool(std::make_unique<ShellExecTool>());
 }
 
-void ToolRegistry::registerTool(std::unique_ptr<ITool> tool) {
+void ToolRegistry::registerTool(std::shared_ptr<ITool> tool) {
     if (!tool) return;
     QString name = tool->definition().name;
-    m_tools.insert(name, tool.get());
+    m_tools.insert(name, tool);
     m_ownedTools.push_back(std::move(tool));
     emit toolsChanged();
 }
 
-std::unique_ptr<ITool> ToolRegistry::takeTool(const QString& name) {
+std::shared_ptr<ITool> ToolRegistry::takeTool(const QString& name) {
     for (auto it = m_ownedTools.begin(); it != m_ownedTools.end(); ++it) {
         if ((*it)->definition().name == name) {
-            std::unique_ptr<ITool> taken = std::move(*it);
+            std::shared_ptr<ITool> taken = *it;
             m_ownedTools.erase(it);
             m_tools.remove(name);      // keep the name index in sync
             m_disabledTools.remove(name);
@@ -448,8 +448,12 @@ std::unique_ptr<ITool> ToolRegistry::takeTool(const QString& name) {
 ITool* ToolRegistry::find(const QString& name) const {
     auto it = m_tools.find(name);
     if (it != m_tools.end())
-        return it.value();
+        return it.value().get();
     return nullptr;
+}
+
+std::shared_ptr<ITool> ToolRegistry::findShared(const QString& name) const {
+    return m_tools.value(name);
 }
 
 QVector<ToolDefinition> ToolRegistry::listAll() const {

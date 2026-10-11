@@ -323,10 +323,55 @@ private slots:
         QVERIFY(registry.find(name) != nullptr);
         QVERIFY(registry.isRegistered(name));
 
-        // takeTool transfers ownership out (no dangling registry entry).
+        // docs/22 F1: takeTool removes the registry entry and hands back
+        // the shared reference — the taken tool stays fully usable.
         auto taken = registry.takeTool(name);
         QVERIFY(taken != nullptr);
         QVERIFY(registry.find(name) == nullptr);
+        QCOMPARE(taken->definition().name, name);
+    }
+
+    // docs/22 F1: a tool unregistered mid-flight must survive until the
+    // pool-thread execute() returns. McpManager discards takeTool's return
+    // value; the dispatch path holds a shared_ptr reference for exactly
+    // that window (pre-fix this test was a use-after-free).
+    void takeToolWhileInFlightKeepsToolAlive() {
+        class SlowTool : public ITool {
+        public:
+            ToolDefinition definition() const override {
+                ToolDefinition def;
+                def.name = QStringLiteral("test_slow_owner");
+                return def;
+            }
+            ToolResult execute(const QJsonObject&) override {
+                QTest::qSleep(200);
+                return ToolResult::ok(QStringLiteral("slow-done"));
+            }
+        };
+
+        auto& registry = ToolRegistry::instance();
+        const QString name = QStringLiteral("test_slow_owner");
+        registry.registerTool(std::make_unique<SlowTool>());
+        const std::shared_ptr<ITool> dispatched = registry.findShared(name);
+        QVERIFY(dispatched != nullptr);
+
+        QThread* worker = QThread::create([dispatched]() {
+            const ToolResult result = dispatched->execute({});
+            QVERIFY(result.success);
+            QCOMPARE(result.output, QStringLiteral("slow-done"));
+        });
+        QObject::connect(worker, &QThread::finished, worker,
+                         &QThread::deleteLater);
+        worker->start();
+
+        // While execute() is sleeping, remove the registry entry and drop
+        // the ownership on the floor — as McpManager does on disconnect.
+        QTest::qWait(60);
+        registry.takeTool(name);
+        QVERIFY(registry.find(name) == nullptr);
+
+        QVERIFY(QTest::qWaitFor([worker]() { return worker->isFinished(); },
+                                5000));
     }
 
     // Cancel: the waiting execute() slices on the atomic flag and bails.

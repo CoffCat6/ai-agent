@@ -61,13 +61,18 @@ ToolDefinition McpToolAdapter::definition() const {
 }
 
 ToolResult McpToolAdapter::execute(const QJsonObject& args) {
-    if (!m_client)
+    // docs/22 F1: the client may be torn down while this call is in flight
+    // (server removed/disabled). QPointer nulls out as soon as destruction
+    // starts; the receiver-context invokeMethod then drops the queued call
+    // if the client dies before it is delivered.
+    McpClient* client = m_client.data();
+    if (!client)
         return ToolResult::fail(QStringLiteral("MCP client unavailable"));
 
     auto pending = std::make_shared<PendingCall>();
 
     // Register the call on the GUI thread where the client/transport live.
-    QMetaObject::invokeMethod(m_client, [this, pending, args]() {
+    QMetaObject::invokeMethod(client, [this, pending, args]() {
         const quint64 id = m_client->callTool(m_toolName, args,
             [pending](bool isError, const QString& text, const QString& error) {
                 QMutexLocker lock(&pending->mutex);
@@ -103,7 +108,10 @@ ToolResult McpToolAdapter::execute(const QJsonObject& args) {
                 QMutexLocker lock(&pending->mutex);
                 return pending->requestId;
             }();
-            QMetaObject::invokeMethod(m_client, [this, requestId]() {
+            McpClient* cancelTarget = m_client.data();
+            if (!cancelTarget)
+                return ToolResult::fail(QStringLiteral("MCP client unavailable"));
+            QMetaObject::invokeMethod(cancelTarget, [this, requestId]() {
                 m_client->cancelRequest(requestId);
             }, Qt::QueuedConnection);
             // Cooperative cancel: give the round trip a short grace period,
