@@ -55,6 +55,8 @@ private slots:
     // docs/23 G4: write_file is atomic and byte-exact (no CRLF translation)
     void writeFileRoundTripsLfBytes();
     void writeFileToDirectoryFailsWithOpenError();
+    // docs/24 H3: read_file refuses oversized files before reading
+    void readFileOversizeRefusedBeforeRead();
 };
 
 void TestSandbox::allowsUserWrites() {
@@ -647,6 +649,39 @@ void TestSandbox::writeFileToDirectoryFailsWithOpenError() {
     QVERIFY(!r.success);
     QVERIFY2(r.error.contains(QStringLiteral("Cannot open file")),
              qPrintable(r.error));
+}
+
+// docs/24 H3: a file beyond the pre-read bound is refused before any bulk
+// read — the Safe-level tool must not spike memory on a huge target.
+void TestSandbox::readFileOversizeRefusedBeforeRead() {
+    QTemporaryDir dir = sandboxTempDir();
+    QVERIFY(dir.isValid());
+
+    const QString big = dir.filePath("big.txt");
+    {
+        QFile f(big);
+        QVERIFY(f.open(QIODevice::WriteOnly));
+        f.write(QByteArray(9 * 1024 * 1024, 'x'));
+        f.close();
+    }
+
+    ITool* tool = ToolRegistry::instance().find(QStringLiteral("read_file"));
+    QVERIFY(tool);
+    const ToolResult r = tool->execute(QJsonObject{{"path", big}});
+    QVERIFY(!r.success);
+    QVERIFY2(r.error.contains(QStringLiteral("File too large")),
+             qPrintable(r.error));
+
+    // Regular files keep working.
+    const QString small = dir.filePath("small.txt");
+    {
+        QFile f(small);
+        QVERIFY(f.open(QIODevice::WriteOnly));
+        f.write("tiny");
+    }
+    const ToolResult ok = tool->execute(QJsonObject{{"path", small}});
+    QVERIFY(ok.success);
+    QCOMPARE(ok.output, QStringLiteral("tiny"));
 }
 
 QTEST_GUILESS_MAIN(TestSandbox)

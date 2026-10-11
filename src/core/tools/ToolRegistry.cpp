@@ -36,6 +36,9 @@ QJsonObject stringParam(const QString& description) {
 
 constexpr int kMaxFileChars = 20000;
 constexpr int kMaxOutputChars = 8000;
+// docs/24 H3: pre-read refusal bound for read_file (bytes, checked before
+// readAll — the character cap only applies to the model-facing output).
+constexpr qint64 kMaxReadFileBytes = 8 * 1024 * 1024;
 
 QString truncateOutput(const QString& text, int maxChars) {
     if (text.size() <= maxChars) return text;
@@ -76,6 +79,17 @@ public:
             return ToolResult::fail("File does not exist: " + path);
         if (!file.open(QIODevice::ReadOnly | QIODevice::Text))
             return ToolResult::fail("Cannot open file: " + file.errorString());
+
+        // docs/24 H3: refuse before reading — read_file is a Safe-level
+        // (no-confirmation) tool, and the character cap below only kicks in
+        // AFTER the whole file has been read into memory. A prompt-injected
+        // model pointing at a multi-gigabyte file must not spike memory.
+        if (file.size() > kMaxReadFileBytes) {
+            return ToolResult::fail(
+                QStringLiteral("File too large to read (%1 bytes; limit %2). "
+                               "Read it in parts with other tools if really needed.")
+                    .arg(file.size()).arg(kMaxReadFileBytes));
+        }
 
         // Try UTF-8 first (Qt 6 default); if the byte sequence is not valid
         // UTF-8, fall back to the system locale encoding so non-UTF-8 text
