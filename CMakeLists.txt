@@ -49,6 +49,7 @@ add_library(nexus_core STATIC
     src/core/tools/ToolRegistry.h
     src/core/tools/ToolRegistry.cpp
     src/core/tools/Sandbox.h
+    src/core/tools/SandboxWin.cpp
     src/core/tools/WebSearchBackend.h
     src/core/tools/WebSearchBackend.cpp
     src/core/tools/WebSearchTool.h

@@ -12,6 +12,15 @@
 
 namespace NexusAI {
 
+// docs/22 F4 (Windows only, defined in SandboxWin.cpp): resolves the
+// deepest existing component of the path through NTFS reparse points
+// (junctions/symlinks) via GetFinalPathNameByHandle; empty when nothing on
+// the chain exists or opens. Qt's canonicalFilePath() does NOT traverse
+// junctions on Windows, so the sandbox needs the native resolver.
+#ifdef Q_OS_WIN
+QString sandboxNativeFinalPath(const QString& path);
+#endif
+
 // Sandbox security validator - enforces path and tool-level restrictions.
 //
 // docs/17 A1（定稿 v2）判定顺序（优先级从高到低）：
@@ -133,6 +142,13 @@ public:
         };
         if (path.isEmpty()) return deny(isWrite ? DenyReason::WritePolicy
                                                 : DenyReason::ReadPolicy);
+
+        // docs/22 F4: device / extended-length prefixes bypass every
+        // normalization Qt can perform (canonical or ancestor resolution
+        // both fail on them) — reject before anything else.
+        if (path.startsWith(QStringLiteral("\\\\.\\"))
+                || path.startsWith(QStringLiteral("\\\\?\\")))
+            return deny(DenyReason::SystemPath);
 
         // P0-2: 先锚定相对路径（项目激活时以项目根为基准），再 canonicalize。
         const QString normalizedPath = cleanPath(resolvePath(path));
@@ -288,13 +304,64 @@ private:
         return false;
     }
 
-    // Resolve symlinks when the target exists, otherwise lexically collapse
-    // "."/".." segments (works for files that are about to be created).
+    // Resolve the real location of `path` for policy matching.
+    //
+    // docs/22 F4: links only live in directories that already exist, so the
+    // resolver finds the deepest EXISTING component, resolves it to its
+    // final location (Windows: GetFinalPathNameByHandle, which traverses
+    // junctions/symlinks — Qt's canonicalFilePath() does not; POSIX:
+    // canonicalFilePath, which does), then re-joins the not-yet-existing
+    // tail lexically (".." is already collapsed by the absolute path).
+    // This keeps the core invariant "validated path == actually touched
+    // path" on both the write path (target usually absent) and the read
+    // path (existing targets behind a planted junction).
     static QString cleanPath(const QString& path) {
         const QFileInfo info(path);
+        const QString absolute = QDir::cleanPath(info.absoluteFilePath());
+#ifdef Q_OS_WIN
+        QDir dir(absolute);
+        QStringList tail;   // not-yet-existing segments below the anchor
+        while (!dir.isRoot()) {
+            const QString resolved = sandboxNativeFinalPath(dir.absolutePath());
+            if (!resolved.isEmpty()) {
+                const QString joined = tail.isEmpty()
+                    ? resolved
+                    : resolved + QLatin1Char('/')
+                        + tail.join(QLatin1Char('/'));
+                return QDir::toNativeSeparators(QDir::cleanPath(joined));
+            }
+            tail.prepend(dir.dirName());
+            dir.setPath(QDir::cleanPath(
+                dir.absoluteFilePath(QStringLiteral(".."))));
+        }
+        return QDir::toNativeSeparators(absolute);
+#else
         const QString canonical = info.canonicalFilePath();
-        return QDir::toNativeSeparators(canonical.isEmpty()
-            ? info.absoluteFilePath() : canonical);
+        if (!canonical.isEmpty())
+            return QDir::toNativeSeparators(canonical);
+        QDir dir(absolute);
+        QStringList tail;
+        while (!dir.isRoot()) {
+            const QString parentPath = QDir::cleanPath(
+                dir.absoluteFilePath(QStringLiteral("..")));
+            const QString parentCanon =
+                QFileInfo(parentPath).canonicalFilePath();
+            if (!parentCanon.isEmpty()) {
+                // dir itself does not exist (its own canonicalFilePath()
+                // came back empty), so dir.dirName() is the first missing
+                // segment; tail holds the ones below it.
+                QStringList segments;
+                segments.append(dir.dirName());
+                segments.append(tail);
+                const QString joined = parentCanon + QLatin1Char('/')
+                    + segments.join(QLatin1Char('/'));
+                return QDir::toNativeSeparators(QDir::cleanPath(joined));
+            }
+            tail.prepend(dir.dirName());
+            dir.setPath(parentPath);
+        }
+        return QDir::toNativeSeparators(absolute);
+#endif
     }
 
     // True when path equals base or lies underneath it

@@ -3,9 +3,12 @@
 #include "core/tools/ToolRegistry.h"
 
 #include <QtTest>
+#include <QDir>
+#include <QProcess>
 #include <QStandardPaths>
 #include <QTemporaryDir>
 #include <QFile>
+#include <QFileInfo>
 #include <QJsonDocument>
 #include <QJsonObject>
 
@@ -46,6 +49,9 @@ private slots:
     // Encoding fallback: read_file must handle non-UTF-8 files gracefully
     void readFileUtf8RoundTrip();
     void readFileNonUtf8FallsBackToLocal();
+    // docs/22 F4: write-path link resolution
+    void devicePathsAreRejected();
+    void junctionParentChainResolvedForWrites();
 };
 
 void TestSandbox::allowsUserWrites() {
@@ -521,6 +527,79 @@ void TestSandbox::readFileNonUtf8FallsBackToLocal() {
              qPrintable(QStringLiteral("expected 中文, got: %1").arg(r.output)));
 #else
     QSKIP("GBK fallback is Windows-specific (local encoding is CP936)");
+#endif
+}
+
+// docs/22 F4: device / extended-length prefixes bypass every normalization
+// Qt can perform — rejected outright before any resolution.
+void TestSandbox::devicePathsAreRejected() {
+    Sandbox::DenyReason reason = Sandbox::DenyReason::None;
+    QVERIFY(!Sandbox::validatePath(QStringLiteral("\\\\.\\C:\\evil.txt"),
+                                   true, &reason));
+    QCOMPARE(reason, Sandbox::DenyReason::SystemPath);
+    QVERIFY(!Sandbox::validatePath(QStringLiteral("\\\\?\\C:\\Users\\evil.txt"),
+                                   false, &reason));
+    QCOMPARE(reason, Sandbox::DenyReason::SystemPath);
+}
+
+// docs/22 F4: a directory junction planted inside the project must not
+// tunnel writes to the linked target — the write path canonicalizes the
+// deepest existing ancestor, so the policy matches the real destination.
+void TestSandbox::junctionParentChainResolvedForWrites() {
+#ifdef Q_OS_WIN
+    QTemporaryDir area;
+    QVERIFY(area.isValid());
+    const QString root = area.filePath(QStringLiteral("project"));
+    QVERIFY(QDir().mkpath(root));
+
+    // Junction target outside every write allowlist, but guaranteed to
+    // exist: C:\ProgramData is not under the user profile, not a blocked
+    // system path and not deny-listed.
+    const QFileInfo targetInfo(QStringLiteral("C:\\ProgramData"));
+    if (!targetInfo.isDir())
+        QSKIP("C:\\ProgramData unavailable in this environment");
+
+    const QString link = root + QStringLiteral("\\link");
+    QProcess mklink;
+    // mklink is a cmd builtin that rejects forward slashes ("invalid
+    // switch") — both paths must be native-separated.
+    mklink.start(QStringLiteral("cmd.exe"),
+                 {QStringLiteral("/c"), QStringLiteral("mklink"),
+                  QStringLiteral("/J"),
+                  QDir::toNativeSeparators(link),
+                  QDir::toNativeSeparators(targetInfo.absoluteFilePath())});
+    QVERIFY(mklink.waitForFinished(5000));
+    if (!QFileInfo(link).exists())
+        QSKIP("mklink /J unavailable in this environment");
+
+    Sandbox::setProjectDir(root);
+    Sandbox::setProjectWriteEnabled(true);
+
+    Sandbox::DenyReason reason = Sandbox::DenyReason::None;
+    // Pre-fix: the not-yet-existing file kept the junction path text, which
+    // sits inside the project -> wrongly allowed. Post-fix the ancestor
+    // chain resolves through the junction to C:\ProgramData -> refused.
+    QVERIFY(!Sandbox::validatePath(link + QStringLiteral("\\stolen.txt"),
+                                   true, &reason));
+    QCOMPARE(reason, Sandbox::DenyReason::WritePolicy);
+    // Deeper: a missing subdirectory inside the junction resolves too.
+    QVERIFY(!Sandbox::validatePath(
+        link + QStringLiteral("\\sub\\stolen.txt"), true));
+    // Reads through the junction were already refused (canonical path).
+    QVERIFY(!Sandbox::validatePath(link + QStringLiteral("\\existing.txt"),
+                                   false));
+
+    // No over-rejection: legitimate project writes still pass, including
+    // deep paths whose parents do not exist yet.
+    QVERIFY(Sandbox::validatePath(root + QStringLiteral("\\real\\new.txt"),
+                                  true));
+    QVERIFY(Sandbox::validatePath(root + QStringLiteral("\\a\\b\\c\\new.txt"),
+                                  true));
+
+    Sandbox::setProjectWriteEnabled(false);
+    Sandbox::setProjectDir(QString());
+#else
+    QSKIP("directory junctions are Windows-specific");
 #endif
 }
 
