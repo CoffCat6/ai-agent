@@ -73,6 +73,12 @@ public:
     // docs/23 D1: absolute path of the backing SQLite file (empty for
     // backends without one) — the backup feature keys off it.
     virtual QString databasePath() const { return {}; }
+    // docs/24 R1: swap the backing store for a verified snapshot. Only
+    // meaningful for file-backed implementations; default = unsupported.
+    virtual bool restoreFromBackup(const QString& backupPath) {
+        Q_UNUSED(backupPath);
+        return false;
+    }
     virtual void renameSession(const QString& sessionId, const QString& title) {
         Q_UNUSED(sessionId); Q_UNUSED(title);
     }

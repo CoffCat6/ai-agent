@@ -154,10 +154,20 @@ public:
     // Read-only peek into a backup file: {sessions, messages, knowledgeDocs,
     // newestTimestamp, error?} — powers the restore preview dialog (D2).
     static QVariantMap inspectBackupFile(const QString& backupPath);
+    // docs/24 R1: swap the live database file for a verified snapshot.
+    // Caller guarantees no other open connection to the file (UI closes all
+    // tabs first). Every failure leaves the original database in place and
+    // the connection usable; returns false in that case.
+    bool restoreFromBackup(const QString& backupPath);
 
 private:
     void initDatabase();
     void createTables();
+    // docs/24 R1: shared by the constructor and restoreFromBackup — add,
+    // open, PRAGMA setup, schema init. m_dbPath must be set already.
+    bool openConnection();
+    // docs/24 R1: restore-time integrity gate (read-only quick_check).
+    static bool snapshotPassesQuickCheck(const QString& path);
     // docs/23 G7: 硬级联（messages/episodic/sessions/trace_nodes），
     // 由 purgeDeletedSessions 对到期软删会话逐个调用。
     void hardDeleteSessionRows(const QString& sessionId);

@@ -77,6 +77,9 @@ private slots:
     void deletedSessionRoundTrip();
     // docs/23 D1: VACUUM INTO snapshot round-trip, rotation, read-only peek.
     void backupRoundTripInspectAndRotate();
+    // docs/24 R1: restoreFromBackup happy path + corrupt-snapshot refusal.
+    void restoreFromBackupRoundTrip();
+    void restoreFromBackupRejectsCorruptSnapshot();
     void episodicFullTextSearch();
     void auditTrail();
     void tokenStatsAggregate();
@@ -1182,6 +1185,63 @@ void TestMemory::backupRoundTripInspectAndRotate() {
     QVERIFY(QFile::exists(backupsDir + QStringLiteral("/auto_20260101_000006.db")));
     QVERIFY(!QFile::exists(backupsDir + QStringLiteral("/auto_20260101_000003.db")));
     QVERIFY(manual.exists());   // manual snapshots are never rotated
+}
+
+// docs/24 R1: the restore primitive swaps the live file for a verified
+// snapshot — same-instance data switches, the instance stays writable, and
+// the rollback anchor is cleaned up on success.
+void TestMemory::restoreFromBackupRoundTrip() {
+    QTemporaryDir dir;
+    QVERIFY(dir.isValid());
+    const QString snapshot = dir.filePath(QStringLiteral("snap.db"));
+    const QString livePath = dir.filePath(QStringLiteral("live.db"));
+    // Snapshot content: two sessions.
+    {
+        SqliteMemory writer(snapshot);
+        writer.beginSession("a1", "One");
+        writer.saveMessage("a1", msg("user", "from snapshot one"));
+        writer.beginSession("a2", "Two");
+        writer.saveMessage("a2", msg("user", "from snapshot two"));
+    }
+
+    // Live database with DIFFERENT content.
+    SqliteMemory live(livePath);
+    live.beginSession("b1", "Live");
+    live.saveMessage("b1", msg("user", "live data"));
+    QCOMPARE(live.listSessions(10).size(), 1);
+
+    QVERIFY(live.restoreFromBackup(snapshot));
+
+    QCOMPARE(live.listSessions(10).size(), 2);
+    QCOMPARE(live.loadMessages("a1", 10).size(), 1);
+    QVERIFY(!QFile::exists(livePath + QStringLiteral(".pre-restore")));
+    QVERIFY(!QFile::exists(livePath + QStringLiteral(".restore-tmp")));
+    // The reopened instance is fully usable for new writes.
+    live.beginSession("c1", "After restore");
+    QCOMPARE(live.listSessions(10).size(), 3);
+}
+
+// docs/24 R1: a corrupt candidate snapshot is refused before anything
+// moves — original data untouched, connection still usable.
+void TestMemory::restoreFromBackupRejectsCorruptSnapshot() {
+    QTemporaryDir dir;
+    QVERIFY(dir.isValid());
+    const QString garbage = dir.filePath(QStringLiteral("garbage.db"));
+    {
+        QFile f(garbage);
+        QVERIFY(f.open(QIODevice::WriteOnly));
+        f.write("this is not a sqlite database at all");
+    }
+
+    SqliteMemory live(dir.filePath(QStringLiteral("live.db")));
+    live.beginSession("b1", "Live");
+    live.saveMessage("b1", msg("user", "live data"));
+
+    QVERIFY(!live.restoreFromBackup(garbage));
+    QCOMPARE(live.listSessions(10).size(), 1);
+    QCOMPARE(live.loadMessages("b1", 10).size(), 1);
+    live.beginSession("b2", "Still writable");
+    QCOMPARE(live.listSessions(10).size(), 2);
 }
 
 // docs/23 G5: dropping the messages table makes loadMessages' exec fail —

@@ -64,6 +64,12 @@ SqliteMemory::SqliteMemory(const QString& dbPath) : m_dbPath(dbPath) {
         m_dbPath = dataDir + "/nexusai_memory.db";
     }
 
+    // docs/24 R1: connection setup extracted so the restore path can close
+    // and re-open in place (restoreFromBackup) with identical semantics.
+    openConnection();
+}
+
+bool SqliteMemory::openConnection() {
     // Unique per-instance connection name; stored in m_connName so the
     // destructor can removeDatabase it (MEM-702) - an unstored name leaked
     // the connection for the lifetime of the process.
@@ -74,7 +80,7 @@ SqliteMemory::SqliteMemory(const QString& dbPath) : m_dbPath(dbPath) {
 
     if (!m_db.open()) {
         qWarning() << "Failed to open memory database:" << m_db.lastError().text();
-        return;
+        return false;
     }
 
     // Batch 29: parallel session tabs each own a connection to the same
@@ -96,6 +102,7 @@ SqliteMemory::SqliteMemory(const QString& dbPath) : m_dbPath(dbPath) {
     wal.exec("PRAGMA synchronous = NORMAL");
 
     initDatabase();
+    return true;
 }
 
 SqliteMemory::~SqliteMemory() {
@@ -2207,6 +2214,115 @@ QVariantMap SqliteMemory::inspectBackupFile(const QString& backupPath) {
     }
     QSqlDatabase::removeDatabase(connName);
     return out;
+}
+
+// docs/24 R1: restore-time integrity gate for a candidate snapshot.
+bool SqliteMemory::snapshotPassesQuickCheck(const QString& path) {
+    const QString connName = QStringLiteral("nexus_restore_check_%1")
+        .arg(QUuid::createUuid().toString(QUuid::WithoutBraces));
+    bool ok = false;
+    {
+        QSqlDatabase db = QSqlDatabase::addDatabase("QSQLITE", connName);
+        db.setDatabaseName(path);
+        db.setConnectOptions(QStringLiteral("QSQLITE_OPEN_READONLY"));
+        if (db.open()) {
+            QSqlQuery query(db);
+            query.setForwardOnly(true);
+            ok = query.exec("PRAGMA quick_check")
+                 && query.next()
+                 && query.value(0).toString() == QLatin1String("ok");
+            if (!ok)
+                qWarning() << "Restore: snapshot failed quick_check:"
+                           << query.lastError().text();
+            db.close();
+        }
+    }
+    QSqlDatabase::removeDatabase(connName);
+    return ok;
+}
+
+// docs/24 R1: swap the live database file for a snapshot — the D2 restore
+// primitive. Precondition: no other open connection to the database file
+// (the UI flow closes all tabs first; the single-instance lock excludes
+// other processes). Every failure path restores the original file and
+// reopens it, so the instance is always left usable.
+bool SqliteMemory::restoreFromBackup(const QString& backupPath) {
+    const QString dbPath = m_dbPath;
+    const QString tmpPath = dbPath + QStringLiteral(".restore-tmp");
+    const QString rollbackPath = dbPath + QStringLiteral(".pre-restore");
+
+    // ── 1. Close our own connection. Closing the LAST connection to a WAL
+    // database checkpoints and removes the -wal sidecar, so the bare .db
+    // file is complete from here on (rollback anchor copies are faithful).
+    if (m_db.isOpen()) m_db.close();
+    m_db = QSqlDatabase();   // drop the handle before removeDatabase (MEM-702)
+    if (!m_connName.isEmpty()) {
+        QSqlDatabase::removeDatabase(m_connName);
+        m_connName.clear();
+    }
+
+    // Failure helper: best-effort reopen of the original (rolling back via
+    // the anchor when the swap already happened) and report failure.
+    const auto failAndReopen = [&](const char* what) {
+        qWarning() << "Database restore failed at" << what;
+        QFile::remove(tmpPath);
+        if (QFile::exists(rollbackPath) && !QFile::exists(dbPath)) {
+            // Swap already happened: roll the anchor back over the file.
+            QFile::remove(dbPath + "-wal");
+            QFile::remove(dbPath + "-shm");
+            if (!QFile::copy(rollbackPath, dbPath))
+                qWarning() << "Database restore: ROLLBACK copy failed —"
+                           << "original snapshot kept at" << rollbackPath;
+        }
+        if (!openConnection())
+            qCritical() << "Database restore: reopen failed — restart required";
+        return false;
+    };
+
+    // ── 2. Candidate snapshot must pass integrity before anything moves.
+    if (!snapshotPassesQuickCheck(backupPath))
+        return failAndReopen("integrity check");
+
+    // ── 3. Rollback anchor: the current file, before it is touched.
+    QFile::remove(rollbackPath);
+    if (!QFile::copy(dbPath, rollbackPath))
+        return failAndReopen("rollback anchor");
+
+    // ── 4. Stage the snapshot next to the live file.
+    QFile::remove(tmpPath);
+    if (!QFile::copy(backupPath, tmpPath))
+        return failAndReopen("stage snapshot");
+
+    // ── 5. Sidecars of the OLD database must not survive the swap.
+    QFile::remove(dbPath + "-wal");
+    QFile::remove(dbPath + "-shm");
+
+    // ── 6. Swap: remove + rename (QFile::rename fails onto an existing
+    // target, so the two-step form is mandatory).
+    if (!QFile::remove(dbPath) || !QFile::rename(tmpPath, dbPath))
+        return failAndReopen("swap");
+
+    // ── 7. Reopen on the restored file.
+    if (!openConnection()) {
+        qWarning() << "Database restore: restored file failed to open —"
+                   << "rolling back";
+        m_db = QSqlDatabase();
+        if (!m_connName.isEmpty()) {
+            QSqlDatabase::removeDatabase(m_connName);
+            m_connName.clear();
+        }
+        QFile::remove(dbPath);
+        QFile::copy(rollbackPath, dbPath);
+        if (!openConnection())
+            qCritical() << "Database restore: rollback reopen failed —"
+                        << "restart required";
+        return false;
+    }
+
+    // ── 8. Success: the anchor has served its purpose.
+    QFile::remove(rollbackPath);
+    qInfo() << "Database restored from" << backupPath;
+    return true;
 }
 
 } // namespace NexusAI
