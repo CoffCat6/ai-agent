@@ -286,7 +286,14 @@ qInfo() << "NexusAI" << app.applicationVersion() << "starting";
     // Knowledge base: Ollama embeddings (nomic-embed-text) with the
     // retriever's local pseudo-embedding as offline fallback.
     auto* embedding = new OllamaEmbedding(&app);
-    auto* rag = new RagService(&app);
+    // docs/24 H6: deliberately process-lifetime and NEVER deleted — three
+    // discarded-future QtConcurrent workers (startup restore, re-embed-all,
+    // AgentViewModel import) hold the raw pointer and may still be running
+    // when the app quits; parenting it to the app would destroy the object
+    // under them (use-after-free at exit). Same discipline as `memory`
+    // below; its QObject signals keep working without a parent, and their
+    // GUI-thread consumers are queued via the &app context.
+    auto* rag = new RagService(nullptr);
     rag->setEmbedder([embedding](const QString& text) {
         return embedding->embed(text);
     });
