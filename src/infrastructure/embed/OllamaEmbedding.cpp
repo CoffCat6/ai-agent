@@ -19,13 +19,23 @@ QVector<float> OllamaEmbedding::embed(const QString& text) {
     // main-thread m_nam would be cross-thread QObject misuse.
     QNetworkAccessManager nam;
 
+    // docs/22 F3: snapshot the endpoint/model under the mutex — the GUI
+    // thread may swap them while this call is queued or running.
+    QString baseUrl;
+    QString model;
+    {
+        QMutexLocker lock(&m_configMutex);
+        baseUrl = m_baseUrl;
+        model = m_model;
+    }
+
     QJsonObject body;
-    body["model"] = m_model;
+    body["model"] = model;
     body["prompt"] = text;
 
     QJsonDocument doc(body);
     QNetworkRequest request;
-    request.setUrl(QUrl(m_baseUrl + "/api/embeddings"));
+    request.setUrl(QUrl(baseUrl + "/api/embeddings"));
     request.setHeader(QNetworkRequest::ContentTypeHeader, "application/json");
     request.setTransferTimeout(30000);
 
@@ -79,6 +89,17 @@ QVector<QVector<float>> OllamaEmbedding::embedBatch(const QStringList& texts) {
     // Stack-local NAM on the calling thread (see embed()).
     QNetworkAccessManager nam;
 
+    // docs/22 F3: one snapshot for the whole run — every batch in this
+    // import uses the model/endpoint as of the call, even if the user
+    // swaps them mid-import (the next import picks up the new value).
+    QString baseUrl;
+    QString model;
+    {
+        QMutexLocker lock(&m_configMutex);
+        baseUrl = m_baseUrl;
+        model = m_model;
+    }
+
     QVector<QVector<float>> embeddings;
     embeddings.reserve(texts.size());
     int done = 0;
@@ -87,14 +108,14 @@ QVector<QVector<float>> OllamaEmbedding::embedBatch(const QStringList& texts) {
     // (or the GUI-facing progress) for the whole import.
     for (const QStringList& batch : splitBatches(texts, BatchSize)) {
         QJsonObject body;
-        body["model"] = m_model;
+        body["model"] = model;
         QJsonArray input;
         for (const QString& t : batch)
             input.append(t);
         body["input"] = input;
 
         QNetworkRequest request;
-        request.setUrl(QUrl(m_baseUrl + "/api/embed"));
+        request.setUrl(QUrl(baseUrl + "/api/embed"));
         request.setHeader(QNetworkRequest::ContentTypeHeader, "application/json");
         request.setTransferTimeout(120000);
 
@@ -137,14 +158,26 @@ QVector<QVector<float>> OllamaEmbedding::embedBatch(const QStringList& texts) {
 }
 
 void OllamaEmbedding::embedAsync(const QString& text) {
+    // docs/22 F3: snapshot under the mutex (same rationale as embed()).
+    QString baseUrl;
+    QString model;
+    {
+        QMutexLocker lock(&m_configMutex);
+        baseUrl = m_baseUrl;
+        model = m_model;
+    }
+
     QJsonObject body;
-    body["model"] = m_model;
+    body["model"] = model;
     body["prompt"] = text;
 
     QJsonDocument doc(body);
     QNetworkRequest request;
-    request.setUrl(QUrl(m_baseUrl + "/api/embeddings"));
+    request.setUrl(QUrl(baseUrl + "/api/embeddings"));
     request.setHeader(QNetworkRequest::ContentTypeHeader, "application/json");
+    // Aligned with the synchronous paths: a hung server must not leave the
+    // reply and this lambda alive forever.
+    request.setTransferTimeout(30000);
 
     QNetworkReply* reply = m_nam->post(request, doc.toJson());
 

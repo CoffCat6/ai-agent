@@ -1,5 +1,6 @@
 #pragma once
 
+#include <QMutex>
 #include <QObject>
 #include <QVector>
 #include <QString>
@@ -13,10 +14,23 @@ class OllamaEmbedding : public QObject {
 public:
     explicit OllamaEmbedding(QObject* parent = nullptr);
 
-    void setBaseUrl(const QString& url) { m_baseUrl = url; }
-    void setModel(const QString& model) { m_model = model; }
+    // docs/22 F3: setters may run on the GUI thread while embed/embedBatch
+    // run on worker threads (RAG tool, document import) — configuration is
+    // mutex-guarded and each call snapshots it at entry, so a mid-flight
+    // swap never tears a QString or changes the request underneath a call.
+    void setBaseUrl(const QString& url) {
+        QMutexLocker lock(&m_configMutex);
+        m_baseUrl = url;
+    }
+    void setModel(const QString& model) {
+        QMutexLocker lock(&m_configMutex);
+        m_model = model;
+    }
     // Identity of the embedding model (persisted-chunk versioning, Batch 6)
-    QString model() const { return m_model; }
+    QString model() const {
+        QMutexLocker lock(&m_configMutex);
+        return m_model;
+    }
 
     // Synchronous embedding call (blocks with QEventLoop)
     QVector<float> embed(const QString& text);
@@ -40,6 +54,7 @@ signals:
     void embedProgress(int done, int total);
 
 private:
+    mutable QMutex m_configMutex;
     QString m_baseUrl{"http://localhost:11434"};
     QString m_model{"nomic-embed-text"};
     QNetworkAccessManager* m_nam;

@@ -7,6 +7,7 @@
 #include <QHostAddress>
 #include <QNetworkProxy>
 #include <QSignalSpy>
+#include <QThread>
 #include <QTcpServer>
 #include <QTcpSocket>
 #include <QtTest>
@@ -20,8 +21,10 @@ namespace {
 class FakeEmbedServer : public QObject {
     Q_OBJECT
 public:
-    explicit FakeEmbedServer(int dim, QObject* parent = nullptr)
-        : QObject(parent), m_dim(dim) {
+    // delayMs: per-request artificial latency, used to keep a batched
+    // embedding run open while the test mutates the client configuration.
+    explicit FakeEmbedServer(int dim, int delayMs = 0, QObject* parent = nullptr)
+        : QObject(parent), m_dim(dim), m_delayMs(delayMs) {
         QObject::connect(&m_server, &QTcpServer::newConnection, this, [this]() {
             while (QTcpSocket* socket = m_server.nextPendingConnection()) {
                 QObject::connect(socket, &QTcpSocket::disconnected, socket,
@@ -31,7 +34,11 @@ public:
                     buffer += socket->readAll();
                     if (!requestComplete(buffer)) return;
                     const int bodyStart = buffer.indexOf("\r\n\r\n") + 4;
-                    const QStringList texts = parseInputs(buffer.mid(bodyStart));
+                    const QByteArray bodyBytes = buffer.mid(bodyStart);
+                    const QStringList texts = parseInputs(bodyBytes);
+                    // docs/22 F3: record which model each request carried.
+                    m_modelsSeen.append(QJsonDocument::fromJson(bodyBytes)
+                        .object().value(QStringLiteral("model")).toString());
                     buffer.clear();
                     ++m_requests;
                     QJsonArray embeddings;
@@ -43,6 +50,8 @@ public:
                     }
                     QJsonObject body;
                     body["embeddings"] = embeddings;
+                    if (m_delayMs > 0)
+                        QTest::qSleep(m_delayMs);
                     respond(socket, QJsonDocument(body).toJson(QJsonDocument::Compact));
                 });
             }
@@ -55,6 +64,7 @@ public:
         return QStringLiteral("http://127.0.0.1:%1").arg(m_server.serverPort());
     }
     int requests() const { return m_requests; }
+    const QStringList& modelsSeen() const { return m_modelsSeen; }
 
 private:
     static bool requestComplete(const QByteArray& buffer) {
@@ -94,7 +104,9 @@ private:
     QTcpServer m_server;
     QHash<QTcpSocket*, QByteArray> m_buffer;
     int m_dim;
+    int m_delayMs{0};
     int m_requests{0};
+    QStringList m_modelsSeen;
 };
 
 QStringList makeTexts(int n) {
@@ -184,6 +196,40 @@ private slots:
         QCOMPARE(embed.embedBatch(makeTexts(2)).size(), 2);
         QCOMPARE(first.requests(), 1);   // no new traffic to the old endpoint
         QCOMPARE(second.requests(), 1);
+    }
+
+    // docs/22 F3: setModel mid-import must not disturb the running
+    // embedBatch — the call snapshots model/endpoint at entry; the swap
+    // lands on the next call. No torn QString / crash across the swap is
+    // the core contract (the race itself is not reproducible without TSAN).
+    void setModelWhileInFlightUsesSnapshot() {
+        FakeEmbedServer server(4, /*delayMs=*/25);
+        OllamaEmbedding embedder;
+        embedder.setBaseUrl(server.baseUrl());
+        embedder.setModel(QStringLiteral("model-a"));
+
+        const QStringList texts = makeTexts(96);   // 3 batches × ~25ms
+        QVector<QVector<float>> result;
+        QThread* worker = QThread::create([&embedder, &texts, &result]() {
+            result = embedder.embedBatch(texts);
+        });
+        QObject::connect(worker, &QThread::finished, worker,
+                         &QThread::deleteLater);
+        worker->start();
+
+        QTest::qWait(40);   // in-flight, inside batch 1 or 2
+        embedder.setModel(QStringLiteral("model-b"));
+        QVERIFY(QTest::qWaitFor([worker]() { return worker->isFinished(); },
+                                30000));
+
+        // The whole run completed against the entry snapshot.
+        QCOMPARE(result.size(), texts.size());
+        QCOMPARE(server.requests(), 3);
+        QVERIFY(!server.modelsSeen().contains(QStringLiteral("model-b")));
+
+        // The next call picks up the swapped model.
+        QCOMPARE(embedder.embedBatch(makeTexts(1)).size(), 1);
+        QCOMPARE(server.modelsSeen().last(), QStringLiteral("model-b"));
     }
 };
 

@@ -5,6 +5,7 @@
 #include <QJsonArray>
 #include <QJsonDocument>
 #include <QJsonObject>
+#include <QThread>
 #include <QUrl>
 #include <QUrlQuery>
 
@@ -49,6 +50,27 @@ public:
         r.title = query;
         r.url = QStringLiteral("https://example.com/ddg");
         r.snippet = QStringLiteral("no-key result");
+        out.append(r);
+        return out;
+    }
+};
+
+// docs/22 F3: holds the search call open long enough for the test to swap
+// the backend while execute() is inside search().
+class SlowFakeBackend : public WebSearchBackend {
+public:
+    QString providerKey() const override { return QStringLiteral("slow"); }
+
+    QList<WebSearchResult> search(const QString& query, int,
+                                  const QString&, int,
+                                  QString* errorReason = nullptr) const override {
+        if (errorReason) *errorReason = QString();
+        QTest::qSleep(200);
+        QList<WebSearchResult> out;
+        WebSearchResult r;
+        r.title = QStringLiteral("slow:%1").arg(query);
+        r.url = QStringLiteral("https://slow.example.com");
+        r.snippet = QStringLiteral("held open");
         out.append(r);
         return out;
     }
@@ -121,6 +143,33 @@ private slots:
         const ToolResult r = tool.execute({{"query", "test"}, {"max_results", 2}});
         QVERIFY(r.success);
         QVERIFY(r.output.contains(QStringLiteral("example.com")));
+    }
+
+    // docs/22 F3: swapping the backend mid-flight must not disturb the
+    // running call — execute() works on a config snapshot, the next call
+    // picks up the new backend.
+    void setBackendWhileInFlightIsSafe() {
+        WebSearchTool tool(std::make_unique<SlowFakeBackend>());
+        tool.setApiKey(QStringLiteral("dummy-key"));
+
+        QThread* worker = QThread::create([&tool]() {
+            const ToolResult r = tool.execute({{"query", "old"}});
+            QVERIFY(r.success);
+            QVERIFY(r.output.contains(QStringLiteral("slow:old")));
+        });
+        QObject::connect(worker, &QThread::finished, worker,
+                         &QThread::deleteLater);
+        worker->start();
+
+        QTest::qWait(60);   // in-flight, inside SlowFakeBackend::search
+        tool.setBackend(std::make_unique<FakeBackend>());
+        QVERIFY(QTest::qWaitFor([worker]() { return worker->isFinished(); },
+                                8000));
+
+        // The next call runs on the swapped backend.
+        const ToolResult next = tool.execute({{"query", "new"}, {"max_results", 1}});
+        QVERIFY(next.success);
+        QVERIFY(next.output.contains(QStringLiteral("Result 1 for new")));
     }
 
     // L4: setBackend(nullptr) is ignored — the tool keeps its current backend.
