@@ -183,7 +183,19 @@ bool RagService::restorePersistedDocument(const QString& sourceName,
     {
         QMutexLocker lock(&m_mutex);
         if (generation != m_restoreGeneration) return false;
-        dropDocumentLocked(sourceName);
+        // docs/23 G6: the 4096-chunk budget (REL-1003) is a full-path
+        // invariant — the ingest paths check it, so restore must too.
+        // Same accounting as ingestRestoredDocument: an existing same-name
+        // document is dropped first, only the surplus counts against the
+        // cap. A skipped document stays in SQLite (user can delete other
+        // documents or re-embed it later); startup reports the skip count.
+        const int current = totalChunksLocked() - dropDocumentLocked(sourceName);
+        if (current + chunks.size() > m_maxTotalChunks) {
+            qWarning() << "Knowledge restore skipped (budget):" << sourceName
+                       << "needs" << chunks.size() << "chunks,"
+                       << "budget" << m_maxTotalChunks;
+            return false;
+        }
         Document doc;
         doc.name = sourceName;
         doc.chars = 0;

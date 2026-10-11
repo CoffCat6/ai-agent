@@ -57,6 +57,8 @@ private slots:
     void documentChunksListing();
     // Batch 6: persistence + calibration
     void restoreFromPersistedChunksNeedsNoEmbedding();
+    // docs/23 G6: the chunk budget gates the restore path too.
+    void restoreRespectsTotalChunkBudget();
     void queryEmbeddingIsCached();
     void retrievalCalibrationLabeledSet();
     // Batch 9: RAG matrix (TEST-904)
@@ -884,6 +886,47 @@ void TestRag::extractPdfTextFromWorkerThread() {
     // 与主线程结果逐字节一致：证明解析不依赖线程局部状态。
     QCOMPARE(fromThread.text, extractPdfText(path).text);
     QCOMPARE(fromThread.status, PdfExtractStatus::Ok);
+}
+
+// docs/23 G6: the total-chunk budget also gates the restore path — an
+// over-budget persisted document is skipped (it stays in SQLite and the
+// startup loop reports the skip) instead of silently breaking the
+// REL-1003 invariant on every launch.
+void TestRag::restoreRespectsTotalChunkBudget() {
+    int embedCalls = 0;
+    auto embed = [&embedCalls](const QString& text) {
+        ++embedCalls;
+        QVector<float> v(8, 0.0f);
+        for (QChar c : text) v[c.unicode() % 8] += 1.0f;
+        return v;
+    };
+
+    RagService source;
+    source.setEmbedder(embed);
+    source.setBatchEmbedder([&embed](const QStringList& texts) {
+        QVector<QVector<float>> out;
+        for (const QString& t : texts) out.append(embed(t));
+        return out;
+    });
+    source.setEmbeddingModelName(QStringLiteral("m1"));
+    QVERIFY(source.ingestDocument("doc.txt", longDoc("persist", 4)) >= 2);
+    const QVector<KnowledgeChunk> chunks = source.exportPersistedChunks("doc.txt");
+    QVERIFY(chunks.size() >= 2);
+
+    RagService restored;
+    restored.setEmbedder(embed);
+    restored.setEmbeddingModelName(QStringLiteral("m1"));
+    // One chunk short of the requirement: restore must refuse.
+    restored.setMaxTotalChunks(chunks.size() - 1);
+    QVERIFY(!restored.restorePersistedDocument(
+        "doc.txt", chunks, restored.restoreGeneration()));
+    QVERIFY(restored.search(QStringLiteral("persist alpha"), 3).isEmpty());
+
+    // Exact headroom restores fine (the same-name drop is accounted first).
+    restored.setMaxTotalChunks(chunks.size());
+    QVERIFY(restored.restorePersistedDocument(
+        "doc.txt", chunks, restored.restoreGeneration()));
+    QVERIFY(!restored.search(QStringLiteral("persist alpha"), 3).isEmpty());
 }
 
 QTEST_GUILESS_MAIN(TestRag)

@@ -69,6 +69,8 @@ private slots:
     void walJournalModeActive();
     // docs/23 G3: time-based retention for audit_log / token_usage.
     void retentionPrunesAuditAndTokenUsage();
+    // docs/23 G6: clear() cascades to trace nodes like deleteSession.
+    void clearRemovesTraceNodes();
     void episodicFullTextSearch();
     void auditTrail();
     void tokenStatsAggregate();
@@ -1053,6 +1055,25 @@ void TestMemory::retentionPrunesAuditAndTokenUsage() {
     // keepDays <= 0 = keep forever: nothing removed, nothing touched.
     QCOMPARE(mem.pruneAudit(0), 0);
     QCOMPARE(mem.pruneTokenUsage(-1), 0);
+}
+
+// docs/23 G6: clear() must cascade to trace nodes like deleteSession —
+// a surviving trajectory would resurrect ghost nodes on session reopen.
+void TestMemory::clearRemovesTraceNodes() {
+    SqliteMemory mem(QStringLiteral(":memory:"));
+    mem.beginSession("s1", "First");
+    QJsonObject node;
+    node["id"] = QStringLiteral("n1");
+    node["type"] = QStringLiteral("thinking");
+    node["title"] = QStringLiteral("Reasoning");
+    node["status"] = QStringLiteral("completed");
+    node["args"] = QString();
+    node["timestamp"] = 1000.0;
+    mem.saveTraceNode("s1", node, 0);
+    QVERIFY(!mem.loadTraceNodes(QStringLiteral("s1")).isEmpty());
+
+    mem.clear("s1");
+    QVERIFY(mem.loadTraceNodes(QStringLiteral("s1")).isEmpty());
 }
 
 QTEST_GUILESS_MAIN(TestMemory)

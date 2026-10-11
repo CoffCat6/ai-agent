@@ -1149,6 +1149,13 @@ void SqliteMemory::clear(const QString& sessionId) {
     query.addBindValue(sessionId);
     if (!query.exec())
         qWarning() << "Failed to clear episodic memory:" << query.lastError().text();
+
+    // docs/23 G6: align with deleteSession's cascade — leaving trace nodes
+    // behind would resurrect ghost trajectories when the session reopens.
+    query.prepare("DELETE FROM trace_nodes WHERE session_id = ?");
+    query.addBindValue(sessionId);
+    if (!query.exec())
+        qWarning() << "Failed to clear trace nodes:" << query.lastError().text();
 }
 
 void SqliteMemory::beginSession(const QString& sessionId, const QString& title) {
