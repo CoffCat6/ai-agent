@@ -71,6 +71,8 @@ private slots:
     void retentionPrunesAuditAndTokenUsage();
     // docs/23 G6: clear() cascades to trace nodes like deleteSession.
     void clearRemovesTraceNodes();
+    // docs/23 G5: a failing loadMessages query is logged, not silent.
+    void loadMessagesFailureIsLoggedNotSilent();
     void episodicFullTextSearch();
     void auditTrail();
     void tokenStatsAggregate();
@@ -1074,6 +1076,17 @@ void TestMemory::clearRemovesTraceNodes() {
 
     mem.clear("s1");
     QVERIFY(mem.loadTraceNodes(QStringLiteral("s1")).isEmpty());
+}
+
+// docs/23 G5: dropping the messages table makes loadMessages' exec fail —
+// the function must still return (empty array) and, since this fix, log
+// the error instead of failing silently (the warning lands in the log).
+void TestMemory::loadMessagesFailureIsLoggedNotSilent() {
+    SqliteMemory mem(QStringLiteral(":memory:"));
+    QSqlDatabase db = mem.databaseForTest();
+    QVERIFY(db.exec("DROP TABLE messages").isActive());
+
+    QCOMPARE(mem.loadMessages(QStringLiteral("s1")).size(), 0);
 }
 
 QTEST_GUILESS_MAIN(TestMemory)

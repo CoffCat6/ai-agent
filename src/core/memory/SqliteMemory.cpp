@@ -777,6 +777,10 @@ QJsonArray SqliteMemory::loadMessages(const QString& sessionId, int limit) {
             msg["timestamp"] = query.value(3).toDouble();
             messages.append(msg);
         }
+    } else {
+        // docs/23 G5: the only query in the file that failed silently —
+        // a user-visible "history disappeared" with nothing in the log.
+        qWarning() << "Failed to load messages:" << query.lastError().text();
     }
     return messages;
 }
