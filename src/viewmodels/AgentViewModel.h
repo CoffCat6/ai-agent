@@ -322,7 +322,6 @@ public:
     // calls); the last remaining tab cannot be closed.
     Q_INVOKABLE void closeTab(int index);
     Q_INVOKABLE void activateTab(int index);
-
     // ── QML-invokable actions ─────────────────────────
     // Batch 30 (F6): images are compressed data URLs; files are
     // {kind:"file", name, content} text attachments folded into the request.
@@ -366,6 +365,10 @@ public:
     // dialog: {sessions, messages, knowledgeDocs, newestTimestamp,
     // integrityOk, error?}.
     Q_INVOKABLE QVariantMap previewDatabaseBackup(const QString& path);
+    // docs/24 R4: swap the live database for a verified snapshot (closes
+    // all tabs, restores, re-runs the knowledge restore). Empty string =
+    // success, otherwise a user-facing error.
+    Q_INVOKABLE QString restoreDatabaseFrom(const QString& path);
     // docs/23 D1: newest snapshot in the backups directory (status line).
     Q_INVOKABLE QString lastDatabaseBackupPath() const;
     Q_INVOKABLE void renameSession(const QString& sessionId, const QString& title);
@@ -461,6 +464,9 @@ signals:
     void errorOccurred(const QString& error);
     // Non-error user feedback (import finished, etc.)
     void noticeOccurred(const QString& notice);
+    // docs/24 R4: the live database file was swapped for a snapshot — the
+    // wiring layer re-runs the knowledge-base restore against it.
+    void databaseRestored();
     // docs/20 §3.4（A4）：窗口级拖放解析完成，携带附件描述符列表
     // （图片 {kind:"image", dataUrl} / 文本 {kind:"file", name, content}）。
     void attachmentsDropped(const QVariantList& attachments);
@@ -493,6 +499,12 @@ private:
     // docs/18: 新建标签并**显式**指定归属（projectId 空 = 本地），随后激活。
     // 归属不再从任何全局状态继承。
     ChatSessionController* addTab(const QString& projectId);
+    // docs/24 R3: stop every tab and clear the list WITHOUT emitting —
+    // active() is unguarded (m_tabs.at), so the caller MUST leave the
+    // method and reach openTab() within the same call stack (the database
+    // restore orchestration does exactly that; deferred deletes are flushed
+    // by the caller via sendPostedEvents before touching shared state).
+    void closeAllTabs();
     // First controller with an attached agent (active tab preferred) — used
     // for global session-list operations (delete/rename/audit/history pull).
     ChatSessionController* controllerWithAgent() const;

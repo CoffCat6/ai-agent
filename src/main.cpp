@@ -593,6 +593,12 @@ qInfo() << "NexusAI" << app.applicationVersion() << "starting";
     // database-restore flow can re-run it against the swapped file.
     startKnowledgeRestore(memory, rag);
 
+    // docs/24 R4: after a successful database restore, reload the knowledge
+    // base from the swapped file (direct connection — same GUI-thread stack
+    // as the restore orchestration).
+    QObject::connect(agentVM, &AgentViewModel::databaseRestored, &app,
+                     [memory, rag]() { startKnowledgeRestore(memory, rag); });
+
     // Summaries have a separate provider: changing defaults must never
     // reconfigure a service used by a running conversation.
     const auto applySettings = [settings, agentVM, agent, fetchPtr, webPtr,

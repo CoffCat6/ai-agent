@@ -14,6 +14,9 @@ Item {
     property var importPreview: ({})
     property string statusMessage: ""
     property bool statusIsError: false
+    // docs/24 R4: the backup file staged for restore by the preview dialog.
+    property string pendingRestorePath: ""
+    property var pendingRestoreInfo: ({})
 
 
     Flickable {
@@ -249,6 +252,8 @@ Item {
                 page.statusMessage = qsTr("无法读取该备份文件：%1").arg(info.error)
                 return
             }
+            page.pendingRestorePath = selectedFile.toString()
+            page.pendingRestoreInfo = info
             page.statusIsError = !info.integrityOk
             page.statusMessage = qsTr("会话 %1 个，消息 %2 条，知识库文档 %3 份，最新消息时间 %4%5")
                 .arg(info.sessions)
@@ -260,6 +265,64 @@ Item {
                 .arg(info.integrityOk
                      ? ""
                      : qsTr("；警告：完整性检查未通过，可能已损坏"))
+            // docs/24 R4: a healthy snapshot goes straight to the restore
+            // confirmation; a broken one stays preview-only.
+            if (info.integrityOk)
+                confirmRestoreDialog.open()
+        }
+    }
+
+    // docs/24 R4: restore confirmation — the swap closes all tabs and stops
+    // running tasks, and the GUI blocks for the duration of the swap.
+    Dialog {
+        id: confirmRestoreDialog
+        parent: Overlay.overlay
+        modal: true
+        anchors.centerIn: parent
+        width: 440
+        padding: 20
+        background: DialogBackground {}
+
+        contentItem: ColumnLayout {
+            spacing: 12
+
+            Text {
+                text: qsTr("恢复数据库")
+                color: Theme.textPrimary
+                font.pixelSize: Theme.fontSizeTitle
+                font.bold: true
+                font.family: Theme.fontSans
+            }
+            Text {
+                text: qsTr("将把当前数据库替换为该备份：会话 %1 个、消息 %2 条。恢复会关闭全部标签并停止在跑任务，期间界面会短暂无响应。当前未备份的新数据将丢失（启动自动备份仍可用）。")
+                    .arg(page.pendingRestoreInfo.sessions)
+                    .arg(page.pendingRestoreInfo.messages)
+                color: Theme.textSecondary
+                font.pixelSize: Theme.fontSizeCaption
+                font.family: Theme.fontSans
+                wrapMode: Text.Wrap
+                Layout.fillWidth: true
+            }
+            RowLayout {
+                Layout.alignment: Qt.AlignRight
+                AppButton {
+                    text: qsTr("取消")
+                    onClicked: confirmRestoreDialog.close()
+                }
+                AppButton {
+                    text: qsTr("恢复")
+                    highlighted: true
+                    onClicked: {
+                        confirmRestoreDialog.close()
+                        const err = AgentVM.restoreDatabaseFrom(
+                            page.pendingRestorePath)
+                        page.statusIsError = err.length > 0
+                        page.statusMessage = err.length > 0
+                            ? err
+                            : qsTr("数据库已恢复，知识库正在重新装载。")
+                    }
+                }
+            }
         }
     }
 

@@ -271,6 +271,21 @@ void AgentViewModel::openTab() {
     addTab(QString());
 }
 
+// docs/24 R3: database-restore precondition — zero per-tab SQLite
+// connections must survive the call. Silent by design: active() indexes
+// m_tabs unguarded, so no signal may fire while the list is empty; the
+// orchestration ends with openTab(), whose signal burst re-syncs the UI.
+void AgentViewModel::closeAllTabs() {
+    for (ChatSessionController* controller : std::as_const(m_tabs)) {
+        // Stop first, exactly like closeTab: running tasks abort and their
+        // unanswered tool calls are sealed by the agent.
+        controller->stop();
+        controller->deleteLater();
+    }
+    m_tabs.clear();
+    m_activeTab = -1;
+}
+
 // docs/17/18: 新建会话的默认归属 = 普通对话（本地）。项目会话只能由
 // newProjectChat（侧栏项目行的「+」）创建。
 void AgentViewModel::newLocalChat() {
@@ -975,7 +990,15 @@ bool AgentViewModel::undoDeleteSession(const QString& sessionId) {
     return ok;
 }
 
-// ── docs/23 D1: database backup & restore preview ────────────
+// ── docs/23 D1 / docs/24 R4: database backup & restore ───────
+
+namespace {
+// QML file dialogs hand out file URLs; accept both forms.
+QString toLocalDatabasePath(const QString& path) {
+    const QUrl url(path);
+    return url.isLocalFile() ? url.toLocalFile() : path;
+}
+} // namespace
 
 QString AgentViewModel::backupDatabaseNow() {
     const QString dbPath = m_memory ? m_memory->databasePath() : QString();
@@ -992,7 +1015,7 @@ QString AgentViewModel::backupDatabaseNow() {
 }
 
 QVariantMap AgentViewModel::previewDatabaseBackup(const QString& path) {
-    return SqliteMemory::inspectBackupFile(path);
+    return SqliteMemory::inspectBackupFile(toLocalDatabasePath(path));
 }
 
 QString AgentViewModel::lastDatabaseBackupPath() const {
@@ -1001,6 +1024,47 @@ QString AgentViewModel::lastDatabaseBackupPath() const {
         {QStringLiteral("auto_*.db"), QStringLiteral("manual_*.db")},
         QDir::Files, QDir::Time);
     return files.isEmpty() ? QString() : files.first().absoluteFilePath();
+}
+
+// docs/24 R4: the restore orchestration. Synchronous on the GUI thread —
+// an explicit user-confirmed action; the confirm dialog announces that all
+// tabs close and running tasks stop.
+QString AgentViewModel::restoreDatabaseFrom(const QString& path) {
+    const QString local = toLocalDatabasePath(path);
+    if (!m_memory || m_memory->databasePath().isEmpty())
+        return tr("数据库未就绪");
+
+    // 0. The candidate must pass integrity before anything is touched.
+    const QVariantMap info = SqliteMemory::inspectBackupFile(local);
+    if (!info.value("error").toString().isEmpty())
+        return tr("无法读取该备份文件：%1").arg(info.value("error").toString());
+    if (!info.value("integrityOk").toBool())
+        return tr("备份完整性检查未通过，已取消恢复");
+
+    // 1. Zero per-tab connections, flushed synchronously (deferred deletes
+    //    deliver here; the destroyed hooks clean the wiring maps).
+    closeAllTabs();
+    QCoreApplication::sendPostedEvents(nullptr, QEvent::DeferredDelete);
+
+    // 2. Invalidate in-flight knowledge-restore workers before the swap.
+    if (m_rag)
+        m_rag->bumpRestoreGeneration();
+
+    // 3. Swap the file (any failure leaves the original in place and the
+    //    connection usable — docs/24 R1). The captured usageMemory /
+    //    modelConfigurator raw pointers survive: restore reopens in place.
+    if (!m_memory->restoreFromBackup(local))
+        return tr("恢复失败，原数据库已还原");
+
+    // 4. Re-run the knowledge restore against the swapped file (wiring
+    //    layer owns the glue; direct connection runs in-stack).
+    emit databaseRestored();
+
+    // 5. Back to the single-tab steady state — openTab's signal burst
+    //    re-syncs the whole UI from the restored database.
+    openTab();
+    Activity::usage(Activity::Kind::User, QStringLiteral("db.restore"), local);
+    return QString();   // empty = success
 }
 
 void AgentViewModel::renameSession(const QString& sessionId, const QString& title) {
