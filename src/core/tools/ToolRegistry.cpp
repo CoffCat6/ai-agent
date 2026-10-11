@@ -129,17 +129,25 @@ public:
         // Ensure parent directory exists
         QDir().mkpath(QFileInfo(path).absolutePath());
 
-        QFile file(path);
-        if (!file.open(QIODevice::WriteOnly | QIODevice::Text))
-            return ToolResult::fail("Cannot open file for writing: " + file.errorString());
-
-        QTextStream stream(&file);
-        stream << content;
-        stream.flush();
-        file.close();
+        // docs/23 G4: atomic write with explicit error reporting, mirroring
+        // edit_file (Batch 21 A2) — a plain stream write used to swallow
+        // short-write/close errors and report success on a full disk.
+        // No QIODevice::Text: bytes in, bytes out, same line-ending
+        // semantics as edit_file (which matches old_string byte-exactly),
+        // so the two tools cannot produce mixed-line-ending files.
+        const QByteArray bytes = content.toUtf8();
+        QSaveFile out(path);
+        if (!out.open(QIODevice::WriteOnly))
+            return ToolResult::fail("Cannot open file for writing: " + out.errorString());
+        if (out.write(bytes) != bytes.size()) {
+            out.cancelWriting();
+            return ToolResult::fail("Short write (disk full/quota?): " + out.errorString());
+        }
+        if (!out.commit())
+            return ToolResult::fail("Failed to commit atomic write: " + out.errorString());
 
         return ToolResult::ok(QStringLiteral("File written successfully: %1 (%2 bytes)")
-                                  .arg(path).arg(content.toUtf8().size()));
+                                  .arg(path).arg(bytes.size()));
     }
 };
 

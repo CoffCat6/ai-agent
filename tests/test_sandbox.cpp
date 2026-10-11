@@ -52,6 +52,9 @@ private slots:
     // docs/22 F4: write-path link resolution
     void devicePathsAreRejected();
     void junctionParentChainResolvedForWrites();
+    // docs/23 G4: write_file is atomic and byte-exact (no CRLF translation)
+    void writeFileRoundTripsLfBytes();
+    void writeFileToDirectoryFailsWithOpenError();
 };
 
 void TestSandbox::allowsUserWrites() {
@@ -601,6 +604,49 @@ void TestSandbox::junctionParentChainResolvedForWrites() {
 #else
     QSKIP("directory junctions are Windows-specific");
 #endif
+}
+
+// docs/23 G4: write_file writes raw UTF-8 bytes (QSaveFile) — line
+// endings are preserved exactly, matching edit_file's byte semantics so
+// the two tools cannot produce mixed-line-ending files.
+void TestSandbox::writeFileRoundTripsLfBytes() {
+    QTemporaryDir dir = sandboxTempDir();
+    QVERIFY(dir.isValid());
+    const QString path = dir.filePath("write.txt");
+
+    ITool* tool = ToolRegistry::instance().find(QStringLiteral("write_file"));
+    QVERIFY(tool);
+    const ToolResult r = tool->execute(QJsonObject{
+        {"path", path},
+        {"content", QStringLiteral("alpha\nbeta\ngamma\n")}});
+    QVERIFY2(r.success, qPrintable(r.error));
+
+    QFile f(path);
+    QVERIFY(f.open(QIODevice::ReadOnly));
+    const QByteArray bytes = f.readAll();
+    f.close();
+    // Byte-exact: LF kept, no CRLF translation, UTF-8 payload.
+    QCOMPARE(bytes, QByteArray("alpha\nbeta\ngamma\n"));
+    QVERIFY2(r.output.contains(QStringLiteral("bytes)")),
+             qPrintable(r.output));
+}
+
+// docs/23 G4: a failing open must surface as a tool error — never as the
+// pre-fix "File written successfully" false success.
+void TestSandbox::writeFileToDirectoryFailsWithOpenError() {
+    QTemporaryDir dir = sandboxTempDir();
+    QVERIFY(dir.isValid());
+    const QString path = dir.filePath("subdir");
+    QVERIFY(QDir().mkpath(path));
+
+    ITool* tool = ToolRegistry::instance().find(QStringLiteral("write_file"));
+    QVERIFY(tool);
+    const ToolResult r = tool->execute(QJsonObject{
+        {"path", path},
+        {"content", QStringLiteral("nope")}});
+    QVERIFY(!r.success);
+    QVERIFY2(r.error.contains(QStringLiteral("Cannot open file")),
+             qPrintable(r.error));
 }
 
 QTEST_GUILESS_MAIN(TestSandbox)
