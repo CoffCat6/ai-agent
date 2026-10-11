@@ -20,6 +20,9 @@ public:
     QVector<QJsonArray> seenMessages;
     QVector<LLMResponse> script;
     int idx{0};
+    // docs/24 H4: the first N calls record the request but emit nothing —
+    // simulates LLMServiceBase silently superseding an in-flight request.
+    int silentFirstCalls{0};
 
     void chatComplete(const QJsonArray& messages, const QJsonArray&) override {
         seenMessages.append(messages);
@@ -27,6 +30,7 @@ public:
         if (idx < script.size()) resp = script[idx++];
         else if (!script.isEmpty()) resp = script.last();
         resp.success = true;
+        if (seenMessages.size() <= silentFirstCalls) return;
         emit responseReady(resp);
     }
     void cancel() override {}
@@ -142,6 +146,69 @@ private slots:
         // Verify the summary was stored.
         const QJsonArray found = mem->searchEpisodic(QStringLiteral("Qt"), 10);
         QCOMPARE(found.size(), 1);
+
+        delete llm;
+        delete mem;
+    }
+
+    // docs/24 H4: the service keeps one in-flight request — the second
+    // summary silently supersedes the first, and the single response must
+    // land on the right session (the old FIFO pairing stored it under BOTH
+    // sessions).
+    void supersededSummaryDoesNotMisroute() {
+        auto* mem = makeMemory();
+        auto* llm = new FakeLLM;
+        llm->silentFirstCalls = 1;   // request A is superseded, never answers
+        LLMResponse scripted;
+        scripted.success = true;
+        scripted.content = QStringLiteral("会话B的关键结论摘要");
+        llm->script.append(scripted);
+
+        EpisodicService svc;
+        svc.setMemory(mem);
+        svc.setLlmService(llm);
+        svc.setEnabled(true);
+        QSignalSpy spy(&svc, &EpisodicService::summaryStored);
+
+        QJsonArray messages;
+        messages.append(QJsonObject{{"role", "user"}, {"content", "hello"}});
+        svc.generateAndStoreSummary(QStringLiteral("session-A"), messages);
+        svc.generateAndStoreSummary(QStringLiteral("session-B"), messages);
+
+        // A reported as dropped, B stored — nothing misattributed.
+        QCOMPARE(spy.count(), 2);
+        QCOMPARE(spy.at(0).at(0).toString(), QStringLiteral("session-A"));
+        QCOMPARE(spy.at(0).at(1).toBool(), false);
+        QCOMPARE(spy.at(1).at(0).toString(), QStringLiteral("session-B"));
+        QCOMPARE(spy.at(1).at(1).toBool(), true);
+        QCOMPARE(mem->searchEpisodic(QStringLiteral("会话B"), 10).size(), 1);
+
+        delete llm;
+        delete mem;
+    }
+
+    // docs/24 H4: a superseded request never emits — the deadline must
+    // release the pending entry and report the drop instead of leaking it.
+    void summaryTimeoutReleasesPending() {
+        auto* mem = makeMemory();
+        auto* llm = new FakeLLM;
+        llm->silentFirstCalls = 1;   // this request will never be answered
+
+        EpisodicService svc;
+        svc.setMemory(mem);
+        svc.setLlmService(llm);
+        svc.setEnabled(true);
+        svc.setSummaryTimeoutMs(20);
+        QSignalSpy spy(&svc, &EpisodicService::summaryStored);
+
+        QJsonArray messages;
+        messages.append(QJsonObject{{"role", "user"}, {"content", "hello"}});
+        svc.generateAndStoreSummary(QStringLiteral("session-T"), messages);
+        QCOMPARE(spy.count(), 0);   // request in flight, nothing yet
+
+        QTRY_COMPARE(spy.count(), 1);   // deadline fires
+        QCOMPARE(spy.at(0).at(0).toString(), QStringLiteral("session-T"));
+        QCOMPARE(spy.at(0).at(1).toBool(), false);
 
         delete llm;
         delete mem;

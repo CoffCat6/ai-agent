@@ -42,6 +42,10 @@ public:
     void setEnabled(bool enabled) { m_enabled = enabled; }
     bool isEnabled() const { return m_enabled; }
 
+    // docs/24 H4 (test hook): the pending-request deadline. A superseded
+    // request never emits a response, so the entry would otherwise leak.
+    void setSummaryTimeoutMs(int ms) { m_summaryTimeoutMs = ms; }
+
     // REQ-T8-01: asynchronously generate a summary for the given session
     // and store it via IMemory::saveEpisodic. The LLM call is fire-and-forget;
     // the result is persisted when it arrives. Does nothing if disabled or
@@ -64,17 +68,24 @@ signals:
     // Emitted when an async summary has been stored (or skipped on error).
     void summaryStored(const QString& sessionId, bool success);
 
-private slots:
-    void onSummaryResponse(const LLMResponse& response);
-
 private:
+    // docs/24 H4: routed by the monotonic request id captured in the
+    // one-shot connection — a stale/unknown response is dropped instead of
+    // stealing the first pending entry (the old FIFO pairing misrouted
+    // concurrent summaries).
+    void onSummaryResponse(quint64 requestId, const LLMResponse& response);
+
     IMemory* m_memory{nullptr};
     IAIService* m_llmService{nullptr};
     bool m_enabled{false};
 
     // Pending summary request: maps LLM requestId → sessionId so the async
-    // response can be routed to the correct saveEpisodic call.
+    // response can be routed to the correct saveEpisodic call. At most one
+    // entry exists at a time: the LLM service keeps a single in-flight
+    // request, and a newer chatComplete silently supersedes the older one.
     QHash<quint64, QString> m_pendingSummaries;
+    quint64 m_nextSummaryRequestId{1};
+    int m_summaryTimeoutMs{90000};
 };
 
 } // namespace NexusAI

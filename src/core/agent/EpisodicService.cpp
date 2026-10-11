@@ -9,6 +9,7 @@
 #include <QJsonDocument>
 #include <QJsonObject>
 #include <QLoggingCategory>
+#include <QTimer>
 
 Q_LOGGING_CATEGORY(lcEpisodic, "nexus.episodic")
 
@@ -51,17 +52,43 @@ void EpisodicService::generateAndStoreSummary(const QString& sessionId,
                     {"content", summaryPrompt}}
     };
 
+    // docs/24 H4: the LLM service keeps ONE in-flight request — a second
+    // chatComplete silently supersedes the older one (no signal). Queueing
+    // several pending summaries would misattribute the single response
+    // (the old FIFO pairing stored it under the wrong session), so the
+    // newest request wins and the stale one is reported as dropped.
+    if (!m_pendingSummaries.isEmpty()) {
+        const QString staleSession =
+            m_pendingSummaries.take(m_pendingSummaries.keys().first());
+        qCWarning(lcEpisodic, "Summary request superseded; dropped session %s",
+                  qPrintable(staleSession));
+        emit summaryStored(staleSession, false);
+    }
+
     // Track the pending request so the async response can be routed.
-    // We use a signal connection that self-resolves on responseReady.
-    const auto requestId = m_pendingSummaries.size() + 1;  // simple monotonic
+    const quint64 requestId = m_nextSummaryRequestId++;
     m_pendingSummaries.insert(requestId, sessionId);
 
-    // One-shot connection: disconnect after the first response.
+    // One-shot connection: disconnect after the first response. The lambda
+    // captures its own request id — a broadcast response that reaches a
+    // stale connection routes to nothing instead of stealing an entry.
     const auto conn = std::make_shared<QMetaObject::Connection>();
     *conn = connect(m_llmService, &IAIService::responseReady,
-                    this, [this, conn](const LLMResponse& response) {
+                    this, [this, conn, requestId](const LLMResponse& response) {
         disconnect(*conn);
-        onSummaryResponse(response);
+        onSummaryResponse(requestId, response);
+    });
+
+    // Deadline: a superseded request never emits responseReady — without
+    // this both the one-shot connection and the pending entry leak forever.
+    QTimer::singleShot(m_summaryTimeoutMs, this,
+                       [this, conn, requestId, sessionId]() {
+        if (m_pendingSummaries.remove(requestId) > 0) {
+            disconnect(*conn);
+            qCWarning(lcEpisodic, "Summary request timed out for session %s",
+                      qPrintable(sessionId));
+            emit summaryStored(sessionId, false);
+        }
     });
 
     Activity::usage(Activity::Kind::Agent, QStringLiteral("episodic.summary"),
@@ -70,13 +97,12 @@ void EpisodicService::generateAndStoreSummary(const QString& sessionId,
     m_llmService->chatComplete(requestMessages);
 }
 
-void EpisodicService::onSummaryResponse(const LLMResponse& response) {
-    // Find the sessionId for this response. Since we use one-shot connections,
-    // there should be exactly one pending entry.
-    if (m_pendingSummaries.isEmpty()) return;
-
-    // Take the first pending session (FIFO is fine for this async pattern).
-    const QString sessionId = m_pendingSummaries.take(m_pendingSummaries.keys().first());
+void EpisodicService::onSummaryResponse(quint64 requestId,
+                                        const LLMResponse& response) {
+    // docs/24 H4: strict pairing — anything not matching the live request
+    // (stale connection, late reply after timeout) is dropped.
+    if (!m_pendingSummaries.contains(requestId)) return;
+    const QString sessionId = m_pendingSummaries.take(requestId);
 
     if (!response.success || response.content.isEmpty()) {
         qCWarning(lcEpisodic, "Summary generation failed for session %s: %s",
