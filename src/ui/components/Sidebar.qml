@@ -16,6 +16,10 @@ Rectangle {
     signal settingsRequested()
     signal auditRequested()
     signal logsRequested()
+    // docs/23 G7: a session was (soft-)deleted — main.qml shows the undo
+    // toast carrying the id (toasts live at the overlay level, and the
+    // no-cross-file-id convention routes this through a signal).
+    signal sessionDeletedUndoable(string sessionId, string title)
 
     color: Theme.bgSecondary
     border.width: 0
@@ -1037,6 +1041,9 @@ Rectangle {
                                             confirmResetTimer.stop()
                                             sessionDelegate.confirmDelete = false
                                             AgentVM.deleteSession(modelData.id)
+                                            root.sessionDeletedUndoable(
+                                                modelData.id,
+                                                modelData.title || "")
                                         }
                                     }
                                 }

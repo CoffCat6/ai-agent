@@ -170,6 +170,8 @@ public slots:
     void resumeSession(const QString& sessionId);   // load history + trace from memory
     void cancel() { resetSession(); }               // legacy alias
     void deleteSession(const QString& sessionId);   // remove persisted session
+    // docs/23 G7: undo a soft delete (sessionsChanged on success).
+    bool restoreSession(const QString& sessionId);
     void renameSession(const QString& sessionId, const QString& title);
     // docs/20 §3.1（FORK-701）：重新生成。丢弃最后一条 assistant 回答（含末
     // 轮工具消息），从最后一条 user 消息重新发起请求。持久层同步删除回答

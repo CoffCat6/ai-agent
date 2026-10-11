@@ -498,9 +498,13 @@ qInfo() << "NexusAI" << app.applicationVersion() << "starting";
         const int usage = usageMemory->pruneUsage();
         const int audit = usageMemory->pruneAudit(settings->auditRetentionDays());
         const int tokens = usageMemory->pruneTokenUsage(settings->tokenRetentionDays());
-        if (usage + audit + tokens > 0)
+        // docs/23 G7: 软删除会话的撤销窗口 30 天，到期硬回收四表。
+        const int purged = usageMemory->purgeDeletedSessions(
+            QDateTime::currentDateTime().toMSecsSinceEpoch()
+                - 30LL * 86400 * 1000);
+        if (usage + audit + tokens + purged > 0)
             qInfo() << "Pruned rows: usage" << usage << "audit" << audit
-                    << "token_usage" << tokens;
+                    << "token_usage" << tokens << "deleted sessions" << purged;
     };
     runPrunes();
 

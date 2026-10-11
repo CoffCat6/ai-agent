@@ -462,6 +462,10 @@ void SqliteMemory::migrateSessionProjectColumn() {
     if (!columns.contains("archived"))
         execDdl(q, "ALTER TABLE sessions ADD COLUMN archived INTEGER NOT NULL DEFAULT 0",
                 "add sessions.archived column");
+    // docs/23 G7: 软删除标记（NULL/0 = 未删除；删除时刻为毫秒时间戳）。
+    if (!columns.contains("deleted_at"))
+        execDdl(q, "ALTER TABLE sessions ADD COLUMN deleted_at INTEGER",
+                "add sessions.deleted_at column");
 }
 
 // 思考正文按列存（trace_nodes 是列映射表，不是整节点 JSON 大字段）：老库
@@ -903,7 +907,8 @@ QVariantList SqliteMemory::searchMessages(const QString& keyword, int limit, boo
             "snippet(messages_fts, 0, '[', ']', '…', 16) AS snip, s.title AS title "
             "FROM messages_fts JOIN messages m ON m.id = messages_fts.rowid "
             "LEFT JOIN sessions s ON s.id = m.session_id "
-            "WHERE messages_fts MATCH ? AND (? OR COALESCE(s.archived, 0) = 0)"
+            "WHERE messages_fts MATCH ? AND (? OR COALESCE(s.archived, 0) = 0) "
+            "AND COALESCE(s.deleted_at, 0) = 0"
             ") %1 LIMIT ?").arg(groupOrder));
         query.addBindValue(QStringLiteral("\"%1\"").arg(match));
     } else {
@@ -916,7 +921,8 @@ QVariantList SqliteMemory::searchMessages(const QString& keyword, int limit, boo
             "SELECT m.id AS id, m.session_id AS session_id, m.role AS role, "
             "m.timestamp AS timestamp, m.content AS content, s.title AS title "
             "FROM messages m LEFT JOIN sessions s ON s.id = m.session_id "
-            "WHERE m.content LIKE ? ESCAPE '\\' AND (? OR COALESCE(s.archived, 0) = 0)"
+            "WHERE m.content LIKE ? ESCAPE '\\' AND (? OR COALESCE(s.archived, 0) = 0) "
+            "AND COALESCE(s.deleted_at, 0) = 0"
             ") %1 LIMIT ?").arg(groupOrder));
         query.addBindValue(QStringLiteral("%%1%").arg(like));
     }
@@ -1207,7 +1213,8 @@ bool SqliteMemory::setSessionArchived(const QString& id, bool archived) {
 QJsonArray SqliteMemory::listSessions(int limit, bool includeArchived) {
     QSqlQuery query(m_db);
     query.prepare("SELECT id, title, updated_at, project_id, pinned, archived FROM sessions "
-                  "WHERE (? OR archived = 0) ORDER BY pinned DESC, updated_at DESC, id DESC LIMIT ?");
+                  "WHERE (? OR archived = 0) AND COALESCE(deleted_at, 0) = 0 "
+                  "ORDER BY pinned DESC, updated_at DESC, id DESC LIMIT ?");
     query.addBindValue(includeArchived);
     query.addBindValue(limit);
 
@@ -1303,7 +1310,47 @@ void SqliteMemory::setSessionProject(const QString& sessionId,
         qWarning() << "Failed to set session project:" << q.lastError().text();
 }
 
+// docs/23 G7: 软删除。消息/轨迹/审计为撤销窗口保留（审计链"重新生成是
+// 正常行为"的同一纪律），列表与搜索按 deleted_at 过滤；到期行由
+// purgeDeletedSessions 硬级联回收。
 void SqliteMemory::deleteSession(const QString& sessionId) {
+    QSqlQuery query(m_db);
+    query.prepare("UPDATE sessions SET deleted_at = ? WHERE id = ?");
+    query.addBindValue(QDateTime::currentDateTime().toMSecsSinceEpoch());
+    query.addBindValue(sessionId);
+    if (!query.exec())
+        qWarning() << "Failed to delete session:" << query.lastError().text();
+}
+
+bool SqliteMemory::restoreSession(const QString& sessionId) {
+    QSqlQuery query(m_db);
+    query.prepare("UPDATE sessions SET deleted_at = NULL WHERE id = ?");
+    query.addBindValue(sessionId);
+    return query.exec() && query.numRowsAffected() == 1;
+}
+
+int SqliteMemory::purgeDeletedSessions(qint64 deletedBefore) {
+    QSqlQuery query(m_db);
+    query.prepare("SELECT id FROM sessions "
+                  "WHERE deleted_at IS NOT NULL AND deleted_at > 0 AND deleted_at < ?");
+    query.addBindValue(deletedBefore);
+    if (!query.exec()) {
+        qWarning() << "Failed to list expired sessions:"
+                   << query.lastError().text();
+        return 0;
+    }
+    QStringList expired;
+    while (query.next()) expired.append(query.value(0).toString());
+
+    int purged = 0;
+    for (const QString& id : std::as_const(expired)) {
+        hardDeleteSessionRows(id);
+        ++purged;
+    }
+    return purged;
+}
+
+void SqliteMemory::hardDeleteSessionRows(const QString& sessionId) {
     QSqlQuery query(m_db);
     const auto execDelete = [&](const char* what) {
         if (!query.exec())

@@ -59,6 +59,17 @@ public:
     virtual void deleteSession(const QString& sessionId) {
         Q_UNUSED(sessionId);
     }
+    // docs/23 G7: sessions are soft-deleted (messages/trace stay for the
+    // undo window) and hard-purged after the retention window. Defaults
+    // keep alternate IMemory backends compiling without the feature.
+    virtual bool restoreSession(const QString& sessionId) {
+        Q_UNUSED(sessionId);
+        return false;
+    }
+    virtual int purgeDeletedSessions(qint64 deletedBefore) {
+        Q_UNUSED(deletedBefore);
+        return 0;
+    }
     virtual void renameSession(const QString& sessionId, const QString& title) {
         Q_UNUSED(sessionId); Q_UNUSED(title);
     }

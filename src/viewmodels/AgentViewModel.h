@@ -357,6 +357,8 @@ public:
     // opened for the session instead — switching never interrupts a task.
     Q_INVOKABLE void loadSession(const QString& sessionId);
     Q_INVOKABLE void deleteSession(const QString& sessionId);
+    // docs/23 G7: undo a soft-deleted session within the toast window.
+    Q_INVOKABLE bool undoDeleteSession(const QString& sessionId);
     Q_INVOKABLE void renameSession(const QString& sessionId, const QString& title);
     Q_INVOKABLE void setSessionPinned(const QString& sessionId, bool pinned);
     Q_INVOKABLE void setSessionArchived(const QString& sessionId, bool archived);

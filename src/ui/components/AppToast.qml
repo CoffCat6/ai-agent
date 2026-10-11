@@ -6,18 +6,27 @@ import NexusAI.ViewModels
 // Transient toast banner anchored to the top edge of the overlay.
 // accentColor picks the semantic border/text color (Theme.statusDanger for
 // errors, Theme.statusSuccess for notices); duration is the auto-hide delay
-// in milliseconds. Click anywhere on it to dismiss early.
+// in milliseconds. Click anywhere on it to dismiss early. An optional
+// action button (actionText) fires actionTriggered on click — used by the
+// session-delete undo toast (docs/23 G7).
 Rectangle {
     id: root
 
     property string message: ""
     property color accentColor: Theme.statusSuccess
     property int duration: 3500
+    property string actionText: ""
+    signal actionTriggered()
 
     function show(msg) {
         message = msg
         opacity = 1
         hideTimer.restart()
+    }
+
+    function showWithAction(msg, action) {
+        actionText = action
+        show(msg)
     }
 
     parent: Overlay.overlay
@@ -26,8 +35,8 @@ Rectangle {
     anchors.topMargin: 24
     z: 100
 
-    width: Math.min(toastText.implicitWidth, 460) + 32
-    height: toastText.implicitHeight + 20
+    width: toastRow.implicitWidth + 32
+    height: toastRow.implicitHeight + 20
     radius: 8
     color: Theme.bgSecondary
     border.width: 1
@@ -37,27 +46,51 @@ Rectangle {
 
     Behavior on opacity { NumberAnimation { duration: 200 } }
 
-    Text {
-        id: toastText
+    Row {
+        id: toastRow
+        // Above the dismiss MouseArea so the action button receives its
+        // own clicks instead of the backdrop dismiss.
+        z: 1
         anchors.centerIn: parent
-        width: Math.min(implicitWidth, 460)
-        text: root.message
-        color: root.accentColor
-        font.pixelSize: Theme.fontSizeCaption
-        font.family: Theme.fontSans
-        wrapMode: Text.Wrap
+        spacing: 12
+
+        Text {
+            id: toastText
+            width: Math.min(implicitWidth, 460)
+            text: root.message
+            color: root.accentColor
+            font.pixelSize: Theme.fontSizeCaption
+            font.family: Theme.fontSans
+            wrapMode: Text.Wrap
+        }
+
+        AppButton {
+            visible: root.actionText.length > 0
+            text: root.actionText
+            onClicked: {
+                root.opacity = 0
+                root.actionTriggered()
+            }
+            Accessible.name: root.actionText
+        }
     }
 
     Timer {
         id: hideTimer
         interval: root.duration
-        onTriggered: root.opacity = 0
+        onTriggered: {
+            root.opacity = 0
+            root.actionText = ""
+        }
     }
 
     MouseArea {
         anchors.fill: parent
         cursorShape: Qt.PointingHandCursor
-        onClicked: root.opacity = 0
+        onClicked: {
+            root.opacity = 0
+            root.actionText = ""
+        }
     }
 
     Accessible.role: Accessible.Notification

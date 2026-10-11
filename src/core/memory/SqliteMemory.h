@@ -66,6 +66,12 @@ public:
     void touchSession(const QString& sessionId) override;
     QJsonArray listSessions(int limit = 50, bool includeArchived = false) override;
     void deleteSession(const QString& sessionId) override;
+    // docs/23 G7: soft-delete support. deleteSession marks deleted_at
+    // (messages/trace stay for the undo window); restoreSession unmarks;
+    // purgeDeletedSessions hard-cascades rows whose deleted_at is older
+    // than the cutoff. Returns the number of sessions purged.
+    bool restoreSession(const QString& sessionId) override;
+    int purgeDeletedSessions(qint64 deletedBefore) override;
     void renameSession(const QString& sessionId, const QString& title) override;
 
     // docs/17 A0: 项目级会话。projects 表 + sessions.project_id（NULL=本地）。
@@ -133,6 +139,9 @@ public:
 private:
     void initDatabase();
     void createTables();
+    // docs/23 G7: 硬级联（messages/episodic/sessions/trace_nodes），
+    // 由 purgeDeletedSessions 对到期软删会话逐个调用。
+    void hardDeleteSessionRows(const QString& sessionId);
     // docs/17 A0: sessions.project_id 列补齐（受控 ALTER，幂等）。
     void migrateSessionProjectColumn();
     void migrateKnowledgeSchema();

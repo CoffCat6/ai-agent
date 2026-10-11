@@ -423,6 +423,14 @@ void AIAgent::deleteSession(const QString& sessionId) {
     emit sessionsChanged();
 }
 
+// docs/23 G7: undo a soft delete — the undo toast routes here.
+bool AIAgent::restoreSession(const QString& sessionId) {
+    if (!m_memory || sessionId.isEmpty()) return false;
+    if (!m_memory->restoreSession(sessionId)) return false;
+    emit sessionsChanged();
+    return true;
+}
+
 void AIAgent::renameSession(const QString& sessionId, const QString& title) {
     const QString trimmed = title.trimmed();
     if (!m_memory || sessionId.isEmpty() || trimmed.isEmpty()) return;

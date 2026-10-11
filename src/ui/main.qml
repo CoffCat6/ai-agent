@@ -355,6 +355,32 @@ ApplicationWindow {
         }
     }
 
+    // docs/23 G7: session-delete undo toast — the 30-day soft-delete window
+    // is the safety net, this toast is the affordance.
+    AppToast {
+        id: deleteUndoToast
+        property string pendingSessionId: ""
+        accentColor: Theme.textSecondary
+        duration: 10000
+        // Slide below the notice toast while both are on screen
+        anchors.topMargin: noticeToast.visible ? 104 : 24
+        onActionTriggered: {
+            AgentVM.undoDeleteSession(pendingSessionId)
+            pendingSessionId = ""
+        }
+    }
+
+    Connections {
+        target: sidebarPanel
+        function onSessionDeletedUndoable(sessionId, title) {
+            deleteUndoToast.pendingSessionId = sessionId
+            deleteUndoToast.showWithAction(
+                qsTr("已删除会话「%1」，可撤销").arg(
+                    title.length > 0 ? title : qsTr("会话")),
+                qsTr("撤销"))
+        }
+    }
+
     // ── Keyboard Shortcuts ─────────────────────────────
     Shortcut {
         sequence: "Ctrl+,"

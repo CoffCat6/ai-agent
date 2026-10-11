@@ -297,6 +297,11 @@ void ChatSessionController::deleteSession(const QString& sessionId) {
     if (m_agent) m_agent->deleteSession(sessionId);
 }
 
+// docs/23 G7: undo a soft-deleted session (toast action).
+bool ChatSessionController::restoreSession(const QString& sessionId) {
+    return m_agent ? m_agent->restoreSession(sessionId) : false;
+}
+
 void ChatSessionController::renameSession(const QString& sessionId, const QString& title) {
     Activity::usage(Activity::Kind::User, QStringLiteral("session.rename"),
                     sessionId);

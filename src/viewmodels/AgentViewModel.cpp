@@ -963,6 +963,17 @@ void AgentViewModel::deleteSession(const QString& sessionId) {
         controller->deleteSession(sessionId);
 }
 
+// docs/23 G7: undo a soft-deleted session — routed from the undo toast.
+bool AgentViewModel::undoDeleteSession(const QString& sessionId) {
+    if (sessionId.isEmpty()) return false;
+    ChatSessionController* controller = controllerWithAgent();
+    const bool ok = controller ? controller->restoreSession(sessionId) : false;
+    if (ok)
+        Activity::usage(Activity::Kind::User,
+                        QStringLiteral("session.delete_undo"), sessionId);
+    return ok;
+}
+
 void AgentViewModel::renameSession(const QString& sessionId, const QString& title) {
     Activity::usage(Activity::Kind::User, QStringLiteral("session.rename"),
                     sessionId);

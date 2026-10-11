@@ -73,6 +73,8 @@ private slots:
     void clearRemovesTraceNodes();
     // docs/23 G5: a failing loadMessages query is logged, not silent.
     void loadMessagesFailureIsLoggedNotSilent();
+    // docs/23 G7: soft delete → hidden from list/search → undo → purge.
+    void deletedSessionRoundTrip();
     void episodicFullTextSearch();
     void auditTrail();
     void tokenStatsAggregate();
@@ -172,7 +174,11 @@ void TestMemory::sessionDeleteAndRename() {
     sessions = mem.listSessions(10);
     QCOMPARE(sessions.size(), 1);
     QCOMPARE(sessions.at(0).toObject().value("id").toString(), QStringLiteral("s2"));
-    QCOMPARE(mem.loadMessages("s1", 10).size(), 0); // messages removed too
+    // docs/23 G7: 软删除——消息为撤销窗口保留（硬级联见
+    // deletedSessionRoundTrip 的 purge 断言）。
+    QVERIFY(mem.loadMessages("s1", 10).size() > 0);
+    QVERIFY(mem.restoreSession("s1"));
+    QCOMPARE(mem.listSessions(10).size(), 2);
 }
 
 void TestMemory::auditTrail() {
@@ -388,6 +394,9 @@ void TestMemory::episodicFullTextSearch() {
 // refreshes afterwards) and per-session cleanup.
 void TestMemory::traceNodeRoundTrip() {
     SqliteMemory mem(QStringLiteral(":memory:"));
+    // docs/23 G7: a real session row exists in production, and the purge
+    // cascade below only targets sessions that were soft-deleted.
+    mem.beginSession("s1", "Trace");
 
     QJsonObject node;
     node["id"] = QStringLiteral("n1");
@@ -425,6 +434,10 @@ void TestMemory::traceNodeRoundTrip() {
 
     QVERIFY(mem.loadTraceNodes("other").isEmpty());
     mem.deleteSession("s1");
+    // docs/23 G7: 软删除保留轨迹供撤销；硬级联移至 purgeDeletedSessions。
+    QVERIFY(!mem.loadTraceNodes("s1").isEmpty());
+    QCOMPARE(mem.purgeDeletedSessions(
+                 QDateTime::currentMSecsSinceEpoch() + 1000), 1);
     QVERIFY(mem.loadTraceNodes("s1").isEmpty());
 }
 
@@ -1076,6 +1089,47 @@ void TestMemory::clearRemovesTraceNodes() {
 
     mem.clear("s1");
     QVERIFY(mem.loadTraceNodes(QStringLiteral("s1")).isEmpty());
+}
+
+// docs/23 G7: soft delete hides the session from the list and from message
+// search (both FTS and LIKE paths join sessions), the undo window keeps the
+// rows, restoreSession unmarks, and purgeDeletedSessions hard-cascades the
+// four tables while leaving the audit chain intact.
+void TestMemory::deletedSessionRoundTrip() {
+    SqliteMemory mem(QStringLiteral(":memory:"));
+    mem.beginSession("s1", "Doomed");
+    mem.saveMessage("s1", msg("user", QStringLiteral("删除撤销检索锚点")));
+    QJsonObject node;
+    node["id"] = QStringLiteral("n1");
+    node["type"] = QStringLiteral("thinking");
+    node["status"] = QStringLiteral("completed");
+    node["args"] = QString();
+    node["timestamp"] = 1000.0;
+    mem.saveTraceNode("s1", node, 0);
+    mem.logAudit("s1", "task_complete", "", "", true, "done", 1, 10, 5, "m");
+
+    mem.deleteSession("s1");
+    QCOMPARE(mem.listSessions(10).size(), 0);
+    QVERIFY(mem.searchMessages(QStringLiteral("检索锚点"), 10).isEmpty());
+    QVERIFY(mem.loadMessages("s1", 10).size() > 0);   // undo window
+
+    QVERIFY(mem.restoreSession("s1"));
+    QCOMPARE(mem.listSessions(10).size(), 1);
+    QCOMPARE(mem.searchMessages(QStringLiteral("检索锚点"), 10).size(), 1);
+
+    // Expired: hard cascade removes messages/trace/episodic + the session
+    // row; the audit chain stays (regenerate/undo history is kept by design).
+    mem.deleteSession("s1");
+    QCOMPARE(mem.purgeDeletedSessions(
+                 QDateTime::currentMSecsSinceEpoch() + 1000), 1);
+    QCOMPARE(mem.listSessions(10).size(), 0);
+    QVERIFY(mem.loadMessages("s1", 10).isEmpty());
+    QVERIFY(mem.loadTraceNodes(QStringLiteral("s1")).isEmpty());
+    QSqlQuery q(mem.databaseForTest());
+    QVERIFY(q.exec("SELECT count(*) FROM sessions") && q.next());
+    QCOMPARE(q.value(0).toInt(), 0);
+    QVERIFY(q.exec("SELECT count(*) FROM audit_log") && q.next());
+    QCOMPARE(q.value(0).toInt(), 1);
 }
 
 // docs/23 G5: dropping the messages table makes loadMessages' exec fail —

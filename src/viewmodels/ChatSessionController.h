@@ -92,6 +92,8 @@ public:
     void newChat();
     void loadSession(const QString& sessionId);
     void deleteSession(const QString& sessionId);
+    // docs/23 G7: undo a soft-deleted session.
+    bool restoreSession(const QString& sessionId);
     void renameSession(const QString& sessionId, const QString& title);
     QVariantList auditLog(int limit) const;
     // docs/16 §8.3: live context composition of this tab's agent (TopBar
