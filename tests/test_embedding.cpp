@@ -52,6 +52,16 @@ public:
                     body["embeddings"] = embeddings;
                     if (m_delayMs > 0)
                         QTest::qSleep(m_delayMs);
+                    // docs/24 H5: optionally answer 500 for the first N
+                    // requests (transport-error retry coverage).
+                    if (m_requests <= m_failFirstRequests) {
+                        socket->write("HTTP/1.1 500 Internal Server Error\r\n"
+                                      "Content-Length: 0\r\n"
+                                      "Connection: close\r\n\r\n");
+                        socket->flush();
+                        socket->disconnectFromHost();
+                        return;
+                    }
                     respond(socket, QJsonDocument(body).toJson(QJsonDocument::Compact));
                 });
             }
@@ -63,6 +73,8 @@ public:
     QString baseUrl() const {
         return QStringLiteral("http://127.0.0.1:%1").arg(m_server.serverPort());
     }
+    // docs/24 H5: fail the first N requests with HTTP 500.
+    void setFailFirstRequests(int n) { m_failFirstRequests = n; }
     int requests() const { return m_requests; }
     const QStringList& modelsSeen() const { return m_modelsSeen; }
 
@@ -105,6 +117,7 @@ private:
     QHash<QTcpSocket*, QByteArray> m_buffer;
     int m_dim;
     int m_delayMs{0};
+    int m_failFirstRequests{0};
     int m_requests{0};
     QStringList m_modelsSeen;
 };
@@ -230,6 +243,24 @@ private slots:
         // The next call picks up the swapped model.
         QCOMPARE(embedder.embedBatch(makeTexts(1)).size(), 1);
         QCOMPARE(server.modelsSeen().last(), QStringLiteral("model-b"));
+    }
+
+    // docs/24 H5: one transport-error retry per batch — a single blip must
+    // not degrade the whole document to pseudo embeddings permanently.
+    void batchTransportErrorRetriedOnce() {
+        FakeEmbedServer server(4);
+        server.setFailFirstRequests(1);   // first request → HTTP 500
+
+        OllamaEmbedding embedder;
+        embedder.setBaseUrl(server.baseUrl());
+        embedder.setModel(QStringLiteral("m"));
+
+        QSignalSpy progress(&embedder, &OllamaEmbedding::embedProgress);
+        // One batch of 2: request 1 fails, retry succeeds.
+        const QVector<QVector<float>> result = embedder.embedBatch(makeTexts(2));
+        QCOMPARE(result.size(), 2);
+        QCOMPARE(server.requests(), 2);
+        QCOMPARE(progress.count(), 1);   // progress only after success
     }
 };
 

@@ -7,6 +7,7 @@
 #include <QJsonArray>
 #include <QEventLoop>
 #include <QDebug>
+#include <QThread>
 
 namespace NexusAI {
 
@@ -119,11 +120,25 @@ QVector<QVector<float>> OllamaEmbedding::embedBatch(const QStringList& texts) {
         request.setHeader(QNetworkRequest::ContentTypeHeader, "application/json");
         request.setTransferTimeout(120000);
 
-        QNetworkReply* reply = nam.post(request, QJsonDocument(body).toJson());
-
-        QEventLoop loop;
-        connect(reply, &QNetworkReply::finished, &loop, &QEventLoop::quit);
-        loop.exec();
+        // docs/24 H5: one retry per batch on transport errors — a single
+        // transient failure (Ollama restarting, blip) used to degrade the
+        // whole document to pseudo embeddings permanently. Protocol errors
+        // (size mismatch / empty vectors below) stay fail-fast: retrying
+        // them is meaningless.
+        QNetworkReply* reply = nullptr;
+        for (int attempt = 0; attempt < 2; ++attempt) {
+            if (attempt > 0) {
+                qWarning() << "Batch embedding request failed once, retrying:"
+                           << reply->errorString();
+                reply->deleteLater();
+                QThread::msleep(500);
+            }
+            reply = nam.post(request, QJsonDocument(body).toJson());
+            QEventLoop loop;
+            connect(reply, &QNetworkReply::finished, &loop, &QEventLoop::quit);
+            loop.exec();
+            if (reply->error() == QNetworkReply::NoError) break;
+        }
 
         if (reply->error() != QNetworkReply::NoError) {
             qWarning() << "Batch embedding request failed:" << reply->errorString();
