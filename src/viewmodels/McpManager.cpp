@@ -6,6 +6,8 @@
 #include "core/utils/Activity.h"
 
 #include <QLoggingCategory>
+#include <QCoreApplication>
+#include <QTimer>
 #include <utility>
 
 Q_LOGGING_CATEGORY(lcMcp, "nexus.mcp")
@@ -30,7 +32,24 @@ McpManager* McpManager::create(QQmlEngine*, QJSEngine*) {
 }
 
 McpManager::McpManager(QObject* parent)
-    : QObject(parent) {}
+    : QObject(parent) {
+    // docs/24 H9: 应用退出时同步回收在用与已退役的 client——延迟退役的
+    // singleShot 依赖事件循环，退出后不会触发，stdio 子进程（QProcess）
+    // 将永久残留。client 析构内的 reaping 负责关闭子进程。
+    if (qApp) {
+        connect(qApp, &QCoreApplication::aboutToQuit, this, [this]() {
+            const auto reapAll = [this](QVector<McpClient*>& list) {
+                for (McpClient* c : std::as_const(list)) {
+                    c->disconnectFromServer();
+                    delete c;   // 析构内 reaps 子进程（每个至多阻塞 2s）
+                }
+                list.clear();
+            };
+            reapAll(m_clients);
+            reapAll(m_retired);
+        });
+    }
+}
 
 void McpManager::loadAndConnectAll() {
     const auto configs = McpConfig::load();
@@ -62,11 +81,25 @@ void McpManager::applyRestoredConfigs(const QVariantList& servers) {
             ToolRegistry::instance().takeTool(
                 McpToolAdapter::registryNameFor(client->serverName(), tool.name));
         client->disconnectFromServer();
-        client->deleteLater();
+        retireClient(client);
     }
     m_clients.clear();
     m_configs = servers;
     refreshServers();
+}
+
+// docs/24 H9: keep a removed (disconnected) client alive past the maximum
+// in-flight execute window (35s call + 3s cancel grace) — the adapter's
+// pool-thread invokeMethod(client, ...) then always hits a live object
+// (docs/22 F1's shared_ptr covers the adapter; this covers the client).
+void McpManager::retireClient(McpClient* client) {
+    // Track the retirement so the aboutToQuit hook can reap clients whose
+    // delayed delete never fired (app exited inside the window).
+    m_retired.append(client);
+    QTimer::singleShot(40000, client, [this, client]() {
+        m_retired.removeAll(client);
+        client->deleteLater();
+    });
 }
 
 McpClient* McpManager::clientFor(const QString& name) const {
@@ -215,7 +248,7 @@ void McpManager::removeServer(const QString& name) {
             ToolRegistry::instance().takeTool(
                 McpToolAdapter::registryNameFor(client->serverName(), tool.name));
         m_clients.removeAll(client);
-        client->deleteLater();
+        retireClient(client);
     }
     for (int i = 0; i < m_configs.size(); ++i) {
         if (m_configs.at(i).toMap().value("name").toString() == name) {
@@ -259,7 +292,7 @@ void McpManager::setEnabled(const QString& name, bool enabled) {
                 McpToolAdapter::registryNameFor(client->serverName(), tool.name));
         client->disconnectFromServer();
         m_clients.removeAll(client);
-        client->deleteLater();
+        retireClient(client);
     } else if (enabled && !client) {
         // Re-enable: build the client from the persisted config entry.
         for (const QVariant& entry : m_configs) {

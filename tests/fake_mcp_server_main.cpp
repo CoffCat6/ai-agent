@@ -173,9 +173,19 @@ int main(int argc, char* argv[]) {
 
     // stdin readiness via QSocketNotifier is awkward for Windows pipes in a
     // test helper; use a polling timer instead (small and sufficient here).
+    // docs/24 H9: exit on stdin EOF after having served requests — when the
+    // parent test process dies, an orphaned server must release its
+    // inherited handles instead of polling forever.
+    int eofRounds = 0;
     auto* timer = new QTimer(&app);
     timer->setInterval(15);
-    QObject::connect(timer, &QTimer::timeout, [&onLine]() {
+    QObject::connect(timer, &QTimer::timeout, [&onLine, &eofRounds]() {
+        if (qin.atEnd()) {
+            if (handledRequests > 0 && ++eofRounds > 3)
+                QCoreApplication::exit(0);
+            return;
+        }
+        eofRounds = 0;
         while (!qin.atEnd()) {
             const QString line = qin.readLine();
             onLine(line);

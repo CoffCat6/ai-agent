@@ -57,10 +57,17 @@ private:
     McpClient* clientFor(const QString& name) const;
     McpClient* ensureClient(const QVariantMap& server);
     void connectClient(McpClient* client);
+    // docs/24 H9: delayed destruction for removed clients (40s > the
+    // in-flight execute ceiling) so pool-thread invokeMethod always hits
+    // a live object.
+    void retireClient(McpClient* client);
     void persist();
     void refreshServers();
 
     QVector<McpClient*> m_clients;
+    // docs/24 H9: removed clients awaiting their 40s delayed destruction;
+    // reaped synchronously at application quit.
+    QVector<McpClient*> m_retired;
     QVariantList m_configs;      // persisted shape (McpConfig::save)
     QString m_lastError;
 
