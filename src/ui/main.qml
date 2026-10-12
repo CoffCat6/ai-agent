@@ -154,8 +154,8 @@ ApplicationWindow {
         // 接到同一个 KnowledgeDocDialog 实例。
         Connections {
             target: AgentVM
-            function onKnowledgeDocumentOpenRequested(name) {
-                knowledgeDocDialog.openFor(name)
+            function onKnowledgeDocumentOpenRequested(name, chunk) {
+                knowledgeDocDialog.openFor(name, chunk)
             }
         }
     }

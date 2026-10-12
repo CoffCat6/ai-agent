@@ -174,6 +174,9 @@ private:
     // docs/17 A0: sessions.project_id 列补齐（受控 ALTER，幂等）。
     void migrateSessionProjectColumn();
     void migrateKnowledgeSchema();
+    // docs/25: knowledge_chunks.page 列补齐（引用定位——chunk 页码；幂等，
+    // 仅老库升级路径，新库由建表 DDL 带上）。
+    void migrateKnowledgeChunkPageColumn();
     // trace_nodes.reasoning：思考正文列，老库补列（新库由建表 DDL 带上）
     void migrateTraceNodeReasoningColumn();
     // backfillRows（docs/23 G1）：仅 user_version==0（老库升级/新库首建）

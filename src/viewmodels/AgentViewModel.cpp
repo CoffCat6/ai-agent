@@ -45,6 +45,109 @@
 namespace NexusAI {
 namespace {
 
+// docs/25: 单文件批量导入结果。status:
+//   ok | degraded | duplicate | failed | cancelled
+struct BatchFileResult {
+    QString path;
+    QString name;
+    QString status;
+    QString message;
+    int chunks{0};
+
+    QVariantMap toMap() const {
+        return QVariantMap{{QStringLiteral("path"), path},
+                           {QStringLiteral("name"), name},
+                           {QStringLiteral("status"), status},
+                           {QStringLiteral("message"), message},
+                           {QStringLiteral("chunks"), chunks}};
+    }
+};
+
+// docs/25: worker 侧的单文件导入——读取（PDF 走 QPdf 提取，其余按 UTF-8
+// 文本）→ 内容去重 → 唯一命名 → 入库。与单文件路径（importExtractedText）
+// 的语义一致，但以状态值而非信号/提示上报。只捕获值与 rag（过程生命
+// 周期对象，docs/24 H6），绝不捕获 view model。
+BatchFileResult readAndIngestFile(const QString& path, RagService* rag) {
+    BatchFileResult result;
+    result.path = path;
+    const QFileInfo info(QUrl(path).isLocalFile()
+                             ? QUrl(path).toLocalFile()
+                             : path);
+    result.name = info.fileName();
+
+    QString content;
+    QStringList pageTexts;
+    if (info.suffix().compare(QLatin1String("pdf"), Qt::CaseInsensitive) == 0) {
+        const PdfExtractResult pdf = extractPdfText(info.absoluteFilePath());
+        if (!pdf.ok()) {
+            result.status = QStringLiteral("failed");
+            switch (pdf.status) {
+            case PdfExtractStatus::Encrypted:
+                result.message = QObject::tr("PDF 已加密或需要密码");
+                break;
+            case PdfExtractStatus::Corrupted:
+                result.message = QObject::tr("PDF 文件已损坏或格式无效");
+                break;
+            case PdfExtractStatus::NoText:
+                result.message = QObject::tr("PDF 没有文本层（可能是扫描件）");
+                break;
+            default:
+                result.message = QObject::tr("PDF 读取失败");
+                break;
+            }
+            return result;
+        }
+        content = pdf.text;
+        pageTexts = pdf.pageTexts;   // docs/25: chunk 页码映射数据源
+    } else {
+        QFile file(info.absoluteFilePath());
+        if (!file.open(QIODevice::ReadOnly | QIODevice::Text)) {
+            result.status = QStringLiteral("failed");
+            result.message = QObject::tr("无法打开文件");
+            return result;
+        }
+        content = QString::fromUtf8(file.readAll());
+        file.close();
+    }
+
+    if (content.trimmed().isEmpty()) {
+        result.status = QStringLiteral("failed");
+        result.message = QObject::tr("内容为空或无可用分段");
+        return result;
+    }
+
+    const QString hash = knowledgeContentHash(content);
+    if (rag->containsContentHash(hash)) {
+        result.status = QStringLiteral("duplicate");
+        result.message = QObject::tr("相同内容的文档已存在");
+        return result;
+    }
+
+    const QString name = rag->uniqueDocumentName(info.fileName());
+    result.name = name;
+    const int chunks = rag->ingestDocument(name, content, pageTexts);
+    result.chunks = chunks;
+    if (chunks > 0) {
+        if (rag->usesPseudoEmbedding(name)) {
+            result.status = QStringLiteral("degraded");
+            result.message =
+                QObject::tr("嵌入服务不可用，已降级为本地伪嵌入（可稍后重新嵌入）");
+        } else {
+            result.status = QStringLiteral("ok");
+        }
+    } else if (chunks == -1) {
+        result.status = QStringLiteral("failed");
+        result.message = QObject::tr("文档过大，超过单文档分段上限");
+    } else if (chunks == -3) {
+        result.status = QStringLiteral("failed");
+        result.message = QObject::tr("超出知识库总段数预算");
+    } else {
+        result.status = QStringLiteral("failed");
+        result.message = QObject::tr("导入失败");
+    }
+    return result;
+}
+
 void persistSettingsValue(const QString& key, const QVariant& value) {
     QString error;
     if (!SettingsRepository::writeValue(key, value, &error))
@@ -861,16 +964,146 @@ void AgentViewModel::startPdfImport(const QString& path, const QFileInfo& info) 
             setKnowledgeBusy(false);
             return;
         }
-        importExtractedText(info, pdf.text);
+        importExtractedText(info, pdf.text, pdf.pageTexts);
     });
 
     watcher->setFuture(QtConcurrent::run([path]() { return extractPdfText(path); }));
 }
 
+// ── docs/25: 批量知识库导入 ──────────────────────────────────
+
+void AgentViewModel::importDocuments(const QStringList& paths) {
+    if (!m_rag || paths.isEmpty()) return;
+    // 单文件走既有路径：保留其分类错误提示（errorOccurred 弹窗）。
+    if (paths.size() == 1) {
+        importDocument(paths.first());
+        return;
+    }
+    if (m_knowledgeBusy || m_batchRunning) {
+        emit errorOccurred(tr("知识库正忙（导入或重新嵌入进行中），请稍后再试"));
+        return;
+    }
+    QStringList queue;
+    for (const QString& p : paths) {
+        const QString clean = QUrl(p).isLocalFile() ? QUrl(p).toLocalFile() : p;
+        if (!clean.isEmpty()) queue.append(clean);
+    }
+    if (queue.isEmpty()) return;
+    // 新一轮批量导入：清空上一轮结果，避免 done/total 与结果列表跨轮累加。
+    // 重试路径（retryFailedBatchImports）不经此处，保留历史条目。
+    m_batchResults.clear();
+    startBatchQueue(queue);
+}
+
+// GUI 线程：取队首文件、派发池任务；任务完成回调里写结果并链到下一个。
+// 取消即不再派发后续文件（正在导入的文件会完成——单文件嵌入受 120s
+// 超时约束，UI 文案已说明）。每文件一个独立池任务 + watcher 挂 this：
+// worker 只捕获值与 rag（过程生命周期对象，docs/24 H6），VM 中途销毁
+// 不会悬垂。
+void AgentViewModel::importNextBatchFile() {
+    if (!m_batchRunning) return;
+
+    if (m_batchCancelRequested) {
+        for (const QString& path : std::as_const(m_batchQueue)) {
+            m_batchResults.append(BatchFileResult{
+                path, QFileInfo(path).fileName(),
+                QStringLiteral("cancelled"), QString()}.toMap());
+        }
+        m_batchQueue.clear();
+        finishBatchImport();
+        return;
+    }
+    if (m_batchQueue.isEmpty()) {
+        finishBatchImport();
+        return;
+    }
+
+    const QString path = m_batchQueue.takeFirst();
+    m_batchCurrent = QFileInfo(path).fileName();
+    emit batchImportProgressChanged();
+
+    auto* watcher = new QFutureWatcher<BatchFileResult>(this);
+    connect(watcher, &QFutureWatcherBase::finished, this,
+            [this, watcher, path]() {
+        const BatchFileResult result = watcher->result();
+        watcher->deleteLater();
+        m_batchResults.append(result.toMap());
+        if (result.status == QLatin1String("failed")) ++m_batchFailedCount;
+        m_batchCurrent.clear();
+        emit batchImportProgressChanged();
+        importNextBatchFile();
+    });
+    watcher->setFuture(QtConcurrent::run([rag = m_rag, path]() {
+        return readAndIngestFile(path, rag);
+    }));
+}
+
+void AgentViewModel::startBatchQueue(const QStringList& paths) {
+    m_batchQueue = paths;
+    // total 覆盖"本轮已保留的结果 + 待处理文件"，done = 结果数；重试时
+    // 分母因此与结果列表保持自洽（不会出现 done > total）。
+    m_batchTotal = m_batchResults.size() + paths.size();
+    m_batchFailedCount = 0;
+    m_batchCancelRequested = false;
+    m_batchRunning = true;
+    m_batchCurrent.clear();
+    setKnowledgeBusy(true);
+    Activity::usage(Activity::Kind::User, QStringLiteral("doc.import.batch"),
+                    QString::number(paths.size()));
+    emit batchImportProgressChanged();
+    importNextBatchFile();
+}
+
+void AgentViewModel::cancelBatchImport() {
+    // 立即置位并广播，让 UI 能显示"正在取消"；后续文件在下一个文件完成
+    // 回调里统一标记 cancelled（正在导入的文件会先跑完）。
+    if (m_batchRunning && !m_batchCancelRequested) {
+        m_batchCancelRequested = true;
+        emit batchImportProgressChanged();
+    }
+}
+
+// 仅重跑失败项：从结果中移除 failed 条目重新入队（成功/降级/重复条目
+// 原样保留，文档内容以文件系统当前状态为准）。
+void AgentViewModel::retryFailedBatchImports() {
+    // 空闲才允许重试：UI 已在 knowledgeBusy 时隐藏入口，这里再挡一次，
+    // 避免编程式调用与在跑的导入/重新嵌入并发写同一批状态。
+    if (m_batchRunning || m_knowledgeBusy || !m_rag) return;
+    QStringList paths;
+    QVariantList kept;
+    for (const QVariant& entryValue : std::as_const(m_batchResults)) {
+        const QVariantMap entry = entryValue.toMap();
+        if (entry.value(QStringLiteral("status")).toString()
+                == QLatin1String("failed"))
+            paths.append(entry.value(QStringLiteral("path")).toString());
+        else
+            kept.append(entryValue);
+    }
+    if (paths.isEmpty()) return;
+    m_batchResults = kept;
+    startBatchQueue(paths);
+}
+
+void AgentViewModel::finishBatchImport() {
+    m_batchRunning = false;
+    m_batchCancelRequested = false;
+    m_batchCurrent.clear();
+    setKnowledgeBusy(false);
+    emit batchImportProgressChanged();
+}
+
+bool AgentViewModel::batchImportRunning() const { return m_batchRunning; }
+// 已完成文件数 = 结果条目数；在飞文件尚未写结果，故进度不会提前跳到 1。
+int AgentViewModel::batchImportDone() const {
+    return m_batchResults.size();
+}
+int AgentViewModel::batchImportFailedCount() const { return m_batchFailedCount; }
+
 // FEAT-802: duplicate content is rejected up front (before the expensive
 // embedding); same-name-different-content files coexist under a
 // deduplicated display name. 文本路径与 PDF 提取完成后的回调都走这里。
-void AgentViewModel::importExtractedText(const QFileInfo& info, const QString& content) {
+void AgentViewModel::importExtractedText(const QFileInfo& info, const QString& content,
+                                         const QStringList& pageTexts) {
     const QString hash = knowledgeContentHash(content);
     if (m_rag->containsContentHash(hash)) {
         emit noticeOccurred(tr("文档内容已存在，已跳过：%1").arg(info.fileName()));
@@ -878,12 +1111,12 @@ void AgentViewModel::importExtractedText(const QFileInfo& info, const QString& c
     }
     const QString name = m_rag->uniqueDocumentName(info.fileName());
     Activity::usage(Activity::Kind::User, QStringLiteral("doc.import"), name);
-    startIngestion(name, content, false);
+    startIngestion(name, content, false, pageTexts);
 }
 
-void AgentViewModel::openKnowledgeDocument(const QString& name) {
+void AgentViewModel::openKnowledgeDocument(const QString& name, int chunk) {
     if (name.isEmpty()) return;
-    emit knowledgeDocumentOpenRequested(name);
+    emit knowledgeDocumentOpenRequested(name, chunk);
 }
 
 void AgentViewModel::removeDocument(const QString& name) {
@@ -915,12 +1148,13 @@ void AgentViewModel::reembedDocument(const QString& name) {
     startIngestion(name, content, true);
 }
 
-void AgentViewModel::startIngestion(const QString& name, const QString& content, bool reembed) {
+void AgentViewModel::startIngestion(const QString& name, const QString& content,
+                                    bool reembed, const QStringList& pageTexts) {
     setKnowledgeBusy(true);
     setEmbedProgress(0, 0);
     auto* watcher = new QFutureWatcher<int>(this);
     connect(watcher, &QFutureWatcherBase::finished, this,
-            [this, watcher, name, content, reembed]() {
+            [this, watcher, name, content, reembed, pageTexts]() {
         const int chunks = watcher->result();
         watcher->deleteLater();
         setKnowledgeBusy(false);
@@ -950,8 +1184,8 @@ void AgentViewModel::startIngestion(const QString& name, const QString& content,
     // watcher (parented to this) delivers the outcome on the GUI thread,
     // where touching the busy flag and emitting signals is safe.
     RagService* rag = m_rag;
-    watcher->setFuture(QtConcurrent::run([rag, name, content]() -> int {
-        return rag ? rag->ingestDocument(name, content) : 0;
+    watcher->setFuture(QtConcurrent::run([rag, name, content, pageTexts]() -> int {
+        return rag ? rag->ingestDocument(name, content, pageTexts) : 0;
     }));
 }
 

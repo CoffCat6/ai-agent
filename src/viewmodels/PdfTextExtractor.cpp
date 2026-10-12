@@ -82,6 +82,7 @@ PdfExtractResult extractPdfText(const QString& filePath) {
     for (int page = 0; page < doc.pageCount(); ++page)
         pages.append(doc.getAllText(page).text());
     result.text = pages.join(QLatin1Char('\n'));
+    result.pageTexts = pages;   // docs/25: 页边界——chunk 页码映射的数据源
 
     if (result.text.trimmed().isEmpty()) {
         // Opens fine but carries no text layer (scanned image, empty file):
@@ -90,6 +91,7 @@ PdfExtractResult extractPdfText(const QString& filePath) {
         result.status = PdfExtractStatus::NoText;
         result.detail = QStringLiteral("no extractable text layer");
         result.text.clear();
+        result.pageTexts.clear();   // 契约：仅 Ok 时携带页文本
         return result;
     }
 

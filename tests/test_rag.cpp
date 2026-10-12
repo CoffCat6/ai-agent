@@ -59,6 +59,9 @@ private slots:
     void restoreFromPersistedChunksNeedsNoEmbedding();
     // docs/23 G6: the chunk budget gates the restore path too.
     void restoreRespectsTotalChunkBudget();
+    // docs/25: PDF 页码映射
+    void pageMappingWritesChunkPage();
+    void pageMappingAbsentForPlainText();
     void queryEmbeddingIsCached();
     void retrievalCalibrationLabeledSet();
     // Batch 9: RAG matrix (TEST-904)
@@ -927,6 +930,77 @@ void TestRag::restoreRespectsTotalChunkBudget() {
     QVERIFY(restored.restorePersistedDocument(
         "doc.txt", chunks, restored.restoreGeneration()));
     QVERIFY(!restored.search(QStringLiteral("persist alpha"), 3).isEmpty());
+}
+
+    // docs/25: PDF 页码映射——ingestDocument 带 pageTexts 时，chunk 按
+    // 规范化文本定位到页（1 基）；导出的持久化 chunk 携带 page；无页
+    // 信息时 page 为 -1。
+void TestRag::pageMappingWritesChunkPage() {
+    int embedCalls = 0;
+    auto embed = [&embedCalls](const QString&) {
+        ++embedCalls;
+        return QVector<float>(8, 0.25f);
+    };
+
+    RagService rag;
+    rag.setEmbedder(embed);
+    rag.setBatchEmbedder([&embed](const QStringList& texts) {
+        QVector<QVector<float>> out;
+        out.reserve(texts.size());
+        for (int i = 0; i < texts.size(); ++i) out.append(QVector<float>(8, 0.25f));
+        return out;
+    });
+    rag.setEmbeddingModelName(QStringLiteral("m1"));
+
+    // 三页文档：每页 >512 字确保分块跨页；页内关键词差异化（避免
+    // 重复段落命中错误页）。
+    const auto makePage = [](const QString& keyword) {
+        QString page;
+        for (int i = 0; i < 40; ++i)
+            page += QStringLiteral("第%1部分描述%2的详细情况，包含足够多的内容以触发分块机制。").arg(i).arg(keyword);
+        return page;
+    };
+    const QStringList pageTexts = {
+        makePage(QStringLiteral("苹果")),
+        makePage(QStringLiteral("香蕉")),
+        makePage(QStringLiteral("樱桃"))
+    };
+    const QString content = pageTexts.join(QChar(10));
+
+    QCOMPARE(rag.ingestDocument("pdf-doc", content, pageTexts) > 0, true);
+    const auto chunks = rag.documentChunks("pdf-doc");
+    QVERIFY(chunks.size() >= 3);
+    // 每个分块都能映射到页码，且首页 chunk 落在第 1 页。
+    bool sawPage1 = false;
+    for (const auto& chunkValue : chunks) {
+        const int page = chunkValue.toObject().value("page").toInt(-1);
+        QVERIFY2(page >= 1 && page <= 3,
+                 qPrintable(QStringLiteral("unexpected page %1").arg(page)));
+        if (page == 1) sawPage1 = true;
+    }
+    QVERIFY(sawPage1);
+    QVERIFY(rag.usesPseudoEmbedding("pdf-doc") == false);
+}
+
+    // docs/25: 无页信息（文本文件导入）时 page 为 -1——UI 不显示页码。
+void TestRag::pageMappingAbsentForPlainText() {
+    RagService rag;
+    rag.setEmbedder([](const QString&) { return QVector<float>(8, 0.25f); });
+    rag.setBatchEmbedder([](const QStringList& texts) {
+        QVector<QVector<float>> out;
+        out.reserve(texts.size());
+        for (int i = 0; i < texts.size(); ++i)
+            out.append(QVector<float>(8, 0.25f));
+        return out;
+    });
+    rag.setEmbeddingModelName(QStringLiteral("m1"));
+
+    QVERIFY(rag.ingestDocument("plain.txt",
+                               longDoc("plain", 6)) > 0);
+    const auto chunks = rag.documentChunks("plain.txt");
+    QVERIFY(!chunks.isEmpty());
+    for (const auto& chunkValue : chunks)
+        QCOMPARE(chunkValue.toObject().value("page").toInt(-1), -1);
 }
 
 QTEST_GUILESS_MAIN(TestRag)

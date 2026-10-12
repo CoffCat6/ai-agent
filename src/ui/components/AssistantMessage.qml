@@ -75,12 +75,13 @@ Item {
         return false
     }
 
-    // 点击徽标 → 打开知识库文档详情。走 AgentVM 的显式入口
-    // （openKnowledgeDocument），由 main.qml 连接到 KnowledgeDocDialog；
-    // 不再按 contentData 反射式探测窗口子对象——那种写法会在对话框改名、
-    // 换父级或换成非 ApplicationWindow 时静默失效，且没有编译期保护。
-    function openCitation(name) {
-        AgentVM.openKnowledgeDocument(name)
+    // 点击徽标 → 打开知识库文档详情并定位到命中分块（docs/25）。走
+    // AgentVM 的显式入口（openKnowledgeDocument），由 main.qml 连接到
+    // KnowledgeDocDialog；不再按 contentData 反射式探测窗口子对象——那种
+    // 写法会在对话框改名、换父级或换成非 ApplicationWindow 时静默失效，
+    // 且没有编译期保护。chunk < 0 表示简写记号（无分块定位）。
+    function openCitation(name, chunk) {
+        AgentVM.openKnowledgeDocument(name, chunk)
     }
 
     // 逐行扫描，切成 {kind:"text"|"code", text/lang/code} 片段。
@@ -319,7 +320,13 @@ Item {
                                         id: chipLabel
                                         anchors.centerIn: parent
                                         width: Math.max(0, chipBg.width - 16)
-                                        text: modelData.name
+                                        // docs/25: 完整记号显示分块序号。统一用 1 基，
+                                        // 与详情对话框的「分块 N / M」、剪贴板导出及
+                                        // 工具输出的人读行一致；原始记号里的 N 是 0 基
+                                        // chunk_index，不直接展示给用户。
+                                        text: modelData.chunk >= 0
+                                            ? modelData.name + " #" + (modelData.chunk + 1)
+                                            : modelData.name
                                         color: Theme.brandPrimary
                                         elide: Text.ElideMiddle
                                         font.pixelSize: 10
@@ -331,12 +338,15 @@ Item {
                                         anchors.fill: parent
                                         hoverEnabled: true
                                         cursorShape: Qt.PointingHandCursor
-                                        onClicked: root.openCitation(modelData.name)
+                                        onClicked: root.openCitation(
+                                            modelData.name, modelData.chunk)
                                     }
 
                                     Accessible.role: Accessible.Button
-                                    Accessible.name: qsTr("打开引用文档 %1")
-                                        .arg(modelData.name)
+                                    Accessible.name: modelData.chunk >= 0
+                                        ? qsTr("打开引用文档 %1，定位到分块 %2")
+                                              .arg(modelData.name).arg(modelData.chunk + 1)
+                                        : qsTr("打开引用文档 %1").arg(modelData.name)
                                     Accessible.onPressAction: chipMA.clicked()
                                 }
                             }

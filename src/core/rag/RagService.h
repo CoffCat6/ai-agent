@@ -42,7 +42,11 @@ public:
     // Chunk + embed + store a document. Returns the number of chunks kept,
     // 0 when the input is empty/unusable and -1 when the document exceeds
     // MaxChunksPerDocument. Re-ingesting an existing source name replaces it.
-    int ingestDocument(const QString& sourceName, const QString& content);
+    // docs/25: pageTexts 非空（PDF 导入）时逐 chunk 映射页码到元数据。
+    int ingestDocument(const QString& sourceName, const QString& content,
+                       const QStringList& pageTexts = QStringList());
+    static QVariantList mapChunksToPages(const QStringList& chunkTexts,
+                                         const QStringList& pageTexts);
 
     // Background-restore ingestion: bind to the restore generation the task
     // started with. clear()/removeDocument() bump the generation, so a user
@@ -90,6 +94,10 @@ public:
     // "a.txt" exists → "a (2).txt", "a (3).txt", ... (display-name dedupe;
     // the DB primary key stays the unique display name)
     QString uniqueDocumentName(const QString& baseName) const;
+    // docs/25: whether the named document was stored with the local pseudo
+    // embedding (embedder unavailable during import) — batch import reports
+    // this as the "degraded" status. Unknown name → false.
+    bool usesPseudoEmbedding(const QString& sourceName) const;
     // Chunk metadata of one document ordered by chunk_index (detail view);
     // empty when the document is unknown.
     QJsonArray documentChunks(const QString& sourceName) const;
@@ -133,7 +141,8 @@ private:
     // -1 (oversize). Shared by ingestDocument / ingestRestoredDocument.
     std::unique_ptr<DocumentRetriever> buildRetriever(const QString& sourceName,
                                                       const QString& content,
-                                                      int* chunksOut) const;
+                                                      int* chunksOut,
+                                                      const QVariantList& chunkPages = QVariantList()) const;
     // Merged top-k across documents (embedding already done outside the lock).
     QJsonArray finishSearch(const QString& trimmed, const QVector<float>& realVec,
                             int k) const;

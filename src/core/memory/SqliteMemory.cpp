@@ -124,12 +124,20 @@ void SqliteMemory::initDatabase() {
     int userVersion = 0;
     if (versionQuery.exec("PRAGMA user_version") && versionQuery.next())
         userVersion = versionQuery.value(0).toInt();
+    // The PRAGMA above returns a row, so its statement stays active on the
+    // connection until the query object is reused or destroyed. Finalize it
+    // before the migrations: an active statement holds a read lock on the
+    // schema, and the virtual-table DROP in migrateEpisodicFts() then fails
+    // with SQLITE_LOCKED ("database table is locked").
+    versionQuery.finish();
 
     createTables();
     // docs/17 A0: sessions.project_id 列补齐（projects 表在 createTables 里）。
     migrateSessionProjectColumn();
     migrateTraceNodeReasoningColumn();
     migrateKnowledgeSchema();
+    // docs/25: 引用定位——chunk 页码列（PDF 导入写入，-1 = 无页码）。
+    migrateKnowledgeChunkPageColumn();
     migrateMessagesFts(/*backfillRows=*/userVersion == 0);
     migrateEpisodicFts();
     // docs/16 §4.2/§6.2: 预置公开定价（不覆盖用户自定义），并载入
@@ -205,11 +213,18 @@ void SqliteMemory::migrateMessagesFts(bool backfillRows) {
 // table is an external-content FTS5 (content='episodic'), so after recreating
 // it we issue the 'rebuild' command to repopulate from the episodic table.
 void SqliteMemory::migrateEpisodicFts() {
-    QSqlQuery check(m_db);
-    check.prepare("SELECT sql FROM sqlite_master "
-                  "WHERE type='table' AND name='episodic_fts'");
-    if (!check.exec() || !check.next()) return; // table absent — createTables owns it
-    const QString sql = check.value(0).toString();
+    // Probe the current schema in its own scope: the SELECT stays active on
+    // the connection until finalized, and an active schema-reading statement
+    // makes the DROP/CREATE VIRTUAL TABLE below fail with SQLITE_LOCKED
+    // ("database table is locked").
+    QString sql;
+    {
+        QSqlQuery check(m_db);
+        check.prepare("SELECT sql FROM sqlite_master "
+                      "WHERE type='table' AND name='episodic_fts'");
+        if (!check.exec() || !check.next()) return; // absent — createTables owns it
+        sql = check.value(0).toString();
+    }
     if (sql.contains(QStringLiteral("tokenize='trigram'"), Qt::CaseInsensitive))
         return; // already upgraded
 
@@ -499,6 +514,28 @@ void SqliteMemory::migrateTraceNodeReasoningColumn() {
                 "add trace_nodes.metadata column");
 }
 
+// docs/25: knowledge_chunks.page 列补齐（引用定位——chunk 页码；幂等）。
+// 新库由建表 DDL 直接带上该列，本迁移只服务老库升级。
+void SqliteMemory::migrateKnowledgeChunkPageColumn() {
+    QSqlQuery q(m_db);
+    if (!q.exec("PRAGMA table_info(knowledge_chunks)")) {
+        qWarning() << "PRAGMA table_info(knowledge_chunks) failed:"
+                   << q.lastError().text();
+        return;
+    }
+    bool hasColumn = false;
+    while (q.next()) {
+        if (q.value(1).toString() == QLatin1String("page")) {
+            hasColumn = true;
+            break;
+        }
+    }
+    if (!hasColumn)
+        execDdl(q, "ALTER TABLE knowledge_chunks ADD COLUMN page INTEGER NOT NULL "
+                   "DEFAULT -1",
+                "add knowledge_chunks.page column");
+}
+
 void SqliteMemory::migrateKnowledgeSchema() {
     QSqlQuery pragma(m_db);
     QStringList columns;
@@ -571,6 +608,7 @@ void SqliteMemory::migrateKnowledgeSchema() {
             embedding BLOB NOT NULL,
             dim INTEGER NOT NULL,
             pseudo INTEGER NOT NULL,
+            page INTEGER NOT NULL DEFAULT -1,
             PRIMARY KEY (doc_name, chunk_index)
         )
     )", "create knowledge_chunks table");
@@ -632,7 +670,7 @@ void SqliteMemory::replaceKnowledgeChunks(const QString& name,
     }
 
     query.prepare("INSERT INTO knowledge_chunks (doc_name, chunk_index, chunk_total, "
-                  "text, embedding, dim, pseudo) VALUES (?, ?, ?, ?, ?, ?, ?)");
+                  "text, embedding, dim, pseudo, page) VALUES (?, ?, ?, ?, ?, ?, ?, ?)");
     for (const KnowledgeChunk& chunk : chunks) {
         query.addBindValue(name);
         query.addBindValue(chunk.index);
@@ -641,6 +679,7 @@ void SqliteMemory::replaceKnowledgeChunks(const QString& name,
         query.addBindValue(embeddingToBlob(chunk.embedding));
         query.addBindValue(chunk.dim);
         query.addBindValue(chunk.pseudo ? 1 : 0);
+        query.addBindValue(chunk.page);
         if (!query.exec()) {
             qWarning() << "Failed to save chunk:" << query.lastError().text();
             m_db.rollback();
@@ -656,7 +695,7 @@ void SqliteMemory::replaceKnowledgeChunks(const QString& name,
 
 QVector<KnowledgeChunk> SqliteMemory::loadKnowledgeChunks(const QString& name) const {
     QSqlQuery query(m_db);
-    query.prepare("SELECT chunk_index, chunk_total, text, embedding, dim, pseudo "
+    query.prepare("SELECT chunk_index, chunk_total, text, embedding, dim, pseudo, page "
                   "FROM knowledge_chunks WHERE doc_name = ? ORDER BY chunk_index ASC");
     query.addBindValue(name);
 
@@ -670,6 +709,8 @@ QVector<KnowledgeChunk> SqliteMemory::loadKnowledgeChunks(const QString& name) c
             chunk.embedding = embeddingFromBlob(query.value(3).toByteArray());
             chunk.dim = query.value(4).toInt();
             chunk.pseudo = query.value(5).toInt() != 0;
+            const QVariant pageValue = query.value(6);
+            chunk.page = pageValue.isNull() ? -1 : pageValue.toInt();
             chunks.append(chunk);
         }
     } else {

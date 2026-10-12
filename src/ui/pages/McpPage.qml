@@ -69,7 +69,10 @@ ScrollView {
                             width: 8
                             height: 8
                             radius: 4
-                            anchors.verticalCenter: parent.verticalCenter
+                            // Layout-managed item: anchors are undefined
+                            // behavior inside a RowLayout (Qt warns), so
+                            // center via the layout instead.
+                            Layout.alignment: Qt.AlignVCenter
                             readonly property int state: modelData.state
                             color: !modelData.enabled ? Theme.textSecondary
                                  : state === 2 ? Theme.statusSuccess

@@ -307,6 +307,25 @@ public:
     QVariantList knowledgeDocuments() const { return m_knowledgeDocuments; }
     bool knowledgeBusy() const { return m_knowledgeBusy; }
 
+    // ── docs/25: 批量知识库导入 ─────────────────────────
+    Q_PROPERTY(bool batchImportRunning READ batchImportRunning NOTIFY batchImportProgressChanged)
+    Q_PROPERTY(int batchImportDone READ batchImportDone NOTIFY batchImportProgressChanged)
+    Q_PROPERTY(int batchImportTotal READ batchImportTotal NOTIFY batchImportProgressChanged)
+    Q_PROPERTY(QString batchImportCurrent READ batchImportCurrent NOTIFY batchImportProgressChanged)
+    Q_PROPERTY(int batchImportFailedCount READ batchImportFailedCount NOTIFY batchImportProgressChanged)
+    // 取消已请求、正在等在飞文件结束（docs/25）。
+    Q_PROPERTY(bool batchImportCancelling READ batchImportCancelling NOTIFY batchImportProgressChanged)
+    bool batchImportRunning() const;
+    int batchImportDone() const;
+    int batchImportTotal() const { return m_batchTotal; }
+    QString batchImportCurrent() const { return m_batchCurrent; }
+    int batchImportFailedCount() const;
+    bool batchImportCancelling() const { return m_batchRunning && m_batchCancelRequested; }
+    // 逐文件结果 {path, name, status, message, chunks}；status: ok | degraded |
+    // duplicate | failed | cancelled。done = 该列表长度，total 为本轮
+    // （含重试时保留的历史条目）的文件总数，二者随重试保持自洽。
+    Q_INVOKABLE QVariantList batchImportResults() const { return m_batchResults; }
+
     // ── Session tabs (Batch 29) ───────────────────────
     QVariantList tabModel() const;
     int activeTabIndex() const { return m_activeTab; }
@@ -389,12 +408,20 @@ public:
     // Knowledge base management (file import happens on a worker thread;
     // knowledgeChanged notifies on completion)
     Q_INVOKABLE void importDocument(const QString& path);
+    // docs/25: 批量知识库导入——单个文件走既有 importDocument 原路径
+    // （保留其分类错误提示）；多个文件进入串行批处理链（每文件一个池
+    // 任务，GUI 线程链式推进）。进度/取消/失败重试见下方属性与方法。
+    // 取消语义：不再开始队列中的后续文件，正在导入的文件会完成
+    // （单文件嵌入受 120s 超时约束）。
+    Q_INVOKABLE void importDocuments(const QStringList& paths);
+    Q_INVOKABLE void cancelBatchImport();
+    Q_INVOKABLE void retryFailedBatchImports();
     // docs/20 §5.1 (CITE-801): 打开知识库文档详情。AssistantMessage 的引用
     // 徽标点击后调用它；main.qml 把 knowledgeDocumentOpenRequested 连到
     // KnowledgeDocDialog.openFor。由 view model 中转而不是让组件去窗口里
     // 反射找对话框：显式信号链有编译期保护，也不会因对话框改名/换父级而
-    // 静默失效。
-    Q_INVOKABLE void openKnowledgeDocument(const QString& name);
+    // 静默失效。docs/25: chunk >= 0 时对话框定位到该 0 基分块并高亮。
+    Q_INVOKABLE void openKnowledgeDocument(const QString& name, int chunk = -1);
     Q_INVOKABLE void removeDocument(const QString& name);
     Q_INVOKABLE void clearKnowledge();
     // Chunk metadata of one imported document (document detail dialog)
@@ -455,9 +482,12 @@ signals:
     void searchResultsChanged();
     void knowledgeChanged();
     // docs/20 §5.1 (CITE-801): 引用徽标要求打开某文档的详情。
-    void knowledgeDocumentOpenRequested(const QString& name);
+    // docs/25: chunk >= 0 时 KnowledgeDocDialog 定位到该分块
+    void knowledgeDocumentOpenRequested(const QString& name, int chunk);
     void knowledgeBusyChanged();
     void knowledgeEmbedProgressChanged();
+    // docs/25: 批量导入进度（running/done/total/current/failedCount 共用）
+    void batchImportProgressChanged();
 
     void toolConfirmRequired(const QString& id, const QString& name, const QVariantMap& args);
     void toolRegistryModelChanged();
@@ -530,11 +560,18 @@ private:
 
     // Runs ingestDocument on a worker thread; the outcome (busy flag, signals)
     // is handled back on the GUI thread via a QFutureWatcher.
-    void startIngestion(const QString& name, const QString& content, bool reembed);
+    void startIngestion(const QString& name, const QString& content, bool reembed,
+                        const QStringList& pageTexts = QStringList());
+    // docs/25: 批量导入的串行推进——GUI 线程取队首文件、派发池任务，
+    // 任务完成回调里写结果并链到下一个。取消即不再派发后续文件。
+    void importNextBatchFile();
+    void startBatchQueue(const QStringList& paths);
+    void finishBatchImport();
     // docs/20 §5.2 (C2): 与 importDocument 的文本路径共用「提取后」步骤。
     // PDF 的后台提取（startPdfImport）完成后也汇到这里，再按内容去重、
     // 取唯一显示名并交给 startIngestion。
-    void importExtractedText(const QFileInfo& info, const QString& content);
+    void importExtractedText(const QFileInfo& info, const QString& content,
+                             const QStringList& pageTexts = QStringList());
     // docs/20 §5.2 (C2): PDF 文本提取的后台化（QPdfDocument 解析不在
     // GUI 线程跑，避免大文件冻结界面）。
     void startPdfImport(const QString& path, const QFileInfo& info);
@@ -589,6 +626,14 @@ private:
     // ── Knowledge Base ────────────────────────────────
     QVariantList m_knowledgeDocuments;
     bool m_knowledgeBusy{false};
+    // docs/25: 批量导入状态（全部 GUI 线程独占；worker 只返回结果值）
+    QStringList m_batchQueue;             // 尚未开始的文件
+    QVariantList m_batchResults;          // {path, name, status, message}
+    int m_batchTotal{0};
+    int m_batchFailedCount{0};
+    bool m_batchRunning{false};
+    bool m_batchCancelRequested{false};
+    QString m_batchCurrent;
     int m_embedDone{0};
     int m_embedTotal{0};
     LogModel* m_logModel;

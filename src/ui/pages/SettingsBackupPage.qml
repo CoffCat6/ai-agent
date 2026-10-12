@@ -289,7 +289,7 @@ Item {
             Text {
                 text: qsTr("恢复数据库")
                 color: Theme.textPrimary
-                font.pixelSize: Theme.fontSizeTitle
+                font.pixelSize: Theme.fontSizeH2
                 font.bold: true
                 font.family: Theme.fontSans
             }

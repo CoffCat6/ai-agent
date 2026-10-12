@@ -17,6 +17,9 @@ struct KnowledgeChunk {
     QVector<float> embedding; // pseudo-mode chunks persist their (stable) vector too
     int dim{0};
     bool pseudo{false};
+    // docs/25: chunk 文本落在 PDF 的第几页（1 基；跨页记起始页）。仅 PDF
+    // 导入携带；文本文件与其他来源为 -1。持久化于 knowledge_chunks.page。
+    int page{-1};
 };
 
 // Stable content fingerprint for persistence versioning: a document is only

@@ -24,6 +24,12 @@ namespace Citation {
 //      引用定义是 [ref][def] 这种**两组**方括号，只跳第一组会让第二组
 //      （[def]）被当成引用 —— 所以这种情况要把紧跟的同组方括号一并吃掉；
 //   5. '[' 前是 '!' 时按图片语法处理，不识别。
+// 完整 provenance 记号（docs/25）：知识库工具结果教模型书写
+// [doc:文档名#chunkId]；解析时归一化 —— docName 剥离 "doc:" 前缀与末尾
+// "#<数字>"（取**最后一个** '#'，与 KnowledgeSearchTool 的约定一致：文档名
+// 允许含 '#'），chunkIndex 记录 0 基分块号；简写 [文档名] 的 chunkIndex
+// 为 -1。QML 渲染层的 isKnownCitation 按归一化后的 docName 匹配，两种
+// 书写形态都能成为徽标。
 // 拼接语义：引用片段只保留记号内容（方括号由徽标 chip 取代），其余片段
 // 原文保留 —— 除记号定界符外无损，散文文字不会丢一个字。
 //
@@ -31,9 +37,10 @@ namespace Citation {
 // 逐条镜像的 JS 实现（root.parseCitations），双份逻辑 + 双份用例已经造成
 // 注释腐化，故已删除；单一事实源见 tests/test_highlighter.cpp。
 struct Segment {
-    QString text;      // 片段原文；isCitation 时 == docName（记号内容）
+    QString text;      // 片段原文；isCitation 时 == 记号内容
     bool isCitation{false};
-    QString docName;   // isCitation == true 时为文档名
+    QString docName;   // isCitation == true 时为归一化文档名（无 doc:/#N）
+    int chunkIndex{-1}; // docs/25: 完整记号携带的 0 基分块号；简写为 -1
 };
 
 inline QVector<Segment> parse(const QString& text) {
@@ -86,13 +93,36 @@ inline QVector<Segment> parse(const QString& text) {
         }   // 整组跳过，不解析内部
 
         if (i > last)
-            out.append({text.mid(last, i - last), false, {}});
-        out.append({content, true, content});
+            out.append({text.mid(last, i - last), false, {}, -1});
+        Segment citation;
+        citation.text = content;
+        citation.isCitation = true;
+        citation.docName = content;
+        citation.chunkIndex = -1;
+        // docs/25: [doc:文档名#chunkId] 完整记号归一化。取最后一个 '#'：
+        // 其后须能解析为十进制整数才认定为 chunk 后缀，否则整体就是文档名
+        // （文档名允许含 '#'，KnowledgeSearchTool 同一约定）。
+        if (citation.docName.startsWith(QLatin1String("doc:"))) {
+            const QString body = citation.docName.mid(4);
+            const int hash = body.lastIndexOf(QLatin1Char('#'));
+            if (hash >= 0 && hash + 1 < body.size()) {
+                // 用 toInt(&ok) 而非手写 QChar::isDigit 循环：后者会接受
+                // 全角/阿拉伯-印度数字，而 toInt 对它们解析失败会**静默返回
+                // 0**，把引用误定位到第 1 个分块。ok 同时挡住溢出。
+                bool isNumber = false;
+                const int chunkId = body.mid(hash + 1).toInt(&isNumber);
+                if (isNumber) {
+                    citation.docName = body.left(hash);
+                    citation.chunkIndex = chunkId;
+                }
+            }
+        }
+        out.append(citation);
         last = j + 1;
         i = j + 1;
     }
     if (last < n)
-        out.append({text.mid(last), false, {}});
+        out.append({text.mid(last), false, {}, -1});
     return out;
 }
 
@@ -125,7 +155,8 @@ public:
     }
 
     // 把一段散文切成文本/引用交替片段。返回 QVariantList of QVariantMap：
-    //   {text: 片段原文, citation: bool, name: 引用时的文档名}
+    //   {text: 片段原文, citation: bool, name: 引用时的归一化文档名,
+    //    chunk: 完整记号 [doc:name#N] 携带的 0 基分块号，简写为 -1}
     Q_INVOKABLE QVariantList parse(const QString& text) const {
         const QVector<Citation::Segment> segs = Citation::parse(text);
         QVariantList out;
@@ -135,6 +166,7 @@ public:
                 {QStringLiteral("text"), s.text},
                 {QStringLiteral("citation"), s.isCitation},
                 {QStringLiteral("name"), s.docName},
+                {QStringLiteral("chunk"), s.chunkIndex},
             });
         }
         return out;

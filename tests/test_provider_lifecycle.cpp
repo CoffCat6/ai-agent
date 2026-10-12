@@ -75,8 +75,24 @@ public:
     explicit FakeSseServer(QObject* parent = nullptr) : QObject(parent) {
         QObject::connect(&m_server, &QTcpServer::newConnection, this, [this]() {
             while (QTcpSocket* socket = m_server.nextPendingConnection()) {
-                QObject::connect(socket, &QTcpSocket::disconnected, socket,
-                                 &QTcpSocket::deleteLater);
+                // Per-socket state is keyed by the raw pointer, and QTcpSocket
+                // objects are recycled by the allocator once deleted. Without
+                // this cleanup a later connection can inherit a stale
+                // "already bound" marker - its request is then silently
+                // dropped and the test times out - or leave a dangling entry
+                // in m_held that releaseHeld() would dereference (SIGSEGV).
+                QObject::connect(socket, &QTcpSocket::disconnected, this,
+                                 [this, socket]() {
+                    m_buffers.remove(socket);
+                    m_boundSockets.remove(socket);
+                    for (auto it = m_held.begin(); it != m_held.end();) {
+                        if (it.value() == socket)
+                            it = m_held.erase(it);
+                        else
+                            ++it;
+                    }
+                    socket->deleteLater();
+                });
                 m_buffers.insert(socket, QByteArray());
                 QObject::connect(socket, &QTcpSocket::readyRead, this, [this, socket]() {
                     onBytes(socket);
@@ -91,6 +107,22 @@ public:
             qWarning() << "FakeSseServer listen failed:" << m_server.errorString();
     }
 
+    ~FakeSseServer() override {
+        // Tear the sockets down while the tracking maps are still alive. A
+        // socket's destructor emits disconnected(), and the handler installed
+        // above touches those maps - if ~QObject deleted the sockets instead
+        // (after the members are gone) that handler would write to freed
+        // memory. Detach it first, then delete explicitly.
+        const QList<QTcpSocket*> sockets = m_buffers.keys();
+        for (QTcpSocket* socket : sockets) {
+            socket->disconnect(this);
+            delete socket;
+        }
+        m_buffers.clear();
+        m_boundSockets.clear();
+        m_held.clear();
+    }
+
     QString baseUrl() const {
         return QStringLiteral("http://127.0.0.1:%1").arg(m_server.serverPort());
     }
@@ -98,6 +130,12 @@ public:
     void enqueue(const Script& script) { m_scripts.append(script); }
 
     int heldCount() const { return m_held.size(); }
+
+    // Sockets still tracked by the server (buffers + bound markers). Must fall
+    // back to 0 once every connection has closed - per-socket state keyed by a
+    // raw pointer otherwise outlives the socket and is inherited by whichever
+    // later connection the allocator hands the same address to.
+    int trackedSocketCount() const { return m_buffers.size(); }
 
     // Batch 15: flattened (whitespace-stripped) body of the most recent
     // complete request - for request-level sampling-param assertions.
@@ -841,6 +879,28 @@ private slots:
         QCOMPARE(response.content, QStringLiteral("Hello"));
         QVERIFY2(response.toolCalls.isEmpty(),
                  "the superseded request's tool call leaked into the live request");
+    }
+
+    // Regression: per-socket state must be released when a connection closes.
+    // Leaked entries are keyed by a raw pointer, and the allocator recycles
+    // addresses, so a later connection could look "already bound" - its
+    // request was silently dropped and the suite timed out (and could crash
+    // via a dangling m_held entry). Three sequential requests must all be
+    // answered, and nothing may stay tracked afterwards.
+    void socketStateReleasedOnDisconnect() {
+        FakeSseServer server;
+        OpenAIService service;
+        service.setBaseUrl(server.baseUrl());
+        QSignalSpy spy(&service, &IAIService::responseReady);
+
+        for (int i = 0; i < 3; ++i) {
+            server.enqueue({openaiTextBody(), false, kMatchA});
+            service.chatComplete(userMessages(QStringLiteral("hi")), {});
+            QVERIFY2(spy.wait(5000),
+                     qPrintable(QStringLiteral("request %1 was not answered").arg(i + 1)));
+            spy.clear();
+        }
+        QTRY_COMPARE_WITH_TIMEOUT(server.trackedSocketCount(), 0, 5000);
     }
 };
 

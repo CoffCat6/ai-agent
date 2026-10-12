@@ -69,6 +69,30 @@ public:
     QVariant defPanel;
 };
 
+// docs/25: 批量导入测试助手（文件作用域——moc 对类作用域 lambda 报
+// "Not a signal or slot declaration"，且 helper 无捕获需求）。
+static QString batchWrite(const QTemporaryDir& dir, const QString& name,
+                          const QString& content) {
+    const QString path = dir.filePath(name);
+    QFile f(path);
+    if (!f.open(QIODevice::WriteOnly | QIODevice::Text)) return QString();
+    f.write(content.toUtf8());
+    f.close();
+    return path;
+}
+
+static void setupEmbedder(RagService& rag, bool slow) {
+    rag.setEmbedder([](const QString&) { return QVector<float>(8, 0.25f); });
+    rag.setBatchEmbedder([slow](const QStringList& texts) {
+        if (slow) QTest::qSleep(300);   // hold the file in-flight
+        QVector<QVector<float>> out;
+        out.reserve(texts.size());
+        for (int i = 0; i < texts.size(); ++i)
+            out.append(QVector<float>(8, 0.25f));
+        return out;
+    });
+}
+
 } // namespace
 
 class TestAgentViewModel : public QObject {
@@ -1430,7 +1454,116 @@ private slots:
 
         vm.setAgent(nullptr);
     }
-};
 
+    // Happy path: each file gets a status; duplicate content is "duplicate",
+    // empty content is "failed", and retry re-runs the failed file with its
+    // CURRENT on-disk content.
+    void batchImportStatusesAndRetry() {
+        AgentViewModel vm(nullptr);
+        RagService rag;
+        setupEmbedder(rag, false);
+        vm.setRagService(&rag);
+        QTemporaryDir dir(QStandardPaths::writableLocation(
+                              QStandardPaths::DocumentsLocation)
+                          + QStringLiteral("/nexusai-tests-XXXXXX"));
+        QVERIFY(dir.isValid());
+
+        const QString pathA = batchWrite(dir, "a.txt", QStringLiteral("alpha 专属内容甲"));
+        const QString pathB = batchWrite(dir, "b.txt", QStringLiteral("beta 专属内容乙"));
+        const QString pathDup = batchWrite(dir, "a2.txt", QStringLiteral("alpha 专属内容甲"));  // same content as A
+        const QString pathEmpty = batchWrite(dir, "empty.txt", QStringLiteral("   "));
+        QVERIFY(!pathA.isEmpty() && !pathB.isEmpty() && !pathDup.isEmpty() && !pathEmpty.isEmpty());
+
+        vm.importDocuments({pathA, pathB, pathDup, pathEmpty});
+        QTRY_COMPARE_WITH_TIMEOUT(vm.batchImportRunning(), false, 30000);
+
+        QCOMPARE(vm.batchImportTotal(), 4);
+        QCOMPARE(vm.batchImportFailedCount(), 1);
+        QCOMPARE(rag.documents().size(), 2);   // A 与 B 入库；空文件失败
+
+        QVariantMap status;
+        for (const QVariant& entry : vm.batchImportResults()) {
+            const QVariantMap e = entry.toMap();
+            status[e.value("name").toString()] = e.value("status").toString();
+        }
+        QCOMPARE(status.value("a.txt").toString(), QStringLiteral("ok"));
+        QCOMPARE(status.value("b.txt").toString(), QStringLiteral("ok"));
+        QCOMPARE(status.value("a2.txt").toString(), QStringLiteral("duplicate"));
+        QCOMPARE(status.value("empty.txt").toString(), QStringLiteral("failed"));
+
+        // Retry: fill the failed file with NEW content — it becomes "ok"
+        // and the other entries are preserved (not re-imported).
+        batchWrite(dir, "empty.txt", QStringLiteral("gamma 补充内容丙"));
+        const int documentsBefore = rag.documents().size();
+        vm.retryFailedBatchImports();
+        QTRY_COMPARE_WITH_TIMEOUT(vm.batchImportRunning(), false, 30000);
+        QCOMPARE(vm.batchImportFailedCount(), 0);
+        QCOMPARE(rag.documents().size(), documentsBefore + 1);
+        QCOMPARE(vm.batchImportResults().size(), 4);
+    }
+
+    // docs/25: cancel stops the queue — the in-flight file completes, the
+    // not-yet-started ones are marked cancelled. The slow embedder holds
+    // file 1 in flight for 300 ms while the cancel flag is set.
+    void batchImportCancelStopsRemaining() {
+        AgentViewModel vm(nullptr);
+        RagService rag;
+        setupEmbedder(rag, true);
+        vm.setRagService(&rag);
+        QTemporaryDir dir(QStandardPaths::writableLocation(
+                              QStandardPaths::DocumentsLocation)
+                          + QStringLiteral("/nexusai-tests-XXXXXX"));
+        QVERIFY(dir.isValid());
+
+        const QString p1 = batchWrite(dir, "f1.txt", QStringLiteral("first 第一"));
+        const QString p2 = batchWrite(dir, "f2.txt", QStringLiteral("second 第二"));
+        const QString p3 = batchWrite(dir, "f3.txt", QStringLiteral("third 第三"));
+        QVERIFY(!p1.isEmpty() && !p2.isEmpty() && !p3.isEmpty());
+
+        vm.importDocuments({p1, p2, p3});
+        // File 1 is in flight: the cancel lands before file 2 is dispatched.
+        vm.cancelBatchImport();
+        QTRY_COMPARE_WITH_TIMEOUT(vm.batchImportRunning(), false, 30000);
+
+        QCOMPARE(rag.documents().size(), 1);   // only the in-flight file
+        QCOMPARE(vm.batchImportFailedCount(), 0);
+        int cancelled = 0, ok = 0;
+        for (const QVariant& entry : vm.batchImportResults()) {
+            const QString s = entry.toMap().value("status").toString();
+            if (s == QStringLiteral("cancelled")) ++cancelled;
+            else if (s == QStringLiteral("ok")) ++ok;
+        }
+        QCOMPARE(ok, 1);
+        QCOMPARE(cancelled, 2);
+    }
+
+    // docs/25: embedder unavailable → the document still ingests in pseudo
+    // mode and the batch reports it as "degraded" (not failed).
+    void batchImportReportsDegraded() {
+        AgentViewModel vm(nullptr);
+        RagService rag;
+        setupEmbedder(rag, false);
+        // Empty batch results → DocumentRetriever falls back to pseudo.
+        rag.setBatchEmbedder([](const QStringList&) { return QVector<QVector<float>>{}; });
+        vm.setRagService(&rag);
+        QTemporaryDir dir(QStandardPaths::writableLocation(
+                              QStandardPaths::DocumentsLocation)
+                          + QStringLiteral("/nexusai-tests-XXXXXX"));
+        QVERIFY(dir.isValid());
+
+        const QString p1 = batchWrite(dir, "d1.txt", QStringLiteral("离线内容一"));
+        const QString p2 = batchWrite(dir, "d2.txt", QStringLiteral("离线内容二"));
+        QVERIFY(!p1.isEmpty() && !p2.isEmpty());
+
+        vm.importDocuments({p1, p2});
+        QTRY_COMPARE_WITH_TIMEOUT(vm.batchImportRunning(), false, 30000);
+
+        QCOMPARE(vm.batchImportFailedCount(), 0);
+        QCOMPARE(rag.documents().size(), 2);
+        for (const QVariant& entry : vm.batchImportResults())
+            QCOMPARE(entry.toMap().value("status").toString(), QStringLiteral("degraded"));
+        QVERIFY(rag.usesPseudoEmbedding(QStringLiteral("d1.txt")));
+    }
+};
 QTEST_GUILESS_MAIN(TestAgentViewModel)
 #include "test_viewmodel.moc"

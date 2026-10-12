@@ -81,6 +81,9 @@ private slots:
     void restoreFromBackupRoundTrip();
     void restoreFromBackupRejectsCorruptSnapshot();
     void episodicFullTextSearch();
+    // docs/14 L3 regression: a database whose episodic_fts predates the
+    // trigram decision must be upgraded in place the next time it is opened.
+    void episodicFtsUpgradesToTrigramOnOpen();
     void auditTrail();
     void tokenStatsAggregate();
     void tokenStatsEmptyWhenNoData();
@@ -754,6 +757,49 @@ void TestMemory::searchMessagesSyncsOnDelete() {
 
     mem.deleteSession("s1");
     QVERIFY(mem.searchMessages(QStringLiteral("检索锚点"), 50).isEmpty());
+}
+
+// docs/14 L3: an in-place upgrade must convert an old episodic_fts (default
+// unicode61 tokenizer) to trigram. Fresh databases get trigram straight from
+// createTables, so this only exercises the migration path - exactly the case
+// that silently never applied in production (drop failed with
+// "database table is locked", so the recreate hit "already exists").
+void TestMemory::episodicFtsUpgradesToTrigramOnOpen() {
+    QTemporaryDir dir;
+    QVERIFY(dir.isValid());
+    const QString path = dir.filePath(QStringLiteral("episodic_upgrade.db"));
+    {
+        SqliteMemory memory(path);
+        QSqlDatabase db = memory.databaseForTest();
+        // Roll episodic_fts back to the pre-L3 shape: no trigram tokenizer.
+        QVERIFY(db.exec("DROP TRIGGER IF EXISTS episodic_ai").isActive());
+        QVERIFY(db.exec("DROP TRIGGER IF EXISTS episodic_ad").isActive());
+        QVERIFY(db.exec("DROP TABLE IF EXISTS episodic_fts").isActive());
+        QVERIFY(db.exec("CREATE VIRTUAL TABLE episodic_fts USING fts5("
+                        "summary, tags, content='episodic', content_rowid='id')")
+                    .isActive());
+        QSqlQuery pre(db);
+        QVERIFY(pre.exec("SELECT sql FROM sqlite_master WHERE name='episodic_fts'"));
+        QVERIFY(pre.next());
+        QVERIFY(!pre.value(0).toString().contains(QStringLiteral("trigram")));
+    }
+    {
+        // Reopening runs migrateEpisodicFts(): the schema must become trigram.
+        SqliteMemory memory(path);
+        QSqlDatabase db = memory.databaseForTest();
+        QSqlQuery q(db);
+        QVERIFY(q.exec("SELECT sql FROM sqlite_master WHERE name='episodic_fts'"));
+        QVERIFY(q.next());
+        QVERIFY2(q.value(0).toString().contains(QStringLiteral("trigram")),
+                 qPrintable(QStringLiteral("episodic_fts not upgraded: %1")
+                                .arg(q.value(0).toString())));
+        // The sync triggers must survive the drop/recreate round trip.
+        QSqlQuery trig(db);
+        QVERIFY(trig.exec("SELECT count(*) FROM sqlite_master WHERE type='trigger' "
+                          "AND name IN ('episodic_ai','episodic_ad')"));
+        QVERIFY(trig.next());
+        QCOMPARE(trig.value(0).toInt(), 2);
+    }
 }
 
 // Keywords shorter than 3 characters cannot use the trigram index; they must

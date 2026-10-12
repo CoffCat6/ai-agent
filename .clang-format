@@ -1,0 +1,63 @@
+# NexusAI C++ formatting rules.
+#
+# Derived from the existing code base (LLVM base + the project's 4-space,
+# 100-column house style) so that new and edited code stays consistent. Only
+# layout is specified here - no semantic rewrites.
+#
+# Apply to a file:  clang-format -i path/to/file.cpp
+# Check (no write): clang-format --dry-run --Werror path/to/file.cpp
+#
+# NOTE: the tree predates any formatter, so a repo-wide `clang-format -i`
+# is NOT a no-op: it reflows hand-wrapped expressions and raw-string call
+# arguments (measured: ~6.2k lines across 107 files). Treat that one-time
+# pass as a deliberate, isolated commit - do not mix it with functional
+# changes. Until then the config governs edited/new code only.
+---
+Language: Cpp
+BasedOnStyle: LLVM
+
+# ── Indentation ───────────────────────────────────────────
+IndentWidth: 4
+TabWidth: 4
+UseTab: Never
+# class members sit at +4; access specifiers return to the class column
+AccessModifierOffset: -4
+ContinuationIndentWidth: 4
+ConstructorInitializerIndentWidth: 4
+NamespaceIndentation: None
+IndentCaseLabels: false
+
+# ── Line width ────────────────────────────────────────────
+ColumnLimit: 100
+
+# ── Braces ────────────────────────────────────────────────
+BreakBeforeBraces: Attach
+AllowShortBlocksOnASingleLine: Empty
+AllowShortFunctionsOnASingleLine: All
+AllowShortIfStatementsOnASingleLine: WithoutElse
+AllowShortLoopsOnASingleLine: false
+AllowShortLambdasOnASingleLine: All
+
+# ── Pointers / references ─────────────────────────────────
+# `const QString& name` / `QTcpSocket* socket` - star binds to the type
+PointerAlignment: Left
+ReferenceAlignment: Pointer
+
+# ── Includes ──────────────────────────────────────────────
+# The include list is hand-grouped (std / Qt / project); keep it untouched
+# instead of letting the formatter re-sort it.
+SortIncludes: Never
+IncludeBlocks: Preserve
+
+# ── Misc ──────────────────────────────────────────────────
+AlignAfterOpenBracket: Align
+BinPackArguments: true
+BinPackParameters: true
+AllowAllParametersOfDeclarationOnNextLine: true
+BreakConstructorInitializers: BeforeColon
+Cpp11BracedListStyle: true
+EmptyLineBeforeAccessModifier: LogicalBlock
+FixNamespaceComments: true
+SpaceBeforeParens: ControlStatements
+SpacesInParentheses: false
+SpacesBeforeTrailingComments: 1

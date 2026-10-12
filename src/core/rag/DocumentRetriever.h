@@ -39,7 +39,11 @@ public:
 
     // Add a document: chunk it and store embeddings. Returns false when the
     // content produced no usable chunks.
-    bool addDocument(const QString& content, const QJsonObject& metadata) {
+    // docs/25: chunkPages 与 chunk 列表等长时逐 chunk 写入元数据 page 字段
+    //（1 基 PDF 页码，由调用方按页边界映射）；空列表 = 无页码（文本文件、
+    // 旧导入），page 记 -1。
+    bool addDocument(const QString& content, const QJsonObject& metadata,
+                     const QVariantList& chunkPages = QVariantList()) {
         const QStringList chunks = chunkDocument(content, ChunkSize, ChunkOverlap);
         if (chunks.isEmpty()) return false;
 
@@ -63,6 +67,8 @@ public:
             chunkMeta["chunk_index"] = i;
             chunkMeta["chunk_total"] = chunks.size();
             chunkMeta["text"] = chunks[i];
+            chunkMeta["page"] = i < chunkPages.size()
+                ? chunkPages.at(i).toInt() : -1;
             const QVector<float> vec = pseudo ? pseudoEmbed(chunks[i]) : vectors.at(i);
             m_store.insert(vec, chunkMeta);
         }
@@ -88,6 +94,7 @@ public:
             chunkMeta["chunk_index"] = chunk.index;
             chunkMeta["chunk_total"] = chunk.total;
             chunkMeta["text"] = chunk.text;
+            chunkMeta["page"] = chunk.page;
             m_store.insert(chunk.embedding, chunkMeta);
         }
         return true;
@@ -153,6 +160,7 @@ public:
             chunk.embedding = entry.first;
             chunk.dim = entry.first.size();
             chunk.pseudo = m_usesPseudo;
+            chunk.page = entry.second.value("page").toInt(-1);
             chunks.append(chunk);
         }
         return chunks;
@@ -182,25 +190,8 @@ public:
     static constexpr int ChunkOverlap = 64;  // chars carried over between chunks
     static constexpr int PseudoEmbedDim = 128;
 
-    // Dimension-stable fallback embedding (lexical hash; no real semantics,
-    // but keeps search functional when the embedder is offline). Public so
-    // RagService can compute the pseudo query vector once per search.
-    static QVector<float> pseudoEmbed(const QString& text) {
-        QVector<float> vec(PseudoEmbedDim, 0.0f);
-        for (int i = 0; i < text.length(); ++i) {
-            const int idx = (text.at(i).unicode() * 31 + i) % PseudoEmbedDim;
-            vec[idx] += 1.0f;
-        }
-        float norm = 0.0f;
-        for (float v : vec) norm += v * v;
-        norm = std::sqrt(norm);
-        if (norm > 0.0f) {
-            for (float& v : vec) v /= norm;
-        }
-        return vec;
-    }
-
-private:
+    // docs/25: 公开给 RagService——页码映射需要先拿到 chunk 文本列表，
+    // 再把结果经 addDocument 的 chunkPages 参数写回元数据。
     // Character-level chunking with overlap, cutting at sentence boundaries
     // (paragraph breaks, CJK and latin punctuation) when one is available in
     // the back half of the window; hard cut otherwise.
@@ -230,6 +221,25 @@ private:
         return chunks;
     }
 
+    // Dimension-stable fallback embedding (lexical hash; no real semantics,
+    // but keeps search functional when the embedder is offline). Public so
+    // RagService can compute the pseudo query vector once per search.
+    static QVector<float> pseudoEmbed(const QString& text) {
+        QVector<float> vec(PseudoEmbedDim, 0.0f);
+        for (int i = 0; i < text.length(); ++i) {
+            const int idx = (text.at(i).unicode() * 31 + i) % PseudoEmbedDim;
+            vec[idx] += 1.0f;
+        }
+        float norm = 0.0f;
+        for (float v : vec) norm += v * v;
+        norm = std::sqrt(norm);
+        if (norm > 0.0f) {
+            for (float& v : vec) v /= norm;
+        }
+        return vec;
+    }
+
+private:
     static bool isSentenceBoundary(QChar c) {
         return c == '\n' || c == '.' || c == '!' || c == '?' || c == ';' || c == ':'
             || c == u'。' || c == u'！' || c == u'？' || c == u'；' || c == u'…'

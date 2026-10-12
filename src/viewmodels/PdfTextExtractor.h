@@ -2,6 +2,7 @@
 
 #include <QMetaType>
 #include <QString>
+#include <QStringList>
 
 namespace NexusAI {
 
@@ -30,6 +31,9 @@ enum class PdfExtractStatus {
 struct PdfExtractResult {
     PdfExtractStatus status{PdfExtractStatus::OpenFailed};
     QString text;    // page texts joined with '\n'; empty unless status == Ok
+    // docs/25: 每页原文（与 text 的 '\n' 拼接顺序一致）——引用定位需要把
+    // chunk 文本映射回页码。仅 status == Ok 时非空。
+    QStringList pageTexts;
     QString detail;  // untranslated technical reason (logs / test output)
 
     bool ok() const { return status == PdfExtractStatus::Ok; }

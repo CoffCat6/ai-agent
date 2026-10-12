@@ -52,6 +52,15 @@ bool RagService::containsContentHash(const QString& contentHash) const {
     return false;
 }
 
+bool RagService::usesPseudoEmbedding(const QString& sourceName) const {
+    QMutexLocker lock(&m_mutex);
+    for (const auto& doc : m_docs) {
+        if (doc.name == sourceName)
+            return doc.retriever->usesPseudoEmbedding();
+    }
+    return false;
+}
+
 QString RagService::uniqueDocumentName(const QString& baseName) const {
     QMutexLocker lock(&m_mutex);
     if (!hasDocumentLocked(baseName)) return baseName;
@@ -80,7 +89,8 @@ int RagService::dropDocumentLocked(const QString& sourceName) {
 }
 
 std::unique_ptr<DocumentRetriever> RagService::buildRetriever(
-        const QString& sourceName, const QString& content, int* chunksOut) const {
+        const QString& sourceName, const QString& content, int* chunksOut,
+        const QVariantList& chunkPages) const {
     *chunksOut = 0;
     const QString trimmed = content.trimmed();
     if (sourceName.isEmpty() || trimmed.isEmpty()) return nullptr;
@@ -103,15 +113,67 @@ std::unique_ptr<DocumentRetriever> RagService::buildRetriever(
         retriever->setBatchEmbedFunction(m_batchEmbedFn);
     }
 
-    if (!retriever->addDocument(trimmed, QJsonObject{{"source", sourceName}}))
+    if (!retriever->addDocument(trimmed, QJsonObject{{"source", sourceName}},
+                                chunkPages))
         return nullptr;
     *chunksOut = retriever->documentCount();
     return retriever;
 }
 
-int RagService::ingestDocument(const QString& sourceName, const QString& content) {
+// docs/25: chunk 文本 → PDF 页码（1 基）。两侧同规则 simplified 后在
+// "规范化页文本拼接串"中做子串定位——chunkDocument 会 simplified，因此
+// 匹配可靠。chunk 有序且相邻仅重叠 ChunkOverlap 个字符，故从上一命中
+// 位置回退一个重叠窗口继续搜索：整体复杂度从 O(chunks × 全文) 降到近似
+// O(全文)，同时避免重复段落把页码误判到文档更早的位置。匹配不到（极端
+// 空白差异）记 -1，UI 不显示页码。跨页 chunk 记其文本起点所在页（起点
+// 含 64 字符重叠，可能落在上一页尾部）。
+QVariantList RagService::mapChunksToPages(const QStringList& chunkTexts,
+                                          const QStringList& pageTexts) {
+    QVariantList pages;
+    if (pageTexts.isEmpty()) return pages;
+
+    QString full;
+    QVector<int> starts;   // 每页规范化文本在 full 中的起始偏移
+    for (const QString& page : pageTexts) {
+        const QString norm = page.simplified();
+        starts.append(full.size());
+        if (!full.isEmpty()) full += QLatin1Char(' ');
+        full += norm;
+    }
+
+    int cursor = 0;
+    for (const QString& chunk : chunkTexts) {
+        const QString needle = chunk.simplified();
+        int page = -1;
+        if (!needle.isEmpty()) {
+            const int from = qMax(0, cursor - DocumentRetriever::ChunkOverlap);
+            const int pos = full.indexOf(needle, from);
+            if (pos >= 0) {
+                cursor = pos;
+                for (int i = starts.size() - 1; i >= 0; --i) {
+                    if (pos >= starts.at(i)) { page = i + 1; break; }
+                }
+            }
+        }
+        pages.append(page);
+    }
+    return pages;
+}
+
+int RagService::ingestDocument(const QString& sourceName, const QString& content,
+                               const QStringList& pageTexts) {
     int chunks = 0;
-    auto retriever = buildRetriever(sourceName, content, &chunks);
+    QVariantList chunkPages;
+    if (!pageTexts.isEmpty()) {
+        // 与 buildRetriever → addDocument 的输入严格一致（同样 trim）：否则
+        // 前导/尾随空白会让两次 chunkDocument 的切分点漂移，chunk 与页码的
+        // 一一对应关系被破坏。
+        const QString trimmed = content.trimmed();
+        const QStringList chunkTexts = DocumentRetriever::chunkDocument(
+            trimmed, DocumentRetriever::ChunkSize, DocumentRetriever::ChunkOverlap);
+        chunkPages = mapChunksToPages(chunkTexts, pageTexts);
+    }
+    auto retriever = buildRetriever(sourceName, content, &chunks, chunkPages);
     if (!retriever) return chunks;
 
     // Export before the retriever is moved into the document store.

@@ -254,6 +254,53 @@ private slots:
         QVERIFY(!Citation::hasCitation(plain));
     }
 
+    // docs/25: 完整 provenance 记号 [doc:文档名#chunkId] 归一化——docName
+    // 剥前缀与 #N、chunkIndex 记 0 基分块号；简写记号 chunkIndex = -1。
+    void citationMarkerWithChunkIndex() {
+        const auto segs = Citation::parse(
+            QStringLiteral("出处 [doc:报告 B#3] 与另一处 [报告 B]。"));
+
+        QVERIFY(segs[1].isCitation);
+        QCOMPARE(segs[1].docName, QStringLiteral("报告 B"));   // 前缀+#N 剥离
+        QCOMPARE(segs[1].chunkIndex, 3);
+        // 简写记号：归一化文档名相同（两种书写指向同一文档），无分块。
+        QVERIFY(segs[3].isCitation);
+        QCOMPARE(segs[3].docName, QStringLiteral("报告 B"));
+        QCOMPARE(segs[3].chunkIndex, -1);
+
+        // 无损：拼接回原文一字不丢。
+        QString joined;
+        for (const auto& s : segs) joined += s.text;
+        QCOMPARE(joined, QStringLiteral("出处 doc:报告 B#3 与另一处 报告 B。"));
+
+        // 文档名含 '#' 但末段不是纯数字：整体保留为文档名（KnowledgeSearchTool
+        // 同一约定——chunkId 取最后一个 '#' 后的数字）。注意整行只有记号时
+        // 没有前导文本段，引用就是 segments[0]。
+        const auto hashName = Citation::parse(QStringLiteral("[doc:C++#笔记]"));
+        QCOMPARE(hashName.size(), 1);
+        QVERIFY(hashName[0].isCitation);
+        QCOMPARE(hashName[0].docName, QStringLiteral("doc:C++#笔记"));
+        QCOMPARE(hashName[0].chunkIndex, -1);
+
+        // 非 ASCII 数字（全角 '３'）不是合法 chunkId：QChar::isDigit 会接受
+        // 它，但 toInt 解析失败——若只看 isDigit 会静默得到 0，把引用误定位
+        // 到第 1 个分块。这里必须整体保留为文档名、chunkIndex 为 -1。
+        const auto fullWidth = Citation::parse(QStringLiteral("[doc:全角#３]"));
+        QCOMPARE(fullWidth.size(), 1);
+        QVERIFY(fullWidth[0].isCitation);
+        QCOMPARE(fullWidth[0].docName, QStringLiteral("doc:全角#３"));
+        QCOMPARE(fullWidth[0].chunkIndex, -1);
+
+        // 溢出（超出 int 范围）同样拒绝，不静默取 0。
+        const auto overflow = Citation::parse(
+            QStringLiteral("[doc:大数#99999999999999999999]"));
+        QCOMPARE(overflow.size(), 1);
+        QVERIFY(overflow[0].isCitation);
+        QCOMPARE(overflow[0].docName,
+                 QStringLiteral("doc:大数#99999999999999999999"));
+        QCOMPARE(overflow[0].chunkIndex, -1);
+    }
+
     // 拒绝规则（CitationParser.h 规则 1–5）。
     //
     // ⚠ 这里必须逐段断言「没有任何片段是引用」，不能只断言「不是单个引用

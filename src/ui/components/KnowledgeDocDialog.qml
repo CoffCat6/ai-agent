@@ -16,12 +16,15 @@ Dialog {
     height: 560
 
     property string docName: ""
-    property var chunks: []   // [{chunk_index, chunk_total, text, ...}]
+    property var chunks: []   // [{chunk_index, chunk_total, text, page, ...}]
     property var meta: null   // entry of AgentVM.knowledgeDocuments
+    // docs/25: 引用定位目标（0 基 chunk_index；-1 = 无定位）。命中的分块
+    // 卡片高亮 + 列表滚动定位，关闭对话框后复位。
+    property int targetChunk: -1
 
-
-    function openFor(name) {
+    function openFor(name, targetChunkIndex) {
         docName = name
+        targetChunk = targetChunkIndex === undefined ? -1 : targetChunkIndex
         open()  // content loads in onAboutToShow
     }
 
@@ -32,7 +35,17 @@ Dialog {
         for (let i = 0; i < docs.length; ++i) {
             if (docs[i].name === docName) { meta = docs[i]; break }
         }
+        // docs/25: 定位——documentChunks 按 chunk_index 排序且连续，列表
+        // 下标即 chunk_index。Qt.callLater 让布局先完成再滚动定位。
+        if (targetChunk >= 0 && targetChunk < chunks.length) {
+            Qt.callLater(function() {
+                chunkList.positionViewAtIndex(targetChunk, ListView.Beginning)
+                chunkList.currentIndex = targetChunk
+            })
+        }
     }
+
+    onClosed: targetChunk = -1
 
     function toClipboardText() {
         var lines = []
@@ -154,7 +167,14 @@ Dialog {
                 width: chunkList.width
                 height: chunkText.implicitHeight + chunkHeader.implicitHeight + 26
                 radius: 6
-                color: Theme.surfaceHover
+                // docs/25: 引用定位命中的分块卡片以品牌色高亮（打开期间
+                // 保持，关闭对话框复位）。
+                color: dialog.targetChunk === modelData.chunk_index
+                    ? Qt.rgba(Theme.brandPrimary.r, Theme.brandPrimary.g,
+                              Theme.brandPrimary.b, 0.12)
+                    : Theme.surfaceHover
+                border.width: dialog.targetChunk === modelData.chunk_index ? 1 : 0
+                border.color: Theme.brandPrimary
 
                 ColumnLayout {
                     anchors.fill: parent
@@ -168,6 +188,8 @@ Dialog {
                             id: chunkHeader
                             text: qsTr("分块 %1 / %2")
                                 .arg(modelData.chunk_index + 1).arg(modelData.chunk_total)
+                                + (modelData.page >= 0
+                                   ? qsTr(" · 第 %1 页").arg(modelData.page) : "")
                             color: Theme.brandPrimary
                             font.pixelSize: 9
                             font.family: Theme.fontMono

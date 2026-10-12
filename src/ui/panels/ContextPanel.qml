@@ -22,11 +22,14 @@ Rectangle {
     // Fade the content out while collapsing
     readonly property real contentFade: AgentVM.isPanelVisible ? 1.0 : 0.0
 
-    // Document import dialog (handled off-GUI-thread by AgentViewModel)
+    // Document import dialog (handled off-GUI-thread by AgentViewModel).
+    // docs/25: 多选 → 批量导入链（VM 内按文件串行推进）；单选 → 既有
+    // 单文件路径（保留其分类错误提示）。
     FileDialog {
         id: kbFileDialog
+        fileMode: FileDialog.OpenFiles
         nameFilters: [qsTr("支持的文件 (*.txt *.md *.json *.csv *.log *.pdf)"), qsTr("所有文件 (*)")]
-        onAccepted: AgentVM.importDocument(selectedFile)
+        onAccepted: AgentVM.importDocuments(selectedFiles)
     }
 
     // Left border separator
@@ -76,7 +79,8 @@ Rectangle {
                 visible: AgentVM.knowledgeDocuments.length > 0
             }
 
-            // Import-in-progress indicator (embedding runs in background)
+            // Import-in-progress indicator (embedding runs in background).
+            // docs/25: 批量导入时展示逐文件进度并提供取消。
             Row {
                 visible: AgentVM.knowledgeBusy
                 spacing: 6
@@ -98,12 +102,38 @@ Rectangle {
 
                 Text {
                     anchors.verticalCenter: parent.verticalCenter
-                    text: AgentVM.knowledgeEmbedTotal > 0
-                        ? qsTr("已嵌入 %1/%2").arg(AgentVM.knowledgeEmbedDone).arg(AgentVM.knowledgeEmbedTotal)
-                        : qsTr("导入中…")
+                    text: AgentVM.batchImportCancelling
+                        ? qsTr("批量导入 %1/%2：正在取消…")
+                              .arg(AgentVM.batchImportDone)
+                              .arg(AgentVM.batchImportTotal)
+                        : AgentVM.batchImportRunning
+                            ? qsTr("批量导入 %1/%2：%3")
+                                  .arg(AgentVM.batchImportDone)
+                                  .arg(AgentVM.batchImportTotal)
+                                  .arg(AgentVM.batchImportCurrent)
+                            : AgentVM.knowledgeEmbedTotal > 0
+                                ? qsTr("已嵌入 %1/%2").arg(AgentVM.knowledgeEmbedDone).arg(AgentVM.knowledgeEmbedTotal)
+                                : qsTr("导入中…")
                     color: Theme.brandPrimary
                     font.pixelSize: 10
                     font.family: Theme.fontSans
+                }
+
+                // docs/25: 取消——不再开始后续文件；正在导入的文件会完成。
+                IconButton {
+                    anchors.verticalCenter: parent.verticalCenter
+                    visible: AgentVM.batchImportRunning
+                    enabled: !AgentVM.batchImportCancelling
+                    opacity: AgentVM.batchImportCancelling ? 0.35 : 1.0
+                    width: 20
+                    height: 20
+                    radius: 4
+                    icon: "x"
+                    iconSize: 10
+                    tooltip: AgentVM.batchImportCancelling
+                        ? qsTr("正在取消（等待当前文件完成）")
+                        : qsTr("取消批量导入（未开始的文件将跳过）")
+                    onClicked: AgentVM.cancelBatchImport()
                 }
             }
 
@@ -116,9 +146,19 @@ Rectangle {
                 iconSize: 14
                 opacity: AgentVM.knowledgeBusy ? 0.35 : 1.0
                 enabled: !AgentVM.knowledgeBusy
-                tooltip: qsTr("导入文档")
+                tooltip: qsTr("导入文档（可多选）")
                 onClicked: kbFileDialog.open()
             }
+        }
+
+        // docs/25: 批量导入结束后的失败重试入口——只在有失败项且空闲时
+        // 可见；重跑以文件系统当前内容为准。
+        AppButton {
+            Layout.fillWidth: true
+            visible: !AgentVM.knowledgeBusy && AgentVM.batchImportFailedCount > 0
+            text: qsTr("重试失败的导入（%1）").arg(AgentVM.batchImportFailedCount)
+            onClicked: AgentVM.retryFailedBatchImports()
+            Accessible.name: qsTr("重试失败的批量导入")
         }
 
         Text {
