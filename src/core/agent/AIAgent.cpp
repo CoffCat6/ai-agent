@@ -285,8 +285,6 @@ QString AIAgent::appendTraceNode(const QString& type, const QString& title,
     // persistTraceNode 整节点写进 trace_nodes）。
     if (extra.contains("reasoning"))
         node["reasoning"] = extra.value("reasoning");
-    // docs/21：user_message 节点带上它的消息主键（extra 里给），分叉要按这个
-    // 主键把历史切到同一位置。其余节点没有归属（0），总是随会话可见。
     if (extra.contains("messageId"))
         node["messageId"] = extra.value("messageId");
 
@@ -294,25 +292,6 @@ QString AIAgent::appendTraceNode(const QString& type, const QString& title,
     persistTraceNode(node, m_nextTraceOrder++);
     emit traceChanged();
     return id;
-}
-
-void AIAgent::updateTraceNodeContent(const QString& nodeId, const QString& title,
-                                     const QJsonObject& variantMeta) {
-    if (nodeId.isEmpty()) return;
-    for (int i = m_traceModel.size() - 1; i >= 0; --i) {
-        QJsonObject node = m_traceModel.at(i).toObject();
-        if (node.value("id").toString() != nodeId) continue;
-        node["title"] = title;
-        for (auto it = variantMeta.constBegin(); it != variantMeta.constEnd(); ++it)
-            node[it.key()] = it.value();
-        m_traceModel.replace(i, node);
-        // 节点是持久行的内存镜像：只改内存的话，重新打开会话时标题会退回旧
-        // 文本（切换答案版本、分支时改问正文都会走到这里）。upsert 保留
-        // node_order，所以传下标只会写在已存在行上，不会移动位置。
-        persistTraceNode(node, i);
-        emit traceChanged();
-        return;
-    }
 }
 
 void AIAgent::updateLastNodeStatus(const QString& status) {
@@ -544,13 +523,7 @@ bool AIAgent::startTask(const QString& userMessage, const QStringList& images,
         userMsg["metadata"] = metadata;
     }
     m_messages.append(userMsg);
-    // docs/21 真分支：新提问挂在"当前对话末端"（head）下面，长出一条新分支。
-    // 主键与父键都补进内存副本——分支与切换答案都按 id 定位，不能靠 MAX(id) 反猜
-    // （插入失败时会拿到上一条消息的 id，锚点就指错了）。
-    // 紧接着创建本轮的 assistant 子行（空正文）：本轮所有轨迹节点都要挂在一个
-    // 确定的 id 上，答案写完只是把正文填进去。
-    // 主键由写入方回传并补进内存副本：分叉锚点与截断阈值都按它定位，不能靠
-    // MAX(id) 反猜（插入失败时会拿到上一条消息的 id）。
+    // 主键由写入方回传：MAX(id) 反猜在插入失败时会拿到上一条消息的 id。
     qint64 savedUserId = 0;
     if (m_memory) {
         savedUserId = m_memory->saveMessage(m_sessionId, userMsg);
@@ -565,7 +538,6 @@ bool AIAgent::startTask(const QString& userMessage, const QStringList& images,
         extra["images"] = userMsg.value("images");
     if (userMsg.contains("files"))
         extra["files"] = userMsg.value("files");
-    // docs/21：user 节点带上消息主键，UI 才能据此发起"从此处分支"与兄弟导航。
     if (savedUserId > 0) extra["messageId"] = savedUserId;
     appendTraceNode("user_message", userMessage, "completed", extra);
     // Pre-notify compression: ensure m_messages is within budget before
@@ -1215,16 +1187,9 @@ void AIAgent::stop() {
     if (m_memory && !m_sessionId.isEmpty()) m_memory->touchSession(m_sessionId);
 }
 
-// docs/20 §3.1（FORK-701）：重新生成。丢弃最后一条 assistant 回答（含末轮工具
-// 消息），从最后一条 user 消息重新发起。docs/21 的"分叉"不走这条路——它把历史复制
-// 到一个新会话（AgentViewModel::branchToNewSession），当前会话完全不受影响。
-//
-// 与 MEM-701 resume 契约一致：工具证据只存 trace_nodes（展示层），持久层消息表
-// 只留 user/assistant 对白。同步语义是：
-//   1. 持久层 truncateLastTurn 在一个事务里删掉该 user 消息之后的消息行**与其后
-//      的持久化轨迹节点**（少了后半步，被丢弃的思考/工具过程会在重开会话时复活）；
-//   2. 落盘失败时内存里的上下文与时间线一字不动，并 emit errorOccurred；
-//   3. 成功后从 processIteration 重新发起，不重新组装 system/episodic（上下文里已有）。
+// 截掉末条回答后从末条提问重发。顺序是硬要求：先 truncateLastTurn（一个事务里
+// 连该提问之后的轨迹节点一起删，否则被丢弃的过程会在重开会话时复活），失败就内存
+// 一字不动并 errorOccurred，成功后直接重发、不重新组装 system/episodic。
 //
 // 伪嵌入/stop 残留的 dangling tool_calls 已随截断一并消失，不需要 seal。
 void AIAgent::regenerateLast() {
@@ -1234,7 +1199,6 @@ void AIAgent::regenerateLast() {
     restartTaskFromAnchor();
 }
 
-// docs/20 §3.2（FORK-701）：替换最后一条 user 消息并重发。
 bool AIAgent::editLastUserMessage(const QString& text) {
     if (m_active || !m_llmService || text.trimmed().isEmpty()) return false;
     if (!checkQuota()) return false;
@@ -1278,10 +1242,6 @@ bool AIAgent::rewindLastTurn(bool removeUser) {
             break;
         }
     }
-    // 计数器不回退：appendTraceNode 写进内存的节点对象里**没有** order 键（它
-    // 只是 persistTraceNode 的参数），所以在这里"按现有节点重算"会一律读到 0，
-    // 新节点就撞上已有行的 node_order，重载时时间线顺序错乱。留空档无害——
-    // node_order 只用来排序。
     emit traceChanged();
     return true;
 }
@@ -1303,7 +1263,6 @@ void AIAgent::restartTaskFromAnchor() {
 
     ++m_epoch;   // invalidate results from any previous task
 
-    // 发起前的预压缩：与 startTask 同口径，保证 UI 不闪 >100%。
     {
         const int reserved = estimateReservedTokensForNextRequest();
         const int effective = qMax(0, m_contextLimit - reserved);
@@ -1359,9 +1318,6 @@ void AIAgent::clearStreamState() {
     m_reasoningText.clear();
     m_streamNodeActive = false;
     m_thinkingNodeId.clear();
-    // summary 节点 id 与流式状态同生命周期：留着上一轮的值，finishTask 就会把
-    // 变体元数据挂到已被丢弃的旧节点上（m_streamNodeActive 恰好让它现在安全，
-    // 但这是隐式耦合，不是保证）。
     m_summaryNodeId.clear();
 }
 

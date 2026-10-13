@@ -28,10 +28,7 @@ Item {
     // 气泡最大宽 = 本 delegate 宽 × 比例；正文可用宽再扣掉水平内边距。
     readonly property real maxBubbleWidth: Math.max(120, width * Theme.bubbleMaxRatio)
     readonly property real maxContentWidth: Math.max(80, maxBubbleWidth - Theme.spaceMd * 2)
-    // 内容自然宽（标题 + 附件取大者），再夹到上限。
-    // 编辑态例外：阅读态的气泡是"缩到内容宽"，一条"你好"只有两字宽，直接拿来
-    // 当输入框就窄得没法打字；而且边打字边变宽会一路抖动。所以编辑时一次性摊到
-    // 气泡上限宽，给输入一个稳定、够用的落点。
+    // 编辑态摊到上限宽：收缩宽给不了输入框落点，且边打字边变宽会一路抖动。
     readonly property real contentWidth: editing
         ? maxContentWidth
         : Math.min(Math.max(bodyText.implicitWidth, attachRow.implicitWidth), maxContentWidth)

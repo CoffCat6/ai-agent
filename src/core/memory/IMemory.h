@@ -11,47 +11,25 @@ class IMemory {
 public:
     virtual ~IMemory() = default;
 
-    // ── 会话消息（线性）+ 分叉为新会话（docs/21）─────────────────
-    // 一个会话就是一条按主键单调递增的对话线。"从这里分叉"不在原会话里动刀：它把
-    // 那次回答及之前的历史**复制**成一个新会话（forkSessionAtAnswer），原会话一个字
-    // 都不改，天然可回退，也不需要 head/parent/兄弟节点这套持久结构。
-    // 答案不另存版本：重新生成 / 编辑重发就是截断这一轮再重发（truncateLastTurn），
-    // 与 docs/20 FORK-701 的既有语义一致。
-    //
-    // 返回新行主键（AUTOINCREMENT 单调），失败返回 0。调用方必须用返回值定位这一行，
-    // 不能靠 MAX(id) 反猜——插入失败时会拿到上一条消息的 id。
+    // 返回新行主键（失败 0）：调用方靠它定位这一行，MAX(id) 在插入失败时会拿到上一条。
     virtual qint64 saveMessage(const QString& sessionId, const QJsonObject& msg) = 0;
-    // 该会话最近 limit 条消息，按对话顺序正序。每行带 id：分叉锚点与截断阈值都靠它。
     virtual QJsonArray loadMessages(const QString& sessionId, int limit = 50) = 0;
 
-    // docs/20 §3.1/§3.2（FORK-701）：按主键阈值删除（AUTOINCREMENT 保证单调），
-    // messages_fts 影子表经 AFTER DELETE 触发器自动同步。audit_log 不动。
     virtual int deleteMessagesFrom(const QString& sessionId, qint64 fromId) {
         Q_UNUSED(sessionId); Q_UNUSED(fromId);
         return 0;
     }
-    // docs/20 §3.1（FORK-701）：会话内最后一条 user 消息的主键，供截断定位阈值。
     virtual qint64 lastUserMessageId(const QString& sessionId) {
         Q_UNUSED(sessionId);
         return 0;
     }
-    // 原子截末轮：删掉该 user 消息之后的消息行**以及**其后的持久化轨迹节点，一个
-    // 事务。轨迹节点必须一起删——上一版只删消息行，被丢弃的过程在重开会话时整段
-    // 复活。removeUser=true 时连提问一起删（编辑重发），false 时保留它当重发锚点。
+    // 原子截末轮：消息行和其后的轨迹节点一起删，一个事务。
     virtual bool truncateLastTurn(const QString& sessionId, bool removeUser) {
         Q_UNUSED(sessionId); Q_UNUSED(removeUser);
         return false;
     }
 
-    // docs/21 分叉为新会话：把源会话**第 answerRank 条回答及其之前**的历史复制到
-    // 一个新会话，返回新会话 id；失败返回空串。**源会话完全不参与**——这就是
-    // "在一次回答结束后，由此开始一个新分支"：副本以那条回答结尾，用户在新会话里
-    // 接着问。分叉点是一条回答（assistant 行）而不是提问：回答必须一起复制，
-    // 否则新会话会停在半句话上。
-    // 定位按"第几条回答"而不是消息主键：线性会话里第 n 条 summary 节点恒对应第
-    // n 条 assistant 行（一轮回答各写一条，截断成对删、分叉成对复制），所以升级前
-    // 那些 trace_nodes.message_id 为空甚至为脏值的会话同样能分叉，不需要数据迁移。
-    // 时间线切到那条回答所在轮次的末尾（下一条提问之前的最后一个节点）。
+    // docs/21：把第 answerRank 条回答及之前的历史复制成一个新会话（失败空串）。
     virtual QString forkSessionAtAnswer(const QString& sourceSessionId, int answerRank,
                                         const QString& title) {
         Q_UNUSED(sourceSessionId); Q_UNUSED(answerRank); Q_UNUSED(title);
@@ -132,9 +110,6 @@ public:
     // when a session is resumed - plain message history only keeps the
     // user/assistant text. `order` fixes the timeline position on first
     // insert and is ignored on upsert (status/title updates).
-    // docs/21：节点可通过 node["messageId"] 记下它归属的消息主键（落在
-    // trace_nodes.message_id 列），仅作诊断用。分叉与截末轮都不读这一列——它们按
-    // 类型和 node_order 定位，所以升级前那些填着脏值的旧行不会把操作带偏。
     virtual void saveTraceNode(const QString& sessionId, const QJsonObject& node, int order) {
         Q_UNUSED(sessionId); Q_UNUSED(node); Q_UNUSED(order);
     }

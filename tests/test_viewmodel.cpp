@@ -1566,9 +1566,7 @@ private slots:
             QCOMPARE(entry.toMap().value("status").toString(), QStringLiteral("degraded"));
         QVERIFY(rag.usesPseudoEmbedding(QStringLiteral("d1.txt")));
     }
-    // docs/21 分叉入口在拿不到持久层 / 活动会话 / 合法下标时必须直接拒绝，
-    // 不能悄悄造出一个空会话。真正的内容复制在 test_memory 与
-    // branchFromAnswerForksByTraceIndex 里覆盖。
+    // 入口守卫：拿不到持久层 / 活动会话 / 合法下标时直接拒绝，不造空会话。
     void branchFromAnswerGuards() {
         AgentViewModel vm(nullptr);
         QVERIFY(!vm.branchFromAnswer(1));           // 没有持久层
@@ -1579,11 +1577,8 @@ private slots:
         QCOMPARE(mem.listSessions().size(), 0);
     }
 
-    // 分叉的完整链路：回答气泡只交出它在时间线里的下标 → VM 换算成"第几条回答"
-    // → 持久层按序号切出副本并加载到新标签。
-    // 回归点：上一版让界面去读 trace 节点的 messageId，而回答侧从来没有人写过
-    // 这个键（只有 user_message 节点带），"从此处分支"因此永远不显示，单测却全绿
-    // ——它们都直接手写消息主键，绕过了这条换算。这里走真实恢复出来的时间线。
+    // 完整链路：下标 → 第几条回答 → 副本。回归点：上一版界面读 messageId 而回答侧
+    // 从没人写过这个键，按钮因此永不显示，旧用例又都手写主键绕过了这段换算。
     void branchFromAnswerForksByTraceIndex() {
         SqliteMemory memory(QStringLiteral(":memory:"));
         memory.beginSession(QStringLiteral("src"), QStringLiteral("源会话"));
@@ -1599,7 +1594,6 @@ private slots:
         memory.saveMessage(QStringLiteral("src"),
                            QJsonObject{{QStringLiteral("role"), QStringLiteral("assistant")},
                                        {QStringLiteral("content"), QStringLiteral("第二答")}});
-        // 时间线故意不带任何 messageId 归属：升级前的老会话就是这个样子。
         struct Row { const char* id; const char* type; const char* title; };
         const Row rows[] = {
             {"nq1", "user_message", "第一问"},
@@ -1639,22 +1633,26 @@ private slots:
         QCOMPARE(copied.at(1).toObject().value("content").toString(),
                  QStringLiteral("第一答"));
         QCOMPARE(memory.loadTraceNodes(forked).size(), 2);
-        // 点完就切到新会话里接着问。
         QCOMPARE(agent.currentSessionId(), forked);
         QCOMPARE(memory.loadMessages(QStringLiteral("src"), 50).size(), 4);
 
-        // 非回答行（下标 0 是提问）与越界下标都被拒，且不再造出第二个会话。
         vm.loadSession(QStringLiteral("src"));
         const int sessionsBefore = memory.listSessions().size();
         QVERIFY(!vm.branchFromAnswer(0));
         QVERIFY(!vm.branchFromAnswer(999));
         QCOMPARE(memory.listSessions().size(), sessionsBefore);
 
-        // 从最后一条回答分叉 = 整段历史都带过去。
+        // 从最后一条回答分叉 = 整段历史都带过去；第二次分叉标题要顺延编号。
         QVERIFY(vm.branchFromAnswer(3));
         const QString whole = agent.currentSessionId();
         QCOMPARE(memory.loadMessages(whole, 50).size(), 4);
         QCOMPARE(memory.loadTraceNodes(whole).size(), 4);
+        for (const auto& entry : memory.listSessions()) {
+            const QJsonObject session = entry.toObject();
+            if (session.value(QStringLiteral("id")).toString() == whole)
+                QCOMPARE(session.value(QStringLiteral("title")).toString(),
+                         QStringLiteral("源会话（分支2）"));
+        }
     }
 };
 QTEST_GUILESS_MAIN(TestAgentViewModel)

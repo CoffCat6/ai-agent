@@ -43,7 +43,7 @@ public:
     int intermediateCount() const { return m_trace.intermediateCount(); }
     // docs/20 §3.1/§3.2：该类型的最后一行（供消息级操作按钮定位末条）。
     int lastIndexOfType(const QString& type) const { return m_trace.lastIndexOfType(type); }
-    // docs/21：该类型的第几行（1 起，0=不在表里/类型不符），分叉锚点换算用。
+    // docs/21：该类型的第几行（1 起，0=不命中），分叉锚点换算用。
     int rankOfTypeAt(int row, const QString& type) const
     { return m_trace.rankOfTypeAt(row, type); }
     QString finalResponse() const { return m_finalResponse; }

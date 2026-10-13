@@ -38,6 +38,7 @@
 #include <QJsonObject>
 #include <QSaveFile>
 #include <QScreen>
+#include <QSet>
 #include <QStandardPaths>
 #include <QUrl>
 #include <QtConcurrent/QtConcurrentRun>
@@ -1656,14 +1657,12 @@ bool AgentViewModel::branchFromAnswer(int traceIndex) {
         emit errorOccurred(tr("这个会话还没有可分叉的历史记录。"));
         return false;
     }
-    // 下标 → 第几条回答：这条回答在持久层里就是第 rank 条 assistant 行。
     const int rank = source->rankOfTypeAt(traceIndex, QStringLiteral("summary"));
     if (rank <= 0) {
         emit errorOccurred(tr("这条回答还没有存进会话记录，稍等一下再试。"));
         return false;
     }
 
-    // 标题沿用源会话并加后缀：两条对话看起来成对，侧栏里也能一眼分辨哪条是分叉。
     QString sourceTitle;
     for (const QVariant& entry : std::as_const(m_sessionList)) {
         const QVariantMap session = entry.toMap();
@@ -1674,8 +1673,15 @@ bool AgentViewModel::branchFromAnswer(int traceIndex) {
     }
     if (sourceTitle.isEmpty()) sourceTitle = tr("新会话");
 
-    const QString forked = m_memory->forkSessionAtAnswer(sourceSession, rank,
-                                                         tr("%1（分支）").arg(sourceTitle));
+    // 同一条对话可以分好几次，只写"（分支）"会在侧栏里撞车，重名就顺延编号。
+    QSet<QString> takenTitles;
+    for (const QVariant& entry : std::as_const(m_sessionList))
+        takenTitles.insert(entry.toMap().value(QStringLiteral("title")).toString());
+    QString title = tr("%1（分支）").arg(sourceTitle);
+    for (int n = 2; takenTitles.contains(title); ++n)
+        title = tr("%1（分支%2）").arg(sourceTitle).arg(n);
+
+    const QString forked = m_memory->forkSessionAtAnswer(sourceSession, rank, title);
     if (forked.isEmpty()) {
         emit errorOccurred(tr("无法创建分叉出来的会话，请重试。"));
         return false;

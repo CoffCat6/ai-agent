@@ -135,7 +135,6 @@ void SqliteMemory::initDatabase() {
     // docs/17 A0: sessions.project_id 列补齐（projects 表在 createTables 里）。
     migrateSessionProjectColumn();
     migrateTraceNodeReasoningColumn();
-    // docs/21：把中间那版消息树拉平成"线性历史 + 分叉成新会话"。
     migrateConversationModel(userVersion);
     migrateKnowledgeSchema();
     // docs/25: 引用定位——chunk 页码列（PDF 导入写入，-1 = 无页码）。
@@ -161,15 +160,12 @@ void SqliteMemory::initDatabase() {
             "CREATE INDEX IF NOT EXISTS idx_sessions_pinned_updated "
             "ON sessions(pinned, updated_at)",
             "create idx_sessions_pinned_updated");
-    // docs/21：会话回到线性，按 (session_id, parent_id) 的分支索引不再需要。
     execDdl(versionQuery, "DROP INDEX IF EXISTS idx_messages_session_parent",
             "drop the retired message-tree index");
 
     if (userVersion == 0) {
         execDdl(versionQuery, "ANALYZE", "analyze for the query planner");
     }
-    // docs/23 G1 + docs/21：版本闸门记下"这条库已经跑过 FTS 回填、消息树拉平与
-    // 遗留变体表回收"。老库从 0/1/2 一律升到 3；稳态启动不再重复那些 O(n) 扫描。
     if (userVersion < 3)
         execDdl(versionQuery, "PRAGMA user_version = 3", "stamp user_version");
 }
@@ -271,8 +267,6 @@ void SqliteMemory::createTables() {
 
     // Messages table (workspace_id: forward-compatibility reservation,
     // Batch 7 MEM-704 - always 'local' until multi-tenant support).
-    // docs/21：会话是一条按 id 单调递增的线性对话线；分叉走"复制前史成新会话"，
-    // 所以这里不再有 parent_id / head_message_id 那套树结构。
     execDdl(query, R"(
         CREATE TABLE IF NOT EXISTS messages (
             id INTEGER PRIMARY KEY AUTOINCREMENT,
@@ -525,17 +519,10 @@ void SqliteMemory::migrateTraceNodeReasoningColumn() {
                 "add trace_nodes.metadata column");
 }
 
-// docs/21：会话模型最终定为"线性历史 + 分叉成新会话"。这一步把中间那版消息树
-// 拉平回去，一次性（user_version < 3），整体一个事务：
-//   1. 只有 parent_id / head_message_id 两列存在过才处理：按 head 的祖先链定出
-//      "用户当时在看的那一条线"，链外的行是他已经放弃的重复答案版本，删掉；挂在
-//      这些被删行上的轨迹节点一起删，否则重开会话会画出一段没有归属答案的过程。
-//   2. 清空 parent_id / head_message_id。两列本身留着不重建表——在用户的真实库上
-//      重建三张主表的风险，远大于多两个没人读的空列；新库的 DDL 已经不带它们。
-//   3. 遗留的 message_variants 表 DROP（答案不再存多版本）。
-//   4. trace_nodes.message_id 保留并继续维护：它现在的职责很窄但确实有用——截断
-//      末轮时按它把这一轮的过程一起删掉，分叉时按它把历史切到同一位置。
-// 没经历过树版本的库这些列/表本来就不存在，整段退化为 no-op，只落版本闸门。
+// 把中间那版消息树拉平回线性历史，一次性（user_version < 3），一个事务：按 head
+// 的祖先链定出用户当时在看的那条线，链外的重复答案行连同其轨迹节点删掉；清空
+// parent_id / head_message_id（列留着——真实库上重建三张主表的风险大于多两个空列）；
+// DROP 遗留的 message_variants。没经历过树版本的库整段退化为 no-op。
 void SqliteMemory::migrateConversationModel(int userVersion) {
     if (userVersion >= 3) return;
     if (!m_db.transaction()) return;
@@ -640,7 +627,6 @@ void SqliteMemory::migrateConversationModel(int userVersion) {
         }
     }
 
-    // 答案不再存多版本：遗留的变体表（含只写过这一版实现的库）一律回收。
     QSqlQuery dropVariants(m_db);
     if (!dropVariants.exec("DROP TABLE IF EXISTS message_variants"))
         qWarning() << "Could not drop message_variants:" << dropVariants.lastError().text();
@@ -916,8 +902,6 @@ QString SqliteMemory::loadKnowledgeDoc(const QString& name) const {
 
 namespace {
 
-// messages 的一行 → 上层看到的对象。id 是分叉锚点与截断阈值；metadata 里的
-// images/files 提升到顶层（provider 转换器与轨迹重建都读顶层键）。
 QJsonObject messageRowToObject(const QString& role, const QString& content,
                                const QString& metadataJson, double timestamp, qint64 id) {
     QJsonObject msg;
@@ -938,8 +922,6 @@ QJsonObject messageRowToObject(const QString& role, const QString& content,
 
 } // namespace
 
-// 落库一条消息并返回其主键（AUTOINCREMENT 单调），失败返回 0。调用方必须用返回值
-// 定位这一行，不能靠 MAX(id) 反猜——插入失败时会拿到上一条消息的 id。
 qint64 SqliteMemory::saveMessage(const QString& sessionId, const QJsonObject& msg) {
     // 空会话 id 写进去就是一行无主消息，永远不会被 loadMessages 取到。
     if (sessionId.isEmpty()) return 0;
@@ -996,9 +978,6 @@ QJsonArray SqliteMemory::loadMessages(const QString& sessionId, int limit) {
     return messages;
 }
 
-// docs/20 §3.1/§3.2（FORK-701）：按主键阈值删除（AUTOINCREMENT 保证 id 单调）。
-// 优先按 (timestamp,rowid) 排序的历史窗口里，阈值用主键最稳；FTS 影子表经
-// AFTER DELETE 触发器自动同步。audit_log 不动。返回删除的行数。
 int SqliteMemory::deleteMessagesFrom(const QString& sessionId, qint64 fromId) {
     if (sessionId.isEmpty() || fromId <= 0) return 0;
     QSqlQuery query(m_db);
@@ -1026,18 +1005,12 @@ qint64 SqliteMemory::lastUserMessageId(const QString& sessionId) {
     return query.next() ? query.value(0).toLongLong() : 0;
 }
 
-// docs/20 §3.1（FORK-701）：原子截末轮。删消息行的同时**必须**删这一轮之后的
-// 持久化轨迹节点——上一版只删消息行，被丢弃的思考/工具过程会在重开会话时整段
-// 复活。removeUser=true 连提问一起删（编辑重发），false 保留它当重发锚点。
-// audit_log 不动：重新生成/编辑是正常行为，保留完整审计链。
 bool SqliteMemory::truncateLastTurn(const QString& sessionId, bool removeUser) {
     if (sessionId.isEmpty() || !m_db.transaction()) return false;
     QSqlQuery query(m_db);
     const qint64 userId = lastUserMessageId(sessionId);
     bool ok = userId > 0;
     if (ok) {
-        // 先剪时间线再删消息行：两者都按"最后一个 user_message 节点之后"定位，
-        // 消息行一删就再也对不上阈值了。
         query.prepare("DELETE FROM trace_nodes WHERE session_id = ? AND node_order >= "
                       "(SELECT MAX(node_order) + ? FROM trace_nodes "
                       "WHERE session_id = ? AND type = 'user_message')");
@@ -1058,19 +1031,12 @@ bool SqliteMemory::truncateLastTurn(const QString& sessionId, bool removeUser) {
     return false;
 }
 
-// docs/21 分叉为新会话：把源会话第 answerRank 条回答及其之前的历史复制进一个新
-// 会话，返回新会话 id。**源会话完全不参与**——这就是"保留之前历史的新对话"：不用
-// 维护 head/兄弟节点两套真相，也不用担心把用户正在看的对话改坏。
-// 锚点按"第几条回答"定位，不读 trace_nodes.message_id：那一列在树迁移时代被整轮
-// 批量回填过，同一列里既有挂在 user 行上的 summary，也有多轮共用一个 id 的脏值，
-// 拿它切时间线会把副本切得比消息列表长。按序号切则新老数据一视同仁，且分叉出去的
-// 会话还能再次分叉（副本的脏列一律写 0，不影响后续定位）。
+// 按序号切、不读 message_id：树迁移时代把整轮节点批量挂到当时"当前"的消息上，
+// 那些脏值会把副本切得比消息列表长。
 QString SqliteMemory::forkSessionAtAnswer(const QString& sourceSessionId, int answerRank,
                                           const QString& title) {
     if (sourceSessionId.isEmpty() || answerRank <= 0) return QString();
 
-    // 锚点行：第 answerRank 条 assistant 消息。查不出来就是越界（时间线和消息行
-    // 对不上，或者这个会话根本还没回答过），拒绝分叉而不是复制出一个说不清的会话。
     qint64 anchorId = 0;
     {
         QSqlQuery anchor(m_db);
@@ -1089,10 +1055,8 @@ QString SqliteMemory::forkSessionAtAnswer(const QString& sourceSessionId, int an
         anchorId = anchor.value(0).toLongLong();
     }
 
-    // 时间线截断点：那条回答所在轮次的末尾 —— 它之后第一条提问之前的最后一个
-    // 节点（答案的 metrics 行、以及本轮所有思考/工具过程都在这一刀之前）；
-    // 它后面没有提问了就切到时间线末尾。summary 节点数不到该序号时不复制时间线，
-    // 交给 resumeSession 用消息文本重建。
+    // 切在那条回答所在轮次的末尾：它之后第一条提问之前的最后一个节点，没有下一条
+    // 提问就切到时间线末尾。数不到 summary 时交给 resumeSession 用消息文本重建。
     int cutoff = -1;
     {
         QSqlQuery cut(m_db);
@@ -1693,10 +1657,6 @@ void SqliteMemory::saveTraceNode(const QString& sessionId, const QJsonObject& no
     QSqlQuery query(m_db);
     // Upsert: position (node_order) is fixed by the first insert; later
     // saves of the same node id only refresh content/status.
-    // docs/21 真分支：message_id 是这个节点的归属消息（user_message 节点归那条
-    // user 行，本轮其余节点归本轮的 assistant 行），"时间线只画活动路径"就靠它。
-    // 分支之间共用 node_order 取值是安全的：跨分支的节点不会同时出现在一次路径
-    // 过滤的结果里。
     query.prepare("INSERT INTO trace_nodes (session_id, node_id, node_order, type, title, "
                   "status, args, result, reasoning, timestamp, message_id, metadata, workspace_id) "
                   "VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, 'local') "

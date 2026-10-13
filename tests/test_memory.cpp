@@ -764,11 +764,7 @@ void TestMemory::searchMessagesSyncsOnDelete() {
     QVERIFY(mem.searchMessages(QStringLiteral("检索锚点"), 50).isEmpty());
 }
 
-// docs/21 分叉为新会话：把源会话"第 n 条回答及其之前"的历史复制成一个新会话，
-// 副本以那条回答结尾（调用方不动源会话，用户在新会话里接着问）。
-// 定位一律按回答序号：trace_nodes.message_id 在这几个用例里故意留空 / 填脏值，
-// 用来钉住"分叉不读那一列"——升级前的老会话（全空）和树迁移时代回填过的脏数据
-// （summary 挂在 user 行上、多轮共用一个 id）都必须切在同一位置。
+// docs/21：按"第 n 条回答"分叉。message_id 故意留空 / 填脏值，钉住分叉不读那一列。
 void TestMemory::forkSessionAtAnswerCopiesThroughThatAnswer() {
     SqliteMemory mem(QStringLiteral(":memory:"));
     mem.beginSession("src", QStringLiteral("源会话"));
@@ -778,8 +774,6 @@ void TestMemory::forkSessionAtAnswerCopiesThroughThatAnswer() {
     const qint64 a2 = mem.saveMessage("src", msg("assistant", QStringLiteral("第二答")));
     QVERIFY(q1 > 0 && a1 > q1 && q2 > a1 && a2 > q2);
 
-    // 时间线：每一轮 = 一个 user_message 节点 + 一个 summary 节点 + 回答之后的
-    // metrics 行（finishTask 的真实形状）。message_id 故意全为 0。
     mem.saveTraceNode("src", QJsonObject{{QStringLiteral("id"), QStringLiteral("nq1")},
                                         {QStringLiteral("type"), QStringLiteral("user_message")},
                                         {QStringLiteral("title"), QStringLiteral("第一问")},
@@ -807,24 +801,19 @@ void TestMemory::forkSessionAtAnswerCopiesThroughThatAnswer() {
                                         {QStringLiteral("timestamp"), 1},
                                         {QStringLiteral("messageId"), q2}}, 4);
 
-    // 从第一答分叉：副本以这条回答结尾，它后面的 metrics 行属于同一轮所以一起带
-    // 过来；第二问及第二答都不在其中。
     const QString forked = mem.forkSessionAtAnswer("src", 1, QStringLiteral("分支标题"));
     QVERIFY(!forked.isEmpty());
     const QJsonArray copied = mem.loadMessages(forked, 50);
     QCOMPARE(copied.size(), 2);
     QCOMPARE(copied.at(0).toObject().value("content").toString(), QStringLiteral("第一问"));
     QCOMPARE(copied.at(1).toObject().value("content").toString(), QStringLiteral("第一答"));
-    // 主键是新的（不是同一批行的共享），否则两条对话会互相改写。
     QVERIFY(copied.at(0).toObject().value("id").toVariant().toLongLong() != q1);
     const QJsonArray nodes = mem.loadTraceNodes(forked);
     QCOMPARE(nodes.size(), 3);
     QCOMPARE(nodes.at(0).toObject().value("id").toString(), QStringLiteral("nq1"));
     QCOMPARE(nodes.at(2).toObject().value("type").toString(), QStringLiteral("metrics"));
-    // 复制过来的节点归属清零：新会话的行主键不同，旧归属已失效。
     QVERIFY(!nodes.at(1).toObject().contains(QStringLiteral("messageId")));
 
-    // 分叉出来的会话在列表里带着标题，且是新的一行。
     bool found = false;
     for (const auto& entry : mem.listSessions()) {
         const QJsonObject session = entry.toObject();
@@ -836,7 +825,6 @@ void TestMemory::forkSessionAtAnswerCopiesThroughThatAnswer() {
     }
     QVERIFY(found);
 
-    // 源会话完全没被碰过。
     QCOMPARE(mem.loadMessages("src", 50).size(), 4);
     QCOMPARE(mem.loadTraceNodes("src").size(), 5);
 
@@ -846,15 +834,14 @@ void TestMemory::forkSessionAtAnswerCopiesThroughThatAnswer() {
     QCOMPARE(mem.loadMessages(whole, 50).size(), 4);
     QCOMPARE(mem.loadTraceNodes(whole).size(), 5);
 
-    // 越界 / 非法参数都被拒，不会静默造出空会话。
     QVERIFY(mem.forkSessionAtAnswer("src", 3, QStringLiteral("x")).isEmpty());
     QVERIFY(mem.forkSessionAtAnswer("src", 0, QStringLiteral("x")).isEmpty());
     QVERIFY(mem.forkSessionAtAnswer("src", -1, QStringLiteral("x")).isEmpty());
     QVERIFY(mem.forkSessionAtAnswer(QString(), 1, QStringLiteral("x")).isEmpty());
 }
 
-// 分叉出来的会话要能再次分叉，且过程节点不丢。上一版按 message_id 切时间线，
-// 而副本的归属被清零，第二次分叉就一段过程都复制不出来。
+// 分叉出的会话要能再次分叉且过程不丢：上一版按 message_id 切，而副本归属被清零，
+// 第二次分叉一段过程都复制不出来。
 void TestMemory::forkedSessionForksAgainKeepingProcess() {
     SqliteMemory mem(QStringLiteral(":memory:"));
     mem.beginSession("src", QStringLiteral("源会话"));
