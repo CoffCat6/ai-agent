@@ -20,14 +20,15 @@ public:
     explicit SqliteMemory(const QString& dbPath = QString());
     ~SqliteMemory() override;
 
-    void saveMessage(const QString& sessionId, const QJsonObject& msg) override;
+    // docs/21：会话是线性的一串消息；分叉 = 复制前史成新会话。
+    // 契约与语义见 IMemory.h。
+    qint64 saveMessage(const QString& sessionId, const QJsonObject& msg) override;
     QJsonArray loadMessages(const QString& sessionId, int limit = 50) override;
-
-    // docs/20 §3.1/§3.2（FORK-701）：按主键阈值删除，供重新生成/编辑重发。
     int deleteMessagesFrom(const QString& sessionId, qint64 fromId) override;
-    // docs/20 §3.1（FORK-701）：会话内最后一条 user 消息的主键。
     qint64 lastUserMessageId(const QString& sessionId) override;
     bool truncateLastTurn(const QString& sessionId, bool removeUser) override;
+    QString forkSessionAtAnswer(const QString& sourceSessionId, int answerRank,
+                                const QString& title) override;
     bool setSessionPinned(const QString& id, bool pinned) override;
     bool setSessionArchived(const QString& id, bool archived) override;
 
@@ -179,6 +180,12 @@ private:
     void migrateKnowledgeChunkPageColumn();
     // trace_nodes.reasoning：思考正文列，老库补列（新库由建表 DDL 带上）
     void migrateTraceNodeReasoningColumn();
+    // docs/21：会话模型定为"线性历史 + 分叉成新会话"。这一步把中间那版消息树
+    // 拉平：按 head 的祖先链定序、删掉旁支上被放弃的重复答案行、清空 parent_id /
+    // head_message_id，并回收遗留的 message_variants 表（答案不再存多版本）。
+    // 没经历过树版本的库这些列/表本来就不存在，整段是 no-op，只落版本闸门。
+    // 仅在 user_version < 3 时跑一次。
+    void migrateConversationModel(int userVersion);
     // backfillRows（docs/23 G1）：仅 user_version==0（老库升级/新库首建）
     // 时执行 O(messages) 的 FTS 回填；稳态启动由触发器保证同步，跳过。
     void migrateMessagesFts(bool backfillRows);

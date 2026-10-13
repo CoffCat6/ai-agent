@@ -84,6 +84,13 @@ private slots:
     // docs/14 L3 regression: a database whose episodic_fts predates the
     // trigram decision must be upgraded in place the next time it is opened.
     void episodicFtsUpgradesToTrigramOnOpen();
+    // docs/21 分叉为新会话：主键回传、线性截断要连时间线一起删、按回答序号分叉
+    // （含二次分叉）、以及中间那版消息树的拉平迁移。
+    void saveMessageReturnsPrimaryKeyOrZero();
+    void truncateLastTurnPrunesPersistedTraceNodes();
+    void forkSessionAtAnswerCopiesThroughThatAnswer();
+    void forkedSessionForksAgainKeepingProcess();
+    void treeDatabaseFlattensToLinearHistory();
     void auditTrail();
     void tokenStatsAggregate();
     void tokenStatsEmptyWhenNoData();
@@ -112,8 +119,6 @@ private slots:
     void searchMessagesGroupsBySession();
     void searchMessagesLikeGuardSuppressesLargeTables();
     // docs/20 §3.1/§3.2（FORK-701）：重新生成/编辑重发的持久层支撑
-    void deleteMessagesFromRemovesTail();
-    void lastUserMessageIdFindsLastUserRow();
 };
 
 void TestMemory::messageRoundTrip() {
@@ -759,6 +764,298 @@ void TestMemory::searchMessagesSyncsOnDelete() {
     QVERIFY(mem.searchMessages(QStringLiteral("检索锚点"), 50).isEmpty());
 }
 
+// docs/21 分叉为新会话：把源会话"第 n 条回答及其之前"的历史复制成一个新会话，
+// 副本以那条回答结尾（调用方不动源会话，用户在新会话里接着问）。
+// 定位一律按回答序号：trace_nodes.message_id 在这几个用例里故意留空 / 填脏值，
+// 用来钉住"分叉不读那一列"——升级前的老会话（全空）和树迁移时代回填过的脏数据
+// （summary 挂在 user 行上、多轮共用一个 id）都必须切在同一位置。
+void TestMemory::forkSessionAtAnswerCopiesThroughThatAnswer() {
+    SqliteMemory mem(QStringLiteral(":memory:"));
+    mem.beginSession("src", QStringLiteral("源会话"));
+    const qint64 q1 = mem.saveMessage("src", msg("user", QStringLiteral("第一问")));
+    const qint64 a1 = mem.saveMessage("src", msg("assistant", QStringLiteral("第一答")));
+    const qint64 q2 = mem.saveMessage("src", msg("user", QStringLiteral("第二问")));
+    const qint64 a2 = mem.saveMessage("src", msg("assistant", QStringLiteral("第二答")));
+    QVERIFY(q1 > 0 && a1 > q1 && q2 > a1 && a2 > q2);
+
+    // 时间线：每一轮 = 一个 user_message 节点 + 一个 summary 节点 + 回答之后的
+    // metrics 行（finishTask 的真实形状）。message_id 故意全为 0。
+    mem.saveTraceNode("src", QJsonObject{{QStringLiteral("id"), QStringLiteral("nq1")},
+                                        {QStringLiteral("type"), QStringLiteral("user_message")},
+                                        {QStringLiteral("title"), QStringLiteral("第一问")},
+                                        {QStringLiteral("status"), QStringLiteral("completed")},
+                                        {QStringLiteral("timestamp"), 1}}, 0);
+    mem.saveTraceNode("src", QJsonObject{{QStringLiteral("id"), QStringLiteral("na1")},
+                                        {QStringLiteral("type"), QStringLiteral("summary")},
+                                        {QStringLiteral("title"), QStringLiteral("第一答")},
+                                        {QStringLiteral("status"), QStringLiteral("completed")},
+                                        {QStringLiteral("timestamp"), 1}}, 1);
+    mem.saveTraceNode("src", QJsonObject{{QStringLiteral("id"), QStringLiteral("nm1")},
+                                        {QStringLiteral("type"), QStringLiteral("metrics")},
+                                        {QStringLiteral("title"), QStringLiteral("Task 1s")},
+                                        {QStringLiteral("status"), QStringLiteral("completed")},
+                                        {QStringLiteral("timestamp"), 1}}, 2);
+    mem.saveTraceNode("src", QJsonObject{{QStringLiteral("id"), QStringLiteral("nq2")},
+                                        {QStringLiteral("type"), QStringLiteral("user_message")},
+                                        {QStringLiteral("title"), QStringLiteral("第二问")},
+                                        {QStringLiteral("status"), QStringLiteral("completed")},
+                                        {QStringLiteral("messageId"), a1}}, 3);
+    mem.saveTraceNode("src", QJsonObject{{QStringLiteral("id"), QStringLiteral("na2")},
+                                        {QStringLiteral("type"), QStringLiteral("summary")},
+                                        {QStringLiteral("title"), QStringLiteral("第二答")},
+                                        {QStringLiteral("status"), QStringLiteral("completed")},
+                                        {QStringLiteral("timestamp"), 1},
+                                        {QStringLiteral("messageId"), q2}}, 4);
+
+    // 从第一答分叉：副本以这条回答结尾，它后面的 metrics 行属于同一轮所以一起带
+    // 过来；第二问及第二答都不在其中。
+    const QString forked = mem.forkSessionAtAnswer("src", 1, QStringLiteral("分支标题"));
+    QVERIFY(!forked.isEmpty());
+    const QJsonArray copied = mem.loadMessages(forked, 50);
+    QCOMPARE(copied.size(), 2);
+    QCOMPARE(copied.at(0).toObject().value("content").toString(), QStringLiteral("第一问"));
+    QCOMPARE(copied.at(1).toObject().value("content").toString(), QStringLiteral("第一答"));
+    // 主键是新的（不是同一批行的共享），否则两条对话会互相改写。
+    QVERIFY(copied.at(0).toObject().value("id").toVariant().toLongLong() != q1);
+    const QJsonArray nodes = mem.loadTraceNodes(forked);
+    QCOMPARE(nodes.size(), 3);
+    QCOMPARE(nodes.at(0).toObject().value("id").toString(), QStringLiteral("nq1"));
+    QCOMPARE(nodes.at(2).toObject().value("type").toString(), QStringLiteral("metrics"));
+    // 复制过来的节点归属清零：新会话的行主键不同，旧归属已失效。
+    QVERIFY(!nodes.at(1).toObject().contains(QStringLiteral("messageId")));
+
+    // 分叉出来的会话在列表里带着标题，且是新的一行。
+    bool found = false;
+    for (const auto& entry : mem.listSessions()) {
+        const QJsonObject session = entry.toObject();
+        if (session.value(QStringLiteral("id")).toString() == forked) {
+            found = true;
+            QCOMPARE(session.value(QStringLiteral("title")).toString(),
+                     QStringLiteral("分支标题"));
+        }
+    }
+    QVERIFY(found);
+
+    // 源会话完全没被碰过。
+    QCOMPARE(mem.loadMessages("src", 50).size(), 4);
+    QCOMPARE(mem.loadTraceNodes("src").size(), 5);
+
+    // 从最后一答分叉：它后面没有提问了，切到时间线末尾（整段历史都在副本里）。
+    const QString whole = mem.forkSessionAtAnswer("src", 2, QStringLiteral("全量分支"));
+    QVERIFY(!whole.isEmpty());
+    QCOMPARE(mem.loadMessages(whole, 50).size(), 4);
+    QCOMPARE(mem.loadTraceNodes(whole).size(), 5);
+
+    // 越界 / 非法参数都被拒，不会静默造出空会话。
+    QVERIFY(mem.forkSessionAtAnswer("src", 3, QStringLiteral("x")).isEmpty());
+    QVERIFY(mem.forkSessionAtAnswer("src", 0, QStringLiteral("x")).isEmpty());
+    QVERIFY(mem.forkSessionAtAnswer("src", -1, QStringLiteral("x")).isEmpty());
+    QVERIFY(mem.forkSessionAtAnswer(QString(), 1, QStringLiteral("x")).isEmpty());
+}
+
+// 分叉出来的会话要能再次分叉，且过程节点不丢。上一版按 message_id 切时间线，
+// 而副本的归属被清零，第二次分叉就一段过程都复制不出来。
+void TestMemory::forkedSessionForksAgainKeepingProcess() {
+    SqliteMemory mem(QStringLiteral(":memory:"));
+    mem.beginSession("src", QStringLiteral("源会话"));
+    mem.saveMessage("src", msg("user", QStringLiteral("第一问")));
+    mem.saveMessage("src", msg("assistant", QStringLiteral("第一答")));
+    mem.saveMessage("src", msg("user", QStringLiteral("第二问")));
+    mem.saveMessage("src", msg("assistant", QStringLiteral("第二答")));
+    mem.saveTraceNode("src", QJsonObject{{QStringLiteral("id"), QStringLiteral("nq1")},
+                                        {QStringLiteral("type"), QStringLiteral("user_message")},
+                                        {QStringLiteral("title"), QStringLiteral("第一问")},
+                                        {QStringLiteral("status"), QStringLiteral("completed")},
+                                        {QStringLiteral("timestamp"), 1}}, 0);
+    mem.saveTraceNode("src", QJsonObject{{QStringLiteral("id"), QStringLiteral("nt1")},
+                                        {QStringLiteral("type"), QStringLiteral("thinking")},
+                                        {QStringLiteral("title"), QStringLiteral("想想")},
+                                        {QStringLiteral("status"), QStringLiteral("completed")},
+                                        {QStringLiteral("timestamp"), 1}}, 1);
+    mem.saveTraceNode("src", QJsonObject{{QStringLiteral("id"), QStringLiteral("na1")},
+                                        {QStringLiteral("type"), QStringLiteral("summary")},
+                                        {QStringLiteral("title"), QStringLiteral("第一答")},
+                                        {QStringLiteral("status"), QStringLiteral("completed")},
+                                        {QStringLiteral("timestamp"), 1}}, 2);
+
+    const QString first = mem.forkSessionAtAnswer("src", 1, QStringLiteral("一次分支"));
+    QVERIFY(!first.isEmpty());
+    const QString second = mem.forkSessionAtAnswer(first, 1, QStringLiteral("二次分支"));
+    QVERIFY(!second.isEmpty());
+    QCOMPARE(mem.loadMessages(second, 50).size(), 2);
+    // 思考过程跟着一起复制，副本不会退化成纯文本时间线。
+    const QJsonArray nodes = mem.loadTraceNodes(second);
+    QCOMPARE(nodes.size(), 3);
+    QCOMPARE(nodes.at(1).toObject().value("type").toString(), QStringLiteral("thinking"));
+}
+
+// docs/21：中间那版消息树要能拉平回线性历史，且不弄丢用户当时在看的那条线。
+// 按 head 的祖先链定序：链外的行是已被放弃的重复答案版本（删），挂在被删行上的
+// 轨迹节点一起删（否则重开会话会画出一段没有归属答案的过程）。
+void TestMemory::treeDatabaseFlattensToLinearHistory() {
+    const QString dir = QStandardPaths::writableLocation(QStandardPaths::TempLocation)
+                        + "/nexusai-flat-test-" + QString::number(QCoreApplication::applicationPid());
+    QDir().mkpath(dir);
+    const QString dbPath = dir + "/tree.db";
+    QFile::remove(dbPath);
+    {
+        QSqlDatabase db = QSqlDatabase::addDatabase("QSQLITE", "treeRaw");
+        db.setDatabaseName(dbPath);
+        QVERIFY(db.open());
+        QSqlQuery q(db);
+        QVERIFY(q.exec("CREATE TABLE sessions (id TEXT PRIMARY KEY, title TEXT NOT NULL, "
+                       "created_at INTEGER NOT NULL, updated_at INTEGER NOT NULL, "
+                       "head_message_id INTEGER NOT NULL DEFAULT 0)"));
+        QVERIFY(q.exec("CREATE TABLE messages (id INTEGER PRIMARY KEY AUTOINCREMENT, "
+                       "session_id TEXT NOT NULL, parent_id INTEGER, role TEXT NOT NULL, "
+                       "content TEXT NOT NULL, timestamp INTEGER NOT NULL, metadata TEXT)"));
+        QVERIFY(q.exec("CREATE TABLE trace_nodes (session_id TEXT NOT NULL, node_id TEXT NOT NULL, "
+                       "node_order INTEGER NOT NULL, type TEXT NOT NULL, title TEXT NOT NULL, "
+                       "status TEXT NOT NULL, args TEXT NOT NULL, result TEXT NOT NULL, "
+                       "timestamp INTEGER NOT NULL, message_id INTEGER NOT NULL DEFAULT 0, "
+                       "metadata TEXT, PRIMARY KEY (session_id, node_id))"));
+        QVERIFY(q.exec("CREATE TABLE message_variants (session_id TEXT NOT NULL, "
+                       "group_key TEXT NOT NULL, variant_index INTEGER NOT NULL, "
+                       "content TEXT NOT NULL, metadata TEXT, created_at INTEGER NOT NULL, "
+                       "PRIMARY KEY (session_id, group_key, variant_index))"));
+        QVERIFY(q.exec("INSERT INTO sessions VALUES ('s1','树',1,1,5)"));
+        struct Row { int id; const char* role; const char* content; int parent; };
+        // 3 是被放弃的另一个答案版本：不在 5→4→2→1 这条链上
+        const QList<Row> rows = {
+            {1, "user", "问题一", 0}, {2, "assistant", "当前答案一", 1},
+            {3, "assistant", "被放弃的答案一", 1},
+            {4, "user", "问题二", 2}, {5, "assistant", "答案二", 4},
+        };
+        for (const auto& row : rows) {
+            q.prepare("INSERT INTO messages (id, session_id, parent_id, role, content, timestamp, metadata) "
+                      "VALUES (?, 's1', ?, ?, ?, ?, '{}')");
+            q.addBindValue(row.id);
+            q.addBindValue(row.parent > 0 ? QVariant(row.parent) : QVariant());
+            q.addBindValue(QString::fromUtf8(row.role));
+            q.addBindValue(QString::fromUtf8(row.content));
+            q.addBindValue(1000 + row.id);
+            QVERIFY(q.exec());
+        }
+        struct Node { const char* id; int order; int owner; };
+        const QList<Node> nodes = {{"n1",0,1},{"n2",1,2},{"n3",2,3},{"n4",3,4},{"n5",4,5}};
+        for (const auto& node : nodes) {
+            q.prepare("INSERT INTO trace_nodes (session_id, node_id, node_order, type, title, "
+                      "status, args, result, timestamp, message_id, metadata) "
+                      "VALUES ('s1', ?, ?, 'summary', 't', 'completed', '', '', 1, ?, '{}')");
+            q.addBindValue(QLatin1String(node.id));
+            q.addBindValue(node.order);
+            q.addBindValue(node.owner);
+            QVERIFY(q.exec());
+        }
+        QVERIFY(q.exec("INSERT INTO message_variants VALUES ('s1','1',0,'被放弃的答案一','{}',900)"));
+        QVERIFY(q.exec("PRAGMA user_version = 2"));
+        db.close();
+    }
+    QSqlDatabase::removeDatabase("treeRaw");
+
+    {
+        SqliteMemory mem(dbPath);
+        const QJsonArray loaded = mem.loadMessages("s1", 50);
+        QCOMPARE(loaded.size(), 4);                 // 链外那条重复答案被删
+        QStringList contents;
+        for (const auto& entry : loaded) contents << entry.toObject().value("content").toString();
+        QVERIFY(!contents.contains(QStringLiteral("被放弃的答案一")));
+        QVERIFY(contents.contains(QStringLiteral("当前答案一")));
+
+        // 时间线里挂在被删行上的节点一起走（n3 归 row 3）。
+        QStringList keptNodes;
+        for (const auto& entry : mem.loadTraceNodes("s1"))
+            keptNodes << entry.toObject().value("id").toString();
+        QCOMPARE(keptNodes, (QStringList() << QStringLiteral("n1") << QStringLiteral("n2")
+                                          << QStringLiteral("n4") << QStringLiteral("n5")));
+
+        // 树列不再被读写：清空后照常线性工作。
+        QSqlQuery probe(mem.databaseForTest());
+        QVERIFY(probe.exec("SELECT COUNT(1) FROM messages WHERE parent_id IS NOT NULL"));
+        QVERIFY(probe.next());
+        QCOMPARE(probe.value(0).toInt(), 0);
+        QVERIFY(!probe.exec("SELECT COUNT(1) FROM message_variants"));   // 表已回收
+
+        const qint64 added = mem.saveMessage("s1", msg("user", QStringLiteral("问题三")));
+        QVERIFY(added > 0);
+        QCOMPARE(mem.loadMessages("s1", 50).size(), 5);
+    }
+
+    // 迁移幂等：再开一次不会重复删任何东西。
+    SqliteMemory reopened(dbPath);
+    QCOMPARE(reopened.loadMessages("s1", 50).size(), 5);
+    QFile::remove(dbPath);
+    QDir(dir).removeRecursively();
+}
+
+// 主键必须由写入方回传：靠 MAX(id) 反查的话，插入失败时会拿到上一条消息的 id，
+// 于是分叉锚点指错轮次、截断阈值切错位置。
+void TestMemory::saveMessageReturnsPrimaryKeyOrZero() {
+    SqliteMemory mem(QStringLiteral(":memory:"));
+    mem.beginSession("s1", QStringLiteral("主键"));
+
+    const qint64 first = mem.saveMessage("s1", msg("user", QStringLiteral("一")));
+    const qint64 second = mem.saveMessage("s1", msg("assistant", QStringLiteral("二")));
+    QVERIFY(first > 0);
+    QCOMPARE(second > first, true);
+
+    // 空会话 id 写进去就是一行永远取不到的孤儿。
+    QCOMPARE(mem.saveMessage(QString(), msg("user", QStringLiteral("无会话"))), qint64(0));
+    // role/content 是 NOT NULL 列：缺键的整节点写入必须失败返回 0。
+    QCOMPARE(mem.saveMessage("s1", QJsonObject{{QStringLiteral("role"), QStringLiteral("user")}}),
+             qint64(0));
+    QCOMPARE(mem.loadMessages("s1").size(), 2);
+}
+
+// 截断末轮必须把这一轮之后的持久化轨迹节点一起删掉。上一版只删消息行，被丢弃的
+// 思考/工具过程会在重开会话时整段复活（界面上凭空多出没有归属答案的一串卡片）。
+void TestMemory::truncateLastTurnPrunesPersistedTraceNodes() {
+    SqliteMemory mem(QStringLiteral(":memory:"));
+    mem.beginSession("s1", QStringLiteral("截断"));
+    const auto saveNode = [&mem](const QString& id, const QString& type, int order) {
+        mem.saveTraceNode(QStringLiteral("s1"),
+                          QJsonObject{{QStringLiteral("id"), id},
+                                      {QStringLiteral("type"), type},
+                                      {QStringLiteral("title"), id},
+                                      {QStringLiteral("status"), QStringLiteral("completed")},
+                                      {QStringLiteral("timestamp"), 1}},
+                          order);
+    };
+    const qint64 q1 = mem.saveMessage("s1", msg("user", QStringLiteral("问题一")));
+    const qint64 a1 = mem.saveMessage("s1", msg("assistant", QStringLiteral("答案一")));
+    QVERIFY(q1 > 0 && a1 > q1);
+    saveNode("nq1", "user_message", 0);
+    saveNode("na1", "summary", 1);
+    const qint64 q2 = mem.saveMessage("s1", msg("user", QStringLiteral("问题二")));
+    const qint64 a2 = mem.saveMessage("s1", msg("assistant", QStringLiteral("答案二")));
+    QVERIFY(q2 > 0 && a2 > q2);
+    saveNode("nq2", "user_message", 2);
+    saveNode("nthink", "thinking", 3);
+    saveNode("nsum2", "summary", 4);
+    QCOMPARE(mem.loadTraceNodes("s1").size(), 5);
+
+    // 重新生成：末轮（问题二的答案、思考、过程）整体收口，提问留着当重发锚点；
+    // 问题一那轮完整留下。
+    QVERIFY(mem.truncateLastTurn("s1", /*removeUser=*/false));
+    QStringList kept;
+    for (const auto& entry : mem.loadTraceNodes("s1"))
+        kept << entry.toObject().value("id").toString();
+    QCOMPARE(kept, (QStringList() << QStringLiteral("nq1") << QStringLiteral("na1")
+                                  << QStringLiteral("nq2")));
+    QJsonArray afterRegen = mem.loadMessages("s1", 50);
+    QCOMPARE(afterRegen.size(), 3);            // q1 / a1 / q2（q2 是重发锚点）
+
+    // 编辑重发：连提问一起截掉。
+    QVERIFY(mem.truncateLastTurn("s1", true));
+    QCOMPARE(mem.loadMessages("s1", 50).size(), 2);
+    QStringList afterEdit;
+    for (const auto& entry : mem.loadTraceNodes("s1"))
+        afterEdit << entry.toObject().value("id").toString();
+    QCOMPARE(afterEdit, (QStringList() << QStringLiteral("nq1") << QStringLiteral("na1")));
+    QVERIFY(!mem.truncateLastTurn(QString(), false));
+}
+
+
 // docs/14 L3: an in-place upgrade must convert an old episodic_fts (default
 // unicode61 tokenizer) to trigram. Fresh databases get trigram straight from
 // createTables, so this only exercises the migration path - exactly the case
@@ -936,70 +1233,6 @@ void TestMemory::messagesFtsMigrationSelfHeals() {
     QDir(dir).removeRecursively();
 }
 
-// docs/20 §3.1/§3.2（FORK-701）：按主键阈值删除尾部消息，FTS 影子表经
-// AFTER DELETE 触发器同步；audit_log 独立不受影响。
-void TestMemory::deleteMessagesFromRemovesTail() {
-    SqliteMemory memory(QStringLiteral(":memory:"));
-
-    memory.saveMessage("s-regen", msg("user", "question"));
-    memory.saveMessage("s-regen", msg("assistant", "bad answer"));
-    memory.saveMessage("s-regen", msg("user", "follow up"));
-    memory.saveMessage("s-regen", msg("assistant", "another answer"));
-
-    // 重复提问（同内容）不干扰：按主键阈值，不按内容匹配。
-    memory.saveMessage("s-regen", msg("user", "question"));
-    memory.saveMessage("s-regen", msg("assistant", "regenerated"));
-
-    memory.logAudit("s-regen", QStringLiteral("task_complete"),
-                    QString(), QString(), true, QStringLiteral("x"));
-
-    // 删除最后一条 user 行（id=5）及其后的 assistant 行。
-    const qint64 userId = memory.lastUserMessageId(QStringLiteral("s-regen"));
-    QVERIFY(userId > 0);
-    const int removed = memory.deleteMessagesFrom(QStringLiteral("s-regen"), userId);
-    QCOMPARE(removed, 2);
-
-    // 前四条（含早先重复提问）保留，尾部两条删除。
-    const QJsonArray loaded = memory.loadMessages(QStringLiteral("s-regen"), 200);
-    QCOMPARE(loaded.size(), 4);
-    QCOMPARE(loaded.at(3).toObject().value("content").toString(),
-             QStringLiteral("another answer"));
-
-    // FTS 影子表经触发器同步：被删内容不再命中。
-    QCOMPARE(memory.searchMessages(QStringLiteral("regenerated"), 50).size(), 0);
-    // 保留的消息仍可检索。
-    QCOMPARE(memory.searchMessages(QStringLiteral("follow up"), 50).size(), 1);
-    // audit_log 不动（重新生成是正常行为，保留完整审计链）。
-    QVERIFY(memory.auditLog(100).size() >= 1);
-
-    // 边界：空会话 / 非法阈值 / 不存在会话。
-    QCOMPARE(memory.deleteMessagesFrom(QString(), userId), 0);
-    QCOMPARE(memory.deleteMessagesFrom(QStringLiteral("s-regen"), 0), 0);
-    QCOMPARE(memory.deleteMessagesFrom(QStringLiteral("no-such"), 1), 0);
-}
-
-// docs/20 §3.1（FORK-701）：会话内最后一条 user 消息的主键。
-void TestMemory::lastUserMessageIdFindsLastUserRow() {
-    SqliteMemory memory(QStringLiteral(":memory:"));
-
-    // 空会话 / 未知会话。
-    QCOMPARE(memory.lastUserMessageId(QString()), 0);
-    QCOMPARE(memory.lastUserMessageId(QStringLiteral("s-id")), 0);
-
-    memory.saveMessage("s-id", msg("user", "q1"));
-    memory.saveMessage("s-id", msg("assistant", "a1"));
-    memory.saveMessage("s-id", msg("user", "q2"));
-    memory.saveMessage("s-id", msg("assistant", "a2"));
-
-    // 尾部是 assistant：MAX(id) 过滤 role='user' 后仍指回最后一条 user。
-    QCOMPARE(memory.lastUserMessageId(QStringLiteral("s-id")),
-             static_cast<qint64>(3));
-
-    // 纯 assistant 会话（异常形状）。
-    memory.saveMessage("s-id2", msg("assistant", "only"));
-    QCOMPARE(memory.lastUserMessageId(QStringLiteral("s-id2")), 0);
-}
-
 // docs/23 G1: the two highest-frequency query paths must stay index-backed —
 // pins the query plan against a future schema change silently dropping them.
 void TestMemory::sessionQueriesUseIndexes() {
@@ -1050,7 +1283,8 @@ void TestMemory::oldDatabaseUpgradeRestampsAndBackfills() {
 
         QSqlQuery version(db);
         QVERIFY(version.exec("PRAGMA user_version") && version.next());
-        QCOMPARE(version.value(0).toInt(), 1);
+        // docs/21 真分支：消息树迁移把闸门推到 2（老库从 0/1 升上来都一样）。
+        QCOMPARE(version.value(0).toInt(), 3);
 
         QSqlQuery index(db);
         QVERIFY(index.exec("SELECT name FROM sqlite_master "

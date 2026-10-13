@@ -285,11 +285,34 @@ QString AIAgent::appendTraceNode(const QString& type, const QString& title,
     // persistTraceNode 整节点写进 trace_nodes）。
     if (extra.contains("reasoning"))
         node["reasoning"] = extra.value("reasoning");
+    // docs/21：user_message 节点带上它的消息主键（extra 里给），分叉要按这个
+    // 主键把历史切到同一位置。其余节点没有归属（0），总是随会话可见。
+    if (extra.contains("messageId"))
+        node["messageId"] = extra.value("messageId");
 
     m_traceModel.append(node);
-    persistTraceNode(node, m_traceModel.size() - 1);
+    persistTraceNode(node, m_nextTraceOrder++);
     emit traceChanged();
     return id;
+}
+
+void AIAgent::updateTraceNodeContent(const QString& nodeId, const QString& title,
+                                     const QJsonObject& variantMeta) {
+    if (nodeId.isEmpty()) return;
+    for (int i = m_traceModel.size() - 1; i >= 0; --i) {
+        QJsonObject node = m_traceModel.at(i).toObject();
+        if (node.value("id").toString() != nodeId) continue;
+        node["title"] = title;
+        for (auto it = variantMeta.constBegin(); it != variantMeta.constEnd(); ++it)
+            node[it.key()] = it.value();
+        m_traceModel.replace(i, node);
+        // 节点是持久行的内存镜像：只改内存的话，重新打开会话时标题会退回旧
+        // 文本（切换答案版本、分支时改问正文都会走到这里）。upsert 保留
+        // node_order，所以传下标只会写在已存在行上，不会移动位置。
+        persistTraceNode(node, i);
+        emit traceChanged();
+        return;
+    }
 }
 
 void AIAgent::updateLastNodeStatus(const QString& status) {
@@ -454,6 +477,7 @@ bool AIAgent::startTask(const QString& userMessage, const QStringList& images,
     if (fresh) {
         m_messages = QJsonArray();
         m_traceModel = QJsonArray();
+        m_nextTraceOrder = 0;
         m_usedToolCallIds.clear();   // fresh history: no recorded call ids
         m_sessionId = QUuid::createUuid().toString(QUuid::WithoutBraces);
 
@@ -520,13 +544,29 @@ bool AIAgent::startTask(const QString& userMessage, const QStringList& images,
         userMsg["metadata"] = metadata;
     }
     m_messages.append(userMsg);
-    if (m_memory) m_memory->saveMessage(m_sessionId, userMsg);
+    // docs/21 真分支：新提问挂在"当前对话末端"（head）下面，长出一条新分支。
+    // 主键与父键都补进内存副本——分支与切换答案都按 id 定位，不能靠 MAX(id) 反猜
+    // （插入失败时会拿到上一条消息的 id，锚点就指错了）。
+    // 紧接着创建本轮的 assistant 子行（空正文）：本轮所有轨迹节点都要挂在一个
+    // 确定的 id 上，答案写完只是把正文填进去。
+    // 主键由写入方回传并补进内存副本：分叉锚点与截断阈值都按它定位，不能靠
+    // MAX(id) 反猜（插入失败时会拿到上一条消息的 id）。
+    qint64 savedUserId = 0;
+    if (m_memory) {
+        savedUserId = m_memory->saveMessage(m_sessionId, userMsg);
+        if (savedUserId > 0) {
+            userMsg["id"] = savedUserId;
+            m_messages.replace(m_messages.size() - 1, userMsg);
+        }
+    }
 
     QJsonObject extra;
     if (userMsg.contains("images"))
         extra["images"] = userMsg.value("images");
     if (userMsg.contains("files"))
         extra["files"] = userMsg.value("files");
+    // docs/21：user 节点带上消息主键，UI 才能据此发起"从此处分支"与兄弟导航。
+    if (savedUserId > 0) extra["messageId"] = savedUserId;
     appendTraceNode("user_message", userMessage, "completed", extra);
     // Pre-notify compression: ensure m_messages is within budget before
     // emitting tokensChanged, so the UI never shows > 100% after the
@@ -567,6 +607,7 @@ void AIAgent::resetSession() {
     m_sessionId.clear();
     m_messages = QJsonArray();
     m_traceModel = QJsonArray();
+    m_nextTraceOrder = 0;
     m_usedToolCallIds.clear();
     // 新会话：累计清零（recordTokenUsage 重新累加）。
     m_sessionTokensUsed = 0;
@@ -619,10 +660,13 @@ void AIAgent::resumeSession(const QString& sessionId) {
     // tool calls / results); fall back to the user/assistant text summary
     // for sessions recorded before trace persistence existed.
     m_traceModel = QJsonArray();
+    m_nextTraceOrder = 0;
     m_lastResponse.clear();
     const QJsonArray savedNodes = m_memory ? m_memory->loadTraceNodes(sessionId) : QJsonArray();
     if (!savedNodes.isEmpty()) {
         m_traceModel = savedNodes;
+        for (const auto& entry : std::as_const(savedNodes))
+            m_nextTraceOrder = qMax(m_nextTraceOrder, entry.toObject().value("order").toInt() + 1);
         for (int i = savedNodes.size() - 1; i >= 0; --i) {
             const QJsonObject node = savedNodes.at(i).toObject();
             if (node.value("type").toString() == "summary") {
@@ -1171,28 +1215,78 @@ void AIAgent::stop() {
     if (m_memory && !m_sessionId.isEmpty()) m_memory->touchSession(m_sessionId);
 }
 
-// docs/20 §3.1（FORK-701）：重新生成。丢弃最后一条 assistant 回答（含末轮
-// 工具消息），从最后一条 user 消息重新发起请求。
+// docs/20 §3.1（FORK-701）：重新生成。丢弃最后一条 assistant 回答（含末轮工具
+// 消息），从最后一条 user 消息重新发起。docs/21 的"分叉"不走这条路——它把历史复制
+// 到一个新会话（AgentViewModel::branchToNewSession），当前会话完全不受影响。
 //
-// 与 MEM-701 resume 契约一致：工具证据仅存 trace_nodes（展示层），持久层
-// 消息表只保留 user/assistant 对白。所以这里的同步语义是：
-//
-//   1. 内存上下文：从最后一条 user 消息处截断（该消息保留 —— 它是重发的
-//      锚点），其后的 tool/assistant 全部移除；
-//   2. 持久层：删除该 user 消息之后的全部行（stop 残留的 tool/assistant
-//      对白），audit_log 不动（重新生成是正常行为，保留完整审计链）；
-//   3. trace 展示层：从最后一个 user_message 节点处截断，后续节点由本次
-//      请求重新写入（节点 id 全新，与旧节点无冲突）；
-//   4. 从 processIteration 重新发起 —— 沿用 startTask 尾部的活跃态与
-//      预算逻辑，不重新组装 system/episodic（上下文里已有）。
+// 与 MEM-701 resume 契约一致：工具证据只存 trace_nodes（展示层），持久层消息表
+// 只留 user/assistant 对白。同步语义是：
+//   1. 持久层 truncateLastTurn 在一个事务里删掉该 user 消息之后的消息行**与其后
+//      的持久化轨迹节点**（少了后半步，被丢弃的思考/工具过程会在重开会话时复活）；
+//   2. 落盘失败时内存里的上下文与时间线一字不动，并 emit errorOccurred；
+//   3. 成功后从 processIteration 重新发起，不重新组装 system/episodic（上下文里已有）。
 //
 // 伪嵌入/stop 残留的 dangling tool_calls 已随截断一并消失，不需要 seal。
 void AIAgent::regenerateLast() {
     if (m_active) return;
     if (m_llmService == nullptr) return;
     if (!checkQuota() || !rewindLastTurn(false)) return;
+    restartTaskFromAnchor();
+}
 
-    // 5. 重置轮次状态并重新发起请求（沿用 startTask 尾部的活跃态逻辑）。
+// docs/20 §3.2（FORK-701）：替换最后一条 user 消息并重发。
+bool AIAgent::editLastUserMessage(const QString& text) {
+    if (m_active || !m_llmService || text.trimmed().isEmpty()) return false;
+    if (!checkQuota()) return false;
+    QJsonObject original;
+    for (int i = m_messages.size() - 1; i >= 1; --i) {
+        const auto message = m_messages.at(i).toObject();
+        if (message.value("role") == QLatin1String("user")) {
+            original = message;
+            break;
+        }
+    }
+    if (original.isEmpty()) return false;
+    if (!rewindLastTurn(true)) return false;
+    QStringList images;
+    for (const auto& image : original.value("images").toArray())
+        images.append(image.toString());
+    return startTask(text.trimmed(), images, original.value("files").toArray());
+}
+
+bool AIAgent::rewindLastTurn(bool removeUser) {
+    int lastUser = -1;
+    for (int i = m_messages.size() - 1; i >= 1; --i) {
+        if (m_messages.at(i).toObject().value("role") == QLatin1String("user")) {
+            lastUser = i;
+            break;
+        }
+    }
+    if (lastUser < 0) return false;
+    // Commit before changing the live conversation; a failed disk write
+    // must leave both the visible answer and the request context intact.
+    if (m_memory && !m_memory->truncateLastTurn(m_sessionId, removeUser)) {
+        emit errorOccurred(tr("无法更新会话记录，原消息已保留，请重试。"));
+        return false;
+    }
+    while (m_messages.size() > lastUser + (removeUser ? 0 : 1))
+        m_messages.removeLast();
+    for (int i = m_traceModel.size() - 1; i >= 0; --i) {
+        if (m_traceModel.at(i).toObject().value("type") == QLatin1String("user_message")) {
+            while (m_traceModel.size() > i + (removeUser ? 0 : 1))
+                m_traceModel.removeLast();
+            break;
+        }
+    }
+    // 计数器不回退：appendTraceNode 写进内存的节点对象里**没有** order 键（它
+    // 只是 persistTraceNode 的参数），所以在这里"按现有节点重算"会一律读到 0，
+    // 新节点就撞上已有行的 node_order，重载时时间线顺序错乱。留空档无害——
+    // node_order 只用来排序。
+    emit traceChanged();
+    return true;
+}
+
+void AIAgent::restartTaskFromAnchor() {
     m_iteration = 0;
     m_lastToolSignature.clear();
     m_repeatToolCount = 0;
@@ -1225,59 +1319,13 @@ void AIAgent::regenerateLast() {
     processIteration();
 }
 
-bool AIAgent::rewindLastTurn(bool removeUser) {
-    int lastUser = -1;
-    for (int i = m_messages.size() - 1; i >= 1; --i) {
-        if (m_messages.at(i).toObject().value("role") == QLatin1String("user")) {
-            lastUser = i;
-            break;
-        }
-    }
-    if (lastUser < 0) return false;
-    // Commit before changing the live conversation; a failed disk write
-    // must leave both the visible answer and the request context intact.
-    if (m_memory && !m_memory->truncateLastTurn(m_sessionId, removeUser)) {
-        emit errorOccurred(tr("无法更新会话记录，原消息已保留，请重试。"));
-        return false;
-    }
-    while (m_messages.size() > lastUser + (removeUser ? 0 : 1))
-        m_messages.removeLast();
-    for (int i = m_traceModel.size() - 1; i >= 0; --i) {
-        if (m_traceModel.at(i).toObject().value("type") == QLatin1String("user_message")) {
-            while (m_traceModel.size() > i + (removeUser ? 0 : 1))
-                m_traceModel.removeLast();
-            break;
-        }
-    }
-    emit traceChanged();
-    return true;
-}
-
-bool AIAgent::editLastUserMessage(const QString& text) {
-    if (m_active || !m_llmService || text.trimmed().isEmpty()) return false;
-    if (!checkQuota()) return false;
-    QJsonObject original;
-    for (int i = m_messages.size() - 1; i >= 1; --i) {
-        const auto message = m_messages.at(i).toObject();
-        if (message.value("role") == QLatin1String("user")) {
-            original = message;
-            break;
-        }
-    }
-    if (original.isEmpty() || !rewindLastTurn(true)) return false;
-    QStringList images;
-    for (const auto& image : original.value("images").toArray())
-        images.append(image.toString());
-    return startTask(text.trimmed(), images, original.value("files").toArray());
-}
-
 // ── Streaming display ─────────────────────────────────────
 
 void AIAgent::onStreamingChunk(const QString& chunk) {
     if (!m_active || chunk.isEmpty()) return;
 
     if (!m_streamNodeActive) {
-        appendTraceNode("summary", QString(), "running");
+        m_summaryNodeId = appendTraceNode("summary", QString(), "running");
         m_streamNodeActive = true;
         m_streamText.clear();
     }
@@ -1311,6 +1359,10 @@ void AIAgent::clearStreamState() {
     m_reasoningText.clear();
     m_streamNodeActive = false;
     m_thinkingNodeId.clear();
+    // summary 节点 id 与流式状态同生命周期：留着上一轮的值，finishTask 就会把
+    // 变体元数据挂到已被丢弃的旧节点上（m_streamNodeActive 恰好让它现在安全，
+    // 但这是隐式耦合，不是保证）。
+    m_summaryNodeId.clear();
 }
 
 // ── Tool execution pipeline ───────────────────────────────
@@ -1668,9 +1720,8 @@ void AIAgent::finishTask(const QString& finalText, bool summaryTraced) {
     m_lastResponse = finalText;
 
     if (!finalText.isEmpty()) {
-        if (!summaryTraced) {
-            appendTraceNode("summary", finalText, "completed");
-        }
+        if (!summaryTraced)
+            m_summaryNodeId = appendTraceNode("summary", finalText, "completed");
         if (m_memory) {
             QJsonObject assistantMsg;
             assistantMsg["role"] = "assistant";
@@ -1679,7 +1730,7 @@ void AIAgent::finishTask(const QString& finalText, bool summaryTraced) {
         }
     }
 
-    if (m_memory && !m_sessionId.isEmpty()) m_memory->touchSession(m_sessionId);
+if (m_memory && !m_sessionId.isEmpty()) m_memory->touchSession(m_sessionId);
 
     // T8 (REQ-T8-01): asynchronously generate an episodic summary for this
     // session. Fire-and-forget; failures never block task completion.

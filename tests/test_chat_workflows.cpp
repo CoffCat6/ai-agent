@@ -198,6 +198,58 @@ private slots:
         agent.setMemory(nullptr);
     }
 
+    // docs/21 分叉为新会话：一次回答结束后从这里另起一条对话——副本**包括这条
+    // 回答**，以它结尾，用户在新会话里接着问。源会话一字不动，所以分叉可回退，
+    // 也不必在同一会话里养一棵分支树。
+    void branchForksHistoryIntoNewSession() {
+        SqliteMemory memory(":memory:");
+        RecordingService service;
+        AIAgent agent;
+        agent.setMemory(&memory);
+        agent.setLLMService(&service);
+
+        QVERIFY(agent.startTask("first question"));
+        service.answer("first answer");
+        QVERIFY(agent.startTask("second question"));
+        service.answer("second answer");
+        const QString original = agent.currentSessionId();
+        QVERIFY(!original.isEmpty());
+
+        // 从第一条回答分叉：副本 = 第一问 + 第一答，正好以这条回答结尾。
+        const QString forked = memory.forkSessionAtAnswer(original, 1,
+                                                          QStringLiteral("forked chat"));
+        QVERIFY(!forked.isEmpty());
+        QVERIFY(forked != original);
+        const QJsonArray carriedFromAnswer = memory.loadMessages(forked, 50);
+        QCOMPARE(carriedFromAnswer.size(), 2);
+        QCOMPARE(carriedFromAnswer.at(1).toObject().value("content").toString(),
+                 QStringLiteral("first answer"));
+        QCOMPARE(memory.loadMessages(original, 50).size(), 4);   // 源会话不受影响
+
+        agent.resetSession();
+        agent.resumeSession(forked);
+        QCOMPARE(agent.currentSessionId(), forked);
+        // 在新会话里接着问：上下文带着那条被分叉出来的回答。
+        QVERIFY(agent.startTask("follow-up on the first answer"));
+        service.answer("forked answer");
+        QCOMPARE(memory.loadMessages(forked, 50).size(), 4);
+        QCOMPARE(memory.loadMessages(original, 50).size(), 4);
+        QCOMPARE(memory.loadMessages(original, 50).at(0).toObject()
+                     .value("content").toString(), QStringLiteral("first question"));
+
+        // 副本用的是新的行主键：两条对话之后各自继续也不会互相改写。
+        agent.resetSession();
+        agent.resumeSession(original);
+        const QJsonArray originalRows = memory.loadMessages(original, 50);
+        QVERIFY(originalRows.at(0).toObject().value("id").toVariant().toLongLong() != 0);
+        QCOMPARE(QJsonDocument(carriedFromAnswer).toJson()
+                     .contains(QJsonDocument(originalRows).toJson()), false);
+        QCOMPARE(memory.loadMessages(original, 50).size(), 4);
+
+        agent.setMemory(nullptr);
+    }
+
+
     void simultaneousApprovalsRouteByRequestAndExpireOnStop() {
         RecordingService firstService;
         AIAgent first;

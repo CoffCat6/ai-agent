@@ -135,6 +135,8 @@ void SqliteMemory::initDatabase() {
     // docs/17 A0: sessions.project_id 列补齐（projects 表在 createTables 里）。
     migrateSessionProjectColumn();
     migrateTraceNodeReasoningColumn();
+    // docs/21：把中间那版消息树拉平成"线性历史 + 分叉成新会话"。
+    migrateConversationModel(userVersion);
     migrateKnowledgeSchema();
     // docs/25: 引用定位——chunk 页码列（PDF 导入写入，-1 = 无页码）。
     migrateKnowledgeChunkPageColumn();
@@ -159,11 +161,17 @@ void SqliteMemory::initDatabase() {
             "CREATE INDEX IF NOT EXISTS idx_sessions_pinned_updated "
             "ON sessions(pinned, updated_at)",
             "create idx_sessions_pinned_updated");
+    // docs/21：会话回到线性，按 (session_id, parent_id) 的分支索引不再需要。
+    execDdl(versionQuery, "DROP INDEX IF EXISTS idx_messages_session_parent",
+            "drop the retired message-tree index");
 
     if (userVersion == 0) {
         execDdl(versionQuery, "ANALYZE", "analyze for the query planner");
-        execDdl(versionQuery, "PRAGMA user_version = 1", "stamp user_version");
     }
+    // docs/23 G1 + docs/21：版本闸门记下"这条库已经跑过 FTS 回填、消息树拉平与
+    // 遗留变体表回收"。老库从 0/1/2 一律升到 3；稳态启动不再重复那些 O(n) 扫描。
+    if (userVersion < 3)
+        execDdl(versionQuery, "PRAGMA user_version = 3", "stamp user_version");
 }
 
 // Batch 17 (FEAT-1701): messages FTS5 index for cross-session search.
@@ -262,7 +270,9 @@ void SqliteMemory::createTables() {
     QSqlQuery query(m_db);
 
     // Messages table (workspace_id: forward-compatibility reservation,
-    // Batch 7 MEM-704 - always 'local' until multi-tenant support)
+    // Batch 7 MEM-704 - always 'local' until multi-tenant support).
+    // docs/21：会话是一条按 id 单调递增的线性对话线；分叉走"复制前史成新会话"，
+    // 所以这里不再有 parent_id / head_message_id 那套树结构。
     execDdl(query, R"(
         CREATE TABLE IF NOT EXISTS messages (
             id INTEGER PRIMARY KEY AUTOINCREMENT,
@@ -374,6 +384,7 @@ void SqliteMemory::createTables() {
             result TEXT NOT NULL,
             reasoning TEXT NOT NULL DEFAULT '',
             timestamp INTEGER NOT NULL,
+            message_id INTEGER NOT NULL DEFAULT 0,
             workspace_id TEXT NOT NULL DEFAULT 'local',
             PRIMARY KEY (session_id, node_id)
         )
@@ -514,6 +525,133 @@ void SqliteMemory::migrateTraceNodeReasoningColumn() {
                 "add trace_nodes.metadata column");
 }
 
+// docs/21：会话模型最终定为"线性历史 + 分叉成新会话"。这一步把中间那版消息树
+// 拉平回去，一次性（user_version < 3），整体一个事务：
+//   1. 只有 parent_id / head_message_id 两列存在过才处理：按 head 的祖先链定出
+//      "用户当时在看的那一条线"，链外的行是他已经放弃的重复答案版本，删掉；挂在
+//      这些被删行上的轨迹节点一起删，否则重开会话会画出一段没有归属答案的过程。
+//   2. 清空 parent_id / head_message_id。两列本身留着不重建表——在用户的真实库上
+//      重建三张主表的风险，远大于多两个没人读的空列；新库的 DDL 已经不带它们。
+//   3. 遗留的 message_variants 表 DROP（答案不再存多版本）。
+//   4. trace_nodes.message_id 保留并继续维护：它现在的职责很窄但确实有用——截断
+//      末轮时按它把这一轮的过程一起删掉，分叉时按它把历史切到同一位置。
+// 没经历过树版本的库这些列/表本来就不存在，整段退化为 no-op，只落版本闸门。
+void SqliteMemory::migrateConversationModel(int userVersion) {
+    if (userVersion >= 3) return;
+    if (!m_db.transaction()) return;
+
+    const auto hasColumn = [this](const char* table, const char* column) {
+        QSqlQuery pragma(m_db);
+        if (!pragma.exec(QString("PRAGMA table_info(%1)").arg(QLatin1String(table))))
+            return false;
+        bool found = false;
+        while (pragma.next()) {
+            if (pragma.value(1).toString() == QLatin1String(column)) { found = true; break; }
+        }
+        pragma.finish();       // 语句握着读锁时后面的 DDL/DML 会失败
+        return found;
+    };
+    const auto abort = [this](const char* where, const QSqlQuery& query) {
+        qWarning() << "Conversation-model migration aborted at" << where << ":"
+                   << query.lastError().text();
+        m_db.rollback();
+    };
+
+    const bool hasTree = hasColumn("messages", "parent_id")
+                      && hasColumn("sessions", "head_message_id");
+    if (hasTree) {
+        QList<QPair<QString, qint64>> heads;
+        {
+            QSqlQuery list(m_db);
+            if (!list.exec("SELECT id, head_message_id FROM sessions WHERE head_message_id > 0")) {
+                abort("session heads", list);
+                return;
+            }
+            while (list.next())
+                heads.append({list.value(0).toString(), list.value(1).toLongLong()});
+            list.finish();
+        }
+        for (const auto& head : std::as_const(heads)) {
+            const QString sessionId = head.first;
+            QList<qint64> onPath;
+            {
+                QSqlQuery walk(m_db);
+                walk.prepare("WITH RECURSIVE anc(id, p) AS ("
+                             "  SELECT id, parent_id FROM messages WHERE session_id = ? AND id = ?"
+                             "  UNION ALL"
+                             "  SELECT m.id, m.parent_id FROM messages m JOIN anc a ON m.id = a.p"
+                             "  WHERE m.session_id = ? AND a.id <> m.id"
+                             ") SELECT id FROM anc");
+                walk.addBindValue(sessionId);
+                walk.addBindValue(head.second);
+                walk.addBindValue(sessionId);
+                if (!walk.exec()) { abort("ancestor walk", walk); return; }
+                while (walk.next()) onPath << walk.value(0).toLongLong();
+                walk.finish();
+            }
+            if (onPath.isEmpty()) continue;   // head 指的行已不在：只清指针
+
+            QList<qint64> abandoned;
+            {
+                QSqlQuery rows(m_db);
+                rows.prepare("SELECT id FROM messages WHERE session_id = ? ORDER BY id ASC");
+                rows.addBindValue(sessionId);
+                if (!rows.exec()) { abort("row scan", rows); return; }
+                while (rows.next()) {
+                    const qint64 id = rows.value(0).toLongLong();
+                    if (!onPath.contains(id)) abandoned << id;
+                }
+                rows.finish();
+            }
+            if (!abandoned.isEmpty()) {
+                const QString placeholders = QStringList(abandoned.count(), QStringLiteral("?"))
+                                                 .join(QStringLiteral(","));
+                {
+                    QSqlQuery nodes(m_db);
+                    nodes.prepare(QString("DELETE FROM trace_nodes WHERE session_id = ? "
+                                          "AND message_id IN (") + placeholders + ")");
+                    nodes.addBindValue(sessionId);
+                    for (qint64 id : std::as_const(abandoned)) nodes.addBindValue(id);
+                    if (!nodes.exec()) { abort("drop abandoned trace", nodes); return; }
+                }
+                {
+                    QSqlQuery rows(m_db);
+                    rows.prepare(QString("DELETE FROM messages WHERE session_id = ? AND id IN (")
+                                 + placeholders + ")");
+                    rows.addBindValue(sessionId);
+                    for (qint64 id : std::as_const(abandoned)) rows.addBindValue(id);
+                    if (!rows.exec()) { abort("drop abandoned rows", rows); return; }
+                }
+            }
+        }
+        {
+            QSqlQuery clearParents(m_db);
+            if (!clearParents.exec("UPDATE messages SET parent_id = NULL WHERE parent_id IS NOT NULL")) {
+                abort("clear parent_id", clearParents);
+                return;
+            }
+        }
+        {
+            QSqlQuery clearHead(m_db);
+            if (!clearHead.exec("UPDATE sessions SET head_message_id = 0 WHERE head_message_id > 0")) {
+                abort("clear head_message_id", clearHead);
+                return;
+            }
+        }
+    }
+
+    // 答案不再存多版本：遗留的变体表（含只写过这一版实现的库）一律回收。
+    QSqlQuery dropVariants(m_db);
+    if (!dropVariants.exec("DROP TABLE IF EXISTS message_variants"))
+        qWarning() << "Could not drop message_variants:" << dropVariants.lastError().text();
+
+    if (!m_db.commit()) {
+        qWarning() << "Conversation-model migration commit failed:"
+                   << m_db.lastError().text();
+        m_db.rollback();
+    }
+}
+
 // docs/25: knowledge_chunks.page 列补齐（引用定位——chunk 页码；幂等）。
 // 新库由建表 DDL 直接带上该列，本迁移只服务老库升级。
 void SqliteMemory::migrateKnowledgeChunkPageColumn() {
@@ -581,7 +719,7 @@ void SqliteMemory::migrateKnowledgeSchema() {
         }
     }
 
-    // MEM-704: workspace_id reservation on the three session tables
+    // MEM-704: workspace_id reservation on the session-scoped tables
     for (const QString& table : { QStringLiteral("messages"),
                                   QStringLiteral("audit_log"),
                                   QStringLiteral("trace_nodes") }) {
@@ -776,7 +914,35 @@ QString SqliteMemory::loadKnowledgeDoc(const QString& name) const {
     return QString();
 }
 
-void SqliteMemory::saveMessage(const QString& sessionId, const QJsonObject& msg) {
+namespace {
+
+// messages 的一行 → 上层看到的对象。id 是分叉锚点与截断阈值；metadata 里的
+// images/files 提升到顶层（provider 转换器与轨迹重建都读顶层键）。
+QJsonObject messageRowToObject(const QString& role, const QString& content,
+                               const QString& metadataJson, double timestamp, qint64 id) {
+    QJsonObject msg;
+    msg["role"] = role;
+    msg["content"] = content;
+    msg["metadata"] = QJsonDocument::fromJson(metadataJson.toUtf8()).object();
+    const QJsonObject metadata = msg.value("metadata").toObject();
+    if (metadata.contains("images"))
+        msg["images"] = metadata.value("images");
+    if (metadata.contains("files"))
+        msg["files"] = metadata.value("files");
+    // Batch 18: msec epoch for export timestamps (consumers that don't need it
+    // simply ignore the extra key).
+    msg["timestamp"] = timestamp;
+    msg["id"] = id;
+    return msg;
+}
+
+} // namespace
+
+// 落库一条消息并返回其主键（AUTOINCREMENT 单调），失败返回 0。调用方必须用返回值
+// 定位这一行，不能靠 MAX(id) 反猜——插入失败时会拿到上一条消息的 id。
+qint64 SqliteMemory::saveMessage(const QString& sessionId, const QJsonObject& msg) {
+    // 空会话 id 写进去就是一行无主消息，永远不会被 loadMessages 取到。
+    if (sessionId.isEmpty()) return 0;
     QSqlQuery query(m_db);
     query.prepare("INSERT INTO messages (session_id, role, content, timestamp, metadata, "
                   "workspace_id) VALUES (?, ?, ?, ?, ?, 'local')");
@@ -797,7 +963,9 @@ void SqliteMemory::saveMessage(const QString& sessionId, const QJsonObject& msg)
 
     if (!query.exec()) {
         qWarning() << "Failed to save message:" << query.lastError().text();
+        return 0;
     }
+    return query.lastInsertId().toLongLong();
 }
 
 QJsonArray SqliteMemory::loadMessages(const QString& sessionId, int limit) {
@@ -806,7 +974,7 @@ QJsonArray SqliteMemory::loadMessages(const QString& sessionId, int limit) {
     // the newest window (rowid breaks timestamp ties), the outer ASC
     // restores conversation order. A plain "ASC LIMIT ?" kept the OLDEST
     // messages and silently dropped the recent ones in long sessions.
-    query.prepare("SELECT role, content, metadata, timestamp FROM ("
+    query.prepare("SELECT role, content, metadata, timestamp, rowid FROM ("
                   "SELECT role, content, metadata, timestamp, rowid FROM messages "
                   "WHERE session_id = ? "
                   "ORDER BY timestamp DESC, rowid DESC LIMIT ?"
@@ -816,23 +984,10 @@ QJsonArray SqliteMemory::loadMessages(const QString& sessionId, int limit) {
 
     QJsonArray messages;
     if (query.exec()) {
-        while (query.next()) {
-            QJsonObject msg;
-            msg["role"] = query.value(0).toString();
-            msg["content"] = query.value(1).toString();
-            msg["metadata"] = QJsonDocument::fromJson(query.value(2).toString().toUtf8()).object();
-            // Batch 30 (F6): promote attached images back to the top level so
-            // the provider converters and the trace rebuild see them.
-            const QJsonObject metadata = msg.value("metadata").toObject();
-            if (metadata.contains("images"))
-                msg["images"] = metadata.value("images");
-            if (metadata.contains("files"))
-                msg["files"] = metadata.value("files");
-            // Batch 18: msec epoch for export timestamps (consumers that
-            // don't need it simply ignore the extra key).
-            msg["timestamp"] = query.value(3).toDouble();
-            messages.append(msg);
-        }
+        while (query.next())
+            messages.append(messageRowToObject(query.value(0).toString(), query.value(1).toString(),
+                                               query.value(2).toString(), query.value(3).toDouble(),
+                                               query.value(4).toLongLong()));
     } else {
         // docs/23 G5: the only query in the file that failed silently —
         // a user-visible "history disappeared" with nothing in the log.
@@ -841,10 +996,9 @@ QJsonArray SqliteMemory::loadMessages(const QString& sessionId, int limit) {
     return messages;
 }
 
-// docs/20 §3.1/§3.2（FORK-701）：重新生成/编辑重发的持久层支撑。按主键
-// 阈值删除（AUTOINCREMENT 保证 id 单调），FTS 影子表经 AFTER DELETE 触发器
-// 自动同步（messages_fts_ad）。audit_log / trace_nodes 不动：重新生成是
-// 正常行为，审计链保留；trace 展示层由 AIAgent 在重建时自行收缩。
+// docs/20 §3.1/§3.2（FORK-701）：按主键阈值删除（AUTOINCREMENT 保证 id 单调）。
+// 优先按 (timestamp,rowid) 排序的历史窗口里，阈值用主键最稳；FTS 影子表经
+// AFTER DELETE 触发器自动同步。audit_log 不动。返回删除的行数。
 int SqliteMemory::deleteMessagesFrom(const QString& sessionId, qint64 fromId) {
     if (sessionId.isEmpty() || fromId <= 0) return 0;
     QSqlQuery query(m_db);
@@ -852,7 +1006,7 @@ int SqliteMemory::deleteMessagesFrom(const QString& sessionId, qint64 fromId) {
     query.addBindValue(sessionId);
     query.addBindValue(fromId);
     if (!query.exec()) {
-        qWarning() << "Failed to delete messages from:" << query.lastError().text();
+        qWarning() << "Failed to delete messages:" << query.lastError().text();
         return 0;
     }
     return query.numRowsAffected();
@@ -860,32 +1014,6 @@ int SqliteMemory::deleteMessagesFrom(const QString& sessionId, qint64 fromId) {
 
 // docs/20 §3.1（FORK-701）：会话内最后一条 user 消息的主键。AUTOINCREMENT
 // id 单调，MAX(id) 即最后一条；限定 role='user' 过滤掉尾部 assistant 行。
-bool SqliteMemory::truncateLastTurn(const QString& sessionId, bool removeUser) {
-    if (sessionId.isEmpty() || !m_db.transaction()) return false;
-    QSqlQuery query(m_db);
-    const qint64 userId = lastUserMessageId(sessionId);
-    bool ok = userId > 0;
-    if (ok) {
-        query.prepare("DELETE FROM messages WHERE session_id = ? AND id >= ?");
-        query.addBindValue(sessionId);
-        query.addBindValue(userId + (removeUser ? 0 : 1));
-        ok = query.exec();
-    }
-    if (ok) {
-        query.prepare("DELETE FROM trace_nodes WHERE session_id = ? AND node_order >= "
-                      "(SELECT MAX(node_order) + ? FROM trace_nodes "
-                      "WHERE session_id = ? AND type = 'user_message')");
-        query.addBindValue(sessionId);
-        query.addBindValue(removeUser ? 0 : 1);
-        query.addBindValue(sessionId);
-        ok = query.exec();
-    }
-    if (ok && m_db.commit()) return true;
-    qWarning() << "Failed to truncate conversation turn:" << query.lastError().text();
-    m_db.rollback();
-    return false;
-}
-
 qint64 SqliteMemory::lastUserMessageId(const QString& sessionId) {
     if (sessionId.isEmpty()) return 0;
     QSqlQuery query(m_db);
@@ -896,6 +1024,138 @@ qint64 SqliteMemory::lastUserMessageId(const QString& sessionId) {
         return 0;
     }
     return query.next() ? query.value(0).toLongLong() : 0;
+}
+
+// docs/20 §3.1（FORK-701）：原子截末轮。删消息行的同时**必须**删这一轮之后的
+// 持久化轨迹节点——上一版只删消息行，被丢弃的思考/工具过程会在重开会话时整段
+// 复活。removeUser=true 连提问一起删（编辑重发），false 保留它当重发锚点。
+// audit_log 不动：重新生成/编辑是正常行为，保留完整审计链。
+bool SqliteMemory::truncateLastTurn(const QString& sessionId, bool removeUser) {
+    if (sessionId.isEmpty() || !m_db.transaction()) return false;
+    QSqlQuery query(m_db);
+    const qint64 userId = lastUserMessageId(sessionId);
+    bool ok = userId > 0;
+    if (ok) {
+        // 先剪时间线再删消息行：两者都按"最后一个 user_message 节点之后"定位，
+        // 消息行一删就再也对不上阈值了。
+        query.prepare("DELETE FROM trace_nodes WHERE session_id = ? AND node_order >= "
+                      "(SELECT MAX(node_order) + ? FROM trace_nodes "
+                      "WHERE session_id = ? AND type = 'user_message')");
+        query.addBindValue(sessionId);
+        query.addBindValue(removeUser ? 0 : 1);
+        query.addBindValue(sessionId);
+        ok = query.exec();
+    }
+    if (ok) {
+        query.prepare("DELETE FROM messages WHERE session_id = ? AND id >= ?");
+        query.addBindValue(sessionId);
+        query.addBindValue(userId + (removeUser ? 0 : 1));
+        ok = query.exec();
+    }
+    if (ok && m_db.commit()) return true;
+    qWarning() << "Failed to truncate conversation turn:" << query.lastError().text();
+    m_db.rollback();
+    return false;
+}
+
+// docs/21 分叉为新会话：把源会话第 answerRank 条回答及其之前的历史复制进一个新
+// 会话，返回新会话 id。**源会话完全不参与**——这就是"保留之前历史的新对话"：不用
+// 维护 head/兄弟节点两套真相，也不用担心把用户正在看的对话改坏。
+// 锚点按"第几条回答"定位，不读 trace_nodes.message_id：那一列在树迁移时代被整轮
+// 批量回填过，同一列里既有挂在 user 行上的 summary，也有多轮共用一个 id 的脏值，
+// 拿它切时间线会把副本切得比消息列表长。按序号切则新老数据一视同仁，且分叉出去的
+// 会话还能再次分叉（副本的脏列一律写 0，不影响后续定位）。
+QString SqliteMemory::forkSessionAtAnswer(const QString& sourceSessionId, int answerRank,
+                                          const QString& title) {
+    if (sourceSessionId.isEmpty() || answerRank <= 0) return QString();
+
+    // 锚点行：第 answerRank 条 assistant 消息。查不出来就是越界（时间线和消息行
+    // 对不上，或者这个会话根本还没回答过），拒绝分叉而不是复制出一个说不清的会话。
+    qint64 anchorId = 0;
+    {
+        QSqlQuery anchor(m_db);
+        anchor.prepare("SELECT id FROM messages WHERE session_id = ? AND role = 'assistant'"
+                       " ORDER BY id ASC LIMIT 1 OFFSET ?");
+        anchor.addBindValue(sourceSessionId);
+        anchor.addBindValue(answerRank - 1);
+        if (!anchor.exec() || !anchor.next()) {
+            qWarning() << "Refused to fork" << sourceSessionId
+                       << "at answer #" << answerRank << ":"
+                       << (anchor.lastError().isValid()
+                               ? anchor.lastError().text()
+                               : QStringLiteral("no such answer in this session"));
+            return QString();
+        }
+        anchorId = anchor.value(0).toLongLong();
+    }
+
+    // 时间线截断点：那条回答所在轮次的末尾 —— 它之后第一条提问之前的最后一个
+    // 节点（答案的 metrics 行、以及本轮所有思考/工具过程都在这一刀之前）；
+    // 它后面没有提问了就切到时间线末尾。summary 节点数不到该序号时不复制时间线，
+    // 交给 resumeSession 用消息文本重建。
+    int cutoff = -1;
+    {
+        QSqlQuery cut(m_db);
+        cut.prepare("SELECT COALESCE("
+                    "(SELECT MIN(t2.node_order) - 1 FROM trace_nodes t2"
+                    "  WHERE t2.session_id = t.session_id AND t2.type = 'user_message'"
+                    "  AND t2.node_order > t.node_order),"
+                    "(SELECT MAX(t3.node_order) FROM trace_nodes t3"
+                    "  WHERE t3.session_id = t.session_id),"
+                    "t.node_order) "
+                    "FROM trace_nodes t WHERE t.session_id = ? AND t.type = 'summary'"
+                    " ORDER BY t.node_order ASC LIMIT 1 OFFSET ?");
+        cut.addBindValue(sourceSessionId);
+        cut.addBindValue(answerRank - 1);
+        if (cut.exec() && cut.next() && !cut.value(0).isNull())
+            cutoff = cut.value(0).toInt();
+    }
+
+    const QString newId = QUuid::createUuid().toString(QUuid::WithoutBraces);
+    beginSession(newId, title);           // 单条 INSERT，自身就是原子的
+
+    bool ok = m_db.transaction();
+    if (ok) {
+        QSqlQuery copy(m_db);
+        copy.prepare("INSERT INTO messages (session_id, role, content, timestamp, metadata, "
+                     "workspace_id) SELECT ?, role, content, timestamp, metadata, workspace_id "
+                     "FROM messages WHERE session_id = ? AND id <= ? ORDER BY id ASC");
+        copy.addBindValue(newId);
+        copy.addBindValue(sourceSessionId);
+        copy.addBindValue(anchorId);
+        ok = copy.exec();
+        if (!ok) qWarning() << "Fork: copy messages failed:" << copy.lastError().text();
+    }
+    if (ok && cutoff >= 0) {
+        QSqlQuery copyNodes(m_db);
+        copyNodes.prepare("INSERT INTO trace_nodes (session_id, node_id, node_order, "
+                          "type, title, status, args, result, reasoning, timestamp, "
+                          "message_id, metadata, workspace_id) "
+                          "SELECT ?, node_id, node_order, type, title, status, args, "
+                          "result, reasoning, timestamp, 0, metadata, workspace_id "
+                          "FROM trace_nodes WHERE session_id = ? AND node_order <= ?");
+        copyNodes.addBindValue(newId);
+        copyNodes.addBindValue(sourceSessionId);
+        copyNodes.addBindValue(cutoff);
+        ok = copyNodes.exec();
+        if (!ok) qWarning() << "Fork: copy trace nodes failed:" << copyNodes.lastError().text();
+    }
+    if (ok) {
+        // 分叉出去的对话留在源会话的项目归属里（项目聊天分叉后仍属于该项目）。
+        QSqlQuery inherit(m_db);
+        inherit.prepare("UPDATE sessions SET project_id = ("
+                        "SELECT project_id FROM sessions WHERE id = ?) WHERE id = ?");
+        inherit.addBindValue(sourceSessionId);
+        inherit.addBindValue(newId);
+        ok = inherit.exec();
+        if (!ok) qWarning() << "Fork: inherit project failed:" << inherit.lastError().text();
+    }
+    if (ok && m_db.commit()) return newId;
+
+    qWarning() << "Fork aborted; removing the half-copied session" << newId;
+    m_db.rollback();
+    hardDeleteSessionRows(newId);       // 半个会话留在列表里比失败更糟
+    return QString();
 }
 
 // Batch 17 (FEAT-1702): cross-session keyword search, newest first. The
@@ -1433,13 +1693,18 @@ void SqliteMemory::saveTraceNode(const QString& sessionId, const QJsonObject& no
     QSqlQuery query(m_db);
     // Upsert: position (node_order) is fixed by the first insert; later
     // saves of the same node id only refresh content/status.
+    // docs/21 真分支：message_id 是这个节点的归属消息（user_message 节点归那条
+    // user 行，本轮其余节点归本轮的 assistant 行），"时间线只画活动路径"就靠它。
+    // 分支之间共用 node_order 取值是安全的：跨分支的节点不会同时出现在一次路径
+    // 过滤的结果里。
     query.prepare("INSERT INTO trace_nodes (session_id, node_id, node_order, type, title, "
-                  "status, args, result, reasoning, timestamp, metadata, workspace_id) "
-                  "VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, 'local') "
+                  "status, args, result, reasoning, timestamp, message_id, metadata, workspace_id) "
+                  "VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, 'local') "
                   "ON CONFLICT(session_id, node_id) DO UPDATE SET type = excluded.type, "
                   "title = excluded.title, status = excluded.status, args = excluded.args, "
                   "result = excluded.result, reasoning = excluded.reasoning, "
-                  "timestamp = excluded.timestamp, metadata = excluded.metadata");
+                  "timestamp = excluded.timestamp, message_id = excluded.message_id, "
+                  "metadata = excluded.metadata");
     // Batch 18 review: every text column is NOT NULL. An absent JSON key
     // yields a null QString, and a null QString binds as SQL NULL — the same
     // silent-drop trap as usage_log.detail (Batch 11). Normalize the bind.
@@ -1457,6 +1722,7 @@ void SqliteMemory::saveTraceNode(const QString& sessionId, const QJsonObject& no
     query.addBindValue(nz(node, "result"));
     query.addBindValue(nz(node, "reasoning"));
     query.addBindValue(static_cast<qint64>(node.value("timestamp").toDouble()));
+    query.addBindValue(node.value("messageId").toVariant().toLongLong());
     QJsonObject metadata;
     for (const char* key : {"images", "files", "model"})
         if (node.contains(QLatin1String(key))) metadata[key] = node.value(QLatin1String(key));
@@ -1467,35 +1733,49 @@ void SqliteMemory::saveTraceNode(const QString& sessionId, const QJsonObject& no
     }
 }
 
+namespace {
+
+// trace_nodes 的一行 → 节点对象。列映射表不是整节点 JSON，所以读端要重建形状；
+// 白名单字段（images/files/model）从 metadata 提升回顶层，messageId 来自列。
+QJsonObject traceNodeFromRow(const QSqlQuery& query) {
+    QJsonObject node;
+    node["id"] = query.value(0).toString();
+    node["type"] = query.value(1).toString();
+    node["title"] = query.value(2).toString();
+    node["status"] = query.value(3).toString();
+    node["args"] = query.value(4).toString();
+    node["result"] = query.value(5).toString();
+    // 空值不写键：与运行期 appendTraceNode 的白名单形状保持一致，
+    // 否则恢复出来的节点会多出一个 reasoning: ""。
+    const QString reasoning = query.value(6).toString();
+    if (!reasoning.isEmpty())
+        node["reasoning"] = reasoning;
+    node["timestamp"] = query.value(7).toLongLong();
+    node["order"] = query.value(8).toInt();
+    const qint64 messageId = query.value(9).isNull() ? 0 : query.value(9).toLongLong();
+    if (messageId > 0)
+        node["messageId"] = messageId;
+    const auto metadata = QJsonDocument::fromJson(query.value(10).toByteArray()).object();
+    for (const char* key : {"images", "files", "model"})
+        if (metadata.contains(QLatin1String(key))) node[key] = metadata.value(QLatin1String(key));
+    return node;
+}
+
+constexpr const char* kTraceNodeColumns =
+    "SELECT node_id, type, title, status, args, result, reasoning, timestamp, "
+    "node_order, message_id, metadata FROM trace_nodes ";
+
+} // namespace
+
 QJsonArray SqliteMemory::loadTraceNodes(const QString& sessionId) {
     QSqlQuery query(m_db);
-    query.prepare("SELECT node_id, type, title, status, args, result, reasoning, timestamp, "
-                  "node_order, metadata "
-                  "FROM trace_nodes WHERE session_id = ? ORDER BY node_order ASC");
+    query.prepare(QString(kTraceNodeColumns) + "WHERE session_id = ? ORDER BY node_order ASC");
     query.addBindValue(sessionId);
 
     QJsonArray nodes;
     if (query.exec()) {
-        while (query.next()) {
-            QJsonObject node;
-            node["id"] = query.value(0).toString();
-            node["type"] = query.value(1).toString();
-            node["title"] = query.value(2).toString();
-            node["status"] = query.value(3).toString();
-            node["args"] = query.value(4).toString();
-            node["result"] = query.value(5).toString();
-            // 空值不写键：与运行期 appendTraceNode 的白名单形状保持一致，
-            // 否则恢复出来的节点会多出一个 reasoning: ""。
-            const QString reasoning = query.value(6).toString();
-            if (!reasoning.isEmpty())
-                node["reasoning"] = reasoning;
-            node["timestamp"] = query.value(7).toLongLong();
-            node["order"] = query.value(8).toInt();
-            const auto metadata = QJsonDocument::fromJson(query.value(9).toByteArray()).object();
-            for (const char* key : {"images", "files", "model"})
-                if (metadata.contains(QLatin1String(key))) node[key] = metadata.value(QLatin1String(key));
-            nodes.append(node);
-        }
+        while (query.next())
+            nodes.append(traceNodeFromRow(query));
     } else {
         qWarning() << "Failed to load trace nodes:" << query.lastError().text();
     }

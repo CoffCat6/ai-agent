@@ -144,6 +144,15 @@ int TraceModel::lastIndexOfType(const QString& type) const {
     return -1;
 }
 
+int TraceModel::rankOfTypeAt(int row, const QString& type) const {
+    if (row < 0 || row >= m_nodes.size()) return 0;
+    if (m_nodes.at(row).value("type").toString() != type) return 0;
+    int rank = 0;
+    for (int i = 0; i <= row; ++i)
+        if (m_nodes.at(i).value("type").toString() == type) ++rank;
+    return rank;
+}
+
 int TraceModel::intermediateCount() const {
     int count = 0;
     for (const auto& node : m_nodes)

@@ -54,6 +54,10 @@ public:
     // 只应在「该类型的最后一条」上显示 —— finishTask 会在助手回复（summary）
     // 之后追加 metrics 节点，所以整表末行恒为 metrics，不能用 index==count-1。
     int lastIndexOfType(const QString& type) const;
+    // 第 row 行在它那一类节点里排第几（1 起）；行越界或类型不符返回 0。
+    // docs/21 分叉：回答气泡只知道自己在时间线里的下标，持久层按"第几条回答"定位
+    // 分叉锚点，这一层换算就是两者之间唯一的桥。
+    int rankOfTypeAt(int row, const QString& type) const;
     // Nodes hidden by the "fold process" toggle in the chat page
     int intermediateCount() const;
 

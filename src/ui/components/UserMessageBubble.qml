@@ -29,8 +29,12 @@ Item {
     readonly property real maxBubbleWidth: Math.max(120, width * Theme.bubbleMaxRatio)
     readonly property real maxContentWidth: Math.max(80, maxBubbleWidth - Theme.spaceMd * 2)
     // 内容自然宽（标题 + 附件取大者），再夹到上限。
-    readonly property real contentWidth: Math.min(
-        Math.max(bodyText.implicitWidth, attachRow.implicitWidth), maxContentWidth)
+    // 编辑态例外：阅读态的气泡是"缩到内容宽"，一条"你好"只有两字宽，直接拿来
+    // 当输入框就窄得没法打字；而且边打字边变宽会一路抖动。所以编辑时一次性摊到
+    // 气泡上限宽，给输入一个稳定、够用的落点。
+    readonly property real contentWidth: editing
+        ? maxContentWidth
+        : Math.min(Math.max(bodyText.implicitWidth, attachRow.implicitWidth), maxContentWidth)
 
     implicitHeight: bubble.height + footer.height + Theme.spaceXs
     height: implicitHeight
@@ -106,8 +110,11 @@ Item {
                         && editDraft.trim() !== root.body
                     onClicked: {
                         const next = editDraft.trim()
-                        // Success replaces this delegate; failure keeps the edit draft.
-                        AgentVM.editAndResend(next)
+                        // 成功则该条被替换；失败留在编辑态保住草稿，原因由
+                        // AgentVM 走 errorOccurred 呈现（原来失败是静默无响应）。
+                        // 不回写 editDraft：body 此刻还是旧文本，模型重绑要到下一个
+                        // tick，进入编辑态时自己会重置草稿。
+                        if (AgentVM.editAndResend(next)) root.editing = false
                     }
                 }
                 AppButton {

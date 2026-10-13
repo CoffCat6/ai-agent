@@ -95,6 +95,13 @@ static void setupEmbedder(RagService& rag, bool slow) {
 
 } // namespace
 
+// docs/21：会话是线性的一串消息，测试夹具按顺序追加即可。
+qint64 appendMessage(SqliteMemory& memory, const QString& sessionId,
+                     const QString& role, const QString& content) {
+    return memory.saveMessage(sessionId, QJsonObject{{QStringLiteral("role"), role},
+                                                     {QStringLiteral("content"), content}});
+}
+
 class TestAgentViewModel : public QObject {
     Q_OBJECT
 
@@ -711,10 +718,8 @@ private slots:
     void editAndResendWithoutProviderKeepsLastTurn() {
         SqliteMemory memory(QStringLiteral(":memory:"));
         memory.beginSession("s-edit", "Edit");
-        memory.saveMessage("s-edit", QJsonObject{{"role", "user"},
-            {"content", QStringLiteral("旧问题")}});
-        memory.saveMessage("s-edit", QJsonObject{{"role", "assistant"},
-            {"content", QStringLiteral("旧回答")}});
+        appendMessage(memory, "s-edit", QStringLiteral("user"), QStringLiteral("旧问题"));
+        appendMessage(memory, "s-edit", QStringLiteral("assistant"), QStringLiteral("旧回答"));
 
         AgentViewModel vm(nullptr);
         vm.setMemory(&memory);
@@ -742,10 +747,8 @@ private slots:
     void exportSessionMarkdownRoundtrip() {
         SqliteMemory memory(QStringLiteral(":memory:"));
         memory.beginSession("s1", "Exported");
-        memory.saveMessage("s1", QJsonObject{{"role", "user"},
-            {"content", QStringLiteral("第一问：什么是 FTS5")}});
-        memory.saveMessage("s1", QJsonObject{{"role", "assistant"},
-            {"content", QStringLiteral("FTS5 是 SQLite 的全文检索扩展模块")}});
+        appendMessage(memory, "s1", QStringLiteral("user"), QStringLiteral("第一问：什么是 FTS5"));
+        appendMessage(memory, "s1", QStringLiteral("assistant"), QStringLiteral("FTS5 是 SQLite 的全文检索扩展模块"));
 
         AgentViewModel vm(nullptr);
         vm.setMemory(&memory);
@@ -775,8 +778,8 @@ private slots:
     void exportSessionJsonRoundtrip() {
         SqliteMemory memory(QStringLiteral(":memory:"));
         memory.beginSession("s1", "Json");
-        memory.saveMessage("s1", QJsonObject{{"role", "user"}, {"content", "q"}});
-        memory.saveMessage("s1", QJsonObject{{"role", "assistant"}, {"content", "a"}});
+        appendMessage(memory, "s1", QStringLiteral("user"), "q");
+        appendMessage(memory, "s1", QStringLiteral("assistant"), "a");
         QJsonObject node;
         node["id"] = "n1";   // saveTraceNode binds the JSON key "id" (column node_id, NOT NULL)
         node["type"] = "tool_call";
@@ -842,8 +845,8 @@ private slots:
     void exportSessionWithToolRounds() {
         SqliteMemory memory(QStringLiteral(":memory:"));
         memory.beginSession("s1", "With tools");
-        memory.saveMessage("s1", QJsonObject{{"role", "user"}, {"content", "list the dir"}});
-        memory.saveMessage("s1", QJsonObject{{"role", "assistant"}, {"content", "done"}});
+        appendMessage(memory, "s1", QStringLiteral("user"), "list the dir");
+        appendMessage(memory, "s1", QStringLiteral("assistant"), "done");
         QJsonObject node;
         node["id"] = "n1";   // saveTraceNode binds the JSON key "id" (column node_id, NOT NULL)
         node["type"] = "tool_call";
@@ -871,7 +874,7 @@ private slots:
     void exportSessionFlattensTraceNewlines() {
         SqliteMemory memory(QStringLiteral(":memory:"));
         memory.beginSession("s1", "Newlines");
-        memory.saveMessage("s1", QJsonObject{{"role", "user"}, {"content", "q"}});
+        appendMessage(memory, "s1", QStringLiteral("user"), "q");
         QJsonObject node;
         node["id"] = "n1";
         node["type"] = "tool_call";
@@ -911,8 +914,8 @@ private slots:
     void exportSessionUrlPath() {
         SqliteMemory memory(QStringLiteral(":memory:"));
         memory.beginSession("s1", "Url export");
-        memory.saveMessage("s1", QJsonObject{{"role", "user"}, {"content", "q"}});
-        memory.saveMessage("s1", QJsonObject{{"role", "assistant"}, {"content", "a"}});
+        appendMessage(memory, "s1", QStringLiteral("user"), "q");
+        appendMessage(memory, "s1", QStringLiteral("assistant"), "a");
 
         AgentViewModel vm(nullptr);
         vm.setMemory(&memory);
@@ -1432,8 +1435,7 @@ private slots:
     void editAndResendGuards() {
         SqliteMemory memory(QStringLiteral(":memory:"));
         memory.beginSession("s-guard", "Guard");
-        memory.saveMessage("s-guard", QJsonObject{{"role", "user"},
-            {"content", QStringLiteral("既有消息")}});
+        appendMessage(memory, "s-guard", QStringLiteral("user"), QStringLiteral("既有消息"));
 
         AgentViewModel vm(nullptr);
         vm.setMemory(&memory);
@@ -1563,6 +1565,96 @@ private slots:
         for (const QVariant& entry : vm.batchImportResults())
             QCOMPARE(entry.toMap().value("status").toString(), QStringLiteral("degraded"));
         QVERIFY(rag.usesPseudoEmbedding(QStringLiteral("d1.txt")));
+    }
+    // docs/21 分叉入口在拿不到持久层 / 活动会话 / 合法下标时必须直接拒绝，
+    // 不能悄悄造出一个空会话。真正的内容复制在 test_memory 与
+    // branchFromAnswerForksByTraceIndex 里覆盖。
+    void branchFromAnswerGuards() {
+        AgentViewModel vm(nullptr);
+        QVERIFY(!vm.branchFromAnswer(1));           // 没有持久层
+        SqliteMemory mem(QStringLiteral(":memory:"));
+        vm.setMemory(&mem);
+        QVERIFY(!vm.branchFromAnswer(1));            // 活动标签还没有会话
+        QVERIFY(!vm.branchFromAnswer(-1));
+        QCOMPARE(mem.listSessions().size(), 0);
+    }
+
+    // 分叉的完整链路：回答气泡只交出它在时间线里的下标 → VM 换算成"第几条回答"
+    // → 持久层按序号切出副本并加载到新标签。
+    // 回归点：上一版让界面去读 trace 节点的 messageId，而回答侧从来没有人写过
+    // 这个键（只有 user_message 节点带），"从此处分支"因此永远不显示，单测却全绿
+    // ——它们都直接手写消息主键，绕过了这条换算。这里走真实恢复出来的时间线。
+    void branchFromAnswerForksByTraceIndex() {
+        SqliteMemory memory(QStringLiteral(":memory:"));
+        memory.beginSession(QStringLiteral("src"), QStringLiteral("源会话"));
+        memory.saveMessage(QStringLiteral("src"),
+                           QJsonObject{{QStringLiteral("role"), QStringLiteral("user")},
+                                       {QStringLiteral("content"), QStringLiteral("第一问")}});
+        memory.saveMessage(QStringLiteral("src"),
+                           QJsonObject{{QStringLiteral("role"), QStringLiteral("assistant")},
+                                       {QStringLiteral("content"), QStringLiteral("第一答")}});
+        memory.saveMessage(QStringLiteral("src"),
+                           QJsonObject{{QStringLiteral("role"), QStringLiteral("user")},
+                                       {QStringLiteral("content"), QStringLiteral("第二问")}});
+        memory.saveMessage(QStringLiteral("src"),
+                           QJsonObject{{QStringLiteral("role"), QStringLiteral("assistant")},
+                                       {QStringLiteral("content"), QStringLiteral("第二答")}});
+        // 时间线故意不带任何 messageId 归属：升级前的老会话就是这个样子。
+        struct Row { const char* id; const char* type; const char* title; };
+        const Row rows[] = {
+            {"nq1", "user_message", "第一问"},
+            {"na1", "summary", "第一答"},
+            {"nq2", "user_message", "第二问"},
+            {"na2", "summary", "第二答"},
+        };
+        for (int i = 0; i < 4; ++i) {
+            memory.saveTraceNode(QStringLiteral("src"),
+                                 QJsonObject{{QStringLiteral("id"), QString::fromLatin1(rows[i].id)},
+                                             {QStringLiteral("type"), QString::fromLatin1(rows[i].type)},
+                                             {QStringLiteral("title"), QString::fromUtf8(rows[i].title)},
+                                             {QStringLiteral("status"), QStringLiteral("completed")},
+                                             {QStringLiteral("timestamp"), 1}}, i);
+        }
+
+        AgentViewModel vm(nullptr);
+        AIAgent agent(&vm);
+        agent.setMemory(&memory);
+        vm.setMemory(&memory);
+        vm.setAgent(&agent);
+        vm.loadSession(QStringLiteral("src"));
+        QCOMPARE(vm.traceCount(), 4);
+
+        // 从第一条回答（下标 1）分叉：副本 = 第一问 + 第一答，源会话一字不动。
+        QVERIFY(vm.branchFromAnswer(1));
+        QString forked;
+        for (const auto& entry : memory.listSessions()) {
+            const QJsonObject session = entry.toObject();
+            if (session.value(QStringLiteral("title")).toString()
+                    == QStringLiteral("源会话（分支）"))
+                forked = session.value(QStringLiteral("id")).toString();
+        }
+        QVERIFY(!forked.isEmpty());
+        const QJsonArray copied = memory.loadMessages(forked, 50);
+        QCOMPARE(copied.size(), 2);
+        QCOMPARE(copied.at(1).toObject().value("content").toString(),
+                 QStringLiteral("第一答"));
+        QCOMPARE(memory.loadTraceNodes(forked).size(), 2);
+        // 点完就切到新会话里接着问。
+        QCOMPARE(agent.currentSessionId(), forked);
+        QCOMPARE(memory.loadMessages(QStringLiteral("src"), 50).size(), 4);
+
+        // 非回答行（下标 0 是提问）与越界下标都被拒，且不再造出第二个会话。
+        vm.loadSession(QStringLiteral("src"));
+        const int sessionsBefore = memory.listSessions().size();
+        QVERIFY(!vm.branchFromAnswer(0));
+        QVERIFY(!vm.branchFromAnswer(999));
+        QCOMPARE(memory.listSessions().size(), sessionsBefore);
+
+        // 从最后一条回答分叉 = 整段历史都带过去。
+        QVERIFY(vm.branchFromAnswer(3));
+        const QString whole = agent.currentSessionId();
+        QCOMPARE(memory.loadMessages(whole, 50).size(), 4);
+        QCOMPARE(memory.loadTraceNodes(whole).size(), 4);
     }
 };
 QTEST_GUILESS_MAIN(TestAgentViewModel)

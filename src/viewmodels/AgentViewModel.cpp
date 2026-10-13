@@ -1641,6 +1641,51 @@ void AgentViewModel::regenerate() {
     active()->regenerate();
 }
 
+// docs/21 分叉为新会话：一条回答结束后，把**包括这条回答在内**的历史整体复制成一
+// 个新会话，切过去让用户接着问。源会话一字不动，所以可以无限次分叉、也永远回得来。
+//
+// 顺序很重要：先 fork（纯持久层动作，失败就到此为止，界面不动），再刷新会话列表让
+// 它出现在侧栏，最后 loadSession 切过去。当前标签忙时 loadSession 会自己开新标签承
+// 载，所以分叉不会打断正在生成的回答。
+bool AgentViewModel::branchFromAnswer(int traceIndex) {
+    if (!m_memory) return false;
+    ChatSessionController* source = active();
+    AIAgent* sourceAgent = source ? source->agent() : nullptr;
+    const QString sourceSession = sourceAgent ? sourceAgent->currentSessionId() : QString();
+    if (sourceSession.isEmpty()) {
+        emit errorOccurred(tr("这个会话还没有可分叉的历史记录。"));
+        return false;
+    }
+    // 下标 → 第几条回答：这条回答在持久层里就是第 rank 条 assistant 行。
+    const int rank = source->rankOfTypeAt(traceIndex, QStringLiteral("summary"));
+    if (rank <= 0) {
+        emit errorOccurred(tr("这条回答还没有存进会话记录，稍等一下再试。"));
+        return false;
+    }
+
+    // 标题沿用源会话并加后缀：两条对话看起来成对，侧栏里也能一眼分辨哪条是分叉。
+    QString sourceTitle;
+    for (const QVariant& entry : std::as_const(m_sessionList)) {
+        const QVariantMap session = entry.toMap();
+        if (session.value(QStringLiteral("id")).toString() == sourceSession) {
+            sourceTitle = session.value(QStringLiteral("title")).toString();
+            break;
+        }
+    }
+    if (sourceTitle.isEmpty()) sourceTitle = tr("新会话");
+
+    const QString forked = m_memory->forkSessionAtAnswer(sourceSession, rank,
+                                                         tr("%1（分支）").arg(sourceTitle));
+    if (forked.isEmpty()) {
+        emit errorOccurred(tr("无法创建分叉出来的会话，请重试。"));
+        return false;
+    }
+    refreshSessions();
+    loadSession(forked);
+    emit sessionListChanged();
+    return true;
+}
+
 // The agent replaces one complete turn, including live and persisted state.
 bool AgentViewModel::editAndResend(const QString& newText) {
     configureModel(active());

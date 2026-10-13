@@ -132,6 +132,11 @@ public:
     QJsonArray messages() const { return m_messages; }
     QJsonArray traceModel() const { return m_traceModel; }
     QString lastResponse() const { return m_lastResponse; }
+
+    // 就地更新内存时间线里的某个节点（正文）并落库，广播 traceChanged。
+    void updateTraceNodeContent(const QString& nodeId, const QString& title,
+                                const QJsonObject& extra = QJsonObject());
+
     QString currentSessionId() const { return m_sessionId; }
 
     // docs/17 A0: 活动项目（全局单活动项目，AgentViewModel 随切换推送）。
@@ -214,7 +219,13 @@ private:
     int calibratedMessageTokens() const;
 
     void processIteration();
+    // docs/20 §3.1（FORK-701）：截断到最后一条 user 消息。removeUser=false 保留
+    // 它当重发锚点（重新生成），true 连提问一起删（编辑重发）。落盘在前、改内在
+    // 后：磁盘失败时上下文与时间线保持原样并 emit errorOccurred。
     bool rewindLastTurn(bool removeUser);
+    // docs/20 FORK-701：从锚点轮重新发起请求的活跃态与预算逻辑
+    // （regenerateLast 与 editLastUserMessage 之外的重发路径共用）。
+    void restartTaskFromAnchor();
     bool toolAllowedForModel(const QString& name) const;
     void applyContextBudget(int reservedTokens);
     void onContextLimitChanged(int oldLimit, int newLimit);
@@ -323,6 +334,13 @@ private:
     QString m_reasoningText;
     bool m_streamNodeActive{false};
     QString m_thinkingNodeId;
+    // docs/21：summary（最终答案）节点的 id。两条创建路径（流式首块 / 非流式
+    // 收尾）都必须留下它，finishTask 才知道该把哪条节点的正文定稿。
+    QString m_summaryNodeId;
+    // docs/21 真分支：下一个轨迹节点的 node_order。分支过滤后的节点集合里
+    // node_order 是**有空洞**的，用数组下标当 order 会撞上已存在的值，重载时
+    // 时间线顺序不确定。所以它只由"现有最大值 + 1"推进。
+    int m_nextTraceOrder{0};
 
     int m_contextLimit{kDefaultContextTokens};
 

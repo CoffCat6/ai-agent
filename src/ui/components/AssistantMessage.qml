@@ -35,6 +35,12 @@ Item {
         && index === AgentVM.lastTraceIndexOfType("summary")
         && !AgentVM.stateBusy
 
+    // docs/21 分叉为新会话：一次回答结束后可以从这里另起一条对话——把包括这条
+    // 回答在内的历史整体复制进一个新会话并切过去，源对话一字不动。
+    // 流式未定稿或还在生成都不给这个入口（那时这条回答还没落库完整）。
+    // 锚点由下标换算，不依赖节点的 messageId：升级前的老会话那一列是空的。
+    readonly property bool canBranch: !streaming && !AgentVM.stateBusy
+
     // 96 = 反引号。拼出三连标记，避免在源码里写裸反引号。
     readonly property string fenceTick: {
         const bt = String.fromCharCode(96)
@@ -388,6 +394,44 @@ Item {
                 color: Theme.textSecondary
                 font.pixelSize: Theme.fontSizeCaption
                 font.family: Theme.fontMono
+            }
+
+            // docs/21 分叉为新会话：从这条回答结尾另起一条对话（副本含这条回答，
+            // 源对话不动），点完就切到新会话里接着问。
+            Rectangle {
+                id: branchBtn
+                visible: root.canBranch && rootHover.hovered
+                width: branchLabel.implicitWidth + 16
+                height: 22
+                radius: 4
+                color: branchMA.containsMouse ? Theme.surfaceHover : "transparent"
+                border.width: 1
+                border.color: Theme.borderSubtle
+                opacity: branchMA.containsMouse ? 1.0 : 0.55
+
+                Behavior on opacity { NumberAnimation { duration: 150 } }
+
+                Text {
+                    id: branchLabel
+                    anchors.centerIn: parent
+                    text: qsTr("从此处分支")
+                    color: Theme.textSecondary
+                    font.pixelSize: 10
+                    font.family: Theme.fontMono
+                }
+
+                MouseArea {
+                    id: branchMA
+                    anchors.fill: parent
+                    hoverEnabled: true
+                    cursorShape: Qt.PointingHandCursor
+                    onClicked: AgentVM.branchFromAnswer(root.index)
+                }
+
+                Accessible.role: Accessible.Button
+                Accessible.name: qsTr("从此处分支")
+                Accessible.description: qsTr("把到这里为止的对话复制成一个新会话，在新会话里继续")
+                Accessible.onPressAction: branchMA.clicked()
             }
 
             // docs/20 §3.1：重新生成（末条回复、非流式、非 busy）。

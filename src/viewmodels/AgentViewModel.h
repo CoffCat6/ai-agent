@@ -368,7 +368,14 @@ public:
     Q_INVOKABLE void stop();                 // abort generation, keep trace
     // docs/20 §3.1（FORK-701）：重新生成最后一条回答（活动标签）。
     Q_INVOKABLE void regenerate();
-    // docs/20 §3.2（FORK-701）：替换最后一条 user 消息并重发（活动标签）。
+
+    // ── docs/21 分叉为新会话 ────────────────────────────
+    // 一条回答结束后从这里分叉：把包括这条回答在内的历史整体复制成一个新会话并切
+    // 过去，用户在新会话里接着问。源会话完全不受影响。traceIndex 是那条回答在时间线
+    // 里的下标（AssistantMessage 的 index）——持久层按"第几条回答"定位锚点，所以
+    // 界面不需要知道消息主键，升级前的老会话同样能分叉。
+    Q_INVOKABLE bool branchFromAnswer(int traceIndex);
+    // docs/20 §3.2（FORK-701）：编辑最后一条提问并重发（截断后按新内容重新发起）。
     Q_INVOKABLE bool editAndResend(const QString& newText);
     Q_INVOKABLE void newChat();              // reset to a fresh session
     // Loads into the active tab; when the active tab is busy a new tab is
