@@ -1040,10 +1040,13 @@ Rectangle {
                                         } else {
                                             confirmResetTimer.stop()
                                             sessionDelegate.confirmDelete = false
-                                            AgentVM.deleteSession(modelData.id)
-                                            root.sessionDeletedUndoable(
-                                                modelData.id,
-                                                modelData.title || "")
+                                            // 顺序不能反：deleteSession 收缩 Repeater 模型时会同步销毁
+                                            // 本 delegate，之后再取任何 id 都抛 "is not defined"，
+                                            // 撤销通知从来没送达过。
+                                            const deletedId = modelData.id
+                                            root.sessionDeletedUndoable(deletedId,
+                                                                        modelData.title || "")
+                                            AgentVM.deleteSession(deletedId)
                                         }
                                     }
                                 }
