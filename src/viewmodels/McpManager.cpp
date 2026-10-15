@@ -56,16 +56,15 @@ void McpManager::loadAndConnectAll() {
     for (const QVariantMap& server : configs) {
         m_configs.append(server);
         if (!server.value("enabled").toBool()) continue;
-        if (server.value("transport").toString() == QLatin1String("http"))
-            continue;   // 31b HTTP clients are created the same way below
-
         McpServerConfig config;
         config.name = server.value("name").toString();
-        config.transport = QStringLiteral("stdio");
+        config.transport = server.value("transport").toString();
         config.command = server.value("command").toString();
         for (const QVariant& arg : server.value("args").toList())
             config.args << arg.toString();
         config.env = server.value("env").toMap();
+        config.url = server.value("url").toString();
+        config.headers = server.value("headers").toMap();
         auto* client = new McpClient(config, this);
         m_clients.append(client);
         connectClient(client);

@@ -86,6 +86,9 @@ ToolResult McpToolAdapter::execute(const QJsonObject& args) {
             QMutexLocker lock(&pending->mutex);
             pending->requestId = id;
         }
+        // If cancel arrived before this lambda ran, cancel now.
+        if (m_cancelled.load() && id != 0)
+            m_client->cancelRequest(id);
     }, Qt::QueuedConnection);
 
     const qint64 deadline =
@@ -130,7 +133,11 @@ ToolResult McpToolAdapter::execute(const QJsonObject& args) {
         if (QDateTime::currentMSecsSinceEpoch() > deadline)
             return ToolResult::fail(QStringLiteral("MCP tool call timed out"));
 
-        QThread::msleep(120);   // cancel-sliced wait (Batch 13 contract)
+        {
+            QMutexLocker lock(&pending->mutex);
+            if (!pending->done)
+                pending->condition.wait(&pending->mutex, 120);
+        }
     }
 }
 

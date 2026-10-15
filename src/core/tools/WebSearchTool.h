@@ -105,7 +105,7 @@ public:
         // 误以为是查询词的问题。
         QString failureReason;
         const QList<WebSearchResult> results =
-            cfg.backend->search(query, maxResults, cfg.apiKey, cfg.timeoutMs, &failureReason);
+            cfg.backend->search(query, maxResults, cfg.apiKey, cfg.timeoutMs, &failureReason, &m_cancelRequested);
 
         if (m_cancelRequested.exchange(false))
             return ToolResult::fail(QStringLiteral("Search cancelled"));

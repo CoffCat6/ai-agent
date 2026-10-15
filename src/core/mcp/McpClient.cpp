@@ -157,16 +157,14 @@ quint64 McpClient::listTools() {
 quint64 McpClient::callTool(const QString& tool, const QJsonObject& args,
                             std::function<void(bool, const QString&,
                                                const QString&)> handler) {
-    const quint64 id = sendRequest(QStringLiteral("tools/call"),
-        QJsonObject{{"name", tool}, {"arguments", args}}, nullptr);
-    if (id == 0) {
-        // Request could not be sent (transport down).
+    if (!m_transport) {
         if (handler) handler(true, QString(),
             QStringLiteral("MCP server not connected"));
         return 0;
     }
-    m_pending[id].toolHandler = std::move(handler);
-    return id;
+    return sendRequest(QStringLiteral("tools/call"),
+        QJsonObject{{"name", tool}, {"arguments", args}}, nullptr,
+        std::move(handler));
 }
 
 void McpClient::cancelRequest(quint64 id) {
@@ -184,7 +182,9 @@ void McpClient::cancelRequest(quint64 id) {
 
 quint64 McpClient::sendRequest(const QString& method, const QJsonObject& params,
                                std::function<void(const QJsonObject&,
-                                                  const QJsonObject&)> handler) {
+                                                  const QJsonObject&)> handler,
+                               std::function<void(bool, const QString&,
+                                                  const QString&)> toolHandler) {
     if (!m_transport) {
         if (handler) handler({}, QJsonObject{
             {"message", QStringLiteral("no transport")}});
@@ -201,6 +201,7 @@ quint64 McpClient::sendRequest(const QString& method, const QJsonObject& params,
 
     auto& pending = m_pending[id];
     pending.handler = std::move(handler);
+    pending.toolHandler = std::move(toolHandler);
     pending.timeout = new QTimer(this);
     pending.timeout->setSingleShot(true);
     connect(pending.timeout, &QTimer::timeout, this, [this, id]() {
@@ -246,7 +247,7 @@ void McpClient::onMessage(const QJsonObject& message) {
     if (!error.isEmpty()) {
         if (pending.handler) pending.handler({}, error);
         if (pending.toolHandler)
-            pending.toolHandler(false, QString(),
+            pending.toolHandler(true, QString(),
                 error.value("message").toString());
         return;
     }
@@ -286,7 +287,7 @@ void McpClient::failRequest(quint64 id, const QString& error) {
     if (pending.handler)
         pending.handler({}, QJsonObject{{"message", error}});
     if (pending.toolHandler)
-        pending.toolHandler(false, QString(), error);
+        pending.toolHandler(true, QString(), error);
     emit diagnostic(error);
 }
 

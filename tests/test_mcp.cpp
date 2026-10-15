@@ -314,6 +314,28 @@ private slots:
         client.disconnectFromServer();
     }
 
+    // A JSON-RPC error response (not result.isError) must surface as a
+    // failure — previously isError=false caused the adapter to swallow the
+    // error and return an empty success.
+    void rpcErrorMapsToFailure() {
+        qputenv("MCP_FAKE_MODE", "rpc_error");
+        McpClient client(makeConfig({"echo"}, "rpc_error"));
+        client.connectToServer();
+        QTRY_COMPARE(client.sessionState(),
+                     McpClient::SessionState::Connected);
+
+        bool handlerRan = false;
+        client.callTool(QStringLiteral("echo"), {},
+                        [&handlerRan](bool isError, const QString& text,
+                                      const QString& error) {
+            handlerRan = true;
+            QVERIFY(isError);
+            QVERIFY(error.contains(QStringLiteral("fake JSON-RPC error")));
+        });
+        QTRY_VERIFY(handlerRan);
+        client.disconnectFromServer();
+    }
+
     // The registry name is mcp__<server>__<tool> with sanitized parts, and
     // the adapter forces RequiresConfirm.
     void adapterRegistersUnderNamespacedName() {

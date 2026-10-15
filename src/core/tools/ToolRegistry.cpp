@@ -8,6 +8,7 @@
 #include <QSaveFile>
 #include <QTextStream>
 #include <QDir>
+#include <QDirIterator>
 #include <QJsonArray>
 #include <QJsonDocument>
 #include <QProcess>
@@ -149,6 +150,14 @@ public:
         // No QIODevice::Text: bytes in, bytes out, same line-ending
         // semantics as edit_file (which matches old_string byte-exactly),
         // so the two tools cannot produce mixed-line-ending files.
+        // A3: size cap mirrors read_file's kMaxReadFileBytes — a model
+        // must not be able to dump unbounded content onto disk.
+        constexpr qint64 kMaxWriteFileBytes = 8 * 1024 * 1024;
+        if (content.size() > kMaxWriteFileBytes)
+            return ToolResult::fail(QStringLiteral(
+                "Content too large to write (%1 chars; limit %2).")
+                .arg(content.size()).arg(kMaxWriteFileBytes));
+
         const QByteArray bytes = content.toUtf8();
         QSaveFile out(path);
         if (!out.open(QIODevice::WriteOnly))
@@ -208,6 +217,13 @@ public:
         QFile file(path);
         if (!file.open(QIODevice::ReadOnly))
             return ToolResult::fail("Cannot open file for reading: " + file.errorString());
+        // B1: same pre-read refusal bound as read_file — editing a
+        // multi-gigabyte file loads it entirely into memory for the
+        // search/replace pass.
+        if (file.size() > kMaxReadFileBytes)
+            return ToolResult::fail(QStringLiteral(
+                "File too large to edit (%1 bytes; limit %2).")
+                .arg(file.size()).arg(kMaxReadFileBytes));
         const QString content = QString::fromUtf8(file.readAll());
         file.close();
         if (content.contains(QChar::ReplacementCharacter))
@@ -283,16 +299,19 @@ public:
         if (!dir.exists())
             return ToolResult::fail("Directory does not exist: " + path);
 
-        const QFileInfoList entries = dir.entryInfoList(
-            QDir::AllEntries | QDir::NoDotAndDotDot, QDir::DirsFirst | QDir::Name);
-
+        // B2: QDirIterator reads incrementally — entryInfoList() would
+        // load every QFileInfo into memory before the 200-entry display
+        // cap, OOM on million-file directories.
         QStringList lines;
         const int maxEntries = 200;
         int count = 0;
-        for (const QFileInfo& info : entries) {
+        QDirIterator it(path, QDir::AllEntries | QDir::NoDotAndDotDot);
+        while (it.hasNext()) {
+            it.next();
+            const QFileInfo info = it.fileInfo();
             if (count++ >= maxEntries) {
-                lines << QStringLiteral("... (%1 more entries)")
-                             .arg(entries.size() - maxEntries);
+                lines << QStringLiteral("... (more entries, display limit %1)")
+                             .arg(maxEntries);
                 break;
             }
             lines << (info.isDir()
@@ -388,7 +407,29 @@ public:
         // that owns the QProcess.
         constexpr int kSliceMs = 200;
         int waitedMs = 0;
+        // A2: drain output incrementally to bound memory — a chatty process
+        // (e.g. `yes`) must not grow QProcess's internal buffer without limit.
+        constexpr qint64 kMaxOutputBytes = 8 * 1024 * 1024;
+        QByteArray accumulated;
         while (!proc.waitForFinished(kSliceMs)) {
+            accumulated += proc.readAllStandardOutput();
+            if (accumulated.size() > kMaxOutputBytes) {
+#ifdef Q_OS_WIN
+                if (proc.processId() > 0) {
+                    qint64 killExit = QProcess::execute(
+                        QStringLiteral("taskkill"),
+                        {QStringLiteral("/PID"),
+                         QString::number(proc.processId()),
+                         QStringLiteral("/T"), QStringLiteral("/F")});
+                    if (killExit != 0)
+                        qWarning() << "shell_exec overflow: taskkill exit" << killExit;
+                }
+#endif
+                proc.kill();
+                proc.waitForFinished(2000);
+                return ToolResult::fail(QStringLiteral(
+                    "Command output exceeded %1 bytes limit").arg(kMaxOutputBytes));
+            }
             if (isCancelled()) {
 #ifdef Q_OS_WIN
                 // cmd.exe /c makes the long runner a grandchild; killing
@@ -411,17 +452,31 @@ public:
             }
             waitedMs += kSliceMs;
             if (waitedMs >= timeoutMs) {
+#ifdef Q_OS_WIN
+                // A1: same tree-kill as cancel — proc.kill() alone orphans
+                // the grandchild under cmd /c.
+                if (proc.processId() > 0) {
+                    qint64 killExit = QProcess::execute(
+                        QStringLiteral("taskkill"),
+                        {QStringLiteral("/PID"),
+                         QString::number(proc.processId()),
+                         QStringLiteral("/T"), QStringLiteral("/F")});
+                    if (killExit != 0)
+                        qWarning() << "shell_exec timeout: taskkill exit" << killExit;
+                }
+#endif
                 proc.kill();
                 proc.waitForFinished(2000);
                 return ToolResult::fail(QStringLiteral("Command timed out after %1 ms").arg(timeoutMs));
             }
         }
+        accumulated += proc.readAllStandardOutput();
 
         // Try UTF-8 first; if the byte sequence is not valid UTF-8, fall
         // back to the system locale encoding so non-UTF-8 output (e.g.
         // cmd.exe CP936/GBK on zh-CN Windows) is readable instead of
         // showing replacement characters (mojibake).
-        const QByteArray rawOutput = proc.readAllStandardOutput();
+        const QByteArray rawOutput = accumulated;
         QString output = QString::fromUtf8(rawOutput);
         if (output.contains(QChar::ReplacementCharacter))
             output = QString::fromLocal8Bit(rawOutput);

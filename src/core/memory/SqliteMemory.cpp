@@ -1858,7 +1858,14 @@ void SqliteMemory::logAudit(const QString& sessionId, const QString& event,
     query.addBindValue(sessionId);
     query.addBindValue(event);
     query.addBindValue(toolName.isNull() ? QStringLiteral("") : toolName);
-    query.addBindValue(arguments.isNull() ? QStringLiteral("") : arguments);
+    // A8: truncate tool arguments before binding — a model can pass
+    // arbitrarily long arguments that would bloat the database.
+    static constexpr int kMaxAuditArgsChars = 10000;
+    QString boundedArgs = arguments.isNull() ? QString() : arguments;
+    if (boundedArgs.size() > kMaxAuditArgsChars)
+        boundedArgs = boundedArgs.left(kMaxAuditArgsChars)
+            + QStringLiteral("...[truncated]");
+    query.addBindValue(boundedArgs);
     query.addBindValue(success ? 1 : 0);
     query.addBindValue(detail.isNull() ? QStringLiteral("") : detail);
     query.addBindValue(QDateTime::currentDateTime().toMSecsSinceEpoch());

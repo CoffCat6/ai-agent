@@ -1859,7 +1859,7 @@ void AIAgent::recordTokenUsage(const LLMResponse& response) {
 // docs/16 §7.2: 配额检查流程。查询当日/当月已消耗（m_memory->quotaStatus）
 // 与 Settings 配额上限（QSettings 扁平键），超限 emit quotaWarning；
 // strictQuotaMode=true 时拒绝请求（返回 false），否则仅警告。
-// 上限 0 = 不限制。quotaStatus 未实现（返回空）时已消耗按 0 处理，不阻塞。
+// 上限 0 = 不限制。quotaStatus 返回空（无配额记录）时已消耗按 0 处理，不阻塞。
 bool AIAgent::checkQuota() {
     if (!m_memory) return true;
 

@@ -259,6 +259,8 @@ void AgentViewModel::subscribeLayoutChanges() {
 // ── Session tabs (Batch 29) ──────────────────────────────
 
 ChatSessionController* AgentViewModel::active() const {
+    if (m_activeTab < 0 || m_activeTab >= m_tabs.size())
+        return nullptr;
     return m_tabs.at(m_activeTab);
 }
 

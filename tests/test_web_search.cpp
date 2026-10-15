@@ -19,7 +19,8 @@ public:
 
     QList<WebSearchResult> search(const QString& query, int maxResults,
                                   const QString&, int,
-                                  QString* errorReason = nullptr) const override {
+                                  QString* errorReason = nullptr,
+                                  const std::atomic<bool>* = nullptr) const override {
         if (errorReason) *errorReason = QString();
         QList<WebSearchResult> out;
         if (query.isEmpty()) return out;
@@ -42,7 +43,8 @@ public:
 
     QList<WebSearchResult> search(const QString& query, int,
                                   const QString&, int,
-                                  QString* errorReason = nullptr) const override {
+                                  QString* errorReason = nullptr,
+                                  const std::atomic<bool>* = nullptr) const override {
         if (errorReason) *errorReason = QString();
         QList<WebSearchResult> out;
         if (query.isEmpty()) return out;
@@ -63,7 +65,8 @@ public:
 
     QList<WebSearchResult> search(const QString& query, int,
                                   const QString&, int,
-                                  QString* errorReason = nullptr) const override {
+                                  QString* errorReason = nullptr,
+                                  const std::atomic<bool>* = nullptr) const override {
         if (errorReason) *errorReason = QString();
         QTest::qSleep(200);
         QList<WebSearchResult> out;

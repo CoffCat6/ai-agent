@@ -103,6 +103,10 @@ void handleToolsCall(quint64 id, const QJsonObject& params) {
         sendTextResult(id, QStringLiteral("fake tool failure"), true);
         return;
     }
+    if (mode == QLatin1String("rpc_error")) {
+        sendError(id, -32603, QStringLiteral("fake JSON-RPC error"));
+        return;
+    }
     // echo (default): reflect the arguments back as JSON text.
     sendTextResult(id, QStringLiteral("echo: %1")
         .arg(QString::fromUtf8(QJsonDocument(

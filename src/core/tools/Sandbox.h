@@ -300,7 +300,8 @@ private:
     // 同时尝试完整路径与文件名（Windows 下大小写不敏感）。
     static bool isDenied(const QString& normalizedPath) {
         QReadLocker lock(&s_policyLock);   // docs/24 H8: s_userDenyList
-        QStringList entries = defaultDenyList();
+        static const QStringList defaultEntries = defaultDenyList();
+        QStringList entries = defaultEntries;
         entries.append(s_userDenyList);
         const QString fileName =
             QFileInfo(normalizedPath).fileName();

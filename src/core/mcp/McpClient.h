@@ -81,7 +81,9 @@ private:
     void refreshTools();
     quint64 sendRequest(const QString& method, const QJsonObject& params,
                         std::function<void(const QJsonObject& result,
-                                           const QJsonObject& error)> handler);
+                                           const QJsonObject& error)> handler,
+                        std::function<void(bool isError, const QString& text,
+                                           const QString& error)> toolHandler = nullptr);
     void sendNotification(const QString& method, const QJsonObject& params);
     void failRequest(quint64 id, const QString& error);
     void setSessionState(SessionState state);

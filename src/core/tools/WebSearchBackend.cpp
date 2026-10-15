@@ -22,7 +22,8 @@ QList<WebSearchResult> TavilyBackend::search(const QString& query,
                                              int maxResults,
                                              const QString& apiKey,
                                              int timeoutMs,
-                                             QString* errorReason) const {
+                                             QString* errorReason,
+                                             const std::atomic<bool>* cancelled) const {
     if (query.trimmed().isEmpty() || apiKey.isEmpty())
         return {};
 
@@ -51,8 +52,17 @@ QList<WebSearchResult> TavilyBackend::search(const QString& query,
     });
     timeout.setSingleShot(true);
     timeout.start(qBound(5000, timeoutMs, 60000));
+    QTimer cancelChecker;
+    if (cancelled) {
+        cancelChecker.setInterval(200);
+        QObject::connect(&cancelChecker, &QTimer::timeout, &loop, [&] {
+            if (cancelled->load()) { reply->abort(); loop.quit(); }
+        });
+        cancelChecker.start();
+    }
     QObject::connect(reply, &QNetworkReply::finished, &loop, &QEventLoop::quit);
     loop.exec();
+    cancelChecker.stop();
 
     if (timedOut) {
         reply->deleteLater();
@@ -117,10 +127,11 @@ QString stripHtml(const QString& s) {
 }
 
 QList<WebSearchResult> DuckDuckGoBackend::search(const QString& query,
-                                                  int maxResults,
-                                                  const QString& /*apiKey*/,
-                                                  int timeoutMs,
-                                                  QString* errorReason) const {
+                                                   int maxResults,
+                                                   const QString& /*apiKey*/,
+                                                   int timeoutMs,
+                                                   QString* errorReason,
+                                                   const std::atomic<bool>* cancelled) const {
     if (query.trimmed().isEmpty())
         return {};
 
@@ -147,8 +158,17 @@ QList<WebSearchResult> DuckDuckGoBackend::search(const QString& query,
     });
     timeout.setSingleShot(true);
     timeout.start(qBound(5000, timeoutMs, 60000));
+    QTimer cancelChecker;
+    if (cancelled) {
+        cancelChecker.setInterval(200);
+        QObject::connect(&cancelChecker, &QTimer::timeout, &loop, [&] {
+            if (cancelled->load()) { reply->abort(); loop.quit(); }
+        });
+        cancelChecker.start();
+    }
     QObject::connect(reply, &QNetworkReply::finished, &loop, &QEventLoop::quit);
     loop.exec();
+    cancelChecker.stop();
 
     if (timedOut) {
         reply->deleteLater();
@@ -252,10 +272,11 @@ QList<WebSearchResult> SearxBackend::parseResponse(const QByteArray& json,
 }
 
 QList<WebSearchResult> SearxBackend::search(const QString& query,
-                                              int maxResults,
-                                              const QString& /*apiKey*/,
-                                              int timeoutMs,
-                                              QString* errorReason) const {
+                                               int maxResults,
+                                               const QString& /*apiKey*/,
+                                               int timeoutMs,
+                                               QString* errorReason,
+                                               const std::atomic<bool>* cancelled) const {
     // 未配置实例地址不是「没搜到」，工具层会先读 notReadyReason() 报出来；
     // 这里仍留一道兜底（直接 new 出后端、没走设置链路的调用方）。
     if (m_baseUrl.isEmpty()) {
@@ -295,8 +316,17 @@ QList<WebSearchResult> SearxBackend::search(const QString& query,
     });
     timeout.setSingleShot(true);
     timeout.start(qBound(5000, timeoutMs, 60000));
+    QTimer cancelChecker;
+    if (cancelled) {
+        cancelChecker.setInterval(200);
+        QObject::connect(&cancelChecker, &QTimer::timeout, &loop, [&] {
+            if (cancelled->load()) { reply->abort(); loop.quit(); }
+        });
+        cancelChecker.start();
+    }
     QObject::connect(reply, &QNetworkReply::finished, &loop, &QEventLoop::quit);
     loop.exec();
+    cancelChecker.stop();
 
     if (timedOut) {
         reply->deleteLater();

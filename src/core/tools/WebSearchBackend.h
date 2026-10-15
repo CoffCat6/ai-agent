@@ -6,6 +6,8 @@
 #include <QString>
 #include <QUrl>
 
+#include <atomic>
+
 namespace NexusAI {
 
 // Search result entry returned by a web search backend.
@@ -38,7 +40,8 @@ public:
                                           int maxResults,
                                           const QString& apiKey,
                                           int timeoutMs = 30000,
-                                          QString* errorReason = nullptr) const = 0;
+                                          QString* errorReason = nullptr,
+                                          const std::atomic<bool>* cancelled = nullptr) const = 0;
 
     // Whether this backend requires an API key. Defaults to true; free
     // backends (e.g. DuckDuckGo) override to false.
@@ -63,7 +66,8 @@ public:
                                   int maxResults,
                                   const QString& apiKey,
                                   int timeoutMs = 30000,
-                                  QString* errorReason = nullptr) const override;
+                                  QString* errorReason = nullptr,
+                                  const std::atomic<bool>* cancelled = nullptr) const override;
 };
 
 // DuckDuckGo Instant Answer API (https://api.duckduckgo.com/). Free, no
@@ -77,7 +81,8 @@ public:
                                   int maxResults,
                                   const QString& apiKey,
                                   int timeoutMs = 30000,
-                                  QString* errorReason = nullptr) const override;
+                                  QString* errorReason = nullptr,
+                                  const std::atomic<bool>* cancelled = nullptr) const override;
 };
 
 // docs/20 §5.3 (D14): self-hosted SearXNG JSON API —
@@ -116,7 +121,8 @@ public:
                                   int maxResults,
                                   const QString& apiKey,
                                   int timeoutMs = 30000,
-                                  QString* errorReason = nullptr) const override;
+                                  QString* errorReason = nullptr,
+                                  const std::atomic<bool>* cancelled = nullptr) const override;
 
 private:
     QString m_baseUrl;
