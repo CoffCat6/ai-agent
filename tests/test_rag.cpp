@@ -5,6 +5,7 @@
 // shared one fixture service, which made removeDocument/toolOnEmptyBase
 // depend on ingestions performed by earlier tests in declaration order.
 #include "core/rag/RagService.h"
+#include "core/rag/DocumentRetriever.h"
 #include "core/rag/KnowledgeSearchTool.h"
 #include "viewmodels/PdfTextExtractor.h"
 
@@ -78,6 +79,19 @@ private slots:
     void extractPdfTextRejectsNonPdfFile();
     void extractPdfTextMissingFile();
     void extractPdfTextFromWorkerThread();
+    // docs/25 B5: finishSearch snapshots retrievers (shared_ptr) under the
+    // lock — a remove after a completed search must not corrupt anything,
+    // and documents that were NOT removed keep searching normally.
+    void searchSnapshotSurvivesRemove();
+    // docs/25 B6: search() ranks with std::partial_sort — topK is a hard cap
+    // and the survivors come back in descending score order.
+    void searchCapsAtTopKInScoreOrder();
+    // docs/25 B7: chunk-once ingest — addChunkedDocument behaves exactly
+    // like addDocument's internal chunking of the same trimmed text.
+    void chunkedDocumentIngestMatchesAddDocument();
+    // docs/25 B7: an oversize PDF (pageTexts set) is rejected by the budget
+    // pre-check BEFORE any chunking/embedding work.
+    void oversizePdfRejectedByPrecheck();
 };
 
 void TestRag::ingestAndListDocuments() {
@@ -1001,6 +1015,74 @@ void TestRag::pageMappingAbsentForPlainText() {
     QVERIFY(!chunks.isEmpty());
     for (const auto& chunkValue : chunks)
         QCOMPARE(chunkValue.toObject().value("page").toInt(-1), -1);
+}
+
+// docs/25 B5: finishSearch copies a shared_ptr snapshot of the retrievers
+// under the lock and does the cosine/rank work after releasing it. Removing
+// a document right after a search must not corrupt the completed result,
+// and documents that were NOT removed keep searching normally (the pre-B5
+// raw-pointer copy would dangle once the removed retriever was destroyed).
+void TestRag::searchSnapshotSurvivesRemove() {
+    RagService rag;
+    QVERIFY(rag.ingestDocument("a.txt", longDoc("alpha", 6)) > 0);
+    QVERIFY(rag.ingestDocument("b.txt", longDoc("beta", 6)) > 0);
+
+    QVERIFY(!rag.search("alpha beta", 4).isEmpty());
+
+    rag.removeDocument("a.txt");
+    // b.txt is untouched and still searchable through its own snapshot.
+    const QJsonArray hits = rag.search("alpha beta", 4);
+    QVERIFY(!hits.isEmpty());
+    for (const auto& entry : hits)
+        QCOMPARE(entry.toObject().value("source").toString(),
+                 QStringLiteral("b.txt"));
+    // Only a.txt left the store.
+    QCOMPARE(rag.documents().size(), 1);
+    QCOMPARE(rag.documents().at(0).toObject().value("name").toString(),
+             QStringLiteral("b.txt"));
+}
+
+// docs/25 B6: search() uses std::partial_sort over the candidate chunks —
+// topK is a hard cap and the survivors are in descending score order.
+void TestRag::searchCapsAtTopKInScoreOrder() {
+    RagService rag;
+    QVERIFY(rag.ingestDocument("doc.txt", longDoc("one", 12)) >= 3);
+    const QJsonArray top2 = rag.search("alpha beta", 2);
+    QCOMPARE(top2.size(), 2);
+    QVERIFY(top2.at(0).toObject().value("score").toDouble()
+                >= top2.at(1).toObject().value("score").toDouble());
+    // A wider topK never returns fewer hits than a narrower one.
+    QVERIFY(rag.search("alpha beta", 8).size() >= top2.size());
+}
+
+// docs/25 B7: the PDF import path chunks once (for page mapping) and feeds
+// the chunks straight to the retriever — addChunkedDocument must behave
+// exactly like addDocument's internal chunking of the same trimmed text.
+void TestRag::chunkedDocumentIngestMatchesAddDocument() {
+    const QString doc = longDoc("gamma", 8).trimmed();
+    const QStringList chunks = DocumentRetriever::chunkDocument(
+        doc, DocumentRetriever::ChunkSize, DocumentRetriever::ChunkOverlap);
+    QVERIFY(chunks.size() > 1);
+
+    DocumentRetriever plain;
+    DocumentRetriever prechunked;
+    QVERIFY(plain.addDocument(doc, QJsonObject{{"source", "x"}}));
+    QVERIFY(prechunked.addChunkedDocument(chunks, QJsonObject{{"source", "x"}}));
+    QCOMPARE(prechunked.documentCount(), plain.documentCount());
+
+    // Same search surface: identical hit count for the same query.
+    QCOMPARE(prechunked.search("alpha beta", 4).size(),
+             plain.search("alpha beta", 4).size());
+}
+
+// docs/25 B7: an oversize PDF (pageTexts set) is rejected by the budget
+// pre-check BEFORE any chunking/embedding work — no wasted chunkDocument
+// pass, no retriever, no document row.
+void TestRag::oversizePdfRejectedByPrecheck() {
+    RagService rag;
+    const QString huge = longDoc("big", (RagService::MaxChunksPerDocument + 2) * 10);
+    QCOMPARE(rag.ingestDocument("big.pdf", huge, {"page one", "page two"}), -1);
+    QVERIFY(rag.isEmpty());
 }
 
 QTEST_GUILESS_MAIN(TestRag)

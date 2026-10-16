@@ -131,7 +131,11 @@ private:
         QString name;
         int chars{0};
         QString contentHash;
-        std::unique_ptr<DocumentRetriever> retriever;
+        // docs/25 B5: shared_ptr so finishSearch can snapshot the retriever
+        // set under the lock and run the (CPU-heavy) cosine + merge OUTSIDE
+        // it — a raw pointer would dangle if removeDocument() dropped the
+        // entry while the unlocked scan was still running.
+        std::shared_ptr<DocumentRetriever> retriever;
     };
 
     int dropDocumentLocked(const QString& sourceName); // returns removed chunk count
@@ -139,10 +143,13 @@ private:
     int totalChunksLocked() const;
     // Chunk + embed outside the lock; nullptr with *chunksOut = 0 (empty) or
     // -1 (oversize). Shared by ingestDocument / ingestRestoredDocument.
+    // docs/25 B7: prechunked non-empty → the caller already chunked the
+    // content (PDF import) and the chunks are reused instead of re-chunking.
     std::unique_ptr<DocumentRetriever> buildRetriever(const QString& sourceName,
                                                       const QString& content,
                                                       int* chunksOut,
-                                                      const QVariantList& chunkPages = QVariantList()) const;
+                                                      const QVariantList& chunkPages = QVariantList(),
+                                                      const QStringList& prechunked = QStringList()) const;
     // Merged top-k across documents (embedding already done outside the lock).
     QJsonArray finishSearch(const QString& trimmed, const QVector<float>& realVec,
                             int k) const;

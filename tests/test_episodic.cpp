@@ -320,6 +320,129 @@ private slots:
         delete mem;
     }
 
+    // docs/25 B2: unified score merge — FTS hits carry 1.0 (an explicit
+    // keyword match outranks any cosine), semantic hits their cosine, a row
+    // hit by both channels appears exactly once, and the merged set is
+    // topK-capped.
+    void mergedRetrievalDedupesAndRanks() {
+        auto* mem = makeMemory();
+        EpisodicService svc;
+        svc.setMemory(mem);
+        svc.setEnabled(true);
+        // Deterministic 2-D embedder: the query vector is always {1, 0}.
+        svc.setEmbedder([](const QString&) { return QVector<float>{1.0f, 0.0f}; });
+
+        const auto seed = [&](const QString& summary) {
+            QJsonObject episode;
+            episode["summary"] = summary;
+            episode["tags"] = QStringLiteral("test");
+            return mem->saveEpisodic(QStringLiteral("s"), episode);
+        };
+        const qint64 bothId = seed(QStringLiteral("zeta keyword both channels"));
+        const qint64 semId = seed(QStringLiteral("zeta semantic only entry"));
+        const qint64 weakId = seed(QStringLiteral("zeta weak semantic entry"));
+
+        const auto setEmb = [&](qint64 id, float x, float y) {
+            const QVector<float> v{x, y};
+            const QByteArray blob(reinterpret_cast<const char*>(v.constData()),
+                                  int(v.size() * sizeof(float)));
+            QVERIFY(mem->updateEpisodicEmbedding(id, blob));
+        };
+        setEmb(bothId, 1.0f, 0.0f);   // cosine 1.0 with the query AND FTS hit
+        setEmb(semId, 1.0f, 0.1f);    // cosine ~0.995, no keyword in summary
+        setEmb(weakId, 0.6f, 0.8f);   // cosine 0.6, no keyword in summary
+
+        // "keyword" FTS-matches only bothId; every seeded row competes on
+        // the semantic channel via the shared embedder vector.
+        const QJsonArray top3 = svc.retrieveRaw(QStringLiteral("keyword"), 3);
+        QCOMPARE(top3.size(), 3);
+        QCOMPARE(top3.at(0).toObject().value("id").toVariant().toLongLong(), bothId);
+        QCOMPARE(top3.at(0).toObject().value("score").toDouble(), 1.0);
+        QCOMPARE(top3.at(1).toObject().value("id").toVariant().toLongLong(), semId);
+        QCOMPARE(top3.at(2).toObject().value("id").toVariant().toLongLong(), weakId);
+        QVERIFY(top3.at(1).toObject().value("score").toDouble()
+                    > top3.at(2).toObject().value("score").toDouble());
+        // Deduped: bothId was hit by BOTH channels but appears once.
+        int bothCount = 0;
+        for (const auto& v : top3)
+            if (v.toObject().value("id").toVariant().toLongLong() == bothId) ++bothCount;
+        QCOMPARE(bothCount, 1);
+        // topK cap: the weak row drops out of a top-2 request.
+        QCOMPARE(svc.retrieveRaw(QStringLiteral("keyword"), 2).size(), 2);
+
+        delete mem;
+    }
+
+    // docs/25 B3: with an embedder configured the query round-trip runs on a
+    // QtConcurrent worker; the result is queued back to the service thread
+    // and delivered via retrievalReady with the matching request id.
+    void asyncRetrievalDeliversViaSignal() {
+        auto* mem = makeMemory();
+        EpisodicService svc;
+        svc.setMemory(mem);
+        svc.setEnabled(true);
+        svc.setEmbedder([](const QString&) { return QVector<float>{1.0f, 0.0f}; });
+
+        QJsonObject episode;
+        episode["summary"] = QStringLiteral("zeta async semantic summary");
+        episode["tags"] = QStringLiteral("t");
+        const qint64 id = mem->saveEpisodic(QStringLiteral("s"), episode);
+        const QVector<float> v{1.0f, 0.0f};
+        const QByteArray blob(reinterpret_cast<const char*>(v.constData()),
+                              int(v.size() * sizeof(float)));
+        QVERIFY(mem->updateEpisodicEmbedding(id, blob));
+
+        QSignalSpy spy(&svc, &EpisodicService::retrievalReady);
+        const quint64 rid = svc.retrieveRelevantSummariesAsync(
+            QStringLiteral("async semantic"));
+        QVERIFY(rid > 0);
+        QTRY_COMPARE(spy.count(), 1);
+        QCOMPARE(spy.at(0).at(0).toULongLong(), rid);
+        QVERIFY(!spy.at(0).at(1).toString().isEmpty());   // injection built
+
+        // Each request gets its own id — two in flight, both delivered.
+        const quint64 rid2 = svc.retrieveRelevantSummariesAsync(
+            QStringLiteral("async semantic"));
+        QVERIFY(rid2 > rid);
+        QTRY_COMPARE(spy.count(), 2);
+        QCOMPARE(spy.at(1).at(0).toULongLong(), rid2);
+
+        delete mem;
+    }
+
+    // docs/25 B3: without an embedder the retrieval is a local FTS scan —
+    // retrievalReady fires INLINE (no worker hop). Not-applicable requests
+    // (empty query / disabled service) return 0 and never emit.
+    void asyncRetrievalWithoutEmbedderIsInline() {
+        auto* mem = makeMemory();
+        EpisodicService svc;
+        svc.setMemory(mem);
+        svc.setEnabled(true);
+
+        QJsonObject episode;
+        episode["summary"] = QStringLiteral("zeta inline fts summary");
+        episode["tags"] = QStringLiteral("t");
+        mem->saveEpisodic(QStringLiteral("s"), episode);
+
+        QSignalSpy spy(&svc, &EpisodicService::retrievalReady);
+        const quint64 rid = svc.retrieveRelevantSummariesAsync(QStringLiteral("zeta"));
+        QVERIFY(rid > 0);
+        QCOMPARE(spy.count(), 1);   // inline: no event-loop round needed
+        QCOMPARE(spy.at(0).at(0).toULongLong(), rid);
+        QVERIFY(!spy.at(0).at(1).toString().isEmpty());
+
+        // Empty query → 0, no signal.
+        QCOMPARE(svc.retrieveRelevantSummariesAsync(QString()), quint64(0));
+        QCOMPARE(spy.count(), 1);
+
+        // Disabled service → 0, no signal.
+        svc.setEnabled(false);
+        QCOMPARE(svc.retrieveRelevantSummariesAsync(QStringLiteral("zeta")), quint64(0));
+        QCOMPARE(spy.count(), 1);
+
+        delete mem;
+    }
+
     // M1: listEpisodic enumerates all stored episodes, newest first.
     void listEpisodicReturnsNewestFirst() {
         auto* mem = makeMemory();

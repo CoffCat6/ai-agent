@@ -173,7 +173,8 @@ private:
     static bool snapshotPassesQuickCheck(const QString& path);
     // docs/23 G7: 硬级联（messages/episodic/sessions/trace_nodes），
     // 由 purgeDeletedSessions 对到期软删会话逐个调用。
-    void hardDeleteSessionRows(const QString& sessionId);
+    // docs/25 B4: 返回全部四条 DELETE 是否成功（purge 事务据此回滚）。
+    bool hardDeleteSessionRows(const QString& sessionId);
     // docs/17 A0: sessions.project_id 列补齐（受控 ALTER，幂等）。
     void migrateSessionProjectColumn();
     void migrateKnowledgeSchema();

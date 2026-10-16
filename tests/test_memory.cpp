@@ -65,6 +65,14 @@ private slots:
     // stamp gates the FTS backfill to the upgrade path.
     void sessionQueriesUseIndexes();
     void oldDatabaseUpgradeRestampsAndBackfills();
+    // docs/25 B1: idx_episodic_ts / idx_episodic_session are created on
+    // fresh databases and re-added in place (IF NOT EXISTS) when an older
+    // database predating them is reopened.
+    void episodicIndexesPresentAndUpgraded();
+    // docs/25 B4: clear()/purgeDeletedSessions() run inside one transaction
+    // — observable behavior unchanged (clear wipes messages+episodic of the
+    // session, purge hard-deletes only the expired soft-deleted sessions).
+    void clearAndPurgeStayAtomic();
     // docs/23 G2: WAL + NORMAL durability for the multi-connection topology.
     void walJournalModeActive();
     // docs/23 G3: time-based retention for audit_log / token_usage.
@@ -1283,6 +1291,70 @@ void TestMemory::oldDatabaseUpgradeRestampsAndBackfills() {
         QVERIFY(fts.next());
         QCOMPARE(fts.value(0).toInt(), 1);   // backfill restored the row
     }
+}
+
+// docs/25 B1: idx_episodic_ts / idx_episodic_session back the semantic
+// scan's candidate-capped ORDER BY timestamp. They are created on fresh
+// databases and re-added in place (CREATE INDEX IF NOT EXISTS) when a
+// pre-B1 database without them is reopened — no dump/reload needed.
+void TestMemory::episodicIndexesPresentAndUpgraded() {
+    QTemporaryDir dir;
+    QVERIFY(dir.isValid());
+    const QString path = dir.filePath(QStringLiteral("episodic_idx.db"));
+    {
+        SqliteMemory memory(path);
+        QSqlQuery q(memory.databaseForTest());
+        QVERIFY(q.exec("SELECT count(*) FROM sqlite_master WHERE type='index' "
+                       "AND name IN ('idx_episodic_ts','idx_episodic_session')"));
+        QVERIFY(q.next());
+        QCOMPARE(q.value(0).toInt(), 2);
+        // Simulate a pre-B1 database: indexes missing, rows intact.
+        QVERIFY(q.exec("DROP INDEX idx_episodic_ts"));
+        QVERIFY(q.exec("DROP INDEX idx_episodic_session"));
+    }
+    {
+        // Reopen: createTables() re-adds both indexes without touching data.
+        SqliteMemory memory(path);
+        QSqlQuery q(memory.databaseForTest());
+        QVERIFY(q.exec("SELECT count(*) FROM sqlite_master WHERE type='index' "
+                       "AND name IN ('idx_episodic_ts','idx_episodic_session')"));
+        QVERIFY(q.next());
+        QCOMPARE(q.value(0).toInt(), 2);
+        QVERIFY(q.exec("PRAGMA integrity_check"));
+        QVERIFY(q.next());
+        QCOMPARE(q.value(0).toString(), QStringLiteral("ok"));
+    }
+}
+
+// docs/25 B4: clear(sessionId) and purgeDeletedSessions() now run inside a
+// single transaction. The observable contract is unchanged: clear wipes the
+// session's messages AND episodic rows in one shot; purge hard-deletes only
+// the expired soft-deleted sessions — live sessions stay fully intact.
+void TestMemory::clearAndPurgeStayAtomic() {
+    SqliteMemory mem(QStringLiteral(":memory:"));
+    mem.beginSession("s1", "live session");
+    mem.beginSession("s2", "doomed session");
+    mem.saveMessage("s1", msg("user", "stay"));
+    mem.saveMessage("s2", msg("user", "gone"));
+
+    QJsonObject episode;
+    episode["summary"] = QStringLiteral("live session episode");
+    mem.saveEpisodic("s1", episode);
+    episode["summary"] = QStringLiteral("doomed session episode");
+    mem.saveEpisodic("s2", episode);
+
+    mem.clear("s2");
+    QCOMPARE(mem.loadMessages("s2", 50).size(), 0);
+    QCOMPARE(mem.searchEpisodic(QStringLiteral("doomed"), 10).size(), 0);
+    QCOMPARE(mem.loadMessages("s1", 50).size(), 1);
+    QCOMPARE(mem.searchEpisodic(QStringLiteral("live session episode"), 10).size(), 1);
+
+    // Soft-delete s2, then purge with a deadline that already covers it.
+    mem.deleteSession("s2");
+    QCOMPARE(mem.purgeDeletedSessions(QDateTime::currentMSecsSinceEpoch() + 1000), 1);
+    QCOMPARE(mem.listSessions(10).size(), 1);
+    QCOMPARE(mem.loadMessages("s1", 50).size(), 1);
+    QVERIFY(mem.loadMessages("s2", 50).isEmpty());
 }
 
 // docs/23 G2: the WAL journal mode is the correctness basis for the

@@ -57,6 +57,11 @@ public:
     // bound the total work). The effective cap scales with the step budget -
     // see setMaxIterations().
     static constexpr int kMinToolExecutions = 16;
+    // docs/25 B3: bounded wait for the async episodic retrieval before a
+    // fresh session's first LLM call. Past the deadline the launch proceeds
+    // WITHOUT the injection — first-response latency never waits on the
+    // embedding round-trip.
+    static constexpr int kEpisodicLaunchTimeoutMs = 200;
 
     // Bounds for the context-window budget (setContextLimit clamps to these;
     // SettingsService applies the same window in its editor)
@@ -220,6 +225,14 @@ private:
     int calibratedMessageTokens() const;
 
     void processIteration();
+    // docs/25 B3: shared launch tail — fresh system message (with/without
+    // the episodic injection) + pre-notify compression + first iteration.
+    void launchTaskTail(bool fresh, const QString& episodicInjection);
+    // docs/25 B3: continuation of startTask's fresh-session path after the
+    // async episodic retrieval resolves (result or 200ms deadline). Builds
+    // the system message with (or without) the injection and runs the
+    // deferred launch tail. No-op when superseded (stop/reset/new epoch).
+    void resumeTaskLaunch(const QString& episodicInjection);
     // 截断到最后一条 user 消息：removeUser=false 留它当重发锚点，true 一起删。
     bool rewindLastTurn(bool removeUser);
     void restartTaskFromAnchor();
@@ -326,6 +339,12 @@ private:
     // REL-1001: task wall-clock budget
     QTimer m_taskTimeoutTimer;
     int m_taskTimeoutMs{kDefaultTaskTimeoutMs};
+
+    // docs/25 B3: pending async episodic retrieval for a fresh session's
+    // first launch. Non-zero between startTask and resumeTaskLaunch; the
+    // epoch snapshot drops the launch when stop()/resetSession() intervened.
+    quint64 m_pendingEpisodicRequestId{0};
+    quint64 m_pendingEpisodicEpoch{0};
 
     // Streaming display state
     QTimer m_streamTimer;

@@ -34,13 +34,17 @@ public:
             scored.append({sim, i});
         }
 
-        // Sort by similarity descending
-        std::sort(scored.begin(), scored.end(),
+        // docs/25 B6: partial_sort maintains only the sorted top-k prefix —
+        // k is tiny compared to the entry count (the 4096-chunk total
+        // budget), so the full O(n log n) sort of every scored chunk was
+        // wasted work. Degenerates gracefully: count == 0 is a no-op,
+        // count == size is a plain full sort.
+        const int count = qMin(k, scored.size());
+        std::partial_sort(scored.begin(), scored.begin() + count, scored.end(),
             [](const auto& a, const auto& b) { return a.first > b.first; });
 
         // Return top-k
         QVector<QJsonObject> results;
-        int count = qMin(k, scored.size());
         for (int i = 0; i < count; ++i) {
             QJsonObject result = m_entries[scored[i].second].metadata;
             result["score"] = scored[i].first;

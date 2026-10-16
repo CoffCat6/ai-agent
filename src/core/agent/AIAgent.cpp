@@ -467,18 +467,6 @@ bool AIAgent::startTask(const QString& userMessage, const QStringList& images,
         m_usedToolCallIds.clear();   // fresh history: no recorded call ids
         m_sessionId = QUuid::createUuid().toString(QUuid::WithoutBraces);
 
-        QJsonObject sysMsg;
-        sysMsg["role"] = "system";
-        QString prompt = effectiveSystemPrompt();
-        // T8 (REQ-T8-02): inject episodic memory summaries for new sessions.
-        if (m_episodicService) {
-            const QString episodic = m_episodicService->retrieveRelevantSummaries(userMessage);
-            if (!episodic.isEmpty())
-                prompt += episodic;
-        }
-        sysMsg["content"] = prompt;
-        m_messages.append(sysMsg);
-
         if (m_memory) {
             m_memory->beginSession(m_sessionId, userMessage.left(60));
             // docs/17 A0: 活动项目激活期间新建的会话标记归属。
@@ -547,6 +535,63 @@ bool AIAgent::startTask(const QString& userMessage, const QStringList& images,
         extra["files"] = userMsg.value("files");
     if (savedUserId > 0) extra["messageId"] = savedUserId;
     appendTraceNode("user_message", userMessage, "completed", extra);
+
+    // docs/25 B3: fresh sessions resolve the episodic retrieval OFF the GUI
+    // thread and continue the launch asynchronously, bounded by
+    // kEpisodicLaunchTimeoutMs — the first LLM call never waits longer than
+    // that on the embedding round-trip. The user message above is already
+    // appended/persisted/traced (visible immediately); the system message
+    // is prepended by the continuation.
+    if (fresh && m_episodicService) {
+        const quint64 requestId =
+            m_episodicService->retrieveRelevantSummariesAsync(userMessage);
+        if (requestId > 0) {
+            m_active = true;   // re-entry guard while the launch is pending
+            m_taskStartMs = QDateTime::currentMSecsSinceEpoch();
+            m_pendingEpisodicRequestId = requestId;
+            m_pendingEpisodicEpoch = m_epoch;
+            const auto conn = std::make_shared<QMetaObject::Connection>();
+            *conn = connect(m_episodicService, &EpisodicService::retrievalReady,
+                            this, [this, conn, requestId](
+                                    quint64 id, const QString& injection) {
+                if (id != requestId) return;   // another request's result
+                disconnect(*conn);
+                if (m_pendingEpisodicRequestId != requestId) return;  // timed out already
+                resumeTaskLaunch(injection);
+            }, Qt::QueuedConnection);
+            QTimer::singleShot(kEpisodicLaunchTimeoutMs, this,
+                               [this, conn, requestId]() {
+                disconnect(*conn);
+                if (m_pendingEpisodicRequestId != requestId) return;  // launched already
+                resumeTaskLaunch(QString());   // skip the injection this round
+            });
+            return true;
+        }
+        // requestId == 0 (retrieval not applicable): fall through and launch
+        // without injection — never block the GUI thread on embeddings.
+    }
+
+    launchTaskTail(fresh, QString());
+    return true;
+}
+
+// docs/25 B3: shared launch tail — prepend the fresh system message (with
+// or without the episodic injection), run the pre-notify compression pass
+// and kick off the first LLM iteration.
+void AIAgent::launchTaskTail(bool fresh, const QString& episodicInjection) {
+    if (fresh) {
+        // T8 (REQ-T8-02): inject episodic memory summaries for new sessions.
+        // Async-only since docs/25 B3: an empty injection (timeout / nothing
+        // found) simply launches without it.
+        QJsonObject sysMsg;
+        sysMsg["role"] = "system";
+        QString prompt = effectiveSystemPrompt();
+        if (!episodicInjection.isEmpty())
+            prompt += episodicInjection;
+        sysMsg["content"] = prompt;
+        m_messages.prepend(sysMsg);   // user message was appended first (B3)
+    }
+
     // Pre-notify compression: ensure m_messages is within budget before
     // emitting tokensChanged, so the UI never shows > 100% after the
     // user sends a large message (compression was previously deferred
@@ -564,7 +609,18 @@ bool AIAgent::startTask(const QString& userMessage, const QStringList& images,
     m_taskStartMs = QDateTime::currentMSecsSinceEpoch();
     if (m_taskTimeoutMs > 0) m_taskTimeoutTimer.start(m_taskTimeoutMs);
     processIteration();
-    return true;
+}
+
+// docs/25 B3: continuation of startTask's fresh-session path after the
+// async episodic retrieval resolves (result or the 200ms deadline).
+void AIAgent::resumeTaskLaunch(const QString& episodicInjection) {
+    if (m_pendingEpisodicRequestId == 0) return;
+    m_pendingEpisodicRequestId = 0;
+    // stop()/resetSession() during the bounded wait bump the epoch — the
+    // prepared launch is obsolete (its message/trace rows stay, matching a
+    // task stopped right after send).
+    if (m_epoch != m_pendingEpisodicEpoch) return;
+    launchTaskTail(/*fresh=*/true, episodicInjection);
 }
 
 void AIAgent::resetSession() {

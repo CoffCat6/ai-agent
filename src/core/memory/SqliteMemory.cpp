@@ -29,6 +29,18 @@ namespace {
 // GUI thread; larger libraries must use the trigram FTS path (3+ chars).
 constexpr qint64 kLikeScanMaxMessages = 50000;
 
+// docs/25 B2: same row-ceiling discipline for the episodic LIKE fallback.
+// The store holds one summary per session, so the ceiling is proportionally
+// smaller than the messages one.
+constexpr qint64 kLikeScanMaxEpisodic = 10000;
+
+// docs/25 B2: candidate ceiling for the episodic semantic scan. The scan is
+// a bounded in-memory cosine rerank (BLOB decode + dot product per row), so
+// the cap keeps memory and CPU bounded on long-lived stores. Episodes older
+// than the cap are unreachable by semantic retrieval — a full candidate set
+// is logged loudly below so the truncation is discoverable, not silent.
+constexpr int kSemanticCandidateCap = 500;
+
 // docs/16 §6.1: 价格单位为"分/1M token"，1M 基准用于整数计费换算。
 constexpr qint64 kPerMillion = 1000000;
 
@@ -291,6 +303,16 @@ void SqliteMemory::createTables() {
             timestamp INTEGER NOT NULL
         )
     )", "create episodic table");
+
+    // docs/25 B1: episodic indexes. The semantic scan orders by timestamp
+    // DESC and clear()/hardDeleteSessionRows() filter by session_id — both
+    // used to degrade into full scans as the store grows. IF NOT EXISTS
+    // (same discipline as idx_messages_session_ts) so existing databases
+    // upgrade in place on the next open.
+    execDdl(query, "CREATE INDEX IF NOT EXISTS idx_episodic_ts ON episodic(timestamp)",
+            "create idx_episodic_ts");
+    execDdl(query, "CREATE INDEX IF NOT EXISTS idx_episodic_session ON episodic(session_id)",
+            "create idx_episodic_session");
 
     // FTS5 virtual table for full-text search. tokenize='trigram' (L3):
     // the default unicode61 tokenizer cannot substring-match CJK text — a
@@ -1276,6 +1298,20 @@ QJsonArray SqliteMemory::searchEpisodic(const QString& query, int limit) {
             "WHERE episodic_fts MATCH ? ORDER BY rank LIMIT ?"));
         sqlQuery.addBindValue(QStringLiteral("\"%1\"").arg(match));
     } else {
+        // docs/25 B2: the sub-trigram LIKE fallback cannot use any index
+        // (leading wildcard) and full-scans the episodic table. Guard it
+        // with the same row-ceiling discipline as searchMessages: above the
+        // ceiling the scan is suppressed (empty result + warning) instead
+        // of stalling the GUI thread; the warning log directs users at 3+
+        // character keywords (which use the trigram FTS index).
+        QSqlQuery countQuery(m_db);
+        if (countQuery.exec(QStringLiteral("SELECT COUNT(*) FROM episodic"))
+                && countQuery.next()
+                && countQuery.value(0).toLongLong() > kLikeScanMaxEpisodic) {
+            qWarning() << "searchEpisodic: LIKE fallback suppressed - episodic"
+                          " table exceeds" << kLikeScanMaxEpisodic << "rows";
+            return results;
+        }
         // Sub-trigram query: trigram cannot answer, fall back to LIKE on
         // summary + tags. Escape LIKE wildcards so user input is literal.
         QString like = kw;
@@ -1313,8 +1349,12 @@ QJsonArray SqliteMemory::searchEpisodicSemantic(const QVector<float>& queryEmbed
     if (queryEmbedding.isEmpty() || limit <= 0) return results;
 
     QSqlQuery query(m_db);
+    // docs/25 B2: the LIMIT is a named constant now (kSemanticCandidateCap);
+    // B1's idx_episodic_ts backs the ORDER BY so the scan reads at most the
+    // newest cap rows instead of sorting the whole table.
     query.prepare("SELECT id, session_id, summary, tags, timestamp, embedding FROM episodic "
-                  "WHERE length(embedding) > 0 ORDER BY timestamp DESC LIMIT 500");
+                  "WHERE length(embedding) > 0 ORDER BY timestamp DESC LIMIT ?");
+    query.addBindValue(kSemanticCandidateCap);
     if (!query.exec()) {
         qWarning() << "searchEpisodicSemantic failed:" << query.lastError().text();
         return results;
@@ -1328,7 +1368,9 @@ QJsonArray SqliteMemory::searchEpisodicSemantic(const QVector<float>& queryEmbed
     struct Candidate { QJsonObject episode; float similarity; };
     QVector<Candidate> candidates;
 
+    int scanned = 0;
     while (query.next()) {
+        ++scanned;
         const QByteArray embBlob = query.value(5).toByteArray();
         if (embBlob.isEmpty()) continue;
         const QVector<float> emb = embeddingFromBlob(embBlob);
@@ -1348,8 +1390,17 @@ QJsonArray SqliteMemory::searchEpisodicSemantic(const QVector<float>& queryEmbed
         episode["summary"] = query.value(2).toString();
         episode["tags"] = query.value(3).toString();
         episode["timestamp"] = query.value(4).toLongLong();
+        // docs/25 B2: carry the cosine score so EpisodicService can merge
+        // FTS and semantic hits by a unified relevance score.
+        episode["score"] = double(dot / (queryNorm * norm));
         candidates.append({episode, dot / (queryNorm * norm)});
     }
+
+    // docs/25 B2: a full candidate set means older episodes were truncated
+    // away — surface it loudly instead of silently forgetting them.
+    if (scanned >= kSemanticCandidateCap)
+        qWarning() << "searchEpisodicSemantic: candidate cap" << kSemanticCandidateCap
+                   << "reached - older episodes are not considered this round";
 
     std::sort(candidates.begin(), candidates.end(),
               [](const Candidate& a, const Candidate& b) { return a.similarity > b.similarity; });
@@ -1499,22 +1550,56 @@ QVariantMap SqliteMemory::tokenStats(int recentDays) {
 
 void SqliteMemory::clear(const QString& sessionId) {
     QSqlQuery query(m_db);
+    const auto execDelete = [&](const char* what) {
+        if (!query.exec()) {
+            qWarning() << "Failed to" << what << ":" << query.lastError().text();
+            return false;
+        }
+        return true;
+    };
+
+    // docs/25 B4: the three DELETEs run in ONE transaction (same discipline
+    // as truncateLastTurn) — a mid-way failure used to leave the session
+    // half-cleared with no way to retry the missing part coherently. A
+    // failed statement rolls the whole clear back; when a transaction
+    // cannot be started (already inside one), fall back to the legacy
+    // statement-by-statement path so the operation never no-ops.
+    if (m_db.transaction()) {
+        query.prepare("DELETE FROM messages WHERE session_id = ?");
+        query.addBindValue(sessionId);
+        bool ok = execDelete("clear messages");
+
+        if (ok) {
+            query.prepare("DELETE FROM episodic WHERE session_id = ?");
+            query.addBindValue(sessionId);
+            ok = execDelete("clear episodic memory");
+        }
+
+        // docs/23 G6: align with deleteSession's cascade — leaving trace nodes
+        // behind would resurrect ghost trajectories when the session reopens.
+        if (ok) {
+            query.prepare("DELETE FROM trace_nodes WHERE session_id = ?");
+            query.addBindValue(sessionId);
+            ok = execDelete("clear trace nodes");
+        }
+
+        if (ok && m_db.commit()) return;
+        qWarning() << "clear failed; rolling back:" << query.lastError().text();
+        m_db.rollback();
+        return;
+    }
+
     query.prepare("DELETE FROM messages WHERE session_id = ?");
     query.addBindValue(sessionId);
-    if (!query.exec())
-        qWarning() << "Failed to clear messages:" << query.lastError().text();
+    execDelete("clear messages");
 
     query.prepare("DELETE FROM episodic WHERE session_id = ?");
     query.addBindValue(sessionId);
-    if (!query.exec())
-        qWarning() << "Failed to clear episodic memory:" << query.lastError().text();
+    execDelete("clear episodic memory");
 
-    // docs/23 G6: align with deleteSession's cascade — leaving trace nodes
-    // behind would resurrect ghost trajectories when the session reopens.
     query.prepare("DELETE FROM trace_nodes WHERE session_id = ?");
     query.addBindValue(sessionId);
-    if (!query.exec())
-        qWarning() << "Failed to clear trace nodes:" << query.lastError().text();
+    execDelete("clear trace nodes");
 }
 
 void SqliteMemory::beginSession(const QString& sessionId, const QString& title) {
@@ -1690,7 +1775,25 @@ int SqliteMemory::purgeDeletedSessions(qint64 deletedBefore) {
     }
     QStringList expired;
     while (query.next()) expired.append(query.value(0).toString());
+    if (expired.isEmpty()) return 0;
 
+    // docs/25 B4: the whole purge round runs in ONE transaction. Purging
+    // per session (four auto-committed DELETEs each) left a crash window
+    // with orphaned rows and held write locks far longer on large purges.
+    // Any failed statement aborts the round via the commit check below.
+    if (m_db.transaction()) {
+        bool ok = true;
+        for (const QString& id : std::as_const(expired))
+            ok = hardDeleteSessionRows(id) && ok;
+        if (ok && m_db.commit()) return expired.size();
+        qWarning() << "purgeDeletedSessions failed; rolling back:"
+                   << m_db.lastError().text();
+        m_db.rollback();
+        return 0;
+    }
+
+    // Legacy fallback: no transaction possible (already inside one) —
+    // purge session by session, matching the pre-B4 behavior.
     int purged = 0;
     for (const QString& id : std::as_const(expired)) {
         hardDeleteSessionRows(id);
@@ -1699,11 +1802,16 @@ int SqliteMemory::purgeDeletedSessions(qint64 deletedBefore) {
     return purged;
 }
 
-void SqliteMemory::hardDeleteSessionRows(const QString& sessionId) {
+bool SqliteMemory::hardDeleteSessionRows(const QString& sessionId) {
     QSqlQuery query(m_db);
+    // docs/25 B4: propagate failure to the caller (purgeDeletedSessions
+    // rolls the whole transaction back on the first failure).
+    bool ok = true;
     const auto execDelete = [&](const char* what) {
-        if (!query.exec())
+        if (!query.exec()) {
             qWarning() << "Failed to" << what << ":" << query.lastError().text();
+            ok = false;
+        }
     };
 
     query.prepare("DELETE FROM messages WHERE session_id = ?");
@@ -1722,6 +1830,7 @@ void SqliteMemory::hardDeleteSessionRows(const QString& sessionId) {
     query.prepare("DELETE FROM trace_nodes WHERE session_id = ?");
     query.addBindValue(sessionId);
     execDelete("delete session trace nodes");
+    return ok;
 }
 
 // ── Trace view persistence ───────────────────────────────

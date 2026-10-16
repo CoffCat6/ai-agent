@@ -90,7 +90,7 @@ int RagService::dropDocumentLocked(const QString& sourceName) {
 
 std::unique_ptr<DocumentRetriever> RagService::buildRetriever(
         const QString& sourceName, const QString& content, int* chunksOut,
-        const QVariantList& chunkPages) const {
+        const QVariantList& chunkPages, const QStringList& prechunked) const {
     *chunksOut = 0;
     const QString trimmed = content.trimmed();
     if (sourceName.isEmpty() || trimmed.isEmpty()) return nullptr;
@@ -113,9 +113,16 @@ std::unique_ptr<DocumentRetriever> RagService::buildRetriever(
         retriever->setBatchEmbedFunction(m_batchEmbedFn);
     }
 
-    if (!retriever->addDocument(trimmed, QJsonObject{{"source", sourceName}},
-                                chunkPages))
-        return nullptr;
+    // docs/25 B7: prechunked input (PDF import) is reused as-is — the
+    // caller chunked the same trimmed text for page mapping, so a second
+    // chunkDocument pass inside addDocument was pure duplicate work.
+    const bool added = prechunked.isEmpty()
+        ? retriever->addDocument(trimmed, QJsonObject{{"source", sourceName}},
+                                 chunkPages)
+        : retriever->addChunkedDocument(prechunked,
+                                        QJsonObject{{"source", sourceName}},
+                                        chunkPages);
+    if (!added) return nullptr;
     *chunksOut = retriever->documentCount();
     return retriever;
 }
@@ -164,16 +171,24 @@ int RagService::ingestDocument(const QString& sourceName, const QString& content
                                const QStringList& pageTexts) {
     int chunks = 0;
     QVariantList chunkPages;
+    QStringList chunkTexts;
     if (!pageTexts.isEmpty()) {
+        const QString trimmed = content.trimmed();
+        // docs/25 B7: budget pre-check BEFORE chunking — an oversize PDF
+        // used to pay a full chunkDocument pass (plus a second one inside
+        // the retriever) just to be rejected by the gate in buildRetriever.
+        const int estimatedChunks = trimmed.size()
+            / (DocumentRetriever::ChunkSize - DocumentRetriever::ChunkOverlap) + 1;
+        if (estimatedChunks > MaxChunksPerDocument) return -1;
         // 与 buildRetriever → addDocument 的输入严格一致（同样 trim）：否则
         // 前导/尾随空白会让两次 chunkDocument 的切分点漂移，chunk 与页码的
         // 一一对应关系被破坏。
-        const QString trimmed = content.trimmed();
-        const QStringList chunkTexts = DocumentRetriever::chunkDocument(
+        chunkTexts = DocumentRetriever::chunkDocument(
             trimmed, DocumentRetriever::ChunkSize, DocumentRetriever::ChunkOverlap);
         chunkPages = mapChunksToPages(chunkTexts, pageTexts);
     }
-    auto retriever = buildRetriever(sourceName, content, &chunks, chunkPages);
+    auto retriever = buildRetriever(sourceName, content, &chunks, chunkPages,
+                                    chunkTexts);
     if (!retriever) return chunks;
 
     // Export before the retriever is moved into the document store.
@@ -357,15 +372,26 @@ QJsonArray RagService::finishSearch(const QString& trimmed, const QVector<float>
                                     int k) const {
     const QVector<float> pseudoVec = DocumentRetriever::pseudoEmbed(trimmed);
 
-    QVector<QJsonObject> hits;
+    // docs/25 B5: the lock only guards the snapshot copy now. The per-doc
+    // search (cosine over every chunk + top-k selection) used to run under
+    // the lock, blocking documents()/isEmpty()/documentChunks() on the GUI
+    // thread for O(total chunks × dim). shared_ptr keeps every retriever
+    // alive for the whole unlocked scan even if removeDocument()/clear()
+    // drop the entries from m_docs meanwhile.
+    QVector<std::shared_ptr<DocumentRetriever>> snapshot;
     {
         QMutexLocker lock(&m_mutex);
-        for (const auto& doc : m_docs) {
-            const QJsonArray results =
-                doc.retriever->search(realVec, pseudoVec, k);
-            for (const auto& entry : results)
-                hits.append(entry.toObject());
-        }
+        snapshot.reserve(static_cast<int>(m_docs.size()));
+        for (const auto& doc : m_docs)
+            snapshot.append(doc.retriever);
+    }
+
+    QVector<QJsonObject> hits;
+    for (const auto& retriever : snapshot) {
+        const QJsonArray results =
+            retriever->search(realVec, pseudoVec, k);
+        for (const auto& entry : results)
+            hits.append(entry.toObject());
     }
     std::sort(hits.begin(), hits.end(),
               [](const QJsonObject& a, const QJsonObject& b) {

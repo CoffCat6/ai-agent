@@ -44,7 +44,17 @@ public:
     // 旧导入），page 记 -1。
     bool addDocument(const QString& content, const QJsonObject& metadata,
                      const QVariantList& chunkPages = QVariantList()) {
-        const QStringList chunks = chunkDocument(content, ChunkSize, ChunkOverlap);
+        return addChunkedDocument(
+            chunkDocument(content, ChunkSize, ChunkOverlap), metadata, chunkPages);
+    }
+
+    // docs/25 B7: chunk-once ingest path. The PDF import already chunks the
+    // content (it needs the chunk texts for page mapping), so re-chunking
+    // inside addDocument doubled the chunking cost — and on oversize input
+    // wasted a full pass before the MaxChunksPerDocument gate rejected it.
+    // Semantics are identical to addDocument otherwise.
+    bool addChunkedDocument(const QStringList& chunks, const QJsonObject& metadata,
+                            const QVariantList& chunkPages = QVariantList()) {
         if (chunks.isEmpty()) return false;
 
         // One batch call for the whole document; a missing/failed/incomplete

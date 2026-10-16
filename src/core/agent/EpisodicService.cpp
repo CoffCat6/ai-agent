@@ -13,10 +13,46 @@
 #include <QSet>
 #include <QtConcurrent>
 #include <QTimer>
+#include <algorithm>
 
 Q_LOGGING_CATEGORY(lcEpisodic, "nexus.episodic")
 
 namespace NexusAI {
+
+namespace {
+
+// docs/25 B2: unified-score merge of FTS and semantic retrieval results.
+// FTS hits score 1.0 (an explicit keyword match outranks any cosine
+// similarity); semantic hits carry their cosine "score" from
+// searchEpisodicSemantic. Deduplicated by episode id, sorted by score
+// descending, topK kept — the old append-after ordering let weak semantic
+// hits ride along behind the FTS block regardless of relevance.
+QJsonArray mergeRetrieval(const QJsonArray& fts, const QJsonArray& semantic,
+                          int topK) {
+    struct Item { double score; QJsonObject episode; };
+    QVector<Item> items;
+    QSet<qint64> seen;
+    const auto push = [&](QJsonObject episode, double score) {
+        const qint64 id = episode.value("id").toVariant().toLongLong();
+        if (seen.contains(id)) return;
+        seen.insert(id);
+        episode["score"] = score;
+        items.append({score, episode});
+    };
+    for (const auto& v : fts)
+        push(v.toObject(), 1.0);
+    for (const auto& v : semantic)
+        push(v.toObject(), v.toObject().value("score").toDouble(0.0));
+    std::sort(items.begin(), items.end(),
+              [](const Item& a, const Item& b) { return a.score > b.score; });
+    QJsonArray out;
+    const int n = qMin(topK, items.size());
+    for (int i = 0; i < n; ++i)
+        out.append(items[i].episode);
+    return out;
+}
+
+} // namespace
 
 EpisodicService::EpisodicService(QObject* parent)
     : QObject(parent) {}
@@ -157,11 +193,13 @@ void EpisodicService::onSummaryResponse(quint64 requestId,
 }
 
 QString EpisodicService::retrieveRelevantSummaries(const QString& query,
-                                                    int topK) const {
+                                                     int topK) const {
     if (!m_enabled || !m_memory || query.trimmed().isEmpty())
         return {};
+    return buildInjection(retrieveRaw(query, topK));
+}
 
-    const QJsonArray results = retrieveRaw(query, topK);
+QString EpisodicService::buildInjection(const QJsonArray& results) const {
     if (results.isEmpty()) return {};
 
     // Build the injection text, capping at kMaxInjectionTokens.
@@ -192,26 +230,64 @@ QJsonArray EpisodicService::retrieveRaw(const QString& query, int topK) const {
     if (!m_enabled || !m_memory || query.trimmed().isEmpty())
         return {};
 
-    QJsonArray results = m_memory->searchEpisodic(query, topK);
+    // docs/25 B2: the embedder call stays on the synchronous path only —
+    // GUI callers must use retrieveRelevantSummariesAsync (B3).
+    const QVector<float> queryVec =
+        m_embedder ? m_embedder(query) : QVector<float>{};
+    return retrieveMerged(query, queryVec, topK);
+}
 
-    if (m_embedder) {
-        const QVector<float> queryVec = m_embedder(query);
-        if (!queryVec.isEmpty()) {
-            const QJsonArray semantic = m_memory->searchEpisodicSemantic(queryVec, topK);
-            QSet<qint64> seen;
-            for (const auto& v : results)
-                seen.insert(v.toObject().value("id").toVariant().toLongLong());
-            for (const auto& v : semantic) {
-                const qint64 id = v.toObject().value("id").toVariant().toLongLong();
-                if (!seen.contains(id)) {
-                    results.append(v);
-                    seen.insert(id);
-                }
-            }
-        }
+QJsonArray EpisodicService::retrieveMerged(const QString& query,
+                                           const QVector<float>& queryVec,
+                                           int topK) const {
+    QJsonArray fts = m_memory->searchEpisodic(query, topK);
+    if (queryVec.isEmpty())
+        return fts;   // no embedder / embed failure: FTS results only
+    return mergeRetrieval(fts, m_memory->searchEpisodicSemantic(queryVec, topK),
+                          topK);
+}
+
+quint64 EpisodicService::retrieveRelevantSummariesAsync(const QString& query,
+                                                        int topK) {
+    if (!m_enabled || !m_memory || query.trimmed().isEmpty())
+        return 0;
+
+    const quint64 requestId = m_nextRetrievalRequestId++;
+
+    if (!m_embedder) {
+        // FTS-only retrieval is a local index scan: complete inline so the
+        // caller receives the result with no worker hop.
+        emit retrievalReady(requestId, buildInjection(retrieveMerged(query, {}, topK)));
+        return requestId;
     }
 
-    return results;
+    // docs/25 B3: the embedding network round-trip runs on a worker thread
+    // (same pattern as the summary embedding in onSummaryResponse —
+    // OllamaEmbedding::embed is worker-safe via its stack-local NAM). The
+    // DB scans and the in-memory cosine stay on this service's thread: a
+    // QSqlDatabase connection must be used from the thread that opened it.
+    const auto embedder = m_embedder;
+    QPointer<EpisodicService> guard(this);
+    QtConcurrent::run([guard, requestId, query, topK, embedder]() {
+        const QVector<float> queryVec = embedder(query);
+        if (guard.isNull()) return;
+        QMetaObject::invokeMethod(guard.data(),
+                                  [guard, requestId, query, queryVec, topK]() {
+            // Queued: runs on the service thread; dropped automatically if
+            // the service was destroyed in between.
+            guard->completeRetrieval(requestId, query, queryVec, topK);
+        }, Qt::QueuedConnection);
+    });
+    return requestId;
+}
+
+void EpisodicService::completeRetrieval(quint64 requestId, const QString& query,
+                                        const QVector<float>& queryVec, int topK) {
+    if (!m_memory) {
+        emit retrievalReady(requestId, QString());
+        return;
+    }
+    emit retrievalReady(requestId, buildInjection(retrieveMerged(query, queryVec, topK)));
 }
 
 void EpisodicService::applyEmbedding(qint64 id, const QByteArray& blob) {

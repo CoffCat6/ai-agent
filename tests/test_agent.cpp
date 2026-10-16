@@ -4,6 +4,7 @@
 // the context budget compression hook.
 #include "core/agent/AIAgent.h"
 #include "core/agent/AgentState.h"
+#include "core/agent/EpisodicService.h"
 #include "core/tools/ToolRegistry.h"
 #include "core/memory/SqliteMemory.h"
 #include "core/rag/RagService.h"
@@ -399,6 +400,9 @@ private slots:
         llm.reset();
         agent.setContextLimit(8192);
         agent.setMemory(nullptr);
+        // docs/25 B3: the episodic fixture is test-local — never leak it
+        // into the neighbours (the async launch changes fresh-session flow).
+        agent.setEpisodicService(nullptr);
         // 权限模式用例会改动本实例（QtTest 全程共用一个测试对象），
         // 每个用例前回落默认，防止泄漏到后续用例。
         agent.setPermissionMode(PermissionMode::ConfirmChanges);
@@ -580,6 +584,13 @@ private slots:
     void testCheckQuota();
     // docs/16 §3.3: 估算器滚动校准（API 真实 promptTokens 反馈 → EWMA 系数）
     void testEstimateScaleCalibration();
+    // docs/25 B3: fresh-session launch with an episodic service attached —
+    // the retrieval resolves off-thread, the injection reaches the system
+    // prompt, and the task completes normally.
+    void taskWithEpisodicAsyncLaunch();
+    // docs/25 B3: a slow embedder is bounded by the launch deadline — the
+    // task starts anyway and the late retrieval result must not relaunch.
+    void taskWithSlowEmbedderStillLaunches();
 };
 
 void TestAgent::directCompletion() {
@@ -2413,6 +2424,92 @@ void TestAgent::regenerateWithoutHistoryOrBusyIsNoop() {
              QStringLiteral("busy q"));
     QVERIFY2(noDanglingToolCalls(sent), "regenerated history illegal");
 
+    agent.setMemory(nullptr);
+}
+
+// docs/25 B3: with an episodic service attached, a fresh-session startTask
+// resolves the retrieval off the GUI thread (embedder on a QtConcurrent
+// worker) and continues the launch via retrievalReady. The user message is
+// appended/persisted/traced BEFORE the async launch (visible immediately);
+// the system message — carrying the injected summary — is prepended by the
+// continuation.
+void TestAgent::taskWithEpisodicAsyncLaunch() {
+    QTemporaryDir dir;
+    QVERIFY(dir.isValid());
+    SqliteMemory memory(dir.filePath(QStringLiteral("episodic_launch.db")));
+
+    // Seed one retrievable episode. searchEpisodic matches the query as an
+    // FTS5 phrase (contiguous substring), so the user message must BE a
+    // substring of the summary for the FTS channel to hit it.
+    QJsonObject episode;
+    episode["summary"] = QStringLiteral("episodic anchor: remembered zeta fact");
+    episode["tags"] = QStringLiteral("t");
+    memory.saveEpisodic(QStringLiteral("old-session"), episode);
+
+    EpisodicService episodic;
+    episodic.setMemory(&memory);
+    episodic.setEnabled(true);
+    episodic.setEmbedder([](const QString&) { return QVector<float>{1.0f, 0.0f}; });
+    agent.setEpisodicService(&episodic);
+    agent.setMemory(&memory);
+
+    llm.script.append(textResponse(QStringLiteral("done with memory")));
+    QSignalSpy spy(&agent, &AIAgent::responseReady);
+    QVERIFY(agent.startTask(QStringLiteral("episodic anchor")));
+
+    // The user message is visible while the async launch is still pending.
+    QVERIFY(traceHas(agent.traceModel(), "user_message", "episodic anchor"));
+
+    QTRY_COMPARE_WITH_TIMEOUT(spy.count(), 1, 15000);
+    QCOMPARE(agent.state(), AgentState::Completed);
+    QCOMPARE(llm.seenMessages.size(), 1);
+    // System message prepended at launch time (docs/25 B3), user second.
+    const QJsonArray first = llm.seenMessages.at(0);
+    QCOMPARE(first.at(0).toObject().value("role").toString(), QStringLiteral("system"));
+    QCOMPARE(first.at(1).toObject().value("role").toString(), QStringLiteral("user"));
+    // The episodic summary was injected into the system prompt.
+    const QString sys = first.at(0).toObject().value("content").toString();
+    QVERIFY2(sys.contains(QStringLiteral("remembered zeta fact")), qPrintable(sys));
+
+    agent.setEpisodicService(nullptr);
+    agent.setMemory(nullptr);
+}
+
+// docs/25 B3: a slow embedder is bounded by kEpisodicLaunchTimeoutMs — the
+// task launches anyway once the deadline fires (without injection), and the
+// late retrievalReady must NOT trigger a second launch: exactly one LLM
+// request, one completion.
+void TestAgent::taskWithSlowEmbedderStillLaunches() {
+    QTemporaryDir dir;
+    QVERIFY(dir.isValid());
+    SqliteMemory memory(dir.filePath(QStringLiteral("episodic_slow.db")));
+
+    EpisodicService episodic;
+    episodic.setMemory(&memory);
+    episodic.setEnabled(true);
+    episodic.setEmbedder([](const QString&) {
+        std::this_thread::sleep_for(std::chrono::milliseconds(400));  // > 200ms deadline
+        return QVector<float>{1.0f, 0.0f};
+    });
+    agent.setEpisodicService(&episodic);
+    agent.setMemory(&memory);
+
+    llm.script.append(textResponse(QStringLiteral("deadline answer")));
+    QSignalSpy spy(&agent, &AIAgent::responseReady);
+    QVERIFY(agent.startTask(QStringLiteral("hello slow embedder")));
+    QTRY_COMPARE_WITH_TIMEOUT(spy.count(), 1, 15000);
+    QCOMPARE(agent.state(), AgentState::Completed);
+    QCOMPARE(llm.seenMessages.size(), 1);   // launched via the deadline path
+    QVERIFY(!llm.seenMessages.at(0).at(0).toObject()
+                 .value("content").toString().contains(QStringLiteral("历史会话摘要")));
+
+    // The embedder lands AFTER the deadline: its late retrievalReady is
+    // ignored (pending id cleared) — no second request, no state change.
+    QTest::qWait(600);
+    QCOMPARE(llm.seenMessages.size(), 1);
+    QCOMPARE(agent.state(), AgentState::Completed);
+
+    agent.setEpisodicService(nullptr);
     agent.setMemory(nullptr);
 }
 

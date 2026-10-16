@@ -64,16 +64,33 @@ public:
     // Returns a formatted string ready for system-prompt injection, or an
     // empty string if disabled / no results / error. The total token count
     // is capped at kMaxInjectionTokens (REQ-T8-03).
+    //
+    // Synchronous path: blocks on the embedder round-trip when one is set —
+    // kept as the test hook / non-GUI callers. GUI callers (AIAgent) use
+    // retrieveRelevantSummariesAsync (docs/25 B3) instead.
     QString retrieveRelevantSummaries(const QString& query,
                                       int topK = kDefaultTopK) const;
 
     // REQ-T8-02 (test hook): raw retrieval returning the FTS5 matches as a
-    // JSON array (for assertions on hit count / content).
+    // JSON array (for assertions on hit count / content). Episodes carry a
+    // unified "score" field (docs/25 B2: FTS hits 1.0, semantic hits their
+    // cosine) and the merged set is topK-capped.
     QJsonArray retrieveRaw(const QString& query, int topK = kDefaultTopK) const;
+
+    // docs/25 B3: async retrieval. The embedder network round-trip runs on
+    // a QtConcurrent worker; the DB scans (QSqlDatabase connections are
+    // thread-affine) and the in-memory cosine merge run on this service's
+    // thread. The injection text is delivered via retrievalReady. Returns
+    // the request id (0 = request not applicable; no signal will fire).
+    quint64 retrieveRelevantSummariesAsync(const QString& query,
+                                           int topK = kDefaultTopK);
 
 signals:
     // Emitted when an async summary has been stored (or skipped on error).
     void summaryStored(const QString& sessionId, bool success);
+    // docs/25 B3: async retrieval result. Empty injection = nothing found
+    // (or the retrieval failed) — callers treat it as "skip injection".
+    void retrievalReady(quint64 requestId, const QString& injection);
 
 private slots:
     // Called on the main thread (via QueuedConnection) after a worker thread
@@ -87,6 +104,19 @@ private:
     // concurrent summaries).
     void onSummaryResponse(quint64 requestId, const LLMResponse& response);
 
+    // docs/25 B3: service-thread completion of an async retrieval (queued
+    // back from the worker): merge FTS + semantic, build the injection,
+    // emit retrievalReady.
+    void completeRetrieval(quint64 requestId, const QString& query,
+                           const QVector<float>& queryVec, int topK);
+
+    // docs/25 B2/B3: shared retrieval core — FTS hits merged with semantic
+    // hits by unified score, topK-capped. queryVec empty = FTS only.
+    QJsonArray retrieveMerged(const QString& query,
+                              const QVector<float>& queryVec, int topK) const;
+    // Format retrieved episodes into the capped injection text.
+    QString buildInjection(const QJsonArray& results) const;
+
     IMemory* m_memory{nullptr};
     IAIService* m_llmService{nullptr};
     std::function<QVector<float>(const QString&)> m_embedder;
@@ -99,6 +129,10 @@ private:
     QHash<quint64, QString> m_pendingSummaries;
     quint64 m_nextSummaryRequestId{1};
     int m_summaryTimeoutMs{90000};
+
+    // docs/25 B3: monotonic id for async retrievals (stale results are
+    // dropped by the receiver's one-shot connection).
+    quint64 m_nextRetrievalRequestId{1};
 };
 
 } // namespace NexusAI
