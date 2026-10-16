@@ -370,6 +370,10 @@ public:
     Q_INVOKABLE void approveToolCall(const QString& id, bool approved);
     Q_INVOKABLE void setToolEnabled(const QString& name, bool enabled);
     Q_INVOKABLE void stop();                 // abort generation, keep trace
+    // docs/25 A4：停**全部**标签的任务（托盘退出等收尾路径用），替代只停
+    // active tab 的 stop()——后者让其余 busy tab 依赖 app 析构 → controller
+    // 析构的被动兜底（隐式依赖 QObject 析构顺序）。
+    Q_INVOKABLE void stopAllTabs();
     // docs/20 §3.1（FORK-701）：重新生成最后一条回答（活动标签）。
     Q_INVOKABLE void regenerate();
 

@@ -139,7 +139,12 @@ void LLMServiceBase::handleReplyFinished(const LLMRequestContextPtr& ctx) {
     // attempts and anything that streamed output are not retried.
     const bool transientStatus =
         (status >= 500 || status == 429) && err != QNetworkReply::OperationCanceledError;
+    // docs/25 A3: align the condition with the comment above — requests
+    // that already streamed any text (content or reasoning) are NOT
+    // retried; resetStreamState() would wipe what the UI already showed
+    // (flash-back) and re-bill the request.
     if (ctx->attempt == 0 && !ctx->cancelled
+            && ctx->content.isEmpty() && ctx->reasoning.isEmpty()
             && (isTransientNetworkError(err) || transientStatus)) {
         ctx->attempt = 1;
         ctx->resetStreamState();

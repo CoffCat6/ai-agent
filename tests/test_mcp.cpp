@@ -432,6 +432,51 @@ private slots:
         QTest::qWait(500);
         adapter.cancel();
         QVERIFY(QTest::qWaitFor([worker]() { return worker->isFinished(); },
+                                 8000));
+        client.disconnectFromServer();
+    }
+
+    // docs/25 A1: a cancel() landing between two execute() invocations must
+    // not poison the NEXT call — pre-fix the leftover flag made the
+    // registration lambda cancel every subsequent request on sight, so the
+    // same adapter failed instantly ("cancelled") until reconnect. Same
+    // regression class as Batch 21 (B3) in ShellExecTool/NetworkFetchTool.
+    void executeAfterCancelCompletes() {
+        McpClient client(makeConfig({"echo"}));
+        client.connectToServer();
+        QTRY_COMPARE(client.sessionState(),
+                     McpClient::SessionState::Connected);
+
+        McpToolAdapter adapter(&client, QStringLiteral("fake"),
+                               QStringLiteral("echo"), QStringLiteral("desc"),
+                               QJsonObject{{"type", "object"}});
+
+        // Baseline: a normal call on this adapter completes.
+        QThread* worker = QThread::create([&adapter]() {
+            const ToolResult result = adapter.execute(
+                QJsonObject{{"text", QStringLiteral("first")}});
+            QVERIFY2(result.success, qPrintable(result.error));
+        });
+        QObject::connect(worker, &QThread::finished, worker,
+                         &QThread::deleteLater);
+        worker->start();
+        QVERIFY(QTest::qWaitFor([worker]() { return worker->isFinished(); },
+                                 8000));
+
+        // A late cancel from the finished task lands between two calls.
+        adapter.cancel();
+
+        // The next execute() on the same adapter must complete normally.
+        QThread* next = QThread::create([&adapter]() {
+            const ToolResult result = adapter.execute(
+                QJsonObject{{"text", QStringLiteral("again")}});
+            QVERIFY2(result.success, qPrintable(result.error));
+            QVERIFY(result.output.contains(QStringLiteral("again")));
+        });
+        QObject::connect(next, &QThread::finished, next,
+                         &QThread::deleteLater);
+        next->start();
+        QVERIFY(QTest::qWaitFor([next]() { return next->isFinished(); },
                                 8000));
         client.disconnectFromServer();
     }

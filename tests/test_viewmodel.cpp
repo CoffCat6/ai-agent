@@ -1116,8 +1116,8 @@ private slots:
     // "激活项目"分支，点开本地会话时活动项目保持不变，于是 TopBar 项目徽标、
     // 沙箱指向、侧栏高亮会停在上一个项目上，与刚打开的会话内容不一致。
     void loadSessionSyncsActiveProjectBothWays() {
-        // setActiveProjectId 直写 QSettings（M4 先例）并改全局沙箱指向，
-        // 用例结束后必须还原，避免污染用户配置与后续用例。
+        // setActiveProjectId 经 SettingsService 落盘（docs/25 A5）并改全局
+        // 沙箱指向，用例结束后必须还原，避免污染用户配置与后续用例。
         QSettings settings("NexusAI", "NexusAI");
         const QVariant savedActive = settings.value("projects/activeId");
 

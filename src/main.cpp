@@ -285,14 +285,15 @@ qInfo() << "NexusAI" << app.applicationVersion() << "starting";
 
     // Knowledge base: Ollama embeddings (nomic-embed-text) with the
     // retriever's local pseudo-embedding as offline fallback.
-    auto* embedding = new OllamaEmbedding(&app);
-    // docs/24 H6: deliberately process-lifetime and NEVER deleted — three
-    // discarded-future QtConcurrent workers (startup restore, re-embed-all,
-    // AgentViewModel import) hold the raw pointer and may still be running
-    // when the app quits; parenting it to the app would destroy the object
-    // under them (use-after-free at exit). Same discipline as `memory`
-    // below; its QObject signals keep working without a parent, and their
-    // GUI-thread consumers are queued via the &app context.
+    // docs/24 H6 (docs/25 A2): `embedding` and `rag` below are deliberately
+    // process-lifetime and NEVER deleted — three discarded-future
+    // QtConcurrent workers (startup restore, re-embed-all, AgentViewModel
+    // import) hold the raw `embedding` pointer through rag and may still be
+    // running when the app quits; parenting either to the app would destroy
+    // the object under them (use-after-free at exit). Same discipline as
+    // `memory` above; their QObject signals keep working without a parent,
+    // and their GUI-thread consumers are queued via the &app context.
+    auto* embedding = new OllamaEmbedding(nullptr);
     auto* rag = new RagService(nullptr);
     rag->setEmbedder([embedding](const QString& text) {
         return embedding->embed(text);
@@ -847,7 +848,7 @@ qInfo() << "NexusAI" << app.applicationVersion() << "starting";
     QObject::connect(quitAction, &QAction::triggered, &app, [&app, agentVM, tray, trayMenu]() {
         tray->hide();
         delete trayMenu;
-        agentVM->stop();
+        agentVM->stopAllTabs();
         QCoreApplication::quit();
     });
     // 双击托盘 = 显示/隐藏主窗（系统托盘的惯用交互）。

@@ -69,7 +69,8 @@ Rectangle {
     // 启动时恢复"上次浏览位置"：展开上次所在的项目节点，重启后能直接看到
     // 自己项目的会话。这里**只恢复浏览态**——归属按标签持有，启动标签默认
     // 本地（普通对话），不再把任何项目套到它上面（docs/18 期 3）。
-    // projects/activeId 由 AgentViewModel 在归属变化时直写（M4 先例）。
+    // projects/activeId 由 AgentViewModel 在归属变化时经 SettingsService
+    // 写入（docs/25 A5：内存镜像与 QSettings 保持一致）。
     Component.onCompleted: {
         const last = Settings.activeProjectId
         if (last.length > 0) {

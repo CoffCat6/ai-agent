@@ -2,6 +2,7 @@
 
 #include "viewmodels/PreferenceStore.h"
 #include "viewmodels/ChangeBus.h"
+#include "viewmodels/SettingsService.h"
 #include "core/agent/AIAgent.h"
 #include "core/memory/IMemory.h"
 #include "core/memory/SqliteMemory.h"
@@ -636,9 +637,10 @@ void AgentViewModel::setActiveProjectId(const QString& id) {
     // "新建默认普通对话"冲突（docs/18 期 3 移除了原 m_pendingProjectId）。
     if (!controller->agent()) return;
     applyProjectTo(controller->agent(), id);
-    // 持久化（M4 直写先例）：重启后由 main.cpp 回灌。docs/18 之后它记录的
-    // 语义是"上次浏览位置"，期 3 会改由侧栏写入。
-    persistSettingsValue(QStringLiteral("projects/activeId"), id);
+    // 持久化走 SettingsService（docs/25 A5：projects/activeId 的唯一写入口），
+    // 内存镜像与 QSettings 同步刷新——Sidebar 读 Settings.activeProjectId 恢复
+    // "上次浏览位置"时不再拿到陈旧值。重启后由 main.cpp 回灌。
+    SettingsService::instance()->setActiveProjectId(id);
     syncSandboxMirror();
     emit activeProjectIdChanged();
 }
@@ -1653,6 +1655,13 @@ QVariantMap AgentViewModel::pendingConfirmation() const {
 
 void AgentViewModel::stop() {
     active()->stop();
+}
+
+// docs/25 A4：停全部标签的任务。与「关 tab 停任务」同一封口语义（agent 封口
+// 未答复的工具调用），托盘退出路径据此不再依赖析构顺序的被动兜底。
+void AgentViewModel::stopAllTabs() {
+    for (ChatSessionController* controller : std::as_const(m_tabs))
+        controller->stop();
 }
 
 // docs/20 §3.1（FORK-701）：重新生成最后一条回答（活动标签）。busy 时由

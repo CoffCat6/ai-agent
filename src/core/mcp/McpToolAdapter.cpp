@@ -61,6 +61,12 @@ ToolDefinition McpToolAdapter::definition() const {
 }
 
 ToolResult McpToolAdapter::execute(const QJsonObject& args) {
+    // docs/25 A1 (Batch 21 B3 pattern): clear any stale cancel from a
+    // previous call. cancel() can land between two execute() invocations;
+    // without this reset the registration lambda below would cancel the
+    // NEXT request on sight, leaving the adapter poisoned until reconnect.
+    m_cancelled.store(false);
+
     // docs/22 F1: the client may be torn down while this call is in flight
     // (server removed/disabled). QPointer nulls out as soon as destruction
     // starts; the receiver-context invokeMethod then drops the queued call
