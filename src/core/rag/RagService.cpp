@@ -109,7 +109,6 @@ std::unique_ptr<DocumentRetriever> RagService::buildRetriever(
     auto retriever = std::make_unique<DocumentRetriever>();
     {
         QMutexLocker lock(&m_mutex);
-        retriever->setEmbedFunction(m_embedFn);
         retriever->setBatchEmbedFunction(m_batchEmbedFn);
     }
 
@@ -252,7 +251,6 @@ bool RagService::restorePersistedDocument(const QString& sourceName,
     auto retriever = std::make_unique<DocumentRetriever>();
     {
         QMutexLocker lock(&m_mutex);
-        retriever->setEmbedFunction(m_embedFn);
         retriever->setBatchEmbedFunction(m_batchEmbedFn);
     }
     if (!retriever->addPrecomputedDocument(sourceName, chunks)) return false;

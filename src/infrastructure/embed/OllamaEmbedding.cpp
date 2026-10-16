@@ -1,5 +1,6 @@
 #include "OllamaEmbedding.h"
 
+#include <QNetworkAccessManager>
 #include <QNetworkRequest>
 #include <QNetworkReply>
 #include <QJsonDocument>
@@ -12,7 +13,7 @@
 namespace NexusAI {
 
 OllamaEmbedding::OllamaEmbedding(QObject* parent)
-    : QObject(parent), m_nam(new QNetworkAccessManager(this)) {}
+    : QObject(parent) {}
 
 QVector<float> OllamaEmbedding::embed(const QString& text) {
     // Stack-local NAM living on the calling thread: embed() may run on a
@@ -172,59 +173,5 @@ QVector<QVector<float>> OllamaEmbedding::embedBatch(const QStringList& texts) {
     return embeddings;
 }
 
-void OllamaEmbedding::embedAsync(const QString& text) {
-    // docs/22 F3: snapshot under the mutex (same rationale as embed()).
-    QString baseUrl;
-    QString model;
-    {
-        QMutexLocker lock(&m_configMutex);
-        baseUrl = m_baseUrl;
-        model = m_model;
-    }
-
-    QJsonObject body;
-    body["model"] = model;
-    body["prompt"] = text;
-
-    QJsonDocument doc(body);
-    QNetworkRequest request;
-    request.setUrl(QUrl(baseUrl + "/api/embeddings"));
-    request.setHeader(QNetworkRequest::ContentTypeHeader, "application/json");
-    // Aligned with the synchronous paths: a hung server must not leave the
-    // reply and this lambda alive forever.
-    request.setTransferTimeout(30000);
-
-    QNetworkReply* reply = m_nam->post(request, doc.toJson());
-
-    connect(reply, &QNetworkReply::finished, this, [this, reply]() {
-        if (reply->error() != QNetworkReply::NoError) {
-            emit errorOccurred(reply->errorString());
-            reply->deleteLater();
-            return;
-        }
-
-        QByteArray responseData = reply->readAll();
-        reply->deleteLater();
-
-        QJsonParseError parseError;
-        QJsonDocument responseDoc = QJsonDocument::fromJson(responseData, &parseError);
-
-        if (parseError.error != QJsonParseError::NoError) {
-            emit errorOccurred("Failed to parse embedding response");
-            return;
-        }
-
-        QJsonObject responseObj = responseDoc.object();
-        QJsonArray embeddingArray = responseObj.value("embedding").toArray();
-
-        QVector<float> embedding;
-        embedding.reserve(embeddingArray.size());
-        for (const auto& val : embeddingArray) {
-            embedding.append(static_cast<float>(val.toDouble()));
-        }
-
-        emit embeddingReady(embedding);
-    });
-}
 
 } // namespace NexusAI

@@ -1975,8 +1975,9 @@ void AIAgent::recordTokenUsage(const LLMResponse& response) {
 }
 
 // docs/16 §7.2: 配额检查流程。查询当日/当月已消耗（m_memory->quotaStatus）
-// 与 Settings 配额上限（QSettings 扁平键），超限 emit quotaWarning；
-// strictQuotaMode=true 时拒绝请求（返回 false），否则仅警告。
+// 与配额上限（扁平设置键，经 SettingsSchema::intSetting/boolSetting 读取，
+// docs/25 E8：与 SettingsService::load 共用同一实现），超限 emit
+// quotaWarning；strictQuotaMode=true 时拒绝请求（返回 false），否则仅警告。
 // 上限 0 = 不限制。quotaStatus 返回空（无配额记录）时已消耗按 0 处理，不阻塞。
 bool AIAgent::checkQuota() {
     if (!m_memory) return true;
@@ -1993,20 +1994,11 @@ bool AIAgent::checkQuota() {
     const qint64 monthlyTokensUsed = used("monthlyTokensUsed", "monthly_tokens_used");
     const qint64 monthlyCostUsed = used("monthlyCostCentsUsed", "monthly_cost_cents_used");
 
-    const qint64 dailyTokenQuota = SettingsSchema::clampInt(QStringLiteral("dailyTokenQuota"),
-        SettingsRepository::value(QStringLiteral("dailyTokenQuota"),
-            SettingsSchema::defaultValue(QStringLiteral("dailyTokenQuota"))).toInt());
-    const qint64 dailyCostQuota = SettingsSchema::clampInt(QStringLiteral("dailyCostQuotaCents"),
-        SettingsRepository::value(QStringLiteral("dailyCostQuotaCents"),
-            SettingsSchema::defaultValue(QStringLiteral("dailyCostQuotaCents"))).toInt());
-    const qint64 monthlyTokenQuota = SettingsSchema::clampInt(QStringLiteral("monthlyTokenQuota"),
-        SettingsRepository::value(QStringLiteral("monthlyTokenQuota"),
-            SettingsSchema::defaultValue(QStringLiteral("monthlyTokenQuota"))).toInt());
-    const qint64 monthlyCostQuota = SettingsSchema::clampInt(QStringLiteral("monthlyCostQuotaCents"),
-        SettingsRepository::value(QStringLiteral("monthlyCostQuotaCents"),
-            SettingsSchema::defaultValue(QStringLiteral("monthlyCostQuotaCents"))).toInt());
-    const bool strict = SettingsRepository::value(QStringLiteral("strictQuotaMode"),
-        SettingsSchema::defaultValue(QStringLiteral("strictQuotaMode"))).toBool();
+    const qint64 dailyTokenQuota = SettingsSchema::intSetting(QStringLiteral("dailyTokenQuota"));
+    const qint64 dailyCostQuota = SettingsSchema::intSetting(QStringLiteral("dailyCostQuotaCents"));
+    const qint64 monthlyTokenQuota = SettingsSchema::intSetting(QStringLiteral("monthlyTokenQuota"));
+    const qint64 monthlyCostQuota = SettingsSchema::intSetting(QStringLiteral("monthlyCostQuotaCents"));
+    const bool strict = SettingsSchema::boolSetting(QStringLiteral("strictQuotaMode"));
 
     bool ok = true;
     const auto check = [&](const QString& type, qint64 usedVal, qint64 quotaVal) {

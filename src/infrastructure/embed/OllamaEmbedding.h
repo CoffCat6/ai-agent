@@ -4,7 +4,7 @@
 #include <QObject>
 #include <QVector>
 #include <QString>
-#include <QNetworkAccessManager>
+
 
 namespace NexusAI {
 
@@ -44,12 +44,7 @@ public:
     static QVector<QStringList> splitBatches(const QStringList& texts, int batchSize);
     QVector<QVector<float>> embedBatch(const QStringList& texts);
 
-    // Asynchronous embedding call
-    void embedAsync(const QString& text);
-
 signals:
-    void embeddingReady(const QVector<float>& embedding);
-    void errorOccurred(const QString& error);
     // Texts embedded so far / total (after each successful batch)
     void embedProgress(int done, int total);
 
@@ -57,7 +52,6 @@ private:
     mutable QMutex m_configMutex;
     QString m_baseUrl{"http://localhost:11434"};
     QString m_model{"nomic-embed-text"};
-    QNetworkAccessManager* m_nam;
 };
 
 } // namespace NexusAI

@@ -25,7 +25,11 @@ public:
     static QStringList options(const QString& key);
     static bool isValidValue(const QString& key, const QVariant& value);
 
-    static void migrate(int fromVersion);
+    // docs/25 E8：int/bool 设置键读取的统一入口（存储值 → schema 默认值 →
+    // clamp 一站式）。配额键曾由 AIAgent::checkQuota 与 SettingsService::load
+    // 各写一份三段式样板形成双源，收敛于此；新代码读设置键时优先使用。
+    static int intSetting(const QString& key);
+    static bool boolSetting(const QString& key);
 };
 
 } // namespace NexusAI

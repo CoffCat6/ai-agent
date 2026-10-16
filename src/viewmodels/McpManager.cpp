@@ -14,10 +14,6 @@ Q_LOGGING_CATEGORY(lcMcp, "nexus.mcp")
 
 namespace NexusAI {
 
-namespace {
-constexpr int StateConnected = 2;    // McpClient::SessionState::Connected
-constexpr int StateFailed = 3;
-} // namespace
 
 McpManager* McpManager::s_instance = nullptr;
 

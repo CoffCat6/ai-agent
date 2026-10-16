@@ -3,7 +3,7 @@
 #include "PreferenceStore.h"
 #include "ChangeBus.h"
 #include "FontProbe.h"
-#include "core/utils/SettingsRepository.h"
+
 #include "core/utils/SettingsSchema.h"
 
 #include <QGuiApplication>
@@ -112,7 +112,8 @@ void ThemeManager::subscribeChanges() {
             const bool dark = (mode == automaticThemeMode())
                 ? resolveSystemDark()
                 : (mode == QStringLiteral("dark"));
-            saveTheme(dark);
+            // docs/25 E6：不再回写 legacy 键 theme/dark——该键写而不读
+            //（仅启动迁移读一次），唯一事实源是 prefs/v1/ui.themeMode。
             emit themeModeChanged();
             if (dark != m_isDark) {
                 m_isDark = dark;
@@ -137,11 +138,6 @@ void ThemeManager::subscribeChanges() {
     });
 }
 
-void ThemeManager::saveTheme(bool dark) {
-    QString error;
-    if (!SettingsRepository::writeValue(QStringLiteral("theme/dark"), dark, &error))
-        qWarning() << "Failed to persist legacy theme state:" << error;
-}
 
 void ThemeManager::setIsDark(bool dark) {
     // REQ-T5-04: an explicit toggle (settings or Ctrl+D) always upgrades an

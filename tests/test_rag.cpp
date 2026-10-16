@@ -1071,8 +1071,13 @@ void TestRag::chunkedDocumentIngestMatchesAddDocument() {
     QCOMPARE(prechunked.documentCount(), plain.documentCount());
 
     // Same search surface: identical hit count for the same query.
-    QCOMPARE(prechunked.search("alpha beta", 4).size(),
-             plain.search("alpha beta", 4).size());
+    // docs/25 E3：单参 search(query) 已删除，这里显式走向量版——两个检索器
+    // 均为伪模式（无批量嵌入器），查询向量用本地 pseudoEmbed 计算，与原
+    // 单参重载内部的行为完全一致。
+    const QVector<float> queryPseudo =
+        DocumentRetriever::pseudoEmbed(QStringLiteral("alpha beta"));
+    QCOMPARE(prechunked.search({}, queryPseudo, 4).size(),
+             plain.search({}, queryPseudo, 4).size());
 }
 
 // docs/25 B7: an oversize PDF (pageTexts set) is rejected by the budget

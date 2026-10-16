@@ -56,7 +56,7 @@ public:
 
     QList<ToolInfo> tools() const { return m_tools; }
 
-    quint64 listTools();
+
     // Sends tools/call; handler runs on the GUI thread exactly once:
     // handler(isError, joinedText, errorText).
     quint64 callTool(const QString& tool, const QJsonObject& args,

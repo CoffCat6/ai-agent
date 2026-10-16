@@ -35,31 +35,6 @@ int g_retentionFiles = SettingsSchema::kDefaultLogRetentionFiles;
 std::vector<Logger::LogEntry> g_ring;
 quint64 g_nextSeq = 1;
 
-const char* levelName(QtMsgType type) {
-    switch (type) {
-    case QtDebugMsg:    return "DEBUG";
-    case QtInfoMsg:     return "INFO";
-    case QtWarningMsg:  return "WARN";
-    case QtCriticalMsg: return "CRIT";
-    case QtFatalMsg:    return "FATAL";
-    }
-    return "LOG";
-}
-
-// Severity ranking: QtMsgType's declaration order is NOT a severity order
-// (QtInfoMsg = 4 ranks above QtFatalMsg = 3), so threshold comparisons must
-// go through this mapping. Exposed by the doc-6 log-panel tests: with
-// minLevel = Warning, qInfo lines passed `type < g_minLevel`.
-int severityRank(QtMsgType type) {
-    switch (type) {
-    case QtDebugMsg:    return 0;
-    case QtInfoMsg:     return 1;
-    case QtWarningMsg:  return 2;
-    case QtCriticalMsg: return 3;
-    case QtFatalMsg:    return 4;
-    }
-    return 4;
-}
 
 bool parseLevel(const QString& name, QtMsgType& out) {
     if (name.compare(QLatin1String("debug"), Qt::CaseInsensitive) == 0) { out = QtDebugMsg; return true; }
@@ -128,11 +103,11 @@ void messageHandler(QtMsgType type, const QMessageLogContext& context, const QSt
     QMutexLocker locker(&g_mutex);
     // QtMsgType is not ordered by severity. Check while holding the same lock
     // used by setMinLevel() to avoid a data race during live settings changes.
-    if (severityRank(type) < severityRank(g_minLevel)) return;
+    if (Logger::severityRank(type) < Logger::severityRank(g_minLevel)) return;
 
     QString line = QString("[%1] [%2]")
         .arg(QDateTime::currentDateTime().toString("yyyy-MM-dd hh:mm:ss.zzz"),
-             QString::fromLatin1(levelName(type)));
+             QString::fromLatin1(Logger::levelName(type)));
     if (context.category && *context.category)
         line += QString(" [%1]").arg(QString::fromLatin1(context.category));
     line += " " + message;
@@ -214,6 +189,34 @@ void messageHandler(QtMsgType type, const QMessageLogContext& context, const QSt
 }
 
 } // namespace
+
+// docs/25 E7：从匿名命名空间提升为 public static——LogModel（日志面板）
+// 原先持有一份相同实现，现在两侧共用，级别显示名与 severity 序永不漂移。
+const char* Logger::levelName(QtMsgType type) {
+    switch (type) {
+    case QtDebugMsg:    return "DEBUG";
+    case QtInfoMsg:     return "INFO";
+    case QtWarningMsg:  return "WARN";
+    case QtCriticalMsg: return "CRIT";
+    case QtFatalMsg:    return "FATAL";
+    }
+    return "LOG";
+}
+
+// Severity ranking: QtMsgType's declaration order is NOT a severity order
+// (QtInfoMsg = 4 ranks above QtFatalMsg = 3), so threshold comparisons must
+// go through this mapping. Exposed by the doc-6 log-panel tests: with
+// minLevel = Warning, qInfo lines passed `type < g_minLevel`.
+int Logger::severityRank(QtMsgType type) {
+    switch (type) {
+    case QtDebugMsg:    return 0;
+    case QtInfoMsg:     return 1;
+    case QtWarningMsg:  return 2;
+    case QtCriticalMsg: return 3;
+    case QtFatalMsg:    return 4;
+    }
+    return 4;
+}
 
 QString Logger::logDir() {
     QMutexLocker locker(&g_mutex);

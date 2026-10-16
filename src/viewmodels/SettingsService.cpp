@@ -30,6 +30,13 @@ namespace {
 constexpr auto kProfilesKey = "modelProfiles";
 constexpr auto kActiveKey = "activeProfileId";
 
+// docs/25 E9：contextTokens 的两版历史默认值。8192 是 v2 时代的默认上下文
+// 窗口；300000 是 v3 期短暂启用、后因过于激进被收敛掉的值。存量配置若
+// 正好等于其中之一即视为「旧默认」而非用户主动选择（自定义值是任何其它
+// 数字），升级时归一到当前默认 AIAgent::kDefaultContextTokens。
+constexpr int kLegacyContextTokensV2 = 8192;
+constexpr int kLegacyContextTokensV3 = 300000;
+
 // 厂商默认端点/模型表来自协议注册表：一个厂商目前就一条协议，所以取该厂商
 // 默认协议的描述符。新增协议（例如 OpenAI Responses）只需要改那张表。
 const LlmProtocolDescriptor* defaultsForProvider(const QString& provider) {
@@ -144,7 +151,8 @@ void upgradeContextTokenDefault() {
     const QVariant stored = SettingsRepository::value("contextTokens");
     if (!stored.isValid()) return;                    // 未写过：新默认自然生效
     const int value = stored.toInt();
-    const bool wasSomeDefault = (value == 8192 || value == 300000);
+    const bool wasSomeDefault = (value == kLegacyContextTokensV2
+                                 || value == kLegacyContextTokensV3);
     if (!wasSomeDefault) return;                      // 用户自定义值：不动
     QString error;
     if (!SettingsRepository::writeValue("contextTokens", AIAgent::kDefaultContextTokens,
@@ -247,17 +255,17 @@ bool SettingsService::persistValue(const QString& key, const QVariant& value) {
 }
 
 void SettingsService::load() {
-    // L2: schema migration hook. Runs once per schema version bump; v0→v1
-    // is a no-op, but the version stamp is written so future migrations
-    // can detect the starting point.
+    // L2: schema 版本迁移。docs/25 E11：原 SettingsSchema::migrate 空钩子已
+    // 删除——带策略的迁移由下方具名函数按版本区间直接调用；版本戳写回存储，
+    // 后续迁移可据此判断起点。
     const int storedVersion = SettingsRepository::value(QStringLiteral("schemaVersion"),
         SettingsSchema::defaultValue(QStringLiteral("schemaVersion"))).toInt();
     if (storedVersion < SettingsSchema::kSchemaVersion) {
-        SettingsSchema::migrate(storedVersion);
-        // profile 存在 modelProfiles blob 里（不在顶层键注册表），清空存量模型的
-        // 迁移因此落在这里，与 SettingsSchema::migrate 的分工一起生效。
+        // profile 存在 modelProfiles blob 里（不在顶层键注册表），清空存量
+        // 模型的迁移因此落在这里。
         if (storedVersion < 2) clearProfileModelsOnUpgrade();
-        // v3/v4：contextTokens 旧默认值（8192 / 短暂的 300000）归一为当前默认。
+        // v3/v4：contextTokens 旧默认值（kLegacyContextTokensV2/V3）归一为
+        // 当前默认。
         if (storedVersion < 4) upgradeContextTokenDefault();
         QString error;
         if (!SettingsRepository::writeValue("schemaVersion", SettingsSchema::kSchemaVersion,
@@ -393,20 +401,13 @@ void SettingsService::load() {
         SettingsRepository::value(QStringLiteral("memory/backupKeepCount"),
             SettingsSchema::defaultValue(QStringLiteral("memory/backupKeepCount"))).toInt());
     // docs/16 §7.3: quota settings (flat keys; 0 = unlimited for int quotas).
-    m_dailyTokenQuota = SettingsSchema::clampInt(QStringLiteral("dailyTokenQuota"),
-        SettingsRepository::value(QStringLiteral("dailyTokenQuota"),
-            SettingsSchema::defaultValue(QStringLiteral("dailyTokenQuota"))).toInt());
-    m_dailyCostQuotaCents = SettingsSchema::clampInt(QStringLiteral("dailyCostQuotaCents"),
-        SettingsRepository::value(QStringLiteral("dailyCostQuotaCents"),
-            SettingsSchema::defaultValue(QStringLiteral("dailyCostQuotaCents"))).toInt());
-    m_monthlyTokenQuota = SettingsSchema::clampInt(QStringLiteral("monthlyTokenQuota"),
-        SettingsRepository::value(QStringLiteral("monthlyTokenQuota"),
-            SettingsSchema::defaultValue(QStringLiteral("monthlyTokenQuota"))).toInt());
-    m_monthlyCostQuotaCents = SettingsSchema::clampInt(QStringLiteral("monthlyCostQuotaCents"),
-        SettingsRepository::value(QStringLiteral("monthlyCostQuotaCents"),
-            SettingsSchema::defaultValue(QStringLiteral("monthlyCostQuotaCents"))).toInt());
-    m_strictQuotaMode = SettingsRepository::value(QStringLiteral("strictQuotaMode"),
-        SettingsSchema::defaultValue(QStringLiteral("strictQuotaMode"))).toBool();
+    // docs/25 E8：读取经 SettingsSchema::intSetting/boolSetting，与
+    // AIAgent::checkQuota 共用同一实现（原先两处各写一份三段式样板）。
+    m_dailyTokenQuota = SettingsSchema::intSetting(QStringLiteral("dailyTokenQuota"));
+    m_dailyCostQuotaCents = SettingsSchema::intSetting(QStringLiteral("dailyCostQuotaCents"));
+    m_monthlyTokenQuota = SettingsSchema::intSetting(QStringLiteral("monthlyTokenQuota"));
+    m_monthlyCostQuotaCents = SettingsSchema::intSetting(QStringLiteral("monthlyCostQuotaCents"));
+    m_strictQuotaMode = SettingsSchema::boolSetting(QStringLiteral("strictQuotaMode"));
     m_defaultPermissionMode = SettingsRepository::value(
         QStringLiteral("agent/defaultPermissionMode"),
         SettingsSchema::defaultValue(QStringLiteral("agent/defaultPermissionMode"))).toString();

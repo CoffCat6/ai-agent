@@ -152,8 +152,7 @@ void HttpTransport::onSseChunk(QNetworkReply* reply, const QByteArray& chunk) {
 void HttpTransport::dispatchSseEvents(const QByteArray& payload) {
     // One event may carry multiple data lines already joined; here it is one
     // JSON document per event.
-    const int status = 200;
-    Q_UNUSED(status)
+
     dispatchPayload(payload);
 }
 

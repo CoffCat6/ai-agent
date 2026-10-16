@@ -557,14 +557,16 @@ qInfo() << "NexusAI" << app.applicationVersion() << "starting";
     // docs/23 G3: 定期收敛 usage_log / audit_log / token_usage。托盘常驻
     // 进程可能数天不重启，仅靠启动清理会让保留策略形同虚设。超时回调在
     // GUI 线程触发（QTimer 归属 app），SQLite 单线程纪律保持成立。
+    // docs/23 G7（docs/25 E10）：软删除会话的撤销窗口——30 天内可恢复，
+    // 到期由 purgeDeletedSessions 硬回收四表。具名常量替代裸魔数。
+    static constexpr qint64 kSoftDeleteUndoWindowMs = 30LL * 24 * 60 * 60 * 1000;
     const auto runPrunes = [usageMemory, settings]() {
         const int usage = usageMemory->pruneUsage();
         const int audit = usageMemory->pruneAudit(settings->auditRetentionDays());
         const int tokens = usageMemory->pruneTokenUsage(settings->tokenRetentionDays());
-        // docs/23 G7: 软删除会话的撤销窗口 30 天，到期硬回收四表。
         const int purged = usageMemory->purgeDeletedSessions(
             QDateTime::currentDateTime().toMSecsSinceEpoch()
-                - 30LL * 86400 * 1000);
+                - kSoftDeleteUndoWindowMs);
         if (usage + audit + tokens + purged > 0)
             qInfo() << "Pruned rows: usage" << usage << "audit" << audit
                     << "token_usage" << tokens << "deleted sessions" << purged;

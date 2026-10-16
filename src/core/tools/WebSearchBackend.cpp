@@ -24,8 +24,19 @@ QList<WebSearchResult> TavilyBackend::search(const QString& query,
                                              int timeoutMs,
                                              QString* errorReason,
                                              const std::atomic<bool>* cancelled) const {
-    if (query.trimmed().isEmpty() || apiKey.isEmpty())
+    // docs/25 E12：空 query 是 no-op，不写 errorReason——与 SearXNG 契约一致
+    //（test_web_search 的 sentinel 断言：「没发起检索」不是故障；工具层
+    // 本就拦截空 query，这里是纯防御路径）。
+    if (query.trimmed().isEmpty())
         return {};
+    // 缺 API key 是配置错误：写明原因，调用方能区分「未配置」与「没搜到」
+    //（对齐 SearxBackend 缺 baseUrl 时报 notReadyReason 的既有模式）。
+    if (apiKey.isEmpty()) {
+        if (errorReason)
+            *errorReason = QStringLiteral(
+                "未配置 Tavily API key（请在设置中心填写 webSearch/apiKey）");
+        return {};
+    }
 
     maxResults = qBound(1, maxResults, 10);
 
@@ -132,6 +143,8 @@ QList<WebSearchResult> DuckDuckGoBackend::search(const QString& query,
                                                    int timeoutMs,
                                                    QString* errorReason,
                                                    const std::atomic<bool>* cancelled) const {
+    // docs/25 E12：空 query 是 no-op，不写 errorReason——与 SearXNG 契约一致
+    //（test_web_search 的 sentinel 断言；工具层本就拦截空 query）。
     if (query.trimmed().isEmpty())
         return {};
 

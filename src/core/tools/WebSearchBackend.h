@@ -70,8 +70,10 @@ public:
                                   const std::atomic<bool>* cancelled = nullptr) const override;
 };
 
-// DuckDuckGo Instant Answer API (https://api.duckduckgo.com/). Free, no
-// API key required. Returns instant answers and related topics via GET.
+// DuckDuckGo HTML 端点（https://html.duckduckgo.com/html/）。免费、无需
+// API key。docs/25 E12：实现是 HTML 抓取——GET 查询后解析 result__a
+//（标题/链接，含 uddg 跳转参数解包）与 result__snippet（摘要），
+// 并非早期注释误写的 Instant Answer JSON API。
 class DuckDuckGoBackend : public WebSearchBackend {
 public:
     QString providerKey() const override { return QStringLiteral("duckduckgo"); }

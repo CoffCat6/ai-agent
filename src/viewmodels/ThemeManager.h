@@ -45,7 +45,7 @@ signals:
 
 private:
     void loadTheme();
-    void saveTheme(bool dark);
+
     void loadFontPrefs();
     void registerPreferences();
     void subscribeChanges();

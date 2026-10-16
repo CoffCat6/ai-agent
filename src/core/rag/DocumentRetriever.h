@@ -31,10 +31,11 @@ public:
     using EmbedFn = std::function<QVector<float>(const QString&)>;
     using BatchEmbedFn = std::function<QVector<QVector<float>>(const QStringList&)>;
 
-    explicit DocumentRetriever(EmbedFn embedFn = {})
-        : m_embedFn(std::move(embedFn)) {}
+    // docs/25 E3：原先接受 EmbedFn 的构造/setEmbedFunction 只服务于已删除的
+    // search(query) 单参重载（查询向量在检索器内部现算）。查询向量改由
+    // RagService 每次检索时预计算后传入向量版 search，这里不再持有嵌入函数。
+    DocumentRetriever() = default;
 
-    void setEmbedFunction(EmbedFn fn) { m_embedFn = std::move(fn); }
     void setBatchEmbedFunction(BatchEmbedFn fn) { m_batchEmbedFn = std::move(fn); }
 
     // Add a document: chunk it and store embeddings. Returns false when the
@@ -110,19 +111,13 @@ public:
         return true;
     }
 
-    // Search for relevant document chunks
-    QJsonArray search(const QString& query, int k = 5) const {
-        if (m_store.size() == 0) return {};
-        // A pseudo-mode store never uses the real vector: skip the (network)
-        // embed call entirely in that mode.
-        QVector<float> realVec = (m_embedFn && !m_usesPseudo)
-            ? m_embedFn(query) : QVector<float>{};
-        return search(realVec, pseudoEmbed(query), k);
-    }
-
     // Search with pre-computed query vectors for both embedding modes. The
     // vector matching this store's mode is used; a real-mode store is only
     // scored with a real vector of its own dimension.
+    //
+    // docs/25 E3：已删除 search(query, k) 单参重载——它会在检索器内部隐式
+    // 触发（网络）embed，且全仓无调用方；查询向量一律由上层（RagService）
+    // 预计算后传入本重载，网络边界因此显式化。
     //
     // Relevance gate (FIX-301): below-threshold passages are dropped, so
     // "no passages matched" is a reachable state. Real embeddings are gated
@@ -257,8 +252,7 @@ private:
     }
 
     VectorStore m_store;
-    EmbedFn m_embedFn;            // single-text embedding (queries)
-    BatchEmbedFn m_batchEmbedFn;  // document chunks embedding (imports)
+    BatchEmbedFn m_batchEmbedFn;    // document chunks embedding (imports)
     int m_embeddingDim{0};
     bool m_usesPseudo{false};
 };

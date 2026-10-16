@@ -9,33 +9,9 @@
 namespace NexusAI {
 
 namespace {
-QString levelName(int level) {
-    switch (static_cast<QtMsgType>(level)) {
-    case QtDebugMsg:    return QStringLiteral("DEBUG");
-    case QtInfoMsg:     return QStringLiteral("INFO");
-    case QtWarningMsg:  return QStringLiteral("WARN");
-    case QtCriticalMsg: return QStringLiteral("CRIT");
-    case QtFatalMsg:    return QStringLiteral("FATAL");
-    }
-    return QStringLiteral("LOG");
-}
-
-// Severity ranking: QtMsgType's declaration order is NOT a severity order
-// (Qt 6: QtInfoMsg = 4 ranks above QtFatalMsg = 3), so threshold comparisons
-// must go through this mapping. Same semantics as Logger.cpp::severityRank,
-// duplicated here because that helper lives in an anonymous namespace and
-// is not exposed via Logger.h. m_filterLevel stores this rank (0..4), not
-// the raw QtMsgType value.
-int severityRank(int level) {
-    switch (static_cast<QtMsgType>(level)) {
-    case QtDebugMsg:    return 0;
-    case QtInfoMsg:     return 1;
-    case QtWarningMsg:  return 2;
-    case QtCriticalMsg: return 3;
-    case QtFatalMsg:    return 4;
-    }
-    return 4;
-}
+// docs/25 E7：levelName/severityRank 的重复实现已删除，改用
+// Logger::levelName/Logger::severityRank（原 Logger.cpp 匿名命名空间版本
+// 提升为 public static 后两处共用）。
 
 // Local calendar day of a timestamp. LOCAL time on purpose: the panel formats
 // each row with the same clock, so a filter and the visible dates cannot
@@ -75,7 +51,9 @@ QVariant LogModel::data(const QModelIndex& index, int role) const {
     const Logger::LogEntry& entry = m_visible.at(index.row());
     switch (role) {
     case TimestampRole: return entry.timestamp;
-    case LevelRole:     return levelName(entry.level);
+    case LevelRole:
+        return QString::fromLatin1(
+            Logger::levelName(static_cast<QtMsgType>(entry.level)));
     case CategoryRole:  return entry.category;
     case MessageRole:   return entry.message;
     case SeqRole:       return qulonglong(entry.seq);
@@ -211,7 +189,10 @@ QString LogModel::toClipboardText() const {
         const QString cat = entry.category.isEmpty()
             ? QString() : QStringLiteral(" [%1]").arg(entry.category);
         lines.append(QStringLiteral("[%1] [%2]%3 %4")
-                         .arg(ts, levelName(entry.level), cat, entry.message));
+                         .arg(ts,
+                              QString::fromLatin1(
+                                  Logger::levelName(static_cast<QtMsgType>(entry.level))),
+                              cat, entry.message));
     }
     return lines.join(QLatin1Char('\n'));
 }
@@ -221,7 +202,9 @@ bool LogModel::passesFilter(const Logger::LogEntry& entry) const {
     // (0=Debug..4=Fatal), NOT a raw QtMsgType (whose declaration order is
     // not a severity order — QtInfoMsg=4 > QtFatalMsg=3 in Qt 6).
     // m_filterLevel < 0 means ALL — no severity gate.
-    if (m_filterLevel >= 0 && severityRank(entry.level) != m_filterLevel) return false;
+    if (m_filterLevel >= 0
+            && Logger::severityRank(static_cast<QtMsgType>(entry.level)) != m_filterLevel)
+        return false;
     if (!m_filterDate.isEmpty() && dateKey(entry.timestamp) != m_filterDate) return false;
     if (!m_filterCategory.isEmpty()) {
         // Legacy/general lines have no logging category → treat as "app".

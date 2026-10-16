@@ -1,6 +1,7 @@
 #include "SettingsSchema.h"
 
 #include "core/agent/AIAgent.h"
+#include "core/utils/SettingsRepository.h"
 
 #include <QMetaType>
 #include <cmath>
@@ -307,11 +308,13 @@ bool SettingsSchema::isValidValue(const QString& key, const QVariant& value) {
     return true;
 }
 
-void SettingsSchema::migrate(int fromVersion) {
-    // Versioned value migrations requiring policy are performed by SettingsService.
-    // v0→v1 is a no-op; v1→v2 rewrites modelProfiles; v2→v4 normalizes only
-    // historical defaults. Keep this hook for future key migrations.
-    (void)fromVersion;
+int SettingsSchema::intSetting(const QString& key) {
+    return clampInt(key,
+        SettingsRepository::value(key, defaultValue(key)).toInt());
+}
+
+bool SettingsSchema::boolSetting(const QString& key) {
+    return SettingsRepository::value(key, defaultValue(key)).toBool();
 }
 
 } // namespace NexusAI

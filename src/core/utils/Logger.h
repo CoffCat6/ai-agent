@@ -48,6 +48,16 @@ public:
     // unknown names yield |fallback|.
     static QtMsgType levelFromName(const QString& name, QtMsgType fallback);
 
+    // docs/25 E7：QtMsgType 的 severity 序（Debug=0 < Info=1 < Warning=2 <
+    // Critical=3 < Fatal=4）。QtMsgType 的声明顺序不是 severity 顺序
+    //（Qt 6 中 QtInfoMsg=4 高于 QtFatalMsg=3），阈值比较必须经此映射。
+    // 原先 Logger.cpp 与 LogModel.cpp 各持一份相同实现，收敛于此共用。
+    static int severityRank(QtMsgType type);
+
+    // 级别的显示名（DEBUG/INFO/WARN/CRIT/FATAL）：日志文件行与
+    // in-app 日志面板（LogModel）共用，保证两侧口径一致。
+    static const char* levelName(QtMsgType type);
+
     // Path of the log file currently being written (empty before the first
     // message or when the log directory is not writable).
     static QString logFilePath();

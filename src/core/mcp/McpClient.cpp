@@ -149,10 +149,6 @@ void McpClient::refreshTools() {
         });
 }
 
-quint64 McpClient::listTools() {
-    refreshTools();   // fire-and-forget refresh (id is not needed by callers)
-    return 0;
-}
 
 quint64 McpClient::callTool(const QString& tool, const QJsonObject& args,
                             std::function<void(bool, const QString&,
