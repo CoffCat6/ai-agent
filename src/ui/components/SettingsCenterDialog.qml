@@ -63,8 +63,15 @@ Dialog {
                 })
             }
         }
-        return SettingsSearch.search(query, registryEntries, categoryOrder,
-                                     categoryNames)
+        // docs/25 C3: 手工索引标题在 JS 侧经 QT_TRANSLATE_NOOP 标记，此处
+        // 按 SettingsSearch 上下文运行时查询翻译；声明式偏好的 displayName
+        // 走同一查询（.ts 无对应条目时原样返回），英文界面搜索结果不再
+        // 中英混杂。
+        const results = SettingsSearch.search(query, registryEntries, categoryOrder,
+                                              categoryNames)
+        for (let i = 0; i < results.length; ++i)
+            results[i].title = qsTranslate("SettingsSearch", results[i].title)
+        return results
     }
 
     background: DialogBackground {}
@@ -125,7 +132,7 @@ Dialog {
                         placeholderTextColor: Theme.textSecondary
                         color: Theme.textPrimary
                         selectionColor: Theme.brandPrimary
-                        selectedTextColor: "#ffffff"
+                        selectedTextColor: Theme.selectedTextColor
                         font.pixelSize: Theme.fontSizeBody
                         font.family: Theme.fontSans
                         selectByMouse: true

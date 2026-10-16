@@ -61,6 +61,7 @@ Dialog {
                     { seq: "Ctrl+D",  action: qsTr("切换深色/浅色主题") },
                     { seq: "Ctrl+/",  action: qsTr("打开本速查表") },
                     { seq: "Enter",   action: qsTr("发送消息") },
+                    { seq: "Ctrl+Enter", action: qsTr("发送消息（输入法组合键安全）") },
                     { seq: "Shift+Enter", action: qsTr("输入换行") },
                     { seq: "↑ / ↓",   action: qsTr("回溯/前进输入历史") },
                     { seq: "Ctrl+V",  action: qsTr("粘贴图片附件") }

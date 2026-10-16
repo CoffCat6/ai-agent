@@ -199,7 +199,8 @@ Dialog {
                         Item { Layout.fillWidth: true }
 
                         Text {
-                            text: (modelData.text || "").length + " chars"
+                            // docs/25 C2: 硬编码英文量词 " chars" 归一为可译模板
+                            text: qsTr("%1 字符").arg((modelData.text || "").length)
                             color: Theme.textSecondary
                             font.pixelSize: 9
                             font.family: Theme.fontMono

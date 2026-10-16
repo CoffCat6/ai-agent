@@ -131,19 +131,32 @@ ScrollView {
                     }
 
                     Text {
+                        id: endpointText
                         Layout.fillWidth: true
                         text: modelData.endpoint
                         color: Theme.textSecondary
                         font.pixelSize: Theme.fontSizeCaption
                         font.family: Theme.fontMono
                         elide: Text.ElideRight
+
+                        // docs/25 C5: elide 截断时悬停可看完整端点
+                        HoverHandler { id: endpointHover }
+                        ToolTip.visible: endpointHover.hovered && endpointText.truncated
+                        ToolTip.text: endpointText.text
                     }
 
                     Text {
+                        // docs/25 C4: McpManager.lastError 是全局共享字段，
+                        // 多服务器失败时逐条重复展示同一错误会误导归属——
+                        // 仅当失败项唯一时展示具体错误；多个失败统一提示，
+                        // 细节见日志。
                         visible: modelData.state === 3
                                  && McpManager.lastError !== ""
                         Layout.fillWidth: true
-                        text: McpManager.lastError
+                        text: McpManager.servers.filter(
+                                  function(s) { return s.state === 3 }).length === 1
+                              ? McpManager.lastError
+                              : qsTr("多个服务器连接失败，详见日志")
                         color: Theme.statusDanger
                         font.pixelSize: Theme.fontSizeCaption
                         font.family: Theme.fontSans

@@ -33,6 +33,12 @@ Rectangle {
         return v.toFixed(1) + suffix
     }
 
+    // docs/25 C4: token 明细浮层的精确数字走千分位（与 UsageStatsPage
+    // .fmtNumber 同一口径）；formatTokens 的紧凑显示仅用于顶栏小字。
+    function fmtNumber(n) {
+        return Number(n || 0).toLocaleString(Qt.locale(), 'f', 0)
+    }
+
     // Bottom border
     Rectangle {
         width: parent.width
@@ -610,7 +616,7 @@ Rectangle {
                             elide: Text.ElideRight
                         }
                         Text {
-                            text: modelData.tokens
+                            text: root.fmtNumber(modelData.tokens)
                             color: Theme.textSecondary
                             font.pixelSize: Theme.fontSizeCaption
                             font.family: Theme.fontMono
@@ -645,7 +651,7 @@ Rectangle {
                         font.family: Theme.fontMono
                     }
                     Text {
-                        text: tokenPopup.maxTokens - tokenPopup.totalTokens
+                        text: root.fmtNumber(tokenPopup.maxTokens - tokenPopup.totalTokens)
                         color: Theme.textSecondary
                         font.pixelSize: Theme.fontSizeCaption
                         font.family: Theme.fontMono
@@ -702,7 +708,7 @@ Rectangle {
                             elide: Text.ElideRight
                         }
                         Text {
-                            text: modelData.tokens
+                            text: root.fmtNumber(modelData.tokens)
                             color: Theme.textSecondary
                             font.pixelSize: Theme.fontSizeCaption
                             font.family: Theme.fontMono
@@ -744,7 +750,7 @@ Rectangle {
                             elide: Text.ElideRight
                         }
                         Text {
-                            text: modelData.tokens
+                            text: root.fmtNumber(modelData.tokens)
                             color: Theme.textSecondary
                             font.pixelSize: Theme.fontSizeCaption
                             font.family: Theme.fontMono

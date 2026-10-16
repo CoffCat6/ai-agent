@@ -121,7 +121,7 @@ Item {
                         text: Settings.maxSteps
                         placeholderText: "30"
                         placeholderTextColor: Theme.textSecondary
-                        color: Theme.textPrimary; selectionColor: Theme.brandPrimary; selectedTextColor: "#ffffff"
+                        color: Theme.textPrimary; selectionColor: Theme.brandPrimary; selectedTextColor: Theme.selectedTextColor
                         font.pixelSize: Theme.fontSizeBody; font.family: Theme.fontSans
                         validator: IntValidator { bottom: 3; top: 1000 }
                         background: Rectangle { radius: 6; color: Theme.bgPrimary; border.width: maxStepsField.activeFocus ? 2 : 1; border.color: maxStepsField.activeFocus ? Theme.brandPrimary : Theme.borderSubtle }
@@ -182,7 +182,7 @@ Item {
                     placeholderText: qsTr("留空 = 内置提示词")
                     placeholderTextColor: Theme.textSecondary
                     color: Theme.textPrimary
-                    selectionColor: Theme.brandPrimary; selectedTextColor: "#ffffff"
+                    selectionColor: Theme.brandPrimary; selectedTextColor: Theme.selectedTextColor
                     wrapMode: TextArea.Wrap
                     font.pixelSize: Theme.fontSizeBody; font.family: Theme.fontMono
                     background: Rectangle { radius: 6; color: Theme.bgPrimary; border.width: promptField.activeFocus ? 2 : 1; border.color: promptField.activeFocus ? Theme.brandPrimary : Theme.borderSubtle }

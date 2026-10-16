@@ -64,6 +64,7 @@ Rectangle {
             }
 
             Text {
+                id: privacyNote
                 // Privacy statement (audit P1-7): local storage/retrieval does
                 // NOT mean the content stays local - passages travel with the
                 // request to whichever model service is configured. Batch 14:
@@ -77,6 +78,11 @@ Rectangle {
                 Layout.fillWidth: true
                 elide: Text.ElideRight
                 visible: AgentVM.knowledgeDocuments.length > 0
+
+                // docs/25 C5: 说明被 elide 截断时悬停查看全文
+                HoverHandler { id: privacyNoteHover }
+                ToolTip.visible: privacyNoteHover.hovered && privacyNote.truncated
+                ToolTip.text: privacyNote.text
             }
 
             // Import-in-progress indicator (embedding runs in background).
@@ -263,7 +269,8 @@ Rectangle {
                             }
 
                             Text {
-                                text: modelData.chunks + qsTr(" 段 · ") + modelData.chars + qsTr(" 字符")
+                                // docs/25 C2: 量词拼接模板化，单一可译模板
+                                text: qsTr("%1 段 · %2 字符").arg(modelData.chunks).arg(modelData.chars)
                                 color: Theme.textSecondary
                                 font.pixelSize: 9
                                 font.family: Theme.fontMono

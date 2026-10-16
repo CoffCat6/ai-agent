@@ -38,12 +38,25 @@ Dialog {
         var lines = []
         for (var i = 0; i < filtered.length; ++i) {
             var e = filtered[i]
-            var t = e.timestamp ? Qt.formatDateTime(new Date(e.timestamp), "yyyy-MM-dd hh:mm:ss") : "-"
+            var t = e.timestamp ? Theme.formatDateTimeSec(new Date(e.timestamp)) : "-"
             lines.push(t + "  [" + e.event + "]  " + e.toolName
                        + (e.arguments ? "  " + e.arguments : "")
                        + (e.detail ? "  // " + e.detail : ""))
         }
         return lines.join("\n")
+    }
+
+    // docs/25 C3: event 枚举 → 可读标签（进翻译流程，英文界面不再裸露
+    // tool_execute 等内部枚举）。剪贴板导出保留原始枚举以便程序化检索。
+    function eventLabel(ev) {
+        var map = {
+            "tool_execute":  qsTr("工具执行"),
+            "tool_approved": qsTr("工具已批准"),
+            "tool_declined": qsTr("工具已拒绝"),
+            "tool_blocked":  qsTr("工具已拦截"),
+            "unknown_tool":  qsTr("未知工具")
+        }
+        return map[ev] || ev
     }
 
     onAboutToShow: {
@@ -172,13 +185,15 @@ Dialog {
                         Text {
                             id: badge
                             anchors.centerIn: parent
+                            // docs/25 C3: 结果徽标映射为可读 qsTr 标签，
+                            // 不再裸露 OK/FAIL 等英文缩写
                             text: {
                                 var ev = modelData.event
-                                if (ev === "tool_execute") return modelData.success ? "OK" : "FAIL"
-                                if (ev === "tool_approved") return "ALLOW"
-                                if (ev === "tool_declined") return "DENIED"
-                                if (ev === "tool_blocked") return "BLOCKED"
-                                if (ev === "unknown_tool") return "UNKNOWN"
+                                if (ev === "tool_execute") return modelData.success ? qsTr("成功") : qsTr("失败")
+                                if (ev === "tool_approved") return qsTr("允许")
+                                if (ev === "tool_declined") return qsTr("拒绝")
+                                if (ev === "tool_blocked") return qsTr("拦截")
+                                if (ev === "unknown_tool") return qsTr("未知")
                                 return ev.toUpperCase()
                             }
                             font.pixelSize: 9
@@ -200,7 +215,7 @@ Dialog {
                         spacing: 2
 
                         Text {
-                            text: modelData.toolName + "  ·  " + modelData.event
+                            text: modelData.toolName + "  ·  " + dialog.eventLabel(modelData.event)
                             color: Theme.textPrimary
                             font.pixelSize: Theme.fontSizeCaption
                             font.family: Theme.fontMono

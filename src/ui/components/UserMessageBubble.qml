@@ -160,7 +160,7 @@ Item {
             anchors.verticalCenter: parent.verticalCenter
             visible: root.modelData.timestamp !== undefined
             text: root.modelData.timestamp !== undefined
-                ? Qt.formatDateTime(new Date(root.modelData.timestamp), "HH:mm")
+                ? Theme.formatTime(new Date(root.modelData.timestamp))
                 : ""
             color: Theme.textTertiary
             font.pixelSize: Theme.fontSizeCaption

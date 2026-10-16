@@ -153,12 +153,18 @@ Item {
                                 iconColor: Theme.statusDanger
                             }
                             Text {
+                                id: denyPathText
                                 Layout.fillWidth: true
                                 text: modelData
                                 color: Theme.textPrimary
                                 font.pixelSize: Theme.fontSizeCaption
                                 font.family: Theme.fontMono
                                 elide: Text.ElideRight
+
+                                // docs/25 C5: 路径被 elide 截断时悬停查看完整值
+                                HoverHandler { id: denyPathHover }
+                                ToolTip.visible: denyPathHover.hovered && denyPathText.truncated
+                                ToolTip.text: denyPathText.text
                             }
                             Rectangle {
                                 width: 20; height: 20; radius: 4
@@ -206,7 +212,7 @@ Item {
                         placeholderTextColor: Theme.textSecondary
                         color: Theme.textPrimary
                         selectionColor: Theme.brandPrimary
-                        selectedTextColor: "#ffffff"
+                        selectedTextColor: Theme.selectedTextColor
                         font.pixelSize: Theme.fontSizeBody
                         font.family: Theme.fontMono
                         background: Rectangle {

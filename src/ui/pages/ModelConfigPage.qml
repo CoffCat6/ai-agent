@@ -680,7 +680,7 @@ Item {
                         placeholderTextColor: Theme.textSecondary
                         color: Theme.textPrimary
                         selectionColor: Theme.brandPrimary
-                        selectedTextColor: "#ffffff"
+                        selectedTextColor: Theme.selectedTextColor
                         font.pixelSize: Theme.fontSizeCaption
                         font.family: Theme.fontMono
                         background: Rectangle {

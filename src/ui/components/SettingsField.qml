@@ -74,7 +74,7 @@ RowLayout {
         echoMode: root.secret && !root.revealed ? TextInput.Password : TextInput.Normal
         color: Theme.textPrimary
         selectionColor: Theme.brandPrimary
-        selectedTextColor: "#ffffff"
+        selectedTextColor: Theme.selectedTextColor
         font.pixelSize: Theme.fontSizeBody
         font.family: Theme.fontSans
         background: Rectangle {

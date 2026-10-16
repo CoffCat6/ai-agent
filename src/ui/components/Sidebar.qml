@@ -229,7 +229,9 @@ Rectangle {
                     Layout.topMargin: 8
 
                     Text {
-                        text: "PROJECTS"
+                        // docs/25 C3: 区块标题进翻译流程（中文「项目」，
+                        // 与下方「对话」标题风格一致）
+                        text: qsTr("PROJECTS")
                         color: Theme.textSecondary
                         font.pixelSize: 10
                         font.family: Theme.fontMono
@@ -875,6 +877,7 @@ Rectangle {
                         }
 
                         Text {
+                            id: sessionTitle
                             visible: !sessionDelegate.renaming
                             anchors.verticalCenter: parent.verticalCenter
                             text: modelData.title && modelData.title.length > 0
@@ -884,6 +887,11 @@ Rectangle {
                             font.family: Theme.fontSans
                             elide: Text.ElideRight
                             width: parent.width - (sessionDelegate.hovered ? 132 : 0)
+
+                            // docs/25 C5: elide 截断时悬停可看完整标题
+                            HoverHandler { id: sessionTitleHover }
+                            ToolTip.visible: sessionTitleHover.hovered && sessionTitle.truncated
+                            ToolTip.text: sessionTitle.text
                         }
 
                         // Hover 操作行：置顶 / 归档 / 导出 / 重命名 / 删除。

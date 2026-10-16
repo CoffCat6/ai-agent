@@ -1,6 +1,8 @@
 #pragma once
 
 #include <QColor>
+#include <QDateTime>
+#include <QLocale>
 #include <QQmlEngine>
 #include <QObject>
 
@@ -147,6 +149,34 @@ public:
     QColor statusDangerSurface() const {
         return m_manager->isDark() ? QColor("#2A1618") : QColor("#FFF1F0");
     }
+
+    // ── docs/25 C1: 统一时间格式化出口 ─────────────────
+    // QML 各处原先直接 Qt.formatDateTime 且 hh/HH 口径不一（12/24 小时
+    // 混排：记忆页/日志/审计为 12h，消息气泡为 24h）。统一收口到 Theme
+    // 单例：内部走 QLocale（等价 QML 的 Qt.locale()，数字排版随界面
+    // locale），一律 24 小时制，与日志/审计口径一致。
+    Q_INVOKABLE QString formatDateTime(const QDateTime& dt) const {
+        // 完整时间戳（记忆条目等）：yyyy-MM-dd HH:mm
+        return QLocale().toString(dt, QStringLiteral("yyyy-MM-dd HH:mm"));
+    }
+    Q_INVOKABLE QString formatDateTimeSec(const QDateTime& dt) const {
+        // 带秒时间戳（审计导出等）：yyyy-MM-dd HH:mm:ss
+        return QLocale().toString(dt, QStringLiteral("yyyy-MM-dd HH:mm:ss"));
+    }
+    Q_INVOKABLE QString formatTime(const QDateTime& dt) const {
+        // 消息气泡短时间：HH:mm
+        return QLocale().toString(dt, QStringLiteral("HH:mm"));
+    }
+    Q_INVOKABLE QString formatLogTime(const QDateTime& dt) const {
+        // 日志面板紧凑时间：MM-dd HH:mm:ss
+        return QLocale().toString(dt, QStringLiteral("MM-dd HH:mm:ss"));
+    }
+
+    // ── docs/25 C6: 文本选区前景色 token ───────────────
+    // 10+ 处 QML 硬编码 selectedTextColor: "#ffffff" 的统一替代；与
+    // selectionColor: Theme.brandPrimary 搭配（白字对品牌色底满足对比度）。
+    Q_PROPERTY(QColor selectedTextColor READ selectedTextColor CONSTANT FINAL)
+    QColor selectedTextColor() const { return QColor("#FFFFFF"); }
 
     // ── Spacing scale (docs/19 §3.3, theme-independent) ──
     Q_PROPERTY(int spaceXs READ spaceXs CONSTANT FINAL)

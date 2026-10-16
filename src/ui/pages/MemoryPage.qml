@@ -196,7 +196,7 @@ Item {
                 placeholderTextColor: Theme.textSecondary
                 color: Theme.textPrimary
                 selectionColor: Theme.brandPrimary
-                selectedTextColor: "#ffffff"
+                selectedTextColor: Theme.selectedTextColor
                 font.pixelSize: Theme.fontSizeBody
                 font.family: Theme.fontSans
                 background: Rectangle {
@@ -252,7 +252,11 @@ Item {
                 ScrollBar.vertical: ScrollBar {}
 
                 delegate: Rectangle {
+                    id: episodeDelegate
                     required property var modelData
+                    // docs/25 C5: 摘要 3 行截断的展开/收起状态（delegate 局部，
+                    // 切换条目后随 delegate 重建复位）
+                    property bool summaryExpanded: false
                     width: list.width - 8
                     implicitHeight: itemCol.implicitHeight + 20
                     radius: 6
@@ -270,15 +274,34 @@ Item {
                         spacing: 6
 
                         Text {
+                            id: summaryText
                             text: modelData.summary && modelData.summary.length > 0
                                   ? modelData.summary : qsTr("(空摘要)")
                             color: Theme.textPrimary
                             font.pixelSize: Theme.fontSizeBody
                             font.family: Theme.fontSans
                             wrapMode: Text.Wrap
-                            maximumLineCount: 3
+                            // docs/25 C5: 默认 3 行截断，可展开查看全文
+                            maximumLineCount: episodeDelegate.summaryExpanded ? 99999 : 3
                             elide: Text.ElideRight
                             Layout.fillWidth: true
+                        }
+
+                        // docs/25 C5: 摘要展开/收起入口——仅在发生截断或
+                        // 已展开时可见，避免短摘要挂一个无意义操作。
+                        Text {
+                            visible: summaryText.truncated || episodeDelegate.summaryExpanded
+                            text: episodeDelegate.summaryExpanded ? qsTr("收起") : qsTr("展开全文")
+                            color: Theme.brandPrimary
+                            font.pixelSize: Theme.fontSizeCaption
+                            font.family: Theme.fontSans
+
+                            MouseArea {
+                                anchors.fill: parent
+                                cursorShape: Qt.PointingHandCursor
+                                onClicked: episodeDelegate.summaryExpanded =
+                                           !episodeDelegate.summaryExpanded
+                            }
                         }
 
                         RowLayout {
@@ -286,8 +309,7 @@ Item {
                             spacing: 12
 
                             Text {
-                                text: Qt.formatDateTime(new Date(modelData.timestamp),
-                                                        "yyyy-MM-dd hh:mm")
+                                text: Theme.formatDateTime(new Date(modelData.timestamp))
                                 color: Theme.textSecondary
                                 font.pixelSize: Theme.fontSizeCaption
                                 font.family: Theme.fontMono

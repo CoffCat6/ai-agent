@@ -80,7 +80,8 @@ Item {
                                     text: "· " + (modelData.level === "safe" ? qsTr("自动")
                                                 : modelData.level === "requires_confirm" ? qsTr("需确认")
                                                 : qsTr("危险"))
-                                    color: modelData.level === "dangerous" ? "#e85d5d" : Theme.textSecondary
+                                    // docs/25 C6: 危险级别色归 Theme token
+                                    color: modelData.level === "dangerous" ? Theme.statusDanger : Theme.textSecondary
                                     font.pixelSize: 10
                                     font.family: Theme.fontSans
                                 }
@@ -196,7 +197,7 @@ Item {
                             placeholderTextColor: Theme.textSecondary
                             color: Theme.textPrimary
                             selectionColor: Theme.brandPrimary
-                            selectedTextColor: "#ffffff"
+                            selectedTextColor: Theme.selectedTextColor
                             font.pixelSize: Theme.fontSizeBody
                             font.family: Theme.fontSans
                             background: Rectangle {
@@ -253,7 +254,7 @@ Item {
                         placeholderTextColor: Theme.textSecondary
                         color: Theme.textPrimary
                         selectionColor: Theme.brandPrimary
-                        selectedTextColor: "#ffffff"
+                        selectedTextColor: Theme.selectedTextColor
                         font.pixelSize: Theme.fontSizeBody
                         font.family: Theme.fontSans
                         background: Rectangle {

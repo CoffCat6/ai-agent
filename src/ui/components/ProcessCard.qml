@@ -58,11 +58,12 @@ Item {
                 const xy = line.substring(0, 2)
                 const path = line.substring(3)
                 let badge = "?", color = Theme.textSecondary
-                if (xy === "??") { badge = "新"; color = Theme.statusSuccess }
-                else if (xy[0] === "A" || xy[1] === "A") { badge = "增"; color = Theme.statusSuccess }
-                else if (xy[0] === "D" || xy[1] === "D") { badge = "删"; color = Theme.statusDanger }
-                else if (xy[0] === "M" || xy[1] === "M") { badge = "改"; color = Theme.statusWarning }
-                else if (xy[0] === "R" || xy[1] === "R") { badge = "移"; color = Theme.brandPrimary }
+                // docs/25 C3: git 徽标单字进翻译流程，英文界面不再裸露中文
+                if (xy === "??") { badge = qsTr("新"); color = Theme.statusSuccess }
+                else if (xy[0] === "A" || xy[1] === "A") { badge = qsTr("增"); color = Theme.statusSuccess }
+                else if (xy[0] === "D" || xy[1] === "D") { badge = qsTr("删"); color = Theme.statusDanger }
+                else if (xy[0] === "M" || xy[1] === "M") { badge = qsTr("改"); color = Theme.statusWarning }
+                else if (xy[0] === "R" || xy[1] === "R") { badge = qsTr("移"); color = Theme.brandPrimary }
                 entries.push({status: badge, text: path, color: color})
             }
         }
@@ -204,58 +205,72 @@ Item {
                 font.family: Theme.fontSans
             }
 
-            // git_status 结构化文件列表
-            Column {
-                visible: root.bodyVisible && root.gitStatusEntries !== null
+            // 展开区（docs/25 C7: 折叠态不实例化重型内容——Loader 绑定
+            // bodyVisible，超长会话中大量折叠的过程节点不再为不可见的
+            // 文本布局付费；折叠态高度仅由头部+摘要行决定，天然稳定）。
+            Loader {
+                id: bodyLoader
+                active: root.bodyVisible
+                visible: active
                 width: parent.width
-                spacing: 1
+                sourceComponent: root.gitStatusEntries !== null
+                                  ? gitStatusComp : codeComp
+            }
 
-                Repeater {
-                    model: root.gitStatusEntries
+            Component {
+                id: gitStatusComp
+                Column {
+                    width: bodyLoader.width
+                    spacing: 1
 
-                    delegate: Row {
-                        width: parent.width
-                        spacing: 6
+                    Repeater {
+                        model: root.gitStatusEntries
 
-                        Rectangle {
-                            width: 22; height: 16; radius: 3
-                            anchors.verticalCenter: parent.verticalCenter
-                            color: modelData.color
-                            opacity: 0.15
+                        delegate: Row {
+                            width: parent.width
+                            spacing: 6
+
+                            Rectangle {
+                                width: 22; height: 16; radius: 3
+                                anchors.verticalCenter: parent.verticalCenter
+                                color: modelData.color
+                                opacity: 0.15
+
+                                Text {
+                                    anchors.centerIn: parent
+                                    text: modelData.status
+                                    color: modelData.color
+                                    font.pixelSize: 9
+                                    font.family: Theme.fontSans
+                                    font.bold: true
+                                }
+                            }
 
                             Text {
-                                anchors.centerIn: parent
-                                text: modelData.status
+                                anchors.verticalCenter: parent.verticalCenter
+                                text: modelData.text
                                 color: modelData.color
-                                font.pixelSize: 9
-                                font.family: Theme.fontSans
-                                font.bold: true
+                                font.pixelSize: Theme.fontSizeCaption
+                                font.family: Theme.fontMono
+                                elide: Text.ElideRight
+                                width: parent.width - 28
                             }
-                        }
-
-                        Text {
-                            anchors.verticalCenter: parent.verticalCenter
-                            text: modelData.text
-                            color: modelData.color
-                            font.pixelSize: Theme.fontSizeCaption
-                            font.family: Theme.fontMono
-                            elide: Text.ElideRight
-                            width: parent.width - 28
                         }
                     }
                 }
             }
 
-            // 展开区
-            CodeBlock {
-                visible: root.bodyVisible && root.gitStatusEntries === null
-                width: parent.width
-                text: root.detailText
-                textColor: root.nodeType === "tool_result"
-                    ? Theme.statusSuccess
-                    : (root.nodeType === "thinking"
-                       ? Theme.textSecondary : Theme.textPrimary)
-                bgColor: Theme.codeBackground
+            Component {
+                id: codeComp
+                CodeBlock {
+                    width: bodyLoader.width
+                    text: root.detailText
+                    textColor: root.nodeType === "tool_result"
+                        ? Theme.statusSuccess
+                        : (root.nodeType === "thinking"
+                           ? Theme.textSecondary : Theme.textPrimary)
+                    bgColor: Theme.codeBackground
+                }
             }
 
             // 变更预览（确认态且有 preview 时显示）

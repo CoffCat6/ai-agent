@@ -21,6 +21,20 @@ Item {
     property var bySourceData: []
     property real sourcesTotal: 0   // 各来源 token 之和（占比分母，避免估算值 > totalTokens 导致 > 100%）
 
+    // docs/25 C5: 费用明细空态判定（表头/合计/预估行共用）
+    readonly property bool costRowsEmpty: (costStatsData.byModel || []).length === 0
+    // docs/25 C5: 配额区空态判定——无任何用量且未配置任何配额时，
+    // 四行 0/不限 没有信息量，统一显示空态（对齐 byModel/byDay）。
+    readonly property bool quotaEmpty: {
+        var q = quotaStatusData || {}
+        return Number(q.dailyTokensUsed || 0) === 0
+            && Number(q.dailyCostCentsUsed || 0) === 0
+            && Number(q.monthlyTokensUsed || 0) === 0
+            && Number(q.monthlyCostCentsUsed || 0) === 0
+            && Settings.dailyTokenQuota <= 0 && Settings.dailyCostQuotaCents <= 0
+            && Settings.monthlyTokenQuota <= 0 && Settings.monthlyCostQuotaCents <= 0
+    }
+
     function refresh() {
         stats = AgentVM.tokenStatsDetailed(windowDays)
         costStatsData = AgentVM.costStats(windowDays)
@@ -414,8 +428,9 @@ Item {
                             anchors.margins: 12
                             spacing: 4
 
-                            // 表头
+                            // 表头（docs/25 C5: 空态时隐藏，与 byModel/byDay 空态形态一致）
                             RowLayout {
+                                visible: page.bySourceData.length > 0
                                 Layout.fillWidth: true
                                 spacing: 8
                                 Text {
@@ -450,6 +465,16 @@ Item {
                                     font.family: Theme.fontMono
                                     Layout.fillWidth: true
                                 }
+                            }
+
+                            // docs/25 C5: 按来源空态补全（对齐 byModel/byDay）
+                            Text {
+                                visible: page.bySourceData.length === 0
+                                text: qsTr("该范围内暂无数据")
+                                color: Theme.textSecondary
+                                font.pixelSize: Theme.fontSizeBody
+                                font.family: Theme.fontSans
+                                opacity: 0.7
                             }
 
                             Repeater {
@@ -523,8 +548,9 @@ Item {
                             anchors.margins: 12
                             spacing: 4
 
-                            // 表头
+                            // 表头（docs/25 C5: 空态时隐藏）
                             RowLayout {
+                                visible: !page.costRowsEmpty
                                 Layout.fillWidth: true
                                 spacing: 8
                                 Text {
@@ -559,6 +585,16 @@ Item {
                                     font.family: Theme.fontMono
                                     Layout.preferredWidth: 70
                                 }
+                            }
+
+                            // docs/25 C5: 费用明细空态补全（对齐 byModel/byDay）
+                            Text {
+                                visible: page.costRowsEmpty
+                                text: qsTr("该范围内暂无数据")
+                                color: Theme.textSecondary
+                                font.pixelSize: Theme.fontSizeBody
+                                font.family: Theme.fontSans
+                                opacity: 0.7
                             }
 
                             Repeater {
@@ -602,13 +638,15 @@ Item {
                                 }
                             }
 
-                            // 合计行
+                            // 合计行（docs/25 C5: 费用明细空态时一并隐藏）
                             Rectangle {
+                                visible: !page.costRowsEmpty
                                 Layout.fillWidth: true
                                 Layout.preferredHeight: 1
                                 color: Theme.borderSubtle
                             }
                             RowLayout {
+                                visible: !page.costRowsEmpty
                                 Layout.fillWidth: true
                                 spacing: 8
                                 Text {
@@ -644,6 +682,7 @@ Item {
                             }
 
                             Text {
+                                visible: !page.costRowsEmpty
                                 text: qsTr("预估月费用: %1").arg(page.fmtCost(page.costStatsData.projectedMonthlyCents))
                                 color: Theme.textSecondary
                                 font.pixelSize: Theme.fontSizeCaption
@@ -681,8 +720,20 @@ Item {
                             anchors.margins: 12
                             spacing: 8
 
+                            // docs/25 C5: 配额区空态补全（对齐 byModel/byDay）——
+                            // 无任何用量且未配置任何配额时不渲染 0/不限 四行
+                            Text {
+                                visible: page.quotaEmpty
+                                text: qsTr("该范围内暂无数据")
+                                color: Theme.textSecondary
+                                font.pixelSize: Theme.fontSizeBody
+                                font.family: Theme.fontSans
+                                opacity: 0.7
+                            }
+
                             // 日 Token / 日费用 / 月 Token / 月费用
                             Repeater {
+                                visible: !page.quotaEmpty
                                 model: [
                                     { label: qsTr("日 Token"), used: page.quotaStatusData.dailyTokensUsed, quota: Settings.dailyTokenQuota, isCost: false },
                                     { label: qsTr("日费用"), used: page.quotaStatusData.dailyCostCentsUsed, quota: Settings.dailyCostQuotaCents, isCost: true },

@@ -1,4 +1,5 @@
 import QtQuick
+import QtQuick.Controls
 import NexusAI
 import NexusAI.ViewModels
 
@@ -51,6 +52,7 @@ Rectangle {
         }
 
         Text {
+            id: chipName
             anchors.verticalCenter: parent.verticalCenter
             text: root.name
             color: Theme.textPrimary
@@ -58,6 +60,11 @@ Rectangle {
             font.family: Theme.fontSans
             elide: Text.ElideRight
             width: Math.min(implicitWidth, 140)
+
+            // docs/25 C5: 文件名被 140px 上限截断时悬停可看全名
+            HoverHandler { id: chipNameHover }
+            ToolTip.visible: chipNameHover.hovered && chipName.truncated
+            ToolTip.text: chipName.text
         }
     }
 

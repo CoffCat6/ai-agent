@@ -15,6 +15,9 @@ Item {
     readonly property real maximumOffset: Math.max(0, flick.contentHeight - flick.height)
     readonly property bool userInteracting: flick.moving || scrollMouse.pressed
     property bool pinnedToBottom: true
+    // docs/25 C6: 本组件刻意不 import NexusAI（tests/qml 以相对路径直接
+    // 加载，保持 dependency-free），故无法引用 Theme token；此中性灰仅作
+    // 模块外回退默认值，生产路径由 AgentChatPage 注入 Theme token。
     property color scrollBarColor: "#808080"
 
     function clampOffset(offset) {

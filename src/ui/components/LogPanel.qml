@@ -255,7 +255,7 @@ Dialog {
                     // which swallowed the severity of every backfilled row.
                     Text {
                         Layout.preferredWidth: 108
-                        text: Qt.formatDateTime(new Date(timestamp), "MM-dd hh:mm:ss")
+                        text: Theme.formatLogTime(new Date(timestamp))
                         color: Theme.textSecondary
                         font.pixelSize: 10
                         font.family: Theme.fontMono
@@ -264,8 +264,12 @@ Dialog {
                     Text {
                         Layout.preferredWidth: 46
                         text: level
-                        color: (level === "WARN" || level === "CRIT" || level === "FATAL")
-                            ? Theme.brandPrimary : Theme.textSecondary
+                        // docs/25 C6: 告警级别不再共用 brandPrimary——WARN 用
+                        // 告警色、CRIT/FATAL 用危险色，语义与状态徽标对齐。
+                        color: level === "WARN"
+                            ? Theme.statusWarning
+                            : ((level === "CRIT" || level === "FATAL")
+                               ? Theme.statusDanger : Theme.textSecondary)
                         font.pixelSize: 10
                         font.family: Theme.fontMono
                         font.bold: level === "WARN" || level === "CRIT" || level === "FATAL"
