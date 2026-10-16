@@ -132,6 +132,7 @@ public:
     QJsonArray messages() const { return m_messages; }
     QJsonArray traceModel() const { return m_traceModel; }
     QString lastResponse() const { return m_lastResponse; }
+    QJsonArray todoList() const { return m_todoList; }
 
     QString currentSessionId() const { return m_sessionId; }
 
@@ -184,7 +185,7 @@ signals:
     void stateChanged(AgentState state);
     void traceChanged();
     void responseReady(const QString& response);
-    void toolConfirmRequired(const QString& id, const QString& name, const QJsonObject& args);
+    void toolConfirmRequired(const QString& id, const QString& name, const QJsonObject& args, const QString& preview);
     void errorOccurred(const QString& error);
     void tokensChanged(int usedTokens);
     void contextLimitChanged();
@@ -196,6 +197,10 @@ signals:
     void costChanged(qint64 costCents);
     // 会话累计 token 变化（新请求记账 / 换会话恢复 / 新会话清零）。
     void sessionTokensChanged(qint64 sessionTokens);
+    // P5a: task list managed by the todo_write tool.
+    void todoListChanged(const QJsonArray& todos);
+    // Episodic memory changed (new summary stored / deleted / cleared).
+    void episodicChanged();
 
 private:
     void setState(AgentState state);
@@ -281,6 +286,9 @@ private:
     QString m_activeProjectName;
     QString m_activeProjectRoot;
     QString m_lastResponse;
+
+    // P5a: task list maintained by the todo_write tool.
+    QJsonArray m_todoList;
 
     QVector<ToolCallInfo> m_pendingToolCalls;
     ToolCallInfo m_currentConfirmCall;

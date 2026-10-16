@@ -34,6 +34,11 @@ Item {
 
     Component.onCompleted: refresh()
 
+    Connections {
+        target: AgentVM
+        function onEpisodicChanged() { page.applySearch() }
+    }
+
     ColumnLayout {
         anchors.fill: parent
         spacing: 0

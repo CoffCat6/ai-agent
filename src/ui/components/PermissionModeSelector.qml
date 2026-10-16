@@ -40,7 +40,7 @@ Item {
         color: triggerMA.containsMouse || modePopup.opened
             ? Theme.surfaceHover : "transparent"
         border.width: 1
-        border.color: modePopup.opened || root.isFullAccess
+        border.color: modePopup.opened
             ? root.accentColor : "transparent"
 
         Behavior on color { ColorAnimation { duration: 150 } }

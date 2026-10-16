@@ -604,10 +604,10 @@ void TestAgent::dangerousToolsNotExposed() {
     agent.startTask("hi");
     QTRY_COMPARE(spy.count(), 1);
 
-    // The 5 Safe/RequiresConfirm built-ins are exposed; the Dangerous probe
+    // The Safe/RequiresConfirm built-ins are exposed; the Dangerous probe
     // must be withheld from the schema entirely.
     const auto seen = llm.seenTools.first();
-    QCOMPARE(seen.size(), 5);
+    QCOMPARE(seen.size(), 11);
     for (const auto& entry : seen) {
         QVERIFY(entry.toObject().value("function").toObject().value("name").toString()
                     != QStringLiteral("test_dangerous"));
@@ -653,7 +653,14 @@ void TestAgent::confirmApproveWritesFile() {
     QTRY_COMPARE(confirmSpy.count(), 1);
     QCOMPARE(agent.state(), AgentState::AwaitingToolConfirm);
 
-    const QString id = confirmSpy.first().first().toString();
+    // P3: verify the preview (diff) is generated and non-empty for write_file.
+    const QList<QVariant> confirmArgs = confirmSpy.first();
+    QCOMPARE(confirmArgs.size(), 4);
+    const QString preview = confirmArgs.at(3).toString();
+    QVERIFY2(!preview.isEmpty(), "write_file preview should be non-empty (new file diff)");
+    QVERIFY2(preview.contains(QStringLiteral("+++")), qPrintable(preview));
+
+    const QString id = confirmArgs.at(0).toString();
     QSignalSpy spy(&agent, &AIAgent::responseReady);
     agent.approveToolCall(id, true);
     QTRY_COMPARE_WITH_TIMEOUT(spy.count(), 1, 15000);
@@ -1776,7 +1783,9 @@ void TestAgent::multipleDistinctToolCallsInOneResponse() {
         if (content.contains(QStringLiteral("fine"))) anomalyPos = idx;
         ++idx;
     }
-    QVERIFY(readPos >= 0 && anomalyPos > readPos);
+    // P2: parallel execution — results may arrive in any order; verify both
+    // are present rather than asserting a specific ordering.
+    QVERIFY(readPos >= 0 && anomalyPos >= 0);
     QVERIFY2(noDanglingToolCalls(sent), "mixed burst left dangling tool_calls");
     agent.setMemory(nullptr);
 }

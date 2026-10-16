@@ -12,10 +12,11 @@ Dialog {
     anchors.centerIn: parent
     padding: 0
     width: 440
-    height: Math.min(460, parent ? parent.height - 24 : 460)
+    height: Math.min(560, parent ? parent.height - 24 : 560)
 
     property string toolName: ""
     property string arguments: "{}"
+    property string preview: ""
     property string pendingToolCallId: ""
     property string sessionTitle: ""
     property int pendingCount: 0
@@ -30,6 +31,7 @@ Dialog {
         pendingToolCallId = request.id
         toolName = request.name
         arguments = JSON.stringify(request.arguments, null, 2)
+        preview = request.preview || ""
         sessionTitle = request.sessionTitle
         pendingCount = request.count
         if (!visible) open()
@@ -135,23 +137,22 @@ Dialog {
             }
         }
 
-        // Arguments header
+        // Diff preview (when available) or raw arguments
         Text {
             Layout.leftMargin: 20
             Layout.rightMargin: 20
-            text: qsTr("调用参数:")
+            text: dialog.preview ? qsTr("变更预览:") : qsTr("调用参数:")
             color: Theme.textSecondary
             font.pixelSize: Theme.fontSizeBody
             font.family: Theme.fontSans
         }
 
-        // Code block showing arguments
         CodeBlock {
             Layout.leftMargin: 20
             Layout.rightMargin: 20
             Layout.fillWidth: true
-            Layout.preferredHeight: 120
-            text: dialog.arguments
+            Layout.preferredHeight: dialog.preview ? 200 : 120
+            text: dialog.preview || dialog.arguments
         }
 
         // Action buttons

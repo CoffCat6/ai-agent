@@ -72,6 +72,11 @@ public:
         if (cancelled) cancelled->store(true);
         cancel();
     }
+    // P3: generate a human-readable preview (e.g. unified diff) for the
+    // confirmation dialog. Default returns empty — only file-mutating
+    // tools override this. Called on the GUI thread before dispatch, so
+    // the implementation must be fast and never block.
+    virtual QString generatePreview(const QJsonObject& args) const { Q_UNUSED(args) return {}; }
 };
 
 } // namespace NexusAI

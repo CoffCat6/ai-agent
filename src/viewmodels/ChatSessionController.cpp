@@ -83,11 +83,16 @@ void ChatSessionController::connectAgent(AIAgent* agent) {
     });
 
     connect(agent, &AIAgent::toolConfirmRequired, this,
-            [this](const QString& id, const QString& name, const QJsonObject& args) {
-        emit toolConfirmRequired(id, name, args.toVariantMap());
+            [this](const QString& id, const QString& name, const QJsonObject& args, const QString& preview) {
+        emit toolConfirmRequired(id, name, args.toVariantMap(), preview);
     });
 
     connect(agent, &AIAgent::errorOccurred, this, &ChatSessionController::errorOccurred);
+
+    connect(agent, &AIAgent::todoListChanged, this, [this](const QJsonArray& todos) {
+        m_todoList = todos.toVariantList();
+        emit todoListChanged(m_todoList);
+    });
 
     connect(agent, &AIAgent::tokensChanged, this, [this](int usedTokens) {
         m_usedTokens = usedTokens;
@@ -113,6 +118,8 @@ void ChatSessionController::connectAgent(AIAgent* agent) {
     // refreshes the shared list whenever any tab reports a change.
     connect(agent, &AIAgent::sessionsChanged, this,
             &ChatSessionController::sessionHistoryChanged);
+
+    connect(agent, &AIAgent::episodicChanged, this, &ChatSessionController::episodicChanged);
 
     connect(agent, &AIAgent::sessionChanged, this, [this](const QString& sessionId) {
         if (m_currentSessionId != sessionId) {

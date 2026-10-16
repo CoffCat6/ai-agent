@@ -56,6 +56,8 @@ QString truncateText(const QString& text, int maxChars) {
 }
 
 QString argsToString(const QJsonObject& args) {
+    if (args.isEmpty())
+        return {};
     return QString::fromUtf8(QJsonDocument(args).toJson(QJsonDocument::Compact));
 }
 
@@ -184,6 +186,9 @@ void AIAgent::setOwnedMemory(std::unique_ptr<IMemory> memory) {
 
 void AIAgent::setEpisodicService(EpisodicService* service) {
     m_episodicService = service;
+    if (m_episodicService)
+        connect(m_episodicService, &EpisodicService::summaryStored,
+                this, &AIAgent::episodicChanged);
 }
 
 void AIAgent::setMaxIterations(int steps) {
@@ -287,6 +292,8 @@ QString AIAgent::appendTraceNode(const QString& type, const QString& title,
         node["reasoning"] = extra.value("reasoning");
     if (extra.contains("messageId"))
         node["messageId"] = extra.value("messageId");
+    if (extra.contains("preview"))
+        node["preview"] = extra.value("preview");
 
     m_traceModel.append(node);
     persistTraceNode(node, m_nextTraceOrder++);
@@ -1384,6 +1391,9 @@ bool AIAgent::toolAllowedForModel(const QString& name) const {
 void AIAgent::processNextToolCall() {
     if (!m_active) return;
 
+    QVector<ToolCallInfo> parallelCalls;
+    QVector<bool> parallelAutoApproved;
+
     while (!m_pendingToolCalls.isEmpty()) {
         const ToolCallInfo call = m_pendingToolCalls.takeFirst();
         ITool* tool = m_toolRegistry ? m_toolRegistry->find(call.name) : nullptr;
@@ -1444,22 +1454,60 @@ void AIAgent::processNextToolCall() {
                         && def.autoEditSafe)));
 
         if (!autoApproved) {
-            // Suspend the loop and ask the user. The confirmation handle is
-            // the trace node id, matching what the QML timeline buttons send.
+            // Suspend the loop and ask the user. Dispatch any parallel calls
+            // collected so far first, then emit the confirmation request.
+            if (!parallelCalls.isEmpty())
+                for (int i = 0; i < parallelCalls.size(); ++i)
+                    dispatchToolExecution(parallelCalls[i], QString(),
+                                          parallelAutoApproved[i]);
+            const QString preview = tool ? tool->generatePreview(call.arguments) : QString();
             m_confirmNodeId = appendTraceNode("tool_call", call.name, "waiting_confirm",
-                            QJsonObject{{"args", argsToString(call.arguments)}});
+                            QJsonObject{{"args", argsToString(call.arguments)}, {"preview", preview}});
             m_currentConfirmCall = call;
             setState(AgentState::AwaitingToolConfirm);
-            emit toolConfirmRequired(m_confirmNodeId, call.name, call.arguments);
+            emit toolConfirmRequired(m_confirmNodeId, call.name, call.arguments, preview);
             return; // resumes in approveToolCall()
         }
 
-        dispatchToolExecution(call, QString(), def.level != ToolLevel::Safe);
-        return; // resumes in finishToolExecution()
+        // P2: collect for parallel dispatch — independent tools (e.g. multiple
+        // read_file) run concurrently on the thread pool instead of serially.
+        parallelCalls.append(call);
+        parallelAutoApproved.append(def.level != ToolLevel::Safe);
     }
 
-    // All tool calls handled -> feed results back to the LLM.
-    processIteration();
+    if (parallelCalls.isEmpty()) {
+        // All tool calls handled -> feed results back to the LLM.
+        processIteration();
+        return;
+    }
+
+    // P2: dispatch all auto-approved calls in parallel — independent tools
+    // (e.g. multiple read_file) run concurrently on the thread pool instead
+    // of serially waiting for each to finish. Budget is checked here so the
+    // seal + processIteration happens once, not per excess call.
+    for (int i = 0; i < parallelCalls.size(); ++i) {
+        if (m_toolExecutions >= m_maxToolExecutions) {
+            for (int j = i; j < parallelCalls.size(); ++j) {
+                appendTraceNode("tool_call", parallelCalls[j].name, "cancelled",
+                                QJsonObject{{"args", argsToString(parallelCalls[j].arguments)}});
+                appendToolResultMessage(parallelCalls[j],
+                    QStringLiteral("[Not executed] Tool execution budget exhausted."));
+            }
+            appendTraceNode("context",
+                QStringLiteral("Tool execution budget (%1) exhausted - forcing a "
+                               "final answer").arg(m_maxToolExecutions),
+                "completed");
+            m_forcedFinal = true;
+            // P2: if tools are still in flight, defer processIteration() until
+            // the last one finishes in finishToolExecution — otherwise the
+            // forced final answer fires before tool results are collected.
+            if (m_inFlightTools.isEmpty())
+                processIteration();
+            return;
+        }
+        dispatchToolExecution(parallelCalls[i], QString(),
+                              parallelAutoApproved[i]);
+    }
 }
 
 // ── Tool execution (worker thread) ────────────────────────
@@ -1497,7 +1545,8 @@ void AIAgent::dispatchToolExecution(const ToolCallInfo& call, const QString& tra
         }
         m_pendingToolCalls.clear();
         m_forcedFinal = true;
-        processIteration();
+        if (m_inFlightTools.isEmpty())
+            processIteration();
         return;
     }
 
@@ -1606,6 +1655,19 @@ void AIAgent::finishToolExecution(const ToolCallInfo& call, const QString& trace
                            m_lastTokensUsed, currentModel());
     }
 
+    // P5a: todo_write tool updates the agent's task list and notifies the UI.
+    if (result.success && call.name == QStringLiteral("todo_write")) {
+        const QJsonDocument doc = QJsonDocument::fromJson(result.output.toUtf8());
+        if (doc.isArray()) {
+            m_todoList = doc.array();
+            emit todoListChanged(m_todoList);
+        }
+    }
+
+    // P2: wait for all parallel tools to finish before resuming the loop —
+    // results from concurrent tools are batched into one LLM turn.
+    if (!m_inFlightTools.isEmpty())
+        return;
     processNextToolCall();
 }
 

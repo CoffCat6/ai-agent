@@ -9,9 +9,61 @@
 #include <QTextStream>
 #include <QDir>
 #include <QDirIterator>
+#include <QRegularExpression>
 #include <QJsonArray>
 #include <QJsonDocument>
 #include <QProcess>
+
+// ── P3: unified diff generator for file-mutating tool previews ──
+// Common-prefix/suffix line diff — O(n) and sufficient for the confirmation
+// dialog (files are already size-capped by read/edit bounds). Returns empty
+// when there are no changes.
+static QString unifiedDiff(const QString& oldText, const QString& newText,
+                           const QString& oldLabel, const QString& newLabel,
+                           int context = 3) {
+    const QStringList oldLines = oldText.split('\n', Qt::KeepEmptyParts);
+    const QStringList newLines = newText.split('\n', Qt::KeepEmptyParts);
+
+    int p = 0;
+    const int minLen = qMin(oldLines.size(), newLines.size());
+    while (p < minLen && oldLines[p] == newLines[p]) ++p;
+
+    int s = 0;
+    while (s < minLen - p &&
+           oldLines[oldLines.size() - 1 - s] == newLines[newLines.size() - 1 - s]) ++s;
+
+    const int oldStart = p;
+    const int oldEnd = oldLines.size() - s;
+    const int newStart = p;
+    const int newEnd = newLines.size() - s;
+
+    if (oldStart == oldEnd && newStart == newEnd) return {};
+
+    const int ctxBefore = qMin(context, oldStart);
+    const int ctxAfter = qMin(context, static_cast<int>(oldLines.size()) - oldEnd);
+    const int hunkOldStart = oldStart - ctxBefore;
+    const int hunkNewStart = newStart - ctxBefore;
+    const int hunkOldLen = ctxBefore + (oldEnd - oldStart) + ctxAfter;
+    const int hunkNewLen = ctxBefore + (newEnd - newStart) + ctxAfter;
+
+    QString diff;
+    diff += QStringLiteral("--- %1\n").arg(oldLabel);
+    diff += QStringLiteral("+++ %1\n").arg(newLabel);
+    diff += QStringLiteral("@@ -%1,%2 +%3,%4 @@\n")
+        .arg(hunkOldStart + 1).arg(hunkOldLen)
+        .arg(hunkNewStart + 1).arg(hunkNewLen);
+
+    for (int i = hunkOldStart; i < oldStart; ++i)
+        diff += QStringLiteral(" %1\n").arg(oldLines[i]);
+    for (int i = oldStart; i < oldEnd; ++i)
+        diff += QStringLiteral("-%1\n").arg(oldLines[i]);
+    for (int i = newStart; i < newEnd; ++i)
+        diff += QStringLiteral("+%1\n").arg(newLines[i]);
+    for (int i = oldEnd; i < oldEnd + ctxAfter; ++i)
+        diff += QStringLiteral(" %1\n").arg(oldLines[i]);
+
+    return diff;
+}
 
 #include <atomic>
 
@@ -130,6 +182,26 @@ public:
         return def;
     }
 
+    QString generatePreview(const QJsonObject& args) const override {
+        const QString path = Sandbox::resolvePath(args.value("path").toString());
+        const QString content = args.value("content").toString();
+        if (path.isEmpty()) return {};
+
+        QFile file(path);
+        if (!file.exists()) {
+            const QStringList lines = content.split('\n', Qt::KeepEmptyParts);
+            QString diff = QStringLiteral("--- /dev/null\n+++ %1\n@@ -0,0 +1,%2 @@\n")
+                               .arg(path).arg(lines.size());
+            for (const auto& line : lines)
+                diff += QStringLiteral("+%1\n").arg(line);
+            return diff;
+        }
+        if (!file.open(QIODevice::ReadOnly)) return {};
+        const QString oldContent = QString::fromUtf8(file.readAll());
+        file.close();
+        return unifiedDiff(oldContent, content, path, path);
+    }
+
     ToolResult execute(const QJsonObject& args) override {
         const QString path = Sandbox::resolvePath(args.value("path").toString());
         const QString content = args.value("content").toString();
@@ -184,8 +256,10 @@ public:
     ToolDefinition definition() const override {
         ToolDefinition def;
         def.name = "edit_file";
-        def.description = "Replace an exact, unique occurrence of old_string in "
-                          "an existing file with new_string. Prefer this over "
+        def.description = "Replace an exact occurrence of old_string in "
+                          "an existing file with new_string. By default the "
+                          "match must be unique; set replace_all=true to "
+                          "replace every occurrence. Prefer this over "
                           "write_file when only part of an existing file changes.";
         def.level = ToolLevel::RequiresConfirm;
         def.autoEditSafe = true;   // 会话"自动编辑"模式放行；沙箱写策略仍生效
@@ -194,16 +268,49 @@ public:
             "paths are resolved against the active project root when a "
             "project is active, otherwise against the current working "
             "directory.");
-        props["old_string"] = stringParam("Exact text to replace (must occur exactly once).");
+        props["old_string"] = stringParam("Exact text to replace.");
         props["new_string"] = stringParam("Replacement text (may be empty to delete text).");
+        QJsonObject replaceAllParam;
+        replaceAllParam["type"] = "boolean";
+        replaceAllParam["description"] = "If true, replace all occurrences of old_string. "
+                                         "Default is false (requires a unique match).";
+        props["replace_all"] = replaceAllParam;
         def.parameters = buildParams(props, QJsonArray{"path", "old_string", "new_string"});
         return def;
+    }
+
+    QString generatePreview(const QJsonObject& args) const override {
+        const QString path = Sandbox::resolvePath(args.value("path").toString());
+        const QString oldString = args.value("old_string").toString();
+        const QString newString = args.value("new_string").toString();
+        const bool replaceAll = args.value("replace_all").toBool();
+        if (path.isEmpty() || oldString.isEmpty()) return {};
+
+        QFile file(path);
+        if (!file.open(QIODevice::ReadOnly)) return {};
+        const QString content = QString::fromUtf8(file.readAll());
+        file.close();
+
+        if (replaceAll) {
+            if (!content.contains(oldString)) return {};
+            QString updated = content;
+            updated.replace(oldString, newString);
+            return unifiedDiff(content, updated, path, path);
+        }
+
+        const int pos = content.indexOf(oldString);
+        if (pos < 0) return {};
+
+        QString updated = content;
+        updated.replace(pos, oldString.length(), newString);
+        return unifiedDiff(content, updated, path, path);
     }
 
     ToolResult execute(const QJsonObject& args) override {
         const QString path = Sandbox::resolvePath(args.value("path").toString());
         const QString oldString = args.value("old_string").toString();
         const QString newString = args.value("new_string").toString();
+        const bool replaceAll = args.value("replace_all").toBool();
 
         if (path.isEmpty())
             return ToolResult::fail("Path is required");
@@ -230,20 +337,24 @@ public:
             return ToolResult::fail("File is not valid UTF-8 text");
 
         int count = 0;
-        int pos = -1;
+        int firstPos = -1;
         for (int at = content.indexOf(oldString); at >= 0;
              at = content.indexOf(oldString, at + oldString.length())) {
-            if (count == 0) pos = at;
+            if (count == 0) firstPos = at;
             ++count;
         }
         if (count == 0)
             return ToolResult::fail("old_string not found");
-        if (count > 1)
-            return ToolResult::fail(QStringLiteral("old_string matches %1 locations, need unique")
+        if (!replaceAll && count > 1)
+            return ToolResult::fail(QStringLiteral("old_string matches %1 locations, need unique "
+                                                     "(set replace_all=true to replace all)")
                                         .arg(count));
 
         QString updated = content;
-        updated.replace(pos, oldString.length(), newString);
+        if (replaceAll)
+            updated.replace(oldString, newString);
+        else
+            updated.replace(firstPos, oldString.length(), newString);
 
         // Raw (non-Text) mode: bytes in, bytes out - no newline translation,
         // so the untouched parts of the file survive byte-for-byte.
@@ -264,8 +375,9 @@ public:
         if (!out.commit())
             return ToolResult::fail("Failed to commit atomic write: " + out.errorString());
 
-        return ToolResult::ok(QStringLiteral("Replaced 1 occurrence at offset %1; file now %2 bytes")
-                                  .arg(pos).arg(bytes.size()));
+        return ToolResult::ok(QStringLiteral("Replaced %1 occurrence%2; file now %3 bytes")
+                                  .arg(count).arg(count == 1 ? QString() : QStringLiteral("s"))
+                                  .arg(bytes.size()));
     }
 };
 
@@ -498,6 +610,396 @@ private:
     std::atomic<bool> m_cancelRequested{false};
 };
 
+// ── Built-in Glob Tool (Safe) ───────────────────────────
+// Fast file-path pattern search — lets the model discover files by name
+// without constructing shell commands (cross-platform, no findstr/grep).
+class GlobTool : public ITool {
+public:
+    ToolDefinition definition() const override {
+        ToolDefinition def;
+        def.name = "glob";
+        def.description = "Find files matching a glob pattern. Returns matching "
+                          "file paths relative to the search root. Use ** for "
+                          "recursive search (e.g. **/*.cpp).";
+        def.level = ToolLevel::Safe;
+        QJsonObject props;
+        props["pattern"] = stringParam("Glob pattern (e.g. **/*.cpp, src/**/*.h, "
+            "*.txt). ** triggers recursive search.");
+        props["path"] = stringParam("Root directory to search from. Relative "
+            "paths resolve against the active project root when a project is "
+            "active, otherwise against the current working directory. "
+            "Defaults to the project root or CWD.");
+        def.parameters = buildParams(props, QJsonArray{"pattern"});
+        return def;
+    }
+
+    ToolResult execute(const QJsonObject& args) override {
+        const QString pattern = args.value("pattern").toString();
+        if (pattern.isEmpty())
+            return ToolResult::fail("Pattern is required");
+
+        QString searchPath = args.value("path").toString();
+        if (searchPath.isEmpty())
+            searchPath = Sandbox::currentProjectDir().isEmpty()
+                ? QDir::currentPath()
+                : Sandbox::currentProjectDir();
+        else
+            searchPath = Sandbox::resolvePath(searchPath);
+
+        if (searchPath.isEmpty())
+            return ToolResult::fail("Path is required");
+
+        Sandbox::DenyReason reason;
+        if (!Sandbox::validatePath(searchPath, false, &reason))
+            return ToolResult::fail(Sandbox::denialHint(reason));
+
+        // Parse pattern: extract subdirectory, recursive flag, and name filter.
+        QString subPath;
+        QString nameFilter = QStringLiteral("*");
+        bool recursive = false;
+        const QStringList segments = pattern.split(QLatin1Char('/'), Qt::SkipEmptyParts);
+        for (int i = 0; i < segments.size(); ++i) {
+            if (segments[i] == QLatin1String("**")) {
+                recursive = true;
+                if (i + 1 < segments.size())
+                    nameFilter = segments[i + 1];
+                break;
+            }
+            if (i == segments.size() - 1) {
+                nameFilter = segments[i];
+            } else {
+                if (!subPath.isEmpty()) subPath += QLatin1Char('/');
+                subPath += segments[i];
+            }
+        }
+
+        QString fullSearchPath = searchPath;
+        if (!subPath.isEmpty())
+            fullSearchPath = QDir(searchPath).absoluteFilePath(subPath);
+
+        Sandbox::DenyReason subReason;
+        if (!Sandbox::validatePath(fullSearchPath, false, &subReason))
+            return ToolResult::fail(Sandbox::denialHint(subReason));
+
+        QDir dir(fullSearchPath);
+        if (!dir.exists())
+            return ToolResult::fail("Directory does not exist: " + fullSearchPath);
+
+        QStringList lines;
+        constexpr int maxResults = 200;
+        int count = 0;
+        QDirIterator it(fullSearchPath, QStringList{nameFilter},
+            QDir::Files | QDir::NoDotAndDotDot,
+            recursive ? QDirIterator::Subdirectories : QDirIterator::NoIteratorFlags);
+        while (it.hasNext()) {
+            const QString filePath = it.next();
+            if (count++ >= maxResults) {
+                lines << QStringLiteral("... (more results, limit %1)").arg(maxResults);
+                break;
+            }
+            lines << QDir(searchPath).relativeFilePath(filePath);
+        }
+
+        if (lines.isEmpty())
+            return ToolResult::ok("No files matched.");
+        return ToolResult::ok(lines.join('\n'));
+    }
+};
+
+// ── Built-in Grep Tool (Safe) ───────────────────────────
+// Content search across files — lets the model find code by regex without
+// shell commands. Returns file:line:match triples, capped to protect context.
+class GrepTool : public ITool {
+public:
+    ToolDefinition definition() const override {
+        ToolDefinition def;
+        def.name = "grep";
+        def.description = "Search file contents using a regular expression. "
+                          "Returns matching lines with file paths and line "
+                          "numbers. Searches recursively from the given path.";
+        def.level = ToolLevel::Safe;
+        QJsonObject props;
+        props["pattern"] = stringParam("Regular expression to search for.");
+        props["path"] = stringParam("Root directory to search from. Relative "
+            "paths resolve against the active project root when a project is "
+            "active, otherwise against the current working directory. "
+            "Defaults to the project root or CWD.");
+        props["include"] = stringParam("File name filter (e.g. *.cpp, *.h). "
+            "Defaults to all files.");
+        def.parameters = buildParams(props, QJsonArray{"pattern"});
+        return def;
+    }
+
+    ToolResult execute(const QJsonObject& args) override {
+        const QString pattern = args.value("pattern").toString();
+        if (pattern.isEmpty())
+            return ToolResult::fail("Pattern is required");
+
+        QString searchPath = args.value("path").toString();
+        if (searchPath.isEmpty())
+            searchPath = Sandbox::currentProjectDir().isEmpty()
+                ? QDir::currentPath()
+                : Sandbox::currentProjectDir();
+        else
+            searchPath = Sandbox::resolvePath(searchPath);
+
+        if (searchPath.isEmpty())
+            return ToolResult::fail("Path is required");
+
+        Sandbox::DenyReason reason;
+        if (!Sandbox::validatePath(searchPath, false, &reason))
+            return ToolResult::fail(Sandbox::denialHint(reason));
+
+        QDir dir(searchPath);
+        if (!dir.exists())
+            return ToolResult::fail("Directory does not exist: " + searchPath);
+
+        const QString include = args.value("include").toString();
+        const QStringList nameFilters = include.isEmpty()
+            ? QStringList{QStringLiteral("*")}
+            : QStringList{include};
+
+        QRegularExpression regex(pattern);
+        if (!regex.isValid())
+            return ToolResult::fail(QStringLiteral("Invalid regex: %1").arg(regex.errorString()));
+
+        QStringList lines;
+        constexpr int maxMatches = 100;
+        constexpr int maxFileBytes = 2 * 1024 * 1024;
+        constexpr int maxFiles = 500;
+        int matchCount = 0;
+        int filesSearched = 0;
+
+        QDirIterator it(searchPath, nameFilters,
+            QDir::Files | QDir::NoDotAndDotDot, QDirIterator::Subdirectories);
+        while (it.hasNext() && matchCount < maxMatches && filesSearched < maxFiles) {
+            const QString filePath = it.next();
+            ++filesSearched;
+
+            QFileInfo info(filePath);
+            if (info.size() > maxFileBytes)
+                continue;
+
+            QFile file(filePath);
+            if (!file.open(QIODevice::ReadOnly | QIODevice::Text))
+                continue;
+
+            const QString relativePath = QDir(searchPath).relativeFilePath(filePath);
+            int lineNum = 0;
+            while (!file.atEnd() && matchCount < maxMatches) {
+                const QString line = QString::fromUtf8(file.readLine());
+                ++lineNum;
+                if (regex.match(line).hasMatch()) {
+                    lines << QStringLiteral("%1:%2: %3")
+                        .arg(relativePath)
+                        .arg(lineNum)
+                        .arg(line.trimmed());
+                    ++matchCount;
+                }
+            }
+        }
+
+        if (lines.isEmpty())
+            return ToolResult::ok("No matches found.");
+        if (matchCount >= maxMatches)
+            lines << QStringLiteral("... (results truncated at %1 matches)").arg(maxMatches);
+        return ToolResult::ok(lines.join('\n'));
+    }
+};
+
+// ── Built-in Git Tools (P5c) ─────────────────────────────
+// git_status and git_diff are Safe (read-only); git_commit is
+// RequiresConfirm. All operate in the project root via Sandbox.
+
+struct GitResult { bool ok; QString output; };
+
+static GitResult runGit(const QStringList& args, int timeoutMs = 10000) {
+    QProcess proc;
+    proc.setProcessChannelMode(QProcess::MergedChannels);
+    const QString projectRoot = Sandbox::currentProjectDir();
+    if (!projectRoot.isEmpty())
+        proc.setWorkingDirectory(projectRoot);
+    proc.start(QStringLiteral("git"), args);
+    if (!proc.waitForStarted(3000))
+        return {false, QStringLiteral("Failed to start git: %1").arg(proc.errorString())};
+    if (!proc.waitForFinished(timeoutMs))
+        return {false, QStringLiteral("git timed out after %1 ms").arg(timeoutMs)};
+    const QString output = QString::fromUtf8(proc.readAllStandardOutput()).trimmed();
+    if (proc.exitCode() != 0)
+        return {false, output.isEmpty() ? QStringLiteral("git exited with code %1").arg(proc.exitCode()) : output};
+    return {true, output};
+}
+
+class GitStatusTool : public ITool {
+public:
+    ToolDefinition definition() const override {
+        ToolDefinition def;
+        def.name = "git_status";
+        def.description = "Show the working tree status of the active project's "
+                          "git repository. Returns porcelain format with branch info.";
+        def.level = ToolLevel::Safe;
+        QJsonObject props;
+        props["path"] = stringParam("Optional path to limit status to a subdirectory or file.");
+        def.parameters = buildParams(props, QJsonArray{});
+        return def;
+    }
+
+    ToolResult execute(const QJsonObject& args) override {
+        QStringList gitArgs{QStringLiteral("status"), QStringLiteral("--porcelain=v1"), QStringLiteral("-b")};
+        const QString path = args.value("path").toString();
+        if (!path.isEmpty())
+            gitArgs << Sandbox::resolvePath(path);
+        const GitResult r = runGit(gitArgs);
+        return r.ok ? ToolResult::ok(r.output.isEmpty() ? QStringLiteral("No changes (clean working tree).") : r.output)
+                    : ToolResult::fail(r.output);
+    }
+};
+
+class GitDiffTool : public ITool {
+public:
+    ToolDefinition definition() const override {
+        ToolDefinition def;
+        def.name = "git_diff";
+        def.description = "Show unstaged (or staged) changes in the active project's "
+                          "git repository as a unified diff.";
+        def.level = ToolLevel::Safe;
+        QJsonObject props;
+        QJsonObject stagedProp;
+        stagedProp["type"] = "boolean";
+        stagedProp["description"] = "If true, show staged (cached) changes. Default: false (unstaged).";
+        props["staged"] = stagedProp;
+        props["path"] = stringParam("Optional path to limit diff to a specific file.");
+        def.parameters = buildParams(props, QJsonArray{});
+        return def;
+    }
+
+    ToolResult execute(const QJsonObject& args) override {
+        QStringList gitArgs{QStringLiteral("diff")};
+        if (args.value("staged").toBool())
+            gitArgs << QStringLiteral("--staged");
+        const QString path = args.value("path").toString();
+        if (!path.isEmpty())
+            gitArgs << Sandbox::resolvePath(path);
+        const GitResult r = runGit(gitArgs);
+        return r.ok ? ToolResult::ok(r.output.isEmpty() ? QStringLiteral("No changes.") : r.output)
+                    : ToolResult::fail(r.output);
+    }
+};
+
+class GitCommitTool : public ITool {
+public:
+    ToolDefinition definition() const override {
+        ToolDefinition def;
+        def.name = "git_commit";
+        def.description = "Create a git commit with the given message in the active "
+                          "project. Only staged changes are committed. Use git_diff "
+                          "with staged=true to review what will be committed first.";
+        def.level = ToolLevel::RequiresConfirm;
+        QJsonObject props;
+        props["message"] = stringParam("Commit message.");
+        def.parameters = buildParams(props, QJsonArray{"message"});
+        return def;
+    }
+
+    QString generatePreview(const QJsonObject& args) const override {
+        const GitResult staged = runGit({QStringLiteral("diff"), QStringLiteral("--staged"), QStringLiteral("--stat")});
+        const GitResult status = runGit({QStringLiteral("status"), QStringLiteral("--porcelain=v1")});
+        QString preview;
+        preview += QStringLiteral("Staged changes:\n%1\n\n").arg(staged.ok && !staged.output.isEmpty() ? staged.output : QStringLiteral("(none)"));
+        preview += QStringLiteral("Working tree:\n%1").arg(status.ok && !status.output.isEmpty() ? status.output : QStringLiteral("(clean)"));
+        return preview;
+    }
+
+    ToolResult execute(const QJsonObject& args) override {
+        const QString message = args.value("message").toString().trimmed();
+        if (message.isEmpty())
+            return ToolResult::fail("Commit message is required");
+        const GitResult r = runGit({QStringLiteral("commit"), QStringLiteral("-m"), message});
+        return r.ok ? ToolResult::ok(r.output) : ToolResult::fail(r.output);
+    }
+};
+
+// ── Built-in Todo Write Tool (Safe) ───────────────────────
+// P5a: lets the LLM manage a structured task list for multi-step work.
+// The result JSON is parsed by AIAgent::finishToolExecution to update
+// the agent's m_todoList and notify the UI.
+class TodoWriteTool : public ITool {
+public:
+    ToolDefinition definition() const override {
+        ToolDefinition def;
+        def.name = "todo_write";
+        def.description = "Manage a task list for tracking multi-step work. "
+                          "Pass the full list each time (replaces the previous one). "
+                          "Each task has content, status (pending/in_progress/completed), "
+                          "and priority (high/medium/low).";
+        def.level = ToolLevel::Safe;
+        QJsonObject todoItem;
+        todoItem["type"] = "object";
+        QJsonObject itemProps;
+        itemProps["content"] = stringParam("Brief description of the task.");
+        QJsonObject statusProp;
+        statusProp["type"] = "string";
+        statusProp["enum"] = QJsonArray{"pending", "in_progress", "completed"};
+        statusProp["description"] = "Task status.";
+        itemProps["status"] = statusProp;
+        QJsonObject priorityProp;
+        priorityProp["type"] = "string";
+        priorityProp["enum"] = QJsonArray{"high", "medium", "low"};
+        priorityProp["description"] = "Priority level (default: medium).";
+        itemProps["priority"] = priorityProp;
+        todoItem["properties"] = itemProps;
+        QJsonArray itemRequired;
+        itemRequired.append("content");
+        itemRequired.append("status");
+        todoItem["required"] = itemRequired;
+        QJsonObject todosParam;
+        todosParam["type"] = "array";
+        todosParam["items"] = todoItem;
+        todosParam["description"] = "Complete task list (replaces existing list).";
+        QJsonObject props;
+        props["todos"] = todosParam;
+        def.parameters = buildParams(props, QJsonArray{"todos"});
+        return def;
+    }
+
+    ToolResult execute(const QJsonObject& args) override {
+        const QJsonArray todos = args.value("todos").toArray();
+        if (todos.isEmpty())
+            return ToolResult::ok(QStringLiteral("[]"));
+
+        static const QSet<QString> validStatuses{
+            QStringLiteral("pending"), QStringLiteral("in_progress"),
+            QStringLiteral("completed")};
+        static const QSet<QString> validPriorities{
+            QStringLiteral("high"), QStringLiteral("medium"), QStringLiteral("low")};
+
+        QJsonArray normalized;
+        for (int i = 0; i < todos.size(); ++i) {
+            const QJsonObject item = todos.at(i).toObject();
+            const QString content = item.value("content").toString().trimmed();
+            if (content.isEmpty())
+                return ToolResult::fail(QStringLiteral(
+                    "Task at index %1 has empty content").arg(i));
+            const QString status = item.value("status").toString();
+            if (!validStatuses.contains(status))
+                return ToolResult::fail(QStringLiteral(
+                    "Task at index %1 has invalid status '%2' "
+                    "(must be pending/in_progress/completed)").arg(i).arg(status));
+            QString priority = item.value("priority").toString(QStringLiteral("medium"));
+            if (!validPriorities.contains(priority))
+                priority = QStringLiteral("medium");
+            QJsonObject norm;
+            norm["content"] = content;
+            norm["status"] = status;
+            norm["priority"] = priority;
+            normalized.append(norm);
+        }
+
+        return ToolResult::ok(QString::fromUtf8(
+            QJsonDocument(normalized).toJson(QJsonDocument::Compact)));
+    }
+};
+
 // ── ToolRegistry Implementation ──────────────────────────
 ToolRegistry& ToolRegistry::instance() {
     static ToolRegistry registry;
@@ -515,6 +1017,12 @@ void ToolRegistry::registerBuiltins() {
     registerTool(std::make_unique<FileWriteTool>());
     registerTool(std::make_unique<EditFileTool>());   // Batch 19 (FEAT-1901)
     registerTool(std::make_unique<ShellExecTool>());
+    registerTool(std::make_unique<GlobTool>());
+    registerTool(std::make_unique<GrepTool>());
+    registerTool(std::make_unique<GitStatusTool>());
+    registerTool(std::make_unique<GitDiffTool>());
+    registerTool(std::make_unique<GitCommitTool>());
+    registerTool(std::make_unique<TodoWriteTool>());
 }
 
 void ToolRegistry::registerTool(std::shared_ptr<ITool> tool) {

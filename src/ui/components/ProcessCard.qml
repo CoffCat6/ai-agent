@@ -19,12 +19,55 @@ Item {
     readonly property string detailText: {
         if (nodeType === "thinking")
             return modelData.reasoning || ""
+        if (nodeType === "tool_call") {
+            const raw = modelData.args || ""
+            if (raw === "") return modelData.result || ""
+            const t = modelData.title || ""
+            if (t === "shell_exec" || t === "git_commit") {
+                try {
+                    const obj = JSON.parse(raw)
+                    if (t === "shell_exec" && obj.command)
+                        return obj.command
+                    if (t === "git_commit" && obj.message)
+                        return obj.message
+                } catch (e) {}
+            }
+            return raw
+        }
         return (modelData.args || "") !== "" ? modelData.args : (modelData.result || "")
     }
     readonly property bool hasDetail: detailText !== ""
     readonly property bool waitingConfirm: status === "waiting_confirm"
+    readonly property string previewText: waitingConfirm ? (modelData.preview || "") : ""
+    readonly property bool hasPreview: previewText !== ""
     // 确认态必须展开，否则同意/拒绝按钮不可达。
     readonly property bool bodyVisible: (expanded || waitingConfirm) && hasDetail
+
+    // git_status 结构化展示：解析 porcelain v1 输出为文件状态列表
+    readonly property bool isGitStatus: nodeType === "tool_result" && (modelData.title || "") === "git_status"
+    readonly property var gitStatusEntries: isGitStatus ? parseGitStatus(modelData.result || "") : null
+
+    function parseGitStatus(text) {
+        const lines = text.split("\n")
+        const entries = []
+        for (let i = 0; i < lines.length; i++) {
+            const line = lines[i]
+            if (line.startsWith("## ")) {
+                entries.push({status: "⎇", text: line.substring(3), color: Theme.textSecondary})
+            } else if (line.length >= 3) {
+                const xy = line.substring(0, 2)
+                const path = line.substring(3)
+                let badge = "?", color = Theme.textSecondary
+                if (xy === "??") { badge = "新"; color = Theme.statusSuccess }
+                else if (xy[0] === "A" || xy[1] === "A") { badge = "增"; color = Theme.statusSuccess }
+                else if (xy[0] === "D" || xy[1] === "D") { badge = "删"; color = Theme.statusDanger }
+                else if (xy[0] === "M" || xy[1] === "M") { badge = "改"; color = Theme.statusWarning }
+                else if (xy[0] === "R" || xy[1] === "R") { badge = "移"; color = Theme.brandPrimary }
+                entries.push({status: badge, text: path, color: color})
+            }
+        }
+        return entries.length > 0 ? entries : null
+    }
 
     readonly property color accent: {
         if (nodeType === "thinking") return Theme.brandPrimary
@@ -161,15 +204,74 @@ Item {
                 font.family: Theme.fontSans
             }
 
+            // git_status 结构化文件列表
+            Column {
+                visible: root.bodyVisible && root.gitStatusEntries !== null
+                width: parent.width
+                spacing: 1
+
+                Repeater {
+                    model: root.gitStatusEntries
+
+                    delegate: Row {
+                        width: parent.width
+                        spacing: 6
+
+                        Rectangle {
+                            width: 22; height: 16; radius: 3
+                            anchors.verticalCenter: parent.verticalCenter
+                            color: modelData.color
+                            opacity: 0.15
+
+                            Text {
+                                anchors.centerIn: parent
+                                text: modelData.status
+                                color: modelData.color
+                                font.pixelSize: 9
+                                font.family: Theme.fontSans
+                                font.bold: true
+                            }
+                        }
+
+                        Text {
+                            anchors.verticalCenter: parent.verticalCenter
+                            text: modelData.text
+                            color: modelData.color
+                            font.pixelSize: Theme.fontSizeCaption
+                            font.family: Theme.fontMono
+                            elide: Text.ElideRight
+                            width: parent.width - 28
+                        }
+                    }
+                }
+            }
+
             // 展开区
             CodeBlock {
-                visible: root.bodyVisible
+                visible: root.bodyVisible && root.gitStatusEntries === null
                 width: parent.width
                 text: root.detailText
                 textColor: root.nodeType === "tool_result"
                     ? Theme.statusSuccess
                     : (root.nodeType === "thinking"
                        ? Theme.textSecondary : Theme.textPrimary)
+                bgColor: Theme.codeBackground
+            }
+
+            // 变更预览（确认态且有 preview 时显示）
+            Text {
+                visible: root.hasPreview
+                text: qsTr("变更预览:")
+                color: Theme.textSecondary
+                font.pixelSize: Theme.fontSizeCaption
+                font.family: Theme.fontSans
+            }
+
+            CodeBlock {
+                visible: root.hasPreview
+                width: parent.width
+                height: Math.min(200, implicitHeight)
+                text: root.previewText
                 bgColor: Theme.codeBackground
             }
 

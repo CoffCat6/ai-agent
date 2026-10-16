@@ -4,6 +4,7 @@
 #include <QJsonObject>
 #include <QString>
 #include <QVariant>
+#include <QVector>
 
 namespace NexusAI {
 
@@ -36,8 +37,19 @@ public:
         return {};
     }
 
-    virtual void saveEpisodic(const QString& sessionId, const QJsonObject& episode) = 0;
+    virtual qint64 saveEpisodic(const QString& sessionId, const QJsonObject& episode) = 0;
     virtual QJsonArray searchEpisodic(const QString& query, int limit = 10) = 0;
+    // Semantic retrieval via cosine similarity against stored embedding BLOBs.
+    // Default no-op; SqliteMemory implements with in-memory cosine rerank.
+    virtual QJsonArray searchEpisodicSemantic(const QVector<float>& queryEmbedding, int limit = 10) {
+        Q_UNUSED(queryEmbedding); Q_UNUSED(limit);
+        return {};
+    }
+    // Asynchronously update the embedding BLOB of an existing episode.
+    virtual bool updateEpisodicEmbedding(qint64 id, const QByteArray& blob) {
+        Q_UNUSED(id); Q_UNUSED(blob);
+        return false;
+    }
 
     virtual void clear(const QString& sessionId) = 0;
 

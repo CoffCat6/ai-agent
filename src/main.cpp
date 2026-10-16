@@ -382,6 +382,9 @@ qInfo() << "NexusAI" << app.applicationVersion() << "starting";
     // T8 (F4): episodic long-term memory service.
     auto* episodicService = new EpisodicService(&app);
     episodicService->setMemory(memory);
+    episodicService->setEmbedder([embedding](const QString& text) {
+        return embedding->embed(text);
+    });
     agent->setEpisodicService(episodicService);
 
     // ── ViewModels (QML singletons, owned by the app) ──
@@ -471,7 +474,7 @@ qInfo() << "NexusAI" << app.applicationVersion() << "starting";
         target->setModelLocal(LlmProtocolRegistry::isLocal(
             profile.value("apiProtocol").toString(), profile.value("provider").toString()));
     });
-    agentVM->setAgentFactory([&app, settings,
+    agentVM->setAgentFactory([&app, settings, embedding,
                               tabProviderSets, tabMemories, summaryProviders]() -> AIAgent* {
         auto* tabAgent = new AIAgent(&app);
         tabAgent->setToolRegistry(&ToolRegistry::instance());
@@ -486,6 +489,9 @@ qInfo() << "NexusAI" << app.applicationVersion() << "starting";
         auto* summaries = new EpisodicService(tabAgent);
         summaries->setMemory(tabAgent->memory());
         summaries->setEnabled(settings->episodicMemoryEnabled());
+        summaries->setEmbedder([embedding](const QString& text) {
+            return embedding->embed(text);
+        });
         tabAgent->setEpisodicService(summaries);
         tabMemories->insert(tabAgent, summaries);
         summaryProviders->insert(tabAgent, LlmProtocolRegistry::createServiceSet(summaries));

@@ -259,12 +259,6 @@ ApplicationWindow {
         }
     }
 
-    // ── Tool Confirmation Dialog ──────────────────────
-    ToolConfirmDialog {
-        id: toolConfirmDialog
-        parent: Overlay.overlay
-    }
-
     // ── Settings Center Dialog (General Settings) ─────
     SettingsCenterDialog {
         id: settingsCenterDialog

@@ -4,6 +4,8 @@
 #include <QJsonArray>
 #include <QJsonObject>
 #include <QString>
+#include <QVector>
+#include <functional>
 
 #include "core/utils/TokenEstimator.h"
 #include "core/agent/LLMTypes.h"
@@ -24,6 +26,10 @@ class IAIService;
 //
 // Injection budget: retrieved summaries are capped at kMaxInjectionTokens
 // (default 1500) via TokenEstimator (REQ-T8-03, R8).
+//
+// Embedding generation is also asynchronous: the episode is saved first
+// (without embedding), then a worker thread generates the embedding and
+// updates the row via updateEpisodicEmbedding on the main thread.
 class EpisodicService : public QObject {
     Q_OBJECT
 public:
@@ -38,6 +44,7 @@ public:
 
     void setMemory(IMemory* memory) { m_memory = memory; }
     void setLlmService(IAIService* service) { m_llmService = service; }
+    void setEmbedder(std::function<QVector<float>(const QString&)> embedder) { m_embedder = std::move(embedder); }
 
     void setEnabled(bool enabled) { m_enabled = enabled; }
     bool isEnabled() const { return m_enabled; }
@@ -68,6 +75,11 @@ signals:
     // Emitted when an async summary has been stored (or skipped on error).
     void summaryStored(const QString& sessionId, bool success);
 
+private slots:
+    // Called on the main thread (via QueuedConnection) after a worker thread
+    // finishes generating the embedding BLOB.
+    void applyEmbedding(qint64 id, const QByteArray& blob);
+
 private:
     // docs/24 H4: routed by the monotonic request id captured in the
     // one-shot connection — a stale/unknown response is dropped instead of
@@ -77,6 +89,7 @@ private:
 
     IMemory* m_memory{nullptr};
     IAIService* m_llmService{nullptr};
+    std::function<QVector<float>(const QString&)> m_embedder;
     bool m_enabled{false};
 
     // Pending summary request: maps LLM requestId → sessionId so the async

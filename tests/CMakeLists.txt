@@ -34,6 +34,7 @@ nexus_add_test(test_protocol_registry test_protocol_registry.cpp)
 # OpenAI Responses 协议的报文转换与非流式解析
 nexus_add_test(test_openai_responses test_openai_responses.cpp)
 nexus_add_test(test_memory test_memory.cpp)
+nexus_add_test(test_tools test_tools.cpp)
 # docs/20 §5.2 (C2): PDF text extraction (PdfTextExtractor) lives in
 # nexus_viewmodels, not nexus_core - Qt6::Pdf pulls Qt6::Gui along and core
 # must stay UI-free (docs/13 §4.1). test_rag therefore links the viewmodels

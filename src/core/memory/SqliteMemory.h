@@ -41,8 +41,10 @@ public:
     // Decision recorded in docs/5-完善计划.md Batch 7 (MEM-703): 搁置,
     // pending a summarization-strategy design; the future integration shape
     // is a session summary injected into the system prompt.
-    void saveEpisodic(const QString& sessionId, const QJsonObject& episode) override;
+    qint64 saveEpisodic(const QString& sessionId, const QJsonObject& episode) override;
     QJsonArray searchEpisodic(const QString& query, int limit = 10) override;
+    QJsonArray searchEpisodicSemantic(const QVector<float>& queryEmbedding, int limit = 10) override;
+    bool updateEpisodicEmbedding(qint64 id, const QByteArray& blob) override;
 
     // M1: long-term memory management (browse / forget / wipe).
     QJsonArray listEpisodic(int limit = 200) override;

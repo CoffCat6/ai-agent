@@ -9,6 +9,9 @@
 #include <QJsonDocument>
 #include <QJsonObject>
 #include <QLoggingCategory>
+#include <QPointer>
+#include <QSet>
+#include <QtConcurrent>
 #include <QTimer>
 
 Q_LOGGING_CATEGORY(lcEpisodic, "nexus.episodic")
@@ -127,12 +130,30 @@ void EpisodicService::onSummaryResponse(quint64 requestId,
     episode["summary"] = summary;
     episode["tags"] = tagStr;
 
-    m_memory->saveEpisodic(sessionId, episode);
+    // Save episode first (without embedding), then generate embedding async.
+    const qint64 episodeId = m_memory->saveEpisodic(sessionId, episode);
 
     Activity::usage(Activity::Kind::Agent, QStringLiteral("episodic.summary"),
                     sessionId, 0, QStringLiteral("stored len=%1").arg(summary.size()));
 
     emit summaryStored(sessionId, true);
+
+    // Asynchronously generate embedding on a worker thread, then update
+    // the row on the main thread (SQLite is not thread-safe).
+    if (m_embedder && episodeId > 0) {
+        const auto embedder = m_embedder;
+        QPointer<EpisodicService> guard(this);
+        QtConcurrent::run([guard, episodeId, summary, embedder]() {
+            const QVector<float> emb = embedder(summary);
+            if (emb.isEmpty() || guard.isNull()) return;
+            const QByteArray blob(reinterpret_cast<const char*>(emb.constData()),
+                                  int(emb.size() * sizeof(float)));
+            QMetaObject::invokeMethod(guard.data(), "applyEmbedding",
+                                      Qt::QueuedConnection,
+                                      Q_ARG(qint64, episodeId),
+                                      Q_ARG(QByteArray, blob));
+        });
+    }
 }
 
 QString EpisodicService::retrieveRelevantSummaries(const QString& query,
@@ -171,7 +192,31 @@ QJsonArray EpisodicService::retrieveRaw(const QString& query, int topK) const {
     if (!m_enabled || !m_memory || query.trimmed().isEmpty())
         return {};
 
-    return m_memory->searchEpisodic(query, topK);
+    QJsonArray results = m_memory->searchEpisodic(query, topK);
+
+    if (m_embedder) {
+        const QVector<float> queryVec = m_embedder(query);
+        if (!queryVec.isEmpty()) {
+            const QJsonArray semantic = m_memory->searchEpisodicSemantic(queryVec, topK);
+            QSet<qint64> seen;
+            for (const auto& v : results)
+                seen.insert(v.toObject().value("id").toVariant().toLongLong());
+            for (const auto& v : semantic) {
+                const qint64 id = v.toObject().value("id").toVariant().toLongLong();
+                if (!seen.contains(id)) {
+                    results.append(v);
+                    seen.insert(id);
+                }
+            }
+        }
+    }
+
+    return results;
+}
+
+void EpisodicService::applyEmbedding(qint64 id, const QByteArray& blob) {
+    if (m_memory)
+        m_memory->updateEpisodicEmbedding(id, blob);
 }
 
 } // namespace NexusAI

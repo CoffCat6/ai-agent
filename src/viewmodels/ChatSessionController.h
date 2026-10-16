@@ -65,6 +65,7 @@ public:
     // 复位浏览游标到最新（用户编辑后再次开始浏览时调用）。
     void resetHistoryCursor();
     QString currentSessionId() const { return m_currentSessionId; }
+    QVariantList todoList() const { return m_todoList; }
     // docs/18: 本标签的项目归属（转发自 agent；无 agent 时为空 = 本地）。
     // 归属按标签持有，AgentViewModel 的派生属性与沙箱镜像都从这里读。
     QString activeProjectId() const;
@@ -124,7 +125,7 @@ signals:
     // Surfaced regardless of which tab is active: the confirm dialog is
     // global and approveToolCall routes back to the waiting controller.
     void toolConfirmRequired(const QString& id, const QString& name,
-                             const QVariantMap& args);
+                             const QVariantMap& args, const QString& preview);
     void errorOccurred(const QString& error);
     // Session data behind the global history list changed.
     void sessionHistoryChanged();
@@ -135,6 +136,8 @@ signals:
     // Session permission mode changed (AgentViewModel re-emits for the
     // active tab; SessionTabs reads it via tabModel for background tabs).
     void permissionModeChanged();
+    void todoListChanged(const QVariantList& todos);
+    void episodicChanged();
 
 private:
     void setState(AgentState state);
@@ -152,6 +155,7 @@ private:
     qint64 m_sessionTokensUsed{0};   // AIAgent::sessionTokensUsed 镜像
     int m_permissionMode{0};            // PermissionMode as int; 0 = ConfirmChanges
     bool m_permissionModeOverridden{false};
+    QVariantList m_todoList;
 
 
     // docs/20 §3.3：输入历史环。仅内存态（进程内），相邻重复不入队；

@@ -329,10 +329,10 @@ ChatSessionController* AgentViewModel::ensureTab() {
     // confirmations are global UX (the confirm dialog routes the decision
     // back to the waiting tab through approveToolCall).
     connect(controller, &ChatSessionController::toolConfirmRequired, this,
-            [this, controller](const QString& id, const QString& name, const QVariantMap& args) {
-        m_confirmations.append({controller, id, name, args});
+            [this, controller](const QString& id, const QString& name, const QVariantMap& args, const QString& preview) {
+        m_confirmations.append({controller, id, name, args, preview});
         emit pendingConfirmationsChanged();
-        emit toolConfirmRequired(id, name, args);
+        emit toolConfirmRequired(id, name, args, preview);
     });
     connect(controller, &QObject::destroyed, this, [this, controller] {
         m_prevBusy.remove(controller);
@@ -340,6 +340,14 @@ ChatSessionController* AgentViewModel::ensureTab() {
     });
     connect(controller, &ChatSessionController::errorOccurred, this,
             &AgentViewModel::errorOccurred);
+    connect(controller, &ChatSessionController::todoListChanged, this,
+            [this, controller](const QVariantList& todos) {
+        if (controller != active()) return;
+        m_todoList = todos;
+        emit todoListChanged();
+    });
+    connect(controller, &ChatSessionController::episodicChanged,
+            this, &AgentViewModel::episodicChanged);
     // Session history is shared (every tab agent reads the same database).
     connect(controller, &ChatSessionController::sessionHistoryChanged, this,
             &AgentViewModel::refreshSessions);
@@ -420,6 +428,8 @@ void AgentViewModel::activateTab(int index) {
     emit costChanged(m_lastCostCents);
     emit currentSessionIdChanged();
     emit permissionModeChanged();
+    m_todoList = active()->todoList();
+    emit todoListChanged();
     emit activeTabChanged();
     emit tabsChanged();
     // 沙箱镜像随活动标签走；派生值确实变了才通知。
@@ -451,6 +461,8 @@ void AgentViewModel::closeTab(int index) {
     emit tokenUsageChanged();
     emit sessionTokensChanged();
     emit currentSessionIdChanged();
+    m_todoList = active()->todoList();
+    emit todoListChanged();
     emit activeTabChanged();
     emit tabsChanged();
     refreshSessions();
@@ -1349,20 +1361,24 @@ QVariantList AgentViewModel::searchEpisodic(const QString& keyword, int limit) {
 bool AgentViewModel::removeEpisodic(qint64 id) {
     if (!m_memory) return false;
     const bool ok = m_memory->deleteEpisodic(id);
-    if (ok)
+    if (ok) {
         Activity::usage(Activity::Kind::User,
                         QStringLiteral("memory.episodic.delete"),
                         QString::number(id));
+        emit episodicChanged();
+    }
     return ok;
 }
 
 int AgentViewModel::clearEpisodic() {
     if (!m_memory) return 0;
     const int removed = m_memory->deleteAllEpisodic();
-    if (removed > 0)
+    if (removed > 0) {
         Activity::usage(Activity::Kind::User,
                         QStringLiteral("memory.episodic.clear"),
                         QString::number(removed));
+        emit episodicChanged();
+    }
     return removed;
 }
 
@@ -1629,8 +1645,10 @@ QVariantMap AgentViewModel::pendingConfirmation() const {
             break;
         }
     }
-    return {{"id", request.id}, {"name", request.name}, {"arguments", request.arguments},
+    const QVariantMap result = {{"id", request.id}, {"name", request.name}, {"arguments", request.arguments},
+            {"preview", request.preview},
             {"sessionId", sessionId}, {"sessionTitle", title}, {"count", m_confirmations.size()}};
+    return result;
 }
 
 void AgentViewModel::stop() {

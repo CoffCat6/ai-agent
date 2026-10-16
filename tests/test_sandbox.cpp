@@ -42,6 +42,7 @@ private slots:
     // registry because tool classes are internal to ToolRegistry.cpp
     void editFileUniqueReplace();
     void editFileMultipleMatchRejected();
+    void editFileReplaceAll();
     void editFileNotFound();
     void editFileOutsideWhitelistRejected();
     void editFileCrlfBoundary();
@@ -417,6 +418,28 @@ void TestSandbox::editFileMultipleMatchRejected() {
     QVERIFY2(r.error.contains(QStringLiteral("matches 3 locations")),
              qPrintable(r.error));
     QCOMPARE(readFileText(path), QStringLiteral("x one x two x"));   // untouched
+}
+
+void TestSandbox::editFileReplaceAll() {
+    QTemporaryDir dir = sandboxTempDir();
+    QVERIFY(dir.isValid());
+    const QString path = dir.filePath("replaceall.txt");
+    QFile f(path);
+    QVERIFY(f.open(QIODevice::WriteOnly));
+    f.write("x one x two x");
+    f.close();
+
+    ITool* tool = ToolRegistry::instance().find(QStringLiteral("edit_file"));
+    QVERIFY(tool);
+    const ToolResult r = tool->execute(QJsonObject{
+        {"path", path},
+        {"old_string", QStringLiteral("x")},
+        {"new_string", QStringLiteral("y")},
+        {"replace_all", true}
+    });
+    QVERIFY2(r.success, qPrintable(r.error));
+    QVERIFY2(r.output.contains(QStringLiteral("Replaced 3 occurrences")), qPrintable(r.output));
+    QCOMPARE(readFileText(path), QStringLiteral("y one y two y"));
 }
 
 void TestSandbox::editFileNotFound() {

@@ -121,6 +121,9 @@ class AgentViewModel : public QObject {
     // ── Tool Registry ─────────────────────────────────
     Q_PROPERTY(QVariantList toolRegistryModel READ toolRegistryModel NOTIFY toolRegistryModelChanged FINAL)
 
+    // P5a: task list managed by the todo_write tool (active tab).
+    Q_PROPERTY(QVariantList todoList READ todoList NOTIFY todoListChanged FINAL)
+
     // ── Knowledge Base ────────────────────────────────
     Q_PROPERTY(QVariantList knowledgeDocuments READ knowledgeDocuments NOTIFY knowledgeChanged FINAL)
     Q_PROPERTY(bool knowledgeBusy READ knowledgeBusy NOTIFY knowledgeBusyChanged FINAL)
@@ -302,6 +305,7 @@ public:
 
     // Tool registry
     QVariantList toolRegistryModel() const { return m_toolRegistryModel; }
+    QVariantList todoList() const { return m_todoList; }
 
     // Knowledge base
     QVariantList knowledgeDocuments() const { return m_knowledgeDocuments; }
@@ -492,8 +496,10 @@ signals:
     // docs/25: 批量导入进度（running/done/total/current/failedCount 共用）
     void batchImportProgressChanged();
 
-    void toolConfirmRequired(const QString& id, const QString& name, const QVariantMap& args);
+    void toolConfirmRequired(const QString& id, const QString& name, const QVariantMap& args, const QString& preview);
     void toolRegistryModelChanged();
+    void todoListChanged();
+    void episodicChanged();
     void errorOccurred(const QString& error);
     // Non-error user feedback (import finished, etc.)
     void noticeOccurred(const QString& notice);
@@ -519,6 +525,7 @@ private:
         QString id;
         QString name;
         QVariantMap arguments;
+        QString preview;
     };
     QList<Confirmation> m_confirmations;
     void pruneConfirmations();
@@ -625,6 +632,7 @@ private:
 
     // ── Tool Registry ──────────────────────────────────
     QVariantList m_toolRegistryModel;
+    QVariantList m_todoList;
 
     // ── Knowledge Base ────────────────────────────────
     QVariantList m_knowledgeDocuments;

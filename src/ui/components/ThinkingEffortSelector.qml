@@ -60,7 +60,7 @@ Item {
         color: triggerMA.containsMouse || effortPopup.opened
             ? Theme.surfaceHover : "transparent"
         border.width: 1
-        border.color: effortPopup.opened || root.emphasized
+        border.color: effortPopup.opened
             ? Theme.brandPrimary : "transparent"
 
         Behavior on color { ColorAnimation { duration: 150 } }

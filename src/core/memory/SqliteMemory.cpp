@@ -10,6 +10,7 @@
 #include <QFile>
 #include <QFileInfo>
 #include <algorithm>
+#include <cmath>
 #include <QDebug>
 #include <QDateTime>
 #include <QUuid>
@@ -1235,19 +1236,25 @@ QVariantList SqliteMemory::searchMessages(const QString& keyword, int limit, boo
     return out;
 }
 
-void SqliteMemory::saveEpisodic(const QString& sessionId, const QJsonObject& episode) {
+qint64 SqliteMemory::saveEpisodic(const QString& sessionId, const QJsonObject& episode) {
     QSqlQuery query(m_db);
     query.prepare("INSERT INTO episodic (session_id, summary, tags, embedding, timestamp) "
                   "VALUES (?, ?, ?, ?, ?)");
     query.addBindValue(sessionId);
     query.addBindValue(episode.value("summary").toString());
     query.addBindValue(episode.value("tags").toString());
-    query.addBindValue(episode.value("embedding").toVariant().toByteArray());
+    QByteArray embBlob;
+    const QJsonValue embVal = episode.value("embedding");
+    if (embVal.isString())
+        embBlob = QByteArray::fromBase64(embVal.toString().toLatin1());
+    query.addBindValue(embBlob);
     query.addBindValue(QDateTime::currentDateTime().toMSecsSinceEpoch());
 
     if (!query.exec()) {
         qWarning() << "Failed to save episodic memory:" << query.lastError().text();
+        return 0;
     }
+    return query.lastInsertId().toLongLong();
 }
 
 QJsonArray SqliteMemory::searchEpisodic(const QString& query, int limit) {
@@ -1299,6 +1306,72 @@ QJsonArray SqliteMemory::searchEpisodic(const QString& query, int limit) {
         results.append(episode);
     }
     return results;
+}
+
+QJsonArray SqliteMemory::searchEpisodicSemantic(const QVector<float>& queryEmbedding, int limit) {
+    QJsonArray results;
+    if (queryEmbedding.isEmpty() || limit <= 0) return results;
+
+    QSqlQuery query(m_db);
+    query.prepare("SELECT id, session_id, summary, tags, timestamp, embedding FROM episodic "
+                  "WHERE length(embedding) > 0 ORDER BY timestamp DESC LIMIT 500");
+    if (!query.exec()) {
+        qWarning() << "searchEpisodicSemantic failed:" << query.lastError().text();
+        return results;
+    }
+
+    float queryNorm = 0.0f;
+    for (float v : queryEmbedding) queryNorm += v * v;
+    queryNorm = std::sqrt(queryNorm);
+    if (queryNorm < 1e-6f) return results;
+
+    struct Candidate { QJsonObject episode; float similarity; };
+    QVector<Candidate> candidates;
+
+    while (query.next()) {
+        const QByteArray embBlob = query.value(5).toByteArray();
+        if (embBlob.isEmpty()) continue;
+        const QVector<float> emb = embeddingFromBlob(embBlob);
+        if (emb.size() != queryEmbedding.size()) continue;
+
+        float dot = 0.0f, norm = 0.0f;
+        for (int i = 0; i < emb.size(); ++i) {
+            dot += queryEmbedding[i] * emb[i];
+            norm += emb[i] * emb[i];
+        }
+        norm = std::sqrt(norm);
+        if (norm < 1e-6f) continue;
+
+        QJsonObject episode;
+        episode["id"] = query.value(0).toInt();
+        episode["session_id"] = query.value(1).toString();
+        episode["summary"] = query.value(2).toString();
+        episode["tags"] = query.value(3).toString();
+        episode["timestamp"] = query.value(4).toLongLong();
+        candidates.append({episode, dot / (queryNorm * norm)});
+    }
+
+    std::sort(candidates.begin(), candidates.end(),
+              [](const Candidate& a, const Candidate& b) { return a.similarity > b.similarity; });
+
+    const int n = qMin(limit, candidates.size());
+    for (int i = 0; i < n; ++i)
+        results.append(candidates[i].episode);
+
+    return results;
+}
+
+bool SqliteMemory::updateEpisodicEmbedding(qint64 id, const QByteArray& blob) {
+    if (id <= 0) return false;
+    QSqlQuery query(m_db);
+    query.prepare("UPDATE episodic SET embedding = ? WHERE id = ?");
+    query.addBindValue(blob);
+    query.addBindValue(id);
+    if (!query.exec()) {
+        qWarning() << "updateEpisodicEmbedding failed:" << query.lastError().text();
+        return false;
+    }
+    return query.numRowsAffected() > 0;
 }
 
 // M1: enumerate every stored episode, newest first. searchEpisodic cannot do
@@ -1684,7 +1757,7 @@ void SqliteMemory::saveTraceNode(const QString& sessionId, const QJsonObject& no
     query.addBindValue(static_cast<qint64>(node.value("timestamp").toDouble()));
     query.addBindValue(node.value("messageId").toVariant().toLongLong());
     QJsonObject metadata;
-    for (const char* key : {"images", "files", "model"})
+    for (const char* key : {"images", "files", "model", "preview"})
         if (node.contains(QLatin1String(key))) metadata[key] = node.value(QLatin1String(key));
     query.addBindValue(QString::fromUtf8(QJsonDocument(metadata).toJson(QJsonDocument::Compact)));
 
@@ -1716,7 +1789,7 @@ QJsonObject traceNodeFromRow(const QSqlQuery& query) {
     if (messageId > 0)
         node["messageId"] = messageId;
     const auto metadata = QJsonDocument::fromJson(query.value(10).toByteArray()).object();
-    for (const char* key : {"images", "files", "model"})
+    for (const char* key : {"images", "files", "model", "preview"})
         if (metadata.contains(QLatin1String(key))) node[key] = metadata.value(QLatin1String(key));
     return node;
 }

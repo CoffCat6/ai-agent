@@ -182,6 +182,56 @@ Item {
             }
 
             Rectangle {
+                visible: AgentVM.pendingConfirmation.count > 0 && !transcript.pinnedToBottom
+                anchors.bottom: parent.bottom
+                anchors.bottomMargin: 52
+                anchors.right: parent.right
+                anchors.rightMargin: 16
+                z: 5
+                width: confirmRow.implicitWidth + 20
+                height: 32
+                radius: height / 2
+                color: confirmBadgeMA.containsMouse ? Theme.surfaceHover : Theme.cardBackground
+                border.width: 1
+                border.color: Theme.statusWarning
+                opacity: 0.94
+
+                Row {
+                    id: confirmRow
+                    anchors.centerIn: parent
+                    spacing: 6
+
+                    AppIcon {
+                        anchors.verticalCenter: parent.verticalCenter
+                        icon: "warning"
+                        size: 12
+                        iconColor: Theme.statusWarning
+                    }
+
+                    Text {
+                        anchors.verticalCenter: parent.verticalCenter
+                        text: qsTr("有待确认 · %1").arg(AgentVM.pendingConfirmation.count)
+                        color: Theme.statusWarning
+                        font.pixelSize: 10
+                        font.family: Theme.fontSans
+                        font.bold: true
+                    }
+                }
+
+                MouseArea {
+                    id: confirmBadgeMA
+                    anchors.fill: parent
+                    hoverEnabled: true
+                    cursorShape: Qt.PointingHandCursor
+                    onClicked: transcript.jumpToBottom()
+                }
+
+                ToolTip.visible: confirmBadgeMA.containsMouse
+                ToolTip.delay: 600
+                ToolTip.text: qsTr("有待确认的工具操作，点击查看")
+            }
+
+            Rectangle {
                 visible: !transcript.pinnedToBottom && transcript.maximumOffset > 0
                 anchors.bottom: parent.bottom
                 anchors.bottomMargin: 12
