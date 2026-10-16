@@ -109,6 +109,9 @@ Item {
                         }
 
                         Switch {
+                            id: toolEnableSwitch
+                            // docs/25 D3: 读屏可区分是哪个工具的开关
+                            Accessible.name: qsTr("启用工具 %1").arg(modelData.name)
                             checked: modelData.enabled
                             onToggled: AgentVM.setToolEnabled(modelData.name, checked)
                         }

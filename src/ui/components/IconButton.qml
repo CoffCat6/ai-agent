@@ -24,6 +24,9 @@ Rectangle {
     height: 32
     radius: 6
     color: controlArea.containsMouse ? root.hoverBgColor : root.restBgColor
+    // docs/25 D1: 键盘焦点环
+    border.width: root.activeFocus ? 2 : 0
+    border.color: Theme.brandPrimary
 
     AppIcon {
         anchors.centerIn: parent
@@ -39,6 +42,11 @@ Rectangle {
         cursorShape: Qt.PointingHandCursor
         onClicked: root.clicked()
     }
+
+    // docs/25 D1: 键盘可达（Tab 聚焦 + 回车/空格激活）
+    activeFocusOnTab: true
+    Keys.onReturnPressed: root.clicked()
+    Keys.onSpacePressed: root.clicked()
 
     ToolTip.visible: root.tooltip.length > 0 && controlArea.containsMouse
     ToolTip.delay: 600

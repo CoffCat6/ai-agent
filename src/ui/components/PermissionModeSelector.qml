@@ -31,16 +31,25 @@ Item {
 
     Accessible.role: Accessible.ComboBox
     Accessible.name: qsTr("会话权限模式") + " · " + modeLabel
+    // docs/25 D4: 触发器键盘可达——Tab 聚焦，回车/空格/下方向键开合菜单
+    Accessible.onPressAction: root.toggleMenu()
+    activeFocusOnTab: true
+    function toggleMenu() {
+        modePopup.opened ? modePopup.close() : modePopup.open()
+    }
+    Keys.onReturnPressed: root.toggleMenu()
+    Keys.onSpacePressed: root.toggleMenu()
+    Keys.onDownPressed: root.toggleMenu()
 
     // Trigger pill (ModelSelector styling)
     Rectangle {
         id: triggerBox
         anchors.fill: parent
         radius: 6
-        color: triggerMA.containsMouse || modePopup.opened
+        color: triggerMA.containsMouse || modePopup.opened || root.activeFocus
             ? Theme.surfaceHover : "transparent"
         border.width: 1
-        border.color: modePopup.opened
+        border.color: modePopup.opened || root.activeFocus
             ? root.accentColor : "transparent"
 
         Behavior on color { ColorAnimation { duration: 150 } }
@@ -80,12 +89,14 @@ Item {
             anchors.margins: -4
             hoverEnabled: true
             cursorShape: Qt.PointingHandCursor
-            onClicked: modePopup.opened ? modePopup.close() : modePopup.open()
+            onClicked: root.toggleMenu()
         }
     }
 
     Popup {
         id: modePopup
+        // docs/25 D4: 打开时接受键盘焦点，菜单项才能进入焦点链
+        focus: true
         x: 0
         y: -height - 6          // opens above the trigger
         width: 300
@@ -128,7 +139,19 @@ Item {
                     Layout.rightMargin: 2
                     Layout.preferredHeight: 34
                     radius: 5
-                    color: modeMA.containsMouse ? Theme.surfaceHover : "transparent"
+                    color: modeMA.containsMouse || modeItem.activeFocus
+                        ? Theme.surfaceHover : "transparent"
+
+                    // docs/25 D4: 菜单项键盘激活 + 读屏单选语义
+                    //（完全访问需二次确认，与鼠标路径同一分支）
+                    function activate() {
+                        modePopup.close()
+                        if (modelData.mode === AgentVM.permissionModeFullAccess
+                                && AgentVM.permissionMode !== AgentVM.permissionModeFullAccess)
+                            root.confirmFullAccess()
+                        else
+                            AgentVM.permissionMode = modelData.mode
+                    }
 
                     RowLayout {
                         anchors.fill: parent
@@ -181,15 +204,18 @@ Item {
                         anchors.fill: parent
                         hoverEnabled: true
                         cursorShape: Qt.PointingHandCursor
-                        onClicked: {
-                            modePopup.close()
-                            if (modelData.mode === AgentVM.permissionModeFullAccess
-                                    && AgentVM.permissionMode !== AgentVM.permissionModeFullAccess)
-                                root.confirmFullAccess()
-                            else
-                                AgentVM.permissionMode = modelData.mode
-                        }
+                        onClicked: modeItem.activate()
                     }
+                    activeFocusOnTab: true
+                    Keys.onReturnPressed: modeItem.activate()
+                    Keys.onSpacePressed: modeItem.activate()
+                    Keys.onDownPressed: nextItemInFocusChain().forceActiveFocus()
+                    Keys.onUpPressed: nextItemInFocusChain(false).forceActiveFocus()
+                    Accessible.role: Accessible.RadioButton
+                    Accessible.name: modelData.label
+                    Accessible.description: modelData.desc
+                    Accessible.checked: modeItem.isSelected
+                    Accessible.onPressAction: modeItem.activate()
                 }
             }
         }

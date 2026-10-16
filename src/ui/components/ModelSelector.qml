@@ -40,21 +40,31 @@ Item {
     implicitWidth: selectorRow.implicitWidth + 20
     implicitHeight: 28
 
+    // docs/25 D4: 触发器键盘可达——Tab 聚焦，回车/空格/下方向键开合菜单。
+    activeFocusOnTab: true
+    function toggleMenu() {
+        menuPopup.opened ? menuPopup.close() : menuPopup.open()
+    }
+    Keys.onReturnPressed: root.toggleMenu()
+    Keys.onSpacePressed: root.toggleMenu()
+    Keys.onDownPressed: if (root.enabled) root.toggleMenu()
+
     Accessible.role: Accessible.ComboBox
     Accessible.name: qsTr("模型选择器")
     Accessible.description: hasProfile
         ? (activeProfile.displayName || activeProfile.provider) + " · " + (activeProfile.model || "")
         : qsTr("未配置模型")
+    Accessible.onPressAction: root.toggleMenu()
 
     // Trigger pill button
     Rectangle {
         id: selectorBox
         anchors.fill: parent
         radius: 6
-        color: selectorMA.containsMouse || menuPopup.opened
+        color: selectorMA.containsMouse || menuPopup.opened || root.activeFocus
             ? Theme.surfaceHover : "transparent"
         border.width: 1
-        border.color: menuPopup.opened || selectorMA.containsMouse
+        border.color: menuPopup.opened || selectorMA.containsMouse || root.activeFocus
             ? Theme.brandPrimary : "transparent"
 
         Behavior on color { ColorAnimation { duration: 150 } }
@@ -104,13 +114,15 @@ Item {
             anchors.margins: -4
             hoverEnabled: true
             cursorShape: Qt.PointingHandCursor
-            onClicked: menuPopup.opened ? menuPopup.close() : menuPopup.open()
+            onClicked: root.toggleMenu()
         }
     }
 
     // Dropdown popup (opens upward, scrolls when tall)
     Popup {
         id: menuPopup
+        // docs/25 D4: 打开时接受键盘焦点，菜单项才能进入焦点链
+        focus: true
         x: 0
         y: -height - 6          // opens above the trigger
         width: Math.max(280, root.width)
@@ -156,7 +168,16 @@ Item {
                         Layout.rightMargin: 2
                         Layout.preferredHeight: 28
                         radius: 5
-                        color: modelMA.containsMouse ? Theme.surfaceHover : "transparent"
+                        color: modelMA.containsMouse || modelItem.activeFocus
+                            ? Theme.surfaceHover : "transparent"
+
+                        // docs/25 D4: 菜单项键盘激活 + 读屏单选语义
+                        function activate() {
+                            AgentVM.selectChatModel(
+                                root.activeProfile.id, modelData)
+                            menuPopup.close()
+                            root.showWindowHint(root.activeProfile.apiProtocol, modelData)
+                        }
 
                         RowLayout {
                             anchors.fill: parent
@@ -196,13 +217,17 @@ Item {
                             anchors.fill: parent
                             hoverEnabled: true
                             cursorShape: Qt.PointingHandCursor
-                            onClicked: {
-                                AgentVM.selectChatModel(
-                                    root.activeProfile.id, modelData)
-                                menuPopup.close()
-                                root.showWindowHint(root.activeProfile.apiProtocol, modelData)
-                            }
+                            onClicked: modelItem.activate()
                         }
+                        activeFocusOnTab: true
+                        Keys.onReturnPressed: modelItem.activate()
+                        Keys.onSpacePressed: modelItem.activate()
+                        Keys.onDownPressed: nextItemInFocusChain().forceActiveFocus()
+                        Keys.onUpPressed: nextItemInFocusChain(false).forceActiveFocus()
+                        Accessible.role: Accessible.RadioButton
+                        Accessible.name: modelData
+                        Accessible.checked: modelItem.isSelected
+                        Accessible.onPressAction: modelItem.activate()
                     }
                 }
 
@@ -249,7 +274,15 @@ Item {
                         Layout.rightMargin: 2
                         Layout.preferredHeight: 28
                         radius: 5
-                        color: profileMA.containsMouse ? Theme.surfaceHover : "transparent"
+                        color: profileMA.containsMouse || profileItem.activeFocus
+                            ? Theme.surfaceHover : "transparent"
+
+                        // docs/25 D4: 菜单项键盘激活 + 读屏单选语义
+                        function activate() {
+                            AgentVM.selectChatModel(modelData.id)
+                            menuPopup.close()
+                            root.showWindowHint(modelData.apiProtocol, modelData.model)
+                        }
 
                         RowLayout {
                             anchors.fill: parent
@@ -290,12 +323,18 @@ Item {
                             anchors.fill: parent
                             hoverEnabled: true
                             cursorShape: Qt.PointingHandCursor
-                            onClicked: {
-                                AgentVM.selectChatModel(modelData.id)
-                                menuPopup.close()
-                                root.showWindowHint(modelData.apiProtocol, modelData.model)
-                            }
+                            onClicked: profileItem.activate()
                         }
+                        activeFocusOnTab: true
+                        Keys.onReturnPressed: profileItem.activate()
+                        Keys.onSpacePressed: profileItem.activate()
+                        Keys.onDownPressed: nextItemInFocusChain().forceActiveFocus()
+                        Keys.onUpPressed: nextItemInFocusChain(false).forceActiveFocus()
+                        Accessible.role: Accessible.RadioButton
+                        Accessible.name: (modelData.displayName || modelData.provider)
+                            + " · " + (modelData.model ? modelData.model : qsTr("未指定模型"))
+                        Accessible.checked: profileItem.isCurrent
+                        Accessible.onPressAction: profileItem.activate()
                     }
                 }
 
@@ -311,13 +350,21 @@ Item {
 
                 // ── Section 3: open full settings ──
                 Rectangle {
+                    id: settingsItem
                     Layout.fillWidth: true
                     Layout.leftMargin: 2
                     Layout.rightMargin: 2
                     Layout.bottomMargin: 2
                     Layout.preferredHeight: 30
                     radius: 5
-                    color: settingsMA.containsMouse ? Theme.surfaceHover : "transparent"
+                    color: settingsMA.containsMouse || settingsItem.activeFocus
+                        ? Theme.surfaceHover : "transparent"
+
+                    // docs/25 D4: 入口菜单项键盘激活
+                    function activate() {
+                        menuPopup.close()
+                        root.settingsRequested()
+                    }
 
                     RowLayout {
                         anchors.fill: parent
@@ -347,11 +394,16 @@ Item {
                         anchors.fill: parent
                         hoverEnabled: true
                         cursorShape: Qt.PointingHandCursor
-                        onClicked: {
-                            menuPopup.close()
-                            root.settingsRequested()
-                        }
+                        onClicked: settingsItem.activate()
                     }
+                    activeFocusOnTab: true
+                    Keys.onReturnPressed: settingsItem.activate()
+                    Keys.onSpacePressed: settingsItem.activate()
+                    Keys.onDownPressed: nextItemInFocusChain().forceActiveFocus()
+                    Keys.onUpPressed: nextItemInFocusChain(false).forceActiveFocus()
+                    Accessible.role: Accessible.MenuItem
+                    Accessible.name: qsTr("管理模型配置…")
+                    Accessible.onPressAction: settingsItem.activate()
                 }
             }
         }

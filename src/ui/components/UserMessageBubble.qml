@@ -172,21 +172,24 @@ Item {
             anchors.right: parent.right
             anchors.verticalCenter: parent.verticalCenter
             spacing: Theme.spaceXs
-            visible: rootHover.hovered && !root.editing
+            // docs/25 D2: 任一操作按钮聚焦时保持可见，防焦点漂移。
+            visible: (rootHover.hovered || copyBtn.activeFocus || editBtn.activeFocus)
+                     && !root.editing
 
-            CopyButton { text: root.body }
+            CopyButton { id: copyBtn; text: root.body }
 
             // docs/20 §3.2：编辑重发（末条 user 消息、非 busy、无附件）。
             Rectangle {
                 id: editBtn
-                visible: root.canEdit && rootHover.hovered
+                visible: root.canEdit
+                         && (rootHover.hovered || editBtn.activeFocus)
                 width: editLabel.implicitWidth + 16
                 height: 22
                 radius: 4
                 color: editMA.containsMouse ? Theme.surfaceHover : "transparent"
-                border.width: 1
-                border.color: Theme.borderSubtle
-                opacity: editMA.containsMouse ? 1.0 : 0.55
+                border.width: editBtn.activeFocus ? 2 : 1
+                border.color: editBtn.activeFocus ? Theme.brandPrimary : Theme.borderSubtle
+                opacity: editMA.containsMouse || editBtn.activeFocus ? 1.0 : 0.55
 
                 Behavior on opacity { NumberAnimation { duration: 150 } }
 
@@ -210,6 +213,16 @@ Item {
                         editArea.forceActiveFocus()
                     }
                 }
+
+                // docs/25 D2: 键盘激活（Tab 聚焦 + 回车/空格）
+                activeFocusOnTab: true
+                function startEditing() {
+                    root.editDraft = root.body
+                    root.editing = true
+                    editArea.forceActiveFocus()
+                }
+                Keys.onReturnPressed: editBtn.startEditing()
+                Keys.onSpacePressed: editBtn.startEditing()
 
                 Accessible.role: Accessible.Button
                 Accessible.name: qsTr("编辑并重发")

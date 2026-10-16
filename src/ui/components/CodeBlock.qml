@@ -59,10 +59,14 @@ Rectangle {
         }
 
         CopyButton {
+            id: copyBtn
             anchors.right: parent.right
             anchors.rightMargin: 6
             anchors.verticalCenter: parent.verticalCenter
-            visible: root.copyable && root.text !== "" && codeHover.hovered
+            // docs/25 D2: 聚焦时保持可见——CopyButton 已在 Tab 链内（docs/25 D1），
+            // 鼠标移开后不因 hover 消失而丢失焦点。
+            visible: root.copyable && root.text !== ""
+                     && (codeHover.hovered || copyBtn.activeFocus)
             text: root.text
             bgColor: "transparent"
         }

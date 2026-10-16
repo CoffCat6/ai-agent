@@ -30,6 +30,9 @@ Item {
     // 自定义网关刚建好时活动配置还没有模型名，此时思考档位既不会随请求发出也没有
     // 任何效果——与其让人点了没反应，不如显式禁用并说明原因。
     readonly property bool usable: AgentVM.modelConfigured && !AgentVM.stateBusy
+    // docs/25 D4: 整体禁用让 Tab 焦点链跳过不可用触发器（enabled 会向下传播
+    // 到 MouseArea/Popup，取代原先单独的 triggerMA.enabled 绑定）。
+    enabled: root.usable
 
     readonly property string currentLabel: {
         for (var i = 0; i < levels.length; ++i)
@@ -47,6 +50,15 @@ Item {
             if (levels[i].value === current) return levels[i].desc
         return ""
     }
+    // docs/25 D4: 触发器键盘可达——Tab 聚焦，回车/空格/下方向键开合菜单
+    Accessible.onPressAction: root.toggleMenu()
+    activeFocusOnTab: true
+    function toggleMenu() {
+        effortPopup.opened ? effortPopup.close() : effortPopup.open()
+    }
+    Keys.onReturnPressed: root.toggleMenu()
+    Keys.onSpacePressed: root.toggleMenu()
+    Keys.onDownPressed: root.toggleMenu()
 
     function selectLevel(value) {
         AgentVM.setChatReasoningEffort(value)
@@ -57,10 +69,10 @@ Item {
         anchors.fill: parent
         radius: 6
         opacity: root.usable ? 1.0 : 0.5
-        color: triggerMA.containsMouse || effortPopup.opened
+        color: triggerMA.containsMouse || effortPopup.opened || root.activeFocus
             ? Theme.surfaceHover : "transparent"
         border.width: 1
-        border.color: effortPopup.opened
+        border.color: effortPopup.opened || root.activeFocus
             ? Theme.brandPrimary : "transparent"
 
         Behavior on color { ColorAnimation { duration: 150 } }
@@ -100,16 +112,17 @@ Item {
             id: triggerMA
             anchors.fill: parent
             anchors.margins: -4
-            enabled: root.usable
             hoverEnabled: true
             cursorShape: Qt.PointingHandCursor
-            onClicked: effortPopup.opened ? effortPopup.close() : effortPopup.open()
+            onClicked: root.toggleMenu()
         }
     }
 
     // 触发器贴着窗口底边，所以和另两个选择器一样向上弹。
     Popup {
         id: effortPopup
+        // docs/25 D4: 打开时接受键盘焦点，菜单项才能进入焦点链
+        focus: true
         x: 0
         y: -height - 6
         width: 320
@@ -145,7 +158,14 @@ Item {
                     Layout.rightMargin: 2
                     Layout.preferredHeight: 34
                     radius: 5
-                    color: levelMA.containsMouse ? Theme.surfaceHover : "transparent"
+                    color: levelMA.containsMouse || levelItem.activeFocus
+                        ? Theme.surfaceHover : "transparent"
+
+                    // docs/25 D4: 菜单项键盘激活 + 读屏单选语义
+                    function activate() {
+                        effortPopup.close()
+                        root.selectLevel(modelData.value)
+                    }
 
                     RowLayout {
                         anchors.fill: parent
@@ -196,11 +216,18 @@ Item {
                         anchors.fill: parent
                         hoverEnabled: true
                         cursorShape: Qt.PointingHandCursor
-                        onClicked: {
-                            effortPopup.close()
-                            root.selectLevel(modelData.value)
-                        }
+                        onClicked: levelItem.activate()
                     }
+                    activeFocusOnTab: true
+                    Keys.onReturnPressed: levelItem.activate()
+                    Keys.onSpacePressed: levelItem.activate()
+                    Keys.onDownPressed: nextItemInFocusChain().forceActiveFocus()
+                    Keys.onUpPressed: nextItemInFocusChain(false).forceActiveFocus()
+                    Accessible.role: Accessible.RadioButton
+                    Accessible.name: modelData.label
+                    Accessible.description: modelData.desc
+                    Accessible.checked: levelItem.isSelected
+                    Accessible.onPressAction: levelItem.activate()
                 }
             }
         }

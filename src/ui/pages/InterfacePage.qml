@@ -97,6 +97,9 @@ Item {
                 ComboBox {
                     id: themeModeCombo
                     Layout.preferredWidth: 200
+                    // docs/25 D3: 控件补读屏命名（对齐 SettingsField 做法）
+                    Accessible.name: qsTr("主题模式")
+                    Accessible.description: qsTr("当前：%1").arg(currentText)
                     model: page.themeModeOptions
                     textRole: "label"
                     valueRole: "value"
@@ -138,7 +141,9 @@ Item {
                         Layout.fillWidth: true
                     }
                     ComboBox {
+                        id: fontSansCombo
                         Layout.preferredWidth: 200
+                        Accessible.name: qsTr("正文字体")
                         model: page.fontFamilies
                         currentIndex: page.fontFamilies.indexOf(page.pref("ui.fontSans"))
                         onActivated: EditBuffer.stage("ui.fontSans", currentText)
@@ -157,7 +162,9 @@ Item {
                         Layout.fillWidth: true
                     }
                     ComboBox {
+                        id: fontMonoCombo
                         Layout.preferredWidth: 200
+                        Accessible.name: qsTr("等宽字体")
                         model: page.fontFamilies
                         currentIndex: page.fontFamilies.indexOf(page.pref("ui.fontMono"))
                         onActivated: EditBuffer.stage("ui.fontMono", currentText)
@@ -178,7 +185,9 @@ Item {
                     RowLayout {
                         spacing: 8
                         Slider {
+                            id: fontSizeSlider
                             Layout.preferredWidth: 120
+                            Accessible.name: qsTr("基础字号")
                             from: page.fontSizeRange.min
                             to: page.fontSizeRange.max
                             value: page.pref("ui.baseFontSize")
@@ -187,7 +196,9 @@ Item {
                         SpinBox {
                             // Basic style indicators take 40 px per side; the
                             // width must leave room for the text between them.
+                            id: fontSizeSpin
                             Layout.preferredWidth: 128
+                            Accessible.name: qsTr("基础字号")
                             editable: true
                             from: page.fontSizeRange.min
                             to: page.fontSizeRange.max
@@ -266,6 +277,8 @@ Item {
                 ComboBox {
                     id: localeCombo
                     Layout.preferredWidth: 200
+                    Accessible.name: qsTr("界面语言")
+                    Accessible.description: qsTr("当前：%1").arg(currentText)
                     textRole: "label"
 
                     // First entry is "auto" = follow the system language.
@@ -324,7 +337,9 @@ Item {
                     SpinBox {
                         // 160 leaves ~80 px of text area after the 40 px
                         // indicators, enough for "560 px".
+                        id: sidebarWidthSpin
                         Layout.preferredWidth: 160
+                        Accessible.name: qsTr("侧边栏默认宽度")
                         from: page.sidebarRange.min
                         to: page.sidebarRange.max
                         value: page.pref("ui.defaultSidebarWidth")
@@ -344,7 +359,9 @@ Item {
                         Layout.fillWidth: true
                     }
                     SpinBox {
+                        id: panelWidthSpin
                         Layout.preferredWidth: 160
+                        Accessible.name: qsTr("面板默认宽度")
                         from: page.panelRange.min
                         to: page.panelRange.max
                         value: page.pref("ui.defaultPanelWidth")
@@ -364,6 +381,8 @@ Item {
                         Layout.fillWidth: true
                     }
                     Switch {
+                        id: sidebarExpandedSwitch
+                        Accessible.name: qsTr("侧边栏默认展开")
                         checked: page.pref("ui.defaultSidebarExpanded") === true
                         onToggled: EditBuffer.stage("ui.defaultSidebarExpanded", checked)
                     }
@@ -380,6 +399,8 @@ Item {
                         Layout.fillWidth: true
                     }
                     Switch {
+                        id: panelVisibleSwitch
+                        Accessible.name: qsTr("面板默认展开")
                         checked: page.pref("ui.defaultPanelVisible") === true
                         onToggled: EditBuffer.stage("ui.defaultPanelVisible", checked)
                     }
@@ -396,6 +417,8 @@ Item {
                         Layout.fillWidth: true
                     }
                     Switch {
+                        id: restoreWindowSwitch
+                        Accessible.name: qsTr("启动时恢复窗口")
                         checked: page.pref("ui.restoreWindowOnStartup") === true
                         onToggled: EditBuffer.stage("ui.restoreWindowOnStartup", checked)
                     }

@@ -13,11 +13,22 @@ Rectangle {
     height: 22
     radius: 4
     color: copyMA.containsMouse ? Theme.surfaceHover : root.bgColor
+    // docs/25 D1: 键盘焦点环（复制成功色优先级高于焦点色）
     border.width: 1
-    border.color: root.copied ? Theme.statusSuccess : Theme.borderSubtle
-    opacity: copyMA.containsMouse || root.copied ? 1.0 : 0.55
+    border.color: root.activeFocus ? Theme.brandPrimary
+                 : (root.copied ? Theme.statusSuccess : Theme.borderSubtle)
+    opacity: copyMA.containsMouse || root.copied || root.activeFocus ? 1.0 : 0.55
 
     property bool copied: false
+
+    // 复制动作提为函数：鼠标、键盘、无障碍三条激活路径共用。
+    function copyToClipboard() {
+        if (root.text.length > 0) {
+            AgentVM.copyToClipboard(root.text)
+            root.copied = true
+            resetTimer.restart()
+        }
+    }
 
     Behavior on opacity { NumberAnimation { duration: 150 } }
     Behavior on border.color { ColorAnimation { duration: 150 } }
@@ -36,14 +47,13 @@ Rectangle {
         anchors.fill: parent
         hoverEnabled: true
         cursorShape: Qt.PointingHandCursor
-        onClicked: {
-            if (root.text.length > 0) {
-                AgentVM.copyToClipboard(root.text)
-                root.copied = true
-                resetTimer.restart()
-            }
-        }
+        onClicked: root.copyToClipboard()
     }
+
+    // docs/25 D1: 键盘可达（Tab 聚焦 + 回车/空格激活）
+    activeFocusOnTab: true
+    Keys.onReturnPressed: root.copyToClipboard()
+    Keys.onSpacePressed: root.copyToClipboard()
 
     Timer {
         id: resetTimer
@@ -53,5 +63,5 @@ Rectangle {
 
     Accessible.role: Accessible.Button
     Accessible.name: root.copied ? qsTr("已复制") : qsTr("复制")
-    Accessible.onPressAction: copyMA.clicked()
+    Accessible.onPressAction: root.copyToClipboard()
 }

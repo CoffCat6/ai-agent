@@ -377,12 +377,17 @@ Item {
         height: 18
 
         Row {
+            id: footerActions
             anchors.left: parent.left
             anchors.verticalCenter: parent.verticalCenter
             spacing: Theme.spaceXs
+            // docs/25 D2: 操作条内任一按钮获得焦点时保持可见——防止聚焦后
+            // 鼠标移开导致按钮消失、焦点漂移；键盘激活路径见各按钮 Keys。
             visible: rootHover.hovered || regenerateBtn.visible
+                     || copyBtn.activeFocus || branchBtn.activeFocus
+                     || regenerateBtn.activeFocus
 
-            CopyButton { text: root.body }
+            CopyButton { id: copyBtn; text: root.body }
 
             Text {
                 anchors.verticalCenter: parent.verticalCenter
@@ -394,14 +399,15 @@ Item {
 
             Rectangle {
                 id: branchBtn
-                visible: root.canBranch && rootHover.hovered
+                visible: root.canBranch
+                         && (rootHover.hovered || branchBtn.activeFocus)
                 width: branchLabel.implicitWidth + 16
                 height: 22
                 radius: 4
                 color: branchMA.containsMouse ? Theme.surfaceHover : "transparent"
-                border.width: 1
-                border.color: Theme.borderSubtle
-                opacity: branchMA.containsMouse ? 1.0 : 0.55
+                border.width: branchBtn.activeFocus ? 2 : 1
+                border.color: branchBtn.activeFocus ? Theme.brandPrimary : Theme.borderSubtle
+                opacity: branchMA.containsMouse || branchBtn.activeFocus ? 1.0 : 0.55
 
                 Behavior on opacity { NumberAnimation { duration: 150 } }
 
@@ -422,6 +428,11 @@ Item {
                     onClicked: AgentVM.branchFromAnswer(root.index)
                 }
 
+                // docs/25 D2: 键盘激活（Tab 聚焦 + 回车/空格）
+                activeFocusOnTab: true
+                Keys.onReturnPressed: AgentVM.branchFromAnswer(root.index)
+                Keys.onSpacePressed: AgentVM.branchFromAnswer(root.index)
+
                 Accessible.role: Accessible.Button
                 Accessible.name: qsTr("从此处分支")
                 Accessible.description: qsTr("把到这里为止的对话复制成一个新会话，在新会话里继续")
@@ -431,14 +442,15 @@ Item {
             // docs/20 §3.1：重新生成（末条回复、非流式、非 busy）。
             Rectangle {
                 id: regenerateBtn
-                visible: root.canRegenerate && rootHover.hovered
+                visible: root.canRegenerate
+                         && (rootHover.hovered || regenerateBtn.activeFocus)
                 width: regenLabel.implicitWidth + 16
                 height: 22
                 radius: 4
                 color: regenMA.containsMouse ? Theme.surfaceHover : "transparent"
-                border.width: 1
-                border.color: Theme.borderSubtle
-                opacity: regenMA.containsMouse ? 1.0 : 0.55
+                border.width: regenerateBtn.activeFocus ? 2 : 1
+                border.color: regenerateBtn.activeFocus ? Theme.brandPrimary : Theme.borderSubtle
+                opacity: regenMA.containsMouse || regenerateBtn.activeFocus ? 1.0 : 0.55
 
                 Behavior on opacity { NumberAnimation { duration: 150 } }
 
@@ -458,6 +470,11 @@ Item {
                     cursorShape: Qt.PointingHandCursor
                     onClicked: AgentVM.regenerate()
                 }
+
+                // docs/25 D2: 键盘激活（Tab 聚焦 + 回车/空格）
+                activeFocusOnTab: true
+                Keys.onReturnPressed: AgentVM.regenerate()
+                Keys.onSpacePressed: AgentVM.regenerate()
 
                 Accessible.role: Accessible.Button
                 Accessible.name: qsTr("重新生成")

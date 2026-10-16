@@ -802,10 +802,39 @@ Rectangle {
                         text: modelData.archived ? qsTr("恢复会话") : qsTr("归档会话")
                         onTriggered: AgentVM.setSessionArchived(modelData.id, !modelData.archived)
                     }
+                    // docs/25 D2: 导出/重命名/删除此前只有 hover 操作条一条入口，
+                    // 键盘与读屏用户不可达——菜单扩展出等价路径（Menu 自带
+                    // 键盘导航）。删除有全局撤销通知兜底，菜单内一步执行。
+                    MenuItem {
+                        text: qsTr("导出会话")
+                        onTriggered: {
+                            root.exportSessionId = modelData.id
+                            exportDialog.open()
+                        }
+                    }
+                    MenuItem {
+                        text: qsTr("重命名会话")
+                        onTriggered: {
+                            sessionDelegate.confirmDelete = false
+                            sessionDelegate.renaming = true
+                        }
+                    }
+                    MenuItem {
+                        text: qsTr("删除会话")
+                        onTriggered: {
+                            const deletedId = modelData.id
+                            root.sessionDeletedUndoable(deletedId,
+                                                        modelData.title || "")
+                            AgentVM.deleteSession(deletedId)
+                        }
+                    }
                 }
 
                 background: Rectangle {
-                    color: hovered ? Theme.surfaceHover : "transparent"
+                    // docs/25 D2: activeFocus 高亮让键盘用户可见「行已聚焦」，
+                    // 同时操作条依据 activeFocus 显示（见下方 Row.visible）。
+                    color: hovered || sessionDelegate.activeFocus
+                        ? Theme.surfaceHover : "transparent"
                     Rectangle {
                         width: 3
                         height: parent.height
@@ -886,7 +915,8 @@ Rectangle {
                             font.pixelSize: Theme.fontSizeBody
                             font.family: Theme.fontSans
                             elide: Text.ElideRight
-                            width: parent.width - (sessionDelegate.hovered ? 132 : 0)
+                            width: parent.width
+                                   - ((sessionDelegate.hovered || sessionDelegate.activeFocus) ? 132 : 0)
 
                             // docs/25 C5: elide 截断时悬停可看完整标题
                             HoverHandler { id: sessionTitleHover }
@@ -898,8 +928,11 @@ Rectangle {
                         // 全部用直连 MouseArea 的 Rectangle，不再用 Popup Menu——
                         // Menu 在 Repeater delegate 内弹出会被焦点抢占秒关，
                         // 置顶/归档因此从未生效（bug 修复：改为直连按钮）。
+                        // docs/25 D2: 键盘可达——行聚焦（ItemDelegate 在 Tab 链
+                        // 内）时同样显示，按钮可继续 Tab 进入并回车激活。
                         Row {
-                            visible: sessionDelegate.hovered && !sessionDelegate.renaming
+                            visible: (sessionDelegate.hovered || sessionDelegate.activeFocus)
+                                     && !sessionDelegate.renaming
                             anchors.verticalCenter: parent.verticalCenter
                             anchors.right: parent.right
                             spacing: 2
@@ -910,6 +943,9 @@ Rectangle {
                                 height: 20
                                 radius: 4
                                 color: pinMA.containsMouse ? Theme.surfaceHover : "transparent"
+                                // docs/25 D1/D2: 焦点环 + 键盘激活
+                                border.width: activeFocus ? 2 : 0
+                                border.color: Theme.brandPrimary
 
                                 AppIcon {
                                     anchors.centerIn: parent
@@ -927,6 +963,11 @@ Rectangle {
                                     cursorShape: Qt.PointingHandCursor
                                     onClicked: AgentVM.setSessionPinned(modelData.id, !modelData.pinned)
                                 }
+                                activeFocusOnTab: true
+                                Keys.onReturnPressed:
+                                    AgentVM.setSessionPinned(modelData.id, !modelData.pinned)
+                                Keys.onSpacePressed:
+                                    AgentVM.setSessionPinned(modelData.id, !modelData.pinned)
                                 Accessible.role: Accessible.Button
                                 Accessible.name: modelData.pinned ? qsTr("取消置顶") : qsTr("置顶会话")
                                 Accessible.onPressAction: AgentVM.setSessionPinned(modelData.id, !modelData.pinned)
@@ -938,6 +979,8 @@ Rectangle {
                                 height: 20
                                 radius: 4
                                 color: archiveMA.containsMouse ? Theme.surfaceHover : "transparent"
+                                border.width: activeFocus ? 2 : 0
+                                border.color: Theme.brandPrimary
 
                                 AppIcon {
                                     anchors.centerIn: parent
@@ -954,6 +997,11 @@ Rectangle {
                                     cursorShape: Qt.PointingHandCursor
                                     onClicked: AgentVM.setSessionArchived(modelData.id, !modelData.archived)
                                 }
+                                activeFocusOnTab: true
+                                Keys.onReturnPressed:
+                                    AgentVM.setSessionArchived(modelData.id, !modelData.archived)
+                                Keys.onSpacePressed:
+                                    AgentVM.setSessionArchived(modelData.id, !modelData.archived)
                                 Accessible.role: Accessible.Button
                                 Accessible.name: modelData.archived ? qsTr("恢复会话") : qsTr("归档会话")
                                 Accessible.onPressAction: AgentVM.setSessionArchived(modelData.id, !modelData.archived)
@@ -965,6 +1013,8 @@ Rectangle {
                                 height: 20
                                 radius: 4
                                 color: exportMA.containsMouse ? Theme.surfaceHover : "transparent"
+                                border.width: activeFocus ? 2 : 0
+                                border.color: Theme.brandPrimary
 
                                 AppIcon {
                                     anchors.centerIn: parent
@@ -983,6 +1033,22 @@ Rectangle {
                                         exportDialog.open()
                                     }
                                 }
+                                // docs/25 D2: 此前缺 Accessible——补 role/name/onPressAction
+                                activeFocusOnTab: true
+                                Keys.onReturnPressed: {
+                                    root.exportSessionId = modelData.id
+                                    exportDialog.open()
+                                }
+                                Keys.onSpacePressed: {
+                                    root.exportSessionId = modelData.id
+                                    exportDialog.open()
+                                }
+                                Accessible.role: Accessible.Button
+                                Accessible.name: qsTr("导出会话")
+                                Accessible.onPressAction: {
+                                    root.exportSessionId = modelData.id
+                                    exportDialog.open()
+                                }
                             }
 
                             // Rename action
@@ -991,6 +1057,8 @@ Rectangle {
                                 height: 20
                                 radius: 4
                                 color: renameMA.containsMouse ? Theme.surfaceHover : "transparent"
+                                border.width: activeFocus ? 2 : 0
+                                border.color: Theme.brandPrimary
 
                                 AppIcon {
                                     anchors.centerIn: parent
@@ -1009,16 +1077,34 @@ Rectangle {
                                         sessionDelegate.renaming = true
                                     }
                                 }
+                                activeFocusOnTab: true
+                                Keys.onReturnPressed: {
+                                    sessionDelegate.confirmDelete = false
+                                    sessionDelegate.renaming = true
+                                }
+                                Keys.onSpacePressed: {
+                                    sessionDelegate.confirmDelete = false
+                                    sessionDelegate.renaming = true
+                                }
+                                Accessible.role: Accessible.Button
+                                Accessible.name: qsTr("重命名会话")
+                                Accessible.onPressAction: {
+                                    sessionDelegate.confirmDelete = false
+                                    sessionDelegate.renaming = true
+                                }
                             }
 
                             // Delete action (two-step confirm)
                             Rectangle {
+                                id: deleteBtn
                                 width: 20
                                 height: 20
                                 radius: 4
                                 color: deleteMA.containsMouse || sessionDelegate.confirmDelete
                                     ? Qt.rgba(Theme.statusDanger.r, Theme.statusDanger.g,
                                               Theme.statusDanger.b, 0.15) : "transparent"
+                                border.width: activeFocus ? 2 : 0
+                                border.color: Theme.statusDanger
 
                                 AppIcon {
                                     anchors.centerIn: parent
@@ -1042,23 +1128,32 @@ Rectangle {
                                     anchors.fill: parent
                                     hoverEnabled: true
                                     cursorShape: Qt.PointingHandCursor
-                                    onClicked: {
-                                        if (!sessionDelegate.confirmDelete) {
-                                            sessionDelegate.confirmDelete = true
-                                            confirmResetTimer.restart()
-                                        } else {
-                                            confirmResetTimer.stop()
-                                            sessionDelegate.confirmDelete = false
-                                            // 顺序不能反：deleteSession 收缩 Repeater 模型时会同步销毁
-                                            // 本 delegate，之后再取任何 id 都抛 "is not defined"，
-                                            // 撤销通知从来没送达过。
-                                            const deletedId = modelData.id
-                                            root.sessionDeletedUndoable(deletedId,
-                                                                        modelData.title || "")
-                                            AgentVM.deleteSession(deletedId)
-                                        }
+                                    onClicked: deleteBtn.confirmOrDelete()
+                                }
+                                activeFocusOnTab: true
+                                Keys.onReturnPressed: deleteBtn.confirmOrDelete()
+                                Keys.onSpacePressed: deleteBtn.confirmOrDelete()
+                                // 两步确认逻辑提为函数：鼠标/键盘/读屏共用。
+                                function confirmOrDelete() {
+                                    if (!sessionDelegate.confirmDelete) {
+                                        sessionDelegate.confirmDelete = true
+                                        confirmResetTimer.restart()
+                                    } else {
+                                        confirmResetTimer.stop()
+                                        sessionDelegate.confirmDelete = false
+                                        // 顺序不能反：deleteSession 收缩 Repeater 模型时会同步销毁
+                                        // 本 delegate，之后再取任何 id 都抛 "is not defined"，
+                                        // 撤销通知从来没送达过。
+                                        const deletedId = modelData.id
+                                        root.sessionDeletedUndoable(deletedId,
+                                                                    modelData.title || "")
+                                        AgentVM.deleteSession(deletedId)
                                     }
                                 }
+                                Accessible.role: Accessible.Button
+                                Accessible.name: qsTr("删除会话")
+                                Accessible.description: qsTr("需要点击两次确认")
+                                Accessible.onPressAction: deleteBtn.confirmOrDelete()
                             }
                         }
 
@@ -1225,12 +1320,19 @@ Rectangle {
 
                 // Theme toggle switch: knob carries the mode icon
                 Rectangle {
+                    id: themeToggle
                     Layout.preferredWidth: 48
                     Layout.preferredHeight: 24
                     radius: 12
                     color: ThemeManager.isDark ? Theme.brandPrimary : Theme.surfaceHover
-                    border.width: 1
-                    border.color: Theme.borderSubtle
+                    border.width: themeToggle.activeFocus ? 2 : 1
+                    border.color: themeToggle.activeFocus
+                        ? Theme.brandPrimary : Theme.borderSubtle
+
+                    // 切换动作提为函数：鼠标/键盘/读屏共用。
+                    function toggleTheme() {
+                        ThemeManager.isDark = !ThemeManager.isDark
+                    }
 
                     Rectangle {
                         width: 18
@@ -1255,8 +1357,21 @@ Rectangle {
                     MouseArea {
                         anchors.fill: parent
                         cursorShape: Qt.PointingHandCursor
-                        onClicked: ThemeManager.isDark = !ThemeManager.isDark
+                        onClicked: themeToggle.toggleTheme()
                     }
+
+                    // docs/25 D5: 纯 MouseArea 开关补键盘与读屏可达
+                    activeFocusOnTab: true
+                    Keys.onReturnPressed: themeToggle.toggleTheme()
+                    Keys.onSpacePressed: themeToggle.toggleTheme()
+                    Accessible.role: Accessible.CheckBox
+                    Accessible.name: qsTr("深色模式")
+                    Accessible.description: ThemeManager.isDark
+                        ? qsTr("当前为深色主题，按回车切换到浅色")
+                        : qsTr("当前为浅色主题，按回车切换到深色")
+                    Accessible.checkable: true
+                    Accessible.checked: ThemeManager.isDark
+                    Accessible.onPressAction: themeToggle.toggleTheme()
                 }
             }
         }

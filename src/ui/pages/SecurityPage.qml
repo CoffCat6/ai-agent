@@ -167,8 +167,11 @@ Item {
                                 ToolTip.text: denyPathText.text
                             }
                             Rectangle {
+                                id: denyDelBtn
                                 width: 20; height: 20; radius: 4
                                 color: denyDelMA.containsMouse ? Theme.surfaceHover : "transparent"
+                                border.width: denyDelBtn.activeFocus ? 2 : 0
+                                border.color: Theme.statusDanger
                                 AppIcon {
                                     anchors.centerIn: parent
                                     icon: "close"
@@ -176,17 +179,25 @@ Item {
                                     iconColor: denyDelMA.containsMouse
                                         ? Theme.statusDanger : Theme.textSecondary
                                 }
+                                // docs/25 D3: 黑名单条目删除按钮补键盘与读屏可达
+                                function removeAt() {
+                                    const list = Settings.readDenyList.slice()
+                                    list.splice(index, 1)
+                                    Settings.readDenyList = list
+                                }
                                 MouseArea {
                                     id: denyDelMA
                                     anchors.fill: parent
                                     hoverEnabled: true
                                     cursorShape: Qt.PointingHandCursor
-                                    onClicked: {
-                                        const list = Settings.readDenyList.slice()
-                                        list.splice(index, 1)
-                                        Settings.readDenyList = list
-                                    }
+                                    onClicked: denyDelBtn.removeAt()
                                 }
+                                activeFocusOnTab: true
+                                Keys.onReturnPressed: denyDelBtn.removeAt()
+                                Keys.onSpacePressed: denyDelBtn.removeAt()
+                                Accessible.role: Accessible.Button
+                                Accessible.name: qsTr("移除黑名单条目 %1").arg(denyPathText.text)
+                                Accessible.onPressAction: denyDelBtn.removeAt()
                             }
                         }
                     }

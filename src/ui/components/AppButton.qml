@@ -26,8 +26,10 @@ Rectangle {
     color: highlighted ? Theme.brandPrimary
                        : (controlArea.containsMouse ? Theme.surfaceHover : buttonColor)
     opacity: enabled ? 1.0 : 0.5
-    border.width: 1
-    border.color: highlighted ? Theme.brandPrimary : Theme.borderSubtle
+    // docs/25 D1: 键盘焦点环——Tab/回车可达时给出可见提示
+    border.width: activeFocus ? 2 : 1
+    border.color: activeFocus ? Theme.brandPrimary
+                              : (highlighted ? Theme.brandPrimary : Theme.borderSubtle)
 
     // Press animation
     scale: controlArea.containsPress ? 0.98 : 1.0
@@ -52,6 +54,12 @@ Rectangle {
         cursorShape: Qt.PointingHandCursor
         onClicked: root.clicked()
     }
+
+    // docs/25 D1: 纯 MouseArea 按钮默认不可 Tab 聚焦——基类统一补键盘
+    // 激活路径，所有实例（含禁用态）一次性受益。
+    activeFocusOnTab: true
+    Keys.onReturnPressed: root.clicked()
+    Keys.onSpacePressed: root.clicked()
 
     Accessible.role: Accessible.Button
     Accessible.name: root.text

@@ -50,8 +50,11 @@ Item {
             Layout.fillWidth: true
         }
 
+        // docs/25 D3: 内部控件各自补读屏命名——根 Item 的 Accessible.name
+        // 不会自动传递给真正接收焦点的子控件。
         Switch {
             visible: control.meta && control.meta.type === "Bool"
+            Accessible.name: control.displayName
             checked: control.stagedValue() === true
             onToggled: control.stage(checked)
         }
@@ -59,6 +62,7 @@ Item {
         ComboBox {
             visible: control.meta && control.meta.type === "Enum"
                      && control.meta.options && control.meta.options.length > 2
+            Accessible.name: control.displayName
             Layout.fillWidth: true
             model: control.meta ? control.meta.options : []
             currentIndex: {
@@ -82,7 +86,9 @@ Item {
             readonly property var range: control.meta ? control.meta.constraint : null
 
             Slider {
+                id: prefSlider
                 Layout.fillWidth: true
+                Accessible.name: control.displayName
                 from: parent.range && parent.range.hasRange ? parent.range.min : 0
                 to: parent.range && parent.range.hasRange ? parent.range.max : 100
                 value: control.stagedValue()
@@ -90,7 +96,9 @@ Item {
             }
             SpinBox {
                 // 128 leaves ~48 px of text area after the 40 px indicators.
+                id: prefSpin
                 Layout.preferredWidth: 128
+                Accessible.name: control.displayName
                 editable: true
                 from: parent.range && parent.range.hasRange ? parent.range.min : 0
                 to: parent.range && parent.range.hasRange ? parent.range.max : 100
@@ -102,6 +110,7 @@ Item {
         TextField {
             id: stringField
             visible: !control.meta || control.meta.type === "String"
+            Accessible.name: control.displayName
             Layout.fillWidth: true
             text: {
                 const value = control.stagedValue()

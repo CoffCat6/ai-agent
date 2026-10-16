@@ -91,29 +91,29 @@
         <translation>Open cited document %1</translation>
     </message>
     <message>
-        <location filename="../src/ui/components/AssistantMessage.qml" line="411"/>
-        <location filename="../src/ui/components/AssistantMessage.qml" line="426"/>
+        <location filename="../src/ui/components/AssistantMessage.qml" line="417"/>
+        <location filename="../src/ui/components/AssistantMessage.qml" line="437"/>
         <source>从此处分支</source>
         <translation>Branch from here</translation>
     </message>
     <message>
-        <location filename="../src/ui/components/AssistantMessage.qml" line="427"/>
+        <location filename="../src/ui/components/AssistantMessage.qml" line="438"/>
         <source>把到这里为止的对话复制成一个新会话，在新会话里继续</source>
         <translation>Copy the conversation up to this point into a new chat and continue there</translation>
     </message>
     <message>
-        <location filename="../src/ui/components/AssistantMessage.qml" line="448"/>
-        <location filename="../src/ui/components/AssistantMessage.qml" line="463"/>
+        <location filename="../src/ui/components/AssistantMessage.qml" line="460"/>
+        <location filename="../src/ui/components/AssistantMessage.qml" line="480"/>
         <source>重新生成</source>
         <translation>Regenerate</translation>
     </message>
     <message>
-        <location filename="../src/ui/components/AssistantMessage.qml" line="464"/>
+        <location filename="../src/ui/components/AssistantMessage.qml" line="481"/>
         <source>丢弃当前回答并重新生成</source>
         <translation>Discard the current answer and regenerate</translation>
     </message>
     <message>
-        <location filename="../src/ui/components/AssistantMessage.qml" line="473"/>
+        <location filename="../src/ui/components/AssistantMessage.qml" line="490"/>
         <source>助手回复</source>
         <translation>Assistant reply</translation>
     </message>
@@ -256,12 +256,12 @@
 <context>
     <name>CodeBlock</name>
     <message>
-        <location filename="../src/ui/components/CodeBlock.qml" line="110"/>
+        <location filename="../src/ui/components/CodeBlock.qml" line="114"/>
         <source>代码块（%1）</source>
         <translation>Code block (%1)</translation>
     </message>
     <message>
-        <location filename="../src/ui/components/CodeBlock.qml" line="111"/>
+        <location filename="../src/ui/components/CodeBlock.qml" line="115"/>
         <source>代码块</source>
         <translation>Code block</translation>
     </message>
@@ -353,6 +353,11 @@
         <translation>%1 chunks · %2 chars</translation>
     </message>
     <message>
+        <location filename="../src/ui/panels/ContextPanel.qml" line="304"/>
+        <source>移除文档</source>
+        <translation>Remove document</translation>
+    </message>
+    <message>
         <source>导入文档</source>
         <translation type="vanished">Import Document</translation>
     </message>
@@ -396,14 +401,14 @@ and the model can retrieve their content to answer questions</translation>
 <context>
     <name>CopyButton</name>
     <message>
-        <location filename="../src/ui/components/CopyButton.qml" line="28"/>
-        <location filename="../src/ui/components/CopyButton.qml" line="55"/>
+        <location filename="../src/ui/components/CopyButton.qml" line="39"/>
+        <location filename="../src/ui/components/CopyButton.qml" line="65"/>
         <source>已复制</source>
         <translation>Copied</translation>
     </message>
     <message>
-        <location filename="../src/ui/components/CopyButton.qml" line="28"/>
-        <location filename="../src/ui/components/CopyButton.qml" line="55"/>
+        <location filename="../src/ui/components/CopyButton.qml" line="39"/>
+        <location filename="../src/ui/components/CopyButton.qml" line="65"/>
         <source>复制</source>
         <translation>Copy</translation>
     </message>
@@ -793,48 +798,53 @@ and the model can retrieve their content to answer questions</translation>
         <translation>Appearance</translation>
     </message>
     <message>
-        <location filename="../src/ui/pages/InterfacePage.qml" line="114"/>
+        <location filename="../src/ui/pages/InterfacePage.qml" line="117"/>
         <source>字体</source>
         <translation>Fonts</translation>
     </message>
     <message>
-        <location filename="../src/ui/pages/InterfacePage.qml" line="134"/>
+        <location filename="../src/ui/pages/InterfacePage.qml" line="137"/>
+        <location filename="../src/ui/pages/InterfacePage.qml" line="146"/>
         <source>正文字体</source>
         <translation>Body Font</translation>
     </message>
     <message>
-        <location filename="../src/ui/pages/InterfacePage.qml" line="153"/>
+        <location filename="../src/ui/pages/InterfacePage.qml" line="158"/>
+        <location filename="../src/ui/pages/InterfacePage.qml" line="167"/>
         <source>等宽字体</source>
         <translation>Monospace Font</translation>
     </message>
     <message>
-        <location filename="../src/ui/pages/InterfacePage.qml" line="172"/>
+        <location filename="../src/ui/pages/InterfacePage.qml" line="179"/>
+        <location filename="../src/ui/pages/InterfacePage.qml" line="190"/>
+        <location filename="../src/ui/pages/InterfacePage.qml" line="201"/>
         <source>基础字号</source>
         <translation>Base Font Size</translation>
     </message>
     <message>
-        <location filename="../src/ui/pages/InterfacePage.qml" line="217"/>
+        <location filename="../src/ui/pages/InterfacePage.qml" line="228"/>
         <source>预览（保存前生效于界面）</source>
         <translation>Preview (applied to the interface before saving)</translation>
     </message>
     <message>
-        <location filename="../src/ui/pages/InterfacePage.qml" line="224"/>
+        <location filename="../src/ui/pages/InterfacePage.qml" line="235"/>
         <source>正文预览：智能体正在思考多行文本 Aa Bb 0123</source>
         <translation>Body preview: The agent is thinking with multi-line text Aa Bb 0123</translation>
     </message>
     <message>
-        <location filename="../src/ui/pages/InterfacePage.qml" line="244"/>
+        <location filename="../src/ui/pages/InterfacePage.qml" line="255"/>
         <source>语言</source>
         <translation>Language</translation>
     </message>
     <message>
-        <location filename="../src/ui/pages/InterfacePage.qml" line="260"/>
+        <location filename="../src/ui/pages/InterfacePage.qml" line="271"/>
+        <location filename="../src/ui/pages/InterfacePage.qml" line="280"/>
         <source>界面语言</source>
         <translation>Interface Language</translation>
     </message>
     <message>
         <location filename="../src/ui/pages/InterfacePage.qml" line="36"/>
-        <location filename="../src/ui/pages/InterfacePage.qml" line="273"/>
+        <location filename="../src/ui/pages/InterfacePage.qml" line="286"/>
         <source>跟随系统</source>
         <translation>Follow System</translation>
     </message>
@@ -855,51 +865,63 @@ and the model can retrieve their content to answer questions</translation>
     </message>
     <message>
         <location filename="../src/ui/pages/InterfacePage.qml" line="91"/>
+        <location filename="../src/ui/pages/InterfacePage.qml" line="101"/>
         <source>主题模式</source>
         <translation>Theme mode</translation>
     </message>
     <message>
-        <location filename="../src/ui/pages/InterfacePage.qml" line="277"/>
+        <location filename="../src/ui/pages/InterfacePage.qml" line="102"/>
+        <location filename="../src/ui/pages/InterfacePage.qml" line="281"/>
+        <source>当前：%1</source>
+        <translation>Current: %1</translation>
+    </message>
+    <message>
+        <location filename="../src/ui/pages/InterfacePage.qml" line="290"/>
         <source>简体中文</source>
         <translation>简体中文</translation>
     </message>
     <message>
-        <location filename="../src/ui/pages/InterfacePage.qml" line="278"/>
+        <location filename="../src/ui/pages/InterfacePage.qml" line="291"/>
         <source>English</source>
         <translation>English</translation>
     </message>
     <message>
-        <location filename="../src/ui/pages/InterfacePage.qml" line="298"/>
+        <location filename="../src/ui/pages/InterfacePage.qml" line="311"/>
         <source>窗口布局</source>
         <translation>Window Layout</translation>
     </message>
     <message>
-        <location filename="../src/ui/pages/InterfacePage.qml" line="318"/>
+        <location filename="../src/ui/pages/InterfacePage.qml" line="331"/>
+        <location filename="../src/ui/pages/InterfacePage.qml" line="342"/>
         <source>侧边栏默认宽度</source>
         <translation>Default Sidebar Width</translation>
     </message>
     <message>
-        <location filename="../src/ui/pages/InterfacePage.qml" line="340"/>
+        <location filename="../src/ui/pages/InterfacePage.qml" line="355"/>
+        <location filename="../src/ui/pages/InterfacePage.qml" line="364"/>
         <source>面板默认宽度</source>
         <translation>Default Panel Width</translation>
     </message>
     <message>
-        <location filename="../src/ui/pages/InterfacePage.qml" line="360"/>
+        <location filename="../src/ui/pages/InterfacePage.qml" line="377"/>
+        <location filename="../src/ui/pages/InterfacePage.qml" line="385"/>
         <source>侧边栏默认展开</source>
         <translation>Expand Sidebar by Default</translation>
     </message>
     <message>
-        <location filename="../src/ui/pages/InterfacePage.qml" line="376"/>
+        <location filename="../src/ui/pages/InterfacePage.qml" line="395"/>
+        <location filename="../src/ui/pages/InterfacePage.qml" line="403"/>
         <source>面板默认展开</source>
         <translation>Expand Panel by Default</translation>
     </message>
     <message>
-        <location filename="../src/ui/pages/InterfacePage.qml" line="392"/>
+        <location filename="../src/ui/pages/InterfacePage.qml" line="413"/>
+        <location filename="../src/ui/pages/InterfacePage.qml" line="421"/>
         <source>启动时恢复窗口</source>
         <translation>Restore Window on Startup</translation>
     </message>
     <message>
-        <location filename="../src/ui/pages/InterfacePage.qml" line="407"/>
+        <location filename="../src/ui/pages/InterfacePage.qml" line="430"/>
         <source>以上默认值在下次启动时生效；当前窗口布局以手动拖拽为准。</source>
         <translation>These defaults apply on the next start; the current window layout follows manual resizing.</translation>
     </message>
@@ -1097,22 +1119,22 @@ and the model can retrieve their content to answer questions</translation>
         <translation>%1 tools</translation>
     </message>
     <message>
-        <location filename="../src/ui/pages/McpPage.qml" line="315"/>
+        <location filename="../src/ui/pages/McpPage.qml" line="325"/>
         <source>移除服务器 %1？</source>
         <translation>Remove server %1?</translation>
     </message>
     <message>
-        <location filename="../src/ui/pages/McpPage.qml" line="329"/>
+        <location filename="../src/ui/pages/McpPage.qml" line="339"/>
         <source>取消</source>
         <translation>Cancel</translation>
     </message>
     <message>
-        <location filename="../src/ui/pages/McpPage.qml" line="333"/>
+        <location filename="../src/ui/pages/McpPage.qml" line="343"/>
         <source>移除</source>
         <translation>Remove</translation>
     </message>
     <message>
-        <location filename="../src/ui/pages/McpPage.qml" line="187"/>
+        <location filename="../src/ui/pages/McpPage.qml" line="193"/>
         <source>添加服务器</source>
         <translation>Add Server</translation>
     </message>
@@ -1122,47 +1144,61 @@ and the model can retrieve their content to answer questions</translation>
         <translation>MCP server management page</translation>
     </message>
     <message>
-        <location filename="../src/ui/pages/McpPage.qml" line="159"/>
+        <location filename="../src/ui/pages/McpPage.qml" line="118"/>
+        <source>启用服务器 %1</source>
+        <translation>Enable server %1</translation>
+    </message>
+    <message>
+        <location filename="../src/ui/pages/McpPage.qml" line="129"/>
+        <source>删除服务器</source>
+        <translation>Delete server</translation>
+    </message>
+    <message>
+        <location filename="../src/ui/pages/McpPage.qml" line="165"/>
         <source>多个服务器连接失败，详见日志</source>
         <translation>Multiple servers failed to connect, see logs</translation>
     </message>
     <message>
-        <location filename="../src/ui/pages/McpPage.qml" line="200"/>
+        <location filename="../src/ui/pages/McpPage.qml" line="206"/>
+        <location filename="../src/ui/pages/McpPage.qml" line="209"/>
         <source>名称</source>
         <translation>Name</translation>
     </message>
     <message>
-        <location filename="../src/ui/pages/McpPage.qml" line="204"/>
+        <location filename="../src/ui/pages/McpPage.qml" line="211"/>
         <source>my-server</source>
         <translation>my-server</translation>
     </message>
     <message>
-        <location filename="../src/ui/pages/McpPage.qml" line="215"/>
+        <location filename="../src/ui/pages/McpPage.qml" line="222"/>
+        <location filename="../src/ui/pages/McpPage.qml" line="225"/>
         <source>类型</source>
         <translation>Type</translation>
     </message>
     <message>
-        <location filename="../src/ui/pages/McpPage.qml" line="227"/>
+        <location filename="../src/ui/pages/McpPage.qml" line="235"/>
+        <location filename="../src/ui/pages/McpPage.qml" line="238"/>
         <source>命令与参数（空格分隔）</source>
         <translation>Command and arguments (space-separated)</translation>
     </message>
     <message>
-        <location filename="../src/ui/pages/McpPage.qml" line="231"/>
+        <location filename="../src/ui/pages/McpPage.qml" line="240"/>
         <source>npx -y @modelcontextprotocol/server-filesystem D:/docs</source>
         <translation>npx -y @modelcontextprotocol/server-filesystem D:/docs</translation>
     </message>
     <message>
-        <location filename="../src/ui/pages/McpPage.qml" line="244"/>
+        <location filename="../src/ui/pages/McpPage.qml" line="253"/>
+        <location filename="../src/ui/pages/McpPage.qml" line="256"/>
         <source>服务端点 URL</source>
         <translation>Endpoint URL</translation>
     </message>
     <message>
-        <location filename="../src/ui/pages/McpPage.qml" line="248"/>
+        <location filename="../src/ui/pages/McpPage.qml" line="258"/>
         <source>https://mcp.example.com/mcp</source>
         <translation>https://mcp.example.com/mcp</translation>
     </message>
     <message>
-        <location filename="../src/ui/pages/McpPage.qml" line="263"/>
+        <location filename="../src/ui/pages/McpPage.qml" line="273"/>
         <source>添加并连接</source>
         <translation>Add &amp; Connect</translation>
     </message>
@@ -1834,43 +1870,45 @@ and the model can retrieve their content to answer questions</translation>
         <translation>Context window: unknown (using global default)</translation>
     </message>
     <message>
-        <location filename="../src/ui/components/ModelSelector.qml" line="44"/>
+        <location filename="../src/ui/components/ModelSelector.qml" line="53"/>
         <source>模型选择器</source>
         <translation>Model selector</translation>
     </message>
     <message>
-        <location filename="../src/ui/components/ModelSelector.qml" line="47"/>
+        <location filename="../src/ui/components/ModelSelector.qml" line="56"/>
         <source>未配置模型</source>
         <translation>No model configured</translation>
     </message>
     <message>
-        <location filename="../src/ui/components/ModelSelector.qml" line="81"/>
+        <location filename="../src/ui/components/ModelSelector.qml" line="91"/>
         <source>未配置模型 · 点击设置</source>
         <translation>No model configured · Click to set up</translation>
     </message>
     <message>
-        <location filename="../src/ui/components/ModelSelector.qml" line="84"/>
-        <location filename="../src/ui/components/ModelSelector.qml" line="279"/>
+        <location filename="../src/ui/components/ModelSelector.qml" line="94"/>
+        <location filename="../src/ui/components/ModelSelector.qml" line="312"/>
+        <location filename="../src/ui/components/ModelSelector.qml" line="335"/>
         <source>未指定模型</source>
         <translation>no model set</translation>
     </message>
     <message>
-        <location filename="../src/ui/components/ModelSelector.qml" line="137"/>
+        <location filename="../src/ui/components/ModelSelector.qml" line="149"/>
         <source>模型 · %1</source>
         <translation>Model · %1</translation>
     </message>
     <message>
-        <location filename="../src/ui/components/ModelSelector.qml" line="214"/>
+        <location filename="../src/ui/components/ModelSelector.qml" line="239"/>
         <source>这条配置还没有可选模型：先在「管理模型配置…」里填写模型名。</source>
         <translation>This profile has no models yet - set a model name under Manage model profiles…</translation>
     </message>
     <message>
-        <location filename="../src/ui/components/ModelSelector.qml" line="233"/>
+        <location filename="../src/ui/components/ModelSelector.qml" line="258"/>
         <source>配置 · 共 %1 个</source>
         <translation>Profiles · %1 total</translation>
     </message>
     <message>
-        <location filename="../src/ui/components/ModelSelector.qml" line="338"/>
+        <location filename="../src/ui/components/ModelSelector.qml" line="385"/>
+        <location filename="../src/ui/components/ModelSelector.qml" line="405"/>
         <source>管理模型配置…</source>
         <translation>Manage Model Profiles…</translation>
     </message>
@@ -2652,19 +2690,19 @@ and the model can retrieve their content to answer questions</translation>
     <name>PermissionModeSelector</name>
     <message>
         <location filename="../src/ui/components/PermissionModeSelector.qml" line="28"/>
-        <location filename="../src/ui/components/PermissionModeSelector.qml" line="116"/>
+        <location filename="../src/ui/components/PermissionModeSelector.qml" line="127"/>
         <source>完全访问</source>
         <translation>Full Access</translation>
     </message>
     <message>
         <location filename="../src/ui/components/PermissionModeSelector.qml" line="29"/>
-        <location filename="../src/ui/components/PermissionModeSelector.qml" line="111"/>
+        <location filename="../src/ui/components/PermissionModeSelector.qml" line="122"/>
         <source>自动编辑</source>
         <translation>Auto Edit</translation>
     </message>
     <message>
         <location filename="../src/ui/components/PermissionModeSelector.qml" line="30"/>
-        <location filename="../src/ui/components/PermissionModeSelector.qml" line="106"/>
+        <location filename="../src/ui/components/PermissionModeSelector.qml" line="117"/>
         <source>变更确认</source>
         <translation>Confirm Changes</translation>
     </message>
@@ -2674,42 +2712,42 @@ and the model can retrieve their content to answer questions</translation>
         <translation>Session Permission Mode</translation>
     </message>
     <message>
-        <location filename="../src/ui/components/PermissionModeSelector.qml" line="107"/>
+        <location filename="../src/ui/components/PermissionModeSelector.qml" line="118"/>
         <source>敏感工具执行前逐次询问（默认）</source>
         <translation>Ask before every sensitive tool call (default)</translation>
     </message>
     <message>
-        <location filename="../src/ui/components/PermissionModeSelector.qml" line="112"/>
+        <location filename="../src/ui/components/PermissionModeSelector.qml" line="123"/>
         <source>自动执行文件编辑与搜索抓取；命令与 MCP 工具仍询问</source>
         <translation>Auto-run file edits, web search and fetch; shell and MCP tools still ask</translation>
     </message>
     <message>
-        <location filename="../src/ui/components/PermissionModeSelector.qml" line="117"/>
+        <location filename="../src/ui/components/PermissionModeSelector.qml" line="128"/>
         <source>所有工具自动执行，不再询问</source>
         <translation>Run every tool automatically without asking</translation>
     </message>
     <message>
-        <location filename="../src/ui/components/PermissionModeSelector.qml" line="218"/>
+        <location filename="../src/ui/components/PermissionModeSelector.qml" line="244"/>
         <source>启用完全访问？</source>
         <translation>Enable Full Access?</translation>
     </message>
     <message>
-        <location filename="../src/ui/components/PermissionModeSelector.qml" line="226"/>
+        <location filename="../src/ui/components/PermissionModeSelector.qml" line="252"/>
         <source>本会话中所有工具（包括 shell 命令、文件写入、MCP 工具）</source>
         <translation>In this session every tool (including shell commands, file writes, MCP tools)</translation>
     </message>
     <message>
-        <location filename="../src/ui/components/PermissionModeSelector.qml" line="227"/>
+        <location filename="../src/ui/components/PermissionModeSelector.qml" line="253"/>
         <source>都将不经逐次确认自动执行，仅在会话内生效，重启后回落到默认模式。确定继续吗？</source>
         <translation>will run automatically without per-call approval. This lasts for the session only and resets to the default after restart. Continue?</translation>
     </message>
     <message>
-        <location filename="../src/ui/components/PermissionModeSelector.qml" line="239"/>
+        <location filename="../src/ui/components/PermissionModeSelector.qml" line="265"/>
         <source>取消</source>
         <translation>Cancel</translation>
     </message>
     <message>
-        <location filename="../src/ui/components/PermissionModeSelector.qml" line="243"/>
+        <location filename="../src/ui/components/PermissionModeSelector.qml" line="269"/>
         <source>启用完全访问</source>
         <translation>Enable Full Access</translation>
     </message>
@@ -2943,47 +2981,52 @@ and the model can retrieve their content to answer questions</translation>
         <translation>Built-in defaults: ~/.ssh, ~/.gnupg, ~/.aws and *.pem / *.key / *.ppk / *.kdbx. Entries below are user additions: a directory (or a directory name matching at any depth) or a glob such as *.env.</translation>
     </message>
     <message>
-        <location filename="../src/ui/pages/SecurityPage.qml" line="197"/>
+        <location filename="../src/ui/pages/SecurityPage.qml" line="199"/>
+        <source>移除黑名单条目 %1</source>
+        <translation>Remove deny-list entry %1</translation>
+    </message>
+    <message>
+        <location filename="../src/ui/pages/SecurityPage.qml" line="208"/>
         <source>暂无追加项</source>
         <translation>No user entries</translation>
     </message>
     <message>
-        <location filename="../src/ui/pages/SecurityPage.qml" line="211"/>
+        <location filename="../src/ui/pages/SecurityPage.qml" line="222"/>
         <source>目录路径、目录名或通配模式（如 D:secrets、.git、*.env）</source>
         <translation>Directory path, directory name, or glob (e.g. D:secrets, .git, *.env)</translation>
     </message>
     <message>
-        <location filename="../src/ui/pages/SecurityPage.qml" line="225"/>
+        <location filename="../src/ui/pages/SecurityPage.qml" line="236"/>
         <source>新增黑名单条目</source>
         <translation>New deny-list entry</translation>
     </message>
     <message>
-        <location filename="../src/ui/pages/SecurityPage.qml" line="231"/>
+        <location filename="../src/ui/pages/SecurityPage.qml" line="242"/>
         <source>添加</source>
         <translation>Add</translation>
     </message>
     <message>
-        <location filename="../src/ui/pages/SecurityPage.qml" line="264"/>
+        <location filename="../src/ui/pages/SecurityPage.qml" line="275"/>
         <source>隐私门</source>
         <translation>Privacy Gates</translation>
     </message>
     <message>
-        <location filename="../src/ui/pages/SecurityPage.qml" line="272"/>
+        <location filename="../src/ui/pages/SecurityPage.qml" line="283"/>
         <source>仅本地模式</source>
         <translation>Local-only Mode</translation>
     </message>
     <message>
-        <location filename="../src/ui/pages/SecurityPage.qml" line="278"/>
+        <location filename="../src/ui/pages/SecurityPage.qml" line="289"/>
         <source>使用云端模型时拦截知识库搜索、联网搜索与全部 MCP 工具（工具页会显示拦截徽标）；本地模型不受影响。</source>
         <translation>With cloud models this blocks knowledge search, web search and all MCP tools (a badge shows on the Tools page); local models are unaffected.</translation>
     </message>
     <message>
-        <location filename="../src/ui/pages/SecurityPage.qml" line="294"/>
+        <location filename="../src/ui/pages/SecurityPage.qml" line="305"/>
         <source>允许 http_fetch 访问本机与内网地址</source>
         <translation>Allow http_fetch to reach localhost and intranet</translation>
     </message>
     <message>
-        <location filename="../src/ui/pages/SecurityPage.qml" line="300"/>
+        <location filename="../src/ui/pages/SecurityPage.qml" line="311"/>
         <source>关闭时 http_fetch 拒绝本机/内网目标（防 SSRF）；仅在确有访问内网服务的需求时开启。</source>
         <translation>When off, http_fetch rejects local/intranet targets (SSRF guard); enable only if intranet access is truly needed.</translation>
     </message>
@@ -3239,28 +3282,29 @@ and the model can retrieve their content to answer questions</translation>
         <translation>Clear search</translation>
     </message>
     <message>
-        <location filename="../src/ui/components/SettingsCenterDialog.qml" line="238"/>
+        <location filename="../src/ui/components/SettingsCenterDialog.qml" line="240"/>
         <source>跳转</source>
         <translation>Go to</translation>
     </message>
     <message>
-        <location filename="../src/ui/components/SettingsCenterDialog.qml" line="263"/>
+        <location filename="../src/ui/components/SettingsCenterDialog.qml" line="265"/>
         <source>没有匹配「%1」的设置</source>
         <translation>No settings match &quot;%1&quot;</translation>
     </message>
     <message>
-        <location filename="../src/ui/components/SettingsCenterDialog.qml" line="367"/>
-        <location filename="../src/ui/components/SettingsCenterDialog.qml" line="420"/>
+        <location filename="../src/ui/components/SettingsCenterDialog.qml" line="369"/>
+        <location filename="../src/ui/components/SettingsCenterDialog.qml" line="422"/>
         <source>恢复默认</source>
         <translation>Restore Defaults</translation>
     </message>
     <message>
-        <location filename="../src/ui/components/SettingsCenterDialog.qml" line="378"/>
+        <location filename="../src/ui/components/SettingsCenterDialog.qml" line="160"/>
+        <location filename="../src/ui/components/SettingsCenterDialog.qml" line="380"/>
         <source>关闭</source>
         <translation>Close</translation>
     </message>
     <message>
-        <location filename="../src/ui/components/SettingsCenterDialog.qml" line="416"/>
+        <location filename="../src/ui/components/SettingsCenterDialog.qml" line="418"/>
         <source>取消</source>
         <translation>Cancel</translation>
     </message>
@@ -3289,7 +3333,7 @@ and the model can retrieve their content to answer questions</translation>
         <translation type="vanished">Discard</translation>
     </message>
     <message>
-        <location filename="../src/ui/components/SettingsCenterDialog.qml" line="401"/>
+        <location filename="../src/ui/components/SettingsCenterDialog.qml" line="403"/>
         <source>确认将当前分类的配置项恢复为默认值？</source>
         <translation>Restore the settings in this category to their defaults?</translation>
     </message>
@@ -3517,8 +3561,8 @@ and the model can retrieve their content to answer questions</translation>
     <name>Sidebar</name>
     <message>
         <location filename="../src/ui/components/Sidebar.qml" line="781"/>
-        <location filename="../src/ui/components/Sidebar.qml" line="884"/>
-        <location filename="../src/ui/components/Sidebar.qml" line="1142"/>
+        <location filename="../src/ui/components/Sidebar.qml" line="913"/>
+        <location filename="../src/ui/components/Sidebar.qml" line="1237"/>
         <source>新会话</source>
         <translation>New Session</translation>
     </message>
@@ -3543,7 +3587,7 @@ and the model can retrieve their content to answer questions</translation>
     </message>
     <message>
         <location filename="../src/ui/components/Sidebar.qml" line="487"/>
-        <location filename="../src/ui/components/Sidebar.qml" line="1034"/>
+        <location filename="../src/ui/components/Sidebar.qml" line="1120"/>
         <source>确认?</source>
         <translation>Confirm?</translation>
     </message>
@@ -3614,79 +3658,117 @@ and the model can retrieve their content to answer questions</translation>
     </message>
     <message>
         <location filename="../src/ui/components/Sidebar.qml" line="798"/>
-        <location filename="../src/ui/components/Sidebar.qml" line="931"/>
+        <location filename="../src/ui/components/Sidebar.qml" line="972"/>
         <source>取消置顶</source>
         <translation>Unpin</translation>
     </message>
     <message>
         <location filename="../src/ui/components/Sidebar.qml" line="798"/>
-        <location filename="../src/ui/components/Sidebar.qml" line="931"/>
+        <location filename="../src/ui/components/Sidebar.qml" line="972"/>
         <source>置顶会话</source>
         <translation>Pin conversation</translation>
     </message>
     <message>
         <location filename="../src/ui/components/Sidebar.qml" line="802"/>
-        <location filename="../src/ui/components/Sidebar.qml" line="958"/>
+        <location filename="../src/ui/components/Sidebar.qml" line="1006"/>
         <source>恢复会话</source>
         <translation>Restore conversation</translation>
     </message>
     <message>
         <location filename="../src/ui/components/Sidebar.qml" line="802"/>
-        <location filename="../src/ui/components/Sidebar.qml" line="958"/>
+        <location filename="../src/ui/components/Sidebar.qml" line="1006"/>
         <source>归档会话</source>
         <translation>Archive conversation</translation>
+    </message>
+    <message>
+        <location filename="../src/ui/components/Sidebar.qml" line="809"/>
+        <location filename="../src/ui/components/Sidebar.qml" line="1047"/>
+        <source>导出会话</source>
+        <translation>Export conversation</translation>
+    </message>
+    <message>
+        <location filename="../src/ui/components/Sidebar.qml" line="816"/>
+        <location filename="../src/ui/components/Sidebar.qml" line="1090"/>
+        <source>重命名会话</source>
+        <translation>Rename conversation</translation>
+    </message>
+    <message>
+        <location filename="../src/ui/components/Sidebar.qml" line="823"/>
+        <location filename="../src/ui/components/Sidebar.qml" line="1154"/>
+        <source>删除会话</source>
+        <translation>Delete conversation</translation>
+    </message>
+    <message>
+        <location filename="../src/ui/components/Sidebar.qml" line="1155"/>
+        <source>需要点击两次确认</source>
+        <translation>Click again to confirm</translation>
     </message>
     <message>
         <source>会话操作</source>
         <translation type="vanished">Conversation actions</translation>
     </message>
     <message>
-        <location filename="../src/ui/components/Sidebar.qml" line="1073"/>
+        <location filename="../src/ui/components/Sidebar.qml" line="1168"/>
         <source>已置顶 · </source>
         <translation>Pinned · </translation>
     </message>
     <message>
-        <location filename="../src/ui/components/Sidebar.qml" line="1074"/>
+        <location filename="../src/ui/components/Sidebar.qml" line="1169"/>
         <source>已归档 · </source>
         <translation>Archived · </translation>
     </message>
     <message>
-        <location filename="../src/ui/components/Sidebar.qml" line="1111"/>
+        <location filename="../src/ui/components/Sidebar.qml" line="1206"/>
         <source>无匹配结果</source>
         <translation>No matches</translation>
     </message>
     <message>
-        <location filename="../src/ui/components/Sidebar.qml" line="1164"/>
+        <location filename="../src/ui/components/Sidebar.qml" line="1259"/>
         <source>用户</source>
         <translation>User</translation>
     </message>
     <message>
-        <location filename="../src/ui/components/Sidebar.qml" line="1165"/>
+        <location filename="../src/ui/components/Sidebar.qml" line="1260"/>
         <source>助手</source>
         <translation>Assistant</translation>
     </message>
     <message>
-        <location filename="../src/ui/components/Sidebar.qml" line="1204"/>
+        <location filename="../src/ui/components/Sidebar.qml" line="1299"/>
         <source>日志</source>
         <translation>Logs</translation>
     </message>
     <message>
-        <location filename="../src/ui/components/Sidebar.qml" line="1212"/>
+        <location filename="../src/ui/components/Sidebar.qml" line="1307"/>
         <source>审计日志</source>
         <translation>Audit Log</translation>
     </message>
     <message>
-        <location filename="../src/ui/components/Sidebar.qml" line="1220"/>
+        <location filename="../src/ui/components/Sidebar.qml" line="1315"/>
         <source>设置 (Ctrl+,)</source>
         <translation>Settings (Ctrl+,)</translation>
     </message>
     <message>
-        <location filename="../src/ui/components/Sidebar.qml" line="1272"/>
+        <location filename="../src/ui/components/Sidebar.qml" line="1368"/>
+        <source>深色模式</source>
+        <translation>Dark mode</translation>
+    </message>
+    <message>
+        <location filename="../src/ui/components/Sidebar.qml" line="1370"/>
+        <source>当前为深色主题，按回车切换到浅色</source>
+        <translation>Dark theme is active; press Return to switch to light</translation>
+    </message>
+    <message>
+        <location filename="../src/ui/components/Sidebar.qml" line="1371"/>
+        <source>当前为浅色主题，按回车切换到深色</source>
+        <translation>Light theme is active; press Return to switch to dark</translation>
+    </message>
+    <message>
+        <location filename="../src/ui/components/Sidebar.qml" line="1387"/>
         <source>Markdown (*.md)</source>
         <translation>Markdown (*.md)</translation>
     </message>
     <message>
-        <location filename="../src/ui/components/Sidebar.qml" line="1272"/>
+        <location filename="../src/ui/components/Sidebar.qml" line="1387"/>
         <source>JSON (*.json)</source>
         <translation>JSON (*.json)</translation>
     </message>
@@ -3748,7 +3830,7 @@ and the model can retrieve their content to answer questions</translation>
     <name>ThinkingEffortSelector</name>
     <message>
         <location filename="../src/ui/components/ThinkingEffortSelector.qml" line="23"/>
-        <location filename="../src/ui/components/ThinkingEffortSelector.qml" line="37"/>
+        <location filename="../src/ui/components/ThinkingEffortSelector.qml" line="40"/>
         <source>思考·默认</source>
         <translation>Thinking - Default</translation>
     </message>
@@ -3798,17 +3880,17 @@ and the model can retrieve their content to answer questions</translation>
         <translation>Maximum reasoning effort; slow and costly, for hard problems</translation>
     </message>
     <message>
-        <location filename="../src/ui/components/ThinkingEffortSelector.qml" line="44"/>
+        <location filename="../src/ui/components/ThinkingEffortSelector.qml" line="47"/>
         <source>思考强度</source>
         <translation>Thinking effort</translation>
     </message>
     <message>
-        <location filename="../src/ui/components/ThinkingEffortSelector.qml" line="83"/>
+        <location filename="../src/ui/components/ThinkingEffortSelector.qml" line="95"/>
         <source>思考·未配置模型</source>
         <translation>Effort · no model set</translation>
     </message>
     <message>
-        <location filename="../src/ui/components/ThinkingEffortSelector.qml" line="127"/>
+        <location filename="../src/ui/components/ThinkingEffortSelector.qml" line="140"/>
         <source>思考强度 · 当前会话</source>
         <translation>Reasoning effort · This conversation</translation>
     </message>
@@ -3975,95 +4057,100 @@ and the model can retrieve their content to answer questions</translation>
         <translation>Blocked by Local-only Mode</translation>
     </message>
     <message>
-        <location filename="../src/ui/pages/ToolsPage.qml" line="130"/>
+        <location filename="../src/ui/pages/ToolsPage.qml" line="114"/>
+        <source>启用工具 %1</source>
+        <translation>Enable tool %1</translation>
+    </message>
+    <message>
+        <location filename="../src/ui/pages/ToolsPage.qml" line="133"/>
         <source>联网搜索</source>
         <translation>Web Search</translation>
     </message>
     <message>
-        <location filename="../src/ui/pages/ToolsPage.qml" line="138"/>
+        <location filename="../src/ui/pages/ToolsPage.qml" line="141"/>
         <source>启用后模型可调用 web_search 获取实时信息。搜索查询会发送至所配置的搜索服务商，请勿在查询中包含敏感信息。</source>
         <translation>When enabled, the model can call web_search to fetch real-time information. Search queries are sent to the configured search provider; do not include sensitive information in your queries.</translation>
     </message>
     <message>
-        <location filename="../src/ui/pages/ToolsPage.qml" line="152"/>
-        <location filename="../src/ui/pages/ToolsPage.qml" line="167"/>
+        <location filename="../src/ui/pages/ToolsPage.qml" line="155"/>
+        <location filename="../src/ui/pages/ToolsPage.qml" line="170"/>
         <source>搜索服务</source>
         <translation>Search provider</translation>
     </message>
     <message>
-        <location filename="../src/ui/pages/ToolsPage.qml" line="180"/>
-        <location filename="../src/ui/pages/ToolsPage.qml" line="209"/>
+        <location filename="../src/ui/pages/ToolsPage.qml" line="183"/>
+        <location filename="../src/ui/pages/ToolsPage.qml" line="212"/>
         <source>搜索 API Key</source>
         <translation>Search API key</translation>
     </message>
     <message>
-        <location filename="../src/ui/pages/ToolsPage.qml" line="195"/>
+        <location filename="../src/ui/pages/ToolsPage.qml" line="198"/>
         <source>已配置（输入新值可覆盖，留空不修改）</source>
         <translation>Configured (enter a new value to overwrite, leave blank to keep)</translation>
     </message>
     <message>
-        <location filename="../src/ui/pages/ToolsPage.qml" line="196"/>
+        <location filename="../src/ui/pages/ToolsPage.qml" line="199"/>
         <source>未配置</source>
         <translation>Not configured</translation>
     </message>
     <message>
-        <location filename="../src/ui/pages/ToolsPage.qml" line="225"/>
+        <location filename="../src/ui/pages/ToolsPage.qml" line="228"/>
         <source>清除密钥</source>
         <translation>Clear key</translation>
     </message>
     <message>
-        <location filename="../src/ui/pages/ToolsPage.qml" line="229"/>
+        <location filename="../src/ui/pages/ToolsPage.qml" line="232"/>
         <source>清除搜索 API Key</source>
         <translation>Clear search API key</translation>
     </message>
     <message>
-        <location filename="../src/ui/pages/ToolsPage.qml" line="243"/>
-        <location filename="../src/ui/pages/ToolsPage.qml" line="275"/>
+        <location filename="../src/ui/pages/ToolsPage.qml" line="246"/>
+        <location filename="../src/ui/pages/ToolsPage.qml" line="278"/>
         <source>SearXNG 服务地址</source>
         <translation>SearXNG service URL</translation>
     </message>
     <message>
-        <location filename="../src/ui/pages/ToolsPage.qml" line="253"/>
+        <location filename="../src/ui/pages/ToolsPage.qml" line="256"/>
         <source>例如 http://localhost:8080</source>
         <translation>e.g. http://localhost:8080</translation>
     </message>
     <message>
-        <location filename="../src/ui/pages/ToolsPage.qml" line="279"/>
+        <location filename="../src/ui/pages/ToolsPage.qml" line="282"/>
         <source>自托管 SearXNG 实例地址（无需 API Key），搜索查询会发送至该实例。</source>
         <translation>Self-hosted SearXNG instance URL (no API key needed); search queries are sent to this instance.</translation>
     </message>
     <message>
-        <location filename="../src/ui/pages/ToolsPage.qml" line="299"/>
+        <location filename="../src/ui/pages/ToolsPage.qml" line="302"/>
         <source>会话权限模式</source>
         <translation>Session Permission Mode</translation>
     </message>
     <message>
-        <location filename="../src/ui/pages/ToolsPage.qml" line="307"/>
+        <location filename="../src/ui/pages/ToolsPage.qml" line="310"/>
         <source>新会话默认使用的工具审批级别。可在会话内随时通过输入框旁的模式选择器更改，仅对当前会话生效。</source>
         <translation>Default tool-approval level for new sessions. Change anytime per session via the mode selector next to the input box; applies to that session only.</translation>
     </message>
     <message>
-        <location filename="../src/ui/pages/ToolsPage.qml" line="321"/>
+        <location filename="../src/ui/pages/ToolsPage.qml" line="324"/>
         <source>默认模式</source>
         <translation>Default Mode</translation>
     </message>
     <message>
-        <location filename="../src/ui/pages/ToolsPage.qml" line="332"/>
+        <location filename="../src/ui/pages/ToolsPage.qml" line="335"/>
         <source>变更确认</source>
         <translation>Confirm Changes</translation>
     </message>
     <message>
-        <location filename="../src/ui/pages/ToolsPage.qml" line="333"/>
+        <location filename="../src/ui/pages/ToolsPage.qml" line="336"/>
         <source>自动编辑</source>
         <translation>Auto Edit</translation>
     </message>
     <message>
-        <location filename="../src/ui/pages/ToolsPage.qml" line="334"/>
+        <location filename="../src/ui/pages/ToolsPage.qml" line="337"/>
         <source>完全访问</source>
         <translation>Full Access</translation>
     </message>
     <message>
-        <location filename="../src/ui/pages/ToolsPage.qml" line="343"/>
+        <location filename="../src/ui/pages/ToolsPage.qml" line="346"/>
         <source>默认权限模式</source>
         <translation>Default Permission Mode</translation>
     </message>
@@ -4668,17 +4755,17 @@ and the model can retrieve their content to answer questions</translation>
         <translation type="vanished">Branch from here</translation>
     </message>
     <message>
-        <location filename="../src/ui/components/UserMessageBubble.qml" line="196"/>
+        <location filename="../src/ui/components/UserMessageBubble.qml" line="199"/>
         <source>编辑</source>
         <translation>Edit</translation>
     </message>
     <message>
-        <location filename="../src/ui/components/UserMessageBubble.qml" line="215"/>
+        <location filename="../src/ui/components/UserMessageBubble.qml" line="228"/>
         <source>编辑并重发</source>
         <translation>Edit and resend</translation>
     </message>
     <message>
-        <location filename="../src/ui/components/UserMessageBubble.qml" line="216"/>
+        <location filename="../src/ui/components/UserMessageBubble.qml" line="229"/>
         <source>修改这条消息并重新发送</source>
         <translation>Edit this message and send it again</translation>
     </message>
@@ -4699,7 +4786,7 @@ and the model can retrieve their content to answer questions</translation>
         <translation type="vanished">Delete this branch</translation>
     </message>
     <message>
-        <location filename="../src/ui/components/UserMessageBubble.qml" line="225"/>
+        <location filename="../src/ui/components/UserMessageBubble.qml" line="238"/>
         <source>你的消息</source>
         <translation>Your message</translation>
     </message>

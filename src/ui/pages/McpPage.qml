@@ -113,6 +113,9 @@ ScrollView {
                         }
 
                         Switch {
+                            id: mcpEnableSwitch
+                            // docs/25 D3: 读屏可区分是哪台服务器的开关
+                            Accessible.name: qsTr("启用服务器 %1").arg(modelData.name)
                             checked: modelData.enabled
                             onToggled: McpManager.setEnabled(
                                 modelData.name, checked)
@@ -121,6 +124,9 @@ ScrollView {
                         IconButton {
                             icon: "trash"
                             iconSize: 16
+                            // docs/25 D5: 无 tooltip 时 IconButton 读屏名回落为
+                            // 图标名 "trash"，不可读——补 tooltip 即补 Accessible.name
+                            tooltip: qsTr("删除服务器")
                             restIconColor: Theme.textSecondary
                             hoverIconColor: Theme.statusDanger
                             onClicked: {
@@ -200,6 +206,7 @@ ScrollView {
                         Text { text: qsTr("名称"); color: Theme.textSecondary; font.pixelSize: Theme.fontSizeCaption; font.family: Theme.fontMono }
                         TextField {
                             id: nameField
+                            Accessible.name: qsTr("名称")
                             Layout.preferredWidth: 160
                             placeholderText: qsTr("my-server")
                             placeholderTextColor: Theme.textSecondary
@@ -215,6 +222,7 @@ ScrollView {
                         Text { text: qsTr("类型"); color: Theme.textSecondary; font.pixelSize: Theme.fontSizeCaption; font.family: Theme.fontMono }
                         ComboBox {
                             id: transportBox
+                            Accessible.name: qsTr("类型")
                             Layout.preferredWidth: 120
                             model: ["stdio", "http"]
                         }
@@ -227,6 +235,7 @@ ScrollView {
                         Text { text: qsTr("命令与参数（空格分隔）"); color: Theme.textSecondary; font.pixelSize: Theme.fontSizeCaption; font.family: Theme.fontMono }
                         TextField {
                             id: commandField
+                            Accessible.name: qsTr("命令与参数（空格分隔）")
                             Layout.fillWidth: true
                             placeholderText: qsTr("npx -y @modelcontextprotocol/server-filesystem D:/docs")
                             placeholderTextColor: Theme.textSecondary
@@ -244,6 +253,7 @@ ScrollView {
                         Text { text: qsTr("服务端点 URL"); color: Theme.textSecondary; font.pixelSize: Theme.fontSizeCaption; font.family: Theme.fontMono }
                         TextField {
                             id: urlField
+                            Accessible.name: qsTr("服务端点 URL")
                             Layout.fillWidth: true
                             placeholderText: qsTr("https://mcp.example.com/mcp")
                             placeholderTextColor: Theme.textSecondary

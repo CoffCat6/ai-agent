@@ -299,6 +299,9 @@ Rectangle {
                             radius: 5
                             icon: "close"
                             iconSize: 12
+                            // docs/25 D5: 与同行「重新嵌入」按钮一致补 tooltip，
+                            // 同时补齐读屏名（无 tooltip 时回落为图标名 "close"）
+                            tooltip: qsTr("移除文档")
                             hoverBgColor: Qt.rgba(Theme.statusDanger.r, Theme.statusDanger.g,
                                                   Theme.statusDanger.b, 0.15)
                             hoverIconColor: Theme.statusDanger
