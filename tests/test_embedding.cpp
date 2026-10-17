@@ -4,11 +4,14 @@
 // are all covered without a real Ollama instance.
 #include "infrastructure/embed/OllamaEmbedding.h"
 #include "infrastructure/embed/OpenAICompatibleEmbedding.h"
+#include "infrastructure/embed/EmbedShutdown.h"
 
+#include <QElapsedTimer>
 #include <QHostAddress>
 #include <QNetworkProxy>
 #include <QSignalSpy>
 #include <QThread>
+#include <QTimer>
 #include <QTcpServer>
 #include <QTcpSocket>
 #include <QtTest>
@@ -42,6 +45,18 @@ public:
                         .object().value(QStringLiteral("model")).toString());
                     buffer.clear();
                     ++m_requests;
+                    // 任务 #22 取消用例：挂起模式——请求已完整接收但
+                    // 不响应（连接保持），中断由客户端退出轮询 abort。
+                    if (m_hang) return;
+                    // 任务 #22 B1 用例：统一回 401（客户端错误）。
+                    if (m_failAllUnauthorized) {
+                        socket->write("HTTP/1.1 401 Unauthorized\r\n"
+                                      "Content-Length: 0\r\n"
+                                      "Connection: close\r\n\r\n");
+                        socket->flush();
+                        socket->disconnectFromHost();
+                        return;
+                    }
                     QJsonArray embeddings;
                     for (int i = 0; i < texts.size(); ++i) {
                         QJsonArray vec;
@@ -76,6 +91,10 @@ public:
     }
     // docs/24 H5: fail the first N requests with HTTP 500.
     void setFailFirstRequests(int n) { m_failFirstRequests = n; }
+    // 任务 #22 取消用例：收到请求后挂起不响应。
+    void setHang(bool hang) { m_hang = hang; }
+    // 任务 #22 B1 用例：所有请求回 401（客户端错误不重试）。
+    void setFailAllUnauthorized(bool fail) { m_failAllUnauthorized = fail; }
     int requests() const { return m_requests; }
     const QStringList& modelsSeen() const { return m_modelsSeen; }
 
@@ -119,6 +138,8 @@ private:
     int m_dim;
     int m_delayMs{0};
     int m_failFirstRequests{0};
+    bool m_hang{false};
+    bool m_failAllUnauthorized{false};
     int m_requests{0};
     QStringList m_modelsSeen;
 };
@@ -153,6 +174,18 @@ public:
                                   buffer.mid(headerEnd + 4));
                     buffer.clear();
                     ++m_requests;
+                    // 任务 #22 取消用例：挂起模式——请求已完整接收但
+                    // 不响应（连接保持），中断由客户端退出轮询 abort。
+                    if (m_hang) return;
+                    // 任务 #22 B1 用例：统一回 401（客户端错误）。
+                    if (m_failAllUnauthorized) {
+                        socket->write("HTTP/1.1 401 Unauthorized\r\n"
+                                      "Content-Length: 0\r\n"
+                                      "Connection: close\r\n\r\n");
+                        socket->flush();
+                        socket->disconnectFromHost();
+                        return;
+                    }
                     // docs/24 H5: fail the first N requests with HTTP 500
                     // (transport-error retry coverage).
                     if (m_requests <= m_failFirstRequests) {
@@ -177,6 +210,10 @@ public:
     }
     // docs/24 H5: fail the first N requests with HTTP 500.
     void setFailFirstRequests(int n) { m_failFirstRequests = n; }
+    // 任务 #22 取消用例：收到请求后挂起不响应。
+    void setHang(bool hang) { m_hang = hang; }
+    // 任务 #22 B1 用例：所有请求回 401（客户端错误不重试）。
+    void setFailAllUnauthorized(bool fail) { m_failAllUnauthorized = fail; }
     // 稳定乱序：data 按 index 降序返回（index 归位逻辑可断言）。
     void setReverseIndices(bool reverse) { m_reverseIndices = reverse; }
     // 协议错误注入：HTTP 200 但响应不写 data。
@@ -256,6 +293,8 @@ private:
     int m_dim;
     int m_failFirstRequests{0};
     int m_countOffset{0};
+    bool m_hang{false};
+    bool m_failAllUnauthorized{false};
     int m_requests{0};
     int m_inputCount{0};
     bool m_reverseIndices{false};
@@ -272,6 +311,13 @@ class TestEmbedding : public QObject {
 private slots:
     void initTestCase() {
         QNetworkProxy::setApplicationProxy(QNetworkProxy::NoProxy);
+    }
+
+    // 任务 #22：退出标志是进程级全局状态——取消用例置位后若因断言失
+    // 败提前返回，残留标志会短路后续所有用例的入口检查，这里在每个
+    // 用例开始前兜底复位（用例结尾也各自复位，双保险）。
+    void init() {
+        resetEmbeddingShutdownForTesting();
     }
 
     // FEAT-803: batching boundaries
@@ -512,6 +558,106 @@ private slots:
         QCOMPARE(batches.size(), 2);
         QCOMPARE(batches.at(0).size(), 32);
         QCOMPARE(batches.at(1).size(), 1);
+    }
+
+    // ── 任务 #22：退出协作取消 + 4xx 不重试 ──
+
+    // 入口短路：标志置位后 embed/embedBatch 不发任何请求直接返回空
+    //（两个后端对称断言——排队中的调用在进程退出时不白跑）。
+    void shutdownFlagShortCircuitsEntry() {
+        requestEmbeddingShutdown();
+        {
+            FakeOpenAIEmbedServer server(2);
+            OpenAICompatibleEmbedding embed;
+            embed.setBaseUrl(server.baseUrl());
+            QVERIFY(embed.embed(QStringLiteral("x")).isEmpty());
+            QVERIFY(embed.embedBatch(makeTexts(2)).isEmpty());
+            QCOMPARE(server.requests(), 0);
+        }
+        {
+            FakeEmbedServer server(2);
+            OllamaEmbedding embed;
+            embed.setBaseUrl(server.baseUrl());
+            QVERIFY(embed.embed(QStringLiteral("x")).isEmpty());
+            QVERIFY(embed.embedBatch(makeTexts(2)).isEmpty());
+            QCOMPARE(server.requests(), 0);
+        }
+        resetEmbeddingShutdownForTesting();
+    }
+
+    // 轮询中断（OpenAI 单条）：server 挂起 + 500ms 后置位退出标志 →
+    // embed 在一个轮询周期（200ms）内返回空，而不是等 60s 传输超时
+    //（这正是退出卡住修复 A 的核心路径）。
+    void openaiShutdownInterruptsHangingEmbed() {
+        FakeOpenAIEmbedServer server(2);
+        server.setHang(true);
+        OpenAICompatibleEmbedding embed;
+        embed.setBaseUrl(server.baseUrl());
+
+        QTimer::singleShot(500, []() { requestEmbeddingShutdown(); });
+        QElapsedTimer elapsed;
+        elapsed.start();
+        QVERIFY(embed.embed(QStringLiteral("hang")).isEmpty());
+        QVERIFY(elapsed.elapsed() < 5000);
+        QCOMPARE(server.requests(), 1);
+        resetEmbeddingShutdownForTesting();
+    }
+
+    // 批量中断（OpenAI）：第一批挂起时置位 → 在途批被 abort、后续批
+    // 不再发送（70 条 = 3 批，只应看到第 1 批的 1 个请求）。
+    void openaiShutdownInterruptsHangingBatch() {
+        FakeOpenAIEmbedServer server(2);
+        server.setHang(true);
+        OpenAICompatibleEmbedding embed;
+        embed.setBaseUrl(server.baseUrl());
+
+        QTimer::singleShot(500, []() { requestEmbeddingShutdown(); });
+        const QVector<QVector<float>> result = embed.embedBatch(makeTexts(70));
+        QVERIFY(result.isEmpty());
+        QCOMPARE(server.requests(), 1);
+        resetEmbeddingShutdownForTesting();
+    }
+
+    // 轮询中断（Ollama 单条，对称验证；Ollama 超时 30s，修复后同样在
+    // 一个轮询周期内返回空）。
+    void ollamaShutdownInterruptsHangingEmbed() {
+        FakeEmbedServer server(2);
+        server.setHang(true);
+        OllamaEmbedding embed;
+        embed.setBaseUrl(server.baseUrl());
+
+        QTimer::singleShot(500, []() { requestEmbeddingShutdown(); });
+        QElapsedTimer elapsed;
+        elapsed.start();
+        QVERIFY(embed.embed(QStringLiteral("hang")).isEmpty());
+        QVERIFY(elapsed.elapsed() < 5000);
+        QCOMPARE(server.requests(), 1);
+        resetEmbeddingShutdownForTesting();
+    }
+
+    // 4xx 不重试（OpenAI）：401 是客户端错误，同样的请求再发一次注定
+    // 再失败——只应收到 1 次请求（修复前 attempt 循环会发满 2 次）。
+    // 5xx 重试语义由 openaiBatchTransportErrorRetriedOnce 继续覆盖。
+    void openaiClientErrorNotRetried() {
+        FakeOpenAIEmbedServer server(2);
+        server.setFailAllUnauthorized(true);
+        OpenAICompatibleEmbedding embed;
+        embed.setBaseUrl(server.baseUrl());
+
+        QVERIFY(embed.embedBatch(makeTexts(2)).isEmpty());
+        QCOMPARE(server.requests(), 1);
+    }
+
+    // 4xx 不重试（Ollama，对称验证；Ollama 典型 4xx 是 404 模型不存
+    // 在，这里同样以 401 注入）。
+    void ollamaClientErrorNotRetried() {
+        FakeEmbedServer server(2);
+        server.setFailAllUnauthorized(true);
+        OllamaEmbedding embed;
+        embed.setBaseUrl(server.baseUrl());
+
+        QVERIFY(embed.embedBatch(makeTexts(2)).isEmpty());
+        QCOMPARE(server.requests(), 1);
     }
 };
 

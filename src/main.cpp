@@ -44,6 +44,7 @@
 #include "infrastructure/llm/LlmProtocolRegistry.h"
 #include "infrastructure/embed/OllamaEmbedding.h"
 #include "infrastructure/embed/OpenAICompatibleEmbedding.h"
+#include "infrastructure/embed/EmbedShutdown.h"
 
 #include <memory>
 #include <QAtomicInt>
@@ -181,6 +182,10 @@ void startKnowledgeRestore(SqliteMemory* memory, RagService* rag) {
                              restoreGeneration]() {
         int fromChunks = 0, reEmbedded = 0;
         for (const RestoreItem& item : restoreItems) {
+            // 任务 #22：进程退出（aboutToQuit 置位标志）后不再继续恢复/
+            // 重嵌入——继续算只会白写一堆 pseudo 降级向量，还会拖住静态
+            // 析构阶段的线程池 waitForDone。
+            if (embeddingShutdownRequested()) break;
             if (persistedChunksUsable(item.contentHash, item.embeddingModel,
                                       item.content, currentModel)
                     && rag->restorePersistedDocument(
@@ -299,6 +304,17 @@ qInfo() << "NexusAI" << app.applicationVersion() << "starting";
     // to RagService/EpisodicService stay valid for the whole process.
     auto* ollamaEmbedding = new OllamaEmbedding(nullptr);
     auto* openaiEmbedding = new OpenAICompatibleEmbedding(nullptr);
+    // 任务 #22（退出卡住修复 A）：aboutToQuit 置位进程级嵌入中断标志。
+    // 上面的 H6 纪律决定了三个后台 worker（restore / re-embed / 导入）
+    // 无人取消——future 被丢弃，进程退出时没有任何句柄能打断它们；而
+    // 嵌入调用在 QEventLoop 里同步等待最长 300s 的传输超时，main() 返
+    // 回后的静态析构阶段线程池 waitForDone() 会无限等下去（窗口消失、
+    // 进程挂后台）。标志置位后，两个后端的轮询定时器在 ~200ms 内
+    // abort 在途请求、跳过后续批与重试，下面两个后台 for 循环也尽快
+    // 收手，进程得以干净退出。
+    QObject::connect(&app, &QCoreApplication::aboutToQuit, &app, []() {
+        requestEmbeddingShutdown();
+    });
     // Active-backend switch: written on the GUI thread (applyEmbeddingConfig
     // below), read inside the embed closures on worker threads. Acquire/
     // release makes the flip visible to queued workers; a stale read at
@@ -373,8 +389,12 @@ qInfo() << "NexusAI" << app.applicationVersion() << "starting";
                 << items.size() << "document(s)";
         const quint64 gen = rag->restoreGeneration();
         (void)QtConcurrent::run([rag, items, gen]() {
-            for (const ReembedItem& item : items)
+            for (const ReembedItem& item : items) {
+                // 任务 #22：退出中断（同 startKnowledgeRestore）——置位
+                // 后剩余文档不再重嵌入，worker 尽快返回让进程退出。
+                if (embeddingShutdownRequested()) break;
                 rag->ingestRestoredDocument(item.name, item.content, gen);
+            }
         });
     };
     // Apply the configured embedding backend + identity BEFORE the restore

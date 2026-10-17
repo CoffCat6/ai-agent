@@ -109,6 +109,7 @@ add_library(nexus_infra STATIC
     src/infrastructure/llm/OllamaService.cpp
     src/infrastructure/llm/AnthropicService.h
     src/infrastructure/llm/AnthropicService.cpp
+    src/infrastructure/embed/EmbedShutdown.h
     src/infrastructure/embed/OllamaEmbedding.h
     src/infrastructure/embed/OllamaEmbedding.cpp
     src/infrastructure/embed/OpenAICompatibleEmbedding.h
