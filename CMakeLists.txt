@@ -97,6 +97,8 @@ target_link_libraries(nexus_core PUBLIC Qt6::Core Qt6::Sql Qt6::Concurrent Qt6::
 # ── Infrastructure Library ────────────────────────────────
 add_library(nexus_infra STATIC
     src/infrastructure/llm/IAIService.h
+    src/infrastructure/llm/GeminiService.h
+    src/infrastructure/llm/GeminiService.cpp
     src/infrastructure/llm/LLMServiceBase.h
     src/infrastructure/llm/LLMServiceBase.cpp
     src/infrastructure/llm/LlmProtocolRegistry.h

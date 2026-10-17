@@ -1,6 +1,7 @@
 // 协议注册表：描述符完整性、profile 归一化回退、按协议装配服务集合。
 #include "infrastructure/llm/IAIService.h"
 #include "infrastructure/llm/LlmProtocolRegistry.h"
+#include "infrastructure/llm/GeminiService.h"
 
 #include <QtTest>
 
@@ -102,6 +103,43 @@ private slots:
             QCOMPARE(service->parent(), &parent);
         }
         QVERIFY(LlmProtocolRegistry::createService(QStringLiteral("nope"), &parent) == nullptr);
+    }
+
+    // 任务 #24（批次四）：Gemini 原生 GenerateContent 协议的注册面——
+    // key/provider/默认端点模型/envVar/local=false（云 gate 生效前提）。
+    void geminiDescriptorRegistered() {
+        const QString key = QString::fromLatin1(LlmProtocol::kGeminiGenerate);
+        const auto* d = LlmProtocolRegistry::find(key);
+        QVERIFY(d != nullptr);
+        QCOMPARE(d->provider, QStringLiteral("gemini"));
+        QCOMPARE(d->defaultBaseUrl,
+                 QStringLiteral("https://generativelanguage.googleapis.com"));
+        QCOMPARE(d->defaultModel, QStringLiteral("gemini-2.5-flash"));
+        QCOMPARE(d->envApiKeyVar, QStringLiteral("GEMINI_API_KEY"));
+        QVERIFY(!d->local);   // 云 provider：localOnlyMode 的云 gate 必须拦得住
+        QVERIFY(d->models.contains(QStringLiteral("gemini-2.5-pro")));
+        QCOMPARE(d->contextWindows.value(QStringLiteral("gemini-2.5-flash")), 1000000);
+        QCOMPARE(d->contextWindows.value(QStringLiteral("gemini-2.5-pro")), 1000000);
+
+        // 厂商轴可查询：providers 含 gemini、按厂商取协议非空、旧 profile
+        // （只有 provider=gemini）resolve 回落到该厂商默认协议。
+        QVERIFY(LlmProtocolRegistry::providers().contains(QStringLiteral("gemini")));
+        QVERIFY(LlmProtocolRegistry::isKnownProvider(QStringLiteral("gemini")));
+        const auto protocols =
+            LlmProtocolRegistry::protocolsOfProvider(QStringLiteral("gemini"));
+        QCOMPARE(protocols.size(), 1);
+        QCOMPARE(protocols.at(0).key, key);
+        QCOMPARE(LlmProtocolRegistry::resolve(QString(), QStringLiteral("gemini"))->key,
+                 key);
+
+        // local-only 门控按 (协议, 厂商) 判定：gemini 是云服务
+        QVERIFY(!LlmProtocolRegistry::isLocal(key, QStringLiteral("gemini")));
+        QVERIFY(!LlmProtocolRegistry::isLocal(QString(), QStringLiteral("gemini")));
+
+        // 工厂产出的是 GeminiService 实例（装配链端到端）
+        QObject parent;
+        QVERIFY(qobject_cast<GeminiService*>(
+                    LlmProtocolRegistry::createService(key, &parent)) != nullptr);
     }
 };
 

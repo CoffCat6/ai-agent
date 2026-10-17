@@ -1515,100 +1515,105 @@ and the model can retrieve their content to answer questions</translation>
         <translation>Model configuration page</translation>
     </message>
     <message>
-        <location filename="../src/ui/pages/ModelConfigPage.qml" line="81"/>
-        <location filename="../src/ui/pages/ModelConfigPage.qml" line="726"/>
+        <location filename="../src/ui/pages/ModelConfigPage.qml" line="65"/>
+        <source>Gemini</source>
+        <translation>Gemini</translation>
+    </message>
+    <message>
+        <location filename="../src/ui/pages/ModelConfigPage.qml" line="84"/>
+        <location filename="../src/ui/pages/ModelConfigPage.qml" line="735"/>
         <source>temperature</source>
         <translation>temperature</translation>
     </message>
     <message>
-        <location filename="../src/ui/pages/ModelConfigPage.qml" line="82"/>
+        <location filename="../src/ui/pages/ModelConfigPage.qml" line="85"/>
         <source>最大输出</source>
         <translation>Max Output</translation>
     </message>
     <message>
-        <location filename="../src/ui/pages/ModelConfigPage.qml" line="83"/>
-        <location filename="../src/ui/pages/ModelConfigPage.qml" line="758"/>
+        <location filename="../src/ui/pages/ModelConfigPage.qml" line="86"/>
+        <location filename="../src/ui/pages/ModelConfigPage.qml" line="767"/>
         <source>num_ctx</source>
         <translation>num_ctx</translation>
     </message>
     <message>
-        <location filename="../src/ui/pages/ModelConfigPage.qml" line="84"/>
-        <location filename="../src/ui/pages/ModelConfigPage.qml" line="777"/>
+        <location filename="../src/ui/pages/ModelConfigPage.qml" line="87"/>
+        <location filename="../src/ui/pages/ModelConfigPage.qml" line="786"/>
         <source>思考强度</source>
         <translation>Thinking effort</translation>
     </message>
     <message>
-        <location filename="../src/ui/pages/ModelConfigPage.qml" line="85"/>
+        <location filename="../src/ui/pages/ModelConfigPage.qml" line="88"/>
         <source>上下文预算</source>
         <translation>Context Budget</translation>
     </message>
     <message>
-        <location filename="../src/ui/pages/ModelConfigPage.qml" line="102"/>
+        <location filename="../src/ui/pages/ModelConfigPage.qml" line="105"/>
         <source>例如 https://my-gateway.example.com/v1</source>
         <translation>e.g. https://my-gateway.example.com/v1</translation>
     </message>
     <message>
-        <location filename="../src/ui/pages/ModelConfigPage.qml" line="111"/>
+        <location filename="../src/ui/pages/ModelConfigPage.qml" line="116"/>
         <source>网关上真实在跑的模型名，例如 glm-4</source>
         <translation>Model name served by your gateway, e.g. glm-4</translation>
     </message>
     <message>
-        <location filename="../src/ui/pages/ModelConfigPage.qml" line="124"/>
+        <location filename="../src/ui/pages/ModelConfigPage.qml" line="133"/>
         <source>按网关要求填写（可留空走环境变量）</source>
         <translation>Enter as your gateway requires (blank falls back to the environment variable)</translation>
     </message>
     <message>
-        <location filename="../src/ui/pages/ModelConfigPage.qml" line="125"/>
+        <location filename="../src/ui/pages/ModelConfigPage.qml" line="134"/>
         <source>或留空，读环境变量 %1</source>
         <translation>Or leave blank to read %1 from the environment</translation>
     </message>
     <message>
-        <location filename="../src/ui/pages/ModelConfigPage.qml" line="132"/>
+        <location filename="../src/ui/pages/ModelConfigPage.qml" line="141"/>
         <source>模型名</source>
         <translation>model name</translation>
     </message>
     <message>
-        <location filename="../src/ui/pages/ModelConfigPage.qml" line="145"/>
+        <location filename="../src/ui/pages/ModelConfigPage.qml" line="154"/>
         <source>手动覆盖</source>
         <translation>manual override</translation>
     </message>
     <message>
-        <location filename="../src/ui/pages/ModelConfigPage.qml" line="146"/>
+        <location filename="../src/ui/pages/ModelConfigPage.qml" line="155"/>
         <source>模型能力表</source>
         <translation>model capability table</translation>
     </message>
     <message>
-        <location filename="../src/ui/pages/ModelConfigPage.qml" line="146"/>
+        <location filename="../src/ui/pages/ModelConfigPage.qml" line="155"/>
         <source>全局默认</source>
         <translation>global default</translation>
     </message>
     <message>
-        <location filename="../src/ui/pages/ModelConfigPage.qml" line="245"/>
+        <location filename="../src/ui/pages/ModelConfigPage.qml" line="254"/>
         <source>模型服务配置</source>
         <translation>Model Configuration</translation>
     </message>
     <message>
-        <location filename="../src/ui/pages/ModelConfigPage.qml" line="575"/>
+        <location filename="../src/ui/pages/ModelConfigPage.qml" line="584"/>
         <source>模型名不再按厂商预填：在下面的输入框里自己添加，列表会同步到聊天输入区的选择器。</source>
         <translation>Model names are no longer preset by vendor: add your own in the input below, and the list syncs to the chat input&apos;s selector.</translation>
     </message>
     <message>
-        <location filename="../src/ui/pages/ModelConfigPage.qml" line="708"/>
+        <location filename="../src/ui/pages/ModelConfigPage.qml" line="717"/>
         <source>列表还是空的：模型名不再自动预填，在右边输入一个名字回车即可。</source>
         <translation>The list is still empty: model names are no longer auto-filled; type a name on the right and press Enter.</translation>
     </message>
     <message>
-        <location filename="../src/ui/pages/ModelConfigPage.qml" line="738"/>
+        <location filename="../src/ui/pages/ModelConfigPage.qml" line="747"/>
         <source>自定义上限，留空 = 服务默认</source>
         <translation>Custom limit, blank = server default</translation>
     </message>
     <message>
-        <location filename="../src/ui/pages/ModelConfigPage.qml" line="804"/>
+        <location filename="../src/ui/pages/ModelConfigPage.qml" line="813"/>
         <source>自定义预算，留空 = 按能力表</source>
         <translation>Custom budget, blank = follow capability table</translation>
     </message>
     <message>
-        <location filename="../src/ui/pages/ModelConfigPage.qml" line="961"/>
+        <location filename="../src/ui/pages/ModelConfigPage.qml" line="970"/>
         <source>厂商配置会带上默认地址，模型名一律留空由你自己填——预填的官方模型列表未必是你实际调用的那个。</source>
         <translation>A vendor config comes with a default address; the model name is left blank for you to fill in - the preset official model list may not be the one you actually call.</translation>
     </message>
@@ -1625,13 +1630,13 @@ and the model can retrieve their content to answer questions</translation>
         <translation type="vanished">+ Add</translation>
     </message>
     <message>
-        <location filename="../src/ui/pages/ModelConfigPage.qml" line="75"/>
-        <location filename="../src/ui/pages/ModelConfigPage.qml" line="391"/>
+        <location filename="../src/ui/pages/ModelConfigPage.qml" line="78"/>
+        <location filename="../src/ui/pages/ModelConfigPage.qml" line="400"/>
         <source>显示名称</source>
         <translation>Display Name</translation>
     </message>
     <message>
-        <location filename="../src/ui/pages/ModelConfigPage.qml" line="253"/>
+        <location filename="../src/ui/pages/ModelConfigPage.qml" line="262"/>
         <source>点芯片切换要编辑的配置；改动即时写入配置，不需要另点保存。</source>
         <translation>Click a chip to switch the profile being edited. Changes are written immediately; there is no separate save step.</translation>
     </message>
@@ -1640,18 +1645,18 @@ and the model can retrieve their content to answer questions</translation>
         <translation type="vanished">One profile per service. The vendor sets the defaults; the API protocol sets the wire format.</translation>
     </message>
     <message>
-        <location filename="../src/ui/pages/ModelConfigPage.qml" line="367"/>
-        <location filename="../src/ui/pages/ModelConfigPage.qml" line="938"/>
+        <location filename="../src/ui/pages/ModelConfigPage.qml" line="376"/>
+        <location filename="../src/ui/pages/ModelConfigPage.qml" line="947"/>
         <source>新建模型配置</source>
         <translation>New Model Profile</translation>
     </message>
     <message>
-        <location filename="../src/ui/pages/ModelConfigPage.qml" line="372"/>
+        <location filename="../src/ui/pages/ModelConfigPage.qml" line="381"/>
         <source>+ 新建</source>
         <translation>+ New</translation>
     </message>
     <message>
-        <location filename="../src/ui/pages/ModelConfigPage.qml" line="392"/>
+        <location filename="../src/ui/pages/ModelConfigPage.qml" line="401"/>
         <source>例如：工作用 GPT、本地 qwen…</source>
         <translation>e.g. Work GPT, local qwen…</translation>
     </message>
@@ -1670,37 +1675,37 @@ and the model can retrieve their content to answer questions</translation>
         <translation>Claude</translation>
     </message>
     <message>
-        <location filename="../src/ui/pages/ModelConfigPage.qml" line="63"/>
+        <location filename="../src/ui/pages/ModelConfigPage.qml" line="66"/>
         <source>Ollama 本地</source>
         <translation>Ollama (Local)</translation>
     </message>
     <message>
-        <location filename="../src/ui/pages/ModelConfigPage.qml" line="64"/>
+        <location filename="../src/ui/pages/ModelConfigPage.qml" line="67"/>
         <source>自定义网关</source>
         <translation>Custom Gateway</translation>
     </message>
     <message>
-        <location filename="../src/ui/pages/ModelConfigPage.qml" line="76"/>
-        <location filename="../src/ui/pages/ModelConfigPage.qml" line="284"/>
+        <location filename="../src/ui/pages/ModelConfigPage.qml" line="79"/>
+        <location filename="../src/ui/pages/ModelConfigPage.qml" line="293"/>
         <source>配置来源</source>
         <translation>Profile Source</translation>
     </message>
     <message>
-        <location filename="../src/ui/pages/ModelConfigPage.qml" line="77"/>
-        <location filename="../src/ui/pages/ModelConfigPage.qml" line="433"/>
+        <location filename="../src/ui/pages/ModelConfigPage.qml" line="80"/>
+        <location filename="../src/ui/pages/ModelConfigPage.qml" line="442"/>
         <source>接口协议</source>
         <translation>API Protocol</translation>
     </message>
     <message>
-        <location filename="../src/ui/pages/ModelConfigPage.qml" line="78"/>
-        <location filename="../src/ui/pages/ModelConfigPage.qml" line="131"/>
-        <location filename="../src/ui/pages/ModelConfigPage.qml" line="482"/>
+        <location filename="../src/ui/pages/ModelConfigPage.qml" line="81"/>
+        <location filename="../src/ui/pages/ModelConfigPage.qml" line="140"/>
+        <location filename="../src/ui/pages/ModelConfigPage.qml" line="491"/>
         <source>服务地址</source>
         <translation>Base URL</translation>
     </message>
     <message>
-        <location filename="../src/ui/pages/ModelConfigPage.qml" line="79"/>
-        <location filename="../src/ui/pages/ModelConfigPage.qml" line="491"/>
+        <location filename="../src/ui/pages/ModelConfigPage.qml" line="82"/>
+        <location filename="../src/ui/pages/ModelConfigPage.qml" line="500"/>
         <source>API Key</source>
         <translation>API Key</translation>
     </message>
@@ -1713,8 +1718,8 @@ and the model can retrieve their content to answer questions</translation>
         <translation type="vanished">Base URL</translation>
     </message>
     <message>
-        <location filename="../src/ui/pages/ModelConfigPage.qml" line="80"/>
-        <location filename="../src/ui/pages/ModelConfigPage.qml" line="579"/>
+        <location filename="../src/ui/pages/ModelConfigPage.qml" line="83"/>
+        <location filename="../src/ui/pages/ModelConfigPage.qml" line="588"/>
         <source>当前模型</source>
         <translation>Current Model</translation>
     </message>
@@ -1723,17 +1728,17 @@ and the model can retrieve their content to answer questions</translation>
         <translation type="vanished">Model List</translation>
     </message>
     <message>
-        <location filename="../src/ui/pages/ModelConfigPage.qml" line="640"/>
+        <location filename="../src/ui/pages/ModelConfigPage.qml" line="649"/>
         <source>%1K</source>
         <translation>%1K</translation>
     </message>
     <message>
-        <location filename="../src/ui/pages/ModelConfigPage.qml" line="641"/>
+        <location filename="../src/ui/pages/ModelConfigPage.qml" line="650"/>
         <source>未知</source>
         <translation>Unknown</translation>
     </message>
     <message>
-        <location filename="../src/ui/pages/ModelConfigPage.qml" line="679"/>
+        <location filename="../src/ui/pages/ModelConfigPage.qml" line="688"/>
         <source>添加模型…</source>
         <translation>Add model…</translation>
     </message>
@@ -1750,72 +1755,72 @@ and the model can retrieve their content to answer questions</translation>
         <translation type="vanished">Empty = not sent</translation>
     </message>
     <message>
-        <location filename="../src/ui/pages/ModelConfigPage.qml" line="735"/>
+        <location filename="../src/ui/pages/ModelConfigPage.qml" line="744"/>
         <source>最大输出 tokens</source>
         <translation>Max Output Tokens</translation>
     </message>
     <message>
-        <location filename="../src/ui/pages/ModelConfigPage.qml" line="420"/>
+        <location filename="../src/ui/pages/ModelConfigPage.qml" line="429"/>
         <source>自定义不预填服务地址与模型名，也不带入厂商预设模型；请求仍按 OpenAI Chat Completions 报文发出。</source>
         <translation>A custom profile pre-fills neither the base URL nor the model name, and brings in no vendor presets. Requests still use the OpenAI Chat Completions wire format.</translation>
     </message>
     <message>
-        <location filename="../src/ui/pages/ModelConfigPage.qml" line="285"/>
+        <location filename="../src/ui/pages/ModelConfigPage.qml" line="294"/>
         <source>一条配置对应一个可用服务。厂商决定默认地址，接口协议决定报文格式；模型由你自己填。</source>
         <translation>One profile maps to one usable service: the vendor decides the default address, the API protocol decides the message format, and the model is yours to fill in.</translation>
     </message>
     <message>
-        <location filename="../src/ui/pages/ModelConfigPage.qml" line="463"/>
+        <location filename="../src/ui/pages/ModelConfigPage.qml" line="472"/>
         <source>Responses 需要端点显式实现 /responses；多数「OpenAI 兼容」网关只提供 Chat Completions。</source>
         <translation>Responses requires the endpoint to implement /responses; most OpenAI-compatible gateways only offer Chat Completions.</translation>
     </message>
     <message>
-        <location filename="../src/ui/pages/ModelConfigPage.qml" line="475"/>
+        <location filename="../src/ui/pages/ModelConfigPage.qml" line="484"/>
         <source>服务连接</source>
         <translation>Connection</translation>
     </message>
     <message>
-        <location filename="../src/ui/pages/ModelConfigPage.qml" line="477"/>
+        <location filename="../src/ui/pages/ModelConfigPage.qml" line="486"/>
         <source>本地服务不需要 API Key；地址指向 Ollama 的 host:port。</source>
         <translation>Local services need no API key; the address points at Ollama&apos;s host:port.</translation>
     </message>
     <message>
-        <location filename="../src/ui/pages/ModelConfigPage.qml" line="478"/>
+        <location filename="../src/ui/pages/ModelConfigPage.qml" line="487"/>
         <source>API Key 保存时按当前用户加密（Windows DPAPI）。</source>
         <translation>The API key is encrypted per user when stored (Windows DPAPI).</translation>
     </message>
     <message>
-        <location filename="../src/ui/pages/ModelConfigPage.qml" line="504"/>
+        <location filename="../src/ui/pages/ModelConfigPage.qml" line="513"/>
         <source>密钥已填写，保存时加密存储。</source>
         <translation>Key filled in; stored encrypted.</translation>
     </message>
     <message>
-        <location filename="../src/ui/pages/ModelConfigPage.qml" line="505"/>
+        <location filename="../src/ui/pages/ModelConfigPage.qml" line="514"/>
         <source>密钥为空：请求前会先读环境变量 %1。</source>
         <translation>No key set: %1 from the environment is read before the request.</translation>
     </message>
     <message>
-        <location filename="../src/ui/pages/ModelConfigPage.qml" line="538"/>
+        <location filename="../src/ui/pages/ModelConfigPage.qml" line="547"/>
         <source>测试用模型</source>
         <translation>Test model</translation>
     </message>
     <message>
-        <location filename="../src/ui/pages/ModelConfigPage.qml" line="550"/>
+        <location filename="../src/ui/pages/ModelConfigPage.qml" line="559"/>
         <source>测试用模型只影响本次请求，不会改写当前模型。</source>
         <translation>The test model only affects this request; it does not change the current model.</translation>
     </message>
     <message>
-        <location filename="../src/ui/pages/ModelConfigPage.qml" line="551"/>
+        <location filename="../src/ui/pages/ModelConfigPage.qml" line="560"/>
         <source>模型列表为空，没东西可测：先在上方「模型」卡片里添加一个模型名。</source>
         <translation>The model list is empty, nothing to test: add a model name in the &quot;Model&quot; card above first.</translation>
     </message>
     <message>
-        <location filename="../src/ui/pages/ModelConfigPage.qml" line="562"/>
+        <location filename="../src/ui/pages/ModelConfigPage.qml" line="571"/>
         <source>正在连接（最多等 20 秒）…</source>
         <translation>Connecting (waits up to 20 s)…</translation>
     </message>
     <message>
-        <location filename="../src/ui/pages/ModelConfigPage.qml" line="574"/>
+        <location filename="../src/ui/pages/ModelConfigPage.qml" line="583"/>
         <source>模型</source>
         <translation>Models</translation>
     </message>
@@ -1824,17 +1829,17 @@ and the model can retrieve their content to answer questions</translation>
         <translation type="vanished">These models also appear in the chat model picker. Click a chip to make it current; × removes it.</translation>
     </message>
     <message>
-        <location filename="../src/ui/pages/ModelConfigPage.qml" line="612"/>
+        <location filename="../src/ui/pages/ModelConfigPage.qml" line="621"/>
         <source>设为当前模型 %1</source>
         <translation>Set as current model %1</translation>
     </message>
     <message>
-        <location filename="../src/ui/pages/ModelConfigPage.qml" line="679"/>
+        <location filename="../src/ui/pages/ModelConfigPage.qml" line="688"/>
         <source>添加网关模型名…</source>
         <translation>Add gateway model name…</translation>
     </message>
     <message>
-        <location filename="../src/ui/pages/ModelConfigPage.qml" line="693"/>
+        <location filename="../src/ui/pages/ModelConfigPage.qml" line="702"/>
         <source>添加模型到列表</source>
         <translation>Add model to list</translation>
     </message>
@@ -1847,17 +1852,17 @@ and the model can retrieve their content to answer questions</translation>
         <translation type="vanished">The list is empty: type a model name and press Enter to add it back.</translation>
     </message>
     <message>
-        <location filename="../src/ui/pages/ModelConfigPage.qml" line="721"/>
+        <location filename="../src/ui/pages/ModelConfigPage.qml" line="730"/>
         <source>生成参数</source>
         <translation>Generation</translation>
     </message>
     <message>
-        <location filename="../src/ui/pages/ModelConfigPage.qml" line="722"/>
+        <location filename="../src/ui/pages/ModelConfigPage.qml" line="731"/>
         <source>留空 = 使用服务默认，不随请求发送。</source>
         <translation>Blank = service default; the field is not sent.</translation>
     </message>
     <message>
-        <location filename="../src/ui/pages/ModelConfigPage.qml" line="727"/>
+        <location filename="../src/ui/pages/ModelConfigPage.qml" line="736"/>
         <source>0 - 2，留空不发送</source>
         <translation>0 - 2, blank to omit</translation>
     </message>
@@ -1866,32 +1871,32 @@ and the model can retrieve their content to answer questions</translation>
         <translation type="vanished">Empty = service default</translation>
     </message>
     <message>
-        <location filename="../src/ui/pages/ModelConfigPage.qml" line="750"/>
+        <location filename="../src/ui/pages/ModelConfigPage.qml" line="759"/>
         <source>Ollama 的上下文窗口就是 num_ctx</source>
         <translation>For Ollama the context window is num_ctx</translation>
     </message>
     <message>
-        <location filename="../src/ui/pages/ModelConfigPage.qml" line="761"/>
+        <location filename="../src/ui/pages/ModelConfigPage.qml" line="770"/>
         <source>自定义窗口，留空 = 不发送</source>
         <translation>Custom window, blank = do not send</translation>
     </message>
     <message>
-        <location filename="../src/ui/pages/ModelConfigPage.qml" line="772"/>
+        <location filename="../src/ui/pages/ModelConfigPage.qml" line="781"/>
         <source>思考与上下文</source>
         <translation>Reasoning and Context</translation>
     </message>
     <message>
-        <location filename="../src/ui/pages/ModelConfigPage.qml" line="773"/>
+        <location filename="../src/ui/pages/ModelConfigPage.qml" line="782"/>
         <source>思考强度存在这条配置上；聊天输入区的快捷选择框读写的是当前启用的配置。</source>
         <translation>Effort is stored on this profile; the shortcut selector by the chat input reads and writes the active profile.</translation>
     </message>
     <message>
-        <location filename="../src/ui/pages/ModelConfigPage.qml" line="787"/>
+        <location filename="../src/ui/pages/ModelConfigPage.qml" line="796"/>
         <source>OpenAI 兼容按档位发送 reasoning_effort；Claude 折算为思考预算（输出上限要留得住预算，否则自动退回不思考）；Ollama 只有开/关，低中高均按开处理。</source>
         <translation>OpenAI sends reasoning_effort per level; Claude converts it into a thinking budget (the output limit must leave room for it, otherwise thinking is dropped); Ollama is on/off only, so low, medium and high all mean on.</translation>
     </message>
     <message>
-        <location filename="../src/ui/pages/ModelConfigPage.qml" line="801"/>
+        <location filename="../src/ui/pages/ModelConfigPage.qml" line="810"/>
         <source>上下文预算覆盖</source>
         <translation>Context Budget Override</translation>
     </message>
@@ -1900,42 +1905,42 @@ and the model can retrieve their content to answer questions</translation>
         <translation type="vanished">Blank = follow the model capability table</translation>
     </message>
     <message>
-        <location filename="../src/ui/pages/ModelConfigPage.qml" line="813"/>
+        <location filename="../src/ui/pages/ModelConfigPage.qml" line="822"/>
         <source>当前生效 %1 tokens（来源：%2）</source>
         <translation>Effective budget: %1 tokens (source: %2)</translation>
     </message>
     <message>
-        <location filename="../src/ui/pages/ModelConfigPage.qml" line="815"/>
+        <location filename="../src/ui/pages/ModelConfigPage.qml" line="824"/>
         <source>当前生效 %1 tokens（来源：全局默认，能力表里没有这个模型）</source>
         <translation>Effective budget: %1 tokens (global default; the capability table has no entry for this model)</translation>
     </message>
     <message>
-        <location filename="../src/ui/pages/ModelConfigPage.qml" line="830"/>
+        <location filename="../src/ui/pages/ModelConfigPage.qml" line="839"/>
         <source>最大输出 %1 已不小于上下文窗口 %2，请求可能被服务端拒绝。</source>
         <translation>Max output %1 is not below the context window %2; the server may reject the request.</translation>
     </message>
     <message>
-        <location filename="../src/ui/pages/ModelConfigPage.qml" line="869"/>
+        <location filename="../src/ui/pages/ModelConfigPage.qml" line="878"/>
         <source>还没有模型配置</source>
         <translation>No model profile yet</translation>
     </message>
     <message>
-        <location filename="../src/ui/pages/ModelConfigPage.qml" line="871"/>
+        <location filename="../src/ui/pages/ModelConfigPage.qml" line="880"/>
         <source>✓ 正在使用：%1</source>
         <translation>✓ Active: %1</translation>
     </message>
     <message>
-        <location filename="../src/ui/pages/ModelConfigPage.qml" line="873"/>
+        <location filename="../src/ui/pages/ModelConfigPage.qml" line="882"/>
         <source>编辑中的配置未启用</source>
         <translation>The profile being edited is not active</translation>
     </message>
     <message>
-        <location filename="../src/ui/pages/ModelConfigPage.qml" line="886"/>
+        <location filename="../src/ui/pages/ModelConfigPage.qml" line="895"/>
         <source>已保存：%1</source>
         <translation>Saved: %1</translation>
     </message>
     <message>
-        <location filename="../src/ui/pages/ModelConfigPage.qml" line="888"/>
+        <location filename="../src/ui/pages/ModelConfigPage.qml" line="897"/>
         <source>还需填写：%1，才能启用或测试连接</source>
         <translation>Fill in %1 before you can activate this profile or test it</translation>
     </message>
@@ -1952,27 +1957,27 @@ and the model can retrieve their content to answer questions</translation>
         <translation type="vanished">Thinking effort (Default = no thinking parameter is sent)</translation>
     </message>
     <message>
-        <location filename="../src/ui/pages/ModelConfigPage.qml" line="781"/>
+        <location filename="../src/ui/pages/ModelConfigPage.qml" line="790"/>
         <source>默认</source>
         <translation>Default</translation>
     </message>
     <message>
-        <location filename="../src/ui/pages/ModelConfigPage.qml" line="69"/>
+        <location filename="../src/ui/pages/ModelConfigPage.qml" line="72"/>
         <source>关闭</source>
         <translation>Off</translation>
     </message>
     <message>
-        <location filename="../src/ui/pages/ModelConfigPage.qml" line="70"/>
+        <location filename="../src/ui/pages/ModelConfigPage.qml" line="73"/>
         <source>低</source>
         <translation>Low</translation>
     </message>
     <message>
-        <location filename="../src/ui/pages/ModelConfigPage.qml" line="71"/>
+        <location filename="../src/ui/pages/ModelConfigPage.qml" line="74"/>
         <source>中</source>
         <translation>Medium</translation>
     </message>
     <message>
-        <location filename="../src/ui/pages/ModelConfigPage.qml" line="72"/>
+        <location filename="../src/ui/pages/ModelConfigPage.qml" line="75"/>
         <source>高</source>
         <translation>High</translation>
     </message>
@@ -1989,17 +1994,17 @@ and the model can retrieve their content to answer questions</translation>
         <translation type="vanished">Empty = auto</translation>
     </message>
     <message>
-        <location filename="../src/ui/pages/ModelConfigPage.qml" line="899"/>
+        <location filename="../src/ui/pages/ModelConfigPage.qml" line="908"/>
         <source>✓ 使用中</source>
         <translation>✓ In Use</translation>
     </message>
     <message>
-        <location filename="../src/ui/pages/ModelConfigPage.qml" line="899"/>
+        <location filename="../src/ui/pages/ModelConfigPage.qml" line="908"/>
         <source>启用此配置</source>
         <translation>Enable This Profile</translation>
     </message>
     <message>
-        <location filename="../src/ui/pages/ModelConfigPage.qml" line="907"/>
+        <location filename="../src/ui/pages/ModelConfigPage.qml" line="916"/>
         <source>删除</source>
         <translation>Delete</translation>
     </message>
@@ -2008,12 +2013,12 @@ and the model can retrieve their content to answer questions</translation>
         <translation type="vanished">Connecting…</translation>
     </message>
     <message>
-        <location filename="../src/ui/pages/ModelConfigPage.qml" line="517"/>
+        <location filename="../src/ui/pages/ModelConfigPage.qml" line="526"/>
         <source>测试中…</source>
         <translation>Testing…</translation>
     </message>
     <message>
-        <location filename="../src/ui/pages/ModelConfigPage.qml" line="517"/>
+        <location filename="../src/ui/pages/ModelConfigPage.qml" line="526"/>
         <source>测试连接</source>
         <translation>Test Connection</translation>
     </message>
@@ -2824,22 +2829,27 @@ and the model can retrieve their content to answer questions</translation>
         <translation>Ollama (Local)</translation>
     </message>
     <message>
-        <location filename="../src/viewmodels/SettingsService.cpp" line="758"/>
+        <location filename="../src/viewmodels/SettingsService.cpp" line="760"/>
+        <source>Gemini</source>
+        <translation>Gemini</translation>
+    </message>
+    <message>
+        <location filename="../src/viewmodels/SettingsService.cpp" line="761"/>
         <source>Claude</source>
         <translation>Claude</translation>
     </message>
     <message>
-        <location filename="../src/viewmodels/SettingsService.cpp" line="885"/>
+        <location filename="../src/viewmodels/SettingsService.cpp" line="895"/>
         <source>向量模型 API 密钥加密失败，未保存更改。</source>
         <translation>Embedding API key encryption failed. Changes were not saved.</translation>
     </message>
     <message>
-        <location filename="../src/viewmodels/SettingsService.cpp" line="985"/>
+        <location filename="../src/viewmodels/SettingsService.cpp" line="995"/>
         <source>搜索 API 密钥加密失败，未保存更改。</source>
         <translation>Search API key encryption failed. Changes were not saved.</translation>
     </message>
     <message>
-        <location filename="../src/viewmodels/SettingsService.cpp" line="1204"/>
+        <location filename="../src/viewmodels/SettingsService.cpp" line="1214"/>
         <source>无法更新 Windows 开机自启动设置。</source>
         <translation>Could not update Windows startup settings.</translation>
     </message>
@@ -3014,32 +3024,32 @@ and the model can retrieve their content to answer questions</translation>
 <context>
     <name>QObject</name>
     <message>
-        <location filename="../src/main.cpp" line="883"/>
+        <location filename="../src/main.cpp" line="910"/>
         <source>显示/隐藏主窗</source>
         <translation>Show / hide main window</translation>
     </message>
     <message>
-        <location filename="../src/main.cpp" line="884"/>
+        <location filename="../src/main.cpp" line="911"/>
         <source>新建会话</source>
         <translation>New session</translation>
     </message>
     <message>
-        <location filename="../src/main.cpp" line="886"/>
+        <location filename="../src/main.cpp" line="913"/>
         <source>退出</source>
         <translation>Quit</translation>
     </message>
     <message>
-        <location filename="../src/main.cpp" line="940"/>
+        <location filename="../src/main.cpp" line="967"/>
         <source>任务完成</source>
         <translation>Task finished</translation>
     </message>
     <message>
-        <location filename="../src/main.cpp" line="940"/>
+        <location filename="../src/main.cpp" line="967"/>
         <source>任务结束</source>
         <translation>Task ended</translation>
     </message>
     <message>
-        <location filename="../src/main.cpp" line="941"/>
+        <location filename="../src/main.cpp" line="968"/>
         <source>会话已回复</source>
         <translation>The session has replied</translation>
     </message>

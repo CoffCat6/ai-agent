@@ -1,6 +1,7 @@
 #include "LlmProtocolRegistry.h"
 
 #include "AnthropicService.h"
+#include "GeminiService.h"
 #include "IAIService.h"
 #include "OllamaService.h"
 #include "OpenAIResponsesService.h"
@@ -51,6 +52,18 @@ const QVector<LlmProtocolDescriptor>& LlmProtocolRegistry::descriptors() {
           {QStringLiteral("claude-3-opus-20240229"), 200000}},
          QStringLiteral("ANTHROPIC_API_KEY"), false,
          [](QObject* parent) -> IAIService* { return new AnthropicService(parent); }},
+
+        // 任务 #24（批次四）：Google Gemini 原生 GenerateContent 协议。
+        // 云 provider（local=false）：localOnlyMode 的云 gate 机制现成。
+        {protocolKey(LlmProtocol::kGeminiGenerate), QStringLiteral("gemini"),
+         QStringLiteral("GenerateContent"),
+         QStringLiteral("https://generativelanguage.googleapis.com"),
+         QStringLiteral("gemini-2.5-flash"),
+         {QStringLiteral("gemini-2.5-flash"), QStringLiteral("gemini-2.5-pro")},
+         {{QStringLiteral("gemini-2.5-flash"), 1000000},
+          {QStringLiteral("gemini-2.5-pro"), 1000000}},
+         QStringLiteral("GEMINI_API_KEY"), false,
+         [](QObject* parent) -> IAIService* { return new GeminiService(parent); }},
 
         {protocolKey(LlmProtocol::kOllamaChat), QStringLiteral("ollama"),
          QStringLiteral("Ollama Chat"),

@@ -17,6 +17,7 @@ namespace LlmProtocol {
 inline constexpr auto kOpenaiChat = "openai-chat";
 inline constexpr auto kOpenaiResponses = "openai-responses";
 inline constexpr auto kAnthropicMessages = "anthropic-messages";
+inline constexpr auto kGeminiGenerate = "gemini-generate";
 inline constexpr auto kOllamaChat = "ollama-chat";
 }
 

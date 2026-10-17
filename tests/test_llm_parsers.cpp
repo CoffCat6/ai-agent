@@ -3,6 +3,7 @@
 #include "infrastructure/llm/OpenAIService.h"
 #include "infrastructure/llm/OllamaService.h"
 #include "infrastructure/llm/AnthropicService.h"
+#include "infrastructure/llm/GeminiService.h"
 #include "core/utils/DataUrlUtils.h"
 
 #include <QtTest>
@@ -41,6 +42,15 @@ public:
 class TestableAnthropic : public AnthropicService {
 public:
     using AnthropicService::AnthropicService;
+    void feed(LLMRequestContext& ctx, const QByteArray& line) { processLine(ctx, line); }
+    LLMResponse result(const LLMRequestContext& ctx) const { return streamResult(ctx); }
+    ProviderRequestStatePtr newState() const { return createRequestState(); }
+};
+
+// 任务 #24：Gemini 流式解析同样通过受保护入口手工驱动。
+class TestableGemini : public GeminiService {
+public:
+    using GeminiService::GeminiService;
     void feed(LLMRequestContext& ctx, const QByteArray& line) { processLine(ctx, line); }
     LLMResponse result(const LLMRequestContext& ctx) const { return streamResult(ctx); }
     ProviderRequestStatePtr newState() const { return createRequestState(); }
@@ -135,6 +145,28 @@ private slots:
     void anthropicConvertDropsLeadingAssistant();
     void anthropicParseToolUse();
     void anthropicStreamingUsageCapture();
+
+    // ── Gemini GenerateContent（任务 #24）──────────────
+    void geminiConvertMessages();
+    void geminiConvertToolCalls();
+    void geminiConvertToolResults();
+    void geminiConvertImages();
+    void geminiParseTextAndUsage();
+    void geminiParseToolCall();
+    void geminiParseThoughtAndSafety();
+    void geminiParseError();
+    void geminiThinkingBudgetMapping();
+    void geminiStreamingAccumulation();
+    // 任务 #27：审查修复（M-1/M-2/m-1/m-2/s-2/s-3）配套用例
+    void geminiThinkingBudgetClamping();
+    void geminiConvertPlainTextToolResult();
+    void geminiConvertUnknownToolCallId();
+    void geminiParsePromptFeedbackBlock();
+    void geminiStreamingBlockedUpgrade();
+    void geminiStreamingInBandError();
+    void geminiStreamingPromptFeedbackBlock();
+    void geminiUrlDefense();
+    void geminiChatCompleteRejectsBadModelName();
 
     // ── 思考强度：请求字段映射与思考正文分离 ──────────────
     void openaiReasoningEffortOmittedWhenUnset();
@@ -619,6 +651,537 @@ void TestLlmParsers::ollamaStreamingKeepsThinkingOutOfContent() {
     })"));
     QCOMPARE(full.reasoning, QStringLiteral("because"));
     QCOMPARE(full.content, QStringLiteral("42"));
+}
+
+// ── Gemini GenerateContent（任务 #24）─────────────────────
+
+// system 折叠进 systemInstruction、assistant → model、连续同角色纯文本
+// 轮合并、开头的 model 轮删除（对齐 Anthropic 模板行为）。
+void TestLlmParsers::geminiConvertMessages() {
+    const GeminiService::ConvertedRequest out = GeminiService::convertMessages(arrayOf(R"([
+        {"role": "system", "content": "be brief"},
+        {"role": "system", "content": "and kind"},
+        {"role": "assistant", "content": "stale"},
+        {"role": "user", "content": "question"},
+        {"role": "assistant", "content": "part one"},
+        {"role": "assistant", "content": "part two"},
+        {"role": "user", "content": "again"}
+    ])"));
+
+    QCOMPARE(out.systemInstruction, QStringLiteral("be brief\n\nand kind"));
+    QCOMPARE(out.contents.size(), 3);
+
+    const QJsonObject user = out.contents.at(0).toObject();
+    QCOMPARE(user.value("role").toString(), QStringLiteral("user"));
+    QCOMPARE(user.value("parts").toArray().at(0).toObject()
+                 .value("text").toString(), QStringLiteral("question"));
+
+    // 连续 model 纯文本轮合并成一个 content 的单个 text part
+    const QJsonObject model = out.contents.at(1).toObject();
+    QCOMPARE(model.value("role").toString(), QStringLiteral("model"));
+    const QJsonArray modelParts = model.value("parts").toArray();
+    QCOMPARE(modelParts.size(), 1);
+    QCOMPARE(modelParts.at(0).toObject().value("text").toString(),
+             QStringLiteral("part one\n\npart two"));
+
+    QCOMPARE(out.contents.at(2).toObject().value("parts").toArray().at(0)
+                 .toObject().value("text").toString(), QStringLiteral("again"));
+}
+
+// assistant tool_calls → model 轮的 functionCall parts：arguments JSON
+// 字符串解析为 args 对象；text 与 functionCall 共存于同一轮。
+void TestLlmParsers::geminiConvertToolCalls() {
+    const GeminiService::ConvertedRequest out = GeminiService::convertMessages(arrayOf(R"([
+        {"role": "user", "content": "read it"},
+        {"role": "assistant", "content": "checking",
+         "tool_calls": [
+             {"id": "call_9", "type": "function", "function": {
+                 "name": "read_file",
+                 "arguments": "{\"path\": \"/tmp/a.txt\"}"
+             }},
+             {"id": "call_10", "type": "function", "function": {
+                 "name": "list_dir",
+                 "arguments": "{\"path\": \"/x\"}"
+             }}
+         ]}
+    ])"));
+
+    QCOMPARE(out.contents.size(), 2);
+    const QJsonObject model = out.contents.at(1).toObject();
+    QCOMPARE(model.value("role").toString(), QStringLiteral("model"));
+    const QJsonArray parts = model.value("parts").toArray();
+    QCOMPARE(parts.size(), 3);   // text + 两个 functionCall
+
+    QCOMPARE(parts.at(0).toObject().value("text").toString(), QStringLiteral("checking"));
+
+    const QJsonObject call0 = parts.at(1).toObject().value("functionCall").toObject();
+    QCOMPARE(call0.value("name").toString(), QStringLiteral("read_file"));
+    QCOMPARE(call0.value("args").toObject().value("path").toString(),
+             QStringLiteral("/tmp/a.txt"));
+
+    const QJsonObject call1 = parts.at(2).toObject().value("functionCall").toObject();
+    QCOMPARE(call1.value("name").toString(), QStringLiteral("list_dir"));
+    QCOMPARE(call1.value("args").toObject().value("path").toString(),
+             QStringLiteral("/x"));
+}
+
+// 连续 tool 结果 run-merge 进一个 user content 的多个 functionResponse
+// parts；函数名从历史 assistant tool_calls 按 tool_call_id 反查（tool
+// 消息本身只有 id）。
+void TestLlmParsers::geminiConvertToolResults() {
+    const GeminiService::ConvertedRequest out = GeminiService::convertMessages(arrayOf(R"([
+        {"role": "user", "content": "go"},
+        {"role": "assistant", "content": "", "tool_calls": [
+            {"id": "call_1", "type": "function",
+             "function": {"name": "read_file", "arguments": "{}"}},
+            {"id": "call_2", "type": "function",
+             "function": {"name": "list_dir", "arguments": "{}"}}
+        ]},
+        {"role": "tool", "tool_call_id": "call_1", "content": "{\"lines\": 3}"},
+        {"role": "tool", "tool_call_id": "call_2", "content": "{\"files\": []}"},
+        {"role": "user", "content": "thanks"}
+    ])"));
+
+    QCOMPARE(out.contents.size(), 4);   // user / model(functionCall) / user(结果) / user
+    const QJsonObject resultTurn = out.contents.at(2).toObject();
+    QCOMPARE(resultTurn.value("role").toString(), QStringLiteral("user"));
+    const QJsonArray parts = resultTurn.value("parts").toArray();
+    QCOMPARE(parts.size(), 2);          // 两个结果同轮送达
+
+    const QJsonObject fr0 = parts.at(0).toObject().value("functionResponse").toObject();
+    QCOMPARE(fr0.value("name").toString(), QStringLiteral("read_file"));
+    QCOMPARE(fr0.value("response").toObject().value("lines").toInt(), 3);
+
+    const QJsonObject fr1 = parts.at(1).toObject().value("functionResponse").toObject();
+    QCOMPARE(fr1.value("name").toString(), QStringLiteral("list_dir"));
+    QCOMPARE(fr1.value("response").toObject().value("files").toArray().size(), 0);
+}
+
+// images data URL → inlineData parts（mimeType/data 拆开），text part
+// 在前；无 images 的 user 轮保持纯 text parts。
+void TestLlmParsers::geminiConvertImages() {
+    const QJsonObject user{
+        {"role", "user"},
+        {"content", "what is in this picture?"},
+        {"images", QJsonArray{
+            QStringLiteral("data:image/png;base64,QUJD")
+        }}};
+    const GeminiService::ConvertedRequest out = GeminiService::convertMessages({user});
+
+    QCOMPARE(out.contents.size(), 1);
+    const QJsonArray parts = out.contents.at(0).toObject().value("parts").toArray();
+    QCOMPARE(parts.size(), 2);
+    QCOMPARE(parts.at(0).toObject().value("text").toString(),
+             QStringLiteral("what is in this picture?"));
+    const QJsonObject inlineData = parts.at(1).toObject().value("inlineData").toObject();
+    QCOMPARE(inlineData.value("mimeType").toString(), QStringLiteral("image/png"));
+    QCOMPARE(inlineData.value("data").toString(), QStringLiteral("QUJD"));
+}
+
+// 非流式完整响应：text parts 拼接 + usageMetadata 映射（prompt/
+// candidates/合计含 thoughts）+ finishReason=STOP 正常成功。
+void TestLlmParsers::geminiParseTextAndUsage() {
+    const LLMResponse r = GeminiService::parseResponse(jsonOf(R"({
+        "candidates": [{
+            "content": {"role": "model", "parts": [
+                {"text": "Hello"}, {"text": "!"}
+            ]},
+            "finishReason": "STOP"
+        }],
+        "usageMetadata": {"promptTokenCount": 120, "candidatesTokenCount": 34,
+                          "thoughtsTokenCount": 6}
+    })"));
+    QVERIFY(r.success);
+    QCOMPARE(r.content, QStringLiteral("Hello!"));
+    QVERIFY(r.toolCalls.isEmpty());
+    QCOMPARE(r.promptTokens, 120);
+    QCOMPARE(r.completionTokens, 34);
+    QCOMPARE(r.tokensUsed, 160);   // 120 + 34 + 6
+}
+
+// functionCall parts → ToolCallInfo；Gemini 不返回调用 id，必须合成稳定
+// 的 gemini-call-{序号}（Agent 层按 id 关联工具结果）。
+void TestLlmParsers::geminiParseToolCall() {
+    const LLMResponse r = GeminiService::parseResponse(jsonOf(R"({
+        "candidates": [{
+            "content": {"role": "model", "parts": [
+                {"text": "Let me check."},
+                {"functionCall": {"name": "read_file", "args": {"path": "/tmp/a"}}},
+                {"functionCall": {"name": "list_dir", "args": {"path": "/x"}}}
+            ]},
+            "finishReason": "STOP"
+        }]
+    })"));
+    QVERIFY(r.success);
+    QCOMPARE(r.content, QStringLiteral("Let me check."));
+    QCOMPARE(r.toolCalls.size(), 2);
+    QCOMPARE(r.toolCalls.at(0).id, QStringLiteral("gemini-call-0"));
+    QCOMPARE(r.toolCalls.at(0).name, QStringLiteral("read_file"));
+    QCOMPARE(r.toolCalls.at(0).arguments.value("path").toString(), QStringLiteral("/tmp/a"));
+    QCOMPARE(r.toolCalls.at(1).id, QStringLiteral("gemini-call-1"));
+    QCOMPARE(r.toolCalls.at(1).name, QStringLiteral("list_dir"));
+}
+
+// thought:true 的 parts 走 reasoning 通道、不进 content；SAFETY 拦截且
+// 无任何输出时升级为错误；MAX_TOKENS 截断时保留已有内容正常返回。
+void TestLlmParsers::geminiParseThoughtAndSafety() {
+    const LLMResponse withThought = GeminiService::parseResponse(jsonOf(R"({
+        "candidates": [{
+            "content": {"role": "model", "parts": [
+                {"thought": true, "text": "step by step"},
+                {"text": "answer"}
+            ]},
+            "finishReason": "STOP"
+        }]
+    })"));
+    QVERIFY(withThought.success);
+    QCOMPARE(withThought.reasoning, QStringLiteral("step by step"));
+    QCOMPARE(withThought.content, QStringLiteral("answer"));
+
+    // SAFETY 且无输出：不能静默给空响应
+    const LLMResponse blocked = GeminiService::parseResponse(jsonOf(R"({
+        "candidates": [{
+            "content": {"role": "model", "parts": []},
+            "finishReason": "SAFETY"
+        }]
+    })"));
+    QVERIFY(!blocked.success);
+    QVERIFY(blocked.error.contains(QStringLiteral("SAFETY")));
+
+    // MAX_TOKENS 截断：内容仍有价值，正常返回
+    const LLMResponse truncated = GeminiService::parseResponse(jsonOf(R"({
+        "candidates": [{
+            "content": {"role": "model", "parts": [{"text": "partial"}]},
+            "finishReason": "MAX_TOKENS"
+        }]
+    })"));
+    QVERIFY(truncated.success);
+    QCOMPARE(truncated.content, QStringLiteral("partial"));
+
+    // 无 candidates 的空体：失败而非"成功但空"
+    QVERIFY(!GeminiService::parseResponse(jsonOf("{}")).success);
+}
+
+// 错误体 {"error":{code,message,status}} → success=false，message 带
+// status 后缀（排查 INVALID_ARGUMENT / API_KEY_INVALID 一眼可见）。
+void TestLlmParsers::geminiParseError() {
+    const LLMResponse r = GeminiService::parseResponse(jsonOf(R"({
+        "error": {"code": 400, "message": "API key not valid",
+                  "status": "INVALID_ARGUMENT"}
+    })"));
+    QVERIFY(!r.success);
+    QVERIFY(r.error.contains(QStringLiteral("API key not valid")));
+    QVERIFY(r.error.contains(QStringLiteral("INVALID_ARGUMENT")));
+}
+
+// 思考档位表：与 Anthropic 对齐（low 2048 / medium 8192 / high 16384），
+// off/未设置/未知 → 0（不发 thinkingConfig，服务端默认）。
+void TestLlmParsers::geminiThinkingBudgetMapping() {
+    QCOMPARE(GeminiService::thinkingBudgetFor(QString()), 0);
+    QCOMPARE(GeminiService::thinkingBudgetFor(QStringLiteral("off")), 0);
+    QCOMPARE(GeminiService::thinkingBudgetFor(QStringLiteral("bogus")), 0);
+    QCOMPARE(GeminiService::thinkingBudgetFor(QStringLiteral("low")), 2048);
+    QCOMPARE(GeminiService::thinkingBudgetFor(QStringLiteral("medium")), 8192);
+    QCOMPARE(GeminiService::thinkingBudgetFor(QStringLiteral("high")), 16384);
+}
+
+// 流式路径：text/thought/functionCall 增量 + finishReason 置 done +
+// usageMetadata 累积覆盖 + 通道分离（reasoning 永不进 streamingChunk）。
+void TestLlmParsers::geminiStreamingAccumulation() {
+    TestableGemini svc;
+    LLMRequestContext ctx;
+    ctx.provider = svc.newState();
+    QSignalSpy answer(&svc, &IAIService::streamingChunk);
+    QSignalSpy thought(&svc, &IAIService::reasoningChunk);
+
+    svc.feed(ctx, QByteArrayLiteral(
+        "data: {\"candidates\":[{\"content\":{\"role\":\"model\",\"parts\":"
+        "[{\"thought\":true,\"text\":\"thinking\"}]}}],\"usageMetadata\":"
+        "{\"promptTokenCount\":100,\"candidatesTokenCount\":5}}"));
+    svc.feed(ctx, QByteArrayLiteral(
+        "data: {\"candidates\":[{\"content\":{\"role\":\"model\",\"parts\":"
+        "[{\"text\":\"Hi\"},{\"functionCall\":{\"name\":\"read_file\","
+        "\"args\":{\"path\":\"/a\"}}}]}}],\"usageMetadata\":"
+        "{\"promptTokenCount\":100,\"candidatesTokenCount\":20}}"));
+    svc.feed(ctx, QByteArrayLiteral(
+        "data: {\"candidates\":[{\"content\":{\"role\":\"model\",\"parts\":[]},"
+        "\"finishReason\":\"STOP\"}],\"usageMetadata\":"
+        "{\"promptTokenCount\":100,\"candidatesTokenCount\":25,"
+        "\"thoughtsTokenCount\":10}}"));
+
+    QVERIFY(ctx.doneReceived);
+    const LLMResponse r = svc.result(ctx);
+    QVERIFY(r.success);
+    QCOMPARE(r.reasoning, QStringLiteral("thinking"));
+    QCOMPARE(r.content, QStringLiteral("Hi"));
+    QCOMPARE(r.toolCalls.size(), 1);
+    QCOMPARE(r.toolCalls.at(0).id, QStringLiteral("gemini-call-0"));
+    QCOMPARE(r.toolCalls.at(0).name, QStringLiteral("read_file"));
+    QCOMPARE(r.toolCalls.at(0).arguments.value("path").toString(), QStringLiteral("/a"));
+    // 累积 usageMetadata 取最后一 chunk 的值（覆盖而非累加）
+    QCOMPARE(r.promptTokens, 100);
+    QCOMPARE(r.completionTokens, 25);
+    QCOMPARE(r.tokensUsed, 135);   // 100 + 25 + 10
+    // 通道分离：思考增量只走 reasoningChunk，答案只走 streamingChunk
+    QCOMPARE(answer.count(), 1);
+    QCOMPARE(answer.at(0).at(0).toString(), QStringLiteral("Hi"));
+    QCOMPARE(thought.count(), 1);
+    QCOMPARE(thought.at(0).at(0).toString(), QStringLiteral("thinking"));
+}
+
+// M-1：thinkingBudget 与 maxOutputTokens 共池（Gemini 的输出上限包含
+// 思考 token），档位超上限必须钳制、留不出最低预算必须降级为不发——
+// 宁可少思考，也不能发必 400 的报文。
+void TestLlmParsers::geminiThinkingBudgetClamping() {
+    // medium/high 超过 maxOutputTokens-1024 时钳到上限（4096-1024=3072）
+    QCOMPARE(GeminiService::clampedThinkingBudget(
+                 QStringLiteral("medium"), 4096), 3072);
+    QCOMPARE(GeminiService::clampedThinkingBudget(
+                 QStringLiteral("high"), 4096), 3072);
+    // 档位在池内时原样通过（不误伤正常配置）
+    QCOMPARE(GeminiService::clampedThinkingBudget(
+                 QStringLiteral("low"), 4096), 2048);
+    QCOMPARE(GeminiService::clampedThinkingBudget(
+                 QStringLiteral("medium"), 9216), 8192);
+    QCOMPARE(GeminiService::clampedThinkingBudget(
+                 QStringLiteral("high"), 32768), 16384);
+    // 输出上限连最低预算都留不出来：降级为 0（不发 thinkingConfig）
+    QCOMPARE(GeminiService::clampedThinkingBudget(
+                 QStringLiteral("low"), 1500), 0);
+    QCOMPARE(GeminiService::clampedThinkingBudget(
+                 QStringLiteral("medium"), 1024), 0);
+    // off/未设置/未知档位维持不发
+    QCOMPARE(GeminiService::clampedThinkingBudget(QString(), 4096), 0);
+    QCOMPARE(GeminiService::clampedThinkingBudget(
+                 QStringLiteral("off"), 4096), 0);
+    QCOMPARE(GeminiService::clampedThinkingBudget(
+                 QStringLiteral("bogus"), 4096), 0);
+}
+
+// M-2：Agent 层三条真实路径（用户拒绝授权/重复调用跳过/封口 note）的
+// tool content 是纯文本，必须包装成 {"result": 原文} 而非静默空 {}——
+// 否则模型看不到"用户拒绝"语义可能重复调用被拒工具；合法 JSON 但非
+// 对象（数组）同样包装；JSON 对象内容保持原样透传。
+void TestLlmParsers::geminiConvertPlainTextToolResult() {
+    const QString declined = QStringLiteral(
+        "User declined execution of tool 'read_file'. "
+        "Adapt your plan accordingly.");
+    const QJsonArray messages = QJsonArray{
+        QJsonObject{{"role", "user"}, {"content", "read it"}},
+        QJsonObject{{"role", "assistant"}, {"content", ""},
+            {"tool_calls", QJsonArray{QJsonObject{
+                {"id", "call_1"}, {"type", "function"},
+                {"function", QJsonObject{
+                    {"name", "read_file"}, {"arguments", "{}"}}}
+            }}}},
+        QJsonObject{{"role", "tool"}, {"tool_call_id", "call_1"},
+                    {"content", declined}},
+    };
+    const GeminiService::ConvertedRequest out =
+        GeminiService::convertMessages(messages);
+
+    QCOMPARE(out.contents.size(), 3);
+    const QJsonObject fr = out.contents.at(2).toObject()
+                               .value("parts").toArray().at(0).toObject()
+                               .value("functionResponse").toObject();
+    QCOMPARE(fr.value("name").toString(), QStringLiteral("read_file"));
+    // 纯文本结果包成 {"result": 原文}，模型必须收到拒绝语义
+    QCOMPARE(fr.value("response").toObject().value("result").toString(),
+             declined);
+    QCOMPARE(fr.value("response").toObject().size(), 1);
+
+    // 合法 JSON 但非对象（数组）：同样包装，response 只要对象
+    const GeminiService::ConvertedRequest arr = GeminiService::convertMessages(
+        QJsonArray{
+            QJsonObject{{"role", "user"}, {"content", "go"}},
+            QJsonObject{{"role", "tool"}, {"tool_call_id", "c"},
+                        {"content", "[1, 2]"}},
+        });
+    const QJsonObject frArr = arr.contents.at(1).toObject()
+                                  .value("parts").toArray().at(0).toObject()
+                                  .value("functionResponse").toObject();
+    QCOMPARE(frArr.value("response").toObject().value("result").toString(),
+             QStringLiteral("[1, 2]"));
+}
+
+// s-2 缺口 3：tool_call_id 反查不到历史 assistant tool_calls 时，
+// functionResponse.name 退回 id 本身（报文结构仍可发）。
+void TestLlmParsers::geminiConvertUnknownToolCallId() {
+    const GeminiService::ConvertedRequest out = GeminiService::convertMessages(
+        arrayOf(R"([
+        {"role": "user", "content": "go"},
+        {"role": "tool", "tool_call_id": "ghost_id", "content": "{\"ok\": true}"}
+    ])"));
+    QCOMPARE(out.contents.size(), 2);
+    const QJsonObject fr = out.contents.at(1).toObject()
+                               .value("parts").toArray().at(0).toObject()
+                               .value("functionResponse").toObject();
+    QCOMPARE(fr.value("name").toString(), QStringLiteral("ghost_id"));
+    QCOMPARE(fr.value("response").toObject().value("ok").toBool(), true);
+}
+
+// m-1（非流式）：请求侧安全拦截（无 candidates 无 error，只有
+// promptFeedback.blockReason）报明确错误；s-3：拦截 finishReason 家族
+// 集合判断 + PROHIBITED 零输出也升级为错误。
+void TestLlmParsers::geminiParsePromptFeedbackBlock() {
+    const LLMResponse blocked = GeminiService::parseResponse(jsonOf(
+        R"({"promptFeedback": {"blockReason": "SAFETY"}})"));
+    QVERIFY(!blocked.success);
+    QVERIFY(blocked.error.contains(
+        QStringLiteral("Request blocked by safety filters")));
+    QVERIFY(blocked.error.contains(QStringLiteral("SAFETY")));
+
+    // s-3：六值拦截集合（SAFETY/RECITATION/PROHIBITED/BLOCKLIST/
+    // IMAGE_SAFETY/SPII），正常结束与截断不属于拦截
+    QVERIFY(GeminiService::isBlockedFinishReason(QStringLiteral("SAFETY")));
+    QVERIFY(GeminiService::isBlockedFinishReason(QStringLiteral("RECITATION")));
+    QVERIFY(GeminiService::isBlockedFinishReason(QStringLiteral("PROHIBITED")));
+    QVERIFY(GeminiService::isBlockedFinishReason(QStringLiteral("BLOCKLIST")));
+    QVERIFY(GeminiService::isBlockedFinishReason(QStringLiteral("IMAGE_SAFETY")));
+    QVERIFY(GeminiService::isBlockedFinishReason(QStringLiteral("SPII")));
+    QVERIFY(!GeminiService::isBlockedFinishReason(QStringLiteral("STOP")));
+    QVERIFY(!GeminiService::isBlockedFinishReason(QStringLiteral("MAX_TOKENS")));
+    QVERIFY(!GeminiService::isBlockedFinishReason(QString()));
+
+    // PROHIBITED 零输出：升级为错误而非"成功但空内容"
+    const LLMResponse prohibited = GeminiService::parseResponse(jsonOf(R"({
+        "candidates": [{
+            "content": {"role": "model", "parts": []},
+            "finishReason": "PROHIBITED"
+        }]
+    })"));
+    QVERIFY(!prohibited.success);
+    QVERIFY(prohibited.error.contains(QStringLiteral("PROHIBITED")));
+}
+
+// s-2 缺口 1 + s-3（流式）：拦截型 finishReason 结束流且无任何输出时，
+// streamResult 同样把空响应升级为错误（此前只测了非流式路径）。
+void TestLlmParsers::geminiStreamingBlockedUpgrade() {
+    TestableGemini svc;
+    LLMRequestContext ctx;
+    ctx.provider = svc.newState();
+
+    svc.feed(ctx, QByteArrayLiteral(
+        "data: {\"candidates\":[{\"content\":{\"role\":\"model\",\"parts\":[]},"
+        "\"finishReason\":\"SAFETY\"}]}"));
+    QVERIFY(ctx.doneReceived);
+    const LLMResponse safety = svc.result(ctx);
+    QVERIFY(!safety.success);
+    QVERIFY(safety.error.contains(QStringLiteral("SAFETY")));
+
+    // s-3：PROHIBITED 走同一集合判断
+    LLMRequestContext ctx2;
+    ctx2.provider = svc.newState();
+    svc.feed(ctx2, QByteArrayLiteral(
+        "data: {\"candidates\":[{\"content\":{\"role\":\"model\",\"parts\":[]},"
+        "\"finishReason\":\"PROHIBITED\"}]}"));
+    const LLMResponse prohibited = svc.result(ctx2);
+    QVERIFY(!prohibited.success);
+    QVERIFY(prohibited.error.contains(QStringLiteral("PROHIBITED")));
+}
+
+// s-2 缺口 2：流内 error 事件置 errorEmitted + 发 errorOccurred；同一
+// 流内后续 error 事件不再重复上报（基类回退梯子也据此短路）。
+void TestLlmParsers::geminiStreamingInBandError() {
+    TestableGemini svc;
+    LLMRequestContext ctx;
+    ctx.provider = svc.newState();
+    QSignalSpy errors(&svc, &IAIService::errorOccurred);
+
+    svc.feed(ctx, QByteArrayLiteral(
+        "data: {\"error\":{\"code\":429,\"message\":\"Resource exhausted\","
+        "\"status\":\"RESOURCE_EXHAUSTED\"}}"));
+    QCOMPARE(errors.count(), 1);
+    QVERIFY(errors.at(0).at(0).toString()
+                .contains(QStringLiteral("Resource exhausted")));
+    QVERIFY(errors.at(0).at(0).toString()
+                .contains(QStringLiteral("RESOURCE_EXHAUSTED")));
+    QVERIFY(ctx.errorEmitted);
+
+    // 第二个 error 事件：不重复上报
+    svc.feed(ctx, QByteArrayLiteral(
+        "data: {\"error\":{\"code\":429,\"message\":\"again\","
+        "\"status\":\"RESOURCE_EXHAUSTED\"}}"));
+    QCOMPARE(errors.count(), 1);
+}
+
+// m-1（流式）：请求侧拦截以 chunk 形态出现（无 error 无 candidates，
+// 只有 promptFeedback.blockReason）——同样置 errorEmitted 并报明确的
+// 拦截原因，而不是流结束后落进基类"Empty or invalid response"回退。
+void TestLlmParsers::geminiStreamingPromptFeedbackBlock() {
+    TestableGemini svc;
+    LLMRequestContext ctx;
+    ctx.provider = svc.newState();
+    QSignalSpy errors(&svc, &IAIService::errorOccurred);
+
+    svc.feed(ctx, QByteArrayLiteral(
+        "data: {\"promptFeedback\":{\"blockReason\":\"SAFETY\"}}"));
+    QCOMPARE(errors.count(), 1);
+    QVERIFY(errors.at(0).at(0).toString().contains(
+        QStringLiteral("Request blocked by safety filters")));
+    QVERIFY(errors.at(0).at(0).toString().contains(QStringLiteral("SAFETY")));
+    QVERIFY(ctx.errorEmitted);
+}
+
+// m-2：模型名白名单（trim + [A-Za-z0-9._:~-]）与 baseUrl 尾斜杠防御。
+void TestLlmParsers::geminiUrlDefense() {
+    // trim 后白名单内的名字原样通过（: 给 tag 风格命名、~ 给本地命名）
+    QCOMPARE(GeminiService::sanitizeModelName(
+                 QStringLiteral("  gemini-2.5-flash\n")),
+             QStringLiteral("gemini-2.5-flash"));
+    QCOMPARE(GeminiService::sanitizeModelName(QStringLiteral("my-model:latest")),
+             QStringLiteral("my-model:latest"));
+    QCOMPARE(GeminiService::sanitizeModelName(QStringLiteral("gemini-2.5-pro")),
+             QStringLiteral("gemini-2.5-pro"));
+    // 破坏 URL 结构的字符一律拒绝（? 截断 query、/ 改写 path、空白 %20、
+    // # 截断 fragment）；空/纯空白同样拒绝
+    QVERIFY(GeminiService::sanitizeModelName(
+                 QStringLiteral("gemini?x")).isEmpty());
+    QVERIFY(GeminiService::sanitizeModelName(
+                 QStringLiteral("gemini 2.5")).isEmpty());
+    QVERIFY(GeminiService::sanitizeModelName(
+                 QStringLiteral("gemini/2.5")).isEmpty());
+    QVERIFY(GeminiService::sanitizeModelName(
+                 QStringLiteral("gemini#frag")).isEmpty());
+    QVERIFY(GeminiService::sanitizeModelName(QString()).isEmpty());
+    QVERIFY(GeminiService::sanitizeModelName(
+                 QStringLiteral("   ")).isEmpty());
+
+    const QString expected = QStringLiteral(
+        "https://generativelanguage.googleapis.com/v1beta/models/"
+        "gemini-2.5-flash:streamGenerateContent?alt=sse");
+    // 无尾斜杠：原样拼接
+    QCOMPARE(GeminiService::buildStreamUrl(
+                 QStringLiteral("https://generativelanguage.googleapis.com"),
+                 QStringLiteral("gemini-2.5-flash")),
+             expected);
+    // baseUrl 带尾斜杠（乃至多个）：去重后不再出现 "//v1beta"
+    QCOMPARE(GeminiService::buildStreamUrl(
+                 QStringLiteral("https://generativelanguage.googleapis.com/"),
+                 QStringLiteral("gemini-2.5-flash")),
+             expected);
+    QCOMPARE(GeminiService::buildStreamUrl(
+                 QStringLiteral("https://host//"),
+                 QStringLiteral("m")),
+             QStringLiteral(
+                 "https://host/v1beta/models/m:streamGenerateContent?alt=sse"));
+}
+
+// m-2：模型名含非法字符时 chatComplete 提前 errorOccurred，不发结构
+// 被破坏的 URL 请求。
+void TestLlmParsers::geminiChatCompleteRejectsBadModelName() {
+    TestableGemini svc;
+    svc.setApiKey(QStringLiteral("test-key"));
+    QSignalSpy errors(&svc, &IAIService::errorOccurred);
+
+    svc.setModel(QStringLiteral("bad model/name"));
+    svc.chatComplete(QJsonArray{
+        QJsonObject{{"role", "user"}, {"content", "hi"}}});
+    QCOMPARE(errors.count(), 1);
+    QVERIFY(errors.at(0).at(0).toString()
+                .contains(QStringLiteral("Invalid Gemini model name")));
+    QVERIFY(errors.at(0).at(0).toString()
+                .contains(QStringLiteral("bad model/name")));
 }
 
 QTEST_GUILESS_MAIN(TestLlmParsers)

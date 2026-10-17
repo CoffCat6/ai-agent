@@ -755,6 +755,9 @@ void SettingsService::removeModelFromProfile(const QString& id, const QString& m
 QString SettingsService::providerDisplayName(const QString& provider) const {
     if (provider == QLatin1String("openai")) return tr("OpenAI 兼容");
     if (provider == QLatin1String("ollama")) return tr("Ollama 本地");
+    // 任务 #24：gemini 必须显式分支——兜底返回 "Claude"，不加的话
+    // Gemini 配置的芯片会显示成 Claude。
+    if (provider == QLatin1String("gemini")) return tr("Gemini");
     return tr("Claude");
 }
 

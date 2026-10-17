@@ -60,6 +60,9 @@ Item {
     readonly property var kindOptions: [
         { kind: "openai",    label: qsTr("OpenAI 兼容") },
         { kind: "anthropic", label: qsTr("Claude") },
+        // 任务 #24（批次四）：Gemini 原生 GenerateContent 协议。协议/端点/
+        // 模型预设来自注册表（endpointOptions 动态驱动），这里只补来源项。
+        { kind: "gemini",    label: qsTr("Gemini") },
         { kind: "ollama",    label: qsTr("Ollama 本地") },
         { kind: "custom",    label: qsTr("自定义网关") }
     ]
@@ -102,6 +105,8 @@ Item {
             return qsTr("例如 https://my-gateway.example.com/v1")
         if (page.editingKind === "anthropic")
             return "https://api.anthropic.com"
+        if (page.editingKind === "gemini")
+            return "https://generativelanguage.googleapis.com"
         if (page.isOllama)
             return "http://localhost:11434"
         return "https://api.openai.com/v1"
@@ -111,6 +116,8 @@ Item {
             return qsTr("网关上真实在跑的模型名，例如 glm-4")
         if (page.editingKind === "anthropic")
             return "claude-sonnet-4-5"
+        if (page.editingKind === "gemini")
+            return "gemini-2.5-flash"
         if (page.isOllama)
             return "qwen2.5:7b"
         return "gpt-4o-mini"
@@ -118,6 +125,8 @@ Item {
     readonly property string apiKeyEnvVar: {
         if (page.editingKind === "anthropic")
             return "ANTHROPIC_API_KEY"
+        if (page.editingKind === "gemini")
+            return "GEMINI_API_KEY"
         return "OPENAI_API_KEY"
     }
     readonly property string apiKeyPlaceholder: page.isCustom
