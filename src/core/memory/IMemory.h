@@ -182,6 +182,24 @@ public:
         return 0;
     }
 
+    // Usage activity timeline (optional capability; default no-ops).
+    // loadUsageEvents enumerates recent usage_log rows, newest first
+    // (id DESC); `limit` caps the number of rows returned. Each item is
+    // a map with:
+    //   timestamp  qint64 (epoch ms)
+    //   category   "nexus.user" / "nexus.agent" / "nexus.network"
+    //   action     short event name (e.g. "session.create", "llm_result")
+    //   target     target id/name (may be empty)
+    //   requestId  double (0 when uncorrelated)
+    //   detail     one-line metadata (may be empty)
+    // Privacy contract (Activity.h): metadata only — action, target
+    // id/name, sizes, ids; never prompt text, document content or API
+    // keys.
+    virtual QJsonArray loadUsageEvents(int limit = 500) const {
+        Q_UNUSED(limit);
+        return {};
+    }
+
     // M1 (stats): aggregate token/cost statistics from the audit trail
     // (optional capability; default empty). The task_complete audit rows are
     // the only place real token counts land. Returns a map with

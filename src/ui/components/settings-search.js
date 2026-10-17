@@ -60,6 +60,9 @@ var handIndex = [
     { title: QT_TRANSLATE_NOOP("SettingsSearch", "配额设置"), category: "usage", keywords: "配额 token 费用 每日 每月 超限 quota" },
     { title: QT_TRANSLATE_NOOP("SettingsSearch", "用量统计"), category: "usage", keywords: "用量 统计 消耗 成本 成本明细" },
 
+    // ── 活动记录 ─────────────────────────────────────────
+    { title: QT_TRANSLATE_NOOP("SettingsSearch", "活动记录"), category: "activity", keywords: "活动 轨迹 usage 操作 记录 audit trail 时间线" },
+
     // ── 设置与备份 ───────────────────────────────────────
     { title: QT_TRANSLATE_NOOP("SettingsSearch", "设置导出与导入"), category: "backup", keywords: "导出 导入 备份 json 设置" },
     { title: QT_TRANSLATE_NOOP("SettingsSearch", "数据库备份"), category: "backup", keywords: "数据库 备份 恢复 快照 sqlite 预览" }

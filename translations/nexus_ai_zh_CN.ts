@@ -2,6 +2,106 @@
 <!DOCTYPE TS>
 <TS version="2.1" language="zh_CN">
 <context>
+    <name>ActivityLogPage</name>
+    <message>
+        <location filename="../src/ui/pages/ActivityLogPage.qml" line="18"/>
+        <source>活动记录页</source>
+        <translation>活动记录页</translation>
+    </message>
+    <message>
+        <location filename="../src/ui/pages/ActivityLogPage.qml" line="19"/>
+        <source>浏览用户操作、智能体活动与网络请求的使用轨迹</source>
+        <translation>浏览用户操作、智能体活动与网络请求的使用轨迹</translation>
+    </message>
+    <message>
+        <location filename="../src/ui/pages/ActivityLogPage.qml" line="54"/>
+        <source>用户</source>
+        <translation>用户</translation>
+    </message>
+    <message>
+        <location filename="../src/ui/pages/ActivityLogPage.qml" line="55"/>
+        <location filename="../src/ui/pages/ActivityLogPage.qml" line="150"/>
+        <source>智能体</source>
+        <translation>智能体</translation>
+    </message>
+    <message>
+        <location filename="../src/ui/pages/ActivityLogPage.qml" line="56"/>
+        <location filename="../src/ui/pages/ActivityLogPage.qml" line="150"/>
+        <source>网络</source>
+        <translation>网络</translation>
+    </message>
+    <message>
+        <location filename="../src/ui/pages/ActivityLogPage.qml" line="58"/>
+        <source>未知</source>
+        <translation>未知</translation>
+    </message>
+    <message>
+        <location filename="../src/ui/pages/ActivityLogPage.qml" line="89"/>
+        <source>活动记录</source>
+        <translation>活动记录</translation>
+    </message>
+    <message>
+        <location filename="../src/ui/pages/ActivityLogPage.qml" line="96"/>
+        <source>浏览操作与网络请求的使用轨迹。仅记录操作元数据（操作类型、对象、结果），不包含对话内容、文档内容与 API 密钥。</source>
+        <translation>浏览操作与网络请求的使用轨迹。仅记录操作元数据（操作类型、对象、结果），不包含对话内容、文档内容与 API 密钥。</translation>
+    </message>
+    <message>
+        <location filename="../src/ui/pages/ActivityLogPage.qml" line="150"/>
+        <source>全部</source>
+        <translation>全部</translation>
+    </message>
+    <message>
+        <location filename="../src/ui/pages/ActivityLogPage.qml" line="150"/>
+        <source>用户操作</source>
+        <translation>用户操作</translation>
+    </message>
+    <message>
+        <location filename="../src/ui/pages/ActivityLogPage.qml" line="153"/>
+        <source>活动类别筛选</source>
+        <translation>活动类别筛选</translation>
+    </message>
+    <message>
+        <location filename="../src/ui/pages/ActivityLogPage.qml" line="158"/>
+        <source>过滤操作 / 对象 / 说明…</source>
+        <translation>过滤操作 / 对象 / 说明…</translation>
+    </message>
+    <message>
+        <location filename="../src/ui/pages/ActivityLogPage.qml" line="171"/>
+        <source>过滤活动记录关键词</source>
+        <translation>过滤活动记录关键词</translation>
+    </message>
+    <message>
+        <location filename="../src/ui/pages/ActivityLogPage.qml" line="175"/>
+        <source>共 %1 条</source>
+        <translation>共 %1 条</translation>
+    </message>
+    <message>
+        <location filename="../src/ui/pages/ActivityLogPage.qml" line="181"/>
+        <source>刷新</source>
+        <translation>刷新</translation>
+    </message>
+    <message>
+        <location filename="../src/ui/pages/ActivityLogPage.qml" line="183"/>
+        <source>刷新活动记录</source>
+        <translation>刷新活动记录</translation>
+    </message>
+    <message>
+        <location filename="../src/ui/pages/ActivityLogPage.qml" line="203"/>
+        <source>暂无活动记录</source>
+        <translation>暂无活动记录</translation>
+    </message>
+    <message>
+        <location filename="../src/ui/pages/ActivityLogPage.qml" line="204"/>
+        <source>无匹配的活动记录</source>
+        <translation>无匹配的活动记录</translation>
+    </message>
+    <message>
+        <location filename="../src/ui/pages/ActivityLogPage.qml" line="230"/>
+        <source>—</source>
+        <translation>—</translation>
+    </message>
+</context>
+<context>
     <name>AgentChatPage</name>
     <message>
         <location filename="../src/ui/pages/AgentChatPage.qml" line="24"/>
@@ -1916,52 +2016,52 @@
 <context>
     <name>NexusAI</name>
     <message>
-        <location filename="../src/core/utils/SettingsSchema.cpp" line="81"/>
+        <location filename="../src/core/utils/SettingsSchema.cpp" line="82"/>
         <source>主题模式</source>
         <translation>主题模式</translation>
     </message>
     <message>
-        <location filename="../src/core/utils/SettingsSchema.cpp" line="88"/>
+        <location filename="../src/core/utils/SettingsSchema.cpp" line="89"/>
         <source>正文字体</source>
         <translation>正文字体</translation>
     </message>
     <message>
-        <location filename="../src/core/utils/SettingsSchema.cpp" line="91"/>
+        <location filename="../src/core/utils/SettingsSchema.cpp" line="92"/>
         <source>等宽字体</source>
         <translation>等宽字体</translation>
     </message>
     <message>
-        <location filename="../src/core/utils/SettingsSchema.cpp" line="94"/>
+        <location filename="../src/core/utils/SettingsSchema.cpp" line="95"/>
         <source>基础字号</source>
         <translation>基础字号</translation>
     </message>
     <message>
-        <location filename="../src/core/utils/SettingsSchema.cpp" line="102"/>
+        <location filename="../src/core/utils/SettingsSchema.cpp" line="103"/>
         <source>侧边栏默认宽度</source>
         <translation>侧边栏默认宽度</translation>
     </message>
     <message>
-        <location filename="../src/core/utils/SettingsSchema.cpp" line="105"/>
+        <location filename="../src/core/utils/SettingsSchema.cpp" line="106"/>
         <source>面板默认宽度</source>
         <translation>面板默认宽度</translation>
     </message>
     <message>
-        <location filename="../src/core/utils/SettingsSchema.cpp" line="108"/>
+        <location filename="../src/core/utils/SettingsSchema.cpp" line="109"/>
         <source>侧边栏默认展开</source>
         <translation>侧边栏默认展开</translation>
     </message>
     <message>
-        <location filename="../src/core/utils/SettingsSchema.cpp" line="111"/>
+        <location filename="../src/core/utils/SettingsSchema.cpp" line="112"/>
         <source>面板默认展开</source>
         <translation>面板默认展开</translation>
     </message>
     <message>
-        <location filename="../src/core/utils/SettingsSchema.cpp" line="114"/>
+        <location filename="../src/core/utils/SettingsSchema.cpp" line="115"/>
         <source>启动时恢复窗口</source>
         <translation>启动时恢复窗口</translation>
     </message>
     <message>
-        <location filename="../src/core/utils/SettingsSchema.cpp" line="97"/>
+        <location filename="../src/core/utils/SettingsSchema.cpp" line="98"/>
         <source>界面语言</source>
         <translation>界面语言</translation>
     </message>
@@ -1997,21 +2097,26 @@
     </message>
     <message>
         <location filename="../src/core/utils/SettingsSchema.cpp" line="70"/>
+        <source>活动记录</source>
+        <translation>活动记录</translation>
+    </message>
+    <message>
+        <location filename="../src/core/utils/SettingsSchema.cpp" line="71"/>
         <source>设置与备份</source>
         <translation>设置与备份</translation>
     </message>
     <message>
-        <location filename="../src/core/utils/SettingsSchema.cpp" line="117"/>
+        <location filename="../src/core/utils/SettingsSchema.cpp" line="118"/>
         <source>关闭时最小化到系统托盘</source>
         <translation>关闭时最小化到系统托盘</translation>
     </message>
     <message>
-        <location filename="../src/core/utils/SettingsSchema.cpp" line="120"/>
+        <location filename="../src/core/utils/SettingsSchema.cpp" line="121"/>
         <source>开机自启动</source>
         <translation>开机自启动</translation>
     </message>
     <message>
-        <location filename="../src/core/utils/SettingsSchema.cpp" line="123"/>
+        <location filename="../src/core/utils/SettingsSchema.cpp" line="124"/>
         <source>系统通知</source>
         <translation>系统通知</translation>
     </message>
@@ -2030,7 +2135,7 @@
         <translation>用量统计</translation>
     </message>
     <message>
-        <location filename="../src/core/utils/SettingsSchema.cpp" line="78"/>
+        <location filename="../src/core/utils/SettingsSchema.cpp" line="79"/>
         <source>上次访问分类</source>
         <translation>上次访问分类</translation>
     </message>
@@ -2097,8 +2202,8 @@
     <message>
         <location filename="../src/viewmodels/AgentViewModel.cpp" line="287"/>
         <location filename="../src/viewmodels/AgentViewModel.cpp" line="485"/>
-        <location filename="../src/viewmodels/AgentViewModel.cpp" line="1648"/>
-        <location filename="../src/viewmodels/AgentViewModel.cpp" line="1709"/>
+        <location filename="../src/viewmodels/AgentViewModel.cpp" line="1679"/>
+        <location filename="../src/viewmodels/AgentViewModel.cpp" line="1740"/>
         <source>新会话</source>
         <translation>新会话</translation>
     </message>
@@ -2237,27 +2342,27 @@
         <translation>无法读取 PDF 文件：%1</translation>
     </message>
     <message>
-        <location filename="../src/viewmodels/AgentViewModel.cpp" line="1692"/>
+        <location filename="../src/viewmodels/AgentViewModel.cpp" line="1723"/>
         <source>这个会话还没有可分叉的历史记录。</source>
         <translation>这个会话还没有可分叉的历史记录。</translation>
     </message>
     <message>
-        <location filename="../src/viewmodels/AgentViewModel.cpp" line="1697"/>
+        <location filename="../src/viewmodels/AgentViewModel.cpp" line="1728"/>
         <source>这条回答还没有存进会话记录，稍等一下再试。</source>
         <translation>这条回答还没有存进会话记录，稍等一下再试。</translation>
     </message>
     <message>
-        <location filename="../src/viewmodels/AgentViewModel.cpp" line="1715"/>
+        <location filename="../src/viewmodels/AgentViewModel.cpp" line="1746"/>
         <source>%1（分支）</source>
         <translation>%1（分支）</translation>
     </message>
     <message>
-        <location filename="../src/viewmodels/AgentViewModel.cpp" line="1717"/>
+        <location filename="../src/viewmodels/AgentViewModel.cpp" line="1748"/>
         <source>%1（分支%2）</source>
         <translation>%1（分支%2）</translation>
     </message>
     <message>
-        <location filename="../src/viewmodels/AgentViewModel.cpp" line="1721"/>
+        <location filename="../src/viewmodels/AgentViewModel.cpp" line="1752"/>
         <source>无法创建分叉出来的会话，请重试。</source>
         <translation>无法创建分叉出来的会话，请重试。</translation>
     </message>
@@ -2342,17 +2447,17 @@
         <translation>恢复失败，原数据库已还原</translation>
     </message>
     <message>
-        <location filename="../src/viewmodels/AgentViewModel.cpp" line="1532"/>
+        <location filename="../src/viewmodels/AgentViewModel.cpp" line="1563"/>
         <source>文件过大（附件上限 %1 KB）：%2</source>
         <translation>文件过大（附件上限 %1 KB）：%2</translation>
     </message>
     <message>
-        <location filename="../src/viewmodels/AgentViewModel.cpp" line="1537"/>
+        <location filename="../src/viewmodels/AgentViewModel.cpp" line="1568"/>
         <source>暂不支持二进制文件作为附件：%1</source>
         <translation>暂不支持二进制文件作为附件：%1</translation>
     </message>
     <message>
-        <location filename="../src/viewmodels/AgentViewModel.cpp" line="1550"/>
+        <location filename="../src/viewmodels/AgentViewModel.cpp" line="1581"/>
         <source>已忽略 %1 个不支持的文件类型（仅支持图片与文本文件）</source>
         <translation>已忽略 %1 个不支持的文件类型（仅支持图片与文本文件）</translation>
     </message>
@@ -3292,19 +3397,19 @@
         <translation>没有匹配「%1」的设置</translation>
     </message>
     <message>
-        <location filename="../src/ui/components/SettingsCenterDialog.qml" line="369"/>
-        <location filename="../src/ui/components/SettingsCenterDialog.qml" line="422"/>
+        <location filename="../src/ui/components/SettingsCenterDialog.qml" line="378"/>
+        <location filename="../src/ui/components/SettingsCenterDialog.qml" line="431"/>
         <source>恢复默认</source>
         <translation>恢复默认</translation>
     </message>
     <message>
         <location filename="../src/ui/components/SettingsCenterDialog.qml" line="160"/>
-        <location filename="../src/ui/components/SettingsCenterDialog.qml" line="380"/>
+        <location filename="../src/ui/components/SettingsCenterDialog.qml" line="389"/>
         <source>关闭</source>
         <translation>关闭</translation>
     </message>
     <message>
-        <location filename="../src/ui/components/SettingsCenterDialog.qml" line="418"/>
+        <location filename="../src/ui/components/SettingsCenterDialog.qml" line="427"/>
         <source>取消</source>
         <translation>取消</translation>
     </message>
@@ -3333,7 +3438,7 @@
         <translation type="vanished">放弃</translation>
     </message>
     <message>
-        <location filename="../src/ui/components/SettingsCenterDialog.qml" line="403"/>
+        <location filename="../src/ui/components/SettingsCenterDialog.qml" line="412"/>
         <source>确认将当前分类的配置项恢复为默认值？</source>
         <translation>确认将当前分类的配置项恢复为默认值？</translation>
     </message>
@@ -3465,11 +3570,16 @@
     </message>
     <message>
         <location filename="../src/ui/components/settings-search.js" line="64"/>
+        <source>活动记录</source>
+        <translation>活动记录</translation>
+    </message>
+    <message>
+        <location filename="../src/ui/components/settings-search.js" line="67"/>
         <source>设置导出与导入</source>
         <translation>设置导出与导入</translation>
     </message>
     <message>
-        <location filename="../src/ui/components/settings-search.js" line="65"/>
+        <location filename="../src/ui/components/settings-search.js" line="68"/>
         <source>数据库备份</source>
         <translation>数据库备份</translation>
     </message>
@@ -3562,7 +3672,7 @@
     <message>
         <location filename="../src/ui/components/Sidebar.qml" line="781"/>
         <location filename="../src/ui/components/Sidebar.qml" line="913"/>
-        <location filename="../src/ui/components/Sidebar.qml" line="1258"/>
+        <location filename="../src/ui/components/Sidebar.qml" line="1262"/>
         <source>新会话</source>
         <translation>新会话</translation>
     </message>
@@ -3704,12 +3814,12 @@
         <translation>需要点击两次确认</translation>
     </message>
     <message>
-        <location filename="../src/ui/components/Sidebar.qml" line="1278"/>
+        <location filename="../src/ui/components/Sidebar.qml" line="1283"/>
         <source>会话 %1，%2 条命中</source>
         <translation>会话 %1，%2 条命中</translation>
     </message>
     <message>
-        <location filename="../src/ui/components/Sidebar.qml" line="1339"/>
+        <location filename="../src/ui/components/Sidebar.qml" line="1344"/>
         <source>%1 条命中</source>
         <translation>%1 条命中</translation>
     </message>
@@ -3724,7 +3834,7 @@
     </message>
     <message>
         <location filename="../src/ui/components/Sidebar.qml" line="1169"/>
-        <location filename="../src/ui/components/Sidebar.qml" line="1263"/>
+        <location filename="../src/ui/components/Sidebar.qml" line="1267"/>
         <source>已归档 · </source>
         <translation>已归档 · </translation>
     </message>
@@ -3743,42 +3853,42 @@
         <translation type="vanished">助手</translation>
     </message>
     <message>
-        <location filename="../src/ui/components/Sidebar.qml" line="1411"/>
+        <location filename="../src/ui/components/Sidebar.qml" line="1417"/>
         <source>日志</source>
         <translation>日志</translation>
     </message>
     <message>
-        <location filename="../src/ui/components/Sidebar.qml" line="1419"/>
+        <location filename="../src/ui/components/Sidebar.qml" line="1425"/>
         <source>审计日志</source>
         <translation>审计日志</translation>
     </message>
     <message>
-        <location filename="../src/ui/components/Sidebar.qml" line="1427"/>
+        <location filename="../src/ui/components/Sidebar.qml" line="1433"/>
         <source>设置 (Ctrl+,)</source>
         <translation>设置 (Ctrl+,)</translation>
     </message>
     <message>
-        <location filename="../src/ui/components/Sidebar.qml" line="1480"/>
+        <location filename="../src/ui/components/Sidebar.qml" line="1486"/>
         <source>深色模式</source>
         <translation>深色模式</translation>
     </message>
     <message>
-        <location filename="../src/ui/components/Sidebar.qml" line="1482"/>
+        <location filename="../src/ui/components/Sidebar.qml" line="1488"/>
         <source>当前为深色主题，按回车切换到浅色</source>
         <translation>当前为深色主题，按回车切换到浅色</translation>
     </message>
     <message>
-        <location filename="../src/ui/components/Sidebar.qml" line="1483"/>
+        <location filename="../src/ui/components/Sidebar.qml" line="1489"/>
         <source>当前为浅色主题，按回车切换到深色</source>
         <translation>当前为浅色主题，按回车切换到深色</translation>
     </message>
     <message>
-        <location filename="../src/ui/components/Sidebar.qml" line="1499"/>
+        <location filename="../src/ui/components/Sidebar.qml" line="1505"/>
         <source>Markdown (*.md)</source>
         <translation>Markdown (*.md)</translation>
     </message>
     <message>
-        <location filename="../src/ui/components/Sidebar.qml" line="1499"/>
+        <location filename="../src/ui/components/Sidebar.qml" line="1505"/>
         <source>JSON (*.json)</source>
         <translation>JSON (*.json)</translation>
     </message>
@@ -3831,7 +3941,7 @@
         <translation>昨天</translation>
     </message>
     <message>
-        <location filename="../src/core/memory/SqliteMemory.cpp" line="1286"/>
+        <location filename="../src/core/memory/SqliteMemory.cpp" line="1293"/>
         <source>消息库超过 %1 条：少于 3 个字符的关键词只能全表扫描，请输入至少 3 个字符以使用全文索引。</source>
         <translation>消息库超过 %1 条：少于 3 个字符的关键词只能全表扫描，请输入至少 3 个字符以使用全文索引。</translation>
     </message>
@@ -4604,6 +4714,10 @@
         <translation>超限拒绝请求</translation>
     </message>
     <message>
+        <source>浏览操作与网络请求的使用轨迹。仅记录操作元数据（操作类型、对象、结果），不包含对话内容、文档内容与 API 密钥。</source>
+        <translation type="vanished">浏览操作与网络请求的使用轨迹。仅记录操作元数据（操作类型、对象、结果），不包含对话内容、文档内容与 API 密钥。</translation>
+    </message>
+    <message>
         <location filename="../src/ui/pages/UsageStatsPage.qml" line="278"/>
         <source>累计费用</source>
         <translation>累计费用</translation>
@@ -4623,6 +4737,62 @@
         <location filename="../src/ui/pages/UsageStatsPage.qml" line="453"/>
         <source>输出</source>
         <translation>输出</translation>
+    </message>
+    <message>
+        <source>用户</source>
+        <translation type="vanished">用户</translation>
+    </message>
+    <message>
+        <source>智能体</source>
+        <translation type="vanished">智能体</translation>
+    </message>
+    <message>
+        <source>网络</source>
+        <translation type="vanished">网络</translation>
+    </message>
+    <message>
+        <source>活动记录</source>
+        <translation type="vanished">活动记录</translation>
+    </message>
+    <message>
+        <source>浏览操作与网络请求的使用轨迹。仅记录操作元数据（操作类型、对象、结果），不包含对话内容与文档内容。</source>
+        <translation type="vanished">浏览操作与网络请求的使用轨迹。仅记录操作元数据（操作类型、对象、结果），不包含对话内容与文档内容。</translation>
+    </message>
+    <message>
+        <source>全部</source>
+        <translation type="vanished">全部</translation>
+    </message>
+    <message>
+        <source>用户操作</source>
+        <translation type="vanished">用户操作</translation>
+    </message>
+    <message>
+        <source>活动类别筛选</source>
+        <translation type="vanished">活动类别筛选</translation>
+    </message>
+    <message>
+        <source>过滤操作 / 对象 / 说明…</source>
+        <translation type="vanished">过滤操作 / 对象 / 说明…</translation>
+    </message>
+    <message>
+        <source>过滤活动记录关键词</source>
+        <translation type="vanished">过滤活动记录关键词</translation>
+    </message>
+    <message>
+        <source>共 %1 条</source>
+        <translation type="vanished">共 %1 条</translation>
+    </message>
+    <message>
+        <source>刷新活动记录</source>
+        <translation type="vanished">刷新活动记录</translation>
+    </message>
+    <message>
+        <source>暂无活动记录</source>
+        <translation type="vanished">暂无活动记录</translation>
+    </message>
+    <message>
+        <source>无匹配的活动记录</source>
+        <translation type="vanished">无匹配的活动记录</translation>
     </message>
     <message>
         <location filename="../src/ui/pages/UsageStatsPage.qml" line="345"/>

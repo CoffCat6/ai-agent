@@ -1354,6 +1354,29 @@ QVariantList episodesToVariantList(const QJsonArray& arr) {
     }
     return out;
 }
+
+// usage_log 活动时间线：usage events 的 JSON 字段名即 QML 契约
+// （timestamp/category/action/target/requestId/detail —— 完整契约见
+// IMemory::loadUsageEvents），此处只做 QJsonArray → QVariantList 的容器
+// 转换与字段透传，不做重命名（区别于 episodes 的 snake_case → camelCase
+// 映射）。UsageStatsPage.qml 的 delegate 按 modelData.* 直接消费这些
+// 字段名，签名与字段名不可偏离。
+QVariantList usageEventsToVariantList(const QJsonArray& arr) {
+    QVariantList out;
+    out.reserve(arr.size());
+    for (const QJsonValue& v : arr) {
+        const QJsonObject o = v.toObject();
+        out.append(QVariantMap{
+            {QStringLiteral("timestamp"), o.value(QStringLiteral("timestamp")).toVariant()},
+            {QStringLiteral("category"), o.value(QStringLiteral("category")).toString()},
+            {QStringLiteral("action"), o.value(QStringLiteral("action")).toString()},
+            {QStringLiteral("target"), o.value(QStringLiteral("target")).toString()},
+            {QStringLiteral("requestId"), o.value(QStringLiteral("requestId")).toVariant()},
+            {QStringLiteral("detail"), o.value(QStringLiteral("detail")).toString()},
+        });
+    }
+    return out;
+}
 } // namespace
 
 QVariantList AgentViewModel::listEpisodic(int limit) {
@@ -1388,6 +1411,14 @@ int AgentViewModel::clearEpisodic() {
         emit episodicChanged();
     }
     return removed;
+}
+
+// usage_log 活动时间线：设置中心「用量统计」页“活动记录”区块的数据源。
+// 本 VM 持有 IMemory*，数据经 IMemory::loadUsageEvents 虚方法接线
+// （SqliteMemory override）；纯只读透传，不产生状态变化与信号。
+QVariantList AgentViewModel::listUsageEvents(int limit) const {
+    if (!m_memory) return {};
+    return usageEventsToVariantList(m_memory->loadUsageEvents(limit));
 }
 
 QVariantMap AgentViewModel::tokenStats(int recentDays) {

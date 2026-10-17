@@ -118,6 +118,10 @@ private slots:
     void workspaceIdColumnReserved();
     // 日志增强: usage trail persistence (Batch 12 前日志增强)
     void usageLogRoundTripAndPrune();
+    // usage timeline: AgentViewModel 持有 IMemory*，loadUsageEvents 必须经
+    // 接口虚方法接线——若 SqliteMemory 的签名漂移（如丢失 const）只是
+    // hide 而非 override，接口调用会拿默认空数组。
+    void usageEventsReachableThroughInterface();
     // Batch 17: cross-session message search (FEAT-1701/1702)
     void searchMessagesFindsAcrossSessions();
     void searchMessagesSyncsOnDelete();
@@ -746,6 +750,52 @@ void TestMemory::usageLogRoundTripAndPrune() {
     QCOMPARE(memory.loadUsageEvents(100).size(), before + 1);
     QVERIFY(memory.loadUsageEvents(100).at(0).toObject().value("detail")
                 .toString().isEmpty());
+}
+
+// AgentViewModel holds an IMemory*, so the usage timeline must come back
+// through the interface pointer: if SqliteMemory::loadUsageEvents merely
+// hid the base virtual (signature drift, e.g. a missing const), the
+// interface call would return the default empty array. Rows written via
+// the concrete class must read back through IMemory*, newest first.
+void TestMemory::usageEventsReachableThroughInterface() {
+    SqliteMemory memory(":memory:");
+    memory.addUsageEvent(QStringLiteral("nexus.user"),
+                         QStringLiteral("session.create"),
+                         QStringLiteral("s1"),
+                         quint64{42},
+                         QStringLiteral("count=1"));
+    memory.addUsageEvent(QStringLiteral("nexus.network"),
+                         QStringLiteral("llm_result"),
+                         QStringLiteral("https://api.example.com/v1"),
+                         quint64{43},
+                         QString());
+
+    IMemory* iface = &memory;
+    const QJsonArray events = iface->loadUsageEvents(500);
+    QCOMPARE(events.size(), 2);
+
+    // Newest first (id DESC), full field contract on both rows.
+    const QJsonObject newest = events.at(0).toObject();
+    QCOMPARE(newest.value("action").toString(), QStringLiteral("llm_result"));
+    QCOMPARE(newest.value("category").toString(), QStringLiteral("nexus.network"));
+    QCOMPARE(newest.value("target").toString(),
+             QStringLiteral("https://api.example.com/v1"));
+    QCOMPARE(newest.value("requestId").toDouble(), 43.0);
+    QVERIFY(newest.value("timestamp").toVariant().toLongLong() > 0);
+    QVERIFY(newest.value("detail").toString().isEmpty());
+
+    const QJsonObject oldest = events.at(1).toObject();
+    QCOMPARE(oldest.value("action").toString(), QStringLiteral("session.create"));
+    QCOMPARE(oldest.value("category").toString(), QStringLiteral("nexus.user"));
+    QCOMPARE(oldest.value("target").toString(), QStringLiteral("s1"));
+    QCOMPARE(oldest.value("requestId").toDouble(), 42.0);
+    QCOMPARE(oldest.value("detail").toString(), QStringLiteral("count=1"));
+
+    // Interface-path limit semantics: caps rows, keeps the newest.
+    const QJsonArray capped = iface->loadUsageEvents(1);
+    QCOMPARE(capped.size(), 1);
+    QCOMPARE(capped.at(0).toObject().value("action").toString(),
+             QStringLiteral("llm_result"));
 }
 
 // Batch 17: the trigram FTS path must answer 3+ char CJK/ASCII substring

@@ -338,6 +338,15 @@ Dialog {
                     visible: active
                     source: "qrc:/qt/qml/NexusAI/src/ui/pages/UsageStatsPage.qml"
                 }
+
+                Loader {
+                    anchors.fill: parent
+                    // 同 usage：绑定 opened，关闭即销毁，重开重新拉取
+                    // usage_log，时间线不停留在旧值。
+                    active: dialog.currentCategory === "activity" && dialog.opened
+                    visible: active
+                    source: "qrc:/qt/qml/NexusAI/src/ui/pages/ActivityLogPage.qml"
+                }
                 }   // ── 分类页包裹层（搜索时隐藏）──
             }
         }

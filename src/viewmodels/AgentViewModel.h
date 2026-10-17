@@ -451,6 +451,12 @@ public:
     Q_INVOKABLE QVariantList searchEpisodic(const QString& keyword, int limit = 50);
     Q_INVOKABLE bool removeEpisodic(qint64 id);
     Q_INVOKABLE int clearEpisodic();
+    // usage_log 活动时间线（设置中心「用量统计」页的“活动记录”区块）：
+    // 透传 IMemory::loadUsageEvents（契约注释见 IMemory.h）。每项为 map：
+    // timestamp(qint64 ms) / category / action / target / requestId(double) /
+    // detail，按 id DESC 最新在前；limit 为返回条数上限（默认 500）。
+    // UsageStatsPage.qml 的 delegate 按这些 modelData.* 字段名消费，不可偏离。
+    Q_INVOKABLE QVariantList listUsageEvents(int limit = 500) const;
     // M1 (stats): token/cost aggregation for the usage page.
     Q_INVOKABLE QVariantMap tokenStats(int recentDays = 30);
     // docs/16 §8: detailed aggregates for the extended usage page.

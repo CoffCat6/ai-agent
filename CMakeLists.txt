@@ -254,6 +254,7 @@ qt_add_qml_module(nexus_ai
         src/ui/pages/ToolsPage.qml
         src/ui/pages/MemoryPage.qml
         src/ui/pages/UsageStatsPage.qml
+        src/ui/pages/ActivityLogPage.qml
         src/ui/pages/SettingsBackupPage.qml
 )
 

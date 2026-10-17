@@ -11,6 +11,7 @@
 #include "core/rag/KnowledgeSearchTool.h"
 #include "infrastructure/llm/IAIService.h"
 #include "core/utils/TokenEstimator.h"
+#include "viewmodels/AgentViewModel.h"
 
 #include <QSet>
 #include <QSemaphore>
@@ -591,6 +592,9 @@ private slots:
     // docs/25 B3: a slow embedder is bounded by the launch deadline — the
     // task starts anyway and the late retrieval result must not relaunch.
     void taskWithSlowEmbedderStillLaunches();
+    // 审查 M2（任务 #12）：VM 层 QVariantMap 键名契约——QML delegate 消费的
+    // modelData.* 字段名不可偏离（AgentViewModel.h 注释的机器验证）。
+    void listUsageEventsExposesFieldContract();
 };
 
 void TestAgent::directCompletion() {
@@ -2511,6 +2515,75 @@ void TestAgent::taskWithSlowEmbedderStillLaunches() {
 
     agent.setEpisodicService(nullptr);
     agent.setMemory(nullptr);
+}
+
+// 审查 M2（任务 #12）：VM 层 QVariantMap 键名契约。QML delegate 直接消费
+// modelData.timestamp/category/action/target/requestId/detail；若 VM 转换层
+// usageEventsToVariantList 的键名被误改（如套用同文件 episodesToVariantList
+// 的 snake_case → camelCase 映射习惯），QML 会静默显示空白字段，而既有
+// test_memory 用例只断言到 QJsonObject 层、不会红。本用例经 AgentViewModel
+// 全链路（setMemory → listUsageEvents）对键集合、类型、排序与 limit 语义
+// 做机器验证。
+void TestAgent::listUsageEventsExposesFieldContract() {
+    SqliteMemory memory(QStringLiteral(":memory:"));
+    memory.addUsageEvent(QStringLiteral("nexus.user"),
+                         QStringLiteral("session.create"),
+                         QStringLiteral("s1"),
+                         quint64{7},
+                         QStringLiteral("count=1"));
+    memory.addUsageEvent(QStringLiteral("nexus.network"),
+                         QStringLiteral("llm_result"),
+                         QStringLiteral("https://api.example.com/v1"),
+                         quint64{8},
+                         QString());
+
+    AgentViewModel vm(nullptr);
+    vm.setMemory(&memory);
+
+    const QVariantList events = vm.listUsageEvents(500);
+    QCOMPARE(events.size(), 2);
+
+    // 键集合精确断言：恰好六个键——多键、漏键、改名都红。
+    const QSet<QString> expectedKeys{
+        QStringLiteral("timestamp"), QStringLiteral("category"),
+        QStringLiteral("action"),    QStringLiteral("target"),
+        QStringLiteral("requestId"), QStringLiteral("detail"),
+    };
+    for (const QVariant& v : events) {
+        const QVariantMap e = v.toMap();
+        QCOMPARE(QSet<QString>(e.keyBegin(), e.keyEnd()), expectedKeys);
+    }
+
+    // 类型契约 + 最新在前（id DESC）。数值字段：timestamp 为 epoch ms、
+    // requestId 为数值；字符串字段：category/action/target/detail。
+    const QVariantMap newest = events.at(0).toMap();
+    QCOMPARE(newest.value(QStringLiteral("category")).toString(),
+             QStringLiteral("nexus.network"));
+    QCOMPARE(newest.value(QStringLiteral("action")).toString(),
+             QStringLiteral("llm_result"));
+    QCOMPARE(newest.value(QStringLiteral("target")).toString(),
+             QStringLiteral("https://api.example.com/v1"));
+    QVERIFY(newest.value(QStringLiteral("detail")).toString().isEmpty());
+    QVERIFY(newest.value(QStringLiteral("timestamp")).canConvert<qint64>());
+    QVERIFY(newest.value(QStringLiteral("timestamp")).toLongLong() > 0);
+    QCOMPARE(newest.value(QStringLiteral("requestId")).toDouble(), 8.0);
+
+    const QVariantMap oldest = events.at(1).toMap();
+    QCOMPARE(oldest.value(QStringLiteral("action")).toString(),
+             QStringLiteral("session.create"));
+    QCOMPARE(oldest.value(QStringLiteral("requestId")).toDouble(), 7.0);
+    QCOMPARE(oldest.value(QStringLiteral("detail")).toString(),
+             QStringLiteral("count=1"));
+
+    // 排序：id DESC 下 timestamp 非升（同一毫秒连写允许相等）。
+    QVERIFY(newest.value(QStringLiteral("timestamp")).toLongLong()
+            >= oldest.value(QStringLiteral("timestamp")).toLongLong());
+
+    // limit 语义：截断后保留最新的那一条。
+    const QVariantList capped = vm.listUsageEvents(1);
+    QCOMPARE(capped.size(), 1);
+    QCOMPARE(capped.at(0).toMap().value(QStringLiteral("action")).toString(),
+             QStringLiteral("llm_result"));
 }
 
 QTEST_GUILESS_MAIN(TestAgent)

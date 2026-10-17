@@ -46,7 +46,14 @@ target_compile_definitions(test_rag PRIVATE
     NEXUS_TEST_RESOURCES_DIR="${CMAKE_CURRENT_SOURCE_DIR}/resources")
 add_test(NAME test_rag COMMAND test_rag)
 
-nexus_add_test(test_agent test_agent.cpp)
+# 任务 #12（审查 M2）：VM 层字段契约用例构造 AgentViewModel，它 lives in
+# nexus_viewmodels（nexus_add_test 只链 core+infra，见上 test_viewmodel 同因
+# 单列）。用例本身仍不依赖 QML/Quick，链接集与 test_viewmodel 一致。
+add_executable(test_agent test_agent.cpp)
+target_link_libraries(test_agent PRIVATE
+    nexus_core nexus_infra nexus_viewmodels Qt6::Test)
+target_compile_definitions(test_agent PRIVATE NEXUSAI_TESTING)
+add_test(NAME test_agent COMMAND test_agent)
 
 # Provider lifecycle tests drive real HTTP through a scripted loopback server
 add_executable(test_provider_lifecycle test_provider_lifecycle.cpp)

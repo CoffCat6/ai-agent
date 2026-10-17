@@ -136,10 +136,13 @@ public:
     // ── Usage trail (跨会话用户操作与网络事件, Batch 12 前日志增强) ──
     // Structured usage events (Activity facade → this sink). Retained under
     // the 30-day / 10000-row policy enforced by pruneUsage at startup.
+    // loadUsageEvents is promoted to the IMemory interface (usage timeline
+    // page): the signature must stay identical to the virtual, including
+    // the trailing const, or it would hide instead of override.
     void addUsageEvent(const QString& category, const QString& action,
                        const QString& target, quint64 requestId,
                        const QString& detail);
-    QJsonArray loadUsageEvents(int limit = 500) const;
+    QJsonArray loadUsageEvents(int limit = 500) const override;
     // Delete rows older than keepDays OR beyond maxRows (newest kept).
     // Returns the number of rows removed.
     int pruneUsage(int keepDays = 30, int maxRows = 10000);
