@@ -3,6 +3,7 @@
 // local HTTP server so success, progress accounting and fail-fast behavior
 // are all covered without a real Ollama instance.
 #include "infrastructure/embed/OllamaEmbedding.h"
+#include "infrastructure/embed/OpenAICompatibleEmbedding.h"
 
 #include <QHostAddress>
 #include <QNetworkProxy>
@@ -128,6 +129,140 @@ QStringList makeTexts(int n) {
         texts.append(QStringLiteral("text %1").arg(i));
     return texts;
 }
+
+// OpenAI-compatible fake (task #16): answers /v1/embeddings with
+// {"data": [{"index": i, "embedding": [...]}]}. Vector values are encoded
+// from the index (vec[d] = index + 1 + d*0.25) so request-order correctness
+// is assertable even when data comes back shuffled; the request path and
+// Authorization header are recorded for the URL-joining/Bearer cases.
+class FakeOpenAIEmbedServer : public QObject {
+    Q_OBJECT
+public:
+    explicit FakeOpenAIEmbedServer(int dim, QObject* parent = nullptr)
+        : QObject(parent), m_dim(dim) {
+        QObject::connect(&m_server, &QTcpServer::newConnection, this, [this]() {
+            while (QTcpSocket* socket = m_server.nextPendingConnection()) {
+                QObject::connect(socket, &QTcpSocket::disconnected, socket,
+                                 &QTcpSocket::deleteLater);
+                QObject::connect(socket, &QTcpSocket::readyRead, this, [this, socket]() {
+                    QByteArray& buffer = m_buffer[socket];
+                    buffer += socket->readAll();
+                    if (!requestComplete(buffer)) return;
+                    const int headerEnd = buffer.indexOf("\r\n\r\n");
+                    recordRequest(buffer.left(headerEnd),
+                                  buffer.mid(headerEnd + 4));
+                    buffer.clear();
+                    ++m_requests;
+                    // docs/24 H5: fail the first N requests with HTTP 500
+                    // (transport-error retry coverage).
+                    if (m_requests <= m_failFirstRequests) {
+                        socket->write("HTTP/1.1 500 Internal Server Error\r\n"
+                                      "Content-Length: 0\r\n"
+                                      "Connection: close\r\n\r\n");
+                        socket->flush();
+                        socket->disconnectFromHost();
+                        return;
+                    }
+                    respond(socket);
+                });
+            }
+        });
+        if (!m_server.listen(QHostAddress::LocalHost))
+            qWarning() << "FakeOpenAIEmbedServer listen failed:"
+                       << m_server.errorString();
+    }
+
+    QString baseUrl() const {
+        return QStringLiteral("http://127.0.0.1:%1").arg(m_server.serverPort());
+    }
+    // docs/24 H5: fail the first N requests with HTTP 500.
+    void setFailFirstRequests(int n) { m_failFirstRequests = n; }
+    // 稳定乱序：data 按 index 降序返回（index 归位逻辑可断言）。
+    void setReverseIndices(bool reverse) { m_reverseIndices = reverse; }
+    // 协议错误注入：HTTP 200 但响应不写 data。
+    void setDropData(bool drop) { m_dropData = drop; }
+    // 协议错误注入：data 条数相对 input 的偏移（负数=少几条）。
+    void setCountOffset(int offset) { m_countOffset = offset; }
+    int requests() const { return m_requests; }
+    const QString& lastPath() const { return m_lastPath; }
+    const QString& lastAuthorization() const { return m_lastAuthorization; }
+
+private:
+    static bool requestComplete(const QByteArray& buffer) {
+        const int headerEnd = buffer.indexOf("\r\n\r\n");
+        if (headerEnd < 0) return false;
+        int contentLength = 0;
+        const QList<QByteArray> lines = buffer.left(headerEnd).split('\n');
+        for (const QByteArray& line : lines) {
+            if (line.toLower().startsWith("content-length:")) {
+                contentLength = line.mid(15).trimmed().toInt();
+                break;
+            }
+        }
+        return buffer.size() - (headerEnd + 4) >= contentLength;
+    }
+
+    // 请求行（"POST /v1/embeddings HTTP/1.1"）取路径；头里找 Authorization；
+    // body 的 input 兼容单条（字符串）与批量（数组）两种形态。
+    void recordRequest(const QByteArray& head, const QByteArray& bodyBytes) {
+        const QByteArray requestLine = head.left(head.indexOf("\r\n"));
+        const QList<QByteArray> parts = requestLine.split(' ');
+        m_lastPath = parts.size() > 1 ? QString::fromLatin1(parts.at(1))
+                                      : QString();
+        m_lastAuthorization.clear();
+        const QList<QByteArray> lines = head.split('\n');
+        for (const QByteArray& line : lines) {
+            if (line.toLower().startsWith("authorization:"))
+                m_lastAuthorization = QString::fromLatin1(line.mid(14).trimmed());
+        }
+        const QJsonDocument doc = QJsonDocument::fromJson(bodyBytes);
+        const QJsonValue input = doc.object().value("input");
+        m_inputCount = input.isString() ? 1
+                                         : static_cast<int>(input.toArray().size());
+    }
+
+    void respond(QTcpSocket* socket) {
+        QJsonObject body;
+        if (!m_dropData) {
+            const int count = m_inputCount + m_countOffset;
+            QJsonArray data;
+            for (int i = 0; i < count; ++i) {
+                // 乱序形态：data 数组顺序与 index 相反；向量值仍按真实
+                // index 编码，客户端按 index 归位后顺序必须与请求一致。
+                const int index = m_reverseIndices ? (count - 1 - i) : i;
+                QJsonArray vec;
+                for (int d = 0; d < m_dim; ++d)
+                    vec.append(index + 1 + d * 0.25);
+                QJsonObject item;
+                item["index"] = index;
+                item["embedding"] = vec;
+                data.append(item);
+            }
+            body["data"] = data;
+        }
+        const QByteArray payload =
+            QJsonDocument(body).toJson(QJsonDocument::Compact);
+        socket->write("HTTP/1.1 200 OK\r\n"
+                      "Content-Type: application/json\r\n"
+                      "Content-Length: " + QByteArray::number(payload.size()) + "\r\n"
+                      "Connection: close\r\n"
+                      "\r\n" + payload);
+        socket->flush();
+        socket->disconnectFromHost();
+    }
+
+    QTcpServer m_server;
+    QHash<QTcpSocket*, QByteArray> m_buffer;
+    int m_dim;
+    int m_failFirstRequests{0};
+    int m_countOffset{0};
+    int m_requests{0};
+    int m_inputCount{0};
+    bool m_reverseIndices{false};
+    bool m_dropData{false};
+    QString m_lastPath;
+    QString m_lastAuthorization;
+};
 
 } // namespace
 
@@ -261,6 +396,122 @@ private slots:
         QCOMPARE(result.size(), 2);
         QCOMPARE(server.requests(), 2);
         QCOMPARE(progress.count(), 1);   // progress only after success
+    }
+
+    // ── OpenAICompatibleEmbedding（外部向量模型，任务 #16）──
+
+    // 单条 embed：OpenAI 格式响应解析 + model() 的 "openai:" 前缀标识
+    // （切换后端时旧持久化 chunk 依此失效，向量空间不混用）。
+    void openaiSingleEmbedParsesResponse() {
+        FakeOpenAIEmbedServer server(4);
+        OpenAICompatibleEmbedding embed;
+        embed.setBaseUrl(server.baseUrl());
+        embed.setModel(QStringLiteral("text-embedding-3-small"));
+        QCOMPARE(embed.model(), QStringLiteral("openai:text-embedding-3-small"));
+
+        const QVector<float> vec = embed.embed(QStringLiteral("hello"));
+        QCOMPARE(vec.size(), 4);
+        // fake 的向量按 index 编码：vec[d] = index + 1 + d*0.25（index=0）
+        QCOMPARE(vec.at(0), 1.0f);
+        QCOMPARE(vec.at(1), 1.25f);
+        QCOMPARE(vec.at(3), 1.75f);
+    }
+
+    // Bearer 鉴权头 + URL 拼接容错：baseUrl 带/不带 /v1、带尾斜杠三种
+    // 形态都必须命中 .../v1/embeddings。
+    void openaiBearerHeaderAndUrlJoining() {
+        FakeOpenAIEmbedServer server(2);
+        OpenAICompatibleEmbedding embed;
+        embed.setApiKey(QStringLiteral("sk-test-123"));
+
+        // ① baseUrl 不带 /v1 → 拼 /v1/embeddings
+        embed.setBaseUrl(server.baseUrl());
+        QVERIFY(!embed.embed(QStringLiteral("a")).isEmpty());
+        QCOMPARE(server.lastPath(), QStringLiteral("/v1/embeddings"));
+        QCOMPARE(server.lastAuthorization(), QStringLiteral("Bearer sk-test-123"));
+
+        // ② baseUrl 已带 /v1 → 不再重复拼（不能出现 /v1/v1/embeddings）
+        embed.setBaseUrl(server.baseUrl() + QStringLiteral("/v1"));
+        QVERIFY(!embed.embed(QStringLiteral("b")).isEmpty());
+        QCOMPARE(server.lastPath(), QStringLiteral("/v1/embeddings"));
+
+        // ③ 尾部多余斜杠 → 归一后拼接
+        embed.setBaseUrl(server.baseUrl() + QStringLiteral("/"));
+        QVERIFY(!embed.embed(QStringLiteral("c")).isEmpty());
+        QCOMPARE(server.lastPath(), QStringLiteral("/v1/embeddings"));
+        QCOMPARE(server.requests(), 3);
+    }
+
+    // key 为空：仍发请求（部分兼容网关无鉴权；让服务端 401 拒绝），
+    // 且请求不带 Authorization 头。
+    void openaiEmptyKeyStillSendsRequest() {
+        FakeOpenAIEmbedServer server(2);
+        OpenAICompatibleEmbedding embed;
+        embed.setBaseUrl(server.baseUrl());
+
+        QVERIFY(!embed.embed(QStringLiteral("x")).isEmpty());
+        QCOMPARE(server.lastAuthorization(), QString());
+        QCOMPARE(server.requests(), 1);
+    }
+
+    // 批量：data 乱序返回（index 降序）时按 index 归位，结果顺序必须
+    // 与请求一致（协议不保证服务端保序，实测部分网关乱序返回）。
+    void openaiBatchShuffledIndicesReordered() {
+        FakeOpenAIEmbedServer server(2);
+        server.setReverseIndices(true);
+        OpenAICompatibleEmbedding embed;
+        embed.setBaseUrl(server.baseUrl());
+
+        const QVector<QVector<float>> result = embed.embedBatch(makeTexts(3));
+        QCOMPARE(result.size(), 3);
+        QCOMPARE(result.at(0).at(0), 1.0f);   // 第 1 条输入 → index 0 向量
+        QCOMPARE(result.at(1).at(0), 2.0f);   // 第 2 条输入 → index 1 向量
+        QCOMPARE(result.at(2).at(0), 3.0f);   // 第 3 条输入 → index 2 向量
+    }
+
+    // 协议错误 fail-fast（对齐 OllamaEmbedding 语义，docs/24 H5）：HTTP
+    // 200 但 data 缺失 / 数量不符 → 空容器，不重试。
+    void openaiBatchProtocolErrorsFailFast() {
+        {   // 响应缺 data
+            FakeOpenAIEmbedServer server(2);
+            server.setDropData(true);
+            OpenAICompatibleEmbedding embed;
+            embed.setBaseUrl(server.baseUrl());
+            QVERIFY(embed.embedBatch(makeTexts(2)).isEmpty());
+            QCOMPARE(server.requests(), 1);   // fail-fast：无第二次请求
+        }
+        {   // data 数量与 input 不符
+            FakeOpenAIEmbedServer server(2);
+            server.setCountOffset(-1);
+            OpenAICompatibleEmbedding embed;
+            embed.setBaseUrl(server.baseUrl());
+            QVERIFY(embed.embedBatch(makeTexts(3)).isEmpty());
+        }
+    }
+
+    // docs/24 H5 对齐：批级传输错误重试一次（500ms 退避），单次瞬时故障
+    // 不再把整篇文档永久降级为伪向量。
+    void openaiBatchTransportErrorRetriedOnce() {
+        FakeOpenAIEmbedServer server(2);
+        server.setFailFirstRequests(1);
+        OpenAICompatibleEmbedding embed;
+        embed.setBaseUrl(server.baseUrl());
+
+        QSignalSpy progress(&embed, &OpenAICompatibleEmbedding::embedProgress);
+        const QVector<QVector<float>> result = embed.embedBatch(makeTexts(2));
+        QCOMPARE(result.size(), 2);
+        QCOMPARE(server.requests(), 2);   // 一次失败 + 一次重试成功
+        QCOMPARE(progress.count(), 1);    // 进度只在批成功后报告
+    }
+
+    // splitBatches 静态方法与 Ollama 版语义一致（FEAT-803 分页边界）。
+    void openaiSplitBatchesBoundaries() {
+        QVERIFY(OpenAICompatibleEmbedding::splitBatches({}, 32).isEmpty());
+        const QStringList texts = makeTexts(33);
+        const auto batches = OpenAICompatibleEmbedding::splitBatches(texts, 32);
+        QCOMPARE(batches.size(), 2);
+        QCOMPARE(batches.at(0).size(), 32);
+        QCOMPARE(batches.at(1).size(), 1);
     }
 };
 

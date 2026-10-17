@@ -50,6 +50,10 @@ public:
         loggingRetentionFiles = s.value("logging/retentionFiles");
         embeddingModel = s.value("embedding/model");
         embeddingBaseUrl = s.value("embedding/baseUrl");
+        // 任务 #20：embedding provider/apiKey 行为测试需要守卫这两个键
+        // （对齐 webSearch/provider、webSearch/apiKey 的守卫先例）。
+        embeddingProvider = s.value("embedding/provider");
+        embeddingApiKey = s.value("embedding/apiKey");
         allowFullDiskRead = s.value("security/allowFullDiskRead");
         localOnlyMode = s.value("security/localOnlyMode");
         allowLocalNetworkFetch = s.value("security/allowLocalNetworkFetch");
@@ -88,6 +92,12 @@ public:
         else s.remove("embedding/model");
         if (embeddingBaseUrl.isValid()) s.setValue("embedding/baseUrl", embeddingBaseUrl);
         else s.remove("embedding/baseUrl");
+        if (embeddingProvider.isValid())
+            s.setValue("embedding/provider", embeddingProvider);
+        else s.remove("embedding/provider");
+        if (embeddingApiKey.isValid())
+            s.setValue("embedding/apiKey", embeddingApiKey);
+        else s.remove("embedding/apiKey");
         if (allowFullDiskRead.isValid())
             s.setValue("security/allowFullDiskRead", allowFullDiskRead);
         else s.remove("security/allowFullDiskRead");
@@ -142,6 +152,8 @@ public:
     QVariant loggingRetentionFiles;
     QVariant embeddingModel;
     QVariant embeddingBaseUrl;
+    QVariant embeddingProvider;
+    QVariant embeddingApiKey;
     QVariant allowFullDiskRead;
     QVariant localOnlyMode;
     QVariant allowLocalNetworkFetch;
@@ -737,7 +749,8 @@ private slots:
             "security/allowFullDiskRead", "security/allowProjectWrite",
             "security/localOnlyMode", "security/allowLocalNetworkFetch",
             "security/readDenyList", "projects/activeId",
-            "embedding/model", "embedding/baseUrl", "agent/systemPromptOverride",
+            "embedding/model", "embedding/baseUrl", "embedding/provider",
+            "embedding/apiKey", "agent/systemPromptOverride",
             "logging/level", "logging/directory", "logging/maxFileSizeMb",
             "logging/retentionFiles", "webSearch/provider", "webSearch/apiKey",
             "webSearch/searxBaseUrl", "memory/episodicMemoryEnabled",
@@ -1262,6 +1275,108 @@ ComboBox {
         svc.setWebSearchProvider(QStringLiteral("google"));
         QCOMPARE(spy.count(), 0);
         QCOMPARE(svc.webSearchProvider(), QStringLiteral("tavily"));
+    }
+
+    // 任务 #20（Mj1）：embedding provider 的 L4 守卫——合法键持久化并
+    // 发射信号；未知键拒绝（值不变、无信号、落盘不动），对齐
+    // webSearchProviderRejectsUnknownKey 的先例写法。
+    void embeddingProviderRejectsUnknownKey() {
+        SettingsGuard guard;
+        {
+            QSettings s("NexusAI", "NexusAI");
+            s.remove("embedding/provider");   // 构造后回落 schema 默认 "ollama"
+        }
+        SettingsService svc(nullptr);
+        QCOMPARE(svc.embeddingProvider(), QStringLiteral("ollama"));
+        // 合法键：值生效、信号发射、落盘同步。
+        QSignalSpy okSpy(&svc, &SettingsService::embeddingProviderChanged);
+        svc.setEmbeddingProvider(QStringLiteral("openai"));
+        QCOMPARE(okSpy.count(), 1);
+        QCOMPARE(svc.embeddingProvider(), QStringLiteral("openai"));
+        {
+            QSettings s("NexusAI", "NexusAI");
+            QCOMPARE(s.value("embedding/provider").toString(),
+                     QStringLiteral("openai"));
+        }
+        // 未知键：拒绝——值保持不变、无信号。
+        QSignalSpy rejectSpy(&svc, &SettingsService::embeddingProviderChanged);
+        svc.setEmbeddingProvider(QStringLiteral("bogus"));
+        QCOMPARE(rejectSpy.count(), 0);
+        QCOMPARE(svc.embeddingProvider(), QStringLiteral("openai"));
+        {
+            QSettings s("NexusAI", "NexusAI");
+            QCOMPARE(s.value("embedding/provider").toString(),
+                     QStringLiteral("openai"));
+        }
+    }
+
+    // 任务 #20（Mj1）：embedding API key 的 DPAPI 往返与空串清除；顺带
+    // 断言真实值出口（embeddingApiKeyValue，修 B1）与掩码 getter（恒空）
+    // 的区分，以及 webSearchApiKeyValue（修 Mj2）的同构往返——此前两者
+    // 均零测试覆盖。
+    void embeddingApiKeyRoundTripAndClear() {
+        SettingsGuard guard;
+        {
+            QSettings s("NexusAI", "NexusAI");
+            s.remove("embedding/apiKey");
+            s.remove("webSearch/apiKey");
+        }
+        {
+            // 写入：掩码 getter 恒空（QML 掩码语义），真实值出口返回
+            // 内存值；落盘必须是 DPAPI 密文（绝不等于明文）。
+            SettingsService svc(nullptr);
+            svc.setEmbeddingApiKey(QStringLiteral("k1"));
+            QCOMPARE(svc.embeddingApiKey(), QString());
+            QVERIFY(svc.embeddingApiKeySet());
+            QCOMPARE(svc.embeddingApiKeyValue(), QStringLiteral("k1"));
+            svc.setWebSearchApiKey(QStringLiteral("k1"));
+            QCOMPARE(svc.webSearchApiKey(), QString());
+            QVERIFY(svc.webSearchApiKeySet());
+            QCOMPARE(svc.webSearchApiKeyValue(), QStringLiteral("k1"));
+#ifdef Q_OS_WIN
+            QSettings s("NexusAI", "NexusAI");
+            const QString stored = s.value("embedding/apiKey").toString();
+            QVERIFY(stored.startsWith(QStringLiteral("dpapi:v1:")));
+            QVERIFY(stored != QStringLiteral("k1"));
+#endif
+        }
+        // 新实例 load：DPAPI 解密回填，真实值出口取回明文（往返成立）。
+        {
+            SettingsService svc2(nullptr);
+            QCOMPARE(svc2.embeddingApiKeyValue(), QStringLiteral("k1"));
+            QCOMPARE(svc2.webSearchApiKeyValue(), QStringLiteral("k1"));
+        }
+        // 空串清除：apiKeySet 归零、落盘为空；新实例确认读回为空。
+        {
+            SettingsService svc3(nullptr);
+            QVERIFY(svc3.embeddingApiKeySet());
+            svc3.setEmbeddingApiKey(QString());
+            QVERIFY(!svc3.embeddingApiKeySet());
+            QCOMPARE(svc3.embeddingApiKeyValue(), QString());
+            {
+                QSettings s("NexusAI", "NexusAI");
+                QVERIFY(s.value("embedding/apiKey").toString().isEmpty());
+            }
+            SettingsService svc4(nullptr);
+            QVERIFY(!svc4.embeddingApiKeySet());
+            QCOMPARE(svc4.embeddingApiKeyValue(), QString());
+        }
+    }
+
+    // 任务 #20（Mj1）：localOnlyMode 拦截决策（批次三设计决策 2）的纯
+    // 函数四组合——main.cpp applyEmbeddingConfig 的后端切换与此同源。
+    void embeddingProviderLocalOnlyDecision() {
+        // 纯本地模式开启：外部请求被拦截，回退本地 Ollama。
+        QCOMPARE(SettingsService::embeddingUsesExternalProvider(
+                     QStringLiteral("openai"), true), false);
+        // 关闭：外部 provider 生效。
+        QCOMPARE(SettingsService::embeddingUsesExternalProvider(
+                     QStringLiteral("openai"), false), true);
+        // 本地 provider 与纯本地模式无关，恒走本地。
+        QCOMPARE(SettingsService::embeddingUsesExternalProvider(
+                     QStringLiteral("ollama"), true), false);
+        QCOMPARE(SettingsService::embeddingUsesExternalProvider(
+                     QStringLiteral("ollama"), false), false);
     }
 
     // L2: SettingsSchema key registry is populated and contains known keys.

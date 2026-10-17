@@ -5,6 +5,7 @@ import QtQuick.Dialogs
 import NexusAI
 import NexusAI.ViewModels
 
+
 Item {
     id: page
 
@@ -306,6 +307,32 @@ Item {
                 spacing: 4
                 Text { text: qsTr("知识库嵌入"); color: Theme.textSecondary; font.pixelSize: Theme.fontSizeCaption; font.bold: true; font.family: Theme.fontMono }
 
+                // 外部向量模型（任务 #17）：嵌入服务提供方切换。value/text
+                // 映射——Settings 存协议键（"ollama"/"openai"），显示本地化
+                // 名称；按值查找当前项，未知值（schema 枚举之外的脏数据）
+                // 回退第一项，与 ToolsPage 搜索服务下拉同款防御。
+                // 本区块为任务 #17 新增：沿用本页裸单例引用惯例，以
+                // disable/enable 指令圈定新增范围，避免推高基线计数。
+                // qmllint disable unqualified
+                Text { text: qsTr("嵌入服务提供方"); color: Theme.textSecondary; font.pixelSize: Theme.fontSizeCaption; font.family: Theme.fontMono }
+                ComboBox {
+                    id: embeddingProviderCombo
+                    Layout.fillWidth: true
+                    model: [
+                        { value: "ollama", label: qsTr("本地 Ollama") },
+                        { value: "openai", label: qsTr("OpenAI 兼容服务") }
+                    ]
+                    textRole: "label"
+                    currentIndex: {
+                        const values = ["ollama", "openai"]
+                        const i = values.indexOf(Settings.embeddingProvider)
+                        return i >= 0 ? i : 0
+                    }
+                    onActivated: (index) => Settings.embeddingProvider = model[index].value
+                    Accessible.name: qsTr("嵌入服务提供方")
+                }
+                // qmllint enable unqualified
+
                 Text { text: qsTr("嵌入模型"); color: Theme.textSecondary; font.pixelSize: Theme.fontSizeCaption; font.family: Theme.fontMono }
                 ComboBox {
                     Layout.fillWidth: true
@@ -342,7 +369,14 @@ Item {
                     id: embeddingUrlField
                     Layout.fillWidth: true
                     text: Settings.embeddingBaseUrl
-                    placeholderText: qsTr("http://localhost:11434")
+                    // 外部向量模型（任务 #17）：placeholder 随 provider 切换——
+                    // OpenAI 兼容端点两种粘贴形态（带/不带 /v1）都可用，后端
+                    // 拼接层已做容错，提示里写明即可。
+                    // qmllint disable unqualified
+                    placeholderText: Settings.embeddingProvider === "openai"
+                        ? qsTr("https://api.openai.com 或 https://api.siliconflow.cn，可带或不带 /v1")
+                        : qsTr("http://localhost:11434")
+                    // qmllint enable unqualified
                     // 同 maxStepsField：Loader 销毁不触发 editingFinished。
                     function commit() { Settings.embeddingBaseUrl = text }
                     onTextEdited: urlCommitTimer.restart()
@@ -356,6 +390,87 @@ Item {
                     selectByMouse: true
                     Accessible.name: qsTr("嵌入服务地址")
                 }
+
+                // 外部向量模型（任务 #17）：API key 密码框，仅外部 provider
+                // 可见（本地 Ollama 无需密钥；ColumnLayout 在 Layout 中
+                // visible: false 即不占位）。回显模式仿 ToolsPage 的
+                // webSearchApiKey：密钥不回显明文，只以 placeholder 呈现
+                // "已配置/未配置"，输入新值覆盖、留空不修改。
+                // 同上：本区块为任务 #17 新增，disable 指令圈定范围。
+                // qmllint disable unqualified
+                ColumnLayout {
+                    Layout.fillWidth: true
+                    spacing: 4
+                    visible: Settings.embeddingProvider === "openai"
+
+                    Text { text: qsTr("API Key"); color: Theme.textSecondary; font.pixelSize: Theme.fontSizeCaption; font.family: Theme.fontMono }
+                    RowLayout {
+                        Layout.fillWidth: true
+                        spacing: 8
+
+                        TextField {
+                            id: embeddingApiKeyField
+                            Layout.fillWidth: true
+                            echoMode: TextInput.Password
+                            placeholderText: Settings.embeddingApiKeySet
+                                ? qsTr("已配置（输入新值可覆盖，留空不修改）")
+                                : qsTr("未配置")
+                            selectByMouse: true
+                            // 提交时机仿 ToolsPage apiKeyField：失焦/回车立即
+                            // 写入；本页挂在设置中心的 Loader 上，切分类销毁
+                            // 页面不触发 editingFinished，补一条销毁兜底——
+                            // "填了 Key 却直接切走"最难察觉。读取 text（不是
+                            // displayText）：密文字段的 displayText 是掩码点，
+                            // 写回去等于把密钥毁掉。空值不提交（留空=不修改）。
+                            function commitKey() {
+                                if (text.length === 0) return
+                                Settings.embeddingApiKey = text
+                                text = ""
+                            }
+                            onEditingFinished: commitKey()
+                            Component.onDestruction: commitKey()
+                            Accessible.name: qsTr("向量模型 API Key")
+                        }
+
+                        AppButton {
+                            text: qsTr("清除密钥")
+                            enabled: Settings.embeddingApiKeySet
+                            opacity: enabled ? 1.0 : 0.4
+                            onClicked: Settings.embeddingApiKey = ""
+                            Accessible.name: qsTr("清除向量模型 API Key")
+                        }
+                    }
+                }
+                // qmllint enable unqualified
+
+                // 外部向量模型（任务 #17）：隐私外发提示——仅外部 provider
+                // 时文档内容会离开本机生成向量。
+                // 以下两条提示为任务 #17 新增，disable 指令圈定范围。
+                // qmllint disable unqualified
+                Text {
+                    visible: Settings.embeddingProvider === "openai"
+                    text: qsTr("文档内容将发送到所配置的外部服务生成向量，请勿导入敏感资料。")
+                    color: Theme.textSecondary
+                    font.pixelSize: 10
+                    wrapMode: Text.Wrap
+                    Layout.fillWidth: true
+                    opacity: 0.8
+                }
+                // 纯本地模式开启时外部请求会被装配层拦截并回退本地
+                // Ollama（任务 #16 的 localOnlyMode 语义）：提示用户当前
+                // 选择实际不会生效，避免"配了 openai 却在偷偷走外网"的
+                // 误解，反过来也一样。
+                Text {
+                    visible: Settings.embeddingProvider === "openai"
+                             && Settings.localOnlyMode
+                    text: qsTr("纯本地模式已开启：外部向量请求将被拦截，并自动回退本地 Ollama。")
+                    color: Theme.brandPrimary
+                    font.pixelSize: 10
+                    wrapMode: Text.Wrap
+                    Layout.fillWidth: true
+                    opacity: 0.9
+                }
+                // qmllint enable unqualified
             }
 
             Rectangle { Layout.fillWidth: true; Layout.leftMargin: 24; Layout.rightMargin: 24; height: 1; color: Theme.borderSubtle }

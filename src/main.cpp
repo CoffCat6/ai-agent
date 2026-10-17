@@ -43,8 +43,10 @@
 #include "infrastructure/llm/IAIService.h"
 #include "infrastructure/llm/LlmProtocolRegistry.h"
 #include "infrastructure/embed/OllamaEmbedding.h"
+#include "infrastructure/embed/OpenAICompatibleEmbedding.h"
 
 #include <memory>
+#include <QAtomicInt>
 
 #include <QDir>
 #include <QLockFile>
@@ -283,30 +285,102 @@ qInfo() << "NexusAI" << app.applicationVersion() << "starting";
     // Process-lifetime memory backend (SQLite, app-data location).
     auto* memory = new SqliteMemory();
 
-    // Knowledge base: Ollama embeddings (nomic-embed-text) with the
-    // retriever's local pseudo-embedding as offline fallback.
-    // docs/24 H6 (docs/25 A2): `embedding` and `rag` below are deliberately
-    // process-lifetime and NEVER deleted — three discarded-future
-    // QtConcurrent workers (startup restore, re-embed-all, AgentViewModel
-    // import) hold the raw `embedding` pointer through rag and may still be
-    // running when the app quits; parenting either to the app would destroy
-    // the object under them (use-after-free at exit). Same discipline as
-    // `memory` above; their QObject signals keep working without a parent,
-    // and their GUI-thread consumers are queued via the &app context.
-    auto* embedding = new OllamaEmbedding(nullptr);
+    // Knowledge base: embeddings with a provider switch — local Ollama or
+    // an OpenAI-compatible external service (task #16); the retriever's
+    // local pseudo-embedding stays as the offline fallback.
+    // docs/24 H6 (docs/25 A2): `ollamaEmbedding`, `openaiEmbedding` and
+    // `rag` below are deliberately process-lifetime and NEVER deleted —
+    // three discarded-future QtConcurrent workers (startup restore,
+    // re-embed-all, AgentViewModel import) hold these raw pointers through
+    // rag and may still be running when the app quits; parenting any of
+    // them to the app would destroy the object under them (use-after-free
+    // at exit). Provider switching therefore never swaps instances either:
+    // it only flips the atomic switch below, so the embed closures handed
+    // to RagService/EpisodicService stay valid for the whole process.
+    auto* ollamaEmbedding = new OllamaEmbedding(nullptr);
+    auto* openaiEmbedding = new OpenAICompatibleEmbedding(nullptr);
+    // Active-backend switch: written on the GUI thread (applyEmbeddingConfig
+    // below), read inside the embed closures on worker threads. Acquire/
+    // release makes the flip visible to queued workers; a stale read at
+    // worst routes one call through the other backend — which is fully
+    // configured as well, never a dangling pointer.
+    const auto openAiActive = std::make_shared<QAtomicInt>(0);
+    const auto embedText = [ollamaEmbedding, openaiEmbedding, openAiActive](
+            const QString& text) {
+        return openAiActive->loadAcquire() ? openaiEmbedding->embed(text)
+                                           : ollamaEmbedding->embed(text);
+    };
+    const auto embedTexts = [ollamaEmbedding, openaiEmbedding, openAiActive](
+            const QStringList& texts) {
+        return openAiActive->loadAcquire() ? openaiEmbedding->embedBatch(texts)
+                                           : ollamaEmbedding->embedBatch(texts);
+    };
     auto* rag = new RagService(nullptr);
-    rag->setEmbedder([embedding](const QString& text) {
-        return embedding->embed(text);
-    });
-    rag->setBatchEmbedder([embedding](const QStringList& texts) {
-        return embedding->embedBatch(texts);
-    });
-    // Apply the configured embedding model BEFORE the restore snapshot: the
-    // persisted-chunk usability check compares against this identity.
-    embedding->setModel(settings->embeddingModel());
-    rag->setEmbeddingModelName(embedding->model());
-    // Batch 25 (G11): endpoint too — Ollama may live on another host/port.
-    embedding->setBaseUrl(settings->embeddingBaseUrl());
+    rag->setEmbedder(embedText);
+    rag->setBatchEmbedder(embedTexts);
+    // Embedding backend/config application, shared by this startup call and
+    // the hot-reload connects further below (provider / model / baseUrl /
+    // apiKey / localOnlyMode) — the same re-apply chain web search uses.
+    const auto applyEmbeddingConfig = [settings, ollamaEmbedding, openaiEmbedding,
+                                       openAiActive, rag, memory]() {
+        // Both backends stay fully configured: the inactive one is only a
+        // stale atomic read away, and each setter snapshots under its own
+        // mutex (docs/22 F3) — mid-flight calls never see torn state.
+        ollamaEmbedding->setModel(settings->embeddingModel());
+        ollamaEmbedding->setBaseUrl(settings->embeddingBaseUrl());
+        openaiEmbedding->setModel(settings->embeddingModel());
+        openaiEmbedding->setBaseUrl(settings->embeddingBaseUrl());
+        // 任务 #20 修 B1：embeddingApiKey() 是掩码 getter（恒空串），
+        // 注入后端必须取真实值出口 embeddingApiKeyValue()——否则
+        // 用户配了 key 也发不出 Authorization 头（401）。
+        openaiEmbedding->setApiKey(settings->embeddingApiKeyValue());
+
+        // Provider selection, web-search-factory style (createWebSearchBackend
+        // above). The gating decision itself is extracted into the pure
+        // function SettingsService::embeddingUsesExternalProvider (unit-
+        // tested in test_settings, task #20/Mj1): provider == "openai" and
+        // localOnlyMode off → external backend; anything else (including
+        // unknown keys) → local Ollama. localOnlyMode keeps document
+        // content on this machine — blocked requests fall back to local.
+        const bool usesExternal = SettingsService::embeddingUsesExternalProvider(
+            settings->embeddingProvider(), settings->localOnlyMode());
+        if (!usesExternal
+                && settings->embeddingProvider() == QLatin1String("openai"))
+            qWarning() << "localOnlyMode is on - external embedding requests"
+                       << "are blocked, falling back to local Ollama";
+        openAiActive->storeRelease(usesExternal ? 1 : 0);
+
+        // Identity switch (model rename OR provider flip — the openai
+        // backend's model() carries an "openai:" prefix so the two backends'
+        // vector spaces never mix): old chunks are invalid, re-embed in the
+        // background (written back via documentPersisted). The startup call
+        // only seeds the identity — stale chunks in the database are
+        // handled by startKnowledgeRestore's persistedChunksUsable check.
+        const QString identity = openAiActive->loadAcquire()
+            ? openaiEmbedding->model() : ollamaEmbedding->model();
+        const QString previous = rag->embeddingModelName();
+        if (previous == identity) return;
+        rag->setEmbeddingModelName(identity);
+        if (previous.isEmpty()) return;   // first seeding at startup
+
+        struct ReembedItem { QString name; QString content; };
+        QVector<ReembedItem> items;
+        for (const auto& rec : memory->loadKnowledgeDocRecords())
+            items.append({rec.name, rec.content});
+        if (items.isEmpty()) return;
+
+        qInfo() << "Embedding identity changed - re-embedding"
+                << items.size() << "document(s)";
+        const quint64 gen = rag->restoreGeneration();
+        (void)QtConcurrent::run([rag, items, gen]() {
+            for (const ReembedItem& item : items)
+                rag->ingestRestoredDocument(item.name, item.content, gen);
+        });
+    };
+    // Apply the configured embedding backend + identity BEFORE the restore
+    // snapshot: the persisted-chunk usability check compares against this
+    // identity.
+    applyEmbeddingConfig();
     // Expose the knowledge base to the model as a safe auto-executed tool
     ToolRegistry::instance().registerTool(std::make_unique<KnowledgeSearchTool>(rag));
 
@@ -383,9 +457,7 @@ qInfo() << "NexusAI" << app.applicationVersion() << "starting";
     // T8 (F4): episodic long-term memory service.
     auto* episodicService = new EpisodicService(&app);
     episodicService->setMemory(memory);
-    episodicService->setEmbedder([embedding](const QString& text) {
-        return embedding->embed(text);
-    });
+    episodicService->setEmbedder(embedText);
     agent->setEpisodicService(episodicService);
 
     // ── ViewModels (QML singletons, owned by the app) ──
@@ -475,7 +547,7 @@ qInfo() << "NexusAI" << app.applicationVersion() << "starting";
         target->setModelLocal(LlmProtocolRegistry::isLocal(
             profile.value("apiProtocol").toString(), profile.value("provider").toString()));
     });
-    agentVM->setAgentFactory([&app, settings, embedding,
+    agentVM->setAgentFactory([&app, settings, embedText,
                               tabProviderSets, tabMemories, summaryProviders]() -> AIAgent* {
         auto* tabAgent = new AIAgent(&app);
         tabAgent->setToolRegistry(&ToolRegistry::instance());
@@ -490,9 +562,7 @@ qInfo() << "NexusAI" << app.applicationVersion() << "starting";
         auto* summaries = new EpisodicService(tabAgent);
         summaries->setMemory(tabAgent->memory());
         summaries->setEnabled(settings->episodicMemoryEnabled());
-        summaries->setEmbedder([embedding](const QString& text) {
-            return embedding->embed(text);
-        });
+        summaries->setEmbedder(embedText);
         tabAgent->setEpisodicService(summaries);
         tabMemories->insert(tabAgent, summaries);
         summaryProviders->insert(tabAgent, LlmProtocolRegistry::createServiceSet(summaries));
@@ -644,9 +714,12 @@ qInfo() << "NexusAI" << app.applicationVersion() << "starting";
         fetchPtr->setAllowPrivateTargets(settings->allowLocalNetworkFetch());
 
         // T6 (F3): inject the current web search API key (DPAPI-decrypted).
+        // 任务 #20 修 Mj2：webSearchApiKey() 是掩码 getter（恒空串），
+        // 注入后端必须取真实值出口 webSearchApiKeyValue()——此前 Tavily
+        // 用户在 UI 配了 key 也报"未配置"（3d45dd5 引入的断裂）。
         // L4: also (re)create the backend for the configured provider — this
         // was a dead setting before (always Tavily regardless of provider).
-        webPtr->setApiKey(settings->webSearchApiKey());
+        webPtr->setApiKey(settings->webSearchApiKeyValue());
         webPtr->setBackend(createWebSearchBackend(settings->webSearchProvider()));
 
         // T8 (F4): sync episodic memory toggle and LLM service.
@@ -701,40 +774,32 @@ qInfo() << "NexusAI" << app.applicationVersion() << "starting";
     QObject::connect(settings, &SettingsService::defaultPermissionModeChanged,
                      &app, applyPermissionMode);
 
-    // FEAT-801: switching the embedding model invalidates every stored
-    // chunk vector → full knowledge re-embed in the background (the new
-    // layout is written back via documentPersisted).
+    // FEAT-801 / 外部向量模型（任务 #16）: any embedding-related change
+    // (model, endpoint, API key, provider switch, local-only toggle)
+    // re-applies the embedding configuration — the same signal → re-apply
+    // chain web search uses. Identity changes (model rename, provider flip)
+    // trigger the background re-embed inside applyEmbeddingConfig; endpoint
+    // and key changes only redirect future requests (stored vectors depend
+    // on the model identity, not the service address — Batch 25 G11).
     QObject::connect(settings, &SettingsService::embeddingModelChanged, &app,
-        [settings, embedding, rag, memory]() {
-            if (embedding->model() == settings->embeddingModel()) return;
-            embedding->setModel(settings->embeddingModel());
-            rag->setEmbeddingModelName(embedding->model());
-
-            struct ReembedItem { QString name; QString content; };
-            QVector<ReembedItem> items;
-            for (const auto& rec : memory->loadKnowledgeDocRecords())
-                items.append({rec.name, rec.content});
-            if (items.isEmpty()) return;
-
-            qInfo() << "Embedding model changed - re-embedding"
-                    << items.size() << "document(s)";
-            const quint64 gen = rag->restoreGeneration();
-            (void)QtConcurrent::run([rag, items, gen]() {
-                for (const ReembedItem& item : items)
-                    rag->ingestRestoredDocument(item.name, item.content, gen);
-            });
-        });
-
-    // Batch 25 (G11): endpoint changes only redirect future requests —
-    // stored vectors depend on the embedding model, not the service address,
-    // so unlike the model switch above there is no re-embed.
+                     [applyEmbeddingConfig]() { applyEmbeddingConfig(); });
     QObject::connect(settings, &SettingsService::embeddingBaseUrlChanged, &app,
-        [settings, embedding]() {
-            embedding->setBaseUrl(settings->embeddingBaseUrl());
-        });
+                     [applyEmbeddingConfig]() { applyEmbeddingConfig(); });
+    QObject::connect(settings, &SettingsService::embeddingProviderChanged, &app,
+                     [applyEmbeddingConfig]() { applyEmbeddingConfig(); });
+    QObject::connect(settings, &SettingsService::embeddingApiKeyChanged, &app,
+                     [applyEmbeddingConfig]() { applyEmbeddingConfig(); });
+    // localOnlyModeChanged also re-runs applySettings (above); this connect
+    // additionally re-evaluates the embedding provider fallback immediately.
+    QObject::connect(settings, &SettingsService::localOnlyModeChanged, &app,
+                     [applyEmbeddingConfig]() { applyEmbeddingConfig(); });
 
-    // FEAT-803: batch-embedding progress → knowledge panel
-    QObject::connect(embedding, &OllamaEmbedding::embedProgress,
+    // FEAT-803: batch-embedding progress → knowledge panel. Both backends
+    // are connected — only the active one ever emits, so provider switches
+    // never leave the panel unfed.
+    QObject::connect(ollamaEmbedding, &OllamaEmbedding::embedProgress,
+                     agentVM, &AgentViewModel::setEmbedProgress);
+    QObject::connect(openaiEmbedding, &OpenAICompatibleEmbedding::embedProgress,
                      agentVM, &AgentViewModel::setEmbedProgress);
 
     // The application always uses the configured model pipeline; no demo

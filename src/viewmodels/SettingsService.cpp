@@ -350,6 +350,17 @@ void SettingsService::load() {
         SettingsSchema::defaultValue(QStringLiteral("embedding/model"))).toString();
     m_embeddingBaseUrl = SettingsRepository::value(QStringLiteral("embedding/baseUrl"),
         SettingsSchema::defaultValue(QStringLiteral("embedding/baseUrl"))).toString();
+    // 外部向量模型（任务 #16）：provider 枚举夹紧（同 webSearch/provider
+    // 的 load 侧防御，坏值回落 schema 默认）+ DPAPI 解密的 API key。
+    m_embeddingProvider = SettingsRepository::value(QStringLiteral("embedding/provider"),
+        SettingsSchema::defaultValue(QStringLiteral("embedding/provider"))).toString();
+    if (!SettingsSchema::options(QStringLiteral("embedding/provider"))
+             .contains(m_embeddingProvider))
+        m_embeddingProvider = SettingsSchema::defaultValue(
+            QStringLiteral("embedding/provider")).toString();
+    m_embeddingApiKey = unprotectApiKey(SettingsRepository::value(
+        QStringLiteral("embedding/apiKey"),
+        SettingsSchema::defaultValue(QStringLiteral("embedding/apiKey"))).toString());
     m_systemPromptOverride = SettingsRepository::value(
         QStringLiteral("agent/systemPromptOverride"),
         SettingsSchema::defaultValue(QStringLiteral("agent/systemPromptOverride"))).toString();
@@ -839,6 +850,53 @@ void SettingsService::setEmbeddingBaseUrl(const QString& url) {
     Activity::usage(Activity::Kind::User, QStringLiteral("settings.embeddingBaseUrl"),
                     trimmed);
     emit embeddingBaseUrlChanged();
+}
+
+// 外部向量模型（任务 #16）：合法 provider 键来自 SettingsSchema，供
+// 设置 UI 与 main.cpp 的后端工厂共用（对齐 webSearchProviders）。
+QStringList SettingsService::embeddingProviders() const {
+    return SettingsSchema::options(QStringLiteral("embedding/provider"));
+}
+
+// 外部向量模型（任务 #16）：provider 切换。未知键拒绝持久化（对齐
+// setWebSearchProvider 的 L4 守卫——持久化一个没有后端匹配的键会让
+// 工厂静默回退，UI 上显示一个幻影 provider）。
+void SettingsService::setEmbeddingProvider(const QString& provider) {
+    const QString trimmed = provider.trimmed();
+    if (trimmed.isEmpty() || m_embeddingProvider == trimmed) return;
+    if (!embeddingProviders().contains(trimmed)) {
+        qWarning() << "Unknown embedding provider:" << trimmed;
+        return;
+    }
+    if (!persistValue(QStringLiteral("embedding/provider"), trimmed)) return;
+    m_embeddingProvider = trimmed;
+    Activity::usage(Activity::Kind::User, QStringLiteral("settings.embeddingProvider"),
+                    trimmed);
+    emit embeddingProviderChanged();
+}
+
+// 拦截决策（批次三设计决策 2）：纯函数实现，语义见头文件注释。
+// main.cpp applyEmbeddingConfig 的后端切换与此同源（任务 #20 提取）。
+bool SettingsService::embeddingUsesExternalProvider(const QString& provider,
+                                                    bool localOnlyMode) {
+    return provider == QLatin1String("openai") && !localOnlyMode;
+}
+
+// 外部向量模型的 API key：DPAPI 加密落盘（完全复刻 setWebSearchApiKey，
+// 绝不明文持久化），空串清除已存 key；密钥本身绝不写进日志。
+void SettingsService::setEmbeddingApiKey(const QString& key) {
+    const QString trimmed = key.trimmed();
+    if (m_embeddingApiKey == trimmed) return;
+    const QString stored = protectApiKey(trimmed);
+    if (!trimmed.isEmpty() && stored.isEmpty()) {
+        emit persistenceError(tr("向量模型 API 密钥加密失败，未保存更改。"));
+        return;
+    }
+    if (!persistValue(QStringLiteral("embedding/apiKey"), stored)) return;
+    m_embeddingApiKey = trimmed;
+    Activity::usage(Activity::Kind::User, QStringLiteral("settings.embeddingApiKey"),
+                    trimmed.isEmpty() ? QStringLiteral("(cleared)") : QStringLiteral("(set)"));
+    emit embeddingApiKeyChanged();
 }
 
 // Empty (after trim) clears the override and falls back to the built-in

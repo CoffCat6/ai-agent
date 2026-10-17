@@ -36,7 +36,7 @@ var handIndex = [
     { title: QT_TRANSLATE_NOOP("SettingsSearch", "模型行为"), category: "general", keywords: "步数 预算 超时 maxSteps timeout 任务上限" },
     { title: QT_TRANSLATE_NOOP("SettingsSearch", "自定义系统提示词"), category: "general", keywords: "系统提示词 prompt override 提示词" },
     { title: QT_TRANSLATE_NOOP("SettingsSearch", "日志"), category: "general", keywords: "日志 级别 目录 大小 保留 log" },
-    { title: QT_TRANSLATE_NOOP("SettingsSearch", "知识库嵌入"), category: "general", keywords: "嵌入 embedding ollama 向量 嵌入模型 服务地址" },
+    { title: QT_TRANSLATE_NOOP("SettingsSearch", "知识库嵌入"), category: "general", keywords: "嵌入 embedding ollama 向量 嵌入模型 服务地址 provider 提供方 openai 密钥 apiKey 兼容服务" },
 
     // ── 安全 ─────────────────────────────────────────────
     { title: QT_TRANSLATE_NOOP("SettingsSearch", "文件读取沙箱"), category: "security", keywords: "读取 沙箱 全盘 磁盘 read 策略" },

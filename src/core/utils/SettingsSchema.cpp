@@ -151,6 +151,14 @@ const QVector<SettingsKeyDef>& SettingsSchema::registeredKeys() {
                    SettingValueType::String, requiredText()),
             keyDef(QStringLiteral("embedding/baseUrl"), QStringLiteral("http://localhost:11434"),
                    SettingValueType::String, requiredText()),
+            // 外部向量模型（任务 #16）：embedding 后端选择（本地 ollama ↔
+            // OpenAI 兼容协议）与外部服务的 API key（DPAPI 加密，同
+            // webSearch/apiKey）。键登记纪律：新键必须同步本账本。
+            keyDef(QStringLiteral("embedding/provider"), QStringLiteral("ollama"),
+                   SettingValueType::String,
+                   enumValues({QStringLiteral("ollama"), QStringLiteral("openai")})),
+            keyDef(QStringLiteral("embedding/apiKey"), QString(), SettingValueType::String,
+                   {}, true),
             keyDef(QStringLiteral("agent/systemPromptOverride"), QString(), SettingValueType::String),
             keyDef(QStringLiteral("logging/level"), QStringLiteral("info"),
                    SettingValueType::String,

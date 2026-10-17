@@ -61,6 +61,14 @@ class SettingsService : public QObject {
     // Batch 25 (G11): Ollama endpoint for knowledge-base embeddings; the
     // protocol stays /api/embed(dings) - only the host:port is configurable.
     Q_PROPERTY(QString embeddingBaseUrl READ embeddingBaseUrl WRITE setEmbeddingBaseUrl NOTIFY embeddingBaseUrlChanged)
+    // 外部向量模型（任务 #16）：知识库 embedding 后端选择与外部服务的
+    // API key（DPAPI 加密落盘，同 webSearch 先例）。key 永不回显给 QML
+    // （getter 返回掩码空串），UI 只看 embeddingApiKeySet。
+    Q_PROPERTY(QString embeddingProvider READ embeddingProvider WRITE setEmbeddingProvider NOTIFY embeddingProviderChanged)
+    Q_PROPERTY(QString embeddingApiKey READ embeddingApiKey WRITE setEmbeddingApiKey NOTIFY embeddingApiKeyChanged)
+    Q_PROPERTY(bool embeddingApiKeySet READ embeddingApiKeySet NOTIFY embeddingApiKeyChanged)
+    // 合法 provider 键（设置 UI 的单一事实源，与 main.cpp 的后端工厂共用）。
+    Q_PROPERTY(QStringList embeddingProviders READ embeddingProviders CONSTANT)
     Q_PROPERTY(QString logLevel READ logLevel WRITE setLogLevel NOTIFY logLevelChanged)
     Q_PROPERTY(QString logDirectory READ logDirectory WRITE setLogDirectory NOTIFY logDirectoryChanged)
     Q_PROPERTY(int logMaxFileSizeMb READ logMaxFileSizeMb WRITE setLogMaxFileSizeMb NOTIFY logMaxFileSizeMbChanged)
@@ -147,6 +155,27 @@ public:
     void setEmbeddingModel(const QString& model);
     QString embeddingBaseUrl() const { return m_embeddingBaseUrl; }
     void setEmbeddingBaseUrl(const QString& url);
+    // 外部向量模型（任务 #16）：provider（"ollama" | "openai"）与加密
+    // API key。掩码 getter 对齐 webSearchApiKey：值不回显，只暴露
+    // embeddingApiKeySet。
+    QString embeddingProvider() const { return m_embeddingProvider; }
+    void setEmbeddingProvider(const QString& provider);
+    QString embeddingApiKey() const { return {}; }   // masked getter
+    void setEmbeddingApiKey(const QString& key);
+    bool embeddingApiKeySet() const { return !m_embeddingApiKey.isEmpty(); }
+    // 真实 key 的 C++ 出口（main.cpp 装配层注入后端用；任务 #20 修 B1：
+    // 此前 main.cpp 误用掩码 getter，后端永远拿到空串导致 401）。非
+    // Q_PROPERTY 且无 Q_INVOKABLE——QML 侧仍只能看到掩码空串与
+    // embeddingApiKeySet，掩码语义不变。
+    QString embeddingApiKeyValue() const { return m_embeddingApiKey; }
+    // 合法 provider 键（与 main.cpp 的后端工厂保持同步）。
+    QStringList embeddingProviders() const;
+    // 拦截决策（批次三设计决策 2）：provider 请求外部服务且纯本地模式
+    // 未开启时才走外部后端；纯本地模式拦截外部 embedding 请求回退本地
+    // Ollama。提取为纯函数使 main.cpp applyEmbeddingConfig 的后端切换
+    // 决策可单测（任务 #20 修 Mj1）。
+    static bool embeddingUsesExternalProvider(const QString& provider,
+                                              bool localOnlyMode);
     QString logLevel() const { return m_logLevel; }
     void setLogLevel(const QString& level);
     QString logDirectory() const;
@@ -165,6 +194,10 @@ public:
     void setWebSearchApiKey(const QString& key);
     // L1: true when a non-empty search API key is stored.
     bool webSearchApiKeySet() const { return !m_webSearchApiKey.isEmpty(); }
+    // 真实 key 的 C++ 出口（任务 #20 修 Mj2：main.cpp 注入 webSearch 后端
+    // 此前误用掩码 getter 拿到空串，Tavily 用户配了 key 也报"未配置"）。
+    // 非 Q_PROPERTY 且无 Q_INVOKABLE——掩码语义对 QML 保持不变。
+    QString webSearchApiKeyValue() const { return m_webSearchApiKey; }
     // L1: legal provider keys for the settings UI.
     QStringList webSearchProviders() const;
     // docs/20 §5.3 (C3): self-hosted SearXNG base URL ("" = not configured).
@@ -300,6 +333,8 @@ signals:
     void allowLocalNetworkFetchChanged();
     void embeddingModelChanged();
     void embeddingBaseUrlChanged();
+    void embeddingProviderChanged();
+    void embeddingApiKeyChanged();
     void logLevelChanged();
     void logDirectoryChanged();
     void logMaxFileSizeMbChanged();
@@ -341,6 +376,9 @@ private:
     bool m_allowLocalNetworkFetch{};
     QString m_embeddingModel;
     QString m_embeddingBaseUrl;
+    // 外部向量模型（任务 #16）：provider 与加密存储的 API key。
+    QString m_embeddingProvider;
+    QString m_embeddingApiKey;
     QString m_logLevel;
     QString m_logDirectory;
     int m_logMaxFileSizeMb{};

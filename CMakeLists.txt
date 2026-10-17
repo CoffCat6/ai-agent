@@ -111,6 +111,8 @@ add_library(nexus_infra STATIC
     src/infrastructure/llm/AnthropicService.cpp
     src/infrastructure/embed/OllamaEmbedding.h
     src/infrastructure/embed/OllamaEmbedding.cpp
+    src/infrastructure/embed/OpenAICompatibleEmbedding.h
+    src/infrastructure/embed/OpenAICompatibleEmbedding.cpp
 )
 target_include_directories(nexus_infra PUBLIC ${CMAKE_CURRENT_SOURCE_DIR}/src)
 target_link_libraries(nexus_infra PUBLIC nexus_core Qt6::Network)
