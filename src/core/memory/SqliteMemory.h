@@ -34,7 +34,16 @@ public:
 
     // Batch 17 (FEAT-1702): cross-session keyword search (trigram FTS5 with
     // a LIKE fallback for keywords shorter than 3 characters - the trigram
-    // index cannot answer shorter queries).
+    // index cannot answer shorter queries). Batch 22 (search-aggregate):
+    // results aggregate PER SESSION - one row per session
+    // {sessionId, sessionTitle, hitCount, latestTimestamp, bestSnippet,
+    // bestRole}, newest hit first; `limit` caps the number of SESSIONS
+    // (default 50). bestSnippet is single-line, markdown-stripped and
+    // wraps the keyword in U+0001/U+0002 control-character highlight
+    // markers (review fix m-1: plain brackets collide with bracketed text
+    // like "arr[0]"). The sub-trigram LIKE
+    // fallback keeps its Batch 21 (B4) guard: past a message-count ceiling
+    // it returns a single notice row (sessionId="__search_notice__").
     QVariantList searchMessages(const QString& keyword, int limit = 50, bool includeArchived = false) override;
 
     // Episodic memory (FTS5) — currently NOT wired into the agent.
@@ -164,6 +173,19 @@ public:
     bool restoreFromBackup(const QString& backupPath);
 
 private:
+    // Batch 22 (search-aggregate): snippet post-processing shared by the
+    // FTS and LIKE search paths. stripMarkdownDecorations removes the
+    // decorations a raw message body carries (bold/italic/code spans,
+    // links, images, headings, list bullets, fenced blocks); the ordering
+    // is load-bearing - see the .cpp. buildSearchSnippet composes the full
+    // pipeline: strip → flatten newlines → hit-centered window → inject
+    // the U+0001/U+0002 control-character highlight marker LAST (stripping
+    // markdown first is what keeps the link rule from eating the marked
+    // keyword as link text; review fix M-1 also drops the underscore
+    // bold/italic rules there to protect snake_case identifiers).
+    static QString stripMarkdownDecorations(const QString& text);
+    static QString buildSearchSnippet(const QString& raw, const QString& keyword);
+
     void initDatabase();
     void createTables();
     // docs/24 R1: shared by the constructor and restoreFromBackup — add,

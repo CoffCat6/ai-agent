@@ -126,6 +126,22 @@ private slots:
     // Batch 21: session-grouped ordering (A3) and LIKE guard (B4)
     void searchMessagesGroupsBySession();
     void searchMessagesLikeGuardSuppressesLargeTables();
+    // Batch 22 (search-aggregate): per-session aggregation (exact hitCount,
+    // latestTimestamp ordering, limit = session cap), user-preferred best
+    // snippet, markdown stripping / newline flattening / [kw] markers,
+    // FTS vs LIKE path consistency, archived filtering.
+    void searchMessagesAggregatePerSession();
+    void searchMessagesOrdersSessionsAndCapsLimit();
+    void searchMessagesBestSnippetPrefersUserHit();
+    void searchMessagesSnippetStripsMarkdown();
+    void searchMessagesSnippetFlattensNewlines();
+    void searchMessagesFtsAndLikeAgreeOnMarkers();
+    void searchMessagesRespectsArchivedFilter();
+    // Review fixes: M-1 (underscore identifiers survive stripping) and the
+    // degradation path (keyword only inside stripped markup → marker-less
+    // head window instead of a lost row).
+    void searchMessagesSnippetPreservesUnderscoreIdentifiers();
+    void searchMessagesSnippetDegradesWhenKeywordInStrippedMarkup();
     // docs/20 §3.1/§3.2（FORK-701）：重新生成/编辑重发的持久层支撑
 };
 
@@ -733,7 +749,9 @@ void TestMemory::usageLogRoundTripAndPrune() {
 }
 
 // Batch 17: the trigram FTS path must answer 3+ char CJK/ASCII substring
-// queries across sessions, newest first, with session title enrichment.
+// queries across sessions. Batch 22 (search-aggregate): one row per
+// session, newest hit first, carrying the aggregated fields the sidebar
+// renders (hitCount / latestTimestamp / bestSnippet / bestRole).
 void TestMemory::searchMessagesFindsAcrossSessions() {
     SqliteMemory mem(QStringLiteral(":memory:"));
     mem.beginSession("s1", "明代研究");
@@ -744,13 +762,14 @@ void TestMemory::searchMessagesFindsAcrossSessions() {
 
     const QVariantList hits = mem.searchMessages(QStringLiteral("文献学"), 50);
     QCOMPARE(hits.size(), 2);
-    // Newest first: s2's hit precedes s1's.
+    // Newest hit first: s2's hit (saved last) precedes s1's.
     const QVariantMap first = hits.at(0).toMap();
     QCOMPARE(first.value("sessionId").toString(), QStringLiteral("s2"));
-    QCOMPARE(first.value("role").toString(), QStringLiteral("user"));
-    QVERIFY(first.value("messageId").toLongLong() > 0);
-    QVERIFY(first.value("timestamp").toLongLong() > 0);
-    QVERIFY(first.value("snippet").toString().contains(QStringLiteral("文献学")));
+    QCOMPARE(first.value("sessionTitle").toString(), QStringLiteral("杂谈"));
+    QCOMPARE(first.value("hitCount").toInt(), 1);
+    QCOMPARE(first.value("bestRole").toString(), QStringLiteral("user"));
+    QVERIFY(first.value("latestTimestamp").toLongLong() > 0);
+    QVERIFY(first.value("bestSnippet").toString().contains(QStringLiteral("\u0001文献学\u0002")));
     // Grouping caption: the session title rides along.
     const QVariantMap second = hits.at(1).toMap();
     QCOMPARE(second.value("sessionId").toString(), QStringLiteral("s1"));
@@ -762,11 +781,16 @@ void TestMemory::searchMessagesFindsAcrossSessions() {
 }
 
 // Deleting a session must remove its rows from the FTS index (DELETE trigger).
+// Batch 22 (search-aggregate): one aggregated session row before the
+// delete, none after.
 void TestMemory::searchMessagesSyncsOnDelete() {
     SqliteMemory mem(QStringLiteral(":memory:"));
     mem.beginSession("s1", "To be deleted");
     mem.saveMessage("s1", msg("user", "独一无二的检索锚点文本"));
-    QCOMPARE(mem.searchMessages(QStringLiteral("检索锚点"), 50).size(), 1);
+    const QVariantList hits = mem.searchMessages(QStringLiteral("检索锚点"), 50);
+    QCOMPARE(hits.size(), 1);
+    QCOMPARE(hits.at(0).toMap().value("sessionId").toString(), QStringLiteral("s1"));
+    QCOMPARE(hits.at(0).toMap().value("hitCount").toInt(), 1);
 
     mem.deleteSession("s1");
     QVERIFY(mem.searchMessages(QStringLiteral("检索锚点"), 50).isEmpty());
@@ -1095,7 +1119,8 @@ void TestMemory::episodicFtsUpgradesToTrigramOnOpen() {
 }
 
 // Keywords shorter than 3 characters cannot use the trigram index; they must
-// fall back to a LIKE scan (both CJK and ASCII).
+// fall back to a LIKE scan (both CJK and ASCII). Both rows share one
+// session, so the aggregated result is a single session row either way.
 void TestMemory::searchMessagesShortKeywordLikeFallback() {
     SqliteMemory mem(QStringLiteral(":memory:"));
     mem.saveMessage("s1", msg("user", "明代史料汇编"));
@@ -1103,18 +1128,23 @@ void TestMemory::searchMessagesShortKeywordLikeFallback() {
 
     const QVariantList cjk = mem.searchMessages(QStringLiteral("明代"), 50);
     QCOMPARE(cjk.size(), 1);
-    QVERIFY(cjk.at(0).toMap().value("snippet").toString()
-                .contains(QStringLiteral("明代")));
+    QVERIFY(cjk.at(0).toMap().value("bestSnippet").toString()
+                .contains(QStringLiteral("\u0001明代\u0002")));
 
+    // 5 chars → the trigram FTS path; same one-row-per-session shape and
+    // the same [kw] marker pipeline.
     const QVariantList ascii = mem.searchMessages(QStringLiteral("async"), 50);
     QCOMPARE(ascii.size(), 1);
+    QVERIFY(ascii.at(0).toMap().value("bestSnippet").toString()
+                .contains(QStringLiteral("\u0001async\u0002")));
 
     QVERIFY(mem.searchMessages(QStringLiteral("zzz"), 50).isEmpty());
 }
 
-// Batch 21 (A3): hits interleaved by timestamp across sessions must still be
-// returned in contiguous session groups (Sidebar section headers require it),
-// ordered by the group's newest hit; within a group, newest first.
+// Batch 21 (A3) kept same-session rows contiguous; Batch 22
+// (search-aggregate) collapses them entirely: ONE row per session, ordered
+// by the group's newest hit, with the best snippet (user role first, then
+// newest) as the session's single preview line.
 void TestMemory::searchMessagesGroupsBySession() {
     SqliteMemory mem(QStringLiteral(":memory:"));
     mem.beginSession("sA", "Session A");
@@ -1122,8 +1152,7 @@ void TestMemory::searchMessagesGroupsBySession() {
 
     // Insert directly so timestamps are deterministic (saveMessage stamps now).
     // Time order of matching messages: B1(400), A1(300), B2(200), A2(100).
-    // Session A's newest hit (300) is newer than B's newest (400)? No - B's
-    // group max is 400, so B leads; within B: 400 then 200; then A: 300, 100.
+    // Session B's newest hit (400) outranks A's (300), so B leads.
     QSqlQuery insert(mem.databaseForTest());
     QVERIFY(insert.prepare(
         "INSERT INTO messages (session_id, role, content, timestamp) "
@@ -1141,15 +1170,18 @@ void TestMemory::searchMessagesGroupsBySession() {
     addRow("sB", QStringLiteral("分组关键词-B-new"), 400);
 
     const QVariantList hits = mem.searchMessages(QStringLiteral("分组关键词"), 50);
-    QCOMPARE(hits.size(), 4);
-    QCOMPARE(hits.at(0).toMap().value("sessionId").toString(), QStringLiteral("sB"));
-    QVERIFY(hits.at(0).toMap().value("snippet").toString().contains(QStringLiteral("B-new")));
-    QCOMPARE(hits.at(1).toMap().value("sessionId").toString(), QStringLiteral("sB"));
-    QVERIFY(hits.at(1).toMap().value("snippet").toString().contains(QStringLiteral("B-old")));
-    QCOMPARE(hits.at(2).toMap().value("sessionId").toString(), QStringLiteral("sA"));
-    QVERIFY(hits.at(2).toMap().value("snippet").toString().contains(QStringLiteral("A-new")));
-    QCOMPARE(hits.at(3).toMap().value("sessionId").toString(), QStringLiteral("sA"));
-    QVERIFY(hits.at(3).toMap().value("snippet").toString().contains(QStringLiteral("A-old")));
+    QCOMPARE(hits.size(), 2);
+    const QVariantMap sB = hits.at(0).toMap();
+    QCOMPARE(sB.value("sessionId").toString(), QStringLiteral("sB"));
+    QCOMPARE(sB.value("hitCount").toInt(), 2);
+    QCOMPARE(sB.value("latestTimestamp").toLongLong(), qint64(400));
+    QVERIFY(sB.value("bestSnippet").toString().contains(QStringLiteral("B-new")));
+    QVERIFY(sB.value("bestSnippet").toString().contains(QStringLiteral("\u0001分组关键词\u0002")));
+    const QVariantMap sA = hits.at(1).toMap();
+    QCOMPARE(sA.value("sessionId").toString(), QStringLiteral("sA"));
+    QCOMPARE(sA.value("hitCount").toInt(), 2);
+    QCOMPARE(sA.value("latestTimestamp").toLongLong(), qint64(300));
+    QVERIFY(sA.value("bestSnippet").toString().contains(QStringLiteral("A-new")));
 }
 
 // Batch 21 (B4): past the LIKE row ceiling, a sub-trigram keyword must NOT run
@@ -1184,6 +1216,253 @@ void TestMemory::searchMessagesLikeGuardSuppressesLargeTables() {
     // the content goes through the normal path.
     mem.saveMessage("s1", msg("user", "可索引的独特关键词锚点"));
     QCOMPARE(mem.searchMessages(QStringLiteral("独特关键词"), 50).size(), 1);
+}
+
+// ── Batch 22 (search-aggregate) ────────────────────────────────────────
+// Aggregation correctness: multiple sessions with multiple hits each
+// collapse to one row per session; hitCount is the exact per-session match
+// count and latestTimestamp is that session's newest matching message.
+void TestMemory::searchMessagesAggregatePerSession() {
+    SqliteMemory mem(QStringLiteral(":memory:"));
+    mem.beginSession("s1", "第一会话");
+    mem.beginSession("s2", "第二会话");
+    mem.beginSession("s3", "第三会话");
+
+    // Deterministic timestamps (saveMessage stamps "now", which can tie).
+    QSqlQuery insert(mem.databaseForTest());
+    QVERIFY(insert.prepare(
+        "INSERT INTO messages (session_id, role, content, timestamp) "
+        "VALUES (?, ?, ?, ?)"));
+    auto addRow = [&](const QString& session, const QString& role,
+                      const QString& content, qint64 ts) {
+        insert.bindValue(0, session);
+        insert.bindValue(1, role);
+        insert.bindValue(2, content);
+        insert.bindValue(3, ts);
+        QVERIFY2(insert.exec(), qPrintable(insert.lastError().text()));
+    };
+    // s1: three hits (100/200/600), s2: two hits (300/500), s3: one (400).
+    addRow("s1", "user", "聚合关键词 one", 100);
+    addRow("s1", "assistant", "聚合关键词 two", 200);
+    addRow("s2", "user", "聚合关键词 three", 300);
+    addRow("s3", "user", "聚合关键词 four", 400);
+    addRow("s2", "assistant", "聚合关键词 five", 500);
+    addRow("s1", "assistant", "聚合关键词 six", 600);
+
+    const QVariantList hits = mem.searchMessages(QStringLiteral("聚合关键词"), 50);
+    QCOMPARE(hits.size(), 3);
+    // Ordered by each session's newest hit: s1(600) > s2(500) > s3(400).
+    QCOMPARE(hits.at(0).toMap().value("sessionId").toString(), QStringLiteral("s1"));
+    QCOMPARE(hits.at(0).toMap().value("hitCount").toInt(), 3);
+    QCOMPARE(hits.at(0).toMap().value("latestTimestamp").toLongLong(), qint64(600));
+    QCOMPARE(hits.at(0).toMap().value("sessionTitle").toString(), QStringLiteral("第一会话"));
+    QCOMPARE(hits.at(1).toMap().value("sessionId").toString(), QStringLiteral("s2"));
+    QCOMPARE(hits.at(1).toMap().value("hitCount").toInt(), 2);
+    QCOMPARE(hits.at(1).toMap().value("latestTimestamp").toLongLong(), qint64(500));
+    QCOMPARE(hits.at(2).toMap().value("sessionId").toString(), QStringLiteral("s3"));
+    QCOMPARE(hits.at(2).toMap().value("hitCount").toInt(), 1);
+    QCOMPARE(hits.at(2).toMap().value("latestTimestamp").toLongLong(), qint64(400));
+
+    // Non-matching rows in the same sessions must not inflate hitCount.
+    addRow("s1", "user", "完全无关的内容", 700);
+    const QVariantList after = mem.searchMessages(QStringLiteral("聚合关键词"), 50);
+    QCOMPARE(after.size(), 3);
+    QCOMPARE(after.at(0).toMap().value("hitCount").toInt(), 3);
+}
+
+// Ordering and limit semantics: newest-hit session first; `limit` caps the
+// number of SESSIONS returned (it used to cap message rows).
+void TestMemory::searchMessagesOrdersSessionsAndCapsLimit() {
+    SqliteMemory mem(QStringLiteral(":memory:"));
+    mem.beginSession("old", "旧会话");
+    mem.beginSession("mid", "中会话");
+    mem.beginSession("new", "新会话");
+
+    QSqlQuery insert(mem.databaseForTest());
+    QVERIFY(insert.prepare(
+        "INSERT INTO messages (session_id, role, content, timestamp) "
+        "VALUES (?, ?, ?, ?)"));
+    auto addRow = [&](const QString& session, qint64 ts) {
+        insert.bindValue(0, session);
+        insert.bindValue(1, QStringLiteral("user"));
+        insert.bindValue(2, QStringLiteral("排序关键词-%1").arg(session));
+        insert.bindValue(3, ts);
+        QVERIFY2(insert.exec(), qPrintable(insert.lastError().text()));
+    };
+    addRow("old", 100);
+    addRow("mid", 200);
+    addRow("new", 300);
+
+    const QVariantList ordered = mem.searchMessages(QStringLiteral("排序关键词"), 50);
+    QCOMPARE(ordered.size(), 3);
+    QCOMPARE(ordered.at(0).toMap().value("sessionId").toString(), QStringLiteral("new"));
+    QCOMPARE(ordered.at(1).toMap().value("sessionId").toString(), QStringLiteral("mid"));
+    QCOMPARE(ordered.at(2).toMap().value("sessionId").toString(), QStringLiteral("old"));
+
+    // limit = 2 keeps only the two newest-hit sessions.
+    const QVariantList capped = mem.searchMessages(QStringLiteral("排序关键词"), 2);
+    QCOMPARE(capped.size(), 2);
+    QCOMPARE(capped.at(0).toMap().value("sessionId").toString(), QStringLiteral("new"));
+    QCOMPARE(capped.at(1).toMap().value("sessionId").toString(), QStringLiteral("mid"));
+}
+
+// Best-snippet preference: within a session a user-role hit wins over a
+// newer assistant hit (people usually search their own words), the newest
+// user hit at that; a session with assistant hits only falls back to its
+// newest one.
+void TestMemory::searchMessagesBestSnippetPrefersUserHit() {
+    SqliteMemory mem(QStringLiteral(":memory:"));
+    mem.beginSession("s1", "用户优先");
+    mem.beginSession("s2", "仅助手");
+
+    QSqlQuery insert(mem.databaseForTest());
+    QVERIFY(insert.prepare(
+        "INSERT INTO messages (session_id, role, content, timestamp) "
+        "VALUES (?, ?, ?, ?)"));
+    auto addRow = [&](const QString& session, const QString& role,
+                      const QString& content, qint64 ts) {
+        insert.bindValue(0, session);
+        insert.bindValue(1, role);
+        insert.bindValue(2, content);
+        insert.bindValue(3, ts);
+        QVERIFY2(insert.exec(), qPrintable(insert.lastError().text()));
+    };
+    addRow("s1", "assistant", "偏好关键词 assistant-old", 100);
+    addRow("s1", "user", "偏好关键词 user-old", 200);
+    addRow("s1", "assistant", "偏好关键词 assistant-new", 300);
+    addRow("s1", "user", "偏好关键词 user-new", 400);
+    addRow("s2", "assistant", "偏好关键词 only-assistant", 500);
+
+    const QVariantList hits = mem.searchMessages(QStringLiteral("偏好关键词"), 50);
+    QCOMPARE(hits.size(), 2);
+    // s2's newest hit (500) outranks s1's (400).
+    const QVariantMap s2 = hits.at(0).toMap();
+    QCOMPARE(s2.value("sessionId").toString(), QStringLiteral("s2"));
+    QCOMPARE(s2.value("bestRole").toString(), QStringLiteral("assistant"));
+    QVERIFY(s2.value("bestSnippet").toString().contains(QStringLiteral("only-assistant")));
+    // s1: the newest USER hit beats the newest assistant hit.
+    const QVariantMap s1 = hits.at(1).toMap();
+    QCOMPARE(s1.value("sessionId").toString(), QStringLiteral("s1"));
+    QCOMPARE(s1.value("hitCount").toInt(), 4);
+    QCOMPARE(s1.value("bestRole").toString(), QStringLiteral("user"));
+    QVERIFY(s1.value("bestSnippet").toString().contains(QStringLiteral("user-new")));
+}
+
+// Markdown stripping: the snippet shows plain text - decorations
+// (**bold**, `code`, headings, list bullets, links) are stripped BEFORE
+// the [keyword] marker is injected (the link rule would otherwise eat
+// "[kw]" as link text), and the keyword is wrapped in half-width [ ].
+void TestMemory::searchMessagesSnippetStripsMarkdown() {
+    SqliteMemory mem(QStringLiteral(":memory:"));
+    mem.beginSession("s1", "Markdown");
+    mem.saveMessage("s1", msg("user",
+        "关于**量子纠缠**的解释：\n"
+        "- 见 `量子线路` 文档\n"
+        "## 量子纠缠小节\n"
+        "详情参见 [量子纠缠百科](https://example.com/qe)"));
+
+    const QVariantList hits = mem.searchMessages(QStringLiteral("量子纠缠"), 50);
+    QCOMPARE(hits.size(), 1);
+    const QString snippet = hits.at(0).toMap().value("bestSnippet").toString();
+    QVERIFY(!snippet.contains(QStringLiteral("**")));
+    QVERIFY(!snippet.contains(QLatin1Char('`')));
+    QVERIFY(!snippet.contains(QStringLiteral("##")));
+    QVERIFY(!snippet.contains(QStringLiteral("- ")));
+    QVERIFY(!snippet.contains(QStringLiteral("https://")));
+    QVERIFY(snippet.contains(QStringLiteral("\u0001量子纠缠\u0002")));
+}
+
+// Newline flattening: a multi-line message (\n, \r\n, \r mix) yields a
+// single-line snippet - embedded line breaks used to overflow the
+// sidebar's fixed row heights.
+void TestMemory::searchMessagesSnippetFlattensNewlines() {
+    SqliteMemory mem(QStringLiteral(":memory:"));
+    mem.beginSession("s1", "多行");
+    mem.saveMessage("s1", msg("assistant",
+        "量子筛法第一行\n量子筛法第二行\r\n量子筛法第三行\r量子筛法第四行"));
+
+    const QVariantList hits = mem.searchMessages(QStringLiteral("量子筛法"), 50);
+    QCOMPARE(hits.size(), 1);
+    const QString snippet = hits.at(0).toMap().value("bestSnippet").toString();
+    QVERIFY(!snippet.contains(QLatin1Char('\n')));
+    QVERIFY(!snippet.contains(QLatin1Char('\r')));
+    QVERIFY(snippet.contains(QStringLiteral("\u0001量子筛法\u0002")));
+}
+
+// Path consistency: the trigram FTS path (3+ chars) and the LIKE fallback
+// (<3 chars) go through the same snippet pipeline, so both wrap the
+// keyword in the same [ ] markers.
+void TestMemory::searchMessagesFtsAndLikeAgreeOnMarkers() {
+    SqliteMemory mem(QStringLiteral(":memory:"));
+    mem.beginSession("s1", "一致性");
+    mem.saveMessage("s1", msg("user", "超导量子比特的相干时间"));
+
+    // 4 chars → trigram FTS path.
+    const QVariantList fts = mem.searchMessages(QStringLiteral("量子比特"), 50);
+    QCOMPARE(fts.size(), 1);
+    QCOMPARE(fts.at(0).toMap().value("hitCount").toInt(), 1);
+    QVERIFY(fts.at(0).toMap().value("bestSnippet").toString()
+                .contains(QStringLiteral("\u0001量子比特\u0002")));
+
+    // 2 chars → LIKE fallback path.
+    const QVariantList like = mem.searchMessages(QStringLiteral("超导"), 50);
+    QCOMPARE(like.size(), 1);
+    QCOMPARE(like.at(0).toMap().value("hitCount").toInt(), 1);
+    QVERIFY(like.at(0).toMap().value("bestSnippet").toString()
+                .contains(QStringLiteral("\u0001超导\u0002")));
+}
+
+// Archived filtering: archived sessions drop out of the results unless
+// includeArchived is set (same session-set discipline as listSessions).
+void TestMemory::searchMessagesRespectsArchivedFilter() {
+    SqliteMemory mem(QStringLiteral(":memory:"));
+    mem.beginSession("visible", "常规会话");
+    mem.beginSession("boxed", "归档会话");
+    mem.saveMessage("visible", msg("user", "归档过滤关键词 A"));
+    mem.saveMessage("boxed", msg("user", "归档过滤关键词 B"));
+    QVERIFY(mem.setSessionArchived("boxed", true));
+
+    const QVariantList active =
+        mem.searchMessages(QStringLiteral("归档过滤关键词"), 50);
+    QCOMPARE(active.size(), 1);
+    QCOMPARE(active.at(0).toMap().value("sessionId").toString(),
+             QStringLiteral("visible"));
+
+    const QVariantList all =
+        mem.searchMessages(QStringLiteral("归档过滤关键词"), 50, true);
+    QCOMPARE(all.size(), 2);
+}
+
+// Review fix (M-1) regression: underscore-flavored markers must not be
+// stripped from code identifiers - "__init__" and "user_name" appear far
+// more often as code in chat messages than as bold/italic markup.
+void TestMemory::searchMessagesSnippetPreservesUnderscoreIdentifiers() {
+    SqliteMemory mem(QStringLiteral(":memory:"));
+    mem.beginSession("s1", "代码会话");
+    mem.saveMessage("s1", msg("assistant",
+        "在 Python 中 __init__ 是构造函数，user_name 是下划线命名"));
+    const QVariantList hits = mem.searchMessages(QStringLiteral("user_name"), 50);
+    QCOMPARE(hits.size(), 1);
+    const QString snippet = hits.at(0).toMap().value("bestSnippet").toString();
+    QVERIFY(snippet.contains(QStringLiteral("user_name")));      // 标识符完整保留
+    QVERIFY(snippet.contains(QStringLiteral("\u0001user_name\u0002")));  // 高亮标记在位
+    QVERIFY(snippet.contains(QStringLiteral("__init__")));       // dunder 完整保留
+}
+
+// Review fix (degradation path): a keyword that only exists inside
+// stripped markup (here: the URL of an image) must produce a marker-less
+// head-window snippet instead of crashing or losing the row.
+void TestMemory::searchMessagesSnippetDegradesWhenKeywordInStrippedMarkup() {
+    SqliteMemory mem(QStringLiteral(":memory:"));
+    mem.beginSession("s1", "图片会话");
+    mem.saveMessage("s1", msg("assistant",
+        "架构图说明：![系统架构](https://img.example.com/diagram.png) 如图所示"));
+    // "img.example" 只存在于被剥离的图片 URL 中。
+    const QVariantList hits = mem.searchMessages(QStringLiteral("img.example"), 50);
+    QCOMPARE(hits.size(), 1);
+    const QString snippet = hits.at(0).toMap().value("bestSnippet").toString();
+    QVERIFY(!snippet.contains(QChar(u'\u0001')));   // 无标记
+    QVERIFY(!snippet.contains(QStringLiteral("https://")));  // URL 已被剥离
 }
 
 // Discipline #8: an old database without messages_fts must self-heal on

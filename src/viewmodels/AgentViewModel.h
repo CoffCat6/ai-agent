@@ -291,7 +291,10 @@ public:
     // 系统提示里的项目名同步更新。
     Q_INVOKABLE void renameProject(const QString& projectId, const QString& name);
     QString currentSessionId() const { return active()->currentSessionId(); }
-    // Batch 17: message-search results (set via the searchMessages invokable)
+    // Batch 17: message-search results (set via the searchMessages invokable).
+    // Batch 22 (search-aggregate): one row per session
+    // {sessionId, sessionTitle, hitCount, latestTimestamp, bestSnippet,
+    // bestRole}, newest hit first.
     QVariantList searchResults() const { return m_searchResults; }
 
     // Token management (active tab)
@@ -406,6 +409,8 @@ public:
     Q_INVOKABLE void setSessionArchived(const QString& sessionId, bool archived);
     // Batch 17: refresh searchResults from the memory backend (empty keyword
     // → empty results, which the sidebar treats as "back to session list").
+    // Batch 22 (search-aggregate): the backend aggregates per session; the
+    // hardcoded limit caps the number of SESSIONS (50).
     Q_INVOKABLE void searchMessages(const QString& keyword, bool includeArchived = false);
     // Batch 18: export a session's messages (+ trace nodes) as Markdown or
     // JSON. Returns false (and emits errorOccurred) on failure.

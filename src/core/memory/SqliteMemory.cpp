@@ -1,8 +1,11 @@
 #include "SqliteMemory.h"
 
+#include <QHash>
 #include <QSqlQuery>
 #include <QSqlError>
+#include <QRegularExpression>
 #include <QVariant>
+#include <QVector>
 #include <QJsonDocument>
 #include <QStandardPaths>
 #include <QDir>
@@ -1145,18 +1148,130 @@ QString SqliteMemory::forkSessionAtAnswer(const QString& sourceSessionId, int an
     return QString();
 }
 
-// Batch 17 (FEAT-1702): cross-session keyword search, newest first. The
-// trigram FTS path handles 3+ character keywords (quoted phrase → substring
-// match, CJK included); shorter keywords fall back to a LIKE scan because a
-// trigram index cannot answer sub-trigram queries. Snippets come from fts5
-// snippet() on the FTS path and a match-centered window on the LIKE path.
+// Batch 22 (search-aggregate): strip the markdown decorations a raw
+// message body carries so the sidebar snippet shows plain text. Line-level
+// constructs (fenced code blocks, heading markers, list bullets) are
+// handled while the line structure still exists; inline markup is removed
+// afterwards, longest marker first - "**bold**" must fall to the bold rule
+// before the italic rule can match "*bold*" inside it, and images before
+// links (a link match inside "![alt](url)" would leave a stray "!").
+// Review fix (M-1): underscore-flavored bold/italic (__b__/_i_) are NOT
+// stripped. No word boundary can separate them from code identifiers -
+// "__init__" would lose its dunder and "user_name" would collapse to
+// "username", while in a coding-assistant chat the identifier reading is
+// far more likely than the emphasis one. Star-flavored markers already
+// cover the bold/italic markup AI replies actually use; a residual "__"
+// is harmless. Best-effort by design: it removes decoration only, never
+// content, and unknown markup passes through untouched.
+QString SqliteMemory::stripMarkdownDecorations(const QString& text) {
+    static const QRegularExpression fence(QStringLiteral("^\\s*```"));
+    static const QRegularExpression heading(QStringLiteral("^\\s{0,3}#{1,6}\\s+"));
+    static const QRegularExpression bullet(QStringLiteral("^\\s*[-*+]\\s+"));
+    static const QRegularExpression image(QStringLiteral("!\\[([^\\]]*)\\]\\([^)]*\\)"));
+    static const QRegularExpression link(QStringLiteral("\\[([^\\]]*)\\]\\([^)]*\\)"));
+    static const QRegularExpression codeSpan(QStringLiteral("`([^`]*)`"));
+    static const QRegularExpression boldStar(QStringLiteral("\\*\\*(.+?)\\*\\*"));
+    static const QRegularExpression italicStar(QStringLiteral("\\*(.+?)\\*"));
+
+    // Fenced blocks: the ``` marker lines are dropped, the enclosed lines
+    // are kept verbatim (no further stripping inside code).
+    QStringList kept;
+    bool inFence = false;
+    const QStringList lines =
+        text.split(QRegularExpression(QStringLiteral("\\r\\n|\\r|\\n")));
+    kept.reserve(lines.size());
+    for (QString line : lines) {
+        if (fence.match(line).hasMatch()) {
+            inFence = !inFence;
+            continue;
+        }
+        if (!inFence) {
+            line.remove(heading);
+            line.remove(bullet);
+        }
+        kept.append(line);
+    }
+
+    QString stripped = kept.join(QLatin1Char('\n'));
+    // Inline markup, in removal order: images → links (image first, see
+    // above), then code spans, then bold (long) before italic (short).
+    // Underscore flavors deliberately absent - see the header comment.
+    stripped.replace(image, QStringLiteral("\\1"));
+    stripped.replace(link, QStringLiteral("\\1"));
+    stripped.replace(codeSpan, QStringLiteral("\\1"));
+    stripped.replace(boldStar, QStringLiteral("\\1"));
+    stripped.replace(italicStar, QStringLiteral("\\1"));
+    return stripped;
+}
+
+// Batch 22 (search-aggregate): turn a raw message body into the
+// single-line sidebar snippet. Pipeline (the order is load-bearing):
+//   1. strip markdown decorations (stripMarkdownDecorations);
+//   2. flatten newlines and collapse runs of whitespace - the sidebar row
+//      is one fixed-height line, embedded '\n' used to overflow it;
+//   3. cut a bounded window centered on the first (case-insensitive) hit;
+//   4. wrap the keyword in U+0001/U+0002 control-character highlight
+//      markers - the contract the QML delegate renders. Review fix (m-1):
+//      plain "[kw]" brackets collide with bracketed text messages carry
+//      verbatim ("arr[0]", "[TODO]"); control characters cannot occur in
+//      normal text, so the UI can tell injected markers from content.
+//      Injection happens LAST: stripping markdown first is what keeps the
+//      link rule from eating the marked keyword as link text.
+// When the keyword cannot be found in the stripped text (e.g. it only
+// existed inside stripped markup), a head window is shown without markers.
+QString SqliteMemory::buildSearchSnippet(const QString& raw, const QString& keyword) {
+    static const QRegularExpression whitespace(QStringLiteral("\\s+"));
+    QString flat = stripMarkdownDecorations(raw);
+    flat.replace(whitespace, QStringLiteral(" "));
+    flat = flat.trimmed();
+
+    // ~48 context chars ≈ the window the previous FTS
+    // snippet(..., 16 tokens) call produced.
+    constexpr int kWindow = 48;
+    int hit = flat.indexOf(keyword, 0, Qt::CaseInsensitive);
+    QString snippet = flat;
+    if (hit < 0) {
+        if (flat.length() > kWindow)
+            snippet = flat.left(kWindow) + QStringLiteral("…");
+    } else {
+        const int start = qMax(0, hit - kWindow / 2);
+        const int end = qMin(flat.length(), hit + keyword.length() + kWindow / 2);
+        snippet = (start > 0 ? QStringLiteral("…") : QString())
+                  + flat.mid(start, end - start)
+                  + (end < flat.length() ? QStringLiteral("…") : QString());
+        // Re-locate inside the (possibly prefixed/trimmed) window.
+        hit = snippet.indexOf(keyword, 0, Qt::CaseInsensitive);
+    }
+
+    if (hit >= 0 && !keyword.isEmpty()) {
+        // U+0001/U+0002 delimit the injected marker - see header comment.
+        snippet = snippet.left(hit) + QChar(u'\u0001')
+                  + snippet.mid(hit, keyword.length()) + QChar(u'\u0002')
+                  + snippet.mid(hit + keyword.length());
+    }
+    return snippet;
+}
+
+// Batch 17 (FEAT-1702): cross-session keyword search. Batch 22
+// (search-aggregate): results are aggregated PER SESSION - one row per
+// session {sessionId, sessionTitle, hitCount, latestTimestamp, bestSnippet,
+// bestRole}, the session's newest hit first; `limit` caps the number of
+// sessions. The trigram FTS path handles 3+ character keywords (quoted
+// phrase → substring match, CJK included); shorter keywords fall back to a
+// LIKE scan because a trigram index cannot answer sub-trigram queries.
+//
+// Batch 22: the FTS path no longer calls snippet(). Its token window cut
+// markdown markers in half (a "**Nexus" fragment survives stripping as
+// literal asterisks) and its bracket markers duplicated the manual ones,
+// so both paths now fetch the full row content and share the C++
+// buildSearchSnippet() pipeline - one uniform snippet shape.
 QVariantList SqliteMemory::searchMessages(const QString& keyword, int limit, bool includeArchived) {
     QVariantList out;
     const QString kw = keyword.trimmed();
     if (kw.isEmpty() || limit <= 0) return out;
 
-    QSqlQuery query(m_db);
     const bool ftsPath = kw.length() >= 3;
+    QSqlQuery query(m_db);
     if (!ftsPath) {
         // Batch 21 (B4): the LIKE '%kw%' fallback cannot use any index
         // (leading wildcard) and turns into a full table scan on the GUI
@@ -1182,33 +1297,23 @@ QVariantList SqliteMemory::searchMessages(const QString& keyword, int limit, boo
             return out;
         }
     }
-    // Batch 21 (A3): results are grouped by session for the Sidebar section
-    // headers (section.property = "sessionId"), so identical session ids must
-    // be CONTIGUOUS. Order by the group's newest hit first, then by timestamp
-    // inside the group - a plain timestamp DESC interleaved sessions and made
-    // the same group header render repeatedly. The window functions live in
-    // an OUTER query: FTS5's snippet() is an auxiliary function bound to the
-    // virtual-table scan and is illegal once a window function forces
-    // materialization at the same level ("unable to use function snippet in
-    // the requested context"), so the inner query resolves snippet() to a
-    // plain column first.
-    const QString groupOrder = QStringLiteral(
-        "ORDER BY MAX(timestamp) OVER (PARTITION BY session_id) DESC, "
-        "MAX(id) OVER (PARTITION BY session_id) DESC, "
-        "timestamp DESC, id DESC");
+
+    // Batch 22 (search-aggregate), pass 1/2: exact per-session aggregation.
+    // GROUP BY counts every matching message row and records the session's
+    // newest hit; `limit` now caps SESSIONS, so it is applied here. The
+    // trailing session_id tie-break keeps the order deterministic when two
+    // sessions share a newest-hit timestamp.
     if (ftsPath) {
         QString match = kw;
         match.replace(QLatin1String("\""), QLatin1String("\"\""));
         query.prepare(QStringLiteral(
-            "SELECT id, session_id, role, timestamp, snip, title FROM ("
-            "SELECT m.id AS id, m.session_id AS session_id, m.role AS role, "
-            "m.timestamp AS timestamp, "
-            "snippet(messages_fts, 0, '[', ']', '…', 16) AS snip, s.title AS title "
+            "SELECT m.session_id, s.title, COUNT(*), MAX(m.timestamp) "
             "FROM messages_fts JOIN messages m ON m.id = messages_fts.rowid "
             "LEFT JOIN sessions s ON s.id = m.session_id "
             "WHERE messages_fts MATCH ? AND (? OR COALESCE(s.archived, 0) = 0) "
-            "AND COALESCE(s.deleted_at, 0) = 0"
-            ") %1 LIMIT ?").arg(groupOrder));
+            "AND COALESCE(s.deleted_at, 0) = 0 "
+            "GROUP BY m.session_id "
+            "ORDER BY MAX(m.timestamp) DESC, m.session_id DESC LIMIT ?"));
         query.addBindValue(QStringLiteral("\"%1\"").arg(match));
     } else {
         QString like = kw;
@@ -1216,13 +1321,12 @@ QVariantList SqliteMemory::searchMessages(const QString& keyword, int limit, boo
             .replace(QLatin1String("%"), QLatin1String("\\%"))
             .replace(QLatin1String("_"), QLatin1String("\\_"));
         query.prepare(QStringLiteral(
-            "SELECT id, session_id, role, timestamp, content AS snip, title FROM ("
-            "SELECT m.id AS id, m.session_id AS session_id, m.role AS role, "
-            "m.timestamp AS timestamp, m.content AS content, s.title AS title "
+            "SELECT m.session_id, s.title, COUNT(*), MAX(m.timestamp) "
             "FROM messages m LEFT JOIN sessions s ON s.id = m.session_id "
             "WHERE m.content LIKE ? ESCAPE '\\' AND (? OR COALESCE(s.archived, 0) = 0) "
-            "AND COALESCE(s.deleted_at, 0) = 0"
-            ") %1 LIMIT ?").arg(groupOrder));
+            "AND COALESCE(s.deleted_at, 0) = 0 "
+            "GROUP BY m.session_id "
+            "ORDER BY MAX(m.timestamp) DESC, m.session_id DESC LIMIT ?"));
         query.addBindValue(QStringLiteral("%%1%").arg(like));
     }
     query.addBindValue(includeArchived);
@@ -1231,28 +1335,102 @@ QVariantList SqliteMemory::searchMessages(const QString& keyword, int limit, boo
         qWarning() << "searchMessages failed:" << query.lastError().text();
         return out;
     }
+
+    struct SessionHit {
+        QString id;
+        QString title;
+        int hits = 0;
+        qint64 latest = 0;
+    };
+    QVector<SessionHit> sessions;
     while (query.next()) {
-        QVariantMap row;
-        row.insert(QStringLiteral("messageId"), query.value(0));
-        row.insert(QStringLiteral("sessionId"), query.value(1));
-        const QString role = query.value(2).toString();
-        const qint64 ts = query.value(3).toLongLong();
-        QString snippet = query.value(4).toString();
-        if (!ftsPath) {
-            // LIKE path: center a window on the first (case-insensitive) hit.
-            const int hit = snippet.indexOf(kw, 0, Qt::CaseInsensitive);
-            const int window = 48;
-            if (hit > window) {
-                const int start = hit - window / 2;
-                snippet = QStringLiteral("…") + snippet.mid(start, window + kw.length());
-            }
-            if (snippet.length() > window * 2 + kw.length())
-                snippet += QStringLiteral("…");
+        sessions.append(SessionHit{query.value(0).toString(),
+                                   query.value(1).toString(),
+                                   query.value(2).toInt(),
+                                   query.value(3).toLongLong()});
+    }
+    if (sessions.isEmpty()) return out;
+
+    // Pass 2/2: the best row per session for the snippet - a user-role hit
+    // first (people usually search their own words), then the newest hit.
+    // SQLite window functions cannot appear in WHERE, so ROW_NUMBER() is
+    // computed in the inner SELECT and the outer filter keeps rn = 1.
+    QStringList placeholders;
+    placeholders.reserve(sessions.size());
+    for (int i = 0; i < sessions.size(); ++i)
+        placeholders << QStringLiteral("?");
+    const QString idList = placeholders.join(QStringLiteral(", "));
+    QSqlQuery best(m_db);
+    if (ftsPath) {
+        QString match = kw;
+        match.replace(QLatin1String("\""), QLatin1String("\"\""));
+        best.prepare(QStringLiteral(
+            "SELECT session_id, role, content FROM ("
+            "SELECT m.session_id AS session_id, m.role AS role, "
+            "m.content AS content, "
+            "ROW_NUMBER() OVER (PARTITION BY m.session_id "
+            "ORDER BY (m.role = 'user') DESC, m.timestamp DESC, m.id DESC) AS rn "
+            "FROM messages_fts JOIN messages m ON m.id = messages_fts.rowid "
+            "LEFT JOIN sessions s ON s.id = m.session_id "
+            "WHERE messages_fts MATCH ? AND (? OR COALESCE(s.archived, 0) = 0) "
+            "AND COALESCE(s.deleted_at, 0) = 0 "
+            "AND m.session_id IN (%1)) WHERE rn = 1").arg(idList));
+        best.addBindValue(QStringLiteral("\"%1\"").arg(match));
+    } else {
+        QString like = kw;
+        like.replace(QLatin1String("\\"), QLatin1String("\\\\"))
+            .replace(QLatin1String("%"), QLatin1String("\\%"))
+            .replace(QLatin1String("_"), QLatin1String("\\_"));
+        best.prepare(QStringLiteral(
+            "SELECT session_id, role, content FROM ("
+            "SELECT m.session_id AS session_id, m.role AS role, "
+            "m.content AS content, "
+            "ROW_NUMBER() OVER (PARTITION BY m.session_id "
+            "ORDER BY (m.role = 'user') DESC, m.timestamp DESC, m.id DESC) AS rn "
+            "FROM messages m LEFT JOIN sessions s ON s.id = m.session_id "
+            "WHERE m.content LIKE ? ESCAPE '\\' AND (? OR COALESCE(s.archived, 0) = 0) "
+            "AND COALESCE(s.deleted_at, 0) = 0 "
+            "AND m.session_id IN (%1)) WHERE rn = 1").arg(idList));
+        best.addBindValue(QStringLiteral("%%1%").arg(like));
+    }
+    best.addBindValue(includeArchived);
+    for (const SessionHit& s : sessions)
+        best.addBindValue(s.id);
+
+    struct BestRow {
+        QString role;
+        QString content;
+    };
+    QHash<QString, BestRow> bestBySession;
+    if (!best.exec()) {
+        // Pass 1 already proved the WHERE clause runs, so this is
+        // unexpected; still return the aggregated session rows (empty
+        // snippets) rather than dropping results the sidebar could show.
+        qWarning() << "searchMessages (best-hit pass) failed:"
+                   << best.lastError().text();
+    } else {
+        while (best.next()) {
+            bestBySession.insert(best.value(0).toString(),
+                                 BestRow{best.value(1).toString(),
+                                         best.value(2).toString()});
         }
-        row.insert(QStringLiteral("snippet"), snippet);
-        row.insert(QStringLiteral("role"), role);
-        row.insert(QStringLiteral("timestamp"), ts);
-        row.insert(QStringLiteral("sessionTitle"), query.value(5));
+    }
+
+    for (const SessionHit& s : sessions) {
+        QVariantMap row;
+        row.insert(QStringLiteral("sessionId"), s.id);
+        row.insert(QStringLiteral("sessionTitle"), s.title);
+        row.insert(QStringLiteral("hitCount"), s.hits);
+        row.insert(QStringLiteral("latestTimestamp"), s.latest);
+        const auto it = bestBySession.constFind(s.id);
+        if (it != bestBySession.constEnd()) {
+            row.insert(QStringLiteral("bestSnippet"),
+                       buildSearchSnippet(it->content, kw));
+            row.insert(QStringLiteral("bestRole"), it->role);
+        } else {
+            row.insert(QStringLiteral("bestSnippet"), QString());
+            row.insert(QStringLiteral("bestRole"), QString());
+        }
         out.append(row);
     }
     return out;

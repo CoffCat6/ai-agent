@@ -1182,10 +1182,12 @@ Rectangle {
             }
         }
 
-        // ── Search Results (Batch 17 / F1) ───────────
-        // Grouped by session: the title caption renders on the first row of
-        // each group (previousSection != section). Click restores the whole
-        // session; in-message scroll positioning is a declared enhancement.
+        // ── Search Results (Batch 22 / search-aggregate) ──
+        // Batch 22 (search-aggregate): 搜索结果按会话聚合为一张卡片
+        // （标题 + 命中数 + 最佳片段 + 最近命中时间），替代原先按消息
+        // 逐行展开 + section 分组的展示。数据契约见 AgentVM.searchResults：
+        // 每项 sessionId / sessionTitle / hitCount / latestTimestamp /
+        // bestSnippet / bestRole；notice 行 sessionId === "__search_notice__"。
         ScrollView {
             visible: root.searching
             Layout.fillWidth: true
@@ -1198,8 +1200,8 @@ Rectangle {
                 model: AgentVM.searchResults
                 spacing: 2
                 clip: true
-                section.property: "sessionId"
 
+                // 空态（Batch 17 起保留）。
                 Text {
                     anchors.centerIn: parent
                     visible: searchResultsList.count === 0
@@ -1207,68 +1209,184 @@ Rectangle {
                     color: Theme.textSecondary
                     font.pixelSize: Theme.fontSizeCaption
                     font.family: Theme.fontSans
+                    Accessible.role: Accessible.StaticText
+                    Accessible.name: qsTr("无匹配结果")
+                }
+
+                // Batch 22 (search-aggregate): \u0001命中词\u0002 控制字符
+                // 标记 → StyledText 高亮富文本（审查修复 m-1：标记从半角
+                // 方括号改为 U+0001/U+0002 定界，原文里的 arr[0]、[TODO]
+                // 不再被误高亮）。顺序不能反：先对整段文本做 HTML 实体
+                // 转义（& < >，防原文里的尖括号破坏标签结构），再按控制
+                // 字符把关键词替换为 <b><span style="color:…">…</span></b>。
+                // 加粗走 <b>、颜色走 <span>——StyledText 的 style 属性只在
+                // <span> 上生效（写在 <b> 上会被忽略），故嵌套两层。控制
+                // 字符不参与转义、也不会出现在正常文本里；一条 snippet
+                // 内多个标记全部高亮（全局匹配）。无标记时原样（转义后）
+                // 显示。
+                function highlightedSnippet(raw) {
+                    if (raw === undefined || raw === null) return ""
+                    let escaped = ""
+                    for (let i = 0; i < raw.length; ++i) {
+                        const ch = raw.charAt(i)
+                        if (ch === "&") escaped += "&amp;"
+                        else if (ch === "<") escaped += "&lt;"
+                        else if (ch === ">") escaped += "&gt;"
+                        else escaped += ch
+                    }
+                    const color = Theme.brandPrimary.toString()
+                    return escaped.replace(/\x01([^\x01\x02]*)\x02/g,
+                        "<b><span style=\"color:" + color + "\">$1</span></b>")
+                }
+
+                // Batch 22 (search-aggregate): ToolTip 兜底用——剥掉
+                // \u0001标记\u0002 控制字符还原纯文本（截断时悬停可看
+                // 完整片段，与 sessionTitle 的 docs/25 C5 模式一致）。
+                // 审查修复 m-1：只按控制字符剥标记；消息原文自带的
+                // 半角方括号（arr[0]、[TODO]）是内容，原样保留。
+                function plainSnippet(raw) {
+                    if (raw === undefined || raw === null) return ""
+                    return raw.replace(/\x01([^\x01\x02]*)\x02/g, "$1")
                 }
 
                 delegate: ItemDelegate {
                     id: resultDelegate
                     width: searchResultsList.width
-                    // Batch 21 (B4): a backend notice row (too many messages
-                    // for the LIKE scan) renders as a single wrapped caption.
+                    // Batch 21 (B4): 后端通知行（消息量超过 LIKE 扫描上限）
+                    // 渲染为单条可换行提示，逻辑原样保留。
                     readonly property bool isNotice:
                         modelData.sessionId === "__search_notice__"
+                    // 会话标题（空串 → "新会话"），标题行与 Accessible 共用。
+                    readonly property string displayTitle:
+                        modelData.sessionTitle && modelData.sessionTitle.length > 0
+                        ? modelData.sessionTitle : qsTr("新会话")
+                    // 次要信息行：已归档标记 + 最近命中时间。契约当前未含
+                    // archived 字段（undefined → 不显示标记），数据层后续
+                    // 补充即自动生效，与 sessionRow 的呈现口径一致。
+                    readonly property string metaText:
+                        (modelData.archived === true ? qsTr("已归档 · ") : "")
+                        + (modelData.latestTimestamp > 0
+                           ? Theme.formatDateTime(new Date(modelData.latestTimestamp))
+                           : "")
+                    // Batch 22 (search-aggregate): 卡片高度按内容计算
+                    // （ColumnLayout 顶对齐，implicitHeight + 内容下方
+                    // 16px 呼吸空间，兼作卡片间距），不再固定 44/62 的
+                    // 消息行硬编码。
                     height: isNotice ? 48
-                        : (ListView.previousSection !== ListView.section ? 62 : 44)
+                        : resultsColumn.implicitHeight + 16
+
+                    // docs/25 D2 风格：卡片与 notice 行对读屏可达。
+                    Accessible.role: resultDelegate.isNotice
+                        ? Accessible.StaticText : Accessible.Button
+                    Accessible.name: resultDelegate.isNotice
+                        ? (modelData.notice || "")
+                        : qsTr("会话 %1，%2 条命中")
+                            .arg(resultDelegate.displayTitle)
+                            .arg(modelData.hitCount)
+                    Accessible.description: resultDelegate.isNotice
+                        ? "" : resultDelegate.metaText
+                    Accessible.onPressAction: resultDelegate.openSession()
 
                     background: Rectangle {
                         color: resultDelegate.hovered && !resultDelegate.isNotice
                             ? Theme.surfaceHover : "transparent"
                     }
 
+                    // 点击进入会话：清空搜索框回到会话列表（与原行为一致）。
+                    function openSession() {
+                        if (resultDelegate.isNotice) return   // informational, not a session
+                        searchField.text = ""          // back to the session list
+                        AgentVM.loadSession(modelData.sessionId)
+                    }
+
                     ColumnLayout {
+                        id: resultsColumn
                         anchors.fill: parent
                         anchors.leftMargin: 20
                         anchors.rightMargin: 12
                         spacing: 2
 
+                        // notice 行（原样保留）。
+                        Text {
+                            visible: resultDelegate.isNotice
+                            text: resultDelegate.isNotice ? modelData.notice : ""
+                            color: Theme.statusWarning
+                            font.pixelSize: Theme.fontSizeCaption
+                            font.family: Theme.fontSans
+                            wrapMode: Text.WordWrap
+                            Layout.fillWidth: true
+                        }
+
+                        // 行 1：会话标题（左）+ 命中数（右，次要色）。
+                        Item {
+                            visible: !resultDelegate.isNotice
+                            Layout.fillWidth: true
+                            Layout.preferredHeight: 20
+
+                            Text {
+                                id: resultTitle
+                                anchors.left: parent.left
+                                anchors.right: hitCountText.left
+                                anchors.rightMargin: 8
+                                anchors.verticalCenter: parent.verticalCenter
+                                text: resultDelegate.displayTitle
+                                color: Theme.textPrimary
+                                font.pixelSize: Theme.fontSizeBody
+                                font.family: Theme.fontSans
+                                elide: Text.ElideRight
+                            }
+
+                            Text {
+                                id: hitCountText
+                                anchors.right: parent.right
+                                anchors.verticalCenter: parent.verticalCenter
+                                // || 0 兜底：notice 行的绑定同样会求值。
+                                text: qsTr("%1 条命中").arg(modelData.hitCount || 0)
+                                color: Theme.textSecondary
+                                font.pixelSize: Theme.fontSizeCaption
+                                font.family: Theme.fontSans
+                            }
+                        }
+
+                        // 行 2：最佳片段（\u0001命中词\u0002 控制字符标记
+                        // → 品牌色高亮）。换行已在数据层压平，此处保持单
+                        // 行；富文本的 elide 在部分 Qt 版本不生效，clip 兜
+                        // 底保证不横向溢出错位。
                         Text {
                             visible: !resultDelegate.isNotice
-                                && ListView.previousSection !== ListView.section
-                            text: modelData.sessionTitle && modelData.sessionTitle.length > 0
-                                ? modelData.sessionTitle : qsTr("新会话")
-                            color: Theme.brandPrimary
+                            text: searchResultsList.highlightedSnippet(
+                                modelData.bestSnippet)
+                            textFormat: Text.StyledText
+                            color: Theme.textPrimary
                             font.pixelSize: Theme.fontSizeCaption
-                            font.weight: Font.DemiBold
+                            font.family: Theme.fontSans
+                            elide: Text.ElideRight
+                            wrapMode: Text.NoWrap
+                            clip: true
+                            Layout.fillWidth: true
+
+                            HoverHandler { id: snippetHover }
+                            ToolTip.visible: snippetHover.hovered && truncated
+                            ToolTip.text: searchResultsList.plainSnippet(
+                                modelData.bestSnippet)
+                        }
+
+                        // 行 3：次要信息（已归档标记 + 最近命中时间）。
+                        // 时间复用 Theme 单例的 QLocale 出口（docs/25 C1
+                        // 统一格式化），与记忆条目同口径（yyyy-MM-dd HH:mm）。
+                        Text {
+                            visible: !resultDelegate.isNotice
+                                && resultDelegate.metaText.length > 0
+                            text: resultDelegate.metaText
+                            color: Theme.textSecondary
+                            font.pixelSize: Theme.fontSizeCaption
                             font.family: Theme.fontSans
                             elide: Text.ElideRight
                             Layout.fillWidth: true
                         }
-
-                        Text {
-                            text: resultDelegate.isNotice ? modelData.notice : modelData.snippet
-                            color: resultDelegate.isNotice
-                                ? Theme.statusWarning : Theme.textPrimary
-                            font.pixelSize: Theme.fontSizeCaption
-                            font.family: Theme.fontSans
-                            elide: resultDelegate.isNotice ? Text.ElideNone : Text.ElideRight
-                            wrapMode: resultDelegate.isNotice ? Text.WordWrap : Text.NoWrap
-                            Layout.fillWidth: true
-                        }
-
-                        Text {
-                            visible: !resultDelegate.isNotice
-                            text: modelData.role === "user" ? qsTr("用户")
-                                : modelData.role === "assistant" ? qsTr("助手") : modelData.role
-                            color: Theme.textSecondary
-                            font.pixelSize: 10
-                            font.family: Theme.fontMono
-                        }
                     }
 
-                    onClicked: {
-                        if (resultDelegate.isNotice) return   // informational, not a session
-                        searchField.text = ""          // back to the session list
-                        AgentVM.loadSession(modelData.sessionId)
-                    }
+                    onClicked: resultDelegate.openSession()
                 }
             }
         }

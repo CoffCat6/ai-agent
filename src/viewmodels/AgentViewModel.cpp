@@ -759,6 +759,12 @@ void AgentViewModel::setSessionArchived(const QString& sessionId, bool archived)
     emit noticeOccurred(archived ? tr("会话已归档，可在“包含已归档”中恢复。") : tr("会话已恢复。"));
 }
 
+// Batch 17 (FEAT-1702) / Batch 22 (search-aggregate): pass-through to the
+// memory backend, which returns one aggregated row per session
+// {sessionId, sessionTitle, hitCount, latestTimestamp, bestSnippet,
+// bestRole} (the limit passed through caps SESSIONS at 50). The sidebar
+// renders these verbatim; an empty keyword yields empty results, which it
+// treats as "back to the session list".
 void AgentViewModel::searchMessages(const QString& keyword, bool includeArchived) {
     const QVariantList results = m_memory
         ? m_memory->searchMessages(keyword, 50, includeArchived) : QVariantList();

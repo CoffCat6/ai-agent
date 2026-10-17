@@ -1916,102 +1916,102 @@
 <context>
     <name>NexusAI</name>
     <message>
-        <location filename="../src/core/utils/SettingsSchema.cpp" line="80"/>
+        <location filename="../src/core/utils/SettingsSchema.cpp" line="81"/>
         <source>主题模式</source>
         <translation>主题模式</translation>
     </message>
     <message>
-        <location filename="../src/core/utils/SettingsSchema.cpp" line="87"/>
+        <location filename="../src/core/utils/SettingsSchema.cpp" line="88"/>
         <source>正文字体</source>
         <translation>正文字体</translation>
     </message>
     <message>
-        <location filename="../src/core/utils/SettingsSchema.cpp" line="90"/>
+        <location filename="../src/core/utils/SettingsSchema.cpp" line="91"/>
         <source>等宽字体</source>
         <translation>等宽字体</translation>
     </message>
     <message>
-        <location filename="../src/core/utils/SettingsSchema.cpp" line="93"/>
+        <location filename="../src/core/utils/SettingsSchema.cpp" line="94"/>
         <source>基础字号</source>
         <translation>基础字号</translation>
     </message>
     <message>
-        <location filename="../src/core/utils/SettingsSchema.cpp" line="101"/>
+        <location filename="../src/core/utils/SettingsSchema.cpp" line="102"/>
         <source>侧边栏默认宽度</source>
         <translation>侧边栏默认宽度</translation>
     </message>
     <message>
-        <location filename="../src/core/utils/SettingsSchema.cpp" line="104"/>
+        <location filename="../src/core/utils/SettingsSchema.cpp" line="105"/>
         <source>面板默认宽度</source>
         <translation>面板默认宽度</translation>
     </message>
     <message>
-        <location filename="../src/core/utils/SettingsSchema.cpp" line="107"/>
+        <location filename="../src/core/utils/SettingsSchema.cpp" line="108"/>
         <source>侧边栏默认展开</source>
         <translation>侧边栏默认展开</translation>
     </message>
     <message>
-        <location filename="../src/core/utils/SettingsSchema.cpp" line="110"/>
+        <location filename="../src/core/utils/SettingsSchema.cpp" line="111"/>
         <source>面板默认展开</source>
         <translation>面板默认展开</translation>
     </message>
     <message>
-        <location filename="../src/core/utils/SettingsSchema.cpp" line="113"/>
+        <location filename="../src/core/utils/SettingsSchema.cpp" line="114"/>
         <source>启动时恢复窗口</source>
         <translation>启动时恢复窗口</translation>
     </message>
     <message>
-        <location filename="../src/core/utils/SettingsSchema.cpp" line="96"/>
+        <location filename="../src/core/utils/SettingsSchema.cpp" line="97"/>
         <source>界面语言</source>
         <translation>界面语言</translation>
     </message>
     <message>
-        <location filename="../src/core/utils/SettingsSchema.cpp" line="61"/>
+        <location filename="../src/core/utils/SettingsSchema.cpp" line="62"/>
         <source>模型配置</source>
         <translation>模型配置</translation>
     </message>
     <message>
-        <location filename="../src/core/utils/SettingsSchema.cpp" line="62"/>
+        <location filename="../src/core/utils/SettingsSchema.cpp" line="63"/>
         <source>界面设置</source>
         <translation>界面设置</translation>
     </message>
     <message>
-        <location filename="../src/core/utils/SettingsSchema.cpp" line="63"/>
+        <location filename="../src/core/utils/SettingsSchema.cpp" line="64"/>
         <source>通用设置</source>
         <translation>通用设置</translation>
     </message>
     <message>
-        <location filename="../src/core/utils/SettingsSchema.cpp" line="64"/>
+        <location filename="../src/core/utils/SettingsSchema.cpp" line="65"/>
         <source>安全</source>
         <translation>安全</translation>
     </message>
     <message>
-        <location filename="../src/core/utils/SettingsSchema.cpp" line="65"/>
+        <location filename="../src/core/utils/SettingsSchema.cpp" line="66"/>
         <source>MCP 服务器</source>
         <translation>MCP 服务器</translation>
     </message>
     <message>
-        <location filename="../src/core/utils/SettingsSchema.cpp" line="66"/>
+        <location filename="../src/core/utils/SettingsSchema.cpp" line="67"/>
         <source>工具管理</source>
         <translation>工具管理</translation>
     </message>
     <message>
-        <location filename="../src/core/utils/SettingsSchema.cpp" line="69"/>
+        <location filename="../src/core/utils/SettingsSchema.cpp" line="70"/>
         <source>设置与备份</source>
         <translation>设置与备份</translation>
     </message>
     <message>
-        <location filename="../src/core/utils/SettingsSchema.cpp" line="116"/>
+        <location filename="../src/core/utils/SettingsSchema.cpp" line="117"/>
         <source>关闭时最小化到系统托盘</source>
         <translation>关闭时最小化到系统托盘</translation>
     </message>
     <message>
-        <location filename="../src/core/utils/SettingsSchema.cpp" line="119"/>
+        <location filename="../src/core/utils/SettingsSchema.cpp" line="120"/>
         <source>开机自启动</source>
         <translation>开机自启动</translation>
     </message>
     <message>
-        <location filename="../src/core/utils/SettingsSchema.cpp" line="122"/>
+        <location filename="../src/core/utils/SettingsSchema.cpp" line="123"/>
         <source>系统通知</source>
         <translation>系统通知</translation>
     </message>
@@ -2020,17 +2020,17 @@
         <translation type="vanished">工具与记忆</translation>
     </message>
     <message>
-        <location filename="../src/core/utils/SettingsSchema.cpp" line="67"/>
+        <location filename="../src/core/utils/SettingsSchema.cpp" line="68"/>
         <source>记忆管理</source>
         <translation>记忆管理</translation>
     </message>
     <message>
-        <location filename="../src/core/utils/SettingsSchema.cpp" line="68"/>
+        <location filename="../src/core/utils/SettingsSchema.cpp" line="69"/>
         <source>用量统计</source>
         <translation>用量统计</translation>
     </message>
     <message>
-        <location filename="../src/core/utils/SettingsSchema.cpp" line="77"/>
+        <location filename="../src/core/utils/SettingsSchema.cpp" line="78"/>
         <source>上次访问分类</source>
         <translation>上次访问分类</translation>
     </message>
@@ -2097,8 +2097,8 @@
     <message>
         <location filename="../src/viewmodels/AgentViewModel.cpp" line="287"/>
         <location filename="../src/viewmodels/AgentViewModel.cpp" line="485"/>
-        <location filename="../src/viewmodels/AgentViewModel.cpp" line="1642"/>
-        <location filename="../src/viewmodels/AgentViewModel.cpp" line="1703"/>
+        <location filename="../src/viewmodels/AgentViewModel.cpp" line="1648"/>
+        <location filename="../src/viewmodels/AgentViewModel.cpp" line="1709"/>
         <source>新会话</source>
         <translation>新会话</translation>
     </message>
@@ -2128,17 +2128,17 @@
         <translation>会话已恢复。</translation>
     </message>
     <message>
-        <location filename="../src/viewmodels/AgentViewModel.cpp" line="777"/>
+        <location filename="../src/viewmodels/AgentViewModel.cpp" line="783"/>
         <source>导出失败：未连接持久化后端</source>
         <translation>导出失败：未连接持久化后端</translation>
     </message>
     <message>
-        <location filename="../src/viewmodels/AgentViewModel.cpp" line="782"/>
+        <location filename="../src/viewmodels/AgentViewModel.cpp" line="788"/>
         <source>导出失败：不支持的格式“%1”（可选 md / json）</source>
         <translation>导出失败：不支持的格式“%1”（可选 md / json）</translation>
     </message>
     <message>
-        <location filename="../src/viewmodels/AgentViewModel.cpp" line="797"/>
+        <location filename="../src/viewmodels/AgentViewModel.cpp" line="803"/>
         <source># NexusAI 会话导出
 
 </source>
@@ -2147,21 +2147,21 @@
 </translation>
     </message>
     <message>
-        <location filename="../src/viewmodels/AgentViewModel.cpp" line="798"/>
+        <location filename="../src/viewmodels/AgentViewModel.cpp" line="804"/>
         <source>- 会话 ID：%1
 </source>
         <translation>- 会话 ID：%1
 </translation>
     </message>
     <message>
-        <location filename="../src/viewmodels/AgentViewModel.cpp" line="799"/>
+        <location filename="../src/viewmodels/AgentViewModel.cpp" line="805"/>
         <source>- 导出时间：%1
 </source>
         <translation>- 导出时间：%1
 </translation>
     </message>
     <message>
-        <location filename="../src/viewmodels/AgentViewModel.cpp" line="800"/>
+        <location filename="../src/viewmodels/AgentViewModel.cpp" line="806"/>
         <source>- 消息数：%1
 
 ---
@@ -2174,17 +2174,17 @@
 </translation>
     </message>
     <message>
-        <location filename="../src/viewmodels/AgentViewModel.cpp" line="804"/>
+        <location filename="../src/viewmodels/AgentViewModel.cpp" line="810"/>
         <source>用户</source>
         <translation>用户</translation>
     </message>
     <message>
-        <location filename="../src/viewmodels/AgentViewModel.cpp" line="805"/>
+        <location filename="../src/viewmodels/AgentViewModel.cpp" line="811"/>
         <source>助手</source>
         <translation>助手</translation>
     </message>
     <message>
-        <location filename="../src/viewmodels/AgentViewModel.cpp" line="814"/>
+        <location filename="../src/viewmodels/AgentViewModel.cpp" line="820"/>
         <source>---
 
 ## 过程摘要
@@ -2197,67 +2197,67 @@
 </translation>
     </message>
     <message>
-        <location filename="../src/viewmodels/AgentViewModel.cpp" line="843"/>
+        <location filename="../src/viewmodels/AgentViewModel.cpp" line="849"/>
         <source>导出失败：无法写入 %1</source>
         <translation>导出失败：无法写入 %1</translation>
     </message>
     <message>
-        <location filename="../src/viewmodels/AgentViewModel.cpp" line="848"/>
+        <location filename="../src/viewmodels/AgentViewModel.cpp" line="854"/>
         <source>导出失败：写入未完成 %1</source>
         <translation>导出失败：写入未完成 %1</translation>
     </message>
     <message>
-        <location filename="../src/viewmodels/AgentViewModel.cpp" line="854"/>
+        <location filename="../src/viewmodels/AgentViewModel.cpp" line="860"/>
         <source>已导出会话（%1 条消息）：%2</source>
         <translation>已导出会话（%1 条消息）：%2</translation>
     </message>
     <message>
-        <location filename="../src/viewmodels/AgentViewModel.cpp" line="916"/>
+        <location filename="../src/viewmodels/AgentViewModel.cpp" line="922"/>
         <source>无法读取文件：%1</source>
         <translation>无法读取文件：%1</translation>
     </message>
     <message>
-        <location filename="../src/viewmodels/AgentViewModel.cpp" line="963"/>
+        <location filename="../src/viewmodels/AgentViewModel.cpp" line="969"/>
         <source>PDF 已加密或需要密码，无法导入：%1</source>
         <translation>PDF 已加密或需要密码，无法导入：%1</translation>
     </message>
     <message>
-        <location filename="../src/viewmodels/AgentViewModel.cpp" line="966"/>
+        <location filename="../src/viewmodels/AgentViewModel.cpp" line="972"/>
         <source>PDF 文件已损坏或格式无效，无法导入：%1</source>
         <translation>PDF 文件已损坏或格式无效，无法导入：%1</translation>
     </message>
     <message>
-        <location filename="../src/viewmodels/AgentViewModel.cpp" line="969"/>
+        <location filename="../src/viewmodels/AgentViewModel.cpp" line="975"/>
         <source>未能从 PDF 中提取到文本（可能是扫描件，没有文本层）：%1</source>
         <translation>未能从 PDF 中提取到文本（可能是扫描件，没有文本层）：%1</translation>
     </message>
     <message>
-        <location filename="../src/viewmodels/AgentViewModel.cpp" line="973"/>
+        <location filename="../src/viewmodels/AgentViewModel.cpp" line="979"/>
         <source>无法读取 PDF 文件：%1</source>
         <translation>无法读取 PDF 文件：%1</translation>
     </message>
     <message>
-        <location filename="../src/viewmodels/AgentViewModel.cpp" line="1686"/>
+        <location filename="../src/viewmodels/AgentViewModel.cpp" line="1692"/>
         <source>这个会话还没有可分叉的历史记录。</source>
         <translation>这个会话还没有可分叉的历史记录。</translation>
     </message>
     <message>
-        <location filename="../src/viewmodels/AgentViewModel.cpp" line="1691"/>
+        <location filename="../src/viewmodels/AgentViewModel.cpp" line="1697"/>
         <source>这条回答还没有存进会话记录，稍等一下再试。</source>
         <translation>这条回答还没有存进会话记录，稍等一下再试。</translation>
     </message>
     <message>
-        <location filename="../src/viewmodels/AgentViewModel.cpp" line="1709"/>
+        <location filename="../src/viewmodels/AgentViewModel.cpp" line="1715"/>
         <source>%1（分支）</source>
         <translation>%1（分支）</translation>
     </message>
     <message>
-        <location filename="../src/viewmodels/AgentViewModel.cpp" line="1711"/>
+        <location filename="../src/viewmodels/AgentViewModel.cpp" line="1717"/>
         <source>%1（分支%2）</source>
         <translation>%1（分支%2）</translation>
     </message>
     <message>
-        <location filename="../src/viewmodels/AgentViewModel.cpp" line="1715"/>
+        <location filename="../src/viewmodels/AgentViewModel.cpp" line="1721"/>
         <source>无法创建分叉出来的会话，请重试。</source>
         <translation>无法创建分叉出来的会话，请重试。</translation>
     </message>
@@ -2266,93 +2266,93 @@
         <translation type="vanished">分叉会话已创建，但没能发出第一条消息。</translation>
     </message>
     <message>
-        <location filename="../src/viewmodels/AgentViewModel.cpp" line="938"/>
+        <location filename="../src/viewmodels/AgentViewModel.cpp" line="944"/>
         <source>无法打开文件：%1</source>
         <translation>无法打开文件：%1</translation>
     </message>
     <message>
-        <location filename="../src/viewmodels/AgentViewModel.cpp" line="1000"/>
+        <location filename="../src/viewmodels/AgentViewModel.cpp" line="1006"/>
         <source>知识库正忙（导入或重新嵌入进行中），请稍后再试</source>
         <translation>知识库正忙（导入或重新嵌入进行中），请稍后再试</translation>
     </message>
     <message>
-        <location filename="../src/viewmodels/AgentViewModel.cpp" line="1126"/>
+        <location filename="../src/viewmodels/AgentViewModel.cpp" line="1132"/>
         <source>文档内容已存在，已跳过：%1</source>
         <translation>文档内容已存在，已跳过：%1</translation>
     </message>
     <message>
-        <location filename="../src/viewmodels/AgentViewModel.cpp" line="1161"/>
+        <location filename="../src/viewmodels/AgentViewModel.cpp" line="1167"/>
         <source>未找到文档内容，无法重新嵌入：%1</source>
         <translation>未找到文档内容，无法重新嵌入：%1</translation>
     </message>
     <message>
-        <location filename="../src/viewmodels/AgentViewModel.cpp" line="1180"/>
+        <location filename="../src/viewmodels/AgentViewModel.cpp" line="1186"/>
         <source>已重新嵌入 %1（%2 段）</source>
         <translation>已重新嵌入 %1（%2 段）</translation>
     </message>
     <message>
-        <location filename="../src/viewmodels/AgentViewModel.cpp" line="1182"/>
+        <location filename="../src/viewmodels/AgentViewModel.cpp" line="1188"/>
         <source>重新嵌入失败：%1</source>
         <translation>重新嵌入失败：%1</translation>
     </message>
     <message>
-        <location filename="../src/viewmodels/AgentViewModel.cpp" line="1186"/>
+        <location filename="../src/viewmodels/AgentViewModel.cpp" line="1192"/>
         <source>已导入 %1（%2 段）</source>
         <translation>已导入 %1（%2 段）</translation>
     </message>
     <message>
-        <location filename="../src/viewmodels/AgentViewModel.cpp" line="1188"/>
+        <location filename="../src/viewmodels/AgentViewModel.cpp" line="1194"/>
         <source>导入失败（文件为空或无法分块）：%1</source>
         <translation>导入失败（文件为空或无法分块）：%1</translation>
     </message>
     <message>
-        <location filename="../src/viewmodels/AgentViewModel.cpp" line="1190"/>
+        <location filename="../src/viewmodels/AgentViewModel.cpp" line="1196"/>
         <source>知识库总量已达上限（最多 %1 段），请先删除部分文档后再导入</source>
         <translation>知识库总量已达上限（最多 %1 段），请先删除部分文档后再导入</translation>
     </message>
     <message>
-        <location filename="../src/viewmodels/AgentViewModel.cpp" line="1193"/>
+        <location filename="../src/viewmodels/AgentViewModel.cpp" line="1199"/>
         <source>文件过大（超过单文档 %1 段上限）：%2</source>
         <translation>文件过大（超过单文档 %1 段上限）：%2</translation>
     </message>
     <message>
-        <location filename="../src/viewmodels/AgentViewModel.cpp" line="1256"/>
-        <location filename="../src/viewmodels/AgentViewModel.cpp" line="1286"/>
+        <location filename="../src/viewmodels/AgentViewModel.cpp" line="1262"/>
+        <location filename="../src/viewmodels/AgentViewModel.cpp" line="1292"/>
         <source>数据库未就绪</source>
         <translation>数据库未就绪</translation>
     </message>
     <message>
-        <location filename="../src/viewmodels/AgentViewModel.cpp" line="1263"/>
+        <location filename="../src/viewmodels/AgentViewModel.cpp" line="1269"/>
         <source>备份失败，详见日志</source>
         <translation>备份失败，详见日志</translation>
     </message>
     <message>
-        <location filename="../src/viewmodels/AgentViewModel.cpp" line="1291"/>
+        <location filename="../src/viewmodels/AgentViewModel.cpp" line="1297"/>
         <source>无法读取该备份文件：%1</source>
         <translation>无法读取该备份文件：%1</translation>
     </message>
     <message>
-        <location filename="../src/viewmodels/AgentViewModel.cpp" line="1293"/>
+        <location filename="../src/viewmodels/AgentViewModel.cpp" line="1299"/>
         <source>备份完整性检查未通过，已取消恢复</source>
         <translation>备份完整性检查未通过，已取消恢复</translation>
     </message>
     <message>
-        <location filename="../src/viewmodels/AgentViewModel.cpp" line="1308"/>
+        <location filename="../src/viewmodels/AgentViewModel.cpp" line="1314"/>
         <source>恢复失败，原数据库已还原</source>
         <translation>恢复失败，原数据库已还原</translation>
     </message>
     <message>
-        <location filename="../src/viewmodels/AgentViewModel.cpp" line="1526"/>
+        <location filename="../src/viewmodels/AgentViewModel.cpp" line="1532"/>
         <source>文件过大（附件上限 %1 KB）：%2</source>
         <translation>文件过大（附件上限 %1 KB）：%2</translation>
     </message>
     <message>
-        <location filename="../src/viewmodels/AgentViewModel.cpp" line="1531"/>
+        <location filename="../src/viewmodels/AgentViewModel.cpp" line="1537"/>
         <source>暂不支持二进制文件作为附件：%1</source>
         <translation>暂不支持二进制文件作为附件：%1</translation>
     </message>
     <message>
-        <location filename="../src/viewmodels/AgentViewModel.cpp" line="1544"/>
+        <location filename="../src/viewmodels/AgentViewModel.cpp" line="1550"/>
         <source>已忽略 %1 个不支持的文件类型（仅支持图片与文本文件）</source>
         <translation>已忽略 %1 个不支持的文件类型（仅支持图片与文本文件）</translation>
     </message>
@@ -2623,52 +2623,52 @@
 <context>
     <name>NexusAI::SettingsService</name>
     <message>
-        <location filename="../src/viewmodels/SettingsService.cpp" line="245"/>
+        <location filename="../src/viewmodels/SettingsService.cpp" line="253"/>
         <source>设置未能保存，请检查存储权限或磁盘空间后重试。</source>
         <translation>设置未能保存，请检查存储权限或磁盘空间后重试。</translation>
     </message>
     <message>
-        <location filename="../src/viewmodels/SettingsService.cpp" line="469"/>
+        <location filename="../src/viewmodels/SettingsService.cpp" line="470"/>
         <source>API 密钥加密失败，模型配置未保存。</source>
         <translation>API 密钥加密失败，模型配置未保存。</translation>
     </message>
     <message>
-        <location filename="../src/viewmodels/SettingsService.cpp" line="485"/>
+        <location filename="../src/viewmodels/SettingsService.cpp" line="486"/>
         <source>模型配置未能保存。请检查设置存储权限或磁盘空间后重试。</source>
         <translation>模型配置未能保存。请检查设置存储权限或磁盘空间后重试。</translation>
     </message>
     <message>
-        <location filename="../src/viewmodels/SettingsService.cpp" line="492"/>
+        <location filename="../src/viewmodels/SettingsService.cpp" line="493"/>
         <source>自定义网关</source>
         <translation>自定义网关</translation>
     </message>
     <message>
-        <location filename="../src/viewmodels/SettingsService.cpp" line="497"/>
+        <location filename="../src/viewmodels/SettingsService.cpp" line="498"/>
         <source>新配置</source>
         <translation>新配置</translation>
     </message>
     <message>
-        <location filename="../src/viewmodels/SettingsService.cpp" line="744"/>
+        <location filename="../src/viewmodels/SettingsService.cpp" line="745"/>
         <source>OpenAI 兼容</source>
         <translation>OpenAI 兼容</translation>
     </message>
     <message>
-        <location filename="../src/viewmodels/SettingsService.cpp" line="745"/>
+        <location filename="../src/viewmodels/SettingsService.cpp" line="746"/>
         <source>Ollama 本地</source>
         <translation>Ollama 本地</translation>
     </message>
     <message>
-        <location filename="../src/viewmodels/SettingsService.cpp" line="746"/>
+        <location filename="../src/viewmodels/SettingsService.cpp" line="747"/>
         <source>Claude</source>
         <translation>Claude</translation>
     </message>
     <message>
-        <location filename="../src/viewmodels/SettingsService.cpp" line="933"/>
+        <location filename="../src/viewmodels/SettingsService.cpp" line="934"/>
         <source>搜索 API 密钥加密失败，未保存更改。</source>
         <translation>搜索 API 密钥加密失败，未保存更改。</translation>
     </message>
     <message>
-        <location filename="../src/viewmodels/SettingsService.cpp" line="1152"/>
+        <location filename="../src/viewmodels/SettingsService.cpp" line="1153"/>
         <source>无法更新 Windows 开机自启动设置。</source>
         <translation>无法更新 Windows 开机自启动设置。</translation>
     </message>
@@ -2843,32 +2843,32 @@
 <context>
     <name>QObject</name>
     <message>
-        <location filename="../src/main.cpp" line="823"/>
+        <location filename="../src/main.cpp" line="825"/>
         <source>显示/隐藏主窗</source>
         <translation>显示/隐藏主窗</translation>
     </message>
     <message>
-        <location filename="../src/main.cpp" line="824"/>
+        <location filename="../src/main.cpp" line="826"/>
         <source>新建会话</source>
         <translation>新建会话</translation>
     </message>
     <message>
-        <location filename="../src/main.cpp" line="826"/>
+        <location filename="../src/main.cpp" line="828"/>
         <source>退出</source>
         <translation>退出</translation>
     </message>
     <message>
-        <location filename="../src/main.cpp" line="880"/>
+        <location filename="../src/main.cpp" line="882"/>
         <source>任务完成</source>
         <translation>任务完成</translation>
     </message>
     <message>
-        <location filename="../src/main.cpp" line="880"/>
+        <location filename="../src/main.cpp" line="882"/>
         <source>任务结束</source>
         <translation>任务结束</translation>
     </message>
     <message>
-        <location filename="../src/main.cpp" line="881"/>
+        <location filename="../src/main.cpp" line="883"/>
         <source>会话已回复</source>
         <translation>会话已回复</translation>
     </message>
@@ -3562,7 +3562,7 @@
     <message>
         <location filename="../src/ui/components/Sidebar.qml" line="781"/>
         <location filename="../src/ui/components/Sidebar.qml" line="913"/>
-        <location filename="../src/ui/components/Sidebar.qml" line="1237"/>
+        <location filename="../src/ui/components/Sidebar.qml" line="1258"/>
         <source>新会话</source>
         <translation>新会话</translation>
     </message>
@@ -3704,6 +3704,16 @@
         <translation>需要点击两次确认</translation>
     </message>
     <message>
+        <location filename="../src/ui/components/Sidebar.qml" line="1278"/>
+        <source>会话 %1，%2 条命中</source>
+        <translation>会话 %1，%2 条命中</translation>
+    </message>
+    <message>
+        <location filename="../src/ui/components/Sidebar.qml" line="1339"/>
+        <source>%1 条命中</source>
+        <translation>%1 条命中</translation>
+    </message>
+    <message>
         <source>会话操作</source>
         <translation type="vanished">会话操作</translation>
     </message>
@@ -3714,61 +3724,61 @@
     </message>
     <message>
         <location filename="../src/ui/components/Sidebar.qml" line="1169"/>
+        <location filename="../src/ui/components/Sidebar.qml" line="1263"/>
         <source>已归档 · </source>
         <translation>已归档 · </translation>
     </message>
     <message>
-        <location filename="../src/ui/components/Sidebar.qml" line="1206"/>
+        <location filename="../src/ui/components/Sidebar.qml" line="1208"/>
+        <location filename="../src/ui/components/Sidebar.qml" line="1213"/>
         <source>无匹配结果</source>
         <translation>无匹配结果</translation>
     </message>
     <message>
-        <location filename="../src/ui/components/Sidebar.qml" line="1259"/>
         <source>用户</source>
-        <translation>用户</translation>
+        <translation type="vanished">用户</translation>
     </message>
     <message>
-        <location filename="../src/ui/components/Sidebar.qml" line="1260"/>
         <source>助手</source>
-        <translation>助手</translation>
+        <translation type="vanished">助手</translation>
     </message>
     <message>
-        <location filename="../src/ui/components/Sidebar.qml" line="1299"/>
+        <location filename="../src/ui/components/Sidebar.qml" line="1411"/>
         <source>日志</source>
         <translation>日志</translation>
     </message>
     <message>
-        <location filename="../src/ui/components/Sidebar.qml" line="1307"/>
+        <location filename="../src/ui/components/Sidebar.qml" line="1419"/>
         <source>审计日志</source>
         <translation>审计日志</translation>
     </message>
     <message>
-        <location filename="../src/ui/components/Sidebar.qml" line="1315"/>
+        <location filename="../src/ui/components/Sidebar.qml" line="1427"/>
         <source>设置 (Ctrl+,)</source>
         <translation>设置 (Ctrl+,)</translation>
     </message>
     <message>
-        <location filename="../src/ui/components/Sidebar.qml" line="1368"/>
+        <location filename="../src/ui/components/Sidebar.qml" line="1480"/>
         <source>深色模式</source>
         <translation>深色模式</translation>
     </message>
     <message>
-        <location filename="../src/ui/components/Sidebar.qml" line="1370"/>
+        <location filename="../src/ui/components/Sidebar.qml" line="1482"/>
         <source>当前为深色主题，按回车切换到浅色</source>
         <translation>当前为深色主题，按回车切换到浅色</translation>
     </message>
     <message>
-        <location filename="../src/ui/components/Sidebar.qml" line="1371"/>
+        <location filename="../src/ui/components/Sidebar.qml" line="1483"/>
         <source>当前为浅色主题，按回车切换到深色</source>
         <translation>当前为浅色主题，按回车切换到深色</translation>
     </message>
     <message>
-        <location filename="../src/ui/components/Sidebar.qml" line="1387"/>
+        <location filename="../src/ui/components/Sidebar.qml" line="1499"/>
         <source>Markdown (*.md)</source>
         <translation>Markdown (*.md)</translation>
     </message>
     <message>
-        <location filename="../src/ui/components/Sidebar.qml" line="1387"/>
+        <location filename="../src/ui/components/Sidebar.qml" line="1499"/>
         <source>JSON (*.json)</source>
         <translation>JSON (*.json)</translation>
     </message>
@@ -3801,27 +3811,27 @@
 <context>
     <name>SqliteMemory</name>
     <message>
-        <location filename="../src/core/memory/SqliteMemory.cpp" line="54"/>
+        <location filename="../src/core/memory/SqliteMemory.cpp" line="57"/>
         <source>刚刚</source>
         <translation>刚刚</translation>
     </message>
     <message>
-        <location filename="../src/core/memory/SqliteMemory.cpp" line="55"/>
+        <location filename="../src/core/memory/SqliteMemory.cpp" line="58"/>
         <source>%1 分钟前</source>
         <translation>%1 分钟前</translation>
     </message>
     <message>
-        <location filename="../src/core/memory/SqliteMemory.cpp" line="56"/>
+        <location filename="../src/core/memory/SqliteMemory.cpp" line="59"/>
         <source>%1 小时前</source>
         <translation>%1 小时前</translation>
     </message>
     <message>
-        <location filename="../src/core/memory/SqliteMemory.cpp" line="57"/>
+        <location filename="../src/core/memory/SqliteMemory.cpp" line="60"/>
         <source>昨天</source>
         <translation>昨天</translation>
     </message>
     <message>
-        <location filename="../src/core/memory/SqliteMemory.cpp" line="1178"/>
+        <location filename="../src/core/memory/SqliteMemory.cpp" line="1286"/>
         <source>消息库超过 %1 条：少于 3 个字符的关键词只能全表扫描，请输入至少 3 个字符以使用全文索引。</source>
         <translation>消息库超过 %1 条：少于 3 个字符的关键词只能全表扫描，请输入至少 3 个字符以使用全文索引。</translation>
     </message>

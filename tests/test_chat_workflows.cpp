@@ -341,6 +341,9 @@ private slots:
             QVERIFY(memory.setSessionArchived("a", true));
             QCOMPARE(memory.listSessions().size(), 1);
             QCOMPARE(memory.listSessions(50, true).size(), 2);
+            // Batch 22 (search-aggregate): searchMessages returns one row
+            // per SESSION - each session here holds exactly one matching
+            // message, so these counts double as session counts.
             for (const QString& keyword : {QString("ne"), QString("needle")}) {
                 QCOMPARE(memory.searchMessages(keyword).size(), 1);
                 QCOMPARE(memory.searchMessages(keyword, 50, true).size(), 2);
