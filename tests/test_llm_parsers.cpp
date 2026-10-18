@@ -1357,9 +1357,9 @@ void TestLlmParsers::geminiSanitizeSchemaStripsUnsupported() {
     QVERIFY(ok);
     const QJsonObject props = s.value("properties").toObject();
 
-    // $ref 被裁剪，退化为空（无约束）属性，不残留 $ref
-    const QJsonObject a = props.value("a").toObject();
-    QVERIFY(a.isEmpty());
+    // $ref 被裁剪，属性保留为无约束空对象 {}（丢约束保结构），不残留 $ref
+    QVERIFY(props.contains("a"));
+    QVERIFY(props.value("a").toObject().isEmpty());
 
     // anyOf 收敛到第一个分支 string
     const QJsonObject b = props.value("b").toObject();

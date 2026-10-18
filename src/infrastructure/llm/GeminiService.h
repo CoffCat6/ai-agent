@@ -13,7 +13,8 @@ namespace NexusAI {
 // Agent 层统一用 OpenAI wire format（messages + tool_calls）；本类负责与
 // Gemini v1beta REST 协议互转：
 // - 请求 "tools": {type,function:{name,description,parameters}} ->
-//   [{"functionDeclarations":[{name,description,parameters}]}]
+//   [{"functionDeclarations":[{name,description,parameters}]}]（convertTools
+//   产出扁平声明数组，外壳在 chatComplete 组请求体时包装）
 // - 历史: assistant tool_calls -> model content 的 functionCall parts
 //   （OpenAI 的 arguments 是 JSON 字符串，Gemini 的 args 要解析后的对
 //   象）；role:"tool" 结果 -> user content 的 functionResponse parts
@@ -87,8 +88,11 @@ public:
     static LLMResponse parseResponse(const QJsonObject& json);
 
     // OpenAI wire format {type:"function",function:{name,description,parameters}}
-    // -> Gemini [{"functionDeclarations":[{"name",description,parameters}]}]。
-    // parameters 走 sanitizeSchema 子集降级；无法安全降级的工具整条跳过。
+    // -> Gemini 扁平 functionDeclarations 声明数组
+    // [{name,description,parameters}, ...]（与 OpenAIResponsesService::
+    // convertTools 的扁平约定一致；请求体的 functionDeclarations 外壳由
+    // chatComplete 包装）。parameters 走 sanitizeSchema 子集降级；无法安全
+    // 降级的工具整条跳过。
     static QJsonArray convertTools(const QJsonArray& tools);
 
     // m-4：MCP inputSchema 是完整 JSON Schema，可能包含 Gemini Schema 子集不
@@ -96,7 +100,9 @@ public:
     // 直接 400。这里做子集校验/降级：递归裁剪不支持关键字、把 anyOf/oneOf/
     // allOf 收敛到第一个可降级分支、顶层收敛为 object+properties。无法安全
     // 降级（如顶层是明确的非对象标量/数组且无 properties 可收敛）时 *ok=false
-    // 并返回空对象，调用方应跳过该工具并 qWarning。纯函数，供测试断言。
+    // 并返回空对象，调用方应跳过该工具并 qWarning；顶层降级后为空（空
+    // schema 或纯 $ref 元数据）则兜底为无约束 object（*ok=true）。纯函数，
+    // 供测试断言。
     static QJsonObject sanitizeSchema(const QJsonObject& inputSchema, bool* ok);
 
 protected:

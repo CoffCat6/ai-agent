@@ -217,20 +217,57 @@ public:
     }
 
     // docs/16 §4.4: 详细聚合统计（含方向/来源拆分）
-    virtual QVariantMap tokenStatsDetailed(int recentDays = 30) {
-        Q_UNUSED(recentDays);
+    // Batch 6 T1: fromTs/toTs（epoch ms，本地时区，口径对齐写入侧
+    // QDateTime::toMSecsSinceEpoch）任一 > 0 时进入范围模式：窗口为
+    // [fromTs, toTs)（左闭右开；fromTs <= 0 不设下界、toTs <= 0 不设
+    // 上界，fromTs == toTs 必为空范围），recentDays 被忽略——「今日」=
+    // 本地自然日 0 点 ~ 次日 0 点，由调用方构造后传入；两者均 <= 0 时
+    // 回退既有 recentDays 回溯窗口（recentDays <= 0 按 30）。
+    // byDay 行上限（批次六审查 M1）：recentDays 回退窗口最多 31 行、
+    // 范围模式最多 366 行，超出按 day DESC 截断最近 N 天；范围跨多年
+    // 超出 366 天属已知边界（降采样演进方向见 docs/25 批次六遗留技术债）。
+    virtual QVariantMap tokenStatsDetailed(int recentDays = 30,
+                                           qint64 fromTs = 0, qint64 toTs = 0) {
+        Q_UNUSED(recentDays); Q_UNUSED(fromTs); Q_UNUSED(toTs);
         return {};
     }
 
-    // docs/16 §4.4: 按来源聚合统计
-    virtual QVariantList tokenStatsBySource(int recentDays = 30) {
-        Q_UNUSED(recentDays);
+    // docs/16 §4.4: 按来源聚合统计（范围语义同 tokenStatsDetailed）
+    virtual QVariantList tokenStatsBySource(int recentDays = 30,
+                                            qint64 fromTs = 0, qint64 toTs = 0) {
+        Q_UNUSED(recentDays); Q_UNUSED(fromTs); Q_UNUSED(toTs);
         return {};
     }
 
-    // docs/16 §4.4: 成本核算统计
-    virtual QVariantMap costStats(int recentDays = 30) {
-        Q_UNUSED(recentDays);
+    // docs/16 §4.4: 成本核算统计（范围语义同 tokenStatsDetailed；
+    // projectedMonthlyCents 固定按当月推算，不受范围参数影响；
+    // byDay 行上限语义同 tokenStatsDetailed：回退窗口 31 行 / 范围
+    // 模式 366 行，超出截断最近 N 天）
+    virtual QVariantMap costStats(int recentDays = 30,
+                                  qint64 fromTs = 0, qint64 toTs = 0) {
+        Q_UNUSED(recentDays); Q_UNUSED(fromTs); Q_UNUSED(toTs);
+        return {};
+    }
+
+    // Batch 6 T1: token_usage 明细分页查询（每次 LLM 请求一行）。
+    // 范围：fromTs > 0 加下界 timestamp >= fromTs，toTs > 0 加上界
+    // timestamp < toTs（左闭右开，与聚合接口一致）；均为 0 = 全部记录
+    // （明细查询没有 recentDays 回退概念）。
+    // 返回 {rows: QVariantList, total: int}：
+    //   - rows 按 timestamp DESC（同刻按 id DESC 稳定排序）分页返回，
+    //     每行为驼峰键 QVariantMap {requestId, sessionId, model,
+    //     timestamp, inputTokens, outputTokens, cacheHitTokens,
+    //     latencyMs, costCents}；
+    //   - total = 范围内总行数（与分页无关，供翻页 UI 计算页数）；
+    //     offset 超出总数时 rows 为空、total 仍正确；
+    //   - offset 分页的并发写入语义（批次六审查 m2）：翻页期间若有
+    //     新行写入（新行 timestamp 更大、插入队首），后续 offset 窗口
+    //     整体右移，已展示行可能重复出现于下一页；UI 可通过 refresh
+    //     重置翻页规避（长期演进：锚定翻页，见 docs/25 批次六遗留技术债）。
+    // limit 为每页行数（默认 50，钳制到 [1, 500]），offset < 0 归 0。
+    virtual QVariantMap tokenUsageRecords(qint64 fromTs = 0, qint64 toTs = 0,
+                                          int limit = 50, int offset = 0) {
+        Q_UNUSED(fromTs); Q_UNUSED(toTs); Q_UNUSED(limit); Q_UNUSED(offset);
         return {};
     }
 

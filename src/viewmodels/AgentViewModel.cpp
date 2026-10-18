@@ -1443,20 +1443,31 @@ QVariantMap AgentViewModel::tokenStats(int recentDays) {
 
 // docs/16 §8: forward to IMemory (SqliteMemory) so QML can call
 // AgentVM.tokenStatsDetailed / costStats / quotaStatus directly.
-QVariantMap AgentViewModel::tokenStatsDetailed(int recentDays) {
-    return m_memory ? m_memory->tokenStatsDetailed(recentDays) : QVariantMap{};
+// Batch 6 T1: fromTs/toTs 范围语义（[fromTs, toTs)，均 0 回退
+// recentDays）见 IMemory.h。
+QVariantMap AgentViewModel::tokenStatsDetailed(int recentDays, qint64 fromTs, qint64 toTs) {
+    return m_memory ? m_memory->tokenStatsDetailed(recentDays, fromTs, toTs)
+                    : QVariantMap{};
 }
 
-QVariantList AgentViewModel::tokenStatsBySource(int recentDays) {
-    return m_memory ? m_memory->tokenStatsBySource(recentDays) : QVariantList{};
+QVariantList AgentViewModel::tokenStatsBySource(int recentDays, qint64 fromTs, qint64 toTs) {
+    return m_memory ? m_memory->tokenStatsBySource(recentDays, fromTs, toTs)
+                    : QVariantList{};
 }
 
-QVariantMap AgentViewModel::costStats(int recentDays) {
-    return m_memory ? m_memory->costStats(recentDays) : QVariantMap{};
+QVariantMap AgentViewModel::costStats(int recentDays, qint64 fromTs, qint64 toTs) {
+    return m_memory ? m_memory->costStats(recentDays, fromTs, toTs)
+                    : QVariantMap{};
 }
 
 QVariantMap AgentViewModel::quotaStatus() {
     return m_memory ? m_memory->quotaStatus() : QVariantMap{};
+}
+
+// Batch 6 T1: token_usage 明细分页透传（{rows, total}，timestamp DESC）。
+QVariantMap AgentViewModel::tokenUsageRecords(qint64 fromTs, qint64 toTs, int limit, int offset) {
+    return m_memory ? m_memory->tokenUsageRecords(fromTs, toTs, limit, offset)
+                    : QVariantMap{};
 }
 
 // docs/16 §8.3: TopBar 悬停浮层的数据源。取当前激活 tab 的会话 id 做

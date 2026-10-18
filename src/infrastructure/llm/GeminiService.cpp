@@ -40,9 +40,11 @@ bool isGeminiUnsupportedKeyword(const QString& key) {
 }
 
 // 递归把一段 schema 节点降到 Gemini Schema 子集（原地修改，返回 false 表示
-// 该节点无法安全降级）。组合器（anyOf/oneOf/allOf）收敛到第一个能降级的
-// 分支并并入其约束；$ref 无法解析直接丢弃；properties/items 递归下探。
-// 处理后节点为空（所有约束都被裁掉）时返回 false，表示无法安全降级。
+// 该节点已无任何有效约束——内容被整段裁空）。组合器（anyOf/oneOf/allOf）
+// 收敛到第一个能降级的分支并并入其约束；$ref 无法解析直接丢弃；
+// properties/items 递归下探。返回 false 的处置由调用方按层级决定：属性子
+// 节点空 = 保留为无约束 {}（丢约束保结构）；items 子节点空 = 移除 items；
+// 顶层空 = sanitizeSchema 兜底为无约束 object（均不是降级失败）。
 bool sanitizeSchemaNode(QJsonObject& node) {
     const char* combinators[] = {"anyOf", "oneOf", "allOf"};
     for (const char* key : combinators) {
@@ -72,9 +74,16 @@ bool sanitizeSchemaNode(QJsonObject& node) {
             for (auto it = props.begin(); it != props.end();) {
                 if (it.value().isObject()) {
                     QJsonObject sub = it.value().toObject();
-                    if (sanitizeSchemaNode(sub)) { it.value() = sub; ++it; continue; }
+                    // 子节点降级后为空（如 $ref 被裁尽）= 无约束属性，保留
+                    // 为空对象 {}：Gemini 接受空 Schema 对象，删掉整个属性
+                    // 反而让模型丢掉该参数的存在性。只有非对象的脏值才整
+                    // 条删除。
+                    sanitizeSchemaNode(sub);
+                    it.value() = sub;
+                    ++it;
+                } else {
+                    it = props.erase(it);
                 }
-                it = props.erase(it);
             }
             node[QStringLiteral("properties")] = props;
         } else {
@@ -93,7 +102,7 @@ bool sanitizeSchemaNode(QJsonObject& node) {
         }
     }
 
-    // 节点为空表示所有约束都被裁掉，无法安全降级
+    // 节点为空 = 所有约束都被裁尽（无任何有效信息），处置见函数头注释。
     return !node.isEmpty();
 }
 
@@ -107,10 +116,13 @@ GeminiService::GeminiService(QObject* parent)
 }
 
 // OpenAI wire format {type:"function",function:{name,description,parameters}}
-// -> Gemini [{"functionDeclarations":[{name,description,parameters}]}]。
-// parameters 就是 JSON Schema 对象，两个协议同形；但 Gemini 只吃它的一个子
-// 集，超出子集（$ref/anyOf/oneOf 等）会整体 400 —— 这里经 sanitizeSchema 做
-// 子集校验/降级，无法安全降级的工具整条跳过 + qWarning，保住其余工具可用。
+// -> Gemini 扁平 functionDeclarations 声明数组
+// [{name,description,parameters}, ...]（与 OpenAIResponsesService::convertTools
+// 的扁平约定一致）。parameters 就是 JSON Schema 对象，两个协议同形；但
+// Gemini 只吃它的一个子集，超出子集（$ref/anyOf/oneOf 等）会整体 400 ——
+// 这里经 sanitizeSchema 做子集校验/降级，无法安全降级的工具整条跳过 +
+// qWarning，保住其余工具可用。请求体侧的 {"functionDeclarations":[...]}
+// 外壳由 chatComplete 组装（见 body["tools"]）。
 QJsonArray GeminiService::convertTools(const QJsonArray& tools) {
     QJsonArray declarations;
     for (const auto& tool : tools) {
@@ -134,20 +146,27 @@ QJsonArray GeminiService::convertTools(const QJsonArray& tools) {
         d["parameters"] = parameters;
         declarations.append(d);
     }
-    return QJsonArray{ QJsonObject{{"functionDeclarations", declarations}} };
+    return declarations;
 }
 
 // m-4：把 MCP inputSchema（JSON Schema）降到 Gemini Schema 子集。顶层强制收
 // 敛为 object+properties（functionDeclarations.parameters 期待对象）；明确是
 // 非对象标量/数组且无可收敛 properties 的顶层，无法安全表达成命名参数对象，
-// 返回空并置 *ok=false（调用方跳过该工具）。type 强制写小写 object：与本项
-// 目 inputSchema 的 JSON Schema 形态一致（Gemini 侧按小写可正常接收）。
+// 返回空并置 *ok=false（调用方跳过该工具）——这才是降级失败路径。顶层降级
+// 后为空（空 schema，或 $ref 等元数据被整段裁空）不是失败：兜底为无约束
+// object，Gemini 接受 {"type":"object","properties":{}}（无参数工具），跳过
+// 会白白丢工具。type 强制写小写 object：与本项目 inputSchema 的 JSON Schema
+// 形态一致（Gemini 侧按小写可正常接收）。
 QJsonObject GeminiService::sanitizeSchema(const QJsonObject& inputSchema, bool* ok) {
     QJsonObject schema = inputSchema;
     if (!sanitizeSchemaNode(schema)) {
-        // 顶层节点无法安全降级，跳过该工具
-        if (ok) *ok = false;
-        return {};
+        // 顶层无任何有效约束：兜底为无约束 object（*ok=true），见函数头
+        // 注释——顶层空不是降级失败路径。
+        if (ok) *ok = true;
+        return QJsonObject{
+            {QStringLiteral("type"), QStringLiteral("object")},
+            {QStringLiteral("properties"), QJsonObject{}},
+        };
     }
 
     const QString type = schema.value(QStringLiteral("type")).toString().toLower();
@@ -535,8 +554,16 @@ void GeminiService::chatComplete(const QJsonArray& messages, const QJsonArray& t
     }
     body["generationConfig"] = generationConfig;
 
-    if (!tools.isEmpty())
-        body["tools"] = convertTools(tools);
+    if (!tools.isEmpty()) {
+        // convertTools 产出扁平声明数组；Gemini 请求体要求
+        // [{"functionDeclarations":[...]}] 外壳，这里包装。全部工具都无法
+        // 安全降级时不发 tools（空声明数组无意义），模型退化为无工具可
+        // 用，但请求本身不会失败。
+        const QJsonArray declarations = convertTools(tools);
+        if (!declarations.isEmpty())
+            body["tools"] = QJsonArray{
+                QJsonObject{{"functionDeclarations", declarations}} };
+    }
 
     QNetworkRequest request;
     request.setUrl(QUrl(buildStreamUrl(m_baseUrl, model)));

@@ -334,6 +334,22 @@ void OpenAIResponsesService::processLine(LLMRequestContext& ctx, const QByteArra
         return;
     }
 
+    // 部分第三方网关不走 output_item.added/done 包装，直接吐扁平的
+    // {"type":"function_call", item_id, call_id, name, arguments} 事件。
+    // 累积语义与标准事件一致：item_id 归位（callKey 从载荷顶层取 item_id
+    // 就是为此类事件准备的）、arguments 增量靠 accumulateArguments 折叠。
+    if (type == QLatin1String("function_call")) {
+        PendingCall& slot = slotFor(*state, callKey(json, QJsonObject()));
+        const QString name = json.value("name").toString();
+        if (!name.isEmpty()) slot.name = name;
+        const QString callId = json.value("call_id").toString();
+        if (!callId.isEmpty()) slot.callId = callId;
+        if (json.contains("arguments"))
+            slot.arguments = OpenAIService::accumulateArguments(
+                slot.arguments, argumentsToString(json.value("arguments")));
+        return;
+    }
+
     if (type == QLatin1String("response.function_call_arguments.delta")
             || type == QLatin1String("response.function_call_arguments.done")) {
         // .delta 带增量、.done 带完整值（不含 name）；两者都按 item_id 归位，

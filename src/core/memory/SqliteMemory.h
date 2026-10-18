@@ -66,12 +66,23 @@ public:
     QVariantMap tokenStats(int recentDays = 30) override;
 
     // docs/16 §4.4: 分类 token 明细与聚合查询（token_usage 表）。
+    // Batch 6 T1: fromTs/toTs 范围语义（左闭右开 [fromTs, toTs)，任一
+    // > 0 生效、均为 0 回退 recentDays）与 byDay 行上限语义（批次六
+    // 审查 M1：回退窗口 31 行 / 范围模式 366 行，超出截断最近 N 天）
+    // 见 IMemory.h。
     void logTokenUsage(const QVariantMap& record) override;
-    QVariantMap tokenStatsDetailed(int recentDays = 30) override;
-    QVariantList tokenStatsBySource(int recentDays = 30) override;
-    QVariantMap costStats(int recentDays = 30) override;
+    QVariantMap tokenStatsDetailed(int recentDays = 30,
+                                   qint64 fromTs = 0, qint64 toTs = 0) override;
+    QVariantList tokenStatsBySource(int recentDays = 30,
+                                    qint64 fromTs = 0, qint64 toTs = 0) override;
+    QVariantMap costStats(int recentDays = 30,
+                          qint64 fromTs = 0, qint64 toTs = 0) override;
     QVariantMap quotaStatus() override;
     QVariantMap sessionTokenBreakdown(const QString& sessionId) override;
+    // Batch 6 T1: token_usage 明细分页（{rows, total}，timestamp DESC），
+    // 契约见 IMemory.h。
+    QVariantMap tokenUsageRecords(qint64 fromTs = 0, qint64 toTs = 0,
+                                  int limit = 50, int offset = 0) override;
 
     void clear(const QString& sessionId) override;
 

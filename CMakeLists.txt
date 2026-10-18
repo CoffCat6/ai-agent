@@ -249,6 +249,11 @@ qt_add_qml_module(nexus_ai
         src/ui/components/ThinkingEffortSelector.qml
         src/ui/components/ToolConfirmDialog.qml
         src/ui/components/ShortcutsDialog.qml
+        # 批次六 T2（docs/16 §8）：QML Canvas 自绘图表组件库（禁引 Qt Charts）。
+        # QTP0004 NEW：charts/ 子目录文件平铺注册进 NexusAI 模块。
+        src/ui/components/charts/DonutChart.qml
+        src/ui/components/charts/LineTrendChart.qml
+        src/ui/components/charts/BarCompareChart.qml
         src/ui/panels/ContextPanel.qml
         src/ui/pages/AgentChatPage.qml
         src/ui/pages/GeneralPage.qml

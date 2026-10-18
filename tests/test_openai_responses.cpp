@@ -1,10 +1,12 @@
 // OpenAI Responses 协议的报文转换与非流式解析（纯函数，不触网）。
-// 流式事件解析在 test_provider_lifecycle 里用脚本化 SSE 服务器覆盖真实路径。
+// 顶层扁平 function_call 事件的流式分派在本文件手工喂行覆盖（不触网）；
+// 端到端 SSE 服务器路径仍在 test_provider_lifecycle 里覆盖。
 #include "infrastructure/llm/OpenAIResponsesService.h"
 
 #include <QtTest>
 #include <QJsonArray>
 #include <QJsonObject>
+#include <QStringList>
 
 using namespace NexusAI;
 
@@ -17,6 +19,24 @@ public:
     using OpenAIResponsesService::buildRequestBody;
     using OpenAIResponsesService::extractApiError;
     using OpenAIResponsesService::isCompleteBody;
+};
+
+// 暴露受保护的流式入口，测试可手工驱动一次请求的 processLine 事件序列
+// 并检查 streamResult 与累积槽（与 test_llm_parsers 的 Testable 约定一致）。
+class TestableOpenAIResponses : public OpenAIResponsesService {
+public:
+    using OpenAIResponsesService::OpenAIResponsesService;
+    void feed(LLMRequestContext& ctx, const QByteArray& line) { processLine(ctx, line); }
+    LLMResponse result(const LLMRequestContext& ctx) const { return streamResult(ctx); }
+    ProviderRequestStatePtr newState() const { return createRequestState(); }
+    // 累积槽的 key 列表（item_id 或 "output:N" 兜底），供断言归位槽位。
+    QStringList callKeys(const LLMRequestContext& ctx) const {
+        const auto* state =
+            static_cast<const ResponsesRequestState*>(ctx.provider.data());
+        QStringList keys;
+        for (const auto& call : state->calls) keys.append(call.key);
+        return keys;
+    }
 };
 
 QJsonObject message(const QString& role, const QString& content) {
@@ -286,6 +306,79 @@ private slots:
         const LLMResponse parsed = OpenAIResponsesService::parseResponse(json);
         QVERIFY(!parsed.success);
         QVERIFY(parsed.error.contains(QStringLiteral("failed")));
+    }
+
+    // ── processLine 流式分派：顶层扁平 function_call 事件（第三方网关）──
+    // 部分网关不走 output_item.added/done 包装，直接吐扁平的
+    // {"type":"function_call", item_id, call_id, name, arguments}。
+    // 单条完整事件 + response.completed：finalize 产出 name/callId/arguments，
+    // completed 事件不清空已累积的调用。
+    void responsesProcessLineTopLevelFunctionCallComplete() {
+        TestableOpenAIResponses svc;
+        LLMRequestContext ctx;
+        ctx.provider = svc.newState();
+
+        svc.feed(ctx, QByteArrayLiteral(
+            "data: {\"type\":\"function_call\",\"item_id\":\"fc_1\",\"call_id\":\"call_1\","
+            "\"name\":\"get_weather\",\"arguments\":\"{\\\"city\\\":\\\"Beijing\\\"}\"}"));
+        svc.feed(ctx, QByteArrayLiteral(
+            "data: {\"type\":\"response.completed\",\"response\":{}}"));
+
+        const LLMResponse r = svc.result(ctx);
+        QCOMPARE(r.toolCalls.size(), 1);
+        QCOMPARE(r.toolCalls.at(0).name, QStringLiteral("get_weather"));
+        // id 必须取 call_id：下一轮要按它回传 function_call_output
+        QCOMPARE(r.toolCalls.at(0).id, QStringLiteral("call_1"));
+        QCOMPARE(r.toolCalls.at(0).arguments.value("city").toString(),
+                 QStringLiteral("Beijing"));
+    }
+
+    // 同 item_id 的多条扁平事件按 item_id 归位到同一槽，arguments 增量
+    // 折叠成一个调用，不重复。
+    void responsesProcessLineTopLevelFunctionCallArgumentChunks() {
+        TestableOpenAIResponses svc;
+        LLMRequestContext ctx;
+        ctx.provider = svc.newState();
+
+        svc.feed(ctx, QByteArrayLiteral(
+            "data: {\"type\":\"function_call\",\"item_id\":\"fc_2\",\"call_id\":\"call_2\","
+            "\"name\":\"search_docs\",\"arguments\":\"{\\\"par\"}"));
+        svc.feed(ctx, QByteArrayLiteral(
+            "data: {\"type\":\"function_call\",\"item_id\":\"fc_2\",\"arguments\":"
+            "\"tial\\\":true}\"}"));
+        svc.feed(ctx, QByteArrayLiteral(
+            "data: {\"type\":\"response.completed\",\"response\":{}}"));
+
+        // 两条同 item_id 事件只占一个累积槽
+        QCOMPARE(svc.callKeys(ctx), QStringList{QStringLiteral("fc_2")});
+        const LLMResponse r = svc.result(ctx);
+        QCOMPARE(r.toolCalls.size(), 1);
+        QCOMPARE(r.toolCalls.at(0).name, QStringLiteral("search_docs"));
+        QCOMPARE(r.toolCalls.at(0).id, QStringLiteral("call_2"));
+        // 两片增量拼接成完整 JSON：{"par + tial":true} → {"partial":true}
+        QCOMPARE(r.toolCalls.at(0).arguments.value("partial").toBool(), true);
+    }
+
+    // 无 item_id 的扁平事件落 output:-1 兜底槽（callKey 的 output_index
+    // 缺省 -1），调用不丢、不崩溃，name/call_id/arguments 完整。
+    void responsesProcessLineTopLevelFunctionCallNoItemId() {
+        TestableOpenAIResponses svc;
+        LLMRequestContext ctx;
+        ctx.provider = svc.newState();
+
+        svc.feed(ctx, QByteArrayLiteral(
+            "data: {\"type\":\"function_call\",\"call_id\":\"call_3\","
+            "\"name\":\"get_time\",\"arguments\":\"{}\"}"));
+        svc.feed(ctx, QByteArrayLiteral(
+            "data: {\"type\":\"response.completed\",\"response\":{}}"));
+
+        // 无 item_id 且无 output_index：落 output:-1 兜底槽位
+        QCOMPARE(svc.callKeys(ctx), QStringList{QStringLiteral("output:-1")});
+        const LLMResponse r = svc.result(ctx);
+        QCOMPARE(r.toolCalls.size(), 1);
+        QCOMPARE(r.toolCalls.at(0).name, QStringLiteral("get_time"));
+        QCOMPARE(r.toolCalls.at(0).id, QStringLiteral("call_3"));
+        QVERIFY(r.toolCalls.at(0).arguments.isEmpty());
     }
 };
 

@@ -47,6 +47,49 @@ constexpr int kSemanticCandidateCap = 500;
 // docs/16 §6.1: 价格单位为"分/1M token"，1M 基准用于整数计费换算。
 constexpr qint64 kPerMillion = 1000000;
 
+// Batch 6 T1: 聚合查询的时间窗口解析（tokenStatsDetailed /
+// tokenStatsBySource / costStats 共用）。
+// 优先级：fromTs / toTs（epoch ms，本地时区，口径对齐写入侧
+// QDateTime::toMSecsSinceEpoch）任一 > 0 → 范围模式，窗口为
+// [fromTs, toTs)（左闭右开；fromTs <= 0 不设下界、toTs <= 0 不设上界，
+// fromTs == toTs 必为空范围），recentDays 被忽略——「今日」= 本地自然日
+// 0 点 ~ 次日 0 点，由调用方构造后传入；
+// 两者均 <= 0 → 回退既有 recentDays 回溯窗口（recentDays <= 0 按 30）。
+struct UsageWindow {
+    QString whereSql;      // 如 "timestamp >= ? AND timestamp < ?"
+    QVector<qint64> binds; // 与 whereSql 占位符一一对应
+    // 批次六审查 M1：是否范围模式（fromTs/toTs 任一 > 0）。byDay 行上
+    // 限据此选择：范围模式 366 / recentDays 回退 31（语义见 IMemory.h）。
+    bool rangeMode = false;
+};
+UsageWindow resolveUsageWindow(int recentDays, qint64 fromTs, qint64 toTs) {
+    UsageWindow w;
+    if (fromTs > 0 || toTs > 0) {
+        w.rangeMode = true;
+        QStringList conds;
+        if (fromTs > 0) {
+            conds << QStringLiteral("timestamp >= ?");
+            w.binds.append(fromTs);
+        }
+        if (toTs > 0) {
+            conds << QStringLiteral("timestamp < ?");
+            w.binds.append(toTs);
+        }
+        w.whereSql = conds.join(QStringLiteral(" AND "));
+        return w;
+    }
+    if (recentDays <= 0) recentDays = 30;
+    w.whereSql = QStringLiteral("timestamp >= ?");
+    w.binds.append(QDateTime::currentDateTime().addDays(-recentDays)
+                       .toMSecsSinceEpoch());
+    return w;
+}
+
+// 把窗口占位符按序绑定到已 prepare 的查询（与 whereSql 一一对应）。
+void bindUsageWindow(QSqlQuery& q, const UsageWindow& w) {
+    for (qint64 v : w.binds) q.addBindValue(v);
+}
+
 // Human-friendly relative timestamp for the session list. UI-visible copy
 // (P3-9): routed through SqliteMemory::tr() so it lands in the .ts file.
 // "MM-dd" is a date-format string, not user-visible copy - kept untranslated.
@@ -2413,11 +2456,10 @@ void SqliteMemory::logTokenUsage(const QVariantMap& record) {
 
 // ── docs/16 §9.2: 详细聚合统计（L3+L4+L6）─────────────
 // 返回方向维度累计 + 来源维度累计 + 调用统计 + byModel + byDay。
-QVariantMap SqliteMemory::tokenStatsDetailed(int recentDays) {
+// Batch 6 T1: fromTs/toTs 范围模式语义见 resolveUsageWindow。
+QVariantMap SqliteMemory::tokenStatsDetailed(int recentDays, qint64 fromTs, qint64 toTs) {
     QVariantMap out;
-    if (recentDays <= 0) recentDays = 30;
-    const qint64 cutoff = QDateTime::currentDateTime().addDays(-recentDays)
-                              .toMSecsSinceEpoch();
+    const UsageWindow win = resolveUsageWindow(recentDays, fromTs, toTs);
 
     QSqlQuery total(m_db);
     total.prepare(QStringLiteral(
@@ -2434,8 +2476,8 @@ QVariantMap SqliteMemory::tokenStatsDetailed(int recentDays) {
         "COALESCE(SUM(cache_hit_system_prompt),0), COALESCE(SUM(cache_hit_conversation),0), "
         "COALESCE(SUM(cache_hit_tool_call),0), "
         "COALESCE(SUM(cost_cents),0), CAST(COALESCE(AVG(latency_ms),0) AS INTEGER) "
-        "FROM token_usage WHERE timestamp >= ?"));
-    total.addBindValue(cutoff);
+        "FROM token_usage WHERE ") + win.whereSql);
+    bindUsageWindow(total, win);
     qint64 totalInput = 0, totalOutput = 0, totalCacheHit = 0, totalCost = 0;
     int totalCalls = 0, avgLatency = 0;
     if (total.exec() && total.next()) {
@@ -2481,9 +2523,11 @@ QVariantMap SqliteMemory::tokenStatsDetailed(int recentDays) {
         "COALESCE(SUM(input_tokens),0), COALESCE(SUM(output_tokens),0), "
         "COALESCE(SUM(cache_hit_tokens),0), COALESCE(SUM(cost_cents),0), "
         "CAST(COALESCE(AVG(latency_ms),0) AS INTEGER) "
-        "FROM token_usage WHERE timestamp >= ? GROUP BY model "
+        "FROM token_usage WHERE ") + win.whereSql +
+        QStringLiteral(
+        " GROUP BY model "
         "ORDER BY SUM(input_tokens)+SUM(output_tokens) DESC"));
-    modelQ.addBindValue(cutoff);
+    bindUsageWindow(modelQ, win);
     if (modelQ.exec()) {
         while (modelQ.next()) {
             byModel.append(QVariantMap{
@@ -2503,12 +2547,19 @@ QVariantMap SqliteMemory::tokenStatsDetailed(int recentDays) {
 
     QVariantList byDay;
     QSqlQuery dayQ(m_db);
+    // 批次六审查 M1：byDay 行上限——范围模式放宽至 366 行（跨 >31 天的
+    // 自定义范围/「全部」不再被静默截断为最近 31 天，与同页环形图/柱状
+    // 图的全量口径一致；超 366 天仍按 day DESC 截断最近 N 天，属已知
+    // 边界，见 docs/25 批次六遗留技术债）；recentDays 回退窗口保持既有
+    // 31 行上限不变。语义声明见 IMemory.h。
     dayQ.prepare(QStringLiteral(
         "SELECT date(timestamp/1000,'unixepoch','localtime') AS d, COUNT(*), "
         "COALESCE(SUM(input_tokens),0), COALESCE(SUM(output_tokens),0), "
         "COALESCE(SUM(cache_hit_tokens),0), COALESCE(SUM(cost_cents),0) "
-        "FROM token_usage WHERE timestamp >= ? GROUP BY d ORDER BY d DESC LIMIT 31"));
-    dayQ.addBindValue(cutoff);
+        "FROM token_usage WHERE ") + win.whereSql +
+        QStringLiteral(" GROUP BY d ORDER BY d DESC LIMIT ?"));
+    bindUsageWindow(dayQ, win);
+    dayQ.addBindValue(win.rangeMode ? 366 : 31);
     if (dayQ.exec()) {
         while (dayQ.next()) {
             byDay.append(QVariantMap{
@@ -2531,11 +2582,10 @@ QVariantMap SqliteMemory::tokenStatsDetailed(int recentDays) {
 // ── docs/16 §9.2: 按来源聚合（L5）─────────────────────
 // 7 个来源各返回 {source, inputTokens, outputTokens, cacheHitTokens, costCents}。
 // costCents 按来源 token 占总 token 比例分摊（明细表只存整次请求总费用）。
-QVariantList SqliteMemory::tokenStatsBySource(int recentDays) {
+// Batch 6 T1: fromTs/toTs 范围模式语义见 resolveUsageWindow。
+QVariantList SqliteMemory::tokenStatsBySource(int recentDays, qint64 fromTs, qint64 toTs) {
     QVariantList out;
-    if (recentDays <= 0) recentDays = 30;
-    const qint64 cutoff = QDateTime::currentDateTime().addDays(-recentDays)
-                              .toMSecsSinceEpoch();
+    const UsageWindow win = resolveUsageWindow(recentDays, fromTs, toTs);
 
     QSqlQuery q(m_db);
     q.prepare(QStringLiteral(
@@ -2551,8 +2601,8 @@ QVariantList SqliteMemory::tokenStatsBySource(int recentDays) {
         "COALESCE(SUM(cache_hit_tool_call),0), "
         "COALESCE(SUM(cost_cents),0), "
         "COALESCE(SUM(input_tokens),0)+COALESCE(SUM(output_tokens),0) "
-        "FROM token_usage WHERE timestamp >= ?"));
-    q.addBindValue(cutoff);
+        "FROM token_usage WHERE ") + win.whereSql);
+    bindUsageWindow(q, win);
     if (!q.exec() || !q.next()) {
         qWarning() << "tokenStatsBySource failed:" << q.lastError().text();
         return out;
@@ -2663,24 +2713,104 @@ QVariantMap SqliteMemory::sessionTokenBreakdown(const QString& sessionId) {
     return out;
 }
 
+// ── Batch 6 T1: token_usage 明细分页查询 ────────────────
+// 返回 {rows, total}：rows 按 timestamp DESC（同刻按 id DESC，次级键
+// 保证分页翻页次序稳定）返回范围内一页明细，每行驼峰键
+// {requestId, sessionId, model, timestamp, inputTokens, outputTokens,
+// cacheHitTokens, latencyMs, costCents}；total = 范围内总行数。
+// 范围与聚合接口同口径（[fromTs, toTs) 左闭右开，fromTs<=0 不设下界、
+// toTs<=0 不设上界；均为 0 = 全部记录——明细查询没有 recentDays 回退
+// 概念）。limit 每页行数（<=0 取默认 50，钳制上限 500），offset < 0 归 0；
+// offset 超出总数时 rows 为空、total 仍正确。
+QVariantMap SqliteMemory::tokenUsageRecords(qint64 fromTs, qint64 toTs,
+                                            int limit, int offset) {
+    QVariantMap out;
+    if (limit <= 0) limit = 50;
+    if (limit > 500) limit = 500;
+    if (offset < 0) offset = 0;
+
+    // 范围 WHERE 片段：与聚合接口 resolveUsageWindow 的范围模式同一
+    // 口径，但 (0, 0) 表示全部记录而非回退 recentDays。
+    QStringList conds;
+    QVector<qint64> binds;
+    if (fromTs > 0) {
+        conds << QStringLiteral("timestamp >= ?");
+        binds.append(fromTs);
+    }
+    if (toTs > 0) {
+        conds << QStringLiteral("timestamp < ?");
+        binds.append(toTs);
+    }
+    const QString whereSql = conds.isEmpty()
+        ? QString()
+        : QStringLiteral(" WHERE ") + conds.join(QStringLiteral(" AND "));
+
+    int total = 0;
+    {
+        QSqlQuery cnt(m_db);
+        cnt.prepare(QStringLiteral("SELECT COUNT(*) FROM token_usage")
+                    + whereSql);
+        for (qint64 v : binds) cnt.addBindValue(v);
+        if (cnt.exec() && cnt.next()) {
+            total = cnt.value(0).toInt();
+        } else {
+            qWarning() << "tokenUsageRecords count failed:"
+                       << cnt.lastError().text();
+        }
+    }
+
+    QVariantList rows;
+    QSqlQuery q(m_db);
+    q.prepare(QStringLiteral(
+        "SELECT request_id, session_id, model, timestamp, "
+        "input_tokens, output_tokens, cache_hit_tokens, latency_ms, cost_cents "
+        "FROM token_usage") + whereSql +
+        QStringLiteral(" ORDER BY timestamp DESC, id DESC LIMIT ? OFFSET ?"));
+    for (qint64 v : binds) q.addBindValue(v);
+    q.addBindValue(limit);
+    q.addBindValue(offset);
+    if (q.exec()) {
+        while (q.next()) {
+            rows.append(QVariantMap{
+                {QStringLiteral("requestId"),       q.value(0).toLongLong()},
+                {QStringLiteral("sessionId"),       q.value(1).toString()},
+                {QStringLiteral("model"),           q.value(2).toString()},
+                {QStringLiteral("timestamp"),       q.value(3).toLongLong()},
+                {QStringLiteral("inputTokens"),     q.value(4).toLongLong()},
+                {QStringLiteral("outputTokens"),    q.value(5).toLongLong()},
+                {QStringLiteral("cacheHitTokens"),  q.value(6).toLongLong()},
+                {QStringLiteral("latencyMs"),       q.value(7).toLongLong()},
+                {QStringLiteral("costCents"),       q.value(8).toLongLong()},
+            });
+        }
+    } else {
+        qWarning() << "tokenUsageRecords rows failed:" << q.lastError().text();
+    }
+
+    out["rows"] = rows;
+    out["total"] = total;
+    return out;
+}
+
 // ── docs/16 §6.3: 成本核算聚合 ─────────────────────────
 // totalCostCents 取已存储的 SUM(cost_cents)；input/output/cacheHit 费用
 // 按各模型定价重新拆分（明细表只存总费用）。projectedMonthlyCents 按当月
-// 日均推算。
-QVariantMap SqliteMemory::costStats(int recentDays) {
+// 日均推算（固定当月语义，不受范围参数影响）。
+// Batch 6 T1: fromTs/toTs 范围模式语义见 resolveUsageWindow。
+QVariantMap SqliteMemory::costStats(int recentDays, qint64 fromTs, qint64 toTs) {
     QVariantMap out;
-    if (recentDays <= 0) recentDays = 30;
-    const qint64 cutoff = QDateTime::currentDateTime().addDays(-recentDays)
-                              .toMSecsSinceEpoch();
+    const UsageWindow win = resolveUsageWindow(recentDays, fromTs, toTs);
 
     QSqlQuery modelQ(m_db);
     modelQ.prepare(QStringLiteral(
         "SELECT model, COUNT(*), "
         "COALESCE(SUM(input_tokens),0), COALESCE(SUM(output_tokens),0), "
         "COALESCE(SUM(cache_hit_tokens),0), COALESCE(SUM(cost_cents),0) "
-        "FROM token_usage WHERE timestamp >= ? GROUP BY model "
+        "FROM token_usage WHERE ") + win.whereSql +
+        QStringLiteral(
+        " GROUP BY model "
         "ORDER BY SUM(cost_cents) DESC"));
-    modelQ.addBindValue(cutoff);
+    bindUsageWindow(modelQ, win);
 
     qint64 totalCost = 0, inputCost = 0, outputCost = 0, cacheHitCost = 0;
     QVariantList byModel;
@@ -2721,12 +2851,16 @@ QVariantMap SqliteMemory::costStats(int recentDays) {
 
     QVariantList byDay;
     QSqlQuery dayQ(m_db);
+    // 批次六审查 M1：byDay 行上限——范围模式 366 行 / recentDays 回退
+    // 31 行，语义同 tokenStatsDetailed（声明见 IMemory.h）。
     dayQ.prepare(QStringLiteral(
         "SELECT date(timestamp/1000,'unixepoch','localtime') AS d, COUNT(*), "
         "COALESCE(SUM(input_tokens),0)+COALESCE(SUM(output_tokens),0), "
         "COALESCE(SUM(cost_cents),0) "
-        "FROM token_usage WHERE timestamp >= ? GROUP BY d ORDER BY d DESC LIMIT 31"));
-    dayQ.addBindValue(cutoff);
+        "FROM token_usage WHERE ") + win.whereSql +
+        QStringLiteral(" GROUP BY d ORDER BY d DESC LIMIT ?"));
+    bindUsageWindow(dayQ, win);
+    dayQ.addBindValue(win.rangeMode ? 366 : 31);
     if (dayQ.exec()) {
         while (dayQ.next()) {
             byDay.append(QVariantMap{

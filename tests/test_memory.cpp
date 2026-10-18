@@ -25,6 +25,23 @@ QJsonObject msg(const QString& role, const QString& content) {
     return m;
 }
 
+// Batch 6 T1: token_usage 明细 fixture（驼峰键对齐 logTokenUsage 契约）。
+// 固定 requestId/sessionId，可变 model/timestamp/方向 token/费用/延迟。
+QVariantMap usageRec(const QString& model, qint64 ts, int in, int out,
+                     int cache, int cost, qint64 latency = 100) {
+    QVariantMap r;
+    r["sessionId"] = QStringLiteral("s-range");
+    r["model"] = model;
+    r["requestId"] = 42;
+    r["timestamp"] = ts;
+    r["inputTokens"] = in;
+    r["outputTokens"] = out;
+    r["cacheHitTokens"] = cache;
+    r["costCents"] = cost;
+    r["latencyMs"] = latency;
+    return r;
+}
+
 } // namespace
 
 class TestMemory : public QObject {
@@ -104,6 +121,14 @@ private slots:
     void tokenStatsEmptyWhenNoData();
     // docs/16 §8.3: session-scoped token breakdown (TopBar hover popup).
     void sessionTokenBreakdown();
+    // Batch 6 T1: 起止时间戳范围聚合 + 明细分页（token_usage 口径）。
+    void tokenStatsDetailedCustomRange();
+    void tokenUsageRecordsPagination();
+    void tokenUsageRecordsMatchAggregates();
+    void costStatsAndBySourceCustomRange();
+    // 批次六审查 M1: byDay 行上限——范围模式 366 行（跨 >31 天范围
+    // 不截断）/ recentDays 回退窗口 31 行（既有语义回归锁定）。
+    void byDayRangeModeLimitSemantics();
     // docs/17 A0: projects + session ownership
     void projectSessionLifecycle();
     // docs/17 P2: project rename (display name only)
@@ -415,6 +440,344 @@ void TestMemory::sessionTokenBreakdown() {
 
     // Blank id: defensive no-op rather than a full-table scan.
     QVERIFY(mem.sessionTokenBreakdown(QString()).isEmpty());
+}
+
+// Batch 6 T1: tokenStatsDetailed 起止时间戳范围模式。「今日」按本地自然日
+// 0 点起算（QDateTime 口径对齐写入侧）、fromTs==toTs 空范围、byModel/byDay
+// 在自定义范围内的分组正确性；fromTs/toTs 均 0 时回退既有 recentDays 窗口
+// （兼容回归）。所有窗口/时间戳均由同一 QDate 派生，断言自洽不受运行时钟
+// 跨午夜影响。
+void TestMemory::tokenStatsDetailedCustomRange() {
+    SqliteMemory mem(QStringLiteral(":memory:"));
+
+    // 本地自然日 0 点口径（与 quotaStatus / 写入侧 QDateTime 一致）。
+    const QDate today = QDate::currentDate();
+    const qint64 todayStart =
+        QDateTime(today, QTime(0, 0)).toMSecsSinceEpoch();
+    const qint64 tomorrowStart =
+        QDateTime(today.addDays(1), QTime(0, 0)).toMSecsSinceEpoch();
+    const qint64 yesterdayStart =
+        QDateTime(today.addDays(-1), QTime(0, 0)).toMSecsSinceEpoch();
+    const qint64 yesterdayLate =
+        QDateTime(today.addDays(-1), QTime(23, 59, 59, 999)).toMSecsSinceEpoch();
+
+    // 今天两条（gpt-4o / qwen2.5）+ 昨天一条（gpt-4o，23:59:59.999）。
+    mem.logTokenUsage(usageRec("gpt-4o", todayStart + 1, 100, 50, 40, 7));
+    mem.logTokenUsage(usageRec("qwen2.5", todayStart + 3600000, 200, 100, 0, 11));
+    mem.logTokenUsage(usageRec("gpt-4o", yesterdayLate, 1000, 500, 0, 70));
+
+    // 「今日」[今天0点, 明天0点)：只含今天两条，昨天 23:59:59.999 被排除。
+    const QVariantMap todayStats =
+        mem.tokenStatsDetailed(0, todayStart, tomorrowStart);
+    QCOMPARE(todayStats.value("totalCalls").toInt(), 2);
+    QCOMPARE(todayStats.value("totalInputTokens").toLongLong(), 300);
+    QCOMPARE(todayStats.value("totalOutputTokens").toLongLong(), 150);
+    QCOMPARE(todayStats.value("totalCacheHitTokens").toLongLong(), 40);
+    QCOMPARE(todayStats.value("totalCostCents").toLongLong(), 18);
+
+    // byModel 范围内分组：qwen2.5 总量 300 > gpt-4o 今日 150（DESC 在前），
+    // 昨天那条 gpt-4o 的 1000 input 不得泄漏进分组。
+    const QVariantList byModel = todayStats.value("byModel").toList();
+    QCOMPARE(byModel.size(), 2);
+    QCOMPARE(byModel.at(0).toMap().value("model").toString(),
+             QStringLiteral("qwen2.5"));
+    QCOMPARE(byModel.at(0).toMap().value("calls").toInt(), 1);
+    QCOMPARE(byModel.at(0).toMap().value("inputTokens").toLongLong(), 200);
+    QCOMPARE(byModel.at(1).toMap().value("model").toString(),
+             QStringLiteral("gpt-4o"));
+    QCOMPARE(byModel.at(1).toMap().value("inputTokens").toLongLong(), 100);
+
+    // byDay 范围内分组：今日窗口只剩今天一组。
+    const QVariantList byDay = todayStats.value("byDay").toList();
+    QCOMPARE(byDay.size(), 1);
+    QCOMPARE(byDay.at(0).toMap().value("day").toString(),
+             today.toString(Qt::ISODate));
+    QCOMPARE(byDay.at(0).toMap().value("inputTokens").toLongLong(), 300);
+    QCOMPARE(byDay.at(0).toMap().value("calls").toInt(), 2);
+
+    // 跨两天窗口 [昨天0点, 明天0点)：byDay 两组按天独立聚合，DESC 最新在前。
+    const QVariantMap bothDays =
+        mem.tokenStatsDetailed(0, yesterdayStart, tomorrowStart);
+    QCOMPARE(bothDays.value("totalCalls").toInt(), 3);
+    const QVariantList days = bothDays.value("byDay").toList();
+    QCOMPARE(days.size(), 2);
+    QCOMPARE(days.at(0).toMap().value("day").toString(),
+             today.toString(Qt::ISODate));
+    QCOMPARE(days.at(0).toMap().value("inputTokens").toLongLong(), 300);
+    QCOMPARE(days.at(1).toMap().value("day").toString(),
+             today.addDays(-1).toString(Qt::ISODate));
+    QCOMPARE(days.at(1).toMap().value("inputTokens").toLongLong(), 1000);
+    QCOMPARE(days.at(1).toMap().value("calls").toInt(), 1);
+
+    // fromTs == toTs：左闭右开语义下必为空范围。
+    const QVariantMap empty =
+        mem.tokenStatsDetailed(0, todayStart, todayStart);
+    QCOMPARE(empty.value("totalCalls").toInt(), 0);
+    QCOMPARE(empty.value("totalInputTokens").toLongLong(), 0);
+    QVERIFY(empty.value("byModel").toList().isEmpty());
+    QVERIFY(empty.value("byDay").toList().isEmpty());
+
+    // 只有下界（toTs=0 不设上界）：从昨天 0 点起全部 3 条。
+    const QVariantMap sinceYesterday =
+        mem.tokenStatsDetailed(0, yesterdayStart, 0);
+    QCOMPARE(sinceYesterday.value("totalCalls").toInt(), 3);
+
+    // 兼容回归：fromTs/toTs 均 0 → 回退 recentDays 窗口（30 天全包含）。
+    const QVariantMap fallback = mem.tokenStatsDetailed(30);
+    QCOMPARE(fallback.value("totalCalls").toInt(), 3);
+}
+
+// Batch 6 T1: tokenUsageRecords 分页明细。timestamp DESC（同刻按 id DESC
+// 稳定）、limit/offset 分页遍历不重不漏、offset 越界返回空 rows 但 total
+// 正确、范围过滤（左闭右开）、fromTs==toTs 空范围、limit<=0 取默认 50、
+// 行字段完整（驼峰九键）。
+void TestMemory::tokenUsageRecordsPagination() {
+    SqliteMemory mem(QStringLiteral(":memory:"));
+
+    // 7 条记录，时间严格递增（ts_i = base + i * 1000）。
+    const qint64 base = 1700000000000LL;
+    for (int i = 0; i < 7; ++i) {
+        mem.logTokenUsage(usageRec(i % 2 == 0 ? "gpt-4o" : "qwen2.5",
+                                   base + i * 1000,
+                                   10 + i, 20 + i, 5, 3 + i, 100 + i));
+    }
+
+    // 全量一页（limit 50）：7 行，timestamp 严格递减。
+    const QVariantMap all = mem.tokenUsageRecords(0, 0, 50, 0);
+    QCOMPARE(all.value("total").toInt(), 7);
+    const QVariantList rows = all.value("rows").toList();
+    QCOMPARE(rows.size(), 7);
+    for (int i = 1; i < rows.size(); ++i) {
+        QVERIFY(rows.at(i).toMap().value("timestamp").toLongLong()
+                < rows.at(i - 1).toMap().value("timestamp").toLongLong());
+    }
+
+    // 行字段完整（驼峰九键）与值：最新一行是 i=6（base + 6000）。
+    const QVariantMap first = rows.at(0).toMap();
+    QCOMPARE(first.value("requestId").toLongLong(), 42);
+    QCOMPARE(first.value("sessionId").toString(), QStringLiteral("s-range"));
+    QCOMPARE(first.value("model").toString(), QStringLiteral("gpt-4o"));
+    QCOMPARE(first.value("timestamp").toLongLong(), base + 6000);
+    QCOMPARE(first.value("inputTokens").toLongLong(), 16);
+    QCOMPARE(first.value("outputTokens").toLongLong(), 26);
+    QCOMPARE(first.value("cacheHitTokens").toLongLong(), 5);
+    QCOMPARE(first.value("latencyMs").toLongLong(), 106);
+    QCOMPARE(first.value("costCents").toLongLong(), 9);
+
+    // 分页遍历：limit 3 → 3 + 3 + 1，翻页间不重不漏且次序稳定。
+    const QVariantMap p1 = mem.tokenUsageRecords(0, 0, 3, 0);
+    const QVariantMap p2 = mem.tokenUsageRecords(0, 0, 3, 3);
+    const QVariantMap p3 = mem.tokenUsageRecords(0, 0, 3, 6);
+    QCOMPARE(p1.value("total").toInt(), 7);
+    QCOMPARE(p2.value("total").toInt(), 7);
+    QCOMPARE(p3.value("total").toInt(), 7);
+    QCOMPARE(p1.value("rows").toList().size(), 3);
+    QCOMPARE(p2.value("rows").toList().size(), 3);
+    QCOMPARE(p3.value("rows").toList().size(), 1);
+    QCOMPARE(p1.value("rows").toList().at(0).toMap().value("timestamp").toLongLong(),
+             base + 6000);
+    QCOMPARE(p2.value("rows").toList().at(0).toMap().value("timestamp").toLongLong(),
+             base + 3000);
+    QCOMPARE(p3.value("rows").toList().at(0).toMap().value("timestamp").toLongLong(),
+             base + 0);
+    QVERIFY(p1.value("rows").toList().at(2).toMap().value("timestamp").toLongLong()
+            > p2.value("rows").toList().at(0).toMap().value("timestamp").toLongLong());
+
+    // offset 越界：rows 为空但 total 仍正确。
+    const QVariantMap over = mem.tokenUsageRecords(0, 0, 50, 100);
+    QCOMPARE(over.value("total").toInt(), 7);
+    QVERIFY(over.value("rows").toList().isEmpty());
+
+    // 范围过滤 [base+2000, base+5000)：左闭右开 → 恰含 2000/3000/4000。
+    const QVariantMap ranged =
+        mem.tokenUsageRecords(base + 2000, base + 5000, 50, 0);
+    QCOMPARE(ranged.value("total").toInt(), 3);
+    QCOMPARE(ranged.value("rows").toList().size(), 3);
+    QCOMPARE(ranged.value("rows").toList().at(0).toMap().value("timestamp").toLongLong(),
+             base + 4000);
+
+    // fromTs == toTs：空范围。
+    const QVariantMap emptyRange =
+        mem.tokenUsageRecords(base + 2000, base + 2000, 50, 0);
+    QCOMPARE(emptyRange.value("total").toInt(), 0);
+    QVERIFY(emptyRange.value("rows").toList().isEmpty());
+
+    // limit <= 0 → 默认每页 50。
+    const QVariantMap defLimit = mem.tokenUsageRecords(0, 0, -5, 0);
+    QCOMPARE(defLimit.value("rows").toList().size(), 7);
+}
+
+// Batch 6 T1: 明细与聚合口径一致——同范围下 records.total ==
+// detailed.totalCalls，SUM(明细各列) == detailed 对应聚合值（跨页合计）；
+// 范围外记录两边都不计入。
+void TestMemory::tokenUsageRecordsMatchAggregates() {
+    SqliteMemory mem(QStringLiteral(":memory:"));
+
+    const QDate today = QDate::currentDate();
+    const qint64 todayStart =
+        QDateTime(today, QTime(0, 0)).toMSecsSinceEpoch();
+    const qint64 tomorrowStart =
+        QDateTime(today.addDays(1), QTime(0, 0)).toMSecsSinceEpoch();
+
+    // 范围内 3 条 + 范围外 1 条（昨天 23:59:59.999，今日窗口之外）。
+    mem.logTokenUsage(usageRec("gpt-4o", todayStart + 1000, 100, 50, 40, 7));
+    mem.logTokenUsage(usageRec("qwen2.5", todayStart + 2000, 200, 80, 60, 9));
+    mem.logTokenUsage(usageRec("gpt-4o", todayStart + 3000, 30, 20, 10, 2));
+    mem.logTokenUsage(usageRec("claude",
+                               QDateTime(today.addDays(-1), QTime(23, 59, 59, 999))
+                                   .toMSecsSinceEpoch(),
+                               999, 999, 0, 999));
+
+    const QVariantMap detailed =
+        mem.tokenStatsDetailed(0, todayStart, tomorrowStart);
+    // limit 2 强制跨页取全（3 = 2 + 1），顺带覆盖跨页合计。
+    const QVariantMap page1 =
+        mem.tokenUsageRecords(todayStart, tomorrowStart, 2, 0);
+    const QVariantMap page2 =
+        mem.tokenUsageRecords(todayStart, tomorrowStart, 2, 2);
+
+    QCOMPARE(detailed.value("totalCalls").toInt(), 3);
+    QCOMPARE(page1.value("total").toInt(), detailed.value("totalCalls").toInt());
+
+    QVariantList rows = page1.value("rows").toList();
+    rows += page2.value("rows").toList();
+    QCOMPARE(rows.size(), 3);
+
+    qint64 sumIn = 0, sumOut = 0, sumCache = 0, sumCost = 0;
+    for (const auto& rowV : rows) {
+        const QVariantMap row = rowV.toMap();
+        sumIn += row.value("inputTokens").toLongLong();
+        sumOut += row.value("outputTokens").toLongLong();
+        sumCache += row.value("cacheHitTokens").toLongLong();
+        sumCost += row.value("costCents").toLongLong();
+    }
+    QCOMPARE(sumIn, detailed.value("totalInputTokens").toLongLong());
+    QCOMPARE(sumOut, detailed.value("totalOutputTokens").toLongLong());
+    QCOMPARE(sumCache, detailed.value("totalCacheHitTokens").toLongLong());
+    QCOMPARE(sumCost, detailed.value("totalCostCents").toLongLong());
+    // 范围外 claude 行（999 input/999 cents）不进任何一边。
+    QCOMPARE(sumIn, qint64(330));
+    QCOMPARE(sumCost, qint64(18));
+}
+
+// Batch 6 T1: costStats / tokenStatsBySource 范围模式——范围外记录被排除；
+// fromTs/toTs 均 0 回退 recentDays 窗口（兼容回归）。
+void TestMemory::costStatsAndBySourceCustomRange() {
+    SqliteMemory mem(QStringLiteral(":memory:"));
+
+    const QDate today = QDate::currentDate();
+    const qint64 todayStart =
+        QDateTime(today, QTime(0, 0)).toMSecsSinceEpoch();
+    const qint64 tomorrowStart =
+        QDateTime(today.addDays(1), QTime(0, 0)).toMSecsSinceEpoch();
+
+    QVariantMap in1;
+    in1["sessionId"] = "s1";
+    in1["model"] = "gpt-4o";
+    in1["requestId"] = 1;
+    in1["timestamp"] = todayStart + 1000;
+    in1["inputTokens"] = 100;
+    in1["outputTokens"] = 50;
+    in1["inputSystemPrompt"] = 60;
+    in1["inputConversation"] = 40;
+    in1["costCents"] = 7;
+    QVariantMap in2;
+    in2["sessionId"] = "s2";
+    in2["model"] = "qwen2.5";
+    in2["requestId"] = 2;
+    in2["timestamp"] = todayStart + 2000;
+    in2["inputTokens"] = 200;
+    in2["outputTokens"] = 100;
+    in2["inputSystemPrompt"] = 150;
+    in2["inputConversation"] = 50;
+    in2["costCents"] = 11;
+    QVariantMap out1; // 昨天深夜：今日窗口之外
+    out1["sessionId"] = "s3";
+    out1["model"] = "gpt-4o";
+    out1["requestId"] = 3;
+    out1["timestamp"] =
+        QDateTime(today.addDays(-1), QTime(23, 59, 59, 999)).toMSecsSinceEpoch();
+    out1["inputTokens"] = 1000;
+    out1["outputTokens"] = 500;
+    out1["inputSystemPrompt"] = 900;
+    out1["costCents"] = 700;
+    mem.logTokenUsage(in1);
+    mem.logTokenUsage(in2);
+    mem.logTokenUsage(out1);
+
+    // costStats 范围模式：只累计今日两条（7 + 11 = 18 分），昨天的
+    // 大额 gpt-4o（700 分）不泄漏进 totalCostCents / byModel / byDay。
+    const QVariantMap cost = mem.costStats(0, todayStart, tomorrowStart);
+    QCOMPARE(cost.value("totalCostCents").toLongLong(), 18);
+    QCOMPARE(cost.value("byModel").toList().size(), 2);
+    QCOMPARE(cost.value("byDay").toList().size(), 1);
+
+    // tokenStatsBySource 范围模式：来源固定 7 行，system_prompt 只累计
+    // 今日（60 + 150 = 210），昨天的 900 不泄漏。
+    const QVariantList sources =
+        mem.tokenStatsBySource(0, todayStart, tomorrowStart);
+    QCOMPARE(sources.size(), 7);
+    const QVariantMap sp = sources.at(0).toMap();
+    QCOMPARE(sp.value("source").toString(), QStringLiteral("system_prompt"));
+    QCOMPARE(sp.value("inputTokens").toLongLong(), 210);
+    const QVariantMap conv = sources.at(1).toMap();
+    QCOMPARE(conv.value("source").toString(), QStringLiteral("conversation"));
+    QCOMPARE(conv.value("inputTokens").toLongLong(), 90);
+
+    // 兼容回归：fromTs/toTs 均 0 → 回退 recentDays（30 天全包含）。
+    const QVariantMap costAll = mem.costStats(30);
+    QCOMPARE(costAll.value("totalCostCents").toLongLong(), 718);
+    const QVariantList sourcesAll = mem.tokenStatsBySource(30);
+    QCOMPARE(sourcesAll.at(0).toMap().value("inputTokens").toLongLong(), 1110);
+}
+
+// 批次六审查 M1: byDay 行上限语义。连续 40 天数据：
+// - 范围模式（fromTs/toTs 任一 > 0）：tokenStatsDetailed / costStats 的
+//   byDay 必须完整返回 40 行（不被旧 LIMIT 31 静默截断为最近 31 天，
+//   与同页环形图/柱状图全量口径一致）；
+// - recentDays 回退模式（fromTs/toTs 均 0）：byDay 仍按既有 31 行上限
+//   截断最近 31 天（回归锁定，防止回退窗口被一并放宽）。
+// 所有时间戳由同一 QDate 派生，断言不受运行时钟跨午夜影响。
+void TestMemory::byDayRangeModeLimitSemantics() {
+    SqliteMemory mem(QStringLiteral(":memory:"));
+
+    // 连续 40 天（today-39 ~ today），每天一条记录（12:00）。
+    const QDate today = QDate::currentDate();
+    const qint64 tomorrowStart =
+        QDateTime(today.addDays(1), QTime(0, 0)).toMSecsSinceEpoch();
+    const qint64 rangeFrom =
+        QDateTime(today.addDays(-39), QTime(0, 0)).toMSecsSinceEpoch();
+    for (int i = 0; i < 40; ++i) {
+        mem.logTokenUsage(usageRec("gpt-4o",
+            QDateTime(today.addDays(-39 + i), QTime(12, 0))
+                .toMSecsSinceEpoch(),
+            10 + i, 5, 0, 1, 100));
+    }
+
+    // 范围模式 [39 天前 0 点, 明天 0 点)：覆盖全部 40 天 → byDay 完整
+    // 40 行（DESC 最新在前：首行今天、末行 39 天前）。
+    const QVariantMap stats = mem.tokenStatsDetailed(0, rangeFrom, tomorrowStart);
+    QCOMPARE(stats.value("totalCalls").toInt(), 40);
+    const QVariantList byDay = stats.value("byDay").toList();
+    QCOMPARE(byDay.size(), 40);
+    QCOMPARE(byDay.at(0).toMap().value("day").toString(),
+             today.toString(Qt::ISODate));
+    QCOMPARE(byDay.at(39).toMap().value("day").toString(),
+             today.addDays(-39).toString(Qt::ISODate));
+
+    // costStats 同一范围：byDay 同样 40 行（两处查询共用上限语义）。
+    const QVariantMap cost = mem.costStats(0, rangeFrom, tomorrowStart);
+    QCOMPARE(cost.value("byDay").toList().size(), 40);
+
+    // 回退模式（fromTs/toTs 均 0）：recentDays=45 窗口全包含 40 天，
+    // 但 byDay 仍按 31 行上限截断最近 31 天（today ~ today-30）。
+    const QVariantMap fallback = mem.tokenStatsDetailed(45);
+    const QVariantList fallbackDays = fallback.value("byDay").toList();
+    QCOMPARE(fallbackDays.size(), 31);
+    QCOMPARE(fallbackDays.at(0).toMap().value("day").toString(),
+             today.toString(Qt::ISODate));
+    QCOMPARE(fallbackDays.at(30).toMap().value("day").toString(),
+             today.addDays(-30).toString(Qt::ISODate));
 }
 
 void TestMemory::episodicFullTextSearch() {

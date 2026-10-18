@@ -468,10 +468,23 @@ public:
     // M1 (stats): token/cost aggregation for the usage page.
     Q_INVOKABLE QVariantMap tokenStats(int recentDays = 30);
     // docs/16 §8: detailed aggregates for the extended usage page.
-    Q_INVOKABLE QVariantMap tokenStatsDetailed(int recentDays = 30);
-    Q_INVOKABLE QVariantList tokenStatsBySource(int recentDays = 30);
-    Q_INVOKABLE QVariantMap costStats(int recentDays = 30);
+    // Batch 6 T1: fromTs/toTs（epoch ms，本地口径）任一 > 0 时按
+    // [fromTs, toTs) 范围聚合（recentDays 被忽略），均 0 回退
+    // recentDays 窗口——语义细节见 IMemory.h。
+    Q_INVOKABLE QVariantMap tokenStatsDetailed(int recentDays = 30,
+                                               qint64 fromTs = 0, qint64 toTs = 0);
+    Q_INVOKABLE QVariantList tokenStatsBySource(int recentDays = 30,
+                                                qint64 fromTs = 0, qint64 toTs = 0);
+    Q_INVOKABLE QVariantMap costStats(int recentDays = 30,
+                                      qint64 fromTs = 0, qint64 toTs = 0);
     Q_INVOKABLE QVariantMap quotaStatus();
+    // Batch 6 T1: token_usage 明细分页（每次 LLM 请求一行）。返回
+    // {rows, total}: rows 按 timestamp DESC（同刻按 id DESC）分页，
+    // 每行 {requestId, sessionId, model, timestamp, inputTokens,
+    // outputTokens, cacheHitTokens, latencyMs, costCents}（驼峰键）；
+    // total = 范围内总行数。fromTs/toTs 均 0 = 全部记录。见 IMemory.h。
+    Q_INVOKABLE QVariantMap tokenUsageRecords(qint64 fromTs = 0, qint64 toTs = 0,
+                                              int limit = 50, int offset = 0);
     // docs/16 §8.3: 当前激活会话的 token 来源拆分（TopBar 悬停浮层）。
     // 无激活会话 id 时返回空 map，QML 据此显示空态。
     Q_INVOKABLE QVariantMap sessionTokenBreakdown() const;
