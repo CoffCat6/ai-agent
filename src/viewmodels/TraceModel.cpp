@@ -138,6 +138,13 @@ int TraceModel::rowOfId(const QString& id) const {
     return -1;
 }
 
+int TraceModel::rowOfMessageId(qint64 messageId) const {
+    if (messageId <= 0) return -1;
+    for (int i = 0; i < m_nodes.size(); ++i)
+        if (m_nodes.at(i).value("messageId").toLongLong() == messageId) return i;
+    return -1;
+}
+
 int TraceModel::lastIndexOfType(const QString& type) const {
     for (int i = m_nodes.size() - 1; i >= 0; --i)
         if (m_nodes.at(i).value("type").toString() == type) return i;

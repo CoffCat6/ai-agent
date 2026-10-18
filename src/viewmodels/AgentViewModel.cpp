@@ -773,6 +773,22 @@ void AgentViewModel::searchMessages(const QString& keyword, bool includeArchived
     emit searchResultsChanged();
 }
 
+// A1 (hit-locate): the sidebar search card hands us a session + the id of
+// its newest matching message. loadSession() fills the trace model
+// synchronously (resumeSession is synchronous); the locate intent is then
+// broadcast on the ChangeBus so the chat page can scroll to & briefly
+// highlight that message after its Repeater lays out the new session. A
+// messageId <= 0 (e.g. pass-2 failure) just opens the session with no jump.
+void AgentViewModel::revealMessage(const QString& sessionId, qint64 messageId) {
+    if (sessionId.isEmpty()) return;
+    loadSession(sessionId);
+    if (messageId <= 0) return;
+    auto* bus = ChangeBus::instance();
+    if (bus)
+        bus->notify(QStringLiteral("search.revealMessage"),
+                    QVariant::fromValue(messageId));
+}
+
 // Batch 18 (FEAT-1801): export one session as Markdown or JSON. Reads go
 // through the persistence backend attached in setMemory(); the file write is
 // atomic (QSaveFile) so a failed export never leaves a half-written file.

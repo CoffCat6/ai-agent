@@ -74,6 +74,16 @@ protected:
         int completionTokens{0};
         int cacheReadTokens{0};
         int cacheCreationTokens{0};
+        // m-3: a retried attempt must not re-emit tool_use blocks accumulated
+        // by the failed first attempt (token counts are overwritten on the
+        // retry's message_start/message_delta anyway).
+        void reset() override {
+            toolUses.clear();
+            promptTokens = 0;
+            completionTokens = 0;
+            cacheReadTokens = 0;
+            cacheCreationTokens = 0;
+        }
     };
 
     ProviderRequestStatePtr createRequestState() const override

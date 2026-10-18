@@ -48,6 +48,10 @@ protected:
         // docs/16 §5.1: eval counts from the done=true final line.
         int promptTokens{0};
         int completionTokens{0};
+        // m-3: toolCalls is reassigned on done=true (so it already survives
+        // a retry without leaking), but reset() keeps the contract uniform
+        // across backends and protects against future accumulate-style edits.
+        void reset() override { toolCalls.clear(); promptTokens = 0; completionTokens = 0; }
     };
 
     ProviderRequestStatePtr createRequestState() const override

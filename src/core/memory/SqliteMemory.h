@@ -36,14 +36,16 @@ public:
     // a LIKE fallback for keywords shorter than 3 characters - the trigram
     // index cannot answer shorter queries). Batch 22 (search-aggregate):
     // results aggregate PER SESSION - one row per session
-    // {sessionId, sessionTitle, hitCount, latestTimestamp, bestSnippet,
-    // bestRole}, newest hit first; `limit` caps the number of SESSIONS
-    // (default 50). bestSnippet is single-line, markdown-stripped and
-    // wraps the keyword in U+0001/U+0002 control-character highlight
-    // markers (review fix m-1: plain brackets collide with bracketed text
-    // like "arr[0]"). The sub-trigram LIKE
-    // fallback keeps its Batch 21 (B4) guard: past a message-count ceiling
-    // it returns a single notice row (sessionId="__search_notice__").
+    // {sessionId, sessionTitle, hitCount, latestTimestamp, archived,
+    // bestSnippet, bestRole, firstHitMessageId}, newest hit first; `limit`
+    // caps the number of SESSIONS (default 50). bestSnippet is single-line,
+    // markdown-stripped and wraps the keyword in U+0001/U+0002
+    // control-character highlight markers (review fix m-1: plain brackets
+    // collide with bracketed text like "arr[0]"). firstHitMessageId (A1)
+    // is the messages.id of the session's newest matching message — the
+    // sidebar jump target. The sub-trigram LIKE fallback keeps its Batch 21
+    // (B4) guard: past a message-count ceiling it returns a single notice
+    // row (sessionId="__search_notice__").
     QVariantList searchMessages(const QString& keyword, int limit = 50, bool includeArchived = false) override;
 
     // Episodic memory (FTS5) — currently NOT wired into the agent.

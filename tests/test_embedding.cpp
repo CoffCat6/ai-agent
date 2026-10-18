@@ -57,15 +57,32 @@ public:
                         socket->disconnectFromHost();
                         return;
                     }
-                    QJsonArray embeddings;
-                    for (int i = 0; i < texts.size(); ++i) {
+                    QJsonObject body;
+                    if (m_returnSingleEmbedding && texts.size() == 1) {
+                        // 单条 embed 响应形态：{"embedding": [...]}，用于
+                        // 验证 OllamaEmbedding::embed() 解析。
                         QJsonArray vec;
                         for (int d = 0; d < m_dim; ++d)
                             vec.append(0.25);
-                        embeddings.append(vec);
+                        body["embedding"] = vec;
+                    } else {
+                        QJsonArray embeddings;
+                        const int count = texts.size() + m_countOffset;
+                        for (int i = 0; i < count; ++i) {
+                            QJsonArray vec;
+                            for (int d = 0; d < m_dim; ++d)
+                                vec.append(0.25);
+                            if (m_indexEncoded) {
+                                QJsonObject entry;
+                                entry["index"] = i;
+                                entry["embedding"] = vec;
+                                embeddings.append(entry);
+                            } else {
+                                embeddings.append(vec);
+                            }
+                        }
+                        body["embeddings"] = embeddings;
                     }
-                    QJsonObject body;
-                    body["embeddings"] = embeddings;
                     if (m_delayMs > 0)
                         QTest::qSleep(m_delayMs);
                     // docs/24 H5: optionally answer 500 for the first N
@@ -95,6 +112,14 @@ public:
     void setHang(bool hang) { m_hang = hang; }
     // 任务 #22 B1 用例：所有请求回 401（客户端错误不重试）。
     void setFailAllUnauthorized(bool fail) { m_failAllUnauthorized = fail; }
+    // 协议错误注入：data 条数相对 input 的偏移（负数=少几条）。
+    void setCountOffset(int offset) { m_countOffset = offset; }
+    // 单条 embed 响应形态开关：true 时返回 {"embedding": [...]} 而非
+    // {"embeddings": [[...]]}，验证 OllamaEmbedding::embed() 解析。
+    void setReturnSingleEmbedding(bool single) { m_returnSingleEmbedding = single; }
+    // 索引编码开关：true 时 embeddings 数组元素为 {"index":i,"embedding":[...]}
+    // 而非纯数组，验证 OllamaEmbedding::embedBatch() 对两种形态的容错。
+    void setIndexEncoded(bool encoded) { m_indexEncoded = encoded; }
     int requests() const { return m_requests; }
     const QStringList& modelsSeen() const { return m_modelsSeen; }
 
@@ -114,12 +139,19 @@ private:
     }
 
     static QStringList parseInputs(const QByteArray& body) {
-        // The request body is indented JSON: {"input": ["a", "b", ...]}
+        // 兼容两种请求形态：batch 用 {"input": ["a","b",...]}，
+        // 单条 embed 用 {"prompt": "..."}（OllamaEmbedding::embed 的格式）。
         QStringList texts;
         const QJsonDocument doc = QJsonDocument::fromJson(body);
-        const QJsonArray input = doc.object().value("input").toArray();
-        for (const auto& item : input)
-            texts.append(item.toString());
+        const QJsonValue input = doc.object().value("input");
+        if (input.isArray()) {
+            for (const auto& item : input.toArray())
+                texts.append(item.toString());
+        } else {
+            const QJsonValue prompt = doc.object().value("prompt");
+            if (prompt.isString())
+                texts.append(prompt.toString());
+        }
         return texts;
     }
 
@@ -140,6 +172,9 @@ private:
     int m_failFirstRequests{0};
     bool m_hang{false};
     bool m_failAllUnauthorized{false};
+    int m_countOffset{0};
+    bool m_indexEncoded{false};
+    bool m_returnSingleEmbedding{false};
     int m_requests{0};
     QStringList m_modelsSeen;
 };
@@ -658,6 +693,63 @@ private slots:
 
         QVERIFY(embed.embedBatch(makeTexts(2)).isEmpty());
         QCOMPARE(server.requests(), 1);
+    }
+
+    // ── Ollama 对称测试（对齐 OpenAI 既有用例）──
+
+    // 单条 embed：Ollama 单数响应形态 {"embedding": [...]} 解析。
+    // 与 openaiSingleEmbedParsesResponse 对称——验证 OllamaEmbedding::embed()
+    // 能正确解析单数响应，而非仅支持批量 {"embeddings": [...]} 形态。
+    void ollamaSingleEmbedParsesResponse() {
+        FakeEmbedServer server(4);
+        server.setReturnSingleEmbedding(true);
+        OllamaEmbedding embed;
+        embed.setBaseUrl(server.baseUrl());
+        embed.setModel(QStringLiteral("nomic-embed-text"));
+
+        const QVector<float> vec = embed.embed(QStringLiteral("hello"));
+        QCOMPARE(vec.size(), 4);
+        // FakeEmbedServer 固定回 0.25
+        QCOMPARE(vec.at(0), 0.25f);
+        QCOMPARE(vec.at(1), 0.25f);
+        QCOMPARE(vec.at(3), 0.25f);
+    }
+
+    // 协议错误 fail-fast（对齐 openaiBatchProtocolErrorsFailFast）：
+    // data 条数不匹配 / 索引编码形态（Ollama 不认）→ 空容器，不重试。
+    void ollamaBatchProtocolErrorsFailFast() {
+        {   // data 条数比 input 少一条 → size mismatch 短路
+            FakeEmbedServer server(4);
+            server.setCountOffset(-1);
+            OllamaEmbedding embed;
+            embed.setBaseUrl(server.baseUrl());
+            QVERIFY(embed.embedBatch(makeTexts(2)).isEmpty());
+            QCOMPARE(server.requests(), 1);   // fail-fast：无重试
+        }
+        {   // 索引编码形态（{"index":i,"embedding":[...]}）→ 元素非数组
+            // → toArray() 返回空 → vec.isEmpty() 短路
+            FakeEmbedServer server(4);
+            server.setIndexEncoded(true);
+            OllamaEmbedding embed;
+            embed.setBaseUrl(server.baseUrl());
+            QVERIFY(embed.embedBatch(makeTexts(2)).isEmpty());
+            QCOMPARE(server.requests(), 1);
+        }
+    }
+
+    // 轮询中断（Ollama 批量，对称于 openaiShutdownInterruptsHangingBatch）：
+    // server 挂起 + 500ms 后置位退出标志 → 在途批被 abort、后续批不再发送。
+    void ollamaShutdownInterruptsHangingBatch() {
+        FakeEmbedServer server(2);
+        server.setHang(true);
+        OllamaEmbedding embed;
+        embed.setBaseUrl(server.baseUrl());
+
+        QTimer::singleShot(500, []() { requestEmbeddingShutdown(); });
+        const QVector<QVector<float>> result = embed.embedBatch(makeTexts(70));
+        QVERIFY(result.isEmpty());
+        QCOMPARE(server.requests(), 1);
+        resetEmbeddingShutdownForTesting();
     }
 };
 

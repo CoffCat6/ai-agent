@@ -48,6 +48,12 @@
 > 后台线程（`QtConcurrent` + `QFutureWatcher`，不再冻结界面）；C3 的 searxng
 > 在未填 `webSearch/searxBaseUrl` 时给出明确错误（原来只有"请检查网络连接"），
 > 并把 HTTP/解析失败与"真的没结果"分开报。
+> **s-1 Gemini thinking off 档位现状登记（2026-10-18，仅登记不改行为）**：
+> GeminiService 的思考档位映射处，off 档位 = 不指定 generationConfig.thinkingConfig、
+> 交由服务端默认动态思考，而非"彻底关闭思考"——Gemini 2.5/3 系列本身即 thinking
+> 模型，API 没有真正的"关思考"开关，只能"不指定"。对应代码
+> `GeminiService::thinkingBudgetFor()` 对 off/未设置/未知档位返回 0（不发
+> thinkingConfig 字段）。本项只补注释与本文档登记，不改任何运行行为。
 > **创建日期**：2026-10-06
 > **依赖文档**：docs/14（L1–L6 遗留修复）、docs/17（沙箱与设置体系）、docs/18（会话归属模型）、docs/19（对话界面视觉完善）
 > **涉及模块**：AgentViewModel / ChatSessionController / AIAgent / SqliteMemory / main.cpp / AgentChatPage / AssistantMessage / InputConsole / Sidebar / SettingsSchema

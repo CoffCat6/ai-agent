@@ -6,9 +6,98 @@
 #include <QJsonDocument>
 #include <QJsonArray>
 #include <QRegularExpression>
+#include <QSet>
 #include <QDebug>
 
 namespace NexusAI {
+
+namespace {
+
+// m-4：Gemini Schema 子集不支持的关键字。MCP 的 inputSchema 是完整 JSON
+// Schema，一旦这些关键字进了 functionDeclarations.parameters，整条工具声明
+// 会直接 400。纯约束性关键字这里直接裁掉（丢约束保结构）；组合/引用类
+// （anyOf/oneOf/allOf/$ref）在 sanitizeSchemaNode 里先收敛再裁剪。
+bool isGeminiUnsupportedKeyword(const QString& key) {
+    static const QSet<QString> unsupported = {
+        QStringLiteral("$ref"), QStringLiteral("$schema"), QStringLiteral("$defs"),
+        QStringLiteral("$id"), QStringLiteral("definitions"),
+        QStringLiteral("oneOf"), QStringLiteral("anyOf"), QStringLiteral("allOf"),
+        QStringLiteral("not"), QStringLiteral("patternProperties"),
+        QStringLiteral("additionalProperties"), QStringLiteral("const"),
+        QStringLiteral("contains"), QStringLiteral("if"), QStringLiteral("then"),
+        QStringLiteral("else"), QStringLiteral("minItems"), QStringLiteral("maxItems"),
+        QStringLiteral("uniqueItems"), QStringLiteral("minLength"),
+        QStringLiteral("maxLength"), QStringLiteral("pattern"),
+        QStringLiteral("minProperties"), QStringLiteral("maxProperties"),
+        QStringLiteral("minimum"), QStringLiteral("maximum"),
+        QStringLiteral("exclusiveMinimum"), QStringLiteral("exclusiveMaximum"),
+        QStringLiteral("multipleOf"), QStringLiteral("default"),
+        QStringLiteral("examples"), QStringLiteral("contentMediaType"),
+        QStringLiteral("contentEncoding"), QStringLiteral("readOnly"),
+        QStringLiteral("writeOnly"),
+    };
+    return unsupported.contains(key);
+}
+
+// 递归把一段 schema 节点降到 Gemini Schema 子集（原地修改，返回 false 表示
+// 该节点无法安全降级）。组合器（anyOf/oneOf/allOf）收敛到第一个能降级的
+// 分支并并入其约束；$ref 无法解析直接丢弃；properties/items 递归下探。
+// 处理后节点为空（所有约束都被裁掉）时返回 false，表示无法安全降级。
+bool sanitizeSchemaNode(QJsonObject& node) {
+    const char* combinators[] = {"anyOf", "oneOf", "allOf"};
+    for (const char* key : combinators) {
+        if (!node.contains(key)) continue;
+        const QJsonArray branches = node.value(key).toArray();
+        node.remove(key);
+        for (const auto& b : branches) {
+            if (!b.isObject()) continue;
+            QJsonObject candidate = b.toObject();
+            if (!sanitizeSchemaNode(candidate)) continue;
+            for (auto it = candidate.begin(); it != candidate.end(); ++it) {
+                if (!node.contains(it.key())) node.insert(it.key(), it.value());
+            }
+            break;
+        }
+    }
+
+    for (auto it = node.begin(); it != node.end();) {
+        if (isGeminiUnsupportedKeyword(it.key())) it = node.erase(it);
+        else ++it;
+    }
+
+    if (node.contains(QStringLiteral("properties"))) {
+        const QJsonValue pv = node.value(QStringLiteral("properties"));
+        if (pv.isObject()) {
+            QJsonObject props = pv.toObject();
+            for (auto it = props.begin(); it != props.end();) {
+                if (it.value().isObject()) {
+                    QJsonObject sub = it.value().toObject();
+                    if (sanitizeSchemaNode(sub)) { it.value() = sub; ++it; continue; }
+                }
+                it = props.erase(it);
+            }
+            node[QStringLiteral("properties")] = props;
+        } else {
+            node.remove(QStringLiteral("properties"));
+        }
+    }
+
+    if (node.contains(QStringLiteral("items"))) {
+        const QJsonValue iv = node.value(QStringLiteral("items"));
+        if (iv.isObject()) {
+            QJsonObject items = iv.toObject();
+            if (sanitizeSchemaNode(items)) node[QStringLiteral("items")] = items;
+            else node.remove(QStringLiteral("items"));
+        } else {
+            node.remove(QStringLiteral("items"));
+        }
+    }
+
+    // 节点为空表示所有约束都被裁掉，无法安全降级
+    return !node.isEmpty();
+}
+
+} // namespace
 
 GeminiService::GeminiService(QObject* parent)
     : LLMServiceBase(parent)
@@ -19,20 +108,63 @@ GeminiService::GeminiService(QObject* parent)
 
 // OpenAI wire format {type:"function",function:{name,description,parameters}}
 // -> Gemini [{"functionDeclarations":[{name,description,parameters}]}]。
-// parameters 就是 JSON Schema 对象，两个协议同形，原样透传。
+// parameters 就是 JSON Schema 对象，两个协议同形；但 Gemini 只吃它的一个子
+// 集，超出子集（$ref/anyOf/oneOf 等）会整体 400 —— 这里经 sanitizeSchema 做
+// 子集校验/降级，无法安全降级的工具整条跳过 + qWarning，保住其余工具可用。
 QJsonArray GeminiService::convertTools(const QJsonArray& tools) {
     QJsonArray declarations;
     for (const auto& tool : tools) {
         const QJsonObject obj = tool.toObject();
         const QJsonObject fn = obj.contains("function")
             ? obj.value("function").toObject() : obj;
+        const QString name = fn.value("name").toString();
+
+        bool schemaOk = true;
+        const QJsonObject parameters =
+            sanitizeSchema(fn.value("parameters").toObject(), &schemaOk);
+        if (!schemaOk) {
+            qWarning() << "Gemini: skipping tool" << name
+                       << "- inputSchema not representable in the Gemini Schema subset";
+            continue;
+        }
+
         QJsonObject d;
-        d["name"] = fn.value("name").toString();
+        d["name"] = name;
         d["description"] = fn.value("description").toString();
-        d["parameters"] = fn.value("parameters").toObject();
+        d["parameters"] = parameters;
         declarations.append(d);
     }
     return QJsonArray{ QJsonObject{{"functionDeclarations", declarations}} };
+}
+
+// m-4：把 MCP inputSchema（JSON Schema）降到 Gemini Schema 子集。顶层强制收
+// 敛为 object+properties（functionDeclarations.parameters 期待对象）；明确是
+// 非对象标量/数组且无可收敛 properties 的顶层，无法安全表达成命名参数对象，
+// 返回空并置 *ok=false（调用方跳过该工具）。type 强制写小写 object：与本项
+// 目 inputSchema 的 JSON Schema 形态一致（Gemini 侧按小写可正常接收）。
+QJsonObject GeminiService::sanitizeSchema(const QJsonObject& inputSchema, bool* ok) {
+    QJsonObject schema = inputSchema;
+    if (!sanitizeSchemaNode(schema)) {
+        // 顶层节点无法安全降级，跳过该工具
+        if (ok) *ok = false;
+        return {};
+    }
+
+    const QString type = schema.value(QStringLiteral("type")).toString().toLower();
+    const bool structurallyScalarOrArray =
+        type == QLatin1String("array") || type == QLatin1String("string")
+        || type == QLatin1String("number") || type == QLatin1String("integer")
+        || type == QLatin1String("boolean");
+    if (structurallyScalarOrArray && !schema.contains(QStringLiteral("properties"))) {
+        if (ok) *ok = false;
+        return {};
+    }
+
+    schema[QStringLiteral("type")] = QStringLiteral("object");
+    if (!schema.contains(QStringLiteral("properties")))
+        schema[QStringLiteral("properties")] = QJsonObject{};
+    if (ok) *ok = true;
+    return schema;
 }
 
 GeminiService::ConvertedRequest
@@ -293,7 +425,10 @@ int GeminiService::thinkingBudgetFor(const QString& level) {
     if (level == QLatin1String("low")) return 2048;
     if (level == QLatin1String("medium")) return 8192;
     if (level == QLatin1String("high")) return 16384;
-    return 0;   // "off" / 未设置 / 未知档位：不发 thinkingConfig，服务端默认
+    // s-1 现状登记：off / 未设置 / 未知档位返回 0 = 不指定 thinkingConfig，
+    // 交由服务端默认动态思考——而非"彻底关闭思考"。Gemini 2.5/3 系列本身即
+    // thinking 模型，API 没有真正的"关思考"开关，只能做到"不指定"。
+    return 0;
 }
 
 // M-1（任务 #27）：思考与正文共享 maxOutputTokens 这一池（Gemini 的输

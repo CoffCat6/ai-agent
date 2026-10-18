@@ -15,6 +15,22 @@ Item {
     // 自动渲染为开关；模型相关的上下文预算已迁往"模型配置"页。
     property var preferenceKeys: PreferenceRegistry.preferencesInCategory("general")
 
+    // 嵌入 provider 的本地化显示名。provider 的「值集合」单一来源是
+    // Settings.embeddingProviders（SettingsSchema 的 embedding/provider
+    // options，与 main.cpp 后端工厂共用），此处只做展示层 label 映射。
+    readonly property var embeddingProviderLabels: ({
+        "ollama": qsTr("本地 Ollama"),
+        "openai": qsTr("OpenAI 兼容服务")
+    })
+
+    // 嵌入模型预设：仅本页使用，非跨页共享（任务 #27 A3）。本地 Ollama
+    // 与外部 OpenAI 兼容服务的模型生态不同，下拉候选随当前 provider 联动
+    //（不再硬编码 Ollama 一组）。
+    readonly property var embeddingModelPresets: ({
+        "ollama": ["nomic-embed-text", "bge-m3", "mxbai-embed-large", "all-minilm"],
+        "openai": ["text-embedding-3-small", "text-embedding-3-large", "text-embedding-ada-002"]
+    })
+
     // General preferences and service-backed settings live in separate stores;
     // reset both here so the page-level action really restores the whole page.
     function requestResetDefaults() {
@@ -36,7 +52,6 @@ Item {
             width: flick.width
             spacing: 16
 
-            Item { Layout.preferredHeight: 4 }
 
             RowLayout {
                 Layout.leftMargin: 24
@@ -318,26 +333,44 @@ Item {
                 ComboBox {
                     id: embeddingProviderCombo
                     Layout.fillWidth: true
-                    model: [
-                        { value: "ollama", label: qsTr("本地 Ollama") },
-                        { value: "openai", label: qsTr("OpenAI 兼容服务") }
-                    ]
+                    // 值单一来源 Settings.embeddingProviders（schema options，
+                    // 与后端工厂共用），不再 UI 硬编码 provider 键；仅 label
+                    // 在此本地化映射。
+                    model: Settings.embeddingProviders.map(p => ({
+                        value: p,
+                        label: page.embeddingProviderLabels[p] || Settings.providerDisplayName(p)
+                    }))
                     textRole: "label"
                     currentIndex: {
-                        const values = ["ollama", "openai"]
-                        const i = values.indexOf(Settings.embeddingProvider)
+                        const i = Settings.embeddingProviders.indexOf(Settings.embeddingProvider)
                         return i >= 0 ? i : 0
                     }
-                    onActivated: (index) => Settings.embeddingProvider = model[index].value
+                    onActivated: (index) => Settings.embeddingProvider = Settings.embeddingProviders[index]
                     Accessible.name: qsTr("嵌入服务提供方")
                 }
                 // qmllint enable unqualified
+
+                // 任务 #27 A3：provider 切换后当前 model 若不在新预设列表中，
+                // 自动重置为新预设第一项（持久化值与显示脱节防御）。
+                Connections {
+                    target: Settings
+                    function onEmbeddingProviderChanged() {
+                        const presets = page.embeddingModelPresets[Settings.embeddingProvider] || []
+                        if (!presets.includes(Settings.embeddingModel) && presets.length > 0) {
+                            Settings.embeddingModel = presets[0]
+                        }
+                    }
+                }
 
                 Text { text: qsTr("嵌入模型"); color: Theme.textSecondary; font.pixelSize: Theme.fontSizeCaption; font.family: Theme.fontMono }
                 ComboBox {
                     Layout.fillWidth: true
                     editable: true
-                    model: ["nomic-embed-text", "bge-m3", "mxbai-embed-large", "all-minilm"]
+                    // 模型预设随 provider 切换联动（任务 #27 A3）：候选列表
+                    // 不再硬编码 Ollama 一组，切到外部服务后跟随其模型生态。
+                    // qmllint disable unqualified
+                    model: page.embeddingModelPresets[Settings.embeddingProvider] || []
+                    // qmllint enable unqualified
                     // QQuickComboBox::componentComplete() resets an editable
                     // combo's editText to currentText (the first item), which
                     // wiped the binding below on every page build — the saved

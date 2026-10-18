@@ -1264,7 +1264,7 @@ Rectangle {
                     // archived 字段（undefined → 不显示标记），数据层后续
                     // 补充即自动生效，与 sessionRow 的呈现口径一致。
                     readonly property string metaText:
-                        (modelData.archived === true ? qsTr("已归档 · ") : "")
+                        (modelData.archived ? qsTr("已归档 · ") : "")
                         + (modelData.latestTimestamp > 0
                            ? Theme.formatDateTime(new Date(modelData.latestTimestamp))
                            : "")
@@ -1296,7 +1296,7 @@ Rectangle {
                     function openSession() {
                         if (resultDelegate.isNotice) return   // informational, not a session
                         searchField.text = ""          // back to the session list
-                        AgentVM.loadSession(modelData.sessionId)
+                        AgentVM.revealMessage(modelData.sessionId, modelData.firstHitMessageId || 0)
                     }
 
                     ColumnLayout {

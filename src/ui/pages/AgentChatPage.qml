@@ -10,6 +10,11 @@ Item {
 
     signal settingsRequested()
 
+    // A1 (hit-locate): 搜索命中定位高亮行索引，-1 表示不高亮。
+    // TraceNodeRouter.highlighted 绑定到 index === revealHighlightIndex。
+    property int revealHighlightIndex: -1
+
+
     // Sending can synchronously insert the user row before requestFollow().
     // Forward the intent immediately instead of waiting for another count change.
     QtObject {
@@ -77,6 +82,8 @@ Item {
                     toggleDetailFn: function(key, def) {
                         transcript.toggleDetail(key, def)
                     }
+                    // A1 (hit-locate): 搜索命中定位——索引匹配时短暂高亮。
+                    highlighted: index === root.revealHighlightIndex
                 }
             }
 
@@ -279,6 +286,41 @@ Item {
             function onCurrentSessionIdChanged() {
                 transcript.jumpToBottom()
             }
+        }
+
+        // A1 (hit-locate): 监听 ChangeBus 上的搜索命中定位意图。
+        // revealMessage() 先 loadSession 同步填充 traceModel，再 notify
+        // search.revealMessage；此处 Qt.callLater 延迟一帧，等 Repeater
+        // 完成新会话的布局后再读 rowOfMessageId 和 scrollToIndex。
+        Connections {
+            target: ChangeBus
+            function onChanged(key, value) {
+                if (key !== "search.revealMessage")
+                    return
+                const messageId = value.toLongLong()
+                if (messageId <= 0) {
+                    transcript.jumpToBottom()
+                    return
+                }
+                Qt.callLater(function() {
+                    const row = AgentVM.traceModel.rowOfMessageId(messageId)
+                    if (row >= 0) {
+                        transcript.scrollToIndex(row)
+                        root.revealHighlightIndex = row
+                        highlightTimer.start()
+                    } else {
+                        // assistant 命中或 messageId 未映射到当前 trace 行 → 回退跳到底部
+                        transcript.jumpToBottom()
+                    }
+                }, 0)
+            }
+        }
+
+        // A1 (hit-locate): 2s 清除高亮的本地 Timer（root 级，避免与页面级 Timer 重复）。
+        Timer {
+            id: highlightTimer
+            interval: 2000
+            onTriggered: root.revealHighlightIndex = -1
         }
 
         Item {

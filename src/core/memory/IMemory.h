@@ -154,12 +154,14 @@ public:
     // Batch 17 (FEAT-1702): cross-session keyword search over the message
     // history (optional capability; default no-ops). Batch 22
     // (search-aggregate): results are aggregated PER SESSION - each row is
-    // a map {sessionId, sessionTitle, hitCount, latestTimestamp,
-    // bestSnippet, bestRole}, ordered by latestTimestamp (the session's
-    // newest hit) first; `limit` caps the number of SESSIONS. bestSnippet
-    // is single-line, markdown-stripped and wraps the keyword in
-    // U+0001/U+0002 control-character highlight markers. Empty/blank
-    // keywords return an empty list.
+    // a map {sessionId, sessionTitle, hitCount, latestTimestamp, archived,
+    // bestSnippet, bestRole, firstHitMessageId}, ordered by latestTimestamp
+    // (the session's newest hit) first; `limit` caps the number of
+    // SESSIONS. bestSnippet is single-line, markdown-stripped and wraps the
+    // keyword in U+0001/U+0002 control-character highlight markers.
+    // firstHitMessageId (qint64) is the messages.id of that session's
+    // newest matching message (0 when unavailable); archived mirrors the
+    // session soft-archive flag. Empty/blank keywords return an empty list.
     virtual QVariantList searchMessages(const QString& keyword, int limit = 50, bool includeArchived = false) {
         Q_UNUSED(keyword); Q_UNUSED(limit); Q_UNUSED(includeArchived);
         return {};

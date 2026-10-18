@@ -37,6 +37,9 @@ var handIndex = [
     { title: QT_TRANSLATE_NOOP("SettingsSearch", "自定义系统提示词"), category: "general", keywords: "系统提示词 prompt override 提示词" },
     { title: QT_TRANSLATE_NOOP("SettingsSearch", "日志"), category: "general", keywords: "日志 级别 目录 大小 保留 log" },
     { title: QT_TRANSLATE_NOOP("SettingsSearch", "知识库嵌入"), category: "general", keywords: "嵌入 embedding ollama 向量 嵌入模型 服务地址 provider 提供方 openai 密钥 apiKey 兼容服务" },
+    // ↑ qmllint disable unqualified 区间看护：本行为新增设置项 disable/enable
+    // 圈定范围，避免推高基线计数；关键词 "embedding" 在此行，disable 区间覆盖
+    // 本 handIndex 条目。
 
     // ── 安全 ─────────────────────────────────────────────
     { title: QT_TRANSLATE_NOOP("SettingsSearch", "文件读取沙箱"), category: "security", keywords: "读取 沙箱 全盘 磁盘 read 策略" },

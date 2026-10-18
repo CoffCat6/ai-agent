@@ -45,6 +45,24 @@ Item {
         requestScrollToBottom()
     }
 
+    // A1 (hit-locate): scroll so the idx-th row lands near the top of the
+    // viewport. The caller (chat page) invokes this after the Repeater has
+    // laid out the freshly loaded session; forceLayout() guarantees each
+    // delegate's y (relative to messageColumn) is current before we read it.
+    // Locating is an explicit user intent, so pinnedToBottom drops to false
+    // — geometry updates must not yank the user back to the bottom.
+    function scrollToIndex(idx) {
+        if (idx < 0 || idx >= messages.count)
+            return
+        messageColumn.forceLayout()
+        const item = messages.itemAt(idx)
+        if (!item)
+            return
+        flick.cancelFlick()
+        beginUserScroll()
+        flick.contentY = clampOffset(item.y - 8)
+    }
+
     function beginUserScroll() {
         pinnedToBottom = false
     }

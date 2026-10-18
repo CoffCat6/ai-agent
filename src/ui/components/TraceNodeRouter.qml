@@ -18,6 +18,21 @@ Item {
     // 折叠状态读写回调（来自页面 ListView）。
     property var detailExpandedFn
     property var toggleDetailFn
+    // A1 (hit-locate): 搜索跳转后被短暂置 true，由聊天页的高亮计时器清除。
+    property bool highlighted: false
+
+    // A1 (hit-locate): 2s 自动复位高亮——避免搜索卡片残留高亮底色。
+    Timer {
+        id: highlightResetTimer
+        interval: 2000
+        onTriggered: highlighted = false
+    }
+
+    // A1 (hit-locate): highlighted 重新为 true 时重启 2s 复位计时。
+    onHighlightedChanged: {
+        if (highlighted)
+            highlightResetTimer.restart()
+    }
 
     readonly property string nodeType:
         (modelData !== undefined && modelData !== null)
@@ -63,6 +78,23 @@ Item {
     height: processHidden ? 0 : implicitHeight
     visible: !processHidden
     implicitHeight: topGap + (loader.item ? loader.item.implicitHeight : 0)
+
+    // A1 (hit-locate): 命中定位的短暂高亮底色（z 置底，不遮挡交互）。
+    Rectangle {
+        id: highlight
+        z: -1
+        anchors.fill: parent
+        anchors.topMargin: 4
+        anchors.bottomMargin: 4
+        radius: 8
+        color: root.highlighted
+            ? Qt.rgba(Theme.brandPrimary.r, Theme.brandPrimary.g,
+                      Theme.brandPrimary.b, 0.10)
+            : "transparent"
+        border.width: root.highlighted ? 1.5 : 0
+        border.color: Theme.brandPrimary
+        Behavior on color { ColorAnimation { duration: 250 } }
+    }
 
     Loader {
         id: loader

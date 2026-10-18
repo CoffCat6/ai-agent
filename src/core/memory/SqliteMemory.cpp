@@ -1172,13 +1172,16 @@ QString SqliteMemory::stripMarkdownDecorations(const QString& text) {
     static const QRegularExpression codeSpan(QStringLiteral("`([^`]*)`"));
     static const QRegularExpression boldStar(QStringLiteral("\\*\\*(.+?)\\*\\*"));
     static const QRegularExpression italicStar(QStringLiteral("\\*(.+?)\\*"));
+    // Review fix (Suggestion②): the newline splitter is now a static — the
+    // per-call temporary QRegularExpression used to recompile the pattern on
+    // every snippet, a hot path when many sessions are aggregated.
+    static const QRegularExpression newline(QStringLiteral("\\r\\n|\\r|\\n"));
 
     // Fenced blocks: the ``` marker lines are dropped, the enclosed lines
     // are kept verbatim (no further stripping inside code).
     QStringList kept;
     bool inFence = false;
-    const QStringList lines =
-        text.split(QRegularExpression(QStringLiteral("\\r\\n|\\r|\\n")));
+    const QStringList lines = text.split(newline);
     kept.reserve(lines.size());
     for (QString line : lines) {
         if (fence.match(line).hasMatch()) {
@@ -1254,11 +1257,18 @@ QString SqliteMemory::buildSearchSnippet(const QString& raw, const QString& keyw
 
 // Batch 17 (FEAT-1702): cross-session keyword search. Batch 22
 // (search-aggregate): results are aggregated PER SESSION - one row per
-// session {sessionId, sessionTitle, hitCount, latestTimestamp, bestSnippet,
-// bestRole}, the session's newest hit first; `limit` caps the number of
-// sessions. The trigram FTS path handles 3+ character keywords (quoted
-// phrase → substring match, CJK included); shorter keywords fall back to a
-// LIKE scan because a trigram index cannot answer sub-trigram queries.
+// session {sessionId, sessionTitle, hitCount, latestTimestamp, archived,
+// bestSnippet, bestRole, firstHitMessageId}, the session's newest hit
+// first; `limit` caps the number of sessions. The trigram FTS path handles
+// 3+ character keywords (quoted phrase → substring match, CJK included);
+// shorter keywords fall back to a LIKE scan because a trigram index cannot
+// answer sub-trigram queries.
+//
+// firstHitMessageId (A1 hit-locate) is the messages.id of the session's
+// newest matching message — the jump target for the sidebar's
+// locate-and-highlight flow. archived mirrors the session's soft-archive
+// flag (Suggestion④) so the result card can render the same "已归档" badge
+// the session list shows.
 //
 // Batch 22: the FTS path no longer calls snippet(). Its token window cut
 // markdown markers in half (a "**Nexus" fragment survives stripping as
@@ -1307,7 +1317,8 @@ QVariantList SqliteMemory::searchMessages(const QString& keyword, int limit, boo
         QString match = kw;
         match.replace(QLatin1String("\""), QLatin1String("\"\""));
         query.prepare(QStringLiteral(
-            "SELECT m.session_id, s.title, COUNT(*), MAX(m.timestamp) "
+            "SELECT m.session_id, s.title, COUNT(*), MAX(m.timestamp), "
+            "COALESCE(s.archived, 0) "
             "FROM messages_fts JOIN messages m ON m.id = messages_fts.rowid "
             "LEFT JOIN sessions s ON s.id = m.session_id "
             "WHERE messages_fts MATCH ? AND (? OR COALESCE(s.archived, 0) = 0) "
@@ -1321,7 +1332,8 @@ QVariantList SqliteMemory::searchMessages(const QString& keyword, int limit, boo
             .replace(QLatin1String("%"), QLatin1String("\\%"))
             .replace(QLatin1String("_"), QLatin1String("\\_"));
         query.prepare(QStringLiteral(
-            "SELECT m.session_id, s.title, COUNT(*), MAX(m.timestamp) "
+            "SELECT m.session_id, s.title, COUNT(*), MAX(m.timestamp), "
+            "COALESCE(s.archived, 0) "
             "FROM messages m LEFT JOIN sessions s ON s.id = m.session_id "
             "WHERE m.content LIKE ? ESCAPE '\\' AND (? OR COALESCE(s.archived, 0) = 0) "
             "AND COALESCE(s.deleted_at, 0) = 0 "
@@ -1341,20 +1353,31 @@ QVariantList SqliteMemory::searchMessages(const QString& keyword, int limit, boo
         QString title;
         int hits = 0;
         qint64 latest = 0;
+        bool archived = false;
     };
     QVector<SessionHit> sessions;
     while (query.next()) {
         sessions.append(SessionHit{query.value(0).toString(),
                                    query.value(1).toString(),
                                    query.value(2).toInt(),
-                                   query.value(3).toLongLong()});
+                                   query.value(3).toLongLong(),
+                                   query.value(4).toBool()});
     }
     if (sessions.isEmpty()) return out;
 
-    // Pass 2/2: the best row per session for the snippet - a user-role hit
-    // first (people usually search their own words), then the newest hit.
-    // SQLite window functions cannot appear in WHERE, so ROW_NUMBER() is
-    // computed in the inner SELECT and the outer filter keeps rn = 1.
+    // Pass 2/2: the best snippet row per session (a user-role hit first —
+    // people usually search their own words, then the newest hit) PLUS the
+    // session's newest hit message id (firstHitMessageId, for the sidebar's
+    // jump-to-message). SQLite window functions cannot appear in WHERE, so
+    // ROW_NUMBER() is computed in the inner SELECT and the outer filter keeps
+    // the winning rows.
+    //
+    // Suggestion① (memory-peak): the window's intermediate result set no
+    // longer selects `content` (the large text column). It carries only the
+    // sort keys + message id; the winning row's role/content are fetched once
+    // via a final JOIN onto that id. Two ROW_NUMBER()s — best_rn (user-first)
+    // and latest_rn (newest hit) — share the single scan, so each session
+    // contributes at most two rows (one when best == latest).
     QStringList placeholders;
     placeholders.reserve(sessions.size());
     for (int i = 0; i < sessions.size(); ++i)
@@ -1365,16 +1388,19 @@ QVariantList SqliteMemory::searchMessages(const QString& keyword, int limit, boo
         QString match = kw;
         match.replace(QLatin1String("\""), QLatin1String("\"\""));
         best.prepare(QStringLiteral(
-            "SELECT session_id, role, content FROM ("
-            "SELECT m.session_id AS session_id, m.role AS role, "
-            "m.content AS content, "
+            "SELECT r.session_id, mb.role, mb.content, r.id, r.best_rn, r.latest_rn FROM ("
+            "SELECT m.session_id AS session_id, m.id AS id, "
             "ROW_NUMBER() OVER (PARTITION BY m.session_id "
-            "ORDER BY (m.role = 'user') DESC, m.timestamp DESC, m.id DESC) AS rn "
+            "ORDER BY (m.role = 'user') DESC, m.timestamp DESC, m.id DESC) AS best_rn, "
+            "ROW_NUMBER() OVER (PARTITION BY m.session_id "
+            "ORDER BY m.timestamp DESC, m.id DESC) AS latest_rn "
             "FROM messages_fts JOIN messages m ON m.id = messages_fts.rowid "
             "LEFT JOIN sessions s ON s.id = m.session_id "
             "WHERE messages_fts MATCH ? AND (? OR COALESCE(s.archived, 0) = 0) "
             "AND COALESCE(s.deleted_at, 0) = 0 "
-            "AND m.session_id IN (%1)) WHERE rn = 1").arg(idList));
+            "AND m.session_id IN (%1)) r "
+            "JOIN messages mb ON mb.id = r.id "
+            "WHERE r.best_rn = 1 OR r.latest_rn = 1").arg(idList));
         best.addBindValue(QStringLiteral("\"%1\"").arg(match));
     } else {
         QString like = kw;
@@ -1382,15 +1408,18 @@ QVariantList SqliteMemory::searchMessages(const QString& keyword, int limit, boo
             .replace(QLatin1String("%"), QLatin1String("\\%"))
             .replace(QLatin1String("_"), QLatin1String("\\_"));
         best.prepare(QStringLiteral(
-            "SELECT session_id, role, content FROM ("
-            "SELECT m.session_id AS session_id, m.role AS role, "
-            "m.content AS content, "
+            "SELECT r.session_id, mb.role, mb.content, r.id, r.best_rn, r.latest_rn FROM ("
+            "SELECT m.session_id AS session_id, m.id AS id, "
             "ROW_NUMBER() OVER (PARTITION BY m.session_id "
-            "ORDER BY (m.role = 'user') DESC, m.timestamp DESC, m.id DESC) AS rn "
+            "ORDER BY (m.role = 'user') DESC, m.timestamp DESC, m.id DESC) AS best_rn, "
+            "ROW_NUMBER() OVER (PARTITION BY m.session_id "
+            "ORDER BY m.timestamp DESC, m.id DESC) AS latest_rn "
             "FROM messages m LEFT JOIN sessions s ON s.id = m.session_id "
             "WHERE m.content LIKE ? ESCAPE '\\' AND (? OR COALESCE(s.archived, 0) = 0) "
             "AND COALESCE(s.deleted_at, 0) = 0 "
-            "AND m.session_id IN (%1)) WHERE rn = 1").arg(idList));
+            "AND m.session_id IN (%1)) r "
+            "JOIN messages mb ON mb.id = r.id "
+            "WHERE r.best_rn = 1 OR r.latest_rn = 1").arg(idList));
         best.addBindValue(QStringLiteral("%%1%").arg(like));
     }
     best.addBindValue(includeArchived);
@@ -1402,6 +1431,7 @@ QVariantList SqliteMemory::searchMessages(const QString& keyword, int limit, boo
         QString content;
     };
     QHash<QString, BestRow> bestBySession;
+    QHash<QString, qint64> firstHitBySession;
     if (!best.exec()) {
         // Pass 1 already proved the WHERE clause runs, so this is
         // unexpected; still return the aggregated session rows (empty
@@ -1410,9 +1440,23 @@ QVariantList SqliteMemory::searchMessages(const QString& keyword, int limit, boo
                    << best.lastError().text();
     } else {
         while (best.next()) {
-            bestBySession.insert(best.value(0).toString(),
-                                 BestRow{best.value(1).toString(),
-                                         best.value(2).toString()});
+            const QString sid = best.value(0).toString();
+            // best_rn == 1 → the snippet row (user-first); latest_rn == 1 →
+            // the newest hit message id (firstHitMessageId). When the two
+            // windows agree on the same row (best == latest), both are
+            // captured from this single row.
+            // QHash::insert is idempotent for duplicate keys: when best_rn
+            // and latest_rn both resolve to the same session (the same row
+            // wins both windows), the second insert silently overwrites with
+            // identical values — no dedup branch needed, and the final
+            // mapping is correct either way.
+            if (best.value(4).toInt() == 1) {
+                bestBySession.insert(sid, BestRow{best.value(1).toString(),
+                                                  best.value(2).toString()});
+            }
+            if (best.value(5).toInt() == 1) {
+                firstHitBySession.insert(sid, best.value(3).toLongLong());
+            }
         }
     }
 
@@ -1422,6 +1466,7 @@ QVariantList SqliteMemory::searchMessages(const QString& keyword, int limit, boo
         row.insert(QStringLiteral("sessionTitle"), s.title);
         row.insert(QStringLiteral("hitCount"), s.hits);
         row.insert(QStringLiteral("latestTimestamp"), s.latest);
+        row.insert(QStringLiteral("archived"), s.archived);
         const auto it = bestBySession.constFind(s.id);
         if (it != bestBySession.constEnd()) {
             row.insert(QStringLiteral("bestSnippet"),
@@ -1431,6 +1476,9 @@ QVariantList SqliteMemory::searchMessages(const QString& keyword, int limit, boo
             row.insert(QStringLiteral("bestSnippet"), QString());
             row.insert(QStringLiteral("bestRole"), QString());
         }
+        const auto fh = firstHitBySession.constFind(s.id);
+        row.insert(QStringLiteral("firstHitMessageId"),
+                   fh != firstHitBySession.constEnd() ? fh.value() : qint64(0));
         out.append(row);
     }
     return out;

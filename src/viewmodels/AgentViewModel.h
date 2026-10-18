@@ -107,8 +107,9 @@ class AgentViewModel : public QObject {
     // 为空表示"本地对话"视图（只显示 project_id 为 NULL 的会话）。
     Q_PROPERTY(QVariantList projects READ projects NOTIFY projectsChanged FINAL)
     Q_PROPERTY(QString activeProjectId READ activeProjectId WRITE setActiveProjectId NOTIFY activeProjectIdChanged FINAL)
-    // Batch 17 (FEAT-1702): cross-session message search results; each entry
-    // is {sessionId, sessionTitle, messageId, snippet, role, timestamp}.
+    // Batch 17 (FEAT-1702): cross-session message search results, aggregated
+    // per session (Batch 22): {sessionId, sessionTitle, hitCount,
+    // latestTimestamp, archived, bestSnippet, bestRole, firstHitMessageId}.
     Q_PROPERTY(QVariantList searchResults READ searchResults NOTIFY searchResultsChanged FINAL)
 
     // ── Layout defaults (General Settings) ─────────────
@@ -293,8 +294,9 @@ public:
     QString currentSessionId() const { return active()->currentSessionId(); }
     // Batch 17: message-search results (set via the searchMessages invokable).
     // Batch 22 (search-aggregate): one row per session
-    // {sessionId, sessionTitle, hitCount, latestTimestamp, bestSnippet,
-    // bestRole}, newest hit first.
+    // {sessionId, sessionTitle, hitCount, latestTimestamp, archived,
+    // bestSnippet, bestRole, firstHitMessageId}, newest hit first. A1 adds
+    // firstHitMessageId (jump target) and archived (card badge).
     QVariantList searchResults() const { return m_searchResults; }
 
     // Token management (active tab)
@@ -412,6 +414,12 @@ public:
     // Batch 22 (search-aggregate): the backend aggregates per session; the
     // hardcoded limit caps the number of SESSIONS (50).
     Q_INVOKABLE void searchMessages(const QString& keyword, bool includeArchived = false);
+    // A1 (hit-locate): switch to a session and, when messageId > 0, ask the
+    // chat page to scroll to & briefly highlight that persisted message.
+    // The switch runs synchronously (resumeSession fills the trace model);
+    // the locate intent is broadcast on the ChangeBus so the QML message
+    // viewport can react after its Repeater has laid out the new session.
+    Q_INVOKABLE void revealMessage(const QString& sessionId, qint64 messageId);
     // Batch 18: export a session's messages (+ trace nodes) as Markdown or
     // JSON. Returns false (and emits errorOccurred) on failure.
     Q_INVOKABLE bool exportSession(const QString& sessionId, const QString& path,

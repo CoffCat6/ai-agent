@@ -1318,6 +1318,12 @@ void TestMemory::searchMessagesAggregatePerSession() {
     const QVariantList after = mem.searchMessages(QStringLiteral("聚合关键词"), 50);
     QCOMPARE(after.size(), 3);
     QCOMPARE(after.at(0).toMap().value("hitCount").toInt(), 3);
+
+    // A1 (hit-locate): firstHitMessageId must point to each session's newest hit.
+    // s1 newest = id 6 (ts=600), s2 newest = id 5 (ts=500), s3 newest = id 4 (ts=400).
+    QCOMPARE(after.at(0).toMap().value("firstHitMessageId").toLongLong(), qint64(6));
+    QCOMPARE(after.at(1).toMap().value("firstHitMessageId").toLongLong(), qint64(5));
+    QCOMPARE(after.at(2).toMap().value("firstHitMessageId").toLongLong(), qint64(4));
 }
 
 // Ordering and limit semantics: newest-hit session first; `limit` caps the
@@ -1481,6 +1487,10 @@ void TestMemory::searchMessagesRespectsArchivedFilter() {
     const QVariantList all =
         mem.searchMessages(QStringLiteral("归档过滤关键词"), 50, true);
     QCOMPARE(all.size(), 2);
+
+    // A1 (hit-locate): firstHitMessageId must be present and valid for each session.
+    QVERIFY(all.at(0).toMap().value("firstHitMessageId").toLongLong() > 0);
+    QVERIFY(all.at(1).toMap().value("firstHitMessageId").toLongLong() > 0);
 }
 
 // Review fix (M-1) regression: underscore-flavored markers must not be

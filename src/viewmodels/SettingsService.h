@@ -293,7 +293,8 @@ public:
     // baseUrl / 当前模型 / 模型列表由 updateProfile 单点重算，UI 不反查默认值。
     Q_INVOKABLE QVariantList endpointOptions(const QString& provider) const;
     // Localized display name for a provider key (legacy profile migration).
-    QString providerDisplayName(const QString& provider) const;
+    // 暴露给 QML（GeneralPage embeddingProviderLabels 容错 fallback）。
+    Q_INVOKABLE QString providerDisplayName(const QString& provider) const;
 
     // Query the capability-table context window for a given protocol+model.
     // Returns 0 when the protocol or model is unknown (caller should fall

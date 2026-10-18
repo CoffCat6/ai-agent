@@ -9,9 +9,15 @@
 #include <QJsonArray>
 #include <QEventLoop>
 #include <QDebug>
+#include <QLoggingCategory>
 #include <QThread>
 #include <QTimer>
 #include <QAtomicInt>
+
+// Embedding 域日志类别（对齐 SettingsService/McpManager 的模块级
+// Q_LOGGING_CATEGORY + qCWarning 规范）：空 key 这类需要按域过滤的
+// 告警不再走无类别的 qWarning。
+Q_LOGGING_CATEGORY(lcEmbedding, "nexus.embedding")
 
 namespace NexusAI {
 namespace {
@@ -84,8 +90,8 @@ QVector<float> OpenAICompatibleEmbedding::embed(const QString& text) {
         // 401 拒绝（日志可见），而不是客户端直接失败——后者让用户无法
         // 区分"网关本就免鉴权"与"密钥没配好"。
         if (g_warnedEmptyApiKey.testAndSetAcquire(0, 1))
-            qWarning() << "Embedding API key is empty - sending the request"
-                       << "anyway; auth-requiring services will answer 401";
+            qCWarning(lcEmbedding) << "Embedding API key is empty - sending the request"
+                                   << "anyway; auth-requiring services will answer 401";
     } else {
         request.setRawHeader(QByteArrayLiteral("Authorization"),
                              QByteArrayLiteral("Bearer ") + apiKey.toUtf8());
@@ -210,9 +216,9 @@ QVector<QVector<float>> OpenAICompatibleEmbedding::embedBatch(
             // g_warnedEmptyApiKey，批量导入几十批不会刷屏，也不会与
             // embed() 各打一条重复警告。
             if (g_warnedEmptyApiKey.testAndSetAcquire(0, 1))
-                qWarning() << "Embedding API key is empty - batch requests"
-                           << "are sent anyway; auth-requiring services"
-                           << "will answer 401";
+                qCWarning(lcEmbedding) << "Embedding API key is empty - batch requests"
+                                       << "are sent anyway; auth-requiring services"
+                                       << "will answer 401";
         } else {
             request.setRawHeader(QByteArrayLiteral("Authorization"),
                                  QByteArrayLiteral("Bearer ") + apiKey.toUtf8());

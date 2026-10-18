@@ -67,6 +67,10 @@ protected:
         // docs/16 §5.1: usage object from the include_usage final chunk
         // (empty "choices"), mapped onto LLMResponse in streamResult.
         QJsonObject usage;
+        // m-3: tool-call fragments are appended by index across stream
+        // deltas; a retried attempt must start from an empty vector or it
+        // duplicates the previous attempt's calls.
+        void reset() override { toolCalls.clear(); usage = QJsonObject{}; }
     };
 
     ProviderRequestStatePtr createRequestState() const override

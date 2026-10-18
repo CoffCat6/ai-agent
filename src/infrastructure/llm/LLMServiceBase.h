@@ -18,6 +18,14 @@ namespace NexusAI {
 // between requests at all.
 struct ProviderRequestState {
     virtual ~ProviderRequestState() = default;
+    // Reset per-request accumulation (tool-call fragments/toolCalls queues)
+    // to a clean slate. Called by LLMRequestContext::resetStreamState() on the
+    // REL-1001 transparent retry path, so a re-posted request must NOT carry
+    // over tool calls accumulated by the failed first attempt — otherwise
+    // streamResult() would re-emit them (duplicate toolCalls across all
+    // backends). Default no-op: the naked ProviderRequestState (and any
+    // subclass with nothing eventful to clear) keeps working unchanged.
+    virtual void reset() {}
 };
 using ProviderRequestStatePtr = QSharedPointer<ProviderRequestState>;
 
@@ -54,6 +62,12 @@ struct LLMRequestContext {
         doneReceived = false;
         responseEmitted = false;
         errorEmitted = false;
+        // m-3: also clear the provider-side accumulation. The failed attempt
+        // may already have streamed tool-call fragments into the request state
+        // (toolUses/toolCalls) before the transient error hit; without this,
+        // the retry re-emits them and the caller sees duplicate toolCalls.
+        // provider 总非空（createRequestState 返回的共享指针），if 守卫是防御性编程。
+        if (provider) provider->reset();
     }
 };
 using LLMRequestContextPtr = QSharedPointer<LLMRequestContext>;

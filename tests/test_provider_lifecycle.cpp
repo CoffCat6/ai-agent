@@ -819,6 +819,31 @@ private slots:
         QVERIFY(response.toolCalls.isEmpty());
     }
 
+    // m-3: a transient failure (HTTP 500) hit AFTER the failed attempt already
+    // streamed a tool-call delta (content still empty) is retried transparently.
+    // The retry must NOT re-emit the tool call accumulated by attempt #1 — the
+    // provider-side tool-call queue has to be reset by resetStreamState().
+    void transientErrorRetryDoesNotDuplicateToolCalls() {
+        FakeSseServer server;
+        OpenAIService service;
+        service.setBaseUrl(server.baseUrl());
+        QSignalSpy spy(&service, &IAIService::responseReady);
+        QSignalSpy errors(&service, &IAIService::errorOccurred);
+
+        // First attempt: 500, but its SSE body already carried a tool call.
+        server.enqueue({openaiToolBody(), false, kMatchA, 500});
+        // Retry: 200 with the same tool call.
+        server.enqueue({openaiToolBody(), false, kMatchA, 200});
+        service.chatComplete(userMessages(QStringLiteral("hi")), {});
+        QVERIFY2(spy.wait(5000), "no response after transient tool-call failure");
+        QCOMPARE(errors.count(), 0);
+        QCOMPARE(spy.count(), 1);
+        const LLMResponse response = takeResponse(spy, 0);
+        QCOMPARE(response.toolCalls.size(), 1);
+        QCOMPARE(response.toolCalls.first().name, QStringLiteral("search_knowledge_base"));
+        QCOMPARE(response.toolCalls.first().id, QStringLiteral("call_1"));
+    }
+
     // 日志增强 privacy red line: the network metadata events must never
     // contain request/response body content — endpoint, status, sizes and
     // ids only.

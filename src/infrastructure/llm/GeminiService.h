@@ -49,6 +49,9 @@ public:
     // thinkingConfig 字段（服务端默认行为）。纯函数，供测试直接断言。
     // 档位与 Anthropic 对齐；16384 在 gemini-2.5-flash（上限 24576）与
     // pro（上限 32768）两侧都合法。
+    // s-1 现状登记：off 档位返回 0 = 不指定 thinkingConfig，交由服务端
+    // 默认动态思考——而非"彻底关闭思考"。Gemini 2.5/3 系列本身就是
+    // thinking 模型，API 没有真正意义上的"关思考"开关，只能"不指定"。
     static int thinkingBudgetFor(const QString& level);
 
     // M-1（任务 #27）：Gemini 的 maxOutputTokens 是包含思考 token 的输
@@ -83,6 +86,19 @@ public:
     static ConvertedRequest convertMessages(const QJsonArray& messages);
     static LLMResponse parseResponse(const QJsonObject& json);
 
+    // OpenAI wire format {type:"function",function:{name,description,parameters}}
+    // -> Gemini [{"functionDeclarations":[{"name",description,parameters}]}]。
+    // parameters 走 sanitizeSchema 子集降级；无法安全降级的工具整条跳过。
+    static QJsonArray convertTools(const QJsonArray& tools);
+
+    // m-4：MCP inputSchema 是完整 JSON Schema，可能包含 Gemini Schema 子集不
+    // 支持的 $ref/$defs/anyOf/oneOf/allOf 等关键字，一旦发出去整条工具声明
+    // 直接 400。这里做子集校验/降级：递归裁剪不支持关键字、把 anyOf/oneOf/
+    // allOf 收敛到第一个可降级分支、顶层收敛为 object+properties。无法安全
+    // 降级（如顶层是明确的非对象标量/数组且无 properties 可收敛）时 *ok=false
+    // 并返回空对象，调用方应跳过该工具并 qWarning。纯函数，供测试断言。
+    static QJsonObject sanitizeSchema(const QJsonObject& inputSchema, bool* ok);
+
 protected:
     struct GeminiRequestState : ProviderRequestState {
         // Gemini 的 functionCall 在单个 chunk 里完整给出（不分片），直
@@ -97,6 +113,8 @@ protected:
         // isBlockedFinishReason）且无任何可用输出时，streamResult 要把
         // 空响应升级为错误——这里记住最后一个 finishReason。
         QString finishReason;
+        // m-3: functionCall 按 chunk 逐个 append，重试必须清空否则重复。
+        void reset() override { toolCalls.clear(); finishReason.clear(); }
     };
 
     ProviderRequestStatePtr createRequestState() const override
@@ -120,7 +138,6 @@ protected:
     }
 
 private:
-    static QJsonArray convertTools(const QJsonArray& tools);
 
     int m_maxOutputTokens{4096};   // 4096 兜底（对齐 Anthropic 的 max_tokens 兜底）
     QVariant m_temperature;        // 未设置 → generationConfig 不发该字段

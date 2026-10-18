@@ -63,6 +63,14 @@ protected:
         QHash<QString, int> indexByKey;
         // response.completed 里的 usage 对象；为空则 streamResult 退回估算路径。
         QJsonObject usage;
+        // m-3: calls + indexByKey must reset together — clearing only the
+        // vector would leave the hash pointing at staled indices and out-of-
+        // bounds the next slotFor() on the retry.
+        void reset() override {
+            calls.clear();
+            indexByKey.clear();
+            usage = QJsonObject{};
+        }
     };
 
     ProviderRequestStatePtr createRequestState() const override

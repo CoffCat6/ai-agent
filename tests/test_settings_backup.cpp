@@ -44,6 +44,7 @@ private slots:
                            QStringLiteral("NexusAI"), QStringLiteral("NexusAI"));
         settings.setValue(QStringLiteral("schemaVersion"), 4);
         settings.setValue(QStringLiteral("embedding/model"), QStringLiteral("my-embed"));
+        settings.setValue(QStringLiteral("embedding/apiKey"), QStringLiteral("hidden-embed-key"));
         settings.setValue(QStringLiteral("security/allowFullDiskRead"), true);
         settings.setValue(QStringLiteral("webSearch/apiKey"), QStringLiteral("hidden-web-key"));
         settings.setValue(QStringLiteral("modelProfiles"), QString::fromUtf8(
@@ -74,6 +75,7 @@ private slots:
         const QByteArray bytes = exported.readAll();
         QVERIFY(!bytes.contains("hidden-model-key"));
         QVERIFY(!bytes.contains("hidden-web-key"));
+        QVERIFY(!bytes.contains("hidden-embed-key"));
         QVERIFY(!bytes.contains("hidden-mcp-key"));
         QVERIFY(!bytes.contains("hidden-header"));
         const QVariantMap preview = backup.previewImport(exportPath);

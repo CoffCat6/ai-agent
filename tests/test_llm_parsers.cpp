@@ -4,6 +4,7 @@
 #include "infrastructure/llm/OllamaService.h"
 #include "infrastructure/llm/AnthropicService.h"
 #include "infrastructure/llm/GeminiService.h"
+#include "infrastructure/llm/OpenAIResponsesService.h"
 #include "core/utils/DataUrlUtils.h"
 
 #include <QtTest>
@@ -51,6 +52,14 @@ public:
 class TestableGemini : public GeminiService {
 public:
     using GeminiService::GeminiService;
+    void feed(LLMRequestContext& ctx, const QByteArray& line) { processLine(ctx, line); }
+    LLMResponse result(const LLMRequestContext& ctx) const { return streamResult(ctx); }
+    ProviderRequestStatePtr newState() const { return createRequestState(); }
+};
+
+class TestableOpenAIResponses : public OpenAIResponsesService {
+public:
+    using OpenAIResponsesService::OpenAIResponsesService;
     void feed(LLMRequestContext& ctx, const QByteArray& line) { processLine(ctx, line); }
     LLMResponse result(const LLMRequestContext& ctx) const { return streamResult(ctx); }
     ProviderRequestStatePtr newState() const { return createRequestState(); }
@@ -168,6 +177,12 @@ private slots:
     void geminiUrlDefense();
     void geminiChatCompleteRejectsBadModelName();
 
+    // m-3：resetStreamState 必须清空 provider 侧的 tool 调用累积
+    void resetStreamStateClearsGeminiToolCalls();
+    void resetStreamStateClearsAnthropicToolUses();
+    void resetStreamStateClearsOpenAIToolCalls();
+    void resetStreamStateClearsResponsesCalls();
+
     // ── 思考强度：请求字段映射与思考正文分离 ──────────────
     void openaiReasoningEffortOmittedWhenUnset();
     void openaiReasoningEffortSentPerLevel();
@@ -176,6 +191,20 @@ private slots:
     void anthropicStreamingThinkingBlockStaysOutOfContent();
     void ollamaThinkFlagMapping();
     void ollamaStreamingKeepsThinkingOutOfContent();
+
+    // m-4：sanitizeSchema 补齐用例（共 11 个）
+    void geminiSanitizeSchemaKeepsObject();
+    void geminiSanitizeSchemaStripsUnsupported();
+    void geminiSanitizeSchemaSkipsNonObject();
+    void geminiSanitizeSchemaAllOf();
+    void geminiSanitizeSchemaNestedCombinators();
+    void geminiSanitizeSchemaEmpty();
+    void geminiSanitizeSchemaDeepNesting();
+    void geminiSanitizeSchemaAdditionalProperties();
+    void geminiSanitizeSchemaNot();
+    void geminiSanitizeSchemaPatternProperties();
+    void geminiSanitizeSchemaItemsRecursiveFailure();
+    void geminiConvertToolsSkipsUndegradable();
 };
 
 void TestLlmParsers::openaiPlainText() {
@@ -1184,5 +1213,331 @@ void TestLlmParsers::geminiChatCompleteRejectsBadModelName() {
                 .contains(QStringLiteral("bad model/name")));
 }
 
-QTEST_GUILESS_MAIN(TestLlmParsers)
+// m-3（Gemini 流式解析路径）：resetStreamState 清空 functionCall 分片累积
+// 后重试不重复。
+void TestLlmParsers::resetStreamStateClearsGeminiToolCalls() {
+    TestableGemini svc;
+    LLMRequestContext ctx;
+    ctx.provider = svc.newState();
+
+    svc.feed(ctx, QByteArrayLiteral(
+        "data: {\"candidates\":[{\"content\":{\"role\":\"model\",\"parts\":"
+        "[{\"functionCall\":{\"name\":\"read_file\",\"args\":{\"path\":\"/a\"}}}]}}]}"));
+    QCOMPARE(svc.result(ctx).toolCalls.size(), 1);
+
+    ctx.resetStreamState();
+
+    svc.feed(ctx, QByteArrayLiteral(
+        "data: {\"candidates\":[{\"content\":{\"role\":\"model\",\"parts\":"
+        "[{\"functionCall\":{\"name\":\"list_dir\",\"args\":{\"path\":\"/x\"}}}]}}]}"));
+    const LLMResponse r = svc.result(ctx);
+    QCOMPARE(r.toolCalls.size(), 1);
+    QCOMPARE(r.toolCalls.first().name, QStringLiteral("list_dir"));
+    QCOMPARE(r.toolCalls.first().id, QStringLiteral("gemini-call-0"));
+}
+
+// m-3（Anthropic toolUses 增量合并路径）：resetStreamState 同样清空 tool_use
+// 分片累积，重试后不重复。
+void TestLlmParsers::resetStreamStateClearsAnthropicToolUses() {
+    TestableAnthropic svc;
+        LLMRequestContext ctx;
+        ctx.provider = svc.newState();
+
+        svc.feed(ctx, QByteArrayLiteral(
+            "data: {\"type\":\"content_block_start\",\"index\":0,\"content_block\":"
+            "{\"type\":\"tool_use\",\"id\":\"toolu_1\",\"name\":\"read_file\"}}"));
+        svc.feed(ctx, QByteArrayLiteral(
+            "data: {\"type\":\"content_block_delta\",\"index\":0,\"delta\":"
+            "{\"type\":\"input_json_delta\",\"partial_json\":\"{\\\"path\\\":\\\"/a\\\"}\"}}"));
+        QCOMPARE(svc.result(ctx).toolCalls.size(), 1);
+
+        ctx.resetStreamState();
+
+        svc.feed(ctx, QByteArrayLiteral(
+            "data: {\"type\":\"content_block_start\",\"index\":0,\"content_block\":"
+            "{\"type\":\"tool_use\",\"id\":\"toolu_2\",\"name\":\"list_dir\"}}"));
+        svc.feed(ctx, QByteArrayLiteral(
+            "data: {\"type\":\"content_block_delta\",\"index\":0,\"delta\":"
+            "{\"type\":\"input_json_delta\",\"partial_json\":\"{}\"}}"));
+        const LLMResponse r = svc.result(ctx);
+        QCOMPARE(r.toolCalls.size(), 1);
+        QCOMPARE(r.toolCalls.first().name, QStringLiteral("list_dir"));
+    }
+
+    // m-3（OpenAI toolCalls 增量合并路径）：resetStreamState 清空 tool_call
+    // 分片累积，重试后不重复。
+    void TestLlmParsers::resetStreamStateClearsOpenAIToolCalls() {
+        TestableOpenAI svc;
+        LLMRequestContext ctx;
+        ctx.provider = svc.newState();
+
+        svc.feed(ctx, QByteArrayLiteral(
+            "data: {\"choices\":[{\"delta\":{\"tool_calls\":[{\"index\":0,\"id\":\"call_1\","
+            "\"function\":{\"name\":\"read_file\",\"arguments\":\"\"}}]}}]}"));
+        svc.feed(ctx, QByteArrayLiteral(
+            "data: {\"choices\":[{\"delta\":{\"tool_calls\":[{\"index\":0,\"arguments\":"
+            "\"{\\\"path\\\":\\\"/a\\\"}\"}]}}]}"));
+        QCOMPARE(svc.result(ctx).toolCalls.size(), 1);
+
+        ctx.resetStreamState();
+
+        svc.feed(ctx, QByteArrayLiteral(
+            "data: {\"choices\":[{\"delta\":{\"tool_calls\":[{\"index\":0,\"id\":\"call_2\","
+            "\"function\":{\"name\":\"list_dir\",\"arguments\":\"\"}}]}}]}"));
+        svc.feed(ctx, QByteArrayLiteral(
+            "data: {\"choices\":[{\"delta\":{\"tool_calls\":[{\"index\":0,\"arguments\":"
+            "\"{}\"}]}}]}"));
+        const LLMResponse r = svc.result(ctx);
+        QCOMPARE(r.toolCalls.size(), 1);
+        QCOMPARE(r.toolCalls.first().name, QStringLiteral("list_dir"));
+    }
+
+    // m-3（Responses API calls 增量合并路径）：resetStreamState 清空 call
+    // 累积，重试后不重复。
+    void TestLlmParsers::resetStreamStateClearsResponsesCalls() {
+        TestableOpenAIResponses svc;
+        LLMRequestContext ctx;
+        ctx.provider = svc.newState();
+
+        svc.feed(ctx, QByteArrayLiteral(
+            "data: {\"type\":\"function_call\",\"item_id\":\"fc_1\",\"call_id\":\"call_1\","
+            "\"name\":\"read_file\",\"arguments\":\"\"}"));
+        svc.feed(ctx, QByteArrayLiteral(
+            "data: {\"type\":\"function_call\",\"item_id\":\"fc_1\",\"arguments\":"
+            "\"{\\\"path\\\":\\\"/a\\\"}\"}"));
+        QCOMPARE(svc.result(ctx).toolCalls.size(), 1);
+
+        ctx.resetStreamState();
+
+        svc.feed(ctx, QByteArrayLiteral(
+            "data: {\"type\":\"function_call\",\"item_id\":\"fc_2\",\"call_id\":\"call_2\","
+            "\"name\":\"list_dir\",\"arguments\":\"\"}"));
+        svc.feed(ctx, QByteArrayLiteral(
+            "data: {\"type\":\"function_call\",\"item_id\":\"fc_2\",\"arguments\":"
+            "\"{}\"}"));
+        const LLMResponse r = svc.result(ctx);
+        QCOMPARE(r.toolCalls.size(), 1);
+        QCOMPARE(r.toolCalls.first().name, QStringLiteral("list_dir"));
+    }
+
+// m-4：Gemini 子集内的普通 object schema 原样保留（type/properties/required/
+// description 不丢）。
+void TestLlmParsers::geminiSanitizeSchemaKeepsObject() {
+    bool ok = false;
+    const QJsonObject s = GeminiService::sanitizeSchema(jsonOf(R"({
+        "type": "object",
+        "properties": {
+            "query": {"type": "string", "description": "the query"}
+        },
+        "required": ["query"]
+    })"), &ok);
+    QVERIFY(ok);
+    QCOMPARE(s.value("type").toString(), QStringLiteral("object"));
+    const QJsonObject query =
+        s.value("properties").toObject().value("query").toObject();
+    QCOMPARE(query.value("type").toString(), QStringLiteral("string"));
+    QCOMPARE(query.value("description").toString(), QStringLiteral("the query"));
+    QVERIFY(s.value("required").toArray().contains(QStringLiteral("query")));
+}
+
+// m-4：不支持关键字被裁剪 / 组合器收敛——$ref 属性退化为无约束、anyOf/
+// oneOf 收敛到第一个分支、约束性关键字（pattern/const）被裁。
+void TestLlmParsers::geminiSanitizeSchemaStripsUnsupported() {
+    bool ok = false;
+    const QJsonObject s = GeminiService::sanitizeSchema(jsonOf(R"({
+        "type": "object",
+        "properties": {
+            "a": {"$ref": "#/defs/A"},
+            "b": {"anyOf": [{"type": "string"}, {"type": "number"}]},
+            "c": {"type": "string", "enum": ["x", "y"], "pattern": "^x"},
+            "d": {"oneOf": [{"type": "integer"}, {"type": "boolean"}]},
+            "e": {"type": "array", "items": {"type": "string"}, "maxItems": 5}
+        }
+    })"), &ok);
+    QVERIFY(ok);
+    const QJsonObject props = s.value("properties").toObject();
+
+    // $ref 被裁剪，退化为空（无约束）属性，不残留 $ref
+    const QJsonObject a = props.value("a").toObject();
+    QVERIFY(a.isEmpty());
+
+    // anyOf 收敛到第一个分支 string
+    const QJsonObject b = props.value("b").toObject();
+    QCOMPARE(b.value("type").toString(), QStringLiteral("string"));
+    QVERIFY(!b.contains("anyOf"));
+
+    // pattern 裁剪，type/enum 保留
+    const QJsonObject c = props.value("c").toObject();
+    QCOMPARE(c.value("type").toString(), QStringLiteral("string"));
+    QVERIFY(c.contains("enum"));
+    QVERIFY(!c.contains("pattern"));
+
+    // oneOf 收敛到第一个分支 integer
+    QCOMPARE(props.value("d").toObject().value("type").toString(),
+             QStringLiteral("integer"));
+
+    // array items 保留，maxItems 裁剪
+    const QJsonObject e = props.value("e").toObject();
+    QCOMPARE(e.value("type").toString(), QStringLiteral("array"));
+    QCOMPARE(e.value("items").toObject().value("type").toString(),
+             QStringLiteral("string"));
+    QVERIFY(!e.contains("maxItems"));
+}
+
+// m-4：顶层是明确的非对象标量/数组且无 properties 可收敛时无法安全降级，
+// sanitizeSchema 返回空并置 *ok=false（调用方跳过该工具）。
+void TestLlmParsers::geminiSanitizeSchemaSkipsNonObject() {
+    bool ok = true;
+    const QJsonObject s = GeminiService::sanitizeSchema(
+        jsonOf(R"({"type": "string"})"), &ok);
+    QVERIFY(!ok);
+    QVERIFY(s.isEmpty());
+
+    bool arrok = true;
+    const QJsonObject arr = GeminiService::sanitizeSchema(
+        jsonOf(R"({"type": "array", "items": {"type": "string"}})"), &arrok);
+    QVERIFY(!arrok);
+    QVERIFY(arr.isEmpty());
+
+    // 顶层 $ref 虽被裁剪，但会收敛成无约束 object，仍可发（不跳过）
+    bool refok = false;
+    const QJsonObject ref = GeminiService::sanitizeSchema(
+        jsonOf(R"({"$ref": "#/defs/ToolArgs"})"), &refok);
+    QVERIFY(refok);
+    QCOMPARE(ref.value("type").toString(), QStringLiteral("object"));
+}
+
+// m-4：allOf 组合器收敛到第一个可降级分支。
+void TestLlmParsers::geminiSanitizeSchemaAllOf() {
+    bool ok = false;
+    const QJsonObject s = GeminiService::sanitizeSchema(jsonOf(R"({
+        "type": "object",
+        "properties": {
+            "a": {"allOf": [{"type": "string"}, {"type": "number"}]}
+        }
+    })"), &ok);
+    QVERIFY(ok);
+    const QJsonObject a = s.value("properties").toObject().value("a").toObject();
+    QCOMPARE(a.value("type").toString(), QStringLiteral("string"));
+    QVERIFY(!a.contains("allOf"));
+}
+
+// m-4：嵌套组合器（anyOf 内嵌 anyOf）递归展开。
+void TestLlmParsers::geminiSanitizeSchemaNestedCombinators() {
+    bool ok = false;
+    const QJsonObject s = GeminiService::sanitizeSchema(jsonOf(R"({
+        "type": "object",
+        "properties": {
+            "a": {"anyOf": [{"anyOf": [{"type": "string"}]}, {"type": "number"}]}
+        }
+    })"), &ok);
+    QVERIFY(ok);
+    const QJsonObject a = s.value("properties").toObject().value("a").toObject();
+    QCOMPARE(a.value("type").toString(), QStringLiteral("string"));
+    QVERIFY(!a.contains("anyOf"));
+}
+
+// m-4：空 schema 收敛成无约束 object（type+空 properties）。
+void TestLlmParsers::geminiSanitizeSchemaEmpty() {
+    bool ok = false;
+    const QJsonObject s = GeminiService::sanitizeSchema(jsonOf(R"({})"), &ok);
+    QVERIFY(ok);
+    QCOMPARE(s.value("type").toString(), QStringLiteral("object"));
+    QVERIFY(s.contains("properties"));
+    QVERIFY(s.value("properties").toObject().isEmpty());
+}
+
+// m-4：深层嵌套节点递归降级，所有约束被裁时返回 false。
+void TestLlmParsers::geminiSanitizeSchemaDeepNesting() {
+    bool ok = false;
+    const QJsonObject s = GeminiService::sanitizeSchema(jsonOf(R"({
+        "type": "object",
+        "properties": {
+            "a": {
+                "type": "object",
+                "properties": {
+                    "b": {
+                        "type": "object",
+                        "properties": {
+                            "c": {"$ref": "#/defs/X"}
+                        }
+                    }
+                }
+            }
+        }
+    })"), &ok);
+    QVERIFY(ok);
+    const QJsonObject a = s.value("properties").toObject().value("a").toObject();
+    const QJsonObject propsA = a.value("properties").toObject();
+    QVERIFY(!propsA.isEmpty());
+    const QJsonObject b = propsA.value("b").toObject();
+    const QJsonObject propsB = b.value("properties").toObject();
+    QVERIFY(!propsB.isEmpty());
+    const QJsonObject c = propsB.value("c").toObject();
+    // $ref 被裁剪，c 变成空对象（无约束）
+    QVERIFY(c.isEmpty());
+}
+
+// m-4：additionalProperties 被裁剪。
+void TestLlmParsers::geminiSanitizeSchemaAdditionalProperties() {
+    bool ok = false;
+    const QJsonObject s = GeminiService::sanitizeSchema(jsonOf(R"({
+        "type": "object",
+        "additionalProperties": false
+    })"), &ok);
+    QVERIFY(ok);
+    QVERIFY(!s.contains("additionalProperties"));
+    QCOMPARE(s.value("type").toString(), QStringLiteral("object"));
+}
+
+// m-4：not 关键字被裁剪。
+void TestLlmParsers::geminiSanitizeSchemaNot() {
+    bool ok = false;
+    const QJsonObject s = GeminiService::sanitizeSchema(jsonOf(R"({
+        "type": "object",
+        "not": {"type": "string"}
+    })"), &ok);
+    QVERIFY(ok);
+    QVERIFY(!s.contains("not"));
+}
+
+// m-4：patternProperties 被裁剪。
+void TestLlmParsers::geminiSanitizeSchemaPatternProperties() {
+    bool ok = false;
+    const QJsonObject s = GeminiService::sanitizeSchema(jsonOf(R"({
+        "type": "object",
+        "patternProperties": {
+            "^x_": {"type": "string"}
+        }
+    })"), &ok);
+    QVERIFY(ok);
+    QVERIFY(!s.contains("patternProperties"));
+}
+
+// m-4：items 无法安全降级时（递归失败），父节点被裁。
+void TestLlmParsers::geminiSanitizeSchemaItemsRecursiveFailure() {
+    bool ok = true;
+    const QJsonObject s = GeminiService::sanitizeSchema(jsonOf(R"({
+        "type": "array",
+        "items": {"$ref": "#/defs/X"}
+    })"), &ok);
+    // 顶层是数组且无可收敛 properties，无法安全降级
+    QVERIFY(!ok);
+    QVERIFY(s.isEmpty());
+}
+
+// m-4：convertTools 跳过无法安全降级的工具，保留可降级工具。
+void TestLlmParsers::geminiConvertToolsSkipsUndegradable() {
+    const QJsonArray tools = arrayOf(R"([
+        {"type":"function","function":{"name":"ok","parameters":{"type":"object","properties":{"x":{"type":"string"}}}}},
+        {"type":"function","function":{"name":"skip","parameters":{"type":"string"}}}
+    ])");
+    const QJsonArray decls = GeminiService::convertTools(tools);
+    QCOMPARE(decls.size(), 1);
+    const QJsonObject decl = decls.at(0).toObject();
+    QCOMPARE(decl.value("name").toString(), QStringLiteral("ok"));
+}
+
+
+    QTEST_GUILESS_MAIN(TestLlmParsers)
 #include "test_llm_parsers.moc"
