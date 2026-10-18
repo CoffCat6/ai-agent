@@ -1,7 +1,8 @@
+pragma ComponentBehavior: Bound
 import QtQuick
 import QtQuick.Layouts
 import QtQuick.Controls
-import NexusAI
+import NexusAI.ViewModels
 
 // 批次六 T2（docs/16 §8）：模型 Token 占比环形图。QML Canvas 自绘，
 // 不引入 Qt Charts（find_package 保持核心组件 + Pdf）。
@@ -13,6 +14,18 @@ import NexusAI
 //
 // 交互：悬停扇区/图例项 → 外扩高亮 + 中心切换为该项数值 + tooltip；
 // 键盘左右键在「概览 ↔ 各扇区」间移动高亮（配合读屏 description）。
+//
+// 批次七修复（真机反馈图例溢出卡片）：图例区重写。旧实现图例容器是
+// 普通 Column（不管理子项宽度），delegate 的隐含宽 = 内部文本自然宽
+// 之和，模型名 Text 的 Layout.preferredWidth 只是建议值不是上限，
+// RowLayout 空间充足时按自然宽分配 → 长模型名（step-5-preview、
+// deepseek-v4-flash-0731 等）整行溢出图例区与卡片边界。
+// 新实现（与页面 Flickable 同构模式）：
+//   - 图例区（Flickable）宽度有确定上限 200（极窄容器收缩至 120）；
+//   - 图例行宽 Layout.fillWidth 跟随图例区实际宽度，不再由内容反向
+//     撑开，模型名 fillWidth + minimumWidth: 0 允许收缩触发 elide；
+//   - 百分比固定宽右对齐，任何模型名长度下始终可见；
+//   - 模型数量多、图例内容高度超过可用高度时，图例区垂直滚动。
 Item {
     id: root
 
@@ -219,55 +232,97 @@ Item {
         }
 
         // 右：图例（模型名 + 占比；悬停联动高亮扇区）
-        Column {
-            spacing: Theme.spaceSm
-            Layout.alignment: Qt.AlignVCenter
+        // 布局不变式（任何模型名长度/数量组合都不溢出的保证）：
+        //   图例区宽度 ∈ [120, 200]，高度 ≤ root.height；
+        //   图例行宽 = 图例区实际宽度（fillWidth，非内容反向撑开）；
+        //   行内 = 色块 10 + 模型名(可收缩至 0 触发 elide) + 百分比 44。
+        Flickable {
+            id: legendScroll
+            // 宽度：正常恒 200；极窄容器下最多收缩到 120（保住色块 +
+            // 最低模型名 + 百分比的最小可用组合），不会侵占环形图之外
+            Layout.preferredWidth: 200
             Layout.maximumWidth: 200
+            Layout.minimumWidth: 120
+            // 高度：跟随图例内容、以组件可用高度为上限；配合 AlignVCenter
+            // 保持「模型少时垂直居中」的原视觉，模型多时占满并滚动
+            Layout.preferredHeight: legendColumn.implicitHeight
+            Layout.maximumHeight: root.height
+            Layout.alignment: Qt.AlignVCenter
 
-            Repeater {
-                model: root.slices
+            clip: true
+            flickableDirection: Flickable.VerticalFlick
+            boundsBehavior: Flickable.StopAtBounds
+            contentWidth: legendColumn.width
+            contentHeight: legendColumn.height
 
-                delegate: Item {
-                    id: legendRow
-                    required property var modelData
-                    required property int index
-                    readonly property bool highlighted: legendRow.index === root.highlightIndex
-                    implicitWidth: legendRowLayout.implicitWidth
-                    implicitHeight: legendRowLayout.implicitHeight
+            ScrollBar.vertical: ScrollBar { policy: ScrollBar.AsNeeded }
 
-                    RowLayout {
-                        id: legendRowLayout
-                        anchors.fill: parent
-                        spacing: Theme.spaceSm
+            ColumnLayout {
+                id: legendColumn
+                width: legendScroll.width   // 宽度跟随视口，不产生横向滚动
+                spacing: Theme.spaceSm
 
-                        Rectangle {
-                            Layout.preferredWidth: 10
-                            Layout.preferredHeight: 10
-                            radius: 2
-                            color: root.seriesColor(legendRow.index)
+                Repeater {
+                    model: root.slices
+
+                    delegate: Item {
+                        id: legendRow
+                        required property var modelData
+                        required property int index
+                        readonly property bool highlighted: legendRow.index === root.highlightIndex
+
+                        // 行宽由 ColumnLayout fillWidth 分配（= 图例区
+                        // 实际宽度）；高度由行内容隐含值决定
+                        Layout.fillWidth: true
+                        implicitHeight: legendRowLayout.implicitHeight
+
+                        RowLayout {
+                            id: legendRowLayout
+                            // 只锚定水平两侧，高度由隐含值决定
+                            anchors.left: parent.left
+                            anchors.right: parent.right
+                            spacing: Theme.spaceSm
+
+                            Rectangle {
+                                Layout.preferredWidth: 10
+                                Layout.preferredHeight: 10
+                                radius: 2
+                                color: root.seriesColor(legendRow.index)
+                            }
+                            Text {
+                                // 模型名：填满剩余宽度；minimumWidth 0
+                                // 允许收缩，宽度小于自然宽时 elide 生效
+                                // （ElideRight，与 BarCompareChart 的
+                                // x 轴标签截断风格统一）
+                                Layout.fillWidth: true
+                                Layout.minimumWidth: 0
+                                text: legendRow.modelData.label
+                                textFormat: Text.PlainText   // 模型名（远端可控）防富文本渲染
+                                color: legendRow.highlighted ? Theme.textPrimary : Theme.textSecondary
+                                font.pixelSize: Theme.fontSizeCaption
+                                font.family: Theme.fontSans
+                                elide: Text.ElideRight
+                            }
+                            Text {
+                                // 百分比：固定宽右对齐，任何模型名长度下
+                                // 始终可见；elide 仅为超大字号的兜底
+                                Layout.preferredWidth: 44
+                                Layout.minimumWidth: 0
+                                horizontalAlignment: Text.AlignRight
+                                text: root.percentText(legendRow.index)
+                                color: legendRow.highlighted ? Theme.textPrimary : Theme.textSecondary
+                                font.pixelSize: Theme.fontSizeCaption
+                                font.family: Theme.fontMono
+                                elide: Text.ElideRight
+                            }
                         }
-                        Text {
-                            Layout.preferredWidth: 100
-                            text: legendRow.modelData.label
-                            textFormat: Text.PlainText   // 模型名（远端可控）防富文本渲染
-                            color: legendRow.highlighted ? Theme.textPrimary : Theme.textSecondary
-                            font.pixelSize: Theme.fontSizeCaption
-                            font.family: Theme.fontSans
-                            elide: Text.ElideMiddle
-                        }
-                        Text {
-                            text: root.percentText(legendRow.index)
-                            color: legendRow.highlighted ? Theme.textPrimary : Theme.textSecondary
-                            font.pixelSize: Theme.fontSizeCaption
-                            font.family: Theme.fontMono
-                        }
-                    }
 
-                    MouseArea {
-                        anchors.fill: parent
-                        hoverEnabled: true
-                        onEntered: root.hoverIndex = legendRow.index
-                        onExited: root.hoverIndex = -1
+                        MouseArea {
+                            anchors.fill: parent
+                            hoverEnabled: true
+                            onEntered: root.hoverIndex = legendRow.index
+                            onExited: root.hoverIndex = -1
+                        }
                     }
                 }
             }
@@ -286,7 +341,8 @@ Item {
 
     // ── 命中测试：鼠标位置 → 扇区序号 ───────────────
     function sectorGeometry() {
-        var outerR = Math.min(chartArea.width, chartArea.height) / 2 - 8
+        // 极窄容器下外半径可能为负（Canvas 负半径行为未定义），钳制到 0
+        var outerR = Math.max(0, Math.min(chartArea.width, chartArea.height) / 2 - 8)
         return { cx: chartArea.width / 2, cy: chartArea.height / 2,
                  outerR: outerR, innerR: outerR * 0.62 }
     }

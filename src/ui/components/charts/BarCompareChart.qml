@@ -1,6 +1,6 @@
 import QtQuick
 import QtQuick.Controls
-import NexusAI
+import NexusAI.ViewModels
 
 // 批次六 T2（docs/16 §8）：按模型用量对比柱状图。QML Canvas 自绘，
 // 不引入 Qt Charts。
@@ -13,6 +13,12 @@ import NexusAI
 //
 // 交互：悬停柱 → 品牌色描边高亮 + tooltip；键盘左右键在
 // 「概览 ↔ 各柱」间移动高亮。
+//
+// 批次七打磨（真机反馈基本工作，视觉统一）：模型名截断保持尾部省略
+// （ElideRight 语义），与 DonutChart 图例的 Text.ElideRight 风格统一；
+// 柱顶数值同样在槽宽内省略，防模型数量多、槽变窄时相邻数值互相重叠。
+// 柱顶数值位置（柱上方 3px）与 x 轴标签（基线下方 6px）分居基线两侧，
+// 矮柱时几何上不重叠，维持现状不引入额外分支。
 Item {
     id: root
 
@@ -139,7 +145,8 @@ Item {
         return Math.max(0, Math.min(n - 1, idx))
     }
 
-    // Canvas 侧文本省略（模型名过长时截断加省略号）
+    // Canvas 侧文本省略（尾部截断加省略号；与 DonutChart 图例的
+    // Text.ElideRight 截断风格统一。供 x 轴模型名与柱顶数值共用）
     function elidedText(ctx, text, maxW) {
         var t = String(text)
         if (maxW <= 0) return ""
@@ -228,13 +235,16 @@ Item {
                     }
                 }
 
-                // 柱顶数值（紧凑格式；高亮时主色强调）
+                // 柱顶数值（紧凑格式；高亮时主色强调；槽内省略——模型
+                // 数量多、槽变窄时防相邻数值文本互相重叠侵入邻柱）
                 ctx.textAlign = "center"
                 ctx.textBaseline = "bottom"
                 ctx.fillStyle = highlighted ? Theme.textPrimary : Theme.textSecondary
-                ctx.fillText(root.compactNumber(value), x + barW / 2, y - 3)
+                ctx.fillText(root.elidedText(ctx, root.compactNumber(value), slot - 2),
+                             x + barW / 2, y - 3)
 
-                // x 轴模型名（槽宽内省略截断）
+                // x 轴模型名（槽宽内省略截断，ElideRight 风格与
+                // DonutChart 图例统一）
                 ctx.textBaseline = "top"
                 ctx.fillStyle = highlighted ? Theme.textPrimary : Theme.textSecondary
                 ctx.fillText(root.elidedText(ctx, root.bars[i].label, slot - 4),

@@ -196,3 +196,32 @@ add_test(NAME test_web_search COMMAND test_web_search)
 add_executable(test_episodic test_episodic.cpp)
 target_link_libraries(test_episodic PRIVATE nexus_core nexus_infra Qt6::Test)
 add_test(NAME test_episodic COMMAND test_episodic)
+# 任务 20：统计页三图表的渲染级回归。用户真机反馈 LineTrendChart 图表
+# 区域完全空白（数据链路已实证正常：d30 有 19 天数据、总计 1,676,757），
+# 而既有测试无一真正加载过这三个 QML 组件——qmllint 是静态检查、
+# test_memory 是 C++ 数据层。本用例用 QQmlApplicationEngine 加载
+# build/NexusAI/ 文件系统副本里的真实组件（图表 qrc 只在 nexus_ai.exe
+# 里，测试进程访问不到；qmldir 的 prefer 指向该 qrc 且只做优先、不做
+# 失败回退，由测试内 URL 拦截器重写回文件系统副本，见 cpp 注释），
+# 再对 grabImage 结果做像素断言：
+#   1. 每图表品牌主色系像素（与 Theme.brandPrimary RGB 距离 < 0.15）
+#      > 50 —— trend 失败即复现用户反馈的空白 bug；
+#   2. 图表有可见内容（非透明像素 > 500）；
+#   3. 尺寸 > 100（布局未塌陷）；
+#   4. trend 数据派生链：points=19、hasData、axisMax 有限且覆盖峰值。
+# offscreen 平台（headless 稳定，Canvas 已实证能完整渲染）；构建树只
+# 部署 qwindows.dll，需指向 SDK 的 platform 插件目录（同 test_droparea）。
+add_executable(test_charts_qml test_charts_qml.cpp)
+target_link_libraries(test_charts_qml PRIVATE
+    nexus_core nexus_infra nexus_viewmodels nexus_viewmodelsplugin
+    Qt6::Test Qt6::Qml Qt6::Quick)
+# NEXUS_TEST_QML_DIR: ChartsHarness.qml 所在目录；
+# NEXUS_BUILD_DIR: build/NexusAI/qmldir（模块 NexusAI 的文件系统副本）
+# 所在目录，测试引擎 addImportPath 用。
+target_compile_definitions(test_charts_qml PRIVATE
+    NEXUS_TEST_QML_DIR="${CMAKE_CURRENT_SOURCE_DIR}/qml"
+    NEXUS_BUILD_DIR="${CMAKE_BINARY_DIR}")
+add_test(NAME test_charts_qml
+    COMMAND ${CMAKE_COMMAND} -E env
+        "QT_QPA_PLATFORM_PLUGIN_PATH=${QT6_INSTALL_PREFIX}/${QT6_INSTALL_PLUGINS}/platforms"
+        $<TARGET_FILE:test_charts_qml> -platform offscreen)

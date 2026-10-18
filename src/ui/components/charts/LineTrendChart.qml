@@ -1,6 +1,6 @@
 import QtQuick
 import QtQuick.Controls
-import NexusAI
+import NexusAI.ViewModels
 
 // 批次六 T2（docs/16 §8）：按天 Token 走势折线图。QML Canvas 自绘，
 // 不引入 Qt Charts。
@@ -8,9 +8,20 @@ import NexusAI
 // 数据契约（与 T1 byDay 口径对齐，由调用方注入并保证按天升序）：
 //   series: [{ label: "MM-dd", value: 当日 token }, ...]
 // 全 0 序列视为真实数据（画 0 基线平线），空序列显示空态占位。
+// series 为 undefined/null 时按空序列处理（|| [] 兜底）。
 //
 // 交互：悬停数据点 → 竖参考线 + 放大高亮点 + tooltip；
 // 键盘左右键在「概览 ↔ 各数据点」间移动高亮。
+//
+// 批次七修复（真机反馈图表区完全空白，数据链路已实证正常）：防御性
+// 修复 + 可观测性增强——正常路径绘制行为不变（offscreen harness 已
+// 验证正常路径渲染正确），防御只加在异常路径：
+//   1. onPaint 整体 try-catch：此前 onPaint 内任何 JS 异常都被静默吞
+//      掉（clearRect 已执行 → 纯空白），这是空白最重要的可观测性缺口；
+//   2. NaN/Infinity 防御：value 非有限数记 0，axisStep/axisMax 非有限
+//      或非正时回退，防 NaN 坐标导致所有绘制静默跳过；
+//   3. 可见性重绘：组件位于页面 Flickable 内初始可能在视口外，Canvas
+//      在不可见期间 paint 事件可能被跳过，变可见时主动补绘。
 Item {
     id: root
 
@@ -25,7 +36,10 @@ Item {
         var list = root.series || []
         for (var i = 0; i < list.length; ++i) {
             var item = list[i]
-            var v = Number(item && item.value ? item.value : 0)
+            // NaN/Infinity 防御：非有限数记 0（保持 value=0 是真实数据
+            // 的契约），防单个异常值让整条折线坐标变 NaN 而静默消失
+            var raw = Number(item && item.value !== undefined ? item.value : 0)
+            var v = Number.isFinite(raw) ? raw : 0
             var l = item && item.label !== undefined ? String(item.label) : ""
             out.push({ label: l, value: v })
         }
@@ -47,9 +61,18 @@ Item {
         var nice = frac <= 1 ? 1 : frac <= 2 ? 2 : frac <= 5 ? 5 : 10
         return nice * Math.pow(10, exp)
     }
-    readonly property real axisStep: root.niceStep(root.maxValue / 4)
-    readonly property real axisMax: Math.max(root.axisStep,
-                                             Math.ceil(root.maxValue / root.axisStep) * root.axisStep)
+    // 防御：maxValue 异常（非有限/负）经 niceStep 会产生 NaN/Infinity
+    // 步进 → 所有 y 坐标 NaN → 绘制静默跳过。axisStep 非有限或非正
+    // 回退 1；axisMax 非有限或非正回退 max(1, maxValue)。
+    readonly property real axisStep: {
+        var s = root.niceStep(root.maxValue / 4)
+        return Number.isFinite(s) && s > 0 ? s : 1
+    }
+    readonly property real axisMax: {
+        var m = Math.max(root.axisStep,
+                         Math.ceil(root.maxValue / root.axisStep) * root.axisStep)
+        return Number.isFinite(m) && m > 0 ? m : Math.max(1, root.maxValue)
+    }
 
     // ── 交互状态（悬停优先于键盘选中）────────────────
     property int hoverIndex: -1
@@ -89,6 +112,10 @@ Item {
     onHighlightIndexChanged: canvas.requestPaint()
     onPaletteColorsChanged: canvas.requestPaint()   // 明暗主题切换时重取色
     onAxisMaxChanged: canvas.requestPaint()
+
+    // 可见性重绘：初始位于 Flickable 视口外时 paint 可能被跳过，
+    // 变可见时主动补绘（防御 Flickable 内初始不可见场景）
+    onVisibleChanged: if (visible) canvas.requestPaint()
 
     implicitWidth: 400
     implicitHeight: 220
@@ -157,102 +184,110 @@ Item {
         onHeightChanged: requestPaint()
 
         onPaint: {
-            var ctx = getContext("2d")
-            ctx.clearRect(0, 0, width, height)
-            if (!root.hasData) return
-            var n = root.points.length
-            var plotL = root.padLeft
-            var plotR = width - root.padRight
-            var plotT = root.padTop
-            var plotB = height - root.padBottom
-            var plotW = plotR - plotL
-            var plotH = plotB - plotT
+            // 可观测性：onPaint 内 JS 异常此前完全静默（clearRect 已执行
+            // → 纯空白）。整体 try-catch 显性化，为真机定位留下日志线索。
+            try {
+                var ctx = getContext("2d")
+                ctx.clearRect(0, 0, width, height)
+                if (!root.hasData) return
+                var n = root.points.length
+                var plotL = root.padLeft
+                var plotR = width - root.padRight
+                var plotT = root.padTop
+                var plotB = height - root.padBottom
+                var plotW = plotR - plotL
+                var plotH = plotB - plotT
 
-            // 网格线 + y 轴刻度（nice number 步进）
-            ctx.strokeStyle = Theme.borderSubtle
-            ctx.lineWidth = 1
-            ctx.fillStyle = Theme.textSecondary
-            ctx.font = Theme.fontSizeCaption + "px \"" + Theme.fontSans + "\""
-            ctx.textAlign = "right"
-            ctx.textBaseline = "middle"
-            for (var v = 0; v <= root.axisMax + 0.5; v += root.axisStep) {
-                var gy = plotB - plotH * (v / root.axisMax)
-                ctx.beginPath()
-                ctx.moveTo(plotL, gy)
-                ctx.lineTo(plotR, gy)
-                ctx.stroke()
-                ctx.fillText(root.compactNumber(v), plotL - 6, gy)
-            }
-
-            // x 轴日期标签（按可用宽度抽样，避免重叠；尽量补上末点）
-            ctx.textAlign = "center"
-            ctx.textBaseline = "top"
-            var stepX = n > 1 ? plotW / (n - 1) : 0
-            var maxLabels = Math.max(2, Math.floor(plotW / 56))
-            var stride = Math.max(1, Math.ceil(n / maxLabels))
-            var lastShown = -1
-            for (var i = 0; i < n; i += stride) {
-                ctx.fillText(root.points[i].label, root.xAt(i), plotB + 6)
-                lastShown = i
-            }
-            if (lastShown < n - 1 && (n - 1 - lastShown) * stepX >= 30)
-                ctx.fillText(root.points[n - 1].label, root.xAt(n - 1), plotB + 6)
-
-            var col = root.seriesColor(0)
-
-            // 折线下方渐变填充（品牌色低透明度，增强走势体感）
-            var grad = ctx.createLinearGradient(0, plotT, 0, plotB)
-            grad.addColorStop(0, Qt.rgba(col.r, col.g, col.b, 0.22))
-            grad.addColorStop(1, Qt.rgba(col.r, col.g, col.b, 0.02))
-            ctx.beginPath()
-            ctx.moveTo(root.xAt(0), plotB)
-            for (var j = 0; j < n; ++j)
-                ctx.lineTo(root.xAt(j), root.yAt(root.points[j].value))
-            ctx.lineTo(root.xAt(n - 1), plotB)
-            ctx.closePath()
-            ctx.fillStyle = grad
-            ctx.fill()
-
-            // 折线
-            ctx.beginPath()
-            ctx.moveTo(root.xAt(0), root.yAt(root.points[0].value))
-            for (var k = 1; k < n; ++k)
-                ctx.lineTo(root.xAt(k), root.yAt(root.points[k].value))
-            ctx.strokeStyle = col
-            ctx.lineWidth = 2
-            ctx.stroke()
-
-            // 数据点
-            for (var m = 0; m < n; ++m) {
-                ctx.beginPath()
-                ctx.arc(root.xAt(m), root.yAt(root.points[m].value), 3, 0, Math.PI * 2)
-                ctx.fillStyle = col
-                ctx.fill()
-                ctx.strokeStyle = Theme.bgSecondary
-                ctx.lineWidth = 1
-                ctx.stroke()
-            }
-
-            // 高亮：竖虚线参考线 + 放大描边点
-            if (root.highlightIndex >= 0 && root.highlightIndex < n) {
-                var hi = root.highlightIndex
-                var hx = root.xAt(hi)
-                var hy = root.yAt(root.points[hi].value)
+                // 网格线 + y 轴刻度（nice number 步进）
                 ctx.strokeStyle = Theme.borderSubtle
                 ctx.lineWidth = 1
-                ctx.setLineDash([3, 3])
+                ctx.fillStyle = Theme.textSecondary
+                ctx.font = Theme.fontSizeCaption + "px \"" + Theme.fontSans + "\""
+                ctx.textAlign = "right"
+                ctx.textBaseline = "middle"
+                for (var v = 0; v <= root.axisMax + 0.5; v += root.axisStep) {
+                    var gy = plotB - plotH * (v / root.axisMax)
+                    ctx.beginPath()
+                    ctx.moveTo(plotL, gy)
+                    ctx.lineTo(plotR, gy)
+                    ctx.stroke()
+                    ctx.fillText(root.compactNumber(v), plotL - 6, gy)
+                }
+
+                // x 轴日期标签（按可用宽度抽样，避免重叠；尽量补上末点）
+                ctx.textAlign = "center"
+                ctx.textBaseline = "top"
+                var stepX = n > 1 ? plotW / (n - 1) : 0
+                var maxLabels = Math.max(2, Math.floor(plotW / 56))
+                var stride = Math.max(1, Math.ceil(n / maxLabels))
+                var lastShown = -1
+                for (var i = 0; i < n; i += stride) {
+                    ctx.fillText(root.points[i].label, root.xAt(i), plotB + 6)
+                    lastShown = i
+                }
+                if (lastShown < n - 1 && (n - 1 - lastShown) * stepX >= 30)
+                    ctx.fillText(root.points[n - 1].label, root.xAt(n - 1), plotB + 6)
+
+                var col = root.seriesColor(0)
+
+                // 折线下方渐变填充（品牌色低透明度，增强走势体感）
+                var grad = ctx.createLinearGradient(0, plotT, 0, plotB)
+                grad.addColorStop(0, Qt.rgba(col.r, col.g, col.b, 0.22))
+                grad.addColorStop(1, Qt.rgba(col.r, col.g, col.b, 0.02))
                 ctx.beginPath()
-                ctx.moveTo(hx, plotT)
-                ctx.lineTo(hx, plotB)
-                ctx.stroke()
-                ctx.setLineDash([])
-                ctx.beginPath()
-                ctx.arc(hx, hy, 5, 0, Math.PI * 2)
-                ctx.fillStyle = col
+                ctx.moveTo(root.xAt(0), plotB)
+                for (var j = 0; j < n; ++j)
+                    ctx.lineTo(root.xAt(j), root.yAt(root.points[j].value))
+                ctx.lineTo(root.xAt(n - 1), plotB)
+                ctx.closePath()
+                ctx.fillStyle = grad
                 ctx.fill()
-                ctx.strokeStyle = Theme.textPrimary
+
+                // 折线
+                ctx.beginPath()
+                ctx.moveTo(root.xAt(0), root.yAt(root.points[0].value))
+                for (var k = 1; k < n; ++k)
+                    ctx.lineTo(root.xAt(k), root.yAt(root.points[k].value))
+                ctx.strokeStyle = col
                 ctx.lineWidth = 2
                 ctx.stroke()
+
+                // 数据点
+                for (var m = 0; m < n; ++m) {
+                    ctx.beginPath()
+                    ctx.arc(root.xAt(m), root.yAt(root.points[m].value), 3, 0, Math.PI * 2)
+                    ctx.fillStyle = col
+                    ctx.fill()
+                    ctx.strokeStyle = Theme.bgSecondary
+                    ctx.lineWidth = 1
+                    ctx.stroke()
+                }
+
+                // 高亮：竖虚线参考线 + 放大描边点
+                if (root.highlightIndex >= 0 && root.highlightIndex < n) {
+                    var hi = root.highlightIndex
+                    var hx = root.xAt(hi)
+                    var hy = root.yAt(root.points[hi].value)
+                    ctx.strokeStyle = Theme.borderSubtle
+                    ctx.lineWidth = 1
+                    ctx.setLineDash([3, 3])
+                    ctx.beginPath()
+                    ctx.moveTo(hx, plotT)
+                    ctx.lineTo(hx, plotB)
+                    ctx.stroke()
+                    ctx.setLineDash([])
+                    ctx.beginPath()
+                    ctx.arc(hx, hy, 5, 0, Math.PI * 2)
+                    ctx.fillStyle = col
+                    ctx.fill()
+                    ctx.strokeStyle = Theme.textPrimary
+                    ctx.lineWidth = 2
+                    ctx.stroke()
+                }
+            } catch (e) {
+                console.warn("[LineTrendChart] paint failed:", e, "w=", width,
+                             "h=", height, "points=", root.points.length,
+                             "axisMax=", root.axisMax)
             }
         }
     }
