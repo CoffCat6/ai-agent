@@ -9,16 +9,16 @@ import NexusAI.ViewModels
 //   series: [{ label: 模型名, value: 数值 }, ...]
 //   mode:   "tokens"（默认）| "calls" —— 数值口径开关，切换时调用方
 //           重新注入对应 series；组件用 mode 决定单位文案与无障碍描述。
-// value = 0 是真实数据（画 0 高度柱 + 柱顶「0」），空序列显示空态占位。
+// value = 0 是真实数据（画 0 长度柱 + 柱尾「0」），空序列显示空态占位。
 //
-// 交互：悬停柱 → 品牌色描边高亮 + tooltip；键盘左右键在
+// 横向（而非纵向）柱状图：模型名是长 ID（deepseek-v4-flash-0731、
+// gemini-3.6-flash-high），纵向柱图的 x 轴标签只能分到「绘图区宽度 /
+// 模型数」——设置面板 ~560px 内容区里 7 个模型每个槽仅 ~70px，名字
+// 必然被省略成「deepseek-v4-f…」。改为横向后，模型名独占左侧一列，
+// 列宽按最长名字实测（上限 42% 宽度），名字完整可读，柱长表示数值。
+//
+// 交互：悬停行 → 行底色 + 柱描边高亮 + tooltip；键盘左右键在
 // 「概览 ↔ 各柱」间移动高亮。
-//
-// 批次七打磨（真机反馈基本工作，视觉统一）：模型名截断保持尾部省略
-// （ElideRight 语义），与 DonutChart 图例的 Text.ElideRight 风格统一；
-// 柱顶数值同样在槽宽内省略，防模型数量多、槽变窄时相邻数值互相重叠。
-// 柱顶数值位置（柱上方 3px）与 x 轴标签（基线下方 6px）分居基线两侧，
-// 矮柱时几何上不重叠，维持现状不引入额外分支。
 Item {
     id: root
 
@@ -32,6 +32,7 @@ Item {
         for (var i = 0; i < list.length; ++i) {
             var item = list[i]
             var v = Number(item && item.value ? item.value : 0)
+            if (!Number.isFinite(v)) v = 0
             var l = item && item.label !== undefined ? String(item.label) : ""
             out.push({ label: l, value: v })
         }
@@ -56,9 +57,15 @@ Item {
         var nice = frac <= 1 ? 1 : frac <= 2 ? 2 : frac <= 5 ? 5 : 10
         return nice * Math.pow(10, exp)
     }
-    readonly property real axisStep: root.niceStep(root.maxValue / 4)
-    readonly property real axisMax: Math.max(root.axisStep,
-                                             Math.ceil(root.maxValue / root.axisStep) * root.axisStep)
+    readonly property real axisStep: {
+        var s = root.niceStep(root.maxValue / 4)
+        return Number.isFinite(s) && s > 0 ? s : 1
+    }
+    readonly property real axisMax: {
+        var m = Math.max(root.axisStep,
+                         Math.ceil(root.maxValue / root.axisStep) * root.axisStep)
+        return Number.isFinite(m) && m > 0 ? m : Math.max(1, root.maxValue)
+    }
 
     // ── 交互状态（悬停优先于键盘选中）────────────────
     property int hoverIndex: -1
@@ -106,6 +113,8 @@ Item {
     onModeChanged: canvas.requestPaint()          // 单位口径切换（配合新 series）
     onPaletteColorsChanged: canvas.requestPaint() // 明暗主题切换时重取色
     onAxisMaxChanged: canvas.requestPaint()
+    onPadLeftChanged: canvas.requestPaint()
+    onVisibleChanged: if (visible) canvas.requestPaint()
 
     implicitWidth: 400
     implicitHeight: 220
@@ -129,24 +138,43 @@ Item {
         return next
     }
 
-    // ── 绘图区内边距 ─────────────────────────────────
-    readonly property real padLeft: 48
-    readonly property real padRight: 16
-    readonly property real padTop: 14
-    readonly property real padBottom: 26
+    // ── 模型名列宽：按最长模型名实测 ─────────────────
+    readonly property string longestLabel: {
+        var s = ""
+        for (var i = 0; i < root.bars.length; ++i)
+            if (root.bars[i].label.length > s.length) s = root.bars[i].label
+        return s
+    }
+    // 隐藏的量尺：implicitWidth 即该字符串在当前字号下的自然宽度
+    Text {
+        id: labelMeasure
+        visible: false
+        text: root.longestLabel
+        font.pixelSize: Theme.fontSizeCaption
+        font.family: Theme.fontSans
+    }
 
-    // 悬停命中：x → 柱槽序号
-    function indexAtX(x) {
+    // ── 绘图区内边距 ─────────────────────────────────
+    // 左：模型名列（实测宽度 + 间距，上限 42% 防长名字吃掉绘图区）
+    readonly property real padLeft: Math.max(56, Math.min(root.width * 0.42,
+                                                          labelMeasure.implicitWidth + 16))
+    // 右：柱尾数值标签（803.9k 约 40px）
+    readonly property real padRight: 54
+    readonly property real padTop: 8
+    readonly property real padBottom: 24
+
+    // 悬停命中：y → 行序号
+    function indexAtY(y) {
         var n = root.bars.length
         if (n === 0) return -1
-        var plotW = canvas.width - root.padLeft - root.padRight
-        if (plotW <= 0) return -1
-        var idx = Math.floor((x - root.padLeft) * n / plotW)
+        var plotH = canvas.height - root.padTop - root.padBottom
+        if (plotH <= 0) return -1
+        var idx = Math.floor((y - root.padTop) * n / plotH)
         return Math.max(0, Math.min(n - 1, idx))
     }
 
-    // Canvas 侧文本省略（尾部截断加省略号；与 DonutChart 图例的
-    // Text.ElideRight 截断风格统一。供 x 轴模型名与柱顶数值共用）
+    // Canvas 侧文本省略（尾部截断加省略号）——模型名列宽度已按最长名
+    // 实测，正常不触发；仅当 42% 上限被撑满（超长模型名）时兜底。
     function elidedText(ctx, text, maxW) {
         var t = String(text)
         if (maxW <= 0) return ""
@@ -156,17 +184,16 @@ Item {
         return t + "…"
     }
 
-    // 顶部圆角、底部直角的柱体路径
+    // 横向柱体路径：右端圆角、左端直角（左端贴在数值轴基线上）
     function roundedBarPath(ctx, x, y, w, h, r) {
-        var rr = Math.min(r, w / 2, h)
+        var rr = Math.max(0, Math.min(r, w, h / 2))
         ctx.beginPath()
-        ctx.moveTo(x + rr, y)
+        ctx.moveTo(x, y)
         ctx.lineTo(x + w - rr, y)
         ctx.quadraticCurveTo(x + w, y, x + w, y + rr)
-        ctx.lineTo(x + w, y + h)
+        ctx.lineTo(x + w, y + h - rr)
+        ctx.quadraticCurveTo(x + w, y + h, x + w - rr, y + h)
         ctx.lineTo(x, y + h)
-        ctx.lineTo(x, y + rr)
-        ctx.quadraticCurveTo(x, y, x + rr, y)
         ctx.closePath()
     }
 
@@ -188,67 +215,82 @@ Item {
         onHeightChanged: requestPaint()
 
         onPaint: {
-            var ctx = getContext("2d")
-            ctx.clearRect(0, 0, width, height)
-            if (!root.hasData) return
-            var n = root.bars.length
-            var plotL = root.padLeft
-            var plotR = width - root.padRight
-            var plotT = root.padTop
-            var plotB = height - root.padBottom
-            var plotW = plotR - plotL
-            var plotH = plotB - plotT
+            // 可观测性：onPaint 内 JS 异常否则完全静默（clearRect 已执行
+            // → 纯空白）
+            try {
+                var ctx = getContext("2d")
+                ctx.clearRect(0, 0, width, height)
+                if (!root.hasData) return
+                var n = root.bars.length
+                var plotL = root.padLeft
+                var plotR = width - root.padRight
+                var plotT = root.padTop
+                var plotB = height - root.padBottom
+                var plotW = Math.max(1, plotR - plotL)
+                var plotH = Math.max(1, plotB - plotT)
+                var rowH = plotH / n
+                var barH = Math.max(3, Math.min(rowH * 0.62, 22))
 
-            // 网格线 + y 轴刻度（nice number 步进）
-            ctx.strokeStyle = Theme.borderSubtle
-            ctx.lineWidth = 1
-            ctx.fillStyle = Theme.textSecondary
-            ctx.font = Theme.fontSizeCaption + "px \"" + Theme.fontSans + "\""
-            ctx.textAlign = "right"
-            ctx.textBaseline = "middle"
-            for (var v = 0; v <= root.axisMax + 0.5; v += root.axisStep) {
-                var gy = plotB - plotH * (v / root.axisMax)
-                ctx.beginPath()
-                ctx.moveTo(plotL, gy)
-                ctx.lineTo(plotR, gy)
-                ctx.stroke()
-                ctx.fillText(root.compactNumber(v), plotL - 6, gy)
-            }
-
-            var slot = plotW / n
-            var barW = Math.min(slot * 0.6, 64)
-            for (var i = 0; i < n; ++i) {
-                var value = root.bars[i].value
-                var h = plotH * (value / root.axisMax)
-                var x = plotL + slot * i + (slot - barW) / 2
-                var y = plotB - h
-                var highlighted = i === root.highlightIndex
-
-                if (h > 0) {
-                    root.roundedBarPath(ctx, x, y, barW, h, 3)
-                    ctx.fillStyle = root.seriesColor(i)
-                    ctx.fill()
-                    if (highlighted) {
-                        ctx.strokeStyle = Theme.brandPrimary
-                        ctx.lineWidth = 2
-                        ctx.stroke()
-                    }
+                // 纵向网格线 + x 轴刻度（nice number 步进）
+                ctx.strokeStyle = Theme.borderSubtle
+                ctx.lineWidth = 1
+                ctx.fillStyle = Theme.textSecondary
+                ctx.font = Theme.fontSizeCaption + "px \"" + Theme.fontSans + "\""
+                ctx.textAlign = "center"
+                ctx.textBaseline = "top"
+                for (var v = 0; v <= root.axisMax + 0.5; v += root.axisStep) {
+                    var gx = plotL + plotW * (v / root.axisMax)
+                    ctx.beginPath()
+                    ctx.moveTo(gx, plotT)
+                    ctx.lineTo(gx, plotB)
+                    ctx.stroke()
+                    ctx.fillText(root.compactNumber(v), gx, plotB + 6)
                 }
 
-                // 柱顶数值（紧凑格式；高亮时主色强调；槽内省略——模型
-                // 数量多、槽变窄时防相邻数值文本互相重叠侵入邻柱）
-                ctx.textAlign = "center"
-                ctx.textBaseline = "bottom"
-                ctx.fillStyle = highlighted ? Theme.textPrimary : Theme.textSecondary
-                ctx.fillText(root.elidedText(ctx, root.compactNumber(value), slot - 2),
-                             x + barW / 2, y - 3)
+                for (var i = 0; i < n; ++i) {
+                    var value = root.bars[i].value
+                    var cy = plotT + rowH * i + rowH / 2
+                    var y = cy - barH / 2
+                    var w = plotW * Math.max(0, value) / root.axisMax
+                    var highlighted = i === root.highlightIndex
 
-                // x 轴模型名（槽宽内省略截断，ElideRight 风格与
-                // DonutChart 图例统一）
-                ctx.textBaseline = "top"
-                ctx.fillStyle = highlighted ? Theme.textPrimary : Theme.textSecondary
-                ctx.fillText(root.elidedText(ctx, root.bars[i].label, slot - 4),
-                             plotL + slot * i + slot / 2, plotB + 6)
+                    // 悬停/选中行：整行底色（横向柱图里行就是「数据项」，
+                    // 行级高亮比只描柱更容易扫读）
+                    if (highlighted) {
+                        ctx.fillStyle = Theme.surfaceHover
+                        ctx.fillRect(0, plotT + rowH * i, width, rowH)
+                    }
+
+                    // 柱体
+                    if (w > 0) {
+                        root.roundedBarPath(ctx, plotL, y, Math.max(2, w), barH, 3)
+                        ctx.fillStyle = root.seriesColor(i)
+                        ctx.fill()
+                        if (highlighted) {
+                            ctx.strokeStyle = Theme.brandPrimary
+                            ctx.lineWidth = 2
+                            ctx.stroke()
+                        }
+                    }
+
+                    // 模型名（右对齐到柱基线左侧）
+                    ctx.textAlign = "right"
+                    ctx.textBaseline = "middle"
+                    ctx.fillStyle = highlighted ? Theme.textPrimary : Theme.textSecondary
+                    ctx.fillText(root.elidedText(ctx, root.bars[i].label, plotL - 12),
+                                 plotL - 8, cy)
+
+                    // 数值（柱尾外，紧凑格式；超出右侧留白时省略兜底）
+                    ctx.textAlign = "left"
+                    ctx.fillStyle = highlighted ? Theme.textPrimary : Theme.textSecondary
+                    ctx.fillText(root.elidedText(ctx, root.compactNumber(value),
+                                                 root.padRight - 10),
+                                 plotL + w + 6, cy)
+                }
+            } catch (e) {
+                console.warn("[BarCompareChart] paint failed:", e, "w=", width,
+                             "h=", height, "bars=", root.bars.length,
+                             "axisMax=", root.axisMax)
             }
         }
     }
@@ -258,11 +300,11 @@ Item {
         anchors.fill: parent
         hoverEnabled: true
         onPositionChanged: (mouse) => {
-            // 仅在绘图区横向范围内命中
-            if (mouse.x < root.padLeft - 8 || mouse.x > width - root.padRight + 8) {
+            // 仅在绘图区纵向范围内命中（上下留白外不提示）
+            if (mouse.y < root.padTop - 4 || mouse.y > height - root.padBottom + 4) {
                 root.hoverIndex = -1
             } else {
-                root.hoverIndex = root.indexAtX(mouse.x)
+                root.hoverIndex = root.indexAtY(mouse.y)
             }
         }
         onExited: root.hoverIndex = -1

@@ -233,15 +233,20 @@ Item {
 
         // 右：图例（模型名 + 占比；悬停联动高亮扇区）
         // 布局不变式（任何模型名长度/数量组合都不溢出的保证）：
-        //   图例区宽度 ∈ [120, 200]，高度 ≤ root.height；
+        //   图例区宽度 ∈ [120, 340]，高度 ≤ root.height；
         //   图例行宽 = 图例区实际宽度（fillWidth，非内容反向撑开）；
         //   行内 = 色块 10 + 模型名(可收缩至 0 触发 elide) + 百分比 44。
         Flickable {
             id: legendScroll
-            // 宽度：正常恒 200；极窄容器下最多收缩到 120（保住色块 +
-            // 最低模型名 + 百分比的最小可用组合），不会侵占环形图之外
+            // 宽度：占据环形图之外的剩余宽度（上限 340，防止宽窗口下图例
+            // 抢走视觉重心）；极窄容器下最多收缩到 120（保住色块 + 最低
+            // 模型名 + 百分比的最小可用组合）。
+            // 用量统计页已改为「一张图一行」，图例从固定 200 放宽后，
+            // deepseek-v4-flash-0731 / gemini-3.6-flash-high 这类长模型名
+            // 不再被压成「deepseek-v4-f…」。
+            Layout.fillWidth: true
             Layout.preferredWidth: 200
-            Layout.maximumWidth: 200
+            Layout.maximumWidth: 340
             Layout.minimumWidth: 120
             // 高度：跟随图例内容、以组件可用高度为上限；配合 AlignVCenter
             // 保持「模型少时垂直居中」的原视觉，模型多时占满并滚动

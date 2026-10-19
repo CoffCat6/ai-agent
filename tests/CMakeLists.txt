@@ -225,3 +225,4 @@ add_test(NAME test_charts_qml
     COMMAND ${CMAKE_COMMAND} -E env
         "QT_QPA_PLATFORM_PLUGIN_PATH=${QT6_INSTALL_PREFIX}/${QT6_INSTALL_PLUGINS}/platforms"
         $<TARGET_FILE:test_charts_qml> -platform offscreen)
+

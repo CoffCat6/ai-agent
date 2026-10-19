@@ -8,6 +8,12 @@ import NexusAI.ViewModels
 // rows by model, day, source and direction; shows cost breakdown and quota
 // status. The detailed aggregates come from SqliteMemory::tokenStatsDetailed
 // / costStats / quotaStatus / tokenStatsBySource.
+//
+// 页面信息层级（自上而下，逐层下钻，避免同一份数据用图和列表各说一遍）：
+//   统计范围 → 概览（4 个 KPI）→ 用量图表（3 张，一行一张）→ Token 构成
+//   → 按来源拆分 → 费用明细 → 请求明细（表格）→ 配额状态 / 配额设置
+// 原先的「按模型」「按天」两个列表已删除：前者与环形图 / 模型对比图 /
+// 费用明细完全同源，后者与按天走势折线图同源，列表只重复图的结论。
 Item {
     id: page
 
@@ -112,6 +118,11 @@ Item {
         return out
     }
 
+    // 模型对比图卡片高度随模型数量自适应（横向柱状图每模型一行）：
+    // 模型少时不留大片空白，模型多时封顶 380 由图表内部压缩行高。
+    readonly property int barCardHeight: Math.max(180, Math.min(380,
+                                          page.modelSeries.length * 30 + 72))
+
     function refresh() {
         var p = page.rangeParams
         // 范围模式下 from 恒 > 0，recentDays 被忽略（30 仅为防御性回退值）
@@ -202,12 +213,6 @@ Item {
         } else {
             refresh()
         }
-    }
-
-    // 明细缓存占比：cacheHitTokens / inputTokens；输入为 0 无口径可除
-    function fmtCacheRatio(hit, input) {
-        if (Number(input || 0) <= 0) return qsTr("—")
-        return fmtPercent(Number(hit || 0) / Number(input))
     }
 
     function fmtNumber(n) {
@@ -462,6 +467,687 @@ Item {
             }
         }
 
+        // ── 概览卡片（§8.1.1：任务次数 / 累计 Token / 累计费用 / 平均延迟）──
+        RowLayout {
+            Layout.fillWidth: true
+            spacing: 12
+
+            Repeater {
+                model: [
+                    { label: qsTr("任务次数"), value: page.fmtNumber(page.stats.totalCalls) },
+                    { label: qsTr("累计 Token"), value: page.fmtNumber(page.stats.totalTokens) },
+                    { label: qsTr("累计费用"), value: page.fmtCost(page.stats.totalCostCents) },
+                    { label: qsTr("平均延迟"), value: page.fmtLatency(page.stats.avgLatencyMs) }
+                ]
+
+                delegate: Rectangle {
+                    required property var modelData
+                    Layout.fillWidth: true
+                    Layout.preferredHeight: 72
+                    radius: 8
+                    color: Theme.bgPrimary
+                    border.width: 1
+                    border.color: Theme.borderSubtle
+
+                    ColumnLayout {
+                        anchors.centerIn: parent
+                        spacing: 4
+
+                        Text {
+                            text: modelData.value
+                            color: Theme.textPrimary
+                            font.pixelSize: Theme.fontSizeH2
+                            font.bold: true
+                            font.family: Theme.fontSans
+                            Layout.alignment: Qt.AlignHCenter
+                        }
+                        Text {
+                            text: modelData.label
+                            color: Theme.textSecondary
+                            font.pixelSize: Theme.fontSizeCaption
+                            font.family: Theme.fontSans
+                            Layout.alignment: Qt.AlignHCenter
+                        }
+                    }
+                }
+            }
+        }
+
+        // ── 用量图表：一张图独占一行 ────────────────────
+        // 内容区宽度只有 ~560px（设置对话框 860 减去导航与边距），双图
+        // 并排时每张只剩 ~270px：环形图图例被压到 200px 上限、长模型名
+        // 一律省略成「step-5-prev…」，柱状图 x 轴标签也挤成省略号。改为
+        // 一行一张后，图例、轴标签、绘图区都拿到整宽，长模型名完整可读。
+        ColumnLayout {
+            Layout.fillWidth: true
+            spacing: 6
+
+            Text {
+                text: qsTr("用量图表")
+                color: Theme.textSecondary
+                font.pixelSize: Theme.fontSizeCaption
+                font.bold: true
+                font.family: Theme.fontMono
+            }
+
+            // 图一：模型 Token 占比（环形图 + 图例）
+            Rectangle {
+                Layout.fillWidth: true
+                Layout.preferredHeight: 236
+                radius: 8
+                color: Theme.bgPrimary
+                border.width: 1
+                border.color: Theme.borderSubtle
+
+                ColumnLayout {
+                    anchors.fill: parent
+                    anchors.margins: 12
+                    spacing: 6
+
+                    Text {
+                        text: qsTr("模型 Token 分布")
+                        color: Theme.textSecondary
+                        font.pixelSize: Theme.fontSizeCaption
+                        font.family: Theme.fontSans
+                    }
+                    DonutChart {
+                        Layout.fillWidth: true
+                        Layout.fillHeight: true
+                        series: page.donutSeries
+                        centerLabel: qsTr("总 Token")
+                    }
+                }
+            }
+
+            // 图二：按天走势（折线图）
+            Rectangle {
+                Layout.fillWidth: true
+                Layout.preferredHeight: 212
+                radius: 8
+                color: Theme.bgPrimary
+                border.width: 1
+                border.color: Theme.borderSubtle
+
+                ColumnLayout {
+                    anchors.fill: parent
+                    anchors.margins: 12
+                    spacing: 6
+
+                    Text {
+                        text: qsTr("按天走势")
+                        color: Theme.textSecondary
+                        font.pixelSize: Theme.fontSizeCaption
+                        font.family: Theme.fontSans
+                    }
+                    LineTrendChart {
+                        Layout.fillWidth: true
+                        Layout.fillHeight: true
+                        series: page.dayTrendSeries
+                    }
+                }
+            }
+
+            // 图三：模型对比（横向柱状图，模型名占独立列不截断）
+            Rectangle {
+                Layout.fillWidth: true
+                Layout.preferredHeight: page.barCardHeight
+                radius: 8
+                color: Theme.bgPrimary
+                border.width: 1
+                border.color: Theme.borderSubtle
+
+                ColumnLayout {
+                    anchors.fill: parent
+                    anchors.margins: 12
+                    spacing: 6
+
+                    RowLayout {
+                        Layout.fillWidth: true
+                        spacing: 8
+
+                        Text {
+                            text: qsTr("模型对比")
+                            color: Theme.textSecondary
+                            font.pixelSize: Theme.fontSizeCaption
+                            font.family: Theme.fontSans
+                        }
+                        Item { Layout.fillWidth: true }
+                        AppButton {
+                            text: qsTr("Token")
+                            highlighted: page.barMode === "tokens"
+                            onClicked: page.barMode = "tokens"
+                            Accessible.name: qsTr("按 Token 对比")
+                        }
+                        AppButton {
+                            text: qsTr("调用次数")
+                            highlighted: page.barMode === "calls"
+                            onClicked: page.barMode = "calls"
+                            Accessible.name: qsTr("按调用次数对比")
+                        }
+                    }
+                    BarCompareChart {
+                        Layout.fillWidth: true
+                        Layout.fillHeight: true
+                        series: page.barSeries
+                        mode: page.barMode
+                    }
+                }
+            }
+        }
+
+        // ── 方向维度卡片（§8.1.2：Token 构成）──────────
+        ColumnLayout {
+            Layout.fillWidth: true
+            spacing: 6
+
+            Text {
+                text: qsTr("Token 构成")
+                color: Theme.textSecondary
+                font.pixelSize: Theme.fontSizeCaption
+                font.bold: true
+                font.family: Theme.fontMono
+            }
+
+            Rectangle {
+                Layout.fillWidth: true
+                implicitHeight: dirCol.implicitHeight + 24
+                radius: 8
+                color: Theme.bgPrimary
+                border.width: 1
+                border.color: Theme.borderSubtle
+
+                ColumnLayout {
+                    id: dirCol
+                    anchors.fill: parent
+                    anchors.margins: 12
+                    spacing: 8
+
+                    // 输入 / 输出 / 缓存命中 三行进度条
+                    Repeater {
+                        model: [
+                            { label: qsTr("输入(未命中)"), tokens: Math.max(0, page.stats.totalInputTokens - page.stats.totalCacheHitTokens), color: Theme.brandPrimary },
+                            { label: qsTr("缓存命中"), tokens: page.stats.totalCacheHitTokens, color: Theme.statusWarning },
+                            { label: qsTr("输出"), tokens: page.stats.totalOutputTokens, color: Theme.statusSuccess }
+                        ]
+
+                        delegate: RowLayout {
+                            required property var modelData
+                            Layout.fillWidth: true
+                            spacing: 8
+
+                            Text {
+                                text: modelData.label
+                                color: Theme.textPrimary
+                                font.pixelSize: Theme.fontSizeCaption
+                                font.family: Theme.fontSans
+                                Layout.preferredWidth: 84
+                            }
+                            Text {
+                                text: page.fmtNumber(modelData.tokens)
+                                color: Theme.textSecondary
+                                font.pixelSize: Theme.fontSizeCaption
+                                font.family: Theme.fontMono
+                                Layout.preferredWidth: 80
+                            }
+                            Text {
+                                text: page.fmtPercent(page.stats.totalTokens > 0
+                                                      ? modelData.tokens / page.stats.totalTokens : 0)
+                                color: Theme.textSecondary
+                                font.pixelSize: Theme.fontSizeCaption
+                                font.family: Theme.fontMono
+                                Layout.preferredWidth: 50
+                            }
+                            Rectangle {
+                                Layout.fillWidth: true
+                                Layout.preferredHeight: 6
+                                radius: 3
+                                color: Theme.bgSecondary
+                                Rectangle {
+                                    width: Math.max(0, Math.min(parent.width,
+                                        parent.width * (page.stats.totalTokens > 0
+                                            ? modelData.tokens / page.stats.totalTokens : 0)))
+                                    height: parent.height
+                                    radius: parent.radius
+                                    color: modelData.color
+                                }
+                            }
+                        }
+                    }
+
+                    Text {
+                        text: qsTr("缓存命中率: %1").arg(page.fmtPercent(page.stats.cacheHitRate))
+                        color: Theme.textSecondary
+                        font.pixelSize: Theme.fontSizeCaption
+                        font.family: Theme.fontMono
+                    }
+                }
+            }
+        }
+
+        // ── 来源维度卡片（§8.1.3：按来源拆分）──────────
+        ColumnLayout {
+            Layout.fillWidth: true
+            spacing: 6
+
+            Text {
+                text: qsTr("按来源拆分")
+                color: Theme.textSecondary
+                font.pixelSize: Theme.fontSizeCaption
+                font.bold: true
+                font.family: Theme.fontMono
+            }
+
+            Rectangle {
+                Layout.fillWidth: true
+                implicitHeight: srcCol.implicitHeight + 24
+                radius: 8
+                color: Theme.bgPrimary
+                border.width: 1
+                border.color: Theme.borderSubtle
+
+                ColumnLayout {
+                    id: srcCol
+                    anchors.fill: parent
+                    anchors.margins: 12
+                    spacing: 4
+
+                    // 表头（docs/25 C5: 空态时隐藏，与 byModel/byDay 空态形态一致）
+                    RowLayout {
+                        visible: page.bySourceData.length > 0
+                        Layout.fillWidth: true
+                        spacing: 8
+                        Text {
+                            text: qsTr("来源")
+                            color: Theme.textSecondary
+                            font.pixelSize: Theme.fontSizeCaption
+                            font.bold: true
+                            font.family: Theme.fontSans
+                            Layout.preferredWidth: 100
+                        }
+                        Text {
+                            text: qsTr("输入")
+                            color: Theme.textSecondary
+                            font.pixelSize: Theme.fontSizeCaption
+                            font.bold: true
+                            font.family: Theme.fontMono
+                            Layout.preferredWidth: 80
+                        }
+                        Text {
+                            text: qsTr("输出")
+                            color: Theme.textSecondary
+                            font.pixelSize: Theme.fontSizeCaption
+                            font.bold: true
+                            font.family: Theme.fontMono
+                            Layout.preferredWidth: 80
+                        }
+                        Text {
+                            text: qsTr("占比")
+                            color: Theme.textSecondary
+                            font.pixelSize: Theme.fontSizeCaption
+                            font.bold: true
+                            font.family: Theme.fontMono
+                            Layout.fillWidth: true
+                        }
+                    }
+
+                    // docs/25 C5: 按来源空态补全（对齐 byModel/byDay）
+                    Text {
+                        visible: page.bySourceData.length === 0
+                        text: qsTr("该范围内暂无数据")
+                        color: Theme.textSecondary
+                        font.pixelSize: Theme.fontSizeBody
+                        font.family: Theme.fontSans
+                        opacity: 0.7
+                    }
+
+                    Repeater {
+                        model: page.bySourceData
+
+                        delegate: RowLayout {
+                            required property var modelData
+                            Layout.fillWidth: true
+                            spacing: 8
+
+                            Text {
+                                text: page.sourceLabel(modelData.source)
+                                color: Theme.textPrimary
+                                font.pixelSize: Theme.fontSizeCaption
+                                font.family: Theme.fontSans
+                                Layout.preferredWidth: 100
+                                elide: Text.ElideRight
+                            }
+                            Text {
+                                text: page.fmtNumber(modelData.inputTokens)
+                                color: Theme.textSecondary
+                                font.pixelSize: Theme.fontSizeCaption
+                                font.family: Theme.fontMono
+                                Layout.preferredWidth: 80
+                            }
+                            Text {
+                                text: page.fmtNumber(modelData.outputTokens)
+                                color: Theme.textSecondary
+                                font.pixelSize: Theme.fontSizeCaption
+                                font.family: Theme.fontMono
+                                Layout.preferredWidth: 80
+                            }
+                            Text {
+                                text: page.fmtPercent(page.sourcesTotal > 0
+                                    ? (modelData.inputTokens + modelData.outputTokens) / page.sourcesTotal : 0)
+                                color: Theme.textSecondary
+                                font.pixelSize: Theme.fontSizeCaption
+                                font.family: Theme.fontMono
+                                Layout.fillWidth: true
+                            }
+                        }
+                    }
+                }
+            }
+        }
+
+        // ── 费用明细（§8.1.4）──────────────────────────
+        ColumnLayout {
+            Layout.fillWidth: true
+            spacing: 6
+
+            Text {
+                text: qsTr("费用明细")
+                color: Theme.textSecondary
+                font.pixelSize: Theme.fontSizeCaption
+                font.bold: true
+                font.family: Theme.fontMono
+            }
+
+            Rectangle {
+                Layout.fillWidth: true
+                implicitHeight: costCol.implicitHeight + 24
+                radius: 8
+                color: Theme.bgPrimary
+                border.width: 1
+                border.color: Theme.borderSubtle
+
+                ColumnLayout {
+                    id: costCol
+                    anchors.fill: parent
+                    anchors.margins: 12
+                    spacing: 4
+
+                    // 表头（docs/25 C5: 空态时隐藏）
+                    RowLayout {
+                        visible: !page.costRowsEmpty
+                        Layout.fillWidth: true
+                        spacing: 8
+                        Text {
+                            text: qsTr("模型")
+                            color: Theme.textSecondary
+                            font.pixelSize: Theme.fontSizeCaption
+                            font.bold: true
+                            font.family: Theme.fontSans
+                            Layout.fillWidth: true
+                        }
+                        Text {
+                            text: qsTr("调用")
+                            color: Theme.textSecondary
+                            font.pixelSize: Theme.fontSizeCaption
+                            font.bold: true
+                            font.family: Theme.fontMono
+                            Layout.preferredWidth: 60
+                        }
+                        Text {
+                            text: qsTr("Token")
+                            color: Theme.textSecondary
+                            font.pixelSize: Theme.fontSizeCaption
+                            font.bold: true
+                            font.family: Theme.fontMono
+                            Layout.preferredWidth: 80
+                        }
+                        Text {
+                            text: qsTr("费用")
+                            color: Theme.textSecondary
+                            font.pixelSize: Theme.fontSizeCaption
+                            font.bold: true
+                            font.family: Theme.fontMono
+                            Layout.preferredWidth: 70
+                        }
+                    }
+
+                    // docs/25 C5: 费用明细空态补全（对齐 byModel/byDay）
+                    Text {
+                        visible: page.costRowsEmpty
+                        text: qsTr("该范围内暂无数据")
+                        color: Theme.textSecondary
+                        font.pixelSize: Theme.fontSizeBody
+                        font.family: Theme.fontSans
+                        opacity: 0.7
+                    }
+
+                    Repeater {
+                        model: page.costStatsData.byModel || []
+
+                        delegate: RowLayout {
+                            required property var modelData
+                            Layout.fillWidth: true
+                            spacing: 8
+
+                            Text {
+                                text: modelData.model && modelData.model.length > 0
+                                      ? modelData.model : qsTr("(未知)")
+                                textFormat: Text.PlainText   // 模型名（远端可控）防富文本渲染
+                                color: Theme.textPrimary
+                                font.pixelSize: Theme.fontSizeCaption
+                                font.family: Theme.fontSans
+                                elide: Text.ElideRight
+                                Layout.fillWidth: true
+                            }
+                            Text {
+                                text: page.fmtNumber(modelData.calls)
+                                color: Theme.textSecondary
+                                font.pixelSize: Theme.fontSizeCaption
+                                font.family: Theme.fontMono
+                                Layout.preferredWidth: 60
+                            }
+                            Text {
+                                text: page.fmtNumber(modelData.tokens)
+                                color: Theme.textSecondary
+                                font.pixelSize: Theme.fontSizeCaption
+                                font.family: Theme.fontMono
+                                Layout.preferredWidth: 80
+                            }
+                            Text {
+                                text: page.fmtCost(modelData.costCents)
+                                color: Theme.textPrimary
+                                font.pixelSize: Theme.fontSizeCaption
+                                font.family: Theme.fontMono
+                                Layout.preferredWidth: 70
+                            }
+                        }
+                    }
+
+                    // 合计行（docs/25 C5: 费用明细空态时一并隐藏）
+                    Rectangle {
+                        visible: !page.costRowsEmpty
+                        Layout.fillWidth: true
+                        Layout.preferredHeight: 1
+                        color: Theme.borderSubtle
+                    }
+                    RowLayout {
+                        visible: !page.costRowsEmpty
+                        Layout.fillWidth: true
+                        spacing: 8
+                        Text {
+                            text: qsTr("合计")
+                            color: Theme.textPrimary
+                            font.pixelSize: Theme.fontSizeCaption
+                            font.bold: true
+                            font.family: Theme.fontSans
+                            Layout.fillWidth: true
+                        }
+                        Text {
+                            text: page.fmtNumber(page.stats.totalCalls)
+                            color: Theme.textSecondary
+                            font.pixelSize: Theme.fontSizeCaption
+                            font.family: Theme.fontMono
+                            Layout.preferredWidth: 60
+                        }
+                        Text {
+                            text: page.fmtNumber(page.stats.totalTokens)
+                            color: Theme.textSecondary
+                            font.pixelSize: Theme.fontSizeCaption
+                            font.family: Theme.fontMono
+                            Layout.preferredWidth: 80
+                        }
+                        Text {
+                            text: page.fmtCost(page.costStatsData.totalCostCents)
+                            color: Theme.textPrimary
+                            font.pixelSize: Theme.fontSizeCaption
+                            font.bold: true
+                            font.family: Theme.fontMono
+                            Layout.preferredWidth: 70
+                        }
+                    }
+
+                    Text {
+                        visible: !page.costRowsEmpty
+                        text: qsTr("预估月费用: %1").arg(page.fmtCost(page.costStatsData.projectedMonthlyCents))
+                        color: Theme.textSecondary
+                        font.pixelSize: Theme.fontSizeCaption
+                        font.family: Theme.fontMono
+                        Layout.topMargin: 4
+                    }
+                }
+            }
+        }
+
+        // ── 请求明细（Batch 6 T3 + 表格化：每次 LLM 请求一行）──
+        // 表格能力（筛选 / 排序 / 拖拽列宽 / 表体内部滚动）收在
+        // UsageDetailTable 里；本页只负责注入已加载的行与分页回调。
+        ColumnLayout {
+            Layout.fillWidth: true
+            spacing: 6
+
+            RowLayout {
+                Layout.fillWidth: true
+                spacing: 8
+
+                Text {
+                    text: qsTr("请求明细")
+                    color: Theme.textSecondary
+                    font.pixelSize: Theme.fontSizeCaption
+                    font.bold: true
+                    font.family: Theme.fontMono
+                }
+                Item { Layout.fillWidth: true }
+                Text {
+                    text: qsTr("点击表头排序 · 拖动列边界调整列宽")
+                    color: Theme.textSecondary
+                    font.pixelSize: 10
+                    font.family: Theme.fontSans
+                    opacity: 0.8
+                    elide: Text.ElideRight
+                    Layout.maximumWidth: 240
+                }
+            }
+
+            UsageDetailTable {
+                Layout.fillWidth: true
+                rows: page.detailRows
+                total: page.detailTotal
+                onLoadMore: page.loadDetailPage(false)
+            }
+        }
+
+        // ── 配额状态（§8.1.5）──────────────────────────
+        ColumnLayout {
+            Layout.fillWidth: true
+            spacing: 6
+
+            Text {
+                text: qsTr("配额状态")
+                color: Theme.textSecondary
+                font.pixelSize: Theme.fontSizeCaption
+                font.bold: true
+                font.family: Theme.fontMono
+            }
+
+            Rectangle {
+                Layout.fillWidth: true
+                implicitHeight: quotaCol.implicitHeight + 24
+                radius: 8
+                color: Theme.bgPrimary
+                border.width: 1
+                border.color: Theme.borderSubtle
+
+                ColumnLayout {
+                    id: quotaCol
+                    anchors.fill: parent
+                    anchors.margins: 12
+                    spacing: 8
+
+                    // docs/25 C5: 配额区空态补全（对齐 byModel/byDay）——
+                    // 无任何用量且未配置任何配额时不渲染 0/不限 四行
+                    Text {
+                        visible: page.quotaEmpty
+                        text: qsTr("该范围内暂无数据")
+                        color: Theme.textSecondary
+                        font.pixelSize: Theme.fontSizeBody
+                        font.family: Theme.fontSans
+                        opacity: 0.7
+                    }
+
+                    // 日 Token / 日费用 / 月 Token / 月费用
+                    Repeater {
+                        visible: !page.quotaEmpty
+                        model: [
+                            { label: qsTr("日 Token"), used: page.quotaStatusData.dailyTokensUsed, quota: Settings.dailyTokenQuota, isCost: false },
+                            { label: qsTr("日费用"), used: page.quotaStatusData.dailyCostCentsUsed, quota: Settings.dailyCostQuotaCents, isCost: true },
+                            { label: qsTr("月 Token"), used: page.quotaStatusData.monthlyTokensUsed, quota: Settings.monthlyTokenQuota, isCost: false },
+                            { label: qsTr("月费用"), used: page.quotaStatusData.monthlyCostCentsUsed, quota: Settings.monthlyCostQuotaCents, isCost: true }
+                        ]
+
+                        delegate: RowLayout {
+                            required property var modelData
+                            Layout.fillWidth: true
+                            spacing: 8
+
+                            Text {
+                                text: modelData.label
+                                color: Theme.textPrimary
+                                font.pixelSize: Theme.fontSizeCaption
+                                font.family: Theme.fontSans
+                                Layout.preferredWidth: 60
+                            }
+                            Text {
+                                text: modelData.isCost
+                                    ? qsTr("%1 / %2").arg(page.fmtCost(modelData.used)).arg(
+                                        modelData.quota > 0 ? page.fmtCost(modelData.quota) : qsTr("不限"))
+                                    : qsTr("%1 / %2").arg(page.fmtNumber(modelData.used)).arg(
+                                        modelData.quota > 0 ? page.fmtNumber(modelData.quota) : qsTr("不限"))
+                                color: Theme.textSecondary
+                                font.pixelSize: Theme.fontSizeCaption
+                                font.family: Theme.fontMono
+                                Layout.preferredWidth: 160
+                            }
+                            Rectangle {
+                                Layout.fillWidth: true
+                                Layout.preferredHeight: 6
+                                radius: 3
+                                color: Theme.bgSecondary
+                                Rectangle {
+                                    width: Math.max(0, Math.min(parent.width,
+                                        modelData.quota > 0
+                                            ? parent.width * Math.min(1.0, modelData.used / modelData.quota)
+                                            : 0))
+                                    height: parent.height
+                                    radius: parent.radius
+                                    color: modelData.quota > 0 && modelData.used >= modelData.quota
+                                        ? Theme.statusDanger : Theme.brandPrimary
+                                }
+                            }
+                        }
+                    }
+                }
+            }
+        }
+
         // ── 配额设置（docs/17 B4：P1-3——配额键此前无任何编辑入口）──
         // 2×2 网格 + 完整标签：整页滚动后垂直空间不再稀缺，宽度紧张时
         // 仍能完整显示（单行四列在内容区 ~560px 下必然截断）。
@@ -558,1011 +1244,6 @@ Item {
                 }
             }
         }
-
-        // ── 概览卡片（§8.1.1：任务次数 / 累计 Token / 累计费用 / 平均延迟）──
-        RowLayout {
-            Layout.fillWidth: true
-            spacing: 12
-
-            Repeater {
-                model: [
-                    { label: qsTr("任务次数"), value: page.fmtNumber(page.stats.totalCalls) },
-                    { label: qsTr("累计 Token"), value: page.fmtNumber(page.stats.totalTokens) },
-                    { label: qsTr("累计费用"), value: page.fmtCost(page.stats.totalCostCents) },
-                    { label: qsTr("平均延迟"), value: page.fmtLatency(page.stats.avgLatencyMs) }
-                ]
-
-                delegate: Rectangle {
-                    required property var modelData
-                    Layout.fillWidth: true
-                    Layout.preferredHeight: 72
-                    radius: 8
-                    color: Theme.bgPrimary
-                    border.width: 1
-                    border.color: Theme.borderSubtle
-
-                    ColumnLayout {
-                        anchors.centerIn: parent
-                        spacing: 4
-
-                        Text {
-                            text: modelData.value
-                            color: Theme.textPrimary
-                            font.pixelSize: Theme.fontSizeH2
-                            font.bold: true
-                            font.family: Theme.fontSans
-                            Layout.alignment: Qt.AlignHCenter
-                        }
-                        Text {
-                            text: modelData.label
-                            color: Theme.textSecondary
-                            font.pixelSize: Theme.fontSizeCaption
-                            font.family: Theme.fontSans
-                            Layout.alignment: Qt.AlignHCenter
-                        }
-                    }
-                }
-            }
-        }
-
-                // ── 方向维度卡片（§8.1.2：Token 构成）──────────
-                ColumnLayout {
-                    Layout.fillWidth: true
-                    spacing: 6
-
-                    Text {
-                        text: qsTr("Token 构成")
-                        color: Theme.textSecondary
-                        font.pixelSize: Theme.fontSizeCaption
-                        font.bold: true
-                        font.family: Theme.fontMono
-                    }
-
-                    Rectangle {
-                        Layout.fillWidth: true
-                        implicitHeight: dirCol.implicitHeight + 24
-                        radius: 8
-                        color: Theme.bgPrimary
-                        border.width: 1
-                        border.color: Theme.borderSubtle
-
-                        ColumnLayout {
-                            id: dirCol
-                            anchors.fill: parent
-                            anchors.margins: 12
-                            spacing: 8
-
-                            // 输入 / 输出 / 缓存命中 三行进度条
-                            Repeater {
-                                model: [
-                                    { label: qsTr("输入(未命中)"), tokens: Math.max(0, page.stats.totalInputTokens - page.stats.totalCacheHitTokens), color: Theme.brandPrimary },
-                                    { label: qsTr("缓存命中"), tokens: page.stats.totalCacheHitTokens, color: Theme.statusWarning },
-                                    { label: qsTr("输出"), tokens: page.stats.totalOutputTokens, color: Theme.statusSuccess }
-                                ]
-
-                                delegate: RowLayout {
-                                    required property var modelData
-                                    Layout.fillWidth: true
-                                    spacing: 8
-
-                                    Text {
-                                        text: modelData.label
-                                        color: Theme.textPrimary
-                                        font.pixelSize: Theme.fontSizeCaption
-                                        font.family: Theme.fontSans
-                                        Layout.preferredWidth: 84
-                                    }
-                                    Text {
-                                        text: page.fmtNumber(modelData.tokens)
-                                        color: Theme.textSecondary
-                                        font.pixelSize: Theme.fontSizeCaption
-                                        font.family: Theme.fontMono
-                                        Layout.preferredWidth: 80
-                                    }
-                                    Text {
-                                        text: page.fmtPercent(page.stats.totalTokens > 0
-                                                              ? modelData.tokens / page.stats.totalTokens : 0)
-                                        color: Theme.textSecondary
-                                        font.pixelSize: Theme.fontSizeCaption
-                                        font.family: Theme.fontMono
-                                        Layout.preferredWidth: 50
-                                    }
-                                    Rectangle {
-                                        Layout.fillWidth: true
-                                        Layout.preferredHeight: 6
-                                        radius: 3
-                                        color: Theme.bgSecondary
-                                        Rectangle {
-                                            width: Math.max(0, Math.min(parent.width,
-                                                parent.width * (page.stats.totalTokens > 0
-                                                    ? modelData.tokens / page.stats.totalTokens : 0)))
-                                            height: parent.height
-                                            radius: parent.radius
-                                            color: modelData.color
-                                        }
-                                    }
-                                }
-                            }
-
-                            Text {
-                                text: qsTr("缓存命中率: %1").arg(page.fmtPercent(page.stats.cacheHitRate))
-                                color: Theme.textSecondary
-                                font.pixelSize: Theme.fontSizeCaption
-                                font.family: Theme.fontMono
-                            }
-                        }
-                    }
-                }
-
-                // ── 来源维度卡片（§8.1.3：按来源拆分）──────────
-                ColumnLayout {
-                    Layout.fillWidth: true
-                    spacing: 6
-
-                    Text {
-                        text: qsTr("按来源拆分")
-                        color: Theme.textSecondary
-                        font.pixelSize: Theme.fontSizeCaption
-                        font.bold: true
-                        font.family: Theme.fontMono
-                    }
-
-                    Rectangle {
-                        Layout.fillWidth: true
-                        implicitHeight: srcCol.implicitHeight + 24
-                        radius: 8
-                        color: Theme.bgPrimary
-                        border.width: 1
-                        border.color: Theme.borderSubtle
-
-                        ColumnLayout {
-                            id: srcCol
-                            anchors.fill: parent
-                            anchors.margins: 12
-                            spacing: 4
-
-                            // 表头（docs/25 C5: 空态时隐藏，与 byModel/byDay 空态形态一致）
-                            RowLayout {
-                                visible: page.bySourceData.length > 0
-                                Layout.fillWidth: true
-                                spacing: 8
-                                Text {
-                                    text: qsTr("来源")
-                                    color: Theme.textSecondary
-                                    font.pixelSize: Theme.fontSizeCaption
-                                    font.bold: true
-                                    font.family: Theme.fontSans
-                                    Layout.preferredWidth: 100
-                                }
-                                Text {
-                                    text: qsTr("输入")
-                                    color: Theme.textSecondary
-                                    font.pixelSize: Theme.fontSizeCaption
-                                    font.bold: true
-                                    font.family: Theme.fontMono
-                                    Layout.preferredWidth: 80
-                                }
-                                Text {
-                                    text: qsTr("输出")
-                                    color: Theme.textSecondary
-                                    font.pixelSize: Theme.fontSizeCaption
-                                    font.bold: true
-                                    font.family: Theme.fontMono
-                                    Layout.preferredWidth: 80
-                                }
-                                Text {
-                                    text: qsTr("占比")
-                                    color: Theme.textSecondary
-                                    font.pixelSize: Theme.fontSizeCaption
-                                    font.bold: true
-                                    font.family: Theme.fontMono
-                                    Layout.fillWidth: true
-                                }
-                            }
-
-                            // docs/25 C5: 按来源空态补全（对齐 byModel/byDay）
-                            Text {
-                                visible: page.bySourceData.length === 0
-                                text: qsTr("该范围内暂无数据")
-                                color: Theme.textSecondary
-                                font.pixelSize: Theme.fontSizeBody
-                                font.family: Theme.fontSans
-                                opacity: 0.7
-                            }
-
-                            Repeater {
-                                model: page.bySourceData
-
-                                delegate: RowLayout {
-                                    required property var modelData
-                                    Layout.fillWidth: true
-                                    spacing: 8
-
-                                    Text {
-                                        text: page.sourceLabel(modelData.source)
-                                        color: Theme.textPrimary
-                                        font.pixelSize: Theme.fontSizeCaption
-                                        font.family: Theme.fontSans
-                                        Layout.preferredWidth: 100
-                                        elide: Text.ElideRight
-                                    }
-                                    Text {
-                                        text: page.fmtNumber(modelData.inputTokens)
-                                        color: Theme.textSecondary
-                                        font.pixelSize: Theme.fontSizeCaption
-                                        font.family: Theme.fontMono
-                                        Layout.preferredWidth: 80
-                                    }
-                                    Text {
-                                        text: page.fmtNumber(modelData.outputTokens)
-                                        color: Theme.textSecondary
-                                        font.pixelSize: Theme.fontSizeCaption
-                                        font.family: Theme.fontMono
-                                        Layout.preferredWidth: 80
-                                    }
-                                    Text {
-                                        text: page.fmtPercent(page.sourcesTotal > 0
-                                            ? (modelData.inputTokens + modelData.outputTokens) / page.sourcesTotal : 0)
-                                        color: Theme.textSecondary
-                                        font.pixelSize: Theme.fontSizeCaption
-                                        font.family: Theme.fontMono
-                                        Layout.fillWidth: true
-                                    }
-                                }
-                            }
-                        }
-                    }
-                }
-
-                // ── 费用明细（§8.1.4）──────────────────────────
-                ColumnLayout {
-                    Layout.fillWidth: true
-                    spacing: 6
-
-                    Text {
-                        text: qsTr("费用明细")
-                        color: Theme.textSecondary
-                        font.pixelSize: Theme.fontSizeCaption
-                        font.bold: true
-                        font.family: Theme.fontMono
-                    }
-
-                    Rectangle {
-                        Layout.fillWidth: true
-                        implicitHeight: costCol.implicitHeight + 24
-                        radius: 8
-                        color: Theme.bgPrimary
-                        border.width: 1
-                        border.color: Theme.borderSubtle
-
-                        ColumnLayout {
-                            id: costCol
-                            anchors.fill: parent
-                            anchors.margins: 12
-                            spacing: 4
-
-                            // 表头（docs/25 C5: 空态时隐藏）
-                            RowLayout {
-                                visible: !page.costRowsEmpty
-                                Layout.fillWidth: true
-                                spacing: 8
-                                Text {
-                                    text: qsTr("模型")
-                                    color: Theme.textSecondary
-                                    font.pixelSize: Theme.fontSizeCaption
-                                    font.bold: true
-                                    font.family: Theme.fontSans
-                                    Layout.fillWidth: true
-                                }
-                                Text {
-                                    text: qsTr("调用")
-                                    color: Theme.textSecondary
-                                    font.pixelSize: Theme.fontSizeCaption
-                                    font.bold: true
-                                    font.family: Theme.fontMono
-                                    Layout.preferredWidth: 60
-                                }
-                                Text {
-                                    text: qsTr("Token")
-                                    color: Theme.textSecondary
-                                    font.pixelSize: Theme.fontSizeCaption
-                                    font.bold: true
-                                    font.family: Theme.fontMono
-                                    Layout.preferredWidth: 80
-                                }
-                                Text {
-                                    text: qsTr("费用")
-                                    color: Theme.textSecondary
-                                    font.pixelSize: Theme.fontSizeCaption
-                                    font.bold: true
-                                    font.family: Theme.fontMono
-                                    Layout.preferredWidth: 70
-                                }
-                            }
-
-                            // docs/25 C5: 费用明细空态补全（对齐 byModel/byDay）
-                            Text {
-                                visible: page.costRowsEmpty
-                                text: qsTr("该范围内暂无数据")
-                                color: Theme.textSecondary
-                                font.pixelSize: Theme.fontSizeBody
-                                font.family: Theme.fontSans
-                                opacity: 0.7
-                            }
-
-                            Repeater {
-                                model: page.costStatsData.byModel || []
-
-                                delegate: RowLayout {
-                                    required property var modelData
-                                    Layout.fillWidth: true
-                                    spacing: 8
-
-                                    Text {
-                                        text: modelData.model && modelData.model.length > 0
-                                              ? modelData.model : qsTr("(未知)")
-                                        textFormat: Text.PlainText   // 模型名（远端可控）防富文本渲染
-                                        color: Theme.textPrimary
-                                        font.pixelSize: Theme.fontSizeCaption
-                                        font.family: Theme.fontSans
-                                        elide: Text.ElideRight
-                                        Layout.fillWidth: true
-                                    }
-                                    Text {
-                                        text: page.fmtNumber(modelData.calls)
-                                        color: Theme.textSecondary
-                                        font.pixelSize: Theme.fontSizeCaption
-                                        font.family: Theme.fontMono
-                                        Layout.preferredWidth: 60
-                                    }
-                                    Text {
-                                        text: page.fmtNumber(modelData.tokens)
-                                        color: Theme.textSecondary
-                                        font.pixelSize: Theme.fontSizeCaption
-                                        font.family: Theme.fontMono
-                                        Layout.preferredWidth: 80
-                                    }
-                                    Text {
-                                        text: page.fmtCost(modelData.costCents)
-                                        color: Theme.textPrimary
-                                        font.pixelSize: Theme.fontSizeCaption
-                                        font.family: Theme.fontMono
-                                        Layout.preferredWidth: 70
-                                    }
-                                }
-                            }
-
-                            // 合计行（docs/25 C5: 费用明细空态时一并隐藏）
-                            Rectangle {
-                                visible: !page.costRowsEmpty
-                                Layout.fillWidth: true
-                                Layout.preferredHeight: 1
-                                color: Theme.borderSubtle
-                            }
-                            RowLayout {
-                                visible: !page.costRowsEmpty
-                                Layout.fillWidth: true
-                                spacing: 8
-                                Text {
-                                    text: qsTr("合计")
-                                    color: Theme.textPrimary
-                                    font.pixelSize: Theme.fontSizeCaption
-                                    font.bold: true
-                                    font.family: Theme.fontSans
-                                    Layout.fillWidth: true
-                                }
-                                Text {
-                                    text: page.fmtNumber(page.stats.totalCalls)
-                                    color: Theme.textSecondary
-                                    font.pixelSize: Theme.fontSizeCaption
-                                    font.family: Theme.fontMono
-                                    Layout.preferredWidth: 60
-                                }
-                                Text {
-                                    text: page.fmtNumber(page.stats.totalTokens)
-                                    color: Theme.textSecondary
-                                    font.pixelSize: Theme.fontSizeCaption
-                                    font.family: Theme.fontMono
-                                    Layout.preferredWidth: 80
-                                }
-                                Text {
-                                    text: page.fmtCost(page.costStatsData.totalCostCents)
-                                    color: Theme.textPrimary
-                                    font.pixelSize: Theme.fontSizeCaption
-                                    font.bold: true
-                                    font.family: Theme.fontMono
-                                    Layout.preferredWidth: 70
-                                }
-                            }
-
-                            Text {
-                                visible: !page.costRowsEmpty
-                                text: qsTr("预估月费用: %1").arg(page.fmtCost(page.costStatsData.projectedMonthlyCents))
-                                color: Theme.textSecondary
-                                font.pixelSize: Theme.fontSizeCaption
-                                font.family: Theme.fontMono
-                                Layout.topMargin: 4
-                            }
-                        }
-                    }
-                }
-
-                // ── 配额状态（§8.1.5）──────────────────────────
-                ColumnLayout {
-                    Layout.fillWidth: true
-                    spacing: 6
-
-                    Text {
-                        text: qsTr("配额状态")
-                        color: Theme.textSecondary
-                        font.pixelSize: Theme.fontSizeCaption
-                        font.bold: true
-                        font.family: Theme.fontMono
-                    }
-
-                    Rectangle {
-                        Layout.fillWidth: true
-                        implicitHeight: quotaCol.implicitHeight + 24
-                        radius: 8
-                        color: Theme.bgPrimary
-                        border.width: 1
-                        border.color: Theme.borderSubtle
-
-                        ColumnLayout {
-                            id: quotaCol
-                            anchors.fill: parent
-                            anchors.margins: 12
-                            spacing: 8
-
-                            // docs/25 C5: 配额区空态补全（对齐 byModel/byDay）——
-                            // 无任何用量且未配置任何配额时不渲染 0/不限 四行
-                            Text {
-                                visible: page.quotaEmpty
-                                text: qsTr("该范围内暂无数据")
-                                color: Theme.textSecondary
-                                font.pixelSize: Theme.fontSizeBody
-                                font.family: Theme.fontSans
-                                opacity: 0.7
-                            }
-
-                            // 日 Token / 日费用 / 月 Token / 月费用
-                            Repeater {
-                                visible: !page.quotaEmpty
-                                model: [
-                                    { label: qsTr("日 Token"), used: page.quotaStatusData.dailyTokensUsed, quota: Settings.dailyTokenQuota, isCost: false },
-                                    { label: qsTr("日费用"), used: page.quotaStatusData.dailyCostCentsUsed, quota: Settings.dailyCostQuotaCents, isCost: true },
-                                    { label: qsTr("月 Token"), used: page.quotaStatusData.monthlyTokensUsed, quota: Settings.monthlyTokenQuota, isCost: false },
-                                    { label: qsTr("月费用"), used: page.quotaStatusData.monthlyCostCentsUsed, quota: Settings.monthlyCostQuotaCents, isCost: true }
-                                ]
-
-                                delegate: RowLayout {
-                                    required property var modelData
-                                    Layout.fillWidth: true
-                                    spacing: 8
-
-                                    Text {
-                                        text: modelData.label
-                                        color: Theme.textPrimary
-                                        font.pixelSize: Theme.fontSizeCaption
-                                        font.family: Theme.fontSans
-                                        Layout.preferredWidth: 60
-                                    }
-                                    Text {
-                                        text: modelData.isCost
-                                            ? qsTr("%1 / %2").arg(page.fmtCost(modelData.used)).arg(
-                                                modelData.quota > 0 ? page.fmtCost(modelData.quota) : qsTr("不限"))
-                                            : qsTr("%1 / %2").arg(page.fmtNumber(modelData.used)).arg(
-                                                modelData.quota > 0 ? page.fmtNumber(modelData.quota) : qsTr("不限"))
-                                        color: Theme.textSecondary
-                                        font.pixelSize: Theme.fontSizeCaption
-                                        font.family: Theme.fontMono
-                                        Layout.preferredWidth: 160
-                                    }
-                                    Rectangle {
-                                        Layout.fillWidth: true
-                                        Layout.preferredHeight: 6
-                                        radius: 3
-                                        color: Theme.bgSecondary
-                                        Rectangle {
-                                            width: Math.max(0, Math.min(parent.width,
-                                                modelData.quota > 0
-                                                    ? parent.width * Math.min(1.0, modelData.used / modelData.quota)
-                                                    : 0))
-                                            height: parent.height
-                                            radius: parent.radius
-                                            color: modelData.quota > 0 && modelData.used >= modelData.quota
-                                                ? Theme.statusDanger : Theme.brandPrimary
-                                        }
-                                    }
-                                }
-                            }
-                        }
-                    }
-                }
-
-                // ── 用量图表（Batch 6 T3：三图挂接；下方 byModel/byDay
-                //    表格仍保留，作为精确数值视角）────────────────
-                ColumnLayout {
-                    Layout.fillWidth: true
-                    spacing: 6
-
-                    Text {
-                        text: qsTr("用量图表")
-                        color: Theme.textSecondary
-                        font.pixelSize: Theme.fontSizeCaption
-                        font.bold: true
-                        font.family: Theme.fontMono
-                    }
-
-                    // 第一行：模型分布环形图 + 按天走势折线图
-                    RowLayout {
-                        Layout.fillWidth: true
-                        spacing: 12
-
-                        Rectangle {
-                            Layout.fillWidth: true
-                            Layout.preferredHeight: 260
-                            radius: 8
-                            color: Theme.bgPrimary
-                            border.width: 1
-                            border.color: Theme.borderSubtle
-
-                            ColumnLayout {
-                                anchors.fill: parent
-                                anchors.margins: 12
-                                spacing: 6
-
-                                Text {
-                                    text: qsTr("模型 Token 分布")
-                                    color: Theme.textSecondary
-                                    font.pixelSize: Theme.fontSizeCaption
-                                    font.family: Theme.fontSans
-                                }
-                                DonutChart {
-                                    Layout.fillWidth: true
-                                    Layout.fillHeight: true
-                                    series: page.donutSeries
-                                    centerLabel: qsTr("总 Token")
-                                }
-                            }
-                        }
-
-                        Rectangle {
-                            Layout.fillWidth: true
-                            Layout.preferredHeight: 260
-                            radius: 8
-                            color: Theme.bgPrimary
-                            border.width: 1
-                            border.color: Theme.borderSubtle
-
-                            ColumnLayout {
-                                anchors.fill: parent
-                                anchors.margins: 12
-                                spacing: 6
-
-                                Text {
-                                    text: qsTr("按天走势")
-                                    color: Theme.textSecondary
-                                    font.pixelSize: Theme.fontSizeCaption
-                                    font.family: Theme.fontSans
-                                }
-                                LineTrendChart {
-                                    Layout.fillWidth: true
-                                    Layout.fillHeight: true
-                                    series: page.dayTrendSeries
-                                }
-                            }
-                        }
-                    }
-
-                    // 第二行：模型对比柱状图（token / 调用次数口径切换）
-                    Rectangle {
-                        Layout.fillWidth: true
-                        Layout.preferredHeight: 260
-                        radius: 8
-                        color: Theme.bgPrimary
-                        border.width: 1
-                        border.color: Theme.borderSubtle
-
-                        ColumnLayout {
-                            anchors.fill: parent
-                            anchors.margins: 12
-                            spacing: 6
-
-                            RowLayout {
-                                Layout.fillWidth: true
-                                spacing: 8
-
-                                Text {
-                                    text: qsTr("模型对比")
-                                    color: Theme.textSecondary
-                                    font.pixelSize: Theme.fontSizeCaption
-                                    font.family: Theme.fontSans
-                                }
-                                Item { Layout.fillWidth: true }
-                                AppButton {
-                                    text: qsTr("Token")
-                                    highlighted: page.barMode === "tokens"
-                                    onClicked: page.barMode = "tokens"
-                                    Accessible.name: qsTr("按 Token 对比")
-                                }
-                                AppButton {
-                                    text: qsTr("调用次数")
-                                    highlighted: page.barMode === "calls"
-                                    onClicked: page.barMode = "calls"
-                                    Accessible.name: qsTr("按调用次数对比")
-                                }
-                            }
-                            BarCompareChart {
-                                Layout.fillWidth: true
-                                Layout.fillHeight: true
-                                series: page.barSeries
-                                mode: page.barMode
-                            }
-                        }
-                    }
-                }
-
-                // ── 按模型（保留现有，字段适配新 API）──────────
-                ColumnLayout {
-                    Layout.fillWidth: true
-                    spacing: 6
-
-                    Text {
-                        text: qsTr("按模型")
-                        color: Theme.textSecondary
-                        font.pixelSize: Theme.fontSizeCaption
-                        font.bold: true
-                        font.family: Theme.fontMono
-                    }
-
-                    Text {
-                        visible: (page.stats.byModel || []).length === 0
-                        text: qsTr("该范围内暂无数据")
-                        color: Theme.textSecondary
-                        font.pixelSize: Theme.fontSizeBody
-                        font.family: Theme.fontSans
-                        opacity: 0.7
-                    }
-
-                    Repeater {
-                        model: page.stats.byModel || []
-
-                        delegate: Rectangle {
-                            required property var modelData
-                            Layout.fillWidth: true
-                            implicitHeight: 40
-                            radius: 6
-                            color: Theme.bgPrimary
-                            border.width: 1
-                            border.color: Theme.borderSubtle
-
-                            RowLayout {
-                                anchors.fill: parent
-                                anchors.leftMargin: 12
-                                anchors.rightMargin: 12
-                                spacing: 12
-
-                                Text {
-                                    text: modelData.model && modelData.model.length > 0
-                                          ? modelData.model : qsTr("(未知)")
-                                    textFormat: Text.PlainText   // 模型名（远端可控）防富文本渲染
-                                    color: Theme.textPrimary
-                                    font.pixelSize: Theme.fontSizeBody
-                                    font.family: Theme.fontSans
-                                    elide: Text.ElideRight
-                                    Layout.fillWidth: true
-                                }
-                                Text {
-                                    text: qsTr("%1 次").arg(page.fmtNumber(modelData.calls))
-                                    color: Theme.textSecondary
-                                    font.pixelSize: Theme.fontSizeCaption
-                                    font.family: Theme.fontMono
-                                }
-                                Text {
-                                    text: qsTr("%1 tokens").arg(page.fmtNumber(
-                                        (modelData.inputTokens || 0) + (modelData.outputTokens || 0)))
-                                    color: Theme.textSecondary
-                                    font.pixelSize: Theme.fontSizeCaption
-                                    font.family: Theme.fontMono
-                                }
-                                Text {
-                                    text: page.fmtLatency(modelData.avgLatencyMs)
-                                    color: Theme.textSecondary
-                                    font.pixelSize: Theme.fontSizeCaption
-                                    font.family: Theme.fontMono
-                                }
-                            }
-                        }
-                    }
-                }
-
-                // ── 按天（保留现有，字段适配新 API）────────────
-                ColumnLayout {
-                    Layout.fillWidth: true
-                    spacing: 6
-
-                    Text {
-                        text: qsTr("按天")
-                        color: Theme.textSecondary
-                        font.pixelSize: Theme.fontSizeCaption
-                        font.bold: true
-                        font.family: Theme.fontMono
-                    }
-
-                    Text {
-                        visible: (page.stats.byDay || []).length === 0
-                        text: qsTr("该范围内暂无数据")
-                        color: Theme.textSecondary
-                        font.pixelSize: Theme.fontSizeBody
-                        font.family: Theme.fontSans
-                        opacity: 0.7
-                    }
-
-                    Repeater {
-                        model: page.stats.byDay || []
-
-                        delegate: Rectangle {
-                            required property var modelData
-                            Layout.fillWidth: true
-                            implicitHeight: 32
-                            radius: 6
-                            color: Theme.bgPrimary
-                            border.width: 1
-                            border.color: Theme.borderSubtle
-
-                            RowLayout {
-                                anchors.fill: parent
-                                anchors.leftMargin: 12
-                                anchors.rightMargin: 12
-                                spacing: 12
-
-                                Text {
-                                    text: modelData.day
-                                    color: Theme.textPrimary
-                                    font.pixelSize: Theme.fontSizeCaption
-                                    font.family: Theme.fontMono
-                                    Layout.fillWidth: true
-                                }
-                                Text {
-                                    text: qsTr("%1 次").arg(page.fmtNumber(modelData.calls))
-                                    color: Theme.textSecondary
-                                    font.pixelSize: Theme.fontSizeCaption
-                                    font.family: Theme.fontMono
-                                }
-                                Text {
-                                    text: qsTr("%1 tokens").arg(page.fmtNumber(
-                                        (modelData.inputTokens || 0) + (modelData.outputTokens || 0)))
-                                    color: Theme.textSecondary
-                                    font.pixelSize: Theme.fontSizeCaption
-                                    font.family: Theme.fontMono
-                                }
-                            }
-                        }
-                    }
-                }
-
-                // ── 请求明细（Batch 6 T3：每次 LLM 请求一行，分页加载）──
-                ColumnLayout {
-                    Layout.fillWidth: true
-                    spacing: 6
-
-                    Text {
-                        text: qsTr("请求明细")
-                        color: Theme.textSecondary
-                        font.pixelSize: Theme.fontSizeCaption
-                        font.bold: true
-                        font.family: Theme.fontMono
-                    }
-
-                    Rectangle {
-                        Layout.fillWidth: true
-                        implicitHeight: recordsCol.implicitHeight + 24
-                        radius: 8
-                        color: Theme.bgPrimary
-                        border.width: 1
-                        border.color: Theme.borderSubtle
-
-                        ColumnLayout {
-                            id: recordsCol
-                            anchors.fill: parent
-                            anchors.margins: 12
-                            spacing: 4
-
-                            // 表头（空态隐藏，与费用明细形态一致）
-                            RowLayout {
-                                visible: page.detailRows.length > 0
-                                Layout.fillWidth: true
-                                spacing: 8
-
-                                Text {
-                                    text: qsTr("时间")
-                                    color: Theme.textSecondary
-                                    font.pixelSize: Theme.fontSizeCaption
-                                    font.bold: true
-                                    font.family: Theme.fontSans
-                                    Layout.preferredWidth: 104
-                                }
-                                Text {
-                                    text: qsTr("模型")
-                                    color: Theme.textSecondary
-                                    font.pixelSize: Theme.fontSizeCaption
-                                    font.bold: true
-                                    font.family: Theme.fontSans
-                                    Layout.fillWidth: true
-                                }
-                                Text {
-                                    text: qsTr("总 Token")
-                                    color: Theme.textSecondary
-                                    font.pixelSize: Theme.fontSizeCaption
-                                    font.bold: true
-                                    font.family: Theme.fontSans
-                                    horizontalAlignment: Text.AlignRight
-                                    Layout.preferredWidth: 60
-                                }
-                                Text {
-                                    text: qsTr("输入")
-                                    color: Theme.textSecondary
-                                    font.pixelSize: Theme.fontSizeCaption
-                                    font.bold: true
-                                    font.family: Theme.fontSans
-                                    horizontalAlignment: Text.AlignRight
-                                    Layout.preferredWidth: 58
-                                }
-                                Text {
-                                    text: qsTr("输出")
-                                    color: Theme.textSecondary
-                                    font.pixelSize: Theme.fontSizeCaption
-                                    font.bold: true
-                                    font.family: Theme.fontSans
-                                    horizontalAlignment: Text.AlignRight
-                                    Layout.preferredWidth: 58
-                                }
-                                Text {
-                                    text: qsTr("缓存占比")
-                                    color: Theme.textSecondary
-                                    font.pixelSize: Theme.fontSizeCaption
-                                    font.bold: true
-                                    font.family: Theme.fontSans
-                                    horizontalAlignment: Text.AlignRight
-                                    Layout.preferredWidth: 44
-                                }
-                                Text {
-                                    text: qsTr("延迟")
-                                    color: Theme.textSecondary
-                                    font.pixelSize: Theme.fontSizeCaption
-                                    font.bold: true
-                                    font.family: Theme.fontSans
-                                    horizontalAlignment: Text.AlignRight
-                                    Layout.preferredWidth: 48
-                                }
-                                Text {
-                                    text: qsTr("费用")
-                                    color: Theme.textSecondary
-                                    font.pixelSize: Theme.fontSizeCaption
-                                    font.bold: true
-                                    font.family: Theme.fontSans
-                                    horizontalAlignment: Text.AlignRight
-                                    Layout.preferredWidth: 48
-                                }
-                            }
-
-                            // 空态（docs/25 C5 形态对齐）
-                            Text {
-                                visible: page.detailRows.length === 0
-                                text: qsTr("该范围内暂无数据")
-                                color: Theme.textSecondary
-                                font.pixelSize: Theme.fontSizeBody
-                                font.family: Theme.fontSans
-                                opacity: 0.7
-                            }
-
-                            Repeater {
-                                model: page.detailRows
-
-                                delegate: RowLayout {
-                                    required property var modelData
-                                    Layout.fillWidth: true
-                                    spacing: 8
-
-                                    Text {
-                                        text: modelData.timestamp
-                                              ? Theme.formatDateTime(new Date(modelData.timestamp))
-                                              : qsTr("—")
-                                        color: Theme.textSecondary
-                                        font.pixelSize: Theme.fontSizeCaption
-                                        font.family: Theme.fontMono
-                                        Layout.preferredWidth: 104
-                                    }
-                                    Text {
-                                        text: modelData.model && modelData.model.length > 0
-                                              ? modelData.model : qsTr("(未知)")
-                                        textFormat: Text.PlainText   // 模型名（远端可控）防富文本渲染
-                                        color: Theme.textPrimary
-                                        font.pixelSize: Theme.fontSizeCaption
-                                        font.family: Theme.fontSans
-                                        elide: Text.ElideRight
-                                        Layout.fillWidth: true
-                                    }
-                                    Text {
-                                        text: page.fmtNumber((modelData.inputTokens || 0)
-                                                             + (modelData.outputTokens || 0))
-                                        color: Theme.textSecondary
-                                        font.pixelSize: Theme.fontSizeCaption
-                                        font.family: Theme.fontMono
-                                        horizontalAlignment: Text.AlignRight
-                                        Layout.preferredWidth: 60
-                                    }
-                                    Text {
-                                        text: page.fmtNumber(modelData.inputTokens)
-                                        color: Theme.textSecondary
-                                        font.pixelSize: Theme.fontSizeCaption
-                                        font.family: Theme.fontMono
-                                        horizontalAlignment: Text.AlignRight
-                                        Layout.preferredWidth: 58
-                                    }
-                                    Text {
-                                        text: page.fmtNumber(modelData.outputTokens)
-                                        color: Theme.textSecondary
-                                        font.pixelSize: Theme.fontSizeCaption
-                                        font.family: Theme.fontMono
-                                        horizontalAlignment: Text.AlignRight
-                                        Layout.preferredWidth: 58
-                                    }
-                                    Text {
-                                        text: page.fmtCacheRatio(modelData.cacheHitTokens,
-                                                                 modelData.inputTokens)
-                                        color: Theme.textSecondary
-                                        font.pixelSize: Theme.fontSizeCaption
-                                        font.family: Theme.fontMono
-                                        horizontalAlignment: Text.AlignRight
-                                        Layout.preferredWidth: 44
-                                    }
-                                    Text {
-                                        text: page.fmtLatency(modelData.latencyMs)
-                                        color: Theme.textSecondary
-                                        font.pixelSize: Theme.fontSizeCaption
-                                        font.family: Theme.fontMono
-                                        horizontalAlignment: Text.AlignRight
-                                        Layout.preferredWidth: 48
-                                    }
-                                    Text {
-                                        text: page.fmtCost(modelData.costCents)
-                                        color: Theme.textPrimary
-                                        font.pixelSize: Theme.fontSizeCaption
-                                        font.family: Theme.fontMono
-                                        horizontalAlignment: Text.AlignRight
-                                        Layout.preferredWidth: 48
-                                    }
-                                }
-                            }
-
-                            // 分页脚注：已显示 x / 共 y + 加载更多
-                            RowLayout {
-                                visible: page.detailRows.length > 0
-                                Layout.fillWidth: true
-                                spacing: 8
-                                Layout.topMargin: 4
-
-                                Text {
-                                    text: qsTr("已显示 %1 / 共 %2 条")
-                                        .arg(page.fmtNumber(page.detailRows.length))
-                                        .arg(page.fmtNumber(page.detailTotal))
-                                    color: Theme.textSecondary
-                                    font.pixelSize: Theme.fontSizeCaption
-                                    font.family: Theme.fontSans
-                                }
-                                Item { Layout.fillWidth: true }
-                                AppButton {
-                                    visible: page.detailRows.length < page.detailTotal
-                                    text: qsTr("加载更多")
-                                    onClicked: page.loadDetailPage(false)
-                                    Accessible.name: qsTr("加载更多明细")
-                                }
-                            }
-                        }
-                    }
-                }
 
                 Item { Layout.preferredHeight: 8 }
             }

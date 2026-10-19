@@ -254,6 +254,8 @@ qt_add_qml_module(nexus_ai
         src/ui/components/charts/DonutChart.qml
         src/ui/components/charts/LineTrendChart.qml
         src/ui/components/charts/BarCompareChart.qml
+        # 用量统计页「请求明细」表格（筛选 / 排序 / 拖拽列宽）
+        src/ui/components/UsageDetailTable.qml
         src/ui/panels/ContextPanel.qml
         src/ui/pages/AgentChatPage.qml
         src/ui/pages/GeneralPage.qml

@@ -7,15 +7,14 @@ import NexusAI.ViewModels
 
 // 任务 20：统计页三图表的渲染夹具（由 tests/test_charts_qml.cpp 驱动）。
 //
-// 布局对齐真实页面 src/ui/pages/UsageStatsPage.qml:1098-1203：
-//   第一行 RowLayout（spacing 12）两张并排卡片（DonutChart +
-//   LineTrendChart），第二行 BarCompareChart 整宽卡片；卡片均为
-//   260 高、radius 8、bgPrimary 底、borderSubtle 边、内边距 12、
-//   标题行（fontSizeCaption/textSecondary）+ 图表 fillWidth/fillHeight。
+// 布局对齐真实页面 src/ui/pages/UsageStatsPage.qml「用量图表」区：卡片
+// 均为 bgPrimary 底、borderSubtle 边、radius 8、内边距 12、标题行
+// （fontSizeCaption/textSecondary）+ 图表 fillWidth/fillHeight。
+// 差异：真实页面已改为「一张图一行」（整宽，避免长模型名被挤成省略号），
+// 夹具仍用两行（双图并排 + 整宽柱图）——760px 高的测试窗口装不下三张
+// 260 高的整宽卡片，排布差异不影响图表组件本身的像素断言。
 //   注意：真实页面卡片底色是 Theme.bgPrimary（浅色 #F5F7FA），
 //   不是 bgSecondary（纯白）——夹具以真实页面为准。
-//   第二行卡片的 Token/调用次数切换按钮（AppButton）与渲染无关，
-//   夹具刻意省略以保持最小依赖。
 //
 // 数据是用户真机的真实形态（d30 时间段，总计 1,676,757 token）：
 //   - byModel 7 个模型（step-5-preview 占 48%）
