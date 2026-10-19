@@ -573,6 +573,8 @@ private slots:
     void dangerousToolsNotExposed();
     void safeToolFeedbackLoop();
     void confirmApproveWritesFile();
+    void fileCheckpointRecordedAndUndone();
+    void fileCheckpointsUndoInReverseOrder();
     void confirmDeclineFeedsRejection();
     // 会话权限模式：AutoEdit/FullAccess 审批旁路矩阵
     void autoEditBypassesFileTools();
@@ -750,6 +752,117 @@ void TestAgent::confirmApproveWritesFile() {
     written.close();
     QVERIFY(toolMessageContent(llm.seenMessages.last(), "call_t0")
         .contains("File written successfully"));
+}
+
+void TestAgent::fileCheckpointRecordedAndUndone() {
+    SqliteMemory memory(QStringLiteral(":memory:"));
+    agent.setMemory(&memory);
+    // autoEditSafe: write_file runs without a confirmation round-trip.
+    agent.setPermissionMode(PermissionMode::AutoEdit);
+
+    QTemporaryDir dir(testDirTemplate());
+    QVERIFY(dir.isValid());
+    const QString existingPath = dir.filePath("existing.txt");
+    const QString createdPath = dir.filePath("created.txt");
+    {
+        QFile file(existingPath);
+        QVERIFY(file.open(QIODevice::WriteOnly));
+        QCOMPARE(file.write("before"), qint64(6));
+    }
+
+    QSignalSpy checkpointSpy(&agent, &AIAgent::fileCheckpointsChanged);
+    QSignalSpy ready(&agent, &AIAgent::responseReady);
+
+    llm.script.append(toolResponse("write_file",
+        QJsonObject{{"path", existingPath}, {"content", "after"}}));
+    llm.script.append(textResponse(QStringLiteral("edited")));
+    agent.startTask(QStringLiteral("edit it"));
+    QTRY_COMPARE_WITH_TIMEOUT(ready.count(), 1, 15000);
+
+    llm.script.append(toolResponse("write_file",
+        QJsonObject{{"path", createdPath}, {"content", "created"}}));
+    llm.script.append(textResponse(QStringLiteral("created")));
+    agent.startTask(QStringLiteral("create it"));
+    QTRY_COMPARE_WITH_TIMEOUT(ready.count(), 2, 15000);
+
+    QVERIFY(checkpointSpy.count() >= 2);
+    QJsonArray checkpoints = agent.fileCheckpoints();
+    QCOMPARE(checkpoints.size(), 2);
+    // Newest first: the created file, then the edited one.
+    QJsonObject newest = checkpoints.at(0).toObject();
+    QJsonObject older = checkpoints.at(1).toObject();
+    QCOMPARE(QFileInfo(newest.value("path").toString()).canonicalFilePath(),
+             QFileInfo(createdPath).canonicalFilePath());
+    QVERIFY(!newest.value("existed").toBool());
+    QVERIFY(!newest.value("undone").toBool());
+    QCOMPARE(QFileInfo(older.value("path").toString()).canonicalFilePath(),
+             QFileInfo(existingPath).canonicalFilePath());
+    QVERIFY(older.value("existed").toBool());
+
+    // Undo the creation: the file disappears again.
+    QVERIFY(agent.undoFileCheckpoint(newest.value("id").toInteger()));
+    QVERIFY(!QFile::exists(createdPath));
+    checkpoints = agent.fileCheckpoints();
+    QCOMPARE(checkpoints.size(), 2);
+    QVERIFY(checkpoints.at(0).toObject().value("undone").toBool());
+
+    // Undo the edit: bytes restored exactly.
+    QVERIFY(agent.undoFileCheckpoint(older.value("id").toInteger()));
+    QFile restored(existingPath);
+    QVERIFY(restored.open(QIODevice::ReadOnly));
+    QCOMPARE(restored.readAll(), QByteArray("before"));
+
+    // A second undo is refused (already undone).
+    QVERIFY(!agent.undoFileCheckpoint(older.value("id").toInteger()));
+    agent.setMemory(nullptr);
+}
+
+// G4 acceptance: repeated edits to the same file are undone newest-first,
+// each restoring exactly the bytes that preceded that specific write.
+void TestAgent::fileCheckpointsUndoInReverseOrder() {
+    SqliteMemory memory(QStringLiteral(":memory:"));
+    agent.setMemory(&memory);
+    agent.setPermissionMode(PermissionMode::AutoEdit);
+
+    QTemporaryDir dir(testDirTemplate());
+    QVERIFY(dir.isValid());
+    const QString path = dir.filePath("versioned.txt");
+    {
+        QFile file(path);
+        QVERIFY(file.open(QIODevice::WriteOnly));
+        QCOMPARE(file.write("v0"), qint64(2));
+    }
+
+    QSignalSpy ready(&agent, &AIAgent::responseReady);
+    llm.script.append(toolResponse("edit_file",
+        QJsonObject{{"path", path}, {"old_string", "v0"}, {"new_string", "v1"}}));
+    llm.script.append(textResponse(QStringLiteral("v1")));
+    agent.startTask(QStringLiteral("first edit"));
+    QTRY_COMPARE_WITH_TIMEOUT(ready.count(), 1, 15000);
+
+    llm.script.append(toolResponse("edit_file",
+        QJsonObject{{"path", path}, {"old_string", "v1"}, {"new_string", "v2"}}));
+    llm.script.append(textResponse(QStringLiteral("v2")));
+    agent.startTask(QStringLiteral("second edit"));
+    QTRY_COMPARE_WITH_TIMEOUT(ready.count(), 2, 15000);
+
+    QJsonArray checkpoints = agent.fileCheckpoints();
+    QCOMPARE(checkpoints.size(), 2);
+    const qint64 newest = checkpoints.at(0).toObject().value("id").toInteger();
+    const qint64 older = checkpoints.at(1).toObject().value("id").toInteger();
+
+    auto fileContent = [&path]() {
+        QFile file(path);
+        if (!file.open(QIODevice::ReadOnly)) return QByteArray();
+        return file.readAll();
+    };
+
+    QCOMPARE(fileContent(), QByteArray("v2"));
+    QVERIFY(agent.undoFileCheckpoint(newest));
+    QCOMPARE(fileContent(), QByteArray("v1"));
+    QVERIFY(agent.undoFileCheckpoint(older));
+    QCOMPARE(fileContent(), QByteArray("v0"));
+    agent.setMemory(nullptr);
 }
 
 void TestAgent::confirmDeclineFeedsRejection() {

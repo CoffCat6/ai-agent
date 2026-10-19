@@ -176,6 +176,19 @@ const QVector<SettingsKeyDef>& SettingsSchema::registeredKeys() {
             keyDef(QStringLiteral("webSearch/apiKey"), QString(), SettingValueType::String,
                    {}, true),
             keyDef(QStringLiteral("webSearch/searxBaseUrl"), QString(), SettingValueType::String),
+            // H1: outbound HTTP proxy. Applies to every QNetworkAccessManager
+            // (LLM / embedding / search / MCP HTTP). The auth blob holds
+            // username + password as JSON and is DPAPI-encrypted as a whole,
+            // so neither credential is written in plain text.
+            keyDef(QStringLiteral("network/proxyMode"), QStringLiteral("system"),
+                   SettingValueType::String,
+                   enumValues({QStringLiteral("system"), QStringLiteral("manual"),
+                               QStringLiteral("off")})),
+            keyDef(QStringLiteral("network/proxyHost"), QString(), SettingValueType::String),
+            keyDef(QStringLiteral("network/proxyPort"), 8080, SettingValueType::Int,
+                   intRange(1, 65535)),
+            keyDef(QStringLiteral("network/proxyAuth"), QString(), SettingValueType::String,
+                   {}, true),
             keyDef(QStringLiteral("memory/episodicMemoryEnabled"), false, SettingValueType::Bool),
             // docs/23 G3: audit/token retention in days. 0 = keep forever;
             // capped at 10 years to keep the clamp honest.

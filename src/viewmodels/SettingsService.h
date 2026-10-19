@@ -11,6 +11,10 @@
 // 步数预算的默认值与钳制边界都定义在 core 层（AIAgent），此处引用同一常量，
 // 避免两处各写一个字面量后漂移。
 #include "core/agent/AIAgent.h"
+#include "core/utils/NetworkProxyConfig.h"
+
+class QNetworkAccessManager;
+class QNetworkReply;
 
 namespace NexusAI {
 
@@ -84,6 +88,19 @@ class SettingsService : public QObject {
     // docs/20 §5.3 (C3): self-hosted SearXNG base URL (required when the
     // provider is "searxng"; not a secret, stored in plain text).
     Q_PROPERTY(QString webSearchSearxBaseUrl READ webSearchSearxBaseUrl WRITE setWebSearchSearxBaseUrl NOTIFY webSearchSearxBaseUrlChanged)
+    // H1: outbound HTTP proxy. "system" follows the OS configuration,
+    // "manual" uses host/port + optional credentials, "off" disables proxies.
+    // Credentials are persisted as one DPAPI-encrypted blob; the password
+    // getter is masked (same contract as the API-key properties).
+    Q_PROPERTY(QString proxyMode READ proxyMode WRITE setProxyMode NOTIFY proxyModeChanged FINAL)
+    Q_PROPERTY(QString proxyHost READ proxyHost WRITE setProxyHost NOTIFY proxyHostChanged FINAL)
+    Q_PROPERTY(int proxyPort READ proxyPort WRITE setProxyPort NOTIFY proxyPortChanged FINAL)
+    Q_PROPERTY(QString proxyUsername READ proxyUsername WRITE setProxyUsername NOTIFY proxyAuthChanged FINAL)
+    Q_PROPERTY(QString proxyPassword READ proxyPassword WRITE setProxyPassword NOTIFY proxyAuthChanged FINAL)
+    Q_PROPERTY(bool proxyPasswordSet READ proxyPasswordSet NOTIFY proxyAuthChanged FINAL)
+    Q_PROPERTY(bool proxyTesting READ proxyTesting NOTIFY proxyTestChanged FINAL)
+    Q_PROPERTY(bool proxyTestOk READ proxyTestOk NOTIFY proxyTestChanged FINAL)
+    Q_PROPERTY(QString proxyTestResult READ proxyTestResult NOTIFY proxyTestChanged FINAL)
     // L1: legal search provider keys for the settings UI (single source of
     // truth shared with the backend factory, L4).
     Q_PROPERTY(QStringList webSearchProviders READ webSearchProviders CONSTANT)
@@ -203,6 +220,33 @@ public:
     // docs/20 §5.3 (C3): self-hosted SearXNG base URL ("" = not configured).
     QString webSearchSearxBaseUrl() const { return m_webSearchSearxBaseUrl; }
     void setWebSearchSearxBaseUrl(const QString& url);
+
+    // H1: HTTP proxy settings. proxyPassword() is a masked getter; the real
+    // value stays in C++ (proxyPasswordValue) just like the API keys.
+    QString proxyMode() const { return m_proxyMode; }
+    void setProxyMode(const QString& mode);
+    QString proxyHost() const { return m_proxyHost; }
+    void setProxyHost(const QString& host);
+    int proxyPort() const { return m_proxyPort; }
+    void setProxyPort(int port);
+    QString proxyUsername() const { return m_proxyUsername; }
+    void setProxyUsername(const QString& user);
+    QString proxyPassword() const { return {}; }   // masked getter
+    void setProxyPassword(const QString& password);
+    bool proxyPasswordSet() const { return !m_proxyPassword.isEmpty(); }
+    QString proxyPasswordValue() const { return m_proxyPassword; }
+    // Snapshot consumed by main() to configure the application proxy factory.
+    NetworkProxyConfig proxyConfig() const;
+    bool proxyTesting() const { return m_proxyTesting; }
+    bool proxyTestOk() const { return m_proxyTestOk; }
+    QString proxyTestResult() const { return m_proxyTestResult; }
+    // Probe through the current proxy settings. Any HTTP response counts as
+    // success (the proxy forwarded the request); transport errors are
+    // surfaced verbatim so a dead proxy is readable, not a silent timeout.
+    // QML uses testProxy(); testProxyUrl() exists so tests can point the
+    // probe at a scripted local proxy.
+    Q_INVOKABLE void testProxy();
+    Q_INVOKABLE void testProxyUrl(const QString& url);
 
     // T8 (F4): episodic memory toggle (default off).
     bool episodicMemoryEnabled() const { return m_episodicMemoryEnabled; }
@@ -344,6 +388,16 @@ signals:
     void webSearchProviderChanged();
     void webSearchApiKeyChanged();
     void webSearchSearxBaseUrlChanged();
+    void proxyModeChanged();
+    void proxyHostChanged();
+    void proxyPortChanged();
+    // Username/password/password-set changed together: the auth blob is
+    // persisted as a unit.
+    void proxyAuthChanged();
+    // Any proxy setting changed; main() re-applies the factory snapshot.
+    void proxyConfigChanged();
+    void proxyTestChanged();
+    void proxyTestFinished(bool ok, const QString& message);
     void episodicMemoryEnabledChanged();
     void auditRetentionDaysChanged();
     void tokenRetentionDaysChanged();
@@ -361,6 +415,8 @@ signals:
 
 private:
     bool persistValue(const QString& key, const QVariant& value);
+    bool persistProxyAuth();
+    void finishProxyTest(bool ok, const QString& message);
     void load();
     QVariantList migrateLegacy();
     bool persist();
@@ -388,6 +444,17 @@ private:
     QString m_webSearchProvider;
     QString m_webSearchApiKey;
     QString m_webSearchSearxBaseUrl;   // docs/20 §5.3: SearXNG instance URL
+    // H1: proxy state (auth password is kept decrypted in memory only).
+    QString m_proxyMode{QStringLiteral("system")};
+    QString m_proxyHost;
+    int m_proxyPort{8080};
+    QString m_proxyUsername;
+    QString m_proxyPassword;
+    bool m_proxyTesting{false};
+    bool m_proxyTestOk{false};
+    QString m_proxyTestResult;
+    QNetworkAccessManager* m_proxyProbeNam{nullptr};
+    QNetworkReply* m_proxyProbeReply{nullptr};
     bool m_episodicMemoryEnabled{};
     // docs/23 G3: retention state (0 = keep forever).
     int m_auditRetentionDays{};

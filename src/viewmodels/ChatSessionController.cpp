@@ -94,6 +94,12 @@ void ChatSessionController::connectAgent(AIAgent* agent) {
         emit todoListChanged(m_todoList);
     });
 
+    // G4: recorded on tool completion / after undo; reload the metadata list.
+    connect(agent, &AIAgent::fileCheckpointsChanged, this, [this, agent]() {
+        m_fileCheckpoints = agent->fileCheckpoints().toVariantList();
+        emit fileCheckpointsChanged(m_fileCheckpoints);
+    });
+
     connect(agent, &AIAgent::tokensChanged, this, [this](int usedTokens) {
         m_usedTokens = usedTokens;
         emit tokenUsageChanged();
@@ -121,11 +127,14 @@ void ChatSessionController::connectAgent(AIAgent* agent) {
 
     connect(agent, &AIAgent::episodicChanged, this, &ChatSessionController::episodicChanged);
 
-    connect(agent, &AIAgent::sessionChanged, this, [this](const QString& sessionId) {
+    connect(agent, &AIAgent::sessionChanged, this, [this, agent](const QString& sessionId) {
         if (m_currentSessionId != sessionId) {
             m_currentSessionId = sessionId;
             emit currentSessionIdChanged();
         }
+        // G4: checkpoints are per-session.
+        m_fileCheckpoints = agent->fileCheckpoints().toVariantList();
+        emit fileCheckpointsChanged(m_fileCheckpoints);
         emit sessionHistoryChanged();
     });
 
@@ -141,6 +150,7 @@ void ChatSessionController::connectAgent(AIAgent* agent) {
     m_usedTokens = agent->contextComposition().value("totalTokens").toInt();
     emit tokenUsageChanged();
     m_currentSessionId = agent->currentSessionId();
+    m_fileCheckpoints = agent->fileCheckpoints().toVariantList();
     emit currentSessionIdChanged();
     emit sessionHistoryChanged();
 }
@@ -296,6 +306,10 @@ void ChatSessionController::loadSession(const QString& sessionId) {
     m_agent->resumeSession(sessionId);
     m_finalResponse = m_agent->lastResponse();
     emit responseReady();
+}
+
+bool ChatSessionController::undoFileCheckpoint(qint64 id) {
+    return m_agent && m_agent->undoFileCheckpoint(id);
 }
 
 void ChatSessionController::deleteSession(const QString& sessionId) {

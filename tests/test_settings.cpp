@@ -63,6 +63,11 @@ public:
         webSearchApiKey = s.value("webSearch/apiKey");
         // docs/20 §5.3 (C3): SearXNG 地址键同样进守卫（键登记纪律）。
         searxBaseUrl = s.value("webSearch/searxBaseUrl");
+        // H1: proxy settings (auth is a DPAPI blob).
+        proxyMode = s.value("network/proxyMode");
+        proxyHost = s.value("network/proxyHost");
+        proxyPort = s.value("network/proxyPort");
+        proxyAuth = s.value("network/proxyAuth");
         schemaVersion = s.value("schemaVersion");
         defaultPermissionMode = s.value("agent/defaultPermissionMode");
         readDenyList = s.value("security/readDenyList");
@@ -122,6 +127,14 @@ public:
         if (searxBaseUrl.isValid())
             s.setValue("webSearch/searxBaseUrl", searxBaseUrl);
         else s.remove("webSearch/searxBaseUrl");
+        if (proxyMode.isValid()) s.setValue("network/proxyMode", proxyMode);
+        else s.remove("network/proxyMode");
+        if (proxyHost.isValid()) s.setValue("network/proxyHost", proxyHost);
+        else s.remove("network/proxyHost");
+        if (proxyPort.isValid()) s.setValue("network/proxyPort", proxyPort);
+        else s.remove("network/proxyPort");
+        if (proxyAuth.isValid()) s.setValue("network/proxyAuth", proxyAuth);
+        else s.remove("network/proxyAuth");
         if (schemaVersion.isValid())
             s.setValue("schemaVersion", schemaVersion);
         else s.remove("schemaVersion");
@@ -162,6 +175,10 @@ public:
     QVariant webSearchProvider;
     QVariant webSearchApiKey;
     QVariant searxBaseUrl;
+    QVariant proxyMode;
+    QVariant proxyHost;
+    QVariant proxyPort;
+    QVariant proxyAuth;
     QVariant schemaVersion;
     QVariant defaultPermissionMode;
     QVariant readDenyList;
@@ -674,6 +691,11 @@ private slots:
         svc.setEmbeddingModel(QStringLiteral("bge-m3"));
         svc.setEmbeddingBaseUrl(QStringLiteral("http://localhost:12345"));
         svc.setSystemPromptOverride(QStringLiteral("custom prompt"));
+        svc.setProxyMode(QStringLiteral("manual"));
+        svc.setProxyHost(QStringLiteral("proxy.example"));
+        svc.setProxyPort(3128);
+        svc.setProxyUsername(QStringLiteral("alice"));
+        svc.setProxyPassword(QStringLiteral("secret"));
 
         // docs/17 A6: 安全键已迁"安全"页——通用页重置不得触碰它们。
         svc.setAllowFullDiskRead(true);
@@ -703,6 +725,12 @@ private slots:
                  defaults.value("embedding/baseUrl").toString());
         QCOMPARE(svc.systemPromptOverride(),
                  defaults.value("agent/systemPromptOverride").toString());
+        // H1: the proxy block lives on this page.
+        QCOMPARE(svc.proxyMode(), defaults.value("network/proxyMode").toString());
+        QCOMPARE(svc.proxyHost(), defaults.value("network/proxyHost").toString());
+        QCOMPARE(svc.proxyPort(), defaults.value("network/proxyPort").toInt());
+        QCOMPARE(svc.proxyUsername(), QString());
+        QVERIFY(!svc.proxyPasswordSet());
     }
 
     // 步数预算（agent/maxSteps）：钳制到 [kMinMaxIterations, kIterationCeiling]，
@@ -757,6 +785,9 @@ private slots:
             "logging/level", "logging/directory", "logging/maxFileSizeMb",
             "logging/retentionFiles", "webSearch/provider", "webSearch/apiKey",
             "webSearch/searxBaseUrl", "memory/episodicMemoryEnabled",
+            // H1: proxy settings + encrypted credential blob
+            "network/proxyMode", "network/proxyHost", "network/proxyPort",
+            "network/proxyAuth",
             "memory/auditRetentionDays", "memory/tokenRetentionDays",
             "memory/backupOnStartup", "memory/backupKeepCount",
             "dailyTokenQuota", "dailyCostQuotaCents", "monthlyTokenQuota",
@@ -1366,6 +1397,83 @@ ComboBox {
         }
     }
 
+    // H1: proxy mode/host/port persist; credentials are encrypted as one
+    // blob (never plain text), the password getter is masked, and a new
+    // instance decrypts the round-trip.
+    void proxySettingsPersistAndEncryptAuth() {
+        SettingsGuard guard;
+        {
+            QSettings s("NexusAI", "NexusAI");
+            s.remove("network/proxyMode");
+            s.remove("network/proxyHost");
+            s.remove("network/proxyPort");
+            s.remove("network/proxyAuth");
+        }
+        {
+            SettingsService svc(nullptr);
+            // Defaults preserve the pre-H1 behavior: follow the system proxy.
+            QCOMPARE(svc.proxyMode(), QStringLiteral("system"));
+            QCOMPARE(svc.proxyPort(), 8080);
+            QVERIFY(!svc.proxyPasswordSet());
+
+            svc.setProxyMode(QStringLiteral("manual"));
+            svc.setProxyHost(QStringLiteral("http://proxy.example/"));
+            svc.setProxyPort(3128);
+            svc.setProxyUsername(QStringLiteral("alice"));
+            svc.setProxyPassword(QStringLiteral("p@ss word"));
+
+            QCOMPARE(svc.proxyHost(), QStringLiteral("proxy.example"));
+            QCOMPARE(svc.proxyPort(), 3128);
+            QCOMPARE(svc.proxyUsername(), QStringLiteral("alice"));
+            QCOMPARE(svc.proxyPassword(), QString());   // masked getter
+            QVERIFY(svc.proxyPasswordSet());
+
+            const NetworkProxyConfig config = svc.proxyConfig();
+            QCOMPARE(static_cast<int>(config.mode),
+                     static_cast<int>(NetworkProxyConfig::Mode::Manual));
+            QCOMPARE(config.host, QStringLiteral("proxy.example"));
+            QCOMPARE(config.port, 3128);
+            QCOMPARE(config.username, QStringLiteral("alice"));
+            QCOMPARE(config.password, QStringLiteral("p@ss word"));
+
+#ifdef Q_OS_WIN
+            const QString stored = QSettings("NexusAI", "NexusAI")
+                .value("network/proxyAuth").toString();
+            QVERIFY(stored.startsWith(QStringLiteral("dpapi:v1:")));
+            QVERIFY(!stored.contains(QStringLiteral("alice")));
+            QVERIFY(!stored.contains(QStringLiteral("p@ss")));
+#endif
+
+            // Unknown modes are ignored; the port is clamped by the schema.
+            svc.setProxyMode(QStringLiteral("bogus"));
+            QCOMPARE(svc.proxyMode(), QStringLiteral("manual"));
+            svc.setProxyPort(70000);
+            QCOMPARE(svc.proxyPort(), 65535);
+            svc.setProxyPort(3128);
+        }
+        {
+            SettingsService svc(nullptr);
+            QCOMPARE(svc.proxyMode(), QStringLiteral("manual"));
+            QCOMPARE(svc.proxyHost(), QStringLiteral("proxy.example"));
+            QCOMPARE(svc.proxyPort(), 3128);
+            QCOMPARE(svc.proxyUsername(), QStringLiteral("alice"));
+            QCOMPARE(svc.proxyPasswordValue(), QStringLiteral("p@ss word"));
+
+            svc.setProxyPassword(QString());
+            svc.setProxyUsername(QString());
+            QVERIFY(!svc.proxyPasswordSet());
+            QCOMPARE(svc.proxyUsername(), QString());
+        }
+        {
+            // Clearing both credentials persists an empty blob.
+            SettingsService svc(nullptr);
+            QVERIFY(!svc.proxyPasswordSet());
+            QCOMPARE(svc.proxyUsername(), QString());
+            QCOMPARE(QSettings("NexusAI", "NexusAI")
+                         .value("network/proxyAuth").toString(), QString());
+        }
+    }
+
     // 任务 #20（Mj1）：localOnlyMode 拦截决策（批次三设计决策 2）的纯
     // 函数四组合——main.cpp applyEmbeddingConfig 的后端切换与此同源。
     void embeddingProviderLocalOnlyDecision() {
@@ -1394,6 +1502,10 @@ ComboBox {
         bool foundCloseToTray = false;
         bool foundAutoStart = false;
         bool foundNoticeEnabled = false;
+        // H1: proxy keys must be registered, and the credential blob must be
+        // marked encrypted so settings export can never carry it.
+        bool foundProxyMode = false;
+        bool foundProxyAuth = false;
         for (const auto& k : keys) {
             if (k.key == QStringLiteral("webSearch/provider")) foundProvider = true;
             if (k.key == QStringLiteral("webSearch/apiKey")) {
@@ -1404,6 +1516,16 @@ ComboBox {
                 foundSearxBaseUrl = true;
                 // 地址非密钥：明文存储，不得挂 DPAPI。
                 QVERIFY(!k.encrypted);
+            }
+            if (k.key == QStringLiteral("network/proxyMode")) {
+                foundProxyMode = true;
+                QVERIFY(k.constraint.options.contains(QStringLiteral("system")));
+                QVERIFY(k.constraint.options.contains(QStringLiteral("manual")));
+                QVERIFY(k.constraint.options.contains(QStringLiteral("off")));
+            }
+            if (k.key == QStringLiteral("network/proxyAuth")) {
+                foundProxyAuth = true;
+                QVERIFY(k.encrypted);
             }
             if (k.key == QStringLiteral("prefs/v1/window.closeToTray"))
                 foundCloseToTray = true;
@@ -1419,6 +1541,8 @@ ComboBox {
         QVERIFY(foundApiKey);
         // 键登记纪律（docs/17 B3）：漏登记会让"恢复默认"/账本完整性静默失效。
         QVERIFY2(foundSearxBaseUrl, "webSearch/searxBaseUrl missing from schema");
+        QVERIFY2(foundProxyMode, "network/proxyMode missing from schema");
+        QVERIFY2(foundProxyAuth, "network/proxyAuth missing from schema");
         QVERIFY2(foundCloseToTray, "prefs/v1/window.closeToTray missing from schema");
         QVERIFY2(foundAutoStart, "prefs/v1/general.autoStart missing from schema");
         QVERIFY2(foundNoticeEnabled, "prefs/v1/notice.enabled missing from schema");

@@ -39,6 +39,7 @@
 #include "core/rag/KnowledgeSearchTool.h"
 #include "core/utils/Logger.h"
 #include "core/utils/Activity.h"
+#include "core/utils/NetworkProxyConfig.h"
 #include "core/utils/SamplingParams.h"
 #include "infrastructure/llm/IAIService.h"
 #include "infrastructure/llm/LlmProtocolRegistry.h"
@@ -115,20 +116,10 @@ using namespace NexusAI;
 
 namespace {
 
-// Local backends (Ollama at localhost) must bypass any system proxy:
-// routing loopback traffic through e.g. a local clash instance breaks
-// the connection ("connection refused" after a seconds-long detour).
-class LoopbackProxyFactory : public QNetworkProxyFactory {
-public:
-    QVector<QNetworkProxy> queryProxy(const QNetworkProxyQuery& query) override {
-        const QString host = query.url().host();
-        if (host == QLatin1String("localhost")
-            || host == QLatin1String("127.0.0.1")
-            || host == QLatin1String("::1"))
-            return { QNetworkProxy(QNetworkProxy::NoProxy) };
-        return systemProxyForQuery(query);
-    }
-};
+// Local backends (Ollama at localhost) must bypass any proxy: routing
+// loopback traffic through e.g. a local clash instance breaks the connection
+// ("connection refused" after a seconds-long detour). The factory itself owns
+// that rule as well as the user's system/manual/off choice (H1).
 
 // 一套按协议键索引的 LLM 服务集合：进程级一份 + 每个会话 tab 一份。
 using ProviderSet = QHash<QString, IAIService*>;
@@ -233,7 +224,8 @@ int main(int argc, char *argv[])
     // "style does not support customization" warnings.
     QQuickStyle::setStyle(QStringLiteral("Basic"));
 
-    QNetworkProxyFactory::setApplicationProxyFactory(new LoopbackProxyFactory);
+    auto* proxyFactory = new ConfigurableProxyFactory;
+    QNetworkProxyFactory::setApplicationProxyFactory(proxyFactory);
 
     // FEAT-804: load the matching translation if one is bundled. Missing or
     // untranslated strings fall back to their source text.
@@ -654,12 +646,17 @@ qInfo() << "NexusAI" << app.applicationVersion() << "starting";
         const int usage = usageMemory->pruneUsage();
         const int audit = usageMemory->pruneAudit(settings->auditRetentionDays());
         const int tokens = usageMemory->pruneTokenUsage(settings->tokenRetentionDays());
+        // G4: file checkpoint retention (30 days, independent of session
+        // purge; soft-deleted sessions keep theirs until the hard delete).
+        const int checkpoints = usageMemory->pruneFileCheckpoints(
+            QDateTime::currentDateTime().addDays(-30).toMSecsSinceEpoch());
         const int purged = usageMemory->purgeDeletedSessions(
             QDateTime::currentDateTime().toMSecsSinceEpoch()
                 - kSoftDeleteUndoWindowMs);
-        if (usage + audit + tokens + purged > 0)
+        if (usage + audit + tokens + checkpoints + purged > 0)
             qInfo() << "Pruned rows: usage" << usage << "audit" << audit
-                    << "token_usage" << tokens << "deleted sessions" << purged;
+                    << "token_usage" << tokens << "file_checkpoints" << checkpoints
+                    << "deleted sessions" << purged;
     };
     runPrunes();
 
@@ -708,7 +705,12 @@ qInfo() << "NexusAI" << app.applicationVersion() << "starting";
     // Summaries have a separate provider: changing defaults must never
     // reconfigure a service used by a running conversation.
     const auto applySettings = [settings, agentVM, agent, fetchPtr, webPtr,
+                                proxyFactory,
                                 tabMemories, createWebSearchBackend]() {
+        // H1: one snapshot drives the application-wide proxy factory, so every
+        // QNetworkAccessManager (LLM/embedding/search/MCP/http_fetch) follows
+        // the same mode without per-link wiring.
+        proxyFactory->setConfig(settings->proxyConfig());
         agentVM->updateModelProfiles(settings->profiles(), settings->activeProfile());
         const auto applyRuntime = [settings](AIAgent* target) {
             target->setMaxIterations(settings->maxSteps());
@@ -769,6 +771,9 @@ qInfo() << "NexusAI" << app.applicationVersion() << "starting";
     QObject::connect(settings, &SettingsService::webSearchProviderChanged, &app, [applySettings]() { applySettings(); });
     // docs/20 §5.3 (C3): baseUrl changes rebuild the SearXNG backend too.
     QObject::connect(settings, &SettingsService::webSearchSearxBaseUrlChanged, &app, [applySettings]() { applySettings(); });
+    // H1: proxy changes take effect on the next request (in-flight replies
+    // stay on the connection they already negotiated).
+    QObject::connect(settings, &SettingsService::proxyConfigChanged, &app, [applySettings]() { applySettings(); });
 
     // Batch 22 (F8): user-editable system prompt (empty = built-in)
     const auto applySystemPrompt = [agent, agentVM, settings]() {

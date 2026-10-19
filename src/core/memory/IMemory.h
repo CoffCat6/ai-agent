@@ -1,5 +1,6 @@
 #pragma once
 
+#include <QByteArray>
 #include <QJsonArray>
 #include <QJsonObject>
 #include <QString>
@@ -96,6 +97,44 @@ public:
     }
     virtual bool setSessionArchived(const QString& id, bool archived) {
         Q_UNUSED(id); Q_UNUSED(archived); return false;
+    }
+
+    // G4: workspace file checkpoints. write_file/edit_file hand the original
+    // bytes back to the agent, which persists them here (GUI thread only —
+    // the DB connection is thread-bound). `truncated` means only the path was
+    // recorded (too large / unreadable); such rows are audit-only and cannot
+    // be undone. Returns the new row id (0 = failure).
+    virtual qint64 addFileCheckpoint(const QString& sessionId, const QString& path,
+                                     const QByteArray& beforeContent, bool existed,
+                                     bool truncated, quint64 requestId = 0) {
+        Q_UNUSED(sessionId); Q_UNUSED(path); Q_UNUSED(beforeContent);
+        Q_UNUSED(existed); Q_UNUSED(truncated); Q_UNUSED(requestId);
+        return 0;
+    }
+    // Metadata only (newest first), no file content.
+    virtual QJsonArray listFileCheckpoints(const QString& sessionId, int limit = 200) {
+        Q_UNUSED(sessionId); Q_UNUSED(limit);
+        return {};
+    }
+    // Loads one not-yet-undone checkpoint's content, scoped to its session.
+    virtual bool loadFileCheckpointContent(qint64 id, const QString& sessionId,
+                                           QByteArray* beforeContent, bool* existed,
+                                           bool* truncated, QString* path) {
+        Q_UNUSED(id); Q_UNUSED(sessionId); Q_UNUSED(beforeContent);
+        Q_UNUSED(existed); Q_UNUSED(truncated); Q_UNUSED(path);
+        return false;
+    }
+    // Marks a checkpoint undone and drops its stored content (the row stays
+    // as history). Returns false when the row is unknown/already undone.
+    virtual bool markFileCheckpointUndone(qint64 id, const QString& sessionId,
+                                          qint64 undoneAtMs) {
+        Q_UNUSED(id); Q_UNUSED(sessionId); Q_UNUSED(undoneAtMs);
+        return false;
+    }
+    // Drops checkpoints older than the cutoff (session purge is separate).
+    virtual int pruneFileCheckpoints(qint64 olderThanMs) {
+        Q_UNUSED(olderThanMs);
+        return 0;
     }
 
     // Audit trail for tool activity (optional capability; default no-ops).

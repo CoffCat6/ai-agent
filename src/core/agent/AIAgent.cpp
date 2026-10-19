@@ -11,8 +11,12 @@
 #include "core/utils/SettingsSchema.h"
 
 #include <QDateTime>
+#include <QDir>
+#include <QFile>
+#include <QFileInfo>
 #include <QFutureWatcher>
 #include <QJsonDocument>
+#include <QSaveFile>
 #include <QUuid>
 #include <QSysInfo>
 #include <QtConcurrent/QtConcurrentRun>
@@ -433,6 +437,49 @@ void AIAgent::deleteSession(const QString& sessionId) {
     emit sessionsChanged();
 }
 
+QJsonArray AIAgent::fileCheckpoints() const {
+    if (!m_memory || m_sessionId.isEmpty()) return QJsonArray();
+    return m_memory->listFileCheckpoints(m_sessionId);
+}
+
+bool AIAgent::undoFileCheckpoint(qint64 id) {
+    if (!m_memory || m_sessionId.isEmpty() || m_active || id <= 0) return false;
+
+    QByteArray beforeContent;
+    QString path;
+    bool existed = false;
+    bool truncated = false;
+    if (!m_memory->loadFileCheckpointContent(id, m_sessionId, &beforeContent,
+                                             &existed, &truncated, &path))
+        return false;
+    // Path-only rows (oversized/unreadable original) are audit history; the
+    // UI disables them, and a direct call gets the same refusal.
+    if (truncated || path.isEmpty()) return false;
+
+    if (existed) {
+        QDir().mkpath(QFileInfo(path).absolutePath());
+        QSaveFile out(path);
+        if (!out.open(QIODevice::WriteOnly)) return false;
+        if (out.write(beforeContent) != beforeContent.size()) {
+            out.cancelWriting();
+            return false;
+        }
+        if (!out.commit()) return false;
+    } else {
+        QFile created(path);
+        if (created.exists() && !created.remove()) return false;
+    }
+
+    // The file is restored even if the bookkeeping update fails; log rather
+    // than reporting a misleading failure.
+    if (!m_memory->markFileCheckpointUndone(
+            id, m_sessionId, QDateTime::currentMSecsSinceEpoch())) {
+        qWarning() << "File restored but checkpoint could not be marked undone:" << id;
+    }
+    emit fileCheckpointsChanged();
+    return true;
+}
+
 // docs/23 G7: undo a soft delete — the undo toast routes here.
 bool AIAgent::restoreSession(const QString& sessionId) {
     if (!m_memory || sessionId.isEmpty()) return false;
@@ -647,6 +694,8 @@ void AIAgent::resetSession() {
     if (m_llmService && wasActive) m_llmService->cancel();
 
     m_sessionId.clear();
+    // G4: emit after the id is cleared so listeners read an empty list.
+    emit fileCheckpointsChanged();
     m_messages = QJsonArray();
     m_traceModel = QJsonArray();
     m_nextTraceOrder = 0;
@@ -777,6 +826,7 @@ void AIAgent::resumeSession(const QString& sessionId) {
     setState(AgentState::Idle);
     emit traceChanged();
     emit sessionChanged(m_sessionId);
+    emit fileCheckpointsChanged();
     // 续聊历史本身不重放请求（resume 契约 MEM-701），token_usage 里属于本
     // 会话的历史消耗直接恢复为累计基数，TopBar 从打开会话起就显示完整累计。
     m_sessionTokensUsed = m_memory
@@ -1747,6 +1797,19 @@ void AIAgent::finishToolExecution(const ToolCallInfo& call, const QString& trace
                            auditDetail,
                            m_activeRequestId, m_lastLatencyMs,
                            m_lastTokensUsed, currentModel());
+    }
+
+    // G4: persist the pre-write snapshot captured on the pool thread. This
+    // runs on the GUI thread because the SQLite connection is thread-bound.
+    if (result.success && result.checkpoint.isValid()
+            && m_memory && !m_sessionId.isEmpty()) {
+        if (m_memory->addFileCheckpoint(m_sessionId, result.checkpoint.path,
+                                        result.checkpoint.beforeContent,
+                                        result.checkpoint.existed,
+                                        result.checkpoint.truncated,
+                                        m_activeRequestId) > 0) {
+            emit fileCheckpointsChanged();
+        }
     }
 
     // P5a: todo_write tool updates the agent's task list and notifies the UI.

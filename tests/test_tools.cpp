@@ -254,6 +254,77 @@ private slots:
         QVERIFY2(r.error.contains(QStringLiteral("message")), qPrintable(r.error));
     }
 
+    // ── G4: checkpoint payloads ──
+    void writeFileCapturesCheckpoint() {
+        createFile("existing.txt", "old bytes");
+        auto tool = ToolRegistry::instance().findShared("write_file");
+        QVERIFY(tool);
+        const ToolResult r = tool->execute(
+            {{"path", "existing.txt"}, {"content", "new bytes"}});
+        QVERIFY2(r.success, qPrintable(r.error));
+        QVERIFY(r.checkpoint.isValid());
+        QVERIFY(QFileInfo(r.checkpoint.path).isAbsolute());
+        QCOMPARE(QFileInfo(r.checkpoint.path).fileName(), QStringLiteral("existing.txt"));
+        QVERIFY(r.checkpoint.existed);
+        QVERIFY(!r.checkpoint.truncated);
+        QCOMPARE(r.checkpoint.beforeContent, QByteArray("old bytes"));
+    }
+
+    void writeFileCheckpointMarksNewFile() {
+        auto tool = ToolRegistry::instance().findShared("write_file");
+        QVERIFY(tool);
+        const ToolResult r = tool->execute(
+            {{"path", "created.txt"}, {"content", "hello"}});
+        QVERIFY2(r.success, qPrintable(r.error));
+        QVERIFY(r.checkpoint.isValid());
+        QVERIFY(!r.checkpoint.existed);
+        QVERIFY(!r.checkpoint.truncated);
+        QVERIFY(r.checkpoint.beforeContent.isEmpty());
+    }
+
+    void oversizedOriginalDegradesToPathOnly() {
+        const QByteArray big(1024 * 1024 + 1, 'x');
+        {
+            QFile file(m_tempDir->path() + QStringLiteral("/big.txt"));
+            QVERIFY(file.open(QIODevice::WriteOnly));
+            QCOMPARE(file.write(big), big.size());
+        }
+        auto tool = ToolRegistry::instance().findShared("write_file");
+        QVERIFY(tool);
+        const ToolResult r = tool->execute(
+            {{"path", "big.txt"}, {"content", "replaced"}});
+        QVERIFY2(r.success, qPrintable(r.error));
+        QVERIFY(r.checkpoint.isValid());
+        QVERIFY(r.checkpoint.existed);
+        QVERIFY(r.checkpoint.truncated);
+        QVERIFY(r.checkpoint.beforeContent.isEmpty());
+    }
+
+    void editFileCapturesExactBeforeBytes() {
+        createFile("edit.txt", "hello world");
+        auto tool = ToolRegistry::instance().findShared("edit_file");
+        QVERIFY(tool);
+        const ToolResult r = tool->execute({{"path", "edit.txt"},
+                                            {"old_string", "world"},
+                                            {"new_string", "nexus"}});
+        QVERIFY2(r.success, qPrintable(r.error));
+        QVERIFY(r.checkpoint.isValid());
+        QVERIFY(r.checkpoint.existed);
+        QVERIFY(!r.checkpoint.truncated);
+        QCOMPARE(r.checkpoint.beforeContent, QByteArray("hello world"));
+    }
+
+    void failedEditHasNoCheckpoint() {
+        createFile("edit-fail.txt", "hello");
+        auto tool = ToolRegistry::instance().findShared("edit_file");
+        QVERIFY(tool);
+        const ToolResult r = tool->execute({{"path", "edit-fail.txt"},
+                                            {"old_string", "missing"},
+                                            {"new_string", "x"}});
+        QVERIFY(!r.success);
+        QVERIFY(!r.checkpoint.isValid());
+    }
+
 private:
     std::unique_ptr<QTemporaryDir> m_tempDir;
 

@@ -78,6 +78,9 @@ private slots:
     void loadMessagesKeepsNewest();
     void sessionBookkeepingAndClear();
     void sessionDeleteAndRename();
+    void fileCheckpointLifecycle();
+    void fileCheckpointSessionBudgetDegradesToPathOnly();
+    void fileCheckpointPrunedByAgeAndSessionPurge();
     // docs/23 G1: high-frequency paths stay index-backed; the user_version
     // stamp gates the FTS backfill to the upgrade path.
     void sessionQueriesUseIndexes();
@@ -2294,6 +2297,116 @@ void TestMemory::loadMessagesFailureIsLoggedNotSilent() {
     QVERIFY(db.exec("DROP TABLE messages").isActive());
 
     QCOMPARE(mem.loadMessages(QStringLiteral("s1")).size(), 0);
+}
+
+// G4: checkpoint metadata/content round-trip, session scoping, and undo.
+void TestMemory::fileCheckpointLifecycle() {
+    SqliteMemory mem(QStringLiteral(":memory:"));
+
+    const qint64 id1 = mem.addFileCheckpoint(
+        QStringLiteral("s1"), QStringLiteral("/p/a.txt"),
+        QByteArray("old"), true, false, 42);
+    QVERIFY(id1 > 0);
+    const qint64 id2 = mem.addFileCheckpoint(
+        QStringLiteral("s1"), QStringLiteral("/p/b.txt"),
+        QByteArray(), false, false, 43);
+    QVERIFY(id2 > id1);
+
+    // Newest first, metadata only.
+    const QJsonArray rows = mem.listFileCheckpoints(QStringLiteral("s1"));
+    QCOMPARE(rows.size(), 2);
+    const QJsonObject newest = rows.at(0).toObject();
+    QCOMPARE(newest.value("path").toString(), QStringLiteral("/p/b.txt"));
+    QVERIFY(!newest.value("existed").toBool());
+    QVERIFY(!newest.value("truncated").toBool());
+    QVERIFY(!newest.value("undone").toBool());
+    QCOMPARE(newest.value("requestId").toInt(), 43);
+    QVERIFY(newest.value("byteSize").toInt() == 0);
+
+    QByteArray before;
+    QString path;
+    bool existed = false;
+    bool truncated = true;
+    QVERIFY(mem.loadFileCheckpointContent(id1, QStringLiteral("s1"), &before,
+                                          &existed, &truncated, &path));
+    QCOMPARE(path, QStringLiteral("/p/a.txt"));
+    QCOMPARE(before, QByteArray("old"));
+    QVERIFY(existed);
+    QVERIFY(!truncated);
+
+    // Session scoping: another session cannot read the row.
+    QVERIFY(!mem.loadFileCheckpointContent(id1, QStringLiteral("other"), &before,
+                                           &existed, &truncated, &path));
+
+    QVERIFY(mem.markFileCheckpointUndone(id1, QStringLiteral("s1"),
+                                         QDateTime::currentMSecsSinceEpoch()));
+    QVERIFY(!mem.markFileCheckpointUndone(id1, QStringLiteral("s1"),
+                                          QDateTime::currentMSecsSinceEpoch()));
+    // Undo drops the content (the row stays as history).
+    QVERIFY(!mem.loadFileCheckpointContent(id1, QStringLiteral("s1"), &before,
+                                           &existed, &truncated, &path));
+    const QJsonArray after = mem.listFileCheckpoints(QStringLiteral("s1"));
+    QVERIFY(after.at(1).toObject().value("undone").toBool());
+    QCOMPARE(after.at(1).toObject().value("byteSize").toInt(), 0);
+}
+
+// G4: 30-day age prune and the hard session purge both remove checkpoints;
+// a soft delete keeps them so session undo still has its history.
+void TestMemory::fileCheckpointPrunedByAgeAndSessionPurge() {
+    SqliteMemory mem(QStringLiteral(":memory:"));
+    const qint64 now = QDateTime::currentMSecsSinceEpoch();
+
+    QVERIFY(mem.addFileCheckpoint(QStringLiteral("s1"), QStringLiteral("/p/a"),
+                                  QByteArray("a"), true, false) > 0);
+    QCOMPARE(mem.pruneFileCheckpoints(now - 24 * 60 * 60 * 1000), 0);
+    QCOMPARE(mem.pruneFileCheckpoints(now + 1000), 1);
+    QCOMPARE(mem.listFileCheckpoints(QStringLiteral("s1")).size(), 0);
+
+    mem.beginSession(QStringLiteral("s2"), QStringLiteral("t"));
+    QVERIFY(mem.addFileCheckpoint(QStringLiteral("s2"), QStringLiteral("/p/b"),
+                                  QByteArray("b"), true, false) > 0);
+    mem.deleteSession(QStringLiteral("s2"));
+    // Soft delete (undo window) keeps the checkpoint.
+    QCOMPARE(mem.listFileCheckpoints(QStringLiteral("s2")).size(), 1);
+    QCOMPARE(mem.purgeDeletedSessions(now + 1000), 1);
+    QCOMPARE(mem.listFileCheckpoints(QStringLiteral("s2")).size(), 0);
+}
+
+// G4: once the per-session content budget is exhausted, further captures are
+// recorded as path-only rows (truncated=1) instead of growing the DB without
+// bound. The single-file cap is covered by test_tools.
+void TestMemory::fileCheckpointSessionBudgetDegradesToPathOnly() {
+    SqliteMemory mem(QStringLiteral(":memory:"));
+    const QByteArray megabyte(1024 * 1024, 'x');
+
+    // 32 MiB fits exactly.
+    for (int i = 0; i < 32; ++i) {
+        QVERIFY2(mem.addFileCheckpoint(
+                     QStringLiteral("s-budget"),
+                     QStringLiteral("/p/%1.bin").arg(i), megabyte,
+                     true, false) > 0,
+                 qPrintable(QStringLiteral("row %1").arg(i)));
+    }
+    const qint64 overflow = mem.addFileCheckpoint(
+        QStringLiteral("s-budget"), QStringLiteral("/p/overflow.bin"),
+        megabyte, true, false);
+    QVERIFY(overflow > 0);
+
+    const QJsonArray rows = mem.listFileCheckpoints(QStringLiteral("s-budget"));
+    QCOMPARE(rows.size(), 33);
+    const QJsonObject newest = rows.at(0).toObject();
+    QCOMPARE(newest.value("path").toString(), QStringLiteral("/p/overflow.bin"));
+    QVERIFY(newest.value("truncated").toBool());
+    QCOMPARE(newest.value("byteSize").toInt(), 0);
+
+    QByteArray before;
+    QString path;
+    bool existed = false;
+    bool truncated = false;
+    QVERIFY(mem.loadFileCheckpointContent(overflow, QStringLiteral("s-budget"),
+                                          &before, &existed, &truncated, &path));
+    QVERIFY(truncated);
+    QVERIFY(before.isEmpty());
 }
 
 QTEST_GUILESS_MAIN(TestMemory)

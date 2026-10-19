@@ -13,6 +13,9 @@
 #include <QLoggingCategory>
 #include <QCoreApplication>
 #include <QDir>
+#include <QNetworkAccessManager>
+#include <QNetworkReply>
+#include <QNetworkRequest>
 #include <QUrl>
 #include <QUuid>
 
@@ -394,6 +397,29 @@ void SettingsService::load() {
     m_webSearchSearxBaseUrl = SettingsRepository::value(
         QStringLiteral("webSearch/searxBaseUrl"),
         SettingsSchema::defaultValue(QStringLiteral("webSearch/searxBaseUrl"))).toString().trimmed();
+    // H1: proxy mode/host/port plus the encrypted credential blob. A corrupt
+    // or undecryptable auth blob simply leaves both credential fields empty.
+    m_proxyMode = SettingsRepository::value(QStringLiteral("network/proxyMode"),
+        SettingsSchema::defaultValue(QStringLiteral("network/proxyMode"))).toString();
+    if (!SettingsSchema::options(QStringLiteral("network/proxyMode")).contains(m_proxyMode))
+        m_proxyMode = SettingsSchema::defaultValue(QStringLiteral("network/proxyMode")).toString();
+    m_proxyHost = SettingsRepository::value(QStringLiteral("network/proxyHost"),
+        SettingsSchema::defaultValue(QStringLiteral("network/proxyHost"))).toString().trimmed();
+    m_proxyPort = SettingsSchema::clampInt(QStringLiteral("network/proxyPort"),
+        SettingsRepository::value(QStringLiteral("network/proxyPort"),
+            SettingsSchema::defaultValue(QStringLiteral("network/proxyPort"))).toInt());
+    m_proxyUsername.clear();
+    m_proxyPassword.clear();
+    const QString proxyAuth = unprotectApiKey(SettingsRepository::value(
+        QStringLiteral("network/proxyAuth"),
+        SettingsSchema::defaultValue(QStringLiteral("network/proxyAuth"))).toString());
+    if (!proxyAuth.isEmpty()) {
+        const QJsonDocument doc = QJsonDocument::fromJson(proxyAuth.toUtf8());
+        if (doc.isObject()) {
+            m_proxyUsername = doc.object().value(QStringLiteral("username")).toString();
+            m_proxyPassword = doc.object().value(QStringLiteral("password")).toString();
+        }
+    }
     m_episodicMemoryEnabled = SettingsRepository::value(
         QStringLiteral("memory/episodicMemoryEnabled"),
         SettingsSchema::defaultValue(QStringLiteral("memory/episodicMemoryEnabled"))).toBool();
@@ -1015,6 +1041,198 @@ void SettingsService::setWebSearchSearxBaseUrl(const QString& url) {
     emit webSearchSearxBaseUrlChanged();
 }
 
+// ── H1: outbound HTTP proxy ─────────────────────────────────────────────
+
+namespace {
+// Users paste "http://proxy.example:8080/" as often as a bare host; strip
+// the scheme and trailing slash so QNetworkProxy receives a resolvable host.
+QString normalizedProxyHost(const QString& value) {
+    QString host = value.trimmed();
+    const int scheme = host.indexOf(QLatin1String("://"));
+    if (scheme >= 0) host = host.mid(scheme + 3);
+    while (host.endsWith(QLatin1Char('/'))) host.chop(1);
+    return host.trimmed();
+}
+} // namespace
+
+void SettingsService::setProxyMode(const QString& mode) {
+    if (!SettingsSchema::options(QStringLiteral("network/proxyMode")).contains(mode)
+            || m_proxyMode == mode
+            || !persistValue(QStringLiteral("network/proxyMode"), mode)) return;
+    m_proxyMode = mode;
+    Activity::usage(Activity::Kind::User, QStringLiteral("settings.proxyMode"), mode);
+    emit proxyModeChanged();
+    emit proxyConfigChanged();
+}
+
+void SettingsService::setProxyHost(const QString& host) {
+    const QString normalized = normalizedProxyHost(host);
+    if (m_proxyHost == normalized
+            || !persistValue(QStringLiteral("network/proxyHost"), normalized)) return;
+    m_proxyHost = normalized;
+    Activity::usage(Activity::Kind::User, QStringLiteral("settings.proxyHost"),
+                    normalized.isEmpty() ? QStringLiteral("(cleared)") : normalized);
+    emit proxyHostChanged();
+    emit proxyConfigChanged();
+}
+
+void SettingsService::setProxyPort(int port) {
+    const int clamped = SettingsSchema::clampInt(QStringLiteral("network/proxyPort"), port);
+    if (m_proxyPort == clamped
+            || !persistValue(QStringLiteral("network/proxyPort"), clamped)) return;
+    m_proxyPort = clamped;
+    Activity::usage(Activity::Kind::User, QStringLiteral("settings.proxyPort"),
+                    QString::number(clamped));
+    emit proxyPortChanged();
+    emit proxyConfigChanged();
+}
+
+bool SettingsService::persistProxyAuth() {
+    QString stored;
+    if (!m_proxyUsername.isEmpty() || !m_proxyPassword.isEmpty()) {
+        const QJsonObject auth{
+            {QStringLiteral("username"), m_proxyUsername},
+            {QStringLiteral("password"), m_proxyPassword},
+        };
+        const QString plain = QString::fromUtf8(
+            QJsonDocument(auth).toJson(QJsonDocument::Compact));
+        // Never fall back to plain text: a failed encryption drops the change.
+        stored = protectApiKey(plain);
+        if (stored.isEmpty()) {
+            emit persistenceError(tr("代理认证信息加密失败，未保存更改。"));
+            return false;
+        }
+    }
+    return persistValue(QStringLiteral("network/proxyAuth"), stored);
+}
+
+void SettingsService::setProxyUsername(const QString& user) {
+    const QString trimmed = user.trimmed();
+    if (m_proxyUsername == trimmed) return;
+    const QString previous = m_proxyUsername;
+    m_proxyUsername = trimmed;
+    if (!persistProxyAuth()) {
+        m_proxyUsername = previous;
+        return;
+    }
+    // The auth blob carries a password: record only the fact that it changed.
+    Activity::usage(Activity::Kind::User, QStringLiteral("settings.proxyAuth"),
+                    QStringLiteral("(username updated)"));
+    emit proxyAuthChanged();
+    emit proxyConfigChanged();
+}
+
+void SettingsService::setProxyPassword(const QString& password) {
+    if (m_proxyPassword == password) return;
+    const QString previous = m_proxyPassword;
+    m_proxyPassword = password;
+    if (!persistProxyAuth()) {
+        m_proxyPassword = previous;
+        return;
+    }
+    Activity::usage(Activity::Kind::User, QStringLiteral("settings.proxyAuth"),
+                    password.isEmpty() ? QStringLiteral("(cleared)")
+                                       : QStringLiteral("(password updated)"));
+    emit proxyAuthChanged();
+    emit proxyConfigChanged();
+}
+
+NetworkProxyConfig SettingsService::proxyConfig() const {
+    NetworkProxyConfig config;
+    config.mode = NetworkProxyConfig::modeFromString(m_proxyMode);
+    config.host = m_proxyHost;
+    config.port = m_proxyPort;
+    config.username = m_proxyUsername;
+    config.password = m_proxyPassword;
+    return config;
+}
+
+void SettingsService::finishProxyTest(bool ok, const QString& message) {
+    m_proxyTesting = false;
+    m_proxyTestOk = ok;
+    m_proxyTestResult = message;
+    emit proxyTestChanged();
+    emit proxyTestFinished(ok, message);
+}
+
+void SettingsService::testProxy() {
+    testProxyUrl(QStringLiteral("https://www.example.com/"));
+}
+
+void SettingsService::testProxyUrl(const QString& url) {
+    if (m_proxyTesting) return;
+
+    const QUrl target(url);
+    if (!target.isValid() || target.scheme().isEmpty() || target.host().isEmpty()) {
+        finishProxyTest(false, tr("代理测试失败：测试地址无效。"));
+        return;
+    }
+
+    NetworkProxyConfig config = proxyConfig();
+    if (config.mode == NetworkProxyConfig::Mode::Manual && !config.manualUsable()) {
+        finishProxyTest(false, tr("代理测试失败：请先填写有效的代理地址和端口。"));
+        return;
+    }
+
+    if (!m_proxyProbeNam)
+        m_proxyProbeNam = new QNetworkAccessManager(this);
+
+    QNetworkProxy proxy(QNetworkProxy::DefaultProxy);
+    if (config.mode == NetworkProxyConfig::Mode::Manual) {
+        proxy = QNetworkProxy(QNetworkProxy::HttpProxy, config.host.trimmed(),
+                              static_cast<quint16>(config.port));
+        if (!config.username.isEmpty()) {
+            proxy.setUser(config.username);
+            proxy.setPassword(config.password);
+        }
+    } else if (config.mode == NetworkProxyConfig::Mode::Off) {
+        proxy = QNetworkProxy(QNetworkProxy::NoProxy);
+    }
+    // Same loopback rule as the application factory.
+    if (ConfigurableProxyFactory::isLoopbackHost(target.host()))
+        proxy = QNetworkProxy(QNetworkProxy::NoProxy);
+    m_proxyProbeNam->setProxy(proxy);
+
+    m_proxyTesting = true;
+    m_proxyTestOk = false;
+    m_proxyTestResult = tr("正在测试代理…");
+    emit proxyTestChanged();
+
+    QNetworkRequest request(target);
+    // A dead proxy must not look like a hang: bound the probe and surface
+    // the transport error verbatim.
+    request.setTransferTimeout(10000);
+    request.setAttribute(QNetworkRequest::RedirectPolicyAttribute,
+                         QNetworkRequest::NoLessSafeRedirectPolicy);
+
+    m_proxyProbeReply = m_proxyProbeNam->get(request);
+    QNetworkReply* reply = m_proxyProbeReply;
+    connect(reply, &QNetworkReply::finished, this, [this, reply]() {
+        if (reply != m_proxyProbeReply) {
+            reply->deleteLater();
+            return;
+        }
+        m_proxyProbeReply = nullptr;
+        const QNetworkReply::NetworkError error = reply->error();
+        const QString errorText = reply->errorString();
+        const int status = reply->attribute(
+            QNetworkRequest::HttpStatusCodeAttribute).toInt();
+        reply->deleteLater();
+
+        if (error != QNetworkReply::NoError) {
+            finishProxyTest(false, tr("代理测试失败：%1").arg(errorText));
+            return;
+        }
+        // Any HTTP status proves the proxy forwarded the request (a captive
+        // portal or an API 401 is still a working transport).
+        if (status <= 0) {
+            finishProxyTest(false, tr("代理测试失败：未收到任何 HTTP 响应。"));
+            return;
+        }
+        finishProxyTest(true, tr("代理连接正常（HTTP %1）。").arg(status));
+    });
+}
+
 // T8 (F4): episodic memory toggle - same 5-step pattern as localOnlyMode.
 void SettingsService::setEpisodicMemoryEnabled(bool enabled) {
     if (m_episodicMemoryEnabled == enabled
@@ -1128,6 +1346,12 @@ void SettingsService::resetGeneralToDefaults() {
     setEmbeddingBaseUrl(SettingsSchema::defaultValue(QStringLiteral("embedding/baseUrl")).toString());
     setSystemPromptOverride(SettingsSchema::defaultValue(
         QStringLiteral("agent/systemPromptOverride")).toString());
+    // H1: the proxy block lives on this page, so the page-level reset owns it.
+    setProxyMode(SettingsSchema::defaultValue(QStringLiteral("network/proxyMode")).toString());
+    setProxyHost(SettingsSchema::defaultValue(QStringLiteral("network/proxyHost")).toString());
+    setProxyPort(SettingsSchema::defaultValue(QStringLiteral("network/proxyPort")).toInt());
+    setProxyUsername(QString());
+    setProxyPassword(QString());
 }
 
 void SettingsService::setDefaultPermissionMode(const QString& v) {

@@ -99,6 +99,19 @@ public:
     int purgeDeletedSessions(qint64 deletedBefore) override;
     void renameSession(const QString& sessionId, const QString& title) override;
 
+    // G4: file checkpoints (see IMemory.h). Per-session stored content is
+    // capped; over-budget rows degrade to path-only (truncated=1).
+    qint64 addFileCheckpoint(const QString& sessionId, const QString& path,
+                             const QByteArray& beforeContent, bool existed,
+                             bool truncated, quint64 requestId = 0) override;
+    QJsonArray listFileCheckpoints(const QString& sessionId, int limit = 200) override;
+    bool loadFileCheckpointContent(qint64 id, const QString& sessionId,
+                                   QByteArray* beforeContent, bool* existed,
+                                   bool* truncated, QString* path) override;
+    bool markFileCheckpointUndone(qint64 id, const QString& sessionId,
+                                  qint64 undoneAtMs) override;
+    int pruneFileCheckpoints(qint64 olderThanMs) override;
+
     // docs/17 A0: 项目级会话。projects 表 + sessions.project_id（NULL=本地）。
     // 删除项目时会话保留（project_id 置 NULL），不级联删除。
     QString createProject(const QString& name, const QString& rootPath) override;

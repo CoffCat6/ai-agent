@@ -92,6 +92,36 @@ constexpr int kMaxOutputChars = 8000;
 // docs/24 H3: pre-read refusal bound for read_file (bytes, checked before
 // readAll — the character cap only applies to the model-facing output).
 constexpr qint64 kMaxReadFileBytes = 8 * 1024 * 1024;
+// G4: per-file capture cap for undo. Larger files are recorded as path-only
+// (truncated) instead of bloating the session checkpoint budget.
+constexpr qint64 kMaxCheckpointCaptureBytes = 1024 * 1024;
+
+// Must run before the mutating write. Unreadable/oversized originals degrade
+// to a path-only checkpoint rather than blocking the tool.
+static FileCheckpoint captureFileCheckpoint(const QString& path) {
+    FileCheckpoint checkpoint;
+    checkpoint.path = path;
+    const QFileInfo info(path);
+    checkpoint.existed = info.exists();
+    if (!checkpoint.existed) return checkpoint;
+
+    if (!info.isFile() || info.size() > kMaxCheckpointCaptureBytes) {
+        checkpoint.truncated = true;
+        return checkpoint;
+    }
+
+    QFile file(path);
+    if (!file.open(QIODevice::ReadOnly)) {
+        checkpoint.truncated = true;
+        return checkpoint;
+    }
+    checkpoint.beforeContent = file.readAll();
+    if (checkpoint.beforeContent.size() > kMaxCheckpointCaptureBytes) {
+        checkpoint.beforeContent.clear();
+        checkpoint.truncated = true;
+    }
+    return checkpoint;
+}
 
 QString truncateOutput(const QString& text, int maxChars) {
     if (text.size() <= maxChars) return text;
@@ -231,6 +261,9 @@ public:
                 .arg(content.size()).arg(kMaxWriteFileBytes));
 
         const QByteArray bytes = content.toUtf8();
+        // G4: snapshot before QSaveFile replaces the target. On a fresh file
+        // this records existed=false, so undo removes the file again.
+        const FileCheckpoint checkpoint = captureFileCheckpoint(path);
         QSaveFile out(path);
         if (!out.open(QIODevice::WriteOnly))
             return ToolResult::fail("Cannot open file for writing: " + out.errorString());
@@ -241,8 +274,11 @@ public:
         if (!out.commit())
             return ToolResult::fail("Failed to commit atomic write: " + out.errorString());
 
-        return ToolResult::ok(QStringLiteral("File written successfully: %1 (%2 bytes)")
-                                  .arg(path).arg(bytes.size()));
+        ToolResult result = ToolResult::ok(
+            QStringLiteral("File written successfully: %1 (%2 bytes)")
+                .arg(path).arg(bytes.size()));
+        result.checkpoint = checkpoint;
+        return result;
     }
 };
 
@@ -365,6 +401,16 @@ public:
         // renames over the target on commit() (same pattern as
         // AgentViewModel::exportSession).
         const QByteArray bytes = updated.toUtf8();
+        // G4: `content` is the exact pre-edit text already read above.
+        FileCheckpoint checkpoint;
+        checkpoint.path = path;
+        checkpoint.existed = true;
+        const QByteArray beforeBytes = content.toUtf8();
+        if (beforeBytes.size() > kMaxCheckpointCaptureBytes) {
+            checkpoint.truncated = true;
+        } else {
+            checkpoint.beforeContent = beforeBytes;
+        }
         QSaveFile out(path);
         if (!out.open(QIODevice::WriteOnly))
             return ToolResult::fail("Cannot open file for writing: " + out.errorString());
@@ -375,9 +421,12 @@ public:
         if (!out.commit())
             return ToolResult::fail("Failed to commit atomic write: " + out.errorString());
 
-        return ToolResult::ok(QStringLiteral("Replaced %1 occurrence%2; file now %3 bytes")
-                                  .arg(count).arg(count == 1 ? QString() : QStringLiteral("s"))
-                                  .arg(bytes.size()));
+        ToolResult result = ToolResult::ok(
+            QStringLiteral("Replaced %1 occurrence%2; file now %3 bytes")
+                .arg(count).arg(count == 1 ? QString() : QStringLiteral("s"))
+                .arg(bytes.size()));
+        result.checkpoint = checkpoint;
+        return result;
     }
 };
 

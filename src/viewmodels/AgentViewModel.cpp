@@ -348,6 +348,12 @@ ChatSessionController* AgentViewModel::ensureTab() {
         m_todoList = todos;
         emit todoListChanged();
     });
+    connect(controller, &ChatSessionController::fileCheckpointsChanged, this,
+            [this, controller](const QVariantList& checkpoints) {
+        if (controller != active()) return;
+        m_fileCheckpoints = checkpoints;
+        emit fileCheckpointsChanged();
+    });
     connect(controller, &ChatSessionController::episodicChanged,
             this, &AgentViewModel::episodicChanged);
     // Session history is shared (every tab agent reads the same database).
@@ -367,6 +373,12 @@ ChatSessionController* AgentViewModel::ensureTab() {
     // (no-op for ConfirmChanges; also covers the initial tab created
     // before main.cpp injected the setting).
     controller->applyDefaultPermissionMode(m_defaultPermissionMode);
+
+    // The first tab is active implicitly (m_activeTab == -1 -> last).
+    if (controller == active()) {
+        m_fileCheckpoints = controller->fileCheckpoints();
+        emit fileCheckpointsChanged();
+    }
 
     emit tabsChanged();
     return controller;
@@ -432,6 +444,8 @@ void AgentViewModel::activateTab(int index) {
     emit permissionModeChanged();
     m_todoList = active()->todoList();
     emit todoListChanged();
+    m_fileCheckpoints = active()->fileCheckpoints();
+    emit fileCheckpointsChanged();
     emit activeTabChanged();
     emit tabsChanged();
     // 沙箱镜像随活动标签走；派生值确实变了才通知。
@@ -465,6 +479,8 @@ void AgentViewModel::closeTab(int index) {
     emit currentSessionIdChanged();
     m_todoList = active()->todoList();
     emit todoListChanged();
+    m_fileCheckpoints = active()->fileCheckpoints();
+    emit fileCheckpointsChanged();
     emit activeTabChanged();
     emit tabsChanged();
     refreshSessions();
@@ -723,6 +739,15 @@ QVariantList AgentViewModel::inspectFileReferences(const QString& text) const {
         });
     }
     return out;
+}
+
+bool AgentViewModel::undoFileCheckpoint(qint64 id) {
+    if (!active() || !active()->undoFileCheckpoint(id)) return false;
+    // The agent emits fileCheckpointsChanged synchronously, which refreshes
+    // this facade; keep a direct read for the return contract's immediacy.
+    m_fileCheckpoints = active()->fileCheckpoints();
+    emit fileCheckpointsChanged();
+    return true;
 }
 
 // The scan runs off the GUI thread; a generation counter drops results that

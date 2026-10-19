@@ -1,11 +1,27 @@
 #pragma once
 
+#include <QByteArray>
 #include <QJsonObject>
 #include <QString>
 #include <atomic>
 #include <memory>
 
 namespace NexusAI {
+
+// G4: original file content captured by a mutating tool before it writes.
+// The tool runs on a pool thread, so the payload travels back with the
+// ToolResult and the agent (GUI thread) persists it - QSqlDatabase
+// connections are thread-bound and must not be touched here.
+struct FileCheckpoint {
+    QString path;
+    QByteArray beforeContent;
+    bool existed{false};
+    // Content could not be captured (over the per-file cap or unreadable):
+    // the row is still useful as an audit trail but cannot be undone.
+    bool truncated{false};
+
+    bool isValid() const { return !path.isEmpty(); }
+};
 
 // Tool safety level - determines execution policy
 enum class ToolLevel {
@@ -36,6 +52,8 @@ struct ToolResult {
     bool success{false};
     QString output;
     QString error;
+    // G4: set only by write_file/edit_file after a successful mutation.
+    FileCheckpoint checkpoint;
 
     static ToolResult ok(const QString& out) {
         return {true, out, {}};

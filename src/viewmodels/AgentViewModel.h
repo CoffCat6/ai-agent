@@ -130,6 +130,8 @@ class AgentViewModel : public QObject {
 
     // P5a: task list managed by the todo_write tool (active tab).
     Q_PROPERTY(QVariantList todoList READ todoList NOTIFY todoListChanged FINAL)
+    // G4: files the active session changed (newest first).
+    Q_PROPERTY(QVariantList fileCheckpoints READ fileCheckpoints NOTIFY fileCheckpointsChanged FINAL)
 
     // ── Knowledge Base ────────────────────────────────
     Q_PROPERTY(QVariantList knowledgeDocuments READ knowledgeDocuments NOTIFY knowledgeChanged FINAL)
@@ -326,6 +328,7 @@ public:
     // Tool registry
     QVariantList toolRegistryModel() const { return m_toolRegistryModel; }
     QVariantList todoList() const { return m_todoList; }
+    QVariantList fileCheckpoints() const { return m_fileCheckpoints; }
 
     // Knowledge base
     QVariantList knowledgeDocuments() const { return m_knowledgeDocuments; }
@@ -512,6 +515,9 @@ public:
     // metaobject method indices of existing Q_INVOKABLEs (QML AOT caches embed
     // those indices and are not invalidated by header-only changes).
     Q_INVOKABLE QVariantList inspectFileReferences(const QString& text) const;
+    // G4: undo the active session's most recent (or a selected) file change.
+    // Declared last for the same AOT-index reason as inspectFileReferences.
+    Q_INVOKABLE bool undoFileCheckpoint(qint64 id);
 
 signals:
     void stateChanged();
@@ -558,6 +564,7 @@ signals:
     void toolConfirmRequired(const QString& id, const QString& name, const QVariantMap& args, const QString& preview);
     void toolRegistryModelChanged();
     void todoListChanged();
+    void fileCheckpointsChanged();
     void episodicChanged();
     void errorOccurred(const QString& error);
     // Non-error user feedback (import finished, etc.)
@@ -699,6 +706,7 @@ private:
     // ── Tool Registry ──────────────────────────────────
     QVariantList m_toolRegistryModel;
     QVariantList m_todoList;
+    QVariantList m_fileCheckpoints;
 
     // ── Knowledge Base ────────────────────────────────
     QVariantList m_knowledgeDocuments;

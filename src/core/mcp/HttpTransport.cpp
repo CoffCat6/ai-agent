@@ -66,6 +66,13 @@ void HttpTransport::onReplyFinished(QNetworkReply* reply,
 
     const int status =
         reply->attribute(QNetworkRequest::HttpStatusCodeAttribute).toInt();
+    // H1: status 0 with a transport error (DNS / proxy refused / TLS) used to
+    // surface as "MCP HTTP error 0". Keep the server error text readable.
+    if (status <= 0 && reply->error() != QNetworkReply::NoError) {
+        emit errorOccurred(QStringLiteral("MCP HTTP transport error: %1")
+                               .arg(reply->errorString()));
+        return;
+    }
     if (status >= 400) {
         emit errorOccurred(QStringLiteral("MCP HTTP error %1").arg(status));
         return;

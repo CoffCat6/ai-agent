@@ -76,6 +76,8 @@ add_library(nexus_core STATIC
     src/core/utils/AttachmentClassifier.cpp
     src/core/utils/ProjectFileIndex.h
     src/core/utils/ProjectFileIndex.cpp
+    src/core/utils/NetworkProxyConfig.h
+    src/core/utils/NetworkProxyConfig.cpp
     src/core/mcp/McpTransport.h
     src/core/mcp/McpTransport.cpp
     src/core/mcp/StdioTransport.h
@@ -262,6 +264,8 @@ qt_add_qml_module(nexus_ai
         src/ui/components/TodoListPanel.qml
         # G2: '@' reference status chips (fed by AgentVM.inspectFileReferences)
         src/ui/components/ReferenceChipRow.qml
+        # G4: session file checkpoints (fed by AgentVM.fileCheckpoints)
+        src/ui/components/FileChangesPanel.qml
         # 批次六 T2（docs/16 §8）：QML Canvas 自绘图表组件库（禁引 Qt Charts）。
         # QTP0004 NEW：charts/ 子目录文件平铺注册进 NexusAI 模块。
         src/ui/components/charts/DonutChart.qml

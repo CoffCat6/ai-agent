@@ -456,6 +456,26 @@ void SqliteMemory::createTables() {
                    "ON trace_nodes(session_id, node_order)",
             "create trace_nodes index");
 
+    // G4: pre-write snapshots for write_file/edit_file. Content is dropped on
+    // undo and on retention purge; `truncated=1` rows are audit-only.
+    execDdl(query, R"(
+        CREATE TABLE IF NOT EXISTS file_checkpoints (
+            id INTEGER PRIMARY KEY AUTOINCREMENT,
+            session_id TEXT NOT NULL,
+            path TEXT NOT NULL,
+            before_content BLOB,
+            existed INTEGER NOT NULL DEFAULT 1,
+            truncated INTEGER NOT NULL DEFAULT 0,
+            byte_size INTEGER NOT NULL DEFAULT 0,
+            request_id INTEGER NOT NULL DEFAULT 0,
+            created_at INTEGER NOT NULL,
+            undone_at INTEGER
+        )
+    )", "create file_checkpoints table");
+    execDdl(query, "CREATE INDEX IF NOT EXISTS idx_file_checkpoints_session "
+                   "ON file_checkpoints(session_id, created_at DESC, id DESC)",
+            "create file_checkpoints index");
+
     // Cross-session usage trail (user operations / network outcomes). New
     // table — no migration needed; retention is enforced by pruneUsage.
     execDdl(query, R"(
@@ -1852,6 +1872,12 @@ void SqliteMemory::clear(const QString& sessionId) {
             ok = execDelete("clear trace nodes");
         }
 
+        if (ok) {
+            query.prepare("DELETE FROM file_checkpoints WHERE session_id = ?");
+            query.addBindValue(sessionId);
+            ok = execDelete("clear file checkpoints");
+        }
+
         if (ok && m_db.commit()) return;
         qWarning() << "clear failed; rolling back:" << query.lastError().text();
         m_db.rollback();
@@ -1869,6 +1895,10 @@ void SqliteMemory::clear(const QString& sessionId) {
     query.prepare("DELETE FROM trace_nodes WHERE session_id = ?");
     query.addBindValue(sessionId);
     execDelete("clear trace nodes");
+
+    query.prepare("DELETE FROM file_checkpoints WHERE session_id = ?");
+    query.addBindValue(sessionId);
+    execDelete("clear file checkpoints");
 }
 
 void SqliteMemory::beginSession(const QString& sessionId, const QString& title) {
@@ -2099,7 +2129,136 @@ bool SqliteMemory::hardDeleteSessionRows(const QString& sessionId) {
     query.prepare("DELETE FROM trace_nodes WHERE session_id = ?");
     query.addBindValue(sessionId);
     execDelete("delete session trace nodes");
+
+    query.prepare("DELETE FROM file_checkpoints WHERE session_id = ?");
+    query.addBindValue(sessionId);
+    execDelete("delete session file checkpoints");
     return ok;
+}
+
+// ── G4: file checkpoints ──────────────────────────────────
+
+namespace {
+// Total pre-edit content stored per session (sum of byte_size). Beyond this
+// the row still records the path/request but cannot be undone.
+constexpr qint64 kMaxSessionCheckpointBytes = 32 * 1024 * 1024;
+} // namespace
+
+qint64 SqliteMemory::addFileCheckpoint(const QString& sessionId, const QString& path,
+                                       const QByteArray& beforeContent, bool existed,
+                                       bool truncated, quint64 requestId) {
+    if (sessionId.isEmpty() || path.isEmpty()) return 0;
+
+    QByteArray payload = truncated ? QByteArray() : beforeContent;
+    bool pathOnly = truncated;
+    if (!payload.isEmpty()) {
+        QSqlQuery sum(m_db);
+        sum.prepare("SELECT COALESCE(SUM(byte_size), 0) FROM file_checkpoints "
+                    "WHERE session_id = ?");
+        sum.addBindValue(sessionId);
+        if (sum.exec() && sum.next()) {
+            const qint64 used = sum.value(0).toLongLong();
+            if (used + payload.size() > kMaxSessionCheckpointBytes) {
+                payload.clear();
+                pathOnly = true;
+            }
+        }
+    }
+
+    QSqlQuery query(m_db);
+    query.prepare("INSERT INTO file_checkpoints "
+                  "(session_id, path, before_content, existed, truncated, "
+                  " byte_size, request_id, created_at) "
+                  "VALUES (?, ?, ?, ?, ?, ?, ?, ?)");
+    query.addBindValue(sessionId);
+    query.addBindValue(path);
+    query.addBindValue(payload);
+    query.addBindValue(existed ? 1 : 0);
+    query.addBindValue(pathOnly ? 1 : 0);
+    query.addBindValue(static_cast<qint64>(payload.size()));
+    query.addBindValue(static_cast<qint64>(requestId));
+    query.addBindValue(QDateTime::currentMSecsSinceEpoch());
+    if (!query.exec()) {
+        qWarning() << "Failed to save file checkpoint:" << query.lastError().text();
+        return 0;
+    }
+    return query.lastInsertId().toLongLong();
+}
+
+QJsonArray SqliteMemory::listFileCheckpoints(const QString& sessionId, int limit) {
+    QJsonArray rows;
+    if (sessionId.isEmpty()) return rows;
+
+    QSqlQuery query(m_db);
+    query.prepare("SELECT id, path, existed, truncated, byte_size, request_id, "
+                  "created_at, undone_at FROM file_checkpoints "
+                  "WHERE session_id = ? ORDER BY created_at DESC, id DESC LIMIT ?");
+    query.addBindValue(sessionId);
+    query.addBindValue(qBound(1, limit, 500));
+    if (!query.exec()) {
+        qWarning() << "Failed to list file checkpoints:" << query.lastError().text();
+        return rows;
+    }
+    while (query.next()) {
+        QJsonObject row;
+        row["id"] = query.value(0).toLongLong();
+        row["path"] = query.value(1).toString();
+        row["existed"] = query.value(2).toInt() != 0;
+        row["truncated"] = query.value(3).toInt() != 0;
+        row["byteSize"] = query.value(4).toLongLong();
+        row["requestId"] = query.value(5).toLongLong();
+        row["createdAt"] = query.value(6).toLongLong();
+        const QVariant undone = query.value(7);
+        row["undone"] = !undone.isNull();
+        if (!undone.isNull()) row["undoneAt"] = undone.toLongLong();
+        rows.append(row);
+    }
+    return rows;
+}
+
+bool SqliteMemory::loadFileCheckpointContent(qint64 id, const QString& sessionId,
+                                             QByteArray* beforeContent, bool* existed,
+                                             bool* truncated, QString* path) {
+    if (sessionId.isEmpty()) return false;
+    QSqlQuery query(m_db);
+    query.prepare("SELECT path, before_content, existed, truncated "
+                  "FROM file_checkpoints WHERE id = ? AND session_id = ? "
+                  "AND undone_at IS NULL");
+    query.addBindValue(id);
+    query.addBindValue(sessionId);
+    if (!query.exec() || !query.next()) return false;
+
+    if (path) *path = query.value(0).toString();
+    if (beforeContent) *beforeContent = query.value(1).toByteArray();
+    if (existed) *existed = query.value(2).toInt() != 0;
+    if (truncated) *truncated = query.value(3).toInt() != 0;
+    return true;
+}
+
+bool SqliteMemory::markFileCheckpointUndone(qint64 id, const QString& sessionId,
+                                            qint64 undoneAtMs) {
+    QSqlQuery query(m_db);
+    query.prepare("UPDATE file_checkpoints SET undone_at = ?, before_content = X'', "
+                  "byte_size = 0 WHERE id = ? AND session_id = ? AND undone_at IS NULL");
+    query.addBindValue(undoneAtMs);
+    query.addBindValue(id);
+    query.addBindValue(sessionId);
+    if (!query.exec()) {
+        qWarning() << "Failed to mark file checkpoint undone:" << query.lastError().text();
+        return false;
+    }
+    return query.numRowsAffected() == 1;
+}
+
+int SqliteMemory::pruneFileCheckpoints(qint64 olderThanMs) {
+    QSqlQuery query(m_db);
+    query.prepare("DELETE FROM file_checkpoints WHERE created_at < ?");
+    query.addBindValue(olderThanMs);
+    if (!query.exec()) {
+        qWarning() << "Failed to prune file checkpoints:" << query.lastError().text();
+        return 0;
+    }
+    return query.numRowsAffected();
 }
 
 // ── Trace view persistence ───────────────────────────────

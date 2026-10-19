@@ -55,6 +55,14 @@ target_link_libraries(test_agent PRIVATE
 target_compile_definitions(test_agent PRIVATE NEXUSAI_TESTING)
 add_test(NAME test_agent COMMAND test_agent)
 
+# H1: proxy factory modes, real routing through a local HTTP proxy, readable
+# failure for a dead proxy, and the SettingsService probe behind the UI button.
+add_executable(test_network_proxy test_network_proxy.cpp)
+target_link_libraries(test_network_proxy PRIVATE
+    nexus_core nexus_infra nexus_viewmodels Qt6::Test)
+target_compile_definitions(test_network_proxy PRIVATE NEXUSAI_TESTING)
+add_test(NAME test_network_proxy COMMAND test_network_proxy)
+
 # Provider lifecycle tests drive real HTTP through a scripted loopback server
 add_executable(test_provider_lifecycle test_provider_lifecycle.cpp)
 target_link_libraries(test_provider_lifecycle PRIVATE
@@ -265,6 +273,21 @@ add_test(NAME test_reference_row_qml
     COMMAND ${CMAKE_COMMAND} -E env
         "QT_QPA_PLATFORM_PLUGIN_PATH=${QT6_INSTALL_PREFIX}/${QT6_INSTALL_PLUGINS}/platforms"
         $<TARGET_FILE:test_reference_row_qml> -platform offscreen)
+
+# G4: FileChangesPanel 渲染/状态回归（空态不占位、行状态映射、折叠、像素级
+# 非空白）。与 test_todo_qml 同一套文件系统副本 + offscreen 方案。
+add_executable(test_file_changes_qml test_file_changes_qml.cpp)
+target_link_libraries(test_file_changes_qml PRIVATE
+    nexus_core nexus_infra nexus_viewmodels nexus_viewmodelsplugin
+    Qt6::Test Qt6::Qml Qt6::Quick)
+target_compile_definitions(test_file_changes_qml PRIVATE
+    NEXUS_TEST_QML_DIR="${CMAKE_CURRENT_SOURCE_DIR}/qml"
+    NEXUS_BUILD_DIR="${CMAKE_BINARY_DIR}")
+add_dependencies(test_file_changes_qml nexus_ai)
+add_test(NAME test_file_changes_qml
+    COMMAND ${CMAKE_COMMAND} -E env
+        "QT_QPA_PLATFORM_PLUGIN_PATH=${QT6_INSTALL_PREFIX}/${QT6_INSTALL_PLUGINS}/platforms"
+        $<TARGET_FILE:test_file_changes_qml> -platform offscreen)
 
 # G2: '@' completion keyboard/mouse interaction. Real QTest key and click
 # events against the real InputConsole; guards Enter/Tab/Up-Down/click

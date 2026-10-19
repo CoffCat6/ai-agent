@@ -64,6 +64,22 @@ Rectangle {
             visible: todoPanel.hasItems
         }
 
+        // ── File Changes Section (G4) ────────────────
+        // Fed by write_file/edit_file checkpoints; empty when the session has
+        // not touched any file, so the panel takes no space.
+        FileChangesPanel {
+            id: fileChangesPanel
+            Layout.fillWidth: true
+            checkpoints: AgentVM.fileCheckpoints
+        }
+
+        Rectangle {
+            Layout.fillWidth: true
+            height: 1
+            color: Theme.borderSubtle
+            visible: fileChangesPanel.hasItems
+        }
+
         // ── Knowledge Base Section ───────────────────
         RowLayout {
             Layout.fillWidth: true

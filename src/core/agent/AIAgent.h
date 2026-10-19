@@ -138,6 +138,11 @@ public:
     QJsonArray traceModel() const { return m_traceModel; }
     QString lastResponse() const { return m_lastResponse; }
     QJsonArray todoList() const { return m_todoList; }
+    // G4: this session's file checkpoints (newest first, metadata only).
+    QJsonArray fileCheckpoints() const;
+    // Restores one checkpoint's bytes (or deletes a file the agent created).
+    // Rejected while a task is running to avoid racing in-flight writes.
+    bool undoFileCheckpoint(qint64 id);
 
     QString currentSessionId() const { return m_sessionId; }
 
@@ -204,6 +209,8 @@ signals:
     void sessionTokensChanged(qint64 sessionTokens);
     // P5a: task list managed by the todo_write tool.
     void todoListChanged(const QJsonArray& todos);
+    // G4: a checkpoint was recorded or undone (list must be reloaded).
+    void fileCheckpointsChanged();
     // Episodic memory changed (new summary stored / deleted / cleared).
     void episodicChanged();
 

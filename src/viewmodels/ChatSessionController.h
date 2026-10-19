@@ -66,6 +66,9 @@ public:
     void resetHistoryCursor();
     QString currentSessionId() const { return m_currentSessionId; }
     QVariantList todoList() const { return m_todoList; }
+    // G4: this session's file checkpoints (newest first).
+    QVariantList fileCheckpoints() const { return m_fileCheckpoints; }
+    bool undoFileCheckpoint(qint64 id);
     // docs/18: 本标签的项目归属（转发自 agent；无 agent 时为空 = 本地）。
     // 归属按标签持有，AgentViewModel 的派生属性与沙箱镜像都从这里读。
     QString activeProjectId() const;
@@ -137,6 +140,7 @@ signals:
     // active tab; SessionTabs reads it via tabModel for background tabs).
     void permissionModeChanged();
     void todoListChanged(const QVariantList& todos);
+    void fileCheckpointsChanged(const QVariantList& checkpoints);
     void episodicChanged();
 
 private:
@@ -156,6 +160,7 @@ private:
     int m_permissionMode{0};            // PermissionMode as int; 0 = ConfirmChanges
     bool m_permissionModeOverridden{false};
     QVariantList m_todoList;
+    QVariantList m_fileCheckpoints;
 
 
     // docs/20 §3.3：输入历史环。仅内存态（进程内），相邻重复不入队；
