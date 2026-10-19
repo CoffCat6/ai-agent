@@ -331,18 +331,20 @@ Item {
                         id: permissionCombo
                         Layout.preferredWidth: 200
                         textRole: "label"
-                        model: [
+                        readonly property var modes: [
                             { key: "confirm",     label: qsTr("变更确认") },
+                            { key: "plan_only",   label: qsTr("只读（计划模式）") },
                             { key: "auto_edit",   label: qsTr("自动编辑") },
                             { key: "full_access", label: qsTr("完全访问") }
                         ]
+                        model: modes
                         currentIndex: {
-                            const keys = ["confirm", "auto_edit", "full_access"]
-                            const i = keys.indexOf(Settings.defaultPermissionMode)
-                            return i >= 0 ? i : 0
+                            for (var i = 0; i < modes.length; ++i)
+                                if (modes[i].key === Settings.defaultPermissionMode)
+                                    return i
+                            return 0
                         }
-                        onActivated: Settings.defaultPermissionMode =
-                            ["confirm", "auto_edit", "full_access"][currentIndex]
+                        onActivated: Settings.defaultPermissionMode = modes[currentIndex].key
                         Accessible.name: qsTr("默认权限模式")
                     }
                 }

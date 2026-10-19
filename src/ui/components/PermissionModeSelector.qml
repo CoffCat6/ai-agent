@@ -4,7 +4,7 @@ import QtQuick.Controls
 import NexusAI
 import NexusAI.ViewModels
 
-// Session permission mode selector (变更确认 / 自动编辑 / 完全访问).
+// Session permission mode selector (只读 / 变更确认 / 自动编辑 / 完全访问).
 // A pill trigger beside the ModelSelector opening an UPWARD popup with one
 // entry per mode; switching applies to the ACTIVE tab immediately (even
 // mid-task — the next tool call is judged by the new mode). FullAccess
@@ -19,14 +19,17 @@ Item {
     readonly property int mode: AgentVM.permissionMode
     readonly property bool isFullAccess: mode === AgentVM.permissionModeFullAccess
     readonly property bool isAutoEdit: mode === AgentVM.permissionModeAutoEdit
+    readonly property bool isPlanOnly: mode === AgentVM.permissionModePlanOnly
 
-    // Pill accent + label follow the risk level: neutral → brand → danger.
+    // Pill accent + label follow the risk level: safe → neutral → brand → danger.
     readonly property color accentColor: isFullAccess ? Theme.statusDanger
                                     : isAutoEdit ? Theme.brandPrimary
+                                    : isPlanOnly ? Theme.statusSuccess
                                     : Theme.textSecondary
     readonly property string modeLabel:
         mode === AgentVM.permissionModeFullAccess ? qsTr("完全访问")
         : mode === AgentVM.permissionModeAutoEdit ? qsTr("自动编辑")
+        : mode === AgentVM.permissionModePlanOnly ? qsTr("只读")
         : qsTr("变更确认")
 
     Accessible.role: Accessible.ComboBox
@@ -113,6 +116,11 @@ Item {
             Repeater {
                 model: [
                     {
+                        mode: AgentVM.permissionModePlanOnly,
+                        label: qsTr("只读（计划模式）"),
+                        desc: qsTr("仅分析与检索；写入文件、执行命令、提交与 MCP 工具将被拒绝")
+                    },
+                    {
                         mode: AgentVM.permissionModeConfirmChanges,
                         label: qsTr("变更确认"),
                         desc: qsTr("敏感工具执行前逐次询问（默认）")
@@ -183,7 +191,9 @@ Item {
                                 color: modeItem.isSelected
                                     ? Theme.brandPrimary
                                     : (modelData.mode === AgentVM.permissionModeFullAccess
-                                       ? Theme.statusDanger : Theme.textPrimary)
+                                       ? Theme.statusDanger
+                                       : modelData.mode === AgentVM.permissionModePlanOnly
+                                         ? Theme.statusSuccess : Theme.textPrimary)
                                 font.pixelSize: Theme.fontSizeCaption
                                 font.family: Theme.fontMono
                                 font.bold: modeItem.isSelected

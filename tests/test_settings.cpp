@@ -640,10 +640,13 @@ private slots:
         service.setDefaultPermissionMode(QStringLiteral("full_access"));
         QCOMPARE(service.defaultPermissionMode(), QStringLiteral("full_access"));
 
+        service.setDefaultPermissionMode(QStringLiteral("plan_only"));
+        QCOMPARE(service.defaultPermissionMode(), QStringLiteral("plan_only"));
+
         // 非法值：拒绝且不发信号
         service.setDefaultPermissionMode(QStringLiteral("yolo"));
-        QCOMPARE(service.defaultPermissionMode(), QStringLiteral("full_access"));
-        QCOMPARE(spy.count(), 2);
+        QCOMPARE(service.defaultPermissionMode(), QStringLiteral("plan_only"));
+        QCOMPARE(spy.count(), 3);
 
         // 重启语义：新实例从 QSettings 读回
         {

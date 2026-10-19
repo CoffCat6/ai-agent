@@ -1,6 +1,7 @@
 // Unit tests for the glob and grep built-in tools.
 #include "core/tools/ToolRegistry.h"
 #include "core/tools/Sandbox.h"
+#include "core/tools/NetworkFetchTool.h"
 
 #include <QDir>
 #include <QFile>
@@ -209,6 +210,26 @@ private slots:
         QCOMPARE(ToolRegistry::instance().find("git_status")->definition().level, ToolLevel::Safe);
         QCOMPARE(ToolRegistry::instance().find("git_diff")->definition().level, ToolLevel::Safe);
         QCOMPARE(ToolRegistry::instance().find("git_commit")->definition().level, ToolLevel::RequiresConfirm);
+    }
+
+    // G1: PlanOnly keys off readOnly. Every workspace-mutating confirm-level
+    // tool must leave the flag false; GET-only retrieval declares it true.
+    void readOnlyFlagSeparatesRetrievalFromMutation() {
+        const QStringList mutating{
+            QStringLiteral("write_file"), QStringLiteral("edit_file"),
+            QStringLiteral("shell_exec"), QStringLiteral("git_commit")};
+        for (const QString& name : mutating) {
+            auto tool = ToolRegistry::instance().findShared(name);
+            QVERIFY2(tool, qPrintable(name));
+            QCOMPARE(tool->definition().level, ToolLevel::RequiresConfirm);
+            QVERIFY2(!tool->definition().readOnly,
+                     qPrintable(QStringLiteral("%1 must stay blocked in plan mode")
+                                    .arg(name)));
+        }
+
+        NetworkFetchTool fetch;
+        QCOMPARE(fetch.definition().level, ToolLevel::RequiresConfirm);
+        QVERIFY(fetch.definition().readOnly);
     }
 
     void gitStatusFailsOutsideRepo() {

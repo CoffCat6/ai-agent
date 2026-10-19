@@ -135,6 +135,7 @@ private slots:
         const ToolDefinition def = tool.definition();
         QCOMPARE(def.name, QStringLiteral("web_search"));
         QCOMPARE(def.level, ToolLevel::RequiresConfirm);
+        QVERIFY(def.readOnly);   // G1: retrieval stays available in plan mode
         QVERIFY(!def.parameters.isEmpty());
     }
 

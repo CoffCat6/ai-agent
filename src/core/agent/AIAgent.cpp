@@ -406,8 +406,9 @@ QVariantMap AIAgent::contextComposition() const {
     return out;
 }
 
-// 会话级权限模式。纯状态切换：不打断进行中的任务，已在等待确认的调用
-// 不受影响（仍需人工决定），下一次 processNextToolCall 按新模式判定。
+// 会话级权限模式。纯状态切换：不打断进行中的任务；已在等待确认的调用
+// 仍需人工决定，但 PlanOnly 下批准会被拒绝（见 approveToolCall）。下一次
+// processNextToolCall 按新模式判定。
 void AIAgent::setPermissionMode(PermissionMode mode) {
     m_permissionMode = mode;
 }
@@ -637,6 +638,12 @@ void AIAgent::resetSession() {
     m_forcedFinalPush.clear();
     m_confirmNodeId.clear();
     clearStreamState();
+    // F1: the task list belongs to the session being left. Without this a new
+    // chat in the same tab keeps showing the previous session's list.
+    if (!m_todoList.isEmpty()) {
+        m_todoList = QJsonArray();
+        emit todoListChanged(m_todoList);
+    }
     if (m_llmService && wasActive) m_llmService->cancel();
 
     m_sessionId.clear();
@@ -667,6 +674,12 @@ void AIAgent::resumeSession(const QString& sessionId) {
     m_sessionId = sessionId;
     m_messages = QJsonArray();
     m_usedToolCallIds.clear();   // resumed history carries no tool calls
+    // F1: todo state is in-memory and per-session; reopening a persisted
+    // session must not resurrect the list left by the previous one.
+    if (!m_todoList.isEmpty()) {
+        m_todoList = QJsonArray();
+        emit todoListChanged(m_todoList);
+    }
 
     QJsonObject sysMsg;
     sysMsg["role"] = "system";
@@ -1499,15 +1512,40 @@ void AIAgent::processNextToolCall() {
 
         const ToolDefinition def = tool->definition();
 
+        // G1: PlanOnly is a hard read-only gate. Safe tools always pass;
+        // RequiresConfirm tools must explicitly declare readOnly (web
+        // search / fetch). MCP tools leave the flag false, so unknown side
+        // effects are blocked by default.
+        if (m_permissionMode == PermissionMode::PlanOnly
+                && def.level != ToolLevel::Safe && !def.readOnly) {
+            appendTraceNode("tool_call", call.name, "failed",
+                            QJsonObject{{"args", argsToString(call.arguments)}});
+            appendToolResultMessage(call,
+                QStringLiteral("Error: tool '%1' is blocked because this session is "
+                               "in read-only (plan) mode. Do not retry it; continue "
+                               "by analyzing and describing the proposed change.")
+                    .arg(call.name));
+            if (m_memory)
+                m_memory->logAudit(m_sessionId, "tool_blocked", call.name,
+                                   argsToString(call.arguments), false,
+                                   QStringLiteral("read-only (plan) mode"),
+                                   m_activeRequestId, m_lastLatencyMs,
+                                   m_lastTokensUsed, currentModel());
+            continue;
+        }
+
         // 会话权限模式判定：Safe 恒直通；完全访问放行全部确认级工具；
-        // 自动编辑只放行声明 autoEditSafe 的工具（文件编辑/搜索抓取）。
+        // 自动编辑只放行声明 autoEditSafe 的工具（文件编辑/搜索抓取）；
+        // 只读模式只放行显式声明 readOnly 的检索工具（不弹确认）。
         // Dangerous 任何模式下都不自动执行——永远落入确认分支兜底。
         const bool autoApproved =
             def.level == ToolLevel::Safe
             || (def.level == ToolLevel::RequiresConfirm
                 && (m_permissionMode == PermissionMode::FullAccess
                     || (m_permissionMode == PermissionMode::AutoEdit
-                        && def.autoEditSafe)));
+                        && def.autoEditSafe)
+                    || (m_permissionMode == PermissionMode::PlanOnly
+                        && def.readOnly)));
 
         if (!autoApproved) {
             // Suspend the loop and ask the user. Dispatch any parallel calls
@@ -1756,6 +1794,29 @@ void AIAgent::approveToolCall(const QString& id, bool approved) {
                                m_lastTokensUsed, currentModel());
         processNextToolCall();
         return;
+    }
+
+    // G1: switching to PlanOnly while a confirmation is pending must still
+    // win. Approving a mutating tool cannot bypass read-only mode.
+    if (m_permissionMode == PermissionMode::PlanOnly) {
+        ITool* tool = m_toolRegistry ? m_toolRegistry->find(call.name) : nullptr;
+        const ToolDefinition def = tool ? tool->definition() : ToolDefinition{};
+        if (!tool || (def.level != ToolLevel::Safe && !def.readOnly)) {
+            updateTraceNodeStatusById(nodeId, "failed");
+            appendToolResultMessage(call,
+                QStringLiteral("Error: tool '%1' was not executed because this session "
+                               "is in read-only (plan) mode. Do not retry it; continue "
+                               "by analyzing and describing the proposed change.")
+                    .arg(call.name));
+            if (m_memory)
+                m_memory->logAudit(m_sessionId, "tool_blocked", call.name,
+                                   argsToString(call.arguments), false,
+                                   QStringLiteral("read-only (plan) mode; approval refused"),
+                                   m_activeRequestId, m_lastLatencyMs,
+                                   m_lastTokensUsed, currentModel());
+            processNextToolCall();
+            return;
+        }
     }
 
     if (m_memory)

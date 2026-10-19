@@ -162,6 +162,15 @@ Canvas {
             c.closePath(); c.stroke()
             line(c, 12, 10.5, 12, 16.5); line(c, 9, 13.5, 15, 13.5)
         },
+        "file": function(c) {
+            // 文档（Feather "file-text" 简化版）：折角页 + 两条正文线。
+            c.beginPath()
+            c.moveTo(6, 3.5); c.lineTo(14.5, 3.5); c.lineTo(19, 8)
+            c.lineTo(19, 20.5); c.lineTo(6, 20.5); c.closePath()
+            c.stroke()
+            polyline(c, [14.5, 3.5, 14.5, 8, 19, 8])
+            line(c, 9, 12.5, 16, 12.5); line(c, 9, 16, 14, 16)
+        },
         "send": function(c) {
             c.lineWidth = 1
             filled(c, function(k) {

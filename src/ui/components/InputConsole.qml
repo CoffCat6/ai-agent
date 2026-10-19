@@ -13,6 +13,7 @@ import NexusAI.ViewModels
 Rectangle {
     id: root
 
+    objectName: "inputConsole"
     property int maxHeight: 240
     // Batch 30 (F6): [{kind:"image", dataUrl}, {kind:"file", name, content}]
     property var pendingAttachments: []
@@ -21,12 +22,102 @@ Rectangle {
         if (!restoringDraft) AgentVM.draftAttachments = pendingAttachments
     }
 
+    // ── G2: '@' project file mentions ────────────────────
+    property bool mentionOpen: false
+    property int mentionStart: -1
+    property int mentionIndex: 0
+    property string mentionQuery: ""
+    property var mentionResults: []
+    // Guards the two-step text replacement in applyMention(): remove() emits
+    // textChanged synchronously, and the unguarded updateMention() would reset
+    // mentionStart to -1 before insert() runs, losing the completion.
+    property bool applyingMention: false
+    readonly property bool mentionNoProject: mentionOpen && AgentVM.activeProjectRoot === ""
+    readonly property bool mentionScanning: mentionOpen && AgentVM.projectFilesScanning
+    readonly property int mentionPopupHeight: {
+        if (!mentionOpen) return 0
+        if (mentionNoProject) return 56
+        if (mentionResults.length === 0) return 42
+        return Math.min(mentionResults.length * 30 + 8, 240)
+    }
+
+    function closeMention() {
+        if (mentionPopup.opened) mentionPopup.close()
+        mentionOpen = false
+        mentionStart = -1
+        mentionIndex = 0
+        mentionQuery = ""
+        mentionResults = []
+    }
+
+    // Shared token scanner lives in C++ (ProjectFileIndex::mentionAt) so the
+    // popup and the submitted-reference resolver cannot drift.
+    function updateMention() {
+        if (applyingMention) return
+        if (restoringDraft || isBusy) {
+            closeMention()
+            return
+        }
+        const m = AgentVM.activeFileMention(textArea.text, textArea.cursorPosition)
+        if (!m.active) {
+            closeMention()
+            return
+        }
+        if (m.query !== mentionQuery) {
+            mentionIndex = 0
+            mentionQuery = m.query
+        }
+        mentionStart = m.start
+        mentionResults = AgentVM.activeProjectRoot === ""
+            ? [] : AgentVM.listProjectFiles(m.query, 50)
+        if (mentionIndex >= mentionResults.length)
+            mentionIndex = Math.max(0, mentionResults.length - 1)
+        mentionOpen = true
+        if (!mentionPopup.opened) mentionPopup.open()
+    }
+
+    function applyMention(path) {
+        if (mentionStart < 0) return
+        const start = mentionStart
+        const end = textArea.cursorPosition
+        const token = (path.indexOf(" ") >= 0 || path.indexOf("\t") >= 0)
+            ? '@"' + path + '"' : '@' + path
+        const inserted = token + " "
+        applyingMention = true
+        textArea.remove(start, end)
+        textArea.insert(start, inserted)
+        textArea.cursorPosition = start + inserted.length
+        applyingMention = false
+        closeMention()
+        textArea.forceActiveFocus()
+    }
+
+    function moveMention(delta) {
+        const count = mentionResults.length
+        if (count === 0) return
+        mentionIndex = (mentionIndex + delta + count) % count
+        mentionList.positionViewAtIndex(mentionIndex, ListView.Contain)
+    }
+
+    // ── G2: live reference status ────────────────────────
+    // Path-only validation (no file contents), so this stays cheap enough to
+    // run on every keystroke. Chips show exactly which '@' tokens will be
+    // attached when the message is sent, and why the others will not.
+    property var referenceChecks: []
+    readonly property bool referenceVisible: referenceChecks.length > 0
+
+    function updateReferences() {
+        referenceChecks = AgentVM.inspectFileReferences(textArea.text)
+    }
+
     function restoreDraft() {
         restoringDraft = true
+        closeMention()
         textArea.text = AgentVM.draftText
         pendingAttachments = AgentVM.draftAttachments
         historyBrowsing = false
         restoringDraft = false
+        updateReferences()
     }
     Component.onCompleted: restoreDraft()
     Connections {
@@ -36,6 +127,13 @@ Rectangle {
             if (textArea.text !== AgentVM.draftText) root.restoreDraft()
         }
         function onDraftAttachmentsChanged() { root.restoreDraft() }
+        function onProjectFilesChanged() {
+            if (root.mentionOpen) root.updateMention()
+        }
+        function onActiveProjectIdChanged() {
+            root.closeMention()
+            root.updateReferences()
+        }
     }
     // 由 AgentChatPage 注入：发送后请求轨迹视图跳底并恢复跟随。
     property var traceJump: null
@@ -56,6 +154,7 @@ Rectangle {
 
     // Height is driven by the text content (capped) plus the preview strip.
     implicitHeight: (previewVisible ? previewBar.height + 6 : 0)
+                    + (referenceVisible ? referenceBar.height + 6 : 0)
                     + inputRow.height + 16
     height: implicitHeight
     color: Theme.cardBackground
@@ -88,12 +187,30 @@ Rectangle {
         if (root.canSend) {
             const images = []
             const files = []
+            const seen = {}
             for (let i = 0; i < root.pendingAttachments.length; ++i) {
                 const a = root.pendingAttachments[i]
-                if (a.kind === "image") images.push(a.dataUrl)
-                else files.push({kind: "file", name: a.name, content: a.content})
+                if (a.kind === "image") {
+                    images.push(a.dataUrl)
+                } else {
+                    files.push({kind: "file", name: a.name, content: a.content})
+                    seen[a.name] = true
+                }
+            }
+            // G2: '@path' tokens resolve to project files at submit time. The
+            // C++ side caps per-file/total bytes and rejects escapes,
+            // sensitive files and binaries; duplicate attachments win.
+            const refs = AgentVM.resolveFileReferences(textArea.text)
+            for (let i = 0; i < refs.length; ++i) {
+                const ref = refs[i]
+                const base = ref.name.split("/").pop()
+                if (seen[ref.name] || seen[base]) continue
+                seen[ref.name] = true
+                seen[base] = true
+                files.push({kind: "file", name: ref.name, content: ref.content})
             }
             if (!AgentVM.startTask(textArea.text, images, files)) return
+            root.closeMention()
             textArea.text = ""
             root.pendingAttachments = []
             // docs/20 §3.3：发送后退出历史浏览态（游标已在 startTask 内复位）。
@@ -189,6 +306,22 @@ Rectangle {
         }
     }
 
+    // ── G2: referenced project files ────────────────────
+    // One chip per '@' token in the draft. Green = resolves and will be
+    // attached on send; red = will be skipped, with the reason on hover.
+    ReferenceChipRow {
+        id: referenceBar
+        anchors.left: parent.left
+        anchors.right: parent.right
+        anchors.bottom: inputRow.top
+        anchors.leftMargin: 8
+        anchors.rightMargin: 8
+        anchors.bottomMargin: 4
+        height: 24
+        checks: root.referenceChecks
+        visible: root.referenceVisible
+    }
+
     // ── Input row: attach icon | text area | send/stop ──
     Item {
         id: inputRow
@@ -215,14 +348,14 @@ Rectangle {
             font.pixelSize: Theme.fontSizeBody
             font.family: Theme.fontSans
             wrapMode: TextArea.Wrap
-            placeholderText: qsTr("输入消息... (Enter 发送, Shift+Enter 换行)")
+            placeholderText: qsTr("输入消息…（Enter 发送，Shift+Enter 换行，@ 引用项目文件）")
             placeholderTextColor: Theme.textSecondary
             selectByMouse: true
             renderType: Text.NativeRendering
             clip: true
 
             Accessible.name: qsTr("消息输入框")
-            Accessible.description: qsTr("输入消息后按 Enter 发送，Shift+Enter 换行")
+            Accessible.description: qsTr("输入消息后按 Enter 发送，Shift+Enter 换行；输入 @ 可引用项目文件")
 
             // Custom cursor
             cursorDelegate: Rectangle {
@@ -244,7 +377,11 @@ Rectangle {
                     root.historyBrowsing = false
                     AgentVM.resetInputHistory()
                 }
+                root.updateMention()
+                root.updateReferences()
             }
+
+            onCursorPositionChanged: root.updateMention()
 
             // docs/20 §3.3：输入历史浏览。↑ 前移（更旧），↓ 后移（更新）。
             // Shift+↑/↓ 保持默认（多行光标移动，不进入历史）。仅在无显式编辑
@@ -259,6 +396,11 @@ Rectangle {
             }
 
             Keys.onUpPressed: function(event) {
+                if (root.mentionOpen) {
+                    root.moveMention(-1)
+                    event.accepted = true
+                    return
+                }
                 if (event.modifiers & Qt.ShiftModifier) {
                     event.accepted = false
                     return
@@ -283,6 +425,11 @@ Rectangle {
             }
 
             Keys.onDownPressed: function(event) {
+                if (root.mentionOpen) {
+                    root.moveMention(1)
+                    event.accepted = true
+                    return
+                }
                 if (event.modifiers & Qt.ShiftModifier || !root.historyBrowsing) {
                     event.accepted = false
                     return
@@ -305,7 +452,21 @@ Rectangle {
 
             // Batch 30 (F6): Ctrl+V first tries the clipboard image; plain
             // text falls through to the default paste.
+            // G2: while the @ completion popup is open, Esc closes it and
+            // Tab accepts the highlighted path.
             Keys.onPressed: function(event) {
+                if (root.mentionOpen) {
+                    if (event.key === Qt.Key_Escape) {
+                        root.closeMention()
+                        event.accepted = true
+                        return
+                    }
+                    if (event.key === Qt.Key_Tab && root.mentionResults.length > 0) {
+                        root.applyMention(root.mentionResults[root.mentionIndex])
+                        event.accepted = true
+                        return
+                    }
+                }
                 if (event.key === Qt.Key_V && (event.modifiers & Qt.ControlModifier)) {
                     const dataUrl = AgentVM.clipboardImageDataUrl()
                     if (dataUrl !== "") {
@@ -324,19 +485,29 @@ Rectangle {
             Keys.onReturnPressed: function(event) {
                 if (event.modifiers & Qt.ShiftModifier) {
                     event.accepted = false // default: insert newline
-                } else {
-                    sendCurrentText()
-                    event.accepted = true
+                    return
                 }
+                if (root.mentionOpen && root.mentionResults.length > 0) {
+                    root.applyMention(root.mentionResults[root.mentionIndex])
+                } else {
+                    if (root.mentionOpen) root.closeMention()
+                    sendCurrentText()
+                }
+                event.accepted = true
             }
 
             Keys.onEnterPressed: function(event) {
                 if (event.modifiers & Qt.ShiftModifier) {
                     event.accepted = false // default: insert newline
-                } else {
-                    sendCurrentText()
-                    event.accepted = true
+                    return
                 }
+                if (root.mentionOpen && root.mentionResults.length > 0) {
+                    root.applyMention(root.mentionResults[root.mentionIndex])
+                } else {
+                    if (root.mentionOpen) root.closeMention()
+                    sendCurrentText()
+                }
+                event.accepted = true
             }
         }
 
@@ -511,6 +682,109 @@ Rectangle {
             qsTr("全部文件 (*)")
         ]
         onAccepted: root.addTextFile(selectedFile)
+    }
+
+    // ── G2: '@' project file completion ──────────────────
+    // Non-focus popup: the text area keeps the keyboard, so typing narrows
+    // the query without the popup stealing focus. Navigation is handled by
+    // the text area's key handlers above.
+    Popup {
+        id: mentionPopup
+        objectName: "mentionPopup"
+        parent: root
+        x: 36
+        y: -height - 6
+        width: Math.min(520, Math.max(260, root.width - 88))
+        height: root.mentionPopupHeight
+        padding: 0
+        modal: false
+        focus: false
+        closePolicy: Popup.NoAutoClose
+
+        background: Rectangle {
+            radius: 10
+            color: Theme.bgSecondary
+            border.width: 1
+            border.color: Theme.borderSubtle
+        }
+
+        contentItem: Item {
+            Text {
+                anchors.left: parent.left
+                anchors.right: parent.right
+                anchors.margins: 12
+                anchors.verticalCenter: parent.verticalCenter
+                visible: root.mentionResults.length === 0
+                text: root.mentionNoProject
+                    ? qsTr("当前会话未绑定项目，无法引用项目文件。\n请先在侧栏选择或导入项目。")
+                    : root.mentionScanning
+                        ? qsTr("正在扫描项目文件…")
+                        : qsTr("没有匹配的项目文件")
+                color: Theme.textSecondary
+                font.pixelSize: Theme.fontSizeCaption
+                font.family: Theme.fontSans
+                wrapMode: Text.Wrap
+            }
+
+            ListView {
+                id: mentionList
+                objectName: "mentionList"
+                anchors.fill: parent
+                anchors.margins: 4
+                visible: root.mentionResults.length > 0
+                clip: true
+                model: root.mentionResults
+                boundsBehavior: Flickable.StopAtBounds
+
+                delegate: Rectangle {
+                    id: mentionRow
+                    objectName: "mentionRow"
+                    required property string modelData
+                    required property int index
+
+                    width: ListView.view ? ListView.view.width : 0
+                    height: 30
+                    radius: 6
+                    color: index === root.mentionIndex
+                        ? Qt.rgba(Theme.brandPrimary.r, Theme.brandPrimary.g,
+                                  Theme.brandPrimary.b, 0.14)
+                        : mentionRowHover.hovered ? Theme.surfaceHover : "transparent"
+
+                    HoverHandler { id: mentionRowHover }
+
+                    MouseArea {
+                        anchors.fill: parent
+                        cursorShape: Qt.PointingHandCursor
+                        onClicked: root.applyMention(mentionRow.modelData)
+                    }
+
+                    RowLayout {
+                        anchors.fill: parent
+                        anchors.leftMargin: 8
+                        anchors.rightMargin: 8
+                        spacing: 8
+
+                        AppIcon {
+                            Layout.alignment: Qt.AlignVCenter
+                            icon: "file"
+                            size: 13
+                            iconColor: mentionRow.index === root.mentionIndex
+                                ? Theme.brandPrimary : Theme.textSecondary
+                        }
+
+                        Text {
+                            Layout.fillWidth: true
+                            Layout.alignment: Qt.AlignVCenter
+                            text: mentionRow.modelData
+                            color: Theme.textPrimary
+                            font.pixelSize: Theme.fontSizeCaption
+                            font.family: Theme.fontMono
+                            elide: Text.ElideMiddle
+                        }
+                    }
+                }
+            }
+        }
     }
 
     // No height animation: the console resizes on every wrapped line while

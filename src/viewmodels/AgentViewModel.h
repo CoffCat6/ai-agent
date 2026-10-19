@@ -77,11 +77,13 @@ class AgentViewModel : public QObject {
     Q_PROPERTY(bool modelConfigured READ modelConfigured NOTIFY chatModelChanged FINAL)
 
     // ── Session permission mode (active tab) ──────────
-    // 0=变更确认 1=自动编辑 2=完全访问；常量属性供 QML 选择器建立模型。
+    // 0=变更确认 1=自动编辑 2=完全访问 3=只读/计划；常量属性供 QML 选择器
+    // 建立模型。
     Q_PROPERTY(int permissionMode READ permissionMode WRITE setPermissionMode NOTIFY permissionModeChanged FINAL)
     Q_PROPERTY(int permissionModeConfirmChanges READ permissionModeConfirmChanges CONSTANT FINAL)
     Q_PROPERTY(int permissionModeAutoEdit READ permissionModeAutoEdit CONSTANT FINAL)
     Q_PROPERTY(int permissionModeFullAccess READ permissionModeFullAccess CONSTANT FINAL)
+    Q_PROPERTY(int permissionModePlanOnly READ permissionModePlanOnly CONSTANT FINAL)
 
     // ── Context Panel ─────────────────────────────────
     Q_PROPERTY(bool isPanelVisible READ isPanelVisible WRITE setIsPanelVisible NOTIFY panelVisibleChanged FINAL)
@@ -107,6 +109,10 @@ class AgentViewModel : public QObject {
     // 为空表示"本地对话"视图（只显示 project_id 为 NULL 的会话）。
     Q_PROPERTY(QVariantList projects READ projects NOTIFY projectsChanged FINAL)
     Q_PROPERTY(QString activeProjectId READ activeProjectId WRITE setActiveProjectId NOTIFY activeProjectIdChanged FINAL)
+    // G2: the active tab's project root drives '@' completion; scanning is
+    // asynchronous so the popup can show its loading state.
+    Q_PROPERTY(QString activeProjectRoot READ activeProjectRoot NOTIFY activeProjectIdChanged FINAL)
+    Q_PROPERTY(bool projectFilesScanning READ projectFilesScanning NOTIFY projectFilesChanged FINAL)
     // Batch 17 (FEAT-1702): cross-session message search results, aggregated
     // per session (Batch 22): {sessionId, sessionTitle, hitCount,
     // latestTimestamp, archived, bestSnippet, bestRole, firstHitMessageId}.
@@ -208,6 +214,7 @@ public:
     int permissionModeConfirmChanges() const { return static_cast<int>(PermissionMode::ConfirmChanges); }
     int permissionModeAutoEdit() const { return static_cast<int>(PermissionMode::AutoEdit); }
     int permissionModeFullAccess() const { return static_cast<int>(PermissionMode::FullAccess); }
+    int permissionModePlanOnly() const { return static_cast<int>(PermissionMode::PlanOnly); }
     // Global default (from SettingsService) applied to newly created tabs;
     // main.cpp injects it and re-injects when the setting changes. Also
     // retro-applies to tabs the user has not explicitly switched.
@@ -278,6 +285,14 @@ public:
     QVariantList projects() const { return m_projects; }
     // docs/18: 派生自**活动标签**的 agent —— 不存在全局活动项目。
     QString activeProjectId() const;
+    QString activeProjectRoot() const { return active()->activeProjectRoot(); }
+    bool projectFilesScanning() const { return m_projectFilesScanning; }
+    // G2: '@' file mentions. Completion is served from a background-scanned
+    // cache (30s TTL); references are resolved against the active project
+    // root when the message is submitted.
+    Q_INVOKABLE QVariantList listProjectFiles(const QString& query, int limit = 50);
+    Q_INVOKABLE QVariantMap activeFileMention(const QString& text, int cursor) const;
+    Q_INVOKABLE QVariantList resolveFileReferences(const QString& text);
     // 设置**活动标签**的项目归属（不再广播给所有标签）；同时作为
     // activeProjectId 属性的 WRITE 端。
     Q_INVOKABLE void setActiveProjectId(const QString& id);
@@ -491,6 +506,12 @@ public:
     // docs/16 §8.3: 激活 tab 的实时上下文构成（容量占比浮层数据源）。
     Q_INVOKABLE QVariantMap contextComposition() const;
     Q_INVOKABLE QString logFilePath() const;   // runtime log file path (for the audit dialog)
+    // Per-token status for the composer without reading file contents:
+    // [{token, path, error}] where error is "", "no-project", "missing",
+    // "outside" or "sensitive". Declared last so adding it does not shift the
+    // metaobject method indices of existing Q_INVOKABLEs (QML AOT caches embed
+    // those indices and are not invalidated by header-only changes).
+    Q_INVOKABLE QVariantList inspectFileReferences(const QString& text) const;
 
 signals:
     void stateChanged();
@@ -519,6 +540,8 @@ signals:
     // docs/17 A0: 项目列表 / 活动项目变化（侧栏两区数据源）。
     void projectsChanged();
     void activeProjectIdChanged();
+    // G2: project file cache ready / scanning state changed.
+    void projectFilesChanged();
     void currentSessionIdChanged();
     // Active tab's session permission mode changed (switch or tab switch).
     void permissionModeChanged();
@@ -622,6 +645,7 @@ private:
     // GUI 线程跑，避免大文件冻结界面）。
     void startPdfImport(const QString& path, const QFileInfo& info);
     void persistPanelWidths();
+    void refreshProjectFiles(const QString& root);
 
     void loadLayoutDefaults();
     void subscribeLayoutChanges();
@@ -648,6 +672,12 @@ private:
     QVariantList m_sessionList;
     QVariantList m_projects;         // docs/17 A0: 已导入项目
     // docs/18: 归属按标签持有，故这里没有全局活动项目成员。
+    // G2: active project's indexable file cache (background scan).
+    QStringList m_projectFiles;
+    QString m_projectFilesRoot;
+    qint64 m_projectFilesScannedAt{0};
+    quint64 m_projectFilesGeneration{0};
+    bool m_projectFilesScanning{false};
 
     // ── Panel ──────────────────────────────────────────
     bool m_isPanelVisible{};

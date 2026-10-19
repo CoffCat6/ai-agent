@@ -48,6 +48,22 @@ Rectangle {
 
         Behavior on opacity { NumberAnimation { duration: 150 } }
 
+        // ── Task List Section ────────────────────────
+        // Fed by the todo_write tool through AgentVM.todoList; the component
+        // hides itself (and collapses to zero height) when the list is empty.
+        TodoListPanel {
+            id: todoPanel
+            Layout.fillWidth: true
+            todos: AgentVM.todoList
+        }
+
+        Rectangle {
+            Layout.fillWidth: true
+            height: 1
+            color: Theme.borderSubtle
+            visible: todoPanel.hasItems
+        }
+
         // ── Knowledge Base Section ───────────────────
         RowLayout {
             Layout.fillWidth: true

@@ -106,6 +106,18 @@ QString toolMessageContent(const QJsonArray& messages, const QString& callId) {
     return QString();
 }
 
+// The agent may regenerate duplicate provider call ids across turns, so the
+// last tool message is the stable way to read the newest result.
+QString lastToolMessageContent(const QJsonArray& messages) {
+    QString content;
+    for (const auto& entry : messages) {
+        const QJsonObject msg = entry.toObject();
+        if (msg.value("role").toString() == QLatin1String("tool"))
+            content = msg.value("content").toString();
+    }
+    return content;
+}
+
 // Batch 14: does the tools array passed to the LLM service expose the given
 // tool? Matches both flat {"name":...} and OpenAI {"function":{"name":...}}.
 bool toolsArrayContains(const QJsonArray& tools, const QString& name) {
@@ -250,6 +262,32 @@ struct DangerousProbeGuard {
     }
 };
 
+// G1: confirm-level tool that explicitly declares read-only. Production
+// web_search / http_fetch use the same flag; this probe exercises the
+// PlanOnly exception without network access.
+class ReadOnlyProbeTool : public ITool {
+public:
+    ToolDefinition definition() const override {
+        ToolDefinition def;
+        def.name = QStringLiteral("test_readonly");
+        def.description = QStringLiteral("Test helper: read-only confirm-level tool.");
+        def.level = ToolLevel::RequiresConfirm;
+        def.readOnly = true;
+        def.parameters = QJsonObject{
+            {"type", "object"}, {"properties", QJsonObject{}}, {"required", QJsonArray{}}};
+        return def;
+    }
+    ToolResult execute(const QJsonObject&) override {
+        return ToolResult::ok(QStringLiteral("probe-ok"));
+    }
+};
+
+struct NamedToolGuard {
+    explicit NamedToolGuard(QString name) : name(std::move(name)) {}
+    ~NamedToolGuard() { ToolRegistry::instance().takeTool(name); }
+    QString name;
+};
+
 // A Safe tool that can produce every anomaly the plan's Tool matrix lists,
 // driven by a "mode" argument (deterministic anomalies for TEST-903).
 class AnomalyTool : public ITool {
@@ -388,6 +426,23 @@ private slots:
             }
         }
         QVERIFY(found);
+
+        // The bubble renders modelData.files from the user_message trace node;
+        // without this the attachment reaches the model but is invisible in
+        // the transcript.
+        bool traceHasFiles = false;
+        for (const auto& entry : agent.traceModel()) {
+            const QJsonObject node = entry.toObject();
+            if (node.value("type").toString() != QLatin1String("user_message"))
+                continue;
+            const QJsonArray attached = node.value("files").toArray();
+            QCOMPARE(attached.size(), 1);
+            QCOMPARE(attached.first().toObject().value("name").toString(),
+                     QStringLiteral("notes.txt"));
+            traceHasFiles = true;
+        }
+        QVERIFY2(traceHasFiles, "user_message trace node must carry files");
+
         agent.setMemory(nullptr);
     }
 
@@ -523,11 +578,19 @@ private slots:
     void autoEditBypassesFileTools();
     void autoEditStillConfirmsShell();
     void fullAccessBypassesShellButNotDangerous();
+    // G1: PlanOnly (read-only) matrix
+    void planOnlyBlocksWorkspaceTools();
+    void planOnlyAllowsSafeAndReadOnlyTools();
+    void planOnlySwitchRestoresWrites();
+    void planOnlyRefusesApprovalOfPendingWrite();
+    void permissionModeStringRoundTrip();
     void unknownToolFeedsError();
     void maxIterationsStops();
     void repeatedCallWithAnswerFinishes();
     void oldToolRoundsCollapsed();
     void traceRestoredOnResume();
+    // F1: todo list lifetime is per session/tab, never carried across resets.
+    void todoListClearedOnSessionResetAndResume();
     // 思考强度：思考正文只落 thinking 节点，不混进答案、不回灌模型、可恢复
     void reasoningTextLandsOnThinkingNode();
     void stopDuringConfirmationIsNoOp();
@@ -796,6 +859,165 @@ void TestAgent::fullAccessBypassesShellButNotDangerous() {
     QVERIFY2(declined.contains("User declined"), qPrintable(declined));
 }
 
+// G1: PlanOnly rejects every workspace-mutating tool before execution and
+// feeds the model a readable reason so it can continue with analysis.
+void TestAgent::planOnlyBlocksWorkspaceTools() {
+    agent.setPermissionMode(PermissionMode::PlanOnly);
+    QCOMPARE(agent.permissionMode(), PermissionMode::PlanOnly);
+
+    QTemporaryDir dir(testDirTemplate());
+    QVERIFY(dir.isValid());
+    const QString existing = dir.filePath("existing.txt");
+    {
+        QFile f(existing);
+        QVERIFY(f.open(QIODevice::WriteOnly));
+        f.write("original");
+        f.close();
+    }
+    const QString created = dir.filePath("created.txt");
+
+    const QVector<QPair<QString, QJsonObject>> cases{
+        {QStringLiteral("write_file"),
+         QJsonObject{{"path", created}, {"content", "x"}}},
+        {QStringLiteral("edit_file"),
+         QJsonObject{{"path", existing}, {"old_string", "original"},
+                     {"new_string", "changed"}}},
+        {QStringLiteral("shell_exec"),
+         QJsonObject{{"command", "echo should-not-run"}}},
+        {QStringLiteral("git_commit"),
+         QJsonObject{{"message", "blocked"}}}
+    };
+
+    for (const auto& c : cases) {
+        const QString name = c.first;
+        llm.script.append(toolResponse(name, c.second));
+        llm.script.append(textResponse(QStringLiteral("blocked %1").arg(name)));
+
+        QSignalSpy spy(&agent, &AIAgent::responseReady);
+        agent.startTask(QStringLiteral("try %1").arg(name));
+        QTRY_COMPARE_WITH_TIMEOUT(spy.count(), 1, 15000);
+
+        const QString result = lastToolMessageContent(llm.seenMessages.last());
+        QVERIFY2(result.contains(QStringLiteral("read-only (plan) mode")),
+                 qPrintable(result));
+        QCOMPARE(agent.lastResponse(), QStringLiteral("blocked %1").arg(name));
+        QVERIFY(traceHas(agent.traceModel(), "tool_call", name));
+    }
+
+    QVERIFY(!QFile::exists(created));
+    QFile unchanged(existing);
+    QVERIFY(unchanged.open(QIODevice::ReadOnly));
+    QCOMPARE(QString::fromUtf8(unchanged.readAll()), QStringLiteral("original"));
+}
+
+// G1: Safe tools and confirm-level tools that declare readOnly (web_search /
+// http_fetch) stay available in PlanOnly.
+void TestAgent::planOnlyAllowsSafeAndReadOnlyTools() {
+    agent.setPermissionMode(PermissionMode::PlanOnly);
+
+    QTemporaryDir dir(testDirTemplate());
+    QVERIFY(dir.isValid());
+    const QString path = dir.filePath("read.txt");
+    {
+        QFile f(path);
+        QVERIFY(f.open(QIODevice::WriteOnly));
+        f.write("hello-plan");
+        f.close();
+    }
+
+    QSignalSpy spy(&agent, &AIAgent::responseReady);
+
+    llm.script.append(toolResponse("read_file", QJsonObject{{"path", path}}));
+    llm.script.append(textResponse(QStringLiteral("read ok")));
+    agent.startTask(QStringLiteral("read it"));
+    QTRY_COMPARE_WITH_TIMEOUT(spy.count(), 1, 15000);
+    QVERIFY(lastToolMessageContent(llm.seenMessages.last()).contains("hello-plan"));
+    QCOMPARE(agent.lastResponse(), QStringLiteral("read ok"));
+
+    ToolRegistry::instance().registerTool(std::make_unique<ReadOnlyProbeTool>());
+    NamedToolGuard guard{QStringLiteral("test_readonly")};
+    llm.script.append(toolResponse("test_readonly", QJsonObject{}));
+    llm.script.append(textResponse(QStringLiteral("probe ok")));
+    agent.startTask(QStringLiteral("probe it"));
+    QTRY_COMPARE_WITH_TIMEOUT(spy.count(), 2, 15000);
+    QCOMPARE(lastToolMessageContent(llm.seenMessages.last()), QStringLiteral("probe-ok"));
+    QCOMPARE(agent.lastResponse(), QStringLiteral("probe ok"));
+}
+
+// G1: switching back to a writable mode takes effect on the next task.
+void TestAgent::planOnlySwitchRestoresWrites() {
+    QTemporaryDir dir(testDirTemplate());
+    QVERIFY(dir.isValid());
+    const QString blockedPath = dir.filePath("blocked.txt");
+    const QString allowedPath = dir.filePath("allowed.txt");
+
+    QSignalSpy spy(&agent, &AIAgent::responseReady);
+
+    agent.setPermissionMode(PermissionMode::PlanOnly);
+    llm.script.append(toolResponse("write_file",
+        QJsonObject{{"path", blockedPath}, {"content", "no"}}));
+    llm.script.append(textResponse(QStringLiteral("blocked")));
+    agent.startTask(QStringLiteral("blocked write"));
+    QTRY_COMPARE_WITH_TIMEOUT(spy.count(), 1, 15000);
+    QVERIFY(!QFile::exists(blockedPath));
+
+    agent.setPermissionMode(PermissionMode::AutoEdit);
+    llm.script.append(toolResponse("write_file",
+        QJsonObject{{"path", allowedPath}, {"content", "yes"}}));
+    llm.script.append(textResponse(QStringLiteral("written")));
+    agent.startTask(QStringLiteral("allowed write"));
+    QTRY_COMPARE_WITH_TIMEOUT(spy.count(), 2, 15000);
+
+    QFile written(allowedPath);
+    QVERIFY(written.exists());
+    QVERIFY(written.open(QIODevice::ReadOnly));
+    QCOMPARE(QString::fromUtf8(written.readAll()), QStringLiteral("yes"));
+}
+
+// G1: if the user switches to PlanOnly while a write is waiting for
+// approval, clicking "allow" must still be refused.
+void TestAgent::planOnlyRefusesApprovalOfPendingWrite() {
+    agent.setPermissionMode(PermissionMode::ConfirmChanges);
+
+    QTemporaryDir dir(testDirTemplate());
+    QVERIFY(dir.isValid());
+    const QString path = dir.filePath("pending.txt");
+
+    llm.script.append(toolResponse("write_file",
+        QJsonObject{{"path", path}, {"content", "x"}}));
+    llm.script.append(textResponse(QStringLiteral("refused as expected")));
+
+    QSignalSpy confirmSpy(&agent, &AIAgent::toolConfirmRequired);
+    agent.startTask(QStringLiteral("write with approval"));
+    QTRY_COMPARE(confirmSpy.count(), 1);
+    QCOMPARE(agent.state(), AgentState::AwaitingToolConfirm);
+
+    agent.setPermissionMode(PermissionMode::PlanOnly);
+    QSignalSpy spy(&agent, &AIAgent::responseReady);
+    agent.approveToolCall(confirmSpy.first().first().toString(), true);
+    QTRY_COMPARE_WITH_TIMEOUT(spy.count(), 1, 15000);
+
+    QVERIFY(!QFile::exists(path));
+    const QString result = lastToolMessageContent(llm.seenMessages.last());
+    QVERIFY2(result.contains(QStringLiteral("read-only (plan) mode")),
+             qPrintable(result));
+    QCOMPARE(agent.lastResponse(), QStringLiteral("refused as expected"));
+}
+
+void TestAgent::permissionModeStringRoundTrip() {
+    QCOMPARE(permissionModeToString(PermissionMode::ConfirmChanges),
+             QStringLiteral("confirm"));
+    QCOMPARE(permissionModeToString(PermissionMode::PlanOnly),
+             QStringLiteral("plan_only"));
+    QCOMPARE(permissionModeFromString(QStringLiteral("plan_only")),
+             PermissionMode::PlanOnly);
+    QCOMPARE(permissionModeFromString(QStringLiteral("unknown")),
+             PermissionMode::ConfirmChanges);
+    QVERIFY(isValidPermissionMode(static_cast<int>(PermissionMode::PlanOnly)));
+    QVERIFY(!isValidPermissionMode(-1));
+    QVERIFY(!isValidPermissionMode(static_cast<int>(PermissionMode::PlanOnly) + 1));
+}
+
 void TestAgent::unknownToolFeedsError() {
     llm.script.append(toolResponse("no_such_tool", QJsonObject{}));
     llm.script.append(textResponse("ok"));
@@ -972,6 +1194,52 @@ void TestAgent::traceRestoredOnResume() {
     QVERIFY(traceHas(agent.traceModel(), "tool_result"));
     QVERIFY(traceHas(agent.traceModel(), "summary", "done"));
     QCOMPARE(agent.lastResponse(), QStringLiteral("done"));
+
+    agent.setMemory(nullptr);
+}
+
+// F1: the todo list is in-memory and owned by one session. Leaving the
+// session (reset) or opening another one (resume) must clear it; otherwise
+// the new task list panel would show the previous session's tasks.
+void TestAgent::todoListClearedOnSessionResetAndResume() {
+    SqliteMemory memory(QStringLiteral(":memory:"));
+    agent.setMemory(&memory);
+
+    const QJsonArray todos{
+        QJsonObject{{"content", "Inspect code"}, {"status", "completed"}, {"priority", "high"}},
+        QJsonObject{{"content", "Apply fix"}, {"status", "in_progress"}, {"priority", "medium"}}
+    };
+    llm.script.append(toolResponse("todo_write", QJsonObject{{"todos", todos}}));
+    llm.script.append(textResponse(QStringLiteral("first done")));
+
+    QSignalSpy todoSpy(&agent, &AIAgent::todoListChanged);
+    QSignalSpy doneSpy(&agent, &AIAgent::responseReady);
+
+    agent.startTask(QStringLiteral("plan the work"));
+    QTRY_COMPARE_WITH_TIMEOUT(doneSpy.count(), 1, 15000);
+    QCOMPARE(agent.todoList().size(), 2);
+    QVERIFY(todoSpy.count() >= 1);
+
+    // 1) New chat in the same tab: resetSession drops the list.
+    const int beforeReset = todoSpy.count();
+    agent.resetSession();
+    QCOMPARE(agent.todoList().size(), 0);
+    QCOMPARE(todoSpy.count(), beforeReset + 1);
+
+    // 2) Reopening a persisted session must not resurrect the list left by
+    //    the previous session in this tab.
+    llm.script.append(toolResponse("todo_write", QJsonObject{{"todos", todos}}));
+    llm.script.append(textResponse(QStringLiteral("second done")));
+    agent.startTask(QStringLiteral("plan again"));
+    QTRY_COMPARE_WITH_TIMEOUT(doneSpy.count(), 2, 15000);
+    QCOMPARE(agent.todoList().size(), 2);
+
+    memory.beginSession(QStringLiteral("other-session"), QStringLiteral("other"));
+    const int beforeResume = todoSpy.count();
+    agent.resumeSession(QStringLiteral("other-session"));
+    QCOMPARE(agent.currentSessionId(), QStringLiteral("other-session"));
+    QCOMPARE(agent.todoList().size(), 0);
+    QCOMPARE(todoSpy.count(), beforeResume + 1);
 
     agent.setMemory(nullptr);
 }

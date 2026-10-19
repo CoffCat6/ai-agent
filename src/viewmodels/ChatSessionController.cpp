@@ -49,7 +49,7 @@ void ChatSessionController::attachAgent(AIAgent* agent, bool owned) {
 }
 
 void ChatSessionController::setPermissionMode(int mode) {
-    if (mode < 0 || mode > 2 || mode == m_permissionMode) return;
+    if (!isValidPermissionMode(mode) || mode == m_permissionMode) return;
     m_permissionMode = mode;
     m_permissionModeOverridden = true;
     if (m_agent)
@@ -58,7 +58,7 @@ void ChatSessionController::setPermissionMode(int mode) {
 }
 
 void ChatSessionController::applyDefaultPermissionMode(int mode) {
-    if (mode < 0 || mode > 2 || m_permissionModeOverridden
+    if (!isValidPermissionMode(mode) || m_permissionModeOverridden
             || mode == m_permissionMode)
         return;
     m_permissionMode = mode;

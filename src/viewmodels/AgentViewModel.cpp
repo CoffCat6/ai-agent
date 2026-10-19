@@ -14,6 +14,7 @@
 #include "core/utils/Logger.h"
 #include "core/utils/DataUrlUtils.h"
 #include "core/utils/AttachmentClassifier.h"
+#include "core/utils/ProjectFileIndex.h"
 #include "core/utils/SettingsRepository.h"
 #include "core/utils/SettingsSchema.h"
 
@@ -652,6 +653,112 @@ void AgentViewModel::setActiveProjectId(const QString& id) {
 void AgentViewModel::assignProjectIfActiveTabUnbound(const QString& projectId) {
     if (!active()->currentSessionId().isEmpty()) return;
     setActiveProjectId(projectId);
+}
+
+// ── G2: '@' project file completion / references ──────────
+
+QVariantList AgentViewModel::listProjectFiles(const QString& query, int limit) {
+    const QString root = activeProjectRoot();
+    if (root.isEmpty())
+        return {};
+
+    const qint64 now = QDateTime::currentMSecsSinceEpoch();
+    const bool stale = m_projectFilesRoot != root
+        || m_projectFilesScannedAt == 0
+        || now - m_projectFilesScannedAt > 30000;
+    if (stale && !m_projectFilesScanning)
+        refreshProjectFiles(root);
+    if (m_projectFilesRoot != root)
+        return {};
+
+    const QStringList matches = ProjectFileIndex::complete(
+        m_projectFiles, query, qBound(1, limit, 200));
+    QVariantList out;
+    out.reserve(matches.size());
+    for (const QString& path : matches)
+        out.append(path);
+    return out;
+}
+
+QVariantMap AgentViewModel::activeFileMention(const QString& text, int cursor) const {
+    const ProjectFileIndex::Mention mention =
+        ProjectFileIndex::mentionAt(text, cursor);
+    return QVariantMap{
+        {"active", mention.active},
+        {"start", mention.start},
+        {"query", mention.query},
+        {"quoted", mention.quoted},
+    };
+}
+
+QVariantList AgentViewModel::resolveFileReferences(const QString& text) {
+    const QString root = activeProjectRoot();
+    if (root.isEmpty())
+        return {};
+
+    const QVector<ProjectFileIndex::Reference> refs =
+        ProjectFileIndex::resolveReferences(root, text);
+    QVariantList out;
+    out.reserve(refs.size());
+    for (const auto& ref : refs) {
+        out.append(QVariantMap{
+            {"kind", QStringLiteral("file")},
+            {"name", ref.path},
+            {"content", ref.content},
+        });
+    }
+    return out;
+}
+
+QVariantList AgentViewModel::inspectFileReferences(const QString& text) const {
+    const QVector<ProjectFileIndex::ReferenceCheck> checks =
+        ProjectFileIndex::checkReferences(activeProjectRoot(), text);
+    QVariantList out;
+    out.reserve(checks.size());
+    for (const auto& check : checks) {
+        out.append(QVariantMap{
+            {"token", check.token},
+            {"path", check.path},
+            {"error", check.error},
+        });
+    }
+    return out;
+}
+
+// The scan runs off the GUI thread; a generation counter drops results that
+// belong to a project the user already switched away from. The cache is
+// refreshed lazily (30s TTL) so typing '@' never blocks on a repo walk.
+void AgentViewModel::refreshProjectFiles(const QString& root) {
+    if (root.isEmpty()) {
+        ++m_projectFilesGeneration;
+        m_projectFiles.clear();
+        m_projectFilesRoot.clear();
+        m_projectFilesScannedAt = 0;
+        m_projectFilesScanning = false;
+        emit projectFilesChanged();
+        return;
+    }
+
+    const quint64 generation = ++m_projectFilesGeneration;
+    m_projectFilesRoot = root;
+    m_projectFilesScanning = true;
+    emit projectFilesChanged();
+
+    QPointer<AgentViewModel> self(this);
+    (void)QtConcurrent::run([self, root, generation]() {
+        const QStringList files = ProjectFileIndex::scan(root);
+        if (!self)
+            return;
+        QMetaObject::invokeMethod(self.data(), [self, root, generation, files]() {
+            if (!self || generation != self->m_projectFilesGeneration)
+                return;
+            self->m_projectFiles = files;
+            self->m_projectFilesRoot = root;
+            self->m_projectFilesScannedAt = QDateTime::currentMSecsSinceEpoch();
+            self->m_projectFilesScanning = false;
+            emit self->projectFilesChanged();
+        }, Qt::QueuedConnection);
+    });
 }
 
 // docs/18: 把指定项目（id+name+root）推给一个 agent。id 为空 → 推空（本地）。

@@ -57,6 +57,9 @@ ToolDefinition McpToolAdapter::definition() const {
     def.description = m_description.left(MaxDescriptionChars);
     def.parameters = m_inputSchema;
     def.level = ToolLevel::RequiresConfirm;   // forced for MCP tools
+    // Side effects are unknown until MCP annotations (readOnlyHint) are
+    // parsed, so PlanOnly blocks MCP tools by default.
+    def.readOnly = false;
     return def;
 }
 

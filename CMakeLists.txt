@@ -74,6 +74,8 @@ add_library(nexus_core STATIC
     src/core/utils/DataUrlUtils.cpp
     src/core/utils/AttachmentClassifier.h
     src/core/utils/AttachmentClassifier.cpp
+    src/core/utils/ProjectFileIndex.h
+    src/core/utils/ProjectFileIndex.cpp
     src/core/mcp/McpTransport.h
     src/core/mcp/McpTransport.cpp
     src/core/mcp/StdioTransport.h
@@ -137,6 +139,13 @@ add_library(nexus_viewmodels STATIC
 qt_add_qml_module(nexus_viewmodels
     URI NexusAI.ViewModels
     VERSION 1.0
+    # qmlcachegen resolves `import NexusAI.ViewModels` through the import path
+    # (`-I <build dir>` → NexusAI/ViewModels). Without an explicit output
+    # directory the static module's qmldir/qmltypes land at the build root,
+    # are never found there, and the generated AOT code silently embeds stale
+    # method indices - which segfaults when trace delegates call AgentVM
+    # invokables during session resume.
+    OUTPUT_DIRECTORY "${CMAKE_CURRENT_BINARY_DIR}/NexusAI/ViewModels"
     SOURCES
         src/viewmodels/ThemeProvider.h
         src/viewmodels/ThemeManager.h
@@ -249,6 +258,10 @@ qt_add_qml_module(nexus_ai
         src/ui/components/ThinkingEffortSelector.qml
         src/ui/components/ToolConfirmDialog.qml
         src/ui/components/ShortcutsDialog.qml
+        # F1: todo_write task list (read-only, fed by AgentVM.todoList)
+        src/ui/components/TodoListPanel.qml
+        # G2: '@' reference status chips (fed by AgentVM.inspectFileReferences)
+        src/ui/components/ReferenceChipRow.qml
         # 批次六 T2（docs/16 §8）：QML Canvas 自绘图表组件库（禁引 Qt Charts）。
         # QTP0004 NEW：charts/ 子目录文件平铺注册进 NexusAI 模块。
         src/ui/components/charts/DonutChart.qml

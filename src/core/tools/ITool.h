@@ -24,6 +24,11 @@ struct ToolDefinition {
     // 编辑类与搜索/抓取类声明为 true；shell_exec、MCP 工具与一切未声明者
     // 在任何自动模式下仍逐次确认。Dangerous 不受影响。
     bool autoEditSafe{false};
+    // PlanOnly（只读）下是否仍可执行。Safe 级工具恒可执行；确认级工具
+    // 默认不可执行，只有明确不改动工作区的检索工具（web_search /
+    // http_fetch）声明为 true。MCP 工具默认 false——未知副作用按最保守
+    // 处理，待未来解析 readOnlyHint 后再放开。
+    bool readOnly{false};
 };
 
 // Tool execution result

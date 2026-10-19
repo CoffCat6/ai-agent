@@ -53,6 +53,7 @@ public:
             "when the current user message actually needs live web content.";
         def.level = ToolLevel::RequiresConfirm;
         def.autoEditSafe = true;   // 会话"自动编辑"模式放行
+        def.readOnly = true;       // GET-only 检索：PlanOnly 下仍允许
         def.parameters = QJsonObject{
             {"type", "object"},
             {"properties", QJsonObject{

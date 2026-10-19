@@ -146,6 +146,11 @@ nexus_add_test(test_sampling_params test_sampling_params.cpp)
 nexus_add_test(test_data_url_utils test_data_url_utils.cpp)
 nexus_add_test(test_attachment_classifier test_attachment_classifier.cpp)
 
+# G2: project file index + '@' mention parsing. The popup and the
+# submit-time resolver share this implementation, so ordering/rejection
+# rules are locked here rather than in QML.
+nexus_add_test(test_project_files test_project_files.cpp)
+
 # docs/20 §3.4（A4）：拖放边界回归。QML 的 url 对象没有 toLocalFile()，
 # 在 QML 里转路径会抛 TypeError 让拖拽静默失效；本用例用真实拖放事件走
 # 一遍 delivery agent，锁住"urls 原样交给 C++ 的 QList<QUrl>"这一契约。
@@ -225,4 +230,55 @@ add_test(NAME test_charts_qml
     COMMAND ${CMAKE_COMMAND} -E env
         "QT_QPA_PLATFORM_PLUGIN_PATH=${QT6_INSTALL_PREFIX}/${QT6_INSTALL_PLUGINS}/platforms"
         $<TARGET_FILE:test_charts_qml> -platform offscreen)
+
+# F1: TodoListPanel 渲染/状态回归。与 test_charts_qml 共用「build/NexusAI
+# 文件系统副本 + qrc 回退拦截器 + offscreen」方案，锁住空态不占位、三态
+# 映射、折叠/展开和像素级非空白。
+add_executable(test_todo_qml test_todo_qml.cpp)
+target_link_libraries(test_todo_qml PRIVATE
+    nexus_core nexus_infra nexus_viewmodels nexus_viewmodelsplugin
+    Qt6::Test Qt6::Qml Qt6::Quick)
+target_compile_definitions(test_todo_qml PRIVATE
+    NEXUS_TEST_QML_DIR="${CMAKE_CURRENT_SOURCE_DIR}/qml"
+    NEXUS_BUILD_DIR="${CMAKE_BINARY_DIR}")
+# 保证 build/NexusAI/ 下的 QML 文件系统副本（含新增 TodoListPanel.qml）
+# 在测试运行前已同步。
+add_dependencies(test_todo_qml nexus_ai)
+add_test(NAME test_todo_qml
+    COMMAND ${CMAKE_COMMAND} -E env
+        "QT_QPA_PLATFORM_PLUGIN_PATH=${QT6_INSTALL_PREFIX}/${QT6_INSTALL_PLUGINS}/platforms"
+        $<TARGET_FILE:test_todo_qml> -platform offscreen)
+
+# G2: the '@' reference status row is the only feedback telling users whether
+# a mention will actually be attached. Render it for real (same filesystem
+# copy + offscreen setup as test_todo_qml) so "logic wired, row invisible"
+# cannot regress silently.
+add_executable(test_reference_row_qml test_reference_row_qml.cpp)
+target_link_libraries(test_reference_row_qml PRIVATE
+    nexus_core nexus_infra nexus_viewmodels nexus_viewmodelsplugin
+    Qt6::Test Qt6::Qml Qt6::Quick)
+target_compile_definitions(test_reference_row_qml PRIVATE
+    NEXUS_TEST_QML_DIR="${CMAKE_CURRENT_SOURCE_DIR}/qml"
+    NEXUS_BUILD_DIR="${CMAKE_BINARY_DIR}")
+add_dependencies(test_reference_row_qml nexus_ai)
+add_test(NAME test_reference_row_qml
+    COMMAND ${CMAKE_COMMAND} -E env
+        "QT_QPA_PLATFORM_PLUGIN_PATH=${QT6_INSTALL_PREFIX}/${QT6_INSTALL_PLUGINS}/platforms"
+        $<TARGET_FILE:test_reference_row_qml> -platform offscreen)
+
+# G2: '@' completion keyboard/mouse interaction. Real QTest key and click
+# events against the real InputConsole; guards Enter/Tab/Up-Down/click
+# acceptance, which the parser and rendering tests cannot see.
+add_executable(test_mention_interaction test_mention_interaction.cpp)
+target_link_libraries(test_mention_interaction PRIVATE
+    nexus_core nexus_infra nexus_viewmodels nexus_viewmodelsplugin
+    Qt6::Test Qt6::Qml Qt6::Quick)
+target_compile_definitions(test_mention_interaction PRIVATE
+    NEXUS_TEST_QML_DIR="${CMAKE_CURRENT_SOURCE_DIR}/qml"
+    NEXUS_BUILD_DIR="${CMAKE_BINARY_DIR}")
+add_dependencies(test_mention_interaction nexus_ai)
+add_test(NAME test_mention_interaction
+    COMMAND ${CMAKE_COMMAND} -E env
+        "QT_QPA_PLATFORM_PLUGIN_PATH=${QT6_INSTALL_PREFIX}/${QT6_INSTALL_PLUGINS}/platforms"
+        $<TARGET_FILE:test_mention_interaction> -platform offscreen)
 

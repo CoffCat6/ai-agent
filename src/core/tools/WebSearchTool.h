@@ -39,6 +39,7 @@ public:
             "message needs live web content that the model cannot answer.";
         def.level = ToolLevel::RequiresConfirm;
         def.autoEditSafe = true;   // 会话"自动编辑"模式放行
+        def.readOnly = true;       // 只读检索：PlanOnly 下仍允许
         def.parameters = QJsonObject{
             {"type", "object"},
             {"properties", QJsonObject{

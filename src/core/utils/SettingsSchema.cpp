@@ -199,7 +199,7 @@ const QVector<SettingsKeyDef>& SettingsSchema::registeredKeys() {
             keyDef(QStringLiteral("agent/defaultPermissionMode"), QStringLiteral("confirm"),
                    SettingValueType::String,
                    enumValues({QStringLiteral("confirm"), QStringLiteral("auto_edit"),
-                               QStringLiteral("full_access")})),
+                               QStringLiteral("full_access"), QStringLiteral("plan_only")})),
             keyDef(QStringLiteral("ui/sidebarWidth"), QVariant(), SettingValueType::Int,
                    intRange(180, 560)),
             keyDef(QStringLiteral("ui/panelWidth"), QVariant(), SettingValueType::Int,
