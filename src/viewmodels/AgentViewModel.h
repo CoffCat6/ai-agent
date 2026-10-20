@@ -515,9 +515,10 @@ public:
     // metaobject method indices of existing Q_INVOKABLEs (QML AOT caches embed
     // those indices and are not invalidated by header-only changes).
     Q_INVOKABLE QVariantList inspectFileReferences(const QString& text) const;
-    // G4: undo the active session's most recent (or a selected) file change.
+    // G4: undo all of this session's changes to the file that owns the id.
     // Declared last for the same AOT-index reason as inspectFileReferences.
     Q_INVOKABLE bool undoFileCheckpoint(qint64 id);
+    Q_INVOKABLE QVariantMap fileCheckpointDetail(qint64 id) const;
 
 signals:
     void stateChanged();

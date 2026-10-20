@@ -312,6 +312,10 @@ bool ChatSessionController::undoFileCheckpoint(qint64 id) {
     return m_agent && m_agent->undoFileCheckpoint(id);
 }
 
+QJsonObject ChatSessionController::fileCheckpointDetail(qint64 id) const {
+    return m_agent ? m_agent->fileCheckpointDetail(id) : QJsonObject();
+}
+
 void ChatSessionController::deleteSession(const QString& sessionId) {
     Activity::usage(Activity::Kind::User, QStringLiteral("session.delete"),
                     sessionId);

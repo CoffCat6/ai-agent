@@ -1,6 +1,7 @@
 #pragma once
 
 #include <QJsonArray>
+#include <QJsonObject>
 #include <QObject>
 #include <QString>
 
@@ -68,7 +69,9 @@ public:
     QVariantList todoList() const { return m_todoList; }
     // G4: this session's file checkpoints (newest first).
     QVariantList fileCheckpoints() const { return m_fileCheckpoints; }
+    // G4: undo all of this session's changes to the file that owns the id.
     bool undoFileCheckpoint(qint64 id);
+    QJsonObject fileCheckpointDetail(qint64 id) const;
     // docs/18: 本标签的项目归属（转发自 agent；无 agent 时为空 = 本地）。
     // 归属按标签持有，AgentViewModel 的派生属性与沙箱镜像都从这里读。
     QString activeProjectId() const;

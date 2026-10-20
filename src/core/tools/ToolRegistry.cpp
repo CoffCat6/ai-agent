@@ -1,5 +1,6 @@
 #include "ToolRegistry.h"
 #include "Sandbox.h"
+#include "core/git/GitService.h"
 #include "core/utils/SettingsRepository.h"
 #include "core/utils/SettingsSchema.h"
 
@@ -9,6 +10,7 @@
 #include <QTextStream>
 #include <QDir>
 #include <QDirIterator>
+#include <QCryptographicHash>
 #include <QRegularExpression>
 #include <QJsonArray>
 #include <QJsonDocument>
@@ -21,8 +23,12 @@
 static QString unifiedDiff(const QString& oldText, const QString& newText,
                            const QString& oldLabel, const QString& newLabel,
                            int context = 3) {
-    const QStringList oldLines = oldText.split('\n', Qt::KeepEmptyParts);
-    const QStringList newLines = newText.split('\n', Qt::KeepEmptyParts);
+    // Empty content is zero lines, not one empty line: otherwise a
+    // new-file diff invents a spurious "-" line.
+    const QStringList oldLines = oldText.isEmpty()
+        ? QStringList() : oldText.split('\n', Qt::KeepEmptyParts);
+    const QStringList newLines = newText.isEmpty()
+        ? QStringList() : newText.split('\n', Qt::KeepEmptyParts);
 
     int p = 0;
     const int minLen = qMin(oldLines.size(), newLines.size());
@@ -96,6 +102,11 @@ constexpr qint64 kMaxReadFileBytes = 8 * 1024 * 1024;
 // (truncated) instead of bloating the session checkpoint budget.
 constexpr qint64 kMaxCheckpointCaptureBytes = 1024 * 1024;
 
+// Phase 1: per-checkpoint diff bounds. Inputs beyond this are marked
+// unavailable rather than producing a partial, misleading patch.
+constexpr qint64 kMaxCheckpointDiffInputBytes = 512 * 1024;
+constexpr int kMaxCheckpointDiffChars = 64 * 1024;
+
 // Must run before the mutating write. Unreadable/oversized originals degrade
 // to a path-only checkpoint rather than blocking the tool.
 static FileCheckpoint captureFileCheckpoint(const QString& path) {
@@ -120,6 +131,55 @@ static FileCheckpoint captureFileCheckpoint(const QString& path) {
         checkpoint.beforeContent.clear();
         checkpoint.truncated = true;
     }
+    return checkpoint;
+}
+
+// Called only after the write committed. The hash is always recorded so the
+// UI can tell whether the file was modified again later; the diff is bounded.
+static FileCheckpoint finalizeCheckpoint(FileCheckpoint checkpoint,
+                                         const QByteArray& afterBytes) {
+    checkpoint.afterHash = QString::fromLatin1(
+        QCryptographicHash::hash(afterBytes, QCryptographicHash::Sha256).toHex());
+
+    if (checkpoint.truncated) {
+        checkpoint.diffTruncated = true;
+        return checkpoint;
+    }
+    const QByteArray beforeBytes =
+        checkpoint.existed ? checkpoint.beforeContent : QByteArray();
+    if (beforeBytes.size() > kMaxCheckpointDiffInputBytes
+            || afterBytes.size() > kMaxCheckpointDiffInputBytes) {
+        checkpoint.diffTruncated = true;
+        return checkpoint;
+    }
+
+    const QString beforeText = checkpoint.existed
+        ? QString::fromUtf8(beforeBytes) : QString();
+    const QString afterText = QString::fromUtf8(afterBytes);
+    if (beforeText.contains(QChar::ReplacementCharacter)
+            || afterText.contains(QChar::ReplacementCharacter)) {
+        checkpoint.diffTruncated = true;
+        return checkpoint;
+    }
+
+    QString diff = unifiedDiff(
+        beforeText, afterText,
+        checkpoint.existed ? checkpoint.path : QStringLiteral("/dev/null"),
+        checkpoint.path);
+    for (const QString& line : diff.split(QLatin1Char('\n'))) {
+        if (line.startsWith(QLatin1String("+++"))
+                || line.startsWith(QLatin1String("---")))
+            continue;
+        if (line.startsWith(QLatin1Char('+'))) ++checkpoint.addedLines;
+        else if (line.startsWith(QLatin1Char('-'))) ++checkpoint.removedLines;
+    }
+    if (diff.size() > kMaxCheckpointDiffChars) {
+        int cut = diff.lastIndexOf(QLatin1Char('\n'), kMaxCheckpointDiffChars);
+        if (cut <= 0) cut = kMaxCheckpointDiffChars;
+        diff = diff.left(cut) + QStringLiteral("\n…[diff truncated]\n");
+        checkpoint.diffTruncated = true;
+    }
+    checkpoint.diff = diff;
     return checkpoint;
 }
 
@@ -263,7 +323,7 @@ public:
         const QByteArray bytes = content.toUtf8();
         // G4: snapshot before QSaveFile replaces the target. On a fresh file
         // this records existed=false, so undo removes the file again.
-        const FileCheckpoint checkpoint = captureFileCheckpoint(path);
+        FileCheckpoint checkpoint = captureFileCheckpoint(path);
         QSaveFile out(path);
         if (!out.open(QIODevice::WriteOnly))
             return ToolResult::fail("Cannot open file for writing: " + out.errorString());
@@ -277,7 +337,7 @@ public:
         ToolResult result = ToolResult::ok(
             QStringLiteral("File written successfully: %1 (%2 bytes)")
                 .arg(path).arg(bytes.size()));
-        result.checkpoint = checkpoint;
+        result.checkpoint = finalizeCheckpoint(checkpoint, bytes);
         return result;
     }
 };
@@ -425,7 +485,7 @@ public:
             QStringLiteral("Replaced %1 occurrence%2; file now %3 bytes")
                 .arg(count).arg(count == 1 ? QString() : QStringLiteral("s"))
                 .arg(bytes.size()));
-        result.checkpoint = checkpoint;
+        result.checkpoint = finalizeCheckpoint(checkpoint, bytes);
         return result;
     }
 };
@@ -894,13 +954,16 @@ public:
     }
 
     ToolResult execute(const QJsonObject& args) override {
-        QStringList gitArgs{QStringLiteral("status"), QStringLiteral("--porcelain=v1"), QStringLiteral("-b")};
         const QString path = args.value("path").toString();
-        if (!path.isEmpty())
-            gitArgs << Sandbox::resolvePath(path);
-        const GitResult r = runGit(gitArgs);
-        return r.ok ? ToolResult::ok(r.output.isEmpty() ? QStringLiteral("No changes (clean working tree).") : r.output)
-                    : ToolResult::fail(r.output);
+        const QString resolved = path.isEmpty() ? QString() : Sandbox::resolvePath(path);
+        GitService git(Sandbox::currentProjectDir());
+        QString error;
+        const QString output = git.statusText(resolved, &error);
+        if (output.isNull())
+            return ToolResult::fail(error.isEmpty()
+                ? QStringLiteral("git status failed") : error);
+        return ToolResult::ok(output.isEmpty()
+            ? QStringLiteral("No changes (clean working tree).") : output);
     }
 };
 
@@ -923,15 +986,20 @@ public:
     }
 
     ToolResult execute(const QJsonObject& args) override {
-        QStringList gitArgs{QStringLiteral("diff")};
-        if (args.value("staged").toBool())
-            gitArgs << QStringLiteral("--staged");
         const QString path = args.value("path").toString();
-        if (!path.isEmpty())
-            gitArgs << Sandbox::resolvePath(path);
-        const GitResult r = runGit(gitArgs);
-        return r.ok ? ToolResult::ok(r.output.isEmpty() ? QStringLiteral("No changes.") : r.output)
-                    : ToolResult::fail(r.output);
+        const QString resolved = path.isEmpty() ? QString() : Sandbox::resolvePath(path);
+        GitService git(Sandbox::currentProjectDir());
+        bool truncated = false;
+        QString error;
+        const QString output =
+            git.workingDiff(resolved, args.value("staged").toBool(), &truncated, &error);
+        if (output.isNull())
+            return ToolResult::fail(error.isEmpty()
+                ? QStringLiteral("git diff failed") : error);
+        QString body = output.isEmpty() ? QStringLiteral("No changes.") : output;
+        if (truncated)
+            body += QStringLiteral("\n...[diff truncated]");
+        return ToolResult::ok(body);
     }
 };
 

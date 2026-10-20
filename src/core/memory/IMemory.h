@@ -100,20 +100,46 @@ public:
     }
 
     // G4: workspace file checkpoints. write_file/edit_file hand the original
-    // bytes back to the agent, which persists them here (GUI thread only —
-    // the DB connection is thread-bound). `truncated` means only the path was
-    // recorded (too large / unreadable); such rows are audit-only and cannot
-    // be undone. Returns the new row id (0 = failure).
-    virtual qint64 addFileCheckpoint(const QString& sessionId, const QString& path,
-                                     const QByteArray& beforeContent, bool existed,
-                                     bool truncated, quint64 requestId = 0) {
-        Q_UNUSED(sessionId); Q_UNUSED(path); Q_UNUSED(beforeContent);
-        Q_UNUSED(existed); Q_UNUSED(truncated); Q_UNUSED(requestId);
+    // bytes and the at-write diff back to the agent, which persists them here
+    // (GUI thread only — the DB connection is thread-bound). `truncated`
+    // means only the path was recorded (too large / unreadable); such rows
+    // are audit-only and cannot be undone. Returns the new row id (0 =
+    // failure).
+    struct FileCheckpointInput {
+        QString path;
+        QByteArray beforeContent;
+        bool existed{false};
+        bool truncated{false};
+        QString diff;
+        bool diffTruncated{false};
+        int addedLines{0};
+        int removedLines{0};
+        QString afterHash;
+    };
+    virtual qint64 addFileCheckpoint(const QString& sessionId,
+                                     const FileCheckpointInput& input,
+                                     quint64 requestId = 0) {
+        Q_UNUSED(sessionId); Q_UNUSED(input); Q_UNUSED(requestId);
         return 0;
     }
-    // Metadata only (newest first), no file content.
+    // Metadata only (newest first), no file content or diff text.
     virtual QJsonArray listFileCheckpoints(const QString& sessionId, int limit = 200) {
         Q_UNUSED(sessionId); Q_UNUSED(limit);
+        return {};
+    }
+    // One entry per touched file (newest active write first). `id` is the
+    // newest not-yet-undone row (or the newest row when all are undone), so
+    // the UI updates one row per file while undo still steps through the
+    // per-write history. Adds: changeCount, undoneCount, activeCount,
+    // firstAt, updatedAt, latestId, firstId.
+    virtual QJsonArray listFileCheckpointFiles(const QString& sessionId,
+                                               int limit = 200) {
+        Q_UNUSED(sessionId); Q_UNUSED(limit);
+        return {};
+    }
+    // Full detail for one checkpoint (diff, stats, hash); empty when unknown.
+    virtual QJsonObject fileCheckpointDetail(qint64 id, const QString& sessionId) {
+        Q_UNUSED(id); Q_UNUSED(sessionId);
         return {};
     }
     // Loads one not-yet-undone checkpoint's content, scoped to its session.
@@ -129,6 +155,24 @@ public:
     virtual bool markFileCheckpointUndone(qint64 id, const QString& sessionId,
                                           qint64 undoneAtMs) {
         Q_UNUSED(id); Q_UNUSED(sessionId); Q_UNUSED(undoneAtMs);
+        return false;
+    }
+    // Session-level undo: loads the earliest not-yet-undone write for one
+    // path — the state before the session first touched the file.
+    virtual bool loadFileCheckpointGroupContent(
+        const QString& sessionId, const QString& path,
+        QByteArray* beforeContent, bool* existed, bool* truncated,
+        QString* storedPath) {
+        Q_UNUSED(sessionId); Q_UNUSED(path); Q_UNUSED(beforeContent);
+        Q_UNUSED(existed); Q_UNUSED(truncated); Q_UNUSED(storedPath);
+        return false;
+    }
+    // Marks every not-yet-undone write for one path undone and drops their
+    // payloads. Returns false when no active write remains.
+    virtual bool markFileCheckpointGroupUndone(const QString& sessionId,
+                                               const QString& path,
+                                               qint64 undoneAtMs) {
+        Q_UNUSED(sessionId); Q_UNUSED(path); Q_UNUSED(undoneAtMs);
         return false;
     }
     // Drops checkpoints older than the cutoff (session purge is separate).

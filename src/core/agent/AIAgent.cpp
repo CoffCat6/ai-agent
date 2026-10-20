@@ -439,26 +439,41 @@ void AIAgent::deleteSession(const QString& sessionId) {
 
 QJsonArray AIAgent::fileCheckpoints() const {
     if (!m_memory || m_sessionId.isEmpty()) return QJsonArray();
-    return m_memory->listFileCheckpoints(m_sessionId);
+    // One row per file: repeat edits update that file's row while the
+    // per-write ledger stays available for step-by-step undo.
+    return m_memory->listFileCheckpointFiles(m_sessionId);
+}
+
+QJsonObject AIAgent::fileCheckpointDetail(qint64 id) const {
+    if (!m_memory || m_sessionId.isEmpty() || id <= 0) return {};
+    return m_memory->fileCheckpointDetail(id, m_sessionId);
 }
 
 bool AIAgent::undoFileCheckpoint(qint64 id) {
     if (!m_memory || m_sessionId.isEmpty() || m_active || id <= 0) return false;
 
+    // Session-level undo: the given id only identifies the file. Restore the
+    // state before the session's first write to that path and mark every
+    // write for it undone, so one click reverts the whole file.
+    const QJsonObject row = m_memory->fileCheckpointDetail(id, m_sessionId);
+    const QString path = row.value("path").toString();
+    if (path.isEmpty()) return false;
+
     QByteArray beforeContent;
-    QString path;
+    QString storedPath;
     bool existed = false;
     bool truncated = false;
-    if (!m_memory->loadFileCheckpointContent(id, m_sessionId, &beforeContent,
-                                             &existed, &truncated, &path))
+    if (!m_memory->loadFileCheckpointGroupContent(m_sessionId, path, &beforeContent,
+                                                  &existed, &truncated,
+                                                  &storedPath))
         return false;
     // Path-only rows (oversized/unreadable original) are audit history; the
     // UI disables them, and a direct call gets the same refusal.
-    if (truncated || path.isEmpty()) return false;
+    if (truncated || storedPath.isEmpty()) return false;
 
     if (existed) {
-        QDir().mkpath(QFileInfo(path).absolutePath());
-        QSaveFile out(path);
+        QDir().mkpath(QFileInfo(storedPath).absolutePath());
+        QSaveFile out(storedPath);
         if (!out.open(QIODevice::WriteOnly)) return false;
         if (out.write(beforeContent) != beforeContent.size()) {
             out.cancelWriting();
@@ -466,15 +481,16 @@ bool AIAgent::undoFileCheckpoint(qint64 id) {
         }
         if (!out.commit()) return false;
     } else {
-        QFile created(path);
+        QFile created(storedPath);
         if (created.exists() && !created.remove()) return false;
     }
 
     // The file is restored even if the bookkeeping update fails; log rather
     // than reporting a misleading failure.
-    if (!m_memory->markFileCheckpointUndone(
-            id, m_sessionId, QDateTime::currentMSecsSinceEpoch())) {
-        qWarning() << "File restored but checkpoint could not be marked undone:" << id;
+    if (!m_memory->markFileCheckpointGroupUndone(
+            m_sessionId, path, QDateTime::currentMSecsSinceEpoch())) {
+        qWarning() << "File restored but checkpoint group could not be marked undone:"
+                   << path;
     }
     emit fileCheckpointsChanged();
     return true;
@@ -1803,10 +1819,17 @@ void AIAgent::finishToolExecution(const ToolCallInfo& call, const QString& trace
     // runs on the GUI thread because the SQLite connection is thread-bound.
     if (result.success && result.checkpoint.isValid()
             && m_memory && !m_sessionId.isEmpty()) {
-        if (m_memory->addFileCheckpoint(m_sessionId, result.checkpoint.path,
-                                        result.checkpoint.beforeContent,
-                                        result.checkpoint.existed,
-                                        result.checkpoint.truncated,
+        IMemory::FileCheckpointInput input;
+        input.path = result.checkpoint.path;
+        input.beforeContent = result.checkpoint.beforeContent;
+        input.existed = result.checkpoint.existed;
+        input.truncated = result.checkpoint.truncated;
+        input.diff = result.checkpoint.diff;
+        input.diffTruncated = result.checkpoint.diffTruncated;
+        input.addedLines = result.checkpoint.addedLines;
+        input.removedLines = result.checkpoint.removedLines;
+        input.afterHash = result.checkpoint.afterHash;
+        if (m_memory->addFileCheckpoint(m_sessionId, input,
                                         m_activeRequestId) > 0) {
             emit fileCheckpointsChanged();
         }

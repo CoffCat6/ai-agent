@@ -191,6 +191,9 @@ void SqliteMemory::initDatabase() {
     versionQuery.finish();
 
     createTables();
+    // G4 Phase 1: existing databases from the first checkpoint release get
+    // the diff/detail columns added in place.
+    migrateFileCheckpointDetailColumns();
     // docs/17 A0: sessions.project_id 列补齐（projects 表在 createTables 里）。
     migrateSessionProjectColumn();
     migrateTraceNodeReasoningColumn();
@@ -469,7 +472,12 @@ void SqliteMemory::createTables() {
             byte_size INTEGER NOT NULL DEFAULT 0,
             request_id INTEGER NOT NULL DEFAULT 0,
             created_at INTEGER NOT NULL,
-            undone_at INTEGER
+            undone_at INTEGER,
+            diff_text TEXT,
+            diff_truncated INTEGER NOT NULL DEFAULT 0,
+            added_lines INTEGER NOT NULL DEFAULT 0,
+            removed_lines INTEGER NOT NULL DEFAULT 0,
+            after_hash TEXT
         )
     )", "create file_checkpoints table");
     execDdl(query, "CREATE INDEX IF NOT EXISTS idx_file_checkpoints_session "
@@ -586,6 +594,37 @@ void SqliteMemory::migrateSessionProjectColumn() {
     if (!columns.contains("deleted_at"))
         execDdl(q, "ALTER TABLE sessions ADD COLUMN deleted_at INTEGER",
                 "add sessions.deleted_at column");
+}
+
+// G4 Phase 1: detail columns added after file_checkpoints first shipped.
+// Probe-and-add keeps upgrades idempotent; the create-table DDL already
+// carries them for new databases.
+void SqliteMemory::migrateFileCheckpointDetailColumns() {
+    QSqlQuery q(m_db);
+    if (!q.exec("PRAGMA table_info(file_checkpoints)")) return;
+    QStringList columns;
+    while (q.next()) columns.append(q.value(1).toString());
+    q.finish();
+    if (columns.isEmpty()) return;
+
+    if (!columns.contains(QStringLiteral("diff_text")))
+        execDdl(q, "ALTER TABLE file_checkpoints ADD COLUMN diff_text TEXT",
+                "add file_checkpoints.diff_text column");
+    if (!columns.contains(QStringLiteral("diff_truncated")))
+        execDdl(q, "ALTER TABLE file_checkpoints ADD COLUMN diff_truncated "
+                   "INTEGER NOT NULL DEFAULT 0",
+                "add file_checkpoints.diff_truncated column");
+    if (!columns.contains(QStringLiteral("added_lines")))
+        execDdl(q, "ALTER TABLE file_checkpoints ADD COLUMN added_lines "
+                   "INTEGER NOT NULL DEFAULT 0",
+                "add file_checkpoints.added_lines column");
+    if (!columns.contains(QStringLiteral("removed_lines")))
+        execDdl(q, "ALTER TABLE file_checkpoints ADD COLUMN removed_lines "
+                   "INTEGER NOT NULL DEFAULT 0",
+                "add file_checkpoints.removed_lines column");
+    if (!columns.contains(QStringLiteral("after_hash")))
+        execDdl(q, "ALTER TABLE file_checkpoints ADD COLUMN after_hash TEXT",
+                "add file_checkpoints.after_hash column");
 }
 
 // 思考正文按列存（trace_nodes 是列映射表，不是整节点 JSON 大字段）：老库
@@ -2142,15 +2181,18 @@ namespace {
 // Total pre-edit content stored per session (sum of byte_size). Beyond this
 // the row still records the path/request but cannot be undone.
 constexpr qint64 kMaxSessionCheckpointBytes = 32 * 1024 * 1024;
+// Secondary budget for diff text (Phase 1). Diff text is bounded per row by
+// the tools; this keeps a long session from accumulating megabytes of it.
+constexpr qint64 kMaxSessionDiffBytes = 8 * 1024 * 1024;
 } // namespace
 
-qint64 SqliteMemory::addFileCheckpoint(const QString& sessionId, const QString& path,
-                                       const QByteArray& beforeContent, bool existed,
-                                       bool truncated, quint64 requestId) {
-    if (sessionId.isEmpty() || path.isEmpty()) return 0;
+qint64 SqliteMemory::addFileCheckpoint(const QString& sessionId,
+                                       const FileCheckpointInput& input,
+                                       quint64 requestId) {
+    if (sessionId.isEmpty() || input.path.isEmpty()) return 0;
 
-    QByteArray payload = truncated ? QByteArray() : beforeContent;
-    bool pathOnly = truncated;
+    QByteArray payload = input.truncated ? QByteArray() : input.beforeContent;
+    bool pathOnly = input.truncated;
     if (!payload.isEmpty()) {
         QSqlQuery sum(m_db);
         sum.prepare("SELECT COALESCE(SUM(byte_size), 0) FROM file_checkpoints "
@@ -2165,19 +2207,41 @@ qint64 SqliteMemory::addFileCheckpoint(const QString& sessionId, const QString& 
         }
     }
 
+    QString diff = input.truncated ? QString() : input.diff;
+    bool diffTruncated = input.diffTruncated || input.truncated;
+    if (!diff.isEmpty()) {
+        QSqlQuery sum(m_db);
+        sum.prepare("SELECT COALESCE(SUM(LENGTH(diff_text)), 0) "
+                    "FROM file_checkpoints WHERE session_id = ?");
+        sum.addBindValue(sessionId);
+        if (sum.exec() && sum.next()) {
+            const qint64 used = sum.value(0).toLongLong();
+            if (used + diff.size() > kMaxSessionDiffBytes) {
+                diff.clear();
+                diffTruncated = true;
+            }
+        }
+    }
+
     QSqlQuery query(m_db);
     query.prepare("INSERT INTO file_checkpoints "
                   "(session_id, path, before_content, existed, truncated, "
-                  " byte_size, request_id, created_at) "
-                  "VALUES (?, ?, ?, ?, ?, ?, ?, ?)");
+                  " byte_size, request_id, created_at, diff_text, diff_truncated, "
+                  " added_lines, removed_lines, after_hash) "
+                  "VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)");
     query.addBindValue(sessionId);
-    query.addBindValue(path);
+    query.addBindValue(input.path);
     query.addBindValue(payload);
-    query.addBindValue(existed ? 1 : 0);
+    query.addBindValue(input.existed ? 1 : 0);
     query.addBindValue(pathOnly ? 1 : 0);
     query.addBindValue(static_cast<qint64>(payload.size()));
     query.addBindValue(static_cast<qint64>(requestId));
     query.addBindValue(QDateTime::currentMSecsSinceEpoch());
+    query.addBindValue(diff);
+    query.addBindValue(diffTruncated ? 1 : 0);
+    query.addBindValue(input.addedLines);
+    query.addBindValue(input.removedLines);
+    query.addBindValue(input.afterHash);
     if (!query.exec()) {
         qWarning() << "Failed to save file checkpoint:" << query.lastError().text();
         return 0;
@@ -2191,7 +2255,10 @@ QJsonArray SqliteMemory::listFileCheckpoints(const QString& sessionId, int limit
 
     QSqlQuery query(m_db);
     query.prepare("SELECT id, path, existed, truncated, byte_size, request_id, "
-                  "created_at, undone_at FROM file_checkpoints "
+                  "created_at, undone_at, diff_truncated, added_lines, "
+                  "removed_lines, "
+                  "CASE WHEN diff_text IS NULL OR diff_text = '' THEN 0 ELSE 1 END "
+                  "FROM file_checkpoints "
                   "WHERE session_id = ? ORDER BY created_at DESC, id DESC LIMIT ?");
     query.addBindValue(sessionId);
     query.addBindValue(qBound(1, limit, 500));
@@ -2211,9 +2278,136 @@ QJsonArray SqliteMemory::listFileCheckpoints(const QString& sessionId, int limit
         const QVariant undone = query.value(7);
         row["undone"] = !undone.isNull();
         if (!undone.isNull()) row["undoneAt"] = undone.toLongLong();
+        row["diffTruncated"] = query.value(8).toInt() != 0;
+        row["addedLines"] = query.value(9).toInt();
+        row["removedLines"] = query.value(10).toInt();
+        row["hasDiff"] = query.value(11).toInt() != 0;
         rows.append(row);
     }
     return rows;
+}
+
+// G4 UI: collapse the per-write ledger to one row per file. The
+// representative row is the newest not-yet-undone write (or the newest
+// write when the file's history is fully undone); repeated edits therefore
+// update one row instead of stacking up in the panel.
+QJsonArray SqliteMemory::listFileCheckpointFiles(const QString& sessionId, int limit) {
+    QJsonArray files;
+    if (sessionId.isEmpty()) return files;
+
+    QSqlQuery query(m_db);
+    query.prepare(R"(
+        WITH ranked AS (
+            SELECT id, path, existed, truncated, byte_size, request_id,
+                   created_at, undone_at, diff_truncated, added_lines,
+                   removed_lines,
+                   CASE WHEN diff_text IS NULL OR diff_text = ''
+                        THEN 0 ELSE 1 END AS has_diff,
+                   COUNT(*) OVER (PARTITION BY path) AS change_count,
+                   SUM(CASE WHEN undone_at IS NULL THEN 0 ELSE 1 END)
+                       OVER (PARTITION BY path) AS undone_count,
+                   MIN(created_at) OVER (PARTITION BY path) AS first_at,
+                   MAX(created_at) OVER (PARTITION BY path) AS updated_at,
+                   MIN(id) OVER (PARTITION BY path) AS first_id,
+                   MAX(id) OVER (PARTITION BY path) AS latest_id,
+                   FIRST_VALUE(existed) OVER (
+                       PARTITION BY path ORDER BY created_at ASC, id ASC
+                   ) AS first_existed,
+                   FIRST_VALUE(truncated) OVER (
+                       PARTITION BY path ORDER BY created_at ASC, id ASC
+                   ) AS first_truncated,
+                   ROW_NUMBER() OVER (
+                       PARTITION BY path
+                       ORDER BY (undone_at IS NULL) DESC,
+                                created_at DESC, id DESC
+                   ) AS rn
+            FROM file_checkpoints
+            WHERE session_id = ?
+        )
+        SELECT id, path, existed, truncated, byte_size, request_id, created_at,
+               undone_at, diff_truncated, added_lines, removed_lines, has_diff,
+               change_count, undone_count, first_at, updated_at, first_id,
+               latest_id, first_existed, first_truncated
+        FROM ranked
+        WHERE rn = 1
+        ORDER BY updated_at DESC, id DESC
+        LIMIT ?
+    )");
+    query.addBindValue(sessionId);
+    query.addBindValue(qBound(1, limit, 500));
+    if (!query.exec()) {
+        qWarning() << "Failed to list file checkpoint files:" << query.lastError().text();
+        return files;
+    }
+
+    while (query.next()) {
+        QJsonObject row;
+        row["id"] = query.value(0).toLongLong();
+        row["path"] = query.value(1).toString();
+        row["existed"] = query.value(2).toInt() != 0;
+        row["truncated"] = query.value(3).toInt() != 0;
+        row["byteSize"] = query.value(4).toLongLong();
+        row["requestId"] = query.value(5).toLongLong();
+        row["createdAt"] = query.value(6).toLongLong();
+        const QVariant undone = query.value(7);
+        if (!undone.isNull()) row["undoneAt"] = undone.toLongLong();
+        row["diffTruncated"] = query.value(8).toInt() != 0;
+        row["addedLines"] = query.value(9).toInt();
+        row["removedLines"] = query.value(10).toInt();
+        row["hasDiff"] = query.value(11).toInt() != 0;
+        const int changeCount = query.value(12).toInt();
+        const int undoneCount = query.value(13).toInt();
+        row["changeCount"] = changeCount;
+        row["undoneCount"] = undoneCount;
+        row["activeCount"] = changeCount - undoneCount;
+        row["undone"] = changeCount > 0 && undoneCount == changeCount;
+        row["firstAt"] = query.value(14).toLongLong();
+        row["updatedAt"] = query.value(15).toLongLong();
+        row["firstId"] = query.value(16).toLongLong();
+        row["latestId"] = query.value(17).toLongLong();
+        // Session-level undo restores the state before the *first* write, so
+        // the group's undoability and "created by the agent" flag come from
+        // the earliest row, not from the representative diff row.
+        const bool firstExisted = query.value(18).toInt() != 0;
+        const bool firstTruncated = query.value(19).toInt() != 0;
+        row["existed"] = firstExisted;
+        row["truncated"] = firstTruncated;
+        row["firstExisted"] = firstExisted;
+        row["firstTruncated"] = firstTruncated;
+        files.append(row);
+    }
+    return files;
+}
+
+QJsonObject SqliteMemory::fileCheckpointDetail(qint64 id, const QString& sessionId) {
+    if (sessionId.isEmpty() || id <= 0) return {};
+
+    QSqlQuery query(m_db);
+    query.prepare("SELECT id, path, existed, truncated, byte_size, request_id, "
+                  "created_at, undone_at, diff_text, diff_truncated, added_lines, "
+                  "removed_lines, after_hash FROM file_checkpoints "
+                  "WHERE id = ? AND session_id = ?");
+    query.addBindValue(id);
+    query.addBindValue(sessionId);
+    if (!query.exec() || !query.next()) return {};
+
+    QJsonObject row;
+    row["id"] = query.value(0).toLongLong();
+    row["path"] = query.value(1).toString();
+    row["existed"] = query.value(2).toInt() != 0;
+    row["truncated"] = query.value(3).toInt() != 0;
+    row["byteSize"] = query.value(4).toLongLong();
+    row["requestId"] = query.value(5).toLongLong();
+    row["createdAt"] = query.value(6).toLongLong();
+    const QVariant undone = query.value(7);
+    row["undone"] = !undone.isNull();
+    if (!undone.isNull()) row["undoneAt"] = undone.toLongLong();
+    row["diff"] = query.value(8).toString();
+    row["diffTruncated"] = query.value(9).toInt() != 0;
+    row["addedLines"] = query.value(10).toInt();
+    row["removedLines"] = query.value(11).toInt();
+    row["afterHash"] = query.value(12).toString();
+    return row;
 }
 
 bool SqliteMemory::loadFileCheckpointContent(qint64 id, const QString& sessionId,
@@ -2248,6 +2442,45 @@ bool SqliteMemory::markFileCheckpointUndone(qint64 id, const QString& sessionId,
         return false;
     }
     return query.numRowsAffected() == 1;
+}
+
+bool SqliteMemory::loadFileCheckpointGroupContent(
+    const QString& sessionId, const QString& path, QByteArray* beforeContent,
+    bool* existed, bool* truncated, QString* storedPath) {
+    if (sessionId.isEmpty() || path.isEmpty()) return false;
+    QSqlQuery query(m_db);
+    query.prepare("SELECT path, before_content, existed, truncated "
+                  "FROM file_checkpoints WHERE session_id = ? AND path = ? "
+                  "AND undone_at IS NULL "
+                  "ORDER BY created_at ASC, id ASC LIMIT 1");
+    query.addBindValue(sessionId);
+    query.addBindValue(path);
+    if (!query.exec() || !query.next()) return false;
+
+    if (storedPath) *storedPath = query.value(0).toString();
+    if (beforeContent) *beforeContent = query.value(1).toByteArray();
+    if (existed) *existed = query.value(2).toInt() != 0;
+    if (truncated) *truncated = query.value(3).toInt() != 0;
+    return true;
+}
+
+bool SqliteMemory::markFileCheckpointGroupUndone(const QString& sessionId,
+                                                 const QString& path,
+                                                 qint64 undoneAtMs) {
+    if (sessionId.isEmpty() || path.isEmpty()) return false;
+    QSqlQuery query(m_db);
+    query.prepare("UPDATE file_checkpoints SET undone_at = ?, "
+                  "before_content = NULL, byte_size = 0 "
+                  "WHERE session_id = ? AND path = ? AND undone_at IS NULL");
+    query.addBindValue(undoneAtMs);
+    query.addBindValue(sessionId);
+    query.addBindValue(path);
+    if (!query.exec()) {
+        qWarning() << "Failed to mark file checkpoint group undone:"
+                   << query.lastError().text();
+        return false;
+    }
+    return query.numRowsAffected() > 0;
 }
 
 int SqliteMemory::pruneFileCheckpoints(qint64 olderThanMs) {

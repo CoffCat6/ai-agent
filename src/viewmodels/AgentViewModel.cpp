@@ -750,6 +750,11 @@ bool AgentViewModel::undoFileCheckpoint(qint64 id) {
     return true;
 }
 
+QVariantMap AgentViewModel::fileCheckpointDetail(qint64 id) const {
+    if (!active()) return {};
+    return active()->fileCheckpointDetail(id).toVariantMap();
+}
+
 // The scan runs off the GUI thread; a generation counter drops results that
 // belong to a project the user already switched away from. The cache is
 // refreshed lazily (30s TTL) so typing '@' never blocks on a repo walk.

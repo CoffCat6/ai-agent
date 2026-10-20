@@ -6,6 +6,7 @@
 #include <QDir>
 #include <QFile>
 #include <QFileInfo>
+#include <QCryptographicHash>
 #include <QTemporaryDir>
 #include <QTextStream>
 #include <QtTest>
@@ -268,6 +269,17 @@ private slots:
         QVERIFY(r.checkpoint.existed);
         QVERIFY(!r.checkpoint.truncated);
         QCOMPARE(r.checkpoint.beforeContent, QByteArray("old bytes"));
+        // Phase 1: content detail captured with the write.
+        QVERIFY2(r.checkpoint.diff.contains(QStringLiteral("-old bytes")),
+                 qPrintable(r.checkpoint.diff));
+        QVERIFY2(r.checkpoint.diff.contains(QStringLiteral("+new bytes")),
+                 qPrintable(r.checkpoint.diff));
+        QCOMPARE(r.checkpoint.addedLines, 1);
+        QCOMPARE(r.checkpoint.removedLines, 1);
+        QVERIFY(!r.checkpoint.diffTruncated);
+        QCOMPARE(r.checkpoint.afterHash,
+                 QString::fromLatin1(QCryptographicHash::hash(
+                     QByteArray("new bytes"), QCryptographicHash::Sha256).toHex()));
     }
 
     void writeFileCheckpointMarksNewFile() {
@@ -280,6 +292,13 @@ private slots:
         QVERIFY(!r.checkpoint.existed);
         QVERIFY(!r.checkpoint.truncated);
         QVERIFY(r.checkpoint.beforeContent.isEmpty());
+        QVERIFY2(r.checkpoint.diff.contains(QStringLiteral("--- /dev/null")),
+                 qPrintable(r.checkpoint.diff));
+        QVERIFY2(r.checkpoint.diff.contains(QStringLiteral("+hello")),
+                 qPrintable(r.checkpoint.diff));
+        QCOMPARE(r.checkpoint.addedLines, 1);
+        QCOMPARE(r.checkpoint.removedLines, 0);
+        QVERIFY(!r.checkpoint.afterHash.isEmpty());
     }
 
     void oversizedOriginalDegradesToPathOnly() {
@@ -298,6 +317,31 @@ private slots:
         QVERIFY(r.checkpoint.existed);
         QVERIFY(r.checkpoint.truncated);
         QVERIFY(r.checkpoint.beforeContent.isEmpty());
+        QVERIFY(r.checkpoint.diffTruncated);
+        QVERIFY(r.checkpoint.diff.isEmpty());
+        QVERIFY(!r.checkpoint.afterHash.isEmpty());
+    }
+
+    // 600 KiB is small enough to capture for undo (1 MiB cap) but over the
+    // diff input bound (512 KiB): the row stays restorable, the diff does not.
+    void oversizedDiffInputStillCapturesUndoPayload() {
+        const QByteArray medium(600 * 1024, 'y');
+        {
+            QFile file(m_tempDir->path() + QStringLiteral("/medium.txt"));
+            QVERIFY(file.open(QIODevice::WriteOnly));
+            QCOMPARE(file.write(medium), medium.size());
+        }
+        auto tool = ToolRegistry::instance().findShared("write_file");
+        QVERIFY(tool);
+        const ToolResult r = tool->execute(
+            {{"path", "medium.txt"}, {"content", "small"}});
+        QVERIFY2(r.success, qPrintable(r.error));
+        QVERIFY(!r.checkpoint.truncated);
+        QCOMPARE(r.checkpoint.beforeContent.size(), medium.size());
+        QVERIFY(r.checkpoint.diffTruncated);
+        QVERIFY(r.checkpoint.diff.isEmpty());
+        QCOMPARE(r.checkpoint.addedLines, 0);
+        QCOMPARE(r.checkpoint.removedLines, 0);
     }
 
     void editFileCapturesExactBeforeBytes() {
@@ -312,6 +356,16 @@ private slots:
         QVERIFY(r.checkpoint.existed);
         QVERIFY(!r.checkpoint.truncated);
         QCOMPARE(r.checkpoint.beforeContent, QByteArray("hello world"));
+        QVERIFY2(r.checkpoint.diff.contains(QStringLiteral("-hello world")),
+                 qPrintable(r.checkpoint.diff));
+        QVERIFY2(r.checkpoint.diff.contains(QStringLiteral("+hello nexus")),
+                 qPrintable(r.checkpoint.diff));
+        QCOMPARE(r.checkpoint.addedLines, 1);
+        QCOMPARE(r.checkpoint.removedLines, 1);
+        QVERIFY(!r.checkpoint.diffTruncated);
+        QCOMPARE(r.checkpoint.afterHash,
+                 QString::fromLatin1(QCryptographicHash::hash(
+                     QByteArray("hello nexus"), QCryptographicHash::Sha256).toHex()));
     }
 
     void failedEditHasNoCheckpoint() {

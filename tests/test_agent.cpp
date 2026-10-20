@@ -574,7 +574,7 @@ private slots:
     void safeToolFeedbackLoop();
     void confirmApproveWritesFile();
     void fileCheckpointRecordedAndUndone();
-    void fileCheckpointsUndoInReverseOrder();
+    void fileCheckpointsUndoWholeFile();
     void confirmDeclineFeedsRejection();
     // 会话权限模式：AutoEdit/FullAccess 审批旁路矩阵
     void autoEditBypassesFileTools();
@@ -799,12 +799,37 @@ void TestAgent::fileCheckpointRecordedAndUndone() {
              QFileInfo(existingPath).canonicalFilePath());
     QVERIFY(older.value("existed").toBool());
 
+    // Phase 1: the detail API returns the write-time diff and hash.
+    const QJsonObject newerDetail =
+        agent.fileCheckpointDetail(newest.value("id").toInteger());
+    QCOMPARE(newerDetail.value("path").toString(),
+             QFileInfo(createdPath).canonicalFilePath());
+    QVERIFY2(newerDetail.value("diff").toString().contains(QStringLiteral("+created")),
+             qPrintable(newerDetail.value("diff").toString()));
+    QCOMPARE(newerDetail.value("addedLines").toInt(), 1);
+    QCOMPARE(newerDetail.value("removedLines").toInt(), 0);
+    QVERIFY(!newerDetail.value("afterHash").toString().isEmpty());
+    const QJsonObject olderDetail =
+        agent.fileCheckpointDetail(older.value("id").toInteger());
+    QVERIFY2(olderDetail.value("diff").toString().contains(QStringLiteral("-before")),
+             qPrintable(olderDetail.value("diff").toString()));
+    QVERIFY2(olderDetail.value("diff").toString().contains(QStringLiteral("+after")),
+             qPrintable(olderDetail.value("diff").toString()));
+    QCOMPARE(olderDetail.value("addedLines").toInt(), 1);
+    QCOMPARE(olderDetail.value("removedLines").toInt(), 1);
+    QVERIFY(agent.fileCheckpointDetail(999999).isEmpty());
+
     // Undo the creation: the file disappears again.
     QVERIFY(agent.undoFileCheckpoint(newest.value("id").toInteger()));
     QVERIFY(!QFile::exists(createdPath));
     checkpoints = agent.fileCheckpoints();
     QCOMPARE(checkpoints.size(), 2);
     QVERIFY(checkpoints.at(0).toObject().value("undone").toBool());
+    // Undo keeps the row (and its diff) as history.
+    const QJsonObject undoneDetail =
+        agent.fileCheckpointDetail(newest.value("id").toInteger());
+    QVERIFY(undoneDetail.value("undone").toBool());
+    QVERIFY(!undoneDetail.value("diff").toString().isEmpty());
 
     // Undo the edit: bytes restored exactly.
     QVERIFY(agent.undoFileCheckpoint(older.value("id").toInteger()));
@@ -817,9 +842,9 @@ void TestAgent::fileCheckpointRecordedAndUndone() {
     agent.setMemory(nullptr);
 }
 
-// G4 acceptance: repeated edits to the same file are undone newest-first,
-// each restoring exactly the bytes that preceded that specific write.
-void TestAgent::fileCheckpointsUndoInReverseOrder() {
+// G4 acceptance: one undo reverts every change the session made to the
+// file, restoring the bytes from before the session's first write.
+void TestAgent::fileCheckpointsUndoWholeFile() {
     SqliteMemory memory(QStringLiteral(":memory:"));
     agent.setMemory(&memory);
     agent.setPermissionMode(PermissionMode::AutoEdit);
@@ -846,10 +871,14 @@ void TestAgent::fileCheckpointsUndoInReverseOrder() {
     agent.startTask(QStringLiteral("second edit"));
     QTRY_COMPARE_WITH_TIMEOUT(ready.count(), 2, 15000);
 
-    QJsonArray checkpoints = agent.fileCheckpoints();
-    QCOMPARE(checkpoints.size(), 2);
-    const qint64 newest = checkpoints.at(0).toObject().value("id").toInteger();
-    const qint64 older = checkpoints.at(1).toObject().value("id").toInteger();
+    // Repeated edits collapse into one file row; one undo reverts them all.
+    QJsonArray groups = agent.fileCheckpoints();
+    QCOMPARE(groups.size(), 1);
+    QJsonObject group = groups.at(0).toObject();
+    QCOMPARE(group.value("changeCount").toInt(), 2);
+    QCOMPARE(group.value("activeCount").toInt(), 2);
+    QCOMPARE(group.value("path").toString(),
+             QFileInfo(path).canonicalFilePath());
 
     auto fileContent = [&path]() {
         QFile file(path);
@@ -858,10 +887,16 @@ void TestAgent::fileCheckpointsUndoInReverseOrder() {
     };
 
     QCOMPARE(fileContent(), QByteArray("v2"));
-    QVERIFY(agent.undoFileCheckpoint(newest));
-    QCOMPARE(fileContent(), QByteArray("v1"));
-    QVERIFY(agent.undoFileCheckpoint(older));
+    QVERIFY(agent.undoFileCheckpoint(group.value("id").toInteger()));
+    // Session-level undo restores v0, not the intermediate v1.
     QCOMPARE(fileContent(), QByteArray("v0"));
+    groups = agent.fileCheckpoints();
+    QCOMPARE(groups.size(), 1);
+    group = groups.at(0).toObject();
+    QVERIFY(group.value("undone").toBool());
+    QCOMPARE(group.value("activeCount").toInt(), 0);
+    QCOMPARE(group.value("undoneCount").toInt(), 2);
+    QVERIFY(!agent.undoFileCheckpoint(group.value("id").toInteger()));
     agent.setMemory(nullptr);
 }
 

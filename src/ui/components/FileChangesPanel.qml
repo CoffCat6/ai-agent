@@ -14,25 +14,65 @@ Item {
     property var checkpoints: []
     property bool collapsed: false
     property string errorText: ""
+    // Test/embedding hook: overrides AgentVM.fileCheckpointDetail(id).
+    property var detailProvider: null
+    // UI tests set this to false to inject git data without spawning git.
+    property bool gitAutoLoad: true
 
     readonly property int itemCount: checkpoints ? checkpoints.length : 0
     readonly property bool hasItems: itemCount > 0
     readonly property bool listVisible: hasItems && !collapsed
     readonly property int renderedCount: changeList.count
+    readonly property alias detailVisible: detailDialog.visible
+    readonly property alias detailDialogItem: detailDialog
+
+    function detailFor(entry) {
+        if (root.detailProvider) return root.detailProvider(entry.id)
+        return AgentVM.fileCheckpointDetail(entry.id)
+    }
+
+    function openDetail(entry) {
+        if (!entry) return
+        detailDialog.openFor(entry, root.detailFor(entry))
+    }
+
+    function closeDetail() {
+        detailDialog.close()
+    }
+
+    function detailPath() {
+        return detailDialog.checkpoint ? detailDialog.checkpoint.path : ""
+    }
+
+    function detailDiffLineCount() {
+        return detailDialog.diffLineCount
+    }
 
     visible: hasItems
     implicitHeight: hasItems ? content.implicitHeight : 0
 
     function statusText(entry) {
-        if (entry.undone) return qsTr("已撤销")
+        if (root.activeCount(entry) === 0) return qsTr("已全部撤销")
         if (entry.truncated) return qsTr("仅记录路径，请用 git 恢复")
-        return entry.existed
-            ? qsTr("可恢复改动前内容")
-            : qsTr("将删除本次新建的文件")
+        const base = entry.existed
+            ? qsTr("可回退本次会话的全部改动")
+            : qsTr("将删除本会话新建的文件")
+        if (root.activeCount(entry) > 1)
+            return qsTr("%1 · 共 %2 次改动").arg(base).arg(root.activeCount(entry))
+        return base
+    }
+
+    function activeCount(entry) {
+        if (entry.activeCount !== undefined) return entry.activeCount
+        return entry.undone ? 0 : 1
+    }
+
+    function changeCount(entry) {
+        return entry.changeCount !== undefined ? entry.changeCount : 1
     }
 
     function statusColor(entry) {
-        if (entry.undone) return Theme.textSecondary
+        if (root.activeCount(entry) === 0) return Theme.textSecondary
         if (entry.truncated) return Theme.statusWarning
         return Theme.brandPrimary
     }
@@ -121,11 +161,20 @@ Item {
                 readonly property bool truncated: modelData.truncated
 
                 width: ListView.view ? ListView.view.width : 0
-                height: 42
+                height: 46
                 radius: 6
                 color: rowHover.hovered ? Theme.surfaceHover : "transparent"
 
                 HoverHandler { id: rowHover }
+
+                // Below the content row: clicks on text fall through here,
+                // while the undo button consumes its own press.
+                MouseArea {
+                    anchors.fill: parent
+                    cursorShape: Qt.PointingHandCursor
+                    onClicked: root.openDetail(changeRow.modelData)
+                    Accessible.name: qsTr("查看文件改动详情")
+                }
 
                 RowLayout {
                     anchors.fill: parent
@@ -148,7 +197,7 @@ Item {
                         Text {
                             Layout.fillWidth: true
                             text: changeRow.modelData.path
-                            color: changeRow.modelData.undone
+                            color: root.activeCount(changeRow.modelData) === 0
                                 ? Theme.textSecondary : Theme.textPrimary
                             font.pixelSize: Theme.fontSizeCaption
                             font.family: Theme.fontMono
@@ -170,16 +219,46 @@ Item {
                         }
                     }
 
+                    Text {
+                        objectName: "fileChangeCountBadge"
+                        Layout.alignment: Qt.AlignVCenter
+                        visible: root.activeCount(changeRow.modelData) > 1
+                        text: "×" + root.activeCount(changeRow.modelData)
+                        color: Theme.textSecondary
+                        font.family: Theme.fontMono
+                        font.pixelSize: 10
+                    }
+
+                    Text {
+                        Layout.alignment: Qt.AlignVCenter
+                        visible: changeRow.modelData.hasDiff === true
+                                 && changeRow.modelData.addedLines > 0
+                        text: "+" + changeRow.modelData.addedLines
+                        color: Theme.statusSuccess
+                        font.family: Theme.fontMono
+                        font.pixelSize: 10
+                    }
+
+                    Text {
+                        Layout.alignment: Qt.AlignVCenter
+                        visible: changeRow.modelData.hasDiff === true
+                                 && changeRow.modelData.removedLines > 0
+                        text: "−" + changeRow.modelData.removedLines
+                        color: Theme.statusDanger
+                        font.family: Theme.fontMono
+                        font.pixelSize: 10
+                    }
+
                     AppButton {
                         Layout.alignment: Qt.AlignVCenter
-                        text: changeRow.modelData.undone
+                        text: root.activeCount(changeRow.modelData) === 0
                             ? qsTr("已撤销") : qsTr("撤销")
-                        enabled: !changeRow.modelData.undone
+                        enabled: root.activeCount(changeRow.modelData) > 0
                                  && !changeRow.modelData.truncated
                                  && !AgentVM.stateBusy
                         opacity: enabled ? 1.0 : 0.4
                         onClicked: root.requestUndo(changeRow.modelData)
-                        Accessible.name: qsTr("撤销该文件的本次改动")
+                        Accessible.name: qsTr("撤销该文件在本会话的全部改动")
                     }
                 }
             }
@@ -224,10 +303,14 @@ Item {
                 Layout.fillWidth: true
                 text: undoDialog.pending
                     ? (undoDialog.pending.existed
-                        ? qsTr("将把以下文件恢复为改动前内容：\n%1\n此后对该文件的手工修改也会被覆盖。")
+                        ? qsTr("将把以下文件恢复为本次会话首次改动前的内容：\n%1\n此后对该文件的手工修改也会被覆盖。")
                             .arg(undoDialog.pending.path)
-                        : qsTr("将删除模型本次新建的文件：\n%1")
+                        : qsTr("将删除模型在本会话新建的文件：\n%1")
                             .arg(undoDialog.pending.path))
+                      + (root.activeCount(undoDialog.pending) > 1
+                          ? "\n" + qsTr("该文件在本会话共有 %1 次改动，本次将全部撤销。")
+                                .arg(root.activeCount(undoDialog.pending))
+                          : "")
                     : ""
                 color: Theme.textPrimary
                 font.pixelSize: Theme.fontSizeCaption
@@ -255,5 +338,10 @@ Item {
                 }
             }
         }
+    }
+
+    FileChangeDetailDialog {
+        id: detailDialog
+        autoLoadGit: root.gitAutoLoad
     }
 }

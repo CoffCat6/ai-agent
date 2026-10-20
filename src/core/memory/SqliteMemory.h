@@ -101,15 +101,26 @@ public:
 
     // G4: file checkpoints (see IMemory.h). Per-session stored content is
     // capped; over-budget rows degrade to path-only (truncated=1).
-    qint64 addFileCheckpoint(const QString& sessionId, const QString& path,
-                             const QByteArray& beforeContent, bool existed,
-                             bool truncated, quint64 requestId = 0) override;
+    qint64 addFileCheckpoint(const QString& sessionId,
+                             const FileCheckpointInput& input,
+                             quint64 requestId = 0) override;
     QJsonArray listFileCheckpoints(const QString& sessionId, int limit = 200) override;
+    QJsonArray listFileCheckpointFiles(const QString& sessionId,
+                                       int limit = 200) override;
+    QJsonObject fileCheckpointDetail(qint64 id, const QString& sessionId) override;
     bool loadFileCheckpointContent(qint64 id, const QString& sessionId,
                                    QByteArray* beforeContent, bool* existed,
                                    bool* truncated, QString* path) override;
     bool markFileCheckpointUndone(qint64 id, const QString& sessionId,
                                   qint64 undoneAtMs) override;
+    bool loadFileCheckpointGroupContent(const QString& sessionId,
+                                        const QString& path,
+                                        QByteArray* beforeContent, bool* existed,
+                                        bool* truncated,
+                                        QString* storedPath) override;
+    bool markFileCheckpointGroupUndone(const QString& sessionId,
+                                       const QString& path,
+                                       qint64 undoneAtMs) override;
     int pruneFileCheckpoints(qint64 olderThanMs) override;
 
     // docs/17 A0: 项目级会话。projects 表 + sessions.project_id（NULL=本地）。
@@ -228,6 +239,8 @@ private:
     bool hardDeleteSessionRows(const QString& sessionId);
     // docs/17 A0: sessions.project_id 列补齐（受控 ALTER，幂等）。
     void migrateSessionProjectColumn();
+    // G4 Phase 1: diff/stats/hash columns on file_checkpoints.
+    void migrateFileCheckpointDetailColumns();
     void migrateKnowledgeSchema();
     // docs/25: knowledge_chunks.page 列补齐（引用定位——chunk 页码；幂等，
     // 仅老库升级路径，新库由建表 DDL 带上）。

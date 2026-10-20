@@ -35,6 +35,7 @@ nexus_add_test(test_protocol_registry test_protocol_registry.cpp)
 nexus_add_test(test_openai_responses test_openai_responses.cpp)
 nexus_add_test(test_memory test_memory.cpp)
 nexus_add_test(test_tools test_tools.cpp)
+nexus_add_test(test_git_service test_git_service.cpp)
 # docs/20 §5.2 (C2): PDF text extraction (PdfTextExtractor) lives in
 # nexus_viewmodels, not nexus_core - Qt6::Pdf pulls Qt6::Gui along and core
 # must stay UI-free (docs/13 §4.1). test_rag therefore links the viewmodels
@@ -54,6 +55,13 @@ target_link_libraries(test_agent PRIVATE
     nexus_core nexus_infra nexus_viewmodels Qt6::Test)
 target_compile_definitions(test_agent PRIVATE NEXUSAI_TESTING)
 add_test(NAME test_agent COMMAND test_agent)
+
+# Phase 3: async git facade used by the file-change detail dialog.
+add_executable(test_git_viewmodel test_git_viewmodel.cpp)
+target_link_libraries(test_git_viewmodel PRIVATE
+    nexus_core nexus_infra nexus_viewmodels Qt6::Test)
+target_compile_definitions(test_git_viewmodel PRIVATE NEXUSAI_TESTING)
+add_test(NAME test_git_viewmodel COMMAND test_git_viewmodel)
 
 # H1: proxy factory modes, real routing through a local HTTP proxy, readable
 # failure for a dead proxy, and the SettingsService probe behind the UI button.

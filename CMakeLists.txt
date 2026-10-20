@@ -50,6 +50,8 @@ add_library(nexus_core STATIC
     src/core/tools/ToolRegistry.cpp
     src/core/tools/Sandbox.h
     src/core/tools/SandboxWin.cpp
+    src/core/git/GitService.h
+    src/core/git/GitService.cpp
     src/core/tools/WebSearchBackend.h
     src/core/tools/WebSearchBackend.cpp
     src/core/tools/WebSearchTool.h
@@ -162,6 +164,9 @@ qt_add_qml_module(nexus_viewmodels
         src/viewmodels/ConnectionTester.cpp
         src/viewmodels/AgentViewModel.h
         src/viewmodels/AgentViewModel.cpp
+        # Phase 3: async read-only git history facade for the change dialog.
+        src/viewmodels/GitViewModel.h
+        src/viewmodels/GitViewModel.cpp
         src/viewmodels/PreferenceRegistry.h
         src/viewmodels/PreferenceRegistry.cpp
         src/viewmodels/ChangeBus.h
@@ -266,6 +271,9 @@ qt_add_qml_module(nexus_ai
         src/ui/components/ReferenceChipRow.qml
         # G4: session file checkpoints (fed by AgentVM.fileCheckpoints)
         src/ui/components/FileChangesPanel.qml
+        # G4 Phase 1: write-time diff detail dialog + line renderer
+        src/ui/components/FileChangeDetailDialog.qml
+        src/ui/components/DiffView.qml
         # 批次六 T2（docs/16 §8）：QML Canvas 自绘图表组件库（禁引 Qt Charts）。
         # QTP0004 NEW：charts/ 子目录文件平铺注册进 NexusAI 模块。
         src/ui/components/charts/DonutChart.qml

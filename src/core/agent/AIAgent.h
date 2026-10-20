@@ -140,8 +140,11 @@ public:
     QJsonArray todoList() const { return m_todoList; }
     // G4: this session's file checkpoints (newest first, metadata only).
     QJsonArray fileCheckpoints() const;
-    // Restores one checkpoint's bytes (or deletes a file the agent created).
-    // Rejected while a task is running to avoid racing in-flight writes.
+    // G4 Phase 1: diff/stats/hash for one checkpoint (empty when unknown).
+    QJsonObject fileCheckpointDetail(qint64 id) const;
+    // Session-level undo: restores the file to the state before this
+    // session's first write (or deletes a file the agent created) and marks
+    // every write to that path undone. Rejected while a task is running.
     bool undoFileCheckpoint(qint64 id);
 
     QString currentSessionId() const { return m_sessionId; }

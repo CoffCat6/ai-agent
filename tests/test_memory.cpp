@@ -42,6 +42,26 @@ QVariantMap usageRec(const QString& model, qint64 ts, int in, int out,
     return r;
 }
 
+// G4 Phase 1 fixture: checkpoint payload with diff metadata.
+IMemory::FileCheckpointInput cpInput(const QString& path, const QByteArray& before,
+                                     bool existed, bool truncated = false,
+                                     const QString& diff = QString(),
+                                     bool diffTruncated = false,
+                                     int added = 0, int removed = 0,
+                                     const QString& afterHash = QString()) {
+    IMemory::FileCheckpointInput input;
+    input.path = path;
+    input.beforeContent = before;
+    input.existed = existed;
+    input.truncated = truncated;
+    input.diff = diff;
+    input.diffTruncated = diffTruncated;
+    input.addedLines = added;
+    input.removedLines = removed;
+    input.afterHash = afterHash;
+    return input;
+}
+
 } // namespace
 
 class TestMemory : public QObject {
@@ -79,7 +99,10 @@ private slots:
     void sessionBookkeepingAndClear();
     void sessionDeleteAndRename();
     void fileCheckpointLifecycle();
+    void fileCheckpointFilesGroupByPath();
+    void fileCheckpointGroupUndo();
     void fileCheckpointSessionBudgetDegradesToPathOnly();
+    void fileCheckpointDetailSchemaMigrates();
     void fileCheckpointPrunedByAgeAndSessionPurge();
     // docs/23 G1: high-frequency paths stay index-backed; the user_version
     // stamp gates the FTS backfill to the upgrade path.
@@ -2304,12 +2327,16 @@ void TestMemory::fileCheckpointLifecycle() {
     SqliteMemory mem(QStringLiteral(":memory:"));
 
     const qint64 id1 = mem.addFileCheckpoint(
-        QStringLiteral("s1"), QStringLiteral("/p/a.txt"),
-        QByteArray("old"), true, false, 42);
+        QStringLiteral("s1"),
+        cpInput(QStringLiteral("/p/a.txt"), QByteArray("old"), true,
+                false, QStringLiteral("--- a\n+++ b\n@@ -1 +1 @@\n-old\n+new\n"),
+                false, 1, 1, QStringLiteral("hash-a")),
+        42);
     QVERIFY(id1 > 0);
     const qint64 id2 = mem.addFileCheckpoint(
-        QStringLiteral("s1"), QStringLiteral("/p/b.txt"),
-        QByteArray(), false, false, 43);
+        QStringLiteral("s1"),
+        cpInput(QStringLiteral("/p/b.txt"), QByteArray(), false),
+        43);
     QVERIFY(id2 > id1);
 
     // Newest first, metadata only.
@@ -2334,6 +2361,22 @@ void TestMemory::fileCheckpointLifecycle() {
     QVERIFY(existed);
     QVERIFY(!truncated);
 
+    // Phase 1 detail: diff, stats and hash are stored separately from the
+    // (larger) before-content used for undo.
+    const QJsonObject detail = mem.fileCheckpointDetail(id1, QStringLiteral("s1"));
+    QCOMPARE(detail.value("path").toString(), QStringLiteral("/p/a.txt"));
+    QVERIFY(detail.value("diff").toString().contains(QStringLiteral("+new")));
+    QCOMPARE(detail.value("addedLines").toInt(), 1);
+    QCOMPARE(detail.value("removedLines").toInt(), 1);
+    QCOMPARE(detail.value("afterHash").toString(), QStringLiteral("hash-a"));
+    QVERIFY(!detail.value("diffTruncated").toBool());
+    QVERIFY(mem.fileCheckpointDetail(id1, QStringLiteral("other")).isEmpty());
+
+    const QJsonObject firstRow = mem.listFileCheckpoints(
+        QStringLiteral("s1")).at(1).toObject();
+    QVERIFY(firstRow.value("hasDiff").toBool());
+    QCOMPARE(firstRow.value("addedLines").toInt(), 1);
+
     // Session scoping: another session cannot read the row.
     QVERIFY(!mem.loadFileCheckpointContent(id1, QStringLiteral("other"), &before,
                                            &existed, &truncated, &path));
@@ -2348,6 +2391,169 @@ void TestMemory::fileCheckpointLifecycle() {
     const QJsonArray after = mem.listFileCheckpoints(QStringLiteral("s1"));
     QVERIFY(after.at(1).toObject().value("undone").toBool());
     QCOMPARE(after.at(1).toObject().value("byteSize").toInt(), 0);
+    // The diff stays readable after undo (only the undo payload is dropped).
+    const QJsonObject undoneDetail = mem.fileCheckpointDetail(id1, QStringLiteral("s1"));
+    QVERIFY(undoneDetail.value("undone").toBool());
+    QVERIFY(!undoneDetail.value("diff").toString().isEmpty());
+}
+
+// G4 UI: repeated writes to one path collapse into a single file row; the
+// raw per-write rows remain for step-by-step undo.
+void TestMemory::fileCheckpointFilesGroupByPath() {
+    SqliteMemory mem(QStringLiteral(":memory:"));
+    const qint64 now = QDateTime::currentMSecsSinceEpoch();
+
+    const qint64 a1 = mem.addFileCheckpoint(
+        QStringLiteral("s1"),
+        cpInput(QStringLiteral("/p/a.txt"), QByteArray("v0"), true, false,
+                QStringLiteral("--- a\n+++ b\n+v0\n"), false, 1, 0,
+                QStringLiteral("h1")));
+    const qint64 a2 = mem.addFileCheckpoint(
+        QStringLiteral("s1"),
+        cpInput(QStringLiteral("/p/a.txt"), QByteArray("v1"), true, false,
+                QStringLiteral("--- a\n+++ b\n+v1\n"), false, 2, 1,
+                QStringLiteral("h2")));
+    QVERIFY(mem.addFileCheckpoint(
+                QStringLiteral("s1"),
+                cpInput(QStringLiteral("/p/b.txt"), QByteArray(), false)) > 0);
+    QVERIFY(a1 > 0 && a2 > a1);
+
+    QJsonArray files = mem.listFileCheckpointFiles(QStringLiteral("s1"));
+    QCOMPARE(files.size(), 2);
+    QCOMPARE(files.at(0).toObject().value("path").toString(),
+             QStringLiteral("/p/b.txt"));
+
+    QJsonObject a = files.at(1).toObject();
+    QCOMPARE(a.value("path").toString(), QStringLiteral("/p/a.txt"));
+    QCOMPARE(a.value("id").toInteger(), a2);
+    QCOMPARE(a.value("latestId").toInteger(), a2);
+    QCOMPARE(a.value("firstId").toInteger(), a1);
+    QCOMPARE(a.value("changeCount").toInt(), 2);
+    QCOMPARE(a.value("activeCount").toInt(), 2);
+    QCOMPARE(a.value("undoneCount").toInt(), 0);
+    QVERIFY(!a.value("undone").toBool());
+    QCOMPARE(a.value("addedLines").toInt(), 2);
+    QVERIFY(a.value("updatedAt").toInteger() >= a.value("firstAt").toInteger());
+    // The per-write ledger is still intact.
+    QCOMPARE(mem.listFileCheckpoints(QStringLiteral("s1")).size(), 3);
+
+    // Undoing the newest write moves the row to the previous checkpoint.
+    QVERIFY(mem.markFileCheckpointUndone(a2, QStringLiteral("s1"), now));
+    files = mem.listFileCheckpointFiles(QStringLiteral("s1"));
+    QCOMPARE(files.size(), 2);
+    a = files.at(1).toObject();
+    QCOMPARE(a.value("id").toInteger(), a1);
+    QCOMPARE(a.value("activeCount").toInt(), 1);
+    QCOMPARE(a.value("undoneCount").toInt(), 1);
+    QVERIFY(!a.value("undone").toBool());
+
+    // Fully undone files stay visible as history.
+    QVERIFY(mem.markFileCheckpointUndone(a1, QStringLiteral("s1"), now + 1));
+    files = mem.listFileCheckpointFiles(QStringLiteral("s1"));
+    QCOMPARE(files.size(), 2);
+    a = files.at(1).toObject();
+    QVERIFY(a.value("undone").toBool());
+    QCOMPARE(a.value("activeCount").toInt(), 0);
+    QCOMPARE(a.value("id").toInteger(), a2);
+}
+
+// G4 UI: session-level undo uses the earliest payload for the path and
+// marks every write undone in one step. The group's existed/truncated flags
+// likewise come from the earliest write.
+void TestMemory::fileCheckpointGroupUndo() {
+    SqliteMemory mem(QStringLiteral(":memory:"));
+    const qint64 now = QDateTime::currentMSecsSinceEpoch();
+
+    const qint64 c1 = mem.addFileCheckpoint(
+        QStringLiteral("s1"),
+        cpInput(QStringLiteral("/p/c.txt"), QByteArray("v0"), true));
+    const qint64 c2 = mem.addFileCheckpoint(
+        QStringLiteral("s1"),
+        cpInput(QStringLiteral("/p/c.txt"), QByteArray("v1"), true));
+    const qint64 d1 = mem.addFileCheckpoint(
+        QStringLiteral("s1"),
+        cpInput(QStringLiteral("/p/d.txt"), QByteArray(), false));
+    const qint64 d2 = mem.addFileCheckpoint(
+        QStringLiteral("s1"),
+        cpInput(QStringLiteral("/p/d.txt"), QByteArray("d1"), true));
+    // First write of f was too large to store; later writes are smaller.
+    const qint64 f1 = mem.addFileCheckpoint(
+        QStringLiteral("s1"),
+        cpInput(QStringLiteral("/p/f.txt"), QByteArray(), true, true));
+    const qint64 f2 = mem.addFileCheckpoint(
+        QStringLiteral("s1"),
+        cpInput(QStringLiteral("/p/f.txt"), QByteArray("small"), true));
+    QVERIFY(c1 > 0 && c2 > c1 && d1 > 0 && d2 > d1 && f1 > 0 && f2 > f1);
+    QVERIFY(mem.addFileCheckpoint(
+                QStringLiteral("s1"),
+                cpInput(QStringLiteral("/p/e.txt"), QByteArray("e"), true)) > 0);
+
+    const auto findGroup = [](const QJsonArray& rows, const QString& path) {
+        for (const QJsonValue& value : rows) {
+            const QJsonObject row = value.toObject();
+            if (row.value("path").toString() == path) return row;
+        }
+        return QJsonObject();
+    };
+
+    QJsonArray files = mem.listFileCheckpointFiles(QStringLiteral("s1"));
+    QCOMPARE(files.size(), 4);
+
+    QJsonObject c = findGroup(files, QStringLiteral("/p/c.txt"));
+    QCOMPARE(c.value("changeCount").toInt(), 2);
+    QCOMPARE(c.value("existed").toBool(), true);
+    QVERIFY(!c.value("truncated").toBool());
+
+    QJsonObject d = findGroup(files, QStringLiteral("/p/d.txt"));
+    QCOMPARE(d.value("changeCount").toInt(), 2);
+    // Created before the session's first write: undo must delete it.
+    QVERIFY(!d.value("existed").toBool());
+    QVERIFY(!d.value("firstExisted").toBool());
+
+    QJsonObject f = findGroup(files, QStringLiteral("/p/f.txt"));
+    // The earliest original was not stored, so the whole file is audit-only
+    // even though the latest write itself was capturable.
+    QVERIFY(f.value("truncated").toBool());
+    QVERIFY(f.value("firstTruncated").toBool());
+
+    QByteArray before;
+    QString path;
+    bool existed = false;
+    bool truncated = true;
+    QVERIFY(mem.loadFileCheckpointGroupContent(
+        QStringLiteral("s1"), QStringLiteral("/p/c.txt"), &before, &existed,
+        &truncated, &path));
+    QCOMPARE(path, QStringLiteral("/p/c.txt"));
+    QCOMPARE(before, QByteArray("v0"));
+    QVERIFY(existed);
+    QVERIFY(!truncated);
+
+    QVERIFY(mem.markFileCheckpointGroupUndone(
+        QStringLiteral("s1"), QStringLiteral("/p/c.txt"), now));
+    QVERIFY(!mem.markFileCheckpointGroupUndone(
+        QStringLiteral("s1"), QStringLiteral("/p/c.txt"), now + 1));
+    // Every payload for the path is gone, not just the newest one.
+    QVERIFY(!mem.loadFileCheckpointContent(c1, QStringLiteral("s1"), &before,
+                                           &existed, &truncated, &path));
+    QVERIFY(!mem.loadFileCheckpointContent(c2, QStringLiteral("s1"), &before,
+                                           &existed, &truncated, &path));
+
+    files = mem.listFileCheckpointFiles(QStringLiteral("s1"));
+    c = findGroup(files, QStringLiteral("/p/c.txt"));
+    QVERIFY(c.value("undone").toBool());
+    QCOMPARE(c.value("activeCount").toInt(), 0);
+    QCOMPARE(c.value("changeCount").toInt(), 2);
+    d = findGroup(files, QStringLiteral("/p/d.txt"));
+    QVERIFY(!d.value("undone").toBool());
+
+    // The created-file group restores to "did not exist".
+    QVERIFY(mem.loadFileCheckpointGroupContent(
+        QStringLiteral("s1"), QStringLiteral("/p/d.txt"), &before, &existed,
+        &truncated, &path));
+    QVERIFY(!existed);
+    QVERIFY(!truncated);
+    QVERIFY(mem.markFileCheckpointGroupUndone(
+        QStringLiteral("s1"), QStringLiteral("/p/d.txt"), now + 2));
 }
 
 // G4: 30-day age prune and the hard session purge both remove checkpoints;
@@ -2356,15 +2562,17 @@ void TestMemory::fileCheckpointPrunedByAgeAndSessionPurge() {
     SqliteMemory mem(QStringLiteral(":memory:"));
     const qint64 now = QDateTime::currentMSecsSinceEpoch();
 
-    QVERIFY(mem.addFileCheckpoint(QStringLiteral("s1"), QStringLiteral("/p/a"),
-                                  QByteArray("a"), true, false) > 0);
+    QVERIFY(mem.addFileCheckpoint(
+                QStringLiteral("s1"),
+                cpInput(QStringLiteral("/p/a"), QByteArray("a"), true)) > 0);
     QCOMPARE(mem.pruneFileCheckpoints(now - 24 * 60 * 60 * 1000), 0);
     QCOMPARE(mem.pruneFileCheckpoints(now + 1000), 1);
     QCOMPARE(mem.listFileCheckpoints(QStringLiteral("s1")).size(), 0);
 
     mem.beginSession(QStringLiteral("s2"), QStringLiteral("t"));
-    QVERIFY(mem.addFileCheckpoint(QStringLiteral("s2"), QStringLiteral("/p/b"),
-                                  QByteArray("b"), true, false) > 0);
+    QVERIFY(mem.addFileCheckpoint(
+                QStringLiteral("s2"),
+                cpInput(QStringLiteral("/p/b"), QByteArray("b"), true)) > 0);
     mem.deleteSession(QStringLiteral("s2"));
     // Soft delete (undo window) keeps the checkpoint.
     QCOMPARE(mem.listFileCheckpoints(QStringLiteral("s2")).size(), 1);
@@ -2383,13 +2591,12 @@ void TestMemory::fileCheckpointSessionBudgetDegradesToPathOnly() {
     for (int i = 0; i < 32; ++i) {
         QVERIFY2(mem.addFileCheckpoint(
                      QStringLiteral("s-budget"),
-                     QStringLiteral("/p/%1.bin").arg(i), megabyte,
-                     true, false) > 0,
+                     cpInput(QStringLiteral("/p/%1.bin").arg(i), megabyte, true)) > 0,
                  qPrintable(QStringLiteral("row %1").arg(i)));
     }
     const qint64 overflow = mem.addFileCheckpoint(
-        QStringLiteral("s-budget"), QStringLiteral("/p/overflow.bin"),
-        megabyte, true, false);
+        QStringLiteral("s-budget"),
+        cpInput(QStringLiteral("/p/overflow.bin"), megabyte, true));
     QVERIFY(overflow > 0);
 
     const QJsonArray rows = mem.listFileCheckpoints(QStringLiteral("s-budget"));
@@ -2407,6 +2614,72 @@ void TestMemory::fileCheckpointSessionBudgetDegradesToPathOnly() {
                                           &before, &existed, &truncated, &path));
     QVERIFY(truncated);
     QVERIFY(before.isEmpty());
+}
+
+// G4 Phase 1: a database written before the detail columns existed must be
+// upgraded in place. Old rows read back with empty diff metadata instead of
+// failing the query, and new writes carry the full detail.
+void TestMemory::fileCheckpointDetailSchemaMigrates() {
+    const QString dir = QStandardPaths::writableLocation(QStandardPaths::TempLocation)
+                        + "/nexusai-memtest-cp-" + QString::number(QCoreApplication::applicationPid());
+    QDir().mkpath(dir);
+    const QString dbPath = dir + "/old-checkpoints.db";
+    QFile::remove(dbPath);
+
+    {
+        QSqlDatabase db = QSqlDatabase::addDatabase("QSQLITE", "cp-old-raw");
+        db.setDatabaseName(dbPath);
+        QVERIFY(db.open());
+        QSqlQuery q(db);
+        QVERIFY(q.exec("CREATE TABLE file_checkpoints ("
+                       "id INTEGER PRIMARY KEY AUTOINCREMENT, "
+                       "session_id TEXT NOT NULL, path TEXT NOT NULL, "
+                       "before_content BLOB, existed INTEGER NOT NULL DEFAULT 1, "
+                       "truncated INTEGER NOT NULL DEFAULT 0, "
+                       "byte_size INTEGER NOT NULL DEFAULT 0, "
+                       "request_id INTEGER NOT NULL DEFAULT 0, "
+                       "created_at INTEGER NOT NULL, undone_at INTEGER)"));
+        q.prepare("INSERT INTO file_checkpoints "
+                  "(session_id, path, before_content, existed, byte_size, created_at) "
+                  "VALUES (?, ?, ?, 1, 3, ?)");
+        q.addBindValue(QStringLiteral("s-old"));
+        q.addBindValue(QStringLiteral("/p/legacy.txt"));
+        q.addBindValue(QByteArray("old"));
+        q.addBindValue(QDateTime::currentMSecsSinceEpoch());
+        QVERIFY(q.exec());
+        db.close();
+    }
+    QSqlDatabase::removeDatabase("cp-old-raw");
+
+    {
+        SqliteMemory memory(dbPath);
+        const QJsonArray rows = memory.listFileCheckpoints(QStringLiteral("s-old"));
+        QCOMPARE(rows.size(), 1);
+        QCOMPARE(rows.at(0).toObject().value("path").toString(),
+                 QStringLiteral("/p/legacy.txt"));
+        QVERIFY(!rows.at(0).toObject().value("hasDiff").toBool());
+
+        const QJsonObject legacy = memory.fileCheckpointDetail(
+            rows.at(0).toObject().value("id").toInteger(), QStringLiteral("s-old"));
+        QVERIFY(!legacy.isEmpty());
+        QVERIFY(legacy.value("diff").toString().isEmpty());
+        QVERIFY(!legacy.value("diffTruncated").toBool());
+        QCOMPARE(legacy.value("addedLines").toInt(), 0);
+
+        const qint64 upgraded = memory.addFileCheckpoint(
+            QStringLiteral("s-old"),
+            cpInput(QStringLiteral("/p/new.txt"), QByteArray("old"), true, false,
+                    QStringLiteral("--- a\n+++ b\n@@ -1 +1 @@\n-old\n+new\n"),
+                    false, 1, 1, QStringLiteral("hash-new")));
+        QVERIFY(upgraded > rows.at(0).toObject().value("id").toInteger());
+        const QJsonObject detail =
+            memory.fileCheckpointDetail(upgraded, QStringLiteral("s-old"));
+        QCOMPARE(detail.value("addedLines").toInt(), 1);
+        QCOMPARE(detail.value("afterHash").toString(), QStringLiteral("hash-new"));
+    }
+
+    QFile::remove(dbPath);
+    QDir(dir).removeRecursively();
 }
 
 QTEST_GUILESS_MAIN(TestMemory)

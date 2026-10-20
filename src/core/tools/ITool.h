@@ -20,6 +20,14 @@ struct FileCheckpoint {
     // the row is still useful as an audit trail but cannot be undone.
     bool truncated{false};
 
+    // Phase 1: the change itself, captured at write time. Recomputing later
+    // from the current file would mix in subsequent edits.
+    QString diff;              // unified diff, bounded
+    bool diffTruncated{false}; // diff exceeded the output cap or input bounds
+    int addedLines{0};
+    int removedLines{0};
+    QString afterHash;         // SHA-256 of the written bytes (hex)
+
     bool isValid() const { return !path.isEmpty(); }
 };
 
