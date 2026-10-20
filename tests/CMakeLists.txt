@@ -13,7 +13,9 @@ qt_add_resources(test_chat_workflows "workflow_ui"
     PREFIX "/qt/qml/NexusAI" BASE "${CMAKE_SOURCE_DIR}" FILES ${NEXUS_WORKFLOW_QML}
     # docs/17 B6: SettingsCenterDialog 的搜索索引是 .js —— 上面的 glob 只
     # 匹配 *.qml，漏掉会让 main.qml 在测试里加载失败（设置中心不可用）。
-    "${CMAKE_SOURCE_DIR}/src/ui/components/settings-search.js")
+    "${CMAKE_SOURCE_DIR}/src/ui/components/settings-search.js"
+    # 审阅树的路径索引同理：ChangeTree.qml 相对导入它。
+    "${CMAKE_SOURCE_DIR}/src/ui/components/FileTree.js")
 add_test(NAME test_chat_workflows COMMAND test_chat_workflows -platform offscreen)
 set_tests_properties(test_chat_workflows PROPERTIES
     ENVIRONMENT "QT_QPA_PLATFORM_PLUGIN_PATH=${QT6_INSTALL_PREFIX}/${QT6_INSTALL_PLUGINS}/platforms")
@@ -63,6 +65,15 @@ target_link_libraries(test_git_viewmodel PRIVATE
 target_compile_definitions(test_git_viewmodel PRIVATE NEXUSAI_TESTING)
 add_test(NAME test_git_viewmodel COMMAND test_git_viewmodel)
 
+# P3-a: commit-message drafter contract (prompt assembly, diff truncation,
+# reply cleaning, local-only gate). Pure statics only, so no QML is needed -
+# the link set matches test_git_viewmodel.
+add_executable(test_commit_drafter test_commit_drafter.cpp)
+target_link_libraries(test_commit_drafter PRIVATE
+    nexus_core nexus_infra nexus_viewmodels Qt6::Test)
+target_compile_definitions(test_commit_drafter PRIVATE NEXUSAI_TESTING)
+add_test(NAME test_commit_drafter COMMAND test_commit_drafter)
+
 # H1: proxy factory modes, real routing through a local HTTP proxy, readable
 # failure for a dead proxy, and the SettingsService probe behind the UI button.
 add_executable(test_network_proxy test_network_proxy.cpp)
@@ -84,11 +95,17 @@ target_link_libraries(test_embedding PRIVATE
 add_test(NAME test_embedding COMMAND test_embedding)
 
 # TEST-905: qmllint gate — error-level findings fail the test run
-# (warning-level legacy noise is tolerated and printed).
+# (warning-level legacy noise is tolerated and printed). QmllintGuard.ps1
+# caps qmllint memory so a pathological QML file cannot freeze the machine.
+find_program(NEXUS_QMLLINT NAMES qmllint
+    HINTS "${QT6_INSTALL_PREFIX}/${QT6_INSTALL_BINS}" NO_DEFAULT_PATH)
+find_program(NEXUS_POWERSHELL NAMES powershell pwsh)
 add_test(NAME qmllint_gate
     COMMAND ${CMAKE_COMMAND}
-        -DQMLLINT=${QT6_INSTALL_FULL_BINS}/qmllint.exe
+        -DQMLLINT=${NEXUS_QMLLINT}
         -DRSP_DIR=${CMAKE_BINARY_DIR}/.rcc/qmllint
+        -DPOWERSHELL=${NEXUS_POWERSHELL}
+        -DGUARD_SCRIPT=${CMAKE_SOURCE_DIR}/cmake/QmllintGuard.ps1
         -P ${CMAKE_SOURCE_DIR}/cmake/QmllintGate.cmake
     WORKING_DIRECTORY ${CMAKE_BINARY_DIR})
 
@@ -296,6 +313,21 @@ add_test(NAME test_file_changes_qml
     COMMAND ${CMAKE_COMMAND} -E env
         "QT_QPA_PLATFORM_PLUGIN_PATH=${QT6_INSTALL_PREFIX}/${QT6_INSTALL_PLUGINS}/platforms"
         $<TARGET_FILE:test_file_changes_qml> -platform offscreen)
+
+# Phase 2: right-panel Git view against a real temporary repository
+# (staged/unstaged trees, repo history, commit detail, working diff).
+add_executable(test_git_panel_qml test_git_panel_qml.cpp)
+target_link_libraries(test_git_panel_qml PRIVATE
+    nexus_core nexus_infra nexus_viewmodels nexus_viewmodelsplugin
+    Qt6::Test Qt6::Qml Qt6::Quick)
+target_compile_definitions(test_git_panel_qml PRIVATE
+    NEXUS_TEST_QML_DIR="${CMAKE_CURRENT_SOURCE_DIR}/qml"
+    NEXUS_BUILD_DIR="${CMAKE_BINARY_DIR}")
+add_dependencies(test_git_panel_qml nexus_ai)
+add_test(NAME test_git_panel_qml
+    COMMAND ${CMAKE_COMMAND} -E env
+        "QT_QPA_PLATFORM_PLUGIN_PATH=${QT6_INSTALL_PREFIX}/${QT6_INSTALL_PLUGINS}/platforms"
+        $<TARGET_FILE:test_git_panel_qml> -platform offscreen)
 
 # G2: '@' completion keyboard/mouse interaction. Real QTest key and click
 # events against the real InputConsole; guards Enter/Tab/Up-Down/click

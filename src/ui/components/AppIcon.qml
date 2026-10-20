@@ -214,6 +214,45 @@ Canvas {
             roundedRect(c, 3.5, 4, 17, 4.5, 1)
             polyline(c, [5.5, 8.5, 5.5, 19, 18.5, 19, 18.5, 8.5])
             line(c, 9.8, 12.5, 14.2, 12.5)
+        },
+        "undo": function(c) {
+            // 回退箭头（Feather "corner-up-left"）：审阅树的单文件撤销。
+            polyline(c, [9, 14.5, 4.5, 10, 9, 5.5])
+            c.beginPath()
+            c.moveTo(19.5, 20); c.lineTo(19.5, 14)
+            c.quadraticCurveTo(19.5, 10, 15.5, 10)
+            c.lineTo(4.5, 10)
+            c.stroke()
+        },
+        "plus": function(c) {
+            line(c, 12, 5, 12, 19); line(c, 5, 12, 19, 12)
+        },
+        "minus": function(c) {
+            line(c, 5, 12, 19, 12)
+        },
+        "branch": function(c) {
+            // Git 分支（Feather "git-branch"）：右栏 Git 页签/分支头。
+            circle(c, 6, 5.5, 2.5)
+            circle(c, 6, 18.5, 2.5)
+            circle(c, 18, 5.5, 2.5)
+            line(c, 6, 8, 6, 16)
+            c.beginPath()
+            c.moveTo(18, 8)
+            c.bezierCurveTo(18, 13.5, 13.5, 15.8, 8.5, 15.8)
+            c.stroke()
+        },
+        "history": function(c) {
+            // 时钟（Feather "clock"）：Git 面板的单文件提交历史入口。
+            circle(c, 12, 12, 8.2)
+            polyline(c, [12, 7.2, 12, 12, 15.8, 13.8])
+        },
+        "blame": function(c) {
+            // 行号槽 + 三行代码：逐行归属（blame）入口。
+            line(c, 5.2, 5.5, 5.2, 18.5)
+            line(c, 8.6, 7.4, 18.6, 7.4)
+            line(c, 8.6, 12, 16.2, 12)
+            line(c, 8.6, 16.6, 18.6, 16.6)
+            circle(c, 5.2, 12, 1.5)
         }
     })
 

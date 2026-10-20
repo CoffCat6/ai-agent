@@ -162,6 +162,9 @@ qt_add_qml_module(nexus_viewmodels
         src/viewmodels/SettingsBackup.cpp
         src/viewmodels/ConnectionTester.h
         src/viewmodels/ConnectionTester.cpp
+        # P3-a: one-shot "draft a commit message" request (no session, no git write).
+        src/viewmodels/CommitMessageDrafter.h
+        src/viewmodels/CommitMessageDrafter.cpp
         src/viewmodels/AgentViewModel.h
         src/viewmodels/AgentViewModel.cpp
         # Phase 3: async read-only git history facade for the change dialog.
@@ -271,6 +274,19 @@ qt_add_qml_module(nexus_ai
         src/ui/components/ReferenceChipRow.qml
         # G4: session file checkpoints (fed by AgentVM.fileCheckpoints)
         src/ui/components/FileChangesPanel.qml
+        # 审阅升级：扁平化目录树（审阅 / Git 状态 / 提交文件共用）+ 路径工具
+        src/ui/components/ChangeTree.qml
+        src/ui/components/FileTree.js
+        # Git 管理（Phase 2）：只读状态/历史面板 + 工作区/提交详情
+        src/ui/components/GitPanel.qml
+        src/ui/components/GitWorkingDiffDialog.qml
+        src/ui/components/GitCommitDialog.qml
+        src/ui/components/GitActionDialog.qml
+        src/ui/components/GitFileHistoryDialog.qml
+        src/ui/components/GitBranchDialog.qml
+        src/ui/components/GitCompareDialog.qml
+        src/ui/components/GitBlameDialog.qml
+        src/ui/components/GitGraphDialog.qml
         # G4 Phase 1: write-time diff detail dialog + line renderer
         src/ui/components/FileChangeDetailDialog.qml
         src/ui/components/DiffView.qml

@@ -4,10 +4,12 @@ import QtQuick.Controls
 import NexusAI
 import NexusAI.ViewModels
 
-// G4: read-only list of files the active session's write_file / edit_file
-// calls touched. Data flows AgentVM.fileCheckpoints -> here; undo is routed
-// back through AgentVM.undoFileCheckpoint. Path-only rows (oversized or
-// unreadable originals) are shown as audit history and cannot be undone.
+// Review section of the right panel: the session's write_file / edit_file
+// checkpoints, one row per file, arranged in a collapsible directory tree.
+// Data flows AgentVM.fileCheckpoints -> here; per-file undo is routed back
+// through AgentVM.undoFileCheckpoint and row clicks open the wide review
+// dialog (FileChangeDetailDialog). Path-only rows (oversized or unreadable
+// originals) are shown as audit history and cannot be undone or diffed.
 Item {
     id: root
 
@@ -16,15 +18,48 @@ Item {
     property string errorText: ""
     // Test/embedding hook: overrides AgentVM.fileCheckpointDetail(id).
     property var detailProvider: null
-    // UI tests set this to false to inject git data without spawning git.
-    property bool gitAutoLoad: true
+    // Active project root: used to display repo-relative paths when set.
+    property string projectRoot: ""
+    // Tree height cap in bounded contexts; 0 = fill the available height
+    // (used when the panel is the body of the review tab).
+    property int listMaxHeight: 260
 
     readonly property int itemCount: checkpoints ? checkpoints.length : 0
     readonly property bool hasItems: itemCount > 0
     readonly property bool listVisible: hasItems && !collapsed
-    readonly property int renderedCount: changeList.count
+    readonly property int renderedCount: changeTree.fileRowCount
+    readonly property int treeRowCount: changeTree.rowCount
+    readonly property int treeFolderRowCount: changeTree.folderRowCount
     readonly property alias detailVisible: detailDialog.visible
     readonly property alias detailDialogItem: detailDialog
+    readonly property alias undoDialogVisible: undoDialog.visible
+    readonly property int activeAdded: sumStat(true)
+    readonly property int activeRemoved: sumStat(false)
+
+    function activeCount(entry) {
+        if (entry.activeCount !== undefined) return entry.activeCount
+        return entry.undone ? 0 : 1
+    }
+
+    function changeCount(entry) {
+        return entry.changeCount !== undefined ? entry.changeCount : 1
+    }
+
+    function statusColor(entry) {
+        if (root.activeCount(entry) === 0) return Theme.textSecondary
+        if (entry.truncated) return Theme.statusWarning
+        return Theme.brandPrimary
+    }
+
+    function sumStat(added) {
+        let total = 0
+        for (let i = 0; i < itemCount; ++i) {
+            const entry = checkpoints[i]
+            if (root.activeCount(entry) === 0) continue
+            total += added ? (entry.addedLines || 0) : (entry.removedLines || 0)
+        }
+        return total
+    }
 
     function detailFor(entry) {
         if (root.detailProvider) return root.detailProvider(entry.id)
@@ -48,33 +83,37 @@ Item {
         return detailDialog.diffLineCount
     }
 
-    visible: hasItems
-    implicitHeight: hasItems ? content.implicitHeight : 0
-
-    function statusText(entry) {
-        if (root.activeCount(entry) === 0) return qsTr("已全部撤销")
-        if (entry.truncated) return qsTr("仅记录路径，请用 git 恢复")
-        const base = entry.existed
-            ? qsTr("可回退本次会话的全部改动")
-            : qsTr("将删除本会话新建的文件")
-        if (root.activeCount(entry) > 1)
-            return qsTr("%1 · 共 %2 次改动").arg(base).arg(root.activeCount(entry))
-        return base
+    // Test hooks for the directory tree.
+    function toggleTreeFolder(path) {
+        changeTree.toggleFolder(path)
     }
 
-    function activeCount(entry) {
-        if (entry.activeCount !== undefined) return entry.activeCount
-        return entry.undone ? 0 : 1
+    function treeIsCollapsed(path) {
+        return changeTree.isCollapsed(path)
     }
 
-    function changeCount(entry) {
-        return entry.changeCount !== undefined ? entry.changeCount : 1
+    function expandTree() {
+        changeTree.expandAll()
     }
 
-    function statusColor(entry) {
-        if (root.activeCount(entry) === 0) return Theme.textSecondary
-        if (entry.truncated) return Theme.statusWarning
-        return Theme.brandPrimary
+    function collapseTree() {
+        changeTree.collapseAll()
+    }
+
+    function rowAction(entry) {
+        const active = root.activeCount(entry)
+        if (active > 0 && entry.truncated === true) {
+            return { "text": qsTr("不可撤销"),
+                     "tooltip": qsTr("原文件过大，仅记录了路径，请用 git 恢复"),
+                     "enabled": false }
+        }
+        return {
+            "text": active === 0 ? qsTr("已撤销") : qsTr("撤销"),
+            "tooltip": active === 0
+                ? qsTr("本会话对该文件的改动已撤销")
+                : qsTr("撤销该文件在本会话的全部改动"),
+            "enabled": active > 0
+        }
     }
 
     function requestUndo(entry) {
@@ -89,20 +128,30 @@ Item {
             root.errorText = qsTr("撤销失败：文件或检查点已不可用。")
     }
 
+    visible: hasItems
+    implicitHeight: hasItems ? content.implicitHeight : 0
+
     ColumnLayout {
         id: content
-        anchors.left: parent.left
-        anchors.right: parent.right
-        anchors.top: parent.top
+        anchors.fill: parent
         spacing: 6
 
-        // Header doubles as the collapse toggle.
+        // Header doubles as the collapse toggle. The MouseArea is declared
+        // before the row so the header's action buttons stay clickable; plain
+        // text does not consume clicks and falls through to the toggle.
         Item {
             id: header
             Layout.fillWidth: true
             Layout.preferredHeight: 22
 
             HoverHandler { id: headerHover }
+
+            MouseArea {
+                anchors.fill: parent
+                cursorShape: Qt.PointingHandCursor
+                onClicked: root.collapsed = !root.collapsed
+                Accessible.name: qsTr("展开或折叠审阅列表")
+            }
 
             RowLayout {
                 anchors.fill: parent
@@ -116,7 +165,7 @@ Item {
                 }
 
                 Text {
-                    text: qsTr("文件改动 · %1").arg(root.itemCount)
+                    text: qsTr("审阅 · %1").arg(root.itemCount)
                     color: Theme.textSecondary
                     font.pixelSize: Theme.fontSizeCaption
                     font.bold: true
@@ -125,6 +174,48 @@ Item {
 
                 Item { Layout.fillWidth: true }
 
+                Text {
+                    Layout.alignment: Qt.AlignVCenter
+                    visible: root.activeAdded > 0
+                    text: "+" + root.activeAdded
+                    color: Theme.statusSuccess
+                    font.pixelSize: 10
+                    font.family: Theme.fontMono
+                }
+
+                Text {
+                    Layout.alignment: Qt.AlignVCenter
+                    visible: root.activeRemoved > 0
+                    text: "−" + root.activeRemoved
+                    color: Theme.statusDanger
+                    font.pixelSize: 10
+                    font.family: Theme.fontMono
+                }
+
+                IconButton {
+                    Layout.alignment: Qt.AlignVCenter
+                    visible: root.hasItems && !root.collapsed
+                    Layout.preferredWidth: 18
+                    Layout.preferredHeight: 18
+                    radius: 4
+                    icon: "chevron-up"
+                    iconSize: 10
+                    tooltip: qsTr("折叠全部目录")
+                    onClicked: root.collapseTree()
+                }
+
+                IconButton {
+                    Layout.alignment: Qt.AlignVCenter
+                    visible: root.hasItems && !root.collapsed
+                    Layout.preferredWidth: 18
+                    Layout.preferredHeight: 18
+                    radius: 4
+                    icon: "chevron-down"
+                    iconSize: 10
+                    tooltip: qsTr("展开全部目录")
+                    onClicked: root.expandTree()
+                }
+
                 AppIcon {
                     Layout.alignment: Qt.AlignVCenter
                     icon: root.collapsed ? "chevron-down" : "chevron-up"
@@ -132,136 +223,23 @@ Item {
                     iconColor: Theme.textSecondary
                 }
             }
-
-            MouseArea {
-                anchors.fill: parent
-                cursorShape: Qt.PointingHandCursor
-                onClicked: root.collapsed = !root.collapsed
-                Accessible.name: qsTr("展开或折叠文件改动列表")
-            }
         }
 
-        ListView {
-            id: changeList
+        ChangeTree {
+            id: changeTree
             Layout.fillWidth: true
-            Layout.preferredHeight: Math.min(contentHeight, 188)
+            Layout.preferredHeight: root.listMaxHeight > 0
+                ? Math.min(changeTree.contentHeight, root.listMaxHeight)
+                : changeTree.contentHeight
+            Layout.fillHeight: root.listMaxHeight <= 0
             visible: root.listVisible
-            clip: true
-            model: root.checkpoints
-            boundsBehavior: Flickable.StopAtBounds
-            ScrollBar.vertical: ScrollBar {}
-
-            delegate: Rectangle {
-                id: changeRow
-                objectName: "fileChangeRow"
-                required property var modelData
-                required property int index
-
-                readonly property bool undone: modelData.undone
-                readonly property bool truncated: modelData.truncated
-
-                width: ListView.view ? ListView.view.width : 0
-                height: 46
-                radius: 6
-                color: rowHover.hovered ? Theme.surfaceHover : "transparent"
-
-                HoverHandler { id: rowHover }
-
-                // Below the content row: clicks on text fall through here,
-                // while the undo button consumes its own press.
-                MouseArea {
-                    anchors.fill: parent
-                    cursorShape: Qt.PointingHandCursor
-                    onClicked: root.openDetail(changeRow.modelData)
-                    Accessible.name: qsTr("查看文件改动详情")
-                }
-
-                RowLayout {
-                    anchors.fill: parent
-                    anchors.leftMargin: 6
-                    anchors.rightMargin: 4
-                    spacing: 8
-
-                    AppIcon {
-                        Layout.alignment: Qt.AlignVCenter
-                        icon: "file"
-                        size: 13
-                        iconColor: root.statusColor(changeRow.modelData)
-                    }
-
-                    ColumnLayout {
-                        Layout.fillWidth: true
-                        Layout.alignment: Qt.AlignVCenter
-                        spacing: 0
-
-                        Text {
-                            Layout.fillWidth: true
-                            text: changeRow.modelData.path
-                            color: root.activeCount(changeRow.modelData) === 0
-                                ? Theme.textSecondary : Theme.textPrimary
-                            font.pixelSize: Theme.fontSizeCaption
-                            font.family: Theme.fontMono
-                            elide: Text.ElideMiddle
-                            Accessible.name: changeRow.modelData.path
-                        }
-
-                        Text {
-                            Layout.fillWidth: true
-                            text: root.statusText(changeRow.modelData)
-                                  + " · "
-                                  + Qt.formatDateTime(
-                                        new Date(changeRow.modelData.createdAt),
-                                        "MM-dd HH:mm")
-                            color: root.statusColor(changeRow.modelData)
-                            font.pixelSize: 10
-                            font.family: Theme.fontSans
-                            elide: Text.ElideRight
-                        }
-                    }
-
-                    Text {
-                        objectName: "fileChangeCountBadge"
-                        Layout.alignment: Qt.AlignVCenter
-                        visible: root.activeCount(changeRow.modelData) > 1
-                        text: "×" + root.activeCount(changeRow.modelData)
-                        color: Theme.textSecondary
-                        font.family: Theme.fontMono
-                        font.pixelSize: 10
-                    }
-
-                    Text {
-                        Layout.alignment: Qt.AlignVCenter
-                        visible: changeRow.modelData.hasDiff === true
-                                 && changeRow.modelData.addedLines > 0
-                        text: "+" + changeRow.modelData.addedLines
-                        color: Theme.statusSuccess
-                        font.family: Theme.fontMono
-                        font.pixelSize: 10
-                    }
-
-                    Text {
-                        Layout.alignment: Qt.AlignVCenter
-                        visible: changeRow.modelData.hasDiff === true
-                                 && changeRow.modelData.removedLines > 0
-                        text: "−" + changeRow.modelData.removedLines
-                        color: Theme.statusDanger
-                        font.family: Theme.fontMono
-                        font.pixelSize: 10
-                    }
-
-                    AppButton {
-                        Layout.alignment: Qt.AlignVCenter
-                        text: root.activeCount(changeRow.modelData) === 0
-                            ? qsTr("已撤销") : qsTr("撤销")
-                        enabled: root.activeCount(changeRow.modelData) > 0
-                                 && !changeRow.modelData.truncated
-                                 && !AgentVM.stateBusy
-                        opacity: enabled ? 1.0 : 0.4
-                        onClicked: root.requestUndo(changeRow.modelData)
-                        Accessible.name: qsTr("撤销该文件在本会话的全部改动")
-                    }
-                }
-            }
+            items: root.checkpoints
+            basePath: root.projectRoot
+            actionsEnabled: !AgentVM.stateBusy
+            actionFor: function(entry) { return root.rowAction(entry) }
+            fileColorFor: function(entry) { return root.statusColor(entry) }
+            onFileActivated: (item) => root.openDetail(item)
+            onFileActionRequested: (item) => root.requestUndo(item)
         }
 
         Text {
@@ -342,6 +320,9 @@ Item {
 
     FileChangeDetailDialog {
         id: detailDialog
-        autoLoadGit: root.gitAutoLoad
+        checkpoints: root.checkpoints
+        detailFor: root.detailFor
+        projectRoot: root.projectRoot
+        onUndoRequested: (entry) => root.requestUndo(entry)
     }
 }

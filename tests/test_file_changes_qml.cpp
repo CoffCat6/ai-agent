@@ -16,8 +16,6 @@
 #include <QDateTime>
 #include <QFile>
 #include <QMap>
-#include <QProcess>
-#include <QProcessEnvironment>
 #include <QSet>
 #include <QVariantList>
 #include <QVariantMap>
@@ -25,7 +23,6 @@
 #include <cmath>
 #include <memory>
 
-#include "core/git/GitService.h"
 #include "core/tools/Sandbox.h"
 #include "viewmodels/ThemeProvider.h"
 
@@ -97,63 +94,6 @@ QVariantMap checkpoint(qint64 id, const QString& path, bool existed,
     };
 }
 
-// Phase 3 end-to-end fixture: a real repository for the dialog's GitVM path.
-class TempRepo {
-public:
-    bool valid() const { return m_dir.isValid(); }
-    QString path() const { return m_dir.path(); }
-    QString filePath(const QString& relative) const { return m_dir.filePath(relative); }
-
-    bool init() {
-        if (!m_dir.isValid()) return false;
-        return run({QStringLiteral("init"), QStringLiteral("-q")})
-            && run({QStringLiteral("config"), QStringLiteral("user.name"),
-                    QStringLiteral("Test User")})
-            && run({QStringLiteral("config"), QStringLiteral("user.email"),
-                    QStringLiteral("test@example.com")})
-            && run({QStringLiteral("config"), QStringLiteral("commit.gpgsign"),
-                    QStringLiteral("false")})
-            && run({QStringLiteral("config"), QStringLiteral("core.autocrlf"),
-                    QStringLiteral("false")});
-    }
-
-    bool write(const QString& relative, const QByteArray& content) const {
-        QFile file(filePath(relative));
-        if (!file.open(QIODevice::WriteOnly)) return false;
-        return file.write(content) == content.size();
-    }
-
-    bool commit(const QString& message) const {
-        return run({QStringLiteral("add"), QStringLiteral("-A")})
-            && run({QStringLiteral("commit"), QStringLiteral("-q"),
-                    QStringLiteral("-m"), message});
-    }
-
-    bool run(const QStringList& args) const {
-        QProcess process;
-        process.setProgram(QStringLiteral("git"));
-        process.setArguments(args);
-        process.setWorkingDirectory(m_dir.path());
-        process.setProcessChannelMode(QProcess::MergedChannels);
-        QProcessEnvironment env = QProcessEnvironment::systemEnvironment();
-        env.insert(QStringLiteral("GIT_OPTIONAL_LOCKS"), QStringLiteral("0"));
-        env.insert(QStringLiteral("GIT_TERMINAL_PROMPT"), QStringLiteral("0"));
-        env.insert(QStringLiteral("LC_ALL"), QStringLiteral("C"));
-        process.setProcessEnvironment(env);
-        process.start();
-        if (!process.waitForStarted(3000)) return false;
-        if (!process.waitForFinished(15000)) {
-            process.kill();
-            process.waitForFinished(1000);
-            return false;
-        }
-        return process.exitCode() == 0;
-    }
-
-private:
-    QTemporaryDir m_dir;
-};
-
 class Harness {
 public:
     NexusQrcFallback fallback{QStringLiteral(NEXUS_BUILD_DIR "/NexusAI")};
@@ -162,11 +102,11 @@ public:
     QQuickWindow* window{nullptr};
     QString error;
 
-    Harness() {
+    explicit Harness(const QString& qmlFile = QStringLiteral("FileChangesHarness.qml")) {
         engine.addUrlInterceptor(&fallback);
         engine.addImportPath(QStringLiteral(NEXUS_BUILD_DIR));
         QQmlComponent component(
-            &engine, QUrl::fromLocalFile(QStringLiteral(NEXUS_TEST_QML_DIR "/FileChangesHarness.qml")));
+            &engine, QUrl::fromLocalFile(QStringLiteral(NEXUS_TEST_QML_DIR "/") + qmlFile));
         if (!component.isReady()) {
             error = component.errorString();
             return;
@@ -203,11 +143,6 @@ public:
 
     bool setCollapsed(bool value) const {
         return root && QMetaObject::invokeMethod(root.get(), "setCollapsed",
-                                                 Q_ARG(QVariant, value));
-    }
-
-    bool setGitAutoLoad(bool value) const {
-        return root && QMetaObject::invokeMethod(root.get(), "setGitAutoLoad",
                                                  Q_ARG(QVariant, value));
     }
 };
@@ -372,6 +307,15 @@ private slots:
         (void)h.window->grabWindow();
         QTest::qWait(150);
 
+        QList<QQuickItem*> diffViews;
+        collectVisualItems(h.window->contentItem(),
+                           QStringLiteral("detailDiffView"), &diffViews);
+        QVERIFY2(!diffViews.isEmpty(), "detailDiffView missing");
+        QVERIFY2(diffViews.first()->width() > 200,
+                 "detail diff pane collapsed horizontally");
+        QVERIFY2(diffViews.first()->height() > 100,
+                 "detail diff pane collapsed vertically");
+
         QVERIFY(QMetaObject::invokeMethod(h.root.get(), "closeDetail"));
         QTRY_COMPARE(h.call("detailVisible").toBool(), false);
 
@@ -393,144 +337,248 @@ private slots:
         QVERIFY(QMetaObject::invokeMethod(h.root.get(), "closeDetail"));
     }
 
-    // Phase 3: the dialog's git tabs render injected working-tree and history
-    // data (the async data path is covered by test_git_viewmodel).
-    void gitTabsRenderWorkingTreeAndHistory() {
+    // 审阅升级：目录分组 + 折叠（折叠后仍然只统计可见文件行）。
+    void treeGroupsFilesByFolder() {
+        Harness h;
+        QVERIFY2(h.window, qPrintable(h.error));
+        QVERIFY(h.setCheckpoints({
+            checkpoint(41, QStringLiteral("/project/src/a.cpp"), true, false, false),
+            checkpoint(42, QStringLiteral("/project/src/b.cpp"), true, false, false),
+            checkpoint(43, QStringLiteral("/project/docs/guide.md"), false, false, false)
+        }));
+        QTRY_COMPARE(h.call("renderedCount").toInt(), 3);
+        QCOMPARE(h.call("treeFolderCount").toInt(), 2);
+        QCOMPARE(h.call("treeRowCount").toInt(), 5);
+
+        // Folder delegates appear only after a rendered frame; retry the
+        // collection instead of assuming the first layout pass created them.
+        const auto visibleFolderRows = [&h]() {
+            QList<QQuickItem*> items;
+            collectVisualItems(h.window->contentItem(),
+                               QStringLiteral("fileTreeFolderRow"), &items);
+            int visible = 0;
+            for (QQuickItem* item : items)
+                if (item->isVisible()) ++visible;
+            return visible;
+        };
+        QTest::qWait(150);
+        (void)h.window->grabWindow();
+        QTRY_COMPARE_WITH_TIMEOUT(visibleFolderRows(), 2, 5000);
+
+        QList<QQuickItem*> folders;
+        collectVisualItems(h.window->contentItem(),
+                           QStringLiteral("fileTreeFolderRow"), &folders);
+        QMap<QString, QQuickItem*> byName;
+        for (QQuickItem* row : folders) {
+            if (row->isVisible())
+                byName.insert(row->property("modelData").toMap().value("name").toString(), row);
+        }
+        QCOMPARE(byName.size(), 2);
+        QCOMPARE(byName.value(QStringLiteral("src"))
+                     ->property("modelData").toMap().value("fileCount").toInt(), 2);
+
+        QVERIFY(QMetaObject::invokeMethod(h.root.get(), "toggleFolder",
+                                          Q_ARG(QVariant, QStringLiteral("src"))));
+        QTRY_COMPARE(h.call("renderedCount").toInt(), 1);
+        QCOMPARE(h.call("treeRowCount").toInt(), 3);
+        QVariant collapsed;
+        QVERIFY(QMetaObject::invokeMethod(h.root.get(), "folderCollapsed",
+                                          Q_RETURN_ARG(QVariant, collapsed),
+                                          Q_ARG(QVariant, QStringLiteral("src"))));
+        QCOMPARE(collapsed.toBool(), true);
+
+        QVERIFY(QMetaObject::invokeMethod(h.root.get(), "toggleFolder",
+                                          Q_ARG(QVariant, QStringLiteral("src"))));
+        QTRY_COMPARE(h.call("renderedCount").toInt(), 3);
+        QCOMPARE(h.call("treeRowCount").toInt(), 5);
+    }
+
+    // 审阅升级：统一视图带行号，并排视图把 -/+ 段配对对齐。
+    void splitViewPairsChanges() {
         Harness h;
         QVERIFY2(h.window, qPrintable(h.error));
 
         QVariantMap item =
-            checkpoint(11, QStringLiteral("/project/src/a.cpp"), true, false, false);
+            checkpoint(51, QStringLiteral("/project/src/a.cpp"), true, false, false);
         item["hasDiff"] = true;
         item["addedLines"] = 1;
         item["removedLines"] = 1;
         QVERIFY(h.setCheckpoints({item}));
         QTRY_COMPARE(h.call("renderedCount").toInt(), 1);
-        QVERIFY(QMetaObject::invokeMethod(h.root.get(), "openDetail",
-                                          Q_ARG(QVariant, 0)));
-        QTRY_VERIFY(h.call("detailVisible").toBool());
 
-        QObject* dlg = h.call("dialogItem").value<QObject*>();
-        QVERIFY(dlg);
-
-        const QString workingDiff = QStringLiteral(
-            "--- a/a.cpp\n"
-            "+++ b/a.cpp\n"
-            "@@ -1,2 +1,2 @@\n"
-            "-old\n"
-            "+new\n");
-        const QString historyDiff = QStringLiteral(
+        const QString diff = QStringLiteral(
             "--- a/a.cpp\n"
             "+++ b/a.cpp\n"
             "@@ -1 +1 @@\n"
-            "-first\n"
-            "+second\n");
-        const qint64 now = QDateTime::currentSecsSinceEpoch();
-        const QVariantList commits{
-            QVariantMap{{"sha", QString(40, QLatin1Char('a'))},
-                        {"shortSha", QStringLiteral("aaaaaaa")},
-                        {"subject", QStringLiteral("edit a.cpp")},
-                        {"author", QStringLiteral("Test User")},
-                        {"timestamp", now}},
-            QVariantMap{{"sha", QString(40, QLatin1Char('b'))},
-                        {"shortSha", QStringLiteral("bbbbbbb")},
-                        {"subject", QStringLiteral("add a.cpp")},
-                        {"author", QStringLiteral("Test User")},
-                        {"timestamp", now - 60}}};
-
-        dlg->setProperty("gitRepo", true);
-        dlg->setProperty("gitRepoKnown", true);
-        dlg->setProperty("workingDiffLoading", false);
-        dlg->setProperty("workingDiff", workingDiff);
-        dlg->setProperty("historyLoading", false);
-        dlg->setProperty("history", commits);
-        dlg->setProperty("commitDiffLoading", false);
-        dlg->setProperty("commitDiff", historyDiff);
-        dlg->setProperty("selectedSha", commits.first().toMap().value("sha"));
-        dlg->setProperty("currentTab", 1);
-        QTest::qWait(200);
-
-        QList<QQuickItem*> tabs;
-        collectVisualItems(h.window->contentItem(), QStringLiteral("workingTab"), &tabs);
-        QCOMPARE(tabs.size(), 1);
-        QVERIFY(tabs.first()->isVisible());
-
-        QList<QQuickItem*> workingViews;
-        collectVisualItems(h.window->contentItem(), QStringLiteral("workingDiffView"),
-                           &workingViews);
-        QCOMPARE(workingViews.size(), 1);
-        QVERIFY2(workingViews.first()->property("renderedCount").toInt() >= 4,
-                 "工作区差异未渲染");
-        QCOMPARE(workingViews.first()->property("diffText").toString(), workingDiff);
-
-        dlg->setProperty("currentTab", 2);
-        QTest::qWait(200);
-        QTRY_COMPARE(dlg->property("gitHistoryRenderedCount").toInt(), 2);
-        QList<QQuickItem*> rows;
-        collectVisualItems(h.window->contentItem(), QStringLiteral("gitCommitRow"), &rows);
-        QCOMPARE(rows.size(), 2);
-
-        QList<QQuickItem*> commitViews;
-        collectVisualItems(h.window->contentItem(), QStringLiteral("commitDiffView"),
-                           &commitViews);
-        QCOMPARE(commitViews.size(), 1);
-        QVERIFY2(commitViews.first()->property("renderedCount").toInt() >= 4,
-                 "提交差异未渲染");
-        QCOMPARE(commitViews.first()->property("diffText").toString(), historyDiff);
-
-        // Outside a repository the git tabs disappear and the dialog falls
-        // back to the checkpoint view.
-        dlg->setProperty("gitRepo", false);
-        dlg->setProperty("currentTab", 2);
-        QTest::qWait(100);
-        QTRY_VERIFY(!tabs.first()->isVisible());
-        QCOMPARE(dlg->property("effectiveTab").toInt(), 0);
-
-        QVERIFY(QMetaObject::invokeMethod(h.root.get(), "closeDetail"));
-    }
-
-    // Phase 3 end-to-end: dialog -> GitVM -> GitService -> rendered rows.
-    void realGitIntegrationLoadsHistory() {
-        QString gitError;
-        if (!GitService::isGitAvailable(&gitError))
-            QSKIP(qPrintable(QStringLiteral("git is not available: %1").arg(gitError)));
-
-        TempRepo repo;
-        QVERIFY(repo.valid());
-        QVERIFY2(repo.init(), "git init failed");
-        QVERIFY(repo.write(QStringLiteral("a.txt"), "one\n"));
-        QVERIFY2(repo.commit(QStringLiteral("first commit")), "git commit failed");
-        Sandbox::setProjectDir(repo.path());
-
-        Harness h;
-        QVERIFY2(h.window, qPrintable(h.error));
-        QVERIFY(h.setGitAutoLoad(true));
-
-        QVariantMap item =
-            checkpoint(21, repo.filePath(QStringLiteral("a.txt")), true, false, false);
-        item["hasDiff"] = true;
-        QVERIFY(h.setCheckpoints({item}));
-        QTRY_COMPARE(h.call("renderedCount").toInt(), 1);
+            "-old\n"
+            "+new\n");
+        QVariantMap detail;
+        detail["diff"] = diff;
+        detail["diffTruncated"] = false;
+        QVERIFY(QMetaObject::invokeMethod(h.root.get(), "setDetail",
+                                          Q_ARG(QVariant, detail)));
         QVERIFY(QMetaObject::invokeMethod(h.root.get(), "openDetail",
                                           Q_ARG(QVariant, 0)));
         QTRY_VERIFY(h.call("detailVisible").toBool());
+        QTRY_COMPARE(h.call("detailDiffLineCount").toInt(), 5);
+
+        QList<QQuickItem*> lines;
+        collectVisualItems(h.window->contentItem(),
+                           QStringLiteral("diffLine"), &lines);
+        QVERIFY(lines.size() >= 5);
+        bool sawOldNumber = false;
+        bool sawNewNumber = false;
+        for (QQuickItem* line : lines) {
+            const QVariantMap data = line->property("modelData").toMap();
+            if (data.value("oldNo").toInt() > 0) sawOldNumber = true;
+            if (data.value("newNo").toInt() > 0) sawNewNumber = true;
+        }
+        QVERIFY2(sawOldNumber && sawNewNumber, "统一视图缺少旧/新行号");
+
+        QVERIFY(QMetaObject::invokeMethod(h.root.get(), "setViewMode",
+                                          Q_ARG(QVariant, QStringLiteral("split"))));
+        QTRY_COMPARE(h.call("detailDiffLineCount").toInt(), 4);
+        QList<QQuickItem*> pairs;
+        collectVisualItems(h.window->contentItem(),
+                           QStringLiteral("diffSplitRow"), &pairs);
+        QCOMPARE(pairs.size(), 1);
+        const QVariantMap pair = pairs.first()->property("modelData").toMap();
+        QCOMPARE(pair.value("oldText").toString(), QStringLiteral("old"));
+        QCOMPARE(pair.value("newText").toString(), QStringLiteral("new"));
+        QCOMPARE(pair.value("oldNo").toInt(), 1);
+        QCOMPARE(pair.value("newNo").toInt(), 1);
+        QVERIFY(QMetaObject::invokeMethod(h.root.get(), "closeDetail"));
+    }
+
+    // 审阅升级：弹窗左侧文件树可在多文件间切换，上/下一个同步边界。
+    void dialogSwitchesBetweenFiles() {
+        Harness h;
+        QVERIFY2(h.window, qPrintable(h.error));
+        QVERIFY(h.setCheckpoints({
+            checkpoint(61, QStringLiteral("/project/src/one.cpp"), true, false, false),
+            checkpoint(62, QStringLiteral("/project/src/two.cpp"), true, false, false)
+        }));
+
+        QVariantMap detailOne;
+        detailOne["diff"] = QStringLiteral(
+            "--- a/one.cpp\n"
+            "+++ b/one.cpp\n"
+            "@@ -1 +1 @@\n"
+            "-old\n"
+            "+one\n");
+        QVariantMap detailTwo;
+        detailTwo["diff"] = QStringLiteral(
+            "--- a/two.cpp\n"
+            "+++ b/two.cpp\n"
+            "@@ -1 +1 @@\n"
+            "-old\n"
+            "+two\n");
+        QVariantMap details;
+        details[QStringLiteral("61")] = detailOne;
+        details[QStringLiteral("62")] = detailTwo;
+        QVERIFY(QMetaObject::invokeMethod(h.root.get(), "setDetailById",
+                                          Q_ARG(QVariant, details)));
+
+        QVERIFY(QMetaObject::invokeMethod(h.root.get(), "openDetail",
+                                          Q_ARG(QVariant, 0)));
+        QTRY_VERIFY(h.call("detailVisible").toBool());
+        QCOMPARE(h.call("detailPath").toString(),
+                 QStringLiteral("/project/src/one.cpp"));
+
+        // The tree must stay at its capped width and leave room for the diff.
+        QTest::qWait(150);
+        QList<QQuickItem*> diffViews;
+        collectVisualItems(h.window->contentItem(),
+                           QStringLiteral("detailDiffView"), &diffViews);
+        QVERIFY2(!diffViews.isEmpty(), "detailDiffView missing");
+        QVERIFY2(diffViews.first()->width() > 100,
+                 "file tree squeezed the detail diff pane");
 
         QObject* dlg = h.call("dialogItem").value<QObject*>();
         QVERIFY(dlg);
-        QTRY_VERIFY_WITH_TIMEOUT(dlg->property("gitRepo").toBool(), 10000);
+        QCOMPARE(dlg->property("treeVisible").toBool(), true);
+        QCOMPARE(dlg->property("canStepForward").toBool(), true);
+        QCOMPARE(dlg->property("canStepBack").toBool(), false);
 
-        QVERIFY(QMetaObject::invokeMethod(dlg, "selectTab",
-                                          Q_ARG(QVariant, 2)));
-        QTRY_VERIFY_WITH_TIMEOUT(
-            dlg->property("gitHistoryRenderedCount").toInt() >= 1, 10000);
-        QTRY_VERIFY_WITH_TIMEOUT(
-            !dlg->property("commitDiff").toString().isEmpty(), 10000);
-        QVERIFY2(dlg->property("commitDiff").toString()
-                     .contains(QStringLiteral("+one")),
-                 qPrintable(dlg->property("commitDiff").toString()));
+        QVERIFY(QMetaObject::invokeMethod(h.root.get(), "selectEntry",
+                                          Q_ARG(QVariant, 1)));
+        QTRY_COMPARE(h.call("detailPath").toString(),
+                     QStringLiteral("/project/src/two.cpp"));
+        QCOMPARE(dlg->property("canStepForward").toBool(), false);
+        QCOMPARE(dlg->property("canStepBack").toBool(), true);
+        QVERIFY2(dlg->property("diffText").toString().contains(QStringLiteral("+two")),
+                 qPrintable(dlg->property("diffText").toString()));
 
+        QVERIFY(QMetaObject::invokeMethod(h.root.get(), "stepEntry",
+                                          Q_ARG(QVariant, -1)));
+        QTRY_COMPARE(h.call("detailPath").toString(),
+                     QStringLiteral("/project/src/one.cpp"));
         QVERIFY(QMetaObject::invokeMethod(h.root.get(), "closeDetail"));
     }
+
+    // 审阅升级：树行撤销按钮（IconButton 替换旧 AppButton）仍进入确认链路。
+    void treeRowActionOpensUndoConfirmation() {
+        Harness h;
+        QVERIFY2(h.window, qPrintable(h.error));
+
+        QVariantMap item =
+            checkpoint(71, QStringLiteral("/project/src/undo.cpp"), true, false, false);
+        item["hasDiff"] = true;
+        item["addedLines"] = 2;
+        QVERIFY(h.setCheckpoints({item}));
+        QTRY_COMPARE(h.call("renderedCount").toInt(), 1);
+
+        QTest::qWait(150);
+        (void)h.window->grabWindow();
+        QTest::qWait(150);
+
+        QList<QQuickItem*> actions;
+        collectVisualItems(h.window->contentItem(),
+                           QStringLiteral("fileRowAction"), &actions);
+        QQuickItem* action = nullptr;
+        for (QQuickItem* candidate : actions) {
+            if (candidate->isVisible()) {
+                action = candidate;
+                break;
+            }
+        }
+        QVERIFY2(action, "撤销按钮未渲染");
+        const QPoint center =
+            action->mapToScene(QPointF(action->width() / 2,
+                                       action->height() / 2)).toPoint();
+        QTest::mouseClick(h.window, Qt::LeftButton, Qt::NoModifier, center);
+        QTRY_VERIFY(h.call("undoDialogVisible").toBool());
+    }
+
+    // Phase 1 layout chain: the review panel hosted in a tab slot with
+    // listMaxHeight 0 must take the tab's height and render its rows.
+    void reviewPanelFillsTabHeight() {
+        Harness h(QStringLiteral("ReviewTabHarness.qml"));
+        QVERIFY2(h.window, qPrintable(h.error));
+        QVERIFY(h.setCheckpoints({
+            checkpoint(81, QStringLiteral("/project/src/a.cpp"), true, false, false),
+            checkpoint(82, QStringLiteral("/project/src/b.cpp"), true, false, false),
+            checkpoint(83, QStringLiteral("/project/docs/guide.md"), false, false, false)
+        }));
+        QTRY_COMPARE(h.call("renderedCount").toInt(), 3);
+        QTRY_VERIFY_WITH_TIMEOUT(h.call("panelHeight").toReal() > 250, 5000);
+
+        QTest::qWait(150);
+        (void)h.window->grabWindow();
+        const auto visibleRows = [&h]() {
+            QList<QQuickItem*> rows;
+            collectVisualItems(h.window->contentItem(),
+                               QStringLiteral("fileChangeRow"), &rows);
+            int visible = 0;
+            for (QQuickItem* row : rows)
+                if (row->isVisible()) ++visible;
+            return visible;
+        };
+        QTRY_COMPARE_WITH_TIMEOUT(visibleRows(), 3, 5000);
+        qInfo() << "Review tab panel height:" << h.call("panelHeight").toReal()
+                << "px; visible file rows:" << visibleRows();
+    }
+
 };
 
 QTEST_MAIN(TestFileChangesQml)

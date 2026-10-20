@@ -839,6 +839,45 @@ void TestAgent::fileCheckpointRecordedAndUndone() {
 
     // A second undo is refused (already undone).
     QVERIFY(!agent.undoFileCheckpoint(older.value("id").toInteger()));
+
+    // Legacy new-file rows (written before diffs were persisted) rebuild an
+    // all-add comparison from the file while the hash still matches.
+    const QString legacyPath = dir.filePath(QStringLiteral("legacy.txt"));
+    {
+        QFile file(legacyPath);
+        QVERIFY(file.open(QIODevice::WriteOnly));
+        QCOMPARE(file.write("legacy line"), qint64(11));
+    }
+    IMemory::FileCheckpointInput legacy;
+    legacy.path = legacyPath;
+    legacy.existed = false;
+    const qint64 legacyId =
+        memory.addFileCheckpoint(agent.currentSessionId(), legacy, 99);
+    QVERIFY(legacyId > 0);
+    const QJsonObject rebuilt = agent.fileCheckpointDetail(legacyId);
+    QVERIFY(rebuilt.value("diffFallback").toBool());
+    QVERIFY2(rebuilt.value("diff").toString().contains(
+                 QStringLiteral("+legacy line")),
+             qPrintable(rebuilt.value("diff").toString()));
+    QCOMPARE(rebuilt.value("addedLines").toInt(), 1);
+
+    // A hash mismatch means the file changed afterwards: do not present the
+    // current content as if it were the write-time result.
+    IMemory::FileCheckpointInput stale = legacy;
+    stale.path = dir.filePath(QStringLiteral("stale.txt"));
+    {
+        QFile file(stale.path);
+        QVERIFY(file.open(QIODevice::WriteOnly));
+        QCOMPARE(file.write("changed later"), qint64(13));
+    }
+    stale.afterHash = QString(64, QLatin1Char('0'));
+    const qint64 staleId =
+        memory.addFileCheckpoint(agent.currentSessionId(), stale, 100);
+    QVERIFY(staleId > 0);
+    const QJsonObject staleDetail = agent.fileCheckpointDetail(staleId);
+    QVERIFY(!staleDetail.value("diffFallback").toBool());
+    QVERIFY(staleDetail.value("diff").toString().isEmpty());
+
     agent.setMemory(nullptr);
 }
 

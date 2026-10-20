@@ -4,42 +4,29 @@ import QtQuick.Layouts
 import NexusAI
 import NexusAI.ViewModels
 
-// G4 Phase 3: details for one file checkpoint across three views:
-//   0. the write-time checkpoint diff (always available)
-//   1. the live working-tree diff for the same path (git only)
-//   2. the file's git history + the selected commit's diff (git only)
-// Git data is loaded asynchronously through GitVM; request ids drop stale
-// answers when the dialog is reopened for another file.
+// Wide review dialog for one file checkpoint. Review is scoped to what the
+// agent wrote in this session: the write-time diff is the only view. The live
+// working tree and git history live in the Git tab instead. The left column
+// lists every file of the session (same tree as the panel) so review does not
+// need closing/reopening per file; viewMode switches the diff between unified
+// and side-by-side renderings.
 Dialog {
     id: dialog
 
     property var checkpoint: null
+    // All session entries (feeding the left tree); empty -> tree hidden.
+    property var checkpoints: []
+    // function(entry) -> detail map; injected by FileChangesPanel.
+    property var detailFor: null
+    // Active project root, used for tree display paths.
+    property string projectRoot: ""
+
     property string diffText: ""
     property bool diffTruncated: false
-
-    property bool autoLoadGit: true
-    property bool gitRepo: false
-    property bool gitRepoKnown: false
-    property int currentTab: 0
-
-    property string workingDiff: ""
-    property bool workingDiffTruncated: false
-    property bool workingDiffLoading: false
-    property string workingDiffError: ""
-
-    property var history: []
-    property bool historyLoading: false
-    property string historyError: ""
-    property string selectedSha: ""
-
-    property string commitDiff: ""
-    property bool commitDiffTruncated: false
-    property bool commitDiffLoading: false
-    property string commitDiffError: ""
-
-    property string workingToken: ""
-    property string historyToken: ""
-    property string commitToken: ""
+    // The stored diff was missing (row written before diffs were persisted)
+    // and was rebuilt from the current file content.
+    property bool diffFallback: false
+    property string viewMode: "unified"
 
     readonly property bool hasDiff: diffText.length > 0
     readonly property bool undone: checkpoint ? checkpoint.undone === true : false
@@ -47,67 +34,65 @@ Dialog {
     readonly property int addedLines: checkpoint ? (checkpoint.addedLines || 0) : 0
     readonly property int removedLines: checkpoint ? (checkpoint.removedLines || 0) : 0
     readonly property alias diffLineCount: detailDiffView.renderedCount
-    readonly property int gitHistoryRenderedCount: commitList.count
-    readonly property int effectiveTab: gitRepo ? currentTab : 0
 
-    signal gitDataRequested(string path)
+    readonly property var entries: (checkpoints && checkpoints.length > 0)
+        ? checkpoints : (checkpoint ? [checkpoint] : [])
+    readonly property int entryIndex: indexOfEntry(checkpoint)
+    readonly property bool treeVisible: entries.length > 1
+    // The tree column must not stretch: without a maximum the layout lets it
+    // consume the whole row and collapses the diff pane.
+    readonly property real treePaneWidth:
+        Math.min(260, Math.max(140, width * 0.32))
+    readonly property bool canStepBack: entryIndex > 0
+    readonly property bool canStepForward: entryIndex >= 0
+        && entryIndex < entries.length - 1
+    readonly property bool undoOffered: checkpoint !== null
+        && !undone && !truncated
 
-    function openFor(entry, detail) {
-        checkpoint = entry || null
+    signal undoRequested(var entry)
+
+    function indexOfEntry(entry) {
+        if (!entry) return -1
+        for (let i = 0; i < entries.length; ++i) {
+            if (entries[i] && entries[i].id === entry.id) return i
+        }
+        return -1
+    }
+
+    function detailForEntry(entry) {
+        if (!entry) return {}
+        if (dialog.detailFor) return dialog.detailFor(entry)
+        return AgentVM.fileCheckpointDetail(entry.id)
+    }
+
+    function applyDetail(detail) {
         const d = detail || {}
         diffText = d.diff !== undefined ? d.diff : ""
         diffTruncated = d.diffTruncated === true
+        diffFallback = d.diffFallback === true
+    }
 
-        currentTab = 0
-        gitRepo = false
-        gitRepoKnown = false
-        workingDiff = ""
-        workingDiffTruncated = false
-        workingDiffLoading = false
-        workingDiffError = ""
-        history = []
-        historyLoading = false
-        historyError = ""
-        selectedSha = ""
-        commitDiff = ""
-        commitDiffTruncated = false
-        commitDiffLoading = false
-        commitDiffError = ""
-        workingToken = ""
-        historyToken = ""
-        commitToken = ""
-
+    function openFor(entry, detail) {
+        checkpoint = entry || null
+        if (detail === undefined || detail === null)
+            applyDetail(detailForEntry(entry))
+        else
+            applyDetail(detail)
         open()
-        if (autoLoadGit && checkpoint && checkpoint.path)
-            loadGit(checkpoint.path)
     }
 
-    function loadGit(path) {
-        gitDataRequested(path)
-        GitVM.refreshRepoInfo()
-        workingDiffLoading = true
-        workingToken = GitVM.requestWorkingDiff(path, false)
-        historyLoading = true
-        historyToken = GitVM.requestFileHistory(path, 20)
+    // Switching files inside the dialog.
+    function selectEntry(entry) {
+        if (!entry) return
+        if (checkpoint && entry.id === checkpoint.id) return
+        checkpoint = entry
+        applyDetail(detailForEntry(entry))
     }
 
-    function selectTab(index) {
-        if (index > 0 && !gitRepo) return
-        currentTab = index
-        if (index === 2 && selectedSha.length === 0 && history.length > 0)
-            selectCommit(history[0].sha)
-    }
-
-    function selectCommit(sha) {
-        if (!sha) return
-        selectedSha = sha
-        commitDiff = ""
-        commitDiffTruncated = false
-        commitDiffError = ""
-        if (!autoLoadGit) return
-        commitDiffLoading = true
-        commitToken = GitVM.requestCommitDiff(
-            sha, checkpoint ? checkpoint.path : "")
+    function stepEntry(delta) {
+        const next = entryIndex + delta
+        if (next < 0 || next >= entries.length) return
+        selectEntry(entries[next])
     }
 
     function statusText() {
@@ -126,65 +111,22 @@ Dialog {
 
     function emptyText() {
         if (truncated) return qsTr("原文件超过单文件上限，仅记录了路径，无法展示内容差异；请用 git 查看或恢复。")
+        if (!checkpoint || checkpoint.existed === false)
+            return qsTr("该新建文件没有可读取的内容：它可能已被删除或改名。")
         return qsTr("此记录没有保存内容差异。")
-    }
-
-    Connections {
-        target: GitVM
-
-        function onRepoInfoChanged() {
-            const info = GitVM.repoInfo || {}
-            dialog.gitRepoKnown = true
-            dialog.gitRepo = info.isRepo === true
-            if (!dialog.gitRepo) {
-                dialog.currentTab = 0
-                dialog.workingToken = ""
-                dialog.historyToken = ""
-                dialog.commitToken = ""
-                dialog.workingDiffLoading = false
-                dialog.historyLoading = false
-                dialog.commitDiffLoading = false
-            }
-        }
-
-        function onWorkingDiffReady(requestId, path, staged, diff, truncated, error) {
-            if (requestId !== dialog.workingToken) return
-            dialog.workingDiff = diff
-            dialog.workingDiffTruncated = truncated
-            dialog.workingDiffError = error
-            dialog.workingDiffLoading = false
-        }
-
-        function onFileHistoryReady(requestId, path, commits, error) {
-            if (requestId !== dialog.historyToken) return
-            dialog.history = commits
-            dialog.historyError = error
-            dialog.historyLoading = false
-            if (dialog.currentTab === 2 && dialog.selectedSha.length === 0
-                    && commits.length > 0)
-                dialog.selectCommit(commits[0].sha)
-        }
-
-        function onCommitDiffReady(requestId, sha, path, diff, truncated, error) {
-            if (requestId !== dialog.commitToken) return
-            dialog.commitDiff = diff
-            dialog.commitDiffTruncated = truncated
-            dialog.commitDiffError = error
-            dialog.commitDiffLoading = false
-        }
     }
 
     parent: Overlay.overlay
     anchors.centerIn: parent
-    width: Math.min(820, parent ? parent.width - 48 : 820)
-    height: Math.min(620, parent ? parent.height - 96 : 620)
+    width: Math.min(1120, parent ? parent.width - 48 : 1120)
+    height: Math.min(760, parent ? parent.height - 80 : 760)
     modal: true
     padding: 0
     closePolicy: Popup.CloseOnEscape | Popup.CloseOnPressOutside
     background: DialogBackground {}
 
     contentItem: ColumnLayout {
-        spacing: 10
+        spacing: 8
 
         RowLayout {
             Layout.fillWidth: true
@@ -223,6 +165,59 @@ Dialog {
                 color: Theme.statusDanger
                 font.family: Theme.fontMono
                 font.pixelSize: Theme.fontSizeCaption
+            }
+
+            IconButton {
+                objectName: "prevFileButton"
+                visible: dialog.treeVisible
+                icon: "chevron-left"
+                enabled: dialog.canStepBack
+                opacity: enabled ? 1.0 : 0.35
+                tooltip: qsTr("上一个文件")
+                onClicked: dialog.stepEntry(-1)
+            }
+
+            IconButton {
+                objectName: "nextFileButton"
+                visible: dialog.treeVisible
+                icon: "chevron-right"
+                enabled: dialog.canStepForward
+                opacity: enabled ? 1.0 : 0.35
+                tooltip: qsTr("下一个文件")
+                onClicked: dialog.stepEntry(1)
+            }
+
+            AppButton {
+                objectName: "unifiedModeButton"
+                visible: dialog.hasDiff
+                text: qsTr("统一")
+                implicitHeight: 24
+                highlighted: dialog.viewMode === "unified"
+                buttonColor: "transparent"
+                textColor: highlighted ? Theme.bgPrimary : Theme.textSecondary
+                onClicked: dialog.viewMode = "unified"
+            }
+
+            AppButton {
+                objectName: "splitModeButton"
+                visible: dialog.hasDiff
+                text: qsTr("并排")
+                implicitHeight: 24
+                highlighted: dialog.viewMode === "split"
+                buttonColor: "transparent"
+                textColor: highlighted ? Theme.bgPrimary : Theme.textSecondary
+                onClicked: dialog.viewMode = "split"
+            }
+
+            AppButton {
+                objectName: "undoButton"
+                visible: dialog.undoOffered
+                text: qsTr("撤销")
+                implicitHeight: 24
+                enabled: !AgentVM.stateBusy
+                opacity: enabled ? 1.0 : 0.4
+                onClicked: dialog.undoRequested(dialog.checkpoint)
+                Accessible.name: qsTr("撤销该文件在本会话的全部改动")
             }
 
             IconButton {
@@ -269,249 +264,74 @@ Dialog {
 
         RowLayout {
             Layout.fillWidth: true
-            Layout.leftMargin: 16
-            Layout.rightMargin: 16
-            spacing: 6
-
-            AppButton {
-                objectName: "checkpointTab"
-                text: qsTr("本次改动")
-                implicitHeight: 28
-                highlighted: dialog.effectiveTab === 0
-                buttonColor: "transparent"
-                textColor: highlighted ? Theme.bgPrimary : Theme.textSecondary
-                onClicked: dialog.selectTab(0)
-            }
-
-            AppButton {
-                objectName: "workingTab"
-                visible: dialog.gitRepo
-                text: qsTr("工作区")
-                implicitHeight: 28
-                highlighted: dialog.effectiveTab === 1
-                buttonColor: "transparent"
-                textColor: highlighted ? Theme.bgPrimary : Theme.textSecondary
-                onClicked: dialog.selectTab(1)
-            }
-
-            AppButton {
-                objectName: "historyTab"
-                visible: dialog.gitRepo
-                text: qsTr("Git 历史")
-                implicitHeight: 28
-                highlighted: dialog.effectiveTab === 2
-                buttonColor: "transparent"
-                textColor: highlighted ? Theme.bgPrimary : Theme.textSecondary
-                onClicked: dialog.selectTab(2)
-            }
-
-            Item { Layout.fillWidth: true }
-
-            Text {
-                visible: dialog.gitRepoKnown && !dialog.gitRepo && dialog.autoLoadGit
-                text: qsTr("不在 Git 仓库中，仅显示本次改动")
-                color: Theme.textSecondary
-                font.family: Theme.fontSans
-                font.pixelSize: 10
-            }
-        }
-
-        StackLayout {
-            Layout.fillWidth: true
             Layout.fillHeight: true
             Layout.leftMargin: 16
             Layout.rightMargin: 16
-            currentIndex: dialog.effectiveTab
+            spacing: 10
 
-            DiffView {
-                id: detailDiffView
-                objectName: "detailDiffView"
-                diffText: dialog.diffText
-                diffTruncated: dialog.diffTruncated
-                emptyText: dialog.emptyText()
+            // ── Session file tree ──────────────────────
+            ColumnLayout {
+                objectName: "reviewFileTree"
+                visible: dialog.treeVisible
+                Layout.preferredWidth: dialog.treePaneWidth
+                Layout.maximumWidth: dialog.treePaneWidth
+                Layout.fillHeight: true
+                spacing: 4
+
+                Text {
+                    text: qsTr("本会话文件 · %1").arg(dialog.entries.length)
+                    color: Theme.textSecondary
+                    font.pixelSize: 10
+                    font.bold: true
+                    font.family: Theme.fontMono
+                }
+
+                ChangeTree {
+                    id: entriesTree
+                    Layout.fillWidth: true
+                    Layout.fillHeight: true
+                    items: dialog.entries
+                    basePath: dialog.projectRoot
+                    rowHeight: 24
+                    fileColorFor: function(entry) {
+                        return entry.undone === true ? Theme.textSecondary
+                                                     : Theme.brandPrimary
+                    }
+                    onFileActivated: (item) => dialog.selectEntry(item)
+                }
+            }
+
+            Rectangle {
+                visible: dialog.treeVisible
+                Layout.preferredWidth: 1
+                Layout.fillHeight: true
+                color: Theme.borderSubtle
             }
 
             ColumnLayout {
-                spacing: 6
+                Layout.fillWidth: true
+                Layout.fillHeight: true
+                spacing: 4
 
                 Text {
                     Layout.fillWidth: true
-                    visible: dialog.workingDiffLoading
-                    text: qsTr("正在读取工作区差异…")
-                    color: Theme.textSecondary
-                    font.family: Theme.fontSans
-                    font.pixelSize: Theme.fontSizeCaption
-                }
-
-                Text {
-                    Layout.fillWidth: true
-                    visible: !dialog.workingDiffLoading
-                             && dialog.workingDiffError.length > 0
-                    text: dialog.workingDiffError
+                    visible: dialog.diffFallback
+                    text: qsTr("该记录未保存差异，以下按当前文件内容重建（文件未再改动时即为当时写入的内容）。")
                     color: Theme.statusWarning
                     font.family: Theme.fontSans
-                    font.pixelSize: Theme.fontSizeCaption
+                    font.pixelSize: 10
                     wrapMode: Text.Wrap
                 }
 
                 DiffView {
-                    objectName: "workingDiffView"
+                    id: detailDiffView
+                    objectName: "detailDiffView"
                     Layout.fillWidth: true
                     Layout.fillHeight: true
-                    visible: !dialog.workingDiffLoading
-                             && dialog.workingDiffError.length === 0
-                    diffText: dialog.workingDiff
-                    diffTruncated: dialog.workingDiffTruncated
-                    emptyText: qsTr("没有未提交的改动（未跟踪文件不显示内容）。")
-                }
-            }
-
-            RowLayout {
-                spacing: 8
-
-                ListView {
-                    id: commitList
-                    objectName: "gitCommitList"
-                    Layout.preferredWidth: 250
-                    Layout.fillHeight: true
-                    clip: true
-                    model: dialog.history
-                    boundsBehavior: Flickable.StopAtBounds
-                    ScrollBar.vertical: ScrollBar {}
-
-                    delegate: Rectangle {
-                        id: commitRow
-                        objectName: "gitCommitRow"
-                        required property var modelData
-
-                        readonly property bool selected:
-                            dialog.selectedSha === modelData.sha
-
-                        width: ListView.view ? ListView.view.width : 0
-                        height: 54
-                        radius: 6
-                        color: selected ? Theme.surfaceHover
-                                        : (rowHover.hovered ? Theme.surfaceHover
-                                                            : "transparent")
-
-                        HoverHandler { id: rowHover }
-
-                        Rectangle {
-                            anchors.left: parent.left
-                            anchors.top: parent.top
-                            anchors.bottom: parent.bottom
-                            width: commitRow.selected ? 3 : 0
-                            radius: 2
-                            color: Theme.brandPrimary
-                        }
-
-                        ColumnLayout {
-                            anchors.fill: parent
-                            anchors.leftMargin: 10
-                            anchors.rightMargin: 6
-                            anchors.topMargin: 5
-                            anchors.bottomMargin: 5
-                            spacing: 2
-
-                            Text {
-                                Layout.fillWidth: true
-                                text: commitRow.modelData.subject
-                                color: Theme.textPrimary
-                                font.family: Theme.fontSans
-                                font.pixelSize: Theme.fontSizeCaption
-                                elide: Text.ElideRight
-                            }
-
-                            Text {
-                                Layout.fillWidth: true
-                                text: commitRow.modelData.shortSha
-                                      + " · " + commitRow.modelData.author
-                                      + " · " + Qt.formatDateTime(
-                                            new Date(commitRow.modelData.timestamp * 1000),
-                                            "MM-dd HH:mm")
-                                color: Theme.textSecondary
-                                font.family: Theme.fontMono
-                                font.pixelSize: 9
-                                elide: Text.ElideRight
-                            }
-                        }
-
-                        MouseArea {
-                            anchors.fill: parent
-                            cursorShape: Qt.PointingHandCursor
-                            onClicked: dialog.selectCommit(commitRow.modelData.sha)
-                            Accessible.name: qsTr("查看该提交的差异")
-                        }
-                    }
-                }
-
-                ColumnLayout {
-                    Layout.fillWidth: true
-                    Layout.fillHeight: true
-                    spacing: 4
-
-                    Text {
-                        Layout.fillWidth: true
-                        visible: dialog.historyLoading
-                        text: qsTr("正在读取 Git 历史…")
-                        color: Theme.textSecondary
-                        font.family: Theme.fontSans
-                        font.pixelSize: Theme.fontSizeCaption
-                    }
-
-                    Text {
-                        Layout.fillWidth: true
-                        visible: !dialog.historyLoading
-                                 && dialog.historyError.length > 0
-                        text: dialog.historyError
-                        color: Theme.statusWarning
-                        font.family: Theme.fontSans
-                        font.pixelSize: Theme.fontSizeCaption
-                        wrapMode: Text.Wrap
-                    }
-
-                    Text {
-                        Layout.fillWidth: true
-                        visible: !dialog.historyLoading
-                                 && dialog.historyError.length === 0
-                                 && dialog.history.length === 0
-                        text: qsTr("该文件没有 Git 历史。")
-                        color: Theme.textSecondary
-                        font.family: Theme.fontSans
-                        font.pixelSize: Theme.fontSizeCaption
-                    }
-
-                    Text {
-                        Layout.fillWidth: true
-                        visible: dialog.commitDiffLoading
-                        text: qsTr("正在读取提交差异…")
-                        color: Theme.textSecondary
-                        font.family: Theme.fontSans
-                        font.pixelSize: Theme.fontSizeCaption
-                    }
-
-                    Text {
-                        Layout.fillWidth: true
-                        visible: !dialog.commitDiffLoading
-                                 && dialog.commitDiffError.length > 0
-                        text: dialog.commitDiffError
-                        color: Theme.statusWarning
-                        font.family: Theme.fontSans
-                        font.pixelSize: Theme.fontSizeCaption
-                        wrapMode: Text.Wrap
-                    }
-
-                    DiffView {
-                        objectName: "commitDiffView"
-                        Layout.fillWidth: true
-                        Layout.fillHeight: true
-                        visible: !dialog.commitDiffLoading
-                                 && dialog.commitDiffError.length === 0
-                                 && dialog.history.length > 0
-                        diffText: dialog.commitDiff
-                        diffTruncated: dialog.commitDiffTruncated
-                        emptyText: qsTr("点击左侧提交查看差异。")
-                    }
+                    diffText: dialog.diffText
+                    diffTruncated: dialog.diffTruncated
+                    viewMode: dialog.viewMode
+                    emptyText: dialog.emptyText()
                 }
             }
         }

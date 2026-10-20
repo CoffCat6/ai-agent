@@ -10,6 +10,7 @@
 #include "core/utils/SettingsRepository.h"
 #include "core/utils/SettingsSchema.h"
 
+#include <QCryptographicHash>
 #include <QDateTime>
 #include <QDir>
 #include <QFile>
@@ -446,7 +447,47 @@ QJsonArray AIAgent::fileCheckpoints() const {
 
 QJsonObject AIAgent::fileCheckpointDetail(qint64 id) const {
     if (!m_memory || m_sessionId.isEmpty() || id <= 0) return {};
-    return m_memory->fileCheckpointDetail(id, m_sessionId);
+    QJsonObject row = m_memory->fileCheckpointDetail(id, m_sessionId);
+    if (row.isEmpty()) return row;
+
+    // New-file rows written before diffs were persisted have no diff text.
+    // Rebuild the all-additions comparison from the current file while it
+    // still matches the recorded hash; the dialog labels the result as rebuilt.
+    if (row.value("diff").toString().isEmpty()
+            && !row.value("existed").toBool()
+            && !row.value("truncated").toBool()) {
+        const QString path = row.value("path").toString();
+        constexpr qint64 kMaxFallbackBytes = 512 * 1024;
+        const QFileInfo info(path);
+        if (info.isFile() && info.size() <= kMaxFallbackBytes) {
+            QFile file(path);
+            if (file.open(QIODevice::ReadOnly)) {
+                const QByteArray bytes = file.readAll();
+                const QString currentHash = QString::fromLatin1(
+                    QCryptographicHash::hash(bytes, QCryptographicHash::Sha256)
+                        .toHex());
+                const QString recordedHash = row.value("afterHash").toString();
+                if (recordedHash.isEmpty() || recordedHash == currentHash) {
+                    const QString text = QString::fromUtf8(bytes);
+                    if (!text.contains(QChar::ReplacementCharacter)) {
+                        const QStringList lines = text.isEmpty()
+                            ? QStringList()
+                            : text.split(QLatin1Char('\n'), Qt::KeepEmptyParts);
+                        QString diff = QStringLiteral(
+                            "--- /dev/null\n+++ %1\n@@ -1,0 +1,%2 @@\n")
+                                           .arg(path).arg(lines.size());
+                        for (const QString& line : std::as_const(lines))
+                            diff += QLatin1Char('+') + line + QLatin1Char('\n');
+                        row["diff"] = diff;
+                        row["addedLines"] = lines.size();
+                        row["removedLines"] = 0;
+                        row["diffFallback"] = true;
+                    }
+                }
+            }
+        }
+    }
+    return row;
 }
 
 bool AIAgent::undoFileCheckpoint(qint64 id) {

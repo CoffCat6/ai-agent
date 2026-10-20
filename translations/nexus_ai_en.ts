@@ -393,6 +393,24 @@
     </message>
 </context>
 <context>
+    <name>ChangeTree</name>
+    <message>
+        <location filename="../src/ui/components/ChangeTree.qml" line="169"/>
+        <source>折叠或展开目录 %1</source>
+        <translation>Collapse or expand folder %1</translation>
+    </message>
+    <message>
+        <location filename="../src/ui/components/ChangeTree.qml" line="251"/>
+        <source>原文件过大，仅记录了路径，无法展示内容差异或撤销</source>
+        <translation>Original file too large; only its path was recorded, so no diff or undo is available.</translation>
+    </message>
+    <message>
+        <location filename="../src/ui/components/ChangeTree.qml" line="289"/>
+        <source>已撤销</source>
+        <translation>Undone</translation>
+    </message>
+</context>
+<context>
     <name>CodeBlock</name>
     <message>
         <location filename="../src/ui/components/CodeBlock.qml" line="114"/>
@@ -408,7 +426,7 @@
 <context>
     <name>ContextPanel</name>
     <message>
-        <location filename="../src/ui/panels/ContextPanel.qml" line="16"/>
+        <location filename="../src/ui/panels/ContextPanel.qml" line="18"/>
         <source>上下文面板</source>
         <translation>Context panel</translation>
     </message>
@@ -417,82 +435,119 @@
         <translation type="vanished">Text files (*.txt *.md *.json *.csv *.log)</translation>
     </message>
     <message>
-        <location filename="../src/ui/panels/ContextPanel.qml" line="31"/>
+        <location filename="../src/ui/panels/ContextPanel.qml" line="35"/>
         <source>所有文件 (*)</source>
         <translation>All files (*)</translation>
     </message>
     <message>
-        <location filename="../src/ui/panels/ContextPanel.qml" line="31"/>
+        <location filename="../src/ui/panels/ContextPanel.qml" line="35"/>
         <source>支持的文件 (*.txt *.md *.json *.csv *.log *.pdf)</source>
         <translation>Supported files (*.txt *.md *.json *.csv *.log *.pdf)</translation>
     </message>
     <message>
-        <location filename="../src/ui/panels/ContextPanel.qml" line="90"/>
+        <source>审阅 · %1</source>
+        <translation type="vanished">Review · %1</translation>
+    </message>
+    <message>
+        <location filename="../src/ui/panels/ContextPanel.qml" line="81"/>
+        <source>审阅</source>
+        <translation>Review</translation>
+    </message>
+    <message>
+        <location filename="../src/ui/panels/ContextPanel.qml" line="87"/>
+        <source>查看本会话的文件改动审阅</source>
+        <translation>Review this session&apos;s file changes</translation>
+    </message>
+    <message>
+        <location filename="../src/ui/panels/ContextPanel.qml" line="171"/>
         <source>知识库 · %1</source>
         <translation>Knowledge Base · %1</translation>
     </message>
     <message>
-        <location filename="../src/ui/panels/ContextPanel.qml" line="91"/>
+        <location filename="../src/ui/panels/ContextPanel.qml" line="106"/>
+        <location filename="../src/ui/panels/ContextPanel.qml" line="172"/>
         <source>知识库</source>
         <translation>Knowledge Base</translation>
     </message>
     <message>
-        <location filename="../src/ui/panels/ContextPanel.qml" line="106"/>
+        <location filename="../src/ui/panels/ContextPanel.qml" line="94"/>
+        <source>Git</source>
+        <translation>Git</translation>
+    </message>
+    <message>
+        <location filename="../src/ui/panels/ContextPanel.qml" line="100"/>
+        <source>查看 Git 管理与历史</source>
+        <translation>View Git management and history</translation>
+    </message>
+    <message>
+        <location filename="../src/ui/panels/ContextPanel.qml" line="112"/>
+        <source>查看知识库文档</source>
+        <translation>View knowledge base documents</translation>
+    </message>
+    <message>
+        <location filename="../src/ui/panels/ContextPanel.qml" line="140"/>
+        <source>本次会话暂无可审阅的文件改动。
+智能体写入或编辑文件后，这里会按目录列出改动。</source>
+        <translation>No file changes to review in this session.
+Files written or edited by the agent are listed here by folder.</translation>
+    </message>
+    <message>
+        <location filename="../src/ui/panels/ContextPanel.qml" line="187"/>
         <source>文档内容会随提问发送给当前模型服务；如需阻止，请在设置中开启“仅本地模式”</source>
         <translation>Document content is sent to the current model service with your questions; to prevent this, enable &quot;Local-only mode&quot; in Settings</translation>
     </message>
     <message>
-        <location filename="../src/ui/panels/ContextPanel.qml" line="144"/>
+        <location filename="../src/ui/panels/ContextPanel.qml" line="225"/>
         <source>批量导入 %1/%2：正在取消…</source>
         <translation>Batch import %1/%2: cancelling…</translation>
     </message>
     <message>
-        <location filename="../src/ui/panels/ContextPanel.qml" line="148"/>
+        <location filename="../src/ui/panels/ContextPanel.qml" line="229"/>
         <source>批量导入 %1/%2：%3</source>
         <translation>Batch import %1/%2: %3</translation>
     </message>
     <message>
-        <location filename="../src/ui/panels/ContextPanel.qml" line="153"/>
+        <location filename="../src/ui/panels/ContextPanel.qml" line="234"/>
         <source>已嵌入 %1/%2</source>
         <translation>Embedded %1/%2</translation>
     </message>
     <message>
-        <location filename="../src/ui/panels/ContextPanel.qml" line="154"/>
+        <location filename="../src/ui/panels/ContextPanel.qml" line="235"/>
         <source>导入中…</source>
         <translation>Importing…</translation>
     </message>
     <message>
-        <location filename="../src/ui/panels/ContextPanel.qml" line="172"/>
+        <location filename="../src/ui/panels/ContextPanel.qml" line="253"/>
         <source>正在取消（等待当前文件完成）</source>
         <translation>Cancelling (waiting for the current file to finish)</translation>
     </message>
     <message>
-        <location filename="../src/ui/panels/ContextPanel.qml" line="173"/>
+        <location filename="../src/ui/panels/ContextPanel.qml" line="254"/>
         <source>取消批量导入（未开始的文件将跳过）</source>
         <translation>Cancel batch import (pending files will be skipped)</translation>
     </message>
     <message>
-        <location filename="../src/ui/panels/ContextPanel.qml" line="187"/>
+        <location filename="../src/ui/panels/ContextPanel.qml" line="268"/>
         <source>导入文档（可多选）</source>
         <translation>Import documents (multi-select)</translation>
     </message>
     <message>
-        <location filename="../src/ui/panels/ContextPanel.qml" line="197"/>
+        <location filename="../src/ui/panels/ContextPanel.qml" line="278"/>
         <source>重试失败的导入（%1）</source>
         <translation>Retry failed imports (%1)</translation>
     </message>
     <message>
-        <location filename="../src/ui/panels/ContextPanel.qml" line="199"/>
+        <location filename="../src/ui/panels/ContextPanel.qml" line="280"/>
         <source>重试失败的批量导入</source>
         <translation>Retry failed batch imports</translation>
     </message>
     <message>
-        <location filename="../src/ui/panels/ContextPanel.qml" line="305"/>
+        <location filename="../src/ui/panels/ContextPanel.qml" line="386"/>
         <source>%1 段 · %2 字符</source>
         <translation>%1 chunks · %2 chars</translation>
     </message>
     <message>
-        <location filename="../src/ui/panels/ContextPanel.qml" line="336"/>
+        <location filename="../src/ui/panels/ContextPanel.qml" line="417"/>
         <source>移除文档</source>
         <translation>Remove document</translation>
     </message>
@@ -501,7 +556,7 @@
         <translation type="vanished">Import Document</translation>
     </message>
     <message>
-        <location filename="../src/ui/panels/ContextPanel.qml" line="204"/>
+        <location filename="../src/ui/panels/ContextPanel.qml" line="285"/>
         <source>导入文本或 PDF 文件（.txt / .md / .pdf …），
 模型即可检索其内容回答问题</source>
         <translation>Import text or PDF files (.txt / .md / .pdf …),
@@ -514,12 +569,12 @@ and the model can retrieve their content to answer questions</translation>
 and the model can retrieve their content to answer questions</translation>
     </message>
     <message>
-        <location filename="../src/ui/panels/ContextPanel.qml" line="285"/>
+        <location filename="../src/ui/panels/ContextPanel.qml" line="366"/>
         <source>降级</source>
         <translation>Fallback</translation>
     </message>
     <message>
-        <location filename="../src/ui/panels/ContextPanel.qml" line="299"/>
+        <location filename="../src/ui/panels/ContextPanel.qml" line="380"/>
         <source>导入时嵌入服务不可用，已使用本地降级嵌入，检索质量有限。可点击右侧刷新按钮重新嵌入。</source>
         <translation>The embedding service was unavailable during import; a local fallback embedding was used with limited retrieval quality. Click the refresh button on the right to re-embed.</translation>
     </message>
@@ -532,7 +587,7 @@ and the model can retrieve their content to answer questions</translation>
         <translation type="vanished"> chars</translation>
     </message>
     <message>
-        <location filename="../src/ui/panels/ContextPanel.qml" line="323"/>
+        <location filename="../src/ui/panels/ContextPanel.qml" line="404"/>
         <source>重新嵌入</source>
         <translation>Re-embed</translation>
     </message>
@@ -555,14 +610,19 @@ and the model can retrieve their content to answer questions</translation>
 <context>
     <name>DiffView</name>
     <message>
-        <location filename="../src/ui/components/DiffView.qml" line="15"/>
+        <location filename="../src/ui/components/DiffView.qml" line="18"/>
         <source>此记录没有保存内容差异。</source>
         <translation>No content diff was saved for this record.</translation>
     </message>
     <message>
-        <location filename="../src/ui/components/DiffView.qml" line="107"/>
+        <location filename="../src/ui/components/DiffView.qml" line="364"/>
         <source>差异过大，仅显示截断后的部分；撤销仍使用完整的改动前内容。</source>
         <translation>Diff too large; only a truncated portion is shown. Undo still uses the full pre-change content.</translation>
+    </message>
+    <message>
+        <location filename="../src/ui/components/DiffView.qml" line="373"/>
+        <source>差异内容</source>
+        <translation>Diff content</translation>
     </message>
 </context>
 <context>
@@ -653,106 +713,140 @@ and the model can retrieve their content to answer questions</translation>
 <context>
     <name>FileChangeDetailDialog</name>
     <message>
-        <location filename="../src/ui/components/FileChangeDetailDialog.qml" line="115"/>
+        <location filename="../src/ui/components/FileChangeDetailDialog.qml" line="100"/>
         <source>已撤销</source>
         <translation>Undone</translation>
     </message>
     <message>
-        <location filename="../src/ui/components/FileChangeDetailDialog.qml" line="116"/>
+        <location filename="../src/ui/components/FileChangeDetailDialog.qml" line="101"/>
         <source>仅记录路径，内容未保存</source>
         <translation>Path only; content was not saved</translation>
     </message>
     <message>
-        <location filename="../src/ui/components/FileChangeDetailDialog.qml" line="117"/>
+        <location filename="../src/ui/components/FileChangeDetailDialog.qml" line="102"/>
         <source>已修改</source>
         <translation>Modified</translation>
     </message>
     <message>
-        <location filename="../src/ui/components/FileChangeDetailDialog.qml" line="117"/>
+        <location filename="../src/ui/components/FileChangeDetailDialog.qml" line="102"/>
         <source>新建文件</source>
         <translation>Created</translation>
     </message>
     <message>
-        <location filename="../src/ui/components/FileChangeDetailDialog.qml" line="128"/>
+        <location filename="../src/ui/components/FileChangeDetailDialog.qml" line="113"/>
         <source>原文件超过单文件上限，仅记录了路径，无法展示内容差异；请用 git 查看或恢复。</source>
         <translation>The original file exceeds the per-file limit, so only its path was recorded and no diff can be shown. Use git to inspect or restore it.</translation>
     </message>
     <message>
-        <location filename="../src/ui/components/FileChangeDetailDialog.qml" line="129"/>
+        <location filename="../src/ui/components/FileChangeDetailDialog.qml" line="115"/>
+        <source>该新建文件没有可读取的内容：它可能已被删除或改名。</source>
+        <translation>The new file has no readable content; it may have been deleted or renamed.</translation>
+    </message>
+    <message>
+        <location filename="../src/ui/components/FileChangeDetailDialog.qml" line="116"/>
         <source>此记录没有保存内容差异。</source>
         <translation>No content diff was saved for this record.</translation>
     </message>
     <message>
-        <location filename="../src/ui/components/FileChangeDetailDialog.qml" line="231"/>
+        <location filename="../src/ui/components/FileChangeDetailDialog.qml" line="176"/>
+        <source>上一个文件</source>
+        <translation>Previous file</translation>
+    </message>
+    <message>
+        <location filename="../src/ui/components/FileChangeDetailDialog.qml" line="186"/>
+        <source>下一个文件</source>
+        <translation>Next file</translation>
+    </message>
+    <message>
+        <location filename="../src/ui/components/FileChangeDetailDialog.qml" line="193"/>
+        <source>统一</source>
+        <translation>Unified</translation>
+    </message>
+    <message>
+        <location filename="../src/ui/components/FileChangeDetailDialog.qml" line="204"/>
+        <source>并排</source>
+        <translation>Side by side</translation>
+    </message>
+    <message>
+        <location filename="../src/ui/components/FileChangeDetailDialog.qml" line="215"/>
+        <source>撤销</source>
+        <translation>Undo</translation>
+    </message>
+    <message>
+        <location filename="../src/ui/components/FileChangeDetailDialog.qml" line="220"/>
+        <source>撤销该文件在本会话的全部改动</source>
+        <translation>Undo all changes to this file in this session</translation>
+    </message>
+    <message>
+        <location filename="../src/ui/components/FileChangeDetailDialog.qml" line="226"/>
         <source>关闭文件改动详情</source>
         <translation>Close file change details</translation>
+    </message>
+    <message>
+        <location filename="../src/ui/components/FileChangeDetailDialog.qml" line="319"/>
+        <source>该记录未保存差异，以下按当前文件内容重建（文件未再改动时即为当时写入的内容）。</source>
+        <translation>No diff was stored for this record; the comparison below is rebuilt from the current file content (accurate if the file has not changed since).</translation>
     </message>
     <message>
         <source>共 %1 次改动</source>
         <translation type="vanished">%1 changes</translation>
     </message>
     <message>
-        <location filename="../src/ui/components/FileChangeDetailDialog.qml" line="262"/>
+        <location filename="../src/ui/components/FileChangeDetailDialog.qml" line="257"/>
         <source>本次会话共 %1 次改动</source>
         <translation>%1 changes in this session</translation>
     </message>
     <message>
-        <location filename="../src/ui/components/FileChangeDetailDialog.qml" line="278"/>
         <source>本次改动</source>
-        <translation>This change</translation>
+        <translation type="vanished">This change</translation>
     </message>
     <message>
-        <location filename="../src/ui/components/FileChangeDetailDialog.qml" line="289"/>
         <source>工作区</source>
-        <translation>Working tree</translation>
+        <translation type="vanished">Working tree</translation>
     </message>
     <message>
-        <location filename="../src/ui/components/FileChangeDetailDialog.qml" line="300"/>
         <source>Git 历史</source>
-        <translation>Git history</translation>
+        <translation type="vanished">Git history</translation>
     </message>
     <message>
-        <location filename="../src/ui/components/FileChangeDetailDialog.qml" line="312"/>
         <source>不在 Git 仓库中，仅显示本次改动</source>
-        <translation>Not in a Git repository; showing this change only</translation>
+        <translation type="vanished">Not in a Git repository; showing this change only</translation>
     </message>
     <message>
-        <location filename="../src/ui/components/FileChangeDetailDialog.qml" line="340"/>
+        <location filename="../src/ui/components/FileChangeDetailDialog.qml" line="282"/>
+        <source>本会话文件 · %1</source>
+        <translation>Session files · %1</translation>
+    </message>
+    <message>
         <source>正在读取工作区差异…</source>
-        <translation>Reading working-tree diff…</translation>
+        <translation type="vanished">Reading working-tree diff…</translation>
     </message>
     <message>
-        <location filename="../src/ui/components/FileChangeDetailDialog.qml" line="365"/>
         <source>没有未提交的改动（未跟踪文件不显示内容）。</source>
-        <translation>No uncommitted changes (untracked files are not shown).</translation>
+        <translation type="vanished">No uncommitted changes (untracked files are not shown).</translation>
     </message>
     <message>
-        <location filename="../src/ui/components/FileChangeDetailDialog.qml" line="443"/>
         <source>查看该提交的差异</source>
-        <translation>View this commit&apos;s diff</translation>
+        <translation type="vanished">View this commit&apos;s diff</translation>
     </message>
     <message>
-        <location filename="../src/ui/components/FileChangeDetailDialog.qml" line="456"/>
         <source>正在读取 Git 历史…</source>
-        <translation>Reading Git history…</translation>
+        <translation type="vanished">Reading Git history…</translation>
     </message>
     <message>
-        <location filename="../src/ui/components/FileChangeDetailDialog.qml" line="478"/>
         <source>该文件没有 Git 历史。</source>
-        <translation>This file has no Git history.</translation>
+        <translation type="vanished">This file has no Git history.</translation>
     </message>
     <message>
-        <location filename="../src/ui/components/FileChangeDetailDialog.qml" line="487"/>
         <source>正在读取提交差异…</source>
-        <translation>Reading commit diff…</translation>
+        <translation type="vanished">Reading commit diff…</translation>
     </message>
     <message>
-        <location filename="../src/ui/components/FileChangeDetailDialog.qml" line="513"/>
         <source>点击左侧提交查看差异。</source>
-        <translation>Select a commit on the left to view its diff.</translation>
+        <translation type="vanished">Select a commit on the left to view its diff.</translation>
     </message>
     <message>
-        <location filename="../src/ui/components/FileChangeDetailDialog.qml" line="528"/>
+        <location filename="../src/ui/components/FileChangeDetailDialog.qml" line="348"/>
         <source>关闭</source>
         <translation>Close</translation>
     </message>
@@ -760,19 +854,17 @@ and the model can retrieve their content to answer questions</translation>
 <context>
     <name>FileChangesPanel</name>
     <message>
-        <location filename="../src/ui/components/FileChangesPanel.qml" line="255"/>
+        <location filename="../src/ui/components/FileChangesPanel.qml" line="111"/>
         <source>已撤销</source>
         <translation>Undone</translation>
     </message>
     <message>
-        <location filename="../src/ui/components/FileChangesPanel.qml" line="56"/>
         <source>仅记录路径，请用 git 恢复</source>
-        <translation>Path only — restore with git</translation>
+        <translation type="vanished">Path only — restore with git</translation>
     </message>
     <message>
-        <location filename="../src/ui/components/FileChangesPanel.qml" line="55"/>
         <source>已全部撤销</source>
-        <translation>All undone</translation>
+        <translation type="vanished">All undone</translation>
     </message>
     <message>
         <source>可恢复改动前内容</source>
@@ -783,73 +875,102 @@ and the model can retrieve their content to answer questions</translation>
         <translation type="vanished">Delete the file created by this change</translation>
     </message>
     <message>
-        <location filename="../src/ui/components/FileChangesPanel.qml" line="61"/>
         <source>%1 · 共 %2 次改动</source>
-        <translation>%1 · %2 changes</translation>
+        <translation type="vanished">%1 · %2 changes</translation>
     </message>
     <message>
         <source>%1 · 剩余 %2 次改动</source>
         <translation type="vanished">%1 · %2 changes remaining</translation>
     </message>
     <message>
-        <location filename="../src/ui/components/FileChangesPanel.qml" line="58"/>
         <source>可回退本次会话的全部改动</source>
-        <translation>Reverts all changes from this session</translation>
+        <translation type="vanished">Reverts all changes from this session</translation>
     </message>
     <message>
-        <location filename="../src/ui/components/FileChangesPanel.qml" line="59"/>
         <source>将删除本会话新建的文件</source>
-        <translation>Deletes the file created in this session</translation>
+        <translation type="vanished">Deletes the file created in this session</translation>
     </message>
     <message>
-        <location filename="../src/ui/components/FileChangesPanel.qml" line="89"/>
+        <location filename="../src/ui/components/FileChangesPanel.qml" line="128"/>
         <source>撤销失败：文件或检查点已不可用。</source>
         <translation>Undo failed: the file or checkpoint is no longer available.</translation>
     </message>
     <message>
-        <location filename="../src/ui/components/FileChangesPanel.qml" line="119"/>
         <source>文件改动 · %1</source>
-        <translation>File changes · %1</translation>
+        <translation type="vanished">File changes · %1</translation>
     </message>
     <message>
-        <location filename="../src/ui/components/FileChangesPanel.qml" line="140"/>
         <source>展开或折叠文件改动列表</source>
-        <translation>Expand or collapse the file changes list</translation>
+        <translation type="vanished">Expand or collapse the file changes list</translation>
     </message>
     <message>
-        <location filename="../src/ui/components/FileChangesPanel.qml" line="176"/>
         <source>查看文件改动详情</source>
-        <translation>View file change details</translation>
+        <translation type="vanished">View file change details</translation>
     </message>
     <message>
-        <location filename="../src/ui/components/FileChangesPanel.qml" line="255"/>
-        <location filename="../src/ui/components/FileChangesPanel.qml" line="330"/>
+        <location filename="../src/ui/components/FileChangesPanel.qml" line="106"/>
+        <source>不可撤销</source>
+        <translation>Cannot undo</translation>
+    </message>
+    <message>
+        <location filename="../src/ui/components/FileChangesPanel.qml" line="107"/>
+        <source>原文件过大，仅记录了路径，请用 git 恢复</source>
+        <translation>Original file too large; only its path was recorded. Restore it with git.</translation>
+    </message>
+    <message>
+        <location filename="../src/ui/components/FileChangesPanel.qml" line="111"/>
+        <location filename="../src/ui/components/FileChangesPanel.qml" line="308"/>
         <source>撤销</source>
         <translation>Undo</translation>
     </message>
     <message>
-        <location filename="../src/ui/components/FileChangesPanel.qml" line="261"/>
+        <location filename="../src/ui/components/FileChangesPanel.qml" line="113"/>
+        <source>本会话对该文件的改动已撤销</source>
+        <translation>This file&apos;s changes in this session were undone</translation>
+    </message>
+    <message>
+        <location filename="../src/ui/components/FileChangesPanel.qml" line="114"/>
         <source>撤销该文件在本会话的全部改动</source>
         <translation>Undo all changes to this file in this session</translation>
     </message>
     <message>
-        <location filename="../src/ui/components/FileChangesPanel.qml" line="306"/>
+        <location filename="../src/ui/components/FileChangesPanel.qml" line="153"/>
+        <source>展开或折叠审阅列表</source>
+        <translation>Expand or collapse the review list</translation>
+    </message>
+    <message>
+        <location filename="../src/ui/components/FileChangesPanel.qml" line="168"/>
+        <source>审阅 · %1</source>
+        <translation>Review · %1</translation>
+    </message>
+    <message>
+        <location filename="../src/ui/components/FileChangesPanel.qml" line="203"/>
+        <source>折叠全部目录</source>
+        <translation>Collapse all folders</translation>
+    </message>
+    <message>
+        <location filename="../src/ui/components/FileChangesPanel.qml" line="215"/>
+        <source>展开全部目录</source>
+        <translation>Expand all folders</translation>
+    </message>
+    <message>
+        <location filename="../src/ui/components/FileChangesPanel.qml" line="284"/>
         <source>将把以下文件恢复为本次会话首次改动前的内容：
 %1
 此后对该文件的手工修改也会被覆盖。</source>
-        <translation>The following file will be restored to its state before this session's first change:
+        <translation>The following file will be restored to its state before this session&apos;s first change:
 %1
 Manual edits made after that will also be overwritten.</translation>
     </message>
     <message>
-        <location filename="../src/ui/components/FileChangesPanel.qml" line="308"/>
+        <location filename="../src/ui/components/FileChangesPanel.qml" line="286"/>
         <source>将删除模型在本会话新建的文件：
 %1</source>
         <translation>The file the model created in this session will be deleted:
 %1</translation>
     </message>
     <message>
-        <location filename="../src/ui/components/FileChangesPanel.qml" line="311"/>
+        <location filename="../src/ui/components/FileChangesPanel.qml" line="289"/>
         <source>该文件在本会话共有 %1 次改动，本次将全部撤销。</source>
         <translation>This file has %1 changes in this session; all of them will be undone.</translation>
     </message>
@@ -858,7 +979,7 @@ Manual edits made after that will also be overwritten.</translation>
         <translation type="vanished">Undo this change to the file</translation>
     </message>
     <message>
-        <location filename="../src/ui/components/FileChangesPanel.qml" line="295"/>
+        <location filename="../src/ui/components/FileChangesPanel.qml" line="273"/>
         <source>撤销文件改动？</source>
         <translation>Undo file change?</translation>
     </message>
@@ -889,7 +1010,7 @@ Any manual edits made since then will be overwritten.</translation>
         <translation type="vanished">This file has %1 changes in this session; undo steps back one change at a time.</translation>
     </message>
     <message>
-        <location filename="../src/ui/components/FileChangesPanel.qml" line="326"/>
+        <location filename="../src/ui/components/FileChangesPanel.qml" line="304"/>
         <source>取消</source>
         <translation>Cancel</translation>
     </message>
@@ -1299,6 +1420,1065 @@ Any manual edits made since then will be overwritten.</translation>
         <location filename="../src/ui/pages/GeneralPage.qml" line="695"/>
         <source>本地智能体桌面应用 · 多模型提供商 · 工具调用 · 本地知识库</source>
         <translation>Local agent desktop app · Multiple model providers · Tool calling · Local knowledge base</translation>
+    </message>
+</context>
+<context>
+    <name>GitActionDialog</name>
+    <message>
+        <location filename="../src/ui/components/GitActionDialog.qml" line="16"/>
+        <location filename="../src/ui/components/GitActionDialog.qml" line="34"/>
+        <source>确认</source>
+        <translation>Confirm</translation>
+    </message>
+    <message>
+        <location filename="../src/ui/components/GitActionDialog.qml" line="128"/>
+        <source>必须填写说明。</source>
+        <translation>A message is required.</translation>
+    </message>
+    <message>
+        <location filename="../src/ui/components/GitActionDialog.qml" line="157"/>
+        <source>取消</source>
+        <translation>Cancel</translation>
+    </message>
+</context>
+<context>
+    <name>GitBlameDialog</name>
+    <message>
+        <location filename="../src/ui/components/GitBlameDialog.qml" line="27"/>
+        <source>暂无归属</source>
+        <translation>no attribution yet</translation>
+    </message>
+    <message>
+        <location filename="../src/ui/components/GitBlameDialog.qml" line="49"/>
+        <source>未提交</source>
+        <translation>uncommitted</translation>
+    </message>
+    <message>
+        <location filename="../src/ui/components/GitBlameDialog.qml" line="110"/>
+        <source>逐行归属 · %1</source>
+        <translation>Line attribution · %1</translation>
+    </message>
+    <message>
+        <location filename="../src/ui/components/GitBlameDialog.qml" line="122"/>
+        <source>重新读取逐行归属</source>
+        <translation>Reload line attribution</translation>
+    </message>
+    <message>
+        <location filename="../src/ui/components/GitBlameDialog.qml" line="129"/>
+        <source>关闭逐行归属</source>
+        <translation>Close line attribution</translation>
+    </message>
+    <message>
+        <location filename="../src/ui/components/GitBlameDialog.qml" line="138"/>
+        <source>%1 行 · 作者：%2</source>
+        <translation>%1 lines · authors: %2</translation>
+    </message>
+    <message>
+        <location filename="../src/ui/components/GitBlameDialog.qml" line="150"/>
+        <source>正在读取逐行归属…</source>
+        <translation>Reading line attribution…</translation>
+    </message>
+    <message>
+        <location filename="../src/ui/components/GitBlameDialog.qml" line="199"/>
+        <source>查看该行的归属提交</source>
+        <translation>Open the commit that owns this line</translation>
+    </message>
+</context>
+<context>
+    <name>GitBranchDialog</name>
+    <message>
+        <location filename="../src/ui/components/GitBranchDialog.qml" line="44"/>
+        <source>无上游</source>
+        <translation>No upstream</translation>
+    </message>
+    <message>
+        <location filename="../src/ui/components/GitBranchDialog.qml" line="46"/>
+        <source>上游已删除</source>
+        <translation>Upstream gone</translation>
+    </message>
+    <message>
+        <location filename="../src/ui/components/GitBranchDialog.qml" line="48"/>
+        <source>↑%1 ↓%2</source>
+        <translation>↑%1 ↓%2</translation>
+    </message>
+    <message>
+        <location filename="../src/ui/components/GitBranchDialog.qml" line="50"/>
+        <source>↑%1</source>
+        <translation>↑%1</translation>
+    </message>
+    <message>
+        <location filename="../src/ui/components/GitBranchDialog.qml" line="52"/>
+        <source>↓%1</source>
+        <translation>↓%1</translation>
+    </message>
+    <message>
+        <location filename="../src/ui/components/GitBranchDialog.qml" line="53"/>
+        <source>已同步</source>
+        <translation>In sync</translation>
+    </message>
+    <message>
+        <location filename="../src/ui/components/GitBranchDialog.qml" line="96"/>
+        <source>分支与远端</source>
+        <translation>Branches and remotes</translation>
+    </message>
+    <message>
+        <location filename="../src/ui/components/GitBranchDialog.qml" line="107"/>
+        <source>重新读取分支信息</source>
+        <translation>Reload branch information</translation>
+    </message>
+    <message>
+        <location filename="../src/ui/components/GitBranchDialog.qml" line="114"/>
+        <source>关闭分支视图</source>
+        <translation>Close branch view</translation>
+    </message>
+    <message>
+        <location filename="../src/ui/components/GitBranchDialog.qml" line="122"/>
+        <source>仅查看：本面板不切换分支、不创建分支，也不访问远端。</source>
+        <translation>Read-only: this panel does not switch or create branches, and never contacts a remote.</translation>
+    </message>
+    <message>
+        <location filename="../src/ui/components/GitBranchDialog.qml" line="134"/>
+        <source>正在读取分支…</source>
+        <translation>Reading branches…</translation>
+    </message>
+    <message>
+        <location filename="../src/ui/components/GitBranchDialog.qml" line="177"/>
+        <source>本地分支 · %1</source>
+        <translation>Local branches · %1</translation>
+    </message>
+    <message>
+        <location filename="../src/ui/components/GitBranchDialog.qml" line="217"/>
+        <source>当前</source>
+        <translation>Current</translation>
+    </message>
+    <message>
+        <location filename="../src/ui/components/GitBranchDialog.qml" line="248"/>
+        <source>远端 · %1</source>
+        <translation>Remotes · %1</translation>
+    </message>
+    <message>
+        <location filename="../src/ui/components/GitBranchDialog.qml" line="287"/>
+        <source>跟踪分支 %1 个</source>
+        <translation>%1 tracking branches</translation>
+    </message>
+    <message>
+        <location filename="../src/ui/components/GitBranchDialog.qml" line="299"/>
+        <source>标签 · %1</source>
+        <translation>Tags · %1</translation>
+    </message>
+    <message>
+        <location filename="../src/ui/components/GitBranchDialog.qml" line="359"/>
+        <source>附注</source>
+        <translation>annotated</translation>
+    </message>
+    <message>
+        <location filename="../src/ui/components/GitBranchDialog.qml" line="359"/>
+        <source>轻量</source>
+        <translation>lightweight</translation>
+    </message>
+</context>
+<context>
+    <name>GitCommitDialog</name>
+    <message>
+        <location filename="../src/ui/components/GitCommitDialog.qml" line="89"/>
+        <source>缺少提交标识，无法读取该提交。</source>
+        <translation>Missing commit identifier; cannot load this commit.</translation>
+    </message>
+    <message>
+        <location filename="../src/ui/components/GitCommitDialog.qml" line="169"/>
+        <source>统一</source>
+        <translation>Unified</translation>
+    </message>
+    <message>
+        <location filename="../src/ui/components/GitCommitDialog.qml" line="179"/>
+        <source>并排</source>
+        <translation>Side by side</translation>
+    </message>
+    <message>
+        <location filename="../src/ui/components/GitCommitDialog.qml" line="190"/>
+        <source>关闭提交详情</source>
+        <translation>Close commit details</translation>
+    </message>
+    <message>
+        <location filename="../src/ui/components/GitCommitDialog.qml" line="220"/>
+        <source>提交说明</source>
+        <translation>Commit message</translation>
+    </message>
+    <message>
+        <location filename="../src/ui/components/GitCommitDialog.qml" line="237"/>
+        <source>改动文件 · %1</source>
+        <translation>Changed files · %1</translation>
+    </message>
+    <message>
+        <location filename="../src/ui/components/GitCommitDialog.qml" line="247"/>
+        <source>正在读取提交文件…</source>
+        <translation>Reading commit files…</translation>
+    </message>
+    <message>
+        <location filename="../src/ui/components/GitCommitDialog.qml" line="267"/>
+        <source>该提交没有文件改动。</source>
+        <translation>This commit has no file changes.</translation>
+    </message>
+    <message>
+        <location filename="../src/ui/components/GitCommitDialog.qml" line="330"/>
+        <source>正在读取提交差异…</source>
+        <translation>Reading commit diff…</translation>
+    </message>
+    <message>
+        <location filename="../src/ui/components/GitCommitDialog.qml" line="358"/>
+        <source>该文件在此提交中没有可显示的差异。</source>
+        <translation>This file has no displayable diff in this commit.</translation>
+    </message>
+    <message>
+        <location filename="../src/ui/components/GitCommitDialog.qml" line="372"/>
+        <source>关闭</source>
+        <translation>Close</translation>
+    </message>
+</context>
+<context>
+    <name>GitCompareDialog</name>
+    <message>
+        <location filename="../src/ui/components/GitCompareDialog.qml" line="154"/>
+        <source>对比</source>
+        <translation>Compare</translation>
+    </message>
+    <message>
+        <location filename="../src/ui/components/GitCompareDialog.qml" line="192"/>
+        <source>交换方向</source>
+        <translation>Swap direction</translation>
+    </message>
+    <message>
+        <location filename="../src/ui/components/GitCompareDialog.qml" line="201"/>
+        <source>重新读取对比结果</source>
+        <translation>Reload the comparison</translation>
+    </message>
+    <message>
+        <location filename="../src/ui/components/GitCompareDialog.qml" line="208"/>
+        <source>关闭对比视图</source>
+        <translation>Close comparison</translation>
+    </message>
+    <message>
+        <location filename="../src/ui/components/GitCompareDialog.qml" line="221"/>
+        <source>正在读取差异文件…</source>
+        <translation>Reading differing files…</translation>
+    </message>
+    <message>
+        <location filename="../src/ui/components/GitCompareDialog.qml" line="222"/>
+        <source>差异文件 · %1</source>
+        <translation>Differing files · %1</translation>
+    </message>
+    <message>
+        <location filename="../src/ui/components/GitCompareDialog.qml" line="230"/>
+        <source>统一</source>
+        <translation>Unified</translation>
+    </message>
+    <message>
+        <location filename="../src/ui/components/GitCompareDialog.qml" line="240"/>
+        <source>并排</source>
+        <translation>Side by side</translation>
+    </message>
+    <message>
+        <location filename="../src/ui/components/GitCompareDialog.qml" line="278"/>
+        <source>A 到 B 之间变化的文件</source>
+        <translation>Files changed from A to B</translation>
+    </message>
+    <message>
+        <location filename="../src/ui/components/GitCompareDialog.qml" line="301"/>
+        <source>两个提交之间没有文件差异。</source>
+        <translation>These two commits have no file differences.</translation>
+    </message>
+    <message>
+        <location filename="../src/ui/components/GitCompareDialog.qml" line="327"/>
+        <source>正在读取差异…</source>
+        <translation>Reading the diff…</translation>
+    </message>
+    <message>
+        <location filename="../src/ui/components/GitCompareDialog.qml" line="353"/>
+        <source>该文件在这两个提交之间没有差异。</source>
+        <translation>This file is identical between the two commits.</translation>
+    </message>
+    <message>
+        <location filename="../src/ui/components/GitCompareDialog.qml" line="354"/>
+        <source>选择一个文件查看差异。</source>
+        <translation>Select a file to see its diff.</translation>
+    </message>
+</context>
+<context>
+    <name>GitFileHistoryDialog</name>
+    <message>
+        <location filename="../src/ui/components/GitFileHistoryDialog.qml" line="78"/>
+        <source>文件历史 · %1</source>
+        <translation>File history · %1</translation>
+    </message>
+    <message>
+        <location filename="../src/ui/components/GitFileHistoryDialog.qml" line="90"/>
+        <source>重新读取该文件历史</source>
+        <translation>Reload this file&apos;s history</translation>
+    </message>
+    <message>
+        <location filename="../src/ui/components/GitFileHistoryDialog.qml" line="97"/>
+        <source>关闭文件历史</source>
+        <translation>Close file history</translation>
+    </message>
+    <message>
+        <location filename="../src/ui/components/GitFileHistoryDialog.qml" line="106"/>
+        <source>正在读取文件历史…</source>
+        <translation>Reading file history…</translation>
+    </message>
+    <message>
+        <location filename="../src/ui/components/GitFileHistoryDialog.qml" line="130"/>
+        <source>该文件还没有提交记录（可能尚未 git add）。</source>
+        <translation>This file has no commits yet (it may not be tracked by git).</translation>
+    </message>
+    <message>
+        <location filename="../src/ui/components/GitFileHistoryDialog.qml" line="179"/>
+        <source>查看该提交</source>
+        <translation>View this commit</translation>
+    </message>
+</context>
+<context>
+    <name>GitGraphDialog</name>
+    <message>
+        <location filename="../src/ui/components/GitGraphDialog.qml" line="94"/>
+        <source>提交图</source>
+        <translation>Commit graph</translation>
+    </message>
+    <message>
+        <location filename="../src/ui/components/GitGraphDialog.qml" line="104"/>
+        <location filename="../src/ui/components/GitGraphDialog.qml" line="148"/>
+        <source>全部分支</source>
+        <translation>All branches</translation>
+    </message>
+    <message>
+        <location filename="../src/ui/components/GitGraphDialog.qml" line="104"/>
+        <location filename="../src/ui/components/GitGraphDialog.qml" line="149"/>
+        <source>仅当前分支</source>
+        <translation>Current branch only</translation>
+    </message>
+    <message>
+        <location filename="../src/ui/components/GitGraphDialog.qml" line="108"/>
+        <source>切换图的分支范围</source>
+        <translation>Switch the graph's branch scope</translation>
+    </message>
+    <message>
+        <location filename="../src/ui/components/GitGraphDialog.qml" line="119"/>
+        <source>重新读取提交图</source>
+        <translation>Reload the commit graph</translation>
+    </message>
+    <message>
+        <location filename="../src/ui/components/GitGraphDialog.qml" line="126"/>
+        <source>关闭提交图</source>
+        <translation>Close the commit graph</translation>
+    </message>
+    <message>
+        <location filename="../src/ui/components/GitGraphDialog.qml" line="134"/>
+        <source>图形来自 git 自身的 --graph，只读本地引用，不会访问远端。</source>
+        <translation>The picture is git's own --graph over local refs; it never contacts a remote.</translation>
+    </message>
+    <message>
+        <location filename="../src/ui/components/GitGraphDialog.qml" line="146"/>
+        <source>%1 个提交 · 范围：%2</source>
+        <translation>%1 commits · scope: %2</translation>
+    </message>
+    <message>
+        <location filename="../src/ui/components/GitGraphDialog.qml" line="160"/>
+        <source>正在读取提交图…</source>
+        <translation>Reading the commit graph…</translation>
+    </message>
+    <message>
+        <location filename="../src/ui/components/GitGraphDialog.qml" line="210"/>
+        <source>查看该提交</source>
+        <translation>View this commit</translation>
+    </message>
+</context>
+<context>
+    <name>GitPanel</name>
+    <message>
+        <location filename="../src/ui/components/GitPanel.qml" line="65"/>
+        <source>上游已删除</source>
+        <translation>Upstream gone</translation>
+    </message>
+    <message>
+        <location filename="../src/ui/components/GitPanel.qml" line="67"/>
+        <source>↑%1 ↓%2</source>
+        <translation>↑%1 ↓%2</translation>
+    </message>
+    <message>
+        <location filename="../src/ui/components/GitPanel.qml" line="69"/>
+        <source>↑%1</source>
+        <translation>↑%1</translation>
+    </message>
+    <message>
+        <location filename="../src/ui/components/GitPanel.qml" line="71"/>
+        <source>↓%1</source>
+        <translation>↓%1</translation>
+    </message>
+    <message>
+        <location filename="../src/ui/components/GitPanel.qml" line="72"/>
+        <source>已同步</source>
+        <translation>In sync</translation>
+    </message>
+    <message>
+        <location filename="../src/ui/components/GitPanel.qml" line="100"/>
+        <location filename="../src/ui/components/GitPanel.qml" line="923"/>
+        <source>正在识别 Git 仓库…</source>
+        <translation>Detecting Git repository…</translation>
+    </message>
+    <message>
+        <location filename="../src/ui/components/GitPanel.qml" line="101"/>
+        <source>不在 Git 仓库</source>
+        <translation>Not in a Git repository</translation>
+    </message>
+    <message>
+        <location filename="../src/ui/components/GitPanel.qml" line="103"/>
+        <source>分离 HEAD @ %1</source>
+        <translation>Detached HEAD @ %1</translation>
+    </message>
+    <message>
+        <location filename="../src/ui/components/GitPanel.qml" line="104"/>
+        <source>(无分支)</source>
+        <translation>(no branch)</translation>
+    </message>
+    <message>
+        <location filename="../src/ui/components/GitPanel.qml" line="411"/>
+        <source>改写最后一次提交？</source>
+        <translation>Rewrite the last commit?</translation>
+    </message>
+    <message>
+        <location filename="../src/ui/components/GitPanel.qml" line="413"/>
+        <source>git commit --amend</source>
+        <translation>git commit --amend</translation>
+    </message>
+    <message>
+        <location filename="../src/ui/components/GitPanel.qml" line="414"/>
+        <source>当前 HEAD：%1 %2</source>
+        <translation>Current HEAD: %1 %2</translation>
+    </message>
+    <message>
+        <location filename="../src/ui/components/GitPanel.qml" line="415"/>
+        <source>同时把已暂存的 %1 个文件并入该提交。</source>
+        <translation>The %1 staged files are folded into that commit too.</translation>
+    </message>
+    <message>
+        <location filename="../src/ui/components/GitPanel.qml" line="416"/>
+        <source>已推送到远端的提交会被拒绝；旧提交仍可从 reflog 找回。</source>
+        <translation>Commits already pushed to a remote are refused; the old commit stays recoverable from the reflog.</translation>
+    </message>
+    <message>
+        <location filename="../src/ui/components/GitPanel.qml" line="418"/>
+        <source>改写提交</source>
+        <translation>Rewrite commit</translation>
+    </message>
+    <message>
+        <location filename="../src/ui/components/GitPanel.qml" line="421"/>
+        <source>新的提交说明（必填）</source>
+        <translation>New commit message (required)</translation>
+    </message>
+    <message>
+        <location filename="../src/ui/components/GitPanel.qml" line="429"/>
+        <source>撤销最后一次提交？</source>
+        <translation>Undo the last commit?</translation>
+    </message>
+    <message>
+        <location filename="../src/ui/components/GitPanel.qml" line="431"/>
+        <source>git reset --soft HEAD^</source>
+        <translation>git reset --soft HEAD^</translation>
+    </message>
+    <message>
+        <location filename="../src/ui/components/GitPanel.qml" line="432"/>
+        <source>将撤销：%1 %2</source>
+        <translation>Will undo: %1 %2</translation>
+    </message>
+    <message>
+        <location filename="../src/ui/components/GitPanel.qml" line="433"/>
+        <source>改动全部退回暂存区，不会丢失。</source>
+        <translation>Every change goes back to the staging area; nothing is lost.</translation>
+    </message>
+    <message>
+        <location filename="../src/ui/components/GitPanel.qml" line="434"/>
+        <source>已推送、合并提交或首次提交会被拒绝。</source>
+        <translation>Pushed commits, merge commits and the first commit are refused.</translation>
+    </message>
+    <message>
+        <location filename="../src/ui/components/GitPanel.qml" line="436"/>
+        <source>撤销提交</source>
+        <translation>Undo commit</translation>
+    </message>
+    <message>
+        <location filename="../src/ui/components/GitPanel.qml" line="443"/>
+        <source>暂存当前改动（stash）？</source>
+        <translation>Stash the current changes?</translation>
+    </message>
+    <message>
+        <location filename="../src/ui/components/GitPanel.qml" line="445"/>
+        <source>git stash push</source>
+        <translation>git stash push</translation>
+    </message>
+    <message>
+        <location filename="../src/ui/components/GitPanel.qml" line="446"/>
+        <source>只收起已跟踪的改动，未跟踪文件保持原地。</source>
+        <translation>Only tracked changes are set aside; untracked files stay in place.</translation>
+    </message>
+    <message>
+        <location filename="../src/ui/components/GitPanel.qml" line="447"/>
+        <source>取出前这些改动不在工作区，其他工具看不到它们。</source>
+        <translation>Until you pop them these changes are not in the worktree, so other tools cannot see them.</translation>
+    </message>
+    <message>
+        <location filename="../src/ui/components/GitPanel.qml" line="449"/>
+        <source>暂存改动</source>
+        <translation>Stash changes</translation>
+    </message>
+    <message>
+        <location filename="../src/ui/components/GitPanel.qml" line="451"/>
+        <source>备注（可选）</source>
+        <translation>Note (optional)</translation>
+    </message>
+    <message>
+        <location filename="../src/ui/components/GitPanel.qml" line="485"/>
+        <source>该文件未被 git 跟踪，git 里没有它的副本。</source>
+        <translation>Git does not track this file, so git holds no copy of it.</translation>
+    </message>
+    <message>
+        <location filename="../src/ui/components/GitPanel.qml" line="486"/>
+        <source>会先复制到备份目录，再删除原文件。</source>
+        <translation>It is copied to the backup folder before the original is deleted.</translation>
+    </message>
+    <message>
+        <location filename="../src/ui/components/GitPanel.qml" line="487"/>
+        <source>备份位置：%1</source>
+        <translation>Backup location: %1</translation>
+    </message>
+    <message>
+        <location filename="../src/ui/components/GitPanel.qml" line="489"/>
+        <source>git restore -- %1</source>
+        <translation>git restore -- %1</translation>
+    </message>
+    <message>
+        <location filename="../src/ui/components/GitPanel.qml" line="490"/>
+        <source>工作区内容回到暂存区版本，已暂存的改动保留。</source>
+        <translation>The worktree returns to the staged version; staged changes are kept.</translation>
+    </message>
+    <message>
+        <location filename="../src/ui/components/GitPanel.qml" line="491"/>
+        <source>该操作无法通过 git 撤销。</source>
+        <translation>Git cannot undo this action.</translation>
+    </message>
+    <message>
+        <location filename="../src/ui/components/GitPanel.qml" line="495"/>
+        <source>删除未跟踪文件？</source>
+        <translation>Delete the untracked file?</translation>
+    </message>
+    <message>
+        <location filename="../src/ui/components/GitPanel.qml" line="495"/>
+        <source>丢弃该文件的改动？</source>
+        <translation>Discard this file&apos;s changes?</translation>
+    </message>
+    <message>
+        <location filename="../src/ui/components/GitPanel.qml" line="497"/>
+        <source>备份并删除</source>
+        <translation>Back up and delete</translation>
+    </message>
+    <message>
+        <location filename="../src/ui/components/GitPanel.qml" line="497"/>
+        <source>丢弃改动</source>
+        <translation>Discard changes</translation>
+    </message>
+    <message>
+        <location filename="../src/ui/components/GitPanel.qml" line="208"/>
+        <location filename="../src/ui/components/GitPanel.qml" line="523"/>
+        <source>当前没有可用的 Git 项目。</source>
+        <translation>No Git project is currently available.</translation>
+    </message>
+    <message>
+        <location filename="../src/ui/components/GitPanel.qml" line="230"/>
+        <source>提交说明已被修改，未覆盖生成结果。</source>
+        <translation>The message was edited meanwhile, so the generated text was not applied.</translation>
+    </message>
+    <message>
+        <location filename="../src/ui/components/GitPanel.qml" line="234"/>
+        <source>已生成提交说明，可继续编辑后再提交</source>
+        <translation>Commit message drafted - edit it before committing</translation>
+    </message>
+    <message>
+        <location filename="../src/ui/components/GitPanel.qml" line="303"/>
+        <source>已选为对比基准 %1，再点另一行开始对比</source>
+        <translation>%1 set as comparison base; pick another commit to compare</translation>
+    </message>
+    <message>
+        <location filename="../src/ui/components/GitPanel.qml" line="309"/>
+        <source>已取消对比基准</source>
+        <translation>Comparison base cleared</translation>
+    </message>
+    <message>
+        <location filename="../src/ui/components/GitPanel.qml" line="531"/>
+        <source>取出这条暂存？</source>
+        <translation>Pop this stash?</translation>
+    </message>
+    <message>
+        <location filename="../src/ui/components/GitPanel.qml" line="533"/>
+        <source>git stash pop stash@{%1}</source>
+        <translation>git stash pop stash@{%1}</translation>
+    </message>
+    <message>
+        <location filename="../src/ui/components/GitPanel.qml" line="534"/>
+        <location filename="../src/ui/components/GitPanel.qml" line="1205"/>
+        <source>(无备注)</source>
+        <translation>(no note)</translation>
+    </message>
+    <message>
+        <location filename="../src/ui/components/GitPanel.qml" line="535"/>
+        <source>改动会立即进入工作区；与工作区现有改动冲突时 git 会拒绝，暂存条目保持不动。</source>
+        <translation>The changes enter the worktree immediately; if they conflict with existing edits git refuses and the stash entry stays.</translation>
+    </message>
+    <message>
+        <location filename="../src/ui/components/GitPanel.qml" line="537"/>
+        <source>取出暂存</source>
+        <translation>Pop stash</translation>
+    </message>
+    <message>
+        <location filename="../src/ui/components/GitPanel.qml" line="642"/>
+        <source>没有已暂存的改动。</source>
+        <translation>Nothing is staged.</translation>
+    </message>
+    <message>
+        <location filename="../src/ui/components/GitPanel.qml" line="660"/>
+        <source>提交成功</source>
+        <translation>Committed</translation>
+    </message>
+    <message>
+        <location filename="../src/ui/components/GitPanel.qml" line="664"/>
+        <source>已暂存</source>
+        <translation>Staged</translation>
+    </message>
+    <message>
+        <location filename="../src/ui/components/GitPanel.qml" line="666"/>
+        <source>已取消暂存</source>
+        <translation>Unstaged</translation>
+    </message>
+    <message>
+        <location filename="../src/ui/components/GitPanel.qml" line="670"/>
+        <source>已删除，备份在 %1</source>
+        <translation>Deleted; backed up to %1</translation>
+    </message>
+    <message>
+        <location filename="../src/ui/components/GitPanel.qml" line="671"/>
+        <source>已丢弃改动</source>
+        <translation>Changes discarded</translation>
+    </message>
+    <message>
+        <location filename="../src/ui/components/GitPanel.qml" line="674"/>
+        <source>已改写上次提交</source>
+        <translation>Last commit rewritten</translation>
+    </message>
+    <message>
+        <location filename="../src/ui/components/GitPanel.qml" line="674"/>
+        <source>已撤销上次提交，改动退回暂存区</source>
+        <translation>Last commit undone; changes are back in the staging area</translation>
+    </message>
+    <message>
+        <location filename="../src/ui/components/GitPanel.qml" line="678"/>
+        <source>改动已暂存到 stash</source>
+        <translation>Changes were stashed</translation>
+    </message>
+    <message>
+        <location filename="../src/ui/components/GitPanel.qml" line="681"/>
+        <source>已取出暂存</source>
+        <translation>Stash popped</translation>
+    </message>
+    <message>
+        <location filename="../src/ui/components/GitPanel.qml" line="759"/>
+        <source>%1 项改动</source>
+        <translation>%1 changes</translation>
+    </message>
+    <message>
+        <location filename="../src/ui/components/GitPanel.qml" line="773"/>
+        <source>查看分支与远端</source>
+        <translation>View branches and remotes</translation>
+    </message>
+    <message>
+        <location filename="../src/ui/components/GitPanel.qml" line="787"/>
+        <source>刷新 Git 状态</source>
+        <translation>Refresh Git status</translation>
+    </message>
+    <message>
+        <location filename="../src/ui/components/GitPanel.qml" line="799"/>
+        <source>改动</source>
+        <translation>Changes</translation>
+    </message>
+    <message>
+        <location filename="../src/ui/components/GitPanel.qml" line="809"/>
+        <source>历史</source>
+        <translation>History</translation>
+    </message>
+    <message>
+        <location filename="../src/ui/components/GitPanel.qml" line="831"/>
+        <source>本地操作</source>
+        <translation>Local actions</translation>
+    </message>
+    <message>
+        <location filename="../src/ui/components/GitPanel.qml" line="846"/>
+        <source>撤销最后一次提交（改动退回暂存区）</source>
+        <translation>Undo the last commit (changes return to staging)</translation>
+    </message>
+    <message>
+        <location filename="../src/ui/components/GitPanel.qml" line="859"/>
+        <source>改写最后一次提交（并入已暂存改动）</source>
+        <translation>Rewrite the last commit (fold in staged changes)</translation>
+    </message>
+    <message>
+        <location filename="../src/ui/components/GitPanel.qml" line="872"/>
+        <source>把已跟踪改动收进 stash</source>
+        <translation>Move tracked changes into a stash</translation>
+    </message>
+    <message>
+        <location filename="../src/ui/components/GitPanel.qml" line="885"/>
+        <source>查看 stash 列表</source>
+        <translation>Show the stash list</translation>
+    </message>
+    <message>
+        <location filename="../src/ui/components/GitPanel.qml" line="904"/>
+        <source>正在读取 Git 状态…</source>
+        <translation>Reading Git status…</translation>
+    </message>
+    <message>
+        <location filename="../src/ui/components/GitPanel.qml" line="932"/>
+        <source>当前项目不是 Git 仓库，无法使用 Git 管理。</source>
+        <translation>The current project is not a Git repository; Git management is unavailable.</translation>
+    </message>
+    <message>
+        <location filename="../src/ui/components/GitPanel.qml" line="944"/>
+        <source>工作区干净，没有未提交的改动。</source>
+        <translation>Working tree clean — no uncommitted changes.</translation>
+    </message>
+    <message>
+        <location filename="../src/ui/components/GitPanel.qml" line="956"/>
+        <source>已暂存 · %1</source>
+        <translation>Staged · %1</translation>
+    </message>
+    <message>
+        <location filename="../src/ui/components/GitPanel.qml" line="975"/>
+        <source>取消暂存该文件</source>
+        <translation>Unstage this file</translation>
+    </message>
+    <message>
+        <location filename="../src/ui/components/GitPanel.qml" line="985"/>
+        <source>未暂存 · %1</source>
+        <translation>Unstaged · %1</translation>
+    </message>
+    <message>
+        <location filename="../src/ui/components/GitPanel.qml" line="1006"/>
+        <source>暂存该文件</source>
+        <translation>Stage this file</translation>
+    </message>
+    <message>
+        <location filename="../src/ui/components/GitPanel.qml" line="1034"/>
+        <source>提交说明（必填）</source>
+        <translation>Commit message (required)</translation>
+    </message>
+    <message>
+        <location filename="../src/ui/components/GitPanel.qml" line="1063"/>
+        <source>已暂存 %1 个文件</source>
+        <translation>%1 file(s) staged</translation>
+    </message>
+    <message>
+        <location filename="../src/ui/components/GitPanel.qml" line="1072"/>
+        <source>AI 起草</source>
+        <translation>Draft with AI</translation>
+    </message>
+    <message>
+        <location filename="../src/ui/components/GitPanel.qml" line="1076"/>
+        <source>用已暂存的差异起草提交说明</source>
+        <translation>Draft a commit message from the staged diff</translation>
+    </message>
+    <message>
+        <location filename="../src/ui/components/GitPanel.qml" line="1082"/>
+        <location filename="../src/ui/components/GitPanel.qml" line="1646"/>
+        <source>提交</source>
+        <translation>Commit</translation>
+    </message>
+    <message>
+        <location filename="../src/ui/components/GitPanel.qml" line="1093"/>
+        <source>正在起草提交说明…</source>
+        <translation>Drafting the commit message…</translation>
+    </message>
+    <message>
+        <location filename="../src/ui/components/GitPanel.qml" line="1103"/>
+        <source>正在提交…</source>
+        <translation>Committing…</translation>
+    </message>
+    <message>
+        <location filename="../src/ui/components/GitPanel.qml" line="1103"/>
+        <source>正在更新暂存区…</source>
+        <translation>Updating the index…</translation>
+    </message>
+    <message>
+        <location filename="../src/ui/components/GitPanel.qml" line="1141"/>
+        <source>正在读取 stash…</source>
+        <translation>Reading stash…</translation>
+    </message>
+    <message>
+        <location filename="../src/ui/components/GitPanel.qml" line="1161"/>
+        <source>stash 是空的。</source>
+        <translation>The stash is empty.</translation>
+    </message>
+    <message>
+        <location filename="../src/ui/components/GitPanel.qml" line="1214"/>
+        <source>取出</source>
+        <translation>Pop</translation>
+    </message>
+    <message>
+        <location filename="../src/ui/components/GitPanel.qml" line="1251"/>
+        <source>搜索提交说明</source>
+        <translation>Search commit messages</translation>
+    </message>
+    <message>
+        <location filename="../src/ui/components/GitPanel.qml" line="1264"/>
+        <source>作者</source>
+        <translation>Author</translation>
+    </message>
+    <message>
+        <location filename="../src/ui/components/GitPanel.qml" line="1274"/>
+        <source>图</source>
+        <translation>Graph</translation>
+    </message>
+    <message>
+        <location filename="../src/ui/components/GitPanel.qml" line="1278"/>
+        <source>打开多分支提交图</source>
+        <translation>Open the multi-branch commit graph</translation>
+    </message>
+    <message>
+        <location filename="../src/ui/components/GitPanel.qml" line="1284"/>
+        <source>筛选</source>
+        <translation>Filter</translation>
+    </message>
+    <message>
+        <location filename="../src/ui/components/GitPanel.qml" line="1299"/>
+        <source>清除筛选条件</source>
+        <translation>Clear the filter</translation>
+    </message>
+    <message>
+        <location filename="../src/ui/components/GitPanel.qml" line="1313"/>
+        <source>没有符合条件的提交。</source>
+        <translation>No commits match the filter.</translation>
+    </message>
+    <message>
+        <location filename="../src/ui/components/GitPanel.qml" line="1314"/>
+        <source>筛选后显示 %1 条（关键词 %2，作者 %3）</source>
+        <translation>Showing %1 filtered commits (keyword %2, author %3)</translation>
+    </message>
+    <message>
+        <location filename="../src/ui/components/GitPanel.qml" line="1331"/>
+        <source>对比基准 A：%1</source>
+        <translation>Comparison base A: %1</translation>
+    </message>
+    <message>
+        <location filename="../src/ui/components/GitPanel.qml" line="1349"/>
+        <source>正在读取 Git 历史…</source>
+        <translation>Reading Git history…</translation>
+    </message>
+    <message>
+        <location filename="../src/ui/components/GitPanel.qml" line="1369"/>
+        <source>仓库还没有提交。</source>
+        <translation>This repository has no commits yet.</translation>
+    </message>
+    <message>
+        <location filename="../src/ui/components/GitPanel.qml" line="1401"/>
+        <source>查看提交详情</source>
+        <translation>View commit details</translation>
+    </message>
+    <message>
+        <location filename="../src/ui/components/GitPanel.qml" line="1463"/>
+        <source>取消对比基准</source>
+        <translation>Cancel the comparison base</translation>
+    </message>
+    <message>
+        <location filename="../src/ui/components/GitPanel.qml" line="1463"/>
+        <source>选为对比基准 / 与基准对比</source>
+        <translation>Set as base / compare with the base</translation>
+    </message>
+    <message>
+        <location filename="../src/ui/components/GitPanel.qml" line="1472"/>
+        <source>加载更多提交</source>
+        <translation>Load more commits</translation>
+    </message>
+    <message>
+        <location filename="../src/ui/components/GitPanel.qml" line="1574"/>
+        <source>提交已暂存的改动？</source>
+        <translation>Commit the staged changes?</translation>
+    </message>
+    <message>
+        <location filename="../src/ui/components/GitPanel.qml" line="1583"/>
+        <source>将提交 %1 个文件：</source>
+        <translation>%1 file(s) will be committed:</translation>
+    </message>
+    <message>
+        <location filename="../src/ui/components/GitPanel.qml" line="1340"/>
+        <location filename="../src/ui/components/GitPanel.qml" line="1640"/>
+        <source>取消</source>
+        <translation>Cancel</translation>
+    </message>
+</context>
+<context>
+    <name>GitWorkingDiffDialog</name>
+    <message>
+        <location filename="../src/ui/components/GitWorkingDiffDialog.qml" line="39"/>
+        <source>未跟踪</source>
+        <translation>Untracked</translation>
+    </message>
+    <message>
+        <location filename="../src/ui/components/GitWorkingDiffDialog.qml" line="40"/>
+        <source>已暂存</source>
+        <translation>Staged</translation>
+    </message>
+    <message>
+        <location filename="../src/ui/components/GitWorkingDiffDialog.qml" line="40"/>
+        <source>未暂存</source>
+        <translation>Unstaged</translation>
+    </message>
+    <message>
+        <source>未跟踪文件：暂不展示内容差异，暂存后可查看。</source>
+        <translation type="vanished">Untracked file: no diff yet. Stage it to view the diff.</translation>
+    </message>
+    <message>
+        <location filename="../src/ui/components/GitWorkingDiffDialog.qml" line="51"/>
+        <source>未跟踪文件没有可展示的内容。</source>
+        <translation>The untracked file has no content to show.</translation>
+    </message>
+    <message>
+        <location filename="../src/ui/components/GitWorkingDiffDialog.qml" line="53"/>
+        <source>没有已暂存的差异。</source>
+        <translation>No staged diff.</translation>
+    </message>
+    <message>
+        <location filename="../src/ui/components/GitWorkingDiffDialog.qml" line="54"/>
+        <source>没有未暂存的改动。</source>
+        <translation>No unstaged changes.</translation>
+    </message>
+    <message>
+        <location filename="../src/ui/components/GitWorkingDiffDialog.qml" line="104"/>
+        <source>无法解析该文件的绝对路径。</source>
+        <translation>Cannot resolve this file&apos;s absolute path.</translation>
+    </message>
+    <message>
+        <location filename="../src/ui/components/GitWorkingDiffDialog.qml" line="108"/>
+        <source>已复制路径</source>
+        <translation>Path copied</translation>
+    </message>
+    <message>
+        <location filename="../src/ui/components/GitWorkingDiffDialog.qml" line="113"/>
+        <source>已用系统默认程序打开</source>
+        <translation>Opened with the default app</translation>
+    </message>
+    <message>
+        <location filename="../src/ui/components/GitWorkingDiffDialog.qml" line="116"/>
+        <source>文件不存在，或系统没有可用的打开方式。</source>
+        <translation>The file does not exist, or no app is registered for it.</translation>
+    </message>
+    <message>
+        <location filename="../src/ui/components/GitWorkingDiffDialog.qml" line="147"/>
+        <source>已把该块退回未暂存</source>
+        <translation>Hunk returned to unstaged</translation>
+    </message>
+    <message>
+        <location filename="../src/ui/components/GitWorkingDiffDialog.qml" line="147"/>
+        <source>已暂存该块</source>
+        <translation>Hunk staged</translation>
+    </message>
+    <message>
+        <location filename="../src/ui/components/GitWorkingDiffDialog.qml" line="200"/>
+        <source>用系统默认程序打开</source>
+        <translation>Open with the default app</translation>
+    </message>
+    <message>
+        <location filename="../src/ui/components/GitWorkingDiffDialog.qml" line="208"/>
+        <source>复制绝对路径</source>
+        <translation>Copy absolute path</translation>
+    </message>
+    <message>
+        <location filename="../src/ui/components/GitWorkingDiffDialog.qml" line="216"/>
+        <source>查看该文件历史</source>
+        <translation>View this file&apos;s history</translation>
+    </message>
+    <message>
+        <location filename="../src/ui/components/GitWorkingDiffDialog.qml" line="225"/>
+        <source>查看该文件逐行归属</source>
+        <translation>View line attribution for this file</translation>
+    </message>
+    <message>
+        <location filename="../src/ui/components/GitWorkingDiffDialog.qml" line="239"/>
+        <source>删除该未跟踪文件（先备份）</source>
+        <translation>Delete this untracked file (backed up first)</translation>
+    </message>
+    <message>
+        <location filename="../src/ui/components/GitWorkingDiffDialog.qml" line="240"/>
+        <source>丢弃该文件的工作区改动</source>
+        <translation>Discard this file&apos;s worktree changes</translation>
+    </message>
+    <message>
+        <location filename="../src/ui/components/GitWorkingDiffDialog.qml" line="246"/>
+        <source>统一</source>
+        <translation>Unified</translation>
+    </message>
+    <message>
+        <location filename="../src/ui/components/GitWorkingDiffDialog.qml" line="256"/>
+        <source>并排</source>
+        <translation>Side by side</translation>
+    </message>
+    <message>
+        <location filename="../src/ui/components/GitWorkingDiffDialog.qml" line="268"/>
+        <source>重新读取该文件差异</source>
+        <translation>Reload this file&apos;s diff</translation>
+    </message>
+    <message>
+        <location filename="../src/ui/components/GitWorkingDiffDialog.qml" line="275"/>
+        <source>关闭工作区差异</source>
+        <translation>Close working tree diff</translation>
+    </message>
+    <message>
+        <location filename="../src/ui/components/GitWorkingDiffDialog.qml" line="302"/>
+        <source>正在读取工作区差异…</source>
+        <translation>Reading working tree diff…</translation>
+    </message>
+    <message>
+        <location filename="../src/ui/components/GitWorkingDiffDialog.qml" line="321"/>
+        <source>未跟踪文件：按当前内容展示全部新增行。</source>
+        <translation>Untracked file: all lines are shown as additions from its current content.</translation>
+    </message>
+    <message>
+        <location filename="../src/ui/components/GitWorkingDiffDialog.qml" line="345"/>
+        <source>分块暂存 · %1 块</source>
+        <translation>Stage by hunk · %1 hunks</translation>
+    </message>
+    <message>
+        <location filename="../src/ui/components/GitWorkingDiffDialog.qml" line="346"/>
+        <source>分块暂存</source>
+        <translation>Stage by hunk</translation>
+    </message>
+    <message>
+        <location filename="../src/ui/components/GitWorkingDiffDialog.qml" line="355"/>
+        <source>正在解析差异块…</source>
+        <translation>Splitting the diff…</translation>
+    </message>
+    <message>
+        <location filename="../src/ui/components/GitWorkingDiffDialog.qml" line="364"/>
+        <source>收起</source>
+        <translation>Collapse</translation>
+    </message>
+    <message>
+        <location filename="../src/ui/components/GitWorkingDiffDialog.qml" line="364"/>
+        <source>展开</source>
+        <translation>Expand</translation>
+    </message>
+    <message>
+        <location filename="../src/ui/components/GitWorkingDiffDialog.qml" line="445"/>
+        <source>取消暂存</source>
+        <translation>Unstage</translation>
+    </message>
+    <message>
+        <location filename="../src/ui/components/GitWorkingDiffDialog.qml" line="446"/>
+        <source>暂存</source>
+        <translation>Stage</translation>
     </message>
 </context>
 <context>
@@ -2723,7 +3903,7 @@ Select or import a project in the sidebar first.</translation>
 <context>
     <name>NexusAI::AIAgent</name>
     <message>
-        <location filename="../src/core/agent/AIAgent.cpp" line="519"/>
+        <location filename="../src/core/agent/AIAgent.cpp" line="560"/>
         <source>请先配置并启用模型，再发送消息。</source>
         <translation>Configure and enable a model before sending a message.</translation>
     </message>
@@ -2772,7 +3952,7 @@ Select or import a project in the sidebar first.</translation>
         <translation type="vanished">No timeline entry matches this message, so the conversation cannot be rewound safely.</translation>
     </message>
     <message>
-        <location filename="../src/core/agent/AIAgent.cpp" line="1375"/>
+        <location filename="../src/core/agent/AIAgent.cpp" line="1416"/>
         <source>无法更新会话记录，原消息已保留，请重试。</source>
         <translation>Could not update the conversation. Original messages were kept. Please retry.</translation>
     </message>
@@ -3048,6 +4228,49 @@ Select or import a project in the sidebar first.</translation>
         <location filename="../src/viewmodels/ChatSessionController.cpp" line="243"/>
         <source>No model agent is configured. Configure a model and try again.</source>
         <translation>No model agent is configured. Configure a model and try again.</translation>
+    </message>
+</context>
+<context>
+    <name>NexusAI::CommitMessageDrafter</name>
+    <message>
+        <location filename="../src/viewmodels/CommitMessageDrafter.cpp" line="54"/>
+        <source>起草超时（%1 秒）。</source>
+        <translation>Drafting timed out (%1s).</translation>
+    </message>
+    <message>
+        <location filename="../src/viewmodels/CommitMessageDrafter.cpp" line="164"/>
+        <source>已有一次起草在进行中，请等待或先取消。</source>
+        <translation>A draft request is already running; wait or cancel it first.</translation>
+    </message>
+    <message>
+        <location filename="../src/viewmodels/CommitMessageDrafter.cpp" line="168"/>
+        <source>没有已暂存的改动，无法起草。</source>
+        <translation>Nothing is staged, so there is nothing to draft.</translation>
+    </message>
+    <message>
+        <location filename="../src/viewmodels/CommitMessageDrafter.cpp" line="186"/>
+        <source>当前模型配置不完整（协议/地址/模型名），无法起草。</source>
+        <translation>The current model profile is incomplete (protocol/base URL/model), so drafting is unavailable.</translation>
+    </message>
+    <message>
+        <location filename="../src/viewmodels/CommitMessageDrafter.cpp" line="193"/>
+        <source>已开启仅本地模式：不会把改动内容发送给云端模型。</source>
+        <translation>Local-only mode is on: staged content is not sent to a cloud model.</translation>
+    </message>
+    <message>
+        <location filename="../src/viewmodels/CommitMessageDrafter.cpp" line="199"/>
+        <source>未知的模型接口协议：%1</source>
+        <translation>Unknown model protocol: %1</translation>
+    </message>
+    <message>
+        <location filename="../src/viewmodels/CommitMessageDrafter.cpp" line="232"/>
+        <source>模型没有返回可用的提交说明。</source>
+        <translation>The model returned no usable commit message.</translation>
+    </message>
+    <message>
+        <location filename="../src/viewmodels/CommitMessageDrafter.cpp" line="254"/>
+        <source>已取消起草。</source>
+        <translation>Drafting cancelled.</translation>
     </message>
 </context>
 <context>
