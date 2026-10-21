@@ -780,12 +780,14 @@ void AIAgent::resumeSession(const QString& sessionId) {
     m_sessionId = sessionId;
     m_messages = QJsonArray();
     m_usedToolCallIds.clear();   // resumed history carries no tool calls
-    // F1: todo state is in-memory and per-session; reopening a persisted
-    // session must not resurrect the list left by the previous one.
-    if (!m_todoList.isEmpty()) {
-        m_todoList = QJsonArray();
-        emit todoListChanged(m_todoList);
-    }
+    // F1: todo state is persisted per session; reopening a session reloads
+    // ITS OWN stored list (empty when it never used todo_write) instead of
+    // resurrecting the list left by the previous session in this tab.
+    QJsonArray storedTodos;
+    if (m_memory && !sessionId.isEmpty())
+        storedTodos = m_memory->loadSessionTodos(sessionId);
+    m_todoList = storedTodos;
+    emit todoListChanged(m_todoList);
 
     QJsonObject sysMsg;
     sysMsg["role"] = "system";
@@ -1882,6 +1884,12 @@ void AIAgent::finishToolExecution(const ToolCallInfo& call, const QString& trace
         if (doc.isArray()) {
             m_todoList = doc.array();
             emit todoListChanged(m_todoList);
+            // F1: persist per session so reopening the session restores its
+            // own list instead of starting empty. GUI thread only — the DB
+            // connection is thread-bound (same discipline as the checkpoint
+            // write above).
+            if (m_memory && !m_sessionId.isEmpty())
+                m_memory->saveSessionTodos(m_sessionId, m_todoList);
         }
     }
 

@@ -197,6 +197,9 @@ private slots:
     // head window instead of a lost row).
     void searchMessagesSnippetPreservesUnderscoreIdentifiers();
     void searchMessagesSnippetDegradesWhenKeywordInStrippedMarkup();
+    // F1: the todo_write task list is persisted per session — round-trip,
+    // replace-not-append, per-session scoping, purge cascade.
+    void sessionTodosRoundTripReplaceAndScope();
     // docs/20 §3.1/§3.2（FORK-701）：重新生成/编辑重发的持久层支撑
 };
 
@@ -2680,6 +2683,67 @@ void TestMemory::fileCheckpointDetailSchemaMigrates() {
 
     QFile::remove(dbPath);
     QDir(dir).removeRecursively();
+}
+
+// F1: the todo_write task list is persisted per session. The tool always
+// sends the FULL list, so a save replaces (never appends); each session only
+// ever sees its own list; an unknown session reads back empty.
+void TestMemory::sessionTodosRoundTripReplaceAndScope() {
+    SqliteMemory mem(QStringLiteral(":memory:"));
+
+    // Unknown session → empty.
+    QCOMPARE(mem.loadSessionTodos(QStringLiteral("s1")).size(), 0);
+
+    const QJsonArray first{
+        QJsonObject{{"content", "Inspect code"}, {"status", "completed"},
+                    {"priority", "high"}},
+        QJsonObject{{"content", "Apply fix"}, {"status", "in_progress"},
+                    {"priority", "medium"}}
+    };
+    QVERIFY(mem.saveSessionTodos(QStringLiteral("s1"), first));
+
+    const QJsonArray loaded = mem.loadSessionTodos(QStringLiteral("s1"));
+    QCOMPARE(loaded.size(), 2);
+    // Item shape is the contract TodoListPanel.qml depends on.
+    const QJsonObject firstItem = loaded.at(0).toObject();
+    QCOMPARE(firstItem.value("content").toString(),
+             QStringLiteral("Inspect code"));
+    QCOMPARE(firstItem.value("status").toString(),
+             QStringLiteral("completed"));
+    QCOMPARE(firstItem.value("priority").toString(),
+             QStringLiteral("high"));
+    QCOMPARE(loaded.at(1).toObject().value("content").toString(),
+             QStringLiteral("Apply fix"));
+
+    // Saving again REPLACES the stored list (the tool sends the full list).
+    const QJsonArray second{
+        QJsonObject{{"content", "Only task"}, {"status", "pending"},
+                    {"priority", "low"}}
+    };
+    QVERIFY(mem.saveSessionTodos(QStringLiteral("s1"), second));
+    const QJsonArray replaced = mem.loadSessionTodos(QStringLiteral("s1"));
+    QCOMPARE(replaced.size(), 1);
+    QCOMPARE(replaced.at(0).toObject().value("content").toString(),
+             QStringLiteral("Only task"));
+
+    // An empty save clears the list rather than resurrecting the old one.
+    QVERIFY(mem.saveSessionTodos(QStringLiteral("s1"), QJsonArray()));
+    QCOMPARE(mem.loadSessionTodos(QStringLiteral("s1")).size(), 0);
+
+    // Per-session scoping: session B never sees session A's list.
+    QVERIFY(mem.saveSessionTodos(QStringLiteral("s1"), first));
+    QVERIFY(mem.saveSessionTodos(QStringLiteral("s2"), second));
+    QCOMPARE(mem.loadSessionTodos(QStringLiteral("s1")).size(), 2);
+    QCOMPARE(mem.loadSessionTodos(QStringLiteral("s2")).size(), 1);
+    QCOMPARE(mem.loadSessionTodos(QStringLiteral("unknown")).size(), 0);
+
+    // Session purge cascades the stored list away with the session.
+    mem.beginSession(QStringLiteral("s2"), QStringLiteral("two"));
+    mem.deleteSession(QStringLiteral("s2"));
+    QCOMPARE(mem.purgeDeletedSessions(
+                 QDateTime::currentMSecsSinceEpoch() + 1000), 1);
+    QCOMPARE(mem.loadSessionTodos(QStringLiteral("s2")).size(), 0);
+    QCOMPARE(mem.loadSessionTodos(QStringLiteral("s1")).size(), 2);
 }
 
 QTEST_GUILESS_MAIN(TestMemory)

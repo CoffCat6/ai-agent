@@ -593,6 +593,9 @@ private slots:
     void traceRestoredOnResume();
     // F1: todo list lifetime is per session/tab, never carried across resets.
     void todoListClearedOnSessionResetAndResume();
+    // F1: the todo list is persisted per session — reopening the SAME session
+    // restores its list, and a different session yields its own (or empty).
+    void todoListPersistsAcrossSessionResume();
     // 思考强度：思考正文只落 thinking 节点，不混进答案、不回灌模型、可恢复
     void reasoningTextLandsOnThinkingNode();
     void stopDuringConfirmationIsNoOp();
@@ -1427,6 +1430,64 @@ void TestAgent::todoListClearedOnSessionResetAndResume() {
     QCOMPARE(agent.currentSessionId(), QStringLiteral("other-session"));
     QCOMPARE(agent.todoList().size(), 0);
     QCOMPARE(todoSpy.count(), beforeResume + 1);
+
+    agent.setMemory(nullptr);
+}
+
+// F1: the todo list is persisted per session. Reopening the SAME session
+// restores its stored list; a different session yields that session's own
+// list (empty when it never used todo_write), never the previous one.
+void TestAgent::todoListPersistsAcrossSessionResume() {
+    SqliteMemory memory(QStringLiteral(":memory:"));
+    agent.setMemory(&memory);
+
+    const QJsonArray todos{
+        QJsonObject{{"content", "Inspect code"}, {"status", "completed"},
+                    {"priority", "high"}},
+        QJsonObject{{"content", "Apply fix"}, {"status", "in_progress"},
+                    {"priority", "medium"}}
+    };
+    llm.script.append(toolResponse("todo_write", QJsonObject{{"todos", todos}}));
+    llm.script.append(textResponse(QStringLiteral("first done")));
+
+    QSignalSpy doneSpy(&agent, &AIAgent::responseReady);
+    agent.startTask(QStringLiteral("plan the work"));
+    QTRY_COMPARE_WITH_TIMEOUT(doneSpy.count(), 1, 15000);
+    QCOMPARE(agent.todoList().size(), 2);
+
+    const QString sessionId = agent.currentSessionId();
+    QVERIFY(!sessionId.isEmpty());
+
+    // 1) Leaving the tab (new chat) drops the list; reopening the SAME
+    //    session restores it from the database.
+    agent.resetSession();
+    QCOMPARE(agent.todoList().size(), 0);
+    agent.resumeSession(sessionId);
+    QCOMPARE(agent.currentSessionId(), sessionId);
+    QCOMPARE(agent.todoList().size(), 2);
+    QCOMPARE(agent.todoList().at(0).toObject().value("content").toString(),
+             QStringLiteral("Inspect code"));
+
+    // 2) A different session yields its own list (empty here), not the
+    //    previous session's.
+    memory.beginSession(QStringLiteral("other-session"), QStringLiteral("other"));
+    agent.resumeSession(QStringLiteral("other-session"));
+    QCOMPARE(agent.currentSessionId(), QStringLiteral("other-session"));
+    QCOMPARE(agent.todoList().size(), 0);
+
+    // 3) That session's own list survives its own resume, and switching back
+    //    restores the first session's list again.
+    const QJsonArray otherTodos{
+        QJsonObject{{"content", "Other task"}, {"status", "pending"},
+                    {"priority", "low"}}
+    };
+    QVERIFY(memory.saveSessionTodos(QStringLiteral("other-session"), otherTodos));
+    agent.resumeSession(sessionId);
+    QCOMPARE(agent.todoList().size(), 2);
+    agent.resumeSession(QStringLiteral("other-session"));
+    QCOMPARE(agent.todoList().size(), 1);
+    QCOMPARE(agent.todoList().at(0).toObject().value("content").toString(),
+             QStringLiteral("Other task"));
 
     agent.setMemory(nullptr);
 }

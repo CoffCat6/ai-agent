@@ -484,6 +484,19 @@ void SqliteMemory::createTables() {
                    "ON file_checkpoints(session_id, created_at DESC, id DESC)",
             "create file_checkpoints index");
 
+    // F1: the todo_write task list, one row per session. The tool always
+    // sends the full list, so the row is replaced wholesale (UPSERT on the
+    // session_id primary key) rather than appended to. New table — the
+    // idempotent CREATE TABLE IF NOT EXISTS is the whole migration, so no
+    // user_version bump is needed (same as file_checkpoints).
+    execDdl(query, R"(
+        CREATE TABLE IF NOT EXISTS session_todos (
+            session_id TEXT PRIMARY KEY,
+            todos TEXT NOT NULL,
+            updated_at INTEGER NOT NULL
+        )
+    )", "create session_todos table");
+
     // Cross-session usage trail (user operations / network outcomes). New
     // table — no migration needed; retention is enforced by pruneUsage.
     execDdl(query, R"(
@@ -1917,6 +1930,13 @@ void SqliteMemory::clear(const QString& sessionId) {
             ok = execDelete("clear file checkpoints");
         }
 
+        // F1: the todo list belongs to the session being cleared.
+        if (ok) {
+            query.prepare("DELETE FROM session_todos WHERE session_id = ?");
+            query.addBindValue(sessionId);
+            ok = execDelete("clear session todos");
+        }
+
         if (ok && m_db.commit()) return;
         qWarning() << "clear failed; rolling back:" << query.lastError().text();
         m_db.rollback();
@@ -2172,6 +2192,11 @@ bool SqliteMemory::hardDeleteSessionRows(const QString& sessionId) {
     query.prepare("DELETE FROM file_checkpoints WHERE session_id = ?");
     query.addBindValue(sessionId);
     execDelete("delete session file checkpoints");
+
+    // F1: the todo list belongs to the session being purged.
+    query.prepare("DELETE FROM session_todos WHERE session_id = ?");
+    query.addBindValue(sessionId);
+    execDelete("delete session todos");
     return ok;
 }
 
@@ -2492,6 +2517,53 @@ int SqliteMemory::pruneFileCheckpoints(qint64 olderThanMs) {
         return 0;
     }
     return query.numRowsAffected();
+}
+
+// ── F1: per-session todo list ─────────────────────────────
+
+// The todo_write tool always sends the FULL list, so the stored row is
+// replaced wholesale. The UPSERT keys on session_id (the table's primary
+// key) and is a single statement, hence atomic without an explicit
+// transaction. An empty list is stored as "[]" so a cleared list round-trips
+// as empty instead of resurrecting the previous one.
+bool SqliteMemory::saveSessionTodos(const QString& sessionId,
+                                    const QJsonArray& todos) {
+    if (sessionId.isEmpty()) return false;
+
+    const QByteArray payload =
+        QJsonDocument(todos).toJson(QJsonDocument::Compact);
+    QSqlQuery query(m_db);
+    query.prepare("INSERT INTO session_todos (session_id, todos, updated_at) "
+                  "VALUES (?, ?, ?) "
+                  "ON CONFLICT(session_id) DO UPDATE SET "
+                  "todos = excluded.todos, updated_at = excluded.updated_at");
+    query.addBindValue(sessionId);
+    query.addBindValue(QString::fromUtf8(payload));
+    query.addBindValue(QDateTime::currentMSecsSinceEpoch());
+    if (!query.exec()) {
+        qWarning() << "Failed to save session todos:" << query.lastError().text();
+        return false;
+    }
+    return true;
+}
+
+QJsonArray SqliteMemory::loadSessionTodos(const QString& sessionId) {
+    QJsonArray todos;
+    if (sessionId.isEmpty()) return todos;
+
+    QSqlQuery query(m_db);
+    query.prepare("SELECT todos FROM session_todos WHERE session_id = ?");
+    query.addBindValue(sessionId);
+    if (!query.exec()) {
+        qWarning() << "Failed to load session todos:" << query.lastError().text();
+        return todos;
+    }
+    if (!query.next()) return todos;   // unknown session: empty list
+
+    const QJsonDocument doc = QJsonDocument::fromJson(
+        query.value(0).toString().toUtf8());
+    if (doc.isArray()) todos = doc.array();
+    return todos;
 }
 
 // ── Trace view persistence ───────────────────────────────

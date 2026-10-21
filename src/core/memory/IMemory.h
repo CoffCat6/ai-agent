@@ -181,6 +181,23 @@ public:
         return 0;
     }
 
+    // F1: the todo_write task list, persisted per session so reopening a
+    // session restores its own list instead of starting empty. The tool
+    // always sends the FULL list, so saveSessionTodos REPLACES the stored
+    // list for that session (never appends). GUI thread only — the DB
+    // connection is thread-bound.
+    virtual bool saveSessionTodos(const QString& sessionId,
+                                  const QJsonArray& todos) {
+        Q_UNUSED(sessionId); Q_UNUSED(todos);
+        return false;
+    }
+    // The stored list for one session; empty when the session never used
+    // todo_write (or is unknown).
+    virtual QJsonArray loadSessionTodos(const QString& sessionId) {
+        Q_UNUSED(sessionId);
+        return {};
+    }
+
     // Audit trail for tool activity (optional capability; default no-ops).
     // events: tool_execute / tool_approved / tool_declined / tool_blocked /
     // unknown_tool / llm_request / task_complete (Batch 11).

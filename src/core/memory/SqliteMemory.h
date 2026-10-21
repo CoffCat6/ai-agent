@@ -123,6 +123,12 @@ public:
                                        qint64 undoneAtMs) override;
     int pruneFileCheckpoints(qint64 olderThanMs) override;
 
+    // F1: per-session todo_write task list (see IMemory.h). One row per
+    // session holding the normalized JSON array; saving replaces the row.
+    bool saveSessionTodos(const QString& sessionId,
+                          const QJsonArray& todos) override;
+    QJsonArray loadSessionTodos(const QString& sessionId) override;
+
     // docs/17 A0: 项目级会话。projects 表 + sessions.project_id（NULL=本地）。
     // 删除项目时会话保留（project_id 置 NULL），不级联删除。
     QString createProject(const QString& name, const QString& rootPath) override;
