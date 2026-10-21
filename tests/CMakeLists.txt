@@ -3,6 +3,37 @@
 
 enable_testing()
 
+# ── Qt runtime on PATH for every test ─────────────────────
+# The test executables link Qt dynamically, so Windows must resolve
+# Qt6Core/Qt6Gui/... at load time. Without the Qt bin dir on PATH they die
+# with 0xc0000135 (STATUS_DLL_NOT_FOUND) before a single test runs, which
+# reads as a mass failure rather than a missing toolchain.
+#
+# Qt's own bin dir also ships the MinGW C++ runtime (libstdc++-6,
+# libgcc_s_seh-1, libwinpthread-1), so it is the only entry needed — the
+# separate D:/Qt/Tools/mingw*/bin is not required.
+#
+# Implementation: shadow add_test so every registration — direct or through
+# the nexus_add_test helper further down — gets the property applied
+# immediately. ENVIRONMENT_MODIFICATION "path_list_prepend" (CMake >= 3.22)
+# prepends to the inherited PATH rather than replacing it, so the compiler
+# dir and user PATH entries survive.
+set(NEXUS_QT_BIN_DIR "${QT6_INSTALL_PREFIX}/${QT6_INSTALL_BINS}")
+
+function(add_test)
+    _add_test(${ARGV})
+    # add_test has two forms: add_test(<name> <cmd>...) and
+    # add_test(NAME <name> COMMAND <cmd>...). Only the name is needed here.
+    list(GET ARGV 0 _nexus_first)
+    if(_nexus_first STREQUAL "NAME")
+        list(GET ARGV 1 _nexus_name)
+    else()
+        set(_nexus_name "${_nexus_first}")
+    endif()
+    set_tests_properties("${_nexus_name}" PROPERTIES
+        ENVIRONMENT_MODIFICATION "PATH=path_list_prepend:${NEXUS_QT_BIN_DIR}")
+endfunction()
+
 add_executable(test_chat_workflows test_chat_workflows.cpp)
 target_link_libraries(test_chat_workflows PRIVATE
     nexus_core nexus_infra nexus_viewmodels nexus_viewmodelsplugin
@@ -344,4 +375,3 @@ add_test(NAME test_mention_interaction
     COMMAND ${CMAKE_COMMAND} -E env
         "QT_QPA_PLATFORM_PLUGIN_PATH=${QT6_INSTALL_PREFIX}/${QT6_INSTALL_PLUGINS}/platforms"
         $<TARGET_FILE:test_mention_interaction> -platform offscreen)
-

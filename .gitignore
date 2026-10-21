@@ -1,5 +1,8 @@
 /.cache
 /build
+# Parallel-lane build dirs (build-<lane>), used so concurrent agents do not
+# race each other's ninja in a shared tree. Same rationale as /build.
+/build-*
 /.agents
 /.*
 /txt
