@@ -14,9 +14,11 @@ Window {
     FileChangesPanel {
         id: panel
         anchors.left: parent.left
-        anchors.right: parent.right
         anchors.top: parent.top
         anchors.margins: 12
+        // Explicit width (instead of anchors.right) so a test can squeeze
+        // the panel down to the 220px production minimum.
+        width: Math.max(0, parent.width - 24)
     }
 
     function setCheckpoints(items) { panel.checkpoints = items }
@@ -62,11 +64,19 @@ Window {
     function folderCollapsed(path) { return panel.treeIsCollapsed(path) }
     function panelVisible() { return panel.visible }
     function panelHeight() { return panel.implicitHeight }
+    function panelWidth() { return panel.width }
+    function setPanelWidth(px) { panel.width = px }
     function listVisible() { return panel.listVisible }
     function detailVisible() { return panel.detailVisible }
     function undoDialogVisible() { return panel.undoDialogVisible }
     function dialogItem() { return panel.detailDialogItem }
     function detailPath() { return panel.detailPath() }
     function detailDiffLineCount() { return panel.detailDiffLineCount() }
+    // Inline split: drive the divider like a drag would and read back the
+    // resulting geometry.
+    function dragSplit(delta) { panel.adjustSplit(delta) }
+    function resetSplit() { panel.resetSplit() }
+    function splitRatio() { return panel.listRatio }
+    function treeHeight() { return panel.treeHeight }
     function backgroundColor() { return Theme.bgSecondary.toString() }
 }

@@ -270,10 +270,14 @@ qt_add_qml_module(nexus_ai
         src/ui/components/ShortcutsDialog.qml
         # F1: todo_write task list (read-only, fed by AgentVM.todoList)
         src/ui/components/TodoListPanel.qml
+        # 任务清单对话框：把待办列表从窄侧栏移进可按需打开的弹窗
+        src/ui/components/TodoDialog.qml
         # G2: '@' reference status chips (fed by AgentVM.inspectFileReferences)
         src/ui/components/ReferenceChipRow.qml
         # G4: session file checkpoints (fed by AgentVM.fileCheckpoints)
         src/ui/components/FileChangesPanel.qml
+        # G4: the review dialog - the panel's wide host (tree beside diff)
+        src/ui/components/ReviewDialog.qml
         # 审阅升级：扁平化目录树（审阅 / Git 状态 / 提交文件共用）+ 路径工具
         src/ui/components/ChangeTree.qml
         src/ui/components/FileTree.js

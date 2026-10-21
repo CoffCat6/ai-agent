@@ -4,17 +4,31 @@ import QtQuick.Layouts
 import NexusAI
 import NexusAI.ViewModels
 
-// Wide review dialog for one file checkpoint. Review is scoped to what the
-// agent wrote in this session: the write-time diff is the only view. The live
-// working tree and git history live in the Git tab instead. The left column
-// lists every file of the session (same tree as the panel) so review does not
-// need closing/reopening per file; viewMode switches the diff between unified
-// and side-by-side renderings.
-Dialog {
-    id: dialog
+// Inline review pane for one file checkpoint.
+//
+// HISTORY: this component used to be a modal Dialog (1120x760) that covered
+// the whole conversation while a diff was open. The review tab now hosts it
+// inline, below a draggable divider, so reviewing a file never hides the
+// chat. The file name - and with it the QML type name - is deliberately
+// kept: a QML module registers its types by file name, so renaming the
+// file would need a CMake change outside the scope of this refactor.
+//
+// Review is scoped to what the agent wrote in this session: the write-time
+// diff is the only view. The live working tree and git history live in the
+// Git tab instead. `entries` lists every file of the session so review does
+// not need closing/reopening per file; viewMode switches the diff between
+// unified and side-by-side renderings.
+//
+// The chrome is split into three rows - title, meta, actions - so it
+// survives a narrow column, and the timestamp drops out below 320px
+// instead of squeezing the path. The wide host (the review dialog) shows
+// the same three rows in a much wider column, which keeps the row
+// structure readable instead of spreading the controls apart.
+Item {
+    id: pane
 
     property var checkpoint: null
-    // All session entries (feeding the left tree); empty -> tree hidden.
+    // All session entries (used for file stepping); empty -> no stepping.
     property var checkpoints: []
     // function(entry) -> detail map; injected by FileChangesPanel.
     property var detailFor: null
@@ -27,6 +41,10 @@ Dialog {
     // and was rebuilt from the current file content.
     property bool diffFallback: false
     property string viewMode: "unified"
+    // Hint shown while no file is open. The host knows where its file
+    // list is - above the diff in the stacked layout, beside it in the
+    // wide one - so the wording points at the right place.
+    property string selectHint: qsTr("在上方选择一个文件查看差异")
 
     readonly property bool hasDiff: diffText.length > 0
     readonly property bool undone: checkpoint ? checkpoint.undone === true : false
@@ -38,17 +56,25 @@ Dialog {
     readonly property var entries: (checkpoints && checkpoints.length > 0)
         ? checkpoints : (checkpoint ? [checkpoint] : [])
     readonly property int entryIndex: indexOfEntry(checkpoint)
+    // True while a file is open in the pane. The pane itself always stays
+    // in the layout (an invisible subtree is never polished, so its diff
+    // list would only get its size - and its rows - a frame later); this
+    // flag is what the host reports as "detail shown".
+    readonly property bool active: checkpoint !== null
+    // The modal dialog used this flag for its second (file tree) column.
+    // The inline pane reuses the panel's own tree, so the flag now means
+    // "the session touched more than one file" - i.e. the file-stepping
+    // controls are worth showing.
     readonly property bool treeVisible: entries.length > 1
-    // The tree column must not stretch: without a maximum the layout lets it
-    // consume the whole row and collapses the diff pane.
-    readonly property real treePaneWidth:
-        Math.min(260, Math.max(140, width * 0.32))
     readonly property bool canStepBack: entryIndex > 0
     readonly property bool canStepForward: entryIndex >= 0
         && entryIndex < entries.length - 1
     readonly property bool undoOffered: checkpoint !== null
         && !undone && !truncated
 
+    // Emitted whenever the pane switches to another file, so the host can
+    // mirror the selection (tree highlight) and show the pane.
+    signal entrySelected(var entry)
     signal undoRequested(var entry)
 
     function indexOfEntry(entry) {
@@ -61,7 +87,7 @@ Dialog {
 
     function detailForEntry(entry) {
         if (!entry) return {}
-        if (dialog.detailFor) return dialog.detailFor(entry)
+        if (pane.detailFor) return pane.detailFor(entry)
         return AgentVM.fileCheckpointDetail(entry.id)
     }
 
@@ -72,27 +98,40 @@ Dialog {
         diffFallback = d.diffFallback === true
     }
 
+    // Opening = pointing the pane at a file. The host decides whether the
+    // pane is on screen (there is no popup to raise any more).
     function openFor(entry, detail) {
-        checkpoint = entry || null
+        if (!entry) return
+        checkpoint = entry
         if (detail === undefined || detail === null)
             applyDetail(detailForEntry(entry))
         else
             applyDetail(detail)
-        open()
+        pane.entrySelected(entry)
     }
 
-    // Switching files inside the dialog.
+    // Switching files inside the pane.
     function selectEntry(entry) {
         if (!entry) return
         if (checkpoint && entry.id === checkpoint.id) return
         checkpoint = entry
         applyDetail(detailForEntry(entry))
+        pane.entrySelected(entry)
     }
 
     function stepEntry(delta) {
         const next = entryIndex + delta
         if (next < 0 || next >= entries.length) return
         selectEntry(entries[next])
+    }
+
+    // Closing the review (host-side): forget the current file so the pane
+    // can go back to its empty state.
+    function clearSelection() {
+        checkpoint = null
+        diffText = ""
+        diffTruncated = false
+        diffFallback = false
     }
 
     function statusText() {
@@ -116,238 +155,179 @@ Dialog {
         return qsTr("此记录没有保存内容差异。")
     }
 
-    parent: Overlay.overlay
-    anchors.centerIn: parent
-    width: Math.min(1120, parent ? parent.width - 48 : 1120)
-    height: Math.min(760, parent ? parent.height - 80 : 760)
-    modal: true
-    padding: 0
-    closePolicy: Popup.CloseOnEscape | Popup.CloseOnPressOutside
-    background: DialogBackground {}
+    ColumnLayout {
+        anchors.fill: parent
+        spacing: 4
 
-    contentItem: ColumnLayout {
-        spacing: 8
-
+        // ── Title row: which file is shown ───────────
         RowLayout {
             Layout.fillWidth: true
-            Layout.leftMargin: 16
-            Layout.rightMargin: 12
-            Layout.topMargin: 14
-            spacing: 8
+            spacing: 6
+            visible: pane.active
 
             AppIcon {
                 icon: "file"
-                size: 14
-                iconColor: dialog.statusColor()
+                size: 13
+                iconColor: pane.statusColor()
             }
 
             Text {
+                id: pathText
                 Layout.fillWidth: true
-                text: dialog.checkpoint ? dialog.checkpoint.path : ""
+                text: pane.checkpoint ? pane.checkpoint.path : ""
                 color: Theme.textPrimary
                 font.family: Theme.fontMono
-                font.pixelSize: Theme.fontSizeBody
+                font.pixelSize: Theme.fontSizeCaption
                 elide: Text.ElideMiddle
                 Accessible.name: text
+
+                // The path is the first thing to be elided in a narrow
+                // panel - keep the full value reachable on hover.
+                HoverHandler { id: pathHover }
+                ToolTip.visible: pathHover.hovered && pathText.truncated
+                ToolTip.delay: 400
+                ToolTip.text: pathText.text
             }
 
             Text {
-                visible: dialog.addedLines > 0
-                text: "+" + dialog.addedLines
+                visible: pane.addedLines > 0
+                text: "+" + pane.addedLines
                 color: Theme.statusSuccess
                 font.family: Theme.fontMono
                 font.pixelSize: Theme.fontSizeCaption
             }
 
             Text {
-                visible: dialog.removedLines > 0
-                text: "−" + dialog.removedLines
+                visible: pane.removedLines > 0
+                text: "−" + pane.removedLines
                 color: Theme.statusDanger
                 font.family: Theme.fontMono
                 font.pixelSize: Theme.fontSizeCaption
             }
-
-            IconButton {
-                objectName: "prevFileButton"
-                visible: dialog.treeVisible
-                icon: "chevron-left"
-                enabled: dialog.canStepBack
-                opacity: enabled ? 1.0 : 0.35
-                tooltip: qsTr("上一个文件")
-                onClicked: dialog.stepEntry(-1)
-            }
-
-            IconButton {
-                objectName: "nextFileButton"
-                visible: dialog.treeVisible
-                icon: "chevron-right"
-                enabled: dialog.canStepForward
-                opacity: enabled ? 1.0 : 0.35
-                tooltip: qsTr("下一个文件")
-                onClicked: dialog.stepEntry(1)
-            }
-
-            AppButton {
-                objectName: "unifiedModeButton"
-                visible: dialog.hasDiff
-                text: qsTr("统一")
-                implicitHeight: 24
-                highlighted: dialog.viewMode === "unified"
-                buttonColor: "transparent"
-                textColor: highlighted ? Theme.bgPrimary : Theme.textSecondary
-                onClicked: dialog.viewMode = "unified"
-            }
-
-            AppButton {
-                objectName: "splitModeButton"
-                visible: dialog.hasDiff
-                text: qsTr("并排")
-                implicitHeight: 24
-                highlighted: dialog.viewMode === "split"
-                buttonColor: "transparent"
-                textColor: highlighted ? Theme.bgPrimary : Theme.textSecondary
-                onClicked: dialog.viewMode = "split"
-            }
-
-            AppButton {
-                objectName: "undoButton"
-                visible: dialog.undoOffered
-                text: qsTr("撤销")
-                implicitHeight: 24
-                enabled: !AgentVM.stateBusy
-                opacity: enabled ? 1.0 : 0.4
-                onClicked: dialog.undoRequested(dialog.checkpoint)
-                Accessible.name: qsTr("撤销该文件在本会话的全部改动")
-            }
-
-            IconButton {
-                icon: "close"
-                onClicked: dialog.close()
-                Accessible.name: qsTr("关闭文件改动详情")
-            }
         }
 
+        // ── Meta row: state, time, file stepping ────
         RowLayout {
             Layout.fillWidth: true
-            Layout.leftMargin: 16
-            Layout.rightMargin: 16
-            spacing: 8
-
-            Text {
-                text: dialog.statusText()
-                color: dialog.statusColor()
-                font.family: Theme.fontSans
-                font.pixelSize: 10
-            }
+            spacing: 4
+            visible: pane.active
 
             Text {
                 Layout.fillWidth: true
-                text: dialog.checkpoint
-                    ? Qt.formatDateTime(new Date(dialog.checkpoint.createdAt),
+                text: pane.statusText()
+                color: pane.statusColor()
+                font.family: Theme.fontSans
+                font.pixelSize: 10
+                elide: Text.ElideRight
+            }
+
+            Text {
+                // The timestamp is the first thing to go when the panel is
+                // narrow: it is reference information, while the status and
+                // the stepping controls are actionable.
+                visible: pane.width >= 320
+                text: pane.checkpoint
+                    ? Qt.formatDateTime(new Date(pane.checkpoint.createdAt),
                                         "yyyy-MM-dd HH:mm:ss")
                     : ""
                 color: Theme.textSecondary
                 font.family: Theme.fontSans
                 font.pixelSize: 10
+                elide: Text.ElideRight
             }
 
-            Text {
-                visible: dialog.checkpoint
-                         && (dialog.checkpoint.changeCount || 1) > 1
-                text: qsTr("本次会话共 %1 次改动").arg(dialog.checkpoint
-                                                     ? dialog.checkpoint.changeCount : 1)
-                color: Theme.textSecondary
-                font.family: Theme.fontSans
-                font.pixelSize: 10
-            }
-        }
-
-        RowLayout {
-            Layout.fillWidth: true
-            Layout.fillHeight: true
-            Layout.leftMargin: 16
-            Layout.rightMargin: 16
-            spacing: 10
-
-            // ── Session file tree ──────────────────────
-            ColumnLayout {
-                objectName: "reviewFileTree"
-                visible: dialog.treeVisible
-                Layout.preferredWidth: dialog.treePaneWidth
-                Layout.maximumWidth: dialog.treePaneWidth
-                Layout.fillHeight: true
-                spacing: 4
-
-                Text {
-                    text: qsTr("本会话文件 · %1").arg(dialog.entries.length)
-                    color: Theme.textSecondary
-                    font.pixelSize: 10
-                    font.bold: true
-                    font.family: Theme.fontMono
-                }
-
-                ChangeTree {
-                    id: entriesTree
-                    Layout.fillWidth: true
-                    Layout.fillHeight: true
-                    items: dialog.entries
-                    basePath: dialog.projectRoot
-                    rowHeight: 24
-                    fileColorFor: function(entry) {
-                        return entry.undone === true ? Theme.textSecondary
-                                                     : Theme.brandPrimary
-                    }
-                    onFileActivated: (item) => dialog.selectEntry(item)
-                }
+            IconButton {
+                objectName: "prevFileButton"
+                visible: pane.treeVisible
+                Layout.preferredWidth: 22
+                Layout.preferredHeight: 22
+                radius: 4
+                icon: "chevron-left"
+                iconSize: 11
+                enabled: pane.canStepBack
+                opacity: enabled ? 1.0 : 0.35
+                tooltip: qsTr("上一个文件")
+                onClicked: pane.stepEntry(-1)
             }
 
-            Rectangle {
-                visible: dialog.treeVisible
-                Layout.preferredWidth: 1
-                Layout.fillHeight: true
-                color: Theme.borderSubtle
-            }
-
-            ColumnLayout {
-                Layout.fillWidth: true
-                Layout.fillHeight: true
-                spacing: 4
-
-                Text {
-                    Layout.fillWidth: true
-                    visible: dialog.diffFallback
-                    text: qsTr("该记录未保存差异，以下按当前文件内容重建（文件未再改动时即为当时写入的内容）。")
-                    color: Theme.statusWarning
-                    font.family: Theme.fontSans
-                    font.pixelSize: 10
-                    wrapMode: Text.Wrap
-                }
-
-                DiffView {
-                    id: detailDiffView
-                    objectName: "detailDiffView"
-                    Layout.fillWidth: true
-                    Layout.fillHeight: true
-                    diffText: dialog.diffText
-                    diffTruncated: dialog.diffTruncated
-                    viewMode: dialog.viewMode
-                    emptyText: dialog.emptyText()
-                }
+            IconButton {
+                objectName: "nextFileButton"
+                visible: pane.treeVisible
+                Layout.preferredWidth: 22
+                Layout.preferredHeight: 22
+                radius: 4
+                icon: "chevron-right"
+                iconSize: 11
+                enabled: pane.canStepForward
+                opacity: enabled ? 1.0 : 0.35
+                tooltip: qsTr("下一个文件")
+                onClicked: pane.stepEntry(1)
             }
         }
 
+        // ── Action row: diff mode + undo ─────────────
         RowLayout {
             Layout.fillWidth: true
-            Layout.leftMargin: 16
-            Layout.rightMargin: 16
-            Layout.bottomMargin: 14
+            spacing: 4
+            visible: pane.active
+
+            AppButton {
+                objectName: "unifiedModeButton"
+                visible: pane.hasDiff
+                text: qsTr("统一")
+                implicitHeight: 22
+                highlighted: pane.viewMode === "unified"
+                buttonColor: "transparent"
+                textColor: highlighted ? Theme.bgPrimary : Theme.textSecondary
+                onClicked: pane.viewMode = "unified"
+            }
+
+            AppButton {
+                objectName: "splitModeButton"
+                visible: pane.hasDiff
+                text: qsTr("并排")
+                implicitHeight: 22
+                highlighted: pane.viewMode === "split"
+                buttonColor: "transparent"
+                textColor: highlighted ? Theme.bgPrimary : Theme.textSecondary
+                onClicked: pane.viewMode = "split"
+            }
 
             Item { Layout.fillWidth: true }
 
             AppButton {
-                text: qsTr("关闭")
-                onClicked: dialog.close()
+                objectName: "undoButton"
+                visible: pane.undoOffered
+                text: qsTr("撤销")
+                implicitHeight: 22
+                enabled: !AgentVM.stateBusy
+                opacity: enabled ? 1.0 : 0.4
+                onClicked: pane.undoRequested(pane.checkpoint)
+                Accessible.name: qsTr("撤销该文件在本会话的全部改动")
             }
+        }
+
+        Text {
+            Layout.fillWidth: true
+            visible: pane.diffFallback
+            text: qsTr("该记录未保存差异，以下按当前文件内容重建（文件未再改动时即为当时写入的内容）。")
+            color: Theme.statusWarning
+            font.family: Theme.fontSans
+            font.pixelSize: 10
+            wrapMode: Text.Wrap
+        }
+
+        DiffView {
+            id: detailDiffView
+            objectName: "detailDiffView"
+            Layout.fillWidth: true
+            Layout.fillHeight: true
+            diffText: pane.diffText
+            diffTruncated: pane.diffTruncated
+            viewMode: pane.viewMode
+            // Without a file there is no diff to render - the hint takes
+            // the empty state's place instead of a blank pane.
+            emptyText: pane.checkpoint ? pane.emptyText() : pane.selectHint
         }
     }
 }

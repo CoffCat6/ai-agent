@@ -395,17 +395,17 @@
 <context>
     <name>ChangeTree</name>
     <message>
-        <location filename="../src/ui/components/ChangeTree.qml" line="169"/>
+        <location filename="../src/ui/components/ChangeTree.qml" line="201"/>
         <source>折叠或展开目录 %1</source>
         <translation>折叠或展开目录 %1</translation>
     </message>
     <message>
-        <location filename="../src/ui/components/ChangeTree.qml" line="251"/>
+        <location filename="../src/ui/components/ChangeTree.qml" line="283"/>
         <source>原文件过大，仅记录了路径，无法展示内容差异或撤销</source>
         <translation>原文件过大，仅记录了路径，无法展示内容差异或撤销</translation>
     </message>
     <message>
-        <location filename="../src/ui/components/ChangeTree.qml" line="289"/>
+        <location filename="../src/ui/components/ChangeTree.qml" line="321"/>
         <source>已撤销</source>
         <translation>已撤销</translation>
     </message>
@@ -426,7 +426,7 @@
 <context>
     <name>ContextPanel</name>
     <message>
-        <location filename="../src/ui/panels/ContextPanel.qml" line="18"/>
+        <location filename="../src/ui/panels/ContextPanel.qml" line="20"/>
         <source>上下文面板</source>
         <translation>上下文面板</translation>
     </message>
@@ -435,12 +435,12 @@
         <translation type="vanished">文本文件 (*.txt *.md *.json *.csv *.log)</translation>
     </message>
     <message>
-        <location filename="../src/ui/panels/ContextPanel.qml" line="35"/>
+        <location filename="../src/ui/panels/ContextPanel.qml" line="39"/>
         <source>所有文件 (*)</source>
         <translation>所有文件 (*)</translation>
     </message>
     <message>
-        <location filename="../src/ui/panels/ContextPanel.qml" line="35"/>
+        <location filename="../src/ui/panels/ContextPanel.qml" line="39"/>
         <source>支持的文件 (*.txt *.md *.json *.csv *.log *.pdf)</source>
         <translation>支持的文件 (*.txt *.md *.json *.csv *.log *.pdf)</translation>
     </message>
@@ -449,105 +449,110 @@
         <translation type="vanished">审阅 · %1</translation>
     </message>
     <message>
-        <location filename="../src/ui/panels/ContextPanel.qml" line="81"/>
         <source>审阅</source>
-        <translation>审阅</translation>
+        <translation type="vanished">审阅</translation>
     </message>
     <message>
-        <location filename="../src/ui/panels/ContextPanel.qml" line="87"/>
         <source>查看本会话的文件改动审阅</source>
-        <translation>查看本会话的文件改动审阅</translation>
+        <translation type="vanished">查看本会话的文件改动审阅</translation>
     </message>
     <message>
-        <location filename="../src/ui/panels/ContextPanel.qml" line="171"/>
+        <source>本次会话暂无可审阅的文件改动。
+智能体写入或编辑文件后，这里会按目录列出改动；
+选中文件即可在下方查看内容差异。</source>
+        <translation type="vanished">本次会话暂无可审阅的文件改动。
+智能体写入或编辑文件后，这里会按目录列出改动；
+选中文件即可在下方查看内容差异。</translation>
+    </message>
+    <message>
+        <location filename="../src/ui/panels/ContextPanel.qml" line="121"/>
         <source>知识库 · %1</source>
         <translation>知识库 · %1</translation>
     </message>
     <message>
-        <location filename="../src/ui/panels/ContextPanel.qml" line="106"/>
-        <location filename="../src/ui/panels/ContextPanel.qml" line="172"/>
+        <location filename="../src/ui/panels/ContextPanel.qml" line="88"/>
+        <location filename="../src/ui/panels/ContextPanel.qml" line="122"/>
         <source>知识库</source>
         <translation>知识库</translation>
     </message>
     <message>
-        <location filename="../src/ui/panels/ContextPanel.qml" line="94"/>
+        <location filename="../src/ui/panels/ContextPanel.qml" line="76"/>
         <source>Git</source>
         <translation>Git</translation>
     </message>
     <message>
-        <location filename="../src/ui/panels/ContextPanel.qml" line="100"/>
+        <location filename="../src/ui/panels/ContextPanel.qml" line="82"/>
         <source>查看 Git 管理与历史</source>
         <translation>查看 Git 管理与历史</translation>
     </message>
     <message>
-        <location filename="../src/ui/panels/ContextPanel.qml" line="112"/>
+        <location filename="../src/ui/panels/ContextPanel.qml" line="94"/>
         <source>查看知识库文档</source>
         <translation>查看知识库文档</translation>
     </message>
     <message>
-        <location filename="../src/ui/panels/ContextPanel.qml" line="140"/>
         <source>本次会话暂无可审阅的文件改动。
 智能体写入或编辑文件后，这里会按目录列出改动。</source>
-        <translation>本次会话暂无可审阅的文件改动。
+        <translation type="vanished">本次会话暂无可审阅的文件改动。
 智能体写入或编辑文件后，这里会按目录列出改动。</translation>
     </message>
     <message>
-        <location filename="../src/ui/panels/ContextPanel.qml" line="187"/>
+        <location filename="../src/ui/panels/ContextPanel.qml" line="137"/>
         <source>文档内容会随提问发送给当前模型服务；如需阻止，请在设置中开启“仅本地模式”</source>
         <translation>文档内容会随提问发送给当前模型服务；如需阻止，请在设置中开启“仅本地模式”</translation>
     </message>
     <message>
-        <location filename="../src/ui/panels/ContextPanel.qml" line="225"/>
+        <location filename="../src/ui/panels/ContextPanel.qml" line="175"/>
         <source>批量导入 %1/%2：正在取消…</source>
         <translation>批量导入 %1/%2：正在取消…</translation>
     </message>
     <message>
-        <location filename="../src/ui/panels/ContextPanel.qml" line="229"/>
+        <location filename="../src/ui/panels/ContextPanel.qml" line="179"/>
         <source>批量导入 %1/%2：%3</source>
         <translation>批量导入 %1/%2：%3</translation>
     </message>
     <message>
-        <location filename="../src/ui/panels/ContextPanel.qml" line="234"/>
+        <location filename="../src/ui/panels/ContextPanel.qml" line="184"/>
         <source>已嵌入 %1/%2</source>
         <translation>已嵌入 %1/%2</translation>
     </message>
     <message>
-        <location filename="../src/ui/panels/ContextPanel.qml" line="235"/>
+        <location filename="../src/ui/panels/ContextPanel.qml" line="185"/>
         <source>导入中…</source>
         <translation>导入中…</translation>
     </message>
     <message>
-        <location filename="../src/ui/panels/ContextPanel.qml" line="253"/>
+        <location filename="../src/ui/panels/ContextPanel.qml" line="203"/>
         <source>正在取消（等待当前文件完成）</source>
         <translation>正在取消（等待当前文件完成）</translation>
     </message>
     <message>
-        <location filename="../src/ui/panels/ContextPanel.qml" line="254"/>
+        <location filename="../src/ui/panels/ContextPanel.qml" line="204"/>
         <source>取消批量导入（未开始的文件将跳过）</source>
         <translation>取消批量导入（未开始的文件将跳过）</translation>
     </message>
     <message>
-        <location filename="../src/ui/panels/ContextPanel.qml" line="268"/>
+        <location filename="../src/ui/panels/ContextPanel.qml" line="218"/>
         <source>导入文档（可多选）</source>
         <translation>导入文档（可多选）</translation>
     </message>
     <message>
-        <location filename="../src/ui/panels/ContextPanel.qml" line="278"/>
+        <location filename="../src/ui/panels/ContextPanel.qml" line="228"/>
         <source>重试失败的导入（%1）</source>
         <translation>重试失败的导入（%1）</translation>
     </message>
     <message>
-        <location filename="../src/ui/panels/ContextPanel.qml" line="280"/>
+        <location filename="../src/ui/panels/ContextPanel.qml" line="230"/>
         <source>重试失败的批量导入</source>
         <translation>重试失败的批量导入</translation>
     </message>
     <message>
-        <location filename="../src/ui/panels/ContextPanel.qml" line="386"/>
+        <location filename="../src/ui/panels/ContextPanel.qml" line="336"/>
         <source>%1 段 · %2 字符</source>
         <translation>%1 段 · %2 字符</translation>
     </message>
     <message>
-        <location filename="../src/ui/panels/ContextPanel.qml" line="417"/>
+        <location filename="../src/ui/panels/ContextPanel.qml" line="367"/>
         <source>移除文档</source>
         <translation>移除文档</translation>
     </message>
@@ -556,7 +561,7 @@
         <translation type="vanished">导入文档</translation>
     </message>
     <message>
-        <location filename="../src/ui/panels/ContextPanel.qml" line="285"/>
+        <location filename="../src/ui/panels/ContextPanel.qml" line="235"/>
         <source>导入文本或 PDF 文件（.txt / .md / .pdf …），
 模型即可检索其内容回答问题</source>
         <translation>导入文本或 PDF 文件（.txt / .md / .pdf …），
@@ -569,12 +574,12 @@
 模型即可检索其内容回答问题</translation>
     </message>
     <message>
-        <location filename="../src/ui/panels/ContextPanel.qml" line="366"/>
+        <location filename="../src/ui/panels/ContextPanel.qml" line="316"/>
         <source>降级</source>
         <translation>降级</translation>
     </message>
     <message>
-        <location filename="../src/ui/panels/ContextPanel.qml" line="380"/>
+        <location filename="../src/ui/panels/ContextPanel.qml" line="330"/>
         <source>导入时嵌入服务不可用，已使用本地降级嵌入，检索质量有限。可点击右侧刷新按钮重新嵌入。</source>
         <translation>导入时嵌入服务不可用，已使用本地降级嵌入，检索质量有限。可点击右侧刷新按钮重新嵌入。</translation>
     </message>
@@ -587,7 +592,7 @@
         <translation type="vanished"> 字符</translation>
     </message>
     <message>
-        <location filename="../src/ui/panels/ContextPanel.qml" line="404"/>
+        <location filename="../src/ui/panels/ContextPanel.qml" line="354"/>
         <source>重新嵌入</source>
         <translation>重新嵌入</translation>
     </message>
@@ -615,12 +620,12 @@
         <translation>此记录没有保存内容差异。</translation>
     </message>
     <message>
-        <location filename="../src/ui/components/DiffView.qml" line="364"/>
+        <location filename="../src/ui/components/DiffView.qml" line="377"/>
         <source>差异过大，仅显示截断后的部分；撤销仍使用完整的改动前内容。</source>
         <translation>差异过大，仅显示截断后的部分；撤销仍使用完整的改动前内容。</translation>
     </message>
     <message>
-        <location filename="../src/ui/components/DiffView.qml" line="373"/>
+        <location filename="../src/ui/components/DiffView.qml" line="386"/>
         <source>差异内容</source>
         <translation>差异内容</translation>
     </message>
@@ -713,77 +718,81 @@
 <context>
     <name>FileChangeDetailDialog</name>
     <message>
-        <location filename="../src/ui/components/FileChangeDetailDialog.qml" line="100"/>
+        <location filename="../src/ui/components/FileChangeDetailDialog.qml" line="139"/>
         <source>已撤销</source>
         <translation>已撤销</translation>
     </message>
     <message>
-        <location filename="../src/ui/components/FileChangeDetailDialog.qml" line="101"/>
+        <location filename="../src/ui/components/FileChangeDetailDialog.qml" line="140"/>
         <source>仅记录路径，内容未保存</source>
         <translation>仅记录路径，内容未保存</translation>
     </message>
     <message>
-        <location filename="../src/ui/components/FileChangeDetailDialog.qml" line="102"/>
+        <location filename="../src/ui/components/FileChangeDetailDialog.qml" line="141"/>
         <source>已修改</source>
         <translation>已修改</translation>
     </message>
     <message>
-        <location filename="../src/ui/components/FileChangeDetailDialog.qml" line="102"/>
+        <location filename="../src/ui/components/FileChangeDetailDialog.qml" line="141"/>
         <source>新建文件</source>
         <translation>新建文件</translation>
     </message>
     <message>
-        <location filename="../src/ui/components/FileChangeDetailDialog.qml" line="113"/>
+        <location filename="../src/ui/components/FileChangeDetailDialog.qml" line="152"/>
         <source>原文件超过单文件上限，仅记录了路径，无法展示内容差异；请用 git 查看或恢复。</source>
         <translation>原文件超过单文件上限，仅记录了路径，无法展示内容差异；请用 git 查看或恢复。</translation>
     </message>
     <message>
-        <location filename="../src/ui/components/FileChangeDetailDialog.qml" line="115"/>
+        <location filename="../src/ui/components/FileChangeDetailDialog.qml" line="154"/>
         <source>该新建文件没有可读取的内容：它可能已被删除或改名。</source>
         <translation>该新建文件没有可读取的内容：它可能已被删除或改名。</translation>
     </message>
     <message>
-        <location filename="../src/ui/components/FileChangeDetailDialog.qml" line="116"/>
+        <location filename="../src/ui/components/FileChangeDetailDialog.qml" line="155"/>
         <source>此记录没有保存内容差异。</source>
         <translation>此记录没有保存内容差异。</translation>
     </message>
     <message>
-        <location filename="../src/ui/components/FileChangeDetailDialog.qml" line="176"/>
+        <location filename="../src/ui/components/FileChangeDetailDialog.qml" line="249"/>
         <source>上一个文件</source>
         <translation>上一个文件</translation>
     </message>
     <message>
-        <location filename="../src/ui/components/FileChangeDetailDialog.qml" line="186"/>
+        <location filename="../src/ui/components/FileChangeDetailDialog.qml" line="263"/>
         <source>下一个文件</source>
         <translation>下一个文件</translation>
     </message>
     <message>
-        <location filename="../src/ui/components/FileChangeDetailDialog.qml" line="193"/>
+        <location filename="../src/ui/components/FileChangeDetailDialog.qml" line="277"/>
         <source>统一</source>
         <translation>统一</translation>
     </message>
     <message>
-        <location filename="../src/ui/components/FileChangeDetailDialog.qml" line="204"/>
+        <location filename="../src/ui/components/FileChangeDetailDialog.qml" line="288"/>
         <source>并排</source>
         <translation>并排</translation>
     </message>
     <message>
-        <location filename="../src/ui/components/FileChangeDetailDialog.qml" line="215"/>
+        <location filename="../src/ui/components/FileChangeDetailDialog.qml" line="301"/>
         <source>撤销</source>
         <translation>撤销</translation>
     </message>
     <message>
-        <location filename="../src/ui/components/FileChangeDetailDialog.qml" line="220"/>
+        <location filename="../src/ui/components/FileChangeDetailDialog.qml" line="306"/>
         <source>撤销该文件在本会话的全部改动</source>
         <translation>撤销该文件在本会话的全部改动</translation>
     </message>
     <message>
-        <location filename="../src/ui/components/FileChangeDetailDialog.qml" line="226"/>
-        <source>关闭文件改动详情</source>
-        <translation>关闭文件改动详情</translation>
+        <location filename="../src/ui/components/FileChangeDetailDialog.qml" line="47"/>
+        <source>在上方选择一个文件查看差异</source>
+        <translation>在上方选择一个文件查看差异</translation>
     </message>
     <message>
-        <location filename="../src/ui/components/FileChangeDetailDialog.qml" line="319"/>
+        <source>关闭文件改动详情</source>
+        <translation type="vanished">关闭文件改动详情</translation>
+    </message>
+    <message>
+        <location filename="../src/ui/components/FileChangeDetailDialog.qml" line="313"/>
         <source>该记录未保存差异，以下按当前文件内容重建（文件未再改动时即为当时写入的内容）。</source>
         <translation>该记录未保存差异，以下按当前文件内容重建（文件未再改动时即为当时写入的内容）。</translation>
     </message>
@@ -792,9 +801,8 @@
         <translation type="vanished">共 %1 次改动</translation>
     </message>
     <message>
-        <location filename="../src/ui/components/FileChangeDetailDialog.qml" line="257"/>
         <source>本次会话共 %1 次改动</source>
-        <translation>本次会话共 %1 次改动</translation>
+        <translation type="vanished">本次会话共 %1 次改动</translation>
     </message>
     <message>
         <source>本次改动</source>
@@ -813,9 +821,8 @@
         <translation type="vanished">不在 Git 仓库中，仅显示本次改动</translation>
     </message>
     <message>
-        <location filename="../src/ui/components/FileChangeDetailDialog.qml" line="282"/>
         <source>本会话文件 · %1</source>
-        <translation>本会话文件 · %1</translation>
+        <translation type="vanished">本会话文件 · %1</translation>
     </message>
     <message>
         <source>正在读取工作区差异…</source>
@@ -846,15 +853,14 @@
         <translation type="vanished">点击左侧提交查看差异。</translation>
     </message>
     <message>
-        <location filename="../src/ui/components/FileChangeDetailDialog.qml" line="348"/>
         <source>关闭</source>
-        <translation>关闭</translation>
+        <translation type="vanished">关闭</translation>
     </message>
 </context>
 <context>
     <name>FileChangesPanel</name>
     <message>
-        <location filename="../src/ui/components/FileChangesPanel.qml" line="111"/>
+        <location filename="../src/ui/components/FileChangesPanel.qml" line="241"/>
         <source>已撤销</source>
         <translation>已撤销</translation>
     </message>
@@ -891,7 +897,7 @@
         <translation type="vanished">将删除本会话新建的文件</translation>
     </message>
     <message>
-        <location filename="../src/ui/components/FileChangesPanel.qml" line="128"/>
+        <location filename="../src/ui/components/FileChangesPanel.qml" line="258"/>
         <source>撤销失败：文件或检查点已不可用。</source>
         <translation>撤销失败：文件或检查点已不可用。</translation>
     </message>
@@ -908,53 +914,63 @@
         <translation type="vanished">查看文件改动详情</translation>
     </message>
     <message>
-        <location filename="../src/ui/components/FileChangesPanel.qml" line="106"/>
+        <location filename="../src/ui/components/FileChangesPanel.qml" line="236"/>
         <source>不可撤销</source>
         <translation>不可撤销</translation>
     </message>
     <message>
-        <location filename="../src/ui/components/FileChangesPanel.qml" line="107"/>
+        <location filename="../src/ui/components/FileChangesPanel.qml" line="237"/>
         <source>原文件过大，仅记录了路径，请用 git 恢复</source>
         <translation>原文件过大，仅记录了路径，请用 git 恢复</translation>
     </message>
     <message>
-        <location filename="../src/ui/components/FileChangesPanel.qml" line="111"/>
-        <location filename="../src/ui/components/FileChangesPanel.qml" line="308"/>
+        <location filename="../src/ui/components/FileChangesPanel.qml" line="241"/>
+        <location filename="../src/ui/components/FileChangesPanel.qml" line="512"/>
         <source>撤销</source>
         <translation>撤销</translation>
     </message>
     <message>
-        <location filename="../src/ui/components/FileChangesPanel.qml" line="113"/>
+        <location filename="../src/ui/components/FileChangesPanel.qml" line="243"/>
         <source>本会话对该文件的改动已撤销</source>
         <translation>本会话对该文件的改动已撤销</translation>
     </message>
     <message>
-        <location filename="../src/ui/components/FileChangesPanel.qml" line="114"/>
+        <location filename="../src/ui/components/FileChangesPanel.qml" line="244"/>
         <source>撤销该文件在本会话的全部改动</source>
         <translation>撤销该文件在本会话的全部改动</translation>
     </message>
     <message>
-        <location filename="../src/ui/components/FileChangesPanel.qml" line="153"/>
+        <location filename="../src/ui/components/FileChangesPanel.qml" line="291"/>
         <source>展开或折叠审阅列表</source>
         <translation>展开或折叠审阅列表</translation>
     </message>
     <message>
-        <location filename="../src/ui/components/FileChangesPanel.qml" line="168"/>
+        <location filename="../src/ui/components/FileChangesPanel.qml" line="306"/>
         <source>审阅 · %1</source>
         <translation>审阅 · %1</translation>
     </message>
     <message>
-        <location filename="../src/ui/components/FileChangesPanel.qml" line="203"/>
+        <location filename="../src/ui/components/FileChangesPanel.qml" line="341"/>
         <source>折叠全部目录</source>
         <translation>折叠全部目录</translation>
     </message>
     <message>
-        <location filename="../src/ui/components/FileChangesPanel.qml" line="215"/>
+        <location filename="../src/ui/components/FileChangesPanel.qml" line="353"/>
         <source>展开全部目录</source>
         <translation>展开全部目录</translation>
     </message>
     <message>
-        <location filename="../src/ui/components/FileChangesPanel.qml" line="284"/>
+        <location filename="../src/ui/components/FileChangesPanel.qml" line="441"/>
+        <source>在左侧选择一个文件查看差异</source>
+        <translation>在左侧选择一个文件查看差异</translation>
+    </message>
+    <message>
+        <location filename="../src/ui/components/FileChangesPanel.qml" line="442"/>
+        <source>在上方选择一个文件查看差异</source>
+        <translation>在上方选择一个文件查看差异</translation>
+    </message>
+    <message>
+        <location filename="../src/ui/components/FileChangesPanel.qml" line="488"/>
         <source>将把以下文件恢复为本次会话首次改动前的内容：
 %1
 此后对该文件的手工修改也会被覆盖。</source>
@@ -963,14 +979,14 @@
 此后对该文件的手工修改也会被覆盖。</translation>
     </message>
     <message>
-        <location filename="../src/ui/components/FileChangesPanel.qml" line="286"/>
+        <location filename="../src/ui/components/FileChangesPanel.qml" line="490"/>
         <source>将删除模型在本会话新建的文件：
 %1</source>
         <translation>将删除模型在本会话新建的文件：
 %1</translation>
     </message>
     <message>
-        <location filename="../src/ui/components/FileChangesPanel.qml" line="289"/>
+        <location filename="../src/ui/components/FileChangesPanel.qml" line="493"/>
         <source>该文件在本会话共有 %1 次改动，本次将全部撤销。</source>
         <translation>该文件在本会话共有 %1 次改动，本次将全部撤销。</translation>
     </message>
@@ -979,7 +995,7 @@
         <translation type="vanished">撤销该文件的本次改动</translation>
     </message>
     <message>
-        <location filename="../src/ui/components/FileChangesPanel.qml" line="273"/>
+        <location filename="../src/ui/components/FileChangesPanel.qml" line="477"/>
         <source>撤销文件改动？</source>
         <translation>撤销文件改动？</translation>
     </message>
@@ -1010,7 +1026,7 @@
         <translation type="vanished">该文件在本会话共有 %1 次改动，撤销会从最近一次开始逐步回退。</translation>
     </message>
     <message>
-        <location filename="../src/ui/components/FileChangesPanel.qml" line="304"/>
+        <location filename="../src/ui/components/FileChangesPanel.qml" line="508"/>
         <source>取消</source>
         <translation>取消</translation>
     </message>
@@ -3952,7 +3968,7 @@
         <translation type="vanished">时间线里找不到与该消息对应的记录，无法安全地重置会话。</translation>
     </message>
     <message>
-        <location filename="../src/core/agent/AIAgent.cpp" line="1416"/>
+        <location filename="../src/core/agent/AIAgent.cpp" line="1418"/>
         <source>无法更新会话记录，原消息已保留，请重试。</source>
         <translation>无法更新会话记录，原消息已保留，请重试。</translation>
     </message>
@@ -4940,6 +4956,57 @@
     </message>
 </context>
 <context>
+    <name>ReviewDialog</name>
+    <message>
+        <location filename="../src/ui/components/ReviewDialog.qml" line="70"/>
+        <location filename="../src/ui/components/ReviewDialog.qml" line="89"/>
+        <source>文件改动审阅</source>
+        <translation>文件改动审阅</translation>
+    </message>
+    <message>
+        <location filename="../src/ui/components/ReviewDialog.qml" line="71"/>
+        <source>按目录列出本次会话改动的文件，并显示所选文件的内容差异</source>
+        <translation>按目录列出本次会话改动的文件，并显示所选文件的内容差异</translation>
+    </message>
+    <message>
+        <location filename="../src/ui/components/ReviewDialog.qml" line="100"/>
+        <source>%1 个文件</source>
+        <translation>%1 个文件</translation>
+    </message>
+    <message>
+        <location filename="../src/ui/components/ReviewDialog.qml" line="141"/>
+        <source>折叠全部目录</source>
+        <translation>折叠全部目录</translation>
+    </message>
+    <message>
+        <location filename="../src/ui/components/ReviewDialog.qml" line="152"/>
+        <source>展开全部目录</source>
+        <translation>展开全部目录</translation>
+    </message>
+    <message>
+        <location filename="../src/ui/components/ReviewDialog.qml" line="161"/>
+        <source>关闭审阅对话框</source>
+        <translation>关闭审阅对话框</translation>
+    </message>
+    <message>
+        <location filename="../src/ui/components/ReviewDialog.qml" line="222"/>
+        <source>本次会话暂无可审阅的文件改动。</source>
+        <translation>本次会话暂无可审阅的文件改动。</translation>
+    </message>
+    <message>
+        <location filename="../src/ui/components/ReviewDialog.qml" line="233"/>
+        <source>智能体写入或编辑文件后，这里会按目录列出改动；
+选中文件即可在右侧查看内容差异。</source>
+        <translation>智能体写入或编辑文件后，这里会按目录列出改动；
+选中文件即可在右侧查看内容差异。</translation>
+    </message>
+    <message>
+        <location filename="../src/ui/components/ReviewDialog.qml" line="255"/>
+        <source>关闭</source>
+        <translation>关闭</translation>
+    </message>
+</context>
+<context>
     <name>SecurityPage</name>
     <message>
         <location filename="../src/ui/pages/SecurityPage.qml" line="13"/>
@@ -5534,46 +5601,56 @@
     </message>
     <message>
         <location filename="../src/ui/components/ShortcutsDialog.qml" line="60"/>
+        <source>打开文件改动审阅</source>
+        <translation>打开文件改动审阅</translation>
+    </message>
+    <message>
+        <location filename="../src/ui/components/ShortcutsDialog.qml" line="61"/>
+        <source>打开任务清单</source>
+        <translation>打开任务清单</translation>
+    </message>
+    <message>
+        <location filename="../src/ui/components/ShortcutsDialog.qml" line="62"/>
         <source>显示/隐藏侧边栏</source>
         <translation>显示/隐藏侧边栏</translation>
     </message>
     <message>
-        <location filename="../src/ui/components/ShortcutsDialog.qml" line="61"/>
+        <location filename="../src/ui/components/ShortcutsDialog.qml" line="63"/>
         <source>切换深色/浅色主题</source>
         <translation>切换深色/浅色主题</translation>
     </message>
     <message>
-        <location filename="../src/ui/components/ShortcutsDialog.qml" line="62"/>
+        <location filename="../src/ui/components/ShortcutsDialog.qml" line="64"/>
         <source>打开本速查表</source>
         <translation>打开本速查表</translation>
     </message>
     <message>
-        <location filename="../src/ui/components/ShortcutsDialog.qml" line="63"/>
+        <location filename="../src/ui/components/ShortcutsDialog.qml" line="65"/>
         <source>发送消息</source>
         <translation>发送消息</translation>
     </message>
     <message>
-        <location filename="../src/ui/components/ShortcutsDialog.qml" line="64"/>
+        <location filename="../src/ui/components/ShortcutsDialog.qml" line="66"/>
         <source>发送消息（输入法组合键安全）</source>
         <translation>发送消息（输入法组合键安全）</translation>
     </message>
     <message>
-        <location filename="../src/ui/components/ShortcutsDialog.qml" line="65"/>
+        <location filename="../src/ui/components/ShortcutsDialog.qml" line="67"/>
         <source>输入换行</source>
         <translation>输入换行</translation>
     </message>
     <message>
-        <location filename="../src/ui/components/ShortcutsDialog.qml" line="66"/>
+        <location filename="../src/ui/components/ShortcutsDialog.qml" line="68"/>
         <source>回溯/前进输入历史</source>
         <translation>回溯/前进输入历史</translation>
     </message>
     <message>
-        <location filename="../src/ui/components/ShortcutsDialog.qml" line="67"/>
+        <location filename="../src/ui/components/ShortcutsDialog.qml" line="69"/>
         <source>粘贴图片附件</source>
         <translation>粘贴图片附件</translation>
     </message>
     <message>
-        <location filename="../src/ui/components/ShortcutsDialog.qml" line="118"/>
+        <location filename="../src/ui/components/ShortcutsDialog.qml" line="120"/>
         <source>关闭</source>
         <translation>关闭</translation>
     </message>
@@ -5814,17 +5891,32 @@
 <context>
     <name>SplitBar</name>
     <message>
-        <location filename="../src/ui/components/SplitBar.qml" line="61"/>
+        <location filename="../src/ui/components/SplitBar.qml" line="108"/>
+        <source>拖动调节高度 · 双击复位</source>
+        <translation>拖动调节高度 · 双击复位</translation>
+    </message>
+    <message>
+        <location filename="../src/ui/components/SplitBar.qml" line="109"/>
         <source>拖动调节宽度 · 双击复位</source>
         <translation>拖动调节宽度 · 双击复位</translation>
     </message>
     <message>
-        <location filename="../src/ui/components/SplitBar.qml" line="64"/>
+        <location filename="../src/ui/components/SplitBar.qml" line="112"/>
         <source>面板分隔条</source>
         <translation>面板分隔条</translation>
     </message>
     <message>
-        <location filename="../src/ui/components/SplitBar.qml" line="65"/>
+        <location filename="../src/ui/components/SplitBar.qml" line="112"/>
+        <source>详情分隔条</source>
+        <translation>详情分隔条</translation>
+    </message>
+    <message>
+        <location filename="../src/ui/components/SplitBar.qml" line="114"/>
+        <source>拖动调节详情区域高度，双击复位</source>
+        <translation>拖动调节详情区域高度，双击复位</translation>
+    </message>
+    <message>
+        <location filename="../src/ui/components/SplitBar.qml" line="115"/>
         <source>拖动调节面板宽度，双击复位</source>
         <translation>拖动调节面板宽度，双击复位</translation>
     </message>
@@ -5852,7 +5944,7 @@
         <translation>昨天</translation>
     </message>
     <message>
-        <location filename="../src/core/memory/SqliteMemory.cpp" line="1405"/>
+        <location filename="../src/core/memory/SqliteMemory.cpp" line="1418"/>
         <source>消息库超过 %1 条：少于 3 个字符的关键词只能全表扫描，请输入至少 3 个字符以使用全文索引。</source>
         <translation>消息库超过 %1 条：少于 3 个字符的关键词只能全表扫描，请输入至少 3 个字符以使用全文索引。</translation>
     </message>
@@ -5931,46 +6023,135 @@
     </message>
 </context>
 <context>
-    <name>TodoListPanel</name>
+    <name>TodoDialog</name>
     <message>
-        <location filename="../src/ui/components/TodoListPanel.qml" line="33"/>
-        <source>已完成</source>
-        <translation>已完成</translation>
+        <location filename="../src/ui/components/TodoDialog.qml" line="120"/>
+        <source>任务清单对话框</source>
+        <translation>任务清单对话框</translation>
     </message>
     <message>
-        <location filename="../src/ui/components/TodoListPanel.qml" line="34"/>
-        <source>进行中</source>
-        <translation>进行中</translation>
+        <location filename="../src/ui/components/TodoDialog.qml" line="121"/>
+        <source>查看当前会话的任务清单与完成进度</source>
+        <translation>查看当前会话的任务清单与完成进度</translation>
     </message>
     <message>
-        <location filename="../src/ui/components/TodoListPanel.qml" line="35"/>
-        <source>待处理</source>
-        <translation>待处理</translation>
+        <location filename="../src/ui/components/TodoDialog.qml" line="147"/>
+        <source>任务清单 · %1/%2 已完成</source>
+        <translation>任务清单 · %1/%2 已完成</translation>
     </message>
     <message>
-        <location filename="../src/ui/components/TodoListPanel.qml" line="74"/>
+        <location filename="../src/ui/components/TodoDialog.qml" line="149"/>
         <source>任务清单</source>
         <translation>任务清单</translation>
     </message>
     <message>
-        <location filename="../src/ui/components/TodoListPanel.qml" line="82"/>
+        <location filename="../src/ui/components/TodoDialog.qml" line="162"/>
+        <location filename="../src/ui/components/TodoDialog.qml" line="266"/>
+        <source>关闭任务清单</source>
+        <translation>关闭任务清单</translation>
+    </message>
+    <message>
+        <location filename="../src/ui/components/TodoDialog.qml" line="196"/>
+        <source>当前会话还没有任务清单。</source>
+        <translation>当前会话还没有任务清单。</translation>
+    </message>
+    <message>
+        <location filename="../src/ui/components/TodoDialog.qml" line="207"/>
+        <source>代理调用 todo_write 记录任务后，任务会出现在这里。</source>
+        <translation>代理调用 todo_write 记录任务后，任务会出现在这里。</translation>
+    </message>
+    <message>
+        <location filename="../src/ui/components/TodoDialog.qml" line="264"/>
+        <source>关闭</source>
+        <translation>关闭</translation>
+    </message>
+</context>
+<context>
+    <name>TodoListPanel</name>
+    <message>
+        <location filename="../src/ui/components/TodoListPanel.qml" line="65"/>
+        <source>进行中 %1</source>
+        <translation>进行中 %1</translation>
+    </message>
+    <message>
+        <location filename="../src/ui/components/TodoListPanel.qml" line="67"/>
+        <source>待处理 %1</source>
+        <translation>待处理 %1</translation>
+    </message>
+    <message>
+        <location filename="../src/ui/components/TodoListPanel.qml" line="125"/>
+        <source>已完成</source>
+        <translation>已完成</translation>
+    </message>
+    <message>
+        <location filename="../src/ui/components/TodoListPanel.qml" line="126"/>
+        <source>进行中</source>
+        <translation>进行中</translation>
+    </message>
+    <message>
+        <location filename="../src/ui/components/TodoListPanel.qml" line="127"/>
+        <source>待处理</source>
+        <translation>待处理</translation>
+    </message>
+    <message>
+        <location filename="../src/ui/components/TodoListPanel.qml" line="131"/>
+        <source>高优先级</source>
+        <translation>高优先级</translation>
+    </message>
+    <message>
+        <location filename="../src/ui/components/TodoListPanel.qml" line="132"/>
+        <source>中优先级</source>
+        <translation>中优先级</translation>
+    </message>
+    <message>
+        <location filename="../src/ui/components/TodoListPanel.qml" line="133"/>
+        <source>低优先级</source>
+        <translation>低优先级</translation>
+    </message>
+    <message>
+        <location filename="../src/ui/components/TodoListPanel.qml" line="197"/>
+        <source>任务清单</source>
+        <translation>任务清单</translation>
+    </message>
+    <message>
+        <location filename="../src/ui/components/TodoListPanel.qml" line="210"/>
         <source>%1/%2 完成</source>
         <translation>%1/%2 完成</translation>
     </message>
     <message>
-        <location filename="../src/ui/components/TodoListPanel.qml" line="108"/>
+        <location filename="../src/ui/components/TodoListPanel.qml" line="228"/>
         <source>任务清单，%1/%2 完成</source>
         <translation>任务清单，%1/%2 完成</translation>
     </message>
     <message>
-        <location filename="../src/ui/components/TodoListPanel.qml" line="110"/>
+        <location filename="../src/ui/components/TodoListPanel.qml" line="230"/>
         <source>已折叠</source>
         <translation>已折叠</translation>
     </message>
     <message>
-        <location filename="../src/ui/components/TodoListPanel.qml" line="110"/>
+        <location filename="../src/ui/components/TodoListPanel.qml" line="230"/>
         <source>已展开</source>
         <translation>已展开</translation>
+    </message>
+    <message>
+        <location filename="../src/ui/components/TodoListPanel.qml" line="235"/>
+        <source>展开任务清单</source>
+        <translation>展开任务清单</translation>
+    </message>
+    <message>
+        <location filename="../src/ui/components/TodoListPanel.qml" line="235"/>
+        <source>折叠任务清单</source>
+        <translation>折叠任务清单</translation>
+    </message>
+    <message>
+        <location filename="../src/ui/components/TodoListPanel.qml" line="253"/>
+        <source>任务进度：%1/%2 已完成</source>
+        <translation>任务进度：%1/%2 已完成</translation>
+    </message>
+    <message>
+        <location filename="../src/ui/components/TodoListPanel.qml" line="284"/>
+        <source>全部完成</source>
+        <translation>全部完成</translation>
     </message>
 </context>
 <context>
@@ -6353,6 +6534,26 @@
         <translation>本会话累计 %1 次请求</translation>
     </message>
     <message>
+        <location filename="../src/ui/components/TopBar.qml" line="810"/>
+        <source>任务清单（%1 项未完成）</source>
+        <translation>任务清单（%1 项未完成）</translation>
+    </message>
+    <message>
+        <location filename="../src/ui/components/TopBar.qml" line="811"/>
+        <source>打开任务清单，%1 项未完成</source>
+        <translation>打开任务清单，%1 项未完成</translation>
+    </message>
+    <message>
+        <location filename="../src/ui/components/TopBar.qml" line="849"/>
+        <source>审阅本次会话的文件改动 (Ctrl+R)</source>
+        <translation>审阅本次会话的文件改动 (Ctrl+R)</translation>
+    </message>
+    <message>
+        <location filename="../src/ui/components/TopBar.qml" line="850"/>
+        <source>打开文件改动审阅</source>
+        <translation>打开文件改动审阅</translation>
+    </message>
+    <message>
         <location filename="../src/ui/components/TopBar.qml" line="518"/>
         <source>工具调用</source>
         <translation>工具调用</translation>
@@ -6404,12 +6605,12 @@
         <translation type="vanished">合计</translation>
     </message>
     <message>
-        <location filename="../src/ui/components/TopBar.qml" line="793"/>
+        <location filename="../src/ui/components/TopBar.qml" line="862"/>
         <source>收起上下文面板 (Ctrl+B)</source>
         <translation>收起上下文面板 (Ctrl+B)</translation>
     </message>
     <message>
-        <location filename="../src/ui/components/TopBar.qml" line="793"/>
+        <location filename="../src/ui/components/TopBar.qml" line="862"/>
         <source>展开上下文面板 (Ctrl+B)</source>
         <translation>展开上下文面板 (Ctrl+B)</translation>
     </message>
@@ -7251,17 +7452,17 @@
         <translation>设置已保存</translation>
     </message>
     <message>
-        <location filename="../src/ui/main.qml" line="372"/>
+        <location filename="../src/ui/main.qml" line="391"/>
         <source>已删除会话「%1」，可撤销</source>
         <translation>已删除会话「%1」，可撤销</translation>
     </message>
     <message>
-        <location filename="../src/ui/main.qml" line="373"/>
+        <location filename="../src/ui/main.qml" line="392"/>
         <source>会话</source>
         <translation>会话</translation>
     </message>
     <message>
-        <location filename="../src/ui/main.qml" line="374"/>
+        <location filename="../src/ui/main.qml" line="393"/>
         <source>撤销</source>
         <translation>撤销</translation>
     </message>

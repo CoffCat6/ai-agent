@@ -72,4 +72,10 @@ Window {
     function renderedCount() { return panel.renderedCount }
     function panelHeight() { return panel.height }
     function panelVisible() { return panel.visible }
+    // Inline split: drive the divider like a drag would and read back the
+    // resulting geometry.
+    function dragSplit(delta) { panel.adjustSplit(delta) }
+    function resetSplit() { panel.resetSplit() }
+    function splitRatio() { return panel.listRatio }
+    function treeHeight() { return panel.treeHeight }
 }

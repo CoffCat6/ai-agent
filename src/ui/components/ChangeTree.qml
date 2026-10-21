@@ -34,6 +34,13 @@ Item {
     // Host-level gate (e.g. agent busy) so action buttons re-evaluate when it
     // flips without rebuilding the tree.
     property bool actionsEnabled: true
+    // Optional selection marker: the host highlights the file row whose
+    // entry id matches. The review panel uses it to mark the file whose
+    // diff is open in the inline detail pane below the tree; without it a
+    // two-pane layout leaves the user guessing which file is being shown.
+    // null / undefined = nothing selected (the default for every other
+    // host: Git status lists, commit file lists).
+    property var selectedId: null
 
     readonly property var rows: FileTree.buildRows(items, {
         "basePath": effectiveBasePath(),
@@ -141,6 +148,15 @@ Item {
             // entries only changeCount.
             readonly property int badgeCount: modelData.activeCount !== undefined
                 ? modelData.activeCount : (modelData.changeCount || 0)
+            // Selected row: the host marks the file shown in its detail
+            // pane. Only file rows can be selected.
+            readonly property bool selected: !rowItem.isFolder
+                && root.selectedId !== null
+                && root.selectedId !== undefined
+                && rowItem.entry !== null
+                && rowItem.entry !== undefined
+                && rowItem.entry.id !== undefined
+                && rowItem.entry.id === root.selectedId
 
             objectName: isFolder ? "fileTreeFolderRow" : "fileChangeRow"
             width: ListView.view ? ListView.view.width : 0
@@ -149,7 +165,23 @@ Item {
             Rectangle {
                 anchors.fill: parent
                 radius: 5
-                color: rowHover.hovered ? Theme.surfaceHover : "transparent"
+                color: rowItem.selected
+                    ? Qt.rgba(Theme.brandPrimary.r, Theme.brandPrimary.g,
+                              Theme.brandPrimary.b, Theme.isDark ? 0.20 : 0.12)
+                    : (rowHover.hovered ? Theme.surfaceHover : "transparent")
+            }
+
+            // Accent stripe on the tree's left edge: the selection must stay
+            // visible even when the row is only half covered by the scroll
+            // area's rounded corners.
+            Rectangle {
+                visible: rowItem.selected
+                x: 0
+                y: 3
+                width: 2
+                height: Math.max(0, parent.height - 6)
+                radius: 1
+                color: Theme.brandPrimary
             }
 
             HoverHandler { id: rowHover }

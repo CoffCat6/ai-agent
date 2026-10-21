@@ -5,9 +5,11 @@ import QtQuick.Dialogs
 import NexusAI
 import NexusAI.ViewModels
 
-// Context panel — right sidebar. A task list stays on top; below it the
-// panel switches between the session 「审阅」 tree (file checkpoints) and the
-// knowledge base. The Git section joins as a third tab in a later phase.
+// Context panel — right sidebar. A narrow column, so it only hosts what
+// suits one: the Git section and the knowledge base, switched by tabs.
+// The 「审阅」 review tree and the task list used to live here too, but a
+// diff and a task list both need width this panel cannot give — they moved
+// to ReviewDialog and TodoDialog, opened from the TopBar.
 // Collapse/expand is driven by AgentVM.isPanelVisible: main.qml animates
 // this item's width to 0 and hosts the floating toggle handle.
 Rectangle {
@@ -23,7 +25,9 @@ Rectangle {
 
     // Fade the content out while collapsing
     readonly property real contentFade: AgentVM.isPanelVisible ? 1.0 : 0.0
-    // 0 = review, 1 = Git (project sessions only), 2 = knowledge base
+    // 0 = Git (project sessions only), 1 = knowledge base. Review and the
+    // task list are not sections any more: both need width this panel cannot
+    // give, so they live in ReviewDialog / TodoDialog (TopBar entries).
     property int activeSection: 0
 
     // Document import dialog (handled off-GUI-thread by AgentViewModel).
@@ -52,40 +56,18 @@ Rectangle {
 
         Behavior on opacity { NumberAnimation { duration: 150 } }
 
-        // ── Task List Section ────────────────────────
-        // Fed by the todo_write tool through AgentVM.todoList; the component
-        // hides itself (and collapses to zero height) when the list is empty.
-        TodoListPanel {
-            id: todoPanel
-            Layout.fillWidth: true
-            todos: AgentVM.todoList
-        }
-
-        Rectangle {
-            Layout.fillWidth: true
-            height: 1
-            color: Theme.borderSubtle
-            visible: todoPanel.hasItems
-        }
-
         // ── Section tabs ─────────────────────────────
-        // Equal-width tabs keep three labels readable down to the 220px
+        // Equal-width tabs keep the labels readable down to the 220px
         // panel minimum; per-section counts live in the section headers.
+        //
+        // 审阅 is deliberately NOT a tab: the diff needs width the sidebar
+        // cannot give, so review lives in ReviewDialog (opened from the
+        // TopBar). The task list moved out for the same reason — it is
+        // TodoDialog now. What is left here is what genuinely suits a
+        // narrow column: Git status/history and the knowledge base.
         RowLayout {
             Layout.fillWidth: true
             spacing: 6
-
-            AppButton {
-                objectName: "reviewTab"
-                Layout.fillWidth: true
-                text: qsTr("审阅")
-                implicitHeight: 26
-                highlighted: root.activeSection === 0
-                buttonColor: "transparent"
-                textColor: highlighted ? Theme.bgPrimary : Theme.textSecondary
-                onClicked: root.activeSection = 0
-                Accessible.name: qsTr("查看本会话的文件改动审阅")
-            }
 
             AppButton {
                 objectName: "gitTab"
@@ -93,10 +75,10 @@ Rectangle {
                 visible: AgentVM.activeProjectRoot.length > 0
                 text: qsTr("Git")
                 implicitHeight: 26
-                highlighted: root.activeSection === 1
+                highlighted: root.activeSection === 0
                 buttonColor: "transparent"
                 textColor: highlighted ? Theme.bgPrimary : Theme.textSecondary
-                onClicked: root.activeSection = 1
+                onClicked: root.activeSection = 0
                 Accessible.name: qsTr("查看 Git 管理与历史")
             }
 
@@ -105,10 +87,10 @@ Rectangle {
                 Layout.fillWidth: true
                 text: qsTr("知识库")
                 implicitHeight: 26
-                highlighted: root.activeSection === 2
+                highlighted: root.activeSection === 1
                 buttonColor: "transparent"
                 textColor: highlighted ? Theme.bgPrimary : Theme.textSecondary
-                onClicked: root.activeSection = 2
+                onClicked: root.activeSection = 1
                 Accessible.name: qsTr("查看知识库文档")
             }
         }
@@ -118,44 +100,12 @@ Rectangle {
             Layout.fillHeight: true
             currentIndex: root.activeSection
 
-            // ── Review Section (G4) ──────────────────
-            // Fed by write_file/edit_file checkpoints; the panel hides itself
-            // when the session has not touched any file, so the empty state
-            // here explains where changes will appear.
-            ColumnLayout {
-                spacing: 8
-
-                FileChangesPanel {
-                    id: fileChangesPanel
-                    Layout.fillWidth: true
-                    Layout.fillHeight: true
-                    listMaxHeight: 0
-                    checkpoints: AgentVM.fileCheckpoints
-                    projectRoot: AgentVM.activeProjectRoot
-                }
-
-                Text {
-                    Layout.fillWidth: true
-                    visible: !fileChangesPanel.hasItems
-                    text: qsTr("本次会话暂无可审阅的文件改动。\n智能体写入或编辑文件后，这里会按目录列出改动。")
-                    color: Theme.textSecondary
-                    font.pixelSize: 10
-                    font.family: Theme.fontSans
-                    wrapMode: Text.Wrap
-                }
-
-                Item {
-                    Layout.fillHeight: true
-                    visible: !fileChangesPanel.hasItems
-                }
-            }
-
             // ── Git Section (read-only) ──────────────────
             // Project sessions only; the tab itself is hidden for local chats.
             GitPanel {
                 id: gitPanel
                 projectRoot: AgentVM.activeProjectRoot
-                active: root.activeSection === 1
+                active: root.activeSection === 0
             }
 
             // ── Knowledge Base Section ───────────────────
@@ -437,11 +387,13 @@ Rectangle {
         target: AgentVM
 
         // Switching to a local conversation hides the Git tab; never leave
-        // the stack parked on a hidden section.
+        // the stack parked on a hidden section. Git is index 0, so falling
+        // back to it is only correct while a project is active — otherwise
+        // move to the knowledge base, which is always available.
         function onActiveProjectIdChanged() {
             if (AgentVM.activeProjectRoot.length === 0
-                    && root.activeSection === 1)
-                root.activeSection = 0
+                    && root.activeSection === 0)
+                root.activeSection = 1
         }
     }
 }

@@ -26,6 +26,97 @@ Item {
     readonly property alias renderedCount: lineList.count
     readonly property int addedCount: root.countKind(parsed, "add")
     readonly property int removedCount: root.countKind(parsed, "del")
+    // Line-number gutters cost 74px in unified mode and 88px in split
+    // mode. The review tab hosts this view inline, where the pane can be
+    // as narrow as ~180px - below that the gutters would leave more room
+    // for nothing than for code, so they fold away and the text takes the
+    // full width.
+    readonly property bool showGutters: width >= 240
+
+    // ── Split-column geometry ───────────────────────────
+    // The old|new divide used to be a hard 50% of the row width, which is
+    // wrong whenever the two sides differ: a one-word edit beside a
+    // rewritten paragraph gets half the space each, so the long side wraps
+    // into a staircase while the short side sits on whitespace.
+    //
+    // `splitRatio` is the share of the row the OLD (left) column takes. It
+    // starts at the content-aware `autoSplitRatio` and the user can drag the
+    // seam; once dragged, `splitTouched` latches so a later file does not
+    // silently undo the choice. Because it is a ratio (not pixels) the
+    // chosen divide survives the dialog being resized.
+    property real splitRatio: 0.5
+    property bool splitTouched: false
+
+    // Widest text either column must be able to show before it wraps. Keeps
+    // a dragged seam from collapsing a column into a sliver.
+    readonly property int minColumnText: 110
+
+    // Content-aware default: monospace, so character count IS width. Give
+    // each side a share proportional to its longest line, but only when the
+    // two together do not already fit — when they do, 50/50 wastes nothing
+    // and reads as the neutral default.
+    readonly property real autoSplitRatio: {
+        if (viewMode !== "split") return 0.5
+        let leftNeed = 0
+        let rightNeed = 0
+        const rows = root.splitRows
+        for (let i = 0; i < rows.length; ++i) {
+            const row = rows[i]
+            if (row.kind !== "pair") continue
+            const l = row.oldText ? row.oldText.length : 0
+            const r = row.newText ? row.newText.length : 0
+            if (l > leftNeed) leftNeed = l
+            if (r > rightNeed) rightNeed = r
+        }
+        const total = leftNeed + rightNeed
+        if (total <= 0) return 0.5
+        // Rough capacity in characters for the current width (caption-size
+        // monospace is ~6.2px per char); both gutters included.
+        const capacity = Math.max(20, (width - 90) / 6.2)
+        if (total <= capacity) return 0.5
+        return Math.max(0.25, Math.min(0.75, leftNeed / total))
+    }
+
+    // The seam's x, clamped so neither column drops below minColumnText.
+    // Single source of truth for every split-mode offset below.
+    function splitXFor(rowWidth) {
+        const gutters = root.showGutters
+        const leftPad = gutters ? 40 : 4
+        const rightPad = gutters ? 41 : 4
+        const lo = leftPad + root.minColumnText
+        const hi = Math.max(lo + 1, rowWidth - rightPad - root.minColumnText - 4)
+        const want = leftPad + (rowWidth - leftPad - rightPad - 4) * root.splitRatio
+        return Math.max(lo, Math.min(hi, want))
+    }
+
+    // Adopt the content-aware divide for a newly shown diff, unless the
+    // user has already dragged the seam (their choice outranks the guess).
+    function resetSplitToAuto() {
+        if (root.splitTouched) return
+        root.splitRatio = root.autoSplitRatio
+    }
+
+    // Drag handler for the seam. The delta arrives in pixels; converting it
+    // to a ratio keeps the divide proportional, so the same relative split
+    // survives the dialog (and therefore this view) being resized. Clamped
+    // through splitXFor's own limits by construction: the ratio is derived
+    // from the same padded span the clamp uses.
+    function dragSplit(deltaPx) {
+        if (root.viewMode !== "split") return
+        const rowWidth = lineList.width
+        if (rowWidth <= 0) return
+        const gutters = root.showGutters
+        const leftPad = gutters ? 40 : 4
+        const rightPad = gutters ? 41 : 4
+        const span = rowWidth - leftPad - rightPad - 4
+        if (span <= 0) return
+        root.splitTouched = true
+        root.splitRatio = Math.max(0, Math.min(1,
+            root.splitRatio + deltaPx / span))
+    }
+
+    onAutoSplitRatioChanged: root.resetSplitToAuto()
+    onDiffTextChanged: root.resetSplitToAuto()
 
     // ── Parsing ────────────────────────────────────────
     // Returns rows {kind, text, oldNo, newNo}: kind is meta (---/+++), hunk
@@ -213,7 +304,19 @@ Item {
 
                     readonly property bool pairRow: modelData.kind === "pair"
                     readonly property bool plain: root.isPlain(modelData.kind)
-                    readonly property int half: Math.floor(width / 2)
+                    // The seam position is shared by every row (and by the
+                    // drag handle), so the columns line up down the whole
+                    // diff instead of drifting per row.
+                    readonly property real seamX: root.splitXFor(diffRow.width)
+                    // Gutter-aware column geometry (see root.showGutters).
+                    // The right column starts past its own line-number
+                    // gutter, which sits at seamX+5 and is 32 wide — so the
+                    // body begins at seamX+41, mirroring the left column's
+                    // 40px gutter. Getting this wrong overlaps the numbers.
+                    readonly property bool gutters: root.showGutters
+                    readonly property int bodyX: gutters ? 78 : 4
+                    readonly property int leftX: gutters ? 40 : 4
+                    readonly property int rightX: diffRow.seamX + (gutters ? 41 : 4)
 
                     objectName: pairRow ? "diffSplitRow" : "diffLine"
                     width: ListView.view ? ListView.view.width : 0
@@ -231,14 +334,14 @@ Item {
                     }
                     Rectangle {
                         visible: diffRow.pairRow
-                        width: Math.max(0, diffRow.half - 1)
+                        width: Math.max(0, diffRow.seamX - 1)
                         height: parent.height
                         color: modelData.del
                             ? root.kindBackground("del") : "transparent"
                     }
                     Rectangle {
                         visible: diffRow.pairRow
-                        x: diffRow.half + 1
+                        x: diffRow.seamX + 1
                         width: parent.width - x
                         height: parent.height
                         color: modelData.add
@@ -246,7 +349,7 @@ Item {
                     }
                     Rectangle {
                         visible: diffRow.pairRow
-                        x: diffRow.half
+                        x: diffRow.seamX
                         width: 1
                         height: parent.height
                         color: Theme.borderSubtle
@@ -255,6 +358,7 @@ Item {
                     // ── Unified / plain rows ────────────
                     Text {
                         visible: !diffRow.pairRow && !diffRow.plain
+                                 && diffRow.gutters
                         x: 4
                         width: 32
                         text: modelData.oldNo > 0 ? String(modelData.oldNo) : ""
@@ -266,6 +370,7 @@ Item {
 
                     Text {
                         visible: !diffRow.pairRow && !diffRow.plain
+                                 && diffRow.gutters
                         x: 40
                         width: 32
                         text: modelData.newNo > 0 ? String(modelData.newNo) : ""
@@ -278,7 +383,7 @@ Item {
                     Text {
                         id: fullBody
                         visible: !diffRow.pairRow
-                        x: diffRow.plain ? 4 : 78
+                        x: diffRow.plain ? 4 : diffRow.bodyX
                         width: Math.max(0, parent.width - x - 4)
                         text: modelData.text !== undefined && modelData.text.length > 0
                             ? modelData.text : " "
@@ -291,7 +396,7 @@ Item {
 
                     // ── Split rows ──────────────────────
                     Text {
-                        visible: diffRow.pairRow
+                        visible: diffRow.pairRow && diffRow.gutters
                         x: 4
                         width: 32
                         text: diffRow.pairRow && modelData.oldNo > 0
@@ -305,8 +410,8 @@ Item {
                     Text {
                         id: leftBody
                         visible: diffRow.pairRow
-                        x: 40
-                        width: Math.max(0, diffRow.half - 44)
+                        x: diffRow.leftX
+                        width: Math.max(0, diffRow.seamX - 4 - diffRow.x)
                         text: diffRow.pairRow && modelData.oldText.length > 0
                             ? modelData.oldText : " "
                         color: modelData.del ? Theme.statusDanger : Theme.textPrimary
@@ -317,8 +422,8 @@ Item {
                     }
 
                     Text {
-                        visible: diffRow.pairRow
-                        x: diffRow.half + 5
+                        visible: diffRow.pairRow && diffRow.gutters
+                        x: diffRow.seamX + 5
                         width: 32
                         text: diffRow.pairRow && modelData.newNo > 0
                             ? String(modelData.newNo) : ""
@@ -331,7 +436,7 @@ Item {
                     Text {
                         id: rightBody
                         visible: diffRow.pairRow
-                        x: diffRow.half + 41
+                        x: diffRow.rightX
                         width: Math.max(0, parent.width - x - 4)
                         text: diffRow.pairRow && modelData.newText.length > 0
                             ? modelData.newText : " "
@@ -342,6 +447,70 @@ Item {
                         textFormat: Text.PlainText
                     }
                 }
+            }
+            // ── Split seam drag handle ─────────────────
+            // One handle for the whole list, not one per row: the per-row
+            // 1px seams above draw the continuous line, this is the only
+            // thing that moves it. Deltas are measured in scene coordinates
+            // for the same reason SplitBar does it — the handle travels with
+            // the seam, so local deltas would feed back into the layout and
+            // make the seam jitter around the cursor.
+            //
+            // The ListView is inset 4px inside this box, so the row-space
+            // seam has to be offset by the same amount to land on the line.
+            Item {
+                id: splitHandle
+                objectName: "diffSplitHandle"
+                visible: root.viewMode === "split" && root.hasDiff
+                x: 4 + root.splitXFor(lineList.width) - width / 2
+                y: 0
+                width: 11
+                height: parent.height
+
+                readonly property bool active: dragArea.pressed
+                readonly property bool hot: dragArea.containsMouse || splitHandle.active
+
+                // Grip: invisible at rest so it never fights the diff, an
+                // accent bar while hovered or dragged.
+                Rectangle {
+                    anchors.horizontalCenter: parent.horizontalCenter
+                    anchors.top: parent.top
+                    anchors.bottom: parent.bottom
+                    width: splitHandle.hot ? 3 : 1
+                    color: splitHandle.hot ? Theme.brandPrimary : Theme.borderSubtle
+                    Behavior on color { ColorAnimation { duration: 120 } }
+                }
+
+                MouseArea {
+                    id: dragArea
+                    anchors.fill: parent
+                    hoverEnabled: true
+                    cursorShape: Qt.SplitHCursor
+
+                    property real lastSceneX: 0
+                    onPressed: (mouse) => {
+                        lastSceneX = mapToItem(null, mouse.x, mouse.y).x
+                    }
+                    onPositionChanged: (mouse) => {
+                        if (!pressed) return
+                        const sceneX = mapToItem(null, mouse.x, mouse.y).x
+                        const delta = sceneX - lastSceneX
+                        lastSceneX = sceneX
+                        root.dragSplit(delta)
+                    }
+                    onDoubleClicked: (mouse) => {
+                        root.splitTouched = false
+                        root.splitRatio = root.autoSplitRatio
+                    }
+                }
+
+                ToolTip.visible: dragArea.containsMouse && !splitHandle.active
+                ToolTip.delay: 600
+                ToolTip.text: qsTr("拖动调节两栏宽度 · 双击按内容自适应")
+
+                Accessible.role: Accessible.Separator
+                Accessible.name: qsTr("改动前后两栏分隔条")
+                Accessible.description: qsTr("拖动调节原内容与改动后内容的宽度，双击按内容自适应")
             }
         }
 

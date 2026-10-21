@@ -782,6 +782,75 @@ Rectangle {
             }
         }
 
+        // ── Task List Toggle ──────────────────────────
+        // The list itself lives in TodoDialog (main.qml) — the sidebar was
+        // too narrow for it. The badge counts tasks that are not finished
+        // yet, so an in-flight plan is visible without opening anything.
+        // Reads AgentVM.todoList directly: TopBar cannot see the dialog
+        // instance, and this way the count follows todoListChanged.
+        IconButton {
+            id: todoToggle
+            readonly property int unfinishedCount: {
+                const list = AgentVM.todoList
+                if (!list || list.length === 0)
+                    return 0
+                let n = 0
+                for (let i = 0; i < list.length; ++i) {
+                    const item = list[i]
+                    if (item && item.status !== "completed")
+                        ++n
+                }
+                return n
+            }
+
+            icon: "check"
+            iconSize: 16
+            restIconColor: Theme.textPrimary
+            visible: unfinishedCount > 0
+            tooltip: qsTr("任务清单（%1 项未完成）").arg(unfinishedCount)
+            Accessible.name: qsTr("打开任务清单，%1 项未完成").arg(unfinishedCount)
+            onClicked: todoDialog.open()
+
+            // Count badge on the top-right corner; hidden at zero so an
+            // idle session shows no chrome at all. Reads the count off the
+            // button's id rather than walking parent.parent — the chain
+            // breaks the moment this Rectangle is wrapped in anything.
+            Rectangle {
+                anchors.right: parent.right
+                anchors.top: parent.top
+                anchors.rightMargin: 1
+                anchors.topMargin: 1
+                visible: todoToggle.unfinishedCount > 0
+                width: Math.max(13, badgeLabel.implicitWidth + 6)
+                height: 13
+                radius: 7
+                color: Theme.brandPrimary
+
+                Text {
+                    id: badgeLabel
+                    anchors.centerIn: parent
+                    text: todoToggle.unfinishedCount > 99
+                        ? "99+" : todoToggle.unfinishedCount
+                    color: Theme.bgPrimary
+                    font.pixelSize: 8
+                    font.family: Theme.fontMono
+                    font.bold: true
+                }
+            }
+        }
+
+        // ── Review Toggle ─────────────────────────────
+        // Opens ReviewDialog (main.qml). Always available: an empty session
+        // gets the dialog's own empty state rather than a dead button.
+        IconButton {
+            icon: "edit"
+            iconSize: 16
+            restIconColor: Theme.textPrimary
+            tooltip: qsTr("审阅本次会话的文件改动 (Ctrl+R)")
+            Accessible.name: qsTr("打开文件改动审阅")
+            onClicked: reviewDialog.open()
+        }
+
         // ── Panel Toggle Button ──────────────────────
         IconButton {
             icon: AgentVM.isPanelVisible ? "chevron-right" : "chevron-left"

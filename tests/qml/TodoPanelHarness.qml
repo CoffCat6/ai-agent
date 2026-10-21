@@ -24,6 +24,18 @@ Window {
     function clearTodos() { panel.todos = [] }
     function itemCount() { return panel.itemCount }
     function completedCount() { return panel.completedCount }
+    function inProgressCount() { return panel.inProgressCount }
+    function pendingCount() { return panel.pendingCount }
+    function allCompleted() { return panel.allCompleted }
+    function progressRatio() { return panel.progressRatio }
+    function stateSummary() { return panel.stateSummary }
+    function listViewportHeight() { return panel.listViewportHeight }
+    function listContentHeight() { return panel.listContentHeight }
+    function listScrollable() { return panel.listScrollable }
+    function moreBelowFold() { return panel.moreBelowFold }
+    function listMaxHeight() { return panel.listMaxHeight }
+    function listHeightCeiling() { return panel.listHeightCeiling }
+    function chromeHeight() { return panel.chromeHeight }
     function panelVisible() { return panel.visible }
     function panelHeight() { return panel.implicitHeight }
     function listVisible() { return panel.listVisible }

@@ -57,6 +57,8 @@ Dialog {
                     { seq: "Ctrl+,",  action: qsTr("打开设置中心") },
                     { seq: "Ctrl+L",  action: qsTr("打开审计日志") },
                     { seq: "Ctrl+B",  action: qsTr("显示/隐藏上下文面板") },
+        { seq: "Ctrl+R",  action: qsTr("打开文件改动审阅") },
+        { seq: "Ctrl+T",  action: qsTr("打开任务清单") },
                     { seq: "Ctrl+[",  action: qsTr("显示/隐藏侧边栏") },
                     { seq: "Ctrl+D",  action: qsTr("切换深色/浅色主题") },
                     { seq: "Ctrl+/",  action: qsTr("打开本速查表") },

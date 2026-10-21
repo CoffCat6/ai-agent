@@ -313,6 +313,25 @@ ApplicationWindow {
         parent: Overlay.overlay
     }
 
+    // ── Task List Dialog ──────────────────────────────
+    // The todo list moved out of the narrow sidebar: a task list and a diff
+    // both need width the 220..640px column cannot give. `todos` is bound to
+    // the live VM list, so a task written while the dialog is open shows up
+    // without any plumbing; the TopBar button just calls open().
+    TodoDialog {
+        id: todoDialog
+        parent: Overlay.overlay
+        todos: AgentVM.todoList
+    }
+
+    // ── File Review Dialog ────────────────────────────
+    // Same reason as above: the diff pane was unreadable in the sidebar.
+    // Bound to the live checkpoint list, so opening needs no data hand-off.
+    ReviewDialog {
+        id: reviewDialog
+        parent: Overlay.overlay
+    }
+
 
     // ── Error / Notice Toasts ───────────────────────────
     AppToast {
@@ -389,6 +408,18 @@ ApplicationWindow {
     Shortcut {
         sequence: "Ctrl+B"
         onActivated: AgentVM.togglePanel()
+    }
+
+    // Review and the task list are dialogs now (the sidebar was too narrow
+    // for either), so they get keys next to the panel toggle they replaced.
+    Shortcut {
+        sequence: "Ctrl+R"
+        onActivated: reviewDialog.open()
+    }
+
+    Shortcut {
+        sequence: "Ctrl+T"
+        onActivated: todoDialog.open()
     }
 
     Shortcut {
