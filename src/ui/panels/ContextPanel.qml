@@ -80,10 +80,26 @@ Rectangle {
         // cannot give, so review lives in ReviewDialog (opened from the
         // TopBar). The task list moved out for the same reason — it is
         // TodoDialog now. What is left here is what genuinely suits a
-        // narrow column: Git status/history and the knowledge base.
+        // narrow column: the project's files, Git status/history, and the
+        // knowledge base.
         RowLayout {
             Layout.fillWidth: true
             spacing: 6
+
+            // Project files: a read-only browser. Same visibility gate as
+            // Git - a local chat has no project to browse.
+            AppButton {
+                objectName: "filesTab"
+                Layout.fillWidth: true
+                visible: AgentVM.activeProjectRoot.length > 0
+                text: qsTr("文件")
+                implicitHeight: 26
+                highlighted: root.activeSection === 2
+                buttonColor: "transparent"
+                textColor: highlighted ? Theme.bgPrimary : Theme.textSecondary
+                onClicked: root.activeSection = 2
+                Accessible.name: qsTr("浏览项目文件")
+            }
 
             AppButton {
                 objectName: "gitTab"
@@ -396,19 +412,30 @@ Rectangle {
                     visible: AgentVM.knowledgeDocuments.length === 0
                 }
             }
+
+            // ── Project Files Section (read-only) ─────────
+            // Last in the stack on purpose: activeSection is a plain number
+            // shared with the tab buttons, so appending keeps the existing
+            // Git=0 / knowledge=1 indices - and the local-chat fallback below
+            // - meaningful without renumbering anything.
+            ProjectFilesPanel {
+                id: filesPanel
+                projectRoot: AgentVM.activeProjectRoot
+                active: root.activeSection === 2
+            }
         }
     }
 
     Connections {
         target: AgentVM
 
-        // Switching to a local conversation hides the Git tab; never leave
-        // the stack parked on a hidden section. Git is index 0, so falling
-        // back to it is only correct while a project is active — otherwise
-        // move to the knowledge base, which is always available.
+        // Switching to a local conversation hides both project-only tabs
+        // (Git = 0, files = 2); never leave the stack parked on a hidden
+        // section. Knowledge (= 1) is always available, so it is the one
+        // fallback for either case.
         function onActiveProjectIdChanged() {
-            if (AgentVM.activeProjectRoot.length === 0
-                    && root.activeSection === 0)
+            if (AgentVM.activeProjectRoot.length > 0) return
+            if (root.activeSection === 0 || root.activeSection === 2)
                 root.activeSection = 1
         }
     }

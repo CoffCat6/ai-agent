@@ -208,6 +208,178 @@ bool isIndexableFile(const QString& name) {
     return indexableSuffixes().contains(lower.mid(dot + 1));
 }
 
+// ── File browser: one level at a time ─────────────────────
+//
+// A directory listing and a recursive index answer different questions, so
+// they filter differently on purpose:
+//
+//   scan()      "which files may I put in front of the model?" - narrow,
+//               extension whitelist, no binaries, no secrets.
+//   listDir()   "what is actually in this folder?" - shows what a file
+//               manager would show, minus ignored dirs and secrets.
+//
+// Keeping them separate is a decision, not an oversight: unifying them would
+// either hide real files from the browser or feed binaries to the model.
+namespace {
+
+// Resolve relPath under root without leaving it. Mirrors the checks in
+// resolveTokenPath: absolute paths, drive-relative paths and ".." escapes are
+// all refused before touching the filesystem.
+bool resolveUnderRoot(const QString& root, const QString& relPath,
+                      QString* absolute, QString* error) {
+    const QString cleanRoot = QDir::cleanPath(QDir::fromNativeSeparators(root));
+    if (cleanRoot.isEmpty() || !QDir(cleanRoot).exists()) {
+        if (error) *error = QStringLiteral("no-project");
+        return false;
+    }
+
+    const QString wanted = relPath.trimmed();
+    QString joined;
+    if (wanted.isEmpty() || wanted == QLatin1String(".")) {
+        joined = cleanRoot;
+    } else {
+        const QString rel = QDir::cleanPath(QDir::fromNativeSeparators(wanted));
+        // Absolute, drive-relative, or escaping upward.
+        if (QDir::isAbsolutePath(rel) || rel == QLatin1String("..")
+                || rel.startsWith(QLatin1String("../"))
+                || (rel.size() > 1 && rel.at(1) == QLatin1Char(':'))) {
+            if (error) *error = QStringLiteral("outside");
+            return false;
+        }
+        joined = QDir::cleanPath(cleanRoot + QLatin1Char('/') + rel);
+    }
+
+    QString prefix = cleanRoot;
+    if (!prefix.endsWith(QLatin1Char('/'))) prefix += QLatin1Char('/');
+#if defined(Q_OS_WIN)
+    const Qt::CaseSensitivity sensitivity = Qt::CaseInsensitive;
+#else
+    const Qt::CaseSensitivity sensitivity = Qt::CaseSensitive;
+#endif
+    // cleanPath already folded any "..", so an escape simply stops matching.
+    // The equal-to-root case has to be allowed explicitly (root has no slash).
+    if (joined != cleanRoot
+            && !(joined + QLatin1Char('/')).startsWith(prefix, sensitivity)) {
+        if (error) *error = QStringLiteral("outside");
+        return false;
+    }
+
+    *absolute = joined;
+    return true;
+}
+
+QString relativeUnder(const QString& root, const QString& absolute) {
+    QString rel = QDir(QDir::cleanPath(QDir::fromNativeSeparators(root)))
+                      .relativeFilePath(absolute);
+    rel.replace(QLatin1Char('\\'), QLatin1Char('/'));
+    return rel;
+}
+
+} // namespace
+
+QVector<DirEntry> listDir(const QString& root, const QString& relPath,
+                          QString* error) {
+    QVector<DirEntry> out;
+    if (error) error->clear();
+
+    QString absolute;
+    if (!resolveUnderRoot(root, relPath, &absolute, error))
+        return out;
+
+    const QFileInfo dirInfo(absolute);
+    if (!dirInfo.exists() || !dirInfo.isDir()) {
+        if (error) *error = QStringLiteral("missing");
+        return out;
+    }
+
+    const QDir dir(absolute);
+    if (!dir.isReadable()) {
+        if (error) *error = QStringLiteral("unreadable");
+        return out;
+    }
+
+    const QFileInfoList entries = dir.entryInfoList(
+        QDir::Files | QDir::Dirs | QDir::NoDotAndDotDot | QDir::Hidden | QDir::System,
+        QDir::Name);
+    out.reserve(entries.size());
+    for (const QFileInfo& info : entries) {
+        // Symlinks are skipped outright: following them can loop, and one
+        // pointing outside the project would smuggle foreign content into a
+        // view that claims to show this project only.
+        if (info.isSymLink())
+            continue;
+        if (info.isDir()) {
+            if (isIgnoredDir(info.fileName()))
+                continue;
+        } else if (!info.isFile() || isSensitiveFile(info.fileName())) {
+            continue;
+        }
+
+        DirEntry entry;
+        entry.name = info.fileName();
+        entry.relPath = relativeUnder(root, info.filePath());
+        entry.isDir = info.isDir();
+        out.append(entry);
+    }
+
+    // Directories before files, each alphabetically. Sorted here rather than
+    // relying on QDir::Name so the two groups stay separated.
+    std::sort(out.begin(), out.end(), [](const DirEntry& a, const DirEntry& b) {
+        if (a.isDir != b.isDir) return a.isDir;
+        return a.name.compare(b.name, Qt::CaseInsensitive) < 0;
+    });
+    return out;
+}
+
+FilePreview readFilePreview(const QString& root, const QString& relPath,
+                            qint64 maxBytes) {
+    FilePreview preview;
+    if (maxBytes <= 0) maxBytes = 512 * 1024;
+
+    QString absolute;
+    if (!resolveUnderRoot(root, relPath, &absolute, &preview.error))
+        return preview;
+
+    const QFileInfo info(absolute);
+    if (!info.exists() || !info.isFile()) {
+        preview.error = QStringLiteral("missing");
+        return preview;
+    }
+    preview.bytes = info.size();
+
+    QFile file(absolute);
+    if (!file.open(QIODevice::ReadOnly)) {
+        preview.error = QStringLiteral("unreadable");
+        return preview;
+    }
+
+    // Read one byte past the cap so "exactly maxBytes" is not reported as
+    // truncated.
+    const QByteArray raw = file.read(maxBytes + 1);
+    file.close();
+    preview.truncated = raw.size() > maxBytes;
+    const QByteArray head = preview.truncated ? raw.left(maxBytes) : raw;
+
+    // A NUL byte early in the file is the cheap, reliable binary signal
+    // (same heuristic git uses). Reporting "binary" beats rendering mojibake.
+    constexpr int kBinaryProbeBytes = 8000;
+    const QByteArray probe = head.left(kBinaryProbeBytes);
+    if (probe.contains('\0')) {
+        preview.binary = true;
+        return preview;
+    }
+
+    // Decode as UTF-8. Qt6's fromUtf8 replaces invalid sequences rather than
+    // failing, so a legacy-encoded file (GBK) shows replacement characters
+    // instead of mojibake - acceptable for a read-only preview, and it keeps
+    // the preview free of a QTextCodec dependency (Core5Compat is not linked).
+    //
+    // A truncated read can split a multi-byte character at the boundary; the
+    // decoder drops that partial tail instead of emitting garbage.
+    preview.text = QString::fromUtf8(head);
+    return preview;
+}
+
 Mention mentionAt(const QString& text, int cursor) {
     Mention mention;
     const int end = qBound(0, cursor, text.size());

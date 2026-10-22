@@ -215,6 +215,29 @@ nexus_add_test(test_attachment_classifier test_attachment_classifier.cpp)
 # rules are locked here rather than in QML.
 nexus_add_test(test_project_files test_project_files.cpp)
 
+# Sidebar file browser facade (ProjectFileViewModel). Needs the viewmodels
+# library, so it cannot use the core-only nexus_add_test helper.
+add_executable(test_project_file_viewmodel test_project_file_viewmodel.cpp)
+target_link_libraries(test_project_file_viewmodel PRIVATE
+    nexus_core nexus_viewmodels Qt6::Test Qt6::Qml)
+add_test(NAME test_project_file_viewmodel COMMAND test_project_file_viewmodel)
+
+# Sidebar file browser panel: real QML against a temporary project tree.
+# Needs the QML module (import NexusAI) and the viewmodels singletons, so it
+# mirrors test_file_changes_qml's wiring rather than nexus_add_test.
+add_executable(test_project_files_panel test_project_files_panel.cpp)
+target_link_libraries(test_project_files_panel PRIVATE
+    nexus_core nexus_infra nexus_viewmodels nexus_viewmodelsplugin
+    Qt6::Test Qt6::Qml Qt6::Quick)
+target_compile_definitions(test_project_files_panel PRIVATE
+    NEXUS_TEST_QML_DIR="${CMAKE_CURRENT_SOURCE_DIR}/qml"
+    NEXUS_BUILD_DIR="${CMAKE_BINARY_DIR}")
+add_dependencies(test_project_files_panel nexus_ai)
+add_test(NAME test_project_files_panel
+    COMMAND ${CMAKE_COMMAND} -E env
+        "QT_QPA_PLATFORM_PLUGIN_PATH=${QT6_INSTALL_PREFIX}/${QT6_INSTALL_PLUGINS}/platforms"
+        $<TARGET_FILE:test_project_files_panel> -platform offscreen)
+
 # docs/20 §3.4（A4）：拖放边界回归。QML 的 url 对象没有 toLocalFile()，
 # 在 QML 里转路径会抛 TypeError 让拖拽静默失效；本用例用真实拖放事件走
 # 一遍 delivery agent，锁住"urls 原样交给 C++ 的 QList<QUrl>"这一契约。

@@ -316,6 +316,187 @@ private slots:
     }
 
 private:
+    // ── file browser: listDir ───────────────────────────
+
+    // A listing shows what a file manager would show, which is deliberately
+    // looser than the indexer: README/LICENSE/.gitignore are real files even
+    // though scan() (which feeds model context) would refuse some of them.
+    void listDirShowsRealFilesNotOnlyIndexableOnes() {
+        writeFile("src/main.cpp", "int main(){}\n");
+        writeFile("README", "no extension at all\n");
+        writeFile("LICENSE", "MIT\n");
+        writeFile(".gitignore", "build/\n");
+        writeFile("notes.bin", QByteArray("\x01\x02\x03", 3));
+
+        QString error;
+        const auto entries = ProjectFileIndex::listDir(m_root->path(), QString(), &error);
+        QVERIFY2(error.isEmpty(), qPrintable(error));
+
+        QStringList names;
+        for (const auto& entry : entries)
+            names.append(entry.name);
+        QVERIFY2(names.contains(QStringLiteral("README")), "无后缀文件应可见");
+        QVERIFY2(names.contains(QStringLiteral("LICENSE")), "无后缀文件应可见");
+        QVERIFY2(names.contains(QStringLiteral(".gitignore")), "点文件应可见");
+        QVERIFY2(names.contains(QStringLiteral("notes.bin")), "非白名单后缀应可见");
+        QVERIFY2(names.contains(QStringLiteral("src")), "目录应可见");
+    }
+
+    // Ignored directories and secrets are the two things the browser hides.
+    void listDirHidesIgnoredDirsAndSecrets() {
+        writeFile("src/main.cpp", "x\n");
+        writeFile(".git/config", "");
+        writeFile("node_modules/pkg/index.js", "");
+        writeFile("cmake-build-debug/x.cpp", "");
+        writeFile(".env", "SECRET=1\n");
+        writeFile("id_rsa", "key\n");
+        writeFile("server.pem", "cert\n");
+
+        QString error;
+        const auto entries = ProjectFileIndex::listDir(m_root->path(), QString(), &error);
+        QVERIFY2(error.isEmpty(), qPrintable(error));
+
+        QStringList names;
+        for (const auto& entry : entries)
+            names.append(entry.name);
+        QVERIFY2(!names.contains(QStringLiteral(".git")), "ignore 目录不应出现");
+        QVERIFY2(!names.contains(QStringLiteral("node_modules")), "ignore 目录不应出现");
+        QVERIFY2(!names.contains(QStringLiteral("cmake-build-debug")), "ignore 目录不应出现");
+        QVERIFY2(!names.contains(QStringLiteral(".env")), "敏感文件不应出现");
+        QVERIFY2(!names.contains(QStringLiteral("id_rsa")), "敏感文件不应出现");
+        QVERIFY2(!names.contains(QStringLiteral("server.pem")), "敏感文件不应出现");
+        QVERIFY2(names.contains(QStringLiteral("src")), "普通目录应出现");
+    }
+
+    // Directories sort before files, each group alphabetically; nesting is
+    // one level only, so a child directory comes back as a single row.
+    void listDirSortsDirsFirstAndIsOneLevelDeep() {
+        writeFile("zebra.txt", "z\n");
+        writeFile("alpha.txt", "a\n");
+        writeFile("beta/inner/deep.cpp", "d\n");
+
+        QString error;
+        const auto entries = ProjectFileIndex::listDir(m_root->path(), QString(), &error);
+        QVERIFY2(error.isEmpty(), qPrintable(error));
+        QVERIFY(entries.size() >= 3);
+
+        // First row must be the directory, whatever its name sorts like.
+        QCOMPARE(entries.first().isDir, true);
+        QCOMPARE(entries.first().name, QStringLiteral("beta"));
+
+        // The nested file must NOT be in this listing - it is one level deep.
+        for (const auto& entry : entries)
+            QVERIFY2(entry.name != QStringLiteral("deep.cpp"), "不应递归");
+
+        // Files that follow are alphabetical.
+        QStringList files;
+        for (const auto& entry : entries)
+            if (!entry.isDir) files.append(entry.name);
+        QCOMPARE(files, QStringList({QStringLiteral("alpha.txt"),
+                                     QStringLiteral("zebra.txt")}));
+    }
+
+    // relPath navigates; entries carry root-relative paths with '/' even on
+    // Windows (the QML side splits on '/').
+    void listDirNavigatesAndReturnsRelativePaths() {
+        writeFile("src/core/engine.cpp", "e\n");
+
+        QString error;
+        const auto entries = ProjectFileIndex::listDir(m_root->path(),
+                                                       QStringLiteral("src"), &error);
+        QVERIFY2(error.isEmpty(), qPrintable(error));
+        QCOMPARE(entries.size(), 1);
+        QCOMPARE(entries.first().name, QStringLiteral("core"));
+        QCOMPARE(entries.first().relPath, QStringLiteral("src/core"));
+        QVERIFY(entries.first().isDir);
+    }
+
+    // Escaping the project must be refused, never resolved.
+    void listDirRejectsEscapes() {
+        for (const QString& escape : {QStringLiteral(".."),
+                                      QStringLiteral("../"),
+                                      QStringLiteral("src/../.."),
+                                      QStringLiteral("src/../../etc")}) {
+            QString error;
+            const auto entries = ProjectFileIndex::listDir(m_root->path(), escape, &error);
+            QVERIFY2(entries.isEmpty(),
+                     qPrintable(QStringLiteral("%1 应被拒绝").arg(escape)));
+            QCOMPARE(error, QStringLiteral("outside"));
+        }
+    }
+
+    // A missing directory reports itself instead of looking empty: the UI has
+    // to tell "no files here" from "I could not look".
+    void listDirDistinguishesMissingFromEmpty() {
+        QDir().mkpath(m_root->path() + "/really-empty");
+
+        QString error;
+        (void)ProjectFileIndex::listDir(m_root->path(), QStringLiteral("really-empty"), &error);
+        QVERIFY2(error.isEmpty(), "空目录不是错误");
+        QCOMPARE(error, QString());
+
+        QString missingError;
+        const auto missing = ProjectFileIndex::listDir(
+            m_root->path(), QStringLiteral("does-not-exist"), &missingError);
+        QVERIFY(missing.isEmpty());
+        QCOMPARE(missingError, QStringLiteral("missing"));
+    }
+
+    // ── file browser: readFilePreview ───────────────────
+
+    void previewReadsTextAndReportsSize() {
+        writeFile("src/hello.cpp", "int main() { return 0; }\n");
+        const auto preview = ProjectFileIndex::readFilePreview(
+            m_root->path(), QStringLiteral("src/hello.cpp"));
+        QVERIFY2(preview.error.isEmpty(), qPrintable(preview.error));
+        QVERIFY2(preview.text.contains(QStringLiteral("int main")), "内容应读出");
+        QCOMPARE(preview.bytes, qint64(25));
+        QCOMPARE(preview.truncated, false);
+        QCOMPARE(preview.binary, false);
+    }
+
+    // Truncation is reported, not silent: the UI promises "first N bytes".
+    void previewTruncatesAndSaysSo() {
+        writeFile("big.txt", QByteArray(4096, 'a'));
+        const auto preview = ProjectFileIndex::readFilePreview(
+            m_root->path(), QStringLiteral("big.txt"), 1024);
+        QVERIFY2(preview.error.isEmpty(), qPrintable(preview.error));
+        QCOMPARE(preview.truncated, true);
+        QCOMPARE(preview.bytes, qint64(4096));      // full size, not 1024
+        QCOMPARE(preview.text.size(), 1024);
+
+        // Exactly at the cap is not truncated (the extra byte is the probe).
+        writeFile("exact.txt", QByteArray(1024, 'b'));
+        const auto exact = ProjectFileIndex::readFilePreview(
+            m_root->path(), QStringLiteral("exact.txt"), 1024);
+        QCOMPARE(exact.truncated, false);
+    }
+
+    // A NUL byte means binary; rendering it as text would show mojibake.
+    void previewDetectsBinary() {
+        writeFile("blob.bin", QByteArray("MZ\x00\x00rest", 9));
+        const auto preview = ProjectFileIndex::readFilePreview(
+            m_root->path(), QStringLiteral("blob.bin"));
+        QVERIFY2(preview.error.isEmpty(), qPrintable(preview.error));
+        QCOMPARE(preview.binary, true);
+        QVERIFY(preview.text.isEmpty());
+    }
+
+    void previewRejectsEscapesAndMissing() {
+        writeFile("a.txt", "a\n");
+        const auto outside = ProjectFileIndex::readFilePreview(
+            m_root->path(), QStringLiteral("../outside.txt"));
+        QCOMPARE(outside.error, QStringLiteral("outside"));
+
+        const auto missing = ProjectFileIndex::readFilePreview(
+            m_root->path(), QStringLiteral("nope.txt"));
+        QCOMPARE(missing.error, QStringLiteral("missing"));
+
+        const auto noProject = ProjectFileIndex::readFilePreview(
+            QString(), QStringLiteral("a.txt"));
+        QCOMPARE(noProject.error, QStringLiteral("no-project"));
+    }
+
     void writeFile(const QString& relative, const QByteArray& content) {
         const QString full = m_root->path() + "/" + relative;
         QDir().mkpath(QFileInfo(full).absolutePath());

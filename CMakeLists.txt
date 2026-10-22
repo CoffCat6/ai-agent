@@ -170,6 +170,9 @@ qt_add_qml_module(nexus_viewmodels
         # Phase 3: async read-only git history facade for the change dialog.
         src/viewmodels/GitViewModel.h
         src/viewmodels/GitViewModel.cpp
+        # Sidebar file browser: one directory level at a time, read-only.
+        src/viewmodels/ProjectFileViewModel.h
+        src/viewmodels/ProjectFileViewModel.cpp
         src/viewmodels/PreferenceRegistry.h
         src/viewmodels/PreferenceRegistry.cpp
         src/viewmodels/ChangeBus.h
@@ -276,6 +279,8 @@ qt_add_qml_module(nexus_ai
         src/ui/components/ReferenceChipRow.qml
         # G4: session file checkpoints (fed by AgentVM.fileCheckpoints)
         src/ui/components/FileChangesPanel.qml
+        # Sidebar project file browser (read-only, fed by ProjectFileVM)
+        src/ui/components/ProjectFilesPanel.qml
         # G4: the review dialog - the panel's wide host (tree beside diff)
         src/ui/components/ReviewDialog.qml
         # 审阅升级：扁平化目录树（审阅 / Git 状态 / 提交文件共用）+ 路径工具

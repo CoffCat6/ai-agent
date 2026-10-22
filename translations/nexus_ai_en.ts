@@ -470,28 +470,38 @@ After the agent writes or edits files they are listed here by folder;
 select a file to view its content diff below.</translation>
     </message>
     <message>
-        <location filename="../src/ui/panels/ContextPanel.qml" line="137"/>
+        <location filename="../src/ui/panels/ContextPanel.qml" line="153"/>
         <source>知识库 · %1</source>
         <translation>Knowledge Base · %1</translation>
     </message>
     <message>
-        <location filename="../src/ui/panels/ContextPanel.qml" line="104"/>
-        <location filename="../src/ui/panels/ContextPanel.qml" line="138"/>
+        <location filename="../src/ui/panels/ContextPanel.qml" line="120"/>
+        <location filename="../src/ui/panels/ContextPanel.qml" line="154"/>
         <source>知识库</source>
         <translation>Knowledge Base</translation>
     </message>
     <message>
-        <location filename="../src/ui/panels/ContextPanel.qml" line="92"/>
+        <location filename="../src/ui/panels/ContextPanel.qml" line="95"/>
+        <source>文件</source>
+        <translation>Files</translation>
+    </message>
+    <message>
+        <location filename="../src/ui/panels/ContextPanel.qml" line="101"/>
+        <source>浏览项目文件</source>
+        <translation>Browse project files</translation>
+    </message>
+    <message>
+        <location filename="../src/ui/panels/ContextPanel.qml" line="108"/>
         <source>Git</source>
         <translation>Git</translation>
     </message>
     <message>
-        <location filename="../src/ui/panels/ContextPanel.qml" line="98"/>
+        <location filename="../src/ui/panels/ContextPanel.qml" line="114"/>
         <source>查看 Git 管理与历史</source>
         <translation>View Git management and history</translation>
     </message>
     <message>
-        <location filename="../src/ui/panels/ContextPanel.qml" line="110"/>
+        <location filename="../src/ui/panels/ContextPanel.qml" line="126"/>
         <source>查看知识库文档</source>
         <translation>View knowledge base documents</translation>
     </message>
@@ -502,62 +512,62 @@ select a file to view its content diff below.</translation>
 Files written or edited by the agent are listed here by folder.</translation>
     </message>
     <message>
-        <location filename="../src/ui/panels/ContextPanel.qml" line="153"/>
+        <location filename="../src/ui/panels/ContextPanel.qml" line="169"/>
         <source>文档内容会随提问发送给当前模型服务；如需阻止，请在设置中开启“仅本地模式”</source>
         <translation>Document content is sent to the current model service with your questions; to prevent this, enable &quot;Local-only mode&quot; in Settings</translation>
     </message>
     <message>
-        <location filename="../src/ui/panels/ContextPanel.qml" line="191"/>
+        <location filename="../src/ui/panels/ContextPanel.qml" line="207"/>
         <source>批量导入 %1/%2：正在取消…</source>
         <translation>Batch import %1/%2: cancelling…</translation>
     </message>
     <message>
-        <location filename="../src/ui/panels/ContextPanel.qml" line="195"/>
+        <location filename="../src/ui/panels/ContextPanel.qml" line="211"/>
         <source>批量导入 %1/%2：%3</source>
         <translation>Batch import %1/%2: %3</translation>
     </message>
     <message>
-        <location filename="../src/ui/panels/ContextPanel.qml" line="200"/>
+        <location filename="../src/ui/panels/ContextPanel.qml" line="216"/>
         <source>已嵌入 %1/%2</source>
         <translation>Embedded %1/%2</translation>
     </message>
     <message>
-        <location filename="../src/ui/panels/ContextPanel.qml" line="201"/>
+        <location filename="../src/ui/panels/ContextPanel.qml" line="217"/>
         <source>导入中…</source>
         <translation>Importing…</translation>
     </message>
     <message>
-        <location filename="../src/ui/panels/ContextPanel.qml" line="219"/>
+        <location filename="../src/ui/panels/ContextPanel.qml" line="235"/>
         <source>正在取消（等待当前文件完成）</source>
         <translation>Cancelling (waiting for the current file to finish)</translation>
     </message>
     <message>
-        <location filename="../src/ui/panels/ContextPanel.qml" line="220"/>
+        <location filename="../src/ui/panels/ContextPanel.qml" line="236"/>
         <source>取消批量导入（未开始的文件将跳过）</source>
         <translation>Cancel batch import (pending files will be skipped)</translation>
     </message>
     <message>
-        <location filename="../src/ui/panels/ContextPanel.qml" line="234"/>
+        <location filename="../src/ui/panels/ContextPanel.qml" line="250"/>
         <source>导入文档（可多选）</source>
         <translation>Import documents (multi-select)</translation>
     </message>
     <message>
-        <location filename="../src/ui/panels/ContextPanel.qml" line="244"/>
+        <location filename="../src/ui/panels/ContextPanel.qml" line="260"/>
         <source>重试失败的导入（%1）</source>
         <translation>Retry failed imports (%1)</translation>
     </message>
     <message>
-        <location filename="../src/ui/panels/ContextPanel.qml" line="246"/>
+        <location filename="../src/ui/panels/ContextPanel.qml" line="262"/>
         <source>重试失败的批量导入</source>
         <translation>Retry failed batch imports</translation>
     </message>
     <message>
-        <location filename="../src/ui/panels/ContextPanel.qml" line="352"/>
+        <location filename="../src/ui/panels/ContextPanel.qml" line="368"/>
         <source>%1 段 · %2 字符</source>
         <translation>%1 chunks · %2 chars</translation>
     </message>
     <message>
-        <location filename="../src/ui/panels/ContextPanel.qml" line="383"/>
+        <location filename="../src/ui/panels/ContextPanel.qml" line="399"/>
         <source>移除文档</source>
         <translation>Remove document</translation>
     </message>
@@ -566,7 +576,7 @@ Files written or edited by the agent are listed here by folder.</translation>
         <translation type="vanished">Import Document</translation>
     </message>
     <message>
-        <location filename="../src/ui/panels/ContextPanel.qml" line="251"/>
+        <location filename="../src/ui/panels/ContextPanel.qml" line="267"/>
         <source>导入文本或 PDF 文件（.txt / .md / .pdf …），
 模型即可检索其内容回答问题</source>
         <translation>Import text or PDF files (.txt / .md / .pdf …),
@@ -579,12 +589,12 @@ and the model can retrieve their content to answer questions</translation>
 and the model can retrieve their content to answer questions</translation>
     </message>
     <message>
-        <location filename="../src/ui/panels/ContextPanel.qml" line="332"/>
+        <location filename="../src/ui/panels/ContextPanel.qml" line="348"/>
         <source>降级</source>
         <translation>Fallback</translation>
     </message>
     <message>
-        <location filename="../src/ui/panels/ContextPanel.qml" line="346"/>
+        <location filename="../src/ui/panels/ContextPanel.qml" line="362"/>
         <source>导入时嵌入服务不可用，已使用本地降级嵌入，检索质量有限。可点击右侧刷新按钮重新嵌入。</source>
         <translation>The embedding service was unavailable during import; a local fallback embedding was used with limited retrieval quality. Click the refresh button on the right to re-embed.</translation>
     </message>
@@ -597,7 +607,7 @@ and the model can retrieve their content to answer questions</translation>
         <translation type="vanished"> chars</translation>
     </message>
     <message>
-        <location filename="../src/ui/panels/ContextPanel.qml" line="370"/>
+        <location filename="../src/ui/panels/ContextPanel.qml" line="386"/>
         <source>重新嵌入</source>
         <translation>Re-embed</translation>
     </message>
@@ -4918,6 +4928,99 @@ Select or import a project in the sidebar first.</translation>
         <location filename="../src/ui/components/ProcessCard.qml" line="307"/>
         <source>允许</source>
         <translation>Allow</translation>
+    </message>
+</context>
+<context>
+    <name>ProjectFilesPanel</name>
+    <message>
+        <location filename="../src/ui/components/ProjectFilesPanel.qml" line="142"/>
+        <source>无法打开该文件（可能已被删除或没有关联程序）。</source>
+        <translation>Could not open the file (it may have been deleted, or no program is associated with it).</translation>
+    </message>
+    <message>
+        <location filename="../src/ui/components/ProjectFilesPanel.qml" line="225"/>
+        <source>按名称过滤项目文件</source>
+        <translation>Filter project files by name</translation>
+    </message>
+    <message>
+        <location filename="../src/ui/components/ProjectFilesPanel.qml" line="231"/>
+        <source>过滤文件…</source>
+        <translation>Filter files…</translation>
+    </message>
+    <message>
+        <location filename="../src/ui/components/ProjectFilesPanel.qml" line="246"/>
+        <source>折叠全部目录</source>
+        <translation>Collapse all folders</translation>
+    </message>
+    <message>
+        <location filename="../src/ui/components/ProjectFilesPanel.qml" line="257"/>
+        <source>重新读取项目文件</source>
+        <translation>Reload project files</translation>
+    </message>
+    <message>
+        <location filename="../src/ui/components/ProjectFilesPanel.qml" line="347"/>
+        <source>没有匹配的文件。</source>
+        <translation>No matching files.</translation>
+    </message>
+    <message>
+        <location filename="../src/ui/components/ProjectFilesPanel.qml" line="348"/>
+        <source>该目录为空。</source>
+        <translation>This folder is empty.</translation>
+    </message>
+    <message>
+        <location filename="../src/ui/components/ProjectFilesPanel.qml" line="401"/>
+        <source>用系统默认程序打开</source>
+        <translation>Open with the default application</translation>
+    </message>
+    <message>
+        <location filename="../src/ui/components/ProjectFilesPanel.qml" line="412"/>
+        <source>收起预览</source>
+        <translation>Collapse preview</translation>
+    </message>
+    <message>
+        <location filename="../src/ui/components/ProjectFilesPanel.qml" line="426"/>
+        <source>二进制文件，无法预览。</source>
+        <translation>Binary file; no preview available.</translation>
+    </message>
+    <message>
+        <location filename="../src/ui/components/ProjectFilesPanel.qml" line="428"/>
+        <source>文件已不存在，可能已被删除或改名。</source>
+        <translation>The file no longer exists; it may have been deleted or renamed.</translation>
+    </message>
+    <message>
+        <location filename="../src/ui/components/ProjectFilesPanel.qml" line="430"/>
+        <source>无法读取该文件（权限不足或已被占用）。</source>
+        <translation>Could not read the file (permission denied or file in use).</translation>
+    </message>
+    <message>
+        <location filename="../src/ui/components/ProjectFilesPanel.qml" line="432"/>
+        <source>该路径不在项目内，已拒绝读取。</source>
+        <translation>That path is outside the project; reading was refused.</translation>
+    </message>
+    <message>
+        <location filename="../src/ui/components/ProjectFilesPanel.qml" line="434"/>
+        <source>读取失败：%1</source>
+        <translation>Read failed: %1</translation>
+    </message>
+    <message>
+        <location filename="../src/ui/components/ProjectFilesPanel.qml" line="436"/>
+        <source>文件较大（%1 字节），仅显示前 512 KB。</source>
+        <translation>Large file (%1 bytes); only the first 512 KB are shown.</translation>
+    </message>
+    <message>
+        <location filename="../src/ui/components/ProjectFilesPanel.qml" line="465"/>
+        <source>文件内容预览</source>
+        <translation>File content preview</translation>
+    </message>
+    <message>
+        <location filename="../src/ui/components/ProjectFilesPanel.qml" line="488"/>
+        <source>当前会话未关联项目；在项目中打开的会话才能浏览项目文件。</source>
+        <translation>This session is not tied to a project; project files can be browsed in sessions opened from a project.</translation>
+    </message>
+    <message>
+        <location filename="../src/ui/components/ProjectFilesPanel.qml" line="496"/>
+        <source>项目文件</source>
+        <translation>Project files</translation>
     </message>
 </context>
 <context>
