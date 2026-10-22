@@ -4933,92 +4933,107 @@
 <context>
     <name>ProjectFilesPanel</name>
     <message>
-        <location filename="../src/ui/components/ProjectFilesPanel.qml" line="150"/>
+        <location filename="../src/ui/components/ProjectFilesPanel.qml" line="156"/>
         <source>无法打开该文件（可能已被删除或没有关联程序）。</source>
         <translation>无法打开该文件（可能已被删除或没有关联程序）。</translation>
     </message>
     <message>
-        <location filename="../src/ui/components/ProjectFilesPanel.qml" line="256"/>
+        <location filename="../src/ui/components/ProjectFilesPanel.qml" line="262"/>
         <source>按名称过滤项目文件</source>
         <translation>按名称过滤项目文件</translation>
     </message>
     <message>
-        <location filename="../src/ui/components/ProjectFilesPanel.qml" line="262"/>
+        <location filename="../src/ui/components/ProjectFilesPanel.qml" line="268"/>
         <source>过滤文件…</source>
         <translation>过滤文件…</translation>
     </message>
     <message>
-        <location filename="../src/ui/components/ProjectFilesPanel.qml" line="277"/>
+        <location filename="../src/ui/components/ProjectFilesPanel.qml" line="283"/>
         <source>折叠全部目录</source>
         <translation>折叠全部目录</translation>
     </message>
     <message>
-        <location filename="../src/ui/components/ProjectFilesPanel.qml" line="288"/>
+        <location filename="../src/ui/components/ProjectFilesPanel.qml" line="294"/>
         <source>重新读取项目文件</source>
         <translation>重新读取项目文件</translation>
     </message>
     <message>
-        <location filename="../src/ui/components/ProjectFilesPanel.qml" line="389"/>
+        <location filename="../src/ui/components/ProjectFilesPanel.qml" line="395"/>
         <source>没有匹配的文件。</source>
         <translation>没有匹配的文件。</translation>
     </message>
     <message>
-        <location filename="../src/ui/components/ProjectFilesPanel.qml" line="390"/>
+        <location filename="../src/ui/components/ProjectFilesPanel.qml" line="396"/>
         <source>该目录为空。</source>
         <translation>该目录为空。</translation>
     </message>
     <message>
-        <location filename="../src/ui/components/ProjectFilesPanel.qml" line="446"/>
+        <location filename="../src/ui/components/ProjectFilesPanel.qml" line="452"/>
+        <source>换行</source>
+        <translation>换行</translation>
+    </message>
+    <message>
+        <location filename="../src/ui/components/ProjectFilesPanel.qml" line="461"/>
+        <source>已开启自动换行，点击改为横向滚动</source>
+        <translation>已开启自动换行，点击改为横向滚动</translation>
+    </message>
+    <message>
+        <location filename="../src/ui/components/ProjectFilesPanel.qml" line="462"/>
+        <source>开启自动换行，长行折行显示</source>
+        <translation>开启自动换行，长行折行显示</translation>
+    </message>
+    <message>
+        <location filename="../src/ui/components/ProjectFilesPanel.qml" line="473"/>
         <source>用系统默认程序打开</source>
         <translation>用系统默认程序打开</translation>
     </message>
     <message>
-        <location filename="../src/ui/components/ProjectFilesPanel.qml" line="457"/>
+        <location filename="../src/ui/components/ProjectFilesPanel.qml" line="484"/>
         <source>收起预览</source>
         <translation>收起预览</translation>
     </message>
     <message>
-        <location filename="../src/ui/components/ProjectFilesPanel.qml" line="471"/>
+        <location filename="../src/ui/components/ProjectFilesPanel.qml" line="498"/>
         <source>二进制文件，无法预览。</source>
         <translation>二进制文件，无法预览。</translation>
     </message>
     <message>
-        <location filename="../src/ui/components/ProjectFilesPanel.qml" line="473"/>
+        <location filename="../src/ui/components/ProjectFilesPanel.qml" line="500"/>
         <source>文件已不存在，可能已被删除或改名。</source>
         <translation>文件已不存在，可能已被删除或改名。</translation>
     </message>
     <message>
-        <location filename="../src/ui/components/ProjectFilesPanel.qml" line="475"/>
+        <location filename="../src/ui/components/ProjectFilesPanel.qml" line="502"/>
         <source>无法读取该文件（权限不足或已被占用）。</source>
         <translation>无法读取该文件（权限不足或已被占用）。</translation>
     </message>
     <message>
-        <location filename="../src/ui/components/ProjectFilesPanel.qml" line="477"/>
+        <location filename="../src/ui/components/ProjectFilesPanel.qml" line="504"/>
         <source>该路径不在项目内，已拒绝读取。</source>
         <translation>该路径不在项目内，已拒绝读取。</translation>
     </message>
     <message>
-        <location filename="../src/ui/components/ProjectFilesPanel.qml" line="479"/>
+        <location filename="../src/ui/components/ProjectFilesPanel.qml" line="506"/>
         <source>读取失败：%1</source>
         <translation>读取失败：%1</translation>
     </message>
     <message>
-        <location filename="../src/ui/components/ProjectFilesPanel.qml" line="481"/>
+        <location filename="../src/ui/components/ProjectFilesPanel.qml" line="508"/>
         <source>文件较大（%1 字节），仅显示前 512 KB。</source>
         <translation>文件较大（%1 字节），仅显示前 512 KB。</translation>
     </message>
     <message>
-        <location filename="../src/ui/components/ProjectFilesPanel.qml" line="510"/>
+        <location filename="../src/ui/components/ProjectFilesPanel.qml" line="550"/>
         <source>文件内容预览</source>
         <translation>文件内容预览</translation>
     </message>
     <message>
-        <location filename="../src/ui/components/ProjectFilesPanel.qml" line="533"/>
+        <location filename="../src/ui/components/ProjectFilesPanel.qml" line="573"/>
         <source>当前会话未关联项目；在项目中打开的会话才能浏览项目文件。</source>
         <translation>当前会话未关联项目；在项目中打开的会话才能浏览项目文件。</translation>
     </message>
     <message>
-        <location filename="../src/ui/components/ProjectFilesPanel.qml" line="541"/>
+        <location filename="../src/ui/components/ProjectFilesPanel.qml" line="581"/>
         <source>项目文件</source>
         <translation>项目文件</translation>
     </message>

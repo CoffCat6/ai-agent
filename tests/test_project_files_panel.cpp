@@ -417,6 +417,88 @@ private slots:
         QTRY_VERIFY(!seams.first()->isVisible());
     }
 
+    // Wrap toggle: code reads better unwrapped, but a minified JSON or a long
+    // single-line log needs soft wrapping. The toggle must actually change the
+    // editor's wrap mode AND give it a bounded width - a wrapping TextArea
+    // inside a ScrollView keeps its longest-line width unless the width is
+    // bound, and then it silently never wraps.
+    void wrapToggleChangesEditorMode() {
+        writeFile("long.txt", QByteArray(300, 'x'));
+
+        Harness h;
+        QVERIFY2(h.window, qPrintable(h.error));
+        QVERIFY(h.invoke1("setProjectRoot", m_dir->path()));
+        QTRY_VERIFY(h.call("rowCount").toInt() >= 1);
+        QVERIFY(h.invoke1("selectFile", QStringLiteral("long.txt")));
+        QTRY_COMPARE(h.call("previewVisible").toBool(), true);
+        QTest::qWait(150);
+
+        // Default is no-wrap: indentation is what makes code readable.
+        QCOMPARE(h.call("previewWrap").toBool(), false);
+        // TextEdit.NoWrap == 0; anything else means the editor wraps.
+        QCOMPARE(h.call("previewWrapMode").toInt(), 0);
+
+        const double unwrappedWidth = h.call("previewEditorWidth").toDouble();
+        const double unwrappedHeight = h.call("previewEditorHeight").toDouble();
+        QVERIFY2(unwrappedWidth > 0, "editor must have a size");
+        QVERIFY2(unwrappedHeight > 0, "editor must have content height");
+
+        QVERIFY(QMetaObject::invokeMethod(h.root.get(), "setPreviewWrap",
+                                          Q_ARG(QVariant, true)));
+        QTRY_COMPARE(h.call("previewWrap").toBool(), true);
+        // Assert "not NoWrap" rather than a specific enum value: the numeric
+        // values of TextEdit.Wrap/WordWrap are not the obvious 1/2/3, and
+        // pinning one would break on a Qt enum reorder for no benefit.
+        QTRY_VERIFY2(h.call("previewWrapMode").toInt() != 0,
+                     "wrap is on but the editor is still NoWrap");
+
+        // In wrap mode the editor is bound to the viewport, i.e. it cannot be
+        // wider than the ScrollView it sits in.
+        QTest::qWait(150);
+        const double wrappedWidth = h.call("previewEditorWidth").toDouble();
+        const double wrappedHeight = h.call("previewEditorHeight").toDouble();
+        QVERIFY2(wrappedWidth > 0, "editor must have a size in wrap mode");
+
+        // The decisive check: 300 characters on one line cannot fit the
+        // sidebar, so soft wrapping MUST produce more lines than before.
+        // Width alone is too weak - it passes by accident whenever the
+        // unwrapped text happens to be narrower than the viewport, which
+        // is exactly the case that hides a missing width binding.
+        QVERIFY2(wrappedHeight > unwrappedHeight + 1.0,
+                 qPrintable(QStringLiteral("wrap did not add lines (h %1 -> %2); "
+                                            "the editor is probably unbounded")
+                                .arg(unwrappedHeight).arg(wrappedHeight)));
+        // ... and it stays inside the viewport it wraps against.
+        QVERIFY2(wrappedWidth <= unwrappedWidth + 1.0,
+                 qPrintable(QStringLiteral("editor got wider in wrap mode (%1 > %2)")
+                                .arg(wrappedWidth).arg(unwrappedWidth)));
+
+        // Toggling back restores horizontal scrolling.
+        QVERIFY(QMetaObject::invokeMethod(h.root.get(), "setPreviewWrap",
+                                          Q_ARG(QVariant, false)));
+        QTRY_COMPARE(h.call("previewWrapMode").toInt(), 0);
+    }
+
+    // The toggle lives in the preview header, so it is only reachable while
+    // there is something to preview.
+    void wrapToggleOnlyWithPreview() {
+        writeFile("a.txt", "x\n");
+
+        Harness h;
+        QVERIFY2(h.window, qPrintable(h.error));
+        QVERIFY(h.invoke1("setProjectRoot", m_dir->path()));
+        QTRY_VERIFY(h.call("rowCount").toInt() >= 1);
+
+        QList<QQuickItem*> toggles;
+        collectVisualItems(h.window->contentItem(),
+                           QStringLiteral("projectFileWrapToggle"), &toggles);
+        QCOMPARE(toggles.size(), 1);
+        QVERIFY2(!toggles.first()->isVisible(), "无预览时不应有换行开关");
+
+        QVERIFY(h.invoke1("selectFile", QStringLiteral("a.txt")));
+        QTRY_VERIFY(toggles.first()->isVisible());
+    }
+
 private:
     void writeFile(const QString& relative, const QByteArray& content) {
         const QString full = m_dir->path() + "/" + relative;

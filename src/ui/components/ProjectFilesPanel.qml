@@ -37,6 +37,12 @@ Item {
     // a dozen lines of code. In-memory only - it is a per-look view
     // parameter, not a stable preference, so it is deliberately not
     // persisted (ui/panelWidth is, and that is the right line).
+    // Soft-wrap long lines instead of scrolling horizontally. Off by default:
+    // code reads better with its indentation intact, and a wrapped line makes
+    // column alignment meaningless. Long single-line files (JSON, minified
+    // output) are the reason the toggle exists.
+    property bool previewWrap: false
+
     property int previewHeight: 320
     readonly property int previewMinHeight: 100
     readonly property int previewDefaultHeight: 320
@@ -436,6 +442,27 @@ Item {
                         Accessible.name: text
                     }
 
+                    // Wrap toggle. A text button rather than an icon: the
+                    // icon set has nothing that reads as "soft wrap", and a
+                    // guessable-but-wrong icon is worse than a word at this
+                    // size. "自动换行" state is carried by `highlighted`.
+                    AppButton {
+                        objectName: "projectFileWrapToggle"
+                        Layout.preferredHeight: 20
+                        text: qsTr("换行")
+                        implicitHeight: 20
+                        highlighted: root.previewWrap
+                        buttonColor: "transparent"
+                        textColor: highlighted ? Theme.bgPrimary : Theme.textTertiary
+                        // AppButton has no tooltip slot; the visible label
+                        // already says what the control is, so the accessible
+                        // name carries the state instead of repeating it.
+                        Accessible.name: root.previewWrap
+                            ? qsTr("已开启自动换行，点击改为横向滚动")
+                            : qsTr("开启自动换行，长行折行显示")
+                        onClicked: root.previewWrap = !root.previewWrap
+                    }
+
                     IconButton {
                         objectName: "projectFileOpen"
                         Layout.preferredWidth: 20
@@ -490,17 +517,30 @@ Item {
                 }
 
                 ScrollView {
+                    id: previewScroll
                     Layout.fillWidth: true
                     Layout.fillHeight: true
                     clip: true
                     visible: root.previewText.length > 0
+                    // Horizontal scrolling is only meaningful while the text
+                    // does not wrap; keeping the bar in wrap mode would offer
+                    // a scrollbar for content that already fits.
+                    ScrollBar.horizontal.policy: root.previewWrap
+                        ? ScrollBar.AlwaysOff : ScrollBar.AsNeeded
 
                     TextArea {
                         id: previewArea
                         objectName: "projectFilePreviewText"
                         readOnly: true
                         selectByMouse: true
-                        wrapMode: TextEdit.NoWrap
+                        // Wrapped mode needs an explicit width: inside a
+                        // ScrollView the content item is free to grow, so
+                        // without this binding the editor sizes itself to the
+                        // longest line and never actually wraps.
+                        width: root.previewWrap
+                            ? previewScroll.availableWidth : implicitWidth
+                        wrapMode: root.previewWrap
+                            ? TextEdit.Wrap : TextEdit.NoWrap
                         text: root.previewText
                         color: Theme.textPrimary
                         font.family: Theme.fontMono

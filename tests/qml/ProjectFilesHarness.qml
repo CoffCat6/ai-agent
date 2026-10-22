@@ -64,6 +64,35 @@ Window {
     function previewDefaultHeight() { return panel.previewDefaultHeight }
     function dragSeam(delta) { panel.dragPreviewSeam(delta) }
     function resetPreviewHeight() { panel.resetPreviewHeight() }
+    // Wrap toggle + the editor's effective wrap state.
+    function setPreviewWrap(on) { panel.previewWrap = on }
+    function previewWrap() { return panel.previewWrap }
+    function previewWrapMode() {
+        // 0 = NoWrap, 1 = WordWrap, 2 = WrapAnywhere, 3 = Wrap (Qt enum order)
+        var items = []
+        collectTextAreas(panel, items)
+        return items.length > 0 ? items[0].wrapMode : -1
+    }
+    function previewEditorWidth() {
+        var items = []
+        collectTextAreas(panel, items)
+        return items.length > 0 ? items[0].width : -1
+    }
+    // The decisive evidence of soft wrapping: the same text needs more lines
+    // (i.e. more height) once it wraps. Width alone can pass by accident when
+    // the unwrapped text happens to be narrower than the viewport.
+    function previewEditorHeight() {
+        var items = []
+        collectTextAreas(panel, items)
+        return items.length > 0 ? items[0].contentHeight : -1
+    }
+    function collectTextAreas(node, out) {
+        for (var i = 0; i < node.children.length; ++i) {
+            var child = node.children[i]
+            if (child.objectName === "projectFilePreviewText") out.push(child)
+            collectTextAreas(child, out)
+        }
+    }
     // Diagnostics: what the VM holds, independent of the panel's own state.
     function vmRoot() { return ProjectFileVM.root }
     function vmChildCount(relPath) { return ProjectFileVM.children(relPath).length }
