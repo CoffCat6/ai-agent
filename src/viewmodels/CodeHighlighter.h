@@ -28,6 +28,18 @@ class CodeHighlighter : public QSyntaxHighlighter {
     Q_PROPERTY(QString text READ text WRITE setText)
     // docs/19 §5.2: 派生的语言标签（"JSON"/"Python"/...），未知语言为空串。
     Q_PROPERTY(QString languageName READ languageName NOTIFY languageNameChanged)
+    // Optional file name (or path) whose extension pins the language. Empty =
+    // fall back to content heuristics, which is what the chat code blocks need
+    // (they only ever have text).
+    //
+    // The sidebar preview has the file name, and the heuristics are
+    // demonstrably wrong on real files: CMakeLists.txt detects as Shell,
+    // .clang-format as Markdown. With a name supplied, an unrecognised
+    // extension leaves the block PLAIN instead of guessing - a wrong colour is
+    // worse than none, and it would make the preview actively misleading.
+    Q_PROPERTY(QString sourceName READ sourceName WRITE setSourceName)
+    // Callers use this to explain why a long file lost its colours.
+    Q_PROPERTY(int maxHighlightChars READ maxHighlightChars CONSTANT)
 
 public:
     explicit CodeHighlighter(QObject* parent = nullptr);
@@ -43,6 +55,16 @@ public:
     // own; a full rehighlight only happens when language/threshold flips.
     QString text() const { return m_text; }
     void setText(const QString& text);
+
+    QString sourceName() const { return m_sourceName; }
+    void setSourceName(const QString& name);
+    static int maxHighlightChars() { return MaxChars; }
+
+    // True when the attached document actually carries at least one coloured
+    // range. QML cannot walk QTextDocument blocks (they are not exposed), so a
+    // test cannot otherwise tell "language recognised" from "colours applied";
+    // this is that observation point. Also handy for diagnostics.
+    Q_INVOKABLE bool hasHighlightedText() const;
 
     // 供代码块标题栏显示的语言名；Unknown → 空串（调用方据此隐藏标题栏）。
     QString languageName() const { return languageDisplayName(m_language); }
@@ -74,12 +96,19 @@ private:
     };
 
     static Language detectLanguage(const QString& text);
+    // Extension-driven mapping for the file preview. Unknown for anything
+    // without a rule set (yaml/toml/ini/cmake/...): those stay plain.
+    static Language languageForFileName(const QString& name);
     static const QVector<Rule>& rulesFor(Language language);
     // 标题栏用的稳定语言名；Unknown → 空串。
     static QString languageDisplayName(Language language);
 
     void rebuildFormats();
     void init();
+    // Recompute m_language from sourceName (if set) or the content heuristics,
+    // rehighlighting when it actually flips. Shared by setText/setSourceName
+    // so the two properties cannot disagree about precedence.
+    void refreshLanguage();
     void claim(int start, int length, int role);
     bool isClaimed(int start, int length) const;
     // /* */ / <!-- --> state machine shared by the C-family comment tokens.
@@ -91,12 +120,17 @@ private:
     void highlightFence(const QString& text);
 
     QString m_text;
+    QString m_sourceName;
     QQuickTextDocument* m_document = nullptr;
     Language m_language = Unknown;
     QVector<QTextCharFormat> m_formats;               // indexed by FormatRole
     QVector<QPair<int, int>> m_claimed;               // spans colored this block
     static constexpr int MaxChars = 64 * 1024;
     static constexpr int MaxLines = 2000;
+    // One line may not be longer than this. MaxLines counts newlines, so a
+    // 60KB minified JSON passes as a single line and would then run every
+    // rule's globalMatch across the whole thing.
+    static constexpr int MaxBlockChars = 8 * 1024;
 };
 
 } // namespace NexusAI

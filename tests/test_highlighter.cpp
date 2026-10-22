@@ -386,6 +386,131 @@ private slots:
         QCOMPARE(none.size(), 1);
         QVERIFY(!CitationParser::instance()->hasCitation(none));
     }
+
+    // ── file-name driven language (sidebar preview) ──────
+    //
+    // The content heuristics are fine for chat code blocks (text only), but
+    // they mislabel real files - measured on this repo: CMakeLists.txt came
+    // out as Shell and .clang-format as Markdown. When the caller knows the
+    // file name, the extension decides, and an unrecognised extension stays
+    // plain rather than being guessed at.
+
+    void sourceNameOverridesHeuristics() {
+        // Content that would trip the heuristics one way ...
+        const QString src = QStringLiteral("if (CMAKE_BUILD_TYPE)\n"
+                                           "  message(STATUS \"x\")\n"
+                                           "endif()\n");
+        {
+            // ... without a name, it guesses (wrongly).
+            QTextDocument doc;
+            doc.setPlainText(src);
+            CodeHighlighter highlighter(&doc);
+            highlighter.setText(src);
+            QVERIFY2(!highlighter.languageName().isEmpty(),
+                     "前提：内容启发式会给出某个判定");
+        }
+
+        // With the name, an extension that has no rule set means plain.
+        QTextDocument doc;
+        doc.setPlainText(src);
+        CodeHighlighter highlighter(&doc);
+        highlighter.setSourceName(QStringLiteral("CMakeLists.txt"));
+        highlighter.setText(src);
+        QCOMPARE(highlighter.languageName(), QString());
+        QVERIFY2(allFormats(doc).isEmpty(), "未知扩展名不应上色");
+    }
+
+    void sourceNameMapsKnownExtensions() {
+        struct Case { const char* name; const char* expected; };
+        const Case cases[] = {
+            {"src/ui/main.qml", "JS/TS"},          // QML approximated as JS
+            {"src/core/agent/AIAgent.cpp", "C++"},
+            {"src/viewmodels/CodeHighlighter.h", "C++"},
+            {"script.py", "Python"},
+            {"data.json", "JSON"},
+            {"index.html", "HTML"},
+            {"form.ui", "HTML"},                   // Qt .ui is XML
+            {"style.css", "CSS"},
+            {"run.sh", "Shell"},
+            {"readme.md", "Markdown"},
+            // No rule set -> plain, even though these look like something.
+            {"config.yaml", ""},
+            {"Cargo.toml", ""},
+            {"notes.txt", ""},
+            {".clang-format", ""},                 // dotfile: no extension
+            {"translation.ts", ""},                // XML in Qt, TS elsewhere: ambiguous
+        };
+        for (const Case& c : cases) {
+            QTextDocument doc;
+            doc.setPlainText(QStringLiteral("placeholder\n"));
+            CodeHighlighter highlighter(&doc);
+            highlighter.setSourceName(QString::fromLatin1(c.name));
+            highlighter.setText(QStringLiteral("placeholder\n"));
+            QCOMPARE(highlighter.languageName(), QString::fromLatin1(c.expected));
+        }
+    }
+
+    // The name wins over content even when the content looks like something
+    // else - a .py file full of JSON-looking text is still Python.
+    void sourceNameWinsOverConflictingContent() {
+        const QString jsonish = QStringLiteral("{\"key\": \"value\", \"n\": 1}\n");
+        QTextDocument doc;
+        doc.setPlainText(jsonish);
+        CodeHighlighter highlighter(&doc);
+        highlighter.setSourceName(QStringLiteral("payload.py"));
+        highlighter.setText(jsonish);
+        QCOMPARE(highlighter.languageName(), QStringLiteral("Python"));
+
+        // Switching files re-evaluates immediately, without waiting for text.
+        highlighter.setSourceName(QStringLiteral("payload.json"));
+        QCOMPARE(highlighter.languageName(), QStringLiteral("JSON"));
+    }
+
+    // A named file still honours the size budget: recognition does not buy an
+    // exemption from the performance guard.
+    void sourceNameStillRespectsSizeBudget() {
+        QString src;
+        while (src.size() <= CodeHighlighter::maxHighlightChars())
+            src += QStringLiteral("// filler comment line\n");
+
+        QTextDocument doc;
+        doc.setPlainText(src);
+        CodeHighlighter highlighter(&doc);
+        highlighter.setSourceName(QStringLiteral("big.cpp"));
+        highlighter.setText(src);
+        QCOMPARE(highlighter.languageName(), QString());
+        QVERIFY(allFormats(doc).isEmpty());
+    }
+
+    // One enormous line defeats the line budget (it counts newlines), so it
+    // gets its own guard: a 60KB minified blob must not run every rule across
+    // the whole thing.
+    void oversizedSingleLineStaysPlain() {
+        QString src = QStringLiteral("{\"a\":\"");
+        while (src.size() < 40 * 1024)
+            src += QLatin1Char('x');
+        src += QStringLiteral("\"}");
+
+        QTextDocument doc;
+        doc.setPlainText(src);
+        CodeHighlighter highlighter(&doc);
+        highlighter.setSourceName(QStringLiteral("min.json"));
+        highlighter.setText(src);
+
+        // The language is still recognised (the file is small and named)...
+        QCOMPARE(highlighter.languageName(), QStringLiteral("JSON"));
+        // ... but the single block is too long to be worth colouring.
+        QVERIFY2(allFormats(doc).isEmpty(), "超长单行不应上色");
+
+        // A short line of the same file does get coloured.
+        QTextDocument small;
+        const QString shortLine = QStringLiteral("{\"a\": \"value\", \"n\": 42}\n");
+        small.setPlainText(shortLine);
+        CodeHighlighter smallHighlighter(&small);
+        smallHighlighter.setSourceName(QStringLiteral("min.json"));
+        smallHighlighter.setText(shortLine);
+        QVERIFY(!allFormats(small).isEmpty());
+    }
 };
 
 int main(int argc, char* argv[]) {

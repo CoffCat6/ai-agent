@@ -145,6 +145,17 @@ Item {
         previewData = ProjectFileVM.preview(relPath)
     }
 
+    // Language label and colour state, read off the highlighter. Exposed as
+    // functions rather than aliases because CodeHighlighter is a QObject, not
+    // an Item: it lives outside the visual child tree, so a host (or a test)
+    // cannot reach it by walking `children`.
+    function previewLanguage() {
+        return previewHighlighter.languageName
+    }
+    function previewHighlighted() {
+        return previewHighlighter.hasHighlightedText()
+    }
+
     function closePreview() {
         previewVisible = false
         selectedPath = ""
@@ -442,6 +453,21 @@ Item {
                         Accessible.name: text
                     }
 
+                    // Detected language, straight from the highlighter. Hidden
+                    // when nothing was recognised so a plain-text file does not
+                    // spend horizontal room on a label saying so - the sidebar
+                    // gets as narrow as 220px and the file name matters more.
+                    Text {
+                        objectName: "projectFileLanguage"
+                        Layout.alignment: Qt.AlignVCenter
+                        visible: text.length > 0
+                        text: previewHighlighter.languageName
+                        color: Theme.textTertiary
+                        font.family: Theme.fontMono
+                        font.pixelSize: 9
+                        Accessible.name: qsTr("语法高亮语言：%1").arg(text)
+                    }
+
                     // Wrap toggle. A text button rather than an icon: the
                     // icon set has nothing that reads as "soft wrap", and a
                     // guessable-but-wrong icon is worse than a word at this
@@ -507,6 +533,12 @@ Item {
                         if (root.previewTruncated)
                             return qsTr("文件较大（%1 字节），仅显示前 512 KB。")
                                 .arg(root.previewBytes)
+                        // Colouring stops at a much lower size than reading
+                        // does, so a mid-sized file shows in full but plain.
+                        // Say why, instead of leaving the user to wonder.
+                        if (root.previewText.length > previewHighlighter.maxHighlightChars)
+                            return qsTr("文件超过 %1 KB，已关闭语法高亮。")
+                                .arg(Math.round(previewHighlighter.maxHighlightChars / 1024))
                         return ""
                     }
                     color: root.previewError.length > 0 ? Theme.statusWarning
@@ -548,6 +580,20 @@ Item {
                         background: null
                         padding: 0
                         Accessible.name: qsTr("文件内容预览")
+
+                        // Syntax highlighting, driven by the FILE NAME rather
+                        // than the content heuristics: this panel knows what it
+                        // is showing, and the heuristics mislabel real files
+                        // (CMakeLists.txt as Shell, .clang-format as Markdown).
+                        // An extension with no rule set stays plain instead of
+                        // being guessed at.
+                        CodeHighlighter {
+                            id: previewHighlighter
+                            objectName: "projectFileHighlighterProbe"
+                            document: previewArea.textDocument
+                            sourceName: root.previewName
+                            text: root.previewText
+                        }
                     }
                 }
             }

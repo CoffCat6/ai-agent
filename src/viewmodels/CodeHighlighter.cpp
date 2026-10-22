@@ -4,6 +4,8 @@
 
 #include <QJsonDocument>
 #include <QJsonParseError>
+#include <QTextBlock>
+#include <QTextLayout>
 
 namespace NexusAI {
 
@@ -27,16 +29,46 @@ void CodeHighlighter::init() {
 
 void CodeHighlighter::setDocument(QQuickTextDocument* document) {
     m_document = document;
+    // QSyntaxHighlighter::setDocument() rehighlights the whole document, so
+    // the current language is applied whatever order QML assigns the three
+    // properties in. (A manual rehighlight here was tried and is redundant:
+    // removing it left every test passing.)
     QSyntaxHighlighter::setDocument(document ? document->textDocument() : nullptr);
 }
 
 void CodeHighlighter::setText(const QString& text) {
     if (m_text == text) return;
     m_text = text;
+    refreshLanguage();
+}
+
+void CodeHighlighter::setSourceName(const QString& name) {
+    const QString trimmed = name.trimmed();
+    if (m_sourceName == trimmed) return;
+    m_sourceName = trimmed;
+    // The name outranks the content: switching files must not keep the
+    // previous file's language while the new text is still on screen.
+    refreshLanguage();
+}
+
+void CodeHighlighter::refreshLanguage() {
     const Language previous = m_language;
-    // docs/9 §5 Batch 23: oversized blocks render as plain text.
-    m_language = (text.size() > MaxChars || text.count(QLatin1Char('\n')) + 1 > MaxLines)
-        ? Unknown : detectLanguage(text);
+
+    // docs/9 §5 Batch 23: oversized blocks render as plain text. The budget
+    // applies to both paths - a 512KB file stays plain even when its
+    // extension is recognised.
+    const bool tooBig = m_text.size() > MaxChars
+        || m_text.count(QLatin1Char('\n')) + 1 > MaxLines;
+
+    if (!m_sourceName.isEmpty()) {
+        // Named file: the extension decides, and an unknown extension means
+        // "leave it plain" rather than "guess from content". Guessing is what
+        // turned CMakeLists.txt into Shell and .clang-format into Markdown.
+        m_language = tooBig ? Unknown : languageForFileName(m_sourceName);
+    } else {
+        m_language = tooBig ? Unknown : detectLanguage(m_text);
+    }
+
     // Content-only edits already rehighlight incrementally through the
     // document change signals; a full pass is only needed when the active
     // language (or the plain-text fallback) flips.
@@ -44,6 +76,81 @@ void CodeHighlighter::setText(const QString& text) {
         rehighlight();
         emit languageNameChanged();
     }
+}
+
+bool CodeHighlighter::hasHighlightedText() const {
+    // document() returns what QSyntaxHighlighter was given, i.e. a
+    // QTextDocument* - reach it through the base class, not via the QML
+    // wrapper (m_document is the QQuickTextDocument*).
+    const QTextDocument* doc = QSyntaxHighlighter::document();
+    if (!doc) return false;
+    for (QTextBlock block = doc->firstBlock(); block.isValid(); block = block.next()) {
+        const QTextLayout* layout = block.layout();
+        if (!layout) continue;
+        const QVector<QTextLayout::FormatRange> ranges = layout->formats();
+        for (const auto& range : ranges) {
+            if (range.length > 0
+                    && range.format.foreground().style() != Qt::NoBrush)
+                return true;
+        }
+    }
+    return false;
+}
+
+CodeHighlighter::Language CodeHighlighter::languageForFileName(const QString& name) {
+    // Only the basename matters, and only the part after the last dot that is
+    // not the first character - so ".clang-format" has no usable extension.
+    const QString base = name.section(QLatin1Char('/'), -1).section(QLatin1Char('\\'), -1);
+    const int dot = base.lastIndexOf(QLatin1Char('.'));
+    if (dot <= 0 || dot == base.size() - 1) return Unknown;
+    const QString ext = base.mid(dot + 1).toLower();
+
+    // C family.
+    if (ext == QLatin1String("c") || ext == QLatin1String("cc")
+            || ext == QLatin1String("cpp") || ext == QLatin1String("cxx")
+            || ext == QLatin1String("h") || ext == QLatin1String("hh")
+            || ext == QLatin1String("hpp") || ext == QLatin1String("hxx")
+            || ext == QLatin1String("inl") || ext == QLatin1String("ipp")
+            || ext == QLatin1String("m") || ext == QLatin1String("mm")
+            || ext == QLatin1String("cs")) {
+        return Cpp;
+    }
+    // JS/TS family. QML rides here: it is a JS superset, so keywords, strings
+    // and comments colour correctly while QML-only words (property / signal /
+    // Item) stay plain. An approximation on purpose - a dedicated QML rule set
+    // is not worth the upkeep yet.
+    if (ext == QLatin1String("js") || ext == QLatin1String("mjs")
+            || ext == QLatin1String("cjs") || ext == QLatin1String("jsx")
+            || ext == QLatin1String("tsx")
+            || ext == QLatin1String("vue") || ext == QLatin1String("svelte")
+            || ext == QLatin1String("qml")) {
+        return JsTs;
+    }
+    if (ext == QLatin1String("py") || ext == QLatin1String("pyi")) return Python;
+    if (ext == QLatin1String("json") || ext == QLatin1String("jsonc")) return Json;
+    // html/xml plus the Qt descriptor formats, which are all XML.
+    if (ext == QLatin1String("html") || ext == QLatin1String("htm")
+            || ext == QLatin1String("xhtml") || ext == QLatin1String("xml")
+            || ext == QLatin1String("svg") || ext == QLatin1String("ui")
+            || ext == QLatin1String("qrc") || ext == QLatin1String("qmltypes")) {
+        return XmlHtml;
+    }
+    if (ext == QLatin1String("css") || ext == QLatin1String("scss")
+            || ext == QLatin1String("less")) {
+        return Css;
+    }
+    if (ext == QLatin1String("sh") || ext == QLatin1String("bash")
+            || ext == QLatin1String("zsh") || ext == QLatin1String("fish")) {
+        return Bash;
+    }
+    if (ext == QLatin1String("md") || ext == QLatin1String("markdown")) return Markdown;
+
+    // Everything else - yaml, toml, ini, txt, cmake, log, lock - has no rule
+    // set and stays plain. ".ts" lands here too, on purpose: it is XML in a Qt
+    // project and TypeScript everywhere else, so either reading would be wrong
+    // for half of this application's own projects. Plain beats confidently
+    // wrong. (".tsx" has no such ambiguity and stays above.)
+    return Unknown;
 }
 
 QString CodeHighlighter::languageDisplayName(Language language) {
@@ -128,6 +235,12 @@ void CodeHighlighter::highlightBlock(const QString& text) {
     setCurrentBlockState(0);
     m_claimed.clear();
     if (m_language == Unknown) return;
+
+    // The MaxLines budget counts newlines, so a 60KB minified JSON passes as
+    // "one line" and would then run every rule's globalMatch across all of it.
+    // Colouring one line is not worth stalling the UI for, and the file is
+    // readable either way - leave it plain.
+    if (text.size() > MaxBlockChars) return;
 
     switch (m_language) {
     case Cpp:

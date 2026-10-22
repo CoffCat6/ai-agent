@@ -67,6 +67,25 @@ Window {
     // Wrap toggle + the editor's effective wrap state.
     function setPreviewWrap(on) { panel.previewWrap = on }
     function previewWrap() { return panel.previewWrap }
+    // Syntax highlighting: the language the preview settled on, and whether
+    // the file's text actually carries colour ranges.
+    function previewLanguage() { return panel.previewLanguage() }
+    // Asks the highlighter itself: QML cannot walk QTextDocument blocks, so
+    // "language recognised" and "colours were actually applied" would
+    // otherwise be indistinguishable from the QML side.
+    function previewHasHighlight() { return panel.previewHighlighted() }
+    function collectByName(node, name, out) {
+        for (var i = 0; i < node.children.length; ++i) {
+            var child = node.children[i]
+            if (child.objectName === name) out.push(child)
+            collectByName(child, name, out)
+        }
+    }
+    function previewNoticeText() {
+        var items = []
+        collectByName(panel, "projectFileNotices", items)
+        return items.length > 0 ? items[0].text : ""
+    }
     function previewWrapMode() {
         // 0 = NoWrap, 1 = WordWrap, 2 = WrapAnywhere, 3 = Wrap (Qt enum order)
         var items = []

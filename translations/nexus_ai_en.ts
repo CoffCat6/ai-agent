@@ -4933,107 +4933,117 @@ Select or import a project in the sidebar first.</translation>
 <context>
     <name>ProjectFilesPanel</name>
     <message>
-        <location filename="../src/ui/components/ProjectFilesPanel.qml" line="156"/>
+        <location filename="../src/ui/components/ProjectFilesPanel.qml" line="167"/>
         <source>无法打开该文件（可能已被删除或没有关联程序）。</source>
         <translation>Could not open the file (it may have been deleted, or no program is associated with it).</translation>
     </message>
     <message>
-        <location filename="../src/ui/components/ProjectFilesPanel.qml" line="262"/>
+        <location filename="../src/ui/components/ProjectFilesPanel.qml" line="273"/>
         <source>按名称过滤项目文件</source>
         <translation>Filter project files by name</translation>
     </message>
     <message>
-        <location filename="../src/ui/components/ProjectFilesPanel.qml" line="268"/>
+        <location filename="../src/ui/components/ProjectFilesPanel.qml" line="279"/>
         <source>过滤文件…</source>
         <translation>Filter files…</translation>
     </message>
     <message>
-        <location filename="../src/ui/components/ProjectFilesPanel.qml" line="283"/>
+        <location filename="../src/ui/components/ProjectFilesPanel.qml" line="294"/>
         <source>折叠全部目录</source>
         <translation>Collapse all folders</translation>
     </message>
     <message>
-        <location filename="../src/ui/components/ProjectFilesPanel.qml" line="294"/>
+        <location filename="../src/ui/components/ProjectFilesPanel.qml" line="305"/>
         <source>重新读取项目文件</source>
         <translation>Reload project files</translation>
     </message>
     <message>
-        <location filename="../src/ui/components/ProjectFilesPanel.qml" line="395"/>
+        <location filename="../src/ui/components/ProjectFilesPanel.qml" line="406"/>
         <source>没有匹配的文件。</source>
         <translation>No matching files.</translation>
     </message>
     <message>
-        <location filename="../src/ui/components/ProjectFilesPanel.qml" line="396"/>
+        <location filename="../src/ui/components/ProjectFilesPanel.qml" line="407"/>
         <source>该目录为空。</source>
         <translation>This folder is empty.</translation>
     </message>
     <message>
-        <location filename="../src/ui/components/ProjectFilesPanel.qml" line="452"/>
+        <location filename="../src/ui/components/ProjectFilesPanel.qml" line="468"/>
+        <source>语法高亮语言：%1</source>
+        <translation>Syntax highlighting language: %1</translation>
+    </message>
+    <message>
+        <location filename="../src/ui/components/ProjectFilesPanel.qml" line="478"/>
         <source>换行</source>
         <translation>Wrap</translation>
     </message>
     <message>
-        <location filename="../src/ui/components/ProjectFilesPanel.qml" line="461"/>
+        <location filename="../src/ui/components/ProjectFilesPanel.qml" line="487"/>
         <source>已开启自动换行，点击改为横向滚动</source>
         <translation>Soft wrap is on; click to scroll horizontally instead</translation>
     </message>
     <message>
-        <location filename="../src/ui/components/ProjectFilesPanel.qml" line="462"/>
+        <location filename="../src/ui/components/ProjectFilesPanel.qml" line="488"/>
         <source>开启自动换行，长行折行显示</source>
         <translation>Turn on soft wrap so long lines fold</translation>
     </message>
     <message>
-        <location filename="../src/ui/components/ProjectFilesPanel.qml" line="473"/>
+        <location filename="../src/ui/components/ProjectFilesPanel.qml" line="499"/>
         <source>用系统默认程序打开</source>
         <translation>Open with the default application</translation>
     </message>
     <message>
-        <location filename="../src/ui/components/ProjectFilesPanel.qml" line="484"/>
+        <location filename="../src/ui/components/ProjectFilesPanel.qml" line="510"/>
         <source>收起预览</source>
         <translation>Collapse preview</translation>
     </message>
     <message>
-        <location filename="../src/ui/components/ProjectFilesPanel.qml" line="498"/>
+        <location filename="../src/ui/components/ProjectFilesPanel.qml" line="524"/>
         <source>二进制文件，无法预览。</source>
         <translation>Binary file; no preview available.</translation>
     </message>
     <message>
-        <location filename="../src/ui/components/ProjectFilesPanel.qml" line="500"/>
+        <location filename="../src/ui/components/ProjectFilesPanel.qml" line="526"/>
         <source>文件已不存在，可能已被删除或改名。</source>
         <translation>The file no longer exists; it may have been deleted or renamed.</translation>
     </message>
     <message>
-        <location filename="../src/ui/components/ProjectFilesPanel.qml" line="502"/>
+        <location filename="../src/ui/components/ProjectFilesPanel.qml" line="528"/>
         <source>无法读取该文件（权限不足或已被占用）。</source>
         <translation>Could not read the file (permission denied or file in use).</translation>
     </message>
     <message>
-        <location filename="../src/ui/components/ProjectFilesPanel.qml" line="504"/>
+        <location filename="../src/ui/components/ProjectFilesPanel.qml" line="530"/>
         <source>该路径不在项目内，已拒绝读取。</source>
         <translation>That path is outside the project; reading was refused.</translation>
     </message>
     <message>
-        <location filename="../src/ui/components/ProjectFilesPanel.qml" line="506"/>
+        <location filename="../src/ui/components/ProjectFilesPanel.qml" line="532"/>
         <source>读取失败：%1</source>
         <translation>Read failed: %1</translation>
     </message>
     <message>
-        <location filename="../src/ui/components/ProjectFilesPanel.qml" line="508"/>
+        <location filename="../src/ui/components/ProjectFilesPanel.qml" line="534"/>
         <source>文件较大（%1 字节），仅显示前 512 KB。</source>
         <translation>Large file (%1 bytes); only the first 512 KB are shown.</translation>
     </message>
     <message>
-        <location filename="../src/ui/components/ProjectFilesPanel.qml" line="550"/>
+        <location filename="../src/ui/components/ProjectFilesPanel.qml" line="540"/>
+        <source>文件超过 %1 KB，已关闭语法高亮。</source>
+        <translation>File exceeds %1 KB; syntax highlighting is off.</translation>
+    </message>
+    <message>
+        <location filename="../src/ui/components/ProjectFilesPanel.qml" line="582"/>
         <source>文件内容预览</source>
         <translation>File content preview</translation>
     </message>
     <message>
-        <location filename="../src/ui/components/ProjectFilesPanel.qml" line="573"/>
+        <location filename="../src/ui/components/ProjectFilesPanel.qml" line="619"/>
         <source>当前会话未关联项目；在项目中打开的会话才能浏览项目文件。</source>
         <translation>This session is not tied to a project; project files can be browsed in sessions opened from a project.</translation>
     </message>
     <message>
-        <location filename="../src/ui/components/ProjectFilesPanel.qml" line="581"/>
+        <location filename="../src/ui/components/ProjectFilesPanel.qml" line="627"/>
         <source>项目文件</source>
         <translation>Project files</translation>
     </message>

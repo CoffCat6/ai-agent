@@ -499,6 +499,124 @@ private slots:
         QTRY_VERIFY(toggles.first()->isVisible());
     }
 
+    // Syntax highlighting in the preview is driven by the FILE NAME, not by
+    // the content heuristics: this panel knows what it is showing, and the
+    // heuristics mislabel real files (CMakeLists.txt came out as Shell).
+    void previewHighlightsByFileName() {
+        writeFile("thing.py", "def greet(name):\n    return True\n");
+        writeFile("config.yaml", "key: value\nother: 2\n");
+
+        Harness h;
+        QVERIFY2(h.window, qPrintable(h.error));
+        QVERIFY(h.invoke1("setProjectRoot", m_dir->path()));
+        QTRY_VERIFY(h.call("rowCount").toInt() >= 2);
+
+        // A recognised extension gets a language label and real colours.
+        QVERIFY(h.invoke1("selectFile", QStringLiteral("thing.py")));
+        QTRY_COMPARE(h.call("previewVisible").toBool(), true);
+        QTRY_COMPARE(h.call("previewLanguage").toString(), QStringLiteral("Python"));
+        QTRY_VERIFY2(h.call("previewHasHighlight").toBool(),
+                     "Python 文件应有高亮");
+
+        // An extension with no rule set stays plain AND says nothing: a label
+        // reading "plain text" would spend sidebar room to state the obvious.
+        QVERIFY(h.invoke1("selectFile", QStringLiteral("config.yaml")));
+        QTRY_COMPARE(h.call("previewLanguage").toString(), QString());
+        QTRY_VERIFY2(!h.call("previewHasHighlight").toBool(),
+                     "未知扩展名不应上色");
+    }
+
+    // The decisive difference between name-driven and content-driven: a CMake
+    // file whose content reads like a shell script. The heuristics say Shell
+    // (measured on this repo's own CMakeLists.txt); the name says "no rule
+    // set", so it must stay plain.
+    void previewDoesNotGuessUnknownExtensions() {
+        writeFile("CMakeLists.txt",
+                  "if (CMAKE_BUILD_TYPE)\n"
+                  "  message(STATUS \"building\")\n"
+                  "endif()\n");
+
+        Harness h;
+        QVERIFY2(h.window, qPrintable(h.error));
+        QVERIFY(h.invoke1("setProjectRoot", m_dir->path()));
+        QTRY_VERIFY(h.call("rowCount").toInt() >= 1);
+
+        QVERIFY(h.invoke1("selectFile", QStringLiteral("CMakeLists.txt")));
+        QTRY_COMPARE(h.call("previewVisible").toBool(), true);
+        QTRY_COMPARE(h.call("previewLanguage").toString(), QString());
+        QVERIFY2(!h.call("previewHasHighlight").toBool(),
+                 ".txt has no rule set; it must not be guessed as Shell");
+
+        // The label is hidden rather than saying "plain text": sidebar width
+        // is better spent on the file name.
+        QList<QQuickItem*> labels;
+        collectVisualItems(h.window->contentItem(),
+                           QStringLiteral("projectFileLanguage"), &labels);
+        QCOMPARE(labels.size(), 1);
+        QVERIFY2(!labels.first()->isVisible(), "no language, no label");
+    }
+
+    // QML rides on the JS/TS rules: an approximation that colours keywords,
+    // strings and comments while QML-only words stay plain.
+    void previewApproximatesQmlAsJs() {
+        writeFile("Widget.qml", "import QtQuick\n"
+                                "Item {\n"
+                                "    // a comment\n"
+                                "    property string title: \"hello\"\n"
+                                "}\n");
+
+        Harness h;
+        QVERIFY2(h.window, qPrintable(h.error));
+        QVERIFY(h.invoke1("setProjectRoot", m_dir->path()));
+        QTRY_VERIFY(h.call("rowCount").toInt() >= 1);
+
+        QVERIFY(h.invoke1("selectFile", QStringLiteral("Widget.qml")));
+        QTRY_COMPARE(h.call("previewLanguage").toString(), QStringLiteral("JS/TS"));
+        QTRY_VERIFY2(h.call("previewHasHighlight").toBool(), ".qml 应近似高亮");
+    }
+
+    // A file too large to colour still renders, and explains why it is plain
+    // rather than leaving the user to wonder.
+    void previewExplainsDisabledHighlight() {
+        // Over the highlighter's 64KB budget, under the 512KB read cap.
+        QByteArray big;
+        while (big.size() < 80 * 1024)
+            big += "// filler line for the size budget\n";
+        writeFile("big.cpp", big);
+
+        Harness h;
+        QVERIFY2(h.window, qPrintable(h.error));
+        QVERIFY(h.invoke1("setProjectRoot", m_dir->path()));
+        QTRY_VERIFY(h.call("rowCount").toInt() >= 1);
+
+        QVERIFY(h.invoke1("selectFile", QStringLiteral("big.cpp")));
+        QTRY_COMPARE(h.call("previewVisible").toBool(), true);
+        // Recognised extension, but the budget wins.
+        QTRY_COMPARE(h.call("previewLanguage").toString(), QString());
+        QVERIFY2(!h.call("previewHasHighlight").toBool(), "超限文件不应上色");
+        QVERIFY2(h.call("previewNoticeText").toString().contains(QStringLiteral("语法高亮")),
+                 qPrintable(QStringLiteral("应说明高亮已关闭，实际：%1")
+                                .arg(h.call("previewNoticeText").toString())));
+    }
+
+    // Switching files must re-evaluate the language immediately: the old
+    // file's colours must not linger over the new file's text.
+    void previewLanguageFollowsFileSwitch() {
+        writeFile("a.py", "def f():\n    return 1\n");
+        writeFile("b.json", "{\"k\": 1}\n");
+
+        Harness h;
+        QVERIFY2(h.window, qPrintable(h.error));
+        QVERIFY(h.invoke1("setProjectRoot", m_dir->path()));
+        QTRY_VERIFY(h.call("rowCount").toInt() >= 2);
+
+        QVERIFY(h.invoke1("selectFile", QStringLiteral("a.py")));
+        QTRY_COMPARE(h.call("previewLanguage").toString(), QStringLiteral("Python"));
+
+        QVERIFY(h.invoke1("selectFile", QStringLiteral("b.json")));
+        QTRY_COMPARE(h.call("previewLanguage").toString(), QStringLiteral("JSON"));
+    }
+
 private:
     void writeFile(const QString& relative, const QByteArray& content) {
         const QString full = m_dir->path() + "/" + relative;
