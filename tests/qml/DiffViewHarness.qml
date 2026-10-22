@@ -46,5 +46,18 @@ Window {
     // Seam x in the view's own coordinates, for the same row width the
     // delegate uses.
     function seamX() { return view.splitXFor(view.width) }
+    // Seam for an arbitrary row width: a delegate computes its own seam from
+    // the row it is laid out in, which is what a row-geometry assertion has
+    // to compare against.
+    function seamForRowWidth(w) { return view.splitXFor(w) }
     function viewWidth() { return view.width }
+    // Geometry contract: the test asserts against the component's own
+    // limits instead of hard-coding the pixel values, so a change to the
+    // gutter/inset cannot leave the test and the component disagreeing.
+    function minSeamX() { return view.minSeamXFor() }
+    function maxSeamX() { return view.maxSeamXFor(view.width) }
+    function minColumnText() { return view.minColumnText }
+    function textSpan() { return view.textSpanFor(view.width) }
+    function oldBodyWidth(seamX) { return view.oldBodyWidthFor(view.width, seamX) }
+    function newBodyWidth(seamX) { return view.newBodyWidthFor(view.width, seamX) }
 }

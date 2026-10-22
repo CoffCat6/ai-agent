@@ -26,12 +26,52 @@ Item {
     readonly property alias renderedCount: lineList.count
     readonly property int addedCount: root.countKind(parsed, "add")
     readonly property int removedCount: root.countKind(parsed, "del")
-    // Line-number gutters cost 74px in unified mode and 88px in split
-    // mode. The review tab hosts this view inline, where the pane can be
-    // as narrow as ~180px - below that the gutters would leave more room
-    // for nothing than for code, so they fold away and the text takes the
-    // full width.
+    // Line-number gutters cost 72px in unified mode and 40px in split mode
+    // (see the geometry block below). The review tab hosts this view inline,
+    // where the pane can be as narrow as ~180px - below that the gutters
+    // would leave more room for nothing than for code, so they fold away and
+    // the text takes the full width.
     readonly property bool showGutters: width >= 240
+
+    // ── Geometry: one place, no magic numbers ───────────
+    // Every split-mode offset in this file is derived from the constants
+    // below. They used to be literals repeated in splitXFor(), dragSplit()
+    // and each delegate child, which is exactly how the left column came to
+    // be measured from the row instead of from its own left edge and painted
+    // 36px over the new column: two places agreed on "40" and one did not.
+    //
+    // So: no number below is allowed to reappear in the delegate. Ask the
+    // geometry properties/functions instead.
+
+    // Gap between the diff box edge and the content, on both sides. The
+    // ListView is inset by this much, so row space and the seam handle's
+    // space differ by exactly this.
+    readonly property int contentInset: 4
+    // Width of one line-number gutter cell.
+    readonly property int gutterWidth: 32
+    // Gap between a gutter cell and the text that follows it.
+    readonly property int gutterGap: 4
+    // Width of the seam rule itself, centred on the seam's x.
+    readonly property int seamWidth: 1
+
+    // Left edge of the OLD column's text. Without gutters the text starts at
+    // the content inset; with them it starts past the old line-number cell.
+    readonly property int oldBodyX: showGutters
+        ? contentInset + gutterWidth + gutterGap
+        : contentInset
+    // Left edge of the NEW column's text, relative to the seam. Measured
+    // from the seam rather than from the row so it cannot drift when the
+    // seam moves.
+    readonly property int newBodyOffset: showGutters
+        ? gutterGap + gutterWidth + gutterGap
+        : contentInset
+    // Where the unified-mode body text starts: past both gutter cells.
+    readonly property int unifiedBodyX: showGutters
+        ? contentInset + 2 * (gutterWidth + gutterGap)
+        : contentInset
+    // Right edge of the OLD column's text, relative to the seam: leave the
+    // seam plus half its width so the rule never sits on a glyph.
+    readonly property int seamToTextGap: contentInset
 
     // ── Split-column geometry ───────────────────────────
     // The old|new divide used to be a hard 50% of the row width, which is
@@ -50,6 +90,15 @@ Item {
     // Widest text either column must be able to show before it wraps. Keeps
     // a dragged seam from collapsing a column into a sliver.
     readonly property int minColumnText: 110
+
+    // Pixels the two columns' text may share, i.e. the row width minus
+    // everything that is not text. Single definition of "the span" for the
+    // clamp, the drag and the content-aware ratio.
+    function textSpanFor(rowWidth) {
+        const left = root.oldBodyX
+        const right = root.contentInset
+        return Math.max(0, rowWidth - left - right)
+    }
 
     // Content-aware default: monospace, so character count IS width. Give
     // each side a share proportional to its longest line, but only when the
@@ -71,22 +120,55 @@ Item {
         const total = leftNeed + rightNeed
         if (total <= 0) return 0.5
         // Rough capacity in characters for the current width (caption-size
-        // monospace is ~6.2px per char); both gutters included.
-        const capacity = Math.max(20, (width - 90) / 6.2)
+        // monospace is ~6.2px per char).
+        const capacity = Math.max(20, root.textSpanFor(width) / 6.2)
         if (total <= capacity) return 0.5
         return Math.max(0.25, Math.min(0.75, leftNeed / total))
+    }
+
+    // Width of the OLD column's text box for a given seam. The delegate must
+    // use this instead of subtracting offsets by hand: it is the one
+    // expression that knows the text starts at oldBodyX.
+    function oldBodyWidthFor(rowWidth, seamX) {
+        return Math.max(0, seamX - root.seamToTextGap - root.oldBodyX)
+    }
+
+    // Left edge and width of the NEW column's text box, in row coordinates.
+    function newBodyXFor(seamX) {
+        return seamX + root.newBodyOffset
+    }
+
+    function newBodyWidthFor(rowWidth, seamX) {
+        return Math.max(0, rowWidth - root.newBodyXFor(seamX) - root.contentInset)
+    }
+
+    // Smallest/largest seam x that still leaves minColumnText of text on both
+    // sides. Derived from the body-width functions above rather than from
+    // offsets, so a change to the gutter or inset cannot desync the clamp
+    // from the boxes it is protecting.
+    //
+    // The gap is part of the old body's span: putting the seam at
+    // oldBodyX + minColumnText without it left the text at minColumnText-4,
+    // i.e. the clamp promised a width it did not deliver.
+    function minSeamXFor() {
+        return root.oldBodyX + root.seamToTextGap + root.minColumnText
+    }
+
+    // Largest seam x: past it the new body would be narrower than
+    // minColumnText. Expressed through newBodyOffset / contentInset for the
+    // same reason as the lower limit.
+    function maxSeamXFor(rowWidth) {
+        const hi = rowWidth - root.newBodyOffset - root.contentInset - root.minColumnText
+        const lo = root.minSeamXFor()
+        return Math.max(lo + 1, hi)
     }
 
     // The seam's x, clamped so neither column drops below minColumnText.
     // Single source of truth for every split-mode offset below.
     function splitXFor(rowWidth) {
-        const gutters = root.showGutters
-        const leftPad = gutters ? 40 : 4
-        const rightPad = gutters ? 41 : 4
-        const lo = leftPad + root.minColumnText
-        const hi = Math.max(lo + 1, rowWidth - rightPad - root.minColumnText - 4)
-        const want = leftPad + (rowWidth - leftPad - rightPad - 4) * root.splitRatio
-        return Math.max(lo, Math.min(hi, want))
+        const want = root.oldBodyX + root.textSpanFor(rowWidth) * root.splitRatio
+        return Math.max(root.minSeamXFor(),
+                        Math.min(root.maxSeamXFor(rowWidth), want))
     }
 
     // Adopt the content-aware divide for a newly shown diff, unless the
@@ -100,15 +182,12 @@ Item {
     // to a ratio keeps the divide proportional, so the same relative split
     // survives the dialog (and therefore this view) being resized. Clamped
     // through splitXFor's own limits by construction: the ratio is derived
-    // from the same padded span the clamp uses.
+    // from the same text span the clamp uses.
     function dragSplit(deltaPx) {
         if (root.viewMode !== "split") return
         const rowWidth = lineList.width
         if (rowWidth <= 0) return
-        const gutters = root.showGutters
-        const leftPad = gutters ? 40 : 4
-        const rightPad = gutters ? 41 : 4
-        const span = rowWidth - leftPad - rightPad - 4
+        const span = root.textSpanFor(rowWidth)
         if (span <= 0) return
         root.splitTouched = true
         root.splitRatio = Math.max(0, Math.min(1,
@@ -117,7 +196,6 @@ Item {
 
     onAutoSplitRatioChanged: root.resetSplitToAuto()
     onDiffTextChanged: root.resetSplitToAuto()
-
     // ── Parsing ────────────────────────────────────────
     // Returns rows {kind, text, oldNo, newNo}: kind is meta (---/+++), hunk
     // (@@), note (\ No newline), context, add or del. Line numbers start in
@@ -308,15 +386,13 @@ Item {
                     // drag handle), so the columns line up down the whole
                     // diff instead of drifting per row.
                     readonly property real seamX: root.splitXFor(diffRow.width)
-                    // Gutter-aware column geometry (see root.showGutters).
-                    // The right column starts past its own line-number
-                    // gutter, which sits at seamX+5 and is 32 wide — so the
-                    // body begins at seamX+41, mirroring the left column's
-                    // 40px gutter. Getting this wrong overlaps the numbers.
+                    // Column geometry comes from root, never from literals:
+                    // the old body's width in particular has to be measured
+                    // from oldBodyX, not from the row's left edge.
                     readonly property bool gutters: root.showGutters
-                    readonly property int bodyX: gutters ? 78 : 4
-                    readonly property int leftX: gutters ? 40 : 4
-                    readonly property int rightX: diffRow.seamX + (gutters ? 41 : 4)
+                    readonly property int bodyX: root.unifiedBodyX
+                    readonly property int leftX: root.oldBodyX
+                    readonly property int rightX: root.newBodyXFor(diffRow.seamX)
 
                     objectName: pairRow ? "diffSplitRow" : "diffLine"
                     width: ListView.view ? ListView.view.width : 0
@@ -334,14 +410,14 @@ Item {
                     }
                     Rectangle {
                         visible: diffRow.pairRow
-                        width: Math.max(0, diffRow.seamX - 1)
+                        width: Math.max(0, diffRow.seamX - root.seamWidth)
                         height: parent.height
                         color: modelData.del
                             ? root.kindBackground("del") : "transparent"
                     }
                     Rectangle {
                         visible: diffRow.pairRow
-                        x: diffRow.seamX + 1
+                        x: diffRow.seamX + root.seamWidth
                         width: parent.width - x
                         height: parent.height
                         color: modelData.add
@@ -350,7 +426,7 @@ Item {
                     Rectangle {
                         visible: diffRow.pairRow
                         x: diffRow.seamX
-                        width: 1
+                        width: root.seamWidth
                         height: parent.height
                         color: Theme.borderSubtle
                     }
@@ -359,8 +435,8 @@ Item {
                     Text {
                         visible: !diffRow.pairRow && !diffRow.plain
                                  && diffRow.gutters
-                        x: 4
-                        width: 32
+                        x: root.contentInset
+                        width: root.gutterWidth
                         text: modelData.oldNo > 0 ? String(modelData.oldNo) : ""
                         color: Theme.textTertiary
                         font.family: Theme.fontMono
@@ -371,8 +447,8 @@ Item {
                     Text {
                         visible: !diffRow.pairRow && !diffRow.plain
                                  && diffRow.gutters
-                        x: 40
-                        width: 32
+                        x: root.contentInset + root.gutterWidth + root.gutterGap
+                        width: root.gutterWidth
                         text: modelData.newNo > 0 ? String(modelData.newNo) : ""
                         color: Theme.textTertiary
                         font.family: Theme.fontMono
@@ -383,8 +459,8 @@ Item {
                     Text {
                         id: fullBody
                         visible: !diffRow.pairRow
-                        x: diffRow.plain ? 4 : diffRow.bodyX
-                        width: Math.max(0, parent.width - x - 4)
+                        x: diffRow.plain ? root.contentInset : diffRow.bodyX
+                        width: Math.max(0, parent.width - x - root.contentInset)
                         text: modelData.text !== undefined && modelData.text.length > 0
                             ? modelData.text : " "
                         color: root.kindColor(modelData.kind)
@@ -397,8 +473,8 @@ Item {
                     // ── Split rows ──────────────────────
                     Text {
                         visible: diffRow.pairRow && diffRow.gutters
-                        x: 4
-                        width: 32
+                        x: root.contentInset
+                        width: root.gutterWidth
                         text: diffRow.pairRow && modelData.oldNo > 0
                             ? String(modelData.oldNo) : ""
                         color: Theme.textTertiary
@@ -409,9 +485,14 @@ Item {
 
                     Text {
                         id: leftBody
+                        objectName: "diffSplitOldText"
                         visible: diffRow.pairRow
                         x: diffRow.leftX
-                        width: Math.max(0, diffRow.seamX - 4 - diffRow.x)
+                        // Measured by the geometry function, which knows the
+                        // text starts at oldBodyX. Hand-subtracting offsets
+                        // here is what once let this column run 36px past the
+                        // seam and paint over the new one.
+                        width: root.oldBodyWidthFor(diffRow.width, diffRow.seamX)
                         text: diffRow.pairRow && modelData.oldText.length > 0
                             ? modelData.oldText : " "
                         color: modelData.del ? Theme.statusDanger : Theme.textPrimary
@@ -423,8 +504,8 @@ Item {
 
                     Text {
                         visible: diffRow.pairRow && diffRow.gutters
-                        x: diffRow.seamX + 5
-                        width: 32
+                        x: diffRow.seamX + root.gutterGap + root.seamWidth
+                        width: root.gutterWidth
                         text: diffRow.pairRow && modelData.newNo > 0
                             ? String(modelData.newNo) : ""
                         color: Theme.textTertiary
@@ -435,9 +516,10 @@ Item {
 
                     Text {
                         id: rightBody
+                        objectName: "diffSplitNewText"
                         visible: diffRow.pairRow
                         x: diffRow.rightX
-                        width: Math.max(0, parent.width - x - 4)
+                        width: root.newBodyWidthFor(diffRow.width, diffRow.seamX)
                         text: diffRow.pairRow && modelData.newText.length > 0
                             ? modelData.newText : " "
                         color: modelData.add ? Theme.statusSuccess : Theme.textPrimary
@@ -456,13 +538,14 @@ Item {
             // the seam, so local deltas would feed back into the layout and
             // make the seam jitter around the cursor.
             //
-            // The ListView is inset 4px inside this box, so the row-space
-            // seam has to be offset by the same amount to land on the line.
+            // The ListView is inset by contentInset inside this box, so the
+            // row-space seam has to be offset by the same amount to land on
+            // the line.
             Item {
                 id: splitHandle
                 objectName: "diffSplitHandle"
                 visible: root.viewMode === "split" && root.hasDiff
-                x: 4 + root.splitXFor(lineList.width) - width / 2
+                x: root.contentInset + root.splitXFor(lineList.width) - width / 2
                 y: 0
                 width: 11
                 height: parent.height
