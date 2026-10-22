@@ -57,6 +57,13 @@ Window {
     function hasProject() { return panel.hasProject }
     function errorText() { return panel.errorText }
     function backgroundColor() { return Theme.bgSecondary.toString() }
+    // Preview seam: the panel applies the raw pointer delta, so a test drives
+    // it exactly like SplitBar would and reads the resulting geometry.
+    function previewHeight() { return panel.previewHeight }
+    function previewMinHeight() { return panel.previewMinHeight }
+    function previewDefaultHeight() { return panel.previewDefaultHeight }
+    function dragSeam(delta) { panel.dragPreviewSeam(delta) }
+    function resetPreviewHeight() { panel.resetPreviewHeight() }
     // Diagnostics: what the VM holds, independent of the panel's own state.
     function vmRoot() { return ProjectFileVM.root }
     function vmChildCount(relPath) { return ProjectFileVM.children(relPath).length }

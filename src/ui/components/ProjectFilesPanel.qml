@@ -32,6 +32,14 @@ Item {
     property string selectedPath: ""
     // True while the preview pane is expanded.
     property bool previewVisible: false
+    // Preview pane height. Default 320 rather than 240: the sidebar's own
+    // margin leaves ~500px at the 600px minimum window, and 240 showed barely
+    // a dozen lines of code. In-memory only - it is a per-look view
+    // parameter, not a stable preference, so it is deliberately not
+    // persisted (ui/panelWidth is, and that is the right line).
+    property int previewHeight: 320
+    readonly property int previewMinHeight: 100
+    readonly property int previewDefaultHeight: 320
 
     // True while the Git/knowledge/file section hosting us is visible. Used
     // only to avoid doing work nobody can see; the tree itself is cheap
@@ -152,6 +160,29 @@ Item {
             previewData = ProjectFileVM.preview(selectedPath)
     }
 
+    // The seam sits between the tree and the preview, so dragging DOWN must
+    // make the preview SHORTER - the divider follows the cursor. SplitBar
+    // reports the raw pointer delta, so the sign is inverted here rather than
+    // inside the component: that keeps SplitBar a plain "report the delta"
+    // tool for every host.
+    //
+    // The upper bound is measured, not constant: the tree keeps its own
+    // minimum (80px, set on the ListView) plus the divider's own height. A
+    // fixed cap would push the tree out of existence on a short sidebar.
+    function dragPreviewSeam(deltaPx) {
+        if (!previewVisible) return
+        const seamHeight = 7          // SplitBar's implicit height
+        const treeMin = 80            // matches fileList's Layout.minimumHeight
+        const available = content.height - treeMin - seamHeight
+        const next = previewHeight - deltaPx
+        previewHeight = Math.max(previewMinHeight,
+                                 Math.min(next, Math.max(previewMinHeight, available)))
+    }
+
+    function resetPreviewHeight() {
+        previewHeight = previewDefaultHeight
+    }
+
     // Project root changes: the VM owns the cache, so drop it and rebuild.
     onProjectRootChanged: {
         errorText = ""
@@ -260,10 +291,9 @@ Item {
         }
 
         // ── File tree ──────────────────────────────────
-        // Shares the vertical space with the preview: the tree keeps a
-        // minimum (enough for a few rows) and the preview takes a fixed
-        // share, because the sidebar is narrow and a preview that eats the
-        // whole column would hide the navigation.
+        // The tree takes whatever the preview does not. Its minimum keeps a
+        // few rows visible; the preview's minimum lives on the preview side,
+        // so dragging can shrink either half but never to nothing.
         ListView {
             id: fileList
             objectName: "projectFileList"
@@ -337,6 +367,18 @@ Item {
             }
         }
 
+        // ── Seam: tree ↔ preview ───────────────────────
+        // Only present while the preview is open; a hidden divider would
+        // still take layout space and leave a dead 7px band.
+        SplitBar {
+            objectName: "projectFilePreviewSeam"
+            Layout.fillWidth: true
+            visible: root.previewVisible
+            orientation: "vertical"
+            onDragged: (delta) => root.dragPreviewSeam(delta)
+            onResetRequested: root.resetPreviewHeight()
+        }
+
         // Empty states, distinct on purpose: "no files" and "filter matched
         // nothing" call for different reactions from the user.
         Text {
@@ -356,7 +398,10 @@ Item {
         Rectangle {
             objectName: "projectFilePreview"
             Layout.fillWidth: true
-            Layout.preferredHeight: root.previewVisible ? 240 : 0
+            // Height is user-draggable (the seam above); the minimum keeps a
+            // usable few lines even at the smallest the sidebar gets.
+            Layout.preferredHeight: root.previewVisible ? root.previewHeight : 0
+            Layout.minimumHeight: root.previewVisible ? root.previewMinHeight : 0
             visible: root.previewVisible
             radius: Theme.radiusSm
             color: Theme.codeBackground

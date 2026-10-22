@@ -338,6 +338,85 @@ private slots:
         QVERIFY(h.call("rowNames").toStringList().contains(QStringLiteral("a")));
     }
 
+    // The preview seam: dragging up grows the preview, dragging down shrinks
+    // it (the divider follows the cursor), and neither half can be dragged
+    // out of existence.
+    void previewSeamResizesAndClamps() {
+        writeFile("notes.txt", "line one\nline two\n");
+
+        Harness h;
+        QVERIFY2(h.window, qPrintable(h.error));
+        QVERIFY(h.invoke1("setProjectRoot", m_dir->path()));
+        QTRY_VERIFY(h.call("rowCount").toInt() >= 1);
+
+        // No preview before a file is picked, so the seam has nothing to do.
+        QCOMPARE(h.call("previewVisible").toBool(), false);
+        QVERIFY(QMetaObject::invokeMethod(h.root.get(), "dragSeam", Q_ARG(QVariant, -60.0)));
+        QCOMPARE(h.call("previewHeight").toInt(), h.call("previewDefaultHeight").toInt());
+
+        QVERIFY(h.invoke1("selectFile", QStringLiteral("notes.txt")));
+        QTRY_COMPARE(h.call("previewVisible").toBool(), true);
+
+        const int start = h.call("previewHeight").toInt();
+        QCOMPARE(start, h.call("previewDefaultHeight").toInt());
+        QVERIFY2(start > 240, "默认预览高度应比原先的 240px 高");
+
+        // Drag UP (negative delta): the seam moves up, the preview grows.
+        QVERIFY(QMetaObject::invokeMethod(h.root.get(), "dragSeam", Q_ARG(QVariant, -80.0)));
+        QCOMPARE(h.call("previewHeight").toInt(), start + 80);
+
+        // Drag DOWN: the preview shrinks.
+        QVERIFY(QMetaObject::invokeMethod(h.root.get(), "dragSeam", Q_ARG(QVariant, 50.0)));
+        QCOMPARE(h.call("previewHeight").toInt(), start + 30);
+
+        // Dragged to nothing: the minimum holds.
+        QVERIFY(QMetaObject::invokeMethod(h.root.get(), "dragSeam", Q_ARG(QVariant, 100000.0)));
+        QCOMPARE(h.call("previewHeight").toInt(), h.call("previewMinHeight").toInt());
+
+        // Dragged to the top: the cap is measured against the live panel
+        // height (the tree keeps its own minimum), so it must stay within the
+        // space actually available rather than growing without bound.
+        QVERIFY(QMetaObject::invokeMethod(h.root.get(), "dragSeam", Q_ARG(QVariant, -100000.0)));
+        const int maxed = h.call("previewHeight").toInt();
+        QVERIFY2(maxed > h.call("previewMinHeight").toInt(), "预览上限应大于下限");
+        QVERIFY2(maxed <= h.window->height(), "预览高度不应超过窗口高度");
+
+        // Double-click resets to the default.
+        QVERIFY(QMetaObject::invokeMethod(h.root.get(), "resetPreviewHeight"));
+        QCOMPARE(h.call("previewHeight").toInt(), h.call("previewDefaultHeight").toInt());
+
+        // Closing the preview collapses it but keeps the chosen height for
+        // the next file: the drag is a view preference, not per-file state.
+        QVERIFY(QMetaObject::invokeMethod(h.root.get(), "dragSeam", Q_ARG(QVariant, -40.0)));
+        const int chosen = h.call("previewHeight").toInt();
+        QVERIFY(QMetaObject::invokeMethod(h.root.get(), "closePreview"));
+        QTRY_COMPARE(h.call("previewVisible").toBool(), false);
+        QCOMPARE(h.call("previewHeight").toInt(), chosen);
+    }
+
+    // The seam only exists while the preview is open: a divider for a pane
+    // that is not there would be a dead 7px band taking layout space.
+    void previewSeamOnlyVisibleWithPreview() {
+        writeFile("a.txt", "x\n");
+
+        Harness h;
+        QVERIFY2(h.window, qPrintable(h.error));
+        QVERIFY(h.invoke1("setProjectRoot", m_dir->path()));
+        QTRY_VERIFY(h.call("rowCount").toInt() >= 1);
+
+        QList<QQuickItem*> seams;
+        collectVisualItems(h.window->contentItem(),
+                           QStringLiteral("projectFilePreviewSeam"), &seams);
+        QCOMPARE(seams.size(), 1);
+        QVERIFY2(!seams.first()->isVisible(), "无预览时分隔条不应可见");
+
+        QVERIFY(h.invoke1("selectFile", QStringLiteral("a.txt")));
+        QTRY_VERIFY(seams.first()->isVisible());
+
+        QVERIFY(QMetaObject::invokeMethod(h.root.get(), "closePreview"));
+        QTRY_VERIFY(!seams.first()->isVisible());
+    }
+
 private:
     void writeFile(const QString& relative, const QByteArray& content) {
         const QString full = m_dir->path() + "/" + relative;
