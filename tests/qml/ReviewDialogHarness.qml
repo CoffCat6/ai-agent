@@ -26,7 +26,14 @@ Window {
         parent: Overlay.overlay
         // The harness has no session: the test injects the checkpoints.
         checkpoints: []
+        reviewAcknowledger: function() { win.acks += 1 }
     }
+
+    // UE-1: the dialog acks through this hook on close. Counted here so a
+    // test can assert "closing once acknowledges once" without the AgentVM
+    // singleton's real checkpoint chain (test_agent covers that half).
+    property int acks: 0
+    function ackCount() { return acks }
 
     function setCheckpoints(items) { dialog.checkpoints = items }
     function clearCheckpoints() { dialog.checkpoints = [] }
@@ -83,6 +90,54 @@ Window {
     function stepEntry(delta) { dialog.reviewPanel.detailDialogItem.stepEntry(delta) }
     function setViewMode(mode) { dialog.reviewPanel.detailDialogItem.viewMode = mode }
     function collapseTree() { dialog.reviewPanel.collapseTree() }
+    // Review verdict plumbing. The real accepted state comes from AgentVM's
+    // checkpoint list; the harness feeds it fixed rows, so a test drives the
+    // panel's accept path against its own detailProvider instead.
+    function pendingCount() { return dialog.reviewPanel.pendingCount }
+    // Bulk-revert plumbing: request opens the confirmation, perform runs it.
+    function requestUndoAll() { dialog.reviewPanel.requestUndoAll() }
+    function undoAllDialogVisible() {
+        return dialog.reviewPanel.undoAllDialogVisible
+    }
+    function undoableCount() { return dialog.reviewPanel.undoableCount }
+    function unrestorableCount() { return dialog.reviewPanel.unrestorableCount }
+    function pendingPaths() { return dialog.reviewPanel.pendingPaths }
+    function errorText() { return dialog.reviewPanel.errorText }
+    // A Dialog is a Popup, so it is not in the item tree; tests reach it
+    // through its own accessors instead of an objectName search.
+    function undoAllDialogItem() {
+        return dialog.reviewPanel.undoAllDialogItem
+    }
+    function undoAllDialogClose() { dialog.reviewPanel.undoAllDialogItem.close() }
+    // The confirm button's own handler, so the test exercises the same path a
+    // click would (close the dialog, then run the batch).
+    function confirmUndoAll() { return dialog.reviewPanel.performUndoAll() }
+    function undoAllListedText() {
+        // Everything the confirmation would show as a file line.
+        const paths = dialog.reviewPanel.pendingPaths
+        const out = []
+        for (let i = 0; i < paths.length; ++i)
+            out.push(paths[i].path)
+        return out
+    }
+    function hasPending() { return dialog.reviewPanel.hasPending }
+    function performAccept(index) {
+        var list = dialog.reviewPanel.checkpoints
+        if (index >= 0 && index < list.length)
+            return dialog.reviewPanel.performAccept(list[index])
+        return 0
+    }
+    function setAccepted(index) {
+        // Mirror what the SQL layer returns after an accept: a per-file flag.
+        var list = dialog.reviewPanel.checkpoints.slice()
+        if (index < 0 || index >= list.length) return
+        var row = {}
+        for (var key in list[index]) row[key] = list[index][key]
+        row.accepted = true
+        row.acceptedAt = Date.now()
+        list[index] = row
+        dialog.checkpoints = list
+    }
     function expandTree() { dialog.reviewPanel.expandTree() }
     function windowBackgroundColor() { return Theme.bgPrimary.toString() }
     function dialogBackgroundColor() { return Theme.bgSecondary.toString() }

@@ -20,7 +20,30 @@ Window {
         active: true
     }
 
+    // ContextPanel's two inputs, settable independently: a local chat has an
+    // empty root AND active=false, which is the state that used to leave the
+    // panel stuck on "正在识别 Git 仓库…".
     function setProjectRoot(path) { panel.projectRoot = path }
+    function setActive(value) { panel.active = value }
+    function activeSectionIndex() { return panel.active ? 0 : 1 }
+    // What the 改动 tab is actually telling the user right now.
+    function changesHintText() {
+        if (!panel.repoKnown && panel.projectRoot.length > 0)
+            return "identifying"
+        if (panel.repoKnown && !panel.isRepo)
+            return "not-a-repo"
+        if (panel.isRepo && panel.statusEntries.length === 0)
+            return "clean"
+        return "ready"
+    }
+    function repoKnownNow() { return panel.repoKnown }
+    // Did the panel ever ask git anything? A local chat must leave this false:
+    // the complaint was a stuck "identifying" line, and a refresh that runs
+    // anyway would keep a git process alive for a session with no repository.
+    function everRequestedGit() {
+        return GitVM.repoInfoLoading || GitVM.statusLoading
+                 || panel.repoKnown || GitVM.statusError.length > 0
+    }
     function setSubTab(index) { panel.setSubTab(index) }
     function stagedCount() { return panel.stagedCount }
     function unstagedCount() { return panel.unstagedCount }

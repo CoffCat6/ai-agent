@@ -4,6 +4,7 @@
 #include <QQmlEngine>
 #include <QQmlApplicationEngine>
 #include <QQuickWindow>
+#include <QQuickItem>
 #include <QSettings>
 #include <QStandardPaths>
 #include <QTemporaryDir>
@@ -21,6 +22,7 @@
 #include "core/tools/ToolRegistry.h"
 #include "infrastructure/llm/IAIService.h"
 #include "viewmodels/AgentViewModel.h"
+#include "viewmodels/GitViewModel.h"
 #include "viewmodels/ThemeProvider.h"
 
 using namespace NexusAI;
@@ -375,6 +377,55 @@ private slots:
         QVERIFY2(issues.isEmpty(), qPrintable(issues.join('\n')));
         const QString capture = qEnvironmentVariable("NEXUS_CAPTURE_PATH");
         if (!capture.isEmpty()) QVERIFY(window->grabWindow().save(capture));
+    }
+
+    // A fresh window is a local chat: the right panel must open on the
+    // knowledge base, not on the (hidden) Git section. Parking the stack on
+    // Git there is what made the first launch show the Git panel's
+    // "identifying a repository" line for a session that has no project.
+    void freshWindowOpensPanelOnKnowledgeNotGit() {
+        QQmlApplicationEngine engine;
+        engine.rootContext()->setContextProperty("Theme", ThemeProvider::instance());
+        engine.load(QUrl("qrc:/qt/qml/NexusAI/src/ui/main.qml"));
+        QVERIFY(!engine.rootObjects().isEmpty());
+        auto* window = qobject_cast<QQuickWindow*>(engine.rootObjects().first());
+        QVERIFY(window);
+        window->resize(1100, 800);
+        QTest::qWait(150);
+
+        // Precondition: this really is a local session.
+        QCOMPARE(vm->activeProjectRoot(), QString());
+
+        auto* gitTab = window->findChild<QObject*>(QStringLiteral("gitTab"));
+        QVERIFY2(gitTab, "上下文面板缺少 gitTab");
+        auto* kbTab = window->findChild<QObject*>(QStringLiteral("knowledgeTab"));
+        QVERIFY2(kbTab, "上下文面板缺少 knowledgeTab");
+
+        // The Git tab is hidden for local chats ...
+        QCOMPARE(gitTab->property("visible").toBool(), false);
+        // ... and the panel is not showing its section.
+        QCOMPARE(kbTab->property("highlighted").toBool(), true);
+        QCOMPARE(gitTab->property("highlighted").toBool(), false);
+
+        // Nothing in the right panel is identifying a repository. The Git
+        // section is not the visible stack page here (knowledge is), so its
+        // own "no project" line is expected to be off screen - what matters
+        // is that no git query is in flight and no "identifying" text is on
+        // the visible page.
+        QVERIFY2(!GitViewModel::instance()->repoInfoLoading(),
+                 "新会话不应在识别 Git 仓库");
+        QVERIFY2(!GitViewModel::instance()->statusLoading(),
+                 "新会话不应在读取 Git 状态");
+        QVERIFY2(GitViewModel::instance()->repoInfo().isEmpty(),
+                 "新会话不应已有仓库信息");
+        const auto texts = window->findChildren<QQuickItem*>();
+        for (QQuickItem* item : texts) {
+            if (!item->isVisible()) continue;
+            const QVariant text = item->property("text");
+            if (!text.isValid()) continue;
+            QVERIFY2(!text.toString().contains(QStringLiteral("正在识别 Git 仓库")),
+                     "可见区域出现了「正在识别 Git 仓库…」");
+        }
     }
 
     void approvalDialogKeepsFirstRequestAndAdvancesQueue() {

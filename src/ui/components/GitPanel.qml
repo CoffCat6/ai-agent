@@ -89,6 +89,14 @@ Item {
     readonly property var repoInfo: GitVM.repoInfo || {}
     readonly property bool repoKnown: repoInfo.isRepo !== undefined
     readonly property bool isRepo: repoInfo.isRepo === true
+    // Three distinct states, not two. A local chat has no project root at all,
+    // so there is nothing to identify and nothing to report: treating "no
+    // root" like "identification pending" left the panel showing
+    // 「正在识别 Git 仓库…」 forever, because a refresh only ever runs once a
+    // root exists - so the answer it was waiting for could never arrive.
+    readonly property bool hasProject: projectRoot.length > 0
+    // "Still identifying" is only meaningful within a project.
+    readonly property bool identifying: hasProject && !repoKnown
     readonly property var statusEntries: GitVM.statusEntries || []
     readonly property var stagedEntries: entriesFor(true)
     readonly property var unstagedEntries: entriesFor(false)
@@ -97,6 +105,7 @@ Item {
     readonly property int dirtyCount: statusEntries.length
     readonly property int logCount: logEntries.length
     readonly property string branchLabel: {
+        if (!hasProject) return qsTr("未关联项目")
         if (!repoKnown) return qsTr("正在识别 Git 仓库…")
         if (!isRepo) return qsTr("不在 Git 仓库")
         if (repoInfo.detached === true)
@@ -917,9 +926,23 @@ Item {
                     wrapMode: Text.Wrap
                 }
 
+                // Local chats: no project, so no repository to talk about.
+                // This is the line the panel was missing - without it the
+                // empty state was just the (never-ending) identifying one.
+                Text {
+                    objectName: "gitNoProjectHint"
+                    Layout.fillWidth: true
+                    visible: !root.hasProject
+                    text: qsTr("当前会话未关联项目；在项目中打开的会话才能使用 Git 管理。")
+                    color: Theme.textSecondary
+                    font.family: Theme.fontSans
+                    font.pixelSize: 10
+                    wrapMode: Text.Wrap
+                }
+
                 Text {
                     Layout.fillWidth: true
-                    visible: !root.repoKnown && root.projectRoot.length > 0
+                    visible: root.identifying
                     text: qsTr("正在识别 Git 仓库…")
                     color: Theme.textSecondary
                     font.family: Theme.fontSans

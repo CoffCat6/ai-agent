@@ -575,6 +575,15 @@ private slots:
     void confirmApproveWritesFile();
     void fileCheckpointRecordedAndUndone();
     void fileCheckpointsUndoWholeFile();
+    // UE-1: 审阅按钮的"未查看改动"高亮。语义是"有我没看过的改动"：
+    // 新增改动点亮，确认后清零，之后的新改动再次点亮。
+    void unreviewedFileCountTracksUnseenChanges();
+    // 审阅的"确认"判定：接受改动后文件保留、行变已确认、不再可撤销；
+    // 全部确认一次处理所有待决文件。
+    void acceptFileCheckpointSettlesTheChange();
+    // 全部撤销：待决文件被还原/删除，已确认与仅路径的记录被跳过，
+    // 单个失败不影响其余，且结果如实上报（不把部分失败当成功）。
+    void undoAllFileCheckpointsRevertsPendingOnly();
     void confirmDeclineFeedsRejection();
     // 会话权限模式：AutoEdit/FullAccess 审批旁路矩阵
     void autoEditBypassesFileTools();
@@ -939,6 +948,301 @@ void TestAgent::fileCheckpointsUndoWholeFile() {
     QCOMPARE(group.value("activeCount").toInt(), 0);
     QCOMPARE(group.value("undoneCount").toInt(), 2);
     QVERIFY(!agent.undoFileCheckpoint(group.value("id").toInteger()));
+    agent.setMemory(nullptr);
+}
+
+// UE-1: the review button's "unseen changes" counter, end to end through the
+// real checkpoint chain (tool -> SQLite -> ChatSessionController -> AgentVM).
+//
+// The contract under test is deliberately about *unseen*, not *changed*: a
+// counter that only ever went up would keep the toolbar lit forever.
+void TestAgent::unreviewedFileCountTracksUnseenChanges() {
+    SqliteMemory memory(QStringLiteral(":memory:"));
+    agent.setMemory(&memory);
+
+    AgentViewModel vm(nullptr);
+    vm.setMemory(&memory);
+    vm.setAgent(&agent);
+    // After setAgent: attaching a tab pushes the controller's permission mode
+    // into the agent, so setting it before would be overwritten.
+    agent.setPermissionMode(PermissionMode::AutoEdit);
+
+    QCOMPARE(vm.unreviewedFileCount(), 0);
+    QSignalSpy countSpy(&vm, &AgentViewModel::unreviewedFileCountChanged);
+
+    QTemporaryDir dir(testDirTemplate());
+    QVERIFY(dir.isValid());
+    const QString first = dir.filePath("first.txt");
+    const QString second = dir.filePath("second.txt");
+    {
+        QFile file(first);
+        QVERIFY(file.open(QIODevice::WriteOnly));
+        QCOMPARE(file.write("before"), qint64(6));
+    }
+
+    QSignalSpy ready(&agent, &AIAgent::responseReady);
+
+    // Write one file: the count follows the checkpoint list.
+    llm.script.append(toolResponse("write_file",
+        QJsonObject{{"path", first}, {"content", "after"}}));
+    llm.script.append(textResponse(QStringLiteral("edited")));
+    agent.startTask(QStringLiteral("edit it"));
+    QTRY_COMPARE_WITH_TIMEOUT(ready.count(), 1, 15000);
+
+    QCOMPARE(vm.fileCheckpoints().size(), 1);
+    QCOMPARE(vm.unreviewedFileCount(), 1);
+    QVERIFY2(countSpy.count() >= 1, "计数变化必须发出信号（顶栏靠它刷新）");
+
+    // A second file: two files to look at, one row each.
+    llm.script.append(toolResponse("write_file",
+        QJsonObject{{"path", second}, {"content", "created"}}));
+    llm.script.append(textResponse(QStringLiteral("created")));
+    agent.startTask(QStringLiteral("create it"));
+    QTRY_COMPARE_WITH_TIMEOUT(ready.count(), 2, 15000);
+    QCOMPARE(vm.unreviewedFileCount(), 2);
+
+    // Editing an already-seen-file-path again must not double-count: the
+    // counter is per file, which is what the review tree shows.
+    llm.script.append(toolResponse("edit_file",
+        QJsonObject{{"path", first}, {"old_string", "after"},
+                   {"new_string", "after2"}}));
+    llm.script.append(textResponse(QStringLiteral("edited again")));
+    agent.startTask(QStringLiteral("edit again"));
+    QTRY_COMPARE_WITH_TIMEOUT(ready.count(), 3, 15000);
+    QCOMPARE(vm.unreviewedFileCount(), 2);
+
+    // Acknowledge (the review dialog closed): zero, and the signal fired.
+    countSpy.clear();
+    vm.acknowledgeFileReview();
+    QCOMPARE(vm.unreviewedFileCount(), 0);
+    QCOMPARE(countSpy.count(), 1);
+
+    // Acknowledging twice is a no-op - no signal storm, still zero.
+    vm.acknowledgeFileReview();
+    QCOMPARE(vm.unreviewedFileCount(), 0);
+    QCOMPARE(countSpy.count(), 1);
+
+    // A later write lifts it again on its own: the watermark is an id, so a
+    // new (higher) checkpoint id is what re-lights the button.
+    llm.script.append(toolResponse("edit_file",
+        QJsonObject{{"path", second}, {"old_string", "created"},
+                   {"new_string", "created2"}}));
+    llm.script.append(textResponse(QStringLiteral("edited third")));
+    agent.startTask(QStringLiteral("edit third"));
+    QTRY_COMPARE_WITH_TIMEOUT(ready.count(), 4, 15000);
+    QVERIFY2(vm.unreviewedFileCount() >= 1,
+             "确认后的新改动必须重新点亮审阅按钮");
+
+    // Undoing the changes makes them "handled", so nothing stays unseen.
+    vm.acknowledgeFileReview();
+    QCOMPARE(vm.unreviewedFileCount(), 0);
+    const QVariantList groups = vm.fileCheckpoints();
+    QVERIFY(!groups.isEmpty());
+    QVERIFY(vm.undoFileCheckpoint(groups.first().toMap().value("id").toLongLong()));
+    QVERIFY2(vm.unreviewedFileCount() == 0,
+             "已撤销的改动不应继续算作待查看");
+
+    vm.setAgent(nullptr);
+    agent.setMemory(nullptr);
+}
+
+// The review's other verdict. Undo is destructive (it rewrites the file), so
+// its bookkeeping could ride on the file operation; accept is purely a
+// decision about a change that already happened, which is why it must not
+// touch the file and must be visible as its own state.
+void TestAgent::acceptFileCheckpointSettlesTheChange() {
+    SqliteMemory memory(QStringLiteral(":memory:"));
+    agent.setMemory(&memory);
+
+    AgentViewModel vm(nullptr);
+    vm.setMemory(&memory);
+    vm.setAgent(&agent);
+    agent.setPermissionMode(PermissionMode::AutoEdit);
+
+    QTemporaryDir dir(testDirTemplate());
+    QVERIFY(dir.isValid());
+    const QString first = dir.filePath("first.txt");
+    const QString second = dir.filePath("second.txt");
+    {
+        QFile file(first);
+        QVERIFY(file.open(QIODevice::WriteOnly));
+        file.write("before");
+    }
+
+    QSignalSpy ready(&agent, &AIAgent::responseReady);
+    llm.script.append(toolResponse("write_file",
+        QJsonObject{{"path", first}, {"content", "after"}}));
+    llm.script.append(textResponse(QStringLiteral("edited")));
+    agent.startTask(QStringLiteral("edit it"));
+    QTRY_COMPARE_WITH_TIMEOUT(ready.count(), 1, 15000);
+
+    llm.script.append(toolResponse("write_file",
+        QJsonObject{{"path", second}, {"content", "created"}}));
+    llm.script.append(textResponse(QStringLiteral("created")));
+    agent.startTask(QStringLiteral("create it"));
+    QTRY_COMPARE_WITH_TIMEOUT(ready.count(), 2, 15000);
+
+    QCOMPARE(vm.fileCheckpoints().size(), 2);
+
+    // ── Accepting one file ──
+    const QVariantList before = vm.fileCheckpoints();
+    QVariantMap target;
+    for (const QVariant& entry : before) {
+        if (entry.toMap().value("path").toString().endsWith(QStringLiteral("first.txt")))
+            target = entry.toMap();
+    }
+    QVERIFY(!target.isEmpty());
+    QVERIFY2(!target.value("accepted").toBool(), "前提：尚未确认");
+
+    QCOMPARE(vm.acceptFileCheckpoint(target.value("id").toLongLong()), 1);
+
+    // The file on disk is untouched: accepting keeps the change.
+    {
+        QFile file(first);
+        QVERIFY(file.open(QIODevice::ReadOnly));
+        QCOMPARE(file.readAll(), QByteArray("after"));
+    }
+
+    QVariantList after = vm.fileCheckpoints();
+    QVariantMap acceptedRow;
+    QVariantMap pendingRow;
+    for (const QVariant& entry : after) {
+        const QVariantMap row = entry.toMap();
+        if (row.value("path").toString().endsWith(QStringLiteral("first.txt")))
+            acceptedRow = row;
+        else
+            pendingRow = row;
+    }
+    QCOMPARE(acceptedRow.value("accepted").toBool(), true);
+    QVERIFY(acceptedRow.contains("acceptedAt"));
+    QCOMPARE(pendingRow.value("accepted").toBool(), false);
+
+    // Accepted changes are settled: undo must refuse them.
+    QVERIFY2(!vm.undoFileCheckpoint(acceptedRow.value("id").toLongLong()),
+             "已确认的改动不允许再撤销");
+    {
+        QFile file(first);
+        QVERIFY(file.open(QIODevice::ReadOnly));
+        QCOMPARE(file.readAll(), QByteArray("after"));
+    }
+
+    // Accepting again is a no-op, not a second "1 file".
+    QCOMPARE(vm.acceptFileCheckpoint(acceptedRow.value("id").toLongLong()), 0);
+
+    // ── Accept all ──
+    // Only the second file is still pending.
+    QCOMPARE(vm.acceptAllFileCheckpoints(), 1);
+    after = vm.fileCheckpoints();
+    for (const QVariant& entry : after)
+        QCOMPARE(entry.toMap().value("accepted").toBool(), true);
+    QCOMPARE(vm.acceptAllFileCheckpoints(), 0);
+
+    // Both files still hold the agent's content.
+    {
+        QFile file(second);
+        QVERIFY(file.open(QIODevice::ReadOnly));
+        QCOMPARE(file.readAll(), QByteArray("created"));
+    }
+
+    // Accepting clears the "unseen changes" badge: a decision was made.
+    QCOMPARE(vm.unreviewedFileCount(), 0);
+
+    vm.setAgent(nullptr);
+    agent.setMemory(nullptr);
+}
+
+// Bulk revert, the mirror of accept-all. The interesting part is not "it
+// reverts things" but what it refuses to touch: an accepted file is a
+// decision the user already made, and a path-only row has no stored content
+// to restore. Both must be skipped and counted, never silently reverted.
+void TestAgent::undoAllFileCheckpointsRevertsPendingOnly() {
+    SqliteMemory memory(QStringLiteral(":memory:"));
+    agent.setMemory(&memory);
+
+    AgentViewModel vm(nullptr);
+    vm.setMemory(&memory);
+    vm.setAgent(&agent);
+    agent.setPermissionMode(PermissionMode::AutoEdit);
+
+    QTemporaryDir dir(testDirTemplate());
+    QVERIFY(dir.isValid());
+
+    // Three files with three different fates:
+    //   modified.txt - existing file, edited   -> reverted to its original
+    //   created.txt  - new file by the agent   -> deleted
+    //   kept.txt     - edited, then accepted   -> left alone
+    const QString modified = dir.filePath("modified.txt");
+    const QString created = dir.filePath("created.txt");
+    const QString kept = dir.filePath("kept.txt");
+    for (const QString& path : {modified, kept}) {
+        QFile file(path);
+        QVERIFY(file.open(QIODevice::WriteOnly));
+        file.write("original");
+    }
+
+    QSignalSpy ready(&agent, &AIAgent::responseReady);
+    const auto runWrite = [&](const QString& path, const QString& content) {
+        const int before = ready.count();
+        llm.script.append(toolResponse("write_file",
+            QJsonObject{{"path", path}, {"content", content}}));
+        llm.script.append(textResponse(QStringLiteral("ok")));
+        agent.startTask(QStringLiteral("write"));
+        QTRY_COMPARE_WITH_TIMEOUT(ready.count(), before + 1, 15000);
+    };
+
+    runWrite(modified, "changed");
+    runWrite(created, "brand new");
+    runWrite(kept, "changed too");
+    QCOMPARE(vm.fileCheckpoints().size(), 3);
+
+    // Accept one of them: it must survive the bulk revert.
+    QVariantMap keptRow;
+    for (const QVariant& entry : vm.fileCheckpoints()) {
+        if (entry.toMap().value("path").toString().endsWith(QStringLiteral("kept.txt")))
+            keptRow = entry.toMap();
+    }
+    QVERIFY(!keptRow.isEmpty());
+    QCOMPARE(vm.acceptFileCheckpoint(keptRow.value("id").toLongLong()), 1);
+
+    const auto readAll = [](const QString& path) {
+        QFile file(path);
+        if (!file.open(QIODevice::ReadOnly)) return QByteArray("<missing>");
+        return file.readAll();
+    };
+
+    // ── The bulk revert ──
+    const QVariantMap result = vm.undoAllFileCheckpoints();
+    QCOMPARE(result.value("reverted").toInt(), 2);
+    // The accepted file is settled, so it is skipped rather than reverted.
+    QCOMPARE(result.value("skipped").toInt(), 1);
+    QCOMPARE(result.value("failed").toStringList().size(), 0);
+
+    // Modified file: back to its pre-session content.
+    QCOMPARE(readAll(modified), QByteArray("original"));
+    // Created file: gone.
+    QVERIFY(!QFile::exists(created));
+    // Accepted file: untouched - the user said keep it.
+    QCOMPARE(readAll(kept), QByteArray("changed too"));
+
+    // Rows reflect what happened.
+    int undoneRows = 0;
+    int acceptedRows = 0;
+    for (const QVariant& entry : vm.fileCheckpoints()) {
+        const QVariantMap row = entry.toMap();
+        if (row.value("accepted").toBool()) ++acceptedRows;
+        if (row.value("undone").toBool()) ++undoneRows;
+    }
+    QCOMPARE(acceptedRows, 1);
+    QCOMPARE(undoneRows, 2);
+
+    // Running it again has nothing left to do.
+    const QVariantMap again = vm.undoAllFileCheckpoints();
+    QCOMPARE(again.value("reverted").toInt(), 0);
+
+    // Accepted content is still intact after the second pass.
+    QCOMPARE(readAll(kept), QByteArray("changed too"));
+
+    vm.setAgent(nullptr);
     agent.setMemory(nullptr);
 }
 

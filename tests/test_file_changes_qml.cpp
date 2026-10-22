@@ -152,6 +152,18 @@ public:
         return out;
     }
 
+    // One-argument call for harness functions that take a parameter (the
+    // seam-for-width probe, for instance). Kept separate from call() so the
+    // common no-argument case stays terse.
+    QVariant call1(const char* fn, const QVariant& arg) const {
+        QVariant out;
+        if (!root || !QMetaObject::invokeMethod(root.get(), fn,
+                                                Q_RETURN_ARG(QVariant, out),
+                                                Q_ARG(QVariant, arg)))
+            return {};
+        return out;
+    }
+
     bool setCheckpoints(const QVariantList& items) const {
         return root && QMetaObject::invokeMethod(root.get(), "setCheckpoints",
                                                  Q_ARG(QVariant, items));
@@ -543,8 +555,10 @@ private slots:
         QVERIFY(QMetaObject::invokeMethod(h.root.get(), "closeDetail"));
     }
 
-    // 审阅升级：树行撤销按钮（IconButton 替换旧 AppButton）仍进入确认链路。
-    void treeRowActionOpensUndoConfirmation() {
+    // 审阅升级：树行的操作按钮是「确认」（行内一次决定，不需要弹窗）；
+    // 撤销是破坏性操作，移到了详情面板里，让用户先看到即将丢弃的 diff。
+    // 本用例锁住这次分工：行内点击不再弹撤销确认框。
+    void treeRowActionAcceptsInsteadOfAskingToUndo() {
         Harness h;
         QVERIFY2(h.window, qPrintable(h.error));
 
@@ -569,12 +583,18 @@ private slots:
                 break;
             }
         }
-        QVERIFY2(action, "撤销按钮未渲染");
+        QVERIFY2(action, "树行操作按钮未渲染");
+        QCOMPARE(action->property("icon").toString(), QStringLiteral("check"));
+        QCOMPARE(action->property("enabled").toBool(), true);
+
         const QPoint center =
             action->mapToScene(QPointF(action->width() / 2,
                                        action->height() / 2)).toPoint();
         QTest::mouseClick(h.window, Qt::LeftButton, Qt::NoModifier, center);
-        QTRY_VERIFY(h.call("undoDialogVisible").toBool());
+        // Accepting is not destructive, so no confirmation dialog appears.
+        QTest::qWait(100);
+        QVERIFY2(!h.call("undoDialogVisible").toBool(),
+                 "行内确认不应弹出撤销确认框");
     }
 
     // Phase 1 layout chain: a panel hosted in a fill-height slot with
@@ -726,19 +746,31 @@ private slots:
         QVERIFY2(diffViews.first()->height() > 100.0,
                  "差异区高度塌陷");
 
-        // The action row (统一/并排/撤销) must fit inside the pane.
+        // The action row (统一/并排/确认/撤销) must fit inside the pane: there
+        // are two verdict buttons now, so the right-most one decides overflow.
         QList<QQuickItem*> undoButtons;
         collectVisualItems(h.window->contentItem(),
                            QStringLiteral("undoButton"), &undoButtons);
         QVERIFY2(!undoButtons.isEmpty(), "撤销按钮未渲染");
-        QQuickItem* undo = undoButtons.first();
+        QList<QQuickItem*> acceptButtons;
+        collectVisualItems(h.window->contentItem(),
+                           QStringLiteral("acceptButton"), &acceptButtons);
+        QVERIFY2(!acceptButtons.isEmpty(), "确认按钮未渲染");
+
         const double paneRight =
             diffViews.first()->mapToScene(QPointF(diffViews.first()->width(), 0)).x();
-        const double undoRight =
-            undo->mapToScene(QPointF(undo->width(), 0)).x();
-        QVERIFY2(undoRight <= paneRight + 1.0,
+        QQuickItem* rightMost = undoButtons.first();
+        for (QQuickItem* candidate : {acceptButtons.first(), undoButtons.first()}) {
+            const double right =
+                candidate->mapToScene(QPointF(candidate->width(), 0)).x();
+            if (right > rightMost->mapToScene(QPointF(rightMost->width(), 0)).x())
+                rightMost = candidate;
+        }
+        const double rightMostRight =
+            rightMost->mapToScene(QPointF(rightMost->width(), 0)).x();
+        QVERIFY2(rightMostRight <= paneRight + 1.0,
                  qPrintable(QStringLiteral("操作行溢出最小宽度面板（%1 > %2）")
-                                .arg(undoRight).arg(paneRight)));
+                                .arg(rightMostRight).arg(paneRight)));
     }
 
 
@@ -880,17 +912,23 @@ private slots:
         QVERIFY(h.set("dragSplit", 200000.0));
         const double rightSeam = h.call("seamX").toDouble();
 
-        const double w = h.call("viewWidth").toDouble();
-        const bool gutters = h.call("showGutters").toBool();
-        const double leftPad = gutters ? 40 : 4;
-        const double rightPad = gutters ? 41 : 4;
-        // minColumnText is 110 on each side.
-        QVERIFY2(leftSeam >= leftPad + 110 - 1,
-                 qPrintable(QStringLiteral("left column collapsed to %1px").arg(leftSeam)));
-        QVERIFY2(rightSeam <= w - rightPad - 110 + 1,
-                 qPrintable(QStringLiteral("right column collapsed: seam %1 of %2")
-                                .arg(rightSeam).arg(w)));
+        // The limits come from the component, not from a copy of its pixel
+        // constants - otherwise this case would keep passing while the
+        // component drifted away from the numbers written here.
+        const double lo = h.call("minSeamX").toDouble();
+        const double hi = h.call("maxSeamX").toDouble();
+        const double minText = h.call("minColumnText").toDouble();
+        QVERIFY2(leftSeam >= lo - 1,
+                 qPrintable(QStringLiteral("\u5de6\u5217\u88ab\u538b\u5230 %1px\uff08\u4e0b\u9650 %2\uff09").arg(leftSeam).arg(lo)));
+        QVERIFY2(rightSeam <= hi + 1,
+                 qPrintable(QStringLiteral("\u53f3\u5217\u88ab\u538b\u584c\uff1aseam %1\uff0c\u4e0a\u9650 %2").arg(rightSeam).arg(hi)));
         QVERIFY2(rightSeam > leftSeam, "clamps did not bracket the seam");
+
+        // ...and the clamp really does leave readable text on both sides.
+        QVERIFY2(h.call1("oldBodyWidth", leftSeam).toDouble() >= minText - 1,
+                 "left column body width fell below minColumnText");
+        QVERIFY2(h.call1("newBodyWidth", rightSeam).toDouble() >= minText - 1,
+                 "right column body width fell below minColumnText");
     }
 
     // Double-click returns to the content-aware divide and re-arms auto.
@@ -934,6 +972,126 @@ private slots:
 
         QVERIFY(h.set("setMode", QStringLiteral("unified")));
         QTRY_VERIFY(!handles.first()->isVisible());
+    }
+
+    // Geometry contract: the clamp and the two body-width functions must
+    // describe the same layout. Before they were derived from one another,
+    // minSeamXFor() promised minColumnText but delivered minColumnText-4,
+    // because the seam-to-text gap was not part of its arithmetic. A seam at
+    // either limit now has to yield a body exactly as wide as advertised.
+    void splitClampAndColumnsAgree() {
+        Harness h(QStringLiteral("DiffViewHarness.qml"));
+        QVERIFY2(h.window, qPrintable(h.error));
+
+        QString diff;
+        diff += "--- a/f.md\n+++ b/f.md\n@@ -1,1 +1,1 @@\n";
+        diff += "-alpha beta\n";
+        diff += "+gamma delta\n";
+        QVERIFY(h.set("setDiff", diff));
+        QTRY_VERIFY(h.call("hasDiff").toBool());
+
+        const double minText = h.call("minColumnText").toDouble();
+        const double lo = h.call("minSeamX").toDouble();
+        const double hi = h.call("maxSeamX").toDouble();
+        const double span = h.call("textSpan").toDouble();
+        QVERIFY2(span > 0.0, "可分配正文宽度为 0");
+        QVERIFY2(hi > lo, "钳制上下限倒置");
+
+        // At the lower limit the old body is exactly minColumnText wide.
+        const double oldAtLo = h.call1("oldBodyWidth", lo).toDouble();
+        QVERIFY2(qAbs(oldAtLo - minText) < 0.51,
+                 qPrintable(QStringLiteral("下限处左正文 %1px，应为 %2px")
+                                .arg(oldAtLo).arg(minText)));
+
+        // At the upper limit the new body is exactly minColumnText wide.
+        const double newAtHi = h.call1("newBodyWidth", hi).toDouble();
+        QVERIFY2(qAbs(newAtHi - minText) < 0.51,
+                 qPrintable(QStringLiteral("上限处右正文 %1px，应为 %2px")
+                                .arg(newAtHi).arg(minText)));
+
+        // At any seam inside the clamp, the two bodies together never ask for
+        // more than the span: no overlap by construction. (Comparing the two
+        // extremes against each other would be meaningless - each is maximal
+        // on its own side.)
+        for (double ratio = 0.0; ratio <= 1.0001; ratio += 0.1) {
+            QVERIFY(h.set("setRatio", ratio));
+            const double seam = h.call("seamX").toDouble();
+            const double oldW = h.call1("oldBodyWidth", seam).toDouble();
+            const double newW = h.call1("newBodyWidth", seam).toDouble();
+            QVERIFY2(oldW + newW <= span + 1.0,
+                     qPrintable(QStringLiteral("ratio %1：两侧正文总宽 %2px 超出可分配 %3px")
+                                    .arg(ratio).arg(oldW + newW).arg(span)));
+            QVERIFY2(oldW >= minText - 1.0,
+                     qPrintable(QStringLiteral("ratio %1：左正文被压到 %2px")
+                                    .arg(ratio).arg(oldW)));
+            QVERIFY2(newW >= minText - 1.0,
+                     qPrintable(QStringLiteral("ratio %1：右正文被压到 %2px")
+                                    .arg(ratio).arg(newW)));
+        }
+
+        // A ratio of 0 or 1 is clamped, not honoured literally.
+        QVERIFY(h.set("setRatio", 0.0));
+        QVERIFY2(qAbs(h.call("seamX").toDouble() - lo) < 0.51,
+                 "ratio 0 未被夹到下限");
+        QVERIFY(h.set("setRatio", 1.0));
+        QVERIFY2(qAbs(h.call("seamX").toDouble() - hi) < 0.51,
+                 "ratio 1 未被夹到上限");
+    }
+
+    // Split-mode columns must not overlap: the old text has to end before
+    // the seam and the new text has to start after it, whatever the row
+    // width. The left body once sized itself as `seamX - 4 - diffRow.x`,
+    // which is seamX-4 in practice - 44px too wide once the gutters are
+    // shown, so a long old line painted straight over the new one.
+    void splitColumnsDoNotOverlap() {
+        Harness h(QStringLiteral("DiffViewHarness.qml"));
+        QVERIFY2(h.window, qPrintable(h.error));
+
+        // Long enough that both sides are clipped by their column width
+        // instead of ending on their own content.
+        QString diff;
+        diff += "--- a/f.md\n+++ b/f.md\n@@ -1,1 +1,1 @@\n";
+        diff += "-" + QString(300, QLatin1Char('a')) + "\n";
+        diff += "+" + QString(300, QLatin1Char('b')) + "\n";
+        QVERIFY(h.set("setDiff", diff));
+        QTRY_VERIFY(h.call("hasDiff").toBool());
+        // split mode defaults on in the harness; the two file headers stay
+        // plain rows, the changed hunk collapses into one pair row.
+        QTRY_COMPARE(h.call("rowCount").toInt(), 4);
+
+        QList<QQuickItem*> rows;
+        collectVisualItems(h.window->contentItem(),
+                           QStringLiteral("diffSplitRow"), &rows);
+        QCOMPARE(rows.size(), 1);
+        QQuickItem* row = rows.first();
+
+        // The seam the delegate itself uses: it is derived from the row
+        // width, which is the ListView's width minus its 4px margins.
+        const double seam = h.call1("seamForRowWidth", row->width()).toDouble();
+        QVERIFY(seam > 0.0 && seam < row->width());
+
+        // The two body texts carry their own anchors, so the assertion does
+        // not have to guess which Text child is which.
+        QList<QQuickItem*> oldBodies;
+        QList<QQuickItem*> newBodies;
+        collectVisualItems(row, QStringLiteral("diffSplitOldText"), &oldBodies);
+        collectVisualItems(row, QStringLiteral("diffSplitNewText"), &newBodies);
+        QCOMPARE(oldBodies.size(), 1);
+        QCOMPARE(newBodies.size(), 1);
+        QQuickItem* left = oldBodies.first();
+        QQuickItem* right = newBodies.first();
+
+        const double leftRight = left->x() + left->width();
+        QVERIFY2(leftRight <= seam - 1.0,
+                 qPrintable(QStringLiteral("左侧原始内容越过中缝（右沿 %1，中缝 %2）")
+                                .arg(leftRight).arg(seam)));
+        QVERIFY2(right->x() >= seam + 1.0,
+                 qPrintable(QStringLiteral("右侧改动内容越过中缝（左沿 %1，中缝 %2）")
+                                .arg(right->x()).arg(seam)));
+        QVERIFY2(left->width() > 20.0,
+                 qPrintable(QStringLiteral("左侧原始内容被压成 %1px").arg(left->width())));
+        QVERIFY2(right->width() > 20.0,
+                 qPrintable(QStringLiteral("右侧改动内容被压成 %1px").arg(right->width())));
     }
 
     // ── Review dialog (the panel's wide host) ────────────────
@@ -1196,6 +1354,249 @@ private slots:
         QCOMPARE(pair.value("newText").toString(), QStringLiteral("two"));
     }
 
+    // The same non-overlap rule inside the review dialog, where the report
+    // came from: two long lines in 并排 mode must stay inside their columns.
+    // The dialog's diff pane is the narrow one (the file tree takes its
+    // column first), so this is the layout that exposed the bug.
+    void reviewDialogSplitColumnsDoNotOverlap() {
+        Harness h(QStringLiteral("ReviewDialogHarness.qml"));
+        QVERIFY2(h.window, qPrintable(h.error));
+
+        QVariantMap entry =
+            checkpoint(151, QStringLiteral("/project/src/wide.cpp"), true, false, false);
+        entry["hasDiff"] = true;
+        entry["addedLines"] = 1;
+        entry["removedLines"] = 1;
+        QVERIFY(h.setCheckpoints({entry}));
+
+        // Long enough to be clipped by the column, not by its own content.
+        QVariantMap detail;
+        detail["diff"] = QStringLiteral("--- a/wide.cpp\n+++ b/wide.cpp\n@@ -1 +1 @@\n-")
+                         + QString(240, QLatin1Char('a')) + QStringLiteral("\n+")
+                         + QString(240, QLatin1Char('b')) + QStringLiteral("\n");
+        QVariantMap details;
+        details[QStringLiteral("151")] = detail;
+        QVERIFY(QMetaObject::invokeMethod(h.root.get(), "setDetailById",
+                                          Q_ARG(QVariant, details)));
+
+        QVERIFY(QMetaObject::invokeMethod(h.root.get(), "openDialog"));
+        QTRY_VERIFY(h.call("dialogVisible").toBool());
+        QVERIFY(QMetaObject::invokeMethod(h.root.get(), "openDetail",
+                                          Q_ARG(QVariant, 0)));
+        QTRY_VERIFY(h.call("detailVisible").toBool());
+        QVERIFY(QMetaObject::invokeMethod(h.root.get(), "setViewMode",
+                                          Q_ARG(QVariant, QStringLiteral("split"))));
+        QTRY_VERIFY(h.call("detailDiffLineCount").toInt() > 0);
+        QTest::qWait(250);
+        (void)h.window->grabWindow();
+
+        QList<QQuickItem*> diffViews;
+        collectVisualItems(h.window->contentItem(),
+                           QStringLiteral("detailDiffView"), &diffViews);
+        QVERIFY(!diffViews.isEmpty());
+        QQuickItem* view = diffViews.first();
+
+        QList<QQuickItem*> rows;
+        collectVisualItems(view, QStringLiteral("diffSplitRow"), &rows);
+        QCOMPARE(rows.size(), 1);
+
+        // QML functions marshal their arguments and return value as
+        // QVariant, so the seam comes back as one.
+        QVariant seamValue;
+        QVERIFY(QMetaObject::invokeMethod(view, "splitXFor",
+                                          Q_RETURN_ARG(QVariant, seamValue),
+                                          Q_ARG(QVariant, rows.first()->width())));
+        const double seam = seamValue.toDouble();
+
+        QList<QQuickItem*> oldBodies;
+        QList<QQuickItem*> newBodies;
+        collectVisualItems(rows.first(), QStringLiteral("diffSplitOldText"), &oldBodies);
+        collectVisualItems(rows.first(), QStringLiteral("diffSplitNewText"), &newBodies);
+        QCOMPARE(oldBodies.size(), 1);
+        QCOMPARE(newBodies.size(), 1);
+
+        QQuickItem* left = oldBodies.first();
+        QQuickItem* right = newBodies.first();
+        const double leftRight = left->x() + left->width();
+        QVERIFY2(leftRight <= seam - 1.0,
+                 qPrintable(QStringLiteral("审阅弹窗内左侧原始内容越过中缝（右沿 %1，中缝 %2）")
+                                .arg(leftRight).arg(seam)));
+        QVERIFY2(right->x() >= seam + 1.0,
+                 qPrintable(QStringLiteral("审阅弹窗内右侧改动内容越过中缝（左沿 %1，中缝 %2）")
+                                .arg(right->x()).arg(seam)));
+        // Both columns have to be readable, not merely non-overlapping.
+        QVERIFY2(left->width() >= 100.0,
+                 qPrintable(QStringLiteral("左侧原始内容仅 %1px").arg(left->width())));
+        QVERIFY2(right->width() >= 100.0,
+                 qPrintable(QStringLiteral("右侧改动内容仅 %1px").arg(right->width())));
+    }
+
+    // UE-2: the review offers a verdict, not just a rollback. Accepting keeps
+    // the change and settles the row: both verdict buttons disappear, because
+    // an accepted change cannot be undone and re-accepting is meaningless.
+    void reviewDialogAcceptsAChange() {
+        Harness h(QStringLiteral("ReviewDialogHarness.qml"));
+        QVERIFY2(h.window, qPrintable(h.error));
+
+        QVariantMap first =
+            checkpoint(171, QStringLiteral("/project/src/a.cpp"), true, false, false);
+        first["hasDiff"] = true;
+        first["addedLines"] = 2;
+        first["removedLines"] = 1;
+        QVariantMap second =
+            checkpoint(172, QStringLiteral("/project/src/b.cpp"), true, false, false);
+        second["hasDiff"] = true;
+        QVERIFY(h.setCheckpoints({first, second}));
+
+        QVariantMap detail;
+        detail["diff"] = QStringLiteral("--- a/a.cpp\n+++ b/a.cpp\n@@ -1 +1 @@\n-old\n+new\n");
+        QVERIFY(QMetaObject::invokeMethod(h.root.get(), "setDetail",
+                                          Q_ARG(QVariant, detail)));
+
+        QVERIFY(QMetaObject::invokeMethod(h.root.get(), "openDialog"));
+        QTRY_VERIFY(h.call("dialogVisible").toBool());
+
+        // Both files are pending a decision.
+        QCOMPARE(h.call("pendingCount").toInt(), 2);
+        QCOMPARE(h.call("hasPending").toBool(), true);
+
+        QVERIFY(QMetaObject::invokeMethod(h.root.get(), "openDetail",
+                                          Q_ARG(QVariant, 0)));
+        QTRY_VERIFY(h.call("detailVisible").toBool());
+        QTest::qWait(150);
+
+        // The detail pane offers both verdicts before a decision is made.
+        QList<QQuickItem*> acceptButtons;
+        collectVisualItems(h.window->contentItem(),
+                           QStringLiteral("acceptButton"), &acceptButtons);
+        QCOMPARE(acceptButtons.size(), 1);
+        QVERIFY2(acceptButtons.first()->isVisible(), "确认按钮应先可见");
+        QList<QQuickItem*> undoButtons;
+        collectVisualItems(h.window->contentItem(),
+                           QStringLiteral("undoButton"), &undoButtons);
+        QVERIFY2(!undoButtons.isEmpty() && undoButtons.first()->isVisible(),
+                 "撤销按钮应先可见");
+
+        // The accept-all entry only exists while something is pending.
+        QList<QQuickItem*> acceptAll;
+        collectVisualItems(h.window->contentItem(),
+                           QStringLiteral("reviewAcceptAllButton"), &acceptAll);
+        QCOMPARE(acceptAll.size(), 1);
+        QVERIFY2(acceptAll.first()->isVisible(), "有待确认项时应显示全部确认");
+
+        // Accept the file shown in the pane. The harness has no database, so
+        // the flag is fed back the way the SQL layer reports it.
+        QVERIFY(QMetaObject::invokeMethod(h.root.get(), "setAccepted",
+                                          Q_ARG(QVariant, 0)));
+        QTRY_COMPARE(h.call("pendingCount").toInt(), 1);
+
+        // ... and the settled row drops both verdict buttons.
+        QTRY_VERIFY(!acceptButtons.first()->isVisible());
+        QTRY_VERIFY(!undoButtons.first()->isVisible());
+
+        // The row itself carries the verdict, which is what the tree renders
+        // as 已确认.
+        QList<QQuickItem*> rows;
+        collectVisualItems(h.window->contentItem(),
+                           QStringLiteral("fileChangeRow"), &rows);
+        bool sawAccepted = false;
+        for (QQuickItem* row : rows) {
+            if (row->property("modelData").toMap().value("accepted").toBool())
+                sawAccepted = true;
+        }
+        QVERIFY2(sawAccepted, "树上没有标记为已确认的行");
+
+        // With the last file settled, accept-all retires.
+        QVERIFY(QMetaObject::invokeMethod(h.root.get(), "setAccepted",
+                                          Q_ARG(QVariant, 1)));
+        QTRY_COMPARE(h.call("pendingCount").toInt(), 0);
+        QTRY_VERIFY(!acceptAll.first()->isVisible());
+    }
+
+    // UE-3: bulk revert asks first. The confirmation has to name the files -
+    // a bare "revert 5 files?" does not let anyone judge the blast radius -
+    // and cancelling must not touch a thing.
+    void reviewDialogUndoAllAsksAndListsFiles() {
+        Harness h(QStringLiteral("ReviewDialogHarness.qml"));
+        QVERIFY2(h.window, qPrintable(h.error));
+
+        QVariantMap first =
+            checkpoint(181, QStringLiteral("/project/src/alpha.cpp"), true, false, false);
+        first["hasDiff"] = true;
+        QVariantMap second =
+            checkpoint(182, QStringLiteral("/project/src/beta.cpp"), true, false, false);
+        second["hasDiff"] = true;
+        // Path-only row: counted as pending but not restorable.
+        QVariantMap third =
+            checkpoint(183, QStringLiteral("/project/big.bin"), true, true, false);
+        QVERIFY(h.setCheckpoints({first, second, third}));
+
+        QVERIFY(QMetaObject::invokeMethod(h.root.get(), "openDialog"));
+        QTRY_VERIFY(h.call("dialogVisible").toBool());
+
+        // Two restorable files plus one path-only row.
+        QCOMPARE(h.call("pendingCount").toInt(), 3);
+        QCOMPARE(h.call("undoableCount").toInt(), 2);
+        QCOMPARE(h.call("unrestorableCount").toInt(), 1);
+
+        // The bulk-revert entry is offered while something is pending.
+        QList<QQuickItem*> undoAllButtons;
+        collectVisualItems(h.window->contentItem(),
+                           QStringLiteral("reviewUndoAllButton"), &undoAllButtons);
+        QCOMPARE(undoAllButtons.size(), 1);
+        QVERIFY2(undoAllButtons.first()->isVisible(), "全部撤销按钮应可见");
+
+        // No dialog before asking.
+        QCOMPARE(h.call("undoAllDialogVisible").toBool(), false);
+
+        // Asking opens the confirmation ...
+        QVERIFY(QMetaObject::invokeMethod(h.root.get(), "requestUndoAll"));
+        QTRY_VERIFY(h.call("undoAllDialogVisible").toBool());
+
+        // ... which lists the files by path, not just a count. A Dialog is a
+        // Popup (absent from the item tree), so the dialog's own model is what
+        // gets checked - it is the same list its delegate renders.
+        const QVariantList listed = h.call("undoAllListedText").toList();
+        QStringList paths;
+        for (const QVariant& entry : listed)
+            paths.append(entry.toString());
+        QCOMPARE(paths.size(), 3);
+        QVERIFY2(paths.join("|").contains(QStringLiteral("alpha.cpp")),
+                 qPrintable(QStringLiteral("清单缺少文件：%1").arg(paths.join(","))));
+        QVERIFY2(paths.join("|").contains(QStringLiteral("beta.cpp")), "清单缺少文件");
+        QVERIFY2(paths.join("|").contains(QStringLiteral("big.bin")), "清单缺少文件");
+
+        // Cancelling leaves everything pending.
+        QVERIFY(QMetaObject::invokeMethod(h.root.get(), "undoAllDialogClose"));
+        QTRY_VERIFY(!h.call("undoAllDialogVisible").toBool());
+        QCOMPARE(h.call("pendingCount").toInt(), 3);
+    }
+
+    // The confirming path really runs the batch: the dialog is only a gate,
+    // and a gate that does not admit anyone is worse than none.
+    void reviewDialogUndoAllConfirmsAndRuns() {
+        Harness h(QStringLiteral("ReviewDialogHarness.qml"));
+        QVERIFY2(h.window, qPrintable(h.error));
+
+        QVariantMap first =
+            checkpoint(191, QStringLiteral("/project/src/one.cpp"), true, false, false);
+        first["hasDiff"] = true;
+        QVERIFY(h.setCheckpoints({first}));
+        QVERIFY(QMetaObject::invokeMethod(h.root.get(), "openDialog"));
+        QTRY_VERIFY(h.call("dialogVisible").toBool());
+        QCOMPARE(h.call("pendingCount").toInt(), 1);
+
+        QVERIFY(QMetaObject::invokeMethod(h.root.get(), "requestUndoAll"));
+        QTRY_VERIFY(h.call("undoAllDialogVisible").toBool());
+
+        // Confirming runs the batch. The harness has no database, so the
+        // revert itself fails - what matters here is that the call was made
+        // and that the failure is reported instead of swallowed.
+        QVERIFY(QMetaObject::invokeMethod(h.root.get(), "confirmUndoAll"));
+        QTest::qWait(100);
+        QVERIFY2(h.call("errorText").toString().length() > 0,
+                 "没有可撤销的文件时应给出说明，而不是静默失败");
+    }
     // Esc closes the dialog (the house close policy).
     void reviewDialogClosesOnEscape() {
         Harness h(QStringLiteral("ReviewDialogHarness.qml"));
@@ -1207,6 +1608,37 @@ private slots:
         QTRY_VERIFY(h.call("dialogVisible").toBool());
         QTest::keyClick(h.window, Qt::Key_Escape);
         QTRY_VERIFY(!h.call("dialogVisible").toBool());
+    }
+
+    // UE-1: closing the review is what acknowledges the changes. The top bar
+    // badge listens to the same action, so a dialog that forgot to ack would
+    // leave it lit forever - hence the count rather than a boolean.
+    void reviewDialogAcknowledgesOnCloseOnly() {
+        Harness h(QStringLiteral("ReviewDialogHarness.qml"));
+        QVERIFY2(h.window, qPrintable(h.error));
+        QVERIFY(h.setCheckpoints({
+            checkpoint(161, QStringLiteral("/project/src/a.cpp"), true, false, false)
+        }));
+
+        // Opening is not "seeing it": nothing acknowledged yet.
+        QVERIFY(QMetaObject::invokeMethod(h.root.get(), "openDialog"));
+        QTRY_VERIFY(h.call("dialogVisible").toBool());
+        QCOMPARE(h.call("ackCount").toInt(), 0);
+
+        // Closing acknowledges exactly once.
+        QVERIFY(QMetaObject::invokeMethod(h.root.get(), "closeDialog"));
+        QTRY_VERIFY(!h.call("dialogVisible").toBool());
+        QCOMPARE(h.call("ackCount").toInt(), 1);
+
+        // Reopening and closing again acknowledges again - each review visit
+        // is its own acknowledgement, so a later batch of changes still
+        // clears correctly.
+        QVERIFY(QMetaObject::invokeMethod(h.root.get(), "openDialog"));
+        QTRY_VERIFY(h.call("dialogVisible").toBool());
+        QCOMPARE(h.call("ackCount").toInt(), 1);
+        QTest::keyClick(h.window, Qt::Key_Escape);
+        QTRY_VERIFY(!h.call("dialogVisible").toBool());
+        QCOMPARE(h.call("ackCount").toInt(), 2);
     }
 };
 

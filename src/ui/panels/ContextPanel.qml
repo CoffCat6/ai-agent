@@ -28,7 +28,12 @@ Rectangle {
     // 0 = Git (project sessions only), 1 = knowledge base. Review and the
     // task list are not sections any more: both need width this panel cannot
     // give, so they live in ReviewDialog / TodoDialog (TopBar entries).
-    property int activeSection: 0
+    //
+    // Starts on the knowledge base for a local chat and on Git for a project
+    // session (see Component.onCompleted). Deliberately a plain property, not
+    // a binding: the fallback below assigns to it when a session switches, and
+    // an assignment would silently break a binding here.
+    property int activeSection: 1
 
     // Document import dialog (handled off-GUI-thread by AgentViewModel).
     // docs/25: 多选 → 批量导入链（VM 内按文件串行推进）；单选 → 既有
@@ -38,6 +43,17 @@ Rectangle {
         fileMode: FileDialog.OpenFiles
         nameFilters: [qsTr("支持的文件 (*.txt *.md *.json *.csv *.log *.pdf)"), qsTr("所有文件 (*)")]
         onAccepted: AgentVM.importDocuments(selectedFiles)
+    }
+
+    // First-load section: parking the stack on Git in a local chat left the
+    // right panel showing the Git panel's empty state (and, before the panel
+    // learned to tell "no project" from "still identifying", a line that never
+    // went away). Binding the initial value is not an option - switching to a
+    // local session assigns to activeSection below, and an assignment would
+    // drop the binding - so it is decided once, here.
+    Component.onCompleted: {
+        if (AgentVM.activeProjectRoot.length > 0)
+            root.activeSection = 0
     }
 
     // Left border separator

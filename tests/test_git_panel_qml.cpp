@@ -278,6 +278,12 @@ public:
                                                  Q_ARG(QVariant, index));
     }
 
+    // ContextPanel's second input: whether the Git section is the visible one.
+    bool setActive(bool value) const {
+        return root && QMetaObject::invokeMethod(root.get(), "setActive",
+                                                 Q_ARG(QVariant, value));
+    }
+
     bool openWorkingFile(const QString& path, bool staged, bool untracked) const {
         return root && QMetaObject::invokeMethod(
             root.get(), "openWorkingFile",
@@ -325,6 +331,39 @@ private slots:
             QSKIP(qPrintable(QStringLiteral("git is not available: %1").arg(error)));
     }
 
+
+    // A local chat has no project root, so nothing may be "identifying a git
+    // repository": the panel used to sit on 「正在识别 Git 仓库…」 forever,
+    // because repoKnown is only true once a refresh came back and no refresh
+    // ever ran. It must stay quiet instead, and git must not be invoked.
+    void localChatDoesNotIdentifyRepository() {
+        Harness h;
+        QVERIFY2(h.window, qPrintable(h.error));
+
+        // ContextPanel's local-chat wiring: no root, section not the Git one.
+        QVERIFY(h.setProjectRoot(QString()));
+        QVERIFY(h.setActive(false));
+
+        // Give any stray async refresh time to (wrongly) land.
+        QTest::qWait(400);
+
+        QVERIFY2(!h.call("repoKnownNow").toBool(),
+                 "无项目根时不应得出\"不是仓库\"的结论，而应完全不识别");
+        QVERIFY2(h.call("changesHintText").toString() != QStringLiteral("identifying"),
+                 "本地会话不应显示「正在识别 Git 仓库…」");
+
+        // Not merely hidden: no git call may have been made at all.
+        QVERIFY2(!h.call("everRequestedGit").toBool(),
+                 "无项目会话不应触发任何 git 识别");
+
+        // The 改动 tab explains itself instead of hanging on a spinner-ish line.
+        QList<QQuickItem*> hints;
+        collectVisualItems(h.window->contentItem(),
+                           QStringLiteral("gitNoProjectHint"), &hints);
+        QCOMPARE(hints.size(), 1);
+        QVERIFY2(hints.first()->isVisible(),
+                 "本地会话应提示\"当前会话未关联项目\"");
+    }
     void showsStagedAndUnstagedTrees() {
         TempRepo repo;
         QVERIFY2(prepareRepo(repo), "failed to prepare the temporary repository");
