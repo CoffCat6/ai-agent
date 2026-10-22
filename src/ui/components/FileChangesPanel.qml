@@ -99,6 +99,8 @@ Item {
     readonly property alias detailVisible: detailPane.active
     readonly property alias detailDialogItem: detailPane
     readonly property alias undoDialogVisible: undoDialog.visible
+    readonly property alias undoAllDialogVisible: undoAllDialog.visible
+    readonly property alias undoAllDialogItem: undoAllDialog
     readonly property int activeAdded: sumStat(true)
     readonly property int activeRemoved: sumStat(false)
 
@@ -124,8 +126,54 @@ Item {
         return entry.changeCount !== undefined ? entry.changeCount : 1
     }
 
+    // Review verdicts: "undone" (reverted) and "accepted" (kept) are both
+    // settled states, so both drop out of the pending count and lose their
+    // action buttons.
+    function isAccepted(entry) {
+        return !!entry && entry.accepted === true
+    }
+
+    function isSettled(entry) {
+        return root.activeCount(entry) === 0 || root.isAccepted(entry)
+    }
+
+    // How many files still await a decision (neither undone nor accepted).
+    readonly property int pendingCount: {
+        let n = 0
+        for (let i = 0; i < itemCount; ++i) {
+            const entry = checkpoints[i]
+            if (root.isSettled(entry)) continue
+            ++n
+        }
+        return n
+    }
+
+    readonly property bool hasPending: pendingCount > 0
+
+    // Which files undo-all would touch. The confirmation dialog lists them,
+    // so the user sees the blast radius before any file is rewritten - the
+    // whole point of confirming this action.
+    readonly property var pendingPaths: {
+        const out = []
+        for (let i = 0; i < itemCount; ++i) {
+            const entry = checkpoints[i]
+            if (root.isSettled(entry)) continue
+            // Path-only rows cannot be restored; the batch skips them and the
+            // dialog must say so rather than imply they will be reverted.
+            out.push({ "path": entry.path, "restorable": entry.truncated !== true })
+        }
+        return out
+    }
+    readonly property int undoableCount: {
+        let n = 0
+        for (let i = 0; i < pendingPaths.length; ++i)
+            if (pendingPaths[i].restorable) ++n
+        return n
+    }
+    readonly property int unrestorableCount: pendingPaths.length - undoableCount
+
     function statusColor(entry) {
-        if (root.activeCount(entry) === 0) return Theme.textSecondary
+        if (root.isSettled(entry)) return Theme.textSecondary
         if (entry.truncated) return Theme.statusWarning
         return Theme.brandPrimary
     }
@@ -230,19 +278,23 @@ Item {
         changeTree.collapseAll()
     }
 
+    // Row action reflects the row's state: a settled row has no action left,
+    // a pending one can be accepted (the primary verdict) or undone. Accept
+    // is shown on the row because it is the decision the review exists for;
+    // undo stays available from the detail pane, where its destructive nature
+    // is surrounded by the diff the user is about to throw away.
     function rowAction(entry) {
-        const active = root.activeCount(entry)
-        if (active > 0 && entry.truncated === true) {
-            return { "text": qsTr("不可撤销"),
+        if (root.isSettled(entry))
+            return null
+        if (entry.truncated === true) {
+            return { "icon": "check",
                      "tooltip": qsTr("原文件过大，仅记录了路径，请用 git 恢复"),
                      "enabled": false }
         }
         return {
-            "text": active === 0 ? qsTr("已撤销") : qsTr("撤销"),
-            "tooltip": active === 0
-                ? qsTr("本会话对该文件的改动已撤销")
-                : qsTr("撤销该文件在本会话的全部改动"),
-            "enabled": active > 0
+            "icon": "check",
+            "tooltip": qsTr("确认该文件在本会话的改动"),
+            "enabled": true
         }
     }
 
@@ -250,6 +302,54 @@ Item {
         root.errorText = ""
         undoDialog.pending = entry
         undoDialog.open()
+    }
+
+    // Accepting is not destructive, so it needs no confirmation dialog: the
+    // diff pane already shows what is being accepted, and a modal on top of
+    // that would only slow the common path down.
+    function performAccept(entry) {
+        root.errorText = ""
+        if (!entry) return 0
+        const accepted = AgentVM.acceptFileCheckpoint(entry.id)
+        if (accepted <= 0)
+            root.errorText = qsTr("确认失败：检查点已撤销或已确认。")
+        return accepted
+    }
+
+    function performAcceptAll() {
+        root.errorText = ""
+        const accepted = AgentVM.acceptAllFileCheckpoints()
+        if (accepted <= 0)
+            root.errorText = qsTr("没有待确认的改动。")
+        return accepted
+    }
+
+    // Reverting everything is destructive and cannot be undone, so it goes
+    // through a dialog that names the files. The result is reported from what
+    // actually happened, not assumed: a locked file stays pending and the user
+    // is told, instead of the row quietly looking reverted.
+    function requestUndoAll() {
+        root.errorText = ""
+        if (root.undoableCount <= 0) {
+            root.errorText = root.pendingPaths.length > 0
+                ? qsTr("待确认的文件都只记录了路径，无法撤销。")
+                : qsTr("没有待撤销的改动。")
+            return
+        }
+        undoAllDialog.open()
+    }
+
+    function performUndoAll() {
+        root.errorText = ""
+        const result = AgentVM.undoAllFileCheckpoints()
+        const reverted = result.reverted !== undefined ? result.reverted : 0
+        const failed = result.failed !== undefined ? result.failed : []
+        if (failed.length > 0)
+            root.errorText = qsTr("已撤销 %1 个文件，%2 个未能还原：%3")
+                .arg(reverted).arg(failed.length).arg(failed.join("\n"))
+        else if (reverted <= 0)
+            root.errorText = qsTr("没有可撤销的改动。")
+        return reverted
     }
 
     function performUndo(entry) {
@@ -395,7 +495,7 @@ Item {
                 selectedId: root.hasSelection
                     ? root.selectedEntry.id : null
                 onFileActivated: (item) => root.openDetail(item)
-                onFileActionRequested: (item) => root.requestUndo(item)
+                onFileActionRequested: (item) => root.performAccept(item)
             }
 
             SplitBar {
@@ -442,6 +542,7 @@ Item {
                         : qsTr("在上方选择一个文件查看差异")
                     onEntrySelected: (entry) => root.selectedEntry = entry
                     onUndoRequested: (entry) => root.requestUndo(entry)
+                    onAcceptRequested: (entry) => root.performAccept(entry)
                 }
             }
         }
@@ -521,4 +622,104 @@ Item {
             }
         }
     }
+    // Bulk revert, behind a confirmation that lists the affected files. The
+    // per-file undo dialog cannot serve here: the user has to see the whole
+    // blast radius at once, including the files that will NOT be touched.
+    Dialog {
+        id: undoAllDialog
+        objectName: "undoAllDialog"
+
+        parent: Overlay.overlay
+        anchors.centerIn: parent
+        width: 520
+        modal: true
+        closePolicy: Popup.CloseOnEscape
+
+        background: DialogBackground {}
+
+        contentItem: ColumnLayout {
+            spacing: 10
+
+            Text {
+                text: qsTr("撤销全部待确认的改动？")
+                color: Theme.textPrimary
+                font.pixelSize: Theme.fontSizeBody
+                font.bold: true
+                font.family: Theme.fontSans
+            }
+
+            Text {
+                Layout.fillWidth: true
+                text: qsTr("将把下列 %1 个文件恢复为本次会话首次改动前的内容；新建的文件会被删除。此操作无法撤销。")
+                    .arg(root.undoableCount)
+                color: Theme.textPrimary
+                font.pixelSize: Theme.fontSizeCaption
+                font.family: Theme.fontSans
+                wrapMode: Text.Wrap
+            }
+
+            // The list itself, not a count: "3 files" is not enough to judge
+            // whether reverting is safe.
+            ScrollView {
+                Layout.fillWidth: true
+                Layout.preferredHeight: Math.min(220, undoAllList.contentHeight + 8)
+                clip: true
+
+                ListView {
+                    id: undoAllList
+                    model: root.pendingPaths
+                    spacing: 2
+
+                    delegate: Text {
+                        required property var modelData
+                        width: undoAllList.width
+                        text: (modelData.restorable ? "• " : "• ") + modelData.path
+                        color: modelData.restorable ? Theme.textPrimary
+                                                    : Theme.textTertiary
+                        font.family: Theme.fontMono
+                        font.pixelSize: Theme.fontSizeCaption
+                        elide: Text.ElideMiddle
+                        // Path-only rows are part of the pending set but the
+                        // batch cannot restore them; showing them greyed keeps
+                        // the list honest without implying they will revert.
+                        opacity: modelData.restorable ? 1.0 : 0.5
+                    }
+                }
+            }
+
+            Text {
+                Layout.fillWidth: true
+                visible: root.unrestorableCount > 0
+                text: qsTr("其中 %1 个文件只记录了路径（原文件过大），无法撤销，将被跳过。")
+                    .arg(root.unrestorableCount)
+                color: Theme.statusWarning
+                font.pixelSize: 10
+                font.family: Theme.fontSans
+                wrapMode: Text.Wrap
+            }
+
+            RowLayout {
+                Layout.alignment: Qt.AlignRight
+                spacing: 8
+
+                AppButton {
+                    objectName: "undoAllCancelButton"
+                    text: qsTr("取消")
+                    onClicked: undoAllDialog.close()
+                }
+
+                AppButton {
+                    objectName: "undoAllConfirmButton"
+                    text: qsTr("全部撤销")
+                    textColor: Theme.statusWarning
+                    highlighted: true
+                    onClicked: {
+                        undoAllDialog.close()
+                        root.performUndoAll()
+                    }
+                }
+            }
+        }
+    }
+
 }

@@ -490,15 +490,17 @@ QJsonObject AIAgent::fileCheckpointDetail(qint64 id) const {
     return row;
 }
 
-bool AIAgent::undoFileCheckpoint(qint64 id) {
-    if (!m_memory || m_sessionId.isEmpty() || m_active || id <= 0) return false;
-
-    // Session-level undo: the given id only identifies the file. Restore the
-    // state before the session's first write to that path and mark every
-    // write for it undone, so one click reverts the whole file.
-    const QJsonObject row = m_memory->fileCheckpointDetail(id, m_sessionId);
-    const QString path = row.value("path").toString();
-    if (path.isEmpty()) return false;
+// One file's restore, shared by the single-file undo and by undo-all. Split
+// out so "revert everything" cannot drift from "revert this one": both must
+// restore the state before the session's FIRST write and mark the whole group
+// undone, and a second implementation would eventually disagree.
+//
+// The caller has already checked that the change is pending (not accepted,
+// not undone). Returns false when the file could not be put back; the row is
+// then left as it was, so the caller can report it instead of silently
+// claiming success.
+bool AIAgent::revertFileCheckpointGroup(const QString& path) {
+    if (!m_memory || m_sessionId.isEmpty() || path.isEmpty()) return false;
 
     QByteArray beforeContent;
     QString storedPath;
@@ -533,8 +535,122 @@ bool AIAgent::undoFileCheckpoint(qint64 id) {
         qWarning() << "File restored but checkpoint group could not be marked undone:"
                    << path;
     }
+    return true;
+}
+
+bool AIAgent::undoFileCheckpoint(qint64 id) {
+    if (!m_memory || m_sessionId.isEmpty() || m_active || id <= 0) return false;
+
+    // Session-level undo: the given id only identifies the file. Restore the
+    // state before the session's first write to that path and mark every
+    // write for it undone, so one click reverts the whole file.
+    const QJsonObject row = m_memory->fileCheckpointDetail(id, m_sessionId);
+    const QString path = row.value("path").toString();
+    if (path.isEmpty()) return false;
+    // An accepted change is settled: the user already decided to keep it, so
+    // reverting it behind that decision would be a contradiction. The UI hides
+    // the undo button for these rows; a direct call gets the same refusal.
+    if (row.value("accepted").toBool()) return false;
+
+    if (!revertFileCheckpointGroup(path)) return false;
     emit fileCheckpointsChanged();
     return true;
+}
+
+// The review's accept verdict, the mirror image of undoFileCheckpoint: the
+// file on disk is left alone (the change is what the user wants), only the
+// bookkeeping changes. Everything not-yet-undone for the path is stamped
+// accepted, which is what makes the row read "已确认" and drops the undo
+// button - an accepted change is settled, so offering undo beside it would
+// contradict the decision the user just made.
+bool AIAgent::acceptFileCheckpoint(qint64 id) {
+    if (!m_memory || m_sessionId.isEmpty() || m_active || id <= 0) return false;
+
+    const QJsonObject row = m_memory->fileCheckpointDetail(id, m_sessionId);
+    const QString path = row.value("path").toString();
+    if (path.isEmpty()) return false;
+    // Already undone or already accepted: nothing to decide.
+    if (!row.value("undone").isNull() && row.value("undone").toBool())
+        return false;
+
+    if (!m_memory->markFileCheckpointGroupAccepted(
+            m_sessionId, path, QDateTime::currentMSecsSinceEpoch())) {
+        return false;
+    }
+    emit fileCheckpointsChanged();
+    return true;
+}
+
+// Accept every file the session still has pending. Returns how many files
+// were newly accepted (0 when there was nothing to accept), so the UI can say
+// what happened instead of guessing.
+int AIAgent::acceptAllFileCheckpoints() {
+    if (!m_memory || m_sessionId.isEmpty() || m_active) return 0;
+
+    const QJsonArray files = m_memory->listFileCheckpointFiles(m_sessionId);
+    int accepted = 0;
+    const qint64 now = QDateTime::currentMSecsSinceEpoch();
+    for (const auto& entry : files) {
+        const QJsonObject file = entry.toObject();
+        if (file.value("undone").toBool()) continue;
+        if (file.value("accepted").toBool()) continue;
+        const QString path = file.value("path").toString();
+        if (path.isEmpty()) continue;
+        if (m_memory->markFileCheckpointGroupAccepted(m_sessionId, path, now))
+            ++accepted;
+    }
+    if (accepted > 0)
+        emit fileCheckpointsChanged();
+    return accepted;
+}
+
+// The mirror of acceptAllFileCheckpoints: revert every file that is still
+// awaiting a decision.
+//
+// Three kinds of row are deliberately skipped, and the distinction matters
+// when the UI reports the result:
+//   - undone    : already reverted, nothing to do
+//   - accepted  : the user decided to keep it; reverting would override that
+//   - truncated : path-only history, the original content was never stored, so
+//                 there is nothing to restore (the UI shows these as 不可撤销)
+// A file whose restore fails (locked, permission denied, vanished directory)
+// is left pending and reported by path, never counted as reverted.
+QVariantMap AIAgent::undoAllFileCheckpoints() {
+    QVariantMap result{{QStringLiteral("reverted"), 0},
+                       {QStringLiteral("skipped"), 0},
+                       {QStringLiteral("failed"), QStringList()}};
+    if (!m_memory || m_sessionId.isEmpty() || m_active) return result;
+
+    const QJsonArray files = m_memory->listFileCheckpointFiles(m_sessionId);
+    int reverted = 0;
+    int skipped = 0;
+    QStringList failed;
+
+    for (const auto& entry : files) {
+        const QJsonObject file = entry.toObject();
+        const QString path = file.value("path").toString();
+        if (path.isEmpty()) continue;
+
+        // Settled or unrestorable: count it, leave it alone.
+        if (file.value("undone").toBool() || file.value("accepted").toBool()
+                || file.value("truncated").toBool()) {
+            ++skipped;
+            continue;
+        }
+
+        if (revertFileCheckpointGroup(path))
+            ++reverted;
+        else
+            failed.append(path);
+    }
+
+    result[QStringLiteral("reverted")] = reverted;
+    result[QStringLiteral("skipped")] = skipped;
+    result[QStringLiteral("failed")] = failed;
+
+    if (reverted > 0 || !failed.isEmpty())
+        emit fileCheckpointsChanged();
+    return result;
 }
 
 // docs/23 G7: undo a soft delete — the undo toast routes here.

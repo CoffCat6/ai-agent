@@ -175,6 +175,15 @@ public:
         Q_UNUSED(sessionId); Q_UNUSED(path); Q_UNUSED(undoneAtMs);
         return false;
     }
+    // Marks every not-yet-undone write for one path accepted. Accepted changes
+    // keep their payload (the diff stays readable) but can no longer be
+    // undone. Returns false when nothing was pending.
+    virtual bool markFileCheckpointGroupAccepted(const QString& sessionId,
+                                                 const QString& path,
+                                                 qint64 acceptedAtMs) {
+        Q_UNUSED(sessionId); Q_UNUSED(path); Q_UNUSED(acceptedAtMs);
+        return false;
+    }
     // Drops checkpoints older than the cutoff (session purge is separate).
     virtual int pruneFileCheckpoints(qint64 olderThanMs) {
         Q_UNUSED(olderThanMs);

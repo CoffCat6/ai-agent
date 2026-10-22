@@ -8,6 +8,7 @@
 #include <QString>
 #include <QTimer>
 #include <QVariant>
+#include <QVariantMap>
 #include <QVector>
 #include <atomic>
 #include <memory>
@@ -146,6 +147,20 @@ public:
     // session's first write (or deletes a file the agent created) and marks
     // every write to that path undone. Rejected while a task is running.
     bool undoFileCheckpoint(qint64 id);
+    // Review's accept verdict: stamps every pending write for the id's path
+    // accepted, leaving the file on disk untouched. Accepted changes can no
+    // longer be undone. Rejected while a task is running.
+    bool acceptFileCheckpoint(qint64 id);
+    // Accepts every file with a pending decision; returns the count accepted.
+    int acceptAllFileCheckpoints();
+    // Reverts every file this session still has pending, i.e. the mirror of
+    // acceptAllFileCheckpoints. Files already accepted, already undone or
+    // recorded path-only are skipped - each is either settled or cannot be
+    // restored. Returns a map for the UI to report what actually happened:
+    //   { "reverted": int, "skipped": int, "failed": QStringList }
+    // Skipped counts files that had nothing to revert; failed lists paths
+    // whose restore did not go through (left untouched, still pending).
+    QVariantMap undoAllFileCheckpoints();
 
     QString currentSessionId() const { return m_sessionId; }
 
@@ -281,6 +296,9 @@ private:
     // Persist one trace node (upsert keyed by node id) so resumed sessions
     // rebuild the full timeline, not just user/assistant text.
     void persistTraceNode(const QJsonObject& node, int order);
+    // Restores one file to its pre-session state and marks the group undone.
+    // Shared by undoFileCheckpoint / undoAllFileCheckpoints.
+    bool revertFileCheckpointGroup(const QString& path);
     // traceNodeId: existing tool_call node to flip to "running" (approval
     // path), or empty to append a fresh one (auto-execution path).
     void dispatchToolExecution(const ToolCallInfo& call, const QString& traceNodeId,

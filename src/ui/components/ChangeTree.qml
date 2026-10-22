@@ -143,6 +143,8 @@ Item {
                                          ? modelData.item : modelData
             readonly property bool truncated: modelData.truncated === true
             readonly property bool undone: modelData.undone === true
+            // Review rows: the user accepted this change (kept, no undo).
+            readonly property bool accepted: modelData.accepted === true
             readonly property var rowAction: root.actionForItem(rowItem.entry)
             // Review entries carry activeCount (remaining writes); status
             // entries only changeCount.
@@ -315,11 +317,14 @@ Item {
                     font.pixelSize: 10
                 }
 
+                // Settled states share one slot: a row is either still
+                // pending, accepted or undone, never two of them at once.
                 Text {
-                    visible: !rowItem.isFolder && rowItem.undone
+                    visible: !rowItem.isFolder && (rowItem.undone || rowItem.accepted)
                     Layout.alignment: Qt.AlignVCenter
-                    text: qsTr("已撤销")
-                    color: Theme.textSecondary
+                    text: rowItem.accepted ? qsTr("已确认") : qsTr("已撤销")
+                    color: rowItem.accepted ? Theme.statusSuccess
+                                            : Theme.textSecondary
                     font.pixelSize: 10
                     font.family: Theme.fontSans
                 }

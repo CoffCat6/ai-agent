@@ -312,6 +312,18 @@ bool ChatSessionController::undoFileCheckpoint(qint64 id) {
     return m_agent && m_agent->undoFileCheckpoint(id);
 }
 
+bool ChatSessionController::acceptFileCheckpoint(qint64 id) {
+    return m_agent && m_agent->acceptFileCheckpoint(id);
+}
+
+int ChatSessionController::acceptAllFileCheckpoints() {
+    return m_agent ? m_agent->acceptAllFileCheckpoints() : 0;
+}
+
+QVariantMap ChatSessionController::undoAllFileCheckpoints() {
+    return m_agent ? m_agent->undoAllFileCheckpoints() : QVariantMap();
+}
+
 QJsonObject ChatSessionController::fileCheckpointDetail(qint64 id) const {
     return m_agent ? m_agent->fileCheckpointDetail(id) : QJsonObject();
 }

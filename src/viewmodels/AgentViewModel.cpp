@@ -353,6 +353,7 @@ ChatSessionController* AgentViewModel::ensureTab() {
         if (controller != active()) return;
         m_fileCheckpoints = checkpoints;
         emit fileCheckpointsChanged();
+        refreshUnreviewedFileCount(false);
     });
     connect(controller, &ChatSessionController::episodicChanged,
             this, &AgentViewModel::episodicChanged);
@@ -378,6 +379,7 @@ ChatSessionController* AgentViewModel::ensureTab() {
     if (controller == active()) {
         m_fileCheckpoints = controller->fileCheckpoints();
         emit fileCheckpointsChanged();
+        refreshUnreviewedFileCount(true);
     }
 
     emit tabsChanged();
@@ -446,6 +448,7 @@ void AgentViewModel::activateTab(int index) {
     emit todoListChanged();
     m_fileCheckpoints = active()->fileCheckpoints();
     emit fileCheckpointsChanged();
+    refreshUnreviewedFileCount(true);
     emit activeTabChanged();
     emit tabsChanged();
     // 沙箱镜像随活动标签走；派生值确实变了才通知。
@@ -481,6 +484,7 @@ void AgentViewModel::closeTab(int index) {
     emit todoListChanged();
     m_fileCheckpoints = active()->fileCheckpoints();
     emit fileCheckpointsChanged();
+    refreshUnreviewedFileCount(true);
     emit activeTabChanged();
     emit tabsChanged();
     refreshSessions();
@@ -747,12 +751,94 @@ bool AgentViewModel::undoFileCheckpoint(qint64 id) {
     // this facade; keep a direct read for the return contract's immediacy.
     m_fileCheckpoints = active()->fileCheckpoints();
     emit fileCheckpointsChanged();
+    refreshUnreviewedFileCount(false);
     return true;
+}
+
+int AgentViewModel::acceptFileCheckpoint(qint64 id) {
+    if (!active() || !active()->acceptFileCheckpoint(id)) return 0;
+    // The agent emits fileCheckpointsChanged synchronously; refresh the mirror
+    // anyway so the caller sees the result without waiting for the signal.
+    m_fileCheckpoints = active()->fileCheckpoints();
+    emit fileCheckpointsChanged();
+    refreshUnreviewedFileCount(false);
+    return 1;
+}
+
+int AgentViewModel::acceptAllFileCheckpoints() {
+    if (!active()) return 0;
+    const int accepted = active()->acceptAllFileCheckpoints();
+    if (accepted > 0) {
+        m_fileCheckpoints = active()->fileCheckpoints();
+        emit fileCheckpointsChanged();
+        refreshUnreviewedFileCount(false);
+    }
+    return accepted;
+}
+
+QVariantMap AgentViewModel::undoAllFileCheckpoints() {
+    if (!active()) return {};
+    const QVariantMap result = active()->undoAllFileCheckpoints();
+    m_fileCheckpoints = active()->fileCheckpoints();
+    emit fileCheckpointsChanged();
+    refreshUnreviewedFileCount(false);
+    return result;
 }
 
 QVariantMap AgentViewModel::fileCheckpointDetail(qint64 id) const {
     if (!active()) return {};
     return active()->fileCheckpointDetail(id).toVariantMap();
+}
+
+// UE-1: 顶栏审阅按钮的"未查看改动"提示。
+//
+// 语义是"有我没看过的改动"，而不是"有改动"：后者一旦有改动就永久点亮，
+// 提示立刻退化成噪声。已读状态用 id 水位表达 —— file_checkpoints.id 是
+// AUTOINCREMENT 且单调，记住"看过哪些"只需记住最大 id，任何新写入的检查
+// 点 id 更大，于是新一轮改动自动重新点亮，无需在写入路径上挂钩。
+//
+// 未查看数按*文件*（去重 path）计，与审阅树的一行一个文件对齐：一个文件
+// 改了 3 次仍然只是一个待看的文件。
+void AgentViewModel::refreshUnreviewedFileCount(bool listChanged) {
+    // 换会话时水位失效：id 是全局递增的，但"用户看过这个会话的改动"与
+    // 另一个会话无关，沿用旧水位会把新会话的改动误判为已读。
+    if (listChanged)
+        m_reviewAckCheckpointId = 0;
+
+    QSet<QString> unseen;
+    for (const QVariant& entry : m_fileCheckpoints) {
+        const QVariantMap row = entry.toMap();
+        const qint64 latestId = row.value(QStringLiteral("latestId"),
+                                          row.value(QStringLiteral("id"))).toLongLong();
+        // 已撤销、或已被用户确认的改动都不算"待看"：两者都是已处理状态。
+        const int active = row.contains(QStringLiteral("activeCount"))
+            ? row.value(QStringLiteral("activeCount")).toInt()
+            : (row.value(QStringLiteral("undone")).toBool() ? 0 : 1);
+        const bool accepted = row.value(QStringLiteral("accepted")).toBool();
+        if (active <= 0 || accepted || latestId <= m_reviewAckCheckpointId)
+            continue;
+        unseen.insert(row.value(QStringLiteral("path")).toString());
+    }
+
+    const int next = unseen.size();
+    if (next == m_unreviewedFileCount)
+        return;
+    m_unreviewedFileCount = next;
+    emit unreviewedFileCountChanged();
+}
+
+void AgentViewModel::acknowledgeFileReview() {
+    qint64 high = m_reviewAckCheckpointId;
+    for (const QVariant& entry : m_fileCheckpoints) {
+        const QVariantMap row = entry.toMap();
+        const qint64 latestId = row.value(QStringLiteral("latestId"),
+                                          row.value(QStringLiteral("id"))).toLongLong();
+        if (latestId > high) high = latestId;
+    }
+    // 即使列表为空也要走一遍：计数可能因为撤销而停在 0，此时没有信号要发，
+    // 但水位该推进（避免"关窗后又因为同一批检查点亮起来"）。
+    m_reviewAckCheckpointId = high;
+    refreshUnreviewedFileCount(false);
 }
 
 // The scan runs off the GUI thread; a generation counter drops results that

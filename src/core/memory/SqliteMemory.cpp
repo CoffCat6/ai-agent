@@ -477,7 +477,8 @@ void SqliteMemory::createTables() {
             diff_truncated INTEGER NOT NULL DEFAULT 0,
             added_lines INTEGER NOT NULL DEFAULT 0,
             removed_lines INTEGER NOT NULL DEFAULT 0,
-            after_hash TEXT
+            after_hash TEXT,
+            accepted_at INTEGER
         )
     )", "create file_checkpoints table");
     execDdl(query, "CREATE INDEX IF NOT EXISTS idx_file_checkpoints_session "
@@ -638,6 +639,13 @@ void SqliteMemory::migrateFileCheckpointDetailColumns() {
     if (!columns.contains(QStringLiteral("after_hash")))
         execDdl(q, "ALTER TABLE file_checkpoints ADD COLUMN after_hash TEXT",
                 "add file_checkpoints.after_hash column");
+    // The review's other verdict (besides undo): the user looked at the change
+    // and accepted it. Kept as its own column rather than inferred from
+    // "not undone", because a checkpoint the user never looked at is neither
+    // accepted nor rejected.
+    if (!columns.contains(QStringLiteral("accepted_at")))
+        execDdl(q, "ALTER TABLE file_checkpoints ADD COLUMN accepted_at INTEGER",
+                "add file_checkpoints.accepted_at column");
 }
 
 // 思考正文按列存（trace_nodes 是列映射表，不是整节点 JSON 大字段）：老库
@@ -2341,6 +2349,11 @@ QJsonArray SqliteMemory::listFileCheckpointFiles(const QString& sessionId, int l
                    FIRST_VALUE(truncated) OVER (
                        PARTITION BY path ORDER BY created_at ASC, id ASC
                    ) AS first_truncated,
+                   -- Accepted only when every write to the path was accepted
+                   -- (the user reviews a file, not individual writes).
+                   SUM(CASE WHEN accepted_at IS NULL THEN 1 ELSE 0 END)
+                       OVER (PARTITION BY path) AS unaccepted_count,
+                   MAX(accepted_at) OVER (PARTITION BY path) AS accepted_at,
                    ROW_NUMBER() OVER (
                        PARTITION BY path
                        ORDER BY (undone_at IS NULL) DESC,
@@ -2352,7 +2365,8 @@ QJsonArray SqliteMemory::listFileCheckpointFiles(const QString& sessionId, int l
         SELECT id, path, existed, truncated, byte_size, request_id, created_at,
                undone_at, diff_truncated, added_lines, removed_lines, has_diff,
                change_count, undone_count, first_at, updated_at, first_id,
-               latest_id, first_existed, first_truncated
+               latest_id, first_existed, first_truncated,
+               unaccepted_count, accepted_at
         FROM ranked
         WHERE rn = 1
         ORDER BY updated_at DESC, id DESC
@@ -2399,6 +2413,14 @@ QJsonArray SqliteMemory::listFileCheckpointFiles(const QString& sessionId, int l
         row["truncated"] = firstTruncated;
         row["firstExisted"] = firstExisted;
         row["firstTruncated"] = firstTruncated;
+        // Review verdicts are mutually exclusive per file: a fully accepted
+        // group is "accepted", a fully undone one is "undone", everything
+        // else is still pending the user's decision.
+        const bool accepted = query.value(20).toInt() == 0
+                              && !query.value(21).isNull();
+        row["accepted"] = accepted;
+        if (accepted)
+            row["acceptedAt"] = query.value(21).toLongLong();
         files.append(row);
     }
     return files;
@@ -2410,7 +2432,7 @@ QJsonObject SqliteMemory::fileCheckpointDetail(qint64 id, const QString& session
     QSqlQuery query(m_db);
     query.prepare("SELECT id, path, existed, truncated, byte_size, request_id, "
                   "created_at, undone_at, diff_text, diff_truncated, added_lines, "
-                  "removed_lines, after_hash FROM file_checkpoints "
+                  "removed_lines, after_hash, accepted_at FROM file_checkpoints "
                   "WHERE id = ? AND session_id = ?");
     query.addBindValue(id);
     query.addBindValue(sessionId);
@@ -2432,6 +2454,9 @@ QJsonObject SqliteMemory::fileCheckpointDetail(qint64 id, const QString& session
     row["addedLines"] = query.value(10).toInt();
     row["removedLines"] = query.value(11).toInt();
     row["afterHash"] = query.value(12).toString();
+    const QVariant accepted = query.value(13);
+    row["accepted"] = !accepted.isNull();
+    if (!accepted.isNull()) row["acceptedAt"] = accepted.toLongLong();
     return row;
 }
 
@@ -2502,6 +2527,29 @@ bool SqliteMemory::markFileCheckpointGroupUndone(const QString& sessionId,
     query.addBindValue(path);
     if (!query.exec()) {
         qWarning() << "Failed to mark file checkpoint group undone:"
+                   << query.lastError().text();
+        return false;
+    }
+    return query.numRowsAffected() > 0;
+}
+
+// The review's "I accept this change" verdict, at file granularity like the
+// undo beside it: every not-yet-undone write for the path is stamped, so the
+// group reads as decided. Content is NOT dropped - an accepted diff stays
+// readable, it just cannot be undone any more.
+bool SqliteMemory::markFileCheckpointGroupAccepted(const QString& sessionId,
+                                                   const QString& path,
+                                                   qint64 acceptedAtMs) {
+    if (sessionId.isEmpty() || path.isEmpty()) return false;
+    QSqlQuery query(m_db);
+    query.prepare("UPDATE file_checkpoints SET accepted_at = ? "
+                  "WHERE session_id = ? AND path = ? "
+                  "AND undone_at IS NULL AND accepted_at IS NULL");
+    query.addBindValue(acceptedAtMs);
+    query.addBindValue(sessionId);
+    query.addBindValue(path);
+    if (!query.exec()) {
+        qWarning() << "Failed to mark file checkpoint group accepted:"
                    << query.lastError().text();
         return false;
     }

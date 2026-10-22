@@ -132,6 +132,9 @@ class AgentViewModel : public QObject {
     Q_PROPERTY(QVariantList todoList READ todoList NOTIFY todoListChanged FINAL)
     // G4: files the active session changed (newest first).
     Q_PROPERTY(QVariantList fileCheckpoints READ fileCheckpoints NOTIFY fileCheckpointsChanged FINAL)
+    // UE-1: 有多少个本次会话改动的文件用户还没看过。> 0 时顶栏审阅按钮
+    // 高亮；关闭审阅窗口即调用 acknowledgeFileReview() 清零。
+    Q_PROPERTY(int unreviewedFileCount READ unreviewedFileCount NOTIFY unreviewedFileCountChanged FINAL)
 
     // ── Knowledge Base ────────────────────────────────
     Q_PROPERTY(QVariantList knowledgeDocuments READ knowledgeDocuments NOTIFY knowledgeChanged FINAL)
@@ -329,6 +332,7 @@ public:
     QVariantList toolRegistryModel() const { return m_toolRegistryModel; }
     QVariantList todoList() const { return m_todoList; }
     QVariantList fileCheckpoints() const { return m_fileCheckpoints; }
+    int unreviewedFileCount() const { return m_unreviewedFileCount; }
 
     // Knowledge base
     QVariantList knowledgeDocuments() const { return m_knowledgeDocuments; }
@@ -518,7 +522,19 @@ public:
     // G4: undo all of this session's changes to the file that owns the id.
     // Declared last for the same AOT-index reason as inspectFileReferences.
     Q_INVOKABLE bool undoFileCheckpoint(qint64 id);
+    // Review's accept verdict: the change is kept, but it can no longer be
+    // undone and the row reads "已确认". Returns the number of files newly
+    // accepted (1 for the single-file form, N for acceptAll).
+    Q_INVOKABLE int acceptFileCheckpoint(qint64 id);
+    Q_INVOKABLE int acceptAllFileCheckpoints();
+    // Reverts every file still awaiting a decision (the mirror of acceptAll).
+    // Returns {reverted, skipped, failed[]}; the caller reports the numbers,
+    // so a partial failure never reads as a full success.
+    Q_INVOKABLE QVariantMap undoAllFileCheckpoints();
     Q_INVOKABLE QVariantMap fileCheckpointDetail(qint64 id) const;
+    // UE-1: 用户已经看过本次会话的文件改动了（审阅窗口关闭时调用）。
+    // 只把"未查看"计数清零，不动检查点本身；之后再有新改动会重新点亮。
+    Q_INVOKABLE void acknowledgeFileReview();
 
 signals:
     void stateChanged();
@@ -566,6 +582,8 @@ signals:
     void toolRegistryModelChanged();
     void todoListChanged();
     void fileCheckpointsChanged();
+    // UE-1: 未查看改动的文件数变了（新增改动，或被确认清零）。
+    void unreviewedFileCountChanged();
     void episodicChanged();
     void errorOccurred(const QString& error);
     // Non-error user feedback (import finished, etc.)
@@ -596,6 +614,10 @@ private:
     };
     QList<Confirmation> m_confirmations;
     void pruneConfirmations();
+    // UE-1: 按当前检查点列表与已确认水位重算"未查看"文件数。
+    // listChanged=true 时表示检查点列表本身刚被替换（可能是切换会话），
+    // 此时若活动会话变了就把水位归零，避免把上一个会话的已读状态带过来。
+    void refreshUnreviewedFileCount(bool listChanged);
     void configureModel(ChatSessionController* controller);
     QVariantList m_availableProfiles;
     QVariantMap m_defaultProfile;
@@ -708,6 +730,14 @@ private:
     QVariantList m_toolRegistryModel;
     QVariantList m_todoList;
     QVariantList m_fileCheckpoints;
+    // UE-1: 用户已确认看过的检查点 id 上限（按活动会话）。
+    // 用 id 水位而不是"清空列表"来表达已读：id 单调递增，任何新写入的
+    // 检查点 id 都更大，于是"又有新改动"天然重新点亮，不需要额外挂钩。
+    // 仅内存态：进程重启后未读提示重新出现是合理行为（用户确实没看过
+    // 上一次运行的改动）。
+    qint64 m_reviewAckCheckpointId{0};
+    // 派生值缓存：fileCheckpoints / ack 变化时重算，只在真的变了才发信号。
+    int m_unreviewedFileCount{0};
 
     // ── Knowledge Base ────────────────────────────────
     QVariantList m_knowledgeDocuments;

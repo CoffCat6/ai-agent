@@ -25,6 +25,7 @@ import NexusAI.ViewModels
 // main.qml) and call open().
 Dialog {
     id: dialog
+    objectName: "reviewDialogItem"
 
     // Session checkpoints. Bound to the live VM list, so a file written
     // while the dialog is open shows up right away; a host (or a test) may
@@ -34,6 +35,10 @@ Dialog {
     property string projectRoot: AgentVM.activeProjectRoot
     // Test/embedding hook: overrides AgentVM.fileCheckpointDetail(id).
     property var detailProvider: null
+    // Test/embedding hook: the "I have seen these changes" action. Defaults to
+    // the AgentVM call the top bar's highlight listens to; a harness can swap
+    // it out to assert when (and how often) close triggers it.
+    property var reviewAcknowledger: null
 
     readonly property int fileCount: panel.itemCount
     readonly property int addedLines: panel.activeAdded
@@ -62,6 +67,18 @@ Dialog {
     padding: 0
     closePolicy: Popup.CloseOnEscape | Popup.CloseOnPressOutside
     background: DialogBackground {}
+    // UE-1: closing the review is what counts as "I have seen these changes",
+    // so the top bar's highlight clears here rather than on open - a user who
+    // opens and closes without reading still got the list in front of them,
+    // and keeping the badge past that point would make it impossible to clear
+    // without pretending to read. New writes afterwards lift the id watermark
+    // and light the badge again on their own.
+    onClosed: {
+        if (dialog.reviewAcknowledger)
+            dialog.reviewAcknowledger()
+        else
+            AgentVM.acknowledgeFileReview()
+    }
 
     contentItem: ColumnLayout {
         spacing: 8
@@ -122,6 +139,36 @@ Dialog {
                 font.family: Theme.fontMono
                 font.pixelSize: Theme.fontSizeCaption
                 Accessible.name: text
+            }
+
+            // Accept every file still pending. Hidden once nothing is left
+            // to accept, so the dialog does not offer an action that would
+            // do nothing.
+            AppButton {
+                objectName: "reviewAcceptAllButton"
+                visible: dialog.hasItems && panel.hasPending
+                text: qsTr("全部确认")
+                implicitHeight: 22
+                enabled: !AgentVM.stateBusy
+                opacity: enabled ? 1.0 : 0.4
+                onClicked: panel.performAcceptAll()
+                Accessible.name: qsTr("确认本会话全部待确认的文件改动")
+            }
+
+            // The mirror action. Destructive, so it asks for confirmation and
+            // names the files; it stays available whenever something is
+            // pending, because reverting is the alternative verdict, not a
+            // feature to be discovered late.
+            AppButton {
+                objectName: "reviewUndoAllButton"
+                visible: dialog.hasItems && panel.hasPending
+                text: qsTr("全部撤销")
+                implicitHeight: 22
+                textColor: Theme.statusWarning
+                enabled: !AgentVM.stateBusy
+                opacity: enabled ? 1.0 : 0.4
+                onClicked: panel.requestUndoAll()
+                Accessible.name: qsTr("撤销本会话全部待确认的文件改动")
             }
 
             // The tree's fold buttons: they belong to the panel, but the

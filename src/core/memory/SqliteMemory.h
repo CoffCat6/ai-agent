@@ -121,6 +121,9 @@ public:
     bool markFileCheckpointGroupUndone(const QString& sessionId,
                                        const QString& path,
                                        qint64 undoneAtMs) override;
+    bool markFileCheckpointGroupAccepted(const QString& sessionId,
+                                         const QString& path,
+                                         qint64 acceptedAtMs) override;
     int pruneFileCheckpoints(qint64 olderThanMs) override;
 
     // F1: per-session todo_write task list (see IMemory.h). One row per

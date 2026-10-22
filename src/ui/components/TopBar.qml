@@ -842,13 +842,59 @@ Rectangle {
         // ── Review Toggle ─────────────────────────────
         // Opens ReviewDialog (main.qml). Always available: an empty session
         // gets the dialog's own empty state rather than a dead button.
+        //
+        // UE-1: the button lights up while the session has changed files the
+        // user has not looked at yet, and carries the count - the same
+        // treatment the task list button gets, so "something needs my
+        // attention" reads the same way in both places. ReviewDialog calls
+        // AgentVM.acknowledgeFileReview() when it closes, so opening the
+        // review is what clears it.
         IconButton {
+            id: reviewToggle
+            objectName: "reviewToggleButton"
+            readonly property int unseenCount: AgentVM.unreviewedFileCount
+            readonly property bool highlighted: unseenCount > 0
+
             icon: "edit"
             iconSize: 16
-            restIconColor: Theme.textPrimary
-            tooltip: qsTr("审阅本次会话的文件改动 (Ctrl+R)")
-            Accessible.name: qsTr("打开文件改动审阅")
+            restIconColor: highlighted ? Theme.brandPrimary : Theme.textPrimary
+            restBgColor: highlighted
+                ? Qt.rgba(Theme.brandPrimary.r, Theme.brandPrimary.g,
+                          Theme.brandPrimary.b, Theme.isDark ? 0.18 : 0.10)
+                : "transparent"
+            tooltip: highlighted
+                ? qsTr("审阅本次会话的文件改动（%1 个文件待查看）").arg(unseenCount)
+                : qsTr("审阅本次会话的文件改动 (Ctrl+R)")
+            Accessible.name: highlighted
+                ? qsTr("打开文件改动审阅，%1 个文件待查看").arg(unseenCount)
+                : qsTr("打开文件改动审阅")
             onClicked: reviewDialog.open()
+
+            // Count badge, mirroring the task list button. Capped at 99+ so a
+            // big sweep of files cannot stretch the toolbar row.
+            Rectangle {
+                objectName: "reviewUnseenBadge"
+                anchors.right: parent.right
+                anchors.top: parent.top
+                anchors.rightMargin: 1
+                anchors.topMargin: 1
+                visible: reviewToggle.highlighted
+                width: Math.max(13, unseenLabel.implicitWidth + 6)
+                height: 13
+                radius: 7
+                color: Theme.brandPrimary
+
+                Text {
+                    id: unseenLabel
+                    anchors.centerIn: parent
+                    text: reviewToggle.unseenCount > 99
+                        ? "99+" : reviewToggle.unseenCount
+                    color: Theme.bgPrimary
+                    font.pixelSize: 8
+                    font.family: Theme.fontMono
+                    font.bold: true
+                }
+            }
         }
 
         // ── Panel Toggle Button ──────────────────────

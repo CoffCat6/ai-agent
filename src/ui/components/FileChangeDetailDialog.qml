@@ -69,13 +69,19 @@ Item {
     readonly property bool canStepBack: entryIndex > 0
     readonly property bool canStepForward: entryIndex >= 0
         && entryIndex < entries.length - 1
+    // A settled file offers neither verdict any more: undo is gone once the
+    // change was accepted, and accept is gone once it was undone.
+    readonly property bool accepted: checkpoint ? checkpoint.accepted === true : false
     readonly property bool undoOffered: checkpoint !== null
-        && !undone && !truncated
+        && !undone && !accepted && !truncated
+    readonly property bool acceptOffered: checkpoint !== null
+        && !undone && !accepted && !truncated
 
     // Emitted whenever the pane switches to another file, so the host can
     // mirror the selection (tree highlight) and show the pane.
     signal entrySelected(var entry)
     signal undoRequested(var entry)
+    signal acceptRequested(var entry)
 
     function indexOfEntry(entry) {
         if (!entry) return -1
@@ -111,6 +117,24 @@ Item {
     }
 
     // Switching files inside the pane.
+    // Keep the pane's own copy in step with the host's list: accepting or
+    // undoing a file replaces its row, and the pane's status line (已确认 /
+    // 已撤销) and its verdict buttons are read off that row. Without this the
+    // pane kept showing the pre-decision snapshot.
+    onCheckpointsChanged: pane.syncFromList()
+
+    function syncFromList() {
+        if (!checkpoint) return
+        for (let i = 0; i < checkpoints.length; ++i) {
+            const entry = checkpoints[i]
+            if (!entry || entry.id !== checkpoint.id) continue
+            // Same file, newer state: swap in the fresh row but keep the
+            // already-loaded diff (it did not change).
+            checkpoint = entry
+            return
+        }
+    }
+
     function selectEntry(entry) {
         if (!entry) return
         if (checkpoint && entry.id === checkpoint.id) return
@@ -137,6 +161,7 @@ Item {
     function statusText() {
         if (!checkpoint) return ""
         if (undone) return qsTr("已撤销")
+        if (accepted) return qsTr("已确认")
         if (truncated) return qsTr("仅记录路径，内容未保存")
         return checkpoint.existed ? qsTr("已修改") : qsTr("新建文件")
     }
@@ -144,6 +169,7 @@ Item {
     function statusColor() {
         if (!checkpoint) return Theme.textSecondary
         if (undone) return Theme.textSecondary
+        if (accepted) return Theme.statusSuccess
         if (truncated) return Theme.statusWarning
         return Theme.brandPrimary
     }
@@ -294,6 +320,21 @@ Item {
             }
 
             Item { Layout.fillWidth: true }
+
+            // Accept is the primary verdict, so it sits before undo and is
+            // highlighted; undo keeps its plain look because it throws work
+            // away and should not read as the obvious next step.
+            AppButton {
+                objectName: "acceptButton"
+                visible: pane.acceptOffered
+                text: qsTr("确认")
+                implicitHeight: 22
+                highlighted: true
+                enabled: !AgentVM.stateBusy
+                opacity: enabled ? 1.0 : 0.4
+                onClicked: pane.acceptRequested(pane.checkpoint)
+                Accessible.name: qsTr("确认该文件在本会话的改动")
+            }
 
             AppButton {
                 objectName: "undoButton"
