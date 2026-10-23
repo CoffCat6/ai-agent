@@ -53,17 +53,31 @@ Window {
     // Line-number gutter: the text it renders, its offset, and the toggle.
     function setShowLineNumbers(on) { panel.showLineNumbers = on }
     function showLineNumbers() { return panel.showLineNumbers }
-    function lineNumberText() { return panel.lineNumberText }
-    function lineNumberLineCount() {
-        var t = panel.lineNumberText
-        if (t.length === 0) return 0
-        var n = 1
-        for (var i = 0; i < t.length; ++i) if (t.charCodeAt(i) === 10) ++n
-        return n
+    // The gutter is a Column of per-logical-line Texts now; a test reads a
+    // row's label by index and the row's height (its visual span).
+    function lineNumberRowCount() { return panel.lineNumberCount }
+    function lineNumberAt(index) {
+        var items = []
+        collectByName(panel, "projectFileLineNumbersColumn", items)
+        if (items.length === 0) return ""
+        var col = items[0]
+        if (index < 0 || index >= col.children.length) return ""
+        var child = col.children[index]
+        return child ? child.text : ""
     }
+    function lineNumberRowHeight(index) {
+        var items = []
+        collectByName(panel, "projectFileLineNumbersColumn", items)
+        if (items.length === 0) return -1
+        var col = items[0]
+        if (index < 0 || index >= col.children.length) return -1
+        var child = col.children[index]
+        return child ? child.height : -1
+    }
+    function lineNumberGutterWidth() { return panel.lineNumberWidth }
     function lineNumberGutterY() {
         var items = []
-        collectByName(panel, "projectFileLineNumbersText", items)
+        collectByName(panel, "projectFileLineNumbersColumn", items)
         return items.length > 0 ? items[0].y : 0
     }
     function lineNumberGutterVisible() {
@@ -110,6 +124,8 @@ Window {
     // Wrap toggle + the editor's effective wrap state.
     function setPreviewWrap(on) { panel.previewWrap = on }
     function previewWrap() { return panel.previewWrap }
+    function editorRowHeight() { return panel.editorRowHeight }
+
     // Syntax highlighting: the language the preview settled on, and whether
     // the file's text actually carries colour ranges.
     function previewLanguage() { return panel.previewLanguage() }

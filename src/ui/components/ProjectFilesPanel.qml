@@ -52,25 +52,42 @@ Item {
     // One number per line, right-padded so the gutter width is stable as the
     // digits grow. Built from the same text the editor shows, so the count
     // matches even when the file ends without a trailing newline.
-    readonly property string lineNumberText: {
-        if (previewText.length === 0) return ""
-        // Count exactly as TextEdit does, so the gutter and the editor
-        // agree on how many rows exist. Measured: a file "a\nb\nc\n"
-        // reports lineCount 4 (the trailing newline opens an empty last
-        // line) and the editor really renders that blank row, so numbering
-        // it is what keeps the gutter aligned with the text.
-        let count = 1
-        for (let i = 0; i < previewText.length; ++i)
-            if (previewText.charCodeAt(i) === 10) ++count
-        if (count <= 0) return ""
-        const width = String(count).length
-        let out = ""
-        for (let n = 1; n <= count; ++n) {
-            const label = String(n)
-            out += " ".repeat(width - label.length) + label
-            if (n < count) out += "\n"
+
+    // Visual rows per logical line, from the layout engine. Only asked for in
+    // wrap mode; without wrapping one logical line IS one visual row.
+    readonly property var lineSpans: (previewWrap && showLineNumbers)
+        ? previewHighlighter.visualLineSpans(previewScroll.availableWidth) : []
+
+    // One row's height, measured off the editor: contentHeight / lineCount
+    // (TextEdit exposes no lineHeight). Same font as the editor, so a row
+    // here is a row there.
+    readonly property real editorRowHeight: previewArea.lineCount > 0
+        ? previewArea.contentHeight / previewArea.lineCount : 12
+
+    // Number of gutter entries = number of LOGICAL lines. In wrap mode that
+    // is spans.length (from the layout engine); without wrapping every visual
+    // row is a logical line, so TextEdit's own count is right - its empty
+    // tail really renders and needs a number.
+    readonly property int lineNumberCount: previewWrap
+        ? lineSpans.length : previewArea.lineCount
+
+    // Gutter width fits the widest number.
+    readonly property real lineNumberWidth: {
+        const digits = String(Math.max(1, lineNumberCount)).length
+        return digits * 6 + 4
+    }
+
+    // Total height the gutter needs: every logical line contributes its own
+    // span. In no-wrap mode that is one row per line.
+    readonly property real gutterContentHeight: {
+        if (!showLineNumbers) return 0
+        if (previewWrap) {
+            let total = 0
+            for (let i = 0; i < lineSpans.length; ++i)
+                total += lineSpans[i] * editorRowHeight
+            return total
         }
-        return out
+        return previewArea.lineCount * editorRowHeight
     }
 
     readonly property int previewMinHeight: 100
@@ -217,6 +234,14 @@ Item {
     // actually moved the view rather than just selecting a row.
     readonly property alias listContentY: fileList.contentY
     readonly property alias listContentHeight: fileList.contentHeight
+
+    // Push the viewport width into the QTextDocument so its layout folds
+    // lines where the editor does (see the note at the gutter).
+    function syncDocTextWidth() {
+        if (!previewArea.textDocument) return
+        previewArea.textDocument.textWidth = previewWrap
+            ? previewScroll.availableWidth : -1
+    }
 
     function previewLanguage() {
         return previewHighlighter.languageName
@@ -672,35 +697,52 @@ Item {
                     Rectangle {
                         objectName: "projectFileLineNumbers"
                         Layout.fillHeight: true
-                        Layout.preferredWidth: lineNumberColumn.implicitWidth + 10
+                        Layout.preferredWidth: root.lineNumberWidth + 10
                         visible: root.showLineNumbers
                         color: "transparent"
                         clip: true
 
-                        Text {
+                        // Per-logical-line numbers. Each entry's height is
+                        // the line's VISUAL span, so in wrap mode the number
+                        // sits on the first row of its line and the folded
+                        // continuation rows stay unnumbered - the same
+                        // convention as code editors. NoWrap needs no spans:
+                        // one logical line is one row.
+                        Column {
                             id: lineNumberColumn
-                            objectName: "projectFileLineNumbersText"
+                            objectName: "projectFileLineNumbersColumn"
                             x: 4
                             // Follow the editor's scroll: the ScrollView
                             // moves its contentItem, so the gutter applies the
                             // same offset negatively.
                             y: previewScroll.contentItem
                                 ? -previewScroll.contentItem.contentY : 0
-                            text: root.lineNumberText
-                            color: Theme.textTertiary
-                            font.family: Theme.fontMono
-                            font.pixelSize: 10
-                            horizontalAlignment: Text.AlignRight
-                            // TextEdit exposes no lineHeight, so the row
-                            // spacing is derived from what it does report:
-                            // contentHeight / lineCount. Same font size and
-                            // family as the editor, so one line here is one
-                            // line there.
-                            lineHeight: previewArea.lineCount > 0
-                                ? previewArea.contentHeight / previewArea.lineCount
-                                : 12
-                            lineHeightMode: Text.FixedHeight
-                            textFormat: Text.PlainText
+                            width: parent.width - 8
+                            spacing: 0
+
+                            Repeater {
+                                objectName: "projectFileLineNumbersRepeater"
+                                model: root.showLineNumbers ? root.lineNumberCount : 0
+
+                                Text {
+                                    required property int index
+                                    readonly property int span: {
+                                        if (!root.previewWrap) return 1
+                                        const spans = root.lineSpans
+                                        return index < spans.length
+                                            ? Math.max(1, spans[index]) : 1
+                                    }
+                                    width: lineNumberColumn.width
+                                    height: span * root.editorRowHeight
+                                    verticalAlignment: Text.AlignTop
+                                    text: index + 1
+                                    color: Theme.textTertiary
+                                    font.family: Theme.fontMono
+                                    font.pixelSize: 10
+                                    horizontalAlignment: Text.AlignRight
+                                    textFormat: Text.PlainText
+                                }
+                            }
                         }
                     }
 
@@ -758,6 +800,14 @@ Item {
                             sourceName: root.previewName
                             text: root.previewText
                         }
+
+                        // Binding the DOCUMENT's textWidth to the viewport is
+                        // what makes the layout engine fold lines here: without
+                        // it the document's own textWidth stays unset (measured
+                        // -1 / huge), QTextLayout lays every block as one row,
+                        // and visualLineSpans() would return all 1s. The editor
+                        // paints from the same layout, so this is the same
+                        // width the text itself wraps against.
                     }
                 }
                 }   // RowLayout (gutter + editor)

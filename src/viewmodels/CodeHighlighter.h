@@ -66,6 +66,20 @@ public:
     // this is that observation point. Also handy for diagnostics.
     Q_INVOKABLE bool hasHighlightedText() const;
 
+    // Visual-row count per logical line: [3,1,1] means line one wraps into
+    // three rows, lines two and three do not. Sourced from the layout engine
+    // (QTextLayout::lineCount), not estimated - a character-width guess drifts
+    // by a row here and there and the error accumulates down the file, which
+    // is worse than no gutter at all. Empty when there is no document.
+    //
+    // Only meaningful in wrap mode; without wrapping every line occupies
+    // exactly one row, and QML knows that without asking.
+    // The width to lay out against is passed by the caller: the editor's
+    // viewport is a QML value, and the document's own textWidth does not
+    // reliably mirror it (measured: the editor folded to 11 rows while the
+    // document still reported every block as a single row).
+    Q_INVOKABLE QVariantList visualLineSpans(qreal wrapWidth) const;
+
     // 供代码块标题栏显示的语言名；Unknown → 空串（调用方据此隐藏标题栏）。
     QString languageName() const { return languageDisplayName(m_language); }
 

@@ -97,6 +97,46 @@ bool CodeHighlighter::hasHighlightedText() const {
     return false;
 }
 
+QVariantList CodeHighlighter::visualLineSpans(qreal width) const {
+    QVariantList out;
+    QTextDocument* doc = const_cast<QTextDocument*>(QSyntaxHighlighter::document());
+    if (!doc || width <= 0) return out;
+
+    // QTextLayout is lazy: without a paint pass, lineCount stays 1 no matter
+    // how long the block is (measured: a 301-char block reported 1 even after
+    // the caller had set textWidth). Laying out here against the caller's
+    // viewport width is what makes the numbers real. Font metrics come from
+    // the document's default font.
+    for (QTextBlock block = doc->firstBlock(); block.isValid(); block = block.next()) {
+        QTextLayout* layout = block.layout();
+        if (!layout) { out.append(1); continue; }
+        if (width > 0) {
+            QTextOption option;
+            option.setWrapMode(QTextOption::WrapAnywhere);
+            layout->setTextOption(option);
+            layout->beginLayout();
+            QTextLine line = layout->createLine();
+            // Manual layout needs an explicit cursor position per line AND the
+            // line must be told where it starts; without setPosition the
+            // second createLine() refuses (measured: one 1823px line at a
+            // 400px width came back as a single row).
+            qreal y = 0;
+            int consumed = 0;
+            while (line.isValid() && consumed < block.length()) {
+                line.setLineWidth(width);
+                line.setPosition(QPointF(0, y));
+                y += line.height();
+                consumed += qMax(1, line.textLength());
+                if (consumed >= block.length()) break;
+                line = layout->createLine();
+            }
+            layout->endLayout();
+        }
+        out.append(qMax(1, layout->lineCount()));
+    }
+    return out;
+}
+
 CodeHighlighter::Language CodeHighlighter::languageForFileName(const QString& name) {
     // Only the basename matters, and only the part after the last dot that is
     // not the first character - so ".clang-format" has no usable extension.

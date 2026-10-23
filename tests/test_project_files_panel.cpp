@@ -13,6 +13,7 @@
 #include <QQmlAbstractUrlInterceptor>
 #include <QQuickWindow>
 #include <QQuickItem>
+#include <cmath>
 #include <QDir>
 #include <QFile>
 #include <QFileInfo>
@@ -784,9 +785,8 @@ private slots:
         // after a trailing newline and really renders it, so numbering it
         // is what keeps the gutter aligned with the text.
         QCOMPARE(h.call("editorLineCount").toInt(), 4);
-        QCOMPARE(h.call("lineNumberLineCount").toInt(), 4);
-        QCOMPARE(h.call("lineNumberText").toString(),
-                 QStringLiteral("1\n2\n3\n4"));
+        QCOMPARE(h.call("lineNumberRowCount").toInt(), 4);
+        QCOMPARE(h.call1("lineNumberAt", 3).toString(), QStringLiteral("4"));
     }
 
     // Wide numbers get padded so the gutter width does not jump between a
@@ -805,15 +805,10 @@ private slots:
         QTRY_COMPARE(h.call("previewVisible").toBool(), true);
         QTest::qWait(150);
 
-        const QStringList lines =
-            h.call("lineNumberText").toString().split(QLatin1Char('\n'));
+        const int rowCount = h.call("lineNumberRowCount").toInt();
         // 12 newlines -> 13 rows (TextEdit counts the empty tail).
-        QCOMPARE(lines.size(), 13);
-        // Two-digit max -> every label is 2 chars wide.
-        for (const QString& line : lines)
-            QCOMPARE(line.size(), 2);
-        QCOMPARE(lines.first(), QStringLiteral(" 1"));
-        QCOMPARE(lines.last(), QStringLiteral("13"));
+        QCOMPARE(rowCount, 13);
+        QCOMPARE(h.call1("lineNumberAt", 12).toString(), QStringLiteral("13"));
     }
 
     // The gutter follows the ScrollView: numbers must not stay pinned while
@@ -864,7 +859,7 @@ private slots:
 
         // The text itself is untouched.
         QVERIFY(!h.call("previewText").toString().isEmpty());
-        QCOMPARE(h.call("lineNumberLineCount").toInt(), 3);
+        QCOMPARE(h.call("lineNumberRowCount").toInt(), 3);
     }
 
     // A file with no trailing newline still counts its last line.
@@ -879,9 +874,92 @@ private slots:
         QTRY_COMPARE(h.call("previewVisible").toBool(), true);
         QTest::qWait(150);
 
-        QCOMPARE(h.call("lineNumberLineCount").toInt(), 2);
-        QCOMPARE(h.call("lineNumberText").toString(),
-                 QStringLiteral("1\n2"));
+        QCOMPARE(h.call("lineNumberRowCount").toInt(), 2);
+        QCOMPARE(h.call1("lineNumberAt", 1).toString(), QStringLiteral("2"));
+    }
+
+    // THE point of the spans: with wrapping on, a long logical line occupies
+    // several visual rows, and the number must sit on the FIRST of them. The
+    // continuation rows are inside the same numbered entry (its height covers
+    // the span), so there is nothing to misalign - the failure mode of the old
+    // fixed-height single-Text gutter.
+    void wrappedLineNumbersMarkLogicalStarts() {
+        // One 300-char line (~11 visual rows at the panel's width) plus two
+        // short ones. No trailing newline: exactly 3 logical lines.
+        writeFile("wrap.txt", QByteArray(300, 'x') + "\nshort\nalso short");
+
+        Harness h;
+        QVERIFY2(h.window, qPrintable(h.error));
+        QVERIFY(h.invoke1("setProjectRoot", m_dir->path()));
+        QTRY_VERIFY(h.call("rowCount").toInt() >= 1);
+        QVERIFY(h.invoke1("selectFile", QStringLiteral("wrap.txt")));
+        QTRY_COMPARE(h.call("previewVisible").toBool(), true);
+
+        // Wrap on: three numbered entries, the first one tall.
+        QVERIFY(QMetaObject::invokeMethod(h.root.get(), "setPreviewWrap",
+                                          Q_ARG(QVariant, true)));
+        QTRY_COMPARE(h.call("lineNumberRowCount").toInt(), 3);
+        QCOMPARE(h.call1("lineNumberAt", 0).toString(), QStringLiteral("1"));
+        QCOMPARE(h.call1("lineNumberAt", 1).toString(), QStringLiteral("2"));
+        QCOMPARE(h.call1("lineNumberAt", 2).toString(), QStringLiteral("3"));
+
+        QTest::qWait(300);   // let the layout engine fold the long line
+
+        const double firstHeight = h.call1("lineNumberRowHeight", 0).toDouble();
+        const double secondHeight = h.call1("lineNumberRowHeight", 1).toDouble();
+        const double rowHeight = h.call("editorRowHeight").toDouble();
+        QVERIFY2(rowHeight > 0, "行高应为正");
+
+        // Entry 1 covers the whole folded line; entries 2 and 3 are one row.
+        QVERIFY2(firstHeight > secondHeight + 1.0,
+                 qPrintable(QStringLiteral("折行行的行号应更高（%1 vs %2）")
+                                .arg(firstHeight).arg(secondHeight)));
+        QCOMPARE(secondHeight, rowHeight);
+        QCOMPARE(h.call1("lineNumberRowHeight", 2).toDouble(), rowHeight);
+
+        // The first entry's height is a whole multiple of the row height,
+        // within rounding: spans come from the layout engine, and the editor's
+        // row height is the same division, so the two agree.
+        const double ratio = firstHeight / rowHeight;
+        QVERIFY2(std::abs(ratio - std::round(ratio)) < 0.2,
+                 qPrintable(QStringLiteral("首行高度应是行高的整数倍（%1）").arg(ratio)));
+
+        // Wrap off: the same file, every entry exactly one row.
+        QVERIFY(QMetaObject::invokeMethod(h.root.get(), "setPreviewWrap",
+                                          Q_ARG(QVariant, false)));
+        QTRY_COMPARE(h.call1("lineNumberRowHeight", 0).toDouble(), rowHeight);
+        QCOMPARE(h.call1("lineNumberRowHeight", 1).toDouble(), rowHeight);
+        QCOMPARE(h.call1("lineNumberRowHeight", 2).toDouble(), rowHeight);
+    }
+
+    // Toggling wrap while numbers are shown must update the gutter - a stale
+    // span list would leave entries sized for the previous mode.
+    void wrapToggleUpdatesGutterSpans() {
+        writeFile("w.txt", QByteArray(300, 'y') + "\nshort\n");
+
+        Harness h;
+        QVERIFY2(h.window, qPrintable(h.error));
+        QVERIFY(h.invoke1("setProjectRoot", m_dir->path()));
+        QTRY_VERIFY(h.call("rowCount").toInt() >= 1);
+        QVERIFY(h.invoke1("selectFile", QStringLiteral("w.txt")));
+        QTRY_COMPARE(h.call("previewVisible").toBool(), true);
+        QTest::qWait(200);
+
+        // NoWrap first: entry heights are uniform.
+        const double flat = h.call1("lineNumberRowHeight", 0).toDouble();
+        QVERIFY2(flat > 0, "行高应为正");
+
+        QVERIFY(QMetaObject::invokeMethod(h.root.get(), "setPreviewWrap",
+                                          Q_ARG(QVariant, true)));
+        QTRY_COMPARE(h.call("lineNumberRowCount").toInt(), 3);
+        QTest::qWait(300);
+        QVERIFY2(h.call1("lineNumberRowHeight", 0).toDouble() > flat + 1.0,
+                 "切换到换行后首条行号应长高");
+
+        // ... and back again.
+        QVERIFY(QMetaObject::invokeMethod(h.root.get(), "setPreviewWrap",
+                                          Q_ARG(QVariant, false)));
+        QTRY_COMPARE(h.call1("lineNumberRowHeight", 0).toDouble(), flat);
     }
 
 private:

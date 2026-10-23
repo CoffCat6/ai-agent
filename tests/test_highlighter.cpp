@@ -485,6 +485,89 @@ private slots:
     // One enormous line defeats the line budget (it counts newlines), so it
     // gets its own guard: a 60KB minified blob must not run every rule across
     // the whole thing.
+    // ── visual line spans (wrap-mode gutter) ─────────────
+
+    // No wrap: every logical line is exactly one visual row, which QML can
+    // assume without asking. The spans still agree.
+    void visualSpansWithoutWrap() {
+        QTextDocument doc;
+        doc.setPlainText(QStringLiteral("one\ntwo\nthree\n"));
+        CodeHighlighter highlighter(&doc);
+        highlighter.setSourceName(QStringLiteral("a.txt"));
+        highlighter.setText(QStringLiteral("one\ntwo\nthree\n"));
+
+        const QVariantList spans = highlighter.visualLineSpans(400);
+        QCOMPARE(spans.size(), 4);   // TextEdit counts the empty tail
+        for (const QVariant& span : spans)
+            QCOMPARE(span.toInt(), 1);
+    }
+
+    // Wrapped: a long line really occupies several rows, and the layout engine
+    // (not an estimate) is what says so. The probe measured 300 chars ≈ 11
+    // visual rows in the panel's viewport; here the document is narrower, but
+    // the invariant is the same: total spans == TextEdit.lineCount.
+    void visualSpansMatchWrapLayout() {
+        QString src = QStringLiteral("%1\nshort\nalso short\n")
+                          .arg(QString(300, QLatin1Char('x')));
+        QTextDocument doc;
+        doc.setPlainText(src);
+        CodeHighlighter highlighter(&doc);
+        highlighter.setSourceName(QStringLiteral("w.txt"));
+        highlighter.setText(src);
+
+        // visualLineSpans() lays the blocks out itself (QTextLayout is lazy,
+        // so nothing is folded until someone asks), against the width it is
+        // given - the editor's viewport in production.
+        const QVariantList spans = highlighter.visualLineSpans(200);
+        QCOMPARE(spans.size(), 4);
+
+        // The long line is the one that wraps.
+        QVERIFY2(spans.at(0).toInt() > 1,
+                 qPrintable(QStringLiteral("长行应折成多行，实际 %1")
+                                .arg(spans.at(0).toInt())));
+        // The short ones do not.
+        QCOMPARE(spans.at(1).toInt(), 1);
+        QCOMPARE(spans.at(2).toInt(), 1);
+        QCOMPARE(spans.at(3).toInt(), 1);   // empty tail: one row
+
+        // Cross-check the sum against the layout engine itself: adding up the
+        // per-block spans must equal the document's total LAYOUT line count.
+        // (QTextDocument::lineCount() is the LOGICAL count - 4 here - while
+        // QQuickTextEdit::lineCount() is the visual one; the probe measured
+        // 12 for a 3-line file in the real panel.)
+        int total = 0;
+        int layoutTotal = 0;
+        for (const QVariant& span : spans) total += span.toInt();
+        for (QTextBlock block = doc.firstBlock(); block.isValid(); block = block.next())
+            layoutTotal += block.layout()->lineCount();
+        QCOMPARE(total, layoutTotal);
+    }
+
+    // Narrow the document further and the long line wraps into more rows: the
+    // spans follow the layout, they are not cached from a previous width.
+    void visualSpansRespondToWidth() {
+        QString src = QStringLiteral("%1\nend\n")
+                          .arg(QString(300, QLatin1Char('x')));
+        QTextDocument doc;
+        doc.setPlainText(src);
+        CodeHighlighter highlighter(&doc);
+        highlighter.setSourceName(QStringLiteral("w.txt"));
+        highlighter.setText(src);
+
+        // The width is an argument now: the document's own textWidth does not
+        // reliably mirror the editor's viewport, so the caller passes the real
+        // one. Two reads at two widths must differ.
+        const QVariantList wide = highlighter.visualLineSpans(400);
+        const QVariantList narrow = highlighter.visualLineSpans(100);
+        QVERIFY2(narrow.at(0).toInt() > wide.at(0).toInt(),
+                 qPrintable(QStringLiteral("更窄的文档应折出更多行（%1 -> %2）")
+                                .arg(wide.at(0).toInt()).arg(narrow.at(0).toInt())));
+
+        QVERIFY2(narrow.at(0).toInt() > wide.at(0).toInt(),
+                 qPrintable(QStringLiteral("更窄的文档应折出更多行（%1 -> %2）")
+                                .arg(wide.at(0).toInt()).arg(narrow.at(0).toInt())));
+    }
+
     void oversizedSingleLineStaysPlain() {
         QString src = QStringLiteral("{\"a\":\"");
         while (src.size() < 40 * 1024)
