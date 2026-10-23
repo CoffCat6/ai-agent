@@ -10,7 +10,8 @@
   - 索引 1 = `ProjectFilesPanel`（只读项目文件浏览）
 - `property int activeSection: 0` 是**面板局部状态**，不持久化、不进 VM。写成普通属性而非绑定：回落逻辑会对它赋值，赋值会打断绑定。
 - `contentFade = AgentVM.isPanelVisible ? 1 : 0`，折叠时内容淡出（`Behavior on opacity` 150ms）。
-- 本地会话（`activeProjectRoot` 为空）时两个标签都隐藏，由 `contextPanelNoProject` 覆盖层说明原因——不擅自改动用户的面板可见性设置，但明确告知"这里为什么是空的"。`onActiveProjectIdChanged` 把 `activeSection` 归零，使回到项目时落在稳定的 Git 分区。
+- 本地会话（`activeProjectRoot` 为空）：两个标签隐藏，**整个 `StackLayout` 也隐藏**，面板完全空白——不显示任何提示文案。这一条有两处必须同时满足，只隐藏标签不够：`StackLayout` 若仍可见就会渲染当前页，而 `GitPanel` 自带 `gitNoProjectHint`，那句「当前会话未关联项目」会从面板里透出来（用例 `freshWindowShowsNoProjectHintInRightPanel` 把守这条）。
+- 不擅自因"没内容"就收起面板：可见性始终由用户（`ui/panelVisible`）决定，空白即空白。`onActiveProjectIdChanged` 把 `activeSection` 归零，使回到项目时落在稳定的 Git 分区。
 
 ## 迁移历史（重要）
 

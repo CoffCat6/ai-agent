@@ -496,15 +496,13 @@ select a file to view its content diff below.</translation>
         <translation>View Git management and history</translation>
     </message>
     <message>
-        <location filename="../src/ui/panels/ContextPanel.qml" line="149"/>
         <source>当前会话未关联项目</source>
-        <translation>This session is not tied to a project</translation>
+        <translation type="vanished">This session is not tied to a project</translation>
     </message>
     <message>
-        <location filename="../src/ui/panels/ContextPanel.qml" line="159"/>
         <source>Git 管理与文件浏览在项目会话中可用；
 知识库已移至左下角工具条。</source>
-        <translation>Git management and file browsing are available in project sessions;\nthe knowledge base moved to the toolbar at the bottom left.</translation>
+        <translation type="vanished">Git management and file browsing are available in project sessions;\nthe knowledge base moved to the toolbar at the bottom left.</translation>
     </message>
     <message>
         <source>查看知识库文档</source>
@@ -2924,7 +2922,7 @@ Select or import a project in the sidebar first.</translation>
     <message>
         <location filename="../src/ui/components/KnowledgeDialog.qml" line="224"/>
         <source>文档内容会随提问发送给当前模型服务；如需阻止，请在设置中开启“仅本地模式”。</source>
-        <translation>Document content is sent to the configured model service with your questions. To prevent that, enable "local-only mode" in Settings.</translation>
+        <translation>Document content is sent to the configured model service with your questions. To prevent that, enable &quot;local-only mode&quot; in Settings.</translation>
     </message>
     <message>
         <location filename="../src/ui/components/KnowledgeDialog.qml" line="239"/>

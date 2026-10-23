@@ -100,6 +100,11 @@ Rectangle {
             Layout.fillWidth: true
             Layout.fillHeight: true
             currentIndex: root.activeSection
+            // Both pages are project-scoped. Without this the stack would still
+            // render its current page in a local chat, and GitPanel carries its
+            // own "no project" hint - which would leak through. A local chat
+            // shows an empty panel, on purpose: nothing here applies to it.
+            visible: AgentVM.activeProjectRoot.length > 0
 
             // ── Git Section (read-only) ──────────────────
             // Project sessions only; the tab itself is hidden for local chats.
@@ -121,52 +126,6 @@ Rectangle {
         }
     }
 
-
-    // Local chat: both sections are project-only, so the panel explains the
-    // absence instead of showing an empty Git list. Wording matches the
-    // per-section hints (gitNoProjectHint / projectFileNoProject) so the
-    // three say the same thing.
-    Item {
-        objectName: "contextPanelNoProject"
-        anchors.fill: parent
-        anchors.margins: 20
-        visible: AgentVM.activeProjectRoot.length === 0
-
-        ColumnLayout {
-            anchors.centerIn: parent
-            width: Math.min(parent.width, 320)
-            spacing: 10
-
-            AppIcon {
-                Layout.alignment: Qt.AlignHCenter
-                icon: "folder"
-                size: 24
-                iconColor: Theme.textTertiary
-            }
-
-            Text {
-                Layout.fillWidth: true
-                text: qsTr("当前会话未关联项目")
-                color: Theme.textSecondary
-                font.family: Theme.fontSans
-                font.pixelSize: Theme.fontSizeBody
-                horizontalAlignment: Text.AlignHCenter
-                Accessible.name: text
-            }
-
-            Text {
-                Layout.fillWidth: true
-                text: qsTr("Git 管理与文件浏览在项目会话中可用；
-知识库已移至左下角工具条。")
-                color: Theme.textTertiary
-                font.family: Theme.fontSans
-                font.pixelSize: Theme.fontSizeCaption
-                horizontalAlignment: Text.AlignHCenter
-                wrapMode: Text.Wrap
-                Accessible.name: text
-            }
-        }
-    }
 
     Connections {
         target: AgentVM

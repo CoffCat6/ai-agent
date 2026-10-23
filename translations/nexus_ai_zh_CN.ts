@@ -496,15 +496,13 @@
         <translation>查看 Git 管理与历史</translation>
     </message>
     <message>
-        <location filename="../src/ui/panels/ContextPanel.qml" line="149"/>
         <source>当前会话未关联项目</source>
-        <translation>当前会话未关联项目</translation>
+        <translation type="vanished">当前会话未关联项目</translation>
     </message>
     <message>
-        <location filename="../src/ui/panels/ContextPanel.qml" line="159"/>
         <source>Git 管理与文件浏览在项目会话中可用；
 知识库已移至左下角工具条。</source>
-        <translation>Git 管理与文件浏览</translation>
+        <translation type="vanished">Git 管理与文件浏览</translation>
     </message>
     <message>
         <source>查看知识库文档</source>

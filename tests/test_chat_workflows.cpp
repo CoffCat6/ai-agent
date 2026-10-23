@@ -409,11 +409,17 @@ private slots:
         QVERIFY2(window->findChild<QObject*>(QStringLiteral("knowledgeTab")) == nullptr,
                  "the knowledge base must no longer be a right-panel section");
 
-        // ... and the panel says why it is empty.
-        auto* hint = window->findChild<QQuickItem*>(QStringLiteral("contextPanelNoProject"));
-        QVERIFY2(hint, "context panel is missing its no-project hint");
-        QVERIFY2(hint->isVisible(), "local chat should show the no-project hint");
-
+        // ... and the panel shows NOTHING at all. Both pages are project-only,
+        // and an empty panel is the honest rendering: there is no "no project"
+        // hint to read, because nothing in this panel applies to a local chat.
+        QVERIFY2(window->findChild<QQuickItem*>(QStringLiteral("contextPanelNoProject")) == nullptr,
+                 "local chat should not carry a no-project hint in the right panel");
+        const auto stack = window->findChild<QQuickItem*>(QStringLiteral("projectFileList"));
+        if (stack)
+            QVERIFY2(!stack->isVisible(), "project file list must stay hidden in a local chat");
+        const auto gitHint = window->findChild<QQuickItem*>(QStringLiteral("gitNoProjectHint"));
+        if (gitHint)
+            QVERIFY2(!gitHint->isVisible(), "git no-project hint must not leak into a local chat");
         // The knowledge base is reachable from the sidebar tool strip instead,
         // next to log / audit / settings.
         auto* kbButton = window->findChild<QObject*>(QStringLiteral("knowledgeButton"));
