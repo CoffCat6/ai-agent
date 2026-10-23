@@ -85,6 +85,7 @@ ApplicationWindow {
             onSettingsRequested: settingsCenterDialog.openCategory("model")
             onAuditRequested: auditDialog.open()
             onLogsRequested: logPanel.open()
+            onKnowledgeRequested: knowledgeDialog.open()
         }
 
         // ── Sidebar / Chat Splitter ────────────────────
@@ -146,7 +147,6 @@ ApplicationWindow {
                 NumberAnimation { duration: 220; easing.type: Easing.OutQuad }
             }
 
-            onDocumentDetailsRequested: knowledgeDocDialog.openFor(name)
         }
 
         // docs/20 §5.1 (CITE-801): 引用徽标 → 文档详情。AssistantMessage 不
@@ -308,6 +308,14 @@ ApplicationWindow {
     }
 
     // ── Knowledge Document Detail Dialog ──────────────
+    // Knowledge base management. Global like the log/audit dialogs beside it in
+    // the sidebar tool strip - it is not scoped to a project or a session.
+    KnowledgeDialog {
+        id: knowledgeDialog
+        parent: Overlay.overlay
+        onDocumentDetailsRequested: (name) => knowledgeDocDialog.openFor(name)
+    }
+
     KnowledgeDocDialog {
         id: knowledgeDocDialog
         parent: Overlay.overlay

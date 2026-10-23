@@ -238,6 +238,22 @@ add_test(NAME test_project_files_panel
         "QT_QPA_PLATFORM_PLUGIN_PATH=${QT6_INSTALL_PREFIX}/${QT6_INSTALL_PLUGINS}/platforms"
         $<TARGET_FILE:test_project_files_panel> -platform offscreen)
 
+# Knowledge base dialog: migrated out of the right sidebar into its own
+# dialog, opened from the sidebar's global tool strip. Locks the move (no
+# knowledge tab in the panel, entry exists in the sidebar) plus the list and
+# empty-state rendering.
+add_executable(test_knowledge_dialog test_knowledge_dialog.cpp)
+target_link_libraries(test_knowledge_dialog PRIVATE
+    nexus_core nexus_infra nexus_viewmodels nexus_viewmodelsplugin
+    Qt6::Test Qt6::Qml Qt6::Quick)
+target_compile_definitions(test_knowledge_dialog PRIVATE
+    NEXUS_BUILD_DIR="${CMAKE_BINARY_DIR}")
+add_dependencies(test_knowledge_dialog nexus_ai)
+add_test(NAME test_knowledge_dialog
+    COMMAND ${CMAKE_COMMAND} -E env
+        "QT_QPA_PLATFORM_PLUGIN_PATH=${QT6_INSTALL_PREFIX}/${QT6_INSTALL_PLUGINS}/platforms"
+        $<TARGET_FILE:test_knowledge_dialog> -platform offscreen)
+
 # docs/20 §3.4（A4）：拖放边界回归。QML 的 url 对象没有 toLocalFile()，
 # 在 QML 里转路径会抛 TypeError 让拖拽静默失效；本用例用真实拖放事件走
 # 一遍 delivery agent，锁住"urls 原样交给 C++ 的 QList<QUrl>"这一契约。

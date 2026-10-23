@@ -281,6 +281,8 @@ qt_add_qml_module(nexus_ai
         src/ui/components/FileChangesPanel.qml
         # Sidebar project file browser (read-only, fed by ProjectFileVM)
         src/ui/components/ProjectFilesPanel.qml
+        # Knowledge base management (global; opened from the sidebar tool strip)
+        src/ui/components/KnowledgeDialog.qml
         # G4: the review dialog - the panel's wide host (tree beside diff)
         src/ui/components/ReviewDialog.qml
         # 审阅升级：扁平化目录树（审阅 / Git 状态 / 提交文件共用）+ 路径工具

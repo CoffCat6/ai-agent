@@ -431,7 +431,7 @@
 <context>
     <name>ContextPanel</name>
     <message>
-        <location filename="../src/ui/panels/ContextPanel.qml" line="20"/>
+        <location filename="../src/ui/panels/ContextPanel.qml" line="18"/>
         <source>上下文面板</source>
         <translation>上下文面板</translation>
     </message>
@@ -440,14 +440,12 @@
         <translation type="vanished">文本文件 (*.txt *.md *.json *.csv *.log)</translation>
     </message>
     <message>
-        <location filename="../src/ui/panels/ContextPanel.qml" line="44"/>
         <source>所有文件 (*)</source>
-        <translation>所有文件 (*)</translation>
+        <translation type="vanished">所有文件 (*)</translation>
     </message>
     <message>
-        <location filename="../src/ui/panels/ContextPanel.qml" line="44"/>
         <source>支持的文件 (*.txt *.md *.json *.csv *.log *.pdf)</source>
-        <translation>支持的文件 (*.txt *.md *.json *.csv *.log *.pdf)</translation>
+        <translation type="vanished">支持的文件 (*.txt *.md *.json *.csv *.log *.pdf)</translation>
     </message>
     <message>
         <source>审阅 · %1</source>
@@ -470,40 +468,47 @@
 选中文件即可在下方查看内容差异。</translation>
     </message>
     <message>
-        <location filename="../src/ui/panels/ContextPanel.qml" line="153"/>
         <source>知识库 · %1</source>
-        <translation>知识库 · %1</translation>
+        <translation type="vanished">知识库 · %1</translation>
     </message>
     <message>
-        <location filename="../src/ui/panels/ContextPanel.qml" line="120"/>
-        <location filename="../src/ui/panels/ContextPanel.qml" line="154"/>
         <source>知识库</source>
-        <translation>知识库</translation>
+        <translation type="vanished">知识库</translation>
     </message>
     <message>
-        <location filename="../src/ui/panels/ContextPanel.qml" line="95"/>
+        <location filename="../src/ui/panels/ContextPanel.qml" line="75"/>
         <source>文件</source>
         <translation>文件</translation>
     </message>
     <message>
-        <location filename="../src/ui/panels/ContextPanel.qml" line="101"/>
+        <location filename="../src/ui/panels/ContextPanel.qml" line="81"/>
         <source>浏览项目文件</source>
         <translation>浏览项目文件</translation>
     </message>
     <message>
-        <location filename="../src/ui/panels/ContextPanel.qml" line="108"/>
+        <location filename="../src/ui/panels/ContextPanel.qml" line="88"/>
         <source>Git</source>
         <translation>Git</translation>
     </message>
     <message>
-        <location filename="../src/ui/panels/ContextPanel.qml" line="114"/>
+        <location filename="../src/ui/panels/ContextPanel.qml" line="94"/>
         <source>查看 Git 管理与历史</source>
         <translation>查看 Git 管理与历史</translation>
     </message>
     <message>
-        <location filename="../src/ui/panels/ContextPanel.qml" line="126"/>
+        <location filename="../src/ui/panels/ContextPanel.qml" line="149"/>
+        <source>当前会话未关联项目</source>
+        <translation>当前会话未关联项目</translation>
+    </message>
+    <message>
+        <location filename="../src/ui/panels/ContextPanel.qml" line="159"/>
+        <source>Git 管理与文件浏览在项目会话中可用；
+知识库已移至左下角工具条。</source>
+        <translation>Git 管理与文件浏览</translation>
+    </message>
+    <message>
         <source>查看知识库文档</source>
-        <translation>查看知识库文档</translation>
+        <translation type="vanished">查看知识库文档</translation>
     </message>
     <message>
         <source>本次会话暂无可审阅的文件改动。
@@ -512,74 +517,61 @@
 智能体写入或编辑文件后，这里会按目录列出改动。</translation>
     </message>
     <message>
-        <location filename="../src/ui/panels/ContextPanel.qml" line="169"/>
         <source>文档内容会随提问发送给当前模型服务；如需阻止，请在设置中开启“仅本地模式”</source>
-        <translation>文档内容会随提问发送给当前模型服务；如需阻止，请在设置中开启“仅本地模式”</translation>
+        <translation type="vanished">文档内容会随提问发送给当前模型服务；如需阻止，请在设置中开启“仅本地模式”</translation>
     </message>
     <message>
-        <location filename="../src/ui/panels/ContextPanel.qml" line="207"/>
         <source>批量导入 %1/%2：正在取消…</source>
-        <translation>批量导入 %1/%2：正在取消…</translation>
+        <translation type="vanished">批量导入 %1/%2：正在取消…</translation>
     </message>
     <message>
-        <location filename="../src/ui/panels/ContextPanel.qml" line="211"/>
         <source>批量导入 %1/%2：%3</source>
-        <translation>批量导入 %1/%2：%3</translation>
+        <translation type="vanished">批量导入 %1/%2：%3</translation>
     </message>
     <message>
-        <location filename="../src/ui/panels/ContextPanel.qml" line="216"/>
         <source>已嵌入 %1/%2</source>
-        <translation>已嵌入 %1/%2</translation>
+        <translation type="vanished">已嵌入 %1/%2</translation>
     </message>
     <message>
-        <location filename="../src/ui/panels/ContextPanel.qml" line="217"/>
         <source>导入中…</source>
-        <translation>导入中…</translation>
+        <translation type="vanished">导入中…</translation>
     </message>
     <message>
-        <location filename="../src/ui/panels/ContextPanel.qml" line="235"/>
         <source>正在取消（等待当前文件完成）</source>
-        <translation>正在取消（等待当前文件完成）</translation>
+        <translation type="vanished">正在取消（等待当前文件完成）</translation>
     </message>
     <message>
-        <location filename="../src/ui/panels/ContextPanel.qml" line="236"/>
         <source>取消批量导入（未开始的文件将跳过）</source>
-        <translation>取消批量导入（未开始的文件将跳过）</translation>
+        <translation type="vanished">取消批量导入（未开始的文件将跳过）</translation>
     </message>
     <message>
-        <location filename="../src/ui/panels/ContextPanel.qml" line="250"/>
         <source>导入文档（可多选）</source>
-        <translation>导入文档（可多选）</translation>
+        <translation type="vanished">导入文档（可多选）</translation>
     </message>
     <message>
-        <location filename="../src/ui/panels/ContextPanel.qml" line="260"/>
         <source>重试失败的导入（%1）</source>
-        <translation>重试失败的导入（%1）</translation>
+        <translation type="vanished">重试失败的导入（%1）</translation>
     </message>
     <message>
-        <location filename="../src/ui/panels/ContextPanel.qml" line="262"/>
         <source>重试失败的批量导入</source>
-        <translation>重试失败的批量导入</translation>
+        <translation type="vanished">重试失败的批量导入</translation>
     </message>
     <message>
-        <location filename="../src/ui/panels/ContextPanel.qml" line="368"/>
         <source>%1 段 · %2 字符</source>
-        <translation>%1 段 · %2 字符</translation>
+        <translation type="vanished">%1 段 · %2 字符</translation>
     </message>
     <message>
-        <location filename="../src/ui/panels/ContextPanel.qml" line="399"/>
         <source>移除文档</source>
-        <translation>移除文档</translation>
+        <translation type="vanished">移除文档</translation>
     </message>
     <message>
         <source>导入文档</source>
         <translation type="vanished">导入文档</translation>
     </message>
     <message>
-        <location filename="../src/ui/panels/ContextPanel.qml" line="267"/>
         <source>导入文本或 PDF 文件（.txt / .md / .pdf …），
 模型即可检索其内容回答问题</source>
-        <translation>导入文本或 PDF 文件（.txt / .md / .pdf …），
+        <translation type="vanished">导入文本或 PDF 文件（.txt / .md / .pdf …），
 模型即可检索其内容回答问题</translation>
     </message>
     <message>
@@ -589,14 +581,12 @@
 模型即可检索其内容回答问题</translation>
     </message>
     <message>
-        <location filename="../src/ui/panels/ContextPanel.qml" line="348"/>
         <source>降级</source>
-        <translation>降级</translation>
+        <translation type="vanished">降级</translation>
     </message>
     <message>
-        <location filename="../src/ui/panels/ContextPanel.qml" line="362"/>
         <source>导入时嵌入服务不可用，已使用本地降级嵌入，检索质量有限。可点击右侧刷新按钮重新嵌入。</source>
-        <translation>导入时嵌入服务不可用，已使用本地降级嵌入，检索质量有限。可点击右侧刷新按钮重新嵌入。</translation>
+        <translation type="vanished">导入时嵌入服务不可用，已使用本地降级嵌入，检索质量有限。可点击右侧刷新按钮重新嵌入。</translation>
     </message>
     <message>
         <source> 段 · </source>
@@ -607,9 +597,8 @@
         <translation type="vanished"> 字符</translation>
     </message>
     <message>
-        <location filename="../src/ui/panels/ContextPanel.qml" line="386"/>
         <source>重新嵌入</source>
-        <translation>重新嵌入</translation>
+        <translation type="vanished">重新嵌入</translation>
     </message>
 </context>
 <context>
@@ -2867,6 +2856,151 @@
         <location filename="../src/ui/pages/InterfacePage.qml" line="430"/>
         <source>以上默认值在下次启动时生效；当前窗口布局以手动拖拽为准。</source>
         <translation>以上默认值在下次启动时生效；当前窗口布局以手动拖拽为准。</translation>
+    </message>
+</context>
+<context>
+    <name>KnowledgeDialog</name>
+    <message>
+        <location filename="../src/ui/components/KnowledgeDialog.qml" line="85"/>
+        <location filename="../src/ui/components/KnowledgeDialog.qml" line="106"/>
+        <source>知识库</source>
+        <translation>知识库</translation>
+    </message>
+    <message>
+        <location filename="../src/ui/components/KnowledgeDialog.qml" line="86"/>
+        <source>管理供模型检索的本地文档</source>
+        <translation>管理供模型检索的本地文档</translation>
+    </message>
+    <message>
+        <location filename="../src/ui/components/KnowledgeDialog.qml" line="120"/>
+        <source>%1 个文档 · %2 段 · %3 字符</source>
+        <translation>%1 个文档 · %2 段 · %3 字符</translation>
+    </message>
+    <message>
+        <location filename="../src/ui/components/KnowledgeDialog.qml" line="156"/>
+        <source>批量导入 %1/%2：正在取消…</source>
+        <translation>批量导入 %1/%2：正在取消…</translation>
+    </message>
+    <message>
+        <location filename="../src/ui/components/KnowledgeDialog.qml" line="160"/>
+        <source>批量导入 %1/%2：%3</source>
+        <translation>批量导入 %1/%2：%3</translation>
+    </message>
+    <message>
+        <location filename="../src/ui/components/KnowledgeDialog.qml" line="165"/>
+        <source>已嵌入 %1/%2</source>
+        <translation>已嵌入 %1/%2</translation>
+    </message>
+    <message>
+        <location filename="../src/ui/components/KnowledgeDialog.qml" line="168"/>
+        <source>导入中…</source>
+        <translation>导入中…</translation>
+    </message>
+    <message>
+        <location filename="../src/ui/components/KnowledgeDialog.qml" line="186"/>
+        <source>正在取消（等待当前文件完成）</source>
+        <translation>正在取消（等待当前文件完成）</translation>
+    </message>
+    <message>
+        <location filename="../src/ui/components/KnowledgeDialog.qml" line="187"/>
+        <source>取消批量导入（未开始的文件将跳过）</source>
+        <translation>取消批量导入（未开始的文件将跳过）</translation>
+    </message>
+    <message>
+        <location filename="../src/ui/components/KnowledgeDialog.qml" line="195"/>
+        <source>导入文档</source>
+        <translation>导入文档</translation>
+    </message>
+    <message>
+        <location filename="../src/ui/components/KnowledgeDialog.qml" line="201"/>
+        <source>导入文档到知识库（可多选）</source>
+        <translation>导入文档到知识库（可多选）</translation>
+    </message>
+    <message>
+        <location filename="../src/ui/components/KnowledgeDialog.qml" line="209"/>
+        <source>关闭知识库</source>
+        <translation>关闭知识库</translation>
+    </message>
+    <message>
+        <location filename="../src/ui/components/KnowledgeDialog.qml" line="224"/>
+        <source>文档内容会随提问发送给当前模型服务；如需阻止，请在设置中开启“仅本地模式”。</source>
+        <translation>文档内容会随提问发送给当前模型服务；如需阻止，请在设置中开启“仅本地模式”。</translation>
+    </message>
+    <message>
+        <location filename="../src/ui/components/KnowledgeDialog.qml" line="239"/>
+        <source>重试失败的导入（%1）</source>
+        <translation>重试失败的导入（%1）</translation>
+    </message>
+    <message>
+        <location filename="../src/ui/components/KnowledgeDialog.qml" line="241"/>
+        <source>重试失败的批量导入</source>
+        <translation>重试失败的批量导入</translation>
+    </message>
+    <message>
+        <location filename="../src/ui/components/KnowledgeDialog.qml" line="266"/>
+        <source>文档</source>
+        <translation>文档</translation>
+    </message>
+    <message>
+        <location filename="../src/ui/components/KnowledgeDialog.qml" line="273"/>
+        <source>段数</source>
+        <translation>段数</translation>
+    </message>
+    <message>
+        <location filename="../src/ui/components/KnowledgeDialog.qml" line="281"/>
+        <source>字符</source>
+        <translation>字符</translation>
+    </message>
+    <message>
+        <location filename="../src/ui/components/KnowledgeDialog.qml" line="289"/>
+        <source>状态</source>
+        <translation>状态</translation>
+    </message>
+    <message>
+        <location filename="../src/ui/components/KnowledgeDialog.qml" line="388"/>
+        <source>已嵌入</source>
+        <translation>已嵌入</translation>
+    </message>
+    <message>
+        <location filename="../src/ui/components/KnowledgeDialog.qml" line="406"/>
+        <source>降级</source>
+        <translation>降级</translation>
+    </message>
+    <message>
+        <location filename="../src/ui/components/KnowledgeDialog.qml" line="422"/>
+        <source>导入时嵌入服务不可用，已使用本地降级嵌入，检索质量有限。可点击右侧刷新按钮重新嵌入。</source>
+        <translation>导入时嵌入服务不可用，已使用本地降级嵌入，检索质量有限。可点击右侧刷新按钮重新嵌入。</translation>
+    </message>
+    <message>
+        <location filename="../src/ui/components/KnowledgeDialog.qml" line="440"/>
+        <source>重新嵌入</source>
+        <translation>重新嵌入</translation>
+    </message>
+    <message>
+        <location filename="../src/ui/components/KnowledgeDialog.qml" line="452"/>
+        <source>移除文档</source>
+        <translation>移除文档</translation>
+    </message>
+    <message>
+        <location filename="../src/ui/components/KnowledgeDialog.qml" line="484"/>
+        <source>知识库还没有文档</source>
+        <translation>知识库还没有文档</translation>
+    </message>
+    <message>
+        <location filename="../src/ui/components/KnowledgeDialog.qml" line="494"/>
+        <source>导入文本或 PDF 文件（.txt / .md / .json / .csv / .log / .pdf），
+模型即可检索其内容并回答问题。</source>
+        <translation>导入文本或 PDF 文件（.txt / .md / .json / .csv / .log</translation>
+    </message>
+    <message>
+        <location filename="../src/ui/components/KnowledgeDialog.qml" line="512"/>
+        <source>支持的文件 (*.txt *.md *.json *.csv *.log *.pdf)</source>
+        <translation>支持的文件 (*.txt *.md *.json *.csv *.log *.pdf)</translation>
+    </message>
+    <message>
+        <location filename="../src/ui/components/KnowledgeDialog.qml" line="513"/>
+        <source>所有文件 (*)</source>
+        <translation>所有文件 (*)</translation>
     </message>
 </context>
 <context>
@@ -5927,19 +6061,19 @@
 <context>
     <name>Sidebar</name>
     <message>
-        <location filename="../src/ui/components/Sidebar.qml" line="781"/>
-        <location filename="../src/ui/components/Sidebar.qml" line="913"/>
-        <location filename="../src/ui/components/Sidebar.qml" line="1262"/>
+        <location filename="../src/ui/components/Sidebar.qml" line="784"/>
+        <location filename="../src/ui/components/Sidebar.qml" line="916"/>
+        <location filename="../src/ui/components/Sidebar.qml" line="1265"/>
         <source>新会话</source>
         <translation>新会话</translation>
     </message>
     <message>
-        <location filename="../src/ui/components/Sidebar.qml" line="709"/>
+        <location filename="../src/ui/components/Sidebar.qml" line="712"/>
         <source>搜索会话历史…</source>
         <translation>搜索会话历史…</translation>
     </message>
     <message>
-        <location filename="../src/ui/components/Sidebar.qml" line="718"/>
+        <location filename="../src/ui/components/Sidebar.qml" line="721"/>
         <source>搜索会话历史</source>
         <translation>搜索会话历史</translation>
     </message>
@@ -5948,13 +6082,13 @@
         <translation type="vanished">搜索结果</translation>
     </message>
     <message>
-        <location filename="../src/ui/components/Sidebar.qml" line="670"/>
+        <location filename="../src/ui/components/Sidebar.qml" line="673"/>
         <source>暂无历史会话</source>
         <translation>暂无历史会话</translation>
     </message>
     <message>
-        <location filename="../src/ui/components/Sidebar.qml" line="487"/>
-        <location filename="../src/ui/components/Sidebar.qml" line="1120"/>
+        <location filename="../src/ui/components/Sidebar.qml" line="490"/>
+        <location filename="../src/ui/components/Sidebar.qml" line="1123"/>
         <source>确认?</source>
         <translation>确认?</translation>
     </message>
@@ -5963,141 +6097,151 @@
         <translation type="vanished">导入项目…</translation>
     </message>
     <message>
-        <location filename="../src/ui/components/Sidebar.qml" line="765"/>
+        <location filename="../src/ui/components/Sidebar.qml" line="768"/>
         <source>选择项目文件夹</source>
         <translation>选择项目文件夹</translation>
     </message>
     <message>
-        <location filename="../src/ui/components/Sidebar.qml" line="266"/>
+        <location filename="../src/ui/components/Sidebar.qml" line="269"/>
         <source>导入项目</source>
         <translation>导入项目</translation>
     </message>
     <message>
-        <location filename="../src/ui/components/Sidebar.qml" line="179"/>
-        <location filename="../src/ui/components/Sidebar.qml" line="198"/>
+        <location filename="../src/ui/components/Sidebar.qml" line="182"/>
+        <location filename="../src/ui/components/Sidebar.qml" line="201"/>
         <source>新对话</source>
         <translation>新对话</translation>
     </message>
     <message>
-        <location filename="../src/ui/components/Sidebar.qml" line="234"/>
+        <location filename="../src/ui/components/Sidebar.qml" line="237"/>
         <source>PROJECTS</source>
         <translation>项目</translation>
     </message>
     <message>
-        <location filename="../src/ui/components/Sidebar.qml" line="430"/>
+        <location filename="../src/ui/components/Sidebar.qml" line="433"/>
         <source>在此项目下新建会话</source>
         <translation>在此项目下新建会话</translation>
     </message>
     <message>
-        <location filename="../src/ui/components/Sidebar.qml" line="460"/>
+        <location filename="../src/ui/components/Sidebar.qml" line="463"/>
         <source>重命名项目</source>
         <translation>重命名项目</translation>
     </message>
     <message>
-        <location filename="../src/ui/components/Sidebar.qml" line="535"/>
+        <location filename="../src/ui/components/Sidebar.qml" line="538"/>
         <source>暂无会话</source>
         <translation>暂无会话</translation>
     </message>
     <message>
-        <location filename="../src/ui/components/Sidebar.qml" line="549"/>
+        <location filename="../src/ui/components/Sidebar.qml" line="552"/>
         <source>暂无项目。点上方 + 选择文件夹导入</source>
         <translation>暂无项目。点上方 + 选择文件夹导入</translation>
     </message>
     <message>
-        <location filename="../src/ui/components/Sidebar.qml" line="616"/>
+        <location filename="../src/ui/components/Sidebar.qml" line="619"/>
         <source>对话</source>
         <translation>对话</translation>
     </message>
     <message>
-        <location filename="../src/ui/components/Sidebar.qml" line="647"/>
+        <location filename="../src/ui/components/Sidebar.qml" line="650"/>
         <source>新建本地对话</source>
         <translation>新建本地对话</translation>
     </message>
     <message>
-        <location filename="../src/ui/components/Sidebar.qml" line="651"/>
+        <location filename="../src/ui/components/Sidebar.qml" line="654"/>
         <source>本地对话</source>
         <translation>本地对话</translation>
     </message>
     <message>
-        <location filename="../src/ui/components/Sidebar.qml" line="731"/>
+        <location filename="../src/ui/components/Sidebar.qml" line="734"/>
         <source>包含已归档</source>
         <translation>包含已归档</translation>
     </message>
     <message>
-        <location filename="../src/ui/components/Sidebar.qml" line="798"/>
-        <location filename="../src/ui/components/Sidebar.qml" line="972"/>
+        <location filename="../src/ui/components/Sidebar.qml" line="801"/>
+        <location filename="../src/ui/components/Sidebar.qml" line="975"/>
         <source>取消置顶</source>
         <translation>取消置顶</translation>
     </message>
     <message>
-        <location filename="../src/ui/components/Sidebar.qml" line="798"/>
-        <location filename="../src/ui/components/Sidebar.qml" line="972"/>
+        <location filename="../src/ui/components/Sidebar.qml" line="801"/>
+        <location filename="../src/ui/components/Sidebar.qml" line="975"/>
         <source>置顶会话</source>
         <translation>置顶会话</translation>
     </message>
     <message>
-        <location filename="../src/ui/components/Sidebar.qml" line="802"/>
-        <location filename="../src/ui/components/Sidebar.qml" line="1006"/>
+        <location filename="../src/ui/components/Sidebar.qml" line="805"/>
+        <location filename="../src/ui/components/Sidebar.qml" line="1009"/>
         <source>恢复会话</source>
         <translation>恢复会话</translation>
     </message>
     <message>
-        <location filename="../src/ui/components/Sidebar.qml" line="802"/>
-        <location filename="../src/ui/components/Sidebar.qml" line="1006"/>
+        <location filename="../src/ui/components/Sidebar.qml" line="805"/>
+        <location filename="../src/ui/components/Sidebar.qml" line="1009"/>
         <source>归档会话</source>
         <translation>归档会话</translation>
     </message>
     <message>
-        <location filename="../src/ui/components/Sidebar.qml" line="809"/>
-        <location filename="../src/ui/components/Sidebar.qml" line="1047"/>
+        <location filename="../src/ui/components/Sidebar.qml" line="812"/>
+        <location filename="../src/ui/components/Sidebar.qml" line="1050"/>
         <source>导出会话</source>
         <translation>导出会话</translation>
     </message>
     <message>
-        <location filename="../src/ui/components/Sidebar.qml" line="816"/>
-        <location filename="../src/ui/components/Sidebar.qml" line="1090"/>
+        <location filename="../src/ui/components/Sidebar.qml" line="819"/>
+        <location filename="../src/ui/components/Sidebar.qml" line="1093"/>
         <source>重命名会话</source>
         <translation>重命名会话</translation>
     </message>
     <message>
-        <location filename="../src/ui/components/Sidebar.qml" line="823"/>
-        <location filename="../src/ui/components/Sidebar.qml" line="1154"/>
+        <location filename="../src/ui/components/Sidebar.qml" line="826"/>
+        <location filename="../src/ui/components/Sidebar.qml" line="1157"/>
         <source>删除会话</source>
         <translation>删除会话</translation>
     </message>
     <message>
-        <location filename="../src/ui/components/Sidebar.qml" line="1155"/>
+        <location filename="../src/ui/components/Sidebar.qml" line="1158"/>
         <source>需要点击两次确认</source>
         <translation>需要点击两次确认</translation>
     </message>
     <message>
-        <location filename="../src/ui/components/Sidebar.qml" line="1283"/>
+        <location filename="../src/ui/components/Sidebar.qml" line="1286"/>
         <source>会话 %1，%2 条命中</source>
         <translation>会话 %1，%2 条命中</translation>
     </message>
     <message>
-        <location filename="../src/ui/components/Sidebar.qml" line="1344"/>
+        <location filename="../src/ui/components/Sidebar.qml" line="1347"/>
         <source>%1 条命中</source>
         <translation>%1 条命中</translation>
+    </message>
+    <message>
+        <location filename="../src/ui/components/Sidebar.qml" line="1460"/>
+        <source>知识库（正在处理）</source>
+        <translation>知识库（正在处理）</translation>
+    </message>
+    <message>
+        <location filename="../src/ui/components/Sidebar.qml" line="1461"/>
+        <source>知识库</source>
+        <translation>知识库</translation>
     </message>
     <message>
         <source>会话操作</source>
         <translation type="vanished">会话操作</translation>
     </message>
     <message>
-        <location filename="../src/ui/components/Sidebar.qml" line="1168"/>
+        <location filename="../src/ui/components/Sidebar.qml" line="1171"/>
         <source>已置顶 · </source>
         <translation>已置顶 · </translation>
     </message>
     <message>
-        <location filename="../src/ui/components/Sidebar.qml" line="1169"/>
-        <location filename="../src/ui/components/Sidebar.qml" line="1267"/>
+        <location filename="../src/ui/components/Sidebar.qml" line="1172"/>
+        <location filename="../src/ui/components/Sidebar.qml" line="1270"/>
         <source>已归档 · </source>
         <translation>已归档 · </translation>
     </message>
     <message>
-        <location filename="../src/ui/components/Sidebar.qml" line="1208"/>
-        <location filename="../src/ui/components/Sidebar.qml" line="1213"/>
+        <location filename="../src/ui/components/Sidebar.qml" line="1211"/>
+        <location filename="../src/ui/components/Sidebar.qml" line="1216"/>
         <source>无匹配结果</source>
         <translation>无匹配结果</translation>
     </message>
@@ -6110,42 +6254,39 @@
         <translation type="vanished">助手</translation>
     </message>
     <message>
-        <location filename="../src/ui/components/Sidebar.qml" line="1417"/>
+        <location filename="../src/ui/components/Sidebar.qml" line="1420"/>
         <source>日志</source>
         <translation>日志</translation>
     </message>
     <message>
-        <location filename="../src/ui/components/Sidebar.qml" line="1425"/>
+        <location filename="../src/ui/components/Sidebar.qml" line="1428"/>
         <source>审计日志</source>
         <translation>审计日志</translation>
     </message>
     <message>
-        <location filename="../src/ui/components/Sidebar.qml" line="1433"/>
+        <location filename="../src/ui/components/Sidebar.qml" line="1436"/>
         <source>设置 (Ctrl+,)</source>
         <translation>设置 (Ctrl+,)</translation>
     </message>
     <message>
-        <location filename="../src/ui/components/Sidebar.qml" line="1486"/>
         <source>深色模式</source>
-        <translation>深色模式</translation>
+        <translation type="vanished">深色模式</translation>
     </message>
     <message>
-        <location filename="../src/ui/components/Sidebar.qml" line="1488"/>
         <source>当前为深色主题，按回车切换到浅色</source>
-        <translation>当前为深色主题，按回车切换到浅色</translation>
+        <translation type="vanished">当前为深色主题，按回车切换到浅色</translation>
     </message>
     <message>
-        <location filename="../src/ui/components/Sidebar.qml" line="1489"/>
         <source>当前为浅色主题，按回车切换到深色</source>
-        <translation>当前为浅色主题，按回车切换到深色</translation>
+        <translation type="vanished">当前为浅色主题，按回车切换到深色</translation>
     </message>
     <message>
-        <location filename="../src/ui/components/Sidebar.qml" line="1505"/>
+        <location filename="../src/ui/components/Sidebar.qml" line="1475"/>
         <source>Markdown (*.md)</source>
         <translation>Markdown (*.md)</translation>
     </message>
     <message>
-        <location filename="../src/ui/components/Sidebar.qml" line="1505"/>
+        <location filename="../src/ui/components/Sidebar.qml" line="1475"/>
         <source>JSON (*.json)</source>
         <translation>JSON (*.json)</translation>
     </message>
@@ -7731,17 +7872,17 @@
         <translation>设置已保存</translation>
     </message>
     <message>
-        <location filename="../src/ui/main.qml" line="391"/>
+        <location filename="../src/ui/main.qml" line="399"/>
         <source>已删除会话「%1」，可撤销</source>
         <translation>已删除会话「%1」，可撤销</translation>
     </message>
     <message>
-        <location filename="../src/ui/main.qml" line="392"/>
+        <location filename="../src/ui/main.qml" line="400"/>
         <source>会话</source>
         <translation>会话</translation>
     </message>
     <message>
-        <location filename="../src/ui/main.qml" line="393"/>
+        <location filename="../src/ui/main.qml" line="401"/>
         <source>撤销</source>
         <translation>撤销</translation>
     </message>

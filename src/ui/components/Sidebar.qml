@@ -16,6 +16,9 @@ Rectangle {
     signal settingsRequested()
     signal auditRequested()
     signal logsRequested()
+    // Knowledge base management. Global like the three above, which is why it
+    // belongs in this row rather than in the project-scoped right panel.
+    signal knowledgeRequested()
     // docs/23 G7: a session was (soft-)deleted — main.qml shows the undo
     // toast carrying the id (toasts live at the overlay level, and the
     // no-cross-file-id convention routes this through a signal).
@@ -1436,60 +1439,27 @@ Rectangle {
 
                 Item { Layout.fillWidth: true }
 
-                // Theme toggle switch: knob carries the mode icon
-                Rectangle {
-                    id: themeToggle
-                    Layout.preferredWidth: 48
-                    Layout.preferredHeight: 24
-                    radius: 12
-                    color: ThemeManager.isDark ? Theme.brandPrimary : Theme.surfaceHover
-                    border.width: themeToggle.activeFocus ? 2 : 1
-                    border.color: themeToggle.activeFocus
-                        ? Theme.brandPrimary : Theme.borderSubtle
-
-                    // 切换动作提为函数：鼠标/键盘/读屏共用。
-                    function toggleTheme() {
-                        ThemeManager.isDark = !ThemeManager.isDark
-                    }
-
-                    Rectangle {
-                        width: 18
-                        height: 18
-                        radius: 9
-                        anchors.verticalCenter: parent.verticalCenter
-                        x: ThemeManager.isDark ? 27 : 3
-                        color: Theme.bgSecondary
-                        border.width: 1
-                        border.color: Theme.borderSubtle
-
-                        AppIcon {
-                            anchors.centerIn: parent
-                            icon: ThemeManager.isDark ? "moon" : "sun"
-                            size: 11
-                            iconColor: Theme.textPrimary
-                        }
-
-                        Behavior on x { NumberAnimation { duration: 200; easing.type: Easing.OutQuad } }
-                    }
-
-                    MouseArea {
-                        anchors.fill: parent
-                        cursorShape: Qt.PointingHandCursor
-                        onClicked: themeToggle.toggleTheme()
-                    }
-
-                    // docs/25 D5: 纯 MouseArea 开关补键盘与读屏可达
-                    activeFocusOnTab: true
-                    Keys.onReturnPressed: themeToggle.toggleTheme()
-                    Keys.onSpacePressed: themeToggle.toggleTheme()
-                    Accessible.role: Accessible.CheckBox
-                    Accessible.name: qsTr("深色模式")
-                    Accessible.description: ThemeManager.isDark
-                        ? qsTr("当前为深色主题，按回车切换到浅色")
-                        : qsTr("当前为浅色主题，按回车切换到深色")
-                    Accessible.checkable: true
-                    Accessible.checked: ThemeManager.isDark
-                    Accessible.onPressAction: themeToggle.toggleTheme()
+                // Knowledge base entry.
+                //
+                // It sits here because this row is the GLOBAL tool strip: log,
+                // audit and settings are all session- and project-independent,
+                // and so is the knowledge base. The right panel's other
+                // sections (Git, files) only exist inside a project, which is
+                // exactly why the knowledge base never belonged there.
+                //
+                // The theme toggle that used to live here was removed to make
+                // room: the same three-way switch (follow system / dark /
+                // light) is in Settings > Interface, so nothing was lost but a
+                // shortcut, and the row now fits four buttons at the 180px
+                // sidebar minimum (24 + 4*32 + 4*4 = 168px).
+                IconButton {
+                    objectName: "knowledgeButton"
+                    icon: "layers"
+                    iconSize: 17
+                    tooltip: AgentVM.knowledgeBusy
+                        ? qsTr("知识库（正在处理）")
+                        : qsTr("知识库")
+                    onClicked: root.knowledgeRequested()
                 }
             }
         }

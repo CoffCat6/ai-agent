@@ -379,11 +379,12 @@ private slots:
         if (!capture.isEmpty()) QVERIFY(window->grabWindow().save(capture));
     }
 
-    // A fresh window is a local chat: the right panel must open on the
-    // knowledge base, not on the (hidden) Git section. Parking the stack on
-    // Git there is what made the first launch show the Git panel's
-    // "identifying a repository" line for a session that has no project.
-    void freshWindowOpensPanelOnKnowledgeNotGit() {
+    // A fresh window is a local chat, and BOTH right-panel sections are
+    // project-only, so the panel must explain the absence rather than park
+    // the stack on a section that cannot render. The knowledge base used to
+    // be that fallback; it now lives in the sidebar tool strip with log /
+    // audit / settings, because it is global rather than project-scoped.
+    void freshWindowShowsNoProjectHintInRightPanel() {
         QQmlApplicationEngine engine;
         engine.rootContext()->setContextProperty("Theme", ThemeProvider::instance());
         engine.load(QUrl("qrc:/qt/qml/NexusAI/src/ui/main.qml"));
@@ -396,22 +397,29 @@ private slots:
         // Precondition: this really is a local session.
         QCOMPARE(vm->activeProjectRoot(), QString());
 
+        // Both project-scoped tabs are hidden ...
         auto* gitTab = window->findChild<QObject*>(QStringLiteral("gitTab"));
-        QVERIFY2(gitTab, "上下文面板缺少 gitTab");
-        auto* kbTab = window->findChild<QObject*>(QStringLiteral("knowledgeTab"));
-        QVERIFY2(kbTab, "上下文面板缺少 knowledgeTab");
-
-        // The Git tab is hidden for local chats ...
+        QVERIFY2(gitTab, "context panel is missing gitTab");
         QCOMPARE(gitTab->property("visible").toBool(), false);
-        // ... and the panel is not showing its section.
-        QCOMPARE(kbTab->property("highlighted").toBool(), true);
-        QCOMPARE(gitTab->property("highlighted").toBool(), false);
+        auto* filesTab = window->findChild<QObject*>(QStringLiteral("filesTab"));
+        QVERIFY2(filesTab, "context panel is missing filesTab");
+        QCOMPARE(filesTab->property("visible").toBool(), false);
 
-        // Nothing in the right panel is identifying a repository. The Git
-        // section is not the visible stack page here (knowledge is), so its
-        // own "no project" line is expected to be off screen - what matters
-        // is that no git query is in flight and no "identifying" text is on
-        // the visible page.
+        // ... the knowledge tab is gone from this panel entirely ...
+        QVERIFY2(window->findChild<QObject*>(QStringLiteral("knowledgeTab")) == nullptr,
+                 "the knowledge base must no longer be a right-panel section");
+
+        // ... and the panel says why it is empty.
+        auto* hint = window->findChild<QQuickItem*>(QStringLiteral("contextPanelNoProject"));
+        QVERIFY2(hint, "context panel is missing its no-project hint");
+        QVERIFY2(hint->isVisible(), "local chat should show the no-project hint");
+
+        // The knowledge base is reachable from the sidebar tool strip instead,
+        // next to log / audit / settings.
+        auto* kbButton = window->findChild<QObject*>(QStringLiteral("knowledgeButton"));
+        QVERIFY2(kbButton, "sidebar is missing the knowledge button");
+
+        // Nothing in the right panel is identifying a repository.
         QVERIFY2(!GitViewModel::instance()->repoInfoLoading(),
                  "新会话不应在识别 Git 仓库");
         QVERIFY2(!GitViewModel::instance()->statusLoading(),
