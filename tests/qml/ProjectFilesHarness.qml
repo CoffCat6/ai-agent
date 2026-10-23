@@ -45,6 +45,16 @@ Window {
     function collapseAll() { panel.collapseAll() }
     function collapseAllFromToolbar() { panel.collapseAll() }
     function refresh() { panel.refresh() }
+    // Reveal-in-tree: returns whether the row was found, and exposes the
+    // list's own position so a test can tell "selected" from "scrolled to".
+    function revealInTree(relPath) { return panel.revealInTree(relPath) }
+    function listContentY() { return panel.listContentY }
+    function listContentHeight() { return panel.listContentHeight }
+    function rowIndexOf(relPath) {
+        for (var i = 0; i < panel.rows.length; ++i)
+            if (panel.rows[i].relPath === relPath) return i
+        return -1
+    }
     function selectFile(relPath) { panel.selectFile(relPath) }
     function selectedPath() { return panel.selectedPath }
     function previewVisible() { return panel.previewVisible }

@@ -518,6 +518,14 @@ private slots:
         QTRY_VERIFY2(h.call("previewHasHighlight").toBool(),
                      "Python 文件应有高亮");
 
+        // The label is genuinely on screen at this width, not merely set.
+        QList<QQuickItem*> pyLabels;
+        collectVisualItems(h.window->contentItem(),
+                           QStringLiteral("projectFileLanguage"), &pyLabels);
+        QCOMPARE(pyLabels.size(), 1);
+        QVERIFY2(pyLabels.first()->isVisible(), "a recognised language shows a label");
+        QCOMPARE(pyLabels.first()->property("text").toString(), QStringLiteral("Python"));
+
         // An extension with no rule set stays plain AND says nothing: a label
         // reading "plain text" would spend sidebar room to state the obvious.
         QVERIFY(h.invoke1("selectFile", QStringLiteral("config.yaml")));
@@ -615,6 +623,142 @@ private slots:
 
         QVERIFY(h.invoke1("selectFile", QStringLiteral("b.json")));
         QTRY_COMPARE(h.call("previewLanguage").toString(), QStringLiteral("JSON"));
+    }
+
+    // Reveal-in-tree: jumping from the previewed file back to its row.
+    //
+    // The interesting part is not the scroll, it is that the ancestors have to
+    // be expanded FIRST - rows only exist for open levels, so a reveal that
+    // searched before expanding would find nothing in a collapsed tree.
+    void revealExpandsAncestorsAndFindsRow() {
+        writeFile("a/b/c/deep.txt", "deep\n");
+        writeFile("top.txt", "top\n");
+
+        Harness h;
+        QVERIFY2(h.window, qPrintable(h.error));
+        QVERIFY(h.invoke1("setProjectRoot", m_dir->path()));
+        QTRY_VERIFY(h.call("rowCount").toInt() >= 1);
+
+        // Everything is collapsed by default: the deep file has no row yet.
+        QCOMPARE(h.call1("rowIndexOf", QStringLiteral("a/b/c/deep.txt")).toInt(), -1);
+        QCOMPARE(h.call1("rowIndexOf", QStringLiteral("a")).toInt(), 0);
+
+        // Reveal expands a -> a/b -> a/b/c and lands on the file.
+        QVERIFY2(h.call1("revealInTree", QStringLiteral("a/b/c/deep.txt")).toBool(),
+                 "定位应成功");
+        QTRY_VERIFY(h.call1("rowIndexOf", QStringLiteral("a/b/c/deep.txt")).toInt() >= 0);
+
+        // Every ancestor is now open (rows exist for all of them).
+        QVERIFY(h.call1("rowIndexOf", QStringLiteral("a")).toInt() >= 0);
+        QVERIFY(h.call1("rowIndexOf", QStringLiteral("a/b")).toInt() >= 0);
+        QVERIFY(h.call1("rowIndexOf", QStringLiteral("a/b/c")).toInt() >= 0);
+
+        // Ancestors come before descendants: the tree order is intact.
+        QVERIFY(h.call1("rowIndexOf", QStringLiteral("a")).toInt()
+                < h.call1("rowIndexOf", QStringLiteral("a/b/c/deep.txt")).toInt());
+    }
+
+    // A root-level file needs no expansion, and revealing it must not throw.
+    void revealRootLevelFile() {
+        writeFile("top.txt", "x\n");
+
+        Harness h;
+        QVERIFY2(h.window, qPrintable(h.error));
+        QVERIFY(h.invoke1("setProjectRoot", m_dir->path()));
+        QTRY_VERIFY(h.call("rowCount").toInt() >= 1);
+
+        QVERIFY(h.call1("revealInTree", QStringLiteral("top.txt")).toBool());
+        QVERIFY(h.call1("rowIndexOf", QStringLiteral("top.txt")).toInt() >= 0);
+    }
+
+    // Revealing scrolls the list: with more rows than fit, a target near the
+    // bottom must move contentY away from zero.
+    void revealScrollsToTarget() {
+        // Enough files that the list has to scroll.
+        for (int i = 0; i < 60; ++i)
+            writeFile(QStringLiteral("file%1.txt").arg(i, 2, 10, QLatin1Char('0')), "x\n");
+
+        Harness h;
+        QVERIFY2(h.window, qPrintable(h.error));
+        QVERIFY(h.invoke1("setProjectRoot", m_dir->path()));
+        QTRY_COMPARE(h.call("rowCount").toInt(), 60);
+
+        // The list is shorter than its content, so scrolling is possible.
+        QTRY_VERIFY(h.call("listContentHeight").toDouble()
+                    > h.window->height() / 2.0);
+        QCOMPARE(h.call("listContentY").toDouble(), 0.0);
+
+        QVERIFY(h.call1("revealInTree", QStringLiteral("file59.txt")).toBool());
+        // positionViewAtIndex is applied on the next frame.
+        QTRY_VERIFY2(h.call("listContentY").toDouble() > 1.0,
+                     "定位后列表应滚动到底部附近");
+    }
+
+    // A path outside the tree is reported, not silently ignored: the caller
+    // shows an error instead of the button appearing to do nothing.
+    void revealMissingPathReportsFalse() {
+        writeFile("here.txt", "x\n");
+
+        Harness h;
+        QVERIFY2(h.window, qPrintable(h.error));
+        QVERIFY(h.invoke1("setProjectRoot", m_dir->path()));
+        QTRY_VERIFY(h.call("rowCount").toInt() >= 1);
+
+        QCOMPARE(h.call1("revealInTree", QStringLiteral("nope/missing.txt")).toBool(), false);
+        QCOMPARE(h.call1("revealInTree", QString()).toBool(), false);
+    }
+
+    // The button itself is only offered while something is previewed.
+    void revealButtonOnlyWithPreview() {
+        writeFile("a.txt", "x\n");
+
+        Harness h;
+        QVERIFY2(h.window, qPrintable(h.error));
+        QVERIFY(h.invoke1("setProjectRoot", m_dir->path()));
+        QTRY_VERIFY(h.call("rowCount").toInt() >= 1);
+
+        QList<QQuickItem*> buttons;
+        collectVisualItems(h.window->contentItem(),
+                           QStringLiteral("projectFileReveal"), &buttons);
+        QCOMPARE(buttons.size(), 1);
+        QVERIFY2(!buttons.first()->isVisible(), "无预览时不应有定位按钮");
+
+        QVERIFY(h.invoke1("selectFile", QStringLiteral("a.txt")));
+        QTRY_VERIFY(buttons.first()->isVisible());
+    }
+
+    // Sidebar at its 220px minimum: the header carries an icon, the file name
+    // and four 20px buttons, so the language label yields rather than crushing
+    // the name. Colours still convey the language.
+    void languageLabelYieldsAtNarrowWidth() {
+        writeFile("thing.py", "def f():\n    return 1\n");
+
+        Harness h;
+        QVERIFY2(h.window, qPrintable(h.error));
+        QVERIFY(h.invoke1("setProjectRoot", m_dir->path()));
+        QTRY_VERIFY(h.call("rowCount").toInt() >= 1);
+
+        QVERIFY(h.invoke1("selectFile", QStringLiteral("thing.py")));
+        QTRY_COMPARE(h.call("previewLanguage").toString(), QStringLiteral("Python"));
+
+        QList<QQuickItem*> labels;
+        collectVisualItems(h.window->contentItem(),
+                           QStringLiteral("projectFileLanguage"), &labels);
+        QCOMPARE(labels.size(), 1);
+        // The harness window is wide, so the label is shown here.
+        QVERIFY(labels.first()->isVisible());
+
+        // Squeeze the host to the sidebar's production minimum (220px panel
+        // minus the panel's own 2x20px margins = 180 for this harness).
+        h.window->resize(220, h.window->height());
+        QTRY_VERIFY2(!labels.first()->isVisible(),
+                     "窄宽度下语言标签应让位给文件名");
+
+        // The preview still knows the language - only the label is hidden.
+        QCOMPARE(h.call("previewLanguage").toString(), QStringLiteral("Python"));
+
+        h.window->resize(420, h.window->height());
+        QTRY_VERIFY(labels.first()->isVisible());
     }
 
 private:

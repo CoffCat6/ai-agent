@@ -139,6 +139,41 @@ Item {
         rebuild()
     }
 
+    // Reveal `relPath` in the tree: expand every ancestor, rebuild, select the
+    // row and scroll it into view.
+    //
+    // The ancestors have to be expanded BEFORE the rebuild - rows only exist
+    // for levels that are open, so searching first would find nothing. This is
+    // also why the selection cannot just be a scroll: a collapsed parent means
+    // no row to scroll to.
+    //
+    // Returns true when the row was found. False means the path is not under
+    // the current root (or no longer exists), which the caller reports instead
+    // of silently doing nothing.
+    function revealInTree(relPath) {
+        if (relPath.length === 0 || !hasProject) return false
+
+        // Walk the ancestors: "a/b/c.txt" -> ["a", "a/b"].
+        const parts = relPath.split("/")
+        const next = {}
+        for (const key in collapsed) next[key] = collapsed[key]
+        let prefix = ""
+        for (let i = 0; i < parts.length - 1; ++i) {
+            prefix = prefix.length === 0 ? parts[i] : prefix + "/" + parts[i]
+            // false = expanded (the default is collapsed).
+            next[prefix] = false
+        }
+        collapsed = next
+        rebuild()
+
+        for (let i = 0; i < rows.length; ++i) {
+            if (rows[i].relPath !== relPath) continue
+            fileList.positionViewAtIndex(i, ListView.Center)
+            return true
+        }
+        return false
+    }
+
     function selectFile(relPath) {
         selectedPath = relPath
         previewVisible = true
@@ -149,6 +184,11 @@ Item {
     // functions rather than aliases because CodeHighlighter is a QObject, not
     // an Item: it lives outside the visual child tree, so a host (or a test)
     // cannot reach it by walking `children`.
+    // Tree scroll state, for hosts and tests that need to verify a reveal
+    // actually moved the view rather than just selecting a row.
+    readonly property alias listContentY: fileList.contentY
+    readonly property alias listContentHeight: fileList.contentHeight
+
     function previewLanguage() {
         return previewHighlighter.languageName
     }
@@ -460,7 +500,11 @@ Item {
                     Text {
                         objectName: "projectFileLanguage"
                         Layout.alignment: Qt.AlignVCenter
-                        visible: text.length > 0
+                        // The header already carries four 20px buttons plus
+                        // the icon and name. At the sidebar's 220px minimum
+                        // there is no room left for a label that duplicates
+                        // what the colours already say, so it yields first.
+                        visible: text.length > 0 && root.width >= 300
                         text: previewHighlighter.languageName
                         color: Theme.textTertiary
                         font.family: Theme.fontMono
@@ -487,6 +531,24 @@ Item {
                             ? qsTr("已开启自动换行，点击改为横向滚动")
                             : qsTr("开启自动换行，长行折行显示")
                         onClicked: root.previewWrap = !root.previewWrap
+                    }
+
+                    // Jump back to the file's row in the tree. Useful when the
+                    // preview is showing a deep path the user navigated to
+                    // earlier and then scrolled away from.
+                    IconButton {
+                        objectName: "projectFileReveal"
+                        Layout.preferredWidth: 20
+                        Layout.preferredHeight: 20
+                        radius: 4
+                        icon: "search"
+                        iconSize: 10
+                        tooltip: qsTr("在文件树中定位该文件")
+                        Accessible.name: tooltip
+                        onClicked: {
+                            if (!root.revealInTree(root.selectedPath))
+                                root.errorText = qsTr("未能在文件树中找到该文件（可能已被删除或移出项目）。")
+                        }
                     }
 
                     IconButton {
