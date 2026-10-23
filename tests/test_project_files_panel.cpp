@@ -761,6 +761,129 @@ private slots:
         QTRY_VERIFY(labels.first()->isVisible());
     }
 
+    // Line numbers in the preview gutter.
+    //
+    // The editor is a TextArea outside its own scroll control (the ScrollView
+    // moves it by resizing, so the TextArea reports contentHeight == height and
+    // exposes no contentY). The gutter therefore cannot read a scroll offset
+    // off the editor; it follows the ScrollView's contentItem instead. These
+    // cases pin both halves: the numbers must match the visible lines, and the
+    // gutter must track scrolling.
+    void lineNumbersMatchContent() {
+        writeFile("three.txt", "alpha\nbeta\ngamma\n");
+
+        Harness h;
+        QVERIFY2(h.window, qPrintable(h.error));
+        QVERIFY(h.invoke1("setProjectRoot", m_dir->path()));
+        QTRY_VERIFY(h.call("rowCount").toInt() >= 1);
+        QVERIFY(h.invoke1("selectFile", QStringLiteral("three.txt")));
+        QTRY_COMPARE(h.call("previewVisible").toBool(), true);
+        QTest::qWait(150);
+
+        // Four numbers for four rows: TextEdit opens an empty last line
+        // after a trailing newline and really renders it, so numbering it
+        // is what keeps the gutter aligned with the text.
+        QCOMPARE(h.call("editorLineCount").toInt(), 4);
+        QCOMPARE(h.call("lineNumberLineCount").toInt(), 4);
+        QCOMPARE(h.call("lineNumberText").toString(),
+                 QStringLiteral("1\n2\n3\n4"));
+    }
+
+    // Wide numbers get padded so the gutter width does not jump between a
+    // 9-line and a 100-line file.
+    void lineNumbersPadToWidest() {
+        QByteArray body;
+        for (int i = 0; i < 12; ++i)
+            body += "line\n";
+        writeFile("twelve.txt", body);
+
+        Harness h;
+        QVERIFY2(h.window, qPrintable(h.error));
+        QVERIFY(h.invoke1("setProjectRoot", m_dir->path()));
+        QTRY_VERIFY(h.call("rowCount").toInt() >= 1);
+        QVERIFY(h.invoke1("selectFile", QStringLiteral("twelve.txt")));
+        QTRY_COMPARE(h.call("previewVisible").toBool(), true);
+        QTest::qWait(150);
+
+        const QStringList lines =
+            h.call("lineNumberText").toString().split(QLatin1Char('\n'));
+        // 12 newlines -> 13 rows (TextEdit counts the empty tail).
+        QCOMPARE(lines.size(), 13);
+        // Two-digit max -> every label is 2 chars wide.
+        for (const QString& line : lines)
+            QCOMPARE(line.size(), 2);
+        QCOMPARE(lines.first(), QStringLiteral(" 1"));
+        QCOMPARE(lines.last(), QStringLiteral("13"));
+    }
+
+    // The gutter follows the ScrollView: numbers must not stay pinned while
+    // the text scrolls under them.
+    void lineNumbersFollowScroll() {
+        QByteArray body;
+        for (int i = 0; i < 120; ++i)
+            body += "line " + QByteArray::number(i) + "\n";
+        writeFile("many.txt", body);
+
+        Harness h;
+        QVERIFY2(h.window, qPrintable(h.error));
+        QVERIFY(h.invoke1("setProjectRoot", m_dir->path()));
+        QTRY_VERIFY(h.call("rowCount").toInt() >= 1);
+        QVERIFY(h.invoke1("selectFile", QStringLiteral("many.txt")));
+        QTRY_COMPARE(h.call("previewVisible").toBool(), true);
+        QTest::qWait(200);
+
+        QCOMPARE(h.call("lineNumberGutterY").toDouble(), 0.0);
+
+        // Scroll the preview down; the gutter must move up by the same amount
+        // (its y goes negative).
+        QVERIFY(h.call1("scrollPreviewTo", 200.0).toBool());
+        QTRY_VERIFY2(h.call("lineNumberGutterY").toDouble() < -1.0,
+                     "行号应随内容一起上移");
+    }
+
+    // The toggle hides the gutter and the separator, and the preview keeps
+    // working without them.
+    void lineNumberToggleHidesGutter() {
+        writeFile("a.txt", "one\ntwo\n");
+
+        Harness h;
+        QVERIFY2(h.window, qPrintable(h.error));
+        QVERIFY(h.invoke1("setProjectRoot", m_dir->path()));
+        QTRY_VERIFY(h.call("rowCount").toInt() >= 1);
+        QVERIFY(h.invoke1("selectFile", QStringLiteral("a.txt")));
+        QTRY_COMPARE(h.call("previewVisible").toBool(), true);
+        QTest::qWait(150);
+
+        // On by default: code is discussed by line.
+        QCOMPARE(h.call("showLineNumbers").toBool(), true);
+        QVERIFY(h.call("lineNumberGutterVisible").toBool());
+
+        QVERIFY(QMetaObject::invokeMethod(h.root.get(), "setShowLineNumbers",
+                                          Q_ARG(QVariant, false)));
+        QTRY_COMPARE(h.call("lineNumberGutterVisible").toBool(), false);
+
+        // The text itself is untouched.
+        QVERIFY(!h.call("previewText").toString().isEmpty());
+        QCOMPARE(h.call("lineNumberLineCount").toInt(), 3);
+    }
+
+    // A file with no trailing newline still counts its last line.
+    void lineNumbersCountUnterminatedLastLine() {
+        writeFile("noeol.txt", "first\nsecond");
+
+        Harness h;
+        QVERIFY2(h.window, qPrintable(h.error));
+        QVERIFY(h.invoke1("setProjectRoot", m_dir->path()));
+        QTRY_VERIFY(h.call("rowCount").toInt() >= 1);
+        QVERIFY(h.invoke1("selectFile", QStringLiteral("noeol.txt")));
+        QTRY_COMPARE(h.call("previewVisible").toBool(), true);
+        QTest::qWait(150);
+
+        QCOMPARE(h.call("lineNumberLineCount").toInt(), 2);
+        QCOMPARE(h.call("lineNumberText").toString(),
+                 QStringLiteral("1\n2"));
+    }
+
 private:
     void writeFile(const QString& relative, const QByteArray& content) {
         const QString full = m_dir->path() + "/" + relative;

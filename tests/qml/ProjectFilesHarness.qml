@@ -50,6 +50,39 @@ Window {
     function revealInTree(relPath) { return panel.revealInTree(relPath) }
     function listContentY() { return panel.listContentY }
     function listContentHeight() { return panel.listContentHeight }
+    // Line-number gutter: the text it renders, its offset, and the toggle.
+    function setShowLineNumbers(on) { panel.showLineNumbers = on }
+    function showLineNumbers() { return panel.showLineNumbers }
+    function lineNumberText() { return panel.lineNumberText }
+    function lineNumberLineCount() {
+        var t = panel.lineNumberText
+        if (t.length === 0) return 0
+        var n = 1
+        for (var i = 0; i < t.length; ++i) if (t.charCodeAt(i) === 10) ++n
+        return n
+    }
+    function lineNumberGutterY() {
+        var items = []
+        collectByName(panel, "projectFileLineNumbersText", items)
+        return items.length > 0 ? items[0].y : 0
+    }
+    function lineNumberGutterVisible() {
+        var items = []
+        collectByName(panel, "projectFileLineNumbers", items)
+        return items.length > 0 ? items[0].visible : false
+    }
+    function editorLineCount() {
+        var items = []
+        collectTextAreas(panel, items)
+        return items.length > 0 ? items[0].lineCount : -1
+    }
+    function scrollPreviewTo(y) {
+        var items = []
+        collectByName(panel, "projectFilePreviewScroll", items)
+        if (items.length === 0) return false
+        items[0].contentItem.contentY = y
+        return true
+    }
     function rowIndexOf(relPath) {
         for (var i = 0; i < panel.rows.length; ++i)
             if (panel.rows[i].relPath === relPath) return i

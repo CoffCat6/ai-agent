@@ -44,6 +44,35 @@ Item {
     property bool previewWrap: false
 
     property int previewHeight: 320
+    // Line numbers in the preview gutter. On by default: the preview exists
+    // to read code, and code is discussed by line ("see line 142"). Users can
+    // turn it off when they want the full width for long lines.
+    property bool showLineNumbers: true
+
+    // One number per line, right-padded so the gutter width is stable as the
+    // digits grow. Built from the same text the editor shows, so the count
+    // matches even when the file ends without a trailing newline.
+    readonly property string lineNumberText: {
+        if (previewText.length === 0) return ""
+        // Count exactly as TextEdit does, so the gutter and the editor
+        // agree on how many rows exist. Measured: a file "a\nb\nc\n"
+        // reports lineCount 4 (the trailing newline opens an empty last
+        // line) and the editor really renders that blank row, so numbering
+        // it is what keeps the gutter aligned with the text.
+        let count = 1
+        for (let i = 0; i < previewText.length; ++i)
+            if (previewText.charCodeAt(i) === 10) ++count
+        if (count <= 0) return ""
+        const width = String(count).length
+        let out = ""
+        for (let n = 1; n <= count; ++n) {
+            const label = String(n)
+            out += " ".repeat(width - label.length) + label
+            if (n < count) out += "\n"
+        }
+        return out
+    }
+
     readonly property int previewMinHeight: 100
     readonly property int previewDefaultHeight: 320
 
@@ -512,6 +541,22 @@ Item {
                         Accessible.name: qsTr("语法高亮语言：%1").arg(text)
                     }
 
+                    // Line-number toggle. Same text-button treatment as the
+                    // wrap toggle, and for the same reason.
+                    AppButton {
+                        objectName: "projectFileLineNumberToggle"
+                        Layout.preferredHeight: 20
+                        text: qsTr("行号")
+                        implicitHeight: 20
+                        highlighted: root.showLineNumbers
+                        buttonColor: "transparent"
+                        textColor: highlighted ? Theme.bgPrimary : Theme.textTertiary
+                        Accessible.name: root.showLineNumbers
+                            ? qsTr("已显示行号，点击隐藏")
+                            : qsTr("显示行号")
+                        onClicked: root.showLineNumbers = !root.showLineNumbers
+                    }
+
                     // Wrap toggle. A text button rather than an icon: the
                     // icon set has nothing that reads as "soft wrap", and a
                     // guessable-but-wrong icon is worse than a word at this
@@ -610,12 +655,69 @@ Item {
                     wrapMode: Text.Wrap
                 }
 
+                // Gutter + editor share one horizontal row so the numbers
+                // stay pinned to the left edge while the text scrolls under
+                // them. The ScrollView owns the vertical scroll: the TextArea
+                // inside it is sized to its content (measured: contentHeight
+                // == height), so it exposes no contentY of its own and the
+                // gutter has to follow the ScrollView's offset instead.
+                RowLayout {
+                    Layout.fillWidth: true
+                    Layout.fillHeight: true
+                    spacing: 0
+                    visible: root.previewText.length > 0
+
+                    // Line numbers. A Text with one number per line, offset by
+                    // the same amount the editor scrolled.
+                    Rectangle {
+                        objectName: "projectFileLineNumbers"
+                        Layout.fillHeight: true
+                        Layout.preferredWidth: lineNumberColumn.implicitWidth + 10
+                        visible: root.showLineNumbers
+                        color: "transparent"
+                        clip: true
+
+                        Text {
+                            id: lineNumberColumn
+                            objectName: "projectFileLineNumbersText"
+                            x: 4
+                            // Follow the editor's scroll: the ScrollView
+                            // moves its contentItem, so the gutter applies the
+                            // same offset negatively.
+                            y: previewScroll.contentItem
+                                ? -previewScroll.contentItem.contentY : 0
+                            text: root.lineNumberText
+                            color: Theme.textTertiary
+                            font.family: Theme.fontMono
+                            font.pixelSize: 10
+                            horizontalAlignment: Text.AlignRight
+                            // TextEdit exposes no lineHeight, so the row
+                            // spacing is derived from what it does report:
+                            // contentHeight / lineCount. Same font size and
+                            // family as the editor, so one line here is one
+                            // line there.
+                            lineHeight: previewArea.lineCount > 0
+                                ? previewArea.contentHeight / previewArea.lineCount
+                                : 12
+                            lineHeightMode: Text.FixedHeight
+                            textFormat: Text.PlainText
+                        }
+                    }
+
+                    // Hairline between the gutter and the text.
+                    Rectangle {
+                        Layout.fillHeight: true
+                        width: 1
+                        visible: root.showLineNumbers
+                        color: Theme.borderSubtle
+                    }
+
                 ScrollView {
                     id: previewScroll
+                    objectName: "projectFilePreviewScroll"
                     Layout.fillWidth: true
                     Layout.fillHeight: true
                     clip: true
-                    visible: root.previewText.length > 0
                     // Horizontal scrolling is only meaningful while the text
                     // does not wrap; keeping the bar in wrap mode would offer
                     // a scrollbar for content that already fits.
@@ -658,6 +760,7 @@ Item {
                         }
                     }
                 }
+                }   // RowLayout (gutter + editor)
             }
         }
 
