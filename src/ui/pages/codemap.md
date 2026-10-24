@@ -17,6 +17,7 @@
 | UsageStatsPage.qml | token/费用/配额统计与请求明细 | 是，分类 `usage`（绑定 `dialog.opened`） |
 | ActivityLogPage.qml | usage_log 操作/网络活动时间线 | 是，分类 `activity`（绑定 `dialog.opened`） |
 | SettingsBackupPage.qml | 设置 JSON 导入导出、数据库备份/恢复 | 是，分类 `backup` |
+| ProjectRulesPage.qml | 项目列表 + 项目规则（AGENTS.md）就地编辑与注入状态 | 是，分类 `projects`（绑定 `dialog.opened`） |
 
 注意：任务描述里的「记忆页 = 知识库文档导入/删除/检索」与代码不符。MemoryPage 管理的是
 会话摘要型长期记忆；知识库文档的导入/删除/重新嵌入在 `panels/ContextPanel.qml` 中，
@@ -165,6 +166,9 @@ AgentChatPage 空态的「配置模型」、ModelSelector、`AgentVM.modelSettin
 - `src/ui/pages/UsageStatsPage.qml`
 - `src/ui/pages/ActivityLogPage.qml`
 - `src/ui/pages/SettingsBackupPage.qml`
+- `src/ui/pages/ProjectRulesPage.qml`
+- `src/viewmodels/AgentViewModel.h`（`loadProjectRules` / `writeProjectRules` /
+  `projectRulesState`）、`src/core/agent/AIAgent.cpp`（`projectRulesBlock`）
 - `src/ui/components/SettingsCenterDialog.qml`、`CategoryNav.qml`、
   `settings-search.js`、`SettingsField.qml`、`PreferenceControl.qml`
 - `src/core/utils/SettingsSchema.cpp`、`src/viewmodels/EditBuffer.cpp`、
@@ -191,3 +195,8 @@ AgentChatPage 空态的「配置模型」、ModelSelector、`AgentVM.modelSettin
 - SettingsBackup 明确排除加密字段、`security/*`、`ui/*`、`modelProfiles`、
   `tools/disabled`、默认权限与自启；恢复后需要用户重新确认这些高风险项。
 - 各页大量使用 `Component.onDestruction` 兜底提交，若页面被非 Loader 方式复用需重新评估。
+- ProjectRulesPage 是项目规则的唯一编辑入口（侧栏项目行不提供入口）。它读写的是
+  项目根目录的 `AGENTS.md`（找不到时读 `.nexus/rules.md`，但保存永远写 `AGENTS.md`）。
+  编辑区 500 ms 防抖落盘：期间切页/关窗可能丢最后一次未落盘的编辑。
+  未编辑的种子模板按 SHA256 判定为「空」，不注入系统提示（见 AIAgent.cpp）。
+  注入状态只是读取时刻的快照：`active` 不代表下一次任务一定注入（文件可能在外部被改）。

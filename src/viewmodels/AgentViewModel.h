@@ -471,6 +471,13 @@ public:
     // display-name-only info records nothing, an override passes through.
     Q_INVOKABLE QString probeSourcePathForName(const QString& displayName);
     Q_INVOKABLE QString probeSourcePathForUrl(const QString& url);
+    // G3 rules-file authoring (settings page): read/write the AGENTS.md under
+    // a project root, and a state probe for the UI ("empty" | "seed" |
+    // "truncated" | "active" | "missing").
+    Q_INVOKABLE QString loadProjectRules(const QString& projectRoot);
+    Q_INVOKABLE bool writeProjectRules(const QString& projectRoot,
+                                       const QString& content);
+    Q_INVOKABLE QString projectRulesState(const QString& projectRoot);
     Q_PROPERTY(bool urlImportRunning READ urlImportRunning NOTIFY urlImportRunningChanged FINAL)
     // SSRF escape hatch, mirrored from SettingsService by main.cpp (same value
     // the http_fetch tool uses).

@@ -347,6 +347,15 @@ Dialog {
                     visible: active
                     source: "qrc:/qt/qml/NexusAI/src/ui/pages/ActivityLogPage.qml"
                 }
+
+                Loader {
+                    anchors.fill: parent
+                    // G3: per-project AGENTS.md authoring. Rebuilt on open so
+                    // the project list and rule states are fresh.
+                    active: dialog.currentCategory === "projects" && dialog.opened
+                    visible: active
+                    source: "qrc:/qt/qml/NexusAI/src/ui/pages/ProjectRulesPage.qml"
+                }
                 }   // ── 分类页包裹层（搜索时隐藏）──
             }
         }

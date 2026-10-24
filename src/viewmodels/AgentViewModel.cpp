@@ -19,6 +19,7 @@
 #include "core/utils/SettingsRepository.h"
 #include "core/utils/SettingsSchema.h"
 
+#include <QCryptographicHash>
 #include <QFileInfo>
 #include <QUrl>
 
@@ -34,6 +35,7 @@
 #include <QDesktopServices>
 #include <QDir>
 #include <QFutureWatcher>
+#include <QCryptographicHash>
 #include <QFileInfo>
 #include <QGuiApplication>
 #include <QJsonArray>
@@ -930,6 +932,23 @@ QString AgentViewModel::importProject(const QString& path) {
         emit noticeOccurred(QStringLiteral("导入项目失败：无法写入项目记录"));
         return QString();
     }
+    // G3: seed the project rules file so the user has somewhere to write
+    // project conventions. Only when the file does NOT exist — re-importing
+    // an existing project must never overwrite what the user has written.
+    // A failure here does NOT fail the import: the project is in, and the
+    // settings page offers another way in.
+    const QString rulesPath = QDir::toNativeSeparators(canonical
+        + QStringLiteral("/AGENTS.md"));
+    if (!QFileInfo::exists(rulesPath)) {
+        QFile rulesFile(rulesPath);
+        if (rulesFile.open(QIODevice::WriteOnly)) {
+            rulesFile.write(AIAgent::rulesSeedTemplate());
+            rulesFile.close();
+        } else {
+            emit noticeOccurred(QStringLiteral(
+                "已导入项目，但无法创建 AGENTS.md；可在设置中手动配置"));
+        }
+    }
     refreshProjects();
     assignProjectIfActiveTabUnbound(id);
     return id;
@@ -1235,6 +1254,65 @@ void AgentViewModel::startPdfImport(const QString& path, const QFileInfo& info) 
 }
 
 // ── docs/25: 批量知识库导入 ──────────────────────────────────
+
+// G3: read the project's rules file for the settings page. Mirrors the
+// agent's lookup order (AGENTS.md first, then .nexus/rules.md) so what the page
+// shows is what gets injected; saving always targets AGENTS.md.
+QString AgentViewModel::loadProjectRules(const QString& projectRoot) {
+    if (projectRoot.isEmpty()) return QString();
+    const QString root = QDir::toNativeSeparators(projectRoot);
+    QString content;
+    const QString candidates[2] = {
+        root + QStringLiteral("/AGENTS.md"),
+        root + QStringLiteral("/.nexus/rules.md"),
+    };
+    for (const QString& candidate : candidates) {
+        QFile file(candidate);
+        if (!file.open(QIODevice::ReadOnly)) continue;
+        // Read ONCE: a second readAll() after the UTF-8 decode returns nothing
+        // because the device is already at EOF.
+        const QByteArray raw = file.readAll();
+        content = QString::fromUtf8(raw);
+        if (content.contains(QChar::ReplacementCharacter))
+            content = QString::fromLocal8Bit(raw);
+        break;
+    }
+    return content;
+}
+
+bool AgentViewModel::writeProjectRules(const QString& projectRoot,
+                                       const QString& content) {
+    if (projectRoot.isEmpty()) return false;
+    QFile file(QDir::toNativeSeparators(projectRoot + QStringLiteral("/AGENTS.md")));
+    if (!file.open(QIODevice::WriteOnly)) return false;
+    return file.write(content.toUtf8()) == content.toUtf8().size();
+}
+
+QString AgentViewModel::projectRulesState(const QString& projectRoot) {
+    QFile file(QDir::toNativeSeparators(projectRoot + QStringLiteral("/AGENTS.md")));
+    if (!file.open(QIODevice::ReadOnly)) return QStringLiteral("missing");
+    const QByteArray raw = file.read(8 * 1024 + 1);
+    const bool truncated = raw.size() > 8 * 1024;
+    if (truncated) return QStringLiteral("truncated");
+    QString content = QString::fromUtf8(raw).trimmed();
+    if (content.isEmpty()) return QStringLiteral("empty");
+    // Same seed comparison as the agent: byte hashes, so editors that touch
+    // line endings or add a BOM still count as "untouched". `content` is
+    // trimmed, so the seed must be trimmed the same way or the state never
+    // reads "seed" and the page claims an untouched template is active.
+    static const QByteArray seedHash = [] {
+        QByteArray seed = AIAgent::rulesSeedTemplate();
+        while (seed.endsWith('\n') || seed.endsWith('\r')) seed.chop(1);
+        return QCryptographicHash::hash(seed, QCryptographicHash::Sha256);
+    }();
+    const QByteArray normalized = content.toUtf8();
+    if (QCryptographicHash::hash(normalized, QCryptographicHash::Sha256) == seedHash)
+        return QStringLiteral("seed");
+    const QByteArray withBom = QByteArray("﻿") + normalized;
+    if (QCryptographicHash::hash(withBom, QCryptographicHash::Sha256) == seedHash)
+        return QStringLiteral("seed");
+    return QStringLiteral("active");
+}
 
 QString AgentViewModel::probeSourcePathForName(const QString& displayName) {
     // Mirrors the rule in importExtractedText for a display-name-only info

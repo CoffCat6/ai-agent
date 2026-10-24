@@ -173,7 +173,21 @@ public:
         m_activeProjectId = id;
         m_activeProjectName = name;
         m_activeProjectRoot = rootPath;
+        // The rules file is per project root; a switch invalidates whatever
+        // was cached for the previous one.
+        m_rulesCachePath.clear();
+        m_rulesCacheContent.clear();
     }
+    // G3 project rules: the AGENTS.md (or .nexus/rules.md) under the active
+    // project root, injected into the system prompt on every request. Empty
+    // when there is no project, no file, or the file still holds the
+    // untouched seed template. Refreshed by mtime before each task so a user
+    // edit takes effect on the next message without a restart.
+    QString projectRulesBlock() const;
+    // The seed written when a project is imported. Exposed so the settings
+    // page can show "not edited yet" and so the import path writes exactly
+    // what this class treats as "empty".
+    static QByteArray rulesSeedTemplate();
     // docs/18: 只读访问器。归属已改为**按标签**持有（每个 tab 一个 agent），
     // AgentViewModel 的 activeProjectId 由这些 getter 派生，不再有全局状态。
     QString activeProjectId() const { return m_activeProjectId; }
@@ -326,6 +340,13 @@ private:
     // P0 项目上下文：随 id 一起推送，进入系统提示（见 projectContextBlock）。
     QString m_activeProjectName;
     QString m_activeProjectRoot;
+    // Rules-file cache (G3): content + the path/mtime it was read at. The
+    // mtime check before each task is one stat() call; without the cache
+    // every message would re-read an 8KB file for nothing.
+    // mutable: filled by the const reader (a cache, not observable state)
+    mutable QString m_rulesCachePath;
+    mutable QString m_rulesCacheContent;
+    mutable QDateTime m_rulesCacheMtime;
     QString m_lastResponse;
 
     // P5a: task list maintained by the todo_write tool.

@@ -229,6 +229,13 @@ QString AIAgent::effectiveSystemPrompt() const {
     const QString project = projectContextBlock();
     if (!project.isEmpty())
         prompt += project;
+    // G3 project rules: after the project context block (same "appended even
+    // to a user override" semantics), before the citation instruction. The
+    // order is deliberate and test-locked: rules are the project's voice,
+    // the citation line is the app's.
+    const QString rules = projectRulesBlock();
+    if (!rules.isEmpty())
+        prompt += rules;
     // CITE-801 (docs/20 §5.1): 回答侧约定 —— 知识库非空时才追加引用格式
     // 指令，让模型在句子末尾标 [文档名]，UI 据此渲染可点击溯源徽标。
     // 用户自定义 override 提示不注入：override 表示"完全接管系统提示"，
@@ -238,6 +245,108 @@ QString AIAgent::effectiveSystemPrompt() const {
         prompt += QStringLiteral(
             "\n\n引用知识库内容时，在句子末尾以 [文档名] 标注来源。");
     return prompt;
+}
+
+// G3: the seed template written when a project is imported. A file whose
+// content matches this exactly has never been edited, so it carries no rules
+// and is NOT injected - an untouched template would only spend tokens telling
+// the model about comments. The marker comment makes the intent readable in
+// any editor; the SHA comparison below is what actually decides.
+QByteArray AIAgent::rulesSeedTemplate() {
+    static const QByteArray seed =
+        "# 项目规则\n"
+        "\n"
+        "<!-- 在这里写下希望模型始终遵守的项目约定，例如：\n"
+        "- 技术栈与目录结构\n"
+        "- 构建 / 测试命令\n"
+        "- 代码风格要求\n"
+        "- 不可改动的文件或目录\n"
+        "-->\n";
+    return seed;
+}
+
+// Whether `content` is the untouched seed (hash compare, not string equality:
+// editors may touch line endings). Recognizes both the seed as written and
+// the same text re-encoded UTF-8 with BOM, which some Windows editors add.
+static bool isUntouchedRulesSeed(const QString& content) {
+    static const QCryptographicHash::Algorithm algo = QCryptographicHash::Sha256;
+    // The block content is trimmed before it reaches this function, so the
+    // seed (which ends with a newline) must be trimmed the same way or the
+    // hashes never match and an untouched template gets injected.
+    static const QByteArray seedHash = [] {
+        QByteArray seed = AIAgent::rulesSeedTemplate();
+        while (seed.endsWith('\n') || seed.endsWith('\r')) seed.chop(1);
+        return QCryptographicHash::hash(seed, algo);
+    }();
+    const QByteArray bare =
+        QCryptographicHash::hash(content.toUtf8(), algo);
+    if (bare == seedHash) return true;
+    // BOM variant: editors on Windows may add one.
+    QByteArray withBom = QByteArray("\xEF\xBB\xBF") + content.toUtf8();
+    return QCryptographicHash::hash(withBom, algo) == seedHash;
+}
+
+// G3: the project rules block. Lookup order matches docs/26 G3: the
+// conventional AGENTS.md first, then .nexus/rules.md for projects that want
+// the rules out of the root. First existing file wins; 8KB cap with a log so
+// an oversized file cannot silently eat the context budget (the cap is the
+// documented acceptance criterion).
+QString AIAgent::projectRulesBlock() const {
+    if (m_activeProjectRoot.isEmpty()) return QString();
+
+    const QString candidates[2] = {
+        m_activeProjectRoot + QStringLiteral("/AGENTS.md"),
+        m_activeProjectRoot + QStringLiteral("/.nexus/rules.md"),
+    };
+    QString path;
+    QFileInfo info;
+    for (const QString& candidate : candidates) {
+        QFileInfo probe(candidate);
+        if (probe.isFile() && probe.isReadable()) {
+            path = candidate;
+            info = probe;
+            break;
+        }
+    }
+    if (path.isEmpty()) return QString();
+
+    // mtime check: one stat() per task instead of a full read per message.
+    // A missing mtime (first call for this file) forces the read.
+    if (path == m_rulesCachePath
+            && info.lastModified() == m_rulesCacheMtime)
+        return m_rulesCacheContent;
+
+    QFile file(path);
+    if (!file.open(QIODevice::ReadOnly)) {
+        qWarning() << "Project rules unreadable (will retry on change):" << path;
+        return QString();
+    }
+    constexpr qint64 kMaxRulesBytes = 8 * 1024;
+    QByteArray raw = file.read(kMaxRulesBytes + 1);
+    const bool truncated = raw.size() > kMaxRulesBytes;
+    if (truncated) {
+        raw = raw.left(kMaxRulesBytes);
+        qWarning() << "Project rules exceed 8KB, truncated:" << path;
+    }
+    // UTF-8 first (BOM auto-stripped by fromUtf8), local 8-bit fallback so a
+    // legacy-encoded rules file still reads instead of turning mojibake.
+    QString content = QString::fromUtf8(raw);
+    if (content.contains(QChar::ReplacementCharacter))
+        content = QString::fromLocal8Bit(raw);
+    content = content.trimmed();
+
+    QString block;
+    if (!content.isEmpty() && !isUntouchedRulesSeed(content)) {
+        block = QStringLiteral(
+                    "\n\nProject rules (%1) - follow these for every task in "
+                    "this project:\n%2%3")
+                    .arg(info.fileName(), content,
+                         truncated ? QStringLiteral("\n[truncated]") : QString());
+    }
+    m_rulesCachePath = path;
+    m_rulesCacheContent = block;
+    m_rulesCacheMtime = info.lastModified();
+    return block;
 }
 
 // 项目上下文块。模型此前完全不知道活动项目的存在：工具参数要求绝对

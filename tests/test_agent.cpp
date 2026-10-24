@@ -672,6 +672,164 @@ private slots:
     // 审查 M2（任务 #12）：VM 层 QVariantMap 键名契约——QML delegate 消费的
     // modelData.* 字段名不可偏离（AgentViewModel.h 注释的机器验证）。
     void listUsageEventsExposesFieldContract();
+
+    // G3: project rules file injection (docs/26 G3)
+    void projectRulesInjectedIntoSystemPrompt() {
+        QTemporaryDir dir(testDirTemplate());
+        QVERIFY(dir.isValid());
+        agent.setMemory(nullptr);
+        agent.setActiveProject(QStringLiteral("p1"), QStringLiteral("Demo"),
+                               dir.path());
+        agent.resetSession();
+        QString baseline;
+        {
+            llm.reset();
+            llm.script.append(textResponse(QStringLiteral("ok")));
+            QSignalSpy spy(&agent, &AIAgent::responseReady);
+            agent.startTask(QStringLiteral("first"));
+            QTRY_COMPARE(spy.count(), 1);
+            baseline = llm.seenMessages.first().first().toObject()
+                           .value("content").toString();
+        }
+        QVERIFY(baseline.contains("Active project"));
+        QVERIFY(!baseline.contains("Project rules"));
+        QFile rules(dir.path() + "/AGENTS.md");
+        QVERIFY(rules.open(QIODevice::WriteOnly));
+        rules.write("# Demo rules\n- use ninja\n");
+        rules.close();
+        // The system prompt is assembled only for a fresh session, so the
+        // rules written mid-session need a new one to take effect.
+        agent.resetSession();
+        llm.reset();
+        llm.script.append(textResponse(QStringLiteral("ok")));
+        QSignalSpy spy2(&agent, &AIAgent::responseReady);
+        agent.startTask(QStringLiteral("second"));
+        QTRY_COMPARE(spy2.count(), 1);
+        const QString withRules = llm.seenMessages.first().first()
+                                      .toObject().value("content").toString();
+        QVERIFY(withRules.contains("use ninja"));
+        QVERIFY(withRules.contains("Active project"));
+        QVERIFY(withRules.indexOf("Project rules")
+                    > withRules.indexOf("Active project"));
+        agent.setActiveProject(QString(), QString(), QString());
+    }
+
+    void seedTemplateIsNotInjected() {
+        QTemporaryDir dir(testDirTemplate());
+        QVERIFY(dir.isValid());
+        QFile rules(dir.path() + "/AGENTS.md");
+        QVERIFY(rules.open(QIODevice::WriteOnly));
+        rules.write(AIAgent::rulesSeedTemplate());
+        rules.close();
+        agent.setMemory(nullptr);
+        agent.setActiveProject(QStringLiteral("p2"), QStringLiteral("Seeded"),
+                               dir.path());
+        agent.resetSession();
+        llm.reset();
+        llm.script.append(textResponse(QStringLiteral("ok")));
+        QSignalSpy spy(&agent, &AIAgent::responseReady);
+        agent.startTask(QStringLiteral("hello"));
+        QTRY_COMPARE(spy.count(), 1);
+        const QString content = llm.seenMessages.first().first()
+                                    .toObject().value("content").toString();
+        QVERIFY(!content.contains("use ninja"));
+        QVERIFY(!content.contains("Project rules"));
+        agent.setActiveProject(QString(), QString(), QString());
+    }
+
+    void oversizedRulesTruncated() {
+        QTemporaryDir dir(testDirTemplate());
+        QVERIFY(dir.isValid());
+        QFile rules(dir.path() + "/AGENTS.md");
+        QVERIFY(rules.open(QIODevice::WriteOnly));
+        rules.write("- rule\n");
+        rules.write(AIAgent::rulesSeedTemplate());
+        rules.write(QByteArray(9 * 1024, 'z'));
+        rules.close();
+        agent.setMemory(nullptr);
+        agent.setActiveProject(QStringLiteral("p3"), QStringLiteral("Big"),
+                               dir.path());
+        agent.resetSession();
+        llm.reset();
+        llm.script.append(textResponse(QStringLiteral("ok")));
+        QSignalSpy spy(&agent, &AIAgent::responseReady);
+        agent.startTask(QStringLiteral("hello"));
+        QTRY_COMPARE(spy.count(), 1);
+        const QString content = llm.seenMessages.first().first()
+                                    .toObject().value("content").toString();
+        QVERIFY(content.contains("[truncated]"));
+        // The injected block carries at most the 8KB cap, not the whole file.
+        QVERIFY(content.count(QLatin1Char('z')) <= 8192);
+        QVERIFY(content.count(QLatin1Char('z')) > 4096);
+        agent.setActiveProject(QString(), QString(), QString());
+    }
+
+    // Writing rules never touches session titles (manual renames survive).
+    void rulesDoNotTouchManualRenames() {
+        QTemporaryDir dir(testDirTemplate());
+        QVERIFY(dir.isValid());
+        SqliteMemory memory(":memory:");
+        agent.setMemory(&memory);
+        agent.setActiveProject(QStringLiteral("p4"), QStringLiteral("R"),
+                               dir.path());
+        agent.resetSession();
+        QFile rules(dir.path() + "/AGENTS.md");
+        QVERIFY(rules.open(QIODevice::WriteOnly));
+        rules.write("- rules\n");
+        rules.close();
+        agent.setActiveProject(QStringLiteral("p4"), QStringLiteral("R"),
+                               dir.path());
+        llm.reset();
+        llm.script.append(textResponse(QStringLiteral("ok")));
+        QSignalSpy spy(&agent, &AIAgent::responseReady);
+        agent.startTask(QStringLiteral("hello"));
+        QTRY_COMPARE(spy.count(), 1);
+        const QString sessionId = agent.currentSessionId();
+        memory.renameSession(sessionId, "my title");
+        llm.reset();
+        llm.script.append(textResponse(QStringLiteral("ok")));
+        QSignalSpy spy2(&agent, &AIAgent::responseReady);
+        agent.startTask(QStringLiteral("again"));
+        QTRY_COMPARE(spy2.count(), 1);
+        QCOMPARE(memory.listSessions().first().toObject().value("title")
+                     .toString(), QString("my title"));
+        agent.setMemory(nullptr);
+        agent.setActiveProject(QString(), QString(), QString());
+    }
+
+    // G3: rules stack on top of a user override (override is "replace the app
+    // prompt", not "replace the project's own conventions"). The citation
+    // instruction stays app-only, so it must NOT appear under an override.
+    void rulesStackOnTopOfSystemPromptOverride() {
+        QTemporaryDir dir(testDirTemplate());
+        QVERIFY(dir.isValid());
+        QFile rules(dir.path() + "/AGENTS.md");
+        QVERIFY(rules.open(QIODevice::WriteOnly));
+        rules.write("# Rules\n- always answer in French\n");
+        rules.close();
+
+        agent.setMemory(nullptr);
+        agent.setActiveProject(QStringLiteral("p5"), QStringLiteral("Ov"),
+                               dir.path());
+        agent.setSystemPromptOverride(QStringLiteral("OVERRIDE PROMPT"));
+        agent.resetSession();
+        llm.reset();
+        llm.script.append(textResponse(QStringLiteral("ok")));
+        QSignalSpy spy(&agent, &AIAgent::responseReady);
+        agent.startTask(QStringLiteral("hello"));
+        QTRY_COMPARE(spy.count(), 1);
+        const QString content = llm.seenMessages.first().first()
+                                    .toObject().value("content").toString();
+        QVERIFY(content.startsWith("OVERRIDE PROMPT"));
+        QVERIFY(content.contains("always answer in French"));
+        QVERIFY(content.contains("Active project"));
+        QVERIFY(!content.contains("You are NexusAI"));   // override replaced it
+        QVERIFY(content.indexOf("always answer in French")
+                    > content.indexOf("Active project"));   // lock the order
+
+        agent.setSystemPromptOverride(QString());
+        agent.setActiveProject(QString(), QString(), QString());
+    }
 };
 
 void TestAgent::directCompletion() {

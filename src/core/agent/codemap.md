@@ -26,7 +26,7 @@
 1. `startTask(text, images, files)`：拒绝 `m_active`、空输入、无 `IAIService`、配额 strict 拒绝。新会话建 UUID、`beginSession`、`setSessionProject`、清零累计 token，发 `sessionChanged/sessionsChanged`；随后重置循环字段并 `++m_epoch`。
 2. 追加 user 消息（`images` 为 data URL，`files` 为结构化字段），`saveMessage()` 回填主键，`appendTraceNode("user_message")`。
 3. 新会话且配置了 `EpisodicService`：`retrieveRelevantSummariesAsync()`，`m_active=true` 占位，登记一次性 `retrievalReady` 连接与 `kEpisodicLaunchTimeoutMs=200ms` 定时器；回调按 requestId 与 epoch 校验后 `resumeTaskLaunch(injection)`。超时或 `requestId==0` 则无注入启动。
-4. `launchTaskTail(fresh, injection)`：`effectiveSystemPrompt()`（内置/用户 override + 项目块 + 知识库引用约定）+ 摘要注入，`prepend` 为 system 消息；先按预算预压缩再 `notifyTokens()`；启动任务超时定时器，进入 `processIteration()`。
+4. `launchTaskTail(fresh, injection)`：`effectiveSystemPrompt()`（内置/用户 override + 项目块 + **G3 项目规则块** + 知识库引用约定）+ 摘要注入。系统提示只在 `fresh` 会话组装一次，会话中途改规则不会重发，`prepend` 为 system 消息；先按预算预压缩再 `notifyTokens()`；启动任务超时定时器，进入 `processIteration()`。
 5. `processIteration()`：若 `m_iteration >= m_maxIterations`，首次触发 `m_forcedFinal=true` 并注入“禁止再调工具”的请求级 `m_forcedFinalPush`（只进本次请求副本，不进历史）；否则 `++m_iteration`。`collapseOldToolRounds()` 后构建 tools schema（排除 `Dangerous`、`isToolUsable()` 为假、`toolAllowedForModel()` 为假者；forced-final 时为空），以 schema token 预留调 `applyContextBudget()`。追加 running 的 `thinking` 节点，`setState(Thinking)`，把 `files` 文本折叠进请求副本，`chatComplete(requestMessages, toolsArray)`。
 6. 流式：`IAIService::streamingChunk` → 首个增量创建 `summary` 节点，100ms 节流刷新标题；`reasoningChunk` 累积到 `m_reasoningText` 并刷新 `thinking` 节点。agent 不显式请求流式，是否流式由协议实现决定；非流式时无增量，最终由 `onLLMResponse` 定稿。
 7. `onLLMResponse()`：校验 requestId → 记录延迟/`recordTokenUsage()` → 定稿 thinking（优先 Provider 的完整 `reasoning`）→ 失败走 `failTask()`。成功则把 assistant 消息（无正文时 content=null，含 `tool_calls`）追加进历史；空/重复 tool_call id 用全局 `call_N` 重写。
@@ -58,7 +58,7 @@
 
 ## 关键文件
 
-- `AIAgent.h` / `AIAgent.cpp`：ReAct 主循环、确认、预算、流式、会话、审计、配额（约 2200 行）。
+- `AIAgent.h` / `AIAgent.cpp`：ReAct 主循环、确认、预算、流式、会话、审计、配额、项目规则注入（约 2440 行）。
 - `AgentState.h`：7 状态枚举 + `Q_DECLARE_METATYPE`。
 - `LLMTypes.h`：`LLMResponse`，含 requestId、分类 token、`reasoning`。
 - `PermissionMode.h`：四种会话权限、字符串映射、QML int 校验。
@@ -77,3 +77,7 @@
 - **错误处理**：LLM 失败即 `failTask()`，不重试、不回滚已写入的消息/轨迹；工具失败只作为 tool 消息回灌，不终止任务。所有失败路径都依赖 `m_active` 与 epoch 防重入。
 - **会话恢复裁剪**：`resumeSession()` 只取最近 200 条 user/assistant；工具证据只存在于轨迹，不进入模型上下文（MEM-701）。扩大到 2000 条仅在窗口变大且空闲时触发。
 - **Token 估算**：预算判断基于字符启发式，依赖每会话 EWMA 校准；首请求前误差最大，`contextComposition()` 的桶与 `notifyTokens()` 必须保持同一校准口径，否则 UI 数字互相矛盾。
+- **G3 项目规则只在 fresh 会话生效**：`effectiveSystemPrompt()` 仅在 `launchTaskTail(fresh=true)` 与 `resumeSession()` 里调用。同一会话内改了 `AGENTS.md`，下一条消息**不会**带上新规则，必须开新会话/重载会话。设置页的「生效中」是读文件时的状态，不代表当前会话已注入。
+- **G3 种子模板判定依赖精确 hash**：`isUntouchedRulesSeed()` 用 SHA256 比对去掉行尾换行后的模板。任何编辑（哪怕只加一个空格）都会让模板变成「有内容」并开始注入；反之编辑器把行尾改成 CRLF 不会误判。判定逻辑分散在 `AIAgent.cpp` 与 `AgentViewModel::projectRulesState()` 两处，必须同步修改。
+- **G3 只写 `AGENTS.md` 不写 `.nexus/rules.md`**：读取支持两个候选路径，保存只针对 `AGENTS.md`。项目若只用 `.nexus/rules.md`，设置页会显示其内容但保存会另建 `AGENTS.md`，两个文件并存时 `AGENTS.md` 优先。
+- **G3 8KB 上限是硬截断**：超出部分丢弃并追加 `[truncated]`，不做分段注入；超长规则文件的有效内容因此可能完全落在被丢弃的后半段。

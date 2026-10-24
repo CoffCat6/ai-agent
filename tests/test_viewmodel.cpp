@@ -1373,6 +1373,116 @@ private slots:
         else settings.remove("projects/activeId");
     }
 
+    // G3: importing a project seeds AGENTS.md once; re-import must not
+    // overwrite whatever the user has since written.
+    void importProjectSeedsRulesOnce() {
+        QTemporaryDir dir;
+        QVERIFY(dir.isValid());
+        SqliteMemory memory(QStringLiteral(":memory:"));
+        AgentViewModel vm(nullptr);
+        vm.setMemory(&memory);
+
+        const QString id = vm.importProject(dir.path());
+        QVERIFY(!id.isEmpty());
+        const QString rulesPath = dir.path() + "/AGENTS.md";
+        QVERIFY(QFileInfo::exists(rulesPath));
+        QFile seeded(rulesPath);
+        QVERIFY(seeded.open(QIODevice::ReadOnly));
+        QCOMPARE(seeded.readAll(), AIAgent::rulesSeedTemplate());
+        seeded.close();
+        // An untouched seed reads as "seed", not "active".
+        QCOMPARE(vm.projectRulesState(dir.path()), QStringLiteral("seed"));
+
+        // The user writes their own rules.
+        QFile out(rulesPath);
+        QVERIFY(out.open(QIODevice::WriteOnly));
+        out.write("# Mine\n- run ctest\n");
+        out.close();
+        QCOMPARE(vm.projectRulesState(dir.path()), QStringLiteral("active"));
+
+        // Re-importing the same folder reuses the record and leaves the file.
+        QCOMPARE(vm.importProject(dir.path()), id);
+        QFile after(rulesPath);
+        QVERIFY(after.open(QIODevice::ReadOnly));
+        QCOMPARE(after.readAll(), QByteArray("# Mine\n- run ctest\n"));
+    }
+
+    // G3: seeding never clobbers something already at the AGENTS.md path.
+    // A directory there makes the agent's isFile() probe fail, so it falls
+    // back to .nexus/rules.md - the import must still succeed either way.
+    void importProjectNeverClobbersExistingRulesPath() {
+        QTemporaryDir dir;
+        QVERIFY(dir.isValid());
+        QVERIFY(QDir(dir.path()).mkdir("AGENTS.md"));
+        SqliteMemory memory(QStringLiteral(":memory:"));
+        AgentViewModel vm(nullptr);
+        vm.setMemory(&memory);
+
+        const QString id = vm.importProject(dir.path());
+        QVERIFY(!id.isEmpty());
+        QCOMPARE(memory.listProjects().size(), 1);
+        // The pre-existing entry is untouched and nothing was written into it.
+        QVERIFY(QFileInfo(dir.path() + "/AGENTS.md").isDir());
+        QCOMPARE(QDir(dir.path() + "/AGENTS.md").entryList(
+                     QDir::Files | QDir::Hidden).size(), 0);
+    }
+
+    // G3: the settings page must see exactly what the agent would inject,
+    // including the .nexus/rules.md fallback and non-UTF-8 content.
+    void loadProjectRulesReadsWholeFileAndFallsBack() {
+        QTemporaryDir dir;
+        QVERIFY(dir.isValid());
+        SqliteMemory memory(QStringLiteral(":memory:"));
+        AgentViewModel vm(nullptr);
+        vm.setMemory(&memory);
+
+        QVERIFY(vm.loadProjectRules(dir.path()).isEmpty());
+        QCOMPARE(vm.projectRulesState(dir.path()), QStringLiteral("missing"));
+        // GBK-ish bytes: fromUtf8 yields U+FFFD, so the local-8bit fallback
+        // must still return the WHOLE file. Reading the device a second time
+        // (already at EOF) would return empty here.
+        QFile legacy(dir.path() + "/AGENTS.md");
+        QVERIFY(legacy.open(QIODevice::WriteOnly));
+        legacy.write(QByteArray("ƒ„∫√πÊ‘Ú"));
+        legacy.close();
+        const QString decoded = vm.loadProjectRules(dir.path());
+        QVERIFY(!decoded.isEmpty());
+        QVERIFY(!decoded.contains(QChar::ReplacementCharacter));
+        QFile::remove(dir.path() + "/AGENTS.md");
+
+
+        // No AGENTS.md: the .nexus/rules.md fallback is what the agent reads,
+        // so the page must show it too.
+        QVERIFY(QDir(dir.path()).mkpath(".nexus"));
+        QFile nested(dir.path() + "/.nexus/rules.md");
+        QVERIFY(nested.open(QIODevice::WriteOnly));
+        nested.write("- from nexus\n");
+        nested.close();
+        QCOMPARE(vm.loadProjectRules(dir.path()), QString("- from nexus\n"));
+
+        // AGENTS.md wins over the fallback.
+        QFile root(dir.path() + "/AGENTS.md");
+        QVERIFY(root.open(QIODevice::WriteOnly));
+        root.write("- from agents\n");
+        root.close();
+        QCOMPARE(vm.loadProjectRules(dir.path()), QString("- from agents\n"));
+
+        // A long file is returned in full here (the 8KB cap is the agent's
+        // injection rule, not the editor's), but the state reports truncation.
+        QVERIFY(root.open(QIODevice::WriteOnly));
+        root.write(QByteArray(9 * 1024, 'x'));
+        root.close();
+        QCOMPARE(vm.loadProjectRules(dir.path()).size(), 9 * 1024);
+        QCOMPARE(vm.projectRulesState(dir.path()),
+                 QStringLiteral("truncated"));
+
+        // Empty (and whitespace-only) files count as empty, not active.
+        QVERIFY(root.open(QIODevice::WriteOnly));
+        root.write("  \n\n");
+        root.close();
+        QCOMPARE(vm.projectRulesState(dir.path()), QStringLiteral("empty"));
+    }
+
     // Batch 31b: McpManager add/remove round trip. The user's real
     // mcp_servers.json is backed up and restored around the test.
     void mcpManagerAddRemoveRoundTrip() {

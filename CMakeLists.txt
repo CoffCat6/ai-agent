@@ -320,6 +320,8 @@ qt_add_qml_module(nexus_ai
         src/ui/pages/MemoryPage.qml
         src/ui/pages/UsageStatsPage.qml
         src/ui/pages/ActivityLogPage.qml
+        # G3: per-project AGENTS.md management (settings page)
+        src/ui/pages/ProjectRulesPage.qml
         src/ui/pages/SettingsBackupPage.qml
 )
 

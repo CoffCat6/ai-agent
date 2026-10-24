@@ -69,6 +69,7 @@ const QVector<CategoryMeta>& SettingsSchema::categories() {
         {QStringLiteral("usage"), QT_TRANSLATE_NOOP("NexusAI", "用量统计"), 8},
         {QStringLiteral("activity"), QT_TRANSLATE_NOOP("NexusAI", "活动记录"), 9},
         {QStringLiteral("backup"), QT_TRANSLATE_NOOP("NexusAI", "设置与备份"), 10},
+        {QStringLiteral("projects"), QT_TRANSLATE_NOOP("NexusAI", "项目规则"), 11},
     };
     return values;
 }
