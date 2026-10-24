@@ -153,6 +153,7 @@ void startKnowledgeRestore(SqliteMemory* memory, RagService* rag) {
         QString content;
         QString contentHash;
         QString embeddingModel;
+        QString sourcePath;
         QVector<KnowledgeChunk> chunks;
     };
     QVector<RestoreItem> restoreItems;
@@ -162,6 +163,7 @@ void startKnowledgeRestore(SqliteMemory* memory, RagService* rag) {
         item.content = rec.content;
         item.contentHash = rec.contentHash;
         item.embeddingModel = rec.embeddingModel;
+        item.sourcePath = rec.sourcePath;
         item.chunks = memory->loadKnowledgeChunks(rec.name);
         restoreItems.append(item);
     }
@@ -180,7 +182,8 @@ void startKnowledgeRestore(SqliteMemory* memory, RagService* rag) {
             if (persistedChunksUsable(item.contentHash, item.embeddingModel,
                                       item.content, currentModel)
                     && rag->restorePersistedDocument(
-                           item.name, item.chunks, restoreGeneration)) {
+                           item.name, item.chunks, item.sourcePath,
+                           restoreGeneration)) {
                 ++fromChunks;
                 continue;
             }
@@ -597,10 +600,12 @@ qInfo() << "NexusAI" << app.applicationVersion() << "starting";
     auto* ragForPersist = rag;
     QObject::connect(rag, &RagService::documentPersisted, &app,
         [memory, ragForPersist](const QString& name, const QString& content,
+                                const QString& sourcePath,
                                 const QVector<KnowledgeChunk>& chunks) {
             memory->upsertKnowledgeDoc(name, content,
                                        knowledgeContentHash(content),
-                                       ragForPersist->embeddingModelName());
+                                       ragForPersist->embeddingModelName(),
+                                       sourcePath);
             memory->replaceKnowledgeChunks(name, chunks);
         });
     QObject::connect(agentVM, &AgentViewModel::documentRemoved, &app,

@@ -156,10 +156,12 @@ public:
         QString content;
         QString contentHash;
         QString embeddingModel;
+        QString sourcePath;
     };
 
     void upsertKnowledgeDoc(const QString& name, const QString& content,
-                            const QString& contentHash, const QString& embeddingModel);
+                            const QString& contentHash, const QString& embeddingModel,
+                            const QString& sourcePath = QString());
     bool removeKnowledgeDoc(const QString& name);
     void clearKnowledgeDocs();
     QString loadKnowledgeDoc(const QString& name) const; // empty when unknown

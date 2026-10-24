@@ -58,6 +58,15 @@ public:
     // the file; returns the command line it ran, empty when nothing suitable
     // was found.
     Q_INVOKABLE QString openWithKnownEditor(const QString& relPath);
+    // Opens an absolute path directly (used by the knowledge dialog for the
+    // recorded source file, which lives OUTSIDE any project root). Returns
+    // false when the file does not exist or the platform refused.
+    Q_INVOKABLE bool openAbsolute(const QString& absolutePath);
+    // Resolves an absolute filesystem path to a canonical form without any
+    // project containment: the knowledge base records absolute paths, which by
+    // definition live outside the browser's project root. Returns "" for a
+    // non-existent file.
+    Q_INVOKABLE QString canonicalAbsolute(const QString& absolutePath) const;
     // Recursive path search over the whole project. Returns
     // [{relPath, isDir}] (see ProjectFileIndex::searchPaths). Empty query
     // yields an empty list - the tree itself is the "show everything" view.

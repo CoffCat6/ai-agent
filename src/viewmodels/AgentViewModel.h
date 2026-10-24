@@ -660,7 +660,8 @@ private:
     // Runs ingestDocument on a worker thread; the outcome (busy flag, signals)
     // is handled back on the GUI thread via a QFutureWatcher.
     void startIngestion(const QString& name, const QString& content, bool reembed,
-                        const QStringList& pageTexts = QStringList());
+                        const QStringList& pageTexts = QStringList(),
+                        const QString& sourcePath = QString());
     // docs/25: 批量导入的串行推进——GUI 线程取队首文件、派发池任务，
     // 任务完成回调里写结果并链到下一个。取消即不再派发后续文件。
     void importNextBatchFile();

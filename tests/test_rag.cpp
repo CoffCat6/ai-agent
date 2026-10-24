@@ -547,7 +547,7 @@ void TestRag::restoreFromPersistedChunksNeedsNoEmbedding() {
     restored.setEmbeddingModelName(QStringLiteral("m1"));
     const int callsBefore = embedCalls;
     QVERIFY(restored.restorePersistedDocument(
-        "doc.txt", chunks, restored.restoreGeneration()));
+        "doc.txt", chunks, QString(), restored.restoreGeneration()));
     QCOMPARE(embedCalls, callsBefore);        // restore: zero embedding IO
 
     // Querying the restored REAL-mode store needs exactly one query
@@ -708,22 +708,29 @@ void TestRag::documentPersistedDeliversAcrossThreads() {
     QAtomicInt delivered{0};
     QString deliveredName;
     QString deliveredContent;
+    QString deliveredSourcePath;
     QVector<KnowledgeChunk> deliveredChunks;
     QObject::connect(&local, &RagService::documentPersisted, &local,
         [&](const QString& name, const QString& content,
-            const QVector<KnowledgeChunk>& chunks) {
+            const QString& sourcePath, const QVector<KnowledgeChunk>& chunks) {
             delivered.fetchAndAddRelaxed(1);
             deliveredName = name;
+            deliveredSourcePath = sourcePath;
             deliveredChunks = chunks;
             deliveredContent = content;
         }, Qt::QueuedConnection);
 
-    const int chunks = local.ingestDocument("doc.txt", longDoc("queue", 6));
+    const QString sourcePath = QStringLiteral("D:/notes/queued.md");
+    const int chunks = local.ingestDocument("doc.txt", longDoc("queue", 6),
+                                            QStringList(), sourcePath);
     QVERIFY(chunks >= 2);
 
     QTRY_COMPARE_WITH_TIMEOUT(delivered.loadRelaxed(), 1, 5000);
     QCOMPARE(deliveredName, QStringLiteral("doc.txt"));
     QVERIFY(!deliveredContent.isEmpty());
+    // The source path rides the same queued signal: a cross-thread delivery
+    // that drops it would silently erase "open the original file" support.
+    QCOMPARE(deliveredSourcePath, sourcePath);
     QCOMPARE(deliveredChunks.size(), chunks);
     QVERIFY(!deliveredChunks.first().embedding.isEmpty());
 }
@@ -936,13 +943,13 @@ void TestRag::restoreRespectsTotalChunkBudget() {
     // One chunk short of the requirement: restore must refuse.
     restored.setMaxTotalChunks(chunks.size() - 1);
     QVERIFY(!restored.restorePersistedDocument(
-        "doc.txt", chunks, restored.restoreGeneration()));
+        "doc.txt", chunks, QString(), restored.restoreGeneration()));
     QVERIFY(restored.search(QStringLiteral("persist alpha"), 3).isEmpty());
 
     // Exact headroom restores fine (the same-name drop is accounted first).
     restored.setMaxTotalChunks(chunks.size());
     QVERIFY(restored.restorePersistedDocument(
-        "doc.txt", chunks, restored.restoreGeneration()));
+        "doc.txt", chunks, QString(), restored.restoreGeneration()));
     QVERIFY(!restored.search(QStringLiteral("persist alpha"), 3).isEmpty());
 }
 

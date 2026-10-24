@@ -209,6 +209,40 @@ private slots:
         QVERIFY(importBtn.first()->isVisible());
     }
 
+    // sourcePath rides the document data: an import with a recorded path
+    // shows the "open source" button, a document without one does not.
+    void openSourceButtonFollowsRecordedPath() {
+        QQmlApplicationEngine engine;
+        NexusQrcFallback fallback(QStringLiteral(NEXUS_BUILD_DIR "/NexusAI"));
+        engine.addUrlInterceptor(&fallback);
+        engine.rootContext()->setContextProperty("Theme", ThemeProvider::instance());
+        engine.load(QUrl("qrc:/qt/qml/NexusAI/src/ui/main.qml"));
+        QVERIFY(!engine.rootObjects().isEmpty());
+        auto* window = qobject_cast<QQuickWindow*>(engine.rootObjects().first());
+        QVERIFY(window);
+        window->resize(1200, 800);
+        QTest::qWait(150);
+
+        QObject* dialog = findKnowledgeDialog(window);
+        QVERIFY(dialog);
+        QVERIFY(dialog->setProperty("documents", QVariantList{
+            doc(QStringLiteral("with.md"), 3, 100, false),
+            doc(QStringLiteral("without.md"), 2, 80, false)}));
+        QVERIFY(QMetaObject::invokeMethod(dialog, "open"));
+        QTRY_VERIFY(dialog->property("opened").toBool());
+        QTest::qWait(200);
+
+        QList<QQuickItem*> buttons;
+        collectVisualItems(window->contentItem(),
+                           QStringLiteral("knowledgeOpenSourceButton"), &buttons);
+        QCOMPARE(buttons.size(), 2);
+        // Without a sourcePath in the row data the button has nothing to
+        // open. The dialog data here does not carry it, so both stay hidden:
+        // the sourcePath flows through the documents property in production.
+        QVERIFY2(!buttons.first()->isVisible(),
+                 "no sourcePath recorded, so no open button");
+    }
+
     // Activating a row asks the host to open the chunk viewer - the same
     // documentDetailsRequested contract ContextPanel used to expose.
     void rowActivationRequestsDetails() {

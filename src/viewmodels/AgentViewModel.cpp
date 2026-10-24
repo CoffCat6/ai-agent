@@ -128,7 +128,8 @@ BatchFileResult readAndIngestFile(const QString& path, RagService* rag) {
 
     const QString name = rag->uniqueDocumentName(info.fileName());
     result.name = name;
-    const int chunks = rag->ingestDocument(name, content, pageTexts);
+    const int chunks = rag->ingestDocument(name, content, pageTexts,
+                                           info.absoluteFilePath());
     result.chunks = chunks;
     if (chunks > 0) {
         if (rag->usesPseudoEmbedding(name)) {
@@ -1373,7 +1374,7 @@ void AgentViewModel::importExtractedText(const QFileInfo& info, const QString& c
     }
     const QString name = m_rag->uniqueDocumentName(info.fileName());
     Activity::usage(Activity::Kind::User, QStringLiteral("doc.import"), name);
-    startIngestion(name, content, false, pageTexts);
+    startIngestion(name, content, false, pageTexts, info.absoluteFilePath());
 }
 
 void AgentViewModel::openKnowledgeDocument(const QString& name, int chunk) {
@@ -1407,11 +1408,12 @@ void AgentViewModel::reembedDocument(const QString& name) {
         return;
     }
 
-    startIngestion(name, content, true);
+    startIngestion(name, content, true);   // no sourcePath: keep the stored one
 }
 
 void AgentViewModel::startIngestion(const QString& name, const QString& content,
-                                    bool reembed, const QStringList& pageTexts) {
+                                    bool reembed, const QStringList& pageTexts,
+                                    const QString& sourcePath) {
     setKnowledgeBusy(true);
     setEmbedProgress(0, 0);
     auto* watcher = new QFutureWatcher<int>(this);
@@ -1446,8 +1448,8 @@ void AgentViewModel::startIngestion(const QString& name, const QString& content,
     // watcher (parented to this) delivers the outcome on the GUI thread,
     // where touching the busy flag and emitting signals is safe.
     RagService* rag = m_rag;
-    watcher->setFuture(QtConcurrent::run([rag, name, content, pageTexts]() -> int {
-        return rag ? rag->ingestDocument(name, content, pageTexts) : 0;
+    watcher->setFuture(QtConcurrent::run([rag, name, content, pageTexts, sourcePath]() -> int {
+        return rag ? rag->ingestDocument(name, content, pageTexts, sourcePath) : 0;
     }));
 }
 

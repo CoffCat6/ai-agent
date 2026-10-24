@@ -164,6 +164,9 @@ private slots:
     void knowledgeSchemaV1Migrates();
     void knowledgeChunkPersistence();
     void knowledgeCascadeDelete();
+    // knowledge_documents.source_path: import records it, restore/re-embed
+    // preserves it, a fresh import replaces it.
+    void knowledgeSourcePathRoundTrip();
     // Batch 7: Conversation/Memory consistency
     void sqliteConnectionNameCleanedUp();
     void workspaceIdColumnReserved();
@@ -967,6 +970,47 @@ void TestMemory::knowledgeChunkPersistence() {
 }
 
 // Removing/clearing documents cascades to their chunks - no orphan vectors
+// source_path round trip: imports record where the file came from, an
+// empty path (restore / re-embed) must NOT erase the stored one, and the
+// record list carries it back out for "open the original file".
+void TestMemory::knowledgeSourcePathRoundTrip() {
+    SqliteMemory memory(":memory:");
+
+    memory.upsertKnowledgeDoc("a.md", "aaa",
+                              knowledgeContentHash("aaa"), "m1",
+                              QStringLiteral("D:/notes/a.md"));
+    memory.upsertKnowledgeDoc("b.md", "bbb",
+                              knowledgeContentHash("bbb"), "m1");
+
+    auto records = memory.loadKnowledgeDocRecords();
+    QCOMPARE(records.size(), 2);
+    for (const auto& rec : records) {
+        if (rec.name == "a.md")
+            QCOMPARE(rec.sourcePath, QStringLiteral("D:/notes/a.md"));
+        else
+            QCOMPARE(rec.sourcePath, QString());
+    }
+
+    // Re-embedding re-persists WITHOUT a path: the stored one must survive.
+    memory.upsertKnowledgeDoc("a.md", "aaa v2",
+                              knowledgeContentHash("aaa v2"), "m2");
+    records = memory.loadKnowledgeDocRecords();
+    for (const auto& rec : records) {
+        if (rec.name == "a.md")
+            QCOMPARE(rec.sourcePath, QStringLiteral("D:/notes/a.md"));
+    }
+
+    // A real import over the same name replaces the path (file moved).
+    memory.upsertKnowledgeDoc("a.md", "aaa v3",
+                              knowledgeContentHash("aaa v3"), "m1",
+                              QStringLiteral("D:/elsewhere/a.md"));
+    records = memory.loadKnowledgeDocRecords();
+    for (const auto& rec : records) {
+        if (rec.name == "a.md")
+            QCOMPARE(rec.sourcePath, QStringLiteral("D:/elsewhere/a.md"));
+    }
+}
+
 // may survive (a deleted document must not stay retrievable).
 void TestMemory::knowledgeCascadeDelete() {
     SqliteMemory memory(":memory:");

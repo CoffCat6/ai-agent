@@ -167,7 +167,8 @@ QVariantList RagService::mapChunksToPages(const QStringList& chunkTexts,
 }
 
 int RagService::ingestDocument(const QString& sourceName, const QString& content,
-                               const QStringList& pageTexts) {
+                               const QStringList& pageTexts,
+                               const QString& sourcePath) {
     int chunks = 0;
     QVariantList chunkPages;
     QStringList chunkTexts;
@@ -202,6 +203,7 @@ int RagService::ingestDocument(const QString& sourceName, const QString& content
         doc.name = sourceName;
         doc.chars = content.trimmed().size();
         doc.contentHash = knowledgeContentHash(content);
+        doc.sourcePath = sourcePath;
         doc.retriever = std::move(retriever);
         m_docs.push_back(std::move(doc));
     }
@@ -211,12 +213,21 @@ int RagService::ingestDocument(const QString& sourceName, const QString& content
     // the Batch 6 refactor, which blanked the panel on import).
     emit changed();
     // Persistence export (may run on a worker thread; consumers queue it).
-    emit documentPersisted(sourceName, content, persisted);
+    emit documentPersisted(sourceName, content, sourcePath, persisted);
     return chunks;
 }
 
 int RagService::ingestRestoredDocument(const QString& sourceName, const QString& content,
                                        quint64 generation) {
+    // A restored document keeps the source path it was imported with (if the
+    // database recorded one) — the file itself may still be on disk.
+    QString sourcePath;
+    {
+        QMutexLocker lock(&m_mutex);
+        for (const Document& doc : m_docs) {
+            if (doc.name == sourceName) { sourcePath = doc.sourcePath; break; }
+        }
+    }
     int chunks = 0;
     auto retriever = buildRetriever(sourceName, content, &chunks);
     if (!retriever) return chunks;
@@ -234,17 +245,21 @@ int RagService::ingestRestoredDocument(const QString& sourceName, const QString&
         doc.name = sourceName;
         doc.chars = content.trimmed().size();
         doc.contentHash = knowledgeContentHash(content);
+        doc.sourcePath = sourcePath;
         doc.retriever = std::move(retriever);
         m_docs.push_back(std::move(doc));
     }
 
     emit changed();   // UI refresh (see ingestDocument)
-    emit documentPersisted(sourceName, content, persisted);
+    // Restore path: the source path comes from the database (if any), so the
+    // signal carries the stored value and persistence keeps it unchanged.
+    emit documentPersisted(sourceName, content, sourcePath, persisted);
     return chunks;
 }
 
 bool RagService::restorePersistedDocument(const QString& sourceName,
                                           const QVector<KnowledgeChunk>& chunks,
+                                          const QString& sourcePath,
                                           quint64 generation) {
     if (chunks.isEmpty()) return false;
 
@@ -275,6 +290,7 @@ bool RagService::restorePersistedDocument(const QString& sourceName,
         doc.name = sourceName;
         doc.chars = 0;
         for (const KnowledgeChunk& chunk : chunks) doc.chars += chunk.text.size();
+        doc.sourcePath = sourcePath;
         doc.retriever = std::move(retriever);
         m_docs.push_back(std::move(doc));
     }
@@ -412,6 +428,7 @@ QJsonArray RagService::documents() const {
         entry["chunks"] = doc.retriever->documentCount();
         entry["chars"] = doc.chars;
         entry["pseudo"] = doc.retriever->usesPseudoEmbedding();
+        entry["sourcePath"] = doc.sourcePath;
         out.append(entry);
     }
     return out;

@@ -43,8 +43,12 @@ public:
     // 0 when the input is empty/unusable and -1 when the document exceeds
     // MaxChunksPerDocument. Re-ingesting an existing source name replaces it.
     // docs/25: pageTexts 非空（PDF 导入）时逐 chunk 映射页码到元数据。
+    // sourcePath: absolute path of the imported file, empty when the content
+    // has no on-disk origin (restore paths pass empty and keep whatever the
+    // database already has).
     int ingestDocument(const QString& sourceName, const QString& content,
-                       const QStringList& pageTexts = QStringList());
+                       const QStringList& pageTexts = QStringList(),
+                       const QString& sourcePath = QString());
     static QVariantList mapChunksToPages(const QStringList& chunkTexts,
                                          const QStringList& pageTexts);
 
@@ -62,6 +66,7 @@ public:
     // restore was superseded.
     bool restorePersistedDocument(const QString& sourceName,
                                   const QVector<KnowledgeChunk>& chunks,
+                                  const QString& sourcePath,
                                   quint64 generation);
 
     // Persistence export of one stored document (empty when unknown).
@@ -124,6 +129,7 @@ signals:
     // Emitted (possibly from a worker thread) after a successful ingest so
     // the wiring layer can persist content hash + chunks.
     void documentPersisted(const QString& name, const QString& content,
+                           const QString& sourcePath,
                            const QVector<KnowledgeChunk>& chunks);
 
 private:
@@ -131,6 +137,11 @@ private:
         QString name;
         int chars{0};
         QString contentHash;
+        // Absolute path of the file the content was imported from, empty when
+        // the document has no on-disk source (restored from the database, or
+        // re-embedded without a known origin). The persistence layer stores it
+        // so the UI can offer "open the original file".
+        QString sourcePath;
         // docs/25 B5: shared_ptr so finishSearch can snapshot the retriever
         // set under the lock and run the (CPU-heavy) cosine + merge OUTSIDE
         // it — a raw pointer would dangle if removeDocument() dropped the

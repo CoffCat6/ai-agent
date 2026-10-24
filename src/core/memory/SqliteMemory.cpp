@@ -432,7 +432,8 @@ void SqliteMemory::createTables() {
         CREATE TABLE IF NOT EXISTS knowledge_documents (
             name TEXT PRIMARY KEY,
             content TEXT NOT NULL,
-            imported_at INTEGER NOT NULL
+            imported_at INTEGER NOT NULL,
+            source_path TEXT NOT NULL DEFAULT ''
         )
     )", "create knowledge_documents table");
 
@@ -827,6 +828,12 @@ void SqliteMemory::migrateKnowledgeSchema() {
         execDdl(query, "ALTER TABLE knowledge_documents "
                        "ADD COLUMN embedding_model TEXT NOT NULL DEFAULT ''",
                 "add knowledge_documents.embedding_model");
+    // Where the document was imported from. Older rows (and documents without
+    // an on-disk origin) carry the empty default; nothing else changes.
+    if (!columns.contains("source_path"))
+        execDdl(query, "ALTER TABLE knowledge_documents "
+                       "ADD COLUMN source_path TEXT NOT NULL DEFAULT ''",
+                "add knowledge_documents.source_path");
 
     // OBS-1102: observability columns on audit_log (Batch 11)
     {
@@ -908,18 +915,27 @@ QVector<float> embeddingFromBlob(const QByteArray& blob) {
 
 void SqliteMemory::upsertKnowledgeDoc(const QString& name, const QString& content,
                                       const QString& contentHash,
-                                      const QString& embeddingModel) {
+                                      const QString& embeddingModel,
+                                      const QString& sourcePath) {
     QSqlQuery query(m_db);
+    // source_path uses a COALESCE-style guard: an empty incoming value (restore
+    // or re-embed, where no path is known) keeps the stored one instead of
+    // erasing it.
     query.prepare("INSERT INTO knowledge_documents (name, content, imported_at, "
-                  "content_hash, embedding_model) VALUES (?, ?, ?, ?, ?) "
+                  "content_hash, embedding_model, source_path) VALUES (?, ?, ?, ?, ?, ?) "
                   "ON CONFLICT(name) DO UPDATE SET content = excluded.content, "
                   "imported_at = excluded.imported_at, content_hash = excluded.content_hash, "
-                  "embedding_model = excluded.embedding_model");
+                  "embedding_model = excluded.embedding_model, "
+                  "source_path = CASE WHEN excluded.source_path = '' "
+                  "THEN knowledge_documents.source_path ELSE excluded.source_path END");
     query.addBindValue(name);
     query.addBindValue(content);
     query.addBindValue(QDateTime::currentDateTime().toMSecsSinceEpoch());
     query.addBindValue(contentHash);
     query.addBindValue(embeddingModel);
+    // An empty QString binds as SQL NULL, which the NOT NULL column rejects.
+    // Bind an explicit empty string instead.
+    query.addBindValue(sourcePath.isNull() ? QStringLiteral("") : sourcePath);
 
     if (!query.exec()) {
         qWarning() << "Failed to save knowledge document:" << query.lastError().text();
@@ -1020,7 +1036,7 @@ void SqliteMemory::clearKnowledgeDocs() {
 
 QVector<SqliteMemory::KnowledgeDocRecord> SqliteMemory::loadKnowledgeDocRecords() const {
     QSqlQuery query(m_db);
-    query.prepare("SELECT name, content, content_hash, embedding_model "
+    query.prepare("SELECT name, content, content_hash, embedding_model, source_path "
                   "FROM knowledge_documents ORDER BY imported_at ASC");
 
     QVector<KnowledgeDocRecord> records;
@@ -1031,6 +1047,7 @@ QVector<SqliteMemory::KnowledgeDocRecord> SqliteMemory::loadKnowledgeDocRecords(
             rec.content = query.value(1).toString();
             rec.contentHash = query.value(2).toString();
             rec.embeddingModel = query.value(3).toString();
+            rec.sourcePath = query.value(4).toString();
             records.append(rec);
         }
     } else {

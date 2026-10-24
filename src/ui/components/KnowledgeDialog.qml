@@ -47,6 +47,9 @@ Dialog {
         return n
     }
     readonly property bool empty: docCount === 0
+    // Set when "open source file" fails (file moved/deleted); cleared on any
+    // successful open. Shown once, not per-row, because the cause is the same.
+    property bool openFailed: false
 
     // Column widths, shared by the header row and the delegates so the two
     // cannot drift apart.
@@ -56,6 +59,8 @@ Dialog {
     readonly property int actionsColumnWidth: 64
 
     function openPanel() { open() }
+
+    onOpened: openFailed = false
 
     // Compact "12.3k" for the char total; the exact number is in each row.
     function formatCount(n) {
@@ -223,6 +228,20 @@ Dialog {
             Layout.bottomMargin: 10
             text: qsTr("文档内容会随提问发送给当前模型服务；如需阻止，请在设置中开启“仅本地模式”。")
             color: Theme.textSecondary
+            font.pixelSize: 10
+            font.family: Theme.fontSans
+            wrapMode: Text.Wrap
+        }
+
+        Text {
+            objectName: "knowledgeOpenFailed"
+            Layout.fillWidth: true
+            Layout.leftMargin: 18
+            Layout.rightMargin: 18
+            Layout.bottomMargin: 8
+            visible: dialog.openFailed
+            text: qsTr("无法打开源文件（可能已被移动或删除）。")
+            color: Theme.statusWarning
             font.pixelSize: 10
             font.family: Theme.fontSans
             wrapMode: Text.Wrap
@@ -420,6 +439,27 @@ Dialog {
                                 // The dialog is wide, so the explanation is not
                                 // truncated the way it had to be in the sidebar.
                                 ToolTip.text: qsTr("导入时嵌入服务不可用，已使用本地降级嵌入，检索质量有限。可点击右侧刷新按钮重新嵌入。")
+                            }
+                        }
+
+                        // Open the original file, only where a source path
+                        // exists (imports record it; restores from older
+                        // databases carry an empty path).
+                        IconButton {
+                            objectName: "knowledgeOpenSourceButton"
+                            Layout.preferredWidth: 22
+                            Layout.preferredHeight: 22
+                            Layout.alignment: Qt.AlignVCenter
+                            visible: String(docRow.modelData.sourcePath || "").length > 0
+                            radius: 5
+                            icon: "export"
+                            iconSize: 12
+                            tooltip: qsTr("打开源文件")
+                            Accessible.name: tooltip
+                            onClicked: {
+                                if (!ProjectFileVM.openAbsolute(
+                                        String(docRow.modelData.sourcePath)))
+                                    openFailed = true
                             }
                         }
 

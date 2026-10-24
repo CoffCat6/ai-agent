@@ -271,6 +271,21 @@ bool ProjectFileViewModel::openInDefaultApp(const QString& relPath) {
     return QDesktopServices::openUrl(QUrl::fromLocalFile(absolute));
 }
 
+bool ProjectFileViewModel::openAbsolute(const QString& absolutePath) {
+    if (absolutePath.isEmpty() || !QFileInfo::exists(absolutePath)) return false;
+    // Same ELECTRON_RUN_AS_NODE scrub as the openInDefaultApp path above.
+    QProcessEnvironment::systemEnvironment().remove(
+        QStringLiteral("ELECTRON_RUN_AS_NODE"));
+    return QDesktopServices::openUrl(QUrl::fromLocalFile(absolutePath));
+}
+
+QString ProjectFileViewModel::canonicalAbsolute(const QString& absolutePath) const {
+    if (absolutePath.isEmpty()) return {};
+    const QFileInfo info(absolutePath);
+    if (!info.exists()) return {};
+    return info.canonicalFilePath();
+}
+
 QString ProjectFileViewModel::openWithKnownEditor(const QString& relPath) {
     const QString absolute = absolutePath(relPath);
     if (absolute.isEmpty() || !QFileInfo::exists(absolute)) return {};
