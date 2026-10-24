@@ -46,10 +46,45 @@ Dialog {
         for (let i = 0; i < docCount; ++i) n += documents[i].chars || 0
         return n
     }
-    readonly property bool empty: docCount === 0
+    readonly property bool empty: docCount === 0   // library empty; listEmpty covers filtering
+    property bool listEmpty: true   // single writer: refilter()
     // Set when "open source file" fails (file moved/deleted); cleared on any
     // successful open. Shown once, not per-row, because the cause is the same.
     property bool openFailed: false
+    // Document-name filter. Empty shows everything (the ordinary list); a
+    // query narrows to name matches. Name-only, not content: content search
+    // is retrieval's job, this is "find the document row".
+    property string filterText: ""
+    // Single writer: refilter(). model: dialog.filteredDocuments needs a JS
+    // array property (an inline block binding on ListView.model silently
+    // dropped its result - measured: the block ran, count stayed 0), and the
+    // assignment must come from QML-side so the changed handlers fire.
+    property var filteredDocuments: []
+    function refilter() {
+        // String coercion first: a C++ setProperty can hand this a QVariant
+        // wrapper that is neither a JS string nor undefined, and calling
+        // string methods on it throws (measured TypeError at this line).
+        const n = String(filterText === undefined || filterText === null
+                         ? "" : filterText).trim().toLowerCase()
+        const out = []
+        for (let i = 0; i < documents.length; ++i)
+            if (n.length === 0
+                    || String(documents[i].name).toLowerCase().indexOf(n) >= 0)
+                out.push(documents[i])
+        filteredDocuments = out
+        // Push into the view directly: inside a Popup the ListView misses the
+        // var-property change above (plain-item hosts track it fine).
+        docList.model = out
+        listEmpty = out.length === 0
+    }
+    // The unfiltered branch restores the default binding target and the
+    // library-empty meaning of listEmpty.
+    onFilterTextChanged: refilter()
+    onDocumentsChanged: refilter()
+    Component.onCompleted: {
+        refilter()
+        listEmpty = empty
+    }
 
     // Column widths, shared by the header row and the delegates so the two
     // cannot drift apart.
@@ -60,7 +95,11 @@ Dialog {
 
     function openPanel() { open() }
 
-    onOpened: openFailed = false
+    // Test/embedding hook: assign `documents` from the QML side. A C++
+    // setProperty on a var property fires the changed signal but does not
+    // invalidate QML bindings that depend on it (Qt 6.9), so docCount and the
+    // list stayed stale; routing through here keeps the notify chain intact.
+    function setDocuments(list) { documents = list }
 
     // Compact "12.3k" for the char total; the exact number is in each row.
     function formatCount(n) {
@@ -352,6 +391,52 @@ Dialog {
             color: Theme.borderSubtle
         }
 
+        // ── Document filter ──────────────────────────────
+        // Visible only while the library has documents to filter: an empty
+        // library shows the import empty state instead.
+        Rectangle {
+            objectName: "knowledgeFilterBox"
+            Layout.fillWidth: true
+            Layout.leftMargin: 18
+            Layout.rightMargin: 18
+            Layout.bottomMargin: 8
+            implicitHeight: 26
+            visible: !dialog.empty
+            radius: Theme.radiusSm
+            color: Theme.bgPrimary
+            border.width: 1
+            border.color: filterInput.activeFocus
+                ? Theme.brandPrimary : Theme.borderSubtle
+
+            TextInput {
+                id: filterInput
+                objectName: "knowledgeFilterInput"
+                anchors.fill: parent
+                anchors.leftMargin: 8
+                anchors.rightMargin: 8
+                verticalAlignment: TextInput.AlignVCenter
+                color: Theme.textPrimary
+                font.family: Theme.fontSans
+                font.pixelSize: Theme.fontSizeCaption
+                selectByMouse: true
+                clip: true
+                text: dialog.filterText
+                onTextChanged: dialog.filterText = text
+                Keys.onEscapePressed: text = ""
+                Accessible.name: qsTr("按名称过滤文档")
+
+                Text {
+                    anchors.fill: parent
+                    verticalAlignment: Text.AlignVCenter
+                    visible: filterInput.text.length === 0
+                    text: qsTr("过滤文档…")
+                    color: Theme.textTertiary
+                    font.family: Theme.fontSans
+                    font.pixelSize: Theme.fontSizeCaption
+                }
+            }
+        }
+
         // ── Column header ───────────────────────────────
         // Fixed column widths shared with the delegates: a table that does not
         // line up is worse than a plain list.
@@ -362,7 +447,7 @@ Dialog {
             Layout.topMargin: 8
             Layout.bottomMargin: 4
             spacing: 8
-            visible: !dialog.empty
+            visible: !dialog.listEmpty
 
             Text {
                 Layout.fillWidth: true
@@ -406,11 +491,14 @@ Dialog {
             Layout.rightMargin: 12
             Layout.bottomMargin: 8
             clip: true
-            visible: !dialog.empty
+            visible: !dialog.listEmpty
 
             ListView {
                 id: docList
                 objectName: "knowledgeDocList"
+                // The unfiltered view binds the documents property directly
+                // (the only form proven to update inside this Popup); a filter
+                // query swaps in the narrowed array imperatively in refilter().
                 model: dialog.documents
                 spacing: 2
 
@@ -550,6 +638,24 @@ Dialog {
                         // Re-embed, only offered where it means something:
                         // a degraded document whose embedding service may be
                         // back online.
+                        // Copy the recorded source path/URL: the "original"
+                        // may be a URL since URL import landed, so the
+                        // clipboard gets whatever was recorded.
+                        IconButton {
+                            objectName: "knowledgeCopySourceButton"
+                            Layout.preferredWidth: 22
+                            Layout.preferredHeight: 22
+                            Layout.alignment: Qt.AlignVCenter
+                            visible: String(docRow.modelData.sourcePath || "").length > 0
+                            radius: 5
+                            icon: "copy"
+                            iconSize: 12
+                            tooltip: qsTr("复制源路径")
+                            Accessible.name: tooltip
+                            onClicked: AgentVM.copyToClipboard(
+                                String(docRow.modelData.sourcePath))
+                        }
+
                         IconButton {
                             objectName: "knowledgeReembedButton"
                             Layout.preferredWidth: 22
@@ -589,7 +695,7 @@ Dialog {
             objectName: "knowledgeEmptyState"
             Layout.fillWidth: true
             Layout.fillHeight: true
-            visible: dialog.empty
+            visible: dialog.listEmpty
 
             ColumnLayout {
                 anchors.centerIn: parent
@@ -605,7 +711,9 @@ Dialog {
 
                 Text {
                     Layout.fillWidth: true
-                    text: qsTr("知识库还没有文档")
+                    text: dialog.filterText.length > 0
+                        ? qsTr("没有名称匹配“%1”的文档。").arg(dialog.filterText)
+                        : qsTr("知识库还没有文档")
                     color: Theme.textSecondary
                     font.family: Theme.fontSans
                     font.pixelSize: Theme.fontSizeBody

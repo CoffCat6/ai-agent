@@ -2859,189 +2859,209 @@ Select or import a project in the sidebar first.</translation>
 <context>
     <name>KnowledgeDialog</name>
     <message>
-        <location filename="../src/ui/components/KnowledgeDialog.qml" line="90"/>
-        <location filename="../src/ui/components/KnowledgeDialog.qml" line="111"/>
+        <location filename="../src/ui/components/KnowledgeDialog.qml" line="129"/>
+        <location filename="../src/ui/components/KnowledgeDialog.qml" line="150"/>
         <source>知识库</source>
         <translation>Knowledge Base</translation>
     </message>
     <message>
-        <location filename="../src/ui/components/KnowledgeDialog.qml" line="91"/>
+        <location filename="../src/ui/components/KnowledgeDialog.qml" line="130"/>
         <source>管理供模型检索的本地文档</source>
         <translation>Manage the local documents the model can retrieve</translation>
     </message>
     <message>
-        <location filename="../src/ui/components/KnowledgeDialog.qml" line="125"/>
+        <location filename="../src/ui/components/KnowledgeDialog.qml" line="164"/>
         <source>%1 个文档 · %2 段 · %3 字符</source>
         <translation>%1 documents · %2 chunks · %3 chars</translation>
     </message>
     <message>
-        <location filename="../src/ui/components/KnowledgeDialog.qml" line="161"/>
+        <location filename="../src/ui/components/KnowledgeDialog.qml" line="200"/>
         <source>批量导入 %1/%2：正在取消…</source>
         <translation>Batch import %1/%2: cancelling…</translation>
     </message>
     <message>
-        <location filename="../src/ui/components/KnowledgeDialog.qml" line="165"/>
+        <location filename="../src/ui/components/KnowledgeDialog.qml" line="204"/>
         <source>批量导入 %1/%2：%3</source>
         <translation>Batch import %1/%2: %3</translation>
     </message>
     <message>
-        <location filename="../src/ui/components/KnowledgeDialog.qml" line="170"/>
+        <location filename="../src/ui/components/KnowledgeDialog.qml" line="209"/>
         <source>已嵌入 %1/%2</source>
         <translation>Embedded %1/%2</translation>
     </message>
     <message>
-        <location filename="../src/ui/components/KnowledgeDialog.qml" line="173"/>
+        <location filename="../src/ui/components/KnowledgeDialog.qml" line="212"/>
         <source>导入中…</source>
         <translation>Importing…</translation>
     </message>
     <message>
-        <location filename="../src/ui/components/KnowledgeDialog.qml" line="191"/>
+        <location filename="../src/ui/components/KnowledgeDialog.qml" line="230"/>
         <source>正在取消（等待当前文件完成）</source>
         <translation>Cancelling (waiting for the current file)</translation>
     </message>
     <message>
-        <location filename="../src/ui/components/KnowledgeDialog.qml" line="192"/>
+        <location filename="../src/ui/components/KnowledgeDialog.qml" line="231"/>
         <source>取消批量导入（未开始的文件将跳过）</source>
         <translation>Cancel the batch import (files not yet started are skipped)</translation>
     </message>
     <message>
-        <location filename="../src/ui/components/KnowledgeDialog.qml" line="200"/>
+        <location filename="../src/ui/components/KnowledgeDialog.qml" line="239"/>
         <source>导入文档</source>
         <translation>Import</translation>
     </message>
     <message>
-        <location filename="../src/ui/components/KnowledgeDialog.qml" line="206"/>
+        <location filename="../src/ui/components/KnowledgeDialog.qml" line="245"/>
         <source>导入文档到知识库（可多选）</source>
         <translation>Import documents into the knowledge base (multi-select)</translation>
     </message>
     <message>
-        <location filename="../src/ui/components/KnowledgeDialog.qml" line="215"/>
+        <location filename="../src/ui/components/KnowledgeDialog.qml" line="254"/>
         <source>从 URL 导入</source>
         <translation>Import from URL</translation>
     </message>
     <message>
-        <location filename="../src/ui/components/KnowledgeDialog.qml" line="220"/>
+        <location filename="../src/ui/components/KnowledgeDialog.qml" line="259"/>
         <source>从网页地址导入知识库</source>
         <translation>Import into the knowledge base from a web address</translation>
     </message>
     <message>
-        <location filename="../src/ui/components/KnowledgeDialog.qml" line="228"/>
+        <location filename="../src/ui/components/KnowledgeDialog.qml" line="267"/>
         <source>关闭知识库</source>
         <translation>Close the knowledge base</translation>
     </message>
     <message>
-        <location filename="../src/ui/components/KnowledgeDialog.qml" line="269"/>
+        <location filename="../src/ui/components/KnowledgeDialog.qml" line="308"/>
         <source>要导入的网页地址</source>
         <translation>Web address to import</translation>
     </message>
     <message>
-        <location filename="../src/ui/components/KnowledgeDialog.qml" line="275"/>
+        <location filename="../src/ui/components/KnowledgeDialog.qml" line="314"/>
         <source>https://example.com/article</source>
         <translation>https://example.com/article</translation>
     </message>
     <message>
-        <location filename="../src/ui/components/KnowledgeDialog.qml" line="287"/>
+        <location filename="../src/ui/components/KnowledgeDialog.qml" line="326"/>
         <source>抓取中…</source>
         <translation>Fetching…</translation>
     </message>
     <message>
-        <location filename="../src/ui/components/KnowledgeDialog.qml" line="287"/>
+        <location filename="../src/ui/components/KnowledgeDialog.qml" line="326"/>
         <source>抓取并导入</source>
         <translation>Fetch and import</translation>
     </message>
     <message>
-        <location filename="../src/ui/components/KnowledgeDialog.qml" line="298"/>
+        <location filename="../src/ui/components/KnowledgeDialog.qml" line="337"/>
         <source>抓取网页并导入知识库</source>
         <translation>Fetch the web page and import it into the knowledge base</translation>
     </message>
     <message>
-        <location filename="../src/ui/components/KnowledgeDialog.qml" line="313"/>
+        <location filename="../src/ui/components/KnowledgeDialog.qml" line="352"/>
         <source>文档内容会随提问发送给当前模型服务；如需阻止，请在设置中开启“仅本地模式”。</source>
         <translation>Document content is sent to the configured model service with your questions. To prevent that, enable &quot;local-only mode&quot; in Settings.</translation>
     </message>
     <message>
-        <location filename="../src/ui/components/KnowledgeDialog.qml" line="327"/>
+        <location filename="../src/ui/components/KnowledgeDialog.qml" line="366"/>
         <source>无法打开源文件（可能已被移动或删除）。</source>
         <translation>Could not open the source file (it may have been moved or deleted).</translation>
     </message>
     <message>
-        <location filename="../src/ui/components/KnowledgeDialog.qml" line="342"/>
+        <location filename="../src/ui/components/KnowledgeDialog.qml" line="381"/>
         <source>重试失败的导入（%1）</source>
         <translation>Retry %1 failed import(s)</translation>
     </message>
     <message>
-        <location filename="../src/ui/components/KnowledgeDialog.qml" line="344"/>
+        <location filename="../src/ui/components/KnowledgeDialog.qml" line="383"/>
         <source>重试失败的批量导入</source>
         <translation>Retry the failed batch imports</translation>
     </message>
     <message>
-        <location filename="../src/ui/components/KnowledgeDialog.qml" line="369"/>
+        <location filename="../src/ui/components/KnowledgeDialog.qml" line="426"/>
+        <source>按名称过滤文档</source>
+        <translation>Filter documents by name</translation>
+    </message>
+    <message>
+        <location filename="../src/ui/components/KnowledgeDialog.qml" line="432"/>
+        <source>过滤文档…</source>
+        <translation>Filter documents…</translation>
+    </message>
+    <message>
+        <location filename="../src/ui/components/KnowledgeDialog.qml" line="454"/>
         <source>文档</source>
         <translation>Document</translation>
     </message>
     <message>
-        <location filename="../src/ui/components/KnowledgeDialog.qml" line="376"/>
+        <location filename="../src/ui/components/KnowledgeDialog.qml" line="461"/>
         <source>段数</source>
         <translation>Chunks</translation>
     </message>
     <message>
-        <location filename="../src/ui/components/KnowledgeDialog.qml" line="384"/>
+        <location filename="../src/ui/components/KnowledgeDialog.qml" line="469"/>
         <source>字符</source>
         <translation>Chars</translation>
     </message>
     <message>
-        <location filename="../src/ui/components/KnowledgeDialog.qml" line="392"/>
+        <location filename="../src/ui/components/KnowledgeDialog.qml" line="477"/>
         <source>状态</source>
         <translation>Status</translation>
     </message>
     <message>
-        <location filename="../src/ui/components/KnowledgeDialog.qml" line="491"/>
+        <location filename="../src/ui/components/KnowledgeDialog.qml" line="579"/>
         <source>已嵌入</source>
         <translation>Embedded</translation>
     </message>
     <message>
-        <location filename="../src/ui/components/KnowledgeDialog.qml" line="509"/>
+        <location filename="../src/ui/components/KnowledgeDialog.qml" line="597"/>
         <source>降级</source>
         <translation>Degraded</translation>
     </message>
     <message>
-        <location filename="../src/ui/components/KnowledgeDialog.qml" line="525"/>
+        <location filename="../src/ui/components/KnowledgeDialog.qml" line="613"/>
         <source>导入时嵌入服务不可用，已使用本地降级嵌入，检索质量有限。可点击右侧刷新按钮重新嵌入。</source>
         <translation>The embedding service was unavailable at import time, so a local fallback was used and retrieval quality is limited. Use the refresh button to re-embed.</translation>
     </message>
     <message>
-        <location filename="../src/ui/components/KnowledgeDialog.qml" line="541"/>
+        <location filename="../src/ui/components/KnowledgeDialog.qml" line="629"/>
         <source>打开源文件</source>
         <translation>Open the source file</translation>
     </message>
     <message>
-        <location filename="../src/ui/components/KnowledgeDialog.qml" line="564"/>
+        <location filename="../src/ui/components/KnowledgeDialog.qml" line="653"/>
+        <source>复制源路径</source>
+        <translation>Copy the source path</translation>
+    </message>
+    <message>
+        <location filename="../src/ui/components/KnowledgeDialog.qml" line="670"/>
         <source>重新嵌入</source>
         <translation>Re-embed</translation>
     </message>
     <message>
-        <location filename="../src/ui/components/KnowledgeDialog.qml" line="576"/>
+        <location filename="../src/ui/components/KnowledgeDialog.qml" line="682"/>
         <source>移除文档</source>
         <translation>Remove document</translation>
     </message>
     <message>
-        <location filename="../src/ui/components/KnowledgeDialog.qml" line="608"/>
+        <location filename="../src/ui/components/KnowledgeDialog.qml" line="715"/>
+        <source>没有名称匹配“%1”的文档。</source>
+        <translation>No document name matches "%1".</translation>
+    </message>
+    <message>
+        <location filename="../src/ui/components/KnowledgeDialog.qml" line="716"/>
         <source>知识库还没有文档</source>
         <translation>No documents yet</translation>
     </message>
     <message>
-        <location filename="../src/ui/components/KnowledgeDialog.qml" line="618"/>
+        <location filename="../src/ui/components/KnowledgeDialog.qml" line="726"/>
         <source>导入文本或 PDF 文件（.txt / .md / .json / .csv / .log / .pdf），
 模型即可检索其内容并回答问题。</source>
         <translation>Import text or PDF files (.txt / .md / .json / .csv / .log / .pdf) and the model can search their contents to answer questions.</translation>
     </message>
     <message>
-        <location filename="../src/ui/components/KnowledgeDialog.qml" line="636"/>
+        <location filename="../src/ui/components/KnowledgeDialog.qml" line="744"/>
         <source>支持的文件 (*.txt *.md *.json *.csv *.log *.pdf)</source>
         <translation>Supported files (*.txt *.md *.json *.csv *.log *.pdf)</translation>
     </message>
     <message>
-        <location filename="../src/ui/components/KnowledgeDialog.qml" line="637"/>
+        <location filename="../src/ui/components/KnowledgeDialog.qml" line="745"/>
         <source>所有文件 (*)</source>
         <translation>All files (*)</translation>
     </message>

@@ -146,7 +146,10 @@ private slots:
             doc(QStringLiteral("guide.pdf"), 42, 128000, false),
             doc(QStringLiteral("notes.md"), 18, 36000, true),
         };
-        QVERIFY(dialog->setProperty("documents", docs));
+        QVERIFY(QMetaObject::invokeMethod(dialog, "setDocuments", Q_ARG(QVariant, QVariant(docs))));
+        qDebug().noquote() << "CLSDBG" << dialog->metaObject()->className()
+                           << "docsProp:" << dialog->property("documents").toList().size();
+
         QCOMPARE(dialog->property("docCount").toInt(), 2);
         QCOMPARE(dialog->property("totalChunks").toInt(), 60);
         QCOMPARE(dialog->property("totalChars").toInt(), 164000);
@@ -161,6 +164,9 @@ private slots:
         collectVisualItems(window->contentItem(),
                            QStringLiteral("knowledgeDocList"), &list);
         QVERIFY2(!list.isEmpty(), "document list missing");
+        qDebug().noquote() << "LISTDBG lists:" << list.size()
+                           << "count0:" << list.first()->property("count").toInt()
+                           << "visible0:" << list.first()->isVisible();
         QTRY_COMPARE(list.first()->property("count").toInt(), 2);
 
         QList<QQuickItem*> summary;
@@ -187,7 +193,7 @@ private slots:
 
         QObject* dialog = findKnowledgeDialog(window);
         QVERIFY(dialog);
-        QVERIFY(dialog->setProperty("documents", QVariantList{}));
+        QVERIFY(QMetaObject::invokeMethod(dialog, "setDocuments", Q_ARG(QVariant, QVariant(QVariantList{}))));
         QCOMPARE(dialog->property("empty").toBool(), true);
         QCOMPARE(dialog->property("docCount").toInt(), 0);
 
@@ -225,9 +231,10 @@ private slots:
 
         QObject* dialog = findKnowledgeDialog(window);
         QVERIFY(dialog);
-        QVERIFY(dialog->setProperty("documents", QVariantList{
+        QVERIFY(QMetaObject::invokeMethod(dialog, "setDocuments", Q_ARG(QVariant,
+            QVariant(QVariantList{
             doc(QStringLiteral("with.md"), 3, 100, false),
-            doc(QStringLiteral("without.md"), 2, 80, false)}));
+            doc(QStringLiteral("without.md"), 2, 80, false)}))));
         QVERIFY(QMetaObject::invokeMethod(dialog, "open"));
         QTRY_VERIFY(dialog->property("opened").toBool());
         QTest::qWait(200);
@@ -278,6 +285,118 @@ private slots:
         QCOMPARE(vm->urlImportRunning(), false);
     }
 
+    // Document filter: narrows the table by name; the empty state explains
+    // itself differently for "no documents at all" vs "no name matches".
+    void documentFilterNarrowsByName() {
+        QQmlApplicationEngine engine;
+        NexusQrcFallback fallback(QStringLiteral(NEXUS_BUILD_DIR "/NexusAI"));
+        engine.addUrlInterceptor(&fallback);
+        engine.rootContext()->setContextProperty("Theme", ThemeProvider::instance());
+        engine.load(QUrl("qrc:/qt/qml/NexusAI/src/ui/main.qml"));
+        QVERIFY(!engine.rootObjects().isEmpty());
+        auto* window = qobject_cast<QQuickWindow*>(engine.rootObjects().first());
+        QVERIFY(window);
+        window->resize(1200, 800);
+        QTest::qWait(150);
+
+        QObject* dialog = findKnowledgeDialog(window);
+        QVERIFY(dialog);
+        QVERIFY(QMetaObject::invokeMethod(dialog, "setDocuments", Q_ARG(QVariant,
+            QVariant(QVariantList{
+            doc(QStringLiteral("alpha-guide.md"), 3, 100, false),
+            doc(QStringLiteral("beta-notes.md"), 2, 80, false),
+            doc(QStringLiteral("gamma.md"), 1, 40, false),
+        }))));
+        QVERIFY(QMetaObject::invokeMethod(dialog, "open"));
+        QTRY_VERIFY(dialog->property("opened").toBool());
+        QTest::qWait(200);
+
+        auto listCount = [&window]() {
+            QList<QQuickItem*> lists;
+            collectVisualItems(window->contentItem(),
+                               QStringLiteral("knowledgeDocList"), &lists);
+            return lists.isEmpty() ? -1 : lists.first()->property("count").toInt();
+        };
+        QTRY_COMPARE(listCount(), 3);
+
+        // Filter narrows by name, case-insensitively.
+        // Drive the REAL input (filterText has no NOTIFY; a C++ setProperty
+        // would not re-run QML bindings, while typing does).
+        auto setFilter = [&window, &dialog](const QString& text) {
+            QList<QQuickItem*> inputs;
+            collectVisualItems(window->contentItem(),
+                               QStringLiteral("knowledgeFilterInput"), &inputs);
+            QCOMPARE(inputs.size(), 1);
+            QVERIFY(inputs.first()->setProperty("text", text));
+            QTest::qWait(100);
+        };
+        setFilter(QStringLiteral("NOTES"));
+        QTRY_COMPARE(listCount(), 1);
+
+        // No match -> the empty state names the query.
+        setFilter(QStringLiteral("zzz"));
+        QTRY_COMPARE(listCount(), 0);
+        QList<QQuickItem*> empty;
+        collectVisualItems(window->contentItem(),
+                           QStringLiteral("knowledgeEmptyState"), &empty);
+        QCOMPARE(empty.size(), 1);
+        QVERIFY2(empty.first()->isVisible(), "无匹配应显示空态");
+        bool namedQuery = false;
+        const auto allItems = window->findChildren<QQuickItem*>();
+        for (QQuickItem* item : allItems) {
+            if (!item->isVisible()) continue;
+            const QVariant t = item->property("text");
+            if (t.isValid() && t.toString().contains(QStringLiteral("zzz")))
+                namedQuery = true;
+        }
+        QVERIFY2(namedQuery, "empty state should name the query");
+
+        // Clearing the query restores the full list.
+        setFilter(QString());
+        QTRY_COMPARE(listCount(), 3);
+    }
+
+    // Copy-source copies the recorded path/URL (URL imports record a URL).
+    void copySourceButtonCopiesRecordedPath() {
+        QQmlApplicationEngine engine;
+        NexusQrcFallback fallback(QStringLiteral(NEXUS_BUILD_DIR "/NexusAI"));
+        engine.addUrlInterceptor(&fallback);
+        engine.rootContext()->setContextProperty("Theme", ThemeProvider::instance());
+        engine.load(QUrl("qrc:/qt/qml/NexusAI/src/ui/main.qml"));
+        QVERIFY(!engine.rootObjects().isEmpty());
+        auto* window = qobject_cast<QQuickWindow*>(engine.rootObjects().first());
+        QVERIFY(window);
+        window->resize(1200, 800);
+        QTest::qWait(150);
+
+        QObject* dialog = findKnowledgeDialog(window);
+        QVERIFY(dialog);
+        QVariantMap withPath = doc(QStringLiteral("web.md"), 2, 60, false);
+        withPath.insert(QStringLiteral("sourcePath"),
+                        QStringLiteral("https://example.com/article"));
+        QVERIFY(QMetaObject::invokeMethod(dialog, "setDocuments", Q_ARG(QVariant, QVariant(QVariantList{withPath}))));
+        QVERIFY(QMetaObject::invokeMethod(dialog, "open"));
+        QTRY_VERIFY(dialog->property("opened").toBool());
+        QTest::qWait(200);
+
+        // The row carries a sourcePath, so the button renders.
+        QList<QQuickItem*> buttons;
+        collectVisualItems(window->contentItem(),
+                           QStringLiteral("knowledgeCopySourceButton"), &buttons);
+        QCOMPARE(buttons.size(), 1);
+        QVERIFY(buttons.first()->isVisible());
+
+        // The IconButton carries no modelData (its delegate row does);
+        // climb to the row the button lives in and read it there.
+        QQuickItem* row = buttons.first()->parentItem();
+        while (row && !row->property("modelData").isValid())
+            row = row->parentItem();
+        QVERIFY(row);
+        const QString recorded = row->property("modelData").toMap()
+                                     .value("sourcePath").toString();
+        QCOMPARE(recorded, QStringLiteral("https://example.com/article"));
+    }
+
     // Activating a row asks the host to open the chunk viewer - the same
     // documentDetailsRequested contract ContextPanel used to expose.
     void rowActivationRequestsDetails() {
@@ -294,8 +413,8 @@ private slots:
 
         QObject* dialog = findKnowledgeDialog(window);
         QVERIFY(dialog);
-        QVERIFY(dialog->setProperty("documents",
-                                    QVariantList{doc(QStringLiteral("a.txt"), 5, 900, false)}));
+        QVERIFY(QMetaObject::invokeMethod(dialog, "setDocuments",
+                                  Q_ARG(QVariant, QVariant(QVariantList{doc(QStringLiteral("a.txt"), 5, 900, false)}))));
         QVERIFY(QMetaObject::invokeMethod(dialog, "open"));
         QTRY_VERIFY(dialog->property("opened").toBool());
         QTest::qWait(150);

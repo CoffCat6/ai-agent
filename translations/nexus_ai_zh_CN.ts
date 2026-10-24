@@ -2859,189 +2859,209 @@
 <context>
     <name>KnowledgeDialog</name>
     <message>
-        <location filename="../src/ui/components/KnowledgeDialog.qml" line="90"/>
-        <location filename="../src/ui/components/KnowledgeDialog.qml" line="111"/>
+        <location filename="../src/ui/components/KnowledgeDialog.qml" line="129"/>
+        <location filename="../src/ui/components/KnowledgeDialog.qml" line="150"/>
         <source>知识库</source>
         <translation>知识库</translation>
     </message>
     <message>
-        <location filename="../src/ui/components/KnowledgeDialog.qml" line="91"/>
+        <location filename="../src/ui/components/KnowledgeDialog.qml" line="130"/>
         <source>管理供模型检索的本地文档</source>
         <translation>管理供模型检索的本地文档</translation>
     </message>
     <message>
-        <location filename="../src/ui/components/KnowledgeDialog.qml" line="125"/>
+        <location filename="../src/ui/components/KnowledgeDialog.qml" line="164"/>
         <source>%1 个文档 · %2 段 · %3 字符</source>
         <translation>%1 个文档 · %2 段 · %3 字符</translation>
     </message>
     <message>
-        <location filename="../src/ui/components/KnowledgeDialog.qml" line="161"/>
+        <location filename="../src/ui/components/KnowledgeDialog.qml" line="200"/>
         <source>批量导入 %1/%2：正在取消…</source>
         <translation>批量导入 %1/%2：正在取消…</translation>
     </message>
     <message>
-        <location filename="../src/ui/components/KnowledgeDialog.qml" line="165"/>
+        <location filename="../src/ui/components/KnowledgeDialog.qml" line="204"/>
         <source>批量导入 %1/%2：%3</source>
         <translation>批量导入 %1/%2：%3</translation>
     </message>
     <message>
-        <location filename="../src/ui/components/KnowledgeDialog.qml" line="170"/>
+        <location filename="../src/ui/components/KnowledgeDialog.qml" line="209"/>
         <source>已嵌入 %1/%2</source>
         <translation>已嵌入 %1/%2</translation>
     </message>
     <message>
-        <location filename="../src/ui/components/KnowledgeDialog.qml" line="173"/>
+        <location filename="../src/ui/components/KnowledgeDialog.qml" line="212"/>
         <source>导入中…</source>
         <translation>导入中…</translation>
     </message>
     <message>
-        <location filename="../src/ui/components/KnowledgeDialog.qml" line="191"/>
+        <location filename="../src/ui/components/KnowledgeDialog.qml" line="230"/>
         <source>正在取消（等待当前文件完成）</source>
         <translation>正在取消（等待当前文件完成）</translation>
     </message>
     <message>
-        <location filename="../src/ui/components/KnowledgeDialog.qml" line="192"/>
+        <location filename="../src/ui/components/KnowledgeDialog.qml" line="231"/>
         <source>取消批量导入（未开始的文件将跳过）</source>
         <translation>取消批量导入（未开始的文件将跳过）</translation>
     </message>
     <message>
-        <location filename="../src/ui/components/KnowledgeDialog.qml" line="200"/>
+        <location filename="../src/ui/components/KnowledgeDialog.qml" line="239"/>
         <source>导入文档</source>
         <translation>导入文档</translation>
     </message>
     <message>
-        <location filename="../src/ui/components/KnowledgeDialog.qml" line="206"/>
+        <location filename="../src/ui/components/KnowledgeDialog.qml" line="245"/>
         <source>导入文档到知识库（可多选）</source>
         <translation>导入文档到知识库（可多选）</translation>
     </message>
     <message>
-        <location filename="../src/ui/components/KnowledgeDialog.qml" line="215"/>
+        <location filename="../src/ui/components/KnowledgeDialog.qml" line="254"/>
         <source>从 URL 导入</source>
         <translation>从 URL 导入</translation>
     </message>
     <message>
-        <location filename="../src/ui/components/KnowledgeDialog.qml" line="220"/>
+        <location filename="../src/ui/components/KnowledgeDialog.qml" line="259"/>
         <source>从网页地址导入知识库</source>
         <translation>从网页地址导入知识库</translation>
     </message>
     <message>
-        <location filename="../src/ui/components/KnowledgeDialog.qml" line="228"/>
+        <location filename="../src/ui/components/KnowledgeDialog.qml" line="267"/>
         <source>关闭知识库</source>
         <translation>关闭知识库</translation>
     </message>
     <message>
-        <location filename="../src/ui/components/KnowledgeDialog.qml" line="269"/>
+        <location filename="../src/ui/components/KnowledgeDialog.qml" line="308"/>
         <source>要导入的网页地址</source>
         <translation>要导入的网页地址</translation>
     </message>
     <message>
-        <location filename="../src/ui/components/KnowledgeDialog.qml" line="275"/>
+        <location filename="../src/ui/components/KnowledgeDialog.qml" line="314"/>
         <source>https://example.com/article</source>
         <translation>https://example.com/article</translation>
     </message>
     <message>
-        <location filename="../src/ui/components/KnowledgeDialog.qml" line="287"/>
+        <location filename="../src/ui/components/KnowledgeDialog.qml" line="326"/>
         <source>抓取中…</source>
         <translation>抓取中…</translation>
     </message>
     <message>
-        <location filename="../src/ui/components/KnowledgeDialog.qml" line="287"/>
+        <location filename="../src/ui/components/KnowledgeDialog.qml" line="326"/>
         <source>抓取并导入</source>
         <translation>抓取并导入</translation>
     </message>
     <message>
-        <location filename="../src/ui/components/KnowledgeDialog.qml" line="298"/>
+        <location filename="../src/ui/components/KnowledgeDialog.qml" line="337"/>
         <source>抓取网页并导入知识库</source>
         <translation>抓取网页并导入知识库</translation>
     </message>
     <message>
-        <location filename="../src/ui/components/KnowledgeDialog.qml" line="313"/>
+        <location filename="../src/ui/components/KnowledgeDialog.qml" line="352"/>
         <source>文档内容会随提问发送给当前模型服务；如需阻止，请在设置中开启“仅本地模式”。</source>
         <translation>文档内容会随提问发送给当前模型服务；如需阻止，请在设置中开启“仅本地模式”。</translation>
     </message>
     <message>
-        <location filename="../src/ui/components/KnowledgeDialog.qml" line="327"/>
+        <location filename="../src/ui/components/KnowledgeDialog.qml" line="366"/>
         <source>无法打开源文件（可能已被移动或删除）。</source>
         <translation>无法打开源文件（可能已被移动或删除）。</translation>
     </message>
     <message>
-        <location filename="../src/ui/components/KnowledgeDialog.qml" line="342"/>
+        <location filename="../src/ui/components/KnowledgeDialog.qml" line="381"/>
         <source>重试失败的导入（%1）</source>
         <translation>重试失败的导入（%1）</translation>
     </message>
     <message>
-        <location filename="../src/ui/components/KnowledgeDialog.qml" line="344"/>
+        <location filename="../src/ui/components/KnowledgeDialog.qml" line="383"/>
         <source>重试失败的批量导入</source>
         <translation>重试失败的批量导入</translation>
     </message>
     <message>
-        <location filename="../src/ui/components/KnowledgeDialog.qml" line="369"/>
+        <location filename="../src/ui/components/KnowledgeDialog.qml" line="426"/>
+        <source>按名称过滤文档</source>
+        <translation>按名称过滤文档</translation>
+    </message>
+    <message>
+        <location filename="../src/ui/components/KnowledgeDialog.qml" line="432"/>
+        <source>过滤文档…</source>
+        <translation>过滤文档…</translation>
+    </message>
+    <message>
+        <location filename="../src/ui/components/KnowledgeDialog.qml" line="454"/>
         <source>文档</source>
         <translation>文档</translation>
     </message>
     <message>
-        <location filename="../src/ui/components/KnowledgeDialog.qml" line="376"/>
+        <location filename="../src/ui/components/KnowledgeDialog.qml" line="461"/>
         <source>段数</source>
         <translation>段数</translation>
     </message>
     <message>
-        <location filename="../src/ui/components/KnowledgeDialog.qml" line="384"/>
+        <location filename="../src/ui/components/KnowledgeDialog.qml" line="469"/>
         <source>字符</source>
         <translation>字符</translation>
     </message>
     <message>
-        <location filename="../src/ui/components/KnowledgeDialog.qml" line="392"/>
+        <location filename="../src/ui/components/KnowledgeDialog.qml" line="477"/>
         <source>状态</source>
         <translation>状态</translation>
     </message>
     <message>
-        <location filename="../src/ui/components/KnowledgeDialog.qml" line="491"/>
+        <location filename="../src/ui/components/KnowledgeDialog.qml" line="579"/>
         <source>已嵌入</source>
         <translation>已嵌入</translation>
     </message>
     <message>
-        <location filename="../src/ui/components/KnowledgeDialog.qml" line="509"/>
+        <location filename="../src/ui/components/KnowledgeDialog.qml" line="597"/>
         <source>降级</source>
         <translation>降级</translation>
     </message>
     <message>
-        <location filename="../src/ui/components/KnowledgeDialog.qml" line="525"/>
+        <location filename="../src/ui/components/KnowledgeDialog.qml" line="613"/>
         <source>导入时嵌入服务不可用，已使用本地降级嵌入，检索质量有限。可点击右侧刷新按钮重新嵌入。</source>
         <translation>导入时嵌入服务不可用，已使用本地降级嵌入，检索质量有限。可点击右侧刷新按钮重新嵌入。</translation>
     </message>
     <message>
-        <location filename="../src/ui/components/KnowledgeDialog.qml" line="541"/>
+        <location filename="../src/ui/components/KnowledgeDialog.qml" line="629"/>
         <source>打开源文件</source>
         <translation>打开源文件</translation>
     </message>
     <message>
-        <location filename="../src/ui/components/KnowledgeDialog.qml" line="564"/>
+        <location filename="../src/ui/components/KnowledgeDialog.qml" line="653"/>
+        <source>复制源路径</source>
+        <translation>复制源路径</translation>
+    </message>
+    <message>
+        <location filename="../src/ui/components/KnowledgeDialog.qml" line="670"/>
         <source>重新嵌入</source>
         <translation>重新嵌入</translation>
     </message>
     <message>
-        <location filename="../src/ui/components/KnowledgeDialog.qml" line="576"/>
+        <location filename="../src/ui/components/KnowledgeDialog.qml" line="682"/>
         <source>移除文档</source>
         <translation>移除文档</translation>
     </message>
     <message>
-        <location filename="../src/ui/components/KnowledgeDialog.qml" line="608"/>
+        <location filename="../src/ui/components/KnowledgeDialog.qml" line="715"/>
+        <source>没有名称匹配“%1”的文档。</source>
+        <translation>没有名称匹配“%1”的文档。</translation>
+    </message>
+    <message>
+        <location filename="../src/ui/components/KnowledgeDialog.qml" line="716"/>
         <source>知识库还没有文档</source>
         <translation>知识库还没有文档</translation>
     </message>
     <message>
-        <location filename="../src/ui/components/KnowledgeDialog.qml" line="618"/>
+        <location filename="../src/ui/components/KnowledgeDialog.qml" line="726"/>
         <source>导入文本或 PDF 文件（.txt / .md / .json / .csv / .log / .pdf），
 模型即可检索其内容并回答问题。</source>
         <translation>导入文本或 PDF 文件（.txt / .md / .json / .csv / .log</translation>
     </message>
     <message>
-        <location filename="../src/ui/components/KnowledgeDialog.qml" line="636"/>
+        <location filename="../src/ui/components/KnowledgeDialog.qml" line="744"/>
         <source>支持的文件 (*.txt *.md *.json *.csv *.log *.pdf)</source>
         <translation>支持的文件 (*.txt *.md *.json *.csv *.log *.pdf)</translation>
     </message>
     <message>
-        <location filename="../src/ui/components/KnowledgeDialog.qml" line="637"/>
+        <location filename="../src/ui/components/KnowledgeDialog.qml" line="745"/>
         <source>所有文件 (*)</source>
         <translation>所有文件 (*)</translation>
     </message>
