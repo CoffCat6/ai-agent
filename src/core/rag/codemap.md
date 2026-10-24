@@ -56,7 +56,7 @@
 1. Worker 线程 `readAndIngestFile(path, rag)`：`.pdf` → `extractPdfText()`（`PdfExtractResult{status, text, pageTexts, detail}`，区分 `OpenFailed/Encrypted/Corrupted/NoText`）；其余按 UTF-8 读。
 2. 内容去重：`knowledgeContentHash` → `rag->containsContentHash()` 命中即 `duplicate`；命名冲突用 `uniqueDocumentName()` 生成 `a (2).txt`。
 3. `startIngestion` → `QtConcurrent::run(rag->ingestDocument(name, content, pageTexts))`，GUI 侧 `QFutureWatcher` 收结果码（`ok` / `degraded`（pseudo）/ `failed`）。
-4. `ingestDocument`：可选先 chunk + `mapChunksToPages`；`buildRetriever`（锁外做网络嵌入）→ `exportChunks` → 锁内预算检查 + 替换同名 → `emit changed()` + `emit documentPersisted(name, content, chunks)`。
+4. `ingestDocument`：可选先 chunk + `mapChunksToPages`；`buildRetriever`（锁外做网络嵌入）→ `exportChunks` → 锁内预算检查 + 替换同名 → `emit changed()` + `emit documentPersisted(name, content, sourcePath, chunks)`。**sourcePath（2026-10-24）**：导入文件时记录绝对路径，随 `Document.sourcePath` 在内存与信号中贯通，最终落 `knowledge_documents.source_path`——支持"打开源文件"。restore 路径从内存旧值带回（不丢），re-embed 不带（持久层 COALESCE 保护）。
 5. `main.cpp` 以 `&app` 为 context 连接 `documentPersisted`（跨线程排队到 GUI）→ `memory->upsertKnowledgeDoc(...)` + `replaceKnowledgeChunks(...)`。
 
 ### PDF 页码映射（`RagService::mapChunksToPages`）

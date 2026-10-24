@@ -32,6 +32,8 @@
 
 **ProjectFileIndex**（`NexusAI::ProjectFileIndex` 纯函数命名空间，无状态、无缓存）：`scan` 递归（`NoSymLinks` + `Hidden`），跳过 23 个硬编码目录名 + `cmake-build-*`/`build-*` 前缀，只收白名单后缀（约 90 种）或无后缀白名单名（Makefile/Dockerfile/CMakeLists.txt/.env.example 等），上限默认 20000，输出 `/` 分隔的相对路径。`complete` 四级评分（basename 前缀 0 > basename 包含 1 > 路径前缀 2 > 路径包含 3），同分按路径长度再字典序。`mentionAt` 处理光标处 '@'（前一字符须空白/起始，光标须在 token 边界）与 `"引号路径"`；`mentionPaths` 抽取全部 token 并剥离尾部中英文标点、去重。`resolveReferences` 限 8 文件 / 24 KB 单文件 / 96 KB 总量，拒绝绝对路径、`..`、Windows 盘符相对路径 `C:foo`、canonical 逃逸 root、敏感文件与含 `\0` 的二进制，超限追加 `[... truncated ...]`；`checkReferences` 只做路径校验（32 项上限）返回 `no-project|missing|outside|sensitive`，供输入框实时标红。
 
+**文件浏览扩展（2026-10-24 批次）**：`listDir(root, relPath)` 一次只读一层，目录优先 + 各组字典序，供右侧栏懒展开树（`ProjectFileVM.children`）；**过滤规则与 `scan` 有意不同**——只排除 ignore 目录与敏感文件，**不套后缀白名单**（浏览器要看见 README/LICENSE/.yaml 等非索引文件）。`readFilePreview(root, relPath, maxBytes=512KB)` 返回 `{text, bytes, truncated, binary, error}`：多读 1 字节探测截断、NUL 字节（前 8KB 内）判二进制、非 UTF-8 回退本地编码。`searchPaths(root, query, maxResults=50)` 递归全项目，相对路径大小写不敏感子串匹配，**规则与 `listDir` 完全一致**（刻意不复用 `scan`，否则"树里看得见但搜不到"），上限 50 条 + 2 秒时长熔断（网络盘/病态目录降级为部分结果）。三者共用 `resolveUnderRoot`：拒绝绝对路径、`..` 逃逸、Windows 盘符相对路径；一律不跟随符号链接。
+
 **NetworkProxyConfig**：值对象 `NetworkProxyConfig`（Mode System/Manual/Off + host/port/username/password，`manualUsable()` = 非空 host 且 port ∈ 1..65535）。`ConfigurableProxyFactory` 是应用级 `QNetworkProxyFactory`，`main.cpp` 装一次，`setConfig` 走 `QMutex`。决策顺序：目标 host 是 loopback（`localhost`/`127.0.0.1`/`::1`/`[::1]`/`*.localhost`）→ **永远 NoProxy**（本地 Ollama/网关）；Off → NoProxy；Manual 且可用 → `HttpProxy` + 可选凭据；Manual 不可用 → NoProxy（不静默回退系统代理）；System → `systemProxyForQuery()`，为空补 NoProxy。只支持 HTTP 代理，无 SOCKS。
 
 **AttachmentClassifier / DataUrlUtils / SamplingParams**：均为零 IO 纯函数。分类按 `QFileInfo::suffix()` 小写匹配 image 6 种（png/jpg/jpeg/webp/bmp/gif）与 text 约 42 种，其余含无扩展名 → Unsupported，`kindToString` 返回 `image|text|unsupported`。data URL 仅接受 `data:image/` 且含 `;base64,`，`parseDataUrl` 切出 mimeType 与 Base64 载荷（不解码、不校验 Base64 合法性）。`SamplingParams` 把脏值归一为**非法 QVariant**（语义"未设置"，Provider 省略字段而非发 0）：`optionalDouble`（有限非负）、`optionalPositiveInt`（>0 且 ≤ INT_MAX，防 4294967296 回绕成 0）、`optionalReasoningLevel`（off/low/medium/high，其余归一为空）。
@@ -61,7 +63,7 @@
 | `Activity.{h,cpp}` | 7 个日志分类、`report`/`usage`、`UsageSink` 注入 |
 | `TokenEstimator.h` | 启发式估算、`compressToFit`、`splitContextTokens`（header-only） |
 | `PricingCalculator.{h,cpp}` | 分/1M token 整数计价、`model_pricing` 进程级缓存 |
-| `ProjectFileIndex.{h,cpp}` | 扫描/补全/'@'解析/引用校验与读取 |
+| `ProjectFileIndex.{h,cpp}` | 扫描/补全/'@'解析/引用校验与读取；文件浏览三 API（`listDir` 一层目录、`readFilePreview` 预览、`searchPaths` 全项目搜索，规则见上） |
 | `NetworkProxyConfig.{h,cpp}` | 代理模式快照 + 应用级 `QNetworkProxyFactory`、loopback 绕过 |
 | `AttachmentClassifier.{h,cpp}` | image/text/unsupported 扩展名分派 |
 | `DataUrlUtils.{h,cpp}` | `data:image/...;base64,` 识别与拆分 |

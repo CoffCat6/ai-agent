@@ -116,9 +116,10 @@
 | `I18nManager` | 翻译器装载与运行时切语言（`I18n`） | `currentLocale/availableLocales`、`applyLocale(locale)` |
 | `ConnectionTester` | 一次性最小请求测试连接（不动实时管线） | `test(protocol, baseUrl, apiKey, model)`；信号 `testFinished(ok, message)` |
 | `GitViewModel` | 异步 Git 门面（`GitVM`）：只读历史/分支/blame + 显式写操作 | `refreshStatus`、`requestRepoLog/DiffHunks/Blame/Graph`、`stageFiles/commitStaged/undoLastCommit/discardPath/stashPush` |
+| `ProjectFileViewModel` | 右侧栏文件浏览门面（`ProjectFileVM`）：一层目录懒读 + 预览 + 打开，按 relPath 缓存（切根失效、失败不缓存），只读无写 | `children/preview/absolutePath/clearCache`、`openInDefaultApp`（清 `ELECTRON_RUN_AS_NODE`）、`openWithKnownEditor`（注册表探测 MarkText/VSCodium/VSCode 的 shell\open\command 应急拉起）、`openAbsolute/canonicalAbsolute`（知识库源文件用，不受项目根约束） |
 | `CommitMessageDrafter` | 一次性“从暂存 diff 起草提交信息”（`CommitDrafter`） | `draft(stagedDiff, recentSubjects)`、`cancel()`；信号 `drafted` |
 | `McpManager` | MCP server 运行时管理（`McpManager`）：连接/工具桥接/持久化 | `addServer/removeServer/setEnabled/reconnect`、`servers`、`lastError` |
-| `CodeHighlighter` | 代码块正则高亮 + 语言启发式识别（QML 元素，非单例） | `document/text/languageName` |
+| `CodeHighlighter` | 代码块正则高亮 + 语言识别（QML 元素，非单例）。语言来源二选一：`sourceName` 扩展名映射（文件预览；未知扩展名保持纯文本不猜），无名字走内容启发式（聊天代码块）；`visualLineSpans(wrapWidth)` 从 `QTextLayout` 取每逻辑行视觉行数（须显式传视口宽，惰性布局需内部自建且设 WrapAnywhere）；单行 >8KB 跳过高亮 | `document/text/sourceName/languageName/visualLineSpans/hasHighlightedText` |
 | `CitationParser` | `[文档名]` / `[doc:名#chunk]` 解析唯一实现 | `parse(text)`、`hasCitation(segments)` |
 | `PdfTextExtractor` | 自由函数 `extractPdfText` + `PdfExtractStatus`/`PdfExtractResult` | 无（C++/测试使用） |
 
@@ -169,7 +170,7 @@
 | `ChatSessionController.h/.cpp` | 158 / 310 | 单标签会话状态、agent 信号接线、历史环 |
 | `SettingsBackup.cpp` | 397 | 可移植键筛选、白名单 profile、回滚 |
 | `McpManager.cpp` | 293 | 连接/工具桥接/延迟退役/退出回收 |
-| `CodeHighlighter.cpp` | 321 | 语言启发式 + 五类 token 着色 |
+| `CodeHighlighter.cpp` | ~420 | 语言启发式 + 扩展名映射 + 五类 token 着色 + 单行预算 |
 | `PreferenceRegistry.cpp` / `PreferenceStore.cpp` | 222 / 114 | 元数据注册 / `prefs/v1` 读写 |
 | `TraceModel.cpp` / `LogModel.cpp` | 151 / 227 | trace 增量 diff / 日志环形镜像（上限 5000 行） |
 | `ThemeProvider.h` / `ThemeManager.cpp` | 208 / 190 | 设计令牌 / 主题偏好与系统配色 |

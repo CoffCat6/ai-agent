@@ -26,7 +26,7 @@
 | `episodic_fts` | 外部内容 FTS5（`content='episodic'`） | `summary, tags` | 摘要检索；触发 `episodic_ai/_ad`，`rowid` 对齐 `episodic.id` |
 | `trace_nodes` | `(session_id, node_id)` | `node_order, type, title, status, args, result, reasoning, timestamp, message_id, metadata, workspace_id` | 恢复会话时的可视化时间线（thinking/tool/summary） |
 | `file_checkpoints` | `id` AUTOINCREMENT | `path, before_content BLOB, existed, truncated, byte_size, request_id, created_at, undone_at, diff_text, added_lines, removed_lines, after_hash` | write_file/edit_file 写前快照，支持单条/按文件组撤销 |
-| `knowledge_documents` | `name` TEXT | `content, imported_at, content_hash, embedding_model` | 知识库原文 + 增量重建判据 |
+| `knowledge_documents` | `name` TEXT | `content, imported_at, content_hash, embedding_model, source_path` | 知识库原文 + 增量重建判据 + **源文件路径**（2026-10-24：导入记录绝对路径；upsert 对空路径 COALESCE 保护旧值；注意空 QString 经 addBindValue 绑定为 SQL NULL，NOT NULL 列须绑显式空串） |
 | `knowledge_chunks` | `(doc_name, chunk_index)` | `chunk_total, text, embedding BLOB, dim, pseudo, page` | 分块与向量；`page=-1` 表示无页码 |
 | `audit_log` | `id` AUTOINCREMENT | `session_id, event, tool_name, arguments, success, detail, timestamp, request_id, latency_ms, tokens, model, workspace_id` | 工具/请求审计；`arguments` 超 10000 字符截断后落库 |
 | `token_usage` | `id` AUTOINCREMENT | `request_id, session_id, model, timestamp`, 3 方向 × 多来源 token 列, `cost_cents, latency_ms` | 每次 LLM 请求一行；聚合统计的唯一精确来源 |
