@@ -7,12 +7,14 @@
 // without losing folder navigation, and that the preview reports truncation
 // and binary instead of looking empty.
 #include <QtTest>
+#include <QGuiApplication>
 #include <QQmlApplicationEngine>
 #include <QQmlComponent>
 #include <QQmlContext>
 #include <QQmlAbstractUrlInterceptor>
 #include <QQuickWindow>
 #include <QQuickItem>
+#include <QClipboard>
 #include <cmath>
 #include <QDir>
 #include <QFile>
@@ -899,6 +901,36 @@ private slots:
                  qPrintable(QStringLiteral("fallback result: %1").arg(launched)));
     }
 
+    // Copy-path button: takes the absolute path of the previewed file into the
+    // clipboard, so a path can move to a terminal or another editor without
+    // retyping.
+    void copyPathPutsAbsolutePathOnClipboard() {
+        writeFile("clip.txt", "x\n");
+
+        Harness h;
+        QVERIFY2(h.window, qPrintable(h.error));
+        QVERIFY(h.invoke1("setProjectRoot", m_dir->path()));
+        QTRY_VERIFY(h.call("rowCount").toInt() >= 1);
+        QVERIFY(h.invoke1("selectFile", QStringLiteral("clip.txt")));
+        QTRY_COMPARE(h.call("previewVisible").toBool(), true);
+
+        // The button exists and is visible at this width. The click itself is
+        // not asserted on the offscreen platform (synthetic clicks to popup
+        // children are not reliably delivered there), so the observable is the
+        // same code the button runs.
+        const QString abs = h.call1("copyPathDirect",
+                                    QStringLiteral("clip.txt")).toString();
+        QVERIFY2(!abs.isEmpty(), "absolutePath must resolve an in-project file");
+
+        // The clipboard now holds the project-contained absolute path.
+        QClipboard* clipboard = QGuiApplication::clipboard();
+        const QString text = clipboard->text();
+        QVERIFY2(text.endsWith(QStringLiteral("clip.txt")),
+                 qPrintable(QStringLiteral("剪贴板应为文件路径，实际：%1").arg(text)));
+        QVERIFY2(text.startsWith(m_dir->path()),
+                 qPrintable(QStringLiteral("路径应在项目根内：%1").arg(text)));
+    }
+
     // THE regression the user hit: nexus_ai started from a VSCode-family
     // terminal inherits ELECTRON_RUN_AS_NODE=1, and every Electron handler
     // launched from inside then boots as bare Node and crashes on the file
@@ -1023,6 +1055,97 @@ private slots:
         QTRY_COMPARE(h.call1("lineNumberRowHeight", 0).toDouble(), flat);
     }
 
+    // ── project-wide search ─────────────────────────────
+
+    // The old filter only matched rows already built from expanded folders, so
+    // a file inside a collapsed directory was unfindable. A query must now
+    // switch the list to whole-project results, which finds files the user
+    // never unfolded.
+    void searchFindsFilesInCollapsedFolders() {
+        writeFile("src/core/memory/SqliteMemory.cpp", "db\n");
+        writeFile("readme.md", "readme\n");
+
+        Harness h;
+        QVERIFY2(h.window, qPrintable(h.error));
+        QVERIFY(h.invoke1("setProjectRoot", m_dir->path()));
+        QTRY_VERIFY(h.call("rowCount").toInt() >= 1);
+
+        // Everything is collapsed by default: the deep file has no tree row.
+        QCOMPARE(h.call1("rowIndexOf", QStringLiteral("src/core/memory/SqliteMemory.cpp")).toInt(), -1);
+
+        // Searching the whole project finds it anyway.
+        QVERIFY(h.invoke1("setFilter", QStringLiteral("SqliteMemory")));
+        QTRY_COMPARE(h.call("rowCount").toInt(), 1);
+        QCOMPARE(h.call1("rowPathAt", 0).toString(),
+                 QStringLiteral("src/core/memory/SqliteMemory.cpp"));
+        QCOMPARE(h.call1("rowIsDirAt", 0).toBool(), false);
+    }
+
+    // Selecting a search hit previews the file AND switches back to the tree
+    // with that file revealed - search answers "where is it", the tree stays
+    // the navigation home.
+    void searchHitSelectsAndReturnsToTree() {
+        writeFile("deep/nested/target.txt", "x\n");
+
+        Harness h;
+        QVERIFY2(h.window, qPrintable(h.error));
+        QVERIFY(h.invoke1("setProjectRoot", m_dir->path()));
+        QTRY_VERIFY(h.call("rowCount").toInt() >= 1);
+
+        QVERIFY(h.invoke1("setFilter", QStringLiteral("target")));
+        QTRY_COMPARE(h.call("rowCount").toInt(), 1);
+        QVERIFY(h.invoke1("selectFile", QStringLiteral("deep/nested/target.txt")));
+        QTRY_COMPARE(h.call("previewVisible").toBool(), true);
+        QCOMPARE(h.call("selectedPath").toString(),
+                 QStringLiteral("deep/nested/target.txt"));
+
+        // Preview came from the search hit; the tree was rebuilt opened at the
+        // file's folder, so the row now exists.
+        QTRY_VERIFY(h.call1("rowIndexOf", QStringLiteral("deep/nested/target.txt")).toInt() >= 0);
+        // ...and the filter cleared, so the tree shows everything again.
+        QTRY_COMPARE(h.call("rowCount").toInt() >= 2, true);
+    }
+
+    // Search respects the same hide rules as the tree: ignored directories and
+    // sensitive files never surface, whichever view is showing.
+    void searchHidesIgnoredAndSensitive() {
+        writeFile("node_modules/pkg/index.js", "js\n");
+        writeFile(".env", "SECRET=1\n");
+        writeFile("visible.txt", "v\n");
+
+        Harness h;
+        QVERIFY2(h.window, qPrintable(h.error));
+        QVERIFY(h.invoke1("setProjectRoot", m_dir->path()));
+        QTRY_VERIFY(h.call("rowCount").toInt() >= 1);
+
+        // A query broad enough to match all three by extension or name.
+        QVERIFY(h.invoke1("setFilter", QStringLiteral("e")));
+        QTRY_VERIFY(h.call("rowCount").toInt() >= 1);
+        QStringList paths;
+        for (int i = 0; i < h.call("rowCount").toInt(); ++i)
+            paths.append(h.call1("rowPathAt", i).toString());
+        QVERIFY2(!paths.join("|").contains(QStringLiteral("node_modules")),
+                 "ignore 目录不应出现在搜索结果");
+        QVERIFY2(!paths.join("|").contains(QStringLiteral(".env")),
+                 "敏感文件不应出现在搜索结果");
+    }
+
+    // Clearing the query returns to the ordinary tree view.
+    void clearingFilterRestoresTree() {
+        writeFile("alpha/beta.txt", "b\n");
+
+        Harness h;
+        QVERIFY2(h.window, qPrintable(h.error));
+        QVERIFY(h.invoke1("setProjectRoot", m_dir->path()));
+        QTRY_VERIFY(h.call("rowCount").toInt() >= 1);
+
+        QVERIFY(h.invoke1("setFilter", QStringLiteral("beta")));
+        QTRY_COMPARE(h.call("rowCount").toInt(), 1);
+        QVERIFY(h.invoke1("setFilter", QString()));
+        // Back to the collapsed tree: just the folder row.
+        QTRY_COMPARE(h.call("rowCount").toInt(), 1);
+        QCOMPARE(h.call1("rowIsDirAt", 0).toBool(), true);
+    }
 private:
     void writeFile(const QString& relative, const QByteArray& content) {
         const QString full = m_dir->path() + "/" + relative;
@@ -1037,3 +1160,4 @@ private:
 
 QTEST_MAIN(TestProjectFilesPanel)
 #include "test_project_files_panel.moc"
+

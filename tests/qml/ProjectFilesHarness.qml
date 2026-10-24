@@ -26,17 +26,22 @@ Window {
     function setProjectRoot(path) { panel.projectRoot = path }
     function projectRoot() { return panel.projectRoot }
     function setFilter(text) { panel.filterText = text }
-    function rowCount() { return panel.rows.length }
+    // The ListView's actual model: the tree rows, or search hits in search
+    // mode. Assertions about "what the list shows" must read this, not
+    // panel.rows, or search-mode results are invisible to the test.
+    function rowCount() { return panel.searchMode ? panel.searchResults.length : panel.rows.length }
     function rowNames() {
         var out = []
         for (var i = 0; i < panel.rows.length; ++i) out.push(panel.rows[i].name)
         return out
     }
     function rowPathAt(index) {
-        return index >= 0 && index < panel.rows.length ? panel.rows[index].relPath : ""
+        var rows = panel.searchMode ? panel.searchResults : panel.rows
+        return index >= 0 && index < rows.length ? rows[index].relPath : ""
     }
     function rowIsDirAt(index) {
-        return index >= 0 && index < panel.rows.length ? panel.rows[index].isDir : false
+        var rows = panel.searchMode ? panel.searchResults : panel.rows
+        return index >= 0 && index < rows.length ? rows[index].isDir : false
     }
     function rowDepthAt(index) {
         return index >= 0 && index < panel.rows.length ? panel.rows[index].depth : -1
@@ -45,6 +50,13 @@ Window {
     function collapseAll() { panel.collapseAll() }
     function collapseAllFromToolbar() { panel.collapseAll() }
     function refresh() { panel.refresh() }
+    // Copy path via the VM, bypassing the button click (the click path is
+    // covered by the visible-button assertions).
+    function copyPathDirect(relPath) {
+        var abs = ProjectFileVM.absolutePath(relPath)
+        if (abs.length > 0) AgentVM.copyToClipboard(abs)
+        return abs
+    }
     // Emergency open path (broken file association): exposed for tests.
     function openWithKnownEditorProbe(relPath) {
         return ProjectFileVM.openWithKnownEditor(relPath)
@@ -102,8 +114,9 @@ Window {
         return true
     }
     function rowIndexOf(relPath) {
-        for (var i = 0; i < panel.rows.length; ++i)
-            if (panel.rows[i].relPath === relPath) return i
+        var rows = panel.searchMode ? panel.searchResults : panel.rows
+        for (var i = 0; i < rows.length; ++i)
+            if (rows[i].relPath === relPath) return i
         return -1
     }
     function selectFile(relPath) { panel.selectFile(relPath) }

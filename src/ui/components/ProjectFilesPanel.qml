@@ -106,6 +106,13 @@ Item {
     // rebuild() runs in the same tick as the text change.
     property string filterNeedle: ""
 
+    // Search mode: a non-empty filter switches the list from the (already
+    // expanded) tree to a flat list of matches from the WHOLE project. The
+    // two views answer different questions and the switch is what makes the
+    // filter box useful without unfolding anything first.
+    property var searchResults: []
+    readonly property bool searchMode: filterNeedle.length > 0
+
     readonly property bool hasProject: projectRoot.length > 0
     readonly property string previewError: previewData.error !== undefined
         ? String(previewData.error) : ""
@@ -224,6 +231,13 @@ Item {
         selectedPath = relPath
         previewVisible = true
         previewData = ProjectFileVM.preview(relPath)
+        // Coming from a search hit, land the user back in the tree at the
+        // file: search answers "where is it", the tree stays the navigation
+        // home. Clearing the query also drops search mode.
+        if (searchMode) {
+            filterText = ""
+            revealInTree(relPath)
+        }
     }
 
     // Language label and colour state, read off the highlighter. Exposed as
@@ -315,6 +329,11 @@ Item {
     onFilterTextChanged: {
         filterNeedle = filterText ? filterText.toLowerCase().trim() : ""
         rebuild()
+        if (searchMode) runSearch()
+    }
+
+    function runSearch() {
+        searchResults = ProjectFileVM.search(filterNeedle)
     }
 
     // Rebuild when a folder's contents change on disk (after refresh()).
@@ -412,7 +431,7 @@ Item {
             Layout.fillHeight: true
             Layout.minimumHeight: 80
             clip: true
-            model: root.rows
+            model: root.searchMode ? root.searchResults : root.rows
             boundsBehavior: Flickable.StopAtBounds
             ScrollBar.vertical: ScrollBar {}
 
@@ -420,7 +439,15 @@ Item {
                 id: fileRow
                 required property var modelData
 
+                // Tree rows carry name/depth; search hits only relPath. One
+                // delegate serves both, so a hit list reuses the tree's
+                // selection, hover and double-click behaviour unchanged.
+                readonly property string displayName: modelData.name !== undefined
+                    ? String(modelData.name)
+                    : String(modelData.relPath).split("/").pop()
                 readonly property bool isFolder: modelData.isDir === true
+                readonly property int rowDepth: modelData.depth !== undefined
+                    ? modelData.depth : 0
                 readonly property bool selected: !isFolder
                     && root.selectedPath === modelData.relPath
 
@@ -438,8 +465,22 @@ Item {
                     cursorShape: Qt.PointingHandCursor
                     acceptedButtons: Qt.LeftButton
                     onClicked: {
-                        if (fileRow.isFolder) root.toggleFolder(fileRow.modelData.relPath)
-                        else root.selectFile(fileRow.modelData.relPath)
+                        if (root.searchMode) {
+                            // A hit is a flat result: selecting a file previews
+                            // it; a folder switches back to the tree opened at
+                            // that folder.
+                            if (fileRow.isFolder) {
+                                root.searchResults = []
+                                root.filterText = ""
+                                root.revealInTree(fileRow.modelData.relPath)
+                            } else {
+                                root.selectFile(fileRow.modelData.relPath)
+                            }
+                        } else if (fileRow.isFolder) {
+                            root.toggleFolder(fileRow.modelData.relPath)
+                        } else {
+                            root.selectFile(fileRow.modelData.relPath)
+                        }
                     }
                     onDoubleClicked: {
                         if (!fileRow.isFolder)
@@ -449,14 +490,16 @@ Item {
 
                 RowLayout {
                     anchors.fill: parent
-                    anchors.leftMargin: 4 + fileRow.modelData.depth * 12
+                    anchors.leftMargin: 4 + fileRow.rowDepth * 12
                     anchors.rightMargin: 6
                     spacing: 4
 
                     AppIcon {
                         Layout.alignment: Qt.AlignVCenter
                         icon: fileRow.isFolder
-                            ? (fileRow.modelData.collapsed ? "chevron-right" : "chevron-down")
+                            ? (fileRow.modelData.collapsed !== undefined
+                                ? (fileRow.modelData.collapsed ? "chevron-right" : "chevron-down")
+                                : "folder")
                             : "file"
                         size: 11
                         iconColor: fileRow.isFolder
@@ -467,7 +510,7 @@ Item {
                     Text {
                         Layout.fillWidth: true
                         Layout.alignment: Qt.AlignVCenter
-                        text: fileRow.modelData.name
+                        text: fileRow.displayName
                         color: fileRow.selected ? Theme.brandPrimary : Theme.textPrimary
                         font.pixelSize: Theme.fontSizeCaption
                         font.family: Theme.fontMono
@@ -491,14 +534,23 @@ Item {
         }
 
         // Empty states, distinct on purpose: "no files" and "filter matched
-        // nothing" call for different reactions from the user.
+        // nothing" call for different reactions from the user. Search mode
+        // has its own empty state: "the whole project has no match" reads
+        // differently from "this folder is empty".
         Text {
             objectName: "projectFileEmpty"
             Layout.fillWidth: true
-            visible: root.rows.length === 0 && root.hasProject
-            text: root.filterText.length > 0
-                ? qsTr("没有匹配的文件。")
-                : qsTr("该目录为空。")
+            visible: root.hasProject
+                     && (root.searchMode
+                         ? root.searchResults.length === 0
+                         : root.rows.length === 0)
+            text: {
+                if (root.searchMode)
+                    return qsTr("整个项目没有匹配“%1”的文件。").arg(root.filterText)
+                return root.filterText.length > 0
+                    ? qsTr("没有匹配的文件。")
+                    : qsTr("该目录为空。")
+            }
             color: Theme.textSecondary
             font.pixelSize: 10
             font.family: Theme.fontSans
@@ -618,6 +670,25 @@ Item {
                         onClicked: {
                             if (!root.revealInTree(root.selectedPath))
                                 root.errorText = qsTr("未能在文件树中找到该文件（可能已被删除或移出项目）。")
+                        }
+                    }
+
+                    // Copy the absolute path. The preview title only shows
+                    // the file name, and a path you cannot take out of the
+                    // app means retyping it in a terminal or an editor.
+                    IconButton {
+                        objectName: "projectFileCopyPath"
+                        Layout.preferredWidth: 20
+                        Layout.preferredHeight: 20
+                        radius: 4
+                        icon: "copy"
+                        iconSize: 10
+                        tooltip: qsTr("复制文件绝对路径")
+                        Accessible.name: tooltip
+                        onClicked: {
+                            const abs = ProjectFileVM.absolutePath(root.selectedPath)
+                            if (abs.length > 0)
+                                AgentVM.copyToClipboard(abs)
                         }
                     }
 

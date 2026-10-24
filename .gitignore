@@ -11,6 +11,9 @@ NexusAI-*-win64.zip
 # lupdate leaves *.ts.bak snapshots next to the .ts it rewrites. The .ts is the
 # single source of truth; the backup must never land in the repo.
 translations/*.ts.bak
+# Test-run logs. QtTest -o file.log outputs land in the repo root when a
+# suite is run manually and must never be committed.
+/*.log
 # lrelease output. The build regenerates these into the build tree and embeds
 # them into the executable's :/i18n resource, so the copies under translations/
 # are dead artifacts that silently drift from the .ts.

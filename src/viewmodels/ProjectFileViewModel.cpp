@@ -202,6 +202,21 @@ QVariantList ProjectFileViewModel::children(const QString& relPath) {
     return out;
 }
 
+QVariantList ProjectFileViewModel::search(const QString& query, int maxResults) {
+    if (m_root.isEmpty()) return {};
+
+    const QVector<ProjectFileIndex::SearchHit> hits =
+        ProjectFileIndex::searchPaths(m_root, query, maxResults);
+
+    QVariantList out;
+    out.reserve(hits.size());
+    for (const auto& hit : hits) {
+        out.append(QVariantMap{{QStringLiteral("relPath"), hit.relPath},
+                               {QStringLiteral("isDir"), hit.isDir}});
+    }
+    return out;
+}
+
 QVariantMap ProjectFileViewModel::preview(const QString& relPath, int maxBytes) {
     const ProjectFileIndex::FilePreview preview =
         ProjectFileIndex::readFilePreview(m_root, relPath, maxBytes);

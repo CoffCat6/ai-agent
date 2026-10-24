@@ -77,6 +77,27 @@ bool isSensitiveFile(const QString& name);
 QVector<DirEntry> listDir(const QString& root, const QString& relPath,
                           QString* error = nullptr);
 
+// Recursive path search over the whole project, for the file browser's
+// filter box. Matching is a case-insensitive substring test on the relative
+// path, so "memory/sql" finds both a file and a folder anywhere in the tree.
+//
+// Rules match listDir() exactly - ignored directories and sensitive files are
+// skipped, symlinks are not followed - so a file visible in the tree is always
+// searchable, and one the tree hides is never suggested. This is why the
+// search does NOT reuse scan(): scan() feeds model context and is
+// deliberately narrower (extension whitelist), which would make files
+// disappear from search results while still sitting in the tree.
+//
+// Stops at maxResults (a project can hold 20000 files; the UI only shows a
+// page) and caps the walk duration so a pathological tree cannot hang the
+// caller, which runs on the GUI thread.
+struct SearchHit {
+    QString relPath;    // project-relative, '/' separators
+    bool isDir{false};
+};
+QVector<SearchHit> searchPaths(const QString& root, const QString& query,
+                               int maxResults = 50);
+
 // Read a file for preview. Byte-capped: content beyond maxBytes is dropped
 // and truncated is set, so the UI can say so instead of showing a silently
 // clipped file. Binary files (a NUL byte in the leading window) come back

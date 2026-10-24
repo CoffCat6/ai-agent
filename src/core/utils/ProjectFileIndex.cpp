@@ -1,6 +1,7 @@
 #include "core/utils/ProjectFileIndex.h"
 
 #include <QDir>
+#include <QElapsedTimer>
 #include <QFile>
 #include <QFileInfo>
 #include <QSet>
@@ -328,6 +329,60 @@ QVector<DirEntry> listDir(const QString& root, const QString& relPath,
         if (a.isDir != b.isDir) return a.isDir;
         return a.name.compare(b.name, Qt::CaseInsensitive) < 0;
     });
+    return out;
+}
+
+QVector<SearchHit> searchPaths(const QString& root, const QString& query,
+                               int maxResults) {
+    QVector<SearchHit> out;
+    if (maxResults <= 0) return out;
+
+    const QString needle = query.trimmed().toLower();
+    if (needle.isEmpty()) return out;
+
+    QString error;
+    QString rootAbs;
+    if (!resolveUnderRoot(root, QString(), &rootAbs, &error))
+        return out;
+
+    // Iterative walk with an explicit stack: recursion is fine, but a
+    // depth-first loop makes the result cap and elapsed-time checks simpler.
+    QStringList pending{rootAbs};
+    QElapsedTimer timer;
+    timer.start();
+
+    while (!pending.isEmpty() && out.size() < maxResults) {
+        // A runaway walk (network drive, generated tree) must not freeze the
+        // GUI thread that called us. 2s is generous for a local SSD and small
+        // enough that a bad path degrades to "partial results" instead of a
+        // frozen window.
+        if (timer.elapsed() > 2000) break;
+
+        const QString dirAbs = pending.takeFirst();
+        const QDir dir(dirAbs);
+        const QFileInfoList entries = dir.entryInfoList(
+            QDir::Files | QDir::Dirs | QDir::NoDotAndDotDot | QDir::Hidden,
+            QDir::Name);
+        for (const QFileInfo& info : entries) {
+            if (info.isSymLink()) continue;
+
+            if (info.isDir()) {
+                if (isIgnoredDir(info.fileName())) continue;
+                if (out.size() < maxResults) pending.append(info.filePath());
+            } else if (!info.isFile() || isSensitiveFile(info.fileName())) {
+                continue;
+            }
+
+            QString rel = relativeUnder(root, info.filePath());
+            if (rel.toLower().contains(needle)) {
+                SearchHit hit;
+                hit.relPath = rel;
+                hit.isDir = info.isDir();
+                out.append(hit);
+                if (out.size() >= maxResults) break;
+            }
+        }
+    }
     return out;
 }
 

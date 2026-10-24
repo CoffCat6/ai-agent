@@ -58,6 +58,11 @@ public:
     // the file; returns the command line it ran, empty when nothing suitable
     // was found.
     Q_INVOKABLE QString openWithKnownEditor(const QString& relPath);
+    // Recursive path search over the whole project. Returns
+    // [{relPath, isDir}] (see ProjectFileIndex::searchPaths). Empty query
+    // yields an empty list - the tree itself is the "show everything" view.
+    // Not cached: a search reflects the tree as it is right now.
+    Q_INVOKABLE QVariantList search(const QString& query, int maxResults = 50);
     // Absolute path for the given relPath, empty when it would escape root.
     // Exposed mainly so a test (and a future "copy path" button) can assert
     // the containment rule without opening anything.
