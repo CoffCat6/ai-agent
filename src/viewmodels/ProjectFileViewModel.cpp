@@ -6,9 +6,129 @@
 #include <QDir>
 #include <QFileInfo>
 #include <QJSEngine>
+#include <QProcess>
 #include <QUrl>
+#include <QDebug>
+#include <windows.h>
 
 namespace NexusAI {
+
+// ── Emergency "open with" fallback ─────────────────────
+//
+// The shell's file association can point at anything, including broken
+// handlers. Real-world case: an Electron markdown editor whose Node 24 runtime
+// treated the .md file as a JavaScript entry point and crashed with
+// "SyntaxError: Invalid or unexpected token" - while openInDefaultApp()
+// reported success, so our UI said nothing went wrong.
+//
+// This fallback asks the registry which editors are actually registered and
+// launches one directly with the file as an argument, bypassing whatever the
+// association resolves to.
+
+// Registry value reader. Two things the obvious implementation gets wrong:
+//   1. RegGetValueW refuses HKEY_CLASSES_ROOT, so the key is opened with
+//      RegOpenKeyExW and read with RegQueryValueExW.
+//   2. RegQueryValueExW's value-name argument cannot carry a sub-key path
+//      ("ProgId\shell\open\command" as a value name returns
+//      ERROR_FILE_NOT_FOUND even though the key itself opens fine). Callers
+//      pass the full KEY path here and the VALUE name (empty = default value)
+//      separately.
+static bool readRegString(HKEY root, const QString& keyPath,
+                          const QString& valueName, QString* out) {
+    const QString native = QDir::toNativeSeparators(keyPath);
+    HKEY key = nullptr;
+    const LONG rc = ::RegOpenKeyExW(
+        root, reinterpret_cast<const wchar_t*>(native.utf16()), 0, KEY_READ, &key);
+    if (rc != ERROR_SUCCESS) return false;
+
+    DWORD type = 0, size = 0;
+    LONG qrc = ::RegQueryValueExW(
+        key,
+        valueName.isEmpty() ? nullptr
+            : reinterpret_cast<const wchar_t*>(valueName.utf16()),
+        nullptr, &type, nullptr, &size);
+    if (qrc != ERROR_SUCCESS || size == 0) {
+        ::RegCloseKey(key);
+        return false;
+    }
+    QByteArray buffer(int(size), char(0));
+    qrc = ::RegQueryValueExW(
+        key,
+        valueName.isEmpty() ? nullptr
+            : reinterpret_cast<const wchar_t*>(valueName.utf16()),
+        nullptr, &type, reinterpret_cast<BYTE*>(buffer.data()), &size);
+    ::RegCloseKey(key);
+    if (qrc != ERROR_SUCCESS) return false;
+
+    if (type == REG_EXPAND_SZ) {
+        // REG_EXPAND_SZ carries %VAR% segments; the unexpanded form is not a
+        // usable path.
+        wchar_t expanded[MAX_PATH * 2];
+        const DWORD n = ::ExpandEnvironmentStringsW(
+            reinterpret_cast<const wchar_t*>(buffer.constData()),
+            expanded, MAX_PATH * 2);
+        *out = (n > 0 && n <= MAX_PATH * 2)
+            ? QString::fromWCharArray(expanded)
+            : QString::fromWCharArray(
+                reinterpret_cast<const wchar_t*>(buffer.constData()));
+    } else {
+        *out = QString::fromWCharArray(
+            reinterpret_cast<const wchar_t*>(buffer.constData()));
+    }
+    return true;
+}
+
+// Reads the command line of "<progId>\shell\open\command". "command" is a KEY
+// whose DEFAULT value holds the command line, not a value of the progId key
+// (measured: reading it as a value name returned ERROR_FILE_NOT_FOUND).
+static bool readShellOpenCommand(HKEY root, const QString& progId,
+                                 QString* out) {
+    return readRegString(root,
+                         progId + QStringLiteral("\\shell\\open\\command"),
+                         QString(), out);
+}
+
+// Known markdown/code editors, probed where each installer registers itself.
+// The .md UserChoice (what Explorer actually honours) comes first; everything
+// else is a fixed list.
+static QStringList candidateEditors(const QString& absolute) {
+    QStringList commands;
+
+    auto pushCommand = [&](QString value) {
+        value = value.trimmed();
+        if (value.isEmpty()) return;
+        // A bare "%1" means "open with this file as the only argument".
+        if (value.compare(QStringLiteral("\"%1\""), Qt::CaseInsensitive) == 0
+                || value.compare(QStringLiteral("%1"), Qt::CaseInsensitive) == 0) {
+            commands.append(QStringLiteral("\"%1\"").arg(absolute));
+            return;
+        }
+        value.replace(QStringLiteral("%1"), absolute, Qt::CaseInsensitive);
+        commands.append(value);
+    };
+
+    // 1. The user's own choice for .md.
+    QString progId;
+    if (readRegString(HKEY_CURRENT_USER,
+                      QStringLiteral("Software\\Microsoft\\Windows\\CurrentVersion"
+                                     "\\Explorer\\FileExts\\.md\\UserChoice"),
+                      QStringLiteral("ProgId"), &progId) && !progId.isEmpty()) {
+        QString cmd;
+        if (readShellOpenCommand(HKEY_CLASSES_ROOT, progId, &cmd))
+            pushCommand(cmd);
+    }
+
+    // 2. Fixed fallbacks: common markdown/code editors, by their ProgIds.
+    for (const QString& id : {QStringLiteral("MarkText.Document"),
+                              QStringLiteral("VSCodium.markdown"),
+                              QStringLiteral("Applications\\VSCodium.exe"),
+                              QStringLiteral("VSCode.md")}) {
+        QString cmd;
+        if (readShellOpenCommand(HKEY_CLASSES_ROOT, id, &cmd))
+            pushCommand(cmd);
+    }
+    return commands;
+}
 
 ProjectFileViewModel* ProjectFileViewModel::s_instance = nullptr;
 
@@ -112,6 +232,41 @@ bool ProjectFileViewModel::openInDefaultApp(const QString& relPath) {
     const QString absolute = absolutePath(relPath);
     if (absolute.isEmpty() || !QFileInfo::exists(absolute)) return false;
     return QDesktopServices::openUrl(QUrl::fromLocalFile(absolute));
+}
+
+QString ProjectFileViewModel::openWithKnownEditor(const QString& relPath) {
+    const QString absolute = absolutePath(relPath);
+    if (absolute.isEmpty() || !QFileInfo::exists(absolute)) return {};
+
+    for (const QString& command : candidateEditors(absolute)) {
+        // Split the executable from its own arguments: every candidate starts
+        // with either a quoted path or a bare one.
+        QString program;
+        QString rest;
+        if (command.startsWith(QLatin1Char('"'))) {
+            const int close = command.indexOf(QLatin1Char('"'), 1);
+            if (close < 0) continue;
+            program = command.left(close + 1);
+            rest = command.mid(close + 1).trimmed();
+        } else {
+            const int space = command.indexOf(QLatin1Char(' '));
+            if (space > 0) {
+                program = command.left(space);
+                rest = command.mid(space + 1).trimmed();
+            } else {
+                program = command;
+            }
+        }
+        program.remove(QLatin1Char('"'));
+        if (program.isEmpty() || !QFileInfo::exists(program)) continue;
+
+        QStringList args;
+        if (!rest.isEmpty()) args.append(rest);
+        args.append(absolute);
+        if (QProcess::startDetached(program, args))
+            return program + QLatin1Char(' ') + absolute;
+    }
+    return {};
 }
 
 } // namespace NexusAI

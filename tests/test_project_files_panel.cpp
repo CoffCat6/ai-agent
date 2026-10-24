@@ -878,6 +878,42 @@ private slots:
         QCOMPARE(h.call1("lineNumberAt", 1).toString(), QStringLiteral("2"));
     }
 
+    // Emergency open path (broken file association). Probed against the
+    // machine's real registry, so the assertion is loose by design: either
+    // nothing is registered (empty is correct) or the launched command names
+    // a known editor. What must never happen is a garbage result.
+    void openWithKnownEditorFindsRegisteredEditor() {
+        writeFile("real.md", "# hello");
+
+        Harness h;
+        QVERIFY2(h.window, qPrintable(h.error));
+        QVERIFY(h.invoke1("setProjectRoot", m_dir->path()));
+        QTRY_VERIFY(h.call("rowCount").toInt() >= 1);
+
+        const QString launched = h.call1("openWithKnownEditorProbe",
+            QStringLiteral("real.md")).toString();
+        QVERIFY2(launched.isEmpty()
+                     || launched.toLower().contains("marktext")
+                     || launched.toLower().contains("codium")
+                     || launched.toLower().contains("code"),
+                 qPrintable(QStringLiteral("fallback result: %1").arg(launched)));
+    }
+
+    // The emergency path respects project containment like every other.
+    void openWithKnownEditorRespectsContainment() {
+        writeFile("in.md", "x");
+
+        Harness h;
+        QVERIFY2(h.window, qPrintable(h.error));
+        QVERIFY(h.invoke1("setProjectRoot", m_dir->path()));
+        QTRY_VERIFY(h.call("rowCount").toInt() >= 1);
+
+        QCOMPARE(h.call1("openWithKnownEditorProbe",
+                         QStringLiteral("../outside.md")).toString(), QString());
+        QCOMPARE(h.call1("openWithKnownEditorProbe",
+                         QStringLiteral("-rf")).toString(), QString());
+    }
+
     // THE point of the spans: with wrapping on, a long logical line occupies
     // several visual rows, and the number must sit on the FIRST of them. The
     // continuation rows are inside the same numbered entry (its height covers

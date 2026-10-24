@@ -53,6 +53,11 @@ public:
     // Opens with the OS handler. Returns false when the path is invalid or
     // the platform refused; the caller reports that instead of failing quietly.
     Q_INVOKABLE bool openInDefaultApp(const QString& relPath);
+    // Emergency fallback for a broken "open with" association. Finds a known
+    // markdown/code editor through the registry and launches it directly with
+    // the file; returns the command line it ran, empty when nothing suitable
+    // was found.
+    Q_INVOKABLE QString openWithKnownEditor(const QString& relPath);
     // Absolute path for the given relPath, empty when it would escape root.
     // Exposed mainly so a test (and a future "copy path" button) can assert
     // the containment rule without opening anything.

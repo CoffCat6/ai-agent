@@ -45,6 +45,10 @@ Window {
     function collapseAll() { panel.collapseAll() }
     function collapseAllFromToolbar() { panel.collapseAll() }
     function refresh() { panel.refresh() }
+    // Emergency open path (broken file association): exposed for tests.
+    function openWithKnownEditorProbe(relPath) {
+        return ProjectFileVM.openWithKnownEditor(relPath)
+    }
     // Reveal-in-tree: returns whether the row was found, and exposes the
     // list's own position so a test can tell "selected" from "scrolled to".
     function revealInTree(relPath) { return panel.revealInTree(relPath) }
