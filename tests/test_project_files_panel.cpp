@@ -899,6 +899,31 @@ private slots:
                  qPrintable(QStringLiteral("fallback result: %1").arg(launched)));
     }
 
+    // THE regression the user hit: nexus_ai started from a VSCode-family
+    // terminal inherits ELECTRON_RUN_AS_NODE=1, and every Electron handler
+    // launched from inside then boots as bare Node and crashes on the file
+    // ("SyntaxError: Invalid or unexpected token"). The open path must scrub
+    // that variable so the handler starts as a GUI app regardless of how our
+    // own process was launched.
+    void openWithKnownEditorWorksWithRunAsNodeInherited() {
+        writeFile("real.md", "# hello");
+
+        Harness h;
+        QVERIFY2(h.window, qPrintable(h.error));
+        QVERIFY(h.invoke1("setProjectRoot", m_dir->path()));
+        QTRY_VERIFY(h.call("rowCount").toInt() >= 1);
+
+        // Simulate the hostile launch environment BEFORE the open call.
+        qputenv("ELECTRON_RUN_AS_NODE", "1");
+        const QString launched = h.call1("openWithKnownEditorProbe",
+            QStringLiteral("real.md")).toString();
+        qunsetenv("ELECTRON_RUN_AS_NODE");
+
+        // The fallback must still have found and launched an editor.
+        QVERIFY2(!launched.isEmpty(),
+                 "ELECTRON_RUN_AS_NODE inherited: emergency open must still work");
+    }
+
     // The emergency path respects project containment like every other.
     void openWithKnownEditorRespectsContainment() {
         writeFile("in.md", "x");

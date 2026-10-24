@@ -7,6 +7,7 @@
 #include <QFileInfo>
 #include <QJSEngine>
 #include <QProcess>
+#include <QProcessEnvironment>
 #include <QUrl>
 #include <QDebug>
 #include <windows.h>
@@ -86,6 +87,17 @@ static bool readShellOpenCommand(HKEY root, const QString& progId,
     return readRegString(root,
                          progId + QStringLiteral("\\shell\\open\\command"),
                          QString(), out);
+}
+
+// Child processes must not inherit ELECTRON_RUN_AS_NODE: it turns every
+// Electron application into a bare Node runtime, which then misreads the
+// document it was handed as a script. The variable is harmless to native
+// programs, so a copy with just that entry removed is safe for anything we
+// might launch here.
+static QProcessEnvironment cleanChildEnvironment() {
+    QProcessEnvironment env = QProcessEnvironment::systemEnvironment();
+    env.remove(QStringLiteral("ELECTRON_RUN_AS_NODE"));
+    return env;
 }
 
 // Known markdown/code editors, probed where each installer registers itself.
@@ -231,6 +243,16 @@ QString ProjectFileViewModel::absolutePath(const QString& relPath) const {
 bool ProjectFileViewModel::openInDefaultApp(const QString& relPath) {
     const QString absolute = absolutePath(relPath);
     if (absolute.isEmpty() || !QFileInfo::exists(absolute)) return false;
+
+    // ShellExecute spawns the handler with OUR environment. If this process
+    // was started from a VSCode-family terminal it carries
+    // ELECTRON_RUN_AS_NODE=1, and any Electron-based handler (MarkText was
+    // the reported case) then boots as a bare Node runtime and treats the
+    // file as a JavaScript entry point: "SyntaxError: Invalid or unexpected
+    // token". Removing the variable before the spawn is what makes the
+    // handler start as a GUI app again.
+    QProcessEnvironment::systemEnvironment().remove(
+        QStringLiteral("ELECTRON_RUN_AS_NODE"));
     return QDesktopServices::openUrl(QUrl::fromLocalFile(absolute));
 }
 
@@ -263,7 +285,11 @@ QString ProjectFileViewModel::openWithKnownEditor(const QString& relPath) {
         QStringList args;
         if (!rest.isEmpty()) args.append(rest);
         args.append(absolute);
-        if (QProcess::startDetached(program, args))
+        QProcess proc;
+        proc.setProgram(program);
+        proc.setArguments(args);
+        proc.setProcessEnvironment(cleanChildEnvironment());
+        if (proc.startDetached())
             return program + QLatin1Char(' ') + absolute;
     }
     return {};

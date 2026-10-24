@@ -4,6 +4,8 @@
 #include "core/tools/Sandbox.h"
 
 #include <QDesktopServices>
+#include <QProcess>
+#include <QProcessEnvironment>
 #include <QDir>
 #include <QFileInfo>
 #include <QFutureWatcher>
@@ -686,6 +688,10 @@ QString GitViewModel::absolutePath(const QString& path) const {
 bool GitViewModel::openInDefaultApp(const QString& path) {
     const QString absolute = absolutePath(path);
     if (absolute.isEmpty() || !QFileInfo::exists(absolute)) return false;
+    // Same ELECTRON_RUN_AS_NODE scrub as ProjectFileViewModel: a handler
+    // inherited from a VSCode-family terminal must not boot as Node.
+    QProcessEnvironment::systemEnvironment().remove(
+        QStringLiteral("ELECTRON_RUN_AS_NODE"));
     return QDesktopServices::openUrl(QUrl::fromLocalFile(absolute));
 }
 
