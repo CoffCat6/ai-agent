@@ -77,6 +77,7 @@ add_library(nexus_core STATIC
     src/core/utils/AttachmentClassifier.h
     src/core/utils/AttachmentClassifier.cpp
     src/core/utils/ProjectFileIndex.h
+        src/core/utils/WebContent.h
     src/core/utils/ProjectFileIndex.cpp
     src/core/utils/NetworkProxyConfig.h
     src/core/utils/NetworkProxyConfig.cpp

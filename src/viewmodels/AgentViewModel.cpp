@@ -15,6 +15,7 @@
 #include "core/utils/DataUrlUtils.h"
 #include "core/utils/AttachmentClassifier.h"
 #include "core/utils/ProjectFileIndex.h"
+#include "core/utils/WebContent.h"
 #include "core/utils/SettingsRepository.h"
 #include "core/utils/SettingsSchema.h"
 
@@ -1234,6 +1235,69 @@ void AgentViewModel::startPdfImport(const QString& path, const QFileInfo& info) 
 }
 
 // ── docs/25: 批量知识库导入 ──────────────────────────────────
+
+void AgentViewModel::importFromUrl(const QString& url) {
+    // Syntax validation first: it needs no services, and a malformed URL must
+    // be reported even when the knowledge base is not wired up (tests, and a
+    // user who has not configured a model yet).
+    const QUrl parsed(url.trimmed());
+    if (!parsed.isValid() || parsed.host().isEmpty()
+            || (parsed.scheme() != QLatin1String("http")
+                && parsed.scheme() != QLatin1String("https"))) {
+        emit errorOccurred(tr("仅支持 http/https URL：%1").arg(url));
+        return;
+    }
+    if (!m_rag || m_knowledgeBusy || m_urlImportRunning) return;
+
+    m_urlImportRunning = true;
+    emit urlImportRunningChanged();
+    m_urlFetchCancel.store(false);
+
+    // Fetch on the pool thread: the sliced event loop inside fetchUrl must
+    // not spin on the GUI thread (it would still process events, but a modal
+    // import is exactly when we do not want re-entrancy).
+    const bool allowPrivate = m_allowPrivateFetchTargets;
+    auto* watcher = new QFutureWatcher<WebContent::FetchResult>(this);
+    connect(watcher, &QFutureWatcherBase::finished, this,
+            [this, watcher, url](void) {
+        watcher->deleteLater();
+        m_urlImportRunning = false;
+        emit urlImportRunningChanged();
+
+        const WebContent::FetchResult result = watcher->result();
+        switch (result.outcome) {
+        case WebContent::FetchResult::Outcome::Finished: {
+            if (result.text.trimmed().isEmpty()) {
+                emit errorOccurred(tr("页面无可用正文：%1").arg(url));
+                return;
+            }
+            // Route through the file-import pipeline with the URL recorded as
+            // the source. The "file name" is the last path segment (or host).
+            QFileInfo info(QUrl(url).path());
+            const QString fallback = QUrl(url).host();
+            importExtractedText(
+                QFileInfo(info.fileName().isEmpty() ? fallback : info.fileName()),
+                result.text);
+            return;
+        }
+        case WebContent::FetchResult::Outcome::Redirected:
+            emit errorOccurred(tr("页面已重定向至 %1，请直接导入新地址。")
+                                   .arg(result.location));
+            return;
+        default:
+            emit errorOccurred(tr("抓取失败：%1").arg(result.error));
+            return;
+        }
+    });
+
+    const QUrl parsedCopy = parsed;
+    watcher->setFuture(QtConcurrent::run([this, parsedCopy, allowPrivate]() {
+        return WebContent::fetchUrl(m_urlFetchCancel, parsedCopy.toString(),
+                                    allowPrivate, 30000,
+                                    4 * 1024 * 1024,   // 4 MB wire: whole page
+                                    400000);           // 400k chars of text
+    }));
+}
 
 void AgentViewModel::importDocuments(const QStringList& paths) {
     if (!m_rag || paths.isEmpty()) return;

@@ -200,10 +200,24 @@ Dialog {
                 text: qsTr("导入文档")
                 implicitHeight: 24
                 highlighted: true
-                enabled: !AgentVM.knowledgeBusy
+                enabled: !AgentVM.knowledgeBusy && !AgentVM.urlImportRunning
                 opacity: enabled ? 1.0 : 0.4
                 onClicked: fileDialog.open()
                 Accessible.name: qsTr("导入文档到知识库（可多选）")
+            }
+
+            // URL import: the button reveals the address row. Inline rather
+            // than a nested dialog — one fewer modal for a two-field action.
+            AppButton {
+                id: urlImportToggle
+                objectName: "knowledgeUrlImportToggle"
+                Layout.alignment: Qt.AlignVCenter
+                text: qsTr("从 URL 导入")
+                implicitHeight: 24
+                enabled: !AgentVM.knowledgeBusy && !AgentVM.urlImportRunning
+                opacity: enabled ? 1.0 : 0.4
+                onClicked: urlRow.visible = !urlRow.visible
+                Accessible.name: qsTr("从网页地址导入知识库")
             }
 
             IconButton {
@@ -212,6 +226,76 @@ Dialog {
                 icon: "close"
                 onClicked: dialog.close()
                 Accessible.name: qsTr("关闭知识库")
+            }
+        }
+
+        // ── URL import row ──────────────────────────────
+        // Hidden until the toggle is pressed; keeps the header compact for
+        // users who never import from the web.
+        RowLayout {
+            id: urlRow
+            objectName: "knowledgeUrlRow"
+            Layout.fillWidth: true
+            Layout.leftMargin: 18
+            Layout.rightMargin: 18
+            Layout.bottomMargin: 10
+            spacing: 6
+            visible: urlRow.visible
+
+            Rectangle {
+                Layout.fillWidth: true
+                implicitHeight: 26
+                radius: Theme.radiusSm
+                color: Theme.bgPrimary
+                border.width: 1
+                border.color: urlInput.activeFocus
+                    ? Theme.brandPrimary : Theme.borderSubtle
+
+                TextInput {
+                    id: urlInput
+                    objectName: "knowledgeUrlInput"
+                    anchors.fill: parent
+                    anchors.leftMargin: 8
+                    anchors.rightMargin: 8
+                    verticalAlignment: TextInput.AlignVCenter
+                    color: Theme.textPrimary
+                    font.family: Theme.fontMono
+                    font.pixelSize: Theme.fontSizeCaption
+                    selectByMouse: true
+                    clip: true
+                    // Enter starts the import; Esc hides the row.
+                    Keys.onReturnPressed: importUrlButton.clicked()
+                    Keys.onEscapePressed: urlRow.visible = false
+                    Accessible.name: qsTr("要导入的网页地址")
+
+                    Text {
+                        anchors.fill: parent
+                        verticalAlignment: Text.AlignVCenter
+                        visible: urlInput.text.length === 0
+                        text: qsTr("https://example.com/article")
+                        color: Theme.textTertiary
+                        font.family: Theme.fontMono
+                        font.pixelSize: Theme.fontSizeCaption
+                    }
+                }
+            }
+
+            AppButton {
+                id: importUrlButton
+                objectName: "knowledgeUrlImportButton"
+                text: AgentVM.urlImportRunning
+                    ? qsTr("抓取中…") : qsTr("抓取并导入")
+                implicitHeight: 26
+                highlighted: true
+                enabled: !AgentVM.knowledgeBusy && !AgentVM.urlImportRunning
+                         && urlInput.text.trim().length > 0
+                opacity: enabled ? 1.0 : 0.4
+                onClicked: {
+                    dialog.openFailed = false
+                    AgentVM.importFromUrl(urlInput.text.trim())
+                    urlInput.text = ""
+                }
+                Accessible.name: qsTr("抓取网页并导入知识库")
             }
         }
 

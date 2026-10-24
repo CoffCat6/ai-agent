@@ -1,6 +1,7 @@
 #pragma once
 
 #include <QObject>
+#include <atomic>
 #include <QQmlEngine>
 #include <QJsonArray>
 #include <QJsonObject>
@@ -460,6 +461,17 @@ public:
     // 取消语义：不再开始队列中的后续文件，正在导入的文件会完成
     // （单文件嵌入受 120s 超时约束）。
     Q_INVOKABLE void importDocuments(const QStringList& paths);
+    // docs/26 H6: fetch a web page and ingest the stripped text. Runs the
+    // fetch on a worker thread (sliced event loop inside WebContent::fetchUrl),
+    // then routes through the same dedupe/naming/ingestion chain as file
+    // imports. source_path records the URL (the "original" is remote, not
+    // local). allowPrivateTargets comes from the settings escape hatch.
+    Q_INVOKABLE void importFromUrl(const QString& url);
+    Q_PROPERTY(bool urlImportRunning READ urlImportRunning NOTIFY urlImportRunningChanged FINAL)
+    // SSRF escape hatch, mirrored from SettingsService by main.cpp (same value
+    // the http_fetch tool uses).
+    void setAllowPrivateTargets(bool allowed) { m_allowPrivateFetchTargets = allowed; }
+    bool urlImportRunning() const { return m_urlImportRunning; }
     Q_INVOKABLE void cancelBatchImport();
     Q_INVOKABLE void retryFailedBatchImports();
     // docs/20 §5.1 (CITE-801): 打开知识库文档详情。AssistantMessage 的引用
@@ -575,6 +587,7 @@ signals:
     void knowledgeDocumentOpenRequested(const QString& name, int chunk);
     void knowledgeBusyChanged();
     void knowledgeEmbedProgressChanged();
+    void urlImportRunningChanged();
     // docs/25: 批量导入进度（running/done/total/current/failedCount 共用）
     void batchImportProgressChanged();
 
@@ -743,6 +756,9 @@ private:
     // ── Knowledge Base ────────────────────────────────
     QVariantList m_knowledgeDocuments;
     bool m_knowledgeBusy{false};
+    bool m_urlImportRunning{false};
+    bool m_allowPrivateFetchTargets{false};
+    std::atomic<bool> m_urlFetchCancel{false};
     // docs/25: 批量导入状态（全部 GUI 线程独占；worker 只返回结果值）
     QStringList m_batchQueue;             // 尚未开始的文件
     QVariantList m_batchResults;          // {path, name, status, message}

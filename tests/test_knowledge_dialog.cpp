@@ -243,6 +243,41 @@ private slots:
                  "no sourcePath recorded, so no open button");
     }
 
+    // URL import: the toggle reveals the address row, and the import is
+    // rejected up front for non-http(s) input. A real fetch needs the network,
+    // which the test environment may not have — so the observable here is the
+    // URL validation gate, not a successful ingestion.
+    void urlImportRejectsNonHttpInput() {
+        QQmlApplicationEngine engine;
+        NexusQrcFallback fallback(QStringLiteral(NEXUS_BUILD_DIR "/NexusAI"));
+        engine.addUrlInterceptor(&fallback);
+        engine.rootContext()->setContextProperty("Theme", ThemeProvider::instance());
+        engine.load(QUrl("qrc:/qt/qml/NexusAI/src/ui/main.qml"));
+        QVERIFY(!engine.rootObjects().isEmpty());
+        auto* window = qobject_cast<QQuickWindow*>(engine.rootObjects().first());
+        QVERIFY(window);
+        window->resize(1200, 800);
+        QTest::qWait(150);
+
+        // The entry exists ...
+        QVERIFY(window->findChild<QObject*>(
+                    QStringLiteral("knowledgeUrlImportToggle")));
+        // ... and the VM rejects a non-http scheme before touching the network.
+        auto* vm = AgentViewModel::instance();
+        QSignalSpy errorSpy(vm, &AgentViewModel::errorOccurred);
+        vm->importFromUrl(QStringLiteral("ftp://example.com/file.md"));
+        QCOMPARE(errorSpy.count(), 1);
+        QVERIFY2(errorSpy.first().at(0).toString().contains(QStringLiteral("http")),
+                 qPrintable(errorSpy.first().at(0).toString()));
+
+        // ... and an empty URL is likewise rejected without state changes.
+        vm->importFromUrl(QString());
+        QCOMPARE(errorSpy.count(), 2);
+
+        // Neither attempt left a running import behind.
+        QCOMPARE(vm->urlImportRunning(), false);
+    }
+
     // Activating a row asks the host to open the chunk viewer - the same
     // documentDetailsRequested contract ContextPanel used to expose.
     void rowActivationRequestsDetails() {

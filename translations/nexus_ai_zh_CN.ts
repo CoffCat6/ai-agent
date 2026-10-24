@@ -2915,98 +2915,133 @@
         <translation>导入文档到知识库（可多选）</translation>
     </message>
     <message>
-        <location filename="../src/ui/components/KnowledgeDialog.qml" line="214"/>
+        <location filename="../src/ui/components/KnowledgeDialog.qml" line="215"/>
+        <source>从 URL 导入</source>
+        <translation>从 URL 导入</translation>
+    </message>
+    <message>
+        <location filename="../src/ui/components/KnowledgeDialog.qml" line="220"/>
+        <source>从网页地址导入知识库</source>
+        <translation>从网页地址导入知识库</translation>
+    </message>
+    <message>
+        <location filename="../src/ui/components/KnowledgeDialog.qml" line="228"/>
         <source>关闭知识库</source>
         <translation>关闭知识库</translation>
     </message>
     <message>
-        <location filename="../src/ui/components/KnowledgeDialog.qml" line="229"/>
+        <location filename="../src/ui/components/KnowledgeDialog.qml" line="269"/>
+        <source>要导入的网页地址</source>
+        <translation>要导入的网页地址</translation>
+    </message>
+    <message>
+        <location filename="../src/ui/components/KnowledgeDialog.qml" line="275"/>
+        <source>https://example.com/article</source>
+        <translation>https://example.com/article</translation>
+    </message>
+    <message>
+        <location filename="../src/ui/components/KnowledgeDialog.qml" line="287"/>
+        <source>抓取中…</source>
+        <translation>抓取中…</translation>
+    </message>
+    <message>
+        <location filename="../src/ui/components/KnowledgeDialog.qml" line="287"/>
+        <source>抓取并导入</source>
+        <translation>抓取并导入</translation>
+    </message>
+    <message>
+        <location filename="../src/ui/components/KnowledgeDialog.qml" line="298"/>
+        <source>抓取网页并导入知识库</source>
+        <translation>抓取网页并导入知识库</translation>
+    </message>
+    <message>
+        <location filename="../src/ui/components/KnowledgeDialog.qml" line="313"/>
         <source>文档内容会随提问发送给当前模型服务；如需阻止，请在设置中开启“仅本地模式”。</source>
         <translation>文档内容会随提问发送给当前模型服务；如需阻止，请在设置中开启“仅本地模式”。</translation>
     </message>
     <message>
-        <location filename="../src/ui/components/KnowledgeDialog.qml" line="243"/>
+        <location filename="../src/ui/components/KnowledgeDialog.qml" line="327"/>
         <source>无法打开源文件（可能已被移动或删除）。</source>
         <translation>无法打开源文件（可能已被移动或删除）。</translation>
     </message>
     <message>
-        <location filename="../src/ui/components/KnowledgeDialog.qml" line="258"/>
+        <location filename="../src/ui/components/KnowledgeDialog.qml" line="342"/>
         <source>重试失败的导入（%1）</source>
         <translation>重试失败的导入（%1）</translation>
     </message>
     <message>
-        <location filename="../src/ui/components/KnowledgeDialog.qml" line="260"/>
+        <location filename="../src/ui/components/KnowledgeDialog.qml" line="344"/>
         <source>重试失败的批量导入</source>
         <translation>重试失败的批量导入</translation>
     </message>
     <message>
-        <location filename="../src/ui/components/KnowledgeDialog.qml" line="285"/>
+        <location filename="../src/ui/components/KnowledgeDialog.qml" line="369"/>
         <source>文档</source>
         <translation>文档</translation>
     </message>
     <message>
-        <location filename="../src/ui/components/KnowledgeDialog.qml" line="292"/>
+        <location filename="../src/ui/components/KnowledgeDialog.qml" line="376"/>
         <source>段数</source>
         <translation>段数</translation>
     </message>
     <message>
-        <location filename="../src/ui/components/KnowledgeDialog.qml" line="300"/>
+        <location filename="../src/ui/components/KnowledgeDialog.qml" line="384"/>
         <source>字符</source>
         <translation>字符</translation>
     </message>
     <message>
-        <location filename="../src/ui/components/KnowledgeDialog.qml" line="308"/>
+        <location filename="../src/ui/components/KnowledgeDialog.qml" line="392"/>
         <source>状态</source>
         <translation>状态</translation>
     </message>
     <message>
-        <location filename="../src/ui/components/KnowledgeDialog.qml" line="407"/>
+        <location filename="../src/ui/components/KnowledgeDialog.qml" line="491"/>
         <source>已嵌入</source>
         <translation>已嵌入</translation>
     </message>
     <message>
-        <location filename="../src/ui/components/KnowledgeDialog.qml" line="425"/>
+        <location filename="../src/ui/components/KnowledgeDialog.qml" line="509"/>
         <source>降级</source>
         <translation>降级</translation>
     </message>
     <message>
-        <location filename="../src/ui/components/KnowledgeDialog.qml" line="441"/>
+        <location filename="../src/ui/components/KnowledgeDialog.qml" line="525"/>
         <source>导入时嵌入服务不可用，已使用本地降级嵌入，检索质量有限。可点击右侧刷新按钮重新嵌入。</source>
         <translation>导入时嵌入服务不可用，已使用本地降级嵌入，检索质量有限。可点击右侧刷新按钮重新嵌入。</translation>
     </message>
     <message>
-        <location filename="../src/ui/components/KnowledgeDialog.qml" line="457"/>
+        <location filename="../src/ui/components/KnowledgeDialog.qml" line="541"/>
         <source>打开源文件</source>
         <translation>打开源文件</translation>
     </message>
     <message>
-        <location filename="../src/ui/components/KnowledgeDialog.qml" line="480"/>
+        <location filename="../src/ui/components/KnowledgeDialog.qml" line="564"/>
         <source>重新嵌入</source>
         <translation>重新嵌入</translation>
     </message>
     <message>
-        <location filename="../src/ui/components/KnowledgeDialog.qml" line="492"/>
+        <location filename="../src/ui/components/KnowledgeDialog.qml" line="576"/>
         <source>移除文档</source>
         <translation>移除文档</translation>
     </message>
     <message>
-        <location filename="../src/ui/components/KnowledgeDialog.qml" line="524"/>
+        <location filename="../src/ui/components/KnowledgeDialog.qml" line="608"/>
         <source>知识库还没有文档</source>
         <translation>知识库还没有文档</translation>
     </message>
     <message>
-        <location filename="../src/ui/components/KnowledgeDialog.qml" line="534"/>
+        <location filename="../src/ui/components/KnowledgeDialog.qml" line="618"/>
         <source>导入文本或 PDF 文件（.txt / .md / .json / .csv / .log / .pdf），
 模型即可检索其内容并回答问题。</source>
         <translation>导入文本或 PDF 文件（.txt / .md / .json / .csv / .log</translation>
     </message>
     <message>
-        <location filename="../src/ui/components/KnowledgeDialog.qml" line="552"/>
+        <location filename="../src/ui/components/KnowledgeDialog.qml" line="636"/>
         <source>支持的文件 (*.txt *.md *.json *.csv *.log *.pdf)</source>
         <translation>支持的文件 (*.txt *.md *.json *.csv *.log *.pdf)</translation>
     </message>
     <message>
-        <location filename="../src/ui/components/KnowledgeDialog.qml" line="553"/>
+        <location filename="../src/ui/components/KnowledgeDialog.qml" line="637"/>
         <source>所有文件 (*)</source>
         <translation>所有文件 (*)</translation>
     </message>
@@ -4224,50 +4259,50 @@
 <context>
     <name>NexusAI::AgentViewModel</name>
     <message>
-        <location filename="../src/viewmodels/AgentViewModel.cpp" line="289"/>
-        <location filename="../src/viewmodels/AgentViewModel.cpp" line="507"/>
-        <location filename="../src/viewmodels/AgentViewModel.cpp" line="1931"/>
-        <location filename="../src/viewmodels/AgentViewModel.cpp" line="1992"/>
+        <location filename="../src/viewmodels/AgentViewModel.cpp" line="290"/>
+        <location filename="../src/viewmodels/AgentViewModel.cpp" line="508"/>
+        <location filename="../src/viewmodels/AgentViewModel.cpp" line="1995"/>
+        <location filename="../src/viewmodels/AgentViewModel.cpp" line="2056"/>
         <source>新会话</source>
         <translation>新会话</translation>
     </message>
     <message>
-        <location filename="../src/viewmodels/AgentViewModel.cpp" line="599"/>
+        <location filename="../src/viewmodels/AgentViewModel.cpp" line="600"/>
         <source>请等待当前任务完成，或停止后切换模型。</source>
         <translation>请等待当前任务完成，或停止后切换模型。</translation>
     </message>
     <message>
-        <location filename="../src/viewmodels/AgentViewModel.cpp" line="971"/>
+        <location filename="../src/viewmodels/AgentViewModel.cpp" line="972"/>
         <source>无法更新会话置顶状态，请重试。</source>
         <translation>无法更新会话置顶状态，请重试。</translation>
     </message>
     <message>
-        <location filename="../src/viewmodels/AgentViewModel.cpp" line="979"/>
+        <location filename="../src/viewmodels/AgentViewModel.cpp" line="980"/>
         <source>无法更新会话归档状态，请重试。</source>
         <translation>无法更新会话归档状态，请重试。</translation>
     </message>
     <message>
-        <location filename="../src/viewmodels/AgentViewModel.cpp" line="983"/>
+        <location filename="../src/viewmodels/AgentViewModel.cpp" line="984"/>
         <source>会话已归档，可在“包含已归档”中恢复。</source>
         <translation>会话已归档，可在“包含已归档”中恢复。</translation>
     </message>
     <message>
-        <location filename="../src/viewmodels/AgentViewModel.cpp" line="983"/>
+        <location filename="../src/viewmodels/AgentViewModel.cpp" line="984"/>
         <source>会话已恢复。</source>
         <translation>会话已恢复。</translation>
     </message>
     <message>
-        <location filename="../src/viewmodels/AgentViewModel.cpp" line="1023"/>
+        <location filename="../src/viewmodels/AgentViewModel.cpp" line="1024"/>
         <source>导出失败：未连接持久化后端</source>
         <translation>导出失败：未连接持久化后端</translation>
     </message>
     <message>
-        <location filename="../src/viewmodels/AgentViewModel.cpp" line="1028"/>
+        <location filename="../src/viewmodels/AgentViewModel.cpp" line="1029"/>
         <source>导出失败：不支持的格式“%1”（可选 md / json）</source>
         <translation>导出失败：不支持的格式“%1”（可选 md / json）</translation>
     </message>
     <message>
-        <location filename="../src/viewmodels/AgentViewModel.cpp" line="1043"/>
+        <location filename="../src/viewmodels/AgentViewModel.cpp" line="1044"/>
         <source># NexusAI 会话导出
 
 </source>
@@ -4276,21 +4311,21 @@
 </translation>
     </message>
     <message>
-        <location filename="../src/viewmodels/AgentViewModel.cpp" line="1044"/>
+        <location filename="../src/viewmodels/AgentViewModel.cpp" line="1045"/>
         <source>- 会话 ID：%1
 </source>
         <translation>- 会话 ID：%1
 </translation>
     </message>
     <message>
-        <location filename="../src/viewmodels/AgentViewModel.cpp" line="1045"/>
+        <location filename="../src/viewmodels/AgentViewModel.cpp" line="1046"/>
         <source>- 导出时间：%1
 </source>
         <translation>- 导出时间：%1
 </translation>
     </message>
     <message>
-        <location filename="../src/viewmodels/AgentViewModel.cpp" line="1046"/>
+        <location filename="../src/viewmodels/AgentViewModel.cpp" line="1047"/>
         <source>- 消息数：%1
 
 ---
@@ -4303,17 +4338,17 @@
 </translation>
     </message>
     <message>
-        <location filename="../src/viewmodels/AgentViewModel.cpp" line="1050"/>
+        <location filename="../src/viewmodels/AgentViewModel.cpp" line="1051"/>
         <source>用户</source>
         <translation>用户</translation>
     </message>
     <message>
-        <location filename="../src/viewmodels/AgentViewModel.cpp" line="1051"/>
+        <location filename="../src/viewmodels/AgentViewModel.cpp" line="1052"/>
         <source>助手</source>
         <translation>助手</translation>
     </message>
     <message>
-        <location filename="../src/viewmodels/AgentViewModel.cpp" line="1060"/>
+        <location filename="../src/viewmodels/AgentViewModel.cpp" line="1061"/>
         <source>---
 
 ## 过程摘要
@@ -4326,67 +4361,87 @@
 </translation>
     </message>
     <message>
-        <location filename="../src/viewmodels/AgentViewModel.cpp" line="1089"/>
+        <location filename="../src/viewmodels/AgentViewModel.cpp" line="1090"/>
         <source>导出失败：无法写入 %1</source>
         <translation>导出失败：无法写入 %1</translation>
     </message>
     <message>
-        <location filename="../src/viewmodels/AgentViewModel.cpp" line="1094"/>
+        <location filename="../src/viewmodels/AgentViewModel.cpp" line="1095"/>
         <source>导出失败：写入未完成 %1</source>
         <translation>导出失败：写入未完成 %1</translation>
     </message>
     <message>
-        <location filename="../src/viewmodels/AgentViewModel.cpp" line="1100"/>
+        <location filename="../src/viewmodels/AgentViewModel.cpp" line="1101"/>
         <source>已导出会话（%1 条消息）：%2</source>
         <translation>已导出会话（%1 条消息）：%2</translation>
     </message>
     <message>
-        <location filename="../src/viewmodels/AgentViewModel.cpp" line="1162"/>
+        <location filename="../src/viewmodels/AgentViewModel.cpp" line="1163"/>
         <source>无法读取文件：%1</source>
         <translation>无法读取文件：%1</translation>
     </message>
     <message>
-        <location filename="../src/viewmodels/AgentViewModel.cpp" line="1209"/>
+        <location filename="../src/viewmodels/AgentViewModel.cpp" line="1210"/>
         <source>PDF 已加密或需要密码，无法导入：%1</source>
         <translation>PDF 已加密或需要密码，无法导入：%1</translation>
     </message>
     <message>
-        <location filename="../src/viewmodels/AgentViewModel.cpp" line="1212"/>
+        <location filename="../src/viewmodels/AgentViewModel.cpp" line="1213"/>
         <source>PDF 文件已损坏或格式无效，无法导入：%1</source>
         <translation>PDF 文件已损坏或格式无效，无法导入：%1</translation>
     </message>
     <message>
-        <location filename="../src/viewmodels/AgentViewModel.cpp" line="1215"/>
+        <location filename="../src/viewmodels/AgentViewModel.cpp" line="1216"/>
         <source>未能从 PDF 中提取到文本（可能是扫描件，没有文本层）：%1</source>
         <translation>未能从 PDF 中提取到文本（可能是扫描件，没有文本层）：%1</translation>
     </message>
     <message>
-        <location filename="../src/viewmodels/AgentViewModel.cpp" line="1219"/>
+        <location filename="../src/viewmodels/AgentViewModel.cpp" line="1220"/>
         <source>无法读取 PDF 文件：%1</source>
         <translation>无法读取 PDF 文件：%1</translation>
     </message>
     <message>
-        <location filename="../src/viewmodels/AgentViewModel.cpp" line="1975"/>
+        <location filename="../src/viewmodels/AgentViewModel.cpp" line="1247"/>
+        <source>仅支持 http/https URL：%1</source>
+        <translation>仅支持 http/https URL：%1</translation>
+    </message>
+    <message>
+        <location filename="../src/viewmodels/AgentViewModel.cpp" line="1271"/>
+        <source>页面无可用正文：%1</source>
+        <translation>页面无可用正文：%1</translation>
+    </message>
+    <message>
+        <location filename="../src/viewmodels/AgentViewModel.cpp" line="1284"/>
+        <source>页面已重定向至 %1，请直接导入新地址。</source>
+        <translation>页面已重定向至 %1，请直接导入新地址。</translation>
+    </message>
+    <message>
+        <location filename="../src/viewmodels/AgentViewModel.cpp" line="1288"/>
+        <source>抓取失败：%1</source>
+        <translation>抓取失败：%1</translation>
+    </message>
+    <message>
+        <location filename="../src/viewmodels/AgentViewModel.cpp" line="2039"/>
         <source>这个会话还没有可分叉的历史记录。</source>
         <translation>这个会话还没有可分叉的历史记录。</translation>
     </message>
     <message>
-        <location filename="../src/viewmodels/AgentViewModel.cpp" line="1980"/>
+        <location filename="../src/viewmodels/AgentViewModel.cpp" line="2044"/>
         <source>这条回答还没有存进会话记录，稍等一下再试。</source>
         <translation>这条回答还没有存进会话记录，稍等一下再试。</translation>
     </message>
     <message>
-        <location filename="../src/viewmodels/AgentViewModel.cpp" line="1998"/>
+        <location filename="../src/viewmodels/AgentViewModel.cpp" line="2062"/>
         <source>%1（分支）</source>
         <translation>%1（分支）</translation>
     </message>
     <message>
-        <location filename="../src/viewmodels/AgentViewModel.cpp" line="2000"/>
+        <location filename="../src/viewmodels/AgentViewModel.cpp" line="2064"/>
         <source>%1（分支%2）</source>
         <translation>%1（分支%2）</translation>
     </message>
     <message>
-        <location filename="../src/viewmodels/AgentViewModel.cpp" line="2004"/>
+        <location filename="../src/viewmodels/AgentViewModel.cpp" line="2068"/>
         <source>无法创建分叉出来的会话，请重试。</source>
         <translation>无法创建分叉出来的会话，请重试。</translation>
     </message>
@@ -4395,93 +4450,93 @@
         <translation type="vanished">分叉会话已创建，但没能发出第一条消息。</translation>
     </message>
     <message>
-        <location filename="../src/viewmodels/AgentViewModel.cpp" line="1184"/>
+        <location filename="../src/viewmodels/AgentViewModel.cpp" line="1185"/>
         <source>无法打开文件：%1</source>
         <translation>无法打开文件：%1</translation>
     </message>
     <message>
-        <location filename="../src/viewmodels/AgentViewModel.cpp" line="1246"/>
+        <location filename="../src/viewmodels/AgentViewModel.cpp" line="1310"/>
         <source>知识库正忙（导入或重新嵌入进行中），请稍后再试</source>
         <translation>知识库正忙（导入或重新嵌入进行中），请稍后再试</translation>
     </message>
     <message>
-        <location filename="../src/viewmodels/AgentViewModel.cpp" line="1372"/>
+        <location filename="../src/viewmodels/AgentViewModel.cpp" line="1436"/>
         <source>文档内容已存在，已跳过：%1</source>
         <translation>文档内容已存在，已跳过：%1</translation>
     </message>
     <message>
-        <location filename="../src/viewmodels/AgentViewModel.cpp" line="1407"/>
+        <location filename="../src/viewmodels/AgentViewModel.cpp" line="1471"/>
         <source>未找到文档内容，无法重新嵌入：%1</source>
         <translation>未找到文档内容，无法重新嵌入：%1</translation>
     </message>
     <message>
-        <location filename="../src/viewmodels/AgentViewModel.cpp" line="1427"/>
+        <location filename="../src/viewmodels/AgentViewModel.cpp" line="1491"/>
         <source>已重新嵌入 %1（%2 段）</source>
         <translation>已重新嵌入 %1（%2 段）</translation>
     </message>
     <message>
-        <location filename="../src/viewmodels/AgentViewModel.cpp" line="1429"/>
+        <location filename="../src/viewmodels/AgentViewModel.cpp" line="1493"/>
         <source>重新嵌入失败：%1</source>
         <translation>重新嵌入失败：%1</translation>
     </message>
     <message>
-        <location filename="../src/viewmodels/AgentViewModel.cpp" line="1433"/>
+        <location filename="../src/viewmodels/AgentViewModel.cpp" line="1497"/>
         <source>已导入 %1（%2 段）</source>
         <translation>已导入 %1（%2 段）</translation>
     </message>
     <message>
-        <location filename="../src/viewmodels/AgentViewModel.cpp" line="1435"/>
+        <location filename="../src/viewmodels/AgentViewModel.cpp" line="1499"/>
         <source>导入失败（文件为空或无法分块）：%1</source>
         <translation>导入失败（文件为空或无法分块）：%1</translation>
     </message>
     <message>
-        <location filename="../src/viewmodels/AgentViewModel.cpp" line="1437"/>
+        <location filename="../src/viewmodels/AgentViewModel.cpp" line="1501"/>
         <source>知识库总量已达上限（最多 %1 段），请先删除部分文档后再导入</source>
         <translation>知识库总量已达上限（最多 %1 段），请先删除部分文档后再导入</translation>
     </message>
     <message>
-        <location filename="../src/viewmodels/AgentViewModel.cpp" line="1440"/>
+        <location filename="../src/viewmodels/AgentViewModel.cpp" line="1504"/>
         <source>文件过大（超过单文档 %1 段上限）：%2</source>
         <translation>文件过大（超过单文档 %1 段上限）：%2</translation>
     </message>
     <message>
-        <location filename="../src/viewmodels/AgentViewModel.cpp" line="1503"/>
-        <location filename="../src/viewmodels/AgentViewModel.cpp" line="1533"/>
+        <location filename="../src/viewmodels/AgentViewModel.cpp" line="1567"/>
+        <location filename="../src/viewmodels/AgentViewModel.cpp" line="1597"/>
         <source>数据库未就绪</source>
         <translation>数据库未就绪</translation>
     </message>
     <message>
-        <location filename="../src/viewmodels/AgentViewModel.cpp" line="1510"/>
+        <location filename="../src/viewmodels/AgentViewModel.cpp" line="1574"/>
         <source>备份失败，详见日志</source>
         <translation>备份失败，详见日志</translation>
     </message>
     <message>
-        <location filename="../src/viewmodels/AgentViewModel.cpp" line="1538"/>
+        <location filename="../src/viewmodels/AgentViewModel.cpp" line="1602"/>
         <source>无法读取该备份文件：%1</source>
         <translation>无法读取该备份文件：%1</translation>
     </message>
     <message>
-        <location filename="../src/viewmodels/AgentViewModel.cpp" line="1540"/>
+        <location filename="../src/viewmodels/AgentViewModel.cpp" line="1604"/>
         <source>备份完整性检查未通过，已取消恢复</source>
         <translation>备份完整性检查未通过，已取消恢复</translation>
     </message>
     <message>
-        <location filename="../src/viewmodels/AgentViewModel.cpp" line="1555"/>
+        <location filename="../src/viewmodels/AgentViewModel.cpp" line="1619"/>
         <source>恢复失败，原数据库已还原</source>
         <translation>恢复失败，原数据库已还原</translation>
     </message>
     <message>
-        <location filename="../src/viewmodels/AgentViewModel.cpp" line="1815"/>
+        <location filename="../src/viewmodels/AgentViewModel.cpp" line="1879"/>
         <source>文件过大（附件上限 %1 KB）：%2</source>
         <translation>文件过大（附件上限 %1 KB）：%2</translation>
     </message>
     <message>
-        <location filename="../src/viewmodels/AgentViewModel.cpp" line="1820"/>
+        <location filename="../src/viewmodels/AgentViewModel.cpp" line="1884"/>
         <source>暂不支持二进制文件作为附件：%1</source>
         <translation>暂不支持二进制文件作为附件：%1</translation>
     </message>
     <message>
-        <location filename="../src/viewmodels/AgentViewModel.cpp" line="1833"/>
+        <location filename="../src/viewmodels/AgentViewModel.cpp" line="1897"/>
         <source>已忽略 %1 个不支持的文件类型（仅支持图片与文本文件）</source>
         <translation>已忽略 %1 个不支持的文件类型（仅支持图片与文本文件）</translation>
     </message>
@@ -5228,87 +5283,87 @@
 <context>
     <name>QObject</name>
     <message>
-        <location filename="../src/main.cpp" line="920"/>
+        <location filename="../src/main.cpp" line="922"/>
         <source>显示/隐藏主窗</source>
         <translation>显示/隐藏主窗</translation>
     </message>
     <message>
-        <location filename="../src/main.cpp" line="921"/>
+        <location filename="../src/main.cpp" line="923"/>
         <source>新建会话</source>
         <translation>新建会话</translation>
     </message>
     <message>
-        <location filename="../src/main.cpp" line="923"/>
+        <location filename="../src/main.cpp" line="925"/>
         <source>退出</source>
         <translation>退出</translation>
     </message>
     <message>
-        <location filename="../src/main.cpp" line="977"/>
+        <location filename="../src/main.cpp" line="979"/>
         <source>任务完成</source>
         <translation>任务完成</translation>
     </message>
     <message>
-        <location filename="../src/main.cpp" line="977"/>
+        <location filename="../src/main.cpp" line="979"/>
         <source>任务结束</source>
         <translation>任务结束</translation>
     </message>
     <message>
-        <location filename="../src/main.cpp" line="978"/>
+        <location filename="../src/main.cpp" line="980"/>
         <source>会话已回复</source>
         <translation>会话已回复</translation>
     </message>
     <message>
-        <location filename="../src/viewmodels/AgentViewModel.cpp" line="89"/>
+        <location filename="../src/viewmodels/AgentViewModel.cpp" line="90"/>
         <source>PDF 已加密或需要密码</source>
         <translation>PDF 已加密或需要密码</translation>
     </message>
     <message>
-        <location filename="../src/viewmodels/AgentViewModel.cpp" line="92"/>
+        <location filename="../src/viewmodels/AgentViewModel.cpp" line="93"/>
         <source>PDF 文件已损坏或格式无效</source>
         <translation>PDF 文件已损坏或格式无效</translation>
     </message>
     <message>
-        <location filename="../src/viewmodels/AgentViewModel.cpp" line="95"/>
+        <location filename="../src/viewmodels/AgentViewModel.cpp" line="96"/>
         <source>PDF 没有文本层（可能是扫描件）</source>
         <translation>PDF 没有文本层（可能是扫描件）</translation>
     </message>
     <message>
-        <location filename="../src/viewmodels/AgentViewModel.cpp" line="98"/>
+        <location filename="../src/viewmodels/AgentViewModel.cpp" line="99"/>
         <source>PDF 读取失败</source>
         <translation>PDF 读取失败</translation>
     </message>
     <message>
-        <location filename="../src/viewmodels/AgentViewModel.cpp" line="109"/>
+        <location filename="../src/viewmodels/AgentViewModel.cpp" line="110"/>
         <source>无法打开文件</source>
         <translation>无法打开文件</translation>
     </message>
     <message>
-        <location filename="../src/viewmodels/AgentViewModel.cpp" line="118"/>
+        <location filename="../src/viewmodels/AgentViewModel.cpp" line="119"/>
         <source>内容为空或无可用分段</source>
         <translation>内容为空或无可用分段</translation>
     </message>
     <message>
-        <location filename="../src/viewmodels/AgentViewModel.cpp" line="125"/>
+        <location filename="../src/viewmodels/AgentViewModel.cpp" line="126"/>
         <source>相同内容的文档已存在</source>
         <translation>相同内容的文档已存在</translation>
     </message>
     <message>
-        <location filename="../src/viewmodels/AgentViewModel.cpp" line="138"/>
+        <location filename="../src/viewmodels/AgentViewModel.cpp" line="139"/>
         <source>嵌入服务不可用，已降级为本地伪嵌入（可稍后重新嵌入）</source>
         <translation>嵌入服务不可用，已降级为本地伪嵌入（可稍后重新嵌入）</translation>
     </message>
     <message>
-        <location filename="../src/viewmodels/AgentViewModel.cpp" line="144"/>
+        <location filename="../src/viewmodels/AgentViewModel.cpp" line="145"/>
         <source>文档过大，超过单文档分段上限</source>
         <translation>文档过大，超过单文档分段上限</translation>
     </message>
     <message>
-        <location filename="../src/viewmodels/AgentViewModel.cpp" line="147"/>
+        <location filename="../src/viewmodels/AgentViewModel.cpp" line="148"/>
         <source>超出知识库总段数预算</source>
         <translation>超出知识库总段数预算</translation>
     </message>
     <message>
-        <location filename="../src/viewmodels/AgentViewModel.cpp" line="150"/>
+        <location filename="../src/viewmodels/AgentViewModel.cpp" line="151"/>
         <source>导入失败</source>
         <translation>导入失败</translation>
     </message>

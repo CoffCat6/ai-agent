@@ -737,8 +737,10 @@ qInfo() << "NexusAI" << app.applicationVersion() << "starting";
         Sandbox::setUserDenyList(denyList);
 
         // Batch 20: http_fetch SSRF escape hatch follows its (opt-in,
-        // default-off) setting; immediate effect on the next fetch.
+        // default-off) setting; immediate effect on the next fetch. The
+        // knowledge-base URL import shares the same gate.
         fetchPtr->setAllowPrivateTargets(settings->allowLocalNetworkFetch());
+        agentVM->setAllowPrivateTargets(settings->allowLocalNetworkFetch());
 
         // T6 (F3): inject the current web search API key (DPAPI-decrypted).
         // 任务 #20 修 Mj2：webSearchApiKey() 是掩码 getter（恒空串），
