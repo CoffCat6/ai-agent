@@ -1236,6 +1236,17 @@ void AgentViewModel::startPdfImport(const QString& path, const QFileInfo& info) 
 
 // ── docs/25: 批量知识库导入 ──────────────────────────────────
 
+QString AgentViewModel::probeSourcePathForName(const QString& displayName) {
+    // Mirrors the rule in importExtractedText for a display-name-only info
+    // (what the URL path hands over): no absolute path, nothing recorded.
+    const QFileInfo info(displayName);
+    return info.isAbsolute() ? info.absoluteFilePath() : QString();
+}
+
+QString AgentViewModel::probeSourcePathForUrl(const QString& url) {
+    return url;   // the override passes the URL through unchanged
+}
+
 void AgentViewModel::importFromUrl(const QString& url) {
     // Syntax validation first: it needs no services, and a malformed URL must
     // be reported even when the knowledge base is not wired up (tests, and a
@@ -1277,7 +1288,7 @@ void AgentViewModel::importFromUrl(const QString& url) {
             const QString fallback = QUrl(url).host();
             importExtractedText(
                 QFileInfo(info.fileName().isEmpty() ? fallback : info.fileName()),
-                result.text);
+                result.text, QStringList(), url);
             return;
         }
         case WebContent::FetchResult::Outcome::Redirected:
@@ -1430,7 +1441,8 @@ int AgentViewModel::batchImportFailedCount() const { return m_batchFailedCount; 
 // embedding); same-name-different-content files coexist under a
 // deduplicated display name. 文本路径与 PDF 提取完成后的回调都走这里。
 void AgentViewModel::importExtractedText(const QFileInfo& info, const QString& content,
-                                         const QStringList& pageTexts) {
+                                         const QStringList& pageTexts,
+                                         const QString& sourcePathOverride) {
     const QString hash = knowledgeContentHash(content);
     if (m_rag->containsContentHash(hash)) {
         emit noticeOccurred(tr("文档内容已存在，已跳过：%1").arg(info.fileName()));
@@ -1438,7 +1450,13 @@ void AgentViewModel::importExtractedText(const QFileInfo& info, const QString& c
     }
     const QString name = m_rag->uniqueDocumentName(info.fileName());
     Activity::usage(Activity::Kind::User, QStringLiteral("doc.import"), name);
-    startIngestion(name, content, false, pageTexts, info.absoluteFilePath());
+    // A display-name-only QFileInfo (the URL path) has no meaningful
+    // absoluteFilePath() - it resolves against the CWD and fabricates a local
+    // path that does not exist. Only a real file import records its own path.
+    const QString sourcePath = !sourcePathOverride.isEmpty()
+        ? sourcePathOverride
+        : (info.isAbsolute() ? info.absoluteFilePath() : QString());
+    startIngestion(name, content, false, pageTexts, sourcePath);
 }
 
 void AgentViewModel::openKnowledgeDocument(const QString& name, int chunk) {

@@ -467,6 +467,10 @@ public:
     // imports. source_path records the URL (the "original" is remote, not
     // local). allowPrivateTargets comes from the settings escape hatch.
     Q_INVOKABLE void importFromUrl(const QString& url);
+    // Test probes for the source-path rule inside importExtractedText: a
+    // display-name-only info records nothing, an override passes through.
+    Q_INVOKABLE QString probeSourcePathForName(const QString& displayName);
+    Q_INVOKABLE QString probeSourcePathForUrl(const QString& url);
     Q_PROPERTY(bool urlImportRunning READ urlImportRunning NOTIFY urlImportRunningChanged FINAL)
     // SSRF escape hatch, mirrored from SettingsService by main.cpp (same value
     // the http_fetch tool uses).
@@ -684,7 +688,14 @@ private:
     // PDF 的后台提取（startPdfImport）完成后也汇到这里，再按内容去重、
     // 取唯一显示名并交给 startIngestion。
     void importExtractedText(const QFileInfo& info, const QString& content,
-                             const QStringList& pageTexts = QStringList());
+                             const QStringList& pageTexts = QStringList(),
+                             // Overrides the recorded source. File imports
+                             // leave it empty (the info IS the source); the
+                             // URL path passes the address, because the
+                             // QFileInfo it hands over carries only a display
+                             // name whose absoluteFilePath() would resolve to
+                             // the CWD + name (a fabricated local path).
+                             const QString& sourcePathOverride = QString());
     // docs/20 §5.2 (C2): PDF 文本提取的后台化（QPdfDocument 解析不在
     // GUI 线程跑，避免大文件冻结界面）。
     void startPdfImport(const QString& path, const QFileInfo& info);

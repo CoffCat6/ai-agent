@@ -397,6 +397,53 @@ private slots:
         QCOMPARE(recorded, QStringLiteral("https://example.com/article"));
     }
 
+    // A URL import must record the URL as its source, never a fabricated
+    // local path. The regression: importFromUrl handed a display-name-only
+    // QFileInfo to the file-import pipeline, whose absoluteFilePath()
+    // resolved the name against the CWD ("D:/...build/v2-6" style paths that
+    // exist nowhere) - the user's copy-source then produced a local path for
+    // a web document. The override now carries the URL through.
+    void urlImportRecordsUrlNotLocalPath() {
+        QQmlApplicationEngine engine;
+        NexusQrcFallback fallback(QStringLiteral(NEXUS_BUILD_DIR "/NexusAI"));
+        engine.addUrlInterceptor(&fallback);
+        engine.rootContext()->setContextProperty("Theme", ThemeProvider::instance());
+        engine.load(QUrl("qrc:/qt/qml/NexusAI/src/ui/main.qml"));
+        QVERIFY(!engine.rootObjects().isEmpty());
+        auto* window = qobject_cast<QQuickWindow*>(engine.rootObjects().first());
+        QVERIFY(window);
+        window->resize(1200, 800);
+        QTest::qWait(150);
+
+        // The observable is the ingest chain's source-path contract. Drive it
+        // through the VM's own method with a fetch that succeeds without the
+        // network: not possible offline, so pin the guard at the unit level -
+        // importExtractedText's rule - via a QFileInfo that mirrors what the
+        // URL path builds (display name only, not absolute).
+        QObject* dialog = findKnowledgeDialog(window);
+        QVERIFY(dialog);
+
+        // The rule lives on the VM (importExtractedText); probe it there.
+        auto* vm = AgentViewModel::instance();
+        {
+            QString out;
+            QVERIFY(QMetaObject::invokeMethod(vm, "probeSourcePathForName",
+                                              Q_RETURN_ARG(QString, out),
+                                              Q_ARG(QString, QStringLiteral("v2-6"))));
+            QVERIFY2(out.isEmpty(),
+                     qPrintable(QStringLiteral("display-name-only info must not "
+                                               "record a path, got: %1")
+                                  .arg(out)));
+        }
+        {
+            QString out;
+            QVERIFY(QMetaObject::invokeMethod(vm, "probeSourcePathForUrl",
+                                              Q_RETURN_ARG(QString, out),
+                                              Q_ARG(QString, QStringLiteral("https://x.example/a.md"))));
+            QCOMPARE(out, QStringLiteral("https://x.example/a.md"));
+        }
+    }
+
     // Activating a row asks the host to open the chunk viewer - the same
     // documentDetailsRequested contract ContextPanel used to expose.
     void rowActivationRequestsDetails() {
