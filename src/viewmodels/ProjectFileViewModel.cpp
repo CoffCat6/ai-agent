@@ -271,11 +271,29 @@ bool ProjectFileViewModel::openInDefaultApp(const QString& relPath) {
     return QDesktopServices::openUrl(QUrl::fromLocalFile(absolute));
 }
 
+QString ProjectFileViewModel::openAbsoluteRoute(const QString& absolutePath) const {
+    if (absolutePath.isEmpty()) return QString();
+    const QUrl parsed(absolutePath, QUrl::StrictMode);
+    if (parsed.isValid()
+            && (parsed.scheme() == QLatin1String("http")
+                || parsed.scheme() == QLatin1String("https")))
+        return QStringLiteral("web");
+    if (QFileInfo::exists(absolutePath))
+        return QStringLiteral("file");
+    return QString();
+}
+
 bool ProjectFileViewModel::openAbsolute(const QString& absolutePath) {
-    if (absolutePath.isEmpty() || !QFileInfo::exists(absolutePath)) return false;
-    // Same ELECTRON_RUN_AS_NODE scrub as the openInDefaultApp path above.
+    // The knowledge base records two source shapes: absolute file paths from
+    // file imports, and http(s) URLs from URL imports. QUrl::fromLocalFile on
+    // an https address produced an invalid URL and the open silently failed,
+    // so the route (see openAbsoluteRoute) sends URLs to the browser.
+    const QString route = openAbsoluteRoute(absolutePath);
+    if (route.isEmpty()) return false;
     QProcessEnvironment::systemEnvironment().remove(
         QStringLiteral("ELECTRON_RUN_AS_NODE"));
+    if (route == QLatin1String("web"))
+        return QDesktopServices::openUrl(QUrl(absolutePath, QUrl::StrictMode));
     return QDesktopServices::openUrl(QUrl::fromLocalFile(absolutePath));
 }
 

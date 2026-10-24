@@ -157,6 +157,35 @@ private slots:
 
     // The preview reports truncation and binary detection through the facade,
     // since that is what the panel renders its notices from.
+    // openAbsolute routes by scheme: the knowledge base records both file
+    // paths and http(s) URLs as a source. A URL used to go through
+    // QUrl::fromLocalFile, which produced an invalid URL and the open
+    // silently failed (measured: the user clicked "open source" on a URL-
+    // imported document and nothing happened).
+    // The ROUTE probe is the offline-decidable contract: QDesktopServices
+    // itself cannot launch anything in this GUI-less process, so the test
+    // asserts which branch each source takes, not the launch outcome.
+    void openAbsoluteRoutesUrlsToWebAndFilesToLocal() {
+        writeFile("real.md", "x");
+        ProjectFileViewModel vm;
+        vm.setRoot(m_root->path());
+
+        // http(s) sources route to the browser branch - the whole fix.
+        QCOMPARE(vm.openAbsoluteRoute(QStringLiteral("https://example.com/a.md")),
+                 QStringLiteral("web"));
+        QCOMPARE(vm.openAbsoluteRoute(QStringLiteral("http://example.com/b.md")),
+                 QStringLiteral("web"));
+
+        // A real local path routes to the file branch.
+        QCOMPARE(vm.openAbsoluteRoute(m_root->path() + "/real.md"),
+                 QStringLiteral("file"));
+
+        // Missing files and garbage route nowhere.
+        QVERIFY(vm.openAbsoluteRoute(m_root->path() + "/nope.md").isEmpty());
+        QVERIFY(vm.openAbsoluteRoute(QString()).isEmpty());
+        QVERIFY(vm.openAbsoluteRoute(QStringLiteral("not a path or url")).isEmpty());
+    }
+
     void previewReportsTruncationAndBinary() {
         writeFile("big.txt", QByteArray(4096, 'a'));
         writeFile("blob.bin", QByteArray("MZ\x00\x00rest", 9));

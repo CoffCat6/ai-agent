@@ -62,6 +62,10 @@ public:
     // recorded source file, which lives OUTSIDE any project root). Returns
     // false when the file does not exist or the platform refused.
     Q_INVOKABLE bool openAbsolute(const QString& absolutePath);
+    // Pure routing decision for openAbsolute ("web" | "file" | ""): which
+    // branch a source path takes, without launching anything. Test seam and
+    // diagnostics - QDesktopServices cannot run in a GUI-less process.
+    Q_INVOKABLE QString openAbsoluteRoute(const QString& absolutePath) const;
     // Resolves an absolute filesystem path to a canonical form without any
     // project containment: the knowledge base records absolute paths, which by
     // definition live outside the browser's project root. Returns "" for a

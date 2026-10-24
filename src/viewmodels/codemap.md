@@ -116,7 +116,7 @@
 | `I18nManager` | 翻译器装载与运行时切语言（`I18n`） | `currentLocale/availableLocales`、`applyLocale(locale)` |
 | `ConnectionTester` | 一次性最小请求测试连接（不动实时管线） | `test(protocol, baseUrl, apiKey, model)`；信号 `testFinished(ok, message)` |
 | `GitViewModel` | 异步 Git 门面（`GitVM`）：只读历史/分支/blame + 显式写操作 | `refreshStatus`、`requestRepoLog/DiffHunks/Blame/Graph`、`stageFiles/commitStaged/undoLastCommit/discardPath/stashPush` |
-| `ProjectFileViewModel` | 右侧栏文件浏览门面（`ProjectFileVM`）：一层目录懒读 + 预览 + 打开，按 relPath 缓存（切根失效、失败不缓存），只读无写 | `children/preview/absolutePath/clearCache`、`openInDefaultApp`（清 `ELECTRON_RUN_AS_NODE`）、`openWithKnownEditor`（注册表探测 MarkText/VSCodium/VSCode 的 shell\open\command 应急拉起）、`openAbsolute/canonicalAbsolute`（知识库源文件用，不受项目根约束） |
+| `ProjectFileViewModel` | 右侧栏文件浏览门面（`ProjectFileVM`）：一层目录懒读 + 预览 + 打开，按 relPath 缓存（切根失效、失败不缓存），只读无写 | `children/preview/absolutePath/clearCache`、`openInDefaultApp`（清 `ELECTRON_RUN_AS_NODE`）、`openWithKnownEditor`（注册表探测 MarkText/VSCodium/VSCode 的 shell\open\command 应急拉起）、`openAbsolute`（**按 scheme 分流**：http(s) → 浏览器 openUrl，本地 → fromLocalFile——URL 源此前走 fromLocalFile 得无效 URL 静默打不开；判定与执行分离为 `openAbsoluteRoute` 探针，GUI-less 测试可断言路由）、`canonicalAbsolute`（知识库源文件用，不受项目根约束） |
 | `CommitMessageDrafter` | 一次性“从暂存 diff 起草提交信息”（`CommitDrafter`） | `draft(stagedDiff, recentSubjects)`、`cancel()`；信号 `drafted` |
 | `McpManager` | MCP server 运行时管理（`McpManager`）：连接/工具桥接/持久化 | `addServer/removeServer/setEnabled/reconnect`、`servers`、`lastError` |
 | `CodeHighlighter` | 代码块正则高亮 + 语言识别（QML 元素，非单例）。语言来源二选一：`sourceName` 扩展名映射（文件预览；未知扩展名保持纯文本不猜），无名字走内容启发式（聊天代码块）；`visualLineSpans(wrapWidth)` 从 `QTextLayout` 取每逻辑行视觉行数（须显式传视口宽，惰性布局需内部自建且设 WrapAnywhere）；单行 >8KB 跳过高亮 | `document/text/sourceName/languageName/visualLineSpans/hasHighlightedText` |
