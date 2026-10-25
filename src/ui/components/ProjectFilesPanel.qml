@@ -836,6 +836,10 @@ Item {
                     // a scrollbar for content that already fits.
                     ScrollBar.horizontal.policy: root.previewWrap
                         ? ScrollBar.AlwaysOff : ScrollBar.AsNeeded
+                    // Match the bar: Shift+wheel pans only in NoWrap mode,
+                    // where the text can actually overflow horizontally.
+                    // (The overlay itself is declared after the TextArea -
+                    // topmost, so it sees wheel events before the editor.)
 
                     TextArea {
                         id: previewArea
@@ -880,6 +884,11 @@ Item {
                         // paints from the same layout, so this is the same
                         // width the text itself wraps against.
                     }
+
+                    // Match the horizontal scrollbar: Shift+wheel pans only
+                    // in NoWrap mode, where the text can actually overflow
+                    // horizontally. Declared after the TextArea (topmost).
+                    HWheelScroll { enabled: !root.previewWrap }
                 }
                 }   // RowLayout (gutter + editor)
             }

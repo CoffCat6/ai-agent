@@ -94,6 +94,13 @@ Rectangle {
                     }
                 }
             }
+
+            // Many open tabs overflow this strip; Shift+wheel pans it like
+            // the other horizontally-overflowing views. Sibling of the Row
+            // (positioners forbid fill anchors on their children) and
+            // declared after it (topmost) so it sees wheel events first;
+            // NoButton keeps tab clicks and drag-flick untouched.
+            HWheelScroll {}
         }
     }
 

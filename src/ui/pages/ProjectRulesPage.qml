@@ -72,7 +72,7 @@ Rectangle {
     function stateMeta(st) {
         switch (st) {
         case "active": return { label: qsTr("生效中"), color: Theme.statusSuccess }
-        case "truncated": return { label: qsTr("超过 8 KB，截断注入"), color: Theme.statusWarning }
+        case "truncated": return { label: qsTr("超过注入上限，截断注入"), color: Theme.statusWarning }
         case "seed": return { label: qsTr("模板未编辑，未注入"), color: Theme.statusWarning }
         case "empty": return { label: qsTr("规则为空，未注入"), color: Theme.textSecondary }
         case "missing": return { label: qsTr("未创建"), color: Theme.textSecondary }
@@ -85,7 +85,11 @@ Rectangle {
         return AgentVM.projectRulesState(root.selectedProject.rootPath)
     }
 
-    // The 8 KB injection cap counts bytes, not chars.
+    // The injection cap (AgentVM.projectRulesMaxBytes) counts bytes, not
+    // chars; pulled once at page creation - the constant never changes at
+    // runtime.
+    readonly property int rulesMaxBytes: AgentVM.projectRulesMaxBytes()
+
     function utf8Bytes(s) {
         try { return unescape(encodeURIComponent(s)).length }
         catch (e) { return s.length }
@@ -307,8 +311,10 @@ Rectangle {
 
                 Text {
                     Layout.alignment: Qt.AlignVCenter
-                    text: qsTr("%1 / 8192 字节").arg(root.utf8Bytes(rulesArea.text))
-                    color: root.utf8Bytes(rulesArea.text) > 8192
+                    text: qsTr("%1 / %2 字节")
+                        .arg(root.utf8Bytes(rulesArea.text))
+                        .arg(root.rulesMaxBytes)
+                    color: root.utf8Bytes(rulesArea.text) > root.rulesMaxBytes
                         ? Theme.statusWarning : Theme.textTertiary
                     font.pixelSize: 9
                     font.family: Theme.fontMono
@@ -463,12 +469,19 @@ Rectangle {
                             }
                         }
                     }
+
+                    // Declared AFTER the TextArea so the overlay is topmost
+                    // and sees wheel events before the editor consumes them.
+                    // Rules files are written unwrapped: Shift+wheel pans
+                    // horizontally, plain wheel still scrolls lines.
+                    HWheelScroll {}
                 }
             }
 
             Text {
                 Layout.fillWidth: true
-                text: qsTr("规则计入上下文预算，注入上限 8 KB，超出部分自动截断；未编辑的模板不会被注入。")
+                text: qsTr("规则计入上下文预算，注入上限 %1 KB，超出部分自动截断；未编辑的模板不会被注入。")
+                    .arg(Math.round(root.rulesMaxBytes / 1024))
                 color: Theme.textTertiary
                 font.pixelSize: 9
                 font.family: Theme.fontSans

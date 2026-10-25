@@ -1372,6 +1372,10 @@ QStringList AgentViewModel::watchedRulesFiles() const {
     return m_rulesWatcher ? m_rulesWatcher->files() : QStringList();
 }
 
+int AgentViewModel::projectRulesMaxBytes() const {
+    return AIAgent::kProjectRulesMaxBytes;
+}
+
 QString AgentViewModel::projectRulesState(const QString& projectRoot) {
     if (projectRoot.isEmpty()) return QStringLiteral("missing");
     const QString root = QDir::toNativeSeparators(projectRoot);
@@ -1390,8 +1394,9 @@ QString AgentViewModel::projectRulesState(const QString& projectRoot) {
     if (chosen.isEmpty()) return QStringLiteral("missing");
     QFile file(chosen);
     if (!file.open(QIODevice::ReadOnly)) return QStringLiteral("missing");
-    const QByteArray raw = file.read(8 * 1024 + 1);
-    if (raw.size() > 8 * 1024) return QStringLiteral("truncated");
+    const QByteArray raw = file.read(AIAgent::kProjectRulesMaxBytes + 1);
+    if (raw.size() > AIAgent::kProjectRulesMaxBytes)
+        return QStringLiteral("truncated");
     QString content = QString::fromUtf8(raw).trimmed();
     if (content.isEmpty()) return QStringLiteral("empty");
     // Shared with the injector so page and prompt can never disagree.

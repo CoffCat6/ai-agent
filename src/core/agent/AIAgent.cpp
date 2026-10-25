@@ -300,9 +300,9 @@ bool AIAgent::isUntouchedRulesSeed(const QString& content) {
 
 // G3: the project rules block. Lookup order matches docs/26 G3: the
 // conventional AGENTS.md first, then .nexus/rules.md for projects that want
-// the rules out of the root. First existing file wins; 8KB cap with a log so
-// an oversized file cannot silently eat the context budget (the cap is the
-// documented acceptance criterion).
+// the rules out of the root. First existing file wins; the
+// kProjectRulesMaxBytes cap with a log so an oversized file cannot silently
+// eat the context budget.
 QString AIAgent::projectRulesBlock() const {
     if (m_activeProjectRoot.isEmpty()) return QString();
 
@@ -333,7 +333,7 @@ QString AIAgent::projectRulesBlock() const {
         qWarning() << "Project rules unreadable (will retry on change):" << path;
         return QString();
     }
-    constexpr qint64 kMaxRulesBytes = 8 * 1024;
+    constexpr qint64 kMaxRulesBytes = kProjectRulesMaxBytes;
     QByteArray raw = file.read(kMaxRulesBytes + 1);
     const bool truncated = raw.size() > kMaxRulesBytes;
     if (truncated) {
@@ -361,7 +361,8 @@ QString AIAgent::projectRulesBlock() const {
                 cut = lead;
         }
         raw.truncate(cut);
-        qWarning() << "Project rules exceed 8KB, truncated:" << path;
+        qWarning() << "Project rules exceed the injection cap ("
+                   << kProjectRulesMaxBytes << "bytes), truncated:" << path;
     }
     // UTF-8 first (BOM auto-stripped by fromUtf8), local 8-bit fallback so a
     // legacy-encoded rules file still reads instead of turning mojibake.
@@ -948,6 +949,7 @@ void AIAgent::launchTaskTail(bool fresh, const QString& episodicInjection) {
         // T8 (REQ-T8-02): inject episodic memory summaries for new sessions.
         // Async-only since docs/25 B3: an empty injection (timeout / nothing
         // found) simply launches without it.
+        m_episodicInjection = episodicInjection;
         QJsonObject sysMsg;
         sysMsg["role"] = "system";
         QString prompt = effectiveSystemPrompt();
@@ -955,6 +957,14 @@ void AIAgent::launchTaskTail(bool fresh, const QString& episodicInjection) {
             prompt += episodicInjection;
         sysMsg["content"] = prompt;
         m_messages.prepend(sysMsg);   // user message was appended first (B3)
+    } else {
+        // The system prompt used to be built once per session, so mid-session
+        // changes (project rules by mtime, project switch, prompt override)
+        // never reached a continuing conversation - the settings page's
+        // "next message" promise was false. Rebuild in place each task; the
+        // DB is untouched (nothing persisted) and the session's episodic
+        // injection is re-applied from m_episodicInjection.
+        rebuildSystemMessage();
     }
 
     // Pre-notify compression: ensure m_messages is within budget before
@@ -988,6 +998,30 @@ void AIAgent::resumeTaskLaunch(const QString& episodicInjection) {
     launchTaskTail(/*fresh=*/true, episodicInjection);
 }
 
+// Refresh the in-memory system message (index 0) with the current
+// effectiveSystemPrompt(), re-applying this session's episodic injection.
+// Fresh sessions built it in launchTaskTail; resumed sessions got it from
+// resumeSession - both shapes end with the same content this function
+// produces, so a rebuild at task start is byte-equivalent when nothing
+// changed and only carries the diff when something did (rules by mtime,
+// active project, override, knowledge-base citation line).
+void AIAgent::rebuildSystemMessage() {
+    QString prompt = effectiveSystemPrompt();
+    if (!m_episodicInjection.isEmpty())
+        prompt += m_episodicInjection;
+    QJsonObject sysMsg;
+    sysMsg["role"] = "system";
+    sysMsg["content"] = prompt;
+    if (!m_messages.isEmpty()
+            && m_messages.first().toObject().value("role")
+                   == QLatin1String("system")) {
+        m_messages.replace(0, sysMsg);
+    } else {
+        // No system message yet (defensive): same shape as a fresh launch.
+        m_messages.prepend(sysMsg);
+    }
+}
+
 void AIAgent::resetSession() {
     if (m_active) stop();
     const bool wasActive = m_active;
@@ -1011,6 +1045,7 @@ void AIAgent::resetSession() {
     if (m_llmService && wasActive) m_llmService->cancel();
 
     m_sessionId.clear();
+    m_episodicInjection.clear();   // session-scoped; next fresh launch sets it
     // G4: emit after the id is cleared so listeners read an empty list.
     emit fileCheckpointsChanged();
     m_messages = QJsonArray();
@@ -1039,6 +1074,7 @@ void AIAgent::resumeSession(const QString& sessionId) {
 
     m_sessionId = sessionId;
     m_messages = QJsonArray();
+    m_episodicInjection.clear();   // resumed sessions never carried one
     m_usedToolCallIds.clear();   // resumed history carries no tool calls
     // F1: todo state is persisted per session; reopening a session reloads
     // ITS OWN stored list (empty when it never used todo_write) instead of
@@ -1707,6 +1743,11 @@ void AIAgent::restartTaskFromAnchor() {
     clearStreamState();
 
     ++m_epoch;   // invalidate results from any previous task
+
+    // Regenerate re-sends an existing turn as a NEW request: the system
+    // message must be as fresh as startTask's (a rules edit between the
+    // original turn and the regenerate would otherwise be ignored).
+    rebuildSystemMessage();
 
     {
         const int reserved = estimateReservedTokensForNextRequest();

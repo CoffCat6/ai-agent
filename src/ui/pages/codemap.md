@@ -179,14 +179,15 @@ AgentChatPage 空态的「配置模型」、ModelSelector、`AgentVM.modelSettin
 
 - MemoryPage 与任务描述的知识库职责不一致：知识库导入/删除/检索不在本页；
   若按描述改动会误改语义。知识库 UI 的单一入口是 ContextPanel。
-- GeneralPage 顶部仍写「不受底部保存/取消影响」，是旧批量保存文案遗留；底栏已无保存按钮。
-  该页存在两个恢复默认入口（页头按钮与对话框底栏），二者都调用
-  `requestResetDefaults()`，但只有底栏走确认弹窗。
+- GeneralPage 只有底栏一个恢复默认入口（带确认弹窗）；2026-10-25 移除了页头
+  的重复按钮——它与底栏调用同一 `requestResetDefaults()` 却跳过确认。页头文案
+  同步改为指向底部入口（旧文案提及已不存在的「保存 / 取消」）。
 - InterfacePage 的值读 `EditBuffer.staged` 再回落 `PreferenceStore`，若未来把
   `stage()` 改回纯暂存，页面会表现为“能改但不落盘”；当前依赖 EditBuffer 的写穿语义。
 - UsageStatsPage 单文件约 1250 行，聚合、图表映射、分页、配额编辑耦合在一起；
-  四个配额 SpinBox 用 `Component.onCompleted` 赋初值而非绑定，外部改动不会回显。
-  范围跨多年时后端 byDay 最多 366 行，UI 无降采样提示。
+  四个配额 SpinBox 仍用 `Component.onCompleted` 赋初值，但已配 Settings 信号
+  Connections（焦点护栏）回绑外部变更——备份恢复等改动不再显示旧值、也不会被
+  下一次 onValueModified 写回。范围跨多年时后端 byDay 最多 366 行，UI 无降采样提示。
 - ActivityLogPage 只覆盖最近 500 条，且无自动刷新；它不使用 LogModel。
   LogModel 是运行时日志面板（LogPanel）的模型，两者数据源完全不同，勿混接。
 - ModelConfigPage 的 `savedHint` 只表示最近一次字段写入，不代表整页校验通过；

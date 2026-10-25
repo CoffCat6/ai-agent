@@ -511,6 +511,16 @@ ColumnLayout {
                     opacity: 0.7
                 }
             }
+
+            // Shift+wheel pans the columns. Sibling of the Column (the
+            // positioner forbids fill anchors on its children) and declared
+            // after it (topmost) so it sees wheel events before the
+            // content. This Flickable has no vertical extent
+            // (contentHeight == height), so there is no gesture clash, and
+            // the overlay consumes Shift+wheel even at the horizontal
+            // limits - without that, Qt's native scroll chaining would
+            // hand the leftover delta to the page's vertical scroller.
+            HWheelScroll {}
         }
     }
 

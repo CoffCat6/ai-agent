@@ -1474,9 +1474,10 @@ private slots:
         // A long file is returned in full here (the 8KB cap is the agent's
         // injection rule, not the editor's), but the state reports truncation.
         QVERIFY(root.open(QIODevice::WriteOnly));
-        root.write(QByteArray(9 * 1024, 'x'));
+        root.write(QByteArray(AIAgent::kProjectRulesMaxBytes + 1024, 'x'));
         root.close();
-        QCOMPARE(vm.loadProjectRules(dir.path()).size(), 9 * 1024);
+        QCOMPARE(vm.loadProjectRules(dir.path()).size(),
+                 AIAgent::kProjectRulesMaxBytes + 1024);
         QCOMPARE(vm.projectRulesState(dir.path()),
                  QStringLiteral("truncated"));
 

@@ -1205,6 +1205,33 @@ Item {
                     columnSpacing: 16
                     rowSpacing: 6
 
+                    // External quota changes (e.g. a backup restore done from
+                    // the 备份 page in the same dialog session) must reach
+                    // these four SpinBoxes: the Component.onCompleted seed is
+                    // one-shot, and a stale spin would WRITE the stale value
+                    // back on the next onValueModified. Focus guard keeps a
+                    // typed-but-uncommitted edit from being stomped (same
+                    // pattern as ModelConfigPage's profilesChanged rebind).
+                    Connections {
+                        target: Settings
+                        function onDailyTokenQuotaChanged() {
+                            if (!dailyTokenSpin.activeFocus)
+                                dailyTokenSpin.value = Settings.dailyTokenQuota
+                        }
+                        function onMonthlyTokenQuotaChanged() {
+                            if (!monthlyTokenSpin.activeFocus)
+                                monthlyTokenSpin.value = Settings.monthlyTokenQuota
+                        }
+                        function onDailyCostQuotaCentsChanged() {
+                            if (!dailyCostSpin.activeFocus)
+                                dailyCostSpin.value = Math.round(Settings.dailyCostQuotaCents / 100)
+                        }
+                        function onMonthlyCostQuotaCentsChanged() {
+                            if (!monthlyCostSpin.activeFocus)
+                                monthlyCostSpin.value = Math.round(Settings.monthlyCostQuotaCents / 100)
+                        }
+                    }
+
                     Text { text: qsTr("每日 Token 上限"); color: Theme.textSecondary; font.pixelSize: 10; font.family: Theme.fontSans; Layout.preferredWidth: 104 }
                     SpinBox {
                         id: dailyTokenSpin

@@ -188,6 +188,13 @@ public:
     // page can show "not edited yet" and so the import path writes exactly
     // what this class treats as "empty".
     static QByteArray rulesSeedTemplate();
+    // Injection cap for the rules file, in BYTES (UTF-8). Single source for
+    // the injector, the settings-page state probe and the page's byte
+    // counter - the limit used to be hard-coded 8*1024 in three places and
+    // drifted. 32 KB ≈ 8K tokens of English / ~10K of Chinese, ~8% of the
+    // 128K default window at worst; compression folds history before the
+    // rules block is ever dropped.
+    static constexpr int kProjectRulesMaxBytes = 32 * 1024;
     // Whether `content` (already trimmed) is byte-identical to the untouched
     // seed template (BOM tolerated). Shared with AgentViewModel so the
     // settings page and the injector can never disagree on "not edited yet".
@@ -271,6 +278,12 @@ private:
     // docs/25 B3: shared launch tail — fresh system message (with/without
     // the episodic injection) + pre-notify compression + first iteration.
     void launchTaskTail(bool fresh, const QString& episodicInjection);
+    // Refresh m_messages' system message in place (prepend when absent).
+    // The system prompt is not persisted - resumeSession rebuilds it from
+    // effectiveSystemPrompt() - so rebuilding at every task start costs
+    // nothing and carries mid-session changes (project rules by mtime,
+    // project switch, prompt override) into the NEXT message.
+    void rebuildSystemMessage();
     // docs/25 B3: continuation of startTask's fresh-session path after the
     // async episodic retrieval resolves (result or 200ms deadline). Builds
     // the system message with (or without) the injection and runs the
@@ -340,13 +353,18 @@ private:
     quint64 m_epoch{0};   // bumped on start/stop/reset; stale tool results are dropped
 
     QString m_sessionId;
+    // Episodic summary injected at THIS session's fresh launch (docs/25 B3).
+    // The system message is rebuilt at every task start; this keeps the
+    // session's injection from being dropped by the rebuild. Cleared by
+    // resetSession/resumeSession (resumed sessions never carried one).
+    QString m_episodicInjection;
     QString m_activeProjectId;   // docs/17 A0: 活动项目（空 = 本地）
     // P0 项目上下文：随 id 一起推送，进入系统提示（见 projectContextBlock）。
     QString m_activeProjectName;
     QString m_activeProjectRoot;
     // Rules-file cache (G3): content + the path/mtime it was read at. The
     // mtime check before each task is one stat() call; without the cache
-    // every message would re-read an 8KB file for nothing.
+    // every message would re-read the rules file for nothing.
     // mutable: filled by the const reader (a cache, not observable state)
     mutable QString m_rulesCachePath;
     mutable QString m_rulesCacheContent;

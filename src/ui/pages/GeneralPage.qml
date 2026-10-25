@@ -66,15 +66,14 @@ Item {
                     font.family: Theme.fontSans
                 }
                 Item { Layout.fillWidth: true }
-                AppButton {
-                    text: qsTr("恢复本页默认")
-                    Accessible.name: qsTr("恢复通用设置默认值")
-                    onClicked: page.requestResetDefaults()
-                }
+                // No second reset button here: docs/17 made the dialog's
+                // bottom bar the ONE reset entry (always behind the confirm
+                // dialog). The old header duplicate fired the same destructive
+                // reset with no confirmation.
             }
 
             Text {
-                text: qsTr("本页修改实时保存，不受底部「保存 / 取消」影响")
+                text: qsTr("本页修改实时保存，无需手动提交；「恢复默认」在窗口底部。")
                 color: Theme.textSecondary
                 font.pixelSize: 10
                 font.family: Theme.fontSans

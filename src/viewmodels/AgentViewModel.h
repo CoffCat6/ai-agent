@@ -579,6 +579,11 @@ public:
     // (Windows AV can hold events for tens of seconds) and is deliberately
     // not unit-asserted; the QML handler tolerates late/duplicate events.
     Q_INVOKABLE QStringList watchedRulesFiles() const;
+    // The rules injection cap in bytes (AIAgent::kProjectRulesMaxBytes) for
+    // the settings page's byte counter and over-limit tinting - the page no
+    // longer hard-codes the number the injector truncates at. Defined
+    // out-of-line: AIAgent is only forward-declared here.
+    Q_INVOKABLE int projectRulesMaxBytes() const;
 
 signals:
     void stateChanged();

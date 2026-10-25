@@ -1128,8 +1128,8 @@ Any manual edits made since then will be overwritten.</translation>
     </message>
     <message>
         <location filename="../src/ui/pages/GeneralPage.qml" line="77"/>
-        <source>本页修改实时保存，不受底部「保存 / 取消」影响</source>
-        <translation>Changes on this page save instantly and are not affected by the &quot;Save / Cancel&quot; buttons below</translation>
+        <source>本页修改实时保存，无需手动提交；「恢复默认」在窗口底部。</source>
+        <translation>Changes on this page save instantly; &quot;Restore defaults&quot; lives at the bottom of the window</translation>
     </message>
     <message>
         <location filename="../src/ui/pages/GeneralPage.qml" line="94"/>
@@ -5343,8 +5343,8 @@ Select or import a project in the sidebar first.</translation>
     </message>
     <message>
         <location filename="../src/ui/pages/ProjectRulesPage.qml" line="61"/>
-        <source>超过 8 KB，截断注入</source>
-        <translation>Over 8 KB, injected truncated</translation>
+        <source>超过注入上限，截断注入</source>
+        <translation>Over the injection cap, injected truncated</translation>
     </message>
     <message>
         <location filename="../src/ui/pages/ProjectRulesPage.qml" line="62"/>
@@ -5363,8 +5363,8 @@ Select or import a project in the sidebar first.</translation>
     </message>
     <message>
         <location filename="../src/ui/pages/ProjectRulesPage.qml" line="268"/>
-        <source>%1 / 8192 字节</source>
-        <translation>%1 / 8192 bytes</translation>
+        <source>%1 / %2 字节</source>
+        <translation>%1 / %2 bytes</translation>
     </message>
     <message>
         <location filename="../src/ui/pages/ProjectRulesPage.qml" line="316"/>
@@ -5388,8 +5388,8 @@ Select or import a project in the sidebar first.</translation>
     </message>
     <message>
         <location filename="../src/ui/pages/ProjectRulesPage.qml" line="370"/>
-        <source>规则计入上下文预算，注入上限 8 KB，超出部分自动截断；未编辑的模板不会被注入。</source>
-        <translation>Rules count toward the context budget; injection caps at 8 KB and truncates beyond it. An untouched template is never injected.</translation>
+        <source>规则计入上下文预算，注入上限 %1 KB，超出部分自动截断；未编辑的模板不会被注入。</source>
+        <translation>Rules count toward the context budget; injection caps at %1 KB and truncates beyond it. An untouched template is never injected.</translation>
     </message>
     <message>
         <location filename="../src/ui/pages/ProjectRulesPage.qml" line="394"/>

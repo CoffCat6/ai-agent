@@ -714,6 +714,42 @@ private slots:
         agent.setActiveProject(QString(), QString(), QString());
     }
 
+    // The system prompt is rebuilt at every task start (not once per
+    // session): rules written MID-SESSION reach the next message without a
+    // resetSession - the settings page's "next message" promise.
+    void rulesEditMidSessionReachesNextMessage() {
+        QTemporaryDir dir(testDirTemplate());
+        QVERIFY(dir.isValid());
+        agent.setMemory(nullptr);
+        agent.setActiveProject(QStringLiteral("p8"), QStringLiteral("Live"),
+                               dir.path());
+        agent.resetSession();
+        llm.reset();
+        llm.script.append(textResponse(QStringLiteral("ok")));
+        QSignalSpy spy(&agent, &AIAgent::responseReady);
+        agent.startTask(QStringLiteral("first"));
+        QTRY_COMPARE(spy.count(), 1);
+        const QString baseline = llm.seenMessages.first().first().toObject()
+                                     .value("content").toString();
+        QVERIFY(!baseline.contains("Project rules"));
+
+        // Mid-session edit - NO resetSession here.
+        QFile rules(dir.path() + "/AGENTS.md");
+        QVERIFY(rules.open(QIODevice::WriteOnly));
+        rules.write("- live reload rule\n");
+        rules.close();
+        llm.reset();
+        llm.script.append(textResponse(QStringLiteral("ok")));
+        QSignalSpy spy2(&agent, &AIAgent::responseReady);
+        agent.startTask(QStringLiteral("second"));
+        QTRY_COMPARE(spy2.count(), 1);
+        const QString withRules = llm.seenMessages.first().first().toObject()
+                                      .value("content").toString();
+        QVERIFY(withRules.contains("live reload rule"));
+        QVERIFY(withRules.contains("Active project"));
+        agent.setActiveProject(QString(), QString(), QString());
+    }
+
     void seedTemplateIsNotInjected() {
         QTemporaryDir dir(testDirTemplate());
         QVERIFY(dir.isValid());
@@ -744,7 +780,7 @@ private slots:
         QVERIFY(rules.open(QIODevice::WriteOnly));
         rules.write("- rule\n");
         rules.write(AIAgent::rulesSeedTemplate());
-        rules.write(QByteArray(9 * 1024, 'z'));
+        rules.write(QByteArray(AIAgent::kProjectRulesMaxBytes + 512, 'z'));
         rules.close();
         agent.setMemory(nullptr);
         agent.setActiveProject(QStringLiteral("p3"), QStringLiteral("Big"),
@@ -758,22 +794,23 @@ private slots:
         const QString content = llm.seenMessages.first().first()
                                     .toObject().value("content").toString();
         QVERIFY(content.contains("[truncated]"));
-        // The injected block carries at most the 8KB cap, not the whole file.
-        QVERIFY(content.count(QLatin1Char('z')) <= 8192);
-        QVERIFY(content.count(QLatin1Char('z')) > 4096);
+        // The injected block carries at most the cap, not the whole file.
+        QVERIFY(content.count(QLatin1Char('z')) <= AIAgent::kProjectRulesMaxBytes);
+        QVERIFY(content.count(QLatin1Char('z')) > AIAgent::kProjectRulesMaxBytes / 2);
         agent.setActiveProject(QString(), QString(), QString());
     }
 
-    // A >8KB UTF-8 file whose 8192nd byte lands mid-character: the cut must
-    // back off to a character boundary. Before that fix the split byte
+    // A file over the cap whose cut lands mid-character: the cut must back
+    // off to a UTF-8 character boundary. Before that fix the split byte
     // decoded to U+FFFD, the whole file was re-read as local 8-bit, and a
     // valid Chinese rules file entered the prompt as mojibake on Windows.
     void oversizedUtf8RulesTruncateOnCharBoundary() {
         QTemporaryDir dir(testDirTemplate());
         QVERIFY(dir.isValid());
         QByteArray chinese;
-        chinese.reserve(9 * 1024);
-        while (chinese.size() < 9 * 1024) chinese += "规则";
+        chinese.reserve(AIAgent::kProjectRulesMaxBytes + 1024);
+        while (chinese.size() < AIAgent::kProjectRulesMaxBytes + 1024)
+            chinese += "规则";
         QFile rules(dir.path() + "/AGENTS.md");
         QVERIFY(rules.open(QIODevice::WriteOnly));
         rules.write(chinese);
