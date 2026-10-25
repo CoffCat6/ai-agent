@@ -4284,6 +4284,15 @@
 <context>
     <name>NexusAI::AgentViewModel</name>
     <message>
+        <location filename="../src/viewmodels/AgentViewModel.cpp" line="1293"/>
+        <location filename="../src/viewmodels/AgentViewModel.cpp" line="1298"/>
+        <source>保存项目规则失败：%1</source>
+        <translation>保存项目规则失败：%1</translation>
+    </message>
+</context>
+<context>
+    <name>NexusAI::AgentViewModel</name>
+    <message>
         <location filename="../src/viewmodels/AgentViewModel.cpp" line="292"/>
         <location filename="../src/viewmodels/AgentViewModel.cpp" line="510"/>
         <location filename="../src/viewmodels/AgentViewModel.cpp" line="2071"/>
@@ -5308,60 +5317,99 @@
 <context>
     <name>ProjectRulesPage</name>
     <message>
-        <location filename="../src/ui/pages/ProjectRulesPage.qml" line="61"/>
+        <location filename="../src/ui/pages/ProjectRulesPage.qml" line="96"/>
         <source>项目规则</source>
         <translation>项目规则</translation>
     </message>
     <message>
-        <location filename="../src/ui/pages/ProjectRulesPage.qml" line="70"/>
-        <source>每个项目一份 AGENTS.md，自动注入项目会话的系统提示</source>
-        <translation>每个项目一份 AGENTS.md，自动注入项目会话的系统提示</translation>
+        <location filename="../src/ui/pages/ProjectRulesPage.qml" line="105"/>
+        <source>每个项目一份 AGENTS.md，注入该项目会话的系统提示；每次任务前自动重读，保存后下一条消息即生效。</source>
+        <translation>每个项目一份 AGENTS.md，注入该项目会话的系统提示；每次任务前自动重读，保存后下一条消息即生效。</translation>
     </message>
     <message>
-        <location filename="../src/ui/pages/ProjectRulesPage.qml" line="78"/>
-        <source>规则在每次任务前自动重读（按修改时间），修改后下一条消息即生效。内容计入上下文预算，上限 8 KB。</source>
-        <translation>规则在每次任务前自动重读（按修改时间），修改后下一条消息即生效。内容计入上下文预算，上限 8 KB。</translation>
-    </message>
-    <message>
-        <location filename="../src/ui/pages/ProjectRulesPage.qml" line="157"/>
+        <location filename="../src/ui/pages/ProjectRulesPage.qml" line="230"/>
         <source>尚未导入任何项目。先在侧栏导入项目文件夹，即可为它配置规则。</source>
         <translation>尚未导入任何项目。先在侧栏导入项目文件夹，即可为它配置规则。</translation>
     </message>
     <message>
-        <location filename="../src/ui/pages/ProjectRulesPage.qml" line="177"/>
+        <location filename="../src/ui/pages/ProjectRulesPage.qml" line="258"/>
         <source>AGENTS.md — %1</source>
         <translation>AGENTS.md — %1</translation>
     </message>
     <message>
-        <location filename="../src/ui/pages/ProjectRulesPage.qml" line="192"/>
-        <source>规则为空，未注入</source>
-        <translation>规则为空，未注入</translation>
-    </message>
-    <message>
-        <location filename="../src/ui/pages/ProjectRulesPage.qml" line="193"/>
-        <source>模板未编辑，未注入</source>
-        <translation>模板未编辑，未注入</translation>
-    </message>
-    <message>
-        <location filename="../src/ui/pages/ProjectRulesPage.qml" line="194"/>
-        <source>超过 8KB，已截断注入</source>
-        <translation>超过 8KB，已截断注入</translation>
-    </message>
-    <message>
-        <location filename="../src/ui/pages/ProjectRulesPage.qml" line="195"/>
-        <location filename="../src/ui/pages/ProjectRulesPage.qml" line="197"/>
+        <location filename="../src/ui/pages/ProjectRulesPage.qml" line="60"/>
         <source>生效中</source>
         <translation>生效中</translation>
     </message>
     <message>
-        <location filename="../src/ui/pages/ProjectRulesPage.qml" line="210"/>
+        <location filename="../src/ui/pages/ProjectRulesPage.qml" line="61"/>
+        <source>超过 8 KB，截断注入</source>
+        <translation>超过 8 KB，截断注入</translation>
+    </message>
+    <message>
+        <location filename="../src/ui/pages/ProjectRulesPage.qml" line="62"/>
+        <source>模板未编辑，未注入</source>
+        <translation>模板未编辑，未注入</translation>
+    </message>
+    <message>
+        <location filename="../src/ui/pages/ProjectRulesPage.qml" line="63"/>
+        <source>规则为空，未注入</source>
+        <translation>规则为空，未注入</translation>
+    </message>
+    <message>
+        <location filename="../src/ui/pages/ProjectRulesPage.qml" line="64"/>
+        <source>未创建</source>
+        <translation>未创建</translation>
+    </message>
+    <message>
+        <location filename="../src/ui/pages/ProjectRulesPage.qml" line="268"/>
+        <source>%1 / 8192 字节</source>
+        <translation>%1 / 8192 字节</translation>
+    </message>
+    <message>
+        <location filename="../src/ui/pages/ProjectRulesPage.qml" line="316"/>
         <source>在系统编辑器中打开</source>
         <translation>在系统编辑器中打开</translation>
     </message>
     <message>
-        <location filename="../src/ui/pages/ProjectRulesPage.qml" line="244"/>
+        <location filename="../src/ui/pages/ProjectRulesPage.qml" line="355"/>
+        <source>AGENTS.md 尚未创建，输入内容保存后将自动创建并注入会话</source>
+        <translation>AGENTS.md 尚未创建，输入内容保存后将自动创建并注入会话</translation>
+    </message>
+    <message>
+        <location filename="../src/ui/pages/ProjectRulesPage.qml" line="356"/>
+        <source>写下希望模型始终遵守的项目约定（Markdown）</source>
+        <translation>写下希望模型始终遵守的项目约定（Markdown）</translation>
+    </message>
+    <message>
+        <location filename="../src/ui/pages/ProjectRulesPage.qml" line="358"/>
         <source>项目规则内容</source>
         <translation>项目规则内容</translation>
+    </message>
+    <message>
+        <location filename="../src/ui/pages/ProjectRulesPage.qml" line="370"/>
+        <source>规则计入上下文预算，注入上限 8 KB，超出部分自动截断；未编辑的模板不会被注入。</source>
+        <translation>规则计入上下文预算，注入上限 8 KB，超出部分自动截断；未编辑的模板不会被注入。</translation>
+    </message>
+    <message>
+        <location filename="../src/ui/pages/ProjectRulesPage.qml" line="394"/>
+        <source>从上方选择一个项目，查看并编辑它的 AGENTS.md</source>
+        <translation>从上方选择一个项目，查看并编辑它的 AGENTS.md</translation>
+    </message>
+    <message>
+        <location filename="../src/ui/pages/ProjectRulesPage.qml" line="390"/>
+        <source>AGENTS.md 已被外部编辑器修改，重新加载将丢弃本地未保存的修改。</source>
+        <translation>AGENTS.md 已被外部编辑器修改，重新加载将丢弃本地未保存的修改。</translation>
+    </message>
+    <message>
+        <location filename="../src/ui/pages/ProjectRulesPage.qml" line="398"/>
+        <source>重新加载</source>
+        <translation>重新加载</translation>
+    </message>
+    <message>
+        <location filename="../src/ui/pages/ProjectRulesPage.qml" line="406"/>
+        <source>保留我的修改</source>
+        <translation>保留我的修改</translation>
     </message>
 </context>
 <context>
@@ -5992,6 +6040,14 @@
         <location filename="../src/ui/components/SettingsField.qml" line="107"/>
         <source>显示或隐藏密钥</source>
         <translation>显示或隐藏密钥</translation>
+    </message>
+</context>
+<context>
+    <name>SettingsSearch</name>
+    <message>
+        <location filename="../src/ui/components/settings-search.js" line="66"/>
+        <source>项目规则</source>
+        <translation>项目规则</translation>
     </message>
 </context>
 <context>

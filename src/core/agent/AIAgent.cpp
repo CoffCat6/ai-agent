@@ -265,10 +265,23 @@ QByteArray AIAgent::rulesSeedTemplate() {
     return seed;
 }
 
+// Line endings are not content. Normalize CRLF / lone CR to LF on both
+// sides of the seed comparison so an editor that only rewrote line endings
+// (a CRLF save on Windows) still counts as "untouched". 0x0D never appears
+// inside a UTF-8 multi-byte sequence, so byte-level replacement is safe.
+static QByteArray rulesSeedComparable(QByteArray bytes) {
+    bytes.replace("\r\n", "\n");
+    bytes.replace('\r', '\n');
+    return bytes;
+}
+
 // Whether `content` is the untouched seed (hash compare, not string equality:
-// editors may touch line endings). Recognizes both the seed as written and
-// the same text re-encoded UTF-8 with BOM, which some Windows editors add.
-static bool isUntouchedRulesSeed(const QString& content) {
+// editors may touch line endings). Recognizes the seed as written and the
+// same text re-encoded UTF-8 with BOM, which some Windows editors add.
+// Public: AgentViewModel::projectRulesState() runs the same check for the
+// settings page - a second private copy drifted once already (the trim
+// mismatch the first iteration had to fix).
+bool AIAgent::isUntouchedRulesSeed(const QString& content) {
     static const QCryptographicHash::Algorithm algo = QCryptographicHash::Sha256;
     // The block content is trimmed before it reaches this function, so the
     // seed (which ends with a newline) must be trimmed the same way or the
@@ -276,13 +289,12 @@ static bool isUntouchedRulesSeed(const QString& content) {
     static const QByteArray seedHash = [] {
         QByteArray seed = AIAgent::rulesSeedTemplate();
         while (seed.endsWith('\n') || seed.endsWith('\r')) seed.chop(1);
-        return QCryptographicHash::hash(seed, algo);
+        return QCryptographicHash::hash(rulesSeedComparable(seed), algo);
     }();
-    const QByteArray bare =
-        QCryptographicHash::hash(content.toUtf8(), algo);
-    if (bare == seedHash) return true;
+    const QByteArray bare = rulesSeedComparable(content.toUtf8());
+    if (QCryptographicHash::hash(bare, algo) == seedHash) return true;
     // BOM variant: editors on Windows may add one.
-    QByteArray withBom = QByteArray("\xEF\xBB\xBF") + content.toUtf8();
+    const QByteArray withBom = QByteArray("\xEF\xBB\xBF") + bare;
     return QCryptographicHash::hash(withBom, algo) == seedHash;
 }
 
@@ -325,7 +337,30 @@ QString AIAgent::projectRulesBlock() const {
     QByteArray raw = file.read(kMaxRulesBytes + 1);
     const bool truncated = raw.size() > kMaxRulesBytes;
     if (truncated) {
-        raw = raw.left(kMaxRulesBytes);
+        raw.truncate(kMaxRulesBytes);
+        // Back the cut off to a UTF-8 character boundary. A cut landing
+        // inside a multi-byte character decodes to U+FFFD, which the
+        // fallback below then reads as "not UTF-8" and re-decodes the WHOLE
+        // file as local 8-bit - an oversized but valid UTF-8 rules file
+        // turned into mojibake that way. Walk back at most 3 continuation
+        // bytes (0b10xxxxxx) to the lead byte; if its sequence straddles
+        // the cut, drop it.
+        int cut = int(kMaxRulesBytes);
+        int lead = cut - 1;
+        while (lead > cut - 4 && lead >= 0
+               && (quint8(raw.at(lead)) & 0xC0) == 0x80) {
+            --lead;
+        }
+        if (lead >= 0) {
+            const quint8 b = quint8(raw.at(lead));
+            const int len = (b & 0x80) == 0x00 ? 1
+                          : (b & 0xE0) == 0xC0 ? 2
+                          : (b & 0xF0) == 0xE0 ? 3
+                          : (b & 0xF8) == 0xF0 ? 4 : 1;
+            if (lead + len > cut)
+                cut = lead;
+        }
+        raw.truncate(cut);
         qWarning() << "Project rules exceed 8KB, truncated:" << path;
     }
     // UTF-8 first (BOM auto-stripped by fromUtf8), local 8-bit fallback so a

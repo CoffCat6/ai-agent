@@ -60,6 +60,11 @@ var handIndex = [
     { title: QT_TRANSLATE_NOOP("SettingsSearch", "长期记忆"), category: "memory", keywords: "记忆 episodic 摘要 长期 检索" },
     { title: QT_TRANSLATE_NOOP("SettingsSearch", "数据保留"), category: "memory", keywords: "保留 审计 清理 天数 retention token" },
 
+    // ── 项目规则 ─────────────────────────────────────────
+    // The category itself is otherwise unsearchable: it has no declarative
+    // preferences, and search only sees registry + handIndex rows.
+    { title: QT_TRANSLATE_NOOP("SettingsSearch", "项目规则"), category: "projects", keywords: "AGENTS agents 规则 约定 项目 rules 注入 模板 nexus" },
+
     // ── 用量统计 ─────────────────────────────────────────
     { title: QT_TRANSLATE_NOOP("SettingsSearch", "配额设置"), category: "usage", keywords: "配额 token 费用 每日 每月 超限 quota" },
     { title: QT_TRANSLATE_NOOP("SettingsSearch", "用量统计"), category: "usage", keywords: "用量 统计 消耗 成本 成本明细" },

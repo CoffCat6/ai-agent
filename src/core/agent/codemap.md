@@ -78,6 +78,6 @@
 - **会话恢复裁剪**：`resumeSession()` 只取最近 200 条 user/assistant；工具证据只存在于轨迹，不进入模型上下文（MEM-701）。扩大到 2000 条仅在窗口变大且空闲时触发。
 - **Token 估算**：预算判断基于字符启发式，依赖每会话 EWMA 校准；首请求前误差最大，`contextComposition()` 的桶与 `notifyTokens()` 必须保持同一校准口径，否则 UI 数字互相矛盾。
 - **G3 项目规则只在 fresh 会话生效**：`effectiveSystemPrompt()` 仅在 `launchTaskTail(fresh=true)` 与 `resumeSession()` 里调用。同一会话内改了 `AGENTS.md`，下一条消息**不会**带上新规则，必须开新会话/重载会话。设置页的「生效中」是读文件时的状态，不代表当前会话已注入。
-- **G3 种子模板判定依赖精确 hash**：`isUntouchedRulesSeed()` 用 SHA256 比对去掉行尾换行后的模板。任何编辑（哪怕只加一个空格）都会让模板变成「有内容」并开始注入；反之编辑器把行尾改成 CRLF 不会误判。判定逻辑分散在 `AIAgent.cpp` 与 `AgentViewModel::projectRulesState()` 两处，必须同步修改。
+- **G3 种子模板判定依赖精确 hash**：`AIAgent::isUntouchedRulesSeed()`（公开静态）用 SHA256 比对去掉行尾换行、且 **CRLF/CR 归一化为 LF** 后的模板（行尾不算内容），并容忍 BOM。任何实质编辑（哪怕只加一个空格）都会让模板变成「有内容」并开始注入。判定逻辑已收敛到该单一函数，`AgentViewModel::projectRulesState()` 复用它，不再有两处副本。
 - **G3 只写 `AGENTS.md` 不写 `.nexus/rules.md`**：读取支持两个候选路径，保存只针对 `AGENTS.md`。项目若只用 `.nexus/rules.md`，设置页会显示其内容但保存会另建 `AGENTS.md`，两个文件并存时 `AGENTS.md` 优先。
-- **G3 8KB 上限是硬截断**：超出部分丢弃并追加 `[truncated]`，不做分段注入；超长规则文件的有效内容因此可能完全落在被丢弃的后半段。
+- **G3 8KB 上限是硬截断**：超出部分丢弃并追加 `[truncated]`，不做分段注入；超长规则文件的有效内容因此可能完全落在被丢弃的后半段。截断点会回退到 UTF-8 字符边界（切在多字节字符中间会产生 U+FFFD，进而误触发 local8Bit 回退把整个文件按 GBK 解成乱码）。

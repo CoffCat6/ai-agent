@@ -764,6 +764,45 @@ private slots:
         agent.setActiveProject(QString(), QString(), QString());
     }
 
+    // A >8KB UTF-8 file whose 8192nd byte lands mid-character: the cut must
+    // back off to a character boundary. Before that fix the split byte
+    // decoded to U+FFFD, the whole file was re-read as local 8-bit, and a
+    // valid Chinese rules file entered the prompt as mojibake on Windows.
+    void oversizedUtf8RulesTruncateOnCharBoundary() {
+        QTemporaryDir dir(testDirTemplate());
+        QVERIFY(dir.isValid());
+        QByteArray chinese;
+        chinese.reserve(9 * 1024);
+        while (chinese.size() < 9 * 1024) chinese += "规则";
+        QFile rules(dir.path() + "/AGENTS.md");
+        QVERIFY(rules.open(QIODevice::WriteOnly));
+        rules.write(chinese);
+        rules.close();
+        agent.setActiveProject(QStringLiteral("p6"), QStringLiteral("Cn"),
+                               dir.path());
+        const QString block = agent.projectRulesBlock();
+        QVERIFY(block.contains("[truncated]"));
+        QVERIFY(!block.contains(QChar::ReplacementCharacter));
+        QVERIFY(block.contains(QStringLiteral("规则")));
+        agent.setActiveProject(QString(), QString(), QString());
+    }
+
+    // The untouched template re-saved by a CRLF-rewriting editor is still
+    // "no rules": line endings are not content.
+    void crlfSeedTemplateIsNotInjected() {
+        QTemporaryDir dir(testDirTemplate());
+        QVERIFY(dir.isValid());
+        QFile rules(dir.path() + "/AGENTS.md");
+        QVERIFY(rules.open(QIODevice::WriteOnly));
+        rules.write(QByteArray(AIAgent::rulesSeedTemplate())
+                        .replace('\n', "\r\n"));
+        rules.close();
+        agent.setActiveProject(QStringLiteral("p7"), QStringLiteral("Cr"),
+                               dir.path());
+        QVERIFY(agent.projectRulesBlock().isEmpty());
+        agent.setActiveProject(QString(), QString(), QString());
+    }
+
     // Writing rules never touches session titles (manual renames survive).
     void rulesDoNotTouchManualRenames() {
         QTemporaryDir dir(testDirTemplate());

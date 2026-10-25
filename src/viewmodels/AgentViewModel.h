@@ -21,6 +21,11 @@
 #include "TraceModel.h"
 #include "LogModel.h"
 
+// Global-scope forward declaration: an inline `class QFileSystemWatcher`
+// inside namespace NexusAI would declare NexusAI::QFileSystemWatcher and
+// never resolve to the Qt class.
+class QFileSystemWatcher;
+
 namespace NexusAI {
 
 class AIAgent;
@@ -558,6 +563,22 @@ public:
     // UE-1: 用户已经看过本次会话的文件改动了（审阅窗口关闭时调用）。
     // 只把"未查看"计数清零，不动检查点本身；之后再有新改动会重新点亮。
     Q_INVOKABLE void acknowledgeFileReview();
+    // R3 external-edit coordination: the settings page watches the rules
+    // candidates of the project it is editing so an external editor's save
+    // can reload the page (or warn, when local edits are pending) instead of
+    // being silently clobbered by the next debounced write. Both candidates
+    // (AGENTS.md and .nexus/rules.md) are watched; only existing files can be
+    // added to a QFileSystemWatcher, but a successful writeProjectRules()
+    // re-arms the watcher itself, so a file created by the page's own save
+    // is covered from then on.
+    // Appended at the class tail per the AOT-index convention above.
+    Q_INVOKABLE void watchProjectRules(const QString& projectRoot);
+    Q_INVOKABLE void unwatchProjectRules();
+    // Test probe (same convention as probeSourcePathFor*): the armed watch
+    // set. Async fileChanged delivery depends on OS notification latency
+    // (Windows AV can hold events for tens of seconds) and is deliberately
+    // not unit-asserted; the QML handler tolerates late/duplicate events.
+    Q_INVOKABLE QStringList watchedRulesFiles() const;
 
 signals:
     void stateChanged();
@@ -586,6 +607,10 @@ signals:
     // docs/17 A0: 项目列表 / 活动项目变化（侧栏两区数据源）。
     void projectsChanged();
     void activeProjectIdChanged();
+    // R3: the watched project's rules file changed on disk (external editor
+    // save, or the page's own debounced write - the page distinguishes the
+    // two by comparing disk content against the editor text).
+    void projectRulesFileChanged(const QString& projectRoot);
     // G2: project file cache ready / scanning state changed.
     void projectFilesChanged();
     void currentSessionIdChanged();
@@ -733,6 +758,9 @@ private:
     std::function<QString(const QString&)> m_contentProvider;
     QVariantList m_sessionList;
     QVariantList m_projects;         // docs/17 A0: 已导入项目
+    // R3: watches the edited project's rules candidates for external saves.
+    QFileSystemWatcher* m_rulesWatcher{nullptr};
+    QString m_watchedRulesRoot;      // native-separators root being watched
     // docs/18: 归属按标签持有，故这里没有全局活动项目成员。
     // G2: active project's indexable file cache (background scan).
     QStringList m_projectFiles;

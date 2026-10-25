@@ -197,6 +197,15 @@ AgentChatPage 空态的「配置模型」、ModelSelector、`AgentVM.modelSettin
 - 各页大量使用 `Component.onDestruction` 兜底提交，若页面被非 Loader 方式复用需重新评估。
 - ProjectRulesPage 是项目规则的唯一编辑入口（侧栏项目行不提供入口）。它读写的是
   项目根目录的 `AGENTS.md`（找不到时读 `.nexus/rules.md`，但保存永远写 `AGENTS.md`）。
-  编辑区 500 ms 防抖落盘：期间切页/关窗可能丢最后一次未落盘的编辑。
-  未编辑的种子模板按 SHA256 判定为「空」，不注入系统提示（见 AIAgent.cpp）。
+  编辑区 500 ms 防抖落盘，切换项目/关窗前冲刷；**冲刷目标必须是 `loadedRoot`**——
+  `onSelectedProjectChanged` 触发时 `selectedProject` 已是新项目，经它冲刷会把上一个
+  项目的文本写进新项目的 `AGENTS.md`（首轮实现的真实数据丢失 bug，勿回退）。
+  状态徽标/项目状态点靠 `stateRevision` 计数器重算：`projectRulesState()` 是
+  Q_INVOKABLE 无通知信号，不加计数器徽标会在编辑后冻结在旧状态。
+  `stateMeta()` 按原始状态串映射颜色，禁止按翻译后文本匹配。
+  未编辑的种子模板按 SHA256 判定为「空」，不注入系统提示（共享
+  `AIAgent::isUntouchedRulesSeed()`，见 AIAgent.cpp）。
   注入状态只是读取时刻的快照：`active` 不代表下一次任务一定注入（文件可能在外部被改）。
+  外部编辑经 `AgentVM.watchProjectRules` 协调（QFileSystemWatcher 监听两个候选文件，
+  写盘后自动重挂）：编辑器干净时磁盘变化静默重载；`dirty`（未落盘编辑）时弹
+  「重新加载 / 保留我的修改」横幅，而不是被下一次防抖写静默覆盖。

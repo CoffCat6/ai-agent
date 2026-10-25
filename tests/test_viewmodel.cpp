@@ -1459,6 +1459,10 @@ private slots:
         nested.write("- from nexus\n");
         nested.close();
         QCOMPARE(vm.loadProjectRules(dir.path()), QString("- from nexus\n"));
+        // The badge must follow the same fallback the agent injects:
+        // rules living only in .nexus/rules.md read as "active",
+        // not the AGENTS.md-only "missing" the first iteration showed.
+        QCOMPARE(vm.projectRulesState(dir.path()), QStringLiteral("active"));
 
         // AGENTS.md wins over the fallback.
         QFile root(dir.path() + "/AGENTS.md");
@@ -1481,6 +1485,62 @@ private slots:
         root.write("  \n\n");
         root.close();
         QCOMPARE(vm.projectRulesState(dir.path()), QStringLiteral("empty"));
+
+        // A CRLF re-save of the untouched template still reads as "seed"
+        // (same shared normalization as the injector).
+        QVERIFY(root.open(QIODevice::WriteOnly));
+        root.write(QByteArray(AIAgent::rulesSeedTemplate()).replace('\n', "\r\n"));
+        root.close();
+        QCOMPARE(vm.projectRulesState(dir.path()), QStringLiteral("seed"));
+    }
+
+    // R3: the watcher arms exactly the existing candidate files, re-arms
+    // after our own write creates a missing AGENTS.md, and disarms on
+    // unwatch. Async fileChanged DELIVERY is OS-latency dependent
+    // (Windows AV can hold events for tens of seconds) and is not asserted
+    // here: the QML handler tolerates late/duplicate events by comparing
+    // disk content against the editor text.
+    void projectRulesWatcherArmsAndDisarms() {
+        QTemporaryDir dir;
+        QVERIFY(dir.isValid());
+        SqliteMemory memory(QStringLiteral(":memory:"));
+        AgentViewModel vm(nullptr);
+        vm.setMemory(&memory);
+        const QString native = QDir::toNativeSeparators(dir.path());
+
+        // No rules files yet: nothing can be armed.
+        vm.watchProjectRules(dir.path());
+        QCOMPARE(vm.watchedRulesFiles().size(), 0);
+
+        // Only AGENTS.md exists: exactly that file is armed.
+        QFile f(dir.path() + "/AGENTS.md");
+        QVERIFY(f.open(QIODevice::WriteOnly));
+        f.write("- seed");
+        f.close();
+        vm.watchProjectRules(dir.path());
+        QCOMPARE(vm.watchedRulesFiles(),
+                 QStringList({ native + QDir::separator() + "AGENTS.md" }));
+
+        // Both candidates exist: both are armed.
+        QVERIFY(QDir(dir.path()).mkpath(".nexus"));
+        QFile nested(dir.path() + "/.nexus/rules.md");
+        QVERIFY(nested.open(QIODevice::WriteOnly));
+        nested.close();
+        vm.watchProjectRules(dir.path());
+        QCOMPARE(vm.watchedRulesFiles().size(), 2);
+
+        // Our own write to a WATCHED root re-arms - this covers the
+        // first-save case where the page creates AGENTS.md itself.
+        vm.unwatchProjectRules();
+        QFile::remove(dir.path() + "/AGENTS.md");
+        vm.watchProjectRules(dir.path());
+        QCOMPARE(vm.watchedRulesFiles().size(), 1);   // only .nexus/rules.md
+        QVERIFY(vm.writeProjectRules(dir.path(), "- mine"));
+        QCOMPARE(vm.watchedRulesFiles().size(), 2);   // AGENTS.md re-armed
+
+        // Switching away disarms everything.
+        vm.unwatchProjectRules();
+        QCOMPARE(vm.watchedRulesFiles().size(), 0);
     }
 
     // Batch 31b: McpManager add/remove round trip. The user's real

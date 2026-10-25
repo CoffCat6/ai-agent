@@ -21,6 +21,7 @@
 
 #include <QCryptographicHash>
 #include <QFileInfo>
+#include <QFileSystemWatcher>
 #include <QUrl>
 
 #include <QBuffer>
@@ -1280,37 +1281,121 @@ QString AgentViewModel::loadProjectRules(const QString& projectRoot) {
     return content;
 }
 
+// R3 external-edit coordination helpers. Rules candidates in the agent's
+// lookup order; rearm() swaps the watched set, keeping only existing files
+// (QFileSystemWatcher rejects missing paths).
+namespace {
+    // Fully native-separator paths: the watcher reports the path exactly as
+    // added, and the fileChanged handler compares against these strings, so
+    // a mixed "C:\root/AGENTS.md" would never string-match.
+    QStringList rulesCandidatePaths(const QString& nativeRoot) {
+        return { QDir::toNativeSeparators(
+                     nativeRoot + QStringLiteral("/AGENTS.md")),
+                 QDir::toNativeSeparators(
+                     nativeRoot + QStringLiteral("/.nexus/rules.md")) };
+    }
+
+    void rearmRulesWatcher(QFileSystemWatcher* watcher, const QString& nativeRoot) {
+        if (!watcher) return;
+        const QStringList watched = watcher->files();
+        if (!watched.isEmpty()) watcher->removePaths(watched);
+        for (const QString& candidate : rulesCandidatePaths(nativeRoot)) {
+            if (QFileInfo(candidate).isFile()
+                    && !watcher->files().contains(candidate))
+                watcher->addPath(candidate);
+        }
+    }
+}   // namespace
+
 bool AgentViewModel::writeProjectRules(const QString& projectRoot,
                                        const QString& content) {
     if (projectRoot.isEmpty()) return false;
-    QFile file(QDir::toNativeSeparators(projectRoot + QStringLiteral("/AGENTS.md")));
-    if (!file.open(QIODevice::WriteOnly)) return false;
-    return file.write(content.toUtf8()) == content.toUtf8().size();
+    const QString path = QDir::toNativeSeparators(
+        projectRoot + QStringLiteral("/AGENTS.md"));
+    QFile file(path);
+    // The settings page saves debounced and displays no inline error - a
+    // locked (external editor) or read-only target would otherwise look
+    // exactly like a successful save. The global notice toast carries it.
+    if (!file.open(QIODevice::WriteOnly)) {
+        emit noticeOccurred(tr("保存项目规则失败：%1").arg(path));
+        return false;
+    }
+    const QByteArray bytes = content.toUtf8();
+    if (file.write(bytes) != bytes.size()) {
+        emit noticeOccurred(tr("保存项目规则失败：%1").arg(path));
+        return false;
+    }
+    // The write may have just CREATED AGENTS.md for a project that had no
+    // rules file (watchers cannot be armed on missing files) - re-arm so
+    // later external saves still surface.
+    if (m_rulesWatcher && !m_watchedRulesRoot.isEmpty()
+            && m_watchedRulesRoot == QDir::toNativeSeparators(projectRoot)) {
+        rearmRulesWatcher(m_rulesWatcher, m_watchedRulesRoot);
+    }
+    return true;
+}
+
+void AgentViewModel::watchProjectRules(const QString& projectRoot) {
+    if (projectRoot.isEmpty()) {
+        unwatchProjectRules();
+        return;
+    }
+    const QString root = QDir::toNativeSeparators(projectRoot);
+    if (!m_rulesWatcher) {
+        m_rulesWatcher = new QFileSystemWatcher(this);
+        connect(m_rulesWatcher, &QFileSystemWatcher::fileChanged, this,
+                [this](const QString& changedPath) {
+            if (m_watchedRulesRoot.isEmpty()) return;
+            const QString normalized = QDir::toNativeSeparators(changedPath);
+            for (const QString& candidate : rulesCandidatePaths(m_watchedRulesRoot)) {
+                if (candidate == normalized) {
+                    // Atomic-save editors replace the file, which drops it
+                    // from the watcher - re-arm everything before reporting.
+                    rearmRulesWatcher(m_rulesWatcher, m_watchedRulesRoot);
+                    emit projectRulesFileChanged(m_watchedRulesRoot);
+                    return;
+                }
+            }
+        });
+    }
+    m_watchedRulesRoot = root;
+    rearmRulesWatcher(m_rulesWatcher, root);
+}
+
+void AgentViewModel::unwatchProjectRules() {
+    m_watchedRulesRoot.clear();
+    if (m_rulesWatcher && !m_rulesWatcher->files().isEmpty())
+        m_rulesWatcher->removePaths(m_rulesWatcher->files());
+}
+
+QStringList AgentViewModel::watchedRulesFiles() const {
+    return m_rulesWatcher ? m_rulesWatcher->files() : QStringList();
 }
 
 QString AgentViewModel::projectRulesState(const QString& projectRoot) {
-    QFile file(QDir::toNativeSeparators(projectRoot + QStringLiteral("/AGENTS.md")));
+    if (projectRoot.isEmpty()) return QStringLiteral("missing");
+    const QString root = QDir::toNativeSeparators(projectRoot);
+    // Same lookup order as the agent (AGENTS.md first, then .nexus/rules.md):
+    // the badge must describe what is actually injected. The first iteration
+    // probed AGENTS.md only, so a project whose rules live only in the
+    // fallback showed "missing"-derived states while the agent was injecting.
+    const QString candidates[2] = {
+        root + QStringLiteral("/AGENTS.md"),
+        root + QStringLiteral("/.nexus/rules.md"),
+    };
+    QString chosen;
+    for (const QString& candidate : candidates) {
+        if (QFileInfo(candidate).isFile()) { chosen = candidate; break; }
+    }
+    if (chosen.isEmpty()) return QStringLiteral("missing");
+    QFile file(chosen);
     if (!file.open(QIODevice::ReadOnly)) return QStringLiteral("missing");
     const QByteArray raw = file.read(8 * 1024 + 1);
-    const bool truncated = raw.size() > 8 * 1024;
-    if (truncated) return QStringLiteral("truncated");
+    if (raw.size() > 8 * 1024) return QStringLiteral("truncated");
     QString content = QString::fromUtf8(raw).trimmed();
     if (content.isEmpty()) return QStringLiteral("empty");
-    // Same seed comparison as the agent: byte hashes, so editors that touch
-    // line endings or add a BOM still count as "untouched". `content` is
-    // trimmed, so the seed must be trimmed the same way or the state never
-    // reads "seed" and the page claims an untouched template is active.
-    static const QByteArray seedHash = [] {
-        QByteArray seed = AIAgent::rulesSeedTemplate();
-        while (seed.endsWith('\n') || seed.endsWith('\r')) seed.chop(1);
-        return QCryptographicHash::hash(seed, QCryptographicHash::Sha256);
-    }();
-    const QByteArray normalized = content.toUtf8();
-    if (QCryptographicHash::hash(normalized, QCryptographicHash::Sha256) == seedHash)
-        return QStringLiteral("seed");
-    const QByteArray withBom = QByteArray("﻿") + normalized;
-    if (QCryptographicHash::hash(withBom, QCryptographicHash::Sha256) == seedHash)
-        return QStringLiteral("seed");
+    // Shared with the injector so page and prompt can never disagree.
+    if (AIAgent::isUntouchedRulesSeed(content)) return QStringLiteral("seed");
     return QStringLiteral("active");
 }
 

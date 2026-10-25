@@ -188,6 +188,10 @@ public:
     // page can show "not edited yet" and so the import path writes exactly
     // what this class treats as "empty".
     static QByteArray rulesSeedTemplate();
+    // Whether `content` (already trimmed) is byte-identical to the untouched
+    // seed template (BOM tolerated). Shared with AgentViewModel so the
+    // settings page and the injector can never disagree on "not edited yet".
+    static bool isUntouchedRulesSeed(const QString& content);
     // docs/18: 只读访问器。归属已改为**按标签**持有（每个 tab 一个 agent），
     // AgentViewModel 的 activeProjectId 由这些 getter 派生，不再有全局状态。
     QString activeProjectId() const { return m_activeProjectId; }
