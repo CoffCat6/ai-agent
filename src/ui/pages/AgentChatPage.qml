@@ -37,7 +37,6 @@ Item {
         TopBar {
             Layout.fillWidth: true
             Layout.preferredHeight: 40
-            onPromptAssetsRequested: root.settingsCategoryRequested("prompts")
         }
 
         SessionTabs {
@@ -354,6 +353,11 @@ Item {
                 }
                 ThinkingEffortSelector {}
                 PermissionModeSelector {}
+                // 提示词预设与另三个会话级选择器同排：回显当前套用的预设，
+                // 向上弹出带摘要的列表（顶栏只有 40px，装不下预设名）。
+                PromptPresetSelector {
+                    onManageRequested: root.settingsCategoryRequested("prompts")
+                }
             }
         }
     }

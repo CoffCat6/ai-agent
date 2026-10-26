@@ -332,6 +332,9 @@ ChatSessionController* AgentViewModel::ensureTab() {
         if (controller == active()) emit permissionModeChanged();
         emit tabsChanged();   // background tabs show the mode badge
     });
+    connect(controller, &ChatSessionController::promptPresetChanged, this, [this, controller] {
+        if (controller == active()) emit promptPresetChanged();
+    });
 
     // Surfaced no matter which tab they happened in: errors and tool
     // confirmations are global UX (the confirm dialog routes the decision
@@ -450,6 +453,7 @@ void AgentViewModel::activateTab(int index) {
     emit costChanged(m_lastCostCents);
     emit currentSessionIdChanged();
     emit permissionModeChanged();
+    emit promptPresetChanged();
     m_todoList = active()->todoList();
     emit todoListChanged();
     m_fileCheckpoints = active()->fileCheckpoints();
@@ -486,6 +490,7 @@ void AgentViewModel::closeTab(int index) {
     emit tokenUsageChanged();
     emit sessionTokensChanged();
     emit currentSessionIdChanged();
+    emit promptPresetChanged();
     m_todoList = active()->todoList();
     emit todoListChanged();
     m_fileCheckpoints = active()->fileCheckpoints();
@@ -2042,12 +2047,28 @@ QString AgentViewModel::expandSlashCommand(const QString& input,
     return SlashCommand::expand(input, parsed);
 }
 
-void AgentViewModel::applyPromptOverride(const QString& prompt) {
+void AgentViewModel::applyPromptPreset(const QString& id, const QString& name,
+                                       const QString& prompt) {
     // 仅当前标签：预设是"会话级"决定，别的标签与全局 agent/systemPrompt
     // Override 设置不动（全局设置仍由 main.cpp 的 applySystemPrompt 链路
     // 管理，切预设不该污染它）。
-    AIAgent* agent = active()->agent();
-    if (agent) agent->setSystemPromptOverride(prompt);
+    if (!active()) return;
+    active()->applyPromptPreset(id, name, prompt);
+}
+
+void AgentViewModel::clearPromptPreset() {
+    if (!active()) return;
+    active()->clearPromptPreset();
+}
+
+void AgentViewModel::applyGlobalSystemPrompt(const QString& prompt) {
+    for (ChatSessionController* controller : m_tabs)
+        controller->applyGlobalSystemPrompt(prompt);
+}
+
+void AgentViewModel::syncPromptPresets(const QVariantList& presets) {
+    for (ChatSessionController* controller : m_tabs)
+        controller->syncPromptPreset(presets);
 }
 
 bool AgentViewModel::startTask(const QString& input, const QStringList& images,

@@ -6,8 +6,8 @@ import NexusAI.ViewModels
 
 // 提示词与指令（prompts 分类）：三组用户自建文本资产的集中管理页。
 //
-// 1. 系统提示预设（promptPresets）——TopBar 的预设按钮一键套用到当前
-//    会话（写活动标签 agent 的 override，空串清除）；
+// 1. 系统提示预设（promptPresets）——输入框下方 PromptPresetSelector 的
+//    胶囊一键套用到当前会话（会话级 override，清除后回落全局提示词）；
 // 2. 斜杠指令（slashCommands）——输入框以 /指令 触发，发送前由
 //    AgentVM.expandSlashCommand 展开为模板（{text} 占位）；
 // 3. 会话模板（sessionTemplates）——侧栏「新会话」旁的模板菜单，新建
@@ -111,7 +111,7 @@ Item {
                     Text {
                         Layout.fillWidth: true
                         Layout.minimumWidth: 0
-                        text: qsTr("整段角色设定（如「严谨的技术评审」）。通过顶栏的预设按钮套用到当前会话；覆盖全局系统提示词，删除预设不影响已套用的会话。")
+                        text: qsTr("整段角色设定（如「严谨的技术评审」）。在输入框下方的预设选择器里套用到当前会话；覆盖全局系统提示词，删除预设不影响已套用的会话。")
                         color: Theme.textSecondary
                         font.pixelSize: 10
                         wrapMode: Text.Wrap

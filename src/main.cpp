@@ -783,14 +783,18 @@ qInfo() << "NexusAI" << app.applicationVersion() << "starting";
     QObject::connect(settings, &SettingsService::proxyConfigChanged, &app, [applySettings]() { applySettings(); });
 
     // Batch 22 (F8): user-editable system prompt (empty = built-in)
-    const auto applySystemPrompt = [agent, agentVM, settings]() {
-        agent->setSystemPromptOverride(settings->systemPromptOverride());
-        agentVM->applyToAgents([settings](AIAgent* target) {
-            target->setSystemPromptOverride(settings->systemPromptOverride());
-        });
+    // 走 VM 下发而不是直接写 agent：套用了提示词预设的标签由预设接管，
+    // 全局提示只落在未套用的标签上，并记进每个标签作为"清除预设"的回落值。
+    const auto applySystemPrompt = [agentVM, settings]() {
+        agentVM->applyGlobalSystemPrompt(settings->systemPromptOverride());
     };
     applySystemPrompt();
     QObject::connect(settings, &SettingsService::systemPromptOverrideChanged, &app, applySystemPrompt);
+    // 预设被编辑/改名时，已套用该预设的标签跟上新文本（删除不动，见
+    // ChatSessionController::syncPromptPreset）。
+    QObject::connect(settings, &SettingsService::promptPresetsChanged, &app, [agentVM, settings]() {
+        agentVM->syncPromptPresets(settings->promptPresets());
+    });
 
     // 会话权限模式的全局默认：注入 VM，新 tab 继承；未被用户显式切换过的
     // 既有 tab 追补生效。

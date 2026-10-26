@@ -989,6 +989,82 @@ private slots:
         QCOMPARE(i18n->currentLocale(), original);
     }
 
+    // 提示词预设是**会话级**决定：套用/清除/切标签互不干扰，且全局系统
+    // 提示只在未套用的标签上下发（否则改一次全局设置会把预设冲掉）。
+    void promptPresetIsPerTab() {
+        AgentViewModel vm(nullptr);
+        AIAgent agent(&vm);
+        vm.setAgent(&agent);
+        // 不新建标签：模板 agent 就挂在 tab 0 上，预设要落在有 agent 的标签。
+        vm.applyGlobalSystemPrompt(QStringLiteral("GLOBAL"));
+        QCOMPARE(agent.effectiveSystemPrompt(), QStringLiteral("GLOBAL"));
+
+        vm.applyPromptPreset(QStringLiteral("preset-a"), QStringLiteral("评审"),
+                             QStringLiteral("PRESET A"));
+        QCOMPARE(vm.activePromptPresetId(), QStringLiteral("preset-a"));
+        QCOMPARE(vm.activePromptPresetName(), QStringLiteral("评审"));
+        QCOMPARE(agent.effectiveSystemPrompt(), QStringLiteral("PRESET A"));
+
+        // 全局设置变更不能顶掉已套用的预设，但要记住新值供清除时回落。
+        vm.applyGlobalSystemPrompt(QStringLiteral("GLOBAL 2"));
+        QCOMPARE(agent.effectiveSystemPrompt(), QStringLiteral("PRESET A"));
+
+        vm.clearPromptPreset();
+        QCOMPARE(vm.activePromptPresetId(), QString());
+        QCOMPARE(agent.effectiveSystemPrompt(), QStringLiteral("GLOBAL 2"));
+    }
+
+    // 新标签不继承上一个标签的预设；切回去仍然保持。
+    void promptPresetFollowsActiveTab() {
+        AgentViewModel vm(nullptr);
+        AIAgent templateAgent(&vm);
+        QVector<AIAgent*> created;
+        vm.setAgentFactory([&created, &vm]() -> AIAgent* {
+            auto* agent = new AIAgent(&vm);
+            created.append(agent);
+            return agent;
+        });
+        vm.setAgent(&templateAgent);
+
+        vm.applyPromptPreset(QStringLiteral("preset-a"), QStringLiteral("Reviewer"),
+                             QStringLiteral("PRESET A"));
+        QCOMPARE(vm.activePromptPresetId(), QStringLiteral("preset-a"));
+
+        vm.openTab();                       // 新标签没有预设
+        QCOMPARE(vm.activePromptPresetId(), QString());
+        QCOMPARE(vm.activePromptPresetName(), QString());
+
+        vm.applyPromptPreset(QStringLiteral("preset-b"), QStringLiteral("Mentor"),
+                             QStringLiteral("PRESET B"));
+        QCOMPARE(vm.activePromptPresetId(), QStringLiteral("preset-b"));
+
+        vm.activateTab(0);
+        QCOMPARE(vm.activePromptPresetId(), QStringLiteral("preset-a"));
+    }
+
+    // 预设被改名/改正文要推到已套用的标签；被删除时保持原提示不变
+    // （设置页承诺「删除预设不影响已套用的会话」）。
+    void promptPresetSyncsEditsButNotDeletes() {
+        AgentViewModel vm(nullptr);
+        AIAgent agent(&vm);
+        vm.setAgent(&agent);
+
+        vm.applyPromptPreset(QStringLiteral("preset-a"), QStringLiteral("Reviewer"),
+                             QStringLiteral("PRESET A"));
+        QCOMPARE(agent.effectiveSystemPrompt(), QStringLiteral("PRESET A"));
+
+        vm.syncPromptPresets({QVariantMap{
+            {QStringLiteral("id"), QStringLiteral("preset-a")},
+            {QStringLiteral("name"), QStringLiteral("Reviewer v2")},
+            {QStringLiteral("prompt"), QStringLiteral("PRESET A v2")}}});
+        QCOMPARE(vm.activePromptPresetName(), QStringLiteral("Reviewer v2"));
+        QCOMPARE(agent.effectiveSystemPrompt(), QStringLiteral("PRESET A v2"));
+
+        vm.syncPromptPresets({});
+        QCOMPARE(vm.activePromptPresetId(), QStringLiteral("preset-a"));
+        QCOMPARE(agent.effectiveSystemPrompt(), QStringLiteral("PRESET A v2"));
+    }
+
     // Parallel tab state remains independent even before an agent is attached.
     void parallelTabsStayIndependent() {
         AgentViewModel vm(nullptr);

@@ -91,6 +91,12 @@ class AgentViewModel : public QObject {
     Q_PROPERTY(int permissionModeFullAccess READ permissionModeFullAccess CONSTANT FINAL)
     Q_PROPERTY(int permissionModePlanOnly READ permissionModePlanOnly CONSTANT FINAL)
 
+    // ── 提示词预设（活动标签）─────────────────────────
+    // 会话级系统提示覆盖。id 为空 = 未套用（用全局 systemPromptOverride），
+    // name 供界面回显"当前套用的是哪个预设"。
+    Q_PROPERTY(QString activePromptPresetId READ activePromptPresetId NOTIFY promptPresetChanged FINAL)
+    Q_PROPERTY(QString activePromptPresetName READ activePromptPresetName NOTIFY promptPresetChanged FINAL)
+
     // ── Context Panel ─────────────────────────────────
     Q_PROPERTY(bool isPanelVisible READ isPanelVisible WRITE setIsPanelVisible NOTIFY panelVisibleChanged FINAL)
     // User-resizable width of the context panel (persisted)
@@ -226,6 +232,12 @@ public:
     int permissionModeAutoEdit() const { return static_cast<int>(PermissionMode::AutoEdit); }
     int permissionModeFullAccess() const { return static_cast<int>(PermissionMode::FullAccess); }
     int permissionModePlanOnly() const { return static_cast<int>(PermissionMode::PlanOnly); }
+
+    // 提示词预设（活动标签）：套用/清除都只影响当前标签。
+    QString activePromptPresetId() const
+    { return active() ? active()->promptPresetId() : QString(); }
+    QString activePromptPresetName() const
+    { return active() ? active()->promptPresetName() : QString(); }
     // Global default (from SettingsService) applied to newly created tabs;
     // main.cpp injects it and re-injects when the setting changes. Also
     // retro-applies to tabs the user has not explicitly switched.
@@ -389,9 +401,17 @@ public:
     // 纯静态：expansion 逻辑在 core/utils/SlashCommand.h，可单测。
     Q_INVOKABLE static QString expandSlashCommand(const QString& input,
                                                   const QVariantList& commands);
-    // 把提示词预设套用到活动标签的 agent override（空串 = 清除覆盖，回到
-    // 全局提示词）。仅影响当前标签，其它标签与全局设置不动。
-    Q_INVOKABLE void applyPromptOverride(const QString& prompt);
+    // 把提示词预设套用到活动标签（会话级系统提示覆盖）。id 为空 = 清除。
+    // 仅影响当前标签，其它标签与全局设置（Settings.systemPromptOverride）
+    // 不动；清除后回落到全局提示词。
+    Q_INVOKABLE void applyPromptPreset(const QString& id, const QString& name,
+                                       const QString& prompt);
+    Q_INVOKABLE void clearPromptPreset();
+    // main.cpp 的全局系统提示链路调用：记进每个标签（清除预设时回落用），
+    // 只下发给尚未套用预设的标签。
+    void applyGlobalSystemPrompt(const QString& prompt);
+    // 预设列表变化（编辑/改名）时把新文本推给已套用该预设的标签。
+    void syncPromptPresets(const QVariantList& presets);
     // Compressed data URL of the clipboard image (empty when none).
     Q_INVOKABLE QString clipboardImageDataUrl() const;
     // Compressed data URL of an image file picked in QML (empty when unreadable).
@@ -630,6 +650,8 @@ signals:
     void currentSessionIdChanged();
     // Active tab's session permission mode changed (switch or tab switch).
     void permissionModeChanged();
+    // 活动标签套用的提示词预设变了（套用/清除/切标签/预设文本被编辑）。
+    void promptPresetChanged();
     void searchResultsChanged();
     void knowledgeChanged();
     // docs/20 §5.1 (CITE-801): 引用徽标要求打开某文档的详情。

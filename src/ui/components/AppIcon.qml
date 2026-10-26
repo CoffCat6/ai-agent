@@ -205,6 +205,21 @@ Canvas {
             polyline(c, [3.5, 12.5, 12, 17, 20.5, 12.5])
             polyline(c, [3.5, 16.5, 12, 21, 20.5, 16.5])
         },
+        "preset": function(c) {
+            // 角色面具（Feather 无同款，按 "persona/mask" 自绘）：面具轮廓 +
+            // 两个眼孔。用于提示词预设——语义是"换一个说话的设定"，与
+            // token 累计的 layers、附件的图片/文件图标都不撞车。
+            c.beginPath()
+            c.moveTo(4.2, 5.2)
+            c.lineTo(19.8, 5.2)
+            c.lineTo(19.8, 12.4)
+            c.quadraticCurveTo(19.8, 19.4, 12, 21)
+            c.quadraticCurveTo(4.2, 19.4, 4.2, 12.4)
+            c.closePath()
+            c.stroke()
+            line(c, 8.6, 10, 8.6, 12)      // 眼孔（竖短线）
+            line(c, 15.4, 10, 15.4, 12)
+        },
         "pin": function(c) {
             // 图钉（Feather "bookmark" 语义更适合侧栏置顶：书签钉在会话上）。
             polyline(c, [7, 3.5, 17, 3.5, 17, 20.5, 12, 16, 7, 20.5, 7, 3.5])

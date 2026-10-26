@@ -88,6 +88,22 @@ public:
     qint64 sessionTokensUsed() const { return m_sessionTokensUsed; }
     int maxTokens() const;
 
+    // ── 提示词预设（会话级系统提示覆盖）────────────────
+    // 套用的预设按标签持有；与权限模式同理，全局设置（设置页的
+    // agent/systemPromptOverride）只作用于**尚未套用预设**的标签，套用后
+    // 预设接管系统提示，清除则回落到当时的全局值。
+    QString promptPresetId() const { return m_promptPresetId; }
+    QString promptPresetName() const { return m_promptPresetName; }
+    void applyPromptPreset(const QString& id, const QString& name, const QString& prompt);
+    // 清除预设：系统提示回落到全局值（m_globalSystemPrompt）。
+    void clearPromptPreset();
+    // 预设被编辑（文本变化）时把新文本推给已套用的标签；删除则不动——
+    // 已套用的会话保持原提示（设置页对用户的既有承诺）。
+    void syncPromptPreset(const QVariantList& presets);
+    // 全局系统提示下发：记下并以它作为"清除预设"的回落值；只在没有套用
+    // 预设时才真正写到 agent 上。
+    void applyGlobalSystemPrompt(const QString& prompt);
+
     // 会话级权限模式（0=变更确认 1=自动编辑 2=完全访问）。QML 经
     // AgentViewModel 写入并转发给本 tab 的 agent。内存态，不持久化。
     int permissionMode() const { return m_permissionMode; }
@@ -149,6 +165,8 @@ signals:
     // Session permission mode changed (AgentViewModel re-emits for the
     // active tab; SessionTabs reads it via tabModel for background tabs).
     void permissionModeChanged();
+    // 套用的提示词预设变了（套用/清除/预设文本被编辑）。
+    void promptPresetChanged();
     void todoListChanged(const QVariantList& todos);
     void fileCheckpointsChanged(const QVariantList& checkpoints);
     void episodicChanged();
@@ -169,6 +187,15 @@ private:
     qint64 m_sessionTokensUsed{0};   // AIAgent::sessionTokensUsed 镜像
     int m_permissionMode{0};            // PermissionMode as int; 0 = ConfirmChanges
     bool m_permissionModeOverridden{false};
+    // 套用的提示词预设（空 id = 未套用，回落全局 systemPromptOverride）。
+    // 名字随 id 冗余保存：预设被删除后已套用的会话仍能显示来源名。
+    QString m_promptPresetId;
+    QString m_promptPresetName;
+    // 套用时的提示词正文。留在控制器里，换 agent（重挂载）时才能把同一段
+    // 提示重新推给新 agent，而不必回查 Settings。
+    QString m_promptPresetPrompt;
+    // 设置页里配置的全局系统提示词，由 main.cpp 的 applySystemPrompt 下发。
+    QString m_globalSystemPrompt;
     QVariantList m_todoList;
     QVariantList m_fileCheckpoints;
 

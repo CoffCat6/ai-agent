@@ -399,6 +399,22 @@ add_test(NAME test_git_panel_qml
         "QT_QPA_PLATFORM_PLUGIN_PATH=${QT6_INSTALL_PREFIX}/${QT6_INSTALL_PLUGINS}/platforms"
         $<TARGET_FILE:test_git_panel_qml> -platform offscreen)
 
+# 提示词预设选择器：胶囊回显（会话级状态）+ 主题化弹出列表的渲染回归。
+# 从 TopBar 的裸 Menu 搬到选项行后，最容易退化成"逻辑通了、界面看不见"，
+# 故与 test_todo_qml 同一套文件系统副本 + offscreen 方案真加载组件。
+add_executable(test_prompt_preset_qml test_prompt_preset_qml.cpp)
+target_link_libraries(test_prompt_preset_qml PRIVATE
+    nexus_core nexus_infra nexus_viewmodels nexus_viewmodelsplugin
+    Qt6::Test Qt6::Qml Qt6::Quick)
+target_compile_definitions(test_prompt_preset_qml PRIVATE
+    NEXUS_TEST_QML_DIR="${CMAKE_CURRENT_SOURCE_DIR}/qml"
+    NEXUS_BUILD_DIR="${CMAKE_BINARY_DIR}")
+add_dependencies(test_prompt_preset_qml nexus_ai)
+add_test(NAME test_prompt_preset_qml
+    COMMAND ${CMAKE_COMMAND} -E env
+        "QT_QPA_PLATFORM_PLUGIN_PATH=${QT6_INSTALL_PREFIX}/${QT6_INSTALL_PLUGINS}/platforms"
+        $<TARGET_FILE:test_prompt_preset_qml> -platform offscreen)
+
 # G2: '@' completion keyboard/mouse interaction. Real QTest key and click
 # events against the real InputConsole; guards Enter/Tab/Up-Down/click
 # acceptance, which the parser and rendering tests cannot see.

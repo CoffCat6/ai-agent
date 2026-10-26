@@ -45,6 +45,13 @@ void ChatSessionController::attachAgent(AIAgent* agent, bool owned) {
         // The controller mirror is authoritative for UX continuity; push it
         // into the newly attached agent.
         m_agent->setPermissionMode(static_cast<PermissionMode>(m_permissionMode));
+        // 与权限模式同理：预设是本标签的决定，换 agent 后必须重新推下去，
+        // 否则重挂载会把系统提示悄悄退回全局值。
+        // 只有套用了预设才覆盖：未套用时 agent 自己已带着全局提示词
+        // （main.cpp 的 applySystemPrompt / factory 初始化），这里再推空串
+        // 会把它清掉。
+        if (!m_promptPresetId.isEmpty())
+            m_agent->setSystemPromptOverride(m_promptPresetPrompt);
     }
 }
 
@@ -67,6 +74,57 @@ void ChatSessionController::applyDefaultPermissionMode(int mode) {
     emit permissionModeChanged();
 }
 
+void ChatSessionController::applyPromptPreset(const QString& id, const QString& name,
+                                              const QString& prompt) {
+    if (id.isEmpty()) {
+        clearPromptPreset();
+        return;
+    }
+    if (m_promptPresetId == id && m_promptPresetPrompt == prompt
+            && m_promptPresetName == name)
+        return;
+    m_promptPresetId = id;
+    m_promptPresetName = name;
+    m_promptPresetPrompt = prompt;
+    if (m_agent) m_agent->setSystemPromptOverride(prompt);
+    emit promptPresetChanged();
+}
+
+void ChatSessionController::clearPromptPreset() {
+    if (m_promptPresetId.isEmpty() && m_promptPresetPrompt.isEmpty()) return;
+    m_promptPresetId.clear();
+    m_promptPresetName.clear();
+    m_promptPresetPrompt.clear();
+    if (m_agent) m_agent->setSystemPromptOverride(m_globalSystemPrompt);
+    emit promptPresetChanged();
+}
+
+void ChatSessionController::syncPromptPreset(const QVariantList& presets) {
+    if (m_promptPresetId.isEmpty()) return;
+    for (const QVariant& entry : presets) {
+        const QVariantMap preset = entry.toMap();
+        if (preset.value("id").toString() != m_promptPresetId) continue;
+        const QString name = preset.value("name").toString();
+        const QString prompt = preset.value("prompt").toString();
+        if (name == m_promptPresetName && prompt == m_promptPresetPrompt) return;
+        m_promptPresetName = name;
+        m_promptPresetPrompt = prompt;
+        if (m_agent) m_agent->setSystemPromptOverride(prompt);
+        emit promptPresetChanged();
+        return;
+    }
+    // 预设已被删除：保持已套用的提示（设置页对此有明确承诺），只是名字
+    // 仍留着，界面据此提示"来源预设已删除"。
+}
+
+void ChatSessionController::applyGlobalSystemPrompt(const QString& prompt) {
+    // 记下全局值：清除预设时用它回落，不必回查 Settings。
+    m_globalSystemPrompt = prompt;
+    // 套用了预设的标签由预设接管，全局设置只在"无预设"时下发。未套用时
+    // 也必须转发：override 可能被清空（回到内置提示）。
+    if (m_agent && m_promptPresetId.isEmpty())
+        m_agent->setSystemPromptOverride(prompt);
+}
 void ChatSessionController::connectAgent(AIAgent* agent) {
     connect(agent, &AIAgent::stateChanged, this, [this](AgentState state) {
         setState(state);

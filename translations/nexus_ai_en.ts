@@ -6355,6 +6355,74 @@ select a file to view its content diff on the right.</translation>
     </message>
 </context>
 <context>
+    <name>PromptPresetSelector</name>
+    <message>
+        <location filename="../src/ui/components/PromptPresetSelector.qml" line="40"/>
+        <source>提示词·默认</source>
+        <translation>Prompt · default</translation>
+    </message>
+    <message>
+        <location filename="../src/ui/components/PromptPresetSelector.qml" line="41"/>
+        <source>预设已删除 · %1</source>
+        <translation>Preset deleted · %1</translation>
+    </message>
+    <message>
+        <location filename="../src/ui/components/PromptPresetSelector.qml" line="42"/>
+        <source>提示词预设</source>
+        <translation>Prompt preset</translation>
+    </message>
+    <message>
+        <location filename="../src/ui/components/PromptPresetSelector.qml" line="43"/>
+        <source>当前会话套用预设「%1」，覆盖设置里的全局系统提示词</source>
+        <translation>This session applies preset &quot;%1&quot;, overriding the global system prompt from settings</translation>
+    </message>
+    <message>
+        <location filename="../src/ui/components/PromptPresetSelector.qml" line="44"/>
+        <source>当前会话未套用预设，使用设置里的全局系统提示词</source>
+        <translation>No preset applied to this session; using the global system prompt from settings</translation>
+    </message>
+    <message>
+        <location filename="../src/ui/components/PromptPresetSelector.qml" line="45"/>
+        <source>提示词预设 · 当前会话</source>
+        <translation>Prompt presets · this session</translation>
+    </message>
+    <message>
+        <location filename="../src/ui/components/PromptPresetSelector.qml" line="46"/>
+        <source>已套用</source>
+        <translation>Applied</translation>
+    </message>
+    <message>
+        <location filename="../src/ui/components/PromptPresetSelector.qml" line="47"/>
+        <source>跟随全局</source>
+        <translation>Follows global</translation>
+    </message>
+    <message>
+        <location filename="../src/ui/components/PromptPresetSelector.qml" line="48"/>
+        <source>无预设（使用全局系统提示词）</source>
+        <translation>No preset (use the global system prompt)</translation>
+    </message>
+    <message>
+        <location filename="../src/ui/components/PromptPresetSelector.qml" line="49"/>
+        <source>设置页已配置自定义全局提示词</source>
+        <translation>A custom global prompt is configured in settings</translation>
+    </message>
+    <message>
+        <location filename="../src/ui/components/PromptPresetSelector.qml" line="50"/>
+        <source>设置页未配置，使用内置提示词</source>
+        <translation>Nothing configured in settings; the built-in prompt is used</translation>
+    </message>
+    <message>
+        <location filename="../src/ui/components/PromptPresetSelector.qml" line="51"/>
+        <source>还没有预设。用下面的「管理预设…」写下第一段角色设定。</source>
+        <translation>No presets yet. Use &quot;Manage presets…&quot; below to write your first persona.</translation>
+    </message>
+    <message>
+        <location filename="../src/ui/components/PromptPresetSelector.qml" line="52"/>
+        <source>管理预设…</source>
+        <translation>Manage presets…</translation>
+    </message>
+</context>
+<context>
     <name>SettingsSearch</name>
     <message>
         <location filename="../src/ui/components/settings-search.js" line="29"/>
@@ -7583,26 +7651,6 @@ select a file to view its content diff on the right.</translation>
         <location filename="../src/ui/components/TopBar.qml" line="908"/>
         <source>展开上下文面板 (Ctrl+B)</source>
         <translation>Expand Context Panel (Ctrl+B)</translation>
-    </message>
-    <message>
-        <location filename="../src/ui/components/TopBar.qml" line="796"/>
-        <source>提示词预设（套用到当前会话）</source>
-        <translation>Prompt presets (apply to this session)</translation>
-    </message>
-    <message>
-        <location filename="../src/ui/components/TopBar.qml" line="806"/>
-        <source>无（使用全局设置）</source>
-        <translation>None (use global setting)</translation>
-    </message>
-    <message>
-        <location filename="../src/ui/components/TopBar.qml" line="823"/>
-        <source>还没有预设</source>
-        <translation>No presets yet</translation>
-    </message>
-    <message>
-        <location filename="../src/ui/components/TopBar.qml" line="827"/>
-        <source>管理预设…</source>
-        <translation>Manage presets…</translation>
     </message>
 </context>
 <context>
