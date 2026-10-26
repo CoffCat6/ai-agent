@@ -209,7 +209,9 @@ Rectangle {
                 seen[base] = true
                 files.push({kind: "file", name: ref.name, content: ref.content})
             }
-            if (!AgentVM.startTask(textArea.text, images, files)) return
+            if (!AgentVM.startTask(
+                    AgentVM.expandSlashCommand(textArea.text, Settings.slashCommands),
+                    images, files)) return
             root.closeMention()
             textArea.text = ""
             root.pendingAttachments = []

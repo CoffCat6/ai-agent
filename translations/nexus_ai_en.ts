@@ -4978,6 +4978,132 @@ Select or import a project in the sidebar first.</translation>
         <source>无法更新 Windows 开机自启动设置。</source>
         <translation>Could not update Windows startup settings.</translation>
     </message>
+    <message>
+        <location filename="../src/viewmodels/SettingsService.cpp" line="567"/>
+        <source>技术评审</source>
+        <translation>Rigorous code reviewer</translation>
+    </message>
+    <message>
+        <location filename="../src/viewmodels/SettingsService.cpp" line="568"/>
+        <source>你是一位严谨的技术评审。审查代码时只关注真实问题：正确性缺陷、边界条件、安全隐患、性能陷阱与可维护性风险。不写客套与表扬，按严重程度排序输出发现，每条给出位置与具体修改建议。没有问题时明确说&quot;未发现问题&quot;，不硬凑。</source>
+        <translation>You are a rigorous code reviewer. Focus only on real problems: correctness defects, edge cases, security risks, performance traps and maintainability issues. No pleasantries or praise - report findings ordered by severity, each with a location and a concrete fix. When there is nothing to find, say so plainly instead of inventing issues.</translation>
+    </message>
+    <message>
+        <location filename="../src/viewmodels/SettingsService.cpp" line="571"/>
+        <source>资深架构师</source>
+        <translation>Senior architect</translation>
+    </message>
+    <message>
+        <location filename="../src/viewmodels/SettingsService.cpp" line="572"/>
+        <source>你是一位资深软件架构师。面对需求先明确约束与取舍，再给方案：优先给出最小可行的解决路径，说明所选方案的代价与放弃的替代项。复杂设计先讲清结构再动手，始终警惕过度设计与过早优化。</source>
+        <translation>You are a senior software architect. Clarify constraints and trade-offs before proposing anything: prefer the minimal viable path, and state what the chosen approach costs and which alternatives were rejected. For complex designs explain the structure before writing code; stay alert to over-engineering and premature optimization.</translation>
+    </message>
+    <message>
+        <location filename="../src/viewmodels/SettingsService.cpp" line="575"/>
+        <source>耐心导师</source>
+        <translation>Patient mentor</translation>
+    </message>
+    <message>
+        <location filename="../src/viewmodels/SettingsService.cpp" line="576"/>
+        <source>你是一位耐心的技术导师，面向初学者解释问题。每次只引入一个新概念，用类比帮助理解，先讲&quot;为什么&quot;再讲&quot;怎么做&quot;。学生答错时不直接给答案，先给提示；确认理解后再继续下一步。</source>
+        <translation>You are a patient technical mentor teaching beginners. Introduce one new concept at a time, use analogies, and always explain the &quot;why&quot; before the &quot;how&quot;. When the learner gets it wrong, offer a hint instead of the answer; confirm understanding before moving on.</translation>
+    </message>
+    <message>
+        <location filename="../src/viewmodels/SettingsService.cpp" line="579"/>
+        <source>简洁模式</source>
+        <translation>Concise mode</translation>
+    </message>
+    <message>
+        <location filename="../src/viewmodels/SettingsService.cpp" line="580"/>
+        <source>用尽可能少的篇幅回答。优先给结论和关键依据，不写铺垫、总结与客套；能一句话说清的不用两句。需要展开时先给一句话版本，被追问再展开。</source>
+        <translation>Answer in as few words as possible. Lead with the conclusion and the key evidence - no preamble, no summary, no pleasantries; if one sentence suffices, never use two. When detail is needed, give the one-line version first and expand only when asked.</translation>
+    </message>
+    <message>
+        <location filename="../src/viewmodels/SettingsService.cpp" line="595"/>
+        <source>审查代码或 diff</source>
+        <translation>Review code or a diff</translation>
+    </message>
+    <message>
+        <location filename="../src/viewmodels/SettingsService.cpp" line="596"/>
+        <source>请审查以下代码，重点检查正确性问题、边界条件与潜在 bug，按严重程度排序；只给关键修改建议，不要重写全部：
+
+{text}</source>
+        <translation>Review the following code, focusing on correctness issues, edge cases and potential bugs, ordered by severity; give only key fix suggestions, do not rewrite everything:
+
+{text}</translation>
+    </message>
+    <message>
+        <location filename="../src/viewmodels/SettingsService.cpp" line="598"/>
+        <source>解释代码</source>
+        <translation>Explain code</translation>
+    </message>
+    <message>
+        <location filename="../src/viewmodels/SettingsService.cpp" line="599"/>
+        <source>请详细解释下面代码的作用与执行逻辑，包括关键分支、边界处理和可能的坑：
+
+{text}</source>
+        <translation>Explain in detail what the following code does and how it executes, including key branches, boundary handling and possible pitfalls:
+
+{text}</translation>
+    </message>
+    <message>
+        <location filename="../src/viewmodels/SettingsService.cpp" line="600"/>
+        <source>翻译成英文</source>
+        <translation>Translate to English</translation>
+    </message>
+    <message>
+        <location filename="../src/viewmodels/SettingsService.cpp" line="601"/>
+        <source>将下面的内容翻译成英文，保持原意与语气；技术术语、专有名词与代码保持原文：
+
+{text}</source>
+        <translation>Translate the following content into English, preserving meaning and tone; keep technical terms, proper nouns and code as-is:
+
+{text}</translation>
+    </message>
+    <message>
+        <location filename="../src/viewmodels/SettingsService.cpp" line="602"/>
+        <source>生成提交信息</source>
+        <translation>Draft a commit message</translation>
+    </message>
+    <message>
+        <location filename="../src/viewmodels/SettingsService.cpp" line="603"/>
+        <source>为以下代码改动生成一条符合 Conventional Commits 规范的中文提交信息（格式：type(scope): subject，正文用要点列表说明动机与改动），只输出提交信息本身：
+
+{text}</source>
+        <translation>Draft a Conventional Commits commit message in Chinese for the following changes (format: type(scope): subject, body as a bullet list covering motivation and the change); output only the commit message itself:
+
+{text}</translation>
+    </message>
+    <message>
+        <location filename="../src/viewmodels/SettingsService.cpp" line="620"/>
+        <source>代码审查</source>
+        <translation>Code review</translation>
+    </message>
+    <message>
+        <location filename="../src/viewmodels/SettingsService.cpp" line="622"/>
+        <source>请审查这个项目的近期改动：先看当前 git 状态与未提交的变更，再指出正确性、安全性与可维护性问题，按严重程度排序。</source>
+        <translation>Review this project's recent changes: start with the current git status and uncommitted changes, then report correctness, security and maintainability issues ordered by severity.</translation>
+    </message>
+    <message>
+        <location filename="../src/viewmodels/SettingsService.cpp" line="624"/>
+        <source>项目探索</source>
+        <translation>Explore project</translation>
+    </message>
+    <message>
+        <location filename="../src/viewmodels/SettingsService.cpp" line="626"/>
+        <source>我是第一次接触这个项目。请带我了解它：先浏览目录结构，然后介绍核心模块的职责、它们之间的数据流，以及从哪里开始读代码最合适。</source>
+        <translation>I am new to this project. Walk me through it: first the directory layout, then what each core module is responsible for, how data flows between them, and where I should start reading.</translation>
+    </message>
+    <message>
+        <location filename="../src/viewmodels/SettingsService.cpp" line="628"/>
+        <source>快速润色</source>
+        <translation>Quick polish</translation>
+    </message>
+    <message>
+        <location filename="../src/viewmodels/SettingsService.cpp" line="630"/>
+        <source>请润色我接下来粘贴的文字：保持原意不变，让它更清晰、专业、简洁，并保留我的语气。</source>
+        <translation>Polish the text I am about to paste: keep the meaning unchanged while making it clearer, more professional and more concise, preserving my voice.</translation>
+    </message>
 </context>
 <context>
     <name>ParamSelectRow</name>
@@ -6051,6 +6177,184 @@ select a file to view its content diff on the right.</translation>
     </message>
 </context>
 <context>
+    <name>PromptAssetsPage</name>
+    <message>
+        <location filename="../src/ui/pages/PromptAssetsPage.qml" line="21"/>
+        <source>提示词与指令页</source>
+        <translation>Prompts &amp; commands page</translation>
+    </message>
+    <message>
+        <location filename="../src/ui/pages/PromptAssetsPage.qml" line="53"/>
+        <source>提示词与指令</source>
+        <translation>Prompts &amp; commands</translation>
+    </message>
+    <message>
+        <location filename="../src/ui/pages/PromptAssetsPage.qml" line="61"/>
+        <source>系统提示预设、斜杠指令与会话模板。改动即时保存。</source>
+        <translation>System prompt presets, slash commands and session templates. Changes save instantly.</translation>
+    </message>
+    <message>
+        <location filename="../src/ui/pages/PromptAssetsPage.qml" line="94"/>
+        <source>系统提示预设</source>
+        <translation>System prompt presets</translation>
+    </message>
+    <message>
+        <location filename="../src/ui/pages/PromptAssetsPage.qml" line="100"/>
+        <source>新建预设</source>
+        <translation>New preset</translation>
+    </message>
+    <message>
+        <location filename="../src/ui/pages/PromptAssetsPage.qml" line="106"/>
+        <source>整段角色设定（如「严谨的技术评审」）。通过顶栏的预设按钮套用到当前会话；覆盖全局系统提示词，删除预设不影响已套用的会话。</source>
+        <translation>A full persona (e.g. &quot;rigorous code reviewer&quot;). Apply it to the current session from the top-bar button; it overrides the global system prompt, and deleting a preset never affects sessions already applied.</translation>
+    </message>
+    <message>
+        <location filename="../src/ui/pages/PromptAssetsPage.qml" line="141"/>
+        <location filename="../src/ui/pages/PromptAssetsPage.qml" line="285"/>
+        <location filename="../src/ui/pages/PromptAssetsPage.qml" line="450"/>
+        <source>编辑</source>
+        <translation>Edit</translation>
+    </message>
+    <message>
+        <location filename="../src/ui/pages/PromptAssetsPage.qml" line="145"/>
+        <location filename="../src/ui/pages/PromptAssetsPage.qml" line="289"/>
+        <location filename="../src/ui/pages/PromptAssetsPage.qml" line="454"/>
+        <source>删除</source>
+        <translation>Delete</translation>
+    </message>
+    <message>
+        <location filename="../src/ui/pages/PromptAssetsPage.qml" line="164"/>
+        <source>还没有预设。点「新建预设」写下第一段角色设定。</source>
+        <translation>No presets yet. Click &quot;New preset&quot; to write your first persona.</translation>
+    </message>
+    <message>
+        <location filename="../src/ui/pages/PromptAssetsPage.qml" line="178"/>
+        <source>预设名称（如：技术评审）</source>
+        <translation>Preset name (e.g. Code reviewer)</translation>
+    </message>
+    <message>
+        <location filename="../src/ui/pages/PromptAssetsPage.qml" line="189"/>
+        <source>完整的系统提示词内容…</source>
+        <translation>Full system prompt content…</translation>
+    </message>
+    <message>
+        <location filename="../src/ui/pages/PromptAssetsPage.qml" line="201"/>
+        <location filename="../src/ui/pages/PromptAssetsPage.qml" line="355"/>
+        <source>取消</source>
+        <translation>Cancel</translation>
+    </message>
+    <message>
+        <location filename="../src/ui/pages/PromptAssetsPage.qml" line="205"/>
+        <location filename="../src/ui/pages/PromptAssetsPage.qml" line="359"/>
+        <source>创建</source>
+        <translation>Create</translation>
+    </message>
+    <message>
+        <location filename="../src/ui/pages/PromptAssetsPage.qml" line="205"/>
+        <location filename="../src/ui/pages/PromptAssetsPage.qml" line="359"/>
+        <source>保存</source>
+        <translation>Save</translation>
+    </message>
+    <message>
+        <location filename="../src/ui/pages/PromptAssetsPage.qml" line="232"/>
+        <source>斜杠指令</source>
+        <translation>Slash commands</translation>
+    </message>
+    <message>
+        <location filename="../src/ui/pages/PromptAssetsPage.qml" line="238"/>
+        <source>新建指令</source>
+        <translation>New command</translation>
+    </message>
+    <message>
+        <location filename="../src/ui/pages/PromptAssetsPage.qml" line="244"/>
+        <source>输入框以「/指令」开头发送即展开为模板。模板中的 {text} 会被替换为指令后输入的内容；没有占位符时内容附在模板之后。</source>
+        <translation>A message starting with /command is expanded from the template before sending. {text} in the template receives whatever you typed after the command; without a placeholder the text is appended.</translation>
+    </message>
+    <message>
+        <location filename="../src/ui/pages/PromptAssetsPage.qml" line="308"/>
+        <source>还没有指令。例：/review + 模板「请审查以下代码，指出问题：{text}」。</source>
+        <translation>No commands yet. Example: /review with template &quot;Review this code and point out issues: {text}&quot;.</translation>
+    </message>
+    <message>
+        <location filename="../src/ui/pages/PromptAssetsPage.qml" line="320"/>
+        <source>/</source>
+        <translation>/</translation>
+    </message>
+    <message>
+        <location filename="../src/ui/pages/PromptAssetsPage.qml" line="324"/>
+        <source>指令名（不含斜杠，如 review）</source>
+        <translation>Command word (no slash, e.g. review)</translation>
+    </message>
+    <message>
+        <location filename="../src/ui/pages/PromptAssetsPage.qml" line="332"/>
+        <source>说明（可选，显示在指令列表）</source>
+        <translation>Description (optional, shown in the list)</translation>
+    </message>
+    <message>
+        <location filename="../src/ui/pages/PromptAssetsPage.qml" line="343"/>
+        <source>展开模板…含 {text} 占位符</source>
+        <translation>Expansion template… may contain {text}</translation>
+    </message>
+    <message>
+        <location filename="../src/ui/pages/PromptAssetsPage.qml" line="387"/>
+        <source>会话模板</source>
+        <translation>Session templates</translation>
+    </message>
+    <message>
+        <location filename="../src/ui/pages/PromptAssetsPage.qml" line="393"/>
+        <source>新建模板</source>
+        <translation>New template</translation>
+    </message>
+    <message>
+        <location filename="../src/ui/pages/PromptAssetsPage.qml" line="399"/>
+        <source>侧栏「新会话」旁的模板菜单：一键按预置的模型配置、权限模式与首条消息开新会话。首条消息进入输入框待确认，不会自动发送。</source>
+        <translation>The menu next to &quot;New chat&quot; in the sidebar: one click starts a session with the preset model profile, permission mode and first message. The first message lands in the composer for review - never auto-sent.</translation>
+    </message>
+    <message>
+        <location filename="../src/ui/pages/PromptAssetsPage.qml" line="411"/>
+        <location filename="../src/ui/pages/PromptAssetsPage.qml" line="504"/>
+        <source>权限不变</source>
+        <translation>Keep permission</translation>
+    </message>
+    <message>
+        <location filename="../src/ui/pages/PromptAssetsPage.qml" line="412"/>
+        <source>只读计划</source>
+        <translation>Plan only</translation>
+    </message>
+    <message>
+        <location filename="../src/ui/pages/PromptAssetsPage.qml" line="413"/>
+        <source>变更确认</source>
+        <translation>Confirm changes</translation>
+    </message>
+    <message>
+        <location filename="../src/ui/pages/PromptAssetsPage.qml" line="414"/>
+        <source>自动编辑</source>
+        <translation>Auto edit</translation>
+    </message>
+    <message>
+        <location filename="../src/ui/pages/PromptAssetsPage.qml" line="415"/>
+        <source>完全访问</source>
+        <translation>Full access</translation>
+    </message>
+    <message>
+        <location filename="../src/ui/pages/PromptAssetsPage.qml" line="418"/>
+        <location filename="../src/ui/pages/PromptAssetsPage.qml" line="423"/>
+        <location filename="../src/ui/pages/PromptAssetsPage.qml" line="504"/>
+        <source>配置不变</source>
+        <translation>Keep model profile</translation>
+    </message>
+    <message>
+        <location filename="../src/ui/pages/PromptAssetsPage.qml" line="480"/>
+        <source>还没有模板。例：「代码审查」= 只读计划 + 首条消息「请审查这个项目的近期改动」。</source>
+        <translation>No templates yet. Example: &quot;Code review&quot; = plan only + first message &quot;Review this project's recent changes&quot;.</translation>
+    </message>
+    <message>
+        <location filename="../src/ui/pages/PromptAssetsPage.qml" line="493"/>
+        <source>模板名称（如：代码审查）</source>
+        <translation>Template name (e.g. Code review)</translation>
+    </message>
+</context>
+<context>
     <name>SettingsSearch</name>
     <message>
         <location filename="../src/ui/components/settings-search.js" line="29"/>
@@ -6176,6 +6480,21 @@ select a file to view its content diff on the right.</translation>
         <location filename="../src/ui/components/settings-search.js" line="72"/>
         <source>数据库备份</source>
         <translation>Database backup</translation>
+    </message>
+    <message>
+        <location filename="../src/ui/components/settings-search.js" line="67"/>
+        <source>系统提示预设</source>
+        <translation>System prompt presets</translation>
+    </message>
+    <message>
+        <location filename="../src/ui/components/settings-search.js" line="68"/>
+        <source>斜杠指令</source>
+        <translation>Slash commands</translation>
+    </message>
+    <message>
+        <location filename="../src/ui/components/settings-search.js" line="69"/>
+        <source>会话模板</source>
+        <translation>Session templates</translation>
     </message>
 </context>
 <context>
@@ -6502,6 +6821,16 @@ select a file to view its content diff on the right.</translation>
         <location filename="../src/ui/components/Sidebar.qml" line="1475"/>
         <source>JSON (*.json)</source>
         <translation>JSON (*.json)</translation>
+    </message>
+    <message>
+        <location filename="../src/ui/components/Sidebar.qml" line="242"/>
+        <source>空白新对话</source>
+        <translation>Blank new chat</translation>
+    </message>
+    <message>
+        <location filename="../src/ui/components/Sidebar.qml" line="269"/>
+        <source>还没有模板</source>
+        <translation>No templates yet</translation>
     </message>
 </context>
 <context>
@@ -7254,6 +7583,26 @@ select a file to view its content diff on the right.</translation>
         <location filename="../src/ui/components/TopBar.qml" line="908"/>
         <source>展开上下文面板 (Ctrl+B)</source>
         <translation>Expand Context Panel (Ctrl+B)</translation>
+    </message>
+    <message>
+        <location filename="../src/ui/components/TopBar.qml" line="796"/>
+        <source>提示词预设（套用到当前会话）</source>
+        <translation>Prompt presets (apply to this session)</translation>
+    </message>
+    <message>
+        <location filename="../src/ui/components/TopBar.qml" line="806"/>
+        <source>无（使用全局设置）</source>
+        <translation>None (use global setting)</translation>
+    </message>
+    <message>
+        <location filename="../src/ui/components/TopBar.qml" line="823"/>
+        <source>还没有预设</source>
+        <translation>No presets yet</translation>
+    </message>
+    <message>
+        <location filename="../src/ui/components/TopBar.qml" line="827"/>
+        <source>管理预设…</source>
+        <translation>Manage presets…</translation>
     </message>
 </context>
 <context>

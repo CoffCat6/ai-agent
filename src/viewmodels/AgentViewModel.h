@@ -383,6 +383,15 @@ public:
     // {kind:"file", name, content} text attachments folded into the request.
     Q_INVOKABLE bool startTask(const QString& input, const QStringList& images = {},
                                const QVariantList& files = {});
+    // 斜杠指令展开（发送前由 InputConsole 调用）。commands 来自
+    // Settings.slashCommands（{name, templ}），展开规则见
+    // SlashCommand::expand——非斜杠/未知命令原样返回，匹配则整体替换。
+    // 纯静态：expansion 逻辑在 core/utils/SlashCommand.h，可单测。
+    Q_INVOKABLE static QString expandSlashCommand(const QString& input,
+                                                  const QVariantList& commands);
+    // 把提示词预设套用到活动标签的 agent override（空串 = 清除覆盖，回到
+    // 全局提示词）。仅影响当前标签，其它标签与全局设置不动。
+    Q_INVOKABLE void applyPromptOverride(const QString& prompt);
     // Compressed data URL of the clipboard image (empty when none).
     Q_INVOKABLE QString clipboardImageDataUrl() const;
     // Compressed data URL of an image file picked in QML (empty when unreadable).

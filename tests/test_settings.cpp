@@ -68,6 +68,10 @@ public:
         proxyHost = s.value("network/proxyHost");
         proxyPort = s.value("network/proxyPort");
         proxyAuth = s.value("network/proxyAuth");
+        // B1: prompt asset keys (seeding tests remove and rewrite them).
+        promptPresets = s.value("promptPresets");
+        slashCommands = s.value("slashCommands");
+        sessionTemplates = s.value("sessionTemplates");
         schemaVersion = s.value("schemaVersion");
         defaultPermissionMode = s.value("agent/defaultPermissionMode");
         readDenyList = s.value("security/readDenyList");
@@ -135,6 +139,12 @@ public:
         else s.remove("network/proxyPort");
         if (proxyAuth.isValid()) s.setValue("network/proxyAuth", proxyAuth);
         else s.remove("network/proxyAuth");
+        if (promptPresets.isValid()) s.setValue("promptPresets", promptPresets);
+        else s.remove("promptPresets");
+        if (slashCommands.isValid()) s.setValue("slashCommands", slashCommands);
+        else s.remove("slashCommands");
+        if (sessionTemplates.isValid()) s.setValue("sessionTemplates", sessionTemplates);
+        else s.remove("sessionTemplates");
         if (schemaVersion.isValid())
             s.setValue("schemaVersion", schemaVersion);
         else s.remove("schemaVersion");
@@ -179,6 +189,9 @@ public:
     QVariant proxyHost;
     QVariant proxyPort;
     QVariant proxyAuth;
+    QVariant promptPresets;
+    QVariant slashCommands;
+    QVariant sessionTemplates;
     QVariant schemaVersion;
     QVariant defaultPermissionMode;
     QVariant readDenyList;
@@ -768,6 +781,51 @@ private slots:
 
     // docs/17 B3: 账本完整性——三类旁路写入方（ToolRegistry/AgentViewModel/
     // PreferenceStore）的键必须全部登记进 schema，防止"唯一事实源"再漂移。
+
+    // B1: 默认资产种子——键未写入时种入（数量/固定 id/命令词不随 locale 变），
+    // 键已存在（含用户清空的 "[]"）绝不回灌。
+    void promptAssetsSeededOnceAndDeletionRespected() {
+        {
+            QSettings s("NexusAI", "NexusAI");
+            s.remove("promptPresets");
+            s.remove("slashCommands");
+            s.remove("sessionTemplates");
+        }
+        {
+            SettingsService service(nullptr);
+            QCOMPARE(service.promptPresets().size(), 4);
+            QCOMPARE(service.slashCommands().size(), 4);
+            QCOMPARE(service.sessionTemplates().size(), 3);
+            QStringList names;
+            for (const QVariant& c : service.slashCommands())
+                names << c.toMap().value("name").toString();
+            QCOMPARE(names, (QStringList{"review", "explain", "translate", "commit"}));
+            // 代码审查模板默认只读计划档
+            for (const QVariant& t : service.sessionTemplates()) {
+                const QVariantMap m = t.toMap();
+                if (m.value("id").toString() == "default-tmpl-code-review")
+                    QCOMPARE(m.value("permissionMode").toInt(), 3);   // PlanOnly
+            }
+            // 删掉一条默认预设
+            service.removePromptPreset("default-preset-reviewer");
+            QCOMPARE(service.promptPresets().size(), 3);
+        }
+        {
+            // 重启：键已存在，不回灌被删的默认
+            SettingsService service(nullptr);
+            QCOMPARE(service.promptPresets().size(), 3);
+            QCOMPARE(service.slashCommands().size(), 4);
+            // 用户清空指令列表 → "[]"，仍是空，不回灌
+            for (const QVariant& c : service.slashCommands())
+                service.removeSlashCommand(c.toMap().value("id").toString());
+            QCOMPARE(service.slashCommands().size(), 0);
+        }
+        {
+            SettingsService service(nullptr);
+            QCOMPARE(service.slashCommands().size(), 0);
+        }
+    }
+
     void schemaCoversBypassWriters() {
         const auto& keys = SettingsSchema::registeredKeys();
         QSet<QString> registered;
@@ -776,6 +834,8 @@ private slots:
         const QStringList expected = {
             // SettingsService-owned values
             "modelProfiles", "activeProfileId", "contextTokens",
+            // 提示词与指令：三组用户自建资产（SettingsService JSON blob）
+            "promptPresets", "slashCommands", "sessionTemplates",
             "agent/maxSteps", "agent/taskTimeoutMinutes",
             "security/allowFullDiskRead", "security/allowProjectWrite",
             "security/localOnlyMode", "security/allowLocalNetworkFetch",

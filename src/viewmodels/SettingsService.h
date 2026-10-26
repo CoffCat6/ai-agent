@@ -48,6 +48,15 @@ class SettingsService : public QObject {
     Q_PROPERTY(QVariantList profiles READ profiles NOTIFY profilesChanged)
     Q_PROPERTY(QString activeProfileId READ activeProfileId NOTIFY activeProfileChanged)
     Q_PROPERTY(QVariantMap activeProfile READ activeProfile NOTIFY activeProfileChanged)
+    // 用户自建文本资产（提示词与指令页）：三组互相独立的 JSON 列表。
+    // promptPresets: {id, name, prompt} — 系统提示预设，TopBar 一键套用到
+    // 活动标签的 agent override；slashCommands: {id, name, templ, note} —
+    // 发送前经 SlashCommand::expand 展开的斜杠指令，模板可含 {text} 占位；
+    // sessionTemplates: {id, name, profileId, permissionMode, firstMessage}
+    // — 新会话模板（profileId 空 = 不动当前配置，permissionMode -1 = 不动）。
+    Q_PROPERTY(QVariantList promptPresets READ promptPresets NOTIFY promptPresetsChanged)
+    Q_PROPERTY(QVariantList slashCommands READ slashCommands NOTIFY slashCommandsChanged)
+    Q_PROPERTY(QVariantList sessionTemplates READ sessionTemplates NOTIFY sessionTemplatesChanged)
     Q_PROPERTY(int contextTokens READ contextTokens WRITE setContextTokens NOTIFY contextTokensChanged)
     // 每轮任务的步数预算（LLM 往返轮数）。曾硬编码为 10，普通多步任务经常
     // 还没得出结论就耗尽，只能拿已有信息拼一个"我无法确认"的答复。
@@ -319,6 +328,23 @@ public:
     // openai-chat — it is a UI axis, not a fifth wire protocol).
     Q_INVOKABLE void updateProfile(const QString& id, const QVariantMap& fields);
     Q_INVOKABLE void removeProfile(const QString& id);
+
+    // ── 提示词与指令（用户自建文本资产，QML invokables）──
+    // 返回新条目 id；name/命令词为空时返回空串（QML 据此提示）。斜杠指令的
+    // 命令词统一去掉前导 '/' 并转小写存储。所有改动即时持久化并 NOTIFY。
+    Q_INVOKABLE QString addPromptPreset(const QString& name, const QString& prompt);
+    Q_INVOKABLE void updatePromptPreset(const QString& id, const QString& name,
+                                        const QString& prompt);
+    Q_INVOKABLE void removePromptPreset(const QString& id);
+    Q_INVOKABLE QString addSlashCommand(const QString& command, const QString& templ,
+                                        const QString& note);
+    Q_INVOKABLE void updateSlashCommand(const QString& id, const QString& command,
+                                        const QString& templ, const QString& note);
+    Q_INVOKABLE void removeSlashCommand(const QString& id);
+    Q_INVOKABLE QString addSessionTemplate(const QString& name, const QString& profileId,
+                                           int permissionMode, const QString& firstMessage);
+    Q_INVOKABLE void updateSessionTemplate(const QString& id, const QVariantMap& fields);
+    Q_INVOKABLE void removeSessionTemplate(const QString& id);
     // 通用设置页中由 SettingsService 管理的 9 项回写 schema 默认值；偏好
     // 存储项由 GeneralPage 另行通过 PreferenceStore.resetBatch() 复位。
     // 逐项走既有 setter，保证持久化与 NOTIFY 一致。
@@ -353,6 +379,10 @@ public:
     int resolveContextLimit() const;
     int resolveContextLimitForProfile(const QVariantMap& profile) const;
 
+    QVariantList promptPresets() const { return m_promptPresets; }
+    QVariantList slashCommands() const { return m_slashCommands; }
+    QVariantList sessionTemplates() const { return m_sessionTemplates; }
+
     // docs/20 §4.3：开机自启的注册表读写封装（可注入，test_settings 用它
     // 在不碰真实 Run 键的前提下校验读写路径）。默认实现（nullptr）为
     // HKCU\...\Run 键的读写；非 Windows 平台恒 false。
@@ -367,6 +397,9 @@ public:
 signals:
     void persistenceError(const QString& message);
     void profilesChanged();
+    void promptPresetsChanged();
+    void slashCommandsChanged();
+    void sessionTemplatesChanged();
     void activeProfileChanged();
     void contextTokensChanged();
     void maxStepsChanged();
@@ -422,6 +455,20 @@ private:
     bool persist();
 
     QVariantList m_profiles;   // each entry: {id, displayName, kind, provider, apiProtocol, baseUrl, apiKey, model, models}
+    // 提示词与指令页的三组用户资产（JSON blob 持久化，同 modelProfiles 模式）。
+    QVariantList m_promptPresets;    // {id, name, prompt}
+    QVariantList m_slashCommands;    // {id, name, templ, note}
+    QVariantList m_sessionTemplates; // {id, name, profileId, permissionMode, firstMessage}
+
+    // 提示词与指令资产的共享持久化：key 不存在/坏 JSON → 空列表；写回为
+    // 紧凑 JSON 数组。与 modelProfiles 的手工 QJson 处理同模式，但三组
+    // 资产结构简单，共用这一对函数而不是各写一份。
+    static QVariantList loadStringList(const QString& key);
+    bool writeStringList(const QString& key, const QVariantList& list);
+    // 首次启动（键从未写入）种入默认预设/指令/模板，随 locale 本地化；
+    // 用户清空列表持久化为 "[]"（非空 raw），不触发回灌——删光默认后
+    // 重启仍是空。固定 id（default-*）供测试与将来升级合并定位。
+    void maybeSeedPromptAssets();
     QString m_activeId;
     int m_contextTokens{};
     int m_maxSteps{};

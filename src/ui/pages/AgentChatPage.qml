@@ -9,6 +9,8 @@ Item {
     id: root
 
     signal settingsRequested()
+    // TopBar 预设菜单的「管理…」：带目标分类打开设置中心。
+    signal settingsCategoryRequested(string category)
 
     // A1 (hit-locate): 搜索命中定位高亮行索引，-1 表示不高亮。
     // TraceNodeRouter.highlighted 绑定到 index === revealHighlightIndex。
@@ -35,6 +37,7 @@ Item {
         TopBar {
             Layout.fillWidth: true
             Layout.preferredHeight: 40
+            onPromptAssetsRequested: root.settingsCategoryRequested("prompts")
         }
 
         SessionTabs {

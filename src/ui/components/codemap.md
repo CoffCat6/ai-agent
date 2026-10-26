@@ -12,8 +12,8 @@
 
 | 组件 | 职责 | 关键依赖 |
 | --- | --- | --- |
-| `Sidebar.qml`（74 KB，最大文件） | 左栏：Logo/新建、项目树 + 本地对话树（共享 `sessionRow` delegate）、跨会话搜索（200ms 防抖）、归档筛选、导入项目、行内重命名/置顶/归档/导出/删除、底栏（日志/审计/设置/主题开关） | `AgentVM.projects/sessionList/tabModel/searchMessages/importProject/renameSession/setSessionPinned/setSessionArchived/exportSession`、`Settings.activeProjectId`、`ThemeManager.isDark` |
-| `TopBar.qml`（36 KB） | 顶栏：侧栏开关、项目归属徽标（空标签可切换，已有会话转只读）、状态点 + `stateText`、token 占用条/累计/费用 + 上下文构成浮层、任务清单与审阅入口（各自带角标）、右栏开关。审阅按钮在 `unreviewedFileCount > 0` 时变品牌色并显示待看文件数，关闭审阅对话框即清零 | `AgentVM.state/stateText/stateBusy/usedTokens/maxTokens/tokenUsageRate/sessionTokensUsed/lastCostCents/contextComposition()/sessionTokenBreakdown()/todoList/fileCheckpoints/unreviewedFileCount/acknowledgeFileReview()/toggleSidebar/togglePanel` |
+| `Sidebar.qml`（74 KB，最大文件） | 左栏：Logo/新建、项目树 + 本地对话树（共享 `sessionRow` delegate）、跨会话搜索（200ms 防抖）、归档筛选、导入项目、行内重命名/置顶/归档/导出/删除、底栏（日志/审计/设置/主题开关） |新对话按钮右缘的模板窄条（`tmplMA` + `Menu`，与主点击区分离）：按 Settings.sessionTemplates 开新会话——profileId 非空先 setActiveProfile、permissionMode ≥0 写新标签、firstMessage 进 draftText 不自动发送。  `AgentVM.projects/sessionList/tabModel/searchMessages/importProject/renameSession/setSessionPinned/setSessionArchived/exportSession`、`Settings.activeProjectId`、`ThemeManager.isDark` |
+| `TopBar.qml`（36 KB） | 顶栏：侧栏开关、项目归属徽标（空标签可切换，已有会话转只读）、状态点 + `stateText`、token 占用条/累计/费用 + 上下文构成浮层、任务清单与审阅入口（各自带角标）、提示词预设菜单（`Menu` 弹出，套用/清除写活动标签 agent override，`promptAssetsRequested` 信号经 AgentChatPage→main 打开设置中心 prompts 分类）、右栏开关。审阅按钮在 `unreviewedFileCount > 0` 时变品牌色并显示待看文件数，关闭审阅对话框即清零 | `AgentVM.state/stateText/stateBusy/usedTokens/maxTokens/tokenUsageRate/sessionTokensUsed/lastCostCents/contextComposition()/sessionTokenBreakdown()/todoList/fileCheckpoints/unreviewedFileCount/acknowledgeFileReview()/toggleSidebar/togglePanel` |
 | `SessionTabs.qml` | 标签页条：`AgentVM.tabModel` 的横向 Flickable + Repeater，运行中显示品牌色圆点，末标签不可关闭，`+` 新建普通对话 | `AgentVM.tabModel/activateTab/closeTab/newLocalChat` |
 | `SplitBar.qml` | 竖向分隔条：拖拽发 `dragged(delta)`、双击 `resetRequested()`、`dragActive` 让宿主暂停宽度动画 | 纯几何 + `Theme.brandPrimary`；宿主（`main.qml`）负责 clamp 与写回 `AgentVM.sidebarWidth/panelWidth` |
 | `SettingsCenterDialog.qml` | 设置中心：搜索框 + 分类导航 + 10 个分类页 `Loader` 懒加载 + 底栏（恢复默认/关闭）+ 恢复确认对话框 | `PreferenceRegistry.categories/preferencesInCategory/categoryName/categoryOrder`、`PreferenceStore`、`EditBuffer`、`settings-search.js`、绝对 qrc URL `qrc:/qt/qml/NexusAI/src/ui/pages/*.qml` |
@@ -40,7 +40,7 @@
 
 | 组件 | 职责 | 关键依赖 |
 | --- | --- | --- |
-| `InputConsole.qml`（31 KB） | 多行输入：草稿双向同步、附件预览条、`@` 项目文件补全（无焦点 Popup + ListView）、引用状态条、输入历史 ↑/↓、Enter 发送 / Shift+Enter 换行 / Ctrl+V 贴图、发送/停止按钮 | `AgentVM.draftText/draftAttachments/restoreDraft/startTask/stop/historyPrev/historyNext/activeFileMention/listProjectFiles/resolveFileReferences/inspectFileReferences/loadImageDataUrl/loadTextFileAttachment/clipboardImageDataUrl` |
+| `InputConsole.qml`（31 KB） | 多行输入：草稿双向同步、附件预览条、`@` 项目文件补全（无焦点 Popup + ListView）、引用状态条、输入历史 ↑/↓、Enter 发送 / Shift+Enter 换行 / Ctrl+V 贴图、发送前经 `AgentVM.expandSlashCommand(text, Settings.slashCommands)` 展开斜杠指令、发送/停止按钮 | `AgentVM.draftText/draftAttachments/restoreDraft/startTask/stop/historyPrev/historyNext/activeFileMention/listProjectFiles/resolveFileReferences/inspectFileReferences/loadImageDataUrl/loadTextFileAttachment/clipboardImageDataUrl` |
 | `ModelSelector.qml` | 底部向上弹的模型/配置下拉（三段：当前配置模型列表 → 配置列表 → 管理模型配置…），切换后提示上下文窗口 | `AgentVM.chatModelProfile/selectChatModel/stateBusy`、`Settings.profiles/modelContextWindow` |
 | `PermissionModeSelector.qml` | 权限模式下拉（只读/变更确认/自动编辑/完全访问），按风险着色；完全访问需二次确认对话框 | `AgentVM.permissionMode*` 常量、`AppButton`、`DialogBackground` |
 | `ThinkingEffortSelector.qml` | 思考强度下拉（默认/off/low/medium/high），未配置模型时整体禁用 | `AgentVM.chatModelProfile.reasoningEffort/setChatReasoningEffort/modelConfigured` |

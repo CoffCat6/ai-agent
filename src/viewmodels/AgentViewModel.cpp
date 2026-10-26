@@ -18,6 +18,7 @@
 #include "core/utils/WebContent.h"
 #include "core/utils/SettingsRepository.h"
 #include "core/utils/SettingsSchema.h"
+#include "core/utils/SlashCommand.h"
 
 #include <QCryptographicHash>
 #include <QFileInfo>
@@ -2028,6 +2029,26 @@ QString compressedImageDataUrl(const QString& raw, int maxEdge = 1568, int quali
 }
 
 } // namespace
+
+QString AgentViewModel::expandSlashCommand(const QString& input,
+                                           const QVariantList& commands) {
+    QVector<SlashCommand::Command> parsed;
+    parsed.reserve(commands.size());
+    for (const QVariant& entry : commands) {
+        const QVariantMap c = entry.toMap();
+        parsed.append(SlashCommand::Command{
+            c.value("name").toString(), c.value("templ").toString()});
+    }
+    return SlashCommand::expand(input, parsed);
+}
+
+void AgentViewModel::applyPromptOverride(const QString& prompt) {
+    // 仅当前标签：预设是"会话级"决定，别的标签与全局 agent/systemPrompt
+    // Override 设置不动（全局设置仍由 main.cpp 的 applySystemPrompt 链路
+    // 管理，切预设不该污染它）。
+    AIAgent* agent = active()->agent();
+    if (agent) agent->setSystemPromptOverride(prompt);
+}
 
 bool AgentViewModel::startTask(const QString& input, const QStringList& images,
                                const QVariantList& files) {

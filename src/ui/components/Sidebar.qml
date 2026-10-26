@@ -160,12 +160,14 @@ Rectangle {
             Layout.rightMargin: 12
             Layout.preferredHeight: 36
             radius: 6
-            color: newChatMA.containsMouse ? Theme.surfaceHover : "transparent"
+            color: newChatMA.containsMouse || tmplMA.containsMouse
+                ? Theme.surfaceHover : "transparent"
             border.width: 1
             border.color: Theme.borderSubtle
 
             Row {
                 anchors.centerIn: parent
+                anchors.rightMargin: 11   // 给右侧模板入口留出视觉宽度
                 spacing: 6
 
                 AppIcon {
@@ -189,12 +191,83 @@ Rectangle {
             MouseArea {
                 id: newChatMA
                 anchors.fill: parent
+                anchors.rightMargin: 22
                 hoverEnabled: true
                 cursorShape: Qt.PointingHandCursor
                 // Batch 29 (F7): a new session now opens as a new parallel
                 // tab, so starting one never stops a task running elsewhere.
                 // docs/17: 默认新建"普通对话"——项目会话只从项目行的「+」建。
                 onClicked: AgentVM.newLocalChat()
+            }
+
+            // 会话模板入口：右侧窄条独立命中，弹模板菜单。与主点击区分离
+            // ——主按钮保持"空白新对话"的零成本路径不变。
+            MouseArea {
+                id: tmplMA
+                anchors.right: parent.right
+                anchors.top: parent.top
+                anchors.bottom: parent.bottom
+                width: 22
+                hoverEnabled: true
+                cursorShape: Qt.PointingHandCursor
+                onClicked: {
+                    const top = tmplMA.mapToItem(null, 0, 0).y
+                    templateMenu.popup(tmplMA, -templateMenu.width + 24, top + 38)
+                }
+            }
+
+            // 主点击区与模板入口的细分隔线
+            Rectangle {
+                anchors.right: tmplMA.left
+                anchors.top: parent.top
+                anchors.bottom: parent.bottom
+                anchors.topMargin: 6
+                anchors.bottomMargin: 6
+                width: 1
+                color: Theme.borderSubtle
+            }
+
+            AppIcon {
+                anchors.centerIn: tmplMA
+                icon: "chevron-down"
+                size: 10
+                iconColor: tmplMA.containsMouse ? Theme.brandPrimary : Theme.textSecondary
+            }
+
+            Menu {
+                id: templateMenu
+                width: 240
+
+                MenuItem {
+                    text: qsTr("空白新对话")
+                    Accessible.name: text
+                    onTriggered: AgentVM.newLocalChat()
+                }
+                MenuSeparator {}
+                Repeater {
+                    model: Settings.sessionTemplates
+                    delegate: MenuItem {
+                        required property var modelData
+                        text: modelData.name
+                        Accessible.name: text
+                        onTriggered: {
+                            // 模型配置走全局 activeProfile（与 ModelSelector
+                            // 同一机制）；权限与首条消息作用于刚激活的新标签。
+                            // 首条消息进输入框待确认，不自动发送。
+                            if (modelData.profileId !== "")
+                                Settings.setActiveProfile(modelData.profileId)
+                            AgentVM.newLocalChat()
+                            if (modelData.permissionMode >= 0)
+                                AgentVM.permissionMode = modelData.permissionMode
+                            AgentVM.draftText = modelData.firstMessage
+                        }
+                    }
+                }
+                MenuItem {
+                    visible: Settings.sessionTemplates.length === 0
+                    enabled: false
+                    text: qsTr("还没有模板")
+                }
             }
 
             Accessible.role: Accessible.Button

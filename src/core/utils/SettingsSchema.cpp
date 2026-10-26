@@ -70,6 +70,7 @@ const QVector<CategoryMeta>& SettingsSchema::categories() {
         {QStringLiteral("activity"), QT_TRANSLATE_NOOP("NexusAI", "活动记录"), 9},
         {QStringLiteral("backup"), QT_TRANSLATE_NOOP("NexusAI", "设置与备份"), 10},
         {QStringLiteral("projects"), QT_TRANSLATE_NOOP("NexusAI", "项目规则"), 11},
+        {QStringLiteral("prompts"), QT_TRANSLATE_NOOP("NexusAI", "提示词与指令"), 12},
     };
     return values;
 }
@@ -134,6 +135,11 @@ const QVector<SettingsKeyDef>& SettingsSchema::registeredKeys() {
         const auto enumValues = allowedValues;
         QVector<SettingsKeyDef> result = {
             keyDef(QStringLiteral("modelProfiles"), QVariant(), SettingValueType::String),
+            // 提示词与指令页的三组用户资产（SettingsService JSON blob）。
+            // 可移植用户数据：不加密、不 legacy，随设置备份走通用导出路径。
+            keyDef(QStringLiteral("promptPresets"), QVariant(), SettingValueType::String),
+            keyDef(QStringLiteral("slashCommands"), QVariant(), SettingValueType::String),
+            keyDef(QStringLiteral("sessionTemplates"), QVariant(), SettingValueType::String),
             keyDef(QStringLiteral("activeProfileId"), QString(), SettingValueType::String),
             keyDef(QStringLiteral("contextTokens"), AIAgent::kDefaultContextTokens,
                    SettingValueType::Int,

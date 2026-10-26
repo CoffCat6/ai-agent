@@ -305,6 +305,14 @@ void SettingsService::load() {
     if (activeProfile().isEmpty() && !m_profiles.isEmpty())
         m_activeId = m_profiles.first().toMap().value("id").toString();
 
+    // 提示词与指令页的三组用户资产。坏 JSON / 非数组按空列表处理（首次
+    // 启动键不存在也一样），不让一个坏键拖垮整页设置加载。
+    m_promptPresets = loadStringList(QStringLiteral("promptPresets"));
+    m_slashCommands = loadStringList(QStringLiteral("slashCommands"));
+    m_sessionTemplates = loadStringList(QStringLiteral("sessionTemplates"));
+    // 键从未写入 → 种入默认资产（老用户升级首次启动同样受益）。
+    maybeSeedPromptAssets();
+
     // Legacy env fallback for the active profile's key
     QVariantMap active = activeProfile();
     if (!active.isEmpty() && active.value("apiKey").toString().isEmpty()) {
@@ -522,6 +530,234 @@ bool SettingsService::persist() {
     qCWarning(lcSettings) << "Failed to persist model profiles:" << error;
     emit persistenceError(tr("模型配置未能保存。请检查设置存储权限或磁盘空间后重试。"));
     return false;
+}
+
+// ── 提示词与指令（三组用户资产）─────────────────────────────
+
+QVariantList SettingsService::loadStringList(const QString& key) {
+    const QByteArray raw = SettingsRepository::value(key).toString().toUtf8();
+    if (raw.isEmpty()) return {};
+    const QJsonDocument doc = QJsonDocument::fromJson(raw);
+    if (!doc.isArray()) return {};
+    QVariantList out;
+    for (const QJsonValue& v : doc.array())
+        out.append(v.toObject().toVariantMap());
+    return out;
+}
+
+bool SettingsService::writeStringList(const QString& key, const QVariantList& list) {
+    QJsonArray arr;
+    for (const QVariant& entry : list)
+        arr.append(QJsonObject::fromVariantMap(entry.toMap()));
+    return persistValue(key,
+        QString::fromUtf8(QJsonDocument(arr).toJson(QJsonDocument::Compact)));
+}
+
+void SettingsService::maybeSeedPromptAssets() {
+    // 每个键独立判断「从未写入」：raw 为空串 = 键不存在（本函数只写非空
+    // JSON，用户清空列表写的是 "[]"）。命令词不随 locale 变（/review 在
+    // 任何语言下都敲得出来），名称/说明/模板内容走 tr()。
+    if (SettingsRepository::value(QStringLiteral("promptPresets")).toString().isEmpty()) {
+        const auto preset = [](const char* id, const QString& name, const QString& prompt) {
+            return QVariantMap{{QStringLiteral("id"), QString::fromLatin1(id)},
+                               {QStringLiteral("name"), name},
+                               {QStringLiteral("prompt"), prompt}};
+        };
+        m_promptPresets = {
+            preset("default-preset-reviewer", tr("技术评审"),
+                tr("你是一位严谨的技术评审。审查代码时只关注真实问题：正确性缺陷、边界条件、"
+                   "安全隐患、性能陷阱与可维护性风险。不写客套与表扬，按严重程度排序输出发现，"
+                   "每条给出位置与具体修改建议。没有问题时明确说\"未发现问题\"，不硬凑。")),
+            preset("default-preset-architect", tr("资深架构师"),
+                tr("你是一位资深软件架构师。面对需求先明确约束与取舍，再给方案：优先给出最小"
+                   "可行的解决路径，说明所选方案的代价与放弃的替代项。复杂设计先讲清结构再动手，"
+                   "始终警惕过度设计与过早优化。")),
+            preset("default-preset-mentor", tr("耐心导师"),
+                tr("你是一位耐心的技术导师，面向初学者解释问题。每次只引入一个新概念，用类比"
+                   "帮助理解，先讲\"为什么\"再讲\"怎么做\"。学生答错时不直接给答案，先给提示；"
+                   "确认理解后再继续下一步。")),
+            preset("default-preset-concise", tr("简洁模式"),
+                tr("用尽可能少的篇幅回答。优先给结论和关键依据，不写铺垫、总结与客套；能一句"
+                   "话说清的不用两句。需要展开时先给一句话版本，被追问再展开。")),
+        };
+        writeStringList(QStringLiteral("promptPresets"), m_promptPresets);
+    }
+
+    if (SettingsRepository::value(QStringLiteral("slashCommands")).toString().isEmpty()) {
+        const auto command = [](const char* id, const char* name,
+                                const QString& note, const QString& templ) {
+            return QVariantMap{{QStringLiteral("id"), QString::fromLatin1(id)},
+                               {QStringLiteral("name"), QString::fromLatin1(name)},
+                               {QStringLiteral("templ"), templ},
+                               {QStringLiteral("note"), note}};
+        };
+        m_slashCommands = {
+            command("default-slash-review", "review", tr("审查代码或 diff"),
+                tr("请审查以下代码，重点检查正确性问题、边界条件与潜在 bug，按严重程度排序；"
+                   "只给关键修改建议，不要重写全部：\n\n{text}")),
+            command("default-slash-explain", "explain", tr("解释代码"),
+                tr("请详细解释下面代码的作用与执行逻辑，包括关键分支、边界处理和可能的坑：\n\n{text}")),
+            command("default-slash-translate", "translate", tr("翻译成英文"),
+                tr("将下面的内容翻译成英文，保持原意与语气；技术术语、专有名词与代码保持原文：\n\n{text}")),
+            command("default-slash-commit", "commit", tr("生成提交信息"),
+                tr("为以下代码改动生成一条符合 Conventional Commits 规范的中文提交信息"
+                   "（格式：type(scope): subject，正文用要点列表说明动机与改动），"
+                   "只输出提交信息本身：\n\n{text}")),
+        };
+        writeStringList(QStringLiteral("slashCommands"), m_slashCommands);
+    }
+
+    if (SettingsRepository::value(QStringLiteral("sessionTemplates")).toString().isEmpty()) {
+        const auto tmpl = [](const char* id, const QString& name,
+                             int permissionMode, const QString& firstMessage) {
+            return QVariantMap{{QStringLiteral("id"), QString::fromLatin1(id)},
+                               {QStringLiteral("name"), name},
+                               {QStringLiteral("profileId"), QString()},
+                               {QStringLiteral("permissionMode"), permissionMode},
+                               {QStringLiteral("firstMessage"), firstMessage}};
+        };
+        m_sessionTemplates = {
+            tmpl("default-tmpl-code-review", tr("代码审查"),
+                 static_cast<int>(PermissionMode::PlanOnly),
+                 tr("请审查这个项目的近期改动：先看当前 git 状态与未提交的变更，"
+                    "再指出正确性、安全性与可维护性问题，按严重程度排序。")),
+            tmpl("default-tmpl-explore", tr("项目探索"),
+                 static_cast<int>(PermissionMode::PlanOnly),
+                 tr("我是第一次接触这个项目。请带我了解它：先浏览目录结构，然后介绍核心模块的"
+                    "职责、它们之间的数据流，以及从哪里开始读代码最合适。")),
+            tmpl("default-tmpl-polish", tr("快速润色"),
+                 static_cast<int>(PermissionMode::ConfirmChanges),
+                 tr("请润色我接下来粘贴的文字：保持原意不变，让它更清晰、专业、简洁，"
+                    "并保留我的语气。")),
+        };
+        writeStringList(QStringLiteral("sessionTemplates"), m_sessionTemplates);
+    }
+}
+
+QString SettingsService::addPromptPreset(const QString& name, const QString& prompt) {
+    const QString trimmed = name.trimmed();
+    if (trimmed.isEmpty()) return QString();
+    const QString id = QUuid::createUuid().toString(QUuid::WithoutBraces);
+    m_promptPresets.append(QVariantMap{
+        {QStringLiteral("id"), id},
+        {QStringLiteral("name"), trimmed},
+        {QStringLiteral("prompt"), prompt}});
+    if (writeStringList(QStringLiteral("promptPresets"), m_promptPresets))
+        emit promptPresetsChanged();
+    return id;
+}
+
+void SettingsService::updatePromptPreset(const QString& id, const QString& name,
+                                         const QString& prompt) {
+    const QString trimmed = name.trimmed();
+    if (id.isEmpty() || trimmed.isEmpty()) return;
+    for (int i = 0; i < m_promptPresets.size(); ++i) {
+        QVariantMap p = m_promptPresets.at(i).toMap();
+        if (p.value("id").toString() != id) continue;
+        p["name"] = trimmed;
+        p["prompt"] = prompt;
+        m_promptPresets[i] = p;
+        if (writeStringList(QStringLiteral("promptPresets"), m_promptPresets))
+            emit promptPresetsChanged();
+        return;
+    }
+}
+
+void SettingsService::removePromptPreset(const QString& id) {
+    for (int i = 0; i < m_promptPresets.size(); ++i) {
+        if (m_promptPresets.at(i).toMap().value("id").toString() != id) continue;
+        m_promptPresets.removeAt(i);
+        if (writeStringList(QStringLiteral("promptPresets"), m_promptPresets))
+            emit promptPresetsChanged();
+        return;
+    }
+}
+
+QString SettingsService::addSlashCommand(const QString& command, const QString& templ,
+                                         const QString& note) {
+    // 命令词去掉用户可能带上的 '/'、转小写存储（展开时大小写不敏感）。
+    QString name = command.trimmed();
+    while (name.startsWith(QLatin1Char('/'))) name.remove(0, 1);
+    name = name.toLower();
+    if (name.isEmpty() || templ.trimmed().isEmpty()) return QString();
+    const QString id = QUuid::createUuid().toString(QUuid::WithoutBraces);
+    m_slashCommands.append(QVariantMap{
+        {QStringLiteral("id"), id},
+        {QStringLiteral("name"), name},
+        {QStringLiteral("templ"), templ},
+        {QStringLiteral("note"), note}});
+    if (writeStringList(QStringLiteral("slashCommands"), m_slashCommands))
+        emit slashCommandsChanged();
+    return id;
+}
+
+void SettingsService::updateSlashCommand(const QString& id, const QString& command,
+                                         const QString& templ, const QString& note) {
+    QString name = command.trimmed();
+    while (name.startsWith(QLatin1Char('/'))) name.remove(0, 1);
+    name = name.toLower();
+    if (id.isEmpty() || name.isEmpty() || templ.trimmed().isEmpty()) return;
+    for (int i = 0; i < m_slashCommands.size(); ++i) {
+        QVariantMap c = m_slashCommands.at(i).toMap();
+        if (c.value("id").toString() != id) continue;
+        c["name"] = name;
+        c["templ"] = templ;
+        c["note"] = note;
+        m_slashCommands[i] = c;
+        if (writeStringList(QStringLiteral("slashCommands"), m_slashCommands))
+            emit slashCommandsChanged();
+        return;
+    }
+}
+
+void SettingsService::removeSlashCommand(const QString& id) {
+    for (int i = 0; i < m_slashCommands.size(); ++i) {
+        if (m_slashCommands.at(i).toMap().value("id").toString() != id) continue;
+        m_slashCommands.removeAt(i);
+        if (writeStringList(QStringLiteral("slashCommands"), m_slashCommands))
+            emit slashCommandsChanged();
+        return;
+    }
+}
+
+QString SettingsService::addSessionTemplate(const QString& name, const QString& profileId,
+                                            int permissionMode, const QString& firstMessage) {
+    const QString trimmed = name.trimmed();
+    if (trimmed.isEmpty()) return QString();
+    const QString id = QUuid::createUuid().toString(QUuid::WithoutBraces);
+    m_sessionTemplates.append(QVariantMap{
+        {QStringLiteral("id"), id},
+        {QStringLiteral("name"), trimmed},
+        {QStringLiteral("profileId"), profileId},
+        {QStringLiteral("permissionMode"), permissionMode},
+        {QStringLiteral("firstMessage"), firstMessage}});
+    if (writeStringList(QStringLiteral("sessionTemplates"), m_sessionTemplates))
+        emit sessionTemplatesChanged();
+    return id;
+}
+
+void SettingsService::updateSessionTemplate(const QString& id, const QVariantMap& fields) {
+    if (id.isEmpty() || fields.isEmpty()) return;
+    for (int i = 0; i < m_sessionTemplates.size(); ++i) {
+        QVariantMap t = m_sessionTemplates.at(i).toMap();
+        if (t.value("id").toString() != id) continue;
+        for (auto it = fields.constBegin(); it != fields.constEnd(); ++it)
+            t[it.key()] = it.value();
+        m_sessionTemplates[i] = t;
+        if (writeStringList(QStringLiteral("sessionTemplates"), m_sessionTemplates))
+            emit sessionTemplatesChanged();
+        return;
+    }
+}
+
+void SettingsService::removeSessionTemplate(const QString& id) {
+    for (int i = 0; i < m_sessionTemplates.size(); ++i) {
+        if (m_sessionTemplates.at(i).toMap().value("id").toString() != id) continue;
+        m_sessionTemplates.removeAt(i);
+        if (writeStringList(QStringLiteral("sessionTemplates"), m_sessionTemplates))
+            emit sessionTemplatesChanged();
+        return;
+    }
 }
 
 QString SettingsService::addProfile(const QString& kind) {

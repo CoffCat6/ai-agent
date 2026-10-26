@@ -113,6 +113,7 @@ ApplicationWindow {
             Layout.fillWidth: true
             Layout.fillHeight: true
             onSettingsRequested: settingsCenterDialog.openCategory("model")
+            onSettingsCategoryRequested: (category) => settingsCenterDialog.openCategory(category)
         }
 
         // ── Chat / Context Panel Splitter ──────────────
@@ -262,6 +263,7 @@ ApplicationWindow {
     // ── Settings Center Dialog (General Settings) ─────
     SettingsCenterDialog {
         id: settingsCenterDialog
+        objectName: "settingsCenterDialog"
         parent: Overlay.overlay
         onSettingsSaved: noticeToast.show(qsTr("设置已保存"))
         onSettingsError: (message) => errorToast.show(message)

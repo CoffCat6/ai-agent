@@ -105,7 +105,7 @@
 | `LogModel` | 应用内日志列表模型（会话内追加、过滤/日期） | `AgentVM.logModel`（CONSTANT）；`filterLevel/filterText/filterCategory/filterDate`、`clearView()`、`toClipboardText()` |
 | `ChangeBus` | 偏好变更广播总线 | `notify(key, value)`；信号 `changed(key, value)` |
 | `EditBuffer` | 偏好校验写穿缓冲（单例） | `stage/commit/rollback/resetToDefault`、属性 `dirty/staged/firstInvalidKey/validationError` |
-| `SettingsService` | 设置与模型 profile 门面（`Settings`），DPAPI/迁移 | `profiles/activeProfile`、`addProfile/updateProfile/selectModelForProfile`、`testProxy`、`resetGeneralToDefaults`、`modelContextWindow` |
+| `SettingsService` | 设置与模型 profile 门面（`Settings`），DPAPI/迁移；三组用户自建文本资产（`promptPresets`/`slashCommands`/`sessionTemplates`，JSON blob 持久化，提示词与指令页管理，备份白名单自动携带；首次启动经 `maybeSeedPromptAssets()` 种入4 预设 + 4 指令 + 3 模板（固定 id `default-*`，键为 "[]" 视为已清空不回灌）） | `profiles/activeProfile`、`addProfile/updateProfile/selectModelForProfile`、`addPromptPreset/addSlashCommand/addSessionTemplate` 及各自 update/remove、`testProxy`、`resetGeneralToDefaults`、`modelContextWindow` |
 | `SettingsBackup` | 可移植设置导入导出（不含凭据/SQLite） | `exportSettings`、`previewImport`、`importSettings`、`lastError`、`restartRequired` |
 | `PreferenceRegistry` | 偏好元数据注册表（来自 SettingsSchema） | `hasPreference/defaultValue/displayName/preferenceMeta/categories` |
 | `PreferenceStore` | `prefs/v1/<key>` 持久化 + legacy 回退（单例） | `load/hasStoredValue/save/saveBatch/reset/resetBatch` |

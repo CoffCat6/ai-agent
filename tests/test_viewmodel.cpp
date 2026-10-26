@@ -12,6 +12,7 @@
 #include "core/tools/ToolRegistry.h"
 #include "core/memory/SqliteMemory.h"
 #include "core/utils/Logger.h"
+#include "core/utils/SlashCommand.h"
 #include "core/rag/RagService.h"
 #include "core/utils/Activity.h"
 
@@ -1542,6 +1543,30 @@ private slots:
         // Switching away disarms everything.
         vm.unwatchProjectRules();
         QCOMPARE(vm.watchedRulesFiles().size(), 0);
+    }
+
+    // B2: 斜杠指令展开（core/utils/SlashCommand.h 纯函数）——匹配、
+    // {text} 占位、无占位追加、大小写、未知命令与非斜杠原样返回。
+    void slashCommandExpansion() {
+        using namespace NexusAI::SlashCommand;
+        const QVector<Command> cmds = {
+            {QStringLiteral("review"), QStringLiteral("请审查：{text}")},
+            {QStringLiteral("translate"), QStringLiteral("翻译成英文")},
+        };
+        QCOMPARE(expand(QStringLiteral("普通问题"), cmds),
+                 QStringLiteral("普通问题"));
+        QCOMPARE(expand(QStringLiteral("/etc/hosts 是什么"), cmds),
+                 QStringLiteral("/etc/hosts 是什么"));
+        QCOMPARE(expand(QStringLiteral("/review 这段代码"), cmds),
+                 QStringLiteral("请审查：这段代码"));
+        QCOMPARE(expand(QStringLiteral("/REVIEW 这段代码"), cmds),
+                 QStringLiteral("请审查：这段代码"));
+        QCOMPARE(expand(QStringLiteral("/translate"), cmds),
+                 QStringLiteral("翻译成英文"));
+        QCOMPARE(expand(QStringLiteral("/translate  你好 "), cmds),
+                 QStringLiteral("翻译成英文\n\n你好"));
+        QCOMPARE(expand(QStringLiteral("  /review 前导空白"), cmds),
+                 QStringLiteral("请审查：前导空白"));
     }
 
     // Batch 31b: McpManager add/remove round trip. The user's real

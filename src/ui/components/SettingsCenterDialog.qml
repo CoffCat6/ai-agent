@@ -356,6 +356,14 @@ Dialog {
                     visible: active
                     source: "qrc:/qt/qml/NexusAI/src/ui/pages/ProjectRulesPage.qml"
                 }
+
+                Loader {
+                    anchors.fill: parent
+                    // 提示词与指令：三组用户资产（预设/斜杠指令/会话模板）。
+                    active: dialog.currentCategory === "prompts" && dialog.opened
+                    visible: active
+                    source: "qrc:/qt/qml/NexusAI/src/ui/pages/PromptAssetsPage.qml"
+                }
                 }   // ── 分类页包裹层（搜索时隐藏）──
             }
         }

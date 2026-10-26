@@ -18,6 +18,7 @@
 | ActivityLogPage.qml | usage_log 操作/网络活动时间线 | 是，分类 `activity`（绑定 `dialog.opened`） |
 | SettingsBackupPage.qml | 设置 JSON 导入导出、数据库备份/恢复 | 是，分类 `backup` |
 | ProjectRulesPage.qml | 项目列表 + 项目规则（AGENTS.md）就地编辑与注入状态 | 是，分类 `projects`（绑定 `dialog.opened`） |
+| PromptAssetsPage.qml | 提示词与指令：三段式管理（系统提示预设/斜杠指令/会话模板），行内编辑表单；套用与展开逻辑不在本页（TopBar 菜单 / InputConsole 发送链 / Sidebar 模板菜单）。**布局陷阱（回归测试 promptAssetsPageShowsCreateButtons 锁定）**：ScrollView 内容列的宽度必须写 `width: assetsScroll.availableWidth`（限定 id）——裸 `availableWidth` 在子项作用域解析不到，绑定失效后宽度回退到未折行文本的隐式宽度（≈860px），整页被推出对话框右侧、全部交互控件不可见但 `visible=true`；换行/省略的 Text 还须 `Layout.minimumWidth: 0`，否则未折行隐式宽度成为布局最小宽度、布局拒绝收缩。是，分类 `prompts`（绑定 `dialog.opened`） |
 
 注意：任务描述里的「记忆页 = 知识库文档导入/删除/检索」与代码不符。MemoryPage 管理的是
 会话摘要型长期记忆；知识库文档的导入/删除/重新嵌入在 `panels/ContextPanel.qml` 中，

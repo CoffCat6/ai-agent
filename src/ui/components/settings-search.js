@@ -65,6 +65,11 @@ var handIndex = [
     // preferences, and search only sees registry + handIndex rows.
     { title: QT_TRANSLATE_NOOP("SettingsSearch", "项目规则"), category: "projects", keywords: "AGENTS agents 规则 约定 项目 rules 注入 模板 nexus" },
 
+    // ── 提示词与指令 ─────────────────────────────────────
+    { title: QT_TRANSLATE_NOOP("SettingsSearch", "系统提示预设"), category: "prompts", keywords: "预设 prompt 预设库 角色 系统 提示词" },
+    { title: QT_TRANSLATE_NOOP("SettingsSearch", "斜杠指令"), category: "prompts", keywords: "斜杠 slash 指令 command 快捷 展开" },
+    { title: QT_TRANSLATE_NOOP("SettingsSearch", "会话模板"), category: "prompts", keywords: "模板 template 新会话 预置 首条消息" },
+
     // ── 用量统计 ─────────────────────────────────────────
     { title: QT_TRANSLATE_NOOP("SettingsSearch", "配额设置"), category: "usage", keywords: "配额 token 费用 每日 每月 超限 quota" },
     { title: QT_TRANSLATE_NOOP("SettingsSearch", "用量统计"), category: "usage", keywords: "用量 统计 消耗 成本 成本明细" },

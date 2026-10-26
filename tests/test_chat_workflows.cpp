@@ -384,6 +384,36 @@ private slots:
     // the stack on a section that cannot render. The knowledge base used to
     // be that fallback; it now lives in the sidebar tool strip with log /
     // audit / settings, because it is global rather than project-scoped.
+
+    // B1 验收：提示词与指令页必须显示可命中的交互控件（首版只渲染了
+    // 文本、按钮全部不可见）。打开 prompts 分类后三个「新建」按钮可见
+    // 且有实际宽度；失败时打印几何信息辅助定位。
+    void promptAssetsPageShowsCreateButtons() {
+        QQmlApplicationEngine engine;
+        engine.rootContext()->setContextProperty("Theme", ThemeProvider::instance());
+        engine.load(QUrl("qrc:/qt/qml/NexusAI/src/ui/main.qml"));
+        QVERIFY(!engine.rootObjects().isEmpty());
+        auto* window = qobject_cast<QQuickWindow*>(engine.rootObjects().first());
+        QVERIFY(window);
+        auto* dialog = window->findChild<QObject*>("settingsCenterDialog");
+        QVERIFY(dialog);
+        const QMetaObject* meta = dialog->metaObject();
+        QVERIFY(meta->invokeMethod(dialog, "openCategory",
+                                   Q_ARG(QVariant, QStringLiteral("prompts"))));
+        QTest::qWait(300);
+        const QStringList names = {
+            QStringLiteral("promptPresetAddButton"),
+            QStringLiteral("slashAddButton"),
+            QStringLiteral("templateAddButton")
+        };
+        for (const QString& name : names) {
+            auto* button = window->findChild<QQuickItem*>(name);
+            QVERIFY2(button, qPrintable(QStringLiteral("missing: ") + name));
+            QVERIFY2(button->isVisible(), qPrintable(name + " not visible"));
+            QVERIFY2(button->width() > 20, qPrintable(name + " too narrow"));
+        }
+    }
+
     void freshWindowShowsNoProjectHintInRightPanel() {
         QQmlApplicationEngine engine;
         engine.rootContext()->setContextProperty("Theme", ThemeProvider::instance());

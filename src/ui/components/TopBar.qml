@@ -8,6 +8,10 @@ import NexusAI.ViewModels
 Rectangle {
     id: root
 
+    // 预设菜单里的「管理…」：经 AgentChatPage 中继到 main 的设置中心
+    // （openCategory("prompts")）。TopBar 看不到对话框实例，走信号链。
+    signal promptAssetsRequested()
+
     color: Theme.bgSecondary
 
     // 紧凑 token 计数（TopBar 小字用）：1234 → 1.2k，56000 → 56k。
@@ -779,6 +783,50 @@ Rectangle {
                     font.pixelSize: Theme.fontSizeCaption
                     font.family: Theme.fontMono
                 }
+            }
+        }
+
+        // ── 提示词预设切换器 ──────────────────────────
+        // 一键把预设套用到当前会话（写活动标签 agent 的 override），
+        // 「无」清除覆盖回到全局设置；管理入口去设置中心的 prompts 分类。
+        IconButton {
+            id: presetToggle
+            icon: "layers"
+            iconSize: 16
+            tooltip: qsTr("提示词预设（套用到当前会话）")
+            Accessible.name: tooltip
+            onClicked: presetMenu.popup(presetToggle, 0, presetToggle.height + 4)
+        }
+
+        Menu {
+            id: presetMenu
+            width: 240
+
+            MenuItem {
+                text: qsTr("无（使用全局设置）")
+                Accessible.name: text
+                onTriggered: AgentVM.applyPromptOverride("")
+            }
+            MenuSeparator {}
+            Repeater {
+                model: Settings.promptPresets
+                delegate: MenuItem {
+                    required property var modelData
+                    text: modelData.name
+                    Accessible.name: text
+                    onTriggered: AgentVM.applyPromptOverride(modelData.prompt)
+                }
+            }
+            MenuItem {
+                visible: Settings.promptPresets.length === 0
+                enabled: false
+                text: qsTr("还没有预设")
+            }
+            MenuSeparator {}
+            MenuItem {
+                text: qsTr("管理预设…")
+                Accessible.name: text
+                onTriggered: root.promptAssetsRequested()
             }
         }
 
