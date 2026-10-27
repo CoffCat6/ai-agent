@@ -48,10 +48,12 @@ constexpr int kStreamFlushMs = 100;       // trace flush throttle while streamin
 // An interim assistant answer this long counts as the final result when the
 // model keeps re-issuing an identical tool call instead of stopping.
 constexpr int kMinFinalAnswerChars = 40;
-// Completed tool rounds kept verbatim in the history; older rounds are
-// collapsed to a note. A long tail of tool_call/tool messages reads like an
-// "always call tools" pattern and makes weak models fire the tool on every
-// new message, greetings included.
+// Completed tool rounds kept verbatim in history *across user turns*; older
+// rounds (from previous turns) are collapsed to a note. A long tail of
+// tool_call/tool messages reads like an "always call tools" pattern and makes
+// weak models fire the tool on every new message, greetings included.
+// Rounds inside the CURRENT user turn are never collapsed - see
+// collapseOldToolRounds().
 constexpr int kKeepToolRounds = 2;
 
 QString truncateText(const QString& text, int maxChars) {
@@ -1826,12 +1828,33 @@ void AIAgent::clearStreamState() {
 
 // ── Tool execution pipeline ───────────────────────────────
 
-// Collapse tool-call rounds older than the newest kKeepToolRounds into a
-// single assistant note. Each round (assistant with tool_calls + its tool
-// results) is replaced as a WHOLE so the wire format stays valid. This
-// keeps the model from reading the conversation as an "always call tools"
-// script - the pattern that made it fire search_knowledge_base on greetings.
+// Collapse tool-call rounds from *previous* user turns into a single note.
+// Each round (assistant with tool_calls + its tool results) is replaced as a
+// WHOLE so the wire format stays valid. This keeps the model from reading the
+// conversation as an "always call tools" script - the pattern that made it
+// fire search_knowledge_base on greetings.
+//
+// Scope matters: only rounds belonging to EARLIER user turns are eligible.
+// One task legitimately runs many tool rounds (browse tree -> read files ->
+// analyse), and collapsing its own history mid-task makes the model forget
+// what it just gathered: it re-reads the same paths, those get collapsed
+// again, and the task never converges before the step budget runs out.
+// Context pressure inside one turn is compressToFit's job, which also cuts at
+// user-turn boundaries.
 void AIAgent::collapseOldToolRounds() {
+    // 当前用户轮次的起点：最后一个 user 消息。它之后的工具轮次属于**正在
+    // 进行的任务**，一律保留——模型需要它们才能接着往下做（浏览目录 → 读
+    // 文件 → 分析）。找不到 user 消息（理论上不会）时按 0 处理，等价于
+    // "全部可折叠"，与旧行为一致。
+    int currentTurnStart = 0;
+    for (int i = m_messages.size() - 1; i >= 1; --i) {
+        if (m_messages.at(i).toObject().value("role").toString()
+                == QLatin1String("user")) {
+            currentTurnStart = i;
+            break;
+        }
+    }
+
     struct Round { int from; int to; };   // inclusive message range
     QVector<Round> rounds;
     for (int i = 1; i < m_messages.size(); ++i) {   // skip the system prompt
@@ -1843,7 +1866,9 @@ void AIAgent::collapseOldToolRounds() {
         while (j < m_messages.size()
                && m_messages.at(j).toObject().value("role").toString() == QLatin1String("tool"))
             ++j;
-        rounds.append({i, j - 1});
+        // 只收当前轮次之前的轮次；本轮次内的整段跳过（i 直接跳到轮末）。
+        if (j - 1 < currentTurnStart)
+            rounds.append({i, j - 1});
         i = j - 1;
     }
     if (rounds.size() <= kKeepToolRounds) return;

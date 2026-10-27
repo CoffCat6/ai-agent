@@ -599,6 +599,9 @@ private slots:
     void maxIterationsStops();
     void repeatedCallWithAnswerFinishes();
     void oldToolRoundsCollapsed();
+    // P0：单任务内的工具轮次不得被折叠（否则模型遗忘刚读到的东西，
+    // 反复重读同一批路径，任务跑不完）。
+    void currentTurnToolRoundsSurvive();
     void traceRestoredOnResume();
     // F1: todo list lifetime is per session/tab, never carried across resets.
     void todoListClearedOnSessionResetAndResume();
@@ -1844,10 +1847,11 @@ void TestAgent::repeatedCallWithAnswerFinishes() {
     QVERIFY(traceHas(agent.traceModel(), "tool_result", "hello agent"));
 }
 
-// After several completed tool rounds, older rounds must be collapsed into
-// a note (only the newest two stay verbatim) while the wire format stays
-// valid - a long tail of tool_call/tool messages reads like an "always call
-// tools" script and made the model fire the tool on greetings.
+// 跨用户轮次时，旧轮次的工具调用必须折叠成一条注记（只保留最近
+// kKeepToolRounds 轮），否则一长串 tool_call/tool 消息会让模型把它读成
+// "每次都要先调工具"的脚本（曾导致打招呼也去调 search_knowledge_base）。
+// 注意作用域：折叠只对**之前用户轮次**生效，同一任务内的轮次永远保留
+// （见 currentTurnToolRoundsSurvive）。
 void TestAgent::oldToolRoundsCollapsed() {
     QTemporaryDir dir(testDirTemplate());
     QVERIFY(dir.isValid());
@@ -1863,14 +1867,22 @@ void TestAgent::oldToolRoundsCollapsed() {
     }
     llm.script.append(textResponse(QStringLiteral("all read")));
 
+    // 第一轮用户任务：4 个工具轮次（同一任务内，全部应保留）。
     QSignalSpy spy(&agent, &AIAgent::responseReady);
     agent.startTask(QStringLiteral("read all four"));
     QTRY_COMPARE_WITH_TIMEOUT(spy.count(), 1, 20000);
     QCOMPARE(agent.state(), AgentState::Completed);
 
-    // The final LLM call must carry only the newest 2 tool rounds verbatim;
-    // older ones are replaced by the collapsed-rounds note. Pairing must
-    // stay valid after the replacement.
+    // 第二轮用户任务：这一次请求会把上一轮的工具轮次折叠掉。
+    llm.script.append(textResponse(QStringLiteral("second turn done")));
+    QSignalSpy spy2(&agent, &AIAgent::responseReady);
+    agent.startTask(QStringLiteral("now just answer"));
+    QTRY_COMPARE_WITH_TIMEOUT(spy2.count(), 1, 20000);
+    QCOMPARE(agent.state(), AgentState::Completed);
+
+    // The final LLM call must carry at most kKeepToolRounds verbatim tool
+    // rounds from the previous turn; the older ones are replaced by the
+    // collapsed-rounds note. Pairing must stay valid after the replacement.
     const QJsonArray last = llm.seenMessages.last();
     int toolMsgs = 0;
     QString collapsedNote;
@@ -1880,8 +1892,10 @@ void TestAgent::oldToolRoundsCollapsed() {
         if (msg.value("content").toString().contains(QStringLiteral("Earlier tool calls")))
             collapsedNote = msg.value("content").toString();
     }
+    // 上一轮的 4 个工具轮次里，只有最近 2 轮原样保留。
     QCOMPARE(toolMsgs, 2);
-    QVERIFY(!collapsedNote.isEmpty());
+    QVERIFY2(!collapsedNote.isEmpty(),
+             "跨用户轮次的旧工具轮次没有被折叠");
     // FIX-504: the note must not name any specific tool - a hardcoded
     // "e.g. search_knowledge_base" injects KB bias into every conversation
     // no matter which tools were actually used.
@@ -1891,6 +1905,51 @@ void TestAgent::oldToolRoundsCollapsed() {
 
     // All four reads really executed before collapsing kicked in
     QVERIFY(traceHas(agent.traceModel(), "tool_result", "payload"));
+}
+
+// P0: 单任务内的工具轮次必须原样留在上下文里。
+//
+// 回归点：collapseOldToolRounds 曾对**所有**工具轮次生效（只保留最近 2
+// 轮），于是"浏览目录 → 读文件 → 分析"这类长任务在跑到第 3 轮时，模型
+// 已经看不到前两轮的 list_dir 输出，只能重新浏览一遍；新的一轮又被下一
+// 次折叠吃掉，形成「读 → 折叠 → 再读」的循环，直到步数预算耗尽——用户
+// 看到的就是任务"没跑完"。
+//
+// 折叠的正确作用域是**跨用户轮次**：同一任务内的轮次一律保留。
+void TestAgent::currentTurnToolRoundsSurvive() {
+    QTemporaryDir dir(testDirTemplate());
+    QVERIFY(dir.isValid());
+
+    // 同一任务内连续 5 轮工具调用（超过 kKeepToolRounds 的 2 轮）。
+    constexpr int kRounds = 5;
+    for (int i = 0; i < kRounds; ++i) {
+        const QString path = dir.filePath(QStringLiteral("turn%1.txt").arg(i));
+        QFile file(path);
+        QVERIFY(file.open(QIODevice::WriteOnly | QIODevice::Text));
+        file.write("payload-marker");
+        file.close();
+        llm.script.append(toolResponse("read_file",
+            QJsonObject{{"path", path}}));
+    }
+    llm.script.append(textResponse(QStringLiteral("all done")));
+
+    QSignalSpy spy(&agent, &AIAgent::responseReady);
+    agent.startTask(QStringLiteral("read them all in one go"));
+    QTRY_COMPARE_WITH_TIMEOUT(spy.count(), 1, 30000);
+    QCOMPARE(agent.state(), AgentState::Completed);
+
+    // 最后一次请求：当前任务内的 5 轮结果必须全部还在，且没有任何折叠注记。
+    const QJsonArray last = llm.seenMessages.last();
+    int toolMsgs = 0;
+    for (const auto& entry : last) {
+        const QJsonObject msg = entry.toObject();
+        if (msg.value("role").toString() == QLatin1String("tool")) ++toolMsgs;
+        QVERIFY2(!msg.value("content").toString()
+                      .contains(QStringLiteral("Earlier tool calls")),
+                 "同一任务内的工具轮次被折叠了——模型会遗忘刚读到的内容");
+    }
+    QCOMPARE(toolMsgs, kRounds);
+    QVERIFY2(noDanglingToolCalls(last), "保留全部工具轮次后配对仍须合法");
 }
 
 void TestAgent::traceRestoredOnResume() {
