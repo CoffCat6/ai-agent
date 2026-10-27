@@ -6,6 +6,7 @@
 #include "core/agent/AgentState.h"
 #include "core/agent/EpisodicService.h"
 #include "core/tools/ToolRegistry.h"
+#include "core/tools/Sandbox.h"
 #include "core/memory/SqliteMemory.h"
 #include "core/rag/RagService.h"
 #include "core/rag/KnowledgeSearchTool.h"
@@ -18,6 +19,7 @@
 #include <QtTest>
 #include <QSignalSpy>
 #include <QTemporaryDir>
+#include <QProcess>
 #include <QFile>
 #include <QSettings>
 #include <QStandardPaths>
@@ -587,6 +589,8 @@ private slots:
     void confirmDeclineFeedsRejection();
     // 会话权限模式：AutoEdit/FullAccess 审批旁路矩阵
     void autoEditBypassesFileTools();
+    // 自动编辑下 git 只读工具免确认（不再被迫走 shell_exec）。
+    void autoEditBypassesGitReadOnlyTools();
     void autoEditStillConfirmsShell();
     void fullAccessBypassesShellButNotDangerous();
     // G1: PlanOnly (read-only) matrix
@@ -940,7 +944,10 @@ void TestAgent::dangerousToolsNotExposed() {
     // The Safe/RequiresConfirm built-ins are exposed; the Dangerous probe
     // must be withheld from the schema entirely.
     const auto seen = llm.seenTools.first();
-    QCOMPARE(seen.size(), 11);
+    // 内置工具总数：read_file / write_file / edit_file / list_dir /
+    // shell_exec / glob / grep / git_status / git_diff / git_log / git_show /
+    // git_commit / todo_write = 13（Dangerous 的探针工具不计入）。
+    QCOMPARE(seen.size(), 13);
     for (const auto& entry : seen) {
         QVERIFY(entry.toObject().value("function").toObject().value("name").toString()
                     != QStringLiteral("test_dangerous"));
@@ -1511,6 +1518,59 @@ void TestAgent::confirmDeclineFeedsRejection() {
 }
 
 // 自动编辑模式：write_file 免确认直接执行；确认框不出现。
+// 自动编辑模式：git 只读工具（git_log / git_show）必须免确认。
+//
+// 回归点：没有这两个工具时，模型要看提交历史只能用 shell_exec，而
+// shell_exec 是 RequiresConfirm 且未声明 autoEditSafe——自动编辑下每次
+// 都弹确认，用户体感就是"git 相关操作老是被拦"。
+void TestAgent::autoEditBypassesGitReadOnlyTools() {
+    agent.setPermissionMode(PermissionMode::AutoEdit);
+
+    QTemporaryDir repo(testDirTemplate());
+    QVERIFY(repo.isValid());
+    const auto run = [&](const QStringList& args) {
+        QProcess p;
+        p.setWorkingDirectory(repo.path());
+        p.start(QStringLiteral("git"), args);
+        return p.waitForFinished(10000) && p.exitCode() == 0;
+    };
+    QVERIFY(run({QStringLiteral("init"), QStringLiteral("-q")}));
+    QVERIFY(run({QStringLiteral("config"), QStringLiteral("user.email"),
+                 QStringLiteral("t@e.c")}));
+    QVERIFY(run({QStringLiteral("config"), QStringLiteral("user.name"),
+                 QStringLiteral("T")}));
+
+    QTemporaryDir dir(testDirTemplate());
+    QVERIFY(dir.isValid());
+    const QString path = dir.filePath(QStringLiteral("f.txt"));
+    QFile f(path);
+    QVERIFY(f.open(QIODevice::WriteOnly | QIODevice::Text));
+    f.write("data");
+    f.close();
+    QVERIFY(run({QStringLiteral("add"), QStringLiteral("-A")}));
+    QVERIFY(run({QStringLiteral("commit"), QStringLiteral("-qm"),
+                 QStringLiteral("wired"), QStringLiteral("--allow-empty")}));
+
+    // 让工具在仓库里工作：Sandbox 项目根指向临时仓库。
+    Sandbox::setProjectDir(repo.path());
+
+    llm.script.append(toolResponse("git_log", QJsonObject{}));
+    llm.script.append(textResponse(QStringLiteral("listed")));
+
+    QSignalSpy confirmSpy(&agent, &AIAgent::toolConfirmRequired);
+    QSignalSpy spy(&agent, &AIAgent::responseReady);
+    agent.startTask(QStringLiteral("show history"));
+    QTRY_COMPARE_WITH_TIMEOUT(spy.count(), 1, 20000);
+    Sandbox::setProjectDir(QString());
+
+    QCOMPARE(confirmSpy.count(), 0);
+    QCOMPARE(agent.state(), AgentState::Completed);
+    // 工具真的执行了（模型的上下文里能看到提交主题）。
+    QVERIFY2(toolMessageContent(llm.seenMessages.last(), "call_t0")
+                 .contains(QStringLiteral("wired")),
+             "git_log 没有返回提交历史");
+}
+
 void TestAgent::autoEditBypassesFileTools() {
     agent.setPermissionMode(PermissionMode::AutoEdit);
     QCOMPARE(agent.permissionMode(), PermissionMode::AutoEdit);

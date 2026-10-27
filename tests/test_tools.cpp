@@ -4,6 +4,7 @@
 #include "core/tools/NetworkFetchTool.h"
 
 #include <QDir>
+#include <QProcess>
 #include <QFile>
 #include <QFileInfo>
 #include <QCryptographicHash>
@@ -204,6 +205,83 @@ private slots:
     }
 
     // ── Git tool tests ──
+    // git_log / git_show 必须是 Safe 级只读工具：模型要查历史/看提交详情
+    // 时不应被迫退到 shell_exec（那样每次都得弹确认）。
+    void gitReadOnlyHistoryToolsRegistered() {
+        auto log = ToolRegistry::instance().findShared(QStringLiteral("git_log"));
+        auto show = ToolRegistry::instance().findShared(QStringLiteral("git_show"));
+        QVERIFY2(log, "missing git_log (the model can only fall back to shell_exec)");
+        QVERIFY2(show, "missing git_show (the model can only fall back to shell_exec)");
+        QCOMPARE(log->definition().level, ToolLevel::Safe);
+        QCOMPARE(show->definition().level, ToolLevel::Safe);
+        QVERIFY(log->definition().readOnly);
+        QVERIFY(show->definition().readOnly);
+    }
+
+    void gitLogListsRecentCommits() {
+        QTemporaryDir repo;
+        QVERIFY(repo.isValid());
+        QVERIFY(initRepo(repo.path()));
+        QVERIFY(commitFile(repo.path(), QStringLiteral("a.txt"),
+                           QByteArray("x"), QStringLiteral("first commit")));
+
+        Sandbox::setProjectDir(repo.path());
+        auto tool = ToolRegistry::instance().findShared(QStringLiteral("git_log"));
+        QVERIFY(tool);
+        const ToolResult r = tool->execute({});
+        Sandbox::setProjectDir(QString());
+
+        QVERIFY2(r.success, qPrintable(r.error));
+        QVERIFY2(r.output.contains(QStringLiteral("first commit")),
+                 qPrintable(r.output));
+    }
+
+    void gitLogHonorsLimitAndPath() {
+        QTemporaryDir repo;
+        QVERIFY(repo.isValid());
+        QVERIFY(initRepo(repo.path()));
+        for (const char* name : {"one", "two", "three"})
+            QVERIFY(commitFile(repo.path(),
+                               QStringLiteral("%1.txt").arg(QLatin1String(name)),
+                               QByteArray(name),
+                               QStringLiteral("commit-%1").arg(QLatin1String(name))));
+
+        Sandbox::setProjectDir(repo.path());
+        auto tool = ToolRegistry::instance().findShared(QStringLiteral("git_log"));
+        QVERIFY(tool);
+
+        const ToolResult two = tool->execute({{QStringLiteral("limit"), 2}});
+        QVERIFY2(two.success, qPrintable(two.error));
+        QCOMPARE(two.output.count(QStringLiteral("commit-")), 2);
+
+        const ToolResult one = tool->execute(
+            {{QStringLiteral("path"), QStringLiteral("one.txt")}});
+        QVERIFY2(one.success, qPrintable(one.error));
+        QVERIFY2(one.output.contains(QStringLiteral("commit-one")),
+                 qPrintable(one.output));
+        QVERIFY2(!one.output.contains(QStringLiteral("commit-three")),
+                 qPrintable(one.output));
+        Sandbox::setProjectDir(QString());
+    }
+
+    void gitShowReturnsCommitDetail() {
+        QTemporaryDir repo;
+        QVERIFY(repo.isValid());
+        QVERIFY(initRepo(repo.path()));
+        QVERIFY(commitFile(repo.path(), QStringLiteral("a.txt"),
+                           QByteArray("hello"), QStringLiteral("show-me")));
+
+        Sandbox::setProjectDir(repo.path());
+        auto tool = ToolRegistry::instance().findShared(QStringLiteral("git_show"));
+        QVERIFY(tool);
+        const ToolResult r = tool->execute(
+            {{QStringLiteral("ref"), QStringLiteral("HEAD")}});
+        Sandbox::setProjectDir(QString());
+
+        QVERIFY2(r.success, qPrintable(r.error));
+        QVERIFY2(r.output.contains(QStringLiteral("show-me")), qPrintable(r.output));
+        QVERIFY2(r.output.contains(QStringLiteral("a.txt")), qPrintable(r.output));
+    }
     void gitToolsRegisteredWithCorrectLevels() {
         QVERIFY(ToolRegistry::instance().find("git_status"));
         QVERIFY(ToolRegistry::instance().find("git_diff"));
@@ -440,6 +518,37 @@ private slots:
 
 private:
     std::unique_ptr<QTemporaryDir> m_tempDir;
+
+    // 临时仓库夹具：git 只读工具需要真实仓库才能验证输出形态。
+    bool initRepo(const QString& path) {
+        const auto run = [&](const QStringList& args) {
+            QProcess p;
+            p.setWorkingDirectory(path);
+            p.start(QStringLiteral("git"), args);
+            return p.waitForFinished(10000) && p.exitCode() == 0;
+        };
+        return run({QStringLiteral("init"), QStringLiteral("-q")})
+            && run({QStringLiteral("config"), QStringLiteral("user.email"),
+                    QStringLiteral("t@e.c")})
+            && run({QStringLiteral("config"), QStringLiteral("user.name"),
+                    QStringLiteral("T")});
+    }
+
+    bool commitFile(const QString& repoPath, const QString& name,
+                    const QByteArray& content, const QString& message) {
+        QFile file(QDir(repoPath).filePath(name));
+        if (!file.open(QIODevice::WriteOnly)) return false;
+        file.write(content);
+        file.close();
+        const auto run = [&](const QStringList& args) {
+            QProcess p;
+            p.setWorkingDirectory(repoPath);
+            p.start(QStringLiteral("git"), args);
+            return p.waitForFinished(10000) && p.exitCode() == 0;
+        };
+        return run({QStringLiteral("add"), QStringLiteral("-A")})
+            && run({QStringLiteral("commit"), QStringLiteral("-qm"), message});
+    }
 
     void createFile(const QString& relativePath, const QString& content) {
         const QString fullPath = m_tempDir->path() + QLatin1Char('/') + relativePath;

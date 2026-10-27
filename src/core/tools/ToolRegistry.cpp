@@ -561,7 +561,10 @@ public:
                           "its combined stdout/stderr and exit code. Avoid nested "
                           "quotes (e.g. python -c \"...\") - they break on Windows; "
                           "prefer dedicated tools (http_fetch for web requests) "
-                          "instead of reimplementing them via shell.";
+                          "instead of reimplementing them via shell. For git, use "
+                          "git_log / git_show / git_status / git_diff - do not run "
+                          "git commands here; this tool asks the user for approval "
+                          "on every call.";
         def.level = ToolLevel::RequiresConfirm;
         QJsonObject cmdProp = stringParam("The shell command to execute.");
         QJsonObject timeoutProp;
@@ -1061,6 +1064,160 @@ public:
     }
 };
 
+// 只读：列出提交历史。
+//
+// 存在的理由不是"功能缺失"，而是**避免模型为了看历史去调 shell_exec**。
+// shell_exec 是 RequiresConfirm 且未声明 autoEditSafe，在自动编辑模式下
+// 每次都会弹确认；而 git log 本身是无副作用的读操作，把它做成 Safe 级工具
+// 既安全又不再打断用户。
+class GitLogTool : public ITool {
+public:
+    ToolDefinition definition() const override {
+        ToolDefinition def;
+        def.name = "git_log";
+        def.description =
+            "List recent commits of the active project's git repository "
+            "(newest first): short SHA, author, date and subject. Use this "
+            "for history questions - do NOT run 'git log' through shell_exec.";
+        def.level = ToolLevel::Safe;
+        def.readOnly = true;
+        QJsonObject props;
+        QJsonObject limitProp;
+        limitProp["type"] = "integer";
+        limitProp["description"] = "How many commits to return (1-100, default 20).";
+        props["limit"] = limitProp;
+        props["path"] = stringParam(
+            "Optional path to show only commits touching that file or directory.");
+        def.parameters = buildParams(props, QJsonArray{});
+        return def;
+    }
+
+    ToolResult execute(const QJsonObject& args) override {
+        QString projectRoot;
+        ToolResult guard;
+        if (!requireProjectRoot(&projectRoot, &guard)) return guard;
+
+        int limit = args.value("limit").toInt();
+        if (limit <= 0) limit = 20;
+        limit = qBound(1, limit, 100);
+
+        const QString path = args.value("path").toString().trimmed();
+        GitService git(projectRoot);
+        QString error;
+        const QVector<GitCommitInfo> commits = git.log(limit, 0, path, &error);
+        if (!error.isEmpty())
+            return ToolResult::fail(error);
+
+        if (commits.isEmpty()) {
+            return ToolResult::ok(path.isEmpty()
+                ? QStringLiteral("No commits yet in this repository.")
+                : QStringLiteral("No commits touch '%1'.").arg(path));
+        }
+        QStringList lines;
+        lines.reserve(commits.size());
+        for (const GitCommitInfo& c : commits) {
+            // 一行一条：短 SHA + 日期 + 作者 + 主题，便于模型直接引用。
+            const QString date = QDateTime::fromMSecsSinceEpoch(c.timestamp)
+                                     .toString(QStringLiteral("yyyy-MM-dd"));
+            lines << QStringLiteral("%1  %2  %3  %4")
+                         .arg(c.shortSha, date, c.author, c.subject);
+        }
+        return ToolResult::ok(lines.join(QLatin1Char('\n')));
+    }
+};
+
+// 只读：某个提交的详情（元信息 + 改动文件清单 + 有界 diff）。
+// 与 git_log 同一动机：把"看某个提交改了什么"从 shell_exec 里拿出来。
+class GitShowTool : public ITool {
+public:
+    ToolDefinition definition() const override {
+        ToolDefinition def;
+        def.name = "git_show";
+        def.description =
+            "Show one commit of the active project's git repository: metadata, "
+            "the list of changed files with +/- counts, and a bounded unified "
+            "diff. Accepts any revision git understands (SHA, short SHA, HEAD, "
+            "branch). Use this instead of running 'git show' via shell_exec.";
+        def.level = ToolLevel::Safe;
+        def.readOnly = true;
+        QJsonObject props;
+        props["ref"] = stringParam("Commit SHA / short SHA / ref such as HEAD or main.");
+        props["path"] = stringParam("Optional path to limit the diff to one file.");
+        def.parameters = buildParams(props, QJsonArray{"ref"});
+        return def;
+    }
+
+    ToolResult execute(const QJsonObject& args) override {
+        QString projectRoot;
+        ToolResult guard;
+        if (!requireProjectRoot(&projectRoot, &guard)) return guard;
+
+        const QString ref = args.value("ref").toString().trimmed();
+        if (ref.isEmpty())
+            return ToolResult::fail(QStringLiteral(
+                "A commit reference is required (SHA, short SHA, HEAD or a branch name)."));
+
+        // GitService::commit 只接受十六进制 SHA；这里先把任何 git 认识的
+        // 引用（HEAD / 分支名 / 短 SHA / tag）解析成完整 SHA，否则模型传
+        // "HEAD" 会被拒成 "Invalid commit id"。
+        const GitResult resolved = runGit(
+            {QStringLiteral("rev-parse"), QStringLiteral("--verify"),
+             QStringLiteral("--end-of-options"), ref + QStringLiteral("^{commit}")});
+        if (!resolved.ok) {
+            return ToolResult::fail(QStringLiteral("Unknown commit reference '%1': %2")
+                                        .arg(ref, resolved.output));
+        }
+        const QString sha = resolved.output.trimmed();
+        if (sha.isEmpty())
+            return ToolResult::fail(QStringLiteral("Cannot resolve '%1' to a commit").arg(ref));
+
+        const QString path = args.value("path").toString().trimmed();
+        GitService git(projectRoot);
+        QString error;
+        const GitCommitInfo info = git.commit(sha, &error);
+        if (!error.isEmpty())
+            return ToolResult::fail(error);
+        if (!info.isValid())
+            return ToolResult::fail(QStringLiteral("Commit not found: %1").arg(ref));
+
+        QStringList out;
+        out << QStringLiteral("commit %1").arg(info.sha);
+        out << QStringLiteral("Author: %1 <%2>").arg(info.author, info.authorEmail);
+        out << QStringLiteral("Date:   %1").arg(
+            QDateTime::fromMSecsSinceEpoch(info.timestamp)
+                .toString(QStringLiteral("yyyy-MM-dd HH:mm:ss")));
+        out << QString();
+        out << info.subject;
+        if (!info.body.trimmed().isEmpty()) {
+            out << QString();
+            out << info.body.trimmed();
+        }
+
+        // 改动文件清单（只列路径与增删行数，diff 在下面单独给）。
+        const QVector<GitFileStat> files = git.commitFiles(sha, &error);
+        if (!error.isEmpty()) return ToolResult::fail(error);
+        if (!files.isEmpty()) {
+            out << QString();
+            out << QStringLiteral("Files (%1):").arg(files.size());
+            for (const GitFileStat& f : files) {
+                out << QStringLiteral("  %1 %2 (+%3/-%4)")
+                           .arg(f.status, f.path)
+                           .arg(f.additions).arg(f.removals);
+            }
+        }
+
+        bool truncated = false;
+        const QString diff = git.commitDiff(sha, path, &truncated, &error);
+        if (!error.isEmpty()) return ToolResult::fail(error);
+        if (!diff.isEmpty()) {
+            out << QString();
+            out << diff;
+            if (truncated) out << QStringLiteral("...[diff truncated]");
+        }
+        return ToolResult::ok(out.join(QLatin1Char('\n')));
+    }
+};
+
 class GitCommitTool : public ITool {
 public:
     ToolDefinition definition() const override {
@@ -1199,6 +1356,8 @@ void ToolRegistry::registerBuiltins() {
     registerTool(std::make_unique<GrepTool>());
     registerTool(std::make_unique<GitStatusTool>());
     registerTool(std::make_unique<GitDiffTool>());
+    registerTool(std::make_unique<GitLogTool>());
+    registerTool(std::make_unique<GitShowTool>());
     registerTool(std::make_unique<GitCommitTool>());
     registerTool(std::make_unique<TodoWriteTool>());
 }
