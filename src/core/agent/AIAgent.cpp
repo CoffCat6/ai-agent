@@ -60,10 +60,26 @@ QString truncateText(const QString& text, int maxChars) {
         + QStringLiteral("\n...[truncated %1 chars]").arg(text.size() - maxChars);
 }
 
+// 上线的 arguments 字符串（assistant.tool_calls[].function.arguments）。
+//
+// OpenAI 规范要求它恒为 **JSON 字符串**：无参数工具必须写成 "{}"。此前这里
+// 走的是 argsToString，空对象返回空串，报文里就成了 "arguments": ""；严格
+// 校验的网关把它当作字段缺失，直接 400 并报
+// "tool_calls.function.arguments is required"。
+// OpenAIResponsesService::argumentsToString 早就是这个语义（空→"{}"），
+// 缺陷只存在于 Chat Completions 这条路径。
+QString argsToWire(const QJsonObject& args) {
+    // 空对象天然序列化成 "{}"，不需要特判。
+    return QString::fromUtf8(QJsonDocument(args).toJson(QJsonDocument::Compact));
+}
+
+// 展示 / 签名用途（trace 节点的 args、审计日志、重复调用签名比对）：保持
+// 原有观感——空参数显示为空，而不是在界面上多出两个大括号。报文请用
+// argsToWire。
 QString argsToString(const QJsonObject& args) {
     if (args.isEmpty())
         return {};
-    return QString::fromUtf8(QJsonDocument(args).toJson(QJsonDocument::Compact));
+    return argsToWire(args);
 }
 
 // CITE-801 (docs/20 §5.1): 知识库非空判定。系统提示词里的引用溯源约定
@@ -1514,7 +1530,8 @@ void AIAgent::onLLMResponse(const LLMResponse& response) {
             c["type"] = "function";
             QJsonObject fn;
             fn["name"] = normalized.name;
-            fn["arguments"] = argsToString(normalized.arguments);
+            // 报文用 argsToWire：空参数必须是 "{}"（见函数上方说明）。
+            fn["arguments"] = argsToWire(normalized.arguments);
             c["function"] = fn;
             callsArr.append(c);
         }

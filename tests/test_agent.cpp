@@ -620,6 +620,8 @@ private slots:
     // Batch 2: agent tool-call lifecycle (FIX-201/202/203)
     void stopDuringConfirmationSealsToolCalls();
     void stopDuringExecutionSealsToolCalls();
+    // 无参数工具在报文里的 arguments 必须是 "{}" 而不是 ""。
+    void emptyArgumentsSerializeAsEmptyObject();
     // Batch 13: cooperative tool cancellation (SEC-1301..1304)
     void toolCancelledOnStop();
     void shellProcessKilledOnStop();
@@ -2298,6 +2300,37 @@ void TestAgent::knowledgeNormalKnowledgeSequence() {
 
 // ── Batch 2: agent tool-call lifecycle ────────────────────
 
+// OpenAI 规范：assistant.tool_calls[].function.arguments 必须是 JSON 字符串。
+// 无参数工具（git_status 的 required 为空）被调用时 arguments 是空对象，
+// 序列化成 "" 会让严格校验的网关 400，报错文案即
+// "tool_calls.function.arguments is required"（它把 "" 当作字段缺失）。
+// 回归点：argsToString 曾对空对象返回空串。
+void TestAgent::emptyArgumentsSerializeAsEmptyObject() {
+    llm.reset();
+    // git_status 的 required 是空数组：不传 path 即为"无参数调用"。
+    llm.script.append(toolResponse(QStringLiteral("git_status"), QJsonObject{}));
+    llm.script.append(textResponse(QStringLiteral("done")));
+
+    QSignalSpy spy(&agent, &AIAgent::responseReady);
+    agent.startTask(QStringLiteral("check status"));
+    QTRY_COMPARE(spy.count(), 1);
+
+    // 第二轮请求里带着上一轮的 assistant.tool_calls，它是真正上线的报文形态。
+    QVERIFY(llm.seenMessages.size() >= 2);
+    const QJsonArray secondTurn = llm.seenMessages.at(1);
+    QJsonObject call;
+    for (const auto& entry : secondTurn) {
+        const QJsonObject msg = entry.toObject();
+        if (msg.value("role").toString() != QLatin1String("assistant")) continue;
+        const QJsonArray calls = msg.value("tool_calls").toArray();
+        if (!calls.isEmpty()) { call = calls.first().toObject(); break; }
+    }
+    QVERIFY2(!call.isEmpty(), "第二轮请求里没有 assistant.tool_calls");
+
+    const QJsonValue args = call.value("function").toObject().value("arguments");
+    QVERIFY2(args.isString(), "arguments 必须是 JSON 字符串（OpenAI 报文要求）");
+    QCOMPARE(args.toString(), QStringLiteral("{}"));
+}
 // Stopping while a RequiresConfirm call is pending must still seal the
 // assistant's tool_calls - a dangling sequence is invalid for the wire
 // format and derails proxies on the next user turn.
