@@ -247,6 +247,65 @@ private slots:
         QVERIFY(!r.success);
     }
 
+    // 无项目绑定时 git 工具必须给出可执行的提示，而不是让 GitService
+    // 回落到 CWD、把 "Not a git repository: .../build" 抛给模型。
+    void gitToolsExplainMissingProject() {
+        Sandbox::setProjectDir(QString());   // 模拟未绑定项目的会话
+        const QStringList names{QStringLiteral("git_status"),
+                                QStringLiteral("git_diff"),
+                                QStringLiteral("git_commit")};
+        for (const QString& name : names) {
+            auto tool = ToolRegistry::instance().findShared(name);
+            QVERIFY2(tool, qPrintable(name));
+            const ToolResult r = tool->execute({{"message", QStringLiteral("x")}});
+            QVERIFY2(!r.success, qPrintable(name));
+            QVERIFY2(r.error.contains(QStringLiteral("no project bound")),
+                     qPrintable(QStringLiteral("%1 的错误没说明缺少项目：%2")
+                                    .arg(name, r.error)));
+            // 不能把进程 CWD 泄露成"仓库路径"
+            QVERIFY2(!r.error.contains(QStringLiteral("Not a git repository")),
+                     qPrintable(r.error));
+        }
+    }
+
+    // list_dir 的空 path / "." 是"列当前目录"，不是参数缺失。
+    void listDirTreatsEmptyPathAsCurrentDirectory() {
+        createFile(QStringLiteral("visible.txt"), QStringLiteral("x"));
+
+        auto tool = ToolRegistry::instance().findShared("list_dir");
+        QVERIFY(tool);
+
+        // 空 path：有项目 → 列项目根
+        const ToolResult empty = tool->execute({});
+        QVERIFY2(empty.success, qPrintable(empty.error));
+        QVERIFY2(empty.output.contains(QStringLiteral("visible.txt")),
+                 qPrintable(empty.output));
+
+        // "." 同样指项目根
+        const ToolResult dot = tool->execute({{"path", "."}});
+        QVERIFY2(dot.success, qPrintable(dot.error));
+        QVERIFY2(dot.output.contains(QStringLiteral("visible.txt")),
+                 qPrintable(dot.output));
+
+        // 子目录相对路径
+        createFile(QStringLiteral("sub/inner.txt"), QStringLiteral("y"));
+        const ToolResult sub = tool->execute({{"path", "sub"}});
+        QVERIFY2(sub.success, qPrintable(sub.error));
+        QVERIFY2(sub.output.contains(QStringLiteral("inner.txt")),
+                 qPrintable(sub.output));
+    }
+
+    // 无项目时 list_dir 仍要说明"该传什么"，不能只说 "Path is required"。
+    void listDirExplainsMissingProject() {
+        Sandbox::setProjectDir(QString());
+        auto tool = ToolRegistry::instance().findShared("list_dir");
+        QVERIFY(tool);
+        const ToolResult r = tool->execute({});
+        QVERIFY(!r.success);
+        QVERIFY2(r.error.contains(QStringLiteral("path")),
+                 qPrintable(QStringLiteral("错误应提示传 path：%1").arg(r.error)));
+    }
+
     void gitCommitRejectsEmptyMessage() {
         auto tool = ToolRegistry::instance().findShared("git_commit");
         QVERIFY(tool);

@@ -508,9 +508,17 @@ public:
     }
 
     ToolResult execute(const QJsonObject& args) override {
-        const QString path = Sandbox::resolvePath(args.value("path").toString());
-        if (path.isEmpty())
-            return ToolResult::fail("Path is required");
+        // 空 path / "." 是"列出当前目录"的自然写法（模型极常这么调），
+        // 不是参数缺失：此前直接报 "Path is required"，模型无法从这句话
+        // 知道该填什么，于是反复用空 path 重试。这里把它解析成项目根；
+        // 只有"既没传 path、会话又没绑项目"时才真的无从下手。
+        const QString requested = args.value("path").toString().trimmed();
+        const QString path = Sandbox::resolvePath(requested);
+        if (path.isEmpty()) {
+            return ToolResult::fail(QStringLiteral(
+                "No directory to list: pass an absolute path, or bind a project "
+                "to this session so '.' resolves to the project root."));
+        }
 
         Sandbox::DenyReason reason;
         if (!Sandbox::validatePath(path, false, &reason))
@@ -922,20 +930,64 @@ public:
 
 struct GitResult { bool ok; QString output; };
 
+// 三个 git 工具共用的前置检查：没有绑定项目时不执行 git。
+//
+// 否则 GitService/runGit 会用 QDir::currentPath() 作为仓库目录（通常是
+// 应用启动目录或 build 目录），模型最后看到的是
+// "Not a git repository: .../build" —— 一个它无法解释的路径，于是反复
+// 重试。这里直接给出可执行的提示：先在侧栏绑定项目。
+static bool requireProjectRoot(QString* root, ToolResult* failure) {
+    const QString projectRoot = Sandbox::currentProjectDir();
+    if (!projectRoot.isEmpty()) {
+        if (root) *root = projectRoot;
+        return true;
+    }
+    if (failure) {
+        *failure = ToolResult::fail(QStringLiteral(
+            "This session has no project bound, so there is no git repository "
+            "to inspect. Ask the user to select or import a project in the "
+            "sidebar first."));
+    }
+    return false;
+}
+
+// git 子进程的统一环境：不提示凭据、不启分页、稳定输出编码。
+// 此前 runGit 直接用继承来的环境，配置了 GIT_PAGER 或需要凭据时会阻塞到
+// 超时；错误信息也受 LC_ALL 影响（GitService 早已这么做，两者行为不一致）。
+static QProcessEnvironment gitProcessEnvironment() {
+    QProcessEnvironment env = QProcessEnvironment::systemEnvironment();
+    env.insert(QStringLiteral("GIT_OPTIONAL_LOCKS"), QStringLiteral("0"));
+    env.insert(QStringLiteral("GIT_TERMINAL_PROMPT"), QStringLiteral("0"));
+    env.insert(QStringLiteral("GIT_PAGER"), QStringLiteral("cat"));
+    env.insert(QStringLiteral("LC_ALL"), QStringLiteral("C"));
+    return env;
+}
+
 static GitResult runGit(const QStringList& args, int timeoutMs = 10000) {
     QProcess proc;
-    proc.setProcessChannelMode(QProcess::MergedChannels);
+    // 分离通道：合并通道会把 stderr（真正的失败原因）混进 stdout，
+    // 再被上层 6000 字符截断时可能先丢掉错误原文。
+    proc.setProcessChannelMode(QProcess::SeparateChannels);
     const QString projectRoot = Sandbox::currentProjectDir();
     if (!projectRoot.isEmpty())
         proc.setWorkingDirectory(projectRoot);
+    proc.setProcessEnvironment(gitProcessEnvironment());
     proc.start(QStringLiteral("git"), args);
     if (!proc.waitForStarted(3000))
         return {false, QStringLiteral("Failed to start git: %1").arg(proc.errorString())};
-    if (!proc.waitForFinished(timeoutMs))
+    if (!proc.waitForFinished(timeoutMs)) {
+        proc.kill();
+        proc.waitForFinished(1000);
         return {false, QStringLiteral("git timed out after %1 ms").arg(timeoutMs)};
+    }
     const QString output = QString::fromUtf8(proc.readAllStandardOutput()).trimmed();
-    if (proc.exitCode() != 0)
-        return {false, output.isEmpty() ? QStringLiteral("git exited with code %1").arg(proc.exitCode()) : output};
+    const QString stderrText = QString::fromUtf8(proc.readAllStandardError()).trimmed();
+    if (proc.exitCode() != 0) {
+        const QString detail = stderrText.isEmpty() ? output : stderrText;
+        return {false, detail.isEmpty()
+            ? QStringLiteral("git exited with code %1").arg(proc.exitCode())
+            : detail};
+    }
     return {true, output};
 }
 
@@ -954,9 +1006,13 @@ public:
     }
 
     ToolResult execute(const QJsonObject& args) override {
-        const QString path = args.value("path").toString();
-        const QString resolved = path.isEmpty() ? QString() : Sandbox::resolvePath(path);
-        GitService git(Sandbox::currentProjectDir());
+        QString projectRoot;
+        ToolResult guard;
+        if (!requireProjectRoot(&projectRoot, &guard)) return guard;
+        // 空 path = 整个仓库（此前用空串跳过 resolvePath，语义正确但
+        // 与其它工具不一致；resolvePath 现在也把空/'.' 解析成项目根）。
+        const QString resolved = Sandbox::resolvePath(args.value("path").toString().trimmed());
+        GitService git(projectRoot);
         QString error;
         const QString output = git.statusText(resolved, &error);
         if (output.isNull())
@@ -986,9 +1042,11 @@ public:
     }
 
     ToolResult execute(const QJsonObject& args) override {
-        const QString path = args.value("path").toString();
-        const QString resolved = path.isEmpty() ? QString() : Sandbox::resolvePath(path);
-        GitService git(Sandbox::currentProjectDir());
+        QString projectRoot;
+        ToolResult guard;
+        if (!requireProjectRoot(&projectRoot, &guard)) return guard;
+        const QString resolved = Sandbox::resolvePath(args.value("path").toString().trimmed());
+        GitService git(projectRoot);
         bool truncated = false;
         QString error;
         const QString output =
@@ -1028,6 +1086,9 @@ public:
     }
 
     ToolResult execute(const QJsonObject& args) override {
+        // runGit 自己按 Sandbox 的项目根设置工作目录，这里只需前置拦截。
+        ToolResult guard;
+        if (!requireProjectRoot(nullptr, &guard)) return guard;
         const QString message = args.value("message").toString().trimmed();
         if (message.isEmpty())
             return ToolResult::fail("Commit message is required");

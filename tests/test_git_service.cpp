@@ -780,6 +780,67 @@ private slots:
         QVERIFY2(text.contains(QStringLiteral("tracked.txt")), qPrintable(text));
     }
 
+    // 模型常把"."、"src/"、"<项目根绝对路径>"直接当 path 传下来。
+    // 回归点：normalizePath 曾把"指向仓库根"的路径（"."/
+    // "<root>/."）判成 "Path escapes the repository"——cleanPath 会把
+    // "<root>/." 折叠成 "<root>"，于是 abs.size() <= prefix.size() 成立，
+    // 被误当作越界。
+    void pathAcceptsRepoRootAndSubdirs() {
+        TempRepo repo;
+        QVERIFY(repo.valid() && repo.init());
+        QVERIFY(repo.write(QStringLiteral("src/a.txt"), "a\n"));
+        QVERIFY(repo.addAll() && repo.commit(QStringLiteral("base")));
+        QVERIFY(repo.write(QStringLiteral("src/a.txt"), "b\n"));
+
+        GitService git(repo.path());
+        const QString root = git.repositoryRoot();
+        QVERIFY(!root.isEmpty());
+
+        // 全部指向"仓库根"或"仓库内子目录"，都必须能正常读。
+        const QStringList accepted{
+            QString(),                              // 空 = 整个仓库
+            QStringLiteral("."),                    // 点 = 仓库根
+            QStringLiteral("./"),                   // 带斜杠的点
+            root,                                   // 绝对路径（仓库根）
+            root + QStringLiteral("/."),            // 绝对路径带 "/."
+            QDir::toNativeSeparators(root),         // 绝对路径（反斜杠）
+            QStringLiteral("src"),                  // 相对子目录
+            QStringLiteral("src/"),                 // 相对子目录带斜杠
+            QStringLiteral("./src"),
+            root + QStringLiteral("/src"),          // 绝对子目录
+            QDir::toNativeSeparators(root + QStringLiteral("/src")),
+        };
+
+        for (const QString& path : accepted) {
+            QString error;
+            const QString text = git.statusText(path, &error);
+            QVERIFY2(!text.isNull(),
+                     qPrintable(QStringLiteral("statusText 拒绝了合法路径 [%1]: %2")
+                                    .arg(path).arg(error)));
+
+            bool truncated = false;
+            const QString diff = git.workingDiff(path, false, &truncated, &error);
+            QVERIFY2(!diff.isNull(),
+                     qPrintable(QStringLiteral("workingDiff 拒绝了合法路径 [%1]: %2")
+                                    .arg(path).arg(error)));
+        }
+
+        // 真正越界的仍必须被拒。
+        const QStringList rejected{
+            QStringLiteral("../outside"),
+            QStringLiteral(".."),
+            root + QStringLiteral("/../outside"),
+            QStringLiteral("/etc/passwd"),
+            QStringLiteral("C:/Windows"),
+        };
+        for (const QString& path : rejected) {
+            QString error;
+            const QString text = git.statusText(path, &error);
+            QVERIFY2(text.isNull(),
+                     qPrintable(QStringLiteral("statusText 放过了越界路径 [%1]").arg(path)));
+        }
+    }
+
     void rejectsUnsafeInputs() {
         TempRepo repo;
         QVERIFY(repo.valid() && repo.init());

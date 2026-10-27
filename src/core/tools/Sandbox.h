@@ -125,7 +125,14 @@ public:
     static QString resolvePath(const QString& path) {
         // docs/24 H8: 读 currentProjectDir()（内部持锁，递归模式安全）。
         const QString root = currentProjectDir();
-        if (!path.isEmpty() && !root.isEmpty() && QDir::isRelativePath(path))
+        if (root.isEmpty())
+            return path;   // 无项目：保持原语义（由调用方判断是否可用）
+        // 无项目以外的两种"指向项目根"的写法：空串与 "."（含 "./"）。
+        // 模型常把它们当作"当前目录"，空串此前会原样透传成空、随后落到
+        // 进程 CWD，或触发调用方的 "Path is required"。
+        if (path.isEmpty() || path == QLatin1String("."))
+            return root;
+        if (QDir::isRelativePath(path))
             return QDir(root).absoluteFilePath(path);
         return path;
     }

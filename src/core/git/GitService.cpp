@@ -351,10 +351,17 @@ QString GitService::normalizePath(const QString& root, const QString& path,
         abs = prefix + clean;
     }
     abs = cleanSlashes(abs);
+    // 解析结果正好等于仓库根 = 调用方指的是"整个仓库"（模型传 "."、
+    // "./"、"<root>"、甚至 "<root>/." 都会被 cleanPath 折叠成 root）。
+    // 这在语义上等价于 path 为空，必须放行；此前 abs.size() <= prefix.size()
+    // 把它误判成越界，报 "Path escapes the repository: ."。
+    if (abs.compare(rootClean, kPathCase) == 0) {
+        if (ok) *ok = true;
+        return {};
+    }
     if (!abs.startsWith(prefix, kPathCase) || abs.size() <= prefix.size())
         return {};
     if (!isWithin(abs, rootClean)) return {};
-
     const QString rel = abs.mid(prefix.size());
     if (rel.isEmpty() || rel == QStringLiteral(".")
             || rel.startsWith(QStringLiteral("../")))
