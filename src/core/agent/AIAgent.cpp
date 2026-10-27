@@ -1941,6 +1941,12 @@ bool AIAgent::toolAllowedForModel(const QString& name) const {
 
 void AIAgent::processNextToolCall() {
     if (!m_active) return;
+    // 有待确认的调用时绝不能继续处理队列：确认期间并行工具（Safe 级、
+    // 已自动放行者）在 worker 线程跑完会回到 finishToolExecution →
+    // processNextToolCall。若这里不早退，队列一空就会走到 processIteration
+    // 发起下一轮 LLM 请求——用户还没点"允许"，任务已经跑到底了。
+    // 唯一的恢复入口是 approveToolCall()。
+    if (!m_confirmNodeId.isEmpty()) return;
 
     QVector<ToolCallInfo> parallelCalls;
     QVector<bool> parallelAutoApproved;
@@ -2269,6 +2275,11 @@ void AIAgent::finishToolExecution(const ToolCallInfo& call, const QString& trace
     // P2: wait for all parallel tools to finish before resuming the loop —
     // results from concurrent tools are batched into one LLM turn.
     if (!m_inFlightTools.isEmpty())
+        return;
+    // 还有待确认的调用时就到此为止，不要推进队列（同 processNextToolCall
+    // 入口的守卫）。这里的续跑发生在并行工具完成的回调里，正是"确认提示
+    // 还没点、流程已经继续"的直接来源。
+    if (!m_confirmNodeId.isEmpty())
         return;
     processNextToolCall();
 }

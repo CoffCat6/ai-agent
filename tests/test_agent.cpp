@@ -617,6 +617,9 @@ private slots:
     // 思考强度：思考正文只落 thinking 节点，不混进答案、不回灌模型、可恢复
     void reasoningTextLandsOnThinkingNode();
     void stopDuringConfirmationIsNoOp();
+    // 复现：同一轮里"自动放行的调用"排在"需确认的调用"之前时，
+    // 确认期间不得推进到下一轮 LLM 请求。
+    void confirmationSuspendsEvenWithParallelAutoApprovedCalls();
     void contextBudgetCompressesHistory();
     void auditTrailRecorded();
     // TEST-002: Knowledge/Normal behavioral matrix (agent level, scripted
@@ -2240,6 +2243,58 @@ void TestAgent::reasoningTextLandsOnThinkingNode() {
     QCOMPARE(restored, QStringLiteral("weighed two options then chose"));
 
     agent.setMemory(nullptr);
+}
+
+// 复现并锁定：一轮回复里既有自动放行的工具、又有需确认的工具时，
+// 确认请求必须真正"挂住"整个任务。
+//
+// 怀疑点：processNextToolCall 在遇到需确认的调用时，会先
+// dispatchToolExecution 掉之前收集的 parallelCalls 再 return。那些并行
+// 调用在 worker 线程完成后会回到 finishToolExecution → processNextToolCall，
+// 而此时的 state 是 AwaitingToolConfirm，pending 队列里可能还有后续调用，
+// 于是可能在用户点确认之前就把流程推进下去了。
+void TestAgent::confirmationSuspendsEvenWithParallelAutoApprovedCalls() {
+    agent.setPermissionMode(PermissionMode::ConfirmChanges);
+
+    QTemporaryDir dir(testDirTemplate());
+    QVERIFY(dir.isValid());
+    const QString path = dir.filePath(QStringLiteral("w.txt"));
+
+    // 第 1 个：read_file（Safe，自动放行）；第 2 个：write_file（需确认）。
+    LLMResponse mixed;
+    mixed.success = true;
+    ToolCallInfo readCall;
+    readCall.id = QStringLiteral("call_read");
+    readCall.name = QStringLiteral("read_file");
+    readCall.arguments = QJsonObject{{"path", dir.filePath(QStringLiteral("r.txt"))}};
+    mixed.toolCalls.append(readCall);
+    ToolCallInfo writeCall;
+    writeCall.id = QStringLiteral("call_write");
+    writeCall.name = QStringLiteral("write_file");
+    writeCall.arguments = QJsonObject{{"path", path}, {"content", "x"}};
+    mixed.toolCalls.append(writeCall);
+    llm.script.append(mixed);
+    llm.script.append(textResponse(QStringLiteral("should wait for approval")));
+
+    QSignalSpy confirmSpy(&agent, &AIAgent::toolConfirmRequired);
+    QSignalSpy responseSpy(&agent, &AIAgent::responseReady);
+    agent.startTask(QStringLiteral("mixed"));
+    QTRY_COMPARE_WITH_TIMEOUT(confirmSpy.count(), 1, 15000);
+
+    // 确认请求已发出：此刻必须处于 AwaitingToolConfirm，且**没有**发起
+    // 第二次 LLM 请求（那意味着流程绕过确认继续跑了）。
+    QCOMPARE(agent.state(), AgentState::AwaitingToolConfirm);
+    QTest::qWait(600);          // 给并行调用充足时间完成
+    QCOMPARE(agent.state(), AgentState::AwaitingToolConfirm);
+    QCOMPARE(responseSpy.count(), 0);
+    QCOMPARE(llm.seenMessages.size(), 1);   // 只有第一次请求
+    QVERIFY(!QFile::exists(path));          // 未确认前绝不写文件
+
+    // 批准后才继续。
+    agent.approveToolCall(confirmSpy.first().first().toString(), true);
+    QTRY_COMPARE_WITH_TIMEOUT(responseSpy.count(), 1, 15000);
+    QCOMPARE(agent.state(), AgentState::Completed);
+    QVERIFY(QFile::exists(path));
 }
 
 void TestAgent::stopDuringConfirmationIsNoOp() {
