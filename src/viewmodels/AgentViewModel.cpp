@@ -436,6 +436,32 @@ void AgentViewModel::newProjectChat(const QString& projectId) {
     addTab(projectId);
 }
 
+void AgentViewModel::startFromSessionTemplate(const QVariantMap& tmpl) {
+    // 空模板（菜单里点了「空白新对话」）退化成普通新建，调用方不必分支。
+    if (tmpl.isEmpty()) {
+        newLocalChat();
+        return;
+    }
+
+    // 1. 模型配置：必须早于 newLocalChat（见头文件里的顺序说明）。
+    const QString profileId = tmpl.value("profileId").toString().trimmed();
+    if (!profileId.isEmpty()) {
+        if (auto* settings = SettingsService::instance())
+            settings->setActiveProfile(profileId);
+    }
+
+    // 2. 新标签，随后把模板的会话级选项写到这个标签上。
+    newLocalChat();
+
+    // 缺省 -1 = 模板不改权限（与设置页的"权限不变"同一语义）。
+    bool ok = false;
+    const int mode = tmpl.value("permissionMode").toInt(&ok);
+    if (ok && mode >= 0) setPermissionMode(mode);
+
+    // 3. 首条消息只进草稿：用户还要自己确认再发。
+    setDraftText(tmpl.value("firstMessage").toString());
+}
+
 void AgentViewModel::activateTab(int index) {
     if (index < 0 || index >= m_tabs.size() || index == m_activeTab) return;
     // docs/18: activeProjectId 是派生值，切标签会改变它——先取旧值用于比对。

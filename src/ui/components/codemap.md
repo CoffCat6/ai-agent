@@ -12,9 +12,9 @@
 
 | 组件 | 职责 | 关键依赖 |
 | --- | --- | --- |
-| `Sidebar.qml`（74 KB，最大文件） | 左栏：Logo/新建、项目树 + 本地对话树（共享 `sessionRow` delegate）、跨会话搜索（200ms 防抖）、归档筛选、导入项目、行内重命名/置顶/归档/导出/删除、底栏（日志/审计/设置/主题开关） |新对话按钮右缘的模板窄条（`tmplMA` + `Menu`，与主点击区分离）：按 Settings.sessionTemplates 开新会话——profileId 非空先 setActiveProfile、permissionMode ≥0 写新标签、firstMessage 进 draftText 不自动发送。  `AgentVM.projects/sessionList/tabModel/searchMessages/importProject/renameSession/setSessionPinned/setSessionArchived/exportSession`、`Settings.activeProjectId`、`ThemeManager.isDark` |
+| `Sidebar.qml`（74 KB，最大文件） | 左栏：Logo/新建、项目树 + 本地对话树（共享 `sessionRow` delegate）、跨会话搜索（200ms 防抖）、归档筛选、导入项目、行内重命名/置顶/归档/导出/删除、底栏（日志/审计/设置/主题开关） |新对话按钮右缘的模板窄条（`tmplMA` + `SessionTemplateMenu`，与主点击区分离）：按 `Settings.sessionTemplates` 开新会话，应用动作统一走 `AgentVM.startFromSessionTemplate`；`Accessible` 语义挂在窄条上（"从会话模板开始"）。  `AgentVM.projects/sessionList/tabModel/searchMessages/importProject/renameSession/setSessionPinned/setSessionArchived/exportSession`、`Settings.activeProjectId`、`ThemeManager.isDark` |
 | `TopBar.qml`（36 KB） | 顶栏：侧栏开关、项目归属徽标（空标签可切换，已有会话转只读）、状态点 + `stateText`、token 占用条/累计/费用 + 上下文构成浮层、任务清单与审阅入口（各自带角标）、右栏开关。提示词预设不在顶栏：它为 40px 高度塞不下预设名，已移到输入框下方的选项行（`PromptPresetSelector`）。审阅按钮在 `unreviewedFileCount > 0` 时变品牌色并显示待看文件数，关闭审阅对话框即清零 | `AgentVM.state/stateText/stateBusy/usedTokens/maxTokens/tokenUsageRate/sessionTokensUsed/lastCostCents/contextComposition()/sessionTokenBreakdown()/todoList/fileCheckpoints/unreviewedFileCount/acknowledgeFileReview()/toggleSidebar/togglePanel` |
-| `SessionTabs.qml` | 标签页条：`AgentVM.tabModel` 的横向 Flickable + Repeater，运行中显示品牌色圆点，末标签不可关闭，`+` 新建普通对话 | `AgentVM.tabModel/activateTab/closeTab/newLocalChat` |
+| `SessionTabs.qml` | 标签页条：`AgentVM.tabModel` 的横向 Flickable + Repeater，运行中显示品牌色圆点，末标签不可关闭；`+` 左键新建普通对话、右键/长按开模板菜单（`templatesRequested` 信号上抛） | `AgentVM.tabModel/activateTab/closeTab/newLocalChat`、`SessionTemplateMenu` |
 | `SplitBar.qml` | 竖向分隔条：拖拽发 `dragged(delta)`、双击 `resetRequested()`、`dragActive` 让宿主暂停宽度动画 | 纯几何 + `Theme.brandPrimary`；宿主（`main.qml`）负责 clamp 与写回 `AgentVM.sidebarWidth/panelWidth` |
 | `SettingsCenterDialog.qml` | 设置中心：搜索框 + 分类导航 + 10 个分类页 `Loader` 懒加载 + 底栏（恢复默认/关闭）+ 恢复确认对话框 | `PreferenceRegistry.categories/preferencesInCategory/categoryName/categoryOrder`、`PreferenceStore`、`EditBuffer`、`settings-search.js`、绝对 qrc URL `qrc:/qt/qml/NexusAI/src/ui/pages/*.qml` |
 | `CategoryNav.qml` | 设置分类左侧导航（180 px），当前项左侧 3px 品牌条 | `PreferenceRegistry.categories()/categoryName()`、`I18n.currentLocale`（触发语言切换重算） |
@@ -44,6 +44,7 @@
 | `ModelSelector.qml` | 底部向上弹的模型/配置下拉（三段：当前配置模型列表 → 配置列表 → 管理模型配置…），切换后提示上下文窗口 | `AgentVM.chatModelProfile/selectChatModel/stateBusy`、`Settings.profiles/modelContextWindow` |
 | `PermissionModeSelector.qml` | 权限模式下拉（只读/变更确认/自动编辑/完全访问），按风险着色；完全访问需二次确认对话框 | `AgentVM.permissionMode*` 常量、`AppButton`、`DialogBackground` |
 | `PromptPresetSelector.qml` | 会话级提示词预设选择器：胶囊回显当前套用的预设名（未套用显示"提示词·默认"，来源预设被删则标黄并注明"预设已删除"），向上弹出主题化列表（分区标题 + 当前状态 + "无预设（使用全局系统提示词）"+ 每条预设的名称与两行提示词摘要 + 空态 + 「管理预设…」）。`manageRequested` 信号经 AgentChatPage→main 打开设置中心 prompts 分类 | `AgentVM.activePromptPresetId/activePromptPresetName/applyPromptPreset/clearPromptPreset`、`Settings.promptPresets/systemPromptOverride`、`DialogBackground` |
+| `SessionTemplateMenu.qml` | 会话模板菜单（独立组件，三个宿主共用：侧栏窄条 / 标签栏「+」右键 / 空态）。`Popup` + `DialogBackground` + 主题化行项；每行"名称 + 配置·权限"两行摘要，配置被删时明写「配置已删除」。`openBelow(trigger)`/`openAbove(trigger)` 手工算场景坐标并夹进窗口（Popup 没有 `popup(item,x,y)`/`mapToItem`）。应用动作一律调 `AgentVM.startFromSessionTemplate` | `Settings.sessionTemplates/profiles`、`AgentVM.startFromSessionTemplate/newLocalChat`、`DialogBackground` |
 | `ThinkingEffortSelector.qml` | 思考强度下拉（默认/off/low/medium/high），未配置模型时整体禁用 | `AgentVM.chatModelProfile.reasoningEffort/setChatReasoningEffort/modelConfigured` |
 | `ToolConfirmDialog.qml` | 高危工具确认：警告侧条 + 工具名 + 变更预览/调用参数 + 允许/拒绝 | `AgentVM.pendingConfirmation/approveToolCall`；`CodeBlock` |
 | `ShortcutsDialog.qml` | 快捷键速查表（两列静态表，与 `main.qml` 的 `Shortcut` 一一对应） | 纯静态数据 |
@@ -127,7 +128,7 @@
 
 ## 集成点
 
-- **宿主**：`main.qml`（Sidebar、两个 SplitBar、SettingsCenterDialog、AuditDialog、LogPanel、KnowledgeDocDialog、3 个 AppToast、ShortcutsDialog、窗口级 DropArea、窗口级 Shortcut）；`pages/AgentChatPage.qml`（TopBar、SessionTabs、TranscriptViewport、InputConsole、ModelSelector、ThinkingEffortSelector、PermissionModeSelector、PromptPresetSelector）；`panels/ContextPanel.qml`（TodoListPanel、FileChangesPanel、GitPanel）；`pages/*.qml`（SettingCard、SettingsField、ParamSelectRow、PreferenceControl、UsageDetailTable、charts/*）。
+- **宿主**：`main.qml`（Sidebar、两个 SplitBar、SettingsCenterDialog、AuditDialog、LogPanel、KnowledgeDocDialog、3 个 AppToast、ShortcutsDialog、窗口级 DropArea、窗口级 Shortcut）；`pages/AgentChatPage.qml`（TopBar、SessionTabs、TranscriptViewport、InputConsole、ModelSelector、ThinkingEffortSelector、PermissionModeSelector、PromptPresetSelector、SessionTemplateMenu）；`panels/ContextPanel.qml`（TodoListPanel、FileChangesPanel、GitPanel）；`pages/*.qml`（SettingCard、SettingsField、ParamSelectRow、PreferenceControl、UsageDetailTable、charts/*）。
 - **C++ 单例**：`AgentVM`、`GitVM`、`Settings`、`PreferenceStore`、`PreferenceRegistry`、`EditBuffer`、`Theme`/`ThemeManager`、`I18n`、`CommitDrafter`、`CitationParser`、`CodeHighlighter`。
 - **模块注册**：根 `CMakeLists.txt` 的 `qt_add_qml_module(nexus_ai … QML_FILES)` 逐个列出本目录文件；`charts/` 因 `QTP0004 NEW` 平铺注册进 `NexusAI` 模块（移动目录会改 qrc 路径）。设置页通过绝对 qrc URL 加载，不依赖相对路径。
 - **测试锚点**：`tests/CMakeLists.txt` 把 `src/ui/**/*.qml` 与两个 JS 重新打进测试资源；组件广泛使用 `objectName` 作为自动化锚点（`inputConsole`、`messageInput`、`mentionPopup`、`mentionRow`、`changeTree`、`fileChangeRow`、`fileRowAction`、`diffView`、`diffSplitRow`、`detailDiffView`、`commitFileTree`、`gitBlameRow`、`gitGraphRow`、`gitActionMessage`、`gitCommitMessage`、`fileChangeCountBadge` 等）。

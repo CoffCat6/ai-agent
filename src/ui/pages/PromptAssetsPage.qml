@@ -10,8 +10,9 @@ import NexusAI.ViewModels
 //    胶囊一键套用到当前会话（会话级 override，清除后回落全局提示词）；
 // 2. 斜杠指令（slashCommands）——输入框以 /指令 触发，发送前由
 //    AgentVM.expandSlashCommand 展开为模板（{text} 占位）；
-// 3. 会话模板（sessionTemplates）——侧栏「新会话」旁的模板菜单，新建
-//    会话时预置模型配置 / 权限模式 / 首条消息。
+// 3. 会话模板（sessionTemplates）——SessionTemplateMenu 在三个宿主提供
+//    入口（侧栏窄条 / 标签栏「+」右键 / 空态），新建会话时预置模型配置 /
+//    权限模式 / 首条消息；应用逻辑统一在 AgentVM::startFromSessionTemplate。
 //
 // 三组都是 SettingsService 上的 JSON 列表属性，改动即时持久化；本页只
 // 做编辑，不碰套用/展开/应用逻辑（那些在 TopBar / InputConsole / Sidebar）。
@@ -414,7 +415,7 @@ Item {
                     Text {
                         Layout.fillWidth: true
                         Layout.minimumWidth: 0
-                        text: qsTr("侧栏「新会话」旁的模板菜单：一键按预置的模型配置、权限模式与首条消息开新会话。首条消息进入输入框待确认，不会自动发送。")
+                        text: qsTr("三个入口都能用：侧栏「新对话」右缘的箭头、会话标签栏「+」的右键/长按、以及空会话页的「从模板开始」。一键按预置的模型配置、权限模式与首条消息开新会话；首条消息进入输入框待确认，不会自动发送。")
                         color: Theme.textSecondary
                         font.pixelSize: 10
                         wrapMode: Text.Wrap

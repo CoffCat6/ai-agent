@@ -9,6 +9,10 @@ import NexusAI.ViewModels
 Rectangle {
     id: root
 
+    // 模板菜单的「管理模板…」：本组件不认识设置中心，交给
+    // AgentChatPage → main 打开对应分类。
+    signal templatesRequested()
+
     implicitHeight: 34
     color: Theme.bgSecondary
 
@@ -105,27 +109,54 @@ Rectangle {
         HWheelScroll {}
     }
 
-    Text {
+    // 「+」：左键 = 空白新对话（保持原行为，零成本路径不变）；右键 / 长按
+    // = 会话模板菜单。侧栏折叠后模板入口原本彻底不可达，这里是它的替代
+    // 路径（标签栏始终可见）。
+    Item {
         id: addButton
         anchors.right: parent.right
         anchors.rightMargin: 12
         anchors.verticalCenter: parent.verticalCenter
-        text: "+"
-        color: addArea.containsMouse ? Theme.brandPrimary : Theme.textSecondary
-        font.pixelSize: 16
-        font.family: Theme.fontSans
+        width: Math.max(addLabel.implicitWidth, 18)
+        height: parent.height
+
+        Text {
+            id: addLabel
+            anchors.centerIn: parent
+            text: "+"
+            color: addArea.containsMouse || templateMenu.popped
+                ? Theme.brandPrimary : Theme.textSecondary
+            font.pixelSize: 16
+            font.family: Theme.fontSans
+        }
 
         MouseArea {
             id: addArea
             anchors.fill: parent
+            anchors.margins: -4
             hoverEnabled: true
+            acceptedButtons: Qt.LeftButton | Qt.RightButton
             cursorShape: Qt.PointingHandCursor
-            // docs/17: 标签栏「+」同样默认新建普通对话；项目会话只从项目行「+」建。
-            onClicked: AgentVM.newLocalChat()
+            // docs/17: 标签栏「+」默认新建普通对话；项目会话只从项目行「+」建。
+            onClicked: function(mouse) {
+                if (mouse.button === Qt.RightButton)
+                    templateMenu.openBelow(addButton)
+                else
+                    AgentVM.newLocalChat()
+            }
+            // 长按同样开模板菜单（触屏/无右键场景）。
+            onPressAndHold: templateMenu.openBelow(addButton)
         }
 
         Accessible.role: Accessible.Button
         Accessible.name: qsTr("新建对话标签页")
+        Accessible.description: qsTr("点击新建空白对话；右键或长按从会话模板开始")
         Accessible.onPressAction: AgentVM.newLocalChat()
+    }
+
+    SessionTemplateMenu {
+        id: templateMenu
+        // 标签栏不认识设置中心；转成信号交给 AgentChatPage → main 处理。
+        onManageRequested: root.templatesRequested()
     }
 }

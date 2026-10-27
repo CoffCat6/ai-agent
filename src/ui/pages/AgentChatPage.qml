@@ -42,6 +42,7 @@ Item {
         SessionTabs {
             Layout.fillWidth: true
             Layout.preferredHeight: 34
+            onTemplatesRequested: root.settingsCategoryRequested("prompts")
         }
 
         Item {
@@ -134,6 +135,73 @@ Item {
                     highlighted: true
                     onClicked: root.settingsRequested()
                 }
+
+                // 模板入口的空态副本：侧栏折叠后原本没有任何可达路径，
+                // 这里补一条（只在有模板时出现，避免空菜单多一个死按钮）。
+                Item {
+                    id: emptyTemplateEntry
+                    anchors.horizontalCenter: parent.horizontalCenter
+                    visible: Settings.sessionTemplates.length > 0
+                    width: emptyTemplateRow.implicitWidth + 20
+                    height: 28
+
+                    Rectangle {
+                        anchors.fill: parent
+                        radius: 6
+                        color: emptyTemplateMA.containsMouse || emptyTemplateMenu.popped
+                            ? Theme.surfaceHover : "transparent"
+                        border.width: 1
+                        border.color: emptyTemplateMenu.popped
+                            ? Theme.brandPrimary : Theme.borderSubtle
+
+                        Row {
+                            id: emptyTemplateRow
+                            anchors.centerIn: parent
+                            spacing: 6
+
+                            AppIcon {
+                                anchors.verticalCenter: parent.verticalCenter
+                                icon: "preset"
+                                size: 12
+                                iconColor: emptyTemplateMA.containsMouse
+                                    || emptyTemplateMenu.popped
+                                    ? Theme.brandPrimary : Theme.textSecondary
+                            }
+                            Text {
+                                anchors.verticalCenter: parent.verticalCenter
+                                text: qsTr("从模板开始")
+                                color: emptyTemplateMA.containsMouse
+                                    || emptyTemplateMenu.popped
+                                    ? Theme.brandPrimary : Theme.textSecondary
+                                font.pixelSize: Theme.fontSizeCaption
+                                font.family: Theme.fontSans
+                            }
+                            AppIcon {
+                                anchors.verticalCenter: parent.verticalCenter
+                                icon: "chevron-down"
+                                size: 10
+                                iconColor: Theme.textSecondary
+                            }
+                        }
+
+                        MouseArea {
+                            id: emptyTemplateMA
+                            anchors.fill: parent
+                            hoverEnabled: true
+                            cursorShape: Qt.PointingHandCursor
+                            onClicked: emptyTemplateMenu.openBelow(emptyTemplateEntry)
+                        }
+                    }
+
+                    Accessible.role: Accessible.Button
+                    Accessible.name: qsTr("从会话模板开始")
+                    Accessible.onPressAction: emptyTemplateMenu.openBelow(emptyTemplateEntry)
+                }
+            }
+
+            SessionTemplateMenu {
+                id: emptyTemplateMenu
+                onManageRequested: root.settingsCategoryRequested("prompts")
             }
 
             Rectangle {

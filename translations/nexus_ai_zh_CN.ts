@@ -5844,6 +5844,59 @@
     </message>
 </context>
 <context>
+    <name>SessionTemplateMenu</name>
+    <message>
+        <location filename="../src/ui/components/SessionTemplateMenu.qml" line="40"/>
+        <source>会话模板</source>
+        <translation>会话模板</translation>
+    </message>
+    <message>
+        <location filename="../src/ui/components/SessionTemplateMenu.qml" line="41"/>
+        <source>共 %1 个</source>
+        <translation>共 %1 个</translation>
+    </message>
+    <message>
+        <location filename="../src/ui/components/SessionTemplateMenu.qml" line="42"/>
+        <source>配置已删除</source>
+        <translation>配置已删除</translation>
+    </message>
+    <message>
+        <location filename="../src/ui/components/SessionTemplateMenu.qml" line="43"/>
+        <source>管理模板…</source>
+        <translation>管理模板…</translation>
+    </message>
+    <message>
+        <location filename="../src/ui/components/SessionTemplateMenu.qml" line="44"/>
+        <source>还没有模板。在「设置 → 提示词与指令」里新建，例如「代码审查」＝只读计划 + 首条消息。</source>
+        <translation>还没有模板。在「设置 → 提示词与指令」里新建，例如「代码审查」＝只读计划 + 首条消息。</translation>
+    </message>
+    <message>
+        <location filename="../src/ui/components/SessionTemplateMenu.qml" line="45"/>
+        <source>从会话模板开始</source>
+        <translation>从会话模板开始</translation>
+    </message>
+    <message>
+        <location filename="../src/ui/components/SessionTemplateMenu.qml" line="46"/>
+        <source>按预置的模型配置、权限模式与首条消息新建会话</source>
+        <translation>按预置的模型配置、权限模式与首条消息新建会话</translation>
+    </message>
+    <message>
+        <location filename="../src/ui/components/SessionTemplateMenu.qml" line="47"/>
+        <source>从模板开始</source>
+        <translation>从模板开始</translation>
+    </message>
+    <message>
+        <location filename="../src/ui/components/SessionTemplateMenu.qml" line="48"/>
+        <source>点击新建空白对话；右键或长按从会话模板开始</source>
+        <translation>点击新建空白对话；右键或长按从会话模板开始</translation>
+    </message>
+    <message>
+        <location filename="../src/ui/components/SessionTemplateMenu.qml" line="49"/>
+        <source>三个入口都能用：侧栏「新对话」右缘的箭头、会话标签栏「+」的右键/长按、以及空会话页的「从模板开始」。一键按预置的模型配置、权限模式与首条消息开新会话；首条消息进入输入框待确认，不会自动发送。</source>
+        <translation>三个入口都能用：侧栏「新对话」右缘的箭头、会话标签栏「+」的右键/长按、以及空会话页的「从模板开始」。一键按预置的模型配置、权限模式与首条消息开新会话；首条消息进入输入框待确认，不会自动发送。</translation>
+    </message>
+</context>
+<context>
     <name>SessionTabs</name>
     <message>
         <source>新建会话标签页</source>
@@ -6304,11 +6357,6 @@
         <location filename="../src/ui/pages/PromptAssetsPage.qml" line="393"/>
         <source>新建模板</source>
         <translation>新建模板</translation>
-    </message>
-    <message>
-        <location filename="../src/ui/pages/PromptAssetsPage.qml" line="399"/>
-        <source>侧栏「新会话」旁的模板菜单：一键按预置的模型配置、权限模式与首条消息开新会话。首条消息进入输入框待确认，不会自动发送。</source>
-        <translation>侧栏「新会话」旁的模板菜单：一键按预置的模型配置、权限模式与首条消息开新会话。首条消息进入输入框待确认，不会自动发送。</translation>
     </message>
     <message>
         <location filename="../src/ui/pages/PromptAssetsPage.qml" line="411"/>

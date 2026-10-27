@@ -386,6 +386,17 @@ public:
     // 记得顺序、漏一处就落进当前项目。
     Q_INVOKABLE void newLocalChat();
     Q_INVOKABLE void newProjectChat(const QString& projectId);
+    // 会话模板一键开新会话：{id, name, profileId, permissionMode, firstMessage}。
+    // 应用逻辑只在这里实现一份——侧栏窄条、标签栏「+」、空态入口都调它，
+    // 避免每个入口各自复制那段"顺序敏感"的步骤。
+    //
+    // 顺序是**语义要求**而非风格：
+    //  1. setActiveProfile 必须在 newLocalChat **之前**——addTab 内部的
+    //     configureModel 只在 controller「未选模型且无 sessionId」时取
+    //     m_defaultProfile 的快照，晚一步新标签就落回旧配置；
+    //  2. permissionMode 必须在 newLocalChat **之后**——它写的是活动标签；
+    //  3. firstMessage 进草稿待确认，绝不自动发送（对用户是硬承诺）。
+    Q_INVOKABLE void startFromSessionTemplate(const QVariantMap& tmpl);
     // Closing a running tab stops its task (the agent seals unanswered tool
     // calls); the last remaining tab cannot be closed.
     Q_INVOKABLE void closeTab(int index);

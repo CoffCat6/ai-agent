@@ -415,6 +415,21 @@ add_test(NAME test_prompt_preset_qml
         "QT_QPA_PLATFORM_PLUGIN_PATH=${QT6_INSTALL_PREFIX}/${QT6_INSTALL_PLUGINS}/platforms"
         $<TARGET_FILE:test_prompt_preset_qml> -platform offscreen)
 
+# 会话模板入口：菜单渲染（主题化 Popup）+ 三宿主可达 + startFromSessionTemplate
+# 的顺序语义（profileId 早于建标签、权限落到新标签、首条消息只进草稿）。
+add_executable(test_session_template_qml test_session_template_qml.cpp)
+target_link_libraries(test_session_template_qml PRIVATE
+    nexus_core nexus_infra nexus_viewmodels nexus_viewmodelsplugin
+    Qt6::Test Qt6::Qml Qt6::Quick)
+target_compile_definitions(test_session_template_qml PRIVATE
+    NEXUS_TEST_QML_DIR="${CMAKE_CURRENT_SOURCE_DIR}/qml"
+    NEXUS_BUILD_DIR="${CMAKE_BINARY_DIR}")
+add_dependencies(test_session_template_qml nexus_ai)
+add_test(NAME test_session_template_qml
+    COMMAND ${CMAKE_COMMAND} -E env
+        "QT_QPA_PLATFORM_PLUGIN_PATH=${QT6_INSTALL_PREFIX}/${QT6_INSTALL_PLUGINS}/platforms"
+        $<TARGET_FILE:test_session_template_qml> -platform offscreen)
+
 # G2: '@' completion keyboard/mouse interaction. Real QTest key and click
 # events against the real InputConsole; guards Enter/Tab/Up-Down/click
 # acceptance, which the parser and rendering tests cannot see.

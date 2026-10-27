@@ -86,6 +86,7 @@ ApplicationWindow {
             onAuditRequested: auditDialog.open()
             onLogsRequested: logPanel.open()
             onKnowledgeRequested: knowledgeDialog.open()
+            onSettingsCategoryRequested: (category) => settingsCenterDialog.openCategory(category)
         }
 
         // ── Sidebar / Chat Splitter ────────────────────

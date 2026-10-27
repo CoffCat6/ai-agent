@@ -23,6 +23,9 @@ Rectangle {
     // toast carrying the id (toasts live at the overlay level, and the
     // no-cross-file-id convention routes this through a signal).
     signal sessionDeletedUndoable(string sessionId, string title)
+    // 模板菜单的「管理模板…」：带目标分类打开设置中心（prompts）。
+    // 不能复用 settingsRequested——那个固定开 model 分类。
+    signal settingsCategoryRequested(string category)
 
     color: Theme.bgSecondary
     border.width: 0
@@ -211,9 +214,16 @@ Rectangle {
                 hoverEnabled: true
                 cursorShape: Qt.PointingHandCursor
                 onClicked: {
-                    const top = tmplMA.mapToItem(null, 0, 0).y
-                    templateMenu.popup(tmplMA, -templateMenu.width + 24, top + 38)
+                    templateMenu.openBelow(tmplMA)
                 }
+
+                // 窄条此前没有任何无障碍信息：外层按钮声明的是"新对话"
+                // 且直接新建，读屏用户既发现不了模板菜单、键盘也到不了。
+                // MouseArea 的 Accessible 会被合并进父项的语义树。
+                Accessible.role: Accessible.Button
+                Accessible.name: qsTr("从会话模板开始")
+                Accessible.description: qsTr("按预置的模型配置、权限模式与首条消息新建会话")
+                Accessible.onPressAction: templateMenu.openBelow(tmplMA)
             }
 
             // 主点击区与模板入口的细分隔线
@@ -234,40 +244,12 @@ Rectangle {
                 iconColor: tmplMA.containsMouse ? Theme.brandPrimary : Theme.textSecondary
             }
 
-            Menu {
+            // 会话模板菜单：独立组件（同一定义也给标签栏「+」与空态入口用）。
+            // 此前这里是内联的裸 Menu——main.cpp 强制 Basic 风格，它渲染成
+            // Qt 默认浅灰矩形，与主题不符，且整块锚死在 tmplMA 上。
+            SessionTemplateMenu {
                 id: templateMenu
-                width: 240
-
-                MenuItem {
-                    text: qsTr("空白新对话")
-                    Accessible.name: text
-                    onTriggered: AgentVM.newLocalChat()
-                }
-                MenuSeparator {}
-                Repeater {
-                    model: Settings.sessionTemplates
-                    delegate: MenuItem {
-                        required property var modelData
-                        text: modelData.name
-                        Accessible.name: text
-                        onTriggered: {
-                            // 模型配置走全局 activeProfile（与 ModelSelector
-                            // 同一机制）；权限与首条消息作用于刚激活的新标签。
-                            // 首条消息进输入框待确认，不自动发送。
-                            if (modelData.profileId !== "")
-                                Settings.setActiveProfile(modelData.profileId)
-                            AgentVM.newLocalChat()
-                            if (modelData.permissionMode >= 0)
-                                AgentVM.permissionMode = modelData.permissionMode
-                            AgentVM.draftText = modelData.firstMessage
-                        }
-                    }
-                }
-                MenuItem {
-                    visible: Settings.sessionTemplates.length === 0
-                    enabled: false
-                    text: qsTr("还没有模板")
-                }
+                onManageRequested: root.settingsCategoryRequested("prompts")
             }
 
             Accessible.role: Accessible.Button
