@@ -70,11 +70,17 @@ Item {
     Keys.onSpacePressed: root.toggleMenu()
     Keys.onDownPressed: root.toggleMenu()
 
-    // 测试/自检用：弹出列表在窗口坐标里的几何（渲染回归断言用）。
-    readonly property real popupLeft: presetPopup.mapToItem(null, 0, 0).x
-    readonly property real popupTop: presetPopup.mapToItem(null, 0, 0).y
-    readonly property real popupBottom:
-        presetPopup.mapToItem(null, 0, 0).y + presetPopup.height
+    // 测试/自检用：弹出层在**场景**坐标里的几何（渲染回归断言用）。
+    // Popup 不是 Item，没有 mapToItem；但它的 parent 是 Item，先取 popup
+    // 相对 parent 的 x/y 再交给 parent 映射到场景，语义才等价于"它画在
+    // 屏幕的哪里"。
+    readonly property Item popupSceneParent: presetPopup.parent
+    readonly property point popupScenePos: popupSceneParent
+        ? popupSceneParent.mapToItem(null, presetPopup.x, presetPopup.y)
+        : Qt.point(0, 0)
+    readonly property real popupLeft: popupScenePos.x
+    readonly property real popupTop: popupScenePos.y
+    readonly property real popupBottom: popupScenePos.y + presetPopup.height
     readonly property real popupWidth: presetPopup.width
     function presetRowCount() { return presetRepeater.count }
     // 最矮的一行：两行摘要要求足够行高，否则内容会被裁掉。
