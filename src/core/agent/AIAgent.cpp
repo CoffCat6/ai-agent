@@ -45,6 +45,14 @@ constexpr int kMaxToolResultChars = 6000; // cap fed back to the LLM
 // CodeHighlighter::MaxChars（64k），深度推理长文也可完整展示，且仍保有上界。
 constexpr int kMaxReasoningChars = 64 * 1024;
 constexpr int kStreamFlushMs = 100;       // trace flush throttle while streaming
+// 恢复会话时读入的轨迹节点上限（从最新往回取）。
+//
+// 之前是全量读入：长会话的轨迹可达成千上万节点，整条链路都在 GUI 线程上
+// 同步完成（SQL → QJsonArray → QVariantList → TraceModel 重建 → Repeater
+// 全量实例化 delegate），打开会话就有明显的内存峰值与卡顿。
+// 800 个节点足以覆盖"最近几轮对话 + 正在进行的任务"，更早的历史仍留在库
+// 里，导出走无参的全量接口。超出时界面上会有一条提示，说明被折叠了多少。
+constexpr int kRestoreTraceNodeLimit = 800;
 // An interim assistant answer this long counts as the final result when the
 // model keeps re-issuing an identical tool call instead of stopping.
 constexpr int kMinFinalAnswerChars = 40;
@@ -1132,7 +1140,13 @@ void AIAgent::resumeSession(const QString& sessionId) {
     m_traceModel = QJsonArray();
     m_nextTraceOrder = 0;
     m_lastResponse.clear();
-    const QJsonArray savedNodes = m_memory ? m_memory->loadTraceNodes(sessionId) : QJsonArray();
+    // 只恢复最近一段轨迹（见 kRestoreTraceNodeLimit 的说明）。
+    const QJsonArray savedNodes = m_memory
+        ? m_memory->loadRecentTraceNodes(sessionId, kRestoreTraceNodeLimit)
+        : QJsonArray();
+    // 取回数量正好等于上限 => 很可能还有更早的节点没读。没有单独的计数查询，
+    // 用这个边界判断即可：宁可多提示一次，也不要让用户以为历史丢了。
+    const bool traceTruncated = savedNodes.size() >= kRestoreTraceNodeLimit;
     if (!savedNodes.isEmpty()) {
         m_traceModel = savedNodes;
         for (const auto& entry : std::as_const(savedNodes))
@@ -1172,6 +1186,17 @@ void AIAgent::resumeSession(const QString& sessionId) {
                 m_lastResponse = content;
             }
         }
+    }
+
+    // 轨迹被截断时给出可见说明：否则用户会以为早先的过程"消失了"。
+    // 只影响界面，不影响模型上下文（MEM-701 下轨迹本就只供展示）。
+    if (traceTruncated) {
+        appendTraceNode("context",
+            QStringLiteral("Only the most recent %1 trace steps were loaded to "
+                           "keep this session responsive; earlier steps stay in "
+                           "the database and are included in exports.")
+                .arg(kRestoreTraceNodeLimit),
+            "completed");
     }
 
     m_iteration = 0;

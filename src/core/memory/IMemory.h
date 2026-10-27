@@ -238,6 +238,15 @@ public:
         Q_UNUSED(sessionId);
         return {};
     }
+    // 最近 limit 个节点（按 order 升序返回，即时间顺序），limit <= 0 = 全部。
+    // 恢复会话只要最近一段：长会话的完整轨迹可达数万节点，全量读入会在 GUI
+    // 线程上同步完成 SQL → QJsonArray → QVariantList → QML delegate 全量实例化，
+    // 表现为"打开会话内存暴涨 + 明显卡顿"。导出等确实需要全量数据的路径继续
+    // 用上面的无参版本。
+    virtual QJsonArray loadRecentTraceNodes(const QString& sessionId, int limit) {
+        Q_UNUSED(limit);
+        return loadTraceNodes(sessionId);
+    }
 
     // docs/17 A0: 项目级会话（optional capability; default no-ops）。
     // 项目 = 导入的文件夹；删除项目时会话保留（project_id 置 NULL）。

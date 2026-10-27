@@ -160,6 +160,8 @@ private slots:
     // docs/17 P2: project rename (display name only)
     void projectRename();
     void traceNodeRoundTrip();
+    // P1：恢复会话只读最近一段轨迹，且必须取"最新"而不是"最旧"。
+    void loadRecentTraceNodesTakesNewestWindow();
     // Batch 6: knowledge persistence v2
     void knowledgeSchemaV1Migrates();
     void knowledgeChunkPersistence();
@@ -828,6 +830,49 @@ void TestMemory::episodicFullTextSearch() {
 
 // Trace nodes: upsert semantics (position fixed on first insert, content
 // refreshes afterwards) and per-session cleanup.
+// P1：loadRecentTraceNodes 必须返回**最近** limit 个节点，且按时间升序。
+// 回归点：用 "ASC LIMIT ?" 会取到最旧的一段，用户打开长会话反而看不到
+// 最近的进展。
+void TestMemory::loadRecentTraceNodesTakesNewestWindow() {
+    SqliteMemory mem(QStringLiteral(":memory:"));
+    mem.beginSession(QStringLiteral("s1"), QStringLiteral("Recent"));
+
+    constexpr int kTotal = 50;
+    for (int i = 0; i < kTotal; ++i) {
+        QJsonObject node;
+        node["id"] = QStringLiteral("n%1").arg(i);
+        node["type"] = QStringLiteral("tool_result");
+        node["title"] = QStringLiteral("step %1").arg(i);
+        node["status"] = QStringLiteral("success");
+        node["args"] = QString();
+        node["result"] = QStringLiteral("payload %1").arg(i);
+        node["timestamp"] = 1000.0 + i;
+        mem.saveTraceNode(QStringLiteral("s1"), node, i);
+    }
+
+    // 无参版本保持"全量"，导出依赖它。
+    QCOMPARE(mem.loadTraceNodes(QStringLiteral("s1")).size(), kTotal);
+
+    // limit <= 0 = 全部
+    QCOMPARE(mem.loadRecentTraceNodes(QStringLiteral("s1"), 0).size(), kTotal);
+    QCOMPARE(mem.loadRecentTraceNodes(QStringLiteral("s1"), -1).size(), kTotal);
+
+    // 取最近 10 个：内容是 n40..n49，且升序
+    const QJsonArray recent = mem.loadRecentTraceNodes(QStringLiteral("s1"), 10);
+    QCOMPARE(recent.size(), 10);
+    QCOMPARE(recent.first().toObject().value("id").toString(), QStringLiteral("n40"));
+    QCOMPARE(recent.last().toObject().value("id").toString(), QStringLiteral("n49"));
+    for (int i = 0; i < recent.size(); ++i) {
+        QCOMPARE(recent.at(i).toObject().value("order").toInt(), 40 + i);
+    }
+
+    // limit 大于总数时返回全部，不报错
+    QCOMPARE(mem.loadRecentTraceNodes(QStringLiteral("s1"), kTotal * 2).size(), kTotal);
+
+    // 不存在的会话返回空
+    QVERIFY(mem.loadRecentTraceNodes(QStringLiteral("nope"), 10).isEmpty());
+}
+
 void TestMemory::traceNodeRoundTrip() {
     SqliteMemory mem(QStringLiteral(":memory:"));
     // docs/23 G7: a real session row exists in production, and the purge

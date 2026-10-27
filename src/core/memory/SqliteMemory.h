@@ -174,6 +174,7 @@ public:
     // Trace view persistence (IMemory optional capability)
     void saveTraceNode(const QString& sessionId, const QJsonObject& node, int order) override;
     QJsonArray loadTraceNodes(const QString& sessionId) override;
+    QJsonArray loadRecentTraceNodes(const QString& sessionId, int limit) override;
 
 #ifdef NEXUSAI_TESTING
     // Test-only: direct access for constructing deterministic fixtures

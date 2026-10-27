@@ -603,6 +603,8 @@ private slots:
     // 反复重读同一批路径，任务跑不完）。
     void currentTurnToolRoundsSurvive();
     void traceRestoredOnResume();
+    // P1：长会话恢复只读最近一段轨迹，并给出可见提示（否则像历史丢了）。
+    void resumeLoadsOnlyRecentTraceNodes();
     // F1: todo list lifetime is per session/tab, never carried across resets.
     void todoListClearedOnSessionResetAndResume();
     // F1: the todo list is persisted per session — reopening the SAME session
@@ -1950,6 +1952,50 @@ void TestAgent::currentTurnToolRoundsSurvive() {
     }
     QCOMPARE(toolMsgs, kRounds);
     QVERIFY2(noDanglingToolCalls(last), "保留全部工具轮次后配对仍须合法");
+}
+
+// P1：恢复会话读入的轨迹有上限（从最新往回取），超出时插一条说明节点。
+//
+// 回归点：此前 loadTraceNodes 无 LIMIT，长会话一次性把成千上万节点读进
+// 内存，整条链路（SQL → QJsonArray → QVariantList → Repeater 全量实例化）
+// 都在 GUI 线程同步完成，打开会话即出现内存峰值与卡顿。
+void TestAgent::resumeLoadsOnlyRecentTraceNodes() {
+    SqliteMemory memory(QStringLiteral(":memory:"));
+    agent.setMemory(&memory);
+
+    const QString sessionId = QStringLiteral("long-session");
+    memory.beginSession(sessionId, QStringLiteral("Long"));
+
+    // 直接灌入超过上限的节点（模拟长期使用的会话）。
+    constexpr int kNodes = 900;
+    for (int i = 0; i < kNodes; ++i) {
+        QJsonObject node;
+        node["id"] = QStringLiteral("n%1").arg(i);
+        node["type"] = QStringLiteral("tool_result");
+        node["title"] = QStringLiteral("step-%1").arg(i);
+        node["status"] = QStringLiteral("success");
+        node["result"] = QStringLiteral("payload");
+        node["timestamp"] = 1000.0 + i;
+        memory.saveTraceNode(sessionId, node, i);
+    }
+
+    agent.resumeSession(sessionId);
+    const QJsonArray restored = agent.traceModel();
+
+    // 1) 不是全量：900 个原始节点里只取最近一段（+1 条截断说明）。
+    QVERIFY2(restored.size() < kNodes,
+             "恢复时仍然读入了全部轨迹节点");
+    QVERIFY2(restored.size() <= 801,
+             "恢复的节点数超出上限太多");
+
+    // 2) 取的是**最近**的一段，最早的那个节点必须已经不在。
+    QVERIFY(!traceHas(restored, "tool_result", "step-0"));
+
+    // 3) 必须给用户可见说明，而不是让历史"悄悄消失"。
+    QVERIFY2(traceHas(restored, "context", "most recent"),
+             "轨迹被截断却没有向用户说明");
+
+    agent.setMemory(nullptr);
 }
 
 void TestAgent::traceRestoredOnResume() {

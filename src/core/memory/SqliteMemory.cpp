@@ -2722,6 +2722,32 @@ QJsonArray SqliteMemory::loadTraceNodes(const QString& sessionId) {
     return nodes;
 }
 
+// 只取最近 limit 个节点（返回时仍按时间升序）。
+//
+// 内层 DESC 取最新窗口，外层 ASC 还原对话顺序——与 loadMessages 同一套
+// 写法。直接用 "ASC LIMIT ?" 会取到**最旧**的一段，反而丢掉用户最关心的
+// 最近进展。limit <= 0 视为"全部"，保持调用方无需分支。
+QJsonArray SqliteMemory::loadRecentTraceNodes(const QString& sessionId, int limit) {
+    if (limit <= 0) return loadTraceNodes(sessionId);
+
+    QSqlQuery query(m_db);
+    query.prepare(QStringLiteral("SELECT * FROM (") + kTraceNodeColumns +
+                  QStringLiteral("WHERE session_id = ? "
+                                 "ORDER BY node_order DESC LIMIT ?"
+                                 ") ORDER BY node_order ASC"));
+    query.addBindValue(sessionId);
+    query.addBindValue(limit);
+
+    QJsonArray nodes;
+    if (query.exec()) {
+        while (query.next())
+            nodes.append(traceNodeFromRow(query));
+    } else {
+        qWarning() << "Failed to load recent trace nodes:" << query.lastError().text();
+    }
+    return nodes;
+}
+
 // ── Usage trail ─────────────────────────────────────────
 
 void SqliteMemory::addUsageEvent(const QString& category, const QString& action,
