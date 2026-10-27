@@ -5897,18 +5897,6 @@ select a file to view its content diff on the right.</translation>
     </message>
 </context>
 <context>
-    <name>SessionTabs</name>
-    <message>
-        <source>新建会话标签页</source>
-        <translation type="vanished">New session tab</translation>
-    </message>
-    <message>
-        <location filename="../src/ui/components/SessionTabs.qml" line="120"/>
-        <source>新建对话标签页</source>
-        <translation>New chat tab</translation>
-    </message>
-</context>
-<context>
     <name>SettingsBackupPage</name>
     <message>
         <location filename="../src/ui/pages/SettingsBackupPage.qml" line="11"/>
@@ -6708,6 +6696,14 @@ select a file to view its content diff on the right.</translation>
 </context>
 <context>
     <name>Sidebar</name>
+    <message>
+        <source>结束对话</source>
+        <translation>End conversation</translation>
+    </message>
+    <message>
+        <source>关闭这条对话的视图，历史仍保留</source>
+        <translation>Close this conversation's view; history is kept</translation>
+    </message>
     <message>
         <location filename="../src/ui/components/Sidebar.qml" line="784"/>
         <location filename="../src/ui/components/Sidebar.qml" line="916"/>

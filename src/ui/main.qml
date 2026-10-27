@@ -69,6 +69,7 @@ ApplicationWindow {
         // leftSplitter and persisted across runs.
         Sidebar {
             id: sidebarPanel
+            objectName: "sidebarPanel"
             Layout.preferredWidth: AgentVM.isSidebarExpanded ? AgentVM.sidebarWidth : 0
             Layout.fillHeight: true
             // Stay visible through the whole collapse animation; RowLayout
@@ -436,6 +437,23 @@ ApplicationWindow {
     Shortcut {
         sequence: "Ctrl+["
         onActivated: AgentVM.toggleSidebar()
+    }
+
+    // docs/30：标签栏删除后，切会话与结束会话不再是鼠标专属动作。
+    // Ctrl+W 与编辑器/浏览器的"关掉当前"一致；Ctrl+Tab 在打开集合内循环。
+    Shortcut {
+        sequence: "Ctrl+W"
+        onActivated: AgentVM.closeActiveConversation()
+    }
+
+    Shortcut {
+        sequences: ["Ctrl+Tab"]
+        onActivated: AgentVM.cycleConversation(1)
+    }
+
+    Shortcut {
+        sequences: ["Ctrl+Shift+Tab"]
+        onActivated: AgentVM.cycleConversation(-1)
     }
 
     Shortcut {

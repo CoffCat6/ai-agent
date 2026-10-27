@@ -24,6 +24,7 @@
 #include "viewmodels/AgentViewModel.h"
 #include "viewmodels/GitViewModel.h"
 #include "viewmodels/ThemeProvider.h"
+#include "viewmodels/SettingsService.h"
 
 using namespace NexusAI;
 
@@ -252,6 +253,75 @@ private slots:
     }
 
 
+
+
+    // docs/30 §4.2：后台会话跑完 → 侧栏置"完成未读"点，切回去即清。
+    // 这是 VM 里唯一无法自证的状态转移（需要真实的任务 Busy→Idle 边沿），
+    // 所以放在有 RecordingService 的集成套件里跑。会话必须真的进数据库，
+    // 否则 sessionList() 为空、侧栏根本没有这一行可标。
+    void backgroundCompletionMarksConversationUnread() {
+        SqliteMemory memory(QStringLiteral(":memory:"));
+        RecordingService firstService;
+        AIAgent first;
+        first.setMemory(&memory);
+        first.setLLMService(&firstService);
+        RecordingService* secondService = nullptr;
+        vm->setAgentFactory([&]() {
+            auto* agent = new AIAgent;
+            agent->setMemory(&memory);
+            secondService = new RecordingService(agent);
+            agent->setLLMService(secondService);
+            return agent;
+        });
+        vm->setMemory(&memory);
+        vm->setAgent(&first);
+
+        auto entryOf = [this](const QString& id) {
+            for (const QVariant& e : vm->sessionList())
+                if (e.toMap().value("id").toString() == id) return e.toMap();
+            return QVariantMap{};
+        };
+
+        // 前台会话 A：发起任务后它就 busy 且 active。
+        QVERIFY(vm->startTask("foreground question"));
+        const QString sessionA = first.currentSessionId();
+        QVERIFY(!sessionA.isEmpty());
+        QCOMPARE(entryOf(sessionA).value("active").toBool(), true);
+        QCOMPARE(entryOf(sessionA).value("busy").toBool(), true);
+
+        // A 还在忙 → 打开空白对话只能新开一个 controller（引擎约束），
+        // 于是 A 变成后台会话。
+        const int tabsBefore = vm->tabModel().size();
+        vm->newLocalChat();
+        QCOMPARE(vm->tabModel().size(), tabsBefore + 1);
+        QCOMPARE(entryOf(sessionA).value("active").toBool(), false);
+        QCOMPARE(entryOf(sessionA).value("busy").toBool(), true);
+        QCOMPARE(entryOf(sessionA).value("open").toBool(), true);
+
+        // 前台（活动）会话跑完 → **不**置未读：用户正看着它。
+        QVERIFY(vm->startTask("foreground question 2"));
+        const QString sessionB = vm->currentSessionId();
+        QVERIFY(!sessionB.isEmpty());
+        QVERIFY(sessionB != sessionA);
+        secondService->answer("answer for the foreground session");
+        QVERIFY(!entryOf(sessionB).value("unread").toBool());
+
+        // 后台会话 A 跑完 → 置未读（这是气泡通知之外的第二重可见性）。
+        firstService.answer("answer for the background session");
+        QCOMPARE(entryOf(sessionA).value("busy").toBool(), false);
+        QCOMPARE(entryOf(sessionA).value("unread").toBool(), true);
+
+        // 点回 A → 未读立刻清掉，并且它重新成为活动会话。
+        vm->openConversation(sessionA);
+        QCOMPARE(vm->currentSessionId(), sessionA);
+        QCOMPARE(entryOf(sessionA).value("unread").toBool(), false);
+        QCOMPARE(entryOf(sessionA).value("active").toBool(), true);
+
+        vm->setAgent(nullptr);
+        vm->setMemory(nullptr);
+        first.setMemory(nullptr);
+    }
+
     void simultaneousApprovalsRouteByRequestAndExpireOnStop() {
         RecordingService firstService;
         AIAgent first;
@@ -412,6 +482,158 @@ private slots:
             QVERIFY2(button->isVisible(), qPrintable(name + " not visible"));
             QVERIFY2(button->width() > 20, qPrintable(name + " too narrow"));
         }
+    }
+
+
+    // docs/30 P1：单对话视图的呈现回归。
+    // 这个用例锁的是"界面形态"本身——标签栏必须消失、侧栏必须能表达三种
+    // 运行状态、顶栏必须补上会话标题与模板入口。它们都是纯 QML 契约，
+    // 数据面语义由 test_viewmodel 的 openConversation 那一组覆盖。
+    void singleConversationViewChrome() {
+        QQmlApplicationEngine engine;
+        engine.rootContext()->setContextProperty("Theme", ThemeProvider::instance());
+        engine.load(QUrl("qrc:/qt/qml/NexusAI/src/ui/main.qml"));
+        QVERIFY(!engine.rootObjects().isEmpty());
+        auto* window = qobject_cast<QQuickWindow*>(engine.rootObjects().first());
+        QVERIFY(window);
+        window->resize(1200, 800);
+        QTest::qWait(200);
+
+        // 侧栏的会话行来自数据库；空库没有行，状态槽也就无从装配。
+        // 预置会话并打开它，让侧栏与顶栏都处于真实形态。
+        // 侧栏行与 resumeSession 都依赖一个挂了记忆后端的 agent；cleanup()
+        // 会 detach，所以这里显式挂一个（不配 LLM：本用例不跑任务）。
+        SqliteMemory memory(QStringLiteral(":memory:"));
+        memory.beginSession(QStringLiteral("p1-chrome-a"), QStringLiteral("会话 A"));
+        memory.beginSession(QStringLiteral("p1-chrome-b"), QStringLiteral("会话 B"));
+        AIAgent chromeAgent;
+        chromeAgent.setMemory(&memory);
+        vm->setMemory(&memory);
+        vm->setAgent(&chromeAgent);
+        vm->openConversation(QStringLiteral("p1-chrome-a"));
+        QTest::qWait(100);
+        QCOMPARE(vm->currentSessionId(), QStringLiteral("p1-chrome-a"));
+
+        // 1. 标签栏已经整套移除（组件删除 + QML_FILES 移除）。
+        QVERIFY2(window->findChild<QQuickItem*>(QStringLiteral("sessionTabs")) == nullptr,
+                 "SessionTabs must be gone");
+        QVERIFY(vm->tabModel().size() >= 1);   // 引擎仍保留多 controller 能力
+
+        // 2. 顶栏补上了唯一常显的会话标题（标签栏删除后的替代品）。
+        auto* title = window->findChild<QQuickItem*>(
+            QStringLiteral("topBarSessionTitle"));
+        QVERIFY2(title, "top bar is missing the current-session title");
+        QVERIFY(title->isVisible());
+        QVERIFY(title->width() > 40);
+
+        // 3. 顶栏的模板入口：没有模板时隐藏（不留一个永远空着的按钮）。
+        auto* templateEntry = window->findChild<QQuickItem*>(
+            QStringLiteral("topBarTemplateEntry"));
+        QVERIFY2(templateEntry, "top bar is missing the session-template entry");
+        QCOMPARE(templateEntry->isVisible(), SettingsService::instance()->sessionTemplates().size() > 0);
+
+        // 4. 侧栏每一行都有状态槽（docs/30 §4.2 的三态位）。
+        //    注意不能用 window->findChildren 找 delegate 内部的项：它们虽然带
+        //    objectName，却不是 window 的 QObject 后代遍历能覆盖的路径。
+        //    沿场景图（ScrollView → ColumnLayout → Repeater 实例）显式收集。
+        QTest::qWait(300);
+        QList<QQuickItem*> stateSlots;
+        {
+            auto* sbItem = window->findChild<QQuickItem*>(QStringLiteral("sidebarPanel"));
+            QVERIFY(sbItem);
+            auto* scroll = sbItem->findChild<QQuickItem*>("sidebarTreeScroll");
+            QVERIFY(scroll);
+            auto* col = scroll->findChild<QQuickItem*>();
+            QVERIFY(col);
+            for (auto* group : col->childItems())
+                for (auto* row : group->childItems())
+                    if (QString::fromLatin1(row->metaObject()->className())
+                            .startsWith(QLatin1String("ItemDelegate")))
+                        for (auto* it : row->findChildren<QQuickItem*>())
+                            if (it->objectName() == QLatin1String("sessionStateSlot"))
+                                stateSlots.append(it);
+        }
+        QVERIFY2(!stateSlots.isEmpty(), "sidebar session rows have no state slot");
+
+        // 每个槽里三态控件都在（busy 转圈 / 等待确认 / 未读点），可见性由
+        // 模型驱动，这里只要求结构完备——否则模型一变就没有可显示的控件。
+        int busyIcons = 0, awaitingIcons = 0, unreadDots = 0;
+        for (auto* slot : stateSlots) {
+            for (auto* child : slot->findChildren<QQuickItem*>()) {
+                const QString name = child->objectName();
+                if (name == QLatin1String("sessionBusyIcon")) ++busyIcons;
+                else if (name == QLatin1String("sessionAwaitingIcon")) ++awaitingIcons;
+                else if (name == QLatin1String("sessionUnreadDot")) ++unreadDots;
+            }
+        }
+        QCOMPARE(busyIcons, stateSlots.size());
+        QCOMPARE(awaitingIcons, stateSlots.size());
+        QCOMPARE(unreadDots, stateSlots.size());
+
+        // 5. 状态槽在所有行里宽度固定——busy 开始/结束时标题不该左右跳。
+        for (auto* slot : stateSlots) QCOMPARE(slot->width(), 14.0);
+    }
+
+    // docs/30 §5-3：折叠状态按会话分桶。两条会话的第 N 行折叠 key
+    // （type:index:内容前缀）会撞车，共用字典会让 B 会话继承 A 的折叠态。
+    void transcriptDetailStateIsPerConversation() {
+        QQmlApplicationEngine engine;
+        engine.rootContext()->setContextProperty("Theme", ThemeProvider::instance());
+        engine.load(QUrl("qrc:/qt/qml/NexusAI/src/ui/main.qml"));
+        QVERIFY(!engine.rootObjects().isEmpty());
+        auto* window = qobject_cast<QQuickWindow*>(engine.rootObjects().first());
+        QVERIFY(window);
+        QTest::qWait(150);
+
+        SqliteMemory memory(QStringLiteral(":memory:"));
+        memory.beginSession(QStringLiteral("p1-fold-a"), QStringLiteral("会话 A"));
+        memory.beginSession(QStringLiteral("p1-fold-b"), QStringLiteral("会话 B"));
+        AIAgent foldAgent;
+        foldAgent.setMemory(&memory);
+        vm->setMemory(&memory);
+        vm->setAgent(&foldAgent);
+        vm->openConversation(QStringLiteral("p1-fold-a"));
+
+        // TranscriptViewport 是本用例的探针：它持有 detailStateBySession。
+        const auto viewports = window->findChildren<QQuickItem*>();
+        QObject* transcript = nullptr;
+        for (auto* item : viewports) {
+            if (item->metaObject()->indexOfProperty("detailStateBySession") >= 0) {
+                transcript = item;
+                break;
+            }
+        }
+        QVERIFY2(transcript, "transcript viewport is missing detailStateBySession");
+
+        auto call = [transcript](const char* fn, const QVariantList& args) {
+            QVariant ret;
+            QMetaObject::invokeMethod(transcript, fn, Q_RETURN_ARG(QVariant, ret),
+                                      Q_ARG(QVariant, args.value(0)),
+                                      Q_ARG(QVariant, args.value(1)));
+            return ret;
+        };
+
+        // 会话 A：折叠 key "k"。
+        const QString sessionA = vm->currentSessionId();
+        QCOMPARE(sessionA, QStringLiteral("p1-fold-a"));
+        call("toggleDetail", {QStringLiteral("k"), true});
+        QVERIFY(call("detailExpanded", {QStringLiteral("k"), true}).toBool() == false);
+
+        // 切到 B：同一个 key 不受 A 影响。
+        vm->openConversation(QStringLiteral("p1-fold-b"));
+        QTest::qWait(80);
+        QCOMPARE(vm->currentSessionId(), QStringLiteral("p1-fold-b"));
+        QVERIFY2(call("detailExpanded", {QStringLiteral("k"), true}).toBool() == true,
+                 "fold state leaked across conversations");
+
+        // 切回 A：A 的折叠态还在。
+        vm->openConversation(QStringLiteral("p1-fold-a"));
+        QTest::qWait(80);
+        QCOMPARE(vm->currentSessionId(), sessionA);
+        QVERIFY(call("detailExpanded", {QStringLiteral("k"), true}).toBool() == false);
+
+        vm->setAgent(nullptr);
+        vm->setMemory(nullptr);
     }
 
     void freshWindowShowsNoProjectHintInRightPanel() {

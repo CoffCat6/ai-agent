@@ -282,6 +282,8 @@ ChatSessionController* AgentViewModel::ensureTab() {
         // docs/20 §4.1（D10）：Busy → 非 Busy 边沿 = 一次任务结束。任意 tab
         // 都发（后台任务完成也要通知），标题走 tabModel 的同一解析逻辑。
         const bool busy = controller->isBusy();
+        // hasDraft 也是一条"能不能淘汰"的运行时键，它随草稿变化，所以
+        // 状态一变就让侧栏重算（下面的 sessionListChanged 统一负责）。
         if (m_prevBusy.contains(controller) && m_prevBusy.value(controller) && !busy) {
             QString title;
             for (const auto& entry : m_sessionList) {
@@ -292,12 +294,24 @@ ChatSessionController* AgentViewModel::ensureTab() {
                 }
             }
             if (title.isEmpty()) title = tr("新会话");
+            // docs/30：后台会话跑完 → 侧栏置"完成未读"点。活动会话不置：
+            // 用户人就在那儿看着，再点个点只是噪音。置于 taskFinished 之后
+            // 是为了让气泡通知与未读点在同一次事件里落地。
+            const QString finishedSession = controller->currentSessionId();
+            if (controller != active() && !finishedSession.isEmpty()) {
+                m_unreadSessions.insert(finishedSession);
+                emit sessionListChanged();
+            }
             emit taskFinished(title,
                 controller->state() == AgentState::Completed);
         }
         m_prevBusy[controller] = busy;
         if (controller == active()) emit stateChanged();
-        emit tabsChanged();   // tab busy indicator
+        // 侧栏的 busy/hasDraft 点读的是 sessionList 的运行时键，因此这里
+        // 两个信号都要发：tabsChanged 给标签栏（过渡期仍在），
+        // sessionListChanged 让侧栏重算那几行。
+        emit tabsChanged();
+        emit sessionListChanged();
     });
     connect(controller, &ChatSessionController::traceChanged, this, [this, controller] {
         if (controller == active()) emit traceChanged();
@@ -307,9 +321,12 @@ ChatSessionController* AgentViewModel::ensureTab() {
     });
     connect(controller, &ChatSessionController::draftTextChanged, this, [this, controller] {
         if (controller == active()) emit draftTextChanged();
+        // hasDraft 决定"这条会话能不能被淘汰"，随草稿变化，侧栏要重算。
+        emit sessionListChanged();
     });
     connect(controller, &ChatSessionController::draftAttachmentsChanged, this, [this, controller] {
         if (controller == active()) emit draftAttachmentsChanged();
+        emit sessionListChanged();
     });
     connect(controller, &ChatSessionController::tokenUsageChanged, this, [this, controller] {
         if (controller == active()) emit tokenUsageChanged();
@@ -326,7 +343,10 @@ ChatSessionController* AgentViewModel::ensureTab() {
     });
     connect(controller, &ChatSessionController::currentSessionIdChanged, this, [this, controller] {
         if (controller == active()) emit currentSessionIdChanged();
-        emit tabsChanged();   // tab title follows the session
+        // 会话 id 变了 → 侧栏该行的 open/active/busy 键要重算（旧 id 的行
+        // 回到"只在历史里"，新 id 的行点亮），所以两个信号都发。
+        emit tabsChanged();
+        emit sessionListChanged();
     });
     connect(controller, &ChatSessionController::permissionModeChanged, this, [this, controller] {
         if (controller == active()) emit permissionModeChanged();
@@ -392,6 +412,9 @@ ChatSessionController* AgentViewModel::ensureTab() {
     }
 
     emit tabsChanged();
+    // 新 controller 目前是空壳（无会话 id），侧栏不会为它画行；但它改变了
+    // 打开集合的大小，超上限淘汰的时机依赖于此，保持通知一致。
+    emit sessionListChanged();
     return controller;
 }
 
@@ -423,6 +446,10 @@ void AgentViewModel::closeAllTabs() {
     }
     m_tabs.clear();
     m_activeTab = -1;
+    // docs/30：controller 全没了，打开集合/未读/LRU 的键一并清空，否则
+    // 恢复完数据库后 sessionList() 会给已不存在的会话算出 open=true。
+    m_sessionLru.clear();
+    m_unreadSessions.clear();
 }
 
 // docs/17/18: 新建会话的默认归属 = 普通对话（本地）。项目会话只能由
@@ -487,10 +514,16 @@ void AgentViewModel::activateTab(int index) {
     refreshUnreviewedFileCount(true);
     emit activeTabChanged();
     emit tabsChanged();
+    // docs/30：activity 变了 → 侧栏要重算 active 高亮与未读点（切换即算看过）。
+    // 直接清表再发信号，不走 clearConversationUnread()——那会多发一次同样的
+    // 通知。原地清是为了让标签栏「切换即已读」与侧栏点击语义一致。
+    m_unreadSessions.remove(active()->currentSessionId());
+    emit sessionListChanged();
     // 沙箱镜像随活动标签走；派生值确实变了才通知。
     syncSandboxMirror();
     if (projectBefore != activeProjectId())
         emit activeProjectIdChanged();
+    touchSessionLru(active()->currentSessionId());
 }
 
 void AgentViewModel::closeTab(int index) {
@@ -498,6 +531,11 @@ void AgentViewModel::closeTab(int index) {
     ChatSessionController* controller = m_tabs.at(index);
     // Stop first: a running task gets aborted and its unanswered tool calls
     // sealed by the agent, so nothing keeps writing after the tab is gone.
+    // docs/30：它的 LRU 位置与未读点同时清掉——controller 都没了，留着这两
+    // 项只会让 evictIdleConversation 反复撞到陈旧条目。
+    const QString closedSession = controller->currentSessionId();
+    m_sessionLru.removeAll(closedSession);
+    m_unreadSessions.remove(closedSession);
     controller->stop();
     m_tabs.removeAt(index);
     controller->deleteLater();
@@ -524,6 +562,9 @@ void AgentViewModel::closeTab(int index) {
     refreshUnreviewedFileCount(true);
     emit activeTabChanged();
     emit tabsChanged();
+    // 关掉一条会话后，活动会话可能整体变了 —— 侧栏的 open/active/busy 键
+    // 必须重算（closeTab 不走 activateTab，不会替我们发这个信号）。
+    emit sessionListChanged();
     refreshSessions();
 }
 
@@ -552,6 +593,228 @@ QVariantList AgentViewModel::tabModel() const {
         model.append(tab);
     }
     return model;
+}
+
+// ── 单对话视图（docs/30）─────────────────────────────────
+// 标签栏停用后侧栏成为唯一入口，会话的"打开/切换/结束"语义收在下面三个
+// 函数里。设计上的三条硬约束：
+//  1. 切换绝不能打断正在跑的任务（activateTab 本身不碰 agent）；
+//  2. 忙的 controller 不能换会话（AIAgent::resumeSession 在 m_active 时
+//     直接返回，ChatSessionController::loadSession 也有 isBusy 守卫），
+//     所以后台有任务时打开另一条会话必然多开一个 controller；
+//  3. 打开集合有上界，且只淘汰空闲无草稿的 controller（docs/30 §4.4）。
+
+ChatSessionController* AgentViewModel::controllerForSession(const QString& sessionId) const {
+    if (sessionId.isEmpty()) return nullptr;
+    for (ChatSessionController* controller : m_tabs) {
+        if (controller->currentSessionId() == sessionId) return controller;
+    }
+    return nullptr;
+}
+
+// "不能动"的判据：busy 中断会丢任务，有草稿淘汰会丢用户输入。两者都出现过
+// 在 docs/30 §4.4 的淘汰规则里，集中在这里免得两处判断漂移。
+bool AgentViewModel::conversationPinned(ChatSessionController* controller) {
+    if (!controller) return false;
+    if (controller->isBusy()) return true;
+    return !controller->draftText().trimmed().isEmpty()
+        || !controller->draftAttachments().isEmpty();
+}
+
+void AgentViewModel::touchSessionLru(const QString& sessionId) {
+    if (sessionId.isEmpty()) return;
+    m_sessionLru.removeAll(sessionId);
+    m_sessionLru.append(sessionId);
+}
+
+// 淘汰一条最久未用的**空闲无草稿**会话。成功时刷新会话列表（open/busy 变了）
+// 并返回 true；打开集合里全是 busy/有草稿时返回 false，由调用方提示用户。
+bool AgentViewModel::evictIdleConversation() {
+    // LRU 只记"承载了会话"的 controller；空白对话（还没发过消息）不在里面，
+    // 但它同样占一条连接，所以两条路径都要扫。
+    for (int i = 0; i < m_sessionLru.size(); ++i) {
+        const QString candidate = m_sessionLru.at(i);
+        ChatSessionController* controller = controllerForSession(candidate);
+        if (!controller) {
+            m_sessionLru.removeAt(i);   // 陈旧项（会话已被关闭/删除）
+            --i;
+            continue;
+        }
+        if (controller == active()) continue;   // 正在看的永远不淘汰
+        if (conversationPinned(controller)) continue;
+        // 释放但**不删数据**：会话仍在数据库/侧栏历史里，点它可重新打开。
+        closeConversation(candidate);
+        return true;
+    }
+    // 其次是最久未用的空白对话：它没有会话可"释放视图"，直接关标签。
+    for (int i = 0; i < m_tabs.size(); ++i) {
+        ChatSessionController* controller = m_tabs.at(i);
+        if (controller == active()) continue;
+        if (!controller->currentSessionId().isEmpty()) continue;
+        if (conversationPinned(controller)) continue;
+        closeTab(i);
+        return true;
+    }
+    return false;
+}
+
+void AgentViewModel::openConversation(const QString& sessionId) {
+    if (sessionId.isEmpty()) return;
+
+    // 1. 已经有 controller 承载它 —— 激活即可。后台 busy 的会话由此切回来，
+    //    activateTab 不碰 agent，任务继续跑（回归：切走不中断）。
+    if (ChatSessionController* existing = controllerForSession(sessionId)) {
+        for (int i = 0; i < m_tabs.size(); ++i) {
+            if (m_tabs.at(i) != existing) continue;
+            if (i != m_activeTab) activateTab(i);
+            break;
+        }
+        clearConversationUnread(sessionId);
+        touchSessionLru(sessionId);
+        return;
+    }
+
+    // 2. 没有承载者：先看能不能就地复用。
+    //
+    // 空闲时就地换内容是单窗口模型**正确**的做法，不是优化：每个 controller
+    // 都背一条独立 SQLite 连接（main.cpp 的工厂给每个 tab agent 一个
+    // setOwnedMemory），新建还会恢复最多 800 条 trace 节点。若"空闲时点一条
+    // 会话"也新建，浏览历史就会稳定把连接数堆到上限然后开始淘汰——用户翻九条
+    // 旧会话就撞上"打开的对话过多"，不可接受。
+    // 只有活动 controller 忙（不能换会话，见 §1 的引擎约束）时才不得不新开。
+    // 另一个不能就地复用的情形是**活动会话里存着草稿**：草稿属于那条会话，
+    // 就地换内容会把草稿带到另一条会话上（用户切回来会看到串台的输入）。
+    // 这时保留原 controller（它已被 conversationPinned 钉住，不会被淘汰），
+    // 另起一个承载目标会话。
+    ChatSessionController* target = active();
+    if (target && (!target->isBusy()
+                   && target->draftText().trimmed().isEmpty()
+                   && target->draftAttachments().isEmpty())) {
+        // 就地换内容。
+    } else {
+        target = nullptr;
+        // 先看有没有空闲的空壳 controller 可接，再考虑新建。
+        for (ChatSessionController* controller : m_tabs) {
+            if (controller == active() || conversationPinned(controller)) continue;
+            if (controller->currentSessionId().isEmpty()) {
+                target = controller;
+                break;
+            }
+        }
+    }
+
+    if (!target) {
+        // 新建之前先守住上限：已经开满且无可淘汰对象时明确拒绝，不静默失败。
+        if (m_tabs.size() >= kMaxOpenConversations && !evictIdleConversation()) {
+            emit noticeOccurred(tr("打开的对话过多，请先结束其中一些再打开新的。"));
+            return;
+        }
+        target = addTab(QString());
+    }
+
+    // 3. 归属与会话同步：按目标会话的归属改过去再加载，避免刚打开的一瞬间
+    //    徽标/沙箱指向旧值（与 loadSession 的同一顺序）。
+    QString project;
+    for (const QVariant& entry : std::as_const(m_sessionList)) {
+        const QVariantMap s = entry.toMap();
+        if (s.value("id").toString() == sessionId) {
+            project = s.value("projectId").toString();
+            break;
+        }
+    }
+    if (target->agent()) applyProjectTo(target->agent(), project);
+    target->loadSession(sessionId);
+    clearConversationUnread(sessionId);
+    touchSessionLru(sessionId);
+    // 归属变了要通知（派生属性 projectBadge / '@' 补全都读它）。
+    emit activeProjectIdChanged();
+    emit currentSessionIdChanged();
+    emit tabsChanged();
+    emit sessionListChanged();
+    refreshSessions();
+}
+
+void AgentViewModel::closeConversation(const QString& sessionId) {
+    ChatSessionController* controller = controllerForSession(sessionId);
+    if (!controller) return;
+
+    const int index = m_tabs.indexOf(controller);
+    if (index < 0) return;
+
+    // 最后一个不能被 closeTab 关掉（m_tabs.size() <= 1 守卫）。docs/30 §4.5
+    // 的语义是"关掉最后一个 → 立刻开一个空白对话"，而不是拒绝操作：用户
+    // 点「结束对话」时必须真的结束，否则它看起来像坏了。
+    const bool lastOne = m_tabs.size() <= 1;
+    m_unreadSessions.remove(sessionId);
+    m_sessionLru.removeAll(sessionId);
+
+    if (lastOne) {
+        // 复用同一个 controller 就地重置，等价于用户点「新对话」。
+        controller->newChat();
+        controller->setDraftText(QString());
+        controller->setDraftAttachments({});
+        applyProjectTo(controller->agent(), QString());
+        emit stateChanged();
+        emit traceChanged();
+        emit draftTextChanged();
+        emit draftAttachmentsChanged();
+        emit currentSessionIdChanged();
+        emit activeProjectIdChanged();
+        emit tabsChanged();
+        refreshSessions();
+        return;
+    }
+
+    // 非最后一个：stop 由 closeTab 负责（先停再 deleteLater，未答复的工具
+    // 调用被 agent 封口）。closeTab 还会重算活动索引并广播属性变化。
+    closeTab(index);
+}
+
+void AgentViewModel::clearConversationUnread(const QString& sessionId) {
+    if (sessionId.isEmpty()) return;
+    if (!m_unreadSessions.remove(sessionId)) return;
+    // unread 是 sessionList 的运行时键，列表变了通知 QML 重算。
+    emit sessionListChanged();
+}
+
+// Ctrl+W：结束"我正在看的那条"。空白对话（还没发过消息）没有可结束的会话，
+// 但用户按了就该有反应 —— 换一个干净的空白对话，语义上等价于"丢掉这个草稿"。
+void AgentViewModel::closeActiveConversation() {
+    ChatSessionController* controller = active();
+    if (!controller) return;
+    const QString sessionId = controller->currentSessionId();
+    if (sessionId.isEmpty()) {
+        // 空白对话：清草稿 + 换新会话（不新增 controller）。
+        controller->setDraftText(QString());
+        controller->setDraftAttachments({});
+        controller->newChat();
+        applyProjectTo(controller->agent(), QString());
+        emit draftTextChanged();
+        emit draftAttachmentsChanged();
+        emit traceChanged();
+        emit currentSessionIdChanged();
+        emit activeProjectIdChanged();
+        emit tabsChanged();
+        emit sessionListChanged();
+        refreshSessions();
+        return;
+    }
+    closeConversation(sessionId);
+}
+
+// Ctrl+Tab / Ctrl+Shift+Tab：在**被承载**的会话间循环。跳过空白对话
+// （sessionId 为空），因为它在侧栏里没有对应的行，切过去等于"消失了"。
+void AgentViewModel::cycleConversation(int delta) {
+    if (delta == 0 || m_tabs.size() <= 1) return;
+    const int step = delta > 0 ? 1 : -1;
+    for (int offset = 1; offset < m_tabs.size(); ++offset) {
+        const int raw = m_activeTab + step * offset;
+        const int index = ((raw % m_tabs.size()) + m_tabs.size()) % m_tabs.size();
+        ChatSessionController* candidate = m_tabs.at(index);
+        if (!candidate || candidate->currentSessionId().isEmpty()) continue;
+        activateTab(index);
+        return;
+    }
 }
 
 // ── Real agent pipeline ──────────────────────────────────
@@ -1177,6 +1440,35 @@ void AgentViewModel::refreshSessions() {
     m_sessionList = sessions;
     emit sessionListChanged();
     emit tabsChanged();   // tab titles may resolve now
+}
+
+// docs/30：把打开集合的运行时状态叠加到数据库快照上给 QML。键的含义见
+// AgentViewModel.h 的 sessionList 注释；open/active/busy/hasDraft/unread
+// 都是**读取时**从 controller 现取的，因此任务状态一变（tabsChanged），
+// 侧栏重算绑定就能拿到新值，不必回数据库。
+QVariantList AgentViewModel::sessionList() const {
+    QVariantList out;
+    out.reserve(m_sessionList.size());
+    for (const QVariant& entry : m_sessionList) {
+        QVariantMap session = entry.toMap();
+        const QString id = session.value(QStringLiteral("id")).toString();
+        ChatSessionController* controller = controllerForSession(id);
+        session[QStringLiteral("open")] = controller != nullptr;
+        session[QStringLiteral("active")] =
+            controller != nullptr && controller == active();
+        session[QStringLiteral("busy")] = controller && controller->isBusy();
+        // docs/30 §4.2：等待确认是"卡在等用户决定"，侧栏要用静态警告图标而
+        // 不是转圈——转圈暗示"它自己会好"。pendingConfirmation 只暴露队首，
+        // 所以这里直接问该 controller 的 agent。
+        session[QStringLiteral("awaitingConfirm")] =
+            controller && controller->agent()
+            && !controller->agent()->pendingConfirmationId().isEmpty();
+        session[QStringLiteral("hasDraft")] =
+            controller ? conversationPinned(controller) : false;
+        session[QStringLiteral("unread")] = m_unreadSessions.contains(id);
+        out.append(session);
+    }
+    return out;
 }
 
 // ── Knowledge base (RAG) ─────────────────────────────────
@@ -2362,11 +2654,17 @@ void AgentViewModel::loadSession(const QString& sessionId) {
         target = activeProjectId();
     // Never interrupt a running task: when the active tab is busy the session
     // opens in a fresh tab instead——新标签的归属直接就是该会话的归属。
-    if (active()->isBusy())
-        addTab(target);
-    else
-        setActiveProjectId(target);
+    // docs/30：这个"忙就开新标签"的补偿逻辑收进 openConversation，两个入口
+    // 不再各写一份，否则侧栏点击与内部定位（revealMessage）语义会分叉。
+    if (active()->isBusy()) {
+        openConversation(sessionId);
+        return;
+    }
+    setActiveProjectId(target);
     active()->loadSession(sessionId);
+    // 侧栏点击也走这里（内部定位 revealMessage 亦然）：打开即算看过。
+    clearConversationUnread(sessionId);
+    touchSessionLru(sessionId);
 }
 
 void AgentViewModel::cancel() {

@@ -8,6 +8,10 @@ import NexusAI.ViewModels
 Rectangle {
     id: root
 
+    // 模板菜单的「管理模板…」：本组件不认识设置中心，交给宿主上抛
+    // （AgentChatPage → main 打开 prompts 分类）。
+    signal templatesRequested()
+
     color: Theme.bgSecondary
 
     // 紧凑 token 计数（TopBar 小字用）：1234 → 1.2k，56000 → 56k。
@@ -256,8 +260,65 @@ Rectangle {
             }
         }
 
+        // ── 当前会话标题（docs/30）───────────────────
+        // 标签栏删除后，这里是**唯一**常显的会话标题位：侧栏只有高亮没有文字
+        // 归属，用户在多条会话间切换时需要一眼确认"我在看哪条"。
+        // 弹性宽度 + elide；截断时悬停看全文（与侧栏同一口径）。
+        Text {
+            id: sessionTitleLabel
+            objectName: "topBarSessionTitle"
+            Layout.fillWidth: true
+            Layout.leftMargin: 12
+            Layout.rightMargin: 12
+            Layout.maximumWidth: 480
+            text: AgentVM.currentSessionId.length > 0
+                ? (chatTitle || qsTr("新会话"))
+                : qsTr("新对话")
+            color: Theme.textSecondary
+            font.pixelSize: Theme.fontSizeCaption
+            font.family: Theme.fontSans
+            elide: Text.ElideRight
+            verticalAlignment: Text.AlignVCenter
+
+            // 标题不在 AgentVM 里单独暴露（tabModel 才有），从会话列表按 id 找；
+            // 列表变化时绑定自动重算。
+            readonly property string chatTitle: {
+                const list = AgentVM.sessionList
+                const id = AgentVM.currentSessionId
+                if (id.length === 0) return ""
+                for (let i = 0; i < list.length; ++i)
+                    if (list[i].id === id) return list[i].title || ""
+                return ""
+            }
+
+            HoverHandler { id: titleHover }
+            ToolTip.visible: titleHover.hovered && sessionTitleLabel.truncated
+            ToolTip.delay: 600
+            ToolTip.text: sessionTitleLabel.text
+        }
+
+        // ── 会话模板入口（docs/30 §5-1）──────────────
+        // 标签栏删除后，"侧栏折叠 + 已有消息"这条路径上模板入口会彻底不可达
+        // （侧栏窄条随侧栏一起消失）。TopBar 始终可见，用它补上。
+        // 只在有模板时出现，避免一个永远空着的按钮。
+        IconButton {
+            id: templateEntry
+            objectName: "topBarTemplateEntry"
+            visible: Settings.sessionTemplates.length > 0
+            icon: "preset"
+            iconSize: 16
+            tooltip: qsTr("从会话模板开始")
+            onClicked: templateMenu.openBelow(templateEntry)
+
+            SessionTemplateMenu {
+                id: templateMenu
+                // 本组件不认识设置中心，转成信号交给 AgentChatPage → main。
+                onManageRequested: root.templatesRequested()
+            }
+        }
+
         // ── Spacer ────────────────────────────────────
-        Item { Layout.fillWidth: true }
+        Item { Layout.preferredWidth: 4 }
 
         // ── State Status Indicator ───────────────────
         RowLayout {

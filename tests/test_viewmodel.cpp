@@ -1110,6 +1110,396 @@ private slots:
         QCOMPARE(vm.tabModel().size(), 1);
     }
 
+    // ── docs/30 单对话视图 ────────────────────────────────
+    // 侧栏点一条会话的语义收在 openConversation 里。核心断言是它与标签栏
+    // 的差别：切换不新增 controller（每个都是一条 SQLite 连接），且
+    // sessionList 上的运行时键（open/active/busy/hasDraft/unread）跟着变。
+    void openConversationSwitchesWithoutSpawningControllers() {
+        SqliteMemory memory(QStringLiteral(":memory:"));
+        memory.beginSession(QStringLiteral("sess-a"), QStringLiteral("会话 A"));
+        memory.beginSession(QStringLiteral("sess-b"), QStringLiteral("会话 B"));
+
+        AgentViewModel vm(nullptr);
+        AIAgent templateAgent(&vm);
+        templateAgent.setMemory(&memory);
+        vm.setMemory(&memory);
+        vm.setAgentFactory([&vm, &memory]() -> AIAgent* {
+            auto* a = new AIAgent(&vm);
+            a->setMemory(&memory);
+            return a;
+        });
+        vm.setAgent(&templateAgent);
+
+        const int tabsBefore = vm.tabModel().size();
+
+        vm.openConversation(QStringLiteral("sess-a"));
+        QCOMPARE(vm.currentSessionId(), QStringLiteral("sess-a"));
+        // 空闲时就地换内容：不新增 controller。
+        QCOMPARE(vm.tabModel().size(), tabsBefore);
+
+        auto sessionEntry = [&vm](const QString& id) {
+            for (const QVariant& entry : vm.sessionList())
+                if (entry.toMap().value("id").toString() == id) return entry.toMap();
+            return QVariantMap{};
+        };
+        QCOMPARE(sessionEntry(QStringLiteral("sess-a")).value("active").toBool(), true);
+        QCOMPARE(sessionEntry(QStringLiteral("sess-a")).value("open").toBool(), true);
+        QCOMPARE(sessionEntry(QStringLiteral("sess-b")).value("active").toBool(), false);
+        QCOMPARE(sessionEntry(QStringLiteral("sess-b")).value("open").toBool(), false);
+
+        // 切到另一条：仍只有一个 controller，活动标记整体搬家。
+        vm.openConversation(QStringLiteral("sess-b"));
+        QCOMPARE(vm.currentSessionId(), QStringLiteral("sess-b"));
+        QCOMPARE(vm.tabModel().size(), tabsBefore);
+        QCOMPARE(sessionEntry(QStringLiteral("sess-a")).value("active").toBool(), false);
+        QCOMPARE(sessionEntry(QStringLiteral("sess-a")).value("open").toBool(), false);
+        QCOMPARE(sessionEntry(QStringLiteral("sess-b")).value("active").toBool(), true);
+        QCOMPARE(sessionEntry(QStringLiteral("sess-b")).value("open").toBool(), true);
+
+        // 幂等：再点一次当前会话不产生任何副作用。
+        vm.openConversation(QStringLiteral("sess-b"));
+        QCOMPARE(vm.tabModel().size(), tabsBefore);
+        QCOMPARE(vm.currentSessionId(), QStringLiteral("sess-b"));
+
+        // 未知 id（侧栏列表陈旧）不制造空会话，也不崩。
+        vm.openConversation(QStringLiteral("no-such-session"));
+        QCOMPARE(vm.tabModel().size(), tabsBefore);
+        vm.openConversation(QString());
+        QCOMPARE(vm.tabModel().size(), tabsBefore);
+    }
+
+    // 已经打开的会话被点回来时**不得**新建 controller，也不得打断它的任务：
+    // 这是标签栏时代"切走不中断"的等价断言（activateTab 只换索引）。
+    // docs/30 §4.4：打开集合有上界，且"钉住"（有草稿/在跑）的会话绝不淘汰。
+    // 上界的理由不是美观：每个 controller 一条 SQLite 连接 + 最多 800 条
+    // trace 节点恢复，标签时代那个"用户懒得点 +"的隐含限制已不存在。
+    void openConversationsAreBoundedAndRefuseWhenAllPinned() {
+        SqliteMemory memory(QStringLiteral(":memory:"));
+        const int count = AgentViewModel::kMaxOpenConversations + 3;
+        QStringList ids;
+        for (int i = 0; i < count; ++i) {
+            const QString id = QStringLiteral("sess-%1").arg(i);
+            memory.beginSession(id, QStringLiteral("会话 %1").arg(i));
+            ids.append(id);
+        }
+
+        AgentViewModel vm(nullptr);
+        AIAgent templateAgent(&vm);
+        templateAgent.setMemory(&memory);
+        vm.setMemory(&memory);
+        vm.setAgentFactory([&vm, &memory]() -> AIAgent* {
+            auto* a = new AIAgent(&vm);
+            a->setMemory(&memory);
+            return a;
+        });
+        vm.setAgent(&templateAgent);
+
+        // 空闲时反复切换：就地复用，controller 数恒定（浏览历史不该堆连接）。
+        for (const QString& id : ids) vm.openConversation(id);
+        QCOMPARE(vm.currentSessionId(), ids.last());
+        QCOMPARE(vm.tabModel().size(), 1);
+
+        // 每条都留下草稿 → 全都钉住，切换只能新开 controller，直到上限。
+        QSignalSpy notice(&vm, &AgentViewModel::noticeOccurred);
+        for (const QString& id : ids) {
+            vm.openConversation(id);
+            vm.setDraftText(QStringLiteral("草稿 %1").arg(id));
+            if (vm.tabModel().size() >= AgentViewModel::kMaxOpenConversations)
+                break;
+        }
+        QCOMPARE(vm.tabModel().size(), AgentViewModel::kMaxOpenConversations);
+
+        // 所有打开的会话都还带着自己的草稿（没被淘汰牺牲）。
+        int openWithDraft = 0;
+        for (const QVariant& entry : vm.sessionList()) {
+            const QVariantMap session = entry.toMap();
+            if (!session.value("open").toBool()) continue;
+            if (session.value("hasDraft").toBool()) ++openWithDraft;
+        }
+        QCOMPARE(openWithDraft, AgentViewModel::kMaxOpenConversations);
+
+        // 达上限且全部钉住 → 明确拒绝（提示用户），不静默失败、不越界。
+        QString unopened;
+        for (const QString& id : ids) {
+            bool isOpen = false;
+            for (const QVariant& entry : vm.sessionList()) {
+                const QVariantMap s = entry.toMap();
+                if (s.value("id").toString() == id && s.value("open").toBool())
+                    isOpen = true;
+            }
+            if (!isOpen) { unopened = id; break; }
+        }
+        if (!unopened.isEmpty()) {
+            const int before = vm.tabModel().size();
+            vm.openConversation(unopened);
+            QCOMPARE(vm.tabModel().size(), before);
+            QCOMPARE(notice.count(), 1);
+            // 被拒绝的会话没有被打开。
+            QVERIFY(vm.currentSessionId() != unopened);
+        }
+
+        // 打开集合里没有任何会话被误标为 open=false 之外的怪状态。
+        for (const QVariant& entry : vm.sessionList()) {
+            const QVariantMap session = entry.toMap();
+            if (!session.value("active").toBool()) continue;
+            QVERIFY(session.value("open").toBool());
+        }
+    }
+
+    void openConversationReusesExistingController() {
+        SqliteMemory memory(QStringLiteral(":memory:"));
+        memory.beginSession(QStringLiteral("sess-a"), QStringLiteral("会话 A"));
+
+        AgentViewModel vm(nullptr);
+        AIAgent templateAgent(&vm);
+        templateAgent.setMemory(&memory);
+        vm.setMemory(&memory);
+        vm.setAgentFactory([&vm, &memory]() -> AIAgent* {
+            auto* a = new AIAgent(&vm);
+            a->setMemory(&memory);
+            return a;
+        });
+        vm.setAgent(&templateAgent);
+
+        vm.openConversation(QStringLiteral("sess-a"));
+        const int tabsWithA = vm.tabModel().size();
+
+        // 转到一个空白新对话 —— A 的 controller 保留在打开集合里。
+        vm.newLocalChat();
+        const int tabsAfterNew = vm.tabModel().size();
+        QCOMPARE(tabsAfterNew, tabsWithA + 1);
+
+        // 点回 A：复用已有 controller，不新增。
+        vm.openConversation(QStringLiteral("sess-a"));
+        QCOMPARE(vm.tabModel().size(), tabsAfterNew);
+        QCOMPARE(vm.currentSessionId(), QStringLiteral("sess-a"));
+    }
+
+    // 草稿是"不能淘汰"的硬条件：用户切走再切回必须还在（docs/30 §7-1）。
+    void conversationDraftSurvivesSwitching() {
+        SqliteMemory memory(QStringLiteral(":memory:"));
+        memory.beginSession(QStringLiteral("sess-a"), QStringLiteral("会话 A"));
+        memory.beginSession(QStringLiteral("sess-b"), QStringLiteral("会话 B"));
+
+        AgentViewModel vm(nullptr);
+        AIAgent templateAgent(&vm);
+        templateAgent.setMemory(&memory);
+        vm.setMemory(&memory);
+        vm.setAgentFactory([&vm, &memory]() -> AIAgent* {
+            auto* a = new AIAgent(&vm);
+            a->setMemory(&memory);
+            return a;
+        });
+        vm.setAgent(&templateAgent);
+
+        vm.openConversation(QStringLiteral("sess-a"));
+        vm.setDraftText(QStringLiteral("未发送的想法"));
+        vm.openConversation(QStringLiteral("sess-b"));
+        QCOMPARE(vm.draftText(), QString());
+
+        // sess-a 仍被 controller 承载（有草稿 → 不可淘汰）。
+        bool foundDraftOwner = false;
+        for (const QVariant& entry : vm.sessionList()) {
+            const QVariantMap session = entry.toMap();
+            if (session.value("id").toString() != QStringLiteral("sess-a")) continue;
+            foundDraftOwner = session.value("open").toBool()
+                && session.value("hasDraft").toBool();
+        }
+        QVERIFY(foundDraftOwner);
+
+        vm.openConversation(QStringLiteral("sess-a"));
+        QCOMPARE(vm.draftText(), QStringLiteral("未发送的想法"));
+    }
+
+    // "完成未读"是 QML 依赖的运行时键：写入/清除都要安全，且活动会话永远
+    // 不带未读点（active && unread 是自相矛盾的呈现）。
+    void unreadStateIsConsistentWithActiveConversation() {
+        SqliteMemory memory(QStringLiteral(":memory:"));
+        memory.beginSession(QStringLiteral("sess-a"), QStringLiteral("会话 A"));
+        memory.beginSession(QStringLiteral("sess-b"), QStringLiteral("会话 B"));
+
+        AgentViewModel vm(nullptr);
+        AIAgent templateAgent(&vm);
+        templateAgent.setMemory(&memory);
+        vm.setMemory(&memory);
+        vm.setAgentFactory([&vm, &memory]() -> AIAgent* {
+            auto* a = new AIAgent(&vm);
+            a->setMemory(&memory);
+            return a;
+        });
+        vm.setAgent(&templateAgent);
+
+        auto entryOf = [&vm](const QString& id) {
+            for (const QVariant& e : vm.sessionList())
+                if (e.toMap().value("id").toString() == id) return e.toMap();
+            return QVariantMap{};
+        };
+
+        vm.openConversation(QStringLiteral("sess-a"));
+        // 未知 id / 空串是安全 no-op。
+        vm.clearConversationUnread(QString());
+        vm.clearConversationUnread(QStringLiteral("no-such-session"));
+        QVERIFY(!entryOf(QStringLiteral("sess-a")).value("unread").toBool());
+
+        // 切走再切回，活动会话始终不带未读。
+        vm.openConversation(QStringLiteral("sess-b"));
+        QVERIFY(!entryOf(vm.currentSessionId()).value("unread").toBool());
+        vm.openConversation(QStringLiteral("sess-a"));
+        QVERIFY(!entryOf(QStringLiteral("sess-a")).value("unread").toBool());
+    }
+
+    // closeConversation 与"删除会话"是两件事：结束视图不删数据，且结束后
+    // 会话仍在 sessionList 里（open=false），点它可重新打开。
+    void closeConversationReleasesViewButKeepsHistory() {
+        SqliteMemory memory(QStringLiteral(":memory:"));
+        memory.beginSession(QStringLiteral("sess-a"), QStringLiteral("会话 A"));
+        memory.beginSession(QStringLiteral("sess-b"), QStringLiteral("会话 B"));
+
+        AgentViewModel vm(nullptr);
+        AIAgent templateAgent(&vm);
+        templateAgent.setMemory(&memory);
+        vm.setMemory(&memory);
+        vm.setAgentFactory([&vm, &memory]() -> AIAgent* {
+            auto* a = new AIAgent(&vm);
+            a->setMemory(&memory);
+            return a;
+        });
+        vm.setAgent(&templateAgent);
+
+        // 两条会话同时被打开的唯一日常路径：A 里存着草稿（钉住不能就地换
+        // 内容），此时再打开 B 就只能新起一个 controller。没有草稿的话，
+        // 打开 B 会就地复用 A 的 controller —— 那才是单窗口语义。
+        vm.openConversation(QStringLiteral("sess-a"));
+        vm.setDraftText(QStringLiteral("A 的草稿"));
+        vm.openConversation(QStringLiteral("sess-b"));
+        QCOMPARE(vm.currentSessionId(), QStringLiteral("sess-b"));
+        QCOMPARE(vm.tabModel().size(), 2);
+
+        vm.closeConversation(QStringLiteral("sess-a"));
+        QCOMPARE(vm.tabModel().size(), 1);
+        // 数据还在：会话仍在历史列表里，只是不再被打开。
+        bool stillListed = false;
+        for (const QVariant& entry : vm.sessionList()) {
+            const QVariantMap session = entry.toMap();
+            if (session.value("id").toString() != QStringLiteral("sess-a")) continue;
+            stillListed = true;
+            QVERIFY(!session.value("open").toBool());
+            QVERIFY(!session.value("active").toBool());
+        }
+        QVERIFY(stillListed);
+        QCOMPARE(memory.listSessions().size(), 2);
+        // 关的那条是后台会话，活动会话不受影响。
+        QCOMPARE(vm.currentSessionId(), QStringLiteral("sess-b"));
+
+        // 再点开它 → 重新承载（载入的是它的历史，不是 B 的）。
+        vm.openConversation(QStringLiteral("sess-a"));
+        QCOMPARE(vm.currentSessionId(), QStringLiteral("sess-a"));
+        QCOMPARE(vm.draftText(), QString());
+    }
+
+    // 关掉最后一个打开会话时**结束**而不是拒绝（docs/30 §4.5）：
+    // 就地重置成一个空白对话，controller 数保持为 1。
+    void closingLastConversationResetsToBlank() {
+        SqliteMemory memory(QStringLiteral(":memory:"));
+        memory.beginSession(QStringLiteral("sess-a"), QStringLiteral("会话 A"));
+
+        AgentViewModel vm(nullptr);
+        AIAgent templateAgent(&vm);
+        templateAgent.setMemory(&memory);
+        vm.setMemory(&memory);
+        vm.setAgent(&templateAgent);
+
+        vm.openConversation(QStringLiteral("sess-a"));
+        QCOMPARE(vm.currentSessionId(), QStringLiteral("sess-a"));
+
+        vm.closeConversation(QStringLiteral("sess-a"));
+        QCOMPARE(vm.tabModel().size(), 1);
+        QCOMPARE(vm.currentSessionId(), QString());
+        QCOMPARE(vm.draftText(), QString());
+        QCOMPARE(vm.activeProjectId(), QString());
+        // 数据没被删。
+        QCOMPARE(memory.listSessions().size(), 1);
+
+        // 不存在的 id 是安全的 no-op。
+        vm.closeConversation(QStringLiteral("no-such-session"));
+        QCOMPARE(vm.tabModel().size(), 1);
+    }
+
+    // docs/30 P1：Ctrl+W 的落点。有会话 → 结束视图；空白对话 → 就地重置。
+    void closeActiveConversationHandlesBlankAndBound() {
+        SqliteMemory memory(QStringLiteral(":memory:"));
+        memory.beginSession(QStringLiteral("sess-a"), QStringLiteral("会话 A"));
+
+        AgentViewModel vm(nullptr);
+        AIAgent templateAgent(&vm);
+        templateAgent.setMemory(&memory);
+        vm.setMemory(&memory);
+        vm.setAgent(&templateAgent);
+
+        // 空白对话：按下 Ctrl+W 不该崩，也不该多出 controller。
+        QCOMPARE(vm.currentSessionId(), QString());
+        vm.setDraftText(QStringLiteral("草稿"));
+        const int tabsBefore = vm.tabModel().size();
+        vm.closeActiveConversation();
+        QCOMPARE(vm.tabModel().size(), tabsBefore);
+        QCOMPARE(vm.draftText(), QString());
+        QCOMPARE(vm.currentSessionId(), QString());
+
+        // 有会话：等价于 closeConversation(活动会话)。
+        vm.openConversation(QStringLiteral("sess-a"));
+        QCOMPARE(vm.currentSessionId(), QStringLiteral("sess-a"));
+        vm.closeActiveConversation();
+        QCOMPARE(vm.currentSessionId(), QString());
+        QCOMPARE(vm.tabModel().size(), 1);
+        // 数据仍在。
+        QCOMPARE(memory.listSessions().size(), 1);
+    }
+
+    // docs/30 P1：Ctrl+Tab / Ctrl+Shift+Tab 在**被承载**的会话间循环，
+    // 跳过空白对话（它在侧栏没有对应行，切过去等于消失）。
+    void cycleConversationSkipsBlankAndWraps() {
+        SqliteMemory memory(QStringLiteral(":memory:"));
+        memory.beginSession(QStringLiteral("sess-a"), QStringLiteral("会话 A"));
+        memory.beginSession(QStringLiteral("sess-b"), QStringLiteral("会话 B"));
+
+        AgentViewModel vm(nullptr);
+        AIAgent templateAgent(&vm);
+        templateAgent.setMemory(&memory);
+        vm.setMemory(&memory);
+        vm.setAgentFactory([&vm, &memory]() -> AIAgent* {
+            auto* a = new AIAgent(&vm);
+            a->setMemory(&memory);
+            return a;
+        });
+        vm.setAgent(&templateAgent);
+
+        // 只有一条会话时循环是 no-op（不会绕回自己、不会新建）。
+        vm.openConversation(QStringLiteral("sess-a"));
+        const int tabsOne = vm.tabModel().size();
+        vm.cycleConversation(1);
+        QCOMPARE(vm.currentSessionId(), QStringLiteral("sess-a"));
+        QCOMPARE(vm.tabModel().size(), tabsOne);
+
+        // 造第二个承载者：A 留草稿（钉住），再开 B。
+        vm.setDraftText(QStringLiteral("A 的草稿"));
+        vm.openConversation(QStringLiteral("sess-b"));
+        QCOMPARE(vm.currentSessionId(), QStringLiteral("sess-b"));
+        QCOMPARE(vm.tabModel().size(), 2);
+
+        // 正向循环到 A，再正向绕回 B。
+        vm.cycleConversation(1);
+        QCOMPARE(vm.currentSessionId(), QStringLiteral("sess-a"));
+        vm.cycleConversation(1);
+        QCOMPARE(vm.currentSessionId(), QStringLiteral("sess-b"));
+        // 反向回到 A。
+        vm.cycleConversation(-1);
+        QCOMPARE(vm.currentSessionId(), QStringLiteral("sess-a"));
+
+        // delta 0 是 no-op。
+        vm.cycleConversation(0);
+        QCOMPARE(vm.currentSessionId(), QStringLiteral("sess-a"));
+    }
+
     // Batch 29 fix: each tab's factory agent is a separate instance with a
     // separate LLM service — two tabs sharing one service instance abort
     // each other's streams (LLMServiceBase keeps a single in-flight

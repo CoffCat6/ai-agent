@@ -37,11 +37,7 @@ Item {
         TopBar {
             Layout.fillWidth: true
             Layout.preferredHeight: 40
-        }
-
-        SessionTabs {
-            Layout.fillWidth: true
-            Layout.preferredHeight: 34
+            // 顶栏的模板入口「管理模板…」与空态入口同一条路径。
             onTemplatesRequested: root.settingsCategoryRequested("prompts")
         }
 
@@ -57,18 +53,33 @@ Item {
 
                 // Keep detail state outside delegates so resets/session changes
                 // do not discard the user's expand/collapse choices.
-                property var detailState: ({})
+                //
+                // docs/30 §5-3: 按会话分桶。折叠 key 对流式中间节点是
+                // `type:index:内容前缀`（TraceNodeRouter.qml），index 在两条
+                // 会话里必然撞车——单窗口模型下切换会话是高频路径，共用一个
+                // 字典会让 A 会话的卡片在 B 会话里被错误折叠/展开。
+                // 外层键是 sessionId，空会话（还没发消息）用空串。
+                property var detailStateBySession: ({})
+                readonly property string detailSessionKey: AgentVM.currentSessionId
+                readonly property var detailState: {
+                    const all = detailStateBySession
+                    const key = detailSessionKey
+                    return key in all ? all[key] : ({})
+                }
                 property bool showProcess: true
                 readonly property int intermediateCount: AgentVM.intermediateCount
 
                 function detailExpanded(key, defaultExpanded) {
-                    return key in detailState ? detailState[key] : defaultExpanded
+                    const state = detailState
+                    return key in state ? state[key] : defaultExpanded
                 }
 
                 function toggleDetail(key, defaultExpanded) {
-                    const next = Object.assign({}, detailState)
-                    next[key] = !(key in next ? next[key] : defaultExpanded)
-                    detailState = next
+                    const all = Object.assign({}, detailStateBySession)
+                    const session = Object.assign({}, detailState)
+                    session[key] = !(key in session ? session[key] : defaultExpanded)
+                    all[detailSessionKey] = session
+                    detailStateBySession = all
                 }
 
                 function toggleProcess() {

@@ -163,7 +163,7 @@ signals:
     void costChanged(qint64 costCents);
     void quotaWarning(const QString& quotaType, qint64 used, qint64 quota);
     // Session permission mode changed (AgentViewModel re-emits for the
-    // active tab; SessionTabs reads it via tabModel for background tabs).
+    // active tab; the sidebar reads it via sessionList for background sessions).
     void permissionModeChanged();
     // 套用的提示词预设变了（套用/清除/预设文本被编辑）。
     void promptPresetChanged();

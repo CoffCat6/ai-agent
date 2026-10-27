@@ -25,8 +25,27 @@
 - `AgentViewModel` = 门面 + 全局状态（会话列表、项目、知识库、布局持久化、工具注册表、批量导入队列）。`ChatSessionController` = **一个标签的会话**（trace / finalResponse / draft / sessionId / token / 权限 / 输入历史），刻意“不知道标签概念”。
 - 每个标签一个 `AIAgent`：tab 0 挂 main.cpp 的共享模板 agent（`owned=false`），其余由 `setAgentFactory()` 工厂创建（`owned=true`，析构时 `deleteLater`，并拥有独立 `SqliteMemory` 连接）。
 - **每标签独立 ProviderSet 是硬要求**：`LLMServiceBase` 每个实例只保存一份在途请求上下文并向所有挂接的 agent 广播信号，共享会导致两个标签互相中止流、chunk 串到对方 trace。
-- 切换标签不打断任务（后台标签继续跑自己的 trace）；`loadSession()` 在活动标签 busy 时改为 `addTab()` 新开标签承载会话。
-- 关标签：先 `stop()`（agent 封口未答复的工具调用）再 `deleteLater()`；最后一个标签不可关。`closeAllTabs()` 静默清空（不 emit），供数据库恢复使用。
+- 切换标签不打断任务（后台标签继续跑自己的 trace）；`loadSession()` 在活动标签 busy 时改走 `openConversation()`（可能新开 controller 承载会话）。
+- 关标签：先 `stop()`（agent 封口未答复的工具调用）再 `deleteLater()`；最后一个标签不可关。`closeAllTabs()` 静默清空（不 emit），并连同清空 LRU 与未读表，供数据库恢复使用。
+
+### 2b. 单对话视图（docs/30，P0 已实施）
+
+面向用户的形态从「标签栏」迁到「侧栏驱动单窗口」：主区永远只渲染活动会话，
+所有会话在侧栏可见，后台有任务的行显示动画图标。引擎层不变（仍是一会话一
+controller 一 agent 一连接），因此下面这层是**呈现语义**的收敛点：
+
+- `openConversation(id)`：已被 controller 承载 → `activateTab`（不打断任务）；
+  否则就地复用活动 controller（**须空闲且无草稿**，否则是新建）→ 加载并激活。
+  空闲时就地复用是硬要求：每个 controller 一条 SQLite 连接 + 最多 800 条 trace
+  节点恢复，若浏览历史也新建，翻几条旧会话就撞上限。
+- `closeConversation(id)`：停任务 + 释放 controller，**不删数据**；关掉最后一个时
+  就地重置为空白对话（而非像 `closeTab` 那样拒绝）。
+- `sessionList()` 在读取端叠加运行时键 `open/active/busy/hasDraft/unread`——不写进
+  `m_sessionList` 快照，因为 busy/unread 随任务变化而数据库快照不变。任一键变化都发
+  `sessionListChanged`。
+- 上界 `kMaxOpenConversations = 12`，淘汰只针对 LRU 里**空闲且无草稿**的会话（其次
+  是最久未用的空白对话）；活动/busy/有草稿的永不淘汰，全钉住时 `noticeOccurred` 拒绝。
+- 草稿归属：有草稿的 controller 不能被就地换内容，否则草稿会串到另一条会话上。
 
 ### 3. 会话状态机
 
@@ -99,7 +118,7 @@
 
 | 类名 | 角色 | 关键 QML 接口 |
 | --- | --- | --- |
-| `AgentViewModel` | 主门面（`AgentVM`）：标签管理 + 全局会话/项目/知识库/布局/工具/统计 | `startTask`、`stop`、`approveToolCall`、`loadSession`、`newChat`、`regenerate`、`editAndResend`、`branchFromAnswer`、`listProjectFiles`、`importDocument(s)`、`undoFileCheckpoint`、`restoreDatabaseFrom`；属性 `state/traceModel/tabModel/knowledgeDocuments/...` |
+| `AgentViewModel` | 主门面（`AgentVM`）：打开集合管理 + 全局会话/项目/知识库/布局/工具/统计 | `startTask`、`stop`、`approveToolCall`、`openConversation`、`closeConversation`、`clearConversationUnread`、`loadSession`、`newChat`、`regenerate`、`editAndResend`、`branchFromAnswer`、`listProjectFiles`、`importDocument(s)`、`undoFileCheckpoint`、`restoreDatabaseFrom`；属性 `state/traceModel/sessionList/tabModel/knowledgeDocuments/...` |
 | `ChatSessionController` | 单标签会话状态与 agent 适配（非 QML 类型） | 无（C++ 侧：`attachAgent`、`startTask`、`stop`、`loadSession`、`permissionMode`） |
 | `TraceModel` | trace 增量 `QAbstractListModel`（非 QML 类型） | 经 `AgentVM.traceModel` 使用；roles `id/type/title/status/args/result/timestamp/modelData` |
 | `LogModel` | 应用内日志列表模型（会话内追加、过滤/日期） | `AgentVM.logModel`（CONSTANT）；`filterLevel/filterText/filterCategory/filterDate`、`clearView()`、`toClipboardText()` |
@@ -127,7 +146,7 @@
 
 1. **发送与流式**：QML Composer → `AgentVM.startTask(text, images, files)` → `configureModel(active())` + 图片压缩 → `ChatSessionController::startTask`（历史环/Usage）→ `AIAgent::startTask` → `stateChanged` / `traceChanged`（全量 JSON）→ `TraceModel::applyDelta` → 门面仅对活动标签 `emit traceChanged` → ListView 只收到插入/变更行。
 2. **工具确认**：`AIAgent::toolConfirmRequired` → controller → VM 队列 + `pendingConfirmation` + 全局信号 → 确认对话框 → `AgentVM.approveToolCall(id, ok)` → 按 id 找回 controller 并校验 `pendingConfirmationId` → `AIAgent::approveToolCall`。
-3. **会话切换/恢复**：Sidebar → `loadSession(sessionId)` → 在 `sessionList` 查 `projectId`（查不到保持当前归属）→ busy 则 `addTab(project)` 否则 `setActiveProjectId(project)` → `controller.loadSession`（busy 时拒绝）→ `AIAgent::resumeSession` → `sessionChanged`/`traceChanged` → 重建 trace、checkpoints、刷新共享会话列表。
+3. **会话切换/恢复**：Sidebar → `openConversation(sessionId)`（docs/30；旧的 `loadSession` 保留为内部入口，搜索定位 `revealMessage` 走它）→ 已被承载则 `activateTab`，否则就地复用空闲无草稿的 controller / 守上限后新建 → 按 `sessionList` 查到的 `projectId` 先 `applyProjectTo` 再 `controller.loadSession`（busy 时拒绝）→ `AIAgent::resumeSession` → `sessionChanged`/`traceChanged` → 重建 trace、checkpoints、刷新共享会话列表，清未读并推进 LRU。
 4. **会话派生操作**：`newChat`→`agent.resetSession`；`regenerate`→`agent.regenerateLast`；`editAndResend`→`agent.editLastUserMessage`（整轮替换，含持久化）；`branchFromAnswer`→`memory.forkSessionAtAnswer(sessionId, summary 的 rank, 唯一标题)`→`refreshSessions`→`loadSession`（源会话不动）。
 5. **项目与 `@` 引用**：`importProject(path)` → canonicalize → `memory.createProject` → `refreshProjects` → 仅当活动标签尚无会话时绑定归属；`listProjectFiles(query)` 读 30s TTL 缓存，过期则后台 `ProjectFileIndex::scan`；`resolveFileReferences(text)` 把 `@path` 变成 `{kind:"file",name,content}` 附件；`inspectFileReferences` 逐 token 返回 `no-project/missing/outside/sensitive`。
 5b. **项目规则（G3/R3）**：设置页经 `loadProjectRules` / `writeProjectRules`（失败发 `noticeOccurred`，成功后自动重挂监听）/ `projectRulesState`（与注入侧同一回退顺序，复用 `AIAgent::isUntouchedRulesSeed`）读写 `AGENTS.md`。外部编辑协调：`watchProjectRules` / `unwatchProjectRules` 以 `QFileSystemWatcher` 监听两个候选文件（只存在者可挂），变化发 `projectRulesFileChanged(root)`——**异步投递受 Windows 文件通知延迟影响（AV 可扣数秒甚至更久），页面按内容比较分流，迟到/重复/自身写入都安全**；`watchedRulesFiles` 是挂载集探针（同步断言用，不测异步投递）。三个 Q_INVOKABLE 追加在类尾（AOT 索引约定）。

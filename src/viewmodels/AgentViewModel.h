@@ -12,6 +12,7 @@
 #include <QTimer>
 #include <QHash>
 #include <QPointer>
+#include <QSet>
 #include <QVector>
 #include <functional>
 
@@ -165,6 +166,13 @@ class AgentViewModel : public QObject {
     Q_PROPERTY(int activeTabIndex READ activeTabIndex NOTIFY activeTabChanged FINAL)
 
 public:
+    // docs/30：同时打开的会话数上限。侧栏模型下"点一次会话"就可能新起一个
+    // controller（= 一个 AIAgent + 一条 SQLite 连接 + 最多 800 条 trace 节点
+    // 恢复），标签时代那个"用户懒得点 +"的隐含限制不存在了，必须显式设界。
+    // 12 的依据：每个 controller 占一条 SQLite 连接（WAL + busy_timeout 5s），
+    // 12 条远低于 SQLite 的实际压力，也在桌面内存预算之内。
+    static constexpr int kMaxOpenConversations = 12;
+
     // No default constructor on purpose: a default-constructible
     // QML_SINGLETON makes the engine prefer Constructor over the create()
     // factory (qqmlprivate's construction-mode check), yielding a second,
@@ -301,7 +309,11 @@ public:
     Q_INVOKABLE void saveWindowGeometry(double x, double y, double width, double height, bool maximized);
 
     // Sessions
-    QVariantList sessionList() const { return m_sessionList; }
+    // docs/30：m_sessionList 是数据库快照（refreshSessions 写入），对 QML
+    // 暴露时要叠加**运行时键**——哪些会话正被 controller 承载、哪个是活动、
+    // 是否在跑、是否有草稿、是否后台跑完未读。叠在读取端而不是写入端，是因为
+    // busy/unread 随任务变化而数据库快照不变，写进快照会反复失效重拉。
+    QVariantList sessionList() const;
 
     // docs/17 A0: 项目级会话。projects 为已导入项目列表
     // [{id, name, rootPath}]；activeProjectId 为空 = 本地对话视图。
@@ -401,6 +413,30 @@ public:
     // calls); the last remaining tab cannot be closed.
     Q_INVOKABLE void closeTab(int index);
     Q_INVOKABLE void activateTab(int index);
+
+    // ── 单对话视图（docs/30）──────────────────────────
+    // 侧栏是唯一的会话入口，主区只渲染**活动会话**。下面三个入口覆盖侧栏
+    // 需要的全部语义；标签栏停用后，用户可及的切换/关闭路径改由它们承担
+    // （activateTab/closeTab 保留，引擎语义与既有单测不变）。
+    //
+    // openConversation：点侧栏某条会话。幂等——已有 controller 承载该会话
+    // 时直接激活（后台 busy 的会话由此切回来，任务不中断）；没有承载者时
+    // 复用空闲 controller 或新建一个。**忙的 controller 不能换会话**
+    // （AIAgent::resumeSession 在 m_active 时直接返回），所以"后台有任务时
+    // 点另一条会话"必然多开一个 controller —— 这是既有约束，不是选择。
+    Q_INVOKABLE void openConversation(const QString& sessionId);
+    // closeConversation：结束一条会话的**视图**（停任务 + 释放 controller），
+    // 不删数据——会话仍在侧栏历史里，点它可重新打开。与「删除会话」是两件事。
+    Q_INVOKABLE void closeConversation(const QString& sessionId);
+    // clearConversationUnread：会话被看到时清掉"完成未读"点（激活即清）。
+    Q_INVOKABLE void clearConversationUnread(const QString& sessionId);
+    // closeActiveConversation：Ctrl+W 的落点。等价于 closeConversation(活动会话
+    // 的 id)；活动 controller 还没绑定会话（空白对话）时直接换一个新对话。
+    Q_INVOKABLE void closeActiveConversation();
+    // cycleConversation(delta)：Ctrl+Tab / Ctrl+Shift+Tab 在打开集合内循环。
+    // 只遍历**被承载**的会话（不会为了切换去数据库里翻历史），index 按 m_tabs
+    // 顺序，与用户看到的侧栏顺序无关但稳定。
+    Q_INVOKABLE void cycleConversation(int delta);
     // ── QML-invokable actions ─────────────────────────
     // Batch 30 (F6): images are compressed data URLs; files are
     // {kind:"file", name, content} text attachments folded into the request.
@@ -797,6 +833,23 @@ private:
     qint64 m_lastCostCents{0};
     // 全局默认权限模式（设置键 agent/defaultPermissionMode），仅用于新 tab。
     int m_defaultPermissionMode{0};
+
+    // ── 单对话视图（docs/30）──────────────────────────
+    // 后台跑完、用户还没回来看的会话 id（侧栏"完成未读"点）。激活即清。
+    QSet<QString> m_unreadSessions;
+    // 打开集合的 LRU（最近激活/打开在后）。超上限时只淘汰**队首的、空闲且
+    // 无草稿**的 controller——busy 与有草稿的永不淘汰（前者会中断任务，
+    // 后者会丢用户输入）。容量与 kMaxOpenConversations 一致，不会无限增长。
+    QVector<QString> m_sessionLru;
+    // 承载某条会话的 controller；没有则 nullptr（会话只在数据库里）。
+    ChatSessionController* controllerForSession(const QString& sessionId) const;
+    // 记录/推进会话的 LRU 位置。
+    void touchSessionLru(const QString& sessionId);
+    // 打开集合超过上限时淘汰最久未用的空闲会话；无可淘汰对象时返回 false
+    // （调用方负责提示用户，不静默失败）。
+    bool evictIdleConversation();
+    // 该 controller 是否还该留在打开集合里（busy 或存着草稿就不能动）。
+    static bool conversationPinned(ChatSessionController* controller);
 
     // ── Global services ───────────────────────────────
     RagService* m_rag{nullptr};

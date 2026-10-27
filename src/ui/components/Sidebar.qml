@@ -244,7 +244,7 @@ Rectangle {
                 iconColor: tmplMA.containsMouse ? Theme.brandPrimary : Theme.textSecondary
             }
 
-            // 会话模板菜单：独立组件（同一定义也给标签栏「+」与空态入口用）。
+            // 会话模板菜单：独立组件（同一定义也给 TopBar 与空态入口用）。
             // 此前这里是内联的裸 Menu——main.cpp 强制 Basic 风格，它渲染成
             // Qt 默认浅灰矩形，与主题不符，且整块锚死在 tmplMA 上。
             SessionTemplateMenu {
@@ -268,6 +268,7 @@ Rectangle {
         // 以及打开一条旧会话时的同步。侧栏不再承担"激活项目"。
         ScrollView {
             id: treeScroll
+            objectName: "sidebarTreeScroll"
             visible: !root.searching
             Layout.fillWidth: true
             Layout.fillHeight: true
@@ -877,6 +878,14 @@ Rectangle {
                             sessionDelegate.renaming = true
                         }
                     }
+                    // docs/30 §4.5：「结束对话」与「删除会话」是两件事。前者
+                    // 只释放视图（停任务 + 关 controller），会话仍在历史里可重开；
+                    // 后者删数据（有 10 秒撤销）。只在它确实被打开时才有意义。
+                    MenuItem {
+                        text: qsTr("结束对话")
+                        enabled: modelData.open === true
+                        onTriggered: AgentVM.closeConversation(modelData.id)
+                    }
                     MenuItem {
                         text: qsTr("删除会话")
                         onTriggered: {
@@ -963,18 +972,80 @@ Rectangle {
                             }
                         }
 
+                        // ── docs/30：会话运行状态槽 ──────────────
+                        // 固定 14px 宽的槽位，位于标题左侧。用固定槽而不是
+                        // "有状态才插入"：否则 busy 开始/结束时标题会左右跳。
+                        // 三态互斥（busy > 等待确认 > 未读），一个位置一种含义。
+                        Item {
+                            id: sessionStateSlot
+                            objectName: "sessionStateSlot"
+                            anchors.verticalCenter: parent.verticalCenter
+                            width: 14
+                            height: 14
+
+                            // 进行中：旋转刷新图标（与 KnowledgeDialog 的
+                            // 导入进度同一写法，不引入新控件）。
+                            AppIcon {
+                                id: busyIcon
+                                objectName: "sessionBusyIcon"
+                                anchors.centerIn: parent
+                                icon: "refresh"
+                                size: 12
+                                visible: modelData.busy === true
+                                      && modelData.awaitingConfirm !== true
+                                iconColor: Theme.brandPrimary
+
+                                RotationAnimation on rotation {
+                                    running: busyIcon.visible
+                                    loops: Animation.Infinite
+                                    from: 0
+                                    to: 360
+                                    duration: 1200
+                                }
+                            }
+
+                            // 等待用户确认：静态警告图标。不能用转圈暗示
+                            // "它自己会好"——这类会话正卡在等人决定。
+                            AppIcon {
+                                objectName: "sessionAwaitingIcon"
+                                anchors.centerIn: parent
+                                icon: "warning"
+                                size: 12
+                                visible: modelData.awaitingConfirm === true
+                                iconColor: Theme.statusWarning
+                            }
+
+                            // 后台跑完、用户还没回来看。
+                            Rectangle {
+                                objectName: "sessionUnreadDot"
+                                anchors.centerIn: parent
+                                width: 6
+                                height: 6
+                                radius: 3
+                                visible: modelData.unread === true
+                                      && modelData.busy !== true
+                                color: Theme.brandPrimary
+                            }
+                        }
+
                         Text {
                             id: sessionTitle
                             visible: !sessionDelegate.renaming
                             anchors.verticalCenter: parent.verticalCenter
+                            anchors.left: sessionStateSlot.right
+                            anchors.leftMargin: 4
                             text: modelData.title && modelData.title.length > 0
                                 ? modelData.title : qsTr("新会话")
                             color: Theme.textPrimary
                             font.pixelSize: Theme.fontSizeBody
                             font.family: Theme.fontSans
                             elide: Text.ElideRight
-                            width: parent.width
-                                   - ((sessionDelegate.hovered || sessionDelegate.activeFocus) ? 132 : 0)
+                            // 操作条宽度随会话是否打开而变（「结束对话」只在打开时
+                            // 出现），所以让位量也要跟着算，否则标题要么被多压
+                            // 一截、要么在操作条下面。
+                            width: parent.width - sessionStateSlot.width - 4
+                                   - ((sessionDelegate.hovered || sessionDelegate.activeFocus)
+                                      ? sessionActions.width + 6 : 0)
 
                             // docs/25 C5: elide 截断时悬停可看完整标题
                             HoverHandler { id: sessionTitleHover }
@@ -982,13 +1053,14 @@ Rectangle {
                             ToolTip.text: sessionTitle.text
                         }
 
-                        // Hover 操作行：置顶 / 归档 / 导出 / 重命名 / 删除。
+                        // Hover 操作行：置顶 / 归档 / 导出 / 结束对话 / 重命名 / 删除。
                         // 全部用直连 MouseArea 的 Rectangle，不再用 Popup Menu——
                         // Menu 在 Repeater delegate 内弹出会被焦点抢占秒关，
                         // 置顶/归档因此从未生效（bug 修复：改为直连按钮）。
                         // docs/25 D2: 键盘可达——行聚焦（ItemDelegate 在 Tab 链
                         // 内）时同样显示，按钮可继续 Tab 进入并回车激活。
                         Row {
+                            id: sessionActions
                             visible: (sessionDelegate.hovered || sessionDelegate.activeFocus)
                                      && !sessionDelegate.renaming
                             anchors.verticalCenter: parent.verticalCenter
@@ -1107,6 +1179,45 @@ Rectangle {
                                     root.exportSessionId = modelData.id
                                     exportDialog.open()
                                 }
+                            }
+
+                            // docs/30 §4.5：结束对话（只释放视图，不删数据）。
+                            // 只在会话被打开时出现——没打开就没有"结束"可言。
+                            Rectangle {
+                                width: 20
+                                height: 20
+                                radius: 4
+                                visible: modelData.open === true
+                                color: closeConvMA.containsMouse ? Theme.surfaceHover : "transparent"
+                                border.width: activeFocus ? 2 : 0
+                                border.color: Theme.brandPrimary
+
+                                AppIcon {
+                                    anchors.centerIn: parent
+                                    icon: "close"
+                                    size: 12
+                                    iconColor: closeConvMA.containsMouse
+                                        ? Theme.brandPrimary : Theme.textSecondary
+                                }
+
+                                function endConversation() {
+                                    AgentVM.closeConversation(modelData.id)
+                                }
+
+                                MouseArea {
+                                    id: closeConvMA
+                                    anchors.fill: parent
+                                    hoverEnabled: true
+                                    cursorShape: Qt.PointingHandCursor
+                                    onClicked: parent.endConversation()
+                                }
+                                activeFocusOnTab: true
+                                Keys.onReturnPressed: endConversation()
+                                Keys.onSpacePressed: endConversation()
+                                Accessible.role: Accessible.Button
+                                Accessible.name: qsTr("结束对话")
+                                Accessible.description: qsTr("关闭这条对话的视图，历史仍保留")
+                                Accessible.onPressAction: endConversation()
                             }
 
                             // Rename action
@@ -1232,10 +1343,14 @@ Rectangle {
                     }
                 }
 
+                // docs/30：侧栏是唯一入口。openConversation 与旧的 loadSession
+                // 的差别在于：已在打开集合里的会话只是**激活**（不重新 resume、
+                // 不打断后台任务），并且会清掉"完成未读"点；未打开的会话才真正
+                // 加载。忙的会话也能点回来——它的任务继续跑。
                 onClicked: {
                     if (sessionDelegate.renaming) return
                     sessionDelegate.confirmDelete = false
-                    AgentVM.loadSession(modelData.id)
+                    AgentVM.openConversation(modelData.id)
                 }
             }
         }
