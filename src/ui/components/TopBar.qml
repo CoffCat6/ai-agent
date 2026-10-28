@@ -142,7 +142,10 @@ Rectangle {
                 hoverEnabled: true
                 cursorShape: projectBadge.editable
                     ? Qt.PointingHandCursor : Qt.ArrowCursor
-                onClicked: projectPopup.opened ? projectPopup.close() : projectPopup.open()
+                // 再点一次关闭：必须在 onPressed 判断。项目弹层是
+                // CloseOnReleaseOutside，鼠标释放时它先把弹层关掉，
+                // onClicked/onReleased 读到的 opened 恒为 false，toggle 会又打开。
+                onPressed: projectPopup.opened ? projectPopup.close() : projectPopup.open()
             }
 
             Accessible.role: Accessible.Button
@@ -161,7 +164,7 @@ Rectangle {
                 width: 280
                 height: projectContent.implicitHeight + 12
                 padding: 6
-                closePolicy: Popup.CloseOnEscape | Popup.CloseOnPressOutside
+                closePolicy: Popup.CloseOnEscape | Popup.CloseOnReleaseOutside
 
                 background: DialogBackground {}
 
@@ -308,7 +311,8 @@ Rectangle {
             icon: "preset"
             iconSize: 16
             tooltip: qsTr("从会话模板开始")
-            onClicked: templateMenu.openBelow(templateEntry)
+            // 再点一次关闭（onPressed，理由同 SessionTemplateMenu.toggleBelow）。
+            onClicked: templateMenu.toggleBelow(templateEntry)
 
             SessionTemplateMenu {
                 id: templateMenu

@@ -200,7 +200,7 @@ Item {
                             anchors.fill: parent
                             hoverEnabled: true
                             cursorShape: Qt.PointingHandCursor
-                            onClicked: emptyTemplateMenu.openBelow(emptyTemplateEntry)
+                            onClicked: emptyTemplateMenu.toggleBelow(emptyTemplateEntry)
                         }
                     }
 

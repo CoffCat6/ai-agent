@@ -188,6 +188,29 @@ private slots:
         QCoreApplication::setApplicationName(QStringLiteral("NexusAI"));
     }
 
+    // 用户报告：「再点一次还是打开，必须点别处才能关」。
+    // 真实鼠标点触发胶囊两次：第一次开、第二次必须关。
+    void secondClickOnTriggerClosesPopup() {
+        SavedPresets saved;
+        Harness h;
+        QVERIFY2(h.window, qPrintable(h.error));
+        QCOMPARE(h.call("opened").toBool(), false);
+
+        auto* trigger = h.window->findChild<QQuickItem*>(
+            QStringLiteral("promptPresetTrigger"));
+        QVERIFY2(trigger, "prompt preset trigger not found");
+
+        const QPoint center = trigger->mapToScene(QPointF(trigger->width() / 2,
+                                                          trigger->height() / 2)).toPoint();
+        QTest::mouseClick(h.window, Qt::LeftButton, Qt::NoModifier, center);
+        QTRY_VERIFY(h.call("opened").toBool());
+        QTest::qWait(250);   // let the popup finish opening animations
+
+        QTest::mouseClick(h.window, Qt::LeftButton, Qt::NoModifier, center);
+        QTRY_VERIFY2(!h.call("opened").toBool(),
+                     "clicking the trigger a second time must close the popup");
+    }
+
     // 未套用预设：胶囊显示默认文案，且确实画出内容。
     void defaultStateRendersTrigger() {
         SavedPresets saved;

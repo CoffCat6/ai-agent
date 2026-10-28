@@ -845,6 +845,53 @@ private slots:
         vm->setMemory(nullptr);
     }
 
+    // 用户报告：下拉按钮点第二次还是打开，必须点别处才关。
+    // 覆盖输入区选项行的三个下拉（模型 / 思考强度 / 权限模式）与顶栏项目徽标。
+    // 这三个选择器都是"Popup + onPressed toggle"的同一模式，逐个用真实鼠标
+    // 点两次，第二次必须关闭。
+    void dropdownTriggersToggleClosedOnSecondClick() {
+        QQmlApplicationEngine engine;
+        engine.rootContext()->setContextProperty("Theme", ThemeProvider::instance());
+        engine.load(QUrl("qrc:/qt/qml/NexusAI/src/ui/main.qml"));
+        QVERIFY(!engine.rootObjects().isEmpty());
+        auto* window = qobject_cast<QQuickWindow*>(engine.rootObjects().first());
+        QVERIFY(window);
+        window->resize(1200, 800);
+        QTest::qWait(250);
+
+        const QStringList triggerNames = {
+            QStringLiteral("modelSelectorTrigger"),
+            QStringLiteral("thinkingEffortTrigger"),
+            QStringLiteral("permissionModeTrigger"),
+        };
+        for (const QString& name : triggerNames) {
+            auto* trigger = window->findChild<QQuickItem*>(name);
+            QVERIFY2(trigger, qPrintable(QStringLiteral("missing trigger: ") + name));
+            // 弹层状态挂在选择器 root 上（触发器是它的子项）。
+            QObject* selectorRoot = trigger->parent();
+            QVERIFY2(selectorRoot, qPrintable(name + ": trigger has no parent"));
+            // 未配置模型时思考强度整体不可用（usable=false），点不开是正确行为，
+            // 不是本用例的对象。
+            if (selectorRoot->property("usable").isValid()
+                    && !selectorRoot->property("usable").toBool())
+                continue;
+            QCOMPARE(selectorRoot->property("opened").toBool(), false);
+            const QPoint center = trigger->mapToScene(
+                QPointF(trigger->width() / 2, trigger->height() / 2)).toPoint();
+
+            QTest::mousePress(window, Qt::LeftButton, Qt::NoModifier, center);
+            QTest::mouseRelease(window, Qt::LeftButton, Qt::NoModifier, center);
+            QTRY_VERIFY2(selectorRoot->property("opened").toBool(),
+                         qPrintable(name + ": first click must open the popup"));
+            QTest::qWait(150);
+
+            QTest::mousePress(window, Qt::LeftButton, Qt::NoModifier, center);
+            QTest::mouseRelease(window, Qt::LeftButton, Qt::NoModifier, center);
+            QTRY_VERIFY2(!selectorRoot->property("opened").toBool(),
+                         qPrintable(name + ": second click must close the popup"));
+        }
+    }
+
     void freshWindowShowsNoProjectHintInRightPanel() {
         QQmlApplicationEngine engine;
         engine.rootContext()->setContextProperty("Theme", ThemeProvider::instance());

@@ -213,9 +213,8 @@ Rectangle {
                 width: 22
                 hoverEnabled: true
                 cursorShape: Qt.PointingHandCursor
-                onClicked: {
-                    templateMenu.openBelow(tmplMA)
-                }
+                // 再点一次关闭：onPressed（见 SessionTemplateMenu.toggleBelow）。
+                onPressed: templateMenu.toggleBelow(tmplMA)
 
                 // 窄条此前没有任何无障碍信息：外层按钮声明的是"新对话"
                 // 且直接新建，读屏用户既发现不了模板菜单、键盘也到不了。
@@ -1337,7 +1336,10 @@ Rectangle {
                                     anchors.fill: parent
                                     hoverEnabled: true
                                     cursorShape: Qt.PointingHandCursor
-                                    onClicked: moreBtn.openMenu()
+                                    // 再点一次关闭：onPressed（弹层是
+                                    // CloseOnReleaseOutside，onClicked 里读不到真值）。
+                                    onPressed: morePopup.opened
+                                        ? morePopup.close() : moreBtn.openMenu()
                                 }
                                 activeFocusOnTab: true
                                 Keys.onReturnPressed: moreBtn.openMenu()
@@ -1394,7 +1396,7 @@ Rectangle {
                                 // 而 contentItem 首帧高度为 0 时不会再次刷新。
                                 height: moreCol.implicitHeight + 12
                                 padding: 6
-                                closePolicy: Popup.CloseOnEscape | Popup.CloseOnPressOutside
+                                closePolicy: Popup.CloseOnEscape | Popup.CloseOnReleaseOutside
 
                                 background: DialogBackground {}
 

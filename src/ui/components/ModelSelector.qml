@@ -49,6 +49,9 @@ Item {
     Keys.onSpacePressed: root.toggleMenu()
     Keys.onDownPressed: if (root.enabled) root.toggleMenu()
 
+    // 回归用例用：弹层是否打开（Popup 不是 Item，测试取不到它）。
+    readonly property bool opened: menuPopup.opened
+
     Accessible.role: Accessible.ComboBox
     Accessible.name: qsTr("模型选择器")
     Accessible.description: hasProfile
@@ -59,6 +62,7 @@ Item {
     // Trigger pill button
     Rectangle {
         id: selectorBox
+        objectName: "modelSelectorTrigger"
         anchors.fill: parent
         radius: 6
         color: selectorMA.containsMouse || menuPopup.opened || root.activeFocus
@@ -114,7 +118,18 @@ Item {
             anchors.margins: -4
             hoverEnabled: true
             cursorShape: Qt.PointingHandCursor
-            onClicked: root.toggleMenu()
+            // 再点一次关闭（修复）：原先 onClicked + CloseOnPressOutside 的组合
+            // 有竞态——弹层在**按下**时就被关掉，抬起时 onClicked 读到 opened
+            // 为 false 又打开一次，表现为"点第二次还是开着"。
+            // 现在把判断放在 onPressed（此刻弹层状态还没被外部点击策略改写），
+            // 并让弹层改用 CloseOnReleaseOutside：鼠标释放时才处理"点外面"，
+            // 于是触发器自己的 pressed 处理总是先看到真实状态。
+            // 必须在 onPressed 而不是 onReleased/onClicked 上做这个判断：
+            // 弹层的 CloseOnReleaseOutside 会在**鼠标释放**时先把弹层关掉，
+            // 于是 onReleased/onClicked 读到的 opened 恒为 false，toggle 就
+            // 又打开了——用户看到的正是"点第二次还是开着，只能点别处关"。
+            // onPressed 发生在弹层的外部点击处理之前，读到的才是点击前状态。
+            onPressed: menuPopup.opened ? menuPopup.close() : menuPopup.open()
         }
     }
 
@@ -129,7 +144,7 @@ Item {
         height: Math.min(menuContent.implicitHeight + 12,
                          Math.max(200, root.mapToItem(null, 0, 0).y - 12))
         padding: 6
-        closePolicy: Popup.CloseOnEscape | Popup.CloseOnPressOutside
+        closePolicy: Popup.CloseOnEscape | Popup.CloseOnReleaseOutside
 
         background: DialogBackground {}
 

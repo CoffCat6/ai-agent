@@ -292,6 +292,31 @@ private slots:
         QVERIFY(!vm->stateBusy());
     }
 
+    // 用户报告：「点第二次还是打开，必须点别处才关」。
+    // 真实鼠标点触发器两次：第一次开，第二次必须关。
+    void secondClickOnTriggerClosesMenu() {
+        SavedTemplates saved;
+        Harness h;
+        QVERIFY2(h.window, qPrintable(h.error));
+        QCOMPARE(h.call("popped").toBool(), false);
+
+        auto* trigger = h.window->findChild<QQuickItem*>(
+            QStringLiteral("templateTrigger"));
+        QVERIFY2(trigger, "template trigger not found");
+        const QPoint center = trigger->mapToScene(QPointF(trigger->width() / 2,
+                                                         trigger->height() / 2)).toPoint();
+
+        QTest::mousePress(h.window, Qt::LeftButton, Qt::NoModifier, center);
+        QTest::mouseRelease(h.window, Qt::LeftButton, Qt::NoModifier, center);
+        QTRY_VERIFY(h.call("popped").toBool());
+        QTest::qWait(200);
+
+        QTest::mousePress(h.window, Qt::LeftButton, Qt::NoModifier, center);
+        QTest::mouseRelease(h.window, Qt::LeftButton, Qt::NoModifier, center);
+        QTRY_VERIFY2(!h.call("popped").toBool(),
+                     "clicking the trigger a second time must close the menu");
+    }
+
     // 空模板退化为普通新建（菜单里的「空白新对话」走同一条路径）。
     void emptyTemplateDegradesToPlainNewChat() {
         SavedTemplates saved;

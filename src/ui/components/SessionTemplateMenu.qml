@@ -30,6 +30,15 @@ Item {
     function openBelow(trigger) { openAt(trigger, true) }
     function openAbove(trigger) { openAt(trigger, false) }
 
+    // 触发器的"再点一次关闭"。三个宿主（侧栏窄条 / 顶栏图标 / 空态入口）
+    // 都必须在 onPressed 里调它，而不是 onClicked：弹层是
+    // CloseOnReleaseOutside，释放时它先关掉弹层，onClicked 读到的 opened
+    // 恒为 false，toggle 就会又打开一次（"点第二次还是开着"）。
+    function toggleBelow(trigger) {
+        if (templatePopup.opened) templatePopup.close()
+        else openAt(trigger, true)
+    }
+
     // 调试用：记录最近一次 openAt 的入参与计算结果。
     property string lastOpenDebug: ""
 
@@ -121,7 +130,7 @@ Item {
         width: 280
         height: content.implicitHeight + 12
         padding: 6
-        closePolicy: Popup.CloseOnEscape | Popup.CloseOnPressOutside
+        closePolicy: Popup.CloseOnEscape | Popup.CloseOnReleaseOutside
 
         background: DialogBackground {}
 

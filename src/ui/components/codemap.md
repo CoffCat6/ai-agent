@@ -132,6 +132,25 @@
 - **模块注册**：根 `CMakeLists.txt` 的 `qt_add_qml_module(nexus_ai … QML_FILES)` 逐个列出本目录文件；`charts/` 因 `QTP0004 NEW` 平铺注册进 `NexusAI` 模块（移动目录会改 qrc 路径）。设置页通过绝对 qrc URL 加载，不依赖相对路径。
 - **测试锚点**：`tests/CMakeLists.txt` 把 `src/ui/**/*.qml` 与两个 JS 重新打进测试资源；组件广泛使用 `objectName` 作为自动化锚点（`inputConsole`、`messageInput`、`mentionPopup`、`mentionRow`、`changeTree`、`fileChangeRow`、`fileRowAction`、`diffView`、`diffSplitRow`、`detailDiffView`、`commitFileTree`、`gitBlameRow`、`gitGraphRow`、`gitActionMessage`、`gitCommitMessage`、`fileChangeCountBadge` 等）。
 
+## 下拉/弹出触发器的开合约定
+
+所有「点一次开、再点一次关」的触发器必须把判断放在 **`onPressed`**，并且弹层
+用 `closePolicy: Popup.CloseOnEscape | Popup.CloseOnReleaseOutside`。
+
+原因：若用 `onClicked`/`onReleased` + `CloseOnPressOutside`，弹层会在鼠标按下/
+释放的那一刻先被外部点击策略关掉，处理器读到的 `opened` 恒为 `false`，toggle
+于是又打开一次——用户看到的是"点第二次还是开着，只能点别处关"。
+
+已按此约定修正：`ModelSelector`、`ThinkingEffortSelector`、
+`PermissionModeSelector`、`PromptPresetSelector`、`TopBar` 项目徽标、
+`SessionTemplateMenu.toggleBelow()`（三个宿主）、`Sidebar` 会话行「…」。
+新增下拉时照抄，回归用例见 `test_chat_workflows::dropdownTriggersToggleClosedOnSecondClick`、
+`test_prompt_preset_qml::secondClickOnTriggerClosesPopup`、
+`test_session_template_qml::secondClickOnTriggerClosesMenu`。
+
+原生 `ComboBox`（设置页 `ParamSelectRow` / `PreferenceControl` / `LogPanel`）
+自带正确的开合行为，无需处理。
+
 ## 约束与风险
 
 - **代码级硬约束**：`AssistantMessage.qml` **禁止出现正则字面量与裸反引号**（历史上导致 qmlcachegen 内存失控），围栏标记用 `String.fromCharCode(96)` 动态拼接；`DiffView.qml` 的 hunk 正则必须用 `new RegExp(...)` 构造（qmllint 6.9.0 在「正则字面量 + 循环」的函数上会无限增长）。改动这两个文件前先读文件头注释。

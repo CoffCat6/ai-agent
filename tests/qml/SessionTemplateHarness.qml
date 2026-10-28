@@ -16,11 +16,18 @@ Window {
     // 触发器：模拟侧栏「新对话」右缘那条窄条。
     Rectangle {
         id: trigger
+        objectName: "templateTrigger"
         x: 20
         y: 120
         width: 22
         height: 36
         color: "#cccccc"
+
+        // 与真实宿主同样的接线（onPressed + toggleBelow）。
+        MouseArea {
+            anchors.fill: parent
+            onPressed: menu.toggleBelow(trigger)
+        }
     }
 
     SessionTemplateMenu {
