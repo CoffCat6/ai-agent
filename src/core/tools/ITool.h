@@ -62,12 +62,27 @@ struct ToolResult {
     QString error;
     // G4: set only by write_file/edit_file after a successful mutation.
     FileCheckpoint checkpoint;
+    // 数据去向标识：工具把「这次请求实际打到了哪个外部服务」报上来，供
+    // 界面显示与审计（目前只有 web_search 填充，值是后端的 providerKey，
+    // 如 "zhipu"）。空 = 该工具没有外部服务来源（本地工具、或后端未自报）。
+    QString source;
 
     static ToolResult ok(const QString& out) {
         return {true, out, {}};
     }
     static ToolResult fail(const QString& err) {
         return {false, {}, err};
+    }
+    // 带来源的成功结果。与 ok() 分开，避免改动既有 3 元初始化的调用点。
+    static ToolResult ok(const QString& out, const QString& source) {
+        ToolResult result = ok(out);
+        result.source = source;
+        return result;
+    }
+    static ToolResult fail(const QString& err, const QString& source) {
+        ToolResult result = fail(err);
+        result.source = source;
+        return result;
     }
 };
 

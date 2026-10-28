@@ -2,6 +2,7 @@
 
 #include "core/agent/AIAgent.h"
 #include "core/utils/SettingsRepository.h"
+#include "core/tools/WebSearchBackend.h"
 
 #include <QMetaType>
 #include <cmath>
@@ -160,7 +161,7 @@ const QVector<SettingsKeyDef>& SettingsSchema::registeredKeys() {
                    SettingValueType::String, requiredText()),
             // 外部向量模型（任务 #16）：embedding 后端选择（本地 ollama ↔
             // OpenAI 兼容协议）与外部服务的 API key（DPAPI 加密，同
-            // webSearch/apiKey）。键登记纪律：新键必须同步本账本。
+            // webSearch/*ApiKey）。键登记纪律：新键必须同步本账本。
             keyDef(QStringLiteral("embedding/provider"), QStringLiteral("ollama"),
                    SettingValueType::String,
                    enumValues({QStringLiteral("ollama"), QStringLiteral("openai")})),
@@ -176,13 +177,21 @@ const QVector<SettingsKeyDef>& SettingsSchema::registeredKeys() {
                    SettingValueType::Int, intRange(1, 1024)),
             keyDef(QStringLiteral("logging/retentionFiles"), kDefaultLogRetentionFiles,
                    SettingValueType::Int, intRange(1, 100)),
-            keyDef(QStringLiteral("webSearch/provider"), QStringLiteral("tavily"),
+            // 联网搜索后端。合法键由 WebSearchProviderRegistry 决定，这里的
+            // 枚举值只是账本的镜像（test_settings 断言两者一致）。默认
+            // DuckDuckGo：免密钥，装上即可用。
+            keyDef(QStringLiteral("webSearch/provider"),
+                   WebSearchProviderRegistry::defaultProviderKey(),
                    SettingValueType::String,
-                   enumValues({QStringLiteral("tavily"), QStringLiteral("duckduckgo"),
-                               QStringLiteral("searxng")})),
-            keyDef(QStringLiteral("webSearch/apiKey"), QString(), SettingValueType::String,
+                   enumValues(WebSearchProviderRegistry::keys())),
+            // 每个 provider 一把独立密钥：智谱与 DeepSeek 的 key 来自两个不同
+            // 平台，共用一个键会导致「配了 A 的 key，切到 B 时把 A 的密钥发给
+            // B」——既是 401，也是一次跨厂商凭据泄露。两把 key 都 DPAPI
+            // 加密落盘，绝不进设置备份（SettingsBackup 按 encrypted 排除）。
+            keyDef(QStringLiteral("webSearch/zhipuApiKey"), QString(), SettingValueType::String,
                    {}, true),
-            keyDef(QStringLiteral("webSearch/searxBaseUrl"), QString(), SettingValueType::String),
+            keyDef(QStringLiteral("webSearch/deepseekApiKey"), QString(), SettingValueType::String,
+                   {}, true),
             // H1: outbound HTTP proxy. Applies to every QNetworkAccessManager
             // (LLM / embedding / search / MCP HTTP). The auth blob holds
             // username + password as JSON and is DPAPI-encrypted as a whole,

@@ -16,6 +16,16 @@ Item {
 
     readonly property string nodeType: modelData.type || ""
     readonly property string status: modelData.status || ""
+    // 外部服务来源（web_search 的后端 key，如 "zhipu"）。空 = 本地工具或
+    // 后端未自报，此时不显示徽章。
+    readonly property string source: modelData.source || ""
+    // 来源的展示名。技术名词不翻译（与设置页的 label 一致）。
+    function sourceLabel(key) {
+        if (key === "zhipu") return "智谱"
+        if (key === "deepseek") return "DeepSeek"
+        if (key === "duckduckgo") return "DuckDuckGo"
+        return key
+    }
     readonly property string detailText: {
         if (nodeType === "thinking")
             return modelData.reasoning || ""
@@ -171,7 +181,34 @@ Item {
                         font.pixelSize: Theme.fontSizeCaption
                         font.family: Theme.fontMono
                         elide: Text.ElideRight
-                        width: Math.max(40, headerRow.width - x - 8)
+                        // 徽章隐藏时不占 Row 宽度，扣减也要跟着消失，否则
+                        // 标题会白白缩掉一段。
+                        width: Math.max(40, headerRow.width - x
+                                        - (sourceBadge.visible ? sourceBadge.width + Theme.spaceSm : 0)
+                                        - 8)
+                    }
+
+                    // 检索来源徽章：让「这次查询发给了谁」在会话里直接可见，
+                    // 失败时同样是重要信息（哪家失败）。
+                    Rectangle {
+                        id: sourceBadge
+                        anchors.verticalCenter: parent.verticalCenter
+                        visible: root.source !== ""
+                        width: sourceLabelText.implicitWidth + 10
+                        height: 15
+                        radius: 3
+                        color: Theme.brandPrimary
+                        opacity: 0.14
+
+                        Text {
+                            id: sourceLabelText
+                            anchors.centerIn: parent
+                            text: root.sourceLabel(root.source)
+                            color: Theme.brandPrimary
+                            font.pixelSize: 9
+                            font.family: Theme.fontSans
+                            font.bold: true
+                        }
                     }
                 }
 

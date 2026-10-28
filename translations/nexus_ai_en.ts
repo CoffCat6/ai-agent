@@ -7431,20 +7431,29 @@ select a file to view its content diff on the right.</translation>
         <translation>Clear search API key</translation>
     </message>
     <message>
-        <location filename="../src/ui/pages/ToolsPage.qml" line="246"/>
-        <location filename="../src/ui/pages/ToolsPage.qml" line="278"/>
-        <source>SearXNG 服务地址</source>
-        <translation>SearXNG service URL</translation>
+        <location filename="../src/ui/pages/ToolsPage.qml" line="265"/>
+        <source>测试连接</source>
+        <translation>Test connection</translation>
     </message>
     <message>
-        <location filename="../src/ui/pages/ToolsPage.qml" line="256"/>
-        <source>例如 http://localhost:8080</source>
-        <translation>e.g. http://localhost:8080</translation>
+        <location filename="../src/ui/pages/ToolsPage.qml" line="265"/>
+        <source>测试搜索服务连接</source>
+        <translation>Test search service connection</translation>
     </message>
     <message>
-        <location filename="../src/ui/pages/ToolsPage.qml" line="282"/>
-        <source>自托管 SearXNG 实例地址（无需 API Key），搜索查询会发送至该实例。</source>
-        <translation>Self-hosted SearXNG instance URL (no API key needed); search queries are sent to this instance.</translation>
+        <location filename="../src/ui/pages/ToolsPage.qml" line="120"/>
+        <source>DuckDuckGo（免密钥）</source>
+        <translation>DuckDuckGo (no API key)</translation>
+    </message>
+    <message>
+        <location filename="../src/ui/pages/ToolsPage.qml" line="120"/>
+        <source>智谱 Web Search</source>
+        <translation>Zhipu Web Search</translation>
+    </message>
+    <message>
+        <location filename="../src/ui/pages/ToolsPage.qml" line="120"/>
+        <source>DeepSeek Search</source>
+        <translation>DeepSeek Search</translation>
     </message>
     <message>
         <location filename="../src/ui/pages/ToolsPage.qml" line="302"/>

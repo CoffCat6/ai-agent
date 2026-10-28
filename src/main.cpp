@@ -411,22 +411,20 @@ qInfo() << "NexusAI" << app.applicationVersion() << "starting";
     auto* webPtr = webOwned.get();
     ToolRegistry::instance().registerTool(std::move(webOwned));
 
-    // L4: web search backend factory. Maps the provider key from settings to
-    // a concrete WebSearchBackend. Unknown keys fall back to Tavily with a
-    // warning (the setting is also clamped in SettingsService, but this is a
-    // defense-in-depth fallback for corrupted configs).
-    // docs/20 §5.3 (C3): "searxng" reads its required baseUrl from settings.
-    const auto createWebSearchBackend = [settings](const QString& providerKey)
+    // L4: web search backend factory. The provider table lives in
+    // WebSearchProviderRegistry (shared with the settings schema options and
+    // the QML dropdown), so adding a provider never touches this file.
+    // Unknown keys fall back to the registry default with a warning (the
+    // setting is also clamped in SettingsService; this is defense-in-depth
+    // for corrupted configs).
+    const auto createWebSearchBackend = [](const QString& providerKey)
         -> std::unique_ptr<WebSearchBackend> {
-        if (providerKey == QLatin1String("tavily"))
-            return std::make_unique<TavilyBackend>();
-        if (providerKey == QLatin1String("duckduckgo"))
-            return std::make_unique<DuckDuckGoBackend>();
-        if (providerKey == QLatin1String("searxng"))
-            return std::make_unique<SearxBackend>(settings->webSearchSearxBaseUrl());
+        if (auto backend = WebSearchProviderRegistry::create(providerKey))
+            return backend;
+        const QString fallback = WebSearchProviderRegistry::defaultProviderKey();
         qWarning() << "Unknown web search provider:" << providerKey
-                   << "- falling back to tavily";
-        return std::make_unique<TavilyBackend>();
+                   << "- falling back to" << fallback;
+        return WebSearchProviderRegistry::create(fallback);
     };
 
     // ── Batch 14 (SEC-1401/1402): local-only mode gate ──
@@ -743,11 +741,11 @@ qInfo() << "NexusAI" << app.applicationVersion() << "starting";
         agentVM->setAllowPrivateTargets(settings->allowLocalNetworkFetch());
 
         // T6 (F3): inject the current web search API key (DPAPI-decrypted).
-        // 任务 #20 修 Mj2：webSearchApiKey() 是掩码 getter（恒空串），
-        // 注入后端必须取真实值出口 webSearchApiKeyValue()——此前 Tavily
-        // 用户在 UI 配了 key 也报"未配置"（3d45dd5 引入的断裂）。
-        // L4: also (re)create the backend for the configured provider — this
-        // was a dead setting before (always Tavily regardless of provider).
+        // 任务 #20 修 Mj2：webSearchApiKey() 是掩码 getter（恒空串），注入
+        // 后端必须取真实值出口 webSearchApiKeyValue()——此前用户在 UI 配了
+        // key 也报"未配置"（3d45dd5 引入的断裂）。密钥按 provider 分桶，
+        // 该 getter 返回的正是「当前选中 provider」那一把。
+        // L4: 同时按 configured provider 重建后端。
         webPtr->setApiKey(settings->webSearchApiKeyValue());
         webPtr->setBackend(createWebSearchBackend(settings->webSearchProvider()));
 
@@ -774,10 +772,12 @@ qInfo() << "NexusAI" << app.applicationVersion() << "starting";
     QObject::connect(settings, &SettingsService::allowProjectWriteChanged, &app, [applySettings]() { applySettings(); });
     QObject::connect(settings, &SettingsService::allowLocalNetworkFetchChanged, &app, [applySettings]() { applySettings(); });
     QObject::connect(settings, &SettingsService::episodicMemoryEnabledChanged, &app, [applySettings]() { applySettings(); });
-    // L4: provider switch rebuilds the web search backend immediately.
+    // L4: provider switch rebuilds the web search backend immediately. 密钥也
+    // 随 provider 换桶（webSearchApiKeyValue 读的是当前 provider 那一把），
+    // 所以 setApiKey 与 setBackend 必须在同一次 applySettings 里成对执行。
     QObject::connect(settings, &SettingsService::webSearchProviderChanged, &app, [applySettings]() { applySettings(); });
-    // docs/20 §5.3 (C3): baseUrl changes rebuild the SearXNG backend too.
-    QObject::connect(settings, &SettingsService::webSearchSearxBaseUrlChanged, &app, [applySettings]() { applySettings(); });
+    // 密钥改动（含切换 provider 后补发的那次通知）同样要重新注入。
+    QObject::connect(settings, &SettingsService::webSearchApiKeyChanged, &app, [applySettings]() { applySettings(); });
     // H1: proxy changes take effect on the next request (in-flight replies
     // stay on the connection they already negotiated).
     QObject::connect(settings, &SettingsService::proxyConfigChanged, &app, [applySettings]() { applySettings(); });

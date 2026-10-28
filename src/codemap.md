@@ -41,7 +41,7 @@
 9. `new SqliteMemory()`（进程级、无 parent）；`new OllamaEmbedding(nullptr)`、`new OpenAICompatibleEmbedding(nullptr)`；`aboutToQuit` 连接 `requestEmbeddingShutdown()`，让退出时在途嵌入尽快中止。
 10. 共享原子开关 `openAiActive`；`embedText`/`embedTexts` 闭包按开关选后端；`new RagService(nullptr)` 注入单条/批量 embedder。
 11. `applyEmbeddingConfig()`：同步两后端 model/baseUrl、外部后端 apiKey（`embeddingApiKeyValue()` 真值）；用 `SettingsService::embeddingUsesExternalProvider(provider, localOnlyMode)` 决定后端（local-only 时回退 Ollama 并告警）；身份（`"openai:"` 前缀模型名）变化时记录新身份并在池线程重嵌入全部文档（启动首次只播种身份）。
-12. 工具注册：`KnowledgeSearchTool(rag)`、`NetworkFetchTool`、`WebSearchTool` 进 `ToolRegistry::instance()`；Web 搜索后端工厂映射 `tavily`/`duckduckgo`/`searxng`（未知回退 Tavily）。
+12. 工具注册：`KnowledgeSearchTool(rag)`、`NetworkFetchTool`、`WebSearchTool` 进 `ToolRegistry::instance()`；Web 搜索后端工厂查 `WebSearchProviderRegistry`（`duckduckgo`/`zhipu`/`deepseek`，未知回退注册表默认项）。
 13. local-only 门禁 `applyLocalOnlyGate()`：把 `web_search` 与所有 `mcp__*` 写入 `ToolRegistry::setPolicyBlocked`；监听 `localOnlyModeChanged` 与 `activeProfileChanged`。
 14. Agent 装配：`new AIAgent(&app)`，注入 `ToolRegistry`、主 `memory`；`new EpisodicService(&app)` 注入 memory 与 `embedText`，再 `agent->setEpisodicService()`。
 15. 主题：`ThemeManager`/`ThemeProvider` 单例挂 app；`applyControlPalette()` 把 `ThemeProvider` 颜色写入 `QPalette`（Basic 控件取调色板），`themeChanged` 时重刷。
@@ -60,7 +60,7 @@
 28. `taskFinished`：受 `notice.enabled` 控制，窗口可见且激活时不打扰，托盘可用/close-to-tray 时 `showMessage` 6 秒。
 29. `I18nManager::localeChanged → engine.retranslate`，强制 QML 重新求值 `qsTr`；最后 `app.exec()`。
 
-**设置 → 运行时重应用链**：`readDenyListChanged`/`profilesChanged`/`localOnlyModeChanged`/`activeProfileChanged`/`contextTokensChanged`/`maxStepsChanged`/`taskTimeoutMinutesChanged`/`allowFullDiskReadChanged`/`allowProjectWriteChanged`/`allowLocalNetworkFetchChanged`/`episodicMemoryEnabledChanged`/`webSearchProviderChanged`/`webSearchSearxBaseUrlChanged`/`proxyConfigChanged` 全部重跑 `applySettings()`；`systemPromptOverrideChanged` 与 `defaultPermissionModeChanged` 各有独立 apply，embedding 五键重跑 `applyEmbeddingConfig()`（local-only 同时命中两条链）。
+**设置 → 运行时重应用链**：`readDenyListChanged`/`profilesChanged`/`localOnlyModeChanged`/`activeProfileChanged`/`contextTokensChanged`/`maxStepsChanged`/`taskTimeoutMinutesChanged`/`allowFullDiskReadChanged`/`allowProjectWriteChanged`/`allowLocalNetworkFetchChanged`/`episodicMemoryEnabledChanged`/`webSearchProviderChanged`/`webSearchApiKeyChanged`/`proxyConfigChanged`/`webSearchTestChanged` 全部重跑 `applySettings()`；`systemPromptOverrideChanged` 与 `defaultPermissionModeChanged` 各有独立 apply，embedding 五键重跑 `applyEmbeddingConfig()`（local-only 同时命中两条链）。
 
 **退出路径**：普通关闭由 `main.qml` 的 `onClosing` 先保存窗口几何，再按 `window.closeToTray && trayAvailable` 决定隐藏或接受；唯一真正退出是托盘"退出"（停全部 tab）。`aboutToQuit` 置位嵌入中断标志，后台 restore/re-embed 循环尽快收手；`main` 返回后 `QLockFile` 析构释放，Qt 静态析构阶段的线程池 `waitForDone` 不再被 300s 网络等待拖死。
 

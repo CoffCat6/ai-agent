@@ -7431,20 +7431,29 @@
         <translation>清除搜索 API Key</translation>
     </message>
     <message>
-        <location filename="../src/ui/pages/ToolsPage.qml" line="246"/>
-        <location filename="../src/ui/pages/ToolsPage.qml" line="278"/>
-        <source>SearXNG 服务地址</source>
-        <translation>SearXNG 服务地址</translation>
+        <location filename="../src/ui/pages/ToolsPage.qml" line="265"/>
+        <source>测试连接</source>
+        <translation>测试连接</translation>
     </message>
     <message>
-        <location filename="../src/ui/pages/ToolsPage.qml" line="256"/>
-        <source>例如 http://localhost:8080</source>
-        <translation>例如 http://localhost:8080</translation>
+        <location filename="../src/ui/pages/ToolsPage.qml" line="265"/>
+        <source>测试搜索服务连接</source>
+        <translation>测试搜索服务连接</translation>
     </message>
     <message>
-        <location filename="../src/ui/pages/ToolsPage.qml" line="282"/>
-        <source>自托管 SearXNG 实例地址（无需 API Key），搜索查询会发送至该实例。</source>
-        <translation>自托管 SearXNG 实例地址（无需 API Key），搜索查询会发送至该实例。</translation>
+        <location filename="../src/ui/pages/ToolsPage.qml" line="120"/>
+        <source>DuckDuckGo（免密钥）</source>
+        <translation>DuckDuckGo（免密钥）</translation>
+    </message>
+    <message>
+        <location filename="../src/ui/pages/ToolsPage.qml" line="120"/>
+        <source>智谱 Web Search</source>
+        <translation>智谱 Web Search</translation>
+    </message>
+    <message>
+        <location filename="../src/ui/pages/ToolsPage.qml" line="120"/>
+        <source>DeepSeek Search</source>
+        <translation>DeepSeek Search</translation>
     </message>
     <message>
         <location filename="../src/ui/pages/ToolsPage.qml" line="302"/>

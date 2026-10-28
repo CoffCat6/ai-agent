@@ -4,6 +4,7 @@
 #include "core/utils/SettingsSchema.h"
 #include "viewmodels/ThemeManager.h"
 #include "core/tools/ToolRegistry.h"
+#include "core/tools/WebSearchBackend.h"
 
 #include "core/memory/SqliteMemory.h"
 #include "core/utils/Logger.h"
@@ -18,6 +19,7 @@
 #include <QJsonObject>
 #include <QStyleHints>
 #include <QQmlComponent>
+#include <QQmlContext>
 #include <QQmlEngine>
 #include <QSignalSpy>
 #include <QSettings>
@@ -51,7 +53,7 @@ public:
         embeddingModel = s.value("embedding/model");
         embeddingBaseUrl = s.value("embedding/baseUrl");
         // 任务 #20：embedding provider/apiKey 行为测试需要守卫这两个键
-        // （对齐 webSearch/provider、webSearch/apiKey 的守卫先例）。
+        // （对齐 webSearch/provider、webSearch/*ApiKey 的守卫先例）。
         embeddingProvider = s.value("embedding/provider");
         embeddingApiKey = s.value("embedding/apiKey");
         allowFullDiskRead = s.value("security/allowFullDiskRead");
@@ -60,9 +62,9 @@ public:
         systemPromptOverride = s.value("agent/systemPromptOverride");
         toolsDisabled = s.value("tools/disabled");
         webSearchProvider = s.value("webSearch/provider");
-        webSearchApiKey = s.value("webSearch/apiKey");
-        // docs/20 §5.3 (C3): SearXNG 地址键同样进守卫（键登记纪律）。
-        searxBaseUrl = s.value("webSearch/searxBaseUrl");
+        // 密钥按 provider 分桶：两把独立的 key 都要进守卫。
+        zhipuApiKey = s.value("webSearch/zhipuApiKey");
+        deepseekApiKey = s.value("webSearch/deepseekApiKey");
         // H1: proxy settings (auth is a DPAPI blob).
         proxyMode = s.value("network/proxyMode");
         proxyHost = s.value("network/proxyHost");
@@ -125,12 +127,12 @@ public:
         if (webSearchProvider.isValid())
             s.setValue("webSearch/provider", webSearchProvider);
         else s.remove("webSearch/provider");
-        if (webSearchApiKey.isValid())
-            s.setValue("webSearch/apiKey", webSearchApiKey);
-        else s.remove("webSearch/apiKey");
-        if (searxBaseUrl.isValid())
-            s.setValue("webSearch/searxBaseUrl", searxBaseUrl);
-        else s.remove("webSearch/searxBaseUrl");
+        if (zhipuApiKey.isValid())
+            s.setValue("webSearch/zhipuApiKey", zhipuApiKey);
+        else s.remove("webSearch/zhipuApiKey");
+        if (deepseekApiKey.isValid())
+            s.setValue("webSearch/deepseekApiKey", deepseekApiKey);
+        else s.remove("webSearch/deepseekApiKey");
         if (proxyMode.isValid()) s.setValue("network/proxyMode", proxyMode);
         else s.remove("network/proxyMode");
         if (proxyHost.isValid()) s.setValue("network/proxyHost", proxyHost);
@@ -183,8 +185,8 @@ public:
     QVariant systemPromptOverride;
     QVariant toolsDisabled;
     QVariant webSearchProvider;
-    QVariant webSearchApiKey;
-    QVariant searxBaseUrl;
+    QVariant zhipuApiKey;
+    QVariant deepseekApiKey;
     QVariant proxyMode;
     QVariant proxyHost;
     QVariant proxyPort;
@@ -843,8 +845,9 @@ private slots:
             "embedding/model", "embedding/baseUrl", "embedding/provider",
             "embedding/apiKey", "agent/systemPromptOverride",
             "logging/level", "logging/directory", "logging/maxFileSizeMb",
-            "logging/retentionFiles", "webSearch/provider", "webSearch/apiKey",
-            "webSearch/searxBaseUrl", "memory/episodicMemoryEnabled",
+            "logging/retentionFiles", "webSearch/provider",
+            "webSearch/zhipuApiKey", "webSearch/deepseekApiKey",
+            "memory/episodicMemoryEnabled",
             // H1: proxy settings + encrypted credential blob
             "network/proxyMode", "network/proxyHost", "network/proxyPort",
             "network/proxyAuth",
@@ -945,9 +948,17 @@ private slots:
         QVERIFY(!SettingsRepository::writeValue(QStringLiteral("logging/maxFileSizeMb"),
                                                  QStringLiteral("10"), &validationError));
         QVERIFY(!validationError.isEmpty());
+        // 合法 provider 键与后端注册表同源（单一事实源，不再两处硬编码）。
         QCOMPARE(SettingsSchema::options(QStringLiteral("webSearch/provider")),
-                 QStringList({QStringLiteral("tavily"), QStringLiteral("duckduckgo"),
-                              QStringLiteral("searxng")}));
+                 WebSearchProviderRegistry::keys());
+        QCOMPARE(SettingsSchema::options(QStringLiteral("webSearch/provider")),
+                 QStringList({QStringLiteral("duckduckgo"), QStringLiteral("zhipu"),
+                              QStringLiteral("deepseek")}));
+        // 默认值也来自注册表：移除 Tavily 后首装应当是免密钥后端。
+        QCOMPARE(SettingsSchema::defaultValue(QStringLiteral("webSearch/provider")).toString(),
+                 WebSearchProviderRegistry::defaultProviderKey());
+        QCOMPARE(WebSearchProviderRegistry::defaultProviderKey(),
+                 QStringLiteral("duckduckgo"));
     }
 
     void modelSelectionAndSignals() {
@@ -1251,6 +1262,218 @@ ComboBox {
         QCOMPARE(editTextAfterBuild(kCustomValue), QStringLiteral("custom-embed"));
     }
 
+    // 回归（本次改动引入的缺陷）：密钥输入框的可见性绑定必须随 provider
+    // 切换即时重算。
+    //
+    // 根因：把「是否需要密钥」写成 Q_INVOKABLE 后，QML 侧
+    // `visible: Settings.webSearchProviderNeedsApiKey()` 是一次函数调用，
+    // 结果不依赖任何 notify 信号；切换 provider 只发 webSearchProviderChanged，
+    // 该绑定不会重算，输入框要等重新打开设置页（组件重建）才出现。
+    // 修法是改成带 NOTIFY webSearchProviderChanged 的 Q_PROPERTY。
+    void webSearchKeyFieldVisibilityTracksProviderSwitch() {
+        SettingsGuard guard;
+        {
+            QSettings s("NexusAI", "NexusAI");
+            s.remove("webSearch/provider");
+        }
+        SettingsService svc(nullptr);
+        QQmlEngine engine;
+
+        // 与 ToolsPage 同形的绑定：属性读取，不是函数调用。
+        static const char* kQml = R"QML(
+import QtQuick
+Item {
+    property bool keyFieldVisible: settings.webSearchProviderNeedsApiKey
+    property bool keyConfigured: settings.webSearchApiKeySet
+}
+)QML";
+
+        // QML 通过 context property 拿到同一个实例（生产里是 QML_SINGLETON）。
+        // 必须在创建组件之前设置，否则绑定求值时会解析不到。
+        engine.rootContext()->setContextProperty(QStringLiteral("settings"), &svc);
+        QQmlComponent component(&engine);
+        component.setData(QByteArray(kQml), QUrl());
+        QVERIFY2(component.isReady(), qPrintable(component.errorString()));
+        std::unique_ptr<QObject> item2(component.create());
+        QVERIFY2(item2 != nullptr, qPrintable(component.errorString()));
+
+        QCOMPARE(svc.webSearchProvider(), QStringLiteral("duckduckgo"));
+        // 免密钥后端：输入框隐藏。
+        QCOMPARE(item2->property("keyFieldVisible").toBool(), false);
+
+        // 切到需要密钥的后端：绑定必须立刻翻成可见，无需重建组件。
+        svc.setWebSearchProvider(QStringLiteral("zhipu"));
+        QCOMPARE(item2->property("keyFieldVisible").toBool(), true);
+        QCOMPARE(item2->property("keyConfigured").toBool(), false);
+
+        // 配好密钥后「已配置」也跟着走。
+        svc.setWebSearchApiKey(QStringLiteral("zhipu-key"));
+        QCOMPARE(item2->property("keyConfigured").toBool(), true);
+
+        // 切到免密钥后端：输入框立即隐藏；再切回，已配置的状态仍在。
+        svc.setWebSearchProvider(QStringLiteral("duckduckgo"));
+        QCOMPARE(item2->property("keyFieldVisible").toBool(), false);
+        svc.setWebSearchProvider(QStringLiteral("zhipu"));
+        QCOMPARE(item2->property("keyFieldVisible").toBool(), true);
+        QCOMPARE(item2->property("keyConfigured").toBool(), true);
+
+        // 元对象层面锁定修法：必须是属性且带正确的 NOTIFY，否则上面的绑定
+        // 会退回「只求值一次」的行为。
+        const QMetaObject* mo = svc.metaObject();
+        const int idx = mo->indexOfProperty("webSearchProviderNeedsApiKey");
+        QVERIFY2(idx >= 0, "webSearchProviderNeedsApiKey must be a Q_PROPERTY");
+        const QMetaProperty prop = mo->property(idx);
+        QVERIFY(prop.hasNotifySignal());
+        QCOMPARE(prop.notifySignal().name(), QByteArray("webSearchProviderChanged"));
+    }
+
+    // 搜索连通性测试的「前置校验」路径：未配置就得当场说清楚，不能发起
+    // 一次注定失败的请求再把原始错误丢给用户。
+    //
+    // 真实检索路径不在这里测（会打真网络、结果依赖外部服务可用性），与
+    // test_web_search 只测 build/parse 纯函数的既有口径一致；网络层由
+    // 各后端的 errorReason 契约单独覆盖。
+    void webSearchTestGuardsBeforeNetwork() {
+        SettingsGuard guard;
+        {
+            QSettings s("NexusAI", "NexusAI");
+            s.remove("webSearch/provider");
+            s.remove("webSearch/zhipuApiKey");
+        }
+        SettingsService svc(nullptr);
+
+        // 需要密钥的后端 + 没填 key：立即失败，文案点名是哪家。
+        svc.setWebSearchProvider(QStringLiteral("zhipu"));
+        QCOMPARE(svc.webSearchProviderLabel(QStringLiteral("zhipu")),
+                 QStringLiteral("智谱 Web Search"));
+        QSignalSpy spy(&svc, &SettingsService::webSearchTestChanged);
+        svc.testWebSearch();
+        QCOMPARE(spy.count(), 1);           // 同步完成，不发「正在测试」中间态
+        QVERIFY(!svc.webSearchTesting());
+        QVERIFY(!svc.webSearchTestOk());
+        QVERIFY2(svc.webSearchTestResult().contains(QStringLiteral("智谱 Web Search")),
+                 qPrintable(svc.webSearchTestResult()));
+        QVERIFY(svc.webSearchTestResult().contains(QStringLiteral("API Key")));
+
+        // 未知 provider：同样给出可读原因而不是静默失败。
+        // （setWebSearchProvider 会拒绝未知键，这里直接验证 label 兜底行为。）
+        QCOMPARE(svc.webSearchProviderLabel(QStringLiteral("bogus")),
+                 QStringLiteral("bogus"));
+
+        // 成功/失败结论必须能被 QML 观测到：属性存在且带通知信号。
+        const QMetaObject* mo = svc.metaObject();
+        for (const char* name : {"webSearchTesting", "webSearchTestOk",
+                                 "webSearchTestResult"}) {
+            const int idx = mo->indexOfProperty(name);
+            QVERIFY2(idx >= 0, name);
+            const QMetaProperty prop = mo->property(idx);
+            QVERIFY2(prop.hasNotifySignal(), name);
+            QCOMPARE(prop.notifySignal().name(), QByteArray("webSearchTestChanged"));
+        }
+    }
+
+    // 连通性测试的完整异步状态机：进行中 → 结论。用替身后端把网络层摘掉，
+    // 才能断言「先发正在测试、再发结论」的时序与文案（真实路径会打真网络，
+    // 结果取决于外部服务，不适合做回归断言）。
+    void webSearchTestRunsAsyncAndReportsOutcome() {
+        SettingsGuard guard;
+        {
+            QSettings s("NexusAI", "NexusAI");
+            s.remove("webSearch/provider");
+            s.remove("webSearch/zhipuApiKey");
+        }
+        SettingsService svc(nullptr);
+        svc.setWebSearchProvider(QStringLiteral("zhipu"));
+        svc.setWebSearchApiKey(QStringLiteral("fake-key"));
+
+        // 成功：后端返回 2 条结果、无错误原因。
+        class TwoResultBackend : public WebSearchBackend {
+        public:
+            QString providerKey() const override { return QStringLiteral("zhipu"); }
+            QList<WebSearchResult> search(const QString&, int, const QString&, int,
+                                          QString* errorReason,
+                                          const std::atomic<bool>*) const override {
+                if (errorReason) *errorReason = QString();
+                QList<WebSearchResult> out;
+                for (int i = 0; i < 2; ++i) {
+                    WebSearchResult r;
+                    r.title = QStringLiteral("r%1").arg(i);
+                    r.url = QStringLiteral("https://e.org/%1").arg(i);
+                    out.append(r);
+                }
+                return out;
+            }
+        };
+        svc.setWebSearchTestBackendForTesting(std::make_unique<TwoResultBackend>());
+        QSignalSpy spy(&svc, &SettingsService::webSearchTestChanged);
+        svc.testWebSearch();
+        // 同步先进入"进行中"，异步回结论。
+        QVERIFY(svc.webSearchTesting());
+        QVERIFY(svc.webSearchTestResult().contains(QStringLiteral("正在测试")));
+        QVERIFY(spy.wait(5000));
+        QVERIFY(!svc.webSearchTesting());
+        QVERIFY(svc.webSearchTestOk());
+        QVERIFY2(svc.webSearchTestResult().contains(QStringLiteral("2")),
+                 qPrintable(svc.webSearchTestResult()));
+        QVERIFY(svc.webSearchTestResult().contains(QStringLiteral("智谱 Web Search")));
+
+        // 失败：后端把原因写进 errorReason。
+        class FailingBackend : public WebSearchBackend {
+        public:
+            QString providerKey() const override { return QStringLiteral("zhipu"); }
+            QList<WebSearchResult> search(const QString&, int, const QString&, int,
+                                          QString* errorReason,
+                                          const std::atomic<bool>*) const override {
+                if (errorReason) *errorReason = QStringLiteral("API Key 无效");
+                return {};
+            }
+        };
+        svc.setWebSearchTestBackendForTesting(std::make_unique<FailingBackend>());
+        QSignalSpy failSpy(&svc, &SettingsService::webSearchTestChanged);
+        svc.testWebSearch();
+        QVERIFY(failSpy.wait(5000));
+        QVERIFY(!svc.webSearchTesting());
+        QVERIFY(!svc.webSearchTestOk());
+        // 失败文案要点名是哪家 + 原始原因。
+        QVERIFY2(svc.webSearchTestResult().contains(QStringLiteral("智谱 Web Search")),
+                 qPrintable(svc.webSearchTestResult()));
+        QVERIFY2(svc.webSearchTestResult().contains(QStringLiteral("API Key 无效")),
+                 qPrintable(svc.webSearchTestResult()));
+    }
+
+    // 免密钥后端（duckduckgo）也能测：没有密钥可验，但同样是一次真实检索。
+    void webSearchTestAllowsKeylessProvider() {
+        SettingsGuard guard;
+        {
+            QSettings s("NexusAI", "NexusAI");
+            s.remove("webSearch/provider");
+        }
+        SettingsService svc(nullptr);
+        QCOMPARE(svc.webSearchProvider(), QStringLiteral("duckduckgo"));
+        QVERIFY(!svc.webSearchProviderNeedsApiKey());
+
+        class OneResultBackend : public WebSearchBackend {
+        public:
+            QString providerKey() const override { return QStringLiteral("duckduckgo"); }
+            bool requiresApiKey() const override { return false; }
+            QList<WebSearchResult> search(const QString&, int, const QString&, int,
+                                          QString* errorReason,
+                                          const std::atomic<bool>*) const override {
+                if (errorReason) *errorReason = QString();
+                WebSearchResult r;
+                r.title = QStringLiteral("t");
+                r.url = QStringLiteral("https://e.org");
+                return {r};
+            }
+        };
+        svc.setWebSearchTestBackendForTesting(std::make_unique<OneResultBackend>());
+        QSignalSpy spy(&svc, &SettingsService::webSearchTestChanged);
+        svc.testWebSearch();
+        QVERIFY(spy.wait(5000));
+        QVERIFY(svc.webSearchTestOk());
+        QVERIFY(!svc.webSearchTestResult().contains(QStringLiteral("API Key")));
+    }
+
     void toolRegistryEmitsToolsChanged() {
         SettingsGuard guard;
         auto& reg = ToolRegistry::instance();
@@ -1364,11 +1587,12 @@ ComboBox {
     void webSearchProviderRejectsUnknownKey() {
         SettingsGuard guard;
         SettingsService svc(nullptr);
-        svc.setWebSearchProvider(QStringLiteral("tavily"));
+        svc.setWebSearchProvider(QStringLiteral("zhipu"));
+        QCOMPARE(svc.webSearchProvider(), QStringLiteral("zhipu"));
         QSignalSpy spy(&svc, &SettingsService::webSearchProviderChanged);
         svc.setWebSearchProvider(QStringLiteral("google"));
         QCOMPARE(spy.count(), 0);
-        QCOMPARE(svc.webSearchProvider(), QStringLiteral("tavily"));
+        QCOMPARE(svc.webSearchProvider(), QStringLiteral("zhipu"));
     }
 
     // 任务 #20（Mj1）：embedding provider 的 L4 守卫——合法键持久化并
@@ -1413,7 +1637,7 @@ ComboBox {
         {
             QSettings s("NexusAI", "NexusAI");
             s.remove("embedding/apiKey");
-            s.remove("webSearch/apiKey");
+            s.remove("webSearch/zhipuApiKey");
         }
         {
             // 写入：掩码 getter 恒空（QML 掩码语义），真实值出口返回
@@ -1423,6 +1647,8 @@ ComboBox {
             QCOMPARE(svc.embeddingApiKey(), QString());
             QVERIFY(svc.embeddingApiKeySet());
             QCOMPARE(svc.embeddingApiKeyValue(), QStringLiteral("k1"));
+            // 搜索密钥分桶存储：先切到需要密钥的后端再写入。
+            svc.setWebSearchProvider(QStringLiteral("zhipu"));
             svc.setWebSearchApiKey(QStringLiteral("k1"));
             QCOMPARE(svc.webSearchApiKey(), QString());
             QVERIFY(svc.webSearchApiKeySet());
@@ -1432,12 +1658,17 @@ ComboBox {
             const QString stored = s.value("embedding/apiKey").toString();
             QVERIFY(stored.startsWith(QStringLiteral("dpapi:v1:")));
             QVERIFY(stored != QStringLiteral("k1"));
+            // 搜索密钥同样必须是密文。
+            const QString searchStored = s.value("webSearch/zhipuApiKey").toString();
+            QVERIFY(searchStored.startsWith(QStringLiteral("dpapi:v1:")));
+            QVERIFY(searchStored != QStringLiteral("k1"));
 #endif
         }
         // 新实例 load：DPAPI 解密回填，真实值出口取回明文（往返成立）。
         {
             SettingsService svc2(nullptr);
             QCOMPARE(svc2.embeddingApiKeyValue(), QStringLiteral("k1"));
+            QCOMPARE(svc2.webSearchProvider(), QStringLiteral("zhipu"));
             QCOMPARE(svc2.webSearchApiKeyValue(), QStringLiteral("k1"));
         }
         // 空串清除：apiKeySet 归零、落盘为空；新实例确认读回为空。
@@ -1455,6 +1686,88 @@ ComboBox {
             QVERIFY(!svc4.embeddingApiKeySet());
             QCOMPARE(svc4.embeddingApiKeyValue(), QString());
         }
+    }
+
+    // 密钥按 provider 分桶：切换 provider 不会串用另一家的凭据（否则会把
+    // A 平台的密钥发给 B 平台——401 之外还是一次跨厂商凭据泄露）。
+    void webSearchApiKeysAreBucketedPerProvider() {
+        SettingsGuard guard;
+        {
+            QSettings s("NexusAI", "NexusAI");
+            s.remove("webSearch/zhipuApiKey");
+            s.remove("webSearch/deepseekApiKey");
+            s.remove("webSearch/provider");
+        }
+        SettingsService svc(nullptr);
+        QCOMPARE(svc.webSearchProvider(), QStringLiteral("duckduckgo"));
+        // 免密钥后端：没有密钥桶，setWebSearchApiKey 是 no-op（不写脏数据）。
+        QVERIFY(!svc.webSearchProviderNeedsApiKey());
+        QVERIFY(!svc.webSearchApiKeySet());
+        svc.setWebSearchApiKey(QStringLiteral("should-be-ignored"));
+        QVERIFY(!svc.webSearchApiKeySet());
+        {
+            QSettings s("NexusAI", "NexusAI");
+            QVERIFY(!s.contains("webSearch/zhipuApiKey"));
+            QVERIFY(!s.contains("webSearch/deepseekApiKey"));
+        }
+
+        // 智谱写一把，DeepSeek 写另一把，两者互不可见。
+        QSignalSpy keySpy(&svc, &SettingsService::webSearchApiKeyChanged);
+        svc.setWebSearchProvider(QStringLiteral("zhipu"));
+        QVERIFY(svc.webSearchProviderNeedsApiKey());
+        // 切换 provider 必发一次 apiKeyChanged：QML 的「已配置/未配置」
+        // 占位符判据随之变化，不通知就会继续显示上一家的状态。
+        QVERIFY(keySpy.count() >= 1);
+        svc.setWebSearchApiKey(QStringLiteral("zhipu-key"));
+        QCOMPARE(svc.webSearchApiKeyValue(), QStringLiteral("zhipu-key"));
+
+        svc.setWebSearchProvider(QStringLiteral("deepseek"));
+        // 切过去时 DeepSeek 还没配 key：不能读到智谱那把。
+        QVERIFY(!svc.webSearchApiKeySet());
+        QCOMPARE(svc.webSearchApiKeyValue(), QString());
+        svc.setWebSearchApiKey(QStringLiteral("deepseek-key"));
+        QCOMPARE(svc.webSearchApiKeyValue(), QStringLiteral("deepseek-key"));
+
+        // 切回智谱：原样取回智谱那把。
+        svc.setWebSearchProvider(QStringLiteral("zhipu"));
+        QCOMPARE(svc.webSearchApiKeyValue(), QStringLiteral("zhipu-key"));
+        QVERIFY(svc.webSearchApiKeySet());
+
+        // 两把 key 各自落在自己的设置键上，重启后仍分桶。
+        {
+            QSettings s("NexusAI", "NexusAI");
+            QVERIFY(!s.value("webSearch/zhipuApiKey").toString().isEmpty());
+            QVERIFY(!s.value("webSearch/deepseekApiKey").toString().isEmpty());
+            QVERIFY(s.value("webSearch/zhipuApiKey").toString()
+                    != s.value("webSearch/deepseekApiKey").toString());
+        }
+        SettingsService svc2(nullptr);
+        QCOMPARE(svc2.webSearchApiKeyValue(), QStringLiteral("zhipu-key"));
+        svc2.setWebSearchProvider(QStringLiteral("deepseek"));
+        QCOMPARE(svc2.webSearchApiKeyValue(), QStringLiteral("deepseek-key"));
+
+        // 清除只影响当前 provider。
+        svc2.setWebSearchApiKey(QString());
+        QVERIFY(!svc2.webSearchApiKeySet());
+        svc2.setWebSearchProvider(QStringLiteral("zhipu"));
+        QCOMPARE(svc2.webSearchApiKeyValue(), QStringLiteral("zhipu-key"));
+    }
+
+    // 未知 provider 键被拒绝（L4），且不再出现已被移除的后端。
+    void webSearchProviderRejectsRemovedBackends() {
+        SettingsGuard guard;
+        SettingsService svc(nullptr);
+        const QString before = svc.webSearchProvider();
+        QSignalSpy spy(&svc, &SettingsService::webSearchProviderChanged);
+        for (const QString& removed : {QStringLiteral("tavily"),
+                                       QStringLiteral("searxng")}) {
+            svc.setWebSearchProvider(removed);
+            QCOMPARE(svc.webSearchProvider(), before);
+        }
+        QCOMPARE(spy.count(), 0);
+        // UI 下拉的合法值里也不该再有它们。
+        QVERIFY(!svc.webSearchProviders().contains(QStringLiteral("tavily")));
+        QVERIFY(!svc.webSearchProviders().contains(QStringLiteral("searxng")));
     }
 
     // H1: proxy mode/host/port persist; credentials are encrypted as one
@@ -1555,9 +1868,10 @@ ComboBox {
         const auto& keys = SettingsSchema::registeredKeys();
         QVERIFY(!keys.isEmpty());
         bool foundProvider = false;
-        bool foundApiKey = false;
-        // docs/20 §5.3 (C3): SearXNG 地址键必须进账本（键登记纪律）。
-        bool foundSearxBaseUrl = false;
+        // 密钥按 provider 分桶：每一把都要在账本里且标记 encrypted
+        //（设置导出必须永远带不走凭据）。
+        bool foundZhipuApiKey = false;
+        bool foundDeepSeekApiKey = false;
         // docs/20 工作流 B（桌面集成）：新偏好键必须登记进账本。
         bool foundCloseToTray = false;
         bool foundAutoStart = false;
@@ -1567,15 +1881,18 @@ ComboBox {
         bool foundProxyMode = false;
         bool foundProxyAuth = false;
         for (const auto& k : keys) {
-            if (k.key == QStringLiteral("webSearch/provider")) foundProvider = true;
-            if (k.key == QStringLiteral("webSearch/apiKey")) {
-                foundApiKey = true;
+            if (k.key == QStringLiteral("webSearch/provider")) {
+                foundProvider = true;
+                // provider 的合法值必须来自注册表，不是另一份手写清单。
+                QCOMPARE(k.constraint.options, WebSearchProviderRegistry::keys());
+            }
+            if (k.key == QStringLiteral("webSearch/zhipuApiKey")) {
+                foundZhipuApiKey = true;
                 QVERIFY(k.encrypted);
             }
-            if (k.key == QStringLiteral("webSearch/searxBaseUrl")) {
-                foundSearxBaseUrl = true;
-                // 地址非密钥：明文存储，不得挂 DPAPI。
-                QVERIFY(!k.encrypted);
+            if (k.key == QStringLiteral("webSearch/deepseekApiKey")) {
+                foundDeepSeekApiKey = true;
+                QVERIFY(k.encrypted);
             }
             if (k.key == QStringLiteral("network/proxyMode")) {
                 foundProxyMode = true;
@@ -1598,9 +1915,9 @@ ComboBox {
             }
         }
         QVERIFY(foundProvider);
-        QVERIFY(foundApiKey);
         // 键登记纪律（docs/17 B3）：漏登记会让"恢复默认"/账本完整性静默失效。
-        QVERIFY2(foundSearxBaseUrl, "webSearch/searxBaseUrl missing from schema");
+        QVERIFY2(foundZhipuApiKey, "webSearch/zhipuApiKey missing from schema");
+        QVERIFY2(foundDeepSeekApiKey, "webSearch/deepseekApiKey missing from schema");
         QVERIFY2(foundProxyMode, "network/proxyMode missing from schema");
         QVERIFY2(foundProxyAuth, "network/proxyAuth missing from schema");
         QVERIFY2(foundCloseToTray, "prefs/v1/window.closeToTray missing from schema");

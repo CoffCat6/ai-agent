@@ -76,7 +76,7 @@ AgentChatPage 空态的「配置模型」、ModelSelector、`AgentVM.modelSettin
 - `security`：`security/allowFullDiskRead`、`security/allowProjectWrite`、
   `security/localOnlyMode`、`security/allowLocalNetworkFetch`、`security/readDenyList`。
 - `tools`：`tools/disabled`（经 ToolRegistry 持久化）、`webSearch/provider`、
-  `webSearch/apiKey`（加密）、`webSearch/searxBaseUrl`、`agent/defaultPermissionMode`。
+  `webSearch/zhipuApiKey` / `webSearch/deepseekApiKey`（各自加密，按 provider 分桶）、`agent/defaultPermissionMode`。
 - `memory`：`memory/episodicMemoryEnabled`、`memory/auditRetentionDays`、
   `memory/tokenRetentionDays`；记忆正文在 SQLite，不在 SettingsSchema。
 - `usage`：`dailyTokenQuota`、`dailyCostQuotaCents`、`monthlyTokenQuota`、

@@ -15,18 +15,23 @@
 namespace NexusAI {
 
 // REQ-T6-01..06: web search tool. ReAct-callable wrapper around a
-// WebSearchBackend (Tavily by default). The backend is selected via
-// SettingsService::webSearchProvider; the API key is stored via DPAPI
-// encryption. Results are capped at 6000 characters (DFX) and the tool
-// respects localOnlyMode gating (REQ-T6-04).
+// WebSearchBackend (DuckDuckGo by default, per WebSearchProviderRegistry).
+// The backend is selected via SettingsService::webSearchProvider; each
+// provider keeps its own DPAPI-encrypted API key. Results are capped at 6000
+// characters (DFX) and the tool respects localOnlyMode gating (REQ-T6-04).
 class WebSearchTool : public ITool {
 public:
     // DFX: max total characters returned to the model across all results.
     static constexpr int kMaxResultChars = 6000;
 
+    // 默认后端取注册表的默认项（DuckDuckGo），与设置项默认值同源，
+    // 避免「构造出的默认」与「设置里的默认」两处漂移。
     explicit WebSearchTool(std::unique_ptr<WebSearchBackend> backend = nullptr)
         : m_backend(backend ? std::shared_ptr<WebSearchBackend>(std::move(backend))
-                            : std::make_shared<TavilyBackend>()) {}
+                            : WebSearchProviderRegistry::create(
+                                  WebSearchProviderRegistry::defaultProviderKey())) {
+        if (!m_backend) m_backend = std::make_shared<DuckDuckGoBackend>();
+    }
 
     ToolDefinition definition() const override {
         ToolDefinition def;
@@ -85,18 +90,23 @@ public:
         // against it, so the backend cannot be swapped mid-search.
         const Config cfg = snapshotConfig();
 
+        // 每条返回路径都带上后端标识：用户需要知道这次查询发给了谁——
+        // 失败时尤其重要（「请求失败」到底是哪家失败）。
+        const QString source = cfg.backend->providerKey();
+
         const QString query = args.value(QStringLiteral("query")).toString().trimmed();
         if (query.isEmpty())
-            return ToolResult::fail(QStringLiteral("query is required"));
+            return ToolResult::fail(QStringLiteral("query is required"), source);
 
         if (cfg.backend->requiresApiKey() && cfg.apiKey.isEmpty())
-            return ToolResult::fail(QStringLiteral("未配置搜索 API key（请在设置中心配置 web_search 密钥）"));
+            return ToolResult::fail(QStringLiteral(
+                "未配置搜索 API Key（请在设置中心 → 工具 → 联网搜索填写）"), source);
 
-        // docs/20 §5.3: 后端自报的未就绪原因（如 searxng 缺 baseUrl）优先于
-        // 网络诊断——否则用户只会看到「请检查网络连接」而被指错方向。
+        // 后端自报的未就绪原因优先于网络诊断——否则用户只会看到「请检查
+        // 网络连接」而被指错方向。
         const QString notReady = cfg.backend->notReadyReason();
         if (!notReady.isEmpty())
-            return ToolResult::fail(notReady);
+            return ToolResult::fail(notReady, source);
 
         int maxResults = args.value(QStringLiteral("max_results")).toInt(5);
         maxResults = qBound(1, maxResults, 10);
@@ -109,15 +119,16 @@ public:
             cfg.backend->search(query, maxResults, cfg.apiKey, cfg.timeoutMs, &failureReason, &m_cancelRequested);
 
         if (m_cancelRequested.exchange(false))
-            return ToolResult::fail(QStringLiteral("Search cancelled"));
+            return ToolResult::fail(QStringLiteral("Search cancelled"), source);
 
         if (!failureReason.isEmpty())
-            return ToolResult::fail(failureReason);
+            return ToolResult::fail(failureReason, source);
 
         if (results.isEmpty())
-            return ToolResult::fail(cfg.backend->requiresApiKey()
-                ? QStringLiteral("未找到搜索结果（请检查 API key 或网络连接）")
-                : QStringLiteral("未找到搜索结果（请检查网络连接）"));
+            // 走到这里说明后端既没抛错也没返回结果（后端应在自己那边写明
+            // 原因，如「没搜到」「被反爬拦截」）；这条是兜底文案。
+            return ToolResult::fail(
+                QStringLiteral("搜索没有返回结果，请调整查询词后重试"), source);
 
         // Format results as a numbered list and cap total characters.
         QStringList lines;
@@ -146,10 +157,10 @@ public:
         }
 
         Activity::usage(Activity::Kind::Network, QStringLiteral("web_search"),
-                        cfg.backend->providerKey(), 0,
+                        source, 0,
                         QStringLiteral("query=%1 results=%2").arg(query).arg(results.size()));
 
-        return ToolResult::ok(lines.join(QStringLiteral("\n\n")));
+        return ToolResult::ok(lines.join(QStringLiteral("\n\n")), source);
     }
 
 private:

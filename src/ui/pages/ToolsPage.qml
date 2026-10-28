@@ -5,7 +5,19 @@ import NexusAI
 import NexusAI.ViewModels
 
 Item {
+    id: page
+
     Accessible.name: qsTr("工具管理页")
+
+    // 联网搜索后端的本地化显示名。「值集合」单一来源是
+    // Settings.webSearchProviders（WebSearchProviderRegistry，与 schema
+    // options、main.cpp 的工厂同源），这里只做展示层 label 映射。
+    readonly property var webSearchProviderLabels: ({
+        "duckduckgo": qsTr("DuckDuckGo（免密钥）"),
+        "zhipu": qsTr("智谱 Web Search"),
+        "deepseek": qsTr("DeepSeek Search")
+    })
+
     Flickable {
         anchors.fill: parent
         clip: true
@@ -161,12 +173,20 @@ Item {
                     ComboBox {
                         id: providerCombo
                         Layout.preferredWidth: 200
-                        model: Settings.webSearchProviders
+                        // 值单一来源 Settings.webSearchProviders（后端注册表，
+                        // 与 schema options、main.cpp 的工厂同源）；仅 label
+                        // 在此本地化映射。新增后端时这里零改动。
+                        model: Settings.webSearchProviders.map(p => ({
+                            value: p,
+                            label: page.webSearchProviderLabels[p] || p
+                        }))
+                        textRole: "label"
                         currentIndex: {
                             const i = Settings.webSearchProviders.indexOf(Settings.webSearchProvider)
                             return i >= 0 ? i : 0
                         }
-                        onActivated: Settings.webSearchProvider = currentText
+                        onActivated: (index) => Settings.webSearchProvider =
+                            Settings.webSearchProviders[index]
                         Accessible.name: qsTr("搜索服务")
                     }
                 }
@@ -174,10 +194,11 @@ Item {
                 ColumnLayout {
                     Layout.fillWidth: true
                     spacing: 4
-                    // duckduckgo 与 searxng 均为无密钥后端（requiresApiKey
-                    // = false），不显示 API Key 字段。
-                    visible: Settings.webSearchProvider !== "duckduckgo"
-                             && Settings.webSearchProvider !== "searxng"
+                    // 是否需要密钥由后端注册表回答（requiresApiKey），UI 不再
+                    // 硬编码 provider 字符串——新增免密钥后端时这里自动跟上。
+                    // 注意：必须绑定属性而不是调用函数，否则切换 provider 后
+                    // QML 不会重算，输入框会一直藏着直到重开设置页。
+                    visible: Settings.webSearchProviderNeedsApiKey
 
                     Text {
                         text: qsTr("搜索 API Key")
@@ -234,58 +255,35 @@ Item {
                     }
                 }
 
-                // docs/20 §5.3（C3）：searxng 的必填项——自托管实例地址。
-                // 仅选中 searxng 时可见；无需 API Key（空值 = 未配置，
-                // 工具层搜索时返回明确错误而不是把请求发去空地址）。
-                ColumnLayout {
+                // 连通性测试：用当前选中的服务 + 当前密钥真实检索一次。
+                // 与代理测试同一套交互（按钮 + 内联结论文本），结果三态由
+                // webSearchTesting / webSearchTestOk / webSearchTestResult 驱动。
+                RowLayout {
                     Layout.fillWidth: true
-                    spacing: 4
-                    visible: Settings.webSearchProvider === "searxng"
+                    spacing: 8
+
+                    AppButton {
+                        text: qsTr("测试连接")
+                        // 需要密钥的后端在没填 key 时测试必然失败，直接禁用
+                        // 比让用户点出一句「请先填写 API Key」更省事。
+                        enabled: !Settings.webSearchTesting
+                                 && (!Settings.webSearchProviderNeedsApiKey
+                                     || Settings.webSearchApiKeySet)
+                        opacity: enabled ? 1.0 : 0.4
+                        onClicked: Settings.testWebSearch()
+                        Accessible.name: qsTr("测试搜索服务连接")
+                    }
 
                     Text {
-                        text: qsTr("SearXNG 服务地址")
-                        color: Theme.textSecondary
+                        Layout.fillWidth: true
+                        text: Settings.webSearchTestResult
+                        visible: text.length > 0
+                        color: Settings.webSearchTesting
+                            ? Theme.textSecondary
+                            : (Settings.webSearchTestOk ? Theme.statusSuccess : Theme.statusWarning)
                         font.pixelSize: Theme.fontSizeCaption
-                        font.family: Theme.fontMono
-                    }
-
-                    TextField {
-                        id: searxBaseUrlField
-                        Layout.fillWidth: true
-                        text: Settings.webSearchSearxBaseUrl
-                        placeholderText: qsTr("例如 http://localhost:8080")
-                        placeholderTextColor: Theme.textSecondary
-                        color: Theme.textPrimary
-                        selectionColor: Theme.brandPrimary
-                        selectedTextColor: Theme.selectedTextColor
-                        font.pixelSize: Theme.fontSizeBody
                         font.family: Theme.fontSans
-                        background: Rectangle {
-                            radius: 6
-                            color: Theme.bgPrimary
-                            border.width: searxBaseUrlField.activeFocus ? 2 : 1
-                            border.color: searxBaseUrlField.activeFocus ? Theme.brandPrimary : Theme.borderSubtle
-                        }
-                        // 同 apiKeyField：切分类销毁页面不触发 editingFinished，
-                        // 补销毁兜底。与密钥不同：空值是有效输入（清除地址），
-                        // 直接写入。
-                        function commitBaseUrl() {
-                            if (text === Settings.webSearchSearxBaseUrl) return
-                            Settings.webSearchSearxBaseUrl = text
-                        }
-                        onEditingFinished: commitBaseUrl()
-                        Component.onDestruction: commitBaseUrl()
-                        Accessible.name: qsTr("SearXNG 服务地址")
-                    }
-
-                    Text {
-                        text: qsTr("自托管 SearXNG 实例地址（无需 API Key），搜索查询会发送至该实例。")
-                        color: Theme.textSecondary
-                        font.pixelSize: 10
-                        font.family: Theme.fontSans
-                        opacity: 0.8
                         wrapMode: Text.Wrap
-                        Layout.fillWidth: true
                     }
                 }
             }

@@ -4,6 +4,7 @@
 #include "core/utils/SettingsRepository.h"
 
 #include "core/agent/AIAgent.h"
+#include "core/tools/WebSearchBackend.h"
 #include "core/utils/Logger.h"
 #include "infrastructure/llm/LlmProtocolRegistry.h"
 
@@ -16,8 +17,11 @@
 #include <QNetworkAccessManager>
 #include <QNetworkReply>
 #include <QNetworkRequest>
+#include <QFutureWatcher>
 #include <QUrl>
 #include <QUuid>
+#include <QtConcurrent/QtConcurrentRun>
+#include <memory>
 
 #ifdef Q_OS_WIN
 #include <windows.h>
@@ -239,6 +243,10 @@ SettingsService::SettingsService(QObject* parent) : QObject(parent) {
     load();
 }
 
+// 出定义在这里而不是头文件：unique_ptr<WebSearchBackend> 的析构需要完整
+// 类型，而头文件只前置声明了它。
+SettingsService::~SettingsService() = default;
+
 QVariantMap SettingsService::activeProfile() const {
     for (const QVariant& entry : m_profiles) {
         const QVariantMap p = entry.toMap();
@@ -396,15 +404,17 @@ void SettingsService::load() {
              .contains(m_webSearchProvider))
         m_webSearchProvider = SettingsSchema::defaultValue(
             QStringLiteral("webSearch/provider")).toString();
-    // API key is stored encrypted (DPAPI) - empty if not set or decryption failed.
-    m_webSearchApiKey = unprotectApiKey(SettingsRepository::value(
-        QStringLiteral("webSearch/apiKey"),
-        SettingsSchema::defaultValue(QStringLiteral("webSearch/apiKey"))).toString());
-    // docs/20 §5.3 (C3): SearXNG instance URL; plain text (not a secret),
-    // empty = not configured.
-    m_webSearchSearxBaseUrl = SettingsRepository::value(
-        QStringLiteral("webSearch/searxBaseUrl"),
-        SettingsSchema::defaultValue(QStringLiteral("webSearch/searxBaseUrl"))).toString().trimmed();
+    // API keys are stored per provider (encrypted at rest, DPAPI) - empty when
+    // unset or when decryption failed. 每个 provider 一把独立密钥，取错桶
+    // 会把 A 平台的密钥发给 B 平台（401 + 跨厂商凭据泄露）。
+    m_webSearchApiKeys.clear();
+    for (const QString& providerKey : WebSearchProviderRegistry::keys()) {
+        const QString settingKey = WebSearchProviderRegistry::apiKeySettingKey(providerKey);
+        if (settingKey.isEmpty()) continue;   // 免密钥后端（duckduckgo）没有存储舱
+        m_webSearchApiKeys.insert(providerKey,
+            unprotectApiKey(SettingsRepository::value(
+                settingKey, SettingsSchema::defaultValue(settingKey)).toString()));
+    }
     // H1: proxy mode/host/port plus the encrypted credential blob. A corrupt
     // or undecryptable auth blob simply leaves both credential fields empty.
     m_proxyMode = SettingsRepository::value(QStringLiteral("network/proxyMode"),
@@ -1222,20 +1232,37 @@ void SettingsService::setLogRetentionFiles(int count) {
     emit logRetentionFilesChanged();
 }
 
-// L1: legal search provider keys for the settings UI. Kept in sync with the
-// backend factory (L4); searxng was enabled by docs/20 §5.3 (C3).
+// L1: legal search provider keys for the settings UI. Single source of truth
+// is WebSearchProviderRegistry (shared with the schema options and the
+// backend factory in main.cpp), so adding a provider touches one table.
 QStringList SettingsService::webSearchProviders() const {
-    return SettingsSchema::options(QStringLiteral("webSearch/provider"));
+    return WebSearchProviderRegistry::keys();
 }
 
-// T6 (F3): search provider ("tavily" | …). Clamped to known providers.
+// 当前 provider 是否需要 API Key —— QML 用它决定是否显示密钥输入框，
+// 不再硬编码 provider 字符串（新增免密钥后端时 UI 自动跟上）。
+bool SettingsService::webSearchProviderNeedsApiKey() const {
+    return WebSearchProviderRegistry::requiresApiKey(m_webSearchProvider);
+}
+
+// 当前 provider 的解密后密钥。免密钥后端恒返回空串。
+QString SettingsService::webSearchApiKeyValue() const {
+    return m_webSearchApiKeys.value(m_webSearchProvider);
+}
+
+bool SettingsService::webSearchApiKeySet() const {
+    return !webSearchApiKeyValue().isEmpty();
+}
+
+// T6 (F3): search provider ("duckduckgo" | "zhipu" | "deepseek"). Clamped to
+// the registry's keys.
 void SettingsService::setWebSearchProvider(const QString& provider) {
     const QString trimmed = provider.trimmed();
     if (trimmed.isEmpty() || m_webSearchProvider == trimmed) return;
     // L4: reject unknown provider keys — keeps the setting in sync with the
-    // backend factory (webSearchProviders()). Without this guard the setting
-    // would persist a value no backend matches, and the factory would silently
-    // fall back to Tavily, making the UI show a phantom provider.
+    // backend factory. Without this guard the setting would persist a value
+    // no backend matches, and the factory would silently fall back, making
+    // the UI show a phantom provider.
     if (!webSearchProviders().contains(trimmed)) {
         qWarning() << "Unknown web search provider:" << trimmed;
         return;
@@ -1245,36 +1272,128 @@ void SettingsService::setWebSearchProvider(const QString& provider) {
     Activity::usage(Activity::Kind::User, QStringLiteral("settings.webSearchProvider"),
                     trimmed);
     emit webSearchProviderChanged();
+    // 密钥是分桶存的：切 provider 等于换了「已配置/未配置」的判据，必须补发
+    // 一次通知，否则 QML 的占位符仍显示上一个 provider 的状态。
+    emit webSearchApiKeyChanged();
 }
 
-// API key is encrypted at rest via DPAPI. Empty string drops the stored key.
+// API key is encrypted at rest via DPAPI and stored per provider. Empty string
+// drops the stored key for the CURRENT provider only.
 void SettingsService::setWebSearchApiKey(const QString& key) {
+    const QString settingKey = WebSearchProviderRegistry::apiKeySettingKey(m_webSearchProvider);
+    if (settingKey.isEmpty()) {
+        qWarning() << "Web search provider" << m_webSearchProvider
+                   << "does not take an API key";
+        return;
+    }
     const QString trimmed = key.trimmed();
-    if (m_webSearchApiKey == trimmed) return;
+    if (m_webSearchApiKeys.value(m_webSearchProvider) == trimmed) return;
     // REQ-T6-05: encrypt on persistence; never log the key.
     const QString stored = protectApiKey(trimmed);
     if (!trimmed.isEmpty() && stored.isEmpty()) {
         emit persistenceError(tr("搜索 API 密钥加密失败，未保存更改。"));
         return;
     }
-    if (!persistValue(QStringLiteral("webSearch/apiKey"), stored)) return;
-    m_webSearchApiKey = trimmed;
-    Activity::usage(Activity::Kind::User, QStringLiteral("settings.webSearchApiKey"),
+    if (!persistValue(settingKey, stored)) return;
+    m_webSearchApiKeys.insert(m_webSearchProvider, trimmed);
+    Activity::usage(Activity::Kind::User,
+                    QStringLiteral("settings.webSearchApiKey.%1").arg(m_webSearchProvider),
                     trimmed.isEmpty() ? QStringLiteral("(cleared)") : QStringLiteral("(set)"));
     emit webSearchApiKeyChanged();
 }
 
-// docs/20 §5.3 (C3): SearXNG instance base URL. Unlike the API key, empty
-// is meaningful (clears the setting → "not configured") and the value is
-// not secret, so the usage event records it as-is.
-void SettingsService::setWebSearchSearxBaseUrl(const QString& url) {
-    const QString trimmed = url.trimmed();
-    if (m_webSearchSearxBaseUrl == trimmed
-            || !persistValue(QStringLiteral("webSearch/searxBaseUrl"), trimmed)) return;
-    m_webSearchSearxBaseUrl = trimmed;
-    Activity::usage(Activity::Kind::User, QStringLiteral("settings.webSearchSearxBaseUrl"),
-                    trimmed.isEmpty() ? QStringLiteral("(cleared)") : trimmed);
-    emit webSearchSearxBaseUrlChanged();
+// 搜索连通性测试。真实检索一次，把「网络通不通」「密钥对不对」「配额够
+// 不够」一次问清楚——探端点只能证明 DNS/TLS 可达，配错的 key 会显示
+// 「连接正常」，比不测更误导。
+//
+// 线程：WebSearchBackend::search() 内部是 QNetworkAccessManager + 一个
+// 阻塞的 QEventLoop，跑在 GUI 线程会冻结界面（最长到后端超时 30s）。因此
+// 用一个 QFutureWatcher：worker 只捕获值（backend 是 shared_ptr 保活，
+// key 是拷贝），结果回到 GUI 线程后才写状态、发信号。
+void SettingsService::testWebSearch() {
+    if (m_webSearchTesting) return;
+
+    // 测试缝优先；生产路径 m_webSearchTestBackend 恒为空。
+    auto backend = m_webSearchTestBackend
+        ? std::move(m_webSearchTestBackend)
+        : WebSearchProviderRegistry::create(m_webSearchProvider);
+    if (!backend) {
+        m_webSearchTesting = false;
+        m_webSearchTestOk = false;
+        m_webSearchTestResult = tr("测试失败：未知的搜索服务 %1。").arg(m_webSearchProvider);
+        emit webSearchTestChanged();
+        return;
+    }
+
+    // 免密钥后端（duckduckgo）没有密钥可验，仍然是一次真实检索。
+    const QString apiKey = webSearchApiKeyValue();
+    if (backend->requiresApiKey() && apiKey.isEmpty()) {
+        m_webSearchTesting = false;
+        m_webSearchTestOk = false;
+        m_webSearchTestResult = tr("测试失败：请先填写 %1 的 API Key。")
+                                    .arg(webSearchProviderLabel(m_webSearchProvider));
+        emit webSearchTestChanged();
+        return;
+    }
+
+    m_webSearchTesting = true;
+    m_webSearchTestOk = false;
+    m_webSearchTestResult = tr("正在测试搜索连接…");
+    emit webSearchTestChanged();
+
+    // 固定查询词：一个稳定存在、任何引擎都该有结果的中文词，避免
+    // 「密钥有效但查询词太窄」被误判成失败。
+    const QString probeQuery = QStringLiteral("人工智能");
+    const QString providerLabel = webSearchProviderLabel(m_webSearchProvider);
+    std::shared_ptr<WebSearchBackend> shared = std::move(backend);
+
+    auto* watcher = new QFutureWatcher<QPair<QString, int>>(this);
+    connect(watcher, &QFutureWatcherBase::finished, this,
+            [this, watcher, providerLabel]() {
+        const auto probe = watcher->result();
+        watcher->deleteLater();
+        const QString reason = probe.first;
+        const int resultCount = probe.second;
+        if (!reason.isEmpty()) {
+            m_webSearchTesting = false;
+            m_webSearchTestOk = false;
+            m_webSearchTestResult =
+                tr("%1 连接失败：%2").arg(providerLabel, reason);
+        } else {
+            m_webSearchTesting = false;
+            m_webSearchTestOk = true;
+            m_webSearchTestResult = tr("%1 连接正常（返回 %2 条结果）。")
+                                        .arg(providerLabel)
+                                        .arg(resultCount);
+        }
+        Activity::usage(Activity::Kind::User,
+                        QStringLiteral("settings.webSearchTest.%1").arg(m_webSearchProvider),
+                        m_webSearchTestOk ? QStringLiteral("ok") : QStringLiteral("failed"));
+        emit webSearchTestChanged();
+    });
+
+    watcher->setFuture(QtConcurrent::run(
+        [shared, probeQuery, apiKey]() -> QPair<QString, int> {
+            QString reason;
+            const QList<WebSearchResult> results =
+                shared->search(probeQuery, 3, apiKey, 15000, &reason);
+            // 后端把「请求没成功」写进 reason；空 reason + 零结果意味着
+            // 检索正常但没有匹配（对固定查询词罕见，按成功处理并如实报数）。
+            return {reason, results.size()};
+        }));
+}
+
+void SettingsService::setWebSearchTestBackendForTesting(
+        std::unique_ptr<WebSearchBackend> backend) {
+    m_webSearchTestBackend = std::move(backend);
+}
+
+// provider 的展示名：与 ToolsPage 的 label 映射保持一致的单一来源在 QML，
+// 这里只需要给错误/成功文案用的短名。
+QString SettingsService::webSearchProviderLabel(const QString& providerKey) const {
+    if (const auto* d = WebSearchProviderRegistry::find(providerKey))
+        return d->label;
+    return providerKey;
 }
 
 // ── H1: outbound HTTP proxy ─────────────────────────────────────────────

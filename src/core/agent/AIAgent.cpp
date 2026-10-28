@@ -475,6 +475,10 @@ QString AIAgent::appendTraceNode(const QString& type, const QString& title,
         node["messageId"] = extra.value("messageId");
     if (extra.contains("preview"))
         node["preview"] = extra.value("preview");
+    // 外部服务来源（web_search 的 providerKey）。白名单放行才能进
+    // trace_nodes.metadata 并在会话恢复后仍显示。
+    if (extra.contains("source"))
+        node["source"] = extra.value("source");
 
     m_traceModel.append(node);
     persistTraceNode(node, m_nextTraceOrder++);
@@ -2191,9 +2195,12 @@ void AIAgent::finishToolExecution(const ToolCallInfo& call, const QString& trace
     updateTraceNodeStatusById(traceNodeId, result.success ? "success" : "failed");
 
     const QString output = result.success ? result.output : result.error;
+    QJsonObject resultExtra{{"result", truncateText(output, kMaxTraceChars)}};
+    // 让界面能显示「这次检索打到了哪个服务」。失败时同样有价值：
+    // 「请求失败」到底是哪家失败。
+    if (!result.source.isEmpty()) resultExtra["source"] = result.source;
     appendTraceNode("tool_result", call.name,
-                    result.success ? "success" : "failed",
-                    QJsonObject{{"result", truncateText(output, kMaxTraceChars)}});
+                    result.success ? "success" : "failed", resultExtra);
 
     appendToolResultMessage(call, truncateText(
         result.success ? result.output

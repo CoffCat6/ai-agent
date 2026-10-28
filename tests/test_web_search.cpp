@@ -141,7 +141,7 @@ private slots:
 
     // L4: setBackend swaps the search backend at runtime.
     void setBackendSwapsBackend() {
-        WebSearchTool tool; // default = TavilyBackend
+        WebSearchTool tool; // default = 注册表默认后端（DuckDuckGo）
         tool.setApiKey(QStringLiteral("dummy-key"));
         tool.setBackend(std::make_unique<FakeBackend>());
         const ToolResult r = tool.execute({{"query", "test"}, {"max_results", 2}});
@@ -202,167 +202,294 @@ private slots:
         QVERIFY(r.output.contains(QStringLiteral("example.com")));
     }
 
-    // ── docs/20 §5.3 (C3): SearXNG backend ──
+    // 服务来源（source）：每次调用都要报出「这次查询发给了谁」。
+    // 成功与失败路径都必须带——失败时用户更需要知道是哪家失败。
+    void resultCarriesProviderSource() {
+        // 成功路径。
+        WebSearchTool okTool(std::make_unique<FakeBackend>());
+        okTool.setApiKey(QStringLiteral("k"));
+        const ToolResult ok = okTool.execute({{"query", "qt"}});
+        QVERIFY(ok.success);
+        QCOMPARE(ok.source, QStringLiteral("fake"));
 
-    // providerKey / requiresApiKey / baseUrl wiring (no API key by design).
-    void searxBackendProperties() {
-        SearxBackend backend(QStringLiteral("  http://localhost:8080/  "));
-        QCOMPARE(backend.providerKey(), QStringLiteral("searxng"));
+        // 失败路径（后端报错）。
+        class FailingBackend : public WebSearchBackend {
+        public:
+            QString providerKey() const override { return QStringLiteral("failing"); }
+            QList<WebSearchResult> search(const QString&, int, const QString&, int,
+                                          QString* errorReason,
+                                          const std::atomic<bool>*) const override {
+                if (errorReason) *errorReason = QStringLiteral("后端不可用");
+                return {};
+            }
+        };
+        WebSearchTool failTool(std::make_unique<FailingBackend>());
+        failTool.setApiKey(QStringLiteral("k"));
+        const ToolResult fail = failTool.execute({{"query", "qt"}});
+        QVERIFY(!fail.success);
+        QCOMPARE(fail.source, QStringLiteral("failing"));
+        QVERIFY(fail.error.contains(QStringLiteral("后端不可用")));
+
+        // 缺密钥路径：还没发请求，但已经能确定「本该发给谁」。
+        WebSearchTool noKeyTool(std::make_unique<FakeBackend>());
+        const ToolResult noKey = noKeyTool.execute({{"query", "qt"}});
+        QVERIFY(!noKey.success);
+        QCOMPARE(noKey.source, QStringLiteral("fake"));
+
+        // 本地工具没有外部来源：source 必须是空串（UI 据此隐藏徽章）。
+        class LocalBackend : public WebSearchBackend {
+        public:
+            QString providerKey() const override { return QString(); }
+            bool requiresApiKey() const override { return false; }
+            QList<WebSearchResult> search(const QString&, int, const QString&, int,
+                                          QString* errorReason,
+                                          const std::atomic<bool>*) const override {
+                if (errorReason) *errorReason = QString();
+                WebSearchResult r;
+                r.title = QStringLiteral("t");
+                r.url = QStringLiteral("https://e.org");
+                return {r};
+            }
+        };
+        WebSearchTool localTool(std::make_unique<LocalBackend>());
+        const ToolResult local = localTool.execute({{"query", "qt"}});
+        QVERIFY(local.success);
+        QVERIFY(local.source.isEmpty());
+    }
+
+    // ── 后端注册表（单一事实源）──
+
+    // 注册表是 UI 下拉、schema options 与后端工厂的共同来源，三家必须
+    // 一致，否则会出现「下拉里能选、工厂里没有」的幻影 provider。
+    void registryKeysAreConsistent() {
+        const QStringList keys = WebSearchProviderRegistry::keys();
+        QCOMPARE(keys, (QStringList{QStringLiteral("duckduckgo"),
+                                    QStringLiteral("zhipu"),
+                                    QStringLiteral("deepseek")}));
+        for (const QString& key : keys) {
+            QVERIFY2(WebSearchProviderRegistry::find(key) != nullptr, qPrintable(key));
+            auto backend = WebSearchProviderRegistry::create(key);
+            QVERIFY2(backend != nullptr, qPrintable(key));
+            // 描述符里的 key 必须与后端自报的 providerKey 一致。
+            QCOMPARE(backend->providerKey(), key);
+            QCOMPARE(backend->requiresApiKey(),
+                     WebSearchProviderRegistry::requiresApiKey(key));
+        }
+        QVERIFY(WebSearchProviderRegistry::find(QStringLiteral("tavily")) == nullptr);
+        QVERIFY(WebSearchProviderRegistry::find(QStringLiteral("searxng")) == nullptr);
+        QVERIFY(WebSearchProviderRegistry::create(QStringLiteral("bogus")) == nullptr);
+    }
+
+    // 默认后端免密钥（首装即可用），且密钥桶只在需要密钥的后端上存在。
+    void registryDefaultIsKeylessAndKeySlotsAreScoped() {
+        const QString defaultKey = WebSearchProviderRegistry::defaultProviderKey();
+        QCOMPARE(defaultKey, QStringLiteral("duckduckgo"));
+        QVERIFY(!WebSearchProviderRegistry::requiresApiKey(defaultKey));
+        QVERIFY(WebSearchProviderRegistry::apiKeySettingKey(defaultKey).isEmpty());
+
+        // 需要密钥的后端各有一把独立的键——共用一个键会把 A 平台的密钥
+        // 发给 B 平台。
+        QCOMPARE(WebSearchProviderRegistry::apiKeySettingKey(QStringLiteral("zhipu")),
+                 QStringLiteral("webSearch/zhipuApiKey"));
+        QCOMPARE(WebSearchProviderRegistry::apiKeySettingKey(QStringLiteral("deepseek")),
+                 QStringLiteral("webSearch/deepseekApiKey"));
+
+        // 工具的默认构造也走注册表默认项，不硬编码某个具体后端。
+        WebSearchTool tool;
+        QCOMPARE(tool.definition().name, QStringLiteral("web_search"));
+    }
+
+    // 免密钥后端（duckduckgo）跳过 API key 检查，直接进入检索。
+    void duckduckgoNeedsNoKey() {
+        DuckDuckGoBackend backend;
+        QCOMPARE(backend.providerKey(), QStringLiteral("duckduckgo"));
         QVERIFY(!backend.requiresApiKey());
-        QCOMPARE(backend.baseUrl(), QStringLiteral("http://localhost:8080/"));
-        // Default-constructed backend has no instance configured.
-        QVERIFY(SearxBackend().baseUrl().isEmpty());
+        QVERIFY(backend.notReadyReason().isEmpty());
+        // 空 query 是 no-op，不发起请求、也不报错。
+        QVERIFY(backend.search(QString(), 5, QString(), 5000).isEmpty());
     }
 
-    // URL building: <baseUrl>/search?q=…&format=json — trailing slash is
-    // normalized, a base path is preserved, and the query round-trips
-    // through percent-encoding.
-    void searxngBuildsSearchUrl() {
-        const QUrl url = SearxBackend::buildSearchUrl(
-            QStringLiteral("http://localhost:8080/"), QStringLiteral("qt & widgets"));
-        QVERIFY(url.isValid());
-        QVERIFY(!url.isRelative());
-        QCOMPARE(url.scheme(), QStringLiteral("http"));
-        QCOMPARE(url.host(), QStringLiteral("localhost"));
-        QCOMPARE(url.port(), 8080);
-        QCOMPARE(url.path(), QStringLiteral("/search"));
+    // 反爬挑战页识别：DDG 对疑似机器人返回 202 + anomaly 页面，页面里没有
+    // 任何 result__a。识别不出来时零结果会被误报成「没找到结果」，用户只会
+    // 反复改查询词。
+    void duckduckgoDetectsAntiBotChallenge() {
+        // 实测页面特征（202 + anomaly.js + challenge-form + 拼图 modal）。
+        const QString challenge = QStringLiteral(
+            "<form id=\"challenge-form\" action=\"//duckduckgo.com/anomaly.js\">"
+            "<div class=\"anomaly-modal__description\">Please complete the "
+            "following challenge</div>"
+            "<div>Select all squares containing a duck:</div>");
+        QVERIFY(DuckDuckGoBackend::looksLikeAntiBotChallenge(challenge));
 
-        const QUrlQuery q(url.query());
-        QCOMPARE(q.queryItemValue(QStringLiteral("q"), QUrl::FullyDecoded),
-                 QStringLiteral("qt & widgets"));
-        QCOMPARE(q.queryItemValue(QStringLiteral("format")), QStringLiteral("json"));
-
-        // A deployment under a sub-path keeps it: …/searx → …/searx/search.
-        QCOMPARE(SearxBackend::buildSearchUrl(QStringLiteral("http://host/searx/"),
-                                              QStringLiteral("x")).path(),
-                 QStringLiteral("/searx/search"));
+        // 真实结果页不应被误判。
+        const QString normal = QStringLiteral(
+            "<a class=\"result__a\" href=\"https://example.com\">Example</a>"
+            "<a class=\"result__snippet\">snippet</a>");
+        QVERIFY(!DuckDuckGoBackend::looksLikeAntiBotChallenge(normal));
+        QVERIFY(!DuckDuckGoBackend::looksLikeAntiBotChallenge(QString()));
     }
 
-    // Response parsing: {title,url,content} mapping identical to Tavily —
-    // entries without a URL are dropped, a missing title falls back to the
-    // URL, titles are trimmed.
-    // (Plain escaped literals instead of R"()" raw strings: moc cannot
-    // lex raw string literals and would emit an empty metaobject.)
-    void searxngParsesMockJson() {
+    // ── 智谱 Web Search ──
+
+    // 请求构造：search_intent 是平台必填项（漏传直接 400）；query 不截断
+    // （超长由 search() 提前拦截并给出可读原因，而不是静默改查询词）。
+    void zhipuBuildsRequest() {
+        const QJsonObject body = ZhipuSearchBackend::buildRequest(
+            QStringLiteral("  qt 多线程  "), 3);
+        QCOMPARE(body.value(QStringLiteral("search_query")).toString(),
+                 QStringLiteral("qt 多线程"));
+        QCOMPARE(body.value(QStringLiteral("search_engine")).toString(),
+                 QStringLiteral("search_std"));
+        QVERIFY(body.contains(QStringLiteral("search_intent")));
+        QCOMPARE(body.value(QStringLiteral("search_intent")).toBool(), false);
+        QCOMPARE(body.value(QStringLiteral("count")).toInt(), 3);
+        // 截断规则与其它后端一致（1..10）。
+        QCOMPARE(ZhipuSearchBackend::buildRequest(QStringLiteral("x"), 50)
+                     .value(QStringLiteral("count")).toInt(), 10);
+        QCOMPARE(ZhipuSearchBackend::buildRequest(QStringLiteral("x"), 0)
+                     .value(QStringLiteral("count")).toInt(), 1);
+    }
+
+    // 响应解析：字段名是 link（不是 url）与 content；缺 url 丢弃、缺 title
+    // 回退 url、标题去空白。
+    void zhipuParsesResponse() {
         static const QByteArray kMock = QStringLiteral(
             "{"
-            "\"query\": \"qt searxng\","
-            "\"number_of_results\": 4,"
-            "\"results\": ["
-            "  {\"title\": \"SearXNG docs\", \"url\": \"https://docs.searxng.org/\","
-            "   \"content\": \"Privacy-focused metasearch engine\"},"
-            "  {\"title\": \"  Qt Forum  \", \"url\": \"https://forum.qt.io/\","
-            "   \"content\": \"Qt discussion\"},"
-            "  {\"title\": \"Dropped: no url\", \"content\": \"should never appear\"},"
-            "  {\"url\": \"https://example.org/untitled\","
-            "   \"content\": \"title falls back to url\"}"
+            "\"search_result\": ["
+            "  {\"title\": \"智谱文档\", \"link\": \"https://docs.bigmodel.cn/\","
+            "   \"content\": \"搜索摘要\", \"media\": \"智谱\", \"publish_date\": \"2026-01-01\"},"
+            "  {\"title\": \"  Qt 论坛  \", \"link\": \"https://forum.qt.io/\","
+            "   \"content\": \"Qt 讨论\"},"
+            "  {\"title\": \"没有链接\", \"content\": \"应被丢弃\"},"
+            "  {\"link\": \"https://example.org/untitled\", \"content\": \"标题回退为链接\"}"
             "]"
             "}").toUtf8();
 
-        const QList<WebSearchResult> out = SearxBackend::parseResponse(kMock, 10);
+        QString reason;
+        const QList<WebSearchResult> out =
+            ZhipuSearchBackend::parseResponse(kMock, 10, &reason);
+        QVERIFY(reason.isEmpty());
         QCOMPARE(out.size(), 3);
-        QCOMPARE(out[0].title, QStringLiteral("SearXNG docs"));
-        QCOMPARE(out[0].url, QStringLiteral("https://docs.searxng.org/"));
-        QCOMPARE(out[0].snippet, QStringLiteral("Privacy-focused metasearch engine"));
-        QCOMPARE(out[1].title, QStringLiteral("Qt Forum"));
-        QCOMPARE(out[2].url, QStringLiteral("https://example.org/untitled"));
+        QCOMPARE(out[0].title, QStringLiteral("智谱文档"));
+        QCOMPARE(out[0].url, QStringLiteral("https://docs.bigmodel.cn/"));
+        QCOMPARE(out[0].snippet, QStringLiteral("搜索摘要"));
+        QCOMPARE(out[1].title, QStringLiteral("Qt 论坛"));
         QCOMPARE(out[2].title, out[2].url);
     }
 
-    // maxResults follows the Tavily truncation rule: qBound(1, n, 10) —
-    // the parse caps at 10 even when the caller asks for more.
-    void searxngParseCapsMaxResults() {
-        QJsonArray results;
-        for (int i = 0; i < 15; ++i) {
-            results.append(QJsonObject{
-                {QStringLiteral("title"), QStringLiteral("R%1").arg(i)},
-                {QStringLiteral("url"), QStringLiteral("https://example.com/%1").arg(i)},
-                {QStringLiteral("content"), QStringLiteral("snippet %1").arg(i)}});
-        }
-        const QByteArray json = QJsonDocument(QJsonObject{{QStringLiteral("results"), results}})
-                                    .toJson(QJsonDocument::Compact);
-
-        QCOMPARE(SearxBackend::parseResponse(json, 100).size(), 10);
-        QCOMPARE(SearxBackend::parseResponse(json, 3).size(), 3);
-        // qBound lower edge: 0 clamps to 1.
-        QCOMPARE(SearxBackend::parseResponse(json, 0).size(), 1);
-    }
-
-    // Malformed payloads degrade to an empty result list (the tool layer
-    // turns that into a user-facing failure), never a crash.
-    void searxngInvalidPayloadReturnsEmpty() {
-        QVERIFY(SearxBackend::parseResponse("not json at all", 5).isEmpty());
-        QVERIFY(SearxBackend::parseResponse("[1,2,3]", 5).isEmpty());
-        QVERIFY(SearxBackend::parseResponse("{\"results\": []}", 5).isEmpty());
-        QVERIFY(SearxBackend::parseResponse(
-                    "{\"results\": [{\"title\": \"no url\"}, \"junk\"]}", 5).isEmpty());
-    }
-
-    // Guard conditions short-circuit before any network I/O: empty query or
-    // unconfigured baseUrl ("" from webSearch/searxBaseUrl) returns {}.
-    void searxngSearchWithoutBaseUrlOrQueryIsNoop() {
-        const SearxBackend unconfigured;
-        QVERIFY(unconfigured.search(QStringLiteral("hello"), 5, QString(), 5000).isEmpty());
-
-        const SearxBackend configured(QStringLiteral("http://localhost:8080"));
-        QVERIFY(configured.search(QString(), 5, QString(), 5000).isEmpty());
-        QVERIFY(configured.search(QStringLiteral("   "), 5, QString(), 5000).isEmpty());
-    }
-
-    // ── docs/20 §5.3 (code-review fix): 可操作的错误诊断 ──
-
-    // 未配置 baseUrl 必须报「去填地址」，而不是让工具层说「请检查网络连接」。
-    void searxngNotReadyReasonNamesTheSetting() {
-        QVERIFY(SearxBackend().notReadyReason().isEmpty() == false);
-        QVERIFY(SearxBackend().notReadyReason().contains(
-            QStringLiteral("webSearch/searxBaseUrl")));
-        // 配好地址后就绪（空串 = 就绪）。
-        QVERIFY(SearxBackend(QStringLiteral("http://localhost:8080")).notReadyReason().isEmpty());
-    }
-
-    // search() 的 errorReason out-param 把「没搜到」与「请求失败」分开：
-    // 缺 baseUrl 时原因必须指明是未配置，而不是超时/网络。
-    void searxngSearchReportsConfigurationFailure() {
-        const SearxBackend unconfigured;
+    // 智谱的业务错误码要翻译成可操作的提示，而不是把原始 JSON 丢给用户。
+    void zhipuMapsBusinessErrors() {
+        static const QByteArray kBusy = QStringLiteral(
+            "{\"error\":{\"code\":\"1701\",\"message\":\"并发超限\"}}").toUtf8();
         QString reason;
-        QVERIFY(unconfigured.search(QStringLiteral("hello"), 5, QString(), 5000, &reason).isEmpty());
-        QVERIFY(!reason.isEmpty());
-        QVERIFY(reason.contains(QStringLiteral("webSearch/searxBaseUrl")));
+        QVERIFY(ZhipuSearchBackend::parseResponse(kBusy, 5, &reason).isEmpty());
+        QVERIFY(reason.contains(QStringLiteral("并发")));
 
-        // 已配置 + 空查询：仍然空结果，但不该报成「未配置」。
-        const SearxBackend configured(QStringLiteral("http://localhost:8080"));
-        QString noopReason = QStringLiteral("sentinel");
-        QVERIFY(configured.search(QString(), 5, QString(), 5000, &noopReason).isEmpty());
-        QCOMPARE(noopReason, QStringLiteral("sentinel"));
+        static const QByteArray kAuth = QStringLiteral(
+            "{\"error\":{\"code\":\"401\",\"message\":\"令牌已过期或验证不正确\"}}").toUtf8();
+        QString authReason;
+        QVERIFY(ZhipuSearchBackend::parseResponse(kAuth, 5, &authReason).isEmpty());
+        QVERIFY(authReason.contains(QStringLiteral("令牌")));
+
+        // 非对象 JSON：结构错误，不是「没搜到」。
+        QString malformed;
+        QVERIFY(ZhipuSearchBackend::parseResponse("[1,2,3]", 5, &malformed).isEmpty());
+        QVERIFY(malformed.contains(QStringLiteral("JSON")));
+
+        // 合法但零结果：空列表且不写原因（真的没搜到）。
+        QString zero;
+        QVERIFY(ZhipuSearchBackend::parseResponse("{\"search_result\": []}", 5, &zero).isEmpty());
+        QVERIFY(zero.isEmpty());
     }
 
-    // 非法地址（无 scheme / scheme 不是 http/https）也要给出可读原因，
-    // 而不是静默空结果。
-    void searxngSearchReportsInvalidBaseUrl() {
-        const SearxBackend bad(QStringLiteral("localhost:8080"));
+    // 缺 key / query 超 70 字符：必须在发请求前拦截并说明原因。
+    void zhipuGuardsBeforeNetwork() {
+        const ZhipuSearchBackend backend;
+        QString noKey;
+        QVERIFY(backend.search(QStringLiteral("hello"), 5, QString(), 5000, &noKey).isEmpty());
+        QVERIFY(noKey.contains(QStringLiteral("智谱 API Key")));
+
+        // 72 个字符已超平台 70 字符上限。
+        const QString tooLong(72, QLatin1Char('x'));
+        QString longReason;
+        QVERIFY(backend.search(tooLong, 5, QStringLiteral("k"), 5000, &longReason).isEmpty());
+        QVERIFY(longReason.contains(QString::number(ZhipuSearchBackend::kMaxQueryChars)));
+        // 提示里要说明「当前多少个字符」，否则用户不知道要砍多少。
+        QVERIFY(longReason.contains(QString::number(tooLong.size())));
+    }
+
+    // ── DeepSeek Search ──
+
+    // 请求构造：need_content 必须为 false（content 是整页正文，会撑爆 6000
+    // 字符预算；summary 才是给模型读的摘要）。
+    void deepSeekBuildsRequest() {
+        const QJsonObject body = DeepSeekSearchBackend::buildRequest(
+            QStringLiteral("  DeepSeek V4 发布  "), 4);
+        QCOMPARE(body.value(QStringLiteral("query")).toString(),
+                 QStringLiteral("DeepSeek V4 发布"));
+        QCOMPARE(body.value(QStringLiteral("count")).toInt(), 4);
+        QVERIFY(body.contains(QStringLiteral("need_content")));
+        QCOMPARE(body.value(QStringLiteral("need_content")).toBool(), false);
+        QCOMPARE(DeepSeekSearchBackend::buildRequest(QStringLiteral("x"), 99)
+                     .value(QStringLiteral("count")).toInt(), 10);
+    }
+
+    // 响应解析：summary 优先（长摘要，给模型读），回退 snippet；content
+    // 即使存在也不进 snippet（那是整页正文）。
+    void deepSeekParsesResponse() {
+        static const QByteArray kMock = QStringLiteral(
+            "{"
+            "\"results\": ["
+            "  {\"title\": \"DeepSeek V4\", \"url\": \"https://example.com/a\","
+            "   \"snippet\": \"短摘要\", \"summary\": \"长摘要，适合给模型阅读\","
+            "   \"content\": \"整页正文不应进入结果\","
+            "   \"date\": \"2026-06-01T00:00:00+00:00\", \"authority\": 3},"
+            "  {\"title\": \"只有 snippet\", \"url\": \"https://example.com/b\","
+            "   \"snippet\": \"回退到这里\", \"summary\": \"\"},"
+            "  {\"title\": \"无 url\", \"summary\": \"应被丢弃\"}"
+            "]"
+            "}").toUtf8();
+
         QString reason;
-        QVERIFY(bad.search(QStringLiteral("hello"), 5, QString(), 5000, &reason).isEmpty());
-        QVERIFY(!reason.isEmpty());
-        QVERIFY(reason.contains(QStringLiteral("localhost:8080")));
-        // 提示里要点明可用的 scheme。
-        QVERIFY(reason.contains(QStringLiteral("http://")));
+        const QList<WebSearchResult> out =
+            DeepSeekSearchBackend::parseResponse(kMock, 10, &reason);
+        QVERIFY(reason.isEmpty());
+        QCOMPARE(out.size(), 2);
+        QCOMPARE(out[0].snippet, QStringLiteral("长摘要，适合给模型阅读"));
+        QVERIFY(!out[0].snippet.contains(QStringLiteral("整页正文")));
+        QCOMPARE(out[1].snippet, QStringLiteral("回退到这里"));
     }
 
-    // parseResponse 的既有契约不变：合法 JSON 但零结果 → 空列表且无原因
-    // （真的没搜到）；非对象 JSON → 空列表（工具层据此判定响应结构不对）。
-    void searxngParseFailureIsDistinctFromZeroResults() {
-        const QList<WebSearchResult> zeroResults =
-            SearxBackend::parseResponse(QStringLiteral("{\"results\": []}").toUtf8(), 5);
-        QVERIFY(zeroResults.isEmpty());
-        const QList<WebSearchResult> malformed =
-            SearxBackend::parseResponse(QStringLiteral("[1,2,3]").toUtf8(), 5);
-        QVERIFY(malformed.isEmpty());
-        // 有结果的响应仍照常解析（回归保护）。
-        const QList<WebSearchResult> one =
-            SearxBackend::parseResponse(
-                QStringLiteral("{\"results\":[{\"url\":\"https://e.org\"}]}").toUtf8(), 5);
-        QCOMPARE(one.size(), 1);
-        QCOMPARE(one[0].url, QStringLiteral("https://e.org"));
+    // OpenAI 兼容错误信封原样透出；合法但零结果不报错。
+    void deepSeekMapsErrors() {
+        static const QByteArray kBalance = QStringLiteral(
+            "{\"error\":{\"message\":\"Insufficient Balance\","
+            "\"type\":\"invalid_request_error\",\"param\":null,"
+            "\"code\":\"invalid_request_error\"}}").toUtf8();
+        QString reason;
+        QVERIFY(DeepSeekSearchBackend::parseResponse(kBalance, 5, &reason).isEmpty());
+        QCOMPARE(reason, QStringLiteral("Insufficient Balance"));
+
+        // 正常响应：解析出结果且无原因。
+        static const QByteArray kOk = QStringLiteral(
+            "{\"results\":[{\"title\":\"t\",\"url\":\"https://e.org\","
+            "\"summary\":\"s\"}]}").toUtf8();
+        QString okReason;
+        QCOMPARE(DeepSeekSearchBackend::parseResponse(kOk, 5, &okReason).size(), 1);
+        QVERIFY(okReason.isEmpty());
+
+        // 官方约定：200 + 空数组是「没搜到」，且不计费。
+        QString zero;
+        QVERIFY(DeepSeekSearchBackend::parseResponse("{\"results\": []}", 5, &zero).isEmpty());
+        QVERIFY(zero.isEmpty());
+    }
+
+    void deepSeekGuardsBeforeNetwork() {
+        const DeepSeekSearchBackend backend;
+        QString noKey;
+        QVERIFY(backend.search(QStringLiteral("hello"), 5, QString(), 5000, &noKey).isEmpty());
+        QVERIFY(noKey.contains(QStringLiteral("DeepSeek API Key")));
+        QVERIFY(backend.search(QString(), 5, QStringLiteral("k"), 5000).isEmpty());
     }
 };
 

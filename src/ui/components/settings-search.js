@@ -53,7 +53,7 @@ var handIndex = [
 
     // ── 工具管理 ─────────────────────────────────────────
     { title: QT_TRANSLATE_NOOP("SettingsSearch", "工具管理"), category: "tools", keywords: "工具 禁用 启用 shell read_file write_file 需确认" },
-    { title: QT_TRANSLATE_NOOP("SettingsSearch", "联网搜索"), category: "tools", keywords: "联网 搜索 web_search tavily searxng api key 密钥 搜索服务" },
+    { title: QT_TRANSLATE_NOOP("SettingsSearch", "联网搜索"), category: "tools", keywords: "联网 搜索 web_search duckduckgo zhipu deepseek 智谱 api key 密钥 搜索服务" },
     { title: QT_TRANSLATE_NOOP("SettingsSearch", "默认权限模式"), category: "tools", keywords: "权限 模式 确认 自动编辑 完全访问 只读 计划 permission plan read only plan_only" },
 
     // ── 记忆管理 ─────────────────────────────────────────

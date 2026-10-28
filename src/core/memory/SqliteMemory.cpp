@@ -2664,7 +2664,7 @@ void SqliteMemory::saveTraceNode(const QString& sessionId, const QJsonObject& no
     query.addBindValue(static_cast<qint64>(node.value("timestamp").toDouble()));
     query.addBindValue(node.value("messageId").toVariant().toLongLong());
     QJsonObject metadata;
-    for (const char* key : {"images", "files", "model", "preview"})
+    for (const char* key : {"images", "files", "model", "preview", "source"})
         if (node.contains(QLatin1String(key))) metadata[key] = node.value(QLatin1String(key));
     query.addBindValue(QString::fromUtf8(QJsonDocument(metadata).toJson(QJsonDocument::Compact)));
 
@@ -2676,7 +2676,8 @@ void SqliteMemory::saveTraceNode(const QString& sessionId, const QJsonObject& no
 namespace {
 
 // trace_nodes 的一行 → 节点对象。列映射表不是整节点 JSON，所以读端要重建形状；
-// 白名单字段（images/files/model）从 metadata 提升回顶层，messageId 来自列。
+// 白名单字段（images/files/model/preview/source）从 metadata 提升回顶层，
+// messageId 来自列。
 QJsonObject traceNodeFromRow(const QSqlQuery& query) {
     QJsonObject node;
     node["id"] = query.value(0).toString();
@@ -2696,7 +2697,7 @@ QJsonObject traceNodeFromRow(const QSqlQuery& query) {
     if (messageId > 0)
         node["messageId"] = messageId;
     const auto metadata = QJsonDocument::fromJson(query.value(10).toByteArray()).object();
-    for (const char* key : {"images", "files", "model", "preview"})
+    for (const char* key : {"images", "files", "model", "preview", "source"})
         if (metadata.contains(QLatin1String(key))) node[key] = metadata.value(QLatin1String(key));
     return node;
 }

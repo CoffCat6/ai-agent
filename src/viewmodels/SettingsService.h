@@ -1,12 +1,15 @@
 #pragma once
 
 #include <QCoreApplication>
+#include <QHash>
 #include <QQmlEngine>
 #include <QObject>
 #include <QString>
 #include <QStringList>
 #include <QVariantList>
 #include <QVariantMap>
+
+#include <memory>
 
 // 步数预算的默认值与钳制边界都定义在 core 层（AIAgent），此处引用同一常量，
 // 避免两处各写一个字面量后漂移。
@@ -15,6 +18,12 @@
 
 class QNetworkAccessManager;
 class QNetworkReply;
+
+namespace NexusAI {
+// 前置声明：测试缝的参数只需要一个不完整类型，避免把 core/tools 的头文件
+// 拉进每个包含 SettingsService.h 的编译单元。
+class WebSearchBackend;
+}
 
 namespace NexusAI {
 
@@ -94,9 +103,18 @@ class SettingsService : public QObject {
     // L1: whether a search API key is stored (the key itself is never echoed
     // to QML; the getter returns a masked empty string).
     Q_PROPERTY(bool webSearchApiKeySet READ webSearchApiKeySet NOTIFY webSearchApiKeyChanged)
-    // docs/20 §5.3 (C3): self-hosted SearXNG base URL (required when the
-    // provider is "searxng"; not a secret, stored in plain text).
-    Q_PROPERTY(QString webSearchSearxBaseUrl READ webSearchSearxBaseUrl WRITE setWebSearchSearxBaseUrl NOTIFY webSearchSearxBaseUrlChanged)
+    // 当前 provider 是否需要 API Key。QML 用它决定密钥输入框的可见性。
+    // 必须是 Q_PROPERTY（不能只给 Q_INVOKABLE）：函数调用形式的绑定没有
+    // 依赖任何 notify 信号，切换 provider 后 QML 不会重算，输入框要等
+    // 重新打开设置页才出现——NOTIFY 指向 webSearchProviderChanged 才能
+    // 让绑定跟着切换即时更新。
+    Q_PROPERTY(bool webSearchProviderNeedsApiKey READ webSearchProviderNeedsApiKey NOTIFY webSearchProviderChanged)
+    // 搜索连通性测试（设置页的「测试连接」按钮）。结果三态由
+    // webSearchTestChanged 统一通知，语义与 proxyTesting/proxyTestOk/
+    // proxyTestResult 一致：进行中 / 是否连通 / 可直接展示的结论。
+    Q_PROPERTY(bool webSearchTesting READ webSearchTesting NOTIFY webSearchTestChanged FINAL)
+    Q_PROPERTY(bool webSearchTestOk READ webSearchTestOk NOTIFY webSearchTestChanged FINAL)
+    Q_PROPERTY(QString webSearchTestResult READ webSearchTestResult NOTIFY webSearchTestChanged FINAL)
     // H1: outbound HTTP proxy. "system" follows the OS configuration,
     // "manual" uses host/port + optional credentials, "off" disables proxies.
     // Credentials are persisted as one DPAPI-encrypted blob; the password
@@ -135,6 +153,9 @@ public:
     // No default constructor on purpose (see AgentViewModel: the engine
     // would prefer Constructor over the create() factory).
     explicit SettingsService(QObject* parent);
+    // 出定义在 .cpp：成员里有 unique_ptr<WebSearchBackend>（前置声明），
+    // 隐式析构会在每个包含本头文件的 TU 里要求完整类型。
+    ~SettingsService() override;
 
     // QML singleton plumbing (same pattern as AgentViewModel)
     static SettingsService* instance();
@@ -213,22 +234,46 @@ public:
     QString systemPromptOverride() const { return m_systemPromptOverride; }
     void setSystemPromptOverride(const QString& prompt);
 
-    // T6 (F3): search provider ("tavily" | …) and encrypted API key.
+    // T6 (F3): search provider ("duckduckgo" | "zhipu" | "deepseek").
     QString webSearchProvider() const { return m_webSearchProvider; }
     void setWebSearchProvider(const QString& provider);
+    // 密钥按 provider 分桶（webSearch/<provider>ApiKey）。QML 侧接口保持
+    // 单键语义：getter/setter 针对「当前选中的 provider」，切换 provider 时
+    // 补发 webSearchApiKeyChanged，输入框据此刷新「已配置/未配置」。
     QString webSearchApiKey() const { return {}; }   // masked getter
     void setWebSearchApiKey(const QString& key);
-    // L1: true when a non-empty search API key is stored.
-    bool webSearchApiKeySet() const { return !m_webSearchApiKey.isEmpty(); }
+    // L1: true when the CURRENT provider has a non-empty key stored.
+    bool webSearchApiKeySet() const;
     // 真实 key 的 C++ 出口（任务 #20 修 Mj2：main.cpp 注入 webSearch 后端
-    // 此前误用掩码 getter 拿到空串，Tavily 用户配了 key 也报"未配置"）。
+    // 此前误用掩码 getter 拿到空串，用户配了 key 也报"未配置"）。
     // 非 Q_PROPERTY 且无 Q_INVOKABLE——掩码语义对 QML 保持不变。
-    QString webSearchApiKeyValue() const { return m_webSearchApiKey; }
-    // L1: legal provider keys for the settings UI.
+    QString webSearchApiKeyValue() const;
+    // L1: legal provider keys for the settings UI（来自
+    // WebSearchProviderRegistry，与后端工厂同源）。
     QStringList webSearchProviders() const;
-    // docs/20 §5.3 (C3): self-hosted SearXNG base URL ("" = not configured).
-    QString webSearchSearxBaseUrl() const { return m_webSearchSearxBaseUrl; }
-    void setWebSearchSearxBaseUrl(const QString& url);
+    // 当前 provider 是否需要 API Key（QML 据此决定是否显示密钥输入框，
+    // 不再硬编码 provider 字符串）。
+    bool webSearchProviderNeedsApiKey() const;
+    bool webSearchTesting() const { return m_webSearchTesting; }
+    bool webSearchTestOk() const { return m_webSearchTestOk; }
+    QString webSearchTestResult() const { return m_webSearchTestResult; }
+    // 用当前 provider + 当前密钥发一次真实检索（固定查询词），把「网络能
+    // 通吗」「密钥有效吗」「配额够吗」一次问清楚。
+    //
+    // 为什么真的去检索而不是探端点：只有真实查询才能同时验证鉴权、配额与
+    // 响应结构；探 GET / 端点只能证明 DNS 与 TLS 通，用户配错的 key 会显示
+    // 「连接正常」——比不测更误导。
+    //
+    // 在 QtConcurrent 池线程执行：这里是 GUI 线程，而 WebSearchBackend 的
+    // search() 用一个 QNetworkAccessManager + QEventLoop 阻塞等待，直接在
+    // GUI 线程调会冻结界面（最长到后端超时）。
+    Q_INVOKABLE void testWebSearch();
+    // provider 的展示名（错误/成功文案用）；未知 key 原样返回。
+    QString webSearchProviderLabel(const QString& providerKey) const;
+    // 测试缝（非 Q_INVOKABLE、不进 QML）：注入替身后端，让单测能覆盖完整的
+    // 异步状态机而不打真实网络。对齐 testProxyUrl() 的既有做法——那条缝
+    // 存在的原因就是"让测试能把探针指向脚本化的本地服务"。
+    void setWebSearchTestBackendForTesting(std::unique_ptr<WebSearchBackend> backend);
 
     // H1: HTTP proxy settings. proxyPassword() is a masked getter; the real
     // value stays in C++ (proxyPasswordValue) just like the API keys.
@@ -420,7 +465,6 @@ signals:
     void systemPromptOverrideChanged();
     void webSearchProviderChanged();
     void webSearchApiKeyChanged();
-    void webSearchSearxBaseUrlChanged();
     void proxyModeChanged();
     void proxyHostChanged();
     void proxyPortChanged();
@@ -431,6 +475,8 @@ signals:
     void proxyConfigChanged();
     void proxyTestChanged();
     void proxyTestFinished(bool ok, const QString& message);
+    // 搜索连通性测试的状态/结果变化（三态属性共用一个通知，同代理测试）。
+    void webSearchTestChanged();
     void episodicMemoryEnabledChanged();
     void auditRetentionDaysChanged();
     void tokenRetentionDaysChanged();
@@ -489,8 +535,9 @@ private:
     int m_logRetentionFiles{};
     QString m_systemPromptOverride;
     QString m_webSearchProvider;
-    QString m_webSearchApiKey;
-    QString m_webSearchSearxBaseUrl;   // docs/20 §5.3: SearXNG instance URL
+    // provider 键 → 解密后的 API key（"webSearch/<provider>ApiKey" 的存储舱）。
+    // 只读内存持有明文，落盘一律走 protectApiKey。
+    QHash<QString, QString> m_webSearchApiKeys;
     // H1: proxy state (auth password is kept decrypted in memory only).
     QString m_proxyMode{QStringLiteral("system")};
     QString m_proxyHost;
@@ -502,6 +549,14 @@ private:
     QString m_proxyTestResult;
     QNetworkAccessManager* m_proxyProbeNam{nullptr};
     QNetworkReply* m_proxyProbeReply{nullptr};
+
+    // 搜索连通性测试的状态。测试在池线程跑，结果回到 GUI 线程后才写这三个
+    // 成员并发信号（与 proxy 测试同一套「只在 GUI 线程改状态」的约定）。
+    bool m_webSearchTesting{false};
+    bool m_webSearchTestOk{false};
+    QString m_webSearchTestResult;
+    // 见 setWebSearchTestBackendForTesting；生产路径恒为空。
+    std::unique_ptr<WebSearchBackend> m_webSearchTestBackend;
     bool m_episodicMemoryEnabled{};
     // docs/23 G3: retention state (0 = keep forever).
     int m_auditRetentionDays{};

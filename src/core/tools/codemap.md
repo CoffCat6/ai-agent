@@ -7,7 +7,7 @@
 - `ITool.h`：全部工具的唯一抽象契约（`ToolDefinition` / `ToolResult` / `ToolCallInfo` / `FileCheckpoint`）。
 - `ToolRegistry.cpp/.h`：工具注册表单例，内建 11 个文件/shell/git/todo 工具（`FileReadTool`、`ListDirTool`、`FileWriteTool`、`EditFileTool`、`ShellExecTool`、`GlobTool`、`GrepTool`、`GitStatusTool`、`GitDiffTool`、`GitCommitTool`、`TodoWriteTool`），并负责 schema 暴露、用户禁用持久化、策略拦截。
 - `Sandbox.h` + `SandboxWin.cpp`：路径级安全策略（系统目录、黑名单、读写允许层、workspace 边界、Windows reparse point 解析）。
-- `WebSearchBackend.h/.cpp`：搜索后端抽象（Tavily / DuckDuckGo HTML / SearXNG）与结果结构。
+- `WebSearchBackend.h/.cpp`：搜索后端抽象（DuckDuckGo HTML / 智谱 / DeepSeek）、结果结构与 `WebSearchProviderRegistry`。
 - `WebSearchTool.h`、`NetworkFetchTool.h`：两个联网工具（header-only，`web_search` / `http_fetch`）。
 
 **不含调度**：真正的调用分发、确认流程、并发编排在 `core/agent/AIAgent.cpp`（`processNextToolCall` / `dispatchToolExecution` / `finishToolExecution`）。本目录只提供「可被调用的对象」与被调用的安全/网络实现。
@@ -16,7 +16,7 @@
 
 ### ITool 契约（`ITool.h`）
 - `definition()` 返回 `ToolDefinition{name, description, parameters(JSON Schema), level, autoEditSafe, readOnly}`；每次调用都会重新构造（`ToolRegistry::listAll` 也逐次调用，无缓存）。
-- `execute(args)` 是纯同步阻塞语义，运行在 `QtConcurrent` 池线程；返回 `ToolResult{success, output, error, checkpoint}`。
+- `execute(args)` 是纯同步阻塞语义，运行在 `QtConcurrent` 池线程；返回 `ToolResult{success, output, error, checkpoint, source}`。`source` 是「这次请求打到了哪个外部服务」（只有 `web_search` 填充，值 = 后端 `providerKey()`），经 `AIAgent::appendTraceNode` 的白名单进 `trace_nodes.metadata`，会话恢复后仍可显示。
 - 协作式取消：`using Cancellation = std::shared_ptr<std::atomic<bool>>`。`execute(args, cancelled)` 默认实现只在入口检查一次；`cancel(cancelled)` 默认置位原子并转调无参 `cancel()`。契约要求 `cancel()` 只允许翻原子/关句柄，**不得阻塞、不得跨线程触碰 execute 的非原子状态**。
 - `generatePreview(args)` 在 GUI 线程、派发前调用，只用于确认弹窗预览（`write_file`/`edit_file` 生成 unified diff，`git_commit` 生成 staged/工作区摘要），必须快且不阻塞。
 - `FileCheckpoint`：G4 撤销/审计载荷。写入前捕获原内容（>1MiB 记 `truncated`），写入后补 `diff`、`addedLines`/`removedLines`、`afterHash`(SHA-256)。checkpoint 随 `ToolResult` 回到 GUI 线程再由 agent 落库（`QSqlDatabase` 线程绑定）。
@@ -55,10 +55,11 @@
 
 ### 联网工具
 - `WebSearchBackend` 无状态、`search()` 为 `const`；可选 `requiresApiKey()`、`notReadyReason()`、`errorReason` 出参——把「没配置」「请求失败」「零结果」三态分开。
-- `TavilyBackend`：POST `https://api.tavily.com/search`，JSON body 带 `api_key`，`search_depth=basic`。
-- `DuckDuckGoBackend`：抓 `html.duckduckgo.com/html/`，正则解析 `result__a`/`result__snippet`，解包 `uddg=` 跳转。
-- `SearxBackend`：GET `<base>/search?q=&format=json`，`buildSearchUrl`/`parseResponse` 提为纯函数供单测；403/400 提示「实例未启用 JSON API」。
-- `WebSearchTool`：`RequiresConfirm` + `autoEditSafe` + `readOnly`；`max_results` 夹到 1–10（默认 5），总输出 6000 字符，单条 snippet 截 800；配置（backend/apiKey/timeout）通过 `std::mutex` 快照，**backend 可在飞行中被替换而不悬垂**。
+- `WebSearchProviderRegistry`：后端元数据表（`key`/`label`/`requiresApiKey`/`apiKeySettingKey`）+ `create()` 工厂 + `defaultProviderKey()`。**设置 UI 下拉、`SettingsSchema` 的 options 与 `main.cpp` 的工厂全部读这张表**，新增后端只改一处。
+- `DuckDuckGoBackend`（默认，免密钥）：抓 `html.duckduckgo.com/html/`，正则解析 `result__a`/`result__snippet`，解包 `uddg=` 跳转；`looksLikeAntiBotChallenge()` 识别 202 + `anomaly.js` 反爬页——不识别的话挑战页会被误报成「没找到结果」。
+- `ZhipuSearchBackend`：POST `https://open.bigmodel.cn/api/paas/v4/web_search`，Bearer；`search_query`/`search_engine`/`search_intent` 三项必填（漏 `search_intent` 直接 400）；结果 `search_result[]`，链接字段是 `link` 不是 `url`；`search_query` 硬上限 70 字符，超长在发请求前拦截。
+- `DeepSeekSearchBackend`：POST `https://api.deepseek.com/v1/tools/search`，Bearer（与对话 API 同一把 key）；`need_content=false` 是刻意的——`content` 是整页正文会撑爆 6000 字符预算，映射 `summary`（600~800 字符，官方定位「给模型阅读」）回退 `snippet`。
+- `WebSearchTool`：`RequiresConfirm` + `autoEditSafe` + `readOnly`；`max_results` 夹到 1–10（默认 5），总输出 6000 字符，单条 snippet 截 800；配置（backend/apiKey/timeout）通过 `std::mutex` 快照，**backend 可在飞行中被替换而不悬垂**。所有返回路径（含失败）都把后端的 `providerKey()` 写进 `ToolResult::source`，界面据此显示检索来源徽章。
 - `NetworkFetchTool`：GET-only，`RequiresConfirm` + `autoEditSafe` + `readOnly`；SSRF 预检（字面量地址直接判，域名走异步 `QHostInfo` + 200ms 切片 DNS loop），拒绝 loopback/RFC1918/CGNAT/link-local/ULA/多播等；`ManualRedirectPolicy`（3xx 显式报失败并回显 Location）；响应体 1MiB 线上截断、正文 6000 字符；HTML→文本为极简正则剥离，UTF-8 失败回退 local8Bit。
 
 ## 数据与控制流
@@ -88,7 +89,7 @@
 | `ToolRegistry.cpp` | 1257 行 | 11 个内建工具 + `unifiedDiff` + checkpoint 捕获/收尾 + 注册表实现 |
 | `Sandbox.h` | 418 行 | 路径策略、黑名单、`ExecutionScope`、`cleanPath`、锁 |
 | `SandboxWin.cpp` | 51 行 | `GetFinalPathNameByHandleW` 解析 reparse point（`\\?\` 前缀归一） |
-| `WebSearchBackend.h/.cpp` | 133 / 382 行 | 后端抽象 + Tavily/DDG/SearXNG 实现 |
+| `WebSearchBackend.h/.cpp` | 161 / 534 行 | 后端抽象 + 注册表 + DDG/智谱/DeepSeek 实现 |
 | `WebSearchTool.h` | 175 行 | `web_search` 定义、快照配置、结果格式化 |
 | `NetworkFetchTool.h` | 334 行 | `http_fetch`、SSRF 白/黑名单、切片取消、HTML→文本 |
 
@@ -100,7 +101,8 @@
 - **`registerTool` 同名覆盖不清理 `m_ownedTools`**：重复注册同名工具会让 `listAll()` 出现重复条目（MCP 重连路径依赖 `takeTool` 先摘除，若顺序出错会暴露该缺陷）。
 - **注册表无锁**：`QHash/QSet` 假定只在 GUI 线程读写；`findShared()` 也在 GUI 线程调用，池线程只持有已取出的 `shared_ptr`。
 - `web_search` 的取消标志是单成员 `std::atomic`，同一 `WebSearchTool` 实例被多 tab 共享时，`cancel()` 语义是「取消该实例当前/下一次调用」，只在 `execute` 入口重置；真正的并发隔离依赖 AIAgent 的 `Cancellation` 令牌（`WebSearchTool` 只读 `m_cancelRequested`，令牌取消不传导到后端）。
-- 三个搜索后端各自新建 `QNetworkAccessManager` + `QEventLoop`，**必须在非 GUI 线程调用**；超时被强制夹到 5–60s，调用方传入更小值无效。Tavily 把 `api_key` 放在 JSON body（非 Header），日志/抓包面需注意。
+- 三个搜索后端的 HTTP 往返统一走 `sendRequest()`（`QNetworkAccessManager` + `QEventLoop`），**必须在非 GUI 线程调用**；超时被强制夹到 5–60s，调用方传入更小值无效。凭据一律走 `Authorization: Bearer` 头（不再有把 key 放进 JSON body 的后端）。
+- 搜索密钥**按 provider 分桶**（`webSearch/zhipuApiKey` / `webSearch/deepseekApiKey`，各自 DPAPI 加密）：共用一个键会把 A 平台的密钥发给 B 平台。`SettingsService::webSearchApiKeyValue()` 读的是**当前选中 provider** 那一把，切换 provider 时必须补发 `webSearchApiKeyChanged` 并在同一个 `applySettings` 里成对执行 `setApiKey` + `setBackend`。
 - `http_fetch` 明确不覆盖 DNS rebinding，也不做内容类型过滤（二进制会被当文本处理）；代理由全局 `QNetworkProxyFactory` 决定，SSRF 判定基于解析结果而非实际出口。
 - 文件类工具全靠 `kMaxReadFileBytes`(8MiB)/`kMaxWriteFileBytes`(8MiB)/`kMaxFileChars`(20000)/`kMaxOutputChars`(8000) 限流；`read_file` 的字符截断发生在整文件读入后，只有字节上限是读前拒绝。
 - `edit_file` 是字节级精确匹配（不归一化换行），CRLF 文件用 LF 的 `old_string` 会报「not found」——这是刻意契约（`editFileCrlfBoundary` 测试固定）。

@@ -75,7 +75,7 @@
 
 - **账本纪律**：`writeBatch` 只校验 `definition()` 命中的键，未登记键静默放行，拼写错误不会被发现；`isValidValue` 对未知键返回 `false`，两处口径不一致。
 - **QSettings 非原子**：回滚是 best-effort，进程崩溃可能留下半批写入；每次访问都新开 QSettings 并 `sync()`，高频写有 IO 成本。
-- **加密只在 ViewModels 层**：绕过 `SettingsService` 直接 `writeValue("webSearch/apiKey", ...)` 会落明文；非 Windows 平台 `encrypted` 标记形同虚设。
+- **加密只在 ViewModels 层**：绕过 `SettingsService` 直接 `writeValue("webSearch/<provider>ApiKey", ...)` 会落明文；非 Windows 平台 `encrypted` 标记形同虚设。
 - **Logger 全局锁 + 同步文件 IO**：handler 持锁做 write/flush/stderr，日志风暴会串行化所有线程（含 GUI）；单行超 `maxFileBytes` 时按字节 `left()` 截断，可能切断 UTF-8 多字节序列。
 - **回填去重按 message 文本**：同文不同时的日志被静默丢弃；回填项重新分配 `seq`，环形缓冲内 `seq` 顺序与 `timestamp` 不再单调。
 - **Token 估算非真实分词**：CJK 区间不含扩展 B 平面（代理对按两个 char 计），图片固定 1000、消息固定 +4，只适合预算/触发压缩，不能作为计费依据。

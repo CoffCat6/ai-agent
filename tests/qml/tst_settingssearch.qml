@@ -101,7 +101,10 @@ Item {
         }
 
         function test_handIndexMatchesByEnglishKeyword() {
-            const results = SettingsSearchLib.search("searxng", registryEntries, categoryOrder, categoryNames)
+            // 英文关键词命中手写索引：联网搜索后端从 Tavily/SearXNG 换成
+            // DuckDuckGo/智谱/DeepSeek 后，关键词表必须同步，否则设置中心
+            // 里搜「zhipu」会搜不到联网搜索页。
+            const results = SettingsSearchLib.search("zhipu", registryEntries, categoryOrder, categoryNames)
             compare(results.length, 1)
             compare(results[0].title, "联网搜索")
             compare(results[0].category, "tools")

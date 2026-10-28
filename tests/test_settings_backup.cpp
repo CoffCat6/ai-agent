@@ -46,7 +46,8 @@ private slots:
         settings.setValue(QStringLiteral("embedding/model"), QStringLiteral("my-embed"));
         settings.setValue(QStringLiteral("embedding/apiKey"), QStringLiteral("hidden-embed-key"));
         settings.setValue(QStringLiteral("security/allowFullDiskRead"), true);
-        settings.setValue(QStringLiteral("webSearch/apiKey"), QStringLiteral("hidden-web-key"));
+        settings.setValue(QStringLiteral("webSearch/zhipuApiKey"), QStringLiteral("hidden-web-key"));
+        settings.setValue(QStringLiteral("webSearch/deepseekApiKey"), QStringLiteral("hidden-web-key-2"));
         settings.setValue(QStringLiteral("modelProfiles"), QString::fromUtf8(
             QJsonDocument(QJsonArray{QJsonObject{
                 {QStringLiteral("id"), QStringLiteral("profile-1")},
@@ -75,6 +76,7 @@ private slots:
         const QByteArray bytes = exported.readAll();
         QVERIFY(!bytes.contains("hidden-model-key"));
         QVERIFY(!bytes.contains("hidden-web-key"));
+        QVERIFY(!bytes.contains("hidden-web-key-2"));
         QVERIFY(!bytes.contains("hidden-embed-key"));
         QVERIFY(!bytes.contains("hidden-mcp-key"));
         QVERIFY(!bytes.contains("hidden-header"));
@@ -86,7 +88,8 @@ private slots:
         QVERIFY(backup.restartRequired());
         settings.sync();
         QCOMPARE(settings.value(QStringLiteral("embedding/model")).toString(), QStringLiteral("my-embed"));
-        QCOMPARE(settings.value(QStringLiteral("webSearch/apiKey")).toString(), QStringLiteral("hidden-web-key"));
+        QCOMPARE(settings.value(QStringLiteral("webSearch/zhipuApiKey")).toString(), QStringLiteral("hidden-web-key"));
+        QCOMPARE(settings.value(QStringLiteral("webSearch/deepseekApiKey")).toString(), QStringLiteral("hidden-web-key-2"));
         QVERIFY(settings.value(QStringLiteral("security/allowFullDiskRead")).toBool());
         QVERIFY(settings.value(QStringLiteral("modelProfiles")).toString().contains(QStringLiteral("hidden-model-key")));
         const auto restored = McpConfig::load();
