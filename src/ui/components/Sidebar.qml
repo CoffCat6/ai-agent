@@ -910,6 +910,13 @@ Rectangle {
                 // modelData 上下文已不可依赖；先钉成普通属性再用。
                 readonly property string sessionId: modelData.id
                 readonly property bool sessionArchived: modelData.archived === true
+                // 会话行「…」菜单的几何（供回归用例断言"弹在按钮旁边"）。
+                readonly property bool moreOpen: morePopup.opened
+                readonly property real morePopupX: morePopup.x
+                readonly property real morePopupY: morePopup.y
+                readonly property real morePopupWidth: morePopup.width
+                readonly property real morePopupHeight: morePopup.height
+                readonly property real moreContentHeight: moreCol.implicitHeight
                 property bool renaming: false
                 property bool confirmDelete: false
                 // 会话行内的左对齐基准：状态槽占住标题左侧 14px + 4px 间距。
@@ -1308,6 +1315,7 @@ Rectangle {
                             // 位置手工算（Popup 没有 Menu.popup(item,x,y)）。
                             Rectangle {
                                 id: moreBtn
+                                objectName: "moreBtn"
                                 width: 20
                                 height: 20
                                 radius: 4
@@ -1336,22 +1344,36 @@ Rectangle {
                                 Keys.onSpacePressed: moreBtn.openMenu()
 
                                 function openMenu() {
-                                    // 场景坐标：菜单右缘对齐按钮右缘，向下展开；
-                                    // 下方放不下就翻到上方，再夹进窗口。
-                                    const pt = moreBtn.mapToItem(null, 0, 0)
-                                    const winW = morePopup.Window.width
-                                    const winH = morePopup.Window.height
+                                    // 坐标关键：Popup.parent 是 Overlay.overlay，
+                                    // 所以 x/y 必须相对 overlay 而不是场景根。
+                                    // 之前用 mapToItem(null, ...) 配 overlay 父级，
+                                    // 在侧栏有内缩时会整体偏移（菜单弹到左上角）。
+                                    const overlay = morePopup.parent
+                                    const pt = overlay
+                                        ? moreBtn.mapToItem(overlay, 0, 0)
+                                        : moreBtn.mapToItem(null, 0, 0)
+                                    // 用按钮的 Window 附加属性，不用 Popup 的：
+                                    // Popup 尚未 open 时 morePopup.Window 可能取不到
+                                    // 宽高（实测为 0），导致夹取算式把 x 压到 8、
+                                    // 菜单永远弹在窗口左上角。按钮一定在窗口里。
+                                    const winW = moreBtn.Window.width
+                                    const winH = moreBtn.Window.height
+                                    // 高度先按内容估一遍：首帧 morePopup.height 还是 0，
+                                    // 拿它算 y 会让"下方放不下"的判断永远不成立。
+                                    const popupH = Math.max(morePopup.height,
+                                                            moreCol.implicitHeight + 12)
+                                    const popupW = morePopup.width
                                     const x = Math.max(8, Math.min(
-                                        pt.x + moreBtn.width - morePopup.width,
-                                        Math.max(8, winW - morePopup.width - 8)))
+                                        pt.x + moreBtn.width - popupW,
+                                        Math.max(8, winW - popupW - 8)))
                                     const belowY = pt.y + moreBtn.height + 4
-                                    const aboveY = pt.y - morePopup.height - 4
+                                    const aboveY = pt.y - popupH - 4
                                     let y = belowY
-                                    if (y + morePopup.height > winH - 4 && aboveY >= 4)
+                                    if (y + popupH > winH - 4 && aboveY >= 4)
                                         y = aboveY
                                     morePopup.x = x
                                     morePopup.y = Math.max(4, Math.min(
-                                        y, Math.max(4, winH - morePopup.height - 4)))
+                                        y, Math.max(4, winH - popupH - 4)))
                                     morePopup.open()
                                 }
 
@@ -1363,8 +1385,13 @@ Rectangle {
 
                             Popup {
                                 id: morePopup
+                                objectName: "sessionMorePopup"
                                 parent: Overlay.overlay
                                 width: 168
+                                // 与 SessionTemplateMenu 同一写法（已验证可用）：
+                                // 显式 height 绑到 contentItem 的 implicitHeight。
+                                // 用 implicitHeight 会让 Popup 走自己的重算路径，
+                                // 而 contentItem 首帧高度为 0 时不会再次刷新。
                                 height: moreCol.implicitHeight + 12
                                 padding: 6
                                 closePolicy: Popup.CloseOnEscape | Popup.CloseOnPressOutside
@@ -1375,57 +1402,144 @@ Rectangle {
                                     id: moreCol
                                     spacing: 2
 
-                                    // 三项动作与右键菜单同义，只是排布换了位置。
-                                    // 用 Loader 实例化共享的行项组件：QML 里内联
-                                    // Component 不能直接当类型名使用。
-                                    Repeater {
-                                        model: [
-                                            {
-                                                text: modelData.archived
-                                                    ? qsTr("恢复会话") : qsTr("归档会话"),
-                                                icon: "archive",
-                                                action: "archive"
-                                            },
-                                            {
-                                                text: qsTr("导出会话"),
-                                                icon: "export",
-                                                action: "export"
-                                            },
-                                            {
-                                                text: qsTr("结束对话"),
-                                                icon: "close",
-                                                action: "close",
-                                                enabled: modelData.open === true
+                                    // 三项动作与右键菜单同义。直接写三个实例而不是
+                                    // Repeater+Loader：Loader 的 implicitHeight 不反映
+                                    // item 高度，会把外层 ColumnLayout（进而 Popup）
+                                    // 的高度算成 0，弹层只剩一条。
+                                    Rectangle {
+                                        Layout.fillWidth: true
+                                        Layout.preferredHeight: 28
+                                        radius: 5
+                                        color: archMA.containsMouse ? Theme.surfaceHover
+                                                                  : "transparent"
+                                        RowLayout {
+                                            anchors.fill: parent
+                                            anchors.leftMargin: 8
+                                            anchors.rightMargin: 8
+                                            spacing: 8
+                                            AppIcon {
+                                                Layout.alignment: Qt.AlignVCenter
+                                                icon: "archive"
+                                                size: 12
+                                                iconColor: Theme.textSecondary
                                             }
-                                        ]
-                                        delegate: Loader {
-                                            required property var modelData
-                                            Layout.fillWidth: true
-                                            sourceComponent: moreMenuItemComponent
-                                            onLoaded: {
-                                                // modelData 是 delegate 的隐式上下文属性，
-                                                // 不是 Item 的属性——这里先落成局部值，
-                                                // 回调里就不会在作用域消失后取不到。
-                                                const entry = modelData
-                                                const sessionId = sessionDelegate.sessionId
-                                                item.text = entry.text
-                                                item.icon = entry.icon
-                                                item.enabled = entry.enabled !== false
-                                                item.activated.connect(function() {
-                                                    morePopup.close()
-                                                    if (entry.action === "archive") {
-                                                        AgentVM.setSessionArchived(
-                                                            sessionId,
-                                                            !sessionDelegate.sessionArchived)
-                                                    } else if (entry.action === "export") {
-                                                        root.exportSessionId = sessionId
-                                                        exportDialog.open()
-                                                    } else {
-                                                        AgentVM.closeConversation(sessionId)
-                                                    }
-                                                })
+                                            Text {
+                                                Layout.fillWidth: true
+                                                Layout.alignment: Qt.AlignVCenter
+                                                text: modelData.archived
+                                                    ? qsTr("恢复会话") : qsTr("归档会话")
+                                                color: Theme.textPrimary
+                                                font.pixelSize: Theme.fontSizeCaption
+                                                font.family: Theme.fontSans
+                                                elide: Text.ElideRight
                                             }
                                         }
+                                        MouseArea {
+                                            id: archMA
+                                            anchors.fill: parent
+                                            hoverEnabled: true
+                                            cursorShape: Qt.PointingHandCursor
+                                            onClicked: {
+                                                morePopup.close()
+                                                AgentVM.setSessionArchived(
+                                                    sessionDelegate.sessionId,
+                                                    !sessionDelegate.sessionArchived)
+                                            }
+                                        }
+                                        Accessible.role: Accessible.MenuItem
+                                        Accessible.name: modelData.archived
+                                            ? qsTr("恢复会话") : qsTr("归档会话")
+                                    }
+
+                                    Rectangle {
+                                        Layout.fillWidth: true
+                                        Layout.preferredHeight: 28
+                                        radius: 5
+                                        color: expMA.containsMouse ? Theme.surfaceHover
+                                                                  : "transparent"
+                                        RowLayout {
+                                            anchors.fill: parent
+                                            anchors.leftMargin: 8
+                                            anchors.rightMargin: 8
+                                            spacing: 8
+                                            AppIcon {
+                                                Layout.alignment: Qt.AlignVCenter
+                                                icon: "export"
+                                                size: 12
+                                                iconColor: Theme.textSecondary
+                                            }
+                                            Text {
+                                                Layout.fillWidth: true
+                                                Layout.alignment: Qt.AlignVCenter
+                                                text: qsTr("导出会话")
+                                                color: Theme.textPrimary
+                                                font.pixelSize: Theme.fontSizeCaption
+                                                font.family: Theme.fontSans
+                                                elide: Text.ElideRight
+                                            }
+                                        }
+                                        MouseArea {
+                                            id: expMA
+                                            anchors.fill: parent
+                                            hoverEnabled: true
+                                            cursorShape: Qt.PointingHandCursor
+                                            onClicked: {
+                                                morePopup.close()
+                                                root.exportSessionId =
+                                                    sessionDelegate.sessionId
+                                                exportDialog.open()
+                                            }
+                                        }
+                                        Accessible.role: Accessible.MenuItem
+                                        Accessible.name: qsTr("导出会话")
+                                    }
+
+                                    Rectangle {
+                                        id: closeItem
+                                        Layout.fillWidth: true
+                                        Layout.preferredHeight: 28
+                                        radius: 5
+                                        // 只在会话确实被打开时才有"结束"可言。
+                                        enabled: modelData.open === true
+                                        opacity: enabled ? 1.0 : 0.5
+                                        color: closeMA.containsMouse && enabled
+                                            ? Theme.surfaceHover : "transparent"
+                                        RowLayout {
+                                            anchors.fill: parent
+                                            anchors.leftMargin: 8
+                                            anchors.rightMargin: 8
+                                            spacing: 8
+                                            AppIcon {
+                                                Layout.alignment: Qt.AlignVCenter
+                                                icon: "close"
+                                                size: 12
+                                                iconColor: Theme.textSecondary
+                                            }
+                                            Text {
+                                                Layout.fillWidth: true
+                                                Layout.alignment: Qt.AlignVCenter
+                                                text: qsTr("结束对话")
+                                                color: Theme.textPrimary
+                                                font.pixelSize: Theme.fontSizeCaption
+                                                font.family: Theme.fontSans
+                                                elide: Text.ElideRight
+                                            }
+                                        }
+                                        MouseArea {
+                                            id: closeMA
+                                            anchors.fill: parent
+                                            hoverEnabled: true
+                                            enabled: closeItem.enabled
+                                            cursorShape: closeItem.enabled
+                                                ? Qt.PointingHandCursor : Qt.ArrowCursor
+                                            onClicked: {
+                                                morePopup.close()
+                                                AgentVM.closeConversation(
+                                                    sessionDelegate.sessionId)
+                                            }
+                                        }
+                                        Accessible.role: Accessible.MenuItem
+                                        Accessible.name: qsTr("结束对话")
                                     }
                                 }
                             }

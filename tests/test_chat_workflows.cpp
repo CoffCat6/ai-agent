@@ -2,6 +2,7 @@
 #include <QQmlComponent>
 #include <QQmlContext>
 #include <QQmlEngine>
+#include <QQuickItem>
 #include <QQmlApplicationEngine>
 #include <QQuickWindow>
 #include <QQuickItem>
@@ -707,6 +708,48 @@ private slots:
             }
         }
         QVERIFY2(rowsChecked > 0, "no session row was inspected");
+
+        // docs/30：「…」菜单必须弹在按钮**旁边**，而不是窗口左上角。
+        // 回归点：曾经用 Popup.Window 取窗口宽高（未 open 时为 0），夹取算式
+        // 把 x 压成 8、y 压成 4，菜单整块跑到窗口角上。
+        {
+            QQuickItem* moreBtn = nullptr;
+            for (auto* group : col->childItems())
+                for (auto* row : group->childItems()) {
+                    if (!QString::fromLatin1(row->metaObject()->className())
+                             .startsWith(QLatin1String("ItemDelegate"))) continue;
+                    for (auto* it : row->findChildren<QQuickItem*>())
+                        if (it->objectName() == QLatin1String("moreBtn"))
+                            moreBtn = it;
+                    if (!moreBtn) continue;
+
+                    QVERIFY(QMetaObject::invokeMethod(moreBtn, "openMenu"));
+                    QTest::qWait(150);
+                    QCOMPARE(row->property("moreOpen").toBool(), true);
+
+                    // 内容真的铺开了（3 个菜单项 + 标题留白 >= 3*28）。
+                    const qreal contentH = row->property("moreContentHeight").toDouble();
+                    QVERIFY2(contentH >= 84.0,
+                             qPrintable(QStringLiteral("popup content is %1px tall; "
+                                                       "the three menu rows did not lay out")
+                                            .arg(contentH)));
+
+                    // 位置：右缘贴按钮右缘，垂直方向紧贴按钮下方。
+                    const QPointF btn = moreBtn->mapToItem(nullptr, QPointF(0, 0));
+                    const qreal px = row->property("morePopupX").toDouble();
+                    const qreal py = row->property("morePopupY").toDouble();
+                    const qreal pw = row->property("morePopupWidth").toDouble();
+                    QVERIFY2(qAbs((px + pw) - (btn.x() + moreBtn->width())) <= 1.0,
+                             qPrintable(QStringLiteral("popup right edge %1 is not flush "
+                                                       "with the button %2")
+                                            .arg(px + pw).arg(btn.x() + moreBtn->width())));
+                    QVERIFY2(qAbs(py - (btn.y() + moreBtn->height() + 4)) <= 1.0,
+                             qPrintable(QStringLiteral("popup top %1 is not just below "
+                                                       "the button %2")
+                                            .arg(py).arg(btn.y() + moreBtn->height() + 4)));
+                    break;
+                }
+        }
 
         // 最窄侧栏（180px，SplitBar 的下限）：标题宽度必须仍是非负，
         // 且时间行仍与标题对齐。缩进改小之后这里才真正有余量，值得锁住。
