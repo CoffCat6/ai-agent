@@ -576,11 +576,13 @@ Rectangle {
                         }
 
                         // 展开的会话（缩进显示，与项目行形成可见层级）
+                        // 外层左缩进与项目头同为 12：层级靠 delegate 内部的
+                        // 8px + 状态槽表达，不再靠外包一层大缩进（旧值 26 叠加
+                        // 内部 20 会把标题推到 x=64，比分组头标签还靠右）。
                         ColumnLayout {
                             visible: projectNode.expanded
                             Layout.fillWidth: true
-                            Layout.leftMargin: 26
-                            Layout.rightMargin: 12
+                            Layout.leftMargin: 12
                             spacing: 2
 
                             Repeater {
@@ -588,14 +590,15 @@ Rectangle {
                                 delegate: sessionRow
                             }
 
-                            // 项目下暂无会话的空态（缩进与会话标题对齐）
+                            // 项目下暂无会话的空态。缩进 = 外层 12 之外再 +26，
+                            // 正好落在会话标题的 x=38 基线（8 + 槽 14 + 间距 4）。
                             Text {
                                 visible: projectNode.projectSessions.length === 0
                                 text: qsTr("暂无会话")
                                 color: Theme.textSecondary
                                 font.pixelSize: Theme.fontSizeCaption
                                 font.family: Theme.fontSans
-                                Layout.leftMargin: 20
+                                Layout.leftMargin: 26
                                 Layout.topMargin: 2
                             }
                         }
@@ -710,12 +713,11 @@ Rectangle {
                     Accessible.name: qsTr("本地对话")
                 }
 
-                // 本地会话（缩进，随「对话」头折叠）
+                // 本地会话（缩进，随「对话」头折叠）。左缩进同项目树，理由同上。
                 ColumnLayout {
                     visible: root.localExpanded
                     Layout.fillWidth: true
-                    Layout.leftMargin: 26
-                    Layout.rightMargin: 12
+                    Layout.leftMargin: 12
                     spacing: 2
 
                     Repeater {
@@ -730,7 +732,8 @@ Rectangle {
                     color: Theme.textSecondary
                     font.pixelSize: Theme.fontSizeCaption
                     font.family: Theme.fontSans
-                    Layout.leftMargin: 46
+                    // 外层 12 + 26 = 38，与会话标题同一基线（旧值 46 基于 26 的外层）。
+                    Layout.leftMargin: 26
                     Layout.topMargin: 4
                 }
             }
@@ -825,6 +828,68 @@ Rectangle {
             onAccepted: AgentVM.importProject(selectedFolder)
         }
 
+        // 会话行「…」溢出菜单的行项。定义在 sessionRow 之前：QML 里被引用的
+        // 内联组件必须在同一作用域内可见（顺序不影响解析，但先定义更易读）。
+        Component {
+            id: moreMenuItemComponent
+            Rectangle {
+                id: itemRoot
+                Layout.fillWidth: true
+                Layout.preferredHeight: 28
+                radius: 5
+                color: itemMA.containsMouse || itemHover.hovered
+                    ? Theme.surfaceHover : "transparent"
+
+                property string text: ""
+                property string icon: "archive"
+                signal activated()
+
+                HoverHandler { id: itemHover }
+
+                RowLayout {
+                    anchors.fill: parent
+                    anchors.leftMargin: 8
+                    anchors.rightMargin: 8
+                    spacing: 8
+
+                    AppIcon {
+                        Layout.alignment: Qt.AlignVCenter
+                        icon: itemRoot.icon
+                        size: 12
+                        iconColor: itemRoot.enabled ? Theme.textSecondary
+                                                    : Theme.textTertiary
+                    }
+                    Text {
+                        Layout.fillWidth: true
+                        Layout.alignment: Qt.AlignVCenter
+                        text: itemRoot.text
+                        color: itemRoot.enabled ? Theme.textPrimary : Theme.textTertiary
+                        font.pixelSize: Theme.fontSizeCaption
+                        font.family: Theme.fontSans
+                        elide: Text.ElideRight
+                    }
+                }
+
+                MouseArea {
+                    id: itemMA
+                    anchors.fill: parent
+                    hoverEnabled: true
+                    enabled: itemRoot.enabled
+                    cursorShape: itemRoot.enabled
+                        ? Qt.PointingHandCursor : Qt.ArrowCursor
+                    onClicked: itemRoot.activated()
+                }
+
+                activeFocusOnTab: itemRoot.enabled
+                Keys.onReturnPressed: if (itemRoot.enabled) itemRoot.activated()
+                Keys.onSpacePressed: if (itemRoot.enabled) itemRoot.activated()
+
+                Accessible.role: Accessible.MenuItem
+                Accessible.name: itemRoot.text
+                Accessible.onPressAction: if (itemRoot.enabled) itemRoot.activated()
+            }
+        }
+
         // 共用的会话行 delegate（项目树 / 本地树两处复用）
         Component {
             id: sessionRow
@@ -841,8 +906,18 @@ Rectangle {
                 Accessible.description: modelData.timeText || ""
 
                 readonly property bool isActive: AgentVM.currentSessionId === modelData.id
+                // 「…」菜单的回调在 Popup 里异步执行，届时 delegate 的隐式
+                // modelData 上下文已不可依赖；先钉成普通属性再用。
+                readonly property string sessionId: modelData.id
+                readonly property bool sessionArchived: modelData.archived === true
                 property bool renaming: false
                 property bool confirmDelete: false
+                // 会话行内的左对齐基准：状态槽占住标题左侧 14px + 4px 间距。
+                // 标题、重命名输入框、时间行三者都必须从这条基线起排，否则
+                // 加了状态槽之后时间行会比标题左伸出 18px（本次修复的问题）。
+                readonly property int stateSlotWidth: 14
+                readonly property int stateSlotGap: 4
+                readonly property int titleInset: stateSlotWidth + stateSlotGap
 
                 // 右键菜单：同一组操作（与 hover 按钮等价，供习惯右键的用户）。
                 TapHandler {
@@ -910,9 +985,12 @@ Rectangle {
                     }
                 }
 
+                // 行内容缩进 8：叠加外层 12 后，状态槽正好落在 x=20——
+                // 与分组头的展开箭头同一条竖线；标题落在 x=38，与分组头的
+                // 文件夹/消息图标对齐。右缘 12 与分组头一致。
                 ColumnLayout {
                     anchors.fill: parent
-                    anchors.leftMargin: 20
+                    anchors.leftMargin: 8
                     anchors.rightMargin: 12
                     spacing: 2
 
@@ -925,7 +1003,10 @@ Rectangle {
                             id: renameInput
                             visible: sessionDelegate.renaming
                             anchors.verticalCenter: parent.verticalCenter
-                            width: parent.width - 8
+                            // 与标题同一左基线：重命名时状态槽仍在（它标的是这条
+                            // 会话的运行状态），输入框不能压住它。
+                            x: sessionDelegate.titleInset
+                            width: parent.width - sessionDelegate.titleInset - 8
                             text: modelData.title
                             color: Theme.textPrimary
                             font.pixelSize: Theme.fontSizeBody
@@ -980,8 +1061,8 @@ Rectangle {
                             id: sessionStateSlot
                             objectName: "sessionStateSlot"
                             anchors.verticalCenter: parent.verticalCenter
-                            width: 14
-                            height: 14
+                            width: sessionDelegate.stateSlotWidth
+                            height: sessionDelegate.stateSlotWidth
 
                             // 进行中：旋转刷新图标（与 KnowledgeDialog 的
                             // 导入进度同一写法，不引入新控件）。
@@ -1033,7 +1114,7 @@ Rectangle {
                             visible: !sessionDelegate.renaming
                             anchors.verticalCenter: parent.verticalCenter
                             anchors.left: sessionStateSlot.right
-                            anchors.leftMargin: 4
+                            anchors.leftMargin: sessionDelegate.stateSlotGap
                             text: modelData.title && modelData.title.length > 0
                                 ? modelData.title : qsTr("新会话")
                             color: Theme.textPrimary
@@ -1043,9 +1124,14 @@ Rectangle {
                             // 操作条宽度随会话是否打开而变（「结束对话」只在打开时
                             // 出现），所以让位量也要跟着算，否则标题要么被多压
                             // 一截、要么在操作条下面。
-                            width: parent.width - sessionStateSlot.width - 4
+                            //
+                            // Math.max(0, ...) 是必需的：最窄侧栏（180px）下
+                            // 操作条 130px 会吃掉全部剩余空间，不夹取就会得到
+                            // 负宽度——elide 在负宽度下不生效，标题会溢出到
+                            // 操作条底下。
+                            width: Math.max(0, parent.width - sessionDelegate.titleInset
                                    - ((sessionDelegate.hovered || sessionDelegate.activeFocus)
-                                      ? sessionActions.width + 6 : 0)
+                                      ? sessionActions.width + 6 : 0))
 
                             // docs/25 C5: elide 截断时悬停可看完整标题
                             HoverHandler { id: sessionTitleHover }
@@ -1053,14 +1139,22 @@ Rectangle {
                             ToolTip.text: sessionTitle.text
                         }
 
-                        // Hover 操作行：置顶 / 归档 / 导出 / 结束对话 / 重命名 / 删除。
-                        // 全部用直连 MouseArea 的 Rectangle，不再用 Popup Menu——
-                        // Menu 在 Repeater delegate 内弹出会被焦点抢占秒关，
-                        // 置顶/归档因此从未生效（bug 修复：改为直连按钮）。
+                        // Hover 操作行：置顶 / 重命名 / 删除 + 溢出「…」。
+                        //
+                        // 为什么只留三个：六个按钮合计 108–130px，而最窄侧栏
+                        // （180px）下标题可用宽度只有 ~118px——悬停时标题被压成
+                        // 零宽，等于"一悬停就看不见标题"。收成三个常用动作
+                        // （78px）后窄宽下仍留着标题；其余三项（归档 / 导出 /
+                        // 结束对话）进「…」菜单，与右键菜单同一组动作。
+                        //
+                        // 按钮仍是直连 MouseArea 的 Rectangle（历史教训：Menu 在
+                        // Repeater delegate 内会被焦点抢占秒关）；只有「…」弹出
+                        // 的那个 Popup 是 Popup 而非 Menu，原因见该按钮的注释。
                         // docs/25 D2: 键盘可达——行聚焦（ItemDelegate 在 Tab 链
                         // 内）时同样显示，按钮可继续 Tab 进入并回车激活。
                         Row {
                             id: sessionActions
+                            objectName: "sessionActions"
                             visible: (sessionDelegate.hovered || sessionDelegate.activeFocus)
                                      && !sessionDelegate.renaming
                             anchors.verticalCenter: parent.verticalCenter
@@ -1101,123 +1195,6 @@ Rectangle {
                                 Accessible.role: Accessible.Button
                                 Accessible.name: modelData.pinned ? qsTr("取消置顶") : qsTr("置顶会话")
                                 Accessible.onPressAction: AgentVM.setSessionPinned(modelData.id, !modelData.pinned)
-                            }
-
-                            // 归档 / 恢复
-                            Rectangle {
-                                width: 20
-                                height: 20
-                                radius: 4
-                                color: archiveMA.containsMouse ? Theme.surfaceHover : "transparent"
-                                border.width: activeFocus ? 2 : 0
-                                border.color: Theme.brandPrimary
-
-                                AppIcon {
-                                    anchors.centerIn: parent
-                                    icon: "archive"
-                                    size: 12
-                                    iconColor: modelData.archived || archiveMA.containsMouse
-                                        ? Theme.statusWarning : Theme.textSecondary
-                                }
-
-                                MouseArea {
-                                    id: archiveMA
-                                    anchors.fill: parent
-                                    hoverEnabled: true
-                                    cursorShape: Qt.PointingHandCursor
-                                    onClicked: AgentVM.setSessionArchived(modelData.id, !modelData.archived)
-                                }
-                                activeFocusOnTab: true
-                                Keys.onReturnPressed:
-                                    AgentVM.setSessionArchived(modelData.id, !modelData.archived)
-                                Keys.onSpacePressed:
-                                    AgentVM.setSessionArchived(modelData.id, !modelData.archived)
-                                Accessible.role: Accessible.Button
-                                Accessible.name: modelData.archived ? qsTr("恢复会话") : qsTr("归档会话")
-                                Accessible.onPressAction: AgentVM.setSessionArchived(modelData.id, !modelData.archived)
-                            }
-
-                            // Export action (Batch 18)
-                            Rectangle {
-                                width: 20
-                                height: 20
-                                radius: 4
-                                color: exportMA.containsMouse ? Theme.surfaceHover : "transparent"
-                                border.width: activeFocus ? 2 : 0
-                                border.color: Theme.brandPrimary
-
-                                AppIcon {
-                                    anchors.centerIn: parent
-                                    icon: "export"
-                                    size: 12
-                                    iconColor: exportMA.containsMouse ? Theme.brandPrimary : Theme.textSecondary
-                                }
-
-                                MouseArea {
-                                    id: exportMA
-                                    anchors.fill: parent
-                                    hoverEnabled: true
-                                    cursorShape: Qt.PointingHandCursor
-                                    onClicked: {
-                                        root.exportSessionId = modelData.id
-                                        exportDialog.open()
-                                    }
-                                }
-                                // docs/25 D2: 此前缺 Accessible——补 role/name/onPressAction
-                                activeFocusOnTab: true
-                                Keys.onReturnPressed: {
-                                    root.exportSessionId = modelData.id
-                                    exportDialog.open()
-                                }
-                                Keys.onSpacePressed: {
-                                    root.exportSessionId = modelData.id
-                                    exportDialog.open()
-                                }
-                                Accessible.role: Accessible.Button
-                                Accessible.name: qsTr("导出会话")
-                                Accessible.onPressAction: {
-                                    root.exportSessionId = modelData.id
-                                    exportDialog.open()
-                                }
-                            }
-
-                            // docs/30 §4.5：结束对话（只释放视图，不删数据）。
-                            // 只在会话被打开时出现——没打开就没有"结束"可言。
-                            Rectangle {
-                                width: 20
-                                height: 20
-                                radius: 4
-                                visible: modelData.open === true
-                                color: closeConvMA.containsMouse ? Theme.surfaceHover : "transparent"
-                                border.width: activeFocus ? 2 : 0
-                                border.color: Theme.brandPrimary
-
-                                AppIcon {
-                                    anchors.centerIn: parent
-                                    icon: "close"
-                                    size: 12
-                                    iconColor: closeConvMA.containsMouse
-                                        ? Theme.brandPrimary : Theme.textSecondary
-                                }
-
-                                function endConversation() {
-                                    AgentVM.closeConversation(modelData.id)
-                                }
-
-                                MouseArea {
-                                    id: closeConvMA
-                                    anchors.fill: parent
-                                    hoverEnabled: true
-                                    cursorShape: Qt.PointingHandCursor
-                                    onClicked: parent.endConversation()
-                                }
-                                activeFocusOnTab: true
-                                Keys.onReturnPressed: endConversation()
-                                Keys.onSpacePressed: endConversation()
-                                Accessible.role: Accessible.Button
-                                Accessible.name: qsTr("结束对话")
-                                Accessible.description: qsTr("关闭这条对话的视图，历史仍保留")
-                                Accessible.onPressAction: endConversation()
                             }
 
                             // Rename action
@@ -1324,6 +1301,134 @@ Rectangle {
                                 Accessible.description: qsTr("需要点击两次确认")
                                 Accessible.onPressAction: deleteBtn.confirmOrDelete()
                             }
+
+                            // docs/30：溢出「…」——归档 / 导出 / 结束对话。
+                            // 用 Popup 而非 Menu：Menu 在 Repeater delegate 内弹出
+                            // 会被焦点抢占秒关（历史上置顶/归档因此从未生效）。
+                            // 位置手工算（Popup 没有 Menu.popup(item,x,y)）。
+                            Rectangle {
+                                id: moreBtn
+                                width: 20
+                                height: 20
+                                radius: 4
+                                color: moreMA.containsMouse || morePopup.opened
+                                    ? Theme.surfaceHover : "transparent"
+                                border.width: activeFocus ? 2 : 0
+                                border.color: Theme.brandPrimary
+
+                                AppIcon {
+                                    anchors.centerIn: parent
+                                    icon: "more"
+                                    size: 12
+                                    iconColor: moreMA.containsMouse || morePopup.opened
+                                        ? Theme.brandPrimary : Theme.textSecondary
+                                }
+
+                                MouseArea {
+                                    id: moreMA
+                                    anchors.fill: parent
+                                    hoverEnabled: true
+                                    cursorShape: Qt.PointingHandCursor
+                                    onClicked: moreBtn.openMenu()
+                                }
+                                activeFocusOnTab: true
+                                Keys.onReturnPressed: moreBtn.openMenu()
+                                Keys.onSpacePressed: moreBtn.openMenu()
+
+                                function openMenu() {
+                                    // 场景坐标：菜单右缘对齐按钮右缘，向下展开；
+                                    // 下方放不下就翻到上方，再夹进窗口。
+                                    const pt = moreBtn.mapToItem(null, 0, 0)
+                                    const winW = morePopup.Window.width
+                                    const winH = morePopup.Window.height
+                                    const x = Math.max(8, Math.min(
+                                        pt.x + moreBtn.width - morePopup.width,
+                                        Math.max(8, winW - morePopup.width - 8)))
+                                    const belowY = pt.y + moreBtn.height + 4
+                                    const aboveY = pt.y - morePopup.height - 4
+                                    let y = belowY
+                                    if (y + morePopup.height > winH - 4 && aboveY >= 4)
+                                        y = aboveY
+                                    morePopup.x = x
+                                    morePopup.y = Math.max(4, Math.min(
+                                        y, Math.max(4, winH - morePopup.height - 4)))
+                                    morePopup.open()
+                                }
+
+                                Accessible.role: Accessible.Button
+                                Accessible.name: qsTr("更多操作")
+                                Accessible.description: qsTr("归档、导出或结束这条对话")
+                                Accessible.onPressAction: moreBtn.openMenu()
+                            }
+
+                            Popup {
+                                id: morePopup
+                                parent: Overlay.overlay
+                                width: 168
+                                height: moreCol.implicitHeight + 12
+                                padding: 6
+                                closePolicy: Popup.CloseOnEscape | Popup.CloseOnPressOutside
+
+                                background: DialogBackground {}
+
+                                contentItem: ColumnLayout {
+                                    id: moreCol
+                                    spacing: 2
+
+                                    // 三项动作与右键菜单同义，只是排布换了位置。
+                                    // 用 Loader 实例化共享的行项组件：QML 里内联
+                                    // Component 不能直接当类型名使用。
+                                    Repeater {
+                                        model: [
+                                            {
+                                                text: modelData.archived
+                                                    ? qsTr("恢复会话") : qsTr("归档会话"),
+                                                icon: "archive",
+                                                action: "archive"
+                                            },
+                                            {
+                                                text: qsTr("导出会话"),
+                                                icon: "export",
+                                                action: "export"
+                                            },
+                                            {
+                                                text: qsTr("结束对话"),
+                                                icon: "close",
+                                                action: "close",
+                                                enabled: modelData.open === true
+                                            }
+                                        ]
+                                        delegate: Loader {
+                                            required property var modelData
+                                            Layout.fillWidth: true
+                                            sourceComponent: moreMenuItemComponent
+                                            onLoaded: {
+                                                // modelData 是 delegate 的隐式上下文属性，
+                                                // 不是 Item 的属性——这里先落成局部值，
+                                                // 回调里就不会在作用域消失后取不到。
+                                                const entry = modelData
+                                                const sessionId = sessionDelegate.sessionId
+                                                item.text = entry.text
+                                                item.icon = entry.icon
+                                                item.enabled = entry.enabled !== false
+                                                item.activated.connect(function() {
+                                                    morePopup.close()
+                                                    if (entry.action === "archive") {
+                                                        AgentVM.setSessionArchived(
+                                                            sessionId,
+                                                            !sessionDelegate.sessionArchived)
+                                                    } else if (entry.action === "export") {
+                                                        root.exportSessionId = sessionId
+                                                        exportDialog.open()
+                                                    } else {
+                                                        AgentVM.closeConversation(sessionId)
+                                                    }
+                                                })
+                                            }
+                                        }
+                                    }
+                                }
+                            }
                         }
 
                         Timer {
@@ -1333,13 +1438,25 @@ Rectangle {
                         }
                     }
 
+                    // 时间行与标题共用同一左基线（titleInset）：状态槽占的
+                    // 18px 必须在这里也让出来，否则时间会比标题左伸出 18px，
+                    // 视觉上"挂在行外面"。ColumnLayout 里用 leftMargin 表达。
                     Text {
+                        Layout.leftMargin: sessionDelegate.titleInset
+                        Layout.fillWidth: true
                         text: (modelData.pinned ? qsTr("已置顶 · ") : "")
                             + (modelData.archived ? qsTr("已归档 · ") : "")
                             + (modelData.timeText || "")
                         color: Theme.textSecondary
                         font.pixelSize: Theme.fontSizeCaption
                         font.family: Theme.fontSans
+                        elide: Text.ElideRight
+                        // 窄侧栏（180px）下"已置顶 · 已归档 · 3 天前"也放得下，
+                        // 但更长的相对时间会被裁；悬停可看全文。
+                        HoverHandler { id: sessionTimeHover }
+                        ToolTip.visible: sessionTimeHover.hovered
+                        ToolTip.delay: 600
+                        ToolTip.text: text
                     }
                 }
 

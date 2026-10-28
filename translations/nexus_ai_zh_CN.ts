@@ -6697,6 +6697,14 @@
 <context>
     <name>Sidebar</name>
     <message>
+        <source>更多操作</source>
+        <translation>更多操作</translation>
+    </message>
+    <message>
+        <source>归档、导出或结束这条对话</source>
+        <translation>归档、导出或结束这条对话</translation>
+    </message>
+    <message>
         <source>结束对话</source>
         <translation>结束对话</translation>
     </message>

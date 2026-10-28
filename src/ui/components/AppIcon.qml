@@ -245,6 +245,18 @@ Canvas {
         "minus": function(c) {
             line(c, 5, 12, 19, 12)
         },
+        "more": function(c) {
+            // 省略号（"-" 图标的三点版本）：会话行溢出菜单入口。
+            // 填实三个小圆点，与 Feather 的 more-horizontal 同形。
+            c.beginPath()
+            c.arc(6, 12, 1.5, 0, 2 * Math.PI, false)
+            c.moveTo(13.5, 12)
+            c.arc(12, 12, 1.5, 0, 2 * Math.PI, false)
+            c.moveTo(19.5, 12)
+            c.arc(18, 12, 1.5, 0, 2 * Math.PI, false)
+            c.fill()
+            c.stroke()
+        },
         "branch": function(c) {
             // Git 分支（Feather "git-branch"）：右栏 Git 页签/分支头。
             circle(c, 6, 5.5, 2.5)

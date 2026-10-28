@@ -574,6 +574,172 @@ private slots:
         for (auto* slot : stateSlots) QCOMPARE(slot->width(), 14.0);
     }
 
+
+    // docs/30 修复：会话行加了状态槽之后，时间行必须与标题共用同一左基线。
+    // 这是纯几何契约，只有跑真实场景图才能验证——QML 的 ColumnLayout 不会
+    // 因为"看起来该对齐"就自动对齐，漏掉 leftMargin 就是 18px 的错位。
+    void sessionRowTimeAlignsWithTitle() {
+        QQmlApplicationEngine engine;
+        engine.rootContext()->setContextProperty("Theme", ThemeProvider::instance());
+        engine.load(QUrl("qrc:/qt/qml/NexusAI/src/ui/main.qml"));
+        QVERIFY(!engine.rootObjects().isEmpty());
+        auto* window = qobject_cast<QQuickWindow*>(engine.rootObjects().first());
+        QVERIFY(window);
+        window->resize(1200, 800);
+        QTest::qWait(150);
+
+        SqliteMemory memory(QStringLiteral(":memory:"));
+        memory.beginSession(QStringLiteral("p1-align-a"), QStringLiteral("会话 A"));
+        memory.beginSession(QStringLiteral("p1-align-b"), QStringLiteral("会话 B"));
+        AIAgent alignAgent;
+        alignAgent.setMemory(&memory);
+        vm->setMemory(&memory);
+        vm->setAgent(&alignAgent);
+        vm->openConversation(QStringLiteral("p1-align-a"));
+        QTest::qWait(300);
+
+        auto* sbItem = window->findChild<QQuickItem*>(QStringLiteral("sidebarPanel"));
+        QVERIFY(sbItem);
+        auto* scroll = sbItem->findChild<QQuickItem*>("sidebarTreeScroll");
+        QVERIFY(scroll);
+        auto* col = scroll->findChild<QQuickItem*>();
+        QVERIFY(col);
+
+        int rowsChecked = 0;
+        for (auto* group : col->childItems()) {
+            for (auto* row : group->childItems()) {
+                if (!QString::fromLatin1(row->metaObject()->className())
+                         .startsWith(QLatin1String("ItemDelegate")))
+                    continue;
+                QQuickItem* slot = nullptr;
+                QQuickItem* title = nullptr;
+                QQuickItem* timeRow = nullptr;
+                for (auto* it : row->findChildren<QQuickItem*>())
+                    if (it->objectName() == QLatin1String("sessionStateSlot"))
+                        slot = it;
+                // 内容列 = delegate 的直接 QQuickColumnLayout 子项。直接子项
+                // 依次是：标题行 Item（内含重命名框 / 状态槽 / 标题 Text /
+                // hover 操作条）、时间 Text。
+                QQuickItem* contentCol = nullptr;
+                for (auto* child : row->childItems()) {
+                    if (QString::fromLatin1(child->metaObject()->className())
+                            .startsWith(QLatin1String("QQuickColumnLayout"))) {
+                        contentCol = child;
+                        break;
+                    }
+                }
+                QVERIFY2(contentCol, "session row has no content column");
+                for (auto* child : contentCol->childItems()) {
+                    const bool isText = QString::fromLatin1(
+                        child->metaObject()->className())
+                            .startsWith(QLatin1String("QQuickText"));
+                    if (isText) {
+                        if (child->isVisible()) timeRow = child;
+                        continue;
+                    }
+                    // 标题行容器：取其中与状态槽并列的那个可见 Text。
+                    if (!child->isVisible()) continue;
+                    for (auto* inner : child->childItems())
+                        if (inner->isVisible()
+                                && QString::fromLatin1(inner->metaObject()->className())
+                                       .startsWith(QLatin1String("QQuickText")))
+                            title = inner;
+                }
+                if (!slot || !title || !timeRow || !contentCol) continue;
+
+                // 基准：状态槽左缘 = 列内容原点（ColumnLayout 内 leftMargin 0）。
+                // 标题的左缘 = 槽宽 + 间距；时间行左缘必须与之相等。
+                const qreal slotLeft = slot->mapToItem(contentCol, QPointF(0, 0)).x();
+                const qreal titleLeft = title->mapToItem(contentCol, QPointF(0, 0)).x();
+                const qreal timeLeft = timeRow->mapToItem(contentCol, QPointF(0, 0)).x();
+
+                QVERIFY2(qAbs(slotLeft - 0.0) < 0.5,
+                         qPrintable(QStringLiteral("state slot should start at the "
+                                                   "column origin, got %1").arg(slotLeft)));
+                QVERIFY2(qAbs(titleLeft - timeLeft) < 0.5,
+                         qPrintable(QStringLiteral("time row (%1) is not aligned with "
+                                                   "title (%2)").arg(timeLeft).arg(titleLeft)));
+
+                // 缩进基线：状态槽左缘要与分组头的展开箭头同一条竖线（x=20），
+                // 标题再往右 18px。这层关系是"缩进不至于太远"的唯一量化依据——
+                // 之前三层缩进叠加把标题推到 x=64，比分组头标签(56)还靠右。
+                // 用侧栏绝对坐标衡量（相对 row/group 都会被各自的 leftMargin
+                // 抵消，量不出真正的视觉缩进）。
+                const qreal slotAbs = slot->mapToItem(sbItem, QPointF(0, 0)).x();
+                QVERIFY2(qAbs(slotAbs - 20.0) < 1.0,
+                         qPrintable(QStringLiteral("state slot left edge is %1, "
+                                                   "expected 20 (group header chevron)")
+                                        .arg(slotAbs)));
+                // 标题宽度必须被夹到 >= 0：最窄侧栏（180px）下悬停操作条
+                // 130px 会吃掉全部剩余空间，不夹取会得到负宽度，elide 失效、
+                // 标题溢到操作条底下。
+                QVERIFY2(title->width() >= 0.0,
+                         qPrintable(QStringLiteral("title width went negative: %1")
+                                        .arg(title->width())));
+                // 操作条必须收得足够窄：docs/30 把它从 6 个按钮（108–130px）
+                // 收成 3 个常用 + 「…」（86px）。上限 90 是给"再加一个按钮"
+                // 留的余地，一旦越过就说明又塞回去了，窄侧栏会再次压垮标题。
+                QQuickItem* actions = nullptr;
+                for (auto* it : row->findChildren<QQuickItem*>())
+                    if (it->objectName() == QLatin1String("sessionActions"))
+                        actions = it;
+                if (actions) {
+                    QVERIFY2(actions->implicitWidth() <= 90.0,
+                             qPrintable(QStringLiteral("session action bar is %1px wide; "
+                                                       "keep it at or below 90px so the "
+                                                       "title survives at 180px sidebar")
+                                            .arg(actions->implicitWidth())));
+                    // 180px 最窄侧栏的最坏情况（悬停）也要留住标题：
+                    // row - titleInset - 右缘12 - 操作条 - 6px 间隙 > 0
+                    const qreal worst = (180.0 - 12.0) - 38.0 - 12.0
+                                        - actions->implicitWidth() - 6.0;
+                    QVERIFY2(worst > 0,
+                             qPrintable(QStringLiteral("at 180px sidebar the hovered title "
+                                                       "gets %1px; the action bar is too "
+                                                       "wide").arg(worst)));
+                }
+                const qreal titleAbs = title->mapToItem(sbItem, QPointF(0, 0)).x();
+                QVERIFY2(qAbs(titleAbs - 38.0) < 1.0,
+                         qPrintable(QStringLiteral("title left edge is %1, "
+                                                   "expected 38 (group header icon)")
+                                        .arg(titleAbs)));
+                ++rowsChecked;
+            }
+        }
+        QVERIFY2(rowsChecked > 0, "no session row was inspected");
+
+        // 最窄侧栏（180px，SplitBar 的下限）：标题宽度必须仍是非负，
+        // 且时间行仍与标题对齐。缩进改小之后这里才真正有余量，值得锁住。
+        vm->setSidebarWidth(180);
+        QTest::qWait(200);
+        int narrowChecked = 0;
+        for (auto* group : col->childItems()) {
+            for (auto* row : group->childItems()) {
+                if (!QString::fromLatin1(row->metaObject()->className())
+                         .startsWith(QLatin1String("ItemDelegate")))
+                    continue;
+                // 注意：这里只能验证"非悬停态"宽度非负。悬停态（操作条显示、
+                // 6 个按钮 130px）在 180px 侧栏下会把可用宽度压成负数，但
+                // hover 无法在 offscreen 测试里稳定触发——QML 侧靠 Math.max(0)
+                // 兜底，属真机验收项，不在此假装覆盖。
+                for (auto* it : row->findChildren<QQuickItem*>()) {
+                    if (!QString::fromLatin1(it->metaObject()->className())
+                             .startsWith(QLatin1String("QQuickText")))
+                        continue;
+                    if (!it->isVisible()) continue;
+                    QVERIFY2(it->width() >= 0.0,
+                             qPrintable(QStringLiteral("text width went negative at "
+                                                       "180px sidebar: %1").arg(it->width())));
+                    ++narrowChecked;
+                }
+            }
+        }
+        QVERIFY2(narrowChecked > 0, "no text inspected at the narrow sidebar width");
+
+        vm->setAgent(nullptr);
+        vm->setMemory(nullptr);
+    }
+
     // docs/30 §5-3：折叠状态按会话分桶。两条会话的第 N 行折叠 key
     // （type:index:内容前缀）会撞车，共用字典会让 B 会话继承 A 的折叠态。
     void transcriptDetailStateIsPerConversation() {

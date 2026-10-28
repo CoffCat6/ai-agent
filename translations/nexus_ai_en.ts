@@ -6697,6 +6697,14 @@ select a file to view its content diff on the right.</translation>
 <context>
     <name>Sidebar</name>
     <message>
+        <source>更多操作</source>
+        <translation>More actions</translation>
+    </message>
+    <message>
+        <source>归档、导出或结束这条对话</source>
+        <translation>Archive, export or end this conversation</translation>
+    </message>
+    <message>
         <source>结束对话</source>
         <translation>End conversation</translation>
     </message>
