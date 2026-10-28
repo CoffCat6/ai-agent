@@ -72,6 +72,14 @@ class AgentViewModel : public QObject {
     Q_PROPERTY(int traceCount READ traceCount NOTIFY traceChanged FINAL)
     // thinking / tool_call / tool_result / context nodes (fold toggle badge)
     Q_PROPERTY(int intermediateCount READ intermediateCount NOTIFY traceChanged FINAL)
+    // 用户消息导航索引（对话区左侧导轨的数据源）。每条 =
+    // {row, messageId, preview, length, timestamp}；row 直接喂给
+    // TranscriptViewport::scrollToIndex()。
+    //
+    // 必须是 Q_PROPERTY 而不是 Q_INVOKABLE：QML 侧要绑定它（`model:` /
+    // 计数），函数调用形式的绑定不会随 traceChanged 重算——与
+    // webSearchProviderNeedsApiKey 踩过的是同一个坑。
+    Q_PROPERTY(QVariantList userMessageIndex READ userMessageIndex NOTIFY traceChanged FINAL)
 
     // ── Response ──────────────────────────────────────
     Q_PROPERTY(QString finalResponse READ finalResponse NOTIFY responseReady FINAL)
@@ -259,6 +267,7 @@ public:
     QAbstractListModel* traceModel() { return active()->trace(); }
     int traceCount() const { return active()->traceCount(); }
     int intermediateCount() const { return active()->intermediateCount(); }
+    QVariantList userMessageIndex() const { return active()->userMessageIndex(); }
     // docs/20 §3.1/§3.2：该类型 trace 节点的最后一行（消息级操作按钮用）。
     Q_INVOKABLE int lastTraceIndexOfType(const QString& type) const
     { return active()->lastIndexOfType(type); }

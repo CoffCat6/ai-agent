@@ -337,6 +337,21 @@ add_test(NAME test_charts_qml
 # F1: TodoListPanel 渲染/状态回归。与 test_charts_qml 共用「build/NexusAI
 # 文件系统副本 + qrc 回退拦截器 + offscreen」方案，锁住空态不占位、三态
 # 映射、折叠/展开和像素级非空白。
+# 对话区左侧用户消息导轨：线长映射、轨道压缩上限、点击透出行号。
+# 与 test_todo_qml 同一套文件系统副本 + offscreen 方案。
+add_executable(test_message_navigator test_message_navigator.cpp)
+target_link_libraries(test_message_navigator PRIVATE
+    nexus_core nexus_infra nexus_viewmodels nexus_viewmodelsplugin
+    Qt6::Test Qt6::Qml Qt6::Quick)
+target_compile_definitions(test_message_navigator PRIVATE
+    NEXUS_TEST_QML_DIR="${CMAKE_CURRENT_SOURCE_DIR}/qml"
+    NEXUS_BUILD_DIR="${CMAKE_BINARY_DIR}")
+add_dependencies(test_message_navigator nexus_ai)
+add_test(NAME test_message_navigator
+    COMMAND ${CMAKE_COMMAND} -E env
+        "QT_QPA_PLATFORM_PLUGIN_PATH=${QT6_INSTALL_PREFIX}/${QT6_INSTALL_PLUGINS}/platforms"
+        $<TARGET_FILE:test_message_navigator> -platform offscreen)
+
 add_executable(test_todo_qml test_todo_qml.cpp)
 target_link_libraries(test_todo_qml PRIVATE
     nexus_core nexus_infra nexus_viewmodels nexus_viewmodelsplugin
@@ -445,3 +460,19 @@ add_test(NAME test_mention_interaction
     COMMAND ${CMAKE_COMMAND} -E env
         "QT_QPA_PLATFORM_PLUGIN_PATH=${QT6_INSTALL_PREFIX}/${QT6_INSTALL_PLUGINS}/platforms"
         $<TARGET_FILE:test_mention_interaction> -platform offscreen)
+
+# IconButton 的翻转动画：切换时图标要被横向压扁而不是瞬间替换。
+# Item 没有 scaleX，只有等比 scale——用错会缩成一个点，肉眼很难在
+# 20px 的顶栏按钮上发现问题，所以用像素跨度做断言。
+add_executable(test_icon_flip test_icon_flip.cpp)
+target_link_libraries(test_icon_flip PRIVATE
+    nexus_core nexus_infra nexus_viewmodels nexus_viewmodelsplugin
+    Qt6::Test Qt6::Qml Qt6::Quick)
+target_compile_definitions(test_icon_flip PRIVATE
+    NEXUS_TEST_QML_DIR="${CMAKE_CURRENT_SOURCE_DIR}/qml"
+    NEXUS_BUILD_DIR="${CMAKE_BINARY_DIR}")
+add_dependencies(test_icon_flip nexus_ai)
+add_test(NAME test_icon_flip
+    COMMAND ${CMAKE_COMMAND} -E env
+        "QT_QPA_PLATFORM_PLUGIN_PATH=${QT6_INSTALL_PREFIX}/${QT6_INSTALL_PLUGINS}/platforms"
+        $<TARGET_FILE:test_icon_flip> -platform offscreen)

@@ -167,6 +167,35 @@ int TraceModel::intermediateCount() const {
     return count;
 }
 
+QVariantList TraceModel::userMessageIndex(int previewChars) const {
+    QVariantList out;
+    const int cap = qMax(1, previewChars);
+    for (int i = 0; i < m_nodes.size(); ++i) {
+        const QVariantMap& node = m_nodes.at(i);
+        if (node.value("type").toString() != QLatin1String("user_message"))
+            continue;
+
+        // 正文就是节点 title（AIAgent::startTask 写的就是用户原文）。
+        const QString body = node.value("title").toString();
+        // preview 保留原始长度信息不动，只做展示层的压缩：
+        // 换行/连续空白折成单空格，否则多行消息的悬停提示会占满屏幕。
+        QString preview = body.simplified();
+        if (preview.size() > cap)
+            preview = preview.left(cap) + QStringLiteral("…");
+
+        QVariantMap entry;
+        entry.insert(QStringLiteral("row"), i);
+        entry.insert(QStringLiteral("messageId"),
+                     node.value("messageId").toLongLong());
+        entry.insert(QStringLiteral("preview"), preview);
+        entry.insert(QStringLiteral("length"), body.size());
+        entry.insert(QStringLiteral("timestamp"),
+                     node.value("timestamp").toLongLong());
+        out.append(entry);
+    }
+    return out;
+}
+
 bool TraceModel::isIntermediate(const QVariantMap& node) {
     const QString type = node.value("type").toString();
     return type == QLatin1String("thinking") || type == QLatin1String("tool_call")

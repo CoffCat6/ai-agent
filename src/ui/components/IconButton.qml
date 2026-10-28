@@ -17,6 +17,10 @@ Rectangle {
     property color hoverIconColor: Theme.brandPrimary
     property color restBgColor: "transparent"
     property color hoverBgColor: Theme.surfaceHover
+    // 图标切换时做一次 Y 轴翻转。默认关闭：chevron-up/down 这类"展开/收起"
+    // 图标在同一个界面里可能同时有多个，全都翻一遍会显得躁动。只在
+    // "一个开关、两个面互为正反"的地方开启（侧栏 / 上下文面板）。
+    property bool flipOnIconChange: false
 
     signal clicked()
 
@@ -28,11 +32,54 @@ Rectangle {
     border.width: root.activeFocus ? 2 : 0
     border.color: Theme.brandPrimary
 
+    // displayIcon 故意写成"可以被打断的值"而不是直接绑定 root.icon：
+    // 翻转动画要在横向缩到 0 那一刻写入新图标（此时不可见，切换才不跳），
+    // 而给绑定赋值会永久打断绑定，之后 root.icon 再变就不联动了。
+    // 同步交给下面的 onIconChanged。
     AppIcon {
+        id: iconItem
         anchors.centerIn: parent
-        icon: root.icon
+        property string displayIcon: root.icon
+        icon: displayIcon
         size: root.iconSize
         iconColor: controlArea.containsMouse ? root.hoverIconColor : root.restIconColor
+
+        // Item 没有 scaleX（只有等比 scale，会把图标缩成一个小点而不是压扁），
+        // 所以用 Transform 里的 Scale 单独缩 X 轴。origin 固定在中心。
+        transform: Scale { id: flipScale; origin.x: iconItem.width / 2; xScale: 1 }
+    }
+
+    // 翻转：压扁 → 中点换图 → 展开。两次 NumberAnimation 都不写 from，
+    // 这样快速连点时从当前 xScale 继续，不会跳回 1 再压下去（那会闪）。
+    SequentialAnimation {
+        id: flipAnim
+        NumberAnimation {
+            target: flipScale
+            property: "xScale"
+            to: 0
+            duration: 90
+            easing.type: Easing.InQuad
+        }
+        ScriptAction { script: iconItem.displayIcon = root.icon }
+        NumberAnimation {
+            target: flipScale
+            property: "xScale"
+            to: 1
+            duration: 90
+            easing.type: Easing.OutQuad
+        }
+    }
+
+    onIconChanged: {
+        if (!root.flipOnIconChange) {
+            // 关闭动画时直接同步；若动画正跑到一半（另一个按钮切换了
+            // 开关状态），也要把它停回平铺，否则图标会卡在压扁状态。
+            flipAnim.stop()
+            flipScale.xScale = 1
+            iconItem.displayIcon = root.icon
+            return
+        }
+        flipAnim.restart()
     }
 
     MouseArea {

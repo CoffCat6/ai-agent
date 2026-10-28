@@ -8566,4 +8566,17 @@ select a file to view its content diff on the right.</translation>
         <translation>Undo</translation>
     </message>
 </context>
+<context>
+    <name>MessageNavigator</name>
+    <message>
+        <location filename="../src/ui/components/MessageNavigator.qml" line="170"/>
+        <source>第 %1 条</source>
+        <translation>Message %1</translation>
+    </message>
+    <message>
+        <location filename="../src/ui/components/MessageNavigator.qml" line="170"/>
+        <source>跳到第 %1 条提问：%2</source>
+        <translation>Jump to message %1: %2</translation>
+    </message>
+</context>
 </TS>

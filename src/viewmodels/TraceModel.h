@@ -4,6 +4,7 @@
 #include <QHash>
 #include <QSet>
 #include <QString>
+#include <QVariantList>
 #include <QVariantMap>
 #include <QVector>
 
@@ -62,6 +63,20 @@ public:
     int rankOfTypeAt(int row, const QString& type) const;
     // Nodes hidden by the "fold process" toggle in the chat page
     int intermediateCount() const;
+
+    // 用户消息索引（对话区左侧导轨的数据源）。
+    //
+    // 每条 = {row, messageId, preview, length, timestamp}：
+    //   row        —— 该消息在 traceModel 里的行号，直接喂给
+    //                 TranscriptViewport::scrollToIndex()
+    //   messageId  —— 持久化 messages.id（无则 0，`>>` 恢复的旧节点可能有）
+    //   preview    —— 正文首行压缩后的短串，供悬停查看
+    //   length     —— 正文全长（导轨据此决定线长，不用 preview 长度，
+    //                 否则被截断的长消息会和短消息画成一样长）
+    //   timestamp  —— 毫秒时间戳，悬停时显示发送时间
+    //
+    // 纯函数、无副作用：单测直接调，不依赖网络或 QML。
+    QVariantList userMessageIndex(int previewChars = 60) const;
 
 private:
     static bool isIntermediate(const QVariantMap& node);

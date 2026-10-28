@@ -23,6 +23,7 @@
 | 组件 | 职责 | 关键依赖 |
 | --- | --- | --- |
 | `TranscriptViewport.qml` | 轨迹滚动容器：`Flickable + Column + Repeater`（非虚拟化，行高需精确），自绘滚动条、吸底跟随 `pinnedToBottom`、`scrollToIndex(idx)` 定位 | 只用宿主注入的 `model`/`delegate`/`scrollBarColor`；**刻意不 import NexusAI** |
+| `MessageNavigator.qml` | 对话区左侧用户消息导轨：每条 = 一次提问，线长按正文全长三档（<20→6px / <80→10px / 其余 14px），active/hover 时 +4px 并配色过渡；高度跟随记录数、上限视口高 60%，装不下时等比压缩间距（线长不变）；悬停经**唯一共享** ToolTip 显示序号/时间/正文预览；点击透出 trace 行号 | `entries`（= `AgentVM.userMessageIndex`）、`activeIndex`（页面按滚动位置算）、`viewportHeight`；`jumpRequested(row)` |
 | `TraceNodeRouter.qml` | 按 `modelData.type` 路由到 5 个组件（`user_message`/`summary`/中间节点/`metrics`/`error`），单 `Loader` 只实例化命中的组件；计算 `detailKey`、顶部留白、高亮 | 页面注入 `detailExpandedFn`/`toggleDetailFn`（折叠态存页面级 `detailState`）、`showProcess` |
 | `UserMessageBubble.qml` | 右对齐用户气泡、圆角尾、时间戳、悬停操作条（复制/编辑重发）、内联 `TextArea` 编辑态、附件芯片行 | `AgentVM.stateBusy/traceCount/lastTraceIndexOfType/editAndResend`、`CopyButton`、`AttachmentChip` |
 | `AssistantMessage.qml`（23 KB） | 助手回复：头像列 + Markdown 正文 + 流式光标 + 悬停条（复制/从此处分支/重新生成）；非流式时把「散文/代码」拆段，散文再按 `[文档名]` 切出引用芯片 | `CitationParser.parse`（唯一实现，C++）、`AgentVM.knowledgeDocuments/openKnowledgeDocument/branchFromAnswer/regenerate/traceCount` |
@@ -91,9 +92,9 @@
 | 组件 | 职责 | 关键依赖 |
 | --- | --- | --- |
 | `AppButton.qml` | 主按钮（32 高、圆角 6、按压缩放、focus 环、可高亮） | `Theme`；`signal clicked()` |
-| `IconButton.qml` | 32×32 图标按钮（悬停变色 + Tooltip 600ms） | `AppIcon`、`Theme` |
+| `IconButton.qml` | 32×32 图标按钮：悬停着色 + Tooltip 600ms；`flipOnIconChange` 开启后 icon 变化时做 Y 轴翻转（压扁→中点换图→展开，共 180ms），默认关闭。**Item 没有 scaleX**：横向压扁必须用 `transform: Scale`，用等比 `scale` 会把图标缩成一个点而不是压扁。 | `AppIcon`；`Theme` |
 | `HWheelScroll.qml` | Shift+滚轮横滚：**MouseArea 覆盖层**（`acceptedButtons: NoButton`，`anchors.fill: parent`），`onWheel` 里 Shift 时对解析出的 `flickTarget.contentX` 写入**自夹取后的值**（0 ≤ cX ≤ contentWidth−width）并接受事件，否则 `accepted=false` 放行给 Flickable 纵向滚动。**为什么不是 WheelHandler**（探针实测 Qt 6.9）：`orientation: Horizontal` 只响应自带横向增量的设备，鼠标 Shift+滚轮是纵向增量永远不匹配；`property: "contentX"` 重定向只累计 rotation 从不写属性。Qt Quick 原生不把 Shift+滚轮转横向（`QQuickFlickable::wheelEvent` 仅按 angleDelta 轴向分发）。**三个踩坑实录（全部探针/日志实证）**：① 声明在 ScrollView 里的 Item 的 visual parent 仍是 ScrollView（Pane，无 contentX），真正的 Flickable 是 `parent.contentItem`；② Flickable 子项的 QML `parent` 是 contentItem（普通 Item，无 contentX），QObject::parent 才是 Flickable——所以必须沿视觉父链爬找，鸭子判定 contentX；③ **程序化写 contentX 不被夹取**——到端点后继续写会推出负值/越界，立即触发原生橡皮筋回弹动画，回弹每帧覆写后续平移，表现为「有弹性、必须点击才复原」，且写完 `accepted=true` 后事件不会链接到外层竖滚（到头即停）。平移前还须 `cancelFlick()` 打断进行中的拖拽/回弹动画（否则动画同样逐帧覆写 contentX）。**覆盖层必须放在 Flickable/ScrollView 的直接子级、内容声明之后（最顶层），且不能放进 Row/Column 定位器**（定位器禁止 fill 锚点，覆盖层尺寸归零无法命中——实测踩坑）。NoButton 不拦按压/拖拽/文本选择。已挂 3 处：ProjectRulesPage 规则编辑器、UsageDetailTable 外层横滚 Flickable、ProjectFilesPanel 预览（仅 NoWrap 模式 `enabled`）；纵向纯列表不加。滚轮手势无法自动化测试（合成事件不驱场景投递），行为靠真机验收 | `MouseArea` |
-| `AppIcon.qml` | Canvas 自绘矢量图标库（24×24 网格，约 30 个图标：`menu/close/add/chevron-*/warning/copy/folder/file/send/stop/search/export/layers/pin/archive/undo/plus/minus/branch/history/blame`…） | `Theme.textPrimary` 等令牌；刻意用 Canvas（Shapes 在软件渲染后端不渲染） |
+| `AppIcon.qml` | Canvas 自绘矢量图标库（24×24 网格，约 30 个图标：`menu/close/add/chevron-*/warning/copy/folder/file/send/stop/search/export/layers/pin/archive/undo/plus/minus/branch/history/blame/sidebar-collapse/sidebar-expand/panel-collapse/panel-expand`…） | `Theme.textPrimary` 等令牌；刻意用 Canvas（Shapes 在软件渲染后端不渲染） |
 | `DialogBackground.qml` | 对话框统一外壳（`bgSecondary` + 细边 + 8 圆角），作为 `background:` 使用 | `Theme` |
 | `charts/{DonutChart,LineTrendChart,BarCompareChart}.qml` | Canvas 自绘图表（Token 占比环图 / 趋势线 / 对比柱），**禁止引入 Qt Charts** | 数据由调用方注入；色板循环用 `Theme` 语义色 |
 
@@ -118,7 +119,7 @@
 
 ## 数据与控制流
 
-1. **轨迹渲染**：`AgentVM.traceModel` → `AgentChatPage` 把 `model` 与 `delegate` 注入 `TranscriptViewport` → delegate 为 `TraceNodeRouter` → 按 `modelData.type` 路由到 `UserMessageBubble`/`AssistantMessage`/`ProcessCard`/`MetricsLine`/`ErrorCard`。折叠态不存 delegate 内，而是页面级 `detailState` 经回调读写，切会话不丢。搜索命中定位走 `AgentVM.traceModel.rowOfMessageId` → `transcript.scrollToIndex(row)` → 2 秒高亮复位。
+1. **轨迹渲染**：`AgentVM.traceModel` → `AgentChatPage` 把 `model` 与 `delegate` 注入 `TranscriptViewport` → delegate 为 `TraceNodeRouter` → 按 `modelData.type` 路由到 `UserMessageBubble`/`AssistantMessage`/`ProcessCard`/`MetricsLine`/`ErrorCard`。折叠态不存 delegate 内，而是页面级 `detailState` 经回调读写，切会话不丢。搜索命中定位走 `AgentVM.traceModel.rowOfMessageId` → `transcript.scrollToIndex(row)` → 2 秒高亮复位。左侧导轨是第二条定位入口：`TraceModel::userMessageIndex()` 产出 `{row,messageId,preview,length,timestamp}`，页面用 `transcript.activeIndexIn(rows)` 按像素位置算出"当前在第几条"，点击时 `scrollToIndex(row)` + 弱高亮（`highlightStrength: 0.06`，搜索命中是 `0.10`）。
 2. **输入与发送**：`InputConsole` 维护草稿（写 `AgentVM.draftText/draftAttachments`，并监听其变更回填）→ `sendCurrentText()` 合并附件 + `@` 引用解析 → `AgentVM.startTask(text, images, files)` → 轨迹模型更新 → `TranscriptViewport` 吸底跟随（发送时显式 `requestFollow()` 解钉）。
 3. **审阅（Agent 写入的文件）**：`AgentVM.fileCheckpoints` → `FileChangesPanel` → `ChangeTree`（`FileTree.js` 建树）→ 行点击 → `FileChangeDetailDialog` → `DiffView`；撤销走 `AgentVM.undoFileCheckpoint(id)`，超限文件（`truncated`）只记路径、不可撤销/不可 diff。
 4. **Git**：`ContextPanel` 把 `AgentVM.activeProjectRoot` 传给 `GitPanel`，后者写 `GitVM.projectRoot` 固定仓库位置；面板自身只做「读状态 + 组装命令 + 发请求」，写操作一律经用户显式动作 → `GitActionDialog` 二次确认 → `GitVM` 执行 → `onOperationFinished` 回写提示并刷新日志/分支。`AgentVM.fileCheckpointsChanged` 触发防抖刷新（Agent 写文件后自动更新仓库视图）。

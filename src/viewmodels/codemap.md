@@ -120,7 +120,8 @@ controller 一 agent 一连接），因此下面这层是**呈现语义**的收�
 | --- | --- | --- |
 | `AgentViewModel` | 主门面（`AgentVM`）：打开集合管理 + 全局会话/项目/知识库/布局/工具/统计 | `startTask`、`stop`、`approveToolCall`、`openConversation`、`closeConversation`、`clearConversationUnread`、`loadSession`、`newChat`、`regenerate`、`editAndResend`、`branchFromAnswer`、`listProjectFiles`、`importDocument(s)`、`undoFileCheckpoint`、`restoreDatabaseFrom`；属性 `state/traceModel/sessionList/tabModel/knowledgeDocuments/...` |
 | `ChatSessionController` | 单标签会话状态与 agent 适配（非 QML 类型） | 无（C++ 侧：`attachAgent`、`startTask`、`stop`、`loadSession`、`permissionMode`） |
-| `TraceModel` | trace 增量 `QAbstractListModel`（非 QML 类型） | 经 `AgentVM.traceModel` 使用；roles `id/type/title/status/args/result/timestamp/modelData` |
+| `TraceModel` | trace 增量 `QAbstractListModel`（非 QML 类型） | 经 `AgentVM.traceModel` 使用；roles `id/type/title/status/args/result/timestamp/modelData`；`userMessageIndex()`（纯函数）产出左侧导轨的数据 |
+| `MessageNavigator` 数据源 | `AgentVM.userMessageIndex`（`Q_PROPERTY`，NOTIFY `traceChanged`）= `[{row,messageId,preview,length,timestamp}]` | `row` 是 trace 行号而非数组下标；`length` 用正文全长（导轨线长靠它，用 preview 长度会让长消息与短消息画成一样长） |
 | `LogModel` | 应用内日志列表模型（会话内追加、过滤/日期） | `AgentVM.logModel`（CONSTANT）；`filterLevel/filterText/filterCategory/filterDate`、`clearView()`、`toClipboardText()` |
 | `ChangeBus` | 偏好变更广播总线 | `notify(key, value)`；信号 `changed(key, value)` |
 | `EditBuffer` | 偏好校验写穿缓冲（单例） | `stage/commit/rollback/resetToDefault`、属性 `dirty/staged/firstInvalidKey/validationError` |

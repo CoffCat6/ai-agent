@@ -20,6 +20,9 @@ Item {
     property var toggleDetailFn
     // A1 (hit-locate): 搜索跳转后被短暂置 true，由聊天页的高亮计时器清除。
     property bool highlighted: false
+    // 高亮强度（底色透明度）。搜索命中用 0.10（"这是你要找的"），
+    // 导轨跳转用 0.06（只是"确认落点"，不该和搜索结果混淆）。
+    property real highlightStrength: 0.10
 
     // A1 (hit-locate): 2s 自动复位高亮——避免搜索卡片残留高亮底色。
     Timer {
@@ -89,9 +92,11 @@ Item {
         radius: 8
         color: root.highlighted
             ? Qt.rgba(Theme.brandPrimary.r, Theme.brandPrimary.g,
-                      Theme.brandPrimary.b, 0.10)
+                      Theme.brandPrimary.b, root.highlightStrength)
             : "transparent"
-        border.width: root.highlighted ? 1.5 : 0
+        // 边框跟着强度走：弱高亮配 1.5px 还是会抢眼。
+        border.width: root.highlighted
+            ? (root.highlightStrength >= 0.10 ? 1.5 : 1.0) : 0
         border.color: Theme.brandPrimary
         Behavior on color { ColorAnimation { duration: 250 } }
     }

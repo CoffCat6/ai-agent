@@ -146,6 +146,51 @@ Item {
             atBottom()
         }
 
+        // 导轨定位的关键前提：折叠中间节点只是把它们的 delegate 高度
+        // 压到 0，delegate 仍在 Repeater 里，所以 itemAt(idx) 依然有效、
+        // 行号不会因为折叠而失效。这里把这条前提钉住——如果哪天有人把
+        // 折叠改成从模型里删行，导轨的 row 就会整体错位。
+        function test_collapsedRowsKeepIndicesResolvable() {
+            var yBefore = viewport.rowY(60)
+            verify(yBefore > 0)
+
+            viewport.collapseRows()
+            wait(30)
+            // 计数不变（折叠不删行）。
+            compare(viewport.count, 180)
+            // 行号仍能解析出行高与 y（y 会变小，因为前面的行矮了）。
+            var yAfter = viewport.rowY(60)
+            verify(yAfter >= 0)
+            verify(yAfter < yBefore)
+            // 越界与负数不生成畸形坐标。
+            compare(viewport.rowY(-1), -1)
+            compare(viewport.rowY(10000), -1)
+        }
+
+        // activeIndexIn：视口顶落在第几条用户消息。判据是"这条的顶边
+        // 已滚到视口顶之上"，返回 -1 表示还没滚过第一条。
+        function test_activeIndexInFollowsScrollOffset() {
+            viewport.resetRows()
+            viewport.jumpToBottom()
+            tryCompare(viewport, "count", 50)
+            wait(30)
+
+            var rows = [0, 5, 12, 30, 49]
+            // 顶部时：第一条的顶边就在视口顶（y=0 <= top），所以是 0。
+            viewport.scrollBy(-viewport.maximumOffset)
+            wait(30)
+            compare(viewport.activeIndexIn(rows), 0)
+
+            // 滚到底部：所有行的顶边都已在视口顶之上 → 最后一条。
+            viewport.jumpToBottom()
+            wait(30)
+            compare(viewport.activeIndexIn(rows), rows.length - 1)
+
+            // 空数组与 null 都返回 -1，不崩。
+            compare(viewport.activeIndexIn([]), -1)
+            compare(viewport.activeIndexIn(null), -1)
+        }
+
         function test_resizeAndRewrapStayAtBottom() {
             viewport.wrapRows = true
             viewport.width = 420

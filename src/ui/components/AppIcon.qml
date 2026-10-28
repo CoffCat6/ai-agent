@@ -7,7 +7,8 @@ import QtQuick
 // Repaints are wired to every input so theme switches and hover recolors
 // stay live.
 //
-// Usage: AppIcon { icon: "menu"; size: 20; iconColor: Theme.textPrimary }
+// Usage: AppIcon { icon: "sidebar-collapse"; size: 20; iconColor: Theme.textPrimary }
+// 未注册的 icon 名回退到 painters["menu"]（三条横线），见下面的 def 绑定。
 Canvas {
     id: root
 
@@ -57,8 +58,60 @@ Canvas {
 
     // ── Icon painters (24x24 grid) ─────────────────────
     readonly property var painters: ({
+        // 未知 icon 的兜底画笔（def 绑定会回退到它），本身不再被任何界面
+        // 直接引用——侧栏开关已改用下面的 sidebar-collapse / sidebar-expand。
         "menu": function(c) {
             line(c, 4, 6.5, 20, 6.5); line(c, 4, 12, 20, 12); line(c, 4, 17.5, 20, 17.5)
+        },
+        // 侧栏开合（TopBar 唯一的侧栏按钮）。三横线 "menu" 表达的是"菜单"，
+        // 与"收起/展开一个面板"毫无关系；这里换成"面板 + 指向它的箭头"：
+        //   · 外框 = 整个窗口轮廓，左侧竖线 = 侧栏分割线（靠左，因为侧栏在左）
+        //   · 左半阴影块 = 侧栏本体，开着时填实、收起时留空
+        //   · 箭头指向侧栏 = "展开"，背离 = "收起"
+        // 用两个条目而不是靠 icon 名传参：AppIcon 的画笔签名只有 ctx，
+        // 想按状态变形只能各画一版（chevron-left/right 也是这个做法）。
+        "sidebar-collapse": function(c) {
+            // 窗口轮廓 + 侧栏分隔线。
+            roundedRect(c, 3.5, 5, 17, 14, 2)
+            line(c, 9.5, 5, 9.5, 19)
+            // 侧栏本体填实：强调"它现在占着位置"。
+            c.beginPath()
+            c.moveTo(4.8, 6.2); c.lineTo(9.5, 6.2)
+            c.lineTo(9.5, 17.8); c.lineTo(4.8, 17.8)
+            c.closePath(); c.fill()
+            // 向内的箭头：收起。
+            polyline(c, [17.5, 9.5, 14, 12, 17.5, 14.5])
+        },
+        "sidebar-expand": function(c) {
+            roundedRect(c, 3.5, 5, 17, 14, 2)
+            line(c, 9.5, 5, 9.5, 19)
+            // 收起态不填侧栏本体：留空就是"这里没有内容"。
+            // 向外的箭头：展开。
+            polyline(c, [14, 9.5, 17.5, 12, 14, 14.5])
+        },
+        // 右侧上下文面板开合。与上面的侧栏图标**同一套视觉语法**（窗口轮廓
+        // + 面板分隔线 + 面板本体填实/留空 + 指向箭头），只是镜像到右边：
+        //   · 分隔线在右（x=14.5），填实块落在右半
+        //   · 箭头在左半：指向右 = 展开，指向左 = 收起
+        // 两侧共用同一套语义，用户学会一个就学会另一个；此前右侧用的是裸
+        // chevron，和左侧的"面板+箭头"完全不同构，看过去像两个不相干的功能。
+        "panel-collapse": function(c) {
+            roundedRect(c, 3.5, 5, 17, 14, 2)
+            line(c, 14.5, 5, 14.5, 19)
+            // 面板本体填实：强调"它现在占着位置"。
+            c.beginPath()
+            c.moveTo(14.5, 6.2); c.lineTo(19.2, 6.2)
+            c.lineTo(19.2, 17.8); c.lineTo(14.5, 17.8)
+            c.closePath(); c.fill()
+            // 向内的箭头（指向面板）：收起。
+            polyline(c, [6.5, 9.5, 10, 12, 6.5, 14.5])
+        },
+        "panel-expand": function(c) {
+            roundedRect(c, 3.5, 5, 17, 14, 2)
+            line(c, 14.5, 5, 14.5, 19)
+            // 收起态不填面板本体。
+            // 向外的箭头（指向面板要出现的方向）：展开。
+            polyline(c, [10, 9.5, 13.5, 12, 10, 14.5])
         },
         "close": function(c) {
             line(c, 6.5, 6.5, 17.5, 17.5); line(c, 17.5, 6.5, 6.5, 17.5)

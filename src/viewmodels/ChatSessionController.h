@@ -42,6 +42,8 @@ public:
     TraceModel* trace() { return &m_trace; }
     int traceCount() const { return m_trace.count(); }
     int intermediateCount() const { return m_trace.intermediateCount(); }
+    // 对话区左侧导航导轨的数据源；构造代价 O(n) 且只在 trace 变化时被读。
+    QVariantList userMessageIndex() const { return m_trace.userMessageIndex(); }
     // docs/20 §3.1/§3.2：该类型的最后一行（供消息级操作按钮定位末条）。
     int lastIndexOfType(const QString& type) const { return m_trace.lastIndexOfType(type); }
     // docs/21：该类型的第几行（1 起，0=不命中），分叉锚点换算用。

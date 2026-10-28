@@ -189,6 +189,65 @@ private slots:
         QCOMPARE(m.lastIndexOfType(QStringLiteral("nope")), -1);
     }
 
+    // 对话区左侧导航导轨的数据源。锁住四件事：只挑 user_message、
+    // row 是 trace 行号（不是数组下标）、preview 压缩换行、length 用正文
+    // 全长（导轨的线长靠它，用 preview 长度会让长消息和短消息画成一样）。
+    void traceModelUserMessageIndex() {
+        TraceModel m;
+        // 空模型：空数组，不崩。
+        QVERIFY(m.userMessageIndex().isEmpty());
+
+        m.resetNodes({
+            QVariantMap{{"id", "u1"}, {"type", "user_message"},
+                        {"title", "第一问"}, {"messageId", 11},
+                        {"timestamp", 1000}},
+            QVariantMap{{"id", "s1"}, {"type", "summary"}, {"title", "答"}},
+            QVariantMap{{"id", "t1"}, {"type", "thinking"}, {"title", "想"}},
+            QVariantMap{{"id", "u2"}, {"type", "user_message"},
+                        {"title", "第二问\n带换行   和   多空格"}, {"messageId", 12},
+                        {"timestamp", 2000}},
+            QVariantMap{{"id", "u3"}, {"type", "user_message"},
+                        {"title", QString(200, QLatin1Char('x'))}},
+        });
+
+        const QVariantList index = m.userMessageIndex();
+        QCOMPARE(index.size(), 3);
+
+        // row 必须是 trace 行号：第二条用户消息在 trace 的第 3 行，
+        // 而它在数组里是下标 1。两者混用会让点击跳到错的节点。
+        QCOMPARE(index.at(0).toMap().value("row").toInt(), 0);
+        QCOMPARE(index.at(1).toMap().value("row").toInt(), 3);
+        QCOMPARE(index.at(2).toMap().value("row").toInt(), 4);
+
+        QCOMPARE(index.at(0).toMap().value("messageId").toLongLong(), qint64(11));
+        QCOMPARE(index.at(0).toMap().value("preview").toString(),
+                 QStringLiteral("第一问"));
+        QCOMPARE(index.at(0).toMap().value("timestamp").toLongLong(), qint64(1000));
+
+        // 换行与连续空白被折成单空格（否则悬停提示会占满屏）。
+        QCOMPARE(index.at(1).toMap().value("preview").toString(),
+                 QStringLiteral("第二问 带换行 和 多空格"));
+
+        // length 是正文全长，不是 preview 长度。
+        QCOMPARE(index.at(1).toMap().value("length").toInt(), 17);
+        QCOMPARE(index.at(2).toMap().value("length").toInt(), 200);
+        // preview 被截断并带省略号，length 不受影响。
+        QCOMPARE(index.at(2).toMap().value("preview").toString().size(), 61);
+        QVERIFY(index.at(2).toMap().value("preview").toString().endsWith(QStringLiteral("…")));
+
+        // 缺 messageId / timestamp 的旧节点不产生无效值。
+        m.resetNodes({QVariantMap{{"id", "u9"}, {"type", "user_message"},
+                                  {"title", "无 id 无时间"}}});
+        const QVariantList sparse = m.userMessageIndex();
+        QCOMPARE(sparse.size(), 1);
+        QCOMPARE(sparse.at(0).toMap().value("messageId").toLongLong(), qint64(0));
+        QCOMPARE(sparse.at(0).toMap().value("timestamp").toLongLong(), qint64(0));
+
+        // 一条用户消息都没有（纯助手/工具轨迹）→ 空数组，导轨据此隐藏。
+        m.resetNodes({QVariantMap{{"id", "s1"}, {"type", "summary"}}});
+        QVERIFY(m.userMessageIndex().isEmpty());
+    }
+
     // docs/20 §3.3：输入历史环（进程内、相邻去重、↑ 前移 / ↓ 后移）；
     // 无 agent 时尝试发送也保留输入，便于配置模型后重试。
     void inputHistoryNavigateAndDedupe() {

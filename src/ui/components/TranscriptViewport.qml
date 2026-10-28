@@ -63,6 +63,38 @@ Item {
         flick.contentY = clampOffset(item.y - 8)
     }
 
+    // 某一行相对内容顶部的 y（行不存在返回 -1）。折叠中间节点时
+    // delegate 仍在 Repeater 里（只是 height 0），所以 itemAt 依然有效。
+    //
+    // 刻意不调 forceLayout()：这个函数在滚动热路径上被反复调用（导轨的
+    // active 计算），而滚动发生时布局早已稳定。需要强制布局的定位入口
+    // （scrollToIndex）自己调。
+    function rowY(row) {
+        if (row < 0 || row >= messages.count) return -1
+        const item = messages.itemAt(row)
+        return item ? item.y : -1
+    }
+
+    // 用户消息导轨：视口顶端当前落在 where 里的第几条。
+    // `rows` 是用户消息的 trace 行号数组（升序，来自 AgentVM.userMessageIndex）。
+    //
+    // 判据是「这条的顶边已经滚到视口顶之上（含容差）」的最后一条——即
+    // 用户此刻正在读的那一段所属的问题。返回 -1 表示还没滚过第一条。
+    // 放在 QML 而不是 C++：行高只有 delegate 实测值，跨语言搬运只会引入
+    // 同步风险。
+    function activeIndexIn(rows) {
+        if (!rows || rows.length === 0) return -1
+        const top = flick.contentY + 8
+        let idx = -1
+        for (let i = 0; i < rows.length; ++i) {
+            const y = rowY(rows[i])
+            if (y < 0) continue
+            if (y <= top) idx = i
+            else break
+        }
+        return idx
+    }
+
     function beginUserScroll() {
         pinnedToBottom = false
     }

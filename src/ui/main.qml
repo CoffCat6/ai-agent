@@ -64,7 +64,8 @@ ApplicationWindow {
 
         // ── Left: Sidebar ──────────────────────────────
         // Collapse animates the width to 0 (content fades inside the
-        // Sidebar); the floating handle below stays reachable while hidden.
+        // Sidebar). 收起后仍可从 TopBar 的侧栏按钮或 Ctrl+[ 展开——
+        // 早期浮在中间分隔缝上的那个圆形把手已移除，全局只留 TopBar 一处。
         // Expanded width comes from AgentVM.sidebarWidth, dragged via
         // leftSplitter and persisted across runs.
         Sidebar {
@@ -160,105 +161,6 @@ ApplicationWindow {
             function onKnowledgeDocumentOpenRequested(name, chunk) {
                 knowledgeDocDialog.openFor(name, chunk)
             }
-        }
-    }
-
-    // ── Sidebar Toggle Handle ──────────────────────────
-    // Floats on the sidebar's right edge; docks to the window edge while
-    // collapsed so the sidebar can always be re-opened from here.
-    Item {
-        id: sidebarHandle
-        width: 24
-        height: 56
-        z: 20
-        anchors.verticalCenter: parent.verticalCenter
-        x: Math.max(sidebarPanel.width - 12, 6)
-
-        Rectangle {
-            anchors.fill: parent
-            radius: height / 2
-
-            color: {
-                if (sidebarHandleMA.containsMouse && AgentVM.isSidebarExpanded) return Theme.brandPrimary
-                if (sidebarHandleMA.containsMouse) return Theme.surfaceHover
-                return Theme.bgSecondary
-            }
-            border.width: 1
-            border.color: sidebarHandleMA.containsMouse && AgentVM.isSidebarExpanded
-                ? Theme.brandPrimary : Theme.borderSubtle
-
-            Behavior on color { ColorAnimation { duration: 150 } }
-
-            AppIcon {
-                anchors.centerIn: parent
-                icon: AgentVM.isSidebarExpanded ? "chevron-left" : "chevron-right"
-                size: 14
-                iconColor: sidebarHandleMA.containsMouse && AgentVM.isSidebarExpanded
-                    ? Theme.bgPrimary : Theme.textSecondary
-            }
-
-            MouseArea {
-                id: sidebarHandleMA
-                anchors.fill: parent
-                anchors.margins: -4   // Slightly larger hit area
-                hoverEnabled: true
-                cursorShape: Qt.PointingHandCursor
-                onClicked: AgentVM.toggleSidebar()
-            }
-
-            ToolTip.visible: sidebarHandleMA.containsMouse
-            ToolTip.delay: 600
-            ToolTip.text: AgentVM.isSidebarExpanded
-                ? qsTr("收起侧边栏 (Ctrl+[)") : qsTr("展开侧边栏 (Ctrl+[)")
-        }
-    }
-
-    // ── Context Panel Toggle Handle ────────────────────
-    // Mirrors the sidebar handle on the right edge.
-    Item {
-        id: panelHandle
-        width: 24
-        height: 56
-        z: 20
-        anchors.verticalCenter: parent.verticalCenter
-        x: parent.width - width - Math.max(contextPanel.width - 12, 6)
-
-        Rectangle {
-            anchors.fill: parent
-            radius: height / 2
-
-            color: {
-                if (panelHandleMA.containsMouse && AgentVM.isPanelVisible) return Theme.brandPrimary
-                if (panelHandleMA.containsMouse) return Theme.surfaceHover
-                return Theme.bgSecondary
-            }
-            border.width: 1
-            border.color: panelHandleMA.containsMouse && AgentVM.isPanelVisible
-                ? Theme.brandPrimary : Theme.borderSubtle
-
-            Behavior on color { ColorAnimation { duration: 150 } }
-
-            AppIcon {
-                anchors.centerIn: parent
-                icon: AgentVM.isPanelVisible ? "chevron-right" : "chevron-left"
-                size: 14
-                iconColor: panelHandleMA.containsMouse && AgentVM.isPanelVisible
-                    ? Theme.bgPrimary : Theme.textSecondary
-            }
-
-            MouseArea {
-                id: panelHandleMA
-                anchors.fill: parent
-                anchors.margins: -4
-                hoverEnabled: true
-                cursorShape: Qt.PointingHandCursor
-                onClicked: AgentVM.togglePanel()
-            }
-
-            ToolTip.visible: panelHandleMA.containsMouse
-            ToolTip.delay: 600
-            ToolTip.text: AgentVM.isPanelVisible
-                ? qsTr("收起上下文面板 (Ctrl+B)") : qsTr("展开上下文面板 (Ctrl+B)")
         }
     }
 

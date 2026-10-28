@@ -15,6 +15,9 @@ Item {
     // A1 (hit-locate): 搜索命中定位高亮行索引，-1 表示不高亮。
     // TraceNodeRouter.highlighted 绑定到 index === revealHighlightIndex。
     property int revealHighlightIndex: -1
+    // 高亮强度：搜索命中 0.10（"这是你要找的"），导轨跳转 0.06
+    // （只是"确认落点"，不该和搜索结果混淆）。
+    property real revealHighlightStrength: 0.10
 
 
     // Sending can synchronously insert the user row before requestFollow().
@@ -98,6 +101,39 @@ Item {
                     }
                     // A1 (hit-locate): 搜索命中定位——索引匹配时短暂高亮。
                     highlighted: index === root.revealHighlightIndex
+                    highlightStrength: root.revealHighlightStrength
+                }
+            }
+
+            // 左侧用户消息导航导轨。数据来自 AgentVM.userMessageIndex
+            // （trace 变化时随之更新），当前条由 viewport 的像素位置算出。
+            MessageNavigator {
+                id: navigator
+                anchors.left: parent.left
+                anchors.leftMargin: 2
+                anchors.verticalCenter: parent.verticalCenter
+                viewportHeight: transcript.height
+                entries: AgentVM.userMessageIndex
+                // rows 只随 trace 变化，activeIndex 随滚动变化；把两者分开
+                // 算，避免每次滚动都重建一份 rows 数组。
+                readonly property var rows: {
+                    const list = AgentVM.userMessageIndex
+                    const out = []
+                    for (let i = 0; i < list.length; ++i) out.push(list[i].row)
+                    return out
+                }
+                activeIndex: {
+                    // 依赖 scrollOffset 才会随滚动重算（QML 只跟踪读到的属性）。
+                    const ignored = transcript.scrollOffset
+                    return transcript.activeIndexIn(rows)
+                }
+                onJumpRequested: function(row) {
+                    transcript.scrollToIndex(row)
+                    // 复用搜索定位的高亮链路，但底色更弱：导轨跳转是
+                    // "确认落点"，不是"搜索结果"。
+                    root.revealHighlightStrength = 0.06
+                    root.revealHighlightIndex = row
+                    highlightTimer.start()
                 }
             }
 
@@ -387,6 +423,7 @@ Item {
                     const row = AgentVM.traceModel.rowOfMessageId(messageId)
                     if (row >= 0) {
                         transcript.scrollToIndex(row)
+                        root.revealHighlightStrength = 0.10
                         root.revealHighlightIndex = row
                         highlightTimer.start()
                     } else {

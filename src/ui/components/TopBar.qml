@@ -58,10 +58,15 @@ Rectangle {
         spacing: 0
 
         // ── Sidebar Toggle ───────────────────────────
+        // 全局唯一的侧栏开关（原先浮在侧栏右缘的圆形把手已移除）。
+        // 图标随状态切换：展开态画"侧栏填实 + 向内箭头"（点它=收起），
+        // 收起态画"侧栏留空 + 向外箭头"（点它=展开）。
         IconButton {
-            icon: "menu"
+            icon: AgentVM.isSidebarExpanded ? "sidebar-collapse" : "sidebar-expand"
             iconSize: 20
             restIconColor: Theme.textPrimary
+            // 两个面互为正反，翻转一下能看出"这是同一个开关的两态"。
+            flipOnIconChange: true
             tooltip: AgentVM.isSidebarExpanded
                 ? qsTr("收起侧边栏 (Ctrl+[)") : qsTr("展开侧边栏 (Ctrl+[)")
             onClicked: AgentVM.toggleSidebar()
@@ -963,10 +968,17 @@ Rectangle {
         }
 
         // ── Panel Toggle Button ──────────────────────
+        // 与左侧侧栏按钮同一套视觉语法（窗口轮廓 + 面板分隔线 + 面板本体
+        // 填实/留空 + 指向箭头），只是镜像到右边。收起态加一层细边框，
+        // 让"这里有东西可以展开"比纯靠图标更容易被发现。
         IconButton {
-            icon: AgentVM.isPanelVisible ? "chevron-right" : "chevron-left"
-            iconSize: 18
+            icon: AgentVM.isPanelVisible ? "panel-collapse" : "panel-expand"
+            // 与左侧侧栏按钮同为 20：两个开关是同一类控件，尺寸不该
+            // 因为历史原因（旧的 chevron 偏小）而不一致。
+            iconSize: 20
             restIconColor: Theme.textPrimary
+            // 与左侧一致：两侧是同类控件，动效也不该一边有一边没有。
+            flipOnIconChange: true
             border.width: AgentVM.isPanelVisible ? 0 : 1
             border.color: Theme.borderSubtle
             tooltip: AgentVM.isPanelVisible

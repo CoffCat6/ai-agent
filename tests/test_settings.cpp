@@ -1273,8 +1273,12 @@ ComboBox {
     void webSearchKeyFieldVisibilityTracksProviderSwitch() {
         SettingsGuard guard;
         {
+            // 三把键全清：只清 provider 会让测试读到本机真实已配置的 key
+            // （"切过去应该显示未配置"的断言就会依赖开发机的注册表状态）。
             QSettings s("NexusAI", "NexusAI");
             s.remove("webSearch/provider");
+            s.remove("webSearch/zhipuApiKey");
+            s.remove("webSearch/deepseekApiKey");
         }
         SettingsService svc(nullptr);
         QQmlEngine engine;

@@ -8558,4 +8558,17 @@
         <translation>撤销</translation>
     </message>
 </context>
+<context>
+    <name>MessageNavigator</name>
+    <message>
+        <location filename="../src/ui/components/MessageNavigator.qml" line="170"/>
+        <source>第 %1 条</source>
+        <translation>第 %1 条</translation>
+    </message>
+    <message>
+        <location filename="../src/ui/components/MessageNavigator.qml" line="170"/>
+        <source>跳到第 %1 条提问：%2</source>
+        <translation>跳到第 %1 条提问：%2</translation>
+    </message>
+</context>
 </TS>
