@@ -81,6 +81,7 @@ Item {
                 subtitle: qsTr("本地 Ollama 数据不出本机；外部服务会把文档内容发送到所配置的端点。")
 
                 SettingRow {
+                    objectName: "embedding/provider"
                     label: qsTr("嵌入服务提供方")
 
                     ComboBox {
@@ -115,6 +116,7 @@ Item {
                 }
 
                 SettingRow {
+                    objectName: "embedding/model"
                     label: qsTr("嵌入模型")
 
                     ComboBox {
@@ -146,6 +148,7 @@ Item {
 
                 SettingsField {
                     id: embeddingUrlField
+                    objectName: "embedding/baseUrl"
                     label: qsTr("嵌入服务地址")
                     mono: true
                     text: Settings.embeddingBaseUrl
@@ -172,6 +175,7 @@ Item {
 
                     SettingsField {
                         id: embeddingApiKeyField
+                        objectName: "embedding/apiKey"
                         label: qsTr("向量模型 API Key")
                         labelWidth: 140
                         secret: true

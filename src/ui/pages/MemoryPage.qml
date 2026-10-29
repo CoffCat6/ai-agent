@@ -88,6 +88,7 @@ Item {
             title: qsTr("记忆与保留")
 
             SettingRow {
+                objectName: "memory/episodicMemoryEnabled"
                 label: qsTr("启用长期记忆")
                 description: qsTr("开启后，每次任务结束会生成会话摘要并在新会话中注入相关历史，帮助模型记住此前聊过的内容。")
 
@@ -99,6 +100,7 @@ Item {
             }
 
             SettingRow {
+                objectName: "memory/auditRetentionDays"
                 label: qsTr("审计日志保留天数")
                 description: qsTr("工具执行审计链的保留天数，0 表示永久保留。到期记录在启动与每 6 小时的例行清理中删除。")
 
@@ -112,6 +114,7 @@ Item {
             }
 
             SettingRow {
+                objectName: "memory/tokenRetentionDays"
                 label: qsTr("Token 用量保留天数")
                 description: qsTr("每次模型请求的用量明细（token 与费用统计的数据源）的保留天数，0 表示永久保留。")
 
@@ -175,6 +178,7 @@ Item {
 
         // ── 列表 ────────────────────────────────────────
         Rectangle {
+            objectName: "memory/episodes"
             Layout.fillWidth: true
             Layout.fillHeight: true
             Layout.leftMargin: 16

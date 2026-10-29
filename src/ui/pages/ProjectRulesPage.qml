@@ -139,6 +139,7 @@ Rectangle {
                 spacing: 2
 
                 Text {
+                    objectName: "projects/rules"
                     text: qsTr("项目规则")
                     color: Theme.textPrimary
                     font.pixelSize: Theme.fontSizeH2

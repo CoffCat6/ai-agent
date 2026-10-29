@@ -63,6 +63,7 @@ Item {
                 subtitle: qsTr("跟随系统会读取操作系统代理配置；手动代理对所有出站 HTTP 请求生效。")
 
                 SettingRow {
+                    objectName: "network/proxyMode"
                     label: qsTr("代理模式")
 
                     ComboBox {
@@ -90,6 +91,7 @@ Item {
 
                     SettingsField {
                         id: proxyHostField
+                        objectName: "network/proxyHost"
                         label: qsTr("代理服务器地址")
                         mono: true
                         text: Settings.proxyHost
@@ -105,6 +107,7 @@ Item {
                     }
 
                     SettingRow {
+                        objectName: "network/proxyPort"
                         label: qsTr("代理端口")
 
                         SpinBox {
@@ -124,6 +127,7 @@ Item {
 
                     SettingsField {
                         id: proxyUserField
+                        objectName: "network/proxyUsername"
                         label: qsTr("代理用户名")
                         mono: true
                         text: Settings.proxyUsername
@@ -139,6 +143,7 @@ Item {
 
                         SettingsField {
                             id: proxyPasswordField
+                            objectName: "network/proxyPassword"
                             label: qsTr("代理密码")
                             secret: true
                             // 空值 = 不修改（留空不覆盖已保存的密码）；写入成功
@@ -163,6 +168,7 @@ Item {
                 }
 
                 RowLayout {
+                    objectName: "network/testing"
                     Layout.fillWidth: true
                     Layout.topMargin: 4
                     spacing: 8

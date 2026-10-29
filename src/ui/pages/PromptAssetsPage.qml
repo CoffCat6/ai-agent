@@ -95,6 +95,7 @@ Item {
                     spacing: 8
 
                     RowLayout {
+                        objectName: "prompts/presets"
                         Layout.fillWidth: true
                         Text {
                             Layout.fillWidth: true
@@ -238,6 +239,7 @@ Item {
                     spacing: 8
 
                     RowLayout {
+                        objectName: "prompts/slash"
                         Layout.fillWidth: true
                         Text {
                             Layout.fillWidth: true
@@ -398,6 +400,7 @@ Item {
                     spacing: 8
 
                     RowLayout {
+                        objectName: "prompts/templates"
                         Layout.fillWidth: true
                         Text {
                             Layout.fillWidth: true

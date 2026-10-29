@@ -24,7 +24,7 @@
 3. 输入：`InputConsole` 负责草稿、附件、`@` 提及补全、历史浏览与发送；`ModelSelector`/`ThinkingEffortSelector`/`PermissionModeSelector` 读写 `AgentVM`/`Settings`。
 3b. 会话切换（docs/30，P0+P1 已实施）：**侧栏是唯一入口，主区只渲染活动会话**。侧栏点击 → `AgentVM.openConversation(id)`；右侧「结束对话」（右键菜单 / hover 操作条，后者仅在 `open === true` 时出现）→ `closeConversation(id)`；`Ctrl+W` → `closeActiveConversation()`；`Ctrl+Tab`/`Ctrl+Shift+Tab` → `cycleConversation(±1)`（跳过空白对话）。行内 14px 状态槽三态互斥：busy 旋转图标 › 等待确认静态警告 › 未读点。顶栏中部显示当前会话标题，并带会话模板入口（`Ctrl+[` 折叠侧栏后仍可达）。
 4. 拖放：窗口根级 `DropArea`（最后声明、铺满全窗）只判断 `hasUrls` 并把原始 `drop.urls` 交给 `AgentVM.handleDroppedFiles()`；VM 发 `attachmentsDropped`，`AgentChatPage` 转给 `inputConsole.appendAttachments()`。
-5. 设置：`Sidebar.settingsRequested`/`AgentVM.modelSettingsRequested`/`Ctrl+,` 都走 `settingsCenterDialog.openCategory("model")`；关闭时 `EditBuffer.dirty` 则回滚；搜索合并 `PreferenceRegistry` 元数据与 `settings-search.js` 手工索引，并记住 `settings.lastCategory`。
+5. 设置：`Sidebar.settingsRequested`/`AgentVM.modelSettingsRequested`/`Ctrl+,` 都走 `settingsCenterDialog.openCategory("model")`；关闭时 `EditBuffer.dirty` 则回滚；搜索与「恢复默认」可见性由 C++ 单例 `SettingsCatalog` 提供（字段级结果，点选后跳转分类并滚动高亮目标 `objectName`），并记住 `settings.lastCategory`。
 6. 面板：`ContextPanel` 只剩"Git / 知识库"两态 `StackLayout`（`activeSection` 0/1，Git 仅在 `activeProjectRoot` 非空时出现，隐藏时回落到知识库页）。审阅与任务清单已移出侧栏——两者都需要侧栏给不了的宽度，分别改为 `ReviewDialog` / `TodoDialog`，由 `TopBar` 按钮与 `Ctrl+R` / `Ctrl+T` 打开；知识库 `FileDialog` 多选后 `AgentVM.importDocuments()`。
 7. 通知：`errorOccurred`/`noticeOccurred` 分别驱动错误/成功 Toast；删除会话经 `Sidebar.sessionDeletedUndoable` 弹 10 秒撤销条，调用 `AgentVM.undoDeleteSession()`。
 7b. 会话切换（docs/30，P0+P1 已实施）：**侧栏是唯一入口，主区只渲染活动会话**。侧栏点击 → `AgentVM.openConversation(id)`；右侧「结束对话」（右键菜单 / hover 操作条，后者仅在 `open === true` 时出现）→ `closeConversation(id)`；`Ctrl+W` → `closeActiveConversation()`；`Ctrl+Tab`/`Ctrl+Shift+Tab` → `cycleConversation(±1)`（跳过空白对话）。行内 14px 状态槽三态互斥：busy 旋转图标 › 等待确认静态警告 › 未读点。顶栏中部显示当前会话标题，并带会话模板入口（`Ctrl+[` 折叠侧栏后仍可达）。
@@ -34,9 +34,9 @@
 
 ## 集成点
 
-- C++ 单例与属性：`AgentVM`（traceModel/sessionList/projects/sidebarWidth/panelWidth/pendingConfirmation/todoList/fileCheckpoints…）、`Theme`/`ThemeManager`、`Settings`、`PreferenceStore`、`ChangeBus`、`I18n`、`EditBuffer`、`GitVM`、`McpManager`、`ConnectionTester`。
+- C++ 单例与属性：`AgentVM`（traceModel/sessionList/projects/sidebarWidth/panelWidth/pendingConfirmation/todoList/fileCheckpoints…）、`Theme`/`ThemeManager`、`Settings`、`PreferenceStore`、`SettingsCatalog`、`ChangeBus`、`I18n`、`EditBuffer`、`GitVM`、`McpManager`、`ConnectionTester`。
 - qrc 路径固定为 `qrc:/qt/qml/NexusAI/src/ui/main.qml`（URI `NexusAI` + 源目录结构）；设置页在 QML 内以绝对 qrc URL 加载。
-- 测试：`tests/CMakeLists.txt` 把 `src/ui/**/*.qml` 与 `settings-search.js`、`FileTree.js` 重新打进测试资源，`qmllint_gate` 对 `nexus_ai`/`nexus_viewmodels` 的响应文件做静态检查；图表/Todo/审阅/引用行有 offscreen 渲染回归。
+- 测试：`tests/CMakeLists.txt` 把 `src/ui/**/*.qml` 与 `FileTree.js` 重新打进测试资源，`qmllint_gate` 对 `nexus_ai`/`nexus_viewmodels` 的响应文件做静态检查；图表/Todo/审阅/引用行有 offscreen 渲染回归；设置搜索/目录覆盖由 `test_settings` 的 C++ 用例锁定。
 
 ## 关键文件
 
@@ -47,7 +47,7 @@
 | 轨迹 | `components/TranscriptViewport.qml`、`TraceNodeRouter.qml` | 滚动/跟随/定位与节点类型路由 |
 | 输入 | `components/InputConsole.qml`、`ModelSelector.qml`、`ThinkingEffortSelector.qml`、`PermissionModeSelector.qml` | 发送、附件、提及、历史与参数选择 |
 | 侧栏/右栏 | `components/Sidebar.qml`、`panels/ContextPanel.qml` | 会话树/搜索 + 会话运行状态槽（busy/等待确认/未读）；Git/文件（审阅与任务清单已移入对话框） |
-| 设置 | `components/SettingsCenterDialog.qml`、`CategoryNav.qml`、`PreferenceControl.qml`、`settings-search.js`、`SettingsSection.qml`、`SettingRow.qml`、`SettingsField.qml`、`SettingCard.qml` | 搜索、四组可滚动分类导航、偏好控件、按分类复位的底栏。版面原语：`SettingsSection`（扁平分组）/`SettingRow`（左标签右控件）/`SettingsField`（输入行），`SettingCard` 留给带边框的独立卡片 |
+| 设置 | `components/SettingsCenterDialog.qml`、`CategoryNav.qml`、`PreferenceControl.qml`、`SettingsSection.qml`、`SettingRow.qml`、`SettingsField.qml`、`SettingCard.qml` | 搜索（`SettingsCatalog` 字段级结果 + 页内滚动高亮）、四组可滚动分类导航、偏好控件、按分类复位的底栏。版面原语：`SettingsSection`（扁平分组）/`SettingRow`（左标签右控件）/`SettingsField`（输入行），`SettingCard` 留给带边框的独立卡片 |
 | 设置页 | `pages/GeneralPage`、`AgentBehaviorPage`、`NetworkPage`、`LogsPage`、`KnowledgePage`、`InterfacePage`、`ModelConfigPage`、`SecurityPage`、`McpPage`、`ToolsPage`、`MemoryPage`、`UsageStatsPage`、`ActivityLogPage`、`SettingsBackupPage`、`ProjectRulesPage`、`PromptAssetsPage` | 16 个分类，由 `Loader` 按分类懒加载 |
 | 业务组件 | `AssistantMessage.qml`、`UserMessageBubble.qml`、`ProcessCard.qml`、`ErrorCard.qml`、`ToolConfirmDialog.qml`、`TodoListPanel.qml`、`FileChangesPanel.qml`、`ChangeTree.qml`、`GitPanel.qml` | 消息/工具确认/审阅/Git |
 | 图表/表格 | `charts/{DonutChart,LineTrendChart,BarCompareChart}.qml`、`UsageDetailTable.qml`、`DiffView.qml`、`CodeBlock.qml` | Canvas 图表、明细表、diff/代码块 |

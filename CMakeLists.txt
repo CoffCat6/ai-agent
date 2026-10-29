@@ -176,6 +176,9 @@ qt_add_qml_module(nexus_viewmodels
         src/viewmodels/ProjectFileViewModel.cpp
         src/viewmodels/PreferenceRegistry.h
         src/viewmodels/PreferenceRegistry.cpp
+        # 设置中心的字段级目录：搜索/定位/恢复可见性的单一数据源。
+        src/viewmodels/SettingsCatalog.h
+        src/viewmodels/SettingsCatalog.cpp
         src/viewmodels/ChangeBus.h
         src/viewmodels/ChangeBus.cpp
         src/viewmodels/PreferenceStore.h
@@ -246,7 +249,6 @@ qt_add_qml_module(nexus_ai
         src/ui/components/HWheelScroll.qml
         src/ui/components/IconButton.qml
         src/ui/components/SettingsCenterDialog.qml
-        src/ui/components/settings-search.js
         src/ui/components/CategoryNav.qml
         src/ui/components/PreferenceControl.qml
         src/ui/components/AuditDialog.qml

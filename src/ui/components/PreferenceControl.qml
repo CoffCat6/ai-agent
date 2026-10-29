@@ -9,6 +9,8 @@ Item {
 
     property string prefKey: ""
     property string displayName: ""
+    // SettingsCatalog 的搜索跳转按 id 查找目标；偏好条目 id 就是键名。
+    objectName: prefKey
 
     // Validation error from the last failed commit for exactly this key
     // (EditBuffer clears it on the next edit).

@@ -32,6 +32,7 @@ Item {
             Item { Layout.preferredHeight: 4 }
 
             Text {
+                objectName: "tools/disabled"
                 text: qsTr("工具管理")
                 color: Theme.textPrimary
                 font.pixelSize: Theme.fontSizeH2
@@ -141,6 +142,7 @@ Item {
                 description: qsTr("启用后模型可调用 web_search 获取实时信息。搜索查询会发送至所配置的搜索服务商，请勿在查询中包含敏感信息。")
 
                 SettingRow {
+                    objectName: "webSearch/provider"
                     label: qsTr("搜索服务")
 
                     ComboBox {
@@ -169,6 +171,7 @@ Item {
                 // 注意：必须绑定属性而不是调用函数，否则切换 provider 后
                 // QML 不会重算，输入框会一直藏着直到重开设置页。
                 RowLayout {
+                    objectName: "webSearch/apiKey"
                     Layout.fillWidth: true
                     visible: Settings.webSearchProviderNeedsApiKey
                     spacing: 8
@@ -239,6 +242,7 @@ Item {
                 description: qsTr("新会话默认使用的工具审批级别。可在会话内随时通过输入框旁的模式选择器更改，仅对当前会话生效。")
 
                 SettingRow {
+                    objectName: "agent/defaultPermissionMode"
                     label: qsTr("默认模式")
 
                     ComboBox {

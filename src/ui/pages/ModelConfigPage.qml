@@ -289,6 +289,7 @@ Item {
 
             // ── 卡片一：配置来源 ─────────────────────────
             SettingCard {
+                objectName: "model.profile"
                 Layout.fillWidth: true
                 title: qsTr("配置来源")
                 subtitle: qsTr("一条配置对应一个可用服务。厂商决定默认地址，接口协议决定报文格式；模型由你自己填。")
@@ -480,6 +481,7 @@ Item {
 
             // ── 卡片二：服务连接 ─────────────────────────
             SettingCard {
+                objectName: "model.connection"
                 Layout.fillWidth: true
                 title: qsTr("服务连接")
                 subtitle: page.isOllama
@@ -579,6 +581,7 @@ Item {
 
             // ── 卡片三：模型 ─────────────────────────────
             SettingCard {
+                objectName: "model.models"
                 Layout.fillWidth: true
                 title: qsTr("模型")
                 subtitle: qsTr("模型名不再按厂商预填：在下面的输入框里自己添加，列表会同步到聊天输入区的选择器。")
@@ -726,6 +729,7 @@ Item {
             // 每项一行、标签定宽：原来三列并排每列只有 170px，五个档位芯片
             // 被挤成三行，切厂商时列数还会跳变。
             SettingCard {
+                objectName: "model.generation"
                 Layout.fillWidth: true
                 title: qsTr("生成参数")
                 subtitle: qsTr("留空 = 使用服务默认，不随请求发送。")
@@ -777,6 +781,7 @@ Item {
 
             // ── 卡片五：思考与上下文 ─────────────────────
             SettingCard {
+                objectName: "model.reasoning"
                 Layout.fillWidth: true
                 title: qsTr("思考与上下文")
                 subtitle: qsTr("思考强度存在这条配置上；聊天输入区的快捷选择框读写的是当前启用的配置。")

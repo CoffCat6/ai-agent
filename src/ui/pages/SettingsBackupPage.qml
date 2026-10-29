@@ -55,6 +55,7 @@ Item {
             }
 
             Rectangle {
+                objectName: "backup/settings"
                 Layout.fillWidth: true
                 Layout.leftMargin: 24
                 Layout.rightMargin: 24
@@ -136,6 +137,7 @@ Item {
 
             // ── docs/23 D1: 数据库备份 ──────────────────────
             Rectangle {
+                objectName: "backup/database"
                 Layout.fillWidth: true
                 Layout.leftMargin: 24
                 Layout.rightMargin: 24

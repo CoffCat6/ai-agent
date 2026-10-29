@@ -199,12 +199,13 @@ AgentChatPage 空态的「配置模型」、ModelSelector、`AgentVM.modelSettin
 - `main.qml`：实例化 `AgentChatPage` 与 `SettingsCenterDialog`，把
   `settingsRequested` / `modelSettingsRequested` 统一到 `openCategory("model")`，
   并把 `ContextPanel.documentDetailsRequested` 接到 `KnowledgeDocDialog.openFor`。
-- 单例：`Settings`、`PreferenceStore`、`PreferenceRegistry`、`EditBuffer`、
-  `AgentVM`、`McpManager`、`ConnectionTester`、`SettingsBackup`、`Theme`、`I18n`、
-  `ChangeBus`。页面之间不直接互相引用，全部经单例与信号解耦。
+- 单例：`Settings`、`PreferenceStore`、`PreferenceRegistry`、`SettingsCatalog`、
+  `EditBuffer`、`AgentVM`、`McpManager`、`ConnectionTester`、`SettingsBackup`、`Theme`、
+  `I18n`、`ChangeBus`。页面之间不直接互相引用，全部经单例与信号解耦。
 - CategoryNav 切换时写 `settings.lastCategory`；`jumpToCategory` 先清空搜索再写同一键。
-- `PreferenceRegistry.categories()` 同时驱动导航、搜索与恢复默认；`settings-search.js`
-  只补页面自绘项（模型卡片、联网搜索、数据库备份等）。
+- `PreferenceRegistry.categories()` 同时驱动导航与恢复默认；`SettingsCatalog` 提供
+  搜索/定位/复位元数据（偏好自动派生，页面自绘项在 `SettingsCatalog.cpp` 静态表登记，
+  条目 id 必须与页面上同名字段的 `objectName` 一致）。
 
 ## 关键文件
 
@@ -227,7 +228,7 @@ AgentChatPage 空态的「配置模型」、ModelSelector、`AgentVM.modelSettin
 - `src/viewmodels/AgentViewModel.h`（`loadProjectRules` / `writeProjectRules` /
   `projectRulesState`）、`src/core/agent/AIAgent.cpp`（`projectRulesBlock`）
 - `src/ui/components/SettingsCenterDialog.qml`、`CategoryNav.qml`、
-  `settings-search.js`、`SettingsSection.qml`、`SettingRow.qml`、`SettingsField.qml`、
+  `SettingsSection.qml`、`SettingRow.qml`、`SettingsField.qml`、
   `SettingCard.qml`、`PreferenceControl.qml`
 - `src/core/utils/SettingsSchema.cpp`、`src/viewmodels/EditBuffer.cpp`、
   `src/viewmodels/SettingsService.h`、`src/viewmodels/McpManager.h`、
@@ -244,7 +245,8 @@ AgentChatPage 空态的「配置模型」、ModelSelector、`AgentVM.modelSettin
   显式清除），其余页不得越界写别人的键。2026-10-25 已移除页头的重复复位按钮。
 - 新增设置页必须同时：加入 `CMakeLists.txt` 的 `QML_FILES`、在 `SettingsCenterDialog`
   增加同名 `Loader`、在 `SettingsSchema::categories()` 登记分类（含 `groupId`）、在
-  `settings-search.js` 补页面自绘项索引，并提供 `requestResetDefaults()`（如该页有可复位
+  `src/viewmodels/SettingsCatalog.cpp` 登记页面自绘项（id 与控件 `objectName` 一致，
+  `test_settings` 会断言 schema 键全覆盖），并提供 `requestResetDefaults()`（如该页有可复位
   的 SettingsService 字段）。
 - InterfacePage 的值读 `EditBuffer.staged` 再回落 `PreferenceStore`，若未来把
   `stage()` 改回纯暂存，页面会表现为“能改但不落盘”；当前依赖 EditBuffer 的写穿语义。

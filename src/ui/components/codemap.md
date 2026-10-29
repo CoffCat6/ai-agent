@@ -15,7 +15,7 @@
 | `Sidebar.qml`（83 KB，最大文件） | 左栏：Logo/新建、项目树 + 本地对话树（共享 `sessionRow` delegate）、跨会话搜索（200ms 防抖）、归档筛选、导入项目、行内重命名/置顶/删除 + 「…」溢出菜单（归档/导出/结束对话）、底栏（日志/审计/设置/知识库）。**docs/30 起是会话切换的唯一入口**：行点击走 `openConversation`，行内 14px 状态槽表达 busy（旋转）/ 等待确认（静态警告）/ 未读（品牌点）三态 |新对话按钮右缘的模板窄条（`tmplMA` + `SessionTemplateMenu`，与主点击区分离）：按 `Settings.sessionTemplates` 开新会话，应用动作统一走 `AgentVM.startFromSessionTemplate`；`Accessible` 语义挂在窄条上（"从会话模板开始"）。  `AgentVM.projects/sessionList/openConversation/closeConversation/searchMessages/importProject/renameSession/setSessionPinned/setSessionArchived/exportSession`、`Settings.activeProjectId`、`ThemeManager.isDark` |
 | `TopBar.qml`（44 KB） | 顶栏：侧栏开关、项目归属徽标（空标签可切换，已有会话转只读）、**当前会话标题**（docs/30：标签栏删除后的唯一常显标题位，弹性 + elide + 悬停全文）、**会话模板入口**（`preset` 图标，无模板时隐藏；`Ctrl+[` 折叠侧栏后仍可达）、状态点 + `stateText`、token 占用条/累计/费用 + 上下文构成浮层、任务清单与审阅入口（各自带角标）、右栏开关。提示词预设不在顶栏：它为 40px 高度塞不下预设名，已移到输入框下方的选项行（`PromptPresetSelector`）。审阅按钮在 `unreviewedFileCount > 0` 时变品牌色并显示待看文件数，关闭审阅对话框即清零 | `AgentVM.state/stateText/stateBusy/usedTokens/maxTokens/tokenUsageRate/sessionTokensUsed/lastCostCents/contextComposition()/sessionTokenBreakdown()/todoList/fileCheckpoints/unreviewedFileCount/acknowledgeFileReview()/toggleSidebar/togglePanel` |
 | `SplitBar.qml` | 竖向分隔条：拖拽发 `dragged(delta)`、双击 `resetRequested()`、`dragActive` 让宿主暂停宽度动画 | 纯几何 + `Theme.brandPrimary`；宿主（`main.qml`）负责 clamp 与写回 `AgentVM.sidebarWidth/panelWidth` |
-| `SettingsCenterDialog.qml` | 设置中心：搜索框 + 分组分类导航 + 16 个分类页 `Loader` 懒加载（900×680，导航 200px）+ 底栏（恢复默认/关闭）+ 恢复确认对话框；底栏按钮仅当前分类有可复位键或声明了 `requestResetDefaults()` 时出现，按分类调用对应页/领域的复位入口 | `PreferenceRegistry.categoryGroups/categoriesInGroup/categories/preferencesInCategory/categoryName/categoryOrder`、`PreferenceStore`、`EditBuffer`、`settings-search.js`、绝对 qrc URL `qrc:/qt/qml/NexusAI/src/ui/pages/*.qml` |
+| `SettingsCenterDialog.qml` | 设置中心：搜索框 + 分组分类导航 + 16 个分类页 `Loader` 懒加载（900×680，导航 200px）+ 底栏（恢复默认/关闭）+ 恢复确认对话框；搜索由 `SettingsCatalog` 返回字段级结果，点选后打开分类并沿父链滚动到目标 `objectName`，叠加 2.2 秒高亮框；底栏按钮由 `SettingsCatalog.resetMode(category)` 决定，按分类调用对应页/领域的复位入口 | `SettingsCatalog.entries/search/entry/hasEntry/resetMode`、`PreferenceRegistry.categoryGroups/categoriesInGroup/categories/preferencesInCategory/categoryName/categoryOrder`、`PreferenceStore`、`EditBuffer`、绝对 qrc URL `qrc:/qt/qml/NexusAI/src/ui/pages/*.qml` |
 | `CategoryNav.qml` | 设置分类左侧导航（200 px，`Flickable` 可滚动）：按 `categoryGroups()` 分四组渲染，组标题 + 34px 分类项，当前项左侧 3px 品牌条 | `PreferenceRegistry.categoryGroups()/categoryGroupName()/categoriesInGroup()/categoryName()`、`I18n.currentLocale`（触发语言切换重算） |
 
 ### 对话渲染
@@ -87,7 +87,6 @@
 | `LogPanel.qml` | 运行日志面板：类别/级别/日期/关键词四重筛选、吸底跟随、复制可见日志、打开日志目录 | `AgentVM.logModel`（filterCategory/filterLevel/filterDate/filterText/availableDates/toClipboardText/clearView/polling） |
 | `TodoListPanel.qml` | 任务清单（`todo_write` 工具产出）只读视图：优先级色条、状态图标、完成计数、可折叠 | `AgentVM.todoList` |
 | `UsageDetailTable.qml`（25 KB） | 用量统计「请求明细」表：筛选/排序/拖拽调列宽/横向滚动/加载更多 | `rows`/`total` 由调用方注入，组件只发 `loadMore()` |
-| `settings-search.js` | 设置搜索的手工索引与匹配/去重/排序逻辑（`.pragma library`，无 Qt 依赖） | 由 `SettingsCenterDialog` 与 `PreferenceRegistry` 条目合并使用 |
 
 ### 通用控件
 
@@ -125,7 +124,7 @@
 2. **输入与发送**：`InputConsole` 维护草稿（写 `AgentVM.draftText/draftAttachments`，并监听其变更回填）→ `sendCurrentText()` 合并附件 + `@` 引用解析 → `AgentVM.startTask(text, images, files)` → 轨迹模型更新 → `TranscriptViewport` 吸底跟随（发送时显式 `requestFollow()` 解钉）。
 3. **审阅（Agent 写入的文件）**：`AgentVM.fileCheckpoints` → `FileChangesPanel` → `ChangeTree`（`FileTree.js` 建树）→ 行点击 → `FileChangeDetailDialog` → `DiffView`；撤销走 `AgentVM.undoFileCheckpoint(id)`，超限文件（`truncated`）只记路径、不可撤销/不可 diff。
 4. **Git**：`ContextPanel` 把 `AgentVM.activeProjectRoot` 传给 `GitPanel`，后者写 `GitVM.projectRoot` 固定仓库位置；面板自身只做「读状态 + 组装命令 + 发请求」，写操作一律经用户显式动作 → `GitActionDialog` 二次确认 → `GitVM` 执行 → `onOperationFinished` 回写提示并刷新日志/分支。`AgentVM.fileCheckpointsChanged` 触发防抖刷新（Agent 写文件后自动更新仓库视图）。
-5. **设置**：`SettingsCenterDialog` → `CategoryNav`（`PreferenceRegistry.categoryGroups()` → `categoriesInGroup()`）→ `Loader` 按分类懒加载 `pages/*.qml`（usage/activity 两页绑定 `dialog.opened`，关闭即销毁以免统计停在旧值）→ 声明式偏好走 `PreferenceControl` + `EditBuffer.stage`；搜索合并 `PreferenceRegistry` 元数据与 `settings-search.js` 手工索引。关闭时 `EditBuffer.dirty` → `rollback()`。底栏「恢复默认」按当前分类分派：声明式偏好走 `EditBuffer.resetToDefault(keys)`，页面自绘字段调用该页的 `requestResetDefaults()`。
+5. **设置**：`SettingsCenterDialog` → `CategoryNav`（`PreferenceRegistry.categoryGroups()` → `categoriesInGroup()`）→ `Loader` 按分类懒加载 `pages/*.qml`（usage/activity 两页绑定 `dialog.opened`，关闭即销毁以免统计停在旧值）→ 声明式偏好走 `PreferenceControl` + `EditBuffer.stage`；搜索走 `SettingsCatalog.search()`（偏好元数据 + M1 键/页级入口统一登记），结果点击后打开分类、滚动并高亮目标字段（条目 id == 控件 `objectName`）。关闭时 `EditBuffer.dirty` → `rollback()`。底栏「恢复默认」的可见性由 `SettingsCatalog.resetMode(category)` 决定，分派顺序：页面 `requestResetDefaults()` → `EditBuffer.resetToDefault(keys)`。
 6. **通知**：`AgentVM.errorOccurred/noticeOccurred` → `main.qml` 的两个 `AppToast`（error/notice 纵向错开）；`Sidebar.sessionDeletedUndoable` 信号 → 带「撤销」动作的第三个 Toast → `AgentVM.undoDeleteSession()`。
 
 ## 集成点

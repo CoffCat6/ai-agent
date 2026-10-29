@@ -65,6 +65,7 @@ Item {
 
                 SettingsField {
                     id: maxStepsField
+                    objectName: "agent/maxSteps"
                     label: qsTr("单次任务步数预算")
                     labelWidth: 160
                     text: Settings.maxSteps
@@ -92,6 +93,7 @@ Item {
                 }
 
                 SettingRow {
+                    objectName: "agent/taskTimeoutMinutes"
                     label: qsTr("单次任务超时（分钟）")
                     description: qsTr("任务运行超过此时长会停止并基于已收集的信息作答。需要多次网络调用的任务可以适当调高。")
 
@@ -116,6 +118,7 @@ Item {
 
                 TextArea {
                     id: promptField
+                    objectName: "agent/systemPromptOverride"
                     Layout.fillWidth: true
                     Layout.preferredHeight: 160
                     text: Settings.systemPromptOverride

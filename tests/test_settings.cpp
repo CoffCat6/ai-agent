@@ -29,6 +29,7 @@
 #include <QStandardPaths>
 #include "viewmodels/PreferenceStore.h"
 #include "viewmodels/PreferenceRegistry.h"
+#include "viewmodels/SettingsCatalog.h"
 #include "core/utils/SettingsRepository.h"
 
 #include <memory>
@@ -2608,6 +2609,125 @@ Item {
             s.remove("monthlyCostQuotaCents");
             s.remove("strictQuotaMode");
         }
+    }
+
+    // 设置中心目录（SettingsCatalog）的登记纪律：schema 账本里的每个键都必须
+    // 在目录里出现（含隐藏内部键），否则搜索找不到、跳转也定位不到。声明式偏好
+    // 在账本里带 prefs/v1/ 前缀，目录键是偏好键本身。
+    void catalogCoversEveryRegisteredKey() {
+        auto* catalog = SettingsCatalog::instance();
+        QVERIFY(catalog);
+
+        for (const SettingsKeyDef& definition : SettingsSchema::registeredKeys()) {
+            QString id = definition.key;
+            if (id.startsWith(QStringLiteral("prefs/v1/")))
+                id = id.mid(QStringLiteral("prefs/v1/").length());
+            QVERIFY2(catalog->hasEntry(id),
+                     qPrintable(QStringLiteral("catalog entry missing for settings key: %1")
+                                    .arg(definition.key)));
+        }
+
+        // id 既是搜索结果的定位锚点，也是 QML 的 objectName：重名会让跳转
+        // 落到错误控件，必须在目录层面就拦住。
+        QSet<QString> ids;
+        for (const QVariant& value : catalog->entries()) {
+            const QVariantMap entry = value.toMap();
+            const QString id = entry.value("id").toString();
+            QVERIFY2(!id.isEmpty(), "catalog entry without id");
+            QVERIFY2(!ids.contains(id), qPrintable(QStringLiteral("duplicate catalog id: %1").arg(id)));
+            ids.insert(id);
+            // 可见条目必须能被搜索列表完整渲染。
+            QVERIFY2(!entry.value("title").toString().isEmpty(), qPrintable(id));
+            QVERIFY2(!entry.value("category").toString().isEmpty(), qPrintable(id));
+            QVERIFY2(!entry.value("categoryName").toString().isEmpty(), qPrintable(id));
+            QCOMPARE(entry.value("anchor").toString(), id);
+            QCOMPARE(entry.value("hidden").toBool(), false);
+        }
+        QVERIFY(!ids.isEmpty());
+    }
+
+    // 搜索是字段级的：标题、关键词、键名、分类名任意命中都算；空查询与
+    // 无匹配返回空列表；隐藏内部键不出现在结果里。
+    void catalogSearchMatchesFieldLevelMetadata() {
+        auto* catalog = SettingsCatalog::instance();
+        QVERIFY(catalog);
+
+        QVERIFY(catalog->search(QString()).isEmpty());
+        QVERIFY(catalog->search(QStringLiteral("   ")).isEmpty());
+        QVERIFY(catalog->search(QStringLiteral("没有这个设置-xyz")).isEmpty());
+
+        // 中文标题 / 关键词：联网搜索条目落在「工具与能力」页。
+        const QVariantList zhipu = catalog->search(QStringLiteral("智谱"));
+        QVERIFY(!zhipu.isEmpty());
+        bool foundProvider = false;
+        for (const QVariant& value : zhipu) {
+            const QVariantMap entry = value.toMap();
+            QCOMPARE(entry.value("category").toString(), QStringLiteral("tools"));
+            if (entry.value("id").toString() == QStringLiteral("webSearch/provider"))
+                foundProvider = true;
+            // 隐藏的 provider 密钥桶不能出现在搜索结果里。
+            QVERIFY(entry.value("id").toString() != QStringLiteral("webSearch/zhipuApiKey"));
+        }
+        QVERIFY(foundProvider);
+
+        // 键名命中：autoStart 不在标题里，只能靠偏好键名/关键词命中。
+        const QVariantList autoStart = catalog->search(QStringLiteral("autostart"));
+        QVERIFY(!autoStart.isEmpty());
+        QCOMPARE(autoStart.at(0).toMap().value("id").toString(),
+                 QStringLiteral("general.autoStart"));
+
+        // 分类名参与匹配（搜索「界面」应至少命中界面页的偏好键）。
+        const QVariantList interface = catalog->search(QStringLiteral("界面与外观"));
+        QVERIFY(!interface.isEmpty());
+        for (const QVariant& value : interface) {
+            QCOMPARE(value.toMap().value("category").toString(), QStringLiteral("interface"));
+        }
+
+        // 大小写不敏感 + 去首尾空格。
+        const QVariantList upper = catalog->search(QStringLiteral("  PROXY  "));
+        QVERIFY(!upper.isEmpty());
+        bool foundProxyMode = false;
+        for (const QVariant& value : upper) {
+            if (value.toMap().value("id").toString() == QStringLiteral("network/proxyMode"))
+                foundProxyMode = true;
+        }
+        QVERIFY(foundProxyMode);
+    }
+
+    // 「恢复默认」的可见性/分派来自目录元数据：页面级复位（M1 按域入口）、
+    // 声明式偏好复位（EditBuffer）、以及两者都没有的分类。
+    void catalogResetModesDriveResetVisibility() {
+        auto* catalog = SettingsCatalog::instance();
+        QVERIFY(catalog);
+
+        // M1 键由页面 requestResetDefaults() 复位。
+        QCOMPARE(catalog->resetMode(QStringLiteral("agent")), QStringLiteral("page"));
+        QCOMPARE(catalog->resetMode(QStringLiteral("network")), QStringLiteral("page"));
+        QCOMPARE(catalog->resetMode(QStringLiteral("knowledge")), QStringLiteral("page"));
+        QCOMPARE(catalog->resetMode(QStringLiteral("memory")), QStringLiteral("page"));
+        QCOMPARE(catalog->resetMode(QStringLiteral("logs")), QStringLiteral("page"));
+
+        // 声明式偏好由 EditBuffer.resetToDefault 复位。
+        QCOMPARE(catalog->resetMode(QStringLiteral("interface")), QStringLiteral("preference"));
+        QCOMPARE(catalog->resetMode(QStringLiteral("general")), QStringLiteral("preference"));
+
+        // 整条 profile / 独立资产：没有可复位的键。
+        QCOMPARE(catalog->resetMode(QStringLiteral("model")), QStringLiteral("none"));
+        QCOMPARE(catalog->resetMode(QStringLiteral("mcp")), QStringLiteral("none"));
+        QCOMPARE(catalog->resetMode(QStringLiteral("tools")), QStringLiteral("none"));
+        QCOMPARE(catalog->resetMode(QStringLiteral("security")), QStringLiteral("none"));
+        QCOMPARE(catalog->resetMode(QStringLiteral("usage")), QStringLiteral("none"));
+        QCOMPARE(catalog->resetMode(QStringLiteral("unknown")), QStringLiteral("none"));
+
+        // 单条元数据：可见字段级条目与隐藏内部键。
+        const QVariantMap localOnly = catalog->entry(QStringLiteral("security/localOnlyMode"));
+        QCOMPARE(localOnly.value("category").toString(), QStringLiteral("security"));
+        QCOMPARE(localOnly.value("resetMode").toString(), QStringLiteral("none"));
+        QCOMPARE(localOnly.value("hidden").toBool(), false);
+
+        const QVariantMap profiles = catalog->entry(QStringLiteral("modelProfiles"));
+        QCOMPARE(profiles.value("hidden").toBool(), true);
+        QVERIFY(catalog->entry(QStringLiteral("does-not-exist")).isEmpty());
     }
 
 private:

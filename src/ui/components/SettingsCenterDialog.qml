@@ -3,7 +3,6 @@ import QtQuick.Layouts
 import QtQuick.Controls
 import NexusAI
 import NexusAI.ViewModels
-import "settings-search.js" as SettingsSearch
 
 Dialog {
     id: dialog
@@ -21,19 +20,18 @@ Dialog {
     property bool explicitCategory: false
     // docs/17 B6: 非空 = 搜索态——内容区由分类页切换为搜索结果列表。
     readonly property bool searching: searchField.text.trim().length > 0
+    // 搜索结果跳转后要定位的字段（SettingsCatalog 条目 id == 目标 objectName）。
+    property string highlightTargetId: ""
+    property int highlightAttempts: 0
 
     signal settingsSaved()
     signal settingsError(string message)
 
-    // 支持"恢复本页默认"的分类：声明式偏好分类自动支持；其余分类的键由
-    // SettingsService 管理（无 PreferenceMeta），由页面自己的
-    // requestResetDefaults() 负责复位。
-    readonly property var pageResetCategories:
-        ["agent", "network", "knowledge", "memory", "logs"]
-
+    // 恢复默认的可见性与分派由 SettingsCatalog 的条目元数据决定：
+    // "page" = 页面自己的 requestResetDefaults()，"preference" =
+    // EditBuffer.resetToDefault，其余分类没有可复位的键。
     function categoryHasReset(categoryId) {
-        return PreferenceRegistry.preferencesInCategory(categoryId).length > 0
-            || pageResetCategories.indexOf(categoryId) >= 0
+        return SettingsCatalog.resetMode(categoryId) !== "none"
     }
 
     // 先交给页面自己的复位函数（M1 键）；页面没有实现时回落到声明式偏好
@@ -67,47 +65,89 @@ Dialog {
         open()
     }
 
-    // docs/17 B6: 点击结果跳转对应分类并退出搜索态。
-    function jumpToCategory(categoryId) {
+    // 点击搜索结果：打开分类；有条目锚点时滚动到该字段并短暂高亮。
+    // 页面挂在 Loader 上，切换分类即重建，所以定位要等一帧再试。
+    function jumpToSetting(categoryId, settingId) {
         searchField.clear()
         currentCategory = categoryId
         PreferenceStore.save("settings.lastCategory", categoryId)
+        clearHighlight()
+        if (!settingId) return
+        highlightTargetId = settingId
+        highlightAttempts = 0
+        highlightTimer.restart()
     }
 
-    // docs/17 B6: 合并数据源——声明式偏好（PreferenceRegistry 自带
-    // displayName/category）+ 手工索引表（settings-search.js）。分类名与
-    // 顺序在此解析，JS 侧保持纯数据进出（tests/qml 可直接驱动）。
-    function searchSettings(query) {
-        const registryEntries = []
-        const categoryOrder = {}
-        const categoryNames = {}
-        const cats = PreferenceRegistry.categories()
-        for (let i = 0; i < cats.length; ++i) {
-            const id = cats[i]
-            categoryOrder[id] = PreferenceRegistry.categoryOrder(id)
-            const categoryName = PreferenceRegistry.categoryName(id)
-            categoryNames[id] = categoryName
-            const keys = PreferenceRegistry.preferencesInCategory(id)
-            for (let k = 0; k < keys.length; ++k) {
-                const name = PreferenceRegistry.displayName(keys[k])
-                if (name.length === 0) continue
-                registryEntries.push({
-                    title: name,
-                    category: id,
-                    categoryName: categoryName,
-                    keywords: keys[k]
-                })
-            }
+    function jumpToCategory(categoryId) {
+        jumpToSetting(categoryId, "")
+    }
+
+    function clearHighlight() {
+        highlightTargetId = ""
+        highlightHideTimer.stop()
+        highlightOverlay.visible = false
+    }
+
+    // QML 没有 findChild；Loader.item / ScrollView.contentItem 都不是普通的
+    // children，所以两条路径都要递归。
+    function findSettingItem(node, name) {
+        if (!node || name.length === 0) return null
+        if (node.objectName === name) return node
+        if (node.item) {
+            const viaLoader = findSettingItem(node.item, name)
+            if (viaLoader) return viaLoader
         }
-        // docs/25 C3: 手工索引标题在 JS 侧经 QT_TRANSLATE_NOOP 标记，此处
-        // 按 SettingsSearch 上下文运行时查询翻译；声明式偏好的 displayName
-        // 走同一查询（.ts 无对应条目时原样返回），英文界面搜索结果不再
-        // 中英混杂。
-        const results = SettingsSearch.search(query, registryEntries, categoryOrder,
-                                              categoryNames)
-        for (let i = 0; i < results.length; ++i)
-            results[i].title = qsTranslate("SettingsSearch", results[i].title)
-        return results
+        const kids = node.children || []
+        for (let i = 0; i < kids.length; ++i) {
+            const hit = findSettingItem(kids[i], name)
+            if (hit) return hit
+        }
+        return null
+    }
+
+    // 沿父链找可滚动容器（Flickable，或 ScrollView 内部的 Flickable），把
+    // 目标滚进视口。页面根部的 Flickable、模型页与提示词页的 ScrollView 都命中。
+    function scrollSettingIntoView(item) {
+        let node = item
+        while (node && node !== pageHost) {
+            let scroller = null
+            if (node.contentY !== undefined && node.contentHeight !== undefined
+                    && node.contentItem !== undefined)
+                scroller = node
+            else if (node.contentItem && node.contentItem.contentY !== undefined
+                     && node.contentItem.contentHeight !== undefined)
+                scroller = node.contentItem
+            if (scroller && scroller.height > 0) {
+                const pos = item.mapToItem(scroller.contentItem, 0, 0)
+                const margin = 32
+                let target = scroller.contentY
+                if (pos.y < scroller.contentY + margin)
+                    target = pos.y - margin
+                else if (pos.y + item.height > scroller.contentY + scroller.height - margin)
+                    target = pos.y + item.height - scroller.height + margin
+                const maxY = Math.max(0, scroller.contentHeight - scroller.height)
+                scroller.contentY = Math.min(Math.max(0, target), maxY)
+            }
+            node = node.parent
+        }
+    }
+
+    function applyPendingHighlight() {
+        if (highlightTargetId.length === 0) return
+        const item = findSettingItem(pageHost, highlightTargetId)
+        if (!item) {
+            // Loader 可能还没完成布局；重试几次后放弃（仍停留在分类页顶部）。
+            if (++highlightAttempts < 6) highlightTimer.restart()
+            return
+        }
+        scrollSettingIntoView(item)
+        const pos = item.mapToItem(pageHost, 0, 0)
+        highlightOverlay.x = pos.x - 4
+        highlightOverlay.y = pos.y - 4
+        highlightOverlay.width = Math.min(item.width + 8, pageHost.width - pos.x)
+        highlightOverlay.height = Math.min(item.height + 8, pageHost.height - pos.y)
+        highlightOverlay.visible = true
+        highlightHideTimer.restart()
     }
 
     background: DialogBackground {}
@@ -120,6 +160,7 @@ Dialog {
     }
 
     onClosed: {
+        clearHighlight()
         if (EditBuffer.dirty) EditBuffer.rollback()
     }
 
@@ -180,6 +221,7 @@ Dialog {
                                 ? Theme.brandPrimary : Theme.borderSubtle
                         }
                         Accessible.name: qsTr("搜索设置")
+                        onTextChanged: dialog.clearHighlight()
                     }
                     IconButton {
                         visible: searchField.text.length > 0
@@ -218,12 +260,14 @@ Dialog {
                 Layout.fillHeight: true
                 currentCategory: dialog.currentCategory
                 onCategorySelected: (id) => {
+                    dialog.clearHighlight()
                     dialog.currentCategory = id
                     PreferenceStore.save("settings.lastCategory", id)
                 }
             }
 
             Rectangle {
+                id: pageHost
                 Layout.fillWidth: true
                 Layout.fillHeight: true
                 color: Theme.bgPrimary
@@ -236,7 +280,11 @@ Dialog {
                     anchors.margins: 12
                     visible: dialog.searching
                     clip: true
-                    model: dialog.searchSettings(searchField.text)
+                    // 语言切换后重新求值（条目标题在 C++ 侧按当前语言翻译）。
+                    model: {
+                        I18n.currentLocale
+                        return SettingsCatalog.search(searchField.text)
+                    }
                     spacing: 4
 
                     delegate: Rectangle {
@@ -286,12 +334,14 @@ Dialog {
                             anchors.fill: parent
                             hoverEnabled: true
                             cursorShape: Qt.PointingHandCursor
-                            onClicked: dialog.jumpToCategory(modelData.category)
+                            onClicked: dialog.jumpToSetting(modelData.category,
+                                                            modelData.anchor)
                         }
 
                         Accessible.role: Accessible.ListItem
                         Accessible.name: modelData.title + " (" + modelData.categoryName + ")"
-                        Accessible.onPressAction: dialog.jumpToCategory(modelData.category)
+                        Accessible.onPressAction: dialog.jumpToSetting(modelData.category,
+                                                                       modelData.anchor)
                     }
 
                     // 空态：无匹配设置。
@@ -434,6 +484,18 @@ Dialog {
                     source: "qrc:/qt/qml/NexusAI/src/ui/pages/PromptAssetsPage.qml"
                 }
                 }   // ── 分类页包裹层（搜索时隐藏）──
+
+                // 搜索结果定位后的短暂高亮框。位置由 applyPendingHighlight()
+                // 用目标 item.mapToItem(pageHost) 计算，不侵入各页控件。
+                Rectangle {
+                    id: highlightOverlay
+                    visible: false
+                    z: 100
+                    color: "transparent"
+                    radius: 8
+                    border.width: 2
+                    border.color: Theme.brandPrimary
+                }
             }
         }
 
@@ -476,6 +538,21 @@ Dialog {
                 }
             }
         }
+    }
+
+    // 搜索跳转的定位重试与高亮自动消失（不依赖具体页面的加载完成信号）。
+    Timer {
+        id: highlightTimer
+        interval: 60
+        repeat: false
+        onTriggered: dialog.applyPendingHighlight()
+    }
+
+    Timer {
+        id: highlightHideTimer
+        interval: 2200
+        repeat: false
+        onTriggered: dialog.clearHighlight()
     }
 
     // docs/17: 即时保存后不再有"放弃修改"路径；confirmCancelDialog 已移除，

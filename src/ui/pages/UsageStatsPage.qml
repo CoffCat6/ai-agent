@@ -266,6 +266,7 @@ Item {
                 spacing: 2
 
                 Text {
+                    objectName: "usage/overview"
                     text: qsTr("用量统计")
                     color: Theme.textPrimary
                     font.pixelSize: Theme.fontSizeH2
@@ -1190,6 +1191,7 @@ Item {
                         ToolTip.text: qsTr("费用按已计费请求累计。勾选“超限拒绝”后达到上限直接拒绝请求，默认仅警告。")
                     }
                     Switch {
+                        objectName: "strictQuotaMode"
                         checked: Settings.strictQuotaMode
                         onToggled: Settings.strictQuotaMode = checked
                         text: qsTr("超限拒绝请求")
@@ -1235,6 +1237,7 @@ Item {
                     Text { text: qsTr("每日 Token 上限"); color: Theme.textSecondary; font.pixelSize: 10; font.family: Theme.fontSans; Layout.preferredWidth: 104 }
                     SpinBox {
                         id: dailyTokenSpin
+                        objectName: "dailyTokenQuota"
                         Layout.fillWidth: true
                         from: 0; to: 100000000; stepSize: 1000; editable: true
                         Component.onCompleted: value = Settings.dailyTokenQuota
@@ -1244,6 +1247,7 @@ Item {
                     Text { text: qsTr("每月 Token 上限"); color: Theme.textSecondary; font.pixelSize: 10; font.family: Theme.fontSans; Layout.preferredWidth: 104 }
                     SpinBox {
                         id: monthlyTokenSpin
+                        objectName: "monthlyTokenQuota"
                         Layout.fillWidth: true
                         from: 0; to: 1000000000; stepSize: 10000; editable: true
                         Component.onCompleted: value = Settings.monthlyTokenQuota
@@ -1253,6 +1257,7 @@ Item {
                     Text { text: qsTr("每日费用上限（元）"); color: Theme.textSecondary; font.pixelSize: 10; font.family: Theme.fontSans; Layout.preferredWidth: 104 }
                     SpinBox {
                         id: dailyCostSpin
+                        objectName: "dailyCostQuotaCents"
                         Layout.fillWidth: true
                         from: 0; to: 1000000; stepSize: 1; editable: true
                         Component.onCompleted: value = Math.round(Settings.dailyCostQuotaCents / 100)
@@ -1262,6 +1267,7 @@ Item {
                     Text { text: qsTr("每月费用上限（元）"); color: Theme.textSecondary; font.pixelSize: 10; font.family: Theme.fontSans; Layout.preferredWidth: 104 }
                     SpinBox {
                         id: monthlyCostSpin
+                        objectName: "monthlyCostQuotaCents"
                         Layout.fillWidth: true
                         from: 0; to: 10000000; stepSize: 1; editable: true
                         Component.onCompleted: value = Math.round(Settings.monthlyCostQuotaCents / 100)

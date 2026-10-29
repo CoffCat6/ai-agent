@@ -20,6 +20,7 @@ ScrollView {
         Item { Layout.preferredHeight: 4 }
 
         Text {
+            objectName: "mcp/servers"
             text: qsTr("MCP 服务器")
             color: Theme.textPrimary
             font.pixelSize: Theme.fontSizeH2

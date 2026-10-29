@@ -77,6 +77,7 @@ Item {
                 title: qsTr("外观")
 
                 SettingRow {
+                    objectName: "ui.themeMode"
                     label: qsTr("主题模式")
 
                     ComboBox {
@@ -105,6 +106,7 @@ Item {
                 title: qsTr("字体")
 
                 SettingRow {
+                    objectName: "ui.fontSans"
                     label: qsTr("正文字体")
 
                     ComboBox {
@@ -118,6 +120,7 @@ Item {
                 }
 
                 SettingRow {
+                    objectName: "ui.fontMono"
                     label: qsTr("等宽字体")
 
                     ComboBox {
@@ -131,6 +134,7 @@ Item {
                 }
 
                 SettingRow {
+                    objectName: "ui.baseFontSize"
                     label: qsTr("基础字号")
 
                     RowLayout {
@@ -208,6 +212,7 @@ Item {
                 title: qsTr("语言")
 
                 SettingRow {
+                    objectName: "ui.locale"
                     label: qsTr("界面语言")
 
                     ComboBox {
@@ -251,6 +256,7 @@ Item {
                 title: qsTr("窗口布局")
 
                 SettingRow {
+                    objectName: "ui.defaultSidebarWidth"
                     label: qsTr("侧边栏默认宽度")
 
                     SpinBox {
@@ -268,6 +274,7 @@ Item {
                 }
 
                 SettingRow {
+                    objectName: "ui.defaultPanelWidth"
                     label: qsTr("面板默认宽度")
 
                     SpinBox {
@@ -283,6 +290,7 @@ Item {
                 }
 
                 SettingRow {
+                    objectName: "ui.defaultSidebarExpanded"
                     label: qsTr("侧边栏默认展开")
 
                     Switch {
@@ -294,6 +302,7 @@ Item {
                 }
 
                 SettingRow {
+                    objectName: "ui.defaultPanelVisible"
                     label: qsTr("面板默认展开")
 
                     Switch {
@@ -305,6 +314,7 @@ Item {
                 }
 
                 SettingRow {
+                    objectName: "ui.restoreWindowOnStartup"
                     label: qsTr("启动时恢复窗口")
 
                     Switch {

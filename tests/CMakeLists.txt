@@ -42,10 +42,7 @@ target_compile_definitions(test_chat_workflows PRIVATE NEXUSAI_TESTING NEXUS_SOU
 file(GLOB_RECURSE NEXUS_WORKFLOW_QML CONFIGURE_DEPENDS "${CMAKE_SOURCE_DIR}/src/ui/*.qml")
 qt_add_resources(test_chat_workflows "workflow_ui"
     PREFIX "/qt/qml/NexusAI" BASE "${CMAKE_SOURCE_DIR}" FILES ${NEXUS_WORKFLOW_QML}
-    # docs/17 B6: SettingsCenterDialog 的搜索索引是 .js —— 上面的 glob 只
-    # 匹配 *.qml，漏掉会让 main.qml 在测试里加载失败（设置中心不可用）。
-    "${CMAKE_SOURCE_DIR}/src/ui/components/settings-search.js"
-    # 审阅树的路径索引同理：ChangeTree.qml 相对导入它。
+    # 审阅树的路径索引是 .js —— 上面的 glob 只匹配 *.qml。
     "${CMAKE_SOURCE_DIR}/src/ui/components/FileTree.js")
 add_test(NAME test_chat_workflows COMMAND test_chat_workflows -platform offscreen)
 set_tests_properties(test_chat_workflows PROPERTIES

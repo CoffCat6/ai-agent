@@ -57,6 +57,7 @@ Item {
                 title: qsTr("文件读取沙箱")
 
                 SettingRow {
+                    objectName: "security/allowFullDiskRead"
                     label: qsTr("允许读取整个磁盘")
                     description: qsTr("关闭时读取仅限文档/下载/桌面/应用目录与当前项目；开启后除系统目录与黑名单外全部可读，模型读到的内容可能发送给云端模型。")
 
@@ -69,6 +70,7 @@ Item {
 
                 // docs/17 P1-4: 项目目录写入放行（默认只读）。
                 SettingRow {
+                    objectName: "security/allowProjectWrite"
                     label: qsTr("允许写入当前项目目录")
                     description: qsTr("默认项目目录只读，写入仅限用户目录；开启后模型可以修改当前项目中的文件（写入类工具仍受会话权限模式约束，黑名单始终优先）。")
 
@@ -81,6 +83,7 @@ Item {
 
                 // ── 用户黑名单编辑器 ──
                 Text {
+                    objectName: "security/readDenyList"
                     text: qsTr("黑名单（始终拒绝，优先于一切允许规则）")
                     color: Theme.textSecondary
                     font.pixelSize: Theme.fontSizeCaption
@@ -245,6 +248,7 @@ Item {
                 title: qsTr("隐私门")
 
                 SettingRow {
+                    objectName: "security/localOnlyMode"
                     label: qsTr("仅本地模式")
                     description: qsTr("使用云端模型时拦截知识库搜索、联网搜索与全部 MCP 工具（工具页会显示拦截徽标）；本地模型不受影响。")
 
@@ -256,6 +260,7 @@ Item {
                 }
 
                 SettingRow {
+                    objectName: "security/allowLocalNetworkFetch"
                     label: qsTr("允许 http_fetch 访问本机与内网地址")
                     description: qsTr("关闭时 http_fetch 拒绝本机/内网目标（防 SSRF）；仅在确有访问内网服务的需求时开启。")
 

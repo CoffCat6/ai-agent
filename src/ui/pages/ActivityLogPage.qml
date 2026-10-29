@@ -86,6 +86,7 @@ Item {
                 spacing: 2
 
                 Text {
+                    objectName: "activity/log"
                     text: qsTr("活动记录")
                     color: Theme.textPrimary
                     font.pixelSize: Theme.fontSizeH2
