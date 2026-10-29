@@ -41,14 +41,14 @@ Item {
     ColumnLayout {
         id: layout
         anchors.fill: parent
-        spacing: 4
+        spacing: Theme.spaceXs
 
         Text {
             text: control.displayName
             color: Theme.textSecondary
             font.pixelSize: Theme.fontSizeCaption
-            font.bold: true
-            font.family: Theme.fontMono
+            font.family: Theme.fontSans
+            elide: Text.ElideRight
             Layout.fillWidth: true
         }
 
@@ -83,7 +83,7 @@ Item {
         RowLayout {
             visible: control.meta && control.meta.type === "Int"
             Layout.fillWidth: true
-            spacing: 8
+            spacing: Theme.spaceSm
 
             readonly property var range: control.meta ? control.meta.constraint : null
 
@@ -122,8 +122,8 @@ Item {
             font.pixelSize: Theme.fontSizeBody
             font.family: Theme.fontSans
             background: Rectangle {
-                radius: 6
-                color: Theme.bgPrimary
+                radius: Theme.radiusField
+                color: Theme.surfaceHover
                 border.width: stringField.activeFocus ? 2 : 1
                 border.color: stringField.activeFocus ? Theme.brandPrimary : Theme.borderSubtle
             }
@@ -134,7 +134,7 @@ Item {
             visible: control.errorMessage.length > 0
             text: control.errorMessage
             color: Theme.statusDanger
-            font.pixelSize: 10
+            font.pixelSize: Theme.fontSizeCaption
             font.family: Theme.fontSans
             Layout.fillWidth: true
         }

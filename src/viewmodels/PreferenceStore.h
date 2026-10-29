@@ -31,6 +31,9 @@ public:
 
 signals:
     void persistenceError(const QString& message);
+    // 成功后回传本次实际写入的键；设置中心据此显示短暂的"已保存"回执。
+    // resetBatch 不发这个信号：复位有独立文案，避免被"已保存"覆盖。
+    void saved(const QStringList& keys);
 
 private:
     QVariant loadWithLegacy(const QString& key) const;

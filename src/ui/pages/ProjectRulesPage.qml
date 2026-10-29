@@ -125,38 +125,24 @@ Rectangle {
 
     ColumnLayout {
         anchors.fill: parent
-        spacing: 10
+        spacing: Theme.spaceSm
 
-        // ── Header (H2 title + caption, same shape as MemoryPage) ──
+        // ── Header (shared page header primitive) ──
         Item {
             Layout.fillWidth: true
-            Layout.preferredHeight: 58
-            Layout.leftMargin: 24
-            Layout.rightMargin: 24
+            Layout.preferredHeight: header.implicitHeight + Theme.spaceMd
+            Layout.leftMargin: Theme.spaceXl
+            Layout.rightMargin: Theme.spaceXl
 
-            ColumnLayout {
-                anchors.fill: parent
-                spacing: 2
-
-                Text {
-                    objectName: "projects/rules"
-                    text: qsTr("项目规则")
-                    color: Theme.textPrimary
-                    font.pixelSize: Theme.fontSizeH2
-                    font.bold: true
-                    font.family: Theme.fontSans
-                    Accessible.name: text
-                }
-
-                Text {
-                    text: qsTr("每个项目一份 AGENTS.md，注入该项目会话的系统提示；每次任务前自动重读，保存后下一条消息即生效。")
-                    color: Theme.textSecondary
-                    font.pixelSize: 10
-                    font.family: Theme.fontSans
-                    opacity: 0.8
-                    wrapMode: Text.Wrap
-                    Layout.fillWidth: true
-                }
+            SettingsPageHeader {
+                id: header
+                objectName: "projects/rules"
+                anchors.left: parent.left
+                anchors.right: parent.right
+                anchors.top: parent.top
+                anchors.topMargin: Theme.spaceXs
+                title: qsTr("项目规则")
+                description: qsTr("每个项目一份 AGENTS.md，注入该项目会话的系统提示；每次任务前自动重读，保存后下一条消息即生效。")
             }
         }
 
@@ -164,8 +150,8 @@ Rectangle {
         Rectangle {
             Layout.fillWidth: true
             Layout.preferredHeight: 148
-            Layout.leftMargin: 24
-            Layout.rightMargin: 24
+            Layout.leftMargin: Theme.spaceXl
+            Layout.rightMargin: Theme.spaceXl
             radius: Theme.radiusMd
             color: Theme.bgPrimary
             border.width: 1
@@ -177,18 +163,18 @@ Rectangle {
                 id: projectList
                 objectName: "projectRulesProjectList"
                 anchors.fill: parent
-                anchors.margins: 4
+                anchors.margins: Theme.spaceXs
                 clip: true
                 model: AgentVM.projects
                 spacing: 2
-                ScrollBar.vertical: ScrollBar {}
+                ScrollBar.vertical: AppScrollBar {}
 
                 delegate: Rectangle {
                     id: projectDelegate
                     required property var modelData
                     width: projectList.width - 8
                     height: 34
-                    radius: 6
+                    radius: Theme.radiusField
                     readonly property bool selected: root.selectedProject !== null
                         && root.selectedProject.id === modelData.id
                     color: selected || projectMouse.hovered
@@ -207,9 +193,9 @@ Rectangle {
 
                     RowLayout {
                         anchors.fill: parent
-                        anchors.leftMargin: 10
-                        anchors.rightMargin: 10
-                        spacing: 8
+                        anchors.leftMargin: Theme.spaceMd
+                        anchors.rightMargin: Theme.spaceMd
+                        spacing: Theme.spaceSm
 
                         AppIcon {
                             Layout.alignment: Qt.AlignVCenter
@@ -235,7 +221,7 @@ Rectangle {
                             Layout.maximumWidth: 220
                             text: projectDelegate.modelData.rootPath
                             color: Theme.textTertiary
-                            font.pixelSize: 9
+                            font.pixelSize: Theme.fontSizeMicro
                             font.family: Theme.fontMono
                             elide: Text.ElideMiddle
                         }
@@ -245,7 +231,7 @@ Rectangle {
                             Layout.alignment: Qt.AlignVCenter
                             Layout.preferredWidth: 7
                             Layout.preferredHeight: 7
-                            radius: 4
+                            radius: Theme.radiusField
                             color: {
                                 root.stateRevision
                                 return root.stateMeta(AgentVM.projectRulesState(
@@ -262,8 +248,8 @@ Rectangle {
             objectName: "projectRulesNoProjectsCard"
             Layout.fillWidth: true
             Layout.fillHeight: true
-            Layout.leftMargin: 24
-            Layout.rightMargin: 24
+            Layout.leftMargin: Theme.spaceXl
+            Layout.rightMargin: Theme.spaceXl
             radius: Theme.radiusMd
             color: Theme.bgPrimary
             border.width: 1
@@ -273,12 +259,11 @@ Rectangle {
             Text {
                 objectName: "projectRulesNoProjects"
                 anchors.centerIn: parent
-                width: parent.width - 48
+                width: parent.width - Theme.spaceXl * 2
                 text: qsTr("尚未导入任何项目。先在侧栏导入项目文件夹，即可为它配置规则。")
                 color: Theme.textSecondary
                 font.pixelSize: Theme.fontSizeBody
                 font.family: Theme.fontSans
-                opacity: 0.7
                 horizontalAlignment: Text.AlignHCenter
                 wrapMode: Text.Wrap
             }
@@ -288,16 +273,16 @@ Rectangle {
         ColumnLayout {
             Layout.fillWidth: true
             Layout.fillHeight: true
-            Layout.leftMargin: 24
-            Layout.rightMargin: 24
-            Layout.bottomMargin: 6
-            spacing: 8
+            Layout.leftMargin: Theme.spaceXl
+            Layout.rightMargin: Theme.spaceXl
+            Layout.bottomMargin: Theme.spaceXs
+            spacing: Theme.spaceSm
             visible: root.selectedProject !== null
 
             // Toolbar: file identity + byte budget + status pill + external.
             RowLayout {
                 Layout.fillWidth: true
-                spacing: 8
+                spacing: Theme.spaceSm
 
                 Text {
                     Layout.fillWidth: true
@@ -317,7 +302,7 @@ Rectangle {
                         .arg(root.rulesMaxBytes)
                     color: root.utf8Bytes(rulesArea.text) > root.rulesMaxBytes
                         ? Theme.statusWarning : Theme.textTertiary
-                    font.pixelSize: 9
+                    font.pixelSize: Theme.fontSizeMicro
                     font.family: Theme.fontMono
                 }
 
@@ -325,7 +310,7 @@ Rectangle {
                     Layout.alignment: Qt.AlignVCenter
                     Layout.preferredHeight: 18
                     Layout.preferredWidth: statePillText.implicitWidth + 16
-                    radius: 9
+                    radius: Theme.radiusBadge
                     border.width: 1
                     border.color: {
                         root.stateRevision
@@ -344,7 +329,7 @@ Rectangle {
                             root.stateRevision
                             return root.stateMeta(root.currentState()).color
                         }
-                        font.pixelSize: 9
+                        font.pixelSize: Theme.fontSizeMicro
                         font.family: Theme.fontSans
                     }
                 }
@@ -359,7 +344,7 @@ Rectangle {
                     }
                     Layout.preferredWidth: 22
                     Layout.preferredHeight: 22
-                    radius: 4
+                    radius: Theme.radiusField
                     icon: "export"
                     iconSize: 11
                     tooltip: qsTr("在系统编辑器中打开")
@@ -388,15 +373,15 @@ Rectangle {
 
                 RowLayout {
                     anchors.fill: parent
-                    anchors.leftMargin: 10
-                    anchors.rightMargin: 8
-                    spacing: 8
+                    anchors.leftMargin: Theme.spaceMd
+                    anchors.rightMargin: Theme.spaceSm
+                    spacing: Theme.spaceSm
 
                     Text {
                         Layout.fillWidth: true
                         text: qsTr("AGENTS.md 已被外部编辑器修改，重新加载将丢弃本地未保存的修改。")
                         color: Theme.textPrimary
-                        font.pixelSize: 9
+                        font.pixelSize: Theme.fontSizeMicro
                         font.family: Theme.fontSans
                         elide: Text.ElideRight
                     }
@@ -452,7 +437,7 @@ Rectangle {
                         font.family: Theme.fontMono
                         font.pixelSize: Theme.fontSizeCaption
                         background: null
-                        padding: 10
+                        padding: Theme.spaceMd
                         placeholderTextColor: Theme.textTertiary
                         placeholderText: {
                             root.stateRevision
@@ -484,7 +469,7 @@ Rectangle {
                 text: qsTr("规则计入上下文预算，注入上限 %1 KB，超出部分自动截断；未编辑的模板不会被注入。")
                     .arg(Math.round(root.rulesMaxBytes / 1024))
                 color: Theme.textTertiary
-                font.pixelSize: 9
+                font.pixelSize: Theme.fontSizeMicro
                 font.family: Theme.fontSans
                 wrapMode: Text.Wrap
             }
@@ -494,9 +479,9 @@ Rectangle {
         Rectangle {
             Layout.fillWidth: true
             Layout.fillHeight: true
-            Layout.leftMargin: 24
-            Layout.rightMargin: 24
-            Layout.bottomMargin: 6
+            Layout.leftMargin: Theme.spaceXl
+            Layout.rightMargin: Theme.spaceXl
+            Layout.bottomMargin: Theme.spaceXs
             radius: Theme.radiusMd
             color: Theme.bgPrimary
             border.width: 1
@@ -505,12 +490,11 @@ Rectangle {
 
             Text {
                 anchors.centerIn: parent
-                width: parent.width - 48
+                width: parent.width - Theme.spaceXl * 2
                 text: qsTr("从上方选择一个项目，查看并编辑它的 AGENTS.md")
                 color: Theme.textSecondary
                 font.pixelSize: Theme.fontSizeBody
                 font.family: Theme.fontSans
-                opacity: 0.7
                 horizontalAlignment: Text.AlignHCenter
                 wrapMode: Text.Wrap
             }

@@ -19,15 +19,18 @@ ColumnLayout {
     default property alias content: body.data
 
     Layout.fillWidth: true
-    spacing: 8
+    spacing: Theme.spaceSm
 
     Text {
         visible: root.title !== ""
+        Layout.fillWidth: true
         text: root.title
         color: Theme.textSecondary
         font.pixelSize: Theme.fontSizeCaption
         font.bold: true
         font.family: Theme.fontMono
+        font.letterSpacing: 0.4
+        elide: Text.ElideRight
     }
 
     Text {
@@ -37,13 +40,12 @@ ColumnLayout {
         color: Theme.textSecondary
         font.pixelSize: Theme.fontSizeCaption
         font.family: Theme.fontSans
-        opacity: 0.8
         wrapMode: Text.Wrap
     }
 
     ColumnLayout {
         id: body
         Layout.fillWidth: true
-        spacing: 10
+        spacing: Theme.spaceMd
     }
 }

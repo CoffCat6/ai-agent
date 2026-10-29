@@ -899,6 +899,23 @@ private slots:
         QCOMPARE(QSettings("NexusAI", "NexusAI").value("agent/maxSteps").toInt(), 42);
     }
 
+    // 设置中心底栏的"已保存"回执依赖这个信号：只在真正写入成功后发一次，
+    // 相同值的重复赋值不应该刷新回执（否则页面重建也会闪"已保存"）。
+    void settingSavedReportsSuccessfulWritesOnly() {
+        SettingsGuard guard;
+        QSettings("NexusAI", "NexusAI").remove("agent/maxSteps");
+        SettingsService svc(nullptr);
+        QSignalSpy savedSpy(&svc, &SettingsService::settingSaved);
+
+        svc.setMaxSteps(42);
+        QCOMPARE(savedSpy.count(), 1);
+        QCOMPARE(savedSpy.takeFirst().at(0).toString(),
+                 QStringLiteral("agent/maxSteps"));
+
+        svc.setMaxSteps(42);
+        QCOMPARE(savedSpy.count(), 0);
+    }
+
     void taskTimeoutClampsAndPersists() {
         SettingsGuard guard;
         QSettings("NexusAI", "NexusAI").remove("agent/taskTimeoutMinutes");
@@ -2188,19 +2205,28 @@ Item {
 
 
         PreferenceStore store(nullptr);
+        QSignalSpy savedSpy(&store, &PreferenceStore::saved);
         QCOMPARE(store.load("window.closeToTray"), QVariant(false));
         QVERIFY(!store.hasStoredValue("window.closeToTray"));
         QVERIFY(!store.saveBatch({{QStringLiteral("window.closeToTray"), true},
                                  {QStringLiteral("not.registered"), true}}));
+        QCOMPARE(savedSpy.count(), 0);
         QCOMPARE(store.load("window.closeToTray"), QVariant(false));
         QVERIFY(store.saveBatch({{QStringLiteral("window.closeToTray"), true},
                                  {QStringLiteral("notice.enabled"), false}}));
+        QCOMPARE(savedSpy.count(), 1);
+        const QStringList savedKeys = savedSpy.takeFirst().at(0).toStringList();
+        QCOMPARE(savedKeys.size(), 2);
+        QVERIFY(savedKeys.contains("window.closeToTray"));
+        QVERIFY(savedKeys.contains("notice.enabled"));
         QCOMPARE(store.load("window.closeToTray"), QVariant(true));
         QCOMPARE(store.load("notice.enabled"), QVariant(false));
         QVERIFY(store.hasStoredValue("window.closeToTray"));
 
         QVERIFY(store.resetBatch({QStringLiteral("window.closeToTray"),
                                   QStringLiteral("notice.enabled")}));
+        // 复位有独立反馈，不能被通用的"已保存"覆盖。
+        QCOMPARE(savedSpy.count(), 0);
         QCOMPARE(store.load("window.closeToTray"), QVariant(false));
         QCOMPARE(store.load("notice.enabled"), QVariant(true));
         QVERIFY(!store.hasStoredValue("window.closeToTray"));

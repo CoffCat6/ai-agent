@@ -42,32 +42,18 @@ Item {
         // ── 页头 ────────────────────────────────────────
         Item {
             Layout.fillWidth: true
-            Layout.preferredHeight: 58
-            Layout.leftMargin: 24
-            Layout.rightMargin: 24
+            Layout.preferredHeight: header.implicitHeight + Theme.spaceLg
+            Layout.leftMargin: Theme.spaceXl
+            Layout.rightMargin: Theme.spaceXl
 
-            ColumnLayout {
-                anchors.fill: parent
-                spacing: 2
-
-                Text {
-                    text: qsTr("提示词与指令")
-                    color: Theme.textPrimary
-                    font.pixelSize: Theme.fontSizeH2
-                    font.bold: true
-                    font.family: Theme.fontSans
-                    Accessible.name: text
-                }
-                Text {
-                    text: qsTr("系统提示预设、斜杠指令与会话模板。改动即时保存。")
-                    color: Theme.textSecondary
-                    font.pixelSize: 10
-                    font.family: Theme.fontSans
-                    opacity: 0.8
-                    Layout.fillWidth: true
-                    Layout.minimumWidth: 0
-                    wrapMode: Text.Wrap
-                }
+            SettingsPageHeader {
+                id: header
+                anchors.left: parent.left
+                anchors.right: parent.right
+                anchors.top: parent.top
+                anchors.topMargin: Theme.spaceXs
+                title: qsTr("提示词与指令")
+                description: qsTr("系统提示预设、斜杠指令与会话模板。改动即时保存。")
             }
         }
 
@@ -76,23 +62,24 @@ Item {
 
             Layout.fillWidth: true
             Layout.fillHeight: true
-            Layout.leftMargin: 16
-            Layout.rightMargin: 16
-            Layout.bottomMargin: 12
+            Layout.leftMargin: Theme.spaceXl
+            Layout.rightMargin: Theme.spaceXl
+            Layout.bottomMargin: Theme.spaceMd
             contentWidth: availableWidth
             clip: true
+            ScrollBar.vertical: AppScrollBar {}
 
             ColumnLayout {
                 // 限定引用：子项作用域里裸的 availableWidth 解析不到
                 // ScrollView 的属性，绑定死亡后宽度回退到隐式宽度（未折行
                 // 文本 ≈860px），整页内容被推出对话框右侧、按钮全部不可见。
                 width: assetsScroll.availableWidth
-                spacing: 20
+                spacing: Theme.spaceXl
 
                 // ══ 1. 系统提示预设 ══════════════════════════
                 ColumnLayout {
                     Layout.fillWidth: true
-                    spacing: 8
+                    spacing: Theme.spaceSm
 
                     RowLayout {
                         objectName: "prompts/presets"
@@ -115,7 +102,7 @@ Item {
                         Layout.minimumWidth: 0
                         text: qsTr("整段角色设定（如「严谨的技术评审」）。在输入框下方的预设选择器里套用到当前会话；覆盖全局系统提示词，删除预设不影响已套用的会话。")
                         color: Theme.textSecondary
-                        font.pixelSize: 10
+                        font.pixelSize: Theme.fontSizeCaption
                         wrapMode: Text.Wrap
                     }
 
@@ -124,8 +111,8 @@ Item {
                         delegate: Rectangle {
                             required property var modelData
                             Layout.fillWidth: true
-                            implicitHeight: presetCol.implicitHeight + 20
-                            radius: 6
+                            implicitHeight: presetCol.implicitHeight + Theme.spaceLg
+                            radius: Theme.radiusField
                             color: Theme.bgPrimary
                             border.width: 1
                             border.color: Theme.borderSubtle
@@ -134,8 +121,8 @@ Item {
                                 id: presetCol
                                 anchors.left: parent.left
                                 anchors.right: parent.right
-                                anchors.margins: 10
-                                spacing: 4
+                                anchors.margins: Theme.spaceMd
+                                spacing: Theme.spaceXs
 
                                 RowLayout {
                                     Layout.fillWidth: true
@@ -183,7 +170,7 @@ Item {
                     ColumnLayout {
                         visible: page.editing !== null && page.editing.section === "preset"
                         Layout.fillWidth: true
-                        spacing: 6
+                        spacing: Theme.spaceXs
 
                         TextField {
                             id: presetName
@@ -201,7 +188,7 @@ Item {
                             font.pixelSize: Theme.fontSizeCaption
                             placeholderText: qsTr("完整的系统提示词内容…")
                             background: Rectangle {
-                                radius: 6
+                                radius: Theme.radiusField
                                 color: Theme.codeBackground
                                 border.width: 1
                                 border.color: Theme.borderSubtle
@@ -236,7 +223,7 @@ Item {
                 // ══ 2. 斜杠指令 ══════════════════════════════
                 ColumnLayout {
                     Layout.fillWidth: true
-                    spacing: 8
+                    spacing: Theme.spaceSm
 
                     RowLayout {
                         objectName: "prompts/slash"
@@ -259,7 +246,7 @@ Item {
                         Layout.minimumWidth: 0
                         text: qsTr("输入框以「/指令」开头发送即展开为模板。模板中的 {text} 会被替换为指令后输入的内容；没有占位符时内容附在模板之后。")
                         color: Theme.textSecondary
-                        font.pixelSize: 10
+                        font.pixelSize: Theme.fontSizeCaption
                         wrapMode: Text.Wrap
                     }
 
@@ -268,8 +255,8 @@ Item {
                         delegate: Rectangle {
                             required property var modelData
                             Layout.fillWidth: true
-                            implicitHeight: slashCol.implicitHeight + 20
-                            radius: 6
+                            implicitHeight: slashCol.implicitHeight + Theme.spaceLg
+                            radius: Theme.radiusField
                             color: Theme.bgPrimary
                             border.width: 1
                             border.color: Theme.borderSubtle
@@ -278,8 +265,8 @@ Item {
                                 id: slashCol
                                 anchors.left: parent.left
                                 anchors.right: parent.right
-                                anchors.margins: 10
-                                spacing: 4
+                                anchors.margins: Theme.spaceMd
+                                spacing: Theme.spaceXs
 
                                 RowLayout {
                                     Layout.fillWidth: true
@@ -331,7 +318,7 @@ Item {
                     ColumnLayout {
                         visible: page.editing !== null && page.editing.section === "slash"
                         Layout.fillWidth: true
-                        spacing: 6
+                        spacing: Theme.spaceXs
 
                         RowLayout {
                             Layout.fillWidth: true
@@ -343,6 +330,12 @@ Item {
                                 placeholderText: qsTr("指令名（不含斜杠，如 review）")
                                 color: Theme.textPrimary
                                 font.pixelSize: Theme.fontSizeBody
+                                background: Rectangle {
+                                    radius: Theme.radiusField
+                                    color: Theme.surfaceHover
+                                    border.width: slashName.activeFocus ? 2 : 1
+                                    border.color: slashName.activeFocus ? Theme.brandPrimary : Theme.borderSubtle
+                                }
                             }
                         }
                         TextField {
@@ -351,6 +344,12 @@ Item {
                             placeholderText: qsTr("说明（可选，显示在指令列表）")
                             color: Theme.textPrimary
                             font.pixelSize: Theme.fontSizeBody
+                            background: Rectangle {
+                                radius: Theme.radiusField
+                                color: Theme.surfaceHover
+                                border.width: slashNote.activeFocus ? 2 : 1
+                                border.color: slashNote.activeFocus ? Theme.brandPrimary : Theme.borderSubtle
+                            }
                         }
                         TextArea {
                             id: slashTemplate
@@ -361,7 +360,7 @@ Item {
                             font.pixelSize: Theme.fontSizeCaption
                             placeholderText: qsTr("展开模板…含 {text} 占位符")
                             background: Rectangle {
-                                radius: 6
+                                radius: Theme.radiusField
                                 color: Theme.codeBackground
                                 border.width: 1
                                 border.color: Theme.borderSubtle
@@ -397,7 +396,7 @@ Item {
                 // ══ 3. 会话模板 ══════════════════════════════
                 ColumnLayout {
                     Layout.fillWidth: true
-                    spacing: 8
+                    spacing: Theme.spaceSm
 
                     RowLayout {
                         objectName: "prompts/templates"
@@ -420,7 +419,7 @@ Item {
                         Layout.minimumWidth: 0
                         text: qsTr("三个入口都能用：侧栏「新对话」右缘的箭头、会话标签栏「+」的右键/长按、以及空会话页的「从模板开始」。一键按预置的模型配置、权限模式与首条消息开新会话；首条消息进入输入框待确认，不会自动发送。")
                         color: Theme.textSecondary
-                        font.pixelSize: 10
+                        font.pixelSize: Theme.fontSizeCaption
                         wrapMode: Text.Wrap
                     }
 
@@ -445,8 +444,8 @@ Item {
                                 return qsTr("配置不变")
                             }
                             Layout.fillWidth: true
-                            implicitHeight: tmplCol.implicitHeight + 20
-                            radius: 6
+                            implicitHeight: tmplCol.implicitHeight + Theme.spaceLg
+                            radius: Theme.radiusField
                             color: Theme.bgPrimary
                             border.width: 1
                             border.color: Theme.borderSubtle
@@ -455,8 +454,8 @@ Item {
                                 id: tmplCol
                                 anchors.left: parent.left
                                 anchors.right: parent.right
-                                anchors.margins: 10
-                                spacing: 4
+                                anchors.margins: Theme.spaceMd
+                                spacing: Theme.spaceXs
 
                                 RowLayout {
                                     Layout.fillWidth: true
@@ -510,7 +509,7 @@ Item {
                     ColumnLayout {
                         visible: page.editing !== null && page.editing.section === "template"
                         Layout.fillWidth: true
-                        spacing: 6
+                        spacing: Theme.spaceXs
 
                         TextField {
                             id: tmplName
@@ -518,6 +517,12 @@ Item {
                             placeholderText: qsTr("模板名称（如：代码审查）")
                             color: Theme.textPrimary
                             font.pixelSize: Theme.fontSizeBody
+                            background: Rectangle {
+                                radius: Theme.radiusField
+                                color: Theme.surfaceHover
+                                border.width: tmplName.activeFocus ? 2 : 1
+                                border.color: tmplName.activeFocus ? Theme.brandPrimary : Theme.borderSubtle
+                            }
                         }
                         RowLayout {
                             Layout.fillWidth: true
@@ -552,7 +557,7 @@ Item {
                             font.pixelSize: Theme.fontSizeCaption
                             placeholderText: qsTr("首条消息（可选，进入输入框待确认）")
                             background: Rectangle {
-                                radius: 6
+                                radius: Theme.radiusField
                                 color: Theme.codeBackground
                                 border.width: 1
                                 border.color: Theme.borderSubtle

@@ -274,6 +274,12 @@ qt_add_qml_module(nexus_ai
         src/ui/components/SettingRow.qml
         src/ui/components/SettingsField.qml
         src/ui/components/SettingsSection.qml
+        # 设置页连接测试/保存反馈的统一状态行
+        src/ui/components/StatusLine.qml
+        # 设置页统一骨架 / 页头 / 主题化滚动条（视觉底座）
+        src/ui/components/SettingsPage.qml
+        src/ui/components/SettingsPageHeader.qml
+        src/ui/components/AppScrollBar.qml
         src/ui/components/SplitBar.qml
         src/ui/components/TopBar.qml
         src/ui/components/ThinkingEffortSelector.qml

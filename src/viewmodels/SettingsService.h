@@ -446,6 +446,9 @@ public:
 
 signals:
     void persistenceError(const QString& message);
+    // 单个键写入成功。设置中心的底栏用它给即时保存一个可见回执；装载/迁移
+    // 不经过 persistValue，因此不会在启动时误报"已保存"。
+    void settingSaved(const QString& key);
     void profilesChanged();
     void promptPresetsChanged();
     void slashCommandsChanged();

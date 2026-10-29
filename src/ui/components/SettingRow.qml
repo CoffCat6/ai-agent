@@ -24,7 +24,7 @@ RowLayout {
     default property alias content: controlBox.data
 
     Layout.fillWidth: true
-    spacing: 12
+    spacing: Theme.spaceMd
 
     Accessible.role: Accessible.Grouping
     Accessible.name: root.label
@@ -32,7 +32,7 @@ RowLayout {
     ColumnLayout {
         Layout.fillWidth: true
         Layout.minimumWidth: 0
-        spacing: 2
+        spacing: Theme.spaceXs
 
         Text {
             Layout.fillWidth: true
@@ -50,7 +50,6 @@ RowLayout {
             color: Theme.textSecondary
             font.pixelSize: Theme.fontSizeCaption
             font.family: Theme.fontSans
-            opacity: 0.8
             wrapMode: Text.Wrap
         }
     }
@@ -58,6 +57,6 @@ RowLayout {
     ColumnLayout {
         id: controlBox
         Layout.alignment: Qt.AlignVCenter
-        spacing: 4
+        spacing: Theme.spaceXs
     }
 }

@@ -194,9 +194,34 @@ public:
     Q_PROPERTY(int spaceXl READ spaceXl CONSTANT FINAL)
     int spaceXl() const { return 24; }
 
+    // ── Control width scale ────────────────────────────
+    // 设置页右侧控件的统一宽度刻度：同列控件尽量落在同一档，
+    // 避免每个页面各写 120/140/160/200/220/260 导致右边界参差。
+    Q_PROPERTY(int controlWidthXs READ controlWidthXs CONSTANT FINAL)
+    int controlWidthXs() const { return 120; }
+
+    Q_PROPERTY(int controlWidthSm READ controlWidthSm CONSTANT FINAL)
+    int controlWidthSm() const { return 160; }
+
+    Q_PROPERTY(int controlWidthMd READ controlWidthMd CONSTANT FINAL)
+    int controlWidthMd() const { return 200; }
+
+    Q_PROPERTY(int controlWidthLg READ controlWidthLg CONSTANT FINAL)
+    int controlWidthLg() const { return 220; }
+
+    Q_PROPERTY(int controlWidthXl READ controlWidthXl CONSTANT FINAL)
+    int controlWidthXl() const { return 260; }
+
     // ── Radius scale (docs/19 §3.3) ────────────────────
     Q_PROPERTY(int radiusSm READ radiusSm CONSTANT FINAL)
     int radiusSm() const { return 4; }
+
+    // 表单输入框与按钮共用的 6px 圆角；徽标/胶囊用 9px（高度 18 的一半）。
+    Q_PROPERTY(int radiusField READ radiusField CONSTANT FINAL)
+    int radiusField() const { return 6; }
+
+    Q_PROPERTY(int radiusBadge READ radiusBadge CONSTANT FINAL)
+    int radiusBadge() const { return 9; }
 
     Q_PROPERTY(int radiusMd READ radiusMd CONSTANT FINAL)
     int radiusMd() const { return 8; }
@@ -247,8 +272,13 @@ public:
     Q_PROPERTY(int fontSizeBody READ fontSizeBody NOTIFY themeChanged FINAL)
     int fontSizeBody() const { return m_manager->baseFontSize(); }
 
+    // 说明文字与微文案也跟随「基础字号」缩放，但各有下限：基础字号可以调到
+    // 10，直接减 2 会掉到 8px。设置页统一用这两档，不要再写死 pixelSize。
     Q_PROPERTY(int fontSizeCaption READ fontSizeCaption NOTIFY themeChanged FINAL)
-    int fontSizeCaption() const { return m_manager->baseFontSize() - 2; }
+    int fontSizeCaption() const { return qMax(11, m_manager->baseFontSize() - 2); }
+
+    Q_PROPERTY(int fontSizeMicro READ fontSizeMicro NOTIFY themeChanged FINAL)
+    int fontSizeMicro() const { return qMax(10, m_manager->baseFontSize() - 4); }
 
 signals:
     void themeChanged();

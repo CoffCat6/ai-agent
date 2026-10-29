@@ -52,39 +52,27 @@ Item {
         // ── 标题 ────────────────────────────────────────
         Item {
             Layout.fillWidth: true
-            Layout.preferredHeight: 64
-            Layout.leftMargin: 24
-            Layout.rightMargin: 24
+            Layout.preferredHeight: header.implicitHeight + Theme.spaceLg
+            Layout.leftMargin: Theme.spaceXl
+            Layout.rightMargin: Theme.spaceXl
 
-            ColumnLayout {
-                anchors.fill: parent
-                spacing: 2
-
-                Text {
-                    text: qsTr("记忆管理")
-                    color: Theme.textPrimary
-                    font.pixelSize: Theme.fontSizeH2
-                    font.bold: true
-                    font.family: Theme.fontSans
-                }
-                Text {
-                    text: qsTr("长期记忆摘要由会话自动生成，可在新会话中检索注入；删除后不可恢复。")
-                    color: Theme.textSecondary
-                    font.pixelSize: 10
-                    font.family: Theme.fontSans
-                    opacity: 0.8
-                    Layout.fillWidth: true
-                    wrapMode: Text.Wrap
-                }
+            SettingsPageHeader {
+                id: header
+                anchors.left: parent.left
+                anchors.right: parent.right
+                anchors.top: parent.top
+                anchors.topMargin: Theme.spaceXs
+                title: qsTr("记忆管理")
+                description: qsTr("长期记忆摘要由会话自动生成，可在新会话中检索注入；删除后不可恢复。")
             }
         }
 
         // ── 长期记忆与保留（docs/23 G3）──────────────────
         SettingsSection {
             Layout.fillWidth: true
-            Layout.leftMargin: 24
-            Layout.rightMargin: 24
-            Layout.bottomMargin: 8
+            Layout.leftMargin: Theme.spaceXl
+            Layout.rightMargin: Theme.spaceXl
+            Layout.bottomMargin: Theme.spaceSm
             title: qsTr("记忆与保留")
 
             SettingRow {
@@ -131,10 +119,10 @@ Item {
         // ── 搜索 + 清空 ─────────────────────────────────
         RowLayout {
             Layout.fillWidth: true
-            Layout.leftMargin: 24
-            Layout.rightMargin: 24
-            Layout.bottomMargin: 12
-            spacing: 8
+            Layout.leftMargin: Theme.spaceXl
+            Layout.rightMargin: Theme.spaceXl
+            Layout.bottomMargin: Theme.spaceMd
+            spacing: Theme.spaceSm
 
             TextField {
                 id: searchField
@@ -147,8 +135,8 @@ Item {
                 font.pixelSize: Theme.fontSizeBody
                 font.family: Theme.fontSans
                 background: Rectangle {
-                    radius: 6
-                    color: Theme.bgPrimary
+                    radius: Theme.radiusField
+                    color: Theme.surfaceHover
                     border.width: searchField.activeFocus ? 2 : 1
                     border.color: searchField.activeFocus ? Theme.brandPrimary : Theme.borderSubtle
                 }
@@ -159,7 +147,6 @@ Item {
             AppButton {
                 text: qsTr("清空全部")
                 enabled: page.episodeCount > 0
-                opacity: enabled ? 1.0 : 0.4
                 onClicked: confirmClearDialog.open()
                 Accessible.name: qsTr("清空全部长期记忆")
             }
@@ -167,9 +154,9 @@ Item {
 
         // ── 计数 ────────────────────────────────────────
         Text {
-            Layout.leftMargin: 24
-            Layout.rightMargin: 24
-            Layout.bottomMargin: 8
+            Layout.leftMargin: Theme.spaceXl
+            Layout.rightMargin: Theme.spaceXl
+            Layout.bottomMargin: Theme.spaceSm
             text: qsTr("共 %1 条记忆").arg(page.episodeCount)
             color: Theme.textSecondary
             font.pixelSize: Theme.fontSizeCaption
@@ -181,10 +168,10 @@ Item {
             objectName: "memory/episodes"
             Layout.fillWidth: true
             Layout.fillHeight: true
-            Layout.leftMargin: 16
-            Layout.rightMargin: 16
-            Layout.bottomMargin: 12
-            radius: 8
+            Layout.leftMargin: Theme.spaceXl
+            Layout.rightMargin: Theme.spaceXl
+            Layout.bottomMargin: Theme.spaceMd
+            radius: Theme.radiusMd
             color: Theme.bgPrimary
             border.width: 1
             border.color: Theme.borderSubtle
@@ -193,11 +180,11 @@ Item {
             ListView {
                 id: list
                 anchors.fill: parent
-                anchors.margins: 4
+                anchors.margins: Theme.spaceXs
                 clip: true
                 model: page.episodes
                 spacing: 2
-                ScrollBar.vertical: ScrollBar {}
+                ScrollBar.vertical: AppScrollBar {}
 
                 delegate: Rectangle {
                     id: episodeDelegate
@@ -206,8 +193,8 @@ Item {
                     // 切换条目后随 delegate 重建复位）
                     property bool summaryExpanded: false
                     width: list.width - 8
-                    implicitHeight: itemCol.implicitHeight + 20
-                    radius: 6
+                    implicitHeight: itemCol.implicitHeight + Theme.spaceLg
+                    radius: Theme.radiusField
                     color: itemHover.hovered ? Theme.bgSecondary : "transparent"
 
                     HoverHandler { id: itemHover }
@@ -217,9 +204,9 @@ Item {
                         anchors.left: parent.left
                         anchors.right: parent.right
                         anchors.verticalCenter: parent.verticalCenter
-                        anchors.leftMargin: 12
-                        anchors.rightMargin: 12
-                        spacing: 6
+                        anchors.leftMargin: Theme.spaceMd
+                        anchors.rightMargin: Theme.spaceMd
+                        spacing: Theme.spaceXs
 
                         Text {
                             id: summaryText
@@ -254,7 +241,7 @@ Item {
 
                         RowLayout {
                             Layout.fillWidth: true
-                            spacing: 12
+                            spacing: Theme.spaceMd
 
                             Text {
                                 text: Theme.formatDateTime(new Date(modelData.timestamp))
@@ -268,7 +255,6 @@ Item {
                                 color: Theme.textSecondary
                                 font.pixelSize: Theme.fontSizeCaption
                                 font.family: Theme.fontMono
-                                opacity: 0.8
                                 elide: Text.ElideRight
                                 Layout.fillWidth: true
                             }
@@ -293,8 +279,7 @@ Item {
                 color: Theme.textSecondary
                 font.pixelSize: Theme.fontSizeBody
                 font.family: Theme.fontSans
-                opacity: 0.7
-                width: parent.width - 48
+                width: parent.width - Theme.spaceXl * 2
                 horizontalAlignment: Text.AlignHCenter
                 wrapMode: Text.Wrap
             }
@@ -311,24 +296,24 @@ Item {
 
         background: DialogBackground {}
         contentItem: ColumnLayout {
-            spacing: 12
+            spacing: Theme.spaceMd
             Text {
                 text: qsTr("确认清空全部长期记忆？此操作不可恢复。")
                 color: Theme.textPrimary
                 font.pixelSize: Theme.fontSizeBody
                 font.family: Theme.fontSans
-                Layout.leftMargin: 20
-                Layout.topMargin: 20
-                Layout.rightMargin: 20
+                Layout.leftMargin: Theme.spaceXl
+                Layout.topMargin: Theme.spaceXl
+                Layout.rightMargin: Theme.spaceXl
                 wrapMode: Text.Wrap
                 Layout.fillWidth: true
             }
             Item { Layout.fillHeight: true }
             RowLayout {
                 Layout.fillWidth: true
-                Layout.rightMargin: 20
-                Layout.bottomMargin: 16
-                spacing: 8
+                Layout.rightMargin: Theme.spaceXl
+                Layout.bottomMargin: Theme.spaceLg
+                spacing: Theme.spaceSm
                 Item { Layout.fillWidth: true }
                 AppButton {
                     text: qsTr("取消")

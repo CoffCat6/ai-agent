@@ -77,31 +77,19 @@ Item {
         // ── 标题 ────────────────────────────────────────
         Item {
             Layout.fillWidth: true
-            Layout.preferredHeight: 64
-            Layout.leftMargin: 24
-            Layout.rightMargin: 24
+            Layout.preferredHeight: header.implicitHeight + Theme.spaceLg
+            Layout.leftMargin: Theme.spaceXl
+            Layout.rightMargin: Theme.spaceXl
 
-            ColumnLayout {
-                anchors.fill: parent
-                spacing: 2
-
-                Text {
-                    objectName: "activity/log"
-                    text: qsTr("活动记录")
-                    color: Theme.textPrimary
-                    font.pixelSize: Theme.fontSizeH2
-                    font.bold: true
-                    font.family: Theme.fontSans
-                }
-                Text {
-                    text: qsTr("浏览操作与网络请求的使用轨迹。仅记录操作元数据（操作类型、对象、结果），不包含对话内容、文档内容与 API 密钥。")
-                    color: Theme.textSecondary
-                    font.pixelSize: 10
-                    font.family: Theme.fontSans
-                    opacity: 0.8
-                    Layout.fillWidth: true
-                    wrapMode: Text.Wrap
-                }
+            SettingsPageHeader {
+                id: header
+                objectName: "activity/log"
+                anchors.left: parent.left
+                anchors.right: parent.right
+                anchors.top: parent.top
+                anchors.topMargin: Theme.spaceXs
+                title: qsTr("活动记录")
+                description: qsTr("浏览操作与网络请求的使用轨迹。仅记录操作元数据（操作类型、对象、结果），不包含对话内容、文档内容与 API 密钥。")
             }
         }
 
@@ -110,38 +98,38 @@ Item {
             id: flick
             Layout.fillWidth: true
             Layout.fillHeight: true
-            Layout.leftMargin: 24
-            Layout.rightMargin: 24
-            Layout.bottomMargin: 12
+            Layout.leftMargin: Theme.spaceXl
+            Layout.rightMargin: Theme.spaceXl
+            Layout.bottomMargin: Theme.spaceMd
             clip: true
             contentWidth: width
             contentHeight: detailCol.implicitHeight
 
-            ScrollBar.vertical: ScrollBar {}
+            ScrollBar.vertical: AppScrollBar {}
 
             ColumnLayout {
                 id: detailCol
                 width: flick.width
-                spacing: 16
+                spacing: Theme.spaceLg
 
                 Rectangle {
                     Layout.fillWidth: true
-                    implicitHeight: activityCol.implicitHeight + 20
-                    radius: 8
-                    color: Theme.bgPrimary
+                    implicitHeight: activityCol.implicitHeight + Theme.spaceLg
+                    radius: Theme.radiusMd
+                    color: Theme.bgSecondary
                     border.width: 1
                     border.color: Theme.borderSubtle
 
                     ColumnLayout {
                         id: activityCol
                         anchors.fill: parent
-                        anchors.margins: 10
-                        spacing: 8
+                        anchors.margins: Theme.spaceMd
+                        spacing: Theme.spaceSm
 
                         // 工具行：类别筛选 + 关键词过滤 + 计数 + 刷新
                         RowLayout {
                             Layout.fillWidth: true
-                            spacing: 8
+                            spacing: Theme.spaceSm
 
                             ComboBox {
                                 id: activityCategoryCombo
@@ -155,7 +143,7 @@ Item {
                             }
                             TextField {
                                 id: activitySearchField
-                                Layout.preferredWidth: 200
+                                Layout.preferredWidth: Theme.controlWidthMd
                                 placeholderText: qsTr("过滤操作 / 对象 / 说明…")
                                 placeholderTextColor: Theme.textSecondary
                                 color: Theme.textPrimary
@@ -163,8 +151,8 @@ Item {
                                 font.pixelSize: Theme.fontSizeCaption
                                 font.family: Theme.fontSans
                                 background: Rectangle {
-                                    radius: 6
-                                    color: Theme.bgSecondary
+                                    radius: Theme.radiusField
+                                    color: Theme.surfaceHover
                                     border.width: activitySearchField.activeFocus ? 2 : 1
                                     border.color: activitySearchField.activeFocus ? Theme.brandPrimary : Theme.borderSubtle
                                 }
@@ -192,9 +180,9 @@ Item {
                             Layout.fillWidth: true
                             Layout.preferredHeight: 360
                             clip: true
-                            spacing: 4
+                            spacing: Theme.spaceXs
                             model: page.activityEvents
-                            ScrollBar.vertical: ScrollBar {}
+                            ScrollBar.vertical: AppScrollBar {}
 
                             // 空态两种文案：全量无记录 vs 过滤后无匹配
                             Text {
@@ -206,23 +194,22 @@ Item {
                                 color: Theme.textSecondary
                                 font.pixelSize: Theme.fontSizeBody
                                 font.family: Theme.fontSans
-                                opacity: 0.7
                             }
 
                             delegate: Rectangle {
                                 required property var modelData
                                 width: activityList.width
                                 implicitHeight: 40
-                                radius: 6
-                                color: Theme.bgSecondary
+                                radius: Theme.radiusField
+                                color: Theme.bgPrimary
                                 border.width: 1
                                 border.color: Theme.borderSubtle
 
                                 RowLayout {
                                     anchors.fill: parent
-                                    anchors.leftMargin: 10
-                                    anchors.rightMargin: 10
-                                    spacing: 8
+                                    anchors.leftMargin: Theme.spaceMd
+                                    anchors.rightMargin: Theme.spaceMd
+                                    spacing: Theme.spaceSm
 
                                     // 时间（等宽小字）
                                     Text {
@@ -230,7 +217,7 @@ Item {
                                             ? Theme.formatDateTime(new Date(modelData.timestamp))
                                             : qsTr("—")
                                         color: Theme.textSecondary
-                                        font.pixelSize: 10
+                                        font.pixelSize: Theme.fontSizeMicro
                                         font.family: Theme.fontMono
                                         Layout.preferredWidth: 120
                                     }
@@ -240,14 +227,14 @@ Item {
                                         readonly property color badgeColor: page.activityCategoryColor(modelData.category)
                                         Layout.preferredHeight: 18
                                         implicitWidth: activityBadgeText.implicitWidth + 12
-                                        radius: 4
+                                        radius: Theme.radiusBadge
                                         color: Qt.rgba(activityBadge.badgeColor.r, activityBadge.badgeColor.g, activityBadge.badgeColor.b, 0.15)
                                         Text {
                                             id: activityBadgeText
                                             anchors.centerIn: parent
                                             text: page.activityCategoryLabel(modelData.category)
                                             color: activityBadge.badgeColor
-                                            font.pixelSize: 10
+                                            font.pixelSize: Theme.fontSizeMicro
                                             font.family: Theme.fontSans
                                         }
                                     }

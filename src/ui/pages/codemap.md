@@ -70,20 +70,29 @@ AgentChatPage 空态的「配置模型」、ModelSelector、`AgentVM.modelSettin
 4. **无持久化状态**：连接测试结果、日期错误/分页游标、Activity 本地筛选、
    episodes 缓存只在页面生命周期内有效。
 
-### 版面原语（P2）
+### 版面原语（P2 + 视觉底座）
 
-设置页不再各写一套「标题 + 说明 + 控件」的排版，统一用三个组件：
+设置页不再各写一套「标题 + 说明 + 控件」的排版，统一用以下组件：
 
+- `SettingsPage`：整页滚动骨架（页头 + `horizontalMargin`/`contentSpacing` + `AppScrollBar`）。页面只声明内容，子项不要再加左右 `Layout.*Margin`；搜索目录需要锚定页头时传 `headerObjectName`（与 `SettingsCatalog` 条目 id 相同）。
+- `SettingsPageHeader`：统一页头（H2 标题 + caption 说明），固定页头页面直接把它放在顶部。
 - `SettingsSection`：扁平分组（大标题 + 可选说明 + 内容列），用于长页面的分段；
 - `SettingRow`：左列标签/说明、右列控件的单行布局，控件宽度由自身
   `Layout.preferredWidth` 决定（开关、下拉、SpinBox 都走这里）；
 - `SettingsField`：定宽标签 + 单行输入框（可选密文/等宽/防抖/销毁兜底），
-  需要整行铺满的输入项走这里。
+  需要整行铺满的输入项走这里；`statusText/statusOk` 在输入框右侧显示
+  「已配置/未配置」徽标，密钥字段用它表达当前是否已存有凭据（不要塞进 placeholder）；
+- `StatusLine`：测试类操作的内联结果行（`busy/success/warning/danger`），
+  进行中状态点带脉冲，替代各页自写 `Text` + 条件颜色；
+- `SettingCard`：带边框的独立设置卡，内部间距与圆角已 token 化。
 
-`SettingCard` 仍保留给「带边框的独立设置卡」（ToolsPage 的工具卡、LogsPage 的日志
-目录块等），两者只做排版、不读写设置。Interface/Security/Tools/Memory/General 的字段
-已全部改为 section + row；AgentBehavior/Network/Logs/Knowledge 中的相应区块也同步改用
-同一组原语，因此新页面**不要**再手写标签列与像素间距。
+已迁到 `SettingsPage` 的整页滚动页面：General、AgentBehavior、Interface、Security、
+Network、Logs、Knowledge、Tools、Mcp、SettingsBackup。Memory/Usage/Activity/ProjectRules/
+PromptAssets/ModelConfig 因需要固定页头 + 内部列表滚动，保留各自滚动结构，但页头统一为
+`SettingsPageHeader`，字号/间距/圆角/输入框表面全部改用 `Theme` 令牌（`fontSizeMicro`、
+`radiusField`、`radiusBadge`、`space*`）。说明文字一律 caption + `textSecondary`，不再叠加
+`opacity`；输入框统一 `surfaceHover` 底 + `radiusField`，聚焦时品牌色 2px 边框。
+新页面**不要**再手写标签列与像素间距。
 
 ### 各页对应的 schema 键组
 
@@ -138,9 +147,10 @@ AgentChatPage 空态的「配置模型」、ModelSelector、`AgentVM.modelSettin
   `Settings.addProfile(kind)` / `removeProfile` / `setActiveProfile` /
   `selectModelForProfile` / `addModelToProfile` / `removeModelFromProfile`。
   测试连接调用 `ConnectionTester.test(apiProtocol, baseUrl, apiKey, testModel)`，
-  结果经 `testFinished(ok, message)` 回填；测试模型默认当前模型，用户选择后
-  `testModelPinned` 固定。`Settings.endpointOptions(provider)` 决定协议芯片，
-  `Settings.modelContextWindow(apiProtocol, model)` 决定能力表窗口。
+  结果经 `testFinished(ok, message)` 回填到 `StatusLine`（busy/success/danger）；
+  测试模型默认当前模型，用户选择后 `testModelPinned` 固定。`Settings.endpointOptions(provider)`
+  决定协议芯片，`Settings.modelContextWindow(apiProtocol, model)` 决定能力表窗口。
+  API Key 输入框带「已配置/未配置」徽标（`SettingsField.statusText`）。
 - SecurityPage：两个 `SettingsSection`（文件读取沙箱 / 隐私门），每项是 `SettingRow` +
   无文字 CheckBox（行标签即 `Accessible.name`）；CheckBox 直接写 `Settings.*`；黑名单增删以
   `slice()` 复制后整体赋回 `Settings.readDenyList`，去重按 Windows 大小写不敏感语义。
@@ -155,8 +165,9 @@ AgentChatPage 空态的「配置模型」、ModelSelector、`AgentVM.modelSettin
   blockedByPolicy, source(builtin/MCP)}`；Switch 调 `AgentVM.setToolEnabled`，
   由 ToolRegistry 写 `tools/disabled` 并刷新模型。`blockedByPolicy` 只做徽标，
   不改变 Switch 的用户层状态。联网搜索 provider 是 `SettingRow` + ComboBox，API Key 是
-  `SettingsField`（密文、留空不改、提交后清空）+「清除密钥」按钮，key 已配置时只显示
-  `webSearchApiKeySet` 的占位文案，不回显明文。
+  `SettingsField`（密文、留空不改、提交后清空、`statusText` 显示已配置）+「清除密钥」按钮；
+  key 已配置时只显示 `webSearchApiKeySet` 的占位文案，不回显明文。测试按钮在请求期间改文案
+  「测试中…」，结果写入 `StatusLine`（busy/success/warning）。
 - AgentBehaviorPage：步数 `SettingsField`（`IntValidator` 3–1000、`ignoreEmptySubmit`、
   `commitOnDestroy`；非法值在 `onSubmitted` 内被丢弃）、超时为 `SettingRow`，均直接写
   `Settings.maxSteps/taskTimeoutMinutes`；系统提示词经 400ms 防抖写
@@ -164,15 +175,17 @@ AgentChatPage 空态的「配置模型」、ModelSelector、`AgentVM.modelSettin
   `requestResetDefaults()` → `Settings.resetAgentToDefaults()`。
 - NetworkPage：代理字段直写 `Settings.proxyMode/proxyHost/proxyPort/proxyUsername/
   proxyPassword`；主机/用户名用 `SettingsField`（等宽 + 400ms 防抖 + 销毁兜底），端口为
-  `SettingRow` + SpinBox；「测试代理」调用 `Settings.testProxy()`，结果在页面内联显示；
-  密码为掩码 getter，页面只读 `proxyPasswordSet`，清空需显式「清除密码」。
+  `SettingRow` + SpinBox；「测试代理」调用 `Settings.testProxy()`，请求期间按钮文案
+  「测试中…」，结果写入 `StatusLine`（busy/success/warning）；
+  密码为掩码 getter，页面只读 `proxyPasswordSet` 并在输入框右侧显示「已配置/未配置」，
+  清空需显式「清除密码」；「恢复本页默认值」会一并清空代理用户名与密码，确认框有专门提示。
 - LogsPage：级别/目录/大小/保留数直写 `Settings.log*`；目录用 `FolderDialog` 选择并可
   恢复默认；`requestResetDefaults()` → `Settings.resetLoggingToDefaults()`。
 - KnowledgePage：嵌入 provider/model 用 `SettingRow` + ComboBox，baseUrl 用 `SettingsField`
-  （等宽 + 400ms 防抖），API key 用 `SettingsField`（密文 + 留空不改 + 提交后清空）+ 清除
-  按钮，全部直写 `Settings.embedding*`；切换到外部 provider 时提示文档内容会发送到所配置
-  端点，纯本地模式下提示请求会被拦截并回退 Ollama；`requestResetDefaults()` →
-  `Settings.resetEmbeddingToDefaults()`（保留密钥）。
+  （等宽 + 400ms 防抖），API key 用 `SettingsField`（密文 + 留空不改 + 提交后清空 +
+  `statusText` 已配置徽标）+ 清除按钮，全部直写 `Settings.embedding*`；切换到外部 provider
+  时提示文档内容会发送到所配置端点，纯本地模式下提示请求会被拦截并回退 Ollama；
+  `requestResetDefaults()` → `Settings.resetEmbeddingToDefaults()`（保留密钥）。
 - MemoryPage：「记忆与保留」`SettingsSection`（Switch + 两个保留天数 SpinBox，均为
   `SettingRow`）直写 `memory/*`；记忆列表走 `listEpisodic(500)` /
   `searchEpisodic(keyword, 500)` / `removeEpisodic(id)` / `clearEpisodic()`；
@@ -228,6 +241,7 @@ AgentChatPage 空态的「配置模型」、ModelSelector、`AgentVM.modelSettin
 - `src/viewmodels/AgentViewModel.h`（`loadProjectRules` / `writeProjectRules` /
   `projectRulesState`）、`src/core/agent/AIAgent.cpp`（`projectRulesBlock`）
 - `src/ui/components/SettingsCenterDialog.qml`、`CategoryNav.qml`、
+  `SettingsPage.qml`、`SettingsPageHeader.qml`、`AppScrollBar.qml`、
   `SettingsSection.qml`、`SettingRow.qml`、`SettingsField.qml`、
   `SettingCard.qml`、`PreferenceControl.qml`
 - `src/core/utils/SettingsSchema.cpp`、`src/viewmodels/EditBuffer.cpp`、
@@ -265,10 +279,10 @@ AgentChatPage 空态的「配置模型」、ModelSelector、`AgentVM.modelSettin
   新建文本字段优先用 `SettingsField`（`commitDebounce`/`commitOnDestroy`/`lastKnownValue`
   已封装该契约）；手写 `TextField` 时必须自己补 `Component.onDestruction`，且密钥类字段
   只能读 `text`，不能读 `displayText`（掩码）。
-- 设置页的标签列、间距与标题层级统一由 `SettingsSection`/`SettingRow`/`SettingsField`
-  承担；新增页面不要再复制像素级 `Layout.*Margin` 或自绘标签列，否则又会漂移出不一致的
-  对齐（P2 前的现状）。`test_chat_workflows` 的 `settingsPagesInstantiateWithoutWarnings`
-  会逐个 Loader 装载这些页面并断言无 QML 警告。
+- 设置页的滚动、页头、标签列、间距与标题层级统一由 `SettingsPage`/`SettingsPageHeader`/
+  `SettingsSection`/`SettingRow`/`SettingsField` 承担；新增页面不要再复制像素级
+  `Layout.*Margin`、自绘页头或硬编码字号（视觉底座前的现状）。`test_chat_workflows` 的
+  `settingsPagesInstantiateWithoutWarnings` 会逐个 Loader 装载这些页面并断言无 QML 警告。
 - ProjectRulesPage 是项目规则的唯一编辑入口（侧栏项目行不提供入口）。它读写的是
   项目根目录的 `AGENTS.md`（找不到时读 `.nexus/rules.md`，但保存永远写 `AGENTS.md`）。
   编辑区 500 ms 防抖落盘，切换项目/关窗前冲刷；**冲刷目标必须是 `loadedRoot`**——

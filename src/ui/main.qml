@@ -169,7 +169,6 @@ ApplicationWindow {
         id: settingsCenterDialog
         objectName: "settingsCenterDialog"
         parent: Overlay.overlay
-        onSettingsSaved: noticeToast.show(qsTr("设置已保存"))
         onSettingsError: (message) => errorToast.show(message)
     }
 
@@ -312,6 +311,14 @@ ApplicationWindow {
     Shortcut {
         sequence: "Ctrl+,"
         onActivated: settingsCenterDialog.open()
+    }
+
+    // 设置搜索的可发现入口：只在设置中心打开时生效，避免抢走其他页面的
+    // Ctrl+F（未来编辑器内查找等）。
+    Shortcut {
+        sequence: "Ctrl+F"
+        enabled: settingsCenterDialog.opened
+        onActivated: settingsCenterDialog.focusSearch()
     }
 
     Shortcut {

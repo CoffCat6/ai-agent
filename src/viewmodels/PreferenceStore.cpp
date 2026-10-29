@@ -104,6 +104,7 @@ bool PreferenceStore::saveBatch(const QVariantMap& entries) {
         for (auto it = physicalEntries.constBegin(); it != physicalEntries.constEnd(); ++it)
             m_changeBus->notify(it.key().mid(QStringLiteral("prefs/v1/").size()), it.value());
     }
+    emit saved(entries.keys());
     return true;
 }
 

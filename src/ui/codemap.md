@@ -29,7 +29,7 @@
 7. 通知：`errorOccurred`/`noticeOccurred` 分别驱动错误/成功 Toast；删除会话经 `Sidebar.sessionDeletedUndoable` 弹 10 秒撤销条，调用 `AgentVM.undoDeleteSession()`。
 7b. 会话切换（docs/30，P0+P1 已实施）：**侧栏是唯一入口，主区只渲染活动会话**。侧栏点击 → `AgentVM.openConversation(id)`；右侧「结束对话」（右键菜单 / hover 操作条，后者仅在 `open === true` 时出现）→ `closeConversation(id)`；`Ctrl+W` → `closeActiveConversation()`；`Ctrl+Tab`/`Ctrl+Shift+Tab` → `cycleConversation(±1)`（跳过空白对话）。行内 14px 状态槽三态互斥：busy 旋转图标 › 等待确认静态警告 › 未读点。顶栏中部显示当前会话标题，并带会话模板入口（`Ctrl+[` 折叠侧栏后仍可达）。
 8. 引用定位：`ChangeBus` 的 `search.revealMessage` 在 `AgentChatPage` 中 `Qt.callLater` 查 `traceModel.rowOfMessageId`，滚动并高亮 2 秒。
-9. 快捷键（窗口级）：`Ctrl+,` 设置、`Ctrl+L` 审计日志、`Ctrl+B` 右面板、`Ctrl+[` 侧栏、`Ctrl+D` 主题、`Ctrl+/` 速查表。
+9. 快捷键（窗口级）：`Ctrl+,` 设置、`Ctrl+F` 设置中心内搜索（仅对话框打开时生效，聚焦搜索框）、`Ctrl+L` 审计日志、`Ctrl+B` 右面板、`Ctrl+[` 侧栏、`Ctrl+D` 主题、`Ctrl+/` 速查表。速查表 `ShortcutsDialog.qml` 与这些绑定一一对应，增改时两处同步。
 10. 关闭：`onClosing` 先 `AgentVM.saveWindowGeometry(...)`；当 `PreferenceStore.load("window.closeToTray") === true && trayAvailable` 时 `close.accepted = false` 并 `hide()`，否则真正退出（真正退出入口仍是托盘菜单）。
 
 ## 集成点
@@ -47,7 +47,7 @@
 | 轨迹 | `components/TranscriptViewport.qml`、`TraceNodeRouter.qml` | 滚动/跟随/定位与节点类型路由 |
 | 输入 | `components/InputConsole.qml`、`ModelSelector.qml`、`ThinkingEffortSelector.qml`、`PermissionModeSelector.qml` | 发送、附件、提及、历史与参数选择 |
 | 侧栏/右栏 | `components/Sidebar.qml`、`panels/ContextPanel.qml` | 会话树/搜索 + 会话运行状态槽（busy/等待确认/未读）；Git/文件（审阅与任务清单已移入对话框） |
-| 设置 | `components/SettingsCenterDialog.qml`、`CategoryNav.qml`、`PreferenceControl.qml`、`SettingsSection.qml`、`SettingRow.qml`、`SettingsField.qml`、`SettingCard.qml` | 搜索（`SettingsCatalog` 字段级结果 + 页内滚动高亮）、四组可滚动分类导航、偏好控件、按分类复位的底栏。版面原语：`SettingsSection`（扁平分组）/`SettingRow`（左标签右控件）/`SettingsField`（输入行），`SettingCard` 留给带边框的独立卡片 |
+| 设置 | `components/SettingsCenterDialog.qml`、`CategoryNav.qml`、`PreferenceControl.qml`、`SettingsPage.qml`、`SettingsPageHeader.qml`、`AppScrollBar.qml`、`SettingsSection.qml`、`SettingRow.qml`、`SettingsField.qml`、`SettingCard.qml` | 搜索（`SettingsCatalog` 字段级结果 + 页内滚动高亮）、四组可滚动分类导航（图标 + 可折叠分组，「数据与诊断」默认收起、当前分类所在组自动展开；对话框宽度 <900 时导航收成 56px 图标条）、偏好控件、按分类复位的底栏。视觉底座：`SettingsPage`（整页滚动 + 页头 + 边距 + 主题滚动条）/`SettingsPageHeader`（统一标题层级），`SettingsSection`（扁平分组）/`SettingRow`（左标签右控件）/`SettingsField`（输入行），`SettingCard` 留给带边框的独立卡片；字号/间距/圆角/输入框表面统一走 `Theme` 令牌 |
 | 设置页 | `pages/GeneralPage`、`AgentBehaviorPage`、`NetworkPage`、`LogsPage`、`KnowledgePage`、`InterfacePage`、`ModelConfigPage`、`SecurityPage`、`McpPage`、`ToolsPage`、`MemoryPage`、`UsageStatsPage`、`ActivityLogPage`、`SettingsBackupPage`、`ProjectRulesPage`、`PromptAssetsPage` | 16 个分类，由 `Loader` 按分类懒加载 |
 | 业务组件 | `AssistantMessage.qml`、`UserMessageBubble.qml`、`ProcessCard.qml`、`ErrorCard.qml`、`ToolConfirmDialog.qml`、`TodoListPanel.qml`、`FileChangesPanel.qml`、`ChangeTree.qml`、`GitPanel.qml` | 消息/工具确认/审阅/Git |
 | 图表/表格 | `charts/{DonutChart,LineTrendChart,BarCompareChart}.qml`、`UsageDetailTable.qml`、`DiffView.qml`、`CodeBlock.qml` | Canvas 图表、明细表、diff/代码块 |

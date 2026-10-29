@@ -239,32 +239,16 @@ Item {
     // 页头 / 滚动区 / 底栏三块用锚定定位，而不是塞进一个 ColumnLayout：ScrollView
     // 进了布局就会用隐式尺寸参与分配，而它的隐式宽度又由 contentWidth ←
     // availableWidth ← width 反馈而来，每一轮 pass 都把自己缩得更窄（实测 96 → 68）。
-    ColumnLayout {
+    SettingsPageHeader {
         id: pageHeader
         anchors.top: page.top
         anchors.left: page.left
         anchors.right: page.right
-        anchors.leftMargin: 20
-        anchors.rightMargin: 20
-        anchors.topMargin: 14
-        anchors.bottomMargin: 6
-        spacing: 2
-
-        Text {
-            text: qsTr("模型服务配置")
-            color: Theme.textPrimary
-            font.pixelSize: Theme.fontSizeH2
-            font.bold: true
-            font.family: Theme.fontSans
-        }
-        Text {
-            Layout.fillWidth: true
-            text: qsTr("点芯片切换要编辑的配置；改动即时写入配置，不需要另点保存。")
-            color: Theme.textSecondary
-            font.pixelSize: Theme.fontSizeCaption
-            font.family: Theme.fontSans
-            wrapMode: Text.WordWrap
-        }
+        anchors.leftMargin: Theme.spaceXl
+        anchors.rightMargin: Theme.spaceXl
+        anchors.topMargin: Theme.spaceMd
+        title: qsTr("模型服务配置")
+        description: qsTr("点芯片切换要编辑的配置；改动即时写入配置，不需要另点保存。")
     }
 
     ScrollView {
@@ -275,17 +259,18 @@ Item {
         anchors.bottom: footer.top
         clip: true
         visible: page.editing !== null
-        leftPadding: 20
-        rightPadding: 20
-        topPadding: 6
-        bottomPadding: 12
+        leftPadding: Theme.spaceXl
+        rightPadding: Theme.spaceXl
+        topPadding: Theme.spaceSm
+        bottomPadding: Theme.spaceMd
         contentWidth: availableWidth
         contentHeight: pageContent.implicitHeight
+        ScrollBar.vertical: AppScrollBar {}
 
         ColumnLayout {
             id: pageContent
             width: scroller.availableWidth
-            spacing: 12
+            spacing: Theme.spaceMd
 
             // ── 卡片一：配置来源 ─────────────────────────
             SettingCard {
@@ -296,7 +281,7 @@ Item {
 
                 Flow {
                     Layout.fillWidth: true
-                    spacing: 8
+                    spacing: Theme.spaceSm
 
                     Repeater {
                         model: Settings.profiles
@@ -324,7 +309,7 @@ Item {
                             Row {
                                 id: chipRow
                                 anchors.centerIn: parent
-                                spacing: 6
+                                spacing: Theme.spaceXs
 
                                 Rectangle {
                                     visible: profileChip.isActive
@@ -408,7 +393,7 @@ Item {
 
                 RowLayout {
                     Layout.fillWidth: true
-                    spacing: 8
+                    spacing: Theme.spaceSm
 
                     Repeater {
                         model: page.kindOptions
@@ -429,7 +414,7 @@ Item {
                     Layout.fillWidth: true
                     text: qsTr("自定义不预填服务地址与模型名，也不带入厂商预设模型；请求仍按 OpenAI Chat Completions 报文发出。")
                     color: Theme.textSecondary
-                    font.pixelSize: 10
+                    font.pixelSize: Theme.fontSizeCaption
                     font.family: Theme.fontSans
                     wrapMode: Text.WordWrap
                 }
@@ -437,7 +422,7 @@ Item {
                 ColumnLayout {
                     visible: page.protocolOptions.length > 1
                     Layout.fillWidth: true
-                    spacing: 4
+                    spacing: Theme.spaceXs
 
                     Text {
                         text: qsTr("接口协议")
@@ -449,7 +434,7 @@ Item {
 
                     RowLayout {
                         Layout.fillWidth: true
-                        spacing: 8
+                        spacing: Theme.spaceSm
 
                         Repeater {
                             model: page.protocolOptions
@@ -472,7 +457,7 @@ Item {
                         Layout.fillWidth: true
                         text: qsTr("Responses 需要端点显式实现 /responses；多数「OpenAI 兼容」网关只提供 Chat Completions。")
                         color: Theme.textSecondary
-                        font.pixelSize: 10
+                        font.pixelSize: Theme.fontSizeCaption
                         font.family: Theme.fontSans
                         wrapMode: Text.WordWrap
                     }
@@ -501,6 +486,11 @@ Item {
                     visible: !page.isOllama
                     label: qsTr("API Key")
                     secret: true
+                    statusText: page.editing !== null
+                                && String(page.editing.apiKey || "") !== ""
+                        ? qsTr("已配置") : qsTr("未配置")
+                    statusOk: page.editing !== null
+                              && String(page.editing.apiKey || "") !== ""
                     placeholderText: page.apiKeyPlaceholder
                     // 填了 Key 又直接切分类/关设置最容易踩："填了却没保存"最难
                     // 察觉，这里补一次销毁提交（commitIfDirty 读 text 而非掩码）。
@@ -515,17 +505,17 @@ Item {
                         ? qsTr("密钥已填写，保存时加密存储。")
                         : qsTr("密钥为空：请求前会先读环境变量 %1。").arg(page.apiKeyEnvVar)
                     color: Theme.textSecondary
-                    font.pixelSize: 10
+                    font.pixelSize: Theme.fontSizeCaption
                     font.family: Theme.fontSans
                     wrapMode: Text.WordWrap
                 }
 
                 RowLayout {
                     Layout.fillWidth: true
-                    spacing: 8
+                    spacing: Theme.spaceSm
 
                     AppButton {
-                        text: page.testing ? qsTr("测试中…") : qsTr("测试连接")
+                        text: qsTr("测试连接")
                         // 模型列表为空时无从选起：与其用空模型名去撞 404，不如直接禁用
                         // 并把原因写在旁边（下面那行）。
                         enabled: !page.testing && page.ready
@@ -543,7 +533,7 @@ Item {
                     ComboBox {
                         id: testModelCombo
                         visible: page.testModels.length > 0
-                        Layout.preferredWidth: 200
+                        Layout.preferredWidth: Theme.controlWidthMd
                         model: page.testModels
                         currentIndex: page.testModels.indexOf(page.testModel)
                         Accessible.name: qsTr("测试用模型")
@@ -561,21 +551,17 @@ Item {
                         ? qsTr("测试用模型只影响本次请求，不会改写当前模型。")
                         : qsTr("模型列表为空，没东西可测：先在上方「模型」卡片里添加一个模型名。")
                     color: Theme.textSecondary
-                    font.pixelSize: 10
+                    font.pixelSize: Theme.fontSizeCaption
                     font.family: Theme.fontSans
                     wrapMode: Text.WordWrap
                 }
 
-                Text {
+                StatusLine {
                     // 整段显示：单行截断会把 401 / 路径 404 这类根因吃掉半句。
                     visible: page.testing || page.testResult !== ""
-                    Layout.fillWidth: true
                     text: page.testing ? qsTr("正在连接（最多等 20 秒）…") : page.testResult
-                    color: page.testing ? Theme.textSecondary
-                          : (page.testOk ? Theme.statusSuccess : Theme.statusDanger)
-                    font.pixelSize: Theme.fontSizeCaption
-                    font.family: page.testOk ? Theme.fontSans : Theme.fontMono
-                    wrapMode: Text.WordWrap
+                    state: page.testing ? "busy" : (page.testOk ? "success" : "danger")
+                    mono: !page.testing && !page.testOk
                 }
             }
 
@@ -598,7 +584,7 @@ Item {
 
                 Flow {
                     Layout.fillWidth: true
-                    spacing: 6
+                    spacing: Theme.spaceXs
 
                     Repeater {
                         model: page.editing !== null ? (page.editing.models || []) : []
@@ -611,7 +597,7 @@ Item {
 
                             width: modelChipRow.implicitWidth + 22
                             height: 26
-                            radius: 4
+                            radius: Theme.radiusField
                             color: modelChip.isCurrent
                                 ? Qt.rgba(Theme.brandPrimary.r, Theme.brandPrimary.g,
                                           Theme.brandPrimary.b, 0.15)
@@ -634,7 +620,7 @@ Item {
                             Row {
                                 id: modelChipRow
                                 anchors.centerIn: parent
-                                spacing: 6
+                                spacing: Theme.spaceXs
 
                                 Text {
                                     text: modelChip.modelData
@@ -653,7 +639,7 @@ Item {
                                                       : qsTr("未知")
                                     }
                                     color: Theme.textSecondary
-                                    font.pixelSize: 10
+                                    font.pixelSize: Theme.fontSizeCaption
                                     font.family: Theme.fontMono
                                     anchors.verticalCenter: parent.verticalCenter
                                 }
@@ -667,7 +653,7 @@ Item {
                                         text: "×"
                                         color: removeMA.containsMouse
                                             ? Theme.statusDanger : Theme.textSecondary
-                                        font.pixelSize: 12
+                                        font.pixelSize: Theme.fontSizeCaption
                                     }
 
                                     MouseArea {
@@ -685,7 +671,7 @@ Item {
 
                     TextField {
                         id: addModelField
-                        width: 170
+                        width: Theme.controlWidthSm
                         height: 26
                         placeholderText: page.isCustom
                             ? qsTr("添加网关模型名…") : qsTr("添加模型…")
@@ -696,8 +682,8 @@ Item {
                         font.pixelSize: Theme.fontSizeCaption
                         font.family: Theme.fontMono
                         background: Rectangle {
-                            radius: 4
-                            color: Theme.bgPrimary
+                            radius: Theme.radiusField
+                            color: Theme.surfaceHover
                             border.width: addModelField.activeFocus ? 2 : 1
                             border.color: addModelField.activeFocus
                                 ? Theme.brandPrimary : Theme.borderSubtle
@@ -719,7 +705,7 @@ Item {
                     Layout.fillWidth: true
                     text: qsTr("列表还是空的：模型名不再自动预填，在右边输入一个名字回车即可。")
                     color: Theme.textSecondary
-                    font.pixelSize: 10
+                    font.pixelSize: Theme.fontSizeCaption
                     font.family: Theme.fontSans
                     wrapMode: Text.WordWrap
                 }
@@ -757,12 +743,12 @@ Item {
                 ColumnLayout {
                     visible: page.isOllama
                     Layout.fillWidth: true
-                    spacing: 4
+                    spacing: Theme.spaceXs
 
                     Text {
                         text: qsTr("Ollama 的上下文窗口就是 num_ctx")
                         color: Theme.textSecondary
-                        font.pixelSize: 10
+                        font.pixelSize: Theme.fontSizeCaption
                         font.family: Theme.fontSans
                     }
 
@@ -800,15 +786,14 @@ Item {
                     Layout.fillWidth: true
                     text: qsTr("OpenAI 兼容按档位发送 reasoning_effort；Claude 折算为思考预算（输出上限要留得住预算，否则自动退回不思考）；Ollama 只有开/关，低中高均按开处理。")
                     color: Theme.textSecondary
-                    opacity: 0.85
-                    font.pixelSize: 10
+                    font.pixelSize: Theme.fontSizeCaption
                     font.family: Theme.fontSans
                     wrapMode: Text.WordWrap
                 }
 
                 ColumnLayout {
                     Layout.fillWidth: true
-                    spacing: 4
+                    spacing: Theme.spaceXs
 
                     ParamSelectRow {
                         id: contextLengthRow
@@ -830,7 +815,7 @@ Item {
                                   .arg(Settings.contextTokens)
                         color: page.tableContext > 0 || page.manualContext > 0
                             ? Theme.textSecondary : Theme.statusWarning
-                        font.pixelSize: 10
+                        font.pixelSize: Theme.fontSizeCaption
                         font.family: Theme.fontMono
                         wrapMode: Text.WordWrap
                     }
@@ -844,7 +829,7 @@ Item {
                         text: qsTr("最大输出 %1 已不小于上下文窗口 %2，请求可能被服务端拒绝。")
                                   .arg(requestedOutput).arg(page.effectiveContext)
                         color: Theme.statusWarning
-                        font.pixelSize: 10
+                        font.pixelSize: Theme.fontSizeCaption
                         font.family: Theme.fontSans
                         wrapMode: Text.WordWrap
                     }
@@ -859,7 +844,7 @@ Item {
         anchors.left: page.left
         anchors.right: page.right
         anchors.bottom: page.bottom
-        height: 62
+        height: 64
         color: Theme.bgSecondary
 
         Rectangle {
@@ -871,9 +856,9 @@ Item {
 
         RowLayout {
             anchors.fill: parent
-            anchors.leftMargin: 20
-            anchors.rightMargin: 20
-            spacing: 10
+            anchors.leftMargin: Theme.spaceXl
+            anchors.rightMargin: Theme.spaceXl
+            spacing: Theme.spaceSm
 
             ColumnLayout {
                 Layout.fillWidth: true
@@ -901,7 +886,7 @@ Item {
                           : (page.ready ? ""
                                         : qsTr("还需填写：%1，才能启用或测试连接").arg(page.missingFields))
                     color: page.savedHint !== "" ? Theme.statusSuccess : Theme.statusWarning
-                    font.pixelSize: 10
+                    font.pixelSize: Theme.fontSizeCaption
                     font.family: Theme.fontSans
                     wrapMode: Text.WordWrap
                 }
@@ -938,15 +923,15 @@ Item {
         modal: true
         anchors.centerIn: parent
         width: 320
-        height: addDialogContent.implicitHeight + 32
-        padding: 16
+        height: addDialogContent.implicitHeight + Theme.spaceXl * 2
+        padding: Theme.spaceXl
         closePolicy: Popup.CloseOnEscape | Popup.CloseOnPressOutside
 
         background: DialogBackground {}
 
         contentItem: ColumnLayout {
             id: addDialogContent
-            spacing: 8
+            spacing: Theme.spaceSm
 
             Text {
                 text: qsTr("新建模型配置")
@@ -974,7 +959,7 @@ Item {
                 Layout.fillWidth: true
                 text: qsTr("厂商配置会带上默认地址，模型名一律留空由你自己填——预填的官方模型列表未必是你实际调用的那个。")
                 color: Theme.textSecondary
-                font.pixelSize: 10
+                font.pixelSize: Theme.fontSizeCaption
                 font.family: Theme.fontSans
                 wrapMode: Text.WordWrap
             }

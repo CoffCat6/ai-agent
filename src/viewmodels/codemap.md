@@ -65,13 +65,14 @@ controller 一 agent 一连接），因此下面这层是**呈现语义**的收�
 | 层 | 位置 | 作用 |
 | --- | --- | --- |
 | `SettingsSchema` | `core/utils` | 唯一事实源：键注册表、默认值、类型/约束、`clampInt`/`options`、`kSchemaVersion = 4` |
-| `SettingsService` | 本目录 | 强类型属性 + QSettings 直读直写（`SettingsRepository`）+ profile 管理 + DPAPI + 迁移 |
+| `SettingsService` | 本目录 | 强类型属性 + QSettings 直读直写（`SettingsRepository`）+ profile 管理 + DPAPI + 迁移；写成功发 `settingSaved(key)`，失败发 `persistenceError(message)` |
 | `PreferenceRegistry` | 本目录 | 从 `SettingsSchema` 载入 `CategoryGroupMeta`/`CategoryMeta`/`PreferenceMeta`，提供分组与分类查询（`categoryGroups/categoriesInGroup/categoryGroup`）、元数据、默认值、`normalize/validate/coerce` |
-| `PreferenceStore` / `EditBuffer` / `ChangeBus` | 本目录 | 偏好键 `prefs/v1/<key>` 的读写/批量写/重置 + 写穿缓冲 + 变更广播 |
+| `PreferenceStore` / `EditBuffer` / `ChangeBus` | 本目录 | 偏好键 `prefs/v1/<key>` 的读写/批量写/重置 + 写穿缓冲 + 变更广播；`saveBatch` 成功发 `saved(keys)`，失败发 `persistenceError`，`resetBatch` 不发 `saved` |
 
 - `SettingsService` 管“AI 管线/安全/网络/日志/配额”这类**有强类型属性、会被 main.cpp 消费**的键（`agent/*`、`security/*`、`logging/*`、`webSearch/*`、`network/*`、`embedding/*`、`memory/*`、`projects/*`），键直接落 QSettings。
 - `Preference*` 管“设置页可枚举、需要显示名/约束/重置”的偏好（`ui.*` 主题/字体/语言/布局默认、`general.*`、`window.closeToTray` 等），物理键加 `prefs/v1/` 前缀；`legacyKeys` 支持旧键迁移（如 `ui.themeMode` 由布尔 `isDark` 转换）。
 - `EditBuffer` 是 `PreferenceStore` 的校验闸门：`stage()` 用 registry 约束校验后**立即** `saveBatch`（写穿），`dirty` 仅瞬时；校验失败保留暂存值供字段错误标签使用，`rollback()` 丢弃。
+- **保存回执契约**：`SettingsService::settingSaved` 只在 `persistValue`/`persist` 真正写盘成功后发出（装载/迁移不经过，故启动时不会误报“已保存”），参数是本次写入的键；`PreferenceStore::saved` 在 `ChangeBus` 通知后发出本次批量写入的键列表，`resetBatch` 刻意不发。设置中心底栏据此显示短暂「已保存」——经 `SettingsCatalog.entry(key).category` 只认当前分类的键，避免其他分类/后台写入在屏幕上闪回执。
 
 ### 6. 加密、备份与迁移
 
@@ -126,10 +127,10 @@ controller 一 agent 一连接），因此下面这层是**呈现语义**的收�
 | `LogModel` | 应用内日志列表模型（会话内追加、过滤/日期） | `AgentVM.logModel`（CONSTANT）；`filterLevel/filterText/filterCategory/filterDate`、`clearView()`、`toClipboardText()` |
 | `ChangeBus` | 偏好变更广播总线 | `notify(key, value)`；信号 `changed(key, value)` |
 | `EditBuffer` | 偏好校验写穿缓冲（单例） | `stage/commit/rollback/resetToDefault`、属性 `dirty/staged/firstInvalidKey/validationError` |
-| `SettingsService` | 设置与模型 profile 门面（`Settings`），DPAPI/迁移；三组用户自建文本资产（`promptPresets`/`slashCommands`/`sessionTemplates`，JSON blob 持久化，提示词与指令页管理，备份白名单自动携带；首次启动经 `maybeSeedPromptAssets()` 种入4 预设 + 4 指令 + 3 模板（固定 id `default-*`，键为 "[]" 视为已清空不回灌）） | `profiles/activeProfile`、`addProfile/updateProfile/selectModelForProfile`、`addPromptPreset/addSlashCommand/addSessionTemplate` 及各自 update/remove、`testProxy`、按领域拆分的 `resetAgentToDefaults/resetLoggingToDefaults/resetNetworkToDefaults/resetEmbeddingToDefaults/resetMemoryToDefaults`（各自只回写本页 schema 键，`embedding/apiKey` 不随复位清空）、`modelContextWindow` |
+| `SettingsService` | 设置与模型 profile 门面（`Settings`），DPAPI/迁移；三组用户自建文本资产（`promptPresets`/`slashCommands`/`sessionTemplates`，JSON blob 持久化，提示词与指令页管理，备份白名单自动携带；首次启动经 `maybeSeedPromptAssets()` 种入4 预设 + 4 指令 + 3 模板（固定 id `default-*`，键为 "[]" 视为已清空不回灌）） | `profiles/activeProfile`、`addProfile/updateProfile/selectModelForProfile`、`addPromptPreset/addSlashCommand/addSessionTemplate` 及各自 update/remove、`testProxy`、按领域拆分的 `resetAgentToDefaults/resetLoggingToDefaults/resetNetworkToDefaults/resetEmbeddingToDefaults/resetMemoryToDefaults`（各自只回写本页 schema 键，`embedding/apiKey` 不随复位清空）、`modelContextWindow`、信号 `settingSaved/persistenceError` |
 | `SettingsBackup` | 可移植设置导入导出（不含凭据/SQLite） | `exportSettings`、`previewImport`、`importSettings`、`lastError`、`restartRequired` |
 | `PreferenceRegistry` | 偏好元数据注册表（来自 SettingsSchema） | `hasPreference/defaultValue/displayName/preferenceMeta/categories` |
-| `PreferenceStore` | `prefs/v1/<key>` 持久化 + legacy 回退（单例） | `load/hasStoredValue/save/saveBatch/reset/resetBatch` |
+| `PreferenceStore` | `prefs/v1/<key>` 持久化 + legacy 回退（单例） | `load/hasStoredValue/save/saveBatch/reset/resetBatch`、信号 `saved/persistenceError` |
 | `ThemeManager` | 主题/字体状态与系统配色跟随 | `themeMode/isDark/fontSans/fontMono/baseFontSize` |
 | `ThemeProvider` | 设计令牌门面（`Theme`，纯头文件、颜色/间距/圆角/字号/时间格式化） | `bgPrimary/textPrimary/brandPrimary/...`、`formatDateTime/formatTime` |
 | `FontProbe` | 字体可用性与平台默认字体探测 | `isAvailable/systemDefaultSans/systemDefaultMono/availableFamilies` |
@@ -154,7 +155,7 @@ controller 一 agent 一连接），因此下面这层是**呈现语义**的收�
 5b. **项目规则（G3/R3）**：设置页经 `loadProjectRules` / `writeProjectRules`（失败发 `noticeOccurred`，成功后自动重挂监听）/ `projectRulesState`（与注入侧同一回退顺序，复用 `AIAgent::isUntouchedRulesSeed`）读写 `AGENTS.md`。外部编辑协调：`watchProjectRules` / `unwatchProjectRules` 以 `QFileSystemWatcher` 监听两个候选文件（只存在者可挂），变化发 `projectRulesFileChanged(root)`——**异步投递受 Windows 文件通知延迟影响（AV 可扣数秒甚至更久），页面按内容比较分流，迟到/重复/自身写入都安全**；`watchedRulesFiles` 是挂载集探针（同步断言用，不测异步投递）。三个 Q_INVOKABLE 追加在类尾（AOT 索引约定）。
 6. **检查点/撤销**：agent 完成工具或撤销后发 `fileCheckpointsChanged` → controller → VM（仅活动标签更新属性）→ `undoFileCheckpoint(id)` 转 `AIAgent::undoFileCheckpoint`；`fileCheckpointDetail` 返回 JSON 详情。
 7. **知识库**：`importDocument` 文本同步读取 / PDF 后台提取 → `importExtractedText`（内容 hash 去重 → `uniqueDocumentName`）→ `startIngestion`（QtConcurrent）→ `RagService::documentPersisted`（main.cpp，队列到 GUI 线程）→ `SqliteMemory`；`RagService::changed` → `refreshKnowledge`（先更新属性再 NOTIFY，避免 QML 读到旧列表）。
-8. **设置写路径**：QML → `SettingsService` setter → `persistValue/persist` → `SettingsRepository`（QSettings，org/app 均为 `NexusAI`）→ 信号 → main.cpp 的 `applySettings` 把步数/超时/只读/沙箱/代理/搜索/embedding 重新注入所有 agent。偏好路径：QML → `EditBuffer.stage/commit` → `PreferenceStore.saveBatch` → `prefs/v1/` → `ChangeBus.notify` → `ThemeManager`/`I18nManager`/`AgentVM` 各自订阅。
+8. **设置写路径**：QML → `SettingsService` setter → `persistValue/persist` → `SettingsRepository`（QSettings，org/app 均为 `NexusAI`）→ `settingSaved/persistenceError` 信号 → main.cpp 的 `applySettings` 把步数/超时/只读/沙箱/代理/搜索/embedding 重新注入所有 agent。偏好路径：QML → `EditBuffer.stage/commit` → `PreferenceStore.saveBatch` → `prefs/v1/` → `ChangeBus.notify` → `saved/persistenceError` 信号与 `ThemeManager`/`I18nManager`/`AgentVM` 各自订阅。
 9. **Git**：`GitVM.requestX()` 返回 requestId → `GitService` 在池线程执行（写操作 60s 超时）→ `*Ready(requestId, …, error)`；写成功后自动 `refreshStatus/refreshRepoInfo`；切 `projectRoot` 递增四代计数器并清空 repo/status，旧应答被丢弃。
 10. **数据库恢复编排**：`restoreDatabaseFrom`（校验 integrity → `closeAllTabs` → `sendPostedEvents(DeferredDelete)` → `bumpRestoreGeneration` → `memory.restoreFromBackup` → `databaseRestored` → `openTab`），全程同步，靠同一调用栈回到“单标签稳态”。
 

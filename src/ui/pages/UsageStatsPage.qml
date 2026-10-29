@@ -257,31 +257,19 @@ Item {
         // ── 标题 ────────────────────────────────────────
         Item {
             Layout.fillWidth: true
-            Layout.preferredHeight: 64
-            Layout.leftMargin: 24
-            Layout.rightMargin: 24
+            Layout.preferredHeight: header.implicitHeight + Theme.spaceLg
+            Layout.leftMargin: Theme.spaceXl
+            Layout.rightMargin: Theme.spaceXl
 
-            ColumnLayout {
-                anchors.fill: parent
-                spacing: 2
-
-                Text {
-                    objectName: "usage/overview"
-                    text: qsTr("用量统计")
-                    color: Theme.textPrimary
-                    font.pixelSize: Theme.fontSizeH2
-                    font.bold: true
-                    font.family: Theme.fontSans
-                }
-                Text {
-                    text: qsTr("统计已完成任务的模型调用次数、Token 消耗、费用与配额状态。")
-                    color: Theme.textSecondary
-                    font.pixelSize: 10
-                    font.family: Theme.fontSans
-                    opacity: 0.8
-                    Layout.fillWidth: true
-                    wrapMode: Text.Wrap
-                }
+            SettingsPageHeader {
+                id: header
+                objectName: "usage/overview"
+                anchors.left: parent.left
+                anchors.right: parent.right
+                anchors.top: parent.top
+                anchors.topMargin: Theme.spaceXs
+                title: qsTr("用量统计")
+                description: qsTr("统计已完成任务的模型调用次数、Token 消耗、费用与配额状态。")
             }
         }
 
@@ -290,19 +278,19 @@ Item {
             id: flick
             Layout.fillWidth: true
             Layout.fillHeight: true
-            Layout.leftMargin: 24
-            Layout.rightMargin: 24
-            Layout.bottomMargin: 12
+            Layout.leftMargin: Theme.spaceXl
+            Layout.rightMargin: Theme.spaceXl
+            Layout.bottomMargin: Theme.spaceMd
             clip: true
             contentWidth: width
             contentHeight: detailCol.implicitHeight
 
-            ScrollBar.vertical: ScrollBar {}
+            ScrollBar.vertical: AppScrollBar {}
 
             ColumnLayout {
                 id: detailCol
                 width: flick.width
-                spacing: 16
+                spacing: Theme.spaceLg
 
         // ── 时间段选择器（Batch 6 T3：预设按钮 + 自定义输入框）──
         // 批次六审查 m4 窄窗口适配：单行（标签 + 5 预设 + 刷新）在内容区
@@ -312,11 +300,11 @@ Item {
         // 全部按钮始终可达，不引入新文案。
         ColumnLayout {
             Layout.fillWidth: true
-            spacing: 8
+            spacing: Theme.spaceSm
 
             RowLayout {
                 Layout.fillWidth: true
-                spacing: 8
+                spacing: Theme.spaceSm
 
                 Text {
                     text: qsTr("统计范围")
@@ -338,7 +326,7 @@ Item {
 
             Flow {
                 Layout.fillWidth: true
-                spacing: 8
+                spacing: Theme.spaceSm
 
                 Repeater {
                     model: [
@@ -364,11 +352,11 @@ Item {
         ColumnLayout {
             visible: page.rangeMode === "custom"
             Layout.fillWidth: true
-            spacing: 6
+            spacing: Theme.spaceXs
 
             RowLayout {
                 Layout.fillWidth: true
-                spacing: 8
+                spacing: Theme.spaceSm
 
                 Text {
                     text: qsTr("起始日期")
@@ -378,7 +366,7 @@ Item {
                 }
                 TextField {
                     id: fromField
-                    Layout.preferredWidth: 124
+                    Layout.preferredWidth: Theme.controlWidthXs
                     placeholderText: "YYYY-MM-DD"
                     placeholderTextColor: Theme.textSecondary
                     color: Theme.textPrimary
@@ -387,8 +375,8 @@ Item {
                     font.pixelSize: Theme.fontSizeBody
                     font.family: Theme.fontMono
                     background: Rectangle {
-                        radius: 6
-                        color: Theme.bgPrimary
+                        radius: Theme.radiusField
+                        color: Theme.surfaceHover
                         border.width: fromField.activeFocus ? 2 : 1
                         border.color: fromField.activeFocus ? Theme.brandPrimary
                                                             : Theme.borderSubtle
@@ -405,7 +393,7 @@ Item {
                 }
                 TextField {
                     id: toField
-                    Layout.preferredWidth: 124
+                    Layout.preferredWidth: Theme.controlWidthXs
                     placeholderText: "YYYY-MM-DD"
                     placeholderTextColor: Theme.textSecondary
                     color: Theme.textPrimary
@@ -414,8 +402,8 @@ Item {
                     font.pixelSize: Theme.fontSizeBody
                     font.family: Theme.fontMono
                     background: Rectangle {
-                        radius: 6
-                        color: Theme.bgPrimary
+                        radius: Theme.radiusField
+                        color: Theme.surfaceHover
                         border.width: toField.activeFocus ? 2 : 1
                         border.color: toField.activeFocus ? Theme.brandPrimary
                                                           : Theme.borderSubtle
@@ -428,7 +416,7 @@ Item {
 
             RowLayout {
                 Layout.fillWidth: true
-                spacing: 8
+                spacing: Theme.spaceSm
 
                 AppButton {
                     text: qsTr("今天")
@@ -471,7 +459,7 @@ Item {
         // ── 概览卡片（§8.1.1：任务次数 / 累计 Token / 累计费用 / 平均延迟）──
         RowLayout {
             Layout.fillWidth: true
-            spacing: 12
+            spacing: Theme.spaceMd
 
             Repeater {
                 model: [
@@ -485,14 +473,14 @@ Item {
                     required property var modelData
                     Layout.fillWidth: true
                     Layout.preferredHeight: 72
-                    radius: 8
-                    color: Theme.bgPrimary
+                    radius: Theme.radiusMd
+                    color: Theme.bgSecondary
                     border.width: 1
                     border.color: Theme.borderSubtle
 
                     ColumnLayout {
                         anchors.centerIn: parent
-                        spacing: 4
+                        spacing: Theme.spaceXs
 
                         Text {
                             text: modelData.value
@@ -521,7 +509,7 @@ Item {
         // 一行一张后，图例、轴标签、绘图区都拿到整宽，长模型名完整可读。
         ColumnLayout {
             Layout.fillWidth: true
-            spacing: 6
+            spacing: Theme.spaceXs
 
             Text {
                 text: qsTr("用量图表")
@@ -535,15 +523,15 @@ Item {
             Rectangle {
                 Layout.fillWidth: true
                 Layout.preferredHeight: 236
-                radius: 8
-                color: Theme.bgPrimary
+                radius: Theme.radiusMd
+                color: Theme.bgSecondary
                 border.width: 1
                 border.color: Theme.borderSubtle
 
                 ColumnLayout {
                     anchors.fill: parent
-                    anchors.margins: 12
-                    spacing: 6
+                    anchors.margins: Theme.spaceMd
+                    spacing: Theme.spaceXs
 
                     Text {
                         text: qsTr("模型 Token 分布")
@@ -564,15 +552,15 @@ Item {
             Rectangle {
                 Layout.fillWidth: true
                 Layout.preferredHeight: 212
-                radius: 8
-                color: Theme.bgPrimary
+                radius: Theme.radiusMd
+                color: Theme.bgSecondary
                 border.width: 1
                 border.color: Theme.borderSubtle
 
                 ColumnLayout {
                     anchors.fill: parent
-                    anchors.margins: 12
-                    spacing: 6
+                    anchors.margins: Theme.spaceMd
+                    spacing: Theme.spaceXs
 
                     Text {
                         text: qsTr("按天走势")
@@ -592,19 +580,19 @@ Item {
             Rectangle {
                 Layout.fillWidth: true
                 Layout.preferredHeight: page.barCardHeight
-                radius: 8
-                color: Theme.bgPrimary
+                radius: Theme.radiusMd
+                color: Theme.bgSecondary
                 border.width: 1
                 border.color: Theme.borderSubtle
 
                 ColumnLayout {
                     anchors.fill: parent
-                    anchors.margins: 12
-                    spacing: 6
+                    anchors.margins: Theme.spaceMd
+                    spacing: Theme.spaceXs
 
                     RowLayout {
                         Layout.fillWidth: true
-                        spacing: 8
+                        spacing: Theme.spaceSm
 
                         Text {
                             text: qsTr("模型对比")
@@ -639,7 +627,7 @@ Item {
         // ── 方向维度卡片（§8.1.2：Token 构成）──────────
         ColumnLayout {
             Layout.fillWidth: true
-            spacing: 6
+            spacing: Theme.spaceXs
 
             Text {
                 text: qsTr("Token 构成")
@@ -651,17 +639,17 @@ Item {
 
             Rectangle {
                 Layout.fillWidth: true
-                implicitHeight: dirCol.implicitHeight + 24
-                radius: 8
-                color: Theme.bgPrimary
+                implicitHeight: dirCol.implicitHeight + Theme.spaceLg
+                radius: Theme.radiusMd
+                color: Theme.bgSecondary
                 border.width: 1
                 border.color: Theme.borderSubtle
 
                 ColumnLayout {
                     id: dirCol
                     anchors.fill: parent
-                    anchors.margins: 12
-                    spacing: 8
+                    anchors.margins: Theme.spaceMd
+                    spacing: Theme.spaceSm
 
                     // 输入 / 输出 / 缓存命中 三行进度条
                     Repeater {
@@ -674,7 +662,7 @@ Item {
                         delegate: RowLayout {
                             required property var modelData
                             Layout.fillWidth: true
-                            spacing: 8
+                            spacing: Theme.spaceSm
 
                             Text {
                                 text: modelData.label
@@ -702,7 +690,7 @@ Item {
                                 Layout.fillWidth: true
                                 Layout.preferredHeight: 6
                                 radius: 3
-                                color: Theme.bgSecondary
+                                color: Theme.bgPrimary
                                 Rectangle {
                                     width: Math.max(0, Math.min(parent.width,
                                         parent.width * (page.stats.totalTokens > 0
@@ -728,7 +716,7 @@ Item {
         // ── 来源维度卡片（§8.1.3：按来源拆分）──────────
         ColumnLayout {
             Layout.fillWidth: true
-            spacing: 6
+            spacing: Theme.spaceXs
 
             Text {
                 text: qsTr("按来源拆分")
@@ -740,23 +728,23 @@ Item {
 
             Rectangle {
                 Layout.fillWidth: true
-                implicitHeight: srcCol.implicitHeight + 24
-                radius: 8
-                color: Theme.bgPrimary
+                implicitHeight: srcCol.implicitHeight + Theme.spaceLg
+                radius: Theme.radiusMd
+                color: Theme.bgSecondary
                 border.width: 1
                 border.color: Theme.borderSubtle
 
                 ColumnLayout {
                     id: srcCol
                     anchors.fill: parent
-                    anchors.margins: 12
-                    spacing: 4
+                    anchors.margins: Theme.spaceMd
+                    spacing: Theme.spaceXs
 
                     // 表头（docs/25 C5: 空态时隐藏，与 byModel/byDay 空态形态一致）
                     RowLayout {
                         visible: page.bySourceData.length > 0
                         Layout.fillWidth: true
-                        spacing: 8
+                        spacing: Theme.spaceSm
                         Text {
                             text: qsTr("来源")
                             color: Theme.textSecondary
@@ -798,7 +786,6 @@ Item {
                         color: Theme.textSecondary
                         font.pixelSize: Theme.fontSizeBody
                         font.family: Theme.fontSans
-                        opacity: 0.7
                     }
 
                     Repeater {
@@ -807,7 +794,7 @@ Item {
                         delegate: RowLayout {
                             required property var modelData
                             Layout.fillWidth: true
-                            spacing: 8
+                            spacing: Theme.spaceSm
 
                             Text {
                                 text: page.sourceLabel(modelData.source)
@@ -848,7 +835,7 @@ Item {
         // ── 费用明细（§8.1.4）──────────────────────────
         ColumnLayout {
             Layout.fillWidth: true
-            spacing: 6
+            spacing: Theme.spaceXs
 
             Text {
                 text: qsTr("费用明细")
@@ -860,23 +847,23 @@ Item {
 
             Rectangle {
                 Layout.fillWidth: true
-                implicitHeight: costCol.implicitHeight + 24
-                radius: 8
-                color: Theme.bgPrimary
+                implicitHeight: costCol.implicitHeight + Theme.spaceLg
+                radius: Theme.radiusMd
+                color: Theme.bgSecondary
                 border.width: 1
                 border.color: Theme.borderSubtle
 
                 ColumnLayout {
                     id: costCol
                     anchors.fill: parent
-                    anchors.margins: 12
-                    spacing: 4
+                    anchors.margins: Theme.spaceMd
+                    spacing: Theme.spaceXs
 
                     // 表头（docs/25 C5: 空态时隐藏）
                     RowLayout {
                         visible: !page.costRowsEmpty
                         Layout.fillWidth: true
-                        spacing: 8
+                        spacing: Theme.spaceSm
                         Text {
                             text: qsTr("模型")
                             color: Theme.textSecondary
@@ -918,7 +905,6 @@ Item {
                         color: Theme.textSecondary
                         font.pixelSize: Theme.fontSizeBody
                         font.family: Theme.fontSans
-                        opacity: 0.7
                     }
 
                     Repeater {
@@ -927,7 +913,7 @@ Item {
                         delegate: RowLayout {
                             required property var modelData
                             Layout.fillWidth: true
-                            spacing: 8
+                            spacing: Theme.spaceSm
 
                             Text {
                                 text: modelData.model && modelData.model.length > 0
@@ -973,7 +959,7 @@ Item {
                     RowLayout {
                         visible: !page.costRowsEmpty
                         Layout.fillWidth: true
-                        spacing: 8
+                        spacing: Theme.spaceSm
                         Text {
                             text: qsTr("合计")
                             color: Theme.textPrimary
@@ -1012,7 +998,7 @@ Item {
                         color: Theme.textSecondary
                         font.pixelSize: Theme.fontSizeCaption
                         font.family: Theme.fontMono
-                        Layout.topMargin: 4
+                        Layout.topMargin: Theme.spaceXs
                     }
                 }
             }
@@ -1023,11 +1009,11 @@ Item {
         // UsageDetailTable 里；本页只负责注入已加载的行与分页回调。
         ColumnLayout {
             Layout.fillWidth: true
-            spacing: 6
+            spacing: Theme.spaceXs
 
             RowLayout {
                 Layout.fillWidth: true
-                spacing: 8
+                spacing: Theme.spaceSm
 
                 Text {
                     text: qsTr("请求明细")
@@ -1040,10 +1026,9 @@ Item {
                 Text {
                     text: qsTr("点击表头排序 · 拖动列边界调整列宽")
                     color: Theme.textSecondary
-                    font.pixelSize: 10
+                    font.pixelSize: Theme.fontSizeCaption
                     font.family: Theme.fontSans
-                    opacity: 0.8
-                    elide: Text.ElideRight
+                        elide: Text.ElideRight
                     Layout.maximumWidth: 240
                 }
             }
@@ -1059,7 +1044,7 @@ Item {
         // ── 配额状态（§8.1.5）──────────────────────────
         ColumnLayout {
             Layout.fillWidth: true
-            spacing: 6
+            spacing: Theme.spaceXs
 
             Text {
                 text: qsTr("配额状态")
@@ -1071,17 +1056,17 @@ Item {
 
             Rectangle {
                 Layout.fillWidth: true
-                implicitHeight: quotaCol.implicitHeight + 24
-                radius: 8
-                color: Theme.bgPrimary
+                implicitHeight: quotaCol.implicitHeight + Theme.spaceLg
+                radius: Theme.radiusMd
+                color: Theme.bgSecondary
                 border.width: 1
                 border.color: Theme.borderSubtle
 
                 ColumnLayout {
                     id: quotaCol
                     anchors.fill: parent
-                    anchors.margins: 12
-                    spacing: 8
+                    anchors.margins: Theme.spaceMd
+                    spacing: Theme.spaceSm
 
                     // docs/25 C5: 配额区空态补全（对齐 byModel/byDay）——
                     // 无任何用量且未配置任何配额时不渲染 0/不限 四行
@@ -1091,7 +1076,6 @@ Item {
                         color: Theme.textSecondary
                         font.pixelSize: Theme.fontSizeBody
                         font.family: Theme.fontSans
-                        opacity: 0.7
                     }
 
                     // 日 Token / 日费用 / 月 Token / 月费用
@@ -1107,7 +1091,7 @@ Item {
                         delegate: RowLayout {
                             required property var modelData
                             Layout.fillWidth: true
-                            spacing: 8
+                            spacing: Theme.spaceSm
 
                             Text {
                                 text: modelData.label
@@ -1131,7 +1115,7 @@ Item {
                                 Layout.fillWidth: true
                                 Layout.preferredHeight: 6
                                 radius: 3
-                                color: Theme.bgSecondary
+                                color: Theme.bgPrimary
                                 Rectangle {
                                     width: Math.max(0, Math.min(parent.width,
                                         modelData.quota > 0
@@ -1154,21 +1138,21 @@ Item {
         // 仍能完整显示（单行四列在内容区 ~560px 下必然截断）。
         Rectangle {
             Layout.fillWidth: true
-            implicitHeight: quotaSettingsCol.implicitHeight + 20
-            radius: 8
-            color: Theme.bgPrimary
+            implicitHeight: quotaSettingsCol.implicitHeight + Theme.spaceLg
+            radius: Theme.radiusMd
+            color: Theme.bgSecondary
             border.width: 1
             border.color: Theme.borderSubtle
 
             ColumnLayout {
                 id: quotaSettingsCol
                 anchors.fill: parent
-                anchors.margins: 10
-                spacing: 8
+                anchors.margins: Theme.spaceMd
+                spacing: Theme.spaceSm
 
                 RowLayout {
                     Layout.fillWidth: true
-                    spacing: 8
+                    spacing: Theme.spaceSm
 
                     Text {
                         text: qsTr("配额设置")
@@ -1180,10 +1164,9 @@ Item {
                     Text {
                         text: qsTr("0 = 不限制 · 本地模型不计费")
                         color: Theme.textSecondary
-                        font.pixelSize: 10
+                        font.pixelSize: Theme.fontSizeCaption
                         font.family: Theme.fontSans
-                        opacity: 0.8
-                        elide: Text.ElideRight
+                                elide: Text.ElideRight
                         Layout.fillWidth: true
                         HoverHandler { id: quotaTipHover }
                         ToolTip.visible: quotaTipHover.hovered
@@ -1204,8 +1187,8 @@ Item {
                 GridLayout {
                     Layout.fillWidth: true
                     columns: 2
-                    columnSpacing: 16
-                    rowSpacing: 6
+                    columnSpacing: Theme.spaceLg
+                    rowSpacing: Theme.spaceXs
 
                     // External quota changes (e.g. a backup restore done from
                     // the 备份 page in the same dialog session) must reach
@@ -1234,7 +1217,7 @@ Item {
                         }
                     }
 
-                    Text { text: qsTr("每日 Token 上限"); color: Theme.textSecondary; font.pixelSize: 10; font.family: Theme.fontSans; Layout.preferredWidth: 104 }
+                    Text { text: qsTr("每日 Token 上限"); color: Theme.textSecondary; font.pixelSize: Theme.fontSizeCaption; font.family: Theme.fontSans; Layout.preferredWidth: 104 }
                     SpinBox {
                         id: dailyTokenSpin
                         objectName: "dailyTokenQuota"
@@ -1244,7 +1227,7 @@ Item {
                         onValueModified: Settings.dailyTokenQuota = value
                         Accessible.name: qsTr("每日 Token 上限")
                     }
-                    Text { text: qsTr("每月 Token 上限"); color: Theme.textSecondary; font.pixelSize: 10; font.family: Theme.fontSans; Layout.preferredWidth: 104 }
+                    Text { text: qsTr("每月 Token 上限"); color: Theme.textSecondary; font.pixelSize: Theme.fontSizeCaption; font.family: Theme.fontSans; Layout.preferredWidth: 104 }
                     SpinBox {
                         id: monthlyTokenSpin
                         objectName: "monthlyTokenQuota"
@@ -1254,7 +1237,7 @@ Item {
                         onValueModified: Settings.monthlyTokenQuota = value
                         Accessible.name: qsTr("每月 Token 上限")
                     }
-                    Text { text: qsTr("每日费用上限（元）"); color: Theme.textSecondary; font.pixelSize: 10; font.family: Theme.fontSans; Layout.preferredWidth: 104 }
+                    Text { text: qsTr("每日费用上限（元）"); color: Theme.textSecondary; font.pixelSize: Theme.fontSizeCaption; font.family: Theme.fontSans; Layout.preferredWidth: 104 }
                     SpinBox {
                         id: dailyCostSpin
                         objectName: "dailyCostQuotaCents"
@@ -1264,7 +1247,7 @@ Item {
                         onValueModified: Settings.dailyCostQuotaCents = value * 100
                         Accessible.name: qsTr("每日费用上限 元")
                     }
-                    Text { text: qsTr("每月费用上限（元）"); color: Theme.textSecondary; font.pixelSize: 10; font.family: Theme.fontSans; Layout.preferredWidth: 104 }
+                    Text { text: qsTr("每月费用上限（元）"); color: Theme.textSecondary; font.pixelSize: Theme.fontSizeCaption; font.family: Theme.fontSans; Layout.preferredWidth: 104 }
                     SpinBox {
                         id: monthlyCostSpin
                         objectName: "monthlyCostQuotaCents"

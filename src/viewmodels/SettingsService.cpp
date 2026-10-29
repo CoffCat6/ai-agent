@@ -258,7 +258,10 @@ QVariantMap SettingsService::activeProfile() const {
 
 bool SettingsService::persistValue(const QString& key, const QVariant& value) {
     QString error;
-    if (SettingsRepository::writeValue(key, value, &error)) return true;
+    if (SettingsRepository::writeValue(key, value, &error)) {
+        emit settingSaved(key);
+        return true;
+    }
 
     qCWarning(lcSettings) << "Failed to persist setting" << key << error;
     emit persistenceError(tr("设置未能保存，请检查存储权限或磁盘空间后重试。"));
@@ -535,7 +538,12 @@ bool SettingsService::persist() {
         {QString::fromLatin1(kActiveKey), m_activeId}
     };
     QString error;
-    if (SettingsRepository::writeBatch(entries, &error)) return true;
+    if (SettingsRepository::writeBatch(entries, &error)) {
+        // 模型配置走整份 blob 写入，不经过 persistValue；补发同一个回执信号，
+        // 让设置底栏的"已保存"对模型页同样成立。
+        emit settingSaved(QStringLiteral("modelProfiles"));
+        return true;
+    }
 
     qCWarning(lcSettings) << "Failed to persist model profiles:" << error;
     emit persistenceError(tr("模型配置未能保存。请检查设置存储权限或磁盘空间后重试。"));

@@ -14,7 +14,8 @@ Dialog {
     anchors.centerIn: parent
     padding: 0
     width: 520
-    height: 460
+    // 条目新增 Ctrl+F 后按原高度会挤到关闭按钮，留出余量。
+    height: 520
 
 
     background: DialogBackground {}
@@ -39,9 +40,8 @@ Dialog {
             Layout.rightMargin: 24
             text: qsTr("全部快捷键一览")
             color: Theme.textSecondary
-            font.pixelSize: 10
+            font.pixelSize: Theme.fontSizeCaption
             font.family: Theme.fontSans
-            opacity: 0.8
             Layout.fillWidth: true
         }
 
@@ -55,6 +55,7 @@ Dialog {
             Repeater {
                 model: [
                     { seq: "Ctrl+,",  action: qsTr("打开设置中心") },
+                    { seq: "Ctrl+F",  action: qsTr("设置中心内搜索（设置打开时）") },
                     { seq: "Ctrl+L",  action: qsTr("打开审计日志") },
                     { seq: "Ctrl+B",  action: qsTr("显示/隐藏上下文面板") },
         { seq: "Ctrl+R",  action: qsTr("打开文件改动审阅") },

@@ -353,6 +353,59 @@ Canvas {
             line(c, 8.6, 12, 16.2, 12)
             line(c, 8.6, 16.6, 18.6, 16.6)
             circle(c, 5.2, 12, 1.5)
+        },
+        // ── 设置中心分类导航（CategoryNav）──
+        // 每个分类一个语义图标；只用路径基元，保证软件渲染后端也可见。
+        "globe": function(c) {
+            circle(c, 12, 12, 8.2)
+            line(c, 3.8, 12, 20.2, 12)
+            c.beginPath()
+            c.moveTo(12, 3.8)
+            c.bezierCurveTo(7.6, 6.4, 7.6, 17.6, 12, 20.2)
+            c.bezierCurveTo(16.4, 17.6, 16.4, 6.4, 12, 3.8)
+            c.stroke()
+        },
+        "book": function(c) {
+            roundedRect(c, 3.8, 5.2, 7.4, 13.6, 1.4)
+            roundedRect(c, 12.8, 5.2, 7.4, 13.6, 1.4)
+            line(c, 12, 5.8, 12, 18.6)
+        },
+        "chart": function(c) {
+            line(c, 4, 20, 20, 20)
+            line(c, 7.5, 20, 7.5, 13.5)
+            line(c, 12, 20, 12, 7.5)
+            line(c, 16.5, 20, 16.5, 11)
+        },
+        "pulse": function(c) {
+            polyline(c, [3.5, 12.5, 7.2, 12.5, 9.2, 7.5, 12.2, 17, 14.4, 10.5, 16.2, 12.5, 20.5, 12.5])
+        },
+        "list": function(c) {
+            // 带项目符号的列表，与三横线 "menu" 区分。
+            circle(c, 5, 7, 1.2); line(c, 9, 7, 20, 7)
+            circle(c, 5, 12, 1.2); line(c, 9, 12, 20, 12)
+            circle(c, 5, 17, 1.2); line(c, 9, 17, 20, 17)
+        },
+        "database": function(c) {
+            // 圆柱体：顶面 + 两条侧边 + 两道弧线。
+            c.beginPath()
+            c.moveTo(5, 6)
+            c.bezierCurveTo(5, 4.1, 8.1, 3.4, 12, 3.4)
+            c.bezierCurveTo(15.9, 3.4, 19, 4.1, 19, 6)
+            c.bezierCurveTo(19, 7.9, 15.9, 8.6, 12, 8.6)
+            c.bezierCurveTo(8.1, 8.6, 5, 7.9, 5, 6)
+            c.stroke()
+            line(c, 5, 6, 5, 18)
+            line(c, 19, 6, 19, 18)
+            c.beginPath()
+            c.moveTo(5, 18)
+            c.bezierCurveTo(5, 19.9, 8.1, 20.6, 12, 20.6)
+            c.bezierCurveTo(15.9, 20.6, 19, 19.9, 19, 18)
+            c.stroke()
+            c.beginPath()
+            c.moveTo(5, 12)
+            c.bezierCurveTo(5, 13.9, 8.1, 14.6, 12, 14.6)
+            c.bezierCurveTo(15.9, 14.6, 19, 13.9, 19, 12)
+            c.stroke()
         }
     })
 

@@ -7,38 +7,18 @@ import NexusAI.ViewModels
 // MCP server management (Batch 31b): list configured servers with live
 // connection state, add/remove/enable them; tools surface in the chat once
 // a server connects.
-ScrollView {
+Item {
     id: page
-    clip: true
 
     Accessible.name: qsTr("MCP 服务器管理页")
 
-    ColumnLayout {
-        width: page.availableWidth
-        spacing: 12
+    SettingsPage {
+        anchors.fill: parent
 
-        Item { Layout.preferredHeight: 4 }
-
-        Text {
-            objectName: "mcp/servers"
-            text: qsTr("MCP 服务器")
-            color: Theme.textPrimary
-            font.pixelSize: Theme.fontSizeH2
-            font.bold: true
-            font.family: Theme.fontSans
-            Layout.leftMargin: 24
-        }
-
-        Text {
-            text: qsTr("接入外部工具服务器；其工具经确认后由智能体调用。修改即时生效。")
-            color: Theme.textSecondary
-            font.pixelSize: Theme.fontSizeCaption
-            font.family: Theme.fontSans
-            wrapMode: Text.Wrap
-            Layout.fillWidth: true
-            Layout.leftMargin: 24
-            Layout.rightMargin: 24
-        }
+        title: qsTr("MCP 服务器")
+        description: qsTr("接入外部工具服务器；其工具经确认后由智能体调用。修改即时生效。")
+        // 设置搜索用：目录条目 mcp/servers 锚定页头标题。
+        headerObjectName: "mcp/servers"
 
         // ── Server cards ───────────────────────────────
         Repeater {
@@ -46,10 +26,8 @@ ScrollView {
 
             delegate: Rectangle {
                 Layout.fillWidth: true
-                Layout.leftMargin: 24
-                Layout.rightMargin: 24
-                height: serverCard.implicitHeight + 20
-                radius: 8
+                implicitHeight: serverCard.implicitHeight + Theme.spaceXl
+                radius: Theme.radiusMd
                 color: Theme.bgSecondary
                 border.width: 1
                 border.color: Theme.borderSubtle
@@ -57,19 +35,19 @@ ScrollView {
                 ColumnLayout {
                     id: serverCard
                     anchors.fill: parent
-                    anchors.margins: 10
-                    spacing: 6
+                    anchors.margins: Theme.spaceMd
+                    spacing: Theme.spaceSm
 
                     RowLayout {
                         Layout.fillWidth: true
-                        spacing: 8
+                        spacing: Theme.spaceSm
 
                         Rectangle {
                             // Connection state dot: green connected,
                             // brand connecting, red failed, gray off.
                             width: 8
                             height: 8
-                            radius: 4
+                            radius: width / 2
                             // Layout-managed item: anchors are undefined
                             // behavior inside a RowLayout (Qt warns), so
                             // center via the layout instead.
@@ -92,14 +70,14 @@ ScrollView {
                         Rectangle {
                             width: transportBadge.width + 12
                             height: 18
-                            radius: 9
+                            radius: Theme.radiusBadge
                             color: Theme.surfaceHover
                             Text {
                                 id: transportBadge
                                 anchors.centerIn: parent
                                 text: modelData.transport
                                 color: Theme.textSecondary
-                                font.pixelSize: 10
+                                font.pixelSize: Theme.fontSizeMicro
                                 font.family: Theme.fontMono
                             }
                         }
@@ -176,10 +154,8 @@ ScrollView {
         // ── Add server form ────────────────────────────
         Rectangle {
             Layout.fillWidth: true
-            Layout.leftMargin: 24
-            Layout.rightMargin: 24
-            height: addForm.implicitHeight + 20
-            radius: 8
+            implicitHeight: addForm.implicitHeight + Theme.spaceXl
+            radius: Theme.radiusMd
             color: Theme.bgSecondary
             border.width: 1
             border.color: Theme.borderSubtle
@@ -187,8 +163,8 @@ ScrollView {
             ColumnLayout {
                 id: addForm
                 anchors.fill: parent
-                anchors.margins: 10
-                spacing: 8
+                anchors.margins: Theme.spaceMd
+                spacing: Theme.spaceSm
 
                 Text {
                     text: qsTr("添加服务器")
@@ -200,40 +176,42 @@ ScrollView {
 
                 RowLayout {
                     Layout.fillWidth: true
-                    spacing: 8
+                    spacing: Theme.spaceSm
 
                     ColumnLayout {
-                        spacing: 4
-                        Text { text: qsTr("名称"); color: Theme.textSecondary; font.pixelSize: Theme.fontSizeCaption; font.family: Theme.fontMono }
+                        spacing: Theme.spaceXs
+                        Text { text: qsTr("名称"); color: Theme.textSecondary; font.pixelSize: Theme.fontSizeCaption; font.family: Theme.fontSans }
                         TextField {
                             id: nameField
                             Accessible.name: qsTr("名称")
-                            Layout.preferredWidth: 160
+                            Layout.preferredWidth: Theme.controlWidthSm
                             placeholderText: qsTr("my-server")
                             placeholderTextColor: Theme.textSecondary
                             color: Theme.textPrimary
+                            selectionColor: Theme.brandPrimary
+                            selectedTextColor: Theme.selectedTextColor
                             selectByMouse: true
                             font.pixelSize: Theme.fontSizeBody
-                            background: Rectangle { radius: 6; color: Theme.bgPrimary; border.width: nameField.activeFocus ? 2 : 1; border.color: nameField.activeFocus ? Theme.brandPrimary : Theme.borderSubtle }
+                            background: Rectangle { radius: Theme.radiusField; color: Theme.surfaceHover; border.width: nameField.activeFocus ? 2 : 1; border.color: nameField.activeFocus ? Theme.brandPrimary : Theme.borderSubtle }
                         }
                     }
 
                     ColumnLayout {
-                        spacing: 4
-                        Text { text: qsTr("类型"); color: Theme.textSecondary; font.pixelSize: Theme.fontSizeCaption; font.family: Theme.fontMono }
+                        spacing: Theme.spaceXs
+                        Text { text: qsTr("类型"); color: Theme.textSecondary; font.pixelSize: Theme.fontSizeCaption; font.family: Theme.fontSans }
                         ComboBox {
                             id: transportBox
                             Accessible.name: qsTr("类型")
-                            Layout.preferredWidth: 120
+                            Layout.preferredWidth: Theme.controlWidthXs
                             model: ["stdio", "http"]
                         }
                     }
 
                     ColumnLayout {
                         Layout.fillWidth: true
-                        spacing: 4
+                        spacing: Theme.spaceXs
                         visible: transportBox.currentText === "stdio"
-                        Text { text: qsTr("命令与参数（空格分隔）"); color: Theme.textSecondary; font.pixelSize: Theme.fontSizeCaption; font.family: Theme.fontMono }
+                        Text { text: qsTr("命令与参数（空格分隔）"); color: Theme.textSecondary; font.pixelSize: Theme.fontSizeCaption; font.family: Theme.fontSans }
                         TextField {
                             id: commandField
                             Accessible.name: qsTr("命令与参数（空格分隔）")
@@ -241,17 +219,19 @@ ScrollView {
                             placeholderText: qsTr("npx -y @modelcontextprotocol/server-filesystem D:/docs")
                             placeholderTextColor: Theme.textSecondary
                             color: Theme.textPrimary
+                            selectionColor: Theme.brandPrimary
+                            selectedTextColor: Theme.selectedTextColor
                             selectByMouse: true
                             font.pixelSize: Theme.fontSizeBody
-                            background: Rectangle { radius: 6; color: Theme.bgPrimary; border.width: commandField.activeFocus ? 2 : 1; border.color: commandField.activeFocus ? Theme.brandPrimary : Theme.borderSubtle }
+                            background: Rectangle { radius: Theme.radiusField; color: Theme.surfaceHover; border.width: commandField.activeFocus ? 2 : 1; border.color: commandField.activeFocus ? Theme.brandPrimary : Theme.borderSubtle }
                         }
                     }
 
                     ColumnLayout {
                         Layout.fillWidth: true
-                        spacing: 4
+                        spacing: Theme.spaceXs
                         visible: transportBox.currentText === "http"
-                        Text { text: qsTr("服务端点 URL"); color: Theme.textSecondary; font.pixelSize: Theme.fontSizeCaption; font.family: Theme.fontMono }
+                        Text { text: qsTr("服务端点 URL"); color: Theme.textSecondary; font.pixelSize: Theme.fontSizeCaption; font.family: Theme.fontSans }
                         TextField {
                             id: urlField
                             Accessible.name: qsTr("服务端点 URL")
@@ -259,16 +239,18 @@ ScrollView {
                             placeholderText: qsTr("https://mcp.example.com/mcp")
                             placeholderTextColor: Theme.textSecondary
                             color: Theme.textPrimary
+                            selectionColor: Theme.brandPrimary
+                            selectedTextColor: Theme.selectedTextColor
                             selectByMouse: true
                             font.pixelSize: Theme.fontSizeBody
-                            background: Rectangle { radius: 6; color: Theme.bgPrimary; border.width: urlField.activeFocus ? 2 : 1; border.color: urlField.activeFocus ? Theme.brandPrimary : Theme.borderSubtle }
+                            background: Rectangle { radius: Theme.radiusField; color: Theme.surfaceHover; border.width: urlField.activeFocus ? 2 : 1; border.color: urlField.activeFocus ? Theme.brandPrimary : Theme.borderSubtle }
                         }
                     }
                 }
 
                 RowLayout {
                     Layout.alignment: Qt.AlignRight
-                    spacing: 8
+                    spacing: Theme.spaceSm
                     Item { Layout.fillWidth: true }
                     AppButton {
                         text: qsTr("添加并连接")
@@ -298,8 +280,6 @@ ScrollView {
                 }
             }
         }
-
-        Item { Layout.preferredHeight: 8 }
     }
 
     // Removal confirmation (shared, one instance for every card).
@@ -316,12 +296,12 @@ ScrollView {
         background: DialogBackground {}
 
         contentItem: ColumnLayout {
-            spacing: 12
+            spacing: Theme.spaceMd
 
             Text {
-                Layout.leftMargin: 16
-                Layout.rightMargin: 16
-                Layout.topMargin: 16
+                Layout.leftMargin: Theme.spaceLg
+                Layout.rightMargin: Theme.spaceLg
+                Layout.topMargin: Theme.spaceLg
                 Layout.fillWidth: true
                 text: qsTr("移除服务器 %1？").arg(removeConfirm.pendingName)
                 color: Theme.textPrimary
@@ -332,9 +312,9 @@ ScrollView {
 
             RowLayout {
                 Layout.alignment: Qt.AlignRight
-                Layout.rightMargin: 16
-                Layout.bottomMargin: 16
-                spacing: 8
+                Layout.rightMargin: Theme.spaceLg
+                Layout.bottomMargin: Theme.spaceLg
+                spacing: Theme.spaceSm
 
                 AppButton {
                     text: qsTr("取消")

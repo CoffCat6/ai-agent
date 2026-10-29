@@ -15,7 +15,9 @@
 #include <QThreadPool>
 #include <QScopeGuard>
 #include <QFileInfo>
+#include <QFile>
 #include <QDir>
+#include <QRegularExpression>
 #include <QtConcurrent/QtConcurrentRun>
 
 #include "core/agent/AIAgent.h"
@@ -512,7 +514,10 @@ private slots:
             QStringLiteral("security"), QStringLiteral("network"),
             QStringLiteral("memory"), QStringLiteral("tools"),
             QStringLiteral("agent"), QStringLiteral("knowledge"),
-            QStringLiteral("logs")
+            QStringLiteral("logs"), QStringLiteral("mcp"),
+            QStringLiteral("usage"), QStringLiteral("activity"),
+            QStringLiteral("backup"), QStringLiteral("projects"),
+            QStringLiteral("prompts"), QStringLiteral("model")
         };
         for (const QString &category : categories) {
             QVERIFY(QMetaObject::invokeMethod(dialog, "openCategory",
@@ -521,6 +526,120 @@ private slots:
             QVERIFY2(warnings.isEmpty(),
                      qPrintable(QStringLiteral("%1: %2")
                                     .arg(category, warnings.join(QLatin1Char('\n')))));
+        }
+    }
+
+
+    // 设置搜索的可发现性回归：输入即切到结果列表，结果计数可见；无匹配
+    // 时列表清空（空态由 QML 渲染）。键盘跳转依赖同一份结果模型。
+    void settingsSearchShowsResultsAndEmptyState() {
+        QQmlApplicationEngine engine;
+        engine.rootContext()->setContextProperty("Theme", ThemeProvider::instance());
+        engine.load(QUrl("qrc:/qt/qml/NexusAI/src/ui/main.qml"));
+        QVERIFY(!engine.rootObjects().isEmpty());
+        auto* window = engine.rootObjects().first();
+        auto* dialog = window->findChild<QObject*>("settingsCenterDialog");
+        QVERIFY(dialog);
+        QVERIFY(QMetaObject::invokeMethod(dialog, "openCategory",
+                                          Q_ARG(QVariant, QStringLiteral("model"))));
+        QTest::qWait(150);
+
+        auto* field = window->findChild<QObject*>("settingsSearchField");
+        auto* results = window->findChild<QObject*>("settingsSearchResults");
+        QVERIFY(field);
+        QVERIFY(results);
+
+        field->setProperty("text", QStringLiteral("代理"));
+        QTest::qWait(200);
+        QVERIFY(results->property("visible").toBool());
+        QVERIFY(results->property("count").toInt() > 0);
+
+        field->setProperty("text", QStringLiteral("no-such-setting-xyz"));
+        QTest::qWait(200);
+        QCOMPARE(results->property("count").toInt(), 0);
+
+        field->setProperty("text", QString());
+    }
+
+
+    // 导航密度回归：诊断类分组默认收起，但当前分类落在这个组时必须自动
+    // 展开（否则搜索结果跳转过去后选中项不可见）；窄对话框则收成图标条。
+    void settingsNavigationCollapsesAndCompacts() {
+        QQmlApplicationEngine engine;
+        engine.rootContext()->setContextProperty("Theme", ThemeProvider::instance());
+        engine.load(QUrl("qrc:/qt/qml/NexusAI/src/ui/main.qml"));
+        QVERIFY(!engine.rootObjects().isEmpty());
+        auto* window = engine.rootObjects().first();
+        auto* dialog = window->findChild<QObject*>("settingsCenterDialog");
+        auto* nav = window->findChild<QObject*>("settingsCategoryNav");
+        QVERIFY(dialog);
+        QVERIFY(nav);
+        QVERIFY(QMetaObject::invokeMethod(dialog, "openCategory",
+                                          Q_ARG(QVariant, QStringLiteral("model"))));
+        QTest::qWait(120);
+
+        QVariantMap collapsed = nav->property("collapsedGroups").toMap();
+        QVERIFY(collapsed.value(QStringLiteral("data")).toBool());
+
+        QVERIFY(QMetaObject::invokeMethod(dialog, "openCategory",
+                                          Q_ARG(QVariant, QStringLiteral("logs"))));
+        QTest::qWait(120);
+        collapsed = nav->property("collapsedGroups").toMap();
+        QVERIFY(!collapsed.value(QStringLiteral("data")).toBool());
+
+        // 窗口最小宽度 900 → 对话框 876，命中 <900 的紧凑断点。
+        dialog->setProperty("width", 860);
+        QTest::qWait(120);
+        QVERIFY(nav->property("compact").toBool());
+        QCOMPARE(nav->property("width").toInt(), 56);
+    }
+
+
+    // 视觉底座回归：设置界面不再允许裸像素字号。字号偏好可调时，写死
+    // 12px 的说明文字不会跟随缩放，而且各页会逐渐漂移回“10px 说明 + 12px
+    // 正文”的旧层级。这里只扫设置页与设置排版组件，聊天区不在此约束内。
+    void settingsUiUsesThemeFontTokens() {
+        const QStringList files = {
+            QStringLiteral("src/ui/pages/GeneralPage.qml"),
+            QStringLiteral("src/ui/pages/AgentBehaviorPage.qml"),
+            QStringLiteral("src/ui/pages/NetworkPage.qml"),
+            QStringLiteral("src/ui/pages/LogsPage.qml"),
+            QStringLiteral("src/ui/pages/KnowledgePage.qml"),
+            QStringLiteral("src/ui/pages/InterfacePage.qml"),
+            QStringLiteral("src/ui/pages/ModelConfigPage.qml"),
+            QStringLiteral("src/ui/pages/SecurityPage.qml"),
+            QStringLiteral("src/ui/pages/McpPage.qml"),
+            QStringLiteral("src/ui/pages/ToolsPage.qml"),
+            QStringLiteral("src/ui/pages/MemoryPage.qml"),
+            QStringLiteral("src/ui/pages/UsageStatsPage.qml"),
+            QStringLiteral("src/ui/pages/ActivityLogPage.qml"),
+            QStringLiteral("src/ui/pages/SettingsBackupPage.qml"),
+            QStringLiteral("src/ui/pages/ProjectRulesPage.qml"),
+            QStringLiteral("src/ui/pages/PromptAssetsPage.qml"),
+            QStringLiteral("src/ui/components/SettingsPage.qml"),
+            QStringLiteral("src/ui/components/SettingsPageHeader.qml"),
+            QStringLiteral("src/ui/components/SettingsSection.qml"),
+            QStringLiteral("src/ui/components/SettingRow.qml"),
+            QStringLiteral("src/ui/components/SettingsField.qml"),
+            QStringLiteral("src/ui/components/SettingCard.qml"),
+            QStringLiteral("src/ui/components/PreferenceControl.qml"),
+            QStringLiteral("src/ui/components/SettingsCenterDialog.qml"),
+            QStringLiteral("src/ui/components/CategoryNav.qml"),
+            QStringLiteral("src/ui/components/AppButton.qml"),
+            QStringLiteral("src/ui/components/AppScrollBar.qml"),
+            QStringLiteral("src/ui/components/StatusLine.qml")
+        };
+        const QRegularExpression rawFont(QStringLiteral("font\\.pixelSize\\s*:\\s*\\d"));
+        for (const QString &rel : files) {
+            QFile file(QStringLiteral(NEXUS_SOURCE_DIR "/") + rel);
+            QVERIFY2(file.open(QIODevice::ReadOnly | QIODevice::Text),
+                     qPrintable(QStringLiteral("cannot open ") + rel));
+            const QString text = QString::fromUtf8(file.readAll());
+            const auto match = rawFont.match(text);
+            QVERIFY2(!match.hasMatch(),
+                     qPrintable(QStringLiteral("%1: hardcoded font.pixelSize at offset %2")
+                                    .arg(rel)
+                                    .arg(match.capturedStart())));
         }
     }
 

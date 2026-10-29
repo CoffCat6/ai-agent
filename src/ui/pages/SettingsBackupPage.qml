@@ -18,190 +18,71 @@ Item {
     property string pendingRestorePath: ""
     property var pendingRestoreInfo: ({})
 
-
-    Flickable {
-        id: flick
+    SettingsPage {
         anchors.fill: parent
-        clip: true
-        contentWidth: width
-        contentHeight: contentCol.implicitHeight + 32
-        ScrollBar.vertical: ScrollBar {}
 
-        ColumnLayout {
-            id: contentCol
-            width: flick.width
-            spacing: 16
+        title: qsTr("设置与备份")
+        description: qsTr("将应用设置保存为 JSON 文件，或从备份文件恢复。已知密钥字段和 SQLite 数据（如聊天记录与长期记忆）不包含在内；自由文本及 MCP 命令参数可能含有敏感内容。")
 
-            Item { Layout.preferredHeight: 4 }
+        SettingCard {
+            objectName: "backup/settings"
+            Layout.fillWidth: true
+            title: qsTr("导出设置")
+            subtitle: qsTr("选择保存位置，生成可用于迁移设置的 JSON 备份。请妥善保管备份文件。")
 
-            Text {
-                text: qsTr("设置与备份")
-                color: Theme.textPrimary
-                font.pixelSize: Theme.fontSizeH2
-                font.bold: true
-                font.family: Theme.fontSans
-                Layout.leftMargin: 24
+            AppButton {
+                text: qsTr("导出 JSON…")
+                onClicked: exportDialog.open()
             }
+        }
 
-            Text {
-                text: qsTr("将应用设置保存为 JSON 文件，或从备份文件恢复。已知密钥字段和 SQLite 数据（如聊天记录与长期记忆）不包含在内；自由文本及 MCP 命令参数可能含有敏感内容。")
-                color: Theme.textSecondary
-                font.pixelSize: Theme.fontSizeBody
-                font.family: Theme.fontSans
-                wrapMode: Text.Wrap
-                Layout.fillWidth: true
-                Layout.leftMargin: 24
-                Layout.rightMargin: 24
+        SettingCard {
+            Layout.fillWidth: true
+            title: qsTr("从备份恢复")
+            subtitle: qsTr("先预览将恢复的设置，再确认导入；高风险权限及开机自启需在恢复后重新确认。建议恢复后重启应用。")
+
+            AppButton {
+                text: qsTr("选择 JSON 备份…")
+                onClicked: importDialog.open()
             }
+        }
 
-            Rectangle {
-                objectName: "backup/settings"
-                Layout.fillWidth: true
-                Layout.leftMargin: 24
-                Layout.rightMargin: 24
-                implicitHeight: exportCol.implicitHeight + 32
-                radius: 8
-                color: Theme.bgSecondary
-                border.width: 1
-                border.color: Theme.borderSubtle
+        // ── docs/23 D1: 数据库备份 ──────────────────────
+        SettingCard {
+            objectName: "backup/database"
+            Layout.fillWidth: true
+            title: qsTr("数据库备份")
+            subtitle: qsTr("聊天记录、思考轨迹与知识库保存在 SQLite 数据库中，设置 JSON 备份不包含它们。启动时会自动备份并保留最近 %1 份；此处可随时手动备份，或预览任一备份文件的内容概况。").arg(Settings.backupKeepCount)
 
-                ColumnLayout {
-                    id: exportCol
-                    anchors.left: parent.left
-                    anchors.right: parent.right
-                    anchors.top: parent.top
-                    anchors.margins: 16
-                    spacing: 8
-
-                    Text {
-                        text: qsTr("导出设置")
-                        color: Theme.textPrimary
-                        font.pixelSize: Theme.fontSizeBody
-                        font.bold: true
-                        font.family: Theme.fontSans
-                    }
-                    Text {
-                        text: qsTr("选择保存位置，生成可用于迁移设置的 JSON 备份。请妥善保管备份文件。")
-                        color: Theme.textSecondary
-                        font.pixelSize: Theme.fontSizeCaption
-                        font.family: Theme.fontSans
-                        wrapMode: Text.Wrap
-                        Layout.fillWidth: true
-                    }
-                    AppButton {
-                        text: qsTr("导出 JSON…")
-                        onClicked: exportDialog.open()
+            RowLayout {
+                spacing: Theme.spaceSm
+                AppButton {
+                    text: qsTr("立即备份")
+                    onClicked: {
+                        const err = AgentVM.backupDatabaseNow()
+                        page.statusIsError = err.length > 0
+                        page.statusMessage = err.length > 0
+                            ? err
+                            : qsTr("数据库已备份到 %1。").arg(
+                                  AgentVM.lastDatabaseBackupPath())
                     }
                 }
-            }
-
-            Rectangle {
-                Layout.fillWidth: true
-                Layout.leftMargin: 24
-                Layout.rightMargin: 24
-                implicitHeight: importCol.implicitHeight + 32
-                radius: 8
-                color: Theme.bgSecondary
-                border.width: 1
-                border.color: Theme.borderSubtle
-
-                ColumnLayout {
-                    id: importCol
-                    anchors.left: parent.left
-                    anchors.right: parent.right
-                    anchors.top: parent.top
-                    anchors.margins: 16
-                    spacing: 8
-
-                    Text {
-                        text: qsTr("从备份恢复")
-                        color: Theme.textPrimary
-                        font.pixelSize: Theme.fontSizeBody
-                        font.bold: true
-                        font.family: Theme.fontSans
-                    }
-                    Text {
-                        text: qsTr("先预览将恢复的设置，再确认导入；高风险权限及开机自启需在恢复后重新确认。建议恢复后重启应用。")
-                        color: Theme.textSecondary
-                        font.pixelSize: Theme.fontSizeCaption
-                        font.family: Theme.fontSans
-                        wrapMode: Text.Wrap
-                        Layout.fillWidth: true
-                    }
-                    AppButton {
-                        text: qsTr("选择 JSON 备份…")
-                        onClicked: importDialog.open()
-                    }
+                AppButton {
+                    text: qsTr("预览备份文件…")
+                    onClicked: previewDialog.open()
                 }
             }
+        }
 
-            // ── docs/23 D1: 数据库备份 ──────────────────────
-            Rectangle {
-                objectName: "backup/database"
-                Layout.fillWidth: true
-                Layout.leftMargin: 24
-                Layout.rightMargin: 24
-                implicitHeight: dbBackupCol.implicitHeight + 32
-                color: Theme.bgSecondary
-                border.width: 1
-                border.color: Theme.borderSubtle
-
-                ColumnLayout {
-                    id: dbBackupCol
-                    anchors.left: parent.left
-                    anchors.right: parent.right
-                    anchors.top: parent.top
-                    anchors.margins: 16
-                    spacing: 8
-
-                    Text {
-                        text: qsTr("数据库备份")
-                        color: Theme.textPrimary
-                        font.pixelSize: Theme.fontSizeBody
-                        font.bold: true
-                        font.family: Theme.fontSans
-                    }
-                    Text {
-                        text: qsTr("聊天记录、思考轨迹与知识库保存在 SQLite 数据库中，设置 JSON 备份不包含它们。启动时会自动备份并保留最近 %1 份；此处可随时手动备份，或预览任一备份文件的内容概况。").arg(Settings.backupKeepCount)
-                        color: Theme.textSecondary
-                        font.pixelSize: Theme.fontSizeCaption
-                        font.family: Theme.fontSans
-                        wrapMode: Text.Wrap
-                        Layout.fillWidth: true
-                    }
-                    RowLayout {
-                        spacing: 8
-                        AppButton {
-                            text: qsTr("立即备份")
-                            onClicked: {
-                                const err = AgentVM.backupDatabaseNow()
-                                page.statusIsError = err.length > 0
-                                page.statusMessage = err.length > 0
-                                    ? err
-                                    : qsTr("数据库已备份到 %1。").arg(
-                                          AgentVM.lastDatabaseBackupPath())
-                            }
-                        }
-                        AppButton {
-                            text: qsTr("预览备份文件…")
-                            onClicked: previewDialog.open()
-                        }
-                    }
-                }
-            }
-
-            Text {
-                visible: page.statusMessage.length > 0
-                text: page.statusMessage
-                color: page.statusIsError ? Theme.statusDanger : Theme.textPrimary
-                font.pixelSize: Theme.fontSizeBody
-                font.family: Theme.fontSans
-                wrapMode: Text.Wrap
-                Layout.fillWidth: true
-                Layout.leftMargin: 24
-                Layout.rightMargin: 24
-                Accessible.role: Accessible.StaticText
-            }
+        Text {
+            visible: page.statusMessage.length > 0
+            text: page.statusMessage
+            color: page.statusIsError ? Theme.statusDanger : Theme.textPrimary
+            font.pixelSize: Theme.fontSizeBody
+            font.family: Theme.fontSans
+            wrapMode: Text.Wrap
+            Layout.fillWidth: true
+            Accessible.role: Accessible.StaticText
         }
     }
 
@@ -282,11 +163,11 @@ Item {
         modal: true
         anchors.centerIn: parent
         width: 440
-        padding: 20
+        padding: Theme.spaceXl
         background: DialogBackground {}
 
         contentItem: ColumnLayout {
-            spacing: 12
+            spacing: Theme.spaceMd
 
             Text {
                 text: qsTr("恢复数据库")
@@ -307,6 +188,7 @@ Item {
             }
             RowLayout {
                 Layout.alignment: Qt.AlignRight
+                spacing: Theme.spaceSm
                 AppButton {
                     text: qsTr("取消")
                     onClicked: confirmRestoreDialog.close()
@@ -335,11 +217,11 @@ Item {
         anchors.centerIn: parent
         width: 440
         height: 390
-        padding: 20
+        padding: Theme.spaceXl
         background: DialogBackground {}
 
         contentItem: ColumnLayout {
-            spacing: 10
+            spacing: Theme.spaceMd
 
             Text {
                 text: qsTr("确认恢复设置？")
@@ -355,8 +237,8 @@ Item {
                 clip: true
 
                 ColumnLayout {
-                    width: confirmImportDialog.availableWidth - 16
-                    spacing: 10
+                    width: confirmImportDialog.availableWidth - Theme.spaceLg
+                    spacing: Theme.spaceMd
 
                     Text {
                         text: qsTr("即将恢复的分类：%1").arg(
@@ -373,7 +255,7 @@ Item {
                         text: qsTr("备份不含以下密钥：%1").arg(
                             (page.importPreview.skippedSecrets || []).join("、"))
                         color: Theme.textSecondary
-                        font.pixelSize: Theme.fontSizeBody
+                        font.pixelSize: Theme.fontSizeCaption
                         font.family: Theme.fontSans
                         wrapMode: Text.Wrap
                         Layout.fillWidth: true
@@ -383,7 +265,7 @@ Item {
                         text: qsTr("备份提示：%1").arg(
                             (page.importPreview.warnings || []).join("；"))
                         color: Theme.statusDanger
-                        font.pixelSize: Theme.fontSizeBody
+                        font.pixelSize: Theme.fontSizeCaption
                         font.family: Theme.fontSans
                         wrapMode: Text.Wrap
                         Layout.fillWidth: true
@@ -391,7 +273,7 @@ Item {
                     Text {
                         text: qsTr("匹配相同端点的本机密钥会保留；新端点需要重新配置密钥。SQLite 数据不会恢复。恢复会覆盖相应设置，MCP 服务立即禁用；请重启应用并重新确认高风险权限和开机自启。")
                         color: Theme.textSecondary
-                        font.pixelSize: Theme.fontSizeBody
+                        font.pixelSize: Theme.fontSizeCaption
                         font.family: Theme.fontSans
                         wrapMode: Text.Wrap
                         Layout.fillWidth: true
@@ -401,7 +283,7 @@ Item {
 
             RowLayout {
                 Layout.fillWidth: true
-                spacing: 8
+                spacing: Theme.spaceSm
                 Item { Layout.fillWidth: true }
                 AppButton {
                     text: qsTr("取消")

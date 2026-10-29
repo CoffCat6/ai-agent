@@ -29,6 +29,10 @@ RowLayout {
     // 密文字段默认遮蔽，并自带一个显示/隐藏切换（API Key 填完看不到内容是最常见的困惑点）
     property bool secret: false
     property bool revealed: false
+    // 密钥/凭据类字段的配置状态徽标（"已配置"/"未配置"）。放在输入框右侧
+    // 而不是塞进 placeholder：输入新值时 placeholder 会消失，状态不该跟着丢。
+    property string statusText: ""
+    property bool statusOk: true
     // 外部通过 input/text 读写文本与焦点（syncFields 要跳过正在输入的字段）；
     // text 别名让页面可以像普通输入框一样声明初值。
     property alias input: fieldInput
@@ -78,15 +82,14 @@ RowLayout {
     }
 
     Layout.fillWidth: true
-    spacing: 10
+    spacing: Theme.spaceMd
 
     Text {
         Layout.preferredWidth: root.labelWidth
         text: root.label
         color: Theme.textSecondary
         font.pixelSize: Theme.fontSizeCaption
-        font.bold: true
-        font.family: Theme.fontMono
+        font.family: Theme.fontSans
         elide: Text.ElideRight
     }
 
@@ -103,8 +106,10 @@ RowLayout {
         font.family: root.mono ? Theme.fontMono : Theme.fontSans
         selectByMouse: true
         background: Rectangle {
-            radius: 6
-            color: Theme.bgPrimary
+            radius: Theme.radiusField
+            // 输入框用下沉底色：在卡片（bgSecondary）和平面 section
+            // （页底 bgPrimary）上都能看出边界，不再只靠 1px 边框。
+            color: Theme.surfaceHover
             border.width: fieldInput.activeFocus ? 2 : 1
             border.color: fieldInput.activeFocus ? Theme.brandPrimary : Theme.borderSubtle
         }
@@ -123,6 +128,48 @@ RowLayout {
             repeat: false
             onTriggered: root.commitIfDirty()
         }
+    }
+
+    Rectangle {
+        id: statusBadge
+        visible: root.statusText.length > 0
+        Layout.alignment: Qt.AlignVCenter
+        implicitWidth: statusRow.implicitWidth + Theme.spaceSm * 2
+        implicitHeight: 20
+        radius: Theme.radiusBadge
+        color: root.statusOk
+            ? Qt.rgba(Theme.statusSuccess.r, Theme.statusSuccess.g,
+                      Theme.statusSuccess.b, 0.12)
+            : Theme.surfaceHover
+        border.width: 1
+        border.color: root.statusOk
+            ? Qt.rgba(Theme.statusSuccess.r, Theme.statusSuccess.g,
+                      Theme.statusSuccess.b, 0.35)
+            : Theme.borderSubtle
+
+        RowLayout {
+            id: statusRow
+            anchors.centerIn: parent
+            spacing: Theme.spaceXs
+
+            Rectangle {
+                Layout.alignment: Qt.AlignVCenter
+                width: 6
+                height: 6
+                radius: width / 2
+                color: root.statusOk ? Theme.statusSuccess : Theme.textSecondary
+            }
+
+            Text {
+                text: root.statusText
+                color: Theme.textPrimary
+                font.pixelSize: Theme.fontSizeMicro
+                font.family: Theme.fontSans
+            }
+        }
+
+        Accessible.role: Accessible.StaticText
+        Accessible.name: root.statusText
     }
 
     Text {

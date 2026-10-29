@@ -9,7 +9,9 @@ Rectangle {
 
     // ── Public Properties ───────────────────────────────
     property string text: ""
-    property color buttonColor: Theme.borderSubtle
+    // 非高亮按钮用 surfaceHover 作底：borderSubtle 是边框色，当填充色会
+    // 在浅色主题里糊成一块与背景几乎同色的“禁用芯片”。
+    property color buttonColor: Theme.surfaceHover
     property color textColor: Theme.textPrimary
     property bool highlighted: false
     // `enabled` is the native Item property - do not redeclare it. Setting
@@ -22,7 +24,7 @@ Rectangle {
     // ── Styling ────────────────────────────────────────
     implicitHeight: 32
     implicitWidth: buttonText.implicitWidth + 24
-    radius: 6
+    radius: Theme.radiusField
     color: highlighted ? Theme.brandPrimary
                        : (controlArea.containsMouse ? Theme.surfaceHover : buttonColor)
     opacity: enabled ? 1.0 : 0.5
