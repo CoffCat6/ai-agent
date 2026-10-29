@@ -374,7 +374,7 @@ Item {
                 clip: true
                 model: root.renderRows
                 boundsBehavior: Flickable.StopAtBounds
-                ScrollBar.vertical: ScrollBar {}
+                ScrollBar.vertical: AppScrollBar {}
 
                 delegate: Item {
                     id: diffRow
@@ -440,7 +440,7 @@ Item {
                         text: modelData.oldNo > 0 ? String(modelData.oldNo) : ""
                         color: Theme.textTertiary
                         font.family: Theme.fontMono
-                        font.pixelSize: 10
+                        font.pixelSize: Theme.fontSizeMicro
                         horizontalAlignment: Text.AlignRight
                     }
 
@@ -452,7 +452,7 @@ Item {
                         text: modelData.newNo > 0 ? String(modelData.newNo) : ""
                         color: Theme.textTertiary
                         font.family: Theme.fontMono
-                        font.pixelSize: 10
+                        font.pixelSize: Theme.fontSizeMicro
                         horizontalAlignment: Text.AlignRight
                     }
 
@@ -479,7 +479,7 @@ Item {
                             ? String(modelData.oldNo) : ""
                         color: Theme.textTertiary
                         font.family: Theme.fontMono
-                        font.pixelSize: 10
+                        font.pixelSize: Theme.fontSizeMicro
                         horizontalAlignment: Text.AlignRight
                     }
 
@@ -510,7 +510,7 @@ Item {
                             ? String(modelData.newNo) : ""
                         color: Theme.textTertiary
                         font.family: Theme.fontMono
-                        font.pixelSize: 10
+                        font.pixelSize: Theme.fontSizeMicro
                         horizontalAlignment: Text.AlignRight
                     }
 
@@ -561,7 +561,7 @@ Item {
                     anchors.bottom: parent.bottom
                     width: splitHandle.hot ? 3 : 1
                     color: splitHandle.hot ? Theme.brandPrimary : Theme.borderSubtle
-                    Behavior on color { ColorAnimation { duration: 120 } }
+                    Behavior on color { ColorAnimation { duration: Theme.motionFast } }
                 }
 
                 MouseArea {
@@ -616,7 +616,7 @@ Item {
             text: qsTr("差异过大，仅显示截断后的部分；撤销仍使用完整的改动前内容。")
             color: Theme.statusWarning
             font.family: Theme.fontSans
-            font.pixelSize: 10
+            font.pixelSize: Theme.fontSizeMicro
             wrapMode: Text.Wrap
         }
     }

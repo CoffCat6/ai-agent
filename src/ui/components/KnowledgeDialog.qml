@@ -211,7 +211,7 @@ Dialog {
                                       .arg(AgentVM.knowledgeEmbedTotal)
                                 : qsTr("导入中…")
                     color: Theme.brandPrimary
-                    font.pixelSize: 10
+                    font.pixelSize: Theme.fontSizeMicro
                     font.family: Theme.fontSans
                 }
 
@@ -351,7 +351,7 @@ Dialog {
             Layout.bottomMargin: 10
             text: qsTr("文档内容会随提问发送给当前模型服务；如需阻止，请在设置中开启“仅本地模式”。")
             color: Theme.textSecondary
-            font.pixelSize: 10
+            font.pixelSize: Theme.fontSizeMicro
             font.family: Theme.fontSans
             wrapMode: Text.Wrap
         }
@@ -365,7 +365,7 @@ Dialog {
             visible: dialog.openFailed
             text: qsTr("无法打开源文件（可能已被移动或删除）。")
             color: Theme.statusWarning
-            font.pixelSize: 10
+            font.pixelSize: Theme.fontSizeMicro
             font.family: Theme.fontSans
             wrapMode: Text.Wrap
         }
@@ -453,14 +453,14 @@ Dialog {
                 Layout.fillWidth: true
                 text: qsTr("文档")
                 color: Theme.textTertiary
-                font.pixelSize: 9
+                font.pixelSize: Theme.fontSizeNano
                 font.family: Theme.fontSans
             }
             Text {
                 Layout.preferredWidth: dialog.chunksColumnWidth
                 text: qsTr("段数")
                 color: Theme.textTertiary
-                font.pixelSize: 9
+                font.pixelSize: Theme.fontSizeNano
                 font.family: Theme.fontSans
                 horizontalAlignment: Text.AlignRight
             }
@@ -468,7 +468,7 @@ Dialog {
                 Layout.preferredWidth: dialog.charsColumnWidth
                 text: qsTr("字符")
                 color: Theme.textTertiary
-                font.pixelSize: 9
+                font.pixelSize: Theme.fontSizeNano
                 font.family: Theme.fontSans
                 horizontalAlignment: Text.AlignRight
             }
@@ -476,7 +476,7 @@ Dialog {
                 Layout.preferredWidth: dialog.statusColumnWidth
                 text: qsTr("状态")
                 color: Theme.textTertiary
-                font.pixelSize: 9
+                font.pixelSize: Theme.fontSizeNano
                 font.family: Theme.fontSans
                 horizontalAlignment: Text.AlignHCenter
             }
@@ -578,7 +578,7 @@ Dialog {
                                 visible: docRow.modelData.pseudo !== true
                                 text: qsTr("已嵌入")
                                 color: Theme.statusSuccess
-                                font.pixelSize: 9
+                                font.pixelSize: Theme.fontSizeNano
                                 font.family: Theme.fontSans
                             }
 
@@ -596,7 +596,7 @@ Dialog {
                                     anchors.centerIn: parent
                                     text: qsTr("降级")
                                     color: Theme.statusWarning
-                                    font.pixelSize: 8
+                                    font.pixelSize: Theme.fontSizeNano
                                     font.family: Theme.fontSans
                                 }
 

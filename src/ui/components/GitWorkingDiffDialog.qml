@@ -190,7 +190,7 @@ Dialog {
                 color: dialog.untracked ? Theme.textSecondary
                     : (dialog.staged ? Theme.statusSuccess : Theme.statusWarning)
                 font.family: Theme.fontSans
-                font.pixelSize: 10
+                font.pixelSize: Theme.fontSizeMicro
             }
 
             IconButton {
@@ -284,7 +284,7 @@ Dialog {
             text: dialog.actionNotice
             color: Theme.textSecondary
             font.family: Theme.fontSans
-            font.pixelSize: 10
+            font.pixelSize: Theme.fontSizeMicro
             wrapMode: Text.Wrap
         }
 
@@ -321,7 +321,7 @@ Dialog {
                 text: qsTr("未跟踪文件：按当前内容展示全部新增行。")
                 color: Theme.textSecondary
                 font.family: Theme.fontSans
-                font.pixelSize: 10
+                font.pixelSize: Theme.fontSizeMicro
                 wrapMode: Text.Wrap
             }
 
@@ -346,7 +346,7 @@ Dialog {
                             : qsTr("分块暂存")
                         color: Theme.textSecondary
                         font.family: Theme.fontSans
-                        font.pixelSize: 10
+                        font.pixelSize: Theme.fontSizeMicro
                         font.bold: true
                     }
 
@@ -355,7 +355,7 @@ Dialog {
                         text: qsTr("正在解析差异块…")
                         color: Theme.textTertiary
                         font.family: Theme.fontSans
-                        font.pixelSize: 9
+                        font.pixelSize: Theme.fontSizeNano
                     }
 
                     AppButton {
@@ -375,7 +375,7 @@ Dialog {
                     text: dialog.hunkError
                     color: Theme.textTertiary
                     font.family: Theme.fontSans
-                    font.pixelSize: 10
+                    font.pixelSize: Theme.fontSizeMicro
                     wrapMode: Text.Wrap
                 }
 
@@ -387,7 +387,7 @@ Dialog {
                     clip: true
                     boundsBehavior: Flickable.StopAtBounds
                     contentHeight: hunkColumn.implicitHeight
-                    ScrollBar.vertical: ScrollBar { policy: ScrollBar.AsNeeded }
+                    ScrollBar.vertical: AppScrollBar { policy: ScrollBar.AsNeeded }
 
                     ColumnLayout {
                         id: hunkColumn
@@ -424,7 +424,7 @@ Dialog {
                                             text: hunkRow.modelData.summary
                                             color: Theme.textPrimary
                                             font.family: Theme.fontMono
-                                            font.pixelSize: 9
+                                            font.pixelSize: Theme.fontSizeNano
                                             elide: Text.ElideRight
                                         }
 
@@ -435,7 +435,7 @@ Dialog {
                                                   + " −" + hunkRow.modelData.removals
                                             color: Theme.textTertiary
                                             font.family: Theme.fontMono
-                                            font.pixelSize: 8
+                                            font.pixelSize: Theme.fontSizeNano
                                             elide: Text.ElideMiddle
                                         }
                                     }

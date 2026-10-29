@@ -128,7 +128,7 @@ Dialog {
                 text: qsTr("必须填写说明。")
                 color: Theme.statusWarning
                 font.family: Theme.fontSans
-                font.pixelSize: 10
+                font.pixelSize: Theme.fontSizeMicro
             }
         }
 
@@ -140,7 +140,7 @@ Dialog {
             text: dialog.noticeText
             color: Theme.statusWarning
             font.family: Theme.fontMono
-            font.pixelSize: 10
+            font.pixelSize: Theme.fontSizeMicro
             wrapMode: Text.Wrap
         }
 

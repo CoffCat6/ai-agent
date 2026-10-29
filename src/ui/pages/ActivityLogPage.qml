@@ -185,15 +185,14 @@ Item {
                             ScrollBar.vertical: AppScrollBar {}
 
                             // 空态两种文案：全量无记录 vs 过滤后无匹配
-                            Text {
+                            EmptyState {
                                 visible: page.activityEvents.length === 0
                                 anchors.centerIn: parent
-                                text: page.usageEvents.length === 0
+                                width: Math.max(0, activityList.width - Theme.spaceXl * 2)
+                                icon: "list"
+                                title: page.usageEvents.length === 0
                                     ? qsTr("暂无活动记录")
                                     : qsTr("无匹配的活动记录")
-                                color: Theme.textSecondary
-                                font.pixelSize: Theme.fontSizeBody
-                                font.family: Theme.fontSans
                             }
 
                             delegate: Rectangle {

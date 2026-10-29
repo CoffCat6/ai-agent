@@ -51,7 +51,7 @@ Item {
                 verticalAlignment: Text.AlignVCenter
                 text: qsTr("引用")
                 color: Theme.textTertiary
-                font.pixelSize: 10
+                font.pixelSize: Theme.fontSizeMicro
                 font.family: Theme.fontSans
             }
 
@@ -95,7 +95,7 @@ Item {
                         anchors.verticalCenter: parent.verticalCenter
                         text: chip.label
                         color: chip.failed ? Theme.statusDanger : Theme.textPrimary
-                        font.pixelSize: 10
+                        font.pixelSize: Theme.fontSizeMicro
                         font.family: Theme.fontMono
                         elide: Text.ElideMiddle
                     }

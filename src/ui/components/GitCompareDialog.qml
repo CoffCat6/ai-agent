@@ -222,7 +222,7 @@ Dialog {
                     : qsTr("差异文件 · %1").arg(dialog.fileCount)
                 color: Theme.textSecondary
                 font.family: Theme.fontSans
-                font.pixelSize: 10
+                font.pixelSize: Theme.fontSizeMicro
             }
 
             AppButton {
@@ -278,7 +278,7 @@ Dialog {
                     text: qsTr("A 到 B 之间变化的文件")
                     color: Theme.textTertiary
                     font.family: Theme.fontSans
-                    font.pixelSize: 9
+                    font.pixelSize: Theme.fontSizeNano
                     elide: Text.ElideRight
                 }
 
@@ -301,7 +301,7 @@ Dialog {
                     text: qsTr("两个提交之间没有文件差异。")
                     color: Theme.textSecondary
                     font.family: Theme.fontSans
-                    font.pixelSize: 10
+                    font.pixelSize: Theme.fontSizeMicro
                     wrapMode: Text.Wrap
                 }
             }

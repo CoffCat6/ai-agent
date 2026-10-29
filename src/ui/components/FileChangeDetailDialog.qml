@@ -243,7 +243,7 @@ Item {
                 text: pane.statusText()
                 color: pane.statusColor()
                 font.family: Theme.fontSans
-                font.pixelSize: 10
+                font.pixelSize: Theme.fontSizeMicro
                 elide: Text.ElideRight
             }
 
@@ -258,7 +258,7 @@ Item {
                     : ""
                 color: Theme.textSecondary
                 font.family: Theme.fontSans
-                font.pixelSize: 10
+                font.pixelSize: Theme.fontSizeMicro
                 elide: Text.ElideRight
             }
 
@@ -354,7 +354,7 @@ Item {
             text: qsTr("该记录未保存差异，以下按当前文件内容重建（文件未再改动时即为当时写入的内容）。")
             color: Theme.statusWarning
             font.family: Theme.fontSans
-            font.pixelSize: 10
+            font.pixelSize: Theme.fontSizeMicro
             wrapMode: Text.Wrap
         }
 

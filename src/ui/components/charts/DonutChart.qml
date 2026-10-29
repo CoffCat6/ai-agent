@@ -2,6 +2,7 @@ pragma ComponentBehavior: Bound
 import QtQuick
 import QtQuick.Layouts
 import QtQuick.Controls
+import NexusAI
 import NexusAI.ViewModels
 
 // 批次六 T2（docs/16 §8）：模型 Token 占比环形图。QML Canvas 自绘，
@@ -260,7 +261,7 @@ Item {
             contentWidth: legendColumn.width
             contentHeight: legendColumn.height
 
-            ScrollBar.vertical: ScrollBar { policy: ScrollBar.AsNeeded }
+            ScrollBar.vertical: AppScrollBar { policy: ScrollBar.AsNeeded }
 
             ColumnLayout {
                 id: legendColumn

@@ -114,7 +114,7 @@ Item {
         border.color: presetPopup.opened || root.activeFocus
             ? root.accentColor : "transparent"
 
-        Behavior on color { ColorAnimation { duration: 150 } }
+        Behavior on color { ColorAnimation { duration: Theme.motionBase } }
 
         Row {
             id: presetRow
@@ -136,7 +136,7 @@ Item {
                 color: triggerMA.containsMouse || presetPopup.opened
                     ? root.accentColor
                     : (root.applied ? root.accentColor : Theme.textSecondary)
-                font.pixelSize: 10
+                font.pixelSize: Theme.fontSizeMicro
                 font.family: Theme.fontMono
                 elide: Text.ElideRight
                 // 长预设名不能把选项行顶出去：胶囊自身撑到约 260px 就截断。
@@ -203,14 +203,14 @@ Item {
                     Layout.fillWidth: true
                     text: qsTr("提示词预设 · 当前会话")
                     color: Theme.textSecondary
-                    font.pixelSize: 10
+                    font.pixelSize: Theme.fontSizeMicro
                     font.bold: true
                     font.family: Theme.fontMono
                 }
                 Text {
                     text: root.applied ? qsTr("已套用") : qsTr("跟随全局")
                     color: root.applied ? root.accentColor : Theme.textTertiary
-                    font.pixelSize: 10
+                    font.pixelSize: Theme.fontSizeMicro
                     font.family: Theme.fontMono
                 }
             }
@@ -268,7 +268,7 @@ Item {
                                 ? qsTr("设置页已配置自定义全局提示词")
                                 : qsTr("设置页未配置，使用内置提示词")
                             color: Theme.textSecondary
-                            font.pixelSize: 10
+                            font.pixelSize: Theme.fontSizeMicro
                             font.family: Theme.fontSans
                             elide: Text.ElideRight
                         }
@@ -366,7 +366,7 @@ Item {
                                 // 一屏扫完。
                                 text: root.summarize(modelData.prompt)
                                 color: Theme.textSecondary
-                                font.pixelSize: 10
+                                font.pixelSize: Theme.fontSizeMicro
                                 font.family: Theme.fontSans
                                 wrapMode: Text.Wrap
                                 maximumLineCount: 2
@@ -405,7 +405,7 @@ Item {
                 visible: Settings.promptPresets.length === 0
                 text: qsTr("还没有预设。用下面的「管理预设…」写下第一段角色设定。")
                 color: Theme.textSecondary
-                font.pixelSize: 10
+                font.pixelSize: Theme.fontSizeMicro
                 font.family: Theme.fontSans
                 wrapMode: Text.WordWrap
             }

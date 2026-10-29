@@ -54,7 +54,7 @@ Rectangle {
             text: root.displayLanguage
             color: Theme.textSecondary
             font.family: Theme.fontMono
-            font.pixelSize: 10
+            font.pixelSize: Theme.fontSizeMicro
             font.weight: Font.DemiBold
         }
 

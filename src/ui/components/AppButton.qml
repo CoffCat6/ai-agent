@@ -35,7 +35,7 @@ Rectangle {
 
     // Press animation
     scale: controlArea.containsPress ? 0.98 : 1.0
-    Behavior on scale { NumberAnimation { duration: 100 } }
+    Behavior on scale { NumberAnimation { duration: Theme.motionFast } }
 
     // ── Content ────────────────────────────────────────
     Text {

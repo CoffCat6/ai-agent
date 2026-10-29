@@ -30,15 +30,15 @@ Rectangle {
         }
     }
 
-    Behavior on opacity { NumberAnimation { duration: 150 } }
-    Behavior on border.color { ColorAnimation { duration: 150 } }
+    Behavior on opacity { NumberAnimation { duration: Theme.motionBase } }
+    Behavior on border.color { ColorAnimation { duration: Theme.motionBase } }
 
     Text {
         id: label
         anchors.centerIn: parent
         text: root.copied ? qsTr("已复制") : qsTr("复制")
         color: root.copied ? Theme.statusSuccess : Theme.textSecondary
-        font.pixelSize: 10
+        font.pixelSize: Theme.fontSizeMicro
         font.family: Theme.fontMono
     }
 

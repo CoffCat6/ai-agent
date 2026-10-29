@@ -98,7 +98,7 @@ Item {
         border.width: root.highlighted
             ? (root.highlightStrength >= 0.10 ? 1.5 : 1.0) : 0
         border.color: Theme.brandPrimary
-        Behavior on color { ColorAnimation { duration: 250 } }
+        Behavior on color { ColorAnimation { duration: Theme.motionSlow } }
     }
 
     Loader {

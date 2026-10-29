@@ -122,7 +122,7 @@ Dialog {
             text: qsTr("仅查看：本面板不切换分支、不创建分支，也不访问远端。")
             color: Theme.textTertiary
             font.family: Theme.fontSans
-            font.pixelSize: 10
+            font.pixelSize: Theme.fontSizeMicro
             wrapMode: Text.Wrap
         }
 
@@ -164,7 +164,7 @@ Dialog {
             clip: true
             boundsBehavior: Flickable.StopAtBounds
             contentHeight: branchColumn.implicitHeight
-            ScrollBar.vertical: ScrollBar { policy: ScrollBar.AsNeeded }
+            ScrollBar.vertical: AppScrollBar { policy: ScrollBar.AsNeeded }
 
             ColumnLayout {
                 id: branchColumn
@@ -177,7 +177,7 @@ Dialog {
                     text: qsTr("本地分支 · %1").arg(dialog.branchCount)
                     color: Theme.textSecondary
                     font.family: Theme.fontSans
-                    font.pixelSize: 10
+                    font.pixelSize: Theme.fontSizeMicro
                     font.bold: true
                 }
 
@@ -217,7 +217,7 @@ Dialog {
                                 text: qsTr("当前")
                                 color: Theme.brandPrimary
                                 font.family: Theme.fontMono
-                                font.pixelSize: 8
+                                font.pixelSize: Theme.fontSizeNano
                                 font.bold: true
                             }
 
@@ -226,7 +226,7 @@ Dialog {
                                 color: branchRow.modelData.trackState === "gone"
                                     ? Theme.statusWarning : Theme.textSecondary
                                 font.family: Theme.fontMono
-                                font.pixelSize: 9
+                                font.pixelSize: Theme.fontSizeNano
                             }
 
                             Text {
@@ -234,7 +234,7 @@ Dialog {
                                 text: branchRow.modelData.upstream
                                 color: Theme.textTertiary
                                 font.family: Theme.fontMono
-                                font.pixelSize: 8
+                                font.pixelSize: Theme.fontSizeNano
                                 elide: Text.ElideMiddle
                                 Layout.maximumWidth: 130
                             }
@@ -248,7 +248,7 @@ Dialog {
                     text: qsTr("远端 · %1").arg(dialog.remoteCount)
                     color: Theme.textSecondary
                     font.family: Theme.fontSans
-                    font.pixelSize: 10
+                    font.pixelSize: Theme.fontSizeMicro
                     font.bold: true
                 }
 
@@ -278,7 +278,7 @@ Dialog {
                             text: remoteBlock.modelData.url
                             color: Theme.textTertiary
                             font.family: Theme.fontMono
-                            font.pixelSize: 9
+                            font.pixelSize: Theme.fontSizeNano
                             elide: Text.ElideMiddle
                         }
 
@@ -288,7 +288,7 @@ Dialog {
                                 .arg(remoteBlock.modelData.branchCount)
                             color: Theme.textSecondary
                             font.family: Theme.fontSans
-                            font.pixelSize: 9
+                            font.pixelSize: Theme.fontSizeNano
                         }
                     }
                 }
@@ -299,7 +299,7 @@ Dialog {
                     text: qsTr("标签 · %1").arg(dialog.tagCount)
                     color: Theme.textSecondary
                     font.family: Theme.fontSans
-                    font.pixelSize: 10
+                    font.pixelSize: Theme.fontSizeMicro
                     font.bold: true
                 }
 
@@ -341,7 +341,7 @@ Dialog {
                                 text: tagRow.modelData.subject
                                 color: Theme.textSecondary
                                 font.family: Theme.fontSans
-                                font.pixelSize: 9
+                                font.pixelSize: Theme.fontSizeNano
                                 elide: Text.ElideRight
                             }
 
@@ -349,7 +349,7 @@ Dialog {
                                 text: tagRow.modelData.target
                                 color: Theme.textTertiary
                                 font.family: Theme.fontMono
-                                font.pixelSize: 8
+                                font.pixelSize: Theme.fontSizeNano
                             }
 
                             Text {
@@ -359,7 +359,7 @@ Dialog {
                                     ? qsTr("附注") : qsTr("轻量")
                                 color: Theme.textTertiary
                                 font.family: Theme.fontSans
-                                font.pixelSize: 8
+                                font.pixelSize: Theme.fontSizeNano
                             }
                         }
                     }

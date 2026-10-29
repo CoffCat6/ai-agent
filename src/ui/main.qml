@@ -81,7 +81,7 @@ ApplicationWindow {
                 // While the splitter is dragged the width must track the
                 // cursor exactly instead of easing behind it
                 enabled: !leftSplitter.dragActive
-                NumberAnimation { duration: 220; easing.type: Easing.OutQuad }
+                NumberAnimation { duration: Theme.motionBase; easing.type: Easing.OutQuad }
             }
 
             onSettingsRequested: settingsCenterDialog.openCategory("model")
@@ -148,7 +148,7 @@ ApplicationWindow {
 
             Behavior on Layout.preferredWidth {
                 enabled: !rightSplitter.dragActive
-                NumberAnimation { duration: 220; easing.type: Easing.OutQuad }
+                NumberAnimation { duration: Theme.motionBase; easing.type: Easing.OutQuad }
             }
 
         }
@@ -271,7 +271,7 @@ ApplicationWindow {
         anchors.topMargin: errorToast.visible ? 64 : 24
         // Animate the margin so the reflow doesn't jump when the error
         // toast appears or disappears underneath.
-        Behavior on anchors.topMargin { NumberAnimation { duration: 150 } }
+        Behavior on anchors.topMargin { NumberAnimation { duration: Theme.motionBase } }
     }
 
     Connections {

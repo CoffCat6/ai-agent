@@ -759,7 +759,7 @@ Item {
                 text: root.trackingBadge
                 color: Theme.textSecondary
                 font.family: Theme.fontMono
-                font.pixelSize: 10
+                font.pixelSize: Theme.fontSizeMicro
             }
 
             Text {
@@ -768,7 +768,7 @@ Item {
                 text: qsTr("%1 项改动").arg(root.dirtyCount)
                 color: Theme.statusWarning
                 font.family: Theme.fontSans
-                font.pixelSize: 10
+                font.pixelSize: Theme.fontSizeMicro
             }
 
             IconButton {
@@ -840,7 +840,7 @@ Item {
                 text: qsTr("本地操作")
                 color: Theme.textTertiary
                 font.family: Theme.fontSans
-                font.pixelSize: 9
+                font.pixelSize: Theme.fontSizeNano
             }
 
             IconButton {
@@ -936,7 +936,7 @@ Item {
                     text: qsTr("当前会话未关联项目；在项目中打开的会话才能使用 Git 管理。")
                     color: Theme.textSecondary
                     font.family: Theme.fontSans
-                    font.pixelSize: 10
+                    font.pixelSize: Theme.fontSizeMicro
                     wrapMode: Text.Wrap
                 }
 
@@ -946,7 +946,7 @@ Item {
                     text: qsTr("正在识别 Git 仓库…")
                     color: Theme.textSecondary
                     font.family: Theme.fontSans
-                    font.pixelSize: 10
+                    font.pixelSize: Theme.fontSizeMicro
                 }
 
                 Text {
@@ -955,7 +955,7 @@ Item {
                     text: qsTr("当前项目不是 Git 仓库，无法使用 Git 管理。")
                     color: Theme.textSecondary
                     font.family: Theme.fontSans
-                    font.pixelSize: 10
+                    font.pixelSize: Theme.fontSizeMicro
                     wrapMode: Text.Wrap
                 }
 
@@ -967,7 +967,7 @@ Item {
                     text: qsTr("工作区干净，没有未提交的改动。")
                     color: Theme.textSecondary
                     font.family: Theme.fontSans
-                    font.pixelSize: 10
+                    font.pixelSize: Theme.fontSizeMicro
                     wrapMode: Text.Wrap
                 }
 
@@ -979,7 +979,7 @@ Item {
                     text: qsTr("已暂存 · %1").arg(root.stagedCount)
                     color: Theme.statusSuccess
                     font.family: Theme.fontMono
-                    font.pixelSize: 10
+                    font.pixelSize: Theme.fontSizeMicro
                     font.bold: true
                 }
 
@@ -1008,7 +1008,7 @@ Item {
                     text: qsTr("未暂存 · %1").arg(root.unstagedCount)
                     color: Theme.statusWarning
                     font.family: Theme.fontMono
-                    font.pixelSize: 10
+                    font.pixelSize: Theme.fontSizeMicro
                     font.bold: true
                 }
 
@@ -1087,7 +1087,7 @@ Item {
                             color: root.stagedCount > 0 ? Theme.statusSuccess
                                                         : Theme.textSecondary
                             font.family: Theme.fontSans
-                            font.pixelSize: 10
+                            font.pixelSize: Theme.fontSizeMicro
                         }
 
                         AppButton {
@@ -1116,7 +1116,7 @@ Item {
                         text: qsTr("正在起草提交说明…")
                         color: Theme.textSecondary
                         font.family: Theme.fontSans
-                        font.pixelSize: 10
+                        font.pixelSize: Theme.fontSizeMicro
                     }
 
                     Text {
@@ -1126,7 +1126,7 @@ Item {
                             ? qsTr("正在提交…") : qsTr("正在更新暂存区…")
                         color: Theme.textSecondary
                         font.family: Theme.fontSans
-                        font.pixelSize: 10
+                        font.pixelSize: Theme.fontSizeMicro
                     }
 
                     Text {
@@ -1135,7 +1135,7 @@ Item {
                         text: GitVM.operationError
                         color: Theme.statusWarning
                         font.family: Theme.fontSans
-                        font.pixelSize: 10
+                        font.pixelSize: Theme.fontSizeMicro
                         wrapMode: Text.Wrap
                     }
 
@@ -1146,7 +1146,7 @@ Item {
                         text: root.operationNotice
                         color: Theme.statusSuccess
                         font.family: Theme.fontSans
-                        font.pixelSize: 10
+                        font.pixelSize: Theme.fontSizeMicro
                     }
                 }
 
@@ -1164,7 +1164,7 @@ Item {
                         text: qsTr("正在读取 stash…")
                         color: Theme.textSecondary
                         font.family: Theme.fontSans
-                        font.pixelSize: 10
+                        font.pixelSize: Theme.fontSizeMicro
                     }
 
                     Text {
@@ -1173,7 +1173,7 @@ Item {
                         text: root.stashError
                         color: Theme.statusWarning
                         font.family: Theme.fontSans
-                        font.pixelSize: 10
+                        font.pixelSize: Theme.fontSizeMicro
                         wrapMode: Text.Wrap
                     }
 
@@ -1184,7 +1184,7 @@ Item {
                         text: qsTr("stash 是空的。")
                         color: Theme.textTertiary
                         font.family: Theme.fontSans
-                        font.pixelSize: 10
+                        font.pixelSize: Theme.fontSizeMicro
                     }
 
                     Flickable {
@@ -1195,7 +1195,7 @@ Item {
                         clip: true
                         boundsBehavior: Flickable.StopAtBounds
                         contentHeight: stashColumn.implicitHeight
-                        ScrollBar.vertical: ScrollBar { policy: ScrollBar.AsNeeded }
+                        ScrollBar.vertical: AppScrollBar { policy: ScrollBar.AsNeeded }
 
                         ColumnLayout {
                             id: stashColumn
@@ -1228,7 +1228,7 @@ Item {
                                                      ? modelData.subject : qsTr("(无备注)"))
                                             color: Theme.textPrimary
                                             font.family: Theme.fontMono
-                                            font.pixelSize: 9
+                                            font.pixelSize: Theme.fontSizeNano
                                             elide: Text.ElideRight
                                         }
 
@@ -1274,7 +1274,7 @@ Item {
                         placeholderText: qsTr("搜索提交说明")
                         color: Theme.textPrimary
                         font.family: Theme.fontSans
-                        font.pixelSize: 10
+                        font.pixelSize: Theme.fontSizeMicro
                         selectByMouse: true
                         onAccepted: root.applyLogFilter(text, authorField.text)
                     }
@@ -1287,7 +1287,7 @@ Item {
                         placeholderText: qsTr("作者")
                         color: Theme.textPrimary
                         font.family: Theme.fontSans
-                        font.pixelSize: 10
+                        font.pixelSize: Theme.fontSizeMicro
                         selectByMouse: true
                         onAccepted: root.applyLogFilter(grepField.text, text)
                     }
@@ -1340,7 +1340,7 @@ Item {
                               .arg(root.logAuthor.length > 0 ? root.logAuthor : "—")
                     color: Theme.textSecondary
                     font.family: Theme.fontSans
-                    font.pixelSize: 9
+                    font.pixelSize: Theme.fontSizeNano
                     wrapMode: Text.Wrap
                 }
 
@@ -1354,7 +1354,7 @@ Item {
                         text: qsTr("对比基准 A：%1").arg(root.compareBaseLabel)
                         color: Theme.statusWarning
                         font.family: Theme.fontMono
-                        font.pixelSize: 9
+                        font.pixelSize: Theme.fontSizeNano
                         elide: Text.ElideRight
                     }
 
@@ -1392,7 +1392,7 @@ Item {
                     text: qsTr("仓库还没有提交。")
                     color: Theme.textSecondary
                     font.family: Theme.fontSans
-                    font.pixelSize: 10
+                    font.pixelSize: Theme.fontSizeMicro
                 }
 
                 ListView {
@@ -1403,7 +1403,7 @@ Item {
                     clip: true
                     model: root.logEntries
                     boundsBehavior: Flickable.StopAtBounds
-                    ScrollBar.vertical: ScrollBar {}
+                    ScrollBar.vertical: AppScrollBar {}
 
                     delegate: Rectangle {
                         id: logRow
@@ -1450,7 +1450,7 @@ Item {
                                     text: "HEAD"
                                     color: Theme.brandPrimary
                                     font.family: Theme.fontMono
-                                    font.pixelSize: 8
+                                    font.pixelSize: Theme.fontSizeNano
                                     font.bold: true
                                 }
                             }
@@ -1464,7 +1464,7 @@ Item {
                                             "MM-dd HH:mm")
                                 color: Theme.textSecondary
                                 font.family: Theme.fontMono
-                                font.pixelSize: 9
+                                font.pixelSize: Theme.fontSizeNano
                                 elide: Text.ElideRight
                             }
                         }
@@ -1617,7 +1617,7 @@ Item {
                 clip: true
                 model: root.stagedEntries
                 boundsBehavior: Flickable.StopAtBounds
-                ScrollBar.vertical: ScrollBar {}
+                ScrollBar.vertical: AppScrollBar {}
 
                 delegate: Text {
                     required property var modelData

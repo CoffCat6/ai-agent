@@ -138,7 +138,7 @@ Dialog {
             text: qsTr("%1 行 · 作者：%2").arg(dialog.lineCount).arg(dialog.authorSummary)
             color: Theme.textSecondary
             font.family: Theme.fontSans
-            font.pixelSize: 10
+            font.pixelSize: Theme.fontSizeMicro
             elide: Text.ElideRight
         }
 
@@ -176,7 +176,7 @@ Dialog {
             clip: true
             model: dialog.lines
             boundsBehavior: Flickable.StopAtBounds
-            ScrollBar.vertical: ScrollBar {}
+            ScrollBar.vertical: AppScrollBar {}
 
             delegate: Rectangle {
                 id: blameRow
@@ -209,7 +209,7 @@ Dialog {
                         text: String(blameRow.modelData.lineNo).padStart(4, " ")
                         color: Theme.textTertiary
                         font.family: Theme.fontMono
-                        font.pixelSize: 9
+                        font.pixelSize: Theme.fontSizeNano
                         horizontalAlignment: Text.AlignRight
                         Layout.preferredWidth: 32
                     }
@@ -219,7 +219,7 @@ Dialog {
                         color: blameRow.modelData.uncommitted === true
                             ? Theme.statusWarning : Theme.brandPrimary
                         font.family: Theme.fontMono
-                        font.pixelSize: 9
+                        font.pixelSize: Theme.fontSizeNano
                         Layout.preferredWidth: 56
                     }
 
@@ -227,7 +227,7 @@ Dialog {
                         text: blameRow.modelData.author
                         color: Theme.textSecondary
                         font.family: Theme.fontSans
-                        font.pixelSize: 9
+                        font.pixelSize: Theme.fontSizeNano
                         elide: Text.ElideRight
                         Layout.preferredWidth: 96
                     }
@@ -236,7 +236,7 @@ Dialog {
                         text: dialog.lineDate(blameRow.modelData)
                         color: Theme.textTertiary
                         font.family: Theme.fontMono
-                        font.pixelSize: 9
+                        font.pixelSize: Theme.fontSizeNano
                         Layout.preferredWidth: 72
                     }
 
@@ -245,7 +245,7 @@ Dialog {
                         text: blameRow.modelData.text
                         color: Theme.textPrimary
                         font.family: Theme.fontMono
-                        font.pixelSize: 9
+                        font.pixelSize: Theme.fontSizeNano
                         elide: Text.ElideRight
                     }
                 }

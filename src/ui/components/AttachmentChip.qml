@@ -84,7 +84,7 @@ Rectangle {
             anchors.centerIn: parent
             text: "\u00d7"
             color: removeArea.containsMouse ? "#ffffff" : Theme.textSecondary
-            font.pixelSize: 12
+            font.pixelSize: Theme.fontSizeCaption
         }
 
         MouseArea {

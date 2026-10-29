@@ -242,7 +242,7 @@ Rectangle {
         opacity: textArea.activeFocus && Theme.isDark ? 0.3 : 0.0
         z: -1
 
-        Behavior on opacity { NumberAnimation { duration: 200 } }
+        Behavior on opacity { NumberAnimation { duration: Theme.motionBase } }
     }
 
     // Focus click area
@@ -301,7 +301,7 @@ Rectangle {
             visible: width > 60
             text: qsTr("附件将随消息发送给当前模型服务")
             color: Theme.textSecondary
-            font.pixelSize: 10
+            font.pixelSize: Theme.fontSizeMicro
             font.family: Theme.fontSans
             wrapMode: Text.Wrap
             horizontalAlignment: Text.AlignRight
@@ -587,7 +587,7 @@ Rectangle {
                 }
             }
 
-            Behavior on color { ColorAnimation { duration: 150 } }
+            Behavior on color { ColorAnimation { duration: Theme.motionBase } }
 
             Accessible.role: Accessible.Button
             Accessible.name: root.isBusy ? qsTr("停止") : qsTr("发送")

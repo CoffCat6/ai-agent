@@ -26,7 +26,7 @@ Item {
     ToolTip {
         id: windowHint
         parent: selectorBox
-        font.pixelSize: 10
+        font.pixelSize: Theme.fontSizeMicro
         font.family: Theme.fontMono
     }
     function showWindowHint(apiProtocol, model) {
@@ -71,7 +71,7 @@ Item {
         border.color: menuPopup.opened || selectorMA.containsMouse || root.activeFocus
             ? Theme.brandPrimary : "transparent"
 
-        Behavior on color { ColorAnimation { duration: 150 } }
+        Behavior on color { ColorAnimation { duration: Theme.motionBase } }
 
         Row {
             id: selectorRow
@@ -99,7 +99,7 @@ Item {
                 }
                 color: selectorMA.containsMouse || menuPopup.opened
                     ? Theme.brandPrimary : Theme.textSecondary
-                font.pixelSize: 10
+                font.pixelSize: Theme.fontSizeMicro
                 font.family: Theme.fontMono
             }
 
@@ -165,7 +165,7 @@ Item {
                                                || root.activeProfile.provider)
                         : ""
                     color: Theme.textSecondary
-                    font.pixelSize: 10
+                    font.pixelSize: Theme.fontSizeMicro
                     font.bold: true
                     font.family: Theme.fontMono
                     Layout.leftMargin: 8
@@ -253,7 +253,7 @@ Item {
                     Layout.rightMargin: 8
                     text: qsTr("这条配置还没有可选模型：先在「管理模型配置…」里填写模型名。")
                     color: Theme.textSecondary
-                    font.pixelSize: 10
+                    font.pixelSize: Theme.fontSizeMicro
                     font.family: Theme.fontSans
                     wrapMode: Text.WordWrap
                 }
@@ -272,7 +272,7 @@ Item {
                 Text {
                     text: qsTr("配置 · 共 %1 个").arg(Settings.profiles.length)
                     color: Theme.textSecondary
-                    font.pixelSize: 10
+                    font.pixelSize: Theme.fontSizeMicro
                     font.bold: true
                     font.family: Theme.fontMono
                     Layout.leftMargin: 8

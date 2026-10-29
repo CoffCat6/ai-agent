@@ -149,14 +149,14 @@ Item {
                     Layout.fillWidth: true
                     text: qsTr("会话模板")
                     color: Theme.textSecondary
-                    font.pixelSize: 10
+                    font.pixelSize: Theme.fontSizeMicro
                     font.bold: true
                     font.family: Theme.fontMono
                 }
                 Text {
                     text: qsTr("共 %1 个").arg(root.templateCount)
                     color: Theme.textTertiary
-                    font.pixelSize: 10
+                    font.pixelSize: Theme.fontSizeMicro
                     font.family: Theme.fontMono
                 }
             }
@@ -280,7 +280,7 @@ Item {
                                 Layout.fillWidth: true
                                 text: root.templateSubtitle(modelData)
                                 color: Theme.textSecondary
-                                font.pixelSize: 10
+                                font.pixelSize: Theme.fontSizeMicro
                                 font.family: Theme.fontSans
                                 elide: Text.ElideRight
                             }
@@ -316,7 +316,7 @@ Item {
                 visible: root.templateCount === 0
                 text: qsTr("还没有模板。在「设置 → 提示词与指令」里新建，例如「代码审查」＝只读计划 + 首条消息。")
                 color: Theme.textSecondary
-                font.pixelSize: 10
+                font.pixelSize: Theme.fontSizeMicro
                 font.family: Theme.fontSans
                 wrapMode: Text.WordWrap
             }

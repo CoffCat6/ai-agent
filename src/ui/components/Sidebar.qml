@@ -115,7 +115,7 @@ Rectangle {
         spacing: 0
         opacity: root.contentFade
 
-        Behavior on opacity { NumberAnimation { duration: 150 } }
+        Behavior on opacity { NumberAnimation { duration: Theme.motionBase } }
 
         // ── Logo / Title ───────────────────────────────
         Rectangle {
@@ -140,7 +140,7 @@ Rectangle {
                         anchors.centerIn: parent
                         text: "N"
                         color: Theme.bgPrimary
-                        font.pixelSize: 14
+                        font.pixelSize: Theme.fontSizeBody
                         font.bold: true
                         font.family: Theme.fontMono
                     }
@@ -291,7 +291,7 @@ Rectangle {
                         // 与下方「对话」标题风格一致）
                         text: qsTr("PROJECTS")
                         color: Theme.textSecondary
-                        font.pixelSize: 10
+                        font.pixelSize: Theme.fontSizeMicro
                         font.family: Theme.fontMono
                         font.weight: Font.DemiBold
                     }
@@ -544,7 +544,7 @@ Rectangle {
                                     visible: projectHeader.confirmDelete
                                     text: qsTr("确认?")
                                     color: Theme.statusDanger
-                                    font.pixelSize: 8
+                                    font.pixelSize: Theme.fontSizeNano
                                     font.bold: true
                                 }
                                 MouseArea {
@@ -804,7 +804,7 @@ Rectangle {
                     anchors.centerIn: parent
                     text: archivedToggle.checked ? "✓" : ""
                     color: Theme.bgPrimary
-                    font.pixelSize: 12
+                    font.pixelSize: Theme.fontSizeCaption
                 }
             }
             contentItem: Text {
@@ -1271,7 +1271,7 @@ Rectangle {
                                     visible: sessionDelegate.confirmDelete
                                     text: qsTr("确认?")
                                     color: Theme.statusDanger
-                                    font.pixelSize: 9
+                                    font.pixelSize: Theme.fontSizeNano
                                     font.bold: true
                                 }
 

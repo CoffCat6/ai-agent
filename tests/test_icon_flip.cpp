@@ -108,12 +108,21 @@ private slots:
         qInfo() << "baseline bright:" << full;
         QVERIFY(full > 500);
 
-        // 切换并立刻采样：翻转应在 ~90ms 内压扁，此刻宽度明显变窄。
+        // 切换后在动画窗口内连续采样，取“最窄”的一帧。
+        // 固定 45/50ms 单点采样会被首帧调度抖动放大（动画可能晚十几毫秒才
+        // 起步，此时 xScale 仍接近 1）；连续采样只要求某一帧确实被压扁。
         flipBtn->setProperty("icon", QStringLiteral("panel-expand"));
-        QTest::qWait(45);   // 第一个 NumberAnimation 的中段
-        const QImage midImg = win->grabWindow();
-        const int mid = brightIn(midImg, 20, 100, 20, 100);
-        const int spanMid = brightSpanX(midImg, 20, 100, 20, 100);
+        int spanMid = spanFull;
+        int mid = 0;
+        for (int waited = 0; waited <= 150; waited += 25) {
+            if (waited > 0) QTest::qWait(25);
+            const QImage sample = win->grabWindow();
+            const int span = brightSpanX(sample, 20, 100, 20, 100);
+            if (span < spanMid) {
+                spanMid = span;
+                mid = brightIn(sample, 20, 100, 20, 100);
+            }
+        }
         qInfo() << "mid x-span:" << spanMid << "bright:" << mid
                 << "displayIcon:" << flipIcon->property("icon").toString();
 
@@ -135,7 +144,7 @@ private slots:
         // 反向对照：flipOnIconChange=false 的按钮切换应当瞬间生效、不压扁
         const int spanPlainBefore = brightSpanX(win->grabWindow(), 140, 220, 20, 100);
         plainBtn->setProperty("icon", QStringLiteral("panel-expand"));
-        QTest::qWait(45);
+        QTest::qWait(50);
         const int spanPlainMid = brightSpanX(win->grabWindow(), 140, 220, 20, 100);
         qInfo() << "plain x-span before/mid:" << spanPlainBefore << spanPlainMid;
         // 未开启翻转的按钮：跨度不变（不压扁），图标已瞬间切换。

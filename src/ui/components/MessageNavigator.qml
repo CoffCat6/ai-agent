@@ -108,10 +108,10 @@ Item {
 
                 // 120ms：导航件要有反馈感，但不能拖慢快速扫视。
                 Behavior on width {
-                    NumberAnimation { duration: 120; easing.type: Easing.OutCubic }
+                    NumberAnimation { duration: Theme.motionFast; easing.type: Easing.OutCubic }
                 }
-                Behavior on color { ColorAnimation { duration: 120 } }
-                Behavior on opacity { NumberAnimation { duration: 120 } }
+                Behavior on color { ColorAnimation { duration: Theme.motionFast } }
+                Behavior on opacity { NumberAnimation { duration: Theme.motionFast } }
             }
 
             MouseArea {
@@ -178,7 +178,7 @@ Item {
                     Text {
                         text: qsTr("第 %1 条").arg(root.hoveredNumber)
                         color: Theme.brandPrimary
-                        font.pixelSize: 10
+                        font.pixelSize: Theme.fontSizeMicro
                         font.family: Theme.fontSans
                         font.bold: true
                     }
@@ -189,7 +189,7 @@ Item {
                         text: stamp
                         visible: stamp !== ""
                         color: Theme.textTertiary
-                        font.pixelSize: 10
+                        font.pixelSize: Theme.fontSizeMicro
                         font.family: Theme.fontMono
                     }
                 }

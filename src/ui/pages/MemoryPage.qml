@@ -270,18 +270,14 @@ Item {
             }
 
             // ── 空态 ────────────────────────────────────
-            Text {
+            EmptyState {
                 anchors.centerIn: parent
                 visible: page.episodeCount === 0
-                text: searchField.text.trim().length > 0
-                      ? qsTr("没有匹配的记忆")
-                      : qsTr("暂无长期记忆。开启上方的长期记忆开关后，完成对话会自动生成摘要。")
-                color: Theme.textSecondary
-                font.pixelSize: Theme.fontSizeBody
-                font.family: Theme.fontSans
-                width: parent.width - Theme.spaceXl * 2
-                horizontalAlignment: Text.AlignHCenter
-                wrapMode: Text.Wrap
+                width: Math.max(0, parent.width - Theme.spaceXl * 2)
+                icon: "archive"
+                title: searchField.text.trim().length > 0
+                    ? qsTr("没有匹配的记忆")
+                    : qsTr("暂无长期记忆。开启上方的长期记忆开关后，完成对话会自动生成摘要。")
             }
         }
     }

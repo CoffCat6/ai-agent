@@ -132,7 +132,7 @@ controller 一 agent 一连接），因此下面这层是**呈现语义**的收�
 | `PreferenceRegistry` | 偏好元数据注册表（来自 SettingsSchema） | `hasPreference/defaultValue/displayName/preferenceMeta/categories` |
 | `PreferenceStore` | `prefs/v1/<key>` 持久化 + legacy 回退（单例） | `load/hasStoredValue/save/saveBatch/reset/resetBatch`、信号 `saved/persistenceError` |
 | `ThemeManager` | 主题/字体状态与系统配色跟随 | `themeMode/isDark/fontSans/fontMono/baseFontSize` |
-| `ThemeProvider` | 设计令牌门面（`Theme`，纯头文件、颜色/间距/圆角/字号/时间格式化） | `bgPrimary/textPrimary/brandPrimary/...`、`formatDateTime/formatTime` |
+| `ThemeProvider` | 设计令牌门面（`Theme`，纯头文件、颜色/间距/圆角/字号/动效/时间格式化）。字号档位 `fontSizeNano/Micro/Caption/Body/H2/H1` 全部随「基础字号」缩放（各有下限），QML 不再写死 `font.pixelSize`；动效统一取 `motionFast/Base/Slow` | `bgPrimary/textPrimary/brandPrimary/...`、`fontSizeNano/...`、`motionFast/Base/Slow`、`formatDateTime/formatTime` |
 | `FontProbe` | 字体可用性与平台默认字体探测 | `isAvailable/systemDefaultSans/systemDefaultMono/availableFamilies` |
 | `LocaleProbe` | 可用语言枚举（`:/i18n` 资源扫描） | `availableLocales()` |
 | `I18nManager` | 翻译器装载与运行时切语言（`I18n`） | `currentLocale/availableLocales`、`applyLocale(locale)` |

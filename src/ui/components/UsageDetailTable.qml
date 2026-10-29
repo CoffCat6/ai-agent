@@ -303,8 +303,8 @@ ColumnLayout {
             contentHeight: height
             flickableDirection: Flickable.HorizontalFlick
             boundsBehavior: Flickable.StopAtBounds
-            ScrollBar.horizontal: ScrollBar { policy: ScrollBar.AsNeeded }
-            ScrollBar.vertical: ScrollBar { policy: ScrollBar.AlwaysOff }
+            ScrollBar.horizontal: AppScrollBar { policy: ScrollBar.AsNeeded }
+            ScrollBar.vertical: AppScrollBar { policy: ScrollBar.AlwaysOff }
 
             Column {
                 id: tableCol
@@ -355,7 +355,7 @@ ColumnLayout {
                                     anchors.verticalCenter: parent.verticalCenter
                                     text: headCell.sorted ? (root.sortAsc ? "▲" : "▼") : ""
                                     color: Theme.brandPrimary
-                                    font.pixelSize: 9
+                                    font.pixelSize: Theme.fontSizeNano
                                     font.family: Theme.fontSans
                                 }
                                 MouseArea {
@@ -421,7 +421,7 @@ ColumnLayout {
                     clip: true
                     model: root.viewRows
                     boundsBehavior: Flickable.StopAtBounds
-                    ScrollBar.vertical: ScrollBar { policy: ScrollBar.AsNeeded }
+                    ScrollBar.vertical: AppScrollBar { policy: ScrollBar.AsNeeded }
                     Accessible.role: Accessible.Table
                     Accessible.name: qsTr("请求明细表格")
 

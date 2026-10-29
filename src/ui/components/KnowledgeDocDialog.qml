@@ -128,7 +128,7 @@ Dialog {
                     anchors.centerIn: parent
                     text: qsTr("降级嵌入")
                     color: Theme.statusWarning
-                    font.pixelSize: 10
+                    font.pixelSize: Theme.fontSizeMicro
                     font.family: Theme.fontSans
                 }
             }
@@ -152,7 +152,7 @@ Dialog {
             Layout.leftMargin: 24
             Layout.rightMargin: 24
 
-            ScrollBar.vertical: ScrollBar {}
+            ScrollBar.vertical: AppScrollBar {}
 
             Text {
                 anchors.centerIn: parent
@@ -191,7 +191,7 @@ Dialog {
                                 + (modelData.page >= 0
                                    ? qsTr(" · 第 %1 页").arg(modelData.page) : "")
                             color: Theme.brandPrimary
-                            font.pixelSize: 9
+                            font.pixelSize: Theme.fontSizeNano
                             font.family: Theme.fontMono
                             font.bold: true
                         }
@@ -202,7 +202,7 @@ Dialog {
                             // docs/25 C2: 硬编码英文量词 " chars" 归一为可译模板
                             text: qsTr("%1 字符").arg((modelData.text || "").length)
                             color: Theme.textSecondary
-                            font.pixelSize: 9
+                            font.pixelSize: Theme.fontSizeNano
                             font.family: Theme.fontMono
                         }
                     }

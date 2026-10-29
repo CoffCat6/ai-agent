@@ -161,7 +161,7 @@ Dialog {
                 text: dialog.shortSha
                 color: Theme.textSecondary
                 font.family: Theme.fontMono
-                font.pixelSize: 10
+                font.pixelSize: Theme.fontSizeMicro
             }
 
             AppButton {
@@ -203,7 +203,7 @@ Dialog {
                           new Date(dialog.timestamp * 1000), "yyyy-MM-dd HH:mm")
                 color: Theme.textSecondary
                 font.family: Theme.fontSans
-                font.pixelSize: 10
+                font.pixelSize: Theme.fontSizeMicro
                 elide: Text.ElideRight
             }
 
@@ -213,7 +213,7 @@ Dialog {
                 text: dialog.body
                 color: Theme.textPrimary
                 font.family: Theme.fontSans
-                font.pixelSize: 10
+                font.pixelSize: Theme.fontSizeMicro
                 elide: Text.ElideRight
                 maximumLineCount: 2
                 wrapMode: Text.Wrap
@@ -236,7 +236,7 @@ Dialog {
                 Text {
                     text: qsTr("改动文件 · %1").arg(dialog.fileCount)
                     color: Theme.textSecondary
-                    font.pixelSize: 10
+                    font.pixelSize: Theme.fontSizeMicro
                     font.bold: true
                     font.family: Theme.fontMono
                 }
@@ -312,7 +312,7 @@ Dialog {
                         text: "+" + dialog.selectedAdded
                         color: Theme.statusSuccess
                         font.family: Theme.fontMono
-                        font.pixelSize: 10
+                        font.pixelSize: Theme.fontSizeMicro
                     }
 
                     Text {
@@ -320,7 +320,7 @@ Dialog {
                         text: "−" + dialog.selectedRemoved
                         color: Theme.statusDanger
                         font.family: Theme.fontMono
-                        font.pixelSize: 10
+                        font.pixelSize: Theme.fontSizeMicro
                     }
                 }
 

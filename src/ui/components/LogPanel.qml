@@ -34,7 +34,7 @@ Dialog {
             Layout.topMargin: 20
             text: qsTr("运行日志")
             color: Theme.textPrimary
-            font.pixelSize: 16
+            font.pixelSize: Theme.fontSizeH2
             font.bold: true
             font.family: Theme.fontSans
         }
@@ -202,7 +202,7 @@ Dialog {
                 }
             }
 
-            ScrollBar.vertical: ScrollBar {}
+            ScrollBar.vertical: AppScrollBar {}
 
             // One entry per band. With wrapped messages the rows ran together
             // and there was no way to see where an entry stopped, so each row
@@ -257,7 +257,7 @@ Dialog {
                         Layout.preferredWidth: 108
                         text: Theme.formatLogTime(new Date(timestamp))
                         color: Theme.textSecondary
-                        font.pixelSize: 10
+                        font.pixelSize: Theme.fontSizeMicro
                         font.family: Theme.fontMono
                         font.italic: historical
                     }
@@ -270,7 +270,7 @@ Dialog {
                             ? Theme.statusWarning
                             : ((level === "CRIT" || level === "FATAL")
                                ? Theme.statusDanger : Theme.textSecondary)
-                        font.pixelSize: 10
+                        font.pixelSize: Theme.fontSizeMicro
                         font.family: Theme.fontMono
                         font.bold: level === "WARN" || level === "CRIT" || level === "FATAL"
                     }
@@ -278,7 +278,7 @@ Dialog {
                         Layout.preferredWidth: 56
                         text: category ? String(category).replace("nexus.", "") : ""
                         color: Theme.textSecondary
-                        font.pixelSize: 9
+                        font.pixelSize: Theme.fontSizeNano
                         font.family: Theme.fontMono
                         elide: Text.ElideRight
                     }
@@ -286,7 +286,7 @@ Dialog {
                         Layout.fillWidth: true
                         text: message
                         color: Theme.textPrimary
-                        font.pixelSize: 11
+                        font.pixelSize: Theme.fontSizeCaption
                         font.family: Theme.fontMono
                         wrapMode: Text.WrapAnywhere
                     }

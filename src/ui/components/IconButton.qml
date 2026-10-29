@@ -57,7 +57,7 @@ Rectangle {
             target: flipScale
             property: "xScale"
             to: 0
-            duration: 90
+            duration: Theme.motionFast
             easing.type: Easing.InQuad
         }
         ScriptAction { script: iconItem.displayIcon = root.icon }
@@ -65,7 +65,7 @@ Rectangle {
             target: flipScale
             property: "xScale"
             to: 1
-            duration: 90
+            duration: Theme.motionFast
             easing.type: Easing.OutQuad
         }
     }

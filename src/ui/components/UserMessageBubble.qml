@@ -191,14 +191,14 @@ Item {
                 border.color: editBtn.activeFocus ? Theme.brandPrimary : Theme.borderSubtle
                 opacity: editMA.containsMouse || editBtn.activeFocus ? 1.0 : 0.55
 
-                Behavior on opacity { NumberAnimation { duration: 150 } }
+                Behavior on opacity { NumberAnimation { duration: Theme.motionBase } }
 
                 Text {
                     id: editLabel
                     anchors.centerIn: parent
                     text: qsTr("编辑")
                     color: Theme.textSecondary
-                    font.pixelSize: 10
+                    font.pixelSize: Theme.fontSizeMicro
                     font.family: Theme.fontMono
                 }
 

@@ -161,7 +161,7 @@ Item {
                         anchors.centerIn: parent
                         text: "N"
                         color: Theme.bgPrimary
-                        font.pixelSize: 26
+                        font.pixelSize: Theme.fontSizeH1 + 6
                         font.bold: true
                         font.family: Theme.fontMono
                     }
@@ -287,7 +287,7 @@ Item {
                         anchors.verticalCenter: parent.verticalCenter
                         text: qsTr("有待确认 · %1").arg(AgentVM.pendingConfirmation.count)
                         color: Theme.statusWarning
-                        font.pixelSize: 10
+                        font.pixelSize: Theme.fontSizeMicro
                         font.family: Theme.fontSans
                         font.bold: true
                     }

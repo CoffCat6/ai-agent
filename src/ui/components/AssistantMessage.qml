@@ -331,7 +331,7 @@ Item {
                                             : modelData.name
                                         color: Theme.brandPrimary
                                         elide: Text.ElideMiddle
-                                        font.pixelSize: 10
+                                        font.pixelSize: Theme.fontSizeMicro
                                         font.family: Theme.fontMono
                                     }
 
@@ -409,14 +409,14 @@ Item {
                 border.color: branchBtn.activeFocus ? Theme.brandPrimary : Theme.borderSubtle
                 opacity: branchMA.containsMouse || branchBtn.activeFocus ? 1.0 : 0.55
 
-                Behavior on opacity { NumberAnimation { duration: 150 } }
+                Behavior on opacity { NumberAnimation { duration: Theme.motionBase } }
 
                 Text {
                     id: branchLabel
                     anchors.centerIn: parent
                     text: qsTr("从此处分支")
                     color: Theme.textSecondary
-                    font.pixelSize: 10
+                    font.pixelSize: Theme.fontSizeMicro
                     font.family: Theme.fontMono
                 }
 
@@ -452,14 +452,14 @@ Item {
                 border.color: regenerateBtn.activeFocus ? Theme.brandPrimary : Theme.borderSubtle
                 opacity: regenMA.containsMouse || regenerateBtn.activeFocus ? 1.0 : 0.55
 
-                Behavior on opacity { NumberAnimation { duration: 150 } }
+                Behavior on opacity { NumberAnimation { duration: Theme.motionBase } }
 
                 Text {
                     id: regenLabel
                     anchors.centerIn: parent
                     text: qsTr("重新生成")
                     color: Theme.textSecondary
-                    font.pixelSize: 10
+                    font.pixelSize: Theme.fontSizeMicro
                     font.family: Theme.fontMono
                 }
 

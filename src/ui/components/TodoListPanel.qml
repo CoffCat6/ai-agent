@@ -209,7 +209,7 @@ Item {
                     Layout.alignment: Qt.AlignVCenter
                     text: qsTr("%1/%2 完成").arg(root.completedCount).arg(root.itemCount)
                     color: root.completedCount > 0 ? Theme.textPrimary : Theme.textTertiary
-                    font.pixelSize: 10
+                    font.pixelSize: Theme.fontSizeMicro
                     font.family: Theme.fontMono
                 }
 
@@ -283,7 +283,7 @@ Item {
             visible: root.listVisible
             text: root.allCompleted ? qsTr("全部完成") : root.stateSummary
             color: root.allCompleted ? Theme.statusSuccess : Theme.textTertiary
-            font.pixelSize: 9
+            font.pixelSize: Theme.fontSizeNano
             font.family: Theme.fontMono
             elide: Text.ElideRight
         }
@@ -450,7 +450,7 @@ Item {
                                     visible: todoRow.isInProgress
                                     text: root.statusLabel(todoRow.itemStatus)
                                     color: Theme.brandPrimary
-                                    font.pixelSize: 9
+                                    font.pixelSize: Theme.fontSizeNano
                                     font.family: Theme.fontSans
                                 }
                             }

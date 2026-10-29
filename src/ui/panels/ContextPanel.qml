@@ -51,7 +51,7 @@ Rectangle {
         spacing: 12
         opacity: root.contentFade
 
-        Behavior on opacity { NumberAnimation { duration: 150 } }
+        Behavior on opacity { NumberAnimation { duration: Theme.motionBase } }
 
         // ── Section tabs ─────────────────────────────
         // Equal-width tabs keep the labels readable down to the 220px

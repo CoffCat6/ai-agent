@@ -878,17 +878,14 @@ Item {
                     font.family: Theme.fontSans
                 }
 
-                Text {
-                    visible: text !== ""
-                    Layout.fillWidth: true
+                // 保存/缺字段回执与测试连接共用同一状态行组件：圆点 + 语义色，
+                // 不再由本页手写颜色和可见性。
+                StatusLine {
                     text: page.savedHint !== ""
                           ? qsTr("已保存：%1").arg(page.savedHint)
                           : (page.ready ? ""
                                         : qsTr("还需填写：%1，才能启用或测试连接").arg(page.missingFields))
-                    color: page.savedHint !== "" ? Theme.statusSuccess : Theme.statusWarning
-                    font.pixelSize: Theme.fontSizeCaption
-                    font.family: Theme.fontSans
-                    wrapMode: Text.WordWrap
+                    state: page.savedHint !== "" ? "success" : "warning"
                 }
             }
 

@@ -79,7 +79,7 @@ Item {
         border.color: effortPopup.opened || root.activeFocus
             ? Theme.brandPrimary : "transparent"
 
-        Behavior on color { ColorAnimation { duration: 150 } }
+        Behavior on color { ColorAnimation { duration: Theme.motionBase } }
 
         Row {
             id: effortRow
@@ -99,7 +99,7 @@ Item {
                 text: root.usable ? root.currentLabel : qsTr("思考·未配置模型")
                 color: root.usable && (triggerMA.containsMouse || effortPopup.opened)
                     ? Theme.brandPrimary : Theme.textSecondary
-                font.pixelSize: 10
+                font.pixelSize: Theme.fontSizeMicro
                 font.family: Theme.fontMono
             }
 
@@ -154,7 +154,7 @@ Item {
             Text {
                 text: qsTr("思考强度 · 当前会话")
                 color: Theme.textSecondary
-                font.pixelSize: 10
+                font.pixelSize: Theme.fontSizeMicro
                 font.bold: true
                 font.family: Theme.fontMono
                 Layout.leftMargin: 8
@@ -219,7 +219,7 @@ Item {
                                 Layout.fillWidth: true
                                 text: modelData.desc
                                 color: Theme.textSecondary
-                                font.pixelSize: 10
+                                font.pixelSize: Theme.fontSizeMicro
                                 font.family: Theme.fontSans
                                 elide: Text.ElideRight
                             }

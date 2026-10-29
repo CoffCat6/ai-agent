@@ -273,12 +273,17 @@ public:
     int fontSizeBody() const { return m_manager->baseFontSize(); }
 
     // 说明文字与微文案也跟随「基础字号」缩放，但各有下限：基础字号可以调到
-    // 10，直接减 2 会掉到 8px。设置页统一用这两档，不要再写死 pixelSize。
+    // 10，直接减 2 会掉到 8px。设置页统一用这几档，不要再写死 pixelSize。
     Q_PROPERTY(int fontSizeCaption READ fontSizeCaption NOTIFY themeChanged FINAL)
     int fontSizeCaption() const { return qMax(11, m_manager->baseFontSize() - 2); }
 
     Q_PROPERTY(int fontSizeMicro READ fontSizeMicro NOTIFY themeChanged FINAL)
     int fontSizeMicro() const { return qMax(10, m_manager->baseFontSize() - 4); }
+
+    // 密集面板（Git 差异 / 日志 / 文件树 / 分支图）的 9px 级小字。这些区域
+    // 此前在 QML 里写死 8/9，导致「基础字号」设置对它们完全无效。
+    Q_PROPERTY(int fontSizeNano READ fontSizeNano NOTIFY themeChanged FINAL)
+    int fontSizeNano() const { return qMax(9, m_manager->baseFontSize() - 5); }
 
 signals:
     void themeChanged();

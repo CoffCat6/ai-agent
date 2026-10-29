@@ -245,7 +245,7 @@ Rectangle {
                                         Layout.fillWidth: true
                                         text: modelData.desc
                                         color: Theme.textSecondary
-                                        font.pixelSize: 10
+                                        font.pixelSize: Theme.fontSizeMicro
                                         font.family: Theme.fontMono
                                         elide: Text.ElideMiddle
                                     }
@@ -925,7 +925,7 @@ Rectangle {
                     text: todoToggle.unfinishedCount > 99
                         ? "99+" : todoToggle.unfinishedCount
                     color: Theme.bgPrimary
-                    font.pixelSize: 8
+                    font.pixelSize: Theme.fontSizeNano
                     font.family: Theme.fontMono
                     font.bold: true
                 }
@@ -983,7 +983,7 @@ Rectangle {
                     text: reviewToggle.unseenCount > 99
                         ? "99+" : reviewToggle.unseenCount
                     color: Theme.bgPrimary
-                    font.pixelSize: 8
+                    font.pixelSize: Theme.fontSizeNano
                     font.family: Theme.fontMono
                     font.bold: true
                 }

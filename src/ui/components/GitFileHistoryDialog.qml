@@ -148,7 +148,7 @@ Dialog {
             clip: true
             boundsBehavior: Flickable.StopAtBounds
             contentHeight: historyColumn.implicitHeight
-            ScrollBar.vertical: ScrollBar { policy: ScrollBar.AsNeeded }
+            ScrollBar.vertical: AppScrollBar { policy: ScrollBar.AsNeeded }
 
             ColumnLayout {
                 id: historyColumn
@@ -205,7 +205,7 @@ Dialog {
                                             "yyyy-MM-dd HH:mm")
                                 color: Theme.textSecondary
                                 font.family: Theme.fontMono
-                                font.pixelSize: 9
+                                font.pixelSize: Theme.fontSizeNano
                                 elide: Text.ElideRight
                             }
                         }

@@ -205,7 +205,7 @@ Item {
                             anchors.centerIn: parent
                             text: root.sourceLabel(root.source)
                             color: Theme.brandPrimary
-                            font.pixelSize: 9
+                            font.pixelSize: Theme.fontSizeNano
                             font.family: Theme.fontSans
                             font.bold: true
                         }
@@ -277,7 +277,7 @@ Item {
                                     anchors.centerIn: parent
                                     text: modelData.status
                                     color: modelData.color
-                                    font.pixelSize: 9
+                                    font.pixelSize: Theme.fontSizeNano
                                     font.family: Theme.fontSans
                                     font.bold: true
                                 }

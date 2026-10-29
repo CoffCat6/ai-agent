@@ -1,5 +1,6 @@
 import QtQuick
 import QtQuick.Layouts
+import QtQuick.Controls
 import NexusAI
 import NexusAI.ViewModels
 
@@ -35,12 +36,20 @@ RowLayout {
         spacing: Theme.spaceXs
 
         Text {
+            id: labelText
+
             Layout.fillWidth: true
             text: root.label
             color: Theme.textPrimary
             font.pixelSize: Theme.fontSizeBody
             font.family: Theme.fontSans
             elide: Text.ElideRight
+
+            // 英文/长标签被省略时用 tooltip 补全，避免只能看到半截。
+            HoverHandler { id: labelHover }
+            ToolTip.visible: labelText.truncated && labelHover.hovered
+            ToolTip.text: root.label
+            ToolTip.delay: 500
         }
 
         Text {

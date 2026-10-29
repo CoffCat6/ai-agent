@@ -145,15 +145,16 @@ Dialog {
             Layout.leftMargin: 24
             Layout.rightMargin: 24
 
-            ScrollBar.vertical: ScrollBar {}
+            ScrollBar.vertical: AppScrollBar {}
 
-            Text {
+            EmptyState {
                 anchors.centerIn: parent
                 visible: auditList.count === 0
-                text: dialog.entries.length === 0 ? qsTr("暂无记录") : qsTr("当前筛选条件下暂无记录")
-                color: Theme.textSecondary
-                font.pixelSize: Theme.fontSizeBody
-                font.family: Theme.fontSans
+                width: Math.max(0, auditList.width - Theme.spaceXl * 2)
+                icon: "history"
+                title: dialog.entries.length === 0
+                    ? qsTr("暂无记录")
+                    : qsTr("当前筛选条件下暂无记录")
             }
 
             delegate: Rectangle {
@@ -196,7 +197,7 @@ Dialog {
                                 if (ev === "unknown_tool") return qsTr("未知")
                                 return ev.toUpperCase()
                             }
-                            font.pixelSize: 9
+                            font.pixelSize: Theme.fontSizeNano
                             font.family: Theme.fontMono
                             font.bold: true
                             color: {
@@ -227,7 +228,7 @@ Dialog {
                             visible: (modelData.detail || "") !== ""
                             text: modelData.detail || ""
                             color: Theme.textSecondary
-                            font.pixelSize: 9
+                            font.pixelSize: Theme.fontSizeNano
                             font.family: Theme.fontSans
                             elide: Text.ElideMiddle
                             Layout.fillWidth: true
@@ -238,7 +239,7 @@ Dialog {
                             text: modelData.arguments || ""
                             color: Theme.textSecondary
                             opacity: 0.7
-                            font.pixelSize: 9
+                            font.pixelSize: Theme.fontSizeNano
                             font.family: Theme.fontMono
                             elide: Text.ElideMiddle
                             Layout.fillWidth: true
@@ -250,7 +251,7 @@ Dialog {
                             ? new Date(modelData.timestamp).toLocaleString(Qt.locale(), "MM-dd HH:mm:ss")
                             : ""
                         color: Theme.textSecondary
-                        font.pixelSize: 9
+                        font.pixelSize: Theme.fontSizeNano
                         font.family: Theme.fontMono
                     }
                 }
@@ -265,7 +266,7 @@ Dialog {
             text: ""
             color: Theme.textSecondary
             opacity: 0.8
-            font.pixelSize: 9
+            font.pixelSize: Theme.fontSizeNano
             font.family: Theme.fontMono
             elide: Text.ElideMiddle
             Layout.fillWidth: true

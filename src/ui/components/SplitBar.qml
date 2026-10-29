@@ -51,7 +51,7 @@ Item {
         color: root.dragActive || dragArea.containsMouse
             ? Theme.brandPrimary : Theme.borderSubtle
 
-        Behavior on color { ColorAnimation { duration: 120 } }
+        Behavior on color { ColorAnimation { duration: Theme.motionFast } }
     }
 
     Rectangle {
@@ -64,7 +64,7 @@ Item {
         color: root.dragActive || dragArea.containsMouse
             ? Theme.brandPrimary : Theme.borderSubtle
 
-        Behavior on color { ColorAnimation { duration: 120 } }
+        Behavior on color { ColorAnimation { duration: Theme.motionFast } }
     }
 
     MouseArea {

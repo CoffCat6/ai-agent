@@ -134,7 +134,7 @@ Dialog {
             text: qsTr("图形来自 git 自身的 --graph，只读本地引用，不会访问远端。")
             color: Theme.textTertiary
             font.family: Theme.fontSans
-            font.pixelSize: 10
+            font.pixelSize: Theme.fontSizeMicro
             wrapMode: Text.Wrap
         }
 
@@ -149,7 +149,7 @@ Dialog {
                                               : qsTr("仅当前分支"))
             color: Theme.textSecondary
             font.family: Theme.fontSans
-            font.pixelSize: 10
+            font.pixelSize: Theme.fontSizeMicro
         }
 
         Text {
@@ -186,7 +186,7 @@ Dialog {
             clip: true
             model: dialog.lines
             boundsBehavior: Flickable.StopAtBounds
-            ScrollBar.vertical: ScrollBar {}
+            ScrollBar.vertical: AppScrollBar {}
 
             delegate: Rectangle {
                 id: graphRow
@@ -222,7 +222,7 @@ Dialog {
                         text: graphRow.modelData.art
                         color: Theme.brandPrimary
                         font.family: Theme.fontMono
-                        font.pixelSize: 10
+                        font.pixelSize: Theme.fontSizeMicro
                         Layout.preferredWidth: 68
                     }
 
@@ -230,7 +230,7 @@ Dialog {
                         text: graphRow.modelData.sha
                         color: Theme.textTertiary
                         font.family: Theme.fontMono
-                        font.pixelSize: 9
+                        font.pixelSize: Theme.fontSizeNano
                         visible: graphRow.modelData.hasCommit === true
                         Layout.preferredWidth: 56
                     }
@@ -239,7 +239,7 @@ Dialog {
                         text: graphRow.modelData.date
                         color: Theme.textTertiary
                         font.family: Theme.fontMono
-                        font.pixelSize: 9
+                        font.pixelSize: Theme.fontSizeNano
                         visible: graphRow.modelData.hasCommit === true
                         Layout.preferredWidth: 70
                     }
@@ -253,7 +253,7 @@ Dialog {
                               : ""
                         color: Theme.textPrimary
                         font.family: Theme.fontMono
-                        font.pixelSize: 9
+                        font.pixelSize: Theme.fontSizeNano
                         elide: Text.ElideRight
                     }
                 }

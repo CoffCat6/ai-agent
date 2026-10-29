@@ -276,6 +276,8 @@ qt_add_qml_module(nexus_ai
         src/ui/components/SettingsSection.qml
         # 设置页连接测试/保存反馈的统一状态行
         src/ui/components/StatusLine.qml
+        # 列表/表格空态的统一排版（图标 + 标题 + 说明 + 动作）
+        src/ui/components/EmptyState.qml
         # 设置页统一骨架 / 页头 / 主题化滚动条（视觉底座）
         src/ui/components/SettingsPage.qml
         src/ui/components/SettingsPageHeader.qml

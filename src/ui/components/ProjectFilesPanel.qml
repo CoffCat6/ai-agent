@@ -433,7 +433,7 @@ Item {
             clip: true
             model: root.searchMode ? root.searchResults : root.rows
             boundsBehavior: Flickable.StopAtBounds
-            ScrollBar.vertical: ScrollBar {}
+            ScrollBar.vertical: AppScrollBar {}
 
             delegate: Rectangle {
                 id: fileRow
@@ -552,7 +552,7 @@ Item {
                     : qsTr("该目录为空。")
             }
             color: Theme.textSecondary
-            font.pixelSize: 10
+            font.pixelSize: Theme.fontSizeMicro
             font.family: Theme.fontSans
             wrapMode: Text.Wrap
         }
@@ -594,7 +594,7 @@ Item {
                         text: root.previewName
                         color: Theme.textPrimary
                         font.family: Theme.fontMono
-                        font.pixelSize: 10
+                        font.pixelSize: Theme.fontSizeMicro
                         elide: Text.ElideMiddle
                         Accessible.name: text
                     }
@@ -614,7 +614,7 @@ Item {
                         text: previewHighlighter.languageName
                         color: Theme.textTertiary
                         font.family: Theme.fontMono
-                        font.pixelSize: 9
+                        font.pixelSize: Theme.fontSizeNano
                         Accessible.name: qsTr("语法高亮语言：%1").arg(text)
                     }
 
@@ -746,7 +746,7 @@ Item {
                     }
                     color: root.previewError.length > 0 ? Theme.statusWarning
                                                         : Theme.textSecondary
-                    font.pixelSize: 10
+                    font.pixelSize: Theme.fontSizeMicro
                     font.family: Theme.fontSans
                     wrapMode: Text.Wrap
                 }
@@ -809,7 +809,7 @@ Item {
                                     text: index + 1
                                     color: Theme.textTertiary
                                     font.family: Theme.fontMono
-                                    font.pixelSize: 10
+                                    font.pixelSize: Theme.fontSizeMicro
                                     horizontalAlignment: Text.AlignRight
                                     textFormat: Text.PlainText
                                 }
@@ -857,7 +857,7 @@ Item {
                         text: root.previewText
                         color: Theme.textPrimary
                         font.family: Theme.fontMono
-                        font.pixelSize: 10
+                        font.pixelSize: Theme.fontSizeMicro
                         background: null
                         padding: 0
                         Accessible.name: qsTr("文件内容预览")
@@ -899,7 +899,7 @@ Item {
             visible: root.errorText.length > 0
             text: root.errorText
             color: Theme.statusWarning
-            font.pixelSize: 10
+            font.pixelSize: Theme.fontSizeMicro
             font.family: Theme.fontSans
             wrapMode: Text.Wrap
         }
@@ -913,7 +913,7 @@ Item {
         visible: !hasProject
         text: qsTr("当前会话未关联项目；在项目中打开的会话才能浏览项目文件。")
         color: Theme.textSecondary
-        font.pixelSize: 10
+        font.pixelSize: Theme.fontSizeMicro
         font.family: Theme.fontSans
         wrapMode: Text.Wrap
     }

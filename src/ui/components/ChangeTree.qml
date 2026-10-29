@@ -131,7 +131,7 @@ Item {
         clip: true
         model: root.rows
         boundsBehavior: Flickable.StopAtBounds
-        ScrollBar.vertical: ScrollBar {}
+        ScrollBar.vertical: AppScrollBar {}
 
         delegate: Item {
             id: rowItem
@@ -257,7 +257,7 @@ Item {
                     text: visible ? rowItem.modelData.statusLabel : ""
                     color: root.statusColorForItem(rowItem.entry)
                     font.family: Theme.fontMono
-                    font.pixelSize: 9
+                    font.pixelSize: Theme.fontSizeNano
                     font.bold: true
                 }
 
@@ -268,7 +268,7 @@ Item {
                     text: rowItem.isFolder
                         ? String(rowItem.modelData.fileCount || 0) : ""
                     color: Theme.textTertiary
-                    font.pixelSize: 9
+                    font.pixelSize: Theme.fontSizeNano
                     font.family: Theme.fontMono
                 }
 
@@ -294,7 +294,7 @@ Item {
                     text: visible ? "×" + rowItem.badgeCount : ""
                     color: Theme.textSecondary
                     font.family: Theme.fontMono
-                    font.pixelSize: 10
+                    font.pixelSize: Theme.fontSizeMicro
                 }
 
                 Text {
@@ -304,7 +304,7 @@ Item {
                     text: "+" + rowItem.modelData.addedLines
                     color: Theme.statusSuccess
                     font.family: Theme.fontMono
-                    font.pixelSize: 10
+                    font.pixelSize: Theme.fontSizeMicro
                 }
 
                 Text {
@@ -314,7 +314,7 @@ Item {
                     text: "−" + rowItem.modelData.removedLines
                     color: Theme.statusDanger
                     font.family: Theme.fontMono
-                    font.pixelSize: 10
+                    font.pixelSize: Theme.fontSizeMicro
                 }
 
                 // Settled states share one slot: a row is either still
@@ -325,7 +325,7 @@ Item {
                     text: rowItem.accepted ? qsTr("已确认") : qsTr("已撤销")
                     color: rowItem.accepted ? Theme.statusSuccess
                                             : Theme.textSecondary
-                    font.pixelSize: 10
+                    font.pixelSize: Theme.fontSizeMicro
                     font.family: Theme.fontSans
                 }
 

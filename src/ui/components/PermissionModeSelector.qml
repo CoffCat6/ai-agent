@@ -59,7 +59,7 @@ Item {
         border.color: modePopup.opened || root.activeFocus
             ? root.accentColor : "transparent"
 
-        Behavior on color { ColorAnimation { duration: 150 } }
+        Behavior on color { ColorAnimation { duration: Theme.motionBase } }
 
         Row {
             id: modeRow
@@ -77,7 +77,7 @@ Item {
                 text: root.modeLabel
                 color: triggerMA.containsMouse || modePopup.opened
                     ? root.accentColor : Theme.textSecondary
-                font.pixelSize: 10
+                font.pixelSize: Theme.fontSizeMicro
                 font.family: Theme.fontMono
             }
 
@@ -217,7 +217,7 @@ Item {
                                 Layout.fillWidth: true
                                 text: modelData.desc
                                 color: Theme.textSecondary
-                                font.pixelSize: 10
+                                font.pixelSize: Theme.fontSizeMicro
                                 font.family: Theme.fontSans
                                 elide: Text.ElideRight
                             }

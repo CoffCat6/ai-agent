@@ -54,7 +54,7 @@ Window {
                     visible: !panel.hasItems
                     text: qsTr("本次会话暂无可审阅的文件改动。")
                     color: Theme.textSecondary
-                    font.pixelSize: 10
+                    font.pixelSize: Theme.fontSizeMicro
                     font.family: Theme.fontSans
                     wrapMode: Text.Wrap
                 }

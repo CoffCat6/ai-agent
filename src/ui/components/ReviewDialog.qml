@@ -218,7 +218,7 @@ Dialog {
             text: dialog.projectRoot
             color: Theme.textTertiary
             font.family: Theme.fontMono
-            font.pixelSize: 10
+            font.pixelSize: Theme.fontSizeMicro
             elide: Text.ElideMiddle
             Accessible.name: text
         }

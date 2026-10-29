@@ -417,7 +417,7 @@ Item {
                     visible: root.activeAdded > 0
                     text: "+" + root.activeAdded
                     color: Theme.statusSuccess
-                    font.pixelSize: 10
+                    font.pixelSize: Theme.fontSizeMicro
                     font.family: Theme.fontMono
                 }
 
@@ -426,7 +426,7 @@ Item {
                     visible: root.activeRemoved > 0
                     text: "−" + root.activeRemoved
                     color: Theme.statusDanger
-                    font.pixelSize: 10
+                    font.pixelSize: Theme.fontSizeMicro
                     font.family: Theme.fontMono
                 }
 
@@ -552,7 +552,7 @@ Item {
             visible: root.errorText.length > 0
             text: root.errorText
             color: Theme.statusWarning
-            font.pixelSize: 10
+            font.pixelSize: Theme.fontSizeMicro
             font.family: Theme.fontSans
             wrapMode: Text.Wrap
         }
@@ -693,7 +693,7 @@ Item {
                 text: qsTr("其中 %1 个文件只记录了路径（原文件过大），无法撤销，将被跳过。")
                     .arg(root.unrestorableCount)
                 color: Theme.statusWarning
-                font.pixelSize: 10
+                font.pixelSize: Theme.fontSizeMicro
                 font.family: Theme.fontSans
                 wrapMode: Text.Wrap
             }
