@@ -16,6 +16,7 @@ public:
     static constexpr int kDefaultLogMaxFileSizeMb = 10;
     static constexpr int kDefaultLogRetentionFiles = 14;
 
+    static const QVector<CategoryGroupMeta>& categoryGroups();
     static const QVector<CategoryMeta>& categories();
     static const QVector<PreferenceMeta>& preferences();
     static const QVector<SettingsKeyDef>& registeredKeys();

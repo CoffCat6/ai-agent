@@ -32,15 +32,21 @@ var handIndex = [
     { title: QT_TRANSLATE_NOOP("SettingsSearch", "生成参数"), category: "model", keywords: "温度 temperature 采样 top_p 生成" },
     { title: QT_TRANSLATE_NOOP("SettingsSearch", "思考与上下文"), category: "model", keywords: "思考 推理 reasoning 思考强度 上下文长度" },
 
-    // ── 通用（声明式偏好之外的自绘项）─────────────────────
-    { title: QT_TRANSLATE_NOOP("SettingsSearch", "模型行为"), category: "general", keywords: "步数 预算 超时 maxSteps timeout 任务上限" },
-    { title: QT_TRANSLATE_NOOP("SettingsSearch", "自定义系统提示词"), category: "general", keywords: "系统提示词 prompt override 提示词" },
-    { title: QT_TRANSLATE_NOOP("SettingsSearch", "日志"), category: "general", keywords: "日志 级别 目录 大小 保留 log" },
-    { title: QT_TRANSLATE_NOOP("SettingsSearch", "网络代理"), category: "general", keywords: "代理 proxy http https 网络 host port 端口 用户名 密码 认证 测试" },
-    { title: QT_TRANSLATE_NOOP("SettingsSearch", "知识库嵌入"), category: "general", keywords: "嵌入 embedding ollama 向量 嵌入模型 服务地址 provider 提供方 openai 密钥 apiKey 兼容服务" },
-    // ↑ qmllint disable unqualified 区间看护：本行为新增设置项 disable/enable
-    // 圈定范围，避免推高基线计数；关键词 "embedding" 在此行，disable 区间覆盖
-    // 本 handIndex 条目。
+    // ── 智能体行为（原通用页的模型行为区块）────────────────
+    { title: QT_TRANSLATE_NOOP("SettingsSearch", "任务预算"), category: "agent", keywords: "模型行为 步数 预算 超时 maxSteps timeout 任务上限 智能体" },
+    { title: QT_TRANSLATE_NOOP("SettingsSearch", "自定义系统提示词"), category: "agent", keywords: "系统提示词 prompt override 提示词 人设" },
+
+    // ── 常规应用（声明式偏好之外的自绘项）─────────────────
+    // 托盘 / 自启 / 通知由注册表自动覆盖，不在此重复。
+
+    // ── 网络与代理 ──────────────────────────────────────
+    { title: QT_TRANSLATE_NOOP("SettingsSearch", "网络代理"), category: "network", keywords: "代理 proxy http https 网络 host port 端口 用户名 密码 认证 测试" },
+
+    // ── 日志与诊断 ──────────────────────────────────────
+    { title: QT_TRANSLATE_NOOP("SettingsSearch", "日志"), category: "logs", keywords: "日志 级别 目录 大小 保留 log 诊断 轮转" },
+
+    // ── 知识库嵌入 ──────────────────────────────────────
+    { title: QT_TRANSLATE_NOOP("SettingsSearch", "知识库嵌入"), category: "knowledge", keywords: "嵌入 embedding ollama 向量 嵌入模型 服务地址 provider 提供方 openai 密钥 apiKey 兼容服务 知识库" },
 
     // ── 安全 ─────────────────────────────────────────────
     { title: QT_TRANSLATE_NOOP("SettingsSearch", "文件读取沙箱"), category: "security", keywords: "读取 沙箱 全盘 磁盘 read 策略" },

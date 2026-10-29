@@ -12,7 +12,7 @@
 
 ## 设计
 
-**设置三层结构，职责不重叠。** `SettingsDefinition.h` 只放结构体与枚举（`PreferenceType`/`PreferenceConstraint`/`PreferenceMeta`/`CategoryMeta`/`SettingValueType`/`SettingsKeyDef`），无逻辑、无 Qt 依赖除 QVariant。`SettingsSchema` 是"权威账本"：`categories()` 10 个分类（model…backup，带 order 与 `QT_TRANSLATE_NOOP` 显示名）、`preferences()` 14 条 UI 偏好、`registeredKeys()` = 50 个静态键 + 14 个 `prefs/v1/<key>` 派生键（共 64），全部函数内 `static` 惰性构造，无锁只读。`kSchemaVersion = 4`（v2 模型列表用户自管，v3/v4 归一 contextTokens 旧默认值）。
+**设置三层结构，职责不重叠。** `SettingsDefinition.h` 只放结构体与枚举（`PreferenceType`/`PreferenceConstraint`/`PreferenceMeta`/`CategoryMeta`/`SettingValueType`/`SettingsKeyDef`），无逻辑、无 Qt 依赖除 QVariant。`SettingsSchema` 是"权威账本"：`categoryGroups()` 4 个导航分组（模型与对话 / 外观与常规 / 知识与内容 / 数据与诊断），`categories()` 16 个分类（model…backup，带全局 order、`groupId` 与 `QT_TRANSLATE_NOOP` 显示名）、`preferences()` 14 条 UI 偏好、`registeredKeys()` = 50 个静态键 + 14 个 `prefs/v1/<key>` 派生键（共 64），全部函数内 `static` 惰性构造，无锁只读。`kSchemaVersion = 4`（v2 模型列表用户自管，v3/v4 归一 contextTokens 旧默认值）。
 
 **键命名空间**：顶层业务键（`modelProfiles`、`activeProfileId`、`contextTokens`、`agent/*`、`security/*`、`embedding/*`、`logging/*`、`webSearch/*`、`network/*`、`memory/*`、`ui/*`、`tools/disabled`、`projects/activeId`、配额与 `schemaVersion`）用扁平 `section/name`；UI 偏好统一 `prefs/v1/` 前缀。`theme/dark` 保留为 `legacy = true`，`ui.themeMode` 用 `legacyKeys = {"theme/dark"}` 声明迁移来源。
 

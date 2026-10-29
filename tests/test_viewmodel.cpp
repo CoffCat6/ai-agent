@@ -1017,8 +1017,12 @@ private slots:
         QTranslator translator;
         QVERIFY(translator.load(QLocale(QLocale::English), QStringLiteral("nexus_ai"),
                                 QStringLiteral("_"), QStringLiteral(":/i18n")));
-        QCOMPARE(translator.translate("AgentChatPage", "折叠过程"),
-                 QStringLiteral("Collapse process"));
+        // 过程开关从 AgentChatPage 的悬浮胶囊搬到 TopBar，文案随之迁移到
+        // TopBar 上下文；这里顺手断言新串的翻译存在。
+        QCOMPARE(translator.translate("TopBar", "折叠思考与工具调用过程（%1 项）"),
+                 QStringLiteral("Collapse thinking and tool-call process (%1)"));
+        QCOMPARE(translator.translate("TopBar", "显示思考与工具调用过程（%1 项）"),
+                 QStringLiteral("Show thinking and tool-call process (%1)"));
         QCOMPARE(translator.translate("InterfacePage", "跟随系统"),
                  QStringLiteral("Follow System"));
         QCOMPARE(translator.translate("SqliteMemory", "刚刚"),

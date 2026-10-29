@@ -58,20 +58,62 @@ PreferenceMeta preference(const QString& key, const QString& category,
 
 } // namespace
 
+const QVector<CategoryGroupMeta>& SettingsSchema::categoryGroups() {
+    static const QVector<CategoryGroupMeta> values = {
+        {QStringLiteral("ai"), QT_TRANSLATE_NOOP("NexusAI", "模型与对话"), 1},
+        {QStringLiteral("appearance"), QT_TRANSLATE_NOOP("NexusAI", "外观与常规"), 2},
+        {QStringLiteral("content"), QT_TRANSLATE_NOOP("NexusAI", "知识与内容"), 3},
+        {QStringLiteral("data"), QT_TRANSLATE_NOOP("NexusAI", "数据与诊断"), 4},
+    };
+    return values;
+}
+
 const QVector<CategoryMeta>& SettingsSchema::categories() {
     static const QVector<CategoryMeta> values = {
-        {QStringLiteral("model"), QT_TRANSLATE_NOOP("NexusAI", "模型配置"), 1},
-        {QStringLiteral("interface"), QT_TRANSLATE_NOOP("NexusAI", "界面设置"), 2},
-        {QStringLiteral("general"), QT_TRANSLATE_NOOP("NexusAI", "通用设置"), 3},
-        {QStringLiteral("security"), QT_TRANSLATE_NOOP("NexusAI", "安全"), 4},
-        {QStringLiteral("mcp"), QT_TRANSLATE_NOOP("NexusAI", "MCP 服务器"), 5},
-        {QStringLiteral("tools"), QT_TRANSLATE_NOOP("NexusAI", "工具管理"), 6},
-        {QStringLiteral("memory"), QT_TRANSLATE_NOOP("NexusAI", "记忆管理"), 7},
-        {QStringLiteral("usage"), QT_TRANSLATE_NOOP("NexusAI", "用量统计"), 8},
-        {QStringLiteral("activity"), QT_TRANSLATE_NOOP("NexusAI", "活动记录"), 9},
-        {QStringLiteral("backup"), QT_TRANSLATE_NOOP("NexusAI", "设置与备份"), 10},
-        {QStringLiteral("projects"), QT_TRANSLATE_NOOP("NexusAI", "项目规则"), 11},
-        {QStringLiteral("prompts"), QT_TRANSLATE_NOOP("NexusAI", "提示词与指令"), 12},
+        // ── 模型与对话 ───────────────────────────────────
+        {QStringLiteral("model"), QT_TRANSLATE_NOOP("NexusAI", "模型配置"), 1,
+         QStringLiteral("ai")},
+        // 智能体行为：原「通用设置」的模型行为区块（步数预算 / 任务超时 /
+        // 自定义系统提示词）。与模型配置分开：前者是"用什么模型"，后者是
+        // "智能体怎么跑"。
+        {QStringLiteral("agent"), QT_TRANSLATE_NOOP("NexusAI", "智能体行为"), 2,
+         QStringLiteral("ai")},
+        {QStringLiteral("tools"), QT_TRANSLATE_NOOP("NexusAI", "工具与能力"), 3,
+         QStringLiteral("ai")},
+        {QStringLiteral("mcp"), QT_TRANSLATE_NOOP("NexusAI", "MCP 服务器"), 4,
+         QStringLiteral("ai")},
+        // ── 外观与常规 ───────────────────────────────────
+        {QStringLiteral("interface"), QT_TRANSLATE_NOOP("NexusAI", "界面与外观"), 5,
+         QStringLiteral("appearance")},
+        // 通用页收窄为真正的"应用常规"：托盘 / 自启 / 通知。
+        {QStringLiteral("general"), QT_TRANSLATE_NOOP("NexusAI", "常规应用"), 6,
+         QStringLiteral("appearance")},
+        // 网络代理从通用页拆出：它作用于模型 / 向量 / 搜索 / MCP 四条链路，
+        // 是跨模块的基础设施，不应藏在"常规"里。
+        {QStringLiteral("network"), QT_TRANSLATE_NOOP("NexusAI", "网络与代理"), 7,
+         QStringLiteral("appearance")},
+        {QStringLiteral("security"), QT_TRANSLATE_NOOP("NexusAI", "安全与隐私"), 8,
+         QStringLiteral("appearance")},
+        // ── 知识与内容 ───────────────────────────────────
+        {QStringLiteral("memory"), QT_TRANSLATE_NOOP("NexusAI", "记忆管理"), 9,
+         QStringLiteral("content")},
+        // 知识库嵌入独立成页：记忆页主体是摘要列表，设置项挤在列表上方会
+        // 持续压缩浏览区；嵌入本质是"知识库使用哪个向量服务"。
+        {QStringLiteral("knowledge"), QT_TRANSLATE_NOOP("NexusAI", "知识库嵌入"), 10,
+         QStringLiteral("content")},
+        {QStringLiteral("prompts"), QT_TRANSLATE_NOOP("NexusAI", "提示词与指令"), 11,
+         QStringLiteral("content")},
+        {QStringLiteral("projects"), QT_TRANSLATE_NOOP("NexusAI", "项目规则"), 12,
+         QStringLiteral("content")},
+        // ── 数据与诊断 ───────────────────────────────────
+        {QStringLiteral("usage"), QT_TRANSLATE_NOOP("NexusAI", "用量与配额"), 13,
+         QStringLiteral("data")},
+        {QStringLiteral("activity"), QT_TRANSLATE_NOOP("NexusAI", "活动记录"), 14,
+         QStringLiteral("data")},
+        {QStringLiteral("logs"), QT_TRANSLATE_NOOP("NexusAI", "日志与诊断"), 15,
+         QStringLiteral("data")},
+        {QStringLiteral("backup"), QT_TRANSLATE_NOOP("NexusAI", "备份与恢复"), 16,
+         QStringLiteral("data")},
     };
     return values;
 }

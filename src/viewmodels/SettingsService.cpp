@@ -1688,25 +1688,48 @@ void SettingsService::setActiveProjectId(const QString& id) {
     emit activeProjectIdChanged();
 }
 
-void SettingsService::resetGeneralToDefaults() {
-    // Preference items are reset by their page through PreferenceRegistry.
+void SettingsService::resetAgentToDefaults() {
     setMaxSteps(SettingsSchema::defaultValue(QStringLiteral("agent/maxSteps")).toInt());
     setTaskTimeoutMinutes(SettingsSchema::defaultValue(
         QStringLiteral("agent/taskTimeoutMinutes")).toInt());
-    setLogLevel(SettingsSchema::defaultValue(QStringLiteral("logging/level")).toString());
-    setLogDirectory(SettingsSchema::defaultValue(QStringLiteral("logging/directory")).toString());
-    setLogMaxFileSizeMb(SettingsSchema::defaultValue(QStringLiteral("logging/maxFileSizeMb")).toInt());
-    setLogRetentionFiles(SettingsSchema::defaultValue(QStringLiteral("logging/retentionFiles")).toInt());
-    setEmbeddingModel(SettingsSchema::defaultValue(QStringLiteral("embedding/model")).toString());
-    setEmbeddingBaseUrl(SettingsSchema::defaultValue(QStringLiteral("embedding/baseUrl")).toString());
     setSystemPromptOverride(SettingsSchema::defaultValue(
         QStringLiteral("agent/systemPromptOverride")).toString());
-    // H1: the proxy block lives on this page, so the page-level reset owns it.
+}
+
+void SettingsService::resetLoggingToDefaults() {
+    setLogLevel(SettingsSchema::defaultValue(QStringLiteral("logging/level")).toString());
+    setLogDirectory(SettingsSchema::defaultValue(QStringLiteral("logging/directory")).toString());
+    setLogMaxFileSizeMb(SettingsSchema::defaultValue(
+        QStringLiteral("logging/maxFileSizeMb")).toInt());
+    setLogRetentionFiles(SettingsSchema::defaultValue(
+        QStringLiteral("logging/retentionFiles")).toInt());
+}
+
+void SettingsService::resetNetworkToDefaults() {
     setProxyMode(SettingsSchema::defaultValue(QStringLiteral("network/proxyMode")).toString());
     setProxyHost(SettingsSchema::defaultValue(QStringLiteral("network/proxyHost")).toString());
     setProxyPort(SettingsSchema::defaultValue(QStringLiteral("network/proxyPort")).toInt());
     setProxyUsername(QString());
     setProxyPassword(QString());
+}
+
+void SettingsService::resetEmbeddingToDefaults() {
+    setEmbeddingProvider(SettingsSchema::defaultValue(
+        QStringLiteral("embedding/provider")).toString());
+    setEmbeddingModel(SettingsSchema::defaultValue(QStringLiteral("embedding/model")).toString());
+    setEmbeddingBaseUrl(SettingsSchema::defaultValue(
+        QStringLiteral("embedding/baseUrl")).toString());
+    // 已保存的 API key 不复位：清空密钥是破坏性操作，且切回本地 Ollama 后
+    // 密钥只是闲置；用户可在页面上显式「清除密钥」。
+}
+
+void SettingsService::resetMemoryToDefaults() {
+    setEpisodicMemoryEnabled(SettingsSchema::defaultValue(
+        QStringLiteral("memory/episodicMemoryEnabled")).toBool());
+    setAuditRetentionDays(SettingsSchema::defaultValue(
+        QStringLiteral("memory/auditRetentionDays")).toInt());
+    setTokenRetentionDays(SettingsSchema::defaultValue(
+        QStringLiteral("memory/tokenRetentionDays")).toInt());
 }
 
 void SettingsService::setDefaultPermissionMode(const QString& v) {

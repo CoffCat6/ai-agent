@@ -46,8 +46,8 @@
 | 轨迹 | `components/TranscriptViewport.qml`、`TraceNodeRouter.qml` | 滚动/跟随/定位与节点类型路由 |
 | 输入 | `components/InputConsole.qml`、`ModelSelector.qml`、`ThinkingEffortSelector.qml`、`PermissionModeSelector.qml` | 发送、附件、提及、历史与参数选择 |
 | 侧栏/右栏 | `components/Sidebar.qml`、`panels/ContextPanel.qml` | 会话树/搜索 + 会话运行状态槽（busy/等待确认/未读）；Git/文件（审阅与任务清单已移入对话框） |
-| 设置 | `components/SettingsCenterDialog.qml`、`CategoryNav.qml`、`PreferenceControl.qml`、`settings-search.js` | 搜索、分类导航、偏好控件 |
-| 设置页 | `pages/GeneralPage`、`InterfacePage`、`ModelConfigPage`、`SecurityPage`、`McpPage`、`ToolsPage`、`MemoryPage`、`UsageStatsPage`、`ActivityLogPage`、`SettingsBackupPage` | 由 `Loader` 按分类懒加载 |
+| 设置 | `components/SettingsCenterDialog.qml`、`CategoryNav.qml`、`PreferenceControl.qml`、`settings-search.js` | 搜索、四组可滚动分类导航、偏好控件、按分类复位的底栏 |
+| 设置页 | `pages/GeneralPage`、`AgentBehaviorPage`、`NetworkPage`、`LogsPage`、`KnowledgePage`、`InterfacePage`、`ModelConfigPage`、`SecurityPage`、`McpPage`、`ToolsPage`、`MemoryPage`、`UsageStatsPage`、`ActivityLogPage`、`SettingsBackupPage`、`ProjectRulesPage`、`PromptAssetsPage` | 16 个分类，由 `Loader` 按分类懒加载 |
 | 业务组件 | `AssistantMessage.qml`、`UserMessageBubble.qml`、`ProcessCard.qml`、`ErrorCard.qml`、`ToolConfirmDialog.qml`、`TodoListPanel.qml`、`FileChangesPanel.qml`、`ChangeTree.qml`、`GitPanel.qml` | 消息/工具确认/审阅/Git |
 | 图表/表格 | `charts/{DonutChart,LineTrendChart,BarCompareChart}.qml`、`UsageDetailTable.qml`、`DiffView.qml`、`CodeBlock.qml` | Canvas 图表、明细表、diff/代码块 |
 | 基础控件 | `AppButton.qml`、`AppIcon.qml`、`AppToast.qml`、`IconButton.qml`、`DialogBackground.qml`、`SplitBar.qml`、`SettingsField.qml`、`SettingCard.qml` | 统一外观与交互基元 |

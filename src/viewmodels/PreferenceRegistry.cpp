@@ -4,6 +4,8 @@
 #include <QCoreApplication>
 #include <QLoggingCategory>
 
+#include <algorithm>
+
 Q_LOGGING_CATEGORY(lcPrefReg, "nexus.preferences.registry")
 
 namespace NexusAI {
@@ -33,13 +35,28 @@ PreferenceRegistry* PreferenceRegistry::create(QQmlEngine*, QJSEngine*) {
 
 PreferenceRegistry::PreferenceRegistry(QObject* parent)
     : QObject(parent) {
+    for (const CategoryGroupMeta& group : SettingsSchema::categoryGroups())
+        registerGroup(group);
     for (const CategoryMeta& category : SettingsSchema::categories())
-        registerCategory(category.id, category.name, category.order);
+        registerCategory(category.id, category.name, category.order, category.groupId);
     for (const PreferenceMeta& preference : SettingsSchema::preferences())
         registerPreference(preference);
 }
 
-void PreferenceRegistry::registerCategory(const QString& id, const QString& name, int order) {
+void PreferenceRegistry::registerGroup(const CategoryGroupMeta& meta) {
+    if (meta.id.isEmpty()) {
+        qCWarning(lcPrefReg) << "registerGroup: empty id";
+        return;
+    }
+    if (m_groups.contains(meta.id)) {
+        qCWarning(lcPrefReg) << "registerGroup: duplicate id" << meta.id << "- ignoring";
+        return;
+    }
+    m_groups.insert(meta.id, meta);
+}
+
+void PreferenceRegistry::registerCategory(const QString& id, const QString& name, int order,
+                                          const QString& groupId) {
     if (id.isEmpty()) {
         qCWarning(lcPrefReg) << "registerCategory: empty id";
         return;
@@ -48,10 +65,15 @@ void PreferenceRegistry::registerCategory(const QString& id, const QString& name
         qCWarning(lcPrefReg) << "registerCategory: duplicate id" << id << "- ignoring";
         return;
     }
+    if (!groupId.isEmpty() && !m_groups.contains(groupId)) {
+        qCWarning(lcPrefReg) << "registerCategory: unknown group" << groupId
+                             << "for" << id << "- category will be ungrouped";
+    }
     CategoryMeta cat;
     cat.id = id;
     cat.name = name;
     cat.order = order;
+    cat.groupId = groupId;
     m_categories.insert(id, cat);
 }
 
@@ -227,6 +249,46 @@ QStringList PreferenceRegistry::categories() const {
     return result;
 }
 
+QStringList PreferenceRegistry::categoryGroups() const {
+    QList<CategoryGroupMeta> sorted;
+    for (auto it = m_groups.constBegin(); it != m_groups.constEnd(); ++it)
+        sorted.append(it.value());
+    std::sort(sorted.begin(), sorted.end(),
+              [](const CategoryGroupMeta& a, const CategoryGroupMeta& b) {
+                  return a.order < b.order;
+              });
+    QStringList result;
+    for (const auto& group : sorted)
+        result.append(group.id);
+    return result;
+}
+
+QString PreferenceRegistry::categoryGroupName(const QString& groupId) const {
+    auto it = m_groups.constFind(groupId);
+    if (it == m_groups.constEnd()) return {};
+    return translated(it->name);
+}
+
+QString PreferenceRegistry::categoryGroup(const QString& categoryId) const {
+    auto it = m_categories.constFind(categoryId);
+    if (it == m_categories.constEnd()) return {};
+    return it->groupId;
+}
+
+QStringList PreferenceRegistry::categoriesInGroup(const QString& groupId) const {
+    QList<CategoryMeta> sorted;
+    for (auto it = m_categories.constBegin(); it != m_categories.constEnd(); ++it) {
+        if (it->groupId == groupId)
+            sorted.append(it.value());
+    }
+    std::sort(sorted.begin(), sorted.end(),
+              [](const CategoryMeta& a, const CategoryMeta& b) { return a.order < b.order; });
+    QStringList result;
+    for (const auto& cat : sorted)
+        result.append(cat.id);
+    return result;
+}
+
 QString PreferenceRegistry::categoryName(const QString& id) const {
     auto it = m_categories.constFind(id);
     if (it == m_categories.constEnd()) return {};
@@ -248,6 +310,12 @@ const PreferenceMeta* PreferenceRegistry::meta(const QString& key) const {
 const CategoryMeta* PreferenceRegistry::category(const QString& id) const {
     auto it = m_categories.constFind(id);
     if (it == m_categories.constEnd()) return nullptr;
+    return &it.value();
+}
+
+const CategoryGroupMeta* PreferenceRegistry::group(const QString& id) const {
+    auto it = m_groups.constFind(id);
+    if (it == m_groups.constEnd()) return nullptr;
     return &it.value();
 }
 

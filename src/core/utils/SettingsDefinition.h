@@ -32,10 +32,20 @@ struct PreferenceMeta {
     QStringList legacyKeys;
 };
 
-struct CategoryMeta {
+// 设置中心导航的一级分组（模型与对话 / 外观与常规 / 知识与内容 / 数据与诊断）。
+// CategoryMeta::groupId 指向这里；group 只影响展示层级，不影响任何存储键。
+struct CategoryGroupMeta {
     QString id;
     QString name;
     int order{0};
+};
+
+struct CategoryMeta {
+    QString id;
+    QString name;
+    // 全局排序：search 结果仍按它排序；同一分组的分类在列表中连续。
+    int order{0};
+    QString groupId;
 };
 
 enum class SettingValueType {

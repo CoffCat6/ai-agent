@@ -11,10 +11,11 @@ Dialog {
     modal: true
     anchors.centerIn: parent
     padding: 0
-    // 860×620：模型配置页改成卡片分组后，560 高的视口里主操作（启用/测试连接）会
-    // 被挤出屏幕；580 宽的内容区又放不下"标签 + 输入框 + 一排档位芯片"。
-    width: Math.min(860, parent ? parent.width - 24 : 860)
-    height: Math.min(620, parent ? parent.height - 24 : 620)
+    // 900×680：分类从 12 个扩到 16 个并增加分组标题后，左导航需要滚动；
+    // 同时拆页后的字段更长（日志/代理/嵌入各成一页），620 高会把底部
+    // 主操作挤出视口。
+    width: Math.min(900, parent ? parent.width - 24 : 900)
+    height: Math.min(680, parent ? parent.height - 24 : 680)
 
     property string currentCategory: "model"
     property bool explicitCategory: false
@@ -23,6 +24,41 @@ Dialog {
 
     signal settingsSaved()
     signal settingsError(string message)
+
+    // 支持"恢复本页默认"的分类：声明式偏好分类自动支持；其余分类的键由
+    // SettingsService 管理（无 PreferenceMeta），由页面自己的
+    // requestResetDefaults() 负责复位。
+    readonly property var pageResetCategories:
+        ["agent", "network", "knowledge", "memory", "logs"]
+
+    function categoryHasReset(categoryId) {
+        return PreferenceRegistry.preferencesInCategory(categoryId).length > 0
+            || pageResetCategories.indexOf(categoryId) >= 0
+    }
+
+    // 先交给页面自己的复位函数（M1 键）；页面没有实现时回落到声明式偏好
+    // 复位（M2 键）。返回是否真的复位了内容。
+    function resetPage(categoryId) {
+        const pageLoaders = {
+            "agent": agentPageLoader,
+            "network": networkPageLoader,
+            "knowledge": knowledgePageLoader,
+            "memory": memoryPageLoader,
+            "logs": logsPageLoader
+        }
+        const loader = pageLoaders[categoryId]
+        if (loader && loader.item
+                && typeof loader.item.requestResetDefaults === "function") {
+            loader.item.requestResetDefaults()
+            return true
+        }
+        const keys = PreferenceRegistry.preferencesInCategory(categoryId)
+        if (keys.length > 0) {
+            EditBuffer.resetToDefault(keys)
+            return true
+        }
+        return false
+    }
 
 
     function openCategory(id) {
@@ -178,7 +214,7 @@ Dialog {
 
             CategoryNav {
                 id: categoryNav
-                Layout.preferredWidth: 180
+                Layout.preferredWidth: 200
                 Layout.fillHeight: true
                 currentCategory: dialog.currentCategory
                 onCategorySelected: (id) => {
@@ -281,6 +317,14 @@ Dialog {
                     }
 
                 Loader {
+                    id: agentPageLoader
+                    anchors.fill: parent
+                    active: dialog.currentCategory === "agent"
+                    visible: active
+                    source: "qrc:/qt/qml/NexusAI/src/ui/pages/AgentBehaviorPage.qml"
+                }
+
+                Loader {
                     anchors.fill: parent
                     active: dialog.currentCategory === "interface"
                     visible: active
@@ -293,6 +337,14 @@ Dialog {
                     active: dialog.currentCategory === "general"
                     visible: active
                     source: "qrc:/qt/qml/NexusAI/src/ui/pages/GeneralPage.qml"
+                }
+
+                Loader {
+                    id: networkPageLoader
+                    anchors.fill: parent
+                    active: dialog.currentCategory === "network"
+                    visible: active
+                    source: "qrc:/qt/qml/NexusAI/src/ui/pages/NetworkPage.qml"
                 }
 
                 Loader {
@@ -317,10 +369,19 @@ Dialog {
                 }
 
                 Loader {
+                    id: memoryPageLoader
                     anchors.fill: parent
                     active: dialog.currentCategory === "memory"
                     visible: active
                     source: "qrc:/qt/qml/NexusAI/src/ui/pages/MemoryPage.qml"
+                }
+
+                Loader {
+                    id: knowledgePageLoader
+                    anchors.fill: parent
+                    active: dialog.currentCategory === "knowledge"
+                    visible: active
+                    source: "qrc:/qt/qml/NexusAI/src/ui/pages/KnowledgePage.qml"
                 }
 
                 Loader {
@@ -346,6 +407,14 @@ Dialog {
                     active: dialog.currentCategory === "activity" && dialog.opened
                     visible: active
                     source: "qrc:/qt/qml/NexusAI/src/ui/pages/ActivityLogPage.qml"
+                }
+
+                Loader {
+                    id: logsPageLoader
+                    anchors.fill: parent
+                    active: dialog.currentCategory === "logs"
+                    visible: active
+                    source: "qrc:/qt/qml/NexusAI/src/ui/pages/LogsPage.qml"
                 }
 
                 Loader {
@@ -393,12 +462,9 @@ Dialog {
 
                     AppButton {
                         text: qsTr("恢复默认")
-                        // Categories without registered preferences (e.g. 模型配置,
-                        // which saves through SettingsService instead) have
-                        // nothing this button could reset.
-                        visible: dialog.currentCategory === "general"
-                                 || PreferenceRegistry.preferencesInCategory(
-                                        dialog.currentCategory).length > 0
+                        // 分类没有可复位的键（模型配置通过 SettingsService
+                        // 保存整条 profile、MCP/项目/提示词是独立资产）时不显示。
+                        visible: dialog.categoryHasReset(dialog.currentCategory)
                         onClicked: confirmResetDialog.open()
                     }
                     Item { Layout.fillWidth: true }
@@ -448,13 +514,7 @@ Dialog {
                     text: qsTr("恢复默认")
                     highlighted: true
                     onClicked: {
-                        if (dialog.currentCategory === "general") {
-                            if (generalPageLoader.item)
-                                generalPageLoader.item.requestResetDefaults()
-                        } else {
-                            EditBuffer.resetToDefault(
-                                PreferenceRegistry.preferencesInCategory(dialog.currentCategory))
-                        }
+                        dialog.resetPage(dialog.currentCategory)
                         confirmResetDialog.close()
                     }
                 }

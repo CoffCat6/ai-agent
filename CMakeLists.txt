@@ -315,6 +315,10 @@ qt_add_qml_module(nexus_ai
         src/ui/panels/ContextPanel.qml
         src/ui/pages/AgentChatPage.qml
         src/ui/pages/GeneralPage.qml
+        src/ui/pages/AgentBehaviorPage.qml
+        src/ui/pages/NetworkPage.qml
+        src/ui/pages/LogsPage.qml
+        src/ui/pages/KnowledgePage.qml
         src/ui/pages/SecurityPage.qml
         src/ui/pages/InterfacePage.qml
         src/ui/pages/ModelConfigPage.qml

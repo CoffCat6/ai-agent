@@ -79,6 +79,11 @@ public:
         readDenyList = s.value("security/readDenyList");
         maxSteps = s.value("agent/maxSteps");
         taskTimeoutMinutes = s.value("agent/taskTimeoutMinutes");
+        // 设置中心拆页后新增的按页复位用例会写记忆设置，必须一并守卫，
+        // 否则测试会把用户真实配置改掉。
+        episodicMemoryEnabled = s.value("memory/episodicMemoryEnabled");
+        auditRetentionDays = s.value("memory/auditRetentionDays");
+        tokenRetentionDays = s.value("memory/tokenRetentionDays");
         // 测试开始时把 schema 版本顶到最新：否则每个用例里第一次构造
         // SettingsService 都会跑一次 v1→v2 迁移（清空 modelProfiles 里的模型），
         // 让“先写 profile 再 load”的用例看到被迁移改过的数据。迁移本身由
@@ -160,6 +165,15 @@ public:
         else s.remove("agent/maxSteps");
         if (taskTimeoutMinutes.isValid()) s.setValue("agent/taskTimeoutMinutes", taskTimeoutMinutes);
         else s.remove("agent/taskTimeoutMinutes");
+        if (episodicMemoryEnabled.isValid())
+            s.setValue("memory/episodicMemoryEnabled", episodicMemoryEnabled);
+        else s.remove("memory/episodicMemoryEnabled");
+        if (auditRetentionDays.isValid())
+            s.setValue("memory/auditRetentionDays", auditRetentionDays);
+        else s.remove("memory/auditRetentionDays");
+        if (tokenRetentionDays.isValid())
+            s.setValue("memory/tokenRetentionDays", tokenRetentionDays);
+        else s.remove("memory/tokenRetentionDays");
         Logger::setLogDirectory(loggingDirectory.isValid()
             ? loggingDirectory.toString() : QString());
         Logger::setMaxFileSizeMb(loggingMaxFileSizeMb.isValid()
@@ -199,6 +213,9 @@ public:
     QVariant readDenyList;
     QVariant maxSteps;
     QVariant taskTimeoutMinutes;
+    QVariant episodicMemoryEnabled;
+    QVariant auditRetentionDays;
+    QVariant tokenRetentionDays;
 };
 
 // profile 列表按 id 取一项；找不到返回空 map（测试里用来断言刚建出来的 profile）。
@@ -689,63 +706,177 @@ private slots:
         QCOMPARE(reloaded.defaultPermissionMode(), QStringLiteral("auto_edit"));
     }
 
-    // docs/17 B2: resetGeneralToDefaults 把通用页的键回写为 schema 登记的
-    // 默认值（硬编码的 reset 列表与 schema 默认值靠本测试锁定同步）。
-    // 上下文 Tokens 已迁往"模型配置"页按 profile 管理，不在通用页复位范围。
-    void resetGeneralDefaultsMatchesSchema() {
+    // 设置中心拆页后，原 resetGeneralToDefaults() 拆成按领域的五个入口。
+    // 每个用例锁定两件事：自己的键回写为 schema 默认值；不碰其他页的键。
+    void resetAgentDefaultsMatchesSchema() {
         SettingsGuard guard;
         SettingsService svc(nullptr);
 
-        // 先全部调到非默认值
         svc.setMaxSteps(99);
         svc.setTaskTimeoutMinutes(12);
+        svc.setSystemPromptOverride(QStringLiteral("custom prompt"));
+        // 其他领域保持非默认值，验证复位不越界。
+        svc.setLogLevel(QStringLiteral("debug"));
+        svc.setProxyMode(QStringLiteral("manual"));
+        svc.setEmbeddingModel(QStringLiteral("bge-m3"));
+
+        svc.resetAgentToDefaults();
+
+        QCOMPARE(svc.maxSteps(),
+                 SettingsSchema::defaultValue(QStringLiteral("agent/maxSteps")).toInt());
+        QCOMPARE(svc.taskTimeoutMinutes(),
+                 SettingsSchema::defaultValue(
+                     QStringLiteral("agent/taskTimeoutMinutes")).toInt());
+        QCOMPARE(svc.systemPromptOverride(),
+                 SettingsSchema::defaultValue(
+                     QStringLiteral("agent/systemPromptOverride")).toString());
+        QCOMPARE(svc.logLevel(), QStringLiteral("debug"));
+        QCOMPARE(svc.proxyMode(), QStringLiteral("manual"));
+        QCOMPARE(svc.embeddingModel(), QStringLiteral("bge-m3"));
+    }
+
+    void resetLoggingDefaultsMatchesSchema() {
+        SettingsGuard guard;
+        SettingsService svc(nullptr);
+
         svc.setLogLevel(QStringLiteral("debug"));
         svc.setLogDirectory(QStringLiteral("/tmp/nexus-test-logs"));
         svc.setLogMaxFileSizeMb(32);
         svc.setLogRetentionFiles(30);
-        svc.setEmbeddingModel(QStringLiteral("bge-m3"));
-        svc.setEmbeddingBaseUrl(QStringLiteral("http://localhost:12345"));
-        svc.setSystemPromptOverride(QStringLiteral("custom prompt"));
+        // 其他领域保持非默认值。
+        svc.setMaxSteps(99);
+        svc.setProxyHost(QStringLiteral("proxy.example"));
+
+        svc.resetLoggingToDefaults();
+
+        QCOMPARE(svc.logLevel(),
+                 SettingsSchema::defaultValue(QStringLiteral("logging/level")).toString());
+        QCOMPARE(QSettings("NexusAI", "NexusAI").value("logging/directory").toString(),
+                 QString());
+        QCOMPARE(svc.logMaxFileSizeMb(),
+                 SettingsSchema::defaultValue(
+                     QStringLiteral("logging/maxFileSizeMb")).toInt());
+        QCOMPARE(svc.logRetentionFiles(),
+                 SettingsSchema::defaultValue(
+                     QStringLiteral("logging/retentionFiles")).toInt());
+        QCOMPARE(svc.maxSteps(), 99);
+        QCOMPARE(svc.proxyHost(), QStringLiteral("proxy.example"));
+    }
+
+    void resetNetworkDefaultsMatchesSchema() {
+        SettingsGuard guard;
+        SettingsService svc(nullptr);
+
         svc.setProxyMode(QStringLiteral("manual"));
         svc.setProxyHost(QStringLiteral("proxy.example"));
         svc.setProxyPort(3128);
         svc.setProxyUsername(QStringLiteral("alice"));
         svc.setProxyPassword(QStringLiteral("secret"));
+        // 其他领域保持非默认值。
+        svc.setMaxSteps(99);
+        svc.setLogLevel(QStringLiteral("debug"));
 
-        // docs/17 A6: 安全键已迁"安全"页——通用页重置不得触碰它们。
-        svc.setAllowFullDiskRead(true);
-        svc.setLocalOnlyMode(true);
-        svc.setAllowLocalNetworkFetch(true);
+        svc.resetNetworkToDefaults();
 
-        svc.resetGeneralToDefaults();
-
-        // 安全三键保持原值（属于安全页语义，不随通用页重置）。
-        QVERIFY(svc.allowFullDiskRead());
-        QVERIFY(svc.localOnlyMode());
-        QVERIFY(svc.allowLocalNetworkFetch());
-
-        QVariantMap defaults;
-        for (const auto& k : SettingsSchema::registeredKeys())
-            if (k.defaultValue.isValid())
-                defaults.insert(k.key, k.defaultValue);
-        QCOMPARE(svc.maxSteps(), defaults.value("agent/maxSteps").toInt());
-        QCOMPARE(svc.taskTimeoutMinutes(), defaults.value("agent/taskTimeoutMinutes").toInt());
-        QCOMPARE(svc.logLevel(), defaults.value("logging/level").toString());
-        QCOMPARE(svc.logMaxFileSizeMb(), defaults.value("logging/maxFileSizeMb").toInt());
-        QCOMPARE(svc.logRetentionFiles(), defaults.value("logging/retentionFiles").toInt());
-        QCOMPARE(QSettings("NexusAI", "NexusAI").value("logging/directory").toString(), QString());
-        QCOMPARE(svc.embeddingModel(),
-                 defaults.value("embedding/model").toString());
-        QCOMPARE(svc.embeddingBaseUrl(),
-                 defaults.value("embedding/baseUrl").toString());
-        QCOMPARE(svc.systemPromptOverride(),
-                 defaults.value("agent/systemPromptOverride").toString());
-        // H1: the proxy block lives on this page.
-        QCOMPARE(svc.proxyMode(), defaults.value("network/proxyMode").toString());
-        QCOMPARE(svc.proxyHost(), defaults.value("network/proxyHost").toString());
-        QCOMPARE(svc.proxyPort(), defaults.value("network/proxyPort").toInt());
+        QCOMPARE(svc.proxyMode(),
+                 SettingsSchema::defaultValue(QStringLiteral("network/proxyMode")).toString());
+        QCOMPARE(svc.proxyHost(),
+                 SettingsSchema::defaultValue(QStringLiteral("network/proxyHost")).toString());
+        QCOMPARE(svc.proxyPort(),
+                 SettingsSchema::defaultValue(QStringLiteral("network/proxyPort")).toInt());
         QCOMPARE(svc.proxyUsername(), QString());
         QVERIFY(!svc.proxyPasswordSet());
+        QCOMPARE(svc.maxSteps(), 99);
+        QCOMPARE(svc.logLevel(), QStringLiteral("debug"));
+    }
+
+    void resetEmbeddingDefaultsMatchesSchema() {
+        SettingsGuard guard;
+        SettingsService svc(nullptr);
+
+        svc.setEmbeddingProvider(QStringLiteral("openai"));
+        svc.setEmbeddingModel(QStringLiteral("text-embedding-3-large"));
+        svc.setEmbeddingBaseUrl(QStringLiteral("https://api.example.com/v1"));
+        svc.setEmbeddingApiKey(QStringLiteral("sk-reset-test"));
+        const bool keyBefore = svc.embeddingApiKeySet();
+        // 其他领域保持非默认值。
+        svc.setSystemPromptOverride(QStringLiteral("custom prompt"));
+
+        svc.resetEmbeddingToDefaults();
+
+        QCOMPARE(svc.embeddingProvider(),
+                 SettingsSchema::defaultValue(QStringLiteral("embedding/provider")).toString());
+        QCOMPARE(svc.embeddingModel(),
+                 SettingsSchema::defaultValue(QStringLiteral("embedding/model")).toString());
+        QCOMPARE(svc.embeddingBaseUrl(),
+                 SettingsSchema::defaultValue(
+                     QStringLiteral("embedding/baseUrl")).toString());
+        // 密钥是破坏性数据：恢复默认不清空，由页面「清除密钥」显式处理。
+        QCOMPARE(svc.embeddingApiKeySet(), keyBefore);
+        QCOMPARE(svc.systemPromptOverride(), QStringLiteral("custom prompt"));
+    }
+
+    void resetMemoryDefaultsMatchesSchema() {
+        SettingsGuard guard;
+        SettingsService svc(nullptr);
+
+        svc.setEpisodicMemoryEnabled(true);
+        svc.setAuditRetentionDays(5);
+        svc.setTokenRetentionDays(7);
+        // 其他领域保持非默认值。
+        svc.setEmbeddingModel(QStringLiteral("bge-m3"));
+
+        svc.resetMemoryToDefaults();
+
+        QCOMPARE(svc.episodicMemoryEnabled(),
+                 SettingsSchema::defaultValue(
+                     QStringLiteral("memory/episodicMemoryEnabled")).toBool());
+        QCOMPARE(svc.auditRetentionDays(),
+                 SettingsSchema::defaultValue(
+                     QStringLiteral("memory/auditRetentionDays")).toInt());
+        QCOMPARE(svc.tokenRetentionDays(),
+                 SettingsSchema::defaultValue(
+                     QStringLiteral("memory/tokenRetentionDays")).toInt());
+        QCOMPARE(svc.embeddingModel(), QStringLiteral("bge-m3"));
+    }
+
+    // 两级导航的数据契约：分组覆盖全部分类且组内不重不漏；分类都有已知
+    // 分组、全局 order 唯一。导航/搜索依赖这两点，分组只是展示层，不改变
+    // 任何存储键，但漏登一个分类会让设置页在侧栏消失。
+    void categoryGroupsCoverAllCategories() {
+        auto* reg = PreferenceRegistry::instance();
+        QVERIFY(reg);
+
+        const QStringList groups = reg->categoryGroups();
+        QVERIFY(groups.size() >= 2);
+        QSet<QString> groupSet;
+        for (const QString& groupId : groups)
+            groupSet.insert(groupId);
+        QCOMPARE(groupSet.size(), groups.size());
+
+        const QStringList categories = reg->categories();
+        QVERIFY(!categories.isEmpty());
+        QSet<int> orders;
+        QSet<QString> grouped;
+        for (const QString& id : categories) {
+            const QString groupId = reg->categoryGroup(id);
+            QVERIFY2(!groupId.isEmpty(), qPrintable(id));
+            QVERIFY2(groups.contains(groupId), qPrintable(id + " -> " + groupId));
+            QVERIFY2(!reg->categoryGroupName(groupId).isEmpty(), qPrintable(groupId));
+            grouped.insert(id);
+            orders.insert(reg->categoryOrder(id));
+        }
+        QCOMPARE(orders.size(), categories.size());
+
+        QSet<QString> inGroupSet;
+        for (const QString& groupId : groups) {
+            const QStringList members = reg->categoriesInGroup(groupId);
+            QVERIFY2(!members.isEmpty(), qPrintable(groupId));
+            for (const QString& id : members)
+                inGroupSet.insert(id);
+        }
+        QCOMPARE(inGroupSet.size(), categories.size());
+        QCOMPARE(inGroupSet, grouped);
     }
 
     // 步数预算（agent/maxSteps）：钳制到 [kMinMaxIterations, kIterationCeiling]，

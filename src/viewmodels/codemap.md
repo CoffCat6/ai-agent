@@ -66,7 +66,7 @@ controller 一 agent 一连接），因此下面这层是**呈现语义**的收�
 | --- | --- | --- |
 | `SettingsSchema` | `core/utils` | 唯一事实源：键注册表、默认值、类型/约束、`clampInt`/`options`、`kSchemaVersion = 4` |
 | `SettingsService` | 本目录 | 强类型属性 + QSettings 直读直写（`SettingsRepository`）+ profile 管理 + DPAPI + 迁移 |
-| `PreferenceRegistry` | 本目录 | 从 `SettingsSchema` 载入 `PreferenceMeta`/`CategoryMeta`，提供元数据、默认值、`normalize/validate/coerce` |
+| `PreferenceRegistry` | 本目录 | 从 `SettingsSchema` 载入 `CategoryGroupMeta`/`CategoryMeta`/`PreferenceMeta`，提供分组与分类查询（`categoryGroups/categoriesInGroup/categoryGroup`）、元数据、默认值、`normalize/validate/coerce` |
 | `PreferenceStore` / `EditBuffer` / `ChangeBus` | 本目录 | 偏好键 `prefs/v1/<key>` 的读写/批量写/重置 + 写穿缓冲 + 变更广播 |
 
 - `SettingsService` 管“AI 管线/安全/网络/日志/配额”这类**有强类型属性、会被 main.cpp 消费**的键（`agent/*`、`security/*`、`logging/*`、`webSearch/*`、`network/*`、`embedding/*`、`memory/*`、`projects/*`），键直接落 QSettings。
@@ -125,7 +125,7 @@ controller 一 agent 一连接），因此下面这层是**呈现语义**的收�
 | `LogModel` | 应用内日志列表模型（会话内追加、过滤/日期） | `AgentVM.logModel`（CONSTANT）；`filterLevel/filterText/filterCategory/filterDate`、`clearView()`、`toClipboardText()` |
 | `ChangeBus` | 偏好变更广播总线 | `notify(key, value)`；信号 `changed(key, value)` |
 | `EditBuffer` | 偏好校验写穿缓冲（单例） | `stage/commit/rollback/resetToDefault`、属性 `dirty/staged/firstInvalidKey/validationError` |
-| `SettingsService` | 设置与模型 profile 门面（`Settings`），DPAPI/迁移；三组用户自建文本资产（`promptPresets`/`slashCommands`/`sessionTemplates`，JSON blob 持久化，提示词与指令页管理，备份白名单自动携带；首次启动经 `maybeSeedPromptAssets()` 种入4 预设 + 4 指令 + 3 模板（固定 id `default-*`，键为 "[]" 视为已清空不回灌）） | `profiles/activeProfile`、`addProfile/updateProfile/selectModelForProfile`、`addPromptPreset/addSlashCommand/addSessionTemplate` 及各自 update/remove、`testProxy`、`resetGeneralToDefaults`、`modelContextWindow` |
+| `SettingsService` | 设置与模型 profile 门面（`Settings`），DPAPI/迁移；三组用户自建文本资产（`promptPresets`/`slashCommands`/`sessionTemplates`，JSON blob 持久化，提示词与指令页管理，备份白名单自动携带；首次启动经 `maybeSeedPromptAssets()` 种入4 预设 + 4 指令 + 3 模板（固定 id `default-*`，键为 "[]" 视为已清空不回灌）） | `profiles/activeProfile`、`addProfile/updateProfile/selectModelForProfile`、`addPromptPreset/addSlashCommand/addSessionTemplate` 及各自 update/remove、`testProxy`、按领域拆分的 `resetAgentToDefaults/resetLoggingToDefaults/resetNetworkToDefaults/resetEmbeddingToDefaults/resetMemoryToDefaults`（各自只回写本页 schema 键，`embedding/apiKey` 不随复位清空）、`modelContextWindow` |
 | `SettingsBackup` | 可移植设置导入导出（不含凭据/SQLite） | `exportSettings`、`previewImport`、`importSettings`、`lastError`、`restartRequired` |
 | `PreferenceRegistry` | 偏好元数据注册表（来自 SettingsSchema） | `hasPreference/defaultValue/displayName/preferenceMeta/categories` |
 | `PreferenceStore` | `prefs/v1/<key>` 持久化 + legacy 回退（单例） | `load/hasStoredValue/save/saveBatch/reset/resetBatch` |

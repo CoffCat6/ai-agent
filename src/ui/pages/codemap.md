@@ -8,8 +8,12 @@
 |---|---|---|
 | AgentChatPage.qml | 主聊天工作区（顶栏 / 会话标签 / 轨迹视口 / 输入区） | 否，由 main.qml 直接实例化 |
 | ModelConfigPage.qml | 模型 provider/profile/模型列表/思考强度/上下文预算 | 是，分类 `model` |
+| AgentBehaviorPage.qml | 单次任务步数预算、超时、自定义系统提示词（原 GeneralPage 的模型行为区块） | 是，分类 `agent` |
+| NetworkPage.qml | HTTP 代理模式（跟随系统/手动/不使用）、主机端口、认证、连接测试 | 是，分类 `network` |
+| LogsPage.qml | 日志级别、保存目录、单文件大小上限、保留文件数 | 是，分类 `logs` |
+| KnowledgePage.qml | 知识库嵌入向量服务（Ollama / OpenAI 兼容）、模型、地址、API Key | 是，分类 `knowledge` |
 | InterfacePage.qml | 主题、字体、语言、窗口默认布局 | 是，分类 `interface` |
-| GeneralPage.qml | 声明式偏好、步数/超时/系统提示词、日志、代理、嵌入服务 | 是，分类 `general` |
+| GeneralPage.qml | 仅剩 `general` 分类的声明式偏好（托盘/自启/通知）与「关于 NexusAI」 | 是，分类 `general` |
 | SecurityPage.qml | 读取沙箱、项目写入、黑名单、仅本地/内网访问 | 是，分类 `security` |
 | McpPage.qml | MCP 服务器增删、启停、连通状态 | 是，分类 `mcp` |
 | ToolsPage.qml | 单工具启停、联网搜索、默认权限模式 | 是，分类 `tools` |
@@ -22,7 +26,8 @@
 
 注意：任务描述里的「记忆页 = 知识库文档导入/删除/检索」与代码不符。MemoryPage 管理的是
 会话摘要型长期记忆；知识库文档的导入/删除/重新嵌入在 `panels/ContextPanel.qml` 中，
-检索由模型通过知识库工具完成。详见下文约束与风险。
+检索由模型通过知识库工具完成。向知识库生成索引所用的**向量服务配置**（provider/model/
+baseUrl/API key）在 `KnowledgePage.qml`，二者职责不同。详见下文约束与风险。
 
 ## 设计
 
@@ -33,12 +38,15 @@
 - `active: dialog.currentCategory === "<id>"`，`visible: active`；
 - `source` 是 `qrc:/qt/qml/NexusAI/src/ui/pages/<Page>.qml`；
 - 分类 id 与顺序由 `SettingsSchema::categories()` 定义，经
-  `PreferenceRegistry.categories()/categoryName()` 暴露；CategoryNav 用 Repeater 渲染；
+  `PreferenceRegistry.categories()/categoryName()` 暴露；导航按
+  `SettingsSchema::categoryGroups()` 的四组渲染（`CategoryNav` 可滚动）；
 - `usage` 与 `activity` 额外与 `dialog.opened` 相与，关闭即销毁、重开重新查询
   （避免统计/时间线停留在首次加载的旧值）；其余页切走分类即销毁；
 - 搜索态（`searchField.text` 非空）只隐藏分类页包裹层，Loader 状态保留，跳转后原位恢复；
-- 对话框 860×620，左侧 180px 导航，底栏只有「恢复默认」（声明式偏好分类可见）与「关闭」，
-  没有「保存/取消」。`onClosed` 只做 `EditBuffer.rollback()`，丢弃校验失败留下的 staged 残值。
+- 对话框 900×680，左侧 200px 分组导航，底栏只有「恢复默认」与「关闭」，没有「保存/取消」。
+  「恢复默认」按当前分类分派：声明式偏好调用 `EditBuffer.resetToDefault(keys)`；页面自绘
+  字段调用该页导出的 `requestResetDefaults()`；两者都没有时按钮隐藏。`onClosed` 只做
+  `EditBuffer.rollback()`，丢弃校验失败留下的 staged 残值。
 
 `openCategory(id)` 设定 `explicitCategory=true` 后打开；`onOpened` 在非显式指定时恢复
 `PreferenceStore.load("settings.lastCategory")`。打开入口包括 Ctrl+,、侧栏设置、
@@ -47,7 +55,8 @@ AgentChatPage 空态的「配置模型」、ModelSelector、`AgentVM.modelSettin
 ### 保存时机
 
 1. **即时直写 SettingsService**：SecurityPage、ModelConfigPage、McpPage、ToolsPage、
-   MemoryPage、UsageStatsPage、SettingsBackupPage、GeneralPage 的 SettingsService 字段。
+   AgentBehaviorPage、NetworkPage、LogsPage、KnowledgePage、MemoryPage、UsageStatsPage、
+   SettingsBackupPage、GeneralPage 的 SettingsService 字段。
    每个控件在 `onToggled/onActivated/onValueModified/onEditingFinished` 写属性。
 2. **即时写穿 EditBuffer**：InterfacePage 与 GeneralPage 的声明式偏好调用
    `EditBuffer.stage(key, value)`；`EditBuffer::stage` 校验后立即 `saveBatch`，
@@ -68,11 +77,14 @@ AgentChatPage 空态的「配置模型」、ModelSelector、`AgentVM.modelSettin
   `ui.locale`、`ui.defaultSidebarWidth`、`ui.defaultPanelWidth`、
   `ui.defaultSidebarExpanded`、`ui.defaultPanelVisible`、`ui.restoreWindowOnStartup`。
 - `general`：`prefs/v1/window.closeToTray`、`prefs/v1/general.autoStart`、
-  `prefs/v1/notice.enabled`；`agent/maxSteps`、`agent/taskTimeoutMinutes`、
-  `agent/systemPromptOverride`、`logging/level`、`logging/directory`、
-  `logging/maxFileSizeMb`、`logging/retentionFiles`、`network/proxyMode`、
-  `network/proxyHost`、`network/proxyPort`、`network/proxyAuth`（加密）、
-  `embedding/provider`、`embedding/model`、`embedding/baseUrl`、`embedding/apiKey`（加密）。
+  `prefs/v1/notice.enabled`。
+- `agent`：`agent/maxSteps`、`agent/taskTimeoutMinutes`、`agent/systemPromptOverride`。
+- `network`：`network/proxyMode`、`network/proxyHost`、`network/proxyPort`、
+  `network/proxyAuth`（用户名 + DPAPI 加密密码）。
+- `logs`：`logging/level`、`logging/directory`、`logging/maxFileSizeMb`、
+  `logging/retentionFiles`。
+- `knowledge`：`embedding/provider`、`embedding/model`、`embedding/baseUrl`、
+  `embedding/apiKey`（DPAPI 加密；复位默认不清空，需在页面显式「清除密钥」）。
 - `security`：`security/allowFullDiskRead`、`security/allowProjectWrite`、
   `security/localOnlyMode`、`security/allowLocalNetworkFetch`、`security/readDenyList`。
 - `tools`：`tools/disabled`（经 ToolRegistry 持久化）、`webSearch/provider`、
@@ -123,6 +135,17 @@ AgentChatPage 空态的「配置模型」、ModelSelector、`AgentVM.modelSettin
   blockedByPolicy, source(builtin/MCP)}`；Switch 调 `AgentVM.setToolEnabled`，
   由 ToolRegistry 写 `tools/disabled` 并刷新模型。`blockedByPolicy` 只做徽标，
   不改变 Switch 的用户层状态。
+- AgentBehaviorPage：步数/超时直接写 `Settings.maxSteps/taskTimeoutMinutes`，系统提示词
+  经 400ms 防抖写 `Settings.systemPromptOverride`；页头显示 `Settings.maxSteps` 与超时值的
+  实时回显，`requestResetDefaults()` → `Settings.resetAgentToDefaults()`。
+- NetworkPage：代理字段直写 `Settings.proxyMode/proxyHost/proxyPort/proxyUsername/
+  proxyPassword`；「测试代理」调用 `Settings.testProxy()`，结果在页面内联显示；密码为
+  掩码 getter，页面只读 `proxyPasswordSet`，清空需显式「清除密码」。
+- LogsPage：级别/目录/大小/保留数直写 `Settings.log*`；目录用 `FolderDialog` 选择并可
+  恢复默认；`requestResetDefaults()` → `Settings.resetLoggingToDefaults()`。
+- KnowledgePage：嵌入 provider/model/baseUrl/API key 直写 `Settings.embedding*`；
+  切换到外部 provider 时提示文档内容会发送到所配置端点，纯本地模式下提示请求会被拦截并
+  回退 Ollama；`requestResetDefaults()` → `Settings.resetEmbeddingToDefaults()`（保留密钥）。
 - MemoryPage：`listEpisodic(500)` / `searchEpisodic(keyword, 500)` /
   `removeEpisodic(id)` / `clearEpisodic()`；`AgentVM.episodicChanged` 触发重新查询。
   搜索框 `onTextChanged` 立即查询（无防抖），计数与空态随结果变化。
@@ -159,6 +182,10 @@ AgentChatPage 空态的「配置模型」、ModelSelector、`AgentVM.modelSettin
 - `src/ui/pages/AgentChatPage.qml`
 - `src/ui/pages/ModelConfigPage.qml`
 - `src/ui/pages/GeneralPage.qml`
+- `src/ui/pages/AgentBehaviorPage.qml`
+- `src/ui/pages/NetworkPage.qml`
+- `src/ui/pages/LogsPage.qml`
+- `src/ui/pages/KnowledgePage.qml`
 - `src/ui/pages/InterfacePage.qml`
 - `src/ui/pages/SecurityPage.qml`
 - `src/ui/pages/McpPage.qml`
@@ -179,10 +206,16 @@ AgentChatPage 空态的「配置模型」、ModelSelector、`AgentVM.modelSettin
 ## 约束与风险
 
 - MemoryPage 与任务描述的知识库职责不一致：知识库导入/删除/检索不在本页；
-  若按描述改动会误改语义。知识库 UI 的单一入口是 ContextPanel。
-- GeneralPage 只有底栏一个恢复默认入口（带确认弹窗）；2026-10-25 移除了页头
-  的重复按钮——它与底栏调用同一 `requestResetDefaults()` 却跳过确认。页头文案
-  同步改为指向底部入口（旧文案提及已不存在的「保存 / 取消」）。
+  若按描述改动会误改语义。知识库 UI 的单一入口是 ContextPanel；向量服务配置在
+  KnowledgePage（`embedding/*`），不要把两页合并。
+- 设置中心「恢复默认」在底栏（带确认弹窗），按当前分类分派到 `EditBuffer.resetToDefault`
+  或页面的 `requestResetDefaults()`。各页复位入口只回写本领域 schema 键：`resetNetwork*`
+  会清空代理用户名/密码，`resetEmbedding*` 刻意保留 `embedding/apiKey`（密钥只能在页面
+  显式清除），其余页不得越界写别人的键。2026-10-25 已移除页头的重复复位按钮。
+- 新增设置页必须同时：加入 `CMakeLists.txt` 的 `QML_FILES`、在 `SettingsCenterDialog`
+  增加同名 `Loader`、在 `SettingsSchema::categories()` 登记分类（含 `groupId`）、在
+  `settings-search.js` 补页面自绘项索引，并提供 `requestResetDefaults()`（如该页有可复位
+  的 SettingsService 字段）。
 - InterfacePage 的值读 `EditBuffer.staged` 再回落 `PreferenceStore`，若未来把
   `stage()` 改回纯暂存，页面会表现为“能改但不落盘”；当前依赖 EditBuffer 的写穿语义。
 - UsageStatsPage 单文件约 1250 行，聚合、图表映射、分页、配额编辑耦合在一起；

@@ -27,6 +27,12 @@ Item {
                                  : AgentVM.listEpisodic(500)
     }
 
+    // 设置中心底栏「恢复默认」按当前分类分派；本页只有记忆相关的
+    // SettingsService 键（没有声明式偏好），必须自己提供入口。
+    function requestResetDefaults() {
+        Settings.resetMemoryToDefaults()
+    }
+
     function forgetOne(id) {
         if (AgentVM.removeEpisodic(id))
             applySearch()

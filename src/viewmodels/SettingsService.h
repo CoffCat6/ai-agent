@@ -390,10 +390,15 @@ public:
                                            int permissionMode, const QString& firstMessage);
     Q_INVOKABLE void updateSessionTemplate(const QString& id, const QVariantMap& fields);
     Q_INVOKABLE void removeSessionTemplate(const QString& id);
-    // 通用设置页中由 SettingsService 管理的 9 项回写 schema 默认值；偏好
-    // 存储项由 GeneralPage 另行通过 PreferenceStore.resetBatch() 复位。
+    // 设置中心各页的「恢复默认」入口。原 GeneralPage 一页承载多个领域时
+    // 只有一个 resetGeneralToDefaults()；拆页后按领域拆分，每页只复位自己
+    // 的键，避免误伤其他页（例如复位网络代理不应清掉系统提示词）。
     // 逐项走既有 setter，保证持久化与 NOTIFY 一致。
-    Q_INVOKABLE void resetGeneralToDefaults();
+    Q_INVOKABLE void resetAgentToDefaults();
+    Q_INVOKABLE void resetLoggingToDefaults();
+    Q_INVOKABLE void resetNetworkToDefaults();
+    Q_INVOKABLE void resetEmbeddingToDefaults();
+    Q_INVOKABLE void resetMemoryToDefaults();
 
     Q_INVOKABLE void setActiveProfile(const QString& id);
     // Switch active model for a specific profile (or active profile if id is empty)
@@ -408,7 +413,7 @@ public:
     // baseUrl / 当前模型 / 模型列表由 updateProfile 单点重算，UI 不反查默认值。
     Q_INVOKABLE QVariantList endpointOptions(const QString& provider) const;
     // Localized display name for a provider key (legacy profile migration).
-    // 暴露给 QML（GeneralPage embeddingProviderLabels 容错 fallback）。
+    // 暴露给 QML（KnowledgePage embeddingProviderLabels 容错 fallback）。
     Q_INVOKABLE QString providerDisplayName(const QString& provider) const;
 
     // Query the capability-table context window for a given protocol+model.
