@@ -71,75 +71,42 @@ Item {
                 Layout.rightMargin: 24
             }
 
-            Text {
-                text: qsTr("外观")
-                color: Theme.textSecondary
-                font.pixelSize: Theme.fontSizeCaption
-                font.bold: true
-                font.family: Theme.fontMono
+            SettingsSection {
                 Layout.leftMargin: 24
                 Layout.rightMargin: 24
-            }
+                title: qsTr("外观")
 
-            RowLayout {
-                Layout.leftMargin: 24
-                Layout.rightMargin: 24
-                Layout.fillWidth: true
-                spacing: 12
+                SettingRow {
+                    label: qsTr("主题模式")
 
-                Text {
-                    text: qsTr("主题模式")
-                    color: Theme.textPrimary
-                    font.pixelSize: Theme.fontSizeBody
-                    font.family: Theme.fontSans
-                    Layout.fillWidth: true
-                }
-                ComboBox {
-                    id: themeModeCombo
-                    Layout.preferredWidth: 200
-                    // docs/25 D3: 控件补读屏命名（对齐 SettingsField 做法）
-                    Accessible.name: qsTr("主题模式")
-                    Accessible.description: qsTr("当前：%1").arg(currentText)
-                    model: page.themeModeOptions
-                    textRole: "label"
-                    valueRole: "value"
-                    currentIndex: {
-                        const cur = page.pref("ui.themeMode")
-                        for (let i = 0; i < model.length; ++i)
-                            if (model[i].value === cur) return i
-                        return 0
+                    ComboBox {
+                        id: themeModeCombo
+                        Layout.preferredWidth: 200
+                        // docs/25 D3: 控件补读屏命名（对齐 SettingsField 做法）
+                        Accessible.name: qsTr("主题模式")
+                        Accessible.description: qsTr("当前：%1").arg(currentText)
+                        model: page.themeModeOptions
+                        textRole: "label"
+                        valueRole: "value"
+                        currentIndex: {
+                            const cur = page.pref("ui.themeMode")
+                            for (let i = 0; i < model.length; ++i)
+                                if (model[i].value === cur) return i
+                            return 0
+                        }
+                        onActivated: EditBuffer.stage("ui.themeMode", currentValue)
                     }
-                    onActivated: EditBuffer.stage("ui.themeMode", currentValue)
                 }
             }
 
-            Text {
-                text: qsTr("字体")
-                color: Theme.textSecondary
-                font.pixelSize: Theme.fontSizeCaption
-                font.bold: true
-                font.family: Theme.fontMono
+            SettingsSection {
                 Layout.leftMargin: 24
                 Layout.rightMargin: 24
-            }
+                title: qsTr("字体")
 
-            ColumnLayout {
-                Layout.leftMargin: 24
-                Layout.rightMargin: 24
-                Layout.fillWidth: true
-                spacing: 10
+                SettingRow {
+                    label: qsTr("正文字体")
 
-                RowLayout {
-                    Layout.fillWidth: true
-                    spacing: 8
-
-                    Text {
-                        text: qsTr("正文字体")
-                        color: Theme.textPrimary
-                        font.pixelSize: Theme.fontSizeBody
-                        font.family: Theme.fontSans
-                        Layout.fillWidth: true
-                    }
                     ComboBox {
                         id: fontSansCombo
                         Layout.preferredWidth: 200
@@ -150,17 +117,9 @@ Item {
                     }
                 }
 
-                RowLayout {
-                    Layout.fillWidth: true
-                    spacing: 8
+                SettingRow {
+                    label: qsTr("等宽字体")
 
-                    Text {
-                        text: qsTr("等宽字体")
-                        color: Theme.textPrimary
-                        font.pixelSize: Theme.fontSizeBody
-                        font.family: Theme.fontSans
-                        Layout.fillWidth: true
-                    }
                     ComboBox {
                         id: fontMonoCombo
                         Layout.preferredWidth: 200
@@ -171,17 +130,9 @@ Item {
                     }
                 }
 
-                RowLayout {
-                    Layout.fillWidth: true
-                    spacing: 8
+                SettingRow {
+                    label: qsTr("基础字号")
 
-                    Text {
-                        text: qsTr("基础字号")
-                        color: Theme.textPrimary
-                        font.pixelSize: Theme.fontSizeBody
-                        font.family: Theme.fontSans
-                        Layout.fillWidth: true
-                    }
                     RowLayout {
                         spacing: 8
                         Slider {
@@ -251,89 +202,57 @@ Item {
                 }
             }
 
-            Text {
-                text: qsTr("语言")
-                color: Theme.textSecondary
-                font.pixelSize: Theme.fontSizeCaption
-                font.bold: true
-                font.family: Theme.fontMono
+            SettingsSection {
                 Layout.leftMargin: 24
                 Layout.rightMargin: 24
-            }
+                title: qsTr("语言")
 
-            RowLayout {
-                Layout.leftMargin: 24
-                Layout.rightMargin: 24
-                Layout.fillWidth: true
-                spacing: 8
+                SettingRow {
+                    label: qsTr("界面语言")
 
-                Text {
-                    text: qsTr("界面语言")
-                    color: Theme.textPrimary
-                    font.pixelSize: Theme.fontSizeBody
-                    font.family: Theme.fontSans
-                    Layout.fillWidth: true
-                }
-                ComboBox {
-                    id: localeCombo
-                    Layout.preferredWidth: 200
-                    Accessible.name: qsTr("界面语言")
-                    Accessible.description: qsTr("当前：%1").arg(currentText)
-                    textRole: "label"
+                    ComboBox {
+                        id: localeCombo
+                        Layout.preferredWidth: 200
+                        Accessible.name: qsTr("界面语言")
+                        Accessible.description: qsTr("当前：%1").arg(currentText)
+                        textRole: "label"
 
-                    // First entry is "auto" = follow the system language.
-                    property var localeEntries: {
-                        const entries = [{ value: "auto", label: qsTr("跟随系统") }]
-                        const locales = I18n.availableLocales
-                        for (let i = 0; i < locales.length; ++i) {
-                            const l = locales[i]
-                            if (l === "zh-CN") entries.push({ value: l, label: qsTr("简体中文") })
-                            else if (l === "en") entries.push({ value: l, label: qsTr("English") })
-                            else entries.push({ value: l, label: l })
+                        // First entry is "auto" = follow the system language.
+                        property var localeEntries: {
+                            const entries = [{ value: "auto", label: qsTr("跟随系统") }]
+                            const locales = I18n.availableLocales
+                            for (let i = 0; i < locales.length; ++i) {
+                                const l = locales[i]
+                                if (l === "zh-CN") entries.push({ value: l, label: qsTr("简体中文") })
+                                else if (l === "en") entries.push({ value: l, label: qsTr("English") })
+                                else entries.push({ value: l, label: l })
+                            }
+                            return entries
                         }
-                        return entries
-                    }
-                    model: localeEntries
+                        model: localeEntries
 
-                    // Unknown stored values fall back to "auto" instead of a
-                    // blank combo (e.g. values written by an older build).
-                    currentIndex: {
-                        const v = page.pref("ui.locale")
-                        for (let i = 0; i < localeEntries.length; ++i)
-                            if (localeEntries[i].value === v) return i
-                        return 0
+                        // Unknown stored values fall back to "auto" instead of a
+                        // blank combo (e.g. values written by an older build).
+                        currentIndex: {
+                            const v = page.pref("ui.locale")
+                            for (let i = 0; i < localeEntries.length; ++i)
+                                if (localeEntries[i].value === v) return i
+                            return 0
+                        }
+                        onActivated: EditBuffer.stage("ui.locale", localeEntries[currentIndex].value)
                     }
-                    onActivated: EditBuffer.stage("ui.locale", localeEntries[currentIndex].value)
                 }
             }
 
-            Text {
-                text: qsTr("窗口布局")
-                color: Theme.textSecondary
-                font.pixelSize: Theme.fontSizeCaption
-                font.bold: true
-                font.family: Theme.fontMono
-                Layout.leftMargin: 24
-                Layout.rightMargin: 24
-            }
-
-            ColumnLayout {
+            SettingsSection {
                 Layout.leftMargin: 24
                 Layout.rightMargin: 24
                 Layout.bottomMargin: 16
-                Layout.fillWidth: true
-                spacing: 10
+                title: qsTr("窗口布局")
 
-                RowLayout {
-                    Layout.fillWidth: true
-                    spacing: 8
-                    Text {
-                        text: qsTr("侧边栏默认宽度")
-                        color: Theme.textPrimary
-                        font.pixelSize: Theme.fontSizeBody
-                        font.family: Theme.fontSans
-                        Layout.fillWidth: true
-                    }
+                SettingRow {
+                    label: qsTr("侧边栏默认宽度")
+
                     SpinBox {
                         // 160 leaves ~80 px of text area after the 40 px
                         // indicators, enough for "560 px".
@@ -348,16 +267,9 @@ Item {
                     }
                 }
 
-                RowLayout {
-                    Layout.fillWidth: true
-                    spacing: 8
-                    Text {
-                        text: qsTr("面板默认宽度")
-                        color: Theme.textPrimary
-                        font.pixelSize: Theme.fontSizeBody
-                        font.family: Theme.fontSans
-                        Layout.fillWidth: true
-                    }
+                SettingRow {
+                    label: qsTr("面板默认宽度")
+
                     SpinBox {
                         id: panelWidthSpin
                         Layout.preferredWidth: 160
@@ -370,16 +282,9 @@ Item {
                     }
                 }
 
-                RowLayout {
-                    Layout.fillWidth: true
-                    spacing: 8
-                    Text {
-                        text: qsTr("侧边栏默认展开")
-                        color: Theme.textPrimary
-                        font.pixelSize: Theme.fontSizeBody
-                        font.family: Theme.fontSans
-                        Layout.fillWidth: true
-                    }
+                SettingRow {
+                    label: qsTr("侧边栏默认展开")
+
                     Switch {
                         id: sidebarExpandedSwitch
                         Accessible.name: qsTr("侧边栏默认展开")
@@ -388,16 +293,9 @@ Item {
                     }
                 }
 
-                RowLayout {
-                    Layout.fillWidth: true
-                    spacing: 8
-                    Text {
-                        text: qsTr("面板默认展开")
-                        color: Theme.textPrimary
-                        font.pixelSize: Theme.fontSizeBody
-                        font.family: Theme.fontSans
-                        Layout.fillWidth: true
-                    }
+                SettingRow {
+                    label: qsTr("面板默认展开")
+
                     Switch {
                         id: panelVisibleSwitch
                         Accessible.name: qsTr("面板默认展开")
@@ -406,16 +304,9 @@ Item {
                     }
                 }
 
-                RowLayout {
-                    Layout.fillWidth: true
-                    spacing: 8
-                    Text {
-                        text: qsTr("启动时恢复窗口")
-                        color: Theme.textPrimary
-                        font.pixelSize: Theme.fontSizeBody
-                        font.family: Theme.fontSans
-                        Layout.fillWidth: true
-                    }
+                SettingRow {
+                    label: qsTr("启动时恢复窗口")
+
                     Switch {
                         id: restoreWindowSwitch
                         Accessible.name: qsTr("启动时恢复窗口")
@@ -436,6 +327,8 @@ Item {
                     Layout.fillWidth: true
                 }
             }
+
+            Item { Layout.fillHeight: true }
         }
     }
 }

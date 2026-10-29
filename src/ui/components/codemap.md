@@ -76,7 +76,9 @@
 
 | 组件 | 职责 | 关键依赖 |
 | --- | --- | --- |
-| `SettingsField.qml` | 设置页字段行：128px 定宽标签 + 输入框 + 密文显隐切换；失焦/回车提交，销毁时按 `commitOnDestroy` 补交 | `Theme`、`EditBuffer`（由宿主页面接线） |
+| `SettingsField.qml` | 设置页字段行：可调 `labelWidth`（默认 128px）定宽标签 + 输入框 + 密文显隐切换；失焦/回车提交，销毁时按 `commitOnDestroy` 补交；`commitDebounce` 给长文本（代理地址/嵌入地址/步数预算）做防抖，`ignoreEmptySubmit` 表达“留空不修改”，`clearOnSubmit` 在密钥写入后清空输入框。**所有提交路径统一走 `submitCurrent()`，读 `text` 而非 `displayText`** | `Theme`、`EditBuffer`（由宿主页面接线）；`text/input/validator` 别名供页面声明初值 |
+| `SettingRow.qml` | 设置页的一行：左侧标签/可选说明，右侧控件插槽。控件宽度由自身的 `Layout.preferredWidth` 决定，标签列吃掉剩余宽度，因此同页控件右边界对齐。读屏名仍由控件自己设置（根节点 name 不会下传） | `Theme`；`default property alias content: controlBox.data` |
+| `SettingsSection.qml` | 无边框平面分组：组标题（mono caption）+ 可选说明 + 内容插槽。与 `SettingCard` 分工：卡片用于字段独立的短页，平面分组用于 Interface/Security 这类连续长页 | `Theme`；`default property alias content: body.data` |
 | `SettingCard.qml` | 设置分组卡：标题 + 副标题 + 内容插槽（`default property alias content: body.data`） | `Theme` |
 | `ParamSelectRow.qml` | 参数下拉行：[自动] + 预设 + [自定义…]，自定义时露出输入框；值↔索引双向映射 | 纯受控组件，`submitted(value)` 出参 |
 | `PreferenceControl.qml` | 声明式偏好通用控件：按 `PreferenceRegistry.preferenceMeta()` 的类型自动选 Switch/ComboBox/Slider+SpinBox/TextField，错误来自 `EditBuffer.validationError` | `PreferenceRegistry`、`PreferenceStore`、`EditBuffer` |
@@ -101,7 +103,7 @@
 ## 设计
 
 - **主题来源唯一**：`Theme`（C++ `ThemeProvider` 注册为 QML 单例）提供颜色、间距（`spaceXs…spaceXl`）、圆角、字号、字体、`maxContentWidth`、`avatarSize`、`bubbleMaxRatio` 与 `formatTime/formatDateTime/formatLogTime` 等格式化函数；明暗切换由 `ThemeManager.isDark` 驱动 `themeChanged` 重算。组件内**几乎不硬编码色值**——残留例外见「约束与风险」。
-- **复用层次**（自底向上）：`AppIcon/AppButton/IconButton/CopyButton/DialogBackground/SplitBar/AppToast` → `CodeBlock/AttachmentChip/ReferenceChipRow/SettingCard/SettingsField/ParamSelectRow/PreferenceControl/DiffView/ChangeTree/UsageDetailTable` → `ProcessCard/AssistantMessage/UserMessageBubble/FileChangesPanel/GitPanel/TodoListPanel/LogPanel` → 各类 `Dialog`。基元几乎都是「Rectangle + MouseArea + 文本」自绘，不依赖 `QtQuick.Controls` 的默认皮肤——凡引了 `QtQuick.Controls` 的（`IconButton`/`AppToast`/`CategoryNav`/`InputConsole`/`PermissionModeSelector` 等）也都自绘 `background`/`contentItem`/`indicator`，只取 `ToolTip`/`Popup`/`Menu` 的行为。
+- **复用层次**（自底向上）：`AppIcon/AppButton/IconButton/CopyButton/DialogBackground/SplitBar/AppToast` → `CodeBlock/AttachmentChip/ReferenceChipRow/SettingCard/SettingsSection/SettingRow/SettingsField/ParamSelectRow/PreferenceControl/DiffView/ChangeTree/UsageDetailTable` → `ProcessCard/AssistantMessage/UserMessageBubble/FileChangesPanel/GitPanel/TodoListPanel/LogPanel` → 各类 `Dialog`。基元几乎都是「Rectangle + MouseArea + 文本」自绘，不依赖 `QtQuick.Controls` 的默认皮肤——凡引了 `QtQuick.Controls` 的（`IconButton`/`AppToast`/`CategoryNav`/`InputConsole`/`PermissionModeSelector` 等）也都自绘 `background`/`contentItem`/`indicator`，只取 `ToolTip`/`Popup`/`Menu` 的行为。
 - **四种 ViewModel 绑定模式**：
   1. *读属性直绑*：`AgentVM.traceModel` → `TranscriptViewport.model`；`AgentVM.fileCheckpoints` → `FileChangesPanel.checkpoints`；`AgentVM.todoList` → `TodoListPanel.todos`。
   2. *写属性直赋*：`AgentVM.permissionMode = mode`、`AgentVM.draftText = text`。
@@ -160,7 +162,8 @@
 - **Layout 管理的 item 上写 `anchors` 是未定义行为**（每次启动告警 "Detected anchors on an item that is managed by a layout"），`InputConsole` 的 `AttachMenuItem` 已改用 `Layout.alignment`。
 - **覆盖式 MouseArea 的声明顺序即层级**：必须先声明（在下层），否则吞掉子按钮点击。`Sidebar` 项目头、`FileChangesPanel` 头部都踩过这个坑（注释保留为回归提示）。
 - **Popup Menu 在 `Repeater` delegate 内会被焦点抢占秒关**，`Sidebar` 的置顶/归档因此改为直连 `Rectangle + MouseArea` 按钮；不要图省事改回 Menu。
-- **`SettingsField`/`ParamSelectRow` 的 `commitOnDestroy`**：设置页挂在 `Loader` 上，切分类直接销毁且不触发 `editingFinished`，编辑中的值会静默丢失；但无条件自动提交又会把半截模型名灌进模型列表，故提交策略由使用方显式开启。密码字段读 `text` 而非 `displayText`（后者是掩码）。
+- **`SettingsField`/`ParamSelectRow` 的 `commitOnDestroy`**：设置页挂在 `Loader` 上，切分类直接销毁且不触发 `editingFinished`，编辑中的值会静默丢失；但无条件自动提交又会把半截模型名灌进模型列表，故提交策略由使用方显式开启。密码字段读 `text` 而非 `displayText`（后者是掩码）。带初值的字段应同时把 `lastKnownValue` 绑到同一设置值，否则页面重建时的销毁兜底会把原值再写一遍。
+- **`SettingRow` 的默认属性是控件插槽**：控件的 `Layout.preferredWidth` 决定右列宽度；不要在这里塞需要整行铺满的控件（用 `SettingsField` 或自定义块）。`SettingsSection` 与 `SettingCard` 都只做排版，不读写设置。
 - **Git 请求必须做 token 比对**：所有 `GitVM.requestXxx()` 的回填 signal 都先比对 `requestId`，否则旧响应会覆盖新数据；`GitVM.projectRoot` 是全局单例状态，由 `GitPanel` 写入，跨面板使用需注意当前仓库。
 - **主题不是全 CONSTANT**：颜色类令牌带 `themeChanged` 通知，间距/圆角/字号是 CONSTANT；明暗切换时不能缓存色值（如 `AppIcon` 需 `requestPaint()`）。
 - **硬编码色值残留**（本应统一走 Theme）：`AuditDialog` 的徽章底色（`Qt.rgba(0,1,0.58,…)` 等三处）、`DiffView` 的 diff 底色 alpha（`0.18`/`0.10` 两档字面量按 `Theme.isDark` 分支选）、`AttachmentChip` 删除按钮的 `#ffffff`。

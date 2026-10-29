@@ -64,28 +64,10 @@ Item {
                 title: qsTr("日志")
                 subtitle: qsTr("达到单文件大小上限后自动轮转；只保留最新的指定数量文件。")
 
-                RowLayout {
-                    Layout.fillWidth: true
-                    spacing: 8
+                SettingRow {
+                    label: qsTr("最低记录级别")
+                    description: qsTr("低于该级别的日志不会写入文件；排查问题时临时调到 debug。")
 
-                    ColumnLayout {
-                        Layout.fillWidth: true
-                        spacing: 2
-                        Text {
-                            text: qsTr("最低记录级别")
-                            color: Theme.textSecondary
-                            font.pixelSize: Theme.fontSizeCaption
-                            font.family: Theme.fontMono
-                        }
-                        Text {
-                            text: qsTr("低于该级别的日志不会写入文件；排查问题时临时调到 debug。")
-                            color: Theme.textSecondary
-                            font.pixelSize: 10
-                            wrapMode: Text.Wrap
-                            Layout.fillWidth: true
-                            opacity: 0.8
-                        }
-                    }
                     ComboBox {
                         id: logLevelCombo
                         Layout.preferredWidth: 160
@@ -147,27 +129,10 @@ Item {
                     color: Theme.borderSubtle
                 }
 
-                RowLayout {
-                    Layout.fillWidth: true
-                    spacing: 8
-                    ColumnLayout {
-                        Layout.fillWidth: true
-                        spacing: 2
-                        Text {
-                            text: qsTr("单个日志文件上限（MB）")
-                            color: Theme.textSecondary
-                            font.pixelSize: Theme.fontSizeCaption
-                            font.family: Theme.fontMono
-                        }
-                        Text {
-                            text: qsTr("达到上限后自动创建新文件。")
-                            color: Theme.textSecondary
-                            font.pixelSize: 10
-                            wrapMode: Text.Wrap
-                            Layout.fillWidth: true
-                            opacity: 0.8
-                        }
-                    }
+                SettingRow {
+                    label: qsTr("单个日志文件上限（MB）")
+                    description: qsTr("达到上限后自动创建新文件。")
+
                     SpinBox {
                         from: 1
                         to: 1024
@@ -177,27 +142,11 @@ Item {
                         Accessible.name: qsTr("单个日志文件大小上限，兆字节")
                     }
                 }
-                RowLayout {
-                    Layout.fillWidth: true
-                    spacing: 8
-                    ColumnLayout {
-                        Layout.fillWidth: true
-                        spacing: 2
-                        Text {
-                            text: qsTr("保留日志文件数")
-                            color: Theme.textSecondary
-                            font.pixelSize: Theme.fontSizeCaption
-                            font.family: Theme.fontMono
-                        }
-                        Text {
-                            text: qsTr("轮转后只保留最新的指定数量文件，更早的自动删除。")
-                            color: Theme.textSecondary
-                            font.pixelSize: 10
-                            wrapMode: Text.Wrap
-                            Layout.fillWidth: true
-                            opacity: 0.8
-                        }
-                    }
+
+                SettingRow {
+                    label: qsTr("保留日志文件数")
+                    description: qsTr("轮转后只保留最新的指定数量文件，更早的自动删除。")
+
                     SpinBox {
                         from: 1
                         to: 100

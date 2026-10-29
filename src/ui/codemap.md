@@ -47,16 +47,16 @@
 | 轨迹 | `components/TranscriptViewport.qml`、`TraceNodeRouter.qml` | 滚动/跟随/定位与节点类型路由 |
 | 输入 | `components/InputConsole.qml`、`ModelSelector.qml`、`ThinkingEffortSelector.qml`、`PermissionModeSelector.qml` | 发送、附件、提及、历史与参数选择 |
 | 侧栏/右栏 | `components/Sidebar.qml`、`panels/ContextPanel.qml` | 会话树/搜索 + 会话运行状态槽（busy/等待确认/未读）；Git/文件（审阅与任务清单已移入对话框） |
-| 设置 | `components/SettingsCenterDialog.qml`、`CategoryNav.qml`、`PreferenceControl.qml`、`settings-search.js` | 搜索、四组可滚动分类导航、偏好控件、按分类复位的底栏 |
+| 设置 | `components/SettingsCenterDialog.qml`、`CategoryNav.qml`、`PreferenceControl.qml`、`settings-search.js`、`SettingsSection.qml`、`SettingRow.qml`、`SettingsField.qml`、`SettingCard.qml` | 搜索、四组可滚动分类导航、偏好控件、按分类复位的底栏。版面原语：`SettingsSection`（扁平分组）/`SettingRow`（左标签右控件）/`SettingsField`（输入行），`SettingCard` 留给带边框的独立卡片 |
 | 设置页 | `pages/GeneralPage`、`AgentBehaviorPage`、`NetworkPage`、`LogsPage`、`KnowledgePage`、`InterfacePage`、`ModelConfigPage`、`SecurityPage`、`McpPage`、`ToolsPage`、`MemoryPage`、`UsageStatsPage`、`ActivityLogPage`、`SettingsBackupPage`、`ProjectRulesPage`、`PromptAssetsPage` | 16 个分类，由 `Loader` 按分类懒加载 |
 | 业务组件 | `AssistantMessage.qml`、`UserMessageBubble.qml`、`ProcessCard.qml`、`ErrorCard.qml`、`ToolConfirmDialog.qml`、`TodoListPanel.qml`、`FileChangesPanel.qml`、`ChangeTree.qml`、`GitPanel.qml` | 消息/工具确认/审阅/Git |
 | 图表/表格 | `charts/{DonutChart,LineTrendChart,BarCompareChart}.qml`、`UsageDetailTable.qml`、`DiffView.qml`、`CodeBlock.qml` | Canvas 图表、明细表、diff/代码块 |
-| 基础控件 | `AppButton.qml`、`AppIcon.qml`、`AppToast.qml`、`IconButton.qml`、`DialogBackground.qml`、`SplitBar.qml`、`SettingsField.qml`、`SettingCard.qml` | 统一外观与交互基元 |
+| 基础控件 | `AppButton.qml`、`AppIcon.qml`、`AppToast.qml`、`IconButton.qml`、`DialogBackground.qml`、`SplitBar.qml` | 统一外观与交互基元 |
 
 ## 约束与风险
 
 - **不要在 QML 解析拖放路径**：`drop.urls` 元素没有 `toLocalFile()`，必须原样交给 C++；`DropArea` 必须最后声明且铺满窗口，否则命中层被内容遮挡。
-- **Loader 生命周期**：设置页切换分类会销毁页面，仅靠 `editingFinished` 会丢输入——依赖 `EditBuffer` 防抖 + `Component.onDestruction`；新增页面需沿用同一保存契约。
+- **Loader 生命周期**：设置页切换分类会销毁页面，仅靠 `editingFinished` 会丢输入——依赖 `EditBuffer` 防抖 + `Component.onDestruction`；新增页面需沿用同一保存契约。文本字段优先用 `SettingsField` 的 `commitDebounce`/`commitOnDestroy`（并绑定 `lastKnownValue` 避免重复提交原值）；密钥字段用 `secret + ignoreEmptySubmit + clearOnSubmit`，读 `text` 而非 `displayText`。
 - **托盘不可用**：`trayAvailable == false` 时绝不能"关闭到托盘"，否则窗口无召回入口。
 - **快捷键冲突**：`Ctrl+/` 与部分输入法的 `/` 组合、`Ctrl+[` 与编辑器缩进习惯可能冲突；窗口级 `Shortcut` 会抢占输入焦点，改动需回归 `InputConsole`。
 - **qrc/注册漂移**：新增 QML 文件必须加入根 `CMakeLists.txt` 的 `QML_FILES`；`charts/` 依赖 QTP0004 平铺，移动目录会改 qrc 路径并导致加载失败。

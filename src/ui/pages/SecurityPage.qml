@@ -51,56 +51,31 @@ Item {
             }
 
             // ── 文件读取沙箱 ──────────────────────────────
-            ColumnLayout {
+            SettingsSection {
                 Layout.leftMargin: 24
                 Layout.rightMargin: 24
-                Layout.fillWidth: true
-                spacing: 8
+                title: qsTr("文件读取沙箱")
 
-                Text { text: qsTr("文件读取沙箱"); color: Theme.textSecondary; font.pixelSize: Theme.fontSizeCaption; font.bold: true; font.family: Theme.fontMono }
+                SettingRow {
+                    label: qsTr("允许读取整个磁盘")
+                    description: qsTr("关闭时读取仅限文档/下载/桌面/应用目录与当前项目；开启后除系统目录与黑名单外全部可读，模型读到的内容可能发送给云端模型。")
 
-                ColumnLayout {
-                    Layout.fillWidth: true
-                    spacing: 2
                     CheckBox {
                         checked: Settings.allowFullDiskRead
                         onToggled: Settings.allowFullDiskRead = checked
-                        text: qsTr("允许读取整个磁盘")
-                        font.pixelSize: Theme.fontSizeBody
-                        font.family: Theme.fontSans
-                        Accessible.name: text
-                    }
-                    Text {
-                        text: qsTr("关闭时读取仅限文档/下载/桌面/应用目录与当前项目；开启后除系统目录与黑名单外全部可读，模型读到的内容可能发送给云端模型。")
-                        color: Theme.textSecondary
-                        font.pixelSize: 10
-                        wrapMode: Text.Wrap
-                        Layout.fillWidth: true
-                        opacity: 0.8
-                        Layout.leftMargin: 32
+                        Accessible.name: qsTr("允许读取整个磁盘")
                     }
                 }
 
                 // docs/17 P1-4: 项目目录写入放行（默认只读）。
-                ColumnLayout {
-                    Layout.fillWidth: true
-                    spacing: 2
+                SettingRow {
+                    label: qsTr("允许写入当前项目目录")
+                    description: qsTr("默认项目目录只读，写入仅限用户目录；开启后模型可以修改当前项目中的文件（写入类工具仍受会话权限模式约束，黑名单始终优先）。")
+
                     CheckBox {
                         checked: Settings.allowProjectWrite
                         onToggled: Settings.allowProjectWrite = checked
-                        text: qsTr("允许写入当前项目目录")
-                        font.pixelSize: Theme.fontSizeBody
-                        font.family: Theme.fontSans
-                        Accessible.name: text
-                    }
-                    Text {
-                        text: qsTr("默认项目目录只读，写入仅限用户目录；开启后模型可以修改当前项目中的文件（写入类工具仍受会话权限模式约束，黑名单始终优先）。")
-                        color: Theme.textSecondary
-                        font.pixelSize: 10
-                        wrapMode: Text.Wrap
-                        Layout.fillWidth: true
-                        opacity: 0.8
-                        Layout.leftMargin: 32
+                        Accessible.name: qsTr("允许写入当前项目目录")
                     }
                 }
 
@@ -262,59 +237,32 @@ Item {
                 }
             }
 
-            Rectangle { Layout.fillWidth: true; height: 1; color: Theme.borderSubtle }
-
             // ── 隐私门 ────────────────────────────────────
-            ColumnLayout {
+            SettingsSection {
                 Layout.leftMargin: 24
                 Layout.rightMargin: 24
                 Layout.bottomMargin: 16
-                Layout.fillWidth: true
-                spacing: 8
+                title: qsTr("隐私门")
 
-                Text { text: qsTr("隐私门"); color: Theme.textSecondary; font.pixelSize: Theme.fontSizeCaption; font.bold: true; font.family: Theme.fontMono }
+                SettingRow {
+                    label: qsTr("仅本地模式")
+                    description: qsTr("使用云端模型时拦截知识库搜索、联网搜索与全部 MCP 工具（工具页会显示拦截徽标）；本地模型不受影响。")
 
-                ColumnLayout {
-                    Layout.fillWidth: true
-                    spacing: 2
                     CheckBox {
                         checked: Settings.localOnlyMode
                         onToggled: Settings.localOnlyMode = checked
-                        text: qsTr("仅本地模式")
-                        font.pixelSize: Theme.fontSizeBody
-                        font.family: Theme.fontSans
-                        Accessible.name: text
-                    }
-                    Text {
-                        text: qsTr("使用云端模型时拦截知识库搜索、联网搜索与全部 MCP 工具（工具页会显示拦截徽标）；本地模型不受影响。")
-                        color: Theme.textSecondary
-                        font.pixelSize: 10
-                        wrapMode: Text.Wrap
-                        Layout.fillWidth: true
-                        opacity: 0.8
-                        Layout.leftMargin: 32
+                        Accessible.name: qsTr("仅本地模式")
                     }
                 }
 
-                ColumnLayout {
-                    Layout.fillWidth: true
-                    spacing: 2
+                SettingRow {
+                    label: qsTr("允许 http_fetch 访问本机与内网地址")
+                    description: qsTr("关闭时 http_fetch 拒绝本机/内网目标（防 SSRF）；仅在确有访问内网服务的需求时开启。")
+
                     CheckBox {
                         checked: Settings.allowLocalNetworkFetch
                         onToggled: Settings.allowLocalNetworkFetch = checked
-                        text: qsTr("允许 http_fetch 访问本机与内网地址")
-                        font.pixelSize: Theme.fontSizeBody
-                        font.family: Theme.fontSans
-                        Accessible.name: text
-                    }
-                    Text {
-                        text: qsTr("关闭时 http_fetch 拒绝本机/内网目标（防 SSRF）；仅在确有访问内网服务的需求时开启。")
-                        color: Theme.textSecondary
-                        font.pixelSize: 10
-                        wrapMode: Text.Wrap
-                        Layout.fillWidth: true
-                        opacity: 0.8
-                        Layout.leftMargin: 32
+                        Accessible.name: qsTr("允许 http_fetch 访问本机与内网地址")
                     }
                 }
             }

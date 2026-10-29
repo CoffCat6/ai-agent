@@ -63,9 +63,27 @@ AgentChatPage 空态的「配置模型」、ModelSelector、`AgentVM.modelSettin
    `staged` 只在失败或“值等于已存值”时短暂存在，因此仍是即时保存而非批量提交。
 3. **文本输入**：多数在失焦/回车提交，并用 `Component.onDestruction` 兜底（Loader
    切分类不触发 `editingFinished`）；长文本（系统提示词、代理主机、嵌入地址）另有
-   400ms 防抖；SettingsField/ParamSelectRow 用 `commitOnDestroy` 补同一语义。
+   400ms 防抖。走 `SettingsField` 的字段由 `commitDebounce`/`commitOnDestroy` 承担同一
+   语义，并须把 `lastKnownValue` 声明式绑到已存值——只有真正改过的文本才会在销毁时
+   提交（否则页面重建会把原值再写一遍）。密钥字段统一 `secret + ignoreEmptySubmit +
+   clearOnSubmit`：留空即不改，写完清空输入框，只能由页面的「清除密钥」按钮删除。
 4. **无持久化状态**：连接测试结果、日期错误/分页游标、Activity 本地筛选、
    episodes 缓存只在页面生命周期内有效。
+
+### 版面原语（P2）
+
+设置页不再各写一套「标题 + 说明 + 控件」的排版，统一用三个组件：
+
+- `SettingsSection`：扁平分组（大标题 + 可选说明 + 内容列），用于长页面的分段；
+- `SettingRow`：左列标签/说明、右列控件的单行布局，控件宽度由自身
+  `Layout.preferredWidth` 决定（开关、下拉、SpinBox 都走这里）；
+- `SettingsField`：定宽标签 + 单行输入框（可选密文/等宽/防抖/销毁兜底），
+  需要整行铺满的输入项走这里。
+
+`SettingCard` 仍保留给「带边框的独立设置卡」（ToolsPage 的工具卡、LogsPage 的日志
+目录块等），两者只做排版、不读写设置。Interface/Security/Tools/Memory/General 的字段
+已全部改为 section + row；AgentBehavior/Network/Logs/Knowledge 中的相应区块也同步改用
+同一组原语，因此新页面**不要**再手写标签列与像素间距。
 
 ### 各页对应的 schema 键组
 
@@ -123,9 +141,11 @@ AgentChatPage 空态的「配置模型」、ModelSelector、`AgentVM.modelSettin
   结果经 `testFinished(ok, message)` 回填；测试模型默认当前模型，用户选择后
   `testModelPinned` 固定。`Settings.endpointOptions(provider)` 决定协议芯片，
   `Settings.modelContextWindow(apiProtocol, model)` 决定能力表窗口。
-- SecurityPage：CheckBox 直接写 `Settings.*`；黑名单增删以 `slice()` 复制后整体
-  赋回 `Settings.readDenyList`，去重按 Windows 大小写不敏感语义。判定顺序由后端
-  执行：系统目录封锁 → 黑名单 → 允许层（用户目录 ∪ 当前项目），页面文案与之一致。
+- SecurityPage：两个 `SettingsSection`（文件读取沙箱 / 隐私门），每项是 `SettingRow` +
+  无文字 CheckBox（行标签即 `Accessible.name`）；CheckBox 直接写 `Settings.*`；黑名单增删以
+  `slice()` 复制后整体赋回 `Settings.readDenyList`，去重按 Windows 大小写不敏感语义。
+  判定顺序由后端执行：系统目录封锁 → 黑名单 → 允许层（用户目录 ∪ 当前项目），
+  页面文案与之一致。
 - McpPage：`Repeater model: McpManager.servers`，每项
   `{name, transport, endpoint, enabled, state, toolCount}`；`state` 2=已连接、
   3=失败、其余=连接中/未启用。`addServer` 解析 stdio 命令行为 command+args 或 http URL；
@@ -134,21 +154,30 @@ AgentChatPage 空态的「配置模型」、ModelSelector、`AgentVM.modelSettin
   `{name, description, level(safe/requires_confirm/dangerous), enabled,
   blockedByPolicy, source(builtin/MCP)}`；Switch 调 `AgentVM.setToolEnabled`，
   由 ToolRegistry 写 `tools/disabled` 并刷新模型。`blockedByPolicy` 只做徽标，
-  不改变 Switch 的用户层状态。
-- AgentBehaviorPage：步数/超时直接写 `Settings.maxSteps/taskTimeoutMinutes`，系统提示词
-  经 400ms 防抖写 `Settings.systemPromptOverride`；页头显示 `Settings.maxSteps` 与超时值的
-  实时回显，`requestResetDefaults()` → `Settings.resetAgentToDefaults()`。
+  不改变 Switch 的用户层状态。联网搜索 provider 是 `SettingRow` + ComboBox，API Key 是
+  `SettingsField`（密文、留空不改、提交后清空）+「清除密钥」按钮，key 已配置时只显示
+  `webSearchApiKeySet` 的占位文案，不回显明文。
+- AgentBehaviorPage：步数 `SettingsField`（`IntValidator` 3–1000、`ignoreEmptySubmit`、
+  `commitOnDestroy`；非法值在 `onSubmitted` 内被丢弃）、超时为 `SettingRow`，均直接写
+  `Settings.maxSteps/taskTimeoutMinutes`；系统提示词经 400ms 防抖写
+  `Settings.systemPromptOverride`；页头显示 `Settings.maxSteps` 与超值的实时回显，
+  `requestResetDefaults()` → `Settings.resetAgentToDefaults()`。
 - NetworkPage：代理字段直写 `Settings.proxyMode/proxyHost/proxyPort/proxyUsername/
-  proxyPassword`；「测试代理」调用 `Settings.testProxy()`，结果在页面内联显示；密码为
-  掩码 getter，页面只读 `proxyPasswordSet`，清空需显式「清除密码」。
+  proxyPassword`；主机/用户名用 `SettingsField`（等宽 + 400ms 防抖 + 销毁兜底），端口为
+  `SettingRow` + SpinBox；「测试代理」调用 `Settings.testProxy()`，结果在页面内联显示；
+  密码为掩码 getter，页面只读 `proxyPasswordSet`，清空需显式「清除密码」。
 - LogsPage：级别/目录/大小/保留数直写 `Settings.log*`；目录用 `FolderDialog` 选择并可
   恢复默认；`requestResetDefaults()` → `Settings.resetLoggingToDefaults()`。
-- KnowledgePage：嵌入 provider/model/baseUrl/API key 直写 `Settings.embedding*`；
-  切换到外部 provider 时提示文档内容会发送到所配置端点，纯本地模式下提示请求会被拦截并
-  回退 Ollama；`requestResetDefaults()` → `Settings.resetEmbeddingToDefaults()`（保留密钥）。
-- MemoryPage：`listEpisodic(500)` / `searchEpisodic(keyword, 500)` /
-  `removeEpisodic(id)` / `clearEpisodic()`；`AgentVM.episodicChanged` 触发重新查询。
-  搜索框 `onTextChanged` 立即查询（无防抖），计数与空态随结果变化。
+- KnowledgePage：嵌入 provider/model 用 `SettingRow` + ComboBox，baseUrl 用 `SettingsField`
+  （等宽 + 400ms 防抖），API key 用 `SettingsField`（密文 + 留空不改 + 提交后清空）+ 清除
+  按钮，全部直写 `Settings.embedding*`；切换到外部 provider 时提示文档内容会发送到所配置
+  端点，纯本地模式下提示请求会被拦截并回退 Ollama；`requestResetDefaults()` →
+  `Settings.resetEmbeddingToDefaults()`（保留密钥）。
+- MemoryPage：「记忆与保留」`SettingsSection`（Switch + 两个保留天数 SpinBox，均为
+  `SettingRow`）直写 `memory/*`；记忆列表走 `listEpisodic(500)` /
+  `searchEpisodic(keyword, 500)` / `removeEpisodic(id)` / `clearEpisodic()`；
+  `AgentVM.episodicChanged` 触发重新查询。搜索框 `onTextChanged` 立即查询（无防抖），
+  计数与空态随结果变化。
 - UsageStatsPage：`refresh()` 一次拉四组聚合
   （`tokenStatsDetailed` / `costStats` / `quotaStatus` / `tokenStatsBySource`），
   再 `loadDetailPage(true)` 拉 `tokenUsageRecords` 首页；分页 50 行，`loadMore`
@@ -198,7 +227,8 @@ AgentChatPage 空态的「配置模型」、ModelSelector、`AgentVM.modelSettin
 - `src/viewmodels/AgentViewModel.h`（`loadProjectRules` / `writeProjectRules` /
   `projectRulesState`）、`src/core/agent/AIAgent.cpp`（`projectRulesBlock`）
 - `src/ui/components/SettingsCenterDialog.qml`、`CategoryNav.qml`、
-  `settings-search.js`、`SettingsField.qml`、`PreferenceControl.qml`
+  `settings-search.js`、`SettingsSection.qml`、`SettingRow.qml`、`SettingsField.qml`、
+  `SettingCard.qml`、`PreferenceControl.qml`
 - `src/core/utils/SettingsSchema.cpp`、`src/viewmodels/EditBuffer.cpp`、
   `src/viewmodels/SettingsService.h`、`src/viewmodels/McpManager.h`、
   `src/core/memory/IMemory.h`
@@ -230,6 +260,13 @@ AgentChatPage 空态的「配置模型」、ModelSelector、`AgentVM.modelSettin
 - SettingsBackup 明确排除加密字段、`security/*`、`ui/*`、`modelProfiles`、
   `tools/disabled`、默认权限与自启；恢复后需要用户重新确认这些高风险项。
 - 各页大量使用 `Component.onDestruction` 兜底提交，若页面被非 Loader 方式复用需重新评估。
+  新建文本字段优先用 `SettingsField`（`commitDebounce`/`commitOnDestroy`/`lastKnownValue`
+  已封装该契约）；手写 `TextField` 时必须自己补 `Component.onDestruction`，且密钥类字段
+  只能读 `text`，不能读 `displayText`（掩码）。
+- 设置页的标签列、间距与标题层级统一由 `SettingsSection`/`SettingRow`/`SettingsField`
+  承担；新增页面不要再复制像素级 `Layout.*Margin` 或自绘标签列，否则又会漂移出不一致的
+  对齐（P2 前的现状）。`test_chat_workflows` 的 `settingsPagesInstantiateWithoutWarnings`
+  会逐个 Loader 装载这些页面并断言无 QML 警告。
 - ProjectRulesPage 是项目规则的唯一编辑入口（侧栏项目行不提供入口）。它读写的是
   项目根目录的 `AGENTS.md`（找不到时读 `.nexus/rules.md`，但保存永远写 `AGENTS.md`）。
   编辑区 500 ms 防抖落盘，切换项目/关窗前冲刷；**冲刷目标必须是 `loadedRoot`**——

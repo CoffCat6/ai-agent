@@ -486,6 +486,45 @@ private slots:
     }
 
 
+    // P2：设置页组件统一（SettingsSection/SettingRow/SettingsField）后，
+    // 所有被改写的分类页必须在真实引擎里实例化成功。qmllint 只做静态检查，
+    // Loader 的 source/绑定错误只会出现在 warnings 里，故逐个打开分类页并
+    // 断言没有新的 QML 警告。
+    void settingsPagesInstantiateWithoutWarnings() {
+        QQmlApplicationEngine engine;
+        QStringList warnings;
+        connect(&engine, &QQmlApplicationEngine::warnings, &engine,
+                [&warnings](const QList<QQmlError> &list) {
+                    for (const QQmlError &error : list)
+                        warnings.append(error.toString());
+                });
+        engine.rootContext()->setContextProperty("Theme", ThemeProvider::instance());
+        engine.load(QUrl("qrc:/qt/qml/NexusAI/src/ui/main.qml"));
+        QVERIFY(!engine.rootObjects().isEmpty());
+
+        auto* dialog = engine.rootObjects().first()->findChild<QObject*>("settingsCenterDialog");
+        QVERIFY(dialog);
+        QTest::qWait(200);
+        warnings.clear(); // 启动期与本用例无关的告警
+
+        const QStringList categories = {
+            QStringLiteral("general"), QStringLiteral("interface"),
+            QStringLiteral("security"), QStringLiteral("network"),
+            QStringLiteral("memory"), QStringLiteral("tools"),
+            QStringLiteral("agent"), QStringLiteral("knowledge"),
+            QStringLiteral("logs")
+        };
+        for (const QString &category : categories) {
+            QVERIFY(QMetaObject::invokeMethod(dialog, "openCategory",
+                                              Q_ARG(QVariant, category)));
+            QTest::qWait(120);
+            QVERIFY2(warnings.isEmpty(),
+                     qPrintable(QStringLiteral("%1: %2")
+                                    .arg(category, warnings.join(QLatin1Char('\n')))));
+        }
+    }
+
+
     // docs/30 P1：单对话视图的呈现回归。
     // 这个用例锁的是"界面形态"本身——标签栏必须消失、侧栏必须能表达三种
     // 运行状态、顶栏必须补上会话标题与模板入口。它们都是纯 QML 契约，

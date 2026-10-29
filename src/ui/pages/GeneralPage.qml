@@ -60,20 +60,11 @@ Item {
                 }
             }
 
-            ColumnLayout {
+            SettingsSection {
                 visible: page.preferenceKeys.length > 0
                 Layout.leftMargin: 24
                 Layout.rightMargin: 24
-                Layout.fillWidth: true
-                spacing: 16
-
-                Text {
-                    text: qsTr("启动与通知")
-                    color: Theme.textSecondary
-                    font.pixelSize: Theme.fontSizeCaption
-                    font.bold: true
-                    font.family: Theme.fontMono
-                }
+                title: qsTr("启动与通知")
 
                 Repeater {
                     model: page.preferenceKeys

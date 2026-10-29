@@ -21,15 +21,29 @@ RowLayout {
     id: root
 
     property string label: ""
+    // 128px 是大多数设置页标签的宽度；个别更长的标签可单独放宽。
+    property int labelWidth: 128
     property string placeholderText: ""
+    // 路径/URL/密钥等机器可读值用等宽字体，叙述性文本用正文字体。
+    property bool mono: false
     // 密文字段默认遮蔽，并自带一个显示/隐藏切换（API Key 填完看不到内容是最常见的困惑点）
     property bool secret: false
     property bool revealed: false
-    // 外部通过 input 读写文本与焦点（syncFields 要跳过正在输入的字段）
+    // 外部通过 input/text 读写文本与焦点（syncFields 要跳过正在输入的字段）；
+    // text 别名让页面可以像普通输入框一样声明初值。
     property alias input: fieldInput
+    property alias text: fieldInput.text
     property alias validator: fieldInput.validator
 
     signal submitted(string value)
+
+    // 长文本（系统提示词、代理地址等）的防抖提交间隔；0 = 只在失焦/回车提交。
+    // 防抖只提交与 lastKnownValue 不同的值，避免每次停顿都把原值重写一遍。
+    property int commitDebounce: 0
+    // 密文字段常用"留空 = 不修改"：空输入不触发 submitted。
+    property bool ignoreEmptySubmit: false
+    // 密钥类字段提交后清空输入框，避免明文在掩码后面继续存在。
+    property bool clearOnSubmit: false
 
     // 组件被销毁（宿主 Loader 切换分类）时把当前文本发一次 submitted。
     // 默认关：调用方按字段语义决定（见上方说明）。
@@ -44,20 +58,30 @@ RowLayout {
         root.lastKnownValue = (value === undefined || value === null) ? "" : String(value)
     }
 
-    function commitIfDirty() {
-        // `text`, not displayText: a Password field's displayText is the mask.
-        // Reading it here would commit "••••" and destroy the stored key.
+    // 唯一提交入口：所有路径都读 `text`（不是 displayText——Password 字段的
+    // displayText 是掩码，写进去等于把密钥毁掉），并统一处理"空值不提交"
+    // 与"提交后清空"两种字段语义。
+    function submitCurrent() {
         const current = fieldInput.text
-        if (current === root.lastKnownValue) return
+        if (root.ignoreEmptySubmit && current.length === 0) return
         root.submitted(current)
         root.lastKnownValue = current
+        if (root.clearOnSubmit) {
+            fieldInput.text = ""
+            root.lastKnownValue = ""
+        }
+    }
+
+    function commitIfDirty() {
+        if (fieldInput.text === root.lastKnownValue) return
+        root.submitCurrent()
     }
 
     Layout.fillWidth: true
     spacing: 10
 
     Text {
-        Layout.preferredWidth: 128
+        Layout.preferredWidth: root.labelWidth
         text: root.label
         color: Theme.textSecondary
         font.pixelSize: Theme.fontSizeCaption
@@ -76,7 +100,8 @@ RowLayout {
         selectionColor: Theme.brandPrimary
         selectedTextColor: Theme.selectedTextColor
         font.pixelSize: Theme.fontSizeBody
-        font.family: Theme.fontSans
+        font.family: root.mono ? Theme.fontMono : Theme.fontSans
+        selectByMouse: true
         background: Rectangle {
             radius: 6
             color: Theme.bgPrimary
@@ -86,13 +111,18 @@ RowLayout {
         Accessible.name: root.label
         // editingFinished covers both Enter and focus loss; adding onAccepted as
         // well would submit twice for a single Enter keypress.
-        // Use `text` (never displayText): with echoMode Password the latter is
-        // the masked bullets, which would overwrite the key with dots.
-        onEditingFinished: {
-            root.submitted(text)
-            root.noteValue(text)
-        }
+        onEditingFinished: root.submitCurrent()
+        // 防抖只在长文本字段启用；Timer 与输入框同生命周期，销毁时由
+        // commitOnDestroy 兜底。
+        onTextEdited: if (root.commitDebounce > 0) commitTimer.restart()
         Component.onDestruction: if (root.commitOnDestroy) root.commitIfDirty()
+
+        Timer {
+            id: commitTimer
+            interval: root.commitDebounce
+            repeat: false
+            onTriggered: root.commitIfDirty()
+        }
     }
 
     Text {

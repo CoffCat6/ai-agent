@@ -62,69 +62,50 @@ Item {
                 title: qsTr("HTTP 代理")
                 subtitle: qsTr("跟随系统会读取操作系统代理配置；手动代理对所有出站 HTTP 请求生效。")
 
-                Text {
-                    text: qsTr("代理模式")
-                    color: Theme.textSecondary
-                    font.pixelSize: Theme.fontSizeCaption
-                    font.family: Theme.fontMono
-                }
-                ComboBox {
-                    id: proxyModeCombo
-                    Layout.preferredWidth: 220
-                    property var modeValues: ["system", "manual", "off"]
-                    model: [qsTr("跟随系统"), qsTr("手动代理"), qsTr("不使用代理")]
-                    Component.onCompleted: currentIndex = Math.max(0, modeValues.indexOf(Settings.proxyMode))
-                    onActivated: Settings.proxyMode = modeValues[currentIndex]
-                    Connections {
-                        target: Settings
-                        function onProxyModeChanged() {
-                            const index = proxyModeCombo.modeValues.indexOf(Settings.proxyMode)
-                            proxyModeCombo.currentIndex = index >= 0 ? index : 0
+                SettingRow {
+                    label: qsTr("代理模式")
+
+                    ComboBox {
+                        id: proxyModeCombo
+                        Layout.preferredWidth: 220
+                        property var modeValues: ["system", "manual", "off"]
+                        model: [qsTr("跟随系统"), qsTr("手动代理"), qsTr("不使用代理")]
+                        Component.onCompleted: currentIndex = Math.max(0, modeValues.indexOf(Settings.proxyMode))
+                        onActivated: Settings.proxyMode = modeValues[currentIndex]
+                        Connections {
+                            target: Settings
+                            function onProxyModeChanged() {
+                                const index = proxyModeCombo.modeValues.indexOf(Settings.proxyMode)
+                                proxyModeCombo.currentIndex = index >= 0 ? index : 0
+                            }
                         }
+                        Accessible.name: qsTr("代理模式")
                     }
-                    Accessible.name: qsTr("代理模式")
                 }
 
                 ColumnLayout {
                     Layout.fillWidth: true
-                    spacing: 4
+                    spacing: 10
                     visible: Settings.proxyMode === "manual"
 
-                    RowLayout {
-                        Layout.fillWidth: true
-                        spacing: 8
+                    SettingsField {
+                        id: proxyHostField
+                        label: qsTr("代理服务器地址")
+                        mono: true
+                        text: Settings.proxyHost
+                        // 基线跟着已保存值走：页面只是重建/切分类时，未编辑的
+                        // 字段不会被 commitOnDestroy 再写一遍。
+                        lastKnownValue: Settings.proxyHost
+                        placeholderText: qsTr("proxy.example.com（不含 http://）")
+                        // 防抖提交 + 切分类销毁兜底（Loader 销毁不触发
+                        // editingFinished）。
+                        commitDebounce: 400
+                        commitOnDestroy: true
+                        onSubmitted: (value) => Settings.proxyHost = value
+                    }
 
-                        TextField {
-                            id: proxyHostField
-                            Layout.fillWidth: true
-                            text: Settings.proxyHost
-                            placeholderText: qsTr("proxy.example.com（不含 http://）")
-                            placeholderTextColor: Theme.textSecondary
-                            color: Theme.textPrimary
-                            selectionColor: Theme.brandPrimary
-                            selectedTextColor: Theme.selectedTextColor
-                            font.pixelSize: Theme.fontSizeBody
-                            font.family: Theme.fontMono
-                            background: Rectangle {
-                                radius: 6
-                                color: Theme.bgPrimary
-                                border.width: proxyHostField.activeFocus ? 2 : 1
-                                border.color: proxyHostField.activeFocus
-                                    ? Theme.brandPrimary : Theme.borderSubtle
-                            }
-                            // 防抖提交 + 切分类销毁兜底（Loader 销毁不触发
-                            // editingFinished）。
-                            function commit() { Settings.proxyHost = text }
-                            onTextEdited: proxyHostCommitTimer.restart()
-                            onEditingFinished: commit()
-                            Component.onDestruction: commit()
-                            Timer {
-                                id: proxyHostCommitTimer
-                                interval: 400
-                                onTriggered: proxyHostField.commit()
-                            }
-                            Accessible.name: qsTr("代理服务器地址")
-                        }
+                    SettingRow {
+                        label: qsTr("代理端口")
 
                         SpinBox {
                             id: proxyPortSpin
@@ -141,78 +122,34 @@ Item {
                         }
                     }
 
-                    Text {
-                        text: qsTr("用户名（可选）")
-                        color: Theme.textSecondary
-                        font.pixelSize: Theme.fontSizeCaption
-                        font.family: Theme.fontMono
-                    }
-                    TextField {
+                    SettingsField {
                         id: proxyUserField
-                        Layout.fillWidth: true
+                        label: qsTr("代理用户名")
+                        mono: true
                         text: Settings.proxyUsername
+                        lastKnownValue: Settings.proxyUsername
                         placeholderText: qsTr("代理认证用户名")
-                        placeholderTextColor: Theme.textSecondary
-                        color: Theme.textPrimary
-                        selectionColor: Theme.brandPrimary
-                        selectedTextColor: Theme.selectedTextColor
-                        font.pixelSize: Theme.fontSizeBody
-                        font.family: Theme.fontMono
-                        background: Rectangle {
-                            radius: 6
-                            color: Theme.bgPrimary
-                            border.width: proxyUserField.activeFocus ? 2 : 1
-                            border.color: proxyUserField.activeFocus
-                                ? Theme.brandPrimary : Theme.borderSubtle
-                        }
-                        selectByMouse: true
-                        function commit() { Settings.proxyUsername = text }
-                        onEditingFinished: commit()
-                        Component.onDestruction: commit()
-                        Accessible.name: qsTr("代理用户名")
+                        commitOnDestroy: true
+                        onSubmitted: (value) => Settings.proxyUsername = value
                     }
 
-                    Text {
-                        text: qsTr("密码（可选）")
-                        color: Theme.textSecondary
-                        font.pixelSize: Theme.fontSizeCaption
-                        font.family: Theme.fontMono
-                    }
                     RowLayout {
                         Layout.fillWidth: true
                         spacing: 8
 
-                        TextField {
+                        SettingsField {
                             id: proxyPasswordField
-                            Layout.fillWidth: true
-                            echoMode: TextInput.Password
+                            label: qsTr("代理密码")
+                            secret: true
+                            // 空值 = 不修改（留空不覆盖已保存的密码）；写入成功
+                            // 后清空输入框。
+                            ignoreEmptySubmit: true
+                            clearOnSubmit: true
+                            commitOnDestroy: true
                             placeholderText: Settings.proxyPasswordSet
                                 ? qsTr("已配置（输入新值可覆盖，留空不修改）")
                                 : qsTr("未配置")
-                            placeholderTextColor: Theme.textSecondary
-                            color: Theme.textPrimary
-                            selectionColor: Theme.brandPrimary
-                            selectedTextColor: Theme.selectedTextColor
-                            font.pixelSize: Theme.fontSizeBody
-                            font.family: Theme.fontMono
-                            background: Rectangle {
-                                radius: 6
-                                color: Theme.bgPrimary
-                                border.width: proxyPasswordField.activeFocus ? 2 : 1
-                                border.color: proxyPasswordField.activeFocus
-                                    ? Theme.brandPrimary : Theme.borderSubtle
-                            }
-                            selectByMouse: true
-                            // 密文字段读 text（不是 displayText），空值不提交
-                            // （留空 = 不修改）。
-                            function commitPassword() {
-                                if (text.length === 0) return
-                                Settings.proxyPassword = text
-                                text = ""
-                            }
-                            onEditingFinished: commitPassword()
-                            Component.onDestruction: commitPassword()
-                            Accessible.name: qsTr("代理密码")
+                            onSubmitted: (value) => Settings.proxyPassword = value
                         }
 
                         AppButton {

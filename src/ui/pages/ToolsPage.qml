@@ -134,45 +134,18 @@ Item {
             Rectangle { Layout.fillWidth: true; Layout.leftMargin: 24; Layout.rightMargin: 24; height: 1; color: Theme.borderSubtle }
 
             // ── 联网搜索 ──────────────────────────────
-            ColumnLayout {
+            SettingsSection {
                 Layout.leftMargin: 24
                 Layout.rightMargin: 24
-                Layout.bottomMargin: 16
-                Layout.fillWidth: true
-                spacing: 8
+                title: qsTr("联网搜索")
+                description: qsTr("启用后模型可调用 web_search 获取实时信息。搜索查询会发送至所配置的搜索服务商，请勿在查询中包含敏感信息。")
 
-                Text {
-                    text: qsTr("联网搜索")
-                    color: Theme.textSecondary
-                    font.pixelSize: Theme.fontSizeCaption
-                    font.bold: true
-                    font.family: Theme.fontMono
-                }
+                SettingRow {
+                    label: qsTr("搜索服务")
 
-                Text {
-                    text: qsTr("启用后模型可调用 web_search 获取实时信息。搜索查询会发送至所配置的搜索服务商，请勿在查询中包含敏感信息。")
-                    color: Theme.textSecondary
-                    font.pixelSize: 10
-                    font.family: Theme.fontSans
-                    opacity: 0.8
-                    wrapMode: Text.Wrap
-                    Layout.fillWidth: true
-                }
-
-                RowLayout {
-                    Layout.fillWidth: true
-                    spacing: 8
-
-                    Text {
-                        text: qsTr("搜索服务")
-                        color: Theme.textPrimary
-                        font.pixelSize: Theme.fontSizeBody
-                        font.family: Theme.fontSans
-                        Layout.fillWidth: true
-                    }
                     ComboBox {
                         id: providerCombo
-                        Layout.preferredWidth: 200
+                        Layout.preferredWidth: 220
                         // 值单一来源 Settings.webSearchProviders（后端注册表，
                         // 与 schema options、main.cpp 的工厂同源）；仅 label
                         // 在此本地化映射。新增后端时这里零改动。
@@ -191,67 +164,36 @@ Item {
                     }
                 }
 
-                ColumnLayout {
+                // 是否需要密钥由后端注册表回答（requiresApiKey），UI 不再
+                // 硬编码 provider 字符串——新增免密钥后端时这里自动跟上。
+                // 注意：必须绑定属性而不是调用函数，否则切换 provider 后
+                // QML 不会重算，输入框会一直藏着直到重开设置页。
+                RowLayout {
                     Layout.fillWidth: true
-                    spacing: 4
-                    // 是否需要密钥由后端注册表回答（requiresApiKey），UI 不再
-                    // 硬编码 provider 字符串——新增免密钥后端时这里自动跟上。
-                    // 注意：必须绑定属性而不是调用函数，否则切换 provider 后
-                    // QML 不会重算，输入框会一直藏着直到重开设置页。
                     visible: Settings.webSearchProviderNeedsApiKey
+                    spacing: 8
 
-                    Text {
-                        text: qsTr("搜索 API Key")
-                        color: Theme.textSecondary
-                        font.pixelSize: Theme.fontSizeCaption
-                        font.family: Theme.fontMono
+                    SettingsField {
+                        id: apiKeyField
+                        label: qsTr("搜索 API Key")
+                        secret: true
+                        // 空值 = 不修改；写入成功后清空输入框，避免明文
+                        // 一直留在掩码后面。
+                        ignoreEmptySubmit: true
+                        clearOnSubmit: true
+                        commitOnDestroy: true
+                        placeholderText: Settings.webSearchApiKeySet
+                                         ? qsTr("已配置（输入新值可覆盖，留空不修改）")
+                                         : qsTr("未配置")
+                        onSubmitted: (value) => Settings.webSearchApiKey = value
                     }
 
-                    RowLayout {
-                        Layout.fillWidth: true
-                        spacing: 8
-
-                        TextField {
-                            id: apiKeyField
-                            Layout.fillWidth: true
-                            echoMode: TextInput.Password
-                            placeholderText: Settings.webSearchApiKeySet
-                                             ? qsTr("已配置（输入新值可覆盖，留空不修改）")
-                                             : qsTr("未配置")
-                            placeholderTextColor: Theme.textSecondary
-                            color: Theme.textPrimary
-                            selectionColor: Theme.brandPrimary
-                            selectedTextColor: Theme.selectedTextColor
-                            font.pixelSize: Theme.fontSizeBody
-                            font.family: Theme.fontSans
-                            background: Rectangle {
-                                radius: 6
-                                color: Theme.bgPrimary
-                                border.width: apiKeyField.activeFocus ? 2 : 1
-                                border.color: apiKeyField.activeFocus ? Theme.brandPrimary : Theme.borderSubtle
-                            }
-                            Accessible.name: qsTr("搜索 API Key")
-                            // 提交时机：失焦/回车立即写入；本页挂在设置中心的
-                            // Loader 上，切换分类会销毁页面且不触发 editingFinished，
-                            // 所以补一条销毁兜底——"填了 Key 却直接切走"最难察觉。
-                            // 读取 text（不是 displayText）：密文字段的 displayText
-                            // 是掩码点，写进去等于把密钥毁掉。
-                            function commitKey() {
-                                if (text.length === 0) return
-                                Settings.webSearchApiKey = text
-                                text = ""
-                            }
-                            onEditingFinished: commitKey()
-                            Component.onDestruction: commitKey()
-                        }
-
-                        AppButton {
-                            text: qsTr("清除密钥")
-                            enabled: Settings.webSearchApiKeySet
-                            opacity: enabled ? 1.0 : 0.4
-                            onClicked: Settings.webSearchApiKey = ""
-                            Accessible.name: qsTr("清除搜索 API Key")
-                        }
+                    AppButton {
+                        text: qsTr("清除密钥")
+                        enabled: Settings.webSearchApiKeySet
+                        opacity: enabled ? 1.0 : 0.4
+                        onClicked: Settings.webSearchApiKey = ""
+                        Accessible.name: qsTr("清除搜索 API Key")
                     }
                 }
 
@@ -289,45 +231,19 @@ Item {
             }
 
             // ── 会话权限模式 ──────────────────────────
-            ColumnLayout {
+            SettingsSection {
                 Layout.leftMargin: 24
                 Layout.rightMargin: 24
                 Layout.bottomMargin: 16
-                Layout.fillWidth: true
-                spacing: 8
+                title: qsTr("会话权限模式")
+                description: qsTr("新会话默认使用的工具审批级别。可在会话内随时通过输入框旁的模式选择器更改，仅对当前会话生效。")
 
-                Text {
-                    text: qsTr("会话权限模式")
-                    color: Theme.textSecondary
-                    font.pixelSize: Theme.fontSizeCaption
-                    font.bold: true
-                    font.family: Theme.fontMono
-                }
+                SettingRow {
+                    label: qsTr("默认模式")
 
-                Text {
-                    text: qsTr("新会话默认使用的工具审批级别。可在会话内随时通过输入框旁的模式选择器更改，仅对当前会话生效。")
-                    color: Theme.textSecondary
-                    font.pixelSize: 10
-                    font.family: Theme.fontSans
-                    opacity: 0.8
-                    wrapMode: Text.Wrap
-                    Layout.fillWidth: true
-                }
-
-                RowLayout {
-                    Layout.fillWidth: true
-                    spacing: 8
-
-                    Text {
-                        text: qsTr("默认模式")
-                        color: Theme.textPrimary
-                        font.pixelSize: Theme.fontSizeBody
-                        font.family: Theme.fontSans
-                        Layout.fillWidth: true
-                    }
                     ComboBox {
                         id: permissionCombo
-                        Layout.preferredWidth: 200
+                        Layout.preferredWidth: 220
                         textRole: "label"
                         readonly property var modes: [
                             { key: "confirm",     label: qsTr("变更确认") },

@@ -80,28 +80,26 @@ Item {
                 title: qsTr("向量服务")
                 subtitle: qsTr("本地 Ollama 数据不出本机；外部服务会把文档内容发送到所配置的端点。")
 
-                Text {
-                    text: qsTr("嵌入服务提供方")
-                    color: Theme.textSecondary
-                    font.pixelSize: Theme.fontSizeCaption
-                    font.family: Theme.fontMono
-                }
-                ComboBox {
-                    id: embeddingProviderCombo
-                    Layout.fillWidth: true
-                    // 值单一来源 Settings.embeddingProviders（schema options，
-                    // 与后端工厂共用），仅 label 在此本地化映射。
-                    model: Settings.embeddingProviders.map(p => ({
-                        value: p,
-                        label: page.embeddingProviderLabels[p] || Settings.providerDisplayName(p)
-                    }))
-                    textRole: "label"
-                    currentIndex: {
-                        const i = Settings.embeddingProviders.indexOf(Settings.embeddingProvider)
-                        return i >= 0 ? i : 0
+                SettingRow {
+                    label: qsTr("嵌入服务提供方")
+
+                    ComboBox {
+                        id: embeddingProviderCombo
+                        Layout.preferredWidth: 220
+                        // 值单一来源 Settings.embeddingProviders（schema options，
+                        // 与后端工厂共用），仅 label 在此本地化映射。
+                        model: Settings.embeddingProviders.map(p => ({
+                            value: p,
+                            label: page.embeddingProviderLabels[p] || Settings.providerDisplayName(p)
+                        }))
+                        textRole: "label"
+                        currentIndex: {
+                            const i = Settings.embeddingProviders.indexOf(Settings.embeddingProvider)
+                            return i >= 0 ? i : 0
+                        }
+                        onActivated: (index) => Settings.embeddingProvider = Settings.embeddingProviders[index]
+                        Accessible.name: qsTr("嵌入服务提供方")
                     }
-                    onActivated: (index) => Settings.embeddingProvider = Settings.embeddingProviders[index]
-                    Accessible.name: qsTr("嵌入服务提供方")
                 }
 
                 // provider 切换后当前 model 若不在新预设列表中，自动重置为
@@ -116,138 +114,84 @@ Item {
                     }
                 }
 
-                Text {
-                    text: qsTr("嵌入模型")
-                    color: Theme.textSecondary
-                    font.pixelSize: Theme.fontSizeCaption
-                    font.family: Theme.fontMono
-                }
-                ComboBox {
-                    id: embeddingModelCombo
-                    Layout.fillWidth: true
-                    editable: true
-                    // 模型预设随 provider 切换联动：候选列表不再硬编码
-                    // Ollama 一组，切到外部服务后跟随其模型生态。
-                    model: page.embeddingModelPresets[Settings.embeddingProvider] || []
-                    // QQuickComboBox::componentComplete() resets an editable
-                    // combo's editText to currentText (the first item), which
-                    // wiped the binding below on every page build — the saved
-                    // model showed up as the default again. Selecting the
-                    // persisted index keeps currentText in sync with the saved
-                    // value; setEditText() no-ops when the text already matches.
-                    currentIndex: model.indexOf(Settings.embeddingModel)
-                    editText: Settings.embeddingModel
-                    onActivated: Settings.embeddingModel = currentText
-                    onAccepted: Settings.embeddingModel = editText
-                    // Editable combos only fire accepted() on Enter; commit on
-                    // focus loss too so a freely typed model name survives
-                    // clicking elsewhere.
-                    onFocusChanged: if (!focus) Settings.embeddingModel = editText
-                    Component.onCompleted: if (editText !== Settings.embeddingModel)
-                        editText = Settings.embeddingModel
-                    Accessible.name: qsTr("知识库嵌入模型")
+                SettingRow {
+                    label: qsTr("嵌入模型")
+
+                    ComboBox {
+                        id: embeddingModelCombo
+                        Layout.preferredWidth: 260
+                        editable: true
+                        // 模型预设随 provider 切换联动：候选列表不再硬编码
+                        // Ollama 一组，切到外部服务后跟随其模型生态。
+                        model: page.embeddingModelPresets[Settings.embeddingProvider] || []
+                        // QQuickComboBox::componentComplete() resets an editable
+                        // combo's editText to currentText (the first item), which
+                        // wiped the binding below on every page build — the saved
+                        // model showed up as the default again. Selecting the
+                        // persisted index keeps currentText in sync with the saved
+                        // value; setEditText() no-ops when the text already matches.
+                        currentIndex: model.indexOf(Settings.embeddingModel)
+                        editText: Settings.embeddingModel
+                        onActivated: Settings.embeddingModel = currentText
+                        onAccepted: Settings.embeddingModel = editText
+                        // Editable combos only fire accepted() on Enter; commit on
+                        // focus loss too so a freely typed model name survives
+                        // clicking elsewhere.
+                        onFocusChanged: if (!focus) Settings.embeddingModel = editText
+                        Component.onCompleted: if (editText !== Settings.embeddingModel)
+                            editText = Settings.embeddingModel
+                        Accessible.name: qsTr("知识库嵌入模型")
+                    }
                 }
 
-                Text {
-                    text: qsTr("嵌入服务地址")
-                    color: Theme.textSecondary
-                    font.pixelSize: Theme.fontSizeCaption
-                    font.family: Theme.fontMono
-                }
-                TextField {
+                SettingsField {
                     id: embeddingUrlField
-                    Layout.fillWidth: true
+                    label: qsTr("嵌入服务地址")
+                    mono: true
                     text: Settings.embeddingBaseUrl
+                    lastKnownValue: Settings.embeddingBaseUrl
                     // 外部服务两种粘贴形态（带/不带 /v1）都可用，后端拼接层
                     // 已做容错，提示里写明即可。
                     placeholderText: Settings.embeddingProvider === "openai"
                         ? qsTr("https://api.openai.com 或 https://api.siliconflow.cn，可带或不带 /v1")
                         : qsTr("http://localhost:11434")
-                    placeholderTextColor: Theme.textSecondary
-                    color: Theme.textPrimary
-                    selectionColor: Theme.brandPrimary
-                    selectedTextColor: Theme.selectedTextColor
-                    font.pixelSize: Theme.fontSizeBody
-                    font.family: Theme.fontMono
-                    background: Rectangle {
-                        radius: 6
-                        color: Theme.bgPrimary
-                        border.width: embeddingUrlField.activeFocus ? 2 : 1
-                        border.color: embeddingUrlField.activeFocus
-                            ? Theme.brandPrimary : Theme.borderSubtle
-                    }
                     // Loader 销毁不触发 editingFinished。
-                    function commit() { Settings.embeddingBaseUrl = text }
-                    onTextEdited: urlCommitTimer.restart()
-                    onEditingFinished: commit()
-                    Component.onDestruction: commit()
-                    Timer {
-                        id: urlCommitTimer
-                        interval: 400
-                        onTriggered: embeddingUrlField.commit()
-                    }
-                    selectByMouse: true
-                    Accessible.name: qsTr("嵌入服务地址")
+                    commitDebounce: 400
+                    commitOnDestroy: true
+                    onSubmitted: (value) => Settings.embeddingBaseUrl = value
                 }
 
                 // API key 密码框，仅外部 provider 可见（本地 Ollama 无需密钥；
                 // ColumnLayout 中 visible: false 即不占位）。密钥不回显明文，
                 // 只以 placeholder 呈现"已配置/未配置"，输入新值覆盖、留空
                 // 不修改。
-                ColumnLayout {
+                RowLayout {
                     Layout.fillWidth: true
-                    spacing: 4
                     visible: Settings.embeddingProvider === "openai"
+                    spacing: 8
 
-                    Text {
-                        text: qsTr("API Key")
-                        color: Theme.textSecondary
-                        font.pixelSize: Theme.fontSizeCaption
-                        font.family: Theme.fontMono
+                    SettingsField {
+                        id: embeddingApiKeyField
+                        label: qsTr("向量模型 API Key")
+                        labelWidth: 140
+                        secret: true
+                        // 密文字段读 text（不是 displayText），空值不提交；
+                        // 写入成功后清空输入框。
+                        ignoreEmptySubmit: true
+                        clearOnSubmit: true
+                        commitOnDestroy: true
+                        placeholderText: Settings.embeddingApiKeySet
+                            ? qsTr("已配置（输入新值可覆盖，留空不修改）")
+                            : qsTr("未配置")
+                        onSubmitted: (value) => Settings.embeddingApiKey = value
                     }
-                    RowLayout {
-                        Layout.fillWidth: true
-                        spacing: 8
 
-                        TextField {
-                            id: embeddingApiKeyField
-                            Layout.fillWidth: true
-                            echoMode: TextInput.Password
-                            placeholderText: Settings.embeddingApiKeySet
-                                ? qsTr("已配置（输入新值可覆盖，留空不修改）")
-                                : qsTr("未配置")
-                            placeholderTextColor: Theme.textSecondary
-                            color: Theme.textPrimary
-                            selectionColor: Theme.brandPrimary
-                            selectedTextColor: Theme.selectedTextColor
-                            font.pixelSize: Theme.fontSizeBody
-                            font.family: Theme.fontMono
-                            background: Rectangle {
-                                radius: 6
-                                color: Theme.bgPrimary
-                                border.width: embeddingApiKeyField.activeFocus ? 2 : 1
-                                border.color: embeddingApiKeyField.activeFocus
-                                    ? Theme.brandPrimary : Theme.borderSubtle
-                            }
-                            selectByMouse: true
-                            // 密文字段读 text（不是 displayText），空值不提交。
-                            function commitKey() {
-                                if (text.length === 0) return
-                                Settings.embeddingApiKey = text
-                                text = ""
-                            }
-                            onEditingFinished: commitKey()
-                            Component.onDestruction: commitKey()
-                            Accessible.name: qsTr("向量模型 API Key")
-                        }
-
-                        AppButton {
-                            text: qsTr("清除密钥")
-                            enabled: Settings.embeddingApiKeySet
-                            opacity: enabled ? 1.0 : 0.4
-                            onClicked: Settings.embeddingApiKey = ""
-                            Accessible.name: qsTr("清除向量模型 API Key")
-                        }
+                    AppButton {
+                        text: qsTr("清除密钥")
+                        enabled: Settings.embeddingApiKeySet
+                        opacity: enabled ? 1.0 : 0.4
+                        onClicked: Settings.embeddingApiKey = ""
+                        Accessible.name: qsTr("清除向量模型 API Key")
                     }
                 }
 

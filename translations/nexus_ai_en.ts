@@ -129,53 +129,52 @@
         <translation>Limits how far and how long the model can go in one task; raise it for complex tasks, at the cost of time and tokens.</translation>
     </message>
     <message>
-        <location filename="../src/ui/pages/AgentBehaviorPage.qml" line="71"/>
-        <location filename="../src/ui/pages/AgentBehaviorPage.qml" line="104"/>
+        <location filename="../src/ui/pages/AgentBehaviorPage.qml" line="68"/>
         <source>单次任务步数预算</source>
         <translation>Step budget per task</translation>
     </message>
     <message>
-        <location filename="../src/ui/pages/AgentBehaviorPage.qml" line="107"/>
+        <location filename="../src/ui/pages/AgentBehaviorPage.qml" line="87"/>
         <source>一次任务里模型最多进行多少轮「思考 → 工具调用」（3–1000）。用完会强制基于已有信息作答。</source>
         <translation>Maximum rounds of think → tool call per task (3–1000). When exhausted, the model must answer from the information it has.</translation>
     </message>
     <message>
-        <location filename="../src/ui/pages/AgentBehaviorPage.qml" line="123"/>
+        <location filename="../src/ui/pages/AgentBehaviorPage.qml" line="95"/>
         <source>单次任务超时（分钟）</source>
         <translation>Task timeout (minutes)</translation>
     </message>
     <message>
-        <location filename="../src/ui/pages/AgentBehaviorPage.qml" line="130"/>
+        <location filename="../src/ui/pages/AgentBehaviorPage.qml" line="96"/>
         <source>任务运行超过此时长会停止并基于已收集的信息作答。需要多次网络调用的任务可以适当调高。</source>
         <translation>The task stops after this long and answers from the information gathered. Raise it for tasks that need many network calls.</translation>
     </message>
     <message>
-        <location filename="../src/ui/pages/AgentBehaviorPage.qml" line="143"/>
+        <location filename="../src/ui/pages/AgentBehaviorPage.qml" line="104"/>
         <source>单次任务超时，分钟</source>
         <translation>Task timeout in minutes</translation>
     </message>
     <message>
-        <location filename="../src/ui/pages/AgentBehaviorPage.qml" line="153"/>
+        <location filename="../src/ui/pages/AgentBehaviorPage.qml" line="114"/>
         <source>系统提示词</source>
         <translation>System Prompt</translation>
     </message>
     <message>
-        <location filename="../src/ui/pages/AgentBehaviorPage.qml" line="154"/>
+        <location filename="../src/ui/pages/AgentBehaviorPage.qml" line="115"/>
         <source>留空使用内置提示词；修改即时生效，内容随请求发送给当前模型服务。</source>
         <translation>Leave empty to use the built-in prompt; changes take effect immediately and are sent with each request.</translation>
     </message>
     <message>
-        <location filename="../src/ui/pages/AgentBehaviorPage.qml" line="161"/>
+        <location filename="../src/ui/pages/AgentBehaviorPage.qml" line="122"/>
         <source>留空 = 内置提示词</source>
         <translation>Empty = built-in prompt</translation>
     </message>
     <message>
-        <location filename="../src/ui/pages/AgentBehaviorPage.qml" line="187"/>
+        <location filename="../src/ui/pages/AgentBehaviorPage.qml" line="148"/>
         <source>自定义系统提示词</source>
         <translation>Custom System Prompt</translation>
     </message>
     <message>
-        <location filename="../src/ui/pages/AgentBehaviorPage.qml" line="191"/>
+        <location filename="../src/ui/pages/AgentBehaviorPage.qml" line="152"/>
         <source>%1 字符</source>
         <translation>%1 chars</translation>
     </message>
@@ -456,7 +455,7 @@
 <context>
     <name>CategoryNav</name>
     <message>
-        <location filename="../src/ui/components/CategoryNav.qml" line="141"/>
+        <location filename="../src/ui/components/CategoryNav.qml" line="142"/>
         <source>当前选中</source>
         <translation>Currently selected</translation>
     </message>
@@ -1209,7 +1208,7 @@ Any manual edits made since then will be overwritten.</translation>
         <translation>Changes on this page save instantly; &quot;Restore defaults&quot; lives at the bottom of the window</translation>
     </message>
     <message>
-        <location filename="../src/ui/pages/GeneralPage.qml" line="71"/>
+        <location filename="../src/ui/pages/GeneralPage.qml" line="67"/>
         <source>启动与通知</source>
         <translation>Startup &amp; Notifications</translation>
     </message>
@@ -1530,7 +1529,7 @@ Any manual edits made since then will be overwritten.</translation>
         <translation type="vanished">Restore Default Prompt</translation>
     </message>
     <message>
-        <location filename="../src/ui/pages/GeneralPage.qml" line="121"/>
+        <location filename="../src/ui/pages/GeneralPage.qml" line="112"/>
         <source>本地智能体桌面应用 · 多模型提供商 · 工具调用 · 本地知识库</source>
         <translation>Local agent desktop app · Multiple model providers · Tool calling · Local knowledge base</translation>
     </message>
@@ -2737,58 +2736,58 @@ Select or import a project in the sidebar first.</translation>
         <translation>Interface</translation>
     </message>
     <message>
-        <location filename="../src/ui/pages/InterfacePage.qml" line="75"/>
+        <location filename="../src/ui/pages/InterfacePage.qml" line="77"/>
         <source>外观</source>
         <translation>Appearance</translation>
     </message>
     <message>
-        <location filename="../src/ui/pages/InterfacePage.qml" line="117"/>
+        <location filename="../src/ui/pages/InterfacePage.qml" line="105"/>
         <source>字体</source>
         <translation>Fonts</translation>
     </message>
     <message>
-        <location filename="../src/ui/pages/InterfacePage.qml" line="137"/>
-        <location filename="../src/ui/pages/InterfacePage.qml" line="146"/>
+        <location filename="../src/ui/pages/InterfacePage.qml" line="108"/>
+        <location filename="../src/ui/pages/InterfacePage.qml" line="113"/>
         <source>正文字体</source>
         <translation>Body Font</translation>
     </message>
     <message>
-        <location filename="../src/ui/pages/InterfacePage.qml" line="158"/>
-        <location filename="../src/ui/pages/InterfacePage.qml" line="167"/>
+        <location filename="../src/ui/pages/InterfacePage.qml" line="121"/>
+        <location filename="../src/ui/pages/InterfacePage.qml" line="126"/>
         <source>等宽字体</source>
         <translation>Monospace Font</translation>
     </message>
     <message>
-        <location filename="../src/ui/pages/InterfacePage.qml" line="179"/>
-        <location filename="../src/ui/pages/InterfacePage.qml" line="190"/>
-        <location filename="../src/ui/pages/InterfacePage.qml" line="201"/>
+        <location filename="../src/ui/pages/InterfacePage.qml" line="134"/>
+        <location filename="../src/ui/pages/InterfacePage.qml" line="141"/>
+        <location filename="../src/ui/pages/InterfacePage.qml" line="152"/>
         <source>基础字号</source>
         <translation>Base Font Size</translation>
     </message>
     <message>
-        <location filename="../src/ui/pages/InterfacePage.qml" line="228"/>
+        <location filename="../src/ui/pages/InterfacePage.qml" line="179"/>
         <source>预览（保存前生效于界面）</source>
         <translation>Preview (applied to the interface before saving)</translation>
     </message>
     <message>
-        <location filename="../src/ui/pages/InterfacePage.qml" line="235"/>
+        <location filename="../src/ui/pages/InterfacePage.qml" line="186"/>
         <source>正文预览：智能体正在思考多行文本 Aa Bb 0123</source>
         <translation>Body preview: The agent is thinking with multi-line text Aa Bb 0123</translation>
     </message>
     <message>
-        <location filename="../src/ui/pages/InterfacePage.qml" line="255"/>
+        <location filename="../src/ui/pages/InterfacePage.qml" line="208"/>
         <source>语言</source>
         <translation>Language</translation>
     </message>
     <message>
-        <location filename="../src/ui/pages/InterfacePage.qml" line="271"/>
-        <location filename="../src/ui/pages/InterfacePage.qml" line="280"/>
+        <location filename="../src/ui/pages/InterfacePage.qml" line="211"/>
+        <location filename="../src/ui/pages/InterfacePage.qml" line="216"/>
         <source>界面语言</source>
         <translation>Interface Language</translation>
     </message>
     <message>
         <location filename="../src/ui/pages/InterfacePage.qml" line="36"/>
-        <location filename="../src/ui/pages/InterfacePage.qml" line="286"/>
+        <location filename="../src/ui/pages/InterfacePage.qml" line="222"/>
         <source>跟随系统</source>
         <translation>Follow System</translation>
     </message>
@@ -2808,64 +2807,64 @@ Select or import a project in the sidebar first.</translation>
         <translation>Light</translation>
     </message>
     <message>
-        <location filename="../src/ui/pages/InterfacePage.qml" line="91"/>
-        <location filename="../src/ui/pages/InterfacePage.qml" line="101"/>
+        <location filename="../src/ui/pages/InterfacePage.qml" line="80"/>
+        <location filename="../src/ui/pages/InterfacePage.qml" line="86"/>
         <source>主题模式</source>
         <translation>Theme mode</translation>
     </message>
     <message>
-        <location filename="../src/ui/pages/InterfacePage.qml" line="102"/>
-        <location filename="../src/ui/pages/InterfacePage.qml" line="281"/>
+        <location filename="../src/ui/pages/InterfacePage.qml" line="87"/>
+        <location filename="../src/ui/pages/InterfacePage.qml" line="217"/>
         <source>当前：%1</source>
         <translation>Current: %1</translation>
     </message>
     <message>
-        <location filename="../src/ui/pages/InterfacePage.qml" line="290"/>
+        <location filename="../src/ui/pages/InterfacePage.qml" line="226"/>
         <source>简体中文</source>
         <translation>简体中文</translation>
     </message>
     <message>
-        <location filename="../src/ui/pages/InterfacePage.qml" line="291"/>
+        <location filename="../src/ui/pages/InterfacePage.qml" line="227"/>
         <source>English</source>
         <translation>English</translation>
     </message>
     <message>
-        <location filename="../src/ui/pages/InterfacePage.qml" line="311"/>
+        <location filename="../src/ui/pages/InterfacePage.qml" line="251"/>
         <source>窗口布局</source>
         <translation>Window Layout</translation>
     </message>
     <message>
-        <location filename="../src/ui/pages/InterfacePage.qml" line="331"/>
-        <location filename="../src/ui/pages/InterfacePage.qml" line="342"/>
+        <location filename="../src/ui/pages/InterfacePage.qml" line="254"/>
+        <location filename="../src/ui/pages/InterfacePage.qml" line="261"/>
         <source>侧边栏默认宽度</source>
         <translation>Default Sidebar Width</translation>
     </message>
     <message>
-        <location filename="../src/ui/pages/InterfacePage.qml" line="355"/>
-        <location filename="../src/ui/pages/InterfacePage.qml" line="364"/>
+        <location filename="../src/ui/pages/InterfacePage.qml" line="271"/>
+        <location filename="../src/ui/pages/InterfacePage.qml" line="276"/>
         <source>面板默认宽度</source>
         <translation>Default Panel Width</translation>
     </message>
     <message>
-        <location filename="../src/ui/pages/InterfacePage.qml" line="377"/>
-        <location filename="../src/ui/pages/InterfacePage.qml" line="385"/>
+        <location filename="../src/ui/pages/InterfacePage.qml" line="286"/>
+        <location filename="../src/ui/pages/InterfacePage.qml" line="290"/>
         <source>侧边栏默认展开</source>
         <translation>Expand Sidebar by Default</translation>
     </message>
     <message>
-        <location filename="../src/ui/pages/InterfacePage.qml" line="395"/>
-        <location filename="../src/ui/pages/InterfacePage.qml" line="403"/>
+        <location filename="../src/ui/pages/InterfacePage.qml" line="297"/>
+        <location filename="../src/ui/pages/InterfacePage.qml" line="301"/>
         <source>面板默认展开</source>
         <translation>Expand Panel by Default</translation>
     </message>
     <message>
-        <location filename="../src/ui/pages/InterfacePage.qml" line="413"/>
-        <location filename="../src/ui/pages/InterfacePage.qml" line="421"/>
+        <location filename="../src/ui/pages/InterfacePage.qml" line="308"/>
+        <location filename="../src/ui/pages/InterfacePage.qml" line="312"/>
         <source>启动时恢复窗口</source>
         <translation>Restore Window on Startup</translation>
     </message>
     <message>
-        <location filename="../src/ui/pages/InterfacePage.qml" line="430"/>
+        <location filename="../src/ui/pages/InterfacePage.qml" line="321"/>
         <source>以上默认值在下次启动时生效；当前窗口布局以手动拖拽为准。</source>
         <translation>These defaults apply on the next start; the current window layout follows manual resizing.</translation>
     </message>
@@ -3182,73 +3181,71 @@ Select or import a project in the sidebar first.</translation>
     </message>
     <message>
         <location filename="../src/ui/pages/KnowledgePage.qml" line="84"/>
-        <location filename="../src/ui/pages/KnowledgePage.qml" line="104"/>
+        <location filename="../src/ui/pages/KnowledgePage.qml" line="101"/>
         <source>嵌入服务提供方</source>
         <translation>Embedding provider</translation>
     </message>
     <message>
-        <location filename="../src/ui/pages/KnowledgePage.qml" line="120"/>
+        <location filename="../src/ui/pages/KnowledgePage.qml" line="118"/>
         <source>嵌入模型</source>
         <translation>Embedding Model</translation>
     </message>
     <message>
-        <location filename="../src/ui/pages/KnowledgePage.qml" line="148"/>
+        <location filename="../src/ui/pages/KnowledgePage.qml" line="143"/>
         <source>知识库嵌入模型</source>
         <translation>Knowledge Base Embedding Model</translation>
     </message>
     <message>
-        <location filename="../src/ui/pages/KnowledgePage.qml" line="152"/>
-        <location filename="../src/ui/pages/KnowledgePage.qml" line="190"/>
+        <location filename="../src/ui/pages/KnowledgePage.qml" line="149"/>
         <source>嵌入服务地址</source>
         <translation>Embedding Endpoint</translation>
     </message>
     <message>
-        <location filename="../src/ui/pages/KnowledgePage.qml" line="164"/>
+        <location filename="../src/ui/pages/KnowledgePage.qml" line="156"/>
         <source>https://api.openai.com 或 https://api.siliconflow.cn，可带或不带 /v1</source>
         <translation>https://api.openai.com or https://api.siliconflow.cn, with or without /v1</translation>
     </message>
     <message>
-        <location filename="../src/ui/pages/KnowledgePage.qml" line="165"/>
+        <location filename="../src/ui/pages/KnowledgePage.qml" line="157"/>
         <source>http://localhost:11434</source>
         <translation>http://localhost:11434</translation>
     </message>
     <message>
-        <location filename="../src/ui/pages/KnowledgePage.qml" line="203"/>
         <source>API Key</source>
-        <translation>API Key</translation>
+        <translation type="vanished">API Key</translation>
     </message>
     <message>
-        <location filename="../src/ui/pages/KnowledgePage.qml" line="217"/>
+        <location filename="../src/ui/pages/KnowledgePage.qml" line="184"/>
         <source>已配置（输入新值可覆盖，留空不修改）</source>
         <translation>Configured (enter a new value to overwrite, leave blank to keep)</translation>
     </message>
     <message>
-        <location filename="../src/ui/pages/KnowledgePage.qml" line="218"/>
+        <location filename="../src/ui/pages/KnowledgePage.qml" line="185"/>
         <source>未配置</source>
         <translation>Not configured</translation>
     </message>
     <message>
-        <location filename="../src/ui/pages/KnowledgePage.qml" line="241"/>
+        <location filename="../src/ui/pages/KnowledgePage.qml" line="175"/>
         <source>向量模型 API Key</source>
         <translation>Embedding API key</translation>
     </message>
     <message>
-        <location filename="../src/ui/pages/KnowledgePage.qml" line="245"/>
+        <location filename="../src/ui/pages/KnowledgePage.qml" line="190"/>
         <source>清除密钥</source>
         <translation>Clear key</translation>
     </message>
     <message>
-        <location filename="../src/ui/pages/KnowledgePage.qml" line="249"/>
+        <location filename="../src/ui/pages/KnowledgePage.qml" line="194"/>
         <source>清除向量模型 API Key</source>
         <translation>Clear embedding API key</translation>
     </message>
     <message>
-        <location filename="../src/ui/pages/KnowledgePage.qml" line="257"/>
+        <location filename="../src/ui/pages/KnowledgePage.qml" line="201"/>
         <source>文档内容将发送到所配置的外部服务生成向量，请勿导入敏感资料。</source>
         <translation>Document content will be sent to the configured external service to generate embeddings. Do not import sensitive material.</translation>
     </message>
     <message>
-        <location filename="../src/ui/pages/KnowledgePage.qml" line="269"/>
+        <location filename="../src/ui/pages/KnowledgePage.qml" line="213"/>
         <source>纯本地模式已开启：外部向量请求将被拦截，并自动回退本地 Ollama。</source>
         <translation>Local-only mode is on: external embedding requests are blocked and fall back to local Ollama.</translation>
     </message>
@@ -3427,73 +3424,73 @@ Select or import a project in the sidebar first.</translation>
         <translation>Files rotate automatically at the size limit; only the newest files are kept.</translation>
     </message>
     <message>
-        <location filename="../src/ui/pages/LogsPage.qml" line="75"/>
+        <location filename="../src/ui/pages/LogsPage.qml" line="68"/>
         <source>最低记录级别</source>
         <translation>Minimum log level</translation>
     </message>
     <message>
-        <location filename="../src/ui/pages/LogsPage.qml" line="81"/>
+        <location filename="../src/ui/pages/LogsPage.qml" line="69"/>
         <source>低于该级别的日志不会写入文件；排查问题时临时调到 debug。</source>
         <translation>Messages below this level are not written to the file; switch to debug temporarily when troubleshooting.</translation>
     </message>
     <message>
-        <location filename="../src/ui/pages/LogsPage.qml" line="106"/>
+        <location filename="../src/ui/pages/LogsPage.qml" line="88"/>
         <source>日志级别</source>
         <translation>Log Level</translation>
     </message>
     <message>
-        <location filename="../src/ui/pages/LogsPage.qml" line="117"/>
+        <location filename="../src/ui/pages/LogsPage.qml" line="99"/>
         <source>日志目录</source>
         <translation>Log directory</translation>
     </message>
     <message>
-        <location filename="../src/ui/pages/LogsPage.qml" line="129"/>
+        <location filename="../src/ui/pages/LogsPage.qml" line="111"/>
         <source>当前日志目录</source>
         <translation>Current log directory</translation>
     </message>
     <message>
-        <location filename="../src/ui/pages/LogsPage.qml" line="134"/>
+        <location filename="../src/ui/pages/LogsPage.qml" line="116"/>
         <source>选择目录</source>
         <translation>Choose directory</translation>
     </message>
     <message>
-        <location filename="../src/ui/pages/LogsPage.qml" line="135"/>
+        <location filename="../src/ui/pages/LogsPage.qml" line="117"/>
         <source>恢复默认目录</source>
         <translation>Restore default directory</translation>
     </message>
     <message>
-        <location filename="../src/ui/pages/LogsPage.qml" line="136"/>
+        <location filename="../src/ui/pages/LogsPage.qml" line="118"/>
         <source>打开目录</source>
         <translation>Open directory</translation>
     </message>
     <message>
-        <location filename="../src/ui/pages/LogsPage.qml" line="140"/>
+        <location filename="../src/ui/pages/LogsPage.qml" line="122"/>
         <source>选择日志保存目录</source>
         <translation>Choose log directory</translation>
     </message>
     <message>
-        <location filename="../src/ui/pages/LogsPage.qml" line="157"/>
+        <location filename="../src/ui/pages/LogsPage.qml" line="133"/>
         <source>单个日志文件上限（MB）</source>
         <translation>Maximum size per log file (MB)</translation>
     </message>
     <message>
-        <location filename="../src/ui/pages/LogsPage.qml" line="163"/>
+        <location filename="../src/ui/pages/LogsPage.qml" line="134"/>
         <source>达到上限后自动创建新文件。</source>
         <translation>A new file is created automatically at the limit.</translation>
     </message>
     <message>
-        <location filename="../src/ui/pages/LogsPage.qml" line="177"/>
+        <location filename="../src/ui/pages/LogsPage.qml" line="142"/>
         <source>单个日志文件大小上限，兆字节</source>
         <translation>Maximum log file size in megabytes</translation>
     </message>
     <message>
-        <location filename="../src/ui/pages/LogsPage.qml" line="187"/>
-        <location filename="../src/ui/pages/LogsPage.qml" line="207"/>
+        <location filename="../src/ui/pages/LogsPage.qml" line="147"/>
+        <location filename="../src/ui/pages/LogsPage.qml" line="156"/>
         <source>保留日志文件数</source>
         <translation>Number of log files to keep</translation>
     </message>
     <message>
-        <location filename="../src/ui/pages/LogsPage.qml" line="193"/>
+        <location filename="../src/ui/pages/LogsPage.qml" line="148"/>
         <source>轮转后只保留最新的指定数量文件，更早的自动删除。</source>
         <translation>After rotation only the newest files are kept; older ones are deleted.</translation>
     </message>
@@ -3613,105 +3610,110 @@ Select or import a project in the sidebar first.</translation>
         <translation>Browse, search and delete long-term memory summaries</translation>
     </message>
     <message>
-        <location filename="../src/ui/pages/MemoryPage.qml" line="58"/>
+        <location filename="../src/ui/pages/MemoryPage.qml" line="64"/>
         <source>记忆管理</source>
         <translation>Memory Management</translation>
     </message>
     <message>
-        <location filename="../src/ui/pages/MemoryPage.qml" line="65"/>
+        <location filename="../src/ui/pages/MemoryPage.qml" line="71"/>
         <source>长期记忆摘要由会话自动生成，可在新会话中检索注入；删除后不可恢复。</source>
         <translation>Long-term memory summaries are auto-generated by conversations and can be retrieved and injected into new conversations; deletion is irreversible.</translation>
     </message>
     <message>
-        <location filename="../src/ui/pages/MemoryPage.qml" line="89"/>
-        <location filename="../src/ui/pages/MemoryPage.qml" line="107"/>
+        <location filename="../src/ui/pages/MemoryPage.qml" line="88"/>
+        <source>记忆与保留</source>
+        <translation>Memory and retention</translation>
+    </message>
+    <message>
+        <location filename="../src/ui/pages/MemoryPage.qml" line="91"/>
+        <location filename="../src/ui/pages/MemoryPage.qml" line="97"/>
         <source>启用长期记忆</source>
         <translation>Enable long-term memory</translation>
     </message>
     <message>
-        <location filename="../src/ui/pages/MemoryPage.qml" line="95"/>
+        <location filename="../src/ui/pages/MemoryPage.qml" line="92"/>
         <source>开启后，每次任务结束会生成会话摘要并在新会话中注入相关历史，帮助模型记住此前聊过的内容。</source>
         <translation>When enabled, a session summary is generated after each task and relevant history is injected into new sessions, helping the model remember what was discussed before.</translation>
     </message>
     <message>
-        <location filename="../src/ui/pages/MemoryPage.qml" line="124"/>
-        <location filename="../src/ui/pages/MemoryPage.qml" line="144"/>
+        <location filename="../src/ui/pages/MemoryPage.qml" line="102"/>
+        <location filename="../src/ui/pages/MemoryPage.qml" line="110"/>
         <source>审计日志保留天数</source>
         <translation>Audit log retention (days)</translation>
     </message>
     <message>
-        <location filename="../src/ui/pages/MemoryPage.qml" line="130"/>
+        <location filename="../src/ui/pages/MemoryPage.qml" line="103"/>
         <source>工具执行审计链的保留天数，0 表示永久保留。到期记录在启动与每 6 小时的例行清理中删除。</source>
         <translation>How many days to keep the tool-execution audit chain; 0 keeps it forever. Expired rows are removed at startup and in the routine sweep every 6 hours.</translation>
     </message>
     <message>
-        <location filename="../src/ui/pages/MemoryPage.qml" line="160"/>
-        <location filename="../src/ui/pages/MemoryPage.qml" line="180"/>
+        <location filename="../src/ui/pages/MemoryPage.qml" line="115"/>
+        <location filename="../src/ui/pages/MemoryPage.qml" line="123"/>
         <source>Token 用量保留天数</source>
         <translation>Token usage retention (days)</translation>
     </message>
     <message>
-        <location filename="../src/ui/pages/MemoryPage.qml" line="166"/>
+        <location filename="../src/ui/pages/MemoryPage.qml" line="116"/>
         <source>每次模型请求的用量明细（token 与费用统计的数据源）的保留天数，0 表示永久保留。</source>
         <translation>How many days to keep per-request usage records (the data source for token and cost statistics); 0 keeps them forever.</translation>
     </message>
     <message>
-        <location filename="../src/ui/pages/MemoryPage.qml" line="195"/>
+        <location filename="../src/ui/pages/MemoryPage.qml" line="139"/>
         <source>搜索记忆内容…</source>
         <translation>Search memory content…</translation>
     </message>
     <message>
-        <location filename="../src/ui/pages/MemoryPage.qml" line="208"/>
+        <location filename="../src/ui/pages/MemoryPage.qml" line="152"/>
         <source>搜索记忆内容</source>
         <translation>Search memory content</translation>
     </message>
     <message>
-        <location filename="../src/ui/pages/MemoryPage.qml" line="213"/>
+        <location filename="../src/ui/pages/MemoryPage.qml" line="157"/>
         <source>清空全部</source>
         <translation>Clear All</translation>
     </message>
     <message>
-        <location filename="../src/ui/pages/MemoryPage.qml" line="217"/>
+        <location filename="../src/ui/pages/MemoryPage.qml" line="161"/>
         <source>清空全部长期记忆</source>
         <translation>Clear all long-term memory</translation>
     </message>
     <message>
-        <location filename="../src/ui/pages/MemoryPage.qml" line="226"/>
+        <location filename="../src/ui/pages/MemoryPage.qml" line="170"/>
         <source>共 %1 条记忆</source>
         <translation>%1 memories total</translation>
     </message>
     <message>
-        <location filename="../src/ui/pages/MemoryPage.qml" line="279"/>
+        <location filename="../src/ui/pages/MemoryPage.qml" line="223"/>
         <source>(空摘要)</source>
         <translation>(empty summary)</translation>
     </message>
     <message>
-        <location filename="../src/ui/pages/MemoryPage.qml" line="294"/>
+        <location filename="../src/ui/pages/MemoryPage.qml" line="238"/>
         <source>收起</source>
         <translation>Collapse</translation>
     </message>
     <message>
-        <location filename="../src/ui/pages/MemoryPage.qml" line="294"/>
+        <location filename="../src/ui/pages/MemoryPage.qml" line="238"/>
         <source>展开全文</source>
         <translation>Expand</translation>
     </message>
     <message>
-        <location filename="../src/ui/pages/MemoryPage.qml" line="329"/>
+        <location filename="../src/ui/pages/MemoryPage.qml" line="273"/>
         <source>遗忘</source>
         <translation>Forget</translation>
     </message>
     <message>
-        <location filename="../src/ui/pages/MemoryPage.qml" line="331"/>
+        <location filename="../src/ui/pages/MemoryPage.qml" line="275"/>
         <source>遗忘这条记忆</source>
         <translation>Forget this memory</translation>
     </message>
     <message>
-        <location filename="../src/ui/pages/MemoryPage.qml" line="343"/>
+        <location filename="../src/ui/pages/MemoryPage.qml" line="287"/>
         <source>没有匹配的记忆</source>
         <translation>No matching memories</translation>
     </message>
     <message>
-        <location filename="../src/ui/pages/MemoryPage.qml" line="344"/>
+        <location filename="../src/ui/pages/MemoryPage.qml" line="288"/>
         <source>暂无长期记忆。开启上方的长期记忆开关后，完成对话会自动生成摘要。</source>
         <translation>No long-term memory yet. Enable the long-term memory switch above; summaries are auto-generated after conversations complete.</translation>
     </message>
@@ -3720,17 +3722,17 @@ Select or import a project in the sidebar first.</translation>
         <translation type="vanished">No long-term memory yet. Enable long-term memory in &quot;Tools &amp; Memory&quot; settings; summaries are auto-generated after conversations complete.</translation>
     </message>
     <message>
-        <location filename="../src/ui/pages/MemoryPage.qml" line="368"/>
+        <location filename="../src/ui/pages/MemoryPage.qml" line="312"/>
         <source>确认清空全部长期记忆？此操作不可恢复。</source>
         <translation>Confirm clearing all long-term memory? This action is irreversible.</translation>
     </message>
     <message>
-        <location filename="../src/ui/pages/MemoryPage.qml" line="386"/>
+        <location filename="../src/ui/pages/MemoryPage.qml" line="330"/>
         <source>取消</source>
         <translation>Cancel</translation>
     </message>
     <message>
-        <location filename="../src/ui/pages/MemoryPage.qml" line="390"/>
+        <location filename="../src/ui/pages/MemoryPage.qml" line="334"/>
         <source>清空</source>
         <translation>Clear</translation>
     </message>
@@ -4357,92 +4359,91 @@ Select or import a project in the sidebar first.</translation>
     </message>
     <message>
         <location filename="../src/ui/pages/NetworkPage.qml" line="66"/>
-        <location filename="../src/ui/pages/NetworkPage.qml" line="85"/>
+        <location filename="../src/ui/pages/NetworkPage.qml" line="82"/>
         <source>代理模式</source>
         <translation>Proxy mode</translation>
     </message>
     <message>
-        <location filename="../src/ui/pages/NetworkPage.qml" line="75"/>
+        <location filename="../src/ui/pages/NetworkPage.qml" line="72"/>
         <source>跟随系统</source>
         <translation>Follow System</translation>
     </message>
     <message>
-        <location filename="../src/ui/pages/NetworkPage.qml" line="75"/>
+        <location filename="../src/ui/pages/NetworkPage.qml" line="72"/>
         <source>手动代理</source>
         <translation>Manual proxy</translation>
     </message>
     <message>
-        <location filename="../src/ui/pages/NetworkPage.qml" line="75"/>
+        <location filename="../src/ui/pages/NetworkPage.qml" line="72"/>
         <source>不使用代理</source>
         <translation>No proxy</translation>
     </message>
     <message>
-        <location filename="../src/ui/pages/NetworkPage.qml" line="101"/>
+        <location filename="../src/ui/pages/NetworkPage.qml" line="99"/>
         <source>proxy.example.com（不含 http://）</source>
         <translation>proxy.example.com (without http://)</translation>
     </message>
     <message>
-        <location filename="../src/ui/pages/NetworkPage.qml" line="126"/>
+        <location filename="../src/ui/pages/NetworkPage.qml" line="93"/>
         <source>代理服务器地址</source>
         <translation>Proxy server address</translation>
     </message>
     <message>
-        <location filename="../src/ui/pages/NetworkPage.qml" line="140"/>
+        <location filename="../src/ui/pages/NetworkPage.qml" line="108"/>
+        <location filename="../src/ui/pages/NetworkPage.qml" line="121"/>
         <source>代理端口</source>
         <translation>Proxy port</translation>
     </message>
     <message>
-        <location filename="../src/ui/pages/NetworkPage.qml" line="145"/>
         <source>用户名（可选）</source>
-        <translation>Username (optional)</translation>
+        <translation type="vanished">Username (optional)</translation>
     </message>
     <message>
-        <location filename="../src/ui/pages/NetworkPage.qml" line="154"/>
+        <location filename="../src/ui/pages/NetworkPage.qml" line="131"/>
         <source>代理认证用户名</source>
         <translation>Proxy authentication username</translation>
     </message>
     <message>
-        <location filename="../src/ui/pages/NetworkPage.qml" line="172"/>
+        <location filename="../src/ui/pages/NetworkPage.qml" line="127"/>
         <source>代理用户名</source>
         <translation>Proxy username</translation>
     </message>
     <message>
-        <location filename="../src/ui/pages/NetworkPage.qml" line="176"/>
         <source>密码（可选）</source>
-        <translation>Password (optional)</translation>
+        <translation type="vanished">Password (optional)</translation>
     </message>
     <message>
-        <location filename="../src/ui/pages/NetworkPage.qml" line="190"/>
+        <location filename="../src/ui/pages/NetworkPage.qml" line="150"/>
         <source>已配置（输入新值可覆盖，留空不修改）</source>
         <translation>Configured (enter a new value to overwrite, leave blank to keep)</translation>
     </message>
     <message>
-        <location filename="../src/ui/pages/NetworkPage.qml" line="191"/>
+        <location filename="../src/ui/pages/NetworkPage.qml" line="151"/>
         <source>未配置</source>
         <translation>Not configured</translation>
     </message>
     <message>
-        <location filename="../src/ui/pages/NetworkPage.qml" line="215"/>
+        <location filename="../src/ui/pages/NetworkPage.qml" line="142"/>
         <source>代理密码</source>
         <translation>Proxy password</translation>
     </message>
     <message>
-        <location filename="../src/ui/pages/NetworkPage.qml" line="219"/>
+        <location filename="../src/ui/pages/NetworkPage.qml" line="156"/>
         <source>清除密码</source>
         <translation>Clear password</translation>
     </message>
     <message>
-        <location filename="../src/ui/pages/NetworkPage.qml" line="223"/>
+        <location filename="../src/ui/pages/NetworkPage.qml" line="160"/>
         <source>清除代理密码</source>
         <translation>Clear proxy password</translation>
     </message>
     <message>
-        <location filename="../src/ui/pages/NetworkPage.qml" line="233"/>
+        <location filename="../src/ui/pages/NetworkPage.qml" line="170"/>
         <source>测试代理</source>
         <translation>Test proxy</translation>
     </message>
     <message>
-        <location filename="../src/ui/pages/NetworkPage.qml" line="236"/>
+        <location filename="../src/ui/pages/NetworkPage.qml" line="173"/>
         <source>测试代理连接</source>
         <translation>Test proxy connection</translation>
     </message>
@@ -6473,87 +6474,91 @@ select a file to view its content diff on the right.</translation>
         <translation>Changes on this page are saved instantly. Evaluation order: system directories → deny list → allow layers (user directories ∪ active project).</translation>
     </message>
     <message>
-        <location filename="../src/ui/pages/SecurityPage.qml" line="60"/>
+        <location filename="../src/ui/pages/SecurityPage.qml" line="57"/>
         <source>文件读取沙箱</source>
         <translation>File Read Sandbox</translation>
     </message>
     <message>
-        <location filename="../src/ui/pages/SecurityPage.qml" line="68"/>
+        <location filename="../src/ui/pages/SecurityPage.qml" line="60"/>
+        <location filename="../src/ui/pages/SecurityPage.qml" line="66"/>
         <source>允许读取整个磁盘</source>
         <translation>Allow reading the entire disk</translation>
     </message>
     <message>
-        <location filename="../src/ui/pages/SecurityPage.qml" line="74"/>
+        <location filename="../src/ui/pages/SecurityPage.qml" line="61"/>
         <source>关闭时读取仅限文档/下载/桌面/应用目录与当前项目；开启后除系统目录与黑名单外全部可读，模型读到的内容可能发送给云端模型。</source>
         <translation>When off, reads are limited to Documents/Downloads/Desktop/AppData and the active project; when on, everything except system directories and the deny list is readable, and anything the model reads may be sent to the cloud model.</translation>
     </message>
     <message>
-        <location filename="../src/ui/pages/SecurityPage.qml" line="91"/>
+        <location filename="../src/ui/pages/SecurityPage.qml" line="72"/>
+        <location filename="../src/ui/pages/SecurityPage.qml" line="78"/>
         <source>允许写入当前项目目录</source>
         <translation>Allow writing into the current project folder</translation>
     </message>
     <message>
-        <location filename="../src/ui/pages/SecurityPage.qml" line="97"/>
+        <location filename="../src/ui/pages/SecurityPage.qml" line="73"/>
         <source>默认项目目录只读，写入仅限用户目录；开启后模型可以修改当前项目中的文件（写入类工具仍受会话权限模式约束，黑名单始终优先）。</source>
         <translation>Project folders are read-only by default and writes are limited to your user folders. When enabled, the model may modify files in the current project (write tools are still bound by the session permission mode, and the deny list always wins).</translation>
     </message>
     <message>
-        <location filename="../src/ui/pages/SecurityPage.qml" line="109"/>
+        <location filename="../src/ui/pages/SecurityPage.qml" line="84"/>
         <source>黑名单（始终拒绝，优先于一切允许规则）</source>
         <translation>Deny list (always denied, overrides every allow rule)</translation>
     </message>
     <message>
-        <location filename="../src/ui/pages/SecurityPage.qml" line="116"/>
+        <location filename="../src/ui/pages/SecurityPage.qml" line="91"/>
         <source>内置默认拦截：~/.ssh、~/.gnupg、~/.aws 及 *.pem / *.key / *.ppk / *.kdbx。以下为追加项，支持目录（或目录名，命中任意层级）与通配模式如 *.env。</source>
         <translation>Built-in defaults: ~/.ssh, ~/.gnupg, ~/.aws and *.pem / *.key / *.ppk / *.kdbx. Entries below are user additions: a directory (or a directory name matching at any depth) or a glob such as *.env.</translation>
     </message>
     <message>
-        <location filename="../src/ui/pages/SecurityPage.qml" line="199"/>
+        <location filename="../src/ui/pages/SecurityPage.qml" line="174"/>
         <source>移除黑名单条目 %1</source>
         <translation>Remove deny-list entry %1</translation>
     </message>
     <message>
-        <location filename="../src/ui/pages/SecurityPage.qml" line="208"/>
+        <location filename="../src/ui/pages/SecurityPage.qml" line="183"/>
         <source>暂无追加项</source>
         <translation>No user entries</translation>
     </message>
     <message>
-        <location filename="../src/ui/pages/SecurityPage.qml" line="222"/>
+        <location filename="../src/ui/pages/SecurityPage.qml" line="197"/>
         <source>目录路径、目录名或通配模式（如 D:secrets、.git、*.env）</source>
         <translation>Directory path, directory name, or glob (e.g. D:secrets, .git, *.env)</translation>
     </message>
     <message>
-        <location filename="../src/ui/pages/SecurityPage.qml" line="236"/>
+        <location filename="../src/ui/pages/SecurityPage.qml" line="211"/>
         <source>新增黑名单条目</source>
         <translation>New deny-list entry</translation>
     </message>
     <message>
-        <location filename="../src/ui/pages/SecurityPage.qml" line="242"/>
+        <location filename="../src/ui/pages/SecurityPage.qml" line="217"/>
         <source>添加</source>
         <translation>Add</translation>
     </message>
     <message>
-        <location filename="../src/ui/pages/SecurityPage.qml" line="275"/>
+        <location filename="../src/ui/pages/SecurityPage.qml" line="245"/>
         <source>隐私门</source>
         <translation>Privacy Gates</translation>
     </message>
     <message>
-        <location filename="../src/ui/pages/SecurityPage.qml" line="283"/>
+        <location filename="../src/ui/pages/SecurityPage.qml" line="248"/>
+        <location filename="../src/ui/pages/SecurityPage.qml" line="254"/>
         <source>仅本地模式</source>
         <translation>Local-only Mode</translation>
     </message>
     <message>
-        <location filename="../src/ui/pages/SecurityPage.qml" line="289"/>
+        <location filename="../src/ui/pages/SecurityPage.qml" line="249"/>
         <source>使用云端模型时拦截知识库搜索、联网搜索与全部 MCP 工具（工具页会显示拦截徽标）；本地模型不受影响。</source>
         <translation>With cloud models this blocks knowledge search, web search and all MCP tools (a badge shows on the Tools page); local models are unaffected.</translation>
     </message>
     <message>
-        <location filename="../src/ui/pages/SecurityPage.qml" line="305"/>
+        <location filename="../src/ui/pages/SecurityPage.qml" line="259"/>
+        <location filename="../src/ui/pages/SecurityPage.qml" line="265"/>
         <source>允许 http_fetch 访问本机与内网地址</source>
         <translation>Allow http_fetch to reach localhost and intranet</translation>
     </message>
     <message>
-        <location filename="../src/ui/pages/SecurityPage.qml" line="311"/>
+        <location filename="../src/ui/pages/SecurityPage.qml" line="260"/>
         <source>关闭时 http_fetch 拒绝本机/内网目标（防 SSRF）；仅在确有访问内网服务的需求时开启。</source>
         <translation>When off, http_fetch rejects local/intranet targets (SSRF guard); enable only if intranet access is truly needed.</translation>
     </message>
@@ -6943,17 +6948,17 @@ select a file to view its content diff on the right.</translation>
 <context>
     <name>SettingsField</name>
     <message>
-        <location filename="../src/ui/components/SettingsField.qml" line="101"/>
+        <location filename="../src/ui/components/SettingsField.qml" line="131"/>
         <source>隐藏</source>
         <translation>Hide</translation>
     </message>
     <message>
-        <location filename="../src/ui/components/SettingsField.qml" line="101"/>
+        <location filename="../src/ui/components/SettingsField.qml" line="131"/>
         <source>显示</source>
         <translation>Show</translation>
     </message>
     <message>
-        <location filename="../src/ui/components/SettingsField.qml" line="107"/>
+        <location filename="../src/ui/components/SettingsField.qml" line="137"/>
         <source>显示或隐藏密钥</source>
         <translation>Show or hide the key</translation>
     </message>
@@ -7914,54 +7919,53 @@ select a file to view its content diff on the right.</translation>
         <translation>Enable tool %1</translation>
     </message>
     <message>
-        <location filename="../src/ui/pages/ToolsPage.qml" line="145"/>
+        <location filename="../src/ui/pages/ToolsPage.qml" line="140"/>
         <source>联网搜索</source>
         <translation>Web Search</translation>
     </message>
     <message>
-        <location filename="../src/ui/pages/ToolsPage.qml" line="153"/>
+        <location filename="../src/ui/pages/ToolsPage.qml" line="141"/>
         <source>启用后模型可调用 web_search 获取实时信息。搜索查询会发送至所配置的搜索服务商，请勿在查询中包含敏感信息。</source>
         <translation>When enabled, the model can call web_search to fetch real-time information. Search queries are sent to the configured search provider; do not include sensitive information in your queries.</translation>
     </message>
     <message>
-        <location filename="../src/ui/pages/ToolsPage.qml" line="167"/>
-        <location filename="../src/ui/pages/ToolsPage.qml" line="190"/>
+        <location filename="../src/ui/pages/ToolsPage.qml" line="144"/>
+        <location filename="../src/ui/pages/ToolsPage.qml" line="163"/>
         <source>搜索服务</source>
         <translation>Search provider</translation>
     </message>
     <message>
-        <location filename="../src/ui/pages/ToolsPage.qml" line="204"/>
-        <location filename="../src/ui/pages/ToolsPage.qml" line="233"/>
+        <location filename="../src/ui/pages/ToolsPage.qml" line="178"/>
         <source>搜索 API Key</source>
         <translation>Search API key</translation>
     </message>
     <message>
-        <location filename="../src/ui/pages/ToolsPage.qml" line="219"/>
+        <location filename="../src/ui/pages/ToolsPage.qml" line="186"/>
         <source>已配置（输入新值可覆盖，留空不修改）</source>
         <translation>Configured (enter a new value to overwrite, leave blank to keep)</translation>
     </message>
     <message>
-        <location filename="../src/ui/pages/ToolsPage.qml" line="220"/>
+        <location filename="../src/ui/pages/ToolsPage.qml" line="187"/>
         <source>未配置</source>
         <translation>Not configured</translation>
     </message>
     <message>
-        <location filename="../src/ui/pages/ToolsPage.qml" line="249"/>
+        <location filename="../src/ui/pages/ToolsPage.qml" line="192"/>
         <source>清除密钥</source>
         <translation>Clear key</translation>
     </message>
     <message>
-        <location filename="../src/ui/pages/ToolsPage.qml" line="253"/>
+        <location filename="../src/ui/pages/ToolsPage.qml" line="196"/>
         <source>清除搜索 API Key</source>
         <translation>Clear search API key</translation>
     </message>
     <message>
-        <location filename="../src/ui/pages/ToolsPage.qml" line="266"/>
+        <location filename="../src/ui/pages/ToolsPage.qml" line="208"/>
         <source>测试连接</source>
         <translation>Test connection</translation>
     </message>
     <message>
-        <location filename="../src/ui/pages/ToolsPage.qml" line="274"/>
+        <location filename="../src/ui/pages/ToolsPage.qml" line="216"/>
         <source>测试搜索服务连接</source>
         <translation>Test search service connection</translation>
     </message>
@@ -7981,42 +7985,42 @@ select a file to view its content diff on the right.</translation>
         <translation>DeepSeek Search</translation>
     </message>
     <message>
-        <location filename="../src/ui/pages/ToolsPage.qml" line="300"/>
+        <location filename="../src/ui/pages/ToolsPage.qml" line="238"/>
         <source>会话权限模式</source>
         <translation>Session Permission Mode</translation>
     </message>
     <message>
-        <location filename="../src/ui/pages/ToolsPage.qml" line="308"/>
+        <location filename="../src/ui/pages/ToolsPage.qml" line="239"/>
         <source>新会话默认使用的工具审批级别。可在会话内随时通过输入框旁的模式选择器更改，仅对当前会话生效。</source>
         <translation>Default tool-approval level for new sessions. Change anytime per session via the mode selector next to the input box; applies to that session only.</translation>
     </message>
     <message>
-        <location filename="../src/ui/pages/ToolsPage.qml" line="322"/>
+        <location filename="../src/ui/pages/ToolsPage.qml" line="242"/>
         <source>默认模式</source>
         <translation>Default Mode</translation>
     </message>
     <message>
-        <location filename="../src/ui/pages/ToolsPage.qml" line="333"/>
+        <location filename="../src/ui/pages/ToolsPage.qml" line="249"/>
         <source>变更确认</source>
         <translation>Confirm Changes</translation>
     </message>
     <message>
-        <location filename="../src/ui/pages/ToolsPage.qml" line="334"/>
+        <location filename="../src/ui/pages/ToolsPage.qml" line="250"/>
         <source>只读（计划模式）</source>
         <translation>Read-only (plan mode)</translation>
     </message>
     <message>
-        <location filename="../src/ui/pages/ToolsPage.qml" line="335"/>
+        <location filename="../src/ui/pages/ToolsPage.qml" line="251"/>
         <source>自动编辑</source>
         <translation>Auto Edit</translation>
     </message>
     <message>
-        <location filename="../src/ui/pages/ToolsPage.qml" line="336"/>
+        <location filename="../src/ui/pages/ToolsPage.qml" line="252"/>
         <source>完全访问</source>
         <translation>Full Access</translation>
     </message>
     <message>
-        <location filename="../src/ui/pages/ToolsPage.qml" line="346"/>
+        <location filename="../src/ui/pages/ToolsPage.qml" line="262"/>
         <source>默认权限模式</source>
         <translation>Default Permission Mode</translation>
     </message>

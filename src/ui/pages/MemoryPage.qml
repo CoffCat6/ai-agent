@@ -79,111 +79,49 @@ Item {
             }
         }
 
-        // ── 长期记忆开关 ───────────────────────────────
-        RowLayout {
+        // ── 长期记忆与保留（docs/23 G3）──────────────────
+        SettingsSection {
             Layout.fillWidth: true
             Layout.leftMargin: 24
             Layout.rightMargin: 24
             Layout.bottomMargin: 8
-            spacing: 8
+            title: qsTr("记忆与保留")
 
-            ColumnLayout {
-                Layout.fillWidth: true
-                spacing: 2
+            SettingRow {
+                label: qsTr("启用长期记忆")
+                description: qsTr("开启后，每次任务结束会生成会话摘要并在新会话中注入相关历史，帮助模型记住此前聊过的内容。")
 
-                Text {
-                    text: qsTr("启用长期记忆")
-                    color: Theme.textPrimary
-                    font.pixelSize: Theme.fontSizeBody
-                    font.family: Theme.fontSans
-                }
-                Text {
-                    text: qsTr("开启后，每次任务结束会生成会话摘要并在新会话中注入相关历史，帮助模型记住此前聊过的内容。")
-                    color: Theme.textSecondary
-                    font.pixelSize: 10
-                    font.family: Theme.fontSans
-                    opacity: 0.8
-                    wrapMode: Text.Wrap
-                    Layout.fillWidth: true
+                Switch {
+                    checked: Settings.episodicMemoryEnabled
+                    onToggled: Settings.episodicMemoryEnabled = checked
+                    Accessible.name: qsTr("启用长期记忆")
                 }
             }
-            Switch {
-                checked: Settings.episodicMemoryEnabled
-                onToggled: Settings.episodicMemoryEnabled = checked
-                Accessible.name: qsTr("启用长期记忆")
-            }
-        }
 
-        // ── 数据保留（docs/23 G3）────────────────────────
-        RowLayout {
-            Layout.fillWidth: true
-            Layout.leftMargin: 24
-            Layout.rightMargin: 24
-            Layout.bottomMargin: 8
-            spacing: 8
+            SettingRow {
+                label: qsTr("审计日志保留天数")
+                description: qsTr("工具执行审计链的保留天数，0 表示永久保留。到期记录在启动与每 6 小时的例行清理中删除。")
 
-            ColumnLayout {
-                Layout.fillWidth: true
-                spacing: 2
-
-                Text {
-                    text: qsTr("审计日志保留天数")
-                    color: Theme.textPrimary
-                    font.pixelSize: Theme.fontSizeBody
-                    font.family: Theme.fontSans
-                }
-                Text {
-                    text: qsTr("工具执行审计链的保留天数，0 表示永久保留。到期记录在启动与每 6 小时的例行清理中删除。")
-                    color: Theme.textSecondary
-                    font.pixelSize: 10
-                    font.family: Theme.fontSans
-                    opacity: 0.8
-                    wrapMode: Text.Wrap
-                    Layout.fillWidth: true
+                SpinBox {
+                    from: 0
+                    to: 3650
+                    value: Settings.auditRetentionDays
+                    onValueModified: Settings.auditRetentionDays = value
+                    Accessible.name: qsTr("审计日志保留天数")
                 }
             }
-            SpinBox {
-                from: 0
-                to: 3650
-                value: Settings.auditRetentionDays
-                onValueModified: Settings.auditRetentionDays = value
-                Accessible.name: qsTr("审计日志保留天数")
-            }
-        }
 
-        RowLayout {
-            Layout.fillWidth: true
-            Layout.leftMargin: 24
-            Layout.rightMargin: 24
-            Layout.bottomMargin: 8
-            spacing: 8
+            SettingRow {
+                label: qsTr("Token 用量保留天数")
+                description: qsTr("每次模型请求的用量明细（token 与费用统计的数据源）的保留天数，0 表示永久保留。")
 
-            ColumnLayout {
-                Layout.fillWidth: true
-                spacing: 2
-
-                Text {
-                    text: qsTr("Token 用量保留天数")
-                    color: Theme.textPrimary
-                    font.pixelSize: Theme.fontSizeBody
-                    font.family: Theme.fontSans
+                SpinBox {
+                    from: 0
+                    to: 3650
+                    value: Settings.tokenRetentionDays
+                    onValueModified: Settings.tokenRetentionDays = value
+                    Accessible.name: qsTr("Token 用量保留天数")
                 }
-                Text {
-                    text: qsTr("每次模型请求的用量明细（token 与费用统计的数据源）的保留天数，0 表示永久保留。")
-                    color: Theme.textSecondary
-                    font.pixelSize: 10
-                    font.family: Theme.fontSans
-                    opacity: 0.8
-                    wrapMode: Text.Wrap
-                    Layout.fillWidth: true
-                }
-            }
-            SpinBox {
-                from: 0
-                to: 3650
-                value: Settings.tokenRetentionDays
-                onValueModified: Settings.tokenRetentionDays = value
-                Accessible.name: qsTr("Token 用量保留天数")
             }
         }
 

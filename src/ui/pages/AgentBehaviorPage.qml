@@ -63,77 +63,38 @@ Item {
                 title: qsTr("任务预算")
                 subtitle: qsTr("限制一次任务里模型能走多远、跑多久；复杂任务可调高，但通常会增加耗时和 token 消耗。")
 
-                ColumnLayout {
-                    Layout.fillWidth: true
-                    spacing: 4
-
-                    Text {
-                        text: qsTr("单次任务步数预算")
-                        color: Theme.textSecondary
-                        font.pixelSize: Theme.fontSizeCaption
-                        font.bold: true
-                        font.family: Theme.fontMono
-                    }
-                    TextField {
-                        id: maxStepsField
-                        Layout.fillWidth: true
-                        text: Settings.maxSteps
-                        placeholderText: "30"
-                        placeholderTextColor: Theme.textSecondary
-                        color: Theme.textPrimary
-                        selectionColor: Theme.brandPrimary
-                        selectedTextColor: Theme.selectedTextColor
-                        font.pixelSize: Theme.fontSizeBody
-                        font.family: Theme.fontSans
-                        validator: IntValidator { bottom: 3; top: 1000 }
-                        background: Rectangle {
-                            radius: 6
-                            color: Theme.bgPrimary
-                            border.width: maxStepsField.activeFocus ? 2 : 1
-                            border.color: maxStepsField.activeFocus
-                                ? Theme.brandPrimary : Theme.borderSubtle
-                        }
-                        // 未完成编辑期间不持久化（例如清空后输入 1000 的中间态）；
-                        // 失焦或 Loader 销毁时只提交有效整数。
-                        function commit() {
-                            if (!acceptableInput) return
-                            Settings.maxSteps = parseInt(text)
-                        }
-                        onEditingFinished: { commit(); text = Settings.maxSteps }
-                        Component.onDestruction: commit()
-                        Accessible.name: qsTr("单次任务步数预算")
-                    }
-                    Text {
-                        text: qsTr("一次任务里模型最多进行多少轮「思考 → 工具调用」（3–1000）。用完会强制基于已有信息作答。")
-                        color: Theme.textSecondary
-                        font.pixelSize: 10
-                        wrapMode: Text.Wrap
-                        Layout.fillWidth: true
+                SettingsField {
+                    id: maxStepsField
+                    label: qsTr("单次任务步数预算")
+                    labelWidth: 160
+                    text: Settings.maxSteps
+                    // 基线跟着已保存值走，避免页面重建时把原值再写一遍。
+                    lastKnownValue: String(Settings.maxSteps)
+                    placeholderText: "30"
+                    validator: IntValidator { bottom: 3; top: 1000 }
+                    // 未完成编辑期间不持久化（例如清空后输入 1000 的中间态）；
+                    // 失焦或 Loader 销毁时只提交范围内的有效整数。
+                    ignoreEmptySubmit: true
+                    commitOnDestroy: true
+                    onSubmitted: (value) => {
+                        const steps = Number(value)
+                        if (Number.isInteger(steps) && steps >= 3 && steps <= 1000)
+                            Settings.maxSteps = steps
                     }
                 }
 
-                RowLayout {
+                Text {
+                    text: qsTr("一次任务里模型最多进行多少轮「思考 → 工具调用」（3–1000）。用完会强制基于已有信息作答。")
+                    color: Theme.textSecondary
+                    font.pixelSize: 10
+                    wrapMode: Text.Wrap
                     Layout.fillWidth: true
-                    spacing: 8
+                }
 
-                    ColumnLayout {
-                        Layout.fillWidth: true
-                        spacing: 2
-                        Text {
-                            text: qsTr("单次任务超时（分钟）")
-                            color: Theme.textSecondary
-                            font.pixelSize: Theme.fontSizeCaption
-                            font.bold: true
-                            font.family: Theme.fontMono
-                        }
-                        Text {
-                            text: qsTr("任务运行超过此时长会停止并基于已收集的信息作答。需要多次网络调用的任务可以适当调高。")
-                            color: Theme.textSecondary
-                            font.pixelSize: 10
-                            wrapMode: Text.Wrap
-                            Layout.fillWidth: true
-                        }
-                    }
+                SettingRow {
+                    label: qsTr("单次任务超时（分钟）")
+                    description: qsTr("任务运行超过此时长会停止并基于已收集的信息作答。需要多次网络调用的任务可以适当调高。")
+
                     SpinBox {
                         from: 1
                         to: 60
