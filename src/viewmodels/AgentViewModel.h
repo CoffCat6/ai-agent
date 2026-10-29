@@ -72,6 +72,12 @@ class AgentViewModel : public QObject {
     Q_PROPERTY(int traceCount READ traceCount NOTIFY traceChanged FINAL)
     // thinking / tool_call / tool_result / context nodes (fold toggle badge)
     Q_PROPERTY(int intermediateCount READ intermediateCount NOTIFY traceChanged FINAL)
+    // 过程节点（思考/工具调用/工具结果/context）是否展开显示。
+    //
+    // 曾经是 AgentChatPage 的页面局部状态，开关悬浮在对话区右上角——
+    // 于是 TopBar 读不到它，用户也无法在切会话/重启后保持选择。它本质
+    // 是"视图偏好"而不是"某条消息的展开态"，因此上移到门面并持久化。
+    Q_PROPERTY(bool showProcess READ showProcess WRITE setShowProcess NOTIFY showProcessChanged FINAL)
     // 用户消息导航索引（对话区左侧导轨的数据源）。每条 =
     // {row, messageId, preview, length, timestamp}；row 直接喂给
     // TranscriptViewport::scrollToIndex()。
@@ -267,6 +273,10 @@ public:
     QAbstractListModel* traceModel() { return active()->trace(); }
     int traceCount() const { return active()->traceCount(); }
     int intermediateCount() const { return active()->intermediateCount(); }
+    // 过程显示偏好是全局的（跨会话、跨标签），不随当前会话变化——
+    // 用户调的是"我想不想看过程"，与正在看哪条会话无关。
+    bool showProcess() const { return m_showProcess; }
+    void setShowProcess(bool show);
     QVariantList userMessageIndex() const { return active()->userMessageIndex(); }
     // docs/20 §3.1/§3.2：该类型 trace 节点的最后一行（消息级操作按钮用）。
     Q_INVOKABLE int lastTraceIndexOfType(const QString& type) const
@@ -673,6 +683,7 @@ public:
 signals:
     void stateChanged();
     void traceChanged();
+    void showProcessChanged();
     void responseReady();
     void draftTextChanged();
     void draftAttachmentsChanged();
@@ -877,6 +888,9 @@ private:
     qint64 m_projectFilesScannedAt{0};
     quint64 m_projectFilesGeneration{0};
     bool m_projectFilesScanning{false};
+
+    // 过程节点是否展开（见 showProcess 属性的注释）。
+    bool m_showProcess{true};
 
     // ── Panel ──────────────────────────────────────────
     bool m_isPanelVisible{};

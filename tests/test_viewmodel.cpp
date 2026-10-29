@@ -248,6 +248,58 @@ private slots:
         QVERIFY(m.userMessageIndex().isEmpty());
     }
 
+    // 过程显示偏好的持久化。它从 AgentChatPage 的页面局部状态上移到门面，
+    // 因为 TopBar 的开关要读写它——而 TopBar 看不见聊天页的内部状态。
+    // 顺带锁住默认值：首次启动必须显示过程，否则用户会以为工具没在跑。
+    void showProcessPersistsAcrossInstances() {
+        // 本文件没有 test_settings.cpp 里的 SettingsGuard（那个夹具属于
+        // 设置测试）；这里手动保存/恢复，避免污染开发机的真实配置。
+        QSettings probe("NexusAI", "NexusAI");
+        const QVariant saved = probe.value("ui/showProcess");
+        probe.remove("ui/showProcess");
+        struct Restore {
+            QVariant v;
+            ~Restore() {
+                QSettings s("NexusAI", "NexusAI");
+                if (v.isValid()) s.setValue("ui/showProcess", v);
+                else s.remove("ui/showProcess");
+            }
+        } restore{saved};
+        Q_UNUSED(restore);
+        {
+            AgentViewModel vm(nullptr);
+            QCOMPARE(vm.showProcess(), true);   // 默认显示过程
+            QSignalSpy spy(&vm, &AgentViewModel::showProcessChanged);
+            vm.setShowProcess(false);
+            QCOMPARE(spy.count(), 1);
+            QCOMPARE(vm.showProcess(), false);
+            // 同值再设不重复发信号（否则 QML 会白重算一次）。
+            vm.setShowProcess(false);
+            QCOMPARE(spy.count(), 1);
+            QSettings s("NexusAI", "NexusAI");
+            QCOMPARE(s.value("ui/showProcess").toBool(), false);
+        }
+        // 新实例读回上一次的选择——这是"阅读偏好"，不该每次重启都回默认。
+        {
+            AgentViewModel vm2(nullptr);
+            QCOMPARE(vm2.showProcess(), false);
+        }
+    }
+
+    // 属性形态锁死：QML 侧要用 `AgentVM.showProcess` 绑定，必须是带
+    // NOTIFY 的 Q_PROPERTY（不是 Q_INVOKABLE——函数调用形式的绑定不会随
+    // 状态变化重算，图标会一直停在初始那一面）。
+    void showProcessIsBindableProperty() {
+        AgentViewModel vm(nullptr);
+        const QMetaObject* mo = vm.metaObject();
+        const int idx = mo->indexOfProperty("showProcess");
+        QVERIFY2(idx >= 0, "showProcess must be a Q_PROPERTY");
+        const QMetaProperty prop = mo->property(idx);
+        QVERIFY(prop.hasNotifySignal());
+        QCOMPARE(prop.notifySignal().name(), QByteArray("showProcessChanged"));
+        QVERIFY(prop.isWritable());
+    }
+
     // docs/20 §3.3：输入历史环（进程内、相邻去重、↑ 前移 / ↓ 后移）；
     // 无 agent 时尝试发送也保留输入，便于配置模型后重试。
     void inputHistoryNavigateAndDedupe() {

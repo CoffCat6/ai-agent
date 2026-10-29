@@ -990,7 +990,7 @@ private slots:
             "tools/disabled", "schemaVersion", "theme/dark",
             // AgentViewModel runtime layout
             "ui/sidebarWidth", "ui/panelWidth",
-            "ui/panelVisible", "ui/sidebarExpanded",
+            "ui/panelVisible", "ui/sidebarExpanded", "ui/showProcess",
             "ui/windowX", "ui/windowY", "ui/windowWidth", "ui/windowHeight",
             "ui/windowMaximized",
             // M2: PreferenceStore 物理键（prefs/v1/<key>）

@@ -19,7 +19,6 @@ Item {
     // （只是"确认落点"，不该和搜索结果混淆）。
     property real revealHighlightStrength: 0.10
 
-
     // Sending can synchronously insert the user row before requestFollow().
     // Forward the intent immediately instead of waiting for another count change.
     QtObject {
@@ -69,7 +68,9 @@ Item {
                     const key = detailSessionKey
                     return key in all ? all[key] : ({})
                 }
-                property bool showProcess: true
+                // 过程显示偏好由 AgentVM 持有（TopBar 的开关控制它），
+                // 这里只读；原先的页面级 property + toggleProcess() 已移除。
+                readonly property bool showProcess: AgentVM.showProcess
                 readonly property int intermediateCount: AgentVM.intermediateCount
 
                 function detailExpanded(key, defaultExpanded) {
@@ -85,9 +86,13 @@ Item {
                     detailStateBySession = all
                 }
 
-                function toggleProcess() {
-                    showProcess = !showProcess
-                    requestScrollToBottom()
+                // 折叠/展开会大幅改变内容总高度。若此时正贴在底部，位置要
+                // 跟着重算，否则展开后会停在半空中。
+                Connections {
+                    target: AgentVM
+                    function onShowProcessChanged() {
+                        transcript.requestScrollToBottom()
+                    }
                 }
 
                 delegate: TraceNodeRouter {
@@ -249,60 +254,6 @@ Item {
             SessionTemplateMenu {
                 id: emptyTemplateMenu
                 onManageRequested: root.settingsCategoryRequested("prompts")
-            }
-
-            Rectangle {
-                visible: transcript.intermediateCount > 0
-                anchors.top: parent.top
-                anchors.topMargin: 8
-                anchors.right: parent.right
-                anchors.rightMargin: 16
-                z: 5
-                width: processRow.implicitWidth + 20
-                height: 26
-                radius: height / 2
-                color: processMA.containsMouse ? Theme.surfaceHover : Theme.cardBackground
-                border.width: 1
-                border.color: Theme.cardBorder
-                opacity: 0.94
-
-                Row {
-                    id: processRow
-                    anchors.centerIn: parent
-                    spacing: 6
-
-                    AppIcon {
-                        anchors.verticalCenter: parent.verticalCenter
-                        icon: transcript.showProcess ? "chevron-up" : "chevron-down"
-                        size: 11
-                        iconColor: processMA.containsMouse
-                            ? Theme.brandPrimary : Theme.textSecondary
-                    }
-
-                    Text {
-                        anchors.verticalCenter: parent.verticalCenter
-                        text: transcript.showProcess
-                            ? qsTr("折叠过程")
-                            : qsTr("思考过程 · %1").arg(transcript.intermediateCount)
-                        color: processMA.containsMouse
-                            ? Theme.brandPrimary : Theme.textSecondary
-                        font.pixelSize: 10
-                        font.family: Theme.fontSans
-                    }
-                }
-
-                MouseArea {
-                    id: processMA
-                    anchors.fill: parent
-                    hoverEnabled: true
-                    cursorShape: Qt.PointingHandCursor
-                    onClicked: transcript.toggleProcess()
-                }
-
-                ToolTip.visible: processMA.containsMouse
-                ToolTip.delay: 600
-                ToolTip.text: transcript.showProcess
-                    ? qsTr("隐藏思考与工具调用过程") : qsTr("显示思考与工具调用过程")
             }
 
             Rectangle {

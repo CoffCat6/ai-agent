@@ -20,6 +20,7 @@
 
 1. 启动：`Component.onCompleted` 读 `AgentVM.restoreWindowOnStartup` 与 `loadWindowGeometry()`，恢复位置/尺寸或最大化；`trayAvailable` 由 `main.cpp` 注入。
 2. 会话渲染：`AgentChatPage` 把 `AgentVM.traceModel` 交给 `TranscriptViewport`，delegate 为 `TraceNodeRouter`（按节点类型路由到用户/助手/过程/错误卡片）；展开态存在页面级 `detailState`，不随 delegate 重建丢失。左侧 `MessageNavigator` 导轨按 `AgentVM.userMessageIndex` 画出每次提问，点击跳到对应 trace 行。
+3. 过程节点开关：`AgentVM.showProcess`（持久化于 `ui/showProcess`）由 TopBar 右侧的按钮控制，`AgentChatPage` 只读并透传给 `TraceNodeRouter`。它原先是一个悬浮在对话区右上角的胶囊按钮，会遮挡正文且与"某条消息的展开"混淆——搬到 TopBar 后与任务清单/审阅/面板同排。
 3. 输入：`InputConsole` 负责草稿、附件、`@` 提及补全、历史浏览与发送；`ModelSelector`/`ThinkingEffortSelector`/`PermissionModeSelector` 读写 `AgentVM`/`Settings`。
 3b. 会话切换（docs/30，P0+P1 已实施）：**侧栏是唯一入口，主区只渲染活动会话**。侧栏点击 → `AgentVM.openConversation(id)`；右侧「结束对话」（右键菜单 / hover 操作条，后者仅在 `open === true` 时出现）→ `closeConversation(id)`；`Ctrl+W` → `closeActiveConversation()`；`Ctrl+Tab`/`Ctrl+Shift+Tab` → `cycleConversation(±1)`（跳过空白对话）。行内 14px 状态槽三态互斥：busy 旋转图标 › 等待确认静态警告 › 未读点。顶栏中部显示当前会话标题，并带会话模板入口（`Ctrl+[` 折叠侧栏后仍可达）。
 4. 拖放：窗口根级 `DropArea`（最后声明、铺满全窗）只判断 `hasUrls` 并把原始 `drop.urls` 交给 `AgentVM.handleDroppedFiles()`；VM 发 `attachmentsDropped`，`AgentChatPage` 转给 `inputConsole.appendAttachments()`。

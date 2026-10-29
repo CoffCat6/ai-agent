@@ -200,6 +200,10 @@ AgentViewModel::AgentViewModel(QObject* parent)
     m_isSidebarExpanded = SettingsRepository::value("ui/sidebarExpanded", m_defaultSidebarExpanded).toBool();
     m_panelWidth = SettingsRepository::value("ui/panelWidth", m_defaultPanelWidth).toInt();
     m_sidebarWidth = SettingsRepository::value("ui/sidebarWidth", m_defaultSidebarWidth).toInt();
+    // 过程显示的偏好与窗口布局同域（都属"界面状态"），一起在启动时读回。
+    m_showProcess = SettingsRepository::value(
+        "ui/showProcess",
+        SettingsSchema::defaultValue(QStringLiteral("ui/showProcess")).toBool()).toBool();
 
     // Splitter drags update the width per mouse move; coalesce the writes
     m_uiPersistTimer.setSingleShot(true);
@@ -2714,6 +2718,15 @@ void AgentViewModel::setIsPanelVisible(bool visible) {
 
 void AgentViewModel::togglePanel() {
     setIsPanelVisible(!m_isPanelVisible);
+}
+
+void AgentViewModel::setShowProcess(bool show) {
+    if (m_showProcess == show) return;
+    m_showProcess = show;
+    persistSettingsValue(QStringLiteral("ui/showProcess"), show);
+    // 折叠/展开会大幅改变内容总高度；不通知视口，展开后内容变长而滚动
+    // 位置不动，用户会停在半空中。
+    emit showProcessChanged();
 }
 
 void AgentViewModel::setPanelWidth(int width) {

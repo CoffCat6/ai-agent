@@ -852,6 +852,29 @@ Rectangle {
             }
         }
 
+        // ── Process Toggle ────────────────────────────
+        // 折叠/展开过程节点（思考、工具调用、工具结果、context）。
+        //
+        // 原先这个开关是悬浮在对话区右上角的胶囊按钮：它控制的是整个会话
+        // 的显示方式，却摆得像"某条消息的展开按钮"；而且浮在滚动区之上，
+        // 窄窗口下正好压住助手正文。挪到这里与任务清单/审阅/面板同排——
+        // 它们都是"会话级视图开关"，语义一致且永不遮挡内容。
+        //
+        // 只在有过程节点时出现：空会话里它点了没有任何效果。
+        IconButton {
+            objectName: "processToggleButton"
+            readonly property int processCount: AgentVM.intermediateCount
+            visible: processCount > 0
+            icon: AgentVM.showProcess ? "process-collapse" : "process-expand"
+            iconSize: 18
+            restIconColor: Theme.textPrimary
+            flipOnIconChange: true
+            tooltip: AgentVM.showProcess
+                ? qsTr("折叠思考与工具调用过程（%1 项）").arg(processCount)
+                : qsTr("显示思考与工具调用过程（%1 项）").arg(processCount)
+            onClicked: AgentVM.showProcess = !AgentVM.showProcess
+        }
+
         // ── Task List Toggle ──────────────────────────
         // The list itself lives in TodoDialog (main.qml) — the sidebar was
         // too narrow for it. The badge counts tasks that are not finished

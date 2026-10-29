@@ -277,6 +277,10 @@ const QVector<SettingsKeyDef>& SettingsSchema::registeredKeys() {
                    intRange(220, 640)),
             keyDef(QStringLiteral("ui/panelVisible"), QVariant(), SettingValueType::Bool),
             keyDef(QStringLiteral("ui/sidebarExpanded"), QVariant(), SettingValueType::Bool),
+            // 会话过程（思考/工具调用/工具结果/context）是否展开显示。
+            // 默认 true：折叠会把"正在做什么"藏起来，首次使用更需要看到它；
+            // 用户嫌吵可以关掉，选择随下次启动保留。
+            keyDef(QStringLiteral("ui/showProcess"), true, SettingValueType::Bool),
             keyDef(QStringLiteral("ui/windowX"), QVariant(), SettingValueType::Double),
             keyDef(QStringLiteral("ui/windowY"), QVariant(), SettingValueType::Double),
             keyDef(QStringLiteral("ui/windowWidth"), QVariant(), SettingValueType::Double),
