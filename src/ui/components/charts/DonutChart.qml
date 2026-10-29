@@ -111,6 +111,14 @@ Item {
     onHighlightIndexChanged: canvas.requestPaint()
     onPaletteColorsChanged: canvas.requestPaint()   // 明暗主题切换时重取色
 
+    // docs/25 §9 s1：onPaint 除色板外还直接读 borderSubtle / textSecondary /
+    // bgSecondary / textPrimary。只靠色板变化重绘时，未来主题若仅微调这些
+    // 非色板色，画布会残留旧色——直接跟随 themeChanged。
+    Connections {
+        target: Theme
+        function onThemeChanged() { canvas.requestPaint() }
+    }
+
     implicitWidth: 360
     implicitHeight: 220
     focusPolicy: Qt.StrongFocus

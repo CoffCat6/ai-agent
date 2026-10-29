@@ -256,16 +256,12 @@ Rectangle {
             border.color: Theme.borderSubtle
             visible: AgentVM.projects.length === 0
 
-            Text {
+            EmptyState {
                 objectName: "projectRulesNoProjects"
                 anchors.centerIn: parent
-                width: parent.width - Theme.spaceXl * 2
-                text: qsTr("尚未导入任何项目。先在侧栏导入项目文件夹，即可为它配置规则。")
-                color: Theme.textSecondary
-                font.pixelSize: Theme.fontSizeBody
-                font.family: Theme.fontSans
-                horizontalAlignment: Text.AlignHCenter
-                wrapMode: Text.Wrap
+                width: Math.min(parent.width - Theme.spaceXl * 2, 520)
+                icon: "folder"
+                description: qsTr("尚未导入任何项目。先在侧栏导入项目文件夹，即可为它配置规则。")
             }
         }
 

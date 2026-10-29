@@ -155,7 +155,9 @@ PromptAssets/ModelConfig 因需要固定页头 + 内部列表滚动，保留各�
   无文字 CheckBox（行标签即 `Accessible.name`）；CheckBox 直接写 `Settings.*`；黑名单增删以
   `slice()` 复制后整体赋回 `Settings.readDenyList`，去重按 Windows 大小写不敏感语义。
   判定顺序由后端执行：系统目录封锁 → 黑名单 → 允许层（用户目录 ∪ 当前项目），
-  页面文案与之一致。
+  页面文案与之一致。黑名单为空时提示用 `EmptyState`，外层 `Item` 在空列表时给 34px
+  占位高度——ListView 空时 `contentHeight` 为 0，直接 `Layout.preferredHeight:
+  Math.min(contentHeight, 160)` 会让提示与下方输入行重叠。
 - McpPage：`Repeater model: McpManager.servers`，每项
   `{name, transport, endpoint, enabled, state, toolCount}`；`state` 2=已连接、
   3=失败、其余=连接中/未启用。`addServer` 解析 stdio 命令行为 command+args 或 http URL；

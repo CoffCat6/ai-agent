@@ -63,94 +63,99 @@ SettingsPage {
             Layout.fillWidth: true
         }
 
-        ListView {
-            id: denyListView
+        // 空态要占一行高度：ListView 内容为空时 contentHeight 为 0，
+        // 旧写法把提示居中在一个 0 高度项里，会和下方输入行重叠。
+        Item {
             Layout.fillWidth: true
-            Layout.preferredHeight: Math.min(contentHeight, 160)
-            clip: true
-            spacing: 2
-            model: Settings.readDenyList
+            Layout.preferredHeight: denyListView.count === 0
+                ? 34
+                : Math.min(denyListView.contentHeight, 160)
 
-            delegate: Rectangle {
-                required property var modelData
-                required property int index
-                width: denyListView.width
-                height: 30
-                radius: Theme.radiusField
-                color: Theme.bgSecondary
-                border.width: 1
-                border.color: Theme.borderSubtle
+            ListView {
+                id: denyListView
+                anchors.fill: parent
+                clip: true
+                spacing: 2
+                model: Settings.readDenyList
 
-                RowLayout {
-                    anchors.fill: parent
-                    anchors.leftMargin: Theme.spaceSm
-                    anchors.rightMargin: Theme.spaceXs
-                    spacing: Theme.spaceSm
+                delegate: Rectangle {
+                    required property var modelData
+                    required property int index
+                    width: denyListView.width
+                    height: 30
+                    radius: Theme.radiusField
+                    color: Theme.bgSecondary
+                    border.width: 1
+                    border.color: Theme.borderSubtle
 
-                    AppIcon {
-                        Layout.preferredWidth: 12
-                        Layout.preferredHeight: 12
-                        icon: "shield"
-                        size: 12
-                        iconColor: Theme.statusDanger
-                    }
-                    Text {
-                        id: denyPathText
-                        Layout.fillWidth: true
-                        text: modelData
-                        color: Theme.textPrimary
-                        font.pixelSize: Theme.fontSizeCaption
-                        font.family: Theme.fontMono
-                        elide: Text.ElideRight
+                    RowLayout {
+                        anchors.fill: parent
+                        anchors.leftMargin: Theme.spaceSm
+                        anchors.rightMargin: Theme.spaceXs
+                        spacing: Theme.spaceSm
 
-                        // docs/25 C5: 路径被 elide 截断时悬停查看完整值
-                        HoverHandler { id: denyPathHover }
-                        ToolTip.visible: denyPathHover.hovered && denyPathText.truncated
-                        ToolTip.text: denyPathText.text
-                    }
-                    Rectangle {
-                        id: denyDelBtn
-                        width: 20; height: 20; radius: Theme.radiusSm
-                        color: denyDelMA.containsMouse ? Theme.surfaceHover : "transparent"
-                        border.width: denyDelBtn.activeFocus ? 2 : 0
-                        border.color: Theme.statusDanger
                         AppIcon {
-                            anchors.centerIn: parent
-                            icon: "close"
-                            size: 11
-                            iconColor: denyDelMA.containsMouse
-                                ? Theme.statusDanger : Theme.textSecondary
+                            Layout.preferredWidth: 12
+                            Layout.preferredHeight: 12
+                            icon: "shield"
+                            size: 12
+                            iconColor: Theme.statusDanger
                         }
-                        // docs/25 D3: 黑名单条目删除按钮补键盘与读屏可达
-                        function removeAt() {
-                            const list = Settings.readDenyList.slice()
-                            list.splice(index, 1)
-                            Settings.readDenyList = list
+                        Text {
+                            id: denyPathText
+                            Layout.fillWidth: true
+                            text: modelData
+                            color: Theme.textPrimary
+                            font.pixelSize: Theme.fontSizeCaption
+                            font.family: Theme.fontMono
+                            elide: Text.ElideRight
+
+                            // docs/25 C5: 路径被 elide 截断时悬停查看完整值
+                            HoverHandler { id: denyPathHover }
+                            ToolTip.visible: denyPathHover.hovered && denyPathText.truncated
+                            ToolTip.text: denyPathText.text
                         }
-                        MouseArea {
-                            id: denyDelMA
-                            anchors.fill: parent
-                            hoverEnabled: true
-                            cursorShape: Qt.PointingHandCursor
-                            onClicked: denyDelBtn.removeAt()
+                        Rectangle {
+                            id: denyDelBtn
+                            width: 20; height: 20; radius: Theme.radiusSm
+                            color: denyDelMA.containsMouse ? Theme.surfaceHover : "transparent"
+                            border.width: denyDelBtn.activeFocus ? 2 : 0
+                            border.color: Theme.statusDanger
+                            AppIcon {
+                                anchors.centerIn: parent
+                                icon: "close"
+                                size: 11
+                                iconColor: denyDelMA.containsMouse
+                                    ? Theme.statusDanger : Theme.textSecondary
+                            }
+                            // docs/25 D3: 黑名单条目删除按钮补键盘与读屏可达
+                            function removeAt() {
+                                const list = Settings.readDenyList.slice()
+                                list.splice(index, 1)
+                                Settings.readDenyList = list
+                            }
+                            MouseArea {
+                                id: denyDelMA
+                                anchors.fill: parent
+                                hoverEnabled: true
+                                cursorShape: Qt.PointingHandCursor
+                                onClicked: denyDelBtn.removeAt()
+                            }
+                            activeFocusOnTab: true
+                            Keys.onReturnPressed: denyDelBtn.removeAt()
+                            Keys.onSpacePressed: denyDelBtn.removeAt()
+                            Accessible.role: Accessible.Button
+                            Accessible.name: qsTr("移除黑名单条目 %1").arg(denyPathText.text)
+                            Accessible.onPressAction: denyDelBtn.removeAt()
                         }
-                        activeFocusOnTab: true
-                        Keys.onReturnPressed: denyDelBtn.removeAt()
-                        Keys.onSpacePressed: denyDelBtn.removeAt()
-                        Accessible.role: Accessible.Button
-                        Accessible.name: qsTr("移除黑名单条目 %1").arg(denyPathText.text)
-                        Accessible.onPressAction: denyDelBtn.removeAt()
                     }
                 }
             }
 
-            Text {
-                anchors.centerIn: parent
+            EmptyState {
                 visible: denyListView.count === 0
-                text: qsTr("暂无追加项")
-                color: Theme.textSecondary
-                font.pixelSize: Theme.fontSizeCaption
-                font.family: Theme.fontSans
+                anchors.centerIn: parent
+                title: qsTr("暂无追加项")
             }
         }
 

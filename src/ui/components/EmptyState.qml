@@ -42,6 +42,7 @@ ColumnLayout {
         font.family: Theme.fontSans
         horizontalAlignment: Text.AlignHCenter
         wrapMode: Text.Wrap
+        Accessible.name: root.title
     }
 
     Text {
@@ -53,6 +54,7 @@ ColumnLayout {
         font.family: Theme.fontSans
         horizontalAlignment: Text.AlignHCenter
         wrapMode: Text.Wrap
+        Accessible.name: root.description
     }
 
     RowLayout {

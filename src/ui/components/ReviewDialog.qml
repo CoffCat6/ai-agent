@@ -252,39 +252,12 @@ Dialog {
             Layout.fillHeight: true
             visible: dialog.emptyStateVisible
 
-            Column {
+            EmptyState {
                 anchors.centerIn: parent
                 width: Math.min(parent.width - 40, 460)
-                spacing: 10
-
-                AppIcon {
-                    anchors.horizontalCenter: parent.horizontalCenter
-                    icon: "file"
-                    size: 26
-                    iconColor: Theme.textTertiary
-                }
-
-                Text {
-                    width: parent.width
-                    text: qsTr("本次会话暂无可审阅的文件改动。")
-                    color: Theme.textSecondary
-                    font.family: Theme.fontSans
-                    font.pixelSize: Theme.fontSizeBody
-                    horizontalAlignment: Text.AlignHCenter
-                    wrapMode: Text.Wrap
-                    Accessible.name: text
-                }
-
-                Text {
-                    width: parent.width
-                    text: qsTr("智能体写入或编辑文件后，这里会按目录列出改动；\n选中文件即可在右侧查看内容差异。")
-                    color: Theme.textTertiary
-                    font.family: Theme.fontSans
-                    font.pixelSize: Theme.fontSizeCaption
-                    horizontalAlignment: Text.AlignHCenter
-                    wrapMode: Text.Wrap
-                    Accessible.name: text
-                }
+                icon: "file"
+                title: qsTr("本次会话暂无可审阅的文件改动。")
+                description: qsTr("智能体写入或编辑文件后，这里会按目录列出改动；\n选中文件即可在右侧查看内容差异。")
             }
         }
 

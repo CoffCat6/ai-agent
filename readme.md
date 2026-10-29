@@ -35,7 +35,7 @@ src/
 ├── viewmodels/      # MVVM 层：AgentViewModel / SettingsService / ThemeManager
 ├── ui/              # QML 视图（main.qml + components / panels / pages）
 └── main.cpp         # 组装依赖链并暴露给 QML
-tests/               # QtTest 单测（18 个套件）
+tests/               # QtTest 单测（46 个套件）
 docs/                # 设计文档与技术路线
 ```
 
@@ -74,7 +74,7 @@ cmake --build build
 ctest --test-dir build --output-on-failure
 ```
 
-覆盖范围：沙箱策略、Token 估算、三家 LLM 响应解析、SQLite 记忆、RAG、ReAct 全流程、嵌入分页与进度、ViewModel、设置服务、日志（环形缓冲/Activity 分类/历史回填）、Provider 请求生命周期与并发隔离、Web 搜索、Episodic 记忆、消息重新生成/编辑重发（FORK-701）、附件类型分派与拖放边界（A4）、偏好键账本与开机自启（B）、设置项编辑生命周期（Loader 销毁不丢值，含可复用字段行/销毁掉真实文本两条守卫）、schema v3/v4 迁移与保守 128000 默认，共 24 套件约 260 用例。双语 .ts 已补齐全部 581 条译文（0 unfinished）。
+覆盖范围：沙箱策略、Token 估算、三家 LLM 响应解析、SQLite 记忆、RAG、ReAct 全流程、嵌入分页与进度、ViewModel、设置服务、日志（环形缓冲/Activity 分类/历史回填）、Provider 请求生命周期与并发隔离、Web 搜索、Episodic 记忆、消息重新生成/编辑重发（FORK-701）、附件类型分派与拖放边界（A4）、偏好键账本与开机自启（B）、设置项编辑生命周期（Loader 销毁不丢值，含可复用字段行/销毁掉真实文本两条守卫）、schema v3/v4 迁移与保守 128000 默认、Git 面板与文件改动审阅、知识库导入、代码图表渲染、MCP 与代理链路，共 46 套件约 270 用例，另含 `qmllint_gate` 静态门禁。双语 .ts 已补齐全部译文（0 unfinished）。
 
 ## 配置与数据位置
 

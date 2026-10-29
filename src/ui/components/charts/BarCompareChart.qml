@@ -112,6 +112,13 @@ Item {
     onHighlightIndexChanged: canvas.requestPaint()
     onModeChanged: canvas.requestPaint()          // 单位口径切换（配合新 series）
     onPaletteColorsChanged: canvas.requestPaint() // 明暗主题切换时重取色
+
+    // docs/25 §9 s1：onPaint 还直接读 borderSubtle / textSecondary /
+    // surfaceHover / textPrimary，只跟色板重绘会漏掉非色板色的主题微调。
+    Connections {
+        target: Theme
+        function onThemeChanged() { canvas.requestPaint() }
+    }
     onAxisMaxChanged: canvas.requestPaint()
     onPadLeftChanged: canvas.requestPaint()
     onVisibleChanged: if (visible) canvas.requestPaint()

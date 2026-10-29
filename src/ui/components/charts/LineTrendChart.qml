@@ -111,6 +111,13 @@ Item {
     onPointsChanged: canvas.requestPaint()
     onHighlightIndexChanged: canvas.requestPaint()
     onPaletteColorsChanged: canvas.requestPaint()   // 明暗主题切换时重取色
+
+    // docs/25 §9 s1：onPaint 还直接读 borderSubtle / textSecondary /
+    // bgSecondary / textPrimary，只跟色板重绘会漏掉非色板色的主题微调。
+    Connections {
+        target: Theme
+        function onThemeChanged() { canvas.requestPaint() }
+    }
     onAxisMaxChanged: canvas.requestPaint()
 
     // 可见性重绘：初始位于 Flickable 视口外时 paint 可能被跳过，
