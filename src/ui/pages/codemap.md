@@ -16,7 +16,7 @@
 | GeneralPage.qml | 仅剩 `general` 分类的声明式偏好（托盘/自启/通知）与「关于 NexusAI」 | 是，分类 `general` |
 | SecurityPage.qml | 读取沙箱、项目写入、黑名单、仅本地/内网访问 | 是，分类 `security` |
 | McpPage.qml | MCP 服务器增删、启停、连通状态 | 是，分类 `mcp` |
-| ToolsPage.qml | 单工具启停、联网搜索、默认权限模式 | 是，分类 `tools` |
+| ToolsPage.qml | 内置工具（默认折叠）/ MCP 工具分组启停、联网搜索、默认权限模式 | 是，分类 `tools` |
 | MemoryPage.qml | 长期记忆（episodic）浏览/搜索/遗忘、审计与 Token 保留天数 | 是，分类 `memory` |
 | UsageStatsPage.qml | token/费用/配额统计与请求明细 | 是，分类 `usage`（绑定 `dialog.opened`） |
 | ActivityLogPage.qml | usage_log 操作/网络活动时间线 | 是，分类 `activity`（绑定 `dialog.opened`） |
@@ -166,7 +166,10 @@ PromptAssets/ModelConfig 因需要固定页头 + 内部列表滚动，保留各�
   `{name, description, level(safe/requires_confirm/dangerous), enabled,
   blockedByPolicy, source(builtin/MCP)}`；Switch 调 `AgentVM.setToolEnabled`，
   由 ToolRegistry 写 `tools/disabled` 并刷新模型。`blockedByPolicy` 只做徽标，
-  不改变 Switch 的用户层状态。联网搜索 provider 是 `SettingRow` + ComboBox，API Key 是
+  不改变 Switch 的用户层状态。列表按 `source` 拆成两个 `SettingsSection`：
+  「内置工具」默认折叠（badge 显示总数/已启用数，避免十几行铺满首屏），
+  「MCP 工具」单独成组、无工具时显示前往 MCP 页的提示；行组件是 `ToolRow.qml`。
+  联网搜索 provider 是 `SettingRow` + ComboBox，API Key 是
   `SettingsField`（密文、留空不改、提交后清空、`statusText` 显示已配置）+「清除密钥」按钮；
   key 已配置时只显示 `webSearchApiKeySet` 的占位文案，不回显明文。测试按钮在请求期间改文案
   「测试中…」，结果写入 `StatusLine`（busy/success/warning）。

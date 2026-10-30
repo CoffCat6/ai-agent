@@ -10,7 +10,19 @@ SettingsPage {
     Accessible.name: qsTr("工具管理页")
 
     title: qsTr("工具管理")
-    description: qsTr("控制哪些工具可被 AI 调用。禁用的工具不会暴露给模型。")
+    description: qsTr("控制哪些工具可被 AI 调用。禁用的工具不会暴露给模型；内置工具默认折叠，MCP 工具单独成组。")
+
+    // 工具列表按来源拆成两组：内置工具默认折叠，MCP 工具单独成组，
+    // 让「本地随附」与「服务器提供」不再混在同一串里。两个名字都以
+    // AgentVM.toolRegistryModel 的 source 字段为准（MCP 工具名带 mcp__ 前缀）。
+    readonly property var builtinTools:
+        AgentVM.toolRegistryModel.filter(t => t.source !== "MCP")
+    readonly property var mcpTools:
+        AgentVM.toolRegistryModel.filter(t => t.source === "MCP")
+    readonly property int builtinEnabledCount:
+        page.builtinTools.filter(t => t.enabled).length
+    readonly property int mcpEnabledCount:
+        page.mcpTools.filter(t => t.enabled).length
 
     // 联网搜索后端的本地化显示名。「值集合」单一来源是
     // Settings.webSearchProviders（WebSearchProviderRegistry，与 schema
@@ -21,82 +33,49 @@ SettingsPage {
         "deepseek": qsTr("DeepSeek Search")
     })
 
-    Repeater {
-        model: AgentVM.toolRegistryModel
+    // ── 内置工具（默认折叠，避免一进页面就是十几行）──
+    SettingsSection {
+        objectName: "toolsBuiltinSection"
+        title: qsTr("内置工具")
+        description: qsTr("随应用提供的工具。展开后可逐个启停；禁用的工具不会暴露给模型。")
+        collapsible: true
+        collapsed: true
+        badge: page.builtinTools.length === 0
+               ? qsTr("暂无")
+               : qsTr("%1 个 · 已启用 %2").arg(page.builtinTools.length)
+                     .arg(page.builtinEnabledCount)
 
-        delegate: Rectangle {
+        Repeater {
+            model: page.builtinTools
+            delegate: ToolRow {}
+        }
+    }
+
+    // ── MCP 工具（由服务器提供，与内置工具分开管理）──
+    SettingsSection {
+        objectName: "toolsMcpSection"
+        title: qsTr("MCP 工具")
+        description: qsTr("由已连接的 MCP 服务器提供，与内置工具分开管理。")
+        collapsible: true
+        badge: page.mcpTools.length === 0
+               ? ""
+               : qsTr("%1 个 · 已启用 %2").arg(page.mcpTools.length)
+                     .arg(page.mcpEnabledCount)
+
+        Repeater {
+            model: page.mcpTools
+            delegate: ToolRow {}
+        }
+
+        Text {
+            objectName: "toolsMcpEmptyHint"
+            visible: page.mcpTools.length === 0
             Layout.fillWidth: true
-            implicitHeight: row.implicitHeight + Theme.spaceLg
-            color: Theme.bgSecondary
-            radius: Theme.radiusMd
-            border.width: 1
-            border.color: Theme.borderSubtle
-
-            RowLayout {
-                id: row
-                anchors.fill: parent
-                anchors.margins: Theme.spaceMd
-                spacing: Theme.spaceMd
-
-                ColumnLayout {
-                    Layout.fillWidth: true
-                    Layout.minimumWidth: 0
-                    spacing: Theme.spaceXs
-
-                    RowLayout {
-                        spacing: Theme.spaceSm
-                        Text {
-                            text: modelData.name
-                            color: Theme.textPrimary
-                            font.bold: true
-                            font.pixelSize: Theme.fontSizeBody
-                            font.family: Theme.fontSans
-                        }
-                        Text {
-                            text: modelData.source === "MCP" ? "· MCP" : "· " + qsTr("内置")
-                            color: Theme.textSecondary
-                            font.pixelSize: Theme.fontSizeMicro
-                            font.family: Theme.fontSans
-                        }
-                        Text {
-                            text: "· " + (modelData.level === "safe" ? qsTr("自动")
-                                        : modelData.level === "requires_confirm" ? qsTr("需确认")
-                                        : qsTr("危险"))
-                            // docs/25 C6: 危险级别色归 Theme token
-                            color: modelData.level === "dangerous" ? Theme.statusDanger : Theme.textSecondary
-                            font.pixelSize: Theme.fontSizeMicro
-                            font.family: Theme.fontSans
-                        }
-                        // docs/17 B1: 策略拦截徽标——Switch 只反映用户层，
-                        // 被仅本地模式等策略拦截时在此可见。
-                        Text {
-                            visible: modelData.blockedByPolicy === true
-                            text: "· " + qsTr("仅本地模式拦截")
-                            color: Theme.statusWarning
-                            font.pixelSize: Theme.fontSizeMicro
-                            font.bold: true
-                            font.family: Theme.fontSans
-                        }
-                    }
-
-                    Text {
-                        text: modelData.description
-                        color: Theme.textSecondary
-                        font.pixelSize: Theme.fontSizeCaption
-                        font.family: Theme.fontSans
-                        wrapMode: Text.Wrap
-                        Layout.fillWidth: true
-                    }
-                }
-
-                Switch {
-                    id: toolEnableSwitch
-                    // docs/25 D3: 读屏可区分是哪个工具的开关
-                    Accessible.name: qsTr("启用工具 %1").arg(modelData.name)
-                    checked: modelData.enabled
-                    onToggled: AgentVM.setToolEnabled(modelData.name, checked)
-                }
-            }
+            text: qsTr("暂无 MCP 工具。先到「MCP 服务器」页连接服务器，服务器提供的工具会出现在这里。")
+            color: Theme.textSecondary
+            font.pixelSize: Theme.fontSizeCaption
+            font.family: Theme.fontSans
+            wrapMode: Text.Wrap
         }
     }
 

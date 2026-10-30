@@ -473,3 +473,18 @@ add_test(NAME test_icon_flip
     COMMAND ${CMAKE_COMMAND} -E env
         "QT_QPA_PLATFORM_PLUGIN_PATH=${QT6_INSTALL_PREFIX}/${QT6_INSTALL_PLUGINS}/platforms"
         $<TARGET_FILE:test_icon_flip> -platform offscreen)
+
+# 工具管理页：内置/MCP 分组、内置组默认折叠、展开后行可见。
+# 与 test_charts_qml / test_icon_flip 共用文件系统副本 + offscreen 方案。
+add_executable(test_tools_page_qml test_tools_page_qml.cpp)
+target_link_libraries(test_tools_page_qml PRIVATE
+    nexus_core nexus_infra nexus_viewmodels nexus_viewmodelsplugin
+    Qt6::Test Qt6::Qml Qt6::Quick)
+target_compile_definitions(test_tools_page_qml PRIVATE
+    NEXUS_TEST_QML_DIR="${CMAKE_CURRENT_SOURCE_DIR}/qml"
+    NEXUS_BUILD_DIR="${CMAKE_BINARY_DIR}")
+add_dependencies(test_tools_page_qml nexus_ai)
+add_test(NAME test_tools_page_qml
+    COMMAND ${CMAKE_COMMAND} -E env
+        "QT_QPA_PLATFORM_PLUGIN_PATH=${QT6_INSTALL_PREFIX}/${QT6_INSTALL_PLUGINS}/platforms"
+        $<TARGET_FILE:test_tools_page_qml> -platform offscreen)
