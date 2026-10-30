@@ -29,6 +29,12 @@ Item {
     property bool testOk: false
     property string savedHint: ""
 
+    // 「从端点拉取模型」的独立状态机：与「测试连接」互不影响（列举失败
+    // 不代表聊天不可用，反之亦然）。
+    property bool fetchingModels: false
+    property string fetchModelsResult: ""
+    property bool fetchModelsOk: false
+
     // 连接测试用哪个模型：默认当前模型，用户可从本配置的模型列表里换一个
     // （典型场景：刚加进来的新模型名还不确定，想单独验证它能不能通，又不想把
     // 当前模型改掉）。列表为空时按钮直接禁用，见下方说明文案。
@@ -226,6 +232,26 @@ Item {
             page.testing = false
             page.testOk = ok
             page.testResult = message
+        }
+
+        function onModelsFetched(ok, models, message) {
+            page.fetchingModels = false
+            page.fetchModelsOk = ok
+            if (!ok) {
+                page.fetchModelsResult = message
+                return
+            }
+            const id = page.editing !== null ? page.editing.id : ""
+            const known = page.editing !== null ? (page.editing.models || []) : []
+            let added = 0
+            for (let i = 0; i < models.length; ++i) {
+                const name = String(models[i])
+                if (name.length === 0 || known.indexOf(name) >= 0) continue
+                Settings.addModelToProfile(id, name)
+                added += 1
+            }
+            page.fetchModelsResult = qsTr("共 %1 个模型，新增 %2 个。")
+                .arg(models.length).arg(added)
         }
     }
 
@@ -696,6 +722,49 @@ Item {
                             }
                         }
                     }
+                }
+
+                RowLayout {
+                    Layout.fillWidth: true
+                    spacing: Theme.spaceSm
+
+                    AppButton {
+                        objectName: "modelFetchModels"
+                        text: page.fetchingModels
+                            ? qsTr("正在拉取…") : qsTr("从端点拉取模型")
+                        // 没有服务地址就无从列举；按钮禁用但把原因写在下面。
+                        enabled: !page.fetchingModels && page.editing !== null
+                                 && String(page.editing.baseUrl || "").trim() !== ""
+                        onClicked: {
+                            page.fetchingModels = true
+                            page.fetchModelsResult = ""
+                            ConnectionTester.fetchModels(page.editing.apiProtocol,
+                                                         page.editing.baseUrl,
+                                                         page.editing.apiKey)
+                        }
+                    }
+
+                    StatusLine {
+                        Layout.fillWidth: true
+                        visible: page.fetchingModels || page.fetchModelsResult !== ""
+                        text: page.fetchingModels
+                            ? qsTr("正在向端点请求模型列表（最多等 20 秒）…")
+                            : page.fetchModelsResult
+                        state: page.fetchingModels ? "busy"
+                             : (page.fetchModelsOk ? "success" : "danger")
+                        mono: !page.fetchingModels && !page.fetchModelsOk
+                    }
+                }
+
+                Text {
+                    visible: page.editing !== null
+                             && String(page.editing.baseUrl || "").trim() === ""
+                    Layout.fillWidth: true
+                    text: qsTr("先在上方「服务地址」里填端点，才能从端点拉取模型。")
+                    color: Theme.textSecondary
+                    font.pixelSize: Theme.fontSizeCaption
+                    font.family: Theme.fontSans
+                    wrapMode: Text.WordWrap
                 }
 
                 Text {

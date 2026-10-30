@@ -123,6 +123,11 @@ const QVector<PreferenceMeta>& SettingsSchema::preferences() {
         preference(QStringLiteral("settings.lastCategory"), QString(),
                    QT_TRANSLATE_NOOP("NexusAI", "上次访问分类"), QStringLiteral("model"),
                    PreferenceType::String),
+        // 设置中心左侧分组折叠状态（逗号分隔的 groupId）。与 lastCategory
+        // 同属「导航自身的写入」：无分类、无显示名、不进搜索与备份。
+        preference(QStringLiteral("settings.collapsedGroups"), QString(),
+                   QT_TRANSLATE_NOOP("NexusAI", "导航分组折叠状态"), QString(),
+                   PreferenceType::String),
         preference(QStringLiteral("ui.themeMode"), QStringLiteral("interface"),
                    QT_TRANSLATE_NOOP("NexusAI", "主题模式"), QStringLiteral("auto"),
                    PreferenceType::Enum,

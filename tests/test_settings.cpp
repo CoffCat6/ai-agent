@@ -1023,6 +1023,7 @@ private slots:
             "prefs/v1/notice.enabled",
             // M2 内部键：PreferenceStore 写入的物理路径
             "prefs/v1/settings.lastCategory",
+            "prefs/v1/settings.collapsedGroups",
             // Legacy dark-mode migration key remains in the catalog.
             "theme/dark",
             // docs/17 A0/A1
@@ -2732,6 +2733,10 @@ Item {
         QCOMPARE(catalog->resetMode(QStringLiteral("knowledge")), QStringLiteral("page"));
         QCOMPARE(catalog->resetMode(QStringLiteral("memory")), QStringLiteral("page"));
         QCOMPARE(catalog->resetMode(QStringLiteral("logs")), QStringLiteral("page"));
+        // 备份策略原先登记在 memory 且不可搜索；现已搬到备份页，页面
+        // 通过 Settings.resetBackupToDefaults() 复位。
+        QCOMPARE(catalog->resetMode(QStringLiteral("backup")), QStringLiteral("page"));
+        QVERIFY(!catalog->search(QStringLiteral("备份保留")).isEmpty());
 
         // 声明式偏好由 EditBuffer.resetToDefault 复位。
         QCOMPARE(catalog->resetMode(QStringLiteral("interface")), QStringLiteral("preference"));

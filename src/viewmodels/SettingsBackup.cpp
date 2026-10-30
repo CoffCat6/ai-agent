@@ -4,10 +4,16 @@
 #include "core/mcp/McpConfig.h"
 #include "infrastructure/llm/LlmProtocolRegistry.h"
 #include "McpManager.h"
+#include "core/utils/Logger.h"
 #include "core/utils/SettingsRepository.h"
 
+#include <QCoreApplication>
 #include <QDateTime>
+#include <QDir>
 #include <QFile>
+#include <QFileInfo>
+#include <QStandardPaths>
+#include <QSysInfo>
 #include <QJsonArray>
 #include <QJsonDocument>
 #include <QJsonObject>
@@ -30,6 +36,21 @@ QString localPath(const QString& path) {
     return url.isLocalFile() ? url.toLocalFile() : path;
 }
 
+// 诊断包里的文本文件：要么完整写下，要么什么都不留。
+bool writeTextFile(const QString& path, const QString& text, QString* error) {
+    QSaveFile file(path);
+    if (!file.open(QIODevice::WriteOnly)) {
+        if (error) *error = file.errorString();
+        return false;
+    }
+    const QByteArray bytes = text.toUtf8();
+    if (file.write(bytes) != bytes.size() || !file.commit()) {
+        if (error) *error = file.errorString();
+        return false;
+    }
+    return true;
+}
+
 // Only explicitly registered, portable keys are eligible. Never restore
 // permissions, system integration, volatile layout, or credentials implicitly.
 bool portableKey(const SettingsKeyDef& def) {
@@ -41,6 +62,7 @@ bool portableKey(const SettingsKeyDef& def) {
         || key == QLatin1String("projects/activeId")
         || key == QLatin1String("settings.lastCategory")
         || key == QLatin1String("prefs/v1/settings.lastCategory")
+        || key == QLatin1String("prefs/v1/settings.collapsedGroups")
         || key == QLatin1String("prefs/v1/general.autoStart")
         || key.startsWith(QLatin1String("security/"))
         || key.startsWith(QLatin1String("ui/"))) return false;
@@ -139,8 +161,7 @@ void SettingsBackup::setError(const QString& error) {
     emit lastErrorChanged();
 }
 
-bool SettingsBackup::exportSettings(const QString& path) {
-    setError({});
+QJsonObject SettingsBackup::buildExportPayload() {
     QJsonObject settings;
     const auto keys = portableKeys();
     QStringList keysToRead = keys.keys();
@@ -151,7 +172,7 @@ bool SettingsBackup::exportSettings(const QString& path) {
     if (!SettingsRepository::readBatch(keysToRead, &storedValues, &presentKeys,
                                        &readError)) {
         setError(tr("无法读取当前设置：%1").arg(readError));
-        return false;
+        return {};
     }
     for (auto it = keys.cbegin(); it != keys.cend(); ++it) {
         if (!presentKeys.contains(it.key())) continue;
@@ -175,12 +196,12 @@ bool SettingsBackup::exportSettings(const QString& path) {
             storedValues.value(QStringLiteral("modelProfiles")).toString().toUtf8(), &error);
         if (error.error != QJsonParseError::NoError || !doc.isArray()) {
             setError(tr("模型配置已损坏，无法安全导出"));
-            return false;
+            return {};
         }
         for (const auto& entry : doc.array()) {
             if (!entry.isObject()) {
                 setError(tr("模型配置包含无效条目"));
-                return false;
+                return {};
             }
             profiles.append(cleanProfile(entry.toObject()));
         }
@@ -194,31 +215,37 @@ bool SettingsBackup::exportSettings(const QString& path) {
         QFile file(mcpPath);
         if (!file.open(QIODevice::ReadOnly)) {
             setError(tr("无法读取 MCP 服务器配置"));
-            return false;
+            return {};
         }
         QJsonParseError error;
         const QJsonDocument doc = QJsonDocument::fromJson(file.readAll(), &error);
         if (error.error != QJsonParseError::NoError || !doc.isObject()
             || !doc.object().value(QStringLiteral("servers")).isArray()) {
             setError(tr("MCP 服务器配置已损坏"));
-            return false;
+            return {};
         }
         for (const auto& entry : doc.object().value(QStringLiteral("servers")).toArray()) {
             if (!entry.isObject()) {
                 setError(tr("MCP 服务器配置包含无效条目"));
-                return false;
+                return {};
             }
             servers.append(cleanServer(entry.toObject()));
         }
     }
 
-    QJsonObject root{{QStringLiteral("format"), QString::fromLatin1(kFormat)},
-                     {QStringLiteral("version"), kVersion},
-                     {QStringLiteral("schemaVersion"), SettingsSchema::kSchemaVersion},
-                     {QStringLiteral("exportedAt"), QDateTime::currentDateTimeUtc().toString(Qt::ISODate)},
-                     {QStringLiteral("settings"), settings},
-                     {QStringLiteral("profiles"), profiles},
-                     {QStringLiteral("mcpServers"), servers}};
+    return QJsonObject{{QStringLiteral("format"), QString::fromLatin1(kFormat)},
+                       {QStringLiteral("version"), kVersion},
+                       {QStringLiteral("schemaVersion"), SettingsSchema::kSchemaVersion},
+                       {QStringLiteral("exportedAt"), QDateTime::currentDateTimeUtc().toString(Qt::ISODate)},
+                       {QStringLiteral("settings"), settings},
+                       {QStringLiteral("profiles"), profiles},
+                       {QStringLiteral("mcpServers"), servers}};
+}
+
+bool SettingsBackup::exportSettings(const QString& path) {
+    setError({});
+    const QJsonObject root = buildExportPayload();
+    if (root.isEmpty()) return false; // buildExportPayload 已设置 lastError
     QSaveFile file(localPath(path));
     if (!file.open(QIODevice::WriteOnly)) {
         setError(tr("无法创建导出文件：%1").arg(file.errorString()));
@@ -230,6 +257,99 @@ bool SettingsBackup::exportSettings(const QString& path) {
         return false;
     }
     return true;
+}
+
+// 诊断包 = 脱敏设置快照 + 日志副本 + 环境信息。Qt 没有公开的 zip 写入
+// API，与其背一个第三方压缩依赖，不如导出一个目录，用户自己打包即可。
+QString SettingsBackup::exportDiagnostics(const QString& directory) {
+    setError({});
+    const QString basePath = localPath(directory).trimmed();
+    if (basePath.isEmpty()) {
+        setError(tr("未指定诊断包保存位置"));
+        return {};
+    }
+    QDir baseDir(basePath);
+    if (!baseDir.exists()) {
+        setError(tr("保存位置不存在：%1").arg(basePath));
+        return {};
+    }
+
+    // 同一秒内重复导出不覆盖：追加 -2、-3 …（诊断包之间常拿来对比）。
+    const QString stamp =
+        QDateTime::currentDateTime().toString(QStringLiteral("yyyyMMdd-HHmmss"));
+    QString folderName = QStringLiteral("nexus-diagnostics-%1").arg(stamp);
+    for (int suffix = 2; baseDir.exists(folderName); ++suffix)
+        folderName = QStringLiteral("nexus-diagnostics-%1-%2").arg(stamp).arg(suffix);
+    if (!baseDir.mkpath(folderName)) {
+        setError(tr("无法创建诊断包目录：%1").arg(folderName));
+        return {};
+    }
+    const QDir bundle(baseDir.filePath(folderName));
+
+    // 1) 设置快照：与「导出设置」共用过滤规则，密钥字段不会写入。
+    const QJsonObject payload = buildExportPayload();
+    if (payload.isEmpty()) return {}; // lastError 已由 buildExportPayload 设置
+    QString writeError;
+    if (!writeTextFile(bundle.filePath(QStringLiteral("settings.json")),
+                       QString::fromUtf8(QJsonDocument(payload).toJson(
+                           QJsonDocument::Indented)),
+                       &writeError)) {
+        setError(tr("写入 settings.json 失败：%1").arg(writeError));
+        return {};
+    }
+
+    // 2) 日志副本（当前文件 + 轮转历史）。单个文件超过 32 MB 就跳过：
+    // 诊断包是给人看的，不该因为一个超大日志把导出卡住。
+    int copiedLogs = 0;
+    int skippedLogs = 0;
+    constexpr qint64 kMaxLogBytes = 32LL * 1024 * 1024;
+    if (bundle.mkpath(QStringLiteral("logs"))) {
+        const QFileInfoList logFiles = QDir(Logger::logDir())
+            .entryInfoList({QStringLiteral("nexus-*.log")}, QDir::Files, QDir::Time);
+        for (const QFileInfo& info : logFiles) {
+            if (info.size() > kMaxLogBytes) {
+                ++skippedLogs;
+                continue;
+            }
+            const QString target =
+                bundle.filePath(QStringLiteral("logs/") + info.fileName());
+            if (QFile::copy(info.absoluteFilePath(), target)) ++copiedLogs;
+            else ++skippedLogs;
+        }
+    }
+
+    // 3) 环境信息：只记录「环境是什么」，不记录用户内容。
+    const QStringList env{
+        QStringLiteral("Nexus AI 诊断包"),
+        QStringLiteral("生成时间: %1")
+            .arg(QDateTime::currentDateTime().toString(Qt::ISODate)),
+        QStringLiteral("应用版本: %1").arg(QCoreApplication::applicationVersion()),
+        QStringLiteral("Qt 运行时: %1").arg(QString::fromLatin1(qVersion())),
+        QStringLiteral("操作系统: %1").arg(QSysInfo::prettyProductName()),
+        QStringLiteral("内核: %1 %2")
+            .arg(QSysInfo::kernelType(), QSysInfo::kernelVersion()),
+        QStringLiteral("CPU 架构: %1（构建：%2）")
+            .arg(QSysInfo::currentCpuArchitecture(),
+                 QSysInfo::buildCpuArchitecture()),
+        QStringLiteral("应用数据目录: %1")
+            .arg(QStandardPaths::writableLocation(
+                QStandardPaths::AppLocalDataLocation)),
+        QStringLiteral("日志目录: %1").arg(Logger::logDir()),
+        QStringLiteral("最低日志级别: %1")
+            .arg(QString::fromLatin1(Logger::levelName(Logger::minLevel()))),
+        QStringLiteral("日志文件: 已复制 %1 个，跳过 %2 个（超过 32 MB 或无法读取）")
+            .arg(copiedLogs).arg(skippedLogs),
+        QString(),
+        QStringLiteral("说明：settings.json 与「导出设置」使用同一份过滤规则——"),
+        QStringLiteral("模型 API Key、Web Search API Key、MCP 环境变量与请求头不会写入。"),
+        QStringLiteral("自由文本字段与 MCP 命令参数仍可能包含路径等敏感信息，分享前请检查。")};
+    if (!writeTextFile(bundle.filePath(QStringLiteral("environment.txt")),
+                       env.join(QLatin1Char('\n')), &writeError)) {
+        setError(tr("写入 environment.txt 失败：%1").arg(writeError));
+        return {};
+    }
+
+    return bundle.absolutePath();
 }
 
 QVariantMap SettingsBackup::parseImport(const QString& path, QVariantMap* settings,

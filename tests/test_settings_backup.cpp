@@ -163,6 +163,90 @@ private slots:
             QVERIFY(QFile::remove(mcpPath));
         }
     }
+
+    // 设置页「编辑服务器」的数据链路：updateServer 必须在原条目上生效
+    // （含改名），保留启用状态，并把 env / headers 一起写回磁盘。
+    // 旧实现的替代路径是删了重加——每删一次，服务器提供的工具全部掉线。
+    void mcpServerUpdateRoundTrip() {
+        const QString configPath = McpConfig::configFilePath();
+        QFile original(configPath);
+        const bool existed = original.exists();
+        QByteArray previous;
+        if (existed) {
+            QVERIFY(original.open(QIODevice::ReadOnly));
+            previous = original.readAll();
+        }
+        QFile::remove(configPath);
+
+        auto* manager = McpManager::instance();
+        manager->applyRestoredConfigs({});
+        QVERIFY(manager->servers().isEmpty());
+
+        // 先建一条禁用条目（不触发进程启动），再改名并补 HTTP 字段。
+        QVERIFY(manager->addServer(QVariantMap{
+            {QStringLiteral("name"), QStringLiteral("t-edit")},
+            {QStringLiteral("transport"), QStringLiteral("stdio")},
+            {QStringLiteral("command"), QStringLiteral("cmd")},
+            {QStringLiteral("enabled"), false}}));
+        QVERIFY(!manager->addServer(QVariantMap{
+            {QStringLiteral("name"), QStringLiteral("t-edit")},
+            {QStringLiteral("transport"), QStringLiteral("stdio")},
+            {QStringLiteral("command"), QStringLiteral("cmd")},
+            {QStringLiteral("enabled"), false}}));
+
+        QVERIFY(manager->updateServer(QStringLiteral("t-edit"), QVariantMap{
+            {QStringLiteral("name"), QStringLiteral("t-edit-2")},
+            {QStringLiteral("transport"), QStringLiteral("http")},
+            {QStringLiteral("url"), QStringLiteral("https://example.invalid/mcp")},
+            {QStringLiteral("headers"), QVariantMap{
+                {QStringLiteral("Authorization"), QStringLiteral("Bearer x")}}}}));
+
+        const QVariantList servers = manager->servers();
+        QCOMPARE(servers.size(), 1);
+        const QVariantMap updated = servers.first().toMap();
+        QCOMPARE(updated.value(QStringLiteral("name")).toString(),
+                 QStringLiteral("t-edit-2"));
+        QCOMPARE(updated.value(QStringLiteral("transport")).toString(),
+                 QStringLiteral("http"));
+        QCOMPARE(updated.value(QStringLiteral("url")).toString(),
+                 QStringLiteral("https://example.invalid/mcp"));
+        QCOMPARE(updated.value(QStringLiteral("headers")).toMap()
+                     .value(QStringLiteral("Authorization")).toString(),
+                 QStringLiteral("Bearer x"));
+        // 编辑不改变启用状态：弹窗里没有这个开关。
+        QVERIFY(!updated.value(QStringLiteral("enabled")).toBool());
+
+        const auto persisted = McpConfig::load();
+        QCOMPARE(persisted.size(), 1);
+        QCOMPARE(persisted.first().value(QStringLiteral("name")).toString(),
+                 QStringLiteral("t-edit-2"));
+
+        // 改名撞上已有条目必须失败，且不破坏现有配置。
+        QVERIFY(manager->addServer(QVariantMap{
+            {QStringLiteral("name"), QStringLiteral("t-other")},
+            {QStringLiteral("transport"), QStringLiteral("stdio")},
+            {QStringLiteral("command"), QStringLiteral("cmd")},
+            {QStringLiteral("enabled"), false}}));
+        QVERIFY(!manager->updateServer(QStringLiteral("t-edit-2"), QVariantMap{
+            {QStringLiteral("name"), QStringLiteral("t-other")},
+            {QStringLiteral("transport"), QStringLiteral("http")},
+            {QStringLiteral("url"), QStringLiteral("https://example.invalid/mcp")}}));
+        QCOMPARE(manager->servers().size(), 2);
+        QCOMPARE(McpConfig::load().size(), 2);
+
+        manager->removeServer(QStringLiteral("t-edit-2"));
+        manager->removeServer(QStringLiteral("t-other"));
+        QVERIFY(manager->servers().isEmpty());
+
+        if (existed) {
+            QSaveFile saved(configPath);
+            QVERIFY(saved.open(QIODevice::WriteOnly));
+            QCOMPARE(saved.write(previous), previous.size());
+            QVERIFY(saved.commit());
+        } else {
+            QVERIFY(QFile::remove(configPath));
+        }
+    }
 };
 
 QTEST_GUILESS_MAIN(TestSettingsBackup)

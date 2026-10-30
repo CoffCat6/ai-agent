@@ -177,6 +177,18 @@ target_link_libraries(test_settings_backup PRIVATE
     nexus_core nexus_infra nexus_viewmodels Qt6::Test Qt6::Qml)
 add_test(NAME test_settings_backup COMMAND test_settings_backup)
 
+# 设置页「从端点拉取模型」：列举端点与响应解析是静态纯函数，不需要网络。
+add_executable(test_model_list test_model_list.cpp)
+target_link_libraries(test_model_list PRIVATE
+    nexus_core nexus_infra nexus_viewmodels Qt6::Test Qt6::Network)
+add_test(NAME test_model_list COMMAND test_model_list)
+
+# 用量页「导出 CSV」：BOM / RFC 4180 / 公式注入防护 / 写失败路径。
+add_executable(test_usage_export test_usage_export.cpp)
+target_link_libraries(test_usage_export PRIVATE
+    nexus_core nexus_infra nexus_viewmodels Qt6::Test)
+add_test(NAME test_usage_export COMMAND test_usage_export)
+
 # Batch 23 F11: syntax highlighting — needs QQuickTextDocument (QtQuick)
 add_executable(test_highlighter test_highlighter.cpp)
 target_link_libraries(test_highlighter PRIVATE

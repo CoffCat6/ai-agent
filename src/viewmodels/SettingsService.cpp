@@ -1740,6 +1740,13 @@ void SettingsService::resetMemoryToDefaults() {
         QStringLiteral("memory/tokenRetentionDays")).toInt());
 }
 
+void SettingsService::resetBackupToDefaults() {
+    setBackupOnStartup(SettingsSchema::defaultValue(
+        QStringLiteral("memory/backupOnStartup")).toBool());
+    setBackupKeepCount(SettingsSchema::defaultValue(
+        QStringLiteral("memory/backupKeepCount")).toInt());
+}
+
 void SettingsService::setDefaultPermissionMode(const QString& v) {
     if (!SettingsSchema::options(QStringLiteral("agent/defaultPermissionMode")).contains(v))
         return;

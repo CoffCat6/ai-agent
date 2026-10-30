@@ -31,6 +31,26 @@ Rectangle {
 
     signal categorySelected(string id)
 
+    // 折叠状态跨会话保留：否则每次打开设置都回到「数据与诊断收起」的
+    // 出厂状态，用户刚展开的组下次又没了。自动展开（当前分类所在组）
+    // 只改内存，不回写存储，避免"打开一次设置就把折叠偏好洗掉"。
+    readonly property string collapsedGroupsKey: "settings.collapsedGroups"
+
+    function loadCollapsedGroups() {
+        if (!PreferenceStore.hasStoredValue(collapsedGroupsKey)) return
+        const stored = PreferenceStore.load(collapsedGroupsKey)
+        const next = {}
+        const text = typeof stored === "string" ? stored : ""
+        for (const id of text.split(","))
+            if (id.length > 0) next[id] = true
+        collapsedGroups = next
+    }
+
+    function persistCollapsedGroups() {
+        PreferenceStore.save(collapsedGroupsKey,
+                             Object.keys(collapsedGroups).join(","))
+    }
+
     readonly property var categoryIcons: ({
         "model": "layers",
         "agent": "preset",
@@ -58,18 +78,19 @@ Rectangle {
         return !compact && collapsedGroups[groupId] === true
     }
 
-    function setGroupCollapsed(groupId, collapsed) {
+    function setGroupCollapsed(groupId, collapsed, persist) {
         const next = {}
         for (const key in collapsedGroups)
             next[key] = collapsedGroups[key]
         if (collapsed) next[groupId] = true
         else delete next[groupId]
         collapsedGroups = next
+        if (persist) persistCollapsedGroups()
     }
 
     function toggleGroup(groupId) {
         if (compact) return
-        setGroupCollapsed(groupId, !groupCollapsed(groupId))
+        setGroupCollapsed(groupId, !groupCollapsed(groupId), true)
     }
 
     // 当前分类必须可见：上次分类、搜索结果跳转、compact 切换都可能落在
@@ -83,7 +104,10 @@ Rectangle {
 
     onCurrentCategoryChanged: ensureActiveGroupExpanded()
     onCompactChanged: ensureActiveGroupExpanded()
-    Component.onCompleted: ensureActiveGroupExpanded()
+    Component.onCompleted: {
+        loadCollapsedGroups()
+        ensureActiveGroupExpanded()
+    }
 
     color: Theme.bgSecondary
 

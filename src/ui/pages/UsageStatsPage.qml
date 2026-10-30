@@ -1,6 +1,7 @@
 import QtQuick
 import QtQuick.Layouts
 import QtQuick.Controls
+import QtQuick.Dialogs
 import NexusAI
 import NexusAI.ViewModels
 
@@ -42,6 +43,9 @@ Item {
     property var detailRows: []
     property int detailTotal: 0
     property int detailOffset: 0
+    // 请求明细导出的结果提示（成功/失败共用一行，切范围时清空）。
+    property string exportMessage: ""
+    property bool exportIsError: false
 
     // docs/25 C5: 费用明细空态判定（表头/合计/预估行共用）
     readonly property bool costRowsEmpty: (costStatsData.byModel || []).length === 0
@@ -125,6 +129,7 @@ Item {
 
     function refresh() {
         var p = page.rangeParams
+        page.exportMessage = ""
         // 范围模式下 from 恒 > 0，recentDays 被忽略（30 仅为防御性回退值）
         stats = AgentVM.tokenStatsDetailed(30, p.from, p.to)
         costStatsData = AgentVM.costStats(30, p.from, p.to)
@@ -152,6 +157,17 @@ Item {
         page.detailTotal = Number(resp && resp.total ? resp.total : 0)
         page.detailRows = reset ? rows : page.detailRows.concat(rows)
         page.detailOffset = reset ? rows.length : page.detailOffset + rows.length
+    }
+
+    // 导出的是表格当前视图（筛选 + 排序后已加载的行），所见即所得；
+    // 文件写入与 CSV 转义都在 AgentVM 里（便于单测/复用）。
+    function exportDetailCsv() {
+        if (page.detailRows.length === 0) {
+            page.exportIsError = true
+            page.exportMessage = qsTr("没有可导出的明细。")
+            return
+        }
+        usageExportDialog.open()
     }
 
     // ── Batch 6 T3: 自定义日期解析（yyyy-MM-dd，本地自然日）──
@@ -1028,12 +1044,36 @@ Item {
                     color: Theme.textSecondary
                     font.pixelSize: Theme.fontSizeCaption
                     font.family: Theme.fontSans
-                        elide: Text.ElideRight
+                    elide: Text.ElideRight
                     Layout.maximumWidth: 240
+                }
+                Text {
+                    visible: page.exportMessage !== ""
+                    text: page.exportMessage
+                    color: page.exportIsError ? Theme.statusDanger : Theme.statusSuccess
+                    font.pixelSize: Theme.fontSizeCaption
+                    font.family: Theme.fontSans
+                    elide: Text.ElideRight
+                    Layout.maximumWidth: 240
+                    Accessible.role: Accessible.StaticText
+                    Accessible.name: text
+                }
+                AppButton {
+                    objectName: "usageExportCsv"
+                    text: qsTr("导出 CSV")
+                    enabled: page.detailRows.length > 0
+                    onClicked: page.exportDetailCsv()
+                    Accessible.name: qsTr("将请求明细导出为 CSV 文件")
+                    // 导出的是「已加载」的行：先点「加载更多」再导出才能拿到全部。
+                    HoverHandler { id: exportHover }
+                    ToolTip.visible: exportHover.hovered
+                    ToolTip.text: qsTr("导出表格当前视图（已加载 %1 / 共 %2 行）")
+                        .arg(page.detailRows.length).arg(page.detailTotal)
                 }
             }
 
             UsageDetailTable {
+                id: detailTable
                 Layout.fillWidth: true
                 rows: page.detailRows
                 total: page.detailTotal
@@ -1263,6 +1303,23 @@ Item {
 
                 Item { Layout.preferredHeight: 8 }
             }
+        }
+    }
+
+    FileDialog {
+        id: usageExportDialog
+        title: qsTr("导出请求明细")
+        fileMode: FileDialog.SaveFile
+        defaultSuffix: "csv"
+        nameFilters: [qsTr("CSV 文件 (*.csv)")]
+        onAccepted: {
+            // viewRows = 表格当前视图（筛选 + 排序），不是整库。
+            const rows = detailTable.viewRows
+            const ok = AgentVM.exportUsageCsv(selectedFile.toString(), rows)
+            page.exportIsError = !ok
+            page.exportMessage = ok
+                ? qsTr("已导出 %1 行明细。").arg(rows.length)
+                : qsTr("导出失败，请检查目标路径是否可写。")
         }
     }
 }

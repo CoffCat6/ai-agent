@@ -114,7 +114,8 @@ Dialog {
             "network": networkPageLoader,
             "knowledge": knowledgePageLoader,
             "memory": memoryPageLoader,
-            "logs": logsPageLoader
+            "logs": logsPageLoader,
+            "backup": backupPageLoader
         }
         const loader = pageLoaders[categoryId]
         if (loader && loader.item
@@ -669,6 +670,7 @@ Dialog {
                 }
 
                 Loader {
+                    id: backupPageLoader
                     anchors.fill: parent
                     active: dialog.currentCategory === "backup"
                     visible: active

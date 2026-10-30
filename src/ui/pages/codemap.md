@@ -7,20 +7,20 @@
 | 文件 | 角色 | 是否由 SettingsCenterDialog 装载 |
 |---|---|---|
 | AgentChatPage.qml | 主聊天工作区（顶栏 / 会话标签 / 轨迹视口 / 输入区） | 否，由 main.qml 直接实例化 |
-| ModelConfigPage.qml | 模型 provider/profile/模型列表/思考强度/上下文预算 | 是，分类 `model` |
+| ModelConfigPage.qml | 模型 provider/profile/模型列表（支持从端点拉取）/思考强度/上下文预算 | 是，分类 `model` |
 | AgentBehaviorPage.qml | 单次任务步数预算、超时、自定义系统提示词（原 GeneralPage 的模型行为区块） | 是，分类 `agent` |
 | NetworkPage.qml | HTTP 代理模式（跟随系统/手动/不使用）、主机端口、认证、连接测试 | 是，分类 `network` |
-| LogsPage.qml | 日志级别、保存目录、单文件大小上限、保留文件数 | 是，分类 `logs` |
+| LogsPage.qml | 日志级别、保存目录、单文件大小上限、保留文件数、诊断包导出 | 是，分类 `logs` |
 | KnowledgePage.qml | 知识库嵌入向量服务（Ollama / OpenAI 兼容）、模型、地址、API Key | 是，分类 `knowledge` |
 | InterfacePage.qml | 主题、字体、语言、窗口默认布局 | 是，分类 `interface` |
 | GeneralPage.qml | 仅剩 `general` 分类的声明式偏好（托盘/自启/通知）与「关于 NexusAI」 | 是，分类 `general` |
 | SecurityPage.qml | 读取沙箱、项目写入、黑名单、仅本地/内网访问 | 是，分类 `security` |
-| McpPage.qml | MCP 服务器增删、启停、连通状态 | 是，分类 `mcp` |
-| ToolsPage.qml | 内置工具（默认折叠）/ MCP 工具分组启停、联网搜索、默认权限模式 | 是，分类 `tools` |
+| McpPage.qml | MCP 服务器增删、启停、重新连接、连通状态；新增/编辑走 `McpServerEditor` 弹窗（含 stdio 命令、环境变量、端点 URL、请求头） | 是，分类 `mcp` |
+| ToolsPage.qml | 内置工具（默认折叠）/ MCP 工具分组启停、名称/说明搜索、联网搜索、默认权限模式 | 是，分类 `tools` |
 | MemoryPage.qml | 长期记忆（episodic）浏览/搜索/遗忘、审计与 Token 保留天数 | 是，分类 `memory` |
-| UsageStatsPage.qml | token/费用/配额统计与请求明细 | 是，分类 `usage`（绑定 `dialog.opened`） |
+| UsageStatsPage.qml | token/费用/配额统计、请求明细（可导出 CSV） | 是，分类 `usage`（绑定 `dialog.opened`） |
 | ActivityLogPage.qml | usage_log 操作/网络活动时间线 | 是，分类 `activity`（绑定 `dialog.opened`） |
-| SettingsBackupPage.qml | 设置 JSON 导入导出、数据库备份/恢复 | 是，分类 `backup` |
+| SettingsBackupPage.qml | 设置 JSON 导入导出、数据库备份/恢复、启动时自动备份与保留份数 | 是，分类 `backup` |
 | ProjectRulesPage.qml | 项目列表 + 项目规则（AGENTS.md）就地编辑与注入状态 | 是，分类 `projects`（绑定 `dialog.opened`） |
 | PromptAssetsPage.qml | 提示词与指令：三段式管理（系统提示预设/斜杠指令/会话模板），行内编辑表单；套用与展开逻辑不在本页（TopBar 菜单 / InputConsole 发送链 / Sidebar 模板菜单）。**布局陷阱（回归测试 promptAssetsPageShowsCreateButtons 锁定）**：ScrollView 内容列的宽度必须写 `width: assetsScroll.availableWidth`（限定 id）——裸 `availableWidth` 在子项作用域解析不到，绑定失效后宽度回退到未折行文本的隐式宽度（≈860px），整页被推出对话框右侧、全部交互控件不可见但 `visible=true`；换行/省略的 Text 还须 `Layout.minimumWidth: 0`，否则未折行隐式宽度成为布局最小宽度、布局拒绝收缩。是，分类 `prompts`（绑定 `dialog.opened`） |
 
@@ -151,6 +151,12 @@ PromptAssets/ModelConfig 因需要固定页头 + 内部列表滚动，保留各�
   测试模型默认当前模型，用户选择后 `testModelPinned` 固定。`Settings.endpointOptions(provider)`
   决定协议芯片，`Settings.modelContextWindow(apiProtocol, model)` 决定能力表窗口。
   API Key 输入框带「已配置/未配置」徽标（`SettingsField.statusText`）。
+  「从端点拉取模型」按钮（`modelFetchModels`）调
+  `ConnectionTester.fetchModels(apiProtocol, baseUrl, apiKey)`：按协议走
+  `/models`、`/v1/models`、`/v1beta/models`、`/api/tags`，结果经
+  `modelsFetched(ok, models, message)` 回填；成功时把新模型逐个
+  `Settings.addModelToProfile(id, name)` 去重追加，并显示「共 N 个，新增 M 个」。
+  服务地址为空时按钮禁用并提示先填端点。
 - SecurityPage：两个 `SettingsSection`（文件读取沙箱 / 隐私门），每项是 `SettingRow` +
   无文字 CheckBox（行标签即 `Accessible.name`）；CheckBox 直接写 `Settings.*`；黑名单增删以
   `slice()` 复制后整体赋回 `Settings.readDenyList`，去重按 Windows 大小写不敏感语义。
@@ -159,8 +165,15 @@ PromptAssets/ModelConfig 因需要固定页头 + 内部列表滚动，保留各�
   占位高度——ListView 空时 `contentHeight` 为 0，直接 `Layout.preferredHeight:
   Math.min(contentHeight, 160)` 会让提示与下方输入行重叠。
 - McpPage：`Repeater model: McpManager.servers`，每项
-  `{name, transport, endpoint, enabled, state, toolCount}`；`state` 2=已连接、
-  3=失败、其余=连接中/未启用。`addServer` 解析 stdio 命令行为 command+args 或 http URL；
+  `{name, transport, endpoint, enabled, state, toolCount, tools, command, args, url, env, headers}`；
+  已连接服务器在卡片下部显示 `tools` 名预览（一行省略、悬停看全量），排查工具来源
+  不必切到工具页；`tools` 为空时整行隐藏。
+  `state` 2=已连接、3=失败、其余=连接中/未启用。头部「添加服务器…」与卡片上的
+  铅笔按钮都打开 `McpServerEditor`（`openForAdd()` / `openForEdit(modelData)`），
+  它把字段解析成 `{name, transport, command, args, env, headers, url}` 后交给
+  `McpManager.addServer` / `updateServer`；编辑走 `updateServer(原名称, 新配置)`，
+  在原条目上改名并整条重建 client——**不要**用「删了重加」，那会让该服务器提供的
+  工具全部掉线、并把启用状态重置。刷新按钮调 `McpManager.reconnect(name)`。
   `setEnabled`、`removeServer` 即时生效并写回 mcp_servers.json。
 - ToolsPage：`AgentVM.toolRegistryModel` 每项
   `{name, description, level(safe/requires_confirm/dangerous), enabled,
@@ -169,6 +182,9 @@ PromptAssets/ModelConfig 因需要固定页头 + 内部列表滚动，保留各�
   不改变 Switch 的用户层状态。列表按 `source` 拆成两个 `SettingsSection`：
   「内置工具」默认折叠（badge 显示总数/已启用数，避免十几行铺满首屏），
   「MCP 工具」单独成组、无工具时显示前往 MCP 页的提示；行组件是 `ToolRow.qml`。
+  页面顶部 `toolsSearch` 输入框按「名称/说明」子串过滤两组（`builtinTools`/`mcpTools`
+  是过滤后的派生数组，`toolRegistryModel.length` 才是全量），命中时自动展开内置组；
+  两组都没有匹配时显示 `toolsSearchEmpty` 提示，清空搜索恢复完整列表。
   联网搜索 provider 是 `SettingRow` + ComboBox，API Key 是
   `SettingsField`（密文、留空不改、提交后清空、`statusText` 显示已配置）+「清除密钥」按钮；
   key 已配置时只显示 `webSearchApiKeySet` 的占位文案，不回显明文。测试按钮在请求期间改文案
@@ -186,6 +202,11 @@ PromptAssets/ModelConfig 因需要固定页头 + 内部列表滚动，保留各�
   清空需显式「清除密码」；「恢复本页默认值」会一并清空代理用户名与密码，确认框有专门提示。
 - LogsPage：级别/目录/大小/保留数直写 `Settings.log*`；目录用 `FolderDialog` 选择并可
   恢复默认；`requestResetDefaults()` → `Settings.resetLoggingToDefaults()`。
+  「导出诊断包」用 `FolderDialog` 选父目录，`SettingsBackup.exportDiagnostics(dir)`
+  新建 `nexus-diagnostics-<yyyyMMdd-HHmmss>/`（同秒重复追加 `-2`），内含
+  `settings.json`（与「导出设置」同一套脱敏规则）、`logs/`（复制 `nexus-*.log`，
+  单个 >32 MB 跳过）、`environment.txt`（版本 / Qt / OS / 架构 / 日志目录 / 已复制数）。
+  Qt 无公开 zip 写入 API，故导出目录而非压缩包；成功返回目录绝对路径，失败走 `lastError`。
 - KnowledgePage：嵌入 provider/model 用 `SettingRow` + ComboBox，baseUrl 用 `SettingsField`
   （等宽 + 400ms 防抖），API key 用 `SettingsField`（密文 + 留空不改 + 提交后清空 +
   `statusText` 已配置徽标）+ 清除按钮，全部直写 `Settings.embedding*`；切换到外部 provider
@@ -204,11 +225,19 @@ PromptAssets/ModelConfig 因需要固定页头 + 内部列表滚动，保留各�
   数据映射：`byModel → modelSeries → donutSeries/barSeries`，`byDay` 先 `reverse()`
   再取 `MM-dd`，费用按分转元；来源占比分母用各来源 token 之和而非 `totalTokens`
   （工具 schema 口径不一致会让占比超过 100%）。
+  请求明细表头「导出 CSV」把 `detailTable.viewRows`（筛选 + 排序后的当前视图，
+  不是整库）交给 `AgentVM.exportUsageCsv(path, rows)`：UTF-8 BOM + CRLF +
+  RFC 4180 转义，`= + - @` 开头的单元格前置单引号防公式注入；空行/写失败
+  返回 false 并在表头旁显示错误提示。
 - ActivityLogPage：`AgentVM.listUsageEvents(500)` 全量拉取（id DESC），
   QML 侧按类别精确匹配 + 关键词对 action/target/detail 不区分大小写过滤；
   刷新按钮手动重拉，页面重建时也会拉一次。
 - SettingsBackupPage：`SettingsBackup.exportSettings` / `previewImport` /
   `importSettings`，恢复前弹预览（分类、被跳过的密钥、警告）；
+  「自动备份」卡直接绑 `Settings.backupOnStartup` / `Settings.backupKeepCount`
+  （`objectName` 为 `memory/backupOnStartup`、`memory/backupKeepCount`，
+  `SettingsCatalog` 登记为可见字段级条目，可按「备份保留」等关键词搜到），
+  页脚「恢复默认」走 `requestResetDefaults()` → `Settings.resetBackupToDefaults()`；
   `AgentVM.backupDatabaseNow` / `previewDatabaseBackup` / `restoreDatabaseFrom`
   处理 SQLite 快照；导入后 MCP 服务器保持禁用并要求重启确认高风险权限。
 
@@ -221,6 +250,8 @@ PromptAssets/ModelConfig 因需要固定页头 + 内部列表滚动，保留各�
   `EditBuffer`、`AgentVM`、`McpManager`、`ConnectionTester`、`SettingsBackup`、`Theme`、
   `I18n`、`ChangeBus`。页面之间不直接互相引用，全部经单例与信号解耦。
 - CategoryNav 切换时写 `settings.lastCategory`；`jumpToCategory` 先清空搜索再写同一键。
+  分组折叠状态另外写在偏好键 `settings.collapsedGroups`（逗号分隔的组 id，
+  见 `CategoryNav.persistCollapsedGroups`）。
 - `PreferenceRegistry.categories()` 同时驱动导航与恢复默认；`SettingsCatalog` 提供
   搜索/定位/复位元数据（偏好自动派生，页面自绘项在 `SettingsCatalog.cpp` 静态表登记，
   条目 id 必须与页面上同名字段的 `objectName` 一致）。

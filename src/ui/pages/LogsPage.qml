@@ -12,6 +12,10 @@ Item {
 
     Accessible.name: qsTr("日志与诊断页")
 
+    // 诊断包导出的结果提示（成功时带目录路径，失败时带原因）。
+    property string diagnosticsMessage: ""
+    property bool diagnosticsIsError: false
+
     function requestResetDefaults() {
         Settings.resetLoggingToDefaults()
     }
@@ -120,11 +124,53 @@ Item {
                 }
             }
         }
+
+        SettingCard {
+            Layout.fillWidth: true
+            title: qsTr("诊断包")
+            subtitle: qsTr("把脱敏设置、最近的日志和环境信息放进一个目录，反馈问题时附上即可。密钥字段与 MCP 环境变量不会写入。")
+
+            RowLayout {
+                Layout.fillWidth: true
+                spacing: Theme.spaceSm
+
+                AppButton {
+                    objectName: "logging/exportDiagnostics"
+                    text: qsTr("导出诊断包")
+                    onClicked: diagnosticsFolderDialog.open()
+                    Accessible.name: qsTr("选择目录并导出诊断包")
+                }
+                Text {
+                    visible: page.diagnosticsMessage !== ""
+                    Layout.fillWidth: true
+                    text: page.diagnosticsMessage
+                    color: page.diagnosticsIsError ? Theme.statusDanger : Theme.statusSuccess
+                    font.pixelSize: Theme.fontSizeCaption
+                    font.family: Theme.fontSans
+                    wrapMode: Text.WrapAnywhere
+                    Accessible.role: Accessible.StaticText
+                    Accessible.name: text
+                }
+            }
+        }
     }
 
     FolderDialog {
         id: logDirectoryDialog
         title: qsTr("选择日志保存目录")
         onAccepted: Settings.logDirectory = selectedFolder.toString()
+    }
+
+    FolderDialog {
+        id: diagnosticsFolderDialog
+        title: qsTr("选择诊断包保存位置")
+        onAccepted: {
+            // 导出一个新目录 nexus-diagnostics-<时间戳>/，不覆盖旧包。
+            const folder = SettingsBackup.exportDiagnostics(selectedFolder.toString())
+            page.diagnosticsIsError = folder === ""
+            page.diagnosticsMessage = folder !== ""
+                ? qsTr("已导出：%1").arg(folder)
+                : (SettingsBackup.lastError || qsTr("导出失败。"))
+        }
     }
 }

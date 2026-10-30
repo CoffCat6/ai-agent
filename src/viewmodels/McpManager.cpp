@@ -7,7 +7,9 @@
 
 #include <QLoggingCategory>
 #include <QCoreApplication>
+#include <QStringList>
 #include <QTimer>
+#include <algorithm>
 #include <utility>
 
 Q_LOGGING_CATEGORY(lcMcp, "nexus.mcp")
@@ -184,6 +186,21 @@ QVariantList McpManager::servers() const {
             client ? client->sessionState()
                    : McpClient::SessionState::Disconnected);
         item["toolCount"] = client ? client->tools().size() : 0;
+        // 工具名预览：连接成功后卡片上直接看得到这台服务器贡献了哪些工具，
+        // 不必去工具页逐个对来源。未连接的服务器给空列表。
+        QStringList toolNames;
+        if (client) {
+            const auto tools = client->tools();
+            toolNames.reserve(tools.size());
+            for (const auto& tool : tools) toolNames.append(tool.name);
+        }
+        item["tools"] = toolNames;
+        // 编辑回填：设置页需要原始字段，而不是拼好的 endpoint。
+        item["command"] = config.value("command");
+        item["args"] = config.value("args");
+        item["url"] = config.value("url");
+        item["env"] = config.value("env");
+        item["headers"] = config.value("headers");
         out.append(item);
     }
     return out;
@@ -193,9 +210,19 @@ void McpManager::refreshServers() {
     emit serversChanged();
 }
 
-void McpManager::addServer(const QVariantMap& server) {
+bool McpManager::addServer(const QVariantMap& server) {
     const QString name = server.value("name").toString().trimmed();
-    if (name.isEmpty() || clientFor(name)) return;
+    if (name.isEmpty()) return false;
+    if (clientFor(name) || std::any_of(m_configs.cbegin(), m_configs.cend(),
+            [&name](const QVariant& entry) {
+                return entry.toMap().value("name").toString() == name;
+            })) {
+        // 旧实现静默 return，设置页点「添加」毫无反馈；现在让调用方
+        // 知道失败，页面据此给出字段级提示。
+        m_lastError = tr("已存在名为「%1」的服务器").arg(name);
+        emit lastErrorChanged(m_lastError);
+        return false;
+    }
 
     QVariantMap normalized = server;
     normalized["name"] = name;
@@ -205,14 +232,14 @@ void McpManager::addServer(const QVariantMap& server) {
     m_configs.append(normalized);
     if (!McpConfig::save(m_configs)) {
         qCWarning(lcMcp) << "Failed to save MCP server configuration";
-        m_lastError = QStringLiteral("Failed to save MCP server configuration");
+        m_lastError = tr("保存 MCP 服务器配置失败");
         emit lastErrorChanged(m_lastError);
     }
     Activity::usage(Activity::Kind::User, QStringLiteral("mcp.server.add"), name);
 
     if (!normalized.value("enabled").toBool()) {
         refreshServers();
-        return;
+        return true;
     }
 
     // Live-connect stdio servers added at runtime (HTTP included — same
@@ -232,6 +259,85 @@ void McpManager::addServer(const QVariantMap& server) {
     connectClient(client);
     client->connectToServer();
     refreshServers();
+    return true;
+}
+
+bool McpManager::updateServer(const QString& originalName,
+                              const QVariantMap& server) {
+    int index = -1;
+    for (int i = 0; i < m_configs.size(); ++i) {
+        if (m_configs.at(i).toMap().value("name").toString() == originalName) {
+            index = i;
+            break;
+        }
+    }
+    if (index < 0) return false;
+
+    const QString name = server.value("name").toString().trimmed();
+    if (name.isEmpty()) return false;
+    if (name != originalName && clientFor(name)) {
+        m_lastError = tr("已存在名为「%1」的服务器").arg(name);
+        emit lastErrorChanged(m_lastError);
+        return false;
+    }
+    for (int i = 0; i < m_configs.size(); ++i) {
+        if (i != index
+                && m_configs.at(i).toMap().value("name").toString() == name) {
+            m_lastError = tr("已存在名为「%1」的服务器").arg(name);
+            emit lastErrorChanged(m_lastError);
+            return false;
+        }
+    }
+
+    QVariantMap normalized = server;
+    normalized["name"] = name;
+    // 编辑不改变启用状态：开关留在卡片上，弹窗只改连接参数。
+    normalized["enabled"] = m_configs.at(index).toMap()
+        .value("enabled", true).toBool();
+
+    // 先持久化再拆连接：写盘失败时保持现有客户端继续工作。
+    QVariantList next = m_configs;
+    next[index] = normalized;
+    if (!McpConfig::save(next)) {
+        qCWarning(lcMcp) << "Failed to save MCP server configuration";
+        m_lastError = tr("保存 MCP 服务器配置失败");
+        emit lastErrorChanged(m_lastError);
+        return false;
+    }
+    m_configs = next;
+
+    // 名称、命令、URL、env、headers 任一变化都要重建客户端：McpClient
+    // 在构造时拍下 config，没有热更新接口。旧名的工具先注销，避免
+    // rename 后注册表里残留 mcp__旧名__* 。
+    if (McpClient* client = clientFor(originalName)) {
+        for (const auto& tool : client->tools())
+            ToolRegistry::instance().takeTool(
+                McpToolAdapter::registryNameFor(client->serverName(), tool.name));
+        client->disconnectFromServer();
+        m_clients.removeAll(client);
+        retireClient(client);
+    }
+
+    Activity::usage(Activity::Kind::User, QStringLiteral("mcp.server.update"), name);
+
+    if (normalized.value("enabled").toBool()) {
+        McpServerConfig config;
+        config.name = name;
+        config.transport = normalized.value("transport").toString();
+        config.command = normalized.value("command").toString();
+        for (const QVariant& arg : normalized.value("args").toList())
+            config.args << arg.toString();
+        config.env = normalized.value("env").toMap();
+        config.url = normalized.value("url").toString();
+        config.headers = normalized.value("headers").toMap();
+
+        auto* fresh = new McpClient(config, this);
+        m_clients.append(fresh);
+        connectClient(fresh);
+        fresh->connectToServer();
+    }
+    refreshServers();
+    return true;
 }
 
 void McpManager::removeServer(const QString& name) {
@@ -253,7 +359,7 @@ void McpManager::removeServer(const QString& name) {
     }
     if (!McpConfig::save(m_configs)) {
         qCWarning(lcMcp) << "Failed to save MCP server configuration";
-        m_lastError = QStringLiteral("Failed to save MCP server configuration");
+        m_lastError = tr("保存 MCP 服务器配置失败");
         emit lastErrorChanged(m_lastError);
     }
     Activity::usage(Activity::Kind::User, QStringLiteral("mcp.server.remove"),
@@ -272,7 +378,7 @@ void McpManager::setEnabled(const QString& name, bool enabled) {
     }
     if (!McpConfig::save(m_configs)) {
         qCWarning(lcMcp) << "Failed to save MCP server configuration";
-        m_lastError = QStringLiteral("Failed to save MCP server configuration");
+        m_lastError = tr("保存 MCP 服务器配置失败");
         emit lastErrorChanged(m_lastError);
     }
     Activity::usage(Activity::Kind::User,

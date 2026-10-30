@@ -119,7 +119,7 @@ controller 一 agent 一连接），因此下面这层是**呈现语义**的收�
 
 | 类名 | 角色 | 关键 QML 接口 |
 | --- | --- | --- |
-| `AgentViewModel` | 主门面（`AgentVM`）：打开集合管理 + 全局会话/项目/知识库/布局/工具/统计 | `startTask`、`stop`、`approveToolCall`、`openConversation`、`closeConversation`、`clearConversationUnread`、`loadSession`、`newChat`、`regenerate`、`editAndResend`、`branchFromAnswer`、`listProjectFiles`、`importDocument(s)`、`undoFileCheckpoint`、`restoreDatabaseFrom`；属性 `state/traceModel/sessionList/tabModel/knowledgeDocuments/...` |
+| `AgentViewModel` | 主门面（`AgentVM`）：打开集合管理 + 全局会话/项目/知识库/布局/工具/统计 | `startTask`、`stop`、`approveToolCall`、`openConversation`、`closeConversation`、`clearConversationUnread`、`loadSession`、`newChat`、`regenerate`、`editAndResend`、`branchFromAnswer`、`listProjectFiles`、`importDocument(s)`、`undoFileCheckpoint`、`restoreDatabaseFrom`、`exportUsageCsv(path, rows)`（UTF-8 BOM + CRLF + RFC 4180 + 公式注入防护，QSaveFile）；属性 `state/traceModel/sessionList/tabModel/knowledgeDocuments/...` |
 | `ChatSessionController` | 单标签会话状态与 agent 适配（非 QML 类型） | 无（C++ 侧：`attachAgent`、`startTask`、`stop`、`loadSession`、`permissionMode`） |
 | `TraceModel` | trace 增量 `QAbstractListModel`（非 QML 类型） | 经 `AgentVM.traceModel` 使用；roles `id/type/title/status/args/result/timestamp/modelData`；`userMessageIndex()`（纯函数）产出左侧导轨的数据 |
 | 视图偏好 | `AgentVM.showProcess`（持久化 `ui/showProcess`，默认 true） | 过程节点（思考/工具调用/结果/context）是否展开；TopBar 的开关写它，`AgentChatPage` 只读 |
@@ -127,8 +127,8 @@ controller 一 agent 一连接），因此下面这层是**呈现语义**的收�
 | `LogModel` | 应用内日志列表模型（会话内追加、过滤/日期） | `AgentVM.logModel`（CONSTANT）；`filterLevel/filterText/filterCategory/filterDate`、`clearView()`、`toClipboardText()` |
 | `ChangeBus` | 偏好变更广播总线 | `notify(key, value)`；信号 `changed(key, value)` |
 | `EditBuffer` | 偏好校验写穿缓冲（单例） | `stage/commit/rollback/resetToDefault`、属性 `dirty/staged/firstInvalidKey/validationError` |
-| `SettingsService` | 设置与模型 profile 门面（`Settings`），DPAPI/迁移；三组用户自建文本资产（`promptPresets`/`slashCommands`/`sessionTemplates`，JSON blob 持久化，提示词与指令页管理，备份白名单自动携带；首次启动经 `maybeSeedPromptAssets()` 种入4 预设 + 4 指令 + 3 模板（固定 id `default-*`，键为 "[]" 视为已清空不回灌）） | `profiles/activeProfile`、`addProfile/updateProfile/selectModelForProfile`、`addPromptPreset/addSlashCommand/addSessionTemplate` 及各自 update/remove、`testProxy`、按领域拆分的 `resetAgentToDefaults/resetLoggingToDefaults/resetNetworkToDefaults/resetEmbeddingToDefaults/resetMemoryToDefaults`（各自只回写本页 schema 键，`embedding/apiKey` 不随复位清空）、`modelContextWindow`、信号 `settingSaved/persistenceError` |
-| `SettingsBackup` | 可移植设置导入导出（不含凭据/SQLite） | `exportSettings`、`previewImport`、`importSettings`、`lastError`、`restartRequired` |
+| `SettingsService` | 设置与模型 profile 门面（`Settings`），DPAPI/迁移；三组用户自建文本资产（`promptPresets`/`slashCommands`/`sessionTemplates`，JSON blob 持久化，提示词与指令页管理，备份白名单自动携带；首次启动经 `maybeSeedPromptAssets()` 种入4 预设 + 4 指令 + 3 模板（固定 id `default-*`，键为 "[]" 视为已清空不回灌）） | `profiles/activeProfile`、`addProfile/updateProfile/selectModelForProfile`、`addPromptPreset/addSlashCommand/addSessionTemplate` 及各自 update/remove、`testProxy`、按领域拆分的 `resetAgentToDefaults/resetLoggingToDefaults/resetNetworkToDefaults/resetEmbeddingToDefaults/resetMemoryToDefaults/resetBackupToDefaults`（各自只回写本页 schema 键，`embedding/apiKey` 不随复位清空）、`modelContextWindow`、信号 `settingSaved/persistenceError` |
+| `SettingsBackup` | 可移植设置导入导出（不含凭据/SQLite）+ 诊断包 | `exportSettings`、`previewImport`、`importSettings`、`exportDiagnostics(dir)`（返回新建目录绝对路径或空串）、`lastError`、`restartRequired`。导出 JSON 与诊断包的 `settings.json` 共用 `buildExportPayload()` 的脱敏规则；诊断包另含 `logs/` 与 `environment.txt` |
 | `PreferenceRegistry` | 偏好元数据注册表（来自 SettingsSchema） | `hasPreference/defaultValue/displayName/preferenceMeta/categories` |
 | `PreferenceStore` | `prefs/v1/<key>` 持久化 + legacy 回退（单例） | `load/hasStoredValue/save/saveBatch/reset/resetBatch`、信号 `saved/persistenceError` |
 | `ThemeManager` | 主题/字体状态与系统配色跟随 | `themeMode/isDark/fontSans/fontMono/baseFontSize` |
@@ -136,11 +136,11 @@ controller 一 agent 一连接），因此下面这层是**呈现语义**的收�
 | `FontProbe` | 字体可用性与平台默认字体探测 | `isAvailable/systemDefaultSans/systemDefaultMono/availableFamilies` |
 | `LocaleProbe` | 可用语言枚举（`:/i18n` 资源扫描） | `availableLocales()` |
 | `I18nManager` | 翻译器装载与运行时切语言（`I18n`） | `currentLocale/availableLocales`、`applyLocale(locale)` |
-| `ConnectionTester` | 一次性最小请求测试连接（不动实时管线） | `test(protocol, baseUrl, apiKey, model)`；信号 `testFinished(ok, message)` |
+| `ConnectionTester` | 一次性最小请求测试连接 + 从端点拉取模型列表（不动实时管线） | `test(protocol, baseUrl, apiKey, model)`；`fetchModels(protocol, baseUrl, apiKey)`（独立 GET，20s 超时，按协议选列举端点与鉴权：OpenAI 系 `/models` Bearer、Anthropic `/v1/models` x-api-key、Gemini `/v1beta/models?key=`、Ollama `/api/tags`）；静态纯函数 `modelsUrl` / `parseModelList`（均可无网络单测）；信号 `testFinished(ok, message)`、`modelsFetched(ok, models, message)` |
 | `GitViewModel` | 异步 Git 门面（`GitVM`）：只读历史/分支/blame + 显式写操作 | `refreshStatus`、`requestRepoLog/DiffHunks/Blame/Graph`、`stageFiles/commitStaged/undoLastCommit/discardPath/stashPush` |
 | `ProjectFileViewModel` | 右侧栏文件浏览门面（`ProjectFileVM`）：一层目录懒读 + 预览 + 打开，按 relPath 缓存（切根失效、失败不缓存），只读无写 | `children/preview/absolutePath/clearCache`、`openInDefaultApp`（清 `ELECTRON_RUN_AS_NODE`）、`openWithKnownEditor`（注册表探测 MarkText/VSCodium/VSCode 的 shell\open\command 应急拉起）、`openAbsolute`（**按 scheme 分流**：http(s) → 浏览器 openUrl，本地 → fromLocalFile——URL 源此前走 fromLocalFile 得无效 URL 静默打不开；判定与执行分离为 `openAbsoluteRoute` 探针，GUI-less 测试可断言路由）、`canonicalAbsolute`（知识库源文件用，不受项目根约束） |
 | `CommitMessageDrafter` | 一次性“从暂存 diff 起草提交信息”（`CommitDrafter`） | `draft(stagedDiff, recentSubjects)`、`cancel()`；信号 `drafted` |
-| `McpManager` | MCP server 运行时管理（`McpManager`）：连接/工具桥接/持久化 | `addServer/removeServer/setEnabled/reconnect`、`servers`、`lastError` |
+| `McpManager` | MCP server 运行时管理（`McpManager`）：连接/工具桥接/持久化 | `addServer/updateServer/removeServer/setEnabled/reconnect`、`servers`（含 `command/args/url/env/headers` 供编辑预填，已连接项另带 `tools` 工具名列表供卡片预览）、`lastError`；`addServer` 返回 `bool`（重名/空名直接 false + lastError），`updateServer(原名称, 配置)` 在原条目上改名并重建 client（保留启用状态，缺省不改） |
 | `CodeHighlighter` | 代码块正则高亮 + 语言识别（QML 元素，非单例）。语言来源二选一：`sourceName` 扩展名映射（文件预览；未知扩展名保持纯文本不猜），无名字走内容启发式（聊天代码块）；`visualLineSpans(wrapWidth)` 从 `QTextLayout` 取每逻辑行视觉行数（须显式传视口宽，惰性布局需内部自建且设 WrapAnywhere）；单行 >8KB 跳过高亮 | `document/text/sourceName/languageName/visualLineSpans/hasHighlightedText` |
 | `CitationParser` | `[文档名]` / `[doc:名#chunk]` 解析唯一实现 | `parse(text)`、`hasCitation(segments)` |
 | `PdfTextExtractor` | 自由函数 `extractPdfText` + `PdfExtractStatus`/`PdfExtractResult` | 无（C++/测试使用） |
@@ -187,12 +187,12 @@ controller 一 agent 一连接），因此下面这层是**呈现语义**的收�
 
 | 文件 | 行数 | 说明 |
 | --- | --- | --- |
-| `AgentViewModel.h/.cpp` | 675 / 1897 | 主门面、标签、项目、知识库、备份恢复、@引用、附件 |
+| `AgentViewModel.h/.cpp` | 954 / 2917 | 主门面、标签、项目、知识库、备份恢复、@引用、附件 |
 | `SettingsService.h/.cpp` | 438 / 1350 | profile/DPAPI/迁移/代理探测/自动启动 |
 | `GitViewModel.h/.cpp` | 187 / 656 | 异步 git 门面 + 四代计数器 + 单写闸门 |
 | `ChatSessionController.h/.cpp` | 158 / 310 | 单标签会话状态、agent 信号接线、历史环 |
-| `SettingsBackup.cpp` | 397 | 可移植键筛选、白名单 profile、回滚 |
-| `McpManager.cpp` | 293 | 连接/工具桥接/延迟退役/退出回收 |
+| `SettingsBackup.cpp` | 539 | 可移植键筛选、白名单 profile、回滚、诊断包 |
+| `McpManager.cpp` | 430 | 连接/工具桥接/延迟退役/退出回收 |
 | `CodeHighlighter.cpp` | ~420 | 语言启发式 + 扩展名映射 + 五类 token 着色 + 单行预算 |
 | `PreferenceRegistry.cpp` / `PreferenceStore.cpp` | 222 / 114 | 元数据注册 / `prefs/v1` 读写 |
 | `TraceModel.cpp` / `LogModel.cpp` | 151 / 227 | trace 增量 diff / 日志环形镜像（上限 5000 行） |

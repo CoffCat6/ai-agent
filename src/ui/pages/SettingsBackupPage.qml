@@ -18,11 +18,56 @@ Item {
     property string pendingRestorePath: ""
     property var pendingRestoreInfo: ({})
 
+    // 本页只有自动备份两项是可复位的 M1 键；其余是导出/恢复入口。
+    function requestResetDefaults() {
+        Settings.resetBackupToDefaults()
+    }
+
     SettingsPage {
         anchors.fill: parent
 
         title: qsTr("设置与备份")
         description: qsTr("将应用设置保存为 JSON 文件，或从备份文件恢复。已知密钥字段和 SQLite 数据（如聊天记录与长期记忆）不包含在内；自由文本及 MCP 命令参数可能含有敏感内容。")
+
+        SettingCard {
+            objectName: "backup/automatic"
+            Layout.fillWidth: true
+            title: qsTr("自动备份")
+            subtitle: qsTr("应用启动时自动生成一份数据库快照；只保留最近指定份数，更早的自动删除。")
+
+            SettingRow {
+                objectName: "memory/backupOnStartup"
+                label: qsTr("启动时自动备份")
+                description: qsTr("关闭后仅在手动点击「立即备份」时生成快照。")
+
+                Switch {
+                    checked: Settings.backupOnStartup
+                    onToggled: Settings.backupOnStartup = checked
+                    Accessible.name: qsTr("启动时自动备份")
+                }
+            }
+
+            Rectangle {
+                Layout.fillWidth: true
+                height: 1
+                color: Theme.borderSubtle
+            }
+
+            SettingRow {
+                objectName: "memory/backupKeepCount"
+                label: qsTr("备份保留数量")
+                description: qsTr("轮转时只保留最新的指定份数，范围 1–20。")
+
+                SpinBox {
+                    from: 1
+                    to: 20
+                    value: Settings.backupKeepCount
+                    editable: true
+                    onValueModified: Settings.backupKeepCount = value
+                    Accessible.name: qsTr("备份保留数量")
+                }
+            }
+        }
 
         SettingCard {
             objectName: "backup/settings"

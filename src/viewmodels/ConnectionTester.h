@@ -4,8 +4,12 @@
 #include <QObject>
 #include <QPointer>
 #include <QTimer>
+#include <QUrl>
 
 #include "infrastructure/llm/IAIService.h"
+
+class QNetworkAccessManager;
+class QNetworkReply;
 
 namespace NexusAI {
 
@@ -13,6 +17,10 @@ namespace NexusAI {
 // settings dialog. Creates a throwaway IAIService so the live agent pipeline
 // is never touched. Exactly one testFinished() is emitted per test() call,
 // after which the temporary service is destroyed.
+//
+// 同时负责「从端点拉取模型列表」：设置页不该逼用户手打模型名，拼错一个字母
+// 要等到聊天失败才发现。拉取是独立的 GET 请求（各协议的列举端点不同），
+// 不复用 chat 服务，避免把一次列举失败误报成「连接不可用」。
 class ConnectionTester : public QObject {
     Q_OBJECT
     QML_SINGLETON
@@ -30,15 +38,41 @@ public:
     Q_INVOKABLE void test(const QString& apiProtocol, const QString& baseUrl,
                           const QString& apiKey, const QString& model);
 
+    // 拉取端点声明的模型列表。协议决定列举端点与鉴权头：
+    //   openai-chat / openai-responses → {base}/models（Bearer）
+    //   anthropic-messages             → {base}/v1/models（x-api-key + version）
+    //   gemini-generate                → {base}/v1beta/models?key=…
+    //   ollama-chat                    → {base}/api/tags
+    // Gemini 的 key 走查询串，其余走请求头；空 key 不发鉴权（本地服务）。
+    Q_INVOKABLE void fetchModels(const QString& apiProtocol,
+                                 const QString& baseUrl,
+                                 const QString& apiKey);
+
+    // 纯函数，便于单测：只负责「协议 → 列举端点」，不碰网络。
+    static QUrl modelsUrl(const QString& apiProtocol, const QString& baseUrl);
+    // 纯函数：把响应体解析成模型名列表（去重、去空、保持端点顺序）。
+    // 失败时返回空列表并写 *error（解析错误 / 没有任何模型）。
+    static QStringList parseModelList(const QString& apiProtocol,
+                                      const QByteArray& body,
+                                      QString* error);
+
 signals:
     void testFinished(bool ok, const QString& message);
+    // 每次 fetchModels 恰好发一次；models 为空表示失败（消息在 message 里）。
+    void modelsFetched(bool ok, const QStringList& models, const QString& message);
 
 private:
     void finish(bool ok, const QString& message);
+    void finishModels(bool ok, const QStringList& models, const QString& message);
 
     QPointer<IAIService> m_service;
     QTimer m_timeout{this};
     bool m_done{true};
+
+    QNetworkAccessManager* m_net{nullptr};
+    QPointer<QNetworkReply> m_modelsReply;
+    QTimer m_modelsTimeout{this};
+    bool m_modelsBusy{false};
 
     static ConnectionTester* s_instance;
 };

@@ -24,7 +24,10 @@ public:
     static constexpr int kMaxGlobalMcpTools = 64;
     QML_NAMED_ELEMENT(McpManager)
 
-    // [{name, transport, endpoint, enabled, state, toolCount}]
+    // [{name, transport, endpoint, enabled, state, toolCount,
+    //   command, args, url, env, headers}]
+    // 后五项供设置页「编辑」回填：它们不在卡片上直接展示，但改动必须
+    // 能在原有条目上继续编辑，否则用户只能删了重建（工具会掉线重连）。
     Q_PROPERTY(QVariantList servers READ servers NOTIFY serversChanged FINAL)
     // Human-readable diagnostics surfaced by the settings page.
     Q_PROPERTY(QString lastError READ lastError NOTIFY lastErrorChanged FINAL)
@@ -43,8 +46,17 @@ public:
     QVariantList servers() const;
     QString lastError() const { return m_lastError; }
 
-    // map: {name, transport:"stdio"|"http", command, args, url, enabled}
-    Q_INVOKABLE void addServer(const QVariantMap& server);
+    // map: {name, transport:"stdio"|"http", command, args, url,
+    //       env, headers, enabled}
+    // Returns false (and leaves the list untouched) on an empty name or a
+    // duplicate — the page shows its own field-level message, while the
+    // manager keeps lastError for the programmatic path.
+    Q_INVOKABLE bool addServer(const QVariantMap& server);
+    // Replaces the entry named `originalName` (renames are allowed when the
+    // new name is free). The live client is rebuilt so command/url/env/
+    // headers changes take effect without deleting the server first.
+    Q_INVOKABLE bool updateServer(const QString& originalName,
+                                  const QVariantMap& server);
     Q_INVOKABLE void removeServer(const QString& name);
     Q_INVOKABLE void setEnabled(const QString& name, bool enabled);
     Q_INVOKABLE void reconnect(const QString& name);

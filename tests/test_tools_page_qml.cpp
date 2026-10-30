@@ -117,6 +117,39 @@ private slots:
         auto* hint = win->findChild<QQuickItem*>(QStringLiteral("toolsMcpEmptyHint"));
         QVERIFY(hint);
         QCOMPARE(hint->isVisible(), mcp == 0);
+
+        // ── 搜索：名称/说明子串过滤，命中时自动展开内置组 ──
+        auto readInt = [&](const char* fn) {
+            QVariant v;
+            QMetaObject::invokeMethod(root.get(), fn, Q_RETURN_ARG(QVariant, v));
+            return v.toInt();
+        };
+        QVariant firstNameV;
+        QVERIFY(QMetaObject::invokeMethod(root.get(), "firstBuiltinName",
+                                          Q_RETURN_ARG(QVariant, firstNameV)));
+        const QString firstName = firstNameV.toString();
+        QVERIFY(!firstName.isEmpty());
+
+        auto* search = win->findChild<QQuickItem*>(QStringLiteral("toolsSearch"));
+        QVERIFY(search);
+        const int builtinBefore = readInt("builtinCount");
+        search->setProperty("text", firstName);
+        QTRY_VERIFY(readInt("builtinCount") >= 1
+                    && readInt("builtinCount") < builtinBefore);
+        // 折叠状态下搜索会以为没结果，所以命中时必须展开。
+        QTRY_COMPARE(builtinSection->property("collapsed").toBool(), false);
+
+        search->setProperty("text", QStringLiteral("zzz-no-such-tool"));
+        QTRY_COMPARE(readInt("builtinCount"), 0);
+        QTRY_COMPARE(readInt("mcpCount"), 0);
+        auto* searchEmpty = win->findChild<QQuickItem*>(
+            QStringLiteral("toolsSearchEmpty"));
+        QVERIFY(searchEmpty);
+        QTRY_VERIFY(searchEmpty->isVisible());
+
+        // 清空搜索恢复完整列表（内置组保持展开，便于继续操作）。
+        search->setProperty("text", QString());
+        QTRY_COMPARE(readInt("builtinCount"), builtinBefore);
     }
 };
 

@@ -21,4 +21,8 @@ Window {
     function registryCount() { return AgentVM.toolRegistryModel.length }
     function builtinCount() { return toolsPage.builtinTools.length }
     function mcpCount() { return toolsPage.mcpTools.length }
+    function firstBuiltinName() {
+        return toolsPage.builtinTools.length > 0
+            ? String(toolsPage.builtinTools[0].name) : ""
+    }
 }

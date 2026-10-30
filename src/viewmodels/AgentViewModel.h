@@ -630,6 +630,10 @@ public:
     // total = 范围内总行数。fromTs/toTs 均 0 = 全部记录。见 IMemory.h。
     Q_INVOKABLE QVariantMap tokenUsageRecords(qint64 fromTs = 0, qint64 toTs = 0,
                                               int limit = 50, int offset = 0);
+    // 用量页「导出 CSV」：把表格当前视图（筛选 + 排序后的行）写成
+    // UTF-8（带 BOM）CSV。行结构与 tokenUsageRecords 的 rows 相同。
+    // 返回 false（并 emit errorOccurred）表示没有行或写入失败。
+    Q_INVOKABLE bool exportUsageCsv(const QString& path, const QVariantList& rows);
     // docs/16 §8.3: 当前激活会话的 token 来源拆分（TopBar 悬停浮层）。
     // 无激活会话 id 时返回空 map，QML 据此显示空态。
     Q_INVOKABLE QVariantMap sessionTokenBreakdown() const;

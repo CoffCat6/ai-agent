@@ -12,7 +12,7 @@
 
 ## 设计
 
-**设置三层结构，职责不重叠。** `SettingsDefinition.h` 只放结构体与枚举（`PreferenceType`/`PreferenceConstraint`/`PreferenceMeta`/`CategoryMeta`/`SettingValueType`/`SettingsKeyDef`），无逻辑、无 Qt 依赖除 QVariant。`SettingsSchema` 是"权威账本"：`categoryGroups()` 4 个导航分组（模型与对话 / 外观与常规 / 知识与内容 / 数据与诊断），`categories()` 16 个分类（model…backup，带全局 order、`groupId` 与 `QT_TRANSLATE_NOOP` 显示名）、`preferences()` 14 条 UI 偏好、`registeredKeys()` = 50 个静态键 + 14 个 `prefs/v1/<key>` 派生键（共 64），全部函数内 `static` 惰性构造，无锁只读。`kSchemaVersion = 4`（v2 模型列表用户自管，v3/v4 归一 contextTokens 旧默认值）。
+**设置三层结构，职责不重叠。** `SettingsDefinition.h` 只放结构体与枚举（`PreferenceType`/`PreferenceConstraint`/`PreferenceMeta`/`CategoryMeta`/`SettingValueType`/`SettingsKeyDef`），无逻辑、无 Qt 依赖除 QVariant。`SettingsSchema` 是"权威账本"：`categoryGroups()` 4 个导航分组（模型与对话 / 外观与常规 / 知识与内容 / 数据与诊断），`categories()` 16 个分类（model…backup，带全局 order、`groupId` 与 `QT_TRANSLATE_NOOP` 显示名）、`preferences()` 15 条 UI 偏好（含 `settings.collapsedGroups`：设置导航分组折叠状态）、`registeredKeys()` = 54 个静态键 + 15 个 `prefs/v1/<key>` 派生键（共 69），全部函数内 `static` 惰性构造，无锁只读。`kSchemaVersion = 4`（v2 模型列表用户自管，v3/v4 归一 contextTokens 旧默认值）。
 
 **键命名空间**：顶层业务键（`modelProfiles`、`activeProfileId`、`contextTokens`、`agent/*`、`security/*`、`embedding/*`、`logging/*`、`webSearch/*`、`network/*`、`memory/*`、`ui/*`、`tools/disabled`、`projects/activeId`、配额与 `schemaVersion`）用扁平 `section/name`；UI 偏好统一 `prefs/v1/` 前缀。`theme/dark` 保留为 `legacy = true`，`ui.themeMode` 用 `legacyKeys = {"theme/dark"}` 声明迁移来源。
 
@@ -59,7 +59,7 @@
 | 文件 | 内容 |
 | --- | --- |
 | `SettingsDefinition.h` | 设置元数据 POD（类型/约束/键定义/分类） |
-| `SettingsSchema.{h,cpp}` | 键账本 64 项、默认值、`isValidValue`/`clampInt`、`intSetting`/`boolSetting`、`kSchemaVersion=4` |
+| `SettingsSchema.{h,cpp}` | 键账本 69 项、默认值、`isValidValue`/`clampInt`、`intSetting`/`boolSetting`、`kSchemaVersion=4` |
 | `SettingsRepository.{h,cpp}` | QSettings 持久化边界、批量读写、失败回滚 |
 | `Logger.{h,cpp}` | 消息处理器、日滚动/容量滚动、保留策略、5000 条环形缓冲、历史回填 |
 | `Activity.{h,cpp}` | 7 个日志分类、`report`/`usage`、`UsageSink` 注入 |

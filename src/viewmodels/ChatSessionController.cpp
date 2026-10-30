@@ -298,7 +298,7 @@ bool ChatSessionController::startTask(const QString& input, const QStringList& i
     Activity::usage(Activity::Kind::User, QStringLiteral("task.start"),
                     input.left(80));
     if (!m_agent) {
-        emit errorOccurred(tr("No model agent is configured. Configure a model and try again."));
+        emit errorOccurred(tr("尚未配置模型，请先配置模型后重试。"));
         return false;
     }
 

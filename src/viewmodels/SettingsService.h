@@ -399,6 +399,7 @@ public:
     Q_INVOKABLE void resetNetworkToDefaults();
     Q_INVOKABLE void resetEmbeddingToDefaults();
     Q_INVOKABLE void resetMemoryToDefaults();
+    Q_INVOKABLE void resetBackupToDefaults();
 
     Q_INVOKABLE void setActiveProfile(const QString& id);
     // Switch active model for a specific profile (or active profile if id is empty)

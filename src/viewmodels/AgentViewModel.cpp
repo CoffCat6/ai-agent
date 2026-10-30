@@ -1422,6 +1422,85 @@ bool AgentViewModel::exportSession(const QString& sessionId, const QString& path
     return true;
 }
 
+namespace {
+
+// RFC 4180 转义 + 公式注入防护。以 = + - @ 开头的文本会被 Excel / WPS
+// 当公式求值（请求 ID、模型名都可能以它们开头，也挡住手工构造的数据），
+// 前置单引号让它保持文本；引号/逗号/换行再按 RFC 4180 加引号转义。
+QString csvCell(const QString& raw) {
+    QString text = raw;
+    if (!text.isEmpty()) {
+        const QChar first = text.front();
+        if (first == QLatin1Char('=') || first == QLatin1Char('+')
+            || first == QLatin1Char('-') || first == QLatin1Char('@')
+            || first == QLatin1Char('\t') || first == QLatin1Char('\r'))
+            text.prepend(QLatin1Char('\''));
+    }
+    if (text.contains(QLatin1Char(',')) || text.contains(QLatin1Char('"'))
+        || text.contains(QLatin1Char('\n')) || text.contains(QLatin1Char('\r'))) {
+        text.replace(QStringLiteral("\""), QStringLiteral("\"\""));
+        text = QStringLiteral("\"") + text + QStringLiteral("\"");
+    }
+    return text;
+}
+
+} // namespace
+
+// 用量页导出：行来自表格当前视图，因此导出的就是用户看到的那批
+// （筛选/排序都生效），不是整库。BOM + CRLF 是为了 Excel 双击打开时
+// 中文表头不乱码；QSaveFile 保证失败时不留半个文件。
+bool AgentViewModel::exportUsageCsv(const QString& path, const QVariantList& rows) {
+    if (rows.isEmpty()) {
+        emit errorOccurred(tr("导出失败：当前没有可导出的请求明细"));
+        return false;
+    }
+    const QUrl urlArg(path);
+    const QString localPath = urlArg.isLocalFile() ? urlArg.toLocalFile() : path;
+    if (localPath.trimmed().isEmpty()) {
+        emit errorOccurred(tr("导出失败：未指定文件路径"));
+        return false;
+    }
+
+    QStringList lines;
+    lines.append(QStringList{
+        tr("时间"), tr("模型"), tr("输入 Tokens"), tr("输出 Tokens"),
+        tr("缓存命中 Tokens"), tr("延迟(ms)"), tr("费用(元)"),
+        tr("会话 ID"), tr("请求 ID")}.join(QLatin1Char(',')));
+    lines.reserve(rows.size() + 1);
+    for (const QVariant& value : rows) {
+        const QVariantMap row = value.toMap();
+        const qint64 timestamp =
+            row.value(QStringLiteral("timestamp")).toLongLong();
+        const double costCents = row.value(QStringLiteral("costCents")).toDouble();
+        lines.append(QStringList{
+            QDateTime::fromMSecsSinceEpoch(timestamp).toString(
+                QStringLiteral("yyyy-MM-dd HH:mm:ss")),
+            csvCell(row.value(QStringLiteral("model")).toString()),
+            QString::number(row.value(QStringLiteral("inputTokens")).toLongLong()),
+            QString::number(row.value(QStringLiteral("outputTokens")).toLongLong()),
+            QString::number(row.value(QStringLiteral("cacheHitTokens")).toLongLong()),
+            QString::number(row.value(QStringLiteral("latencyMs")).toLongLong()),
+            QString::number(costCents / 100.0, 'f', 4),
+            csvCell(row.value(QStringLiteral("sessionId")).toString()),
+            csvCell(row.value(QStringLiteral("requestId")).toString())}
+            .join(QLatin1Char(',')));
+    }
+
+    QSaveFile file(localPath);
+    if (!file.open(QIODevice::WriteOnly)) {
+        emit errorOccurred(tr("导出失败：无法写入 %1").arg(localPath));
+        return false;
+    }
+    QByteArray payload("\xEF\xBB\xBF");   // UTF-8 BOM：Excel 靠它识别编码
+    payload += lines.join(QStringLiteral("\r\n")).toUtf8();
+    payload += "\r\n";
+    if (file.write(payload) != payload.size() || !file.commit()) {
+        emit errorOccurred(tr("导出失败：写入未完成 %1").arg(localPath));
+        return false;
+    }
+    return true;
+}
+
 ChatSessionController* AgentViewModel::controllerWithAgent() const {
     if (active()->agent()) return active();
     for (ChatSessionController* controller : m_tabs) {

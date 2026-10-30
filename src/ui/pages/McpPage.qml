@@ -5,8 +5,9 @@ import NexusAI
 import NexusAI.ViewModels
 
 // MCP server management (Batch 31b): list configured servers with live
-// connection state, add/remove/enable them; tools surface in the chat once
-// a server connects.
+// connection state, add/edit/remove/enable them; tools surface in the chat
+// once a server connects. Add and edit share McpServerEditor — editing used
+// to be unsupported (delete + re-add, which dropped every tool).
 Item {
     id: page
 
@@ -19,6 +20,22 @@ Item {
         description: qsTr("接入外部工具服务器；其工具经确认后由智能体调用。修改即时生效。")
         // 设置搜索用：目录条目 mcp/servers 锚定页头标题。
         headerObjectName: "mcp/servers"
+
+        // ── 新增入口 ───────────────────────────────────
+        // 表单收进弹窗：常驻表单只服务"添加"，编辑还得另开一套字段；
+        // 一个按钮 + 共用弹窗，两种场景同一份校验。
+        RowLayout {
+            Layout.fillWidth: true
+            spacing: Theme.spaceSm
+
+            Item { Layout.fillWidth: true }
+
+            AppButton {
+                objectName: "mcpAddServer"
+                text: qsTr("添加服务器…")
+                onClicked: serverEditor.openForAdd()
+            }
+        }
 
         // ── Server cards ───────────────────────────────
         Repeater {
@@ -101,6 +118,27 @@ Item {
                         }
 
                         IconButton {
+                            // 配置改错了（命令拼错、端点失效）不必删了重建：
+                            // 编辑会复用同一条配置并重建客户端。
+                            icon: "edit"
+                            iconSize: 16
+                            tooltip: qsTr("编辑服务器")
+                            restIconColor: Theme.textSecondary
+                            hoverIconColor: Theme.brandPrimary
+                            onClicked: serverEditor.openForEdit(modelData)
+                        }
+
+                        IconButton {
+                            visible: modelData.enabled
+                            icon: "refresh"
+                            iconSize: 16
+                            tooltip: qsTr("重新连接")
+                            restIconColor: Theme.textSecondary
+                            hoverIconColor: Theme.brandPrimary
+                            onClicked: McpManager.reconnect(modelData.name)
+                        }
+
+                        IconButton {
                             icon: "trash"
                             iconSize: 16
                             // docs/25 D5: 无 tooltip 时 IconButton 读屏名回落为
@@ -130,6 +168,26 @@ Item {
                         ToolTip.text: endpointText.text
                     }
 
+                    // 已连接服务器的工具名预览（一行省略 + 悬停看全量）：
+                    // 排查「这个工具到底来自哪台服务器」不必再切到工具页。
+                    Text {
+                        id: toolsText
+                        readonly property var toolNames: modelData.tools || []
+                        visible: toolNames.length > 0
+                        Layout.fillWidth: true
+                        text: toolNames.join(" · ")
+                        color: Theme.textSecondary
+                        font.pixelSize: Theme.fontSizeMicro
+                        font.family: Theme.fontMono
+                        elide: Text.ElideRight
+                        Accessible.role: Accessible.StaticText
+                        Accessible.name: qsTr("工具：%1").arg(text)
+
+                        HoverHandler { id: toolsHover }
+                        ToolTip.visible: toolsHover.hovered && toolsText.truncated
+                        ToolTip.text: toolNames.join("\n")
+                    }
+
                     Text {
                         // docs/25 C4: McpManager.lastError 是全局共享字段，
                         // 多服务器失败时逐条重复展示同一错误会误导归属——
@@ -150,136 +208,11 @@ Item {
                 }
             }
         }
+    }
 
-        // ── Add server form ────────────────────────────
-        Rectangle {
-            Layout.fillWidth: true
-            implicitHeight: addForm.implicitHeight + Theme.spaceXl
-            radius: Theme.radiusMd
-            color: Theme.bgSecondary
-            border.width: 1
-            border.color: Theme.borderSubtle
-
-            ColumnLayout {
-                id: addForm
-                anchors.fill: parent
-                anchors.margins: Theme.spaceMd
-                spacing: Theme.spaceSm
-
-                Text {
-                    text: qsTr("添加服务器")
-                    color: Theme.textPrimary
-                    font.pixelSize: Theme.fontSizeBody
-                    font.bold: true
-                    font.family: Theme.fontSans
-                }
-
-                RowLayout {
-                    Layout.fillWidth: true
-                    spacing: Theme.spaceSm
-
-                    ColumnLayout {
-                        spacing: Theme.spaceXs
-                        Text { text: qsTr("名称"); color: Theme.textSecondary; font.pixelSize: Theme.fontSizeCaption; font.family: Theme.fontSans }
-                        TextField {
-                            id: nameField
-                            Accessible.name: qsTr("名称")
-                            Layout.preferredWidth: Theme.controlWidthSm
-                            placeholderText: qsTr("my-server")
-                            placeholderTextColor: Theme.textSecondary
-                            color: Theme.textPrimary
-                            selectionColor: Theme.brandPrimary
-                            selectedTextColor: Theme.selectedTextColor
-                            selectByMouse: true
-                            font.pixelSize: Theme.fontSizeBody
-                            background: Rectangle { radius: Theme.radiusField; color: Theme.surfaceHover; border.width: nameField.activeFocus ? 2 : 1; border.color: nameField.activeFocus ? Theme.brandPrimary : Theme.borderSubtle }
-                        }
-                    }
-
-                    ColumnLayout {
-                        spacing: Theme.spaceXs
-                        Text { text: qsTr("类型"); color: Theme.textSecondary; font.pixelSize: Theme.fontSizeCaption; font.family: Theme.fontSans }
-                        ComboBox {
-                            id: transportBox
-                            Accessible.name: qsTr("类型")
-                            Layout.preferredWidth: Theme.controlWidthXs
-                            model: ["stdio", "http"]
-                        }
-                    }
-
-                    ColumnLayout {
-                        Layout.fillWidth: true
-                        spacing: Theme.spaceXs
-                        visible: transportBox.currentText === "stdio"
-                        Text { text: qsTr("命令与参数（空格分隔）"); color: Theme.textSecondary; font.pixelSize: Theme.fontSizeCaption; font.family: Theme.fontSans }
-                        TextField {
-                            id: commandField
-                            Accessible.name: qsTr("命令与参数（空格分隔）")
-                            Layout.fillWidth: true
-                            placeholderText: qsTr("npx -y @modelcontextprotocol/server-filesystem D:/docs")
-                            placeholderTextColor: Theme.textSecondary
-                            color: Theme.textPrimary
-                            selectionColor: Theme.brandPrimary
-                            selectedTextColor: Theme.selectedTextColor
-                            selectByMouse: true
-                            font.pixelSize: Theme.fontSizeBody
-                            background: Rectangle { radius: Theme.radiusField; color: Theme.surfaceHover; border.width: commandField.activeFocus ? 2 : 1; border.color: commandField.activeFocus ? Theme.brandPrimary : Theme.borderSubtle }
-                        }
-                    }
-
-                    ColumnLayout {
-                        Layout.fillWidth: true
-                        spacing: Theme.spaceXs
-                        visible: transportBox.currentText === "http"
-                        Text { text: qsTr("服务端点 URL"); color: Theme.textSecondary; font.pixelSize: Theme.fontSizeCaption; font.family: Theme.fontSans }
-                        TextField {
-                            id: urlField
-                            Accessible.name: qsTr("服务端点 URL")
-                            Layout.fillWidth: true
-                            placeholderText: qsTr("https://mcp.example.com/mcp")
-                            placeholderTextColor: Theme.textSecondary
-                            color: Theme.textPrimary
-                            selectionColor: Theme.brandPrimary
-                            selectedTextColor: Theme.selectedTextColor
-                            selectByMouse: true
-                            font.pixelSize: Theme.fontSizeBody
-                            background: Rectangle { radius: Theme.radiusField; color: Theme.surfaceHover; border.width: urlField.activeFocus ? 2 : 1; border.color: urlField.activeFocus ? Theme.brandPrimary : Theme.borderSubtle }
-                        }
-                    }
-                }
-
-                RowLayout {
-                    Layout.alignment: Qt.AlignRight
-                    spacing: Theme.spaceSm
-                    Item { Layout.fillWidth: true }
-                    AppButton {
-                        text: qsTr("添加并连接")
-                        onClicked: {
-                            const transport = transportBox.currentText
-                            let server = {
-                                name: nameField.text.trim(),
-                                transport: transport,
-                                enabled: true
-                            }
-                            if (server.name === "") return
-                            if (transport === "stdio") {
-                                const parts = commandField.text.trim().split(/\s+/)
-                                if (parts.length === 0 || parts[0] === "") return
-                                server.command = parts[0]
-                                server.args = parts.slice(1)
-                            } else {
-                                server.url = urlField.text.trim()
-                                if (server.url === "") return
-                            }
-                            McpManager.addServer(server)
-                            nameField.text = ""
-                            commandField.text = ""
-                            urlField.text = ""
-                        }
-                    }
-                }
-            }
-        }
+    // Add / edit dialog (shared, one instance for every card).
+    McpServerEditor {
+        id: serverEditor
     }
 
     // Removal confirmation (shared, one instance for every card).

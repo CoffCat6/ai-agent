@@ -280,6 +280,8 @@ qt_add_qml_module(nexus_ai
         src/ui/components/EmptyState.qml
         # 工具管理页的单行（内置/MCP 两组共用）
         src/ui/components/ToolRow.qml
+        # MCP 服务器新增/编辑弹窗（同一套字段与校验）
+        src/ui/components/McpServerEditor.qml
         # 设置页统一骨架 / 页头 / 主题化滚动条（视觉底座）
         src/ui/components/SettingsPage.qml
         src/ui/components/SettingsPageHeader.qml

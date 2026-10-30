@@ -27,6 +27,12 @@ constexpr CatalogResetScope kPage = CatalogResetScope::Page;
 //   * 没有对应控件的条目（页级入口/内部键）不会命中锚点，跳转只打开分类。
 const QVector<CatalogEntryDef>& staticEntries() {
     static const QVector<CatalogEntryDef> values = {
+        // 设置中心导航自身的状态：不是用户可调的设置，登记只为满足
+        // 「每个 schema 键都要有条目」的覆盖断言。
+        {NEXUS_CATALOG_ID("settings.collapsedGroups"), QString(),
+         QT_TRANSLATE_NOOP("SettingsSearch", "导航分组折叠状态"),
+         QStringLiteral("collapsedGroups settings navigation"), true, kNone},
+
         // ── 模型配置（页面按卡片分区，字段级锚点打在 SettingCard 上）──
         {NEXUS_CATALOG_ID("model.profile"), QStringLiteral("model"),
          QT_TRANSLATE_NOOP("SettingsSearch", "配置来源"),
@@ -145,12 +151,12 @@ const QVector<CatalogEntryDef>& staticEntries() {
         {NEXUS_CATALOG_ID("memory/episodes"), QStringLiteral("memory"),
          QT_TRANSLATE_NOOP("SettingsSearch", "长期记忆列表"),
          QStringLiteral("记忆 浏览 搜索 遗忘 清空 episodic"), false, kNone},
-        {NEXUS_CATALOG_ID("memory/backupOnStartup"), QStringLiteral("memory"),
+        {NEXUS_CATALOG_ID("memory/backupOnStartup"), QStringLiteral("backup"),
          QT_TRANSLATE_NOOP("SettingsSearch", "启动时自动备份"),
-         QStringLiteral("备份 backup startup"), true, kNone},
-        {NEXUS_CATALOG_ID("memory/backupKeepCount"), QStringLiteral("memory"),
+         QStringLiteral("备份 backup startup 自动"), false, kPage},
+        {NEXUS_CATALOG_ID("memory/backupKeepCount"), QStringLiteral("backup"),
          QT_TRANSLATE_NOOP("SettingsSearch", "备份保留数量"),
-         QStringLiteral("备份 backup keep"), true, kNone},
+         QStringLiteral("备份 backup keep 保留 数量"), false, kPage},
 
         // ── 知识库嵌入 ──────────────────────────────────────
         {NEXUS_CATALOG_ID("embedding/provider"), QStringLiteral("knowledge"),
