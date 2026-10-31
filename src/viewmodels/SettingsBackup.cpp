@@ -4,6 +4,9 @@
 #include "core/mcp/McpConfig.h"
 #include "infrastructure/llm/LlmProtocolRegistry.h"
 #include "McpManager.h"
+#include "PreferenceRegistry.h"
+#include "SettingsCatalog.h"
+#include "SettingsValueFormat.h"
 #include "core/utils/Logger.h"
 #include "core/utils/SettingsRepository.h"
 
@@ -22,6 +25,8 @@
 #include <QSaveFile>
 #include <QSet>
 #include <QUrl>
+#include <QVector>
+#include <algorithm>
 #include <climits>
 #include <cmath>
 
@@ -63,6 +68,7 @@ bool portableKey(const SettingsKeyDef& def) {
         || key == QLatin1String("settings.lastCategory")
         || key == QLatin1String("prefs/v1/settings.lastCategory")
         || key == QLatin1String("prefs/v1/settings.collapsedGroups")
+        || key == QLatin1String("prefs/v1/general.onboarded")
         || key == QLatin1String("prefs/v1/general.autoStart")
         || key.startsWith(QLatin1String("security/"))
         || key.startsWith(QLatin1String("ui/"))) return false;
@@ -143,6 +149,25 @@ QStringList omittedSecrets() {
     return {QStringLiteral("模型 API Key"), QStringLiteral("Web Search API Key"),
             QStringLiteral("MCP 环境变量与请求头")};
 }
+
+// 导出/备份文件里的键是物理键：声明式偏好带 "prefs/v1/" 前缀，M1 键
+// 原样。设置目录与 PreferenceStore 用的是逻辑键（偏好不带前缀），
+// 分类查询与值快照都必须换回逻辑键。
+QString logicalKeyOf(const QString& exportKey) {
+    const QString prefix = QStringLiteral("prefs/v1/");
+    return exportKey.startsWith(prefix) ? exportKey.mid(prefix.size()) : exportKey;
+}
+
+QString categoryOfExportKey(const QString& exportKey) {
+    return SettingsCatalog::instance()->entry(logicalKeyOf(exportKey))
+        .value(QStringLiteral("category")).toString();
+}
+
+bool inCategoryScope(const QStringList& categories, const QString& categoryId) {
+    return categories.isEmpty() || categories.contains(categoryId);
+}
+
+constexpr int kMaxImportChanges = 200;
 } // namespace
 
 SettingsBackup* SettingsBackup::s_instance = nullptr;
@@ -161,11 +186,13 @@ void SettingsBackup::setError(const QString& error) {
     emit lastErrorChanged();
 }
 
-QJsonObject SettingsBackup::buildExportPayload() {
+QJsonObject SettingsBackup::buildExportPayload(const QStringList& categories) {
     QJsonObject settings;
     const auto keys = portableKeys();
+    const bool includeModel = inCategoryScope(categories, QStringLiteral("model"));
+    const bool includeMcp = inCategoryScope(categories, QStringLiteral("mcp"));
     QStringList keysToRead = keys.keys();
-    keysToRead.append(QStringLiteral("modelProfiles"));
+    if (includeModel) keysToRead.append(QStringLiteral("modelProfiles"));
     QVariantMap storedValues;
     QStringList presentKeys;
     QString readError;
@@ -176,6 +203,10 @@ QJsonObject SettingsBackup::buildExportPayload() {
     }
     for (auto it = keys.cbegin(); it != keys.cend(); ++it) {
         if (!presentKeys.contains(it.key())) continue;
+        // 分类过滤：未知分类的键在选中任意分类时一律排除，避免"只导出
+        // 模型配置"却悄悄带上一条目录里没登记的键。
+        if (!categories.isEmpty()
+            && !categories.contains(categoryOfExportKey(it.key()))) continue;
         QVariant value = storedValues.value(it.key());
         switch (it.value().type) {
         case SettingValueType::Bool: value = value.toBool(); break;
@@ -190,7 +221,7 @@ QJsonObject SettingsBackup::buildExportPayload() {
     }
 
     QJsonArray profiles;
-    if (presentKeys.contains(QStringLiteral("modelProfiles"))) {
+    if (includeModel && presentKeys.contains(QStringLiteral("modelProfiles"))) {
         QJsonParseError error;
         const QJsonDocument doc = QJsonDocument::fromJson(
             storedValues.value(QStringLiteral("modelProfiles")).toString().toUtf8(), &error);
@@ -209,9 +240,10 @@ QJsonObject SettingsBackup::buildExportPayload() {
 
     QJsonArray servers;
     // Missing MCP file is fine; unreadable/corrupt data must not silently
-    // turn a supposedly complete export into an incomplete one.
+    // turn a supposedly complete export into an incomplete one. 按分类导出时
+    // 不读 MCP：一份损坏的 MCP 配置不该挡住"只导出模型配置"。
     const QString mcpPath = McpConfig::configFilePath();
-    if (QFile::exists(mcpPath)) {
+    if (includeMcp && QFile::exists(mcpPath)) {
         QFile file(mcpPath);
         if (!file.open(QIODevice::ReadOnly)) {
             setError(tr("无法读取 MCP 服务器配置"));
@@ -242,9 +274,26 @@ QJsonObject SettingsBackup::buildExportPayload() {
                        {QStringLiteral("mcpServers"), servers}};
 }
 
-bool SettingsBackup::exportSettings(const QString& path) {
+QStringList SettingsBackup::exportableCategories() const {
+    QSet<QString> present;
+    for (const SettingsKeyDef& def : SettingsSchema::registeredKeys()) {
+        if (!portableKey(def)) continue;
+        const QString categoryId = categoryOfExportKey(def.key);
+        if (!categoryId.isEmpty()) present.insert(categoryId);
+    }
+    // 模型配置与 MCP 服务器不在 SettingsSchema 里，但都属于可导出的分类。
+    present.insert(QStringLiteral("model"));
+    present.insert(QStringLiteral("mcp"));
+    QStringList ordered;
+    for (const QString& categoryId : PreferenceRegistry::instance()->categories())
+        if (present.contains(categoryId)) ordered.append(categoryId);
+    return ordered;
+}
+
+bool SettingsBackup::exportSettings(const QString& path,
+                                    const QStringList& categories) {
     setError({});
-    const QJsonObject root = buildExportPayload();
+    const QJsonObject root = buildExportPayload(categories);
     if (root.isEmpty()) return false; // buildExportPayload 已设置 lastError
     QSaveFile file(localPath(path));
     if (!file.open(QIODevice::WriteOnly)) {
@@ -420,6 +469,56 @@ QVariantMap SettingsBackup::parseImport(const QString& path, QVariantMap* settin
         serverNames.insert(name);
         servers->append(cleanServer(raw).toVariantMap());
     }
+    // docs/31 O4：逐键差异。与当前值按设置中心同一口径比较，只列会变化
+    // 或新增的键。portable 白名单已排除加密键；万一将来加入密钥类键，
+    // 这里也只报"已配置 / 未包含"，绝不渲染备份里的值。
+    struct ChangeRow {
+        int order;
+        QString title;
+        QVariantMap map;
+    };
+    QVector<ChangeRow> rows;
+    PreferenceRegistry* registry = PreferenceRegistry::instance();
+    for (auto it = settings->cbegin(); it != settings->cend(); ++it) {
+        const QString logicalKey = logicalKeyOf(it.key());
+        const SettingValueSnapshot current = SettingsValue::inspect(logicalKey);
+        const QVariant importedValue = it.value();
+        if (current.known && !current.secret
+            && SettingsValue::sameValueForKey(logicalKey, current.current,
+                                              importedValue))
+            continue;
+        const QVariantMap meta = SettingsCatalog::instance()->entry(logicalKey);
+        const QString categoryId = meta.value(QStringLiteral("category")).toString();
+        QString title = meta.value(QStringLiteral("title")).toString();
+        if (title.isEmpty()) title = it.key();
+        QVariantMap change;
+        change.insert(QStringLiteral("key"), it.key());
+        change.insert(QStringLiteral("title"), title);
+        change.insert(QStringLiteral("category"), categoryId);
+        change.insert(QStringLiteral("categoryName"),
+                      meta.value(QStringLiteral("categoryName")));
+        change.insert(QStringLiteral("currentDisplay"),
+                      current.known ? SettingsValue::displayOf(current, logicalKey)
+                                    : QString());
+        change.insert(QStringLiteral("importedDisplay"),
+                      current.secret ? tr("未包含")
+                                     : SettingsValue::displayValue(logicalKey,
+                                                                   importedValue));
+        change.insert(QStringLiteral("secret"), current.secret);
+        rows.append({registry->categoryOrder(categoryId), title, change});
+    }
+    std::sort(rows.begin(), rows.end(), [](const ChangeRow& a, const ChangeRow& b) {
+        if (a.order != b.order) return a.order < b.order;
+        const int compared = a.title.localeAwareCompare(b.title);
+        if (compared != 0) return compared < 0;
+        return a.map.value(QStringLiteral("key")).toString()
+            < b.map.value(QStringLiteral("key")).toString();
+    });
+    QVariantList changes;
+    const int changesTotal = rows.size();
+    for (int i = 0; i < changesTotal && i < kMaxImportChanges; ++i)
+        changes.append(rows.at(i).map);
+
     QStringList sections{tr("应用设置（%1 项）").arg(saved.size()),
                          tr("模型配置（%1 条）").arg(profiles->size()),
                          tr("MCP 服务器（%1 条，恢复后保持禁用）").arg(servers->size())};
@@ -430,7 +529,11 @@ QVariantMap SettingsBackup::parseImport(const QString& path, QVariantMap* settin
     return {{QStringLiteral("valid"), true}, {QStringLiteral("error"), QString()},
             {QStringLiteral("sections"), sections},
             {QStringLiteral("skippedSecrets"), omittedSecrets()},
-            {QStringLiteral("warnings"), warnings}};
+            {QStringLiteral("warnings"), warnings},
+            {QStringLiteral("changes"), changes},
+            {QStringLiteral("changesTotal"), changesTotal},
+            {QStringLiteral("changesTruncated"),
+             changesTotal - changes.size()}};
 }
 
 QVariantMap SettingsBackup::previewImport(const QString& path) {

@@ -4,6 +4,7 @@
 // Batch 31b (F9): Streamable HTTP transport coverage.
 #include "core/mcp/McpClient.h"
 #include "core/mcp/McpConfig.h"
+#include "core/mcp/McpConfigTransfer.h"
 #include "core/mcp/McpToolAdapter.h"
 #include "core/mcp/StdioTransport.h"
 #include "core/tools/ToolRegistry.h"
@@ -13,6 +14,9 @@
 #include <QFile>
 #include <QFileInfo>
 #include <QHash>
+#include <QJsonArray>
+#include <QJsonDocument>
+#include <QJsonObject>
 #include <QProcessEnvironment>
 #include <QSignalSpy>
 #include <QStandardPaths>
@@ -771,6 +775,180 @@ private slots:
     // When a server exits non-zero, its stderr tail must be inlined into
     // the transport error so users see the real cause (missing API key,
     // package install failure, ...) in the log instead of just an exit code.
+    // docs/31 N7：导出只写白名单字段、env/headers 不导出、enabled 一律 false。
+    void transferExportOmitsSecretsAndDisables() {
+        QVector<QVariantMap> servers;
+        servers.append({{QStringLiteral("name"), QStringLiteral("alpha")},
+                        {QStringLiteral("transport"), QStringLiteral("stdio")},
+                        {QStringLiteral("command"), QStringLiteral("node")},
+                        {QStringLiteral("args"), QStringList{QStringLiteral("s.js")}},
+                        {QStringLiteral("env"),
+                         QVariantMap{{QStringLiteral("TOKEN"), QStringLiteral("secret")}}},
+                        {QStringLiteral("enabled"), true}});
+        servers.append({{QStringLiteral("name"), QStringLiteral("beta")},
+                        {QStringLiteral("transport"), QStringLiteral("http")},
+                        {QStringLiteral("url"), QStringLiteral("https://example.test/mcp")},
+                        {QStringLiteral("enabled"), true}});
+
+        const QJsonObject root = McpConfigTransfer::buildExport(servers);
+        QCOMPARE(root.value(QStringLiteral("format")).toString(),
+                 QStringLiteral("nexusai-mcp-servers"));
+        QCOMPARE(root.value(QStringLiteral("secretsOmitted")).toInt(), 1);
+        const QJsonArray array = root.value(QStringLiteral("servers")).toArray();
+        QCOMPARE(array.size(), 2);
+        for (const QJsonValue& value : array) {
+            const QJsonObject server = value.toObject();
+            QVERIFY(!server.value(QStringLiteral("enabled")).toBool());
+            QVERIFY(!server.contains(QStringLiteral("env")));
+            QVERIFY(!server.contains(QStringLiteral("headers")));
+        }
+        QCOMPARE(array.at(0).toObject().value(QStringLiteral("command")).toString(),
+                 QStringLiteral("node"));
+    }
+
+    // 同名冲突的三种策略：跳过保持旧值、覆盖换成新值且禁用、重命名新增。
+    void transferImportPolicies() {
+        QTemporaryDir dir;
+        QVERIFY(dir.isValid());
+        const QString path = dir.filePath(QStringLiteral("servers.json"));
+        const QJsonObject file{
+            {QStringLiteral("format"), QStringLiteral("nexusai-mcp-servers")},
+            {QStringLiteral("version"), 1},
+            {QStringLiteral("servers"),
+             QJsonArray{
+                 QJsonObject{{QStringLiteral("name"), QStringLiteral("alpha")},
+                             {QStringLiteral("transport"), QStringLiteral("http")},
+                             {QStringLiteral("url"), QStringLiteral("https://new.test/mcp")},
+                             {QStringLiteral("env"),
+                              QJsonObject{{QStringLiteral("KEY"), QStringLiteral("v")}}}},
+                 QJsonObject{{QStringLiteral("name"), QStringLiteral("gamma")},
+                             {QStringLiteral("transport"), QStringLiteral("stdio")},
+                             {QStringLiteral("command"), QStringLiteral("node")}}}}};
+        QFile out(path);
+        QVERIFY(out.open(QIODevice::WriteOnly));
+        out.write(QJsonDocument(file).toJson());
+        out.close();
+
+        const QVector<QVariantMap> current{
+            {{QStringLiteral("name"), QStringLiteral("alpha")},
+             {QStringLiteral("transport"), QStringLiteral("http")},
+             {QStringLiteral("url"), QStringLiteral("https://old.test/mcp")},
+             {QStringLiteral("enabled"), true}}};
+
+        const auto preview = McpConfigTransfer::previewImportFile(path, current);
+        QVERIFY2(preview.ok, qPrintable(preview.error));
+        QCOMPARE(preview.total, 2);
+        QCOMPARE(preview.importable, 2);
+        QCOMPARE(preview.conflictCount, 1);
+        QCOMPARE(preview.withSecrets, 1);
+
+        int added = 0, replaced = 0, skipped = 0;
+        const auto bySkip = McpConfigTransfer::applyImport(
+            current, preview, McpConfigTransfer::MergePolicy::Skip,
+            &added, &replaced, &skipped);
+        QCOMPARE(bySkip.size(), 2);
+        QCOMPARE(added, 1);
+        QCOMPARE(replaced, 0);
+        QCOMPARE(skipped, 1);
+        QCOMPARE(bySkip.at(0).value(QStringLiteral("url")).toString(),
+                 QStringLiteral("https://old.test/mcp"));
+
+        const auto byOverwrite = McpConfigTransfer::applyImport(
+            current, preview, McpConfigTransfer::MergePolicy::Overwrite,
+            &added, &replaced, &skipped);
+        QCOMPARE(byOverwrite.size(), 2);
+        QCOMPARE(replaced, 1);
+        QCOMPARE(byOverwrite.at(0).value(QStringLiteral("url")).toString(),
+                 QStringLiteral("https://new.test/mcp"));
+        QVERIFY(!byOverwrite.at(0).value(QStringLiteral("enabled")).toBool());
+        QCOMPARE(byOverwrite.at(0).value(QStringLiteral("env")).toMap()
+                     .value(QStringLiteral("KEY")).toString(), QStringLiteral("v"));
+
+        const auto byRename = McpConfigTransfer::applyImport(
+            current, preview, McpConfigTransfer::MergePolicy::Rename,
+            &added, &replaced, &skipped);
+        QCOMPARE(byRename.size(), 3);
+        QCOMPARE(added, 2);
+        QStringList names;
+        for (const QVariantMap& server : byRename) {
+            const QString name = server.value(QStringLiteral("name")).toString();
+            names << name;
+            // 新增/重命名进来的条目一律禁用；未被触碰的原有条目保持原状态。
+            if (name != QStringLiteral("alpha"))
+                QVERIFY(!server.value(QStringLiteral("enabled")).toBool());
+            else
+                QVERIFY(server.value(QStringLiteral("enabled")).toBool());
+        }
+        QVERIFY2(names.contains(QStringLiteral("alpha (2)")), qPrintable(names.join(',')));
+        QVERIFY(names.contains(QStringLiteral("gamma")));
+
+        // 无法识别的策略回退为"跳过"，绝不默默覆盖。
+        QCOMPARE(McpConfigTransfer::policyFromName(QStringLiteral("bogus")),
+                 McpConfigTransfer::MergePolicy::Skip);
+    }
+
+    // 坏文件/坏条目的报错口径：文件级失败 ok=false，条目级失败带 error。
+    void transferRejectsInvalidInput() {
+        QTemporaryDir dir;
+        QVERIFY(dir.isValid());
+
+        auto missing = McpConfigTransfer::previewImportFile(
+            dir.filePath(QStringLiteral("nope.json")));
+        QVERIFY(!missing.ok);
+        QVERIFY(!missing.error.isEmpty());
+
+        const QString garbage = dir.filePath(QStringLiteral("garbage.json"));
+        QFile bad(garbage);
+        QVERIFY(bad.open(QIODevice::WriteOnly));
+        bad.write("{ not json");
+        bad.close();
+        auto malformed = McpConfigTransfer::previewImportFile(garbage);
+        QVERIFY(!malformed.ok);
+        QVERIFY(!malformed.error.isEmpty());
+
+        const QString foreign = dir.filePath(QStringLiteral("foreign.json"));
+        QFile other(foreign);
+        QVERIFY(other.open(QIODevice::WriteOnly));
+        other.write(R"({"format":"something-else","servers":[]})");
+        other.close();
+        auto wrongFormat = McpConfigTransfer::previewImportFile(foreign);
+        QVERIFY(!wrongFormat.ok);
+
+        const QString badEntry = dir.filePath(QStringLiteral("entry.json"));
+        QFile entryFile(badEntry);
+        QVERIFY(entryFile.open(QIODevice::WriteOnly));
+        entryFile.write(R"({"servers":[{"name":"no-command","transport":"stdio"}]})");
+        entryFile.close();
+        auto entry = McpConfigTransfer::previewImportFile(badEntry);
+        QVERIFY(entry.ok);
+        QCOMPARE(entry.total, 1);
+        QCOMPARE(entry.importable, 0);
+        QVERIFY(!entry.entries.first().error.isEmpty());
+    }
+
+    // 导出文件能原样读回：写入 → 预览（无冲突、无凭据字段）。
+    void transferWriteExportRoundTrip() {
+        QTemporaryDir dir;
+        QVERIFY(dir.isValid());
+        const QString path = dir.filePath(QStringLiteral("export.json"));
+        QVector<QVariantMap> servers{
+            {{QStringLiteral("name"), QStringLiteral("alpha")},
+             {QStringLiteral("transport"), QStringLiteral("stdio")},
+             {QStringLiteral("command"), QStringLiteral("node")},
+             {QStringLiteral("args"), QStringList{QStringLiteral("a.js")}},
+             {QStringLiteral("enabled"), true}}};
+        QString error;
+        QVERIFY2(McpConfigTransfer::writeExport(path, servers, &error),
+                 qPrintable(error));
+        const auto preview = McpConfigTransfer::previewImportFile(path);
+        QVERIFY2(preview.ok, qPrintable(preview.error));
+        QCOMPARE(preview.importable, 1);
+        QCOMPARE(preview.withSecrets, 0);
+        QCOMPARE(preview.entries.first().server.value(QStringLiteral("name")).toString(),
+                 QStringLiteral("alpha"));
+        QVERIFY(!preview.entries.first().server.value(QStringLiteral("enabled")).toBool());
+    }
+
     void stderrSurfacedOnExit() {
         StdioTransport::Config cfg;
         cfg.command = fakeServerExe();

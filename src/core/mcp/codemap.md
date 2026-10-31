@@ -8,6 +8,7 @@ MCP（Model Context Protocol 2025-03-26）客户端层：把外部 MCP server �
 - `McpClient` 负责协议生命周期：`initialize` → `notifications/initialized` → `tools/list` → `tools/call`，按 id 复用并发请求，带 30 s 超时与取消。
 - `McpToolAdapter` 是 `ITool` 桥接器，把一次模型工具调用转成阻塞等待的 `tools/call`。
 - `McpConfig` 负责 `<AppData>/mcp_servers.json` 的读写（QVariantMap 形状，避免 core↔viewmodels 类型耦合）。
+- `McpConfigTransfer` 负责 MCP 服务器配置的**独立导入/导出文件**（docs/31 N7）：导出脱敏白名单 + 导入预览/冲突策略，纯函数无 UI 依赖。
 
 ## 设计（模式/抽象/关键类型）
 
@@ -57,15 +58,22 @@ MCP（Model Context Protocol 2025-03-26）客户端层：把外部 MCP server �
 2. `load()` 容错：文件缺失/损坏/非对象 → 空列表；`enabled` 缺省 true；`name` 为空条目丢弃。
 3. `save()` 用 `QSaveFile`（mkpath → write → commit）原子落盘，失败返回 false 并 qWarning。
 
+**配置导入/导出**（`McpConfigTransfer.cpp`）
+1. 导出文件：`{"format":"nexusai-mcp-servers","version":1,"servers":[…],"secretsOmitted":N,"omitted":["env","headers"]}`。
+2. `buildExport()` 只写白名单字段 `name/transport/command/args/url`，环境变量与请求头**一律不写**，`enabled` 强制 `false`；含 env/headers 的条目计入 `secretsOmitted`，页面据此提示"凭据未包含"。
+3. `previewImportFile()` 只做校验与冲突标记，不改内存：未知字段（未来可能出现的凭据字段）在 `sanitizeServer()` 里丢弃；`name` 为空 / transport 非 stdio|http / stdio 缺 command / http 缺 url 记 `error` 并跳过。
+4. `applyImport()` 是纯函数：合法条目逐条合并；同名按策略处理——`skip` 跳过、`overwrite` 替换（仍禁用）、`rename` 用 `"<name> (2)"`、（3）… 保证唯一。`policyFromName()` 不认识的值回退 `skip`，绝不默默覆盖。
+5. 导入保留文件里的 env/headers（MCP 凭据本就明文存本地），但导入后全部禁用，必须手动启用。
+
 ## 集成点
 
-- `src/viewmodels/McpManager.*`：QML 单例 `McpManager`；`loadAndConnectAll()` 读配置并逐个建 `McpClient`；`connected` → 注册 `McpToolAdapter`（每 server ≤32 个，全局 `mcp__*` ≤64）；`disconnected` → `takeTool`；`connectionFailed`/`diagnostic` → 记录 + qCWarning；`addServer/removeServer/setEnabled/reconnect` 增删改并即时连接/反注册；`retireClient()` 延迟 40 s 删除（覆盖 35 s 调用 + 3 s 取消宽限），`aboutToQuit` 同步回收，避免 stdio 子进程残留。
+- `src/viewmodels/McpManager.*`：QML 单例 `McpManager`；`loadAndConnectAll()` 读配置并逐个建 `McpClient`；`connected` → 注册 `McpToolAdapter`（每 server ≤32 个，全局 `mcp__*` ≤64）；`disconnected` → `takeTool`；`connectionFailed`/`diagnostic` → 记录 + qCWarning；`addServer/removeServer/setEnabled/reconnect` 增删改并即时连接/反注册；`exportServers/previewServerImport/importServers` 走 `McpConfigTransfer`，导入后重建 `m_configs`、停用未启用项并 `save()`；`retireClient()` 延迟 40 s 删除（覆盖 35 s 调用 + 3 s 取消宽限），`aboutToQuit` 同步回收，避免 stdio 子进程残留。
 - `src/main.cpp:612-618`：启动时 `McpManager::instance()->loadAndConnectAll()`。
 - `src/main.cpp:444-463`：`localOnlyMode` 时把 `web_search` 与所有已存在的 `mcp__*` 写入 `ToolRegistry::setPolicyBlocked`；切换本地模式或 profile 时重算。
 - `src/core/agent/AIAgent.cpp`：系统提示说明 `mcp__*` 为外部服务；`toolAllowedForModel()` 在 `m_localOnly` 下直接排除 `mcp__*`；审计行把 `mcp__<server>__<tool>` 拆出 `mcp_server` 字段。
 - `src/viewmodels/SettingsBackup.cpp`：备份/恢复 `mcp_servers.json`，恢复后 `applyRestoredConfigs()` 重建 client。
 - `CMakeLists.txt:83-94`：编入 `nexus_core`，依赖 `Qt6::Network`（HTTP 传输）。
-- 测试：`tests/test_mcp.cpp` + `tests/fake_mcp_server_main.cpp`（含 `HttpFakeMcpServer`），覆盖握手、工具调用、错误映射、崩溃重启、并发按 id 关联、SSE、32 MiB 超限、stdout 洪泛、session 头、Windows cmd 包装、stderr 透出。
+- 测试：`tests/test_mcp.cpp` + `tests/fake_mcp_server_main.cpp`（含 `HttpFakeMcpServer`），覆盖握手、工具调用、错误映射、崩溃重启、并发按 id 关联、SSE、32 MiB 超限、stdout 洪泛、session 头、Windows cmd 包装、stderr 透出；另含 `McpConfigTransfer` 四例（脱敏导出、三种冲突策略、非法输入、落盘回读）。
 
 ## 关键文件
 
@@ -75,6 +83,7 @@ MCP（Model Context Protocol 2025-03-26）客户端层：把外部 MCP server �
 - `McpClient.h/.cpp`（108/295 行）：握手、`tools/list`、`tools/call`、pending 表、30 s 超时、取消。
 - `McpToolAdapter.h/.cpp`（52/157 行）：命名、描述截断、跨线程等待、35 s 期限。
 - `McpConfig.h/.cpp`（28/88 行）：`QSaveFile` 原子配置。
+- `McpConfigTransfer.h/.cpp`（64/264 行）：导出脱敏、导入预览、同名冲突策略、重命名。
 
 ## 约束与风险
 
@@ -82,6 +91,7 @@ MCP（Model Context Protocol 2025-03-26）客户端层：把外部 MCP server �
 - **本地模式门禁是快照**：`applyLocalOnlyGate()` 只把"当时已注册"的 `mcp__*` 写入阻断名单；之后新连接的 server 注册的工具不会被追加，存在策略窗口（`main.cpp:451-456` + `ToolRegistry::registerTool` 不重算 policy）。
 - **子进程即任意代码执行**：stdio 的 `command/args/env` 完全来自配置文件，无路径或二进制白名单；Windows 上 `.cmd/.bat` 还要经过 `cmd.exe`，引号规则仅覆盖空格/制表/双引号。
 - **凭据明文**：`env` 与 HTTP `headers` 以明文写入 `mcp_servers.json`（备份文件同样包含），代码中未做加密或脱敏。
+- **两种文件的凭据边界**：整体设置备份（`SettingsBackup`）含 `mcp_servers.json` 全文；N7 的独立导入/导出文件**不含** env/headers，只能迁移服务器形状，凭据需手动补全，二者不可互相替代。
 - **超时是双层的**：client 30 s，adapter 35 s。adapter 超时返回失败后，client 的请求仍可能稍后到达并被静默丢弃；`cancel()` 是协作式的，server 不理会 `notifications/cancelled` 时仍要等满宽限。
 - **资源上限**：stdio 8 MiB 无换行即杀且不重启；stderr 64 KiB；HTTP 单响应 32 MiB 即 `Failed`（无自动恢复）；重启最多 3 次；工具数每 server 32、全局 64（超出只跳过并告警）。
 - **HTTP 为子集**：无 GET SSE 推送通道、无 OAuth、无重连；`start()` 无条件 `Connected`，所以"连接成功"只代表 URL 配置合法。仅接受单个对象响应，JSON-RPC 批量数组会被 `dispatchPayload` 判为畸形。

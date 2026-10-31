@@ -1,4 +1,5 @@
 #include "SettingsService.h"
+#include "core/utils/BackupSchedule.h"
 #include "core/utils/SettingsSchema.h"
 #include "core/utils/Activity.h"
 #include "core/utils/SettingsRepository.h"
@@ -18,6 +19,7 @@
 #include <QNetworkReply>
 #include <QNetworkRequest>
 #include <QFutureWatcher>
+#include <QSet>
 #include <QUrl>
 #include <QUuid>
 #include <QtConcurrent/QtConcurrentRun>
@@ -458,6 +460,13 @@ void SettingsService::load() {
     m_backupKeepCount = SettingsSchema::clampInt(QStringLiteral("memory/backupKeepCount"),
         SettingsRepository::value(QStringLiteral("memory/backupKeepCount"),
             SettingsSchema::defaultValue(QStringLiteral("memory/backupKeepCount"))).toInt());
+    // docs/31 S4.2 N6：定时备份间隔。注册表里可能有任意整数（导入的旧配置、
+    // 手工改键），先 clamp 到 schema 范围再归一到五档之一，界面才不会出现
+    // 下拉框里选不中的值。
+    m_backupIntervalHours = normalizeBackupIntervalHours(
+        SettingsSchema::clampInt(QStringLiteral("memory/backupIntervalHours"),
+            SettingsRepository::value(QStringLiteral("memory/backupIntervalHours"),
+                SettingsSchema::defaultValue(QStringLiteral("memory/backupIntervalHours"))).toInt()));
     // docs/16 §7.3: quota settings (flat keys; 0 = unlimited for int quotas).
     // docs/25 E8：读取经 SettingsSchema::intSetting/boolSetting，与
     // AIAgent::checkQuota 共用同一实现（原先两处各写一份三段式样板）。
@@ -466,6 +475,8 @@ void SettingsService::load() {
     m_monthlyTokenQuota = SettingsSchema::intSetting(QStringLiteral("monthlyTokenQuota"));
     m_monthlyCostQuotaCents = SettingsSchema::intSetting(QStringLiteral("monthlyCostQuotaCents"));
     m_strictQuotaMode = SettingsSchema::boolSetting(QStringLiteral("strictQuotaMode"));
+    m_quotaAlertPercent = SettingsSchema::clampInt(QStringLiteral("usage/alertPercent"),
+        SettingsSchema::intSetting(QStringLiteral("usage/alertPercent")));
     m_defaultPermissionMode = SettingsRepository::value(
         QStringLiteral("agent/defaultPermissionMode"),
         SettingsSchema::defaultValue(QStringLiteral("agent/defaultPermissionMode"))).toString();
@@ -738,6 +749,67 @@ void SettingsService::removeSlashCommand(const QString& id) {
     }
 }
 
+bool SettingsService::applyPromptAssets(const QVariantList& presets,
+                                        const QVariantList& commands) {
+    QVariantList nextPresets;
+    QSet<QString> presetIds;
+    QSet<QString> presetNames;
+    for (const QVariant& entry : presets) {
+        const QVariantMap source = entry.toMap();
+        const QString id = source.value(QStringLiteral("id")).toString();
+        const QString name = source.value(QStringLiteral("name")).toString().trimmed();
+        if (id.isEmpty() || name.isEmpty() || presetIds.contains(id)
+            || presetNames.contains(name.toCaseFolded()))
+            return false;
+        presetIds.insert(id);
+        presetNames.insert(name.toCaseFolded());
+        nextPresets.append(QVariantMap{{QStringLiteral("id"), id},
+                                       {QStringLiteral("name"), name},
+                                       {QStringLiteral("prompt"),
+                                        source.value(QStringLiteral("prompt")).toString()}});
+    }
+
+    QVariantList nextCommands;
+    QSet<QString> commandIds;
+    QSet<QString> commandNames;
+    for (const QVariant& entry : commands) {
+        const QVariantMap source = entry.toMap();
+        const QString id = source.value(QStringLiteral("id")).toString();
+        QString name = source.value(QStringLiteral("name")).toString().trimmed();
+        while (name.startsWith(QLatin1Char('/'))) name.remove(0, 1);
+        name = name.toLower();
+        const QString templ = source.value(QStringLiteral("templ")).toString();
+        if (id.isEmpty() || name.isEmpty() || templ.trimmed().isEmpty()
+            || commandIds.contains(id) || commandNames.contains(name))
+            return false;
+        commandIds.insert(id);
+        commandNames.insert(name);
+        nextCommands.append(QVariantMap{{QStringLiteral("id"), id},
+                                        {QStringLiteral("name"), name},
+                                        {QStringLiteral("templ"), templ},
+                                        {QStringLiteral("note"),
+                                         source.value(QStringLiteral("note")).toString()}});
+    }
+
+    const QVariantList previousPresets = m_promptPresets;
+    const QVariantList previousCommands = m_slashCommands;
+    m_promptPresets = nextPresets;
+    if (!writeStringList(QStringLiteral("promptPresets"), m_promptPresets)) {
+        m_promptPresets = previousPresets;
+        return false;
+    }
+    m_slashCommands = nextCommands;
+    if (!writeStringList(QStringLiteral("slashCommands"), m_slashCommands)) {
+        m_slashCommands = previousCommands;
+        m_promptPresets = previousPresets;
+        writeStringList(QStringLiteral("promptPresets"), previousPresets);
+        return false;
+    }
+    emit promptPresetsChanged();
+    emit slashCommandsChanged();
+    return true;
+}
+
 QString SettingsService::addSessionTemplate(const QString& name, const QString& profileId,
                                             int permissionMode, const QString& firstMessage) {
     const QString trimmed = name.trimmed();
@@ -917,6 +989,56 @@ void SettingsService::removeProfile(const QString& id) {
         emit activeProfileChanged();
         return;
     }
+}
+
+QString SettingsService::duplicateProfile(const QString& id, const QString& newName) {
+    int index = -1;
+    QVariantMap source;
+    for (int i = 0; i < m_profiles.size(); ++i) {
+        const QVariantMap candidate = m_profiles.at(i).toMap();
+        if (candidate.value("id").toString() != id) continue;
+        index = i;
+        source = candidate;
+        break;
+    }
+    if (index < 0) return {};
+
+    // 红线 1：复制绝不携带密钥。apiKey 由用户在新配置上重新填写；其余
+    // 结构字段（端点、模型、模型列表、生成参数、上下文预算等）原样复制。
+    source.remove(QStringLiteral("apiKey"));
+    const QString newId = QUuid::createUuid().toString(QUuid::WithoutBraces);
+    source["id"] = newId;
+    QString name = newName.trimmed();
+    if (name.isEmpty()) {
+        QString base = source.value("displayName").toString().trimmed();
+        if (base.isEmpty()) base = source.value("provider").toString();
+        name = tr("%1 副本").arg(base);
+    }
+    source["displayName"] = name;
+
+    const QVariantList previousProfiles = m_profiles;
+    m_profiles.insert(index + 1, source);
+    if (!persist()) {
+        m_profiles = previousProfiles;
+        return {};
+    }
+    emit profilesChanged();
+    return newId;
+}
+
+void SettingsService::moveProfile(int from, int to) {
+    if (from < 0 || to < 0 || from >= m_profiles.size() || to >= m_profiles.size()
+            || from == to)
+        return;
+
+    const QVariantList previousProfiles = m_profiles;
+    const QVariant profile = m_profiles.takeAt(from);
+    m_profiles.insert(to, profile);
+    if (!persist()) {
+        m_profiles = previousProfiles;
+        return;
+    }
+    emit profilesChanged();
 }
 
 void SettingsService::setActiveProfile(const QString& id) {
@@ -1640,6 +1762,17 @@ void SettingsService::setBackupKeepCount(int count) {
     emit backupKeepCountChanged();
 }
 
+// docs/31 S4.2 N6：定时备份间隔。写盘的是归一后的值，不是用户传入的原始
+// 值——这样下次启动读回来的值一定在下拉框的可选项里。
+void SettingsService::setBackupIntervalHours(int hours) {
+    const int normalized = normalizeBackupIntervalHours(
+        SettingsSchema::clampInt(QStringLiteral("memory/backupIntervalHours"), hours));
+    if (m_backupIntervalHours == normalized
+            || !persistValue(QStringLiteral("memory/backupIntervalHours"), normalized)) return;
+    m_backupIntervalHours = normalized;
+    emit backupIntervalHoursChanged();
+}
+
 // docs/16 §7.3: quota setters. Int quotas are clamped to >= 0 (0 = unlimited);
 // same 4-step pattern as setContextTokens. Flat QSettings keys
 // match the SettingsSchema registration (no prefix).
@@ -1680,6 +1813,14 @@ void SettingsService::setStrictQuotaMode(bool v) {
             || !persistValue(QStringLiteral("strictQuotaMode"), v)) return;
     m_strictQuotaMode = v;
     emit strictQuotaModeChanged();
+}
+
+void SettingsService::setQuotaAlertPercent(int v) {
+    const int clamped = SettingsSchema::clampInt(QStringLiteral("usage/alertPercent"), v);
+    if (m_quotaAlertPercent == clamped
+            || !persistValue(QStringLiteral("usage/alertPercent"), clamped)) return;
+    m_quotaAlertPercent = clamped;
+    emit quotaAlertPercentChanged();
 }
 
 void SettingsService::setReadDenyList(const QVariantList& v) {
@@ -1745,6 +1886,141 @@ void SettingsService::resetBackupToDefaults() {
         QStringLiteral("memory/backupOnStartup")).toBool());
     setBackupKeepCount(SettingsSchema::defaultValue(
         QStringLiteral("memory/backupKeepCount")).toInt());
+    setBackupIntervalHours(SettingsSchema::defaultValue(
+        QStringLiteral("memory/backupIntervalHours")).toInt());
+}
+
+// docs/31 O1：按键写入的统一入口。表里只有"本服务持有真实 setter、且不含
+// 凭据"的键——未知键、加密键（embedding/apiKey、webSearch/*ApiKey、
+// network/proxyAuth）以及只有页面才该写的复合键（modelProfiles、
+// promptPresets、tools/disabled）都不在表内，调用方据此判定不可复位。
+//
+// 注意：这里刻意不覆盖 network/proxyUsername / proxyPassword。代理凭据
+// 整体存在加密的 network/proxyAuth 里，全局复位必须保持原值（红线 1）；
+// 页面上显式的「恢复本页默认值」仍走 resetNetworkToDefaults()，其清空
+// 凭据的行为由确认弹窗单独说明。
+bool SettingsService::setValueForSetting(const QString& key, const QVariant& value) {
+    if (key == QLatin1String("contextTokens")) { setContextTokens(value.toInt()); return true; }
+
+    if (key == QLatin1String("agent/maxSteps")) { setMaxSteps(value.toInt()); return true; }
+    if (key == QLatin1String("agent/taskTimeoutMinutes")) {
+        setTaskTimeoutMinutes(value.toInt());
+        return true;
+    }
+    if (key == QLatin1String("agent/systemPromptOverride")) {
+        setSystemPromptOverride(value.toString());
+        return true;
+    }
+    if (key == QLatin1String("agent/defaultPermissionMode")) {
+        setDefaultPermissionMode(value.toString());
+        return true;
+    }
+
+    if (key == QLatin1String("security/allowFullDiskRead")) {
+        setAllowFullDiskRead(value.toBool());
+        return true;
+    }
+    if (key == QLatin1String("security/allowProjectWrite")) {
+        setAllowProjectWrite(value.toBool());
+        return true;
+    }
+    if (key == QLatin1String("security/localOnlyMode")) {
+        setLocalOnlyMode(value.toBool());
+        return true;
+    }
+    if (key == QLatin1String("security/allowLocalNetworkFetch")) {
+        setAllowLocalNetworkFetch(value.toBool());
+        return true;
+    }
+    if (key == QLatin1String("security/readDenyList")) {
+        setReadDenyList(value.toList());
+        return true;
+    }
+
+    if (key == QLatin1String("embedding/provider")) {
+        setEmbeddingProvider(value.toString());
+        return true;
+    }
+    if (key == QLatin1String("embedding/model")) {
+        setEmbeddingModel(value.toString());
+        return true;
+    }
+    if (key == QLatin1String("embedding/baseUrl")) {
+        setEmbeddingBaseUrl(value.toString());
+        return true;
+    }
+
+    if (key == QLatin1String("network/proxyMode")) { setProxyMode(value.toString()); return true; }
+    if (key == QLatin1String("network/proxyHost")) { setProxyHost(value.toString()); return true; }
+    if (key == QLatin1String("network/proxyPort")) { setProxyPort(value.toInt()); return true; }
+
+    if (key == QLatin1String("memory/episodicMemoryEnabled")) {
+        setEpisodicMemoryEnabled(value.toBool());
+        return true;
+    }
+    if (key == QLatin1String("memory/auditRetentionDays")) {
+        setAuditRetentionDays(value.toInt());
+        return true;
+    }
+    if (key == QLatin1String("memory/tokenRetentionDays")) {
+        setTokenRetentionDays(value.toInt());
+        return true;
+    }
+    if (key == QLatin1String("memory/backupOnStartup")) {
+        setBackupOnStartup(value.toBool());
+        return true;
+    }
+    if (key == QLatin1String("memory/backupKeepCount")) {
+        setBackupKeepCount(value.toInt());
+        return true;
+    }
+    if (key == QLatin1String("memory/backupIntervalHours")) {
+        setBackupIntervalHours(value.toInt());
+        return true;
+    }
+
+    if (key == QLatin1String("logging/level")) { setLogLevel(value.toString()); return true; }
+    if (key == QLatin1String("logging/directory")) {
+        setLogDirectory(value.toString());
+        return true;
+    }
+    if (key == QLatin1String("logging/maxFileSizeMb")) {
+        setLogMaxFileSizeMb(value.toInt());
+        return true;
+    }
+    if (key == QLatin1String("logging/retentionFiles")) {
+        setLogRetentionFiles(value.toInt());
+        return true;
+    }
+
+    if (key == QLatin1String("webSearch/provider")) {
+        setWebSearchProvider(value.toString());
+        return true;
+    }
+
+    if (key == QLatin1String("dailyTokenQuota")) { setDailyTokenQuota(value.toInt()); return true; }
+    if (key == QLatin1String("dailyCostQuotaCents")) {
+        setDailyCostQuotaCents(value.toInt());
+        return true;
+    }
+    if (key == QLatin1String("monthlyTokenQuota")) {
+        setMonthlyTokenQuota(value.toInt());
+        return true;
+    }
+    if (key == QLatin1String("monthlyCostQuotaCents")) {
+        setMonthlyCostQuotaCents(value.toInt());
+        return true;
+    }
+    if (key == QLatin1String("strictQuotaMode")) {
+        setStrictQuotaMode(value.toBool());
+        return true;
+    }
+    if (key == QLatin1String("usage/alertPercent")) {
+        setQuotaAlertPercent(value.toInt());
+        return true;
+    }
+
+    return false;
 }
 
 void SettingsService::setDefaultPermissionMode(const QString& v) {

@@ -141,6 +141,8 @@ class SettingsService : public QObject {
     Q_PROPERTY(int monthlyTokenQuota READ monthlyTokenQuota WRITE setMonthlyTokenQuota NOTIFY monthlyTokenQuotaChanged)
     Q_PROPERTY(int monthlyCostQuotaCents READ monthlyCostQuotaCents WRITE setMonthlyCostQuotaCents NOTIFY monthlyCostQuotaCentsChanged)
     Q_PROPERTY(bool strictQuotaMode READ strictQuotaMode WRITE setStrictQuotaMode NOTIFY strictQuotaModeChanged)
+    // docs/31 S4.1 N9：用量达到配额的该百分比时提醒一次（0 = 关闭，默认 80）。
+    Q_PROPERTY(int quotaAlertPercent READ quotaAlertPercent WRITE setQuotaAlertPercent NOTIFY quotaAlertPercentChanged)
     // 会话权限模式的"全局默认"：新会话/tab 的初始模式。取值
     // "confirm"/"auto_edit"/"full_access"（PermissionMode 字符串形式）。
     Q_PROPERTY(QString defaultPermissionMode READ defaultPermissionMode WRITE setDefaultPermissionMode NOTIFY defaultPermissionModeChanged)
@@ -318,10 +320,14 @@ public:
     // docs/23 D1: startup auto-backup (VACUUM INTO snapshot) + rotation.
     Q_PROPERTY(bool backupOnStartup READ backupOnStartup WRITE setBackupOnStartup NOTIFY backupOnStartupChanged)
     Q_PROPERTY(int backupKeepCount READ backupKeepCount WRITE setBackupKeepCount NOTIFY backupKeepCountChanged)
+    // docs/31 S4.2 N6: 定时备份间隔（小时），0 = 关闭；只接受 0/1/6/24/168 五档。
+    Q_PROPERTY(int backupIntervalHours READ backupIntervalHours WRITE setBackupIntervalHours NOTIFY backupIntervalHoursChanged)
     bool backupOnStartup() const { return m_backupOnStartup; }
     void setBackupOnStartup(bool enabled);
     int backupKeepCount() const { return m_backupKeepCount; }
     void setBackupKeepCount(int count);
+    int backupIntervalHours() const { return m_backupIntervalHours; }
+    void setBackupIntervalHours(int hours);
 
     // docs/16 §7.3: quota settings. 0 = unlimited for the int quotas.
     int dailyTokenQuota() const { return m_dailyTokenQuota; }
@@ -334,6 +340,8 @@ public:
     void setMonthlyCostQuotaCents(int v);
     bool strictQuotaMode() const { return m_strictQuotaMode; }
     void setStrictQuotaMode(bool v);
+    int quotaAlertPercent() const { return m_quotaAlertPercent; }
+    void setQuotaAlertPercent(int v);
 
     QString defaultPermissionMode() const { return m_defaultPermissionMode; }
     void setDefaultPermissionMode(const QString& v);
@@ -386,6 +394,10 @@ public:
     Q_INVOKABLE void updateSlashCommand(const QString& id, const QString& command,
                                         const QString& templ, const QString& note);
     Q_INVOKABLE void removeSlashCommand(const QString& id);
+    // docs/31 S4.6 N8：预设包导入的一次性替换入口。转移层已按冲突策略合并
+    // 好两组列表；这里只做结构校验（id/name 非空且唯一、指令词归一）并把
+    // 两个键一起落盘——任一步失败恢复原列表并返回 false。
+    bool applyPromptAssets(const QVariantList& presets, const QVariantList& commands);
     Q_INVOKABLE QString addSessionTemplate(const QString& name, const QString& profileId,
                                            int permissionMode, const QString& firstMessage);
     Q_INVOKABLE void updateSessionTemplate(const QString& id, const QVariantMap& fields);
@@ -394,6 +406,14 @@ public:
     // 只有一个 resetGeneralToDefaults()；拆页后按领域拆分，每页只复位自己
     // 的键，避免误伤其他页（例如复位网络代理不应清掉系统提示词）。
     // 逐项走既有 setter，保证持久化与 NOTIFY 一致。
+    // docs/31 O1：按键写入的统一入口，供设置中心的行级/全局复位使用。
+    //
+    // 只接受本服务持有真实 setter 的、非加密的 M1 键；未知键、加密键
+    // （embedding/apiKey、webSearch/*ApiKey、network/proxyAuth）与只有页面
+    // 才能安全写入的键一律返回 false。这样「复原」不可能绕开各 setter 的
+    // 校验、clamp 与信号，也不会把密钥写回缓存。
+    Q_INVOKABLE bool setValueForSetting(const QString& key, const QVariant& value);
+
     Q_INVOKABLE void resetAgentToDefaults();
     Q_INVOKABLE void resetLoggingToDefaults();
     Q_INVOKABLE void resetNetworkToDefaults();
@@ -445,6 +465,18 @@ public:
     };
     void setAutoStartBackend(AutoStartBackend* backend);
 
+    // docs/31 S4.4 N4（4a）：复制配置与调整顺序（追加在公开 API 尾部，
+    // 避免新增 Q_INVOKABLE 改变既有方法索引）。
+    //
+    // duplicateProfile 复制除 apiKey 外的全部字段并生成新 id；密钥必须由
+    // 用户重填（红线 1：复制/导出不携带任何密钥）。newName 为空时用
+    // "<原显示名> 副本"。源 id 不存在或写盘失败返回空串，列表不变。
+    // 新配置插在源配置之后，且不会改变当前启用项。
+    Q_INVOKABLE QString duplicateProfile(const QString& id, const QString& newName);
+    // 把第 from 项移到第 to 项（最终位置），其余项顺移。索引非法、同位置
+    // 或写盘失败都是 no-op；成功发 profilesChanged，不改变 activeProfileId。
+    Q_INVOKABLE void moveProfile(int from, int to);
+
 signals:
     void persistenceError(const QString& message);
     // 单个键写入成功。设置中心的底栏用它给即时保存一个可见回执；装载/迁移
@@ -491,11 +523,13 @@ signals:
     void tokenRetentionDaysChanged();
     void backupOnStartupChanged();
     void backupKeepCountChanged();
+    void backupIntervalHoursChanged();
     void dailyTokenQuotaChanged();
     void dailyCostQuotaCentsChanged();
     void monthlyTokenQuotaChanged();
     void monthlyCostQuotaCentsChanged();
     void strictQuotaModeChanged();
+    void quotaAlertPercentChanged();
     void defaultPermissionModeChanged();
     void activeProjectIdChanged();
     void readDenyListChanged();
@@ -573,12 +607,14 @@ private:
     // docs/23 D1: backup state.
     bool m_backupOnStartup{};
     int m_backupKeepCount{};
+    int m_backupIntervalHours{};
     // docs/16 §7.3: quota control state (0 = unlimited for int quotas).
     int m_dailyTokenQuota{};
     int m_dailyCostQuotaCents{};
     int m_monthlyTokenQuota{};
     int m_monthlyCostQuotaCents{};
     bool m_strictQuotaMode{};
+    int m_quotaAlertPercent{};
     QString m_defaultPermissionMode;
     QString m_activeProjectId;
     QVariantList m_readDenyList;

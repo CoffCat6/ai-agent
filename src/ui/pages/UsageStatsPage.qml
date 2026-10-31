@@ -1255,6 +1255,10 @@ Item {
                             if (!monthlyCostSpin.activeFocus)
                                 monthlyCostSpin.value = Math.round(Settings.monthlyCostQuotaCents / 100)
                         }
+                        function onQuotaAlertPercentChanged() {
+                            if (!alertPercentSpin.activeFocus)
+                                alertPercentSpin.value = Settings.quotaAlertPercent
+                        }
                     }
 
                     Text { text: qsTr("每日 Token 上限"); color: Theme.textSecondary; font.pixelSize: Theme.fontSizeCaption; font.family: Theme.fontSans; Layout.preferredWidth: 104 }
@@ -1296,6 +1300,28 @@ Item {
                         Component.onCompleted: value = Math.round(Settings.monthlyCostQuotaCents / 100)
                         onValueModified: Settings.monthlyCostQuotaCents = value * 100
                         Accessible.name: qsTr("每月费用上限 元")
+                    }
+                    // docs/31 S4.1 N9：达到配额的这个百分比时提醒一次（0 = 关闭）。
+                    // 只在未超限区间提醒；超限本身由「超限拒绝请求」与配额警告负责。
+                    Text {
+                        text: qsTr("告警阈值（%）")
+                        color: Theme.textSecondary
+                        font.pixelSize: Theme.fontSizeCaption
+                        font.family: Theme.fontSans
+                        Layout.preferredWidth: 104
+                        HoverHandler { id: alertTipHover }
+                        ToolTip.visible: alertTipHover.hovered
+                        ToolTip.delay: 400
+                        ToolTip.text: qsTr("用量达到配额的这个百分比时提醒一次，0 = 关闭。仅在未超限时提醒。")
+                    }
+                    SpinBox {
+                        id: alertPercentSpin
+                        objectName: "quotaAlertPercent"
+                        Layout.fillWidth: true
+                        from: 0; to: 100; stepSize: 10; editable: true
+                        Component.onCompleted: value = Settings.quotaAlertPercent
+                        onValueModified: Settings.quotaAlertPercent = value
+                        Accessible.name: qsTr("用量告警阈值 百分比")
                     }
                 }
             }

@@ -51,4 +51,20 @@ QStringList FontProbe::availableFamilies() const {
     return QFontDatabase::families();
 }
 
+bool FontProbe::isFixedPitch(const QString& family) const {
+    if (family.isEmpty()) return false;
+    return QFontDatabase::isFixedPitch(family);
+}
+
+QStringList FontProbe::fixedPitchFamilies() const {
+    if (!m_fixedPitchCache.isEmpty()) return m_fixedPitchCache;
+    QStringList families;
+    for (const QString& family : QFontDatabase::families()) {
+        if (QFontDatabase::isFixedPitch(family)) families.append(family);
+    }
+    families.sort(Qt::CaseInsensitive);
+    m_fixedPitchCache = families;
+    return m_fixedPitchCache;
+}
+
 } // namespace NexusAI

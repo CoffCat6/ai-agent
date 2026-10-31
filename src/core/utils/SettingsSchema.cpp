@@ -114,6 +114,15 @@ const QVector<CategoryMeta>& SettingsSchema::categories() {
          QStringLiteral("data")},
         {QStringLiteral("backup"), QT_TRANSLATE_NOOP("NexusAI", "备份与恢复"), 16,
          QStringLiteral("data")},
+        // docs/31 N2：全局快捷键。动作表在 ShortcutMap，偏好只存覆盖项；
+        // 归属“外观与常规”，因为快捷键属于应用习惯而非模型行为。
+        {QStringLiteral("shortcuts"), QT_TRANSLATE_NOOP("NexusAI", "快捷键"), 17,
+         QStringLiteral("appearance")},
+        // docs/31 S4.5 N5：数据管理总览。与用量/活动/日志/备份同属数据组，
+        // 但主体是"统计 + 立即清理/清空/VACUUM"的动作面板而非偏好键，
+        // 独立成页避免继续堆高备份页。放在数据组末尾。
+        {QStringLiteral("storage"), QT_TRANSLATE_NOOP("NexusAI", "数据管理"), 18,
+         QStringLiteral("data")},
     };
     return values;
 }
@@ -164,6 +173,25 @@ const QVector<PreferenceMeta>& SettingsSchema::preferences() {
         preference(QStringLiteral("ui.restoreWindowOnStartup"), QStringLiteral("interface"),
                    QT_TRANSLATE_NOOP("NexusAI", "启动时恢复窗口"), true,
                    PreferenceType::Bool),
+        // docs/31 S4.7 O10：开启后 Theme.motionFast/Base/Slow 归零，32 处
+        // Theme.motion* 绑定的过渡动画全部消失（编排型字面量动画不纳入）。
+        preference(QStringLiteral("ui.reduceMotion"), QStringLiteral("interface"),
+                   QT_TRANSLATE_NOOP("NexusAI", "减少动效"), false,
+                   PreferenceType::Bool),
+        // docs/31 N2：JSON 对象 actionId → PortableText 序列；"{}" 即全部
+        // 默认。动作表本身在 ShortcutMap::actionTable()，这里只负责持久化。
+        preference(QStringLiteral("ui.shortcuts"), QStringLiteral("shortcuts"),
+                   QT_TRANSLATE_NOOP("NexusAI", "自定义快捷键"),
+                   QStringLiteral("{}"), PreferenceType::String),
+        // docs/31 S4.1 O8：设置中心窗口尺寸记忆。与 settings.* 同属导航自身
+        // 状态：无分类 = 隐藏条目（不进导航/搜索，也不参与复位）；ui/ 前缀
+        // 本就不进设置导出。0 = 未保存过，使用默认 900×680。
+        preference(QStringLiteral("ui.settingsDialogWidth"), QString(),
+                   QT_TRANSLATE_NOOP("NexusAI", "设置窗口宽度"), 0,
+                   PreferenceType::Int, integerRange(0, 10000)),
+        preference(QStringLiteral("ui.settingsDialogHeight"), QString(),
+                   QT_TRANSLATE_NOOP("NexusAI", "设置窗口高度"), 0,
+                   PreferenceType::Int, integerRange(0, 10000)),
         preference(QStringLiteral("window.closeToTray"), QStringLiteral("general"),
                    QT_TRANSLATE_NOOP("NexusAI", "关闭时最小化到系统托盘"), false,
                    PreferenceType::Bool),
@@ -172,6 +200,12 @@ const QVector<PreferenceMeta>& SettingsSchema::preferences() {
                    PreferenceType::Bool),
         preference(QStringLiteral("notice.enabled"), QStringLiteral("general"),
                    QT_TRANSLATE_NOOP("NexusAI", "系统通知"), true,
+                   PreferenceType::Bool),
+        // docs/31 N1：首次启动向导是否已看过。无分类 = 隐藏条目（不进导航、
+        // 搜索与「恢复全部设置」），否则复位设置会把向导重新弹出来。
+        // 完成与跳过都写它，保证只打扰一次。
+        preference(QStringLiteral("general.onboarded"), QString(),
+                   QT_TRANSLATE_NOOP("NexusAI", "首次启动向导已完成"), false,
                    PreferenceType::Bool),
     };
     return values;
@@ -263,6 +297,11 @@ const QVector<SettingsKeyDef>& SettingsSchema::registeredKeys() {
             keyDef(QStringLiteral("memory/backupOnStartup"), true, SettingValueType::Bool),
             keyDef(QStringLiteral("memory/backupKeepCount"), 3, SettingValueType::Int,
                    intRange(1, 20)),
+            // docs/31 S4.2 N6: scheduled backup interval in hours. 0 = off;
+            // the service narrows the stored value to 0/1/6/24/168 via
+            // BackupSchedule::normalizeBackupIntervalHours().
+            keyDef(QStringLiteral("memory/backupIntervalHours"), 0, SettingValueType::Int,
+                   intRange(0, 168)),
             keyDef(QStringLiteral("dailyTokenQuota"), 0, SettingValueType::Int,
                    intRange(0, INT_MAX)),
             keyDef(QStringLiteral("dailyCostQuotaCents"), 0, SettingValueType::Int,
@@ -272,6 +311,10 @@ const QVector<SettingsKeyDef>& SettingsSchema::registeredKeys() {
             keyDef(QStringLiteral("monthlyCostQuotaCents"), 0, SettingValueType::Int,
                    intRange(0, INT_MAX)),
             keyDef(QStringLiteral("strictQuotaMode"), false, SettingValueType::Bool),
+            // docs/31 S4.1 N9：用量达到配额的该百分比时提醒一次（0 = 关闭）。
+            // 只在"未超限"区间生效；超限仍走 strictQuotaMode / quotaWarning。
+            keyDef(QStringLiteral("usage/alertPercent"), 80, SettingValueType::Int,
+                   intRange(0, 100)),
             keyDef(QStringLiteral("agent/defaultPermissionMode"), QStringLiteral("confirm"),
                    SettingValueType::String,
                    enumValues({QStringLiteral("confirm"), QStringLiteral("auto_edit"),

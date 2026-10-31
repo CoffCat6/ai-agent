@@ -4,9 +4,11 @@ import QtQuick.Controls
 import NexusAI
 import NexusAI.ViewModels
 
-// docs/20 §4.4（D9 快捷键速查表）：静态两列列表。
-// 快捷键清单是唯一事实源——main.qml 的 Shortcut 与这里的条目一一对应，
-// 新增/修改快捷键时两处必须同步（表格里注明了动作归属，方便核对）。
+// docs/20 §4.4（D9 快捷键速查表）/ docs/31 N2：列表不再静态抄一份序列。
+//
+// 全局动作来自 ShortcutMap（与 main.qml 的 Shortcut、设置页共用同一张
+// 动作表），用户改键后速查表立即显示新值；输入框内的固定按键（发送、
+// 换行、历史、粘贴图片）不可改，单列在下方。
 Dialog {
     id: dialog
 
@@ -14,9 +16,15 @@ Dialog {
     anchors.centerIn: parent
     padding: 0
     width: 520
-    // 条目新增 Ctrl+F 后按原高度会挤到关闭按钮，留出余量。
-    height: 520
+    height: Math.min(680, parent ? parent.height - 48 : 680)
 
+    readonly property var fixedShortcuts: [
+        { seq: "Enter",       action: qsTr("发送消息") },
+        { seq: "Ctrl+Enter",  action: qsTr("发送消息（输入法组合键安全）") },
+        { seq: "Shift+Enter", action: qsTr("输入换行") },
+        { seq: "↑ / ↓",       action: qsTr("回溯/前进输入历史") },
+        { seq: "Ctrl+V",      action: qsTr("粘贴图片附件") }
+    ]
 
     background: DialogBackground {}
 
@@ -45,69 +53,62 @@ Dialog {
             Layout.fillWidth: true
         }
 
-        // ── Two-column shortcut list ──────────────────
-        ColumnLayout {
+        // 条目随动作表增长，固定高度会挤到页脚：列表可滚动。
+        ScrollView {
+            Layout.fillWidth: true
+            Layout.fillHeight: true
             Layout.leftMargin: 24
             Layout.rightMargin: 24
-            Layout.fillWidth: true
-            spacing: 0
+            clip: true
+            contentWidth: availableWidth
+            ScrollBar.horizontal.policy: ScrollBar.AlwaysOff
 
-            Repeater {
-                model: [
-                    { seq: "Ctrl+,",  action: qsTr("打开设置中心") },
-                    { seq: "Ctrl+F",  action: qsTr("设置中心内搜索（设置打开时）") },
-                    { seq: "Ctrl+L",  action: qsTr("打开审计日志") },
-                    { seq: "Ctrl+B",  action: qsTr("显示/隐藏上下文面板") },
-        { seq: "Ctrl+R",  action: qsTr("打开文件改动审阅") },
-        { seq: "Ctrl+T",  action: qsTr("打开任务清单") },
-                    { seq: "Ctrl+[",  action: qsTr("显示/隐藏侧边栏") },
-                    { seq: "Ctrl+D",  action: qsTr("切换深色/浅色主题") },
-                    { seq: "Ctrl+/",  action: qsTr("打开本速查表") },
-                    { seq: "Enter",   action: qsTr("发送消息") },
-                    { seq: "Ctrl+Enter", action: qsTr("发送消息（输入法组合键安全）") },
-                    { seq: "Shift+Enter", action: qsTr("输入换行") },
-                    { seq: "↑ / ↓",   action: qsTr("回溯/前进输入历史") },
-                    { seq: "Ctrl+V",  action: qsTr("粘贴图片附件") }
-                ]
+            ColumnLayout {
+                width: parent.width
+                spacing: 8
 
-                delegate: RowLayout {
-                    required property var modelData
-                    width: parent.width
+                Text {
                     Layout.fillWidth: true
-                    spacing: 12
+                    text: qsTr("全局快捷键")
+                    color: Theme.textSecondary
+                    font.pixelSize: Theme.fontSizeCaption
+                    font.bold: true
+                    font.family: Theme.fontSans
+                }
 
-                    Rectangle {
-                        Layout.preferredWidth: seqLabel.implicitWidth + 20
-                        Layout.preferredHeight: 26
-                        radius: 6
-                        color: Theme.surfaceHover
-                        border.width: 1
-                        border.color: Theme.borderSubtle
+                Repeater {
+                    objectName: "shortcuts/globalList"
+                    model: ShortcutMap.actions
 
-                        Text {
-                            id: seqLabel
-                            anchors.centerIn: parent
-                            text: modelData.seq
-                            color: Theme.textPrimary
-                            font.pixelSize: Theme.fontSizeCaption
-                            font.bold: true
-                            font.family: Theme.fontMono
-                        }
+                    delegate: ShortcutRow {
+                        required property var modelData
+                        seq: modelData.sequence
+                        action: modelData.title
                     }
+                }
 
-                    Text {
-                        Layout.fillWidth: true
-                        text: modelData.action
-                        color: Theme.textSecondary
-                        font.pixelSize: Theme.fontSizeBody
-                        font.family: Theme.fontSans
-                        elide: Text.ElideRight
+                Text {
+                    Layout.fillWidth: true
+                    Layout.topMargin: 8
+                    text: qsTr("输入框内固定按键")
+                    color: Theme.textSecondary
+                    font.pixelSize: Theme.fontSizeCaption
+                    font.bold: true
+                    font.family: Theme.fontSans
+                }
+
+                Repeater {
+                    objectName: "shortcuts/fixedList"
+                    model: dialog.fixedShortcuts
+
+                    delegate: ShortcutRow {
+                        required property var modelData
+                        seq: modelData.seq
+                        action: modelData.action
                     }
                 }
             }
         }
-
-        Item { Layout.fillHeight: true }
 
         RowLayout {
             Layout.fillWidth: true
@@ -122,6 +123,44 @@ Dialog {
                 highlighted: true
                 onClicked: dialog.close()
             }
+        }
+    }
+
+    component ShortcutRow: RowLayout {
+        id: row
+
+        required property string seq
+        required property string action
+
+        Layout.fillWidth: true
+        spacing: 12
+
+        Rectangle {
+            Layout.preferredWidth: seqLabel.implicitWidth + 20
+            Layout.preferredHeight: 26
+            radius: 6
+            color: Theme.surfaceHover
+            border.width: 1
+            border.color: Theme.borderSubtle
+
+            Text {
+                id: seqLabel
+                anchors.centerIn: parent
+                text: row.seq
+                color: Theme.textPrimary
+                font.pixelSize: Theme.fontSizeCaption
+                font.bold: true
+                font.family: Theme.fontMono
+            }
+        }
+
+        Text {
+            Layout.fillWidth: true
+            text: row.action
+            color: Theme.textSecondary
+            font.pixelSize: Theme.fontSizeBody
+            font.family: Theme.fontSans
+            elide: Text.ElideRight
         }
     }
 }

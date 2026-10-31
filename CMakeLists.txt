@@ -65,11 +65,16 @@ add_library(nexus_core STATIC
     src/core/utils/PricingCalculator.cpp
     src/core/utils/Logger.h
     src/core/utils/Logger.cpp
+    # docs/31 O6：日志页「最近日志」的尾部读取（只读文件尾部，超大日志不整读）。
+    src/core/utils/LogTailReader.h
+    src/core/utils/LogTailReader.cpp
     src/core/utils/SettingsRepository.h
     src/core/utils/SettingsRepository.cpp
     src/core/utils/SettingsDefinition.h
     src/core/utils/SettingsSchema.h
     src/core/utils/SettingsSchema.cpp
+    # docs/31 S4.2 N6：定时备份间隔的纯函数调度策略（无 QObject，可单测）。
+    src/core/utils/BackupSchedule.h
     src/core/utils/Activity.h
     src/core/utils/Activity.cpp
     src/core/utils/DataUrlUtils.h
@@ -93,6 +98,9 @@ add_library(nexus_core STATIC
     src/core/mcp/McpToolAdapter.cpp
     src/core/mcp/McpConfig.h
     src/core/mcp/McpConfig.cpp
+    # docs/31 N7：MCP 服务器配置的独立导入/导出（白名单字段、冲突策略）。
+    src/core/mcp/McpConfigTransfer.h
+    src/core/mcp/McpConfigTransfer.cpp
 )
 target_include_directories(nexus_core PUBLIC ${CMAKE_CURRENT_SOURCE_DIR}/src)
 target_link_libraries(nexus_core PUBLIC Qt6::Core Qt6::Sql Qt6::Concurrent Qt6::Network)  # Network: Batch 20 http_fetch
@@ -161,6 +169,9 @@ qt_add_qml_module(nexus_viewmodels
         src/viewmodels/SettingsService.cpp
         src/viewmodels/SettingsBackup.h
         src/viewmodels/SettingsBackup.cpp
+        # docs/31 S4.6 N8：可分享预设包（预设/指令/工具与权限，无密钥）。
+        src/viewmodels/PresetPackTransfer.h
+        src/viewmodels/PresetPackTransfer.cpp
         src/viewmodels/ConnectionTester.h
         src/viewmodels/ConnectionTester.cpp
         # P3-a: one-shot "draft a commit message" request (no session, no git write).
@@ -179,12 +190,27 @@ qt_add_qml_module(nexus_viewmodels
         # 设置中心的字段级目录：搜索/定位/恢复可见性的单一数据源。
         src/viewmodels/SettingsCatalog.h
         src/viewmodels/SettingsCatalog.cpp
+        # docs/31 O1/O2：设置键的当前值/默认值/显示摘要共用同一份实现。
+        src/viewmodels/SettingsValueFormat.h
+        src/viewmodels/SettingsValueFormat.cpp
+        # docs/31 O6：日志页的只读尾部读取（独立于 AgentVM）。
+        src/viewmodels/LogTail.h
+        src/viewmodels/LogTail.cpp
         src/viewmodels/ChangeBus.h
         src/viewmodels/ChangeBus.cpp
         src/viewmodels/PreferenceStore.h
         src/viewmodels/PreferenceStore.cpp
         src/viewmodels/FontProbe.h
         src/viewmodels/FontProbe.cpp
+        # docs/31 N10：关于页的构建信息（Qt/编译器/架构/数据目录）。
+        src/viewmodels/AppInfo.h
+        src/viewmodels/AppInfo.cpp
+        # docs/31 N2：全局快捷键的动作表、冲突校验与 ui.shortcuts 持久化。
+        src/viewmodels/ShortcutMap.h
+        src/viewmodels/ShortcutMap.cpp
+        # docs/31 N1：首次启动向导的触发判定与 general.onboarded 标记。
+        src/viewmodels/Onboarding.h
+        src/viewmodels/Onboarding.cpp
         # docs/20 §5.1 (CITE-801): [文档名] 记号解析的唯一实现。注册成 QML
         # 单例，AssistantMessage.qml 直接调用，不再保留 JS 镜像。
         src/viewmodels/CitationParser.h
@@ -282,6 +308,8 @@ qt_add_qml_module(nexus_ai
         src/ui/components/ToolRow.qml
         # MCP 服务器新增/编辑弹窗（同一套字段与校验）
         src/ui/components/McpServerEditor.qml
+        # docs/31 N1：首次启动向导（语言/主题 → 模型服务 → 可选导入）
+        src/ui/components/OnboardingDialog.qml
         # 设置页统一骨架 / 页头 / 主题化滚动条（视觉底座）
         src/ui/components/SettingsPage.qml
         src/ui/components/SettingsPageHeader.qml
@@ -337,6 +365,8 @@ qt_add_qml_module(nexus_ai
         src/ui/pages/KnowledgePage.qml
         src/ui/pages/SecurityPage.qml
         src/ui/pages/InterfacePage.qml
+        # docs/31 N2：快捷键自定义页（动作表在 ShortcutMap）。
+        src/ui/pages/ShortcutsPage.qml
         src/ui/pages/ModelConfigPage.qml
         src/ui/pages/McpPage.qml
         src/ui/pages/ToolsPage.qml
@@ -347,6 +377,8 @@ qt_add_qml_module(nexus_ai
         src/ui/pages/ProjectRulesPage.qml
         src/ui/pages/PromptAssetsPage.qml
         src/ui/pages/SettingsBackupPage.qml
+        # docs/31 S4.5 N5: 数据管理总览（统计 + 维护动作）
+        src/ui/pages/DataPage.qml
 )
 
 # docs/20 §4.1: app icon PNGs under :/icons/ for the window icon and the

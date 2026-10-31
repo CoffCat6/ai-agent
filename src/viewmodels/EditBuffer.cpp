@@ -1,6 +1,7 @@
 #include "EditBuffer.h"
 #include "PreferenceStore.h"
 #include "PreferenceRegistry.h"
+#include "SettingsValueFormat.h"
 
 #include <QLoggingCategory>
 
@@ -28,11 +29,12 @@ void EditBuffer::stage(const QString& key, const QVariant& value) {
     clearValidationError();
     // Normalize using the same type metadata used for persistence and reset.
     auto* registry = PreferenceRegistry::instance();
+    auto* store = PreferenceStore::instance();
     const QVariant coerced = registry ? registry->normalizeValue(key, value) : value;
     // Staging the value that is already stored un-dirties the buffer instead
     // of keeping a no-op entry alive (e.g. +/- clicked back to the original).
     if (!m_staged.contains(key)
-            && coerced == PreferenceStore::instance()->load(key)) {
+            && coerced == store->load(key)) {
         if (m_staged.remove(key) > 0)
             emit stagedChanged();
         emit staged(key, coerced);
@@ -55,7 +57,15 @@ void EditBuffer::stage(const QString& key, const QVariant& value) {
         qCWarning(lcEditBuffer) << "stage: validation failed -" << error;
         return;
     }
-    if (!PreferenceStore::instance()->saveBatch({{key, coerced}})) {
+    // docs/31 S4.3 N3：撤销点必须在写盘**之前**登记——PreferenceStore::saved
+    // 在 saveBatch 内同步发出，设置中心的回执槽要能立刻看到"这次改动可撤销"。
+    // 写盘失败时恢复旧记录（含"原本没有"），不把没落盘的提交当成可撤销。
+    const QString previousUndoKey = m_undoKey;
+    const bool previousUndoHad = m_undoHadPrevious;
+    const QVariant previousUndoValue = m_undoPrevious;
+    setUndoRecord(key, store->hasStoredValue(key), store->load(key));
+    if (!store->saveBatch({{key, coerced}})) {
+        setUndoRecord(previousUndoKey, previousUndoHad, previousUndoValue);
         m_staged[key] = coerced;
         emit staged(key, coerced);
         emit stagedChanged();
@@ -110,6 +120,9 @@ bool EditBuffer::commit() {
     const bool ok = PreferenceStore::instance()->saveBatch(m_staged);
     if (ok) {
         m_staged.clear();
+        // 批量提交不提供撤销（无法用一次回写表达多个键），旧的单键撤销点
+        // 也一并作废，避免撤销到更早的一次改动。
+        clearUndo();
         clearValidationError();
         emit stagedChanged();
         emit dirtyChanged();
@@ -125,7 +138,10 @@ void EditBuffer::rollback() {
 }
 
 // docs/17: 重置同样立即写穿——把默认值批量落盘并清空暂存。
+// docs/31 S4.3 N3：复位入口清空撤销记录（一次复位覆盖了此前所有改动，
+// 再撤销只会把状态带回一个半复位中间态）。
 void EditBuffer::resetToDefault(const QStringList& keys) {
+    clearUndo();
     auto* reg = PreferenceRegistry::instance();
     if (!reg) return;
     QVariantMap batch;
@@ -144,6 +160,7 @@ void EditBuffer::resetToDefault(const QStringList& keys) {
 }
 
 void EditBuffer::resetAllToDefault() {
+    clearUndo();
     auto* reg = PreferenceRegistry::instance();
     if (!reg) return;
     QVariantMap batch;
@@ -165,6 +182,61 @@ void EditBuffer::resetAllToDefault() {
 
 QStringList EditBuffer::stagedKeys() const {
     return m_staged.keys();
+}
+
+// docs/31 S4.3 N3：只撤销最近一次写穿，且只回写一次（不链式）。
+bool EditBuffer::undoLast() {
+    if (m_undoKey.isEmpty()) return false;
+    const QString key = m_undoKey;
+    const bool hadPrevious = m_undoHadPrevious;
+    const QVariant previous = m_undoPrevious;
+
+    // 防御：只撤销已登记的偏好键，且密钥类永不回写（红线 1：密钥不进入
+    // 内存缓存/落盘回写路径，撤销入口也不会成为例外）。
+    auto* registry = PreferenceRegistry::instance();
+    if (!registry || !registry->hasPreference(key)
+            || SettingsValue::inspect(key).secret) {
+        clearUndo();
+        return false;
+    }
+
+    // 先清记录：撤销只回写一次，写盘失败也不留下"还能再撤销"的假象。
+    clearUndo();
+    auto* store = PreferenceStore::instance();
+    const bool ok = hadPrevious ? store->save(key, previous) : store->reset(key);
+    if (ok) {
+        // 撤销没有改动 staged 映射，但控件是按 `EditBuffer.staged` 的
+        // NOTIFY 重新求值的（stagedValue() 再回落到 PreferenceStore.load）；
+        // 主动广播一次让滑块/下拉/开关同步到恢复后的值。
+        m_staged.remove(key);
+        emit staged(key, store->load(key));
+        emit stagedChanged();
+        emit dirtyChanged();
+    }
+    return ok;
+}
+
+void EditBuffer::setUndoRecord(const QString& key, bool hadPrevious,
+                               const QVariant& previous) {
+    if (key.isEmpty()) {
+        clearUndo();
+        return;
+    }
+    if (m_undoKey == key && m_undoHadPrevious == hadPrevious
+            && m_undoPrevious == previous)
+        return;
+    m_undoKey = key;
+    m_undoHadPrevious = hadPrevious;
+    m_undoPrevious = previous;
+    emit undoChanged();
+}
+
+void EditBuffer::clearUndo() {
+    if (m_undoKey.isEmpty()) return;
+    m_undoKey.clear();
+    m_undoHadPrevious = false;
+    m_undoPrevious.clear();
+    emit undoChanged();
 }
 
 void EditBuffer::clearValidationError() {

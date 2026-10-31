@@ -1,7 +1,11 @@
 #include "SettingsCatalog.h"
 
 #include "core/utils/SettingsSchema.h"
+#include "EditBuffer.h"
 #include "PreferenceRegistry.h"
+#include "PreferenceStore.h"
+#include "SettingsService.h"
+#include "SettingsValueFormat.h"
 
 #include <QCoreApplication>
 #include <QJSEngine>
@@ -78,7 +82,7 @@ const QVector<CatalogEntryDef>& staticEntries() {
         {NEXUS_CATALOG_ID("webSearch/provider"), QStringLiteral("tools"),
          QT_TRANSLATE_NOOP("SettingsSearch", "联网搜索服务"),
          QStringLiteral("联网 搜索 web_search duckduckgo zhipu deepseek 智谱 提供方 provider"),
-         false, kNone},
+         false, kPage},
         {NEXUS_CATALOG_ID("webSearch/apiKey"), QStringLiteral("tools"),
          QT_TRANSLATE_NOOP("SettingsSearch", "联网搜索 API Key"),
          QStringLiteral("联网 搜索 密钥 api key zhipu 智谱 deepseek"), false, kNone},
@@ -91,7 +95,7 @@ const QVector<CatalogEntryDef>& staticEntries() {
         {NEXUS_CATALOG_ID("agent/defaultPermissionMode"), QStringLiteral("tools"),
          QT_TRANSLATE_NOOP("SettingsSearch", "默认权限模式"),
          QStringLiteral("权限 模式 确认 自动编辑 完全访问 只读 计划 permission plan read only plan_only"),
-         false, kNone},
+         false, kPage},
 
         // ── MCP ────────────────────────────────────────────
         {NEXUS_CATALOG_ID("mcp/servers"), QStringLiteral("mcp"),
@@ -124,19 +128,19 @@ const QVector<CatalogEntryDef>& staticEntries() {
         // ── 安全与隐私 ──────────────────────────────────────
         {NEXUS_CATALOG_ID("security/allowFullDiskRead"), QStringLiteral("security"),
          QT_TRANSLATE_NOOP("SettingsSearch", "允许读取整个磁盘"),
-         QStringLiteral("读取 沙箱 全盘 磁盘 read 策略"), false, kNone},
+         QStringLiteral("读取 沙箱 全盘 磁盘 read 策略"), false, kPage},
         {NEXUS_CATALOG_ID("security/allowProjectWrite"), QStringLiteral("security"),
          QT_TRANSLATE_NOOP("SettingsSearch", "允许写入当前项目目录"),
-         QStringLiteral("写入 项目 write project"), false, kNone},
+         QStringLiteral("写入 项目 write project"), false, kPage},
         {NEXUS_CATALOG_ID("security/readDenyList"), QStringLiteral("security"),
          QT_TRANSLATE_NOOP("SettingsSearch", "黑名单"),
-         QStringLiteral("黑名单 拒绝 deny 敏感 追加 读取"), false, kNone},
+         QStringLiteral("黑名单 拒绝 deny 敏感 追加 读取"), false, kPage},
         {NEXUS_CATALOG_ID("security/localOnlyMode"), QStringLiteral("security"),
          QT_TRANSLATE_NOOP("SettingsSearch", "仅本地模式"),
-         QStringLiteral("仅本地 本地模式 local 隐私 offline"), false, kNone},
+         QStringLiteral("仅本地 本地模式 local 隐私 offline"), false, kPage},
         {NEXUS_CATALOG_ID("security/allowLocalNetworkFetch"), QStringLiteral("security"),
          QT_TRANSLATE_NOOP("SettingsSearch", "允许 http_fetch 访问本机与内网地址"),
-         QStringLiteral("http_fetch 本机 内网 ssrf 网络 fetch"), false, kNone},
+         QStringLiteral("http_fetch 本机 内网 ssrf 网络 fetch"), false, kPage},
 
         // ── 记忆管理 ────────────────────────────────────────
         {NEXUS_CATALOG_ID("memory/episodicMemoryEnabled"), QStringLiteral("memory"),
@@ -157,6 +161,9 @@ const QVector<CatalogEntryDef>& staticEntries() {
         {NEXUS_CATALOG_ID("memory/backupKeepCount"), QStringLiteral("backup"),
          QT_TRANSLATE_NOOP("SettingsSearch", "备份保留数量"),
          QStringLiteral("备份 backup keep 保留 数量"), false, kPage},
+        {NEXUS_CATALOG_ID("memory/backupIntervalHours"), QStringLiteral("backup"),
+         QT_TRANSLATE_NOOP("SettingsSearch", "定时备份间隔"),
+         QStringLiteral("备份 backup 定时 间隔 周期 interval schedule"), false, kPage},
 
         // ── 知识库嵌入 ──────────────────────────────────────
         {NEXUS_CATALOG_ID("embedding/provider"), QStringLiteral("knowledge"),
@@ -203,19 +210,22 @@ const QVector<CatalogEntryDef>& staticEntries() {
         // ── 用量与配额 ──────────────────────────────────────
         {NEXUS_CATALOG_ID("dailyTokenQuota"), QStringLiteral("usage"),
          QT_TRANSLATE_NOOP("SettingsSearch", "每日 Token 上限"),
-         QStringLiteral("配额 token 每日 上限 quota daily"), false, kNone},
+         QStringLiteral("配额 token 每日 上限 quota daily"), false, kPage},
         {NEXUS_CATALOG_ID("monthlyTokenQuota"), QStringLiteral("usage"),
          QT_TRANSLATE_NOOP("SettingsSearch", "每月 Token 上限"),
-         QStringLiteral("配额 token 每月 上限 quota monthly"), false, kNone},
+         QStringLiteral("配额 token 每月 上限 quota monthly"), false, kPage},
         {NEXUS_CATALOG_ID("dailyCostQuotaCents"), QStringLiteral("usage"),
          QT_TRANSLATE_NOOP("SettingsSearch", "每日费用上限"),
-         QStringLiteral("配额 费用 成本 元 每日 daily cost"), false, kNone},
+         QStringLiteral("配额 费用 成本 元 每日 daily cost"), false, kPage},
         {NEXUS_CATALOG_ID("monthlyCostQuotaCents"), QStringLiteral("usage"),
          QT_TRANSLATE_NOOP("SettingsSearch", "每月费用上限"),
-         QStringLiteral("配额 费用 成本 元 每月 monthly cost"), false, kNone},
+         QStringLiteral("配额 费用 成本 元 每月 monthly cost"), false, kPage},
         {NEXUS_CATALOG_ID("strictQuotaMode"), QStringLiteral("usage"),
          QT_TRANSLATE_NOOP("SettingsSearch", "超限拒绝请求"),
-         QStringLiteral("配额 超限 拒绝 strict quota"), false, kNone},
+         QStringLiteral("配额 超限 拒绝 strict quota"), false, kPage},
+        {NEXUS_CATALOG_ID("usage/alertPercent"), QStringLiteral("usage"),
+         QT_TRANSLATE_NOOP("SettingsSearch", "用量告警阈值"),
+         QStringLiteral("配额 告警 提醒 阈值 百分比 alert percent usage"), false, kPage},
         {NEXUS_CATALOG_ID("usage/overview"), QStringLiteral("usage"),
          QT_TRANSLATE_NOOP("SettingsSearch", "用量统计"),
          QStringLiteral("用量 统计 消耗 成本 成本明细 usage token"), false, kNone},
@@ -330,6 +340,64 @@ QVariantMap toMap(const ResolvedEntry& entry) {
     return map;
 }
 
+// 值快照只需要"分类 + 复位来源 + 是否隐藏"这三项事实，不依赖翻译。
+// 静态表 + schema 在进程内不变，建一次缓存即可——否则每行每次 revision
+// 变化都要重走 74 条 allEntries()。
+struct EntryFacts {
+    QString categoryId;
+    CatalogResetScope reset{CatalogResetScope::None};
+    bool hidden{false};
+};
+
+const QHash<QString, EntryFacts>& entryFacts() {
+    static const QHash<QString, EntryFacts> facts = [] {
+        QHash<QString, EntryFacts> map;
+        for (const CatalogEntryDef& def : staticEntries())
+            map.insert(def.id, {def.categoryId, def.reset, def.hidden});
+        for (const PreferenceMeta& meta : SettingsSchema::preferences()) {
+            const bool docked = !meta.categoryId.isEmpty();
+            map.insert(meta.key,
+                       {meta.categoryId, docked ? kPref : kNone, !docked});
+        }
+        return map;
+    }();
+    return facts;
+}
+
+struct SearchHit {
+    ResolvedEntry entry;
+    int score{0};
+    QString categoryName;
+};
+
+// 命中权重：标题 > 关键词 > 键名/id > 分类名。同分再按分类顺序与标题排，
+// 保证同一查询两次结果顺序稳定。
+int searchScore(const ResolvedEntry& entry, const QString& needle,
+                const QString& categoryName) {
+    if (entry.title.toLower().contains(needle)) return 100;
+    if (entry.keywords.toLower().contains(needle)) return 60;
+    if (entry.id.toLower().contains(needle)) return 40;
+    if (categoryName.toLower().contains(needle)) return 20;
+    return 0;
+}
+
+// 标题命中区间 + 富文本（<b>）。先在转义后的标题上定位：& < > 转义会改变
+// 长度，索引必须与实际渲染的字符串对齐。返回的 highlightStart/Length 也
+// 基于转义串，QML 只消费 titleHtml，两者只做诊断用。
+QString highlightedTitle(const QString& title, const QString& needle,
+                         int* highlightStart, int* highlightLength) {
+    *highlightStart = -1;
+    *highlightLength = 0;
+    const QString escaped = title.toHtmlEscaped();
+    const int index = escaped.toLower().indexOf(needle);
+    if (index < 0 || needle.isEmpty()) return escaped;
+    *highlightStart = index;
+    *highlightLength = needle.length();
+    return escaped.left(index) + QStringLiteral("<b>")
+        + escaped.mid(index, needle.length()) + QStringLiteral("</b>")
+        + escaped.mid(index + needle.length());
+}
+
 QVector<ResolvedEntry> allEntries() {
     QVector<ResolvedEntry> out;
     for (const PreferenceMeta& meta : SettingsSchema::preferences())
@@ -353,6 +421,88 @@ SettingsCatalog* SettingsCatalog::create(QQmlEngine*, QJSEngine*) {
 
 SettingsCatalog::SettingsCatalog(QObject* parent)
     : QObject(parent) {
+    // 值快照与"已修改"徽标的失效源。两条写入通道都要接：偏好经
+    // PreferenceStore（含 EditBuffer::stage 的写穿），M1 键经 SettingsService。
+    connect(PreferenceStore::instance(), &PreferenceStore::saved, this,
+            [this](const QStringList&) { bumpRevision(); });
+    connect(SettingsService::instance(), &SettingsService::settingSaved, this,
+            [this](const QString&) { bumpRevision(); });
+}
+
+void SettingsCatalog::bumpRevision() {
+    ++m_revision;
+    emit revisionChanged();
+}
+
+QVariantMap SettingsCatalog::describe(const QString& id) const {
+    QVariantMap map;
+    map.insert(QStringLiteral("id"), id);
+
+    const SettingValueSnapshot snapshot = SettingsValue::inspect(id);
+    map.insert(QStringLiteral("known"), snapshot.known);
+    map.insert(QStringLiteral("secret"), snapshot.secret);
+    map.insert(QStringLiteral("configured"), snapshot.configured);
+    map.insert(QStringLiteral("modified"), snapshot.modified);
+    map.insert(QStringLiteral("display"), SettingsValue::displayOf(snapshot, id));
+
+    const auto facts = entryFacts().constFind(id);
+    const bool registered = facts != entryFacts().cend();
+    map.insert(QStringLiteral("category"),
+               registered ? facts->categoryId : QString());
+    // 可复原 = 有登记 + 有复位通道 + 非密钥 + 默认值有效。默认值无效的
+    // 情况真实存在：ui.fontSans 的默认值要等 FontProbe 探测后才填。
+    map.insert(QStringLiteral("revertable"),
+               registered && snapshot.known && !snapshot.secret
+                   && facts->reset != kNone && snapshot.defaultValue.isValid());
+    return map;
+}
+
+bool SettingsCatalog::isModified(const QString& id) const {
+    return SettingsValue::inspect(id).modified;
+}
+
+int SettingsCatalog::modifiedCount(const QString& categoryId) const {
+    if (m_modifiedCountRevision != m_revision) rebuildModifiedCounts();
+    return m_modifiedCounts.value(categoryId);
+}
+
+void SettingsCatalog::rebuildModifiedCounts() const {
+    m_modifiedCounts.clear();
+    const auto& facts = entryFacts();
+    for (auto it = facts.cbegin(); it != facts.cend(); ++it) {
+        // 隐藏条目（导航自身状态、profile 数据）与没有复位通道的条目
+        // 不计入：徽标只告诉用户"这一页有可复原的改动"。
+        if (it->hidden || it->reset == kNone) continue;
+        if (SettingsValue::inspect(it.key()).modified)
+            ++m_modifiedCounts[it->categoryId];
+    }
+    m_modifiedCountRevision = m_revision;
+}
+
+bool SettingsCatalog::resetValue(const QString& id) {
+    const auto& facts = entryFacts();
+    const auto it = facts.constFind(id);
+    if (it == facts.cend() || it->reset == kNone) return false;
+
+    const SettingValueSnapshot snapshot = SettingsValue::inspect(id);
+    // 密钥与凭据不参与复位（docs/31 §6 红线 1）；没有有效默认值时不写回。
+    if (!snapshot.known || snapshot.secret || !snapshot.defaultValue.isValid())
+        return false;
+
+    bool ok = false;
+    if (it->reset == kPref) {
+        EditBuffer* buffer = EditBuffer::instance();
+        buffer->stage(id, snapshot.defaultValue);
+        // stage 是写穿语义：成功时立即落盘且不留 staged；校验失败或写盘
+        // 失败会把值留在 staged 里等用户修正。残留即视为未复位，不能
+        // 对调用方报成功（否则底栏会显示"已恢复"而值没变）。
+        ok = !buffer->stagedKeys().contains(id);
+    } else {
+        ok = SettingsService::instance()->setValueForSetting(id,
+                                                             snapshot.defaultValue);
+    }
+    if (ok) bumpRevision();
+    return ok;
 }
 
 QVariantList SettingsCatalog::entries() const {
@@ -380,27 +530,44 @@ QVariantList SettingsCatalog::search(const QString& query) const {
     if (needle.isEmpty()) return {};
 
     PreferenceRegistry* registry = PreferenceRegistry::instance();
-    QVector<ResolvedEntry> matches;
+    QVector<SearchHit> hits;
     for (const ResolvedEntry& entry : allEntries()) {
         if (entry.hidden || entry.categoryId.isEmpty()) continue;
-        const QString haystack = entry.title + QLatin1Char(' ') + entry.keywords
-            + QLatin1Char(' ') + entry.id + QLatin1Char(' ')
-            + registry->categoryName(entry.categoryId);
-        if (!haystack.toLower().contains(needle)) continue;
-        matches.append(entry);
+        const QString categoryName = registry->categoryName(entry.categoryId);
+        const int score = searchScore(entry, needle, categoryName);
+        if (score <= 0) continue;
+        hits.append({entry, score, categoryName});
     }
-    std::sort(matches.begin(), matches.end(), [registry](const ResolvedEntry& a,
-                                                        const ResolvedEntry& b) {
-        const int orderA = registry->categoryOrder(a.categoryId);
-        const int orderB = registry->categoryOrder(b.categoryId);
+    std::stable_sort(hits.begin(), hits.end(),
+                     [registry](const SearchHit& a, const SearchHit& b) {
+        if (a.score != b.score) return a.score > b.score;
+        const int orderA = registry->categoryOrder(a.entry.categoryId);
+        const int orderB = registry->categoryOrder(b.entry.categoryId);
         if (orderA != orderB) return orderA < orderB;
-        return QString::compare(a.title, b.title, Qt::CaseInsensitive) < 0;
+        return QString::compare(a.entry.title, b.entry.title,
+                                Qt::CaseInsensitive) < 0;
     });
 
     QVariantList results;
-    results.reserve(matches.size());
-    for (const ResolvedEntry& entry : matches)
-        results.append(toMap(entry));
+    results.reserve(hits.size());
+    for (const SearchHit& hit : hits) {
+        QVariantMap map = toMap(hit.entry);
+        map.insert(QStringLiteral("categoryName"), hit.categoryName);
+        int start = -1;
+        int length = 0;
+        map.insert(QStringLiteral("titleHtml"),
+                   highlightedTitle(hit.entry.title, needle, &start, &length));
+        map.insert(QStringLiteral("highlightStart"), start);
+        map.insert(QStringLiteral("highlightLength"), length);
+        map.insert(QStringLiteral("score"), hit.score);
+        // 当前值摘要：密钥类只会得到"已配置/未配置"，不会带出任何值。
+        const SettingValueSnapshot snapshot = SettingsValue::inspect(hit.entry.id);
+        map.insert(QStringLiteral("currentDisplay"),
+                   SettingsValue::displayOf(snapshot, hit.entry.id));
+        map.insert(QStringLiteral("modified"), snapshot.modified);
+        map.insert(QStringLiteral("secret"), snapshot.secret);
+        results.append(map);
+    }
     return results;
 }
 

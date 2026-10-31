@@ -23,6 +23,9 @@ public:
         connect(m_manager, &ThemeManager::fontChanged, this, [this]() {
             emit themeChanged();
         });
+        connect(m_manager, &ThemeManager::motionChanged, this, [this]() {
+            emit motionChanged();
+        });
     }
 
     static ThemeProvider* instance() {
@@ -237,14 +240,17 @@ public:
 
     // ── Motion durations & layout scalars (docs/19 §3.4) ──
     // 时长以毫秒暴露；缓动曲线在 QML 侧用 Easing 枚举内联。
-    Q_PROPERTY(int motionFast READ motionFast CONSTANT FINAL)
-    int motionFast() const { return 100; }
+    // docs/31 S4.7 O10：「减少动效」开启时三个令牌归零——时长为 0 的
+    // Behavior/Transition 直接落定，布局不抖。不能改成 CONSTANT：令牌
+    // 必须随偏好即时重算，32 处 Theme.motion* 绑定靠 NOTIFY 刷新。
+    Q_PROPERTY(int motionFast READ motionFast NOTIFY motionChanged FINAL)
+    int motionFast() const { return m_manager->reduceMotion() ? 0 : 100; }
 
-    Q_PROPERTY(int motionBase READ motionBase CONSTANT FINAL)
-    int motionBase() const { return 180; }
+    Q_PROPERTY(int motionBase READ motionBase NOTIFY motionChanged FINAL)
+    int motionBase() const { return m_manager->reduceMotion() ? 0 : 180; }
 
-    Q_PROPERTY(int motionSlow READ motionSlow CONSTANT FINAL)
-    int motionSlow() const { return 260; }
+    Q_PROPERTY(int motionSlow READ motionSlow NOTIFY motionChanged FINAL)
+    int motionSlow() const { return m_manager->reduceMotion() ? 0 : 260; }
 
     // 对话正文最大宽度：超宽屏下内容居中，避免行长过长（docs/19 §4.5）。
     Q_PROPERTY(int maxContentWidth READ maxContentWidth CONSTANT FINAL)
@@ -287,6 +293,7 @@ public:
 
 signals:
     void themeChanged();
+    void motionChanged();
 
 private:
     ThemeManager* m_manager;

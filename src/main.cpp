@@ -39,6 +39,7 @@
 #include "core/rag/KnowledgeSearchTool.h"
 #include "core/utils/Logger.h"
 #include "core/utils/Activity.h"
+#include "core/utils/BackupSchedule.h"
 #include "core/utils/NetworkProxyConfig.h"
 #include "core/utils/SamplingParams.h"
 #include "infrastructure/llm/IAIService.h"
@@ -52,8 +53,8 @@
 
 #include <QDir>
 #include <QLockFile>
-#ifdef Q_OS_WIN
 #include <QTimer>
+#ifdef Q_OS_WIN
 #include <QQuickWindow>
 #include <QWindow>
 #define WIN32_LEAN_AND_MEAN
@@ -668,25 +669,8 @@ qInfo() << "NexusAI" << app.applicationVersion() << "starting";
     QObject::connect(pruneTimer, &QTimer::timeout, &app, runPrunes);
     pruneTimer->start();
 
-    // docs/23 D1: startup auto-backup — a VACUUM INTO consistency snapshot
-    // (WAL-safe) plus rotation of the auto_* series. The worker is fully
-    // self-contained (own short-lived SQLite connection, value captures
-    // only): it never touches GUI-thread objects, so an exit mid-backup
-    // cannot dangle (docs/22 lesson). Failure is logged, never fatal.
-    if (settings->backupOnStartup()) {
-        const QString dbPath = memory->databasePath();
-        const QString backupDir = SqliteMemory::defaultBackupsDir();
-        const int keep = settings->backupKeepCount();
-        QtConcurrent::run([dbPath, backupDir, keep]() {
-            QDir().mkpath(backupDir);
-            const QString target = backupDir
-                + QStringLiteral("/auto_%1.db")
-                      .arg(QDateTime::currentDateTime().toString(
-                          QStringLiteral("yyyyMMdd_HHmmss")));
-            if (SqliteMemory::createBackupFile(dbPath, target))
-                SqliteMemory::rotateAutoBackups(backupDir, keep);
-        });
-    }
+    // docs/23 D1 的启动自动备份在托盘创建之后与定时备份一起装配（docs/31
+    // S4.2 N6）：失败提示需要托盘对象，见下方「数据库快照的自动备份」块。
 
     // Restore previously imported documents in the background (Batch 6).
     // Snapshot records AND chunks on the GUI thread (the SQLite connection
@@ -922,13 +906,27 @@ qInfo() << "NexusAI" << app.applicationVersion() << "starting";
 
     auto* tray = new QSystemTrayIcon(appIcon, &app);
     tray->setToolTip(QStringLiteral("NexusAI v%1").arg(APP_VERSION));
-    auto* trayMenu = new QMenu();
+
+    // ── 托盘右键菜单：一次建好、终身不改 ──
+    // 只保留窗口/会话/退出三项。早前在托盘里放过「模型配置」子菜单做快速
+    // 切换（docs/31 S4.4 4b），实用性不高、且是下面这个 Qt 缺陷的触发点，
+    // 已按用户要求取消，配置切换统一走设置页。
+    //
+    // 为什么菜单必须始终不动：Quick 应用里存在 QQuickApplicationWindow 顶层
+    // 窗口时，qwindows 的 doUseNativeMenus() 为 true，setContextMenu() 会给
+    // 这棵 QMenu 额外建一套 Win32 HMENU 镜像。镜像建好之后再增删动作，
+    // QMenu::actionEvent() 会把 ActionAdded/ActionRemoved 转给 QPlatformMenu，
+    // qwindows 的 menuItemForTag() 沿 subMenu 链无终止递归（无 visited 集），
+    // 最终栈溢出闪退——实测 25 472 层 qwindows 帧、STATUS_STACK_OVERFLOW。
+    // 复制配置与右键托盘的闪退都出在这条路径上（docs/31 S4.4 回归）。
+    // setData()/setChecked() 这类 ActionChanged 不触发它，增删动作必崩；
+    // 后续若要在托盘里加动态项，只能整棵 QMenu 重建后 setContextMenu() 换上，
+    // 绝不能对已挂上的菜单 addAction()/clear()。
+    QMenu* trayMenu = new QMenu();
     QAction* showAction = trayMenu->addAction(QObject::tr("显示/隐藏主窗"));
     QAction* newChatAction = trayMenu->addAction(QObject::tr("新建会话"));
     trayMenu->addSeparator();
     QAction* quitAction = trayMenu->addAction(QObject::tr("退出"));
-    tray->setContextMenu(trayMenu);
-    tray->show();
 
     // 显示/隐藏主窗（切走窗口后靠托盘召回）。
     QObject::connect(showAction, &QAction::triggered, &app, [mainWindow]() {
@@ -948,12 +946,21 @@ qInfo() << "NexusAI" << app.applicationVersion() << "starting";
         agentVM->newChat();
     });
     // 退出：先停全部 busy tab（沿用"关 tab 停任务"封口语义），再退出。
-    QObject::connect(quitAction, &QAction::triggered, &app, [&app, agentVM, tray, trayMenu]() {
+    // 不能在这里直接 delete menu——quitAction 正是它的子动作，信号还没发
+    // 完就销毁宿主对象会在返回时用已释放的 QAction。解除绑定后交给
+    // deleteLater。
+    QObject::connect(quitAction, &QAction::triggered, &app,
+                     [&app, agentVM, tray, trayMenu]() {
         tray->hide();
-        delete trayMenu;
+        tray->setContextMenu(nullptr);
+        trayMenu->deleteLater();
         agentVM->stopAllTabs();
         QCoreApplication::quit();
     });
+
+    tray->setContextMenu(trayMenu);
+    tray->show();
+
     // 双击托盘 = 显示/隐藏主窗（系统托盘的惯用交互）。
     QObject::connect(tray, &QSystemTrayIcon::activated, &app,
         [mainWindow](QSystemTrayIcon::ActivationReason reason) {
@@ -986,6 +993,123 @@ qInfo() << "NexusAI" << app.applicationVersion() << "starting";
                 success ? QSystemTrayIcon::Information
                         : QSystemTrayIcon::Warning, 6000);
         });
+
+    // docs/31 S4.1 N9：用量达到配额阈值（未超限）时弹一次托盘气泡。
+    // 跨 tab 去重已在 AgentViewModel 完成；这里只负责门控与文案。
+    // 与任务完成通知不同，**窗口在前台也提示**——这是预算提醒，用户
+    // 正在使用时应立刻知道"快超了"，而不是切换窗口后才看到。
+    QObject::connect(agentVM, &AgentViewModel::quotaAlert, &app,
+        [tray, prefStore](const QString& quotaType, qint64 used, qint64 quota) {
+            if (!prefStore->load(QStringLiteral("notice.enabled")).toBool()) return;
+            QString label;
+            if (quotaType == QLatin1String("dailyToken"))
+                label = QObject::tr("今日 Token");
+            else if (quotaType == QLatin1String("dailyCost"))
+                label = QObject::tr("今日费用");
+            else if (quotaType == QLatin1String("monthlyToken"))
+                label = QObject::tr("本月 Token");
+            else if (quotaType == QLatin1String("monthlyCost"))
+                label = QObject::tr("本月费用");
+            else
+                label = quotaType;
+            tray->showMessage(
+                QObject::tr("用量接近配额上限"),
+                QObject::tr("%1 已用 %2 / %3").arg(label).arg(used).arg(quota),
+                QSystemTrayIcon::Information, 6000);
+        });
+
+    // docs/31 S4.2 N6：数据库快照的自动备份。启动备份一次
+    // （memory/backupOnStartup，保留 docs/23 D1 语义）+ 可选的定时备份
+    // （memory/backupIntervalHours，0 = 关闭）。
+    // 装配点从初始化早期挪到托盘创建之后：备份失败要弹托盘气泡，而托盘直
+    // 到这里才存在；原先的启动备份块在它之前，失败只能静默记日志。
+    // worker 完全自包含（自建短连接、只捕获值）：退出时不会悬挂
+    // （docs/22 教训）；失败不阻塞启动/退出，只是少一份快照。
+    {
+        const QString dbPath = memory->databasePath();
+        const QString backupDir = SqliteMemory::defaultBackupsDir();
+        // 两个共享标志只在 GUI 线程读写：worker 通过 QueuedConnection 回到
+        // 主线程后才改，避免跨线程数据竞争。
+        auto backupInFlight = std::make_shared<bool>(false);
+        auto lastFailureNoticeMs = std::make_shared<qint64>(0);
+
+        const auto runBackup = [&app, settings, tray, prefStore, dbPath, backupDir,
+                                backupInFlight, lastFailureNoticeMs]() {
+            if (*backupInFlight) return; // 上一轮还没落盘，跳过本轮
+            *backupInFlight = true;
+            const int keep = settings->backupKeepCount();
+            // 失败气泡的静默期至少一个间隔（关闭定时备份时按 1 小时算）：
+            // 磁盘满时不会每次启动/每小时都弹同一个提示。
+            const qint64 noticeGapMs = qMax<qint64>(
+                backupIntervalMs(settings->backupIntervalHours()), 60LL * 60 * 1000);
+            QtConcurrent::run([&app, tray, prefStore, dbPath, backupDir, keep,
+                               noticeGapMs, backupInFlight, lastFailureNoticeMs]() {
+                QDir().mkpath(backupDir);
+                const QString target = backupDir
+                    + QStringLiteral("/auto_%1.db")
+                          .arg(QDateTime::currentDateTime().toString(
+                              QStringLiteral("yyyyMMdd_HHmmss")));
+                const bool ok = SqliteMemory::createBackupFile(dbPath, target);
+                if (ok)
+                    SqliteMemory::rotateAutoBackups(backupDir, keep);
+                // 结果回 GUI 线程：in-flight 标志与托盘都只在那里碰。
+                QMetaObject::invokeMethod(
+                    &app,
+                    [ok, target, backupDir, tray, prefStore, noticeGapMs,
+                     backupInFlight, lastFailureNoticeMs]() {
+                        *backupInFlight = false;
+                        if (ok) {
+                            qInfo() << "Auto backup written:" << target;
+                            return;
+                        }
+                        qWarning() << "Auto backup failed:" << target;
+                        // 活动记录留痕（日志轮转后仍可在「活动日志」页查到），
+                        // 只记目录与结果，不记数据库内容。
+                        Activity::usage(Activity::Kind::Db,
+                                        QStringLiteral("db.backup.auto.failed"),
+                                        backupDir);
+                        const qint64 now = QDateTime::currentMSecsSinceEpoch();
+                        if (*lastFailureNoticeMs != 0
+                                && now - *lastFailureNoticeMs < noticeGapMs)
+                            return;
+                        *lastFailureNoticeMs = now;
+                        if (!prefStore->load(QStringLiteral("notice.enabled")).toBool())
+                            return;
+                        tray->showMessage(
+                            QObject::tr("自动备份失败"),
+                            QObject::tr("无法写入数据库快照目录：%1").arg(backupDir),
+                            QSystemTrayIcon::Warning, 6000);
+                    },
+                    Qt::QueuedConnection);
+            });
+        };
+
+        auto* backupTimer = new QTimer(&app);
+        // 备份间隔以小时计，秒级精度没有意义；VeryCoarse 让系统合并唤醒。
+        backupTimer->setTimerType(Qt::VeryCoarseTimer);
+        QObject::connect(backupTimer, &QTimer::timeout, &app, runBackup);
+        const auto syncBackupTimer = [settings, backupTimer]() {
+            const qint64 ms = backupIntervalMs(settings->backupIntervalHours());
+            if (ms <= 0) {
+                backupTimer->stop();
+                return;
+            }
+            // setInterval 作用于运行中的定时器会重新计时；只有间隔真的变了
+            // 才重置倒计时，避免无关的设置变更把下一次备份往后推。
+            if (backupTimer->interval() != int(ms)) {
+                backupTimer->stop();
+                backupTimer->setInterval(int(ms));
+            }
+            if (!backupTimer->isActive())
+                backupTimer->start();
+        };
+        QObject::connect(settings, &SettingsService::backupIntervalHoursChanged,
+                         &app, syncBackupTimer);
+        syncBackupTimer();
+
+        if (settings->backupOnStartup())
+            runBackup();
+    }
 
     // 关闭行为：prefs/v1/window.closeToTray（默认 false = 直接退出）。
     // QQuickCloseEvent 没有公共头文件（qquickwindow.h 只前置声明），C++ 侧

@@ -177,6 +177,7 @@ void ChatSessionController::connectAgent(AIAgent* agent) {
     // docs/16 §6/§7: forward cost/quota signals to the UI.
     connect(agent, &AIAgent::costChanged, this, &ChatSessionController::costChanged);
     connect(agent, &AIAgent::quotaWarning, this, &ChatSessionController::quotaWarning);
+    connect(agent, &AIAgent::quotaAlert, this, &ChatSessionController::quotaAlert);
 
     // Session history is global (same SQLite file for every tab); the facade
     // refreshes the shared list whenever any tab reports a change.

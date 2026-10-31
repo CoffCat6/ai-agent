@@ -29,6 +29,7 @@
 
 `Dangerous` 之外还有两层「禁用」语义，与本目录强相关：
 - 用户禁用：`ToolRegistry::setToolEnabled` → 持久化 `tools/disabled`（`SettingsRepository`）。
+- 批量替换（docs/31 S4.6 预设包导入）：`setDisabledTools(names)` 只保留已注册工具名（未注册/已断开的 MCP 工具丢弃），集合不变不写盘，一次写盘一次 `toolsChanged`；写失败恢复原集合并 `qWarning`。`disabledToolNames()` 返回当前被禁用的已注册工具名（大小写不敏感升序），供导出与断言。
 - 策略拦截：`setPolicyBlocked`（localOnly 隐私门控，仅内存，不落盘，避免覆写用户开关）。
 - 最终判定 `isToolUsable = isToolEnabled && !isPolicyBlocked`。
 
@@ -85,8 +86,8 @@
 | 文件 | 规模 | 内容 |
 |---|---|---|
 | `ITool.h` | 113 行 | 契约、`ToolLevel`、`FileCheckpoint`、取消协议、preview |
-| `ToolRegistry.h` | 79 行 | 双索引注册表、双层禁用、`findShared`/`takeTool` |
-| `ToolRegistry.cpp` | 1257 行 | 11 个内建工具 + `unifiedDiff` + checkpoint 捕获/收尾 + 注册表实现 |
+| `ToolRegistry.h` | 85 行 | 双索引注册表、双层禁用、`findShared`/`takeTool`、批量禁用 |
+| `ToolRegistry.cpp` | 1507 行 | 11 个内建工具 + `unifiedDiff` + checkpoint 捕获/收尾 + 注册表实现 |
 | `Sandbox.h` | 418 行 | 路径策略、黑名单、`ExecutionScope`、`cleanPath`、锁 |
 | `SandboxWin.cpp` | 51 行 | `GetFinalPathNameByHandleW` 解析 reparse point（`\\?\` 前缀归一） |
 | `WebSearchBackend.h/.cpp` | 161 / 534 行 | 后端抽象 + 注册表 + DDG/智谱/DeepSeek 实现 |

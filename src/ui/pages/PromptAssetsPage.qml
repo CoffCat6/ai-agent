@@ -1,5 +1,6 @@
 import QtQuick
 import QtQuick.Controls
+import QtQuick.Dialogs
 import QtQuick.Layouts
 import NexusAI
 import NexusAI.ViewModels
@@ -25,9 +26,30 @@ Item {
     // id 为空串 = 新增；null = 无编辑器打开。一次只开一个编辑器。
     property var editing: null
 
+    // docs/31 S4.6 N8：预设包导入/导出的回执行。页面内联显示，不弹 Toast。
+    property string statusMessage: ""
+    property bool statusIsError: false
+    property string importPath: ""
+    property var importPreview: ({})
+
     function startAdd(section) { page.editing = {section: section, id: ""} }
     function startEdit(section, id) { page.editing = {section: section, id: id} }
     function closeEditor() { page.editing = null }
+
+    function applyImport() {
+        if (!page.importPath) return
+        const ok = PresetPackTransfer.importPack(page.importPath,
+                                                 importPackDialog.policy)
+        page.statusIsError = !ok
+        page.statusMessage = ok
+            ? qsTr("预设包已导入，立即生效（无需重启）。")
+            : (PresetPackTransfer.lastError || qsTr("导入失败。"))
+        if (ok) {
+            importPackDialog.close()
+            page.importPath = ""
+            page.importPreview = ({})
+        }
+    }
 
     function entryById(list, id) {
         for (let i = 0; i < list.length; ++i)
@@ -42,18 +64,41 @@ Item {
         // ── 页头 ────────────────────────────────────────
         Item {
             Layout.fillWidth: true
-            Layout.preferredHeight: header.implicitHeight + Theme.spaceLg
+            Layout.preferredHeight: Math.max(header.implicitHeight,
+                                             packToolbar.implicitHeight) + Theme.spaceLg
             Layout.leftMargin: Theme.spaceXl
             Layout.rightMargin: Theme.spaceXl
 
             SettingsPageHeader {
                 id: header
                 anchors.left: parent.left
-                anchors.right: parent.right
+                anchors.right: packToolbar.left
+                anchors.rightMargin: Theme.spaceMd
                 anchors.top: parent.top
                 anchors.topMargin: Theme.spaceXs
                 title: qsTr("提示词与指令")
                 description: qsTr("系统提示预设、斜杠指令与会话模板。改动即时保存。")
+            }
+
+            // docs/31 S4.6 N8：预设包与设置备份是两条独立通路——预设包只
+            // 携带文本资产与工具/权限偏好，导入后立即生效，不要求重启。
+            RowLayout {
+                id: packToolbar
+                anchors.top: parent.top
+                anchors.topMargin: Theme.spaceXs
+                anchors.right: parent.right
+                spacing: Theme.spaceSm
+
+                AppButton {
+                    objectName: "presetPackExportButton"
+                    text: qsTr("导出预设包…")
+                    onClicked: exportFileDialog.open()
+                }
+                AppButton {
+                    objectName: "presetPackImportButton"
+                    text: qsTr("导入预设包…")
+                    onClicked: importFileDialog.open()
+                }
             }
         }
 
@@ -75,6 +120,17 @@ Item {
                 // 文本 ≈860px），整页内容被推出对话框右侧、按钮全部不可见。
                 width: assetsScroll.availableWidth
                 spacing: Theme.spaceXl
+
+                Text {
+                    Layout.fillWidth: true
+                    Layout.minimumWidth: 0
+                    visible: page.statusMessage.length > 0
+                    text: page.statusMessage
+                    color: page.statusIsError ? Theme.statusDanger : Theme.textPrimary
+                    font.pixelSize: Theme.fontSizeBody
+                    wrapMode: Text.Wrap
+                    Accessible.role: Accessible.StaticText
+                }
 
                 // ══ 1. 系统提示预设 ══════════════════════════
                 ColumnLayout {
@@ -623,6 +679,167 @@ Item {
             } else {
                 tmplPermission.currentIndex = 0
                 tmplFirst.text = ""
+            }
+        }
+    }
+
+    FileDialog {
+        id: exportFileDialog
+        title: qsTr("导出预设包")
+        fileMode: FileDialog.SaveFile
+        defaultSuffix: "json"
+        nameFilters: [qsTr("预设包 (*.json)")]
+        onAccepted: {
+            page.statusIsError = !PresetPackTransfer.exportPack(
+                selectedFile.toString())
+            page.statusMessage = page.statusIsError
+                ? (PresetPackTransfer.lastError || qsTr("导出失败。"))
+                : qsTr("预设包已导出（%1 条预设、%2 条斜杠指令）。不含任何密钥。")
+                    .arg(Settings.promptPresets.length)
+                    .arg(Settings.slashCommands.length)
+        }
+    }
+
+    FileDialog {
+        id: importFileDialog
+        title: qsTr("选择预设包")
+        fileMode: FileDialog.OpenFile
+        nameFilters: [qsTr("预设包 (*.json)")]
+        onAccepted: {
+            const path = selectedFile.toString()
+            const preview = PresetPackTransfer.previewPack(path)
+            if (!preview.valid) {
+                page.statusIsError = true
+                page.statusMessage = preview.error
+                    || PresetPackTransfer.lastError
+                    || qsTr("无法预览此预设包。")
+                return
+            }
+            page.importPath = path
+            page.importPreview = preview
+            page.statusMessage = ""
+            importPackDialog.open()
+        }
+    }
+
+    // docs/31 S4.6 N8：导入前先列清单与冲突，再让用户选同名处理策略。
+    // 同名只针对预设/指令；禁用工具与默认权限模式是单值配置，始终随包应用。
+    Dialog {
+        id: importPackDialog
+        parent: Overlay.overlay
+        modal: true
+        anchors.centerIn: parent
+        width: 520
+        padding: Theme.spaceXl
+        background: DialogBackground {}
+
+        property string policy: "rename"
+
+        contentItem: ColumnLayout {
+            spacing: Theme.spaceMd
+
+            Text {
+                Layout.fillWidth: true
+                text: qsTr("导入预设包")
+                color: Theme.textPrimary
+                font.pixelSize: Theme.fontSizeH2
+                font.bold: true
+            }
+            Text {
+                Layout.fillWidth: true
+                text: qsTr("预设 %1 条 · 斜杠指令 %2 条 · 禁用工具 %3 个 · 默认权限模式 %4")
+                    .arg(page.importPreview.presets || 0)
+                    .arg(page.importPreview.commands || 0)
+                    .arg(page.importPreview.disabledTools || 0)
+                    .arg(page.importPreview.permissionMode
+                         ? page.importPreview.permissionMode
+                         : qsTr("不修改"))
+                color: Theme.textSecondary
+                font.pixelSize: Theme.fontSizeBody
+                wrapMode: Text.Wrap
+            }
+            Text {
+                Layout.fillWidth: true
+                visible: (page.importPreview.conflictsTotal || 0) > 0
+                text: qsTr("与现有条目重名 %1 条：").arg(page.importPreview.conflictsTotal)
+                color: Theme.statusWarning
+                font.pixelSize: Theme.fontSizeBody
+            }
+            ColumnLayout {
+                Layout.fillWidth: true
+                visible: (page.importPreview.conflictsTotal || 0) > 0
+                spacing: 2
+                Repeater {
+                    model: page.importPreview.conflicts
+                        ? page.importPreview.conflicts.slice(0, 6) : []
+                    delegate: Text {
+                        required property var modelData
+                        Layout.fillWidth: true
+                        text: modelData.kind === "preset"
+                            ? qsTr("预设：%1").arg(modelData.name)
+                            : qsTr("指令：/%1").arg(modelData.name)
+                        color: Theme.textSecondary
+                        font.pixelSize: Theme.fontSizeCaption
+                        elide: Text.ElideRight
+                    }
+                }
+                Text {
+                    Layout.fillWidth: true
+                    visible: (page.importPreview.conflictsTotal || 0) > 6
+                    text: qsTr("…等 %1 条").arg(page.importPreview.conflictsTotal)
+                    color: Theme.textSecondary
+                    font.pixelSize: Theme.fontSizeCaption
+                }
+            }
+            RowLayout {
+                Layout.fillWidth: true
+                spacing: Theme.spaceSm
+                Text {
+                    text: qsTr("同名条目处理")
+                    color: Theme.textPrimary
+                    font.pixelSize: Theme.fontSizeBody
+                }
+                ComboBox {
+                    id: conflictPolicyCombo
+                    objectName: "presetPackConflictPolicy"
+                    Layout.fillWidth: true
+                    textRole: "label"
+                    valueRole: "value"
+                    model: [
+                        {label: qsTr("全部重命名（保留两边）"), value: "rename"},
+                        {label: qsTr("覆盖本机同名条目"), value: "overwrite"},
+                        {label: qsTr("跳过本机已有的"), value: "skip"}
+                    ]
+                    onActivated: importPackDialog.policy = currentValue
+                }
+            }
+            Text {
+                Layout.fillWidth: true
+                Layout.minimumWidth: 0
+                text: page.importPreview.warnings
+                    ? page.importPreview.warnings.join("\n") : ""
+                color: Theme.textSecondary
+                font.pixelSize: Theme.fontSizeCaption
+                wrapMode: Text.Wrap
+            }
+            RowLayout {
+                Layout.fillWidth: true
+                spacing: Theme.spaceSm
+                Item { Layout.fillWidth: true }
+                AppButton {
+                    text: qsTr("取消")
+                    onClicked: {
+                        importPackDialog.close()
+                        page.importPath = ""
+                        page.importPreview = ({})
+                    }
+                }
+                AppButton {
+                    objectName: "presetPackConfirmImportButton"
+                    text: qsTr("导入")
+                    highlighted: true
+                    onClicked: page.applyImport()
+                }
             }
         }
     }

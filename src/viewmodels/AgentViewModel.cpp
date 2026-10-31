@@ -345,6 +345,20 @@ ChatSessionController* AgentViewModel::ensureTab() {
             emit costChanged(costCents);
         }
     });
+    // docs/31 S4.1 N9: 接近配额上限的提醒跨 tab 去重后再转发。
+    // AIAgent 已按实例去重，但每个标签各有自己的 agent——不在这里再按
+    // (日期, 类型) 拦一次，多标签会各弹一遍托盘通知。
+    connect(controller, &ChatSessionController::quotaAlert, this,
+            [this](const QString& quotaType, qint64 used, qint64 quota) {
+        const QDate today = QDate::currentDate();
+        if (m_quotaAlertDate != today) {
+            m_quotaAlertDate = today;
+            m_quotaAlertsToday.clear();
+        }
+        if (m_quotaAlertsToday.contains(quotaType)) return;
+        m_quotaAlertsToday.insert(quotaType);
+        emit quotaAlert(quotaType, used, quota);
+    });
     connect(controller, &ChatSessionController::currentSessionIdChanged, this, [this, controller] {
         if (controller == active()) emit currentSessionIdChanged();
         // 会话 id 变了 → 侧栏该行的 open/active/busy 键要重算（旧 id 的行
@@ -2179,6 +2193,90 @@ QString AgentViewModel::lastDatabaseBackupPath() const {
         {QStringLiteral("auto_*.db"), QStringLiteral("manual_*.db")},
         QDir::Files, QDir::Time);
     return files.isEmpty() ? QString() : files.first().absoluteFilePath();
+}
+
+void AgentViewModel::openDatabaseBackupsFolder() {
+    const QString dir = SqliteMemory::defaultBackupsDir();
+    if (dir.isEmpty()) return;
+    QDir().mkpath(dir);
+    QDesktopServices::openUrl(QUrl::fromLocalFile(dir));
+}
+
+void AgentViewModel::requestDataStats() {
+    const QString dbPath = m_memory ? m_memory->databasePath() : QString();
+    if (dbPath.isEmpty()) {
+        emit dataStatsReady(QVariantMap{{QStringLiteral("error"), tr("数据库未就绪")}});
+        return;
+    }
+    // QFutureWatcher 模式（同 extractPdfText）：worker lambda 只按值捕获
+    // dbPath（绝不捕获 this），collectStats 用自包含短连接在工作线程上跑，
+    // finished 在 GUI 线程回发。重复点击 = 各自一轮，后到者覆盖先到者，
+    // 数据页只用最新一份。
+    auto* watcher = new QFutureWatcher<QVariantMap>(this);
+    connect(watcher, &QFutureWatcherBase::finished, this, [this, watcher]() {
+        emit dataStatsReady(watcher->result());
+        watcher->deleteLater();
+    });
+    watcher->setFuture(QtConcurrent::run([dbPath]() {
+        return SqliteMemory::collectStats(dbPath);
+    }));
+}
+
+QString AgentViewModel::pruneByRetentionNow() {
+    if (!m_memory) return tr("数据库未就绪");
+    auto* settings = SettingsService::instance();
+    const int auditDays = settings ? settings->auditRetentionDays() : 0;
+    const int tokenDays = settings ? settings->tokenRetentionDays() : 0;
+    // 0 = 永久保留（键语义），对立即清理意味着"没有可清理的"，不报错。
+    m_memory->pruneAudit(auditDays);
+    m_memory->pruneTokenUsage(tokenDays);
+    Activity::usage(Activity::Kind::User, QStringLiteral("db.prune"),
+                    QStringLiteral("audit=%1 tokens=%2").arg(auditDays).arg(tokenDays));
+    return QString();
+}
+
+QString AgentViewModel::clearUsageNow() {
+    if (!m_memory) return tr("数据库未就绪");
+    m_memory->clearTokenUsage();
+    Activity::usage(Activity::Kind::User, QStringLiteral("db.usage.clear"), QString());
+    emit tokenUsageChanged();
+    return QString();
+}
+
+QString AgentViewModel::vacuumDatabaseNow() {
+    if (!m_memory) return tr("数据库未就绪");
+    if (!m_memory->vacuumDatabase())
+        return tr("数据库正被占用（可能有备份或其它任务在进行），请稍后重试");
+    Activity::usage(Activity::Kind::User, QStringLiteral("db.vacuum"), QString());
+    return QString();
+}
+
+QVariantList AgentViewModel::databaseBackups() const {
+    return SqliteMemory::listBackups();
+}
+
+QString AgentViewModel::deleteDatabaseBackup(const QString& path) {
+    const QString target = toLocalDatabasePath(path).trimmed();
+    if (target.isEmpty()) return tr("未指定备份文件");
+
+    // 路径校验先于删除：列表里的路径不是可信输入（QML 属性可被改写），
+    // 只允许删除备份目录自身的直接子文件。
+    const QDir backups(SqliteMemory::defaultBackupsDir());
+    const QString canonicalDir =
+        QFileInfo(backups.absolutePath()).canonicalFilePath();
+    const QString canonicalTarget = QFileInfo(target).canonicalFilePath();
+    if (canonicalDir.isEmpty() || canonicalTarget.isEmpty())
+        return tr("备份文件不存在");
+    const QString relative = QDir(canonicalDir).relativeFilePath(canonicalTarget);
+    if (relative.isEmpty() || relative.startsWith(QLatin1String(".."))
+        || QDir::isAbsolutePath(relative) || relative.contains(QLatin1Char('/')))
+        return tr("只能删除备份目录中的文件");
+
+    if (!QFile::remove(canonicalTarget))
+        return tr("删除失败，请检查文件是否被占用");
+    Activity::usage(Activity::Kind::User, QStringLiteral("db.backup.delete"),
+                    canonicalTarget);
+    return QString();
 }
 
 // docs/24 R4: the restore orchestration. Synchronous on the GUI thread —

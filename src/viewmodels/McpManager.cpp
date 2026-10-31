@@ -1,12 +1,14 @@
 #include "viewmodels/McpManager.h"
 
 #include "core/mcp/McpConfig.h"
+#include "core/mcp/McpConfigTransfer.h"
 #include "core/mcp/McpToolAdapter.h"
 #include "core/tools/ToolRegistry.h"
 #include "core/utils/Activity.h"
 
 #include <QLoggingCategory>
 #include <QCoreApplication>
+#include <QSet>
 #include <QStringList>
 #include <QTimer>
 #include <algorithm>
@@ -72,17 +74,20 @@ void McpManager::loadAndConnectAll() {
 }
 
 void McpManager::applyRestoredConfigs(const QVariantList& servers) {
-    for (McpClient* client : std::as_const(m_clients)) {
-        QObject::disconnect(client, nullptr, this, nullptr);
-        for (const auto& tool : client->tools())
-            ToolRegistry::instance().takeTool(
-                McpToolAdapter::registryNameFor(client->serverName(), tool.name));
-        client->disconnectFromServer();
-        retireClient(client);
-    }
+    for (McpClient* client : std::as_const(m_clients))
+        teardownClient(client);
     m_clients.clear();
     m_configs = servers;
     refreshServers();
+}
+
+void McpManager::teardownClient(McpClient* client) {
+    QObject::disconnect(client, nullptr, this, nullptr);
+    for (const auto& tool : client->tools())
+        ToolRegistry::instance().takeTool(
+            McpToolAdapter::registryNameFor(client->serverName(), tool.name));
+    client->disconnectFromServer();
+    retireClient(client);
 }
 
 // docs/24 H9: keep a removed (disconnected) client alive past the maximum
@@ -425,6 +430,133 @@ void McpManager::reconnect(const QString& name) {
         client->disconnectFromServer();
         client->connectToServer();
     }
+}
+
+// ── docs/31 N7：配置导入/导出 ─────────────────────────────
+
+QVariantMap McpManager::exportServers(const QString& path) {
+    QVector<QVariantMap> servers;
+    for (const QVariant& entry : std::as_const(m_configs)) {
+        const QVariantMap config = entry.toMap();
+        if (!config.value(QStringLiteral("name")).toString().trimmed().isEmpty())
+            servers.append(config);
+    }
+    if (servers.isEmpty()) {
+        return {{QStringLiteral("ok"), false},
+                {QStringLiteral("path"), path},
+                {QStringLiteral("error"), tr("还没有可导出的 MCP 服务器")}};
+    }
+
+    QString error;
+    if (!McpConfigTransfer::writeExport(path, servers, &error)) {
+        return {{QStringLiteral("ok"), false},
+                {QStringLiteral("path"), path},
+                {QStringLiteral("error"), error}};
+    }
+    Activity::usage(Activity::Kind::User, QStringLiteral("mcp.config.export"),
+                    QString::number(servers.size()));
+    int secretsOmitted = 0;
+    for (const QVariantMap& server : std::as_const(servers)) {
+        if (!server.value(QStringLiteral("env")).toMap().isEmpty()
+            || !server.value(QStringLiteral("headers")).toMap().isEmpty())
+            ++secretsOmitted;
+    }
+    return {{QStringLiteral("ok"), true},
+            {QStringLiteral("path"), path},
+            {QStringLiteral("count"), servers.size()},
+            {QStringLiteral("secretsOmitted"), secretsOmitted}};
+}
+
+QVariantMap McpManager::previewServerImport(const QString& path) const {
+    QVector<QVariantMap> current;
+    for (const QVariant& entry : m_configs)
+        current.append(entry.toMap());
+    const McpConfigTransfer::ImportPreview preview =
+        McpConfigTransfer::previewImportFile(path, current);
+
+    QVariantList rows;
+    for (const McpConfigTransfer::ImportEntry& entry : preview.entries) {
+        const QVariantMap server = entry.server;
+        const QString transport = server.value(QStringLiteral("transport")).toString();
+        const QString endpoint = transport == QLatin1String("http")
+            ? server.value(QStringLiteral("url")).toString()
+            : server.value(QStringLiteral("command")).toString() + QLatin1Char(' ')
+                  + server.value(QStringLiteral("args")).toStringList().join(QLatin1Char(' '));
+        rows.append(QVariantMap{
+            {QStringLiteral("name"), server.value(QStringLiteral("name"))},
+            {QStringLiteral("transport"), transport},
+            {QStringLiteral("endpoint"), endpoint.trimmed()},
+            {QStringLiteral("conflict"), entry.conflict},
+            {QStringLiteral("error"), entry.error}});
+    }
+    return {{QStringLiteral("ok"), preview.ok},
+            {QStringLiteral("path"), path},
+            {QStringLiteral("error"), preview.error},
+            {QStringLiteral("total"), preview.total},
+            {QStringLiteral("importable"), preview.importable},
+            {QStringLiteral("conflictCount"), preview.conflictCount},
+            {QStringLiteral("withSecrets"), preview.withSecrets},
+            {QStringLiteral("servers"), rows}};
+}
+
+QVariantMap McpManager::importServers(const QString& path, const QString& policy) {
+    QVector<QVariantMap> current;
+    QSet<QString> currentNames;
+    for (const QVariant& entry : std::as_const(m_configs)) {
+        const QVariantMap config = entry.toMap();
+        current.append(config);
+        currentNames.insert(config.value(QStringLiteral("name")).toString());
+    }
+    const McpConfigTransfer::ImportPreview preview =
+        McpConfigTransfer::previewImportFile(path, current);
+    if (!preview.ok) {
+        return {{QStringLiteral("ok"), false},
+                {QStringLiteral("error"), preview.error}};
+    }
+    if (preview.importable == 0) {
+        return {{QStringLiteral("ok"), false},
+                {QStringLiteral("error"), tr("文件里没有可导入的服务器")}};
+    }
+
+    int added = 0, replaced = 0, skipped = 0;
+    const QVector<QVariantMap> merged = McpConfigTransfer::applyImport(
+        current, preview, McpConfigTransfer::policyFromName(policy),
+        &added, &replaced, &skipped);
+
+    QVariantList next;
+    for (const QVariantMap& server : merged)
+        next.append(server);
+    if (!McpConfig::save(next)) {
+        m_lastError = tr("保存 MCP 服务器配置失败");
+        emit lastErrorChanged(m_lastError);
+        return {{QStringLiteral("ok"), false},
+                {QStringLiteral("error"), m_lastError}};
+    }
+    m_configs = next;
+
+    // 导入一律禁用；被覆盖/删除的原有服务器若还连着，必须同步下线，
+    // 否则界面显示"已禁用"但工具仍在注册表里。
+    QSet<QString> enabledNames;
+    for (const QVariantMap& server : merged) {
+        if (server.value(QStringLiteral("enabled")).toBool())
+            enabledNames.insert(server.value(QStringLiteral("name")).toString());
+    }
+    QVector<McpClient*> drop;
+    for (McpClient* client : std::as_const(m_clients)) {
+        if (!enabledNames.contains(client->serverName())) drop.append(client);
+    }
+    for (McpClient* client : drop) {
+        m_clients.removeAll(client);
+        teardownClient(client);
+    }
+
+    Activity::usage(Activity::Kind::User, QStringLiteral("mcp.config.import"),
+                    QString::number(added + replaced));
+    refreshServers();
+    return {{QStringLiteral("ok"), true},
+            {QStringLiteral("added"), added},
+            {QStringLiteral("replaced"), replaced},
+            {QStringLiteral("skipped"), skipped}};
 }
 
 } // namespace NexusAI

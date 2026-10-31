@@ -11,6 +11,7 @@
 #include <QUrl>
 #include <QTimer>
 #include <QHash>
+#include <QDate>
 #include <QPointer>
 #include <QSet>
 #include <QVector>
@@ -529,6 +530,27 @@ public:
     Q_INVOKABLE QString restoreDatabaseFrom(const QString& path);
     // docs/23 D1: newest snapshot in the backups directory (status line).
     Q_INVOKABLE QString lastDatabaseBackupPath() const;
+    // docs/31 O3: 备份目录里实际存在的快照，最新在前。
+    // [{path, fileName, sizeBytes, mtimeMs, isAuto}] — 让备份页能列出、
+    // 预览、恢复与删除，而不是只能靠文件选择框猜文件名。
+    Q_INVOKABLE QVariantList databaseBackups() const;
+    // 删除一份快照。只接受备份目录内的文件（按目录相对路径校验，不信任
+    // 传入路径）。空串 = 成功，否则是给用户看的错误原因。
+    Q_INVOKABLE QString deleteDatabaseBackup(const QString& path);
+    // 在文件管理器里打开备份目录（目录不存在时先建）。
+    Q_INVOKABLE void openDatabaseBackupsFolder();
+    // docs/31 S4.5 N5（数据管理总览）：异步统计。绝不跑在 GUI 线程连接上
+    //（QtConcurrent + 自包含短连接，见 SqliteMemory::collectStats），
+    // 结果经 dataStatsReady 回 GUI 线程；QML 侧 Connections 接收。
+    Q_INVOKABLE void requestDataStats();
+    // docs/31 S4.5 N5：按当前保留天数立即清理审计与 token 用量
+    //（memory/auditRetentionDays、memory/tokenRetentionDays）。空串 = 成功。
+    Q_INVOKABLE QString pruneByRetentionNow();
+    // docs/31 S4.5 N5：清空全部 token 用量。空串 = 成功。
+    Q_INVOKABLE QString clearUsageNow();
+    // docs/31 S4.5 N5：VACUUM 压缩数据库文件（GUI 连接上执行，期间界面
+    // 短暂卡顿由确认对话框预告；SQLITE_BUSY 时返回"稍后重试"提示）。
+    Q_INVOKABLE QString vacuumDatabaseNow();
     Q_INVOKABLE void renameSession(const QString& sessionId, const QString& title);
     Q_INVOKABLE void setSessionPinned(const QString& sessionId, bool pinned);
     Q_INVOKABLE void setSessionArchived(const QString& sessionId, bool archived);
@@ -747,6 +769,9 @@ signals:
     // docs/24 R4: the live database file was swapped for a snapshot — the
     // wiring layer re-runs the knowledge-base restore against it.
     void databaseRestored();
+    // docs/31 S4.5 N5: 数据库统计就绪（工作线程收集完毕回 GUI 线程）。
+    // 结构见 SqliteMemory::collectStats；打开失败时带 error 字段。
+    void dataStatsReady(const QVariantMap& stats);
     // docs/20 §3.4（A4）：窗口级拖放解析完成，携带附件描述符列表
     // （图片 {kind:"image", dataUrl} / 文本 {kind:"file", name, content}）。
     void attachmentsDropped(const QVariantList& attachments);
@@ -759,6 +784,10 @@ signals:
     // 会话标题与结果状态）。**任意 tab** 都发（不是仅活动 tab）——切走窗口
     // 后后台长任务完成时，托盘通知靠它。UI 不消费；main.cpp 联动托盘。
     void taskFinished(const QString& sessionTitle, bool success);
+    // docs/31 S4.1 N9：任意 tab 的用量达到配额的提醒阈值（未超限）。
+    // 已在门面层按 (日期, quotaType) 去重——多标签不会重复弹同一条通知。
+    // UI 不消费；main.cpp 联动托盘气泡（notice.enabled 门控）。
+    void quotaAlert(const QString& quotaType, qint64 used, qint64 quota);
 
 private:
     struct Confirmation {
@@ -855,6 +884,9 @@ private:
     QHash<const ChatSessionController*, bool> m_prevBusy;
     // docs/16 §8: last per-request cost for the TopBar display.
     qint64 m_lastCostCents{0};
+    // docs/31 S4.1 N9: 接近配额上限提醒的跨 tab 去重（同一天同一类型一次）。
+    QDate m_quotaAlertDate;
+    QSet<QString> m_quotaAlertsToday;
     // 全局默认权限模式（设置键 agent/defaultPermissionMode），仅用于新 tab。
     int m_defaultPermissionMode{0};
 

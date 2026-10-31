@@ -11,14 +11,14 @@
 - **三层结构**：窗口壳（`main.qml`）→ 页面/面板（`pages/`、`panels/`）→ 组件（`components/`）。`AgentChatPage` 内部再分 `TopBar`、`TranscriptViewport`、`InputConsole` + 模型选项行（`SessionTabs` 已随 docs/30 删除）。
 - **单例入口**：`Theme`（只读设计令牌）、`ThemeManager`（明暗切换）、`AgentVM`（打开集合/轨迹/输入/状态）、`Settings`、`PreferenceStore`/`ChangeBus`/`PreferenceRegistry`、`I18n`、`EditBuffer`、`GitVM`、`McpManager`。
 - **响应式壳层**：`RowLayout` 中两个 `SplitBar` 可拖拽；侧栏 180–560px（默认 260），右面板 220–640px（默认 300），聊天区最小 320px；折叠动画 220ms，拖拽时 `enabled: !dragActive` 保持跟手。折叠后宽度为 0 但 `visible` 延续到动画结束，两侧悬浮拉手（24×56、`z:20`）始终可召回。
-- **对话框装载**：`SettingsCenterDialog`、`AuditDialog`、`LogPanel`、`KnowledgeDocDialog`、`ShortcutsDialog` 全部 `parent: Overlay.overlay`；设置页由 `Loader` 按分类懒加载（`qrc:/qt/qml/NexusAI/src/ui/pages/*.qml`）。
+- **对话框装载**：`SettingsCenterDialog`、`OnboardingDialog`、`AuditDialog`、`LogPanel`、`KnowledgeDocDialog`、`ShortcutsDialog` 全部 `parent: Overlay.overlay`；设置页由 `Loader` 按分类懒加载（`qrc:/qt/qml/NexusAI/src/ui/pages/*.qml`）。
 - **主题入口**：QML 侧只读 `Theme.*` 令牌；`Ctrl+D` 切 `ThemeManager.isDark`；C++ 另把同一组颜色同步进 `QPalette` 供 Basic 控件使用。
 - **图表约束**：`DonutChart`/`LineTrendChart`/`BarCompareChart` 用 QML `Canvas` 自绘，禁止引入 Qt Charts；`charts/` 子目录经 QTP0004 NEW 平铺注册进 `NexusAI` 模块。
 - **i18n**：界面文本用 `qsTr`；语言切换由 C++ `I18nManager::localeChanged → engine.retranslate` 强制重求值。
 
 ## 数据与控制流
 
-1. 启动：`Component.onCompleted` 读 `AgentVM.restoreWindowOnStartup` 与 `loadWindowGeometry()`，恢复位置/尺寸或最大化；`trayAvailable` 由 `main.cpp` 注入。
+1. 启动：`Component.onCompleted` 读 `AgentVM.restoreWindowOnStartup` 与 `loadWindowGeometry()`，恢复位置/尺寸或最大化；`trayAvailable` 由 `main.cpp` 注入。随后 `Qt.callLater` 检查 `Onboarding.shouldShow()`（无模型配置且 `general.onboarded` 未写）→ `OnboardingDialog.openOnboarding()`，三步走完或显式跳过才写标记。
 2. 会话渲染：`AgentChatPage` 把 `AgentVM.traceModel` 交给 `TranscriptViewport`，delegate 为 `TraceNodeRouter`（按节点类型路由到用户/助手/过程/错误卡片）；展开态存在页面级 `detailState`，不随 delegate 重建丢失。左侧 `MessageNavigator` 导轨按 `AgentVM.userMessageIndex` 画出每次提问，点击跳到对应 trace 行。
 3. 过程节点开关：`AgentVM.showProcess`（持久化于 `ui/showProcess`）由 TopBar 右侧的按钮控制，`AgentChatPage` 只读并透传给 `TraceNodeRouter`。它原先是一个悬浮在对话区右上角的胶囊按钮，会遮挡正文且与"某条消息的展开"混淆——搬到 TopBar 后与任务清单/审阅/面板同排。
 3. 输入：`InputConsole` 负责草稿、附件、`@` 提及补全、历史浏览与发送；`ModelSelector`/`ThinkingEffortSelector`/`PermissionModeSelector` 读写 `AgentVM`/`Settings`。
@@ -29,12 +29,12 @@
 7. 通知：`errorOccurred`/`noticeOccurred` 分别驱动错误/成功 Toast；删除会话经 `Sidebar.sessionDeletedUndoable` 弹 10 秒撤销条，调用 `AgentVM.undoDeleteSession()`。
 7b. 会话切换（docs/30，P0+P1 已实施）：**侧栏是唯一入口，主区只渲染活动会话**。侧栏点击 → `AgentVM.openConversation(id)`；右侧「结束对话」（右键菜单 / hover 操作条，后者仅在 `open === true` 时出现）→ `closeConversation(id)`；`Ctrl+W` → `closeActiveConversation()`；`Ctrl+Tab`/`Ctrl+Shift+Tab` → `cycleConversation(±1)`（跳过空白对话）。行内 14px 状态槽三态互斥：busy 旋转图标 › 等待确认静态警告 › 未读点。顶栏中部显示当前会话标题，并带会话模板入口（`Ctrl+[` 折叠侧栏后仍可达）。
 8. 引用定位：`ChangeBus` 的 `search.revealMessage` 在 `AgentChatPage` 中 `Qt.callLater` 查 `traceModel.rowOfMessageId`，滚动并高亮 2 秒。
-9. 快捷键（窗口级）：`Ctrl+,` 设置、`Ctrl+F` 设置中心内搜索（仅对话框打开时生效，聚焦搜索框）、`Ctrl+L` 审计日志、`Ctrl+B` 右面板、`Ctrl+[` 侧栏、`Ctrl+D` 主题、`Ctrl+/` 速查表。速查表 `ShortcutsDialog.qml` 与这些绑定一一对应，增改时两处同步。
+9. 快捷键（窗口级）：序列唯一来源是 `ShortcutMap.bindings`（docs/31 N2，动作表/默认值/冲突校验都在 `ShortcutMap.cpp`）；设置页录制时 `ShortcutMap.recording` 让全部窗口级 `Shortcut` 暂时失效，速查表由同一张动作表生成，不再手抄两份。
 10. 关闭：`onClosing` 先 `AgentVM.saveWindowGeometry(...)`；当 `PreferenceStore.load("window.closeToTray") === true && trayAvailable` 时 `close.accepted = false` 并 `hide()`，否则真正退出（真正退出入口仍是托盘菜单）。
 
 ## 集成点
 
-- C++ 单例与属性：`AgentVM`（traceModel/sessionList/projects/sidebarWidth/panelWidth/pendingConfirmation/todoList/fileCheckpoints…）、`Theme`/`ThemeManager`、`Settings`、`PreferenceStore`、`SettingsCatalog`、`ChangeBus`、`I18n`、`EditBuffer`、`GitVM`、`McpManager`、`ConnectionTester`。
+- C++ 单例与属性：`AgentVM`（traceModel/sessionList/projects/sidebarWidth/panelWidth/pendingConfirmation/todoList/fileCheckpoints…）、`Theme`/`ThemeManager`、`Settings`、`PreferenceStore`、`SettingsCatalog`、`ChangeBus`、`I18n`、`EditBuffer`、`GitVM`、`McpManager`、`ConnectionTester`、`ShortcutMap`、`Onboarding`。
 - qrc 路径固定为 `qrc:/qt/qml/NexusAI/src/ui/main.qml`（URI `NexusAI` + 源目录结构）；设置页在 QML 内以绝对 qrc URL 加载。
 - 测试：`tests/CMakeLists.txt` 把 `src/ui/**/*.qml` 与 `FileTree.js` 重新打进测试资源，`qmllint_gate` 对 `nexus_ai`/`nexus_viewmodels` 的响应文件做静态检查；图表/Todo/审阅/引用行有 offscreen 渲染回归；设置搜索/目录覆盖由 `test_settings` 的 C++ 用例锁定。
 
@@ -58,7 +58,7 @@
 - **不要在 QML 解析拖放路径**：`drop.urls` 元素没有 `toLocalFile()`，必须原样交给 C++；`DropArea` 必须最后声明且铺满窗口，否则命中层被内容遮挡。
 - **Loader 生命周期**：设置页切换分类会销毁页面，仅靠 `editingFinished` 会丢输入——依赖 `EditBuffer` 防抖 + `Component.onDestruction`；新增页面需沿用同一保存契约。文本字段优先用 `SettingsField` 的 `commitDebounce`/`commitOnDestroy`（并绑定 `lastKnownValue` 避免重复提交原值）；密钥字段用 `secret + ignoreEmptySubmit + clearOnSubmit`，读 `text` 而非 `displayText`。
 - **托盘不可用**：`trayAvailable == false` 时绝不能"关闭到托盘"，否则窗口无召回入口。
-- **快捷键冲突**：`Ctrl+/` 与部分输入法的 `/` 组合、`Ctrl+[` 与编辑器缩进习惯可能冲突；窗口级 `Shortcut` 会抢占输入焦点，改动需回归 `InputConsole`。
+- **快捷键冲突**：`Ctrl+/` 与部分输入法的 `/` 组合、`Ctrl+[` 与编辑器缩进习惯可能冲突；窗口级 `Shortcut` 会抢占输入焦点，改动需回归 `InputConsole`。序列的唯一事实源是 `ShortcutMap.bindings`（docs/31 N2），不要在 `main.qml` 里再写死；新增/改动全局键须同步 `ShortcutMap` 动作表与 `ShortcutsDialog` 可见性，并保证录制时（`ShortcutMap.recording`）窗口级 `Shortcut` 全部让位，否则录制 `Ctrl+B` 会先触发旧的「面板开关」。
 - **qrc/注册漂移**：新增 QML 文件必须加入根 `CMakeLists.txt` 的 `QML_FILES`；`charts/` 依赖 QTP0004 平铺，移动目录会改 qrc 路径并导致加载失败。
 - **qmllint 噪声**：门禁只把 `Error:` 级判失败，历史 warning 会打印但不阻断；不要据此认为 QML 完全干净。
 - **性能**：`Sidebar.qml`、`GitPanel.qml`、`UsageStatsPage.qml` 均为数千行级组件，且大量绑定/委托；新增每帧绑定需注意 trace 滚动与 Canvas 重绘开销。

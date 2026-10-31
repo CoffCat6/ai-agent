@@ -530,6 +530,35 @@ private slots:
     }
 
 
+    // docs/31 S1 遗留（O1）：安全 / 用量 / 工具页没有 requestResetDefaults，
+    // 底栏「恢复本页默认值」必须回落到逐条 resetValue——否则按钮出现但点了
+    // 没反应，且「恢复全部设置」确认文案承诺的"安全、用量会复位"落空。
+    void settingsResetCoversServiceOnlyCategories() {
+        auto* service = SettingsService::instance();
+        service->setLocalOnlyMode(true);
+
+        QQmlApplicationEngine engine;
+        engine.rootContext()->setContextProperty("Theme", ThemeProvider::instance());
+        engine.load(QUrl("qrc:/qt/qml/NexusAI/src/ui/main.qml"));
+        QVERIFY(!engine.rootObjects().isEmpty());
+        auto* window = engine.rootObjects().first();
+        auto* dialog = window->findChild<QObject*>("settingsCenterDialog");
+        QVERIFY(dialog);
+        QVERIFY(QMetaObject::invokeMethod(dialog, "openCategory",
+                                          Q_ARG(QVariant, QStringLiteral("security"))));
+        QTest::qWait(150);
+
+        auto* resetButton = window->findChild<QObject*>("settingsResetCategoryButton");
+        QVERIFY2(resetButton, "bottom reset button missing");
+        QVERIFY2(resetButton->property("visible").toBool(),
+                 "security category must offer '恢复本页默认值'");
+
+        QVERIFY(QMetaObject::invokeMethod(dialog, "performReset"));
+        QTest::qWait(50);
+        QCOMPARE(service->localOnlyMode(), false);
+    }
+
+
     // 设置搜索的可发现性回归：输入即切到结果列表，结果计数可见；无匹配
     // 时列表清空（空态由 QML 渲染）。键盘跳转依赖同一份结果模型。
     void settingsSearchShowsResultsAndEmptyState() {
@@ -592,6 +621,73 @@ private slots:
         QTest::qWait(120);
         QVERIFY(nav->property("compact").toBool());
         QCOMPARE(nav->property("width").toInt(), 56);
+    }
+
+
+    // docs/31 S1（O7）：分类页缓存不得让页面互相重叠。缓存后 Loader 保持
+    // active，但同一时刻只允许当前分类的页面可见——`visible: active` 会让
+    // 所有访问过的页面同时铺在同一个 anchors.fill 区域上（S1 真实回归：
+    // 切到第二个分类后两页叠在一起）。顺带锁住缓存上限：访问多页后
+    // 只有最近 maxCachedPages 个页面还持有实例。
+    void settingsCategoryPagesNeverOverlap() {
+        QQmlApplicationEngine engine;
+        engine.rootContext()->setContextProperty("Theme", ThemeProvider::instance());
+        engine.load(QUrl("qrc:/qt/qml/NexusAI/src/ui/main.qml"));
+        QVERIFY(!engine.rootObjects().isEmpty());
+        auto* window = engine.rootObjects().first();
+        auto* dialog = window->findChild<QObject*>("settingsCenterDialog");
+        QVERIFY(dialog);
+
+        const QStringList categories = {
+            QStringLiteral("model"), QStringLiteral("agent"),
+            QStringLiteral("interface"), QStringLiteral("general"),
+            QStringLiteral("network"), QStringLiteral("security"),
+            QStringLiteral("mcp"), QStringLiteral("tools"),
+            QStringLiteral("memory"), QStringLiteral("knowledge"),
+            QStringLiteral("backup"), QStringLiteral("logs"),
+            QStringLiteral("usage"), QStringLiteral("activity"),
+            QStringLiteral("projects"), QStringLiteral("prompts")
+        };
+        const auto loaderFor = [dialog](const QString &id) -> QObject* {
+            return dialog->findChild<QObject*>(QStringLiteral("settingsPageLoader.") + id);
+        };
+
+        for (const QString &category : categories) {
+            QVERIFY(QMetaObject::invokeMethod(dialog, "openCategory",
+                                              Q_ARG(QVariant, category)));
+            QTest::qWait(120);
+
+            int visibleCount = 0;
+            QString visibleId;
+            for (const QString &id : categories) {
+                QObject *loader = loaderFor(id);
+                QVERIFY2(loader, qPrintable(QStringLiteral("missing loader: ") + id));
+                if (loader->property("visible").toBool()) {
+                    ++visibleCount;
+                    visibleId = id;
+                }
+            }
+            QVERIFY2(visibleCount == 1,
+                     qPrintable(QStringLiteral("category %1: %2 page(s) visible (%3)")
+                                    .arg(category).arg(visibleCount).arg(visibleId)));
+            QCOMPARE(visibleId, category);
+            QVERIFY(loaderFor(category)->property("item").value<QObject*>() != nullptr);
+        }
+
+        // 缓存上限：最后一次打开的是 prompts（不参与缓存），此前 5 个
+        // 分类页仍是活跃实例；更早的页面已被释放但 loader 本身还在。
+        int instantiated = 0;
+        for (const QString &id : categories) {
+            if (loaderFor(id)->property("item").value<QObject*>() != nullptr)
+                ++instantiated;
+        }
+        QVERIFY2(instantiated <= 6,
+                 qPrintable(QStringLiteral("too many cached pages: %1").arg(instantiated)));
+        // 上一个分类页被保留但不可见——这才是不重叠 + 不丢状态的组合。
+        QObject *prompts = loaderFor(QStringLiteral("prompts"));
+        QCOMPARE(prompts->property("visible").toBool(), true);
+        QObject *projects = loaderFor(QStringLiteral("projects"));
+        QCOMPARE(projects->property("visible").toBool(), false);
     }
 
 

@@ -23,17 +23,25 @@ ApplicationWindow {
     // Restore only when the preference allows it; AgentVM.loadWindowGeometry
     // already drops positions that are off every screen.
     Component.onCompleted: {
-        if (!AgentVM.restoreWindowOnStartup) return
-        const geo = AgentVM.loadWindowGeometry()
-        if (!geo.valid) return
-        if (geo.maximized) {
-            mainWindow.visibility = Window.Maximized
-        } else {
-            x = geo.x
-            y = geo.y
-            width = geo.width
-            height = geo.height
+        if (AgentVM.restoreWindowOnStartup) {
+            const geo = AgentVM.loadWindowGeometry()
+            if (geo.valid) {
+                if (geo.maximized) {
+                    mainWindow.visibility = Window.Maximized
+                } else {
+                    x = geo.x
+                    y = geo.y
+                    width = geo.width
+                    height = geo.height
+                }
+            }
         }
+        // docs/31 N1：全新用户先走向导。判定在 Onboarding 里（无模型配置
+        // 且 general.onboarded 未写）；callLater 等窗口完成首次布局再弹，
+        // 否则 Overlay 尺寸尚未确定，对话框会落在左上角。
+        Qt.callLater(function() {
+            if (Onboarding.shouldShow()) onboardingDialog.openOnboarding()
+        })
     }
     onClosing: (close) => {
         AgentVM.saveWindowGeometry(x, y, width, height,
@@ -172,6 +180,12 @@ ApplicationWindow {
         onSettingsError: (message) => errorToast.show(message)
     }
 
+    // ── First-run onboarding (docs/31 N1) ─────────────
+    OnboardingDialog {
+        id: onboardingDialog
+        parent: Overlay.overlay
+    }
+
     // ── Audit Log Dialog ──────────────────────────────
     AuditDialog {
         id: auditDialog
@@ -308,72 +322,86 @@ ApplicationWindow {
     }
 
     // ── Keyboard Shortcuts ─────────────────────────────
+    // 序列的唯一事实源是 ShortcutMap（docs/31 N2）：自定义页改键、恢复
+    // 默认或全局复位后，这里的绑定随 ShortcutMap.changed 一起刷新。
+    // 录制期间整体让位，否则按下的组合会先触发旧动作而录不进去。
     Shortcut {
-        sequence: "Ctrl+,"
+        sequence: ShortcutMap.bindings["settings.open"] || ""
+        enabled: !ShortcutMap.recording
         onActivated: settingsCenterDialog.open()
     }
 
     // 设置搜索的可发现入口：只在设置中心打开时生效，避免抢走其他页面的
     // Ctrl+F（未来编辑器内查找等）。
     Shortcut {
-        sequence: "Ctrl+F"
-        enabled: settingsCenterDialog.opened
+        sequence: ShortcutMap.bindings["settings.search"] || ""
+        enabled: !ShortcutMap.recording && settingsCenterDialog.opened
         onActivated: settingsCenterDialog.focusSearch()
     }
 
     Shortcut {
-        sequence: "Ctrl+L"
+        sequence: ShortcutMap.bindings["audit.open"] || ""
+        enabled: !ShortcutMap.recording
         onActivated: auditDialog.open()
     }
 
     Shortcut {
-        sequence: "Ctrl+B"
+        sequence: ShortcutMap.bindings["panel.toggle"] || ""
+        enabled: !ShortcutMap.recording
         onActivated: AgentVM.togglePanel()
     }
 
     // Review and the task list are dialogs now (the sidebar was too narrow
     // for either), so they get keys next to the panel toggle they replaced.
     Shortcut {
-        sequence: "Ctrl+R"
+        sequence: ShortcutMap.bindings["review.open"] || ""
+        enabled: !ShortcutMap.recording
         onActivated: reviewDialog.open()
     }
 
     Shortcut {
-        sequence: "Ctrl+T"
+        sequence: ShortcutMap.bindings["todo.open"] || ""
+        enabled: !ShortcutMap.recording
         onActivated: todoDialog.open()
     }
 
     Shortcut {
-        sequence: "Ctrl+["
+        sequence: ShortcutMap.bindings["sidebar.toggle"] || ""
+        enabled: !ShortcutMap.recording
         onActivated: AgentVM.toggleSidebar()
     }
 
     // docs/30：标签栏删除后，切会话与结束会话不再是鼠标专属动作。
     // Ctrl+W 与编辑器/浏览器的"关掉当前"一致；Ctrl+Tab 在打开集合内循环。
     Shortcut {
-        sequence: "Ctrl+W"
+        sequence: ShortcutMap.bindings["conversation.close"] || ""
+        enabled: !ShortcutMap.recording
         onActivated: AgentVM.closeActiveConversation()
     }
 
     Shortcut {
-        sequences: ["Ctrl+Tab"]
+        sequences: [ShortcutMap.bindings["conversation.next"] || ""]
+        enabled: !ShortcutMap.recording
         onActivated: AgentVM.cycleConversation(1)
     }
 
     Shortcut {
-        sequences: ["Ctrl+Shift+Tab"]
+        sequences: [ShortcutMap.bindings["conversation.prev"] || ""]
+        enabled: !ShortcutMap.recording
         onActivated: AgentVM.cycleConversation(-1)
     }
 
     Shortcut {
-        sequence: "Ctrl+D"
+        sequence: ShortcutMap.bindings["theme.toggle"] || ""
+        enabled: !ShortcutMap.recording
         onActivated: ThemeManager.isDark = !ThemeManager.isDark
     }
 
     // docs/20 §4.4（D9 快捷键速查表）：Ctrl+/（与 Ctrl+, 同键位的常见布局）
     // 打开速查表，让新用户能发现功能。
     Shortcut {
-        sequence: "Ctrl+/"
+        sequence: ShortcutMap.bindings["shortcuts.open"] || ""
+        enabled: !ShortcutMap.recording
         onActivated: shortcutsDialog.open()
     }
 

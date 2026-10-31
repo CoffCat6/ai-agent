@@ -274,7 +274,7 @@ Item {
         anchors.rightMargin: Theme.spaceXl
         anchors.topMargin: Theme.spaceMd
         title: qsTr("模型服务配置")
-        description: qsTr("点芯片切换要编辑的配置；改动即时写入配置，不需要另点保存。")
+        description: qsTr("点芯片切换要编辑的配置，拖动芯片可调整顺序；改动即时写入配置，不需要另点保存。")
     }
 
     ScrollView {
@@ -306,8 +306,13 @@ Item {
                 subtitle: qsTr("一条配置对应一个可用服务。厂商决定默认地址，接口协议决定报文格式；模型由你自己填。")
 
                 Flow {
+                    id: profileFlow
+                    // 拖动失败（没落在芯片上）时芯片会停在拖走的位置；改一下
+                    // 间距触发 Flow 重新排布。用独立的 tick 而不是直接写
+                    // spacing，避免破坏 Theme 绑定，也避免累积漂移。
+                    property int reflowTick: 0
                     Layout.fillWidth: true
-                    spacing: Theme.spaceSm
+                    spacing: Theme.spaceSm + profileFlow.reflowTick * 0.01
 
                     Repeater {
                         model: Settings.profiles
@@ -315,6 +320,7 @@ Item {
                         delegate: Rectangle {
                             id: profileChip
                             required property var modelData
+                            required property int index
                             readonly property bool isActive: modelData.id === Settings.activeProfileId
                             readonly property bool isEditing: modelData.id === page.editingId
 
@@ -328,9 +334,19 @@ Item {
                             border.width: profileChip.isEditing ? 2 : 1
                             border.color: profileChip.isEditing
                                 ? Theme.brandPrimary : Theme.borderSubtle
+                            z: chipDrag.drag.active ? 2 : 0
+                            opacity: chipDrag.drag.active ? 0.75 : 1
 
                             Accessible.role: Accessible.Button
                             Accessible.name: chipText.text
+
+                            // docs/31 S4.4（4a）：拖拽芯片调整顺序，落盘由
+                            // moveProfile 负责；点击仍只是切换编辑对象
+                            // （拖动时不触发）。
+                            Drag.active: chipDrag.drag.active
+                            Drag.source: profileChip
+                            Drag.hotSpot: Qt.point(profileChip.width / 2,
+                                                   profileChip.height / 2)
 
                             Row {
                                 id: chipRow
@@ -368,9 +384,44 @@ Item {
                             }
 
                             MouseArea {
+                                id: chipDrag
                                 anchors.fill: parent
                                 cursorShape: Qt.PointingHandCursor
+                                drag.target: profileChip
+                                drag.axis: Drag.XAndYAxis
+                                property bool dragMoved: false
+                                onPressed: dragMoved = false
+                                onPositionChanged: {
+                                    if (drag.active) dragMoved = true
+                                }
+                                onReleased: {
+                                    // 成功落点会重建 delegate；未命中时把拖走的
+                                    // 芯片交回 Flow 重新排布。
+                                    if (dragMoved)
+                                        profileFlow.reflowTick = 1 - profileFlow.reflowTick
+                                    dragMoved = false
+                                }
                                 onClicked: page.editingId = profileChip.modelData.id
+                            }
+
+                            DropArea {
+                                anchors.fill: parent
+                                // 拖动中的芯片跟着光标走，它自己的 DropArea 会
+                                // 一直盖在目标上；禁用后落点才会交给下面的芯片。
+                                enabled: !profileChip.Drag.active
+                                onDropped: (drop) => {
+                                    const source = drop.source
+                                    if (source === null || source === undefined
+                                            || source.index === undefined
+                                            || source.index === profileChip.index)
+                                        return
+                                    // 重排会重建 Repeater delegate；先取值再延后
+                                    // 一拍，不在 DropArea 的事件栈里销毁当前芯片。
+                                    const fromIndex = source.index
+                                    const toIndex = profileChip.index
+                                    Qt.callLater(() => Settings.moveProfile(
+                                                       fromIndex, toIndex))
+                                }
                             }
                         }
                     }
@@ -602,8 +653,10 @@ Item {
                     id: modelRow
                     label: qsTr("当前模型")
                     placeholderText: page.modelPlaceholder
-                    // 只在销毁时补一次（不是逐键），提交的是敲完的名字；逐键提交
-                    // 才会把 "g"/"gp" 这类半截名字灌进 models 列表。
+                    // 唯一显式退出防抖提交的字段：每次 submitted 都会被
+                    // SettingsService 并进 models 列表，停顿提交会把 "g"/"gp"
+                    // 这类半截名字灌进列表。保持回车/失焦 + 销毁兜底。
+                    commitDebounce: 0
                     commitOnDestroy: true
                     onSubmitted: (value) => page.submitField("model", value)
                 }
@@ -966,6 +1019,21 @@ Item {
                 enabled: page.ready && page.editing !== null
                          && page.editing.id !== Settings.activeProfileId
                 onClicked: Settings.setActiveProfile(page.editing.id)
+            }
+
+            AppButton {
+                text: qsTr("复制")
+                // docs/31 S4.4（4a）：复制除 API Key 外的全部字段；新配置
+                // 立即选中以便先补密钥，启用关系保持不变。
+                enabled: page.editing !== null
+                onClicked: {
+                    if (page.editing === null) return
+                    const source = page.editing
+                    const base = source.displayName || source.provider
+                    const id = Settings.duplicateProfile(
+                        source.id, qsTr("%1 副本").arg(base))
+                    if (id !== "") page.editingId = id
+                }
             }
 
             AppButton {

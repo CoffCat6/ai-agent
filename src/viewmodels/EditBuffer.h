@@ -34,6 +34,10 @@ class EditBuffer : public QObject {
     // cleared on the next stage/rollback/reset.
     Q_PROPERTY(QString firstInvalidKey READ firstInvalidKey NOTIFY validationErrorChanged FINAL)
     Q_PROPERTY(QString validationError READ validationError NOTIFY validationErrorChanged FINAL)
+    // docs/31 S4.3 N3：底栏「已保存」回执可点「撤销」——只保留最后一次写穿
+    // 的偏好键（不链式）。密钥类不会进入记录（undoLast 也会再拒一次）。
+    Q_PROPERTY(bool canUndo READ canUndo NOTIFY undoChanged FINAL)
+    Q_PROPERTY(QString undoKey READ undoKey NOTIFY undoChanged FINAL)
 public:
     explicit EditBuffer(QObject* parent);
 
@@ -43,6 +47,8 @@ public:
     QVariantMap staged() const { return m_staged; }
     QString firstInvalidKey() const { return m_firstInvalidKey; }
     QString validationError() const { return m_validationError; }
+    bool canUndo() const { return !m_undoKey.isEmpty(); }
+    QString undoKey() const { return m_undoKey; }
 
     Q_INVOKABLE void stage(const QString& key, const QVariant& value);
     Q_INVOKABLE bool isDirty() const;
@@ -52,20 +58,30 @@ public:
     Q_INVOKABLE void resetToDefault(const QStringList& keys);
     Q_INVOKABLE void resetAllToDefault();
     Q_INVOKABLE QStringList stagedKeys() const;
+    // 撤销最近一次写穿：有旧落盘值就写回，否则删除物理键回到默认值。
+    // 只回写一次（记录随即清空），失败返回 false。
+    Q_INVOKABLE bool undoLast();
 
 signals:
     void dirtyChanged();
     void stagedChanged();
     void validationErrorChanged();
+    void undoChanged();
     void staged(const QString& key, const QVariant& value);
 
 private:
     bool validateOne(const QString& key, const QVariant& value, QString& error) const;
     void clearValidationError();
+    void setUndoRecord(const QString& key, bool hadPrevious, const QVariant& previous);
+    void clearUndo();
 
     QVariantMap m_staged;
     QString m_firstInvalidKey;
     QString m_validationError;
+    // 最近一次成功写穿的撤销点（空 key = 无可撤销）。
+    QString m_undoKey;
+    bool m_undoHadPrevious{false};
+    QVariant m_undoPrevious;
 
     static EditBuffer* s_instance;
 };

@@ -1,6 +1,7 @@
 import QtQuick
 import QtQuick.Layouts
 import QtQuick.Controls
+import QtQuick.Dialogs
 import NexusAI
 import NexusAI.ViewModels
 
@@ -12,6 +13,14 @@ Item {
     id: page
 
     Accessible.name: qsTr("MCP 服务器管理页")
+
+    // docs/31 N7：配置导入/导出的结果提示与导入预览。
+    property string transferMessage: ""
+    property bool transferIsError: false
+    property string importPath: ""
+    property string importPolicy: "skip"
+    property var importPreview: ({ ok: false, servers: [], total: 0, importable: 0,
+                                   conflictCount: 0, withSecrets: 0, error: "" })
 
     SettingsPage {
         anchors.fill: parent
@@ -28,7 +37,32 @@ Item {
             Layout.fillWidth: true
             spacing: Theme.spaceSm
 
-            Item { Layout.fillWidth: true }
+            Text {
+                visible: page.transferMessage !== ""
+                Layout.fillWidth: true
+                text: page.transferMessage
+                color: page.transferIsError ? Theme.statusDanger : Theme.statusSuccess
+                font.pixelSize: Theme.fontSizeCaption
+                font.family: Theme.fontSans
+                wrapMode: Text.WrapAnywhere
+                Accessible.role: Accessible.StaticText
+                Accessible.name: text
+            }
+
+            AppButton {
+                objectName: "mcpExport"
+                text: qsTr("导出配置…")
+                enabled: McpManager.servers.length > 0
+                onClicked: exportDialog.open()
+                Accessible.name: qsTr("导出 MCP 服务器配置")
+            }
+
+            AppButton {
+                objectName: "mcpImport"
+                text: qsTr("导入配置…")
+                onClicked: importFileDialog.open()
+                Accessible.name: qsTr("导入 MCP 服务器配置")
+            }
 
             AppButton {
                 objectName: "mcpAddServer"
@@ -204,6 +238,222 @@ Item {
                         font.pixelSize: Theme.fontSizeCaption
                         font.family: Theme.fontSans
                         wrapMode: Text.Wrap
+                    }
+                }
+            }
+        }
+    }
+
+    // docs/31 N7：导出/导入 MCP 服务器配置。
+    FileDialog {
+        id: exportDialog
+        title: qsTr("导出 MCP 服务器配置")
+        fileMode: FileDialog.SaveFile
+        defaultSuffix: "json"
+        nameFilters: [qsTr("JSON 文件 (*.json)")]
+        onAccepted: {
+            const result = McpManager.exportServers(selectedFile.toString())
+            page.transferIsError = !result.ok
+            if (!result.ok) {
+                page.transferMessage = result.error || qsTr("导出失败。")
+                return
+            }
+            page.transferMessage = result.secretsOmitted > 0
+                ? qsTr("已导出 %1 台服务器；其中 %2 台的环境变量/请求头未包含，请手动补全。")
+                    .arg(result.count).arg(result.secretsOmitted)
+                : qsTr("已导出 %1 台服务器；导入后默认禁用，需要手动启用。").arg(result.count)
+        }
+    }
+
+    FileDialog {
+        id: importFileDialog
+        title: qsTr("选择 MCP 服务器配置文件")
+        fileMode: FileDialog.OpenFile
+        nameFilters: [qsTr("JSON 文件 (*.json)")]
+        onAccepted: {
+            const path = selectedFile.toString()
+            const preview = McpManager.previewServerImport(path)
+            page.transferMessage = ""
+            if (!preview.ok) {
+                page.transferIsError = true
+                page.transferMessage = preview.error || qsTr("导入失败。")
+                return
+            }
+            page.importPath = path
+            page.importPolicy = "skip"
+            page.importPreview = preview
+            importConfirm.open()
+        }
+    }
+
+    Dialog {
+        id: importConfirm
+        objectName: "mcp/importDialog"
+        modal: true
+        anchors.centerIn: parent
+        padding: 0
+        width: 520
+        height: 460
+        background: DialogBackground {}
+
+        // 每次打开都回到「跳过同名」，与 page.importPolicy 的初值一致。
+        onOpened: importPolicyCombo.currentIndex = 0
+
+        contentItem: ColumnLayout {
+            spacing: Theme.spaceMd
+
+            Text {
+                Layout.leftMargin: Theme.spaceLg
+                Layout.rightMargin: Theme.spaceLg
+                Layout.topMargin: Theme.spaceLg
+                Layout.fillWidth: true
+                text: qsTr("导入 MCP 服务器配置")
+                color: Theme.textPrimary
+                font.pixelSize: Theme.fontSizeBody
+                font.bold: true
+                font.family: Theme.fontSans
+            }
+
+            Text {
+                objectName: "mcp/importSummary"
+                Layout.leftMargin: Theme.spaceLg
+                Layout.rightMargin: Theme.spaceLg
+                Layout.fillWidth: true
+                text: qsTr("共 %1 台：可导入 %2 台，同名冲突 %3 台，%4 台包含环境变量或请求头。导入的服务器默认禁用。")
+                    .arg(page.importPreview.total)
+                    .arg(page.importPreview.importable)
+                    .arg(page.importPreview.conflictCount)
+                    .arg(page.importPreview.withSecrets)
+                color: Theme.textSecondary
+                font.pixelSize: Theme.fontSizeCaption
+                font.family: Theme.fontSans
+                wrapMode: Text.Wrap
+            }
+
+            RowLayout {
+                Layout.leftMargin: Theme.spaceLg
+                Layout.rightMargin: Theme.spaceLg
+                Layout.fillWidth: true
+                spacing: Theme.spaceSm
+
+                Text {
+                    text: qsTr("同名服务器")
+                    color: Theme.textPrimary
+                    font.pixelSize: Theme.fontSizeCaption
+                    font.family: Theme.fontSans
+                }
+
+                ComboBox {
+                    id: importPolicyCombo
+                    objectName: "mcp/importPolicy"
+                    Layout.preferredWidth: Theme.controlWidthMd
+                    property var policies: [
+                        { label: qsTr("跳过同名（推荐）"), value: "skip" },
+                        { label: qsTr("覆盖同名"), value: "overwrite" },
+                        { label: qsTr("重命名后添加"), value: "rename" }
+                    ]
+                    model: policies
+                    textRole: "label"
+                    currentIndex: 0
+                    onActivated: page.importPolicy = policies[currentIndex].value
+                    Accessible.name: qsTr("同名服务器处理方式")
+                }
+
+                Item { Layout.fillWidth: true }
+            }
+
+            Rectangle {
+                Layout.leftMargin: Theme.spaceLg
+                Layout.rightMargin: Theme.spaceLg
+                Layout.fillWidth: true
+                Layout.fillHeight: true
+                color: Theme.bgPrimary
+                border.width: 1
+                border.color: Theme.borderSubtle
+                radius: Theme.radiusSm
+                clip: true
+
+                ListView {
+                    id: importList
+                    objectName: "mcp/importList"
+                    anchors.fill: parent
+                    anchors.margins: Theme.spaceXs
+                    model: page.importPreview.servers || []
+                    clip: true
+                    ScrollBar.vertical: AppScrollBar { }
+
+                    delegate: ColumnLayout {
+                        width: importList.width
+                        spacing: 0
+
+                        RowLayout {
+                            Layout.fillWidth: true
+                            spacing: Theme.spaceSm
+
+                            Text {
+                                text: modelData.name || qsTr("（未命名）")
+                                color: Theme.textPrimary
+                                font.pixelSize: Theme.fontSizeCaption
+                                font.family: Theme.fontMono
+                                elide: Text.ElideRight
+                                Layout.fillWidth: true
+                            }
+
+                            Text {
+                                visible: modelData.conflict === true
+                                text: qsTr("同名")
+                                color: Theme.statusWarning
+                                font.pixelSize: Theme.fontSizeMicro
+                                font.family: Theme.fontSans
+                            }
+                        }
+
+                        Text {
+                            Layout.fillWidth: true
+                            visible: (modelData.error || "") !== ""
+                            text: modelData.error || ""
+                            color: Theme.statusDanger
+                            font.pixelSize: Theme.fontSizeMicro
+                            font.family: Theme.fontSans
+                            wrapMode: Text.WrapAnywhere
+                        }
+
+                        Text {
+                            Layout.fillWidth: true
+                            visible: (modelData.endpoint || "") !== ""
+                            text: modelData.endpoint || ""
+                            color: Theme.textSecondary
+                            font.pixelSize: Theme.fontSizeMicro
+                            font.family: Theme.fontMono
+                            elide: Text.ElideRight
+                        }
+                    }
+                }
+            }
+
+            RowLayout {
+                Layout.alignment: Qt.AlignRight
+                Layout.rightMargin: Theme.spaceLg
+                Layout.bottomMargin: Theme.spaceLg
+                spacing: Theme.spaceSm
+
+                AppButton {
+                    text: qsTr("取消")
+                    onClicked: importConfirm.close()
+                }
+                AppButton {
+                    objectName: "mcp/importConfirm"
+                    text: qsTr("导入")
+                    enabled: page.importPreview.importable > 0
+                    onClicked: {
+                        const result = McpManager.importServers(
+                            page.importPath, page.importPolicy)
+                        page.transferIsError = !result.ok
+                        page.transferMessage = result.ok
+                            ? qsTr("已导入：新增 %1 台，覆盖 %2 台，跳过 %3 台；导入的服务器默认禁用。")
+                                .arg(result.added).arg(result.replaced).arg(result.skipped)
+                            : (result.error || qsTr("导入失败。"))
+                        importConfirm.close()
                     }
                 }
             }

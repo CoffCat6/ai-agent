@@ -197,8 +197,15 @@ public:
     int pruneUsage(int keepDays = 30, int maxRows = 10000);
     // docs/23 G3: time-based retention for the audit tables that previously
     // grew unbounded. keepDays <= 0 = keep forever. Returns rows removed.
-    int pruneAudit(int keepDays);
-    int pruneTokenUsage(int keepDays);
+    // docs/31 S4.5：提升为 IMemory 虚接口（数据管理页的"立即清理"动作）。
+    int pruneAudit(int keepDays) override;
+    int pruneTokenUsage(int keepDays) override;
+    // docs/31 S4.5 N5：清空全部 token 用量（用量统计与配额计数归零）。
+    // 返回删除的行数。GUI 线程调用。
+    int clearTokenUsage() override;
+    // docs/31 S4.5 N5：VACUUM 压缩数据库文件。需要独占访问，其它连接
+    // 持有活动事务时失败（SQLITE_BUSY），调用方提示稍后重试。GUI 线程调用。
+    bool vacuumDatabase() override;
 
     // ── docs/23 D1: database backup ─────────────────────────────
     // The SQLite file this instance is bound to (default: the app-data
@@ -206,12 +213,25 @@ public:
     QString databasePath() const { return m_dbPath; }
     // <app-data>/backups — the automatic/manual backup directory.
     static QString defaultBackupsDir();
+    // docs/31 O3: list existing snapshots, newest first. Entries:
+    // {path, fileName, sizeBytes, mtimeMs, isAuto}. Read-only and
+    // self-contained (no database connection) so the backup page can show
+    // what is actually on disk instead of asking the user to pick a file.
+    static QVariantList listBackups();
     // Write a consistent snapshot of dbPath via VACUUM INTO from a
     // short-lived self-contained connection (WAL-safe: the read transaction
     // never blocks a concurrent GUI-thread writer). Self-contained on
     // purpose — usable from a worker thread without touching any
     // GUI-thread object (docs/22 exit-race lesson).
     static bool createBackupFile(const QString& dbPath, const QString& targetPath);
+    // docs/31 S4.5 N5：数据管理总览统计。自包含短连接（同 createBackupFile
+    // 的做法），只读、绝不触碰 GUI 线程连接——可安全地从工作线程调用
+    //（AgentViewModel 经 QtConcurrent 调度）。返回：
+    // {fileSizeBytes, walSizeBytes, pageCount, pageSize, error?,
+    //  sessions, messages, episodic, projects, knowledgeDocuments,
+    //  knowledgeChunks, traceNodes, fileCheckpoints, usageLog,
+    //  tokenUsage, auditLog, sessionTodos}。打开失败时带 error 字段。
+    static QVariantMap collectStats(const QString& dbPath);
     // Remove oldest auto_*.db snapshots beyond keepCount (manual_* files
     // are never touched). Returns files removed.
     static int rotateAutoBackups(const QString& backupsDir, int keepCount);

@@ -2,6 +2,7 @@
 
 #include <QObject>
 #include <QHash>
+#include <QDate>
 #include <QJsonArray>
 #include <QJsonObject>
 #include <QSet>
@@ -247,6 +248,10 @@ signals:
     // docs/16 §12.4: 配额超限警告 (quotaType ∈ dailyToken/dailyCost/
     // monthlyToken/monthlyCost, used=已消耗, quota=上限) 与单次请求费用变化。
     void quotaWarning(const QString& quotaType, qint64 used, qint64 quota);
+    // docs/31 S4.1 N9: 用量达到配额的 alertPercent 但尚未超限时提醒一次。
+    // 同一天同一 quotaType 每个 agent 实例只发一次（跨实例去重由
+    // AgentViewModel 负责，避免多标签重复弹通知）。
+    void quotaAlert(const QString& quotaType, qint64 used, qint64 quota);
     void costChanged(qint64 costCents);
     // 会话累计 token 变化（新请求记账 / 换会话恢复 / 新会话清零）。
     void sessionTokensChanged(qint64 sessionTokens);
@@ -463,6 +468,10 @@ private:
     // ("call_0") repeat across turns, and strict proxies reject duplicates.
     quint64 m_toolCallSeq{0};
     QSet<QString> m_usedToolCallIds;
+    // docs/31 S4.1 N9: 当天已提醒过的配额类型。日期变化时清空——只在内存
+    // 去重，不新增落盘键（重启后当天可能再提醒一次，可接受且更简单）。
+    QDate m_quotaAlertDate;
+    QSet<QString> m_quotaAlertsToday;
 };
 
 } // namespace NexusAI

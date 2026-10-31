@@ -1,6 +1,6 @@
 # src/core/memory/ — 持久化架构地图
 
-> 代码事实来源：`IMemory.h`（368 行）、`SqliteMemory.h`（271 行）、`SqliteMemory.cpp`（3550 行）。
+> 代码事实来源：`IMemory.h`（422 行）、`SqliteMemory.h`（303 行）、`SqliteMemory.cpp`（3818 行）。
 > 本文只描述本目录的契约与实现，数字/行为均取自代码。
 
 ## 职责
@@ -91,6 +91,12 @@
 6. **清理**：`main.cpp` 启动即跑一次 `runPrunes`，并挂 6 小时 `QTimer`：`pruneUsage(30,10000)`、
    `pruneAudit(auditRetentionDays=30)`、`pruneTokenUsage(tokenRetentionDays=90)`、
    `pruneFileCheckpoints(now-30d)`、`purgeDeletedSessions(now-30d)`。`keepDays<=0` 表示永久保留。
+   docs/31 S4.5：`pruneAudit`/`pruneTokenUsage` 提升为 `IMemory` 虚接口，数据管理页可按保留天数**立即**触发；
+   同批新增 `clearTokenUsage()`（清空 token_usage）与 `vacuumDatabase()`（本连接 VACUUM，
+   其它连接持锁时 BUSY 返回 false，调用方提示稍后重试）。
+6b. **统计**：`SqliteMemory::collectStats(dbPath)` 静态自包含只读短连接（同 createBackupFile 的
+   做法），返回 DB/WAL 体积 + 12 张表行数；绝不触碰 GUI 线程连接，由
+   `AgentViewModel::requestDataStats()` 经 `QtConcurrent` 调度、`dataStatsReady` 回 GUI。
 7. **备份/恢复**：启动后台 `QtConcurrent::run` → `createBackupFile(dbPath, auto_yyyyMMdd_HHmmss.db)`
    （独立只读连接 + `VACUUM INTO ?`，失败删除半成品）→ `rotateAutoBackups(keepCount=3)`（只动 `auto_*.db`，
    `manual_*` 永不删除）。恢复：`inspectBackupFile` 预览（sessions/messages/knowledgeDocs/newestTimestamp/

@@ -99,6 +99,23 @@ public:
         Q_UNUSED(id); Q_UNUSED(archived); return false;
     }
 
+    // docs/31 S4.5 N5（数据管理总览）：数据页动作。默认实现让无后端的
+    // 替身照常编译；SqliteMemory 提供真实实现。GUI 线程调用——数据库
+    // 连接线程绑定（与 saveSessionTodos 等既有方法同一约束）。
+    // 按保留天数立即清理（天数来自 memory/*RetentionDays 偏好键）。
+    virtual int pruneAudit(int keepDays) {
+        Q_UNUSED(keepDays);
+        return 0;
+    }
+    virtual int pruneTokenUsage(int keepDays) {
+        Q_UNUSED(keepDays);
+        return 0;
+    }
+    // 清空全部 token 用量（用量统计与配额计数随之归零）。
+    virtual int clearTokenUsage() { return 0; }
+    // VACUUM 压缩数据库文件；需独占，失败（SQLITE_BUSY 等）返回 false。
+    virtual bool vacuumDatabase() { return false; }
+
     // G4: workspace file checkpoints. write_file/edit_file hand the original
     // bytes and the at-write diff back to the agent, which persists them here
     // (GUI thread only — the DB connection is thread-bound). `truncated`

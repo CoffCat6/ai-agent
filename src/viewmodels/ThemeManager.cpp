@@ -37,6 +37,7 @@ ThemeManager::ThemeManager(QObject* parent)
     registerPreferences();
     loadTheme();
     loadFontPrefs();
+    loadMotionPrefs();
     subscribeChanges();
 
     // REQ-T5-02: follow the OS light/dark scheme live while the preference
@@ -99,6 +100,11 @@ void ThemeManager::loadFontPrefs() {
         m_fontMono = probe->systemDefaultMono();
 }
 
+void ThemeManager::loadMotionPrefs() {
+    // toBool 对无效 QVariant 返回 false，正好是 schema 默认值，无需 isValid 分支。
+    m_reduceMotion = PreferenceStore::instance()->load(QStringLiteral("ui.reduceMotion")).toBool();
+}
+
 void ThemeManager::subscribeChanges() {
     if (!m_changeBus) return;
     connect(m_changeBus, &ChangeBus::changed, this, [this](const QString& key, const QVariant& value) {
@@ -134,6 +140,11 @@ void ThemeManager::subscribeChanges() {
             if (size == m_baseFontSize) return;
             m_baseFontSize = size;
             emit fontChanged();
+        } else if (key == QStringLiteral("ui.reduceMotion")) {
+            const bool reduce = value.toBool();
+            if (reduce == m_reduceMotion) return;
+            m_reduceMotion = reduce;
+            emit motionChanged();
         }
     });
 }

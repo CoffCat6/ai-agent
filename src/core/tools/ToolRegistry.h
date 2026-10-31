@@ -46,6 +46,12 @@ public:
     // 这是"用户禁用"层：持久化到 tools/disabled（QSettings）。
     void setToolEnabled(const QString& name, bool enabled);
     bool isToolEnabled(const QString& name) const;
+    // docs/31 S4.6：预设包导入需要一次性替换禁用层。只保留已注册工具的名字
+    // （未注册/已断开的 MCP 工具名丢弃），一次落盘、一次通知；写盘失败恢复
+    // 原集合并返回 false。
+    bool setDisabledTools(const QStringList& names);
+    // 当前被用户禁用的已注册工具名（升序），供预设包导出与测试断言。
+    QStringList disabledToolNames() const;
 
     // docs/17 B1: 策略拦截层（内存态，不持久化）——与用户禁用分离。
     // localOnly 等隐私门控写这里，绝不触碰 tools/disabled 持久层，

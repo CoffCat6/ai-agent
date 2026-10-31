@@ -61,6 +61,19 @@ public:
     Q_INVOKABLE void setEnabled(const QString& name, bool enabled);
     Q_INVOKABLE void reconnect(const QString& name);
 
+    // docs/31 N7：MCP 服务器配置的独立导入/导出（与整体设置备份分开）。
+    //
+    // 文件只含白名单字段，env/headers 不导出；导入保留文件里的 env/headers
+    // 但一律禁用，必须手动启用。冲突策略：overwrite / skip / rename。
+    // 返回 {ok, error, path, count, secretsOmitted}。
+    Q_INVOKABLE QVariantMap exportServers(const QString& path);
+    // 返回 {ok, error, path, total, importable, conflictCount, withSecrets,
+    //       servers:[{name, transport, endpoint, conflict, error}]}。
+    Q_INVOKABLE QVariantMap previewServerImport(const QString& path) const;
+    // 返回 {ok, error, added, replaced, skipped}。
+    Q_INVOKABLE QVariantMap importServers(const QString& path,
+                                          const QString& policy);
+
 signals:
     void serversChanged();
     void lastErrorChanged(const QString& error);
@@ -69,6 +82,9 @@ private:
     McpClient* clientFor(const QString& name) const;
     McpClient* ensureClient(const QVariantMap& server);
     void connectClient(McpClient* client);
+    // 停用/移除一台服务器时的统一收尾：断开信号、撤销工具、断开连接并按
+    // docs/24 H9 延迟回收 client。
+    void teardownClient(McpClient* client);
     // docs/24 H9: delayed destruction for removed clients (40s > the
     // in-flight execute ceiling) so pool-thread invokeMethod always hits
     // a live object.

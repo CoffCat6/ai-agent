@@ -2,10 +2,12 @@
 // incremental snapshot, multi-threaded write smoke, snapshot consistency.
 #include "core/utils/Logger.h"
 #include "core/utils/Activity.h"
+#include "core/utils/LogTailReader.h"
 
 #include <QtConcurrent/QtConcurrent>
 #include <QDateTime>
 #include <QDir>
+#include <QFile>
 #include <QFileInfo>
 #include <QTemporaryDir>
 #include <QtTest>
@@ -17,6 +19,19 @@ namespace {
 // Marker-tagged write; returns the assigned seq (revision delta).
 void write(const QString& marker) {
     qInfo().noquote() << marker;
+}
+
+// Logger 的行头格式固定为 "[yyyy-MM-dd hh:mm:ss.zzz] [LEVEL] msg"：
+// LogTailReader 依赖它解析级别，测试里按同一格式造样本文件。
+QString logLine(const QByteArray& level, const QString& message) {
+    return QStringLiteral("[2026-10-30 12:00:00.000] [%1] %2\n")
+        .arg(QString::fromLatin1(level), message);
+}
+
+bool writeLines(const QString& path, const QString& content) {
+    QFile file(path);
+    if (!file.open(QIODevice::WriteOnly | QIODevice::Truncate)) return false;
+    return file.write(content.toUtf8()) == content.toUtf8().size();
 }
 
 } // namespace
@@ -304,6 +319,142 @@ private slots:
         Logger::setMaxFileSizeMb(previousSize);
         Logger::setRetentionFiles(previousRetention);
         Logger::setMinLevel(previousLevel);
+    }
+
+    // docs/31 O6：日志页「最近日志」的尾部读取。
+    // 不存在的文件必须给出可读错误，而不是空列表假装成功。
+    void tailReportsMissingFile() {
+        QTemporaryDir dir;
+        QVERIFY(dir.isValid());
+        const QString missing = dir.filePath(QStringLiteral("nope.log"));
+
+        LogTailOptions options;
+        const LogTailResult result = readLogTail(missing, options);
+        QVERIFY(!result.ok);
+        QVERIFY(result.lines.isEmpty());
+        QVERIFY2(result.error.contains(missing), qPrintable(result.error));
+        QCOMPARE(result.path, missing);
+    }
+
+    // 级别阈值与关键字都在尾部块上过滤；无级别前缀的续行继承上一行级别。
+    void tailFiltersByLevelAndKeyword() {
+        QTemporaryDir dir;
+        QVERIFY(dir.isValid());
+        const QString path = dir.filePath(QStringLiteral("nexus-test.log"));
+        QString content;
+        content += logLine("DEBUG", QStringLiteral("tail-dbg-1"));
+        content += logLine("INFO", QStringLiteral("tail-inf-1"));
+        content += logLine("WARN", QStringLiteral("tail-warn-1"));
+        content += QStringLiteral("    continuation-of-warn\n");
+        content += logLine("INFO", QStringLiteral("tail-inf-2"));
+        content += logLine("CRIT", QStringLiteral("tail-crit-1"));
+        QVERIFY(writeLines(path, content));
+
+        LogTailOptions options;
+        options.minSeverityRank = Logger::severityRank(QtWarningMsg);
+        LogTailResult result = readLogTail(path, options);
+        QVERIFY2(result.ok, qPrintable(result.error));
+        QCOMPARE(result.lines.size(), 3);
+        QVERIFY(result.lines.at(0).contains(QStringLiteral("tail-warn-1")));
+        // 续行没有自己的级别，按上一行的 WARN 处理，不会被过滤掉。
+        QVERIFY(result.lines.at(1).contains(QStringLiteral("continuation-of-warn")));
+        QVERIFY(result.lines.at(2).contains(QStringLiteral("tail-crit-1")));
+
+        options.minSeverityRank = -1;
+        options.keyword = QStringLiteral("TAIL-INF");
+        result = readLogTail(path, options);
+        QVERIFY(result.ok);
+        QCOMPARE(result.lines.size(), 2);   // 大小写不敏感
+        QVERIFY(result.lines.at(0).contains(QStringLiteral("tail-inf-1")));
+        QVERIFY(result.lines.at(1).contains(QStringLiteral("tail-inf-2")));
+
+        options.keyword = QStringLiteral("no-such-marker");
+        result = readLogTail(path, options);
+        QVERIFY(result.ok);
+        QVERIFY(result.lines.isEmpty());
+        QCOMPARE(result.matched, 0);
+    }
+
+    // 行数上限保留最近的 maxLines 行（旧→新顺序），并标记截断。
+    void tailKeepsLastLinesAndFlagsTruncation() {
+        QTemporaryDir dir;
+        QVERIFY(dir.isValid());
+        const QString path = dir.filePath(QStringLiteral("nexus-test.log"));
+        QString content;
+        for (int i = 0; i < 300; ++i)
+            content += logLine("INFO", QStringLiteral("tail-seq-%1").arg(i));
+        QVERIFY(writeLines(path, content));
+
+        LogTailOptions options;
+        options.maxLines = 50;
+        const LogTailResult result = readLogTail(path, options);
+        QVERIFY2(result.ok, qPrintable(result.error));
+        QCOMPARE(result.matched, 300);
+        QCOMPARE(result.lines.size(), 50);
+        QVERIFY(result.truncated);
+        QVERIFY(result.lines.first().contains(QStringLiteral("tail-seq-250")));
+        QVERIFY(result.lines.last().contains(QStringLiteral("tail-seq-299")));
+
+        // 不超上限时不应误报截断。
+        options.maxLines = 2000;
+        const LogTailResult complete = readLogTail(path, options);
+        QCOMPARE(complete.lines.size(), 300);
+        QVERIFY(!complete.truncated);
+    }
+
+    // 超大文件只读尾部窗口：文件头部的标记不在结果里，读取字节数受限。
+    void tailReadsLargeFileTailOnly() {
+        QTemporaryDir dir;
+        QVERIFY(dir.isValid());
+        const QString path = dir.filePath(QStringLiteral("nexus-big.log"));
+        QString head = logLine("INFO", QStringLiteral("tail-marker-early"));
+        for (int i = 0; i < 4000; ++i)
+            head += logLine("INFO", QStringLiteral("tail-head-%1 %2")
+                                        .arg(i).arg(QString(120, QLatin1Char('h'))));
+        QVERIFY(writeLines(path, head));
+        QFile file(path);
+        QVERIFY(file.open(QIODevice::Append));
+        file.write(logLine("INFO", QStringLiteral("tail-marker-late")).toUtf8());
+        for (int i = 0; i < 200; ++i)
+            file.write(logLine("INFO", QStringLiteral("tail-tail-%1").arg(i)).toUtf8());
+        file.close();
+        QVERIFY(QFileInfo(path).size() > 512 * 1024);
+
+        LogTailOptions options;
+        options.maxBytes = 64 * 1024;
+        options.maxLines = 2000;   // 窗口内所有匹配行都保留，便于验证内容边界
+        const LogTailResult result = readLogTail(path, options);
+        QVERIFY2(result.ok, qPrintable(result.error));
+        QVERIFY2(result.bytesRead <= 64 * 1024, "read past the tail window");
+        QVERIFY(result.truncated);
+        bool sawLate = false;
+        for (const QString& line : result.lines) {
+            QVERIFY(!line.contains(QStringLiteral("tail-marker-early")));
+            if (line.contains(QStringLiteral("tail-marker-late"))) sawLate = true;
+        }
+        QVERIFY2(sawLate, "late marker missing from tail window");
+        for (const QString& line : result.lines)
+            QVERIFY2(line.size() <= 2000 + 1, "over-long line not truncated");
+    }
+
+    // 空路径时回落到日志目录里最近修改的 nexus-*.log。
+    void newestLogFilePicksLatestModified() {
+        QTemporaryDir dir;
+        QVERIFY(dir.isValid());
+        const QString older = dir.filePath(QStringLiteral("nexus-2026-10-28.log"));
+        const QString newer = dir.filePath(QStringLiteral("nexus-2026-10-29.log"));
+        QVERIFY(writeLines(older, logLine("INFO", QStringLiteral("old"))));
+        QVERIFY(writeLines(newer, logLine("INFO", QStringLiteral("new"))));
+        QFile oldFile(older);
+        QVERIFY(oldFile.open(QIODevice::ReadWrite));
+        QVERIFY(oldFile.setFileTime(QDateTime::currentDateTime().addDays(-2),
+                                    QFileDevice::FileModificationTime));
+        oldFile.close();
+
+        const QString previousDir = Logger::logDir();
+        Logger::setLogDirectory(dir.path());
+        QCOMPARE(newestLogFile(), newer);
+        Logger::setLogDirectory(previousDir);
     }
 };
 

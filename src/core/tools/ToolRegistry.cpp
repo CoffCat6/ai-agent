@@ -1432,6 +1432,36 @@ bool ToolRegistry::isToolEnabled(const QString& name) const {
     return m_tools.contains(name) && !m_disabledTools.contains(name);
 }
 
+QStringList ToolRegistry::disabledToolNames() const {
+    QStringList names;
+    for (const QString& name : m_disabledTools)
+        if (m_tools.contains(name)) names.append(name);
+    names.sort(Qt::CaseInsensitive);
+    return names;
+}
+
+bool ToolRegistry::setDisabledTools(const QStringList& names) {
+    QSet<QString> next;
+    for (const QString& name : names)
+        if (m_tools.contains(name)) next.insert(name);
+    if (next == m_disabledTools) return true;
+
+    const QSet<QString> previous = m_disabledTools;
+    m_disabledTools = next;
+    // 排序后再写：QSet 的迭代顺序不稳定，固定顺序让设置值可比对。
+    QStringList ordered(next.begin(), next.end());
+    ordered.sort(Qt::CaseInsensitive);
+    QString error;
+    if (!SettingsRepository::writeValue(QStringLiteral("tools/disabled"), ordered,
+                                        &error)) {
+        m_disabledTools = previous;
+        qWarning() << "Failed to persist disabled tool list:" << error;
+        return false;
+    }
+    emit toolsChanged();
+    return true;
+}
+
 // docs/17 B1: 策略拦截层。只改内存集合，不落盘——与用户禁用彻底分层。
 void ToolRegistry::setPolicyBlocked(const QStringList& names, bool blocked) {
     bool changed = false;

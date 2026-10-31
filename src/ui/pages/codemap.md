@@ -7,22 +7,24 @@
 | 文件 | 角色 | 是否由 SettingsCenterDialog 装载 |
 |---|---|---|
 | AgentChatPage.qml | 主聊天工作区（顶栏 / 会话标签 / 轨迹视口 / 输入区） | 否，由 main.qml 直接实例化 |
-| ModelConfigPage.qml | 模型 provider/profile/模型列表（支持从端点拉取）/思考强度/上下文预算 | 是，分类 `model` |
+| ModelConfigPage.qml | 模型 provider/profile/模型列表（支持从端点拉取）/思考强度/上下文预算；芯片可拖拽排序（`moveProfile`，`DropArea` 落点 + `reflowTick` 复排），底栏「复制」生成不带密钥的新配置 | 是，分类 `model` |
 | AgentBehaviorPage.qml | 单次任务步数预算、超时、自定义系统提示词（原 GeneralPage 的模型行为区块） | 是，分类 `agent` |
 | NetworkPage.qml | HTTP 代理模式（跟随系统/手动/不使用）、主机端口、认证、连接测试 | 是，分类 `network` |
-| LogsPage.qml | 日志级别、保存目录、单文件大小上限、保留文件数、诊断包导出 | 是，分类 `logs` |
+| LogsPage.qml | 日志级别、保存目录、单文件大小上限、保留文件数、最近日志（尾部读取/过滤）、诊断包导出 | 是，分类 `logs` |
 | KnowledgePage.qml | 知识库嵌入向量服务（Ollama / OpenAI 兼容）、模型、地址、API Key | 是，分类 `knowledge` |
-| InterfacePage.qml | 主题、字体、语言、窗口默认布局 | 是，分类 `interface` |
-| GeneralPage.qml | 仅剩 `general` 分类的声明式偏好（托盘/自启/通知）与「关于 NexusAI」 | 是，分类 `general` |
+| InterfacePage.qml | 主题、字体（名称搜索 + 等宽字体约束）、语言、窗口默认布局、减少动效（S4.7） | 是，分类 `interface` |
+| GeneralPage.qml | 仅剩 `general` 分类的声明式偏好（托盘/自启/通知）与「关于 NexusAI」（构建信息、数据目录、诊断包、开源许可） | 是，分类 `general` |
 | SecurityPage.qml | 读取沙箱、项目写入、黑名单、仅本地/内网访问 | 是，分类 `security` |
-| McpPage.qml | MCP 服务器增删、启停、重新连接、连通状态；新增/编辑走 `McpServerEditor` 弹窗（含 stdio 命令、环境变量、端点 URL、请求头） | 是，分类 `mcp` |
+| ShortcutsPage.qml | 全局快捷键逐动作录制/取消/恢复（docs/31 N2）：动作表与校验在 `ShortcutMap`，本页只负责录制交互与提示；录制期间把 `ShortcutMap.recording` 置真以让窗口级 `Shortcut` 让位，切页/关对话框/销毁时收回 | 是，分类 `shortcuts` |
+| McpPage.qml | MCP 服务器增删、启停、重新连接、连通状态、配置导入/导出（同名冲突预览 + 策略）；新增/编辑走 `McpServerEditor` 弹窗（含 stdio 命令、环境变量、端点 URL、请求头） | 是，分类 `mcp` |
 | ToolsPage.qml | 内置工具（默认折叠）/ MCP 工具分组启停、名称/说明搜索、联网搜索、默认权限模式 | 是，分类 `tools` |
 | MemoryPage.qml | 长期记忆（episodic）浏览/搜索/遗忘、审计与 Token 保留天数 | 是，分类 `memory` |
 | UsageStatsPage.qml | token/费用/配额统计、请求明细（可导出 CSV） | 是，分类 `usage`（绑定 `dialog.opened`） |
 | ActivityLogPage.qml | usage_log 操作/网络活动时间线 | 是，分类 `activity`（绑定 `dialog.opened`） |
 | SettingsBackupPage.qml | 设置 JSON 导入导出、数据库备份/恢复、启动时自动备份与保留份数 | 是，分类 `backup` |
+| DataPage.qml | docs/31 S4.5 N5：数据管理总览——DB/WAL 体积与各表行数（`AgentVM.requestDataStats()` 异步统计，`dataStatsReady` 回填）、按保留天数立即清理 / 清空用量 / VACUUM（三个动作全部二次确认，`storageConfirmDialog`）、最近备份展示 + 立即备份/打开备份目录 | 是，分类 `storage`（绑定 `dialog.opened`，重开重新拉统计） |
 | ProjectRulesPage.qml | 项目列表 + 项目规则（AGENTS.md）就地编辑与注入状态 | 是，分类 `projects`（绑定 `dialog.opened`） |
-| PromptAssetsPage.qml | 提示词与指令：三段式管理（系统提示预设/斜杠指令/会话模板），行内编辑表单；套用与展开逻辑不在本页（TopBar 菜单 / InputConsole 发送链 / Sidebar 模板菜单）。**布局陷阱（回归测试 promptAssetsPageShowsCreateButtons 锁定）**：ScrollView 内容列的宽度必须写 `width: assetsScroll.availableWidth`（限定 id）——裸 `availableWidth` 在子项作用域解析不到，绑定失效后宽度回退到未折行文本的隐式宽度（≈860px），整页被推出对话框右侧、全部交互控件不可见但 `visible=true`；换行/省略的 Text 还须 `Layout.minimumWidth: 0`，否则未折行隐式宽度成为布局最小宽度、布局拒绝收缩。是，分类 `prompts`（绑定 `dialog.opened`） |
+| PromptAssetsPage.qml | 提示词与指令：三段式管理（系统提示预设/斜杠指令/会话模板），行内编辑表单；套用与展开逻辑不在本页（TopBar 菜单 / InputConsole 发送链 / Sidebar 模板菜单）。头部工具栏另有「导出预设包…」「导入预设包…」（`PresetPackTransfer`）：导出只写两组资产 + 当前禁用工具与默认权限模式；导入先 `previewPack` 展示四组计数、同名冲突清单（最多 6 条 + “等 N 条”）与策略下拉（默认全部重命名），确认后才落盘，包内禁用工具与权限模式始终应用（不参与逐条冲突）。**布局陷阱（回归测试 promptAssetsPageShowsCreateButtons 锁定）**：ScrollView 内容列的宽度必须写 `width: assetsScroll.availableWidth`（限定 id）——裸 `availableWidth` 在子项作用域解析不到，绑定失效后宽度回退到未折行文本的隐式宽度（≈860px），整页被推出对话框右侧、全部交互控件不可见但 `visible=true`；换行/省略的 Text 还须 `Layout.minimumWidth: 0`，否则未折行隐式宽度成为布局最小宽度、布局拒绝收缩。是，分类 `prompts`（绑定 `dialog.opened`） |
 
 注意：任务描述里的「记忆页 = 知识库文档导入/删除/检索」与代码不符。MemoryPage 管理的是
 会话摘要型长期记忆；知识库文档的导入/删除/重新嵌入在 `panels/ContextPanel.qml` 中，
@@ -41,7 +43,7 @@ baseUrl/API key）在 `KnowledgePage.qml`，二者职责不同。详见下文约
   `PreferenceRegistry.categories()/categoryName()` 暴露；导航按
   `SettingsSchema::categoryGroups()` 的四组渲染（`CategoryNav` 可滚动）；
 - `usage` 与 `activity` 额外与 `dialog.opened` 相与，关闭即销毁、重开重新查询
-  （避免统计/时间线停留在首次加载的旧值）；其余页切走分类即销毁；
+  （避免统计/时间线停留在首次加载的旧值）；`storage`（数据管理）同理；其余页切走分类即销毁；
 - 搜索态（`searchField.text` 非空）只隐藏分类页包裹层，Loader 状态保留，跳转后原位恢复；
 - 对话框 900×680，左侧 200px 分组导航，底栏只有「恢复默认」与「关闭」，没有「保存/取消」。
   「恢复默认」按当前分类分派：声明式偏好调用 `EditBuffer.resetToDefault(keys)`；页面自绘
@@ -63,10 +65,12 @@ AgentChatPage 空态的「配置模型」、ModelSelector、`AgentVM.modelSettin
    `staged` 只在失败或“值等于已存值”时短暂存在，因此仍是即时保存而非批量提交。
 3. **文本输入**：多数在失焦/回车提交，并用 `Component.onDestruction` 兜底（Loader
    切分类不触发 `editingFinished`）；长文本（系统提示词、代理主机、嵌入地址）另有
-   400ms 防抖。走 `SettingsField` 的字段由 `commitDebounce`/`commitOnDestroy` 承担同一
-   语义，并须把 `lastKnownValue` 声明式绑到已存值——只有真正改过的文本才会在销毁时
-   提交（否则页面重建会把原值再写一遍）。密钥字段统一 `secret + ignoreEmptySubmit +
-   clearOnSubmit`：留空即不改，写完清空输入框，只能由页面的「清除密钥」按钮删除。
+   400ms 防抖。走 `SettingsField` 的字段默认**打字停顿 600ms 即提交**（docs/31 S4.8，
+   `commitDebounce` 默认 600；回车/失焦仍立即提交；validator 中间态不落盘；modelRow
+   因提交会并进 models 列表而显式归零），并须把 `lastKnownValue` 声明式绑到已存值——
+   只有真正改过的文本才会在销毁时提交（否则页面重建会把原值再写一遍）。密钥字段统一
+   `secret + ignoreEmptySubmit + clearOnSubmit`：留空即不改（且强制不防抖），写完清空
+   输入框，只能由页面的「清除密钥」按钮删除。
 4. **无持久化状态**：连接测试结果、日期错误/分页游标、Activity 本地筛选、
    episodes 缓存只在页面生命周期内有效。
 
@@ -119,7 +123,8 @@ PromptAssets/ModelConfig 因需要固定页头 + 内部列表滚动，保留各�
 - `memory`：`memory/episodicMemoryEnabled`、`memory/auditRetentionDays`、
   `memory/tokenRetentionDays`；记忆正文在 SQLite，不在 SettingsSchema。
 - `usage`：`dailyTokenQuota`、`dailyCostQuotaCents`、`monthlyTokenQuota`、
-  `monthlyCostQuotaCents`、`strictQuotaMode`；统计数据来自 `token_usage` 表。
+  `monthlyCostQuotaCents`、`strictQuotaMode`、`usage/alertPercent`（经
+  `Settings.quotaAlertPercent`，0 = 关闭提醒）；统计数据来自 `token_usage` 表。
 - `activity`：不写任何键，只读 `usage_log`。
 - `backup`：`SettingsBackup` 的可移植键白名单 + `memory/backupKeepCount`（只读展示）；
   数据库备份走 AgentVM。
@@ -175,6 +180,15 @@ PromptAssets/ModelConfig 因需要固定页头 + 内部列表滚动，保留各�
   在原条目上改名并整条重建 client——**不要**用「删了重加」，那会让该服务器提供的
   工具全部掉线、并把启用状态重置。刷新按钮调 `McpManager.reconnect(name)`。
   `setEnabled`、`removeServer` 即时生效并写回 mcp_servers.json。
+- McpPage 导入/导出（docs/31 N7）：「导出配置…」走 `FileDialog`（SaveFile，`.json`）
+  调 `McpManager.exportServers(path)`，结果文案区分「有凭据未包含」与普通成功；
+  「导入配置…」选文件后先 `previewServerImport(path)` 打开确认弹窗——摘要行
+  （`mcp/importSummary`）报告可导入/同名冲突/含凭据条数，策略下拉
+  （`mcp/importPolicy`：跳过/覆盖/重命名）只对同名项生效，列表 `mcp/importList`
+  逐条显示名称、同名徽标、非法原因与端点；确认后才 `importServers(path, policy)`
+  落盘并停用未启用项。**导入的服务器一律禁用**，用户必须逐台手动启用（凭据不可导出，
+  启用前先补全 env/headers）。顶部状态行 `transferMessage` 显示导入/导出结果，
+  失败转危险色。
 - ToolsPage：`AgentVM.toolRegistryModel` 每项
   `{name, description, level(safe/requires_confirm/dangerous), enabled,
   blockedByPolicy, source(builtin/MCP)}`；Switch 调 `AgentVM.setToolEnabled`，
@@ -202,6 +216,10 @@ PromptAssets/ModelConfig 因需要固定页头 + 内部列表滚动，保留各�
   清空需显式「清除密码」；「恢复本页默认值」会一并清空代理用户名与密码，确认框有专门提示。
 - LogsPage：级别/目录/大小/保留数直写 `Settings.log*`；目录用 `FolderDialog` 选择并可
   恢复默认；`requestResetDefaults()` → `Settings.resetLoggingToDefaults()`。
+  「最近日志」面板（docs/31 O6）走 `LogTail.read(path="", maxLines, minLevel, keyword)`，
+  级别/行数/关键字只是本页查看状态、**不写设置**；关键字输入 300 ms 防抖，「跟随最新」
+  用 2 秒 `Timer`（仅 `visible` 时运行，`positionViewAtEnd()` 只在开启时执行）。
+  列表等宽字体按级别着色，状态行显示匹配数/读取字节/截断标记，失败显示 `LogTail` 的 error。
   「导出诊断包」用 `FolderDialog` 选父目录，`SettingsBackup.exportDiagnostics(dir)`
   新建 `nexus-diagnostics-<yyyyMMdd-HHmmss>/`（同秒重复追加 `-2`），内含
   `settings.json`（与「导出设置」同一套脱敏规则）、`logs/`（复制 `nexus-*.log`，
@@ -233,13 +251,24 @@ PromptAssets/ModelConfig 因需要固定页头 + 内部列表滚动，保留各�
   QML 侧按类别精确匹配 + 关键词对 action/target/detail 不区分大小写过滤；
   刷新按钮手动重拉，页面重建时也会拉一次。
 - SettingsBackupPage：`SettingsBackup.exportSettings` / `previewImport` /
-  `importSettings`，恢复前弹预览（分类、被跳过的密钥、警告）；
+  `importSettings`。导出卡片可先选范围（`exportableCategories()`，
+  空数组 = 全量；`profiles` 归 `model`、`mcpServers` 归 `mcp`）；
+  恢复前弹预览：分类摘要、**逐键差异**（`changes`，分类小标题 +
+  `当前 → 备份`）、被跳过的密钥、警告；
   「自动备份」卡直接绑 `Settings.backupOnStartup` / `Settings.backupKeepCount`
-  （`objectName` 为 `memory/backupOnStartup`、`memory/backupKeepCount`，
-  `SettingsCatalog` 登记为可见字段级条目，可按「备份保留」等关键词搜到），
+  / `Settings.backupIntervalHours`
+  （`objectName` 为 `memory/backupOnStartup`、`memory/backupKeepCount`、
+  `memory/backupIntervalHours`，`SettingsCatalog` 登记为可见字段级条目，
+  可按「备份保留」「定时」等关键词搜到）；间隔是五档 ComboBox（关闭 /
+  1 小时 / 6 小时 / 1 天 / 7 天），`onActivated` 写小时数，
+  `Connections.onBackupIntervalHoursChanged` 反向刷新，导入/复位也能同步；
   页脚「恢复默认」走 `requestResetDefaults()` → `Settings.resetBackupToDefaults()`；
   `AgentVM.backupDatabaseNow` / `previewDatabaseBackup` / `restoreDatabaseFrom`
   处理 SQLite 快照；导入后 MCP 服务器保持禁用并要求重启确认高风险权限。
+  数据库卡片下方的快照列表来自 `AgentVM.databaseBackups()`（最新在前，自动/
+  手动徽标 + 时间/大小），预览/恢复复用同一个确认弹窗，删除走
+  `AgentVM.deleteDatabaseBackup(path)` 并二次确认——路径校验在后端，只允许
+  删除备份目录的直接子文件。
 
 ## 集成点
 
@@ -293,6 +322,27 @@ PromptAssets/ModelConfig 因需要固定页头 + 内部列表滚动，保留各�
   或页面的 `requestResetDefaults()`。各页复位入口只回写本领域 schema 键：`resetNetwork*`
   会清空代理用户名/密码，`resetEmbedding*` 刻意保留 `embedding/apiKey`（密钥只能在页面
   显式清除），其余页不得越界写别人的键。2026-10-25 已移除页头的重复复位按钮。
+- 行级复原与底栏「恢复全部设置」是 2026-10-30（docs/31 S1）新增入口，统一经
+  `SettingsCatalog.resetValue()`：偏好走 `EditBuffer.stage`，M1 键走
+  `SettingsService.setValueForSetting`；`secret` 条目（加密键、`network/proxyUsername|Password`）
+  一律拒绝，与红线 1 对齐。上面的网络页整页复位仍保留原有的清空凭据语义。
+  底栏「恢复本页默认值」的分派顺序是：页面 `requestResetDefaults()` → 声明式偏好 →
+  `resetCatalogEntries()` 逐条 `resetValue`。**最后一个分支专门服务安全 / 工具 / 用量页**
+  （只有 SettingRow 自绘控件、没有页面级复位函数）；新增这类页面时不用补函数，只要键在
+  `SettingsCatalog` 里登记为 `page`。
+- 设置行/偏好行右侧的「已修改」槽宽固定（`SettingRow` 24px、`PreferenceControl` 20px），
+  可见性读 `SettingsCatalog.revision` + `describe(key)`；新增行若需要徽标，写
+  `settingKey`（默认取 `objectName`）即可，不要自己另算默认值。
+- LogsPage 的「最近日志」是**只读查看器**：只读文件尾部窗口（`LogTailReader`，默认 1 MB），
+  级别/行数/关键字都是页面内状态，不登记 schema/catalog 键；需要新过滤维度时先想清楚
+  是否值得新增设置键，不要顺手把查看参数持久化。它独立于 `AgentVM`，不走 agent 栈。
+- 设置中心的分类 Loader 采用"访问过即保留"（`visitedCategories`，上限 5 页），
+  关闭对话框时清空。新增页面必须写成
+  `active: dialog.opened && dialog.pageActive("<id>")`（是否保留实例）+
+  `visible: dialog.currentCategory === "<id>"`（是否当前页）**两条独立绑定**：
+  `visible: active` 会让所有访问过的页面同时 `anchors.fill` 叠在一起（S1 真实回归，
+  `test_chat_workflows::settingsCategoryPagesNeverOverlap` 锁定）。每个 Loader 的
+  `objectName` 统一是 `settingsPageLoader.<id>`，测试靠它枚举可见页。
 - 新增设置页必须同时：加入 `CMakeLists.txt` 的 `QML_FILES`、在 `SettingsCenterDialog`
   增加同名 `Loader`、在 `SettingsSchema::categories()` 登记分类（含 `groupId`）、在
   `src/viewmodels/SettingsCatalog.cpp` 登记页面自绘项（id 与控件 `objectName` 一致，
@@ -300,6 +350,18 @@ PromptAssets/ModelConfig 因需要固定页头 + 内部列表滚动，保留各�
   的 SettingsService 字段）。
 - InterfacePage 的值读 `EditBuffer.staged` 再回落 `PreferenceStore`，若未来把
   `stage()` 改回纯暂存，页面会表现为“能改但不落盘”；当前依赖 EditBuffer 的写穿语义。
+- GeneralPage 的「关于 NexusAI」（docs/31 N10）：版本/Qt/编译器/架构/系统/数据目录
+  全部绑定 `AppInfo` 的 CONSTANT 属性，页面不自行计算；「打开数据目录」调
+  `AppInfo.openDataDir()`（失败显示危险色提示），「导出诊断包」复用
+  `SettingsBackup.exportDiagnostics`（与日志页同一套文案与"新目录不覆盖"语义），
+  「开源许可」弹窗按 `AppInfo.licenses` 渲染。测试 `GeneralPageHarness` 直接比对
+  页面文本与 `AppInfo`，防止换工具链后界面还报旧值。
+- 字体下拉（docs/31 O9）：字体列表动辄上百项，`ui/fontSearchField` 的输入写
+  `page.fontFilter`，正文下拉用 `allFontFamilies.filter()`、等宽下拉用
+  `FontProbe.fixedPitchFamilies()`（C++ 侧缓存，避免每敲一个字都 `isFixedPitch`
+  加载字体文件）。等宽列表会把手选过的非等宽旧值保留在顶部，避免显示空白；
+  两列都为空时显示 `ui/fontSearchEmpty`。`FontPageHarness` 用例锁定"模型真的
+  换成过滤后的数组"，而不只是 FontProbe 返回正确。
 - UsageStatsPage 单文件约 1250 行，聚合、图表映射、分页、配额编辑耦合在一起；
   四个配额 SpinBox 仍用 `Component.onCompleted` 赋初值，但已配 Settings 信号
   Connections（焦点护栏）回绑外部变更——备份恢复等改动不再显示旧值、也不会被
@@ -311,6 +373,13 @@ PromptAssets/ModelConfig 因需要固定页头 + 内部列表滚动，保留各�
 - SecurityPage 的黑名单是“追加项”，内置规则不可在 UI 删除；空列表只代表无追加项。
 - SettingsBackup 明确排除加密字段、`security/*`、`ui/*`、`modelProfiles`、
   `tools/disabled`、默认权限与自启；恢复后需要用户重新确认这些高风险项。
+  按分类导出只是在这份白名单上再叠加分类过滤，不能借分类参数绕过排除项；
+  导入差异（`changes`）也只遍历备份里已通过白名单的键。
+- 导入预览的差异行由真实 `SettingsBackupPage` 渲染，回归在
+  `test_settings_page_qml::importPreviewRendersPerKeyChanges`
+  （`tests/qml/BackupPageHarness.qml`）。Repeater 的 delegate 没有 QObject
+  父链（只有 `setParentItem`），`findChildren` 找不到，断言必须沿
+  `childItems()` 或 `Repeater.itemAt()`。
 - 各页大量使用 `Component.onDestruction` 兜底提交，若页面被非 Loader 方式复用需重新评估。
   新建文本字段优先用 `SettingsField`（`commitDebounce`/`commitOnDestroy`/`lastKnownValue`
   已封装该契约）；手写 `TextField` 时必须自己补 `Component.onDestruction`，且密钥类字段

@@ -21,6 +21,19 @@ RowLayout {
 
     property string label: ""
     property string description: ""
+    // docs/31 O1: 行级"已修改"标识与单键复原。
+    //
+    // 键名默认取 objectName——设置页几乎每行都已经为了搜索跳转写了同名
+    // 锚点。没有登记为目录条目的行（纯入口按钮）会得到 known=false，
+    // 什么也不显示。
+    property string settingKey: ""
+    readonly property string settingId: settingKey.length > 0 ? settingKey : objectName
+    // 先读 revision 建立依赖：SettingsCatalog.describe() 是 Q_INVOKABLE，
+    // 没有变更通知，不显式依赖就只会在创建时求值一次。
+    readonly property var valueState: {
+        SettingsCatalog.revision
+        return SettingsCatalog.describe(settingId)
+    }
 
     default property alias content: controlBox.data
 
@@ -67,5 +80,39 @@ RowLayout {
         id: controlBox
         Layout.alignment: Qt.AlignVCenter
         spacing: Theme.spaceXs
+    }
+
+    // 修改状态槽：宽度恒定，避免值一改就让整行的控件左右跳动。
+    Item {
+        id: statusSlot
+        Layout.alignment: Qt.AlignVCenter
+        Layout.preferredWidth: 24
+        Layout.preferredHeight: 24
+
+        IconButton {
+            anchors.fill: parent
+            // 可复原才给按钮；密钥/凭据等无复位通道的条目只留圆点提示。
+            visible: root.valueState.modified === true
+                     && root.valueState.revertable === true
+            icon: "undo"
+            iconSize: 12
+            tooltip: qsTr("恢复默认值")
+            restIconColor: Theme.brandPrimary
+            hoverIconColor: Theme.brandPrimary
+            hoverBgColor: Theme.surfaceHover
+            Accessible.name: qsTr("将「%1」恢复为默认值").arg(root.label)
+            onClicked: SettingsCatalog.resetValue(root.settingId)
+        }
+
+        Rectangle {
+            anchors.centerIn: parent
+            visible: root.valueState.modified === true
+                     && root.valueState.revertable !== true
+            width: 6
+            height: 6
+            radius: width / 2
+            color: Theme.brandPrimary
+            Accessible.ignored: true
+        }
     }
 }

@@ -26,11 +26,32 @@ SettingsPage {
     readonly property var sidebarRange: PreferenceRegistry.preferenceMeta("ui.defaultSidebarWidth").constraint
     readonly property var panelRange: PreferenceRegistry.preferenceMeta("ui.defaultPanelWidth").constraint
 
-    readonly property var fontFamilies: {
+    // docs/31 O9：字体列表动辄上百项，先按名称过滤再给下拉。
+    // 等宽下拉只列真正等宽的字体；旧配置里手选的非等宽值仍保留在列表
+    // 顶部，避免下拉显示空白。
+    property string fontFilter: ""
+
+    function fontMatches(family) {
+        if (page.fontFilter === "") return true
+        return family.toLowerCase().indexOf(page.fontFilter.toLowerCase()) >= 0
+    }
+
+    readonly property var allFontFamilies: {
         const families = FontProbe.availableFamilies()
         families.sort()
         return families
     }
+
+    readonly property var allMonoFamilies: {
+        const families = FontProbe.fixedPitchFamilies()
+        const current = page.pref("ui.fontMono")
+        if (current && families.indexOf(current) < 0)
+            families.unshift(current)
+        return families
+    }
+
+    readonly property var filteredFontFamilies: page.allFontFamilies.filter(page.fontMatches)
+    readonly property var filteredMonoFamilies: page.allMonoFamilies.filter(page.fontMatches)
 
     // Enum values are stable tokens; the theme combo shows a localized label.
     function themeModeLabel(value) {
@@ -78,15 +99,45 @@ SettingsPage {
         title: qsTr("字体")
 
         SettingRow {
+            objectName: "ui.fontSearch"
+            label: qsTr("搜索字体")
+
+            TextField {
+                objectName: "ui/fontSearchField"
+                Layout.preferredWidth: Theme.controlWidthMd
+                placeholderText: qsTr("按名称筛选字体")
+                selectByMouse: true
+                onTextChanged: page.fontFilter = text.trim()
+                Accessible.name: qsTr("搜索字体")
+                Accessible.description: qsTr("同时筛选正文字体与等宽字体")
+            }
+        }
+
+        Text {
+            objectName: "ui/fontSearchEmpty"
+            visible: page.filteredFontFamilies.length === 0
+                     && page.filteredMonoFamilies.length === 0
+            Layout.fillWidth: true
+            text: qsTr("没有匹配「%1」的字体。").arg(page.fontFilter)
+            color: Theme.textSecondary
+            font.pixelSize: Theme.fontSizeCaption
+            font.family: Theme.fontSans
+            wrapMode: Text.WrapAnywhere
+            Accessible.role: Accessible.StaticText
+            Accessible.name: text
+        }
+
+        SettingRow {
             objectName: "ui.fontSans"
             label: qsTr("正文字体")
 
             ComboBox {
                 id: fontSansCombo
+                objectName: "ui/fontSansCombo"
                 Layout.preferredWidth: Theme.controlWidthMd
                 Accessible.name: qsTr("正文字体")
-                model: page.fontFamilies
-                currentIndex: page.fontFamilies.indexOf(page.pref("ui.fontSans"))
+                model: page.filteredFontFamilies
+                currentIndex: page.filteredFontFamilies.indexOf(page.pref("ui.fontSans"))
                 onActivated: EditBuffer.stage("ui.fontSans", currentText)
             }
         }
@@ -97,10 +148,11 @@ SettingsPage {
 
             ComboBox {
                 id: fontMonoCombo
+                objectName: "ui/fontMonoCombo"
                 Layout.preferredWidth: Theme.controlWidthMd
                 Accessible.name: qsTr("等宽字体")
-                model: page.fontFamilies
-                currentIndex: page.fontFamilies.indexOf(page.pref("ui.fontMono"))
+                model: page.filteredMonoFamilies
+                currentIndex: page.filteredMonoFamilies.indexOf(page.pref("ui.fontMono"))
                 onActivated: EditBuffer.stage("ui.fontMono", currentText)
             }
         }
@@ -291,6 +343,20 @@ SettingsPage {
                 Accessible.name: qsTr("启动时恢复窗口")
                 checked: page.pref("ui.restoreWindowOnStartup") === true
                 onToggled: EditBuffer.stage("ui.restoreWindowOnStartup", checked)
+            }
+        }
+
+        SettingRow {
+            // docs/31 S4.7 O10：无障碍「减少动效」。开关经 EditBuffer 落盘后
+            // 由 ChangeBus 通知 ThemeManager，Theme.motion* 三令牌即时归零。
+            objectName: "ui.reduceMotion"
+            label: qsTr("减少动效")
+
+            Switch {
+                id: reduceMotionSwitch
+                Accessible.name: qsTr("减少动效")
+                checked: page.pref("ui.reduceMotion") === true
+                onToggled: EditBuffer.stage("ui.reduceMotion", checked)
             }
         }
 

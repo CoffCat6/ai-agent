@@ -205,6 +205,10 @@ private slots:
     // F1: the todo_write task list is persisted per session — round-trip,
     // replace-not-append, per-session scoping, purge cascade.
     void sessionTodosRoundTripReplaceAndScope();
+    // docs/31 S4.5 N5：数据管理总览（统计 / 清空用量 / VACUUM）。
+    void collectStatsCountsTablesAndFiles();
+    void clearTokenUsageWipesRowsOnly();
+    void vacuumDatabaseCompactsFile();
     // docs/20 §3.1/§3.2（FORK-701）：重新生成/编辑重发的持久层支撑
 };
 
@@ -2833,6 +2837,83 @@ void TestMemory::sessionTodosRoundTripReplaceAndScope() {
                  QDateTime::currentMSecsSinceEpoch() + 1000), 1);
     QCOMPARE(mem.loadSessionTodos(QStringLiteral("s2")).size(), 0);
     QCOMPARE(mem.loadSessionTodos(QStringLiteral("s1")).size(), 2);
+}
+
+// docs/31 S4.5 N5：collectStats 的行数与文件体积必须对得上实际写入。
+// 用文件库（不是 :memory:）：统计走独立的只读短连接，连接到 ":memory:"
+// 会打开一个全新的空库，断言就失去意义了。
+void TestMemory::collectStatsCountsTablesAndFiles() {
+    QTemporaryDir dir;
+    QVERIFY(dir.isValid());
+    const QString dbPath = dir.filePath(QStringLiteral("stats.db"));
+    SqliteMemory mem(dbPath);
+
+    mem.beginSession(QStringLiteral("s1"), QStringLiteral("one"));
+    mem.beginSession(QStringLiteral("s2"), QStringLiteral("two"));
+    mem.saveMessage(QStringLiteral("s1"), msg("user", "hello"));
+    mem.saveMessage(QStringLiteral("s1"), msg("assistant", "hi"));
+    mem.logTokenUsage(usageRec(QStringLiteral("m1"), 1000, 10, 5, 0, 3));
+    mem.logTokenUsage(usageRec(QStringLiteral("m1"), 2000, 10, 5, 0, 3));
+    mem.logTokenUsage(usageRec(QStringLiteral("m2"), 3000, 10, 5, 0, 3));
+
+    // 自包含短连接：与实例并存（GUI 线程连接持有同一文件），WAL 下安全。
+    const QVariantMap stats = SqliteMemory::collectStats(dbPath);
+    QVERIFY2(!stats.contains(QStringLiteral("error")),
+             qPrintable(stats.value(QStringLiteral("error")).toString()));
+    QCOMPARE(stats.value("sessions").toInt(), 2);
+    QCOMPARE(stats.value("messages").toInt(), 2);
+    QCOMPARE(stats.value("tokenUsage").toInt(), 3);
+    QCOMPARE(stats.value("knowledgeDocuments").toInt(), 0);
+    QVERIFY(stats.value("fileSizeBytes").toLongLong() > 0);
+    QVERIFY(stats.value("pageSize").toInt() > 0);
+    QVERIFY(stats.value("pageCount").toInt() > 0);
+    // 键集合契约：数据页按这些键渲染，少一个就是 UI 空格子。
+    for (const QString& key : {QStringLiteral("dbPath"), QStringLiteral("walSizeBytes"),
+                               QStringLiteral("episodic"), QStringLiteral("knowledgeChunks"),
+                               QStringLiteral("traceNodes"), QStringLiteral("fileCheckpoints"),
+                               QStringLiteral("usageLog"), QStringLiteral("auditLog"),
+                               QStringLiteral("sessionTodos")})
+        QVERIFY2(stats.contains(key), qPrintable(QStringLiteral("missing key: %1").arg(key)));
+
+    // 打不开的路径不抛异常，带 error 字段返回。
+    const QVariantMap bad = SqliteMemory::collectStats(
+        dir.filePath(QStringLiteral("no/such/dir/x.db")));
+    QVERIFY(bad.contains(QStringLiteral("error")));
+}
+
+void TestMemory::clearTokenUsageWipesRowsOnly() {
+    QTemporaryDir dir;
+    QVERIFY(dir.isValid());
+    SqliteMemory mem(dir.filePath(QStringLiteral("usage.db")));
+    for (int i = 0; i < 3; ++i)
+        mem.logTokenUsage(usageRec(QStringLiteral("m1"), 1000 + i, 10, 5, 0, 3));
+    QCOMPARE(mem.tokenUsageRecords(0, 0, 50, 0).value("total").toInt(), 3);
+
+    QCOMPARE(mem.clearTokenUsage(), 3);
+    QCOMPARE(mem.tokenUsageRecords(0, 0, 50, 0).value("total").toInt(), 0);
+    // 幂等：空表上再清一次返回 0，不报错。
+    QCOMPARE(mem.clearTokenUsage(), 0);
+    // 清的只是 token_usage：会话与消息不受影响。
+    QCOMPARE(mem.listSessions(50).size(), 0);
+}
+
+void TestMemory::vacuumDatabaseCompactsFile() {
+    QTemporaryDir dir;
+    QVERIFY(dir.isValid());
+    const QString dbPath = dir.filePath(QStringLiteral("vacuum.db"));
+    SqliteMemory mem(dbPath);
+    // 写入再删除，制造可回收的空闲页。
+    for (int i = 0; i < 50; ++i)
+        mem.logTokenUsage(usageRec(QStringLiteral("m1"), 1000 + i, 10, 5, 0, 3));
+    mem.clearTokenUsage();
+    QVERIFY(mem.vacuumDatabase());
+
+    // VACUUM 后库仍可读写，且统计短连接照常工作。
+    mem.logTokenUsage(usageRec(QStringLiteral("m1"), 5000, 10, 5, 0, 3));
+    QCOMPARE(mem.tokenUsageRecords(0, 0, 50, 0).value("total").toInt(), 1);
+    const QVariantMap stats = SqliteMemory::collectStats(dbPath);
+    QVERIFY(!stats.contains(QStringLiteral("error")));
+    QCOMPARE(stats.value("tokenUsage").toInt(), 1);
 }
 
 QTEST_GUILESS_MAIN(TestMemory)

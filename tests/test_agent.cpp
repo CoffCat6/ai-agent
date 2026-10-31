@@ -674,6 +674,8 @@ private slots:
     void testSessionTokensUsed();
     // docs/16 §13 AC-7: 配额检查（超限 emit quotaWarning，strict 模式拒绝）
     void testCheckQuota();
+    // docs/31 S4.1 N9：达到阈值（未超限）提醒一次，同一天不重复。
+    void testQuotaAlertThreshold();
     // docs/16 §3.3: 估算器滚动校准（API 真实 promptTokens 反馈 → EWMA 系数）
     void testEstimateScaleCalibration();
     // docs/25 B3: fresh-session launch with an episodic service attached —
@@ -3610,6 +3612,81 @@ void TestAgent::testCheckQuota() {
     settings.remove("monthlyTokenQuota");
     settings.remove("monthlyCostQuotaCents");
     settings.remove("strictQuotaMode");
+    agent.setMemory(nullptr);
+}
+
+// docs/31 S4.1 N9：用量达到 alertPercent（默认 80）但**未超限**时提醒一次；
+// 同一天同一类型不重复；0 = 关闭；超限仍由 quotaWarning 负责，不得混报。
+void TestAgent::testQuotaAlertThreshold() {
+    QCoreApplication::setOrganizationName("NexusAI");
+    QCoreApplication::setApplicationName("NexusAI");
+    QSettings settings;
+    settings.remove("dailyTokenQuota");
+    settings.remove("dailyCostQuotaCents");
+    settings.remove("monthlyTokenQuota");
+    settings.remove("monthlyCostQuotaCents");
+    settings.remove("strictQuotaMode");
+    settings.setValue("usage/alertPercent", 80);
+
+    SqliteMemory memory(QStringLiteral(":memory:"));
+    agent.setMemory(&memory);
+
+    // 已用 80000 / 上限 100000：正好 80%，整数边界必须命中。
+    QVariantMap rec;
+    rec["requestId"] = quint64(1);
+    rec["sessionId"] = QStringLiteral("s1");
+    rec["model"] = QStringLiteral("gpt-4o");
+    rec["inputTokens"] = 50000;
+    rec["outputTokens"] = 30000;
+    memory.logTokenUsage(rec);
+
+    settings.setValue("dailyTokenQuota", 100000);
+    settings.setValue("strictQuotaMode", false);
+
+    QSignalSpy alertSpy(&agent, &AIAgent::quotaAlert);
+    QSignalSpy quotaSpy(&agent, &AIAgent::quotaWarning);
+    QSignalSpy responseSpy(&agent, &AIAgent::responseReady);
+
+    llm.reset();
+    llm.script.append(textResponse(QStringLiteral("ok")));
+    agent.startTask(QStringLiteral("hi"));
+    QTRY_COMPARE(responseSpy.count(), 1);
+
+    QCOMPARE(alertSpy.count(), 1);
+    QCOMPARE(alertSpy.at(0).at(0).toString(), QStringLiteral("dailyToken"));
+    QCOMPARE(alertSpy.at(0).at(1).toLongLong(), qint64(80000));
+    QCOMPARE(alertSpy.at(0).at(2).toLongLong(), qint64(100000));
+    // 未超限：不能同时报"超限"。
+    QCOMPARE(quotaSpy.count(), 0);
+
+    // 同一天第二次请求：用量继续增长但仍未超限 → 去重后不再提醒。
+    llm.script.append(textResponse(QStringLiteral("ok again")));
+    agent.startTask(QStringLiteral("again"));
+    QTRY_COMPARE(responseSpy.count(), 2);
+    QCOMPARE(alertSpy.count(), 1);
+    QCOMPARE(quotaSpy.count(), 0);
+
+    // alertPercent = 0 关闭提醒：换一个没有去重状态的新 agent 验证。
+    settings.setValue("usage/alertPercent", 0);
+    AIAgent fresh;
+    fresh.setLLMService(&llm);
+    fresh.setToolRegistry(&ToolRegistry::instance());
+    fresh.setContextLimit(8192);
+    fresh.setMemory(&memory);
+    QSignalSpy freshAlert(&fresh, &AIAgent::quotaAlert);
+    QSignalSpy freshResponse(&fresh, &AIAgent::responseReady);
+    llm.script.append(textResponse(QStringLiteral("ok")));
+    fresh.startTask(QStringLiteral("hi"));
+    QTRY_COMPARE(freshResponse.count(), 1);
+    QCOMPARE(freshAlert.count(), 0);
+
+    settings.remove("dailyTokenQuota");
+    settings.remove("dailyCostQuotaCents");
+    settings.remove("monthlyTokenQuota");
+    settings.remove("monthlyCostQuotaCents");
+    settings.remove("strictQuotaMode");
+    settings.remove("usage/alertPercent");
+    fresh.setMemory(nullptr);
     agent.setMemory(nullptr);
 }
 

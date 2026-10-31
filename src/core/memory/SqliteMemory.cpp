@@ -2842,6 +2842,27 @@ int SqliteMemory::pruneTokenUsage(int keepDays) {
     return query.numRowsAffected();
 }
 
+int SqliteMemory::clearTokenUsage() {
+    QSqlQuery query(m_db);
+    if (!query.exec("DELETE FROM token_usage")) {
+        qWarning() << "Failed to clear token usage:" << query.lastError().text();
+        return 0;
+    }
+    return query.numRowsAffected();
+}
+
+bool SqliteMemory::vacuumDatabase() {
+    // VACUUM 不可在事务内执行；本连接按语句自动提交，正常到这里没有
+    // 挂起事务。其它连接（如备份的短连接）持有锁时 SQLITE_BUSY → false，
+    // 由调用方提示"稍后重试"，不做重试循环。
+    QSqlQuery query(m_db);
+    if (!query.exec("VACUUM")) {
+        qWarning() << "VACUUM failed:" << query.lastError().text();
+        return false;
+    }
+    return true;
+}
+
 void SqliteMemory::renameSession(const QString& sessionId, const QString& title) {
     QSqlQuery query(m_db);
     query.prepare("UPDATE sessions SET title = ?, updated_at = ? WHERE id = ?");
@@ -3501,6 +3522,27 @@ QString SqliteMemory::defaultBackupsDir() {
         + QStringLiteral("/backups");
 }
 
+QVariantList SqliteMemory::listBackups() {
+    const QDir dir(defaultBackupsDir());
+    // QDir::Time = 修改时间倒序，与 lastDatabaseBackupPath() 的"最新一份"
+    // 口径一致；列表顺序因此可以直接当"从新到旧"展示。
+    const QFileInfoList files = dir.entryInfoList(
+        {QStringLiteral("auto_*.db"), QStringLiteral("manual_*.db")},
+        QDir::Files, QDir::Time);
+    QVariantList backups;
+    backups.reserve(files.size());
+    for (const QFileInfo& info : files) {
+        backups.append(QVariantMap{
+            {QStringLiteral("path"), info.absoluteFilePath()},
+            {QStringLiteral("fileName"), info.fileName()},
+            {QStringLiteral("sizeBytes"), info.size()},
+            {QStringLiteral("mtimeMs"), info.lastModified().toMSecsSinceEpoch()},
+            {QStringLiteral("isAuto"), info.fileName().startsWith(
+                 QLatin1String("auto_"))}});
+    }
+    return backups;
+}
+
 bool SqliteMemory::createBackupFile(const QString& dbPath, const QString& targetPath) {
     // Self-contained connection: created, used and dropped on the calling
     // thread (Qt SQL rule) — the GUI-thread instances are never touched.
@@ -3536,6 +3578,68 @@ bool SqliteMemory::createBackupFile(const QString& dbPath, const QString& target
     }
     QSqlDatabase::removeDatabase(connName);
     return true;
+}
+
+QVariantMap SqliteMemory::collectStats(const QString& dbPath) {
+    QVariantMap out;
+    out.insert(QStringLiteral("dbPath"), QDir::toNativeSeparators(dbPath));
+    out.insert(QStringLiteral("fileSizeBytes"),
+               static_cast<qint64>(QFileInfo(dbPath).size()));
+    // WAL 伴生文件可能不存在（检查点后）；不存在按 0 计。
+    out.insert(QStringLiteral("walSizeBytes"),
+               static_cast<qint64>(QFileInfo(dbPath + QStringLiteral("-wal")).size()));
+
+    // 自包含只读短连接（同 createBackupFile 的做法）：创建、使用、销毁都在
+    // 调用线程上，绝不触碰 GUI 线程连接——QtConcurrent 工作线程可安全调用。
+    const QString connName = QStringLiteral("nexus_stats_%1")
+        .arg(QUuid::createUuid().toString(QUuid::WithoutBraces));
+    {
+        QSqlDatabase db = QSqlDatabase::addDatabase("QSQLITE", connName);
+        db.setDatabaseName(dbPath);
+        db.setConnectOptions(QStringLiteral("QSQLITE_OPEN_READONLY"));
+        if (!db.open()) {
+            const QString errorText = db.lastError().text();
+            qWarning() << "Stats: cannot open database:" << errorText;
+            QSqlDatabase::removeDatabase(connName);
+            out.insert(QStringLiteral("error"), errorText);
+            return out;
+        }
+        QSqlQuery query(db);
+        query.setForwardOnly(true);
+        query.exec("PRAGMA busy_timeout = 5000");
+
+        const auto scalar = [&query](const QString& sql) -> QVariant {
+            query.prepare(sql);
+            return query.exec() && query.next() ? query.value(0) : QVariant();
+        };
+        out.insert(QStringLiteral("pageCount"), scalar("PRAGMA page_count").toInt());
+        out.insert(QStringLiteral("pageSize"), scalar("PRAGMA page_size").toInt());
+
+        // 各表行数。表名全部来自本文件的迁移 DDL 常量，无注入面；
+        // 单表 COUNT 逐条执行，任何一张失败不中断其余统计。
+        const QVector<QPair<QString, QString>> tables = {
+            {QStringLiteral("sessions"), QStringLiteral("sessions")},
+            {QStringLiteral("messages"), QStringLiteral("messages")},
+            {QStringLiteral("episodic"), QStringLiteral("episodic")},
+            {QStringLiteral("projects"), QStringLiteral("projects")},
+            {QStringLiteral("knowledgeDocuments"), QStringLiteral("knowledge_documents")},
+            {QStringLiteral("knowledgeChunks"), QStringLiteral("knowledge_chunks")},
+            {QStringLiteral("traceNodes"), QStringLiteral("trace_nodes")},
+            {QStringLiteral("fileCheckpoints"), QStringLiteral("file_checkpoints")},
+            {QStringLiteral("usageLog"), QStringLiteral("usage_log")},
+            {QStringLiteral("tokenUsage"), QStringLiteral("token_usage")},
+            {QStringLiteral("auditLog"), QStringLiteral("audit_log")},
+            {QStringLiteral("sessionTodos"), QStringLiteral("session_todos")},
+        };
+        for (const auto& it : tables) {
+            const QVariant rows = scalar(
+                QStringLiteral("SELECT COUNT(*) FROM %1").arg(it.second));
+            out.insert(it.first, rows.isValid() ? rows.toInt() : 0);
+        }
+        db.close();
+    }
+    QSqlDatabase::removeDatabase(connName);
+    return out;
 }
 
 int SqliteMemory::rotateAutoBackups(const QString& backupsDir, int keepCount) {

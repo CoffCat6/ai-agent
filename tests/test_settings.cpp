@@ -577,6 +577,125 @@ private slots:
         QVERIFY(fallback.value("model").toString().isEmpty());
     }
 
+    // docs/31 S4.4 N4（4a）：复制继承除密钥外的全部字段，顺序可拖拽持久化。
+    void duplicateProfileStripsApiKey() {
+        SettingsGuard guard;
+        {
+            QSettings s("NexusAI", "NexusAI");
+            s.remove("modelProfiles");
+            s.remove("activeProfileId");
+        }
+
+        SettingsService service(nullptr);
+        const QString sourceId = service.activeProfileId();
+        service.updateProfile(sourceId,
+            {{QStringLiteral("displayName"), QStringLiteral("源配置")},
+             {QStringLiteral("baseUrl"), QStringLiteral("http://gw.local/v1")},
+             {QStringLiteral("model"), QStringLiteral("m1")},
+             {QStringLiteral("models"), QStringList{QStringLiteral("m1"), QStringLiteral("m2")}},
+             {QStringLiteral("apiKey"), QStringLiteral("sk-secret")},
+             {QStringLiteral("temperature"), QStringLiteral("0.4")}});
+        QCOMPARE(service.activeProfile().value("apiKey").toString(),
+                 QStringLiteral("sk-secret"));
+
+        const QString copyId = service.duplicateProfile(sourceId, QStringLiteral("副本 A"));
+        QVERIFY(!copyId.isEmpty());
+        QVERIFY(copyId != sourceId);
+        const QVariantMap copy = profileById(service, copyId);
+        QCOMPARE(copy.value("displayName").toString(), QStringLiteral("副本 A"));
+        QVERIFY2(copy.value("apiKey").toString().isEmpty(),
+                 "复制出的配置绝不能携带 API Key");
+        QCOMPARE(copy.value("baseUrl").toString(), QStringLiteral("http://gw.local/v1"));
+        QCOMPARE(copy.value("model").toString(), QStringLiteral("m1"));
+        QCOMPARE(copy.value("models").toStringList(),
+                 (QStringList{QStringLiteral("m1"), QStringLiteral("m2")}));
+        QCOMPARE(copy.value("temperature").toString(), QStringLiteral("0.4"));
+        // 复制不动当前启用项，源配置的密钥也不受影响。
+        QCOMPARE(service.activeProfileId(), sourceId);
+        QCOMPARE(service.activeProfile().value("apiKey").toString(),
+                 QStringLiteral("sk-secret"));
+
+        // 落盘回读：新配置仍在、仍无密钥。
+        SettingsService reloaded(nullptr);
+        const QVariantMap persisted = profileById(reloaded, copyId);
+        QCOMPARE(persisted.value("displayName").toString(), QStringLiteral("副本 A"));
+        QVERIFY(persisted.value("apiKey").toString().isEmpty());
+
+        // 空名字回落到 "<原名称> 副本"；未知 id 返回空串。
+        const QString unnamed = service.duplicateProfile(sourceId, QStringLiteral("   "));
+        QCOMPARE(profileById(service, unnamed).value("displayName").toString(),
+                 QStringLiteral("源配置 副本"));
+        QVERIFY(service.duplicateProfile(QStringLiteral("missing"), QStringLiteral("x")).isEmpty());
+    }
+
+    void moveProfilePersistsOrder() {
+        SettingsGuard guard;
+        {
+            QSettings s("NexusAI", "NexusAI");
+            s.remove("modelProfiles");
+            s.remove("activeProfileId");
+        }
+
+        SettingsService service(nullptr);
+        const QString a = service.activeProfileId();
+        const QString b = service.addProfile(QStringLiteral("anthropic"));
+        const QString c = service.addProfile(QStringLiteral("ollama"));
+        const auto ids = [](const SettingsService& svc) {
+            QStringList out;
+            for (const QVariant& entry : svc.profiles())
+                out.append(entry.toMap().value("id").toString());
+            return out;
+        };
+        QCOMPARE(ids(service), (QStringList{a, b, c}));
+
+        service.moveProfile(0, 2);
+        QCOMPARE(ids(service), (QStringList{b, c, a}));
+        QCOMPARE(service.activeProfileId(), a);   // 排序不改启用项
+
+        SettingsService reloaded(nullptr);
+        QCOMPARE(ids(reloaded), (QStringList{b, c, a}));
+
+        service.moveProfile(2, 0);
+        QCOMPARE(ids(service), (QStringList{a, b, c}));
+        // 非法索引是 no-op，不写盘也不发信号。
+        QSignalSpy profilesSpy(&service, &SettingsService::profilesChanged);
+        service.moveProfile(-1, 0);
+        service.moveProfile(0, 3);
+        service.moveProfile(1, 1);
+        QCOMPARE(profilesSpy.count(), 0);
+        QCOMPARE(ids(service), (QStringList{a, b, c}));
+    }
+
+    // docs/31 S4.4 N4：切换活动配置（设置页「启用」按钮与托盘共用同一条写入
+    // 路径；托盘入口已取消，数据层语义不变）只写全局 activeProfileId，
+    // 重复点当前项与未知 id 都是 no-op，切换结果跨实例保留。
+    void activeProfileSwitchPersists() {
+        SettingsGuard guard;
+        {
+            QSettings s("NexusAI", "NexusAI");
+            s.remove("modelProfiles");
+            s.remove("activeProfileId");
+        }
+
+        SettingsService service(nullptr);
+        const QString first = service.activeProfileId();
+        const QString second = service.addProfile(QStringLiteral("anthropic"));
+        QVERIFY(!second.isEmpty());
+        QCOMPARE(service.activeProfileId(), first);
+
+        QSignalSpy activeSpy(&service, &SettingsService::activeProfileChanged);
+        service.setActiveProfile(second);
+        QCOMPARE(activeSpy.count(), 1);
+        QCOMPARE(service.activeProfileId(), second);
+        service.setActiveProfile(second);
+        QCOMPARE(activeSpy.count(), 1);
+        service.setActiveProfile(QStringLiteral("missing"));
+        QCOMPARE(service.activeProfileId(), second);
+
+        SettingsService reloaded(nullptr);
+        QCOMPARE(reloaded.activeProfileId(), second);
+    }
+
     // 调用方显式给了 baseUrl / model / models，就以它为准，不再自动回填。
     void explicitEndpointValuesWin() {
         SettingsGuard guard;
@@ -1002,8 +1121,12 @@ private slots:
             "network/proxyAuth",
             "memory/auditRetentionDays", "memory/tokenRetentionDays",
             "memory/backupOnStartup", "memory/backupKeepCount",
+            // docs/31 S4.2 N6: 定时备份间隔（0 = 关闭，仅 0/1/6/24/168）
+            "memory/backupIntervalHours",
             "dailyTokenQuota", "dailyCostQuotaCents", "monthlyTokenQuota",
             "monthlyCostQuotaCents", "strictQuotaMode", "agent/defaultPermissionMode",
+            // docs/31 S4.1 N9: 用量告警阈值（0 = 关闭）
+            "usage/alertPercent",
             // ToolRegistry and schema migration
             "tools/disabled", "schemaVersion", "theme/dark",
             // AgentViewModel runtime layout
@@ -1018,6 +1141,14 @@ private slots:
             "prefs/v1/ui.defaultSidebarWidth", "prefs/v1/ui.defaultPanelWidth",
             "prefs/v1/ui.defaultSidebarExpanded", "prefs/v1/ui.defaultPanelVisible",
             "prefs/v1/ui.restoreWindowOnStartup",
+            // docs/31 S4.7 O10: 减少动效开关（ThemeProvider 动效令牌归零）
+            "prefs/v1/ui.reduceMotion",
+            // docs/31 S4.1 O8: 设置中心尺寸记忆（隐藏键）
+            "prefs/v1/ui.settingsDialogWidth", "prefs/v1/ui.settingsDialogHeight",
+            // docs/31 N2: 快捷键覆盖项（ShortcutMap 写入的 JSON）
+            "prefs/v1/ui.shortcuts",
+            // docs/31 N1: 首次启动向导标记（Onboarding 写入，隐藏键）
+            "prefs/v1/general.onboarded",
             // docs/20 工作流 B（桌面集成）偏好键
             "prefs/v1/window.closeToTray", "prefs/v1/general.autoStart",
             "prefs/v1/notice.enabled",
@@ -2745,15 +2876,20 @@ Item {
         // 整条 profile / 独立资产：没有可复位的键。
         QCOMPARE(catalog->resetMode(QStringLiteral("model")), QStringLiteral("none"));
         QCOMPARE(catalog->resetMode(QStringLiteral("mcp")), QStringLiteral("none"));
-        QCOMPARE(catalog->resetMode(QStringLiteral("tools")), QStringLiteral("none"));
-        QCOMPARE(catalog->resetMode(QStringLiteral("security")), QStringLiteral("none"));
-        QCOMPARE(catalog->resetMode(QStringLiteral("usage")), QStringLiteral("none"));
         QCOMPARE(catalog->resetMode(QStringLiteral("unknown")), QStringLiteral("none"));
+
+        // 安全 / 工具 / 用量页没有 requestResetDefaults，但它们的单选开关、
+        // 黑名单、配额都经 SettingsService 单键写入且有默认值（docs/31 S1
+        // 遗留修复）：归类为 page，由底栏逐条 SettingsCatalog.resetValue
+        // 复位——否则「恢复全部设置」的确认文案承诺了却不执行。
+        QCOMPARE(catalog->resetMode(QStringLiteral("tools")), QStringLiteral("page"));
+        QCOMPARE(catalog->resetMode(QStringLiteral("security")), QStringLiteral("page"));
+        QCOMPARE(catalog->resetMode(QStringLiteral("usage")), QStringLiteral("page"));
 
         // 单条元数据：可见字段级条目与隐藏内部键。
         const QVariantMap localOnly = catalog->entry(QStringLiteral("security/localOnlyMode"));
         QCOMPARE(localOnly.value("category").toString(), QStringLiteral("security"));
-        QCOMPARE(localOnly.value("resetMode").toString(), QStringLiteral("none"));
+        QCOMPARE(localOnly.value("resetMode").toString(), QStringLiteral("page"));
         QCOMPARE(localOnly.value("hidden").toBool(), false);
 
         const QVariantMap profiles = catalog->entry(QStringLiteral("modelProfiles"));

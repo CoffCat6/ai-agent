@@ -41,9 +41,15 @@ RowLayout {
 
     signal submitted(string value)
 
-    // 长文本（系统提示词、代理地址等）的防抖提交间隔；0 = 只在失焦/回车提交。
+    // 打字停顿后的防抖提交间隔。docs/31 S4.5 收尾反馈：原来默认只在回车/
+    // 失焦提交，填完不点别处就不保存，很反直觉。现在默认 600ms——停顿即
+    // 提交（等价 docs/31 红线 3 的"stage 直写 + 防抖"），回车/失焦仍然立即
+    // 提交。两类字段必须保持旧语义，由使用方显式 commitDebounce: 0：
+    //   * ModelConfigPage 的「当前模型」——每次 submitted 都会被
+    //     SettingsService 并进 models 列表，停顿提交会把半截名字灌进列表；
+    // secret 字段内部强制不防抖（见 onTextEdited）：半截密钥绝不能落盘。
     // 防抖只提交与 lastKnownValue 不同的值，避免每次停顿都把原值重写一遍。
-    property int commitDebounce: 0
+    property int commitDebounce: 600
     // 密文字段常用"留空 = 不修改"：空输入不触发 submitted。
     property bool ignoreEmptySubmit: false
     // 密钥类字段提交后清空输入框，避免明文在掩码后面继续存在。
@@ -117,16 +123,19 @@ RowLayout {
         // editingFinished covers both Enter and focus loss; adding onAccepted as
         // well would submit twice for a single Enter keypress.
         onEditingFinished: root.submitCurrent()
-        // 防抖只在长文本字段启用；Timer 与输入框同生命周期，销毁时由
-        // commitOnDestroy 兜底。
-        onTextEdited: if (root.commitDebounce > 0) commitTimer.restart()
+        // 防抖提交（默认 600ms）只在非密文字段启用：半截密钥落盘等于毁掉密钥。
+        // Timer 与输入框同生命周期，销毁时由 commitOnDestroy 兜底。
+        onTextEdited: if (root.commitDebounce > 0 && !root.secret) commitTimer.restart()
         Component.onDestruction: if (root.commitOnDestroy) root.commitIfDirty()
 
         Timer {
             id: commitTimer
             interval: root.commitDebounce
             repeat: false
-            onTriggered: root.commitIfDirty()
+            // 有 validator 的字段（步数预算/temperature 等）只在输入进入
+            // Acceptable 状态才提交："0."/"-" 这类中间态不会被当成值落盘，
+            // 输入合法后停顿即提交；回车/失焦仍走 submitCurrent 的原语义。
+            onTriggered: if (fieldInput.acceptableInput) root.commitIfDirty()
         }
     }
 

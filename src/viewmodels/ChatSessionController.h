@@ -164,6 +164,8 @@ signals:
     // cost and quota threshold warnings.
     void costChanged(qint64 costCents);
     void quotaWarning(const QString& quotaType, qint64 used, qint64 quota);
+    // docs/31 S4.1 N9: 接近配额上限（未超限）时转发一次。
+    void quotaAlert(const QString& quotaType, qint64 used, qint64 quota);
     // Session permission mode changed (AgentViewModel re-emits for the
     // active tab; the sidebar reads it via sessionList for background sessions).
     void permissionModeChanged();

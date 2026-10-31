@@ -177,6 +177,54 @@ target_link_libraries(test_settings_backup PRIVATE
     nexus_core nexus_infra nexus_viewmodels Qt6::Test Qt6::Qml)
 add_test(NAME test_settings_backup COMMAND test_settings_backup)
 
+# docs/31 S4.6 N8：预设包导出/预览/冲突策略/拒绝路径。QSettings 指向
+# QTemporaryDir 的 INI 文件（红线 7），不碰真实用户配置。
+add_executable(test_preset_pack test_preset_pack.cpp)
+target_link_libraries(test_preset_pack PRIVATE
+    nexus_core nexus_infra nexus_viewmodels Qt6::Test)
+add_test(NAME test_preset_pack COMMAND test_preset_pack)
+
+# docs/31 N2：快捷键映射的默认值、冲突/安全校验、落盘与复位。
+add_executable(test_shortcuts test_shortcuts.cpp)
+target_link_libraries(test_shortcuts PRIVATE
+    nexus_core nexus_infra nexus_viewmodels Qt6::Test)
+add_test(NAME test_shortcuts COMMAND test_shortcuts)
+
+# docs/31 N1：首次启动向导的触发判定与 general.onboarded 标记。
+add_executable(test_onboarding test_onboarding.cpp)
+target_link_libraries(test_onboarding PRIVATE
+    nexus_core nexus_infra nexus_viewmodels Qt6::Test)
+add_test(NAME test_onboarding COMMAND test_onboarding)
+
+# docs/31 S1（O1/O2）：值快照、行级/页面级复位、搜索权重与密钥掩码。
+# 偏好写盘指向 QTemporaryDir（红线 7），不碰真实用户配置。
+add_executable(test_settings_values test_settings_values.cpp)
+target_link_libraries(test_settings_values PRIVATE
+    nexus_core nexus_infra nexus_viewmodels Qt6::Test)
+add_test(NAME test_settings_values COMMAND test_settings_values)
+
+# docs/31 S1（O3）：备份目录列表（最新在前 / auto 标记）与删除路径校验。
+add_executable(test_db_backups test_db_backups.cpp)
+target_link_libraries(test_db_backups PRIVATE
+    nexus_core nexus_infra nexus_viewmodels Qt6::Test)
+add_test(NAME test_db_backups COMMAND test_db_backups)
+
+# docs/31 S1（O1）：真实 SettingRow 的「已修改」槽与复位按钮。值变了界面
+# 不动这类退化只有真加载组件才能发现，故与 test_icon_flip 同一套文件系统
+# 副本 + offscreen 方案。
+add_executable(test_settings_page_qml test_settings_page_qml.cpp)
+target_link_libraries(test_settings_page_qml PRIVATE
+    nexus_core nexus_infra nexus_viewmodels nexus_viewmodelsplugin
+    Qt6::Test Qt6::Qml Qt6::Quick)
+target_compile_definitions(test_settings_page_qml PRIVATE
+    NEXUS_TEST_QML_DIR="${CMAKE_CURRENT_SOURCE_DIR}/qml"
+    NEXUS_BUILD_DIR="${CMAKE_BINARY_DIR}")
+add_dependencies(test_settings_page_qml nexus_ai)
+add_test(NAME test_settings_page_qml
+    COMMAND ${CMAKE_COMMAND} -E env
+        "QT_QPA_PLATFORM_PLUGIN_PATH=${QT6_INSTALL_PREFIX}/${QT6_INSTALL_PLUGINS}/platforms"
+        $<TARGET_FILE:test_settings_page_qml> -platform offscreen)
+
 # 设置页「从端点拉取模型」：列举端点与响应解析是静态纯函数，不需要网络。
 add_executable(test_model_list test_model_list.cpp)
 target_link_libraries(test_model_list PRIVATE

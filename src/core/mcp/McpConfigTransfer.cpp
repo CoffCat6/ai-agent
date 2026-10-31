@@ -1,0 +1,264 @@
+#include "McpConfigTransfer.h"
+
+#include <QCoreApplication>
+#include <QDateTime>
+#include <QFile>
+#include <QFileInfo>
+#include <QJsonArray>
+#include <QJsonDocument>
+#include <QJsonParseError>
+#include <QSaveFile>
+#include <QSet>
+
+namespace NexusAI {
+namespace McpConfigTransfer {
+namespace {
+
+QString tr(const char* source) {
+    return QCoreApplication::translate("McpConfigTransfer", source);
+}
+
+constexpr int kFormatVersion = 1;
+const QString kFormat = QStringLiteral("nexusai-mcp-servers");
+
+// 导入只接受这几类字段：未知字段（尤其是未来可能出现的凭据字段）不落盘。
+QVariantMap sanitizeServer(const QVariantMap& raw) {
+    QVariantMap clean;
+    for (const QString& field : {QStringLiteral("name"), QStringLiteral("transport"),
+                                 QStringLiteral("command"), QStringLiteral("url")}) {
+        if (raw.contains(field)) clean.insert(field, raw.value(field));
+    }
+    if (raw.contains(QStringLiteral("args")))
+        clean.insert(QStringLiteral("args"), raw.value(QStringLiteral("args")));
+    for (const QString& field : {QStringLiteral("env"), QStringLiteral("headers")}) {
+        if (!raw.contains(field)) continue;
+        const QVariantMap map = raw.value(field).toMap();
+        if (!map.isEmpty()) clean.insert(field, map);
+    }
+    clean.insert(QStringLiteral("enabled"), false);
+    return clean;
+}
+
+QString validate(const QVariantMap& server) {
+    const QString name = server.value(QStringLiteral("name")).toString().trimmed();
+    if (name.isEmpty()) return tr("缺少服务器名称");
+    const QString transport = server.value(QStringLiteral("transport")).toString();
+    if (transport != QLatin1String("stdio") && transport != QLatin1String("http"))
+        return tr("传输方式必须是 stdio 或 http");
+    if (transport == QLatin1String("stdio")) {
+        if (server.value(QStringLiteral("command")).toString().trimmed().isEmpty())
+            return tr("stdio 服务器缺少启动命令");
+    } else if (server.value(QStringLiteral("url")).toString().trimmed().isEmpty()) {
+        return tr("http 服务器缺少地址");
+    }
+    return {};
+}
+
+bool hasSecrets(const QVariantMap& server) {
+    return !server.value(QStringLiteral("env")).toMap().isEmpty()
+        || !server.value(QStringLiteral("headers")).toMap().isEmpty();
+}
+
+QJsonObject exportEntry(const QVariantMap& server) {
+    QJsonObject out;
+    for (const QString& field : {QStringLiteral("name"), QStringLiteral("transport"),
+                                 QStringLiteral("command"), QStringLiteral("url")}) {
+        if (server.contains(field))
+            out.insert(field, QJsonValue::fromVariant(server.value(field)));
+    }
+    const QVariant args = server.value(QStringLiteral("args"));
+    if (args.isValid())
+        out.insert(QStringLiteral("args"), QJsonValue::fromVariant(args));
+    // 显式禁用：导入方必须逐台审阅后才能启用。
+    out.insert(QStringLiteral("enabled"), false);
+    return out;
+}
+
+QString uniqueName(const QString& base, const QSet<QString>& used) {
+    if (!used.contains(base)) return base;
+    for (int suffix = 2; suffix < 1000; ++suffix) {
+        const QString candidate = QStringLiteral("%1 (%2)").arg(base).arg(suffix);
+        if (!used.contains(candidate)) return candidate;
+    }
+    return QStringLiteral("%1 (%2)").arg(base).arg(QDateTime::currentMSecsSinceEpoch());
+}
+
+} // namespace
+
+QJsonObject buildExport(const QVector<QVariantMap>& servers) {
+    QJsonArray array;
+    int secretsOmitted = 0;
+    for (const QVariantMap& server : servers) {
+        if (server.value(QStringLiteral("name")).toString().trimmed().isEmpty()) continue;
+        if (hasSecrets(server)) ++secretsOmitted;
+        array.append(exportEntry(server));
+    }
+    QJsonObject root;
+    root.insert(QStringLiteral("format"), kFormat);
+    root.insert(QStringLiteral("version"), kFormatVersion);
+    root.insert(QStringLiteral("servers"), array);
+    root.insert(QStringLiteral("secretsOmitted"), secretsOmitted);
+    QJsonArray omitted;
+    omitted.append(QStringLiteral("env"));
+    omitted.append(QStringLiteral("headers"));
+    root.insert(QStringLiteral("omitted"), omitted);
+    return root;
+}
+
+bool writeExport(const QString& path, const QVector<QVariantMap>& servers,
+                 QString* error) {
+    if (path.trimmed().isEmpty()) {
+        if (error) *error = tr("请选择保存位置");
+        return false;
+    }
+    QSaveFile file(path);
+    if (!file.open(QIODevice::WriteOnly)) {
+        if (error) *error = tr("无法写入文件：%1").arg(file.errorString());
+        return false;
+    }
+    file.write(QJsonDocument(buildExport(servers)).toJson(QJsonDocument::Indented));
+    if (!file.commit()) {
+        if (error) *error = tr("保存失败：%1").arg(file.errorString());
+        return false;
+    }
+    return true;
+}
+
+ImportPreview previewImportFile(const QString& path,
+                                const QVector<QVariantMap>& current) {
+    ImportPreview preview;
+    if (path.trimmed().isEmpty()) {
+        preview.error = tr("请选择配置文件");
+        return preview;
+    }
+    QFile file(path);
+    if (!file.exists()) {
+        preview.error = tr("文件不存在：%1").arg(path);
+        return preview;
+    }
+    if (!file.open(QIODevice::ReadOnly)) {
+        preview.error = tr("无法读取文件：%1").arg(file.errorString());
+        return preview;
+    }
+    QJsonParseError parseError;
+    const QJsonDocument document = QJsonDocument::fromJson(file.readAll(), &parseError);
+    if (parseError.error != QJsonParseError::NoError) {
+        preview.error = tr("不是有效的 JSON：%1").arg(parseError.errorString());
+        return preview;
+    }
+    if (!document.isObject()) {
+        preview.error = tr("不是有效的 MCP 服务器配置文件");
+        return preview;
+    }
+    const QJsonObject root = document.object();
+    const QJsonValue serversValue = root.value(QStringLiteral("servers"));
+    if (!serversValue.isArray()) {
+        preview.error = tr("不是有效的 MCP 服务器配置文件");
+        return preview;
+    }
+    if (root.contains(QStringLiteral("format"))
+        && root.value(QStringLiteral("format")).toString() != kFormat) {
+        preview.error = tr("文件格式不受支持：%1")
+                            .arg(root.value(QStringLiteral("format")).toString());
+        return preview;
+    }
+
+    preview.ok = true;
+    QSet<QString> existingNames;
+    for (const QVariantMap& entry : current)
+        existingNames.insert(entry.value(QStringLiteral("name")).toString());
+    for (const QJsonValue& value : serversValue.toArray()) {
+        ++preview.total;
+        ImportEntry entry;
+        entry.server = sanitizeServer(value.toObject().toVariantMap());
+        entry.error = validate(entry.server);
+        if (entry.error.isEmpty()) {
+            ++preview.importable;
+            if (hasSecrets(entry.server)) ++preview.withSecrets;
+            entry.conflict = existingNames.contains(
+                entry.server.value(QStringLiteral("name")).toString());
+            if (entry.conflict) ++preview.conflictCount;
+        }
+        preview.entries.append(entry);
+    }
+    return preview;
+}
+
+MergePolicy policyFromName(const QString& name) {
+    const QString normalized = name.trimmed().toLower();
+    if (normalized == QLatin1String("overwrite")) return MergePolicy::Overwrite;
+    if (normalized == QLatin1String("rename")) return MergePolicy::Rename;
+    return MergePolicy::Skip;
+}
+
+QString policyName(MergePolicy policy) {
+    switch (policy) {
+    case MergePolicy::Overwrite: return QStringLiteral("overwrite");
+    case MergePolicy::Rename:    return QStringLiteral("rename");
+    case MergePolicy::Skip:      break;
+    }
+    return QStringLiteral("skip");
+}
+
+QVector<QVariantMap> applyImport(const QVector<QVariantMap>& current,
+                                 const ImportPreview& preview,
+                                 MergePolicy policy, int* added, int* replaced,
+                                 int* skipped) {
+    QVector<QVariantMap> result = current;
+    int addedCount = 0, replacedCount = 0, skippedCount = 0;
+
+    QSet<QString> usedNames;
+    for (const QVariantMap& entry : result)
+        usedNames.insert(entry.value(QStringLiteral("name")).toString());
+
+    for (const ImportEntry& entry : preview.entries) {
+        if (!entry.error.isEmpty()) {
+            ++skippedCount;
+            continue;
+        }
+        QVariantMap server = entry.server;
+        const QString name = server.value(QStringLiteral("name")).toString().trimmed();
+        server.insert(QStringLiteral("name"), name);
+
+        int existing = -1;
+        for (int i = 0; i < result.size(); ++i) {
+            if (result.at(i).value(QStringLiteral("name")).toString() == name) {
+                existing = i;
+                break;
+            }
+        }
+
+        if (existing < 0) {
+            result.append(server);
+            usedNames.insert(name);
+            ++addedCount;
+            continue;
+        }
+
+        switch (policy) {
+        case MergePolicy::Skip:
+            ++skippedCount;
+            break;
+        case MergePolicy::Overwrite:
+            result[existing] = server;   // sanitize 已把 enabled 归 false
+            ++replacedCount;
+            break;
+        case MergePolicy::Rename: {
+            const QString renamed = uniqueName(name, usedNames);
+            server.insert(QStringLiteral("name"), renamed);
+            result.append(server);
+            usedNames.insert(renamed);
+            ++addedCount;
+            break;
+        }
+        }
+    }
+
+    if (added) *added = addedCount;
+    if (replaced) *replaced = replacedCount;
+    if (skipped) *skipped = skippedCount;
+    return result;
+}
+
+} // namespace McpConfigTransfer
+} // namespace NexusAI

@@ -17,6 +17,10 @@ class ThemeManager : public QObject {
     Q_PROPERTY(QString fontSans READ fontSans WRITE setFontSans NOTIFY fontChanged FINAL)
     Q_PROPERTY(QString fontMono READ fontMono WRITE setFontMono NOTIFY fontChanged FINAL)
     Q_PROPERTY(int baseFontSize READ baseFontSize WRITE setBaseFontSize NOTIFY fontChanged FINAL)
+    // docs/31 S4.7 O10：无障碍「减少动效」。只经设置页写偏好键（EditBuffer →
+    // PreferenceStore → ChangeBus），这里不提供 WRITE——与 themeMode 的
+    // Ctrl+D 快捷切换不同，动效没有命令式入口。
+    Q_PROPERTY(bool reduceMotion READ reduceMotion NOTIFY motionChanged FINAL)
 public:
     explicit ThemeManager(QObject* parent);
 
@@ -38,15 +42,19 @@ public:
     int baseFontSize() const { return m_baseFontSize; }
     void setBaseFontSize(int size);
 
+    bool reduceMotion() const { return m_reduceMotion; }
+
 signals:
     void themeChanged();
     void themeModeChanged();
     void fontChanged();
+    void motionChanged();
 
 private:
     void loadTheme();
 
     void loadFontPrefs();
+    void loadMotionPrefs();
     void registerPreferences();
     void subscribeChanges();
     bool resolveSystemDark() const;
@@ -57,6 +65,7 @@ private:
     QString m_fontSans;
     QString m_fontMono;
     int m_baseFontSize{};
+    bool m_reduceMotion{false};
 
     ChangeBus* m_changeBus{nullptr};
 

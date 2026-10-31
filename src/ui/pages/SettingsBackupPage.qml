@@ -17,6 +17,57 @@ Item {
     // docs/24 R4: the backup file staged for restore by the preview dialog.
     property string pendingRestorePath: ""
     property var pendingRestoreInfo: ({})
+    // docs/31 O3: 备份目录里的快照列表（最新在前）。
+    property var backups: []
+    property string pendingDeletePath: ""
+    // docs/31 O5: 导出范围（分类 id）。空数组 = 全部设置。
+    property var exportCategories: []
+
+    Component.onCompleted: refreshBackups()
+
+    function refreshBackups() {
+        backups = AgentVM.databaseBackups()
+    }
+
+    function exportScopeLabel() {
+        if (page.exportCategories.length === 0) return qsTr("全部设置")
+        const names = []
+        for (let i = 0; i < page.exportCategories.length; ++i)
+            names.push(PreferenceRegistry.categoryName(page.exportCategories[i]))
+        return names.join(qsTr("、"))
+    }
+
+    function formatSize(bytes) {
+        if (bytes >= 1048576) return (bytes / 1048576).toFixed(1) + " MB"
+        if (bytes >= 1024) return Math.round(bytes / 1024) + " KB"
+        return bytes + " B"
+    }
+
+    // restore=false 只填摘要；restore=true 在完整性通过时直接弹恢复确认。
+    // 损坏的备份只允许预览，不允许恢复（沿用 docs/24 R4）。
+    function previewBackup(path, restore) {
+        const info = AgentVM.previewDatabaseBackup(path)
+        if (info.error) {
+            page.statusIsError = true
+            page.statusMessage = qsTr("无法读取该备份文件：%1").arg(info.error)
+            return
+        }
+        page.pendingRestorePath = path
+        page.pendingRestoreInfo = info
+        page.statusIsError = !info.integrityOk
+        page.statusMessage = qsTr("会话 %1 个，消息 %2 条，知识库文档 %3 份，最新消息时间 %4%5")
+            .arg(info.sessions)
+            .arg(info.messages)
+            .arg(info.knowledgeDocs)
+            .arg(info.newestTimestamp > 0
+                 ? new Date(info.newestTimestamp).toLocaleString()
+                 : qsTr("（无消息）"))
+            .arg(info.integrityOk
+                 ? ""
+                 : qsTr("；警告：完整性检查未通过，可能已损坏"))
+        if (restore && info.integrityOk)
+            confirmRestoreDialog.open()
+    }
 
     // 本页只有自动备份两项是可复位的 M1 键；其余是导出/恢复入口。
     function requestResetDefaults() {
@@ -33,7 +84,7 @@ Item {
             objectName: "backup/automatic"
             Layout.fillWidth: true
             title: qsTr("自动备份")
-            subtitle: qsTr("应用启动时自动生成一份数据库快照；只保留最近指定份数，更早的自动删除。")
+            subtitle: qsTr("应用启动时可生成一份数据库快照，也可按固定间隔定时备份；只保留最近指定份数，更早的自动删除。")
 
             SettingRow {
                 objectName: "memory/backupOnStartup"
@@ -67,17 +118,75 @@ Item {
                     Accessible.name: qsTr("备份保留数量")
                 }
             }
+
+            Rectangle {
+                Layout.fillWidth: true
+                height: 1
+                color: Theme.borderSubtle
+            }
+
+            // docs/31 S4.2 N6：定时备份只开放五档（0 = 关闭）。写回的是
+            // 小时数；SettingsService 会再归一一次，导入的旧配置也不会出现
+            // 下拉框里选不中的值。
+            SettingRow {
+                objectName: "memory/backupIntervalHours"
+                label: qsTr("定时备份间隔")
+                description: qsTr("应用运行期间按此间隔生成快照；关闭后只保留启动备份与手动备份。")
+
+                ComboBox {
+                    id: backupIntervalCombo
+                    Layout.preferredWidth: Theme.controlWidthSm
+                    property var hourOptions: [0, 1, 6, 24, 168]
+                    model: [qsTr("关闭"), qsTr("每 1 小时"), qsTr("每 6 小时"),
+                            qsTr("每 1 天"), qsTr("每 7 天")]
+                    Component.onCompleted: {
+                        const index = hourOptions.indexOf(Settings.backupIntervalHours)
+                        currentIndex = index >= 0 ? index : 0
+                    }
+                    onActivated: Settings.backupIntervalHours = hourOptions[currentIndex]
+                    Connections {
+                        target: Settings
+                        function onBackupIntervalHoursChanged() {
+                            const index = backupIntervalCombo.hourOptions.indexOf(
+                                Settings.backupIntervalHours)
+                            backupIntervalCombo.currentIndex = index >= 0 ? index : 0
+                        }
+                    }
+                    Accessible.name: qsTr("定时备份间隔")
+                }
+            }
         }
 
         SettingCard {
             objectName: "backup/settings"
             Layout.fillWidth: true
             title: qsTr("导出设置")
-            subtitle: qsTr("选择保存位置，生成可用于迁移设置的 JSON 备份。请妥善保管备份文件。")
+            subtitle: qsTr("选择保存位置，生成可用于迁移设置的 JSON 备份。可按分类只导出需要的部分；请妥善保管备份文件。")
 
-            AppButton {
-                text: qsTr("导出 JSON…")
-                onClicked: exportDialog.open()
+            RowLayout {
+                Layout.fillWidth: true
+                spacing: Theme.spaceSm
+
+                Text {
+                    Layout.fillWidth: true
+                    Layout.minimumWidth: 0
+                    text: qsTr("导出范围：%1").arg(page.exportScopeLabel())
+                    color: Theme.textPrimary
+                    font.pixelSize: Theme.fontSizeBody
+                    font.family: Theme.fontSans
+                    wrapMode: Text.Wrap
+                    elide: Text.ElideRight
+                }
+                AppButton {
+                    objectName: "backup/exportScope"
+                    text: qsTr("选择范围…")
+                    onClicked: exportScopeDialog.open()
+                }
+                AppButton {
+                    objectName: "backup/export"
+                    text: qsTr("导出 JSON…")
+                    onClicked: exportDialog.open()
+                }
             }
         }
 
@@ -110,11 +219,111 @@ Item {
                             ? err
                             : qsTr("数据库已备份到 %1。").arg(
                                   AgentVM.lastDatabaseBackupPath())
+                        page.refreshBackups()
                     }
                 }
                 AppButton {
-                    text: qsTr("预览备份文件…")
+                    text: qsTr("打开备份目录")
+                    onClicked: AgentVM.openDatabaseBackupsFolder()
+                }
+                AppButton {
+                    text: qsTr("从其他位置恢复…")
                     onClicked: previewDialog.open()
+                }
+                Item { Layout.fillWidth: true }
+                AppButton {
+                    text: qsTr("刷新")
+                    onClicked: page.refreshBackups()
+                }
+            }
+
+            Rectangle {
+                Layout.fillWidth: true
+                height: 1
+                color: Theme.borderSubtle
+            }
+
+            Text {
+                visible: page.backups.length === 0
+                Layout.fillWidth: true
+                text: qsTr("备份目录里还没有快照。开启「启动时自动备份」后，应用每次启动都会生成一份。")
+                color: Theme.textSecondary
+                font.pixelSize: Theme.fontSizeCaption
+                font.family: Theme.fontSans
+                wrapMode: Text.Wrap
+            }
+
+            // 列表本身就是"有哪些备份"的答案：时间、大小、来源，加上
+            // 预览/恢复/删除。删除前二次确认，且只允许删备份目录内的文件。
+            Repeater {
+                model: page.backups
+
+                delegate: RowLayout {
+                    required property var modelData
+                    Layout.fillWidth: true
+                    spacing: Theme.spaceSm
+
+                    Rectangle {
+                        Layout.alignment: Qt.AlignVCenter
+                        width: autoBadge.implicitWidth + 10
+                        height: 16
+                        radius: height / 2
+                        color: modelData.isAuto
+                            ? Qt.rgba(Theme.brandPrimary.r, Theme.brandPrimary.g,
+                                      Theme.brandPrimary.b, 0.12)
+                            : Theme.surfaceHover
+                        Text {
+                            id: autoBadge
+                            anchors.centerIn: parent
+                            text: modelData.isAuto ? qsTr("自动") : qsTr("手动")
+                            color: modelData.isAuto ? Theme.brandPrimary
+                                                    : Theme.textSecondary
+                            font.pixelSize: Theme.fontSizeMicro
+                            font.family: Theme.fontSans
+                        }
+                    }
+
+                    ColumnLayout {
+                        Layout.fillWidth: true
+                        spacing: 0
+                        Text {
+                            Layout.fillWidth: true
+                            text: new Date(modelData.mtimeMs).toLocaleString()
+                                  + " · " + page.formatSize(modelData.sizeBytes)
+                            color: Theme.textPrimary
+                            font.pixelSize: Theme.fontSizeCaption
+                            font.family: Theme.fontSans
+                            elide: Text.ElideRight
+                        }
+                        Text {
+                            Layout.fillWidth: true
+                            text: modelData.fileName
+                            color: Theme.textSecondary
+                            font.pixelSize: Theme.fontSizeMicro
+                            font.family: Theme.fontMono
+                            elide: Text.ElideMiddle
+                        }
+                    }
+
+                    AppButton {
+                        text: qsTr("预览")
+                        onClicked: page.previewBackup(modelData.path, false)
+                    }
+                    AppButton {
+                        text: qsTr("恢复")
+                        onClicked: page.previewBackup(modelData.path, true)
+                    }
+                    IconButton {
+                        icon: "trash"
+                        iconSize: 14
+                        tooltip: qsTr("删除此备份")
+                        Layout.alignment: Qt.AlignVCenter
+                        Accessible.name: qsTr("删除备份 %1").arg(modelData.fileName)
+                        onClicked: {
+                            page.pendingDeletePath = modelData.path
+                            confirmDeleteDialog.open()
+                        }
+                    }
                 }
             }
         }
@@ -138,10 +347,119 @@ Item {
         defaultSuffix: "json"
         nameFilters: [qsTr("JSON 文件 (*.json)")]
         onAccepted: {
-            page.statusIsError = !SettingsBackup.exportSettings(selectedFile.toString())
+            page.statusIsError = !SettingsBackup.exportSettings(
+                selectedFile.toString(), page.exportCategories)
             page.statusMessage = page.statusIsError
                 ? (SettingsBackup.lastError || qsTr("导出失败。"))
-                : qsTr("设置已导出。已知密钥字段已过滤；请检查自由文本和 MCP 命令参数。")
+                : qsTr("设置已导出（%1）。已知密钥字段已过滤；请检查自由文本和 MCP 命令参数。")
+                    .arg(page.exportScopeLabel())
+        }
+    }
+
+    // docs/31 O5：分类多选。options 是带 selected 的副本，重开时按页面
+    // 上的选择重建；勾选一次整体替换数组，让 Repeater 重新绑定 checked
+    // （CheckBox 的用户点击会截断 checked 的绑定）。
+    Dialog {
+        id: exportScopeDialog
+        parent: Overlay.overlay
+        modal: true
+        anchors.centerIn: parent
+        width: 460
+        height: 480
+        padding: Theme.spaceXl
+        background: DialogBackground {}
+
+        property var options: []
+
+        function reloadOptions() {
+            const ids = SettingsBackup.exportableCategories()
+            const list = []
+            for (let i = 0; i < ids.length; ++i) {
+                list.push({
+                    id: ids[i],
+                    name: PreferenceRegistry.categoryName(ids[i]),
+                    selected: page.exportCategories.indexOf(ids[i]) >= 0
+                })
+            }
+            options = list
+        }
+
+        onOpened: reloadOptions()
+
+        contentItem: ColumnLayout {
+            spacing: Theme.spaceMd
+
+            Text {
+                text: qsTr("选择导出范围")
+                color: Theme.textPrimary
+                font.pixelSize: Theme.fontSizeH2
+                font.bold: true
+                font.family: Theme.fontSans
+            }
+            Text {
+                Layout.fillWidth: true
+                text: qsTr("只导出选中的分类；一个都不选等于导出全部设置。模型配置与 MCP 服务器分别归入「模型配置」「MCP 服务器」。")
+                color: Theme.textSecondary
+                font.pixelSize: Theme.fontSizeCaption
+                font.family: Theme.fontSans
+                wrapMode: Text.Wrap
+            }
+
+            ScrollView {
+                Layout.fillWidth: true
+                Layout.fillHeight: true
+                clip: true
+
+                ColumnLayout {
+                    width: exportScopeDialog.availableWidth - Theme.spaceLg
+                    spacing: 0
+
+                    Repeater {
+                        model: exportScopeDialog.options
+
+                        delegate: CheckBox {
+                            required property var modelData
+                            required property int index
+                            Layout.fillWidth: true
+                            text: modelData.name
+                            checked: modelData.selected
+                            Accessible.name: modelData.name
+                            onToggled: {
+                                const next = exportScopeDialog.options.slice()
+                                next[index] = {
+                                    id: modelData.id,
+                                    name: modelData.name,
+                                    selected: checked
+                                }
+                                exportScopeDialog.options = next
+                            }
+                        }
+                    }
+                }
+            }
+
+            RowLayout {
+                Layout.fillWidth: true
+                spacing: Theme.spaceSm
+                Item { Layout.fillWidth: true }
+                AppButton {
+                    text: qsTr("取消")
+                    onClicked: exportScopeDialog.close()
+                }
+                AppButton {
+                    text: qsTr("确定")
+                    highlighted: true
+                    onClicked: {
+                        const selected = []
+                        for (let i = 0; i < exportScopeDialog.options.length; ++i) {
+                            if (exportScopeDialog.options[i].selected)
+                                selected.push(exportScopeDialog.options[i].id)
+                        }
+                        page.exportCategories = selected
+                        exportScopeDialog.close()
+                    }
+                }
+            }
         }
     }
 
@@ -173,30 +491,60 @@ Item {
         title: qsTr("选择数据库备份")
         fileMode: FileDialog.OpenFile
         nameFilters: [qsTr("SQLite 数据库 (*.db)")]
-        onAccepted: {
-            const info = AgentVM.previewDatabaseBackup(selectedFile.toString())
-            if (info.error) {
-                page.statusIsError = true
-                page.statusMessage = qsTr("无法读取该备份文件：%1").arg(info.error)
-                return
+        onAccepted: page.previewBackup(selectedFile.toString(), true)
+    }
+
+    // docs/31 O3：删除二次确认。路径校验在后端（只允许备份目录内的文件），
+    // 这里只负责让用户再点一次。
+    Dialog {
+        id: confirmDeleteDialog
+        parent: Overlay.overlay
+        modal: true
+        anchors.centerIn: parent
+        width: 420
+        padding: Theme.spaceXl
+        background: DialogBackground {}
+
+        contentItem: ColumnLayout {
+            spacing: Theme.spaceMd
+
+            Text {
+                text: qsTr("删除这份备份？")
+                color: Theme.textPrimary
+                font.pixelSize: Theme.fontSizeH2
+                font.bold: true
+                font.family: Theme.fontSans
             }
-            page.pendingRestorePath = selectedFile.toString()
-            page.pendingRestoreInfo = info
-            page.statusIsError = !info.integrityOk
-            page.statusMessage = qsTr("会话 %1 个，消息 %2 条，知识库文档 %3 份，最新消息时间 %4%5")
-                .arg(info.sessions)
-                .arg(info.messages)
-                .arg(info.knowledgeDocs)
-                .arg(info.newestTimestamp > 0
-                     ? new Date(info.newestTimestamp).toLocaleString()
-                     : qsTr("（无消息）"))
-                .arg(info.integrityOk
-                     ? ""
-                     : qsTr("；警告：完整性检查未通过，可能已损坏"))
-            // docs/24 R4: a healthy snapshot goes straight to the restore
-            // confirmation; a broken one stays preview-only.
-            if (info.integrityOk)
-                confirmRestoreDialog.open()
+            Text {
+                Layout.fillWidth: true
+                text: qsTr("备份文件将从备份目录中永久删除，无法撤销。")
+                color: Theme.textSecondary
+                font.pixelSize: Theme.fontSizeCaption
+                font.family: Theme.fontSans
+                wrapMode: Text.Wrap
+            }
+            RowLayout {
+                Layout.fillWidth: true
+                spacing: Theme.spaceSm
+                Item { Layout.fillWidth: true }
+                AppButton {
+                    text: qsTr("取消")
+                    onClicked: confirmDeleteDialog.close()
+                }
+                AppButton {
+                    text: qsTr("删除")
+                    highlighted: true
+                    onClicked: {
+                        confirmDeleteDialog.close()
+                        const err = AgentVM.deleteDatabaseBackup(page.pendingDeletePath)
+                        page.pendingDeletePath = ""
+                        page.statusIsError = err.length > 0
+                        page.statusMessage = err.length > 0
+                            ? err : qsTr("备份已删除。")
+                        page.refreshBackups()
+                    }
+                }
+            }
         }
     }
 
@@ -257,11 +605,12 @@ Item {
 
     Dialog {
         id: confirmImportDialog
+        objectName: "backup/importConfirmDialog"
         parent: Overlay.overlay
         modal: true
         anchors.centerIn: parent
-        width: 440
-        height: 390
+        width: 500
+        height: 560
         padding: Theme.spaceXl
         background: DialogBackground {}
 
@@ -295,6 +644,94 @@ Item {
                         wrapMode: Text.Wrap
                         Layout.fillWidth: true
                     }
+                    // docs/31 O4：逐键差异。只列会变化或新增的键，按分类
+                    // 分组的标题由 changes[i-1] 与当前项比较得到；完整列表
+                    // 最多 200 条，超出部分只报数量。
+                    Text {
+                        Layout.fillWidth: true
+                        text: (page.importPreview.changesTotal || 0) > 0
+                            ? qsTr("将被改变的设置（%1 项）：").arg(
+                                  page.importPreview.changesTotal)
+                            : qsTr("备份中的设置与当前值完全一致，恢复不会改变任何值。")
+                        color: Theme.textPrimary
+                        font.pixelSize: Theme.fontSizeBody
+                        font.family: Theme.fontSans
+                        wrapMode: Text.Wrap
+                    }
+
+                    Repeater {
+                        objectName: "backup/importChanges"
+                        model: page.importPreview.changes || []
+
+                        delegate: ColumnLayout {
+                            required property var modelData
+                            required property int index
+                            objectName: "backup/importChangeRow"
+                            Layout.fillWidth: true
+                            spacing: 2
+
+                            Text {
+                                Layout.fillWidth: true
+                                visible: index === 0
+                                    || (page.importPreview.changes[index - 1]
+                                            .categoryName !== modelData.categoryName)
+                                text: modelData.categoryName
+                                color: Theme.textSecondary
+                                font.pixelSize: Theme.fontSizeMicro
+                                font.family: Theme.fontSans
+                                font.bold: true
+                            }
+
+                            RowLayout {
+                                Layout.fillWidth: true
+                                spacing: Theme.spaceSm
+
+                                Text {
+                                    Layout.fillWidth: true
+                                    Layout.minimumWidth: 0
+                                    text: modelData.title
+                                    color: Theme.textPrimary
+                                    font.pixelSize: Theme.fontSizeCaption
+                                    font.family: Theme.fontSans
+                                    elide: Text.ElideRight
+                                }
+                                Text {
+                                    Layout.maximumWidth: 120
+                                    text: modelData.currentDisplay
+                                    color: Theme.textSecondary
+                                    font.pixelSize: Theme.fontSizeCaption
+                                    font.family: Theme.fontSans
+                                    elide: Text.ElideRight
+                                }
+                                Text {
+                                    text: "→"
+                                    color: Theme.textSecondary
+                                    font.pixelSize: Theme.fontSizeCaption
+                                    font.family: Theme.fontSans
+                                }
+                                Text {
+                                    Layout.maximumWidth: 120
+                                    text: modelData.importedDisplay
+                                    color: Theme.brandPrimary
+                                    font.pixelSize: Theme.fontSizeCaption
+                                    font.family: Theme.fontSans
+                                    elide: Text.ElideRight
+                                }
+                            }
+                        }
+                    }
+
+                    Text {
+                        Layout.fillWidth: true
+                        visible: (page.importPreview.changesTruncated || 0) > 0
+                        text: qsTr("另有 %1 项变更未列出。").arg(
+                            page.importPreview.changesTruncated)
+                        color: Theme.textSecondary
+                        font.pixelSize: Theme.fontSizeCaption
+                        font.family: Theme.fontSans
+                        wrapMode: Text.Wrap
+                    }
+
                     Text {
                         visible: (page.importPreview.skippedSecrets || []).length > 0
                         text: qsTr("备份不含以下密钥：%1").arg(

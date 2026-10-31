@@ -3,6 +3,7 @@
 #include <QJsonObject>
 #include <QObject>
 #include <QQmlEngine>
+#include <QStringList>
 #include <QVariantMap>
 
 namespace NexusAI {
@@ -23,7 +24,16 @@ public:
     QString lastError() const { return m_lastError; }
     bool restartRequired() const { return m_restartRequired; }
 
-    Q_INVOKABLE bool exportSettings(const QString& path);
+    // categories 为空 = 全量导出；否则只导出这些分类的设置键，
+    // model 分类额外带 profiles、mcp 分类额外带 mcpServers。
+    Q_INVOKABLE bool exportSettings(const QString& path,
+                                    const QStringList& categories = {});
+    // 导出范围选择器用：实际含可移植键的分类 + model / mcp（按导航顺序）。
+    Q_INVOKABLE QStringList exportableCategories() const;
+    // 预览额外返回逐键差异 changes：
+    //   [{key, title, category, categoryName, currentDisplay, importedDisplay}]
+    // 只列会被改变（换值或新增）的键，最多 200 条，changesTotal 是完整
+    // 数量，changesTruncated = changesTotal - changes.size()。
     Q_INVOKABLE QVariantMap previewImport(const QString& path);
     Q_INVOKABLE bool importSettings(const QString& path);
     // 诊断包（日志与诊断页）：在 directory 下新建 nexus-diagnostics-…/
@@ -39,7 +49,7 @@ signals:
 private:
     // 构建可移植、脱敏的设置备份根对象（导出设置与诊断包共用同一套
     // 过滤规则）；失败时返回空对象并已设置 lastError。
-    QJsonObject buildExportPayload();
+    QJsonObject buildExportPayload(const QStringList& categories = {});
     void setError(const QString& error);
     QVariantMap parseImport(const QString& path, QVariantMap* settings,
                             QVariantList* profiles, QVariantList* servers);

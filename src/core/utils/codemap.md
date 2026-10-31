@@ -12,15 +12,24 @@
 
 ## 设计
 
-**设置三层结构，职责不重叠。** `SettingsDefinition.h` 只放结构体与枚举（`PreferenceType`/`PreferenceConstraint`/`PreferenceMeta`/`CategoryMeta`/`SettingValueType`/`SettingsKeyDef`），无逻辑、无 Qt 依赖除 QVariant。`SettingsSchema` 是"权威账本"：`categoryGroups()` 4 个导航分组（模型与对话 / 外观与常规 / 知识与内容 / 数据与诊断），`categories()` 16 个分类（model…backup，带全局 order、`groupId` 与 `QT_TRANSLATE_NOOP` 显示名）、`preferences()` 15 条 UI 偏好（含 `settings.collapsedGroups`：设置导航分组折叠状态）、`registeredKeys()` = 54 个静态键 + 15 个 `prefs/v1/<key>` 派生键（共 69），全部函数内 `static` 惰性构造，无锁只读。`kSchemaVersion = 4`（v2 模型列表用户自管，v3/v4 归一 contextTokens 旧默认值）。
+**设置三层结构，职责不重叠。** `SettingsDefinition.h` 只放结构体与枚举（`PreferenceType`/`PreferenceConstraint`/`PreferenceMeta`/`CategoryMeta`/`SettingValueType`/`SettingsKeyDef`），无逻辑、无 Qt 依赖除 QVariant。`SettingsSchema` 是"权威账本"：`categoryGroups()` 4 个导航分组（模型与对话 / 外观与常规 / 知识与内容 / 数据与诊断），`categories()` 17 个分类（model…backup + `shortcuts`，带全局 order、`groupId` 与 `QT_TRANSLATE_NOOP` 显示名）、`preferences()` 19 条 UI 偏好（含 `settings.collapsedGroups`：设置导航分组折叠状态；`ui.shortcuts`：快捷键覆盖项 JSON；`general.onboarded`：首次启动向导标记；`ui.settingsDialogWidth/Height`：设置中心尺寸记忆——三者均无分类=隐藏）、`registeredKeys()` = 56 个静态键 + 19 个 `prefs/v1/<key>` 派生键（共 75），全部函数内 `static` 惰性构造，无锁只读。`kSchemaVersion = 4`（v2 模型列表用户自管，v3/v4 归一 contextTokens 旧默认值）。
 
-**键命名空间**：顶层业务键（`modelProfiles`、`activeProfileId`、`contextTokens`、`agent/*`、`security/*`、`embedding/*`、`logging/*`、`webSearch/*`、`network/*`、`memory/*`、`ui/*`、`tools/disabled`、`projects/activeId`、配额与 `schemaVersion`）用扁平 `section/name`；UI 偏好统一 `prefs/v1/` 前缀。`theme/dark` 保留为 `legacy = true`，`ui.themeMode` 用 `legacyKeys = {"theme/dark"}` 声明迁移来源。
+**键命名空间**：顶层业务键（`modelProfiles`、`activeProfileId`、`contextTokens`、`agent/*`、`security/*`、`embedding/*`、`logging/*`、`webSearch/*`、`network/*`、`memory/*`、`ui/*`、`tools/disabled`、`projects/activeId`、配额与 `usage/alertPercent`、`schemaVersion`）用扁平 `section/name`；UI 偏好统一 `prefs/v1/` 前缀。`theme/dark` 保留为 `legacy = true`，`ui.themeMode` 用 `legacyKeys = {"theme/dark"}` 声明迁移来源。
 
 **持久化**：`SettingsRepository` 全部静态方法，每次调用新建 `QSettings(QSettings::defaultFormat(), UserScope, "NexusAI", "NexusAI")`（Windows 即注册表 `HKCU\Software\NexusAI\NexusAI`）。写入前对**已登记**键调 `SettingsSchema::isValidValue`（类型、有限数、整数性、int 范围、枚举白名单、required/maxLength），未登记键直接放行。批量写/删会先快照旧值，`sync()` 失败时做 best-effort 回滚（注释明示 QSettings 非原子）。
+
+**备份调度**（docs/31 S4.2 N6）：`BackupSchedule.h` 是 header-only 纯函数命名空间——五档间隔 `{0,1,6,24,168}` 小时；`normalizeBackupIntervalHours()` 取**不超过**输入值的最大档（负数/0 → 0，即关闭），`backupIntervalMs()` 输出毫秒（0 = 调用方停表）。`SettingsService` 在加载、setter、`setValueForSetting` 三处统一归一后再落盘，所以导入的旧配置/手工改注册表不会让 UI 出现选不中的档位；`main.cpp` 的启动备份与定时备份共用同一个 worker，失败静默期 ≥ 一个间隔且受 `notice.enabled` 门控。
 
 **默认值读取三段式**收敛为 `SettingsSchema::intSetting/boolSetting`（存储值 → schema 默认 → `clampInt`），配额键曾双源（AIAgent::checkQuota 与 SettingsService::load），现统一入口。
 
 **加密字段**只打标记，不在本层实现：`webSearch/apiKey`、`embedding/apiKey`、`network/proxyAuth` 三个键 `encrypted = true`。实际 DPAPI 在 `viewmodels/SettingsService.cpp`：`dpapi:v1:` 前缀 + `CryptProtectData(熵描述 "NexusAI.apiKey")` + Base64；解密失败视为未设置；加密失败**拒绝回退明文**，直接丢弃。`proxyAuth` 是 username+password 的整块 JSON，整体加密。非 Windows 编译单元里 protect/unprotect 退化为恒等（明文）。
+
+**LogTailReader**（docs/31 O6）：`readLogTail(path, options)` 只 `seek` 到文件尾部窗口读取
+（`maxBytes` 夹紧 64 KB–8 MB），超大日志不整读；从窗口中间起读时丢弃半行。级别沿用
+`[ts] [LEVEL]` 行头解析为 `severityRank`（0–4），解析不出级别的续行（异常堆栈）**继承上一行**，
+避免级别过滤误杀上下文。关键字大小写不敏感子串；超长行截断到 2,000 字符加 `…`；保留最近
+`maxLines`（1–2,000）条，`matched` 是窗口内匹配总数，`truncated` 表示窗口前还有未读内容。
+`path` 为空时回落到 `Logger::logFilePath()` → 日志目录里最新的 `nexus-*.log`。
 
 **Logger**：`install()` 先读 `logging/level`、`logging/directory`、`logging/maxFileSizeMb`、`logging/retentionFiles`（均带 `clampInt`），`NEXUSAI_LOG_LEVEL` 环境变量覆盖级别，然后 `qInstallMessageHandler`。单文件 `nexus-YYYYMMDD.log`，超限滚动为 `nexus-YYYYMMDD-NNNN.log`；`pruneOldLogs` 按 mtime 保留 `retentionFiles` 个并强制保留当前活动文件。行格式 `[yyyy-MM-dd hh:mm:ss.zzz] [LEVEL] [category] message`，仅 WARN/CRIT 追加 ` (file:line)`；`levelName` 输出 `DEBUG/INFO/WARN/CRIT/FATAL`。级别比较必须走 `severityRank()`（Qt6 中 `QtInfoMsg=4 > QtFatalMsg=3`，声明序非严重度序）。全部状态（QFile、路径、阈值、环形缓冲、seq）由单个 `QMutex g_mutex` 保护，handler 在锁内做文件追加 + `fflush` + stderr 镜像，Fatal 后 `abort()`。环形缓冲 `RingCapacity = 5000`，`entriesSince(seq)` 拉取式快照；`backfillFromFile()` 从最新日志尾部 256 KB 反向正则解析，标记 `historical = true`、默认上限 2500、按 message 文本去重后重新分配 seq。
 
@@ -59,9 +68,10 @@
 | 文件 | 内容 |
 | --- | --- |
 | `SettingsDefinition.h` | 设置元数据 POD（类型/约束/键定义/分类） |
-| `SettingsSchema.{h,cpp}` | 键账本 69 项、默认值、`isValidValue`/`clampInt`、`intSetting`/`boolSetting`、`kSchemaVersion=4` |
+| `SettingsSchema.{h,cpp}` | 键账本 76 项、默认值、`isValidValue`/`clampInt`、`intSetting`/`boolSetting`、`kSchemaVersion=4` |
 | `SettingsRepository.{h,cpp}` | QSettings 持久化边界、批量读写、失败回滚 |
 | `Logger.{h,cpp}` | 消息处理器、日滚动/容量滚动、保留策略、5000 条环形缓冲、历史回填 |
+| `LogTailReader.{h,cpp}` | 日志文件尾部只读窗口（默认 1 MB）：级别阈值（续行继承）/ 关键字 / 行数上限 / 超长行截断；`newestLogFile()` |
 | `Activity.{h,cpp}` | 7 个日志分类、`report`/`usage`、`UsageSink` 注入 |
 | `TokenEstimator.h` | 启发式估算、`compressToFit`、`splitContextTokens`（header-only） |
 | `PricingCalculator.{h,cpp}` | 分/1M token 整数计价、`model_pricing` 进程级缓存 |

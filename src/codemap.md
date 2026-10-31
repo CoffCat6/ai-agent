@@ -25,7 +25,7 @@
 
 - `core/`：`agent/`（`AIAgent`、`EpisodicService`、`PermissionMode`、`LLMTypes`）、`memory/`（`IMemory`/`SqliteMemory`）、`tools/`（`ITool`/`ToolRegistry`/`Sandbox`/web 工具）、`rag/`、`git/`、`mcp/`、`utils/`（日志、设置、Token、定价、代理、附件/项目索引）。
 - `infrastructure/llm/`：`IAIService` + `LLMServiceBase` + `LlmProtocolRegistry`，协议实现 `OpenAI`/`OpenAIResponses`/`Anthropic`/`Gemini`/`Ollama`；`infrastructure/embed/`：`OllamaEmbedding`、`OpenAICompatibleEmbedding`、`EmbedShutdown`（进程级中断标志）。
-- `viewmodels/`：会话编排 `AgentViewModel`/`ChatSessionController`/`TraceModel`；设置与偏好 `SettingsService`/`SettingsBackup`/`Preference*`/`ChangeBus`/`EditBuffer`；主题与本地化 `ThemeProvider`/`ThemeManager`/`I18nManager`/`LocaleProbe`/`FontProbe`；能力面板 `GitViewModel`/`McpManager`/`ConnectionTester`/`CodeHighlighter`/`CitationParser`/`PdfTextExtractor`/`CommitMessageDrafter`。
+- `viewmodels/`：会话编排 `AgentViewModel`/`ChatSessionController`/`TraceModel`；设置与偏好 `SettingsService`/`SettingsBackup`/`PresetPackTransfer`/`Preference*`/`ChangeBus`/`EditBuffer`；主题与本地化 `ThemeProvider`/`ThemeManager`/`I18nManager`/`LocaleProbe`/`FontProbe`；能力面板 `GitViewModel`/`McpManager`/`ConnectionTester`/`CodeHighlighter`/`CitationParser`/`PdfTextExtractor`/`CommitMessageDrafter`。
 - `ui/`：壳层与组件，详见 [ui/codemap.md](ui/codemap.md)。
 
 ## 数据与控制流
@@ -48,7 +48,7 @@
 16. `AgentViewModel` 注入：RAG、memory、知识内容提供器；`setModelConfigurator` 按 `apiProtocol` 取服务、空 model/baseUrl 则置空，并同步 EpisodicService 的摘要服务、上下文上限与 `setModelLocal`；`setAgentFactory` 为每个 tab 建 agent/own memory/摘要服务/独立服务集，并在 `destroyed` 时清理三张 `QHash`。
 17. `ConnectionTester` 挂 app；RAG 持久化桥：`documentPersisted → upsertKnowledgeDoc + replaceKnowledgeChunks`、`documentRemoved`、`knowledgeCleared` 均回到 GUI 线程写 SQLite。
 18. `McpManager::loadAndConnectAll()` 读取 `mcp_servers.json` 连接启用的 MCP server 并桥接工具。
-19. 用量/审计：`Activity::setUsageSink` 用 `QMetaObject::invokeMethod(&app, ..., QueuedConnection)` 落库；启动即 `runPrunes()`，并起 6 小时 `QTimer` 周期清理 usage/audit/token/checkpoint 与 30 天软删会话；`backupOnStartup` 时池线程 `VACUUM INTO` 自动备份并按 `backupKeepCount` 轮转。
+19. 用量/审计：`Activity::setUsageSink` 用 `QMetaObject::invokeMethod(&app, ..., QueuedConnection)` 落库；启动即 `runPrunes()`，并起 6 小时 `QTimer` 周期清理 usage/audit/token/checkpoint 与 30 天软删会话；**托盘创建之后**装配数据库快照自动备份（docs/31 S4.2）——`backupOnStartup` 启动一次、`memory/backupIntervalHours`（0/1/6/24/168，`BackupSchedule.h` 归一）驱动 `Qt::VeryCoarseTimer` 定时触发，两者共用 `runBackup`（`backupInFlight` 防重入，池线程 `VACUUM INTO` + `rotateAutoBackups` 按 `backupKeepCount` 轮转）；失败回主线程写活动记录并弹托盘警告（受 `notice.enabled` 门控，静默期 ≥ 一个间隔）。
 20. `startKnowledgeRestore(memory, rag)` 先在 GUI 线程快照文档与 chunks，再池线程恢复：chunks 可用则零请求重建，否则重嵌入；`databaseRestored` 后重跑同一函数。
 21. `applySettings()`（并由十余个 `SettingsService` 变更信号重入）：代理、模型 profiles、步数/超时/local-only、`Sandbox` 读策略与项目写/用户黑名单、http_fetch 私网放行、web search key/backend、情节记忆开关。另有 `applySystemPrompt()`、`applyPermissionMode()`（默认权限模式注入 VM）与 embedding 五个变更信号。
 22. 两个 embedding 后端的 `embedProgress` 都接到 `AgentVM::setEmbedProgress`；`agentVM->setAgent(agent)` 完成主 agent 绑定。
@@ -56,7 +56,7 @@
 24. `QQmlApplicationEngine` 注入 `trayAvailable`（`QSystemTrayIcon::isSystemTrayAvailable()`），`objectCreationFailed → exit(-1)`，加载 `qrc:/qt/qml/NexusAI/src/ui/main.qml`；根对象为空或非 `QQuickWindow` 时返回 -1。
 25. Windows：`allowDragDropFromLowerIntegrity(mainWindow)` 延后一个事件循环，用 `ChangeWindowMessageFilterEx` 放行 `WM_DROPFILES`/`WM_COPYDATA`/`0x0049`（UIPI）。
 26. 图标回退链 `:/icons/nexus-64.png → :/icons/nexus-256.png → QApplication::windowIcon()`；创建 `QSystemTrayIcon` + `QMenu`（显示/隐藏主窗、新建会话、退出）。
-27. 托盘交互：显示/隐藏按"可见且激活"切换；新建会话唤起窗口并 `agentVM->newChat()`；退出先隐藏托盘、删菜单、`stopAllTabs()`，再 `QCoreApplication::quit()`；双击托盘切显隐。
+27. 托盘交互：菜单固定三项（显示/隐藏主窗、新建会话、退出），**一次建好后不再增删动作**——Quick 应用里 `doUseNativeMenus()` 为 true，`setContextMenu()` 会给 QMenu 建 Win32 HMENU 镜像，此后再 `addAction()`/`clear()` 会触发 qwindows 的 `menuItemForTag()` 无限递归栈溢出（docs/31 S4.4 闪退根因；原「模型配置」子菜单已按用户要求取消，配置切换统一走设置页）。显示/隐藏按"可见且激活"切换；新建会话唤起窗口并 `agentVM->newChat()`；退出先隐藏托盘、解除菜单、`stopAllTabs()`，再 `QCoreApplication::quit()`；双击托盘切显隐。
 28. `taskFinished`：受 `notice.enabled` 控制，窗口可见且激活时不打扰，托盘可用/close-to-tray 时 `showMessage` 6 秒。
 29. `I18nManager::localeChanged → engine.retranslate`，强制 QML 重新求值 `qsTr`；最后 `app.exec()`。
 

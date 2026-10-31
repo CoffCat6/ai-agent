@@ -2586,10 +2586,30 @@ bool AIAgent::checkQuota() {
     const qint64 monthlyTokenQuota = SettingsSchema::intSetting(QStringLiteral("monthlyTokenQuota"));
     const qint64 monthlyCostQuota = SettingsSchema::intSetting(QStringLiteral("monthlyCostQuotaCents"));
     const bool strict = SettingsSchema::boolSetting(QStringLiteral("strictQuotaMode"));
+    // docs/31 S4.1 N9：接近上限提醒（默认 80%，0 = 关闭）。只在"已达阈值
+    // 但未超限"时生效——超限本身由 quotaWarning/strict 处理，避免同一轮
+    // 既报"接近"又报"超限"。同一天同一类型只提醒一次。
+    const int alertPercent = SettingsSchema::intSetting(QStringLiteral("usage/alertPercent"));
+    const QDate today = QDate::currentDate();
+    if (m_quotaAlertDate != today) {
+        m_quotaAlertDate = today;
+        m_quotaAlertsToday.clear();
+    }
+    const auto checkAlert = [&](const QString& type, qint64 usedVal, qint64 quotaVal) {
+        if (alertPercent <= 0 || quotaVal <= 0 || usedVal >= quotaVal) return;
+        // 用乘法而不是 used/quota 浮点比较：整数边界（正好 80%）必须命中。
+        if (usedVal * 100 < quotaVal * alertPercent) return;
+        if (m_quotaAlertsToday.contains(type)) return;
+        m_quotaAlertsToday.insert(type);
+        emit quotaAlert(type, usedVal, quotaVal);
+    };
 
     bool ok = true;
     const auto check = [&](const QString& type, qint64 usedVal, qint64 quotaVal) {
-        if (quotaVal <= 0 || usedVal < quotaVal) return;
+        if (quotaVal <= 0 || usedVal < quotaVal) {
+            checkAlert(type, usedVal, quotaVal);
+            return;
+        }
         emit quotaWarning(type, usedVal, quotaVal);
         if (strict) ok = false;
     };

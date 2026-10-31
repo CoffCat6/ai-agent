@@ -26,6 +26,12 @@ Item {
 
     implicitHeight: layout.implicitHeight
 
+    // docs/31 O1: 与 SettingRow 同一套"已修改/复原"口径。
+    readonly property var valueState: {
+        SettingsCatalog.revision
+        return SettingsCatalog.describe(prefKey)
+    }
+
     Accessible.name: control.displayName
 
     function stage(value) {
@@ -43,13 +49,49 @@ Item {
         anchors.fill: parent
         spacing: Theme.spaceXs
 
-        Text {
-            text: control.displayName
-            color: Theme.textSecondary
-            font.pixelSize: Theme.fontSizeCaption
-            font.family: Theme.fontSans
-            elide: Text.ElideRight
+        RowLayout {
             Layout.fillWidth: true
+            spacing: Theme.spaceXs
+
+            Text {
+                text: control.displayName
+                color: Theme.textSecondary
+                font.pixelSize: Theme.fontSizeCaption
+                font.family: Theme.fontSans
+                elide: Text.ElideRight
+                Layout.fillWidth: true
+            }
+
+            // 恒定 20px：值一改不会让下面的控件左右跳。
+            Item {
+                Layout.preferredWidth: 20
+                Layout.preferredHeight: 20
+
+                IconButton {
+                    anchors.fill: parent
+                    visible: control.valueState.modified === true
+                             && control.valueState.revertable === true
+                    icon: "undo"
+                    iconSize: 12
+                    tooltip: qsTr("恢复默认值")
+                    restIconColor: Theme.brandPrimary
+                    hoverIconColor: Theme.brandPrimary
+                    hoverBgColor: Theme.surfaceHover
+                    Accessible.name: qsTr("将「%1」恢复为默认值").arg(control.displayName)
+                    onClicked: SettingsCatalog.resetValue(control.prefKey)
+                }
+
+                Rectangle {
+                    anchors.centerIn: parent
+                    visible: control.valueState.modified === true
+                             && control.valueState.revertable !== true
+                    width: 6
+                    height: 6
+                    radius: width / 2
+                    color: Theme.brandPrimary
+                    Accessible.ignored: true
+                }
+            }
         }
 
         // docs/25 D3: 内部控件各自补读屏命名——根 Item 的 Accessible.name
@@ -127,7 +169,17 @@ Item {
                 border.width: stringField.activeFocus ? 2 : 1
                 border.color: stringField.activeFocus ? Theme.brandPrimary : Theme.borderSubtle
             }
+            // docs/31 S4.5 收尾反馈：与 SettingsField 同语义——打字停顿 600ms
+            // 即 stage（EditBuffer 写穿），不必回车/失焦。EditBuffer 自带
+            // 校验：中间态非法时只挂在 staged 显示字段级错误，不落盘。
+            onTextEdited: stringDebounce.restart()
             onEditingFinished: control.stage(text)
+
+            Timer {
+                id: stringDebounce
+                interval: 600
+                onTriggered: control.stage(stringField.text)
+            }
         }
 
         Text {
