@@ -6,10 +6,12 @@ import QtQuick.Controls
 import NexusAI
 import NexusAI.ViewModels
 
-// 模型配置页：profile 列表 + 当前 profile 的全部字段。
+// 模型配置页：档案条 + 当前 profile 的全部字段。
 //
-// 布局是「分组卡片 + 常驻底栏」：卡片按语义分五组，启用/删除固定在底部，不用滚到
-// 长列末尾才找到主操作。本页走 SettingsService 即时保存，不受对话框底栏影响。
+// 布局是「页头 / 档案条 / 分组卡片」：档案条常驻在滚动区外，芯片切换与
+// 启用/复制/删除随时可达，不用滚到长列末尾才找到主操作；不再设状态底栏，
+// 保存结果由设置中心的变更回执承载。本页走 SettingsService 即时保存，
+// 不受对话框底栏影响。
 Item {
     id: page
     clip: true
@@ -27,7 +29,6 @@ Item {
     property bool testing: false
     property string testResult: ""
     property bool testOk: false
-    property string savedHint: ""
 
     // 「从端点拉取模型」的独立状态机：与「测试连接」互不影响（列举失败
     // 不代表聊天不可用，反之亦然）。
@@ -80,19 +81,6 @@ Item {
         { v: "medium",   label: qsTr("中") },
         { v: "high",     label: qsTr("高") }
     ]
-    readonly property var fieldLabels: ({
-        displayName: qsTr("显示名称"),
-        kind: qsTr("配置来源"),
-        apiProtocol: qsTr("接口协议"),
-        baseUrl: qsTr("服务地址"),
-        apiKey: qsTr("API Key"),
-        model: qsTr("当前模型"),
-        temperature: qsTr("temperature"),
-        maxOutputTokens: qsTr("最大输出"),
-        numCtx: qsTr("num_ctx"),
-        reasoningEffort: qsTr("思考强度"),
-        contextLength: qsTr("上下文预算")
-    })
 
     readonly property string editingKind: page.editing !== null
         ? (page.editing.kind || page.editing.provider) : ""
@@ -213,9 +201,6 @@ Item {
         // SettingsService.updateProfile 负责，这里不再补第二次写入：两次写会多一
         // 次 profilesChanged，编辑器会把刚输入的字段再同步一遍。
         Settings.updateProfile(page.editing.id, { [key]: value })
-        const label = page.fieldLabels[key]
-        page.savedHint = label === undefined ? key : label
-        savedTimer.restart()
     }
 
     onEditingChanged: page.syncFields()
@@ -255,15 +240,8 @@ Item {
         }
     }
 
-    Timer {
-        id: savedTimer
-        interval: 1800
-        onTriggered: page.savedHint = ""
-    }
-
-
-    // 页头 / 滚动区 / 底栏三块用锚定定位，而不是塞进一个 ColumnLayout：ScrollView
-    // 进了布局就会用隐式尺寸参与分配，而它的隐式宽度又由 contentWidth ←
+    // 页头 / 档案条 / 滚动区三块用锚定定位，而不是塞进一个 ColumnLayout：
+    // ScrollView 进了布局就会用隐式尺寸参与分配，而它的隐式宽度又由 contentWidth ←
     // availableWidth ← width 反馈而来，每一轮 pass 都把自己缩得更窄（实测 96 → 68）。
     SettingsPageHeader {
         id: pageHeader
@@ -277,12 +255,286 @@ Item {
         description: qsTr("点芯片切换要编辑的配置，拖动芯片可调整顺序；改动即时写入配置，不需要另点保存。")
     }
 
-    ScrollView {
-        id: scroller
+    // ── 档案条：切换 / 新建 / 拖拽排序配置 + 主操作 ─────
+    // profile 芯片从「配置来源」卡里提出来常驻在此：它们是本页的主导航
+    // （切换编辑对象），与任何一张卡的字段都不是一件事；放在滚动区外，
+    // 内容滚多远都还能换配置。拖拽排序的 DropArea 也随之离开 ScrollView，
+    // 不再与滚动手势抢事件。
+    // 启用/复制/删除同样上移到条右端：它们都作用于当前编辑的配置，跟
+    // 芯片同属「管这批配置」的语义层，原来沉在底栏要视线上下两头跑。
+    Rectangle {
+        id: profileBar
         anchors.top: pageHeader.bottom
         anchors.left: page.left
         anchors.right: page.right
-        anchors.bottom: footer.top
+        height: profileBarRow.implicitHeight + Theme.spaceMd * 2
+        color: "transparent"
+
+        RowLayout {
+            id: profileBarRow
+            anchors.verticalCenter: parent.verticalCenter
+            anchors.left: parent.left
+            anchors.right: parent.right
+            anchors.leftMargin: Theme.spaceXl
+            anchors.rightMargin: Theme.spaceXl
+            spacing: Theme.spaceMd
+
+            Flow {
+                id: profileBarFlow
+                // 拖动失败（没落在芯片上）时芯片会停在拖走的位置；改一下
+                // 间距触发 Flow 重新排布。用独立的 tick 而不是直接写
+                // spacing，避免破坏 Theme 绑定，也避免累积漂移。
+                property int reflowTick: 0
+                Layout.fillWidth: true
+                spacing: Theme.spaceSm + profileBarFlow.reflowTick * 0.01
+
+                Repeater {
+                    model: Settings.profiles
+
+                    delegate: Rectangle {
+                        id: profileChip
+                        required property var modelData
+                        required property int index
+                        readonly property bool isActive: modelData.id === Settings.activeProfileId
+                        readonly property bool isEditing: modelData.id === page.editingId
+
+                        width: chipRow.implicitWidth + 24
+                        height: 30
+                        radius: 15
+                        color: profileChip.isActive
+                            ? Qt.rgba(Theme.brandPrimary.r, Theme.brandPrimary.g,
+                                      Theme.brandPrimary.b, 0.15)
+                            : Theme.bgPrimary
+                        border.width: profileChip.isEditing ? 2 : 1
+                        border.color: profileChip.isEditing
+                            ? Theme.brandPrimary : Theme.borderSubtle
+                        z: chipDrag.drag.active ? 2 : 0
+                        opacity: chipDrag.drag.active ? 0.75 : 1
+
+                        Accessible.role: Accessible.Button
+                        Accessible.name: chipText.text
+
+                        // docs/31 S4.4（4a）：拖拽芯片调整顺序，落盘由
+                        // moveProfile 负责；点击仍只是切换编辑对象
+                        // （拖动时不触发）。
+                        Drag.active: chipDrag.drag.active
+                        Drag.source: profileChip
+                        Drag.hotSpot: Qt.point(profileChip.width / 2,
+                                               profileChip.height / 2)
+
+                        Row {
+                            id: chipRow
+                            anchors.centerIn: parent
+                            spacing: Theme.spaceXs
+
+                            Rectangle {
+                                visible: profileChip.isActive
+                                width: 6; height: 6; radius: 3
+                                anchors.verticalCenter: parent.verticalCenter
+                                color: Theme.brandPrimary
+                            }
+
+                            Text {
+                                id: chipText
+                                // 同一厂商的两条协议光看厂商名分不出来，带上协议标签。
+                                text: {
+                                    const name = profileChip.modelData.displayName
+                                        || profileChip.modelData.provider
+                                    const opts = Settings.endpointOptions(
+                                        profileChip.modelData.provider)
+                                    if (opts.length < 2) return name
+                                    for (let i = 0; i < opts.length; ++i)
+                                        if (opts[i].apiProtocol
+                                                === profileChip.modelData.apiProtocol)
+                                            return name + " · " + opts[i].label
+                                    return name
+                                }
+                                color: profileChip.isActive
+                                    ? Theme.brandPrimary : Theme.textPrimary
+                                font.pixelSize: Theme.fontSizeCaption
+                                font.family: Theme.fontSans
+                                anchors.verticalCenter: parent.verticalCenter
+                            }
+                        }
+
+                        MouseArea {
+                            id: chipDrag
+                            anchors.fill: parent
+                            cursorShape: Qt.PointingHandCursor
+                            drag.target: profileChip
+                            drag.axis: Drag.XAndYAxis
+                            property bool dragMoved: false
+                            onPressed: dragMoved = false
+                            onPositionChanged: {
+                                if (drag.active) dragMoved = true
+                            }
+                            onReleased: {
+                                // 成功落点会重建 delegate；未命中时把拖走的
+                                // 芯片交回 Flow 重新排布。
+                                if (dragMoved)
+                                    profileBarFlow.reflowTick = 1 - profileBarFlow.reflowTick
+                                dragMoved = false
+                            }
+                            onClicked: page.editingId = profileChip.modelData.id
+                        }
+
+                        DropArea {
+                            anchors.fill: parent
+                            // 拖动中的芯片跟着光标走，它自己的 DropArea 会
+                            // 一直盖在目标上；禁用后落点才会交给下面的芯片。
+                            enabled: !profileChip.Drag.active
+                            onDropped: (drop) => {
+                                const source = drop.source
+                                if (source === null || source === undefined
+                                        || source.index === undefined
+                                        || source.index === profileChip.index)
+                                    return
+                                // 重排会重建 Repeater delegate；先取值再延后
+                                // 一拍，不在 DropArea 的事件栈里销毁当前芯片。
+                                const fromIndex = source.index
+                                const toIndex = profileChip.index
+                                Qt.callLater(() => Settings.moveProfile(
+                                                   fromIndex, toIndex))
+                            }
+                        }
+                    }
+                }
+
+                Rectangle {
+                    width: addChipText.implicitWidth + 24
+                    height: 30
+                    radius: 15
+                    color: addChipMA.containsMouse ? Theme.surfaceHover : "transparent"
+                    border.width: 1
+                    border.color: addChipMA.containsMouse
+                        ? Theme.brandPrimary : Theme.borderSubtle
+
+                    Accessible.role: Accessible.Button
+                    Accessible.name: qsTr("新建模型配置")
+
+                    Text {
+                        id: addChipText
+                        anchors.centerIn: parent
+                        text: qsTr("+ 新建")
+                        color: addChipMA.containsMouse
+                            ? Theme.brandPrimary : Theme.textSecondary
+                        font.pixelSize: Theme.fontSizeCaption
+                        font.family: Theme.fontSans
+                    }
+
+                    MouseArea {
+                        id: addChipMA
+                        anchors.fill: parent
+                        hoverEnabled: true
+                        cursorShape: Qt.PointingHandCursor
+                        onClicked: addDialog.open()
+                    }
+                }
+            }
+
+            // 主操作组：跟随当前编辑的配置；空列表时连同空态一起隐藏。
+            RowLayout {
+                id: barActions
+                visible: page.editing !== null
+                spacing: Theme.spaceSm
+
+                AppButton {
+                    text: page.editing !== null
+                          && page.editing.id === Settings.activeProfileId
+                          ? qsTr("✓ 使用中") : qsTr("启用此配置")
+                    highlighted: enabled
+                    enabled: page.ready && page.editing !== null
+                             && page.editing.id !== Settings.activeProfileId
+                    onClicked: Settings.setActiveProfile(page.editing.id)
+                }
+
+                AppButton {
+                    text: qsTr("复制")
+                    // docs/31 S4.4（4a）：复制除 API Key 外的全部字段；新配置
+                    // 立即选中以便先补密钥，启用关系保持不变。
+                    enabled: page.editing !== null
+                    onClicked: {
+                        if (page.editing === null) return
+                        const source = page.editing
+                        const base = source.displayName || source.provider
+                        const id = Settings.duplicateProfile(
+                            source.id, qsTr("%1 副本").arg(base))
+                        if (id !== "") page.editingId = id
+                    }
+                }
+
+                AppButton {
+                    text: qsTr("删除")
+                    buttonColor: "transparent"
+                    textColor: Theme.statusDanger
+                    border.color: Theme.borderSubtle
+                    enabled: page.editing !== null && Settings.profiles.length > 1
+                    // 破坏性操作二次确认（红线 6）：删除同时清掉该配置的加密
+                    // 密钥且没有撤销窗口，绝不直接执行。
+                    onClicked: deleteDialog.open()
+                }
+            }
+        }
+
+        Rectangle {
+            anchors.bottom: parent.bottom
+            width: parent.width
+            height: 1
+            color: Theme.borderSubtle
+        }
+    }
+
+    // ── 空状态：一条配置都没有时给一条明确的路 ─────────
+    // 原来此时滚动区整个隐藏，只剩底栏一行小字；现在给居中的引导，
+    // 直接复用「选来源 → 新建」的 addDialog 流程。
+    Item {
+        id: emptyState
+        anchors.top: profileBar.bottom
+        anchors.bottom: page.bottom
+        anchors.left: page.left
+        anchors.right: page.right
+        visible: page.editing === null
+
+        ColumnLayout {
+            anchors.centerIn: parent
+            spacing: Theme.spaceMd
+            width: Math.min(360, emptyState.width - Theme.spaceXl * 2)
+
+            Text {
+                Layout.fillWidth: true
+                text: qsTr("还没有模型配置")
+                color: Theme.textPrimary
+                font.pixelSize: Theme.fontSizeH2
+                font.bold: true
+                font.family: Theme.fontSans
+                horizontalAlignment: Text.AlignHCenter
+            }
+
+            Text {
+                Layout.fillWidth: true
+                text: qsTr("新建一条配置，填上服务地址与模型名，聊天区就能开始工作。")
+                color: Theme.textSecondary
+                font.pixelSize: Theme.fontSizeBody
+                font.family: Theme.fontSans
+                wrapMode: Text.WordWrap
+                horizontalAlignment: Text.AlignHCenter
+            }
+
+            AppButton {
+                Layout.alignment: Qt.AlignHCenter
+                text: qsTr("新建第一个配置")
+                highlighted: true
+                onClicked: addDialog.open()
+            }
+        }
+    }
+
+    ScrollView {
+        id: scroller
+        anchors.top: profileBar.bottom
+        anchors.left: page.left
+        anchors.right: page.right
+        anchors.bottom: page.bottom
         clip: true
         visible: page.editing !== null
         leftPadding: Theme.spaceXl
@@ -299,164 +551,13 @@ Item {
             spacing: Theme.spaceMd
 
             // ── 卡片一：配置来源 ─────────────────────────
+            // （profile 芯片已上移到页头下的常驻档案条；本卡只剩
+            // 「这条配置是谁」的三个字段。）
             SettingCard {
                 objectName: "model.profile"
                 Layout.fillWidth: true
                 title: qsTr("配置来源")
-                subtitle: qsTr("一条配置对应一个可用服务。厂商决定默认地址，接口协议决定报文格式；模型由你自己填。")
-
-                Flow {
-                    id: profileFlow
-                    // 拖动失败（没落在芯片上）时芯片会停在拖走的位置；改一下
-                    // 间距触发 Flow 重新排布。用独立的 tick 而不是直接写
-                    // spacing，避免破坏 Theme 绑定，也避免累积漂移。
-                    property int reflowTick: 0
-                    Layout.fillWidth: true
-                    spacing: Theme.spaceSm + profileFlow.reflowTick * 0.01
-
-                    Repeater {
-                        model: Settings.profiles
-
-                        delegate: Rectangle {
-                            id: profileChip
-                            required property var modelData
-                            required property int index
-                            readonly property bool isActive: modelData.id === Settings.activeProfileId
-                            readonly property bool isEditing: modelData.id === page.editingId
-
-                            width: chipRow.implicitWidth + 24
-                            height: 30
-                            radius: 15
-                            color: profileChip.isActive
-                                ? Qt.rgba(Theme.brandPrimary.r, Theme.brandPrimary.g,
-                                          Theme.brandPrimary.b, 0.15)
-                                : Theme.bgPrimary
-                            border.width: profileChip.isEditing ? 2 : 1
-                            border.color: profileChip.isEditing
-                                ? Theme.brandPrimary : Theme.borderSubtle
-                            z: chipDrag.drag.active ? 2 : 0
-                            opacity: chipDrag.drag.active ? 0.75 : 1
-
-                            Accessible.role: Accessible.Button
-                            Accessible.name: chipText.text
-
-                            // docs/31 S4.4（4a）：拖拽芯片调整顺序，落盘由
-                            // moveProfile 负责；点击仍只是切换编辑对象
-                            // （拖动时不触发）。
-                            Drag.active: chipDrag.drag.active
-                            Drag.source: profileChip
-                            Drag.hotSpot: Qt.point(profileChip.width / 2,
-                                                   profileChip.height / 2)
-
-                            Row {
-                                id: chipRow
-                                anchors.centerIn: parent
-                                spacing: Theme.spaceXs
-
-                                Rectangle {
-                                    visible: profileChip.isActive
-                                    width: 6; height: 6; radius: 3
-                                    anchors.verticalCenter: parent.verticalCenter
-                                    color: Theme.brandPrimary
-                                }
-
-                                Text {
-                                    id: chipText
-                                    // 同一厂商的两条协议光看厂商名分不出来，带上协议标签。
-                                    text: {
-                                        const name = profileChip.modelData.displayName
-                                            || profileChip.modelData.provider
-                                        const opts = Settings.endpointOptions(
-                                            profileChip.modelData.provider)
-                                        if (opts.length < 2) return name
-                                        for (let i = 0; i < opts.length; ++i)
-                                            if (opts[i].apiProtocol
-                                                    === profileChip.modelData.apiProtocol)
-                                                return name + " · " + opts[i].label
-                                        return name
-                                    }
-                                    color: profileChip.isActive
-                                        ? Theme.brandPrimary : Theme.textPrimary
-                                    font.pixelSize: Theme.fontSizeCaption
-                                    font.family: Theme.fontSans
-                                    anchors.verticalCenter: parent.verticalCenter
-                                }
-                            }
-
-                            MouseArea {
-                                id: chipDrag
-                                anchors.fill: parent
-                                cursorShape: Qt.PointingHandCursor
-                                drag.target: profileChip
-                                drag.axis: Drag.XAndYAxis
-                                property bool dragMoved: false
-                                onPressed: dragMoved = false
-                                onPositionChanged: {
-                                    if (drag.active) dragMoved = true
-                                }
-                                onReleased: {
-                                    // 成功落点会重建 delegate；未命中时把拖走的
-                                    // 芯片交回 Flow 重新排布。
-                                    if (dragMoved)
-                                        profileFlow.reflowTick = 1 - profileFlow.reflowTick
-                                    dragMoved = false
-                                }
-                                onClicked: page.editingId = profileChip.modelData.id
-                            }
-
-                            DropArea {
-                                anchors.fill: parent
-                                // 拖动中的芯片跟着光标走，它自己的 DropArea 会
-                                // 一直盖在目标上；禁用后落点才会交给下面的芯片。
-                                enabled: !profileChip.Drag.active
-                                onDropped: (drop) => {
-                                    const source = drop.source
-                                    if (source === null || source === undefined
-                                            || source.index === undefined
-                                            || source.index === profileChip.index)
-                                        return
-                                    // 重排会重建 Repeater delegate；先取值再延后
-                                    // 一拍，不在 DropArea 的事件栈里销毁当前芯片。
-                                    const fromIndex = source.index
-                                    const toIndex = profileChip.index
-                                    Qt.callLater(() => Settings.moveProfile(
-                                                       fromIndex, toIndex))
-                                }
-                            }
-                        }
-                    }
-
-                    Rectangle {
-                        width: addChipText.implicitWidth + 24
-                        height: 30
-                        radius: 15
-                        color: addChipMA.containsMouse ? Theme.surfaceHover : "transparent"
-                        border.width: 1
-                        border.color: addChipMA.containsMouse
-                            ? Theme.brandPrimary : Theme.borderSubtle
-
-                        Accessible.role: Accessible.Button
-                        Accessible.name: qsTr("新建模型配置")
-
-                        Text {
-                            id: addChipText
-                            anchors.centerIn: parent
-                            text: qsTr("+ 新建")
-                            color: addChipMA.containsMouse
-                                ? Theme.brandPrimary : Theme.textSecondary
-                            font.pixelSize: Theme.fontSizeCaption
-                            font.family: Theme.fontSans
-                        }
-
-                        MouseArea {
-                            id: addChipMA
-                            anchors.fill: parent
-                            hoverEnabled: true
-                            cursorShape: Qt.PointingHandCursor
-                            onClicked: addDialog.open()
-                        }
-                    }
-                }
+                subtitle: qsTr("厂商决定默认地址，接口协议决定报文格式；模型由你自己填。")
 
                 SettingsField {
                     id: nameRow
@@ -960,96 +1061,6 @@ Item {
         }
     }
 
-    // ── 常驻底栏：主操作不跟着内容滚动 ─────────────────
-    Rectangle {
-        id: footer
-        anchors.left: page.left
-        anchors.right: page.right
-        anchors.bottom: page.bottom
-        height: 64
-        color: Theme.bgSecondary
-
-        Rectangle {
-            anchors.top: parent.top
-            width: parent.width
-            height: 1
-            color: Theme.borderSubtle
-        }
-
-        RowLayout {
-            anchors.fill: parent
-            anchors.leftMargin: Theme.spaceXl
-            anchors.rightMargin: Theme.spaceXl
-            spacing: Theme.spaceSm
-
-            ColumnLayout {
-                Layout.fillWidth: true
-                spacing: 1
-
-                Text {
-                    text: page.editing === null ? qsTr("还没有模型配置")
-                          : (page.editing.id === Settings.activeProfileId
-                             ? qsTr("✓ 正在使用：%1").arg(
-                                   page.editing.displayName || page.editing.provider)
-                             : qsTr("编辑中的配置未启用"))
-                    color: page.editing !== null
-                        && page.editing.id === Settings.activeProfileId
-                        ? Theme.statusSuccess : Theme.textPrimary
-                    font.pixelSize: Theme.fontSizeCaption
-                    font.bold: true
-                    font.family: Theme.fontSans
-                }
-
-                // 保存/缺字段回执与测试连接共用同一状态行组件：圆点 + 语义色，
-                // 不再由本页手写颜色和可见性。
-                StatusLine {
-                    text: page.savedHint !== ""
-                          ? qsTr("已保存：%1").arg(page.savedHint)
-                          : (page.ready ? ""
-                                        : qsTr("还需填写：%1，才能启用或测试连接").arg(page.missingFields))
-                    state: page.savedHint !== "" ? "success" : "warning"
-                }
-            }
-
-            AppButton {
-                text: page.editing !== null
-                      && page.editing.id === Settings.activeProfileId
-                      ? qsTr("✓ 使用中") : qsTr("启用此配置")
-                highlighted: enabled
-                enabled: page.ready && page.editing !== null
-                         && page.editing.id !== Settings.activeProfileId
-                onClicked: Settings.setActiveProfile(page.editing.id)
-            }
-
-            AppButton {
-                text: qsTr("复制")
-                // docs/31 S4.4（4a）：复制除 API Key 外的全部字段；新配置
-                // 立即选中以便先补密钥，启用关系保持不变。
-                enabled: page.editing !== null
-                onClicked: {
-                    if (page.editing === null) return
-                    const source = page.editing
-                    const base = source.displayName || source.provider
-                    const id = Settings.duplicateProfile(
-                        source.id, qsTr("%1 副本").arg(base))
-                    if (id !== "") page.editingId = id
-                }
-            }
-
-            AppButton {
-                text: qsTr("删除")
-                buttonColor: "transparent"
-                textColor: Theme.statusDanger
-                border.color: Theme.borderSubtle
-                enabled: page.editing !== null && Settings.profiles.length > 1
-                onClicked: {
-                    Settings.removeProfile(page.editing.id)
-                    page.editingId = Settings.activeProfileId
-                }
-            }
-        }
-    }
-
     // 新建前先选来源：不选就只能得到一个 OpenAI 预设，这正是自定义要绕开的坑。
     Dialog {
         id: addDialog
@@ -1096,6 +1107,72 @@ Item {
                 font.pixelSize: Theme.fontSizeCaption
                 font.family: Theme.fontSans
                 wrapMode: Text.WordWrap
+            }
+        }
+    }
+
+    // 删除前二次确认：写清删的是哪条配置、密钥一并清除、不可撤销。
+    // 取消不产生任何写入。
+    Dialog {
+        id: deleteDialog
+        parent: Overlay.overlay
+        modal: true
+        anchors.centerIn: parent
+        width: 380
+        height: deleteDialogContent.implicitHeight + Theme.spaceXl * 2
+        padding: Theme.spaceXl
+        closePolicy: Popup.CloseOnEscape | Popup.CloseOnPressOutside
+
+        background: DialogBackground {}
+
+        contentItem: ColumnLayout {
+            id: deleteDialogContent
+            spacing: Theme.spaceSm
+
+            Text {
+                text: qsTr("删除模型配置")
+                color: Theme.textPrimary
+                font.pixelSize: Theme.fontSizeBody
+                font.bold: true
+                font.family: Theme.fontSans
+            }
+
+            Text {
+                Layout.fillWidth: true
+                text: page.editing !== null
+                    ? qsTr("将删除「%1」，该配置的 API Key 会一并清除，操作不可撤销。")
+                          .arg(page.editing.displayName || page.editing.provider)
+                    : ""
+                color: Theme.textPrimary
+                font.pixelSize: Theme.fontSizeBody
+                font.family: Theme.fontSans
+                wrapMode: Text.WordWrap
+            }
+
+            RowLayout {
+                Layout.fillWidth: true
+                spacing: Theme.spaceSm
+
+                Item { Layout.fillWidth: true }
+
+                AppButton {
+                    text: qsTr("取消")
+                    onClicked: deleteDialog.close()
+                }
+
+                AppButton {
+                    objectName: "modelDeleteConfirmButton"
+                    text: qsTr("删除")
+                    buttonColor: "transparent"
+                    textColor: Theme.statusDanger
+                    border.color: Theme.statusDanger
+                    onClicked: {
+                        deleteDialog.close()
+                        if (page.editing === null) return
+                        Settings.removeProfile(page.editing.id)
+                        page.editingId = Settings.activeProfileId
+                    }
+                }
             }
         }
     }
