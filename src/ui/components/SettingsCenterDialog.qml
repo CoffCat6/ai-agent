@@ -519,14 +519,6 @@ Dialog {
                             searchField.forceActiveFocus()
                         }
                     }
-                    Item { Layout.fillWidth: true }
-                    IconButton {
-                        icon: "x"
-                        iconSize: 16
-                        // docs/25 D5: 无 tooltip 时读屏名回落为图标名 "x"
-                        tooltip: qsTr("关闭")
-                        onClicked: dialog.close()
-                    }
                 }
             }
 
