@@ -14,6 +14,8 @@ translations/*.ts.bak
 # Test-run logs. QtTest -o file.log outputs land in the repo root when a
 # suite is run manually and must never be committed.
 /*.log
+# CTest writes its run tree (logs, LastTest.log) here whenever ctest runs.
+/Testing
 # lrelease output. The build regenerates these into the build tree and embeds
 # them into the executable's :/i18n resource, so the copies under translations/
 # are dead artifacts that silently drift from the .ts.
