@@ -39,8 +39,6 @@ Item {
         TopBar {
             Layout.fillWidth: true
             Layout.preferredHeight: 40
-            // 顶栏的模板入口「管理模板…」与空态入口同一条路径。
-            onTemplatesRequested: root.settingsCategoryRequested("prompts")
         }
 
         Item {

@@ -742,8 +742,9 @@ private slots:
 
     // docs/30 P1：单对话视图的呈现回归。
     // 这个用例锁的是"界面形态"本身——标签栏必须消失、侧栏必须能表达三种
-    // 运行状态、顶栏必须补上会话标题与模板入口。它们都是纯 QML 契约，
-    // 数据面语义由 test_viewmodel 的 openConversation 那一组覆盖。
+    // 运行状态、顶栏必须有会话标题、模板入口必须移除、状态提示居中显示。
+    // 它们都是纯 QML 契约，数据面语义由 test_viewmodel 的 openConversation
+    // 那一组覆盖。
     void singleConversationViewChrome() {
         QQmlApplicationEngine engine;
         engine.rootContext()->setContextProperty("Theme", ThemeProvider::instance());
@@ -781,11 +782,9 @@ private slots:
         QVERIFY(title->isVisible());
         QVERIFY(title->width() > 40);
 
-        // 3. 顶栏的模板入口：没有模板时隐藏（不留一个永远空着的按钮）。
-        auto* templateEntry = window->findChild<QQuickItem*>(
-            QStringLiteral("topBarTemplateEntry"));
-        QVERIFY2(templateEntry, "top bar is missing the session-template entry");
-        QCOMPARE(templateEntry->isVisible(), SettingsService::instance()->sessionTemplates().size() > 0);
+        // 3. 顶栏的模板入口已移除：侧栏窄条与聊天空态仍有入口，TopBar 这份属冗余。
+        QVERIFY2(window->findChild<QQuickItem*>(QStringLiteral("topBarTemplateEntry")) == nullptr,
+                 "top bar template entry must be gone");
 
         // 4. 侧栏每一行都有状态槽（docs/30 §4.2 的三态位）。
         //    注意不能用 window->findChildren 找 delegate 内部的项：它们虽然带

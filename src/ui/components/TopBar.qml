@@ -4,13 +4,9 @@ import QtQuick.Controls
 import NexusAI
 import NexusAI.ViewModels
 
-// Top bar - sidebar toggle, status indicator and panel toggle
+// Top bar - sidebar toggle, centered run-state indicator, token usage
 Rectangle {
     id: root
-
-    // 模板菜单的「管理模板…」：本组件不认识设置中心，交给宿主上抛
-    // （AgentChatPage → main 打开 prompts 分类）。
-    signal templatesRequested()
 
     color: Theme.bgSecondary
 
@@ -41,6 +37,60 @@ Rectangle {
     // .fmtNumber 同一口径）；formatTokens 的紧凑显示仅用于顶栏小字。
     function fmtNumber(n) {
         return Number(n || 0).toLocaleString(Qt.locale(), 'f', 0)
+    }
+
+    // ── State Status Indicator ───────────────────
+    // 运行状态（Ready/思考中/执行工具…）钉在顶栏正中——顶栏即对话区宽度，
+    // 这里就是对话区的视觉中心。放在布局流外（不占 RowLayout 槽位）：
+    // 忙碌指示属于整个对话区，不该跟右侧 token 计量挤在一处。
+    // 会话标题的最大宽度止于中线（见 sessionTitleLabel），不会从下面穿过。
+    RowLayout {
+        id: stateIndicator
+        anchors.horizontalCenter: parent.horizontalCenter
+        anchors.verticalCenter: parent.verticalCenter
+        spacing: 6
+
+        // Status dot
+        Rectangle {
+            id: stateDot
+            width: 8
+            height: 8
+            radius: 4
+
+            color: {
+                var s = AgentVM.state
+                if (s === AgentVM.stateIdle) return Theme.textSecondary
+                if (s === AgentVM.stateThinking) return Theme.brandPrimary
+                if (s === AgentVM.stateAwaitingToolConfirm) return Theme.statusWarning
+                if (s === AgentVM.stateExecutingTool) return Theme.statusWarning
+                if (s === AgentVM.stateSummarizing) return Theme.brandPrimary
+                if (s === AgentVM.stateCompleted) return Theme.statusSuccess
+                if (s === AgentVM.stateError) return Theme.statusDanger
+                return Theme.textSecondary
+            }
+
+            // Pulsing animation for active states. Drives an intermediate
+            // property instead of opacity itself: `Animation on <property>`
+            // destroys the declarative binding and leaves the value stranded
+            // at the last frame when the animation stops, so the indicator
+            // would stay dimmed after a task ends.
+            property real pulse: 1.0
+            SequentialAnimation {
+                running: AgentVM.stateBusy
+                loops: Animation.Infinite
+                NumberAnimation { target: stateDot; property: "pulse"; from: 1.0; to: 0.3; duration: 800 }
+                NumberAnimation { target: stateDot; property: "pulse"; from: 0.3; to: 1.0; duration: 800 }
+            }
+            opacity: AgentVM.stateBusy ? pulse : 1.0
+        }
+
+        Text {
+            objectName: "topBarStateText"
+            text: AgentVM.stateText
+            color: Theme.textSecondary
+            font.pixelSize: Theme.fontSizeCaption
+            font.family: Theme.fontMono
+        }
     }
 
     // Bottom border
@@ -272,13 +322,15 @@ Rectangle {
         // 标签栏删除后，这里是**唯一**常显的会话标题位：侧栏只有高亮没有文字
         // 归属，用户在多条会话间切换时需要一眼确认"我在看哪条"。
         // 弹性宽度 + elide；截断时悬停看全文（与侧栏同一口径）。
+        // 最大宽度到顶栏中线为止：运行状态钉在正中（见 root 下方的
+        // stateIndicator），标题不能再越过中线跟它抢位。
         Text {
             id: sessionTitleLabel
             objectName: "topBarSessionTitle"
             Layout.fillWidth: true
             Layout.leftMargin: 12
             Layout.rightMargin: 12
-            Layout.maximumWidth: 480
+            Layout.maximumWidth: Math.max(80, root.width / 2 - x - 16)
             text: AgentVM.currentSessionId.length > 0
                 ? (chatTitle || qsTr("新会话"))
                 : qsTr("新对话")
@@ -305,75 +357,7 @@ Rectangle {
             ToolTip.text: sessionTitleLabel.text
         }
 
-        // ── 会话模板入口（docs/30 §5-1）──────────────
-        // 标签栏删除后，"侧栏折叠 + 已有消息"这条路径上模板入口会彻底不可达
-        // （侧栏窄条随侧栏一起消失）。TopBar 始终可见，用它补上。
-        // 只在有模板时出现，避免一个永远空着的按钮。
-        IconButton {
-            id: templateEntry
-            objectName: "topBarTemplateEntry"
-            visible: Settings.sessionTemplates.length > 0
-            icon: "preset"
-            iconSize: 16
-            tooltip: qsTr("从会话模板开始")
-            // 再点一次关闭（onPressed，理由同 SessionTemplateMenu.toggleBelow）。
-            onClicked: templateMenu.toggleBelow(templateEntry)
-
-            SessionTemplateMenu {
-                id: templateMenu
-                // 本组件不认识设置中心，转成信号交给 AgentChatPage → main。
-                onManageRequested: root.templatesRequested()
-            }
-        }
-
-        // ── Spacer ────────────────────────────────────
-        Item { Layout.preferredWidth: 4 }
-
-        // ── State Status Indicator ───────────────────
-        RowLayout {
-            spacing: 6
-
-            // Status dot
-            Rectangle {
-                id: stateDot
-                width: 8
-                height: 8
-                radius: 4
-
-                color: {
-                    var s = AgentVM.state
-                    if (s === AgentVM.stateIdle) return Theme.textSecondary
-                    if (s === AgentVM.stateThinking) return Theme.brandPrimary
-                    if (s === AgentVM.stateAwaitingToolConfirm) return Theme.statusWarning
-                    if (s === AgentVM.stateExecutingTool) return Theme.statusWarning
-                    if (s === AgentVM.stateSummarizing) return Theme.brandPrimary
-                    if (s === AgentVM.stateCompleted) return Theme.statusSuccess
-                    if (s === AgentVM.stateError) return Theme.statusDanger
-                    return Theme.textSecondary
-                }
-
-                // Pulsing animation for active states. Drives an intermediate
-                // property instead of opacity itself: `Animation on <property>`
-                // destroys the declarative binding and leaves the value stranded
-                // at the last frame when the animation stops, so the indicator
-                // would stay dimmed after a task ends.
-                property real pulse: 1.0
-                SequentialAnimation {
-                    running: AgentVM.stateBusy
-                    loops: Animation.Infinite
-                    NumberAnimation { target: stateDot; property: "pulse"; from: 1.0; to: 0.3; duration: 800 }
-                    NumberAnimation { target: stateDot; property: "pulse"; from: 0.3; to: 1.0; duration: 800 }
-                }
-                opacity: AgentVM.stateBusy ? pulse : 1.0
-            }
-
-            Text {
-                text: AgentVM.stateText
-                color: Theme.textSecondary
-                font.pixelSize: Theme.fontSizeCaption
-                font.family: Theme.fontMono
-            }
-        }
+        // 模板入口已移除：侧栏窄条与聊天空态仍有入口，TopBar 这份属冗余。
 
         Item { Layout.fillWidth: true }
 
