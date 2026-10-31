@@ -24,7 +24,7 @@ Rectangle {
     // no-cross-file-id convention routes this through a signal).
     signal sessionDeletedUndoable(string sessionId, string title)
     // 模板菜单的「管理模板…」：带目标分类打开设置中心（prompts）。
-    // 不能复用 settingsRequested——那个固定开 model 分类。
+    // 不能复用 settingsRequested——那个恢复上次停留的分类（settings.lastCategory）。
     signal settingsCategoryRequested(string category)
 
     color: Theme.bgSecondary

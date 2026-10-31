@@ -271,6 +271,10 @@ Dialog {
     function openCategory(id) {
         explicitCategory = true
         currentCategory = id
+        // 定向入口（模型选择器、空态「配置模型」、侧栏分类直达）落到的
+        // 页面也算"用户上次所在分类"，同样记录——否则从这类入口进入后
+        // 没点过导航就关闭，下次普通打开会回到更早的分类。
+        PreferenceStore.save("settings.lastCategory", id)
         // 编程入口（模型选择器、空态「配置模型」等）与导航点击一样计入
         // 缓存，否则从这类入口进入的页面切走即销毁，滚动位置全丢。
         markVisited(id)

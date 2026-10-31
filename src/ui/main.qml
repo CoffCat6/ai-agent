@@ -92,7 +92,9 @@ ApplicationWindow {
                 NumberAnimation { duration: Theme.motionBase; easing.type: Easing.OutQuad }
             }
 
-            onSettingsRequested: settingsCenterDialog.openCategory("model")
+            // 普通「设置」入口不指定分类：onOpened 恢复上次停留的分类
+            // （settings.lastCategory），无记录时落在默认的 model 页。
+            onSettingsRequested: settingsCenterDialog.open()
             onAuditRequested: auditDialog.open()
             onLogsRequested: logPanel.open()
             onKnowledgeRequested: knowledgeDialog.open()

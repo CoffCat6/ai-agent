@@ -73,9 +73,9 @@ controller 一 agent 一连接），因此下面这层是**呈现语义**的收�
 - `SettingsService` 管“AI 管线/安全/网络/日志/配额”这类**有强类型属性、会被 main.cpp 消费**的键（`agent/*`、`security/*`、`logging/*`、`webSearch/*`、`network/*`、`embedding/*`、`memory/*`、`projects/*`），键直接落 QSettings。
 - `Preference*` 管“设置页可枚举、需要显示名/约束/重置”的偏好（`ui.*` 主题/字体/语言/布局默认、`general.*`、`window.closeToTray` 等），物理键加 `prefs/v1/` 前缀；`legacyKeys` 支持旧键迁移（如 `ui.themeMode` 由布尔 `isDark` 转换）。
 - `EditBuffer` 是 `PreferenceStore` 的校验闸门：`stage()` 用 registry 约束校验后**立即** `saveBatch`（写穿），`dirty` 仅瞬时；校验失败保留暂存值供字段错误标签使用，`rollback()` 丢弃。写穿成功时记录"提交前的落盘状态"（`undoKey/undoHadPrevious/undoPrevious`，只保留最后一次；撤销点先于 `saveBatch` 登记，失败则恢复旧记录），`undoLast()` 有旧值写回、无旧值删物理键，且只回写一次；复位入口（`resetToDefault/resetAllToDefault`）与成功 `commit()` 清空记录，密钥/未登记键拒绝撤销。
-- **复位口径**：行级复原与「恢复全部设置」经 `SettingsCatalog::resetValue()`。偏好走 `EditBuffer.stage(key, default)`，M1 键走 `SettingsService::setValueForSetting()`；`secret`（加密键、`network/proxyUsername|Password`）一律拒绝。网络页整页 `resetNetworkToDefaults()` 仍会清空代理凭据（页面确认弹窗已明示），不属于新增入口的语义。目录里**所有**有默认值且有 setter 的 M1 键都必须登记为 `kPage`（安全开关/黑名单、用量配额、默认权限、联网搜索 provider 已补齐）——登记成 `kNone` 会让行内圆点无复原按钮、导航徽标不计、底栏复位跳过它们，而「恢复全部设置」的确认文案又承诺会复位。`resetValue` 对偏好键以"staged 里是否残留"判定成功，写盘失败不再误报成功。
+- **复位口径**：行级复原与「恢复全部设置」经 `SettingsCatalog::resetValue()`。偏好走 `EditBuffer.stage(key, default)`，M1 键走 `SettingsService::setValueForSetting()`；`secret`（加密键、`network/proxyUsername|Password`）一律拒绝。网络页整页 `resetNetworkToDefaults()` 仍会清空代理凭据（页面确认弹窗已明示），不属于新增入口的语义。目录里**所有**有默认值且有 setter 的 M1 键都必须登记为 `kPage`（安全开关/黑名单、用量配额、默认权限、联网搜索 provider 已补齐）——登记成 `kNone` 会让行内圆点无复原按钮、底栏复位跳过它们，而「恢复全部设置」的确认文案又承诺会复位。`resetValue` 对偏好键以"staged 里是否残留"判定成功，写盘失败不再误报成功。
 - **值比较**：`SettingsValue::sameValue` 对 `Double/Any` 类型（如 `security/readDenyList` 的 `QVariantList`）先按 metatype 直接比 `QVariant`。用 `toString()` 比较会让任何列表改动都判成"未修改"（`QVariant(QVariantList)` 的字符串恒为空）。
-- **徽标代价**：`modifiedCount()` 的结果按 `revision` 缓存。导航每次写入都会让全部分类各查一次，不缓存就是十几遍全表 `inspect`。
+- **徽标代价**：`modifiedCount()` 的结果按 `revision` 缓存（一次全表 `inspect` 服务全部分类）。2026-10-31 起导航徽标已按用户反馈从 `CategoryNav` 移除，该 API 目前仅测试与潜在调用方使用。
 - **保存回执契约**：`SettingsService::settingSaved` 只在 `persistValue`/`persist` 真正写盘成功后发出（装载/迁移不经过，故启动时不会误报“已保存”），参数是本次写入的键；`PreferenceStore::saved` 在 `ChangeBus` 通知后发出本次批量写入的键列表，`resetBatch` 刻意不发。设置中心底栏据此显示短暂「已保存」——经 `SettingsCatalog.entry(key).category` 只认当前分类的键，避免其他分类/后台写入在屏幕上闪回执。
 
 ### 6. 加密、备份与迁移

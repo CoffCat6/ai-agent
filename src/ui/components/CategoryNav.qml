@@ -274,12 +274,6 @@ Rectangle {
 
                                 readonly property bool isActive:
                                     navItem.modelData === nav.currentCategory
-                                // docs/31 O1：分类内"已修改"条目数。先读 revision
-                                // 建立依赖，否则只在创建时算一次。
-                                readonly property int modifiedCount: {
-                                    SettingsCatalog.revision
-                                    return SettingsCatalog.modifiedCount(navItem.modelData)
-                                }
                                 readonly property string categoryName: {
                                     I18n.currentLocale
                                     // Reading currentLocale re-evaluates this
@@ -320,8 +314,7 @@ Rectangle {
                                     anchors.left: parent.left
                                     anchors.leftMargin: 34
                                     anchors.right: parent.right
-                                    // 有徽标时让出宽度，避免文字压在数字下面。
-                                    anchors.rightMargin: navItem.modifiedCount > 0 ? 36 : 8
+                                    anchors.rightMargin: 8
                                     anchors.verticalCenter: parent.verticalCenter
                                     text: navItem.categoryName
                                     color: navItem.isActive
@@ -330,45 +323,6 @@ Rectangle {
                                     font.family: Theme.fontSans
                                     font.bold: navItem.isActive
                                     elide: Text.ElideRight
-                                }
-
-                                // 已修改计数：告诉用户"哪一页动过"，而不是让他
-                                // 逐页点进去找。密钥不参与计数（没有复位通道）。
-                                Rectangle {
-                                    id: modifiedBadge
-                                    visible: !nav.compact && navItem.modifiedCount > 0
-                                    anchors.right: parent.right
-                                    anchors.rightMargin: 8
-                                    anchors.verticalCenter: parent.verticalCenter
-                                    width: badgeText.implicitWidth + 10
-                                    height: 16
-                                    radius: height / 2
-                                    color: Qt.rgba(Theme.brandPrimary.r,
-                                                   Theme.brandPrimary.g,
-                                                   Theme.brandPrimary.b, 0.15)
-
-                                    Text {
-                                        id: badgeText
-                                        anchors.centerIn: parent
-                                        text: navItem.modifiedCount
-                                        color: Theme.brandPrimary
-                                        font.pixelSize: Theme.fontSizeMicro
-                                        font.bold: true
-                                        font.family: Theme.fontMono
-                                    }
-                                }
-
-                                // 图标条模式下没有文字位，用一个小圆点提示。
-                                Rectangle {
-                                    visible: nav.compact && navItem.modifiedCount > 0
-                                    width: 6
-                                    height: 6
-                                    radius: width / 2
-                                    color: Theme.brandPrimary
-                                    anchors.right: parent.right
-                                    anchors.rightMargin: 8
-                                    anchors.bottom: parent.bottom
-                                    anchors.bottomMargin: 6
                                 }
 
                                 Rectangle {

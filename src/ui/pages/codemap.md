@@ -50,9 +50,11 @@ baseUrl/API key）在 `KnowledgePage.qml`，二者职责不同。详见下文约
   字段调用该页导出的 `requestResetDefaults()`；两者都没有时按钮隐藏。`onClosed` 只做
   `EditBuffer.rollback()`，丢弃校验失败留下的 staged 残值。
 
-`openCategory(id)` 设定 `explicitCategory=true` 后打开；`onOpened` 在非显式指定时恢复
-`PreferenceStore.load("settings.lastCategory")`。打开入口包括 Ctrl+,、侧栏设置、
-AgentChatPage 空态的「配置模型」、ModelSelector、`AgentVM.modelSettingsRequested`。
+`openCategory(id)` 设定 `explicitCategory=true`、写 `settings.lastCategory` 后打开；
+`onOpened` 在非显式指定时恢复 `PreferenceStore.load("settings.lastCategory")`。入口分
+两类：**恢复型**——Ctrl+,（`settings.open`）、侧栏「设置」、托盘激活，走普通 `open()`，
+二次打开回到上次停留的分类；**定向型**——AgentChatPage 空态「配置模型」、ModelSelector、
+`AgentVM.modelSettingsRequested`、`settingsCategoryRequested(category)`，固定开指定分类。
 
 ### 保存时机
 
