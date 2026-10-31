@@ -53,16 +53,14 @@ private slots:
     void defaultsComeFromActionTable() {
         auto* map = ShortcutMap::instance();
         const QVariantMap bindings = map->bindings();
-        QCOMPARE(bindings.size(), 12);
+        QCOMPARE(bindings.size(), 13);
 
         QCOMPARE(bindings.value(QStringLiteral("settings.open")).toString(),
                  QStringLiteral("Ctrl+,"));
-        QCOMPARE(bindings.value(QStringLiteral("settings.search")).toString(),
-                 QStringLiteral("Ctrl+F"));
         QCOMPARE(bindings.value(QStringLiteral("audit.open")).toString(),
                  QStringLiteral("Ctrl+L"));
         QCOMPARE(bindings.value(QStringLiteral("panel.toggle")).toString(),
-                 QStringLiteral("Ctrl+B"));
+                 QStringLiteral("Ctrl+]"));
         QCOMPARE(bindings.value(QStringLiteral("review.open")).toString(),
                  QStringLiteral("Ctrl+R"));
         QCOMPARE(bindings.value(QStringLiteral("todo.open")).toString(),
@@ -75,13 +73,17 @@ private slots:
                  QStringLiteral("Ctrl+Tab"));
         QCOMPARE(bindings.value(QStringLiteral("conversation.prev")).toString(),
                  QStringLiteral("Ctrl+Shift+Tab"));
+        QCOMPARE(bindings.value(QStringLiteral("conversation.new")).toString(),
+                 QStringLiteral("Ctrl+N"));
+        QCOMPARE(bindings.value(QStringLiteral("conversation.search")).toString(),
+                 QStringLiteral("Ctrl+K"));
         QCOMPARE(bindings.value(QStringLiteral("theme.toggle")).toString(),
                  QStringLiteral("Ctrl+D"));
         QCOMPARE(bindings.value(QStringLiteral("shortcuts.open")).toString(),
                  QStringLiteral("Ctrl+/"));
 
         const QVariantList actions = map->actions();
-        QCOMPARE(actions.size(), 12);
+        QCOMPARE(actions.size(), 13);
         for (const QVariant& value : actions) {
             const QVariantMap action = value.toMap();
             QVERIFY(!action.value(QStringLiteral("id")).toString().isEmpty());
@@ -124,11 +126,11 @@ private slots:
 
         // 改回默认值 = 删除覆盖项（存储键随之为空），而不是存一份等值 JSON。
         const QVariantMap back = map->assign(QStringLiteral("panel.toggle"),
-                                             QStringLiteral("Ctrl+B"));
+                                             QStringLiteral("Ctrl+]"));
         QVERIFY(back.value(QStringLiteral("ok")).toBool());
         QCOMPARE(map->modifiedCount(), 0);
         QCOMPARE(map->bindings().value(QStringLiteral("panel.toggle")).toString(),
-                 QStringLiteral("Ctrl+B"));
+                 QStringLiteral("Ctrl+]"));
         QVERIFY(!PreferenceStore::instance()->hasStoredValue(kKey));
     }
 
@@ -142,7 +144,7 @@ private slots:
                  QStringLiteral("audit.open"));
         QVERIFY(!conflict.value(QStringLiteral("error")).toString().isEmpty());
         QCOMPARE(map->bindings().value(QStringLiteral("panel.toggle")).toString(),
-                 QStringLiteral("Ctrl+B"));
+                 QStringLiteral("Ctrl+]"));
         QCOMPARE(map->modifiedCount(), 0);
 
         // 裸字母会被全局 Shortcut 截走，聊天输入框就再也打不出来。
@@ -183,7 +185,7 @@ private slots:
 
         QVERIFY(map->resetAction(QStringLiteral("panel.toggle")));
         QCOMPARE(map->bindings().value(QStringLiteral("panel.toggle")).toString(),
-                 QStringLiteral("Ctrl+B"));
+                 QStringLiteral("Ctrl+]"));
         QCOMPARE(map->modifiedCount(), 1);
         QVERIFY(!map->resetAction(QStringLiteral("panel.toggle")));
 
@@ -204,7 +206,7 @@ private slots:
         // 与设置页“恢复本页默认值”走同一条路径：EditBuffer 写穿到存储。
         EditBuffer::instance()->stage(kKey, QStringLiteral("{}"));
         QCOMPARE(map->bindings().value(QStringLiteral("panel.toggle")).toString(),
-                 QStringLiteral("Ctrl+B"));
+                 QStringLiteral("Ctrl+]"));
         QCOMPARE(map->modifiedCount(), 0);
     }
 
@@ -214,7 +216,7 @@ private slots:
 
         QVERIFY(PreferenceStore::instance()->save(kKey, QStringLiteral("not-json")));
         QCOMPARE(map->bindings().value(QStringLiteral("panel.toggle")).toString(),
-                 QStringLiteral("Ctrl+B"));
+                 QStringLiteral("Ctrl+]"));
         QCOMPARE(map->modifiedCount(), 0);
 
         QVERIFY(PreferenceStore::instance()->save(
@@ -223,7 +225,7 @@ private slots:
                            "\"todo.open\":\"Ctrl+Shift+T\"}")));
         // Ctrl+L 已被 audit.open 占用 → 丢弃该覆盖项，回到默认。
         QCOMPARE(map->bindings().value(QStringLiteral("panel.toggle")).toString(),
-                 QStringLiteral("Ctrl+B"));
+                 QStringLiteral("Ctrl+]"));
         QCOMPARE(map->bindings().value(QStringLiteral("todo.open")).toString(),
                  QStringLiteral("Ctrl+Shift+T"));
         QCOMPARE(map->modifiedCount(), 1);

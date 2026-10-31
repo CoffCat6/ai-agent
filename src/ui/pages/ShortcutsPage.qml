@@ -8,7 +8,7 @@ import NexusAI.ViewModels
 //
 // 动作表、默认值、冲突校验全部在 ShortcutMap；页面只做“录制 → 交给
 // ShortcutMap.assign → 显示结果”。录制期间 ShortcutMap.recording 为 true，
-// main.qml 的全局 Shortcut 集体让位，否则按 Ctrl+B 会先触发旧动作。
+// main.qml 的全局 Shortcut 集体让位，否则按 Ctrl+] 会先触发旧动作。
 SettingsPage {
     id: page
 

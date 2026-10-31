@@ -34,6 +34,14 @@ Rectangle {
     // Batch 17: while the search field has text the sidebar shows the
     // cross-session search results instead of the session list.
     readonly property bool searching: searchField.text.trim().length > 0
+
+    // Ctrl+K（conversation.search）的落点：侧栏收着先展开，再落焦点。
+    // 展开是宽度动画，焦点照常落——动画期间 TextField 已可输入。
+    function focusSearch() {
+        if (!AgentVM.isSidebarExpanded)
+            AgentVM.toggleSidebar()
+        searchField.forceActiveFocus()
+    }
     // Batch 18: session picked for export + chosen format ("md" / "json")
     property string exportSessionId: ""
     property string exportFormat: "md"

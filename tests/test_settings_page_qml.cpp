@@ -554,7 +554,7 @@ private slots:
         QTRY_VERIFY(resetButton->property("visible").toBool());
         QVERIFY(QMetaObject::invokeMethod(resetButton, "clicked"));
         QTRY_COMPARE(map->bindings().value(QStringLiteral("panel.toggle")).toString(),
-                     QStringLiteral("Ctrl+B"));
+                     QStringLiteral("Ctrl+]"));
         QTRY_VERIFY(!resetButton->property("visible").toBool());
 
         map->resetAll();
@@ -597,7 +597,7 @@ private slots:
         QTRY_COMPARE(globalList->property("count").toInt(), map->actions().size());
         QTRY_COMPARE(fixedList->property("count").toInt(), 5);
 
-        // 第 4 个动作是 panel.toggle（动作表顺序）。
+        // 第 3 个动作是 panel.toggle（动作表顺序；settings.search 已移除）。
         auto rowTexts = [globalList](int index) {
             QQuickItem* row = nullptr;
             QMetaObject::invokeMethod(globalList, "itemAt",
@@ -607,16 +607,16 @@ private slots:
             collectItemTexts(row, &texts);
             return texts;
         };
-        QStringList texts = rowTexts(3);
+        QStringList texts = rowTexts(2);
         QVERIFY(texts.contains(QStringLiteral("Ctrl+Shift+B")));
         QVERIFY(texts.contains(
-            map->actions().at(3).toMap().value(QStringLiteral("title")).toString()));
+            map->actions().at(2).toMap().value(QStringLiteral("title")).toString()));
 
         // 改键 → model 变化 → 速查表更新。
         QVERIFY(map->assign(QStringLiteral("panel.toggle"),
                             QStringLiteral("Ctrl+Alt+B"))
                     .value(QStringLiteral("ok")).toBool());
-        QTRY_VERIFY(rowTexts(3).contains(QStringLiteral("Ctrl+Alt+B")));
+        QTRY_VERIFY(rowTexts(2).contains(QStringLiteral("Ctrl+Alt+B")));
 
         map->resetAll();
     }

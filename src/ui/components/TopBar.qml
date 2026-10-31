@@ -1005,7 +1005,7 @@ Rectangle {
             border.width: AgentVM.isPanelVisible ? 0 : 1
             border.color: Theme.borderSubtle
             tooltip: AgentVM.isPanelVisible
-                ? qsTr("收起上下文面板 (Ctrl+B)") : qsTr("展开上下文面板 (Ctrl+B)")
+                ? qsTr("收起右侧面板 (Ctrl+])") : qsTr("展开右侧面板 (Ctrl+])")
             onClicked: AgentVM.togglePanel()
         }
 

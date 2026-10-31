@@ -58,7 +58,7 @@
 - **不要在 QML 解析拖放路径**：`drop.urls` 元素没有 `toLocalFile()`，必须原样交给 C++；`DropArea` 必须最后声明且铺满窗口，否则命中层被内容遮挡。
 - **Loader 生命周期**：设置页切换分类会销毁页面，仅靠 `editingFinished` 会丢输入——依赖 `EditBuffer` 防抖 + `Component.onDestruction`；新增页面需沿用同一保存契约。文本字段优先用 `SettingsField` 的 `commitDebounce`/`commitOnDestroy`（并绑定 `lastKnownValue` 避免重复提交原值）；密钥字段用 `secret + ignoreEmptySubmit + clearOnSubmit`，读 `text` 而非 `displayText`。
 - **托盘不可用**：`trayAvailable == false` 时绝不能"关闭到托盘"，否则窗口无召回入口。
-- **快捷键冲突**：`Ctrl+/` 与部分输入法的 `/` 组合、`Ctrl+[` 与编辑器缩进习惯可能冲突；窗口级 `Shortcut` 会抢占输入焦点，改动需回归 `InputConsole`。序列的唯一事实源是 `ShortcutMap.bindings`（docs/31 N2），不要在 `main.qml` 里再写死；新增/改动全局键须同步 `ShortcutMap` 动作表与 `ShortcutsDialog` 可见性，并保证录制时（`ShortcutMap.recording`）窗口级 `Shortcut` 全部让位，否则录制 `Ctrl+B` 会先触发旧的「面板开关」。
+- **快捷键冲突**：`Ctrl+/` 与部分输入法的 `/` 组合、`Ctrl+[` 与编辑器缩进习惯可能冲突；窗口级 `Shortcut` 会抢占输入焦点，改动需回归 `InputConsole`。序列的唯一事实源是 `ShortcutMap.bindings`（docs/31 N2），不要在 `main.qml` 里再写死；新增/改动全局键须同步 `ShortcutMap` 动作表与 `ShortcutsDialog` 可见性，并保证录制时（`ShortcutMap.recording`）窗口级 `Shortcut` 全部让位，否则录制 `Ctrl+]` 会先触发旧的「右侧面板开关」。
 - **qrc/注册漂移**：新增 QML 文件必须加入根 `CMakeLists.txt` 的 `QML_FILES`；`charts/` 依赖 QTP0004 平铺，移动目录会改 qrc 路径并导致加载失败。
 - **qmllint 噪声**：门禁只把 `Error:` 级判失败，历史 warning 会打印但不阻断；不要据此认为 QML 完全干净。
 - **性能**：`Sidebar.qml`、`GitPanel.qml`、`UsageStatsPage.qml` 均为数千行级组件，且大量绑定/委托；新增每帧绑定需注意 trace 滚动与 Canvas 重绘开销。

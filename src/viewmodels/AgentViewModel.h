@@ -453,9 +453,9 @@ public:
     // closeActiveConversation：Ctrl+W 的落点。等价于 closeConversation(活动会话
     // 的 id)；活动 controller 还没绑定会话（空白对话）时直接换一个新对话。
     Q_INVOKABLE void closeActiveConversation();
-    // cycleConversation(delta)：Ctrl+Tab / Ctrl+Shift+Tab 在打开集合内循环。
-    // 只遍历**被承载**的会话（不会为了切换去数据库里翻历史），index 按 m_tabs
-    // 顺序，与用户看到的侧栏顺序无关但稳定。
+    // cycleConversation(delta)：Ctrl+Tab / Ctrl+Shift+Tab 在侧栏会话列表
+    // （未归档）上循环，openConversation 幂等落点——已打开的直接激活，
+    // 没打开的现场加载；归档会话不参与。
     Q_INVOKABLE void cycleConversation(int delta);
     // ── QML-invokable actions ─────────────────────────
     // Batch 30 (F6): images are compressed data URLs; files are

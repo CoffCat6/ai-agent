@@ -333,13 +333,8 @@ ApplicationWindow {
         onActivated: settingsCenterDialog.open()
     }
 
-    // 设置搜索的可发现入口：只在设置中心打开时生效，避免抢走其他页面的
-    // Ctrl+F（未来编辑器内查找等）。
-    Shortcut {
-        sequence: ShortcutMap.bindings["settings.search"] || ""
-        enabled: !ShortcutMap.recording && settingsCenterDialog.opened
-        onActivated: settingsCenterDialog.focusSearch()
-    }
+    // 设置搜索入口已随 settings.search 一并移除：设置中心打开时搜索框
+    // 就在眼前，专门键位属低频冗余。
 
     Shortcut {
         sequence: ShortcutMap.bindings["audit.open"] || ""
@@ -391,6 +386,20 @@ ApplicationWindow {
         sequences: [ShortcutMap.bindings["conversation.prev"] || ""]
         enabled: !ShortcutMap.recording
         onActivated: AgentVM.cycleConversation(-1)
+    }
+
+    // 与侧栏「+」同源（newLocalChat）：编辑器/浏览器的 Ctrl+N 直觉。
+    Shortcut {
+        sequence: ShortcutMap.bindings["conversation.new"] || ""
+        enabled: !ShortcutMap.recording
+        onActivated: AgentVM.newLocalChat()
+    }
+
+    // Ctrl+K（对话应用的主流搜索惯例）：侧栏收着先展开，焦点落搜索框。
+    Shortcut {
+        sequence: ShortcutMap.bindings["conversation.search"] || ""
+        enabled: !ShortcutMap.recording
+        onActivated: sidebarPanel.focusSearch()
     }
 
     Shortcut {

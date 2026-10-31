@@ -1570,9 +1570,11 @@ private slots:
         QCOMPARE(memory.listSessions().size(), 1);
     }
 
-    // docs/30 P1：Ctrl+Tab / Ctrl+Shift+Tab 在**被承载**的会话间循环，
-    // 跳过空白对话（它在侧栏没有对应行，切过去等于消失）。
-    void cycleConversationSkipsBlankAndWraps() {
+    // Ctrl+Tab / Ctrl+Shift+Tab 在**侧栏会话列表**（未归档）上循环，
+    // openConversation 幂等落点：已打开的直接激活，没打开的现场加载。
+    // 旧实现只在被承载的集合里循环，单标签时永远无反应——那就是
+    // "切换对话快捷键不管用"的根因。
+    void cycleConversationCyclesSidebarListAndWraps() {
         SqliteMemory memory(QStringLiteral(":memory:"));
         memory.beginSession(QStringLiteral("sess-a"), QStringLiteral("会话 A"));
         memory.beginSession(QStringLiteral("sess-b"), QStringLiteral("会话 B"));
@@ -1588,33 +1590,31 @@ private slots:
         });
         vm.setAgent(&templateAgent);
 
-        // 只有一条会话时循环是 no-op（不会绕回自己、不会新建）。
-        vm.openConversation(QStringLiteral("sess-a"));
-        const int tabsOne = vm.tabModel().size();
+        // 会话按最近更新排序，sess-b 更晚创建排在前面。空白对话不在列表
+        // 里：next 从第一条开始，直接现场加载 sess-b。
         vm.cycleConversation(1);
-        QCOMPARE(vm.currentSessionId(), QStringLiteral("sess-a"));
-        QCOMPARE(vm.tabModel().size(), tabsOne);
-
-        // 造第二个承载者：A 留草稿（钉住），再开 B。
-        vm.setDraftText(QStringLiteral("A 的草稿"));
-        vm.openConversation(QStringLiteral("sess-b"));
         QCOMPARE(vm.currentSessionId(), QStringLiteral("sess-b"));
-        QCOMPARE(vm.tabModel().size(), 2);
 
-        // 正向循环到 A，再正向绕回 B。
+        // b → a，a 正向绕回 b，b 反向回 a；delta 0 是 no-op。
         vm.cycleConversation(1);
         QCOMPARE(vm.currentSessionId(), QStringLiteral("sess-a"));
         vm.cycleConversation(1);
         QCOMPARE(vm.currentSessionId(), QStringLiteral("sess-b"));
-        // 反向回到 A。
         vm.cycleConversation(-1);
         QCOMPARE(vm.currentSessionId(), QStringLiteral("sess-a"));
-
-        // delta 0 是 no-op。
         vm.cycleConversation(0);
         QCOMPARE(vm.currentSessionId(), QStringLiteral("sess-a"));
-    }
 
+        // 归档会话不参与循环：只剩未归档的 b 时，正向/反向都绕回自己
+        // （不新建承载者）。
+        vm.setSessionArchived(QStringLiteral("sess-a"), true);
+        const int tabsBefore = vm.tabModel().size();
+        vm.cycleConversation(1);
+        QCOMPARE(vm.currentSessionId(), QStringLiteral("sess-b"));
+        QCOMPARE(vm.tabModel().size(), tabsBefore);
+        vm.cycleConversation(-1);
+        QCOMPARE(vm.currentSessionId(), QStringLiteral("sess-b"));
+    }
     // Batch 29 fix: each tab's factory agent is a separate instance with a
     // separate LLM service — two tabs sharing one service instance abort
     // each other's streams (LLMServiceBase keeps a single in-flight

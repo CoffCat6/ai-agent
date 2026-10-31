@@ -82,12 +82,6 @@ Dialog {
         return PreferenceRegistry.categoryName(categoryId)
     }
 
-    function focusSearch() {
-        if (!opened) open()
-        searchField.forceActiveFocus()
-        searchField.selectAll()
-    }
-
     function showSaveStatus(message, isError, duration) {
         saveStatusText = message
         saveStatusIsError = isError
@@ -487,7 +481,7 @@ Dialog {
                                 ? Theme.brandPrimary : Theme.borderSubtle
                         }
                         Accessible.name: qsTr("搜索设置")
-                        Accessible.description: qsTr("输入关键词筛选设置；Ctrl+F 可随时聚焦搜索框")
+                        Accessible.description: qsTr("输入关键词筛选设置")
                         onTextChanged: {
                             dialog.clearHighlight()
                             if (searchField.text.length === 0)

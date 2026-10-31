@@ -820,19 +820,29 @@ void AgentViewModel::closeActiveConversation() {
     closeConversation(sessionId);
 }
 
-// Ctrl+Tab / Ctrl+Shift+Tab：在**被承载**的会话间循环。跳过空白对话
-// （sessionId 为空），因为它在侧栏里没有对应的行，切过去等于"消失了"。
+// Ctrl+Tab / Ctrl+Shift+Tab：在**侧栏会话列表**（未归档）上循环，顺序与
+// 侧栏一致（置顶优先、按最近更新）。openConversation 幂等——已打开的会话
+// 直接激活对应 controller（后台 busy 的会话由此切回来），没打开的现场加载。
+// 归档会话不参与：侧栏默认不展示它们，切过去等于"消失了"。空白对话不在
+// 列表里，next 从第一条开始、prev 从最后一条开始。
 void AgentViewModel::cycleConversation(int delta) {
-    if (delta == 0 || m_tabs.size() <= 1) return;
-    const int step = delta > 0 ? 1 : -1;
-    for (int offset = 1; offset < m_tabs.size(); ++offset) {
-        const int raw = m_activeTab + step * offset;
-        const int index = ((raw % m_tabs.size()) + m_tabs.size()) % m_tabs.size();
-        ChatSessionController* candidate = m_tabs.at(index);
-        if (!candidate || candidate->currentSessionId().isEmpty()) continue;
-        activateTab(index);
-        return;
+    if (delta == 0 || m_sessionList.isEmpty()) return;
+    QStringList candidates;
+    for (const QVariant& entry : std::as_const(m_sessionList)) {
+        const QVariantMap session = entry.toMap();
+        if (!session.value(QStringLiteral("archived")).toBool())
+            candidates.append(session.value(QStringLiteral("id")).toString());
     }
+    if (candidates.isEmpty()) return;
+
+    ChatSessionController* controller = active();
+    const QString currentId =
+        controller ? controller->currentSessionId() : QString();
+    const int index = candidates.indexOf(currentId);
+    const int next = index < 0
+        ? (delta > 0 ? 0 : candidates.size() - 1)
+        : (index + (delta > 0 ? 1 : -1) + candidates.size()) % candidates.size();
+    openConversation(candidates.at(next));
 }
 
 // ── Real agent pipeline ──────────────────────────────────

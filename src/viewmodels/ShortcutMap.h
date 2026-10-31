@@ -30,7 +30,7 @@ class ShortcutMap : public QObject {
     // 设置页 / 速查表用的完整动作列表（含标题、默认值、是否已修改）。
     Q_PROPERTY(QVariantList actions READ actions NOTIFY changed)
     Q_PROPERTY(int modifiedCount READ modifiedCount NOTIFY changed)
-    // 录制期间为 true：main.qml 的全局 Shortcut 必须让位，否则按 Ctrl+B
+    // 录制期间为 true：main.qml 的全局 Shortcut 必须让位，否则按 Ctrl+]
     // 会先触发“切换面板”而录不到这个组合键。
     Q_PROPERTY(bool recording READ recording WRITE setRecording NOTIFY recordingChanged)
 public:
