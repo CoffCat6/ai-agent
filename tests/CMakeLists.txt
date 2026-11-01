@@ -391,6 +391,23 @@ add_test(NAME test_charts_qml
         "QT_QPA_PLATFORM_PLUGIN_PATH=${QT6_INSTALL_PREFIX}/${QT6_INSTALL_PLUGINS}/platforms"
         $<TARGET_FILE:test_charts_qml> -platform offscreen)
 
+# docs/32 §9: ProcessCard 子代理过程日志渲染回归。与 test_charts_qml 共用
+# 「build/NexusAI 文件系统副本 + qrc 回退拦截器 + offscreen」方案。锁住
+# QVariantList→QML sequence wrapper 的判型坑（Array.isArray 对它返回 false，
+# 曾导致过程日志静默消失——数据链路全绿、UI 盲区，同 docs/25 图表空白教训）。
+add_executable(test_process_card_qml test_process_card_qml.cpp)
+target_link_libraries(test_process_card_qml PRIVATE
+    nexus_core nexus_infra nexus_viewmodels nexus_viewmodelsplugin
+    Qt6::Test Qt6::Qml Qt6::Quick)
+target_compile_definitions(test_process_card_qml PRIVATE
+    NEXUS_TEST_QML_DIR="${CMAKE_CURRENT_SOURCE_DIR}/qml"
+    NEXUS_BUILD_DIR="${CMAKE_BINARY_DIR}"
+    NEXUS_MODULE_DIR="${CMAKE_BINARY_DIR}/NexusAI")
+add_test(NAME test_process_card_qml
+    COMMAND ${CMAKE_COMMAND} -E env
+        "QT_QPA_PLATFORM_PLUGIN_PATH=${QT6_INSTALL_PREFIX}/${QT6_INSTALL_PLUGINS}/platforms"
+        $<TARGET_FILE:test_process_card_qml> -platform offscreen)
+
 # F1: TodoListPanel 渲染/状态回归。与 test_charts_qml 共用「build/NexusAI
 # 文件系统副本 + qrc 回退拦截器 + offscreen」方案，锁住空态不占位、三态
 # 映射、折叠/展开和像素级非空白。

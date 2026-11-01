@@ -29,7 +29,10 @@ Item {
     readonly property var subagentLog: {
         if (!isSpawnAgent) return null
         const raw = modelData.subagentLog
-        return (Array.isArray(raw) && raw.length > 0) ? raw : null
+        // 不能用 Array.isArray 判型：QVariantList 进 QML 后是 sequence
+        // wrapper（length/索引访问正常），Array.isArray 对它返回 false，
+        // 用它判空会让日志永远不渲染。
+        return (raw !== undefined && raw !== null && raw.length > 0) ? raw : null
     }
     readonly property bool hasSubagentLog: subagentLog !== null
     // 日志条目图标与配色：assistant 用品牌色、tool 用警示色。
@@ -335,6 +338,7 @@ Item {
             // 文本布局付费；折叠态高度仅由头部+摘要行决定，天然稳定）。
             Loader {
                 id: bodyLoader
+                objectName: "bodyLoader"
                 active: root.bodyVisible
                 visible: active
                 width: parent.width
@@ -389,6 +393,7 @@ Item {
             Component {
                 id: subagentLogComp
                 Column {
+                    objectName: "subagentLogBody"
                     width: bodyLoader.width
                     spacing: Theme.spaceXs
 
