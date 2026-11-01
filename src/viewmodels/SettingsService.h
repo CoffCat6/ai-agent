@@ -71,6 +71,11 @@ class SettingsService : public QObject {
     // 还没得出结论就耗尽，只能拿已有信息拼一个"我无法确认"的答复。
     Q_PROPERTY(int maxSteps READ maxSteps WRITE setMaxSteps NOTIFY maxStepsChanged)
     Q_PROPERTY(int taskTimeoutMinutes READ taskTimeoutMinutes WRITE setTaskTimeoutMinutes NOTIFY taskTimeoutMinutesChanged)
+    // docs/32 P1: 子代理（spawn_agent）。P1 无设置页，P2 接界面。
+    Q_PROPERTY(bool subagentEnabled READ subagentEnabled WRITE setSubagentEnabled NOTIFY subagentEnabledChanged FINAL)
+    Q_PROPERTY(int subagentMaxParallel READ subagentMaxParallel WRITE setSubagentMaxParallel NOTIFY subagentMaxParallelChanged FINAL)
+    Q_PROPERTY(int subagentMaxSteps READ subagentMaxSteps WRITE setSubagentMaxSteps NOTIFY subagentMaxStepsChanged FINAL)
+    Q_PROPERTY(int subagentTimeoutSec READ subagentTimeoutSec WRITE setSubagentTimeoutSec NOTIFY subagentTimeoutSecChanged FINAL)
 
     Q_PROPERTY(bool allowFullDiskRead READ allowFullDiskRead WRITE setAllowFullDiskRead NOTIFY allowFullDiskReadChanged)
     // docs/17 P1-4: 项目目录写入放行（默认关，安全页）。
@@ -174,6 +179,17 @@ public:
     void setMaxSteps(int steps);
     int taskTimeoutMinutes() const { return m_taskTimeoutMinutes; }
     void setTaskTimeoutMinutes(int minutes);
+
+    // docs/32 P1: sub-agent (spawn_agent) knobs. Registration gating lives
+    // in main.cpp's applySettings; these only persist + broadcast.
+    bool subagentEnabled() const { return m_subagentEnabled; }
+    void setSubagentEnabled(bool enabled);
+    int subagentMaxParallel() const { return m_subagentMaxParallel; }
+    void setSubagentMaxParallel(int value);
+    int subagentMaxSteps() const { return m_subagentMaxSteps; }
+    void setSubagentMaxSteps(int value);
+    int subagentTimeoutSec() const { return m_subagentTimeoutSec; }
+    void setSubagentTimeoutSec(int seconds);
 
     // Security: allow the agent to read files outside the user-directory
     // allowlist (audit P1-8). Opt-in, default off.
@@ -490,6 +506,11 @@ signals:
     void contextTokensChanged();
     void maxStepsChanged();
     void taskTimeoutMinutesChanged();
+    // docs/32 P1: 子代理设置信号。
+    void subagentEnabledChanged();
+    void subagentMaxParallelChanged();
+    void subagentMaxStepsChanged();
+    void subagentTimeoutSecChanged();
 
     void allowFullDiskReadChanged();
     void allowProjectWriteChanged();
@@ -562,6 +583,11 @@ private:
     int m_contextTokens{};
     int m_maxSteps{};
     int m_taskTimeoutMinutes{};
+    // docs/32 P1: 子代理设置。
+    bool m_subagentEnabled{};
+    int m_subagentMaxParallel{};
+    int m_subagentMaxSteps{};
+    int m_subagentTimeoutSec{};
 
     bool m_allowFullDiskRead{};
     bool m_allowProjectWrite{};   // docs/17 P1-4: 项目目录写入放行

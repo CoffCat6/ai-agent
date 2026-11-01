@@ -35,6 +35,8 @@
 #include "core/tools/Sandbox.h"
 #include "core/tools/NetworkFetchTool.h"
 #include "core/tools/WebSearchTool.h"
+// docs/32 P1: 子代理（spawn_agent）工具。
+#include "core/tools/SubAgentTool.h"
 #include "core/rag/RagService.h"
 #include "core/rag/KnowledgeSearchTool.h"
 #include "core/utils/Logger.h"
@@ -49,6 +51,7 @@
 #include "infrastructure/embed/EmbedShutdown.h"
 
 #include <memory>
+#include <atomic>
 #include <QAtomicInt>
 
 #include <QDir>
@@ -691,8 +694,34 @@ qInfo() << "NexusAI" << app.applicationVersion() << "starting";
 
     // Summaries have a separate provider: changing defaults must never
     // reconfigure a service used by a running conversation.
+    // ── docs/32 P1: 子代理（spawn_agent）──
+    // 注册即门控：agent/subagentEnabled 决定工具是否暴露给模型。profile 快照
+    // 由 applySettings 在 GUI 线程写入，池线程经 atomic shared_ptr 读取；
+    // 服务工厂在池线程上创建独立 IAIService——并发单位是服务实例
+    // （LLMServiceBase 每实例仅一个在途请求），与 per-tab 先例同源。
+    struct SubAgentProfileSnapshot {
+        bool valid{false};
+        QString protocolKey;
+        LlmProfileConfig config;
+    };
+    auto subAgentProfile = std::make_shared<
+        std::atomic<std::shared_ptr<const SubAgentProfileSnapshot>>>();
+    auto subAgentTool = std::make_shared<SubAgentTool>();
+    subAgentTool->setServiceFactory([subAgentProfile]() -> IAIService* {
+        const std::shared_ptr<const SubAgentProfileSnapshot> snapshot =
+            subAgentProfile->load();
+        if (!snapshot || !snapshot->valid) return nullptr;
+        IAIService* service = LlmProtocolRegistry::createService(snapshot->protocolKey, nullptr);
+        if (service) service->configure(snapshot->config);
+        return service;
+    });
+    // 跨多次 applySettings 调用保持注册状态；连接会拷贝 lambda，故用共享
+    // 持有而非值捕获。
+    auto spawnRegistered = std::make_shared<bool>(false);
+
     const auto applySettings = [settings, agentVM, agent, fetchPtr, webPtr,
-                                proxyFactory,
+                                proxyFactory, subAgentTool, subAgentProfile,
+                                spawnRegistered,
                                 tabMemories, createWebSearchBackend]() {
         // H1: one snapshot drives the application-wide proxy factory, so every
         // QNetworkAccessManager (LLM/embedding/search/MCP/http_fetch) follows
@@ -736,6 +765,31 @@ qInfo() << "NexusAI" << app.applicationVersion() << "starting";
         // T8 (F4): sync episodic memory toggle and LLM service.
         for (auto* summaries : std::as_const(*tabMemories))
             summaries->setEnabled(settings->episodicMemoryEnabled());
+
+        // docs/32 P1: 子代理——注册门控 + 运行参数 + profile 快照刷新。
+        // 只读工具快照必须在 GUI 线程抓取（ToolRegistry 无内部锁）。
+        subAgentTool->setMaxParallel(settings->subagentMaxParallel());
+        subAgentTool->setMaxSteps(settings->subagentMaxSteps());
+        subAgentTool->setTimeoutMs(settings->subagentTimeoutSec() * 1000LL);
+        subAgentTool->refreshCatalog(settings->localOnlyMode());
+        const QVariantMap spawnProfile = settings->activeProfile();
+        auto profileSnapshot = std::make_shared<SubAgentProfileSnapshot>();
+        profileSnapshot->valid =
+            !spawnProfile.value(QStringLiteral("model")).toString().trimmed().isEmpty()
+            && !spawnProfile.value(QStringLiteral("baseUrl")).toString().trimmed().isEmpty();
+        profileSnapshot->protocolKey = LlmProtocolRegistry::resolve(
+            spawnProfile.value(QStringLiteral("apiProtocol")).toString(),
+            spawnProfile.value(QStringLiteral("provider")).toString())->key;
+        profileSnapshot->config = profileConfigOf(spawnProfile);
+        subAgentProfile->store(std::move(profileSnapshot));
+        if (settings->subagentEnabled() && !*spawnRegistered) {
+            ToolRegistry::instance().registerTool(subAgentTool);
+            *spawnRegistered = true;
+        } else if (!settings->subagentEnabled() && *spawnRegistered) {
+            // 摘除但保留对象：再次启用时同一实例重新注册。
+            ToolRegistry::instance().takeTool(QLatin1String(SubAgentTool::kName));
+            *spawnRegistered = false;
+        }
     };
     applySettings();
 
@@ -752,6 +806,16 @@ qInfo() << "NexusAI" << app.applicationVersion() << "starting";
     // 步数预算改动即时生效（含已在跑的标签）。
     QObject::connect(settings, &SettingsService::maxStepsChanged, &app, [applySettings]() { applySettings(); });
     QObject::connect(settings, &SettingsService::taskTimeoutMinutesChanged, &app, [applySettings]() { applySettings(); });
+    // docs/32 P1: 子代理设置即时生效（开关翻转即注册/注销工具）。
+    QObject::connect(settings, &SettingsService::subagentEnabledChanged, &app, [applySettings]() { applySettings(); });
+    QObject::connect(settings, &SettingsService::subagentMaxParallelChanged, &app, [applySettings]() { applySettings(); });
+    QObject::connect(settings, &SettingsService::subagentMaxStepsChanged, &app, [applySettings]() { applySettings(); });
+    QObject::connect(settings, &SettingsService::subagentTimeoutSecChanged, &app, [applySettings]() { applySettings(); });
+    // 工具可用性变化（MCP 上下线、用户禁用/放行）→ 刷新子代理只读快照。
+    QObject::connect(&ToolRegistry::instance(), &ToolRegistry::toolsChanged, &app,
+                     [subAgentTool, settings]() {
+                         subAgentTool->refreshCatalog(settings->localOnlyMode());
+                     });
     QObject::connect(settings, &SettingsService::allowFullDiskReadChanged, &app, [applySettings]() { applySettings(); });
     QObject::connect(settings, &SettingsService::allowProjectWriteChanged, &app, [applySettings]() { applySettings(); });
     QObject::connect(settings, &SettingsService::allowLocalNetworkFetchChanged, &app, [applySettings]() { applySettings(); });

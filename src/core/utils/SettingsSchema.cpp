@@ -232,6 +232,15 @@ const QVector<SettingsKeyDef>& SettingsSchema::registeredKeys() {
             keyDef(QStringLiteral("agent/taskTimeoutMinutes"),
                    AIAgent::kDefaultTaskTimeoutMs / 60000, SettingValueType::Int,
                    intRange(1, 60)),
+            // docs/32 P1: 子代理（spawn_agent）。默认关——注册即门控，
+            // 开关翻转时 main.cpp 增删工具而非靠禁用层。
+            keyDef(QStringLiteral("agent/subagentEnabled"), false, SettingValueType::Bool),
+            keyDef(QStringLiteral("agent/subagentMaxParallel"), 2, SettingValueType::Int,
+                   intRange(1, 8)),
+            keyDef(QStringLiteral("agent/subagentMaxSteps"), 12, SettingValueType::Int,
+                   intRange(2, 40)),
+            keyDef(QStringLiteral("agent/subagentTimeoutSec"), 300, SettingValueType::Int,
+                   intRange(30, 1800)),
             keyDef(QStringLiteral("security/allowFullDiskRead"), false, SettingValueType::Bool),
             keyDef(QStringLiteral("security/allowProjectWrite"), false, SettingValueType::Bool),
             keyDef(QStringLiteral("security/localOnlyMode"), false, SettingValueType::Bool),

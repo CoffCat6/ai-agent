@@ -199,6 +199,8 @@ public:
         def.name = "read_file";
         def.description = "Read the contents of a file from the local filesystem.";
         def.level = ToolLevel::Safe;
+        def.level = ToolLevel::Safe;
+        def.readOnly = true;   // docs/32 P1: sub-agent eligible (read-only)
         QJsonObject props;
         props["path"] = stringParam("Path to the file. Relative paths are "
             "resolved against the active project root when a project is "
@@ -498,6 +500,8 @@ public:
         def.name = "list_dir";
         def.description = "List the entries of a directory on the local filesystem.";
         def.level = ToolLevel::Safe;
+        def.level = ToolLevel::Safe;
+        def.readOnly = true;   // docs/32 P1: sub-agent eligible (read-only)
         QJsonObject props;
         props["path"] = stringParam("Path to the directory to list. Relative "
             "paths are resolved against the active project root when a "
@@ -742,6 +746,8 @@ public:
                           "file paths relative to the search root. Use ** for "
                           "recursive search (e.g. **/*.cpp).";
         def.level = ToolLevel::Safe;
+        def.level = ToolLevel::Safe;
+        def.readOnly = true;   // docs/32 P1: sub-agent eligible (read-only)
         QJsonObject props;
         props["pattern"] = stringParam("Glob pattern (e.g. **/*.cpp, src/**/*.h, "
             "*.txt). ** triggers recursive search.");
@@ -838,6 +844,8 @@ public:
                           "Returns matching lines with file paths and line "
                           "numbers. Searches recursively from the given path.";
         def.level = ToolLevel::Safe;
+        def.level = ToolLevel::Safe;
+        def.readOnly = true;   // docs/32 P1: sub-agent eligible (read-only)
         QJsonObject props;
         props["pattern"] = stringParam("Regular expression to search for.");
         props["path"] = stringParam("Root directory to search from. Relative "
@@ -1002,6 +1010,8 @@ public:
         def.description = "Show the working tree status of the active project's "
                           "git repository. Returns porcelain format with branch info.";
         def.level = ToolLevel::Safe;
+        def.level = ToolLevel::Safe;
+        def.readOnly = true;   // docs/32 P1: sub-agent eligible (read-only)
         QJsonObject props;
         props["path"] = stringParam("Optional path to limit status to a subdirectory or file.");
         def.parameters = buildParams(props, QJsonArray{});
@@ -1034,6 +1044,8 @@ public:
         def.description = "Show unstaged (or staged) changes in the active project's "
                           "git repository as a unified diff.";
         def.level = ToolLevel::Safe;
+        def.level = ToolLevel::Safe;
+        def.readOnly = true;   // docs/32 P1: sub-agent eligible (read-only)
         QJsonObject props;
         QJsonObject stagedProp;
         stagedProp["type"] = "boolean";

@@ -5,8 +5,10 @@
 #include "core/agent/AIAgent.h"
 #include "core/agent/AgentState.h"
 #include "core/agent/EpisodicService.h"
+#include "core/agent/SubAgentRunner.h"
 #include "core/tools/ToolRegistry.h"
 #include "core/tools/Sandbox.h"
+#include "core/tools/SubAgentTool.h"
 #include "core/memory/SqliteMemory.h"
 #include "core/rag/RagService.h"
 #include "core/rag/KnowledgeSearchTool.h"
@@ -16,6 +18,8 @@
 
 #include <QSet>
 #include <QSemaphore>
+#include <QMutex>
+#include <QtConcurrent/QtConcurrentRun>
 #include <QtTest>
 #include <QSignalSpy>
 #include <QTemporaryDir>
@@ -338,6 +342,101 @@ private:
     std::atomic<bool> m_cancelCalled{false};
 };
 
+// ── docs/32 P1: sub-agent fixtures ─────────────────────────────────────
+
+// Safe+readOnly probe: a deterministic stand-in for the read tools so
+// sub-agent tests never touch the filesystem.
+class SubAgentProbeTool : public ITool {
+public:
+    ToolDefinition definition() const override {
+        ToolDefinition def;
+        def.name = QStringLiteral("test_sub_probe");
+        def.description = QStringLiteral("Test helper: read-only probe for the sub-agent toolset.");
+        def.level = ToolLevel::Safe;
+        def.readOnly = true;
+        def.parameters = QJsonObject{
+            {"type", "object"}, {"properties", QJsonObject{}}, {"required", QJsonArray{}}};
+        return def;
+    }
+    ToolResult execute(const QJsonObject&) override {
+        return ToolResult::ok(QStringLiteral("probe-evidence"));
+    }
+};
+
+void ensureSubAgentProbe() {
+    if (!ToolRegistry::instance().isRegistered(QStringLiteral("test_sub_probe")))
+        ToolRegistry::instance().registerTool(std::make_unique<SubAgentProbeTool>());
+}
+
+// Removes spawn_agent when the test scope ends - also on QCOMPARE failure,
+// which returns early from the test function.
+struct SpawnToolGuard {
+    ~SpawnToolGuard() {
+        ToolRegistry::instance().takeTool(QStringLiteral("spawn_agent"));
+    }
+};
+
+// FakeAIService variant for sub-agent runs: records the requests it sees into
+// shared buffers (the runner deletes the service, so the copies must outlive
+// it) and optionally parks the scripted reply behind a semaphore to emulate
+// an in-flight network request inside the runner's event loop.
+class RecordingFakeService : public FakeAIService {
+public:
+    RecordingFakeService(QMutex* mutex, QVector<QJsonArray>* tools,
+                         QVector<QJsonArray>* messages)
+        : m_mutex(mutex), m_tools(tools), m_messages(messages) {}
+    void chatComplete(const QJsonArray& messages, const QJsonArray& toolsArr) override {
+        {
+            QMutexLocker lock(m_mutex);
+            m_tools->append(toolsArr);
+            m_messages->append(messages);
+        }
+        if (enteredFlag) enteredFlag->store(true);
+        if (gate) gate->acquire();   // park before the scripted reply
+        FakeAIService::chatComplete(messages, toolsArr);
+    }
+    QSemaphore* gate{nullptr};
+    std::atomic<bool>* enteredFlag{nullptr};
+
+private:
+    QMutex* m_mutex;
+    QVector<QJsonArray>* m_tools;
+    QVector<QJsonArray>* m_messages;
+};
+
+// A service that accepts requests and never answers - only the runner's
+// wall-clock abort can end such a run.
+class SilentFakeService : public FakeAIService {
+public:
+    void chatComplete(const QJsonArray&, const QJsonArray&) override {}
+};
+
+struct SubAgentFixture {
+    QMutex mutex;
+    QVector<QJsonArray> subSeenTools;
+    QVector<QJsonArray> subSeenMessages;
+    std::shared_ptr<SubAgentTool> tool;
+};
+
+// Registers spawn_agent wired to a factory that dispenses one scripted
+// RecordingFakeService per run. The guard must outlive the task.
+std::shared_ptr<SubAgentTool> registerSpawnTool(
+        SubAgentFixture& fixture,
+        const std::function<void(RecordingFakeService&)>& script) {
+    ensureSubAgentProbe();
+    auto tool = std::make_shared<SubAgentTool>();
+    tool->setServiceFactory([&fixture, script]() -> IAIService* {
+        auto* service = new RecordingFakeService(&fixture.mutex,
+                                                 &fixture.subSeenTools,
+                                                 &fixture.subSeenMessages);
+        script(*service);
+        return service;
+    });
+    tool->refreshCatalog(false);
+    ToolRegistry::instance().registerTool(tool);
+    return tool;
+}
+
 AnomalyTool* registerAnomalyTool() {
     static AnomalyTool* tool = nullptr;
     if (!ToolRegistry::instance().isRegistered(QStringLiteral("test_anomaly"))) {
@@ -464,6 +563,9 @@ private slots:
         // 权限模式用例会改动本实例（QtTest 全程共用一个测试对象），
         // 每个用例前回落默认，防止泄漏到后续用例。
         agent.setPermissionMode(PermissionMode::ConfirmChanges);
+        // 同理：taskTimeoutSealsAndConverges 之类的用例会把墙钟预算改小，
+        // 不复位会误杀随后任何慢于该阈值的用例（子代理墙钟用例即中招）。
+        agent.setTaskTimeoutMs(AIAgent::kDefaultTaskTimeoutMs);
         agent.resetSession();
     }
 
@@ -688,6 +790,14 @@ private slots:
     // 审查 M2（任务 #12）：VM 层 QVariantMap 键名契约——QML delegate 消费的
     // modelData.* 字段名不可偏离（AgentViewModel.h 注释的机器验证）。
     void listUsageEventsExposesFieldContract();
+
+    // docs/32 P1: 子代理（spawn_agent）
+    void subagentDisabledNotExposed();
+    void subagentReportFlowsBackToMainLoop();
+    void subagentStepBudgetConverges();
+    void subagentTimeoutAborts();
+    void subagentStopCascades();
+    void subagentConcurrencyGateQueues();
 
     // G3: project rules file injection (docs/26 G3)
     void projectRulesInjectedIntoSystemPrompt() {
@@ -3968,6 +4078,200 @@ void TestAgent::listUsageEventsExposesFieldContract() {
     QCOMPARE(capped.size(), 1);
     QCOMPARE(capped.at(0).toMap().value(QStringLiteral("action")).toString(),
              QStringLiteral("llm_result"));
+}
+
+// ── docs/32 P1: 子代理（spawn_agent）───────────────────────────────────
+
+void TestAgent::subagentDisabledNotExposed() {
+    // 未注册 spawn_agent：模型 schema 里不得出现该工具。
+    llm.reset();
+    llm.script.append(textResponse(QStringLiteral("no sub needed")));
+    QSignalSpy spy(&agent, &AIAgent::responseReady);
+    agent.startTask(QStringLiteral("hi"));
+    QTRY_COMPARE(spy.count(), 1);
+    QVERIFY(!llm.seenTools.isEmpty());
+    QVERIFY(!toolsArrayContains(llm.seenTools.first(),
+                                QStringLiteral("spawn_agent")));
+}
+
+void TestAgent::subagentReportFlowsBackToMainLoop() {
+    SubAgentFixture fixture;
+    SpawnToolGuard guard;
+    fixture.tool = registerSpawnTool(fixture, [](RecordingFakeService& sub) {
+        sub.script.append(toolResponse(QStringLiteral("test_sub_probe"), {}));
+        sub.script.append(textResponse(
+            QStringLiteral("Sub findings: probe-evidence confirmed.")));
+    });
+    llm.reset();
+    llm.script.append(toolResponse(QStringLiteral("spawn_agent"),
+        QJsonObject{{"goal", QStringLiteral("inspect the probe")}}));
+    llm.script.append(textResponse(QStringLiteral("integrated")));
+    QSignalSpy spy(&agent, &AIAgent::responseReady);
+    agent.startTask(QStringLiteral("use a sub-agent"));
+    QTRY_COMPARE(spy.count(), 1);
+
+    // 主循环以工具结果形态拿到子代理报告，报告含子代理的证据。
+    const QString report = lastToolMessageContent(agent.messages());
+    QVERIFY(report.contains(QStringLiteral("[Sub-agent report]")));
+    QVERIFY(report.contains(QStringLiteral("probe-evidence")));
+    QVERIFY(report.contains(QStringLiteral("Sub findings")));
+
+    // 子代理工具面：probe 在列；派生器与写类工具排除。子剧本两条 = 两次
+    // chatComplete（工具轮 + 最终报告），只断言第一轮的 schema。
+    QMutexLocker lock(&fixture.mutex);
+    QCOMPARE(fixture.subSeenTools.size(), 2);
+    const QJsonArray subTools = fixture.subSeenTools.first();
+    QVERIFY(toolsArrayContains(subTools, QStringLiteral("test_sub_probe")));
+    QVERIFY(!toolsArrayContains(subTools, QStringLiteral("spawn_agent")));
+    QVERIFY(!toolsArrayContains(subTools, QStringLiteral("write_file")));
+    QVERIFY(!toolsArrayContains(subTools, QStringLiteral("edit_file")));
+    QVERIFY(!toolsArrayContains(subTools, QStringLiteral("shell_exec")));
+    // 子代理系统提示声明只读角色，goal 进入用户消息。
+    const QJsonArray subMessages = fixture.subSeenMessages.first();
+    QVERIFY(subMessages.size() >= 2);
+    QCOMPARE(subMessages.first().toObject().value("role").toString(),
+             QStringLiteral("system"));
+    QVERIFY(subMessages.first().toObject().value("content").toString()
+                .contains(QStringLiteral("read-only research sub-agent")));
+    QVERIFY(subMessages.at(1).toObject().value("content").toString()
+                .contains(QStringLiteral("inspect the probe")));
+}
+
+void TestAgent::subagentStepBudgetConverges() {
+    SubAgentFixture fixture;
+    SpawnToolGuard guard;
+    fixture.tool = registerSpawnTool(fixture, [](RecordingFakeService& sub) {
+        // 三步互不相同的 tool_call 剧本：绕开重复轮守卫，真正撞到步数上限
+        // （剧本耗尽后 FakeAIService 重复最后一条，但参数已不同于第二步，
+        // 强制收尾轮带不回最终报告）。
+        sub.script.append(toolResponse(QStringLiteral("test_sub_probe"), {}));
+        sub.script.append(toolResponse(QStringLiteral("test_sub_probe"),
+                                       QJsonObject{{"round", 2}}));
+        sub.script.append(toolResponse(QStringLiteral("test_sub_probe"),
+                                       QJsonObject{{"round", 3}}));
+    });
+    fixture.tool->setMaxSteps(3);
+    llm.reset();
+    llm.script.append(toolResponse(QStringLiteral("spawn_agent"),
+        QJsonObject{{"goal", QStringLiteral("loop forever")}}));
+    llm.script.append(textResponse(QStringLiteral("converged anyway")));
+    QSignalSpy spy(&agent, &AIAgent::responseReady);
+    agent.startTask(QStringLiteral("spawn a stubborn sub-agent"));
+    QTRY_COMPARE(spy.count(), 1);
+
+    const QString report = lastToolMessageContent(agent.messages());
+    QVERIFY(report.contains(QStringLiteral("step budget")));
+    // 主循环从子代理失败中恢复并给出自己的回答。
+    QCOMPARE(agent.lastResponse(), QStringLiteral("converged anyway"));
+}
+
+void TestAgent::subagentTimeoutAborts() {
+    SubAgentFixture fixture;
+    SpawnToolGuard guard;
+    ensureSubAgentProbe();
+    fixture.tool = std::make_shared<SubAgentTool>();
+    // 永不响应的服务：只有 Runner 的墙钟中止能收场。
+    fixture.tool->setServiceFactory([]() -> IAIService* {
+        return new SilentFakeService();
+    });
+    fixture.tool->refreshCatalog(false);
+    fixture.tool->setTimeoutMs(300);
+    ToolRegistry::instance().registerTool(fixture.tool);
+
+    llm.reset();
+    llm.script.append(toolResponse(QStringLiteral("spawn_agent"),
+        QJsonObject{{"goal", QStringLiteral("stuck")}}));
+    llm.script.append(textResponse(QStringLiteral("gave up cleanly")));
+    QSignalSpy spy(&agent, &AIAgent::responseReady);
+    agent.startTask(QStringLiteral("spawn a frozen sub-agent"));
+    QTRY_COMPARE(spy.count(), 1);
+    QVERIFY(lastToolMessageContent(agent.messages())
+                .contains(QStringLiteral("wall-clock budget")));
+    QCOMPARE(agent.lastResponse(), QStringLiteral("gave up cleanly"));
+}
+
+void TestAgent::subagentStopCascades() {
+    SubAgentFixture fixture;
+    SpawnToolGuard guard;
+    auto enteredFlag = std::make_shared<std::atomic<bool>>(false);
+    auto releaseGate = std::make_shared<QSemaphore>();
+    fixture.tool = registerSpawnTool(fixture, [&](RecordingFakeService& sub) {
+        sub.enteredFlag = enteredFlag.get();
+        sub.gate = releaseGate.get();
+        sub.script.append(toolResponse(QStringLiteral("test_sub_probe"), {}));
+    });
+    llm.reset();
+    llm.script.append(toolResponse(QStringLiteral("spawn_agent"),
+        QJsonObject{{"goal", QStringLiteral("slow probe")}}));
+    // 无后续剧本：任务只能经由 stop() 收场。
+    QSignalSpy spy(&agent, &AIAgent::responseReady);
+    agent.startTask(QStringLiteral("stop a running sub-agent"));
+    QTRY_VERIFY(enteredFlag->load());   // 子代理请求已挂起
+    agent.stop();                       // 级联取消旗标
+    releaseGate->release();             // 放行挂起的回复，Runner 随后观察到旗标
+    QTRY_VERIFY(!agent.isActive());
+    // 派生调用在历史里被密封，无悬挂 tool_calls。
+    QVERIFY(lastToolMessageContent(agent.messages())
+                .contains(QStringLiteral("[Not executed]")));
+    QVERIFY(noDanglingToolCalls(agent.messages()));
+}
+
+void TestAgent::subagentConcurrencyGateQueues() {
+    SubAgentFixture fixture;
+    SpawnToolGuard guard;
+    ensureSubAgentProbe();
+    fixture.tool = std::make_shared<SubAgentTool>();
+    fixture.tool->setMaxParallel(1);
+
+    QMutex gatesMutex;
+    QVector<std::shared_ptr<QSemaphore>> gates;
+    fixture.tool->setServiceFactory([&]() -> IAIService* {
+        auto* service = new RecordingFakeService(&fixture.mutex,
+                                                 &fixture.subSeenTools,
+                                                 &fixture.subSeenMessages);
+        auto gate = std::make_shared<QSemaphore>();
+        {
+            QMutexLocker lock(&gatesMutex);
+            gates.append(gate);
+        }
+        service->gate = gate.get();
+        service->script.append(textResponse(QStringLiteral("report ok")));
+        return service;
+    });
+    // 线程安全的 gates.size() 读取（工厂在池线程写入）。
+    auto gateCount = [&]() -> int {
+        QMutexLocker lock(&gatesMutex);
+        return gates.size();
+    };
+    fixture.tool->refreshCatalog(false);
+    ToolRegistry::instance().registerTool(fixture.tool);
+
+    QVector<QString> results(2);
+    auto runOne = [&fixture, &results](int index, const QString& goal) {
+        const ToolResult result = fixture.tool->execute(
+            QJsonObject{{"goal", goal}});
+        results[index] = result.success ? result.output : result.error;
+    };
+    auto future1 = QtConcurrent::run(runOne, 0, QStringLiteral("first"));
+    // 第一个进入并挂起（占住唯一槽位）。
+    QTRY_COMPARE(gateCount(), 1);
+    auto future2 = QtConcurrent::run(runOne, 1, QStringLiteral("second"));
+    // 排队窗口内不允许第二个并发进入。
+    QTest::qWait(400);
+    QCOMPARE(gateCount(), 1);
+    // 放行第一个 → 槽位释放 → 第二个才能进入。
+    QMutexLocker lock(&gatesMutex);
+    gates.first()->release();
+    lock.unlock();
+    QTRY_COMPARE(gateCount(), 2);
+    {
+        QMutexLocker lock2(&gatesMutex);
+        gates.last()->release();
+    }
+    future1.waitForFinished();
+    future2.waitForFinished();
+    QVERIFY(results.at(0).contains(QStringLiteral("[Sub-agent report]")));
+    QVERIFY(results.at(1).contains(QStringLiteral("[Sub-agent report]")));
 }
 
 QTEST_GUILESS_MAIN(TestAgent)

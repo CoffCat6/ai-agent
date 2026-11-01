@@ -26,6 +26,7 @@ public:
             "with their source document; every hit starts with a "
             "[doc:name#chunkId] provenance marker.";
         def.level = ToolLevel::Safe;
+        def.readOnly = true;   // docs/32 P1: sub-agent eligible (read-only)
         QJsonObject props;
         props["query"] = stringParam("The search query.");
         QJsonObject kProp;

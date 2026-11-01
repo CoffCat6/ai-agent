@@ -40,6 +40,9 @@ add_library(nexus_core STATIC
     src/core/agent/LLMTypes.h
     src/core/agent/AIAgent.h
     src/core/agent/AIAgent.cpp
+    # docs/32 P1: 只读子代理的最小循环（复用 IAIService 虚接口，不引 infra 符号）。
+    src/core/agent/SubAgentRunner.h
+    src/core/agent/SubAgentRunner.cpp
     src/core/agent/EpisodicService.h
     src/core/agent/EpisodicService.cpp
     src/core/memory/IMemory.h
@@ -48,6 +51,9 @@ add_library(nexus_core STATIC
     src/core/tools/ITool.h
     src/core/tools/ToolRegistry.h
     src/core/tools/ToolRegistry.cpp
+    # docs/32 P1: spawn_agent 工具（主代理派生只读子代理的入口）。
+    src/core/tools/SubAgentTool.h
+    src/core/tools/SubAgentTool.cpp
     src/core/tools/Sandbox.h
     src/core/tools/SandboxWin.cpp
     src/core/git/GitService.h

@@ -55,6 +55,7 @@
 - **消费方**：`ChatSessionController`（每 tab）转发 `startTask/approveToolCall/stop/regenerateLast/权限模式`，聚合 `state/trace/tokens`；`AgentViewModel` 暴露 QML 单例属性；`main.cpp` 注入 settings 的步数、超时、上下文窗口、系统提示 override 与 local-only 门控，项目根由 `AgentViewModel` 随切换推送。
 - **agent 信号**：`stateChanged/traceChanged/responseReady/toolConfirmRequired/errorOccurred/tokensChanged/contextLimitChanged/sessionChanged/sessionsChanged/quotaWarning/quotaAlert/costChanged/sessionTokensChanged/todoListChanged/fileCheckpointsChanged/episodicChanged`。
 - **构建**：`nexus_core`（Qt6::Core/Sql/Concurrent/Network，无 Gui），`nexus_viewmodels` 与 `nexus_ai` 消费。
+- **SubAgentRunner（docs/32 P1）**：`spawn_agent` 工具（`core/tools/SubAgentTool`）在池线程驱动的只读子代理循环。与主循环刻意不共享任何状态：服务由 main.cpp 的工厂按活动 profile 现建（并发单位 = IAIService 实例），消息历史内存态即弃，不落 SQLite。工具面由 `SubAgentTool::refreshCatalog()` 在 GUI 线程快照（`ToolLevel::Safe && readOnly`，排除 spawn_agent 自身与 localOnly 网络工具），并发闸/步数/超时由设置键 `agent/subagent*` 控制；主代理 `stop()` 经共享取消旗标级联中止。
 
 ## 关键文件
 
@@ -63,6 +64,7 @@
 - `LLMTypes.h`：`LLMResponse`，含 requestId、分类 token、`reasoning`。
 - `PermissionMode.h`：四种会话权限、字符串映射、QML int 校验。
 - `EpisodicService.h` / `.cpp`：摘要生成/存储、FTS+语义合并检索、注入文本构造、embedding 异步回写。
+- `SubAgentRunner.h` / `.cpp`：只读子代理最小循环（`SubAgentRequest/SubAgentReport`），在池线程自备 `QEventLoop` 驱动 IAIService，含墙钟中止、重复轮守卫、强制收尾轮。
 
 ## 约束与风险
 

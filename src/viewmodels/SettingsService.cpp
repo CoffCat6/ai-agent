@@ -360,6 +360,21 @@ void SettingsService::load() {
         QStringLiteral("agent/taskTimeoutMinutes"),
         SettingsRepository::value(QStringLiteral("agent/taskTimeoutMinutes"),
             SettingsSchema::defaultValue(QStringLiteral("agent/taskTimeoutMinutes"))).toInt());
+    // docs/32 P1: 子代理设置装载。
+    m_subagentEnabled = SettingsRepository::value(QStringLiteral("agent/subagentEnabled"),
+        SettingsSchema::defaultValue(QStringLiteral("agent/subagentEnabled"))).toBool();
+    m_subagentMaxParallel = SettingsSchema::clampInt(
+        QStringLiteral("agent/subagentMaxParallel"),
+        SettingsRepository::value(QStringLiteral("agent/subagentMaxParallel"),
+            SettingsSchema::defaultValue(QStringLiteral("agent/subagentMaxParallel"))).toInt());
+    m_subagentMaxSteps = SettingsSchema::clampInt(
+        QStringLiteral("agent/subagentMaxSteps"),
+        SettingsRepository::value(QStringLiteral("agent/subagentMaxSteps"),
+            SettingsSchema::defaultValue(QStringLiteral("agent/subagentMaxSteps"))).toInt());
+    m_subagentTimeoutSec = SettingsSchema::clampInt(
+        QStringLiteral("agent/subagentTimeoutSec"),
+        SettingsRepository::value(QStringLiteral("agent/subagentTimeoutSec"),
+            SettingsSchema::defaultValue(QStringLiteral("agent/subagentTimeoutSec"))).toInt());
 
     m_allowFullDiskRead = SettingsRepository::value(QStringLiteral("security/allowFullDiskRead"),
         SettingsSchema::defaultValue(QStringLiteral("security/allowFullDiskRead"))).toBool();
@@ -1190,6 +1205,42 @@ void SettingsService::setTaskTimeoutMinutes(int minutes) {
     emit taskTimeoutMinutesChanged();
 }
 
+// docs/32 P1: 子代理设置。生效路径在 main.cpp（applySettings 订阅这些信号
+// → 注册/注销 spawn_agent + 推送运行参数）。
+void SettingsService::setSubagentEnabled(bool enabled) {
+    if (m_subagentEnabled == enabled
+            || !persistValue(QStringLiteral("agent/subagentEnabled"), enabled)) return;
+    m_subagentEnabled = enabled;
+    emit subagentEnabledChanged();
+}
+
+void SettingsService::setSubagentMaxParallel(int value) {
+    const int clamped = SettingsSchema::clampInt(
+        QStringLiteral("agent/subagentMaxParallel"), value);
+    if (m_subagentMaxParallel == clamped
+            || !persistValue(QStringLiteral("agent/subagentMaxParallel"), clamped)) return;
+    m_subagentMaxParallel = clamped;
+    emit subagentMaxParallelChanged();
+}
+
+void SettingsService::setSubagentMaxSteps(int value) {
+    const int clamped = SettingsSchema::clampInt(
+        QStringLiteral("agent/subagentMaxSteps"), value);
+    if (m_subagentMaxSteps == clamped
+            || !persistValue(QStringLiteral("agent/subagentMaxSteps"), clamped)) return;
+    m_subagentMaxSteps = clamped;
+    emit subagentMaxStepsChanged();
+}
+
+void SettingsService::setSubagentTimeoutSec(int seconds) {
+    const int clamped = SettingsSchema::clampInt(
+        QStringLiteral("agent/subagentTimeoutSec"), seconds);
+    if (m_subagentTimeoutSec == clamped
+            || !persistValue(QStringLiteral("agent/subagentTimeoutSec"), clamped)) return;
+    m_subagentTimeoutSec = clamped;
+    emit subagentTimeoutSecChanged();
+}
+
 
 void SettingsService::setAllowFullDiskRead(bool enabled) {
     if (m_allowFullDiskRead == enabled
@@ -1843,6 +1894,14 @@ void SettingsService::resetAgentToDefaults() {
         QStringLiteral("agent/taskTimeoutMinutes")).toInt());
     setSystemPromptOverride(SettingsSchema::defaultValue(
         QStringLiteral("agent/systemPromptOverride")).toString());
+    setSubagentEnabled(SettingsSchema::defaultValue(
+        QStringLiteral("agent/subagentEnabled")).toBool());
+    setSubagentMaxParallel(SettingsSchema::defaultValue(
+        QStringLiteral("agent/subagentMaxParallel")).toInt());
+    setSubagentMaxSteps(SettingsSchema::defaultValue(
+        QStringLiteral("agent/subagentMaxSteps")).toInt());
+    setSubagentTimeoutSec(SettingsSchema::defaultValue(
+        QStringLiteral("agent/subagentTimeoutSec")).toInt());
 }
 
 void SettingsService::resetLoggingToDefaults() {
@@ -1907,6 +1966,10 @@ bool SettingsService::setValueForSetting(const QString& key, const QVariant& val
         setTaskTimeoutMinutes(value.toInt());
         return true;
     }
+    if (key == QLatin1String("agent/subagentEnabled")) { setSubagentEnabled(value.toBool()); return true; }
+    if (key == QLatin1String("agent/subagentMaxParallel")) { setSubagentMaxParallel(value.toInt()); return true; }
+    if (key == QLatin1String("agent/subagentMaxSteps")) { setSubagentMaxSteps(value.toInt()); return true; }
+    if (key == QLatin1String("agent/subagentTimeoutSec")) { setSubagentTimeoutSec(value.toInt()); return true; }
     if (key == QLatin1String("agent/systemPromptOverride")) {
         setSystemPromptOverride(value.toString());
         return true;

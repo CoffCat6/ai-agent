@@ -1107,6 +1107,9 @@ private slots:
             // 提示词与指令：三组用户自建资产（SettingsService JSON blob）
             "promptPresets", "slashCommands", "sessionTemplates",
             "agent/maxSteps", "agent/taskTimeoutMinutes",
+            // docs/32 P1: 子代理设置键
+            "agent/subagentEnabled", "agent/subagentMaxParallel",
+            "agent/subagentMaxSteps", "agent/subagentTimeoutSec",
             "security/allowFullDiskRead", "security/allowProjectWrite",
             "security/localOnlyMode", "security/allowLocalNetworkFetch",
             "security/readDenyList", "projects/activeId",
