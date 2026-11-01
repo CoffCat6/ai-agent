@@ -7,6 +7,7 @@
 #include <QElapsedTimer>
 #include <QEventLoop>
 #include <QFile>
+#include <QFileInfo>
 #include <QJsonArray>
 #include <QJsonDocument>
 #include <QJsonObject>
@@ -437,6 +438,18 @@ SubAgentReport SubAgentRunner::run(IAIService* service, const SubAgentRequest& r
 
 void SubAgentRunner::setArtifactsRootOverride(const QString& dir) {
     g_artifactsRootOverride = dir;
+}
+
+bool SubAgentRunner::isEvidencePath(const QString& path) {
+    if (path.isEmpty()) return false;
+    const QString canonical = QFileInfo(path).canonicalFilePath();
+    if (canonical.isEmpty()) return false;   // missing file or symlink loop
+    const QString root = artifactsRoot();
+    if (root.isEmpty()) return false;
+    // Root may not exist yet (no run ever wrote an artifact); the prefix
+    // check is against its absolute (not canonical) form.
+    const QString rootAbsolute = QFileInfo(root).absoluteFilePath();
+    return canonical.startsWith(rootAbsolute + QLatin1Char('/'));
 }
 
 } // namespace NexusAI

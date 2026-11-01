@@ -203,6 +203,9 @@ public:
     // In-app log panel: live log model + log-directory opener (doc 6)
     LogModel* logModel() const { return m_logModel; }
     Q_INVOKABLE void openLogFolder();
+    // docs/33 E1: 打开子代理证据工件（系统默认 .md 处理器）。仅放行证据
+    // 根目录内的真实文件；返回 false = 路径校验未过或系统无法打开。
+    Q_INVOKABLE bool openSubagentEvidence(const QString& path);
 
     // FEAT-803: batch-embedding progress (wired from OllamaEmbedding)
     int knowledgeEmbedDone() const { return m_embedDone; }

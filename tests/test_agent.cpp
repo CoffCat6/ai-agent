@@ -4549,6 +4549,28 @@ void TestAgent::subagentEvidenceArtifactWrittenAndPruned() {
     QVERIFY(!QFileInfo::exists(stalePath));
     QVERIFY2(artifactPath.startsWith(artifacts.path()),
              qPrintable(QStringLiteral("artifact outside override root: %1").arg(artifactPath)));
+
+    // UI 入口数据源：spawn_agent 的 tool_result 节点带 evidencePath 字段。
+    bool nodeHasEvidence = false;
+    for (const auto& entry : agent.traceModel()) {
+        const QJsonObject node = entry.toObject();
+        if (node.value("type").toString() == QLatin1String("tool_result")
+                && node.value("title").toString() == QLatin1String("spawn_agent")) {
+            QCOMPARE(node.value("evidencePath").toString(), artifactPath);
+            nodeHasEvidence = true;
+        }
+    }
+    QVERIFY(nodeHasEvidence);
+
+    // isEvidencePath：根目录内的真实文件放行；根外/不存在的路径拒绝
+    // （UI 侧用它拦截伪造路径交给系统打开）。
+    QVERIFY(SubAgentRunner::isEvidencePath(artifactPath));
+    QVERIFY(!SubAgentRunner::isEvidencePath(stalePath));   // 已被清理
+    QVERIFY(!SubAgentRunner::isEvidencePath(
+        artifacts.filePath(QStringLiteral("../escape.md"))));
+    QVERIFY(!SubAgentRunner::isEvidencePath(QString()));
+    QVERIFY(!SubAgentRunner::isEvidencePath(
+        QStandardPaths::writableLocation(QStandardPaths::TempLocation)));
 }
 
 // ── docs/33 E2: 角色档案 ──────────────────────────────────────────────

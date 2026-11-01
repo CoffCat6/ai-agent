@@ -138,6 +138,11 @@ public:
     // Tests only; call with an empty string to restore the default.
     static void setArtifactsRootOverride(const QString& dir);
 
+    // True when path is a readable file INSIDE the evidence artifacts root.
+    // The UI opens evidence paths from trace/audit data with the system
+    // handler; this check keeps a planted path from escaping the root.
+    static bool isEvidencePath(const QString& path);
+
 private:
     // The loop proper; run() wraps it with artifact pruning/writing and hands
     // out the final transcript for the evidence dump.

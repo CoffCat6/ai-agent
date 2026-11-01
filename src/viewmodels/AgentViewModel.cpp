@@ -4,6 +4,7 @@
 #include "viewmodels/ChangeBus.h"
 #include "viewmodels/SettingsService.h"
 #include "core/agent/AIAgent.h"
+#include "core/agent/SubAgentRunner.h"
 #include "core/memory/IMemory.h"
 #include "core/memory/SqliteMemory.h"
 #include "core/rag/RagService.h"
@@ -2872,6 +2873,14 @@ void AgentViewModel::openLogFolder() {
     const QString dir = Logger::logDir();
     if (!dir.isEmpty())
         QDesktopServices::openUrl(QUrl::fromLocalFile(dir));
+}
+
+// docs/33 E1: 聊天里 spawn_agent 工具结果卡片上的「查看证据」入口。路径
+// 来自 trace 节点，交给系统默认 .md 处理器前必须验证它在证据工件根目录
+// 内（isEvidencePath 同时要求文件真实存在），防止伪造路径逃逸。
+bool AgentViewModel::openSubagentEvidence(const QString& path) {
+    if (!SubAgentRunner::isEvidencePath(path)) return false;
+    return QDesktopServices::openUrl(QUrl::fromLocalFile(path));
 }
 
 // ── Draft Text ───────────────────────────────────────────

@@ -482,6 +482,10 @@ QString AIAgent::appendTraceNode(const QString& type, const QString& title,
     // trace_nodes.metadata 并在会话恢复后仍显示。
     if (extra.contains("source"))
         node["source"] = extra.value("source");
+    // 子代理证据工件路径（spawn_agent 的 tool_result）。同 source：
+    // 白名单放行才能持久化并在会话恢复后仍显示「查看证据」。
+    if (extra.contains("evidencePath"))
+        node["evidencePath"] = extra.value("evidencePath");
 
     m_traceModel.append(node);
     persistTraceNode(node, m_nextTraceOrder++);
@@ -2279,6 +2283,15 @@ void AIAgent::finishToolExecution(const ToolCallInfo& call, const QString& trace
     // 让界面能显示「这次检索打到了哪个服务」。失败时同样有价值：
     // 「请求失败」到底是哪家失败。
     if (!result.source.isEmpty()) resultExtra["source"] = result.source;
+    // docs/33 E1: 证据工件路径挂上 tool_result 节点——聊天里「查看证据」
+    // 入口的数据源（ProcessCard 按 evidencePath 渲染芯片）。
+    if (call.name == QLatin1String("spawn_agent") && result.success) {
+        static const QRegularExpression evidenceRe(
+            QStringLiteral("evidence: ([^)\\r\\n]+)"));
+        const QRegularExpressionMatch evidenceMatch = evidenceRe.match(output);
+        if (evidenceMatch.hasMatch())
+            resultExtra["evidencePath"] = evidenceMatch.captured(1).trimmed();
+    }
     appendTraceNode("tool_result", call.name,
                     result.success ? "success" : "failed", resultExtra);
 

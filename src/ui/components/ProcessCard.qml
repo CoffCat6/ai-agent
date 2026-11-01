@@ -19,6 +19,9 @@ Item {
     // 外部服务来源（web_search 的后端 key，如 "zhipu"）。空 = 本地工具或
     // 后端未自报，此时不显示徽章。
     readonly property string source: modelData.source || ""
+    // docs/33 E1: 子代理证据工件路径（spawn_agent 的 tool_result）。非空时
+    // 头部渲染「查看证据」芯片，点击交给系统默认 .md 处理器。
+    readonly property string evidencePath: modelData.evidencePath || ""
     // 来源的展示名。技术名词不翻译（与设置页的 label 一致）。
     function sourceLabel(key) {
         if (key === "zhipu") return "智谱"
@@ -185,6 +188,7 @@ Item {
                         // 标题会白白缩掉一段。
                         width: Math.max(40, headerRow.width - x
                                         - (sourceBadge.visible ? sourceBadge.width + Theme.spaceSm : 0)
+                                        - (evidenceChip.visible ? evidenceChip.width + Theme.spaceSm : 0)
                                         - 8)
                     }
 
@@ -208,6 +212,38 @@ Item {
                             font.pixelSize: Theme.fontSizeNano
                             font.family: Theme.fontSans
                             font.bold: true
+                        }
+                    }
+
+                    // docs/33 E1: 证据工件入口——子代理报告的完整 transcript
+                    // 落在本地文件，报告头里的纯文本路径用户没法直接用。
+                    Rectangle {
+                        id: evidenceChip
+                        anchors.verticalCenter: parent.verticalCenter
+                        visible: root.evidencePath !== ""
+                        width: evidenceText.implicitWidth + 14
+                        height: 17
+                        radius: 3
+                        color: evidenceMA.containsMouse
+                            ? Qt.lighter(Theme.brandPrimary, 1.4) : Theme.brandPrimary
+                        opacity: 0.16
+
+                        Text {
+                            id: evidenceText
+                            anchors.centerIn: parent
+                            text: qsTr("查看证据")
+                            color: Theme.brandPrimary
+                            font.pixelSize: Theme.fontSizeNano
+                            font.family: Theme.fontSans
+                            font.bold: true
+                        }
+
+                        MouseArea {
+                            id: evidenceMA
+                            anchors.fill: parent
+                            hoverEnabled: true
+                            cursorShape: Qt.PointingHandCursor
+                            onClicked: AgentVM.openSubagentEvidence(root.evidencePath)
                         }
                     }
                 }
