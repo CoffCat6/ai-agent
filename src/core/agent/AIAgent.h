@@ -230,6 +230,8 @@ public slots:
     // docs/23 G7: undo a soft delete (sessionsChanged on success).
     bool restoreSession(const QString& sessionId);
     void renameSession(const QString& sessionId, const QString& title);
+    // docs/26 I4: 会话标题自动生成开关（默认开；测试/嵌入场景可关）。
+    void setAutoSessionTitleEnabled(bool enabled) { m_autoTitleEnabled = enabled; }
     // docs/20 §3.1（FORK-701）：重新生成。丢弃最后一条 assistant 回答（含末
     // 轮工具消息），从最后一条 user 消息重新发起请求。持久层同步删除回答
     // （audit_log 不动）。无历史或无 agent 挂接时静默返回。busy 时拒绝。
@@ -455,6 +457,27 @@ private:
     // Request the LLM service last dispatched for us (requestStarted echo);
     // responses carrying a different non-zero id are dropped (ARCH-402).
     quint64 m_activeRequestId{0};
+
+    // docs/26 I4: 会话标题自动生成。新会话首轮回答后用主服务在任务间隙发
+    // 一次廉价请求，把 beginSession 写入的"首条消息前 60 字符"升级为短
+    // 标题；用户手动重命名永久跳过，任何失败静默保留原标题。服务是单
+    // 请求语义：与 episodic 摘要串行（finishTask 链），新任务开始时断连
+    // 并 cancel（见 cancelPendingTitleRequest）。
+    QString m_firstUserMessage;
+    bool m_autoTitleEnabled{true};
+    bool m_sessionTitlePending{false};
+    bool m_sessionRenamed{false};
+    bool m_titleInFlight{false};
+    bool m_titleAfterSummary{false};   // 等 episodic summaryStored 再发
+    quint64 m_titleRequestId{0};
+    QMetaObject::Connection m_titleReqConn;
+    QMetaObject::Connection m_titleRespConn;
+    QMetaObject::Connection m_titleErrConn;
+    QTimer m_titleDeadline;            // 标题请求 15s 兜底（被顶掉时解挂）
+    QString sanitizeSessionTitle(const QString& raw) const;
+    void finishTitleRequest();
+    void cancelPendingTitleRequest();
+    void generateSessionTitle();
     // Observability (Batch 11): per-request latency/token accounting and the
     // wall-clock start of the running task.
     qint64 m_requestStartMs{-1};

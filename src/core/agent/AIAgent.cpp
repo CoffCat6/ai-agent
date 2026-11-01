@@ -163,6 +163,14 @@ AIAgent::AIAgent(QObject* parent) : QObject(parent) {
     // REL-1001: hard wall-clock budget per task
     m_taskTimeoutTimer.setSingleShot(true);
     connect(&m_taskTimeoutTimer, &QTimer::timeout, this, &AIAgent::onTaskTimeout);
+
+    // docs/26 I4: 标题请求 15s 兜底——被 episodic/新任务顶掉时无信号可回，
+    // 超时解挂，避免 m_titleInFlight 永久卡死。
+    m_titleDeadline.setSingleShot(true);
+    m_titleDeadline.setInterval(15000);
+    connect(&m_titleDeadline, &QTimer::timeout, this, [this] {
+        cancelPendingTitleRequest();
+    });
 }
 
 void AIAgent::setTaskTimeoutMs(int ms) {
@@ -225,9 +233,21 @@ void AIAgent::setOwnedMemory(std::unique_ptr<IMemory> memory) {
 
 void AIAgent::setEpisodicService(EpisodicService* service) {
     m_episodicService = service;
-    if (m_episodicService)
+    if (m_episodicService) {
         connect(m_episodicService, &EpisodicService::summaryStored,
                 this, &AIAgent::episodicChanged);
+        // docs/26 I4: 标题生成串行在 episodic 摘要之后（同一服务、单请求
+        // 语义）。摘要落地（成败皆可）即触发挂起的标题生成。
+        connect(m_episodicService, &EpisodicService::summaryStored, this,
+                [this](const QString&, bool) {
+            if (m_titleAfterSummary && !m_active) {
+                m_titleAfterSummary = false;
+                QTimer::singleShot(0, this, &AIAgent::generateSessionTitle);
+            } else if (m_titleAfterSummary && m_active) {
+                m_titleAfterSummary = false;   // 新任务已开跑，下轮再挂
+            }
+        });
+    }
 }
 
 void AIAgent::setMaxIterations(int steps) {
@@ -851,8 +871,100 @@ bool AIAgent::restoreSession(const QString& sessionId) {
 void AIAgent::renameSession(const QString& sessionId, const QString& title) {
     const QString trimmed = title.trimmed();
     if (!m_memory || sessionId.isEmpty() || trimmed.isEmpty()) return;
+    // docs/26 I4: 用户手动命名 → 永久放弃本会话的自动标题。
+    if (sessionId == m_sessionId) {
+        m_sessionRenamed = true;
+        m_sessionTitlePending = false;
+    }
     m_memory->renameSession(sessionId, trimmed.left(80));
     emit sessionsChanged();
+}
+
+// ── docs/26 I4: 会话标题自动生成 ───────────────────────────────────────
+
+// 模型偶尔会带引号/换行/解释前缀；标题只取首行、剥掉成对引号、限长。
+QString AIAgent::sanitizeSessionTitle(const QString& raw) const {
+    QString title = raw.trimmed();
+    title = title.section(QLatin1Char('\n'), 0, 0).trimmed();
+    while (!title.isEmpty()
+           && (title.startsWith(QLatin1Char('"'))
+               || title.startsWith(QLatin1Char('“'))
+               || title.startsWith(QStringLiteral("「"))))
+        title = title.mid(1).trimmed();
+    while (!title.isEmpty()
+           && (title.endsWith(QLatin1Char('"'))
+               || title.endsWith(QLatin1Char('”'))
+               || title.endsWith(QStringLiteral("」"))))
+        title.chop(1);
+    return title.trimmed().left(60);
+}
+
+// 收尾：断连、解挂、停止兜底计时。每会话至多生成一次（pending 复位，
+// 失败不重试——beginSession 的截断标题已经可用）。
+void AIAgent::finishTitleRequest() {
+    m_titleInFlight = false;
+    m_sessionTitlePending = false;
+    QObject::disconnect(m_titleReqConn);
+    QObject::disconnect(m_titleRespConn);
+    QObject::disconnect(m_titleErrConn);
+    m_titleDeadline.stop();
+}
+
+// 新任务/兜底超时路径：服务单请求语义下，标题请求若还挂着必须先撤——
+// 断开回调后 cancel，陈旧响应/错误落不到任何处理槽。
+void AIAgent::cancelPendingTitleRequest() {
+    if (!m_titleInFlight) return;
+    QObject::disconnect(m_titleReqConn);
+    QObject::disconnect(m_titleRespConn);
+    QObject::disconnect(m_titleErrConn);
+    m_titleInFlight = false;
+    m_titleDeadline.stop();
+    if (m_llmService)
+        m_llmService->cancel();
+}
+
+void AIAgent::generateSessionTitle() {
+    if (!m_autoTitleEnabled) return;
+    if (m_active || !m_sessionTitlePending || m_sessionRenamed || m_titleInFlight)
+        return;
+    if (!m_llmService || !m_memory || m_sessionId.isEmpty()
+            || m_firstUserMessage.isEmpty())
+        return;
+    m_titleInFlight = true;
+
+    QJsonObject systemMsg;
+    systemMsg["role"] = "system";
+    systemMsg["content"] = QStringLiteral(
+        "Generate a concise chat-session title based on the user's first "
+        "message. Reply with the title only: 3-8 words, in the same "
+        "language as the message, no quotes, no trailing punctuation, no "
+        "explanation.");
+    QJsonObject userMsg;
+    userMsg["role"] = "user";
+    userMsg["content"] = m_firstUserMessage;
+
+    // 身份关联：requestStarted 记下本次请求 id，响应按 id 过滤——广播的
+    // 陈旧响应（被顶掉的场景）落不到这里。
+    const QString sessionId = m_sessionId;
+    m_titleReqConn = connect(m_llmService, &IAIService::requestStarted, this,
+        [this](quint64 requestId) { m_titleRequestId = requestId; });
+    m_titleRespConn = connect(m_llmService, &IAIService::responseReady, this,
+        [this, sessionId](const LLMResponse& r) {
+            if (!m_titleInFlight || r.requestId != m_titleRequestId) return;
+            finishTitleRequest();
+            const QString title = sanitizeSessionTitle(r.content);
+            if (!title.isEmpty() && m_memory) {
+                m_memory->renameSession(sessionId, title);
+                emit sessionsChanged();
+            }
+        });
+    m_titleErrConn = connect(m_llmService, &IAIService::errorOccurred, this,
+        [this]() {
+            if (!m_titleInFlight) return;
+            finishTitleRequest();
+        });
+    m_titleDeadline.start();
+    m_llmService->chatComplete(QJsonArray{systemMsg, userMsg});
 }
 
 bool AIAgent::startTask(const QString& userMessage, const QStringList& images,
@@ -867,6 +979,10 @@ bool AIAgent::startTask(const QString& userMessage, const QStringList& images,
     // docs/16 §7.2: 配额检查（strict 模式下超额拒绝请求）。
     if (!checkQuota()) return false;
 
+    // docs/26 I4: 新任务会顶掉仍在飞行的标题请求（服务单请求语义）——
+    // 先断开其回调并取消，避免陈旧响应串音。
+    cancelPendingTitleRequest();
+
     const bool fresh = m_sessionId.isEmpty();
     if (fresh) {
         m_messages = QJsonArray();
@@ -874,6 +990,9 @@ bool AIAgent::startTask(const QString& userMessage, const QStringList& images,
         m_nextTraceOrder = 0;
         m_usedToolCallIds.clear();   // fresh history: no recorded call ids
         m_sessionId = QUuid::createUuid().toString(QUuid::WithoutBraces);
+        m_firstUserMessage = userMessage.trimmed().left(500);
+        m_sessionTitlePending = true;
+        m_sessionRenamed = false;
 
         if (m_memory) {
             m_memory->beginSession(m_sessionId, userMessage.left(60));
@@ -2563,8 +2682,20 @@ if (m_memory && !m_sessionId.isEmpty()) m_memory->touchSession(m_sessionId);
 
     // T8 (REQ-T8-01): asynchronously generate an episodic summary for this
     // session. Fire-and-forget; failures never block task completion.
-    if (m_episodicService && !m_sessionId.isEmpty() && !m_messages.isEmpty())
+    const bool summaryPending =
+        m_episodicService && !m_sessionId.isEmpty() && !m_messages.isEmpty();
+    if (summaryPending)
         m_episodicService->generateAndStoreSummary(m_sessionId, m_messages);
+
+    // docs/26 I4: 会话标题自动生成。与 episodic 摘要共用主服务（单请求
+    // 语义），必须串行：有摘要就等 summaryStored 链式触发，否则直接发。
+    if (m_sessionTitlePending && !m_sessionRenamed && !m_firstUserMessage.isEmpty()
+            && m_autoTitleEnabled) {
+        if (summaryPending)
+            m_titleAfterSummary = true;
+        else
+            QTimer::singleShot(0, this, &AIAgent::generateSessionTitle);
+    }
 
     emit sessionsChanged();
 

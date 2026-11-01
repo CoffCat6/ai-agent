@@ -580,6 +580,9 @@ private slots:
         // docs/25 B3: the episodic fixture is test-local — never leak it
         // into the neighbours (the async launch changes fresh-session flow).
         agent.setEpisodicService(nullptr);
+        // docs/26 I4: 自动标题会追加一次 chatComplete，绝大多数用例的
+        // seenMessages 计数断言不预期它——默认关，标题用例自行打开。
+        agent.setAutoSessionTitleEnabled(false);
         // 权限模式用例会改动本实例（QtTest 全程共用一个测试对象），
         // 每个用例前回落默认，防止泄漏到后续用例。
         agent.setPermissionMode(PermissionMode::ConfirmChanges);
@@ -738,6 +741,10 @@ private slots:
     void todoListPersistsAcrossSessionResume();
     void todoIdsStableAcrossRewrites();
     void spawnAgentTodoIdEchoedInReportAndAudit();
+    // docs/26 I4: 会话标题自动生成。
+    void autoSessionTitleGeneratedAfterFirstExchange();
+    void autoSessionTitleSkippedWhenUserRenamed();
+    void autoSessionTitleFailureKeepsTruncatedTitle();
     // 思考强度：思考正文只落 thinking 节点，不混进答案、不回灌模型、可恢复
     void reasoningTextLandsOnThinkingNode();
     void stopDuringConfirmationIsNoOp();
@@ -2458,6 +2465,93 @@ void TestAgent::spawnAgentTodoIdEchoedInReportAndAudit() {
     }
     QVERIFY2(found, "spawn_agent audit row with subagent_todo missing");
     agent.setMemory(nullptr);
+}
+
+// ── docs/26 I4: 会话标题自动生成 ──────────────────────────────────────
+
+void TestAgent::autoSessionTitleGeneratedAfterFirstExchange() {
+    SqliteMemory memory(QStringLiteral(":memory:"));
+    agent.setMemory(&memory);
+    agent.setAutoSessionTitleEnabled(true);
+    llm.reset();
+    llm.script.append(textResponse(QStringLiteral("answer one")));
+    llm.script.append(textResponse(QStringLiteral("Parser 机制分析")));
+    QSignalSpy spy(&agent, &AIAgent::responseReady);
+    agent.startTask(QStringLiteral("帮我分析 parser 的实现"));
+    QTRY_COMPARE_WITH_TIMEOUT(spy.count(), 1, 15000);
+
+    // 标题请求在任务结束后发出（测试内无 episodic 服务，不经摘要链）。
+    QTRY_COMPARE_WITH_TIMEOUT(llm.seenMessages.size(), 2, 15000);
+    const QJsonArray titleMessages = llm.seenMessages.last();
+    QCOMPARE(titleMessages.size(), 2);
+    QCOMPARE(titleMessages.at(0).toObject().value("role").toString(),
+             QStringLiteral("system"));
+    QVERIFY(titleMessages.at(1).toObject().value("content").toString()
+                .contains(QStringLiteral("parser")));
+    // 标题写库；sessionsChanged 已通知侧栏重算。
+    QTRY_VERIFY(!memory.listSessions(10).isEmpty());
+    bool titled = false;
+    for (const auto& s : memory.listSessions(10)) {
+        const QJsonObject row = s.toObject();
+        if (row.value("id").toString() == agent.currentSessionId()) {
+            QCOMPARE(row.value("title").toString(),
+                     QStringLiteral("Parser 机制分析"));
+            titled = true;
+        }
+    }
+    QVERIFY2(titled, "session row missing after auto title");
+}
+
+void TestAgent::autoSessionTitleSkippedWhenUserRenamed() {
+    SqliteMemory memory(QStringLiteral(":memory:"));
+    agent.setMemory(&memory);
+    agent.setAutoSessionTitleEnabled(true);
+    llm.reset();
+    llm.script.append(textResponse(QStringLiteral("answer")));
+    QSignalSpy spy(&agent, &AIAgent::responseReady);
+    agent.startTask(QStringLiteral("plan the parser work"));
+    QVERIFY(!agent.currentSessionId().isEmpty());
+    // 任务进行中就手动命名：本会话的自动标题永久放弃。
+    agent.renameSession(agent.currentSessionId(), QStringLiteral("手动命名"));
+    QTRY_COMPARE_WITH_TIMEOUT(spy.count(), 1, 15000);
+    // 给自动标题一个机会窗口：不得发出第二次请求，标题保持手动命名。
+    QTest::qWait(100);
+    QCOMPARE(llm.seenMessages.size(), 1);
+    for (const auto& s : memory.listSessions(10)) {
+        const QJsonObject row = s.toObject();
+        if (row.value("id").toString() == agent.currentSessionId())
+            QCOMPARE(row.value("title").toString(),
+                     QStringLiteral("手动命名"));
+    }
+}
+
+void TestAgent::autoSessionTitleFailureKeepsTruncatedTitle() {
+    SqliteMemory memory(QStringLiteral(":memory:"));
+    agent.setMemory(&memory);
+    agent.setAutoSessionTitleEnabled(true);
+    llm.reset();
+    llm.script.append(textResponse(QStringLiteral("answer")));
+    LLMResponse boom;
+    boom.success = false;
+    boom.error = QStringLiteral("title request failed");
+    llm.script.append(boom);
+    QSignalSpy spy(&agent, &AIAgent::responseReady);
+    const QString firstMessage = QStringLiteral("analyze the parser pipeline thoroughly");
+    agent.startTask(firstMessage);
+    QTRY_COMPARE_WITH_TIMEOUT(spy.count(), 1, 15000);
+    // 标题请求发出且失败：静默保留 beginSession 的截断标题，且不重试。
+    QTRY_COMPARE_WITH_TIMEOUT(llm.seenMessages.size(), 2, 15000);
+    QTest::qWait(50);
+    QCOMPARE(llm.seenMessages.size(), 2);
+    bool titled = false;
+    for (const auto& s : memory.listSessions(10)) {
+        const QJsonObject row = s.toObject();
+        if (row.value("id").toString() == agent.currentSessionId()) {
+            QCOMPARE(row.value("title").toString(), firstMessage.left(60));
+            titled = true;
+        }
+    }
+    QVERIFY2(titled, "session row missing after failed auto title");
 }
 
 // 思考正文的三条硬要求：落进 thinking 节点供展示、不混进答案文本、不回灌给

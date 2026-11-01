@@ -59,7 +59,7 @@
 
 ## 关键文件
 
-- `AIAgent.h` / `AIAgent.cpp`：ReAct 主循环、确认、预算、流式、会话、审计、配额、项目规则注入（约 2440 行）。
+- `AIAgent.h` / `AIAgent.cpp`：ReAct 主循环、确认、预算、流式、会话、审计、配额、项目规则注入、会话标题自动生成（docs/26 I4：首轮回答后经 `generateSessionTitle` 串行在 episodic 摘要后发一次廉价请求，requestId 身份关联 + 15s 兜底，重命名跳过、失败静默）。
 - `AgentState.h`：7 状态枚举 + `Q_DECLARE_METATYPE`。
 - `LLMTypes.h`：`LLMResponse`，含 requestId、分类 token、`reasoning`。
 - `PermissionMode.h`：四种会话权限、字符串映射、QML int 校验。
