@@ -122,6 +122,12 @@ public:
     // Redirect the evidence artifacts root (default: AppData/subagents).
     // Tests only; call with an empty string to restore the default.
     static void setArtifactsRootOverride(const QString& dir);
+
+private:
+    // The loop proper; run() wraps it with artifact pruning/writing and hands
+    // out the final transcript for the evidence dump.
+    static SubAgentReport runImpl(IAIService* service, const SubAgentRequest& request,
+                                  QJsonArray& messages);
 };
 
 } // namespace NexusAI
