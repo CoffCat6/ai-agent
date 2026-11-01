@@ -79,7 +79,7 @@
 - `main.cpp`：组合根、启动/退出顺序、托盘与 UIPI、设置重应用链。
 - `app.rc.in`：Windows VERSIONINFO（图标路径由 CMake 相对化，版本来自 `project(VERSION)`）。
 - `core/agent/AIAgent.{h,cpp}`、`core/agent/EpisodicService.{h,cpp}`、`core/agent/PermissionMode.h`。
-- `core/agent/SubAgentRunner.{h,cpp}`、`core/tools/SubAgentTool.{h,cpp}`：docs/32 P1/P2 只读子代理（spawn_agent，设置键 `agent/subagent*`，注册门控在 main.cpp applySettings，设置页 AgentBehaviorPage）；docs/33 E1 证据工件（AppData/subagents）与 E2 角色档案（预设 + `agent/subagentRoles` 用户档案，role 参数动态枚举 + 工具白名单）。
+- `core/agent/SubAgentRunner.{h,cpp}`、`core/tools/SubAgentTool.{h,cpp}`：docs/32 P1/P2 只读子代理（spawn_agent，设置键 `agent/subagent*`，注册门控在 main.cpp applySettings，设置页 AgentBehaviorPage）；docs/33 E1 证据工件（AppData/subagents）、E2 角色档案（预设 + `agent/subagentRoles` 用户档案，role 参数动态枚举 + 工具白名单）、E3 批判环（review 预设单次批判 + 工具描述引导）。
 - `core/memory/SqliteMemory.{h,cpp}`、`core/tools/{ToolRegistry,Sandbox,WebSearchTool,NetworkFetchTool}.h`。
 - `core/rag/RagService.{h,cpp}`、`core/utils/{Logger,Activity,NetworkProxyConfig,SamplingParams}.h`。
 - `infrastructure/llm/LlmProtocolRegistry.{h,cpp}`、`infrastructure/embed/{OllamaEmbedding,OpenAICompatibleEmbedding,EmbedShutdown}.h`。

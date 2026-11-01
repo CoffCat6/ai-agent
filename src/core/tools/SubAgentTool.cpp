@@ -34,10 +34,15 @@ QVector<SubAgentRole> SubAgentTool::presetRoles() {
          {}},
         {QStringLiteral("review"),
          QStringLiteral(
-             "code review - inspect the relevant files or diffs for real "
+             "code review - a single-pass critique of a changeset. First "
+             "scope the changes yourself (git_status / git_diff, or the "
+             "files named in the context), then inspect them for real "
              "defects only: correctness, boundary conditions, security, "
-             "performance. Rank findings by severity with concrete locations; "
-             "no praise, no filler."),
+             "performance. Report a findings list ranked by severity, each "
+             "with a concrete location (path:line) and what to change; no "
+             "praise, no filler. If the changes are clean, say exactly "
+             "that - do not invent issues. You critique once and report; "
+             "fixing the code is the primary agent's job."),
          {}},
     };
 }
@@ -140,7 +145,14 @@ ToolDefinition SubAgentTool::definition() const {
         "self-contained, and its report is the only thing that comes back. "
         "Issue several spawn_agent calls in one round to run sub-tasks in "
         "parallel; keep goals focused (one coherent question each) and mind "
-        "that every sub-agent consumes tokens.");
+        "that every sub-agent consumes tokens.\n"
+        "Critic loop: after you complete a batch of edits, spawn a 'review' "
+        "sub-agent over that changeset (state the touched files or diff "
+        "scope in 'context'; it can also run git_diff itself) and fold its "
+        "findings list back into your work before declaring the task done. "
+        "Verify each finding and fix the valid ones yourself - do not "
+        "debate with the sub-agent, and re-review only after a substantial "
+        "new batch of edits.");
     def.level = ToolLevel::Safe;
     def.autoEditSafe = true;
     def.readOnly = true;   // spawns read-only work only; usable in PlanOnly

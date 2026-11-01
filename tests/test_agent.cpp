@@ -810,6 +810,7 @@ private slots:
     void subagentUserRoleOverridesAndFiltersTools();
     void subagentUnknownRoleFailsReadable();
     void subagentRolesFromVariantParsesAndDedupes();
+    void reviewCriticLoopGuidanceInPresetAndSchema();
 
     // G3: project rules file injection (docs/26 G3)
     void projectRulesInjectedIntoSystemPrompt() {
@@ -4573,6 +4574,27 @@ void TestAgent::subagentRolesFromVariantParsesAndDedupes() {
     QCOMPARE(presets.at(1).name, QStringLiteral("research"));
     QCOMPARE(presets.at(2).name, QStringLiteral("review"));
     QVERIFY(presets.at(2).prompt.contains(QStringLiteral("code review")));
+}
+
+// docs/33 E3 批判环：review 预设是执行端（自圈改动集 + 严重度排序的
+// findings list），spawn_agent 描述是主循环侧的引导（批次后派审、逐条
+// 核实、不辩论）。
+void TestAgent::reviewCriticLoopGuidanceInPresetAndSchema() {
+    const QVector<SubAgentRole> presets = SubAgentTool::presetRoles();
+    const QString review = presets.at(2).prompt;
+    // 自圈改动集：review 子代理自己跑 git_status/git_diff（或按 context 点名）。
+    QVERIFY(review.contains(QStringLiteral("git_status")));
+    QVERIFY(review.contains(QStringLiteral("git_diff")));
+    // 产出形态：严重度排序 + 具体位置；干净时明说，不硬凑。
+    QVERIFY(review.contains(QStringLiteral("findings list")));
+    QVERIFY(review.contains(QStringLiteral("path:line")));
+    QVERIFY(review.contains(QStringLiteral("do not invent issues")));
+
+    SubAgentTool tool;
+    const QString desc = tool.definition().description;
+    QVERIFY(desc.contains(QStringLiteral("Critic loop")));
+    QVERIFY(desc.contains(QStringLiteral("'review'")));
+    QVERIFY(desc.contains(QStringLiteral("findings")));
 }
 
 QTEST_GUILESS_MAIN(TestAgent)
