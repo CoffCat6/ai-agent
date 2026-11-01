@@ -59,8 +59,13 @@ EpisodicService::EpisodicService(QObject* parent)
 
 void EpisodicService::generateAndStoreSummary(const QString& sessionId,
                                                const QJsonArray& messages) {
-    if (!m_enabled || !m_memory || !m_llmService || sessionId.isEmpty())
+    // docs/26 I4: 会话标题生成串行在本服务之后、以 summaryStored 为触发
+    // 信号——因此"不走摘要"的早退也必须发（成败皆可的语义是「流程结束」
+    // 而非「摘要成功」），否则禁用/无服务时标题链永久挂起。
+    if (!m_enabled || !m_memory || !m_llmService || sessionId.isEmpty()) {
+        emit summaryStored(sessionId, false);
         return;
+    }
 
     // Build a compact conversation transcript for the summarizer.
     // Skip the system message (index 0) and keep only user/assistant turns.
@@ -74,7 +79,10 @@ void EpisodicService::generateAndStoreSummary(const QString& sessionId,
         turns.append(QStringLiteral("%1: %2").arg(role == QLatin1String("user")
             ? QStringLiteral("用户") : QStringLiteral("助手"), content));
     }
-    if (turns.isEmpty()) return;
+    if (turns.isEmpty()) {
+        emit summaryStored(sessionId, false);
+        return;
+    }
 
     // Cap the transcript to avoid excessive prompt size.
     const QString transcript = turns.join(QStringLiteral("\n")).left(4000);

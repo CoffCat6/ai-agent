@@ -489,6 +489,45 @@ Item {
                     onClicked: AgentVM.approveToolCall(root.modelData.id, true)
                 }
             }
+
+            // 展开态的底部收回入口：长内容滚到卡片底部就能收起，不必回到
+            // 顶部点箭头。确认态不显示（那有允许/拒绝按钮收场）。
+            Item {
+                visible: root.expanded && !root.waitingConfirm
+                         && (root.hasDetail || root.hasSubagentLog)
+                width: parent.width
+                height: collapseRow.implicitHeight
+
+                Row {
+                    id: collapseRow
+                    anchors.horizontalCenter: parent.horizontalCenter
+                    spacing: 4
+
+                    Text {
+                        text: qsTr("收起")
+                        color: collapseMA.containsMouse
+                            ? Theme.brandPrimary : Theme.textTertiary
+                        font.pixelSize: Theme.fontSizeCaption
+                        font.family: Theme.fontSans
+                    }
+
+                    AppIcon {
+                        anchors.verticalCenter: parent.verticalCenter
+                        icon: "chevron-up"
+                        size: 10
+                        iconColor: collapseMA.containsMouse
+                            ? Theme.brandPrimary : Theme.textTertiary
+                    }
+                }
+
+                MouseArea {
+                    id: collapseMA
+                    anchors.fill: parent
+                    hoverEnabled: true
+                    cursorShape: Qt.PointingHandCursor
+                    onClicked: root.toggleRequested()
+                }
+            }
         }
     }
 

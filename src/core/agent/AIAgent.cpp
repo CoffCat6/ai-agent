@@ -165,10 +165,12 @@ AIAgent::AIAgent(QObject* parent) : QObject(parent) {
     m_taskTimeoutTimer.setSingleShot(true);
     connect(&m_taskTimeoutTimer, &QTimer::timeout, this, &AIAgent::onTaskTimeout);
 
-    // docs/26 I4: 标题请求 15s 兜底——被 episodic/新任务顶掉时无信号可回，
-    // 超时解挂，避免 m_titleInFlight 永久卡死。
+    // docs/26 I4: 标题请求兜底——被 episodic/新任务顶掉时无信号可回，
+    // 超时解挂，避免 m_titleInFlight 永久卡死。60s：标题请求会打到推理档
+    // 模型（reasoning high 时小请求也可能思考几十秒），15s 会把好端端的
+    // 生成掐死在半路且不重试——标题就永远是截断的首条消息。
     m_titleDeadline.setSingleShot(true);
-    m_titleDeadline.setInterval(15000);
+    m_titleDeadline.setInterval(60000);
     connect(&m_titleDeadline, &QTimer::timeout, this, [this] {
         cancelPendingTitleRequest();
     });

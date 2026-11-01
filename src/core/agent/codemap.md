@@ -59,7 +59,7 @@
 
 ## 关键文件
 
-- `AIAgent.h` / `AIAgent.cpp`：ReAct 主循环、确认、预算、流式、会话、审计、配额、项目规则注入、会话标题自动生成（docs/26 I4：首轮回答后经 `generateSessionTitle` 串行在 episodic 摘要后发一次廉价请求，requestId 身份关联 + 15s 兜底，重命名跳过、失败静默）。
+- `AIAgent.h` / `AIAgent.cpp`：ReAct 主循环、确认、预算、流式、会话、审计、配额、项目规则注入、会话标题自动生成（docs/26 I4：首轮回答后经 `generateSessionTitle` 串行在 episodic 摘要后发一次廉价请求，requestId 身份关联 + 60s 兜底（推理档模型小请求也可能思考超 15s，2026-11-02 放宽），重命名跳过、失败静默；触发依赖 `summaryStored`——EpisodicService 的早退路径（禁用/无服务/无有效对话轮）也必须发该信号（成败皆可 = 「流程结束」），否则禁用 episodic 时标题链永久挂起（2026-11-02 用户反馈修复，回归 test_episodic::disabledServiceStillSignalsCompletion））。
 - `AgentState.h`：7 状态枚举 + `Q_DECLARE_METATYPE`。
 - `LLMTypes.h`：`LLMResponse`，含 requestId、分类 token、`reasoning`。
 - `PermissionMode.h`：四种会话权限、字符串映射、QML int 校验。

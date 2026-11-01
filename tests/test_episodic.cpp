@@ -68,6 +68,27 @@ private slots:
         delete mem;
     }
 
+    // docs/26 I4: 会话标题生成以 summaryStored 为链式触发信号（串行在摘要
+    // 之后）。「不走摘要」的早退（禁用/无服务）也必须发完成信号，否则标题
+    // 链永久挂起——真实用户反馈：episodic 默认关时标题永远是截断的首条消息。
+    void disabledServiceStillSignalsCompletion() {
+        auto* mem = makeMemory();
+        EpisodicService svc;
+        svc.setMemory(mem);
+        svc.setEnabled(false);
+
+        QSignalSpy spy(&svc, &EpisodicService::summaryStored);
+        QJsonArray messages;
+        messages.append(QJsonObject{{"role", "user"}, {"content", "你好"}});
+        svc.generateAndStoreSummary(QStringLiteral("test-session"), messages);
+
+        QCOMPARE(spy.count(), 1);
+        const QList<QVariant> args = spy.takeFirst();
+        QCOMPARE(args.at(0).toString(), QStringLiteral("test-session"));
+        QCOMPARE(args.at(1).toBool(), false);
+        delete mem;
+    }
+
     void retrieveReturnsResultsWhenEnabled() {
         auto* mem = makeMemory();
         EpisodicService svc;

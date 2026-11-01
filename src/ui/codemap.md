@@ -49,7 +49,9 @@
 | 侧栏/右栏 | `components/Sidebar.qml`、`panels/ContextPanel.qml` | 会话树/搜索 + 会话运行状态槽（busy/等待确认/未读）；Git/文件（审阅与任务清单已移入对话框） |
 | 设置 | `components/SettingsCenterDialog.qml`、`CategoryNav.qml`、`PreferenceControl.qml`、`SettingsPage.qml`、`SettingsPageHeader.qml`、`AppScrollBar.qml`、`SettingsSection.qml`、`SettingRow.qml`、`SettingsField.qml`、`SettingCard.qml` | 搜索（`SettingsCatalog` 字段级结果 + 页内滚动高亮）、四组可滚动分类导航（图标 + 可折叠分组，「数据与诊断」默认收起、当前分类所在组自动展开；对话框宽度 <900 时导航收成 56px 图标条）、偏好控件、按分类复位的底栏。视觉底座：`SettingsPage`（整页滚动 + 页头 + 边距 + 主题滚动条）/`SettingsPageHeader`（统一标题层级），`SettingsSection`（扁平分组）/`SettingRow`（左标签右控件）/`SettingsField`（输入行），`SettingCard` 留给带边框的独立卡片；字号/间距/圆角/输入框表面统一走 `Theme` 令牌 |
 | 设置页 | `pages/GeneralPage`、`AgentBehaviorPage`、`NetworkPage`、`LogsPage`、`KnowledgePage`、`InterfacePage`、`ModelConfigPage`、`SecurityPage`、`McpPage`、`ToolsPage`、`MemoryPage`、`UsageStatsPage`、`ActivityLogPage`、`SettingsBackupPage`、`ProjectRulesPage`、`PromptAssetsPage` | 16 个分类，由 `Loader` 按分类懒加载 |
-| 业务组件 | `AssistantMessage.qml`、`UserMessageBubble.qml`、`ProcessCard.qml`、`ErrorCard.qml`、`ToolConfirmDialog.qml`、`TodoListPanel.qml`、`FileChangesPanel.qml`、`ChangeTree.qml`、`GitPanel.qml` | 消息/工具确认/审阅/Git |
+| 业务组件 | `AssistantMessage.qml`、`UserMessageBubble.qml`、`ProcessCard.qml`、`ErrorCard.qml`、`ToolConfirmDialog.qml`、`TodoListPanel.qml`、`FileChangesPanel.qml`、`ChangeTree.qml`、`GitPanel.qml` | 消息/工具确认/审阅/Git；ProcessCard 含子代理过程日志（subagentLog 展开）与底部「收起」入口 |
+
+ProcessCard 的 `subagentLog` 判型注意（2026-11-02 修复，回归 `test_process_card_qml`）：嵌在 modelData（QVariantMap）里的 QVariantList 经 ListView role 进 QML 后是 sequence wrapper——length/索引正常但 `Array.isArray()` 返回 false，判型必须用 undefined/null + length；且 role 数据必须走 ListView 路径测（setProperty 注入会转成原生 JS Array，复现不了）。
 | 图表/表格 | `charts/{DonutChart,LineTrendChart,BarCompareChart}.qml`、`UsageDetailTable.qml`、`DiffView.qml`、`CodeBlock.qml` | Canvas 图表、明细表、diff/代码块 |
 | 基础控件 | `AppButton.qml`、`AppIcon.qml`、`AppToast.qml`、`IconButton.qml`、`DialogBackground.qml`、`SplitBar.qml` | 统一外观与交互基元 |
 

@@ -5815,7 +5815,7 @@
 <context>
     <name>NexusAI::AIAgent</name>
     <message>
-        <location filename="../src/core/agent/AIAgent.cpp" line="978"/>
+        <location filename="../src/core/agent/AIAgent.cpp" line="980"/>
         <source>请先配置并启用模型，再发送消息。</source>
         <translation>请先配置并启用模型，再发送消息。</translation>
     </message>
@@ -5864,7 +5864,7 @@
         <translation type="vanished">时间线里找不到与该消息对应的记录，无法安全地重置会话。</translation>
     </message>
     <message>
-        <location filename="../src/core/agent/AIAgent.cpp" line="1912"/>
+        <location filename="../src/core/agent/AIAgent.cpp" line="1914"/>
         <source>无法更新会话记录，原消息已保留，请重试。</source>
         <translation>无法更新会话记录，原消息已保留，请重试。</translation>
     </message>
@@ -7457,104 +7457,109 @@
 <context>
     <name>ProcessCard</name>
     <message>
-        <location filename="../src/ui/components/ProcessCard.qml" line="93"/>
+        <location filename="../src/ui/components/ProcessCard.qml" line="96"/>
         <source>新</source>
         <translation>新</translation>
     </message>
     <message>
-        <location filename="../src/ui/components/ProcessCard.qml" line="94"/>
+        <location filename="../src/ui/components/ProcessCard.qml" line="97"/>
         <source>增</source>
         <translation>增</translation>
     </message>
     <message>
-        <location filename="../src/ui/components/ProcessCard.qml" line="95"/>
+        <location filename="../src/ui/components/ProcessCard.qml" line="98"/>
         <source>删</source>
         <translation>删</translation>
     </message>
     <message>
-        <location filename="../src/ui/components/ProcessCard.qml" line="96"/>
+        <location filename="../src/ui/components/ProcessCard.qml" line="99"/>
         <source>改</source>
         <translation>改</translation>
     </message>
     <message>
-        <location filename="../src/ui/components/ProcessCard.qml" line="97"/>
+        <location filename="../src/ui/components/ProcessCard.qml" line="100"/>
         <source>移</source>
         <translation>移</translation>
     </message>
     <message>
-        <location filename="../src/ui/components/ProcessCard.qml" line="114"/>
+        <location filename="../src/ui/components/ProcessCard.qml" line="117"/>
         <source>思考</source>
         <translation>思考</translation>
     </message>
     <message>
-        <location filename="../src/ui/components/ProcessCard.qml" line="115"/>
+        <location filename="../src/ui/components/ProcessCard.qml" line="118"/>
         <source>工具调用</source>
         <translation>工具调用</translation>
     </message>
     <message>
-        <location filename="../src/ui/components/ProcessCard.qml" line="116"/>
+        <location filename="../src/ui/components/ProcessCard.qml" line="119"/>
         <source>工具结果</source>
         <translation>工具结果</translation>
     </message>
     <message>
-        <location filename="../src/ui/components/ProcessCard.qml" line="117"/>
+        <location filename="../src/ui/components/ProcessCard.qml" line="120"/>
         <source>上下文</source>
         <translation>上下文</translation>
     </message>
     <message>
-        <location filename="../src/ui/components/ProcessCard.qml" line="122"/>
+        <location filename="../src/ui/components/ProcessCard.qml" line="125"/>
         <source>进行中</source>
         <translation>进行中</translation>
     </message>
     <message>
-        <location filename="../src/ui/components/ProcessCard.qml" line="123"/>
+        <location filename="../src/ui/components/ProcessCard.qml" line="126"/>
         <source>失败</source>
         <translation>失败</translation>
     </message>
     <message>
-        <location filename="../src/ui/components/ProcessCard.qml" line="124"/>
+        <location filename="../src/ui/components/ProcessCard.qml" line="127"/>
         <source>已取消</source>
         <translation>已取消</translation>
     </message>
     <message>
-        <location filename="../src/ui/components/ProcessCard.qml" line="125"/>
+        <location filename="../src/ui/components/ProcessCard.qml" line="128"/>
         <source>待确认</source>
         <translation>待确认</translation>
     </message>
     <message>
-        <location filename="../src/ui/components/ProcessCard.qml" line="252"/>
+        <location filename="../src/ui/components/ProcessCard.qml" line="255"/>
         <source>停止</source>
         <translation>停止</translation>
     </message>
     <message>
-        <location filename="../src/ui/components/ProcessCard.qml" line="284"/>
+        <location filename="../src/ui/components/ProcessCard.qml" line="287"/>
         <source>查看证据</source>
         <translation>查看证据</translation>
     </message>
     <message>
-        <location filename="../src/ui/components/ProcessCard.qml" line="326"/>
+        <location filename="../src/ui/components/ProcessCard.qml" line="329"/>
         <source>已折叠 · %1 条过程记录</source>
         <translation>已折叠 · %1 条过程记录</translation>
     </message>
     <message>
-        <location filename="../src/ui/components/ProcessCard.qml" line="327"/>
+        <location filename="../src/ui/components/ProcessCard.qml" line="330"/>
         <source>已折叠 · %1 字符</source>
         <translation>已折叠 · %1 字符</translation>
     </message>
     <message>
-        <location filename="../src/ui/components/ProcessCard.qml" line="454"/>
+        <location filename="../src/ui/components/ProcessCard.qml" line="459"/>
         <source>变更预览:</source>
         <translation>变更预览:</translation>
     </message>
     <message>
-        <location filename="../src/ui/components/ProcessCard.qml" line="474"/>
+        <location filename="../src/ui/components/ProcessCard.qml" line="479"/>
         <source>拒绝</source>
         <translation>拒绝</translation>
     </message>
     <message>
-        <location filename="../src/ui/components/ProcessCard.qml" line="482"/>
+        <location filename="../src/ui/components/ProcessCard.qml" line="487"/>
         <source>允许</source>
         <translation>允许</translation>
+    </message>
+    <message>
+        <location filename="../src/ui/components/ProcessCard.qml" line="507"/>
+        <source>收起</source>
+        <translation>收起</translation>
     </message>
 </context>
 <context>
