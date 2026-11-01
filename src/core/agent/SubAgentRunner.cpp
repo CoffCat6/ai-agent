@@ -28,6 +28,10 @@ constexpr int kAbortPollMs = 250;
 // Floor for the wall-clock budget: below this the run would not even finish
 // one LLM round-trip, so a mistyped 0/negative timeout cannot busy-loop.
 constexpr qint64 kMinTimeoutMs = 200;
+// 过程可视化日志（assistant/tool 进度事件）的单段文本预算。
+constexpr int kProgressTextMaxChars = 400;
+constexpr int kProgressArgsMaxChars = 160;
+constexpr int kProgressResultMaxChars = 200;
 
 QString argsToWire(const QJsonObject& args) {
     return QString::fromUtf8(QJsonDocument(args).toJson(QJsonDocument::Compact));
@@ -378,6 +382,11 @@ SubAgentReport SubAgentRunner::runImpl(IAIService* service, const SubAgentReques
             return report;
         }
 
+        // 过程可视化：本轮模型的可见文本（含最终答案）进日志，供 UI 展开。
+        if (!response.content.trimmed().isEmpty())
+            notify(step, QStringLiteral("assistant"),
+                   truncate(response.content, kProgressTextMaxChars));
+
         if (response.toolCalls.isEmpty()) {
             report.ok = true;
             report.stop = SubAgentReport::Stop::Completed;
@@ -413,6 +422,15 @@ SubAgentReport SubAgentRunner::runImpl(IAIService* service, const SubAgentReques
             const ToolResult result = entry->tool->execute(call.arguments, request.cancelled);
             appendToolResult(messages, call,
                              truncate(toolResultText(result), kSubToolResultMaxChars));
+            // 过程可视化：每个工具调用的名字、参数与结果摘要进日志。
+            notify(step, QStringLiteral("tool"),
+                   QStringLiteral("%1(%2) ⇒ %3")
+                       .arg(call.name,
+                            truncate(QString::fromUtf8(
+                                QJsonDocument(call.arguments).toJson(
+                                    QJsonDocument::Compact)),
+                                kProgressArgsMaxChars),
+                            truncate(toolResultText(result), kProgressResultMaxChars)));
         }
         notify(step, QStringLiteral("tools"), calledToolNames(response.toolCalls));
 

@@ -50,7 +50,7 @@
 18. `McpManager::loadAndConnectAll()` 读取 `mcp_servers.json` 连接启用的 MCP server 并桥接工具。
 19. 用量/审计：`Activity::setUsageSink` 用 `QMetaObject::invokeMethod(&app, ..., QueuedConnection)` 落库；启动即 `runPrunes()`，并起 6 小时 `QTimer` 周期清理 usage/audit/token/checkpoint 与 30 天软删会话；**托盘创建之后**装配数据库快照自动备份（docs/31 S4.2）——`backupOnStartup` 启动一次、`memory/backupIntervalHours`（0/1/6/24/168，`BackupSchedule.h` 归一）驱动 `Qt::VeryCoarseTimer` 定时触发，两者共用 `runBackup`（`backupInFlight` 防重入，池线程 `VACUUM INTO` + `rotateAutoBackups` 按 `backupKeepCount` 轮转）；失败回主线程写活动记录并弹托盘警告（受 `notice.enabled` 门控，静默期 ≥ 一个间隔）。
 20. `startKnowledgeRestore(memory, rag)` 先在 GUI 线程快照文档与 chunks，再池线程恢复：chunks 可用则零请求重建，否则重嵌入；`databaseRestored` 后重跑同一函数。
-21. `applySettings()`（并由十余个 `SettingsService` 变更信号重入）：代理、模型 profiles、步数/超时/local-only、`Sandbox` 读策略与项目写/用户黑名单、http_fetch 私网放行、web search key/backend、情节记忆开关。另有 `applySystemPrompt()`、`applyPermissionMode()`（默认权限模式注入 VM）与 embedding 五个变更信号。
+21. `applySettings()`（并由十余个 `SettingsService` 变更信号重入）：代理、模型 profiles、local-only、`Sandbox` 读策略与项目写/用户黑名单、http_fetch 私网放行、web search key/backend、情节记忆开关。另有 `applySystemPrompt()`、`applyPermissionMode()`（默认权限模式注入 VM）与 embedding 五个变更信号。
 22. 两个 embedding 后端的 `embedProgress` 都接到 `AgentVM::setEmbedProgress`；`agentVM->setAgent(agent)` 完成主 agent 绑定。
 23. 托盘/自启动桥：`general.autoStart` 偏好 → `settings->setAutoStart()`（Windows 上再与 HKCU Run 项做一次迁移/双向协调）。
 24. `QQmlApplicationEngine` 注入 `trayAvailable`（`QSystemTrayIcon::isSystemTrayAvailable()`），`objectCreationFailed → exit(-1)`，加载 `qrc:/qt/qml/NexusAI/src/ui/main.qml`；根对象为空或非 `QQuickWindow` 时返回 -1。
@@ -60,7 +60,7 @@
 28. `taskFinished`：受 `notice.enabled` 控制，窗口可见且激活时不打扰，托盘可用/close-to-tray 时 `showMessage` 6 秒。
 29. `I18nManager::localeChanged → engine.retranslate`，强制 QML 重新求值 `qsTr`；最后 `app.exec()`。
 
-**设置 → 运行时重应用链**：`readDenyListChanged`/`profilesChanged`/`localOnlyModeChanged`/`activeProfileChanged`/`contextTokensChanged`/`maxStepsChanged`/`taskTimeoutMinutesChanged`/`allowFullDiskReadChanged`/`allowProjectWriteChanged`/`allowLocalNetworkFetchChanged`/`episodicMemoryEnabledChanged`/`webSearchProviderChanged`/`webSearchApiKeyChanged`/`proxyConfigChanged`/`webSearchTestChanged` 全部重跑 `applySettings()`；`systemPromptOverrideChanged` 与 `defaultPermissionModeChanged` 各有独立 apply，embedding 五键重跑 `applyEmbeddingConfig()`（local-only 同时命中两条链）。
+**设置 → 运行时重应用链**：`readDenyListChanged`/`profilesChanged`/`localOnlyModeChanged`/`activeProfileChanged`/`contextTokensChanged`/`allowFullDiskReadChanged`/`allowProjectWriteChanged`/`allowLocalNetworkFetchChanged`/`episodicMemoryEnabledChanged`/`webSearchProviderChanged`/`webSearchApiKeyChanged`/`proxyConfigChanged`/`webSearchTestChanged` 全部重跑 `applySettings()`；`systemPromptOverrideChanged` 与 `defaultPermissionModeChanged` 各有独立 apply，embedding 五键重跑 `applyEmbeddingConfig()`（local-only 同时命中两条链）。
 
 **退出路径**：普通关闭由 `main.qml` 的 `onClosing` 先保存窗口几何，再按 `window.closeToTray && trayAvailable` 决定隐藏或接受；唯一真正退出是托盘"退出"（停全部 tab）。`aboutToQuit` 置位嵌入中断标志，后台 restore/re-embed 循环尽快收手；`main` 返回后 `QLockFile` 析构释放，Qt 静态析构阶段的线程池 `waitForDone` 不再被 300s 网络等待拖死。
 

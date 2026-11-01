@@ -1994,9 +1994,10 @@ void TestAgent::unknownToolFeedsError() {
 }
 
 void TestAgent::maxIterationsStops() {
-    // 预算已可配置（agent/maxSteps，默认 30），本用例断言的是"预算耗尽"这条
-    // 路径本身，所以显式钉一个 10，与脚本长度对齐——否则脚本第 11 轮起会重复
-    // 最后一条响应，被"同轮重复调用"守卫提前收尾，测不到预算耗尽。
+    // 预算已不是用户设置（2026-11-01 起默认内部安全上限 1000），本用例断言
+    // 的是"预算耗尽"这条路径本身，所以显式钉一个 10，与脚本长度对齐——否则
+    // 脚本第 11 轮起会重复最后一条响应，被"同轮重复调用"守卫提前收尾，测不
+    // 到预算耗尽。
     agent.setMaxIterations(10);
 
     // Each round probes a DIFFERENT directory: the identical-round loop
@@ -4588,14 +4589,17 @@ void TestAgent::subagentProgressUpdatesTraceNode() {
     SubAgentFixture fixture;
     SpawnToolGuard guard;
     fixture.tool = registerSpawnTool(fixture, [](RecordingFakeService& sub) {
-        // 两轮工具调用（参数不同以绕开重复轮守卫）+ 预算 3 让第 3 步成为
-        // 强制收尾轮：验证摘要跨轮累积 ×2 与 "final answer" 的追加语义。
+        // 三轮工具调用（参数不同以绕开重复轮守卫）+ 预算 4 让第 4 步成为
+        // 强制收尾轮：验证摘要跨轮累积 ×3（×2→×3 的计数合并路径）与
+        // "final answer" 的追加语义。
         sub.script.append(toolResponse(QStringLiteral("test_sub_probe"), {}));
         sub.script.append(toolResponse(QStringLiteral("test_sub_probe"),
                                        QJsonObject{{"round", 2}}));
+        sub.script.append(toolResponse(QStringLiteral("test_sub_probe"),
+                                       QJsonObject{{"round", 3}}));
         sub.script.append(textResponse(QStringLiteral("final report text")));
     });
-    fixture.tool->setMaxSteps(3);
+    fixture.tool->setMaxSteps(4);
     llm.reset();
     llm.script.append(toolResponse(QStringLiteral("spawn_agent"),
         QJsonObject{{"goal", QStringLiteral("probe with progress")}}));
@@ -4604,12 +4608,41 @@ void TestAgent::subagentProgressUpdatesTraceNode() {
     agent.startTask(QStringLiteral("watch a sub-agent"));
     QTRY_COMPARE(spy.count(), 1);
 
-    // 摘要跨轮累积：probe 跑了两次 → 标题聚合成 ×2，强制收尾轮的
-    // "final answer" 追加在摘要之后而非覆盖它。终态标题即为最后一次事件。
+    // 摘要跨轮累积：probe 跑了三次 → 标题聚合成 ×3（覆盖 ×2→×3 的计数
+    // 增量合并），强制收尾轮的 "final answer" 追加在摘要之后而非覆盖它。
+    // 终态标题即为最后一次事件。
     QTRY_VERIFY(traceHas(agent.traceModel(), QStringLiteral("tool_call"),
-                         QStringLiteral("step 3/3 · test_sub_probe×2 · final answer")));
+                         QStringLiteral("step 4/4 · test_sub_probe×3 · final answer")));
     QVERIFY(traceHas(agent.traceModel(), QStringLiteral("tool_call"),
                      QStringLiteral("spawn_agent")));
+
+    // 过程可视化：assistant/tool 进度事件累积在节点元数据 subagentLog——
+    // 三轮工具调用各一条（名(参数) ⇒ 结果），最终答案一条。
+    const auto fetchLog = [](const QJsonArray& trace) -> QJsonArray {
+        for (const auto& entry : trace) {
+            const QJsonObject node = entry.toObject();
+            if (node.value("type").toString() == QLatin1String("tool_call")
+                    && node.value("title").toString().startsWith(QLatin1String("spawn_agent")))
+                return node.value("subagentLog").toArray();
+        }
+        return {};
+    };
+    QTRY_COMPARE(fetchLog(agent.traceModel()).size(), 4);
+    const QJsonArray log = fetchLog(agent.traceModel());
+    QCOMPARE(log.at(0).toObject().value("phase").toString(), QStringLiteral("tool"));
+    QVERIFY(log.at(0).toObject().value("text").toString()
+                .startsWith(QStringLiteral("test_sub_probe(")));
+    QVERIFY(log.at(0).toObject().value("text").toString()
+                .contains(QStringLiteral("probe-evidence")));
+    QCOMPARE(log.at(1).toObject().value("phase").toString(), QStringLiteral("tool"));
+    QVERIFY(log.at(1).toObject().value("text").toString()
+                .contains(QStringLiteral("\"round\":2")));
+    QCOMPARE(log.at(2).toObject().value("phase").toString(), QStringLiteral("tool"));
+    QVERIFY(log.at(2).toObject().value("text").toString()
+                .contains(QStringLiteral("\"round\":3")));
+    QCOMPARE(log.at(3).toObject().value("phase").toString(), QStringLiteral("assistant"));
+    QCOMPARE(log.at(3).toObject().value("text").toString(),
+             QStringLiteral("final report text"));
 }
 
 // docs/32 P2: 审计行的 request_id 即主请求（parent 归因），detail 以 JSON

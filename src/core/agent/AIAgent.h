@@ -47,12 +47,13 @@ struct SubAgentProgress;   // core/agent/SubAgentRunner.h (docs/32 P2)
 class AIAgent : public QObject {
     Q_OBJECT
 public:
-    // Per-request step budget = LLM round-trips (the system prompt tells the
-    // model about it). Configurable via Settings → agent/maxSteps; these three
-    // are the default and the clamp bounds. 10 used to be hard-coded and was
-    // routinely exhausted by ordinary multi-step tasks before an answer formed.
-    static constexpr int kDefaultMaxIterations = 30;
-    static constexpr int kDefaultTaskTimeoutMs = 300000;
+    // Per-request step budget = LLM round-trips. 2026-11-01 起不再作为用户
+    // 可配置限制（与主流 agent 软件一致）：默认取内部安全上限——模型自己
+    // 决定何时收工，上下文压缩与重复轮守卫才是实际的收敛机制；上限只防
+    // 失控。setter 保留给测试做确定性预算用例。
+    static constexpr int kDefaultMaxIterations = 1000;
+    // 任务墙钟预算默认关闭（0 = 不限时；用户可随时手动停止）。
+    static constexpr int kDefaultTaskTimeoutMs = 0;
     static constexpr int kMinMaxIterations = 3;
     static constexpr int kIterationCeiling = 1000;
     // Lower bound for the cap on ACTUAL tool executions (one response can

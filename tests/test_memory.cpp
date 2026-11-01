@@ -941,6 +941,12 @@ void TestMemory::traceNodeSubagentToolsRoundTrip() {
     node["result"] = QString();
     node["timestamp"] = 1000.0;
     node["subagentTools"] = QJsonArray{QStringLiteral("test_sub_probe×2")};
+    // 过程可视化日志（2026-11-01）：{phase, text} 条目随元数据持久化。
+    node["subagentLog"] = QJsonArray{
+        QJsonObject{{QStringLiteral("phase"), QStringLiteral("tool")},
+                    {QStringLiteral("text"), QStringLiteral("test_sub_probe({}) ⇒ probe-evidence")}},
+        QJsonObject{{QStringLiteral("phase"), QStringLiteral("assistant")},
+                    {QStringLiteral("text"), QStringLiteral("final report text")}}};
     mem.saveTraceNode("s1", node, 0);
 
     const QJsonArray loaded = mem.loadTraceNodes("s1");
@@ -949,6 +955,13 @@ void TestMemory::traceNodeSubagentToolsRoundTrip() {
                                     .value("subagentTools").toArray();
     QCOMPARE(restored.size(), 1);
     QCOMPARE(restored.at(0).toString(), QStringLiteral("test_sub_probe×2"));
+    const QJsonArray restoredLog = loaded.at(0).toObject()
+                                       .value("subagentLog").toArray();
+    QCOMPARE(restoredLog.size(), 2);
+    QCOMPARE(restoredLog.at(0).toObject().value("phase").toString(),
+             QStringLiteral("tool"));
+    QCOMPARE(restoredLog.at(1).toObject().value("text").toString(),
+             QStringLiteral("final report text"));
 }
 
 

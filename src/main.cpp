@@ -572,8 +572,6 @@ qInfo() << "NexusAI" << app.applicationVersion() << "starting";
         // releases it (close + removeDatabase) in its destructor — closing
         // a tab no longer leaks the connection until process exit.
         tabAgent->setOwnedMemory(std::make_unique<SqliteMemory>());
-        tabAgent->setMaxIterations(settings->maxSteps());
-        tabAgent->setTaskTimeoutMs(settings->taskTimeoutMinutes() * 60 * 1000);
         tabAgent->setSystemPromptOverride(settings->systemPromptOverride());
         tabAgent->setLocalOnlyMode(settings->localOnlyMode());
         auto* summaries = new EpisodicService(tabAgent);
@@ -729,8 +727,6 @@ qInfo() << "NexusAI" << app.applicationVersion() << "starting";
         proxyFactory->setConfig(settings->proxyConfig());
         agentVM->updateModelProfiles(settings->profiles(), settings->activeProfile());
         const auto applyRuntime = [settings](AIAgent* target) {
-            target->setMaxIterations(settings->maxSteps());
-            target->setTaskTimeoutMs(settings->taskTimeoutMinutes() * 60 * 1000);
             target->setLocalOnlyMode(settings->localOnlyMode());
         };
         applyRuntime(agent);
@@ -806,9 +802,6 @@ qInfo() << "NexusAI" << app.applicationVersion() << "starting";
     // Defaults and idle tabs refresh; active tasks keep their model snapshots.
     QObject::connect(settings, &SettingsService::activeProfileChanged, &app, [applySettings]() { applySettings(); });
     QObject::connect(settings, &SettingsService::contextTokensChanged, &app, [applySettings]() { applySettings(); });
-    // 步数预算改动即时生效（含已在跑的标签）。
-    QObject::connect(settings, &SettingsService::maxStepsChanged, &app, [applySettings]() { applySettings(); });
-    QObject::connect(settings, &SettingsService::taskTimeoutMinutesChanged, &app, [applySettings]() { applySettings(); });
     // docs/32 P1: 子代理设置即时生效（开关翻转即注册/注销工具）。
     QObject::connect(settings, &SettingsService::subagentEnabledChanged, &app, [applySettings]() { applySettings(); });
     QObject::connect(settings, &SettingsService::subagentMaxParallelChanged, &app, [applySettings]() { applySettings(); });

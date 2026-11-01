@@ -168,7 +168,7 @@ controller 一 agent 一连接），因此下面这层是**呈现语义**的收�
 5b. **项目规则（G3/R3）**：设置页经 `loadProjectRules` / `writeProjectRules`（失败发 `noticeOccurred`，成功后自动重挂监听）/ `projectRulesState`（与注入侧同一回退顺序，复用 `AIAgent::isUntouchedRulesSeed`）读写 `AGENTS.md`。外部编辑协调：`watchProjectRules` / `unwatchProjectRules` 以 `QFileSystemWatcher` 监听两个候选文件（只存在者可挂），变化发 `projectRulesFileChanged(root)`——**异步投递受 Windows 文件通知延迟影响（AV 可扣数秒甚至更久），页面按内容比较分流，迟到/重复/自身写入都安全**；`watchedRulesFiles` 是挂载集探针（同步断言用，不测异步投递）。三个 Q_INVOKABLE 追加在类尾（AOT 索引约定）。
 6. **检查点/撤销**：agent 完成工具或撤销后发 `fileCheckpointsChanged` → controller → VM（仅活动标签更新属性）→ `undoFileCheckpoint(id)` 转 `AIAgent::undoFileCheckpoint`；`fileCheckpointDetail` 返回 JSON 详情。
 7. **知识库**：`importDocument` 文本同步读取 / PDF 后台提取 → `importExtractedText`（内容 hash 去重 → `uniqueDocumentName`）→ `startIngestion`（QtConcurrent）→ `RagService::documentPersisted`（main.cpp，队列到 GUI 线程）→ `SqliteMemory`；`RagService::changed` → `refreshKnowledge`（先更新属性再 NOTIFY，避免 QML 读到旧列表）。
-8. **设置写路径**：QML → `SettingsService` setter → `persistValue/persist` → `SettingsRepository`（QSettings，org/app 均为 `NexusAI`）→ `settingSaved/persistenceError` 信号 → main.cpp 的 `applySettings` 把步数/超时/只读/沙箱/代理/搜索/embedding 重新注入所有 agent。偏好路径：QML → `EditBuffer.stage/commit` → `PreferenceStore.saveBatch` → `prefs/v1/` → `ChangeBus.notify` → `saved/persistenceError` 信号与 `ThemeManager`/`I18nManager`/`AgentVM` 各自订阅。
+8. **设置写路径**：QML → `SettingsService` setter → `persistValue/persist` → `SettingsRepository`（QSettings，org/app 均为 `NexusAI`）→ `settingSaved/persistenceError` 信号 → main.cpp 的 `applySettings` 把只读/沙箱/代理/搜索/embedding 重新注入所有 agent。偏好路径：QML → `EditBuffer.stage/commit` → `PreferenceStore.saveBatch` → `prefs/v1/` → `ChangeBus.notify` → `saved/persistenceError` 信号与 `ThemeManager`/`I18nManager`/`AgentVM` 各自订阅。
 9. **Git**：`GitVM.requestX()` 返回 requestId → `GitService` 在池线程执行（写操作 60s 超时）→ `*Ready(requestId, …, error)`；写成功后自动 `refreshStatus/refreshRepoInfo`；切 `projectRoot` 递增四代计数器并清空 repo/status，旧应答被丢弃。
 10. **数据库恢复编排**：`restoreDatabaseFrom`（校验 integrity → `closeAllTabs` → `sendPostedEvents(DeferredDelete)` → `bumpRestoreGeneration` → `memory.restoreFromBackup` → `databaseRestored` → `openTab`），全程同步，靠同一调用栈回到“单标签稳态”。
 
@@ -187,7 +187,7 @@ controller 一 agent 一连接），因此下面这层是**呈现语义**的收�
   10. `AgentViewModel`：`setRagService` / `setMemory` / `setKnowledgeContentProvider` / `setModelConfigurator` / `setAgentFactory`；
   11. RAG 持久化接线、`McpManager.loadAndConnectAll()`；
   12. usage sink、6 小时清理定时器、启动自动备份、`startKnowledgeRestore`；
-  13. `applySettings()`（步数/超时/只读/sandbox/代理/搜索/embedding/episodic）；
+  13. `applySettings()`（只读/sandbox/代理/搜索/embedding/episodic；步数/超时设置项已于 2026-11-01 移除）；
   14. 权限默认 → embedding 热重配 → `agentVM->setAgent(agent)`；
   15. `general.autoStart` 偏好 ↔ HKCU Run 键桥接；
   16. `QQmlApplicationEngine` 创建并 `load("qrc:/qt/qml/NexusAI/src/ui/main.qml")`，托盘与 `taskFinished` 通知在窗口就绪后接线。

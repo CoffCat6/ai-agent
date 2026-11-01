@@ -226,12 +226,9 @@ const QVector<SettingsKeyDef>& SettingsSchema::registeredKeys() {
             keyDef(QStringLiteral("contextTokens"), AIAgent::kDefaultContextTokens,
                    SettingValueType::Int,
                    intRange(AIAgent::MinContextTokens, AIAgent::MaxContextTokens)),
-            keyDef(QStringLiteral("agent/maxSteps"), AIAgent::kDefaultMaxIterations,
-                   SettingValueType::Int,
-                   intRange(AIAgent::kMinMaxIterations, AIAgent::kIterationCeiling)),
-            keyDef(QStringLiteral("agent/taskTimeoutMinutes"),
-                   AIAgent::kDefaultTaskTimeoutMs / 60000, SettingValueType::Int,
-                   intRange(1, 60)),
+            // 2026-11-01：agent/maxSteps 与 agent/taskTimeoutMinutes 已随
+            // 「取消任务步数/超时限制」移除——步数只留内部安全上限
+            // （kDefaultMaxIterations），任务不再限时。
             // docs/32 P1: 子代理（spawn_agent）。默认关——注册即门控，
             // 开关翻转时 main.cpp 增删工具而非靠禁用层。
             keyDef(QStringLiteral("agent/subagentEnabled"), false, SettingValueType::Bool),

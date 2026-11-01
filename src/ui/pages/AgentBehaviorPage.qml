@@ -6,7 +6,8 @@ import NexusAI.ViewModels
 
 // 智能体行为：原「通用设置」的模型行为区块。
 // 与「模型配置」分开——那边决定"用哪个模型、怎么连"，这里决定"智能体
-// 怎么跑"（预算、超时、系统提示词）。所有键由 SettingsService 即时保存。
+// 怎么跑"（子代理、系统提示词；任务步数/超时限制已取消）。所有键由
+// SettingsService 即时保存。
 SettingsPage {
     id: page
 
@@ -17,57 +18,6 @@ SettingsPage {
 
     function requestResetDefaults() {
         Settings.resetAgentToDefaults()
-    }
-
-    SettingCard {
-        Layout.fillWidth: true
-        title: qsTr("任务预算")
-        subtitle: qsTr("限制一次任务里模型能走多远、跑多久；复杂任务可调高，但通常会增加耗时和 token 消耗。")
-
-        SettingsField {
-            id: maxStepsField
-            objectName: "agent/maxSteps"
-            label: qsTr("单次任务步数预算")
-            labelWidth: 160
-            text: Settings.maxSteps
-            // 基线跟着已保存值走，避免页面重建时把原值再写一遍。
-            lastKnownValue: String(Settings.maxSteps)
-            placeholderText: "30"
-            validator: IntValidator { bottom: 3; top: 1000 }
-            // 未完成编辑期间不持久化（例如清空后输入 1000 的中间态）；
-            // 失焦或 Loader 销毁时只提交范围内的有效整数。
-            ignoreEmptySubmit: true
-            commitOnDestroy: true
-            onSubmitted: (value) => {
-                const steps = Number(value)
-                if (Number.isInteger(steps) && steps >= 3 && steps <= 1000)
-                    Settings.maxSteps = steps
-            }
-        }
-
-        Text {
-            text: qsTr("一次任务里模型最多进行多少轮「思考 → 工具调用」（3–1000）。用完会强制基于已有信息作答。")
-            color: Theme.textSecondary
-            font.pixelSize: Theme.fontSizeCaption
-            font.family: Theme.fontSans
-            wrapMode: Text.Wrap
-            Layout.fillWidth: true
-        }
-
-        SettingRow {
-            objectName: "agent/taskTimeoutMinutes"
-            label: qsTr("单次任务超时（分钟）")
-            description: qsTr("任务运行超过此时长会停止并基于已收集的信息作答。需要多次网络调用的任务可以适当调高。")
-
-            SpinBox {
-                from: 1
-                to: 60
-                value: Settings.taskTimeoutMinutes
-                editable: true
-                onValueModified: Settings.taskTimeoutMinutes = value
-                Accessible.name: qsTr("单次任务超时，分钟")
-            }
-        }
     }
 
     // docs/32 P2: 子代理（spawn_agent）——只读子代理的派生与预算。
@@ -106,7 +56,7 @@ SettingsPage {
         SettingRow {
             objectName: "agent/subagentMaxSteps"
             label: qsTr("单个子代理步数预算")
-            description: qsTr("每个子代理自己的「思考 → 工具调用」轮数上限（2–40），与主任务预算相互独立。")
+            description: qsTr("每个子代理自己的「思考 → 工具调用」轮数上限（2–40），防止失控派生；主任务不限步数。")
 
             SpinBox {
                 from: 2

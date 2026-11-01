@@ -188,7 +188,8 @@ private slots:
         settings.clear();
         settings.setValue(QStringLiteral("embedding/model"),
                           QStringLiteral("keep-out"));
-        settings.setValue(QStringLiteral("agent/maxSteps"), 7);
+        settings.setValue(QStringLiteral("webSearch/provider"),
+                          QStringLiteral("keep-out"));
         settings.setValue(QStringLiteral("activeProfileId"),
                           QStringLiteral("profile-model"));
         settings.setValue(QStringLiteral("modelProfiles"), QString::fromUtf8(
@@ -212,7 +213,7 @@ private slots:
         const QJsonObject saved = root.value(QStringLiteral("settings")).toObject();
         QVERIFY(saved.contains(QStringLiteral("activeProfileId")));
         QVERIFY(!saved.contains(QStringLiteral("embedding/model")));
-        QVERIFY(!saved.contains(QStringLiteral("agent/maxSteps")));
+        QVERIFY(!saved.contains(QStringLiteral("webSearch/provider")));
         QCOMPARE(root.value(QStringLiteral("profiles")).toArray().size(), 1);
         QCOMPARE(root.value(QStringLiteral("mcpServers")).toArray().size(), 0);
 
@@ -247,7 +248,8 @@ private slots:
         settings.setValue(QStringLiteral("embedding/model"),
                           QStringLiteral("base-embed"));
         settings.setValue(QStringLiteral("logging/level"), QStringLiteral("info"));
-        settings.setValue(QStringLiteral("agent/maxSteps"), 5);
+        settings.setValue(QStringLiteral("webSearch/provider"),
+                          QStringLiteral("duckduckgo"));
         settings.sync();
         QCOMPARE(settings.status(), QSettings::NoError);
 

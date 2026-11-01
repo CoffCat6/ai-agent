@@ -64,13 +64,7 @@ const QVector<CatalogEntryDef>& staticEntries() {
          QStringLiteral("contextTokens 上下文 预算"), true, kNone},
 
         // ── 智能体行为 ──────────────────────────────────────
-        {NEXUS_CATALOG_ID("agent/maxSteps"), QStringLiteral("agent"),
-         QT_TRANSLATE_NOOP("SettingsSearch", "单次任务步数预算"),
-         QStringLiteral("模型行为 步数 预算 超时 maxSteps timeout 任务上限 智能体 iteration"),
-         false, kPage},
-        {NEXUS_CATALOG_ID("agent/taskTimeoutMinutes"), QStringLiteral("agent"),
-         QT_TRANSLATE_NOOP("SettingsSearch", "单次任务超时（分钟）"),
-         QStringLiteral("超时 timeout 分钟 任务时长 智能体"), false, kPage},
+        // （agent/maxSteps 与 agent/taskTimeoutMinutes 已随任务预算取消移除）
         {NEXUS_CATALOG_ID("agent/systemPromptOverride"), QStringLiteral("agent"),
          QT_TRANSLATE_NOOP("SettingsSearch", "自定义系统提示词"),
          QStringLiteral("系统提示词 prompt override 提示词 人设"), false, kPage},

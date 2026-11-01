@@ -134,28 +134,32 @@ private slots:
         auto* service = SettingsService::instance();
 
         const SettingsKeyDef* definition =
-            SettingsSchema::definition(QStringLiteral("agent/maxSteps"));
+            SettingsSchema::definition(QStringLiteral("agent/systemPromptOverride"));
         QVERIFY(definition);
-        const int defaultValue = definition->defaultValue.toInt();
-        const int custom = defaultValue + 1;
+        const QString defaultValue = definition->defaultValue.toString();
+        // setter 会 trim：自定义值不能带前导/尾随空白。
+        const QString custom = defaultValue.isEmpty()
+            ? QStringLiteral("customized prompt")
+            : defaultValue + QStringLiteral(" customized");
 
-        service->setMaxSteps(custom);
-        QCOMPARE(service->maxSteps(), custom);
-        const QVariantMap changed = catalog->describe(QStringLiteral("agent/maxSteps"));
+        service->setSystemPromptOverride(custom);
+        QCOMPARE(service->systemPromptOverride(), custom);
+        const QVariantMap changed = catalog->describe(QStringLiteral("agent/systemPromptOverride"));
         QCOMPARE(changed.value(QStringLiteral("known")).toBool(), true);
         QCOMPARE(changed.value(QStringLiteral("modified")).toBool(), true);
         QCOMPARE(changed.value(QStringLiteral("revertable")).toBool(), true);
-        QCOMPARE(changed.value(QStringLiteral("display")).toString(),
-                 QString::number(custom));
+        QCOMPARE(changed.value(QStringLiteral("display")).toString(), custom);
 
-        QVERIFY(catalog->resetValue(QStringLiteral("agent/maxSteps")));
-        QCOMPARE(service->maxSteps(), defaultValue);
-        QCOMPARE(catalog->describe(QStringLiteral("agent/maxSteps"))
+        QVERIFY(catalog->resetValue(QStringLiteral("agent/systemPromptOverride")));
+        QCOMPARE(service->systemPromptOverride(), defaultValue);
+        QCOMPARE(catalog->describe(QStringLiteral("agent/systemPromptOverride"))
                      .value(QStringLiteral("modified")).toBool(),
                  false);
-        QCOMPARE(catalog->describe(QStringLiteral("agent/maxSteps"))
+        // 目录把空值渲染为占位符「（空）」。
+        QCOMPARE(catalog->describe(QStringLiteral("agent/systemPromptOverride"))
                      .value(QStringLiteral("display")).toString(),
-                 QString::number(defaultValue));
+                 defaultValue.isEmpty() ? QStringLiteral("（空）")
+                                        : defaultValue);
     }
 
     // 红线 1：密钥/代理凭据只回答"已配置"，不参与复位，也不泄露明文。

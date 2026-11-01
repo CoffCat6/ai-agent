@@ -22,6 +22,23 @@ Item {
     // docs/33 E1: 子代理证据工件路径（spawn_agent 的 tool_result）。非空时
     // 头部渲染「查看证据」芯片，点击交给系统默认 .md 处理器。
     readonly property string evidencePath: modelData.evidencePath || ""
+    // docs/33 过程可视化：spawn_agent 节点的实时过程日志（元数据 subagentLog，
+    // 条目 {phase, text}）。assistant = 模型可见文本（含最终答案），tool =
+    // 单个工具调用的「名(参数) ⇒ 结果摘要」。
+    readonly property bool isSpawnAgent: (modelData.title || "").startsWith("spawn_agent")
+    readonly property var subagentLog: {
+        if (!isSpawnAgent) return null
+        const raw = modelData.subagentLog
+        return (Array.isArray(raw) && raw.length > 0) ? raw : null
+    }
+    readonly property bool hasSubagentLog: subagentLog !== null
+    // 日志条目图标与配色：assistant 用品牌色、tool 用警示色。
+    function logGlyph(phase) {
+        return phase === "tool" ? "⚙" : "✦"
+    }
+    function logColor(phase) {
+        return phase === "tool" ? Theme.statusWarning : Theme.brandPrimary
+    }
     // 来源的展示名。技术名词不翻译（与设置页的 label 一致）。
     function sourceLabel(key) {
         if (key === "zhipu") return "智谱"
@@ -54,7 +71,8 @@ Item {
     readonly property string previewText: waitingConfirm ? (modelData.preview || "") : ""
     readonly property bool hasPreview: previewText !== ""
     // 确认态必须展开，否则同意/拒绝按钮不可达。
-    readonly property bool bodyVisible: (expanded || waitingConfirm) && hasDetail
+    readonly property bool bodyVisible: (expanded || waitingConfirm)
+                                        && (hasDetail || hasSubagentLog)
 
     // git_status 结构化展示：解析 porcelain v1 输出为文件状态列表
     readonly property bool isGitStatus: nodeType === "tool_result" && (modelData.title || "") === "git_status"
@@ -252,7 +270,7 @@ Item {
                     id: chevron
                     anchors.right: parent.right
                     anchors.verticalCenter: parent.verticalCenter
-                    visible: root.hasDetail && !root.waitingConfirm
+                    visible: (root.hasDetail || root.hasSubagentLog) && !root.waitingConfirm
                     icon: root.expanded ? "chevron-up" : "chevron-down"
                     size: 12
                     iconColor: headerMA.containsMouse
@@ -262,7 +280,7 @@ Item {
                 MouseArea {
                     id: headerMA
                     anchors.fill: parent
-                    enabled: root.hasDetail && !root.waitingConfirm
+                    enabled: (root.hasDetail || root.hasSubagentLog) && !root.waitingConfirm
                     hoverEnabled: true
                     cursorShape: enabled ? Qt.PointingHandCursor : Qt.ArrowCursor
                     onClicked: root.toggleRequested()
@@ -271,8 +289,10 @@ Item {
 
             // 折叠摘要
             Text {
-                visible: root.hasDetail && !root.expanded && !root.waitingConfirm
-                text: qsTr("已折叠 · %1 字符").arg(root.detailText.length)
+                visible: (root.hasDetail || root.hasSubagentLog) && !root.expanded && !root.waitingConfirm
+                text: root.hasSubagentLog
+                    ? qsTr("已折叠 · %1 条过程记录").arg(root.subagentLog.length)
+                    : qsTr("已折叠 · %1 字符").arg(root.detailText.length)
                 color: Theme.textTertiary
                 font.pixelSize: Theme.fontSizeCaption
                 font.family: Theme.fontSans
@@ -287,7 +307,8 @@ Item {
                 visible: active
                 width: parent.width
                 sourceComponent: root.gitStatusEntries !== null
-                                  ? gitStatusComp : codeComp
+                                  ? gitStatusComp
+                                  : (root.hasSubagentLog ? subagentLogComp : codeComp)
             }
 
             Component {
@@ -329,6 +350,55 @@ Item {
                                 width: parent.width - 28
                             }
                         }
+                    }
+                }
+            }
+
+            Component {
+                id: subagentLogComp
+                Column {
+                    width: bodyLoader.width
+                    spacing: Theme.spaceXs
+
+                    Repeater {
+                        model: root.subagentLog
+
+                        delegate: Row {
+                            required property var modelData
+                            width: parent.width
+                            spacing: 6
+
+                            Text {
+                                id: glyphText
+                                anchors.verticalCenter: entryText.verticalCenter
+                                text: root.logGlyph(modelData.phase)
+                                color: root.logColor(modelData.phase)
+                                font.pixelSize: Theme.fontSizeCaption
+                                font.family: Theme.fontSans
+                            }
+
+                            Text {
+                                id: entryText
+                                width: parent.width - 20
+                                text: modelData.text
+                                color: modelData.phase === "tool"
+                                    ? Theme.textSecondary : Theme.textPrimary
+                                font.pixelSize: Theme.fontSizeCaption
+                                font.family: modelData.phase === "tool"
+                                    ? Theme.fontMono : Theme.fontSans
+                                wrapMode: Text.Wrap
+                            }
+                        }
+                    }
+
+                    // 日志之后仍展示参数/结果正文（报告或 goal）。
+                    CodeBlock {
+                        visible: root.detailText !== ""
+                        width: parent.width
+                        text: root.detailText
+                        textColor: root.nodeType === "tool_result"
+                            ? Theme.statusSuccess : Theme.textPrimary
+                        bgColor: Theme.codeBackground
                     }
                 }
             }

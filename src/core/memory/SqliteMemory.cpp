@@ -2668,7 +2668,7 @@ void SqliteMemory::saveTraceNode(const QString& sessionId, const QJsonObject& no
     // 会话恢复后标题摘要仍可重建。evidencePath: 证据工件路径（E1），
     // 「查看证据」入口随会话恢复仍可用。
     for (const char* key : {"images", "files", "model", "preview", "source",
-                            "subagentTools", "evidencePath"})
+                            "subagentTools", "subagentLog", "evidencePath"})
         if (node.contains(QLatin1String(key))) metadata[key] = node.value(QLatin1String(key));
     query.addBindValue(QString::fromUtf8(QJsonDocument(metadata).toJson(QJsonDocument::Compact)));
 
@@ -2702,7 +2702,7 @@ QJsonObject traceNodeFromRow(const QSqlQuery& query) {
         node["messageId"] = messageId;
     const auto metadata = QJsonDocument::fromJson(query.value(10).toByteArray()).object();
     for (const char* key : {"images", "files", "model", "preview", "source",
-                            "subagentTools", "evidencePath"})
+                            "subagentTools", "subagentLog", "evidencePath"})
         if (metadata.contains(QLatin1String(key))) node[key] = metadata.value(QLatin1String(key));
     return node;
 }

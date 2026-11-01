@@ -85,8 +85,6 @@ public:
         schemaVersion = s.value("schemaVersion");
         defaultPermissionMode = s.value("agent/defaultPermissionMode");
         readDenyList = s.value("security/readDenyList");
-        maxSteps = s.value("agent/maxSteps");
-        taskTimeoutMinutes = s.value("agent/taskTimeoutMinutes");
         // 设置中心拆页后新增的按页复位用例会写记忆设置，必须一并守卫，
         // 否则测试会把用户真实配置改掉。
         episodicMemoryEnabled = s.value("memory/episodicMemoryEnabled");
@@ -169,10 +167,6 @@ public:
         if (readDenyList.isValid())
             s.setValue("security/readDenyList", readDenyList);
         else s.remove("security/readDenyList");
-        if (maxSteps.isValid()) s.setValue("agent/maxSteps", maxSteps);
-        else s.remove("agent/maxSteps");
-        if (taskTimeoutMinutes.isValid()) s.setValue("agent/taskTimeoutMinutes", taskTimeoutMinutes);
-        else s.remove("agent/taskTimeoutMinutes");
         if (episodicMemoryEnabled.isValid())
             s.setValue("memory/episodicMemoryEnabled", episodicMemoryEnabled);
         else s.remove("memory/episodicMemoryEnabled");
@@ -219,8 +213,6 @@ public:
     QVariant schemaVersion;
     QVariant defaultPermissionMode;
     QVariant readDenyList;
-    QVariant maxSteps;
-    QVariant taskTimeoutMinutes;
     QVariant episodicMemoryEnabled;
     QVariant auditRetentionDays;
     QVariant tokenRetentionDays;
@@ -839,8 +831,6 @@ private slots:
         SettingsGuard guard;
         SettingsService svc(nullptr);
 
-        svc.setMaxSteps(99);
-        svc.setTaskTimeoutMinutes(12);
         svc.setSystemPromptOverride(QStringLiteral("custom prompt"));
         // 其他领域保持非默认值，验证复位不越界。
         svc.setLogLevel(QStringLiteral("debug"));
@@ -849,11 +839,6 @@ private slots:
 
         svc.resetAgentToDefaults();
 
-        QCOMPARE(svc.maxSteps(),
-                 SettingsSchema::defaultValue(QStringLiteral("agent/maxSteps")).toInt());
-        QCOMPARE(svc.taskTimeoutMinutes(),
-                 SettingsSchema::defaultValue(
-                     QStringLiteral("agent/taskTimeoutMinutes")).toInt());
         QCOMPARE(svc.systemPromptOverride(),
                  SettingsSchema::defaultValue(
                      QStringLiteral("agent/systemPromptOverride")).toString());
@@ -871,7 +856,6 @@ private slots:
         svc.setLogMaxFileSizeMb(32);
         svc.setLogRetentionFiles(30);
         // 其他领域保持非默认值。
-        svc.setMaxSteps(99);
         svc.setProxyHost(QStringLiteral("proxy.example"));
 
         svc.resetLoggingToDefaults();
@@ -886,7 +870,6 @@ private slots:
         QCOMPARE(svc.logRetentionFiles(),
                  SettingsSchema::defaultValue(
                      QStringLiteral("logging/retentionFiles")).toInt());
-        QCOMPARE(svc.maxSteps(), 99);
         QCOMPARE(svc.proxyHost(), QStringLiteral("proxy.example"));
     }
 
@@ -900,7 +883,6 @@ private slots:
         svc.setProxyUsername(QStringLiteral("alice"));
         svc.setProxyPassword(QStringLiteral("secret"));
         // 其他领域保持非默认值。
-        svc.setMaxSteps(99);
         svc.setLogLevel(QStringLiteral("debug"));
 
         svc.resetNetworkToDefaults();
@@ -913,7 +895,6 @@ private slots:
                  SettingsSchema::defaultValue(QStringLiteral("network/proxyPort")).toInt());
         QCOMPARE(svc.proxyUsername(), QString());
         QVERIFY(!svc.proxyPasswordSet());
-        QCOMPARE(svc.maxSteps(), 99);
         QCOMPARE(svc.logLevel(), QStringLiteral("debug"));
     }
 
@@ -1006,56 +987,6 @@ private slots:
         QCOMPARE(inGroupSet, grouped);
     }
 
-    // 步数预算（agent/maxSteps）：钳制到 [kMinMaxIterations, kIterationCeiling]，
-    // 改动即时持久化。默认 30 取代了原先硬编码的 10。
-    void maxStepsClampsAndPersists() {
-        SettingsGuard guard;
-        NexusAI::TestSupport::testSettings().remove("agent/maxSteps");
-        SettingsService svc(nullptr);
-
-        QCOMPARE(svc.maxSteps(), AIAgent::kDefaultMaxIterations);
-
-        svc.setMaxSteps(0);
-        QCOMPARE(svc.maxSteps(), AIAgent::kMinMaxIterations);
-        svc.setMaxSteps(9999);
-        QCOMPARE(svc.maxSteps(), AIAgent::kIterationCeiling);
-
-        svc.setMaxSteps(42);
-        QCOMPARE(svc.maxSteps(), 42);
-        QCOMPARE(NexusAI::TestSupport::testSettings().value("agent/maxSteps").toInt(), 42);
-    }
-
-    // 设置中心底栏的"已保存"回执依赖这个信号：只在真正写入成功后发一次，
-    // 相同值的重复赋值不应该刷新回执（否则页面重建也会闪"已保存"）。
-    void settingSavedReportsSuccessfulWritesOnly() {
-        SettingsGuard guard;
-        NexusAI::TestSupport::testSettings().remove("agent/maxSteps");
-        SettingsService svc(nullptr);
-        QSignalSpy savedSpy(&svc, &SettingsService::settingSaved);
-
-        svc.setMaxSteps(42);
-        QCOMPARE(savedSpy.count(), 1);
-        QCOMPARE(savedSpy.takeFirst().at(0).toString(),
-                 QStringLiteral("agent/maxSteps"));
-
-        svc.setMaxSteps(42);
-        QCOMPARE(savedSpy.count(), 0);
-    }
-
-    void taskTimeoutClampsAndPersists() {
-        SettingsGuard guard;
-        NexusAI::TestSupport::testSettings().remove("agent/taskTimeoutMinutes");
-        SettingsService service(nullptr);
-        QCOMPARE(service.taskTimeoutMinutes(), AIAgent::kDefaultTaskTimeoutMs / 60000);
-
-        service.setTaskTimeoutMinutes(0);
-        QCOMPARE(service.taskTimeoutMinutes(), 1);
-        service.setTaskTimeoutMinutes(99);
-        QCOMPARE(service.taskTimeoutMinutes(), 60);
-        service.setTaskTimeoutMinutes(20);
-        QCOMPARE(NexusAI::TestSupport::testSettings().value("agent/taskTimeoutMinutes").toInt(), 20);
-    }
-
     // docs/17 B3: 账本完整性——三类旁路写入方（ToolRegistry/AgentViewModel/
     // PreferenceStore）的键必须全部登记进 schema，防止"唯一事实源"再漂移。
 
@@ -1140,7 +1071,6 @@ private slots:
             "modelProfiles", "activeProfileId", "contextTokens",
             // 提示词与指令：三组用户自建资产（SettingsService JSON blob）
             "promptPresets", "slashCommands", "sessionTemplates",
-            "agent/maxSteps", "agent/taskTimeoutMinutes",
             // docs/32 P1: 子代理设置键
             "agent/subagentEnabled", "agent/subagentMaxParallel",
             "agent/subagentMaxSteps", "agent/subagentTimeoutSec",

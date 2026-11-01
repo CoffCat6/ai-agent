@@ -352,14 +352,6 @@ void SettingsService::load() {
         QStringLiteral("contextTokens"),
         SettingsRepository::value(QStringLiteral("contextTokens"),
             SettingsSchema::defaultValue(QStringLiteral("contextTokens"))).toInt());
-    m_maxSteps = SettingsSchema::clampInt(
-        QStringLiteral("agent/maxSteps"),
-        SettingsRepository::value(QStringLiteral("agent/maxSteps"),
-            SettingsSchema::defaultValue(QStringLiteral("agent/maxSteps"))).toInt());
-    m_taskTimeoutMinutes = SettingsSchema::clampInt(
-        QStringLiteral("agent/taskTimeoutMinutes"),
-        SettingsRepository::value(QStringLiteral("agent/taskTimeoutMinutes"),
-            SettingsSchema::defaultValue(QStringLiteral("agent/taskTimeoutMinutes"))).toInt());
     // docs/32 P1: 子代理设置装载。
     m_subagentEnabled = SettingsRepository::value(QStringLiteral("agent/subagentEnabled"),
         SettingsSchema::defaultValue(QStringLiteral("agent/subagentEnabled"))).toBool();
@@ -1189,25 +1181,6 @@ void SettingsService::setContextTokens(int tokens) {
     emit contextTokensChanged();
 }
 
-// 步数预算：即时保存；生效路径在 main.cpp（maxStepsChanged → applySettings
-// 把值推给模板 agent 与各标签 agent）。
-void SettingsService::setMaxSteps(int steps) {
-    const int clamped = SettingsSchema::clampInt(QStringLiteral("agent/maxSteps"), steps);
-    if (m_maxSteps == clamped
-            || !persistValue(QStringLiteral("agent/maxSteps"), clamped)) return;
-    m_maxSteps = clamped;
-    emit maxStepsChanged();
-}
-
-void SettingsService::setTaskTimeoutMinutes(int minutes) {
-    const int clamped = SettingsSchema::clampInt(
-        QStringLiteral("agent/taskTimeoutMinutes"), minutes);
-    if (m_taskTimeoutMinutes == clamped
-            || !persistValue(QStringLiteral("agent/taskTimeoutMinutes"), clamped)) return;
-    m_taskTimeoutMinutes = clamped;
-    emit taskTimeoutMinutesChanged();
-}
-
 // docs/32 P1: 子代理设置。生效路径在 main.cpp（applySettings 订阅这些信号
 // → 注册/注销 spawn_agent + 推送运行参数）。
 void SettingsService::setSubagentEnabled(bool enabled) {
@@ -1901,9 +1874,6 @@ void SettingsService::setActiveProjectId(const QString& id) {
 }
 
 void SettingsService::resetAgentToDefaults() {
-    setMaxSteps(SettingsSchema::defaultValue(QStringLiteral("agent/maxSteps")).toInt());
-    setTaskTimeoutMinutes(SettingsSchema::defaultValue(
-        QStringLiteral("agent/taskTimeoutMinutes")).toInt());
     setSystemPromptOverride(SettingsSchema::defaultValue(
         QStringLiteral("agent/systemPromptOverride")).toString());
     setSubagentEnabled(SettingsSchema::defaultValue(
@@ -1976,11 +1946,6 @@ void SettingsService::resetBackupToDefaults() {
 bool SettingsService::setValueForSetting(const QString& key, const QVariant& value) {
     if (key == QLatin1String("contextTokens")) { setContextTokens(value.toInt()); return true; }
 
-    if (key == QLatin1String("agent/maxSteps")) { setMaxSteps(value.toInt()); return true; }
-    if (key == QLatin1String("agent/taskTimeoutMinutes")) {
-        setTaskTimeoutMinutes(value.toInt());
-        return true;
-    }
     if (key == QLatin1String("agent/subagentEnabled")) { setSubagentEnabled(value.toBool()); return true; }
     if (key == QLatin1String("agent/subagentMaxParallel")) { setSubagentMaxParallel(value.toInt()); return true; }
     if (key == QLatin1String("agent/subagentMaxSteps")) { setSubagentMaxSteps(value.toInt()); return true; }
