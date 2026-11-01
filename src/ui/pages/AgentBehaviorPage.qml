@@ -70,6 +70,71 @@ SettingsPage {
         }
     }
 
+    // docs/32 P2: 子代理（spawn_agent）——只读子代理的派生与预算。
+    SettingCard {
+        Layout.fillWidth: true
+        title: qsTr("子代理")
+        subtitle: qsTr("允许模型派生只读子代理并行检索与分析；所有写操作仍由主任务执行。")
+
+        SettingRow {
+            objectName: "agent/subagentEnabled"
+            label: qsTr("启用子代理")
+            description: qsTr("开启后模型可以调用 spawn_agent 派生只读子代理（仅读文件、搜索、git 查看）。")
+
+            Switch {
+                checked: Settings.subagentEnabled
+                onToggled: Settings.subagentEnabled = checked
+                Accessible.name: qsTr("启用子代理")
+            }
+        }
+
+        SettingRow {
+            objectName: "agent/subagentMaxParallel"
+            label: qsTr("并行上限")
+            description: qsTr("同时运行的子代理数量上限（1–8），超出的派生请求排队等待。")
+
+            SpinBox {
+                from: 1
+                to: 8
+                value: Settings.subagentMaxParallel
+                editable: true
+                onValueModified: Settings.subagentMaxParallel = value
+                Accessible.name: qsTr("子代理并行上限")
+            }
+        }
+
+        SettingRow {
+            objectName: "agent/subagentMaxSteps"
+            label: qsTr("单个子代理步数预算")
+            description: qsTr("每个子代理自己的「思考 → 工具调用」轮数上限（2–40），与主任务预算相互独立。")
+
+            SpinBox {
+                from: 2
+                to: 40
+                value: Settings.subagentMaxSteps
+                editable: true
+                onValueModified: Settings.subagentMaxSteps = value
+                Accessible.name: qsTr("子代理步数预算")
+            }
+        }
+
+        SettingRow {
+            objectName: "agent/subagentTimeoutSec"
+            label: qsTr("单个子代理超时（秒）")
+            description: qsTr("子代理运行超过此时长会被中止并报告部分结果（30–1800）。")
+
+            SpinBox {
+                from: 30
+                to: 1800
+                value: Settings.subagentTimeoutSec
+                editable: true
+                stepSize: 30
+                onValueModified: Settings.subagentTimeoutSec = value
+                Accessible.name: qsTr("子代理超时，秒")
+            }
+        }
+    }
+
     SettingCard {
         Layout.fillWidth: true
         title: qsTr("系统提示词")

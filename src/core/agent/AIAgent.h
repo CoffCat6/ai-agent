@@ -26,6 +26,7 @@ class ITool;
 class ToolRegistry;
 class IMemory;
 class EpisodicService;
+struct SubAgentProgress;   // core/agent/SubAgentRunner.h (docs/32 P2)
 
 // The agent core: runs the ReAct loop
 //   user message -> LLM -> (tool calls -> results -> LLM)* -> final answer
@@ -316,6 +317,9 @@ private:
     void clearStreamState();
 
     void processNextToolCall();
+    // docs/32 P2: sub-agent progress events (queued from the pool thread)
+    // update the spawning tool_call node's title in place.
+    void applySubAgentProgress(const QString& nodeId, const SubAgentProgress& progress);
     // Append synthetic tool-result messages for calls the assistant already
     // announced but that will NOT be executed (loop terminator, forced
     // final, stop). Without them the history ends in dangling tool_calls -

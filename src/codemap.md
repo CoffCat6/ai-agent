@@ -79,7 +79,7 @@
 - `main.cpp`：组合根、启动/退出顺序、托盘与 UIPI、设置重应用链。
 - `app.rc.in`：Windows VERSIONINFO（图标路径由 CMake 相对化，版本来自 `project(VERSION)`）。
 - `core/agent/AIAgent.{h,cpp}`、`core/agent/EpisodicService.{h,cpp}`、`core/agent/PermissionMode.h`。
-- `core/agent/SubAgentRunner.{h,cpp}`、`core/tools/SubAgentTool.{h,cpp}`：docs/32 P1 只读子代理（spawn_agent，设置键 `agent/subagent*`，注册门控在 main.cpp applySettings）。
+- `core/agent/SubAgentRunner.{h,cpp}`、`core/tools/SubAgentTool.{h,cpp}`：docs/32 P1/P2 只读子代理（spawn_agent，设置键 `agent/subagent*`，注册门控在 main.cpp applySettings，设置页 AgentBehaviorPage）。
 - `core/memory/SqliteMemory.{h,cpp}`、`core/tools/{ToolRegistry,Sandbox,WebSearchTool,NetworkFetchTool}.h`。
 - `core/rag/RagService.{h,cpp}`、`core/utils/{Logger,Activity,NetworkProxyConfig,SamplingParams}.h`。
 - `infrastructure/llm/LlmProtocolRegistry.{h,cpp}`、`infrastructure/embed/{OllamaEmbedding,OpenAICompatibleEmbedding,EmbedShutdown}.h`。

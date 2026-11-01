@@ -55,7 +55,7 @@
 - **消费方**：`ChatSessionController`（每 tab）转发 `startTask/approveToolCall/stop/regenerateLast/权限模式`，聚合 `state/trace/tokens`；`AgentViewModel` 暴露 QML 单例属性；`main.cpp` 注入 settings 的步数、超时、上下文窗口、系统提示 override 与 local-only 门控，项目根由 `AgentViewModel` 随切换推送。
 - **agent 信号**：`stateChanged/traceChanged/responseReady/toolConfirmRequired/errorOccurred/tokensChanged/contextLimitChanged/sessionChanged/sessionsChanged/quotaWarning/quotaAlert/costChanged/sessionTokensChanged/todoListChanged/fileCheckpointsChanged/episodicChanged`。
 - **构建**：`nexus_core`（Qt6::Core/Sql/Concurrent/Network，无 Gui），`nexus_viewmodels` 与 `nexus_ai` 消费。
-- **SubAgentRunner（docs/32 P1）**：`spawn_agent` 工具（`core/tools/SubAgentTool`）在池线程驱动的只读子代理循环。与主循环刻意不共享任何状态：服务由 main.cpp 的工厂按活动 profile 现建（并发单位 = IAIService 实例），消息历史内存态即弃，不落 SQLite。工具面由 `SubAgentTool::refreshCatalog()` 在 GUI 线程快照（`ToolLevel::Safe && readOnly`，排除 spawn_agent 自身与 localOnly 网络工具），并发闸/步数/超时由设置键 `agent/subagent*` 控制；主代理 `stop()` 经共享取消旗标级联中止。
+- **SubAgentRunner（docs/32 P1/P2）**：`spawn_agent` 工具（`core/tools/SubAgentTool`）在池线程驱动的只读子代理循环。与主循环刻意不共享任何状态：服务由 main.cpp 的工厂按活动 profile 现建（并发单位 = IAIService 实例），消息历史内存态即弃，不落 SQLite。工具面由 `SubAgentTool::refreshCatalog()` 在 GUI 线程快照（`ToolLevel::Safe && readOnly`，排除 spawn_agent 自身与 localOnly 网络工具），并发闸/步数/超时由设置键 `agent/subagent*` 控制；主代理 `stop()` 经共享取消旗标级联中止。进度（P2）：派发 lambda 安装 thread_local 钩子（`SubAgentProgressRouter`），事件排队回 GUI 线程更新派生 tool_call 节点标题（`spawn_agent · step k/N · detail`，只留最新，running 态才更新）；spawn_agent 的审计 detail 为 JSON，携带 `subagent_steps/subagent_tokens`，行级 request_id 即主请求归因。
 
 ## 关键文件
 

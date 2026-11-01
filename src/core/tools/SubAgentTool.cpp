@@ -148,6 +148,9 @@ ToolResult SubAgentTool::execute(const QJsonObject& args, const Cancellation& ca
     request.maxSteps = m_maxSteps.load();
     request.timeoutMs = m_timeoutMs.load();
     request.cancelled = cancelled;
+    // docs/32 P2: the dispatcher installs a thread-local progress hook around
+    // execute(); empty (no-op) when spawned outside an agent dispatch (tests).
+    request.progress = SubAgentProgressRouter::current();
 
     IAIService* service = m_factory();
     SubAgentReport report = SubAgentRunner::run(service, request);

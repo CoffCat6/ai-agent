@@ -798,6 +798,9 @@ private slots:
     void subagentTimeoutAborts();
     void subagentStopCascades();
     void subagentConcurrencyGateQueues();
+    // docs/32 P2: 进度上屏与审计归因
+    void subagentProgressUpdatesTraceNode();
+    void subagentAuditCarriesSubagentStats();
 
     // G3: project rules file injection (docs/26 G3)
     void projectRulesInjectedIntoSystemPrompt() {
@@ -4272,6 +4275,72 @@ void TestAgent::subagentConcurrencyGateQueues() {
     future2.waitForFinished();
     QVERIFY(results.at(0).contains(QStringLiteral("[Sub-agent report]")));
     QVERIFY(results.at(1).contains(QStringLiteral("[Sub-agent report]")));
+}
+
+// docs/32 P2: 子代理每轮进度以事件回传，落到派生调用的 tool_call 节点标题上。
+void TestAgent::subagentProgressUpdatesTraceNode() {
+    SubAgentFixture fixture;
+    SpawnToolGuard guard;
+    fixture.tool = registerSpawnTool(fixture, [](RecordingFakeService& sub) {
+        sub.script.append(toolResponse(QStringLiteral("test_sub_probe"), {}));
+        sub.script.append(textResponse(QStringLiteral("final report text")));
+    });
+    llm.reset();
+    llm.script.append(toolResponse(QStringLiteral("spawn_agent"),
+        QJsonObject{{"goal", QStringLiteral("probe with progress")}}));
+    llm.script.append(textResponse(QStringLiteral("done")));
+    QSignalSpy spy(&agent, &AIAgent::responseReady);
+    agent.startTask(QStringLiteral("watch a sub-agent"));
+    QTRY_COMPARE(spy.count(), 1);
+
+    // 事件经排队回 GUI 线程，等最后一个事件（step 2/12）落进 trace。
+    // 标题只保留最新进度（step 2 的 thinking 事件会覆盖 step 1 的工具名
+    // 细节），终态标题即为最后一次事件。
+    QTRY_VERIFY(traceHas(agent.traceModel(), QStringLiteral("tool_call"),
+                         QStringLiteral("step 2/12")));
+    QVERIFY(traceHas(agent.traceModel(), QStringLiteral("tool_call"),
+                     QStringLiteral("spawn_agent")));
+}
+
+// docs/32 P2: 审计行的 request_id 即主请求（parent 归因），detail 以 JSON
+// 携带子代理自身的 steps/tokens。
+void TestAgent::subagentAuditCarriesSubagentStats() {
+    SqliteMemory memory(QStringLiteral(":memory:"));
+    agent.setMemory(&memory);
+
+    SubAgentFixture fixture;
+    SpawnToolGuard guard;
+    fixture.tool = registerSpawnTool(fixture, [](RecordingFakeService& sub) {
+        sub.script.append(textResponse(QStringLiteral("quick report")));
+    });
+    llm.reset();
+    LLMResponse scripted = textResponse(QStringLiteral("done"));
+    scripted.tokensUsed = 42;
+    llm.script.append(toolResponse(QStringLiteral("spawn_agent"),
+        QJsonObject{{"goal", QStringLiteral("audit me")}}));
+    llm.script.append(scripted);
+    QSignalSpy spy(&agent, &AIAgent::responseReady);
+    agent.startTask(QStringLiteral("spawn for audit"));
+    QTRY_COMPARE_WITH_TIMEOUT(spy.count(), 1, 15000);
+
+    bool found = false;
+    const QJsonArray audit = memory.auditLog(50);
+    for (const auto& entry : audit) {
+        const QJsonObject row = entry.toObject();
+        if (row.value("event").toString() != QLatin1String("tool_execute")
+                || row.value("toolName").toString() != QLatin1String("spawn_agent"))
+            continue;
+        const QJsonObject detail = QJsonDocument::fromJson(
+            row.value("detail").toString().toUtf8()).object();
+        QVERIFY(detail.contains(QStringLiteral("subagent_steps")));
+        QVERIFY(detail.contains(QStringLiteral("subagent_tokens")));
+        QCOMPARE(detail.value("subagent_steps").toInt(), 1);
+        // 主请求归因：审计行 request_id 是派生调用的主请求，恒 > 0。
+        QVERIFY(row.value("requestId").toDouble() > 0);
+        found = true;
+    }
+    QVERIFY2(found, "spawn_agent tool_execute audit row missing");
+    agent.setMemory(nullptr);
 }
 
 QTEST_GUILESS_MAIN(TestAgent)

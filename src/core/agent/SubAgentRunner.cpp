@@ -103,6 +103,12 @@ QString toolNameList(const QVector<SubAgentToolEntry>& tools) {
     return names.join(QStringLiteral(", "));
 }
 
+QString calledToolNames(const QVector<ToolCallInfo>& calls) {
+    QStringList names;
+    for (const auto& call : calls) names.append(call.name);
+    return names.join(QStringLiteral(", "));
+}
+
 // Appends the assistant turn in OpenAI wire format (mirrors AIAgent's
 // serialization: JSON-string arguments, null content when only tool calls).
 void appendAssistantTurn(QJsonArray& messages, const LLMResponse& response,
@@ -218,6 +224,11 @@ SubAgentReport SubAgentRunner::run(IAIService* service, const SubAgentRequest& r
 
     quint64 callSeq{0};
     QString lastSignature;
+    // Per-round progress; the hook is optional, empty outside a dispatched run.
+    const auto notify = [&](int stepNum, const QString& phase, const QString& detail) {
+        if (request.progress)
+            request.progress(SubAgentProgress{stepNum, request.maxSteps, phase, detail});
+    };
 
     for (int step = 1; step <= request.maxSteps; ++step) {
         report.steps = step;
@@ -231,6 +242,8 @@ SubAgentReport SubAgentRunner::run(IAIService* service, const SubAgentRequest& r
         // turn what it gathered into an answer (mirrors AIAgent's forced
         // final) instead of burning the budget on one more call.
         const bool forcedFinal = step == request.maxSteps;
+        notify(step, QStringLiteral("thinking"),
+               forcedFinal ? QStringLiteral("final answer") : QString());
         gotResponse = false;
         gotError = false;
         timedOut = false;
@@ -294,6 +307,7 @@ SubAgentReport SubAgentRunner::run(IAIService* service, const SubAgentRequest& r
             appendToolResult(messages, call,
                              truncate(toolResultText(result), kSubToolResultMaxChars));
         }
+        notify(step, QStringLiteral("tools"), calledToolNames(response.toolCalls));
 
         if (repeated) {
             // The model is stuck in a loop: converge now instead of letting

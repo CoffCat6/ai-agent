@@ -1,7 +1,9 @@
 #pragma once
 
 #include <QString>
+#include <QThreadStorage>
 #include <QVector>
+#include <functional>
 #include <memory>
 
 #include "core/tools/ITool.h"
@@ -20,6 +22,42 @@ struct SubAgentToolEntry {
     std::shared_ptr<ITool> tool;
 };
 
+// docs/32 P2: one live progress event from a running sub-agent. Emitted on
+// the pool thread that runs the sub-agent loop; receivers marshal onto the
+// GUI thread themselves.
+struct SubAgentProgress {
+    int step{0};        // 1-based LLM round
+    int maxSteps{0};
+    QString phase;      // "thinking" (about to call the model) / "tools" (round's tool calls executed)
+    QString detail;     // e.g. executed tool names for the "tools" phase
+};
+
+using SubAgentProgressHook = std::function<void(const SubAgentProgress&)>;
+
+// docs/32 P2: thread-local hand-off from the dispatcher (AIAgent) to the
+// spawning tool. AIAgent cannot pass per-call context through the fixed
+// ITool::execute signature, and SubAgentTool is a process-wide object shared
+// by parallel calls and tabs — a member sink would clobber. The hook is
+// installed inside the QtConcurrent lambda around tool->execute(); sub-agent
+// work (including nested tool calls) stays on that same thread, so the hook
+// is visible for exactly the one run. Multiple parallel spawn_agent calls
+// run on different pool threads and never see each other's hook.
+class SubAgentProgressRouter {
+public:
+    explicit SubAgentProgressRouter(SubAgentProgressHook hook) {
+        s_hook.localData() = std::move(hook);
+    }
+    ~SubAgentProgressRouter() { s_hook.localData() = nullptr; }
+    SubAgentProgressRouter(const SubAgentProgressRouter&) = delete;
+    SubAgentProgressRouter& operator=(const SubAgentProgressRouter&) = delete;
+
+    // The hook installed on the CURRENT thread (null outside a dispatch).
+    static const SubAgentProgressHook& current() { return s_hook.localData(); }
+
+private:
+    static inline QThreadStorage<SubAgentProgressHook> s_hook;
+};
+
 // P1 (docs/32): parameters for one sub-agent run.
 struct SubAgentRequest {
     QString goal;        // required, self-contained task description
@@ -31,6 +69,7 @@ struct SubAgentRequest {
     qint64 timeoutMs{300000};            // whole-run wall-clock budget
     ITool::Cancellation cancelled;       // shared with the dispatching tool; a
                                          // stop() of the primary agent flips it
+    SubAgentProgressHook progress;       // optional; docs/32 P2 live progress
 };
 
 struct SubAgentReport {

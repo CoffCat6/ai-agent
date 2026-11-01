@@ -74,20 +74,19 @@ const QVector<CatalogEntryDef>& staticEntries() {
         {NEXUS_CATALOG_ID("agent/systemPromptOverride"), QStringLiteral("agent"),
          QT_TRANSLATE_NOOP("SettingsSearch", "自定义系统提示词"),
          QStringLiteral("系统提示词 prompt override 提示词 人设"), false, kPage},
-        // docs/32 P1: 子代理设置键——账本覆盖纪律要求登记；P1 无设置页，
-        // 先以隐藏条目占位，P2 加界面时转可见。
+        // docs/32 P2: 子代理设置——随设置页落地转为可见条目。
         {NEXUS_CATALOG_ID("agent/subagentEnabled"), QStringLiteral("agent"),
          QT_TRANSLATE_NOOP("SettingsSearch", "子代理开关"),
-         QStringLiteral("子代理 subagent spawn_agent 派生 并行"), true, kNone},
+         QStringLiteral("子代理 subagent spawn_agent 派生 并行"), false, kPage},
         {NEXUS_CATALOG_ID("agent/subagentMaxParallel"), QStringLiteral("agent"),
          QT_TRANSLATE_NOOP("SettingsSearch", "子代理并行上限"),
-         QStringLiteral("子代理 subagent 并行 并发 上限 parallel"), true, kNone},
+         QStringLiteral("子代理 subagent 并行 并发 上限 parallel"), false, kPage},
         {NEXUS_CATALOG_ID("agent/subagentMaxSteps"), QStringLiteral("agent"),
          QT_TRANSLATE_NOOP("SettingsSearch", "子代理步数预算"),
-         QStringLiteral("子代理 subagent 步数 预算 steps"), true, kNone},
+         QStringLiteral("子代理 subagent 步数 预算 steps"), false, kPage},
         {NEXUS_CATALOG_ID("agent/subagentTimeoutSec"), QStringLiteral("agent"),
          QT_TRANSLATE_NOOP("SettingsSearch", "子代理超时（秒）"),
-         QStringLiteral("子代理 subagent 超时 timeout 秒"), true, kNone},
+         QStringLiteral("子代理 subagent 超时 timeout 秒"), false, kPage},
 
         // ── 工具与能力 ──────────────────────────────────────
         {NEXUS_CATALOG_ID("tools/disabled"), QStringLiteral("tools"),

@@ -1,6 +1,7 @@
 #include "AIAgent.h"
 
 #include "EpisodicService.h"
+#include "SubAgentRunner.h"
 #include "infrastructure/llm/IAIService.h"
 #include "core/tools/ToolRegistry.h"
 #include "core/tools/Sandbox.h"
@@ -17,6 +18,8 @@
 #include <QFileInfo>
 #include <QFutureWatcher>
 #include <QJsonDocument>
+#include <QPointer>
+#include <QRegularExpression>
 #include <QSaveFile>
 #include <QUuid>
 #include <QSysInfo>
@@ -2182,11 +2185,47 @@ void AIAgent::dispatchToolExecution(const ToolCallInfo& call, const QString& tra
     // 进行中切换活动项目会波及所有 tab；执行域把它钉在派发时的值上
     // （线程局部，只覆盖本次工具执行），后台任务不再被前台切换打断。
     const QString projectRoot = m_activeProjectRoot;
-    watcher->setFuture(QtConcurrent::run([tool, call, projectRoot, cancelled]() -> ToolResult {
+    // docs/32 P2: spawn_agent 的进度经线程局部钩子回传（子代理与嵌套工具
+    // 全程在同一线程）。事件排队回 GUI 线程更新对应 tool_call 节点；
+    // QPointer 守护 agent 在任务运行中被销毁的情形——派发 lambda 本身
+    // 不持有裸 this。
+    const bool isSpawnCall = call.name == QLatin1String("spawn_agent");
+    watcher->setFuture(QtConcurrent::run([tool, call, projectRoot, cancelled, nodeId, isSpawnCall,
+                                          target = QPointer<AIAgent>(this)]() -> ToolResult {
         const Sandbox::ExecutionScope scope(projectRoot);
+        SubAgentProgressRouter router(isSpawnCall
+            ? SubAgentProgressHook([nodeId, target](const SubAgentProgress& p) {
+                  if (target.isNull()) return;
+                  QMetaObject::invokeMethod(target, [target, nodeId, p]() {
+                      if (!target.isNull()) target->applySubAgentProgress(nodeId, p);
+                  }, Qt::QueuedConnection);
+              })
+            : SubAgentProgressHook{});
         return tool ? tool->execute(call.arguments, cancelled)
                     : ToolResult::fail(QStringLiteral("Tool not found"));
     }));
+}
+
+// docs/32 P2: live sub-agent progress lands on the spawning tool_call node's
+// title ("spawn_agent · step k/N · detail"). Only running nodes are touched —
+// a stop() may have already flipped the node to cancelled, and a late queued
+// event must not overwrite that.
+void AIAgent::applySubAgentProgress(const QString& nodeId, const SubAgentProgress& progress) {
+    for (int i = 0; i < m_traceModel.size(); ++i) {
+        QJsonObject node = m_traceModel.at(i).toObject();
+        if (node.value("id").toString() != nodeId) continue;
+        if (node.value("status").toString() != QLatin1String("running")) return;
+        QString title = QStringLiteral("spawn_agent · step %1/%2")
+                            .arg(progress.step).arg(progress.maxSteps);
+        if (!progress.detail.isEmpty())
+            title += QStringLiteral(" · %1").arg(progress.detail);
+        if (node.value("title").toString() == title) return;
+        node["title"] = title;
+        m_traceModel.replace(i, node);
+        persistTraceNode(node, i);
+        emit traceChanged();
+        return;
+    }
 }
 
 void AIAgent::finishToolExecution(const ToolCallInfo& call, const QString& traceNodeId,
@@ -2223,6 +2262,21 @@ void AIAgent::finishToolExecution(const ToolCallInfo& call, const QString& trace
                     QJsonDocument(detail).toJson(QJsonDocument::Compact));
                 detailIsJson = true;
             }
+        } else if (call.name == QLatin1String("spawn_agent")) {
+            // docs/32 P2: 子代理归因——审计行的 request_id 本就是派发该任务
+            // 的主请求 id（parent 归因），这里再从报告头解析出子代理自身的
+            // 步数/token 消耗，供用量侧按主请求聚合时区分成本来源。
+            static const QRegularExpression statsRe(
+                QStringLiteral("steps: (\\d+), tokens: (\\d+)"));
+            const QRegularExpressionMatch match =
+                statsRe.match(result.success ? result.output : result.error);
+            const QJsonObject detail{
+                {"output", auditDetail},
+                {"subagent_steps", match.hasMatch() ? match.captured(1).toInt() : 0},
+                {"subagent_tokens", match.hasMatch() ? match.captured(2).toInt() : 0}};
+            auditDetail = QString::fromUtf8(
+                QJsonDocument(detail).toJson(QJsonDocument::Compact));
+            detailIsJson = true;
         }
         // 会话权限模式自动放行的确认级工具：审计行可追溯（标注模式）。
         if (autoApproved) {
