@@ -2207,17 +2207,58 @@ void AIAgent::dispatchToolExecution(const ToolCallInfo& call, const QString& tra
 }
 
 // docs/32 P2: live sub-agent progress lands on the spawning tool_call node's
-// title ("spawn_agent · step k/N · detail"). Only running nodes are touched —
-// a stop() may have already flipped the node to cancelled, and a late queued
-// event must not overwrite that.
+// title ("spawn_agent · step k/N · <accumulated tool summary>[ · final
+// answer]"). Tool usage accumulates across steps in the node's subagentTools
+// array ("name[×count]" entries, oldest first): the title shows what the
+// sub-agent has done so far instead of only the latest round, so the node
+// doubles as a retrospective once the run finishes. Only running nodes are
+// touched — a stop() may have already flipped the node to cancelled, and a
+// late queued event must not overwrite that.
 void AIAgent::applySubAgentProgress(const QString& nodeId, const SubAgentProgress& progress) {
+    // 标题里摘要段的预算：超限时丢最旧的条目（前缀 …），保留最近活动。
+    constexpr int kMaxSummaryChars = 120;
     for (int i = 0; i < m_traceModel.size(); ++i) {
         QJsonObject node = m_traceModel.at(i).toObject();
         if (node.value("id").toString() != nodeId) continue;
         if (node.value("status").toString() != QLatin1String("running")) return;
+        if (progress.phase == QLatin1String("tools")) {
+            QJsonArray summary = node.value("subagentTools").toArray();
+            const QStringList names =
+                progress.detail.split(QLatin1Char(','), Qt::SkipEmptyParts);
+            for (const QString& raw : names) {
+                const QString name = raw.trimmed();
+                if (name.isEmpty()) continue;
+                bool merged = false;
+                for (int j = 0; j < summary.size(); ++j) {
+                    const QString entry = summary.at(j).toString();
+                    if (entry.section(QLatin1Char('×'), 0, 0) != name) continue;
+                    bool ok = false;
+                    const int count = entry.contains(QLatin1Char('×'))
+                        ? entry.section(QLatin1Char('×'), 1).toInt(&ok) : 1;
+                    summary.replace(j, (ok && count > 0)
+                        ? QStringLiteral("%1×%2").arg(name).arg(count + 1)
+                        : QStringLiteral("%1×2").arg(name));
+                    merged = true;
+                    break;
+                }
+                if (!merged) summary.append(name);
+            }
+            node["subagentTools"] = summary;
+        }
+        QStringList parts;
+        const QJsonArray summary = node.value("subagentTools").toArray();
+        for (const auto& v : summary) parts.append(v.toString());
+        QString summaryText = parts.join(QStringLiteral(", "));
+        while (summaryText.size() > kMaxSummaryChars && parts.size() > 1) {
+            parts.removeFirst();
+            summaryText = QStringLiteral("…") + parts.join(QStringLiteral(", "));
+        }
         QString title = QStringLiteral("spawn_agent · step %1/%2")
                             .arg(progress.step).arg(progress.maxSteps);
-        if (!progress.detail.isEmpty())
+        if (!summaryText.isEmpty())
+            title += QStringLiteral(" · %1").arg(summaryText);
+        // "final answer"（强制收尾轮）追加在摘要之后而非覆盖它。
+        if (!progress.detail.isEmpty() && progress.phase != QLatin1String("tools"))
             title += QStringLiteral(" · %1").arg(progress.detail);
         if (node.value("title").toString() == title) return;
         node["title"] = title;

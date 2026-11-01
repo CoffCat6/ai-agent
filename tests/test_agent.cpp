@@ -4427,9 +4427,14 @@ void TestAgent::subagentProgressUpdatesTraceNode() {
     SubAgentFixture fixture;
     SpawnToolGuard guard;
     fixture.tool = registerSpawnTool(fixture, [](RecordingFakeService& sub) {
+        // 两轮工具调用（参数不同以绕开重复轮守卫）+ 预算 3 让第 3 步成为
+        // 强制收尾轮：验证摘要跨轮累积 ×2 与 "final answer" 的追加语义。
         sub.script.append(toolResponse(QStringLiteral("test_sub_probe"), {}));
+        sub.script.append(toolResponse(QStringLiteral("test_sub_probe"),
+                                       QJsonObject{{"round", 2}}));
         sub.script.append(textResponse(QStringLiteral("final report text")));
     });
+    fixture.tool->setMaxSteps(3);
     llm.reset();
     llm.script.append(toolResponse(QStringLiteral("spawn_agent"),
         QJsonObject{{"goal", QStringLiteral("probe with progress")}}));
@@ -4438,11 +4443,10 @@ void TestAgent::subagentProgressUpdatesTraceNode() {
     agent.startTask(QStringLiteral("watch a sub-agent"));
     QTRY_COMPARE(spy.count(), 1);
 
-    // 事件经排队回 GUI 线程，等最后一个事件（step 2/12）落进 trace。
-    // 标题只保留最新进度（step 2 的 thinking 事件会覆盖 step 1 的工具名
-    // 细节），终态标题即为最后一次事件。
+    // 摘要跨轮累积：probe 跑了两次 → 标题聚合成 ×2，强制收尾轮的
+    // "final answer" 追加在摘要之后而非覆盖它。终态标题即为最后一次事件。
     QTRY_VERIFY(traceHas(agent.traceModel(), QStringLiteral("tool_call"),
-                         QStringLiteral("step 2/12")));
+                         QStringLiteral("step 3/3 · test_sub_probe×2 · final answer")));
     QVERIFY(traceHas(agent.traceModel(), QStringLiteral("tool_call"),
                      QStringLiteral("spawn_agent")));
 }

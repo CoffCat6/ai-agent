@@ -160,6 +160,7 @@ private slots:
     // docs/17 P2: project rename (display name only)
     void projectRename();
     void traceNodeRoundTrip();
+    void traceNodeSubagentToolsRoundTrip();
     // P1：恢复会话只读最近一段轨迹，且必须取"最新"而不是"最旧"。
     void loadRecentTraceNodesTakesNewestWindow();
     // Batch 6: knowledge persistence v2
@@ -872,7 +873,6 @@ void TestMemory::loadRecentTraceNodesTakesNewestWindow() {
 
     // limit 大于总数时返回全部，不报错
     QCOMPARE(mem.loadRecentTraceNodes(QStringLiteral("s1"), kTotal * 2).size(), kTotal);
-
     // 不存在的会话返回空
     QVERIFY(mem.loadRecentTraceNodes(QStringLiteral("nope"), 10).isEmpty());
 }
@@ -924,6 +924,31 @@ void TestMemory::traceNodeRoundTrip() {
     QCOMPARE(mem.purgeDeletedSessions(
                  QDateTime::currentMSecsSinceEpoch() + 1000), 1);
     QVERIFY(mem.loadTraceNodes("s1").isEmpty());
+}
+
+// docs/32 P2 优化：子代理进度节点的累积工具摘要（subagentTools）随
+// metadata 白名单持久化，会话恢复后仍在。
+void TestMemory::traceNodeSubagentToolsRoundTrip() {
+    SqliteMemory mem(QStringLiteral(":memory:"));
+    mem.beginSession("s1", "Sub");
+
+    QJsonObject node;
+    node["id"] = QStringLiteral("n1");
+    node["type"] = QStringLiteral("tool_call");
+    node["title"] = QStringLiteral("spawn_agent · step 3/12 · test_sub_probe×2 · final answer");
+    node["status"] = QStringLiteral("running");
+    node["args"] = QString();
+    node["result"] = QString();
+    node["timestamp"] = 1000.0;
+    node["subagentTools"] = QJsonArray{QStringLiteral("test_sub_probe×2")};
+    mem.saveTraceNode("s1", node, 0);
+
+    const QJsonArray loaded = mem.loadTraceNodes("s1");
+    QCOMPARE(loaded.size(), 1);
+    const QJsonArray restored = loaded.at(0).toObject()
+                                    .value("subagentTools").toArray();
+    QCOMPARE(restored.size(), 1);
+    QCOMPARE(restored.at(0).toString(), QStringLiteral("test_sub_probe×2"));
 }
 
 
