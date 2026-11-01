@@ -159,8 +159,12 @@ ToolResult SubAgentTool::execute(const QJsonObject& args, const Cancellation& ca
     delete service;
     releaseSlot();
 
-    const QString stats = QStringLiteral("steps: %1, tokens: %2")
-                              .arg(report.steps).arg(report.tokensUsed);
+    QString stats = QStringLiteral("steps: %1, tokens: %2")
+                        .arg(report.steps).arg(report.tokensUsed);
+    // docs/33 E1: full transcript path for on-demand file_read; prefix keeps
+    // the audit-side stats regex (steps/tokens) matching.
+    if (!report.artifactPath.isEmpty())
+        stats += QStringLiteral(", evidence: %1").arg(report.artifactPath);
     if (report.ok)
         return ToolResult::ok(QStringLiteral(
             "[Sub-agent report] (%1)\n\n%2").arg(stats, report.text));

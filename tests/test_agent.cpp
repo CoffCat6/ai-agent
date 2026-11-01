@@ -24,6 +24,8 @@
 #include <QSignalSpy>
 #include <QTemporaryDir>
 #include <QProcess>
+#include <QDir>
+#include <QFileInfo>
 #include <QFile>
 #include <QSettings>
 #include <QStandardPaths>
@@ -801,6 +803,8 @@ private slots:
     // docs/32 P2: 进度上屏与审计归因
     void subagentProgressUpdatesTraceNode();
     void subagentAuditCarriesSubagentStats();
+    // docs/33 E1: 证据工件
+    void subagentEvidenceArtifactWrittenAndPruned();
 
     // G3: project rules file injection (docs/26 G3)
     void projectRulesInjectedIntoSystemPrompt() {
@@ -4341,6 +4345,60 @@ void TestAgent::subagentAuditCarriesSubagentStats() {
     }
     QVERIFY2(found, "spawn_agent tool_execute audit row missing");
     agent.setMemory(nullptr);
+}
+
+// docs/33 E1: 子代理完整过程落盘为证据工件——报告头带路径，主代理可
+// file_read 细读；7 天保留期由每次派生时的清理执行。
+void TestAgent::subagentEvidenceArtifactWrittenAndPruned() {
+    QTemporaryDir artifacts(testDirTemplate());
+    QVERIFY(artifacts.isValid());
+    SubAgentRunner::setArtifactsRootOverride(artifacts.path());
+    struct ResetOverride {
+        ~ResetOverride() { SubAgentRunner::setArtifactsRootOverride(QString()); }
+    } resetOverride;
+
+    // 预置一个过期的旧工件：本次派生应把它清掉。
+    QDir(artifacts.path()).mkpath(QStringLiteral("."));
+    const QString stalePath = artifacts.filePath(QStringLiteral("stale.md"));
+    { QFile stale(stalePath); QVERIFY(stale.open(QIODevice::WriteOnly)); stale.write("old"); }
+    QVERIFY(QFile::setFileTime(stalePath, QDateTime::currentDateTime().addDays(-8),
+                               QFileDevice::FileModificationTime));
+
+    SubAgentFixture fixture;
+    SpawnToolGuard guard;
+    fixture.tool = registerSpawnTool(fixture, [](RecordingFakeService& sub) {
+        sub.script.append(toolResponse(QStringLiteral("test_sub_probe"), {}));
+        sub.script.append(textResponse(QStringLiteral("findings with probe-evidence")));
+    });
+    llm.reset();
+    llm.script.append(toolResponse(QStringLiteral("spawn_agent"),
+        QJsonObject{{"goal", QStringLiteral("leave evidence")}}));
+    llm.script.append(textResponse(QStringLiteral("done")));
+    QSignalSpy spy(&agent, &AIAgent::responseReady);
+    agent.startTask(QStringLiteral("spawn with artifacts"));
+    QTRY_COMPARE(spy.count(), 1);
+
+    const QString report = lastToolMessageContent(agent.messages());
+    QVERIFY(report.contains(QStringLiteral("[Sub-agent report]")));
+    QVERIFY(report.contains(QStringLiteral("evidence: ")));
+    // 从报告头提取路径并校验内容。
+    const int keyIndex = report.indexOf(QStringLiteral("evidence: "));
+    const int lineEnd = report.indexOf(QLatin1Char('\n'), keyIndex);
+    QString artifactPath = report.mid(keyIndex + QStringLiteral("evidence: ").length(),
+                                      lineEnd - keyIndex
+                                          - QStringLiteral("evidence: ").length());
+    artifactPath = artifactPath.trimmed().remove(QLatin1Char(')'));
+    QVERIFY(QFileInfo::exists(artifactPath));
+    QFile artifact(artifactPath);
+    QVERIFY(artifact.open(QIODevice::ReadOnly));
+    const QString contents = QString::fromUtf8(artifact.readAll());
+    QVERIFY(contents.contains(QStringLiteral("Sub-agent evidence")));
+    QVERIFY(contents.contains(QStringLiteral("leave evidence")));
+    QVERIFY(contents.contains(QStringLiteral("probe-evidence")));
+    // 过期工件被清理；本次工件仍在（且落在覆盖的工件根目录内）。
+    QVERIFY(!QFileInfo::exists(stalePath));
+    QVERIFY2(artifactPath.startsWith(artifacts.path()),
+             qPrintable(QStringLiteral("artifact outside override root: %1").arg(artifactPath)));
 }
 
 QTEST_GUILESS_MAIN(TestAgent)

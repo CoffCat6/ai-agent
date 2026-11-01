@@ -86,6 +86,12 @@ struct SubAgentReport {
     QString text;        // final report (Completed) or a readable failure reason
     int steps{0};        // LLM round-trips actually used
     int tokensUsed{0};   // sum of the per-response token counts, when reported
+    // docs/33 E1: full transcript of the run (goal + every assistant/tool
+    // message), written to the app-data artifacts directory. Empty when the
+    // run had no tool rounds (nothing to preserve) or the disk write failed.
+    // The primary agent can inspect it with file_read — the sandbox read
+    // allowlist covers AppDataLocation.
+    QString artifactPath;
 };
 
 // Minimal read-only sub-agent loop (docs/32 §3.2). Deliberately NOT a full
@@ -107,8 +113,15 @@ public:
     // the primary agent applies its own kMaxToolResultChars when the result
     // lands in the main history.
     static constexpr int kSubToolResultMaxChars = 6000;
+    // Evidence artifacts (docs/33 E1): per-file byte cap and retention.
+    static constexpr int kArtifactMaxBytes = 256 * 1024;
+    static constexpr int kArtifactRetentionDays = 7;
 
     static SubAgentReport run(IAIService* service, const SubAgentRequest& request);
+
+    // Redirect the evidence artifacts root (default: AppData/subagents).
+    // Tests only; call with an empty string to restore the default.
+    static void setArtifactsRootOverride(const QString& dir);
 };
 
 } // namespace NexusAI

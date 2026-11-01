@@ -2,13 +2,18 @@
 
 #include "infrastructure/llm/IAIService.h"
 
+#include <QDateTime>
+#include <QDir>
 #include <QElapsedTimer>
 #include <QEventLoop>
+#include <QFile>
 #include <QJsonArray>
 #include <QJsonDocument>
 #include <QJsonObject>
+#include <QStandardPaths>
 #include <QStringList>
 #include <QTimer>
+#include <QUuid>
 #include <functional>
 
 namespace NexusAI {
@@ -103,6 +108,93 @@ QString toolNameList(const QVector<SubAgentToolEntry>& tools) {
     return names.join(QStringLiteral(", "));
 }
 
+// ── docs/33 E1: evidence artifacts ─────────────────────────────────────
+// The sub-agent's full transcript (incl. every tool result) written to the
+// app-data artifacts root; the tool result carries the path so the primary
+// agent can file_read the details on demand. AppData instead of the project
+// directory: writing scratch into the user's workspace would pollute
+// git status, while AppDataLocation is inside the sandbox read allowlist.
+
+QString g_artifactsRootOverride;   // tests only; set before runs, no concurrent writes
+
+QString artifactsRoot() {
+    if (!g_artifactsRootOverride.isEmpty()) return g_artifactsRootOverride;
+    const QString base =
+        QStandardPaths::writableLocation(QStandardPaths::AppDataLocation);
+    return base.isEmpty() ? QString() : base + QStringLiteral("/subagents");
+}
+
+void pruneEvidenceArtifacts() {
+    const QDir dir(artifactsRoot());
+    if (!dir.exists()) return;
+    const QDateTime cutoff =
+        QDateTime::currentDateTime().addDays(-SubAgentRunner::kArtifactRetentionDays);
+    const auto files = dir.entryInfoList(QDir::Files, QDir::Time);
+    for (const QFileInfo& info : files) {
+        if (info.lastModified() < cutoff)
+            QFile::remove(info.absoluteFilePath());   // best effort
+    }
+}
+
+QString writeEvidenceArtifact(const SubAgentRequest& request, const QJsonArray& messages) {
+    if (request.goal.trimmed().isEmpty()) return {};
+    // Pure Q&A (no tool rounds) loses nothing in the report — skip the file.
+    bool hasToolRound = false;
+    for (const auto& entry : messages) {
+        if (entry.toObject().value("role").toString() == QLatin1String("tool")) {
+            hasToolRound = true;
+            break;
+        }
+    }
+    if (!hasToolRound) return {};
+    const QString root = artifactsRoot();
+    if (root.isEmpty()) return {};
+    if (!QDir().mkpath(root)) return {};
+    const QString path = root + QStringLiteral("/%1-%2.md")
+        .arg(QDateTime::currentDateTime().toString(QStringLiteral("yyyyMMdd-HHmmss")),
+             QUuid::createUuid().toString(QUuid::WithoutBraces).left(8));
+    QFile file(path);
+    if (!file.open(QIODevice::WriteOnly | QIODevice::Truncate)) return {};
+
+    QString md;
+    md += QStringLiteral("# Sub-agent evidence\n\n- Goal: %1\n")
+              .arg(request.goal.trimmed());
+    if (!request.context.trimmed().isEmpty())
+        md += QStringLiteral("- Context: %1\n").arg(request.context.trimmed());
+    md += QStringLiteral(
+        "- The transcript is the sub-agent's own message history; tool "
+        "results are truncated at %1 chars each (same as its live context).\n\n"
+        "## Transcript\n\n").arg(SubAgentRunner::kSubToolResultMaxChars);
+    for (const auto& entry : messages) {
+        const QJsonObject msg = entry.toObject();
+        const QString role = msg.value("role").toString();
+        if (role == QLatin1String("assistant")) {
+            md += QStringLiteral("### assistant\n");
+            const QString content = msg.value("content").toString();
+            if (!content.isEmpty()) md += content + QLatin1Char('\n');
+            for (const auto& c : msg.value("tool_calls").toArray()) {
+                const QJsonObject call = c.toObject();
+                const QJsonObject fn = call.value("function").toObject();
+                md += QStringLiteral("- tool_call %1: %2(%3)\n")
+                          .arg(call.value("id").toString(), fn.value("name").toString(),
+                               fn.value("arguments").toString());
+            }
+            md += QLatin1Char('\n');
+        } else if (role == QLatin1String("tool")) {
+            md += QStringLiteral("### tool result for %1\n%2\n\n")
+                      .arg(msg.value("tool_call_id").toString(),
+                           msg.value("content").toString());
+        }
+    }
+    QByteArray bytes = md.toUtf8();
+    if (bytes.size() > SubAgentRunner::kArtifactMaxBytes) {
+        bytes = bytes.left(SubAgentRunner::kArtifactMaxBytes);
+        bytes += "\n\n... [evidence truncated]\n";
+    }
+    file.write(bytes);
+    return path;
+}
+
 QString calledToolNames(const QVector<ToolCallInfo>& calls) {
     QStringList names;
     for (const auto& call : calls) names.append(call.name);
@@ -146,7 +238,8 @@ void appendToolResult(QJsonArray& messages, const ToolCallInfo& call,
 
 } // namespace
 
-SubAgentReport SubAgentRunner::run(IAIService* service, const SubAgentRequest& request) {
+SubAgentReport SubAgentRunner::runImpl(IAIService* service, const SubAgentRequest& request,
+                                       QJsonArray& messages) {
     SubAgentReport report;
     if (!service) {
         report.stop = SubAgentReport::Stop::Error;
@@ -212,7 +305,6 @@ SubAgentReport SubAgentRunner::run(IAIService* service, const SubAgentRequest& r
         }
     });
 
-    QJsonArray messages;
     QJsonObject systemMsg;
     systemMsg["role"] = "system";
     systemMsg["content"] = systemPrompt(request);
@@ -326,6 +418,20 @@ SubAgentReport SubAgentRunner::run(IAIService* service, const SubAgentRequest& r
         "Sub-agent exhausted its step budget (%1) without a final report.")
         .arg(request.maxSteps);
     return report;
+}
+
+SubAgentReport SubAgentRunner::run(IAIService* service, const SubAgentRequest& request) {
+    pruneEvidenceArtifacts();
+    QJsonArray messages;
+    SubAgentReport report = runImpl(service, request, messages);
+    // docs/33 E1: preserve the full transcript for on-demand file_read; a
+    // pure Q&A run (no tool rounds) writes nothing.
+    report.artifactPath = writeEvidenceArtifact(request, messages);
+    return report;
+}
+
+void SubAgentRunner::setArtifactsRootOverride(const QString& dir) {
+    g_artifactsRootOverride = dir;
 }
 
 } // namespace NexusAI
