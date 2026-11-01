@@ -1,10 +1,13 @@
 #include "LLMServiceBase.h"
 #include "core/utils/Activity.h"
 
+#include <QCoreApplication>
 #include <QElapsedTimer>
+#include <QEventLoop>
 #include <QJsonDocument>
 #include <QJsonObject>
 #include <QNetworkRequest>
+#include <QTimer>
 #include <QDebug>
 
 namespace NexusAI {
@@ -29,8 +32,23 @@ LLMServiceBase::LLMServiceBase(QObject* parent)
 
 LLMServiceBase::~LLMServiceBase() {
     if (m_current && m_current->reply) {
-        m_current->reply->abort();
+        QNetworkReply* reply = m_current->reply;
+        reply->abort();
+        // QNAM 的中止经内部 HTTP 线程异步完成：abort() 只是发起，finished
+        // 可能要等事件循环投递。服务经常在池线程上用完即删（子代理/嵌套
+        // 服务），那里没有常驻事件循环——若不等收尾就析构，reply 会作为
+        // m_nam 子对象被销毁，而 HTTP 线程的收尾事件随后踩进已释放内存
+        // （真实栈上表现为 SIGSEGV / 访问违例）。这里自旋等 finished 或
+        // 对象销毁真正送达，1s 兜底防止异常实现挂死线程。
+        QEventLoop drain;
+        connect(reply, &QNetworkReply::finished, &drain, &QEventLoop::quit);
+        connect(reply, &QObject::destroyed, &drain, &QEventLoop::quit);
+        QTimer::singleShot(1000, &drain, &QEventLoop::quit);
+        if (reply->isRunning()) drain.exec();
     }
+    // 回收 abort 触发的 reply->deleteLater()：延迟删除同样依赖事件循环，
+    // 池线程上不会自行处理。只清 DeferredDelete 队列，不动其它排队事件。
+    QCoreApplication::sendPostedEvents(nullptr, QEvent::DeferredDelete);
 }
 
 void LLMServiceBase::cancel() {

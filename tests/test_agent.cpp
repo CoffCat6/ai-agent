@@ -15,6 +15,7 @@
 #include "core/rag/RagService.h"
 #include "core/rag/KnowledgeSearchTool.h"
 #include "infrastructure/llm/IAIService.h"
+#include "infrastructure/llm/LlmProtocolRegistry.h"
 #include "core/utils/TokenEstimator.h"
 #include "viewmodels/AgentViewModel.h"
 
@@ -32,6 +33,8 @@
 #include <QSettings>
 #include <QStandardPaths>
 #include <QElapsedTimer>
+#include <QTcpServer>
+#include <QTcpSocket>
 
 #include <atomic>
 #include <chrono>
@@ -833,6 +836,7 @@ private slots:
     void subagentStepBudgetConverges();
     void subagentTimeoutAborts();
     void subagentStopCascades();
+    void subagentInflightAbortStressRealNetwork();
     void subagentConcurrencyGateQueues();
     // docs/32 P2: 进度上屏与审计归因
     void subagentProgressUpdatesTraceNode();
@@ -4463,6 +4467,62 @@ void TestAgent::subagentStopCascades() {
     QVERIFY(lastToolMessageContent(agent.messages())
                 .contains(QStringLiteral("[Not executed]")));
     QVERIFY(noDanglingToolCalls(agent.messages()));
+}
+
+// 真实网络栈下的两条中止路径压力回归：中断（取消旗标在请求在飞时翻转，
+// Runner 循环退出但不调 cancel，析构函数里才 abort 在飞请求）与墙钟超时
+// （cancel 后立刻 delete 服务）。服务指向一个永不响应的本地 TCP 端口，
+// 把请求钉在在飞状态——同步假桩覆盖不到这条时序。
+void TestAgent::subagentInflightAbortStressRealNetwork() {
+    QTcpServer server;
+    QVERIFY(server.listen(QHostAddress::LocalHost));
+    QTcpSocket* pending = nullptr;
+    connect(&server, &QTcpServer::newConnection, &server, [&]() {
+        while (QTcpSocket* socket = server.nextPendingConnection()) {
+            if (pending) pending->deleteLater();
+            pending = socket;   // 请求永远得不到响应，保持 in-flight
+        }
+    });
+
+    LlmProfileConfig config;
+    config.baseUrl = QStringLiteral("http://127.0.0.1:%1/v1").arg(server.serverPort());
+    config.apiKey = QStringLiteral("test-key");
+    config.model = QStringLiteral("test-model");
+
+    for (int i = 0; i < 30; ++i) {
+        const bool interruptCase = (i % 2) == 0;
+        auto cancelled = std::make_shared<std::atomic<bool>>(false);
+        if (interruptCase) {
+            // Runner 的 QEventLoop 在本线程自旋，单发定时器在其中触发。
+            QTimer::singleShot(150, nullptr, [flag = cancelled.get()]() {
+                flag->store(true);
+            });
+        }
+        SubAgentRequest request;
+        request.goal = QStringLiteral("never completes");
+        request.maxSteps = 2;
+        // timeoutMs == 0 = 无墙钟预算（中断用例只靠取消旗标收场）。
+        request.timeoutMs = interruptCase ? 0 : 300;
+        request.cancelled = cancelled;
+
+        IAIService* service = LlmProtocolRegistry::createService(
+            QStringLiteral("openai-chat"), nullptr);
+        QVERIFY(service != nullptr);
+        service->configure(config);
+        const SubAgentReport report = SubAgentRunner::run(service, request);
+        // 与 SubAgentTool::execute 的所有权语义一致：创建与销毁都在本线程。
+        delete service;
+
+        if (interruptCase)
+            QVERIFY2(report.stop == SubAgentReport::Stop::Cancelled,
+                     qPrintable(QStringLiteral("iter %1: stop=%2 text=%3")
+                                    .arg(i).arg(int(report.stop)).arg(report.text)));
+        else
+            QVERIFY2(report.stop == SubAgentReport::Stop::TimedOut,
+                     qPrintable(QStringLiteral("iter %1: stop=%2 text=%3")
+                                    .arg(i).arg(int(report.stop)).arg(report.text)));
+    }
+    if (pending) pending->deleteLater();
 }
 
 void TestAgent::subagentConcurrencyGateQueues() {

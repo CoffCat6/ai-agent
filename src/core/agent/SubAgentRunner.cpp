@@ -278,6 +278,9 @@ SubAgentReport SubAgentRunner::runImpl(IAIService* service, const SubAgentReques
     bool gotResponse{false};
     bool gotError{false};
     bool timedOut{false};
+    // 取消旗标触发的中止走 gotError 通道（abort 以错误形式冒出），需要
+    // 单独记账，报告才能归类为 Cancelled 而不是 Error。
+    bool cancelledByFlag{false};
     QObject::connect(service, &IAIService::responseReady, &loop,
                      [&](const LLMResponse& r) {
                          response = r;
@@ -297,6 +300,11 @@ SubAgentReport SubAgentRunner::runImpl(IAIService* service, const SubAgentReques
     abortTimer.setInterval(kAbortPollMs);
     QObject::connect(&abortTimer, &QTimer::timeout, &loop, [&]() {
         if (cancelledFlag()) {
+            // 与超时分支同理：请求还在飞时先 abort，别把在飞请求留给
+            // 调用方的 delete service 在析构里收尾（见 LLMServiceBase
+            // 析构注释——池线程上那是不干净的中止路径）。
+            service->cancel();
+            cancelledByFlag = true;
             error = QStringLiteral("cancelled by the primary agent");
             gotError = true;
             loop.quit();
@@ -358,7 +366,8 @@ SubAgentReport SubAgentRunner::runImpl(IAIService* service, const SubAgentReques
         report.tokensUsed += response.tokensUsed;
         if (gotError) {
             report.stop = timedOut ? SubAgentReport::Stop::TimedOut
-                                   : SubAgentReport::Stop::Error;
+                : cancelledByFlag ? SubAgentReport::Stop::Cancelled
+                                  : SubAgentReport::Stop::Error;
             report.text = QStringLiteral("Sub-agent failed on step %1: %2")
                               .arg(step).arg(error);
             return report;
