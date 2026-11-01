@@ -4360,9 +4360,14 @@ void TestAgent::subagentEvidenceArtifactWrittenAndPruned() {
     // 预置一个过期的旧工件：本次派生应把它清掉。
     QDir(artifacts.path()).mkpath(QStringLiteral("."));
     const QString stalePath = artifacts.filePath(QStringLiteral("stale.md"));
-    { QFile stale(stalePath); QVERIFY(stale.open(QIODevice::WriteOnly)); stale.write("old"); }
-    QVERIFY(QFile::setFileTime(stalePath, QDateTime::currentDateTime().addDays(-8),
-                               QFileDevice::FileModificationTime));
+    {
+        // Qt6: setFileTime 是实例方法，须在文件打开时调用。
+        QFile stale(stalePath);
+        QVERIFY(stale.open(QIODevice::WriteOnly));
+        stale.write("old");
+        QVERIFY(stale.setFileTime(QDateTime::currentDateTime().addDays(-8),
+                                  QFileDevice::FileModificationTime));
+    }
 
     SubAgentFixture fixture;
     SpawnToolGuard guard;
