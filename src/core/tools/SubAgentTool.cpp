@@ -106,17 +106,25 @@ void SubAgentTool::refreshCatalog(bool localOnly) {
     QVector<SubAgentToolEntry> snapshot;
     auto& registry = ToolRegistry::instance();
     for (const auto& def : registry.listAll()) {
-        // Read-only workspace exploration only: Safe level auto-executes in
-        // the sub-agent (there is nobody to confirm a RequiresConfirm call)
-        // and the readOnly flag keeps every mutating tool out.
-        if (def.level != ToolLevel::Safe || !def.readOnly) continue;
         // Never hand the sub-agent the spawner itself (no recursive spawn).
         if (def.name == QLatin1String(SubAgentTool::kName)) continue;
+        // docs/32 P1 baseline: Safe + readOnly auto-executes in the
+        // sub-agent (there is nobody to confirm a RequiresConfirm call)
+        // and the readOnly flag keeps every mutating tool out.
+        // Network retrievals: web_search/http_fetch are RequiresConfirm in
+        // the primary loop (per-call privacy confirmation), but they are
+        // GET-only readOnly tools and localOnlyMode=false is the user's
+        // standing consent to network access — the Safe-only filter used to
+        // silently drop them, leaving the sub-agent without web access.
+        // localOnly mirroring follows AIAgent::toolAllowedForModel exactly:
+        // web_search and mcp__* are gated, http_fetch stays available.
+        const bool networkRead =
+            def.name == QLatin1String("web_search")
+            || def.name == QLatin1String("http_fetch");
+        if (!(def.level == ToolLevel::Safe && def.readOnly) && !networkRead)
+            continue;
         if (!registry.isToolUsable(def.name)) continue;
-        // Mirror AIAgent::toolAllowedForModel's local-only gate for network
-        // tools (MCP tools are never readOnly today; the check costs nothing).
         if (localOnly && (def.name == QLatin1String("web_search")
-                          || def.name == QLatin1String("http_fetch")
                           || def.name.startsWith(QLatin1String("mcp__"))))
             continue;
         auto tool = registry.findShared(def.name);
@@ -140,7 +148,8 @@ ToolDefinition SubAgentTool::definition() const {
         "Spawn a read-only sub-agent to work on an independent sub-task and "
         "return its final report. The sub-agent can only use read-only tools "
         "(file reads, listings, glob/grep, git status/diff/log/show, "
-        "knowledge/web search); all write operations stay with you. The "
+        "knowledge search, web_search/http_fetch when local-only mode is "
+        "off); all write operations stay with you. The "
         "sub-agent cannot ask you questions — the goal must be "
         "self-contained, and its report is the only thing that comes back. "
         "Issue several spawn_agent calls in one round to run sub-tasks in "

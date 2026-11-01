@@ -9,6 +9,8 @@
 #include "core/tools/ToolRegistry.h"
 #include "core/tools/Sandbox.h"
 #include "core/tools/SubAgentTool.h"
+#include "core/tools/NetworkFetchTool.h"
+#include "core/tools/WebSearchTool.h"
 #include "core/memory/SqliteMemory.h"
 #include "core/rag/RagService.h"
 #include "core/rag/KnowledgeSearchTool.h"
@@ -420,6 +422,22 @@ struct SubAgentFixture {
     std::shared_ptr<SubAgentTool> tool;
 };
 
+// docs/32 修正：真实应用里 main.cpp 注册的 web 工具，测试内按需登记并在
+// 守卫析构时摘除（只借 schema 走目录过滤，从不执行网络请求）。
+struct WebToolsGuard {
+    ~WebToolsGuard() {
+        ToolRegistry::instance().takeTool(QStringLiteral("web_search"));
+        ToolRegistry::instance().takeTool(QStringLiteral("http_fetch"));
+    }
+};
+
+void ensureNetworkTools() {
+    if (!ToolRegistry::instance().isRegistered(QStringLiteral("web_search")))
+        ToolRegistry::instance().registerTool(std::make_unique<WebSearchTool>());
+    if (!ToolRegistry::instance().isRegistered(QStringLiteral("http_fetch")))
+        ToolRegistry::instance().registerTool(std::make_unique<NetworkFetchTool>());
+}
+
 // Registers spawn_agent wired to a factory that dispenses one scripted
 // RecordingFakeService per run. The guard must outlive the task.
 std::shared_ptr<SubAgentTool> registerSpawnTool(
@@ -813,6 +831,7 @@ private slots:
     void subagentUnknownRoleFailsReadable();
     void subagentRolesFromVariantParsesAndDedupes();
     void reviewCriticLoopGuidanceInPresetAndSchema();
+    void subagentCatalogCarriesNetworkTools();
 
     // G3: project rules file injection (docs/26 G3)
     void projectRulesInjectedIntoSystemPrompt() {
@@ -4711,6 +4730,47 @@ void TestAgent::reviewCriticLoopGuidanceInPresetAndSchema() {
     QVERIFY(desc.contains(QStringLiteral("Critic loop")));
     QVERIFY(desc.contains(QStringLiteral("'review'")));
     QVERIFY(desc.contains(QStringLiteral("findings")));
+}
+
+// docs/32 修正：子代理工具面必须包含网络只读检索（web_search/http_fetch
+// 是 RequiresConfirm，旧目录过滤按 Safe 一刀切把它们静默漏掉了），且
+// localOnly 门镜像 AIAgent::toolAllowedForModel：web_search/mcp__ 摘除、
+// http_fetch 保留。
+void TestAgent::subagentCatalogCarriesNetworkTools() {
+    ensureNetworkTools();
+    SubAgentFixture fixture;
+    SpawnToolGuard guard;
+    WebToolsGuard webGuard;
+    fixture.tool = registerSpawnTool(fixture, [](RecordingFakeService& sub) {
+        sub.script.append(textResponse(QStringLiteral("network report")));
+    });
+    llm.reset();
+    llm.script.append(toolResponse(QStringLiteral("spawn_agent"),
+        QJsonObject{{"goal", QStringLiteral("search the web")}}));
+    llm.script.append(textResponse(QStringLiteral("integrated")));
+    QSignalSpy spy(&agent, &AIAgent::responseReady);
+    agent.startTask(QStringLiteral("spawn for web"));
+    QTRY_COMPARE_WITH_TIMEOUT(spy.count(), 1, 15000);
+
+    QMutexLocker lock(&fixture.mutex);
+    const QJsonArray subTools = fixture.subSeenTools.first();
+    QVERIFY(toolsArrayContains(subTools, QStringLiteral("web_search")));
+    QVERIFY(toolsArrayContains(subTools, QStringLiteral("http_fetch")));
+    lock.unlock();
+
+    // localOnly=true：web_search 摘除，http_fetch 保留（同主循环门）。
+    fixture.tool->refreshCatalog(true);
+    llm.reset();
+    llm.script.append(toolResponse(QStringLiteral("spawn_agent"),
+        QJsonObject{{"goal", QStringLiteral("fetch local docs")}}));
+    llm.script.append(textResponse(QStringLiteral("integrated 2")));
+    QSignalSpy spy2(&agent, &AIAgent::responseReady);
+    agent.startTask(QStringLiteral("spawn localOnly"));
+    QTRY_COMPARE_WITH_TIMEOUT(spy2.count(), 1, 15000);
+    QMutexLocker lock2(&fixture.mutex);
+    const QJsonArray subTools2 = fixture.subSeenTools.last();
+    QVERIFY(!toolsArrayContains(subTools2, QStringLiteral("web_search")));
+    QVERIFY(toolsArrayContains(subTools2, QStringLiteral("http_fetch")));
 }
 
 QTEST_GUILESS_MAIN(TestAgent)
