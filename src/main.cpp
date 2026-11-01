@@ -771,6 +771,9 @@ qInfo() << "NexusAI" << app.applicationVersion() << "starting";
         subAgentTool->setMaxParallel(settings->subagentMaxParallel());
         subAgentTool->setMaxSteps(settings->subagentMaxSteps());
         subAgentTool->setTimeoutMs(settings->subagentTimeoutSec() * 1000LL);
+        // docs/33 E2: 用户自定义角色档案（预设内建于工具本身）。
+        subAgentTool->setUserRoles(
+            SubAgentTool::rolesFromVariant(settings->subagentRoles()));
         subAgentTool->refreshCatalog(settings->localOnlyMode());
         const QVariantMap spawnProfile = settings->activeProfile();
         auto profileSnapshot = std::make_shared<SubAgentProfileSnapshot>();
@@ -811,6 +814,8 @@ qInfo() << "NexusAI" << app.applicationVersion() << "starting";
     QObject::connect(settings, &SettingsService::subagentMaxParallelChanged, &app, [applySettings]() { applySettings(); });
     QObject::connect(settings, &SettingsService::subagentMaxStepsChanged, &app, [applySettings]() { applySettings(); });
     QObject::connect(settings, &SettingsService::subagentTimeoutSecChanged, &app, [applySettings]() { applySettings(); });
+    // docs/33 E2: 角色档案变更即时生效（spawn_agent schema 的 role 枚举随快照重建）。
+    QObject::connect(settings, &SettingsService::subagentRolesChanged, &app, [applySettings]() { applySettings(); });
     // 工具可用性变化（MCP 上下线、用户禁用/放行）→ 刷新子代理只读快照。
     QObject::connect(&ToolRegistry::instance(), &ToolRegistry::toolsChanged, &app,
                      [subAgentTool, settings]() {

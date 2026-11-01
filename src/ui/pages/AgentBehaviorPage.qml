@@ -135,6 +135,184 @@ SettingsPage {
         }
     }
 
+    // docs/33 E2: 子代理角色档案——预设只读展示，用户档案增删改后整表提交。
+    SettingCard {
+        id: page_roleCard
+        objectName: "agent/subagentRoles"
+        Layout.fillWidth: true
+        title: qsTr("子代理角色档案")
+        subtitle: qsTr("spawn_agent 可按角色派生子代理：预设不可改，自定义档案指定专属提示词与工具白名单。")
+
+        property var roleEditing: null   // null 或 {index: -1(新增) / >=0(编辑)}
+
+        function saveRole() {
+            const name = roleNameField.text.trim()
+            const prompt = rolePromptArea.text.trim()
+            if (!name || !prompt) return
+            const tools = roleToolsField.text.split(",")
+                .map(s => s.trim()).filter(s => s.length > 0)
+            const list = Settings.subagentRoles.slice()
+            const entry = { name: name, prompt: prompt, tools: tools }
+            if (page_roleCard.roleEditing.index >= 0)
+                list[page_roleCard.roleEditing.index] = entry
+            else
+                list.push(entry)
+            Settings.subagentRoles = list
+            page_roleCard.roleEditing = null
+        }
+        function removeRole(index) {
+            const list = Settings.subagentRoles.slice()
+            list.splice(index, 1)
+            Settings.subagentRoles = list
+        }
+
+        Text {
+            Layout.fillWidth: true
+            text: qsTr("内置角色：explore（广度优先勘察）、research（深度查证）、review（代码评审）。调用时省略 role 参数默认使用 explore；自定义档案与预设同名时覆盖预设。")
+            color: Theme.textSecondary
+            font.pixelSize: Theme.fontSizeCaption
+            wrapMode: Text.Wrap
+        }
+
+        Repeater {
+            model: Settings.subagentRoles
+            delegate: Rectangle {
+                required property var modelData
+                required property int index
+                Layout.fillWidth: true
+                implicitHeight: roleCol.implicitHeight + Theme.spaceLg
+                radius: Theme.radiusField
+                color: Theme.bgPrimary
+                border.width: 1
+                border.color: Theme.borderSubtle
+
+                ColumnLayout {
+                    id: roleCol
+                    anchors.left: parent.left
+                    anchors.right: parent.right
+                    anchors.margins: Theme.spaceMd
+                    spacing: Theme.spaceXs
+
+                    RowLayout {
+                        Layout.fillWidth: true
+                        Text {
+                            Layout.fillWidth: true
+                            Layout.minimumWidth: 0
+                            text: modelData.name
+                            color: Theme.textPrimary
+                            font.pixelSize: Theme.fontSizeBody
+                            font.bold: true
+                            elide: Text.ElideRight
+                        }
+                        AppButton {
+                            text: qsTr("编辑")
+                            onClicked: {
+                                roleNameField.text = modelData.name
+                                rolePromptArea.text = modelData.prompt
+                                roleToolsField.text =
+                                    (modelData.tools || []).join(", ")
+                                page_roleCard.roleEditing = { index: index }
+                            }
+                        }
+                        AppButton {
+                            text: qsTr("删除")
+                            onClicked: page_roleCard.removeRole(index)
+                        }
+                    }
+                    Text {
+                        Layout.fillWidth: true
+                        Layout.minimumWidth: 0
+                        text: modelData.prompt
+                        color: Theme.textSecondary
+                        font.pixelSize: Theme.fontSizeCaption
+                        maximumLineCount: 2
+                        elide: Text.ElideRight
+                        wrapMode: Text.Wrap
+                    }
+                    Text {
+                        Layout.fillWidth: true
+                        visible: (modelData.tools || []).length > 0
+                        text: qsTr("工具白名单：%1").arg((modelData.tools || []).join(", "))
+                        color: Theme.textSecondary
+                        font.pixelSize: Theme.fontSizeCaption
+                        elide: Text.ElideRight
+                    }
+                }
+            }
+        }
+        Text {
+            Layout.fillWidth: true
+            visible: Settings.subagentRoles.length === 0
+            text: qsTr("还没有自定义角色。点「新建角色」定义第一支专属子代理。")
+            color: Theme.textSecondary
+            font.pixelSize: Theme.fontSizeCaption
+            wrapMode: Text.Wrap
+        }
+
+        // 编辑器（新增/编辑共用）
+        ColumnLayout {
+            visible: page_roleCard.roleEditing !== null
+            Layout.fillWidth: true
+            spacing: Theme.spaceXs
+
+            TextField {
+                id: roleNameField
+                Layout.fillWidth: true
+                placeholderText: qsTr("角色名（模型以 role 参数引用，如：doc-auditor）")
+                color: Theme.textPrimary
+                font.pixelSize: Theme.fontSizeBody
+            }
+            TextArea {
+                id: rolePromptArea
+                Layout.fillWidth: true
+                Layout.preferredHeight: 96
+                wrapMode: TextEdit.Wrap
+                color: Theme.textPrimary
+                font.pixelSize: Theme.fontSizeCaption
+                placeholderText: qsTr("该角色的专注指令（追加到子代理系统提示词）…")
+                background: Rectangle {
+                    radius: Theme.radiusField
+                    color: Theme.codeBackground
+                    border.width: 1
+                    border.color: Theme.borderSubtle
+                }
+            }
+            TextField {
+                id: roleToolsField
+                Layout.fillWidth: true
+                placeholderText: qsTr("工具白名单（逗号分隔，留空 = 全部只读工具）")
+                color: Theme.textPrimary
+                font.pixelSize: Theme.fontSizeBody
+            }
+            RowLayout {
+                Layout.fillWidth: true
+                Item { Layout.fillWidth: true }
+                AppButton {
+                    text: qsTr("取消")
+                    onClicked: page_roleCard.roleEditing = null
+                }
+                AppButton {
+                    text: page_roleCard.roleEditing !== null
+                          && page_roleCard.roleEditing.index >= 0
+                          ? qsTr("保存") : qsTr("创建")
+                    highlighted: true
+                    onClicked: page_roleCard.saveRole()
+                }
+            }
+        }
+
+        AppButton {
+            text: qsTr("新建角色")
+            objectName: "agent/subagentRoleAddButton"
+            onClicked: {
+                roleNameField.text = ""
+                rolePromptArea.text = ""
+                roleToolsField.text = ""
+                page_roleCard.roleEditing = { index: -1 }
+            }
+        }
+    }
+
     SettingCard {
         Layout.fillWidth: true
         title: qsTr("系统提示词")

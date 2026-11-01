@@ -4,6 +4,7 @@
 #include "core/agent/SubAgentRunner.h"
 
 #include <QMutex>
+#include <QVariant>
 #include <QVector>
 #include <atomic>
 #include <condition_variable>
@@ -47,6 +48,17 @@ public:
     // Connect ToolRegistry::toolsChanged and settings changes here.
     void refreshCatalog(bool localOnly);
 
+    // docs/33 E2: built-in role roster; user-defined profiles are appended
+    // via setUserRoles() (a user role with a preset's name overrides it).
+    static QVector<SubAgentRole> presetRoles();
+    // Parses the agent/subagentRoles settings blob ({name, prompt, tools[]});
+    // entries without a name or prompt are dropped and duplicate names (case-
+    // insensitive) keep only their first occurrence.
+    static QVector<SubAgentRole> rolesFromVariant(const QVariantList& raw);
+    // GUI-thread install of the parsed user roles; executed runs read a
+    // mutex-guarded snapshot (pool threads must not touch settings).
+    void setUserRoles(QVector<SubAgentRole> roles);
+
     // Runtime knobs (any thread; cheap atomic/lock writes).
     void setMaxParallel(int n);       // clamped to [1, 8]
     void setMaxSteps(int steps) { m_maxSteps.store(steps > 0 ? steps : 1); }
@@ -67,10 +79,18 @@ private:
     bool acquireSlot(const Cancellation& cancelled);
     void releaseSlot();
     QVector<SubAgentToolEntry> catalogSnapshot() const;
+    // presets + user roles, user entries first (override by name).
+    QVector<SubAgentRole> rolesSnapshot() const;
+    // Resolves the "role"/"hint" argument against rolesSnapshot(); an empty
+    // roleName picks the default (explore). Returns false for an unknown name.
+    bool resolveRole(const QString& roleName, SubAgentRole* out) const;
 
     ServiceFactory m_factory;
     mutable QMutex m_catalogMutex;
     QVector<SubAgentToolEntry> m_catalog;   // guarded by m_catalogMutex
+
+    mutable QMutex m_rolesMutex;
+    QVector<SubAgentRole> m_userRoles;      // guarded by m_rolesMutex
 
     mutable std::mutex m_gateMutex;
     std::condition_variable m_gateCv;

@@ -5,6 +5,8 @@
 #include "infrastructure/llm/IAIService.h"
 
 #include <QJsonObject>
+#include <QSet>
+#include <QStringList>
 
 namespace NexusAI {
 
@@ -12,6 +14,88 @@ namespace {
 constexpr int kMaxParallelCeiling = 8;
 constexpr int kSlotWaitSliceMs = 250;   // cancellation granularity while queued
 } // namespace
+
+// docs/33 E2: the preset roster. Prompts stay English to match the base
+// sub-agent system prompt; "explore" doubles as the default when the caller
+// names no role.
+QVector<SubAgentRole> SubAgentTool::presetRoles() {
+    return {
+        {QStringLiteral("explore"),
+         QStringLiteral(
+             "breadth first - enumerate candidate locations before reading "
+             "anything in full, then read selectively. Report a structured "
+             "map of what exists where."),
+         {}},
+        {QStringLiteral("research"),
+         QStringLiteral(
+             "depth over breadth - chase the specific question and verify it "
+             "against the sources before reporting. Cite the exact evidence "
+             "(path:line) for every claim."),
+         {}},
+        {QStringLiteral("review"),
+         QStringLiteral(
+             "code review - inspect the relevant files or diffs for real "
+             "defects only: correctness, boundary conditions, security, "
+             "performance. Rank findings by severity with concrete locations; "
+             "no praise, no filler."),
+         {}},
+    };
+}
+
+QVector<SubAgentRole> SubAgentTool::rolesFromVariant(const QVariantList& raw) {
+    QVector<SubAgentRole> out;
+    QSet<QString> seen;
+    for (const QVariant& entry : raw) {
+        const QVariantMap map = entry.toMap();
+        const QString name = map.value(QStringLiteral("name")).toString().trimmed();
+        const QString prompt = map.value(QStringLiteral("prompt")).toString().trimmed();
+        if (name.isEmpty() || prompt.isEmpty()) continue;
+        const QString nameKey = name.toLower();
+        if (seen.contains(nameKey)) continue;   // first entry wins
+        seen.insert(nameKey);
+        SubAgentRole role;
+        role.name = name;
+        role.prompt = prompt;
+        const QVariantList tools = map.value(QStringLiteral("tools")).toList();
+        for (const QVariant& t : tools) {
+            const QString toolName = t.toString().trimmed();
+            if (!toolName.isEmpty()) role.tools.append(toolName);
+        }
+        out.append(role);
+    }
+    return out;
+}
+
+void SubAgentTool::setUserRoles(QVector<SubAgentRole> roles) {
+    QMutexLocker lock(&m_rolesMutex);
+    m_userRoles = std::move(roles);
+}
+
+QVector<SubAgentRole> SubAgentTool::rolesSnapshot() const {
+    QMutexLocker lock(&m_rolesMutex);
+    // User entries first so a same-named user role shadows the preset.
+    QVector<SubAgentRole> roles = m_userRoles;
+    const QVector<SubAgentRole> presets = presetRoles();
+    for (const SubAgentRole& preset : presets) {
+        bool shadowed = false;
+        for (const SubAgentRole& existing : roles) {
+            if (existing.name == preset.name) { shadowed = true; break; }
+        }
+        if (!shadowed) roles.append(preset);
+    }
+    return roles;
+}
+
+bool SubAgentTool::resolveRole(const QString& roleName, SubAgentRole* out) const {
+    const QVector<SubAgentRole> roles = rolesSnapshot();
+    for (const SubAgentRole& role : roles) {
+        if (role.name == roleName) {
+            if (out) *out = role;
+            return true;
+        }
+    }
+    return false;
+}
 
 void SubAgentTool::refreshCatalog(bool localOnly) {
     QVector<SubAgentToolEntry> snapshot;
@@ -72,16 +156,28 @@ ToolDefinition SubAgentTool::definition() const {
         {"description", QStringLiteral(
             "Optional background the sub-agent needs: constraints, starting "
             "points, what the primary agent already knows.")}};
-    QJsonObject hintProp{
+    // docs/33 E2: the role enum is the live roster (presets + user profiles)
+    // so the model can only pick names that actually resolve. Rebuilt each
+    // time AIAgent re-serializes the tool schema.
+    QJsonObject roleProp{
         {"type", QStringLiteral("string")},
-        {"enum", QJsonArray{QStringLiteral("explore"), QStringLiteral("research")}},
-        {"description", QStringLiteral(
-            "explore (default): breadth-first survey. research: depth-first "
-            "verification of a specific question.")}};
+        {"enum", QJsonArray()}};
+    {
+        QJsonArray enumValues;
+        const QVector<SubAgentRole> roles = rolesSnapshot();
+        for (const SubAgentRole& role : roles) enumValues.append(role.name);
+        roleProp["enum"] = enumValues;
+        QStringList roleNames;
+        for (const SubAgentRole& role : roles) roleNames.append(role.name);
+        roleProp["description"] = QStringLiteral(
+            "Which sub-agent role profile to run (%1). Pick the one that "
+            "matches the sub-task; omit for the default (explore).")
+            .arg(roleNames.join(QStringLiteral(", ")));
+    }
     QJsonObject properties;
     properties.insert(QStringLiteral("goal"), goalProp);
     properties.insert(QStringLiteral("context"), contextProp);
-    properties.insert(QStringLiteral("hint"), hintProp);
+    properties.insert(QStringLiteral("role"), roleProp);
     QJsonArray required{QStringLiteral("goal")};
     def.parameters = QJsonObject{
         {"type", QStringLiteral("object")},
@@ -130,11 +226,42 @@ ToolResult SubAgentTool::execute(const QJsonObject& args, const Cancellation& ca
             "Sub-agent is not wired to a model service (internal configuration "
             "error)."));
 
-    const QVector<SubAgentToolEntry> catalog = catalogSnapshot();
+    QVector<SubAgentToolEntry> catalog = catalogSnapshot();
     if (catalog.isEmpty())
         return ToolResult::fail(QStringLiteral(
             "No read-only tools are available for the sub-agent (all disabled "
             "or gated)."));
+
+    // docs/33 E2: resolve the role profile. "role" is the current argument;
+    // "hint" stays as the legacy fallback. An empty name = default (explore).
+    const QString roleName = [&args]() {
+        const QString role = args.value(QStringLiteral("role")).toString().trimmed();
+        if (!role.isEmpty()) return role;
+        return args.value(QStringLiteral("hint")).toString().trimmed();
+    }();
+    SubAgentRole resolved;
+    QStringList roleNames;
+    for (const SubAgentRole& r : rolesSnapshot()) roleNames.append(r.name);
+    if (!roleName.isEmpty()) {
+        if (!resolveRole(roleName, &resolved))
+            return ToolResult::fail(QStringLiteral(
+                "Unknown role '%1'. Available roles: %2")
+                .arg(roleName, roleNames.join(QStringLiteral(", "))));
+    }
+    // Role tool whitelist: intersect with the read-only catalog so a stale
+    // profile entry can never widen the sub-agent's tool set.
+    if (!resolved.tools.isEmpty()) {
+        const QSet<QString> whitelist(resolved.tools.cbegin(), resolved.tools.cend());
+        QVector<SubAgentToolEntry> filtered;
+        for (const SubAgentToolEntry& entry : catalog) {
+            if (whitelist.contains(entry.def.name)) filtered.append(entry);
+        }
+        if (filtered.isEmpty())
+            return ToolResult::fail(QStringLiteral(
+                "Role '%1' whitelists none of the currently available "
+                "read-only tools.").arg(resolved.name));
+        catalog = std::move(filtered);
+    }
 
     if (!acquireSlot(cancelled))
         return ToolResult::fail(QStringLiteral(
@@ -144,6 +271,7 @@ ToolResult SubAgentTool::execute(const QJsonObject& args, const Cancellation& ca
     request.goal = goal;
     request.context = args.value(QStringLiteral("context")).toString();
     request.hint = args.value(QStringLiteral("hint")).toString();
+    request.rolePrompt = resolved.prompt;
     request.tools = catalog;
     request.maxSteps = m_maxSteps.load();
     request.timeoutMs = m_timeoutMs.load();

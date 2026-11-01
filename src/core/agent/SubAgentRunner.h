@@ -58,12 +58,27 @@ private:
     static inline QThreadStorage<SubAgentProgressHook> s_hook;
 };
 
+// docs/33 E2: a named role profile — the "hint" enum generalized into a
+// configurable roster. name is the model-facing id in spawn_agent's "role"
+// argument; prompt replaces the hint-based focus block in the sub-agent
+// system prompt; tools is an optional whitelist on top of the read-only
+// catalog (empty = the whole catalog). Built-in presets live in
+// SubAgentTool::presetRoles(); user-defined ones come from the
+// agent/subagentRoles settings blob via SubAgentTool::rolesFromVariant().
+struct SubAgentRole {
+    QString name;       // e.g. "explore"; must be non-empty
+    QString prompt;     // role focus text for the system prompt
+    QStringList tools;  // tool-name whitelist; empty = no restriction
+};
+
 // P1 (docs/32): parameters for one sub-agent run.
 struct SubAgentRequest {
     QString goal;        // required, self-contained task description
     QString context;     // optional background/constraints from the primary agent
-    QString hint;        // "explore" / "research" (empty = explore); shapes the
-                         // system prompt, not the tool set
+    QString hint;        // legacy preset id ("explore"/"research"); ignored when
+                         // rolePrompt is set — kept so old callers still work
+    QString rolePrompt;  // docs/33 E2: resolved SubAgentRole prompt; non-empty
+                         // replaces the hint-based focus block
     QVector<SubAgentToolEntry> tools;   // read-only snapshot (see above)
     int maxSteps{12};                    // LLM round-trips, incl. the forced final
     qint64 timeoutMs{300000};            // whole-run wall-clock budget

@@ -76,6 +76,9 @@ class SettingsService : public QObject {
     Q_PROPERTY(int subagentMaxParallel READ subagentMaxParallel WRITE setSubagentMaxParallel NOTIFY subagentMaxParallelChanged FINAL)
     Q_PROPERTY(int subagentMaxSteps READ subagentMaxSteps WRITE setSubagentMaxSteps NOTIFY subagentMaxStepsChanged FINAL)
     Q_PROPERTY(int subagentTimeoutSec READ subagentTimeoutSec WRITE setSubagentTimeoutSec NOTIFY subagentTimeoutSecChanged FINAL)
+    // docs/33 E2: 子代理角色档案（JSON 资产，{name, prompt, tools[]} 列表）。
+    // 复合键走专门编辑区（同 promptPresets），不入 setValueForSetting。
+    Q_PROPERTY(QVariantList subagentRoles READ subagentRoles WRITE setSubagentRoles NOTIFY subagentRolesChanged FINAL)
 
     Q_PROPERTY(bool allowFullDiskRead READ allowFullDiskRead WRITE setAllowFullDiskRead NOTIFY allowFullDiskReadChanged)
     // docs/17 P1-4: 项目目录写入放行（默认关，安全页）。
@@ -190,6 +193,8 @@ public:
     void setSubagentMaxSteps(int value);
     int subagentTimeoutSec() const { return m_subagentTimeoutSec; }
     void setSubagentTimeoutSec(int seconds);
+    QVariantList subagentRoles() const { return m_subagentRoles; }
+    void setSubagentRoles(QVariantList roles);
 
     // Security: allow the agent to read files outside the user-directory
     // allowlist (audit P1-8). Opt-in, default off.
@@ -511,6 +516,7 @@ signals:
     void subagentMaxParallelChanged();
     void subagentMaxStepsChanged();
     void subagentTimeoutSecChanged();
+    void subagentRolesChanged();
 
     void allowFullDiskReadChanged();
     void allowProjectWriteChanged();
@@ -588,6 +594,7 @@ private:
     int m_subagentMaxParallel{};
     int m_subagentMaxSteps{};
     int m_subagentTimeoutSec{};
+    QVariantList m_subagentRoles;   // docs/33 E2: 角色档案资产
 
     bool m_allowFullDiskRead{};
     bool m_allowProjectWrite{};   // docs/17 P1-4: 项目目录写入放行

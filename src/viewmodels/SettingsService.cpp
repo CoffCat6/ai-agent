@@ -375,6 +375,9 @@ void SettingsService::load() {
         QStringLiteral("agent/subagentTimeoutSec"),
         SettingsRepository::value(QStringLiteral("agent/subagentTimeoutSec"),
             SettingsSchema::defaultValue(QStringLiteral("agent/subagentTimeoutSec"))).toInt());
+    // docs/33 E2: 角色档案资产（JSON blob，同 promptPresets 的容错——坏
+    // JSON/非数组按空列表处理）。
+    m_subagentRoles = loadStringList(QStringLiteral("agent/subagentRoles"));
 
     m_allowFullDiskRead = SettingsRepository::value(QStringLiteral("security/allowFullDiskRead"),
         SettingsSchema::defaultValue(QStringLiteral("security/allowFullDiskRead"))).toBool();
@@ -1241,6 +1244,15 @@ void SettingsService::setSubagentTimeoutSec(int seconds) {
     emit subagentTimeoutSecChanged();
 }
 
+// docs/33 E2: 角色档案。整表替换式写入（QML 编辑区维护列表后一次性提交）；
+// 行内合法性由消费方（SubAgentTool::rolesFromVariant）过滤。
+void SettingsService::setSubagentRoles(QVariantList roles) {
+    if (m_subagentRoles == roles
+            || !writeStringList(QStringLiteral("agent/subagentRoles"), roles)) return;
+    m_subagentRoles = std::move(roles);
+    emit subagentRolesChanged();
+}
+
 
 void SettingsService::setAllowFullDiskRead(bool enabled) {
     if (m_allowFullDiskRead == enabled
@@ -1902,6 +1914,9 @@ void SettingsService::resetAgentToDefaults() {
         QStringLiteral("agent/subagentMaxSteps")).toInt());
     setSubagentTimeoutSec(SettingsSchema::defaultValue(
         QStringLiteral("agent/subagentTimeoutSec")).toInt());
+    // 角色档案复位为空表：预设（explore/research/review）始终内建于工具，
+    // 清掉的是用户自定义项。
+    setSubagentRoles({});
 }
 
 void SettingsService::resetLoggingToDefaults() {

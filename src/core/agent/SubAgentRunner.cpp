@@ -63,7 +63,12 @@ QString systemPrompt(const SubAgentRequest& request) {
         "conclusion, then the supporting evidence with concrete file paths "
         "(path:line where possible). If you cannot complete the goal, state "
         "exactly what you found and what blocked you.\n");
-    if (request.hint == QLatin1String("research")) {
+    // docs/33 E2: a resolved role profile owns the focus block when present;
+    // the legacy hint enum remains the fallback for old callers/tests.
+    if (!request.rolePrompt.trimmed().isEmpty()) {
+        prompt += QStringLiteral("\nRole focus: %1\n")
+                      .arg(request.rolePrompt.trimmed());
+    } else if (request.hint == QLatin1String("research")) {
         prompt += QStringLiteral(
             "\nFocus: depth over breadth - chase the specific question and "
             "verify it against the sources before reporting.\n");

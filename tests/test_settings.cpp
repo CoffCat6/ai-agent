@@ -1096,6 +1096,33 @@ private slots:
         }
     }
 
+    // docs/33 E2: 子代理角色档案——整表替换写入、重启读回、复位清空。
+    void subagentRolesRoundTripAndReset() {
+        {
+            SettingsService service(nullptr);
+            QCOMPARE(service.subagentRoles().size(), 0);
+            const QVariantList roles{
+                QVariantMap{{QStringLiteral("name"), QStringLiteral("auditor")},
+                            {QStringLiteral("prompt"), QStringLiteral("审计优先")},
+                            {QStringLiteral("tools"),
+                             QVariantList{QStringLiteral("read_file")}}},
+                QVariantMap{{QStringLiteral("name"), QStringLiteral("triage")},
+                            {QStringLiteral("prompt"),
+                             QStringLiteral("先分类再深入")}}};
+            service.setSubagentRoles(roles);
+            QCOMPARE(service.subagentRoles().size(), 2);
+        }
+        {
+            SettingsService service(nullptr);
+            QCOMPARE(service.subagentRoles().size(), 2);
+            QCOMPARE(service.subagentRoles().first().toMap()
+                         .value("name").toString(), QStringLiteral("auditor"));
+            // 复位智能体行为 → 自定义档案清空（预设内建于工具，不受影响）。
+            service.resetAgentToDefaults();
+            QCOMPARE(service.subagentRoles().size(), 0);
+        }
+    }
+
     void schemaCoversBypassWriters() {
         const auto& keys = SettingsSchema::registeredKeys();
         QSet<QString> registered;
@@ -1110,6 +1137,8 @@ private slots:
             // docs/32 P1: 子代理设置键
             "agent/subagentEnabled", "agent/subagentMaxParallel",
             "agent/subagentMaxSteps", "agent/subagentTimeoutSec",
+            // docs/33 E2: 子代理角色档案（复合 JSON 资产）
+            "agent/subagentRoles",
             "security/allowFullDiskRead", "security/allowProjectWrite",
             "security/localOnlyMode", "security/allowLocalNetworkFetch",
             "security/readDenyList", "projects/activeId",

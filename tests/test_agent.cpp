@@ -805,6 +805,11 @@ private slots:
     void subagentAuditCarriesSubagentStats();
     // docs/33 E1: 证据工件
     void subagentEvidenceArtifactWrittenAndPruned();
+    // docs/33 E2: 角色档案。
+    void subagentRolePresetShapesPromptAndSchema();
+    void subagentUserRoleOverridesAndFiltersTools();
+    void subagentUnknownRoleFailsReadable();
+    void subagentRolesFromVariantParsesAndDedupes();
 
     // G3: project rules file injection (docs/26 G3)
     void projectRulesInjectedIntoSystemPrompt() {
@@ -4404,6 +4409,170 @@ void TestAgent::subagentEvidenceArtifactWrittenAndPruned() {
     QVERIFY(!QFileInfo::exists(stalePath));
     QVERIFY2(artifactPath.startsWith(artifacts.path()),
              qPrintable(QStringLiteral("artifact outside override root: %1").arg(artifactPath)));
+}
+
+// ── docs/33 E2: 角色档案 ──────────────────────────────────────────────
+
+namespace {
+// spawn_agent 参数 schema 里 role 属性的 enum 数组（主循环第一轮 schema）。
+QJsonArray roleEnumInMainSchema(const QJsonArray& tools) {
+    for (const auto& entry : tools) {
+        const QJsonObject fn = entry.toObject().value("function").toObject();
+        if (fn.value("name").toString() != QLatin1String("spawn_agent")) continue;
+        return fn.value("parameters").toObject()
+            .value("properties").toObject()
+            .value("role").toObject().value("enum").toArray();
+    }
+    return {};
+}
+} // namespace
+
+void TestAgent::subagentRolePresetShapesPromptAndSchema() {
+    SubAgentFixture fixture;
+    SpawnToolGuard guard;
+    fixture.tool = registerSpawnTool(fixture, [](RecordingFakeService& sub) {
+        sub.script.append(toolResponse(QStringLiteral("test_sub_probe"), {}));
+        sub.script.append(textResponse(QStringLiteral("review done")));
+    });
+    llm.reset();
+    llm.script.append(toolResponse(QStringLiteral("spawn_agent"),
+        QJsonObject{{"goal", QStringLiteral("review the diff")},
+                    {"role", QStringLiteral("review")}}));
+    llm.script.append(textResponse(QStringLiteral("integrated")));
+    QSignalSpy spy(&agent, &AIAgent::responseReady);
+    agent.startTask(QStringLiteral("spawn a reviewer"));
+    QTRY_COMPARE(spy.count(), 1);
+
+    // 预设 review 的专注语进入子代理系统提示词。
+    QMutexLocker lock(&fixture.mutex);
+    const QJsonArray subMessages = fixture.subSeenMessages.first();
+    QVERIFY(subMessages.first().toObject().value("content").toString()
+                .contains(QStringLiteral("code review")));
+    lock.unlock();
+
+    // 主 schema 的 role 枚举 = 预设清单（explore/research/review）。
+    QVERIFY(!llm.seenTools.isEmpty());
+    const QJsonArray roleEnum = roleEnumInMainSchema(llm.seenTools.first());
+    QCOMPARE(roleEnum.size(), 3);
+    QStringList names;
+    for (const auto& v : roleEnum) names.append(v.toString());
+    QVERIFY(names.contains(QStringLiteral("explore")));
+    QVERIFY(names.contains(QStringLiteral("research")));
+    QVERIFY(names.contains(QStringLiteral("review")));
+}
+
+void TestAgent::subagentUserRoleOverridesAndFiltersTools() {
+    SubAgentFixture fixture;
+    SpawnToolGuard guard;
+    fixture.tool = registerSpawnTool(fixture, [](RecordingFakeService& sub) {
+        sub.script.append(toolResponse(QStringLiteral("test_sub_probe"), {}));
+        sub.script.append(textResponse(QStringLiteral("audit done")));
+    });
+    fixture.tool->setUserRoles(SubAgentTool::rolesFromVariant({
+        QVariantMap{{QStringLiteral("name"), QStringLiteral("auditor")},
+                    {QStringLiteral("prompt"),
+                     QStringLiteral("AUDITOR-ROLE-MARKER: audit everything.")},
+                    {QStringLiteral("tools"), QVariantList{
+                        QStringLiteral("test_sub_probe")}}},
+        // 与预设同名 → 覆盖预设，且出现在 schema 枚举里仍只有一个 explore。
+        QVariantMap{{QStringLiteral("name"), QStringLiteral("explore")},
+                    {QStringLiteral("prompt"),
+                     QStringLiteral("CUSTOM-EXPLORE-MARKER")}},
+    }));
+    llm.reset();
+    llm.script.append(toolResponse(QStringLiteral("spawn_agent"),
+        QJsonObject{{"goal", QStringLiteral("audit the module")},
+                    {"role", QStringLiteral("auditor")}}));
+    llm.script.append(textResponse(QStringLiteral("integrated")));
+    QSignalSpy spy(&agent, &AIAgent::responseReady);
+    agent.startTask(QStringLiteral("spawn an auditor"));
+    QTRY_COMPARE(spy.count(), 1);
+
+    QMutexLocker lock(&fixture.mutex);
+    // 白名单把子代理工具面收窄到只剩 probe（目录里其他只读工具全部滤除）。
+    const QJsonArray subTools = fixture.subSeenTools.first();
+    QCOMPARE(subTools.size(), 1);
+    QVERIFY(toolsArrayContains(subTools, QStringLiteral("test_sub_probe")));
+    // 自定义档案的专注语进入系统提示词。
+    QVERIFY(fixture.subSeenMessages.first().first().toObject()
+                .value("content").toString()
+                .contains(QStringLiteral("AUDITOR-ROLE-MARKER")));
+    lock.unlock();
+
+    // 用户 explore 覆盖预设：枚举按唯一角色名展开（auditor + 三个预设名），
+    // explore 只出现一次。
+    const QJsonArray roleEnum = roleEnumInMainSchema(llm.seenTools.first());
+    QCOMPARE(roleEnum.size(), 4);
+    int exploreCount = 0;
+    for (const auto& v : roleEnum) {
+        if (v.toString() == QLatin1String("explore")) ++exploreCount;
+    }
+    QCOMPARE(exploreCount, 1);
+
+    // 覆盖生效：role=explore 用的是用户提示词。
+    llm.reset();
+    llm.script.append(toolResponse(QStringLiteral("spawn_agent"),
+        QJsonObject{{"goal", QStringLiteral("explore again")},
+                    {"role", QStringLiteral("explore")}}));
+    llm.script.append(textResponse(QStringLiteral("done")));
+    QSignalSpy spy2(&agent, &AIAgent::responseReady);
+    agent.startTask(QStringLiteral("spawn custom explorer"));
+    QTRY_COMPARE(spy2.count(), 1);
+    QMutexLocker lock2(&fixture.mutex);
+    QVERIFY(fixture.subSeenMessages.last().first().toObject()
+                .value("content").toString()
+                .contains(QStringLiteral("CUSTOM-EXPLORE-MARKER")));
+}
+
+void TestAgent::subagentUnknownRoleFailsReadable() {
+    SubAgentFixture fixture;
+    SpawnToolGuard guard;
+    fixture.tool = registerSpawnTool(fixture, [](RecordingFakeService& sub) {
+        sub.script.append(textResponse(QStringLiteral("should not run")));
+    });
+    llm.reset();
+    llm.script.append(toolResponse(QStringLiteral("spawn_agent"),
+        QJsonObject{{"goal", QStringLiteral("anything")},
+                    {"role", QStringLiteral("no-such-role")}}));
+    llm.script.append(textResponse(QStringLiteral("recovered")));
+    QSignalSpy spy(&agent, &AIAgent::responseReady);
+    agent.startTask(QStringLiteral("spawn with bad role"));
+    QTRY_COMPARE(spy.count(), 1);
+
+    const QString report = lastToolMessageContent(agent.messages());
+    QVERIFY(report.contains(QStringLiteral("Unknown role")));
+    QVERIFY(report.contains(QStringLiteral("Available roles")));
+    // 子代理一次都没跑（剧本只有一条文本，若跑了 subSeenMessages 会非空）。
+    QMutexLocker lock(&fixture.mutex);
+    QVERIFY(fixture.subSeenMessages.isEmpty());
+}
+
+void TestAgent::subagentRolesFromVariantParsesAndDedupes() {
+    const QVector<SubAgentRole> roles = SubAgentTool::rolesFromVariant({
+        QVariantMap{{QStringLiteral("name"), QStringLiteral("a")},
+                    {QStringLiteral("prompt"), QStringLiteral("P-A")},
+                    {QStringLiteral("tools"), QVariantList{
+                        QStringLiteral("read_file"), QString(),
+                        QStringLiteral("  grep  ")}}},
+        QVariantMap{{QStringLiteral("prompt"), QStringLiteral("no name")}},
+        QVariantMap{{QStringLiteral("name"), QStringLiteral("b")}},
+        QVariantMap{{QStringLiteral("name"), QStringLiteral("A")},
+                    {QStringLiteral("prompt"), QStringLiteral("P-A2")}},
+    });
+    // 无名/无提示词的条目剔除；同名（大小写不敏感）保留首个。
+    QCOMPARE(roles.size(), 1);
+    QCOMPARE(roles.first().name, QStringLiteral("a"));
+    QCOMPARE(roles.first().prompt, QStringLiteral("P-A"));
+    const QStringList expectedTools{QStringLiteral("read_file"), QStringLiteral("grep")};
+    QCOMPARE(roles.first().tools, expectedTools);
+
+    // 预设清单固定为 explore/research/review。
+    const QVector<SubAgentRole> presets = SubAgentTool::presetRoles();
+    QCOMPARE(presets.size(), 3);
+    QCOMPARE(presets.at(0).name, QStringLiteral("explore"));
+    QCOMPARE(presets.at(1).name, QStringLiteral("research"));
+    QCOMPARE(presets.at(2).name, QStringLiteral("review"));
+    QVERIFY(presets.at(2).prompt.contains(QStringLiteral("code review")));
 }
 
 QTEST_GUILESS_MAIN(TestAgent)

@@ -241,6 +241,9 @@ const QVector<SettingsKeyDef>& SettingsSchema::registeredKeys() {
                    intRange(2, 40)),
             keyDef(QStringLiteral("agent/subagentTimeoutSec"), 300, SettingValueType::Int,
                    intRange(30, 1800)),
+            // docs/33 E2: 子代理角色档案（JSON 资产，{name, prompt, tools[]}）。
+            // 同 promptPresets：复合键由专门页面写，不入 setValueForSetting。
+            keyDef(QStringLiteral("agent/subagentRoles"), QVariant(), SettingValueType::String),
             keyDef(QStringLiteral("security/allowFullDiskRead"), false, SettingValueType::Bool),
             keyDef(QStringLiteral("security/allowProjectWrite"), false, SettingValueType::Bool),
             keyDef(QStringLiteral("security/localOnlyMode"), false, SettingValueType::Bool),

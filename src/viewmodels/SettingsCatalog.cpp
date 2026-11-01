@@ -212,6 +212,10 @@ const QVector<CatalogEntryDef>& staticEntries() {
          QT_TRANSLATE_NOOP("SettingsSearch", "会话模板数据"),
          QStringLiteral("sessionTemplates"), true, kNone},
 
+        {NEXUS_CATALOG_ID("agent/subagentRoles"), QStringLiteral("agent"),
+         QT_TRANSLATE_NOOP("SettingsSearch", "子代理角色数据"),
+         QStringLiteral("subagentRoles"), true, kNone},
+
         // ── 项目规则 ────────────────────────────────────────
         {NEXUS_CATALOG_ID("projects/rules"), QStringLiteral("projects"),
          QT_TRANSLATE_NOOP("SettingsSearch", "项目规则"),
