@@ -35,6 +35,13 @@
 
 #include "viewmodels/AgentViewModel.h"
 #include "viewmodels/SettingsService.h"
+#include "TestSettingsIsolation.h"
+
+// 测试进程的 QSettings 重定向到临时 INI（见 TestSettingsIsolation.h），
+// 防止测试改写用户真实设置。
+namespace {
+const NexusAI::TestSupport::SettingsIsolation kSettingsIsolation;
+} // namespace
 
 using NexusAI::AgentViewModel;
 using NexusAI::SettingsService;
@@ -135,13 +142,13 @@ public:
 class SavedPresets {
 public:
     SavedPresets() {
-        QSettings s("NexusAI", "NexusAI");
+        QSettings s = NexusAI::TestSupport::testSettings();
         m_raw = s.value("promptPresets");
         m_override = s.value("agent/systemPromptOverride");
         replaceAll({});
     }
     ~SavedPresets() {
-        QSettings s("NexusAI", "NexusAI");
+        QSettings s = NexusAI::TestSupport::testSettings();
         if (m_raw.isValid()) s.setValue("promptPresets", m_raw);
         else s.remove("promptPresets");
         if (m_override.isValid()) s.setValue("agent/systemPromptOverride", m_override);

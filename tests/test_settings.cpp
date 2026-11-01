@@ -33,6 +33,13 @@
 #include "core/utils/SettingsRepository.h"
 
 #include <memory>
+#include "TestSettingsIsolation.h"
+
+// 测试进程的 QSettings 重定向到临时 INI（见 TestSettingsIsolation.h），
+// 防止测试改写用户真实设置。
+namespace {
+const NexusAI::TestSupport::SettingsIsolation kSettingsIsolation;
+} // namespace
 
 using namespace NexusAI;
 
@@ -41,7 +48,7 @@ namespace {
 class SettingsGuard {
 public:
     SettingsGuard() {
-        QSettings s("NexusAI", "NexusAI");
+        QSettings s = NexusAI::TestSupport::testSettings();
         rawProfiles = s.value("modelProfiles");
         activeId = s.value("activeProfileId");
         // Also guard the keys suites actually write; without this the tests
@@ -92,7 +99,7 @@ public:
         s.setValue("schemaVersion", SettingsSchema::kSchemaVersion);
     }
     ~SettingsGuard() {
-        QSettings s("NexusAI", "NexusAI");
+        QSettings s = NexusAI::TestSupport::testSettings();
         if (rawProfiles.isValid()) s.setValue("modelProfiles", rawProfiles);
         else s.remove("modelProfiles");
         if (activeId.isValid()) s.setValue("activeProfileId", activeId);
@@ -239,7 +246,7 @@ private slots:
     void freshInstallStartsWithBlankModelList() {
         SettingsGuard guard;
         {
-            QSettings s("NexusAI", "NexusAI");
+            QSettings s = NexusAI::TestSupport::testSettings();
             s.remove("modelProfiles");
             s.remove("activeProfileId");
         }
@@ -262,7 +269,7 @@ private slots:
     void legacyProfileGainsApiProtocolOnLoad() {
         SettingsGuard guard;
         {
-            QSettings s("NexusAI", "NexusAI");
+            QSettings s = NexusAI::TestSupport::testSettings();
             QJsonArray arr;
             QJsonObject legacy;
             legacy["id"] = QStringLiteral("legacy-1");
@@ -290,7 +297,7 @@ private slots:
     void endpointPairIsNormalizedOnLoad() {
         SettingsGuard guard;
         {
-            QSettings s("NexusAI", "NexusAI");
+            QSettings s = NexusAI::TestSupport::testSettings();
             QJsonArray arr;
             QJsonObject conflict;
             conflict["id"] = QStringLiteral("c1");
@@ -323,7 +330,7 @@ private slots:
     void responsesProtocolKeepsVendorAndOwnsCapabilityTable() {
         SettingsGuard guard;
         {
-            QSettings s("NexusAI", "NexusAI");
+            QSettings s = NexusAI::TestSupport::testSettings();
             s.remove("modelProfiles");
             s.remove("activeProfileId");
         }
@@ -375,7 +382,7 @@ private slots:
     void vendorSwitchClearsModelAndRewritesBaseUrl() {
         SettingsGuard guard;
         {
-            QSettings s("NexusAI", "NexusAI");
+            QSettings s = NexusAI::TestSupport::testSettings();
             s.remove("modelProfiles");
             s.remove("activeProfileId");
         }
@@ -404,7 +411,7 @@ private slots:
     void protocolSwitchWithinVendorKeepsUserModels() {
         SettingsGuard guard;
         {
-            QSettings s("NexusAI", "NexusAI");
+            QSettings s = NexusAI::TestSupport::testSettings();
             s.remove("modelProfiles");
             s.remove("activeProfileId");
         }
@@ -435,7 +442,7 @@ private slots:
     void customProfileStartsBlank() {
         SettingsGuard guard;
         {
-            QSettings s("NexusAI", "NexusAI");
+            QSettings s = NexusAI::TestSupport::testSettings();
             s.remove("modelProfiles");
             s.remove("activeProfileId");
         }
@@ -461,7 +468,7 @@ private slots:
     void customProfileIgnoresEndpointRefills() {
         SettingsGuard guard;
         {
-            QSettings s("NexusAI", "NexusAI");
+            QSettings s = NexusAI::TestSupport::testSettings();
             s.remove("modelProfiles");
             s.remove("activeProfileId");
         }
@@ -500,7 +507,7 @@ private slots:
     void unknownKindIsIgnoredAndLegacyKindIsInferred() {
         SettingsGuard guard;
         {
-            QSettings s("NexusAI", "NexusAI");
+            QSettings s = NexusAI::TestSupport::testSettings();
             QJsonArray arr;
             QJsonObject legacy;
             legacy["id"] = QStringLiteral("legacy-kind");
@@ -530,7 +537,7 @@ private slots:
     void customProfileStaysBlankAcrossReload() {
         SettingsGuard guard;
         {
-            QSettings s("NexusAI", "NexusAI");
+            QSettings s = NexusAI::TestSupport::testSettings();
             s.remove("modelProfiles");
             s.remove("activeProfileId");
         }
@@ -554,7 +561,7 @@ private slots:
     void addProfileLeavesModelBlank() {
         SettingsGuard guard;
         {
-            QSettings s("NexusAI", "NexusAI");
+            QSettings s = NexusAI::TestSupport::testSettings();
             s.remove("modelProfiles");
             s.remove("activeProfileId");
         }
@@ -581,7 +588,7 @@ private slots:
     void duplicateProfileStripsApiKey() {
         SettingsGuard guard;
         {
-            QSettings s("NexusAI", "NexusAI");
+            QSettings s = NexusAI::TestSupport::testSettings();
             s.remove("modelProfiles");
             s.remove("activeProfileId");
         }
@@ -631,7 +638,7 @@ private slots:
     void moveProfilePersistsOrder() {
         SettingsGuard guard;
         {
-            QSettings s("NexusAI", "NexusAI");
+            QSettings s = NexusAI::TestSupport::testSettings();
             s.remove("modelProfiles");
             s.remove("activeProfileId");
         }
@@ -672,7 +679,7 @@ private slots:
     void activeProfileSwitchPersists() {
         SettingsGuard guard;
         {
-            QSettings s("NexusAI", "NexusAI");
+            QSettings s = NexusAI::TestSupport::testSettings();
             s.remove("modelProfiles");
             s.remove("activeProfileId");
         }
@@ -700,7 +707,7 @@ private slots:
     void explicitEndpointValuesWin() {
         SettingsGuard guard;
         {
-            QSettings s("NexusAI", "NexusAI");
+            QSettings s = NexusAI::TestSupport::testSettings();
             s.remove("modelProfiles");
             s.remove("activeProfileId");
         }
@@ -721,7 +728,7 @@ private slots:
     void repeatEndpointSubmitIsHarmless() {
         SettingsGuard guard;
         {
-            QSettings s("NexusAI", "NexusAI");
+            QSettings s = NexusAI::TestSupport::testSettings();
             s.remove("modelProfiles");
             s.remove("activeProfileId");
         }
@@ -743,7 +750,7 @@ private slots:
     void currentModelAlwaysListedAndTrimmed() {
         SettingsGuard guard;
         {
-            QSettings s("NexusAI", "NexusAI");
+            QSettings s = NexusAI::TestSupport::testSettings();
             s.remove("modelProfiles");
             s.remove("activeProfileId");
         }
@@ -762,7 +769,7 @@ private slots:
     void updateProfileKeepsEndpointPairConsistent() {
         SettingsGuard guard;
         {
-            QSettings s("NexusAI", "NexusAI");
+            QSettings s = NexusAI::TestSupport::testSettings();
             s.remove("modelProfiles");
             s.remove("activeProfileId");
         }
@@ -793,7 +800,7 @@ private slots:
     void defaultPermissionModeSetting() {
         SettingsGuard guard;
         {
-            QSettings s("NexusAI", "NexusAI");
+            QSettings s = NexusAI::TestSupport::testSettings();
             s.remove("agent/defaultPermissionMode");
         }
 
@@ -819,7 +826,7 @@ private slots:
 
         // 重启语义：新实例从 QSettings 读回
         {
-            QSettings s("NexusAI", "NexusAI");
+            QSettings s = NexusAI::TestSupport::testSettings();
             s.setValue("agent/defaultPermissionMode", QStringLiteral("auto_edit"));
         }
         SettingsService reloaded(nullptr);
@@ -871,7 +878,7 @@ private slots:
 
         QCOMPARE(svc.logLevel(),
                  SettingsSchema::defaultValue(QStringLiteral("logging/level")).toString());
-        QCOMPARE(QSettings("NexusAI", "NexusAI").value("logging/directory").toString(),
+        QCOMPARE(NexusAI::TestSupport::testSettings().value("logging/directory").toString(),
                  QString());
         QCOMPARE(svc.logMaxFileSizeMb(),
                  SettingsSchema::defaultValue(
@@ -1003,7 +1010,7 @@ private slots:
     // 改动即时持久化。默认 30 取代了原先硬编码的 10。
     void maxStepsClampsAndPersists() {
         SettingsGuard guard;
-        QSettings("NexusAI", "NexusAI").remove("agent/maxSteps");
+        NexusAI::TestSupport::testSettings().remove("agent/maxSteps");
         SettingsService svc(nullptr);
 
         QCOMPARE(svc.maxSteps(), AIAgent::kDefaultMaxIterations);
@@ -1015,14 +1022,14 @@ private slots:
 
         svc.setMaxSteps(42);
         QCOMPARE(svc.maxSteps(), 42);
-        QCOMPARE(QSettings("NexusAI", "NexusAI").value("agent/maxSteps").toInt(), 42);
+        QCOMPARE(NexusAI::TestSupport::testSettings().value("agent/maxSteps").toInt(), 42);
     }
 
     // 设置中心底栏的"已保存"回执依赖这个信号：只在真正写入成功后发一次，
     // 相同值的重复赋值不应该刷新回执（否则页面重建也会闪"已保存"）。
     void settingSavedReportsSuccessfulWritesOnly() {
         SettingsGuard guard;
-        QSettings("NexusAI", "NexusAI").remove("agent/maxSteps");
+        NexusAI::TestSupport::testSettings().remove("agent/maxSteps");
         SettingsService svc(nullptr);
         QSignalSpy savedSpy(&svc, &SettingsService::settingSaved);
 
@@ -1037,7 +1044,7 @@ private slots:
 
     void taskTimeoutClampsAndPersists() {
         SettingsGuard guard;
-        QSettings("NexusAI", "NexusAI").remove("agent/taskTimeoutMinutes");
+        NexusAI::TestSupport::testSettings().remove("agent/taskTimeoutMinutes");
         SettingsService service(nullptr);
         QCOMPARE(service.taskTimeoutMinutes(), AIAgent::kDefaultTaskTimeoutMs / 60000);
 
@@ -1046,7 +1053,7 @@ private slots:
         service.setTaskTimeoutMinutes(99);
         QCOMPARE(service.taskTimeoutMinutes(), 60);
         service.setTaskTimeoutMinutes(20);
-        QCOMPARE(QSettings("NexusAI", "NexusAI").value("agent/taskTimeoutMinutes").toInt(), 20);
+        QCOMPARE(NexusAI::TestSupport::testSettings().value("agent/taskTimeoutMinutes").toInt(), 20);
     }
 
     // docs/17 B3: 账本完整性——三类旁路写入方（ToolRegistry/AgentViewModel/
@@ -1056,7 +1063,7 @@ private slots:
     // 键已存在（含用户清空的 "[]"）绝不回灌。
     void promptAssetsSeededOnceAndDeletionRespected() {
         {
-            QSettings s("NexusAI", "NexusAI");
+            QSettings s = NexusAI::TestSupport::testSettings();
             s.remove("promptPresets");
             s.remove("slashCommands");
             s.remove("sessionTemplates");
@@ -1277,7 +1284,7 @@ private slots:
     void modelSelectionAndSignals() {
         SettingsGuard guard;
         {
-            QSettings s("NexusAI", "NexusAI");
+            QSettings s = NexusAI::TestSupport::testSettings();
             s.remove("modelProfiles");
             s.remove("activeProfileId");
         }
@@ -1308,7 +1315,7 @@ private slots:
     void addAndRemoveModels() {
         SettingsGuard guard;
         {
-            QSettings s("NexusAI", "NexusAI");
+            QSettings s = NexusAI::TestSupport::testSettings();
             s.remove("modelProfiles");
             s.remove("activeProfileId");
         }
@@ -1329,7 +1336,7 @@ private slots:
     void persistenceAcrossInstances() {
         SettingsGuard guard;
         {
-            QSettings s("NexusAI", "NexusAI");
+            QSettings s = NexusAI::TestSupport::testSettings();
             s.remove("modelProfiles");
             s.remove("activeProfileId");
         }
@@ -1350,7 +1357,7 @@ private slots:
     void logLevelPersistence() {
         SettingsGuard guard;
         {
-            QSettings s("NexusAI", "NexusAI");
+            QSettings s = NexusAI::TestSupport::testSettings();
             s.remove("logging/level");
         }
 
@@ -1395,7 +1402,7 @@ private slots:
         QVERIFY(dir.isValid());
         service.setLogDirectory(dir.path());
         QCOMPARE(service.logDirectory(), QDir::cleanPath(dir.path()));
-        QCOMPARE(QSettings("NexusAI", "NexusAI").value("logging/directory").toString(),
+        QCOMPARE(NexusAI::TestSupport::testSettings().value("logging/directory").toString(),
                  QDir::cleanPath(dir.path()));
     }
 
@@ -1404,7 +1411,7 @@ private slots:
     void systemPromptOverridePersistence() {
         SettingsGuard guard;
         {
-            QSettings s("NexusAI", "NexusAI");
+            QSettings s = NexusAI::TestSupport::testSettings();
             s.remove("agent/systemPromptOverride");
         }
 
@@ -1439,7 +1446,7 @@ private slots:
     void embeddingModelAndReadPolicyPersistence() {
         SettingsGuard guard;
         {
-            QSettings s("NexusAI", "NexusAI");
+            QSettings s = NexusAI::TestSupport::testSettings();
             s.remove("embedding/model");
             s.remove("embedding/baseUrl");
             s.remove("security/allowFullDiskRead");
@@ -1588,7 +1595,7 @@ ComboBox {
         {
             // 三把键全清：只清 provider 会让测试读到本机真实已配置的 key
             // （"切过去应该显示未配置"的断言就会依赖开发机的注册表状态）。
-            QSettings s("NexusAI", "NexusAI");
+            QSettings s = NexusAI::TestSupport::testSettings();
             s.remove("webSearch/provider");
             s.remove("webSearch/zhipuApiKey");
             s.remove("webSearch/deepseekApiKey");
@@ -1653,7 +1660,7 @@ Item {
     void webSearchTestGuardsBeforeNetwork() {
         SettingsGuard guard;
         {
-            QSettings s("NexusAI", "NexusAI");
+            QSettings s = NexusAI::TestSupport::testSettings();
             s.remove("webSearch/provider");
             s.remove("webSearch/zhipuApiKey");
         }
@@ -1695,7 +1702,7 @@ Item {
     void webSearchTestRunsAsyncAndReportsOutcome() {
         SettingsGuard guard;
         {
-            QSettings s("NexusAI", "NexusAI");
+            QSettings s = NexusAI::TestSupport::testSettings();
             s.remove("webSearch/provider");
             s.remove("webSearch/zhipuApiKey");
         }
@@ -1762,7 +1769,7 @@ Item {
     void webSearchTestAllowsKeylessProvider() {
         SettingsGuard guard;
         {
-            QSettings s("NexusAI", "NexusAI");
+            QSettings s = NexusAI::TestSupport::testSettings();
             s.remove("webSearch/provider");
         }
         SettingsService svc(nullptr);
@@ -1816,12 +1823,12 @@ Item {
 
         reg.setToolEnabled("read_file", false);
         {
-            QSettings s("NexusAI", "NexusAI");
+            QSettings s = NexusAI::TestSupport::testSettings();
             QVERIFY(s.value("tools/disabled").toStringList().contains("read_file"));
         }
         reg.setToolEnabled("read_file", true);
         {
-            QSettings s("NexusAI", "NexusAI");
+            QSettings s = NexusAI::TestSupport::testSettings();
             QVERIFY(!s.value("tools/disabled").toStringList().contains("read_file"));
         }
     }
@@ -1854,7 +1861,7 @@ Item {
             QCOMPARE(tm.isDark(), false);
         }
         {
-            QSettings s("NexusAI", "NexusAI");
+            QSettings s = NexusAI::TestSupport::testSettings();
             QCOMPARE(s.value("prefs/v1/ui.themeMode").toString(), QStringLiteral("light"));
         }
         // A fresh instance reads the persisted explicit choice back.
@@ -1872,7 +1879,7 @@ Item {
         tm.setIsDark(false);
         QCOMPARE(tm.themeMode(), QStringLiteral("light"));
         {
-            QSettings s("NexusAI", "NexusAI");
+            QSettings s = NexusAI::TestSupport::testSettings();
             QCOMPARE(s.value("prefs/v1/ui.themeMode").toString(), QStringLiteral("light"));
         }
     }
@@ -1880,7 +1887,7 @@ Item {
     void themeModeLegacyDarkKeyCompat() {
         SettingsGuard guard;
         {
-            QSettings s("NexusAI", "NexusAI");
+            QSettings s = NexusAI::TestSupport::testSettings();
             s.remove("prefs/v1/ui.themeMode");
             s.setValue("theme/dark", false);   // legacy light preference
         }
@@ -1918,7 +1925,7 @@ Item {
     void embeddingProviderRejectsUnknownKey() {
         SettingsGuard guard;
         {
-            QSettings s("NexusAI", "NexusAI");
+            QSettings s = NexusAI::TestSupport::testSettings();
             s.remove("embedding/provider");   // 构造后回落 schema 默认 "ollama"
         }
         SettingsService svc(nullptr);
@@ -1929,7 +1936,7 @@ Item {
         QCOMPARE(okSpy.count(), 1);
         QCOMPARE(svc.embeddingProvider(), QStringLiteral("openai"));
         {
-            QSettings s("NexusAI", "NexusAI");
+            QSettings s = NexusAI::TestSupport::testSettings();
             QCOMPARE(s.value("embedding/provider").toString(),
                      QStringLiteral("openai"));
         }
@@ -1939,7 +1946,7 @@ Item {
         QCOMPARE(rejectSpy.count(), 0);
         QCOMPARE(svc.embeddingProvider(), QStringLiteral("openai"));
         {
-            QSettings s("NexusAI", "NexusAI");
+            QSettings s = NexusAI::TestSupport::testSettings();
             QCOMPARE(s.value("embedding/provider").toString(),
                      QStringLiteral("openai"));
         }
@@ -1952,7 +1959,7 @@ Item {
     void embeddingApiKeyRoundTripAndClear() {
         SettingsGuard guard;
         {
-            QSettings s("NexusAI", "NexusAI");
+            QSettings s = NexusAI::TestSupport::testSettings();
             s.remove("embedding/apiKey");
             s.remove("webSearch/zhipuApiKey");
         }
@@ -1971,7 +1978,7 @@ Item {
             QVERIFY(svc.webSearchApiKeySet());
             QCOMPARE(svc.webSearchApiKeyValue(), QStringLiteral("k1"));
 #ifdef Q_OS_WIN
-            QSettings s("NexusAI", "NexusAI");
+            QSettings s = NexusAI::TestSupport::testSettings();
             const QString stored = s.value("embedding/apiKey").toString();
             QVERIFY(stored.startsWith(QStringLiteral("dpapi:v1:")));
             QVERIFY(stored != QStringLiteral("k1"));
@@ -1996,7 +2003,7 @@ Item {
             QVERIFY(!svc3.embeddingApiKeySet());
             QCOMPARE(svc3.embeddingApiKeyValue(), QString());
             {
-                QSettings s("NexusAI", "NexusAI");
+                QSettings s = NexusAI::TestSupport::testSettings();
                 QVERIFY(s.value("embedding/apiKey").toString().isEmpty());
             }
             SettingsService svc4(nullptr);
@@ -2010,7 +2017,7 @@ Item {
     void webSearchApiKeysAreBucketedPerProvider() {
         SettingsGuard guard;
         {
-            QSettings s("NexusAI", "NexusAI");
+            QSettings s = NexusAI::TestSupport::testSettings();
             s.remove("webSearch/zhipuApiKey");
             s.remove("webSearch/deepseekApiKey");
             s.remove("webSearch/provider");
@@ -2023,7 +2030,7 @@ Item {
         svc.setWebSearchApiKey(QStringLiteral("should-be-ignored"));
         QVERIFY(!svc.webSearchApiKeySet());
         {
-            QSettings s("NexusAI", "NexusAI");
+            QSettings s = NexusAI::TestSupport::testSettings();
             QVERIFY(!s.contains("webSearch/zhipuApiKey"));
             QVERIFY(!s.contains("webSearch/deepseekApiKey"));
         }
@@ -2052,7 +2059,7 @@ Item {
 
         // 两把 key 各自落在自己的设置键上，重启后仍分桶。
         {
-            QSettings s("NexusAI", "NexusAI");
+            QSettings s = NexusAI::TestSupport::testSettings();
             QVERIFY(!s.value("webSearch/zhipuApiKey").toString().isEmpty());
             QVERIFY(!s.value("webSearch/deepseekApiKey").toString().isEmpty());
             QVERIFY(s.value("webSearch/zhipuApiKey").toString()
@@ -2093,7 +2100,7 @@ Item {
     void proxySettingsPersistAndEncryptAuth() {
         SettingsGuard guard;
         {
-            QSettings s("NexusAI", "NexusAI");
+            QSettings s = NexusAI::TestSupport::testSettings();
             s.remove("network/proxyMode");
             s.remove("network/proxyHost");
             s.remove("network/proxyPort");
@@ -2127,7 +2134,7 @@ Item {
             QCOMPARE(config.password, QStringLiteral("p@ss word"));
 
 #ifdef Q_OS_WIN
-            const QString stored = QSettings("NexusAI", "NexusAI")
+            const QString stored = NexusAI::TestSupport::testSettings()
                 .value("network/proxyAuth").toString();
             QVERIFY(stored.startsWith(QStringLiteral("dpapi:v1:")));
             QVERIFY(!stored.contains(QStringLiteral("alice")));
@@ -2159,7 +2166,7 @@ Item {
             SettingsService svc(nullptr);
             QVERIFY(!svc.proxyPasswordSet());
             QCOMPARE(svc.proxyUsername(), QString());
-            QCOMPARE(QSettings("NexusAI", "NexusAI")
+            QCOMPARE(NexusAI::TestSupport::testSettings()
                          .value("network/proxyAuth").toString(), QString());
         }
     }
@@ -2401,7 +2408,7 @@ Item {
     // 移除，不能把用户的主动设置抹掉。
     void schemaV3UpgradesContextTokenDefault() {
         auto clean = [] {
-            QSettings s("NexusAI", "NexusAI");
+            QSettings s = NexusAI::TestSupport::testSettings();
             s.remove("contextTokens");
             s.sync();
         };
@@ -2409,7 +2416,7 @@ Item {
 
         // 存量值 = 旧默认 8192 → 归一。
         {
-            QSettings s("NexusAI", "NexusAI");
+            QSettings s = NexusAI::TestSupport::testSettings();
             s.setValue("contextTokens", 8192);
             s.setValue("schemaVersion", 2);
             s.sync();
@@ -2421,7 +2428,7 @@ Item {
 
         // 中间版本的默认 300000（已升到 v3 的库）→ 同样归一。
         {
-            QSettings s("NexusAI", "NexusAI");
+            QSettings s = NexusAI::TestSupport::testSettings();
             s.setValue("contextTokens", 300000);
             s.setValue("schemaVersion", 3);
             s.sync();
@@ -2433,7 +2440,7 @@ Item {
 
         // 用户自定义值（≠ 任一旧默认）→ 保持不动。
         {
-            QSettings s("NexusAI", "NexusAI");
+            QSettings s = NexusAI::TestSupport::testSettings();
             s.setValue("contextTokens", 65536);
             s.setValue("schemaVersion", 2);
             s.sync();
@@ -2468,11 +2475,11 @@ Item {
     void schemaVersionStampedOnLoad() {
         SettingsGuard guard;
         {
-            QSettings s("NexusAI", "NexusAI");
+            QSettings s = NexusAI::TestSupport::testSettings();
             s.remove("schemaVersion");
         }
         SettingsService svc(nullptr);
-        QSettings s("NexusAI", "NexusAI");
+        QSettings s = NexusAI::TestSupport::testSettings();
         QCOMPARE(s.value("schemaVersion").toInt(), SettingsSchema::kSchemaVersion);
     }
 
@@ -2482,7 +2489,7 @@ Item {
     void schemaV1ProfilesLoseModelsOnUpgrade() {
         SettingsGuard guard;
         {
-            QSettings s("NexusAI", "NexusAI");
+            QSettings s = NexusAI::TestSupport::testSettings();
             QJsonArray arr;
             QJsonObject legacy;
             legacy["id"] = QStringLiteral("v1-profile");
@@ -2535,7 +2542,7 @@ Item {
     void legacyPlaintextApiKeyRemovedAfterMigration() {
         SettingsGuard guard;
         {
-            QSettings s("NexusAI", "NexusAI");
+            QSettings s = NexusAI::TestSupport::testSettings();
             s.remove("modelProfiles");
             s.setValue("provider", QStringLiteral("openai"));
             s.setValue("apiKey", QStringLiteral("legacy-plain-key"));
@@ -2580,7 +2587,7 @@ Item {
     void testResolveContextLimitPriority() {
         SettingsGuard guard;
         {
-            QSettings s("NexusAI", "NexusAI");
+            QSettings s = NexusAI::TestSupport::testSettings();
             s.remove("modelProfiles");
             s.remove("activeProfileId");
             s.remove("contextTokens");
@@ -2751,7 +2758,7 @@ Item {
     void testQuotaSettings() {
         SettingsGuard guard;
         {
-            QSettings s("NexusAI", "NexusAI");
+            QSettings s = NexusAI::TestSupport::testSettings();
             s.remove("dailyTokenQuota");
             s.remove("dailyCostQuotaCents");
             s.remove("monthlyTokenQuota");
@@ -2792,7 +2799,7 @@ Item {
         }
         // 清理：guard 不覆盖这些新键，手动清除避免泄漏到后续套件
         {
-            QSettings s("NexusAI", "NexusAI");
+            QSettings s = NexusAI::TestSupport::testSettings();
             s.remove("dailyTokenQuota");
             s.remove("dailyCostQuotaCents");
             s.remove("monthlyTokenQuota");
@@ -2931,7 +2938,7 @@ Item {
 
 private:
     static void clearThemeKeys() {
-        QSettings s("NexusAI", "NexusAI");
+        QSettings s = NexusAI::TestSupport::testSettings();
         s.remove("prefs/v1/ui.themeMode");
         s.remove("theme/dark");
     }

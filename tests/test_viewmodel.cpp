@@ -32,6 +32,13 @@
 #include <QPointer>
 #include <QTranslator>
 #include <QUrl>
+#include "TestSettingsIsolation.h"
+
+// 测试进程的 QSettings 重定向到临时 INI（见 TestSettingsIsolation.h），
+// 防止测试改写用户真实设置。
+namespace {
+const NexusAI::TestSupport::SettingsIsolation kSettingsIsolation;
+} // namespace
 
 using namespace NexusAI;
 
@@ -42,7 +49,7 @@ namespace {
 class WidthSettingsGuard {
 public:
     WidthSettingsGuard() {
-        QSettings s("NexusAI", "NexusAI");
+        QSettings s = NexusAI::TestSupport::testSettings();
         sidebar = s.value("ui/sidebarWidth");
         panel = s.value("ui/panelWidth");
         // Layout defaults now seed the panel restore fallback (General
@@ -54,7 +61,7 @@ public:
         s.remove("prefs/v1/ui.defaultPanelWidth");
     }
     ~WidthSettingsGuard() {
-        QSettings s("NexusAI", "NexusAI");
+        QSettings s = NexusAI::TestSupport::testSettings();
         if (sidebar.isValid()) s.setValue("ui/sidebarWidth", sidebar);
         else s.remove("ui/sidebarWidth");
         if (panel.isValid()) s.setValue("ui/panelWidth", panel);
@@ -254,13 +261,13 @@ private slots:
     void showProcessPersistsAcrossInstances() {
         // 本文件没有 test_settings.cpp 里的 SettingsGuard（那个夹具属于
         // 设置测试）；这里手动保存/恢复，避免污染开发机的真实配置。
-        QSettings probe("NexusAI", "NexusAI");
+        QSettings probe = NexusAI::TestSupport::testSettings();
         const QVariant saved = probe.value("ui/showProcess");
         probe.remove("ui/showProcess");
         struct Restore {
             QVariant v;
             ~Restore() {
-                QSettings s("NexusAI", "NexusAI");
+                QSettings s = NexusAI::TestSupport::testSettings();
                 if (v.isValid()) s.setValue("ui/showProcess", v);
                 else s.remove("ui/showProcess");
             }
@@ -276,7 +283,7 @@ private slots:
             // 同值再设不重复发信号（否则 QML 会白重算一次）。
             vm.setShowProcess(false);
             QCOMPARE(spy.count(), 1);
-            QSettings s("NexusAI", "NexusAI");
+            QSettings s = NexusAI::TestSupport::testSettings();
             QCOMPARE(s.value("ui/showProcess").toBool(), false);
         }
         // 新实例读回上一次的选择——这是"阅读偏好"，不该每次重启都回默认。
@@ -458,7 +465,7 @@ private slots:
     void widthDefaultsClampingAndSignals() {
         WidthSettingsGuard guard;
         {
-            QSettings s("NexusAI", "NexusAI");
+            QSettings s = NexusAI::TestSupport::testSettings();
             s.remove("ui/sidebarWidth");
             s.remove("ui/panelWidth");
         }
@@ -495,7 +502,7 @@ private slots:
     void widthPersistenceDebouncedAndRestored() {
         WidthSettingsGuard guard;
         {
-            QSettings s("NexusAI", "NexusAI");
+            QSettings s = NexusAI::TestSupport::testSettings();
             s.remove("ui/sidebarWidth");
             s.remove("ui/panelWidth");
         }
@@ -1700,7 +1707,7 @@ private slots:
     void loadSessionSyncsActiveProjectBothWays() {
         // setActiveProjectId 经 SettingsService 落盘（docs/25 A5）并改全局
         // 沙箱指向，用例结束后必须还原，避免污染用户配置与后续用例。
-        QSettings settings("NexusAI", "NexusAI");
+        QSettings settings = NexusAI::TestSupport::testSettings();
         const QVariant savedActive = settings.value("projects/activeId");
 
         SqliteMemory memory(QStringLiteral(":memory:"));
@@ -1742,7 +1749,7 @@ private slots:
     // newLocalChat。回归点：这两个入口此前直接调 openTab()，新 tab 会继承
     // 当前活动项目，于是"在项目里点新会话"拿到的是项目会话而非普通对话。
     void newChatDefaultsToLocalUnlessProjectRequested() {
-        QSettings settings("NexusAI", "NexusAI");
+        QSettings settings = NexusAI::TestSupport::testSettings();
         const QVariant savedActive = settings.value("projects/activeId");
 
         SqliteMemory memory(QStringLiteral(":memory:"));
@@ -1791,7 +1798,7 @@ private slots:
     // docs/18 T1: activeProjectId 是**派生值**（活动标签的归属）——切标签即变。
     // 旧模型下它是全局值，切标签不会变，这正是"徽标撒谎"的根因。
     void activeProjectIdDerivesFromActiveTab() {
-        QSettings settings("NexusAI", "NexusAI");
+        QSettings settings = NexusAI::TestSupport::testSettings();
         const QVariant savedActive = settings.value("projects/activeId");
 
         SqliteMemory memory(QStringLiteral(":memory:"));
@@ -1831,7 +1838,7 @@ private slots:
     // docs/18 T3+T4: 归属按标签隔离——新建本地对话、或打开一条会话，都只影响
     // 当前标签；其他标签的项目归属不被广播式清空/覆盖（旧模型的核心缺陷）。
     void tabProjectOwnershipIsIsolated() {
-        QSettings settings("NexusAI", "NexusAI");
+        QSettings settings = NexusAI::TestSupport::testSettings();
         const QVariant savedActive = settings.value("projects/activeId");
 
         SqliteMemory memory(QStringLiteral(":memory:"));
@@ -1889,7 +1896,7 @@ private slots:
     // 于是"刚打开应用的新标签"莫名带上了一个项目。侧栏的浏览位置改由 QML 读
     // Settings.activeProjectId 恢复展开态，与归属无关。
     void freshTabDefaultsToLocalOnStartup() {
-        QSettings settings("NexusAI", "NexusAI");
+        QSettings settings = NexusAI::TestSupport::testSettings();
         const QVariant savedActive = settings.value("projects/activeId");
 
         AgentViewModel vm(nullptr);
@@ -1909,7 +1916,7 @@ private slots:
     // 动作"，不得把已承载会话的标签改写到新项目上——旧行为会连带切换顶栏徽标，
     // 并把该标签的沙箱与系统提示指向新项目，而它显示的仍是旧会话。
     void importProjectLeavesBoundTabUntouched() {
-        QSettings settings("NexusAI", "NexusAI");
+        QSettings settings = NexusAI::TestSupport::testSettings();
         const QVariant savedActive = settings.value("projects/activeId");
 
         QTemporaryDir dir;

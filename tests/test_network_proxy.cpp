@@ -19,6 +19,13 @@
 #include <QTcpServer>
 #include <QTcpSocket>
 #include <QUrl>
+#include "TestSettingsIsolation.h"
+
+// 测试进程的 QSettings 重定向到临时 INI（见 TestSettingsIsolation.h），
+// 防止测试改写用户真实设置。
+namespace {
+const NexusAI::TestSupport::SettingsIsolation kSettingsIsolation;
+} // namespace
 
 using namespace NexusAI;
 
@@ -27,14 +34,14 @@ namespace {
 class ProxySettingsGuard {
 public:
     ProxySettingsGuard() {
-        QSettings s(QStringLiteral("NexusAI"), QStringLiteral("NexusAI"));
+        QSettings s = NexusAI::TestSupport::testSettings();
         m_mode = s.value("network/proxyMode");
         m_host = s.value("network/proxyHost");
         m_port = s.value("network/proxyPort");
         m_auth = s.value("network/proxyAuth");
     }
     ~ProxySettingsGuard() {
-        QSettings s(QStringLiteral("NexusAI"), QStringLiteral("NexusAI"));
+        QSettings s = NexusAI::TestSupport::testSettings();
         m_mode.isValid() ? s.setValue("network/proxyMode", m_mode)
                          : s.remove("network/proxyMode");
         m_host.isValid() ? s.setValue("network/proxyHost", m_host)

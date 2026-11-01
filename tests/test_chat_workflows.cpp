@@ -28,6 +28,13 @@
 #include "viewmodels/GitViewModel.h"
 #include "viewmodels/ThemeProvider.h"
 #include "viewmodels/SettingsService.h"
+#include "TestSettingsIsolation.h"
+
+// 测试进程的 QSettings 重定向到临时 INI（见 TestSettingsIsolation.h），
+// 防止测试改写用户真实设置。
+namespace {
+const NexusAI::TestSupport::SettingsIsolation kSettingsIsolation;
+} // namespace
 
 using namespace NexusAI;
 
