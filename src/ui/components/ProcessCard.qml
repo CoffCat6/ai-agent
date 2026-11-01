@@ -206,6 +206,7 @@ Item {
                         // 标题会白白缩掉一段。
                         width: Math.max(40, headerRow.width - x
                                         - (sourceBadge.visible ? sourceBadge.width + Theme.spaceSm : 0)
+                                        - (stopChip.visible ? stopChip.width + Theme.spaceSm : 0)
                                         - (evidenceChip.visible ? evidenceChip.width + Theme.spaceSm : 0)
                                         - 8)
                     }
@@ -230,6 +231,37 @@ Item {
                             font.pixelSize: Theme.fontSizeNano
                             font.family: Theme.fontSans
                             font.bold: true
+                        }
+                    }
+
+                    // docs/32 §9：运行中的子代理可手动停止（主任务继续）。
+                    Rectangle {
+                        id: stopChip
+                        anchors.verticalCenter: parent.verticalCenter
+                        visible: root.isSpawnAgent && root.status === "running"
+                        width: stopText.implicitWidth + 14
+                        height: 17
+                        radius: 3
+                        color: stopMA.containsMouse
+                            ? Qt.lighter(Theme.statusDanger, 1.4) : Theme.statusDanger
+                        opacity: 0.16
+
+                        Text {
+                            id: stopText
+                            anchors.centerIn: parent
+                            text: qsTr("停止")
+                            color: Theme.statusDanger
+                            font.pixelSize: Theme.fontSizeNano
+                            font.family: Theme.fontSans
+                            font.bold: true
+                        }
+
+                        MouseArea {
+                            id: stopMA
+                            anchors.fill: parent
+                            hoverEnabled: true
+                            cursorShape: Qt.PointingHandCursor
+                            onClicked: AgentVM.cancelSubAgents()
                         }
                     }
 

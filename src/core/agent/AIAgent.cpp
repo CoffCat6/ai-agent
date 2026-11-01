@@ -4,6 +4,7 @@
 #include "SubAgentRunner.h"
 #include "infrastructure/llm/IAIService.h"
 #include "core/tools/ToolRegistry.h"
+#include "core/tools/SubAgentTool.h"
 #include "core/tools/Sandbox.h"
 #include "core/memory/IMemory.h"
 #include "core/rag/KnowledgeSearchTool.h"
@@ -1849,6 +1850,22 @@ void AIAgent::stop() {
     if (m_memory && !m_sessionId.isEmpty()) m_memory->touchSession(m_sessionId);
 }
 
+// 用户在会话窗口点「停止子代理」：只翻转在飞 spawn_agent 的取消旗标，
+// 与 stop() 的级联不同——不清在飞登记、不封历史、不动主循环状态。Runner
+// 的轮询观察到旗标后以 Cancelled 报告收场，工具结果照常回灌，模型自己
+// 决定接下来怎么办（收尾、换路或重派）。
+bool AIAgent::cancelSubAgents() {
+    bool any = false;
+    for (auto it = m_inFlightTools.cbegin(); it != m_inFlightTools.cend(); ++it) {
+        const auto& tool = it.value();
+        if (tool && tool->definition().name == QLatin1String(SubAgentTool::kName)) {
+            tool->cancel(m_toolCancellations.value(it.key()));
+            any = true;
+        }
+    }
+    return any;
+}
+
 // 截掉末条回答后从末条提问重发。顺序是硬要求：先 truncateLastTurn（一个事务里
 // 连该提问之后的轨迹节点一起删，否则被丢弃的过程会在重开会话时复活），失败就内存
 // 一字不动并 errorOccurred，成功后直接重发、不重新组装 system/episodic。
@@ -2394,8 +2411,11 @@ void AIAgent::applySubAgentProgress(const QString& nodeId, const SubAgentProgres
             parts.removeFirst();
             summaryText = QStringLiteral("…") + parts.join(QStringLiteral(", "));
         }
-        QString title = QStringLiteral("spawn_agent · step %1/%2")
-                            .arg(progress.step).arg(progress.maxSteps);
+        // 无预算（maxSteps==0，默认）时只显示步号——"step 3/1000" 会误导。
+        QString title = progress.maxSteps > 0
+            ? QStringLiteral("spawn_agent · step %1/%2")
+                  .arg(progress.step).arg(progress.maxSteps)
+            : QStringLiteral("spawn_agent · step %1").arg(progress.step);
         if (!summaryText.isEmpty())
             title += QStringLiteral(" · %1").arg(summaryText);
         // "final answer"（强制收尾轮）追加在摘要之后而非覆盖它；assistant/

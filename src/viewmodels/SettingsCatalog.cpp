@@ -75,12 +75,8 @@ const QVector<CatalogEntryDef>& staticEntries() {
         {NEXUS_CATALOG_ID("agent/subagentMaxParallel"), QStringLiteral("agent"),
          QT_TRANSLATE_NOOP("SettingsSearch", "子代理并行上限"),
          QStringLiteral("子代理 subagent 并行 并发 上限 parallel"), false, kPage},
-        {NEXUS_CATALOG_ID("agent/subagentMaxSteps"), QStringLiteral("agent"),
-         QT_TRANSLATE_NOOP("SettingsSearch", "子代理步数预算"),
-         QStringLiteral("子代理 subagent 步数 预算 steps"), false, kPage},
-        {NEXUS_CATALOG_ID("agent/subagentTimeoutSec"), QStringLiteral("agent"),
-         QT_TRANSLATE_NOOP("SettingsSearch", "子代理超时（秒）"),
-         QStringLiteral("子代理 subagent 超时 timeout 秒"), false, kPage},
+        // 2026-11-01：subagentMaxSteps/subagentTimeoutSec 目录项已随「取消
+        // 子代理步数/超时限制」移除。
 
         // ── 工具与能力 ──────────────────────────────────────
         {NEXUS_CATALOG_ID("tools/disabled"), QStringLiteral("tools"),

@@ -2748,6 +2748,13 @@ void AgentViewModel::stop() {
     active()->stop();
 }
 
+// docs/32 §9：只停止活动标签里在飞的子代理（会话窗口的「停止子代理」
+// 按钮），主任务继续跑。
+bool AgentViewModel::cancelSubAgents() {
+    AIAgent* a = active()->agent();
+    return a && a->cancelSubAgents();
+}
+
 // docs/25 A4：停全部标签的任务。与「关 tab 停任务」同一封口语义（agent 封口
 // 未答复的工具调用），托盘退出路径据此不再依赖析构顺序的被动兜底。
 void AgentViewModel::stopAllTabs() {

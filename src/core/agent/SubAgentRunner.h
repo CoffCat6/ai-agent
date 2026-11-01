@@ -80,8 +80,12 @@ struct SubAgentRequest {
     QString rolePrompt;  // docs/33 E2: resolved SubAgentRole prompt; non-empty
                          // replaces the hint-based focus block
     QVector<SubAgentToolEntry> tools;   // read-only snapshot (see above)
-    int maxSteps{12};                    // LLM round-trips, incl. the forced final
-    qint64 timeoutMs{300000};            // whole-run wall-clock budget
+    // LLM round-trip budget incl. the forced final. 0 = 无预算（2026-11-01
+    // 起不再是用户可配置限制，与主任务一致：模型自定何时收工）；内部仍设
+    // kSubStepCap 防失控。>0 仅测试注入做确定性用例。
+    int maxSteps{0};
+    // 0 = no wall-clock budget (user may stop manually); >0 only from tests.
+    qint64 timeoutMs{0};
     ITool::Cancellation cancelled;       // shared with the dispatching tool; a
                                          // stop() of the primary agent flips it
     SubAgentProgressHook progress;       // optional; docs/32 P2 live progress
@@ -128,6 +132,8 @@ public:
     // the primary agent applies its own kMaxToolResultChars when the result
     // lands in the main history.
     static constexpr int kSubToolResultMaxChars = 6000;
+    // maxSteps <= 0 时的内部安全上限（防失控派生；正常情况下模型自己收敛）。
+    static constexpr int kSubStepCap = 1000;
     // Evidence artifacts (docs/33 E1): per-file byte cap and retention.
     static constexpr int kArtifactMaxBytes = 256 * 1024;
     static constexpr int kArtifactRetentionDays = 7;

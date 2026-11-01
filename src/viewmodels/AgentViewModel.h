@@ -502,6 +502,8 @@ public:
     Q_INVOKABLE void approveToolCall(const QString& id, bool approved);
     Q_INVOKABLE void setToolEnabled(const QString& name, bool enabled);
     Q_INVOKABLE void stop();                 // abort generation, keep trace
+    // 只停活动标签在飞的子代理（主任务继续）；返回是否有子代理被中止。
+    Q_INVOKABLE bool cancelSubAgents();
     // docs/25 A4：停**全部**标签的任务（托盘退出等收尾路径用），替代只停
     // active tab 的 stop()——后者让其余 busy tab 依赖 app 析构 → controller
     // 析构的被动兜底（隐式依赖 QObject 析构顺序）。

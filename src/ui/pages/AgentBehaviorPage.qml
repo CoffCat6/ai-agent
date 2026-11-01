@@ -52,37 +52,8 @@ SettingsPage {
                 Accessible.name: qsTr("子代理并行上限")
             }
         }
-
-        SettingRow {
-            objectName: "agent/subagentMaxSteps"
-            label: qsTr("单个子代理步数预算")
-            description: qsTr("每个子代理自己的「思考 → 工具调用」轮数上限（2–40），防止失控派生；主任务不限步数。")
-
-            SpinBox {
-                from: 2
-                to: 40
-                value: Settings.subagentMaxSteps
-                editable: true
-                onValueModified: Settings.subagentMaxSteps = value
-                Accessible.name: qsTr("子代理步数预算")
-            }
-        }
-
-        SettingRow {
-            objectName: "agent/subagentTimeoutSec"
-            label: qsTr("单个子代理超时（秒）")
-            description: qsTr("子代理运行超过此时长会被中止并报告部分结果（30–1800）。")
-
-            SpinBox {
-                from: 30
-                to: 1800
-                value: Settings.subagentTimeoutSec
-                editable: true
-                stepSize: 30
-                onValueModified: Settings.subagentTimeoutSec = value
-                Accessible.name: qsTr("子代理超时，秒")
-            }
-        }
+        // 2026-11-01：子代理步数预算/超时设置项已随「取消子代理限制」移除，
+        // 会话窗口内可随时手动停止运行中的子代理。
     }
 
     // docs/33 E2: 子代理角色档案——预设只读展示，用户档案增删改后整表提交。

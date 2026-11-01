@@ -224,6 +224,10 @@ public slots:
                    const QJsonArray& files = {});
     void approveToolCall(const QString& id, bool approved);
     void stop();                                    // abort generation, keep trace
+    // 只中止在飞的 spawn_agent 调用（用户点「停止子代理」），主任务继续：
+    // 子代理以 Cancelled 报告落回 tool 消息，模型自己决定如何收尾。
+    // 返回是否确实有子代理被中止。
+    bool cancelSubAgents();
     void resetSession();                            // clear everything, fresh session
     void resumeSession(const QString& sessionId);   // load history + trace from memory
     void cancel() { resetSession(); }               // legacy alias

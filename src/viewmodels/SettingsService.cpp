@@ -359,14 +359,8 @@ void SettingsService::load() {
         QStringLiteral("agent/subagentMaxParallel"),
         SettingsRepository::value(QStringLiteral("agent/subagentMaxParallel"),
             SettingsSchema::defaultValue(QStringLiteral("agent/subagentMaxParallel"))).toInt());
-    m_subagentMaxSteps = SettingsSchema::clampInt(
-        QStringLiteral("agent/subagentMaxSteps"),
-        SettingsRepository::value(QStringLiteral("agent/subagentMaxSteps"),
-            SettingsSchema::defaultValue(QStringLiteral("agent/subagentMaxSteps"))).toInt());
-    m_subagentTimeoutSec = SettingsSchema::clampInt(
-        QStringLiteral("agent/subagentTimeoutSec"),
-        SettingsRepository::value(QStringLiteral("agent/subagentTimeoutSec"),
-            SettingsSchema::defaultValue(QStringLiteral("agent/subagentTimeoutSec"))).toInt());
+    // 2026-11-01：subagentMaxSteps/subagentTimeoutSec 已随「取消子代理步数/
+    // 超时限制」移除，装载与写路径一并删除。
     // docs/33 E2: 角色档案资产（JSON blob，同 promptPresets 的容错——坏
     // JSON/非数组按空列表处理）。
     m_subagentRoles = loadStringList(QStringLiteral("agent/subagentRoles"));
@@ -1198,24 +1192,8 @@ void SettingsService::setSubagentMaxParallel(int value) {
     m_subagentMaxParallel = clamped;
     emit subagentMaxParallelChanged();
 }
-
-void SettingsService::setSubagentMaxSteps(int value) {
-    const int clamped = SettingsSchema::clampInt(
-        QStringLiteral("agent/subagentMaxSteps"), value);
-    if (m_subagentMaxSteps == clamped
-            || !persistValue(QStringLiteral("agent/subagentMaxSteps"), clamped)) return;
-    m_subagentMaxSteps = clamped;
-    emit subagentMaxStepsChanged();
-}
-
-void SettingsService::setSubagentTimeoutSec(int seconds) {
-    const int clamped = SettingsSchema::clampInt(
-        QStringLiteral("agent/subagentTimeoutSec"), seconds);
-    if (m_subagentTimeoutSec == clamped
-            || !persistValue(QStringLiteral("agent/subagentTimeoutSec"), clamped)) return;
-    m_subagentTimeoutSec = clamped;
-    emit subagentTimeoutSecChanged();
-}
+// 2026-11-01：setSubagentMaxSteps/setSubagentTimeoutSec 已随「取消子代理
+// 步数/超时限制」移除。
 
 // docs/33 E2: 角色档案。整表替换式写入（QML 编辑区维护列表后一次性提交）；
 // 行内合法性由消费方（SubAgentTool::rolesFromVariant）过滤。
@@ -1880,10 +1858,6 @@ void SettingsService::resetAgentToDefaults() {
         QStringLiteral("agent/subagentEnabled")).toBool());
     setSubagentMaxParallel(SettingsSchema::defaultValue(
         QStringLiteral("agent/subagentMaxParallel")).toInt());
-    setSubagentMaxSteps(SettingsSchema::defaultValue(
-        QStringLiteral("agent/subagentMaxSteps")).toInt());
-    setSubagentTimeoutSec(SettingsSchema::defaultValue(
-        QStringLiteral("agent/subagentTimeoutSec")).toInt());
     // 角色档案复位为空表：预设（explore/research/review）始终内建于工具，
     // 清掉的是用户自定义项。
     setSubagentRoles({});
@@ -1948,8 +1922,6 @@ bool SettingsService::setValueForSetting(const QString& key, const QVariant& val
 
     if (key == QLatin1String("agent/subagentEnabled")) { setSubagentEnabled(value.toBool()); return true; }
     if (key == QLatin1String("agent/subagentMaxParallel")) { setSubagentMaxParallel(value.toInt()); return true; }
-    if (key == QLatin1String("agent/subagentMaxSteps")) { setSubagentMaxSteps(value.toInt()); return true; }
-    if (key == QLatin1String("agent/subagentTimeoutSec")) { setSubagentTimeoutSec(value.toInt()); return true; }
     if (key == QLatin1String("agent/systemPromptOverride")) {
         setSystemPromptOverride(value.toString());
         return true;

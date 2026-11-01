@@ -1071,9 +1071,8 @@ private slots:
             "modelProfiles", "activeProfileId", "contextTokens",
             // 提示词与指令：三组用户自建资产（SettingsService JSON blob）
             "promptPresets", "slashCommands", "sessionTemplates",
-            // docs/32 P1: 子代理设置键
+            // docs/32 P1: 子代理设置键（步数/超时已于 2026-11-01 移除）
             "agent/subagentEnabled", "agent/subagentMaxParallel",
-            "agent/subagentMaxSteps", "agent/subagentTimeoutSec",
             // docs/33 E2: 子代理角色档案（复合 JSON 资产）
             "agent/subagentRoles",
             "security/allowFullDiskRead", "security/allowProjectWrite",

@@ -836,6 +836,8 @@ private slots:
     void subagentStepBudgetConverges();
     void subagentTimeoutAborts();
     void subagentStopCascades();
+    // docs/32 §9: 会话窗口手动停止子代理（主任务继续）。
+    void subagentManualCancelKeepsPrimaryRunning();
     void subagentInflightAbortStressRealNetwork();
     void subagentConcurrencyGateQueues();
     // docs/32 P2: 进度上屏与审计归因
@@ -4467,6 +4469,39 @@ void TestAgent::subagentStopCascades() {
     // 派生调用在历史里被密封，无悬挂 tool_calls。
     QVERIFY(lastToolMessageContent(agent.messages())
                 .contains(QStringLiteral("[Not executed]")));
+    QVERIFY(noDanglingToolCalls(agent.messages()));
+}
+
+// docs/32 §9: 用户点「停止子代理」只中止在飞的 spawn_agent——主任务拿到
+// Cancelled 报告后继续跑，由模型自己收尾。与 stop() 的级联封口相对。
+void TestAgent::subagentManualCancelKeepsPrimaryRunning() {
+    SubAgentFixture fixture;
+    SpawnToolGuard guard;
+    ensureSubAgentProbe();
+    auto enteredFlag = std::make_shared<std::atomic<bool>>(false);
+    auto releaseGate = std::make_shared<QSemaphore>();
+    fixture.tool = registerSpawnTool(fixture, [&](RecordingFakeService& sub) {
+        sub.enteredFlag = enteredFlag.get();
+        sub.gate = releaseGate.get();
+        sub.script.append(toolResponse(QStringLiteral("test_sub_probe"), {}));
+    });
+    // 不注入预算：默认即无步数/超时限制（只能这样收场或模型自收敛）。
+    llm.reset();
+    llm.script.append(toolResponse(QStringLiteral("spawn_agent"),
+        QJsonObject{{"goal", QStringLiteral("slow probe")}}));
+    llm.script.append(textResponse(QStringLiteral("wrapped up")));
+    QSignalSpy spy(&agent, &AIAgent::responseReady);
+    agent.startTask(QStringLiteral("cancel a running sub-agent"));
+    QTRY_VERIFY(enteredFlag->load());   // 子代理请求已挂起
+    // 无预算时的进度标题只显示步号（不出现误导性的 /0 或 /1000）。
+    QTRY_VERIFY(traceHas(agent.traceModel(), QStringLiteral("tool_call"),
+                         QStringLiteral("spawn_agent · step 1")));
+    QVERIFY(agent.cancelSubAgents());   // 只翻旗标，主任务不受影响
+    releaseGate->release();             // 放行挂起的回复，Runner 观察旗标收场
+    QTRY_COMPARE(spy.count(), 1);
+    QCOMPARE(agent.lastResponse(), QStringLiteral("wrapped up"));
+    QVERIFY(lastToolMessageContent(agent.messages())
+                .contains(QStringLiteral("Sub-agent cancelled")));
     QVERIFY(noDanglingToolCalls(agent.messages()));
 }
 

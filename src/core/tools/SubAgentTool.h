@@ -61,7 +61,10 @@ public:
 
     // Runtime knobs (any thread; cheap atomic/lock writes).
     void setMaxParallel(int n);       // clamped to [1, 8]
-    void setMaxSteps(int steps) { m_maxSteps.store(steps > 0 ? steps : 1); }
+    // 步数/超时不再是用户可配置限制（2026-11-01，与主任务一致）：默认 0 =
+    // 不限（Runner 内部留 kSubStepCap 防失控）。setter 保留给测试做确定性
+    // 预算用例。
+    void setMaxSteps(int steps) { m_maxSteps.store(steps > 0 ? steps : 0); }
     void setTimeoutMs(qint64 ms) { m_timeoutMs.store(ms > 0 ? ms : 0); }
 
     ToolDefinition definition() const override;
@@ -97,8 +100,8 @@ private:
     int m_activeRuns{0};                    // guarded by m_gateMutex
     int m_maxParallel{2};                   // guarded by m_gateMutex
 
-    std::atomic<int> m_maxSteps{12};
-    std::atomic<qint64> m_timeoutMs{300000};
+    std::atomic<int> m_maxSteps{0};         // 0 = unlimited (kSubStepCap)
+    std::atomic<qint64> m_timeoutMs{0};     // 0 = no wall-clock budget
 };
 
 } // namespace NexusAI

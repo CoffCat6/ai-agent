@@ -183,131 +183,125 @@
         <translation>Sub-agent parallelism cap</translation>
     </message>
     <message>
-        <location filename="../src/ui/pages/AgentBehaviorPage.qml" line="58"/>
         <source>单个子代理步数预算</source>
-        <translation>Per-sub-agent step budget</translation>
+        <translation type="vanished">Per-sub-agent step budget</translation>
     </message>
     <message>
         <source>每个子代理自己的「思考 → 工具调用」轮数上限（2–40），与主任务预算相互独立。</source>
         <translation type="vanished">Each sub-agent&apos;s own thinking/tool-call round budget (2-40), independent of the main task&apos;s.</translation>
     </message>
     <message>
-        <location filename="../src/ui/pages/AgentBehaviorPage.qml" line="59"/>
         <source>每个子代理自己的「思考 → 工具调用」轮数上限（2–40），防止失控派生；主任务不限步数。</source>
-        <translation type="unfinished">Per-sub-agent thinking → tool-call round cap (2–40) to prevent runaway spawns; the main task is unlimited.</translation>
+        <translation type="obsolete">Per-sub-agent thinking → tool-call round cap (2–40) to prevent runaway spawns; the main task is unlimited.</translation>
     </message>
     <message>
-        <location filename="../src/ui/pages/AgentBehaviorPage.qml" line="67"/>
         <source>子代理步数预算</source>
-        <translation>Sub-agent step budget</translation>
+        <translation type="vanished">Sub-agent step budget</translation>
     </message>
     <message>
-        <location filename="../src/ui/pages/AgentBehaviorPage.qml" line="73"/>
         <source>单个子代理超时（秒）</source>
-        <translation>Per-sub-agent timeout (seconds)</translation>
+        <translation type="vanished">Per-sub-agent timeout (seconds)</translation>
     </message>
     <message>
-        <location filename="../src/ui/pages/AgentBehaviorPage.qml" line="74"/>
         <source>子代理运行超过此时长会被中止并报告部分结果（30–1800）。</source>
-        <translation>A sub-agent running longer is aborted and reports what it has (30-1800).</translation>
+        <translation type="vanished">A sub-agent running longer is aborted and reports what it has (30-1800).</translation>
     </message>
     <message>
-        <location filename="../src/ui/pages/AgentBehaviorPage.qml" line="83"/>
         <source>子代理超时，秒</source>
-        <translation>Sub-agent timeout, seconds</translation>
+        <translation type="vanished">Sub-agent timeout, seconds</translation>
     </message>
     <message>
-        <location filename="../src/ui/pages/AgentBehaviorPage.qml" line="93"/>
+        <location filename="../src/ui/pages/AgentBehaviorPage.qml" line="64"/>
         <source>子代理角色档案</source>
         <translation>Sub-agent role profiles</translation>
     </message>
     <message>
-        <location filename="../src/ui/pages/AgentBehaviorPage.qml" line="94"/>
+        <location filename="../src/ui/pages/AgentBehaviorPage.qml" line="65"/>
         <source>spawn_agent 可按角色派生子代理：预设不可改，自定义档案指定专属提示词与工具白名单。</source>
         <translation>spawn_agent can derive sub-agents per role: presets are read-only, custom profiles define their own prompt and tool whitelist.</translation>
     </message>
     <message>
-        <location filename="../src/ui/pages/AgentBehaviorPage.qml" line="121"/>
+        <location filename="../src/ui/pages/AgentBehaviorPage.qml" line="92"/>
         <source>内置角色：explore（广度优先勘察）、research（深度查证）、review（代码评审）。调用时省略 role 参数默认使用 explore；自定义档案与预设同名时覆盖预设。</source>
         <translation>Built-in roles: explore (breadth-first survey), research (depth-first verification), review (code review). Omitting the role argument defaults to explore; a custom profile sharing a preset&apos;s name overrides it.</translation>
     </message>
     <message>
-        <location filename="../src/ui/pages/AgentBehaviorPage.qml" line="158"/>
+        <location filename="../src/ui/pages/AgentBehaviorPage.qml" line="129"/>
         <source>编辑</source>
         <translation>Edit</translation>
     </message>
     <message>
-        <location filename="../src/ui/pages/AgentBehaviorPage.qml" line="168"/>
+        <location filename="../src/ui/pages/AgentBehaviorPage.qml" line="139"/>
         <source>删除</source>
         <translation>Delete</translation>
     </message>
     <message>
-        <location filename="../src/ui/pages/AgentBehaviorPage.qml" line="185"/>
+        <location filename="../src/ui/pages/AgentBehaviorPage.qml" line="156"/>
         <source>工具白名单：%1</source>
         <translation>Tool whitelist: %1</translation>
     </message>
     <message>
-        <location filename="../src/ui/pages/AgentBehaviorPage.qml" line="196"/>
+        <location filename="../src/ui/pages/AgentBehaviorPage.qml" line="167"/>
         <source>还没有自定义角色。点「新建角色」定义第一支专属子代理。</source>
         <translation>No custom roles yet. Click &quot;New role&quot; to define your first dedicated sub-agent.</translation>
     </message>
     <message>
-        <location filename="../src/ui/pages/AgentBehaviorPage.qml" line="211"/>
+        <location filename="../src/ui/pages/AgentBehaviorPage.qml" line="182"/>
         <source>角色名（模型以 role 参数引用，如：doc-auditor）</source>
         <translation>Role name (the model references it via the role argument, e.g. doc-auditor)</translation>
     </message>
     <message>
-        <location filename="../src/ui/pages/AgentBehaviorPage.qml" line="222"/>
+        <location filename="../src/ui/pages/AgentBehaviorPage.qml" line="193"/>
         <source>该角色的专注指令（追加到子代理系统提示词）…</source>
         <translation>Role focus instructions (appended to the sub-agent system prompt)…</translation>
     </message>
     <message>
-        <location filename="../src/ui/pages/AgentBehaviorPage.qml" line="233"/>
+        <location filename="../src/ui/pages/AgentBehaviorPage.qml" line="204"/>
         <source>工具白名单（逗号分隔，留空 = 全部只读工具）</source>
         <translation>Tool whitelist (comma-separated; empty = all read-only tools)</translation>
     </message>
     <message>
-        <location filename="../src/ui/pages/AgentBehaviorPage.qml" line="241"/>
+        <location filename="../src/ui/pages/AgentBehaviorPage.qml" line="212"/>
         <source>取消</source>
         <translation>Cancel</translation>
     </message>
     <message>
-        <location filename="../src/ui/pages/AgentBehaviorPage.qml" line="247"/>
+        <location filename="../src/ui/pages/AgentBehaviorPage.qml" line="218"/>
         <source>保存</source>
         <translation>Save</translation>
     </message>
     <message>
-        <location filename="../src/ui/pages/AgentBehaviorPage.qml" line="247"/>
+        <location filename="../src/ui/pages/AgentBehaviorPage.qml" line="218"/>
         <source>创建</source>
         <translation>Create</translation>
     </message>
     <message>
-        <location filename="../src/ui/pages/AgentBehaviorPage.qml" line="255"/>
+        <location filename="../src/ui/pages/AgentBehaviorPage.qml" line="226"/>
         <source>新建角色</source>
         <translation>New role</translation>
     </message>
     <message>
-        <location filename="../src/ui/pages/AgentBehaviorPage.qml" line="268"/>
+        <location filename="../src/ui/pages/AgentBehaviorPage.qml" line="239"/>
         <source>系统提示词</source>
         <translation>System Prompt</translation>
     </message>
     <message>
-        <location filename="../src/ui/pages/AgentBehaviorPage.qml" line="269"/>
+        <location filename="../src/ui/pages/AgentBehaviorPage.qml" line="240"/>
         <source>留空使用内置提示词；修改即时生效，内容随请求发送给当前模型服务。</source>
         <translation>Leave empty to use the built-in prompt; changes take effect immediately and are sent with each request.</translation>
     </message>
     <message>
-        <location filename="../src/ui/pages/AgentBehaviorPage.qml" line="277"/>
+        <location filename="../src/ui/pages/AgentBehaviorPage.qml" line="248"/>
         <source>留空 = 内置提示词</source>
         <translation>Empty = built-in prompt</translation>
     </message>
     <message>
-        <location filename="../src/ui/pages/AgentBehaviorPage.qml" line="303"/>
+        <location filename="../src/ui/pages/AgentBehaviorPage.qml" line="274"/>
         <source>自定义系统提示词</source>
         <translation>Custom System Prompt</translation>
     </message>
     <message>
-        <location filename="../src/ui/pages/AgentBehaviorPage.qml" line="307"/>
+        <location filename="../src/ui/pages/AgentBehaviorPage.qml" line="278"/>
         <source>%1 字符</source>
         <translation>%1 chars</translation>
     </message>
@@ -5821,7 +5815,7 @@ Select or import a project in the sidebar first.</translation>
 <context>
     <name>NexusAI::AIAgent</name>
     <message>
-        <location filename="../src/core/agent/AIAgent.cpp" line="977"/>
+        <location filename="../src/core/agent/AIAgent.cpp" line="978"/>
         <source>请先配置并启用模型，再发送消息。</source>
         <translation>Configure and enable a model before sending a message.</translation>
     </message>
@@ -5870,7 +5864,7 @@ Select or import a project in the sidebar first.</translation>
         <translation type="vanished">No timeline entry matches this message, so the conversation cannot be rewound safely.</translation>
     </message>
     <message>
-        <location filename="../src/core/agent/AIAgent.cpp" line="1895"/>
+        <location filename="../src/core/agent/AIAgent.cpp" line="1912"/>
         <source>无法更新会话记录，原消息已保留，请重试。</source>
         <translation>Could not update the conversation. Original messages were kept. Please retry.</translation>
     </message>
@@ -5887,7 +5881,7 @@ Select or import a project in the sidebar first.</translation>
         <location filename="../src/viewmodels/AgentViewModel.cpp" line="301"/>
         <location filename="../src/viewmodels/AgentViewModel.cpp" line="603"/>
         <location filename="../src/viewmodels/AgentViewModel.cpp" line="2733"/>
-        <location filename="../src/viewmodels/AgentViewModel.cpp" line="2794"/>
+        <location filename="../src/viewmodels/AgentViewModel.cpp" line="2801"/>
         <source>新会话</source>
         <translation>New Session</translation>
     </message>
@@ -6133,27 +6127,27 @@ Select or import a project in the sidebar first.</translation>
         <translation>Delete failed. Check whether the file is in use</translation>
     </message>
     <message>
-        <location filename="../src/viewmodels/AgentViewModel.cpp" line="2777"/>
+        <location filename="../src/viewmodels/AgentViewModel.cpp" line="2784"/>
         <source>这个会话还没有可分叉的历史记录。</source>
         <translation>This conversation has no history to fork from yet.</translation>
     </message>
     <message>
-        <location filename="../src/viewmodels/AgentViewModel.cpp" line="2782"/>
+        <location filename="../src/viewmodels/AgentViewModel.cpp" line="2789"/>
         <source>这条回答还没有存进会话记录，稍等一下再试。</source>
         <translation>This answer is not saved to the conversation yet - try again in a moment.</translation>
     </message>
     <message>
-        <location filename="../src/viewmodels/AgentViewModel.cpp" line="2800"/>
+        <location filename="../src/viewmodels/AgentViewModel.cpp" line="2807"/>
         <source>%1（分支）</source>
         <translation>%1 (branch)</translation>
     </message>
     <message>
-        <location filename="../src/viewmodels/AgentViewModel.cpp" line="2802"/>
+        <location filename="../src/viewmodels/AgentViewModel.cpp" line="2809"/>
         <source>%1（分支%2）</source>
         <translation>%1 (branch %2)</translation>
     </message>
     <message>
-        <location filename="../src/viewmodels/AgentViewModel.cpp" line="2806"/>
+        <location filename="../src/viewmodels/AgentViewModel.cpp" line="2813"/>
         <source>无法创建分叉出来的会话，请重试。</source>
         <translation>Could not create the forked conversation. Please try again.</translation>
     </message>
@@ -6884,172 +6878,172 @@ Select or import a project in the sidebar first.</translation>
         <translation>Settings could not be saved. Check storage permissions or disk space and retry.</translation>
     </message>
     <message>
-        <location filename="../src/viewmodels/SettingsService.cpp" line="549"/>
+        <location filename="../src/viewmodels/SettingsService.cpp" line="543"/>
         <source>API 密钥加密失败，模型配置未保存。</source>
         <translation>API key encryption failed. Model configuration was not saved.</translation>
     </message>
     <message>
-        <location filename="../src/viewmodels/SettingsService.cpp" line="570"/>
+        <location filename="../src/viewmodels/SettingsService.cpp" line="564"/>
         <source>模型配置未能保存。请检查设置存储权限或磁盘空间后重试。</source>
         <translation>Model configuration could not be saved. Check storage permissions or disk space and retry.</translation>
     </message>
     <message>
-        <location filename="../src/viewmodels/SettingsService.cpp" line="866"/>
+        <location filename="../src/viewmodels/SettingsService.cpp" line="860"/>
         <source>自定义网关</source>
         <translation>Custom Gateway</translation>
     </message>
     <message>
-        <location filename="../src/viewmodels/SettingsService.cpp" line="871"/>
+        <location filename="../src/viewmodels/SettingsService.cpp" line="865"/>
         <source>新配置</source>
         <translation>New Profile</translation>
     </message>
     <message>
-        <location filename="../src/viewmodels/SettingsService.cpp" line="1025"/>
+        <location filename="../src/viewmodels/SettingsService.cpp" line="1019"/>
         <source>%1 副本</source>
         <translation>%1 copy</translation>
     </message>
     <message>
-        <location filename="../src/viewmodels/SettingsService.cpp" line="1168"/>
+        <location filename="../src/viewmodels/SettingsService.cpp" line="1162"/>
         <source>OpenAI 兼容</source>
         <translation>OpenAI Compatible</translation>
     </message>
     <message>
-        <location filename="../src/viewmodels/SettingsService.cpp" line="1169"/>
+        <location filename="../src/viewmodels/SettingsService.cpp" line="1163"/>
         <source>Ollama 本地</source>
         <translation>Ollama (Local)</translation>
     </message>
     <message>
-        <location filename="../src/viewmodels/SettingsService.cpp" line="1172"/>
+        <location filename="../src/viewmodels/SettingsService.cpp" line="1166"/>
         <source>Gemini</source>
         <translation>Gemini</translation>
     </message>
     <message>
-        <location filename="../src/viewmodels/SettingsService.cpp" line="1173"/>
+        <location filename="../src/viewmodels/SettingsService.cpp" line="1167"/>
         <source>Claude</source>
         <translation>Claude</translation>
     </message>
     <message>
-        <location filename="../src/viewmodels/SettingsService.cpp" line="1333"/>
+        <location filename="../src/viewmodels/SettingsService.cpp" line="1311"/>
         <source>向量模型 API 密钥加密失败，未保存更改。</source>
         <translation>Embedding API key encryption failed. Changes were not saved.</translation>
     </message>
     <message>
-        <location filename="../src/viewmodels/SettingsService.cpp" line="1460"/>
+        <location filename="../src/viewmodels/SettingsService.cpp" line="1438"/>
         <source>搜索 API 密钥加密失败，未保存更改。</source>
         <translation>Search API key encryption failed. Changes were not saved.</translation>
     </message>
     <message>
-        <location filename="../src/viewmodels/SettingsService.cpp" line="1489"/>
+        <location filename="../src/viewmodels/SettingsService.cpp" line="1467"/>
         <source>测试失败：未知的搜索服务 %1。</source>
         <translation>Test failed: unknown search provider %1.</translation>
     </message>
     <message>
-        <location filename="../src/viewmodels/SettingsService.cpp" line="1499"/>
+        <location filename="../src/viewmodels/SettingsService.cpp" line="1477"/>
         <source>测试失败：请先填写 %1 的 API Key。</source>
         <translation>Test failed: enter the API key for %1 first.</translation>
     </message>
     <message>
-        <location filename="../src/viewmodels/SettingsService.cpp" line="1507"/>
+        <location filename="../src/viewmodels/SettingsService.cpp" line="1485"/>
         <source>正在测试搜索连接…</source>
         <translation>Testing search connection…</translation>
     </message>
     <message>
-        <location filename="../src/viewmodels/SettingsService.cpp" line="1527"/>
+        <location filename="../src/viewmodels/SettingsService.cpp" line="1505"/>
         <source>%1 连接失败：%2</source>
         <translation>%1 connection failed: %2</translation>
     </message>
     <message>
-        <location filename="../src/viewmodels/SettingsService.cpp" line="1531"/>
+        <location filename="../src/viewmodels/SettingsService.cpp" line="1509"/>
         <source>%1 连接正常（返回 %2 条结果）。</source>
         <translation>%1 connection is working (%2 results returned).</translation>
     </message>
     <message>
-        <location filename="../src/viewmodels/SettingsService.cpp" line="1623"/>
+        <location filename="../src/viewmodels/SettingsService.cpp" line="1601"/>
         <source>代理认证信息加密失败，未保存更改。</source>
         <translation>Failed to encrypt proxy credentials; changes were not saved.</translation>
     </message>
     <message>
-        <location filename="../src/viewmodels/SettingsService.cpp" line="1688"/>
+        <location filename="../src/viewmodels/SettingsService.cpp" line="1666"/>
         <source>代理测试失败：测试地址无效。</source>
         <translation>Proxy test failed: invalid test URL.</translation>
     </message>
     <message>
-        <location filename="../src/viewmodels/SettingsService.cpp" line="1694"/>
+        <location filename="../src/viewmodels/SettingsService.cpp" line="1672"/>
         <source>代理测试失败：请先填写有效的代理地址和端口。</source>
         <translation>Proxy test failed: enter a valid proxy host and port first.</translation>
     </message>
     <message>
-        <location filename="../src/viewmodels/SettingsService.cpp" line="1719"/>
+        <location filename="../src/viewmodels/SettingsService.cpp" line="1697"/>
         <source>正在测试代理…</source>
         <translation>Testing proxy…</translation>
     </message>
     <message>
-        <location filename="../src/viewmodels/SettingsService.cpp" line="1744"/>
+        <location filename="../src/viewmodels/SettingsService.cpp" line="1722"/>
         <source>代理测试失败：%1</source>
         <translation>Proxy test failed: %1</translation>
     </message>
     <message>
-        <location filename="../src/viewmodels/SettingsService.cpp" line="1750"/>
+        <location filename="../src/viewmodels/SettingsService.cpp" line="1728"/>
         <source>代理测试失败：未收到任何 HTTP 响应。</source>
         <translation>Proxy test failed: no HTTP response received.</translation>
     </message>
     <message>
-        <location filename="../src/viewmodels/SettingsService.cpp" line="1753"/>
+        <location filename="../src/viewmodels/SettingsService.cpp" line="1731"/>
         <source>代理连接正常（HTTP %1）。</source>
         <translation>Proxy connection is working (HTTP %1).</translation>
     </message>
     <message>
-        <location filename="../src/viewmodels/SettingsService.cpp" line="2150"/>
+        <location filename="../src/viewmodels/SettingsService.cpp" line="2122"/>
         <source>无法更新 Windows 开机自启动设置。</source>
         <translation>Could not update Windows startup settings.</translation>
     </message>
     <message>
-        <location filename="../src/viewmodels/SettingsService.cpp" line="606"/>
+        <location filename="../src/viewmodels/SettingsService.cpp" line="600"/>
         <source>技术评审</source>
         <translation>Rigorous code reviewer</translation>
     </message>
     <message>
-        <location filename="../src/viewmodels/SettingsService.cpp" line="607"/>
+        <location filename="../src/viewmodels/SettingsService.cpp" line="601"/>
         <source>你是一位严谨的技术评审。审查代码时只关注真实问题：正确性缺陷、边界条件、安全隐患、性能陷阱与可维护性风险。不写客套与表扬，按严重程度排序输出发现，每条给出位置与具体修改建议。没有问题时明确说&quot;未发现问题&quot;，不硬凑。</source>
         <translation>You are a rigorous code reviewer. Focus only on real problems: correctness defects, edge cases, security risks, performance traps and maintainability issues. No pleasantries or praise - report findings ordered by severity, each with a location and a concrete fix. When there is nothing to find, say so plainly instead of inventing issues.</translation>
     </message>
     <message>
-        <location filename="../src/viewmodels/SettingsService.cpp" line="610"/>
+        <location filename="../src/viewmodels/SettingsService.cpp" line="604"/>
         <source>资深架构师</source>
         <translation>Senior architect</translation>
     </message>
     <message>
-        <location filename="../src/viewmodels/SettingsService.cpp" line="611"/>
+        <location filename="../src/viewmodels/SettingsService.cpp" line="605"/>
         <source>你是一位资深软件架构师。面对需求先明确约束与取舍，再给方案：优先给出最小可行的解决路径，说明所选方案的代价与放弃的替代项。复杂设计先讲清结构再动手，始终警惕过度设计与过早优化。</source>
         <translation>You are a senior software architect. Clarify constraints and trade-offs before proposing anything: prefer the minimal viable path, and state what the chosen approach costs and which alternatives were rejected. For complex designs explain the structure before writing code; stay alert to over-engineering and premature optimization.</translation>
     </message>
     <message>
-        <location filename="../src/viewmodels/SettingsService.cpp" line="614"/>
+        <location filename="../src/viewmodels/SettingsService.cpp" line="608"/>
         <source>耐心导师</source>
         <translation>Patient mentor</translation>
     </message>
     <message>
-        <location filename="../src/viewmodels/SettingsService.cpp" line="615"/>
+        <location filename="../src/viewmodels/SettingsService.cpp" line="609"/>
         <source>你是一位耐心的技术导师，面向初学者解释问题。每次只引入一个新概念，用类比帮助理解，先讲&quot;为什么&quot;再讲&quot;怎么做&quot;。学生答错时不直接给答案，先给提示；确认理解后再继续下一步。</source>
         <translation>You are a patient technical mentor teaching beginners. Introduce one new concept at a time, use analogies, and always explain the &quot;why&quot; before the &quot;how&quot;. When the learner gets it wrong, offer a hint instead of the answer; confirm understanding before moving on.</translation>
     </message>
     <message>
-        <location filename="../src/viewmodels/SettingsService.cpp" line="618"/>
+        <location filename="../src/viewmodels/SettingsService.cpp" line="612"/>
         <source>简洁模式</source>
         <translation>Concise mode</translation>
     </message>
     <message>
-        <location filename="../src/viewmodels/SettingsService.cpp" line="619"/>
+        <location filename="../src/viewmodels/SettingsService.cpp" line="613"/>
         <source>用尽可能少的篇幅回答。优先给结论和关键依据，不写铺垫、总结与客套；能一句话说清的不用两句。需要展开时先给一句话版本，被追问再展开。</source>
         <translation>Answer in as few words as possible. Lead with the conclusion and the key evidence - no preamble, no summary, no pleasantries; if one sentence suffices, never use two. When detail is needed, give the one-line version first and expand only when asked.</translation>
     </message>
     <message>
-        <location filename="../src/viewmodels/SettingsService.cpp" line="634"/>
+        <location filename="../src/viewmodels/SettingsService.cpp" line="628"/>
         <source>审查代码或 diff</source>
         <translation>Review code or a diff</translation>
     </message>
     <message>
-        <location filename="../src/viewmodels/SettingsService.cpp" line="635"/>
+        <location filename="../src/viewmodels/SettingsService.cpp" line="629"/>
         <source>请审查以下代码，重点检查正确性问题、边界条件与潜在 bug，按严重程度排序；只给关键修改建议，不要重写全部：
 
 {text}</source>
@@ -7058,12 +7052,12 @@ Select or import a project in the sidebar first.</translation>
 {text}</translation>
     </message>
     <message>
-        <location filename="../src/viewmodels/SettingsService.cpp" line="637"/>
+        <location filename="../src/viewmodels/SettingsService.cpp" line="631"/>
         <source>解释代码</source>
         <translation>Explain code</translation>
     </message>
     <message>
-        <location filename="../src/viewmodels/SettingsService.cpp" line="638"/>
+        <location filename="../src/viewmodels/SettingsService.cpp" line="632"/>
         <source>请详细解释下面代码的作用与执行逻辑，包括关键分支、边界处理和可能的坑：
 
 {text}</source>
@@ -7072,12 +7066,12 @@ Select or import a project in the sidebar first.</translation>
 {text}</translation>
     </message>
     <message>
-        <location filename="../src/viewmodels/SettingsService.cpp" line="639"/>
+        <location filename="../src/viewmodels/SettingsService.cpp" line="633"/>
         <source>翻译成英文</source>
         <translation>Translate to English</translation>
     </message>
     <message>
-        <location filename="../src/viewmodels/SettingsService.cpp" line="640"/>
+        <location filename="../src/viewmodels/SettingsService.cpp" line="634"/>
         <source>将下面的内容翻译成英文，保持原意与语气；技术术语、专有名词与代码保持原文：
 
 {text}</source>
@@ -7086,12 +7080,12 @@ Select or import a project in the sidebar first.</translation>
 {text}</translation>
     </message>
     <message>
-        <location filename="../src/viewmodels/SettingsService.cpp" line="641"/>
+        <location filename="../src/viewmodels/SettingsService.cpp" line="635"/>
         <source>生成提交信息</source>
         <translation>Draft a commit message</translation>
     </message>
     <message>
-        <location filename="../src/viewmodels/SettingsService.cpp" line="642"/>
+        <location filename="../src/viewmodels/SettingsService.cpp" line="636"/>
         <source>为以下代码改动生成一条符合 Conventional Commits 规范的中文提交信息（格式：type(scope): subject，正文用要点列表说明动机与改动），只输出提交信息本身：
 
 {text}</source>
@@ -7100,32 +7094,32 @@ Select or import a project in the sidebar first.</translation>
 {text}</translation>
     </message>
     <message>
-        <location filename="../src/viewmodels/SettingsService.cpp" line="659"/>
+        <location filename="../src/viewmodels/SettingsService.cpp" line="653"/>
         <source>代码审查</source>
         <translation>Code review</translation>
     </message>
     <message>
-        <location filename="../src/viewmodels/SettingsService.cpp" line="661"/>
+        <location filename="../src/viewmodels/SettingsService.cpp" line="655"/>
         <source>请审查这个项目的近期改动：先看当前 git 状态与未提交的变更，再指出正确性、安全性与可维护性问题，按严重程度排序。</source>
         <translation>Review this project&apos;s recent changes: start with the current git status and uncommitted changes, then report correctness, security and maintainability issues ordered by severity.</translation>
     </message>
     <message>
-        <location filename="../src/viewmodels/SettingsService.cpp" line="663"/>
+        <location filename="../src/viewmodels/SettingsService.cpp" line="657"/>
         <source>项目探索</source>
         <translation>Explore project</translation>
     </message>
     <message>
-        <location filename="../src/viewmodels/SettingsService.cpp" line="665"/>
+        <location filename="../src/viewmodels/SettingsService.cpp" line="659"/>
         <source>我是第一次接触这个项目。请带我了解它：先浏览目录结构，然后介绍核心模块的职责、它们之间的数据流，以及从哪里开始读代码最合适。</source>
         <translation>I am new to this project. Walk me through it: first the directory layout, then what each core module is responsible for, how data flows between them, and where I should start reading.</translation>
     </message>
     <message>
-        <location filename="../src/viewmodels/SettingsService.cpp" line="667"/>
+        <location filename="../src/viewmodels/SettingsService.cpp" line="661"/>
         <source>快速润色</source>
         <translation>Quick polish</translation>
     </message>
     <message>
-        <location filename="../src/viewmodels/SettingsService.cpp" line="669"/>
+        <location filename="../src/viewmodels/SettingsService.cpp" line="663"/>
         <source>请润色我接下来粘贴的文字：保持原意不变，让它更清晰、专业、简洁，并保留我的语气。</source>
         <translation>Polish the text I am about to paste: keep the meaning unchanged while making it clearer, more professional and more concise, preserving my voice.</translation>
     </message>
@@ -7529,31 +7523,36 @@ Select or import a project in the sidebar first.</translation>
     </message>
     <message>
         <location filename="../src/ui/components/ProcessCard.qml" line="252"/>
+        <source>停止</source>
+        <translation>Stop</translation>
+    </message>
+    <message>
+        <location filename="../src/ui/components/ProcessCard.qml" line="284"/>
         <source>查看证据</source>
         <translation>View evidence</translation>
     </message>
     <message>
-        <location filename="../src/ui/components/ProcessCard.qml" line="294"/>
+        <location filename="../src/ui/components/ProcessCard.qml" line="326"/>
         <source>已折叠 · %1 条过程记录</source>
-        <translation type="unfinished">Collapsed · %1 process entries</translation>
+        <translation>Collapsed · %1 process entries</translation>
     </message>
     <message>
-        <location filename="../src/ui/components/ProcessCard.qml" line="295"/>
+        <location filename="../src/ui/components/ProcessCard.qml" line="327"/>
         <source>已折叠 · %1 字符</source>
         <translation>Collapsed · %1 chars</translation>
     </message>
     <message>
-        <location filename="../src/ui/components/ProcessCard.qml" line="422"/>
+        <location filename="../src/ui/components/ProcessCard.qml" line="454"/>
         <source>变更预览:</source>
         <translation>Change preview:</translation>
     </message>
     <message>
-        <location filename="../src/ui/components/ProcessCard.qml" line="442"/>
+        <location filename="../src/ui/components/ProcessCard.qml" line="474"/>
         <source>拒绝</source>
         <translation>Reject</translation>
     </message>
     <message>
-        <location filename="../src/ui/components/ProcessCard.qml" line="450"/>
+        <location filename="../src/ui/components/ProcessCard.qml" line="482"/>
         <source>允许</source>
         <translation>Allow</translation>
     </message>
@@ -8188,12 +8187,12 @@ Select or import a project in the sidebar first.</translation>
 <context>
     <name>QObject</name>
     <message>
-        <location filename="../src/main.cpp" line="988"/>
+        <location filename="../src/main.cpp" line="986"/>
         <source>显示/隐藏主窗</source>
         <translation>Show / hide main window</translation>
     </message>
     <message>
-        <location filename="../src/main.cpp" line="989"/>
+        <location filename="../src/main.cpp" line="987"/>
         <source>新建会话</source>
         <translation>New session</translation>
     </message>
@@ -8206,62 +8205,62 @@ Select or import a project in the sidebar first.</translation>
         <translation type="vanished">(No profiles yet)</translation>
     </message>
     <message>
-        <location filename="../src/main.cpp" line="991"/>
+        <location filename="../src/main.cpp" line="989"/>
         <source>退出</source>
         <translation>Quit</translation>
     </message>
     <message>
-        <location filename="../src/main.cpp" line="1052"/>
+        <location filename="../src/main.cpp" line="1050"/>
         <source>任务完成</source>
         <translation>Task finished</translation>
     </message>
     <message>
-        <location filename="../src/main.cpp" line="1052"/>
+        <location filename="../src/main.cpp" line="1050"/>
         <source>任务结束</source>
         <translation>Task ended</translation>
     </message>
     <message>
-        <location filename="../src/main.cpp" line="1053"/>
+        <location filename="../src/main.cpp" line="1051"/>
         <source>会话已回复</source>
         <translation>The session has replied</translation>
     </message>
     <message>
-        <location filename="../src/main.cpp" line="1068"/>
+        <location filename="../src/main.cpp" line="1066"/>
         <source>今日 Token</source>
         <translation>Today&apos;s tokens</translation>
     </message>
     <message>
-        <location filename="../src/main.cpp" line="1070"/>
+        <location filename="../src/main.cpp" line="1068"/>
         <source>今日费用</source>
         <translation>Today&apos;s cost</translation>
     </message>
     <message>
-        <location filename="../src/main.cpp" line="1072"/>
+        <location filename="../src/main.cpp" line="1070"/>
         <source>本月 Token</source>
         <translation>This month&apos;s tokens</translation>
     </message>
     <message>
-        <location filename="../src/main.cpp" line="1074"/>
+        <location filename="../src/main.cpp" line="1072"/>
         <source>本月费用</source>
         <translation>This month&apos;s cost</translation>
     </message>
     <message>
-        <location filename="../src/main.cpp" line="1078"/>
+        <location filename="../src/main.cpp" line="1076"/>
         <source>用量接近配额上限</source>
         <translation>Usage nearing quota</translation>
     </message>
     <message>
-        <location filename="../src/main.cpp" line="1079"/>
+        <location filename="../src/main.cpp" line="1077"/>
         <source>%1 已用 %2 / %3</source>
         <translation>%1: %2 of %3 used</translation>
     </message>
     <message>
-        <location filename="../src/main.cpp" line="1141"/>
+        <location filename="../src/main.cpp" line="1139"/>
         <source>自动备份失败</source>
         <translation>Automatic backup failed</translation>
     </message>
     <message>
-        <location filename="../src/main.cpp" line="1142"/>
+        <location filename="../src/main.cpp" line="1140"/>
         <source>无法写入数据库快照目录：%1</source>
         <translation>Could not write the database snapshot to: %1</translation>
     </message>
@@ -9278,7 +9277,7 @@ select a file to view its content diff on the right.</translation>
 <context>
     <name>SettingsSearch</name>
     <message>
-        <location filename="../src/viewmodels/SettingsCatalog.cpp" line="215"/>
+        <location filename="../src/viewmodels/SettingsCatalog.cpp" line="211"/>
         <source>项目规则</source>
         <translation>Project rules</translation>
     </message>
@@ -9337,12 +9336,12 @@ select a file to view its content diff on the right.</translation>
         <translation type="vanished">File Read Sandbox</translation>
     </message>
     <message>
-        <location filename="../src/viewmodels/SettingsCatalog.cpp" line="140"/>
+        <location filename="../src/viewmodels/SettingsCatalog.cpp" line="136"/>
         <source>允许写入当前项目目录</source>
         <translation>Allow writing into the current project folder</translation>
     </message>
     <message>
-        <location filename="../src/viewmodels/SettingsCatalog.cpp" line="143"/>
+        <location filename="../src/viewmodels/SettingsCatalog.cpp" line="139"/>
         <source>黑名单</source>
         <translation>Blacklist</translation>
     </message>
@@ -9351,12 +9350,12 @@ select a file to view its content diff on the right.</translation>
         <translation type="vanished">Privacy Gates</translation>
     </message>
     <message>
-        <location filename="../src/viewmodels/SettingsCatalog.cpp" line="109"/>
+        <location filename="../src/viewmodels/SettingsCatalog.cpp" line="105"/>
         <source>MCP 服务器</source>
         <translation>MCP Servers</translation>
     </message>
     <message>
-        <location filename="../src/viewmodels/SettingsCatalog.cpp" line="87"/>
+        <location filename="../src/viewmodels/SettingsCatalog.cpp" line="83"/>
         <source>工具管理</source>
         <translation>Tool management</translation>
     </message>
@@ -9365,7 +9364,7 @@ select a file to view its content diff on the right.</translation>
         <translation type="vanished">Web Search</translation>
     </message>
     <message>
-        <location filename="../src/viewmodels/SettingsCatalog.cpp" line="103"/>
+        <location filename="../src/viewmodels/SettingsCatalog.cpp" line="99"/>
         <source>默认权限模式</source>
         <translation>Default Permission Mode</translation>
     </message>
@@ -9382,47 +9381,47 @@ select a file to view its content diff on the right.</translation>
         <translation type="vanished">Quota Settings</translation>
     </message>
     <message>
-        <location filename="../src/viewmodels/SettingsCatalog.cpp" line="241"/>
+        <location filename="../src/viewmodels/SettingsCatalog.cpp" line="237"/>
         <source>用量统计</source>
         <translation>Usage Statistics</translation>
     </message>
     <message>
-        <location filename="../src/viewmodels/SettingsCatalog.cpp" line="246"/>
+        <location filename="../src/viewmodels/SettingsCatalog.cpp" line="242"/>
         <source>活动记录</source>
         <translation>Activity Log</translation>
     </message>
     <message>
-        <location filename="../src/viewmodels/SettingsCatalog.cpp" line="251"/>
+        <location filename="../src/viewmodels/SettingsCatalog.cpp" line="247"/>
         <source>日志级别</source>
         <translation>Log Level</translation>
     </message>
     <message>
-        <location filename="../src/viewmodels/SettingsCatalog.cpp" line="254"/>
+        <location filename="../src/viewmodels/SettingsCatalog.cpp" line="250"/>
         <source>日志目录</source>
         <translation>Log directory</translation>
     </message>
     <message>
-        <location filename="../src/viewmodels/SettingsCatalog.cpp" line="257"/>
+        <location filename="../src/viewmodels/SettingsCatalog.cpp" line="253"/>
         <source>单个日志文件上限</source>
         <translation>Max log file size</translation>
     </message>
     <message>
-        <location filename="../src/viewmodels/SettingsCatalog.cpp" line="260"/>
+        <location filename="../src/viewmodels/SettingsCatalog.cpp" line="256"/>
         <source>保留日志文件数</source>
         <translation>Number of log files to keep</translation>
     </message>
     <message>
-        <location filename="../src/viewmodels/SettingsCatalog.cpp" line="265"/>
+        <location filename="../src/viewmodels/SettingsCatalog.cpp" line="261"/>
         <source>设置导出与导入</source>
         <translation>Settings Export and Import</translation>
     </message>
     <message>
-        <location filename="../src/viewmodels/SettingsCatalog.cpp" line="268"/>
+        <location filename="../src/viewmodels/SettingsCatalog.cpp" line="264"/>
         <source>数据库备份</source>
         <translation>Database backup</translation>
     </message>
     <message>
-        <location filename="../src/viewmodels/SettingsCatalog.cpp" line="191"/>
+        <location filename="../src/viewmodels/SettingsCatalog.cpp" line="187"/>
         <source>系统提示预设</source>
         <translation>System prompt presets</translation>
     </message>
@@ -9465,258 +9464,256 @@ select a file to view its content diff on the right.</translation>
         <translation>Sub-agent parallelism cap</translation>
     </message>
     <message>
-        <location filename="../src/viewmodels/SettingsCatalog.cpp" line="79"/>
         <source>子代理步数预算</source>
-        <translation>Sub-agent step budget</translation>
+        <translation type="vanished">Sub-agent step budget</translation>
     </message>
     <message>
-        <location filename="../src/viewmodels/SettingsCatalog.cpp" line="82"/>
         <source>子代理超时（秒）</source>
-        <translation>Sub-agent timeout (seconds)</translation>
+        <translation type="vanished">Sub-agent timeout (seconds)</translation>
     </message>
     <message>
-        <location filename="../src/viewmodels/SettingsCatalog.cpp" line="90"/>
+        <location filename="../src/viewmodels/SettingsCatalog.cpp" line="86"/>
         <source>联网搜索服务</source>
         <translation>Web search provider</translation>
     </message>
     <message>
-        <location filename="../src/viewmodels/SettingsCatalog.cpp" line="94"/>
+        <location filename="../src/viewmodels/SettingsCatalog.cpp" line="90"/>
         <source>联网搜索 API Key</source>
         <translation>Web search API key</translation>
     </message>
     <message>
-        <location filename="../src/viewmodels/SettingsCatalog.cpp" line="97"/>
+        <location filename="../src/viewmodels/SettingsCatalog.cpp" line="93"/>
         <source>智谱搜索密钥</source>
         <translation>Zhipu search API key</translation>
     </message>
     <message>
-        <location filename="../src/viewmodels/SettingsCatalog.cpp" line="100"/>
+        <location filename="../src/viewmodels/SettingsCatalog.cpp" line="96"/>
         <source>DeepSeek 搜索密钥</source>
         <translation>DeepSeek search API key</translation>
     </message>
     <message>
-        <location filename="../src/viewmodels/SettingsCatalog.cpp" line="114"/>
+        <location filename="../src/viewmodels/SettingsCatalog.cpp" line="110"/>
         <source>代理模式</source>
         <translation>Proxy mode</translation>
     </message>
     <message>
-        <location filename="../src/viewmodels/SettingsCatalog.cpp" line="117"/>
+        <location filename="../src/viewmodels/SettingsCatalog.cpp" line="113"/>
         <source>代理服务器地址</source>
         <translation>Proxy server address</translation>
     </message>
     <message>
-        <location filename="../src/viewmodels/SettingsCatalog.cpp" line="120"/>
+        <location filename="../src/viewmodels/SettingsCatalog.cpp" line="116"/>
         <source>代理端口</source>
         <translation>Proxy port</translation>
     </message>
     <message>
-        <location filename="../src/viewmodels/SettingsCatalog.cpp" line="123"/>
+        <location filename="../src/viewmodels/SettingsCatalog.cpp" line="119"/>
         <source>代理用户名</source>
         <translation>Proxy username</translation>
     </message>
     <message>
-        <location filename="../src/viewmodels/SettingsCatalog.cpp" line="126"/>
+        <location filename="../src/viewmodels/SettingsCatalog.cpp" line="122"/>
         <source>代理密码</source>
         <translation>Proxy password</translation>
     </message>
     <message>
-        <location filename="../src/viewmodels/SettingsCatalog.cpp" line="129"/>
+        <location filename="../src/viewmodels/SettingsCatalog.cpp" line="125"/>
         <source>代理认证数据</source>
         <translation>Proxy credentials</translation>
     </message>
     <message>
-        <location filename="../src/viewmodels/SettingsCatalog.cpp" line="132"/>
+        <location filename="../src/viewmodels/SettingsCatalog.cpp" line="128"/>
         <source>测试代理</source>
         <translation>Test proxy</translation>
     </message>
     <message>
-        <location filename="../src/viewmodels/SettingsCatalog.cpp" line="137"/>
+        <location filename="../src/viewmodels/SettingsCatalog.cpp" line="133"/>
         <source>允许读取整个磁盘</source>
         <translation>Allow reading the entire disk</translation>
     </message>
     <message>
-        <location filename="../src/viewmodels/SettingsCatalog.cpp" line="146"/>
+        <location filename="../src/viewmodels/SettingsCatalog.cpp" line="142"/>
         <source>仅本地模式</source>
         <translation>Local-only mode</translation>
     </message>
     <message>
-        <location filename="../src/viewmodels/SettingsCatalog.cpp" line="149"/>
+        <location filename="../src/viewmodels/SettingsCatalog.cpp" line="145"/>
         <source>允许 http_fetch 访问本机与内网地址</source>
         <translation>Allow http_fetch to access localhost and intranet addresses</translation>
     </message>
     <message>
-        <location filename="../src/viewmodels/SettingsCatalog.cpp" line="154"/>
+        <location filename="../src/viewmodels/SettingsCatalog.cpp" line="150"/>
         <source>启用长期记忆</source>
         <translation>Enable long-term memory</translation>
     </message>
     <message>
-        <location filename="../src/viewmodels/SettingsCatalog.cpp" line="157"/>
+        <location filename="../src/viewmodels/SettingsCatalog.cpp" line="153"/>
         <source>审计日志保留天数</source>
         <translation>Audit log retention (days)</translation>
     </message>
     <message>
-        <location filename="../src/viewmodels/SettingsCatalog.cpp" line="160"/>
+        <location filename="../src/viewmodels/SettingsCatalog.cpp" line="156"/>
         <source>Token 用量保留天数</source>
         <translation>Token usage retention (days)</translation>
     </message>
     <message>
-        <location filename="../src/viewmodels/SettingsCatalog.cpp" line="163"/>
+        <location filename="../src/viewmodels/SettingsCatalog.cpp" line="159"/>
         <source>长期记忆列表</source>
         <translation>Long-term memory list</translation>
     </message>
     <message>
-        <location filename="../src/viewmodels/SettingsCatalog.cpp" line="166"/>
+        <location filename="../src/viewmodels/SettingsCatalog.cpp" line="162"/>
         <source>启动时自动备份</source>
         <translation>Back up on startup</translation>
     </message>
     <message>
-        <location filename="../src/viewmodels/SettingsCatalog.cpp" line="169"/>
+        <location filename="../src/viewmodels/SettingsCatalog.cpp" line="165"/>
         <source>备份保留数量</source>
         <translation>Backup retention count</translation>
     </message>
     <message>
-        <location filename="../src/viewmodels/SettingsCatalog.cpp" line="172"/>
+        <location filename="../src/viewmodels/SettingsCatalog.cpp" line="168"/>
         <source>定时备份间隔</source>
         <translation>Scheduled backup interval</translation>
     </message>
     <message>
-        <location filename="../src/viewmodels/SettingsCatalog.cpp" line="177"/>
+        <location filename="../src/viewmodels/SettingsCatalog.cpp" line="173"/>
         <source>嵌入服务提供方</source>
         <translation>Embedding provider</translation>
     </message>
     <message>
-        <location filename="../src/viewmodels/SettingsCatalog.cpp" line="180"/>
+        <location filename="../src/viewmodels/SettingsCatalog.cpp" line="176"/>
         <source>嵌入模型</source>
         <translation>Embedding Model</translation>
     </message>
     <message>
-        <location filename="../src/viewmodels/SettingsCatalog.cpp" line="183"/>
+        <location filename="../src/viewmodels/SettingsCatalog.cpp" line="179"/>
         <source>嵌入服务地址</source>
         <translation>Embedding Endpoint</translation>
     </message>
     <message>
-        <location filename="../src/viewmodels/SettingsCatalog.cpp" line="186"/>
+        <location filename="../src/viewmodels/SettingsCatalog.cpp" line="182"/>
         <source>向量模型 API Key</source>
         <translation>Embedding API key</translation>
     </message>
     <message>
-        <location filename="../src/viewmodels/SettingsCatalog.cpp" line="194"/>
+        <location filename="../src/viewmodels/SettingsCatalog.cpp" line="190"/>
         <source>斜杠指令</source>
         <translation>Slash commands</translation>
     </message>
     <message>
-        <location filename="../src/viewmodels/SettingsCatalog.cpp" line="197"/>
+        <location filename="../src/viewmodels/SettingsCatalog.cpp" line="193"/>
         <source>会话模板</source>
         <translation>Session templates</translation>
     </message>
     <message>
-        <location filename="../src/viewmodels/SettingsCatalog.cpp" line="200"/>
+        <location filename="../src/viewmodels/SettingsCatalog.cpp" line="196"/>
         <source>提示词预设数据</source>
         <translation>Prompt preset data</translation>
     </message>
     <message>
-        <location filename="../src/viewmodels/SettingsCatalog.cpp" line="203"/>
+        <location filename="../src/viewmodels/SettingsCatalog.cpp" line="199"/>
         <source>斜杠指令数据</source>
         <translation>Slash command data</translation>
     </message>
     <message>
-        <location filename="../src/viewmodels/SettingsCatalog.cpp" line="206"/>
+        <location filename="../src/viewmodels/SettingsCatalog.cpp" line="202"/>
         <source>会话模板数据</source>
         <translation>Session template data</translation>
     </message>
     <message>
-        <location filename="../src/viewmodels/SettingsCatalog.cpp" line="210"/>
+        <location filename="../src/viewmodels/SettingsCatalog.cpp" line="206"/>
         <source>子代理角色数据</source>
         <translation>Sub-agent role data</translation>
     </message>
     <message>
-        <location filename="../src/viewmodels/SettingsCatalog.cpp" line="218"/>
+        <location filename="../src/viewmodels/SettingsCatalog.cpp" line="214"/>
         <source>当前项目</source>
         <translation>Current project</translation>
     </message>
     <message>
-        <location filename="../src/viewmodels/SettingsCatalog.cpp" line="223"/>
+        <location filename="../src/viewmodels/SettingsCatalog.cpp" line="219"/>
         <source>每日 Token 上限</source>
         <translation>Daily Token Limit</translation>
     </message>
     <message>
-        <location filename="../src/viewmodels/SettingsCatalog.cpp" line="226"/>
+        <location filename="../src/viewmodels/SettingsCatalog.cpp" line="222"/>
         <source>每月 Token 上限</source>
         <translation>Monthly Token Limit</translation>
     </message>
     <message>
-        <location filename="../src/viewmodels/SettingsCatalog.cpp" line="229"/>
+        <location filename="../src/viewmodels/SettingsCatalog.cpp" line="225"/>
         <source>每日费用上限</source>
         <translation>Daily cost limit</translation>
     </message>
     <message>
-        <location filename="../src/viewmodels/SettingsCatalog.cpp" line="232"/>
+        <location filename="../src/viewmodels/SettingsCatalog.cpp" line="228"/>
         <source>每月费用上限</source>
         <translation>Monthly cost limit</translation>
     </message>
     <message>
-        <location filename="../src/viewmodels/SettingsCatalog.cpp" line="235"/>
+        <location filename="../src/viewmodels/SettingsCatalog.cpp" line="231"/>
         <source>超限拒绝请求</source>
         <translation>Reject at limit</translation>
     </message>
     <message>
-        <location filename="../src/viewmodels/SettingsCatalog.cpp" line="238"/>
+        <location filename="../src/viewmodels/SettingsCatalog.cpp" line="234"/>
         <source>用量告警阈值</source>
         <translation>Usage alert threshold</translation>
     </message>
     <message>
-        <location filename="../src/viewmodels/SettingsCatalog.cpp" line="273"/>
+        <location filename="../src/viewmodels/SettingsCatalog.cpp" line="269"/>
         <source>侧边栏宽度</source>
         <translation>Sidebar width</translation>
     </message>
     <message>
-        <location filename="../src/viewmodels/SettingsCatalog.cpp" line="276"/>
+        <location filename="../src/viewmodels/SettingsCatalog.cpp" line="272"/>
         <source>面板宽度</source>
         <translation>Panel width</translation>
     </message>
     <message>
-        <location filename="../src/viewmodels/SettingsCatalog.cpp" line="279"/>
+        <location filename="../src/viewmodels/SettingsCatalog.cpp" line="275"/>
         <source>面板可见</source>
         <translation>Panel visible</translation>
     </message>
     <message>
-        <location filename="../src/viewmodels/SettingsCatalog.cpp" line="282"/>
+        <location filename="../src/viewmodels/SettingsCatalog.cpp" line="278"/>
         <source>侧边栏展开</source>
         <translation>Sidebar expanded</translation>
     </message>
     <message>
-        <location filename="../src/viewmodels/SettingsCatalog.cpp" line="285"/>
+        <location filename="../src/viewmodels/SettingsCatalog.cpp" line="281"/>
         <source>显示过程</source>
         <translation>Show process</translation>
     </message>
     <message>
-        <location filename="../src/viewmodels/SettingsCatalog.cpp" line="288"/>
-        <location filename="../src/viewmodels/SettingsCatalog.cpp" line="290"/>
+        <location filename="../src/viewmodels/SettingsCatalog.cpp" line="284"/>
+        <location filename="../src/viewmodels/SettingsCatalog.cpp" line="286"/>
         <source>窗口位置</source>
         <translation>Window position</translation>
     </message>
     <message>
-        <location filename="../src/viewmodels/SettingsCatalog.cpp" line="292"/>
+        <location filename="../src/viewmodels/SettingsCatalog.cpp" line="288"/>
         <source>窗口宽度</source>
         <translation>Window width</translation>
     </message>
     <message>
-        <location filename="../src/viewmodels/SettingsCatalog.cpp" line="294"/>
+        <location filename="../src/viewmodels/SettingsCatalog.cpp" line="290"/>
         <source>窗口高度</source>
         <translation>Window height</translation>
     </message>
     <message>
-        <location filename="../src/viewmodels/SettingsCatalog.cpp" line="296"/>
+        <location filename="../src/viewmodels/SettingsCatalog.cpp" line="292"/>
         <source>窗口最大化</source>
         <translation>Window maximized</translation>
     </message>
     <message>
-        <location filename="../src/viewmodels/SettingsCatalog.cpp" line="299"/>
+        <location filename="../src/viewmodels/SettingsCatalog.cpp" line="295"/>
         <source>设置版本</source>
         <translation>Settings version</translation>
     </message>
     <message>
-        <location filename="../src/viewmodels/SettingsCatalog.cpp" line="302"/>
+        <location filename="../src/viewmodels/SettingsCatalog.cpp" line="298"/>
         <source>旧版深色主题</source>
         <translation>Legacy dark theme</translation>
     </message>

@@ -276,6 +276,11 @@ SubAgentReport SubAgentRunner::runImpl(IAIService* service, const SubAgentReques
     QElapsedTimer deadline;
     deadline.start();
 
+    // maxSteps <= 0 = 无预算：只留内部安全上限防失控；进度事件照实上报
+    // request.maxSteps（0），UI 标题显示 "step k" 而非误导性的 "k/1000"。
+    const int stepBudget = request.maxSteps > 0
+        ? request.maxSteps : kSubStepCap;
+
     QEventLoop loop;
     LLMResponse response;
     QString error;
@@ -337,10 +342,12 @@ SubAgentReport SubAgentRunner::runImpl(IAIService* service, const SubAgentReques
     // Per-round progress; the hook is optional, empty outside a dispatched run.
     const auto notify = [&](int stepNum, const QString& phase, const QString& detail) {
         if (request.progress)
-            request.progress(SubAgentProgress{stepNum, request.maxSteps, phase, detail});
+            request.progress(SubAgentProgress{stepNum,
+                                              request.maxSteps > 0 ? request.maxSteps : 0,
+                                              phase, detail});
     };
 
-    for (int step = 1; step <= request.maxSteps; ++step) {
+    for (int step = 1; step <= stepBudget; ++step) {
         report.steps = step;
         if (cancelledFlag()) {
             report.stop = SubAgentReport::Stop::Cancelled;
@@ -351,7 +358,7 @@ SubAgentReport SubAgentRunner::runImpl(IAIService* service, const SubAgentReques
         // On the last allowed step withhold the tool schema: the model must
         // turn what it gathered into an answer (mirrors AIAgent's forced
         // final) instead of burning the budget on one more call.
-        const bool forcedFinal = step == request.maxSteps;
+        const bool forcedFinal = step == stepBudget;
         notify(step, QStringLiteral("thinking"),
                forcedFinal ? QStringLiteral("final answer") : QString());
         gotResponse = false;
@@ -449,7 +456,7 @@ SubAgentReport SubAgentRunner::runImpl(IAIService* service, const SubAgentReques
     report.stop = SubAgentReport::Stop::Budget;
     report.text = QStringLiteral(
         "Sub-agent exhausted its step budget (%1) without a final report.")
-        .arg(request.maxSteps);
+        .arg(stepBudget);
     return report;
 }
 

@@ -234,10 +234,9 @@ const QVector<SettingsKeyDef>& SettingsSchema::registeredKeys() {
             keyDef(QStringLiteral("agent/subagentEnabled"), false, SettingValueType::Bool),
             keyDef(QStringLiteral("agent/subagentMaxParallel"), 3, SettingValueType::Int,
                    intRange(1, 8)),
-            keyDef(QStringLiteral("agent/subagentMaxSteps"), 12, SettingValueType::Int,
-                   intRange(2, 40)),
-            keyDef(QStringLiteral("agent/subagentTimeoutSec"), 300, SettingValueType::Int,
-                   intRange(30, 1800)),
+            // 2026-11-01：agent/subagentMaxSteps 与 agent/subagentTimeoutSec
+            // 已随「取消子代理步数/超时限制」移除——与主任务一致，模型自定
+            // 何时收工（Runner 内部只留防失控安全上限），用户可随时手动停止。
             // docs/33 E2: 子代理角色档案（JSON 资产，{name, prompt, tools[]}）。
             // 同 promptPresets：复合键由专门页面写，不入 setValueForSetting。
             keyDef(QStringLiteral("agent/subagentRoles"), QVariant(), SettingValueType::String),

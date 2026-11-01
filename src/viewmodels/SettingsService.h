@@ -70,8 +70,8 @@ class SettingsService : public QObject {
     // docs/32 P1: 子代理（spawn_agent）。P1 无设置页，P2 接界面。
     Q_PROPERTY(bool subagentEnabled READ subagentEnabled WRITE setSubagentEnabled NOTIFY subagentEnabledChanged FINAL)
     Q_PROPERTY(int subagentMaxParallel READ subagentMaxParallel WRITE setSubagentMaxParallel NOTIFY subagentMaxParallelChanged FINAL)
-    Q_PROPERTY(int subagentMaxSteps READ subagentMaxSteps WRITE setSubagentMaxSteps NOTIFY subagentMaxStepsChanged FINAL)
-    Q_PROPERTY(int subagentTimeoutSec READ subagentTimeoutSec WRITE setSubagentTimeoutSec NOTIFY subagentTimeoutSecChanged FINAL)
+    // 2026-11-01：subagentMaxSteps/subagentTimeoutSec 已随「取消子代理步数/
+    // 超时限制」移除（同主任务 maxSteps/taskTimeoutMinutes）。
     // docs/33 E2: 子代理角色档案（JSON 资产，{name, prompt, tools[]} 列表）。
     // 复合键走专门编辑区（同 promptPresets），不入 setValueForSetting。
     Q_PROPERTY(QVariantList subagentRoles READ subagentRoles WRITE setSubagentRoles NOTIFY subagentRolesChanged FINAL)
@@ -180,10 +180,6 @@ public:
     void setSubagentEnabled(bool enabled);
     int subagentMaxParallel() const { return m_subagentMaxParallel; }
     void setSubagentMaxParallel(int value);
-    int subagentMaxSteps() const { return m_subagentMaxSteps; }
-    void setSubagentMaxSteps(int value);
-    int subagentTimeoutSec() const { return m_subagentTimeoutSec; }
-    void setSubagentTimeoutSec(int seconds);
     QVariantList subagentRoles() const { return m_subagentRoles; }
     void setSubagentRoles(QVariantList roles);
 
@@ -503,8 +499,6 @@ signals:
     // docs/32 P1: 子代理设置信号。
     void subagentEnabledChanged();
     void subagentMaxParallelChanged();
-    void subagentMaxStepsChanged();
-    void subagentTimeoutSecChanged();
     void subagentRolesChanged();
 
     void allowFullDiskReadChanged();
@@ -579,8 +573,6 @@ private:
     // docs/32 P1: 子代理设置。
     bool m_subagentEnabled{};
     int m_subagentMaxParallel{};
-    int m_subagentMaxSteps{};
-    int m_subagentTimeoutSec{};
     QVariantList m_subagentRoles;   // docs/33 E2: 角色档案资产
 
     bool m_allowFullDiskRead{};
