@@ -152,7 +152,12 @@ ToolDefinition SubAgentTool::definition() const {
         "findings list back into your work before declaring the task done. "
         "Verify each finding and fix the valid ones yourself - do not "
         "debate with the sub-agent, and re-review only after a substantial "
-        "new batch of edits.");
+        "new batch of edits.\n"
+        "Plan alignment: write the plan with todo_write, then hand each "
+        "step to a sub-agent - pass the step's todo id in 'todo_id' and "
+        "restate the task itself in 'goal' (the sub-agent cannot see your "
+        "todo list). When the report returns, update that todo's status "
+        "with todo_write.");
     def.level = ToolLevel::Safe;
     def.autoEditSafe = true;
     def.readOnly = true;   // spawns read-only work only; usable in PlanOnly
@@ -190,6 +195,17 @@ ToolDefinition SubAgentTool::definition() const {
     properties.insert(QStringLiteral("goal"), goalProp);
     properties.insert(QStringLiteral("context"), contextProp);
     properties.insert(QStringLiteral("role"), roleProp);
+    // docs/33 E4: 计划对齐——todo 项（todo_write 有稳定 id）与子代理运行
+    // 的显式关联，审计可归因、报告头回显提醒同步状态。
+    QJsonObject todoIdProp{
+        {"type", QStringLiteral("string")},
+        {"description", QStringLiteral(
+            "Optional id of the todo item (see todo_write) this sub-task "
+            "implements. Echoed back in the report header and recorded in "
+            "the audit trail; when the report returns, update that item's "
+            "status via todo_write. The sub-agent cannot see your todo "
+            "list - restate the task itself in 'goal'.")}};
+    properties.insert(QStringLiteral("todo_id"), todoIdProp);
     QJsonArray required{QStringLiteral("goal")};
     def.parameters = QJsonObject{
         {"type", QStringLiteral("object")},
@@ -305,6 +321,12 @@ ToolResult SubAgentTool::execute(const QJsonObject& args, const Cancellation& ca
     // the audit-side stats regex (steps/tokens) matching.
     if (!report.artifactPath.isEmpty())
         stats += QStringLiteral(", evidence: %1").arg(report.artifactPath);
+    // docs/33 E4: 计划对齐回显——提醒模型按报告同步该 todo 项的状态
+    // （追加在 tokens 之后，stats 前缀形态不变）。
+    const QString todoId =
+        args.value(QStringLiteral("todo_id")).toString().trimmed();
+    if (!todoId.isEmpty())
+        stats += QStringLiteral(", todo: %1").arg(todoId);
     if (report.ok)
         return ToolResult::ok(QStringLiteral(
             "[Sub-agent report] (%1)\n\n%2").arg(stats, report.text));

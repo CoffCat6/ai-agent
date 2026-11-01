@@ -346,6 +346,9 @@ private:
     void finishToolExecution(const ToolCallInfo& call, const QString& traceNodeId,
                              const ToolResult& result, bool autoApproved = false);
     void appendToolResultMessage(const ToolCallInfo& call, const QString& content);
+    // docs/33 E4: todo_write 稳定 id 调和（显式 id 优先 → content 匹配 →
+    // 新分配 t<n>），同步 m_todoList/UI/持久化，返回带 id 的 JSON 供历史。
+    QString reconcileTodoIds(const QString& todoJson);
     void finishTask(const QString& finalText, bool summaryTraced = false);
     void failTask(const QString& error);
 

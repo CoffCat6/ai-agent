@@ -2241,10 +2241,16 @@ void AIAgent::finishToolExecution(const ToolCallInfo& call, const QString& trace
     appendTraceNode("tool_result", call.name,
                     result.success ? "success" : "failed", resultExtra);
 
+    // docs/33 E4: todo_write 的稳定 id 在结果进历史前调和——模型下一轮
+    // 看到的工具结果就是带 id 的列表（spawn_agent 可引用，面板可锚定）。
+    QString historyOutput = result.success
+        ? result.output
+        : QStringLiteral("Error: %1").arg(result.error);
+    if (result.success && call.name == QStringLiteral("todo_write"))
+        historyOutput = reconcileTodoIds(historyOutput);
+
     appendToolResultMessage(call, truncateText(
-        result.success ? result.output
-                       : QStringLiteral("Error: %1").arg(result.error),
-        kMaxToolResultChars));
+        historyOutput, kMaxToolResultChars));
 
     if (m_memory) {
         // Batch 31a: surface the originating MCP server in the audit trail
@@ -2270,10 +2276,18 @@ void AIAgent::finishToolExecution(const ToolCallInfo& call, const QString& trace
                 QStringLiteral("steps: (\\d+), tokens: (\\d+)"));
             const QRegularExpressionMatch match =
                 statsRe.match(result.success ? result.output : result.error);
-            const QJsonObject detail{
+            // 非 const：下面要往里写 subagent_todo（const operator[] 的
+            // 赋值在 Qt6 是对临时量的空操作）。
+            QJsonObject detail{
                 {"output", auditDetail},
                 {"subagent_steps", match.hasMatch() ? match.captured(1).toInt() : 0},
                 {"subagent_tokens", match.hasMatch() ? match.captured(2).toInt() : 0}};
+            // docs/33 E4: 计划对齐——调用带了 todo_id 时落审计，任务清单
+            // 项 ↔ 子代理运行的对应关系可追溯。
+            const QString spawnTodoId =
+                call.arguments.value(QStringLiteral("todo_id")).toString().trimmed();
+            if (!spawnTodoId.isEmpty())
+                detail["subagent_todo"] = spawnTodoId;
             auditDetail = QString::fromUtf8(
                 QJsonDocument(detail).toJson(QJsonDocument::Compact));
             detailIsJson = true;
@@ -2318,20 +2332,8 @@ void AIAgent::finishToolExecution(const ToolCallInfo& call, const QString& trace
         }
     }
 
-    // P5a: todo_write tool updates the agent's task list and notifies the UI.
-    if (result.success && call.name == QStringLiteral("todo_write")) {
-        const QJsonDocument doc = QJsonDocument::fromJson(result.output.toUtf8());
-        if (doc.isArray()) {
-            m_todoList = doc.array();
-            emit todoListChanged(m_todoList);
-            // F1: persist per session so reopening the session restores its
-            // own list instead of starting empty. GUI thread only — the DB
-            // connection is thread-bound (same discipline as the checkpoint
-            // write above).
-            if (m_memory && !m_sessionId.isEmpty())
-                m_memory->saveSessionTodos(m_sessionId, m_todoList);
-        }
-    }
+    // P5a/E4: todo_write 的 m_todoList/UI/持久化已由 reconcileTodoIds 处理
+    // （含稳定 id 分配）；此处不再重复解析 result.output。
 
     // P2: wait for all parallel tools to finish before resuming the loop —
     // results from concurrent tools are batched into one LLM turn.
@@ -2352,6 +2354,64 @@ void AIAgent::appendToolResultMessage(const ToolCallInfo& call, const QString& c
     toolMsg["content"] = content;
     m_messages.append(toolMsg);
     notifyTokens();
+}
+
+// docs/33 E4: todo_write is a full-list replace, so item identity needs a
+// reconciliation pass — an explicit id the model passed back wins (it is
+// referencing a known item, content change included), then content matching
+// against the previous list consumes each old id once, and anything left
+// gets the next t<n>. The counter is the highest suffix ever seen, so ids
+// are never reused within a session; fabricated ids (t9 on a fresh list)
+// are replaced. Runs on the GUI thread inside finishToolExecution; updates
+// m_todoList, the UI and the per-session persistence, and returns the
+// reconciled JSON for the tool-result message the model reads next turn.
+QString AIAgent::reconcileTodoIds(const QString& todoJson) {
+    const QJsonDocument doc = QJsonDocument::fromJson(todoJson.toUtf8());
+    if (!doc.isArray()) return todoJson;
+    const QJsonArray incoming = doc.array();
+
+    QHash<QString, QStringList> idsByContent;   // content → unmatched ids (in order)
+    QSet<QString> knownIds;
+    QSet<QString> assigned;
+    int maxSuffix = 0;
+    for (const auto& v : m_todoList) {
+        const QJsonObject item = v.toObject();
+        const QString id = item.value("id").toString().trimmed();
+        if (id.isEmpty()) continue;
+        knownIds.insert(id);
+        idsByContent[item.value("content").toString()].append(id);
+        bool ok = false;
+        const int suffix = id.startsWith(QLatin1Char('t'))
+            ? id.mid(1).toInt(&ok) : 0;
+        if (ok && suffix > maxSuffix) maxSuffix = suffix;
+    }
+
+    QJsonArray out;
+    for (int i = 0; i < incoming.size(); ++i) {
+        QJsonObject item = incoming.at(i).toObject();
+        QString id = item.value("id").toString().trimmed();
+        if (!id.isEmpty()
+                && (!knownIds.contains(id) || assigned.contains(id)))
+            id.clear();   // fabricated, stale, or duplicated in this call
+        if (id.isEmpty()) {
+            auto it = idsByContent.find(item.value("content").toString());
+            if (it != idsByContent.end() && !it->isEmpty())
+                id = it->takeFirst();
+        }
+        if (id.isEmpty())
+            id = QStringLiteral("t%1").arg(++maxSuffix);
+        assigned.insert(id);
+        item["id"] = id;
+        out.append(item);
+    }
+
+    m_todoList = out;
+    emit todoListChanged(m_todoList);
+    // F1: persist per session (GUI thread only — the DB connection is
+    // thread-bound, same discipline as the checkpoint write).
+    if (m_memory && !m_sessionId.isEmpty())
+        m_memory->saveSessionTodos(m_sessionId, m_todoList);
+    return QString::fromUtf8(QJsonDocument(out).toJson(QJsonDocument::Compact));
 }
 
 void AIAgent::approveToolCall(const QString& id, bool approved) {

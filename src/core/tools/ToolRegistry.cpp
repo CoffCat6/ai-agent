@@ -1278,12 +1278,20 @@ public:
         def.description = "Manage a task list for tracking multi-step work. "
                           "Pass the full list each time (replaces the previous one). "
                           "Each task has content, status (pending/in_progress/completed), "
-                          "and priority (high/medium/low).";
+                          "and priority (high/medium/low). Every item is assigned a "
+                          "stable id (t1, t2, ...) that survives list rewrites - keep "
+                          "passing it back so references stay valid; new items omit it.";
         def.level = ToolLevel::Safe;
         QJsonObject todoItem;
         todoItem["type"] = "object";
         QJsonObject itemProps;
         itemProps["content"] = stringParam("Brief description of the task.");
+        QJsonObject idProp;
+        idProp["type"] = "string";
+        idProp["description"] = "Stable id from a previous todo_write result; "
+                                "pass it back unchanged to keep the item's "
+                                "identity. Omit for new items.";
+        itemProps["id"] = idProp;
         QJsonObject statusProp;
         statusProp["type"] = "string";
         statusProp["enum"] = QJsonArray{"pending", "in_progress", "completed"};
@@ -1339,6 +1347,9 @@ public:
             norm["content"] = content;
             norm["status"] = status;
             norm["priority"] = priority;
+            // docs/33 E4: id 透传（AIAgent 侧调和——伪造/陈旧 id 会被替换）。
+            const QString id = item.value("id").toString().trimmed();
+            if (!id.isEmpty()) norm["id"] = id;
             normalized.append(norm);
         }
 

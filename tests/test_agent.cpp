@@ -718,6 +718,8 @@ private slots:
     // F1: the todo list is persisted per session — reopening the SAME session
     // restores its list, and a different session yields its own (or empty).
     void todoListPersistsAcrossSessionResume();
+    void todoIdsStableAcrossRewrites();
+    void spawnAgentTodoIdEchoedInReportAndAudit();
     // 思考强度：思考正文只落 thinking 节点，不混进答案、不回灌模型、可恢复
     void reasoningTextLandsOnThinkingNode();
     void stopDuringConfirmationIsNoOp();
@@ -2322,6 +2324,120 @@ void TestAgent::todoListPersistsAcrossSessionResume() {
     QCOMPARE(agent.todoList().at(0).toObject().value("content").toString(),
              QStringLiteral("Other task"));
 
+    agent.setMemory(nullptr);
+}
+
+// docs/33 E4: todo_write 是全量替换，但项身份需要跨轮稳定——模型显式回传
+// 的已知 id 优先、content 匹配次之、新项分配 t<n>；伪造/陈旧 id 被替换；
+// 带 id 的列表回写进历史供下一轮引用（spawn_agent 的 todo_id 由此可锚定）。
+void TestAgent::todoIdsStableAcrossRewrites() {
+    // 第一轮：模型伪造 id "t9" → 被替换为 t1。
+    llm.reset();
+    llm.script.append(toolResponse(QStringLiteral("todo_write"),
+        QJsonObject{{"todos", QJsonArray{QJsonObject{
+            {"id", QStringLiteral("t9")},
+            {"content", QStringLiteral("implement parser")},
+            {"status", QStringLiteral("pending")}}}}}));
+    llm.script.append(textResponse(QStringLiteral("planned")));
+    QSignalSpy spy(&agent, &AIAgent::responseReady);
+    agent.startTask(QStringLiteral("plan it"));
+    QTRY_COMPARE_WITH_TIMEOUT(spy.count(), 1, 15000);
+
+    QJsonArray todos = agent.todoList();
+    QCOMPARE(todos.size(), 1);
+    QCOMPARE(todos.at(0).toObject().value("id").toString(),
+             QStringLiteral("t1"));
+    // 历史里的工具结果已带 id：模型下一轮引用得到。
+    bool historyHasId = false;
+    for (const auto& msg : agent.messages()) {
+        if (msg.toObject().value("role").toString() == QLatin1String("tool")
+                && msg.toObject().value("content").toString()
+                       .contains(QStringLiteral("\"id\":\"t1\"")))
+            historyHasId = true;
+    }
+    QVERIFY(historyHasId);
+
+    // 第二轮：模型回传 t1（content 同 → 显式 id 生效）+ 新项 → t2。
+    llm.reset();
+    llm.script.append(toolResponse(QStringLiteral("todo_write"),
+        QJsonObject{{"todos", QJsonArray{
+            QJsonObject{{"id", QStringLiteral("t1")},
+                        {"content", QStringLiteral("implement parser")},
+                        {"status", QStringLiteral("in_progress")}},
+            QJsonObject{{"content", QStringLiteral("write tests")},
+                        {"status", QStringLiteral("pending")}}}}}));
+    llm.script.append(textResponse(QStringLiteral("updated")));
+    QSignalSpy spy2(&agent, &AIAgent::responseReady);
+    agent.startTask(QStringLiteral("advance the plan"));
+    QTRY_COMPARE_WITH_TIMEOUT(spy2.count(), 1, 15000);
+
+    todos = agent.todoList();
+    QCOMPARE(todos.size(), 2);
+    QCOMPARE(todos.at(0).toObject().value("id").toString(),
+             QStringLiteral("t1"));
+    QCOMPARE(todos.at(1).toObject().value("id").toString(),
+             QStringLiteral("t2"));
+    QCOMPARE(todos.at(0).toObject().value("status").toString(),
+             QStringLiteral("in_progress"));
+
+    // 第三轮：模型重写列表时丢掉 id（只给 content）→ t1 仍按 content 保持。
+    llm.reset();
+    llm.script.append(toolResponse(QStringLiteral("todo_write"),
+        QJsonObject{{"todos", QJsonArray{
+            QJsonObject{{"content", QStringLiteral("write tests")},
+                        {"status", QStringLiteral("in_progress")}},
+            QJsonObject{{"content", QStringLiteral("implement parser")},
+                        {"status", QStringLiteral("pending")}}}}}));
+    llm.script.append(textResponse(QStringLiteral("reordered")));
+    QSignalSpy spy3(&agent, &AIAgent::responseReady);
+    agent.startTask(QStringLiteral("reorder"));
+    QTRY_COMPARE_WITH_TIMEOUT(spy3.count(), 1, 15000);
+
+    todos = agent.todoList();
+    QCOMPARE(todos.size(), 2);
+    QCOMPARE(todos.at(0).toObject().value("id").toString(),
+             QStringLiteral("t2"));
+    QCOMPARE(todos.at(1).toObject().value("id").toString(),
+             QStringLiteral("t1"));
+}
+
+// docs/33 E4: spawn_agent 带 todo_id → 报告头回显（提醒模型同步状态），
+// 审计行 detail 落 subagent_todo（清单项 ↔ 子代理运行可追溯）。
+void TestAgent::spawnAgentTodoIdEchoedInReportAndAudit() {
+    SqliteMemory memory(QStringLiteral(":memory:"));
+    agent.setMemory(&memory);
+
+    SubAgentFixture fixture;
+    SpawnToolGuard guard;
+    fixture.tool = registerSpawnTool(fixture, [](RecordingFakeService& sub) {
+        sub.script.append(textResponse(QStringLiteral("review findings: none")));
+    });
+    llm.reset();
+    llm.script.append(toolResponse(QStringLiteral("spawn_agent"),
+        QJsonObject{{"goal", QStringLiteral("review the diff")},
+                    {"todo_id", QStringLiteral("t2")}}));
+    llm.script.append(textResponse(QStringLiteral("integrated")));
+    QSignalSpy spy(&agent, &AIAgent::responseReady);
+    agent.startTask(QStringLiteral("run the planned review step"));
+    QTRY_COMPARE_WITH_TIMEOUT(spy.count(), 1, 15000);
+
+    const QString report = lastToolMessageContent(agent.messages());
+    QVERIFY(report.contains(QStringLiteral("todo: t2")));
+
+    bool found = false;
+    const QJsonArray audit = memory.auditLog(50);
+    for (const auto& entry : audit) {
+        const QJsonObject row = entry.toObject();
+        if (row.value("event").toString() != QLatin1String("tool_execute")
+                || row.value("toolName").toString() != QLatin1String("spawn_agent"))
+            continue;
+        const QJsonObject detail = QJsonDocument::fromJson(
+            row.value("detail").toString().toUtf8()).object();
+        QCOMPARE(detail.value("subagent_todo").toString(),
+                 QStringLiteral("t2"));
+        found = true;
+    }
+    QVERIFY2(found, "spawn_agent audit row with subagent_todo missing");
     agent.setMemory(nullptr);
 }
 

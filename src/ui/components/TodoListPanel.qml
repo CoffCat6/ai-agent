@@ -17,8 +17,9 @@ import NexusAI.ViewModels
 //   * The panel keeps hiding itself (zero height) when the list is empty, so
 //     an idle session spends no vertical space on it.
 //
-// The item contract (content / status / priority) is owned by todo_write and
-// the ViewModel; this file only decides how those three fields are shown.
+// The item contract (id / content / status / priority) is owned by todo_write and
+// the ViewModel; this file only decides how those fields are shown (the id is
+// prefixed to the content line as a referenceable label, docs/33 E4).
 Item {
     id: root
 
@@ -420,7 +421,11 @@ Item {
                                     id: todoText
                                     objectName: "todoText"
                                     Layout.fillWidth: true
-                                    text: modelData.content || ""
+                                    // docs/33 E4: 稳定 id 徽标——面板项与
+                                    // spawn_agent 引用/审计行可人工对应。
+                                    text: ((modelData.id || "") !== ""
+                                           ? (modelData.id + "  ") : "")
+                                          + (modelData.content || "")
                                     color: todoRow.isCompleted ? Theme.textSecondary : Theme.textPrimary
                                     font.pixelSize: Theme.fontSizeCaption
                                     font.family: Theme.fontSans
