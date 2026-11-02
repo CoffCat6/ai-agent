@@ -20,16 +20,16 @@ SettingsPage {
         Settings.resetAgentToDefaults()
     }
 
-    // docs/32 P2: 子代理（spawn_agent）——只读子代理的派生与预算。
+    // docs/32 P2 / docs/34 P3：子代理（spawn_agent）——只读派生与写类提案。
     SettingCard {
         Layout.fillWidth: true
         title: qsTr("子代理")
-        subtitle: qsTr("允许模型派生只读子代理并行检索与分析；所有写操作仍由主任务执行。")
+        subtitle: qsTr("允许模型派生子代理并行检索与分析；写类角色（coder）只起草改动提案，落盘仍由主任务在用户确认后执行。")
 
         SettingRow {
             objectName: "agent/subagentEnabled"
             label: qsTr("启用子代理")
-            description: qsTr("开启后模型可以调用 spawn_agent 派生只读子代理（仅读文件、搜索、git 查看）。")
+            description: qsTr("开启后模型可以调用 spawn_agent 派生子代理：默认只读（读文件、搜索、git 查看）；coder 角色可用 propose_edit 起草提案，但不会写盘。")
 
             Switch {
                 checked: Settings.subagentEnabled
@@ -89,7 +89,7 @@ SettingsPage {
 
         Text {
             Layout.fillWidth: true
-            text: qsTr("内置角色：explore（广度优先勘察）、research（深度查证）、review（代码评审）。调用时省略 role 参数默认使用 explore；自定义档案与预设同名时覆盖预设。")
+            text: qsTr("内置角色：explore（广度优先勘察）、research（深度查证）、review（代码评审）、coder（起草改动提案，只提不改）。调用时省略 role 参数默认使用 explore；自定义档案与预设同名时覆盖预设。coder 经 propose_edit 产出锚点式提案，由主任务用 edit_file 逐条应用并逐次确认；其他预设不授予提案权。")
             color: Theme.textSecondary
             font.pixelSize: Theme.fontSizeCaption
             wrapMode: Text.Wrap
@@ -201,7 +201,7 @@ SettingsPage {
             TextField {
                 id: roleToolsField
                 Layout.fillWidth: true
-                placeholderText: qsTr("工具白名单（逗号分隔，留空 = 全部只读工具）")
+                placeholderText: qsTr("工具白名单（逗号分隔，留空 = 全部只读工具；写提案需显式加入 propose_edit）")
                 color: Theme.textPrimary
                 font.pixelSize: Theme.fontSizeBody
             }

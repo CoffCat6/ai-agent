@@ -153,8 +153,8 @@
     </message>
     <message>
         <location filename="../src/ui/pages/AgentBehaviorPage.qml" line="27"/>
-        <source>允许模型派生只读子代理并行检索与分析；所有写操作仍由主任务执行。</source>
-        <translation>Let the model derive read-only sub-agents for parallel research and analysis; all writes stay with the main task.</translation>
+        <source>允许模型派生子代理并行检索与分析；写类角色（coder）只起草改动提案，落盘仍由主任务在用户确认后执行。</source>
+        <translation>Let the model spawn sub-agents for parallel research and analysis; the coding role (coder) only drafts change proposals - the primary task applies them after your confirmation.</translation>
     </message>
     <message>
         <location filename="../src/ui/pages/AgentBehaviorPage.qml" line="31"/>
@@ -164,8 +164,8 @@
     </message>
     <message>
         <location filename="../src/ui/pages/AgentBehaviorPage.qml" line="32"/>
-        <source>开启后模型可以调用 spawn_agent 派生只读子代理（仅读文件、搜索、git 查看）。</source>
-        <translation>When on, the model may call spawn_agent to derive read-only sub-agents (file reads, searches, git inspection only).</translation>
+        <source>开启后模型可以调用 spawn_agent 派生子代理：默认只读（读文件、搜索、git 查看）；coder 角色可用 propose_edit 起草提案，但不会写盘。</source>
+        <translation>When enabled, the model can call spawn_agent: sub-agents are read-only by default (file reads, search, git inspection); the coder role can draft proposals with propose_edit but never writes to disk.</translation>
     </message>
     <message>
         <location filename="../src/ui/pages/AgentBehaviorPage.qml" line="43"/>
@@ -222,8 +222,8 @@
     </message>
     <message>
         <location filename="../src/ui/pages/AgentBehaviorPage.qml" line="92"/>
-        <source>内置角色：explore（广度优先勘察）、research（深度查证）、review（代码评审）。调用时省略 role 参数默认使用 explore；自定义档案与预设同名时覆盖预设。</source>
-        <translation>Built-in roles: explore (breadth-first survey), research (depth-first verification), review (code review). Omitting the role argument defaults to explore; a custom profile sharing a preset&apos;s name overrides it.</translation>
+        <source>内置角色：explore（广度优先勘察）、research（深度查证）、review（代码评审）、coder（起草改动提案，只提不改）。调用时省略 role 参数默认使用 explore；自定义档案与预设同名时覆盖预设。coder 经 propose_edit 产出锚点式提案，由主任务用 edit_file 逐条应用并逐次确认；其他预设不授予提案权。</source>
+        <translation>Built-in roles: explore (breadth-first survey), research (depth-first verification), review (code review), coder (drafts change proposals, never applies them). Omitting the role argument defaults to explore; a custom profile sharing a preset&apos;s name overrides it. coder produces anchored proposals via propose_edit; the primary task applies them one by one with edit_file after your confirmation. Other presets are not granted propose_edit.</translation>
     </message>
     <message>
         <location filename="../src/ui/pages/AgentBehaviorPage.qml" line="129"/>
@@ -257,8 +257,8 @@
     </message>
     <message>
         <location filename="../src/ui/pages/AgentBehaviorPage.qml" line="204"/>
-        <source>工具白名单（逗号分隔，留空 = 全部只读工具）</source>
-        <translation>Tool whitelist (comma-separated; empty = all read-only tools)</translation>
+        <source>工具白名单（逗号分隔，留空 = 全部只读工具；写提案需显式加入 propose_edit）</source>
+        <translation>Tool whitelist (comma-separated; empty = all read-only tools; add propose_edit to grant proposals)</translation>
     </message>
     <message>
         <location filename="../src/ui/pages/AgentBehaviorPage.qml" line="212"/>
@@ -10872,8 +10872,8 @@ select a file to view its content diff on the right.</translation>
     </message>
     <message>
         <location filename="../src/ui/pages/ToolsPage.qml" line="82"/>
-        <source>随应用提供的工具。展开后可逐个启停；禁用的工具不会暴露给模型。</source>
-        <translation>Tools shipped with the app. Expand to toggle them individually; disabled tools are hidden from the model.</translation>
+        <source>随应用提供的工具。展开后可逐个启停；禁用的工具不会暴露给模型。子代理专属工具（propose_edit）只在子代理运行时可用，不在此列表。</source>
+        <translation>Tools shipped with the app. Expand to toggle them individually; disabled tools are hidden from the model. The sub-agent-only tool (propose_edit) is available only inside sub-agent runs and is not listed here.</translation>
     </message>
     <message>
         <location filename="../src/ui/pages/ToolsPage.qml" line="86"/>
