@@ -1,5 +1,6 @@
 #include "SubAgentRunner.h"
 
+#include "core/tools/Sandbox.h"
 #include "infrastructure/llm/IAIService.h"
 
 #include <QDateTime>
@@ -246,6 +247,48 @@ void appendToolResult(QJsonArray& messages, const ToolCallInfo& call,
     messages.append(toolMsg);
 }
 
+// docs/34 P3.1: 把提案渲染成主代理可执行的报告段。diff 块只用于阅读——
+// 应用时不依赖行号，主代理照抄 find 原文交给 edit_file。
+QString renderProposals(const QVector<SubAgentProposal>& proposals, bool partial) {
+    if (proposals.isEmpty()) return {};
+    QString out = QStringLiteral("\n\n## PROPOSALS (not applied)\n");
+    if (partial) {
+        out += QStringLiteral(
+            "The run ended before a final report; the proposals below are "
+            "the ones that were validated against the files at proposal "
+            "time. Verify each against the current file before applying.\n");
+    }
+    out += QStringLiteral(
+        "Apply each proposal with edit_file (use file_write only if a new "
+        "file is needed) and pass the 'find' text verbatim as the old text; "
+        "every write still requires user approval. Do not describe the change "
+        "as done until the tool call succeeds.\n\n");
+
+    const QString root = Sandbox::currentProjectDir();
+    int index = 1;
+    for (const auto& proposal : proposals) {
+        QString display = proposal.path;
+        if (!root.isEmpty()) {
+            const QString relative = QDir(root).relativeFilePath(proposal.path);
+            if (!relative.startsWith(QLatin1String(".."))) display = relative;
+        }
+        out += QStringLiteral("### %1. %2\n%3\n\n")
+                   .arg(index++).arg(display, proposal.rationale);
+        for (const auto& edit : proposal.edits) {
+            out += QStringLiteral("```diff\n");
+            const QStringList before = edit.find.split(QLatin1Char('\n'));
+            const QStringList after = edit.replace.split(QLatin1Char('\n'));
+            for (const QString& line : before)
+                out += QLatin1Char('-') + line + QLatin1Char('\n');
+            for (const QString& line : after)
+                out += QLatin1Char('+') + line + QLatin1Char('\n');
+            out += QStringLiteral("```\n");
+        }
+        out += QLatin1Char('\n');
+    }
+    return out;
+}
+
 } // namespace
 
 SubAgentReport SubAgentRunner::runImpl(IAIService* service, const SubAgentRequest& request,
@@ -463,7 +506,19 @@ SubAgentReport SubAgentRunner::runImpl(IAIService* service, const SubAgentReques
 SubAgentReport SubAgentRunner::run(IAIService* service, const SubAgentRequest& request) {
     pruneEvidenceArtifacts();
     QJsonArray messages;
-    SubAgentReport report = runImpl(service, request, messages);
+    // docs/34 P3.1: 提案收集槽只在本次运行的线程上生效；ProposeEditTool 从中
+    // 取得 sink（不在运行内时拿不到，直接拒绝调用）。
+    QVector<SubAgentProposal> proposals;
+    SubAgentReport report;
+    {
+        SubAgentProposalSink sink(&proposals);
+        report = runImpl(service, request, messages);
+    }
+    report.proposals = proposals;
+    if (!proposals.isEmpty()) {
+        report.text += renderProposals(proposals,
+                                       report.stop != SubAgentReport::Stop::Completed);
+    }
     // docs/33 E1: preserve the full transcript for on-demand file_read; a
     // pure Q&A run (no tool rounds) writes nothing.
     report.artifactPath = writeEvidenceArtifact(request, messages);

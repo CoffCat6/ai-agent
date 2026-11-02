@@ -34,6 +34,39 @@ struct SubAgentProgress {
 
 using SubAgentProgressHook = std::function<void(const SubAgentProgress&)>;
 
+// docs/34 P3.1: 一条修改提案——子代理只提「改哪里、怎么改」，不落盘。
+// find 必须在其文件当前内容里恰好出现一次（锚点式），应用由主代理用
+// edit_file/file_write 完成（沿用既有 RequiresConfirm 确认流）。
+struct SubAgentProposalEdit {
+    QString find;
+    QString replace;
+};
+
+struct SubAgentProposal {
+    QString path;       // resolved absolute path (report shows a project-relative form)
+    QString rationale;  // one-line reason from the sub-agent
+    QVector<SubAgentProposalEdit> edits;
+};
+
+// docs/34 P3.1: 提案的线程局部汇聚槽——与 SubAgentProgressRouter 同型：
+// 子代理运行在同一线程上，ProposeEditTool 把校验通过的提案推进来，Runner
+// 在 run() 结束时取走。NULL 表示当前不在子代理运行内（主代理若幻觉调用
+// propose_edit，工具据此直接拒绝）。
+class SubAgentProposalSink {
+public:
+    explicit SubAgentProposalSink(QVector<SubAgentProposal>* sink) {
+        s_sink.localData() = sink;
+    }
+    ~SubAgentProposalSink() { s_sink.localData() = nullptr; }
+    SubAgentProposalSink(const SubAgentProposalSink&) = delete;
+    SubAgentProposalSink& operator=(const SubAgentProposalSink&) = delete;
+
+    static QVector<SubAgentProposal>* current() { return s_sink.localData(); }
+
+private:
+    static inline QThreadStorage<QVector<SubAgentProposal>*> s_sink;
+};
+
 // docs/32 P2: thread-local hand-off from the dispatcher (AIAgent) to the
 // spawning tool. AIAgent cannot pass per-call context through the fixed
 // ITool::execute signature, and SubAgentTool is a process-wide object shared
@@ -111,6 +144,10 @@ struct SubAgentReport {
     // The primary agent can inspect it with file_read — the sandbox read
     // allowlist covers AppDataLocation.
     QString artifactPath;
+    // docs/34 P3.1: 未应用的修改提案（coder 角色经 propose_edit 产出）。
+    // 报告文本里同时渲染成 `## PROPOSALS` 段；即使运行以 Budget/Error
+    // 收场也照常返回，主代理可只应用已验证的部分。
+    QVector<SubAgentProposal> proposals;
 };
 
 // Minimal read-only sub-agent loop (docs/32 §3.2). Deliberately NOT a full

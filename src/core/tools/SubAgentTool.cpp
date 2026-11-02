@@ -1,5 +1,6 @@
 #include "SubAgentTool.h"
 
+#include "ProposeEditTool.h"
 #include "core/agent/SubAgentRunner.h"
 #include "core/tools/ToolRegistry.h"
 #include "infrastructure/llm/IAIService.h"
@@ -7,6 +8,8 @@
 #include <QJsonObject>
 #include <QSet>
 #include <QStringList>
+
+#include <algorithm>
 
 namespace NexusAI {
 
@@ -44,6 +47,24 @@ QVector<SubAgentRole> SubAgentTool::presetRoles() {
              "that - do not invent issues. You critique once and report; "
              "fixing the code is the primary agent's job."),
          {}},
+        // docs/34 P3.1: 写类子代理——只起草提案，不落盘（见 docs/34）。
+        {QStringLiteral("coder"),
+         QStringLiteral(
+             "coding - you draft changes but never apply them. Work in this "
+             "order: locate the relevant code, read it fully, then propose "
+             "the smallest edit that achieves the goal. Every proposal goes "
+             "through propose_edit with an anchor ('find') that occurs "
+             "exactly once in the current file and a one-sentence rationale. "
+             "Keep each proposal focused on one verifiable change; do not "
+             "bundle unrelated refactors, formatting sweeps or speculative "
+             "'improvements'. If an anchor does not match, re-read the file "
+             "and retry - never guess. When the goal is covered, report a "
+             "short summary of what you proposed and why; the primary agent "
+             "applies the edits after user approval."),
+         {QStringLiteral("read_file"), QStringLiteral("list_dir"),
+          QStringLiteral("glob"), QStringLiteral("grep"),
+          QStringLiteral("git_status"), QStringLiteral("git_diff"),
+          QStringLiteral("git_show"), QStringLiteral("propose_edit")}},
     };
 }
 
@@ -105,8 +126,7 @@ bool SubAgentTool::resolveRole(const QString& roleName, SubAgentRole* out) const
 void SubAgentTool::refreshCatalog(bool localOnly) {
     QVector<SubAgentToolEntry> snapshot;
     auto& registry = ToolRegistry::instance();
-    for (const auto& def : registry.listAll()) {
-        // Never hand the sub-agent the spawner itself (no recursive spawn).
+    for (const auto& def : registry.listAll()) {        // Never hand the sub-agent the spawner itself (no recursive spawn).
         if (def.name == QLatin1String(SubAgentTool::kName)) continue;
         // docs/32 P1 baseline: Safe + readOnly auto-executes in the
         // sub-agent (there is nobody to confirm a RequiresConfirm call)
@@ -130,6 +150,13 @@ void SubAgentTool::refreshCatalog(bool localOnly) {
         auto tool = registry.findShared(def.name);
         if (!tool) continue;
         snapshot.append(SubAgentToolEntry{def, std::move(tool)});
+    }
+    // docs/34 P3.1: propose_edit 是子代理专有能力，不进全局注册表（主代理
+    // 的 schema 里不该出现它——主代理直接用 edit_file）。这里作为独立条目
+    // 挂进只读目录；能否使用由角色白名单决定（见 execute 的能力门）。
+    {
+        auto propose = std::make_shared<ProposeEditTool>();
+        snapshot.append(SubAgentToolEntry{propose->definition(), std::move(propose)});
     }
     QMutexLocker lock(&m_catalogMutex);
     m_catalog = std::move(snapshot);
@@ -166,7 +193,12 @@ ToolDefinition SubAgentTool::definition() const {
         "step to a sub-agent - pass the step's todo id in 'todo_id' and "
         "restate the task itself in 'goal' (the sub-agent cannot see your "
         "todo list). When the report returns, update that todo's status "
-        "with todo_write.");
+        "with todo_write.\n"
+        "Drafting changes: the 'coder' role can propose edits, but its "
+        "proposals are NEVER applied - its report ends with a "
+        "## PROPOSALS section listing anchored find/replace pairs. Apply "
+        "them yourself with edit_file (each call still needs user "
+        "approval), verify, and only then report success.");
     def.level = ToolLevel::Safe;
     def.autoEditSafe = true;
     def.readOnly = true;   // spawns read-only work only; usable in PlanOnly
@@ -298,6 +330,18 @@ ToolResult SubAgentTool::execute(const QJsonObject& args, const Cancellation& ca
                 "Role '%1' whitelists none of the currently available "
                 "read-only tools.").arg(resolved.name));
         catalog = std::move(filtered);
+    }
+    // docs/34 P3.1: propose_edit 是一项能力，不是普通读工具。白名单为空的
+    // 角色（explore/research/review）语义是「整个只读目录」，不能让它们
+    // 顺带获得提案权——只有显式点名 propose_edit 的角色才保留它。
+    if (!resolved.tools.contains(QLatin1String(ProposeEditTool::kName))) {
+        catalog.erase(
+            std::remove_if(catalog.begin(), catalog.end(),
+                           [](const SubAgentToolEntry& entry) {
+                               return entry.def.name
+                                   == QLatin1String(ProposeEditTool::kName);
+                           }),
+            catalog.end());
     }
 
     if (!acquireSlot(cancelled))

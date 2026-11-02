@@ -54,6 +54,9 @@ add_library(nexus_core STATIC
     # docs/32 P1: spawn_agent 工具（主代理派生只读子代理的入口）。
     src/core/tools/SubAgentTool.h
     src/core/tools/SubAgentTool.cpp
+    # docs/34 P3.1: 子代理的「写意图」出口——只产提案，永不落盘。
+    src/core/tools/ProposeEditTool.h
+    src/core/tools/ProposeEditTool.cpp
     src/core/tools/Sandbox.h
     src/core/tools/SandboxWin.cpp
     src/core/git/GitService.h

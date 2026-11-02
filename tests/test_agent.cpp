@@ -9,6 +9,7 @@
 #include "core/tools/ToolRegistry.h"
 #include "core/tools/Sandbox.h"
 #include "core/tools/SubAgentTool.h"
+#include "core/tools/ProposeEditTool.h"
 #include "core/tools/NetworkFetchTool.h"
 #include "core/tools/WebSearchTool.h"
 #include "core/memory/SqliteMemory.h"
@@ -838,6 +839,10 @@ private slots:
     void subagentStopCascades();
     // docs/32 §9: 会话窗口手动停止子代理（主任务继续）。
     void subagentManualCancelKeepsPrimaryRunning();
+    // docs/34 P3.1: 写类子代理——提案工具、coder 角色、报告渲染。
+    void proposeEditValidatesAnchorsAndNeverWrites();
+    void coderRoleProposalsReachReportUnapplied();
+    void exploreRoleCannotPropose();
     void subagentInflightAbortStressRealNetwork();
     void subagentConcurrencyGateQueues();
     // docs/32 P2: 进度上屏与审计归因
@@ -4505,6 +4510,237 @@ void TestAgent::subagentManualCancelKeepsPrimaryRunning() {
     QVERIFY(noDanglingToolCalls(agent.messages()));
 }
 
+// docs/34 P3.1：propose_edit 是子代理的「写意图」出口——只校验锚点并登记
+// 提案，绝不落盘。失败路径（无汇聚槽/越界/锚点缺失/锚点不唯一/配额）都不
+// 得产生提案；成功路径下文件字节必须原样。
+void TestAgent::proposeEditValidatesAnchorsAndNeverWrites() {
+    QTemporaryDir dir(testDirTemplate());
+    QVERIFY(dir.isValid());
+    const QString filePath = dir.filePath(QStringLiteral("sample.txt"));
+    const QByteArray original("alpha\nbeta\ngamma\n");
+    {
+        QFile f(filePath);
+        QVERIFY(f.open(QIODevice::WriteOnly));
+        QCOMPARE(f.write(original), qint64(original.size()));
+    }
+    // 直接调用（非 agent 派发）：全局项目目录就是执行域。
+    Sandbox::setProjectDir(dir.path());
+    ProposeEditTool tool;
+
+    const auto edit = [](const QString& find, const QString& replace) {
+        return QJsonObject{{QStringLiteral("find"), find},
+                           {QStringLiteral("replace"), replace}};
+    };
+    const auto call = [&tool, &edit](const QString& path,
+                                     const QList<QJsonObject>& edits,
+                                     const QString& rationale = QStringLiteral("why")) {
+        QJsonArray arr;
+        for (const auto& e : edits) arr.append(e);
+        return tool.execute(QJsonObject{{QStringLiteral("path"), path},
+                                        {QStringLiteral("rationale"), rationale},
+                                        {QStringLiteral("edits"), arr}});
+    };
+
+    // 不在子代理运行内（无线程局部汇聚槽）→ 明确拒绝并指引主代理用写工具。
+    ToolResult result = call(QStringLiteral("sample.txt"), {edit("beta", "BETA")});
+    QVERIFY(!result.success);
+    QVERIFY(result.error.contains(QStringLiteral("only available inside a sub-agent run")));
+
+    QVector<SubAgentProposal> collected;
+    SubAgentProposalSink sink(&collected);
+
+    // 锚点缺失 / 锚点不唯一 / 编辑列表为空 / 越出项目根：四种失败都不入槽。
+    result = call(QStringLiteral("sample.txt"), {edit("delta", "DELTA")});
+    QVERIFY(!result.success);
+    QVERIFY(result.error.contains(QStringLiteral("does not occur")));
+    result = call(QStringLiteral("sample.txt"), {edit("a", "A")});
+    QVERIFY(!result.success);
+    QVERIFY(result.error.contains(QStringLiteral("ambiguous anchor")));
+    QVERIFY(!call(QStringLiteral("sample.txt"), {}).success);
+    result = call(dir.filePath(QStringLiteral("../escape.txt")),
+                  {edit("alpha", "A")});
+    QVERIFY(!result.success);
+    QVERIFY(result.error.contains(QStringLiteral("escapes the project root")));
+    result = call(QStringLiteral("sample.txt"), {edit("beta", "BETA")},
+                  QString());   // rationale 缺失
+    QVERIFY(!result.success);
+    QVERIFY(result.error.contains(QStringLiteral("'rationale' is required")));
+    QVERIFY(collected.isEmpty());
+
+    // 同一调用的多条编辑按顺序在模拟内容上校验：第二条锚点引用第一条的
+    // 替换结果才合法（主代理依次应用时不会半路失败）。
+    result = call(QStringLiteral("sample.txt"),
+                  {edit("beta", "BETA"), edit("BETA\ngamma", "BETA\nGAMMA")});
+    QVERIFY2(result.success, qPrintable(result.error));
+    QCOMPARE(collected.size(), 1);
+    QCOMPARE(collected.first().rationale, QStringLiteral("why"));
+    QCOMPARE(collected.first().edits.size(), 2);
+    QCOMPARE(QFileInfo(collected.first().path).absoluteFilePath(),
+             QFileInfo(filePath).absoluteFilePath());
+    // 提案只读：文件字节不变。
+    {
+        QFile f(filePath);
+        QVERIFY(f.open(QIODevice::ReadOnly));
+        QCOMPARE(f.readAll(), original);
+    }
+    // 顺序校验真生效：第二条锚点若只匹配「原始内容」而非替换后内容则失败。
+    result = call(QStringLiteral("sample.txt"),
+                  {edit("beta", "BETA"), edit("beta", "BETA2")});
+    QVERIFY(!result.success);
+    QVERIFY(result.error.contains(QStringLiteral("does not occur")));
+    QCOMPARE(collected.size(), 1);
+
+    // 配额：每轮运行最多 kMaxProposalsPerRun 条，超出给出可读原因。
+    while (collected.size() < ProposeEditTool::kMaxProposalsPerRun) {
+        const ToolResult ok = call(QStringLiteral("sample.txt"),
+                                   {edit("alpha", "alpha")});
+        QVERIFY2(ok.success, qPrintable(ok.error));
+    }
+    result = call(QStringLiteral("sample.txt"), {edit("alpha", "alpha")});
+    QVERIFY(!result.success);
+    QVERIFY(result.error.contains(QStringLiteral("Proposal limit reached")));
+    QCOMPARE(collected.size(), ProposeEditTool::kMaxProposalsPerRun);
+
+    QFile f(filePath);
+    QVERIFY(f.open(QIODevice::ReadOnly));
+    QCOMPARE(f.readAll(), original);
+    f.close();
+    Sandbox::setProjectDir(QString());
+}
+
+// docs/34 P3.1 集成：coder 角色经 propose_edit 起草 → 报告带 `## PROPOSALS`
+// 段 → 文件保持原样（应用由主代理的 edit_file 完成，走既有确认流）。
+void TestAgent::coderRoleProposalsReachReportUnapplied() {
+    QTemporaryDir dir(testDirTemplate());
+    QVERIFY(dir.isValid());
+    const QString filePath = dir.filePath(QStringLiteral("app.cpp"));
+    const QByteArray original("int main() { return 1; }\n");
+    {
+        QFile f(filePath);
+        QVERIFY(f.open(QIODevice::WriteOnly));
+        QCOMPARE(f.write(original), qint64(original.size()));
+    }
+    agent.setActiveProject(QStringLiteral("p34"), QStringLiteral("Demo"), dir.path());
+
+    SubAgentFixture fixture;
+    SpawnToolGuard guard;
+    fixture.tool = registerSpawnTool(fixture, [](RecordingFakeService& sub) {
+        sub.script.append(toolResponse(QStringLiteral("propose_edit"),
+            QJsonObject{
+                {QStringLiteral("path"), QStringLiteral("app.cpp")},
+                {QStringLiteral("rationale"),
+                 QStringLiteral("main should exit successfully")},
+                {QStringLiteral("edits"), QJsonArray{QJsonObject{
+                    {QStringLiteral("find"), QStringLiteral("return 1;")},
+                    {QStringLiteral("replace"), QStringLiteral("return 0;")}}}}}));
+        sub.script.append(textResponse(QStringLiteral("proposed one edit")));
+    });
+    llm.reset();
+    llm.script.append(toolResponse(QStringLiteral("spawn_agent"),
+        QJsonObject{{QStringLiteral("goal"), QStringLiteral("make main return 0")},
+                    {QStringLiteral("role"), QStringLiteral("coder")}}));
+    llm.script.append(textResponse(QStringLiteral("done")));
+    QSignalSpy spy(&agent, &AIAgent::responseReady);
+    agent.startTask(QStringLiteral("draft the change"));
+    QTRY_COMPARE_WITH_TIMEOUT(spy.count(), 1, 15000);
+
+    // 提案由 Runner 汇聚进报告：段头 + 理由 + find/replace 的 diff。
+    const QString report = lastToolMessageContent(agent.messages());
+    QVERIFY2(report.contains(QStringLiteral("## PROPOSALS")), qPrintable(report));
+    QVERIFY(report.contains(QStringLiteral("not applied")));
+    QVERIFY(report.contains(QStringLiteral("main should exit successfully")));
+    QVERIFY(report.contains(QStringLiteral("-return 1;")));
+    QVERIFY(report.contains(QStringLiteral("+return 0;")));
+    // 报告里给出应用指引（主代理用 edit_file 逐条应用）。
+    QVERIFY(report.contains(QStringLiteral("edit_file")));
+
+    // 子代理全程只读：磁盘文件不变。
+    {
+        QFile f(filePath);
+        QVERIFY(f.open(QIODevice::ReadOnly));
+        QCOMPARE(f.readAll(), original);
+    }
+
+    // coder 的工具面：授予 propose_edit，其余仍是只读工具。
+    QMutexLocker lock(&fixture.mutex);
+    QVERIFY(!fixture.subSeenTools.isEmpty());
+    const QJsonArray subTools = fixture.subSeenTools.first();
+    QVERIFY(toolsArrayContains(subTools, QStringLiteral("propose_edit")));
+    QVERIFY(toolsArrayContains(subTools, QStringLiteral("read_file")));
+    QVERIFY(!toolsArrayContains(subTools, QStringLiteral("edit_file")));
+    QVERIFY(!toolsArrayContains(subTools, QStringLiteral("write_file")));
+    lock.unlock();
+
+    agent.setActiveProject(QString(), QString(), QString());
+}
+
+// docs/34 P3.1：propose_edit 是能力而非普通读工具——角色白名单为空
+// （explore/research/review = 整个只读目录）不意味着顺带获得提案权。
+void TestAgent::exploreRoleCannotPropose() {
+    QTemporaryDir dir(testDirTemplate());
+    QVERIFY(dir.isValid());
+    const QString filePath = dir.filePath(QStringLiteral("app.cpp"));
+    {
+        QFile f(filePath);
+        QVERIFY(f.open(QIODevice::WriteOnly));
+        f.write("int main() { return 1; }\n");
+    }
+    agent.setActiveProject(QStringLiteral("p34"), QStringLiteral("Demo"), dir.path());
+
+    SubAgentFixture fixture;
+    SpawnToolGuard guard;
+    fixture.tool = registerSpawnTool(fixture, [](RecordingFakeService& sub) {
+        // 幻觉调用：explore 的 schema 里没有 propose_edit，Runner 应回
+        // 「Unknown tool」并继续，报告里不出现 PROPOSALS 段。
+        sub.script.append(toolResponse(QStringLiteral("propose_edit"),
+            QJsonObject{
+                {QStringLiteral("path"), QStringLiteral("app.cpp")},
+                {QStringLiteral("rationale"), QStringLiteral("x")},
+                {QStringLiteral("edits"), QJsonArray{QJsonObject{
+                    {QStringLiteral("find"), QStringLiteral("return 1;")},
+                    {QStringLiteral("replace"), QStringLiteral("return 0;")}}}}}));
+        sub.script.append(textResponse(QStringLiteral("cannot draft here")));
+    });
+    llm.reset();
+    // 不点名 role → 默认 explore（白名单为空）。
+    llm.script.append(toolResponse(QStringLiteral("spawn_agent"),
+        QJsonObject{{QStringLiteral("goal"), QStringLiteral("look around")}}));
+    llm.script.append(textResponse(QStringLiteral("done")));
+    QSignalSpy spy(&agent, &AIAgent::responseReady);
+    agent.startTask(QStringLiteral("spawn explorer"));
+    QTRY_COMPARE_WITH_TIMEOUT(spy.count(), 1, 15000);
+
+    const QString report = lastToolMessageContent(agent.messages());
+    QVERIFY(report.contains(QStringLiteral("cannot draft here")));
+    QVERIFY(!report.contains(QStringLiteral("## PROPOSALS")));
+
+    QMutexLocker lock(&fixture.mutex);
+    QVERIFY(fixture.subSeenTools.size() >= 2);
+    QVERIFY(!toolsArrayContains(fixture.subSeenTools.first(),
+                                QStringLiteral("propose_edit")));
+    QVERIFY(toolsArrayContains(fixture.subSeenTools.first(),
+                               QStringLiteral("read_file")));
+    // 子代理第二轮看到的工具结果里是 Unknown tool 提示。
+    bool sawUnknown = false;
+    const QJsonArray second = fixture.subSeenMessages.at(1);
+    for (const auto& entry : second) {
+        const QJsonObject msg = entry.toObject();
+        if (msg.value(QStringLiteral("role")).toString() == QLatin1String("tool")
+                && msg.value(QStringLiteral("content")).toString()
+                       .contains(QStringLiteral("Unknown tool")))
+            sawUnknown = true;
+    }
+    QVERIFY(sawUnknown);
+    lock.unlock();
+
+    // 文件同样未变。
+    QFile f(filePath);
+    QVERIFY(f.open(QIODevice::ReadOnly));
+    QCOMPARE(QString::fromUtf8(f.readAll()), QStringLiteral("int main() { return 1; }\n"));
+    f.close();
+    agent.setActiveProject(QString(), QString(), QString());
+}
+
 // 真实网络栈下的两条中止路径压力回归：中断（取消旗标在请求在飞时翻转，
 // Runner 循环退出但不调 cancel，析构函数里才 abort 在飞请求）与墙钟超时
 // （cancel 后立刻 delete 服务）。服务指向一个永不响应的本地 TCP 端口，
@@ -4841,15 +5077,16 @@ void TestAgent::subagentRolePresetShapesPromptAndSchema() {
                 .contains(QStringLiteral("code review")));
     lock.unlock();
 
-    // 主 schema 的 role 枚举 = 预设清单（explore/research/review）。
+    // 主 schema 的 role 枚举 = 预设清单（explore/research/review/coder）。
     QVERIFY(!llm.seenTools.isEmpty());
     const QJsonArray roleEnum = roleEnumInMainSchema(llm.seenTools.first());
-    QCOMPARE(roleEnum.size(), 3);
+    QCOMPARE(roleEnum.size(), 4);
     QStringList names;
     for (const auto& v : roleEnum) names.append(v.toString());
     QVERIFY(names.contains(QStringLiteral("explore")));
     QVERIFY(names.contains(QStringLiteral("research")));
     QVERIFY(names.contains(QStringLiteral("review")));
+    QVERIFY(names.contains(QStringLiteral("coder")));
 }
 
 void TestAgent::subagentUserRoleOverridesAndFiltersTools() {
@@ -4890,10 +5127,10 @@ void TestAgent::subagentUserRoleOverridesAndFiltersTools() {
                 .contains(QStringLiteral("AUDITOR-ROLE-MARKER")));
     lock.unlock();
 
-    // 用户 explore 覆盖预设：枚举按唯一角色名展开（auditor + 三个预设名），
+    // 用户 explore 覆盖预设：枚举按唯一角色名展开（auditor + 四个预设名），
     // explore 只出现一次。
     const QJsonArray roleEnum = roleEnumInMainSchema(llm.seenTools.first());
-    QCOMPARE(roleEnum.size(), 4);
+    QCOMPARE(roleEnum.size(), 5);
     int exploreCount = 0;
     for (const auto& v : roleEnum) {
         if (v.toString() == QLatin1String("explore")) ++exploreCount;
@@ -4957,13 +5194,15 @@ void TestAgent::subagentRolesFromVariantParsesAndDedupes() {
     const QStringList expectedTools{QStringLiteral("read_file"), QStringLiteral("grep")};
     QCOMPARE(roles.first().tools, expectedTools);
 
-    // 预设清单固定为 explore/research/review。
+    // 预设清单固定为 explore/research/review/coder。
     const QVector<SubAgentRole> presets = SubAgentTool::presetRoles();
-    QCOMPARE(presets.size(), 3);
+    QCOMPARE(presets.size(), 4);
     QCOMPARE(presets.at(0).name, QStringLiteral("explore"));
     QCOMPARE(presets.at(1).name, QStringLiteral("research"));
     QCOMPARE(presets.at(2).name, QStringLiteral("review"));
+    QCOMPARE(presets.at(3).name, QStringLiteral("coder"));
     QVERIFY(presets.at(2).prompt.contains(QStringLiteral("code review")));
+    QVERIFY(presets.at(3).prompt.contains(QStringLiteral("never apply")));
 }
 
 // docs/33 E3 批判环：review 预设是执行端（自圈改动集 + 严重度排序的
