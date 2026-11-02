@@ -2,6 +2,7 @@
 
 #include "EpisodicService.h"
 #include "SubAgentRunner.h"
+#include "BackgroundTaskHub.h"
 #include "infrastructure/llm/IAIService.h"
 #include "core/tools/ToolRegistry.h"
 #include "core/tools/SubAgentTool.h"
@@ -168,7 +169,20 @@ QString systemPrompt() {
 
 AIAgent::AIAgent(QObject* parent)
     : QObject(parent),
-      m_proposalStore(std::make_shared<ProposalStore>()) {
+      m_proposalStore(std::make_shared<ProposalStore>()),
+      m_backgroundHub(std::make_shared<BackgroundTaskHub>()) {
+    m_backgroundNotifyTimer.setSingleShot(true);
+    m_backgroundNotifyTimer.setInterval(250);
+    connect(&m_backgroundNotifyTimer, &QTimer::timeout, this, [this]() {
+        syncBackgroundTraceNodes();
+        emit backgroundSubAgentsChanged();
+    });
+    // The hub emits from worker threads; coalesce into one GUI tick.
+    connect(m_backgroundHub.get(), &BackgroundTaskHub::changed, this, [this]() {
+        if (!m_backgroundNotifyTimer.isActive())
+            m_backgroundNotifyTimer.start();
+    }, Qt::QueuedConnection);
+
     m_streamTimer.setSingleShot(true);
     m_streamTimer.setInterval(kStreamFlushMs);
     connect(&m_streamTimer, &QTimer::timeout, this, &AIAgent::flushStreamNode);
@@ -205,6 +219,8 @@ void AIAgent::onTaskTimeout() {
 }
 
 AIAgent::~AIAgent() {
+    // docs/35 P4.3: background runs never outlive the session that owns them.
+    if (m_backgroundHub) m_backgroundHub->cancelAll();
     // docs/22 F2: an adopted (per-tab) memory is released here, before the
     // QObject base destroys the children. The episodic service shares the
     // instance and outlives this point as a child, so detach it first — it
@@ -525,6 +541,15 @@ QString AIAgent::appendTraceNode(const QString& type, const QString& title,
     // 白名单放行才能持久化并在会话恢复后继续渲染徽章/提案列表。
     if (extra.contains("subagentProposals"))
         node["subagentProposals"] = extra.value("subagentProposals");
+    // docs/35 P4.3: 后台任务节点（type = subagent_task）的归因字段。
+    if (extra.contains("taskId"))
+        node["taskId"] = extra.value("taskId");
+    if (extra.contains("goal"))
+        node["goal"] = extra.value("goal");
+    if (extra.contains("role"))
+        node["role"] = extra.value("role");
+    if (extra.contains("state"))
+        node["state"] = extra.value("state");
 
     m_traceModel.append(node);
     persistTraceNode(node, m_nextTraceOrder++);
@@ -1230,6 +1255,10 @@ void AIAgent::resetSession() {
     m_sessionId.clear();
     // docs/35 P4.4: proposal ids are session-scoped and never persisted.
     m_proposalStore->clear();
+    // docs/35 P4.3: 后台任务属于正在离开的会话——统一取消并清理映射。
+    if (m_backgroundHub) m_backgroundHub->cancelAll();
+    m_backgroundNodeIds.clear();
+    m_backgroundNodeStates.clear();
     m_episodicInjection.clear();   // session-scoped; next fresh launch sets it
     // G4: emit after the id is cleared so listeners read an empty list.
     emit fileCheckpointsChanged();
@@ -1261,6 +1290,11 @@ void AIAgent::resumeSession(const QString& sessionId) {
     m_messages = QJsonArray();
     // docs/35 P4.4: proposal ids do not cross sessions (not persisted).
     m_proposalStore->clear();
+    // docs/35 P4.3: background tasks from the previous session must not keep
+    // running against this session's panel.
+    if (m_backgroundHub) m_backgroundHub->cancelAll();
+    m_backgroundNodeIds.clear();
+    m_backgroundNodeStates.clear();
     m_episodicInjection.clear();   // resumed sessions never carried one
     m_usedToolCallIds.clear();   // resumed history carries no tool calls
     // F1: todo state is persisted per session; reopening a session reloads
@@ -1904,6 +1938,104 @@ bool AIAgent::cancelSubAgent(const QString& traceNodeId) {
     return true;
 }
 
+// ── docs/35 P4.3: background sub-agent management ─────────
+
+QVariantList AIAgent::backgroundSubAgents() const {
+    return m_backgroundHub ? m_backgroundHub->snapshots() : QVariantList{};
+}
+
+int AIAgent::backgroundSubAgentActiveCount() const {
+    return m_backgroundHub ? m_backgroundHub->activeCount() : 0;
+}
+
+bool AIAgent::cancelBackgroundSubAgent(const QString& taskId) {
+    return m_backgroundHub && m_backgroundHub->cancel(taskId);
+}
+
+int AIAgent::cancelAllBackgroundSubAgents() {
+    if (!m_backgroundHub) return 0;
+    const int active = m_backgroundHub->activeCount();
+    m_backgroundHub->cancelAll();
+    return active;
+}
+
+QString AIAgent::backgroundSubAgentReport(const QString& taskId) const {
+    if (!m_backgroundHub) return {};
+    const auto report = m_backgroundHub->reportFor(taskId);
+    if (!report) {
+        const QString state = m_backgroundHub->stateLabel(taskId);
+        if (state.isEmpty()) return {};
+        return QStringLiteral("Sub-agent %1 is %2; no report yet.")
+            .arg(taskId, state);
+    }
+    return SubAgentTool::reportOutput(*report);
+}
+
+void AIAgent::dismissFinishedBackgroundSubAgents() {
+    if (!m_backgroundHub) return;
+    m_backgroundHub->removeFinished();
+    // Drop bookkeeping for rows the panel removed; trace nodes stay (timeline).
+    const QVariantList tasks = m_backgroundHub->snapshots();
+    QSet<QString> present;
+    for (const QVariant& task : tasks)
+        present.insert(task.toMap().value(QStringLiteral("id")).toString());
+    for (auto it = m_backgroundNodeIds.begin(); it != m_backgroundNodeIds.end();) {
+        if (present.contains(it.key())) { ++it; continue; }
+        m_backgroundNodeStates.remove(it.key());
+        it = m_backgroundNodeIds.erase(it);
+    }
+}
+
+// Map hub state -> trace status. Queued and running both render "running":
+// the node is a timeline marker, the panel owns the queued/detail distinction.
+static QString backgroundTraceStatus(const QString& state) {
+    if (state == QLatin1String("completed")) return QStringLiteral("success");
+    if (state == QLatin1String("failed")) return QStringLiteral("failed");
+    if (state == QLatin1String("cancelled")) return QStringLiteral("cancelled");
+    return QStringLiteral("running");
+}
+
+void AIAgent::syncBackgroundTraceNodes() {
+    if (!m_backgroundHub) return;
+    const QVariantList tasks = m_backgroundHub->snapshots();
+    for (const QVariant& entry : tasks) {
+        const QVariantMap task = entry.toMap();
+        const QString id = task.value(QStringLiteral("id")).toString();
+        const QString state = task.value(QStringLiteral("state")).toString();
+        const QString status = backgroundTraceStatus(state);
+        QString nodeId = m_backgroundNodeIds.value(id);
+        if (nodeId.isEmpty()) {
+            const QString goal = task.value(QStringLiteral("goal")).toString();
+            const QString role = task.value(QStringLiteral("role")).toString();
+            QString summary = goal.simplified();
+            if (summary.size() > 60) summary = summary.left(60) + QStringLiteral("…");
+            nodeId = appendTraceNode(
+                QStringLiteral("subagent_task"),
+                QStringLiteral("background · %1 · %2").arg(role, summary),
+                status,
+                QJsonObject{{QStringLiteral("taskId"), id},
+                            {QStringLiteral("goal"), goal},
+                            {QStringLiteral("role"), role},
+                            {QStringLiteral("state"), state}});
+            m_backgroundNodeIds.insert(id, nodeId);
+            m_backgroundNodeStates.insert(id, state);
+            continue;
+        }
+        if (m_backgroundNodeStates.value(id) == state) continue;
+        for (int i = 0; i < m_traceModel.size(); ++i) {
+            QJsonObject node = m_traceModel.at(i).toObject();
+            if (node.value("id").toString() != nodeId) continue;
+            node["status"] = status;
+            node["state"] = state;
+            m_traceModel.replace(i, node);
+            persistTraceNode(node, i);
+            emit traceChanged();
+            break;
+        }
+        m_backgroundNodeStates.insert(id, state);
+    }
+}
+
 // 截掉末条回答后从末条提问重发。顺序是硬要求：先 truncateLastTurn（一个事务里
 // 连该提问之后的轨迹节点一起删，否则被丢弃的过程会在重开会话时复活），失败就内存
 // 一字不动并 errorOccurred，成功后直接重发、不重新组装 system/episodic。
@@ -2385,11 +2517,15 @@ void AIAgent::dispatchToolExecution(const ToolCallInfo& call, const QString& tra
     const bool isSpawnCall = call.name == QLatin1String("spawn_agent");
     watcher->setFuture(QtConcurrent::run([tool, call, projectRoot, cancelled, nodeId, isSpawnCall,
                                           store = m_proposalStore,
+                                          hub = m_backgroundHub,
                                           target = QPointer<AIAgent>(this)]() -> ToolResult {
         const Sandbox::ExecutionScope scope(projectRoot);
         // docs/35 P4.4: apply_proposal resolves its id on the pool thread;
         // same thread-local pattern as the progress hook below.
         ProposalStoreRouter proposalRouter(store);
+        // docs/35 P4.3: spawn_agent(background=true) registers its run here;
+        // subagent_wait/status/cancel read the same session hub.
+        BackgroundTaskHubRouter backgroundRouter(hub);
         SubAgentProgressRouter router(isSpawnCall
             ? SubAgentProgressHook([nodeId, target](const SubAgentProgress& p) {
                   if (target.isNull()) return;
@@ -2516,7 +2652,11 @@ void AIAgent::finishToolExecution(const ToolCallInfo& call, const QString& trace
     if (!result.source.isEmpty()) resultExtra["source"] = result.source;
     // docs/33 E1: 证据工件路径挂上 tool_result 节点——聊天里「查看证据」
     // 入口的数据源（ProcessCard 按 evidencePath 渲染芯片）。
-    if (call.name == QLatin1String("spawn_agent") && result.success) {
+    // docs/35 P4.3: subagent_wait returns the same report shape as spawn_agent.
+    const bool isSubAgentResult =
+        call.name == QLatin1String("spawn_agent")
+        || call.name == QLatin1String("subagent_wait");
+    if (isSubAgentResult && result.success) {
         static const QRegularExpression evidenceRe(
             QStringLiteral("evidence: ([^)\\r\\n]+)"));
         const QRegularExpressionMatch evidenceMatch = evidenceRe.match(output);
@@ -2532,7 +2672,7 @@ void AIAgent::finishToolExecution(const ToolCallInfo& call, const QString& trace
     // id 派生稳定 id；报告正文随后注入 id 清单，模型据此调 apply_proposal。
     // trace 持久化仍只拿上面的轻量索引，节点体积不随提案正文增长。
     QStringList proposalNotes;
-    if (call.name == QLatin1String(SubAgentTool::kName)) {
+    {
         const QJsonArray data =
             result.metadata.value("subagentProposalData").toArray();
         for (int i = 0; i < data.size(); ++i) {

@@ -253,6 +253,14 @@ ApplicationWindow {
         todos: AgentVM.todoList
     }
 
+    // docs/35 P4.3: 后台子代理面板。会话级数据直接绑定活动标签，切换标签
+    // 时 AgentVM 会重新发出 backgroundSubAgentsChanged。
+    BackgroundTasksDialog {
+        id: backgroundTasksDialog
+        parent: Overlay.overlay
+        tasks: AgentVM.backgroundSubAgents
+    }
+
     // ── File Review Dialog ────────────────────────────
     // Same reason as above: the diff pane was unreadable in the sidebar.
     // Bound to the live checkpoint list, so opening needs no data hand-off.

@@ -24,7 +24,7 @@ SettingsPage {
     SettingCard {
         Layout.fillWidth: true
         title: qsTr("子代理")
-        subtitle: qsTr("允许模型派生子代理并行检索与分析；写类角色（coder）只起草改动提案，落盘仍由主任务在用户确认后执行。")
+        subtitle: qsTr("允许模型派生子代理并行检索与分析；写类角色（coder）只起草改动提案，落盘仍由主任务在用户确认后执行；长耗时任务可用后台模式，从顶栏「后台子代理」面板查看。")
 
         SettingRow {
             objectName: "agent/subagentEnabled"

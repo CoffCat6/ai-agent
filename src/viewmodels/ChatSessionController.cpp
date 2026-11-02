@@ -152,6 +152,10 @@ void ChatSessionController::connectAgent(AIAgent* agent) {
         emit todoListChanged(m_todoList);
     });
 
+    // docs/35 P4.3: 后台任务表的合并节流通知；面板按标签读活动 agent。
+    connect(agent, &AIAgent::backgroundSubAgentsChanged,
+            this, &ChatSessionController::backgroundSubAgentsChanged);
+
     // G4: recorded on tool completion / after undo; reload the metadata list.
     connect(agent, &AIAgent::fileCheckpointsChanged, this, [this, agent]() {
         m_fileCheckpoints = agent->fileCheckpoints().toVariantList();

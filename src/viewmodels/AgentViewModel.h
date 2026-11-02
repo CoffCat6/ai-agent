@@ -413,6 +413,9 @@ public:
     // ── Session tabs (Batch 29) ───────────────────────
     QVariantList tabModel() const;
     int activeTabIndex() const { return m_activeTab; }
+    // docs/35 P4.3: 后台任务面板数据（活动标签）。
+    QVariantList backgroundSubAgents() const;
+    int backgroundSubAgentActiveCount() const;
     Q_INVOKABLE void openTab();
     // docs/17: 新建会话的归属规则集中在 VM —— 默认新建的是**普通对话**
     // （本地，不带项目），只有项目行提供的「+」（newProjectChat）才创建
@@ -506,6 +509,16 @@ public:
     Q_INVOKABLE bool cancelSubAgents();
     // docs/35 P4.5: 只停止指定 trace 节点（ProcessCard 的「停止」）。
     Q_INVOKABLE bool cancelSubAgent(const QString& traceNodeId);
+    // docs/35 P4.3: 后台子代理面板——读活动标签的会话任务表。
+    Q_PROPERTY(QVariantList backgroundSubAgents READ backgroundSubAgents
+               NOTIFY backgroundSubAgentsChanged)
+    Q_PROPERTY(int backgroundSubAgentActiveCount
+               READ backgroundSubAgentActiveCount
+               NOTIFY backgroundSubAgentsChanged)
+    Q_INVOKABLE bool cancelBackgroundSubAgent(const QString& taskId);
+    Q_INVOKABLE int cancelAllBackgroundSubAgents();
+    Q_INVOKABLE QString backgroundSubAgentReport(const QString& taskId) const;
+    Q_INVOKABLE void dismissFinishedBackgroundSubAgents();
     // docs/25 A4：停**全部**标签的任务（托盘退出等收尾路径用），替代只停
     // active tab 的 stop()——后者让其余 busy tab 依赖 app 析构 → controller
     // 析构的被动兜底（隐式依赖 QObject 析构顺序）。
@@ -716,6 +729,8 @@ public:
 signals:
     void stateChanged();
     void traceChanged();
+    // docs/35 P4.3: 活动标签的后台任务表或活动标签本身变化。
+    void backgroundSubAgentsChanged();
     void showProcessChanged();
     void responseReady();
     void draftTextChanged();

@@ -9,6 +9,7 @@
 #include <QString>
 #include <QTimer>
 #include <QVariant>
+#include <QVariantList>
 #include <QVariantMap>
 #include <QVector>
 #include <atomic>
@@ -28,6 +29,7 @@ class IMemory;
 class EpisodicService;
 struct SubAgentProgress;   // core/agent/SubAgentRunner.h (docs/32 P2)
 class ProposalStore;       // core/tools/ProposalStore.h (docs/35 P4.4)
+class BackgroundTaskHub;   // core/agent/BackgroundTaskHub.h (docs/35 P4.3)
 
 // The agent core: runs the ReAct loop
 //   user message -> LLM -> (tool calls -> results -> LLM)* -> final answer
@@ -233,6 +235,15 @@ public slots:
     // 「停止」），其他在飞子代理继续跑。节点不是运行中的 spawn_agent
     // 时返回 false。
     bool cancelSubAgent(const QString& traceNodeId);
+    // docs/35 P4.3: 会话级后台子代理任务表。列表行字段见
+    // BackgroundTaskHub::snapshots()；切换会话时任务不串台（resetSession
+    // 会统一取消）。报告按需取，列表更新不携带大字符串。
+    QVariantList backgroundSubAgents() const;
+    int backgroundSubAgentActiveCount() const;
+    bool cancelBackgroundSubAgent(const QString& taskId);
+    int cancelAllBackgroundSubAgents();
+    QString backgroundSubAgentReport(const QString& taskId) const;
+    void dismissFinishedBackgroundSubAgents();
     void resetSession();                            // clear everything, fresh session
     void resumeSession(const QString& sessionId);   // load history + trace from memory
     void cancel() { resetSession(); }               // legacy alias
@@ -258,6 +269,8 @@ signals:
     void contextLimitChanged();
     void sessionChanged(const QString& sessionId);
     void sessionsChanged();
+    // docs/35 P4.3: 后台任务表变化（AIAgent 已按 250ms 合并节流）。
+    void backgroundSubAgentsChanged();
     // docs/16 §12.4: 配额超限警告 (quotaType ∈ dailyToken/dailyCost/
     // monthlyToken/monthlyCost, used=已消耗, quota=上限) 与单次请求费用变化。
     void quotaWarning(const QString& quotaType, qint64 used, qint64 quota);
@@ -332,6 +345,9 @@ private:
     // docs/32 P2: sub-agent progress events (queued from the pool thread)
     // update the spawning tool_call node's title in place.
     void applySubAgentProgress(const QString& nodeId, const SubAgentProgress& progress);
+    // docs/35 P4.3: 把后台任务表的状态映射到独立的 trace 节点
+    // (type = subagent_task)，仅在合并节流的 tick 上调用（GUI 线程）。
+    void syncBackgroundTraceNodes();
     // Append synthetic tool-result messages for calls the assistant already
     // announced but that will NOT be executed (loop terminator, forced
     // final, stop). Without them the history ends in dangling tool_calls -
@@ -419,6 +435,12 @@ private:
     // from spawn_agent metadata, consumed by apply_proposal; cleared when the
     // session changes (ids are never persisted).
     std::shared_ptr<ProposalStore> m_proposalStore;
+    // docs/35 P4.3: background runs outlive one tool call; the hub owns the
+    // task table and its own QThreadPool.
+    std::shared_ptr<BackgroundTaskHub> m_backgroundHub;
+    QTimer m_backgroundNotifyTimer;             // 250ms coalescing tick
+    QHash<QString, QString> m_backgroundNodeIds;    // taskId -> trace node id
+    QHash<QString, QString> m_backgroundNodeStates; // taskId -> last state
     QString m_confirmNodeId;  // trace node of the pending confirmation
     // Actual tool executions in the current request (m_maxToolExecutions cap;
     // the round budget alone bounds LLM rounds, not the announced call count).

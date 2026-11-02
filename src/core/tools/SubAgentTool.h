@@ -3,6 +3,7 @@
 #include "ITool.h"
 #include "core/agent/SubAgentRunner.h"
 
+#include <QJsonArray>
 #include <QMutex>
 #include <QVariant>
 #include <QVector>
@@ -71,6 +72,15 @@ public:
     void setContextLimit(int tokens) {
         m_contextLimit.store(tokens > 0 ? tokens : 0);
     }
+
+    // docs/35 P4.3: render a finished run into the primary-history tool text
+    // and its structured metadata. Shared by spawn_agent's synchronous path
+    // and subagent_wait's background retrieval, so both produce identical
+    // report shapes (evidence path, todo echo, proposal index/full data).
+    static QString reportOutput(const SubAgentReport& report,
+                                const QString& todoId = {});
+    static QJsonArray proposalIndex(const SubAgentReport& report);
+    static QJsonArray proposalData(const SubAgentReport& report);
 
     ToolDefinition definition() const override;
     // ITool's pure virtual; the dispatch path always uses the cancellation

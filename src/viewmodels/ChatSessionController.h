@@ -172,6 +172,8 @@ signals:
     // 套用的提示词预设变了（套用/清除/预设文本被编辑）。
     void promptPresetChanged();
     void todoListChanged(const QVariantList& todos);
+    // docs/35 P4.3: 后台子代理任务表变化（AgentViewModel 只转发活动标签）。
+    void backgroundSubAgentsChanged();
     void fileCheckpointsChanged(const QVariantList& checkpoints);
     void episodicChanged();
 

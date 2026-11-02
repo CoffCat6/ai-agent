@@ -43,6 +43,9 @@ add_library(nexus_core STATIC
     # docs/32 P1: 只读子代理的最小循环（复用 IAIService 虚接口，不引 infra 符号）。
     src/core/agent/SubAgentRunner.h
     src/core/agent/SubAgentRunner.cpp
+    # docs/35 P4.3: 会话级后台子代理任务表（fork/join）。
+    src/core/agent/BackgroundTaskHub.h
+    src/core/agent/BackgroundTaskHub.cpp
     src/core/agent/EpisodicService.h
     src/core/agent/EpisodicService.cpp
     src/core/memory/IMemory.h
@@ -62,6 +65,9 @@ add_library(nexus_core STATIC
     src/core/tools/FileEditUtil.h
     src/core/tools/ApplyProposalTool.h
     src/core/tools/ApplyProposalTool.cpp
+    # docs/35 P4.3: 后台子代理的 wait/status/cancel 管理工具。
+    src/core/tools/SubAgentControlTool.h
+    src/core/tools/SubAgentControlTool.cpp
     src/core/tools/Sandbox.h
     src/core/tools/SandboxWin.cpp
     src/core/git/GitService.h
@@ -337,6 +343,8 @@ qt_add_qml_module(nexus_ai
         src/ui/components/TodoListPanel.qml
         # 任务清单对话框：把待办列表从窄侧栏移进可按需打开的弹窗
         src/ui/components/TodoDialog.qml
+        # docs/35 P4.3: 后台子代理任务面板（顶栏入口 + 独立对话框）
+        src/ui/components/BackgroundTasksDialog.qml
         # G2: '@' reference status chips (fed by AgentVM.inspectFileReferences)
         src/ui/components/ReferenceChipRow.qml
         # G4: session file checkpoints (fed by AgentVM.fileCheckpoints)

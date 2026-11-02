@@ -916,6 +916,46 @@ Rectangle {
             }
         }
 
+        // ── Background Sub-agents (docs/35 P4.3) ───────
+        // 只在有排队/运行中任务时出现；点击打开 BackgroundTasksDialog
+        // （main.qml），面板读同一份会话任务表。角标是进行中的数量。
+        IconButton {
+            id: backgroundAgentsToggle
+            objectName: "backgroundAgentsToggle"
+            readonly property int activeCount: AgentVM.backgroundSubAgentActiveCount
+
+            visible: activeCount > 0
+            icon: "agents"
+            iconSize: 16
+            restIconColor: Theme.brandPrimary
+            tooltip: qsTr("后台子代理（%1 个进行中）").arg(activeCount)
+            Accessible.name: qsTr("打开后台子代理面板，%1 个进行中").arg(activeCount)
+            onClicked: backgroundTasksDialog.open()
+
+            Rectangle {
+                anchors.right: parent.right
+                anchors.top: parent.top
+                anchors.rightMargin: 1
+                anchors.topMargin: 1
+                visible: backgroundAgentsToggle.activeCount > 0
+                width: Math.max(13, backgroundBadgeLabel.implicitWidth + 6)
+                height: 13
+                radius: 7
+                color: Theme.statusWarning
+
+                Text {
+                    id: backgroundBadgeLabel
+                    anchors.centerIn: parent
+                    text: backgroundAgentsToggle.activeCount > 99
+                        ? "99+" : backgroundAgentsToggle.activeCount
+                    color: Theme.bgPrimary
+                    font.pixelSize: Theme.fontSizeNano
+                    font.family: Theme.fontMono
+                    font.bold: true
+                }
+            }
+        }
+
         // ── Review Toggle ─────────────────────────────
         // Opens ReviewDialog (main.qml). Always available: an empty session
         // gets the dialog's own empty state rather than a dead button.

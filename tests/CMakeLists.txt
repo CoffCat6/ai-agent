@@ -441,6 +441,22 @@ add_test(NAME test_todo_qml
         "QT_QPA_PLATFORM_PLUGIN_PATH=${QT6_INSTALL_PREFIX}/${QT6_INSTALL_PLUGINS}/platforms"
         $<TARGET_FILE:test_todo_qml> -platform offscreen)
 
+# docs/35 P4.3: 后台子代理面板（独立对话框）的渲染回归——空态、行数、
+# 状态文案与「清除已结束」入口。与 test_todo_qml 同一套构建目录副本 +
+# offscreen 方案。
+add_executable(test_background_tasks_qml test_background_tasks_qml.cpp)
+target_link_libraries(test_background_tasks_qml PRIVATE
+    nexus_core nexus_infra nexus_viewmodels nexus_viewmodelsplugin
+    Qt6::Test Qt6::Qml Qt6::Quick)
+target_compile_definitions(test_background_tasks_qml PRIVATE
+    NEXUS_TEST_QML_DIR="${CMAKE_CURRENT_SOURCE_DIR}/qml"
+    NEXUS_BUILD_DIR="${CMAKE_BINARY_DIR}")
+add_dependencies(test_background_tasks_qml nexus_ai)
+add_test(NAME test_background_tasks_qml
+    COMMAND ${CMAKE_COMMAND} -E env
+        "QT_QPA_PLATFORM_PLUGIN_PATH=${QT6_INSTALL_PREFIX}/${QT6_INSTALL_PLUGINS}/platforms"
+        $<TARGET_FILE:test_background_tasks_qml> -platform offscreen)
+
 # G2: the '@' reference status row is the only feedback telling users whether
 # a mention will actually be attached. Render it for real (same filesystem
 # copy + offscreen setup as test_todo_qml) so "logic wired, row invisible"

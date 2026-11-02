@@ -71,7 +71,7 @@ const QVector<CatalogEntryDef>& staticEntries() {
         // docs/32 P2: 子代理设置——随设置页落地转为可见条目。
         {NEXUS_CATALOG_ID("agent/subagentEnabled"), QStringLiteral("agent"),
          QT_TRANSLATE_NOOP("SettingsSearch", "子代理开关"),
-         QStringLiteral("子代理 subagent spawn_agent 派生 并行 提案 coder propose_edit apply_proposal 应用"), false, kPage},
+         QStringLiteral("子代理 subagent spawn_agent 派生 并行 提案 coder propose_edit apply_proposal 应用 background 后台 subagent_wait subagent_status subagent_cancel"), false, kPage},
         {NEXUS_CATALOG_ID("agent/subagentMaxParallel"), QStringLiteral("agent"),
          QT_TRANSLATE_NOOP("SettingsSearch", "子代理并行上限"),
          QStringLiteral("子代理 subagent 并行 并发 上限 parallel"), false, kPage},

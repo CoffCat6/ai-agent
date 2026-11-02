@@ -152,9 +152,8 @@
         <translation>Sub-agents</translation>
     </message>
     <message>
-        <location filename="../src/ui/pages/AgentBehaviorPage.qml" line="27"/>
         <source>允许模型派生子代理并行检索与分析；写类角色（coder）只起草改动提案，落盘仍由主任务在用户确认后执行。</source>
-        <translation>Let the model spawn sub-agents for parallel research and analysis; the coding role (coder) only drafts change proposals - the primary task applies them after your confirmation.</translation>
+        <translation type="vanished">Let the model spawn sub-agents for parallel research and analysis; the coding role (coder) only drafts change proposals - the primary task applies them after your confirmation.</translation>
     </message>
     <message>
         <location filename="../src/ui/pages/AgentBehaviorPage.qml" line="31"/>
@@ -209,6 +208,11 @@
     <message>
         <source>子代理超时，秒</source>
         <translation type="vanished">Sub-agent timeout, seconds</translation>
+    </message>
+    <message>
+        <location filename="../src/ui/pages/AgentBehaviorPage.qml" line="27"/>
+        <source>允许模型派生子代理并行检索与分析；写类角色（coder）只起草改动提案，落盘仍由主任务在用户确认后执行；长耗时任务可用后台模式，从顶栏「后台子代理」面板查看。</source>
+        <translation>Let the model spawn sub-agents for parallel research and analysis; the coder role only drafts proposals and the primary agent applies them after approval. Long-running tasks can use background mode and are tracked in the top-bar Background sub-agents panel.</translation>
     </message>
     <message>
         <location filename="../src/ui/pages/AgentBehaviorPage.qml" line="64"/>
@@ -538,6 +542,174 @@
         <location filename="../src/ui/components/AuditDialog.qml" line="300"/>
         <source>关闭</source>
         <translation>Close</translation>
+    </message>
+</context>
+<context>
+    <name>BackgroundTasksDialog</name>
+    <message>
+        <location filename="../src/ui/components/BackgroundTasksDialog.qml" line="55"/>
+        <source>排队中</source>
+        <translation>Queued</translation>
+    </message>
+    <message>
+        <location filename="../src/ui/components/BackgroundTasksDialog.qml" line="56"/>
+        <source>运行中</source>
+        <translation>Running</translation>
+    </message>
+    <message>
+        <location filename="../src/ui/components/BackgroundTasksDialog.qml" line="57"/>
+        <source>已完成</source>
+        <translation>Completed</translation>
+    </message>
+    <message>
+        <location filename="../src/ui/components/BackgroundTasksDialog.qml" line="58"/>
+        <source>失败</source>
+        <translation>Failed</translation>
+    </message>
+    <message>
+        <location filename="../src/ui/components/BackgroundTasksDialog.qml" line="59"/>
+        <source>已取消</source>
+        <translation>Cancelled</translation>
+    </message>
+    <message>
+        <location filename="../src/ui/components/BackgroundTasksDialog.qml" line="82"/>
+        <source>%1 秒</source>
+        <translation>%1s</translation>
+    </message>
+    <message>
+        <location filename="../src/ui/components/BackgroundTasksDialog.qml" line="84"/>
+        <source>%1 分 %2 秒</source>
+        <translation>%1m %2s</translation>
+    </message>
+    <message>
+        <location filename="../src/ui/components/BackgroundTasksDialog.qml" line="85"/>
+        <source>%1 时 %2 分</source>
+        <translation>%1h %2m</translation>
+    </message>
+    <message>
+        <location filename="../src/ui/components/BackgroundTasksDialog.qml" line="109"/>
+        <source>后台子代理面板</source>
+        <translation>Background sub-agents</translation>
+    </message>
+    <message>
+        <location filename="../src/ui/components/BackgroundTasksDialog.qml" line="110"/>
+        <source>查看与管理后台运行的子代理任务</source>
+        <translation>Review and manage background sub-agent tasks</translation>
+    </message>
+    <message>
+        <location filename="../src/ui/components/BackgroundTasksDialog.qml" line="134"/>
+        <source>后台子代理 · %1 个运行中 · %2 个排队</source>
+        <translation>Background sub-agents · %1 running · %2 queued</translation>
+    </message>
+    <message>
+        <location filename="../src/ui/components/BackgroundTasksDialog.qml" line="136"/>
+        <source>后台子代理</source>
+        <translation>Background sub-agents</translation>
+    </message>
+    <message>
+        <location filename="../src/ui/components/BackgroundTasksDialog.qml" line="149"/>
+        <source>关闭后台子代理面板</source>
+        <translation>Close the background sub-agents panel</translation>
+    </message>
+    <message>
+        <location filename="../src/ui/components/BackgroundTasksDialog.qml" line="174"/>
+        <source>没有后台任务。</source>
+        <translation>No background tasks.</translation>
+    </message>
+    <message>
+        <location filename="../src/ui/components/BackgroundTasksDialog.qml" line="183"/>
+        <source>模型对长耗时任务使用 background 模式时会出现在这里。</source>
+        <translation>Tasks the model starts with background=true appear here.</translation>
+    </message>
+    <message>
+        <location filename="../src/ui/components/BackgroundTasksDialog.qml" line="207"/>
+        <source>后台子代理任务列表</source>
+        <translation>Background sub-agent task list</translation>
+    </message>
+    <message>
+        <location filename="../src/ui/components/BackgroundTasksDialog.qml" line="258"/>
+        <source>%1 · %2</source>
+        <translation>%1 · %2</translation>
+    </message>
+    <message>
+        <location filename="../src/ui/components/BackgroundTasksDialog.qml" line="290"/>
+        <source>步数 %1</source>
+        <translation>Steps: %1</translation>
+    </message>
+    <message>
+        <location filename="../src/ui/components/BackgroundTasksDialog.qml" line="297"/>
+        <source>%1 个提案</source>
+        <translation>%1 proposal(s)</translation>
+    </message>
+    <message>
+        <location filename="../src/ui/components/BackgroundTasksDialog.qml" line="305"/>
+        <source>停止</source>
+        <translation>Stop</translation>
+    </message>
+    <message>
+        <location filename="../src/ui/components/BackgroundTasksDialog.qml" line="308"/>
+        <source>停止这个后台子代理</source>
+        <translation>Stop this background sub-agent</translation>
+    </message>
+    <message>
+        <location filename="../src/ui/components/BackgroundTasksDialog.qml" line="311"/>
+        <source>收起</source>
+        <translation>Collapse</translation>
+    </message>
+    <message>
+        <location filename="../src/ui/components/BackgroundTasksDialog.qml" line="311"/>
+        <source>查看</source>
+        <translation>View</translation>
+    </message>
+    <message>
+        <location filename="../src/ui/components/BackgroundTasksDialog.qml" line="320"/>
+        <source>收起任务详情</source>
+        <translation>Hide task details</translation>
+    </message>
+    <message>
+        <location filename="../src/ui/components/BackgroundTasksDialog.qml" line="321"/>
+        <source>查看任务详情</source>
+        <translation>View task details</translation>
+    </message>
+    <message>
+        <location filename="../src/ui/components/BackgroundTasksDialog.qml" line="338"/>
+        <source>最近进度</source>
+        <translation>Recent progress</translation>
+    </message>
+    <message>
+        <location filename="../src/ui/components/BackgroundTasksDialog.qml" line="371"/>
+        <source>等待第一条进度…</source>
+        <translation>Waiting for the first progress event…</translation>
+    </message>
+    <message>
+        <location filename="../src/ui/components/BackgroundTasksDialog.qml" line="371"/>
+        <source>没有进度记录。</source>
+        <translation>No progress recorded.</translation>
+    </message>
+    <message>
+        <location filename="../src/ui/components/BackgroundTasksDialog.qml" line="403"/>
+        <source>共 %1 个任务，%2 个已结束</source>
+        <translation>%1 task(s), %2 finished</translation>
+    </message>
+    <message>
+        <location filename="../src/ui/components/BackgroundTasksDialog.qml" line="415"/>
+        <source>清除已结束</source>
+        <translation>Clear finished</translation>
+    </message>
+    <message>
+        <location filename="../src/ui/components/BackgroundTasksDialog.qml" line="417"/>
+        <source>清除已结束的后台任务</source>
+        <translation>Clear finished background tasks</translation>
+    </message>
+    <message>
+        <location filename="../src/ui/components/BackgroundTasksDialog.qml" line="421"/>
+        <source>全部停止</source>
+        <translation>Stop all</translation>
+    </message>
+    <message>
+        <location filename="../src/ui/components/BackgroundTasksDialog.qml" line="423"/>
+        <source>停止全部后台子代理</source>
+        <translation>Stop all background sub-agents</translation>
     </message>
 </context>
 <context>
@@ -5815,7 +5987,7 @@ Select or import a project in the sidebar first.</translation>
 <context>
     <name>NexusAI::AIAgent</name>
     <message>
-        <location filename="../src/core/agent/AIAgent.cpp" line="980"/>
+        <location filename="../src/core/agent/AIAgent.cpp" line="1021"/>
         <source>请先配置并启用模型，再发送消息。</source>
         <translation>Configure and enable a model before sending a message.</translation>
     </message>
@@ -5864,7 +6036,7 @@ Select or import a project in the sidebar first.</translation>
         <translation type="vanished">No timeline entry matches this message, so the conversation cannot be rewound safely.</translation>
     </message>
     <message>
-        <location filename="../src/core/agent/AIAgent.cpp" line="1914"/>
+        <location filename="../src/core/agent/AIAgent.cpp" line="2082"/>
         <source>无法更新会话记录，原消息已保留，请重试。</source>
         <translation>Could not update the conversation. Original messages were kept. Please retry.</translation>
     </message>
@@ -5872,61 +6044,61 @@ Select or import a project in the sidebar first.</translation>
 <context>
     <name>NexusAI::AgentViewModel</name>
     <message>
-        <location filename="../src/viewmodels/AgentViewModel.cpp" line="1752"/>
-        <location filename="../src/viewmodels/AgentViewModel.cpp" line="1757"/>
+        <location filename="../src/viewmodels/AgentViewModel.cpp" line="1761"/>
+        <location filename="../src/viewmodels/AgentViewModel.cpp" line="1766"/>
         <source>保存项目规则失败：%1</source>
         <translation>Failed to save project rules: %1</translation>
     </message>
     <message>
-        <location filename="../src/viewmodels/AgentViewModel.cpp" line="301"/>
-        <location filename="../src/viewmodels/AgentViewModel.cpp" line="603"/>
-        <location filename="../src/viewmodels/AgentViewModel.cpp" line="2733"/>
-        <location filename="../src/viewmodels/AgentViewModel.cpp" line="2801"/>
+        <location filename="../src/viewmodels/AgentViewModel.cpp" line="310"/>
+        <location filename="../src/viewmodels/AgentViewModel.cpp" line="612"/>
+        <location filename="../src/viewmodels/AgentViewModel.cpp" line="2742"/>
+        <location filename="../src/viewmodels/AgentViewModel.cpp" line="2850"/>
         <source>新会话</source>
         <translation>New Session</translation>
     </message>
     <message>
-        <location filename="../src/viewmodels/AgentViewModel.cpp" line="728"/>
+        <location filename="../src/viewmodels/AgentViewModel.cpp" line="737"/>
         <source>打开的对话过多，请先结束其中一些再打开新的。</source>
         <translation>Too many conversations are open. Close some before opening a new one.</translation>
     </message>
     <message>
-        <location filename="../src/viewmodels/AgentViewModel.cpp" line="927"/>
+        <location filename="../src/viewmodels/AgentViewModel.cpp" line="936"/>
         <source>请等待当前任务完成，或停止后切换模型。</source>
         <translation>Wait for the current task to finish, or stop it before switching models.</translation>
     </message>
     <message>
-        <location filename="../src/viewmodels/AgentViewModel.cpp" line="1316"/>
+        <location filename="../src/viewmodels/AgentViewModel.cpp" line="1325"/>
         <source>无法更新会话置顶状态，请重试。</source>
         <translation>Could not update the pinned state. Please retry.</translation>
     </message>
     <message>
-        <location filename="../src/viewmodels/AgentViewModel.cpp" line="1324"/>
+        <location filename="../src/viewmodels/AgentViewModel.cpp" line="1333"/>
         <source>无法更新会话归档状态，请重试。</source>
         <translation>Could not update the archive state. Please retry.</translation>
     </message>
     <message>
-        <location filename="../src/viewmodels/AgentViewModel.cpp" line="1328"/>
+        <location filename="../src/viewmodels/AgentViewModel.cpp" line="1337"/>
         <source>会话已归档，可在“包含已归档”中恢复。</source>
         <translation>Conversation archived. Enable “Include archived” to restore it.</translation>
     </message>
     <message>
-        <location filename="../src/viewmodels/AgentViewModel.cpp" line="1328"/>
+        <location filename="../src/viewmodels/AgentViewModel.cpp" line="1337"/>
         <source>会话已恢复。</source>
         <translation>Conversation restored.</translation>
     </message>
     <message>
-        <location filename="../src/viewmodels/AgentViewModel.cpp" line="1368"/>
+        <location filename="../src/viewmodels/AgentViewModel.cpp" line="1377"/>
         <source>导出失败：未连接持久化后端</source>
         <translation>Export failed: no persistent backend connected</translation>
     </message>
     <message>
-        <location filename="../src/viewmodels/AgentViewModel.cpp" line="1373"/>
+        <location filename="../src/viewmodels/AgentViewModel.cpp" line="1382"/>
         <source>导出失败：不支持的格式“%1”（可选 md / json）</source>
         <translation>Export failed: unsupported format &quot;%1&quot; (md / json)</translation>
     </message>
     <message>
-        <location filename="../src/viewmodels/AgentViewModel.cpp" line="1388"/>
+        <location filename="../src/viewmodels/AgentViewModel.cpp" line="1397"/>
         <source># NexusAI 会话导出
 
 </source>
@@ -5935,21 +6107,21 @@ Select or import a project in the sidebar first.</translation>
 </translation>
     </message>
     <message>
-        <location filename="../src/viewmodels/AgentViewModel.cpp" line="1389"/>
+        <location filename="../src/viewmodels/AgentViewModel.cpp" line="1398"/>
         <source>- 会话 ID：%1
 </source>
         <translation>- Session ID: %1
 </translation>
     </message>
     <message>
-        <location filename="../src/viewmodels/AgentViewModel.cpp" line="1390"/>
+        <location filename="../src/viewmodels/AgentViewModel.cpp" line="1399"/>
         <source>- 导出时间：%1
 </source>
         <translation>- Exported at: %1
 </translation>
     </message>
     <message>
-        <location filename="../src/viewmodels/AgentViewModel.cpp" line="1391"/>
+        <location filename="../src/viewmodels/AgentViewModel.cpp" line="1400"/>
         <source>- 消息数：%1
 
 ---
@@ -5962,17 +6134,17 @@ Select or import a project in the sidebar first.</translation>
 </translation>
     </message>
     <message>
-        <location filename="../src/viewmodels/AgentViewModel.cpp" line="1395"/>
+        <location filename="../src/viewmodels/AgentViewModel.cpp" line="1404"/>
         <source>用户</source>
         <translation>User</translation>
     </message>
     <message>
-        <location filename="../src/viewmodels/AgentViewModel.cpp" line="1396"/>
+        <location filename="../src/viewmodels/AgentViewModel.cpp" line="1405"/>
         <source>助手</source>
         <translation>Assistant</translation>
     </message>
     <message>
-        <location filename="../src/viewmodels/AgentViewModel.cpp" line="1405"/>
+        <location filename="../src/viewmodels/AgentViewModel.cpp" line="1414"/>
         <source>---
 
 ## 过程摘要
@@ -5985,169 +6157,169 @@ Select or import a project in the sidebar first.</translation>
 </translation>
     </message>
     <message>
-        <location filename="../src/viewmodels/AgentViewModel.cpp" line="1434"/>
-        <location filename="../src/viewmodels/AgentViewModel.cpp" line="1516"/>
+        <location filename="../src/viewmodels/AgentViewModel.cpp" line="1443"/>
+        <location filename="../src/viewmodels/AgentViewModel.cpp" line="1525"/>
         <source>导出失败：无法写入 %1</source>
         <translation>Export failed: cannot write %1</translation>
     </message>
     <message>
-        <location filename="../src/viewmodels/AgentViewModel.cpp" line="1439"/>
-        <location filename="../src/viewmodels/AgentViewModel.cpp" line="1523"/>
+        <location filename="../src/viewmodels/AgentViewModel.cpp" line="1448"/>
+        <location filename="../src/viewmodels/AgentViewModel.cpp" line="1532"/>
         <source>导出失败：写入未完成 %1</source>
         <translation>Export failed: write incomplete %1</translation>
     </message>
     <message>
-        <location filename="../src/viewmodels/AgentViewModel.cpp" line="1445"/>
+        <location filename="../src/viewmodels/AgentViewModel.cpp" line="1454"/>
         <source>已导出会话（%1 条消息）：%2</source>
         <translation>Session exported (%1 messages): %2</translation>
     </message>
     <message>
-        <location filename="../src/viewmodels/AgentViewModel.cpp" line="1479"/>
+        <location filename="../src/viewmodels/AgentViewModel.cpp" line="1488"/>
         <source>导出失败：当前没有可导出的请求明细</source>
         <translation>Export failed: no request details to export</translation>
     </message>
     <message>
-        <location filename="../src/viewmodels/AgentViewModel.cpp" line="1485"/>
+        <location filename="../src/viewmodels/AgentViewModel.cpp" line="1494"/>
         <source>导出失败：未指定文件路径</source>
         <translation>Export failed: no file path specified</translation>
     </message>
     <message>
-        <location filename="../src/viewmodels/AgentViewModel.cpp" line="1491"/>
+        <location filename="../src/viewmodels/AgentViewModel.cpp" line="1500"/>
         <source>时间</source>
         <translation>Time</translation>
     </message>
     <message>
-        <location filename="../src/viewmodels/AgentViewModel.cpp" line="1491"/>
+        <location filename="../src/viewmodels/AgentViewModel.cpp" line="1500"/>
         <source>模型</source>
         <translation>Model</translation>
     </message>
     <message>
-        <location filename="../src/viewmodels/AgentViewModel.cpp" line="1491"/>
+        <location filename="../src/viewmodels/AgentViewModel.cpp" line="1500"/>
         <source>输入 Tokens</source>
         <translation>Input Tokens</translation>
     </message>
     <message>
-        <location filename="../src/viewmodels/AgentViewModel.cpp" line="1491"/>
+        <location filename="../src/viewmodels/AgentViewModel.cpp" line="1500"/>
         <source>输出 Tokens</source>
         <translation>Output Tokens</translation>
     </message>
     <message>
-        <location filename="../src/viewmodels/AgentViewModel.cpp" line="1492"/>
+        <location filename="../src/viewmodels/AgentViewModel.cpp" line="1501"/>
         <source>缓存命中 Tokens</source>
         <translation>Cache hit Tokens</translation>
     </message>
     <message>
-        <location filename="../src/viewmodels/AgentViewModel.cpp" line="1492"/>
+        <location filename="../src/viewmodels/AgentViewModel.cpp" line="1501"/>
         <source>延迟(ms)</source>
         <translation>Latency (ms)</translation>
     </message>
     <message>
-        <location filename="../src/viewmodels/AgentViewModel.cpp" line="1492"/>
+        <location filename="../src/viewmodels/AgentViewModel.cpp" line="1501"/>
         <source>费用(元)</source>
         <translation>Cost (CNY)</translation>
     </message>
     <message>
-        <location filename="../src/viewmodels/AgentViewModel.cpp" line="1493"/>
+        <location filename="../src/viewmodels/AgentViewModel.cpp" line="1502"/>
         <source>会话 ID</source>
         <translation>Session ID</translation>
     </message>
     <message>
-        <location filename="../src/viewmodels/AgentViewModel.cpp" line="1493"/>
+        <location filename="../src/viewmodels/AgentViewModel.cpp" line="1502"/>
         <source>请求 ID</source>
         <translation>Request ID</translation>
     </message>
     <message>
-        <location filename="../src/viewmodels/AgentViewModel.cpp" line="1615"/>
+        <location filename="../src/viewmodels/AgentViewModel.cpp" line="1624"/>
         <source>无法读取文件：%1</source>
         <translation>Cannot read file: %1</translation>
     </message>
     <message>
-        <location filename="../src/viewmodels/AgentViewModel.cpp" line="1662"/>
+        <location filename="../src/viewmodels/AgentViewModel.cpp" line="1671"/>
         <source>PDF 已加密或需要密码，无法导入：%1</source>
         <translation>PDF is encrypted or password-protected, cannot import: %1</translation>
     </message>
     <message>
-        <location filename="../src/viewmodels/AgentViewModel.cpp" line="1665"/>
+        <location filename="../src/viewmodels/AgentViewModel.cpp" line="1674"/>
         <source>PDF 文件已损坏或格式无效，无法导入：%1</source>
         <translation>PDF file is corrupted or has an invalid format, cannot import: %1</translation>
     </message>
     <message>
-        <location filename="../src/viewmodels/AgentViewModel.cpp" line="1668"/>
+        <location filename="../src/viewmodels/AgentViewModel.cpp" line="1677"/>
         <source>未能从 PDF 中提取到文本（可能是扫描件，没有文本层）：%1</source>
         <translation>No text could be extracted from the PDF (it may be a scan without a text layer): %1</translation>
     </message>
     <message>
-        <location filename="../src/viewmodels/AgentViewModel.cpp" line="1672"/>
+        <location filename="../src/viewmodels/AgentViewModel.cpp" line="1681"/>
         <source>无法读取 PDF 文件：%1</source>
         <translation>Cannot read PDF file: %1</translation>
     </message>
     <message>
-        <location filename="../src/viewmodels/AgentViewModel.cpp" line="1858"/>
+        <location filename="../src/viewmodels/AgentViewModel.cpp" line="1867"/>
         <source>仅支持 http/https URL：%1</source>
         <translation>Only http/https URLs are supported: %1</translation>
     </message>
     <message>
-        <location filename="../src/viewmodels/AgentViewModel.cpp" line="1882"/>
+        <location filename="../src/viewmodels/AgentViewModel.cpp" line="1891"/>
         <source>页面无可用正文：%1</source>
         <translation>The page has no usable text: %1</translation>
     </message>
     <message>
-        <location filename="../src/viewmodels/AgentViewModel.cpp" line="1895"/>
+        <location filename="../src/viewmodels/AgentViewModel.cpp" line="1904"/>
         <source>页面已重定向至 %1，请直接导入新地址。</source>
         <translation>The page redirected to %1; import the new address directly.</translation>
     </message>
     <message>
-        <location filename="../src/viewmodels/AgentViewModel.cpp" line="1899"/>
+        <location filename="../src/viewmodels/AgentViewModel.cpp" line="1908"/>
         <source>抓取失败：%1</source>
         <translation>Fetch failed: %1</translation>
     </message>
     <message>
-        <location filename="../src/viewmodels/AgentViewModel.cpp" line="2260"/>
+        <location filename="../src/viewmodels/AgentViewModel.cpp" line="2269"/>
         <source>数据库正被占用（可能有备份或其它任务在进行），请稍后重试</source>
         <translation>The database is busy (a backup or another task may be running). Try again later</translation>
     </message>
     <message>
-        <location filename="../src/viewmodels/AgentViewModel.cpp" line="2271"/>
+        <location filename="../src/viewmodels/AgentViewModel.cpp" line="2280"/>
         <source>未指定备份文件</source>
         <translation>No backup file specified</translation>
     </message>
     <message>
-        <location filename="../src/viewmodels/AgentViewModel.cpp" line="2280"/>
+        <location filename="../src/viewmodels/AgentViewModel.cpp" line="2289"/>
         <source>备份文件不存在</source>
         <translation>The backup file does not exist</translation>
     </message>
     <message>
-        <location filename="../src/viewmodels/AgentViewModel.cpp" line="2284"/>
+        <location filename="../src/viewmodels/AgentViewModel.cpp" line="2293"/>
         <source>只能删除备份目录中的文件</source>
         <translation>Only files in the backup folder can be deleted</translation>
     </message>
     <message>
-        <location filename="../src/viewmodels/AgentViewModel.cpp" line="2287"/>
+        <location filename="../src/viewmodels/AgentViewModel.cpp" line="2296"/>
         <source>删除失败，请检查文件是否被占用</source>
         <translation>Delete failed. Check whether the file is in use</translation>
     </message>
     <message>
-        <location filename="../src/viewmodels/AgentViewModel.cpp" line="2784"/>
+        <location filename="../src/viewmodels/AgentViewModel.cpp" line="2833"/>
         <source>这个会话还没有可分叉的历史记录。</source>
         <translation>This conversation has no history to fork from yet.</translation>
     </message>
     <message>
-        <location filename="../src/viewmodels/AgentViewModel.cpp" line="2789"/>
+        <location filename="../src/viewmodels/AgentViewModel.cpp" line="2838"/>
         <source>这条回答还没有存进会话记录，稍等一下再试。</source>
         <translation>This answer is not saved to the conversation yet - try again in a moment.</translation>
     </message>
     <message>
-        <location filename="../src/viewmodels/AgentViewModel.cpp" line="2807"/>
+        <location filename="../src/viewmodels/AgentViewModel.cpp" line="2856"/>
         <source>%1（分支）</source>
         <translation>%1 (branch)</translation>
     </message>
     <message>
-        <location filename="../src/viewmodels/AgentViewModel.cpp" line="2809"/>
+        <location filename="../src/viewmodels/AgentViewModel.cpp" line="2858"/>
         <source>%1（分支%2）</source>
         <translation>%1 (branch %2)</translation>
     </message>
     <message>
-        <location filename="../src/viewmodels/AgentViewModel.cpp" line="2813"/>
+        <location filename="../src/viewmodels/AgentViewModel.cpp" line="2862"/>
         <source>无法创建分叉出来的会话，请重试。</source>
         <translation>Could not create the forked conversation. Please try again.</translation>
     </message>
@@ -6156,97 +6328,97 @@ Select or import a project in the sidebar first.</translation>
         <translation type="vanished">The forked conversation was created, but its first message could not be sent.</translation>
     </message>
     <message>
-        <location filename="../src/viewmodels/AgentViewModel.cpp" line="1637"/>
+        <location filename="../src/viewmodels/AgentViewModel.cpp" line="1646"/>
         <source>无法打开文件：%1</source>
         <translation>Cannot open file: %1</translation>
     </message>
     <message>
-        <location filename="../src/viewmodels/AgentViewModel.cpp" line="1921"/>
+        <location filename="../src/viewmodels/AgentViewModel.cpp" line="1930"/>
         <source>知识库正忙（导入或重新嵌入进行中），请稍后再试</source>
         <translation>Knowledge base is busy (an import or re-embed is running); try again shortly</translation>
     </message>
     <message>
-        <location filename="../src/viewmodels/AgentViewModel.cpp" line="2048"/>
+        <location filename="../src/viewmodels/AgentViewModel.cpp" line="2057"/>
         <source>文档内容已存在，已跳过：%1</source>
         <translation>Document content already exists, skipped: %1</translation>
     </message>
     <message>
-        <location filename="../src/viewmodels/AgentViewModel.cpp" line="2089"/>
+        <location filename="../src/viewmodels/AgentViewModel.cpp" line="2098"/>
         <source>未找到文档内容，无法重新嵌入：%1</source>
         <translation>Document content not found, cannot re-embed: %1</translation>
     </message>
     <message>
-        <location filename="../src/viewmodels/AgentViewModel.cpp" line="2109"/>
+        <location filename="../src/viewmodels/AgentViewModel.cpp" line="2118"/>
         <source>已重新嵌入 %1（%2 段）</source>
         <translation>Re-embedded %1 (%2 chunks)</translation>
     </message>
     <message>
-        <location filename="../src/viewmodels/AgentViewModel.cpp" line="2111"/>
+        <location filename="../src/viewmodels/AgentViewModel.cpp" line="2120"/>
         <source>重新嵌入失败：%1</source>
         <translation>Re-embedding failed: %1</translation>
     </message>
     <message>
-        <location filename="../src/viewmodels/AgentViewModel.cpp" line="2115"/>
+        <location filename="../src/viewmodels/AgentViewModel.cpp" line="2124"/>
         <source>已导入 %1（%2 段）</source>
         <translation>Imported %1 (%2 chunks)</translation>
     </message>
     <message>
-        <location filename="../src/viewmodels/AgentViewModel.cpp" line="2117"/>
+        <location filename="../src/viewmodels/AgentViewModel.cpp" line="2126"/>
         <source>导入失败（文件为空或无法分块）：%1</source>
         <translation>Import failed (file is empty or cannot be chunked): %1</translation>
     </message>
     <message>
-        <location filename="../src/viewmodels/AgentViewModel.cpp" line="2119"/>
+        <location filename="../src/viewmodels/AgentViewModel.cpp" line="2128"/>
         <source>知识库总量已达上限（最多 %1 段），请先删除部分文档后再导入</source>
         <translation>Knowledge base has reached its limit (max %1 chunks); delete some documents before importing</translation>
     </message>
     <message>
-        <location filename="../src/viewmodels/AgentViewModel.cpp" line="2122"/>
+        <location filename="../src/viewmodels/AgentViewModel.cpp" line="2131"/>
         <source>文件过大（超过单文档 %1 段上限）：%2</source>
         <translation>File too large (exceeds the per-document limit of %1 chunks): %2</translation>
     </message>
     <message>
-        <location filename="../src/viewmodels/AgentViewModel.cpp" line="2185"/>
-        <location filename="../src/viewmodels/AgentViewModel.cpp" line="2219"/>
-        <location filename="../src/viewmodels/AgentViewModel.cpp" line="2237"/>
-        <location filename="../src/viewmodels/AgentViewModel.cpp" line="2250"/>
-        <location filename="../src/viewmodels/AgentViewModel.cpp" line="2258"/>
-        <location filename="../src/viewmodels/AgentViewModel.cpp" line="2299"/>
+        <location filename="../src/viewmodels/AgentViewModel.cpp" line="2194"/>
+        <location filename="../src/viewmodels/AgentViewModel.cpp" line="2228"/>
+        <location filename="../src/viewmodels/AgentViewModel.cpp" line="2246"/>
+        <location filename="../src/viewmodels/AgentViewModel.cpp" line="2259"/>
+        <location filename="../src/viewmodels/AgentViewModel.cpp" line="2267"/>
+        <location filename="../src/viewmodels/AgentViewModel.cpp" line="2308"/>
         <source>数据库未就绪</source>
         <translation>Database not ready</translation>
     </message>
     <message>
-        <location filename="../src/viewmodels/AgentViewModel.cpp" line="2192"/>
+        <location filename="../src/viewmodels/AgentViewModel.cpp" line="2201"/>
         <source>备份失败，详见日志</source>
         <translation>Backup failed; see the log for details</translation>
     </message>
     <message>
-        <location filename="../src/viewmodels/AgentViewModel.cpp" line="2304"/>
+        <location filename="../src/viewmodels/AgentViewModel.cpp" line="2313"/>
         <source>无法读取该备份文件：%1</source>
         <translation>Cannot read this backup file: %1</translation>
     </message>
     <message>
-        <location filename="../src/viewmodels/AgentViewModel.cpp" line="2306"/>
+        <location filename="../src/viewmodels/AgentViewModel.cpp" line="2315"/>
         <source>备份完整性检查未通过，已取消恢复</source>
         <translation>Backup failed the integrity check — restore cancelled</translation>
     </message>
     <message>
-        <location filename="../src/viewmodels/AgentViewModel.cpp" line="2321"/>
+        <location filename="../src/viewmodels/AgentViewModel.cpp" line="2330"/>
         <source>恢复失败，原数据库已还原</source>
         <translation>Restore failed; the original database was kept</translation>
     </message>
     <message>
-        <location filename="../src/viewmodels/AgentViewModel.cpp" line="2617"/>
+        <location filename="../src/viewmodels/AgentViewModel.cpp" line="2626"/>
         <source>文件过大（附件上限 %1 KB）：%2</source>
         <translation>File too large (attachment limit %1 KB): %2</translation>
     </message>
     <message>
-        <location filename="../src/viewmodels/AgentViewModel.cpp" line="2622"/>
+        <location filename="../src/viewmodels/AgentViewModel.cpp" line="2631"/>
         <source>暂不支持二进制文件作为附件：%1</source>
         <translation>Binary files are not supported as attachments yet: %1</translation>
     </message>
     <message>
-        <location filename="../src/viewmodels/AgentViewModel.cpp" line="2635"/>
+        <location filename="../src/viewmodels/AgentViewModel.cpp" line="2644"/>
         <source>已忽略 %1 个不支持的文件类型（仅支持图片与文本文件）</source>
         <translation>Ignored %1 file(s) of unsupported types (images and text files only)</translation>
     </message>
@@ -6258,7 +6430,7 @@ Select or import a project in the sidebar first.</translation>
         <translation type="vanished">No model agent is configured. Configure a model and try again.</translation>
     </message>
     <message>
-        <location filename="../src/viewmodels/ChatSessionController.cpp" line="302"/>
+        <location filename="../src/viewmodels/ChatSessionController.cpp" line="306"/>
         <source>尚未配置模型，请先配置模型后重试。</source>
         <translation>No model is configured. Configure one and try again.</translation>
     </message>
@@ -7457,122 +7629,122 @@ Select or import a project in the sidebar first.</translation>
 <context>
     <name>ProcessCard</name>
     <message>
-        <location filename="../src/ui/components/ProcessCard.qml" line="96"/>
+        <location filename="../src/ui/components/ProcessCard.qml" line="122"/>
         <source>新</source>
         <translation>New</translation>
     </message>
     <message>
-        <location filename="../src/ui/components/ProcessCard.qml" line="97"/>
+        <location filename="../src/ui/components/ProcessCard.qml" line="123"/>
         <source>增</source>
         <translation>Add</translation>
     </message>
     <message>
-        <location filename="../src/ui/components/ProcessCard.qml" line="98"/>
+        <location filename="../src/ui/components/ProcessCard.qml" line="124"/>
         <source>删</source>
         <translation>Del</translation>
     </message>
     <message>
-        <location filename="../src/ui/components/ProcessCard.qml" line="99"/>
+        <location filename="../src/ui/components/ProcessCard.qml" line="125"/>
         <source>改</source>
         <translation>Mod</translation>
     </message>
     <message>
-        <location filename="../src/ui/components/ProcessCard.qml" line="100"/>
+        <location filename="../src/ui/components/ProcessCard.qml" line="126"/>
         <source>移</source>
         <translation>Move</translation>
     </message>
     <message>
-        <location filename="../src/ui/components/ProcessCard.qml" line="117"/>
+        <location filename="../src/ui/components/ProcessCard.qml" line="143"/>
         <source>思考</source>
         <translation>Thinking</translation>
     </message>
     <message>
-        <location filename="../src/ui/components/ProcessCard.qml" line="118"/>
+        <location filename="../src/ui/components/ProcessCard.qml" line="144"/>
         <source>工具调用</source>
         <translation>Tool call</translation>
     </message>
     <message>
-        <location filename="../src/ui/components/ProcessCard.qml" line="119"/>
+        <location filename="../src/ui/components/ProcessCard.qml" line="145"/>
         <source>工具结果</source>
         <translation>Tool result</translation>
     </message>
     <message>
-        <location filename="../src/ui/components/ProcessCard.qml" line="120"/>
+        <location filename="../src/ui/components/ProcessCard.qml" line="146"/>
         <source>上下文</source>
         <translation>Context</translation>
     </message>
     <message>
-        <location filename="../src/ui/components/ProcessCard.qml" line="125"/>
+        <location filename="../src/ui/components/ProcessCard.qml" line="151"/>
         <source>进行中</source>
         <translation>In progress</translation>
     </message>
     <message>
-        <location filename="../src/ui/components/ProcessCard.qml" line="126"/>
+        <location filename="../src/ui/components/ProcessCard.qml" line="152"/>
         <source>失败</source>
         <translation>Failed</translation>
     </message>
     <message>
-        <location filename="../src/ui/components/ProcessCard.qml" line="127"/>
+        <location filename="../src/ui/components/ProcessCard.qml" line="153"/>
         <source>已取消</source>
         <translation>Cancelled</translation>
     </message>
     <message>
-        <location filename="../src/ui/components/ProcessCard.qml" line="128"/>
+        <location filename="../src/ui/components/ProcessCard.qml" line="154"/>
         <source>待确认</source>
         <translation>Awaiting confirmation</translation>
     </message>
     <message>
-        <location filename="../src/ui/components/ProcessCard.qml" line="255"/>
+        <location filename="../src/ui/components/ProcessCard.qml" line="283"/>
         <source>停止</source>
         <translation>Stop</translation>
     </message>
     <message>
-        <location filename="../src/ui/components/ProcessCard.qml" line="287"/>
+        <location filename="../src/ui/components/ProcessCard.qml" line="315"/>
         <source>查看证据</source>
         <translation>View evidence</translation>
     </message>
     <message>
-        <location filename="../src/ui/components/ProcessCard.qml" line="329"/>
+        <location filename="../src/ui/components/ProcessCard.qml" line="384"/>
         <source>已折叠 · %1 条过程记录</source>
         <translation>Collapsed · %1 process entries</translation>
     </message>
     <message>
-        <location filename="../src/ui/components/ProcessCard.qml" line="330"/>
+        <location filename="../src/ui/components/ProcessCard.qml" line="387"/>
         <source>已折叠 · %1 字符</source>
         <translation>Collapsed · %1 chars</translation>
     </message>
     <message>
-        <location filename="../src/ui/components/ProcessCard.qml" line="340"/>
+        <location filename="../src/ui/components/ProcessCard.qml" line="346"/>
         <source>%1 个提案</source>
         <translation>%1 proposals</translation>
     </message>
     <message>
-        <location filename="../src/ui/components/ProcessCard.qml" line="380"/>
+        <location filename="../src/ui/components/ProcessCard.qml" line="386"/>
         <source>已折叠 · %1 个改动提案</source>
         <translation>Collapsed · %1 change proposals</translation>
     </message>
     <message>
-        <location filename="../src/ui/components/ProcessCard.qml" line="531"/>
+        <location filename="../src/ui/components/ProcessCard.qml" line="538"/>
         <source>%1 处修改</source>
         <translation>%1 edits</translation>
     </message>
     <message>
-        <location filename="../src/ui/components/ProcessCard.qml" line="459"/>
+        <location filename="../src/ui/components/ProcessCard.qml" line="584"/>
         <source>变更预览:</source>
         <translation>Change preview:</translation>
     </message>
     <message>
-        <location filename="../src/ui/components/ProcessCard.qml" line="479"/>
+        <location filename="../src/ui/components/ProcessCard.qml" line="604"/>
         <source>拒绝</source>
         <translation>Reject</translation>
     </message>
     <message>
-        <location filename="../src/ui/components/ProcessCard.qml" line="487"/>
+        <location filename="../src/ui/components/ProcessCard.qml" line="612"/>
         <source>允许</source>
         <translation>Allow</translation>
     </message>
     <message>
-        <location filename="../src/ui/components/ProcessCard.qml" line="507"/>
+        <location filename="../src/ui/components/ProcessCard.qml" line="633"/>
         <source>收起</source>
         <translation>Collapse</translation>
     </message>
@@ -8207,12 +8379,12 @@ Select or import a project in the sidebar first.</translation>
 <context>
     <name>QObject</name>
     <message>
-        <location filename="../src/main.cpp" line="986"/>
+        <location filename="../src/main.cpp" line="1012"/>
         <source>显示/隐藏主窗</source>
         <translation>Show / hide main window</translation>
     </message>
     <message>
-        <location filename="../src/main.cpp" line="987"/>
+        <location filename="../src/main.cpp" line="1013"/>
         <source>新建会话</source>
         <translation>New session</translation>
     </message>
@@ -8225,62 +8397,62 @@ Select or import a project in the sidebar first.</translation>
         <translation type="vanished">(No profiles yet)</translation>
     </message>
     <message>
-        <location filename="../src/main.cpp" line="989"/>
+        <location filename="../src/main.cpp" line="1015"/>
         <source>退出</source>
         <translation>Quit</translation>
     </message>
     <message>
-        <location filename="../src/main.cpp" line="1050"/>
+        <location filename="../src/main.cpp" line="1076"/>
         <source>任务完成</source>
         <translation>Task finished</translation>
     </message>
     <message>
-        <location filename="../src/main.cpp" line="1050"/>
+        <location filename="../src/main.cpp" line="1076"/>
         <source>任务结束</source>
         <translation>Task ended</translation>
     </message>
     <message>
-        <location filename="../src/main.cpp" line="1051"/>
+        <location filename="../src/main.cpp" line="1077"/>
         <source>会话已回复</source>
         <translation>The session has replied</translation>
     </message>
     <message>
-        <location filename="../src/main.cpp" line="1066"/>
+        <location filename="../src/main.cpp" line="1092"/>
         <source>今日 Token</source>
         <translation>Today&apos;s tokens</translation>
     </message>
     <message>
-        <location filename="../src/main.cpp" line="1068"/>
+        <location filename="../src/main.cpp" line="1094"/>
         <source>今日费用</source>
         <translation>Today&apos;s cost</translation>
     </message>
     <message>
-        <location filename="../src/main.cpp" line="1070"/>
+        <location filename="../src/main.cpp" line="1096"/>
         <source>本月 Token</source>
         <translation>This month&apos;s tokens</translation>
     </message>
     <message>
-        <location filename="../src/main.cpp" line="1072"/>
+        <location filename="../src/main.cpp" line="1098"/>
         <source>本月费用</source>
         <translation>This month&apos;s cost</translation>
     </message>
     <message>
-        <location filename="../src/main.cpp" line="1076"/>
+        <location filename="../src/main.cpp" line="1102"/>
         <source>用量接近配额上限</source>
         <translation>Usage nearing quota</translation>
     </message>
     <message>
-        <location filename="../src/main.cpp" line="1077"/>
+        <location filename="../src/main.cpp" line="1103"/>
         <source>%1 已用 %2 / %3</source>
         <translation>%1: %2 of %3 used</translation>
     </message>
     <message>
-        <location filename="../src/main.cpp" line="1139"/>
+        <location filename="../src/main.cpp" line="1165"/>
         <source>自动备份失败</source>
         <translation>Automatic backup failed</translation>
     </message>
     <message>
-        <location filename="../src/main.cpp" line="1140"/>
+        <location filename="../src/main.cpp" line="1166"/>
         <source>无法写入数据库快照目录：%1</source>
         <translation>Could not write the database snapshot to: %1</translation>
     </message>
@@ -10871,9 +11043,13 @@ select a file to view its content diff on the right.</translation>
         <translation>Built-in tools</translation>
     </message>
     <message>
-        <location filename="../src/ui/pages/ToolsPage.qml" line="82"/>
         <source>随应用提供的工具。展开后可逐个启停；禁用的工具不会暴露给模型。子代理专属工具（propose_edit）只在子代理运行时可用，不在此列表；启用子代理时还会注册 apply_proposal，用于按提案 id 应用改动（逐次确认）。</source>
-        <translation>Tools shipped with the app. Expand to toggle them individually; disabled tools are hidden from the model. The sub-agent-only tool (propose_edit) is available only inside sub-agent runs and is not listed here; enabling sub-agents also registers apply_proposal, which applies a change by its proposal id (approval each time).</translation>
+        <translation type="vanished">Tools shipped with the app. Expand to toggle them individually; disabled tools are hidden from the model. The sub-agent-only tool (propose_edit) is available only inside sub-agent runs and is not listed here; enabling sub-agents also registers apply_proposal, which applies a change by its proposal id (approval each time).</translation>
+    </message>
+    <message>
+        <location filename="../src/ui/pages/ToolsPage.qml" line="82"/>
+        <source>随应用提供的工具。展开后可逐个启停；禁用的工具不会暴露给模型。子代理专属工具（propose_edit）只在子代理运行时可用，不在此列表；启用子代理时还会注册 apply_proposal（按提案 id 应用改动，逐次确认）与 subagent_wait/status/cancel（取回、查看、停止后台子代理）。</source>
+        <translation>Tools shipped with the app. Expand to toggle them individually; disabled tools are hidden from the model. The sub-agent-only tool (propose_edit) is available only inside sub-agent runs and is not listed here; enabling sub-agents also registers apply_proposal (applies a change by proposal id, with approval each time) and subagent_wait/status/cancel (collect, inspect and stop background sub-agents).</translation>
     </message>
     <message>
         <location filename="../src/ui/pages/ToolsPage.qml" line="86"/>
@@ -11098,27 +11274,37 @@ select a file to view its content diff on the right.</translation>
         <translation>Open the task list, %1 unfinished</translation>
     </message>
     <message>
-        <location filename="../src/ui/components/TopBar.qml" line="943"/>
+        <location filename="../src/ui/components/TopBar.qml" line="931"/>
+        <source>后台子代理（%1 个进行中）</source>
+        <translation>Background sub-agents (%1 active)</translation>
+    </message>
+    <message>
+        <location filename="../src/ui/components/TopBar.qml" line="932"/>
+        <source>打开后台子代理面板，%1 个进行中</source>
+        <translation>Open the background sub-agents panel, %1 active</translation>
+    </message>
+    <message>
+        <location filename="../src/ui/components/TopBar.qml" line="983"/>
         <source>审阅本次会话的文件改动（%1 个文件待查看）</source>
         <translation>Review this session&apos;s file changes (%1 files to look at)</translation>
     </message>
     <message>
-        <location filename="../src/ui/components/TopBar.qml" line="944"/>
+        <location filename="../src/ui/components/TopBar.qml" line="984"/>
         <source>审阅本次会话的文件改动 (Ctrl+R)</source>
         <translation>Review this session&apos;s file changes (Ctrl+R)</translation>
     </message>
     <message>
-        <location filename="../src/ui/components/TopBar.qml" line="946"/>
+        <location filename="../src/ui/components/TopBar.qml" line="986"/>
         <source>打开文件改动审阅，%1 个文件待查看</source>
         <translation>Open the file-change review, %1 files to look at</translation>
     </message>
     <message>
-        <location filename="../src/ui/components/TopBar.qml" line="992"/>
+        <location filename="../src/ui/components/TopBar.qml" line="1032"/>
         <source>收起右侧面板 (Ctrl+])</source>
         <translation>Collapse right panel (Ctrl+])</translation>
     </message>
     <message>
-        <location filename="../src/ui/components/TopBar.qml" line="992"/>
+        <location filename="../src/ui/components/TopBar.qml" line="1032"/>
         <source>展开右侧面板 (Ctrl+])</source>
         <translation>Expand right panel (Ctrl+])</translation>
     </message>
@@ -11135,7 +11321,7 @@ select a file to view its content diff on the right.</translation>
         <translation type="vanished">Review this session&apos;s file changes (Ctrl+R)</translation>
     </message>
     <message>
-        <location filename="../src/ui/components/TopBar.qml" line="947"/>
+        <location filename="../src/ui/components/TopBar.qml" line="987"/>
         <source>打开文件改动审阅</source>
         <translation>Open the file change review</translation>
     </message>
@@ -12110,17 +12296,17 @@ select a file to view its content diff on the right.</translation>
         <translation type="vanished">Settings saved</translation>
     </message>
     <message>
-        <location filename="../src/ui/main.qml" line="320"/>
+        <location filename="../src/ui/main.qml" line="328"/>
         <source>已删除会话「%1」，可撤销</source>
         <translation>Session &quot;%1&quot; deleted — undo available</translation>
     </message>
     <message>
-        <location filename="../src/ui/main.qml" line="321"/>
+        <location filename="../src/ui/main.qml" line="329"/>
         <source>会话</source>
         <translation>session</translation>
     </message>
     <message>
-        <location filename="../src/ui/main.qml" line="322"/>
+        <location filename="../src/ui/main.qml" line="330"/>
         <source>撤销</source>
         <translation>Undo</translation>
     </message>

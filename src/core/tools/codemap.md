@@ -11,6 +11,7 @@
 - `WebSearchTool.h`、`NetworkFetchTool.h`：两个联网工具（header-only，`web_search` / `http_fetch`）。
 - `SubAgentTool.h/.cpp`：`spawn_agent` 派生器（角色档案、并发闸、线程局部进度钩子；目录快照在 GUI 线程取）。`setContextLimit()` 随 profile 快照刷新子代理的上下文窗口（docs/35 P4.1，0 = 不压缩）；并发闸排队时每 250ms 发 `phase="queued"` 进度事件（P4.5）。
 - `ApplyProposalTool.h/.cpp` + `ProposalStore.h`（docs/35 P4.4）：`apply_proposal` 把 coder 产出的提案**结构化地**应用——主代理从报告 `Proposal ids` 行复制 id，工具经线程局部 `ProposalStoreRouter` 取会话注册表（仅进程内，会话切换清空），`generatePreview` 生成与 edit_file 同形状的 diff，`execute` 重新读文件并按顺序重放 `find`（0 次附重定位提示、>1 次报歧义），成功后 QSaveFile 原子写入 + checkpoint 并标记 applied。与 `spawn_agent` 同门控注册；子代理只读目录不会包含它。`FileEditUtil.h` 提供共享的 `unifiedDiff`/`relocateHint`。
+- `SubAgentControlTool.h/.cpp`（docs/35 P4.3）：`subagent_wait`（阻塞取回后台报告，默认 60s / 上限 10 分钟，超时 success + state=running）、`subagent_status`（非阻塞状态/耗时/步数/提案数/最近进度）、`subagent_cancel`（只翻令牌）。三者经 `BackgroundTaskHubRouter` 取会话任务表，与 spawn_agent 同门控注册，并在 `SubAgentTool::refreshCatalog` 排除（子代理不可管理后台任务）；wait 结果复用 `SubAgentTool::reportOutput/proposalIndex/proposalData`，与同步 spawn 同形。
 - `ProposeEditTool.h/.cpp`（docs/34 P3.1）：子代理专用的 `propose_edit`——锚点式 find/replace 提案，**永不落盘**。校验（项目根内、UTF-8 文本、单条 find 恰好命中一次、同调用内按顺序模拟）通过后推进线程局部 `SubAgentProposalSink`；Runner 在报告末尾渲染 `## PROPOSALS` 段，主代理用 `edit_file` 应用。工具不进全局注册表，只有角色白名单显式点名才授予（`SubAgentTool::execute` 的能力门）；配额常量在头文件（3 条/调用、20 条/运行、4000 字符 find、8KB replace、1MiB 文件）。
 
 **不含调度**：真正的调用分发、确认流程、并发编排在 `core/agent/AIAgent.cpp`（`processNextToolCall` / `dispatchToolExecution` / `finishToolExecution`）。本目录只提供「可被调用的对象」与被调用的安全/网络实现。

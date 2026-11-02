@@ -2670,7 +2670,8 @@ void SqliteMemory::saveTraceNode(const QString& sessionId, const QJsonObject& no
     // （docs/34 P3.2），卡片徽章/列表随会话恢复仍可渲染。
     for (const char* key : {"images", "files", "model", "preview", "source",
                             "subagentTools", "subagentLog", "evidencePath",
-                            "subagentProposals"})
+                            "subagentProposals", "taskId", "goal", "role",
+                            "state"})
         if (node.contains(QLatin1String(key))) metadata[key] = node.value(QLatin1String(key));
     query.addBindValue(QString::fromUtf8(QJsonDocument(metadata).toJson(QJsonDocument::Compact)));
 
@@ -2705,7 +2706,8 @@ QJsonObject traceNodeFromRow(const QSqlQuery& query) {
     const auto metadata = QJsonDocument::fromJson(query.value(10).toByteArray()).object();
     for (const char* key : {"images", "files", "model", "preview", "source",
                             "subagentTools", "subagentLog", "evidencePath",
-                            "subagentProposals"})
+                            "subagentProposals", "taskId", "goal", "role",
+                            "state"})
         if (metadata.contains(QLatin1String(key))) node[key] = metadata.value(QLatin1String(key));
     return node;
 }

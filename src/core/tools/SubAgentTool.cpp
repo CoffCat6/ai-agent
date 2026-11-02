@@ -1,6 +1,7 @@
 #include "SubAgentTool.h"
 
 #include "ProposeEditTool.h"
+#include "core/agent/BackgroundTaskHub.h"
 #include "core/agent/SubAgentRunner.h"
 #include "core/tools/Sandbox.h"
 #include "core/tools/ToolRegistry.h"
@@ -131,6 +132,12 @@ void SubAgentTool::refreshCatalog(bool localOnly) {
     auto& registry = ToolRegistry::instance();
     for (const auto& def : registry.listAll()) {        // Never hand the sub-agent the spawner itself (no recursive spawn).
         if (def.name == QLatin1String(SubAgentTool::kName)) continue;
+        // docs/35 P4.3: 后台任务管理工具是主代理专用的会话入口，子代理
+        // 不得看到（递归派生仍禁止）。
+        if (def.name == QLatin1String("subagent_wait")
+                || def.name == QLatin1String("subagent_status")
+                || def.name == QLatin1String("subagent_cancel"))
+            continue;
         // docs/32 P1 baseline: Safe + readOnly auto-executes in the
         // sub-agent (there is nobody to confirm a RequiresConfirm call)
         // and the readOnly flag keeps every mutating tool out.
@@ -202,7 +209,12 @@ ToolDefinition SubAgentTool::definition() const {
         "## PROPOSALS section listing anchored find/replace pairs. Apply them "
         "yourself with apply_proposal(id) using the ids listed under the "
         "section header (each call still needs user approval); fall back to "
-        "edit_file when no id is shown. Verify, and only then report success.");
+        "edit_file when no id is shown. Verify, and only then report success.\n"
+        "Background mode: set background=true for long surveys or drafting "
+        "runs whose result is not needed for your next reasoning step. The "
+        "call then returns immediately with a task id; collect the report "
+        "later with subagent_wait(id) (or peek with subagent_status(id)). "
+        "Keep short tasks that you need right away synchronous.");
     def.level = ToolLevel::Safe;
     def.autoEditSafe = true;
     def.readOnly = true;   // spawns read-only work only; usable in PlanOnly
@@ -251,6 +263,15 @@ ToolDefinition SubAgentTool::definition() const {
             "status via todo_write. The sub-agent cannot see your todo "
             "list - restate the task itself in 'goal'.")}};
     properties.insert(QStringLiteral("todo_id"), todoIdProp);
+    // docs/35 P4.3: fork/join——默认 false 保持既有同步语义。
+    QJsonObject backgroundProp{
+        {"type", QStringLiteral("boolean")},
+        {"description", QStringLiteral(
+            "If true, start the sub-agent in the background and return a task "
+            "id immediately; retrieve the report later with subagent_wait(id). "
+            "Use it for long tasks that do not block your next step. Default "
+            "false (synchronous).")}};
+    properties.insert(QStringLiteral("background"), backgroundProp);
     QJsonArray required{QStringLiteral("goal")};
     def.parameters = QJsonObject{
         {"type", QStringLiteral("object")},
@@ -352,6 +373,63 @@ ToolResult SubAgentTool::execute(const QJsonObject& args, const Cancellation& ca
             catalog.end());
     }
 
+    // docs/35 P4.3: background fork/join. The ack is the valid tool result for
+    // this call; the run is registered in the session hub and continues after
+    // the primary loop moves on (and even after the task ends).
+    if (args.value(QStringLiteral("background")).toBool()) {
+        const std::shared_ptr<BackgroundTaskHub> hub =
+            BackgroundTaskHubRouter::current();
+        if (!hub)
+            return ToolResult::fail(QStringLiteral(
+                "Background sub-agents are only available inside an agent "
+                "session."));
+        const auto bgCancelled = std::make_shared<std::atomic<bool>>(false);
+        SubAgentRequest bgRequest;
+        bgRequest.goal = goal;
+        bgRequest.context = args.value(QStringLiteral("context")).toString();
+        bgRequest.hint = args.value(QStringLiteral("hint")).toString();
+        bgRequest.rolePrompt = resolved.prompt;
+        bgRequest.tools = catalog;
+        bgRequest.maxSteps = m_maxSteps.load();
+        bgRequest.timeoutMs = m_timeoutMs.load();
+        bgRequest.contextLimit = m_contextLimit.load();
+        bgRequest.cancelled = bgCancelled;
+        const ServiceFactory factory = m_factory;
+        const QString roleLabel = resolved.name.isEmpty()
+            ? QStringLiteral("explore") : resolved.name;
+        const QString taskId = hub->createTask(
+            goal, roleLabel, bgCancelled,
+            [this, bgRequest, factory, bgCancelled, hub](const QString& id) mutable {
+                SubAgentReport report;
+                if (bgCancelled->load()) {
+                    report.stop = SubAgentReport::Stop::Cancelled;
+                    report.text = QStringLiteral(
+                        "Sub-agent cancelled before start.");
+                } else if (!acquireSlot(bgCancelled, {})) {
+                    report.stop = SubAgentReport::Stop::Cancelled;
+                    report.text = QStringLiteral(
+                        "Cancelled while waiting for a free sub-agent slot.");
+                } else {
+                    IAIService* service = factory ? factory() : nullptr;
+                    bgRequest.progress = [hub, id](const SubAgentProgress& p) {
+                        hub->updateProgress(id, p.phase, p.detail);
+                    };
+                    report = SubAgentRunner::run(service, bgRequest);
+                    delete service;
+                    releaseSlot();
+                }
+                hub->finishTask(id, report);
+            });
+        if (taskId.isEmpty())
+            return ToolResult::fail(QStringLiteral(
+                "Too many background sub-agents (%1 max). Wait for one to "
+                "finish or cancel it with subagent_cancel(id).")
+                .arg(BackgroundTaskHub::kMaxTasks));
+        return ToolResult::ok(QStringLiteral(
+            "[Sub-agent started] id=%1. Collect with subagent_wait(id) when "
+            "needed; subagent_status(id) reports progress.").arg(taskId));
+    }
+
     // docs/32 P2: the dispatcher installs a thread-local progress hook around
     // execute(); empty (no-op) when spawned outside an agent dispatch (tests).
     // Fetched before queueing so P4.5 can report the wait.
@@ -384,58 +462,76 @@ ToolResult SubAgentTool::execute(const QJsonObject& args, const Cancellation& ca
     delete service;
     releaseSlot();
 
+    // docs/33 E4: 计划对齐回显——提醒模型按报告同步该 todo 项的状态
+    // （追加在 tokens 之后，stats 前缀形态不变）。
+    const QString todoId =
+        args.value(QStringLiteral("todo_id")).toString().trimmed();
+    ToolResult result = report.ok
+        ? ToolResult::ok(reportOutput(report, todoId))
+        : ToolResult::fail(reportOutput(report, todoId));
+    // docs/34 P3.2 / docs/35 P4.4: 提案随结果回传。trace 只持久化轻量索引；
+    // 完整提案由 AIAgent 送进会话注册表（transient）。
+    if (!report.proposals.isEmpty()) {
+        result.metadata.insert(QStringLiteral("subagentProposals"),
+                               proposalIndex(report));
+        result.metadata.insert(QStringLiteral("subagentProposalData"),
+                               proposalData(report));
+    }
+    return result;
+}
+
+QString SubAgentTool::reportOutput(const SubAgentReport& report,
+                                   const QString& todoId) {
     QString stats = QStringLiteral("steps: %1, tokens: %2")
                         .arg(report.steps).arg(report.tokensUsed);
     // docs/33 E1: full transcript path for on-demand file_read; prefix keeps
     // the audit-side stats regex (steps/tokens) matching.
     if (!report.artifactPath.isEmpty())
         stats += QStringLiteral(", evidence: %1").arg(report.artifactPath);
-    // docs/33 E4: 计划对齐回显——提醒模型按报告同步该 todo 项的状态
-    // （追加在 tokens 之后，stats 前缀形态不变）。
-    const QString todoId =
-        args.value(QStringLiteral("todo_id")).toString().trimmed();
     if (!todoId.isEmpty())
         stats += QStringLiteral(", todo: %1").arg(todoId);
-    ToolResult result = report.ok
-        ? ToolResult::ok(QStringLiteral(
-              "[Sub-agent report] (%1)\n\n%2").arg(stats, report.text))
-        : ToolResult::fail(QStringLiteral(
-              "Sub-agent did not complete the goal (%1). Reason: %2")
-              .arg(stats, report.text));
-    // docs/34 P3.2: 提案的轻量索引（项目相对路径 + 理由 + 条数）随结果
-    // 回传，AIAgent 把它挂到 tool_result 节点的 metadata，卡片据此渲染
-    // 「N 个提案」徽章与提案列表。正文（find/replace、diff）仍只在报告
-    // 与证据工件里，避免节点膨胀。
-    if (!report.proposals.isEmpty()) {
-        const QString root = Sandbox::currentProjectDir();
-        QJsonArray index;
-        // docs/35 P4.4: 完整提案随 metadata 回传（transient），AIAgent 据此
-        // 建会话注册表并在报告里注入 Proposal ids；trace 持久化仍只写上面
-        // 的轻量索引，节点体积不回退。
-        QJsonArray full;
-        for (const SubAgentProposal& proposal : report.proposals) {
-            QString display = proposal.path;
-            if (!root.isEmpty()) {
-                const QString relative = QDir(root).relativeFilePath(proposal.path);
-                if (!relative.startsWith(QLatin1String(".."))) display = relative;
-            }
-            index.append(QJsonObject{
-                {QStringLiteral("path"), display},
-                {QStringLiteral("rationale"), proposal.rationale},
-                {QStringLiteral("count"), proposal.edits.size()}});
-            QJsonArray edits;
-            for (const SubAgentProposalEdit& edit : proposal.edits)
-                edits.append(QJsonObject{{QStringLiteral("find"), edit.find},
-                                         {QStringLiteral("replace"), edit.replace}});
-            full.append(QJsonObject{
-                {QStringLiteral("path"), proposal.path},
-                {QStringLiteral("displayPath"), display},
-                {QStringLiteral("rationale"), proposal.rationale},
-                {QStringLiteral("edits"), edits}});
+    return report.ok
+        ? QStringLiteral("[Sub-agent report] (%1)\n\n%2").arg(stats, report.text)
+        : QStringLiteral("Sub-agent did not complete the goal (%1). Reason: %2")
+              .arg(stats, report.text);
+}
+
+QJsonArray SubAgentTool::proposalIndex(const SubAgentReport& report) {
+    const QString root = Sandbox::currentProjectDir();
+    QJsonArray index;
+    for (const SubAgentProposal& proposal : report.proposals) {
+        QString display = proposal.path;
+        if (!root.isEmpty()) {
+            const QString relative = QDir(root).relativeFilePath(proposal.path);
+            if (!relative.startsWith(QLatin1String(".."))) display = relative;
         }
-        result.metadata.insert(QStringLiteral("subagentProposals"), index);
-        result.metadata.insert(QStringLiteral("subagentProposalData"), full);
+        index.append(QJsonObject{
+            {QStringLiteral("path"), display},
+            {QStringLiteral("rationale"), proposal.rationale},
+            {QStringLiteral("count"), proposal.edits.size()}});
     }
-    return result;
+    return index;
+}
+
+QJsonArray SubAgentTool::proposalData(const SubAgentReport& report) {
+    const QString root = Sandbox::currentProjectDir();
+    QJsonArray full;
+    for (const SubAgentProposal& proposal : report.proposals) {
+        QString display = proposal.path;
+        if (!root.isEmpty()) {
+            const QString relative = QDir(root).relativeFilePath(proposal.path);
+            if (!relative.startsWith(QLatin1String(".."))) display = relative;
+        }
+        QJsonArray edits;
+        for (const SubAgentProposalEdit& edit : proposal.edits)
+            edits.append(QJsonObject{{QStringLiteral("find"), edit.find},
+                                     {QStringLiteral("replace"), edit.replace}});
+        full.append(QJsonObject{
+            {QStringLiteral("path"), proposal.path},
+            {QStringLiteral("displayPath"), display},
+            {QStringLiteral("rationale"), proposal.rationale},
+            {QStringLiteral("edits"), edits}});
+    }
+    return full;
 }
 } // namespace NexusAI

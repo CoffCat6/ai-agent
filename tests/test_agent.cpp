@@ -12,6 +12,8 @@
 #include "core/tools/ProposeEditTool.h"
 #include "core/tools/ApplyProposalTool.h"
 #include "core/tools/ProposalStore.h"
+#include "core/tools/SubAgentControlTool.h"
+#include "core/agent/BackgroundTaskHub.h"
 #include "core/tools/NetworkFetchTool.h"
 #include "core/tools/WebSearchTool.h"
 #include "core/memory/SqliteMemory.h"
@@ -155,6 +157,44 @@ public:
                 QJsonObject{{QStringLiteral("id"), proposalId}});
         } else {
             response = textResponse(QStringLiteral("change applied"));
+        }
+        response.requestId = requestId;
+        if (response.success) emit responseReady(response);
+        else emit errorOccurred(response.error);
+    }
+};
+
+// docs/35 P4.3: main-loop script for fork/join — the task id only exists after
+// the spawn_agent ack, so round 2 parses it from the tool message.
+class BackgroundFlowFakeService : public FakeAIService {
+public:
+    void chatComplete(const QJsonArray& messages, const QJsonArray& tools) override {
+        seenMessages.append(messages);
+        seenTools.append(tools);
+        const quint64 requestId = ++requestCounter;
+        emit requestStarted(requestId);
+
+        LLMResponse response;
+        if (requestCounter == 1) {
+            response = toolResponse(QStringLiteral("spawn_agent"),
+                QJsonObject{{QStringLiteral("goal"), QStringLiteral("survey the tree")},
+                            {QStringLiteral("background"), true}});
+        } else if (requestCounter == 2) {
+            QString taskId;
+            static const QRegularExpression idRe(
+                QStringLiteral("\\[Sub-agent started\\] id=(sa-\\d+)"));
+            for (const auto& entry : messages) {
+                const QRegularExpressionMatch match = idRe.match(
+                    entry.toObject().value("content").toString());
+                if (match.hasMatch()) {
+                    taskId = match.captured(1);
+                    break;
+                }
+            }
+            response = toolResponse(QStringLiteral("subagent_wait"),
+                                    QJsonObject{{QStringLiteral("id"), taskId}});
+        } else {
+            response = textResponse(QStringLiteral("background work folded in"));
         }
         response.requestId = requestId;
         if (response.success) emit responseReady(response);
@@ -959,6 +999,11 @@ private slots:
     // docs/35 P4.4: 提案 id 注入报告；apply_proposal 预览/应用/重复/锚点失效。
     void applyProposalToolValidatesAndApplies();
     void applyProposalPreviewAndApplyThroughAgent();
+    // docs/35 P4.3: 后台子代理——ack/status/wait、超时非失败、按任务取消、
+    // 主循环 fork/join 与 subagent_task trace 节点。
+    void subagentBackgroundAckStatusWait();
+    void subagentBackgroundCancelOneTask();
+    void subagentBackgroundForkJoinThroughAgent();
     void subagentInflightAbortStressRealNetwork();
     // docs/35 P4.1: 子代理上下文预算——超限时只压缩线上请求，证据工件保留
     // 完整转录；压缩事件进过程日志。
@@ -5165,6 +5210,237 @@ void TestAgent::applyProposalPreviewAndApplyThroughAgent() {
     QVERIFY(lastTool.contains(QStringLiteral("#1")));
 
     agent.setActiveProject(QString(), QString(), QString());
+}
+
+// docs/35 P4.3: background spawn returns an ack immediately; status/wait read
+// the same session hub; a wait timeout is success with state=running.
+void TestAgent::subagentBackgroundAckStatusWait() {
+    SubAgentFixture fixture;
+    SpawnToolGuard guard;
+    ensureSubAgentProbe();
+    fixture.tool = std::make_shared<SubAgentTool>();
+
+    QMutex gatesMutex;
+    QVector<std::shared_ptr<QSemaphore>> gates;
+    fixture.tool->setServiceFactory([&]() -> IAIService* {
+        auto* service = new RecordingFakeService(&fixture.mutex,
+                                                 &fixture.subSeenTools,
+                                                 &fixture.subSeenMessages);
+        auto gate = std::make_shared<QSemaphore>();
+        {
+            QMutexLocker lock(&gatesMutex);
+            gates.append(gate);
+        }
+        service->gate = gate.get();
+        service->script.append(textResponse(QStringLiteral("background report")));
+        return service;
+    });
+    auto gateCount = [&]() -> int {
+        QMutexLocker lock(&gatesMutex);
+        return gates.size();
+    };
+    fixture.tool->refreshCatalog(false);
+    ToolRegistry::instance().registerTool(fixture.tool);
+
+    auto hub = std::make_shared<BackgroundTaskHub>();
+    SubAgentWaitTool waitTool;
+    SubAgentStatusTool statusTool;
+
+    // 没有 route 的路径（子代理内部/未挂载）拒绝。注意 QThreadStorage
+    // 不是栈：必须在安装正式 router 之前测，析构只会清空当前线程。
+    QVERIFY(!waitTool.execute(QJsonObject{{"id", "sa-1"}}).success);
+    QVERIFY(!statusTool.execute(QJsonObject{{"id", "sa-1"}}).success);
+    BackgroundTaskHubRouter router(hub);
+
+    const ToolResult ack = fixture.tool->execute(QJsonObject{
+        {QStringLiteral("goal"), QStringLiteral("background survey")},
+        {QStringLiteral("background"), true}});
+    QVERIFY2(ack.success, qPrintable(ack.error));
+    QVERIFY(ack.output.contains(QStringLiteral("[Sub-agent started]")));
+    QVERIFY(!ack.output.contains(QStringLiteral("[Sub-agent report]")));
+    static const QRegularExpression idRe(QStringLiteral("id=(sa-\\d+)"));
+    const QRegularExpressionMatch idMatch = idRe.match(ack.output);
+    QVERIFY(idMatch.hasMatch());
+    const QString id = idMatch.captured(1);
+
+    // The worker is parked in chatComplete; the ack already returned.
+    QTRY_COMPARE(gateCount(), 1);
+    const ToolResult status = statusTool.execute(QJsonObject{{"id", id}});
+    QVERIFY2(status.success, qPrintable(status.error));
+    QVERIFY(status.output.contains(QStringLiteral("state: running")));
+
+    QElapsedTimer waitTimer;
+    waitTimer.start();
+    const ToolResult timedOut = waitTool.execute(QJsonObject{
+        {QStringLiteral("id"), id}, {QStringLiteral("timeout_ms"), 300}});
+    QVERIFY2(timedOut.success, qPrintable(timedOut.error));
+    QVERIFY(timedOut.output.contains(QStringLiteral("still running")));
+    QVERIFY(waitTimer.elapsed() >= 250);
+
+    {
+        QMutexLocker lock(&gatesMutex);
+        gates.first()->release();
+    }
+    const ToolResult report = waitTool.execute(QJsonObject{{"id", id}});
+    QVERIFY2(report.success, qPrintable(report.error));
+    QVERIFY(report.output.contains(QStringLiteral("[Sub-agent report]")));
+    QVERIFY(report.output.contains(QStringLiteral("background report")));
+
+    const QVariantList snapshots = hub->snapshots();
+    QCOMPARE(snapshots.size(), 1);
+    const QVariantMap row = snapshots.first().toMap();
+    QCOMPARE(row.value(QStringLiteral("state")).toString(),
+             QStringLiteral("completed"));
+    QCOMPARE(row.value(QStringLiteral("role")).toString(),
+             QStringLiteral("explore"));
+    QCOMPARE(hub->activeCount(), 0);
+
+    // Unknown ids fail readably on all three tools.
+    SubAgentCancelTool cancelTool;
+    QVERIFY(!waitTool.execute(QJsonObject{{"id", "sa-999"}}).success);
+    QVERIFY(!statusTool.execute(QJsonObject{{"id", "sa-999"}}).success);
+    QVERIFY(!cancelTool.execute(QJsonObject{{"id", "sa-999"}}).success);
+}
+
+// docs/35 P4.3: cancelling one background task flips only its token; the
+// other keeps running to completion.
+void TestAgent::subagentBackgroundCancelOneTask() {
+    SubAgentFixture fixture;
+    SpawnToolGuard guard;
+    ensureSubAgentProbe();
+
+    std::atomic<int> active{0};
+    std::atomic<int> peak{0};
+    auto slowTool = std::make_shared<SleepProbeTool>(
+        QStringLiteral("test_slow_bg"), 120, &active, &peak);
+    ToolNameGuard slowGuard{slowTool->definition().name};
+    ToolRegistry::instance().registerTool(slowTool);
+
+    fixture.tool = std::make_shared<SubAgentTool>();
+    fixture.tool->setServiceFactory([&]() -> IAIService* {
+        auto* service = new RecordingFakeService(&fixture.mutex,
+                                                 &fixture.subSeenTools,
+                                                 &fixture.subSeenMessages);
+        for (int i = 0; i < 6; ++i)
+            service->script.append(toolResponse(
+                QStringLiteral("test_slow_bg"), QJsonObject{{"n", i}}));
+        service->script.append(textResponse(QStringLiteral("report ok")));
+        return service;
+    });
+    fixture.tool->refreshCatalog(false);
+    ToolRegistry::instance().registerTool(fixture.tool);
+
+    auto hub = std::make_shared<BackgroundTaskHub>();
+    BackgroundTaskHubRouter router(hub);
+    SubAgentCancelTool cancelTool;
+
+    const auto start = [&fixture](const QString& goal) {
+        return fixture.tool->execute(QJsonObject{
+            {QStringLiteral("goal"), goal},
+            {QStringLiteral("background"), true}});
+    };
+    const ToolResult ackA = start(QStringLiteral("alpha"));
+    const ToolResult ackB = start(QStringLiteral("beta"));
+    QVERIFY(ackA.success);
+    QVERIFY(ackB.success);
+    static const QRegularExpression idRe(QStringLiteral("id=(sa-\\d+)"));
+    const QString idA = idRe.match(ackA.output).captured(1);
+    const QString idB = idRe.match(ackB.output).captured(1);
+    QVERIFY(!idA.isEmpty());
+    QVERIFY(!idB.isEmpty());
+    QVERIFY(idA != idB);
+
+    QTRY_VERIFY(hub->stateLabel(idA) == QLatin1String("running")
+                && hub->stateLabel(idB) == QLatin1String("running"));
+    const ToolResult cancel = cancelTool.execute(QJsonObject{{"id", idA}});
+    QVERIFY2(cancel.success, qPrintable(cancel.error));
+    QVERIFY(cancel.output.contains(QStringLiteral("Cancellation requested")));
+
+    QCOMPARE(hub->waitFor(idA, 15000, {}), QStringLiteral("cancelled"));
+    QCOMPARE(hub->waitFor(idB, 15000, {}), QStringLiteral("completed"));
+    const auto reportA = hub->reportFor(idA);
+    const auto reportB = hub->reportFor(idB);
+    QVERIFY(reportA.has_value());
+    QVERIFY(reportB.has_value());
+    QVERIFY(!reportA->ok);
+    QVERIFY(reportA->stop == SubAgentReport::Stop::Cancelled);
+    QVERIFY(reportB->ok);
+}
+
+// docs/35 P4.3: full main-loop flow — spawn(background) ack, wait for the id
+// in round 2, then the report flows back like a synchronous spawn; the hub
+// feeds the panel API and an independent subagent_task trace node.
+void TestAgent::subagentBackgroundForkJoinThroughAgent() {
+    SubAgentFixture fixture;
+    SpawnToolGuard spawnGuard;
+    ToolNameGuard waitGuard{QString::fromLatin1(SubAgentWaitTool::kName)};
+    fixture.tool = registerSpawnTool(fixture, [](RecordingFakeService& sub) {
+        sub.script.append(toolResponse(QStringLiteral("test_sub_probe"), {}));
+        sub.script.append(textResponse(QStringLiteral("background findings")));
+    });
+    ToolRegistry::instance().registerTool(std::make_shared<SubAgentWaitTool>());
+
+    BackgroundFlowFakeService dynamicLlm;
+    struct RestoreLlm {
+        AIAgent& agent;
+        FakeAIService* original;
+        ~RestoreLlm() { agent.setLLMService(original); }
+    } restoreLlm{agent, &llm};
+    agent.setLLMService(&dynamicLlm);
+
+    QSignalSpy spy(&agent, &AIAgent::responseReady);
+    agent.startTask(QStringLiteral("fork and join"));
+    QTRY_COMPARE_WITH_TIMEOUT(spy.count(), 1, 20000);
+
+    QString ackText;
+    for (const auto& entry : agent.messages()) {
+        const QJsonObject msg = entry.toObject();
+        if (msg.value("role").toString() != QLatin1String("tool")) continue;
+        const QString content = msg.value("content").toString();
+        if (content.contains(QStringLiteral("[Sub-agent started]")))
+            ackText = content;
+    }
+    QVERIFY(ackText.contains(QStringLiteral("[Sub-agent started]")));
+    static const QRegularExpression idRe(QStringLiteral("id=(sa-\\d+)"));
+    const QString taskId = idRe.match(ackText).captured(1);
+    QVERIFY(!taskId.isEmpty());
+
+    // The wait round folded the report into the main history.
+    const QString lastTool = lastToolMessageContent(agent.messages());
+    QVERIFY2(lastTool.contains(QStringLiteral("background findings")),
+             qPrintable(lastTool));
+
+    // Panel API reads the same registry.
+    const QVariantList rows = agent.backgroundSubAgents();
+    QCOMPARE(rows.size(), 1);
+    QCOMPARE(rows.first().toMap().value(QStringLiteral("id")).toString(),
+             taskId);
+    QCOMPARE(rows.first().toMap().value(QStringLiteral("state")).toString(),
+             QStringLiteral("completed"));
+    QCOMPARE(agent.backgroundSubAgentActiveCount(), 0);
+    QVERIFY(agent.backgroundSubAgentReport(taskId)
+                .contains(QStringLiteral("background findings")));
+
+    // Independent trace node (type subagent_task) with attribution metadata.
+    QTRY_VERIFY_WITH_TIMEOUT(([&]() {
+        for (const auto& entry : agent.traceModel()) {
+            const QJsonObject node = entry.toObject();
+            if (node.value("type").toString() != QLatin1String("subagent_task"))
+                continue;
+            if (node.value("taskId").toString() != taskId) continue;
+            if (node.value("state").toString() != QLatin1String("completed"))
+                continue;
+            if (node.value("status").toString() != QLatin1String("success"))
+                continue;
+            return node.value("goal").toString()
+                       == QLatin1String("survey the tree")
+                && node.value("role").toString() == QLatin1String("explore");
+        }
+        return false;
+    })(), 5000);
+
+    agent.dismissFinishedBackgroundSubAgents();
+    QVERIFY(agent.backgroundSubAgents().isEmpty());
 }
 
 // 真实网络栈下的两条中止路径压力回归：中断（取消旗标在请求在飞时翻转，

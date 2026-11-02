@@ -190,6 +190,9 @@ AgentViewModel::AgentViewModel(QObject* parent)
     refreshToolRegistry();
     connect(&ToolRegistry::instance(), &ToolRegistry::toolsChanged,
             this, &AgentViewModel::refreshToolRegistry);
+    // docs/35 P4.3: 切换标签即切换后台任务面板的数据源。
+    connect(this, &AgentViewModel::activeTabChanged,
+            this, &AgentViewModel::backgroundSubAgentsChanged);
 
     // Layout defaults must load first: they seed the panel restore below.
     loadLayoutDefaults();
@@ -279,6 +282,12 @@ ChatSessionController* AgentViewModel::active() const {
 
 ChatSessionController* AgentViewModel::ensureTab() {
     auto* controller = new ChatSessionController(this);
+
+    // docs/35 P4.3: 后台任务表按标签隔离；只转发活动标签的变化。
+    connect(controller, &ChatSessionController::backgroundSubAgentsChanged,
+            this, [this, controller]() {
+                if (controller == active()) emit backgroundSubAgentsChanged();
+            });
 
     // Active-tab forwarding: the facade signal is re-emitted only when the
     // change happened in the tab the UI is looking at.
@@ -2759,6 +2768,40 @@ bool AgentViewModel::cancelSubAgents() {
 bool AgentViewModel::cancelSubAgent(const QString& traceNodeId) {
     AIAgent* a = active()->agent();
     return a && a->cancelSubAgent(traceNodeId);
+}
+
+// docs/35 P4.3：后台子代理面板——数据源是活动标签的 AIAgent 会话任务表。
+QVariantList AgentViewModel::backgroundSubAgents() const {
+    ChatSessionController* controller = active();
+    AIAgent* a = controller ? controller->agent() : nullptr;
+    return a ? a->backgroundSubAgents() : QVariantList{};
+}
+
+int AgentViewModel::backgroundSubAgentActiveCount() const {
+    ChatSessionController* controller = active();
+    AIAgent* a = controller ? controller->agent() : nullptr;
+    return a ? a->backgroundSubAgentActiveCount() : 0;
+}
+
+bool AgentViewModel::cancelBackgroundSubAgent(const QString& taskId) {
+    AIAgent* a = active() ? active()->agent() : nullptr;
+    return a && a->cancelBackgroundSubAgent(taskId);
+}
+
+int AgentViewModel::cancelAllBackgroundSubAgents() {
+    AIAgent* a = active() ? active()->agent() : nullptr;
+    return a ? a->cancelAllBackgroundSubAgents() : 0;
+}
+
+QString AgentViewModel::backgroundSubAgentReport(const QString& taskId) const {
+    ChatSessionController* controller = active();
+    AIAgent* a = controller ? controller->agent() : nullptr;
+    return a ? a->backgroundSubAgentReport(taskId) : QString();
+}
+
+void AgentViewModel::dismissFinishedBackgroundSubAgents() {
+    AIAgent* a = active() ? active()->agent() : nullptr;
+    if (a) a->dismissFinishedBackgroundSubAgents();
 }
 
 // docs/25 A4：停全部标签的任务。与「关 tab 停任务」同一封口语义（agent 封口

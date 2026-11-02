@@ -38,6 +38,7 @@
 // docs/32 P1: 子代理（spawn_agent）工具。
 #include "core/tools/SubAgentTool.h"
 #include "core/tools/ApplyProposalTool.h"
+#include "core/tools/SubAgentControlTool.h"
 #include "core/rag/RagService.h"
 #include "core/rag/KnowledgeSearchTool.h"
 #include "core/utils/Logger.h"
@@ -712,6 +713,11 @@ qInfo() << "NexusAI" << app.applicationVersion() << "starting";
     // docs/35 P4.4: 与 spawn_agent 同门控——只有子代理能产提案，关闭时
     // 不把 apply_proposal 暴露给模型。
     auto applyProposalTool = std::make_shared<ApplyProposalTool>();
+    // docs/35 P4.3: 后台任务管理工具（wait/status/cancel）与 spawn_agent
+    // 同门控，且不会进入子代理目录（SubAgentTool::refreshCatalog 排除）。
+    auto subagentWaitTool = std::make_shared<SubAgentWaitTool>();
+    auto subagentStatusTool = std::make_shared<SubAgentStatusTool>();
+    auto subagentCancelTool = std::make_shared<SubAgentCancelTool>();
     subAgentTool->setServiceFactory([subAgentProfile]() -> IAIService* {
         const std::shared_ptr<const SubAgentProfileSnapshot> snapshot =
             subAgentProfile->load();
@@ -727,6 +733,8 @@ qInfo() << "NexusAI" << app.applicationVersion() << "starting";
     const auto applySettings = [settings, agentVM, agent, fetchPtr, webPtr,
                                 proxyFactory, subAgentTool, subAgentProfile,
                                 spawnRegistered, applyProposalTool,
+                                subagentWaitTool, subagentStatusTool,
+                                subagentCancelTool,
                                 tabMemories, createWebSearchBackend]() {
         // H1: one snapshot drives the application-wide proxy factory, so every
         // QNetworkAccessManager (LLM/embedding/search/MCP/http_fetch) follows
@@ -794,11 +802,17 @@ qInfo() << "NexusAI" << app.applicationVersion() << "starting";
         if (settings->subagentEnabled() && !*spawnRegistered) {
             ToolRegistry::instance().registerTool(subAgentTool);
             ToolRegistry::instance().registerTool(applyProposalTool);
+            ToolRegistry::instance().registerTool(subagentWaitTool);
+            ToolRegistry::instance().registerTool(subagentStatusTool);
+            ToolRegistry::instance().registerTool(subagentCancelTool);
             *spawnRegistered = true;
         } else if (!settings->subagentEnabled() && *spawnRegistered) {
             // 摘除但保留对象：再次启用时同一实例重新注册。
             ToolRegistry::instance().takeTool(QLatin1String(SubAgentTool::kName));
             ToolRegistry::instance().takeTool(QLatin1String(ApplyProposalTool::kName));
+            ToolRegistry::instance().takeTool(QLatin1String(SubAgentWaitTool::kName));
+            ToolRegistry::instance().takeTool(QLatin1String(SubAgentStatusTool::kName));
+            ToolRegistry::instance().takeTool(QLatin1String(SubAgentCancelTool::kName));
             *spawnRegistered = false;
         }
     };
