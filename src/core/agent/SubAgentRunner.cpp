@@ -1,6 +1,7 @@
 #include "SubAgentRunner.h"
 
 #include "core/tools/Sandbox.h"
+#include "core/utils/TokenEstimator.h"
 #include "infrastructure/llm/IAIService.h"
 
 #include <QDateTime>
@@ -473,8 +474,35 @@ SubAgentReport SubAgentRunner::runImpl(IAIService* service, const SubAgentReques
         timedOut = false;
         error.clear();
         abortTimer.start();
-        service->chatComplete(messages,
-                              forcedFinal ? QJsonArray() : toolsSchema(request.tools));
+        // docs/35 P4.1: keep the full transcript for the evidence artifact,
+        // but send a budgeted copy of the request. Only the wire view is
+        // compressed, so earlier evidence is still on disk and the next
+        // round starts from the complete history again.
+        const QJsonArray wireTools =
+            forcedFinal ? QJsonArray() : toolsSchema(request.tools);
+        QJsonArray wireMessages = messages;
+        if (request.contextLimit > 0) {
+            const int capacity = qMax(
+                0, request.contextLimit
+                       - TokenEstimator::estimateToolsSchema(wireTools));
+            if (TokenEstimator::estimateTokens(wireMessages) > capacity) {
+                int omittedRounds = 0;
+                int truncatedResults = 0;
+                wireMessages = TokenEstimator::compressToolRoundsToFit(
+                    wireMessages, capacity, &omittedRounds, &truncatedResults);
+                // Nothing to cut means the header alone exceeds the window;
+                // no event, but the provider error stays self-explanatory.
+                if (omittedRounds > 0 || truncatedResults > 0) {
+                    notify(step, QStringLiteral("context"),
+                           QStringLiteral(
+                               "%1 earlier round(s) omitted, %2 tool result(s) "
+                               "truncated (%3 → %4 messages)")
+                               .arg(omittedRounds).arg(truncatedResults)
+                               .arg(messages.size()).arg(wireMessages.size()));
+                }
+            }
+        }
+        service->chatComplete(wireMessages, wireTools);
         // Fakes may emit synchronously inside chatComplete (before exec);
         // quitting before exec() is a no-op, so only enter the loop when
         // nothing has arrived yet.

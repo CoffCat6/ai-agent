@@ -359,6 +359,7 @@ ToolResult SubAgentTool::execute(const QJsonObject& args, const Cancellation& ca
     request.tools = catalog;
     request.maxSteps = m_maxSteps.load();
     request.timeoutMs = m_timeoutMs.load();
+    request.contextLimit = m_contextLimit.load();
     request.cancelled = cancelled;
     // docs/32 P2: the dispatcher installs a thread-local progress hook around
     // execute(); empty (no-op) when spawned outside an agent dispatch (tests).

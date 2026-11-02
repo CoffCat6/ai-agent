@@ -22,6 +22,37 @@ bool anyContentContains(const QJsonArray& messages, const QString& needle) {
     return false;
 }
 
+// docs/35 P4.1: a sub-agent's wire history — system prompt + one goal, then
+// assistant/tool rounds (the shape compressToolRoundsToFit must handle; the
+// generic compressToFit only understands user-anchored conversations).
+QJsonArray buildSubAgentHistory(int rounds, int toolChars) {
+    QJsonArray history;
+    history.append(msg("system", QString(200, 's')));
+    history.append(msg("user", QStringLiteral("investigate the project")));
+    for (int i = 0; i < rounds; ++i) {
+        QJsonObject assistant;
+        assistant["role"] = "assistant";
+        assistant["content"] = QJsonValue();
+        QJsonArray calls;
+        QJsonObject call;
+        call["id"] = QStringLiteral("call_%1").arg(i);
+        call["type"] = "function";
+        QJsonObject fn;
+        fn["name"] = "read_file";
+        fn["arguments"] = QStringLiteral("{\"path\":\"file%1\"}").arg(i);
+        call["function"] = fn;
+        calls.append(call);
+        assistant["tool_calls"] = calls;
+        history.append(assistant);
+        QJsonObject toolMsg =
+            msg("tool", QStringLiteral("round %1 ").arg(i)
+                            + QString(toolChars, 't'));
+        toolMsg["tool_call_id"] = QStringLiteral("call_%1").arg(i);
+        history.append(toolMsg);
+    }
+    return history;
+}
+
 QJsonArray buildOversizedHistory() {
     QJsonArray history;
     history.append(msg("system", QString(200, 's')));
@@ -64,6 +95,12 @@ private slots:
     void compressInsertsMarker();
     void compressGiantLastTurnBestEffort();
     void compressNoUserAnchorUnchanged();
+    // docs/35 P4.1: sub-agent compression drops whole assistant→tool rounds
+    // from the front (never a lone tool message) and truncates oversized
+    // results when dropping rounds is not enough.
+    void compressToolRoundsDropsOldestKeepsPairs();
+    void compressToolRoundsTruncatesHugeResult();
+    void compressToolRoundsFittingHistoryUnchanged();
     // Batch 10 (REL-1002): token accounting must include assistant
     // tool_calls arguments and the tools schema sent with each request.
     void estimateCountsToolCallsAndSchema() {
@@ -222,6 +259,83 @@ void TestTokenEstimator::compressNoUserAnchorUnchanged() {
     history.append(msg("system", "sys"));
     history.append(msg("assistant", "only assistant"));
     QCOMPARE(TokenEstimator::compressToFit(history, 10).size(), history.size());
+}
+
+// docs/35 P4.1: the sub-agent's history has exactly one user message, so the
+// generic compressor is a no-op there. The round-aware variant must drop the
+// oldest complete assistant→tool pairs, keep the goal, and report the cuts.
+void TestTokenEstimator::compressToolRoundsDropsOldestKeepsPairs() {
+    const QJsonArray history = buildSubAgentHistory(16, 1200);
+    QVERIFY(TokenEstimator::estimateTokens(history) > 4000);
+
+    int omitted = 0;
+    int truncated = 0;
+    const QJsonArray compressed = TokenEstimator::compressToolRoundsToFit(
+        history, 1500, &omitted, &truncated);
+
+    QVERIFY2(omitted > 0, "old rounds were not dropped");
+    QCOMPARE(truncated, 0);
+    QVERIFY2(TokenEstimator::estimateTokens(compressed) <= 1500,
+             "compressed history still exceeds the budget");
+    QCOMPARE(compressed.first().toObject().value("role").toString(),
+             QStringLiteral("system"));
+    QCOMPARE(compressed.at(1).toObject().value("role").toString(),
+             QStringLiteral("user"));
+    QVERIFY(anyContentContains(compressed, QStringLiteral("[Context compressed")));
+    // The newest round survives verbatim.
+    QCOMPARE(compressed.last().toObject().value("content").toString(),
+             history.last().toObject().value("content").toString());
+    // Tool pairing: no "tool" message without its requesting assistant turn.
+    for (int i = 0; i < compressed.size(); ++i) {
+        const QJsonObject m = compressed.at(i).toObject();
+        if (m.value("role").toString() != QLatin1String("tool")) continue;
+        const QString id = m.value("tool_call_id").toString();
+        bool answered = false;
+        for (int j = i - 1; j >= 0 && !answered; --j) {
+            for (const auto& c : compressed.at(j).toObject()
+                                     .value("tool_calls").toArray()) {
+                if (c.toObject().value("id").toString() == id) {
+                    answered = true;
+                    break;
+                }
+            }
+        }
+        QVERIFY2(answered, qPrintable(QStringLiteral(
+            "orphan tool message at %1 (id %2)").arg(i).arg(id)));
+    }
+}
+
+void TestTokenEstimator::compressToolRoundsTruncatesHugeResult() {
+    const QJsonArray history = buildSubAgentHistory(1, 20000);
+    int omitted = 0;
+    int truncated = 0;
+    const QJsonArray compressed = TokenEstimator::compressToolRoundsToFit(
+        history, 600, &omitted, &truncated);
+
+    // Only one group exists, so nothing can be dropped — the huge result
+    // itself must be shrunk, and the assistant/tool pair must stay intact.
+    QCOMPARE(omitted, 0);
+    QVERIFY2(truncated >= 1, "oversized tool result was not truncated");
+    QCOMPARE(compressed.size(), history.size());
+    QVERIFY(anyContentContains(compressed,
+                               QStringLiteral("[truncated to fit context]")));
+    QVERIFY2(TokenEstimator::estimateTokens(compressed) <= 600,
+             "truncation did not reach the budget");
+}
+
+void TestTokenEstimator::compressToolRoundsFittingHistoryUnchanged() {
+    const QJsonArray history = buildSubAgentHistory(2, 10);
+    int omitted = 0;
+    int truncated = 0;
+    const QJsonArray compressed = TokenEstimator::compressToolRoundsToFit(
+        history, 100000, &omitted, &truncated);
+    QCOMPARE(omitted, 0);
+    QCOMPARE(truncated, 0);
+    QCOMPARE(compressed.size(), history.size());
+    QCOMPARE(compressed.first().toObject().value("content").toString(),
+             history.first().toObject().value("content").toString());
+    QCOMPARE(compressed.last().toObject().value("content").toString(),
+             history.last().toObject().value("content").toString());
 }
 
 QTEST_GUILESS_MAIN(TestTokenEstimator)

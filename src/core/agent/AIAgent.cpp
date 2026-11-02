@@ -2381,9 +2381,10 @@ void AIAgent::applySubAgentProgress(const QString& nodeId, const SubAgentProgres
         if (node.value("id").toString() != nodeId) continue;
         if (node.value("status").toString() != QLatin1String("running")) return;
         if (progress.phase == QLatin1String("assistant")
-                || progress.phase == QLatin1String("tool")) {
-            // 过程可视化：模型的可见文本与逐个工具调用追加进日志（先进先
-            // 出，超限丢最旧）。
+                || progress.phase == QLatin1String("tool")
+                || progress.phase == QLatin1String("context")) {
+            // 过程可视化：模型的可见文本、逐个工具调用与上下文压缩事件
+            // 追加进日志（先进先出，超限丢最旧）。
             QJsonArray log = node.value("subagentLog").toArray();
             log.append(QJsonObject{{QStringLiteral("phase"), progress.phase},
                                    {QStringLiteral("text"), progress.detail.left(kMaxLogTextChars)}});

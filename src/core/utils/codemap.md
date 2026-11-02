@@ -35,7 +35,7 @@
 
 **Activity**：7 个 `QLoggingCategory`（`nexus.app/user/agent/tool/rag/network/db`）。`report()` 发 `qCInfo(...).noquote()`，contextId 以 `[id]` 拼进消息（复用 LogPanel 关键字过滤，不扩 schema）；`usage()` = report + 注入的 `UsageSink`（`main.cpp` 注入，`QMetaObject::invokeMethod` 排队到 GUI 线程 → `SqliteMemory::addUsageEvent` → `usage_log`）。隐私契约写死：只传 metadata（action/target id/sizes），禁止 prompt、文档正文、API key。
 
-**TokenEstimator**（header-only 启发式）：非 CJK 4 字符/token，CJK 1.5 字符/token（`(cjk*2+2)/3`），非空至少 1；CJK 区间 = 0x2E80–0x9FFF、F900–FAFF、3000–303F、FF00–FFEF。单消息 = role + content + 4 开销 + 每图 1000 + `files[].content` + 每个 tool_call（8 + name + arguments）。`estimateToolsSchema` 用 compact JSON 全文估算（每次请求都随行，必须预留）。`compressToFit` 保留首条 system、插入省略标记（预留 24 token）、从某条 **user** 消息起保留最大后缀（避免孤儿 tool 消息破坏配对契约），无可用 user 时原样返回。`splitContextTokens` 输出 systemPrompt/conversation/toolResults/images/toolsSchema/usedTokens/totalTokens，约定四桶之和 == `estimateTokens(messages)`。
+**TokenEstimator**（header-only 启发式）：非 CJK 4 字符/token，CJK 1.5 字符/token（`(cjk*2+2)/3`），非空至少 1；CJK 区间 = 0x2E80–0x9FFF、F900–FAFF、3000–303F、FF00–FFEF。单消息 = role + content + 4 开销 + 每图 1000 + `files[].content` + 每个 tool_call（8 + name + arguments）。`estimateToolsSchema` 用 compact JSON 全文估算（每次请求都随行，必须预留）。`compressToFit` 保留首条 system、插入省略标记（预留 24 token）、从某条 **user** 消息起保留最大后缀（避免孤儿 tool 消息破坏配对契约），无可用 user 时原样返回。`compressToolRoundsToFit`（docs/35 P4.1）是子代理专用变体：子代理只有一条 user（goal），`compressToFit` 在其历史上等于不压缩；该变体保留 system+goal，把「assistant + 其后连续 tool」视为不可拆单元整轮丢弃，插入带省略轮数的 user 提示，仍超预算时对最大 tool 结果反复减半（下限 400 字符 + 截断标记，严格递减防死循环），可选出参报告丢弃轮数/截断条数。`splitContextTokens` 输出 systemPrompt/conversation/toolResults/images/toolsSchema/usedTokens/totalTokens，约定四桶之和 == `estimateTokens(messages)`。
 
 **PricingCalculator**：单位"分 / 1M token"，全程 `qint64` 整数，`ceil((in-cache)*inPrice + cache*cachePrice + out*outPrice) / 1e6`；缓存命中量从 input 剥离并单独计价，负数钳 0；`model` 形参不参与公式（`Q_UNUSED`）。`model_pricing` 表（model / input_price_cents / output_price_cents / cache_hit_price_cents / effective_date / notes）由 `SqliteMemory::initDatabase` 末尾 `refreshCache` 一次性载入函数局部静态 `QHash` + 独立 `QMutex`；未命中一律 0（本地 Ollama 与未知模型免费但仍计 token）。
 
@@ -73,7 +73,7 @@
 | `Logger.{h,cpp}` | 消息处理器、日滚动/容量滚动、保留策略、5000 条环形缓冲、历史回填 |
 | `LogTailReader.{h,cpp}` | 日志文件尾部只读窗口（默认 1 MB）：级别阈值（续行继承）/ 关键字 / 行数上限 / 超长行截断；`newestLogFile()` |
 | `Activity.{h,cpp}` | 7 个日志分类、`report`/`usage`、`UsageSink` 注入 |
-| `TokenEstimator.h` | 启发式估算、`compressToFit`、`splitContextTokens`（header-only） |
+| `TokenEstimator.h` | 启发式估算、`compressToFit`、`compressToolRoundsToFit`、`splitContextTokens`（header-only） |
 | `PricingCalculator.{h,cpp}` | 分/1M token 整数计价、`model_pricing` 进程级缓存 |
 | `ProjectFileIndex.{h,cpp}` | 扫描/补全/'@'解析/引用校验与读取；文件浏览三 API（`listDir` 一层目录、`readFilePreview` 预览、`searchPaths` 全项目搜索，规则见上） |
 | `NetworkProxyConfig.{h,cpp}` | 代理模式快照 + 应用级 `QNetworkProxyFactory`、loopback 绕过 |

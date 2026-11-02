@@ -119,6 +119,11 @@ struct SubAgentRequest {
     int maxSteps{0};
     // 0 = no wall-clock budget (user may stop manually); >0 only from tests.
     qint64 timeoutMs{0};
+    // docs/35 P4.1: model context window (tokens) shared by the sub-agent's
+    // profile; 0 = unknown/unlimited (no compression). The runner only
+    // compresses the request copy — the full transcript is kept for the
+    // evidence artifact and the next round.
+    int contextLimit{0};
     ITool::Cancellation cancelled;       // shared with the dispatching tool; a
                                          // stop() of the primary agent flips it
     SubAgentProgressHook progress;       // optional; docs/32 P2 live progress

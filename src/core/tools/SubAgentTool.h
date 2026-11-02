@@ -66,6 +66,11 @@ public:
     // 预算用例。
     void setMaxSteps(int steps) { m_maxSteps.store(steps > 0 ? steps : 0); }
     void setTimeoutMs(qint64 ms) { m_timeoutMs.store(ms > 0 ? ms : 0); }
+    // docs/35 P4.1: 子代理所在 profile 的上下文窗口（token）；0 = 未知/不限。
+    // 由 main.cpp 在 applySettings 里随 profile 快照一起刷新。
+    void setContextLimit(int tokens) {
+        m_contextLimit.store(tokens > 0 ? tokens : 0);
+    }
 
     ToolDefinition definition() const override;
     // ITool's pure virtual; the dispatch path always uses the cancellation
@@ -102,6 +107,7 @@ private:
 
     std::atomic<int> m_maxSteps{0};         // 0 = unlimited (kSubStepCap)
     std::atomic<qint64> m_timeoutMs{0};     // 0 = no wall-clock budget
+    std::atomic<int> m_contextLimit{0};     // 0 = no compression (docs/35 P4.1)
 };
 
 } // namespace NexusAI

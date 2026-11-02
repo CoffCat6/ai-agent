@@ -378,6 +378,26 @@ public:
     }
 };
 
+// docs/35 P4.1: deterministic padded output so a few rounds blow through a
+// small context limit (the probe above returns a short string).
+class LargeOutputProbeTool : public ITool {
+public:
+    ToolDefinition definition() const override {
+        ToolDefinition def;
+        def.name = QStringLiteral("test_large_output");
+        def.description = QStringLiteral(
+            "Test helper: returns a large padded read-only result.");
+        def.level = ToolLevel::Safe;
+        def.readOnly = true;
+        def.parameters = QJsonObject{
+            {"type", "object"}, {"properties", QJsonObject{}}, {"required", QJsonArray{}}};
+        return def;
+    }
+    ToolResult execute(const QJsonObject&) override {
+        return ToolResult::ok(QString(2400, QChar('x')));
+    }
+};
+
 void ensureSubAgentProbe() {
     if (!ToolRegistry::instance().isRegistered(QStringLiteral("test_sub_probe")))
         ToolRegistry::instance().registerTool(std::make_unique<SubAgentProbeTool>());
@@ -846,6 +866,9 @@ private slots:
     // docs/34 P3.3: 同文件多提案的合并提示与重叠标注。
     void coderSameFileProposalsGetMergeHints();
     void subagentInflightAbortStressRealNetwork();
+    // docs/35 P4.1: 子代理上下文预算——超限时只压缩线上请求，证据工件保留
+    // 完整转录；压缩事件进过程日志。
+    void subagentCompressesContextOnTheWire();
     void subagentConcurrencyGateQueues();
     // docs/32 P2: 进度上屏与审计归因
     void subagentProgressUpdatesTraceNode();
@@ -4887,6 +4910,88 @@ void TestAgent::subagentInflightAbortStressRealNetwork() {
                                     .arg(i).arg(int(report.stop)).arg(report.text)));
     }
     if (pending) pending->deleteLater();
+}
+
+// docs/35 P4.1: the sub-agent had no context budget at all — a long run
+// eventually exceeded the model window and the provider rejected the request.
+// The wire copy is now compressed per round (oldest assistant→tool rounds
+// dropped), while the full transcript still goes to the evidence artifact.
+void TestAgent::subagentCompressesContextOnTheWire() {
+    QTemporaryDir artifacts;
+    QVERIFY(artifacts.isValid());
+    SubAgentRunner::setArtifactsRootOverride(artifacts.path());
+
+    FakeAIService fake;
+    for (int i = 0; i < 6; ++i) {
+        LLMResponse r = toolResponse(QStringLiteral("test_large_output"),
+                                     QJsonObject{{"round", i}});
+        r.toolCalls[0].id = QStringLiteral("call_%1").arg(i);
+        fake.script.append(r);
+    }
+    fake.script.append(textResponse(QStringLiteral("done")));
+
+    auto probe = std::make_shared<LargeOutputProbeTool>();
+    SubAgentRequest request;
+    request.goal = QStringLiteral("gather evidence");
+    request.tools.append(SubAgentToolEntry{probe->definition(), probe});
+    request.contextLimit = 1200;
+    QStringList contextEvents;
+    request.progress = [&contextEvents](const SubAgentProgress& p) {
+        if (p.phase == QLatin1String("context"))
+            contextEvents.append(p.detail);
+    };
+
+    const SubAgentReport report = SubAgentRunner::run(&fake, request);
+    SubAgentRunner::setArtifactsRootOverride(QString());
+
+    QVERIFY2(report.ok, qPrintable(report.text));
+    QCOMPARE(report.steps, 7);
+    QVERIFY2(!contextEvents.isEmpty(),
+             "compression happened without a progress event");
+    QVERIFY(contextEvents.last().contains(
+        QStringLiteral("earlier round(s) omitted")));
+
+    // Every request the model saw is a valid wire history: header intact, no
+    // orphan tool message, and never over the configured window.
+    QCOMPARE(fake.seenMessages.size(), 7);
+    bool sawCompressed = false;
+    for (const QJsonArray& wire : fake.seenMessages) {
+        QVERIFY2(noDanglingToolCalls(wire),
+                 "compression broke tool_call/tool pairing");
+        QCOMPARE(wire.first().toObject().value("role").toString(),
+                 QStringLiteral("system"));
+        QCOMPARE(wire.at(1).toObject().value("role").toString(),
+                 QStringLiteral("user"));
+        QVERIFY2(TokenEstimator::estimateTokens(wire) <= 1200,
+                 qPrintable(QStringLiteral("wire uses %1 tokens")
+                                .arg(TokenEstimator::estimateTokens(wire))));
+        for (const auto& entry : wire) {
+            if (entry.toObject().value("content").toString()
+                    .contains(QStringLiteral("earlier tool round(s)")))
+                sawCompressed = true;
+        }
+    }
+    QVERIFY2(sawCompressed, "history was never compressed on the wire");
+
+    // The newest request no longer carries the oldest round...
+    bool oldestOnWire = false;
+    for (const auto& entry : fake.seenMessages.last()) {
+        for (const auto& call : entry.toObject()
+                                    .value("tool_calls").toArray()) {
+            if (call.toObject().value("id").toString()
+                    == QLatin1String("call_0"))
+                oldestOnWire = true;
+        }
+    }
+    QVERIFY2(!oldestOnWire, "oldest round should have been dropped");
+
+    // ...but the evidence artifact keeps the complete transcript.
+    QVERIFY(!report.artifactPath.isEmpty());
+    QFile artifact(report.artifactPath);
+    QVERIFY(artifact.open(QIODevice::ReadOnly));
+    const QByteArray evidence = artifact.readAll();
+    QVERIFY(evidence.contains("call_0"));
+    QVERIFY(evidence.contains("test_large_output"));
 }
 
 void TestAgent::subagentConcurrencyGateQueues() {

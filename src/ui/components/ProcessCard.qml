@@ -55,12 +55,17 @@ Item {
             n += subagentProposals[i].count || 0
         return n
     }
-    // 日志条目图标与配色：assistant 用品牌色、tool 用警示色。
+    // 日志条目图标与配色：assistant 用品牌色、tool 用警示色、context
+    // （docs/35 P4.1 上下文压缩事件）用次要色，与正常输出区分。
     function logGlyph(phase) {
-        return phase === "tool" ? "⚙" : "✦"
+        if (phase === "tool") return "⚙"
+        if (phase === "context") return "↺"
+        return "✦"
     }
     function logColor(phase) {
-        return phase === "tool" ? Theme.statusWarning : Theme.brandPrimary
+        if (phase === "tool") return Theme.statusWarning
+        if (phase === "context") return Theme.textSecondary
+        return Theme.brandPrimary
     }
     // 来源的展示名。技术名词不翻译（与设置页的 label 一致）。
     function sourceLabel(key) {
@@ -473,6 +478,7 @@ Item {
                                 width: parent.width - 20
                                 text: modelData.text
                                 color: modelData.phase === "tool"
+                                    || modelData.phase === "context"
                                     ? Theme.textSecondary : Theme.textPrimary
                                 font.pixelSize: Theme.fontSizeCaption
                                 font.family: modelData.phase === "tool"

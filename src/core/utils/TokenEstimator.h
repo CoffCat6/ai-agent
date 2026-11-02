@@ -145,6 +145,125 @@ public:
         return out;
     }
 
+    // docs/35 P4.1: sub-agent history compression. A sub-agent has exactly one
+    // user message (its goal), so compressToFit() never finds a droppable
+    // suffix there and silently leaves an overflowing history untouched. This
+    // variant keeps the system+goal header and drops whole assistant→tool
+    // rounds from the front — the only cut that preserves the OpenAI
+    // tool_calls/tool pairing contract (a "tool" message is never kept without
+    // the assistant turn that requested it). When even the newest round does
+    // not fit, oversized tool results are halved in place and marked with a
+    // truncation suffix. Best effort: if the header alone exceeds maxTokens,
+    // the array is returned as-is.
+    //
+    // omittedRounds / truncatedResults (optional out-params) report how much
+    // was cut, so the runner can surface a "context compressed" progress event
+    // instead of the model silently losing earlier evidence.
+    static QJsonArray compressToolRoundsToFit(const QJsonArray& messages,
+                                              int maxTokens,
+                                              int* omittedRounds = nullptr,
+                                              int* truncatedResults = nullptr) {
+        if (omittedRounds) *omittedRounds = 0;
+        if (truncatedResults) *truncatedResults = 0;
+        constexpr int kHeaderSize = 2;   // system prompt + goal
+        if (messages.size() <= kHeaderSize) return messages;
+
+        const auto roleAt = [&messages](int i) {
+            return messages.at(i).toObject().value("role").toString();
+        };
+
+        // Group the history: an assistant turn plus the contiguous tool
+        // results answering it travel together. Anything else stands alone.
+        struct Group { int begin; int end; };
+        QVector<Group> groups;
+        for (int i = kHeaderSize; i < messages.size();) {
+            int j = i + 1;
+            if (roleAt(i) == QLatin1String("assistant")) {
+                while (j < messages.size()
+                       && roleAt(j) == QLatin1String("tool"))
+                    ++j;
+            }
+            groups.append(Group{i, j});
+            i = j;
+        }
+        if (groups.isEmpty()) return messages;
+
+        const int headerTokens = estimateTokens(messages.at(0).toObject())
+                               + estimateTokens(messages.at(1).toObject());
+        QVector<int> suffix(groups.size() + 1, 0);
+        for (int i = groups.size() - 1; i >= 0; --i) {
+            for (int m = groups.at(i).begin; m < groups.at(i).end; ++m)
+                suffix[i] += estimateTokens(messages.at(m).toObject());
+            suffix[i] += suffix[i + 1];
+        }
+
+        const auto markerFor = [](int omitted) {
+            QJsonObject marker;
+            marker["role"] = "user";
+            marker["content"] = QStringLiteral(
+                "[Context compressed: %1 earlier tool round(s) were omitted "
+                "to fit the model's context window. Continue the task from "
+                "the remaining history.]").arg(omitted);
+            return marker;
+        };
+
+        // Smallest group index whose (possibly marked) suffix fits.
+        int keep = -1;
+        for (int i = 0; i < groups.size(); ++i) {
+            const int markerTokens = i > 0
+                ? estimateTokens(markerFor(i)) : 0;
+            if (headerTokens + markerTokens + suffix.at(i) <= maxTokens) {
+                keep = i;
+                break;
+            }
+        }
+        // Best effort: keep the newest round and shrink its tool results.
+        if (keep < 0) keep = groups.size() - 1;
+
+        QJsonArray out;
+        out.append(messages.at(0));
+        out.append(messages.at(1));
+        if (keep > 0) out.append(markerFor(keep));
+        for (int i = keep; i < groups.size(); ++i) {
+            for (int m = groups.at(i).begin; m < groups.at(i).end; ++m)
+                out.append(messages.at(m));
+        }
+        if (omittedRounds) *omittedRounds = keep;
+
+        // Truncation fallback: still over budget (tiny window or one huge
+        // result). Halve the largest kept tool result until it fits; the
+        // strict-decrease guard prevents an infinite loop once the suffix
+        // text no longer leaves room to cut.
+        constexpr int kMinToolContentChars = 400;
+        const QString truncSuffix = QStringLiteral(
+            "\n... [truncated to fit context]");
+        int truncated = 0;
+        while (estimateTokens(out) > maxTokens) {
+            int largest = -1;
+            int largestLen = 0;
+            for (int i = kHeaderSize; i < out.size(); ++i) {
+                const QJsonObject msg = out.at(i).toObject();
+                if (msg.value("role").toString() != QLatin1String("tool"))
+                    continue;
+                const int len = msg.value("content").toString().length();
+                if (len > largestLen) {
+                    largest = i;
+                    largestLen = len;
+                }
+            }
+            if (largest < 0) break;
+            const int newLen = qMax(kMinToolContentChars, largestLen / 2);
+            if (newLen + truncSuffix.length() >= largestLen) break;
+            QJsonObject msg = out.at(largest).toObject();
+            msg["content"] = msg.value("content").toString().left(newLen)
+                             + truncSuffix;
+            out.replace(largest, msg);
+            ++truncated;
+        }
+        if (truncatedResults) *truncatedResults = truncated;
+        return out;
+    }
+
     // 上下文构成拆分（TopBar 容量占比浮层，docs/16 §8.3）：把当前消息数组
     // 按 role 拆成互斥的 token 桶。system → systemPrompt；user/assistant →
     // conversation；tool → toolResults；图片负载从宿主消息中单列（避免与

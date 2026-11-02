@@ -701,6 +701,9 @@ qInfo() << "NexusAI" << app.applicationVersion() << "starting";
         bool valid{false};
         QString protocolKey;
         LlmProfileConfig config;
+        // docs/35 P4.1: 子代理与主代理同用当前 profile 的上下文窗口，Runner
+        // 据此压缩超限历史（0 = 未知，不压缩）。
+        int contextLimit{0};
     };
     auto subAgentProfile = std::make_shared<
         std::atomic<std::shared_ptr<const SubAgentProfileSnapshot>>>();
@@ -780,6 +783,9 @@ qInfo() << "NexusAI" << app.applicationVersion() << "starting";
             spawnProfile.value(QStringLiteral("apiProtocol")).toString(),
             spawnProfile.value(QStringLiteral("provider")).toString())->key;
         profileSnapshot->config = profileConfigOf(spawnProfile);
+        profileSnapshot->contextLimit =
+            settings->resolveContextLimitForProfile(spawnProfile);
+        subAgentTool->setContextLimit(profileSnapshot->contextLimit);
         subAgentProfile->store(std::move(profileSnapshot));
         if (settings->subagentEnabled() && !*spawnRegistered) {
             ToolRegistry::instance().registerTool(subAgentTool);
