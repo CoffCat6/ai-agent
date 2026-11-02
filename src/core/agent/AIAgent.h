@@ -59,11 +59,6 @@ public:
     static constexpr int kDefaultTaskTimeoutMs = 0;
     static constexpr int kMinMaxIterations = 3;
     static constexpr int kIterationCeiling = 1000;
-    // Lower bound for the cap on ACTUAL tool executions (one response can
-    // announce arbitrarily many calls, so the round budget alone does not
-    // bound the total work). The effective cap scales with the step budget -
-    // see setMaxIterations().
-    static constexpr int kMinToolExecutions = 16;
     // docs/25 B3: bounded wait for the async episodic retrieval before a
     // fresh session's first LLM call. Past the deadline the launch proceeds
     // WITHOUT the injection — first-response latency never waits on the
@@ -104,11 +99,13 @@ public:
     int contextLimit() const { return m_contextLimit; }
 
     // 每轮任务的步数预算（LLM 往返轮数）。钳制到
-    // [kMinMaxIterations, kIterationCeiling]；同时把工具执行上限按
-    // 2×步数 缩放（不低于 kMinToolExecutions）——一轮回复可以声明多个调用，
-    // 只放宽轮数会让执行上限先被撞到。
+    // [kMinMaxIterations, kIterationCeiling]。工具执行次数不再随步数缩放：
+    // 生产默认不限制（0），需要收紧时用 setMaxToolExecutions() 显式设上限。
     void setMaxIterations(int steps);
     int maxIterations() const { return m_maxIterations; }
+    // 每任务实际工具执行上限。0 = 不限制（生产默认；与子代理 maxSteps=0
+    // 的无预算语义一致）。正数上限保留给测试与未来的策略开关。
+    void setMaxToolExecutions(int executions);
     int maxToolExecutions() const { return m_maxToolExecutions; }
 
     // docs/16 §8.3: 实时上下文构成（按 role 拆分的 token 桶 + tools schema
@@ -385,8 +382,9 @@ private:
     QJsonArray m_traceModel;
     int m_iteration{0};
     int m_maxIterations{kDefaultMaxIterations};
-    // 实际工具执行上限，由 setMaxIterations 按 2×步数 缩放
-    int m_maxToolExecutions{kMinToolExecutions};
+    // 实际工具执行上限，0 = 不限制（生产默认）。正数由
+    // setMaxToolExecutions() 显式设置（测试/未来策略）。
+    int m_maxToolExecutions{0};
     bool m_active{false};
     bool m_modelLocal{false};
     bool m_localOnly{false};
@@ -442,8 +440,9 @@ private:
     QHash<QString, QString> m_backgroundNodeIds;    // taskId -> trace node id
     QHash<QString, QString> m_backgroundNodeStates; // taskId -> last state
     QString m_confirmNodeId;  // trace node of the pending confirmation
-    // Actual tool executions in the current request (m_maxToolExecutions cap;
-    // the round budget alone bounds LLM rounds, not the announced call count).
+    // Actual tool executions in the current request. Only bounded when the
+    // owner set an explicit cap (m_maxToolExecutions > 0); by default the
+    // round budget alone bounds LLM rounds, not the announced call count.
     int m_toolExecutions{0};
 
     // Loop guard (round-level, checked in onLLMResponse): an identical

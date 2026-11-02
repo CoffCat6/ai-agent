@@ -778,6 +778,9 @@ private slots:
         llm.reset();
         agent.setContextLimit(8192);
         agent.setMemory(nullptr);
+        // 工具执行预算生产默认关闭（0=无限）；预算用例显式设置后必须复位，
+        // 否则会泄漏到后续用例（QtTest 全程共用一个测试对象）。
+        agent.setMaxToolExecutions(0);
         // docs/25 B3: the episodic fixture is test-local — never leak it
         // into the neighbours (the async launch changes fresh-session flow).
         agent.setEpisodicService(nullptr);
@@ -975,6 +978,7 @@ private slots:
     // Batch 14 review fix: isToolEnabled predicate semantics
     void toolRegistryEnablementSemantics();
     void toolExecutionBudgetForcesFinal();
+    void mainAgentToolExecutionsUnlimitedByDefault();
     void forcedFinalControlMessageNotPersisted();
     // docs/35: 模型原生文本工具调用模板不得当成回答（真机写进 messages 表）。
     void textualToolCallMarkupDiscardedFromAnswer();
@@ -3387,16 +3391,17 @@ void TestAgent::toolRegistryEnablementSemantics() {
     // cleanup() also restores the singleton for later tests.
 }
 
-// A single response announcing more tool calls than the execution budget
-// allows must execute the budget, seal the rest, and converge into one
-// final no-tools answer instead of running unbounded work.
+// A single response announcing more tool calls than an EXPLICITLY set
+// execution cap allows must execute the cap, seal the rest, and converge
+// into one final no-tools answer instead of running unbounded work.
+// Production defaults to no cap (see mainAgentToolExecutionsUnlimitedByDefault).
 void TestAgent::toolExecutionBudgetForcesFinal() {
     SqliteMemory memory(QStringLiteral(":memory:"));
     agent.setMemory(&memory);
 
-    // 工具执行上限随步数预算缩放（max(16, 2×步数)）。钉一个小预算，让上限(16)
-    // 低于本轮声明的 20 个调用，才测得到"执行预算耗尽"这条路径。
-    agent.setMaxIterations(AIAgent::kMinMaxIterations);
+    // 显式钉一个小预算，让 16 次上限低于本轮声明的 20 个调用，才测得到
+    // "执行预算耗尽"这条路径。生产默认 0（不限制），不会走到这里。
+    agent.setMaxToolExecutions(16);
 
     QTemporaryDir dir(testDirTemplate());
     QVERIFY(dir.isValid());
@@ -3431,7 +3436,48 @@ void TestAgent::toolExecutionBudgetForcesFinal() {
     QVERIFY2(noDanglingToolCalls(llm.seenMessages.last()),
              "budget path left dangling tool_calls");
 
-    agent.setMaxIterations(AIAgent::kDefaultMaxIterations);   // 还原共享 agent
+    agent.setMaxToolExecutions(0);   // 还原生产默认（无限）
+    agent.setMemory(nullptr);
+}
+
+// 2026-11-02 用户决策：主代理不再有 16 次工具执行预算，与子代理的
+// maxSteps=0 语义对齐。默认 0=无限；一轮 20 个调用必须全部执行，且不得
+// 出现 budget 收尾节点（否则又会触发强制收尾/伪工具调用泄漏）。
+void TestAgent::mainAgentToolExecutionsUnlimitedByDefault() {
+    QCOMPARE(agent.maxToolExecutions(), 0);
+
+    SqliteMemory memory(QStringLiteral(":memory:"));
+    agent.setMemory(&memory);
+
+    QTemporaryDir dir(testDirTemplate());
+    QVERIFY(dir.isValid());
+    LLMResponse burst;
+    burst.success = true;
+    for (int i = 0; i < 20; ++i) {
+        ToolCallInfo call;
+        call.id = QStringLiteral("call_u%1").arg(i);
+        call.name = QStringLiteral("read_file");
+        call.arguments = QJsonObject{
+            {"path", dir.filePath(QStringLiteral("u%1.txt").arg(i))}};
+        burst.toolCalls.append(call);
+    }
+    llm.script.append(burst);
+    llm.script.append(textResponse(QStringLiteral("all read")));
+
+    QSignalSpy spy(&agent, &AIAgent::responseReady);
+    agent.startTask(QStringLiteral("read twenty files without a budget"));
+    QTRY_COMPARE_WITH_TIMEOUT(spy.count(), 1, 20000);
+    QCOMPARE(agent.state(), AgentState::Completed);
+
+    int executions = 0;
+    for (const auto& entry : memory.auditLog(100)) {
+        if (entry.toObject().value("event").toString() == QStringLiteral("tool_execute"))
+            ++executions;
+    }
+    QCOMPARE(executions, 20);
+    QVERIFY2(!traceHas(agent.traceModel(), "context", "budget"),
+             "explicit budget path fired without a configured cap");
+
     agent.setMemory(nullptr);
 }
 

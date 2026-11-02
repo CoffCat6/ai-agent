@@ -286,10 +286,11 @@ void AIAgent::setMaxIterations(int steps) {
     const int clamped = qBound(kMinMaxIterations, steps, kIterationCeiling);
     if (m_maxIterations == clamped) return;
     m_maxIterations = clamped;
-    // 一轮回复可以声明多个工具调用，只放宽轮数会让"工具执行上限"先被撞到
-    // （旧实现固定 16，配 10 步时经常比轮数先耗尽）。按 2×步数 缩放，
-    // 且不低于原来的固定值。
-    m_maxToolExecutions = qMax(kMinToolExecutions, clamped * 2);
+}
+
+void AIAgent::setMaxToolExecutions(int executions) {
+    // 0 = unlimited (production default); negatives are clamped to 0.
+    m_maxToolExecutions = qMax(0, executions);
 }
 
 void AIAgent::setContextLimit(int tokens) {
@@ -2422,10 +2423,11 @@ void AIAgent::processNextToolCall() {
 
     // P2: dispatch all auto-approved calls in parallel — independent tools
     // (e.g. multiple read_file) run concurrently on the thread pool instead
-    // of serially waiting for each to finish. Budget is checked here so the
-    // seal + processIteration happens once, not per excess call.
+    // of serially waiting for each to finish. An explicit execution cap (0
+    // = unlimited, the production default) is checked here so the seal +
+    // processIteration happens once, not per excess call.
     for (int i = 0; i < parallelCalls.size(); ++i) {
-        if (m_toolExecutions >= m_maxToolExecutions) {
+        if (m_maxToolExecutions > 0 && m_toolExecutions >= m_maxToolExecutions) {
             for (int j = i; j < parallelCalls.size(); ++j) {
                 appendTraceNode("tool_call", parallelCalls[j].name, "cancelled",
                                 QJsonObject{{"args", argsToString(parallelCalls[j].arguments)}});
@@ -2462,9 +2464,10 @@ void AIAgent::dispatchToolExecution(const ToolCallInfo& call, const QString& tra
     // Redundant-call detection lives in onLLMResponse (round-level, before
     // dispatch) - by the time we get here the call is worth executing.
 
-    if (m_toolExecutions >= m_maxToolExecutions) {
-        // Execution budget exhausted: refuse this call, seal everything still
-        // queued, and force one final no-tools answer from what was gathered.
+    if (m_maxToolExecutions > 0 && m_toolExecutions >= m_maxToolExecutions) {
+        // Explicit execution cap reached: refuse this call, seal everything
+        // still queued, and force one final no-tools answer from what was
+        // gathered.
         if (!traceNodeId.isEmpty())
             updateTraceNodeStatusById(traceNodeId, "cancelled");
         else

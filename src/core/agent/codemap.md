@@ -17,7 +17,7 @@
 - **工具生命周期**：`m_inFlightTools`（call id → `shared_ptr<ITool>`）与 `m_toolCancellations`（call id → `shared_ptr<atomic<bool>>`）让 `stop()` 能协作取消并保证工具在注销后仍存活到 `execute()` 返回。
 - **权限**：`PermissionMode{ConfirmChanges, AutoEdit, FullAccess, PlanOnly}`，默认 `ConfirmChanges`；内存态不持久化，由 `ChatSessionController` 下发。`permissionModeToString/FromString/isValidPermissionMode` 提供稳定字符串与 QML int 校验。
 - **核心类型**：`LLMResponse`（content/toolCalls/tokensUsed/requestId/分类 token/reasoning）、`ToolCallInfo`、`ToolDefinition`（`level`、`autoEditSafe`、`readOnly`）、`ToolResult`（output/error/checkpoint）、`FileCheckpoint`。
-- **预算四件套**：`m_maxIterations`（默认 1000——2026-11-01 起不再作为用户可配置限制，与主流 agent 软件一致：模型自定何时收工，上下文压缩与重复轮守卫才是实际收敛机制，上限只防失控；setter 保留给测试做确定性用例）、`m_maxToolExecutions`（`max(16, 2×步数)`，默认即 2000 的内部安全闸）、`m_contextLimit`（默认 128000，钳制 2048–1048576）、`m_taskTimeoutMs`（默认 0 = 不限时，用户可随时手动停止）。
+- **预算四件套**：`m_maxIterations`（默认 1000——2026-11-01 起不再作为用户可配置限制，与主流 agent 软件一致：模型自定何时收工，上下文压缩与重复轮守卫才是实际收敛机制，上限只防失控；setter 保留给测试做确定性用例）、`m_maxToolExecutions`（默认 0 = 不限制——2026-11-02 用户决策移除 16 次工具执行预算，与子代理 `maxSteps=0` 语义对齐；正数上限只由 `setMaxToolExecutions()` 显式设置，供测试/未来策略）、`m_contextLimit`（默认 128000，钳制 2048–1048576）、`m_taskTimeoutMs`（默认 0 = 不限时，用户可随时手动停止）。
 - **轨迹**：`appendTraceNode()` 白名单字段落 `m_traceModel` 并 `IMemory::saveTraceNode()`；`order` 单调递增，恢复会话时按 `loadTraceNodes()` 重建。流式正文进 `summary` 节点，思考进独立 `thinking` 节点（上限 64 KiB，永不回灌模型）。
 - **闲聊无独立开关**：没有 chat-mode 枚举/属性；“闲聊直接回答”由系统提示中的 small-talk 规则、`collapseOldToolRounds()`（只保留最近 2 轮工具往返，旧的替换为中性 assistant 说明）和重复调用终止器共同实现。
 
@@ -33,7 +33,7 @@
 8. 无工具调用：先经 `core/utils/ModelOutputSanitizer.h` 清洗 content 里的原生 `<tool_call>` 文本模板（模型在 tools 被撤下/端点解析失败时会把它当普通文本输出；只剩模板时用明确说明替代），若流式节点存在则就地定稿，`finishTask(content, streamed=true)`；否则新建 `summary` 节点后完成。`finishTask()` 写 `task_complete` 审计、`metrics` 节点、非空回答的 assistant 消息、`touchSession()`，触发情节摘要生成，发 `sessionsChanged/responseReady`，状态 `Summarizing`→`Completed`。
 9. 有工具调用：先做重复轮检测（signature = 每个 `name:compactArgs;`）。检测到重复（`m_repeatToolCount==1`）时：正文 ≥40 字则封口并完成；否则跳过执行、为每个调用写 `[Repeated call skipped]` 的 tool 消息并重入 LLM；`m_repeatToolCount>=2` 直接以现有正文收敛。
 10. `processNextToolCall()`：逐个取出 pending。未注册工具→失败节点 + 可用工具名 + `unknown_tool` 审计；被禁用/策略拦截→`tool_disabled`；`PlanOnly` 且非 `Safe` 且 `!readOnly`→`tool_blocked`。自动放行规则：`Safe` 恒真；`RequiresConfirm` 在 `FullAccess` 全放行、`AutoEdit` 仅 `autoEditSafe`、`PlanOnly` 仅 `readOnly`；`Dangerous` 永不自动放行。需确认时先把已收集的并行安全调用派发掉，`generatePreview()` 生成预览，追加 `waiting_confirm` 节点，`setState(AwaitingToolConfirm)`，发 `toolConfirmRequired` 后返回。
-11. 自动放行的调用收集为并行批次；派发前检查 `m_toolExecutions >= m_maxToolExecutions`，超限则为剩余调用写“预算耗尽”tool 消息、置 `m_forcedFinal`，等所有在途工具结束后再 `processIteration()`。
+11. 自动放行的调用收集为并行批次；派发前**仅当显式设置了工具执行上限**（`m_maxToolExecutions > 0`；生产默认 0=无限）才检查 `m_toolExecutions >= m_maxToolExecutions`，超限则为剩余调用写“预算耗尽”tool 消息、置 `m_forcedFinal`，等所有在途工具结束后再 `processIteration()`。
 12. `dispatchToolExecution()`：再次校验可用性；预算检查；节点置 running；`setState(ExecutingTool)`；`++m_toolExecutions`；`findShared()` 取强引用，建 `atomic<bool>` 取消标志并登记 epoch；`QtConcurrent::run` 执行 `execute(args, cancelled)`。完成回调清理登记，epoch 不符则标 cancelled，否则 `finishToolExecution()`。
 13. `finishToolExecution()`：节点 success/failed、`tool_result` 节点（截断 1500 字）、tool 消息（截断 6000 字）、`tool_execute` 审计（自动放行标注模式，MCP 名称解析出 `mcp_server`）、写文件 checkpoint、`todo_write` 刷新 `m_todoList`；所有并行调用结束后 `processNextToolCall()`。
 14. `approveToolCall(id, approved)`：id 必须等于 `m_confirmNodeId`。拒绝→cancelled 节点 + “用户拒绝”tool 消息 + `tool_declined` 审计 + 继续循环；批准时若已切到 `PlanOnly` 且工具会改状态→拒绝执行；否则 `tool_approved` 审计后带原节点 id 派发。
@@ -72,7 +72,7 @@
 - **线程约束**：`IMemory` 的 SQLite 连接线程绑定，持久化只能在 GUI 线程；工具在池线程，只能通过 `ToolResult` 把 checkpoint 带回。新增工具不得在 `execute()` 内直接写库。
 - **取消/封口缺口**：并行派发时 `m_currentExecutingCall` 只记录最后一个调用；`stop()` 只封口它和 pending/confirm，其余在途调用的 tool 消息不会补写，历史可能留下多个 `tool_calls` 只有部分 `tool` 响应的非法序列。恢复/重生成前的 `stop()` 同样受影响。
 - **Dangerous 仅在 schema 层过滤**：`dispatchToolExecution()`/`approveToolCall()` 不再校验 `ToolLevel::Dangerous`；当前内置工具未注册 Dangerous，若未来注册，人工批准即可执行。
-- **步数不等于工作量**：`m_maxToolExecutions` 只能随 `setMaxIterations()` 按 2× 缩放，无独立设置入口；一轮可声明任意多调用，执行上限是唯一硬闸。
+- **步数不等于工作量**：默认没有工具执行上限（模型自己收敛；重复轮守卫与上下文压缩兜底）。若显式 `setMaxToolExecutions(n>0)`，一轮声明的调用超过 n 会触发预算收尾——这是测试/策略入口，不再随步数自动缩放。
 - **上下文开关不一致**：`setContextLimit()` 注释称 0 关闭压缩，但 `qBound(MinContextTokens=2048, ...)` 使 0 无法生效；真正的关闭分支只在 `applyContextBudget()` 的 `m_contextLimit <= 0` 守卫里，实际不可达。
 - **无独立闲聊模式**：所谓“闲聊”完全依赖提示词与历史折叠；弱模型仍可能在小招呼叫工具，只能靠重复轮终止器兜底，非确定性行为无硬保证。
 - **情节检索时序**：无 embedder 时 `retrieveRelevantSummariesAsync()` 在返回前同步 emit `retrievalReady`，而 `AIAgent` 在拿到 requestId 后才建立连接，信号会丢失并退化为 200ms 超时后无注入启动；生产装配始终注入 embedder，测试/裁剪装配需注意。
