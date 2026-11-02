@@ -9,6 +9,7 @@
 #include <QEventLoop>
 #include <QFile>
 #include <QFileInfo>
+#include <QHash>
 #include <QJsonArray>
 #include <QJsonDocument>
 #include <QJsonObject>
@@ -249,8 +250,25 @@ void appendToolResult(QJsonArray& messages, const ToolCallInfo& call,
 
 // docs/34 P3.1: 把提案渲染成主代理可执行的报告段。diff 块只用于阅读——
 // 应用时不依赖行号，主代理照抄 find 原文交给 edit_file。
+// P3.3: 同一文件有多个提案时给出合并提示（按列出顺序逐条应用、每条之后
+// 重新核对剩余锚点），文本上相互包含的锚点额外标冲突——先落盘的一条可能
+// 让后一条的锚点移位或消失。
 QString renderProposals(const QVector<SubAgentProposal>& proposals, bool partial) {
     if (proposals.isEmpty()) return {};
+
+    // 项目相对展示路径（正文与合并提示共用）。
+    const QString root = Sandbox::currentProjectDir();
+    QVector<QString> displays;
+    displays.reserve(proposals.size());
+    for (const auto& proposal : proposals) {
+        QString display = proposal.path;
+        if (!root.isEmpty()) {
+            const QString relative = QDir(root).relativeFilePath(proposal.path);
+            if (!relative.startsWith(QLatin1String(".."))) display = relative;
+        }
+        displays.append(display);
+    }
+
     QString out = QStringLiteral("\n\n## PROPOSALS (not applied)\n");
     if (partial) {
         out += QStringLiteral(
@@ -264,16 +282,62 @@ QString renderProposals(const QVector<SubAgentProposal>& proposals, bool partial
         "every write still requires user approval. Do not describe the change "
         "as done until the tool call succeeds.\n\n");
 
-    const QString root = Sandbox::currentProjectDir();
-    int index = 1;
-    for (const auto& proposal : proposals) {
-        QString display = proposal.path;
-        if (!root.isEmpty()) {
-            const QString relative = QDir(root).relativeFilePath(proposal.path);
-            if (!relative.startsWith(QLatin1String(".."))) display = relative;
+    // 合并提示：按首次出现顺序聚合同一文件的提案。
+    QStringList fileOrder;
+    QHash<QString, QVector<int>> byFile;
+    for (int i = 0; i < displays.size(); ++i) {
+        auto it = byFile.find(displays.at(i));
+        if (it == byFile.end()) {
+            fileOrder.append(displays.at(i));
+            it = byFile.insert(displays.at(i), {});
         }
+        it->append(i);
+    }
+    QStringList notes;
+    for (const QString& file : fileOrder) {
+        const QVector<int> indices = byFile.value(file);
+        if (indices.size() < 2) continue;
+        notes << QStringLiteral(
+            "- %1 has %2 proposals. Apply them in the order listed; after "
+            "each edit, re-check the remaining anchors against the current "
+            "file.").arg(file).arg(indices.size());
+        for (int a = 0; a < indices.size(); ++a) {
+            for (int b = a + 1; b < indices.size(); ++b) {
+                bool overlap = false;
+                for (const SubAgentProposalEdit& first
+                     : proposals.at(indices.at(a)).edits) {
+                    for (const SubAgentProposalEdit& second
+                         : proposals.at(indices.at(b)).edits) {
+                        if (first.find == second.find
+                                || first.find.contains(second.find)
+                                || second.find.contains(first.find)) {
+                            overlap = true;
+                            break;
+                        }
+                    }
+                    if (overlap) break;
+                }
+                if (overlap) {
+                    notes << QStringLiteral(
+                        "- Proposals %1 and %2 overlap on %3 (one anchor "
+                        "contains the other). Applying one may invalidate the "
+                        "other - re-read the file and re-propose if an anchor "
+                        "stops matching.")
+                        .arg(indices.at(a) + 1).arg(indices.at(b) + 1).arg(file);
+                }
+            }
+        }
+    }
+    if (!notes.isEmpty()) {
+        out += QStringLiteral("Merge notes:\n");
+        out += notes.join(QLatin1Char('\n'));
+        out += QStringLiteral("\n\n");
+    }
+
+    for (int i = 0; i < proposals.size(); ++i) {
+        const SubAgentProposal& proposal = proposals.at(i);
         out += QStringLiteral("### %1. %2\n%3\n\n")
-                   .arg(index++).arg(display, proposal.rationale);
+                   .arg(i + 1).arg(displays.at(i), proposal.rationale);
         for (const auto& edit : proposal.edits) {
             out += QStringLiteral("```diff\n");
             const QStringList before = edit.find.split(QLatin1Char('\n'));

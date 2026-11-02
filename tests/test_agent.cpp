@@ -843,6 +843,8 @@ private slots:
     void proposeEditValidatesAnchorsAndNeverWrites();
     void coderRoleProposalsReachReportUnapplied();
     void exploreRoleCannotPropose();
+    // docs/34 P3.3: 同文件多提案的合并提示与重叠标注。
+    void coderSameFileProposalsGetMergeHints();
     void subagentInflightAbortStressRealNetwork();
     void subagentConcurrencyGateQueues();
     // docs/32 P2: 进度上屏与审计归因
@@ -4758,6 +4760,75 @@ void TestAgent::exploreRoleCannotPropose() {
     QFile f(filePath);
     QVERIFY(f.open(QIODevice::ReadOnly));
     QCOMPARE(QString::fromUtf8(f.readAll()), QStringLiteral("int main() { return 1; }\n"));
+    f.close();
+    agent.setActiveProject(QString(), QString(), QString());
+}
+
+// docs/34 P3.3：同一文件的多个提案在报告里带合并提示；文本上相互包含的
+// 锚点额外标注冲突（先应用的一条可能让后一条的锚点失效）。
+void TestAgent::coderSameFileProposalsGetMergeHints() {
+    QTemporaryDir dir(testDirTemplate());
+    QVERIFY(dir.isValid());
+    const QString filePath = dir.filePath(QStringLiteral("app.cpp"));
+    const QByteArray original("// header\nint main() { return 1; }\n// footer\n");
+    {
+        QFile f(filePath);
+        QVERIFY(f.open(QIODevice::WriteOnly));
+        QCOMPARE(f.write(original), qint64(original.size()));
+    }
+    agent.setActiveProject(QStringLiteral("p34"), QStringLiteral("Demo"), dir.path());
+
+    const auto propose = [](const QString& find, const QString& replace) {
+        return toolResponse(QStringLiteral("propose_edit"),
+            QJsonObject{
+                {QStringLiteral("path"), QStringLiteral("app.cpp")},
+                {QStringLiteral("rationale"), QStringLiteral("cleanup")},
+                {QStringLiteral("edits"), QJsonArray{QJsonObject{
+                    {QStringLiteral("find"), find},
+                    {QStringLiteral("replace"), replace}}}}});
+    };
+    SubAgentFixture fixture;
+    SpawnToolGuard guard;
+    fixture.tool = registerSpawnTool(fixture, [propose](RecordingFakeService& sub) {
+        // 1、2 互不重叠；3、4 的锚点互相包含（4 的 find 在 3 的 find 里）。
+        sub.script.append(propose(QStringLiteral("// header"), QStringLiteral("// HEADER")));
+        sub.script.append(propose(QStringLiteral("// footer"), QStringLiteral("// FOOTER")));
+        sub.script.append(propose(QStringLiteral("int main() { return 1; }"),
+                                  QStringLiteral("int main() { return 0; }")));
+        sub.script.append(propose(QStringLiteral("return 1;"),
+                                  QStringLiteral("return 42;")));
+        sub.script.append(textResponse(QStringLiteral("proposed four edits")));
+    });
+    llm.reset();
+    llm.script.append(toolResponse(QStringLiteral("spawn_agent"),
+        QJsonObject{{QStringLiteral("goal"), QStringLiteral("clean up main")},
+                    {QStringLiteral("role"), QStringLiteral("coder")}}));
+    llm.script.append(textResponse(QStringLiteral("done")));
+    QSignalSpy spy(&agent, &AIAgent::responseReady);
+    agent.startTask(QStringLiteral("draft same-file changes"));
+    QTRY_COMPARE_WITH_TIMEOUT(spy.count(), 1, 15000);
+
+    const QString report = lastToolMessageContent(agent.messages());
+    QVERIFY2(report.contains(QStringLiteral("Merge notes:")), qPrintable(report));
+    QVERIFY(report.contains(QStringLiteral("app.cpp has 4 proposals")));
+    QVERIFY(report.contains(QStringLiteral("Apply them in the order listed")));
+    QVERIFY(report.contains(QStringLiteral("Proposals 3 and 4 overlap on app.cpp")));
+    QVERIFY(!report.contains(QStringLiteral("Proposals 1 and 2 overlap")));
+
+    // 提案索引仍是 4 条（合并提示不改变数据结构）。
+    bool sawIndex = false;
+    for (const auto& entry : agent.traceModel()) {
+        const QJsonObject node = entry.toObject();
+        if (node.value(QStringLiteral("title")).toString() == QLatin1String("spawn_agent")
+                && node.value(QStringLiteral("type")).toString() == QLatin1String("tool_result"))
+            sawIndex = node.value(QStringLiteral("subagentProposals")).toArray().size() == 4;
+    }
+    QVERIFY(sawIndex);
+
+    // 子代理全程只读：四次提案都不落盘。
+    QFile f(filePath);
+    QVERIFY(f.open(QIODevice::ReadOnly));
+    QCOMPARE(f.readAll(), original);
     f.close();
     agent.setActiveProject(QString(), QString(), QString());
 }

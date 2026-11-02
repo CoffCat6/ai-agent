@@ -108,5 +108,5 @@
 - 搜索密钥**按 provider 分桶**（`webSearch/zhipuApiKey` / `webSearch/deepseekApiKey`，各自 DPAPI 加密）：共用一个键会把 A 平台的密钥发给 B 平台。`SettingsService::webSearchApiKeyValue()` 读的是**当前选中 provider** 那一把，切换 provider 时必须补发 `webSearchApiKeyChanged` 并在同一个 `applySettings` 里成对执行 `setApiKey` + `setBackend`。
 - `http_fetch` 明确不覆盖 DNS rebinding，也不做内容类型过滤（二进制会被当文本处理）；代理由全局 `QNetworkProxyFactory` 决定，SSRF 判定基于解析结果而非实际出口。
 - 文件类工具全靠 `kMaxReadFileBytes`(8MiB)/`kMaxWriteFileBytes`(8MiB)/`kMaxFileChars`(20000)/`kMaxOutputChars`(8000) 限流；`read_file` 的字符截断发生在整文件读入后，只有字节上限是读前拒绝。
-- `edit_file` 是字节级精确匹配（不归一化换行），CRLF 文件用 LF 的 `old_string` 会报「not found」——这是刻意契约（`editFileCrlfBoundary` 测试固定）。
+- `edit_file` 是字节级精确匹配（不归一化换行），CRLF 文件用 LF 的 `old_string` 会报「not found」——这是刻意契约（`editFileCrlfBoundary` 测试固定）。docs/34 P3.3：未命中时 `relocateHint` 附确定性重定位建议（CRLF/LF 差异、空白归一化后唯一行号、首行行号、通用重读建议），探测失败不猜、语义仍为失败；见 `editFileNotFoundSuggestsRelocation`。
 - `NetworkFetchTool.h` 未列入 `nexus_core` 的 CMake 源列表（header-only，由 `main.cpp` 直接 include 进 `nexus_ai`），修改时不会触发 core 重编译依赖链。

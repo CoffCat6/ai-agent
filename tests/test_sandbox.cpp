@@ -44,6 +44,8 @@ private slots:
     void editFileMultipleMatchRejected();
     void editFileReplaceAll();
     void editFileNotFound();
+    // docs/34 P3.3: 锚点失效时的自动重定位建议。
+    void editFileNotFoundSuggestsRelocation();
     void editFileOutsideWhitelistRejected();
     void editFileCrlfBoundary();
     void editFileDirectoryTargetFailsCleanly();
@@ -457,6 +459,51 @@ void TestSandbox::editFileNotFound() {
     QCOMPARE(readFileText(path), QStringLiteral("abc"));             // untouched
 }
 
+void TestSandbox::editFileNotFoundSuggestsRelocation() {
+    QTemporaryDir dir = sandboxTempDir();
+    QVERIFY(dir.isValid());
+
+    // 1) 仅缩进/空白不同：归一化后唯一命中 → 给出行号。
+    const QString indentPath = dir.filePath("indent.cpp");
+    {
+        QFile f(indentPath);
+        QVERIFY(f.open(QIODevice::WriteOnly));
+        f.write("void f() {\n    return 1;\n}\n");
+    }
+    const ToolResult indent = runEdit(indentPath,
+        QStringLiteral("void f() {\nreturn 1;\n}"), QStringLiteral("x"));
+    QVERIFY(!indent.success);
+    QVERIFY2(indent.error.contains(QStringLiteral("old_string not found")),
+             qPrintable(indent.error));
+    QVERIFY2(indent.error.contains(QStringLiteral("collapsing whitespace")),
+             qPrintable(indent.error));
+    QVERIFY2(indent.error.contains(QStringLiteral("line 1")),
+             qPrintable(indent.error));
+    QCOMPARE(readFileText(indentPath), QStringLiteral("void f() {\n    return 1;\n}\n"));
+
+    // 2) 首行还在、上下文已变（同一文件的先前提案改过相邻代码）→ 给首行位置。
+    const QString shiftedPath = dir.filePath("shifted.txt");
+    {
+        QFile f(shiftedPath);
+        QVERIFY(f.open(QIODevice::WriteOnly));
+        f.write("alpha first line\nbeta\ngamma\n");
+    }
+    const ToolResult shifted = runEdit(shiftedPath,
+        QStringLiteral("alpha first line\nDELTA"), QStringLiteral("x"));
+    QVERIFY(!shifted.success);
+    QVERIFY2(shifted.error.contains(QStringLiteral("first line appears at line 1")),
+             qPrintable(shifted.error));
+    QCOMPARE(readFileText(shiftedPath), QStringLiteral("alpha first line\nbeta\ngamma\n"));
+
+    // 3) 完全找不到 → 通用重读建议，不编造位置。
+    const ToolResult missing = runEdit(shiftedPath, QStringLiteral("zzz"),
+                                       QStringLiteral("x"));
+    QVERIFY(!missing.success);
+    QVERIFY2(missing.error.contains(QStringLiteral("Re-read the file")),
+             qPrintable(missing.error));
+    QVERIFY(!missing.error.contains(QStringLiteral("line ")));
+}
+
 void TestSandbox::editFileOutsideWhitelistRejected() {
     // Writes allow user directories (including the whole home), so the
     // rejection test needs a system path - the tool must refuse BEFORE
@@ -489,6 +536,9 @@ void TestSandbox::editFileCrlfBoundary() {
                                       QStringLiteral("replaced"));
     QVERIFY(!lfMiss.success);
     QVERIFY2(lfMiss.error.contains(QStringLiteral("old_string not found")),
+             qPrintable(lfMiss.error));
+    // docs/34 P3.3: 换行符差异给出可操作的重定位提示。
+    QVERIFY2(lfMiss.error.contains(QStringLiteral("CRLF line endings")),
              qPrintable(lfMiss.error));
 
     const ToolResult crlfHit = runEdit(path, QStringLiteral("line1\r\nline2"),
