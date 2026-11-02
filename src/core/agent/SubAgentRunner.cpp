@@ -1,8 +1,11 @@
 #include "SubAgentRunner.h"
 
+#include "core/tools/ProposeEditTool.h"
 #include "core/tools/Sandbox.h"
 #include "core/utils/TokenEstimator.h"
 #include "infrastructure/llm/IAIService.h"
+
+#include <QtConcurrent/QtConcurrentRun>
 
 #include <QDateTime>
 #include <QDir>
@@ -16,6 +19,7 @@
 #include <QJsonObject>
 #include <QStandardPaths>
 #include <QStringList>
+#include <QThreadPool>
 #include <QTimer>
 #include <QUuid>
 #include <functional>
@@ -455,6 +459,45 @@ SubAgentReport SubAgentRunner::runImpl(IAIService* service, const SubAgentReques
                                               phase, detail});
     };
 
+    // docs/35 P4.2: bounded internal parallelism for read-only tools. The
+    // runner owns the pool (instead of using the global one) so nested tasks
+    // cannot starve the primary agent's tool/embedding work. propose_edit is
+    // excluded: it writes through a thread-local sink and its proposal order
+    // must match the call order, so it stays on the run thread.
+    QThreadPool toolPool;
+    toolPool.setMaxThreadCount(kSubToolParallelCap);
+    // Snapshot the project root on the run thread: Sandbox::ExecutionScope is
+    // thread-local, so worker threads would otherwise lose the root the
+    // primary agent pinned for this dispatch (relative paths then fail).
+    const QString projectRoot = Sandbox::currentProjectDir();
+    const auto findEntry = [&request](const QString& name)
+            -> const SubAgentToolEntry* {
+        for (const auto& candidate : request.tools)
+            if (candidate.def.name == name) return &candidate;
+        return nullptr;
+    };
+    const auto parallelEligible = [](const SubAgentToolEntry* entry) {
+        return entry && entry->def.level == ToolLevel::Safe
+               && entry->def.readOnly
+               && entry->def.name != QLatin1String(ProposeEditTool::kName);
+    };
+    const auto logToolCall = [&notify, &messages]
+            (int stepNum, const ToolCallInfo& call, const ToolResult& result) {
+        appendToolResult(messages, call,
+                         truncate(toolResultText(result),
+                                  kSubToolResultMaxChars));
+        // 过程可视化：每个工具调用的名字、参数与结果摘要进日志。
+        notify(stepNum, QStringLiteral("tool"),
+               QStringLiteral("%1(%2) ⇒ %3")
+                   .arg(call.name,
+                        truncate(QString::fromUtf8(
+                            QJsonDocument(call.arguments).toJson(
+                                QJsonDocument::Compact)),
+                            kProgressArgsMaxChars),
+                        truncate(toolResultText(result),
+                                 kProgressResultMaxChars)));
+    };
+
     for (int step = 1; step <= stepBudget; ++step) {
         report.steps = step;
         if (cancelledFlag()) {
@@ -542,37 +585,75 @@ SubAgentReport SubAgentRunner::runImpl(IAIService* service, const SubAgentReques
 
         appendAssistantTurn(messages, response, response.toolCalls, callSeq);
 
-        for (const auto& call : response.toolCalls) {
+        // docs/35 P4.2: run read-only calls in contiguous batches of at most
+        // kSubToolParallelCap, then append their results in the ORIGINAL call
+        // order. Serial calls (unknown tools, propose_edit, non-read-only)
+        // stay on the run thread, so the wire history keeps call/result order
+        // and the proposal sink only ever sees its owning thread.
+        const auto& calls = response.toolCalls;
+        int callIndex = 0;
+        while (callIndex < calls.size()) {
             if (cancelledFlag()) {
                 report.stop = SubAgentReport::Stop::Cancelled;
                 report.text = QStringLiteral("Sub-agent cancelled during tool execution.");
                 return report;
             }
-            const SubAgentToolEntry* entry = nullptr;
-            for (const auto& candidate : request.tools)
-                if (candidate.def.name == call.name) { entry = &candidate; break; }
-            if (!entry) {
-                appendToolResult(messages, call,
-                    QStringLiteral("Unknown tool: %1. Available tools: %2")
-                        .arg(call.name, toolNameList(request.tools)));
+            const ToolCallInfo call = calls.at(callIndex);
+            const SubAgentToolEntry* entry = findEntry(call.name);
+            if (!parallelEligible(entry)) {
+                if (!entry) {
+                    appendToolResult(messages, call,
+                        QStringLiteral("Unknown tool: %1. Available tools: %2")
+                            .arg(call.name, toolNameList(request.tools)));
+                } else {
+                    // Same thread as the dispatching tool: the sandbox
+                    // ExecutionScope pinned by the primary agent's dispatch
+                    // still applies, and the cancellation flag is shared, so
+                    // a stop() also aborts nested cooperative tools.
+                    const ToolResult result =
+                        entry->tool->execute(call.arguments, request.cancelled);
+                    logToolCall(step, call, result);
+                }
+                ++callIndex;
                 continue;
             }
-            // Same thread as the dispatching tool: the sandbox ExecutionScope
-            // pinned by the primary agent's dispatch still applies, and the
-            // cancellation flag is shared, so a stop() also aborts nested
-            // cooperative tools.
-            const ToolResult result = entry->tool->execute(call.arguments, request.cancelled);
-            appendToolResult(messages, call,
-                             truncate(toolResultText(result), kSubToolResultMaxChars));
-            // 过程可视化：每个工具调用的名字、参数与结果摘要进日志。
-            notify(step, QStringLiteral("tool"),
-                   QStringLiteral("%1(%2) ⇒ %3")
-                       .arg(call.name,
-                            truncate(QString::fromUtf8(
-                                QJsonDocument(call.arguments).toJson(
-                                    QJsonDocument::Compact)),
-                                kProgressArgsMaxChars),
-                            truncate(toolResultText(result), kProgressResultMaxChars)));
+
+            int batchEnd = callIndex;
+            while (batchEnd < calls.size()
+                   && batchEnd - callIndex < kSubToolParallelCap
+                   && parallelEligible(findEntry(calls.at(batchEnd).name)))
+                ++batchEnd;
+
+            QVector<QFuture<ToolResult>> futures;
+            futures.reserve(batchEnd - callIndex);
+            bool cancelledMidBatch = false;
+            for (int k = callIndex; k < batchEnd; ++k) {
+                if (cancelledFlag()) {
+                    cancelledMidBatch = true;
+                    break;
+                }
+                const ToolCallInfo batchCall = calls.at(k);
+                const SubAgentToolEntry* batchEntry = findEntry(batchCall.name);
+                futures.append(QtConcurrent::run(
+                    &toolPool,
+                    [tool = batchEntry->tool,
+                     args = batchCall.arguments,
+                     cancelled = request.cancelled,
+                     projectRoot]() {
+                        const Sandbox::ExecutionScope scope(projectRoot);
+                        return tool->execute(args, cancelled);
+                    }));
+            }
+            // Join the whole batch before continuing: results must hit the
+            // history (and the progress log) in call order.
+            for (int k = 0; k < futures.size(); ++k)
+                logToolCall(step, calls.at(callIndex + k), futures.at(k).result());
+            callIndex += futures.size();
+            if (cancelledMidBatch) {
+                report.stop = SubAgentReport::Stop::Cancelled;
+                report.text = QStringLiteral("Sub-agent cancelled during tool execution.");
+                return report;
+            }
         }
         notify(step, QStringLiteral("tools"), calledToolNames(response.toolCalls));
 

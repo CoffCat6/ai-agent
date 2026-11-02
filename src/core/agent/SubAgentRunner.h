@@ -174,6 +174,10 @@ public:
     // the primary agent applies its own kMaxToolResultChars when the result
     // lands in the main history.
     static constexpr int kSubToolResultMaxChars = 6000;
+    // docs/35 P4.2: read-only tools inside one round run on the runner's own
+    // small pool. Capped low because the primary agent may already be running
+    // several sub-agents concurrently (3 sub-agents × 3 = 9 nested tasks).
+    static constexpr int kSubToolParallelCap = 3;
     // maxSteps <= 0 时的内部安全上限（防失控派生；正常情况下模型自己收敛）。
     static constexpr int kSubStepCap = 1000;
     // Evidence artifacts (docs/33 E1): per-file byte cap and retention.

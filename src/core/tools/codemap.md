@@ -54,7 +54,7 @@
 5. 黑名单（绝对拒绝层，先于任何允许规则）：内置 `~/.ssh`、`~/.gnupg`、`~/.aws`、`*.pem/*.key/*.ppk/*.kdbx` + 用户追加项（目录前缀 / glob / 相对目录名）；
 6. 允许层：读 = 用户目录（Documents/Downloads/Desktop/AppData）∪ 当前项目目录，或 FullDisk 全盘；写 = 上述 + Home（项目目录仅在 `projectWrite` 显式开启后加入）。
 - 拒绝原因 `DenyReason` 由 `denialHint()` 转成可直接拼进 `ToolResult::error` 的文案。
-- `currentProjectDir()`：线程局部 `ExecutionScope` 快照优先，回落到全局活动项目；四个策略静态量由 `QReadWriteLock(Recursive)` 保护（GUI 线程写、池线程读）。
+- `currentProjectDir()`：线程局部 `ExecutionScope` 快照优先，回落到全局活动项目；四个策略静态量由 `QReadWriteLock(Recursive)` 保护（GUI 线程写、池线程读）。**任何新开的工具执行线程（如子代理内部并发 worker，docs/35 P4.2）都必须在 lambda 内重建 `ExecutionScope`**，否则相对路径丢失主代理钉住的项目根。
 
 ### 联网工具
 - `WebSearchBackend` 无状态、`search()` 为 `const`；可选 `requiresApiKey()`、`notReadyReason()`、`errorReason` 出参——把「没配置」「请求失败」「零结果」三态分开。

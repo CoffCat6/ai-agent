@@ -34,6 +34,7 @@
 #include <QSettings>
 #include <QStandardPaths>
 #include <QElapsedTimer>
+#include <QThread>
 #include <QTcpServer>
 #include <QTcpSocket>
 
@@ -396,6 +397,45 @@ public:
     ToolResult execute(const QJsonObject&) override {
         return ToolResult::ok(QString(2400, QChar('x')));
     }
+};
+
+// docs/35 P4.2: a sleeping read-only tool that records peak concurrency, so
+// the test can prove the runner actually overlaps calls (and respects the cap).
+class SleepProbeTool : public ITool {
+public:
+    SleepProbeTool(QString name, int sleepMs,
+                   std::atomic<int>* active, std::atomic<int>* peak)
+        : m_name(std::move(name)), m_sleepMs(sleepMs),
+          m_active(active), m_peak(peak) {}
+
+    ToolDefinition definition() const override {
+        ToolDefinition def;
+        def.name = m_name;
+        def.description = QStringLiteral(
+            "Test helper: sleeps and records concurrency.");
+        def.level = ToolLevel::Safe;
+        def.readOnly = true;
+        def.parameters = QJsonObject{
+            {"type", "object"},
+            {"properties", QJsonObject{{"n", QJsonObject{{"type", "integer"}}}}},
+            {"required", QJsonArray{}}};
+        return def;
+    }
+    ToolResult execute(const QJsonObject& args) override {
+        const int now = m_active->fetch_add(1) + 1;
+        int peak = m_peak->load();
+        while (now > peak && !m_peak->compare_exchange_weak(peak, now)) {}
+        QThread::msleep(static_cast<unsigned long>(m_sleepMs));
+        m_active->fetch_sub(1);
+        return ToolResult::ok(
+            QStringLiteral("done %1").arg(args.value("n").toInt()));
+    }
+
+private:
+    QString m_name;
+    int m_sleepMs;
+    std::atomic<int>* m_active;
+    std::atomic<int>* m_peak;
 };
 
 void ensureSubAgentProbe() {
@@ -869,6 +909,10 @@ private slots:
     // docs/35 P4.1: 子代理上下文预算——超限时只压缩线上请求，证据工件保留
     // 完整转录；压缩事件进过程日志。
     void subagentCompressesContextOnTheWire();
+    // docs/35 P4.2: 同轮只读工具并发（有上限）但结果按调用顺序回填；
+    // propose_edit 混排时仍在运行线程串行执行、提案顺序不变。
+    void subagentReadOnlyToolsRunConcurrently();
+    void subagentMixedRoundKeepsCallOrder();
     void subagentConcurrencyGateQueues();
     // docs/32 P2: 进度上屏与审计归因
     void subagentProgressUpdatesTraceNode();
@@ -4992,6 +5036,143 @@ void TestAgent::subagentCompressesContextOnTheWire() {
     const QByteArray evidence = artifact.readAll();
     QVERIFY(evidence.contains("call_0"));
     QVERIFY(evidence.contains("test_large_output"));
+}
+
+// docs/35 P4.2: five read-only calls in one round used to execute strictly
+// one after another. They now overlap (up to kSubToolParallelCap), while the
+// tool messages still land in call order.
+void TestAgent::subagentReadOnlyToolsRunConcurrently() {
+    std::atomic<int> active{0};
+    std::atomic<int> peak{0};
+    const auto probe = std::make_shared<SleepProbeTool>(
+        QStringLiteral("test_sleep"), 120, &active, &peak);
+
+    LLMResponse round;
+    round.success = true;
+    for (int i = 0; i < 5; ++i) {
+        ToolCallInfo call;
+        call.id = QStringLiteral("call_%1").arg(i);
+        call.name = QStringLiteral("test_sleep");
+        call.arguments = QJsonObject{{"n", i}};
+        round.toolCalls.append(call);
+    }
+    FakeAIService fake;
+    fake.script.append(round);
+    fake.script.append(textResponse(QStringLiteral("report")));
+
+    SubAgentRequest request;
+    request.goal = QStringLiteral("run probes");
+    request.maxSteps = 2;   // one tool round + forced final
+    request.tools.append(SubAgentToolEntry{probe->definition(), probe});
+
+    const SubAgentReport report = SubAgentRunner::run(&fake, request);
+    QVERIFY2(report.ok, qPrintable(report.text));
+    QCOMPARE(report.steps, 2);
+
+    // More than one in flight (the old loop was fully serial), never above
+    // the cap. 5 calls therefore run as 3 + 2.
+    const int observed = peak.load();
+    QVERIFY2(observed >= 2,
+             qPrintable(QStringLiteral("peak concurrency %1").arg(observed)));
+    QVERIFY(observed <= SubAgentRunner::kSubToolParallelCap);
+
+    // Results in original call order, each carrying its own argument.
+    const QJsonArray second = fake.seenMessages.at(1);
+    int expected = 0;
+    for (const auto& entry : second) {
+        const QJsonObject msg = entry.toObject();
+        if (msg.value("role").toString() != QLatin1String("tool")) continue;
+        QCOMPARE(msg.value("tool_call_id").toString(),
+                 QStringLiteral("call_%1").arg(expected));
+        QCOMPARE(msg.value("content").toString(),
+                 QStringLiteral("done %1").arg(expected));
+        ++expected;
+    }
+    QCOMPARE(expected, 5);
+}
+
+// docs/35 P4.2: a mixed round [read_file, propose_edit, read_file] must keep
+// the wire order; propose_edit stays on the run thread (thread-local proposal
+// sink) while the reads may execute concurrently.
+void TestAgent::subagentMixedRoundKeepsCallOrder() {
+    QTemporaryDir dir(testDirTemplate());
+    QVERIFY(dir.isValid());
+    const QByteArray original("// header\nint main() { return 1; }\n// footer\n");
+    {
+        QFile f(dir.filePath(QStringLiteral("app.cpp")));
+        QVERIFY(f.open(QIODevice::WriteOnly));
+        QCOMPARE(f.write(original), qint64(original.size()));
+    }
+    agent.setActiveProject(QStringLiteral("p42"), QStringLiteral("Demo"),
+                           dir.path());
+
+    SubAgentFixture fixture;
+    SpawnToolGuard guard;
+    fixture.tool = registerSpawnTool(fixture, [](RecordingFakeService& sub) {
+        LLMResponse round;
+        round.success = true;
+        const auto add = [&round](const QString& id, const QString& name,
+                                  const QJsonObject& args) {
+            ToolCallInfo call;
+            call.id = id;
+            call.name = name;
+            call.arguments = args;
+            round.toolCalls.append(call);
+        };
+        add(QStringLiteral("call_0"), QStringLiteral("read_file"),
+            QJsonObject{{"path", "app.cpp"}});
+        add(QStringLiteral("call_1"), QStringLiteral("propose_edit"),
+            QJsonObject{
+                {"path", "app.cpp"},
+                {"rationale", "make main return success"},
+                {"edits", QJsonArray{QJsonObject{
+                    {"find", "int main() { return 1; }"},
+                    {"replace", "int main() { return 0; }"}}}}});
+        add(QStringLiteral("call_2"), QStringLiteral("read_file"),
+            QJsonObject{{"path", "app.cpp"}});
+        sub.script.append(round);
+        sub.script.append(textResponse(QStringLiteral("mixed done")));
+    });
+    llm.reset();
+    llm.script.append(toolResponse(QStringLiteral("spawn_agent"),
+        QJsonObject{{"goal", QStringLiteral("inspect and propose")},
+                    {"role", QStringLiteral("coder")}}));
+    llm.script.append(textResponse(QStringLiteral("done")));
+    QSignalSpy spy(&agent, &AIAgent::responseReady);
+    agent.startTask(QStringLiteral("mixed round"));
+    QTRY_COMPARE_WITH_TIMEOUT(spy.count(), 1, 15000);
+
+    {
+        QMutexLocker lock(&fixture.mutex);
+        QVERIFY2(fixture.subSeenMessages.size() >= 2, "no follow-up round");
+        QStringList ids;
+        QStringList contents;
+        for (const auto& entry : fixture.subSeenMessages.at(1)) {
+            const QJsonObject msg = entry.toObject();
+            if (msg.value("role").toString() != QLatin1String("tool")) continue;
+            ids.append(msg.value("tool_call_id").toString());
+            contents.append(msg.value("content").toString());
+        }
+        const QStringList expectedIds{
+            QStringLiteral("call_0"), QStringLiteral("call_1"),
+            QStringLiteral("call_2")};
+        QCOMPARE(ids, expectedIds);
+        QCOMPARE(contents.size(), 3);
+        QVERIFY(contents.at(0).contains(QStringLiteral("int main")));
+        QVERIFY(contents.at(1).contains(QStringLiteral("Proposed 1 edit(s)")));
+        QVERIFY(contents.at(2).contains(QStringLiteral("int main")));
+    }
+
+    const QString report = lastToolMessageContent(agent.messages());
+    QVERIFY2(report.contains(QStringLiteral("## PROPOSALS")), qPrintable(report));
+    QVERIFY(report.contains(QStringLiteral("make main return success")));
+
+    // 提案从未落盘。
+    QFile f(dir.filePath(QStringLiteral("app.cpp")));
+    QVERIFY(f.open(QIODevice::ReadOnly));
+    QCOMPARE(f.readAll(), original);
+    f.close();
+    agent.setActiveProject(QString(), QString(), QString());
 }
 
 void TestAgent::subagentConcurrencyGateQueues() {
