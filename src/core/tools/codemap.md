@@ -10,6 +10,7 @@
 - `WebSearchBackend.h/.cpp`：搜索后端抽象（DuckDuckGo HTML / 智谱 / DeepSeek）、结果结构与 `WebSearchProviderRegistry`。
 - `WebSearchTool.h`、`NetworkFetchTool.h`：两个联网工具（header-only，`web_search` / `http_fetch`）。
 - `SubAgentTool.h/.cpp`：`spawn_agent` 派生器（角色档案、并发闸、线程局部进度钩子；目录快照在 GUI 线程取）。`setContextLimit()` 随 profile 快照刷新子代理的上下文窗口（docs/35 P4.1，0 = 不压缩）；并发闸排队时每 250ms 发 `phase="queued"` 进度事件（P4.5）。
+- `ApplyProposalTool.h/.cpp` + `ProposalStore.h`（docs/35 P4.4）：`apply_proposal` 把 coder 产出的提案**结构化地**应用——主代理从报告 `Proposal ids` 行复制 id，工具经线程局部 `ProposalStoreRouter` 取会话注册表（仅进程内，会话切换清空），`generatePreview` 生成与 edit_file 同形状的 diff，`execute` 重新读文件并按顺序重放 `find`（0 次附重定位提示、>1 次报歧义），成功后 QSaveFile 原子写入 + checkpoint 并标记 applied。与 `spawn_agent` 同门控注册；子代理只读目录不会包含它。`FileEditUtil.h` 提供共享的 `unifiedDiff`/`relocateHint`。
 - `ProposeEditTool.h/.cpp`（docs/34 P3.1）：子代理专用的 `propose_edit`——锚点式 find/replace 提案，**永不落盘**。校验（项目根内、UTF-8 文本、单条 find 恰好命中一次、同调用内按顺序模拟）通过后推进线程局部 `SubAgentProposalSink`；Runner 在报告末尾渲染 `## PROPOSALS` 段，主代理用 `edit_file` 应用。工具不进全局注册表，只有角色白名单显式点名才授予（`SubAgentTool::execute` 的能力门）；配额常量在头文件（3 条/调用、20 条/运行、4000 字符 find、8KB replace、1MiB 文件）。
 
 **不含调度**：真正的调用分发、确认流程、并发编排在 `core/agent/AIAgent.cpp`（`processNextToolCall` / `dispatchToolExecution` / `finishToolExecution`）。本目录只提供「可被调用的对象」与被调用的安全/网络实现。
@@ -93,6 +94,7 @@
 | `Sandbox.h` | 418 行 | 路径策略、黑名单、`ExecutionScope`、`cleanPath`、锁 |
 | `SandboxWin.cpp` | 51 行 | `GetFinalPathNameByHandleW` 解析 reparse point（`\\?\` 前缀归一） |
 | `WebSearchBackend.h/.cpp` | 161 / 534 行 | 后端抽象 + 注册表 + DDG/智谱/DeepSeek 实现 |
+| `ApplyProposalTool.h/.cpp` + `ProposalStore.h` | ~120 / ~240 行 | 结构化应用提案、会话内注册表、线程局部路由 |
 | `WebSearchTool.h` | 175 行 | `web_search` 定义、快照配置、结果格式化 |
 | `NetworkFetchTool.h` | 334 行 | `http_fetch`、SSRF 白/黑名单、切片取消、HTML→文本 |
 
@@ -108,5 +110,6 @@
 - 搜索密钥**按 provider 分桶**（`webSearch/zhipuApiKey` / `webSearch/deepseekApiKey`，各自 DPAPI 加密）：共用一个键会把 A 平台的密钥发给 B 平台。`SettingsService::webSearchApiKeyValue()` 读的是**当前选中 provider** 那一把，切换 provider 时必须补发 `webSearchApiKeyChanged` 并在同一个 `applySettings` 里成对执行 `setApiKey` + `setBackend`。
 - `http_fetch` 明确不覆盖 DNS rebinding，也不做内容类型过滤（二进制会被当文本处理）；代理由全局 `QNetworkProxyFactory` 决定，SSRF 判定基于解析结果而非实际出口。
 - 文件类工具全靠 `kMaxReadFileBytes`(8MiB)/`kMaxWriteFileBytes`(8MiB)/`kMaxFileChars`(20000)/`kMaxOutputChars`(8000) 限流；`read_file` 的字符截断发生在整文件读入后，只有字节上限是读前拒绝。
-- `edit_file` 是字节级精确匹配（不归一化换行），CRLF 文件用 LF 的 `old_string` 会报「not found」——这是刻意契约（`editFileCrlfBoundary` 测试固定）。docs/34 P3.3：未命中时 `relocateHint` 附确定性重定位建议（CRLF/LF 差异、空白归一化后唯一行号、首行行号、通用重读建议），探测失败不猜、语义仍为失败；见 `editFileNotFoundSuggestsRelocation`。
+- `edit_file` 是字节级精确匹配（不归一化换行），CRLF 文件用 LF 的 `old_string` 会报「not found」——这是刻意契约（`editFileCrlfBoundary` 测试固定）。docs/34 P3.3：未命中时 `relocateHint` 附确定性重定位建议（CRLF/LF 差异、空白归一化后唯一行号、首行行号、通用重读建议），探测失败不猜、语义仍为失败；见 `editFileNotFoundSuggestsRelocation`。该函数与 `unifiedDiff` 已在 `FileEditUtil.h`，apply_proposal 复用同一套语义。
+- **提案注册表仅进程内**：`apply_proposal` 的 id 不落库，重启后全部失效（报告/证据工件里的文本仍可手工应用）；会话切换清空，跨会话 id 一律「未知」。
 - `NetworkFetchTool.h` 未列入 `nexus_core` 的 CMake 源列表（header-only，由 `main.cpp` 直接 include 进 `nexus_ai`），修改时不会触发 core 重编译依赖链。

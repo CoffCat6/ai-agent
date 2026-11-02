@@ -10,6 +10,8 @@
 #include "core/tools/Sandbox.h"
 #include "core/tools/SubAgentTool.h"
 #include "core/tools/ProposeEditTool.h"
+#include "core/tools/ApplyProposalTool.h"
+#include "core/tools/ProposalStore.h"
 #include "core/tools/NetworkFetchTool.h"
 #include "core/tools/WebSearchTool.h"
 #include "core/memory/SqliteMemory.h"
@@ -22,6 +24,7 @@
 
 #include <QSet>
 #include <QSemaphore>
+#include <QRegularExpression>
 #include <QMutex>
 #include <QtConcurrent/QtConcurrentRun>
 #include <QtTest>
@@ -117,6 +120,47 @@ LLMResponse toolResponse(const QString& name, const QJsonObject& args) {
     r.toolCalls.append(call);
     return r;
 }
+
+// docs/35 P4.4: the proposal id is only known after the sub-agent report
+// lands in the main history, so the scripted response has to be built from
+// the request it sees (a static FakeAIService script cannot know the UUID).
+class ProposalFlowFakeService : public FakeAIService {
+public:
+    void chatComplete(const QJsonArray& messages, const QJsonArray& tools) override {
+        seenMessages.append(messages);
+        seenTools.append(tools);
+        const quint64 requestId = ++requestCounter;
+        emit requestStarted(requestId);
+
+        LLMResponse response;
+        if (requestCounter == 1) {
+            response = toolResponse(QStringLiteral("spawn_agent"),
+                QJsonObject{{QStringLiteral("goal"),
+                             QStringLiteral("make main return zero")},
+                            {QStringLiteral("role"), QStringLiteral("coder")}});
+        } else if (requestCounter == 2) {
+            QString proposalId;
+            static const QRegularExpression idsRe(
+                QStringLiteral("Proposal ids \\(pass one to apply_proposal\\): "
+                               "([^\\s,]+)"));
+            for (const auto& entry : messages) {
+                const QRegularExpressionMatch match = idsRe.match(
+                    entry.toObject().value("content").toString());
+                if (match.hasMatch()) {
+                    proposalId = match.captured(1);
+                    break;
+                }
+            }
+            response = toolResponse(QStringLiteral("apply_proposal"),
+                QJsonObject{{QStringLiteral("id"), proposalId}});
+        } else {
+            response = textResponse(QStringLiteral("change applied"));
+        }
+        response.requestId = requestId;
+        if (response.success) emit responseReady(response);
+        else emit errorOccurred(response.error);
+    }
+};
 
 QString toolMessageContent(const QJsonArray& messages, const QString& callId) {
     for (const auto& entry : messages) {
@@ -912,6 +956,9 @@ private slots:
     void exploreRoleCannotPropose();
     // docs/34 P3.3: 同文件多提案的合并提示与重叠标注。
     void coderSameFileProposalsGetMergeHints();
+    // docs/35 P4.4: 提案 id 注入报告；apply_proposal 预览/应用/重复/锚点失效。
+    void applyProposalToolValidatesAndApplies();
+    void applyProposalPreviewAndApplyThroughAgent();
     void subagentInflightAbortStressRealNetwork();
     // docs/35 P4.1: 子代理上下文预算——超限时只压缩线上请求，证据工件保留
     // 完整转录；压缩事件进过程日志。
@@ -4891,14 +4938,30 @@ void TestAgent::coderSameFileProposalsGetMergeHints() {
     QVERIFY(report.contains(QStringLiteral("Apply them in the order listed")));
     QVERIFY(report.contains(QStringLiteral("Proposals 3 and 4 overlap on app.cpp")));
     QVERIFY(!report.contains(QStringLiteral("Proposals 1 and 2 overlap")));
+    // docs/35 P4.4: 报告引导改用 apply_proposal，并注入可复制的 id。
+    QVERIFY(report.contains(QStringLiteral("apply_proposal(id)")));
+    QVERIFY(report.contains(
+        QStringLiteral("Proposal ids (pass one to apply_proposal)")));
+    QVERIFY(report.contains(QStringLiteral("#1 → app.cpp")));
+    QVERIFY(report.contains(QStringLiteral("#4 → app.cpp")));
 
-    // 提案索引仍是 4 条（合并提示不改变数据结构）。
+    // 提案索引仍是 4 条（合并提示不改变数据结构），且 trace 只存轻量索引
+    // ——完整 find/replace 只在会话注册表/报告里，节点体积不回退。
     bool sawIndex = false;
     for (const auto& entry : agent.traceModel()) {
         const QJsonObject node = entry.toObject();
-        if (node.value(QStringLiteral("title")).toString() == QLatin1String("spawn_agent")
-                && node.value(QStringLiteral("type")).toString() == QLatin1String("tool_result"))
-            sawIndex = node.value(QStringLiteral("subagentProposals")).toArray().size() == 4;
+        if (node.value(QStringLiteral("title")).toString() != QLatin1String("spawn_agent")
+                || node.value(QStringLiteral("type")).toString() != QLatin1String("tool_result"))
+            continue;
+        const QJsonArray index =
+            node.value(QStringLiteral("subagentProposals")).toArray();
+        if (index.size() != 4) continue;
+        sawIndex = true;
+        for (const auto& item : index) {
+            const QJsonObject proposal = item.toObject();
+            QVERIFY(!proposal.contains(QStringLiteral("edits")));
+            QVERIFY(!proposal.contains(QStringLiteral("find")));
+        }
     }
     QVERIFY(sawIndex);
 
@@ -4907,6 +4970,200 @@ void TestAgent::coderSameFileProposalsGetMergeHints() {
     QVERIFY(f.open(QIODevice::ReadOnly));
     QCOMPARE(f.readAll(), original);
     f.close();
+    agent.setActiveProject(QString(), QString(), QString());
+}
+
+// docs/35 P4.4: 结构化应用工具的纯工具层行为——预览取注册表、执行重新校验、
+// 成功后标记 applied、重复应用/未知 id/锚点失效/歧义锚点都可读失败。
+void TestAgent::applyProposalToolValidatesAndApplies() {
+    QTemporaryDir dir(testDirTemplate());
+    QVERIFY(dir.isValid());
+    const QString path = dir.filePath(QStringLiteral("app.cpp"));
+    const QByteArray original("int main() { return 1; }\n");
+    {
+        QFile f(path);
+        QVERIFY(f.open(QIODevice::WriteOnly));
+        QCOMPARE(f.write(original), qint64(original.size()));
+    }
+    Sandbox::setProjectDir(dir.path());
+    Sandbox::setProjectWriteEnabled(true);
+    // 早退（QVERIFY 失败）也要恢复全局沙箱策略，避免影响后续用例。
+    struct RestoreSandbox {
+        ~RestoreSandbox() {
+            Sandbox::setProjectWriteEnabled(false);
+            Sandbox::setProjectDir(QString());
+        }
+    } restoreSandbox;
+
+    ApplyProposalTool tool;
+    auto store = std::make_shared<ProposalStore>();
+    ProposalStoreRouter router(store);
+
+    // 没有路由（例如子代理内部 / 测试直接调用）时拒绝。
+    QVERIFY(!tool.execute(QJsonObject{{"id", QStringLiteral("x#1")}}).success);
+    // 参数与 id 校验。
+    QVERIFY(!tool.execute(QJsonObject{}).success);
+    const ToolResult unknown =
+        tool.execute(QJsonObject{{"id", QStringLiteral("nope#9")}});
+    QVERIFY(!unknown.success);
+    QVERIFY(unknown.error.contains(QStringLiteral("Unknown or expired")));
+
+    StoredProposal proposal;
+    proposal.id = QStringLiteral("node#1");
+    proposal.path = path;
+    proposal.rationale = QStringLiteral("return success");
+    proposal.edits.append(SubAgentProposalEdit{
+        QStringLiteral("int main() { return 1; }"),
+        QStringLiteral("int main() { return 0; }")});
+    store->put(proposal);
+
+    // 预览与 edit_file 同形状：未确认不落盘。
+    const QString preview =
+        tool.generatePreview(QJsonObject{{"id", QStringLiteral("node#1")}});
+    QVERIFY2(preview.contains(QStringLiteral("-int main() { return 1; }")),
+             qPrintable(preview));
+    QVERIFY2(preview.contains(QStringLiteral("+int main() { return 0; }")),
+             qPrintable(preview));
+    {
+        QFile f(path);
+        QVERIFY(f.open(QIODevice::ReadOnly));
+        QCOMPARE(f.readAll(), QByteArray("int main() { return 1; }\n"));
+    }
+
+    const ToolResult applied =
+        tool.execute(QJsonObject{{"id", QStringLiteral("node#1")}});
+    QVERIFY2(applied.success, qPrintable(applied.error));
+    QCOMPARE(applied.checkpoint.path, path);
+    QVERIFY(!applied.checkpoint.diff.isEmpty());
+    QVERIFY(applied.checkpoint.addedLines >= 1);
+    {
+        QFile f(path);
+        QVERIFY(f.open(QIODevice::ReadOnly));
+        QCOMPARE(f.readAll(), QByteArray("int main() { return 0; }\n"));
+    }
+
+    // 重复应用：可读失败，文件不再变化。
+    const ToolResult again =
+        tool.execute(QJsonObject{{"id", QStringLiteral("node#1")}});
+    QVERIFY(!again.success);
+    QVERIFY(again.error.contains(QStringLiteral("already applied")));
+
+    // 锚点失效：带确定性重定位建议。
+    StoredProposal stale;
+    stale.id = QStringLiteral("node#2");
+    stale.path = path;
+    stale.edits.append(SubAgentProposalEdit{
+        QStringLiteral("int main() { return 7; }"),
+        QStringLiteral("int main() { return 9; }")});
+    store->put(stale);
+    const ToolResult staleResult =
+        tool.execute(QJsonObject{{"id", QStringLiteral("node#2")}});
+    QVERIFY(!staleResult.success);
+    QVERIFY(staleResult.error.contains(QStringLiteral("no longer occurs")));
+    QVERIFY(staleResult.error.contains(QStringLiteral("Re-read the file")));
+
+    // 歧义锚点：当前内容里出现两次，拒绝而不是猜一个。
+    {
+        QFile f(path);
+        QVERIFY(f.open(QIODevice::WriteOnly | QIODevice::Truncate));
+        QCOMPARE(f.write("same text\nsame text\n"), qint64(20));
+    }
+    StoredProposal ambiguous;
+    ambiguous.id = QStringLiteral("node#3");
+    ambiguous.path = path;
+    ambiguous.edits.append(SubAgentProposalEdit{
+        QStringLiteral("same text"), QStringLiteral("changed")});
+    store->put(ambiguous);
+    const ToolResult ambiguousResult =
+        tool.execute(QJsonObject{{"id", QStringLiteral("node#3")}});
+    QVERIFY(!ambiguousResult.success);
+    QVERIFY(ambiguousResult.error.contains(QStringLiteral("occurs 2 times")));
+}
+
+// docs/35 P4.4: 全链路——coder 产出提案 → 报告注入 id → 主代理调
+// apply_proposal → 确认弹窗预览 → 批准后落盘；trace 仍只有索引。
+void TestAgent::applyProposalPreviewAndApplyThroughAgent() {
+    QTemporaryDir dir(testDirTemplate());
+    QVERIFY(dir.isValid());
+    const QString path = dir.filePath(QStringLiteral("app.cpp"));
+    const QByteArray original("int main() { return 1; }\n");
+    {
+        QFile f(path);
+        QVERIFY(f.open(QIODevice::WriteOnly));
+        QCOMPARE(f.write(original), qint64(original.size()));
+    }
+    agent.setActiveProject(QStringLiteral("p44"), QStringLiteral("Demo"),
+                           dir.path());
+
+    SubAgentFixture fixture;
+    SpawnToolGuard spawnGuard;
+    fixture.tool = registerSpawnTool(fixture, [](RecordingFakeService& sub) {
+        sub.script.append(toolResponse(QStringLiteral("propose_edit"),
+            QJsonObject{
+                {QStringLiteral("path"), QStringLiteral("app.cpp")},
+                {QStringLiteral("rationale"), QStringLiteral("return success")},
+                {QStringLiteral("edits"), QJsonArray{QJsonObject{
+                    {QStringLiteral("find"),
+                     QStringLiteral("int main() { return 1; }")},
+                    {QStringLiteral("replace"),
+                     QStringLiteral("int main() { return 0; }")}}}}}));
+        sub.script.append(textResponse(QStringLiteral("proposed one edit")));
+    });
+
+    auto applyTool = std::make_shared<ApplyProposalTool>();
+    ToolNameGuard applyGuard{QString::fromLatin1(ApplyProposalTool::kName)};
+    ToolRegistry::instance().registerTool(applyTool);
+
+    // 动态脚本服务：第二轮从 spawn 报告里提取 Proposal id 再返回 apply 调用。
+    ProposalFlowFakeService dynamicLlm;
+    struct RestoreLlm {
+        AIAgent& agent;
+        FakeAIService* original;
+        ~RestoreLlm() { agent.setLLMService(original); }
+    } restoreLlm{agent, &llm};
+    agent.setLLMService(&dynamicLlm);
+    Sandbox::setProjectWriteEnabled(true);
+    struct RestoreSandbox {
+        ~RestoreSandbox() {
+            Sandbox::setProjectWriteEnabled(false);
+            Sandbox::setProjectDir(QString());
+        }
+    } restoreSandbox;
+
+    QSignalSpy confirmSpy(&agent, &AIAgent::toolConfirmRequired);
+    agent.startTask(QStringLiteral("apply the drafted change"));
+    QTRY_COMPARE_WITH_TIMEOUT(confirmSpy.count(), 1, 15000);
+
+    // 确认弹窗识别的是结构化工具，预览就是 diff。
+    const QList<QVariant> confirm = confirmSpy.first();
+    QCOMPARE(confirm.at(1).toString(), QStringLiteral("apply_proposal"));
+    QVERIFY2(confirm.at(3).toString().contains(
+                 QStringLiteral("-int main() { return 1; }")),
+             qPrintable(confirm.at(3).toString()));
+    QVERIFY(confirm.at(3).toString().contains(
+        QStringLiteral("+int main() { return 0; }")));
+
+    // 未批准前不落盘。
+    {
+        QFile f(path);
+        QVERIFY(f.open(QIODevice::ReadOnly));
+        QCOMPARE(f.readAll(), original);
+    }
+
+    QSignalSpy responseSpy(&agent, &AIAgent::responseReady);
+    agent.approveToolCall(confirm.at(0).toString(), true);
+    QTRY_COMPARE_WITH_TIMEOUT(responseSpy.count(), 1, 15000);
+
+    {
+        QFile f(path);
+        QVERIFY(f.open(QIODevice::ReadOnly));
+        QCOMPARE(f.readAll(), QByteArray("int main() { return 0; }\n"));
+    }
+    const QString lastTool = lastToolMessageContent(agent.messages());
+    QVERIFY2(lastTool.contains(QStringLiteral("Applied proposal")),
+             qPrintable(lastTool));
+    QVERIFY(lastTool.contains(QStringLiteral("#1")));
+
     agent.setActiveProject(QString(), QString(), QString());
 }
 

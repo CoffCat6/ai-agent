@@ -57,6 +57,11 @@ add_library(nexus_core STATIC
     # docs/34 P3.1: 子代理的「写意图」出口——只产提案，永不落盘。
     src/core/tools/ProposeEditTool.h
     src/core/tools/ProposeEditTool.cpp
+    # docs/35 P4.4: 提案的结构化应用（会话内注册表 + RequiresConfirm 工具）。
+    src/core/tools/ProposalStore.h
+    src/core/tools/FileEditUtil.h
+    src/core/tools/ApplyProposalTool.h
+    src/core/tools/ApplyProposalTool.cpp
     src/core/tools/Sandbox.h
     src/core/tools/SandboxWin.cpp
     src/core/git/GitService.h

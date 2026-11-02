@@ -27,6 +27,7 @@ class ToolRegistry;
 class IMemory;
 class EpisodicService;
 struct SubAgentProgress;   // core/agent/SubAgentRunner.h (docs/32 P2)
+class ProposalStore;       // core/tools/ProposalStore.h (docs/35 P4.4)
 
 // The agent core: runs the ReAct loop
 //   user message -> LLM -> (tool calls -> results -> LLM)* -> final answer
@@ -414,6 +415,10 @@ private:
     // docs/35 P4.5: trace node id -> tool call id, only for in-flight
     // spawn_agent calls. Lets the per-card "stop" reach exactly one token.
     QHash<QString, QString> m_subAgentNodeCalls;
+    // docs/35 P4.4: session-scoped, process-only proposal registry. Filled
+    // from spawn_agent metadata, consumed by apply_proposal; cleared when the
+    // session changes (ids are never persisted).
+    std::shared_ptr<ProposalStore> m_proposalStore;
     QString m_confirmNodeId;  // trace node of the pending confirmation
     // Actual tool executions in the current request (m_maxToolExecutions cap;
     // the round budget alone bounds LLM rounds, not the announced call count).

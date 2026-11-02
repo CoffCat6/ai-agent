@@ -164,8 +164,8 @@
     </message>
     <message>
         <location filename="../src/ui/pages/AgentBehaviorPage.qml" line="32"/>
-        <source>开启后模型可以调用 spawn_agent 派生子代理：默认只读（读文件、搜索、git 查看）；coder 角色可用 propose_edit 起草提案，但不会写盘。</source>
-        <translation>When enabled, the model can call spawn_agent: sub-agents are read-only by default (file reads, search, git inspection); the coder role can draft proposals with propose_edit but never writes to disk.</translation>
+        <source>开启后模型可以调用 spawn_agent 派生子代理：默认只读（读文件、搜索、git 查看）；coder 角色可用 propose_edit 起草提案，但不会写盘；主代理用 apply_proposal 按提案 id 应用改动，逐次确认。</source>
+        <translation>When enabled, the model can call spawn_agent: sub-agents are read-only by default (file reads, search, git inspection); the coder role can draft proposals with propose_edit but never writes to disk; the primary agent applies them by id with apply_proposal, with approval each time.</translation>
     </message>
     <message>
         <location filename="../src/ui/pages/AgentBehaviorPage.qml" line="43"/>
@@ -10872,8 +10872,8 @@ select a file to view its content diff on the right.</translation>
     </message>
     <message>
         <location filename="../src/ui/pages/ToolsPage.qml" line="82"/>
-        <source>随应用提供的工具。展开后可逐个启停；禁用的工具不会暴露给模型。子代理专属工具（propose_edit）只在子代理运行时可用，不在此列表。</source>
-        <translation>Tools shipped with the app. Expand to toggle them individually; disabled tools are hidden from the model. The sub-agent-only tool (propose_edit) is available only inside sub-agent runs and is not listed here.</translation>
+        <source>随应用提供的工具。展开后可逐个启停；禁用的工具不会暴露给模型。子代理专属工具（propose_edit）只在子代理运行时可用，不在此列表；启用子代理时还会注册 apply_proposal，用于按提案 id 应用改动（逐次确认）。</source>
+        <translation>Tools shipped with the app. Expand to toggle them individually; disabled tools are hidden from the model. The sub-agent-only tool (propose_edit) is available only inside sub-agent runs and is not listed here; enabling sub-agents also registers apply_proposal, which applies a change by its proposal id (approval each time).</translation>
     </message>
     <message>
         <location filename="../src/ui/pages/ToolsPage.qml" line="86"/>

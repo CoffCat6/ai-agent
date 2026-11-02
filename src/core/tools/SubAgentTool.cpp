@@ -199,9 +199,10 @@ ToolDefinition SubAgentTool::definition() const {
         "with todo_write.\n"
         "Drafting changes: the 'coder' role can propose edits, but its "
         "proposals are NEVER applied - its report ends with a "
-        "## PROPOSALS section listing anchored find/replace pairs. Apply "
-        "them yourself with edit_file (each call still needs user "
-        "approval), verify, and only then report success.");
+        "## PROPOSALS section listing anchored find/replace pairs. Apply them "
+        "yourself with apply_proposal(id) using the ids listed under the "
+        "section header (each call still needs user approval); fall back to "
+        "edit_file when no id is shown. Verify, and only then report success.");
     def.level = ToolLevel::Safe;
     def.autoEditSafe = true;
     def.readOnly = true;   // spawns read-only work only; usable in PlanOnly
@@ -408,6 +409,10 @@ ToolResult SubAgentTool::execute(const QJsonObject& args, const Cancellation& ca
     if (!report.proposals.isEmpty()) {
         const QString root = Sandbox::currentProjectDir();
         QJsonArray index;
+        // docs/35 P4.4: 完整提案随 metadata 回传（transient），AIAgent 据此
+        // 建会话注册表并在报告里注入 Proposal ids；trace 持久化仍只写上面
+        // 的轻量索引，节点体积不回退。
+        QJsonArray full;
         for (const SubAgentProposal& proposal : report.proposals) {
             QString display = proposal.path;
             if (!root.isEmpty()) {
@@ -418,8 +423,18 @@ ToolResult SubAgentTool::execute(const QJsonObject& args, const Cancellation& ca
                 {QStringLiteral("path"), display},
                 {QStringLiteral("rationale"), proposal.rationale},
                 {QStringLiteral("count"), proposal.edits.size()}});
+            QJsonArray edits;
+            for (const SubAgentProposalEdit& edit : proposal.edits)
+                edits.append(QJsonObject{{QStringLiteral("find"), edit.find},
+                                         {QStringLiteral("replace"), edit.replace}});
+            full.append(QJsonObject{
+                {QStringLiteral("path"), proposal.path},
+                {QStringLiteral("displayPath"), display},
+                {QStringLiteral("rationale"), proposal.rationale},
+                {QStringLiteral("edits"), edits}});
         }
         result.metadata.insert(QStringLiteral("subagentProposals"), index);
+        result.metadata.insert(QStringLiteral("subagentProposalData"), full);
     }
     return result;
 }

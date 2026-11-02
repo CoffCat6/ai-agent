@@ -29,7 +29,7 @@ SettingsPage {
         SettingRow {
             objectName: "agent/subagentEnabled"
             label: qsTr("启用子代理")
-            description: qsTr("开启后模型可以调用 spawn_agent 派生子代理：默认只读（读文件、搜索、git 查看）；coder 角色可用 propose_edit 起草提案，但不会写盘。")
+            description: qsTr("开启后模型可以调用 spawn_agent 派生子代理：默认只读（读文件、搜索、git 查看）；coder 角色可用 propose_edit 起草提案，但不会写盘；主代理用 apply_proposal 按提案 id 应用改动，逐次确认。")
 
             Switch {
                 checked: Settings.subagentEnabled

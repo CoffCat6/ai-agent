@@ -282,10 +282,11 @@ QString renderProposals(const QVector<SubAgentProposal>& proposals, bool partial
             "time. Verify each against the current file before applying.\n");
     }
     out += QStringLiteral(
-        "Apply each proposal with edit_file (use file_write only if a new "
-        "file is needed) and pass the 'find' text verbatim as the old text; "
-        "every write still requires user approval. Do not describe the change "
-        "as done until the tool call succeeds.\n\n");
+        "Apply each proposal with apply_proposal(id), using the ids listed "
+        "below (every call still requires user approval). If a proposal has "
+        "no id listed, or its anchor needs adjusting, fall back to edit_file "
+        "with the 'find' text verbatim (use file_write only for a new file). "
+        "Do not describe the change as done until the tool call succeeds.\n\n");
 
     // 合并提示：按首次出现顺序聚合同一文件的提案。
     QStringList fileOrder;

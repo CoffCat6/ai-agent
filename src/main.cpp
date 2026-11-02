@@ -37,6 +37,7 @@
 #include "core/tools/WebSearchTool.h"
 // docs/32 P1: 子代理（spawn_agent）工具。
 #include "core/tools/SubAgentTool.h"
+#include "core/tools/ApplyProposalTool.h"
 #include "core/rag/RagService.h"
 #include "core/rag/KnowledgeSearchTool.h"
 #include "core/utils/Logger.h"
@@ -708,6 +709,9 @@ qInfo() << "NexusAI" << app.applicationVersion() << "starting";
     auto subAgentProfile = std::make_shared<
         std::atomic<std::shared_ptr<const SubAgentProfileSnapshot>>>();
     auto subAgentTool = std::make_shared<SubAgentTool>();
+    // docs/35 P4.4: 与 spawn_agent 同门控——只有子代理能产提案，关闭时
+    // 不把 apply_proposal 暴露给模型。
+    auto applyProposalTool = std::make_shared<ApplyProposalTool>();
     subAgentTool->setServiceFactory([subAgentProfile]() -> IAIService* {
         const std::shared_ptr<const SubAgentProfileSnapshot> snapshot =
             subAgentProfile->load();
@@ -722,7 +726,7 @@ qInfo() << "NexusAI" << app.applicationVersion() << "starting";
 
     const auto applySettings = [settings, agentVM, agent, fetchPtr, webPtr,
                                 proxyFactory, subAgentTool, subAgentProfile,
-                                spawnRegistered,
+                                spawnRegistered, applyProposalTool,
                                 tabMemories, createWebSearchBackend]() {
         // H1: one snapshot drives the application-wide proxy factory, so every
         // QNetworkAccessManager (LLM/embedding/search/MCP/http_fetch) follows
@@ -789,10 +793,12 @@ qInfo() << "NexusAI" << app.applicationVersion() << "starting";
         subAgentProfile->store(std::move(profileSnapshot));
         if (settings->subagentEnabled() && !*spawnRegistered) {
             ToolRegistry::instance().registerTool(subAgentTool);
+            ToolRegistry::instance().registerTool(applyProposalTool);
             *spawnRegistered = true;
         } else if (!settings->subagentEnabled() && *spawnRegistered) {
             // 摘除但保留对象：再次启用时同一实例重新注册。
             ToolRegistry::instance().takeTool(QLatin1String(SubAgentTool::kName));
+            ToolRegistry::instance().takeTool(QLatin1String(ApplyProposalTool::kName));
             *spawnRegistered = false;
         }
     };

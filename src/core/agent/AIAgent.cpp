@@ -6,6 +6,7 @@
 #include "core/tools/ToolRegistry.h"
 #include "core/tools/SubAgentTool.h"
 #include "core/tools/Sandbox.h"
+#include "core/tools/ProposalStore.h"
 #include "core/memory/IMemory.h"
 #include "core/rag/KnowledgeSearchTool.h"
 #include "core/utils/TokenEstimator.h"
@@ -144,13 +145,15 @@ QString systemPrompt() {
         "thorough.\n"
         "File writes and shell commands require user approval - if the user declines, "
         "adapt your plan. Never pretend to have run a tool.\n"
-        "Sub-agent proposals (docs/34): a 'coder' sub-agent's report may end with a "
-        "## PROPOSALS section - those edits were NOT applied. Apply them one by one "
-        "with edit_file, passing each proposal's 'find' text verbatim; every write "
-        "still needs user approval. Verify the result (re-read the file, build or "
-        "test when available) before saying the change is done. If an anchor no "
-        "longer matches, re-read the file and re-locate it instead of forcing the "
-        "patch.\n"
+        "Sub-agent proposals (docs/34, docs/35): a 'coder' sub-agent's report may end "
+        "with a ## PROPOSALS section - those edits were NOT applied. Prefer "
+        "apply_proposal(id) with the ids listed under the section header; it "
+        "re-validates the anchor against the current file. When a proposal has no "
+        "id, or its anchor needs adjusting, fall back to edit_file with that "
+        "proposal's 'find' text verbatim. Every write still needs user approval. "
+        "Verify the result (re-read the file, build or test when available) before "
+        "saying the change is done. If an anchor no longer matches, re-read the "
+        "file and re-locate it instead of forcing the patch.\n"
         "Base every tool call on the CURRENT user message and write fresh arguments "
         "for it; never repeat a previous call verbatim unless the user is asking the "
         "same question again.\n"
@@ -163,7 +166,9 @@ QString systemPrompt() {
 
 } // namespace
 
-AIAgent::AIAgent(QObject* parent) : QObject(parent) {
+AIAgent::AIAgent(QObject* parent)
+    : QObject(parent),
+      m_proposalStore(std::make_shared<ProposalStore>()) {
     m_streamTimer.setSingleShot(true);
     m_streamTimer.setInterval(kStreamFlushMs);
     connect(&m_streamTimer, &QTimer::timeout, this, &AIAgent::flushStreamNode);
@@ -1223,6 +1228,8 @@ void AIAgent::resetSession() {
     if (m_llmService && wasActive) m_llmService->cancel();
 
     m_sessionId.clear();
+    // docs/35 P4.4: proposal ids are session-scoped and never persisted.
+    m_proposalStore->clear();
     m_episodicInjection.clear();   // session-scoped; next fresh launch sets it
     // G4: emit after the id is cleared so listeners read an empty list.
     emit fileCheckpointsChanged();
@@ -1252,6 +1259,8 @@ void AIAgent::resumeSession(const QString& sessionId) {
 
     m_sessionId = sessionId;
     m_messages = QJsonArray();
+    // docs/35 P4.4: proposal ids do not cross sessions (not persisted).
+    m_proposalStore->clear();
     m_episodicInjection.clear();   // resumed sessions never carried one
     m_usedToolCallIds.clear();   // resumed history carries no tool calls
     // F1: todo state is persisted per session; reopening a session reloads
@@ -2220,7 +2229,13 @@ void AIAgent::processNextToolCall() {
                 for (int i = 0; i < parallelCalls.size(); ++i)
                     dispatchToolExecution(parallelCalls[i], QString(),
                                           parallelAutoApproved[i]);
-            const QString preview = tool ? tool->generatePreview(call.arguments) : QString();
+            // docs/35 P4.4: previews of apply_proposal resolve the proposal id
+            // against the session registry (GUI-thread install).
+            QString preview;
+            {
+                ProposalStoreRouter proposalRouter(m_proposalStore);
+                preview = tool ? tool->generatePreview(call.arguments) : QString();
+            }
             m_confirmNodeId = appendTraceNode("tool_call", call.name, "waiting_confirm",
                             QJsonObject{{"args", argsToString(call.arguments)}, {"preview", preview}});
             m_currentConfirmCall = call;
@@ -2369,8 +2384,12 @@ void AIAgent::dispatchToolExecution(const ToolCallInfo& call, const QString& tra
     // 不持有裸 this。
     const bool isSpawnCall = call.name == QLatin1String("spawn_agent");
     watcher->setFuture(QtConcurrent::run([tool, call, projectRoot, cancelled, nodeId, isSpawnCall,
+                                          store = m_proposalStore,
                                           target = QPointer<AIAgent>(this)]() -> ToolResult {
         const Sandbox::ExecutionScope scope(projectRoot);
+        // docs/35 P4.4: apply_proposal resolves its id on the pool thread;
+        // same thread-local pattern as the progress hook below.
+        ProposalStoreRouter proposalRouter(store);
         SubAgentProgressRouter router(isSpawnCall
             ? SubAgentProgressHook([nodeId, target](const SubAgentProgress& p) {
                   if (target.isNull()) return;
@@ -2509,6 +2528,32 @@ void AIAgent::finishToolExecution(const ToolCallInfo& call, const QString& trace
     if (result.metadata.value("subagentProposals").isArray())
         resultExtra["subagentProposals"] =
             result.metadata.value("subagentProposals");
+    // docs/35 P4.4: 完整提案（transient）进入会话注册表，用当前 trace 节点
+    // id 派生稳定 id；报告正文随后注入 id 清单，模型据此调 apply_proposal。
+    // trace 持久化仍只拿上面的轻量索引，节点体积不随提案正文增长。
+    QStringList proposalNotes;
+    if (call.name == QLatin1String(SubAgentTool::kName)) {
+        const QJsonArray data =
+            result.metadata.value("subagentProposalData").toArray();
+        for (int i = 0; i < data.size(); ++i) {
+            const QJsonObject entry = data.at(i).toObject();
+            StoredProposal stored;
+            stored.id = QStringLiteral("%1#%2").arg(traceNodeId).arg(i + 1);
+            stored.path = entry.value("path").toString();
+            stored.rationale = entry.value("rationale").toString();
+            for (const auto& rawEdit : entry.value("edits").toArray()) {
+                const QJsonObject edit = rawEdit.toObject();
+                stored.edits.append(SubAgentProposalEdit{
+                    edit.value("find").toString(),
+                    edit.value("replace").toString()});
+            }
+            if (stored.path.isEmpty() || stored.edits.isEmpty()) continue;
+            m_proposalStore->put(stored);
+            proposalNotes << QStringLiteral("%1 → %2")
+                                 .arg(stored.id,
+                                      entry.value("displayPath").toString());
+        }
+    }
     appendTraceNode("tool_result", call.name,
                     result.success ? "success" : "failed", resultExtra);
 
@@ -2519,6 +2564,19 @@ void AIAgent::finishToolExecution(const ToolCallInfo& call, const QString& trace
         : QStringLiteral("Error: %1").arg(result.error);
     if (result.success && call.name == QStringLiteral("todo_write"))
         historyOutput = reconcileTodoIds(historyOutput);
+    // docs/35 P4.4: 把这条运行产出的提案 id 放到 `## PROPOSALS` 标题正下方，
+    // 模型即使只看得到报告前半段也能知道可用的 id。
+    if (!proposalNotes.isEmpty()) {
+        const QString marker = QStringLiteral("## PROPOSALS (not applied)\n");
+        const int at = historyOutput.indexOf(marker);
+        if (at >= 0) {
+            historyOutput.insert(
+                at + marker.size(),
+                QStringLiteral("Proposal ids (pass one to apply_proposal): ")
+                    + proposalNotes.join(QStringLiteral(", "))
+                    + QLatin1Char('\n'));
+        }
+    }
 
     appendToolResultMessage(call, truncateText(
         historyOutput, kMaxToolResultChars));

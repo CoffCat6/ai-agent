@@ -79,7 +79,7 @@ SettingsPage {
         id: builtinSection
         objectName: "toolsBuiltinSection"
         title: qsTr("内置工具")
-        description: qsTr("随应用提供的工具。展开后可逐个启停；禁用的工具不会暴露给模型。子代理专属工具（propose_edit）只在子代理运行时可用，不在此列表。")
+        description: qsTr("随应用提供的工具。展开后可逐个启停；禁用的工具不会暴露给模型。子代理专属工具（propose_edit）只在子代理运行时可用，不在此列表；启用子代理时还会注册 apply_proposal，用于按提案 id 应用改动（逐次确认）。")
         collapsible: true
         collapsed: true
         badge: page.builtinTools.length === 0
