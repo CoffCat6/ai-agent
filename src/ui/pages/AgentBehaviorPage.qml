@@ -66,6 +66,25 @@ SettingsPage {
 
         property var roleEditing: null   // null 或 {index: -1(新增) / >=0(编辑)}
 
+        // docs/35 P4.6: 角色级模型配置。空 id = 沿用当前活动 profile；指向
+        // 已删除的 profile 时装配层回退（这里也把状态标出来）。
+        readonly property var profileChoices:
+            [{ id: "", displayName: qsTr("沿用当前模型配置") }]
+                .concat(Settings.profiles)
+        function profileIndex(profileId) {
+            for (let i = 0; i < profileChoices.length; ++i)
+                if (profileChoices[i].id === (profileId || "")) return i
+            return 0
+        }
+        function profileLabel(profileId) {
+            if (!profileId) return qsTr("沿用当前模型配置")
+            const list = Settings.profiles
+            for (let i = 0; i < list.length; ++i)
+                if (list[i].id === profileId)
+                    return list[i].displayName || profileId
+            return qsTr("%1（已删除，回退当前配置）").arg(profileId)
+        }
+
         function saveRole() {
             const name = roleNameField.text.trim()
             const prompt = rolePromptArea.text.trim()
@@ -73,7 +92,9 @@ SettingsPage {
             const tools = roleToolsField.text.split(",")
                 .map(s => s.trim()).filter(s => s.length > 0)
             const list = Settings.subagentRoles.slice()
-            const entry = { name: name, prompt: prompt, tools: tools }
+            const entry = { name: name, prompt: prompt, tools: tools,
+                            profileId: roleProfileCombo.currentValue || "",
+                            effort: roleEffortField.text.trim() }
             if (page_roleCard.roleEditing.index >= 0)
                 list[page_roleCard.roleEditing.index] = entry
             else
@@ -89,7 +110,7 @@ SettingsPage {
 
         Text {
             Layout.fillWidth: true
-            text: qsTr("内置角色：explore（广度优先勘察）、research（深度查证）、review（代码评审）、coder（起草改动提案，只提不改）。调用时省略 role 参数默认使用 explore；自定义档案与预设同名时覆盖预设。coder 经 propose_edit 产出锚点式提案，由主任务用 edit_file 逐条应用并逐次确认；其他预设不授予提案权。")
+            text: qsTr("内置角色：explore（广度优先勘察）、research（深度查证）、review（代码评审）、coder（起草改动提案，只提不改）。调用时省略 role 参数默认使用 explore；自定义档案与预设同名时覆盖预设。coder 经 propose_edit 产出锚点式提案，由主任务用 apply_proposal / edit_file 逐条应用并逐次确认；其他预设不授予提案权。自定义角色可选择独立的模型配置与思考强度（留空沿用当前配置）。")
             color: Theme.textSecondary
             font.pixelSize: Theme.fontSizeCaption
             wrapMode: Text.Wrap
@@ -132,6 +153,11 @@ SettingsPage {
                                 rolePromptArea.text = modelData.prompt
                                 roleToolsField.text =
                                     (modelData.tools || []).join(", ")
+                                roleProfileCombo.currentIndex =
+                                    page_roleCard.profileIndex(
+                                        String(modelData.profileId || ""))
+                                roleEffortField.text =
+                                    String(modelData.effort || "")
                                 page_roleCard.roleEditing = { index: index }
                             }
                         }
@@ -154,6 +180,20 @@ SettingsPage {
                         Layout.fillWidth: true
                         visible: (modelData.tools || []).length > 0
                         text: qsTr("工具白名单：%1").arg((modelData.tools || []).join(", "))
+                        color: Theme.textSecondary
+                        font.pixelSize: Theme.fontSizeCaption
+                        elide: Text.ElideRight
+                    }
+                    Text {
+                        Layout.fillWidth: true
+                        visible: String(modelData.profileId || "") !== ""
+                                 || String(modelData.effort || "") !== ""
+                        text: qsTr("模型配置：%1%2")
+                                  .arg(page_roleCard.profileLabel(
+                                           String(modelData.profileId || "")))
+                                  .arg(String(modelData.effort || "") !== ""
+                                       ? qsTr(" · 思考强度 %1")
+                                             .arg(modelData.effort) : "")
                         color: Theme.textSecondary
                         font.pixelSize: Theme.fontSizeCaption
                         elide: Text.ElideRight
@@ -205,6 +245,24 @@ SettingsPage {
                 color: Theme.textPrimary
                 font.pixelSize: Theme.fontSizeBody
             }
+            // docs/35 P4.6: 让角色用不同模型配置（coder 强模型 / explore 快模型）。
+            ComboBox {
+                id: roleProfileCombo
+                objectName: "agent/subagentRoleProfile"
+                Layout.fillWidth: true
+                model: page_roleCard.profileChoices
+                textRole: "displayName"
+                valueRole: "id"
+                Accessible.name: qsTr("角色使用的模型配置")
+            }
+            TextField {
+                id: roleEffortField
+                objectName: "agent/subagentRoleEffort"
+                Layout.fillWidth: true
+                placeholderText: qsTr("思考强度覆盖（low / medium / high；留空沿用配置）")
+                color: Theme.textPrimary
+                font.pixelSize: Theme.fontSizeBody
+            }
             RowLayout {
                 Layout.fillWidth: true
                 Item { Layout.fillWidth: true }
@@ -229,6 +287,8 @@ SettingsPage {
                 roleNameField.text = ""
                 rolePromptArea.text = ""
                 roleToolsField.text = ""
+                roleProfileCombo.currentIndex = 0
+                roleEffortField.text = ""
                 page_roleCard.roleEditing = { index: -1 }
             }
         }

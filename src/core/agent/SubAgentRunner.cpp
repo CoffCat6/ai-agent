@@ -32,6 +32,8 @@ namespace {
 // are only observed between events, so this bounds abort latency while
 // keeping idle wakeups cheap.
 constexpr int kAbortPollMs = 250;
+// docs/35 P4.6: 流式增量回传节流（与主界面的流式刷新同量级）。
+constexpr int kStreamFlushMs = 200;
 // Floor for the wall-clock budget: below this the run would not even finish
 // one LLM round-trip, so a mistyped 0/negative timeout cannot busy-loop.
 constexpr qint64 kMinTimeoutMs = 200;
@@ -415,6 +417,14 @@ SubAgentReport SubAgentRunner::runImpl(IAIService* service, const SubAgentReques
                          gotError = true;
                          loop.quit();
                      });
+    // docs/35 P4.6: streaming deltas fill the gap while a long thinking/model
+    // response is in flight. They are throttled into progress events below.
+    QString streamBuffer;
+    QString reasoningBuffer;
+    QObject::connect(service, &IAIService::streamingChunk, &loop,
+                     [&](const QString& chunk) { streamBuffer += chunk; });
+    QObject::connect(service, &IAIService::reasoningChunk, &loop,
+                     [&](const QString& chunk) { reasoningBuffer += chunk; });
     // Wall-clock budget + cancellation poll. Runs only while the loop spins;
     // synchronous fakes that answer inside chatComplete() never reach it.
     QTimer abortTimer;
@@ -459,6 +469,25 @@ SubAgentReport SubAgentRunner::runImpl(IAIService* service, const SubAgentReques
                                               request.maxSteps > 0 ? request.maxSteps : 0,
                                               phase, detail});
     };
+
+    // docs/35 P4.6: one throttled progress event per buffer; the GUI replaces
+    // the trailing entry of the same phase instead of appending a new log
+    // line, so a long stream cannot flush the history out of subagentLog.
+    int streamStep{0};
+    QTimer streamTimer;
+    streamTimer.setInterval(kStreamFlushMs);
+    QObject::connect(&streamTimer, &QTimer::timeout, &loop, [&]() {
+        if (!streamBuffer.isEmpty()) {
+            notify(streamStep, QStringLiteral("stream"),
+                   truncate(streamBuffer, kProgressTextMaxChars));
+            streamBuffer.clear();
+        }
+        if (!reasoningBuffer.isEmpty()) {
+            notify(streamStep, QStringLiteral("reasoning"),
+                   truncate(reasoningBuffer, kProgressTextMaxChars));
+            reasoningBuffer.clear();
+        }
+    });
 
     // docs/35 P4.2: bounded internal parallelism for read-only tools. The
     // runner owns the pool (instead of using the global one) so nested tasks
@@ -517,7 +546,11 @@ SubAgentReport SubAgentRunner::runImpl(IAIService* service, const SubAgentReques
         gotError = false;
         timedOut = false;
         error.clear();
+        streamStep = step;
+        streamBuffer.clear();
+        reasoningBuffer.clear();
         abortTimer.start();
+        streamTimer.start();
         // docs/35 P4.1: keep the full transcript for the evidence artifact,
         // but send a budgeted copy of the request. Only the wire view is
         // compressed, so earlier evidence is still on disk and the next
@@ -552,6 +585,7 @@ SubAgentReport SubAgentRunner::runImpl(IAIService* service, const SubAgentReques
         // nothing has arrived yet.
         if (!gotResponse && !gotError) loop.exec();
         abortTimer.stop();
+        streamTimer.stop();
 
         report.tokensUsed += response.tokensUsed;
         if (gotError) {

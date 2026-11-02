@@ -60,11 +60,14 @@ Item {
     function logGlyph(phase) {
         if (phase === "tool") return "⚙"
         if (phase === "context") return "↺"
+        if (phase === "reasoning") return "◌"
+        if (phase === "stream") return "…"
         return "✦"
     }
     function logColor(phase) {
         if (phase === "tool") return Theme.statusWarning
-        if (phase === "context") return Theme.textSecondary
+        if (phase === "context" || phase === "reasoning")
+            return Theme.textSecondary
         return Theme.brandPrimary
     }
     // 来源的展示名。技术名词不翻译（与设置页的 label 一致）。
@@ -480,6 +483,7 @@ Item {
                                 text: modelData.text
                                 color: modelData.phase === "tool"
                                     || modelData.phase === "context"
+                                    || modelData.phase === "reasoning"
                                     ? Theme.textSecondary : Theme.textPrimary
                                 font.pixelSize: Theme.fontSizeCaption
                                 font.family: modelData.phase === "tool"

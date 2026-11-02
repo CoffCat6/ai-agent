@@ -707,8 +707,24 @@ qInfo() << "NexusAI" << app.applicationVersion() << "starting";
         // 据此压缩超限历史（0 = 未知，不压缩）。
         int contextLimit{0};
     };
-    auto subAgentProfile = std::make_shared<
-        std::atomic<std::shared_ptr<const SubAgentProfileSnapshot>>>();
+    // docs/35 P4.6: 角色可以点名任意已配置的 profile（coder 用强模型、
+    // explore 用快模型）。快照集合按 id 索引；未知 id（profile 已删除）
+    // 回退到活动 profile。
+    struct SubAgentProfileSet {
+        std::shared_ptr<const SubAgentProfileSnapshot> active;
+        QHash<QString, std::shared_ptr<const SubAgentProfileSnapshot>> byId;
+
+        std::shared_ptr<const SubAgentProfileSnapshot> forId(
+            const QString& profileId) const {
+            if (!profileId.isEmpty()) {
+                const auto it = byId.constFind(profileId);
+                if (it != byId.cend()) return it.value();
+            }
+            return active;
+        }
+    };
+    auto subAgentProfiles = std::make_shared<
+        std::atomic<std::shared_ptr<const SubAgentProfileSet>>>();
     auto subAgentTool = std::make_shared<SubAgentTool>();
     // docs/35 P4.4: 与 spawn_agent 同门控——只有子代理能产提案，关闭时
     // 不把 apply_proposal 暴露给模型。
@@ -718,20 +734,39 @@ qInfo() << "NexusAI" << app.applicationVersion() << "starting";
     auto subagentWaitTool = std::make_shared<SubAgentWaitTool>();
     auto subagentStatusTool = std::make_shared<SubAgentStatusTool>();
     auto subagentCancelTool = std::make_shared<SubAgentCancelTool>();
-    subAgentTool->setServiceFactory([subAgentProfile]() -> IAIService* {
-        const std::shared_ptr<const SubAgentProfileSnapshot> snapshot =
-            subAgentProfile->load();
-        if (!snapshot || !snapshot->valid) return nullptr;
-        IAIService* service = LlmProtocolRegistry::createService(snapshot->protocolKey, nullptr);
-        if (service) service->configure(snapshot->config);
-        return service;
-    });
+    subAgentTool->setServiceFactory(
+        [subAgentProfiles](const QString& profileId,
+                           const QString& effort) -> IAIService* {
+            const std::shared_ptr<const SubAgentProfileSet> set =
+                subAgentProfiles->load();
+            if (!set) return nullptr;
+            const std::shared_ptr<const SubAgentProfileSnapshot> snapshot =
+                set->forId(profileId);
+            if (!snapshot || !snapshot->valid) return nullptr;
+            IAIService* service = LlmProtocolRegistry::createService(
+                snapshot->protocolKey, nullptr);
+            if (service) {
+                LlmProfileConfig config = snapshot->config;
+                if (!effort.trimmed().isEmpty())
+                    config.reasoningEffort = effort.trimmed();
+                service->configure(config);
+            }
+            return service;
+        });
+    subAgentTool->setContextLimitResolver(
+        [subAgentProfiles](const QString& profileId) {
+            const std::shared_ptr<const SubAgentProfileSet> set =
+                subAgentProfiles->load();
+            const std::shared_ptr<const SubAgentProfileSnapshot> snapshot =
+                set ? set->forId(profileId) : nullptr;
+            return snapshot ? snapshot->contextLimit : 0;
+        });
     // 跨多次 applySettings 调用保持注册状态；连接会拷贝 lambda，故用共享
     // 持有而非值捕获。
     auto spawnRegistered = std::make_shared<bool>(false);
 
     const auto applySettings = [settings, agentVM, agent, fetchPtr, webPtr,
-                                proxyFactory, subAgentTool, subAgentProfile,
+                                proxyFactory, subAgentTool, subAgentProfiles,
                                 spawnRegistered, applyProposalTool,
                                 subagentWaitTool, subagentStatusTool,
                                 subagentCancelTool,
@@ -786,19 +821,37 @@ qInfo() << "NexusAI" << app.applicationVersion() << "starting";
         subAgentTool->setUserRoles(
             SubAgentTool::rolesFromVariant(settings->subagentRoles()));
         subAgentTool->refreshCatalog(settings->localOnlyMode());
+        // docs/35 P4.6: snapshot EVERY configured profile, not just the active
+        // one — a role's profileId picks from this set. Unknown ids fall back
+        // to the active profile in forId().
+        const auto makeSnapshot = [settings](const QVariantMap& profile) {
+            auto snapshot = std::make_shared<SubAgentProfileSnapshot>();
+            snapshot->valid =
+                !profile.value(QStringLiteral("model")).toString().trimmed().isEmpty()
+                && !profile.value(QStringLiteral("baseUrl")).toString().trimmed().isEmpty();
+            snapshot->protocolKey = LlmProtocolRegistry::resolve(
+                profile.value(QStringLiteral("apiProtocol")).toString(),
+                profile.value(QStringLiteral("provider")).toString())->key;
+            snapshot->config = profileConfigOf(profile);
+            snapshot->contextLimit =
+                settings->resolveContextLimitForProfile(profile);
+            return snapshot;
+        };
         const QVariantMap spawnProfile = settings->activeProfile();
-        auto profileSnapshot = std::make_shared<SubAgentProfileSnapshot>();
-        profileSnapshot->valid =
-            !spawnProfile.value(QStringLiteral("model")).toString().trimmed().isEmpty()
-            && !spawnProfile.value(QStringLiteral("baseUrl")).toString().trimmed().isEmpty();
-        profileSnapshot->protocolKey = LlmProtocolRegistry::resolve(
-            spawnProfile.value(QStringLiteral("apiProtocol")).toString(),
-            spawnProfile.value(QStringLiteral("provider")).toString())->key;
-        profileSnapshot->config = profileConfigOf(spawnProfile);
-        profileSnapshot->contextLimit =
-            settings->resolveContextLimitForProfile(spawnProfile);
-        subAgentTool->setContextLimit(profileSnapshot->contextLimit);
-        subAgentProfile->store(std::move(profileSnapshot));
+        auto profileSet = std::make_shared<SubAgentProfileSet>();
+        for (const QVariant& rawProfile : settings->profiles()) {
+            const QVariantMap profile = rawProfile.toMap();
+            const QString profileId = profile.value(QStringLiteral("id")).toString();
+            if (profileId.isEmpty()) continue;
+            profileSet->byId.insert(profileId, makeSnapshot(profile));
+        }
+        profileSet->active = makeSnapshot(spawnProfile);
+        const QString activeProfileId =
+            spawnProfile.value(QStringLiteral("id")).toString();
+        if (!activeProfileId.isEmpty())
+            profileSet->byId.insert(activeProfileId, profileSet->active);
+        subAgentTool->setContextLimit(profileSet->active->contextLimit);
+        subAgentProfiles->store(std::move(profileSet));
         if (settings->subagentEnabled() && !*spawnRegistered) {
             ToolRegistry::instance().registerTool(subAgentTool);
             ToolRegistry::instance().registerTool(applyProposalTool);

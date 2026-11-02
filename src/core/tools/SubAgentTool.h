@@ -35,14 +35,34 @@ class SubAgentTool : public ITool {
 public:
     static constexpr const char* kName = "spawn_agent";
 
-    // Creates one parentless IAIService per run, already configured for the
-    // active profile; ownership passes to the run, which deletes it on the
-    // executing thread. Returns null when no model profile is usable — the
+    // Creates one parentless IAIService per run. docs/35 P4.6: the role may
+    // select a model profile and an effort override (both empty = the active
+    // profile / its default). Ownership passes to the run, which deletes it
+    // on the executing thread. Returns null when no profile is usable — the
     // run reports that as a readable failure. main.cpp wires the real
     // factory; tests inject fakes.
-    using ServiceFactory = std::function<IAIService*()>;
+    using ServiceFactory =
+        std::function<IAIService*(const QString& profileId,
+                                  const QString& effort)>;
 
-    void setServiceFactory(ServiceFactory factory) { m_factory = std::move(factory); }
+    void setServiceFactory(ServiceFactory factory) {
+        m_factory = std::move(factory);
+    }
+    // Legacy zero-argument factory (tests and simple hosts): ignores the
+    // role's model selection and always uses whatever the fake is configured
+    // with. Kept as an overload so existing call sites stay source-compatible.
+    void setServiceFactory(const std::function<IAIService*()>& factory) {
+        m_factory = [factory](const QString&, const QString&) {
+            return factory();
+        };
+    }
+    // docs/35 P4.6: per-profile context window for the runner's budget.
+    // main.cpp resolves it from the same profile snapshots as the factory;
+    // when unset, the fixed setContextLimit() value applies.
+    using ContextLimitResolver = std::function<int(const QString& profileId)>;
+    void setContextLimitResolver(ContextLimitResolver resolver) {
+        m_contextLimitResolver = std::move(resolver);
+    }
 
     // GUI-thread refresh of the read-only tool snapshot (ToolRegistry has no
     // internal locking, so pool threads must never query it directly).
@@ -106,6 +126,7 @@ private:
     bool resolveRole(const QString& roleName, SubAgentRole* out) const;
 
     ServiceFactory m_factory;
+    ContextLimitResolver m_contextLimitResolver;
     mutable QMutex m_catalogMutex;
     QVector<SubAgentToolEntry> m_catalog;   // guarded by m_catalogMutex
 

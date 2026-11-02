@@ -86,6 +86,11 @@ QVector<SubAgentRole> SubAgentTool::rolesFromVariant(const QVariantList& raw) {
         SubAgentRole role;
         role.name = name;
         role.prompt = prompt;
+        // docs/35 P4.6: 角色级模型配置（缺失 = 沿用活动 profile / 默认档）。
+        role.profileId =
+            map.value(QStringLiteral("profileId")).toString().trimmed();
+        role.effort =
+            map.value(QStringLiteral("effort")).toString().trimmed();
         const QVariantList tools = map.value(QStringLiteral("tools")).toList();
         for (const QVariant& t : tools) {
             const QString toolName = t.toString().trimmed();
@@ -373,6 +378,13 @@ ToolResult SubAgentTool::execute(const QJsonObject& args, const Cancellation& ca
             catalog.end());
     }
 
+    // docs/35 P4.6: 上下文窗口跟着角色选中的 profile 走；没有解析器时用
+    // 固定值（测试/旧宿主）。解析器在主线程外也被调用，main.cpp 的实现只读
+    // 不可变快照。
+    const int contextLimit = m_contextLimitResolver
+        ? m_contextLimitResolver(resolved.profileId)
+        : m_contextLimit.load();
+
     // docs/35 P4.3: background fork/join. The ack is the valid tool result for
     // this call; the run is registered in the session hub and continues after
     // the primary loop moves on (and even after the task ends).
@@ -392,14 +404,17 @@ ToolResult SubAgentTool::execute(const QJsonObject& args, const Cancellation& ca
         bgRequest.tools = catalog;
         bgRequest.maxSteps = m_maxSteps.load();
         bgRequest.timeoutMs = m_timeoutMs.load();
-        bgRequest.contextLimit = m_contextLimit.load();
+        bgRequest.contextLimit = contextLimit;
         bgRequest.cancelled = bgCancelled;
         const ServiceFactory factory = m_factory;
+        const QString roleProfileId = resolved.profileId;
+        const QString roleEffort = resolved.effort;
         const QString roleLabel = resolved.name.isEmpty()
             ? QStringLiteral("explore") : resolved.name;
         const QString taskId = hub->createTask(
             goal, roleLabel, bgCancelled,
-            [this, bgRequest, factory, bgCancelled, hub](const QString& id) mutable {
+            [this, bgRequest, factory, roleProfileId, roleEffort,
+             bgCancelled, hub](const QString& id) mutable {
                 SubAgentReport report;
                 if (bgCancelled->load()) {
                     report.stop = SubAgentReport::Stop::Cancelled;
@@ -410,7 +425,8 @@ ToolResult SubAgentTool::execute(const QJsonObject& args, const Cancellation& ca
                     report.text = QStringLiteral(
                         "Cancelled while waiting for a free sub-agent slot.");
                 } else {
-                    IAIService* service = factory ? factory() : nullptr;
+                    IAIService* service = factory
+                        ? factory(roleProfileId, roleEffort) : nullptr;
                     bgRequest.progress = [hub, id](const SubAgentProgress& p) {
                         hub->updateProgress(id, p.phase, p.detail);
                     };
@@ -451,11 +467,12 @@ ToolResult SubAgentTool::execute(const QJsonObject& args, const Cancellation& ca
     request.tools = catalog;
     request.maxSteps = m_maxSteps.load();
     request.timeoutMs = m_timeoutMs.load();
-    request.contextLimit = m_contextLimit.load();
+    request.contextLimit = contextLimit;
     request.cancelled = cancelled;
     request.progress = progressHook;
 
-    IAIService* service = m_factory();
+    IAIService* service = m_factory
+        ? m_factory(resolved.profileId, resolved.effort) : nullptr;
     SubAgentReport report = SubAgentRunner::run(service, request);
     // The factory hands over ownership; the service was created and used on
     // this thread, so a plain delete here is safe.

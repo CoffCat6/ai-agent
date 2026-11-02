@@ -225,87 +225,122 @@
         <translation>spawn_agent 可按角色派生子代理：预设不可改，自定义档案指定专属提示词与工具白名单。</translation>
     </message>
     <message>
-        <location filename="../src/ui/pages/AgentBehaviorPage.qml" line="92"/>
         <source>内置角色：explore（广度优先勘察）、research（深度查证）、review（代码评审）、coder（起草改动提案，只提不改）。调用时省略 role 参数默认使用 explore；自定义档案与预设同名时覆盖预设。coder 经 propose_edit 产出锚点式提案，由主任务用 edit_file 逐条应用并逐次确认；其他预设不授予提案权。</source>
-        <translation>内置角色：explore（广度优先勘察）、research（深度查证）、review（代码评审）、coder（起草改动提案，只提不改）。调用时省略 role 参数默认使用 explore；自定义档案与预设同名时覆盖预设。coder 经 propose_edit 产出锚点式提案，由主任务用 edit_file 逐条应用并逐次确认；其他预设不授予提案权。</translation>
+        <translation type="vanished">内置角色：explore（广度优先勘察）、research（深度查证）、review（代码评审）、coder（起草改动提案，只提不改）。调用时省略 role 参数默认使用 explore；自定义档案与预设同名时覆盖预设。coder 经 propose_edit 产出锚点式提案，由主任务用 edit_file 逐条应用并逐次确认；其他预设不授予提案权。</translation>
     </message>
     <message>
-        <location filename="../src/ui/pages/AgentBehaviorPage.qml" line="129"/>
+        <location filename="../src/ui/pages/AgentBehaviorPage.qml" line="72"/>
+        <location filename="../src/ui/pages/AgentBehaviorPage.qml" line="80"/>
+        <source>沿用当前模型配置</source>
+        <translation>沿用当前模型配置</translation>
+    </message>
+    <message>
+        <location filename="../src/ui/pages/AgentBehaviorPage.qml" line="85"/>
+        <source>%1（已删除，回退当前配置）</source>
+        <translation>%1（已删除，回退当前配置）</translation>
+    </message>
+    <message>
+        <location filename="../src/ui/pages/AgentBehaviorPage.qml" line="113"/>
+        <source>内置角色：explore（广度优先勘察）、research（深度查证）、review（代码评审）、coder（起草改动提案，只提不改）。调用时省略 role 参数默认使用 explore；自定义档案与预设同名时覆盖预设。coder 经 propose_edit 产出锚点式提案，由主任务用 apply_proposal / edit_file 逐条应用并逐次确认；其他预设不授予提案权。自定义角色可选择独立的模型配置与思考强度（留空沿用当前配置）。</source>
+        <translation>内置角色：explore（广度优先勘察）、research（深度查证）、review（代码评审）、coder（起草改动提案，只提不改）。调用时省略 role 参数默认使用 explore；自定义档案与预设同名时覆盖预设。coder 经 propose_edit 产出锚点式提案，由主任务用 apply_proposal / edit_file 逐条应用并逐次确认；其他预设不授予提案权。自定义角色可选择独立的模型配置与思考强度（留空沿用当前配置）。</translation>
+    </message>
+    <message>
+        <location filename="../src/ui/pages/AgentBehaviorPage.qml" line="150"/>
         <source>编辑</source>
         <translation>编辑</translation>
     </message>
     <message>
-        <location filename="../src/ui/pages/AgentBehaviorPage.qml" line="139"/>
+        <location filename="../src/ui/pages/AgentBehaviorPage.qml" line="165"/>
         <source>删除</source>
         <translation>删除</translation>
     </message>
     <message>
-        <location filename="../src/ui/pages/AgentBehaviorPage.qml" line="156"/>
+        <location filename="../src/ui/pages/AgentBehaviorPage.qml" line="182"/>
         <source>工具白名单：%1</source>
         <translation>工具白名单：%1</translation>
     </message>
     <message>
-        <location filename="../src/ui/pages/AgentBehaviorPage.qml" line="167"/>
+        <location filename="../src/ui/pages/AgentBehaviorPage.qml" line="191"/>
+        <source>模型配置：%1%2</source>
+        <translation>模型配置：%1%2</translation>
+    </message>
+    <message>
+        <location filename="../src/ui/pages/AgentBehaviorPage.qml" line="195"/>
+        <source> · 思考强度 %1</source>
+        <translation> · 思考强度 %1</translation>
+    </message>
+    <message>
+        <location filename="../src/ui/pages/AgentBehaviorPage.qml" line="207"/>
         <source>还没有自定义角色。点「新建角色」定义第一支专属子代理。</source>
         <translation>还没有自定义角色。点「新建角色」定义第一支专属子代理。</translation>
     </message>
     <message>
-        <location filename="../src/ui/pages/AgentBehaviorPage.qml" line="182"/>
+        <location filename="../src/ui/pages/AgentBehaviorPage.qml" line="222"/>
         <source>角色名（模型以 role 参数引用，如：doc-auditor）</source>
         <translation>角色名（模型以 role 参数引用，如：doc-auditor）</translation>
     </message>
     <message>
-        <location filename="../src/ui/pages/AgentBehaviorPage.qml" line="193"/>
+        <location filename="../src/ui/pages/AgentBehaviorPage.qml" line="233"/>
         <source>该角色的专注指令（追加到子代理系统提示词）…</source>
         <translation>该角色的专注指令（追加到子代理系统提示词）…</translation>
     </message>
     <message>
-        <location filename="../src/ui/pages/AgentBehaviorPage.qml" line="204"/>
+        <location filename="../src/ui/pages/AgentBehaviorPage.qml" line="244"/>
         <source>工具白名单（逗号分隔，留空 = 全部只读工具；写提案需显式加入 propose_edit）</source>
         <translation>工具白名单（逗号分隔，留空 = 全部只读工具；写提案需显式加入 propose_edit）</translation>
     </message>
     <message>
-        <location filename="../src/ui/pages/AgentBehaviorPage.qml" line="212"/>
+        <location filename="../src/ui/pages/AgentBehaviorPage.qml" line="256"/>
+        <source>角色使用的模型配置</source>
+        <translation>角色使用的模型配置</translation>
+    </message>
+    <message>
+        <location filename="../src/ui/pages/AgentBehaviorPage.qml" line="262"/>
+        <source>思考强度覆盖（low / medium / high；留空沿用配置）</source>
+        <translation>思考强度覆盖（low / medium / high；留空沿用配置）</translation>
+    </message>
+    <message>
+        <location filename="../src/ui/pages/AgentBehaviorPage.qml" line="270"/>
         <source>取消</source>
         <translation>取消</translation>
     </message>
     <message>
-        <location filename="../src/ui/pages/AgentBehaviorPage.qml" line="218"/>
+        <location filename="../src/ui/pages/AgentBehaviorPage.qml" line="276"/>
         <source>保存</source>
         <translation>保存</translation>
     </message>
     <message>
-        <location filename="../src/ui/pages/AgentBehaviorPage.qml" line="218"/>
+        <location filename="../src/ui/pages/AgentBehaviorPage.qml" line="276"/>
         <source>创建</source>
         <translation>创建</translation>
     </message>
     <message>
-        <location filename="../src/ui/pages/AgentBehaviorPage.qml" line="226"/>
+        <location filename="../src/ui/pages/AgentBehaviorPage.qml" line="284"/>
         <source>新建角色</source>
         <translation>新建角色</translation>
     </message>
     <message>
-        <location filename="../src/ui/pages/AgentBehaviorPage.qml" line="239"/>
+        <location filename="../src/ui/pages/AgentBehaviorPage.qml" line="299"/>
         <source>系统提示词</source>
         <translation>系统提示词</translation>
     </message>
     <message>
-        <location filename="../src/ui/pages/AgentBehaviorPage.qml" line="240"/>
+        <location filename="../src/ui/pages/AgentBehaviorPage.qml" line="300"/>
         <source>留空使用内置提示词；修改即时生效，内容随请求发送给当前模型服务。</source>
         <translation>留空使用内置提示词；修改即时生效，内容随请求发送给当前模型服务。</translation>
     </message>
     <message>
-        <location filename="../src/ui/pages/AgentBehaviorPage.qml" line="248"/>
+        <location filename="../src/ui/pages/AgentBehaviorPage.qml" line="308"/>
         <source>留空 = 内置提示词</source>
         <translation>留空 = 内置提示词</translation>
     </message>
     <message>
-        <location filename="../src/ui/pages/AgentBehaviorPage.qml" line="274"/>
+        <location filename="../src/ui/pages/AgentBehaviorPage.qml" line="334"/>
         <source>自定义系统提示词</source>
         <translation>自定义系统提示词</translation>
     </message>
     <message>
-        <location filename="../src/ui/pages/AgentBehaviorPage.qml" line="278"/>
+        <location filename="../src/ui/pages/AgentBehaviorPage.qml" line="338"/>
         <source>%1 字符</source>
         <translation>%1 字符</translation>
     </message>
@@ -7629,122 +7664,122 @@
 <context>
     <name>ProcessCard</name>
     <message>
-        <location filename="../src/ui/components/ProcessCard.qml" line="122"/>
+        <location filename="../src/ui/components/ProcessCard.qml" line="125"/>
         <source>新</source>
         <translation>新</translation>
     </message>
     <message>
-        <location filename="../src/ui/components/ProcessCard.qml" line="123"/>
+        <location filename="../src/ui/components/ProcessCard.qml" line="126"/>
         <source>增</source>
         <translation>增</translation>
     </message>
     <message>
-        <location filename="../src/ui/components/ProcessCard.qml" line="124"/>
+        <location filename="../src/ui/components/ProcessCard.qml" line="127"/>
         <source>删</source>
         <translation>删</translation>
     </message>
     <message>
-        <location filename="../src/ui/components/ProcessCard.qml" line="125"/>
+        <location filename="../src/ui/components/ProcessCard.qml" line="128"/>
         <source>改</source>
         <translation>改</translation>
     </message>
     <message>
-        <location filename="../src/ui/components/ProcessCard.qml" line="126"/>
+        <location filename="../src/ui/components/ProcessCard.qml" line="129"/>
         <source>移</source>
         <translation>移</translation>
     </message>
     <message>
-        <location filename="../src/ui/components/ProcessCard.qml" line="143"/>
+        <location filename="../src/ui/components/ProcessCard.qml" line="146"/>
         <source>思考</source>
         <translation>思考</translation>
     </message>
     <message>
-        <location filename="../src/ui/components/ProcessCard.qml" line="144"/>
+        <location filename="../src/ui/components/ProcessCard.qml" line="147"/>
         <source>工具调用</source>
         <translation>工具调用</translation>
     </message>
     <message>
-        <location filename="../src/ui/components/ProcessCard.qml" line="145"/>
+        <location filename="../src/ui/components/ProcessCard.qml" line="148"/>
         <source>工具结果</source>
         <translation>工具结果</translation>
     </message>
     <message>
-        <location filename="../src/ui/components/ProcessCard.qml" line="146"/>
+        <location filename="../src/ui/components/ProcessCard.qml" line="149"/>
         <source>上下文</source>
         <translation>上下文</translation>
     </message>
     <message>
-        <location filename="../src/ui/components/ProcessCard.qml" line="151"/>
+        <location filename="../src/ui/components/ProcessCard.qml" line="154"/>
         <source>进行中</source>
         <translation>进行中</translation>
     </message>
     <message>
-        <location filename="../src/ui/components/ProcessCard.qml" line="152"/>
+        <location filename="../src/ui/components/ProcessCard.qml" line="155"/>
         <source>失败</source>
         <translation>失败</translation>
     </message>
     <message>
-        <location filename="../src/ui/components/ProcessCard.qml" line="153"/>
+        <location filename="../src/ui/components/ProcessCard.qml" line="156"/>
         <source>已取消</source>
         <translation>已取消</translation>
     </message>
     <message>
-        <location filename="../src/ui/components/ProcessCard.qml" line="154"/>
+        <location filename="../src/ui/components/ProcessCard.qml" line="157"/>
         <source>待确认</source>
         <translation>待确认</translation>
     </message>
     <message>
-        <location filename="../src/ui/components/ProcessCard.qml" line="283"/>
+        <location filename="../src/ui/components/ProcessCard.qml" line="286"/>
         <source>停止</source>
         <translation>停止</translation>
     </message>
     <message>
-        <location filename="../src/ui/components/ProcessCard.qml" line="315"/>
+        <location filename="../src/ui/components/ProcessCard.qml" line="318"/>
         <source>查看证据</source>
         <translation>查看证据</translation>
     </message>
     <message>
-        <location filename="../src/ui/components/ProcessCard.qml" line="384"/>
+        <location filename="../src/ui/components/ProcessCard.qml" line="387"/>
         <source>已折叠 · %1 条过程记录</source>
         <translation>已折叠 · %1 条过程记录</translation>
     </message>
     <message>
-        <location filename="../src/ui/components/ProcessCard.qml" line="387"/>
+        <location filename="../src/ui/components/ProcessCard.qml" line="390"/>
         <source>已折叠 · %1 字符</source>
         <translation>已折叠 · %1 字符</translation>
     </message>
     <message>
-        <location filename="../src/ui/components/ProcessCard.qml" line="346"/>
+        <location filename="../src/ui/components/ProcessCard.qml" line="349"/>
         <source>%1 个提案</source>
         <translation>%1 个提案</translation>
     </message>
     <message>
-        <location filename="../src/ui/components/ProcessCard.qml" line="386"/>
+        <location filename="../src/ui/components/ProcessCard.qml" line="389"/>
         <source>已折叠 · %1 个改动提案</source>
         <translation>已折叠 · %1 个改动提案</translation>
     </message>
     <message>
-        <location filename="../src/ui/components/ProcessCard.qml" line="538"/>
+        <location filename="../src/ui/components/ProcessCard.qml" line="542"/>
         <source>%1 处修改</source>
         <translation>%1 处修改</translation>
     </message>
     <message>
-        <location filename="../src/ui/components/ProcessCard.qml" line="584"/>
+        <location filename="../src/ui/components/ProcessCard.qml" line="588"/>
         <source>变更预览:</source>
         <translation>变更预览:</translation>
     </message>
     <message>
-        <location filename="../src/ui/components/ProcessCard.qml" line="604"/>
+        <location filename="../src/ui/components/ProcessCard.qml" line="608"/>
         <source>拒绝</source>
         <translation>拒绝</translation>
     </message>
     <message>
-        <location filename="../src/ui/components/ProcessCard.qml" line="612"/>
+        <location filename="../src/ui/components/ProcessCard.qml" line="616"/>
         <source>允许</source>
         <translation>允许</translation>
     </message>
     <message>
-        <location filename="../src/ui/components/ProcessCard.qml" line="633"/>
+        <location filename="../src/ui/components/ProcessCard.qml" line="637"/>
         <source>收起</source>
         <translation>收起</translation>
     </message>
@@ -8379,12 +8414,12 @@
 <context>
     <name>QObject</name>
     <message>
-        <location filename="../src/main.cpp" line="1012"/>
+        <location filename="../src/main.cpp" line="1065"/>
         <source>显示/隐藏主窗</source>
         <translation>显示/隐藏主窗</translation>
     </message>
     <message>
-        <location filename="../src/main.cpp" line="1013"/>
+        <location filename="../src/main.cpp" line="1066"/>
         <source>新建会话</source>
         <translation>新建会话</translation>
     </message>
@@ -8397,62 +8432,62 @@
         <translation type="vanished">（暂无配置）</translation>
     </message>
     <message>
-        <location filename="../src/main.cpp" line="1015"/>
+        <location filename="../src/main.cpp" line="1068"/>
         <source>退出</source>
         <translation>退出</translation>
     </message>
     <message>
-        <location filename="../src/main.cpp" line="1076"/>
+        <location filename="../src/main.cpp" line="1129"/>
         <source>任务完成</source>
         <translation>任务完成</translation>
     </message>
     <message>
-        <location filename="../src/main.cpp" line="1076"/>
+        <location filename="../src/main.cpp" line="1129"/>
         <source>任务结束</source>
         <translation>任务结束</translation>
     </message>
     <message>
-        <location filename="../src/main.cpp" line="1077"/>
+        <location filename="../src/main.cpp" line="1130"/>
         <source>会话已回复</source>
         <translation>会话已回复</translation>
     </message>
     <message>
-        <location filename="../src/main.cpp" line="1092"/>
+        <location filename="../src/main.cpp" line="1145"/>
         <source>今日 Token</source>
         <translation>今日 Token</translation>
     </message>
     <message>
-        <location filename="../src/main.cpp" line="1094"/>
+        <location filename="../src/main.cpp" line="1147"/>
         <source>今日费用</source>
         <translation>今日费用</translation>
     </message>
     <message>
-        <location filename="../src/main.cpp" line="1096"/>
+        <location filename="../src/main.cpp" line="1149"/>
         <source>本月 Token</source>
         <translation>本月 Token</translation>
     </message>
     <message>
-        <location filename="../src/main.cpp" line="1098"/>
+        <location filename="../src/main.cpp" line="1151"/>
         <source>本月费用</source>
         <translation>本月费用</translation>
     </message>
     <message>
-        <location filename="../src/main.cpp" line="1102"/>
+        <location filename="../src/main.cpp" line="1155"/>
         <source>用量接近配额上限</source>
         <translation>用量接近配额上限</translation>
     </message>
     <message>
-        <location filename="../src/main.cpp" line="1103"/>
+        <location filename="../src/main.cpp" line="1156"/>
         <source>%1 已用 %2 / %3</source>
         <translation>%1 已用 %2 / %3</translation>
     </message>
     <message>
-        <location filename="../src/main.cpp" line="1165"/>
+        <location filename="../src/main.cpp" line="1218"/>
         <source>自动备份失败</source>
         <translation>自动备份失败</translation>
     </message>
     <message>
-        <location filename="../src/main.cpp" line="1166"/>
+        <location filename="../src/main.cpp" line="1219"/>
         <source>无法写入数据库快照目录：%1</source>
         <translation>无法写入数据库快照目录：%1</translation>
     </message>

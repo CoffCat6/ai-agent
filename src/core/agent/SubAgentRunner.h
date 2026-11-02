@@ -102,6 +102,11 @@ struct SubAgentRole {
     QString name;       // e.g. "explore"; must be non-empty
     QString prompt;     // role focus text for the system prompt
     QStringList tools;  // tool-name whitelist; empty = no restriction
+    // docs/35 P4.6: 角色级模型配置。profileId 空 = 沿用活动 profile；指向
+    // 已删除的 profile 时装配层回退到活动 profile。effort（low/medium/
+    // high）非空时覆盖该 profile 的思考强度。
+    QString profileId;
+    QString effort;
 };
 
 // P1 (docs/32): parameters for one sub-agent run.

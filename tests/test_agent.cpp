@@ -40,6 +40,7 @@
 #include <QStandardPaths>
 #include <QElapsedTimer>
 #include <QThread>
+#include <QTimer>
 #include <QTcpServer>
 #include <QTcpSocket>
 
@@ -126,6 +127,32 @@ LLMResponse toolResponse(const QString& name, const QJsonObject& args) {
 // docs/35 P4.4: the proposal id is only known after the sub-agent report
 // lands in the main history, so the scripted response has to be built from
 // the request it sees (a static FakeAIService script cannot know the UUID).
+// docs/35 P4.6: a fake that streams asynchronously (inside the runner's event
+// loop), so the 200ms progress throttle actually gets a chance to fire.
+class StreamingFakeService : public FakeAIService {
+public:
+    void chatComplete(const QJsonArray& messages, const QJsonArray& tools) override {
+        seenMessages.append(messages);
+        seenTools.append(tools);
+        const quint64 requestId = ++requestCounter;
+        emit requestStarted(requestId);
+        for (int i = 0; i < 5; ++i) {
+            QTimer::singleShot(i * 10, this,
+                               [this]() { emit streamingChunk(QStringLiteral("chunk ")); });
+        }
+        QTimer::singleShot(25, this, [this]() {
+            emit reasoningChunk(QStringLiteral("pondering"));
+        });
+        QTimer::singleShot(350, this, [this, requestId]() {
+            LLMResponse r;
+            r.success = true;
+            r.content = QStringLiteral("final answer");
+            r.requestId = requestId;
+            emit responseReady(r);
+        });
+    }
+};
+
 class ProposalFlowFakeService : public FakeAIService {
 public:
     void chatComplete(const QJsonArray& messages, const QJsonArray& tools) override {
@@ -1026,6 +1053,10 @@ private slots:
     void subagentUserRoleOverridesAndFiltersTools();
     void subagentUnknownRoleFailsReadable();
     void subagentRolesFromVariantParsesAndDedupes();
+    // docs/35 P4.6: 角色级模型配置与流式进度回传。
+    void subagentRoleModelProfileReachesFactory();
+    void subagentStreamsProgressThrottled();
+    void subagentStreamingLogCollapses();
     void reviewCriticLoopGuidanceInPresetAndSchema();
     void subagentCatalogCarriesNetworkTools();
 
@@ -6257,6 +6288,8 @@ void TestAgent::subagentRolesFromVariantParsesAndDedupes() {
     const QVector<SubAgentRole> roles = SubAgentTool::rolesFromVariant({
         QVariantMap{{QStringLiteral("name"), QStringLiteral("a")},
                     {QStringLiteral("prompt"), QStringLiteral("P-A")},
+                    {QStringLiteral("profileId"), QStringLiteral("  fast-model  ")},
+                    {QStringLiteral("effort"), QStringLiteral(" high ")},
                     {QStringLiteral("tools"), QVariantList{
                         QStringLiteral("read_file"), QString(),
                         QStringLiteral("  grep  ")}}},
@@ -6269,6 +6302,9 @@ void TestAgent::subagentRolesFromVariantParsesAndDedupes() {
     QCOMPARE(roles.size(), 1);
     QCOMPARE(roles.first().name, QStringLiteral("a"));
     QCOMPARE(roles.first().prompt, QStringLiteral("P-A"));
+    // docs/35 P4.6: 角色级模型配置随档案解析（首尾空白剔除）。
+    QCOMPARE(roles.first().profileId, QStringLiteral("fast-model"));
+    QCOMPARE(roles.first().effort, QStringLiteral("high"));
     const QStringList expectedTools{QStringLiteral("read_file"), QStringLiteral("grep")};
     QCOMPARE(roles.first().tools, expectedTools);
 
@@ -6281,6 +6317,134 @@ void TestAgent::subagentRolesFromVariantParsesAndDedupes() {
     QCOMPARE(presets.at(3).name, QStringLiteral("coder"));
     QVERIFY(presets.at(2).prompt.contains(QStringLiteral("code review")));
     QVERIFY(presets.at(3).prompt.contains(QStringLiteral("never apply")));
+}
+
+// docs/35 P4.6: 角色点名的 profileId / effort 一路传到服务工厂，上下文窗口
+// 也按同一 profile 解析（不再全局固定）。
+void TestAgent::subagentRoleModelProfileReachesFactory() {
+    SubAgentFixture fixture;
+    SpawnToolGuard guard;
+    ensureSubAgentProbe();
+    fixture.tool = std::make_shared<SubAgentTool>();
+    fixture.tool->refreshCatalog(false);
+
+    SubAgentRole role;
+    role.name = QStringLiteral("fast");
+    role.prompt = QStringLiteral("quick, cheap exploration");
+    role.tools = QStringList{QStringLiteral("test_sub_probe")};
+    role.profileId = QStringLiteral("profile-fast");
+    role.effort = QStringLiteral("low");
+    fixture.tool->setUserRoles({role});
+
+    QMutex seenMutex;
+    QString seenProfile;
+    QString seenEffort;
+    QString limitProfile;
+    fixture.tool->setServiceFactory(
+        [&](const QString& profileId, const QString& effort) -> IAIService* {
+            QMutexLocker lock(&seenMutex);
+            seenProfile = profileId;
+            seenEffort = effort;
+            auto* service = new RecordingFakeService(
+                &fixture.mutex, &fixture.subSeenTools, &fixture.subSeenMessages);
+            service->script.append(textResponse(QStringLiteral("fast report")));
+            return service;
+        });
+    fixture.tool->setContextLimitResolver(
+        [&](const QString& profileId) -> int {
+            QMutexLocker lock(&seenMutex);
+            limitProfile = profileId;
+            return 4321;
+        });
+
+    const ToolResult result = fixture.tool->execute(QJsonObject{
+        {QStringLiteral("goal"), QStringLiteral("quick probe")},
+        {QStringLiteral("role"), QStringLiteral("fast")}});
+    QVERIFY2(result.success, qPrintable(result.error));
+    QVERIFY(result.output.contains(QStringLiteral("fast report")));
+    QMutexLocker lock(&seenMutex);
+    QCOMPARE(seenProfile, QStringLiteral("profile-fast"));
+    QCOMPARE(seenEffort, QStringLiteral("low"));
+    QCOMPARE(limitProfile, QStringLiteral("profile-fast"));
+}
+
+// docs/35 P4.6: 流式增量按 200ms 节流成 stream/reasoning 进度事件，而不是
+// 每个 chunk 一条。
+void TestAgent::subagentStreamsProgressThrottled() {
+    StreamingFakeService service;
+    SubAgentRequest request;
+    request.goal = QStringLiteral("stream a report");
+    request.maxSteps = 1;   // forced final: no tools, just an answer
+    QVector<SubAgentProgress> events;
+    request.progress = [&events](const SubAgentProgress& p) {
+        events.append(p);
+    };
+
+    const SubAgentReport report = SubAgentRunner::run(&service, request);
+    QVERIFY2(report.ok, qPrintable(report.text));
+    QCOMPARE(report.text, QStringLiteral("final answer"));
+
+    int streamEvents = 0;
+    int reasoningEvents = 0;
+    bool sawChunk = false;
+    bool sawReasoning = false;
+    for (const SubAgentProgress& event : events) {
+        if (event.phase == QLatin1String("stream")) {
+            ++streamEvents;
+            sawChunk |= event.detail.contains(QStringLiteral("chunk"));
+        } else if (event.phase == QLatin1String("reasoning")) {
+            ++reasoningEvents;
+            sawReasoning |= event.detail.contains(QStringLiteral("pondering"));
+        }
+    }
+    // Five chunks arrive in the first 50ms → one throttled tick.
+    QVERIFY2(streamEvents >= 1 && streamEvents <= 2,
+             qPrintable(QStringLiteral("stream events: %1").arg(streamEvents)));
+    QVERIFY(streamEvents <= 2);
+    QCOMPARE(reasoningEvents, 1);
+    QVERIFY(sawChunk);
+    QVERIFY(sawReasoning);
+}
+
+// docs/35 P4.6: 长流式输出不得把 subagentLog 挤出上限——同一阶段的增量
+// 事件在原地更新末条，而不是每次追加一行。
+void TestAgent::subagentStreamingLogCollapses() {
+    SubAgentFixture fixture;
+    SpawnToolGuard guard;
+    ensureSubAgentProbe();
+    fixture.tool = std::make_shared<SubAgentTool>();
+    fixture.tool->setServiceFactory([&]() -> IAIService* {
+        return new StreamingFakeService();   // never gated; answers in 350ms
+    });
+    fixture.tool->refreshCatalog(false);
+    ToolRegistry::instance().registerTool(fixture.tool);
+
+    llm.reset();
+    llm.script.append(toolResponse(QStringLiteral("spawn_agent"),
+        QJsonObject{{QStringLiteral("goal"), QStringLiteral("stream it")}}));
+    llm.script.append(textResponse(QStringLiteral("done")));
+    QSignalSpy spy(&agent, &AIAgent::responseReady);
+    agent.startTask(QStringLiteral("watch streaming"));
+    QTRY_COMPARE_WITH_TIMEOUT(spy.count(), 1, 20000);
+
+    QJsonArray log;
+    for (const auto& entry : agent.traceModel()) {
+        const QJsonObject node = entry.toObject();
+        if (node.value("title").toString().startsWith(QLatin1String("spawn_agent"))
+                && node.value("type").toString() == QLatin1String("tool_call")) {
+            const QJsonArray candidate = node.value("subagentLog").toArray();
+            if (!candidate.isEmpty()) log = candidate;
+        }
+    }
+    QVERIFY2(!log.isEmpty(), "流式运行没有留下过程日志");
+    int streamEntries = 0;
+    for (const auto& entry : log) {
+        if (entry.toObject().value("phase").toString() == QLatin1String("stream"))
+            ++streamEntries;
+    }
+    QVERIFY2(streamEntries <= 1,
+             qPrintable(QStringLiteral("stream log entries: %1").arg(streamEntries)));
+    QVERIFY(log.size() <= 50);
 }
 
 // docs/33 E3 批判环：review 预设是执行端（自圈改动集 + 严重度排序的

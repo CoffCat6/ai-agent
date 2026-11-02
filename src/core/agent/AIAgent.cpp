@@ -2558,14 +2558,26 @@ void AIAgent::applySubAgentProgress(const QString& nodeId, const SubAgentProgres
         QJsonObject node = m_traceModel.at(i).toObject();
         if (node.value("id").toString() != nodeId) continue;
         if (node.value("status").toString() != QLatin1String("running")) return;
+        const bool streamPhase = progress.phase == QLatin1String("stream")
+        || progress.phase == QLatin1String("reasoning");
         if (progress.phase == QLatin1String("assistant")
                 || progress.phase == QLatin1String("tool")
-                || progress.phase == QLatin1String("context")) {
-            // 过程可视化：模型的可见文本、逐个工具调用与上下文压缩事件
-            // 追加进日志（先进先出，超限丢最旧）。
+                || progress.phase == QLatin1String("context")
+                || streamPhase) {
+            // 过程可视化：模型的可见文本、逐个工具调用、上下文压缩与流式
+            // 增量追加进日志（先进先出，超限丢最旧）。docs/35 P4.6：流式
+            // 增量原地替换同阶段的末条，长输出不会把历史事件挤出 50 条。
             QJsonArray log = node.value("subagentLog").toArray();
-            log.append(QJsonObject{{QStringLiteral("phase"), progress.phase},
-                                   {QStringLiteral("text"), progress.detail.left(kMaxLogTextChars)}});
+            const QJsonObject entry{
+                {QStringLiteral("phase"), progress.phase},
+                {QStringLiteral("text"), progress.detail.left(kMaxLogTextChars)}};
+            if (streamPhase && !log.isEmpty()
+                    && log.last().toObject().value("phase").toString()
+                           == progress.phase) {
+                log.replace(log.size() - 1, entry);
+            } else {
+                log.append(entry);
+            }
             while (log.size() > kMaxLogEntries) log.removeFirst();
             node["subagentLog"] = log;
         }
@@ -2630,7 +2642,8 @@ void AIAgent::applySubAgentProgress(const QString& nodeId, const SubAgentProgres
         const bool logChanged =
             progress.phase == QLatin1String("assistant")
             || progress.phase == QLatin1String("tool")
-            || progress.phase == QLatin1String("context");
+            || progress.phase == QLatin1String("context")
+            || streamPhase;
         if (!logChanged && node.value("title").toString() == title) return;
         node["title"] = title;
         m_traceModel.replace(i, node);
