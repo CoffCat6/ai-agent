@@ -264,7 +264,8 @@ Item {
                         }
                     }
 
-                    // docs/32 §9：运行中的子代理可手动停止（主任务继续）。
+                    // docs/32 §9 / docs/35 P4.5：运行中的子代理可单独停止
+                    // （主任务与其他子代理继续）。
                     Rectangle {
                         id: stopChip
                         anchors.verticalCenter: parent.verticalCenter
@@ -291,7 +292,7 @@ Item {
                             anchors.fill: parent
                             hoverEnabled: true
                             cursorShape: Qt.PointingHandCursor
-                            onClicked: AgentVM.cancelSubAgents()
+                            onClicked: AgentVM.cancelSubAgent(root.modelData.id)
                         }
                     }
 

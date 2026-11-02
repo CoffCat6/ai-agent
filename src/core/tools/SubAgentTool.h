@@ -83,8 +83,10 @@ public:
     // polls it (kAbortPollMs) and unwinds.
 
 private:
-    // Counting gate with cancel-aware queueing.
-    bool acquireSlot(const Cancellation& cancelled);
+    // Counting gate with cancel-aware queueing. onQueued fires once per
+    // kSlotWaitSliceMs while the call has no slot (docs/35 P4.5).
+    bool acquireSlot(const Cancellation& cancelled,
+                     const std::function<void()>& onQueued);
     void releaseSlot();
     QVector<SubAgentToolEntry> catalogSnapshot() const;
     // presets + user roles, user entries first (override by name).

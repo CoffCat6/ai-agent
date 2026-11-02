@@ -451,6 +451,13 @@ struct SpawnToolGuard {
     }
 };
 
+// Removes an auxiliary test tool from the registry when the test scope ends
+// (also on QCOMPARE/QVERIFY early return).
+struct ToolNameGuard {
+    QString name;
+    ~ToolNameGuard() { ToolRegistry::instance().takeTool(name); }
+};
+
 // FakeAIService variant for sub-agent runs: records the requests it sees into
 // shared buffers (the runner deletes the service, so the copies must outlive
 // it) and optionally parks the scripted reply behind a semaphore to emulate
@@ -914,6 +921,9 @@ private slots:
     void subagentReadOnlyToolsRunConcurrently();
     void subagentMixedRoundKeepsCallOrder();
     void subagentConcurrencyGateQueues();
+    // docs/35 P4.5: 排队事件上标题；卡片级停止只影响目标子代理。
+    void subagentQueuedProgressReported();
+    void subagentCancelOnlyTargetNode();
     // docs/32 P2: 进度上屏与审计归因
     void subagentProgressUpdatesTraceNode();
     void subagentAuditCarriesSubagentStats();
@@ -5231,6 +5241,163 @@ void TestAgent::subagentConcurrencyGateQueues() {
     future2.waitForFinished();
     QVERIFY(results.at(0).contains(QStringLiteral("[Sub-agent report]")));
     QVERIFY(results.at(1).contains(QStringLiteral("[Sub-agent report]")));
+}
+
+// docs/35 P4.5：并发上限占满时，排队的 spawn_agent 要在标题上显示
+// "queued"，而不是一直停在初始的 "spawn_agent" 或伪造步号。
+void TestAgent::subagentQueuedProgressReported() {
+    SubAgentFixture fixture;
+    SpawnToolGuard guard;
+    ensureSubAgentProbe();
+    fixture.tool = std::make_shared<SubAgentTool>();
+    fixture.tool->setMaxParallel(1);
+
+    QMutex gatesMutex;
+    QVector<std::shared_ptr<QSemaphore>> gates;
+    fixture.tool->setServiceFactory([&]() -> IAIService* {
+        auto* service = new RecordingFakeService(&fixture.mutex,
+                                                 &fixture.subSeenTools,
+                                                 &fixture.subSeenMessages);
+        auto gate = std::make_shared<QSemaphore>();
+        {
+            QMutexLocker lock(&gatesMutex);
+            gates.append(gate);
+        }
+        service->gate = gate.get();
+        service->script.append(textResponse(QStringLiteral("report ok")));
+        return service;
+    });
+    auto gateCount = [&]() -> int {
+        QMutexLocker lock(&gatesMutex);
+        return gates.size();
+    };
+    fixture.tool->refreshCatalog(false);
+    ToolRegistry::instance().registerTool(fixture.tool);
+
+    LLMResponse round;
+    round.success = true;
+    const auto addSpawn = [&round](const QString& id, const QString& goal) {
+        ToolCallInfo call;
+        call.id = id;
+        call.name = QStringLiteral("spawn_agent");
+        call.arguments = QJsonObject{{"goal", goal}};
+        round.toolCalls.append(call);
+    };
+    addSpawn(QStringLiteral("call_qa"), QStringLiteral("first goal"));
+    addSpawn(QStringLiteral("call_qb"), QStringLiteral("second goal"));
+    llm.reset();
+    llm.script.append(round);
+    llm.script.append(textResponse(QStringLiteral("done")));
+
+    QSignalSpy spy(&agent, &AIAgent::responseReady);
+    agent.startTask(QStringLiteral("queue a sub-agent"));
+    // 第一个占住唯一槽位，第二个在 acquireSlot 里排队。
+    QTRY_COMPARE(gateCount(), 1);
+    QTRY_VERIFY(traceHas(agent.traceModel(), QStringLiteral("tool_call"),
+                         QStringLiteral("spawn_agent · queued")));
+
+    {
+        QMutexLocker lock(&gatesMutex);
+        gates.first()->release();
+    }
+    QTRY_COMPARE(gateCount(), 2);
+    {
+        QMutexLocker lock(&gatesMutex);
+        gates.last()->release();
+    }
+    QTRY_COMPARE_WITH_TIMEOUT(spy.count(), 1, 15000);
+}
+
+// docs/35 P4.5：卡片上的「停止」只翻转目标节点的旗标，另一个子代理继续
+// 跑完并把报告回灌；主任务照常收尾。
+void TestAgent::subagentCancelOnlyTargetNode() {
+    SubAgentFixture fixture;
+    SpawnToolGuard guard;
+    ensureSubAgentProbe();
+
+    // 慢速只读工具进目录快照，让两个子代理都保持运行足够久，等我们按下
+    // 「停止」。120ms × 6 轮 ≈ 720ms。
+    std::atomic<int> active{0};
+    std::atomic<int> peak{0};
+    auto sleepTool = std::make_shared<SleepProbeTool>(
+        QStringLiteral("test_slow_remove"), 120, &active, &peak);
+    ToolNameGuard slowGuard{sleepTool->definition().name};
+    ToolRegistry::instance().registerTool(sleepTool);
+
+    fixture.tool = std::make_shared<SubAgentTool>();
+    fixture.tool->setServiceFactory([&]() -> IAIService* {
+        auto* service = new RecordingFakeService(&fixture.mutex,
+                                                 &fixture.subSeenTools,
+                                                 &fixture.subSeenMessages);
+        for (int i = 0; i < 6; ++i)
+            service->script.append(toolResponse(
+                QStringLiteral("test_slow_remove"), QJsonObject{{"n", i}}));
+        service->script.append(textResponse(QStringLiteral("report ok")));
+        return service;
+    });
+    fixture.tool->refreshCatalog(false);
+    ToolRegistry::instance().registerTool(fixture.tool);
+
+    LLMResponse round;
+    round.success = true;
+    const auto addSpawn = [&round](const QString& id, const QString& goal) {
+        ToolCallInfo call;
+        call.id = id;
+        call.name = QStringLiteral("spawn_agent");
+        call.arguments = QJsonObject{{"goal", goal}};
+        round.toolCalls.append(call);
+    };
+    addSpawn(QStringLiteral("call_ca"), QStringLiteral("alpha goal"));
+    addSpawn(QStringLiteral("call_cb"), QStringLiteral("beta goal"));
+    llm.reset();
+    llm.script.append(round);
+    llm.script.append(textResponse(QStringLiteral("wrapped up")));
+
+    QSignalSpy spy(&agent, &AIAgent::responseReady);
+    agent.startTask(QStringLiteral("cancel one sub-agent"));
+
+    // 两个子代理都在运行（各自节点 status=running），取一个节点取消。
+    QString targetNode;
+    QTRY_VERIFY_WITH_TIMEOUT(([&]() {
+        int running = 0;
+        for (const auto& entry : agent.traceModel()) {
+            const QJsonObject node = entry.toObject();
+            if (node.value("type").toString() != QLatin1String("tool_call"))
+                continue;
+            if (!node.value("title").toString().startsWith(
+                    QLatin1String("spawn_agent")))
+                continue;
+            if (node.value("status").toString() != QLatin1String("running"))
+                continue;
+            if (targetNode.isEmpty())
+                targetNode = node.value("id").toString();
+            ++running;
+        }
+        return running >= 2;
+    })(), 10000);
+    QVERIFY(!targetNode.isEmpty());
+    QVERIFY(agent.cancelSubAgent(targetNode));
+    // 未在飞/已完成/非 spawn 节点：静默 false，不误伤别的子代理。
+    QVERIFY(!agent.cancelSubAgent(QStringLiteral("no-such-node")));
+
+    QTRY_COMPARE_WITH_TIMEOUT(spy.count(), 1, 20000);
+    QTRY_VERIFY(!agent.isActive());
+
+    // 一个以 Cancelled 收场，另一个拿到完整报告。
+    int cancelled = 0;
+    int reports = 0;
+    for (const auto& entry : agent.messages()) {
+        const QJsonObject msg = entry.toObject();
+        if (msg.value("role").toString() != QLatin1String("tool")) continue;
+        const QString content = msg.value("content").toString();
+        if (content.contains(QStringLiteral("Reason: Sub-agent cancelled")))
+            ++cancelled;
+        if (content.contains(QStringLiteral("[Sub-agent report]"))) ++reports;
+    }
+    QCOMPARE(cancelled, 1);
+    QCOMPARE(reports, 1);
+    // 任务结束后节点映射已清理。
+    QVERIFY(!agent.cancelSubAgent(targetNode));
 }
 
 // docs/32 P2: 子代理每轮进度以事件回传，落到派生调用的 tool_call 节点标题上。

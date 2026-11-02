@@ -263,13 +263,17 @@ QVector<SubAgentToolEntry> SubAgentTool::catalogSnapshot() const {
     return m_catalog;
 }
 
-bool SubAgentTool::acquireSlot(const Cancellation& cancelled) {
+bool SubAgentTool::acquireSlot(const Cancellation& cancelled,
+                               const std::function<void()>& onQueued) {
     std::unique_lock<std::mutex> lock(m_gateMutex);
     while (true) {
         if (m_activeRuns < m_maxParallel) {
             ++m_activeRuns;
             return true;
         }
+        // docs/35 P4.5: report the wait at the same cadence as the cancel
+        // poll, so the trace node shows "queued" instead of looking stuck.
+        if (onQueued) onQueued();
         // Cancel-aware queueing: bounded wait so a stop() during a long
         // queue does not strand the call.
         m_gateCv.wait_for(lock, std::chrono::milliseconds(kSlotWaitSliceMs),
@@ -347,7 +351,16 @@ ToolResult SubAgentTool::execute(const QJsonObject& args, const Cancellation& ca
             catalog.end());
     }
 
-    if (!acquireSlot(cancelled))
+    // docs/32 P2: the dispatcher installs a thread-local progress hook around
+    // execute(); empty (no-op) when spawned outside an agent dispatch (tests).
+    // Fetched before queueing so P4.5 can report the wait.
+    const SubAgentProgressHook progressHook = SubAgentProgressRouter::current();
+    const auto onQueued = [&progressHook]() {
+        if (progressHook)
+            progressHook(SubAgentProgress{0, 0, QStringLiteral("queued"),
+                                          QStringLiteral("waiting for a free slot")});
+    };
+    if (!acquireSlot(cancelled, onQueued))
         return ToolResult::fail(QStringLiteral(
             "Cancelled while waiting for a free sub-agent slot."));
 
@@ -361,9 +374,7 @@ ToolResult SubAgentTool::execute(const QJsonObject& args, const Cancellation& ca
     request.timeoutMs = m_timeoutMs.load();
     request.contextLimit = m_contextLimit.load();
     request.cancelled = cancelled;
-    // docs/32 P2: the dispatcher installs a thread-local progress hook around
-    // execute(); empty (no-op) when spawned outside an agent dispatch (tests).
-    request.progress = SubAgentProgressRouter::current();
+    request.progress = progressHook;
 
     IAIService* service = m_factory();
     SubAgentReport report = SubAgentRunner::run(service, request);

@@ -2755,6 +2755,12 @@ bool AgentViewModel::cancelSubAgents() {
     return a && a->cancelSubAgents();
 }
 
+// docs/35 P4.5：卡片级停止——只取消该 trace 节点对应的子代理。
+bool AgentViewModel::cancelSubAgent(const QString& traceNodeId) {
+    AIAgent* a = active()->agent();
+    return a && a->cancelSubAgent(traceNodeId);
+}
+
 // docs/25 A4：停全部标签的任务。与「关 tab 停任务」同一封口语义（agent 封口
 // 未答复的工具调用），托盘退出路径据此不再依赖析构顺序的被动兜底。
 void AgentViewModel::stopAllTabs() {

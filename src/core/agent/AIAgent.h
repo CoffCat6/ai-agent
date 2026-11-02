@@ -228,6 +228,10 @@ public slots:
     // 子代理以 Cancelled 报告落回 tool 消息，模型自己决定如何收尾。
     // 返回是否确实有子代理被中止。
     bool cancelSubAgents();
+    // docs/35 P4.5: 只中止指定 trace 节点对应的 spawn_agent（卡片上的
+    // 「停止」），其他在飞子代理继续跑。节点不是运行中的 spawn_agent
+    // 时返回 false。
+    bool cancelSubAgent(const QString& traceNodeId);
     void resetSession();                            // clear everything, fresh session
     void resumeSession(const QString& sessionId);   // load history + trace from memory
     void cancel() { resetSession(); }               // legacy alias
@@ -407,6 +411,9 @@ private:
     // docs/22 F1) while a pool thread is still inside execute().
     QHash<QString, std::shared_ptr<ITool>> m_inFlightTools;
     QHash<QString, std::shared_ptr<std::atomic<bool>>> m_toolCancellations;
+    // docs/35 P4.5: trace node id -> tool call id, only for in-flight
+    // spawn_agent calls. Lets the per-card "stop" reach exactly one token.
+    QHash<QString, QString> m_subAgentNodeCalls;
     QString m_confirmNodeId;  // trace node of the pending confirmation
     // Actual tool executions in the current request (m_maxToolExecutions cap;
     // the round budget alone bounds LLM rounds, not the announced call count).

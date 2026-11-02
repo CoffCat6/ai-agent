@@ -1209,6 +1209,7 @@ void AIAgent::resetSession() {
     m_currentConfirmCall = ToolCallInfo{};
     m_currentExecutingCall = ToolCallInfo{};
     m_inFlightTools.clear();   // Batch 13: bookkeeping only; results are epoch-dropped
+    m_subAgentNodeCalls.clear();
     m_toolExecutions = 0;
     m_forcedFinalPush.clear();
     m_confirmNodeId.clear();
@@ -1825,6 +1826,7 @@ void AIAgent::stop() {
         it.value()->cancel(m_toolCancellations.value(it.key()));
     m_inFlightTools.clear();
     m_toolCancellations.clear();
+    m_subAgentNodeCalls.clear();
     // The assistant message may already be in the history announcing calls
     // that will now never run - seal ALL of them (still queued, awaiting
     // confirmation, and currently executing on the worker pool) or the next
@@ -1877,6 +1879,20 @@ bool AIAgent::cancelSubAgents() {
         }
     }
     return any;
+}
+
+// docs/35 P4.5: 卡片级停止。只翻转目标节点的旗标，其他子代理照常运行；
+// 语义与 cancelSubAgents() 相同（主任务继续、报告以 Cancelled 回灌）。
+bool AIAgent::cancelSubAgent(const QString& traceNodeId) {
+    const QString callId = m_subAgentNodeCalls.value(traceNodeId);
+    if (callId.isEmpty()) return false;
+    const auto it = m_inFlightTools.find(callId);
+    if (it == m_inFlightTools.end()) return false;
+    const auto& tool = it.value();
+    if (!tool || tool->definition().name != QLatin1String(SubAgentTool::kName))
+        return false;
+    tool->cancel(m_toolCancellations.value(callId));
+    return true;
 }
 
 // 截掉末条回答后从末条提问重发。顺序是硬要求：先 truncateLastTurn（一个事务里
@@ -2301,6 +2317,11 @@ void AIAgent::dispatchToolExecution(const ToolCallInfo& call, const QString& tra
     } else {
         updateTraceNodeStatusById(nodeId, "running");
     }
+    // docs/35 P4.5: per-card cancel needs node -> call.id (tokens live under
+    // the call id). Only spawn_agent is tracked; everything else stays on the
+    // existing all-or-nothing stop() path.
+    if (call.name == QLatin1String(SubAgentTool::kName))
+        m_subAgentNodeCalls.insert(nodeId, call.id);
     setState(AgentState::ExecutingTool);
     ++m_toolExecutions;
     m_currentExecutingCall = call;
@@ -2322,6 +2343,8 @@ void AIAgent::dispatchToolExecution(const ToolCallInfo& call, const QString& tra
         if (m_toolCancellations.value(call.id) == cancelled) {
             m_toolCancellations.remove(call.id);
             m_inFlightTools.remove(call.id);
+            if (m_subAgentNodeCalls.value(nodeId) == call.id)
+                m_subAgentNodeCalls.remove(nodeId);
         }
         const ToolResult result = watcher->result();
         watcher->deleteLater();
@@ -2426,10 +2449,13 @@ void AIAgent::applySubAgentProgress(const QString& nodeId, const SubAgentProgres
             summaryText = QStringLiteral("…") + parts.join(QStringLiteral(", "));
         }
         // 无预算（maxSteps==0，默认）时只显示步号——"step 3/1000" 会误导。
-        QString title = progress.maxSteps > 0
-            ? QStringLiteral("spawn_agent · step %1/%2")
-                  .arg(progress.step).arg(progress.maxSteps)
-            : QStringLiteral("spawn_agent · step %1").arg(progress.step);
+        // 排队事件（docs/35 P4.5）没有步号，标题单独显示 queued。
+        QString title = progress.phase == QLatin1String("queued")
+            ? QStringLiteral("spawn_agent · queued")
+            : (progress.maxSteps > 0
+                ? QStringLiteral("spawn_agent · step %1/%2")
+                      .arg(progress.step).arg(progress.maxSteps)
+                : QStringLiteral("spawn_agent · step %1").arg(progress.step));
         if (!summaryText.isEmpty())
             title += QStringLiteral(" · %1").arg(summaryText);
         // "final answer"（强制收尾轮）追加在摘要之后而非覆盖它；assistant/
@@ -2444,9 +2470,12 @@ void AIAgent::applySubAgentProgress(const QString& nodeId, const SubAgentProgres
                 && oldTitle.startsWith(title))
             title = oldTitle;
         // 日志追加也可能单独构成一次变更（标题不变时同样要落库/上屏）。
+        // docs/35 P4.1: context 事件只进日志，不改变标题——必须和后两个
+        // 阶段一样触发落库/上屏，否则压缩记录会在同标题时被提前 return 丢掉。
         const bool logChanged =
             progress.phase == QLatin1String("assistant")
-            || progress.phase == QLatin1String("tool");
+            || progress.phase == QLatin1String("tool")
+            || progress.phase == QLatin1String("context");
         if (!logChanged && node.value("title").toString() == title) return;
         node["title"] = title;
         m_traceModel.replace(i, node);
@@ -2716,6 +2745,7 @@ void AIAgent::finishTask(const QString& finalText, bool summaryTraced) {
     m_active = false;
     m_taskTimeoutTimer.stop();
     m_inFlightTools.clear();   // Batch 13: normally empty here; belt-and-braces
+    m_subAgentNodeCalls.clear();
 
     // Batch 11: close the observability chain — one audit row carrying the
     // task-level latency/tokens, and a metrics trace node for the timeline.
@@ -2777,6 +2807,7 @@ void AIAgent::failTask(const QString& error) {
     m_active = false;
     m_taskTimeoutTimer.stop();
     m_inFlightTools.clear();   // Batch 13: belt-and-braces, mirrors finishTask
+    m_subAgentNodeCalls.clear();
     appendTraceNode("error", error, "failed");
     setState(AgentState::Error);
     emit errorOccurred(error);

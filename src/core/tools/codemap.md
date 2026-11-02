@@ -9,7 +9,7 @@
 - `Sandbox.h` + `SandboxWin.cpp`：路径级安全策略（系统目录、黑名单、读写允许层、workspace 边界、Windows reparse point 解析）。
 - `WebSearchBackend.h/.cpp`：搜索后端抽象（DuckDuckGo HTML / 智谱 / DeepSeek）、结果结构与 `WebSearchProviderRegistry`。
 - `WebSearchTool.h`、`NetworkFetchTool.h`：两个联网工具（header-only，`web_search` / `http_fetch`）。
-- `SubAgentTool.h/.cpp`：`spawn_agent` 派生器（角色档案、并发闸、线程局部进度钩子；目录快照在 GUI 线程取）。`setContextLimit()` 随 profile 快照刷新子代理的上下文窗口（docs/35 P4.1，0 = 不压缩）。
+- `SubAgentTool.h/.cpp`：`spawn_agent` 派生器（角色档案、并发闸、线程局部进度钩子；目录快照在 GUI 线程取）。`setContextLimit()` 随 profile 快照刷新子代理的上下文窗口（docs/35 P4.1，0 = 不压缩）；并发闸排队时每 250ms 发 `phase="queued"` 进度事件（P4.5）。
 - `ProposeEditTool.h/.cpp`（docs/34 P3.1）：子代理专用的 `propose_edit`——锚点式 find/replace 提案，**永不落盘**。校验（项目根内、UTF-8 文本、单条 find 恰好命中一次、同调用内按顺序模拟）通过后推进线程局部 `SubAgentProposalSink`；Runner 在报告末尾渲染 `## PROPOSALS` 段，主代理用 `edit_file` 应用。工具不进全局注册表，只有角色白名单显式点名才授予（`SubAgentTool::execute` 的能力门）；配额常量在头文件（3 条/调用、20 条/运行、4000 字符 find、8KB replace、1MiB 文件）。
 
 **不含调度**：真正的调用分发、确认流程、并发编排在 `core/agent/AIAgent.cpp`（`processNextToolCall` / `dispatchToolExecution` / `finishToolExecution`）。本目录只提供「可被调用的对象」与被调用的安全/网络实现。
