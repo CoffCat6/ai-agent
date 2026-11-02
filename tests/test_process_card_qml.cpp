@@ -59,6 +59,34 @@ private:
     QString m_baseDir;
 };
 
+// docs/35 P4.5: ProcessCard 的「停止」芯片只负责把 trace 节点 id 交给
+// AgentVM.cancelSubAgent；真实取消链路在 test_agent 覆盖。这里锁住
+// QML → VM 这一段（曾出现过「点了没反应」的入口回归）。
+class StubAgentVM : public QObject {
+    Q_OBJECT
+public:
+    Q_INVOKABLE bool cancelSubAgent(const QString& traceNodeId) {
+        cancelledIds.append(traceNodeId);
+        return true;
+    }
+    Q_INVOKABLE void openSubagentEvidence(const QString& path) {
+        openedEvidence.append(path);
+    }
+
+    QStringList cancelledIds;
+    QStringList openedEvidence;
+};
+
+QQuickItem* findChildItem(QQuickItem* root, const QString& objectName) {
+    if (!root) return nullptr;
+    if (root->objectName() == objectName) return root;
+    for (QQuickItem* child : root->childItems()) {
+        if (QQuickItem* hit = findChildItem(child, objectName))
+            return hit;
+    }
+    return nullptr;
+}
+
 // 与 TraceNodeRouter 喂入 ProcessCard 的方式同构：QVariantMap 节点经
 // QAbstractListModel 的 modelData role 交给 delegate（不是 setProperty——
 // 那条路径嵌套 QVariantList 会转成原生 JS Array，只有 role 路径才是
@@ -129,6 +157,17 @@ QVariantMap proposalNode(bool withResult) {
                     : QString()},
         {QStringLiteral("subagentProposals"), proposals},
     };
+}
+
+// docs/33 E1: 成功的 spawn_agent 节点带证据工件路径，头部渲染「查看证据」
+// 芯片；点击必须把路径交给门面（与停止芯片同一套遮挡问题）。
+QVariantMap evidenceNode() {
+    QVariantMap node = spawnNode(0);
+    node[QStringLiteral("status")] = QStringLiteral("success");
+    node[QStringLiteral("title")] = QStringLiteral("spawn_agent");
+    node[QStringLiteral("evidencePath")] =
+        QStringLiteral("/evidence/sa-1.md");
+    return node;
 }
 
 } // namespace
@@ -265,6 +304,102 @@ private slots:
         QCOMPARE(p.value(QStringLiteral("hasSubagentProposals")).toBool(), false);
         QCOMPARE(p.value(QStringLiteral("bodyObjectName")).toString(),
                  QStringLiteral(""));
+    }
+
+    // docs/35 P4.5：运行中的 spawn_agent 卡片点「停止」必须把节点 id 交给
+    // AgentVM。用例点真实像素（不是直接调 handler），覆盖 MouseArea 命中、
+    // 遮挡与绑定求值。
+    void stopChipInvokesCancelWithNodeId() {
+        QQmlApplicationEngine engine;
+        RowsModel rows;
+        StubAgentVM vm;
+        engine.rootContext()->setContextProperty(QStringLiteral("rowsModel"),
+                                                 &rows);
+        NexusQrcFallback interceptor(QStringLiteral(NEXUS_MODULE_DIR));
+        engine.addUrlInterceptor(&interceptor);
+        engine.addImportPath(QStringLiteral(NEXUS_BUILD_DIR));
+
+        QQmlComponent component(&engine, QUrl::fromLocalFile(
+            QStringLiteral(NEXUS_TEST_QML_DIR "/ProcessCardHarness.qml")));
+        QVERIFY2(component.isReady(), qPrintable(component.errorString()));
+        std::unique_ptr<QObject> root(component.create());
+        QVERIFY2(root, qPrintable(component.errorString()));
+        auto* win = qobject_cast<QQuickWindow*>(root.get());
+        QVERIFY(win);
+        win->show();
+        QVERIFY(QTest::qWaitForWindowExposed(win));
+
+        // ProcessCard 在模块内被预编译，`AgentVM` 在编译期就绑定到
+        // QML_SINGLETON 类型，context property 遮蔽不了它；桩只能通过组件
+        // 自己的 agentFacade 属性注入（见 ProcessCard.qml 的注释）。
+        QVERIFY(QMetaObject::invokeMethod(
+            root.get(), "setInjectedAgent",
+            Q_ARG(QVariant, QVariant::fromValue<QObject*>(&vm))));
+
+        rows.setRow(spawnNode(1));   // status=running, title spawn_agent...
+        QTest::qWait(120);
+
+        QQuickItem* chip = findChildItem(win->contentItem(),
+                                         QStringLiteral("subagentStopChip"));
+        QVERIFY2(chip, "停止芯片没有渲染");
+        QVERIFY(chip->isVisible());
+        const QPoint center = chip->mapToScene(
+            QPointF(chip->width() / 2, chip->height() / 2)).toPoint();
+        QTest::mouseClick(win, Qt::LeftButton, Qt::NoModifier, center);
+        QTRY_COMPARE(vm.cancelledIds.size(), 1);
+        QCOMPARE(vm.cancelledIds.first(), QStringLiteral("n1"));
+        // 芯片必须独占点击，不能顺带折叠卡片。
+        QCOMPARE(root->property("toggleCount").toInt(), 0);
+
+        // 空白处仍能折叠卡片——z:-1 修复不能把展开热区一起废掉。
+        QQuickItem* header = findChildItem(win->contentItem(),
+                                           QStringLiteral("cardHeaderArea"));
+        QVERIFY2(header, "卡片头展开热区没有渲染");
+        QTest::mouseClick(
+            win, Qt::LeftButton, Qt::NoModifier,
+            header->mapToScene(QPointF(5, header->height() / 2)).toPoint());
+        QTRY_COMPARE(root->property("toggleCount").toInt(), 1);
+    }
+
+    // docs/33 E1：证据芯片与停止芯片同在卡片头，也被同一个展开热区
+    // （headerMA）盖住过。点真实像素锁住修复。
+    void evidenceChipInvokesFacade() {
+        QQmlApplicationEngine engine;
+        RowsModel rows;
+        StubAgentVM vm;
+        engine.rootContext()->setContextProperty(QStringLiteral("rowsModel"),
+                                                 &rows);
+        NexusQrcFallback interceptor(QStringLiteral(NEXUS_MODULE_DIR));
+        engine.addUrlInterceptor(&interceptor);
+        engine.addImportPath(QStringLiteral(NEXUS_BUILD_DIR));
+
+        QQmlComponent component(&engine, QUrl::fromLocalFile(
+            QStringLiteral(NEXUS_TEST_QML_DIR "/ProcessCardHarness.qml")));
+        QVERIFY2(component.isReady(), qPrintable(component.errorString()));
+        std::unique_ptr<QObject> root(component.create());
+        QVERIFY2(root, qPrintable(component.errorString()));
+        auto* win = qobject_cast<QQuickWindow*>(root.get());
+        QVERIFY(win);
+        win->show();
+        QVERIFY(QTest::qWaitForWindowExposed(win));
+
+        QVERIFY(QMetaObject::invokeMethod(
+            root.get(), "setInjectedAgent",
+            Q_ARG(QVariant, QVariant::fromValue<QObject*>(&vm))));
+
+        rows.setRow(evidenceNode());
+        QTest::qWait(120);
+
+        QQuickItem* chip = findChildItem(win->contentItem(),
+                                         QStringLiteral("subagentEvidenceChip"));
+        QVERIFY2(chip, "证据芯片没有渲染");
+        QVERIFY(chip->isVisible());
+        QTest::mouseClick(
+            win, Qt::LeftButton, Qt::NoModifier,
+            chip->mapToScene(QPointF(chip->width() / 2, chip->height() / 2))
+                .toPoint());
+        QTRY_COMPARE(vm.openedEvidence.size(), 1);
+        QCOMPARE(vm.openedEvidence.first(), QStringLiteral("/evidence/sa-1.md"));
     }
 };
 

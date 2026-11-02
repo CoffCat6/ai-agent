@@ -242,7 +242,7 @@
     <message>
         <location filename="../src/ui/pages/AgentBehaviorPage.qml" line="113"/>
         <source>内置角色：explore（广度优先勘察）、research（深度查证）、review（代码评审）、coder（起草改动提案，只提不改）。调用时省略 role 参数默认使用 explore；自定义档案与预设同名时覆盖预设。coder 经 propose_edit 产出锚点式提案，由主任务用 apply_proposal / edit_file 逐条应用并逐次确认；其他预设不授予提案权。自定义角色可选择独立的模型配置与思考强度（留空沿用当前配置）。</source>
-        <translation>Built-in roles: explore (breadth-first survey), research (depth-first verification), review (code review), coder (drafts change proposals, never applies them). Omitting the role argument defaults to explore; a custom profile sharing a preset's name overrides it. coder produces anchored proposals via propose_edit; the primary task applies them one by one with apply_proposal / edit_file after your confirmation. Other presets are not granted propose_edit. Custom roles can select their own model profile and thinking effort (leave empty to inherit the current profile).</translation>
+        <translation>Built-in roles: explore (breadth-first survey), research (depth-first verification), review (code review), coder (drafts change proposals, never applies them). Omitting the role argument defaults to explore; a custom profile sharing a preset&apos;s name overrides it. coder produces anchored proposals via propose_edit; the primary task applies them one by one with apply_proposal / edit_file after your confirmation. Other presets are not granted propose_edit. Custom roles can select their own model profile and thinking effort (leave empty to inherit the current profile).</translation>
     </message>
     <message>
         <location filename="../src/ui/pages/AgentBehaviorPage.qml" line="150"/>
@@ -582,167 +582,167 @@
 <context>
     <name>BackgroundTasksDialog</name>
     <message>
-        <location filename="../src/ui/components/BackgroundTasksDialog.qml" line="55"/>
+        <location filename="../src/ui/components/BackgroundTasksDialog.qml" line="60"/>
         <source>排队中</source>
         <translation>Queued</translation>
     </message>
     <message>
-        <location filename="../src/ui/components/BackgroundTasksDialog.qml" line="56"/>
+        <location filename="../src/ui/components/BackgroundTasksDialog.qml" line="61"/>
         <source>运行中</source>
         <translation>Running</translation>
     </message>
     <message>
-        <location filename="../src/ui/components/BackgroundTasksDialog.qml" line="57"/>
+        <location filename="../src/ui/components/BackgroundTasksDialog.qml" line="62"/>
         <source>已完成</source>
         <translation>Completed</translation>
     </message>
     <message>
-        <location filename="../src/ui/components/BackgroundTasksDialog.qml" line="58"/>
+        <location filename="../src/ui/components/BackgroundTasksDialog.qml" line="63"/>
         <source>失败</source>
         <translation>Failed</translation>
     </message>
     <message>
-        <location filename="../src/ui/components/BackgroundTasksDialog.qml" line="59"/>
+        <location filename="../src/ui/components/BackgroundTasksDialog.qml" line="64"/>
         <source>已取消</source>
         <translation>Cancelled</translation>
     </message>
     <message>
-        <location filename="../src/ui/components/BackgroundTasksDialog.qml" line="82"/>
+        <location filename="../src/ui/components/BackgroundTasksDialog.qml" line="87"/>
         <source>%1 秒</source>
         <translation>%1s</translation>
     </message>
     <message>
-        <location filename="../src/ui/components/BackgroundTasksDialog.qml" line="84"/>
+        <location filename="../src/ui/components/BackgroundTasksDialog.qml" line="89"/>
         <source>%1 分 %2 秒</source>
         <translation>%1m %2s</translation>
     </message>
     <message>
-        <location filename="../src/ui/components/BackgroundTasksDialog.qml" line="85"/>
+        <location filename="../src/ui/components/BackgroundTasksDialog.qml" line="90"/>
         <source>%1 时 %2 分</source>
         <translation>%1h %2m</translation>
     </message>
     <message>
-        <location filename="../src/ui/components/BackgroundTasksDialog.qml" line="109"/>
+        <location filename="../src/ui/components/BackgroundTasksDialog.qml" line="114"/>
         <source>后台子代理面板</source>
         <translation>Background sub-agents</translation>
     </message>
     <message>
-        <location filename="../src/ui/components/BackgroundTasksDialog.qml" line="110"/>
+        <location filename="../src/ui/components/BackgroundTasksDialog.qml" line="115"/>
         <source>查看与管理后台运行的子代理任务</source>
         <translation>Review and manage background sub-agent tasks</translation>
     </message>
     <message>
-        <location filename="../src/ui/components/BackgroundTasksDialog.qml" line="134"/>
+        <location filename="../src/ui/components/BackgroundTasksDialog.qml" line="139"/>
         <source>后台子代理 · %1 个运行中 · %2 个排队</source>
         <translation>Background sub-agents · %1 running · %2 queued</translation>
     </message>
     <message>
-        <location filename="../src/ui/components/BackgroundTasksDialog.qml" line="136"/>
+        <location filename="../src/ui/components/BackgroundTasksDialog.qml" line="141"/>
         <source>后台子代理</source>
         <translation>Background sub-agents</translation>
     </message>
     <message>
-        <location filename="../src/ui/components/BackgroundTasksDialog.qml" line="149"/>
+        <location filename="../src/ui/components/BackgroundTasksDialog.qml" line="154"/>
         <source>关闭后台子代理面板</source>
         <translation>Close the background sub-agents panel</translation>
     </message>
     <message>
-        <location filename="../src/ui/components/BackgroundTasksDialog.qml" line="174"/>
+        <location filename="../src/ui/components/BackgroundTasksDialog.qml" line="179"/>
         <source>没有后台任务。</source>
         <translation>No background tasks.</translation>
     </message>
     <message>
-        <location filename="../src/ui/components/BackgroundTasksDialog.qml" line="183"/>
+        <location filename="../src/ui/components/BackgroundTasksDialog.qml" line="188"/>
         <source>模型对长耗时任务使用 background 模式时会出现在这里。</source>
         <translation>Tasks the model starts with background=true appear here.</translation>
     </message>
     <message>
-        <location filename="../src/ui/components/BackgroundTasksDialog.qml" line="207"/>
+        <location filename="../src/ui/components/BackgroundTasksDialog.qml" line="212"/>
         <source>后台子代理任务列表</source>
         <translation>Background sub-agent task list</translation>
     </message>
     <message>
-        <location filename="../src/ui/components/BackgroundTasksDialog.qml" line="258"/>
+        <location filename="../src/ui/components/BackgroundTasksDialog.qml" line="263"/>
         <source>%1 · %2</source>
         <translation>%1 · %2</translation>
     </message>
     <message>
-        <location filename="../src/ui/components/BackgroundTasksDialog.qml" line="290"/>
+        <location filename="../src/ui/components/BackgroundTasksDialog.qml" line="295"/>
         <source>步数 %1</source>
         <translation>Steps: %1</translation>
     </message>
     <message>
-        <location filename="../src/ui/components/BackgroundTasksDialog.qml" line="297"/>
+        <location filename="../src/ui/components/BackgroundTasksDialog.qml" line="302"/>
         <source>%1 个提案</source>
         <translation>%1 proposal(s)</translation>
     </message>
     <message>
-        <location filename="../src/ui/components/BackgroundTasksDialog.qml" line="305"/>
+        <location filename="../src/ui/components/BackgroundTasksDialog.qml" line="311"/>
         <source>停止</source>
         <translation>Stop</translation>
     </message>
     <message>
-        <location filename="../src/ui/components/BackgroundTasksDialog.qml" line="308"/>
+        <location filename="../src/ui/components/BackgroundTasksDialog.qml" line="314"/>
         <source>停止这个后台子代理</source>
         <translation>Stop this background sub-agent</translation>
     </message>
     <message>
-        <location filename="../src/ui/components/BackgroundTasksDialog.qml" line="311"/>
+        <location filename="../src/ui/components/BackgroundTasksDialog.qml" line="318"/>
         <source>收起</source>
         <translation>Collapse</translation>
     </message>
     <message>
-        <location filename="../src/ui/components/BackgroundTasksDialog.qml" line="311"/>
+        <location filename="../src/ui/components/BackgroundTasksDialog.qml" line="318"/>
         <source>查看</source>
         <translation>View</translation>
     </message>
     <message>
-        <location filename="../src/ui/components/BackgroundTasksDialog.qml" line="320"/>
+        <location filename="../src/ui/components/BackgroundTasksDialog.qml" line="327"/>
         <source>收起任务详情</source>
         <translation>Hide task details</translation>
     </message>
     <message>
-        <location filename="../src/ui/components/BackgroundTasksDialog.qml" line="321"/>
+        <location filename="../src/ui/components/BackgroundTasksDialog.qml" line="328"/>
         <source>查看任务详情</source>
         <translation>View task details</translation>
     </message>
     <message>
-        <location filename="../src/ui/components/BackgroundTasksDialog.qml" line="338"/>
+        <location filename="../src/ui/components/BackgroundTasksDialog.qml" line="345"/>
         <source>最近进度</source>
         <translation>Recent progress</translation>
     </message>
     <message>
-        <location filename="../src/ui/components/BackgroundTasksDialog.qml" line="371"/>
+        <location filename="../src/ui/components/BackgroundTasksDialog.qml" line="378"/>
         <source>等待第一条进度…</source>
         <translation>Waiting for the first progress event…</translation>
     </message>
     <message>
-        <location filename="../src/ui/components/BackgroundTasksDialog.qml" line="371"/>
+        <location filename="../src/ui/components/BackgroundTasksDialog.qml" line="378"/>
         <source>没有进度记录。</source>
         <translation>No progress recorded.</translation>
     </message>
     <message>
-        <location filename="../src/ui/components/BackgroundTasksDialog.qml" line="403"/>
+        <location filename="../src/ui/components/BackgroundTasksDialog.qml" line="410"/>
         <source>共 %1 个任务，%2 个已结束</source>
         <translation>%1 task(s), %2 finished</translation>
     </message>
     <message>
-        <location filename="../src/ui/components/BackgroundTasksDialog.qml" line="415"/>
+        <location filename="../src/ui/components/BackgroundTasksDialog.qml" line="422"/>
         <source>清除已结束</source>
         <translation>Clear finished</translation>
     </message>
     <message>
-        <location filename="../src/ui/components/BackgroundTasksDialog.qml" line="417"/>
+        <location filename="../src/ui/components/BackgroundTasksDialog.qml" line="424"/>
         <source>清除已结束的后台任务</source>
         <translation>Clear finished background tasks</translation>
     </message>
     <message>
-        <location filename="../src/ui/components/BackgroundTasksDialog.qml" line="421"/>
+        <location filename="../src/ui/components/BackgroundTasksDialog.qml" line="429"/>
         <source>全部停止</source>
         <translation>Stop all</translation>
     </message>
     <message>
-        <location filename="../src/ui/components/BackgroundTasksDialog.qml" line="423"/>
+        <location filename="../src/ui/components/BackgroundTasksDialog.qml" line="431"/>
         <source>停止全部后台子代理</source>
         <translation>Stop all background sub-agents</translation>
     </message>
@@ -7664,122 +7664,122 @@ Select or import a project in the sidebar first.</translation>
 <context>
     <name>ProcessCard</name>
     <message>
-        <location filename="../src/ui/components/ProcessCard.qml" line="125"/>
+        <location filename="../src/ui/components/ProcessCard.qml" line="131"/>
         <source>新</source>
         <translation>New</translation>
     </message>
     <message>
-        <location filename="../src/ui/components/ProcessCard.qml" line="126"/>
+        <location filename="../src/ui/components/ProcessCard.qml" line="132"/>
         <source>增</source>
         <translation>Add</translation>
     </message>
     <message>
-        <location filename="../src/ui/components/ProcessCard.qml" line="127"/>
+        <location filename="../src/ui/components/ProcessCard.qml" line="133"/>
         <source>删</source>
         <translation>Del</translation>
     </message>
     <message>
-        <location filename="../src/ui/components/ProcessCard.qml" line="128"/>
+        <location filename="../src/ui/components/ProcessCard.qml" line="134"/>
         <source>改</source>
         <translation>Mod</translation>
     </message>
     <message>
-        <location filename="../src/ui/components/ProcessCard.qml" line="129"/>
+        <location filename="../src/ui/components/ProcessCard.qml" line="135"/>
         <source>移</source>
         <translation>Move</translation>
     </message>
     <message>
-        <location filename="../src/ui/components/ProcessCard.qml" line="146"/>
+        <location filename="../src/ui/components/ProcessCard.qml" line="152"/>
         <source>思考</source>
         <translation>Thinking</translation>
     </message>
     <message>
-        <location filename="../src/ui/components/ProcessCard.qml" line="147"/>
+        <location filename="../src/ui/components/ProcessCard.qml" line="153"/>
         <source>工具调用</source>
         <translation>Tool call</translation>
     </message>
     <message>
-        <location filename="../src/ui/components/ProcessCard.qml" line="148"/>
+        <location filename="../src/ui/components/ProcessCard.qml" line="154"/>
         <source>工具结果</source>
         <translation>Tool result</translation>
     </message>
     <message>
-        <location filename="../src/ui/components/ProcessCard.qml" line="149"/>
+        <location filename="../src/ui/components/ProcessCard.qml" line="155"/>
         <source>上下文</source>
         <translation>Context</translation>
     </message>
     <message>
-        <location filename="../src/ui/components/ProcessCard.qml" line="154"/>
+        <location filename="../src/ui/components/ProcessCard.qml" line="160"/>
         <source>进行中</source>
         <translation>In progress</translation>
     </message>
     <message>
-        <location filename="../src/ui/components/ProcessCard.qml" line="155"/>
+        <location filename="../src/ui/components/ProcessCard.qml" line="161"/>
         <source>失败</source>
         <translation>Failed</translation>
     </message>
     <message>
-        <location filename="../src/ui/components/ProcessCard.qml" line="156"/>
+        <location filename="../src/ui/components/ProcessCard.qml" line="162"/>
         <source>已取消</source>
         <translation>Cancelled</translation>
     </message>
     <message>
-        <location filename="../src/ui/components/ProcessCard.qml" line="157"/>
+        <location filename="../src/ui/components/ProcessCard.qml" line="163"/>
         <source>待确认</source>
         <translation>Awaiting confirmation</translation>
     </message>
     <message>
-        <location filename="../src/ui/components/ProcessCard.qml" line="286"/>
+        <location filename="../src/ui/components/ProcessCard.qml" line="293"/>
         <source>停止</source>
         <translation>Stop</translation>
     </message>
     <message>
-        <location filename="../src/ui/components/ProcessCard.qml" line="318"/>
+        <location filename="../src/ui/components/ProcessCard.qml" line="327"/>
         <source>查看证据</source>
         <translation>View evidence</translation>
     </message>
     <message>
-        <location filename="../src/ui/components/ProcessCard.qml" line="387"/>
+        <location filename="../src/ui/components/ProcessCard.qml" line="401"/>
         <source>已折叠 · %1 条过程记录</source>
         <translation>Collapsed · %1 process entries</translation>
     </message>
     <message>
-        <location filename="../src/ui/components/ProcessCard.qml" line="390"/>
+        <location filename="../src/ui/components/ProcessCard.qml" line="404"/>
         <source>已折叠 · %1 字符</source>
         <translation>Collapsed · %1 chars</translation>
     </message>
     <message>
-        <location filename="../src/ui/components/ProcessCard.qml" line="349"/>
+        <location filename="../src/ui/components/ProcessCard.qml" line="358"/>
         <source>%1 个提案</source>
         <translation>%1 proposals</translation>
     </message>
     <message>
-        <location filename="../src/ui/components/ProcessCard.qml" line="389"/>
+        <location filename="../src/ui/components/ProcessCard.qml" line="403"/>
         <source>已折叠 · %1 个改动提案</source>
         <translation>Collapsed · %1 change proposals</translation>
     </message>
     <message>
-        <location filename="../src/ui/components/ProcessCard.qml" line="542"/>
+        <location filename="../src/ui/components/ProcessCard.qml" line="556"/>
         <source>%1 处修改</source>
         <translation>%1 edits</translation>
     </message>
     <message>
-        <location filename="../src/ui/components/ProcessCard.qml" line="588"/>
+        <location filename="../src/ui/components/ProcessCard.qml" line="602"/>
         <source>变更预览:</source>
         <translation>Change preview:</translation>
     </message>
     <message>
-        <location filename="../src/ui/components/ProcessCard.qml" line="608"/>
+        <location filename="../src/ui/components/ProcessCard.qml" line="622"/>
         <source>拒绝</source>
         <translation>Reject</translation>
     </message>
     <message>
-        <location filename="../src/ui/components/ProcessCard.qml" line="616"/>
+        <location filename="../src/ui/components/ProcessCard.qml" line="630"/>
         <source>允许</source>
         <translation>Allow</translation>
     </message>
     <message>
-        <location filename="../src/ui/components/ProcessCard.qml" line="637"/>
+        <location filename="../src/ui/components/ProcessCard.qml" line="651"/>
         <source>收起</source>
         <translation>Collapse</translation>
     </message>
@@ -11309,37 +11309,47 @@ select a file to view its content diff on the right.</translation>
         <translation>Open the task list, %1 unfinished</translation>
     </message>
     <message>
-        <location filename="../src/ui/components/TopBar.qml" line="931"/>
+        <location filename="../src/ui/components/TopBar.qml" line="933"/>
         <source>后台子代理（%1 个进行中）</source>
         <translation>Background sub-agents (%1 active)</translation>
     </message>
     <message>
-        <location filename="../src/ui/components/TopBar.qml" line="932"/>
+        <location filename="../src/ui/components/TopBar.qml" line="934"/>
+        <source>后台子代理面板</source>
+        <translation>Background sub-agents</translation>
+    </message>
+    <message>
+        <location filename="../src/ui/components/TopBar.qml" line="936"/>
         <source>打开后台子代理面板，%1 个进行中</source>
         <translation>Open the background sub-agents panel, %1 active</translation>
     </message>
     <message>
-        <location filename="../src/ui/components/TopBar.qml" line="983"/>
+        <location filename="../src/ui/components/TopBar.qml" line="937"/>
+        <source>打开后台子代理面板</source>
+        <translation>Open the background sub-agents panel</translation>
+    </message>
+    <message>
+        <location filename="../src/ui/components/TopBar.qml" line="988"/>
         <source>审阅本次会话的文件改动（%1 个文件待查看）</source>
         <translation>Review this session&apos;s file changes (%1 files to look at)</translation>
     </message>
     <message>
-        <location filename="../src/ui/components/TopBar.qml" line="984"/>
+        <location filename="../src/ui/components/TopBar.qml" line="989"/>
         <source>审阅本次会话的文件改动 (Ctrl+R)</source>
         <translation>Review this session&apos;s file changes (Ctrl+R)</translation>
     </message>
     <message>
-        <location filename="../src/ui/components/TopBar.qml" line="986"/>
+        <location filename="../src/ui/components/TopBar.qml" line="991"/>
         <source>打开文件改动审阅，%1 个文件待查看</source>
         <translation>Open the file-change review, %1 files to look at</translation>
     </message>
     <message>
-        <location filename="../src/ui/components/TopBar.qml" line="1032"/>
+        <location filename="../src/ui/components/TopBar.qml" line="1037"/>
         <source>收起右侧面板 (Ctrl+])</source>
         <translation>Collapse right panel (Ctrl+])</translation>
     </message>
     <message>
-        <location filename="../src/ui/components/TopBar.qml" line="1032"/>
+        <location filename="../src/ui/components/TopBar.qml" line="1037"/>
         <source>展开右侧面板 (Ctrl+])</source>
         <translation>Expand right panel (Ctrl+])</translation>
     </message>
@@ -11356,7 +11366,7 @@ select a file to view its content diff on the right.</translation>
         <translation type="vanished">Review this session&apos;s file changes (Ctrl+R)</translation>
     </message>
     <message>
-        <location filename="../src/ui/components/TopBar.qml" line="987"/>
+        <location filename="../src/ui/components/TopBar.qml" line="992"/>
         <source>打开文件改动审阅</source>
         <translation>Open the file change review</translation>
     </message>

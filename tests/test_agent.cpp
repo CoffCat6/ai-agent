@@ -1031,6 +1031,11 @@ private slots:
     void subagentBackgroundAckStatusWait();
     void subagentBackgroundCancelOneTask();
     void subagentBackgroundForkJoinThroughAgent();
+    // docs/35 P4.3/P4.5: 面板数据与取消经 AgentVM 转发（TopBar/对话框的
+    // 真实数据通道），而不是直接读 AIAgent。
+    void subagentBackgroundPanelThroughViewModel();
+    // docs/35 P4.5: QML 停止芯片点击 → VM → AIAgent 单节点取消的整链。
+    void subagentStopChipThroughViewModel();
     void subagentInflightAbortStressRealNetwork();
     // docs/35 P4.1: 子代理上下文预算——超限时只压缩线上请求，证据工件保留
     // 完整转录；压缩事件进过程日志。
@@ -5472,6 +5477,110 @@ void TestAgent::subagentBackgroundForkJoinThroughAgent() {
 
     agent.dismissFinishedBackgroundSubAgents();
     QVERIFY(agent.backgroundSubAgents().isEmpty());
+}
+
+// docs/35 P4.3: 面板的数据通道是 AgentVM（TopBar/对话框绑定它），
+// ChatSessionController 转发活动标签的 agent 信号。这里覆盖整条链：
+// 后台任务运行中 count/列表可见，结束后仍可取报告，清除后消失。
+void TestAgent::subagentBackgroundPanelThroughViewModel() {
+    SubAgentFixture fixture;
+    SpawnToolGuard guard;
+    ensureSubAgentProbe();
+    fixture.tool = std::make_shared<SubAgentTool>();
+    QMutex gatesMutex;
+    QVector<std::shared_ptr<QSemaphore>> gates;
+    fixture.tool->setServiceFactory([&]() -> IAIService* {
+        auto* service = new RecordingFakeService(&fixture.mutex,
+                                                 &fixture.subSeenTools,
+                                                 &fixture.subSeenMessages);
+        auto gate = std::make_shared<QSemaphore>();
+        {
+            QMutexLocker lock(&gatesMutex);
+            gates.append(gate);
+        }
+        service->gate = gate.get();
+        service->script.append(textResponse(QStringLiteral("bg report")));
+        return service;
+    });
+    fixture.tool->refreshCatalog(false);
+    ToolRegistry::instance().registerTool(fixture.tool);
+
+    AgentViewModel vm(nullptr);
+    vm.setAgent(&agent);
+
+    llm.reset();
+    llm.script.append(toolResponse(QStringLiteral("spawn_agent"),
+        QJsonObject{{QStringLiteral("goal"), QStringLiteral("bg probe")},
+                    {QStringLiteral("background"), true}}));
+    llm.script.append(textResponse(QStringLiteral("ack done")));
+    QSignalSpy spy(&agent, &AIAgent::responseReady);
+    agent.startTask(QStringLiteral("start a background task"));
+    QTRY_COMPARE_WITH_TIMEOUT(spy.count(), 1, 15000);
+
+    // 主任务已结束，后台任务仍在跑：VM 必须看得到（TopBar 角标的数据源）。
+    QTRY_COMPARE_WITH_TIMEOUT(vm.backgroundSubAgentActiveCount(), 1, 3000);
+    const QVariantList rows = vm.backgroundSubAgents();
+    QCOMPARE(rows.size(), 1);
+    const QString taskId =
+        rows.first().toMap().value(QStringLiteral("id")).toString();
+    QVERIFY(!taskId.isEmpty());
+    QVERIFY(vm.cancelBackgroundSubAgent(taskId));
+
+    {
+        QMutexLocker lock(&gatesMutex);
+        gates.first()->release();
+    }
+    QTRY_COMPARE_WITH_TIMEOUT(vm.backgroundSubAgentActiveCount(), 0, 5000);
+    // 终态任务仍留在面板里（入口不能因为 activeCount=0 就丢失报告）。
+    QCOMPARE(vm.backgroundSubAgents().size(), 1);
+    const QString report = vm.backgroundSubAgentReport(taskId);
+    QVERIFY(!report.isEmpty());
+    vm.dismissFinishedBackgroundSubAgents();
+    QCOMPARE(vm.backgroundSubAgents().size(), 0);
+}
+
+// docs/35 P4.5: ProcessCard 的停止芯片 → AgentVM.cancelSubAgent → AIAgent
+// 单节点令牌。QML 点击本身由 test_process_card_qml 覆盖，这里锁 VM 转发。
+void TestAgent::subagentStopChipThroughViewModel() {
+    SubAgentFixture fixture;
+    SpawnToolGuard guard;
+    ensureSubAgentProbe();
+    auto enteredFlag = std::make_shared<std::atomic<bool>>(false);
+    auto releaseGate = std::make_shared<QSemaphore>();
+    fixture.tool = registerSpawnTool(fixture, [&](RecordingFakeService& sub) {
+        sub.enteredFlag = enteredFlag.get();
+        sub.gate = releaseGate.get();
+        sub.script.append(textResponse(QStringLiteral("slow report")));
+    });
+    AgentViewModel vm(nullptr);
+    vm.setAgent(&agent);
+
+    llm.reset();
+    llm.script.append(toolResponse(QStringLiteral("spawn_agent"),
+        QJsonObject{{QStringLiteral("goal"), QStringLiteral("slow probe")}}));
+    llm.script.append(textResponse(QStringLiteral("wrapped up")));
+    QSignalSpy spy(&agent, &AIAgent::responseReady);
+    agent.startTask(QStringLiteral("cancel via card"));
+    QTRY_VERIFY(enteredFlag->load());
+
+    QString nodeId;
+    for (const auto& entry : agent.traceModel()) {
+        const QJsonObject node = entry.toObject();
+        if (node.value("type").toString() == QLatin1String("tool_call")
+                && node.value("title").toString().startsWith(
+                    QLatin1String("spawn_agent"))
+                && node.value("status").toString() == QLatin1String("running")) {
+            nodeId = node.value("id").toString();
+            break;
+        }
+    }
+    QVERIFY2(!nodeId.isEmpty(), "没有找到运行中的 spawn_agent 节点");
+    QVERIFY(vm.cancelSubAgent(nodeId));
+    // 同一个节点重复点按仍返回 true（令牌存在），未知节点返回 false。
+    QVERIFY(!vm.cancelSubAgent(QStringLiteral("no-such-node")));
+
+    releaseGate->release();
+    QTRY_COMPARE_WITH_TIMEOUT(spy.count(), 1, 15000);
 }
 
 // 真实网络栈下的两条中止路径压力回归：中断（取消旗标在请求在飞时翻转，

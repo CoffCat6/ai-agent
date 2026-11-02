@@ -44,7 +44,8 @@ private:
 class StubAgentVM : public QObject {
     Q_OBJECT
 public:
-    Q_INVOKABLE bool cancelBackgroundSubAgent(const QString&) { ++cancels; return true; }
+    Q_INVOKABLE bool cancelBackgroundSubAgent(const QString& id)
+    { ++cancels; cancelledId = id; return true; }
     Q_INVOKABLE int cancelAllBackgroundSubAgents() { ++cancelsAll; return 1; }
     Q_INVOKABLE QString backgroundSubAgentReport(const QString& id)
     { lastReportId = id; return QStringLiteral("report for %1").arg(id); }
@@ -53,6 +54,7 @@ public:
     int cancels{0};
     int cancelsAll{0};
     int dismissals{0};
+    QString cancelledId;
     QString lastReportId;
 };
 
@@ -119,6 +121,29 @@ public:
             return;
         }
         QTest::qWait(150);
+        if (!injectAgent(&stub))
+            error = QStringLiteral("failed to inject the stub façade");
+    }
+
+    // 组件在 NexusAI 模块内预编译，`AgentVM` 编译期绑定到 QML_SINGLETON
+    // 类型，context property 遮蔽不了它——桩只能经组件的 agentFacade 注入。
+    bool injectAgent(QObject* agent) const {
+        return root
+            && QMetaObject::invokeMethod(
+                root.get(), "setInjectedAgent",
+                Q_ARG(QVariant, QVariant::fromValue<QObject*>(agent)));
+    }
+
+    // 点真实像素：覆盖 MouseArea 命中、布局遮挡与绑定求值。
+    bool click(const QString& objectName) const {
+        QQuickItem* item = findChildItem(window->contentItem(), objectName);
+        if (!item || !item->isVisible() || !item->isEnabled())
+            return false;
+        QTest::mouseClick(
+            window, Qt::LeftButton, Qt::NoModifier,
+            item->mapToScene(QPointF(item->width() / 2, item->height() / 2))
+                .toPoint());
+        return true;
     }
 
     bool setTasks(const QVariantList& tasks) const {
@@ -188,7 +213,44 @@ private slots:
                  "有已结束任务时却没有清除入口");
     }
 
-    };
+    // docs/35 P4.3/P4.5: 面板按钮必须真的调到门面——用户反馈过「点了没
+    // 反应」，而渲染级用例（只看文案）发现不了。这里逐颗点像素。
+    void rowActionsInvokeFacade() {
+        BackgroundDialogHarness h;
+        QVERIFY2(h.window, qPrintable(h.error));
+        const qint64 now = 1000;
+        const QVariantList tasks{
+            task(QStringLiteral("sa-1"), QStringLiteral("scan the tree"),
+                 QStringLiteral("running"), now, 3, 0),
+            task(QStringLiteral("sa-2"), QStringLiteral("draft the change"),
+                 QStringLiteral("completed"), now, 4, 2)};
+        QVERIFY(h.setTasks(tasks));
+        QVERIFY(h.openDialog());
+        QTest::qWait(150);
+
+        QTRY_VERIFY2(findChildItem(h.window->contentItem(),
+                                   QStringLiteral("backgroundTaskStopButton")),
+                     "运行中的任务没有停止按钮");
+        QVERIFY2(h.click(QStringLiteral("backgroundTaskStopButton")),
+                 "停止按钮不可点击（被遮挡或不可见）");
+        QCOMPARE(h.stub.cancels, 1);
+        QCOMPARE(h.stub.cancelledId, QStringLiteral("sa-1"));
+
+        // 查看按需取全文：展开时才调报告接口。
+        QCOMPARE(h.stub.lastReportId, QString());
+        QVERIFY2(h.click(QStringLiteral("backgroundTaskViewButton")),
+                 "查看按钮不可点击");
+        QCOMPARE(h.stub.lastReportId, QStringLiteral("sa-1"));
+
+        QVERIFY2(h.click(QStringLiteral("backgroundTasksClearFinished")),
+                 "清除已结束按钮不可点击");
+        QCOMPARE(h.stub.dismissals, 1);
+
+        QVERIFY2(h.click(QStringLiteral("backgroundTasksCancelAll")),
+                 "全部停止按钮不可点击");
+        QCOMPARE(h.stub.cancelsAll, 1);
+    }
+};
 
 QTEST_MAIN(TestBackgroundTasksQml)
 #include "test_background_tasks_qml.moc"

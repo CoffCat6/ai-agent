@@ -11,6 +11,12 @@ Item {
 
     required property var modelData
     property bool expanded: false
+    // 取消/证据/确认三个动作的门面。声明成可覆写属性而不是直接引用单例
+    // AgentVM：本组件位于 NexusAI 模块内、被 qmlcachegen 预编译，编译期
+    // 把 AgentVM 解析成 QML_SINGLETON 类型（import 命名空间），宿主的
+    // context property 遮蔽不了它——QML 测试因此无法断言「真点了按钮」。
+    // 默认值仍是应用单例，生产语义不变。
+    property var agentFacade: AgentVM
     // 折叠状态的唯一数据源在页面（TraceNodeRouter→AgentChatPage），这里只发信号。
     signal toggleRequested()
 
@@ -271,6 +277,7 @@ Item {
                     // （主任务与其他子代理继续）。
                     Rectangle {
                         id: stopChip
+                        objectName: "subagentStopChip"
                         anchors.verticalCenter: parent.verticalCenter
                         visible: root.isSpawnAgent && root.status === "running"
                         width: stopText.implicitWidth + 14
@@ -292,10 +299,11 @@ Item {
 
                         MouseArea {
                             id: stopMA
+                            objectName: "subagentStopArea"
                             anchors.fill: parent
                             hoverEnabled: true
                             cursorShape: Qt.PointingHandCursor
-                            onClicked: AgentVM.cancelSubAgent(root.modelData.id)
+                            onClicked: root.agentFacade.cancelSubAgent(root.modelData.id)
                         }
                     }
 
@@ -303,6 +311,7 @@ Item {
                     // 落在本地文件，报告头里的纯文本路径用户没法直接用。
                     Rectangle {
                         id: evidenceChip
+                        objectName: "subagentEvidenceChip"
                         anchors.verticalCenter: parent.verticalCenter
                         visible: root.evidencePath !== ""
                         width: evidenceText.implicitWidth + 14
@@ -327,7 +336,7 @@ Item {
                             anchors.fill: parent
                             hoverEnabled: true
                             cursorShape: Qt.PointingHandCursor
-                            onClicked: AgentVM.openSubagentEvidence(root.evidencePath)
+                            onClicked: root.agentFacade.openSubagentEvidence(root.evidencePath)
                         }
                     }
 
@@ -369,6 +378,12 @@ Item {
 
                 MouseArea {
                     id: headerMA
+                    objectName: "cardHeaderArea"
+                    // 卡片头的折叠/展开热区铺满整行；必须压到行内芯片
+                    // （停止/证据）之下，否则它会吞掉芯片的点击——真机
+                    // 反馈「点停止没反应」的根因。z:-1 让后声明的芯片
+                    // 优先命中，同时空白处仍可折叠。
+                    z: -1
                     anchors.fill: parent
                     enabled: (root.hasDetail || root.hasSubagentLog
                               || root.hasSubagentProposals) && !root.waitingConfirm
@@ -609,13 +624,13 @@ Item {
                     buttonColor: "transparent"
                     textColor: Theme.statusDanger
                     border.color: Theme.statusDanger
-                    onClicked: AgentVM.approveToolCall(root.modelData.id, false)
+                    onClicked: root.agentFacade.approveToolCall(root.modelData.id, false)
                 }
 
                 AppButton {
                     text: qsTr("允许")
                     highlighted: true
-                    onClicked: AgentVM.approveToolCall(root.modelData.id, true)
+                    onClicked: root.agentFacade.approveToolCall(root.modelData.id, true)
                 }
             }
 

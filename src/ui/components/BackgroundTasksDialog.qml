@@ -20,6 +20,11 @@ Dialog {
     id: dialog
 
     property var tasks: []
+    // 动作门面（停止/报告/清除）。可覆写的原因同 ProcessCard：本组件在
+    // NexusAI 模块内被 qmlcachegen 预编译，`AgentVM` 在编译期解析为
+    // QML_SINGLETON 类型，宿主 context property 遮蔽不了它；测试通过
+    // 该属性注入桩来断言按钮真的调了门面。默认值仍是应用单例。
+    property var agentFacade: AgentVM
     // 行内实时耗时：终态读后端 elapsedMs，运行中按本地时钟推进，不依赖
     // 后端刷新频率。
     property double clockMs: Date.now()
@@ -301,19 +306,21 @@ Dialog {
                                 }
                                 Item { Layout.fillWidth: true }
                                 AppButton {
+                                    objectName: "backgroundTaskStopButton"
                                     visible: rowCard.active
                                     text: qsTr("停止")
-                                    onClicked: AgentVM.cancelBackgroundSubAgent(
+                                    onClicked: dialog.agentFacade.cancelBackgroundSubAgent(
                                         String(rowCard.modelData.id))
                                     Accessible.name: qsTr("停止这个后台子代理")
                                 }
                                 AppButton {
+                                    objectName: "backgroundTaskViewButton"
                                     text: rowCard.expanded ? qsTr("收起") : qsTr("查看")
                                     onClicked: {
                                         rowCard.expanded = !rowCard.expanded
                                         if (rowCard.expanded)
                                             rowCard.reportText =
-                                                AgentVM.backgroundSubAgentReport(
+                                                dialog.agentFacade.backgroundSubAgentReport(
                                                     String(rowCard.modelData.id))
                                     }
                                     Accessible.name: rowCard.expanded
@@ -413,13 +420,14 @@ Dialog {
                 objectName: "backgroundTasksClearFinished"
                 visible: dialog.finishedCount > 0
                 text: qsTr("清除已结束")
-                onClicked: AgentVM.dismissFinishedBackgroundSubAgents()
+                onClicked: dialog.agentFacade.dismissFinishedBackgroundSubAgents()
                 Accessible.name: qsTr("清除已结束的后台任务")
             }
             AppButton {
+                objectName: "backgroundTasksCancelAll"
                 visible: dialog.activeCount > 0
                 text: qsTr("全部停止")
-                onClicked: AgentVM.cancelAllBackgroundSubAgents()
+                onClicked: dialog.agentFacade.cancelAllBackgroundSubAgents()
                 Accessible.name: qsTr("停止全部后台子代理")
             }
         }

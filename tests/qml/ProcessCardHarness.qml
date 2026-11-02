@@ -22,6 +22,12 @@ Window {
 
     // 由 C++ 注入（rowsModel 一行数据，setRow 可换内容）。
     property bool cardExpanded: true
+    // 默认走应用单例（与 TraceNodeRouter 生产路径一致），用例可用
+    // setInjectedAgent() 换成桩来断言「点击真的调了门面」。
+    property var injectedAgent: AgentVM
+    // 卡片头的折叠次数：chip 点击不得同时触发展开（z 顺序回归），空白处
+    // 点击必须仍能折叠。
+    property int toggleCount: 0
 
     ListView {
         id: list
@@ -36,8 +42,12 @@ Window {
             objectName: "card"
             width: list.width
             expanded: root.cardExpanded
+            agentFacade: root.injectedAgent
+            onToggleRequested: root.toggleCount += 1
         }
     }
+
+    function setInjectedAgent(agent) { root.injectedAgent = agent }
 
     // C++ 侧断言通道：hasSubagentLog 判型、日志长度与首条 phase、body 状态，
     // 以及 rawIsArray —— role 路径下嵌套 QVariantList 不是原生 JS 数组，

@@ -13,14 +13,19 @@ ApplicationWindow {
     color: "black"
 
     property var tasks: []
+    // 默认走应用单例；用例可注入桩以断言按钮真的调了门面（组件预编译后
+    // context property 无法遮蔽 AgentVM 单例类型）。
+    property var injectedAgent: AgentVM
 
     function setTasks(list) { win.tasks = list }
     function openDialog() { bg.open(); return bg.visible }
     function closeDialog() { bg.close() }
+    function setInjectedAgent(agent) { win.injectedAgent = agent }
 
     BackgroundTasksDialog {
         id: bg
         parent: Overlay.overlay
         tasks: win.tasks
+        agentFacade: win.injectedAgent
     }
 }

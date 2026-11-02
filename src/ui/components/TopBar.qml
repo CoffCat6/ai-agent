@@ -917,19 +917,24 @@ Rectangle {
         }
 
         // ── Background Sub-agents (docs/35 P4.3) ───────
-        // 只在有排队/运行中任务时出现；点击打开 BackgroundTasksDialog
-        // （main.qml），面板读同一份会话任务表。角标是进行中的数量。
+        // 子代理功能开启即显示（不再只限「有进行中任务」）：面板同时是
+        // 已结束任务的查看入口，只按 activeCount 显隐会让任务一完成入口
+        // 就消失，用户再也点不开历史报告。角标仍只表示进行中的数量。
         IconButton {
             id: backgroundAgentsToggle
             objectName: "backgroundAgentsToggle"
             readonly property int activeCount: AgentVM.backgroundSubAgentActiveCount
 
-            visible: activeCount > 0
+            visible: Settings.subagentEnabled || activeCount > 0
             icon: "agents"
             iconSize: 16
-            restIconColor: Theme.brandPrimary
-            tooltip: qsTr("后台子代理（%1 个进行中）").arg(activeCount)
-            Accessible.name: qsTr("打开后台子代理面板，%1 个进行中").arg(activeCount)
+            restIconColor: activeCount > 0 ? Theme.brandPrimary : Theme.textPrimary
+            tooltip: activeCount > 0
+                ? qsTr("后台子代理（%1 个进行中）").arg(activeCount)
+                : qsTr("后台子代理面板")
+            Accessible.name: activeCount > 0
+                ? qsTr("打开后台子代理面板，%1 个进行中").arg(activeCount)
+                : qsTr("打开后台子代理面板")
             onClicked: backgroundTasksDialog.open()
 
             Rectangle {
