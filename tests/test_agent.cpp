@@ -22,6 +22,7 @@
 #include "infrastructure/llm/IAIService.h"
 #include "infrastructure/llm/LlmProtocolRegistry.h"
 #include "core/utils/TokenEstimator.h"
+#include "core/utils/ModelOutputSanitizer.h"
 #include "viewmodels/AgentViewModel.h"
 
 #include <QSet>
@@ -122,6 +123,17 @@ LLMResponse toolResponse(const QString& name, const QJsonObject& args) {
     call.arguments = args;
     r.toolCalls.append(call);
     return r;
+}
+
+// StepFun 风格的原生文本工具调用模板（真机原文，见 messages 表 id=98）。
+QString textualToolCallMarkup() {
+    return QStringLiteral(
+        "<tool_call>\n"
+        "<function=web_search>\n"
+        "<parameter=max_results>\n8\n</parameter>\n"
+        "<parameter=query>\n恒生指数 11月2日 收盘\n</parameter>\n"
+        "</function>\n"
+        "</tool_call>");
 }
 
 // docs/35 P4.4: the proposal id is only known after the sub-agent report
@@ -964,6 +976,10 @@ private slots:
     void toolRegistryEnablementSemantics();
     void toolExecutionBudgetForcesFinal();
     void forcedFinalControlMessageNotPersisted();
+    // docs/35: 模型原生文本工具调用模板不得当成回答（真机写进 messages 表）。
+    void textualToolCallMarkupDiscardedFromAnswer();
+    void forcedFinalTextualToolCallDoesNotBecomeTheAnswer();
+    void textualToolCallSanitizerHandlesTruncatedAndMultipleBlocks();
     // Batch 4: request-context architecture (ARCH-402/403)
     void switchServiceMidTaskTerminatesCleanly();
     void staleResponseFromSupersededRequestIgnored();
@@ -3450,6 +3466,74 @@ void TestAgent::forcedFinalControlMessageNotPersisted() {
              "forced final + next turn left dangling tool_calls");
 
     agent.setMaxIterations(AIAgent::kDefaultMaxIterations);   // 还原共享 agent
+}
+
+// docs/35: 部分模型的 chat template 把工具调用写成 XML 文本。端点只有在
+// 模板完整时才会翻译成结构化 tool_calls；服务端解析失败时模板会作为普通
+// content 回来。它不得被当成回答展示/落库（真机曾把整条伪调用写进
+// messages 表并在聊天区显示成最终答复）。
+void TestAgent::textualToolCallMarkupDiscardedFromAnswer() {
+    llm.script.append(textResponse(QStringLiteral("Here is the summary.\n")
+                                   + textualToolCallMarkup()));
+
+    QSignalSpy spy(&agent, &AIAgent::responseReady);
+    agent.startTask(QStringLiteral("news roundup"));
+    QTRY_COMPARE_WITH_TIMEOUT(spy.count(), 1, 20000);
+
+    const QString answer = spy.at(0).at(0).toString();
+    QCOMPARE(answer, QStringLiteral("Here is the summary."));
+
+    // 摘要节点就是用户看到的正文，同样不能带模板。
+    bool sawSummary = false;
+    for (const auto& entry : agent.traceModel()) {
+        const QJsonObject node = entry.toObject();
+        if (node.value(QStringLiteral("type")).toString()
+                != QLatin1String("summary"))
+            continue;
+        sawSummary = true;
+        QVERIFY2(!node.value(QStringLiteral("title")).toString()
+                      .contains(QStringLiteral("<tool_call")),
+                 "textual tool-call markup leaked into the summary node");
+    }
+    QVERIFY(sawSummary);
+}
+
+// 真机根因路径：工具预算耗尽 → 撤掉 tools 的强制收尾调用 → 模型仍想搜索，
+// 把原生模板当文本输出。此时必须回落到明确说明，而不是把伪调用当答案。
+void TestAgent::forcedFinalTextualToolCallDoesNotBecomeTheAnswer() {
+    agent.setMaxIterations(3);   // 下限就是 3：三轮工具调用后进入强制收尾
+    const QString home = QStandardPaths::writableLocation(QStandardPaths::HomeLocation);
+    for (int i = 0; i < 3; ++i) {
+        llm.script.append(toolResponse(QStringLiteral("list_dir"),
+            QJsonObject{{QStringLiteral("path"),
+                         home + QStringLiteral("/nexusai_missing_markup_dir_%1")
+                                    .arg(i)}}));
+    }
+    llm.script.append(textResponse(textualToolCallMarkup()));   // 强制收尾的回复
+
+    QSignalSpy spy(&agent, &AIAgent::responseReady);
+    agent.startTask(QStringLiteral("what is the market doing"));
+    QTRY_COMPARE_WITH_TIMEOUT(spy.count(), 1, 20000);
+
+    const QString answer = spy.at(0).at(0).toString();
+    QVERIFY2(!answer.contains(QStringLiteral("<tool_call")), qPrintable(answer));
+    QVERIFY2(answer.startsWith(QStringLiteral("Step budget exhausted")),
+             qPrintable(answer));
+
+    agent.setMaxIterations(AIAgent::kDefaultMaxIterations);   // 还原共享 agent
+}
+
+// 未闭合的模板（流被截断 / 用户看到的就是截断版）要把尾部一起吃掉；
+// 多个块逐个移除，块外的正文保留。
+void TestAgent::textualToolCallSanitizerHandlesTruncatedAndMultipleBlocks() {
+    QString text = QStringLiteral("a\n<tool_call><function=x>...</tool_call>\nb\n"
+                                  "<tool_call><function=y><parameter=q>news");
+    QCOMPARE(ModelOutput::stripTextualToolCalls(text), 2);
+    QCOMPARE(text, QStringLiteral("a\n\nb"));
+
+    QString plain = QStringLiteral("no markup here");
+    QCOMPARE(ModelOutput::stripTextualToolCalls(plain), 0);
+    QCOMPARE(plain, QStringLiteral("no markup here"));
 }
 
 // ── Batch 4: request-context architecture ─────────────────

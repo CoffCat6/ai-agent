@@ -3,6 +3,7 @@
 #include "core/tools/ProposeEditTool.h"
 #include "core/tools/Sandbox.h"
 #include "core/utils/TokenEstimator.h"
+#include "core/utils/ModelOutputSanitizer.h"
 #include "infrastructure/llm/IAIService.h"
 
 #include <QtConcurrent/QtConcurrentRun>
@@ -600,6 +601,19 @@ SubAgentReport SubAgentRunner::runImpl(IAIService* service, const SubAgentReques
             report.stop = SubAgentReport::Stop::Error;
             report.text = QStringLiteral("Sub-agent service produced no response.");
             return report;
+        }
+
+        // Same guard as the main loop: native template markup in `content`
+        // is not a report (nor a progress line). Strip it before either is
+        // surfaced; a markup-only final turn gets an explicit failure text
+        // instead of an empty report.
+        const int textualToolCalls =
+            ModelOutput::stripTextualToolCalls(response.content);
+        if (textualToolCalls > 0 && response.toolCalls.isEmpty()
+                && response.content.isEmpty()) {
+            response.content = QStringLiteral(
+                "Sub-agent model returned a tool call as plain text instead of "
+                "a report; it was discarded.");
         }
 
         // 过程可视化：本轮模型的可见文本（含最终答案）进日志，供 UI 展开。

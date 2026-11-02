@@ -81,6 +81,8 @@ add_library(nexus_core STATIC
     src/core/rag/RagService.cpp
     src/core/rag/KnowledgeSearchTool.h
     src/core/utils/TokenEstimator.h
+    # docs/35: 模型原生文本工具调用模板的清洗（不得当成回答展示/落库）。
+    src/core/utils/ModelOutputSanitizer.h
     src/core/utils/PricingCalculator.h
     src/core/utils/PricingCalculator.cpp
     src/core/utils/Logger.h

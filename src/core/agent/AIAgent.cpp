@@ -11,6 +11,7 @@
 #include "core/memory/IMemory.h"
 #include "core/rag/KnowledgeSearchTool.h"
 #include "core/utils/TokenEstimator.h"
+#include "core/utils/ModelOutputSanitizer.h"
 #include "core/utils/SettingsRepository.h"
 #include "core/utils/SettingsSchema.h"
 
@@ -1724,11 +1725,42 @@ void AIAgent::onLLMResponse(const LLMResponse& response) {
         return;
     }
 
+    // ── Textual tool-call markup must never pass as an answer ──
+    // Models with native XML tool-call templates (observed with StepFun:
+    // "<tool_call><function=web_search><parameter=max_results>8…") emit the
+    // markup as plain content whenever the structured channel is unavailable
+    // — most visibly on the forced-final call where `tools` is withheld. The
+    // provider never turns it into tool_calls, so without this guard the
+    // pseudo-call is shown, persisted as the assistant answer and replayed
+    // to the model on the next turn. Discard it; keep any prose around it.
+    QString answerText = response.content;
+    const int textualToolCalls =
+        ModelOutput::stripTextualToolCalls(answerText);
+    if (textualToolCalls > 0) {
+        qWarning() << "Discarded textual tool-call output from model, blocks:"
+                   << textualToolCalls;
+        appendTraceNode("context",
+            QStringLiteral("Discarded textual tool-call output from the model "
+                           "(%1 block(s))").arg(textualToolCalls),
+            "completed");
+        // The model produced nothing else: say what happened instead of
+        // finishing with an empty answer (and an empty history message).
+        if (answerText.trimmed().isEmpty()) {
+            answerText = m_forcedFinal
+                ? QStringLiteral("Step budget exhausted before I could fully answer. "
+                                 "Here is what I found so far - please continue the "
+                                 "conversation for more detail.")
+                : QStringLiteral("The model returned a tool call as plain text "
+                                 "instead of an answer; it was discarded. Please "
+                                 "retry or continue the conversation.");
+        }
+    }
+
     // Append the assistant message in OpenAI wire format, including tool_calls.
     QJsonObject assistantMsg;
     assistantMsg["role"] = "assistant";
-    if (!response.content.isEmpty()) {
-        assistantMsg["content"] = response.content;
+    if (!answerText.isEmpty()) {
+        assistantMsg["content"] = answerText;
     } else {
         assistantMsg["content"] = QJsonValue(); // null when only tool calls
     }
@@ -1767,12 +1799,12 @@ void AIAgent::onLLMResponse(const LLMResponse& response) {
         // instead of appending a duplicate summary node.
         const bool streamed = m_streamNodeActive;
         if (streamed) {
-            updateLastNodeTitle(response.content);
+            updateLastNodeTitle(answerText);
             updateLastNodeStatus("completed");
             m_streamNodeActive = false;
         }
         m_streamText.clear();
-        finishTask(response.content, streamed);
+        finishTask(answerText, streamed);
         return;
     }
 
@@ -1781,11 +1813,11 @@ void AIAgent::onLLMResponse(const LLMResponse& response) {
     if (m_forcedFinal) {
         sealUnansweredToolCalls(calls);
         m_streamText.clear();
-        finishTask(response.content.isEmpty()
+        finishTask(answerText.isEmpty()
             ? QStringLiteral("Step budget exhausted before I could fully answer. "
                              "Here is what I found so far - please continue the "
                              "conversation for more detail.")
-            : response.content);
+            : answerText);
         return;
     }
 
@@ -1803,7 +1835,7 @@ void AIAgent::onLLMResponse(const LLMResponse& response) {
     if (repeated) ++m_repeatToolCount; else m_repeatToolCount = 0;
 
     if (m_repeatToolCount >= 2
-            || (m_repeatToolCount == 1 && response.content.size() >= kMinFinalAnswerChars)) {
+            || (m_repeatToolCount == 1 && answerText.size() >= kMinFinalAnswerChars)) {
         sealUnansweredToolCalls(calls);
         const bool streamed = m_streamNodeActive;
         if (streamed) {
@@ -1811,11 +1843,11 @@ void AIAgent::onLLMResponse(const LLMResponse& response) {
             m_streamNodeActive = false;
         }
         m_streamText.clear();
-        finishTask(response.content.isEmpty()
+        finishTask(answerText.isEmpty()
             ? QStringLiteral("Step budget exhausted before I could fully answer. "
                              "Here is what I found so far - please continue the "
                              "conversation for more detail.")
-            : response.content, streamed);
+            : answerText, streamed);
         return;
     }
     if (m_repeatToolCount == 1) {
