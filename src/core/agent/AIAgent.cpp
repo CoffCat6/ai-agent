@@ -516,6 +516,10 @@ QString AIAgent::appendTraceNode(const QString& type, const QString& title,
     // 白名单放行才能持久化并在会话恢复后仍显示「查看证据」。
     if (extra.contains("evidencePath"))
         node["evidencePath"] = extra.value("evidencePath");
+    // docs/34 P3.2: 子代理改动提案的轻量索引（spawn_agent 的 tool_result）。
+    // 白名单放行才能持久化并在会话恢复后继续渲染徽章/提案列表。
+    if (extra.contains("subagentProposals"))
+        node["subagentProposals"] = extra.value("subagentProposals");
 
     m_traceModel.append(node);
     persistTraceNode(node, m_nextTraceOrder++);
@@ -2470,6 +2474,11 @@ void AIAgent::finishToolExecution(const ToolCallInfo& call, const QString& trace
         if (evidenceMatch.hasMatch())
             resultExtra["evidencePath"] = evidenceMatch.captured(1).trimmed();
     }
+    // docs/34 P3.2: 工具报上来的结构化附加数据按白名单挑选（目前只有
+    // spawn_agent 的提案索引）。失败同样保留——部分运行也会返回提案。
+    if (result.metadata.value("subagentProposals").isArray())
+        resultExtra["subagentProposals"] =
+            result.metadata.value("subagentProposals");
     appendTraceNode("tool_result", call.name,
                     result.success ? "success" : "failed", resultExtra);
 

@@ -51,7 +51,7 @@
 | 设置页 | `pages/GeneralPage`、`AgentBehaviorPage`、`NetworkPage`、`LogsPage`、`KnowledgePage`、`InterfacePage`、`ModelConfigPage`、`SecurityPage`、`McpPage`、`ToolsPage`、`MemoryPage`、`UsageStatsPage`、`ActivityLogPage`、`SettingsBackupPage`、`ProjectRulesPage`、`PromptAssetsPage` | 16 个分类，由 `Loader` 按分类懒加载 |
 | 业务组件 | `AssistantMessage.qml`、`UserMessageBubble.qml`、`ProcessCard.qml`、`ErrorCard.qml`、`ToolConfirmDialog.qml`、`TodoListPanel.qml`、`FileChangesPanel.qml`、`ChangeTree.qml`、`GitPanel.qml` | 消息/工具确认/审阅/Git；ProcessCard 含子代理过程日志（subagentLog 展开）与底部「收起」入口 |
 
-ProcessCard 的 `subagentLog` 判型注意（2026-11-02 修复，回归 `test_process_card_qml`）：嵌在 modelData（QVariantMap）里的 QVariantList 经 ListView role 进 QML 后是 sequence wrapper——length/索引正常但 `Array.isArray()` 返回 false，判型必须用 undefined/null + length；且 role 数据必须走 ListView 路径测（setProperty 注入会转成原生 JS Array，复现不了）。
+ProcessCard 的 `subagentLog` 判型注意（2026-11-02 修复，回归 `test_process_card_qml`）：嵌在 modelData（QVariantMap）里的 QVariantList 经 ListView role 进 QML 后是 sequence wrapper——length/索引正常但 `Array.isArray()` 返回 false，判型必须用 undefined/null + length；且 role 数据必须走 ListView 路径测（setProperty 注入会转成原生 JS Array，复现不了）。docs/34 P3.2 的 `subagentProposals`（spawn_agent 结果节点上的 `[{path, rationale, count}]`）走同一判型与同一 role 路径，卡片头显示「N 个提案」徽章（总数 = 各 count 之和），展开区 `subagentProposalsBody` 列出路径/理由/处数并把报告正文（含 diff）附在下方。
 | 图表/表格 | `charts/{DonutChart,LineTrendChart,BarCompareChart}.qml`、`UsageDetailTable.qml`、`DiffView.qml`、`CodeBlock.qml` | Canvas 图表、明细表、diff/代码块 |
 | 基础控件 | `AppButton.qml`、`AppIcon.qml`、`AppToast.qml`、`IconButton.qml`、`DialogBackground.qml`、`SplitBar.qml` | 统一外观与交互基元 |
 

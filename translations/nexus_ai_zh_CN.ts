@@ -7542,6 +7542,21 @@
         <translation>已折叠 · %1 字符</translation>
     </message>
     <message>
+        <location filename="../src/ui/components/ProcessCard.qml" line="340"/>
+        <source>%1 个提案</source>
+        <translation>%1 个提案</translation>
+    </message>
+    <message>
+        <location filename="../src/ui/components/ProcessCard.qml" line="380"/>
+        <source>已折叠 · %1 个改动提案</source>
+        <translation>已折叠 · %1 个改动提案</translation>
+    </message>
+    <message>
+        <location filename="../src/ui/components/ProcessCard.qml" line="531"/>
+        <source>%1 处修改</source>
+        <translation>%1 处修改</translation>
+    </message>
+    <message>
         <location filename="../src/ui/components/ProcessCard.qml" line="459"/>
         <source>变更预览:</source>
         <translation>变更预览:</translation>

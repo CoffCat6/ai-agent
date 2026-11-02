@@ -55,6 +55,12 @@ Window {
             firstPhase: card.hasSubagentLog ? card.subagentLog[0].phase : "",
             bodyActive: body ? body.active : false,
             bodyObjectName: (body && body.item) ? body.item.objectName : "",
+            // docs/34 P3.2：提案索引走同一条 role 路径，判型不得依赖
+            // Array.isArray（rawProposalsIsArray 锁住这个语义）。
+            hasSubagentProposals: card.hasSubagentProposals,
+            rawProposalsIsArray: Array.isArray(card.modelData.subagentProposals),
+            proposalCount: card.hasSubagentProposals ? card.subagentProposals.length : -1,
+            proposalTotal: card.proposalTotal,
         }
     }
 

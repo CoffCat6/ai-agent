@@ -4661,6 +4661,27 @@ void TestAgent::coderRoleProposalsReachReportUnapplied() {
         QCOMPARE(f.readAll(), original);
     }
 
+    // docs/34 P3.2：提案索引挂到 spawn_agent 的 tool_result 节点 metadata
+    // （卡片徽章/列表的数据源），路径已转成项目相对形式。
+    bool sawProposalIndex = false;
+    for (const auto& entry : agent.traceModel()) {
+        const QJsonObject node = entry.toObject();
+        if (node.value(QStringLiteral("type")).toString() != QLatin1String("tool_result")
+                || node.value(QStringLiteral("title")).toString()
+                       != QLatin1String("spawn_agent"))
+            continue;
+        const QJsonArray index =
+            node.value(QStringLiteral("subagentProposals")).toArray();
+        if (index.size() != 1) continue;
+        const QJsonObject item = index.first().toObject();
+        if (item.value(QStringLiteral("path")).toString() == QLatin1String("app.cpp")
+                && item.value(QStringLiteral("count")).toInt() == 1
+                && item.value(QStringLiteral("rationale")).toString()
+                       == QLatin1String("main should exit successfully"))
+            sawProposalIndex = true;
+    }
+    QVERIFY(sawProposalIndex);
+
     // coder 的工具面：授予 propose_edit，其余仍是只读工具。
     QMutexLocker lock(&fixture.mutex);
     QVERIFY(!fixture.subSeenTools.isEmpty());

@@ -105,6 +105,32 @@ QVariantMap spawnNode(int logEntries) {
     };
 }
 
+// docs/34 P3.2: spawn_agent 结果节点上的提案索引（子代理经 propose_edit
+// 起草，正文不进 metadata）。withResult=false 用于验证「只有提案、报告
+// 正文为空」时展开区仍可用。
+QVariantMap proposalNode(bool withResult) {
+    QVariantList proposals;
+    proposals.append(QVariantMap{
+        {QStringLiteral("path"), QStringLiteral("src/app.cpp")},
+        {QStringLiteral("rationale"), QStringLiteral("return success")},
+        {QStringLiteral("count"), 2}});
+    proposals.append(QVariantMap{
+        {QStringLiteral("path"), QStringLiteral("README.md")},
+        {QStringLiteral("rationale"), QStringLiteral("document it")},
+        {QStringLiteral("count"), 1}});
+    return QVariantMap{
+        {QStringLiteral("id"), QStringLiteral("n2")},
+        {QStringLiteral("type"), QStringLiteral("tool_result")},
+        {QStringLiteral("title"), QStringLiteral("spawn_agent")},
+        {QStringLiteral("status"), QStringLiteral("success")},
+        {QStringLiteral("args"), QString()},
+        {QStringLiteral("result"),
+         withResult ? QStringLiteral("[Sub-agent report] ... ## PROPOSALS (not applied)")
+                    : QString()},
+        {QStringLiteral("subagentProposals"), proposals},
+    };
+}
+
 } // namespace
 
 class TestProcessCardQml : public QObject {
@@ -174,6 +200,71 @@ private slots:
         rows.setRow(spawnNode(60));
         p = probe();
         QCOMPARE(p.value(QStringLiteral("logLength")).toInt(), 60);
+    }
+
+    // docs/34 P3.2: 提案索引徽章与展开列表（同一 role 路径，同一判型坑）。
+    void subagentProposalsRenderFromVariantList() {
+        QQmlApplicationEngine engine;
+        RowsModel rows;
+        engine.rootContext()->setContextProperty(QStringLiteral("rowsModel"), &rows);
+        NexusQrcFallback interceptor(QStringLiteral(NEXUS_MODULE_DIR));
+        engine.addUrlInterceptor(&interceptor);
+        engine.addImportPath(QStringLiteral(NEXUS_BUILD_DIR));
+
+        QQmlComponent component(&engine, QUrl::fromLocalFile(
+            QStringLiteral(NEXUS_TEST_QML_DIR "/ProcessCardHarness.qml")));
+        QVERIFY2(component.isReady(), qPrintable(component.errorString()));
+        std::unique_ptr<QObject> root(component.create());
+        QVERIFY2(root, qPrintable(component.errorString()));
+        auto* win = qobject_cast<QQuickWindow*>(root.get());
+        QVERIFY(win);
+        win->show();
+        QVERIFY(QTest::qWaitForWindowExposed(win));
+
+        auto* harness = root.get();
+        const auto probe = [&]() -> QVariantMap {
+            QVariant out;
+            const bool ok = QMetaObject::invokeMethod(harness, "probe",
+                                              Q_RETURN_ARG(QVariant, out));
+            return ok ? out.toMap() : QVariantMap{{QStringLiteral("found"), false}};
+        };
+
+        rows.setRow(proposalNode(true));
+        QVariantMap p = probe();
+        QCOMPARE(p.value(QStringLiteral("found")).toBool(), true);
+        QCOMPARE(p.value(QStringLiteral("rawProposalsIsArray")).toBool(), false);
+        QCOMPARE(p.value(QStringLiteral("hasSubagentProposals")).toBool(), true);
+        QCOMPARE(p.value(QStringLiteral("proposalCount")).toInt(), 2);
+        // 徽章总数 = 各提案 count 之和（2 + 1）。
+        QCOMPARE(p.value(QStringLiteral("proposalTotal")).toInt(), 3);
+        // 展开区加载提案列表组件。
+        QCOMPARE(p.value(QStringLiteral("bodyActive")).toBool(), true);
+        QCOMPARE(p.value(QStringLiteral("bodyObjectName")).toString(),
+                 QStringLiteral("subagentProposalsBody"));
+
+        // 报告正文为空（仅提案）时仍可展开——bodyVisible 不能只看正文。
+        rows.setRow(proposalNode(false));
+        p = probe();
+        QCOMPARE(p.value(QStringLiteral("hasSubagentProposals")).toBool(), true);
+        QCOMPARE(p.value(QStringLiteral("bodyActive")).toBool(), true);
+        QCOMPARE(p.value(QStringLiteral("bodyObjectName")).toString(),
+                 QStringLiteral("subagentProposalsBody"));
+
+        // 非 spawn_agent 结果即使带了同名字段也不渲染提案（白名单语义）。
+        QVariantMap foreign = proposalNode(true);
+        foreign.insert(QStringLiteral("title"), QStringLiteral("edit_file"));
+        rows.setRow(foreign);
+        p = probe();
+        QCOMPARE(p.value(QStringLiteral("hasSubagentProposals")).toBool(), false);
+
+        // 无提案键回落代码块。
+        QVariantMap noProposals = proposalNode(true);
+        noProposals.remove(QStringLiteral("subagentProposals"));
+        rows.setRow(noProposals);
+        p = probe();
+        QCOMPARE(p.value(QStringLiteral("hasSubagentProposals")).toBool(), false);
+        QCOMPARE(p.value(QStringLiteral("bodyObjectName")).toString(),
+                 QStringLiteral(""));
     }
 };
 

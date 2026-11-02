@@ -2666,9 +2666,11 @@ void SqliteMemory::saveTraceNode(const QString& sessionId, const QJsonObject& no
     QJsonObject metadata;
     // subagentTools: 子代理进度节点累积的工具摘要（docs/32 P2 优化），
     // 会话恢复后标题摘要仍可重建。evidencePath: 证据工件路径（E1），
-    // 「查看证据」入口随会话恢复仍可用。
+    // 「查看证据」入口随会话恢复仍可用。subagentProposals: 提案索引
+    // （docs/34 P3.2），卡片徽章/列表随会话恢复仍可渲染。
     for (const char* key : {"images", "files", "model", "preview", "source",
-                            "subagentTools", "subagentLog", "evidencePath"})
+                            "subagentTools", "subagentLog", "evidencePath",
+                            "subagentProposals"})
         if (node.contains(QLatin1String(key))) metadata[key] = node.value(QLatin1String(key));
     query.addBindValue(QString::fromUtf8(QJsonDocument(metadata).toJson(QJsonDocument::Compact)));
 
@@ -2702,7 +2704,8 @@ QJsonObject traceNodeFromRow(const QSqlQuery& query) {
         node["messageId"] = messageId;
     const auto metadata = QJsonDocument::fromJson(query.value(10).toByteArray()).object();
     for (const char* key : {"images", "files", "model", "preview", "source",
-                            "subagentTools", "subagentLog", "evidencePath"})
+                            "subagentTools", "subagentLog", "evidencePath",
+                            "subagentProposals"})
         if (metadata.contains(QLatin1String(key))) node[key] = metadata.value(QLatin1String(key));
     return node;
 }

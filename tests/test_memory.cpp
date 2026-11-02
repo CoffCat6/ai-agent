@@ -161,6 +161,8 @@ private slots:
     void projectRename();
     void traceNodeRoundTrip();
     void traceNodeSubagentToolsRoundTrip();
+    // docs/34 P3.2: 提案索引 metadata 往返。
+    void traceNodeSubagentProposalsRoundTrip();
     // P1：恢复会话只读最近一段轨迹，且必须取"最新"而不是"最旧"。
     void loadRecentTraceNodesTakesNewestWindow();
     // Batch 6: knowledge persistence v2
@@ -962,6 +964,46 @@ void TestMemory::traceNodeSubagentToolsRoundTrip() {
              QStringLiteral("tool"));
     QCOMPARE(restoredLog.at(1).toObject().value("text").toString(),
              QStringLiteral("final report text"));
+}
+
+// docs/34 P3.2：spawn_agent 结果节点的提案索引（path/rationale/count）
+// 随 metadata 白名单持久化，会话恢复后卡片徽章与提案列表仍可渲染。
+void TestMemory::traceNodeSubagentProposalsRoundTrip() {
+    SqliteMemory mem(QStringLiteral(":memory:"));
+    mem.beginSession("s1", "Sub");
+
+    QJsonObject node;
+    node["id"] = QStringLiteral("n1");
+    node["type"] = QStringLiteral("tool_result");
+    node["title"] = QStringLiteral("spawn_agent");
+    node["status"] = QStringLiteral("success");
+    node["args"] = QString();
+    node["result"] = QStringLiteral("[Sub-agent report] ... ## PROPOSALS (not applied)");
+    node["timestamp"] = 1000.0;
+    node["evidencePath"] = QStringLiteral("C:/evidence/run.md");
+    node["subagentProposals"] = QJsonArray{
+        QJsonObject{{QStringLiteral("path"), QStringLiteral("src/app.cpp")},
+                    {QStringLiteral("rationale"), QStringLiteral("return success")},
+                    {QStringLiteral("count"), 2}},
+        QJsonObject{{QStringLiteral("path"), QStringLiteral("README.md")},
+                    {QStringLiteral("rationale"), QStringLiteral("document it")},
+                    {QStringLiteral("count"), 1}}};
+    mem.saveTraceNode("s1", node, 0);
+
+    const QJsonArray loaded = mem.loadTraceNodes("s1");
+    QCOMPARE(loaded.size(), 1);
+    const QJsonObject restored = loaded.at(0).toObject();
+    QCOMPARE(restored.value("evidencePath").toString(),
+             QStringLiteral("C:/evidence/run.md"));
+    const QJsonArray proposals = restored.value("subagentProposals").toArray();
+    QCOMPARE(proposals.size(), 2);
+    QCOMPARE(proposals.at(0).toObject().value("path").toString(),
+             QStringLiteral("src/app.cpp"));
+    QCOMPARE(proposals.at(0).toObject().value("count").toInt(), 2);
+    QCOMPARE(proposals.at(0).toObject().value("rationale").toString(),
+             QStringLiteral("return success"));
+    QCOMPARE(proposals.at(1).toObject().value("path").toString(),
+             QStringLiteral("README.md"));
 }
 
 

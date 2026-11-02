@@ -18,7 +18,7 @@
 
 ### ITool 契约（`ITool.h`）
 - `definition()` 返回 `ToolDefinition{name, description, parameters(JSON Schema), level, autoEditSafe, readOnly}`；每次调用都会重新构造（`ToolRegistry::listAll` 也逐次调用，无缓存）。
-- `execute(args)` 是纯同步阻塞语义，运行在 `QtConcurrent` 池线程；返回 `ToolResult{success, output, error, checkpoint, source}`。`source` 是「这次请求打到了哪个外部服务」（只有 `web_search` 填充，值 = 后端 `providerKey()`），经 `AIAgent::appendTraceNode` 的白名单进 `trace_nodes.metadata`，会话恢复后仍可显示。
+- `execute(args)` 是纯同步阻塞语义，运行在 `QtConcurrent` 池线程；返回 `ToolResult{success, output, error, checkpoint, source, metadata}`。`source` 是「这次请求打到了哪个外部服务」（只有 `web_search` 填充，值 = 后端 `providerKey()`），经 `AIAgent::appendTraceNode` 的白名单进 `trace_nodes.metadata`，会话恢复后仍可显示。`metadata`（docs/34 P3.2）是结构化附加数据，下游同样按白名单挑键（目前只有 spawn_agent 填 `subagentProposals`）。
 - 协作式取消：`using Cancellation = std::shared_ptr<std::atomic<bool>>`。`execute(args, cancelled)` 默认实现只在入口检查一次；`cancel(cancelled)` 默认置位原子并转调无参 `cancel()`。契约要求 `cancel()` 只允许翻原子/关句柄，**不得阻塞、不得跨线程触碰 execute 的非原子状态**。
 - `generatePreview(args)` 在 GUI 线程、派发前调用，只用于确认弹窗预览（`write_file`/`edit_file` 生成 unified diff，`git_commit` 生成 staged/工作区摘要），必须快且不阻塞。
 - `FileCheckpoint`：G4 撤销/审计载荷。写入前捕获原内容（>1MiB 记 `truncated`），写入后补 `diff`、`addedLines`/`removedLines`、`afterHash`(SHA-256)。checkpoint 随 `ToolResult` 回到 GUI 线程再由 agent 落库（`QSqlDatabase` 线程绑定）。

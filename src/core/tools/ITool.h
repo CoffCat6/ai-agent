@@ -66,6 +66,10 @@ struct ToolResult {
     // 界面显示与审计（目前只有 web_search 填充，值是后端的 providerKey，
     // 如 "zhipu"）。空 = 该工具没有外部服务来源（本地工具、或后端未自报）。
     QString source;
+    // docs/34 P3.2: 结构化附加数据，供 trace/UI 消费（下游按白名单挑选
+    // 键写进 trace 节点 metadata；按值随结果跨线程传递）。目前只有
+    // spawn_agent 填 subagentProposals（轻量索引，正文仍走报告/工件）。
+    QJsonObject metadata;
 
     static ToolResult ok(const QString& out) {
         return {true, out, {}};

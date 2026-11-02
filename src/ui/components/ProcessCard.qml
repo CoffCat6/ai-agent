@@ -35,6 +35,26 @@ Item {
         return (raw !== undefined && raw !== null && raw.length > 0) ? raw : null
     }
     readonly property bool hasSubagentLog: subagentLog !== null
+    // docs/34 P3.2: spawn_agent 结果节点上的改动提案索引
+    // （[{path, rationale, count}]，正文仍只在报告/证据工件里）。卡片头
+    // 显示「N 个提案」徽章，展开区列出路径、理由与条数。
+    readonly property bool isSpawnResult: nodeType === "tool_result"
+                                          && (modelData.title || "").startsWith("spawn_agent")
+    readonly property var subagentProposals: {
+        if (!isSpawnResult) return null
+        const raw = modelData.subagentProposals
+        // 同 subagentLog：QVariantList 进 QML 是 sequence wrapper，
+        // Array.isArray 判型会永远为 false。
+        return (raw !== undefined && raw !== null && raw.length > 0) ? raw : null
+    }
+    readonly property bool hasSubagentProposals: subagentProposals !== null
+    readonly property int proposalTotal: {
+        if (!hasSubagentProposals) return 0
+        let n = 0
+        for (let i = 0; i < subagentProposals.length; ++i)
+            n += subagentProposals[i].count || 0
+        return n
+    }
     // 日志条目图标与配色：assistant 用品牌色、tool 用警示色。
     function logGlyph(phase) {
         return phase === "tool" ? "⚙" : "✦"
@@ -75,7 +95,8 @@ Item {
     readonly property bool hasPreview: previewText !== ""
     // 确认态必须展开，否则同意/拒绝按钮不可达。
     readonly property bool bodyVisible: (expanded || waitingConfirm)
-                                        && (hasDetail || hasSubagentLog)
+                                        && (hasDetail || hasSubagentLog
+                                            || hasSubagentProposals)
 
     // git_status 结构化展示：解析 porcelain v1 输出为文件状态列表
     readonly property bool isGitStatus: nodeType === "tool_result" && (modelData.title || "") === "git_status"
@@ -211,6 +232,7 @@ Item {
                                         - (sourceBadge.visible ? sourceBadge.width + Theme.spaceSm : 0)
                                         - (stopChip.visible ? stopChip.width + Theme.spaceSm : 0)
                                         - (evidenceChip.visible ? evidenceChip.width + Theme.spaceSm : 0)
+                                        - (proposalBadge.visible ? proposalBadge.width + Theme.spaceSm : 0)
                                         - 8)
                     }
 
@@ -299,13 +321,37 @@ Item {
                             onClicked: AgentVM.openSubagentEvidence(root.evidencePath)
                         }
                     }
+
+                    // docs/34 P3.2: 改动提案计数徽章——折叠态也能一眼看出
+                    // 这次子代理起草了几处修改。
+                    Rectangle {
+                        id: proposalBadge
+                        anchors.verticalCenter: parent.verticalCenter
+                        visible: root.hasSubagentProposals
+                        width: proposalBadgeText.implicitWidth + 10
+                        height: 15
+                        radius: 3
+                        color: Theme.brandPrimary
+                        opacity: 0.14
+
+                        Text {
+                            id: proposalBadgeText
+                            anchors.centerIn: parent
+                            text: qsTr("%1 个提案").arg(root.proposalTotal)
+                            color: Theme.brandPrimary
+                            font.pixelSize: Theme.fontSizeNano
+                            font.family: Theme.fontSans
+                            font.bold: true
+                        }
+                    }
                 }
 
                 AppIcon {
                     id: chevron
                     anchors.right: parent.right
                     anchors.verticalCenter: parent.verticalCenter
-                    visible: (root.hasDetail || root.hasSubagentLog) && !root.waitingConfirm
+                    visible: (root.hasDetail || root.hasSubagentLog
+                              || root.hasSubagentProposals) && !root.waitingConfirm
                     icon: root.expanded ? "chevron-up" : "chevron-down"
                     size: 12
                     iconColor: headerMA.containsMouse
@@ -315,7 +361,8 @@ Item {
                 MouseArea {
                     id: headerMA
                     anchors.fill: parent
-                    enabled: (root.hasDetail || root.hasSubagentLog) && !root.waitingConfirm
+                    enabled: (root.hasDetail || root.hasSubagentLog
+                              || root.hasSubagentProposals) && !root.waitingConfirm
                     hoverEnabled: true
                     cursorShape: enabled ? Qt.PointingHandCursor : Qt.ArrowCursor
                     onClicked: root.toggleRequested()
@@ -324,10 +371,14 @@ Item {
 
             // 折叠摘要
             Text {
-                visible: (root.hasDetail || root.hasSubagentLog) && !root.expanded && !root.waitingConfirm
+                visible: (root.hasDetail || root.hasSubagentLog
+                          || root.hasSubagentProposals)
+                         && !root.expanded && !root.waitingConfirm
                 text: root.hasSubagentLog
                     ? qsTr("已折叠 · %1 条过程记录").arg(root.subagentLog.length)
-                    : qsTr("已折叠 · %1 字符").arg(root.detailText.length)
+                    : (root.hasSubagentProposals
+                       ? qsTr("已折叠 · %1 个改动提案").arg(root.proposalTotal)
+                       : qsTr("已折叠 · %1 字符").arg(root.detailText.length))
                 color: Theme.textTertiary
                 font.pixelSize: Theme.fontSizeCaption
                 font.family: Theme.fontSans
@@ -344,7 +395,10 @@ Item {
                 width: parent.width
                 sourceComponent: root.gitStatusEntries !== null
                                   ? gitStatusComp
-                                  : (root.hasSubagentLog ? subagentLogComp : codeComp)
+                                  : (root.hasSubagentLog
+                                     ? subagentLogComp
+                                     : (root.hasSubagentProposals
+                                        ? proposalsComp : codeComp))
             }
 
             Component {
@@ -440,6 +494,70 @@ Item {
                 }
             }
 
+            // docs/34 P3.2: 提案列表——每条一张小卡：路径 + 处数 + 一行理由，
+            // 报告正文（含 diff）仍以代码块附在下方。
+            Component {
+                id: proposalsComp
+                Column {
+                    objectName: "subagentProposalsBody"
+                    width: bodyLoader.width
+                    spacing: Theme.spaceXs
+
+                    Repeater {
+                        model: root.subagentProposals
+
+                        delegate: Column {
+                            required property var modelData
+                            width: parent.width
+                            spacing: 1
+
+                            Row {
+                                width: parent.width
+                                spacing: 6
+
+                                Text {
+                                    anchors.verticalCenter: parent.verticalCenter
+                                    width: parent.width - countText.width - 6
+                                    text: modelData.path || ""
+                                    color: Theme.brandPrimary
+                                    font.pixelSize: Theme.fontSizeCaption
+                                    font.family: Theme.fontMono
+                                    elide: Text.ElideMiddle
+                                }
+
+                                Text {
+                                    id: countText
+                                    anchors.verticalCenter: parent.verticalCenter
+                                    text: qsTr("%1 处修改").arg(modelData.count || 0)
+                                    color: Theme.textTertiary
+                                    font.pixelSize: Theme.fontSizeNano
+                                    font.family: Theme.fontSans
+                                }
+                            }
+
+                            Text {
+                                visible: text !== ""
+                                width: parent.width
+                                text: modelData.rationale || ""
+                                color: Theme.textSecondary
+                                font.pixelSize: Theme.fontSizeCaption
+                                font.family: Theme.fontSans
+                                wrapMode: Text.Wrap
+                            }
+                        }
+                    }
+
+                    // 报告全文（## PROPOSALS 段与 diff）附在列表之后。
+                    CodeBlock {
+                        visible: root.detailText !== ""
+                        width: parent.width
+                        text: root.detailText
+                        textColor: Theme.statusSuccess
+                        bgColor: Theme.codeBackground
+                    }
+                }
+            }
+
             Component {
                 id: codeComp
                 CodeBlock {
@@ -494,7 +612,8 @@ Item {
             // 顶部点箭头。确认态不显示（那有允许/拒绝按钮收场）。
             Item {
                 visible: root.expanded && !root.waitingConfirm
-                         && (root.hasDetail || root.hasSubagentLog)
+                         && (root.hasDetail || root.hasSubagentLog
+                             || root.hasSubagentProposals)
                 width: parent.width
                 height: collapseRow.implicitHeight
 

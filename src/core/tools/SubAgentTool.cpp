@@ -2,9 +2,12 @@
 
 #include "ProposeEditTool.h"
 #include "core/agent/SubAgentRunner.h"
+#include "core/tools/Sandbox.h"
 #include "core/tools/ToolRegistry.h"
 #include "infrastructure/llm/IAIService.h"
 
+#include <QDir>
+#include <QJsonArray>
 #include <QJsonObject>
 #include <QSet>
 #include <QStringList>
@@ -380,12 +383,32 @@ ToolResult SubAgentTool::execute(const QJsonObject& args, const Cancellation& ca
         args.value(QStringLiteral("todo_id")).toString().trimmed();
     if (!todoId.isEmpty())
         stats += QStringLiteral(", todo: %1").arg(todoId);
-    if (report.ok)
-        return ToolResult::ok(QStringLiteral(
-            "[Sub-agent report] (%1)\n\n%2").arg(stats, report.text));
-    return ToolResult::fail(QStringLiteral(
-        "Sub-agent did not complete the goal (%1). Reason: %2")
-        .arg(stats, report.text));
+    ToolResult result = report.ok
+        ? ToolResult::ok(QStringLiteral(
+              "[Sub-agent report] (%1)\n\n%2").arg(stats, report.text))
+        : ToolResult::fail(QStringLiteral(
+              "Sub-agent did not complete the goal (%1). Reason: %2")
+              .arg(stats, report.text));
+    // docs/34 P3.2: 提案的轻量索引（项目相对路径 + 理由 + 条数）随结果
+    // 回传，AIAgent 把它挂到 tool_result 节点的 metadata，卡片据此渲染
+    // 「N 个提案」徽章与提案列表。正文（find/replace、diff）仍只在报告
+    // 与证据工件里，避免节点膨胀。
+    if (!report.proposals.isEmpty()) {
+        const QString root = Sandbox::currentProjectDir();
+        QJsonArray index;
+        for (const SubAgentProposal& proposal : report.proposals) {
+            QString display = proposal.path;
+            if (!root.isEmpty()) {
+                const QString relative = QDir(root).relativeFilePath(proposal.path);
+                if (!relative.startsWith(QLatin1String(".."))) display = relative;
+            }
+            index.append(QJsonObject{
+                {QStringLiteral("path"), display},
+                {QStringLiteral("rationale"), proposal.rationale},
+                {QStringLiteral("count"), proposal.edits.size()}});
+        }
+        result.metadata.insert(QStringLiteral("subagentProposals"), index);
+    }
+    return result;
 }
-
 } // namespace NexusAI
