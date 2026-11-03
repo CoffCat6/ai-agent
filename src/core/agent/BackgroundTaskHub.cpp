@@ -109,15 +109,35 @@ void BackgroundTaskHub::updateProgress(const QString& id, const QString& phase,
         QMutexLocker lock(&m_mutex);
         Entry* entry = findEntry(id);
         if (!entry || isTerminal(entry->state)) return;
-        entry->progress.append({phase, text});
-        while (entry->progress.size() > kProgressTail)
-            entry->progress.removeFirst();
-        if (step > 0) entry->steps = step;
-        if (maxSteps > 0) entry->maxSteps = maxSteps;
-        // P4.5 "queued" is emitted while the run waits for a sub-agent slot;
-        // the hub state is already "running" by then (pool thread started).
-        // Keep the panel's queue count honest until the next real phase.
-        entry->slotQueued = (phase == QLatin1String("queued"));
+        const bool queuedPhase = (phase == QLatin1String("queued"));
+        // acquireSlot 每 250ms 回调一次 queued；面板只需要第一条，重复的
+        // 同文案事件不必反复入队/发信号（否则 24 条尾巴瞬间被刷满）。
+        const bool append =
+            !queuedPhase || entry->progress.isEmpty()
+            || entry->progress.last().first != phase
+            || entry->progress.last().second != text;
+        bool changed = false;
+        if (append) {
+            entry->progress.append({phase, text});
+            while (entry->progress.size() > kProgressTail)
+                entry->progress.removeFirst();
+            changed = true;
+        }
+        if (step > 0 && entry->steps != step) {
+            entry->steps = step;
+            changed = true;
+        }
+        if (maxSteps > 0 && entry->maxSteps != maxSteps) {
+            entry->maxSteps = maxSteps;
+            changed = true;
+        }
+        // P4.5 "queued" 事件表示 Runner 在 acquireSlot 里排队；hub 状态此时
+        // 已是 running（池线程已启动）。保留独立标记给面板统计。
+        if (entry->slotQueued != queuedPhase) {
+            entry->slotQueued = queuedPhase;
+            changed = true;
+        }
+        if (!changed) return;
     }
     emit changed();
 }

@@ -64,8 +64,8 @@
 - `LLMTypes.h`：`LLMResponse`，含 requestId、分类 token、`reasoning`。
 - `PermissionMode.h`：四种会话权限、字符串映射、QML int 校验。
 - `EpisodicService.h` / `.cpp`：摘要生成/存储、FTS+语义合并检索、注入文本构造、embedding 异步回写。
-- `SubAgentRunner.h` / `.cpp`：只读子代理最小循环（`SubAgentRequest/SubAgentReport`），在池线程自备 `QEventLoop` 驱动 IAIService，含墙钟中止、重复轮守卫、强制收尾轮、按 `contextLimit` 的线上历史压缩（docs/35 P4.1）与同轮只读工具的有界并发（P4.2）。
-- `BackgroundTaskHub.h` / `.cpp`（docs/35 P4.3）：会话级后台任务表 + 自有 4 线程 `QThreadPool`。`spawn_agent(background=true)` 经 `BackgroundTaskHubRouter` 登记后立即 ack `[Sub-agent started] id=sa-N`；Runner 的进度回调写入 `progressTail`（最近 24 条）并实时更新 `steps/maxSteps`，`slotQueued` 标记「线程已启动但 Runner 在 acquireSlot 排队」，`cancelling` 在 cancel 请求后立刻置位（finish 清理），完成后存完整 `SubAgentReport`。状态 `queued → running → completed|failed|cancelled`；30 分钟 TTL 自动取消（归 failed），`cancel` 只翻共享令牌；`waitFor` 供 `subagent_wait` 阻塞取回（超时返回 running，不算失败）。AIAgent 以 250ms 合并 tick 把状态映射到独立 `subagent_task` trace 节点（metadata taskId/goal/role/state，白名单 + SqliteMemory 同步），并暴露 `backgroundSubAgents*` 给面板；会话切换/析构统一取消。
+- `SubAgentRunner.h` / `.cpp`：只读子代理最小循环（`SubAgentRequest/SubAgentReport`），在池线程自备 `QEventLoop` 驱动 IAIService，含墙钟中止、重复轮守卫、强制收尾轮、按 `contextLimit` 的线上历史压缩（docs/35 P4.1）与同轮只读工具的有界并发（P4.2）。`runImpl` 内的 `ToolCancellationWatcher` 以 100ms 轮询 `request.cancelled`，令牌翻转后对登记在飞的工具调用 `cancel(token)`——补上 `ITool` 默认 `execute(args, cancelled)` 只在进入前检查一次的缺口，使 `web_search`/`http_fetch` 这类只认自身 `cancel()` 的同步工具能在停止后几百毫秒内退出。
+- `BackgroundTaskHub.h` / `.cpp`（docs/35 P4.3）：会话级后台任务表 + 自有 4 线程 `QThreadPool`。`spawn_agent(background=true)` 经 `BackgroundTaskHubRouter` 登记后立即 ack `[Sub-agent started] id=sa-N`；Runner 的进度回调写入 `progressTail`（最近 24 条）并实时更新 `steps/maxSteps`，`slotQueued` 标记「线程已启动但 Runner 在 acquireSlot 排队」（`SubAgentTool` 后台分支的 `onQueued` 显式写 hub，queued 事件去重），`cancelling` 在 cancel 请求后立刻置位（finish 清理），完成后存完整 `SubAgentReport`。状态 `queued → running → completed|failed|cancelled`；30 分钟 TTL 自动取消（归 failed），`cancel` 只翻共享令牌；`waitFor` 供 `subagent_wait` 阻塞取回（超时返回 running，不算失败）。AIAgent 以 250ms 合并 tick 把状态映射到独立 `subagent_task` trace 节点（metadata taskId/goal/role/state，白名单 + SqliteMemory 同步），并暴露 `backgroundSubAgents*` 给面板；会话切换/析构统一取消。
 
 ## 约束与风险
 

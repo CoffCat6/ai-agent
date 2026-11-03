@@ -561,6 +561,43 @@ private:
     std::atomic<int>* m_peak;
 };
 
+// docs/35 P4.6：同步执行、只认 cancel() 的工具（web_search/http_fetch 的
+// 实现方式）必须能被子代理的停止令牌打断，否则面板会卡在「正在停止…」
+// 直到网络超时。
+class CancelAwareBlockingProbeTool : public ITool {
+public:
+    ToolDefinition definition() const override {
+        ToolDefinition def;
+        def.name = QStringLiteral("test_blocking");
+        def.description = QStringLiteral(
+            "Test helper: blocks until cancel() is called.");
+        def.level = ToolLevel::Safe;
+        def.readOnly = true;
+        def.parameters = QJsonObject{
+            {"type", "object"}, {"properties", QJsonObject{}},
+            {"required", QJsonArray{}}};
+        return def;
+    }
+    ToolResult execute(const QJsonObject&) override {
+        QElapsedTimer timer;
+        timer.start();
+        while (!m_cancelRequested.load()) {
+            if (timer.elapsed() > 5000) break;   // 防止看门线程失效时挂死
+            QThread::msleep(10);
+        }
+        if (m_cancelRequested.load()) {
+            cancelObserved = true;
+            cancelLatencyMs = timer.elapsed();
+        }
+        return ToolResult::fail(QStringLiteral("blocking probe stopped"));
+    }
+    void cancel() override { m_cancelRequested.store(true); }
+
+    std::atomic<bool> m_cancelRequested{false};
+    std::atomic<bool> cancelObserved{false};
+    std::atomic<qint64> cancelLatencyMs{-1};
+};
+
 void ensureSubAgentProbe() {
     if (!ToolRegistry::instance().isRegistered(QStringLiteral("test_sub_probe")))
         ToolRegistry::instance().registerTool(std::make_unique<SubAgentProbeTool>());
@@ -1064,10 +1101,12 @@ private slots:
     // docs/35 P4.2: 同轮只读工具并发（有上限）但结果按调用顺序回填；
     // propose_edit 混排时仍在运行线程串行执行、提案顺序不变。
     void subagentReadOnlyToolsRunConcurrently();
+    void subagentCancellationAbortsInflightTool();
     void subagentMixedRoundKeepsCallOrder();
     void subagentConcurrencyGateQueues();
     // docs/35 P4.5: 排队事件上标题；卡片级停止只影响目标子代理。
     void subagentQueuedProgressReported();
+    void backgroundSlotQueueSurfacesThroughTool();
     void subagentCancelOnlyTargetNode();
     // docs/32 P2: 进度上屏与审计归因
     void subagentProgressUpdatesTraceNode();
@@ -5972,6 +6011,56 @@ void TestAgent::subagentReadOnlyToolsRunConcurrently() {
     QCOMPARE(expected, 5);
 }
 
+// docs/35 P4.6: 停止必须打断正在同步执行的工具。ITool 默认的
+// execute(args, cancelled) 只在进入前检查令牌，web_search/http_fetch 这类
+// 长调用自己轮询 cancel() 旗标；Runner 以前从不调用 cancel()，于是后台
+// 面板永远停在「正在停止…」。看门线程修好后，这里锁住端到端时延。
+void TestAgent::subagentCancellationAbortsInflightTool() {
+    auto probe = std::make_shared<CancelAwareBlockingProbeTool>();
+
+    LLMResponse round;
+    round.success = true;
+    ToolCallInfo call;
+    call.id = QStringLiteral("call_block");
+    call.name = QStringLiteral("test_blocking");
+    round.toolCalls.append(call);
+    FakeAIService fake;
+    fake.script.append(round);
+    fake.script.append(textResponse(QStringLiteral("unreachable")));
+
+    auto cancelled = std::make_shared<std::atomic<bool>>(false);
+    // 工具执行期间 runImpl 阻塞等待 future，没有事件循环，定时器不可用。
+    std::thread canceller([flag = cancelled.get()]() {
+        QThread::msleep(300);
+        flag->store(true);
+    });
+
+    SubAgentRequest request;
+    request.goal = QStringLiteral("block until stopped");
+    request.maxSteps = 2;
+    request.tools.append(SubAgentToolEntry{probe->definition(), probe});
+    request.cancelled = cancelled;
+
+    QElapsedTimer elapsed;
+    elapsed.start();
+    const SubAgentReport report = SubAgentRunner::run(&fake, request);
+    const qint64 totalMs = elapsed.elapsed();
+    canceller.join();
+
+    QVERIFY2(report.stop == SubAgentReport::Stop::Cancelled,
+             qPrintable(QStringLiteral("stop=%1 text=%2")
+                            .arg(int(report.stop)).arg(report.text)));
+    QVERIFY2(probe->cancelObserved.load(),
+             "看门线程没有把取消传到正在执行的工具");
+    // 300ms 时翻转令牌；看门线程 100ms 一醒，工具 10ms 一片，2s 足够宽松。
+    QVERIFY2(totalMs < 2000,
+             qPrintable(QStringLiteral("cancellation took %1ms").arg(totalMs)));
+    QVERIFY2(probe->cancelLatencyMs.load() >= 0
+                 && probe->cancelLatencyMs.load() < 1500,
+             qPrintable(QStringLiteral("tool saw cancel after %1ms")
+                            .arg(probe->cancelLatencyMs.load())));
+}
+
 // docs/35 P4.2: a mixed round [read_file, propose_edit, read_file] must keep
 // the wire order; propose_edit stays on the run thread (thread-local proposal
 // sink) while the reads may execute concurrently.
@@ -6177,6 +6266,94 @@ void TestAgent::subagentQueuedProgressReported() {
         gates.last()->release();
     }
     QTRY_COMPARE_WITH_TIMEOUT(spy.count(), 1, 15000);
+}
+
+// 2026-11-03 回归：后台 spawn_agent 的池线程一启动 hub 就把它标成 running，
+// 但 Runner 可能还卡在 acquireSlot 等槽位。若不在 onQueued 里写 hub，面板
+// 会把「占线程但没在跑」的任务全算作进行中（4 个任务显示 4 进行中、0 排队）。
+void TestAgent::backgroundSlotQueueSurfacesThroughTool() {
+    SubAgentFixture fixture;
+    SpawnToolGuard guard;
+    ensureSubAgentProbe();
+    auto tool = std::make_shared<SubAgentTool>();
+    tool->setMaxParallel(1);
+
+    QMutex gatesMutex;
+    QVector<std::shared_ptr<QSemaphore>> gates;
+    tool->setServiceFactory([&]() -> IAIService* {
+        auto* service = new RecordingFakeService(&fixture.mutex,
+                                                 &fixture.subSeenTools,
+                                                 &fixture.subSeenMessages);
+        auto gate = std::make_shared<QSemaphore>();
+        {
+            QMutexLocker lock(&gatesMutex);
+            gates.append(gate);
+        }
+        service->gate = gate.get();
+        service->script.append(textResponse(QStringLiteral("bg done")));
+        return service;
+    });
+    auto gateCount = [&]() -> int {
+        QMutexLocker lock(&gatesMutex);
+        return gates.size();
+    };
+    tool->refreshCatalog(false);
+
+    auto hub = std::make_shared<BackgroundTaskHub>();
+    BackgroundTaskHubRouter router(hub);
+
+    static const QRegularExpression idRe(QStringLiteral("id=(sa-\\d+)"));
+    const auto spawn = [&tool](const QString& goal) -> QString {
+        const ToolResult ack = tool->execute(
+            QJsonObject{{QStringLiteral("goal"), goal},
+                        {QStringLiteral("background"), true}});
+        if (!ack.success) return {};
+        const QRegularExpressionMatch match = idRe.match(ack.output);
+        return match.hasMatch() ? match.captured(1) : QString();
+    };
+    const auto rowFor = [&hub](const QString& id) -> QVariantMap {
+        for (const QVariant& row : hub->snapshots()) {
+            if (row.toMap().value(QStringLiteral("id")).toString() == id)
+                return row.toMap();
+        }
+        return {};
+    };
+
+    const QString first = spawn(QStringLiteral("first goal"));
+    QVERIFY(!first.isEmpty());
+    // 第一个真正进了服务（占住唯一槽位）。
+    QTRY_COMPARE(gateCount(), 1);
+
+    const QString second = spawn(QStringLiteral("second goal"));
+    QVERIFY(!second.isEmpty());
+    // hub 状态已是 running（池线程启动了），但 runner 在等槽位：行上必须
+    // 暴露 slotQueued，否则面板会误报进行中。
+    QTRY_VERIFY_WITH_TIMEOUT([&]() {
+        return rowFor(second).value(QStringLiteral("slotQueued")).toBool();
+    }(), 3000);
+    // acquireSlot 每 250ms 回调一次，hub 去重后只保留一条 queued 事件。
+    int queuedEvents = 0;
+    for (const QVariant& item :
+         rowFor(second).value(QStringLiteral("progressTail")).toList()) {
+        if (item.toMap().value(QStringLiteral("phase")).toString()
+            == QLatin1String("queued"))
+            ++queuedEvents;
+    }
+    QCOMPARE(queuedEvents, 1);
+    QCOMPARE(hub->stateLabel(first), QStringLiteral("running"));
+
+    // 停在排队里的任务也能立刻取消，不必等槽位。
+    QVERIFY(hub->cancel(second));
+    QTRY_COMPARE(hub->stateLabel(second), QStringLiteral("cancelled"));
+    QCOMPARE(hub->stateLabel(first), QStringLiteral("running"));
+
+    {
+        QMutexLocker lock(&gatesMutex);
+        gates.first()->release();
+    }
+    QTRY_COMPARE_WITH_TIMEOUT(hub->stateLabel(first), QStringLiteral("completed"),
+                              5000);
+    QCOMPARE(gateCount(), 1);   // 第二个从未创建服务
 }
 
 // docs/35 P4.5：卡片上的「停止」只翻转目标节点的旗标，另一个子代理继续

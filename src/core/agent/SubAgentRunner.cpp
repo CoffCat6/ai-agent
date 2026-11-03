@@ -23,7 +23,10 @@
 #include <QThreadPool>
 #include <QTimer>
 #include <QUuid>
+#include <condition_variable>
 #include <functional>
+#include <mutex>
+#include <thread>
 
 namespace NexusAI {
 
@@ -362,6 +365,66 @@ QString renderProposals(const QVector<SubAgentProposal>& proposals, bool partial
     return out;
 }
 
+// 子代理内的 web_search / http_fetch 是同步执行、只认自己 cancel() 原子旗标
+// 的工具（ITool 默认的 execute(args, cancelled) 只在启动前检查令牌）。Runner
+// 自己的取消检查只发生在轮次边界，于是「停止」在长时间网络调用里会一直停在
+// 「正在停止…」直到工具超时。这个看门线程在 request.cancelled 翻转时对正在
+// 执行的工具调用 cancel()；工具只翻转原子旗标/终止子句柄，可从任意线程安全
+// 调用（子代理工具面限定为只读，不含 shell 等需要 GUI 线程收尾的实现）。
+class ToolCancellationWatcher {
+public:
+    explicit ToolCancellationWatcher(ITool::Cancellation cancelled)
+        : m_cancelled(std::move(cancelled)) {
+        if (m_cancelled)
+            m_thread = std::thread([this]() { watch(); });
+    }
+    ~ToolCancellationWatcher() { stop(); }
+
+    void registerTool(ITool* tool) {
+        if (!tool) return;
+        std::lock_guard<std::mutex> lock(m_mutex);
+        m_tools.append(tool);
+    }
+    void unregisterTool(ITool* tool) {
+        std::lock_guard<std::mutex> lock(m_mutex);
+        m_tools.removeAll(tool);
+    }
+
+private:
+    void stop() {
+        {
+            std::lock_guard<std::mutex> lock(m_mutex);
+            if (m_stopped) return;
+            m_stopped = true;
+        }
+        m_cv.notify_all();
+        if (m_thread.joinable()) m_thread.join();
+    }
+
+    void watch() {
+        std::unique_lock<std::mutex> lock(m_mutex);
+        while (!m_stopped) {
+            // 即使令牌在看门线程第一次醒来后才翻转、或翻转后才有工具
+            // 登记，也继续周期性补发 cancel（工具实现幂等）。
+            if (m_cancelled->load() && !m_tools.isEmpty()) {
+                const QVector<ITool*> inFlight = m_tools;
+                lock.unlock();
+                for (ITool* tool : inFlight)
+                    tool->cancel(m_cancelled);
+                lock.lock();
+            }
+            m_cv.wait_for(lock, std::chrono::milliseconds(100));
+        }
+    }
+
+    ITool::Cancellation m_cancelled;
+    std::mutex m_mutex;
+    std::condition_variable m_cv;
+    QVector<ITool*> m_tools;
+    bool m_stopped{false};
+    std::thread m_thread;
+};
+
 } // namespace
 
 SubAgentReport SubAgentRunner::runImpl(IAIService* service, const SubAgentRequest& request,
@@ -385,6 +448,10 @@ SubAgentReport SubAgentRunner::runImpl(IAIService* service, const SubAgentReques
         report.text = QStringLiteral("Sub-agent cancelled before start.");
         return report;
     }
+
+    // 轮次边界的 cancelledFlag() 检查之外的补充：工具在同步执行时也必须
+    // 能被打断（见 ToolCancellationWatcher 注释）。
+    ToolCancellationWatcher toolWatcher(request.cancelled);
 
     const qint64 timeoutMs = request.timeoutMs > 0
         ? qMax(request.timeoutMs, kMinTimeoutMs)
@@ -659,8 +726,10 @@ SubAgentReport SubAgentRunner::runImpl(IAIService* service, const SubAgentReques
                     // ExecutionScope pinned by the primary agent's dispatch
                     // still applies, and the cancellation flag is shared, so
                     // a stop() also aborts nested cooperative tools.
+                    toolWatcher.registerTool(entry->tool.get());
                     const ToolResult result =
                         entry->tool->execute(call.arguments, request.cancelled);
+                    toolWatcher.unregisterTool(entry->tool.get());
                     logToolCall(step, call, result);
                 }
                 ++callIndex;
@@ -675,6 +744,8 @@ SubAgentReport SubAgentRunner::runImpl(IAIService* service, const SubAgentReques
 
             QVector<QFuture<ToolResult>> futures;
             futures.reserve(batchEnd - callIndex);
+            QVector<ITool*> batchTools;
+            batchTools.reserve(batchEnd - callIndex);
             bool cancelledMidBatch = false;
             for (int k = callIndex; k < batchEnd; ++k) {
                 if (cancelledFlag()) {
@@ -683,6 +754,8 @@ SubAgentReport SubAgentRunner::runImpl(IAIService* service, const SubAgentReques
                 }
                 const ToolCallInfo batchCall = calls.at(k);
                 const SubAgentToolEntry* batchEntry = findEntry(batchCall.name);
+                batchTools.append(batchEntry->tool.get());
+                toolWatcher.registerTool(batchEntry->tool.get());
                 futures.append(QtConcurrent::run(
                     &toolPool,
                     [tool = batchEntry->tool,
@@ -697,6 +770,8 @@ SubAgentReport SubAgentRunner::runImpl(IAIService* service, const SubAgentReques
             // history (and the progress log) in call order.
             for (int k = 0; k < futures.size(); ++k)
                 logToolCall(step, calls.at(callIndex + k), futures.at(k).result());
+            for (ITool* tool : batchTools)
+                toolWatcher.unregisterTool(tool);
             callIndex += futures.size();
             if (cancelledMidBatch) {
                 report.stop = SubAgentReport::Stop::Cancelled;

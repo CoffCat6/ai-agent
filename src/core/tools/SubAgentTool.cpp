@@ -437,7 +437,15 @@ ToolResult SubAgentTool::execute(const QJsonObject& args, const Cancellation& ca
                     report.stop = SubAgentReport::Stop::Cancelled;
                     report.text = QStringLiteral(
                         "Sub-agent cancelled before start.");
-                } else if (!acquireSlot(bgCancelled, {})) {
+                } else if (!acquireSlot(bgCancelled, [hub, id]() {
+                    // P4.5：后台任务的「等待并发槽位」也要上屏。同步路径
+                    // 由 AIAgent 的线程局部进度钩子负责；后台路径没有钩子，
+                    // 必须显式写 hub，否则面板会把等待中的任务误报成运行中。
+                    hub->updateProgress(
+                        id, QStringLiteral("queued"),
+                        QStringLiteral("waiting for a free sub-agent slot"),
+                        0, 0);
+                })) {
                     report.stop = SubAgentReport::Stop::Cancelled;
                     report.text = QStringLiteral(
                         "Cancelled while waiting for a free sub-agent slot.");
