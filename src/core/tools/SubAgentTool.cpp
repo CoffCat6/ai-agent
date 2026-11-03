@@ -445,7 +445,8 @@ ToolResult SubAgentTool::execute(const QJsonObject& args, const Cancellation& ca
                     IAIService* service = factory
                         ? factory(roleProfileId, roleEffort) : nullptr;
                     bgRequest.progress = [hub, id](const SubAgentProgress& p) {
-                        hub->updateProgress(id, p.phase, p.detail);
+                        hub->updateProgress(id, p.phase, p.detail,
+                                            p.step, p.maxSteps);
                     };
                     report = SubAgentRunner::run(service, bgRequest);
                     delete service;

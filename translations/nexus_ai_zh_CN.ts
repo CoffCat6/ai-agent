@@ -629,167 +629,288 @@
 <context>
     <name>BackgroundTasksDialog</name>
     <message>
-        <location filename="../src/ui/components/BackgroundTasksDialog.qml" line="60"/>
+        <location filename="../src/ui/components/BackgroundTasksDialog.qml" line="64"/>
         <source>排队中</source>
         <translation>排队中</translation>
     </message>
     <message>
-        <location filename="../src/ui/components/BackgroundTasksDialog.qml" line="61"/>
+        <location filename="../src/ui/components/BackgroundTasksDialog.qml" line="65"/>
         <source>运行中</source>
         <translation>运行中</translation>
     </message>
     <message>
-        <location filename="../src/ui/components/BackgroundTasksDialog.qml" line="62"/>
+        <location filename="../src/ui/components/BackgroundTasksDialog.qml" line="66"/>
+        <location filename="../src/ui/components/BackgroundTasksDialog.qml" line="786"/>
+        <source>正在停止…</source>
+        <translation>正在停止…</translation>
+    </message>
+    <message>
+        <location filename="../src/ui/components/BackgroundTasksDialog.qml" line="67"/>
         <source>已完成</source>
         <translation>已完成</translation>
     </message>
     <message>
-        <location filename="../src/ui/components/BackgroundTasksDialog.qml" line="63"/>
+        <location filename="../src/ui/components/BackgroundTasksDialog.qml" line="68"/>
         <source>失败</source>
         <translation>失败</translation>
     </message>
     <message>
-        <location filename="../src/ui/components/BackgroundTasksDialog.qml" line="64"/>
+        <location filename="../src/ui/components/BackgroundTasksDialog.qml" line="69"/>
         <source>已取消</source>
         <translation>已取消</translation>
     </message>
     <message>
-        <location filename="../src/ui/components/BackgroundTasksDialog.qml" line="87"/>
+        <location filename="../src/ui/components/BackgroundTasksDialog.qml" line="117"/>
         <source>%1 秒</source>
         <translation>%1 秒</translation>
     </message>
     <message>
-        <location filename="../src/ui/components/BackgroundTasksDialog.qml" line="89"/>
+        <location filename="../src/ui/components/BackgroundTasksDialog.qml" line="119"/>
         <source>%1 分 %2 秒</source>
         <translation>%1 分 %2 秒</translation>
     </message>
     <message>
-        <location filename="../src/ui/components/BackgroundTasksDialog.qml" line="90"/>
+        <location filename="../src/ui/components/BackgroundTasksDialog.qml" line="120"/>
         <source>%1 时 %2 分</source>
         <translation>%1 时 %2 分</translation>
     </message>
     <message>
-        <location filename="../src/ui/components/BackgroundTasksDialog.qml" line="114"/>
+        <location filename="../src/ui/components/BackgroundTasksDialog.qml" line="131"/>
+        <source>%1 / %2</source>
+        <translation>%1 / %2</translation>
+    </message>
+    <message>
+        <location filename="../src/ui/components/BackgroundTasksDialog.qml" line="145"/>
+        <source>进行中 · %1</source>
+        <translation>进行中 · %1</translation>
+    </message>
+    <message>
+        <location filename="../src/ui/components/BackgroundTasksDialog.qml" line="146"/>
+        <source>排队中 · %1</source>
+        <translation>排队中 · %1</translation>
+    </message>
+    <message>
+        <location filename="../src/ui/components/BackgroundTasksDialog.qml" line="147"/>
+        <source>已结束 · %1</source>
+        <translation>已结束 · %1</translation>
+    </message>
+    <message>
+        <location filename="../src/ui/components/BackgroundTasksDialog.qml" line="162"/>
+        <source>思考</source>
+        <translation>思考</translation>
+    </message>
+    <message>
+        <location filename="../src/ui/components/BackgroundTasksDialog.qml" line="163"/>
+        <location filename="../src/ui/components/BackgroundTasksDialog.qml" line="164"/>
+        <source>工具</source>
+        <translation>工具</translation>
+    </message>
+    <message>
+        <location filename="../src/ui/components/BackgroundTasksDialog.qml" line="165"/>
+        <source>输出</source>
+        <translation>输出</translation>
+    </message>
+    <message>
+        <location filename="../src/ui/components/BackgroundTasksDialog.qml" line="166"/>
+        <source>流式</source>
+        <translation>流式</translation>
+    </message>
+    <message>
+        <location filename="../src/ui/components/BackgroundTasksDialog.qml" line="167"/>
+        <source>推理</source>
+        <translation>推理</translation>
+    </message>
+    <message>
+        <location filename="../src/ui/components/BackgroundTasksDialog.qml" line="168"/>
+        <source>压缩</source>
+        <translation>压缩</translation>
+    </message>
+    <message>
+        <location filename="../src/ui/components/BackgroundTasksDialog.qml" line="169"/>
+        <source>排队</source>
+        <translation>排队</translation>
+    </message>
+    <message>
+        <location filename="../src/ui/components/BackgroundTasksDialog.qml" line="303"/>
         <source>后台子代理面板</source>
         <translation>后台子代理面板</translation>
     </message>
     <message>
-        <location filename="../src/ui/components/BackgroundTasksDialog.qml" line="115"/>
+        <location filename="../src/ui/components/BackgroundTasksDialog.qml" line="304"/>
         <source>查看与管理后台运行的子代理任务</source>
         <translation>查看与管理后台运行的子代理任务</translation>
     </message>
     <message>
-        <location filename="../src/ui/components/BackgroundTasksDialog.qml" line="139"/>
-        <source>后台子代理 · %1 个运行中 · %2 个排队</source>
-        <translation>后台子代理 · %1 个运行中 · %2 个排队</translation>
+        <location filename="../src/ui/components/BackgroundTasksDialog.qml" line="328"/>
+        <source>后台子代理 · %1 进行中 · %2 排队</source>
+        <translation>后台子代理 · %1 进行中 · %2 排队</translation>
     </message>
     <message>
-        <location filename="../src/ui/components/BackgroundTasksDialog.qml" line="141"/>
+        <location filename="../src/ui/components/BackgroundTasksDialog.qml" line="811"/>
+        <source>实时进度</source>
+        <translation>实时进度</translation>
+    </message>
+    <message>
+        <location filename="../src/ui/components/BackgroundTasksDialog.qml" line="819"/>
+        <source>最新在上</source>
+        <translation>最新在上</translation>
+    </message>
+    <message>
+        <location filename="../src/ui/components/BackgroundTasksDialog.qml" line="890"/>
+        <source>完整报告</source>
+        <translation>完整报告</translation>
+    </message>
+    <message>
+        <source>后台子代理 · %1 个运行中 · %2 个排队</source>
+        <translation type="vanished">后台子代理 · %1 个运行中 · %2 个排队</translation>
+    </message>
+    <message>
+        <location filename="../src/ui/components/BackgroundTasksDialog.qml" line="330"/>
         <source>后台子代理</source>
         <translation>后台子代理</translation>
     </message>
     <message>
-        <location filename="../src/ui/components/BackgroundTasksDialog.qml" line="154"/>
+        <location filename="../src/ui/components/BackgroundTasksDialog.qml" line="343"/>
         <source>关闭后台子代理面板</source>
         <translation>关闭后台子代理面板</translation>
     </message>
     <message>
-        <location filename="../src/ui/components/BackgroundTasksDialog.qml" line="179"/>
+        <location filename="../src/ui/components/BackgroundTasksDialog.qml" line="376"/>
         <source>没有后台任务。</source>
         <translation>没有后台任务。</translation>
     </message>
     <message>
-        <location filename="../src/ui/components/BackgroundTasksDialog.qml" line="188"/>
+        <location filename="../src/ui/components/BackgroundTasksDialog.qml" line="385"/>
         <source>模型对长耗时任务使用 background 模式时会出现在这里。</source>
         <translation>模型对长耗时任务使用 background 模式时会出现在这里。</translation>
     </message>
     <message>
-        <location filename="../src/ui/components/BackgroundTasksDialog.qml" line="212"/>
+        <location filename="../src/ui/components/BackgroundTasksDialog.qml" line="414"/>
+        <source>进行中 %1</source>
+        <translation>进行中 %1</translation>
+    </message>
+    <message>
+        <location filename="../src/ui/components/BackgroundTasksDialog.qml" line="422"/>
+        <source>排队 %1</source>
+        <translation>排队 %1</translation>
+    </message>
+    <message>
+        <location filename="../src/ui/components/BackgroundTasksDialog.qml" line="431"/>
+        <source>已结束 %1</source>
+        <translation>已结束 %1</translation>
+    </message>
+    <message>
+        <location filename="../src/ui/components/BackgroundTasksDialog.qml" line="449"/>
         <source>后台子代理任务列表</source>
         <translation>后台子代理任务列表</translation>
     </message>
     <message>
-        <location filename="../src/ui/components/BackgroundTasksDialog.qml" line="263"/>
+        <location filename="../src/ui/components/BackgroundTasksDialog.qml" line="511"/>
+        <location filename="../src/ui/components/BackgroundTasksDialog.qml" line="642"/>
         <source>%1 · %2</source>
         <translation>%1 · %2</translation>
     </message>
     <message>
-        <location filename="../src/ui/components/BackgroundTasksDialog.qml" line="295"/>
+        <location filename="../src/ui/components/BackgroundTasksDialog.qml" line="547"/>
         <source>步数 %1</source>
         <translation>步数 %1</translation>
     </message>
     <message>
-        <location filename="../src/ui/components/BackgroundTasksDialog.qml" line="302"/>
+        <location filename="../src/ui/components/BackgroundTasksDialog.qml" line="555"/>
         <source>%1 个提案</source>
         <translation>%1 个提案</translation>
     </message>
     <message>
-        <location filename="../src/ui/components/BackgroundTasksDialog.qml" line="311"/>
+        <location filename="../src/ui/components/BackgroundTasksDialog.qml" line="614"/>
+        <source>从左侧选择一个子代理查看详情。</source>
+        <translation>从左侧选择一个子代理查看详情。</translation>
+    </message>
+    <message>
+        <location filename="../src/ui/components/BackgroundTasksDialog.qml" line="685"/>
+        <source>状态</source>
+        <translation>状态</translation>
+    </message>
+    <message>
+        <location filename="../src/ui/components/BackgroundTasksDialog.qml" line="709"/>
+        <source>排队等待</source>
+        <translation>排队等待</translation>
+    </message>
+    <message>
+        <location filename="../src/ui/components/BackgroundTasksDialog.qml" line="709"/>
+        <source>耗时</source>
+        <translation>耗时</translation>
+    </message>
+    <message>
+        <location filename="../src/ui/components/BackgroundTasksDialog.qml" line="727"/>
+        <source>步数</source>
+        <translation>步数</translation>
+    </message>
+    <message>
+        <location filename="../src/ui/components/BackgroundTasksDialog.qml" line="745"/>
+        <source>提案</source>
+        <translation>提案</translation>
+    </message>
+    <message>
+        <location filename="../src/ui/components/BackgroundTasksDialog.qml" line="776"/>
         <source>停止</source>
         <translation>停止</translation>
     </message>
     <message>
-        <location filename="../src/ui/components/BackgroundTasksDialog.qml" line="314"/>
+        <location filename="../src/ui/components/BackgroundTasksDialog.qml" line="780"/>
         <source>停止这个后台子代理</source>
         <translation>停止这个后台子代理</translation>
     </message>
     <message>
-        <location filename="../src/ui/components/BackgroundTasksDialog.qml" line="318"/>
         <source>收起</source>
-        <translation>收起</translation>
+        <translation type="vanished">收起</translation>
     </message>
     <message>
-        <location filename="../src/ui/components/BackgroundTasksDialog.qml" line="318"/>
         <source>查看</source>
-        <translation>查看</translation>
+        <translation type="vanished">查看</translation>
     </message>
     <message>
-        <location filename="../src/ui/components/BackgroundTasksDialog.qml" line="327"/>
         <source>收起任务详情</source>
-        <translation>收起任务详情</translation>
+        <translation type="vanished">收起任务详情</translation>
     </message>
     <message>
-        <location filename="../src/ui/components/BackgroundTasksDialog.qml" line="328"/>
         <source>查看任务详情</source>
-        <translation>查看任务详情</translation>
+        <translation type="vanished">查看任务详情</translation>
     </message>
     <message>
-        <location filename="../src/ui/components/BackgroundTasksDialog.qml" line="345"/>
         <source>最近进度</source>
-        <translation>最近进度</translation>
+        <translation type="vanished">最近进度</translation>
     </message>
     <message>
-        <location filename="../src/ui/components/BackgroundTasksDialog.qml" line="378"/>
+        <location filename="../src/ui/components/BackgroundTasksDialog.qml" line="873"/>
         <source>等待第一条进度…</source>
         <translation>等待第一条进度…</translation>
     </message>
     <message>
-        <location filename="../src/ui/components/BackgroundTasksDialog.qml" line="378"/>
+        <location filename="../src/ui/components/BackgroundTasksDialog.qml" line="874"/>
         <source>没有进度记录。</source>
         <translation>没有进度记录。</translation>
     </message>
     <message>
-        <location filename="../src/ui/components/BackgroundTasksDialog.qml" line="410"/>
         <source>共 %1 个任务，%2 个已结束</source>
-        <translation>共 %1 个任务，%2 个已结束</translation>
+        <translation type="vanished">共 %1 个任务，%2 个已结束</translation>
     </message>
     <message>
-        <location filename="../src/ui/components/BackgroundTasksDialog.qml" line="422"/>
+        <location filename="../src/ui/components/BackgroundTasksDialog.qml" line="581"/>
         <source>清除已结束</source>
         <translation>清除已结束</translation>
     </message>
     <message>
-        <location filename="../src/ui/components/BackgroundTasksDialog.qml" line="424"/>
+        <location filename="../src/ui/components/BackgroundTasksDialog.qml" line="584"/>
         <source>清除已结束的后台任务</source>
         <translation>清除已结束的后台任务</translation>
     </message>
     <message>
-        <location filename="../src/ui/components/BackgroundTasksDialog.qml" line="429"/>
+        <location filename="../src/ui/components/BackgroundTasksDialog.qml" line="590"/>
         <source>全部停止</source>
         <translation>全部停止</translation>
     </message>
     <message>
-        <location filename="../src/ui/components/BackgroundTasksDialog.qml" line="431"/>
+        <location filename="../src/ui/components/BackgroundTasksDialog.qml" line="593"/>
         <source>停止全部后台子代理</source>
         <translation>停止全部后台子代理</translation>
     </message>

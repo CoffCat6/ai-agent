@@ -213,39 +213,126 @@ private slots:
                  "有已结束任务时却没有清除入口");
     }
 
-    // docs/35 P4.3/P4.5: 面板按钮必须真的调到门面——用户反馈过「点了没
-    // 反应」，而渲染级用例（只看文案）发现不了。这里逐颗点像素。
-    void rowActionsInvokeFacade() {
+    // docs/35 P4.3/P4.5（2026-11-03 两栏改版）：面板按钮必须真的调到门面，
+// 且**实时更新不得打断点击**。旧实现把 ListView 直接绑到整表替换的
+// QVariantList：hub 每次 250ms 刷新都会重建 delegate，用户按下停止后
+// 释放前按钮被销毁（点了没反应），展开的「查看」也会立刻被收回。这里
+// 连续刷新后再点像素，锁住本地 ListModel 按 id 合并的修复。
+    void detailSelectionShowsLiveStatsAndSurvivesUpdates() {
         BackgroundDialogHarness h;
         QVERIFY2(h.window, qPrintable(h.error));
         const qint64 now = 1000;
-        const QVariantList tasks{
-            task(QStringLiteral("sa-1"), QStringLiteral("scan the tree"),
-                 QStringLiteral("running"), now, 3, 0),
-            task(QStringLiteral("sa-2"), QStringLiteral("draft the change"),
-                 QStringLiteral("completed"), now, 4, 2)};
+        QVariantMap running = task(QStringLiteral("sa-1"),
+                                   QStringLiteral("scan the tree"),
+                                   QStringLiteral("running"), now, 3, 0);
+        running["progressTail"] = QVariantList{
+            QVariantMap{{QStringLiteral("phase"), QStringLiteral("thinking")},
+                        {QStringLiteral("text"), QStringLiteral("step 1")}},
+            QVariantMap{{QStringLiteral("phase"), QStringLiteral("tool")},
+                        {QStringLiteral("text"),
+                         QStringLiteral("web_search(...) ⇒ ok")}}};
+        const QVariantMap queued = task(QStringLiteral("sa-2"),
+                                        QStringLiteral("wait for a slot"),
+                                        QStringLiteral("queued"), now, 0, 0);
+        // hub 状态仍是 running，但 Runner 在 acquireSlot 里排队（P4.5）。
+        QVariantMap slotQueued = task(QStringLiteral("sa-4"),
+                                      QStringLiteral("also waiting"),
+                                      QStringLiteral("running"), now, 0, 0);
+        slotQueued["slotQueued"] = true;
+        const QVariantMap done = task(QStringLiteral("sa-3"),
+                                      QStringLiteral("draft the change"),
+                                      QStringLiteral("completed"), now, 4, 2);
+        QVariantList tasks{running, queued, slotQueued, done};
         QVERIFY(h.setTasks(tasks));
         QVERIFY(h.openDialog());
         QTest::qWait(150);
 
-        QTRY_VERIFY2(findChildItem(h.window->contentItem(),
-                                   QStringLiteral("backgroundTaskStopButton")),
-                     "运行中的任务没有停止按钮");
-        QVERIFY2(h.click(QStringLiteral("backgroundTaskStopButton")),
-                 "停止按钮不可点击（被遮挡或不可见）");
+        const auto textOf = [&](const QString& name) -> QString {
+            QQuickItem* item = findChildItem(h.window->contentItem(), name);
+            return item ? item->property("text").toString() : QString();
+        };
+        const auto visible = [&](const QString& name) -> bool {
+            QQuickItem* item = findChildItem(h.window->contentItem(), name);
+            return item && item->isVisible();
+        };
+
+        QQuickItem* list = findChildItem(h.window->contentItem(),
+                                         QStringLiteral("backgroundTasksList"));
+        QVERIFY(list);
+        QTRY_COMPARE(list->property("count").toInt(), 4);
+
+        // 实时统计：运行中 1、排队 2（含等待槽位）、已结束 1。
+        QCOMPARE(textOf(QStringLiteral("backgroundTasksRunningCount")),
+                 QStringLiteral("进行中 1"));
+        QCOMPARE(textOf(QStringLiteral("backgroundTasksQueuedCount")),
+                 QStringLiteral("排队 2"));
+        QCOMPARE(textOf(QStringLiteral("backgroundTasksFinishedCount")),
+                 QStringLiteral("已结束 1"));
+        QVERIFY(textOf(QStringLiteral("backgroundTasksTitle"))
+                    .contains(QStringLiteral("1 进行中")));
+
+        // 自动选中运行中的任务，运行中即可看到实时详情（不依赖最终报告）。
+        QTRY_COMPARE(textOf(QStringLiteral("backgroundTaskDetailTitle")),
+                     QStringLiteral("explore · 运行中"));
+        QCOMPARE(textOf(QStringLiteral("backgroundTaskDetailSteps")),
+                 QStringLiteral("3"));
+        QQuickItem* progress = findChildItem(
+            h.window->contentItem(),
+            QStringLiteral("backgroundTaskDetailProgress"));
+        QVERIFY(progress);
+        QTRY_COMPARE(progress->property("count").toInt(), 2);
+
+        // 模拟 hub 的连续实时刷新（250ms）：行/选择/进度都不能被打断。
+        for (int i = 0; i < 6; ++i) {
+            running["steps"] = 3 + i;
+            running["progressTail"] = QVariantList{
+                QVariantMap{{QStringLiteral("phase"), QStringLiteral("thinking")},
+                            {QStringLiteral("text"),
+                             QStringLiteral("step %1").arg(4 + i)}}};
+            QVERIFY(h.setTasks(QVariantList{running, queued, slotQueued, done}));
+        }
+        QCOMPARE(textOf(QStringLiteral("backgroundTaskDetailTitle")),
+                 QStringLiteral("explore · 运行中"));
+        QCOMPARE(textOf(QStringLiteral("backgroundTaskDetailSteps")),
+                 QStringLiteral("8"));
+        QTRY_COMPARE(progress->property("count").toInt(), 1);
+
+        // 刷新之后再点停止——旧实现在这里按下的按钮会被重建掉。
+        QVERIFY2(h.click(QStringLiteral("backgroundTaskDetailStop")),
+                 "实时刷新后停止按钮不可点击");
         QCOMPARE(h.stub.cancels, 1);
         QCOMPARE(h.stub.cancelledId, QStringLiteral("sa-1"));
 
-        // 查看按需取全文：展开时才调报告接口。
-        QCOMPARE(h.stub.lastReportId, QString());
-        QVERIFY2(h.click(QStringLiteral("backgroundTaskViewButton")),
-                 "查看按钮不可点击");
-        QCOMPARE(h.stub.lastReportId, QStringLiteral("sa-1"));
+        // 点左侧已完成任务 → 右栏立即取完整报告。
+        QVERIFY2(h.click(QStringLiteral("backgroundTaskRow_sa-3")),
+                 "已完成任务行不可点击");
+        QTRY_COMPARE(h.stub.lastReportId, QStringLiteral("sa-3"));
+        QCOMPARE(textOf(QStringLiteral("backgroundTaskDetailTitle")),
+                 QStringLiteral("explore · 已完成"));
+        QQuickItem* report = findChildItem(
+            h.window->contentItem(),
+            QStringLiteral("backgroundTaskDetailReport"));
+        QVERIFY(report);
+        QVERIFY(report->isVisible());
+        QCOMPARE(report->property("text").toString(),
+                 QStringLiteral("report for sa-3"));
+
+        // 回到运行中的任务：详情停止按钮仍在。
+        QVERIFY(h.click(QStringLiteral("backgroundTaskRow_sa-1")));
+        QTRY_VERIFY(visible(QStringLiteral("backgroundTaskDetailStop")));
+
+        // hub 收到取消请求后 cancelling=true：面板立刻显示「正在停止…」，
+        // 停止按钮消失（避免重复点击），任务仍计入进行中。
+        running["cancelling"] = true;
+        QVERIFY(h.setTasks(QVariantList{running, queued, slotQueued, done}));
+        QTRY_VERIFY(visible(QStringLiteral("backgroundTaskDetailStopping")));
+        QVERIFY(!visible(QStringLiteral("backgroundTaskDetailStop")));
+        QCOMPARE(textOf(QStringLiteral("backgroundTasksRunningCount")),
+                 QStringLiteral("进行中 1"));
 
         QVERIFY2(h.click(QStringLiteral("backgroundTasksClearFinished")),
                  "清除已结束按钮不可点击");
         QCOMPARE(h.stub.dismissals, 1);
-
         QVERIFY2(h.click(QStringLiteral("backgroundTasksCancelAll")),
                  "全部停止按钮不可点击");
         QCOMPARE(h.stub.cancelsAll, 1);

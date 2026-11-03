@@ -1054,7 +1054,8 @@ private slots:
     // docs/35 P4.3/P4.5: 面板数据与取消经 AgentVM 转发（TopBar/对话框的
     // 真实数据通道），而不是直接读 AIAgent。
     void subagentBackgroundPanelThroughViewModel();
-    // docs/35 P4.5: QML 停止芯片点击 → VM → AIAgent 单节点取消的整链。
+    // 2026-11-03：面板实时统计——运行中步数/进度、槽位排队、取消中状态。
+    void backgroundHubReportsLiveProgressAndCancelling();
     void subagentStopChipThroughViewModel();
     void subagentInflightAbortStressRealNetwork();
     // docs/35 P4.1: 子代理上下文预算——超限时只压缩线上请求，证据工件保留
@@ -5673,6 +5674,67 @@ void TestAgent::subagentBackgroundPanelThroughViewModel() {
     QVERIFY(!report.isEmpty());
     vm.dismissFinishedBackgroundSubAgents();
     QCOMPARE(vm.backgroundSubAgents().size(), 0);
+}
+
+// 2026-11-03：面板不只显示终态。hub 要在运行中暴露步数/最近进度，把
+// 「占用线程但还在等槽位」如实标成排队，并在 cancel() 后立刻给出
+// cancelling（Runner 收尾前状态仍是 running，界面上先显示「正在停止…」）。
+void TestAgent::backgroundHubReportsLiveProgressAndCancelling() {
+    auto hub = std::make_shared<BackgroundTaskHub>();
+    QSemaphore gate;
+    auto cancelled = std::make_shared<std::atomic<bool>>(false);
+    const QString id = hub->createTask(
+        QStringLiteral("live stats"), QStringLiteral("research"), cancelled,
+        [hub, &gate](const QString& taskId) {
+            gate.acquire();
+            SubAgentReport report;
+            report.stop = SubAgentReport::Stop::Cancelled;
+            report.text = QStringLiteral("stopped");
+            hub->finishTask(taskId, report);
+        });
+    QVERIFY(!id.isEmpty());
+    QTRY_COMPARE(hub->stateLabel(id), QStringLiteral("running"));
+
+    hub->updateProgress(id, QStringLiteral("thinking"), QStringLiteral("step 1"),
+                        1, 0);
+    QVariantMap row = hub->snapshots().first().toMap();
+    QCOMPARE(row.value(QStringLiteral("steps")).toInt(), 1);
+    QCOMPARE(row.value(QStringLiteral("progressTail")).toList().size(), 1);
+    QVERIFY(!row.value(QStringLiteral("slotQueued")).toBool());
+    QVERIFY(!row.value(QStringLiteral("cancelling")).toBool());
+
+    // 线程已启动、Runner 却在 acquireSlot 排队：状态仍 running，但面板
+    // 必须按排队统计（displayState 会看 slotQueued）。
+    hub->updateProgress(id, QStringLiteral("queued"),
+                        QStringLiteral("waiting for a free slot"), 0, 0);
+    row = hub->snapshots().first().toMap();
+    QVERIFY(row.value(QStringLiteral("slotQueued")).toBool());
+    hub->updateProgress(id, QStringLiteral("thinking"), QStringLiteral("step 2"),
+                        2, 0);
+    row = hub->snapshots().first().toMap();
+    QVERIFY(!row.value(QStringLiteral("slotQueued")).toBool());
+    QCOMPARE(row.value(QStringLiteral("steps")).toInt(), 2);
+
+    // 进度尾巴加深到 24 条，面板可不滚动看到最近一段。
+    for (int i = 0; i < 30; ++i) {
+        hub->updateProgress(id, QStringLiteral("thinking"),
+                            QStringLiteral("step %1").arg(i + 3), i + 3, 0);
+    }
+    row = hub->snapshots().first().toMap();
+    QCOMPARE(row.value(QStringLiteral("progressTail")).toList().size(), 24);
+    QCOMPARE(row.value(QStringLiteral("steps")).toInt(), 32);
+
+    QVERIFY(hub->cancel(id));
+    row = hub->snapshots().first().toMap();
+    QVERIFY(row.value(QStringLiteral("cancelling")).toBool());
+    QCOMPARE(row.value(QStringLiteral("state")).toString(),
+             QStringLiteral("running"));
+
+    gate.release();
+    QTRY_COMPARE(hub->stateLabel(id), QStringLiteral("cancelled"));
+    row = hub->snapshots().first().toMap();
+    QVERIFY(!row.value(QStringLiteral("cancelling")).toBool());
+    QVERIFY(!row.value(QStringLiteral("slotQueued")).toBool());
 }
 
 // docs/35 P4.5: ProcessCard 的停止芯片 → AgentVM.cancelSubAgent → AIAgent

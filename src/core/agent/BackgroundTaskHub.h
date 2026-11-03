@@ -48,9 +48,11 @@ public:
     QString createTask(const QString& goal, const QString& role,
                        const ITool::Cancellation& cancelled, Work work);
 
-    // Worker-thread callbacks from the sub-agent run.
+    // Worker-thread callbacks from the sub-agent run. step/maxSteps are
+// optional (0 = unknown) and let the panel show live step counts while the
+// run is still active.
     void updateProgress(const QString& id, const QString& phase,
-                        const QString& text);
+                        const QString& text, int step = 0, int maxSteps = 0);
     void finishTask(const QString& id, const SubAgentReport& report);
 
     // Flipping the shared token is the only cancellation mechanism; queued
@@ -88,7 +90,10 @@ private:
         qint64 startedAtMs{0};
         qint64 finishedAtMs{0};
         int steps{0};
+        int maxSteps{0};        // 0 = unbounded / unknown
         int proposalCount{0};
+        bool cancelling{false}; // cancel() requested; runner still unwinding
+        bool slotQueued{false}; // running but waiting for a sub-agent slot
         QString error;
         QVector<QPair<QString, QString>> progress;   // phase, text (tail)
         SubAgentReport report;

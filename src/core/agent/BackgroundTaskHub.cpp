@@ -8,7 +8,9 @@ namespace NexusAI {
 
 namespace {
 
-constexpr int kProgressTail = 3;
+// The panel shows a live progress timeline while a task runs, so keep a
+// deeper tail than the 3 lines the mobile-era tool result summary needed.
+constexpr int kProgressTail = 24;
 
 QString terminalStateFor(const SubAgentReport& report) {
     if (report.stop == SubAgentReport::Stop::Cancelled)
@@ -81,6 +83,8 @@ void BackgroundTaskHub::expire(const QString& id) {
             entry->error = QStringLiteral(
                 "Background task exceeded the 30 minute time limit.");
             entry->finishedAtMs = QDateTime::currentMSecsSinceEpoch();
+            entry->cancelling = false;
+            entry->slotQueued = false;
         }
         m_cv.wakeAll();
     }
@@ -99,7 +103,8 @@ bool BackgroundTaskHub::markRunning(const QString& id) {
 }
 
 void BackgroundTaskHub::updateProgress(const QString& id, const QString& phase,
-                                       const QString& text) {
+                                       const QString& text, int step,
+                                       int maxSteps) {
     {
         QMutexLocker lock(&m_mutex);
         Entry* entry = findEntry(id);
@@ -107,6 +112,12 @@ void BackgroundTaskHub::updateProgress(const QString& id, const QString& phase,
         entry->progress.append({phase, text});
         while (entry->progress.size() > kProgressTail)
             entry->progress.removeFirst();
+        if (step > 0) entry->steps = step;
+        if (maxSteps > 0) entry->maxSteps = maxSteps;
+        // P4.5 "queued" is emitted while the run waits for a sub-agent slot;
+        // the hub state is already "running" by then (pool thread started).
+        // Keep the panel's queue count honest until the next real phase.
+        entry->slotQueued = (phase == QLatin1String("queued"));
     }
     emit changed();
 }
@@ -122,6 +133,8 @@ void BackgroundTaskHub::finishTask(const QString& id, const SubAgentReport& repo
         entry->hasReport = true;
         entry->steps = report.steps;
         entry->proposalCount = report.proposals.size();
+        entry->cancelling = false;
+        entry->slotQueued = false;
         entry->finishedAtMs = QDateTime::currentMSecsSinceEpoch();
         if (entry->expired) {
             entry->error = QStringLiteral(
@@ -147,6 +160,13 @@ bool BackgroundTaskHub::cancel(const QString& id) {
             entry->state = QStringLiteral("cancelled");
             entry->error = QStringLiteral("cancelled before start");
             entry->finishedAtMs = QDateTime::currentMSecsSinceEpoch();
+            entry->slotQueued = false;
+        } else {
+            // A running task keeps its state until the runner unwinds and
+            // calls finishTask(); the token is what it polls. The flag gives
+            // the panel immediate "正在停止…" feedback instead of appearing
+            // to ignore the click.
+            entry->cancelling = true;
         }
         // A running task keeps its state until the runner unwinds and calls
         // finishTask(); the token is what it polls.
@@ -189,7 +209,10 @@ QVariantList BackgroundTaskHub::snapshots() const {
             {QStringLiteral("startedAt"), entry.startedAtMs},
             {QStringLiteral("elapsedMs"), qMax<qint64>(0, end - entry.startedAtMs)},
             {QStringLiteral("steps"), entry.steps},
+            {QStringLiteral("maxSteps"), entry.maxSteps},
             {QStringLiteral("proposalCount"), entry.proposalCount},
+            {QStringLiteral("cancelling"), entry.cancelling},
+            {QStringLiteral("slotQueued"), entry.slotQueued},
             {QStringLiteral("progressTail"), tail},
             {QStringLiteral("error"), entry.error}});
     }
