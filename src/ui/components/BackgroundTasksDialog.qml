@@ -37,6 +37,8 @@ Dialog {
     // 选中任务（右栏）。按 id 保存，列表更新/重排不会丢选择。
     property string selectedId: ""
     property string selectedReport: ""
+    // 右栏页签：0 = 实时进度，1 = 完整报告。运行中只看进度，完成后可切换。
+    property int detailTab: 0
 
     readonly property int taskCount: tasks ? tasks.length : 0
 
@@ -187,8 +189,11 @@ Dialog {
             steps: Number(task.steps || 0),
             maxSteps: Number(task.maxSteps || 0),
             proposalCount: Number(task.proposalCount || 0),
-            error: String(task.error || ""),
-            progressTail: task.progressTail || []
+            error: String(task.error || "")
+            // progressTail / cancelling 等复杂或派生字段不进 ListModel：
+            // QVariantList/JS array 的 role 类型会在 append/set 之间冲突
+            // （"different type [VariantMap -> List]"）；详情区直接读
+            // dialog.selectedTask 的原始数据。
         }
     }
 
@@ -261,11 +266,14 @@ Dialog {
         const task = dialog.findTask(dialog.selectedId)
         if (!task || !dialog.isTerminal(dialog.displayState(task))) {
             dialog.selectedReport = ""
+            if (dialog.detailTab === 1) dialog.detailTab = 0
             return
         }
         dialog.selectedReport =
             String(dialog.agentFacade.backgroundSubAgentReport(
                        String(task.id)) || "")
+        if (dialog.selectedReport === "" && dialog.detailTab === 1)
+            dialog.detailTab = 0
     }
     function refresh() {
         dialog.syncTasks()
@@ -274,7 +282,11 @@ Dialog {
     }
 
     onTasksChanged: dialog.refresh()
-    onSelectedIdChanged: dialog.refreshReport()
+    onSelectedIdChanged: {
+        dialog.refreshReport()
+        // 选中已完成任务时直接打开报告；运行中/排队默认看实时进度。
+        dialog.detailTab = dialog.selectedReport !== "" ? 1 : 0
+    }
     onVisibleChanged: {
         if (visible) {
             dialog.clockMs = Date.now()
@@ -606,6 +618,7 @@ Dialog {
                 color: Theme.bgPrimary
                 border.width: 1
                 border.color: Theme.borderSubtle
+                clip: true
 
                 Text {
                     objectName: "backgroundTaskDetailEmpty"
@@ -672,6 +685,8 @@ Dialog {
                         font.pixelSize: Theme.fontSizeCaption
                         font.family: Theme.fontSans
                         wrapMode: Text.Wrap
+                        maximumLineCount: 3
+                        elide: Text.ElideRight
                     }
 
                     RowLayout {
@@ -788,34 +803,45 @@ Dialog {
                             font.pixelSize: Theme.fontSizeCaption
                             font.family: Theme.fontSans
                         }
-                        Text {
-                            Layout.fillWidth: true
-                            visible: dialog.selectedTask !== null
-                                && String(dialog.selectedTask.error || "") !== ""
-                            text: dialog.selectedTask
-                                ? String(dialog.selectedTask.error || "") : ""
-                            color: Theme.statusDanger
-                            font.pixelSize: Theme.fontSizeMicro
-                            font.family: Theme.fontSans
-                            wrapMode: Text.Wrap
-                            elide: Text.ElideRight
-                            maximumLineCount: 2
-                        }
+                        Item { Layout.fillWidth: true }
                     }
 
-                    // ── Live progress ────────────────
+                    Text {
+                        Layout.fillWidth: true
+                        visible: dialog.selectedTask !== null
+                            && String(dialog.selectedTask.error || "") !== ""
+                        text: dialog.selectedTask
+                            ? String(dialog.selectedTask.error || "") : ""
+                        color: Theme.statusDanger
+                        font.pixelSize: Theme.fontSizeMicro
+                        font.family: Theme.fontSans
+                        wrapMode: Text.Wrap
+                        maximumLineCount: 2
+                        elide: Text.ElideRight
+                    }
+
+                    // ── Live progress / full report ──
                     RowLayout {
                         Layout.fillWidth: true
                         spacing: 6
-                        Text {
+                        AppButton {
+                            objectName: "backgroundTaskProgressTab"
                             text: qsTr("实时进度")
-                            color: Theme.textSecondary
-                            font.pixelSize: Theme.fontSizeMicro
-                            font.family: Theme.fontSans
-                            font.bold: true
+                            highlighted: dialog.detailTab === 0
+                            onClicked: dialog.detailTab = 0
+                            Accessible.name: qsTr("查看实时进度")
+                        }
+                        AppButton {
+                            objectName: "backgroundTaskReportTab"
+                            text: qsTr("完整报告")
+                            highlighted: dialog.detailTab === 1
+                            enabled: dialog.selectedReport !== ""
+                            onClicked: dialog.detailTab = 1
+                            Accessible.name: qsTr("查看完整报告")
                         }
                         Item { Layout.fillWidth: true }
                         Text {
+                            visible: dialog.detailTab === 0
                             text: qsTr("最新在上")
                             color: Theme.textTertiary
                             font.pixelSize: Theme.fontSizeMicro
@@ -823,99 +849,108 @@ Dialog {
                         }
                     }
 
-                    Item {
+                    StackLayout {
+                        objectName: "backgroundTaskDetailStack"
                         Layout.fillWidth: true
                         Layout.fillHeight: true
+                        currentIndex: dialog.detailTab
 
-                        ListView {
-                            id: progressList
-                            objectName: "backgroundTaskDetailProgress"
-                            anchors.fill: parent
-                            clip: true
-                            spacing: 2
-                            model: dialog.selectedProgressNewestFirst()
-                            boundsBehavior: Flickable.StopAtBounds
-
-                            delegate: RowLayout {
-                                required property var modelData
-                                width: progressList.width
-                                spacing: 8
-                                Text {
-                                    Layout.preferredWidth: 54
-                                    text: dialog.phaseLabel(modelData.phase)
-                                    color: Theme.textTertiary
-                                    font.pixelSize: Theme.fontSizeMicro
-                                    font.family: Theme.fontMono
-                                    elide: Text.ElideRight
-                                }
-                                Text {
-                                    Layout.fillWidth: true
-                                    text: String(modelData.text || "")
-                                    color: Theme.textSecondary
-                                    font.pixelSize: Theme.fontSizeMicro
-                                    font.family: Theme.fontMono
-                                    wrapMode: Text.Wrap
-                                }
-                            }
-
-                            ScrollBar.vertical: AppScrollBar {}
-                        }
-
-                        Text {
-                            objectName: "backgroundTaskDetailProgressEmpty"
-                            anchors.centerIn: parent
-                            width: parent.width - 32
-                            horizontalAlignment: Text.AlignHCenter
-                            visible: progressList.count === 0
-                            text: dialog.selectedTask
-                                && dialog.isActiveState(
-                                       dialog.displayState(dialog.selectedTask))
-                                ? qsTr("等待第一条进度…")
-                                : qsTr("没有进度记录。")
-                            color: Theme.textTertiary
-                            font.pixelSize: Theme.fontSizeMicro
-                            font.family: Theme.fontSans
-                            wrapMode: Text.Wrap
-                        }
-                    }
-
-                    // ── Full report (finished tasks) ─
-                    ColumnLayout {
-                        Layout.fillWidth: true
-                        Layout.fillHeight: true
-                        spacing: 4
-                        visible: dialog.selectedReport !== ""
-
-                        Text {
-                            text: qsTr("完整报告")
-                            color: Theme.textSecondary
-                            font.pixelSize: Theme.fontSizeMicro
-                            font.family: Theme.fontSans
-                            font.bold: true
-                        }
-
-                        Flickable {
-                            id: reportFlick
+                        Item {
+                            objectName: "backgroundTaskProgressPage"
                             Layout.fillWidth: true
                             Layout.fillHeight: true
-                            clip: true
-                            contentWidth: width
-                            contentHeight: reportText.implicitHeight
-                            boundsBehavior: Flickable.StopAtBounds
 
-                            Text {
-                                id: reportText
-                                objectName: "backgroundTaskDetailReport"
-                                width: reportFlick.width - 8
-                                text: dialog.selectedReport
-                                textFormat: TextEdit.MarkdownText
-                                wrapMode: Text.Wrap
-                                color: Theme.textPrimary
-                                font.pixelSize: Theme.fontSizeCaption
-                                font.family: Theme.fontSans
+                            ListView {
+                                id: progressList
+                                objectName: "backgroundTaskDetailProgress"
+                                anchors.fill: parent
+                                clip: true
+                                spacing: 2
+                                model: dialog.selectedProgressNewestFirst()
+                                boundsBehavior: Flickable.StopAtBounds
+
+                                delegate: RowLayout {
+                                    required property var modelData
+                                    width: progressList.width
+                                    spacing: 8
+                                    Text {
+                                        Layout.preferredWidth: 54
+                                        text: dialog.phaseLabel(modelData.phase)
+                                        color: Theme.textTertiary
+                                        font.pixelSize: Theme.fontSizeMicro
+                                        font.family: Theme.fontMono
+                                        elide: Text.ElideRight
+                                    }
+                                    Text {
+                                        Layout.fillWidth: true
+                                        text: String(modelData.text || "")
+                                        color: Theme.textSecondary
+                                        font.pixelSize: Theme.fontSizeMicro
+                                        font.family: Theme.fontMono
+                                        wrapMode: Text.Wrap
+                                    }
+                                }
+
+                                ScrollBar.vertical: AppScrollBar {}
                             }
 
-                            ScrollBar.vertical: AppScrollBar {}
+                            Text {
+                                objectName: "backgroundTaskDetailProgressEmpty"
+                                anchors.centerIn: parent
+                                width: parent.width - 32
+                                horizontalAlignment: Text.AlignHCenter
+                                visible: progressList.count === 0
+                                text: dialog.selectedTask
+                                    && dialog.isActiveState(
+                                           dialog.displayState(dialog.selectedTask))
+                                    ? qsTr("等待第一条进度…")
+                                    : qsTr("没有进度记录。")
+                                color: Theme.textTertiary
+                                font.pixelSize: Theme.fontSizeMicro
+                                font.family: Theme.fontSans
+                                wrapMode: Text.Wrap
+                            }
+                        }
+
+                        Item {
+                            objectName: "backgroundTaskReportPage"
+                            Layout.fillWidth: true
+                            Layout.fillHeight: true
+
+                            Flickable {
+                                id: reportFlick
+                                anchors.fill: parent
+                                clip: true
+                                contentWidth: width
+                                contentHeight: reportText.implicitHeight + 8
+                                boundsBehavior: Flickable.StopAtBounds
+
+                                Text {
+                                    id: reportText
+                                    objectName: "backgroundTaskDetailReport"
+                                    width: reportFlick.width - 12
+                                    text: dialog.selectedReport
+                                    textFormat: TextEdit.MarkdownText
+                                    wrapMode: Text.Wrap
+                                    color: Theme.textPrimary
+                                    font.pixelSize: Theme.fontSizeCaption
+                                    font.family: Theme.fontSans
+                                }
+
+                                ScrollBar.vertical: AppScrollBar {}
+                            }
+
+                            Text {
+                                anchors.centerIn: parent
+                                width: parent.width - 32
+                                horizontalAlignment: Text.AlignHCenter
+                                visible: dialog.selectedReport === ""
+                                text: qsTr("任务完成后可查看完整报告。")
+                                color: Theme.textTertiary
+                                font.pixelSize: Theme.fontSizeMicro
+                                font.family: Theme.fontSans
+                                wrapMode: Text.Wrap
+                            }
                         }
                     }
                 }

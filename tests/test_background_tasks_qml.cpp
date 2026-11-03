@@ -281,6 +281,14 @@ private slots:
             QStringLiteral("backgroundTaskDetailProgress"));
         QVERIFY(progress);
         QTRY_COMPARE(progress->property("count").toInt(), 2);
+        // 右栏高度必须真正分给进度区（曾因进度/报告同时 fillHeight 被挤成 0）。
+        QVERIFY2(progress->height() > 40, qPrintable(QString::number(progress->height())));
+        QVERIFY(progress->width() > 100);
+        QQuickItem* progressPage = findChildItem(
+            h.window->contentItem(),
+            QStringLiteral("backgroundTaskProgressPage"));
+        QVERIFY(progressPage);
+        QTRY_VERIFY(progressPage->height() > 100);
 
         // 模拟 hub 的连续实时刷新（250ms）：行/选择/进度都不能被打断。
         for (int i = 0; i < 6; ++i) {
@@ -314,12 +322,24 @@ private slots:
             QStringLiteral("backgroundTaskDetailReport"));
         QVERIFY(report);
         QVERIFY(report->isVisible());
+        // 页签切换后的几何更新在下一轮布局之后，先等它落定；滚动的
+        // 是 Flickable 本身（Text 只是 contentItem 里的内容，单行高度很小）。
+        QQuickItem* page = findChildItem(
+            h.window->contentItem(),
+            QStringLiteral("backgroundTaskReportPage"));
+        QVERIFY(page);
+        QTRY_VERIFY(page->height() > 100);
+        QVERIFY(report->width() > 100);
+        QVERIFY(report->implicitHeight() > 0);
         QCOMPARE(report->property("text").toString(),
                  QStringLiteral("report for sa-3"));
 
         // 回到运行中的任务：详情停止按钮仍在。
         QVERIFY(h.click(QStringLiteral("backgroundTaskRow_sa-1")));
         QTRY_VERIFY(visible(QStringLiteral("backgroundTaskDetailStop")));
+        // 运行中自动回到「实时进度」页签，进度区仍可滚动。
+        QTRY_VERIFY(visible(QStringLiteral("backgroundTaskDetailProgress")));
+        QVERIFY(progress->height() > 40);
 
         // hub 收到取消请求后 cancelling=true：面板立刻显示「正在停止…」，
         // 停止按钮消失（避免重复点击），任务仍计入进行中。
