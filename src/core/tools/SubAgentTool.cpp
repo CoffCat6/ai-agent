@@ -91,6 +91,8 @@ QVector<SubAgentRole> SubAgentTool::rolesFromVariant(const QVariantList& raw) {
             map.value(QStringLiteral("profileId")).toString().trimmed();
         role.effort =
             map.value(QStringLiteral("effort")).toString().trimmed();
+        // 角色级默认后台开关（缺失 / 非布尔 = false，旧档案自动兼容）。
+        role.background = map.value(QStringLiteral("background")).toBool();
         const QVariantList tools = map.value(QStringLiteral("tools")).toList();
         for (const QVariant& t : tools) {
             const QString toolName = t.toString().trimmed();
@@ -219,7 +221,9 @@ ToolDefinition SubAgentTool::definition() const {
         "runs whose result is not needed for your next reasoning step. The "
         "call then returns immediately with a task id; collect the report "
         "later with subagent_wait(id) (or peek with subagent_status(id)). "
-        "Keep short tasks that you need right away synchronous.");
+        "Keep short tasks that you need right away synchronous. Some roles "
+        "default to background: omitting the argument uses the role's "
+        "default, and background=false forces a synchronous run.");
     def.level = ToolLevel::Safe;
     def.autoEditSafe = true;
     def.readOnly = true;   // spawns read-only work only; usable in PlanOnly
@@ -274,8 +278,10 @@ ToolDefinition SubAgentTool::definition() const {
         {"description", QStringLiteral(
             "If true, start the sub-agent in the background and return a task "
             "id immediately; retrieve the report later with subagent_wait(id). "
-            "Use it for long tasks that do not block your next step. Default "
-            "false (synchronous).")}};
+            "Use it for long tasks that do not block your next step. When "
+            "omitted, the selected role's default applies (synchronous unless "
+            "the role opts into background); background=false forces a "
+            "synchronous run.")}};
     properties.insert(QStringLiteral("background"), backgroundProp);
     QJsonArray required{QStringLiteral("goal")};
     def.parameters = QJsonObject{
@@ -336,21 +342,23 @@ ToolResult SubAgentTool::execute(const QJsonObject& args, const Cancellation& ca
             "or gated)."));
 
     // docs/33 E2: resolve the role profile. "role" is the current argument;
-    // "hint" stays as the legacy fallback. An empty name = default (explore).
-    const QString roleName = [&args]() {
+    // "hint" stays as the legacy fallback. An empty name = default (explore),
+    // resolved like an explicit role so a user shadow of "explore" (tools,
+    // model profile, default background) also applies when role is omitted.
+    const QString requestedRole = [&args]() {
         const QString role = args.value(QStringLiteral("role")).toString().trimmed();
         if (!role.isEmpty()) return role;
         return args.value(QStringLiteral("hint")).toString().trimmed();
     }();
+    const QString roleName = requestedRole.isEmpty()
+        ? QStringLiteral("explore") : requestedRole;
     SubAgentRole resolved;
     QStringList roleNames;
     for (const SubAgentRole& r : rolesSnapshot()) roleNames.append(r.name);
-    if (!roleName.isEmpty()) {
-        if (!resolveRole(roleName, &resolved))
-            return ToolResult::fail(QStringLiteral(
-                "Unknown role '%1'. Available roles: %2")
-                .arg(roleName, roleNames.join(QStringLiteral(", "))));
-    }
+    if (!resolveRole(roleName, &resolved))
+        return ToolResult::fail(QStringLiteral(
+            "Unknown role '%1'. Available roles: %2")
+            .arg(roleName, roleNames.join(QStringLiteral(", "))));
     // Role tool whitelist: intersect with the read-only catalog so a stale
     // profile entry can never widen the sub-agent's tool set.
     if (!resolved.tools.isEmpty()) {
@@ -388,7 +396,11 @@ ToolResult SubAgentTool::execute(const QJsonObject& args, const Cancellation& ca
     // docs/35 P4.3: background fork/join. The ack is the valid tool result for
     // this call; the run is registered in the session hub and continues after
     // the primary loop moves on (and even after the task ends).
-    if (args.value(QStringLiteral("background")).toBool()) {
+    // 角色默认后台：只在模型省略 background 时生效；显式 false 强制同步。
+    const bool background = args.contains(QStringLiteral("background"))
+        ? args.value(QStringLiteral("background")).toBool()
+        : resolved.background;
+    if (background) {
         const std::shared_ptr<BackgroundTaskHub> hub =
             BackgroundTaskHubRouter::current();
         if (!hub)

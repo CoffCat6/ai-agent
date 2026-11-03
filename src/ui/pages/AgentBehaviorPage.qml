@@ -62,7 +62,7 @@ SettingsPage {
         objectName: "agent/subagentRoles"
         Layout.fillWidth: true
         title: qsTr("子代理角色档案")
-        subtitle: qsTr("spawn_agent 可按角色派生子代理：预设不可改，自定义档案指定专属提示词与工具白名单。")
+        subtitle: qsTr("spawn_agent 可按角色派生子代理：预设不可改，自定义档案指定专属提示词、工具白名单与默认运行方式。")
 
         property var roleEditing: null   // null 或 {index: -1(新增) / >=0(编辑)}
 
@@ -94,7 +94,8 @@ SettingsPage {
             const list = Settings.subagentRoles.slice()
             const entry = { name: name, prompt: prompt, tools: tools,
                             profileId: roleProfileCombo.currentValue || "",
-                            effort: roleEffortField.text.trim() }
+                            effort: roleEffortField.text.trim(),
+                            background: roleBackgroundSwitch.checked }
             if (page_roleCard.roleEditing.index >= 0)
                 list[page_roleCard.roleEditing.index] = entry
             else
@@ -110,7 +111,7 @@ SettingsPage {
 
         Text {
             Layout.fillWidth: true
-            text: qsTr("内置角色：explore（广度优先勘察）、research（深度查证）、review（代码评审）、coder（起草改动提案，只提不改）。调用时省略 role 参数默认使用 explore；自定义档案与预设同名时覆盖预设。coder 经 propose_edit 产出锚点式提案，由主任务用 apply_proposal / edit_file 逐条应用并逐次确认；其他预设不授予提案权。自定义角色可选择独立的模型配置与思考强度（留空沿用当前配置）。")
+            text: qsTr("内置角色：explore（广度优先勘察）、research（深度查证）、review（代码评审）、coder（起草改动提案，只提不改）。调用时省略 role 参数默认使用 explore；自定义档案与预设同名时覆盖预设。coder 经 propose_edit 产出锚点式提案，由主任务用 apply_proposal / edit_file 逐条应用并逐次确认；其他预设不授予提案权。自定义角色可选择独立的模型配置与思考强度（留空沿用当前配置），并可设为默认后台运行（模型省略 background 时生效）。")
             color: Theme.textSecondary
             font.pixelSize: Theme.fontSizeCaption
             wrapMode: Text.Wrap
@@ -158,6 +159,8 @@ SettingsPage {
                                         String(modelData.profileId || ""))
                                 roleEffortField.text =
                                     String(modelData.effort || "")
+                                roleBackgroundSwitch.checked =
+                                    modelData.background === true
                                 page_roleCard.roleEditing = { index: index }
                             }
                         }
@@ -181,6 +184,14 @@ SettingsPage {
                         visible: (modelData.tools || []).length > 0
                         text: qsTr("工具白名单：%1").arg((modelData.tools || []).join(", "))
                         color: Theme.textSecondary
+                        font.pixelSize: Theme.fontSizeCaption
+                        elide: Text.ElideRight
+                    }
+                    Text {
+                        Layout.fillWidth: true
+                        visible: modelData.background === true
+                        text: qsTr("默认后台运行（调用时省略 background）")
+                        color: Theme.brandPrimary
                         font.pixelSize: Theme.fontSizeCaption
                         elide: Text.ElideRight
                     }
@@ -263,6 +274,31 @@ SettingsPage {
                 color: Theme.textPrimary
                 font.pixelSize: Theme.fontSizeBody
             }
+            // 角色级默认后台：模型省略 spawn_agent 的 background 参数时生效。
+            RowLayout {
+                Layout.fillWidth: true
+                spacing: Theme.spaceSm
+                Text {
+                    Layout.fillWidth: true
+                    Layout.minimumWidth: 0
+                    text: qsTr("默认后台运行")
+                    color: Theme.textPrimary
+                    font.pixelSize: Theme.fontSizeBody
+                    wrapMode: Text.Wrap
+                }
+                Switch {
+                    id: roleBackgroundSwitch
+                    objectName: "agent/subagentRoleBackground"
+                    Accessible.name: qsTr("该角色默认在后台运行")
+                }
+            }
+            Text {
+                Layout.fillWidth: true
+                text: qsTr("spawn_agent 省略 background 参数时按此设置执行；模型显式传 false 仍可强制同步。后台任务从顶栏「后台子代理」面板查看。")
+                color: Theme.textSecondary
+                font.pixelSize: Theme.fontSizeCaption
+                wrapMode: Text.Wrap
+            }
             RowLayout {
                 Layout.fillWidth: true
                 Item { Layout.fillWidth: true }
@@ -289,6 +325,7 @@ SettingsPage {
                 roleToolsField.text = ""
                 roleProfileCombo.currentIndex = 0
                 roleEffortField.text = ""
+                roleBackgroundSwitch.checked = false
                 page_roleCard.roleEditing = { index: -1 }
             }
         }

@@ -220,9 +220,8 @@
         <translation>子代理角色档案</translation>
     </message>
     <message>
-        <location filename="../src/ui/pages/AgentBehaviorPage.qml" line="65"/>
         <source>spawn_agent 可按角色派生子代理：预设不可改，自定义档案指定专属提示词与工具白名单。</source>
-        <translation>spawn_agent 可按角色派生子代理：预设不可改，自定义档案指定专属提示词与工具白名单。</translation>
+        <translation type="vanished">spawn_agent 可按角色派生子代理：预设不可改，自定义档案指定专属提示词与工具白名单。</translation>
     </message>
     <message>
         <source>内置角色：explore（广度优先勘察）、research（深度查证）、review（代码评审）、coder（起草改动提案，只提不改）。调用时省略 role 参数默认使用 explore；自定义档案与预设同名时覆盖预设。coder 经 propose_edit 产出锚点式提案，由主任务用 edit_file 逐条应用并逐次确认；其他预设不授予提案权。</source>
@@ -240,107 +239,136 @@
         <translation>%1（已删除，回退当前配置）</translation>
     </message>
     <message>
-        <location filename="../src/ui/pages/AgentBehaviorPage.qml" line="113"/>
         <source>内置角色：explore（广度优先勘察）、research（深度查证）、review（代码评审）、coder（起草改动提案，只提不改）。调用时省略 role 参数默认使用 explore；自定义档案与预设同名时覆盖预设。coder 经 propose_edit 产出锚点式提案，由主任务用 apply_proposal / edit_file 逐条应用并逐次确认；其他预设不授予提案权。自定义角色可选择独立的模型配置与思考强度（留空沿用当前配置）。</source>
-        <translation>内置角色：explore（广度优先勘察）、research（深度查证）、review（代码评审）、coder（起草改动提案，只提不改）。调用时省略 role 参数默认使用 explore；自定义档案与预设同名时覆盖预设。coder 经 propose_edit 产出锚点式提案，由主任务用 apply_proposal / edit_file 逐条应用并逐次确认；其他预设不授予提案权。自定义角色可选择独立的模型配置与思考强度（留空沿用当前配置）。</translation>
+        <translation type="vanished">内置角色：explore（广度优先勘察）、research（深度查证）、review（代码评审）、coder（起草改动提案，只提不改）。调用时省略 role 参数默认使用 explore；自定义档案与预设同名时覆盖预设。coder 经 propose_edit 产出锚点式提案，由主任务用 apply_proposal / edit_file 逐条应用并逐次确认；其他预设不授予提案权。自定义角色可选择独立的模型配置与思考强度（留空沿用当前配置）。</translation>
     </message>
     <message>
-        <location filename="../src/ui/pages/AgentBehaviorPage.qml" line="150"/>
+        <location filename="../src/ui/pages/AgentBehaviorPage.qml" line="65"/>
+        <source>spawn_agent 可按角色派生子代理：预设不可改，自定义档案指定专属提示词、工具白名单与默认运行方式。</source>
+        <translation>spawn_agent 可按角色派生子代理：预设不可改，自定义档案指定专属提示词、工具白名单与默认运行方式。</translation>
+    </message>
+    <message>
+        <location filename="../src/ui/pages/AgentBehaviorPage.qml" line="114"/>
+        <source>内置角色：explore（广度优先勘察）、research（深度查证）、review（代码评审）、coder（起草改动提案，只提不改）。调用时省略 role 参数默认使用 explore；自定义档案与预设同名时覆盖预设。coder 经 propose_edit 产出锚点式提案，由主任务用 apply_proposal / edit_file 逐条应用并逐次确认；其他预设不授予提案权。自定义角色可选择独立的模型配置与思考强度（留空沿用当前配置），并可设为默认后台运行（模型省略 background 时生效）。</source>
+        <translation>内置角色：explore（广度优先勘察）、research（深度查证）、review（代码评审）、coder（起草改动提案，只提不改）。调用时省略 role 参数默认使用 explore；自定义档案与预设同名时覆盖预设。coder 经 propose_edit 产出锚点式提案，由主任务用 apply_proposal / edit_file 逐条应用并逐次确认；其他预设不授予提案权。自定义角色可选择独立的模型配置与思考强度（留空沿用当前配置），并可设为默认后台运行（模型省略 background 时生效）。</translation>
+    </message>
+    <message>
+        <location filename="../src/ui/pages/AgentBehaviorPage.qml" line="151"/>
         <source>编辑</source>
         <translation>编辑</translation>
     </message>
     <message>
-        <location filename="../src/ui/pages/AgentBehaviorPage.qml" line="165"/>
+        <location filename="../src/ui/pages/AgentBehaviorPage.qml" line="168"/>
         <source>删除</source>
         <translation>删除</translation>
     </message>
     <message>
-        <location filename="../src/ui/pages/AgentBehaviorPage.qml" line="182"/>
+        <location filename="../src/ui/pages/AgentBehaviorPage.qml" line="185"/>
         <source>工具白名单：%1</source>
         <translation>工具白名单：%1</translation>
     </message>
     <message>
-        <location filename="../src/ui/pages/AgentBehaviorPage.qml" line="191"/>
+        <location filename="../src/ui/pages/AgentBehaviorPage.qml" line="193"/>
+        <source>默认后台运行（调用时省略 background）</source>
+        <translation>默认后台运行（调用时省略 background）</translation>
+    </message>
+    <message>
+        <location filename="../src/ui/pages/AgentBehaviorPage.qml" line="202"/>
         <source>模型配置：%1%2</source>
         <translation>模型配置：%1%2</translation>
     </message>
     <message>
-        <location filename="../src/ui/pages/AgentBehaviorPage.qml" line="195"/>
+        <location filename="../src/ui/pages/AgentBehaviorPage.qml" line="206"/>
         <source> · 思考强度 %1</source>
         <translation> · 思考强度 %1</translation>
     </message>
     <message>
-        <location filename="../src/ui/pages/AgentBehaviorPage.qml" line="207"/>
+        <location filename="../src/ui/pages/AgentBehaviorPage.qml" line="218"/>
         <source>还没有自定义角色。点「新建角色」定义第一支专属子代理。</source>
         <translation>还没有自定义角色。点「新建角色」定义第一支专属子代理。</translation>
     </message>
     <message>
-        <location filename="../src/ui/pages/AgentBehaviorPage.qml" line="222"/>
+        <location filename="../src/ui/pages/AgentBehaviorPage.qml" line="233"/>
         <source>角色名（模型以 role 参数引用，如：doc-auditor）</source>
         <translation>角色名（模型以 role 参数引用，如：doc-auditor）</translation>
     </message>
     <message>
-        <location filename="../src/ui/pages/AgentBehaviorPage.qml" line="233"/>
+        <location filename="../src/ui/pages/AgentBehaviorPage.qml" line="244"/>
         <source>该角色的专注指令（追加到子代理系统提示词）…</source>
         <translation>该角色的专注指令（追加到子代理系统提示词）…</translation>
     </message>
     <message>
-        <location filename="../src/ui/pages/AgentBehaviorPage.qml" line="244"/>
+        <location filename="../src/ui/pages/AgentBehaviorPage.qml" line="255"/>
         <source>工具白名单（逗号分隔，留空 = 全部只读工具；写提案需显式加入 propose_edit）</source>
         <translation>工具白名单（逗号分隔，留空 = 全部只读工具；写提案需显式加入 propose_edit）</translation>
     </message>
     <message>
-        <location filename="../src/ui/pages/AgentBehaviorPage.qml" line="256"/>
+        <location filename="../src/ui/pages/AgentBehaviorPage.qml" line="267"/>
         <source>角色使用的模型配置</source>
         <translation>角色使用的模型配置</translation>
     </message>
     <message>
-        <location filename="../src/ui/pages/AgentBehaviorPage.qml" line="262"/>
+        <location filename="../src/ui/pages/AgentBehaviorPage.qml" line="273"/>
         <source>思考强度覆盖（low / medium / high；留空沿用配置）</source>
         <translation>思考强度覆盖（low / medium / high；留空沿用配置）</translation>
     </message>
     <message>
-        <location filename="../src/ui/pages/AgentBehaviorPage.qml" line="270"/>
+        <location filename="../src/ui/pages/AgentBehaviorPage.qml" line="284"/>
+        <source>默认后台运行</source>
+        <translation>默认后台运行</translation>
+    </message>
+    <message>
+        <location filename="../src/ui/pages/AgentBehaviorPage.qml" line="292"/>
+        <source>该角色默认在后台运行</source>
+        <translation>该角色默认在后台运行</translation>
+    </message>
+    <message>
+        <location filename="../src/ui/pages/AgentBehaviorPage.qml" line="297"/>
+        <source>spawn_agent 省略 background 参数时按此设置执行；模型显式传 false 仍可强制同步。后台任务从顶栏「后台子代理」面板查看。</source>
+        <translation>spawn_agent 省略 background 参数时按此设置执行；模型显式传 false 仍可强制同步。后台任务从顶栏「后台子代理」面板查看。</translation>
+    </message>
+    <message>
+        <location filename="../src/ui/pages/AgentBehaviorPage.qml" line="306"/>
         <source>取消</source>
         <translation>取消</translation>
     </message>
     <message>
-        <location filename="../src/ui/pages/AgentBehaviorPage.qml" line="276"/>
+        <location filename="../src/ui/pages/AgentBehaviorPage.qml" line="312"/>
         <source>保存</source>
         <translation>保存</translation>
     </message>
     <message>
-        <location filename="../src/ui/pages/AgentBehaviorPage.qml" line="276"/>
+        <location filename="../src/ui/pages/AgentBehaviorPage.qml" line="312"/>
         <source>创建</source>
         <translation>创建</translation>
     </message>
     <message>
-        <location filename="../src/ui/pages/AgentBehaviorPage.qml" line="284"/>
+        <location filename="../src/ui/pages/AgentBehaviorPage.qml" line="320"/>
         <source>新建角色</source>
         <translation>新建角色</translation>
     </message>
     <message>
-        <location filename="../src/ui/pages/AgentBehaviorPage.qml" line="299"/>
+        <location filename="../src/ui/pages/AgentBehaviorPage.qml" line="336"/>
         <source>系统提示词</source>
         <translation>系统提示词</translation>
     </message>
     <message>
-        <location filename="../src/ui/pages/AgentBehaviorPage.qml" line="300"/>
+        <location filename="../src/ui/pages/AgentBehaviorPage.qml" line="337"/>
         <source>留空使用内置提示词；修改即时生效，内容随请求发送给当前模型服务。</source>
         <translation>留空使用内置提示词；修改即时生效，内容随请求发送给当前模型服务。</translation>
     </message>
     <message>
-        <location filename="../src/ui/pages/AgentBehaviorPage.qml" line="308"/>
+        <location filename="../src/ui/pages/AgentBehaviorPage.qml" line="345"/>
         <source>留空 = 内置提示词</source>
         <translation>留空 = 内置提示词</translation>
     </message>
     <message>
-        <location filename="../src/ui/pages/AgentBehaviorPage.qml" line="334"/>
+        <location filename="../src/ui/pages/AgentBehaviorPage.qml" line="371"/>
         <source>自定义系统提示词</source>
         <translation>自定义系统提示词</translation>
     </message>
     <message>
-        <location filename="../src/ui/pages/AgentBehaviorPage.qml" line="338"/>
+        <location filename="../src/ui/pages/AgentBehaviorPage.qml" line="375"/>
         <source>%1 字符</source>
         <translation>%1 字符</translation>
     </message>
@@ -6022,7 +6050,7 @@
 <context>
     <name>NexusAI::AIAgent</name>
     <message>
-        <location filename="../src/core/agent/AIAgent.cpp" line="1021"/>
+        <location filename="../src/core/agent/AIAgent.cpp" line="1023"/>
         <source>请先配置并启用模型，再发送消息。</source>
         <translation>请先配置并启用模型，再发送消息。</translation>
     </message>
@@ -6071,7 +6099,7 @@
         <translation type="vanished">时间线里找不到与该消息对应的记录，无法安全地重置会话。</translation>
     </message>
     <message>
-        <location filename="../src/core/agent/AIAgent.cpp" line="2082"/>
+        <location filename="../src/core/agent/AIAgent.cpp" line="2115"/>
         <source>无法更新会话记录，原消息已保留，请重试。</source>
         <translation>无法更新会话记录，原消息已保留，请重试。</translation>
     </message>
@@ -7739,12 +7767,12 @@
         <translation>查看证据</translation>
     </message>
     <message>
-        <location filename="../src/ui/components/ProcessCard.qml" line="401"/>
+        <location filename="../src/ui/components/ProcessCard.qml" line="402"/>
         <source>已折叠 · %1 条过程记录</source>
         <translation>已折叠 · %1 条过程记录</translation>
     </message>
     <message>
-        <location filename="../src/ui/components/ProcessCard.qml" line="404"/>
+        <location filename="../src/ui/components/ProcessCard.qml" line="405"/>
         <source>已折叠 · %1 字符</source>
         <translation>已折叠 · %1 字符</translation>
     </message>
@@ -7754,32 +7782,32 @@
         <translation>%1 个提案</translation>
     </message>
     <message>
-        <location filename="../src/ui/components/ProcessCard.qml" line="403"/>
+        <location filename="../src/ui/components/ProcessCard.qml" line="404"/>
         <source>已折叠 · %1 个改动提案</source>
         <translation>已折叠 · %1 个改动提案</translation>
     </message>
     <message>
-        <location filename="../src/ui/components/ProcessCard.qml" line="556"/>
+        <location filename="../src/ui/components/ProcessCard.qml" line="557"/>
         <source>%1 处修改</source>
         <translation>%1 处修改</translation>
     </message>
     <message>
-        <location filename="../src/ui/components/ProcessCard.qml" line="602"/>
+        <location filename="../src/ui/components/ProcessCard.qml" line="603"/>
         <source>变更预览:</source>
         <translation>变更预览:</translation>
     </message>
     <message>
-        <location filename="../src/ui/components/ProcessCard.qml" line="622"/>
+        <location filename="../src/ui/components/ProcessCard.qml" line="623"/>
         <source>拒绝</source>
         <translation>拒绝</translation>
     </message>
     <message>
-        <location filename="../src/ui/components/ProcessCard.qml" line="630"/>
+        <location filename="../src/ui/components/ProcessCard.qml" line="631"/>
         <source>允许</source>
         <translation>允许</translation>
     </message>
     <message>
-        <location filename="../src/ui/components/ProcessCard.qml" line="651"/>
+        <location filename="../src/ui/components/ProcessCard.qml" line="652"/>
         <source>收起</source>
         <translation>收起</translation>
     </message>

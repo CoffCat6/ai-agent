@@ -1078,6 +1078,9 @@ private slots:
     void subagentUserRoleOverridesAndFiltersTools();
     void subagentUnknownRoleFailsReadable();
     void subagentRolesFromVariantParsesAndDedupes();
+    // docs/35：角色级默认后台开关——省略 background 时按角色默认执行，
+    // 显式 false 仍可强制同步。
+    void subagentRoleDefaultBackgroundStartsAsync();
     // docs/35 P4.6: 角色级模型配置与流式进度回传。
     void subagentRoleModelProfileReachesFactory();
     void subagentStreamsProgressThrottled();
@@ -6529,6 +6532,7 @@ void TestAgent::subagentRolesFromVariantParsesAndDedupes() {
                     {QStringLiteral("prompt"), QStringLiteral("P-A")},
                     {QStringLiteral("profileId"), QStringLiteral("  fast-model  ")},
                     {QStringLiteral("effort"), QStringLiteral(" high ")},
+                    {QStringLiteral("background"), true},
                     {QStringLiteral("tools"), QVariantList{
                         QStringLiteral("read_file"), QString(),
                         QStringLiteral("  grep  ")}}},
@@ -6544,6 +6548,13 @@ void TestAgent::subagentRolesFromVariantParsesAndDedupes() {
     // docs/35 P4.6: 角色级模型配置随档案解析（首尾空白剔除）。
     QCOMPARE(roles.first().profileId, QStringLiteral("fast-model"));
     QCOMPARE(roles.first().effort, QStringLiteral("high"));
+    // docs/35：角色默认后台随档案解析；缺失字段 = false（旧档案兼容）。
+    QVERIFY(roles.first().background);
+    const QVector<SubAgentRole> legacy = SubAgentTool::rolesFromVariant({
+        QVariantMap{{QStringLiteral("name"), QStringLiteral("legacy")},
+                    {QStringLiteral("prompt"), QStringLiteral("P")}}});
+    QCOMPARE(legacy.size(), 1);
+    QVERIFY(!legacy.first().background);
     const QStringList expectedTools{QStringLiteral("read_file"), QStringLiteral("grep")};
     QCOMPARE(roles.first().tools, expectedTools);
 
@@ -6556,6 +6567,55 @@ void TestAgent::subagentRolesFromVariantParsesAndDedupes() {
     QCOMPARE(presets.at(3).name, QStringLiteral("coder"));
     QVERIFY(presets.at(2).prompt.contains(QStringLiteral("code review")));
     QVERIFY(presets.at(3).prompt.contains(QStringLiteral("never apply")));
+}
+
+// docs/35：角色级默认后台。用户档案把 explore 设为默认后台后：
+//   * 省略 background（甚至省略 role）→ 走后台 fork，立即 ack；
+//   * 显式 background=false → 同步执行（模型决定优先于角色默认）。
+void TestAgent::subagentRoleDefaultBackgroundStartsAsync() {
+    SubAgentFixture fixture;
+    SpawnToolGuard guard;
+    ensureSubAgentProbe();
+    fixture.tool = registerSpawnTool(fixture, [](RecordingFakeService& sub) {
+        sub.script.append(textResponse(QStringLiteral("role-bg report")));
+    });
+    fixture.tool->setUserRoles(SubAgentTool::rolesFromVariant({
+        QVariantMap{{QStringLiteral("name"), QStringLiteral("explore")},
+                    {QStringLiteral("prompt"),
+                     QStringLiteral("CUSTOM-EXPLORE-DEFAULT-BG")},
+                    {QStringLiteral("background"), true}}}));
+
+    auto hub = std::make_shared<BackgroundTaskHub>();
+    BackgroundTaskHubRouter router(hub);
+
+    // 省略 role 与 background：默认 explore 解析成功，且按角色默认转后台。
+    const ToolResult ack = fixture.tool->execute(QJsonObject{
+        {QStringLiteral("goal"), QStringLiteral("default-background survey")}});
+    QVERIFY2(ack.success, qPrintable(ack.error));
+    QVERIFY(ack.output.contains(QStringLiteral("[Sub-agent started]")));
+    QVERIFY(!ack.output.contains(QStringLiteral("[Sub-agent report]")));
+    QCOMPARE(hub->snapshots().size(), 1);
+    QCOMPARE(hub->snapshots().first().toMap()
+                 .value(QStringLiteral("role")).toString(),
+             QStringLiteral("explore"));
+    static const QRegularExpression idRe(QStringLiteral("id=(sa-\\d+)"));
+    const QRegularExpressionMatch idMatch = idRe.match(ack.output);
+    QVERIFY(idMatch.hasMatch());
+    SubAgentWaitTool waitTool;
+    const ToolResult report = waitTool.execute(QJsonObject{
+        {QStringLiteral("id"), idMatch.captured(1)},
+        {QStringLiteral("timeout_ms"), 10000}});
+    QVERIFY2(report.success, qPrintable(report.error));
+    QVERIFY(report.output.contains(QStringLiteral("role-bg report")));
+
+    // 模型显式 false：角色默认被覆盖，回到同步 fork，不新增后台任务。
+    const ToolResult sync = fixture.tool->execute(QJsonObject{
+        {QStringLiteral("goal"), QStringLiteral("force sync")},
+        {QStringLiteral("background"), false}});
+    QVERIFY2(sync.success, qPrintable(sync.error));
+    QVERIFY(sync.output.contains(QStringLiteral("[Sub-agent report]")));
+    QVERIFY(!sync.output.contains(QStringLiteral("[Sub-agent started]")));
+    QCOMPARE(hub->snapshots().size(), 1);
 }
 
 // docs/35 P4.6: 角色点名的 profileId / effort 一路传到服务工厂，上下文窗口

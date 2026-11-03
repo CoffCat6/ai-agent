@@ -107,6 +107,9 @@ struct SubAgentRole {
     // high）非空时覆盖该 profile 的思考强度。
     QString profileId;
     QString effort;
+    // 该角色默认是否后台运行。spawn_agent 省略 background 参数时按此值
+    // 执行；模型显式传 false 仍可强制同步（模型决定优先于角色默认）。
+    bool background{false};
 };
 
 // P1 (docs/32): parameters for one sub-agent run.

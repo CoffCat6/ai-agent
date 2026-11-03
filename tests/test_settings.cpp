@@ -1042,6 +1042,7 @@ private slots:
             const QVariantList roles{
                 QVariantMap{{QStringLiteral("name"), QStringLiteral("auditor")},
                             {QStringLiteral("prompt"), QStringLiteral("审计优先")},
+                            {QStringLiteral("background"), true},
                             {QStringLiteral("tools"),
                              QVariantList{QStringLiteral("read_file")}}},
                 QVariantMap{{QStringLiteral("name"), QStringLiteral("triage")},
@@ -1055,6 +1056,9 @@ private slots:
             QCOMPARE(service.subagentRoles().size(), 2);
             QCOMPARE(service.subagentRoles().first().toMap()
                          .value("name").toString(), QStringLiteral("auditor"));
+            // 角色级默认后台（docs/35）随 JSON 资产原样存回。
+            QCOMPARE(service.subagentRoles().first().toMap()
+                         .value("background").toBool(), true);
             // 复位智能体行为 → 自定义档案清空（预设内建于工具，不受影响）。
             service.resetAgentToDefaults();
             QCOMPARE(service.subagentRoles().size(), 0);

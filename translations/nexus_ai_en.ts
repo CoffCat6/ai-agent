@@ -220,9 +220,8 @@
         <translation>Sub-agent role profiles</translation>
     </message>
     <message>
-        <location filename="../src/ui/pages/AgentBehaviorPage.qml" line="65"/>
         <source>spawn_agent 可按角色派生子代理：预设不可改，自定义档案指定专属提示词与工具白名单。</source>
-        <translation>spawn_agent can derive sub-agents per role: presets are read-only, custom profiles define their own prompt and tool whitelist.</translation>
+        <translation type="vanished">spawn_agent can derive sub-agents per role: presets are read-only, custom profiles define their own prompt and tool whitelist.</translation>
     </message>
     <message>
         <source>内置角色：explore（广度优先勘察）、research（深度查证）、review（代码评审）、coder（起草改动提案，只提不改）。调用时省略 role 参数默认使用 explore；自定义档案与预设同名时覆盖预设。coder 经 propose_edit 产出锚点式提案，由主任务用 edit_file 逐条应用并逐次确认；其他预设不授予提案权。</source>
@@ -240,107 +239,136 @@
         <translation>%1 (deleted; falls back to the current profile)</translation>
     </message>
     <message>
-        <location filename="../src/ui/pages/AgentBehaviorPage.qml" line="113"/>
         <source>内置角色：explore（广度优先勘察）、research（深度查证）、review（代码评审）、coder（起草改动提案，只提不改）。调用时省略 role 参数默认使用 explore；自定义档案与预设同名时覆盖预设。coder 经 propose_edit 产出锚点式提案，由主任务用 apply_proposal / edit_file 逐条应用并逐次确认；其他预设不授予提案权。自定义角色可选择独立的模型配置与思考强度（留空沿用当前配置）。</source>
-        <translation>Built-in roles: explore (breadth-first survey), research (depth-first verification), review (code review), coder (drafts change proposals, never applies them). Omitting the role argument defaults to explore; a custom profile sharing a preset&apos;s name overrides it. coder produces anchored proposals via propose_edit; the primary task applies them one by one with apply_proposal / edit_file after your confirmation. Other presets are not granted propose_edit. Custom roles can select their own model profile and thinking effort (leave empty to inherit the current profile).</translation>
+        <translation type="vanished">Built-in roles: explore (breadth-first survey), research (depth-first verification), review (code review), coder (drafts change proposals, never applies them). Omitting the role argument defaults to explore; a custom profile sharing a preset&apos;s name overrides it. coder produces anchored proposals via propose_edit; the primary task applies them one by one with apply_proposal / edit_file after your confirmation. Other presets are not granted propose_edit. Custom roles can select their own model profile and thinking effort (leave empty to inherit the current profile).</translation>
     </message>
     <message>
-        <location filename="../src/ui/pages/AgentBehaviorPage.qml" line="150"/>
+        <location filename="../src/ui/pages/AgentBehaviorPage.qml" line="65"/>
+        <source>spawn_agent 可按角色派生子代理：预设不可改，自定义档案指定专属提示词、工具白名单与默认运行方式。</source>
+        <translation>spawn_agent can spawn sub-agents by role: presets are read-only; a custom profile specifies its own prompt, tool whitelist and default run mode.</translation>
+    </message>
+    <message>
+        <location filename="../src/ui/pages/AgentBehaviorPage.qml" line="114"/>
+        <source>内置角色：explore（广度优先勘察）、research（深度查证）、review（代码评审）、coder（起草改动提案，只提不改）。调用时省略 role 参数默认使用 explore；自定义档案与预设同名时覆盖预设。coder 经 propose_edit 产出锚点式提案，由主任务用 apply_proposal / edit_file 逐条应用并逐次确认；其他预设不授予提案权。自定义角色可选择独立的模型配置与思考强度（留空沿用当前配置），并可设为默认后台运行（模型省略 background 时生效）。</source>
+        <translation>Built-in roles: explore (breadth-first survey), research (deep verification), review (code review), coder (drafts change proposals only, never applies them). Omit role to use explore; a custom profile with the same name overrides a preset. coder drafts anchored proposals via propose_edit, which the primary agent applies one by one with apply_proposal / edit_file after per-edit approval; other presets cannot propose edits. A custom role can pick its own model profile and reasoning effort (empty = current config) and default to running in the background (used when the model omits background).</translation>
+    </message>
+    <message>
+        <location filename="../src/ui/pages/AgentBehaviorPage.qml" line="151"/>
         <source>编辑</source>
         <translation>Edit</translation>
     </message>
     <message>
-        <location filename="../src/ui/pages/AgentBehaviorPage.qml" line="165"/>
+        <location filename="../src/ui/pages/AgentBehaviorPage.qml" line="168"/>
         <source>删除</source>
         <translation>Delete</translation>
     </message>
     <message>
-        <location filename="../src/ui/pages/AgentBehaviorPage.qml" line="182"/>
+        <location filename="../src/ui/pages/AgentBehaviorPage.qml" line="185"/>
         <source>工具白名单：%1</source>
         <translation>Tool whitelist: %1</translation>
     </message>
     <message>
-        <location filename="../src/ui/pages/AgentBehaviorPage.qml" line="191"/>
+        <location filename="../src/ui/pages/AgentBehaviorPage.qml" line="193"/>
+        <source>默认后台运行（调用时省略 background）</source>
+        <translation>Runs in the background by default (when background is omitted)</translation>
+    </message>
+    <message>
+        <location filename="../src/ui/pages/AgentBehaviorPage.qml" line="202"/>
         <source>模型配置：%1%2</source>
         <translation>Model profile: %1%2</translation>
     </message>
     <message>
-        <location filename="../src/ui/pages/AgentBehaviorPage.qml" line="195"/>
+        <location filename="../src/ui/pages/AgentBehaviorPage.qml" line="206"/>
         <source> · 思考强度 %1</source>
         <translation> · effort %1</translation>
     </message>
     <message>
-        <location filename="../src/ui/pages/AgentBehaviorPage.qml" line="207"/>
+        <location filename="../src/ui/pages/AgentBehaviorPage.qml" line="218"/>
         <source>还没有自定义角色。点「新建角色」定义第一支专属子代理。</source>
         <translation>No custom roles yet. Click &quot;New role&quot; to define your first dedicated sub-agent.</translation>
     </message>
     <message>
-        <location filename="../src/ui/pages/AgentBehaviorPage.qml" line="222"/>
+        <location filename="../src/ui/pages/AgentBehaviorPage.qml" line="233"/>
         <source>角色名（模型以 role 参数引用，如：doc-auditor）</source>
         <translation>Role name (the model references it via the role argument, e.g. doc-auditor)</translation>
     </message>
     <message>
-        <location filename="../src/ui/pages/AgentBehaviorPage.qml" line="233"/>
+        <location filename="../src/ui/pages/AgentBehaviorPage.qml" line="244"/>
         <source>该角色的专注指令（追加到子代理系统提示词）…</source>
         <translation>Role focus instructions (appended to the sub-agent system prompt)…</translation>
     </message>
     <message>
-        <location filename="../src/ui/pages/AgentBehaviorPage.qml" line="244"/>
+        <location filename="../src/ui/pages/AgentBehaviorPage.qml" line="255"/>
         <source>工具白名单（逗号分隔，留空 = 全部只读工具；写提案需显式加入 propose_edit）</source>
         <translation>Tool whitelist (comma-separated; empty = all read-only tools; add propose_edit to grant proposals)</translation>
     </message>
     <message>
-        <location filename="../src/ui/pages/AgentBehaviorPage.qml" line="256"/>
+        <location filename="../src/ui/pages/AgentBehaviorPage.qml" line="267"/>
         <source>角色使用的模型配置</source>
         <translation>Model profile used by this role</translation>
     </message>
     <message>
-        <location filename="../src/ui/pages/AgentBehaviorPage.qml" line="262"/>
+        <location filename="../src/ui/pages/AgentBehaviorPage.qml" line="273"/>
         <source>思考强度覆盖（low / medium / high；留空沿用配置）</source>
         <translation>Thinking effort override (low / medium / high; leave empty to inherit)</translation>
     </message>
     <message>
-        <location filename="../src/ui/pages/AgentBehaviorPage.qml" line="270"/>
+        <location filename="../src/ui/pages/AgentBehaviorPage.qml" line="284"/>
+        <source>默认后台运行</source>
+        <translation>Run in the background by default</translation>
+    </message>
+    <message>
+        <location filename="../src/ui/pages/AgentBehaviorPage.qml" line="292"/>
+        <source>该角色默认在后台运行</source>
+        <translation>This role runs in the background by default</translation>
+    </message>
+    <message>
+        <location filename="../src/ui/pages/AgentBehaviorPage.qml" line="297"/>
+        <source>spawn_agent 省略 background 参数时按此设置执行；模型显式传 false 仍可强制同步。后台任务从顶栏「后台子代理」面板查看。</source>
+        <translation>Used when spawn_agent omits the background argument; an explicit false still forces a synchronous run. Background tasks appear in the top-bar "Background sub-agents" panel.</translation>
+    </message>
+    <message>
+        <location filename="../src/ui/pages/AgentBehaviorPage.qml" line="306"/>
         <source>取消</source>
         <translation>Cancel</translation>
     </message>
     <message>
-        <location filename="../src/ui/pages/AgentBehaviorPage.qml" line="276"/>
+        <location filename="../src/ui/pages/AgentBehaviorPage.qml" line="312"/>
         <source>保存</source>
         <translation>Save</translation>
     </message>
     <message>
-        <location filename="../src/ui/pages/AgentBehaviorPage.qml" line="276"/>
+        <location filename="../src/ui/pages/AgentBehaviorPage.qml" line="312"/>
         <source>创建</source>
         <translation>Create</translation>
     </message>
     <message>
-        <location filename="../src/ui/pages/AgentBehaviorPage.qml" line="284"/>
+        <location filename="../src/ui/pages/AgentBehaviorPage.qml" line="320"/>
         <source>新建角色</source>
         <translation>New role</translation>
     </message>
     <message>
-        <location filename="../src/ui/pages/AgentBehaviorPage.qml" line="299"/>
+        <location filename="../src/ui/pages/AgentBehaviorPage.qml" line="336"/>
         <source>系统提示词</source>
         <translation>System Prompt</translation>
     </message>
     <message>
-        <location filename="../src/ui/pages/AgentBehaviorPage.qml" line="300"/>
+        <location filename="../src/ui/pages/AgentBehaviorPage.qml" line="337"/>
         <source>留空使用内置提示词；修改即时生效，内容随请求发送给当前模型服务。</source>
         <translation>Leave empty to use the built-in prompt; changes take effect immediately and are sent with each request.</translation>
     </message>
     <message>
-        <location filename="../src/ui/pages/AgentBehaviorPage.qml" line="308"/>
+        <location filename="../src/ui/pages/AgentBehaviorPage.qml" line="345"/>
         <source>留空 = 内置提示词</source>
         <translation>Empty = built-in prompt</translation>
     </message>
     <message>
-        <location filename="../src/ui/pages/AgentBehaviorPage.qml" line="334"/>
+        <location filename="../src/ui/pages/AgentBehaviorPage.qml" line="371"/>
         <source>自定义系统提示词</source>
         <translation>Custom System Prompt</translation>
     </message>
     <message>
-        <location filename="../src/ui/pages/AgentBehaviorPage.qml" line="338"/>
+        <location filename="../src/ui/pages/AgentBehaviorPage.qml" line="375"/>
         <source>%1 字符</source>
         <translation>%1 chars</translation>
     </message>
@@ -6022,7 +6050,7 @@ Select or import a project in the sidebar first.</translation>
 <context>
     <name>NexusAI::AIAgent</name>
     <message>
-        <location filename="../src/core/agent/AIAgent.cpp" line="1021"/>
+        <location filename="../src/core/agent/AIAgent.cpp" line="1023"/>
         <source>请先配置并启用模型，再发送消息。</source>
         <translation>Configure and enable a model before sending a message.</translation>
     </message>
@@ -6071,7 +6099,7 @@ Select or import a project in the sidebar first.</translation>
         <translation type="vanished">No timeline entry matches this message, so the conversation cannot be rewound safely.</translation>
     </message>
     <message>
-        <location filename="../src/core/agent/AIAgent.cpp" line="2082"/>
+        <location filename="../src/core/agent/AIAgent.cpp" line="2115"/>
         <source>无法更新会话记录，原消息已保留，请重试。</source>
         <translation>Could not update the conversation. Original messages were kept. Please retry.</translation>
     </message>
@@ -7739,12 +7767,12 @@ Select or import a project in the sidebar first.</translation>
         <translation>View evidence</translation>
     </message>
     <message>
-        <location filename="../src/ui/components/ProcessCard.qml" line="401"/>
+        <location filename="../src/ui/components/ProcessCard.qml" line="402"/>
         <source>已折叠 · %1 条过程记录</source>
         <translation>Collapsed · %1 process entries</translation>
     </message>
     <message>
-        <location filename="../src/ui/components/ProcessCard.qml" line="404"/>
+        <location filename="../src/ui/components/ProcessCard.qml" line="405"/>
         <source>已折叠 · %1 字符</source>
         <translation>Collapsed · %1 chars</translation>
     </message>
@@ -7754,32 +7782,32 @@ Select or import a project in the sidebar first.</translation>
         <translation>%1 proposals</translation>
     </message>
     <message>
-        <location filename="../src/ui/components/ProcessCard.qml" line="403"/>
+        <location filename="../src/ui/components/ProcessCard.qml" line="404"/>
         <source>已折叠 · %1 个改动提案</source>
         <translation>Collapsed · %1 change proposals</translation>
     </message>
     <message>
-        <location filename="../src/ui/components/ProcessCard.qml" line="556"/>
+        <location filename="../src/ui/components/ProcessCard.qml" line="557"/>
         <source>%1 处修改</source>
         <translation>%1 edits</translation>
     </message>
     <message>
-        <location filename="../src/ui/components/ProcessCard.qml" line="602"/>
+        <location filename="../src/ui/components/ProcessCard.qml" line="603"/>
         <source>变更预览:</source>
         <translation>Change preview:</translation>
     </message>
     <message>
-        <location filename="../src/ui/components/ProcessCard.qml" line="622"/>
+        <location filename="../src/ui/components/ProcessCard.qml" line="623"/>
         <source>拒绝</source>
         <translation>Reject</translation>
     </message>
     <message>
-        <location filename="../src/ui/components/ProcessCard.qml" line="630"/>
+        <location filename="../src/ui/components/ProcessCard.qml" line="631"/>
         <source>允许</source>
         <translation>Allow</translation>
     </message>
     <message>
-        <location filename="../src/ui/components/ProcessCard.qml" line="651"/>
+        <location filename="../src/ui/components/ProcessCard.qml" line="652"/>
         <source>收起</source>
         <translation>Collapse</translation>
     </message>
