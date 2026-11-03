@@ -766,7 +766,7 @@
         <translation>最新在上</translation>
     </message>
     <message>
-        <location filename="../src/ui/components/BackgroundTasksDialog.qml" line="939"/>
+        <location filename="../src/ui/components/BackgroundTasksDialog.qml" line="948"/>
         <source>任务完成后可查看完整报告。</source>
         <translation>任务完成后可查看完整报告。</translation>
     </message>
@@ -896,12 +896,12 @@
         <translation type="vanished">最近进度</translation>
     </message>
     <message>
-        <location filename="../src/ui/components/BackgroundTasksDialog.qml" line="901"/>
+        <location filename="../src/ui/components/BackgroundTasksDialog.qml" line="906"/>
         <source>等待第一条进度…</source>
         <translation>等待第一条进度…</translation>
     </message>
     <message>
-        <location filename="../src/ui/components/BackgroundTasksDialog.qml" line="902"/>
+        <location filename="../src/ui/components/BackgroundTasksDialog.qml" line="907"/>
         <source>没有进度记录。</source>
         <translation>没有进度记录。</translation>
     </message>
@@ -6205,7 +6205,7 @@
 <context>
     <name>NexusAI::AIAgent</name>
     <message>
-        <location filename="../src/core/agent/AIAgent.cpp" line="1023"/>
+        <location filename="../src/core/agent/AIAgent.cpp" line="1059"/>
         <source>请先配置并启用模型，再发送消息。</source>
         <translation>请先配置并启用模型，再发送消息。</translation>
     </message>
@@ -6254,7 +6254,7 @@
         <translation type="vanished">时间线里找不到与该消息对应的记录，无法安全地重置会话。</translation>
     </message>
     <message>
-        <location filename="../src/core/agent/AIAgent.cpp" line="2115"/>
+        <location filename="../src/core/agent/AIAgent.cpp" line="2162"/>
         <source>无法更新会话记录，原消息已保留，请重试。</source>
         <translation>无法更新会话记录，原消息已保留，请重试。</translation>
     </message>
@@ -11491,62 +11491,72 @@
         <translation>本会话累计 %1 次请求</translation>
     </message>
     <message>
-        <location filename="../src/ui/components/TopBar.qml" line="887"/>
+        <location filename="../src/ui/components/TopBar.qml" line="895"/>
         <source>任务清单（%1 项未完成）</source>
         <translation>任务清单（%1 项未完成）</translation>
     </message>
     <message>
-        <location filename="../src/ui/components/TopBar.qml" line="888"/>
+        <location filename="../src/ui/components/TopBar.qml" line="896"/>
+        <source>任务清单（全部完成）</source>
+        <translation>任务清单（全部完成）</translation>
+    </message>
+    <message>
+        <location filename="../src/ui/components/TopBar.qml" line="898"/>
         <source>打开任务清单，%1 项未完成</source>
         <translation>打开任务清单，%1 项未完成</translation>
     </message>
     <message>
-        <location filename="../src/ui/components/TopBar.qml" line="933"/>
+        <location filename="../src/ui/components/TopBar.qml" line="899"/>
+        <source>打开任务清单，全部完成</source>
+        <translation>打开任务清单，全部完成</translation>
+    </message>
+    <message>
+        <location filename="../src/ui/components/TopBar.qml" line="944"/>
         <source>后台子代理（%1 个进行中）</source>
         <translation>后台子代理（%1 个进行中）</translation>
     </message>
     <message>
-        <location filename="../src/ui/components/TopBar.qml" line="934"/>
+        <location filename="../src/ui/components/TopBar.qml" line="945"/>
         <source>后台子代理面板</source>
         <translation>后台子代理面板</translation>
     </message>
     <message>
-        <location filename="../src/ui/components/TopBar.qml" line="936"/>
+        <location filename="../src/ui/components/TopBar.qml" line="947"/>
         <source>打开后台子代理面板，%1 个进行中</source>
         <translation>打开后台子代理面板，%1 个进行中</translation>
     </message>
     <message>
-        <location filename="../src/ui/components/TopBar.qml" line="937"/>
+        <location filename="../src/ui/components/TopBar.qml" line="948"/>
         <source>打开后台子代理面板</source>
         <translation>打开后台子代理面板</translation>
     </message>
     <message>
-        <location filename="../src/ui/components/TopBar.qml" line="988"/>
+        <location filename="../src/ui/components/TopBar.qml" line="999"/>
         <source>审阅本次会话的文件改动（%1 个文件待查看）</source>
         <translation>审阅本次会话的文件改动（%1 个文件待查看）</translation>
     </message>
     <message>
-        <location filename="../src/ui/components/TopBar.qml" line="989"/>
+        <location filename="../src/ui/components/TopBar.qml" line="1000"/>
         <source>审阅本次会话的文件改动 (Ctrl+R)</source>
         <translation>审阅本次会话的文件改动 (Ctrl+R)</translation>
     </message>
     <message>
-        <location filename="../src/ui/components/TopBar.qml" line="991"/>
+        <location filename="../src/ui/components/TopBar.qml" line="1002"/>
         <source>打开文件改动审阅，%1 个文件待查看</source>
         <translation>打开文件改动审阅，%1 个文件待查看</translation>
     </message>
     <message>
-        <location filename="../src/ui/components/TopBar.qml" line="992"/>
+        <location filename="../src/ui/components/TopBar.qml" line="1003"/>
         <source>打开文件改动审阅</source>
         <translation>打开文件改动审阅</translation>
     </message>
     <message>
-        <location filename="../src/ui/components/TopBar.qml" line="1037"/>
+        <location filename="../src/ui/components/TopBar.qml" line="1048"/>
         <source>收起右侧面板 (Ctrl+])</source>
         <translation>收起右侧面板 (Ctrl+])</translation>
     </message>
     <message>
-        <location filename="../src/ui/components/TopBar.qml" line="1037"/>
+        <location filename="../src/ui/components/TopBar.qml" line="1048"/>
         <source>展开右侧面板 (Ctrl+])</source>
         <translation>展开右侧面板 (Ctrl+])</translation>
     </message>

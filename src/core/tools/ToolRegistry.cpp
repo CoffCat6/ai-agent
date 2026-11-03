@@ -1224,6 +1224,11 @@ public:
         def.name = "todo_write";
         def.description = "Manage a task list for tracking multi-step work. "
                           "Pass the full list each time (replaces the previous one). "
+                          "The list is live, not a one-time plan: call this tool again "
+                          "whenever an item starts or finishes, set the active item to "
+                          "in_progress and completed items to completed, and reconcile "
+                          "the list before your final answer so finished work is never "
+                          "left pending/in_progress. "
                           "Each task has content, status (pending/in_progress/completed), "
                           "and priority (high/medium/low). Every item is assigned a "
                           "stable id (t1, t2, ...) that survives list rewrites - keep "

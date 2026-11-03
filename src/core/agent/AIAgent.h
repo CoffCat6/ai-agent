@@ -411,6 +411,9 @@ private:
 
     // P5a: task list maintained by the todo_write tool.
     QJsonArray m_todoList;
+    // Highest t<n> ever allocated in this session. Kept separately from the
+    // live list so clearing the list (todo_write []) cannot recycle ids.
+    int m_todoIdSeq{0};
 
     QVector<ToolCallInfo> m_pendingToolCalls;
     ToolCallInfo m_currentConfirmCall;

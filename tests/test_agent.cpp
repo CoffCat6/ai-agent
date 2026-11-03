@@ -981,6 +981,8 @@ private slots:
     // restores its list, and a different session yields its own (or empty).
     void todoListPersistsAcrossSessionResume();
     void todoIdsStableAcrossRewrites();
+    void todoStateInjectedIntoSystemPromptAndKeptCurrent();
+    void todoIdsNotReusedAfterListClear();
     void spawnAgentTodoIdEchoedInReportAndAudit();
     // docs/26 I4: 会话标题自动生成。
     void autoSessionTitleGeneratedAfterFirstExchange();
@@ -2717,6 +2719,92 @@ void TestAgent::todoIdsStableAcrossRewrites() {
              QStringLiteral("t2"));
     QCOMPARE(todos.at(1).toObject().value("id").toString(),
              QStringLiteral("t1"));
+}
+
+// 2026-11-03 真机缺陷：模型把 todo_write 当一次性计划，写完全部 in_progress
+// 后再也不回写，最终答案说"全部完成"而面板仍停在未完成。修复是让系统提示
+// 每轮携带当前清单 + 明确维护规则；这里锁定注入内容随状态变化而更新。
+void TestAgent::todoStateInjectedIntoSystemPromptAndKeptCurrent() {
+    llm.reset();
+    llm.script.append(toolResponse(QStringLiteral("todo_write"),
+        QJsonObject{{"todos", QJsonArray{
+            QJsonObject{{"content", QStringLiteral("Inspect code")},
+                        {"status", QStringLiteral("in_progress")}},
+            QJsonObject{{"content", QStringLiteral("Apply fix")},
+                        {"status", QStringLiteral("pending")}}}}}));
+    llm.script.append(toolResponse(QStringLiteral("todo_write"),
+        QJsonObject{{"todos", QJsonArray{
+            QJsonObject{{"id", QStringLiteral("t1")},
+                        {"content", QStringLiteral("Inspect code")},
+                        {"status", QStringLiteral("completed")}},
+            QJsonObject{{"id", QStringLiteral("t2")},
+                        {"content", QStringLiteral("Apply fix")},
+                        {"status", QStringLiteral("in_progress")}}}}}));
+    llm.script.append(textResponse(QStringLiteral("all done")));
+
+    QSignalSpy spy(&agent, &AIAgent::responseReady);
+    agent.startTask(QStringLiteral("plan and work"));
+    QTRY_COMPARE_WITH_TIMEOUT(spy.count(), 1, 15000);
+
+    // 每个请求都带系统提示：第 2 个请求（首次 todo_write 之后）应看到清单块。
+    QCOMPARE(llm.seenMessages.size(), 3);
+    const auto systemOf = [this](int index) {
+        return llm.seenMessages.at(index).first().toObject()
+            .value(QStringLiteral("content")).toString();
+    };
+    const QString afterPlan = systemOf(1);
+    QVERIFY2(afterPlan.contains(QStringLiteral("Current task list")),
+             qPrintable(afterPlan.left(200)));
+    QVERIFY(afterPlan.contains(QStringLiteral("t1 [in_progress]")));
+    QVERIFY(afterPlan.contains(QStringLiteral("t2 [pending]")));
+    // 第二次 todo_write 之后的状态必须反映到下一轮系统提示。
+    const QString afterAdvance = systemOf(2);
+    QVERIFY(afterAdvance.contains(QStringLiteral("t1 [completed]")));
+    QVERIFY(afterAdvance.contains(QStringLiteral("t2 [in_progress]")));
+
+    // 工具结果里重复维护规则，避免"写完初版就再也不回写"。
+    bool reminderInHistory = false;
+    for (const auto& entry : agent.messages()) {
+        const QJsonObject msg = entry.toObject();
+        if (msg.value(QStringLiteral("role")).toString() == QLatin1String("tool")
+                && msg.value(QStringLiteral("content")).toString()
+                       .contains(QStringLiteral("Keep it current")))
+            reminderInHistory = true;
+    }
+    QVERIFY2(reminderInHistory, "todo_write 结果缺少维护提醒");
+
+    const QJsonArray todos = agent.todoList();
+    QCOMPARE(todos.size(), 2);
+    QCOMPARE(todos.at(0).toObject().value("status").toString(),
+             QStringLiteral("completed"));
+}
+
+// 清单被清空（todo_write []）后，新项不得复用旧 id——历史/审计里的 t1
+// 会因此指向另一个任务。计数器独立于当前列表保存在 AIAgent。
+void TestAgent::todoIdsNotReusedAfterListClear() {
+    llm.reset();
+    llm.script.append(toolResponse(QStringLiteral("todo_write"),
+        QJsonObject{{"todos", QJsonArray{QJsonObject{
+            {"content", QStringLiteral("First task")},
+            {"status", QStringLiteral("pending")}}}}}));
+    llm.script.append(toolResponse(QStringLiteral("todo_write"),
+        QJsonObject{{"todos", QJsonArray{}}}));
+    llm.script.append(toolResponse(QStringLiteral("todo_write"),
+        QJsonObject{{"todos", QJsonArray{QJsonObject{
+            {"content", QStringLiteral("Second task")},
+            {"status", QStringLiteral("pending")}}}}}));
+    llm.script.append(textResponse(QStringLiteral("done")));
+
+    QSignalSpy spy(&agent, &AIAgent::responseReady);
+    agent.startTask(QStringLiteral("clear and rebuild"));
+    QTRY_COMPARE_WITH_TIMEOUT(spy.count(), 1, 15000);
+
+    const QJsonArray todos = agent.todoList();
+    QCOMPARE(todos.size(), 1);
+    QCOMPARE(todos.at(0).toObject().value("content").toString(),
+             QStringLiteral("Second task"));
+    QCOMPARE(todos.at(0).toObject().value("id").toString(),
+             QStringLiteral("t2"));
 }
 
 // docs/33 E4: spawn_agent 带 todo_id → 报告头回显（提醒模型同步状态），

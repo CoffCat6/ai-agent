@@ -863,10 +863,17 @@ Rectangle {
         // The list itself lives in TodoDialog (main.qml) — the sidebar was
         // too narrow for it. The badge counts tasks that are not finished
         // yet, so an in-flight plan is visible without opening anything.
+        // The button stays available while any list exists (including an
+        // all-completed one): the plan is part of the session record and must
+        // stay reviewable after the badge count drops to zero.
         // Reads AgentVM.todoList directly: TopBar cannot see the dialog
         // instance, and this way the count follows todoListChanged.
         IconButton {
             id: todoToggle
+            readonly property int todoCount: {
+                const list = AgentVM.todoList
+                return list ? list.length : 0
+            }
             readonly property int unfinishedCount: {
                 const list = AgentVM.todoList
                 if (!list || list.length === 0)
@@ -883,9 +890,13 @@ Rectangle {
             icon: "check"
             iconSize: 16
             restIconColor: Theme.textPrimary
-            visible: unfinishedCount > 0
-            tooltip: qsTr("任务清单（%1 项未完成）").arg(unfinishedCount)
-            Accessible.name: qsTr("打开任务清单，%1 项未完成").arg(unfinishedCount)
+            visible: todoCount > 0
+            tooltip: unfinishedCount > 0
+                ? qsTr("任务清单（%1 项未完成）").arg(unfinishedCount)
+                : qsTr("任务清单（全部完成）")
+            Accessible.name: unfinishedCount > 0
+                ? qsTr("打开任务清单，%1 项未完成").arg(unfinishedCount)
+                : qsTr("打开任务清单，全部完成")
             onClicked: todoDialog.open()
 
             // Count badge on the top-right corner; hidden at zero so an

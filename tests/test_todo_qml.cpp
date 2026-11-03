@@ -304,7 +304,71 @@ private slots:
                  qPrintable(QStringLiteral("任务清单渲染为空白（非背景像素 %1）").arg(visible)));
     }
 
-    // 头部进度摘要：计数、比例与进度条几何——不逐行扫读就能看出整体进度。
+    // 2026-11-03：清单是持续更新的（todo_write 全量替换），完成状态必须在不
+// 关闭/重开面板的情况下立刻重绘。这条用例锁住「同一个 content 从 in_progress
+// 变 completed 后，行标记、删除线与计数同步更新」。
+void statusUpdatesRepaintRowsInPlace() {
+    Harness h;
+    QVERIFY2(h.window, qPrintable(h.error));
+
+    QVariantList items{
+        todo(QStringLiteral("Inspect code"), QStringLiteral("in_progress"),
+             QStringLiteral("high")),
+        todo(QStringLiteral("Apply fix"), QStringLiteral("pending"),
+             QStringLiteral("medium"))};
+    QVERIFY(h.setTodos(items));
+    QTRY_COMPARE(h.call("completedCount").toInt(), 0);
+    QTRY_COMPARE(h.call("inProgressCount").toInt(), 1);
+
+    QTest::qWait(200);
+    (void)h.window->grabWindow();
+    QList<QQuickItem*> delegates;
+    collectVisualItems(h.window->contentItem(), QStringLiteral("todoItem"), &delegates);
+    QMap<QString, QQuickItem*> byContent;
+    for (QQuickItem* item : delegates)
+        byContent.insert(item->property("content").toString(), item);
+    QCOMPARE(byContent.size(), 2);
+    QCOMPARE(byContent.value(QStringLiteral("Inspect code"))
+                 ->property("itemStatus").toString(),
+             QStringLiteral("in_progress"));
+    QCOMPARE(byContent.value(QStringLiteral("Inspect code"))
+                 ->property("isCompleted").toBool(),
+             false);
+
+    // 模型回写状态：同一项完成、下一项开始。
+    items = QVariantList{
+        todo(QStringLiteral("Inspect code"), QStringLiteral("completed"),
+             QStringLiteral("high")),
+        todo(QStringLiteral("Apply fix"), QStringLiteral("in_progress"),
+             QStringLiteral("medium"))};
+    QVERIFY(h.setTodos(items));
+    QTRY_COMPARE(h.call("completedCount").toInt(), 1);
+    QTRY_COMPARE(h.call("inProgressCount").toInt(), 1);
+    QTRY_VERIFY(!h.call("allCompleted").toBool());
+
+    QTest::qWait(200);
+    (void)h.window->grabWindow();
+    delegates.clear();
+    byContent.clear();
+    collectVisualItems(h.window->contentItem(), QStringLiteral("todoItem"), &delegates);
+    for (QQuickItem* item : delegates)
+        byContent.insert(item->property("content").toString(), item);
+    QCOMPARE(byContent.size(), 2);
+    QQuickItem* done = byContent.value(QStringLiteral("Inspect code"));
+    QVERIFY(done);
+    QCOMPARE(done->property("itemStatus").toString(),
+             QStringLiteral("completed"));
+    QCOMPARE(done->property("isCompleted").toBool(), true);
+    QQuickItem* doneText = findChildItem(done, QStringLiteral("todoText"));
+    QVERIFY(doneText);
+    const QFont doneFont = doneText->property("font").value<QFont>();
+    QVERIFY2(doneFont.strikeOut(), "完成项没有删除线");
+    QCOMPARE(byContent.value(QStringLiteral("Apply fix"))
+                 ->property("itemStatus").toString(),
+             QStringLiteral("in_progress"));
+}
+
+// 头部进度摘要：计数、比例与进度条几何——不逐行扫读就能看出整体进度。
     void progressSummaryReportsCompletion() {
         Harness h;
         QVERIFY2(h.window, qPrintable(h.error));
