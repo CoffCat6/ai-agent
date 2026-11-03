@@ -1081,6 +1081,9 @@ private slots:
     // docs/35：角色级默认后台开关——省略 background 时按角色默认执行，
     // 显式 false 仍可强制同步。
     void subagentRoleDefaultBackgroundStartsAsync();
+    // 2026-11-03：设置页「内置子代理默认后台运行」统一控制预设角色，
+    // 用户同名档案仍然优先。
+    void subagentPresetBackgroundSettingAppliesToBuiltins();
     // docs/35 P4.6: 角色级模型配置与流式进度回传。
     void subagentRoleModelProfileReachesFactory();
     void subagentStreamsProgressThrottled();
@@ -6615,6 +6618,64 @@ void TestAgent::subagentRoleDefaultBackgroundStartsAsync() {
     QVERIFY2(sync.success, qPrintable(sync.error));
     QVERIFY(sync.output.contains(QStringLiteral("[Sub-agent report]")));
     QVERIFY(!sync.output.contains(QStringLiteral("[Sub-agent started]")));
+    QCOMPARE(hub->snapshots().size(), 1);
+}
+
+// 2026-11-03：设置页的内置角色默认后台开关。预设角色统一继承该开关；
+// 用户同名档案（shadow）不继承，自己的 background 仍然优先。
+void TestAgent::subagentPresetBackgroundSettingAppliesToBuiltins() {
+    SubAgentFixture fixture;
+    SpawnToolGuard guard;
+    ensureSubAgentProbe();
+    fixture.tool = registerSpawnTool(fixture, [](RecordingFakeService& sub) {
+        sub.script.append(textResponse(QStringLiteral("preset-bg report")));
+    });
+    fixture.tool->setPresetBackground(true);
+
+    auto hub = std::make_shared<BackgroundTaskHub>();
+    BackgroundTaskHubRouter router(hub);
+
+    // 内置 research 未在档案里配置 background，但全局开关打开 → 后台。
+    const ToolResult ack = fixture.tool->execute(QJsonObject{
+        {QStringLiteral("goal"), QStringLiteral("preset background")},
+        {QStringLiteral("role"), QStringLiteral("research")}});
+    QVERIFY2(ack.success, qPrintable(ack.error));
+    QVERIFY(ack.output.contains(QStringLiteral("[Sub-agent started]")));
+    QCOMPARE(hub->snapshots().size(), 1);
+    QCOMPARE(hub->snapshots().first().toMap()
+                 .value(QStringLiteral("role")).toString(),
+             QStringLiteral("research"));
+    static const QRegularExpression idRe(QStringLiteral("id=(sa-\\d+)"));
+    const QRegularExpressionMatch idMatch = idRe.match(ack.output);
+    QVERIFY(idMatch.hasMatch());
+    SubAgentWaitTool waitTool;
+    const ToolResult report = waitTool.execute(QJsonObject{
+        {QStringLiteral("id"), idMatch.captured(1)},
+        {QStringLiteral("timeout_ms"), 10000}});
+    QVERIFY2(report.success, qPrintable(report.error));
+    QVERIFY(report.output.contains(QStringLiteral("preset-bg report")));
+
+    // 用户同名档案遮蔽预设：没有 background 字段 = false → 同步执行。
+    fixture.tool->setUserRoles(SubAgentTool::rolesFromVariant({
+        QVariantMap{{QStringLiteral("name"), QStringLiteral("research")},
+                    {QStringLiteral("prompt"),
+                     QStringLiteral("CUSTOM-RESEARCH-MARKER")}}}));
+    const ToolResult shadowed = fixture.tool->execute(QJsonObject{
+        {QStringLiteral("goal"), QStringLiteral("shadowed role is sync")},
+        {QStringLiteral("role"), QStringLiteral("research")}});
+    QVERIFY2(shadowed.success, qPrintable(shadowed.error));
+    QVERIFY(shadowed.output.contains(QStringLiteral("[Sub-agent report]")));
+    QVERIFY(!shadowed.output.contains(QStringLiteral("[Sub-agent started]")));
+    QCOMPARE(hub->snapshots().size(), 1);
+
+    // 关掉全局开关并从遮蔽档案恢复预设 → 内置角色回到同步默认。
+    fixture.tool->setUserRoles({});
+    fixture.tool->setPresetBackground(false);
+    const ToolResult presetSync = fixture.tool->execute(QJsonObject{
+        {QStringLiteral("goal"), QStringLiteral("presets are sync again")},
+        {QStringLiteral("role"), QStringLiteral("research")}});
+    QVERIFY2(presetSync.success, qPrintable(presetSync.error));
+    QVERIFY(presetSync.output.contains(QStringLiteral("[Sub-agent report]")));
     QCOMPARE(hub->snapshots().size(), 1);
 }
 

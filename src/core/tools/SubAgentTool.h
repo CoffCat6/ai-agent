@@ -79,6 +79,10 @@ public:
     // GUI-thread install of the parsed user roles; executed runs read a
     // mutex-guarded snapshot (pool threads must not touch settings).
     void setUserRoles(QVector<SubAgentRole> roles);
+    // 内置角色（explore/research/review/coder）的默认后台开关。开启后
+    // rolesSnapshot() 给预设角色统一打上 background=true；用户同名档案
+    // 仍然遮蔽预设，其自身设置优先。
+    void setPresetBackground(bool enabled) { m_presetBackground.store(enabled); }
 
     // Runtime knobs (any thread; cheap atomic/lock writes).
     void setMaxParallel(int n);       // clamped to [1, 8]
@@ -141,6 +145,7 @@ private:
     std::atomic<int> m_maxSteps{0};         // 0 = unlimited (kSubStepCap)
     std::atomic<qint64> m_timeoutMs{0};     // 0 = no wall-clock budget
     std::atomic<int> m_contextLimit{0};     // 0 = no compression (docs/35 P4.1)
+    std::atomic<bool> m_presetBackground{false};  // built-in role default
 };
 
 } // namespace NexusAI

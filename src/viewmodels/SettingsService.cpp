@@ -359,6 +359,10 @@ void SettingsService::load() {
         QStringLiteral("agent/subagentMaxParallel"),
         SettingsRepository::value(QStringLiteral("agent/subagentMaxParallel"),
             SettingsSchema::defaultValue(QStringLiteral("agent/subagentMaxParallel"))).toInt());
+    m_subagentPresetBackground = SettingsRepository::value(
+        QStringLiteral("agent/subagentPresetBackground"),
+        SettingsSchema::defaultValue(
+            QStringLiteral("agent/subagentPresetBackground"))).toBool();
     // 2026-11-01：subagentMaxSteps/subagentTimeoutSec 已随「取消子代理步数/
     // 超时限制」移除，装载与写路径一并删除。
     // docs/33 E2: 角色档案资产（JSON blob，同 promptPresets 的容错——坏
@@ -1192,6 +1196,15 @@ void SettingsService::setSubagentMaxParallel(int value) {
     m_subagentMaxParallel = clamped;
     emit subagentMaxParallelChanged();
 }
+
+// 内置角色默认后台：只改预设的 background 默认值，用户同名档案优先。
+void SettingsService::setSubagentPresetBackground(bool enabled) {
+    if (m_subagentPresetBackground == enabled
+            || !persistValue(QStringLiteral("agent/subagentPresetBackground"),
+                             enabled)) return;
+    m_subagentPresetBackground = enabled;
+    emit subagentPresetBackgroundChanged();
+}
 // 2026-11-01：setSubagentMaxSteps/setSubagentTimeoutSec 已随「取消子代理
 // 步数/超时限制」移除。
 
@@ -1858,6 +1871,8 @@ void SettingsService::resetAgentToDefaults() {
         QStringLiteral("agent/subagentEnabled")).toBool());
     setSubagentMaxParallel(SettingsSchema::defaultValue(
         QStringLiteral("agent/subagentMaxParallel")).toInt());
+    setSubagentPresetBackground(SettingsSchema::defaultValue(
+        QStringLiteral("agent/subagentPresetBackground")).toBool());
     // 角色档案复位为空表：预设（explore/research/review）始终内建于工具，
     // 清掉的是用户自定义项。
     setSubagentRoles({});
@@ -1922,6 +1937,7 @@ bool SettingsService::setValueForSetting(const QString& key, const QVariant& val
 
     if (key == QLatin1String("agent/subagentEnabled")) { setSubagentEnabled(value.toBool()); return true; }
     if (key == QLatin1String("agent/subagentMaxParallel")) { setSubagentMaxParallel(value.toInt()); return true; }
+    if (key == QLatin1String("agent/subagentPresetBackground")) { setSubagentPresetBackground(value.toBool()); return true; }
     if (key == QLatin1String("agent/systemPromptOverride")) {
         setSystemPromptOverride(value.toString());
         return true;

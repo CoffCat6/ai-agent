@@ -234,6 +234,10 @@ const QVector<SettingsKeyDef>& SettingsSchema::registeredKeys() {
             keyDef(QStringLiteral("agent/subagentEnabled"), false, SettingValueType::Bool),
             keyDef(QStringLiteral("agent/subagentMaxParallel"), 3, SettingValueType::Int,
                    intRange(1, 8)),
+            // 2026-11-03：内置角色（explore/research/review/coder）的默认
+            // 后台开关；预设不存单独档案，由这一键统一控制。
+            keyDef(QStringLiteral("agent/subagentPresetBackground"), false,
+                   SettingValueType::Bool),
             // 2026-11-01：agent/subagentMaxSteps 与 agent/subagentTimeoutSec
             // 已随「取消子代理步数/超时限制」移除——与主任务一致，模型自定
             // 何时收工（Runner 内部只留防失控安全上限），用户可随时手动停止。

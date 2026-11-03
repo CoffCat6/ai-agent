@@ -112,7 +112,12 @@ QVector<SubAgentRole> SubAgentTool::rolesSnapshot() const {
     QMutexLocker lock(&m_rolesMutex);
     // User entries first so a same-named user role shadows the preset.
     QVector<SubAgentRole> roles = m_userRoles;
-    const QVector<SubAgentRole> presets = presetRoles();
+    QVector<SubAgentRole> presets = presetRoles();
+    // 设置页「内置子代理默认后台运行」：只改变预设的默认值；同名用户
+    // 档案在上面且不会被预设覆盖，所以它们自己的 background 仍然优先。
+    if (m_presetBackground.load()) {
+        for (SubAgentRole& preset : presets) preset.background = true;
+    }
     for (const SubAgentRole& preset : presets) {
         bool shadowed = false;
         for (const SubAgentRole& existing : roles) {

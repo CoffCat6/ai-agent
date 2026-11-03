@@ -1065,6 +1065,22 @@ private slots:
         }
     }
 
+    // 2026-11-03：内置角色默认后台开关——持久化并在恢复智能体默认时复位。
+    void subagentPresetBackgroundRoundTripAndReset() {
+        {
+            SettingsService service(nullptr);
+            QCOMPARE(service.subagentPresetBackground(), false);
+            service.setSubagentPresetBackground(true);
+            QVERIFY(service.subagentPresetBackground());
+        }
+        {
+            SettingsService service(nullptr);
+            QVERIFY(service.subagentPresetBackground());
+            service.resetAgentToDefaults();
+            QVERIFY(!service.subagentPresetBackground());
+        }
+    }
+
     void schemaCoversBypassWriters() {
         const auto& keys = SettingsSchema::registeredKeys();
         QSet<QString> registered;
@@ -1077,6 +1093,7 @@ private slots:
             "promptPresets", "slashCommands", "sessionTemplates",
             // docs/32 P1: 子代理设置键（步数/超时已于 2026-11-01 移除）
             "agent/subagentEnabled", "agent/subagentMaxParallel",
+            "agent/subagentPresetBackground",
             // docs/33 E2: 子代理角色档案（复合 JSON 资产）
             "agent/subagentRoles",
             "security/allowFullDiskRead", "security/allowProjectWrite",

@@ -52,6 +52,19 @@ SettingsPage {
                 Accessible.name: qsTr("子代理并行上限")
             }
         }
+        // 2026-11-03：内置角色的默认后台开关。预设不单独存档案，统一由此控制；
+// 自定义角色（含与预设同名）在下方角色档案里单独设置且优先。
+        SettingRow {
+            objectName: "agent/subagentPresetBackground"
+            label: qsTr("内置子代理默认后台运行")
+            description: qsTr("开启后 explore / research / review / coder 在模型省略 background 时默认后台执行；自定义角色（含同名覆盖）的设置优先。")
+
+            Switch {
+                checked: Settings.subagentPresetBackground
+                onToggled: Settings.subagentPresetBackground = checked
+                Accessible.name: qsTr("内置子代理默认后台运行")
+            }
+        }
         // 2026-11-01：子代理步数预算/超时设置项已随「取消子代理限制」移除，
         // 会话窗口内可随时手动停止运行中的子代理。
     }
@@ -62,7 +75,7 @@ SettingsPage {
         objectName: "agent/subagentRoles"
         Layout.fillWidth: true
         title: qsTr("子代理角色档案")
-        subtitle: qsTr("spawn_agent 可按角色派生子代理：预设不可改，自定义档案指定专属提示词、工具白名单与默认运行方式。")
+        subtitle: qsTr("spawn_agent 可按角色派生子代理：预设不可改（默认后台见上方开关），自定义档案可指定专属提示词、工具白名单与默认运行方式。")
 
         property var roleEditing: null   // null 或 {index: -1(新增) / >=0(编辑)}
 
@@ -111,7 +124,7 @@ SettingsPage {
 
         Text {
             Layout.fillWidth: true
-            text: qsTr("内置角色：explore（广度优先勘察）、research（深度查证）、review（代码评审）、coder（起草改动提案，只提不改）。调用时省略 role 参数默认使用 explore；自定义档案与预设同名时覆盖预设。coder 经 propose_edit 产出锚点式提案，由主任务用 apply_proposal / edit_file 逐条应用并逐次确认；其他预设不授予提案权。自定义角色可选择独立的模型配置与思考强度（留空沿用当前配置），并可设为默认后台运行（模型省略 background 时生效）。")
+            text: qsTr("内置角色：explore（广度优先勘察）、research（深度查证）、review（代码评审）、coder（起草改动提案，只提不改）。调用时省略 role 参数默认使用 explore；自定义档案与预设同名时覆盖预设。coder 经 propose_edit 产出锚点式提案，由主任务用 apply_proposal / edit_file 逐条应用并逐次确认；其他预设不授予提案权。内置角色是否默认后台由上方「内置子代理默认后台运行」统一控制。自定义角色可选择独立的模型配置与思考强度（留空沿用当前配置），并可设为默认后台运行（模型省略 background 时生效）。")
             color: Theme.textSecondary
             font.pixelSize: Theme.fontSizeCaption
             wrapMode: Text.Wrap

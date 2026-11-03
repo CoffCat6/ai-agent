@@ -75,6 +75,10 @@ const QVector<CatalogEntryDef>& staticEntries() {
         {NEXUS_CATALOG_ID("agent/subagentMaxParallel"), QStringLiteral("agent"),
          QT_TRANSLATE_NOOP("SettingsSearch", "子代理并行上限"),
          QStringLiteral("子代理 subagent 并行 并发 上限 parallel"), false, kPage},
+        // 2026-11-03：内置角色（explore/research/review/coder）默认后台开关。
+        {NEXUS_CATALOG_ID("agent/subagentPresetBackground"), QStringLiteral("agent"),
+         QT_TRANSLATE_NOOP("SettingsSearch", "内置子代理默认后台"),
+         QStringLiteral("子代理 subagent 内置 预设 explore research review coder 默认 后台 background preset"), false, kPage},
         // 2026-11-01：subagentMaxSteps/subagentTimeoutSec 目录项已随「取消
         // 子代理步数/超时限制」移除。
 
