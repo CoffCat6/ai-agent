@@ -499,18 +499,12 @@ private slots:
         delete mem;
     }
 
-    // M1: deleteAllEpisodic wipes the store and reports the row count.
-    void deleteAllEpisodicWipesStore() {
-        auto* mem = makeMemory();
-        for (int i = 0; i < 3; ++i) {
-            QJsonObject episode;
-            episode["summary"] = QStringLiteral("s%1").arg(i);
-            mem->saveEpisodic(QStringLiteral("sess"), episode);
-        }
-        QCOMPARE(mem->deleteAllEpisodic(), 3);
-        QCOMPARE(mem->listEpisodic(200).size(), 0);
-        delete mem;
-    }
+// M1: deleteAllEpisodic wipes the store and reports the row count.
+    void deleteAllEpisodicWipesStore();
+
+    // B2-B（docs/36 §3.6）：软删除会话的情节不得参与 FTS/LIKE/语义检索，
+    // 也不得被 EpisodicService 注入；恢复会话后重新可见。
+    void softDeletedSessionEpisodesAreNotInjected();
 
 private:
     SqliteMemory* makeMemory() {
@@ -526,6 +520,62 @@ private:
     int m_dbCounter{0};
     QVector<QJsonArray> m_seenMessages;
 };
+
+// M1: deleteAllEpisodic wipes the store and reports the row count.（原为类内
+// 定义；B2-B 新增用例搬到类外后，这里同步为类外定义。）
+void TestEpisodic::deleteAllEpisodicWipesStore() {
+    auto* mem = makeMemory();
+    for (int i = 0; i < 3; ++i) {
+        QJsonObject episode;
+        episode["summary"] = QStringLiteral("s%1").arg(i);
+        mem->saveEpisodic(QStringLiteral("sess"), episode);
+    }
+    QCOMPARE(mem->deleteAllEpisodic(), 3);
+    QCOMPARE(mem->listEpisodic(200).size(), 0);
+    delete mem;
+}
+
+void TestEpisodic::softDeletedSessionEpisodesAreNotInjected() {
+    auto* mem = makeMemory();
+    mem->beginSession(QStringLiteral("s-deleted"), QStringLiteral("doomed"));
+
+    QJsonObject episode;
+    episode["summary"] = QStringLiteral("用户询问了软删除会话的记忆注入");
+    episode["tags"] = QStringLiteral("Qt,软删除");
+    const qint64 id = mem->saveEpisodic(QStringLiteral("s-deleted"), episode);
+    QVERIFY(id > 0);
+    const QVector<float> query{1.0f, 0.0f};
+    const QByteArray blob(reinterpret_cast<const char*>(query.constData()),
+                          int(query.size() * sizeof(float)));
+    QVERIFY(mem->updateEpisodicEmbedding(id, blob));
+
+    EpisodicService svc;
+    svc.setMemory(mem);
+    svc.setEnabled(true);
+
+    // 可见基线：三路检索都能命中，注入文本非空。
+    QCOMPARE(mem->searchEpisodic(QStringLiteral("软删除"), 10).size(), 1);
+    QCOMPARE(mem->searchEpisodic(QStringLiteral("软删"), 10).size(), 1); // LIKE 路
+    QCOMPARE(mem->searchEpisodicSemantic(query, 10).size(), 1);
+    QVERIFY(!svc.retrieveRelevantSummaries(QStringLiteral("软删除")).isEmpty());
+
+    mem->deleteSession(QStringLiteral("s-deleted"));
+
+    // 软删除窗口内（30 天 undo）不得再被检索/注入。
+    QCOMPARE(mem->searchEpisodic(QStringLiteral("软删除"), 10).size(), 0);
+    QCOMPARE(mem->searchEpisodic(QStringLiteral("软删"), 10).size(), 0);
+    QCOMPARE(mem->searchEpisodicSemantic(query, 10).size(), 0);
+    QVERIFY(svc.retrieveRelevantSummaries(QStringLiteral("软删除")).isEmpty());
+
+    // 撤销删除后重新可见。
+    QVERIFY(mem->restoreSession(QStringLiteral("s-deleted")));
+    QCOMPARE(mem->searchEpisodic(QStringLiteral("软删除"), 10).size(), 1);
+    QCOMPARE(mem->searchEpisodicSemantic(query, 10).size(), 1);
+    QVERIFY(!svc.retrieveRelevantSummaries(QStringLiteral("软删除")).isEmpty());
+
+    delete mem;
+}
+
 
 QTEST_MAIN(TestEpisodic)
 #include "test_episodic.moc"

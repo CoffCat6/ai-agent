@@ -739,6 +739,34 @@ QString lastToolCallStatus(const QJsonArray& trace, const QString& name) {
     return status;
 }
 
+// B2-A: how many tool_call nodes for `name` are still running. A parallel
+// burst must be observed fully in flight before stop() is called.
+int runningToolCallCount(const QJsonArray& trace, const QString& name) {
+    int count = 0;
+    for (const auto& entry : trace) {
+        const QJsonObject node = entry.toObject();
+        if (node.value("type").toString() == QStringLiteral("tool_call")
+                && node.value("title").toString() == name
+                && node.value("status").toString() == QStringLiteral("running"))
+            ++count;
+    }
+    return count;
+}
+
+// B2-A: number of tool-role messages carrying the given tool_call_id. The
+// seal contract is exactly one per announced id - zero leaves a dangling
+// sequence, two duplicates it.
+int toolResponseCountForId(const QJsonArray& messages, const QString& id) {
+    int count = 0;
+    for (const auto& entry : messages) {
+        const QJsonObject msg = entry.toObject();
+        if (msg.value("role").toString() == QStringLiteral("tool")
+                && msg.value("tool_call_id").toString() == id)
+            ++count;
+    }
+    return count;
+}
+
 // The default read sandbox only allows Documents/Downloads/Desktop/app data
 // (audit P1-8), so test fixtures create their temp dirs there - a plain
 // QTemporaryDir lands in TempLocation, which read_file must refuse.
@@ -1006,6 +1034,8 @@ private slots:
     // Batch 2: agent tool-call lifecycle (FIX-201/202/203)
     void stopDuringConfirmationSealsToolCalls();
     void stopDuringExecutionSealsToolCalls();
+    // B2-A: stop 必须封口同一轮所有在飞调用，而不只是最后一个派发的。
+    void stopSealsEveryParallelToolCall();
     // 无参数工具在报文里的 arguments 必须是 "{}" 而不是 ""。
     void emptyArgumentsSerializeAsEmptyObject();
     // Batch 13: cooperative tool cancellation (SEC-1301..1304)
@@ -3327,6 +3357,65 @@ void TestAgent::stopDuringExecutionSealsToolCalls() {
              "stop during execution left dangling tool_calls");
     QTest::qWait(200);
     QCOMPARE(spy.count(), 0);       // the stopped task must not resume
+}
+
+// B2-A: same-round parallel Safe tools all leave the pending queue at
+// dispatch time. stop() only used to seal the LAST dispatched call
+// (m_currentExecutingCall), leaving the other in-flight ids dangling. Assert
+// exactly one tool response per announced id, and that the next request's
+// history is wire-legal.
+void TestAgent::stopSealsEveryParallelToolCall() {
+    BlockingTool* blocking = registerBlockingTool();
+    LLMResponse burst;
+    burst.success = true;
+    QStringList ids;
+    for (int i = 0; i < 3; ++i) {
+        ToolCallInfo call;
+        call.id = QStringLiteral("call_par_%1").arg(i);
+        call.name = QStringLiteral("test_blocking");
+        burst.toolCalls.append(call);
+        ids.append(call.id);
+    }
+    llm.script.append(burst);
+    llm.script.append(textResponse(QStringLiteral("next turn ok")));
+
+    QSignalSpy readySpy(&agent, &AIAgent::responseReady);
+    agent.startTask(QStringLiteral("three parallel blockers"));
+    QTRY_VERIFY_WITH_TIMEOUT(
+        runningToolCallCount(agent.traceModel(), QStringLiteral("test_blocking")) == 3,
+        5000);
+
+    agent.stop();
+    QCOMPARE(agent.state(), AgentState::Idle);
+    // Let all three parked workers return; their late callbacks are
+    // epoch-dropped and must not append a second tool response.
+    blocking->release();
+    blocking->release();
+    blocking->release();
+
+    const QJsonArray stopped = agent.messages();
+    QVERIFY2(noDanglingToolCalls(stopped),
+             "stop sealed only the last in-flight parallel call");
+    for (const QString& id : ids) {
+        QCOMPARE(toolResponseCountForId(stopped, id), 1);
+        QVERIFY2(toolMessageContent(stopped, id)
+                     .contains(QStringLiteral("Not executed")),
+                 qPrintable(id));
+    }
+
+    // The next turn must see a valid history: each id answered exactly once.
+    agent.startTask(QStringLiteral("next turn"));
+    QTRY_VERIFY_WITH_TIMEOUT(readySpy.count() == 1, 5000);
+    QVERIFY(!llm.seenMessages.isEmpty());
+    const QJsonArray nextHistory = llm.seenMessages.last();
+    QVERIFY2(noDanglingToolCalls(nextHistory),
+             "next request inherited a dangling tool_calls sequence");
+    for (const QString& id : ids)
+        QCOMPARE(toolResponseCountForId(nextHistory, id), 1);
+
+    QTest::qWait(300);   // late watcher callbacks settle
+    for (const QString& id : ids)
+        QCOMPARE(toolResponseCountForId(agent.messages(), id), 1);
 }
 
 // Batch 13 (SEC-1304): stop() must reach the tool itself, not only the LLM

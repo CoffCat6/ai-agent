@@ -9,6 +9,7 @@
 #include <QSqlQuery>
 #include <QTemporaryDir>
 #include <QFile>
+#include <QUuid>
 
 #include <QtTest>
 #include <QJsonArray>
@@ -213,6 +214,14 @@ private slots:
     void clearTokenUsageWipesRowsOnly();
     void vacuumDatabaseCompactsFile();
     // docs/20 §3.1/§3.2（FORK-701）：重新生成/编辑重发的持久层支撑
+
+    // ── B2-B（docs/36 §3）：迁移保护 / 知识库原子写 / clear 的 todo 级联 ──
+    void treeMigrationAbortsOnDanglingParent();
+    void treeMigrationAbortsOnMissingHead();
+    void treeMigrationSucceedsWithPreMigrateSnapshot();
+    void knowledgeDocChunksCommitAtomically();
+    void knowledgeEmptyMarkersBindAsEmptyStrings();
+    void clearFallbackRemovesSessionTodos();
 };
 
 void TestMemory::messageRoundTrip() {
@@ -2994,6 +3003,278 @@ void TestMemory::vacuumDatabaseCompactsFile() {
     const QVariantMap stats = SqliteMemory::collectStats(dbPath);
     QVERIFY(!stats.contains(QStringLiteral("error")));
     QCOMPARE(stats.value("tokenUsage").toInt(), 1);
+}
+
+// ── B2-B（docs/36 §3）：迁移保护 ─────────────────────────────
+namespace {
+
+// 构造一个 user_version=2 的“消息树”旧库（docs/21 迁移前的形态）。
+// headId 写入 sessions.head_message_id；danglingParentId > 0 时额外插入
+// 一条 parent 指向不存在行的消息（断链）。返回 false 表示建库失败。
+bool seedTreeDatabase(const QString& dbPath, qint64 headId, qint64 danglingParentId) {
+    const QString conn = QStringLiteral("tree_seed_%1")
+        .arg(QUuid::createUuid().toString(QUuid::WithoutBraces));
+    bool ok = true;
+    {
+        QSqlDatabase db = QSqlDatabase::addDatabase("QSQLITE", conn);
+        db.setDatabaseName(dbPath);
+        if (!db.open()) { ok = false; }
+        else {
+            QSqlQuery q(db);
+            ok = q.exec("CREATE TABLE sessions (id TEXT PRIMARY KEY, title TEXT NOT NULL, "
+                        "created_at INTEGER NOT NULL, updated_at INTEGER NOT NULL, "
+                        "head_message_id INTEGER NOT NULL DEFAULT 0)") && ok;
+            ok = q.exec("CREATE TABLE messages (id INTEGER PRIMARY KEY AUTOINCREMENT, "
+                        "session_id TEXT NOT NULL, parent_id INTEGER, role TEXT NOT NULL, "
+                        "content TEXT NOT NULL, timestamp INTEGER NOT NULL, metadata TEXT)") && ok;
+            ok = q.exec("CREATE TABLE trace_nodes (session_id TEXT NOT NULL, node_id TEXT NOT NULL, "
+                        "node_order INTEGER NOT NULL, type TEXT NOT NULL, title TEXT NOT NULL, "
+                        "status TEXT NOT NULL, args TEXT NOT NULL, result TEXT NOT NULL, "
+                        "timestamp INTEGER NOT NULL, message_id INTEGER NOT NULL DEFAULT 0, "
+                        "metadata TEXT, PRIMARY KEY (session_id, node_id))") && ok;
+            ok = q.exec("CREATE TABLE message_variants (session_id TEXT NOT NULL, "
+                        "group_key TEXT NOT NULL, variant_index INTEGER NOT NULL, "
+                        "content TEXT NOT NULL, metadata TEXT, created_at INTEGER NOT NULL, "
+                        "PRIMARY KEY (session_id, group_key, variant_index))") && ok;
+            q.prepare("INSERT INTO sessions VALUES ('s1','树',1,1,?)");
+            q.addBindValue(headId);
+            ok = q.exec() && ok;
+
+            struct Row { int id; const char* role; const char* content; int parent; };
+            QList<Row> rows = {
+                {1, "user", "问题一", 0}, {2, "assistant", "当前答案一", 1},
+                {3, "assistant", "被放弃的答案一", 1},
+                {4, "user", "问题二", 2}, {5, "assistant", "答案二", 4},
+            };
+            if (danglingParentId > 0)
+                rows.append({6, "assistant", "断链答案", int(danglingParentId)});
+            for (const auto& row : rows) {
+                q.prepare("INSERT INTO messages (id, session_id, parent_id, role, content, "
+                          "timestamp, metadata) VALUES (?, 's1', ?, ?, ?, ?, '{}')");
+                q.addBindValue(row.id);
+                q.addBindValue(row.parent > 0 ? QVariant(row.parent) : QVariant());
+                q.addBindValue(QString::fromUtf8(row.role));
+                q.addBindValue(QString::fromUtf8(row.content));
+                q.addBindValue(1000 + row.id);
+                ok = q.exec() && ok;
+                q.prepare("INSERT INTO trace_nodes (session_id, node_id, node_order, type, "
+                          "title, status, args, result, timestamp, message_id, metadata) "
+                          "VALUES ('s1', ?, ?, 'summary', 't', 'completed', '', '', 1, ?, '{}')");
+                q.addBindValue(QStringLiteral("n%1").arg(row.id));
+                q.addBindValue(row.id - 1);
+                q.addBindValue(row.id);
+                ok = q.exec() && ok;
+            }
+            ok = q.exec("INSERT INTO message_variants VALUES "
+                        "('s1','1',0,'被放弃的答案一','{}',900)") && ok;
+            ok = q.exec("PRAGMA user_version = 2") && ok;
+            db.close();
+        }
+    }
+    QSqlDatabase::removeDatabase(conn);
+    return ok;
+}
+
+int messageRowCount(SqliteMemory& mem) {
+    QSqlQuery q(mem.databaseForTest());
+    return (q.exec("SELECT COUNT(*) FROM messages") && q.next())
+        ? q.value(0).toInt() : -1;
+}
+
+int traceRowCount(SqliteMemory& mem) {
+    QSqlQuery q(mem.databaseForTest());
+    return (q.exec("SELECT COUNT(*) FROM trace_nodes") && q.next())
+        ? q.value(0).toInt() : -1;
+}
+
+int userVersionOf(SqliteMemory& mem) {
+    QSqlQuery q(mem.databaseForTest());
+    return (q.exec("PRAGMA user_version") && q.next()) ? q.value(0).toInt() : -1;
+}
+
+// 只读打开一个快照文件，返回 messages 行数；打不开返回 -1。
+int messagesInSnapshot(const QString& path) {
+    const QString conn = QStringLiteral("snap_check_%1")
+        .arg(QUuid::createUuid().toString(QUuid::WithoutBraces));
+    int rows = -1;
+    {
+        QSqlDatabase db = QSqlDatabase::addDatabase("QSQLITE", conn);
+        db.setDatabaseName(path);
+        db.setConnectOptions(QStringLiteral("QSQLITE_OPEN_READONLY"));
+        if (db.open()) {
+            QSqlQuery q(db);
+            if (q.exec("SELECT COUNT(*) FROM messages") && q.next())
+                rows = q.value(0).toInt();
+            db.close();
+        }
+    }
+    QSqlDatabase::removeDatabase(conn);
+    return rows;
+}
+
+} // namespace
+
+// 断链（parent_id 指不到同一会话的行）时迁移必须中止：不能把“链外”当成
+// “被放弃的答案”删掉真消息，user_version 也不能前进。
+void TestMemory::treeMigrationAbortsOnDanglingParent() {
+    QTemporaryDir dir;
+    QVERIFY(dir.isValid());
+    const QString dbPath = dir.filePath(QStringLiteral("tree-dangling.db"));
+    QVERIFY(seedTreeDatabase(dbPath, 5, 99));
+
+    {
+        SqliteMemory mem(dbPath);
+        QCOMPARE(messageRowCount(mem), 6);
+        QCOMPARE(traceRowCount(mem), 6);
+        QCOMPARE(userVersionOf(mem), 2);              // 版本未前进
+        QVERIFY(QFile::exists(dbPath + QStringLiteral(".pre-migrate")));
+        // 旧表原样保留：可正常读回。
+        QCOMPARE(mem.loadMessages(QStringLiteral("s1"), 50).size(), 6);
+
+        // 修复数据后可重试：删掉断链行。
+        QSqlQuery fix(mem.databaseForTest());
+        QVERIFY(fix.exec("DELETE FROM messages WHERE id = 6"));
+        QVERIFY(fix.exec("DELETE FROM trace_nodes WHERE message_id = 6"));
+    }
+    {
+        // 重新打开即完成迁移（失败可重试）。
+        SqliteMemory retried(dbPath);
+        QCOMPARE(userVersionOf(retried), 3);
+        QCOMPARE(messageRowCount(retried), 4);
+    }
+}
+
+// head_message_id 指向不存在的行：迁移必须中止——旧代码会当作“头行已不在”
+// 直接清指针并盖版本，丢失可诊断状态。
+void TestMemory::treeMigrationAbortsOnMissingHead() {
+    QTemporaryDir dir;
+    QVERIFY(dir.isValid());
+    const QString dbPath = dir.filePath(QStringLiteral("tree-head.db"));
+    QVERIFY(seedTreeDatabase(dbPath, 99, 0));
+
+    SqliteMemory mem(dbPath);
+    QCOMPARE(messageRowCount(mem), 5);
+    QCOMPARE(traceRowCount(mem), 5);
+    QCOMPARE(userVersionOf(mem), 2);
+    QVERIFY(QFile::exists(dbPath + QStringLiteral(".pre-migrate")));
+}
+
+// 正常迁移：仍要拉平（链外答案删除）、user_version=3，并且迁移前快照可打开。
+void TestMemory::treeMigrationSucceedsWithPreMigrateSnapshot() {
+    QTemporaryDir dir;
+    QVERIFY(dir.isValid());
+    const QString dbPath = dir.filePath(QStringLiteral("tree-ok.db"));
+    QVERIFY(seedTreeDatabase(dbPath, 5, 0));
+
+    SqliteMemory mem(dbPath);
+    QCOMPARE(userVersionOf(mem), 3);
+    QCOMPARE(messageRowCount(mem), 4);
+    QCOMPARE(traceRowCount(mem), 4);
+    QVERIFY(!mem.loadMessages(QStringLiteral("s1"), 50)
+                 .at(0).toObject().value("content").toString().isEmpty());
+
+    const QString snapshot = dbPath + QStringLiteral(".pre-migrate");
+    QVERIFY(QFile::exists(snapshot));
+    // 快照是迁移前的 5 行树，可用于回滚。
+    QCOMPARE(messagesInSnapshot(snapshot), 5);
+}
+
+// ── B2-B：知识库文档 + 分块单事务 ─────────────────────────────
+
+// 分块写入失败必须把文档行一起回滚：不能出现“新文档 + 旧分块”或孤儿分块。
+void TestMemory::knowledgeDocChunksCommitAtomically() {
+    SqliteMemory memory(QStringLiteral(":memory:"));
+
+    QVector<KnowledgeChunk> original;
+    for (int i = 0; i < 2; ++i) {
+        KnowledgeChunk c;
+        c.index = i; c.total = 2; c.text = QStringLiteral("old chunk %1").arg(i);
+        c.embedding = QVector<float>{1.0f, float(i)}; c.dim = 2; c.pseudo = false;
+        original.append(c);
+    }
+    memory.upsertKnowledgeDoc(QStringLiteral("doc.txt"), QStringLiteral("v1 content"),
+                              knowledgeContentHash(QStringLiteral("v1 content")),
+                              QStringLiteral("m1"));
+    memory.replaceKnowledgeChunks(QStringLiteral("doc.txt"), original);
+    QCOMPARE(memory.loadKnowledgeDoc(QStringLiteral("doc.txt")),
+             QStringLiteral("v1 content"));
+    QCOMPARE(memory.loadKnowledgeChunks(QStringLiteral("doc.txt")).size(), 2);
+
+    // 非法分块：两个 index=0 → 第二行撞主键约束，整批失败。
+    QVector<KnowledgeChunk> broken = original;
+    broken[1].index = 0;
+    memory.upsertKnowledgeDoc(QStringLiteral("doc.txt"), QStringLiteral("v2 content"),
+                              knowledgeContentHash(QStringLiteral("v2 content")),
+                              QStringLiteral("m2"));
+    memory.replaceKnowledgeChunks(QStringLiteral("doc.txt"), broken);
+
+    // 回滚后文档与分块都还是 v1 的一致状态。
+    QCOMPARE(memory.loadKnowledgeDoc(QStringLiteral("doc.txt")),
+             QStringLiteral("v1 content"));
+    const auto records = memory.loadKnowledgeDocRecords();
+    QCOMPARE(records.size(), 1);
+    QCOMPARE(records.at(0).contentHash,
+             knowledgeContentHash(QStringLiteral("v1 content")));
+    QCOMPARE(records.at(0).embeddingModel, QStringLiteral("m1"));
+    const QVector<KnowledgeChunk> chunksAfterFailure =
+        memory.loadKnowledgeChunks(QStringLiteral("doc.txt"));
+    QCOMPARE(chunksAfterFailure.size(), 2);
+    QCOMPARE(chunksAfterFailure.at(1).text, QStringLiteral("old chunk 1"));
+
+    // 正常覆盖：新文档 + 新分块一起可见，旧分块全部消失（保留幂等）。
+    QVector<KnowledgeChunk> replacement;
+    for (int i = 0; i < 3; ++i) {
+        KnowledgeChunk c;
+        c.index = i; c.total = 3; c.text = QStringLiteral("new chunk %1").arg(i);
+        c.embedding = QVector<float>{1.0f, float(i), 0.5f}; c.dim = 3; c.pseudo = false;
+        replacement.append(c);
+    }
+    memory.upsertKnowledgeDoc(QStringLiteral("doc.txt"), QStringLiteral("v2 content"),
+                              knowledgeContentHash(QStringLiteral("v2 content")),
+                              QStringLiteral("m2"));
+    memory.replaceKnowledgeChunks(QStringLiteral("doc.txt"), replacement);
+
+    QCOMPARE(memory.loadKnowledgeDoc(QStringLiteral("doc.txt")),
+             QStringLiteral("v2 content"));
+    QCOMPARE(memory.loadKnowledgeChunks(QStringLiteral("doc.txt")).size(), 3);
+    const auto after = memory.loadKnowledgeDocRecords();
+    QCOMPARE(after.at(0).contentHash,
+             knowledgeContentHash(QStringLiteral("v2 content")));
+    QCOMPARE(after.at(0).embeddingModel, QStringLiteral("m2"));
+}
+
+// 空 contentHash / embeddingModel 过去直接绑定成 NULL，撞 NOT NULL 后整条文档
+// 静默丢失；现在必须落成 '' 且记录可读回。
+void TestMemory::knowledgeEmptyMarkersBindAsEmptyStrings() {
+    SqliteMemory memory(QStringLiteral(":memory:"));
+    memory.upsertKnowledgeDoc(QStringLiteral("empty.md"), QStringLiteral("body"),
+                              QString(), QString());
+
+    const auto records = memory.loadKnowledgeDocRecords();
+    QCOMPARE(records.size(), 1);
+    QCOMPARE(records.at(0).name, QStringLiteral("empty.md"));
+    QCOMPARE(records.at(0).content, QStringLiteral("body"));
+    QVERIFY(records.at(0).contentHash.isEmpty());
+    QVERIFY(records.at(0).embeddingModel.isEmpty());
+}
+
+// ── B2-B：clear() 无事务回退路径补齐 session_todos ─────────────
+
+void TestMemory::clearFallbackRemovesSessionTodos() {
+    SqliteMemory mem(QStringLiteral(":memory:"));
+    mem.beginSession(QStringLiteral("s1"), QStringLiteral("t"));
+    const QJsonArray todos{
+        QJsonObject{{"content", "task"}, {"status", "pending"}, {"priority", "low"}}};
+    QVERIFY(mem.saveSessionTodos(QStringLiteral("s1"), todos));
+    QCOMPARE(mem.loadSessionTodos(QStringLiteral("s1")).size(), 1);
+
+    // 外部事务让 clear() 的 m_db.transaction() 失败，强制走无事务回退分支。
+    QSqlDatabase db = mem.databaseForTest();
+    QVERIFY(db.transaction());
+    mem.clear(QStringLiteral("s1"));
+    QVERIFY(db.commit());
+
+    QCOMPARE(mem.loadSessionTodos(QStringLiteral("s1")).size(), 0);
 }
 
 QTEST_GUILESS_MAIN(TestMemory)

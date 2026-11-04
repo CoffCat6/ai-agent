@@ -1,6 +1,7 @@
 #include "SqliteMemory.h"
 
 #include <QHash>
+#include <QSet>
 #include <QSqlQuery>
 #include <QSqlError>
 #include <QRegularExpression>
@@ -129,6 +130,16 @@ SqliteMemory::SqliteMemory(const QString& dbPath) : m_dbPath(dbPath) {
 }
 
 bool SqliteMemory::openConnection() {
+    // B2-B: repair a restore that died between remove/rename before SQLite
+    // gets a chance to create an empty database at the missing path. Skipped
+    // while restoreFromBackup itself is reconnecting: that code owns the
+    // anchor and decides the rollback.
+    if (!m_restoreInProgress && !recoverInterruptedRestore()) {
+        qCritical() << "Database recovery incomplete; refusing to open database at"
+                    << m_dbPath;
+        return false;
+    }
+
     // Unique per-instance connection name; stored in m_connName so the
     // destructor can removeDatabase it (MEM-702) - an unstored name leaked
     // the connection for the lifetime of the process.
@@ -164,7 +175,158 @@ bool SqliteMemory::openConnection() {
     return true;
 }
 
+// B2-B/B2 收口: repair a restore that died mid-swap before SQLite gets a
+// chance to create an empty database at a missing path. The `.restore-intent`
+// marker is written (and flushed) immediately before the live file is renamed
+// to `.pre-restore`; it is the evidence that the database on disk belongs to
+// an in-flight restore, not to a normal startup. Returns false when a restore
+// window exists but cannot be repaired safely — the caller must not open
+// SQLite (that would materialize an empty database and hide the data loss).
+bool SqliteMemory::recoverInterruptedRestore() {
+    // An in-memory database has no file to repair.
+    if (m_dbPath.isEmpty() || m_dbPath.startsWith(QLatin1Char(':'))) return true;
+
+    const QString tmpPath = m_dbPath + QStringLiteral(".restore-tmp");
+    const QString anchorPath = m_dbPath + QStringLiteral(".pre-restore");
+    const QString intentPath = m_dbPath + QStringLiteral(".restore-intent");
+
+    // A staging copy that never reached the swap is useless; leaving it
+    // around makes the next restore fail on a stale target.
+    if (QFile::exists(tmpPath)) {
+        if (QFile::remove(tmpPath))
+            qWarning() << "Removed stale restore staging file:" << tmpPath;
+        else
+            qWarning() << "Could not remove stale restore staging file:" << tmpPath;
+    }
+
+    const QFileInfo dbInfo(m_dbPath);
+    const QFileInfo anchorInfo(anchorPath);
+    const bool hasDb = dbInfo.exists();
+    const bool hasAnchor = anchorInfo.exists();
+    const bool anchorIsFile = anchorInfo.isFile();
+    const bool hasIntent = QFile::exists(intentPath);
+
+    // A 0-byte file opens as a brand-new database and passes quick_check, so
+    // size is part of the "complete" test (P1-1). A directory is never a db.
+    const auto dbLooksComplete = [this]() {
+        const QFileInfo info(m_dbPath);
+        return info.isFile() && info.size() > 0
+               && snapshotPassesQuickCheck(m_dbPath);
+    };
+    const auto anchorLooksUsable = [&]() {
+        return anchorIsFile && anchorInfo.size() > 0
+               && snapshotPassesQuickCheck(anchorPath);
+    };
+    const auto removeSidecars = [this]() {
+        QFile::remove(m_dbPath + QStringLiteral("-wal"));
+        QFile::remove(m_dbPath + QStringLiteral("-shm"));
+    };
+
+    // ── dbPath missing ────────────────────────────────────────────────
+    if (!hasDb) {
+        if (!hasAnchor) {
+            if (hasIntent) {
+                qCritical() << "Interrupted restore: intent present but no anchor;"
+                            << "refusing to create an empty database at" << m_dbPath;
+                return false;
+            }
+            return true;   // normal first run
+        }
+        if (!anchorLooksUsable()) {
+            qCritical() << "Interrupted restore: anchor missing/unusable; refusing"
+                        << "to create an empty database; anchor kept at" << anchorPath;
+            return false;
+        }
+        // Rename (same directory, atomic on one volume) rather than copy; a
+        // failed rename must not fall through to "open the missing path".
+        if (!QFile::rename(anchorPath, m_dbPath)) {
+            qCritical() << "Interrupted restore: anchor rename to" << m_dbPath
+                        << "failed; anchor kept at" << anchorPath;
+            return false;
+        }
+        QFile::remove(intentPath);
+        qWarning() << "Interrupted restore detected; recovered database from"
+                   << anchorPath;
+        return true;
+    }
+
+    // ── dbPath exists ─────────────────────────────────────────────────
+    if (hasIntent) {
+        if (dbLooksComplete()) {
+            // Swap committed (or was fully rolled back). Retire the anchor
+            // only when it really is a regular file.
+            if (anchorIsFile)
+                QFile::remove(anchorPath);
+            else if (hasAnchor)
+                qWarning() << "Restore intent cleared; anchor path is not a"
+                           << "regular file and was left untouched:" << anchorPath;
+            QFile::remove(intentPath);
+            qInfo() << "Restore intent resolved on the live database";
+            return true;
+        }
+        // Intent + incomplete live file (0 bytes / failed quick_check):
+        // the anchor is authoritative. Never trust the new file here.
+        if (!anchorLooksUsable()) {
+            qCritical() << "Interrupted restore: live database incomplete and"
+                        << "anchor unusable; refusing to open; anchor kept at"
+                        << anchorPath;
+            return false;
+        }
+        removeSidecars();
+        if (!QFile::remove(m_dbPath)) {
+            qCritical() << "Interrupted restore: could not remove incomplete"
+                        << "database" << m_dbPath;
+            return false;
+        }
+        if (!QFile::rename(anchorPath, m_dbPath)) {
+            qCritical() << "Interrupted restore: anchor rename failed; anchor"
+                        << "kept at" << anchorPath;
+            return false;
+        }
+        QFile::remove(intentPath);
+        qWarning() << "Interrupted restore: rolled back incomplete database"
+                   << "from anchor";
+        return true;
+    }
+
+    // ── no intent: legacy residual anchor ─────────────────────────────
+    if (dbLooksComplete()) {
+        if (anchorIsFile) {
+            QFile::remove(anchorPath);
+            qInfo() << "Removed stale restore anchor:" << anchorPath;
+        } else if (hasAnchor) {
+            qWarning() << "Stale restore anchor is not a regular file; left"
+                       << "untouched:" << anchorPath;
+        }
+        return true;
+    }
+
+    if (hasAnchor) {
+        if (!anchorLooksUsable()) {
+            qCritical() << "Live database is incomplete and the anchor is"
+                        << "unusable; refusing to open; anchor kept at"
+                        << anchorPath;
+            return false;
+        }
+        removeSidecars();
+        if (QFile::remove(m_dbPath) && QFile::rename(anchorPath, m_dbPath)) {
+            qWarning() << "Recovered incomplete live database from anchor";
+            return true;
+        }
+        qCritical() << "Interrupted restore: anchor recovery failed; anchor"
+                    << "kept at" << anchorPath;
+        return false;
+    }
+
+    // Incomplete file, no anchor, no intent: nothing proves a restore was in
+    // flight. A 0-byte file is what SQLite would create on first open, so
+    // first-run semantics are preserved.
+    return true;
+}
+
 SqliteMemory::~SqliteMemory() {
+    // B2-B: a document saved without its chunk pass must still reach disk.
+    commitPendingKnowledgeTransaction();
     if (m_db.isOpen()) {
         m_db.close();
     }
@@ -197,7 +359,11 @@ void SqliteMemory::initDatabase() {
     // docs/17 A0: sessions.project_id 列补齐（projects 表在 createTables 里）。
     migrateSessionProjectColumn();
     migrateTraceNodeReasoningColumn();
-    migrateConversationModel(userVersion);
+    // B2-B: the stamp below is the "migration finished" marker. Only advance
+    // it when the flattening transaction actually committed — a failed
+    // migration must be retried on the next start with the old tables intact
+    // (the pre-migrate snapshot also stays on disk for manual recovery).
+    const bool conversationMigrationOk = migrateConversationModel(userVersion);
     migrateKnowledgeSchema();
     // docs/25: 引用定位——chunk 页码列（PDF 导入写入，-1 = 无页码）。
     migrateKnowledgeChunkPageColumn();
@@ -228,8 +394,11 @@ void SqliteMemory::initDatabase() {
     if (userVersion == 0) {
         execDdl(versionQuery, "ANALYZE", "analyze for the query planner");
     }
-    if (userVersion < 3)
+    if (userVersion < 3 && conversationMigrationOk)
         execDdl(versionQuery, "PRAGMA user_version = 3", "stamp user_version");
+    else if (userVersion < 3)
+        qWarning() << "Conversation-model migration incomplete; user_version stays at"
+                   << userVersion << "- will retry on next start";
 }
 
 // Batch 17 (FEAT-1701): messages FTS5 index for cross-session search.
@@ -673,9 +842,8 @@ void SqliteMemory::migrateTraceNodeReasoningColumn() {
 // 的祖先链定出用户当时在看的那条线，链外的重复答案行连同其轨迹节点删掉；清空
 // parent_id / head_message_id（列留着——真实库上重建三张主表的风险大于多两个空列）；
 // DROP 遗留的 message_variants。没经历过树版本的库整段退化为 no-op。
-void SqliteMemory::migrateConversationModel(int userVersion) {
-    if (userVersion >= 3) return;
-    if (!m_db.transaction()) return;
+bool SqliteMemory::migrateConversationModel(int userVersion) {
+    if (userVersion >= 3) return true;
 
     const auto hasColumn = [this](const char* table, const char* column) {
         QSqlQuery pragma(m_db);
@@ -688,106 +856,204 @@ void SqliteMemory::migrateConversationModel(int userVersion) {
         pragma.finish();       // 语句握着读锁时后面的 DDL/DML 会失败
         return found;
     };
+
+    const bool hasTree = hasColumn("messages", "parent_id")
+                      && hasColumn("sessions", "head_message_id");
+
+    // B2-B (1/2): snapshot before anything can be deleted. VACUUM INTO is the
+    // backup facility's own primitive (docs/23 D1): it produces a consistent
+    // single file even though the live database is in WAL mode. A failed
+    // snapshot aborts the migration — the legacy tables stay authoritative
+    // and user_version is not advanced, so the next start retries.
+    if (hasTree && !m_dbPath.isEmpty() && !m_dbPath.startsWith(QLatin1Char(':'))) {
+        const QString backupPath = m_dbPath + QStringLiteral(".pre-migrate");
+        QFile::remove(backupPath);
+        if (!createBackupFile(m_dbPath, backupPath)) {
+            qWarning() << "Conversation-model migration aborted: could not create"
+                       << backupPath << "- legacy tables kept, user_version stays at"
+                       << userVersion;
+            return false;
+        }
+    }
+
+    // B2-B (2/2): validate the tree BEFORE mutating it. A dangling parent_id,
+    // a head pointing at a missing row, or a head that cannot be walked to a
+    // root means the tree cannot be flattened faithfully. Treating "not on
+    // the head chain" as "abandoned answer" would then delete real messages
+    // (and their trace nodes).
+    QList<QPair<QString, qint64>> heads;
+    QHash<QString, QHash<qint64, qint64>> parentOfBySession;
+
+    if (hasTree) {
+        QSqlQuery list(m_db);
+        if (!list.exec("SELECT id, head_message_id FROM sessions WHERE head_message_id > 0")) {
+            qWarning() << "Conversation-model migration aborted at session heads:"
+                       << list.lastError().text();
+            return false;
+        }
+        while (list.next())
+            heads.append({list.value(0).toString(), list.value(1).toLongLong()});
+        list.finish();
+
+        // Any non-root parent_id must resolve to a message of the SAME
+        // session. This covers branches that are off the active head too.
+        {
+            QSqlQuery orphans(m_db);
+            if (!orphans.exec("SELECT COUNT(*) FROM messages m "
+                              "WHERE m.parent_id IS NOT NULL AND m.parent_id <> 0 "
+                              "AND NOT EXISTS (SELECT 1 FROM messages p "
+                              "WHERE p.id = m.parent_id AND p.session_id = m.session_id)")) {
+                qWarning() << "Conversation-model migration aborted at parent check:"
+                           << orphans.lastError().text();
+                return false;
+            }
+            if (!orphans.next()) {
+                qWarning() << "Conversation-model migration aborted: parent check"
+                              " returned no row";
+                return false;
+            }
+            const qint64 dangling = orphans.value(0).toLongLong();
+            orphans.finish();
+            if (dangling > 0) {
+                qWarning() << "Conversation-model migration aborted:" << dangling
+                           << "message(s) reference a missing parent_id; legacy"
+                              " tables kept";
+                return false;
+            }
+        }
+
+        for (const auto& head : std::as_const(heads)) {
+            const QString sessionId = head.first;
+            QHash<qint64, qint64> parentOf;
+            {
+                QSqlQuery rows(m_db);
+                rows.prepare("SELECT id, COALESCE(parent_id, 0) FROM messages "
+                             "WHERE session_id = ?");
+                rows.addBindValue(sessionId);
+                if (!rows.exec()) {
+                    qWarning() << "Conversation-model migration aborted at row scan:"
+                               << rows.lastError().text();
+                    return false;
+                }
+                while (rows.next())
+                    parentOf.insert(rows.value(0).toLongLong(),
+                                    rows.value(1).toLongLong());
+                rows.finish();
+            }
+
+            if (!parentOf.contains(head.second)) {
+                qWarning() << "Conversation-model migration aborted: session" << sessionId
+                           << "head_message_id" << head.second << "is missing;"
+                              " legacy tables kept";
+                return false;
+            }
+
+            // Walk the head chain to the root. A cycle or a parent outside
+            // this session is a broken chain, not a set of abandoned rows.
+            QSet<qint64> seen;
+            qint64 cursor = head.second;
+            while (cursor != 0) {
+                if (seen.contains(cursor)) {
+                    qWarning() << "Conversation-model migration aborted: parent chain"
+                               << "cycle in session" << sessionId << "at" << cursor;
+                    return false;
+                }
+                seen.insert(cursor);
+                const auto it = parentOf.constFind(cursor);
+                if (it == parentOf.constEnd()) {
+                    qWarning() << "Conversation-model migration aborted: broken"
+                               << "parent chain in session" << sessionId
+                               << "at message" << cursor;
+                    return false;
+                }
+                cursor = it.value();
+            }
+            parentOfBySession.insert(sessionId, parentOf);
+        }
+    }
+
+    // Validation passed: flatten in ONE transaction. Only a successful commit
+    // is reported as success (user_version advance is gated on this bool).
+    if (!m_db.transaction()) {
+        qWarning() << "Conversation-model migration aborted: could not begin transaction:"
+                   << m_db.lastError().text();
+        return false;
+    }
     const auto abort = [this](const char* where, const QSqlQuery& query) {
         qWarning() << "Conversation-model migration aborted at" << where << ":"
                    << query.lastError().text();
         m_db.rollback();
+        return false;
     };
 
-    const bool hasTree = hasColumn("messages", "parent_id")
-                      && hasColumn("sessions", "head_message_id");
-    if (hasTree) {
-        QList<QPair<QString, qint64>> heads;
-        {
-            QSqlQuery list(m_db);
-            if (!list.exec("SELECT id, head_message_id FROM sessions WHERE head_message_id > 0")) {
-                abort("session heads", list);
-                return;
-            }
-            while (list.next())
-                heads.append({list.value(0).toString(), list.value(1).toLongLong()});
-            list.finish();
-        }
-        for (const auto& head : std::as_const(heads)) {
-            const QString sessionId = head.first;
-            QList<qint64> onPath;
-            {
-                QSqlQuery walk(m_db);
-                walk.prepare("WITH RECURSIVE anc(id, p) AS ("
-                             "  SELECT id, parent_id FROM messages WHERE session_id = ? AND id = ?"
-                             "  UNION ALL"
-                             "  SELECT m.id, m.parent_id FROM messages m JOIN anc a ON m.id = a.p"
-                             "  WHERE m.session_id = ? AND a.id <> m.id"
-                             ") SELECT id FROM anc");
-                walk.addBindValue(sessionId);
-                walk.addBindValue(head.second);
-                walk.addBindValue(sessionId);
-                if (!walk.exec()) { abort("ancestor walk", walk); return; }
-                while (walk.next()) onPath << walk.value(0).toLongLong();
-                walk.finish();
-            }
-            if (onPath.isEmpty()) continue;   // head 指的行已不在：只清指针
+    for (const auto& head : std::as_const(heads)) {
+        const QString sessionId = head.first;
+        const auto treeIt = parentOfBySession.constFind(sessionId);
+        if (treeIt == parentOfBySession.constEnd()) continue;
+        const QHash<qint64, qint64>& parentOf = treeIt.value();
 
-            QList<qint64> abandoned;
+        QList<qint64> onPath;
+        qint64 cursor = head.second;
+        while (cursor != 0) {
+            onPath << cursor;
+            cursor = parentOf.value(cursor, 0);
+        }
+
+        QList<qint64> abandoned;
+        {
+            QSqlQuery rows(m_db);
+            rows.prepare("SELECT id FROM messages WHERE session_id = ? ORDER BY id ASC");
+            rows.addBindValue(sessionId);
+            if (!rows.exec()) return abort("row scan", rows);
+            while (rows.next()) {
+                const qint64 id = rows.value(0).toLongLong();
+                if (!onPath.contains(id)) abandoned << id;
+            }
+            rows.finish();
+        }
+        if (!abandoned.isEmpty()) {
+            const QString placeholders = QStringList(abandoned.count(), QStringLiteral("?"))
+                                             .join(QStringLiteral(","));
+            {
+                QSqlQuery nodes(m_db);
+                nodes.prepare(QString("DELETE FROM trace_nodes WHERE session_id = ? "
+                                      "AND message_id IN (") + placeholders + ")");
+                nodes.addBindValue(sessionId);
+                for (qint64 id : std::as_const(abandoned)) nodes.addBindValue(id);
+                if (!nodes.exec()) return abort("drop abandoned trace", nodes);
+            }
             {
                 QSqlQuery rows(m_db);
-                rows.prepare("SELECT id FROM messages WHERE session_id = ? ORDER BY id ASC");
+                rows.prepare(QString("DELETE FROM messages WHERE session_id = ? AND id IN (")
+                             + placeholders + ")");
                 rows.addBindValue(sessionId);
-                if (!rows.exec()) { abort("row scan", rows); return; }
-                while (rows.next()) {
-                    const qint64 id = rows.value(0).toLongLong();
-                    if (!onPath.contains(id)) abandoned << id;
-                }
-                rows.finish();
-            }
-            if (!abandoned.isEmpty()) {
-                const QString placeholders = QStringList(abandoned.count(), QStringLiteral("?"))
-                                                 .join(QStringLiteral(","));
-                {
-                    QSqlQuery nodes(m_db);
-                    nodes.prepare(QString("DELETE FROM trace_nodes WHERE session_id = ? "
-                                          "AND message_id IN (") + placeholders + ")");
-                    nodes.addBindValue(sessionId);
-                    for (qint64 id : std::as_const(abandoned)) nodes.addBindValue(id);
-                    if (!nodes.exec()) { abort("drop abandoned trace", nodes); return; }
-                }
-                {
-                    QSqlQuery rows(m_db);
-                    rows.prepare(QString("DELETE FROM messages WHERE session_id = ? AND id IN (")
-                                 + placeholders + ")");
-                    rows.addBindValue(sessionId);
-                    for (qint64 id : std::as_const(abandoned)) rows.addBindValue(id);
-                    if (!rows.exec()) { abort("drop abandoned rows", rows); return; }
-                }
-            }
-        }
-        {
-            QSqlQuery clearParents(m_db);
-            if (!clearParents.exec("UPDATE messages SET parent_id = NULL WHERE parent_id IS NOT NULL")) {
-                abort("clear parent_id", clearParents);
-                return;
-            }
-        }
-        {
-            QSqlQuery clearHead(m_db);
-            if (!clearHead.exec("UPDATE sessions SET head_message_id = 0 WHERE head_message_id > 0")) {
-                abort("clear head_message_id", clearHead);
-                return;
+                for (qint64 id : std::as_const(abandoned)) rows.addBindValue(id);
+                if (!rows.exec()) return abort("drop abandoned rows", rows);
             }
         }
     }
 
+    if (hasTree) {
+        QSqlQuery clearParents(m_db);
+        if (!clearParents.exec("UPDATE messages SET parent_id = NULL WHERE parent_id IS NOT NULL"))
+            return abort("clear parent_id", clearParents);
+        QSqlQuery clearHead(m_db);
+        if (!clearHead.exec("UPDATE sessions SET head_message_id = 0 WHERE head_message_id > 0"))
+            return abort("clear head_message_id", clearHead);
+    }
+
     QSqlQuery dropVariants(m_db);
     if (!dropVariants.exec("DROP TABLE IF EXISTS message_variants"))
-        qWarning() << "Could not drop message_variants:" << dropVariants.lastError().text();
+        return abort("drop message_variants", dropVariants);
 
     if (!m_db.commit()) {
         qWarning() << "Conversation-model migration commit failed:"
                    << m_db.lastError().text();
         m_db.rollback();
+        return false;
     }
+    return true;
 }
-
 // docs/25: knowledge_chunks.page 列补齐（引用定位——chunk 页码；幂等）。
 // 新库由建表 DDL 直接带上该列，本迁移只服务老库升级。
 void SqliteMemory::migrateKnowledgeChunkPageColumn() {
@@ -904,6 +1170,12 @@ QByteArray embeddingToBlob(const QVector<float>& vec) {
     return blob;
 }
 
+// B2-B: an empty QString reaches SQLite as NULL. The knowledge columns are
+// NOT NULL, so normalize a null QString to an explicit empty string.
+QString bindText(const QString& value) {
+    return value.isNull() ? QStringLiteral("") : value;
+}
+
 QVector<float> embeddingFromBlob(const QByteArray& blob) {
     QVector<float> vec(blob.size() / int(sizeof(float)));
     if (!vec.isEmpty())
@@ -913,10 +1185,40 @@ QVector<float> embeddingFromBlob(const QByteArray& blob) {
 
 } // namespace
 
+bool SqliteMemory::commitPendingKnowledgeTransaction() {
+    if (!m_knowledgeTxnPending) return true;
+    m_knowledgeTxnPending = false;
+    m_pendingKnowledgeDoc.clear();
+    if (m_db.commit()) return true;
+    qWarning() << "Failed to commit knowledge document transaction:"
+               << m_db.lastError().text();
+    m_db.rollback();
+    return false;
+}
+
+void SqliteMemory::rollbackPendingKnowledgeTransaction() {
+    if (!m_knowledgeTxnPending) return;
+    m_knowledgeTxnPending = false;
+    m_pendingKnowledgeDoc.clear();
+    m_db.rollback();
+}
+
 void SqliteMemory::upsertKnowledgeDoc(const QString& name, const QString& content,
                                       const QString& contentHash,
                                       const QString& embeddingModel,
                                       const QString& sourcePath) {
+    // B2-B: the persistence bridge (main.cpp) calls upsertKnowledgeDoc and
+    // replaceKnowledgeChunks back to back. Both run in ONE transaction that
+    // is opened here and committed there. Any earlier standalone save (a
+    // document persisted without chunks) is flushed first so it is never
+    // rolled back as collateral of the new document.
+    commitPendingKnowledgeTransaction();
+
+    const bool started = m_db.transaction();
+    if (!started)
+        qWarning() << "Knowledge document transaction not started; writing in"
+                      " autocommit mode:" << m_db.lastError().text();
+
     QSqlQuery query(m_db);
     // source_path uses a COALESCE-style guard: an empty incoming value (restore
     // or re-embed, where no path is known) keeps the stored one instead of
@@ -928,61 +1230,87 @@ void SqliteMemory::upsertKnowledgeDoc(const QString& name, const QString& conten
                   "embedding_model = excluded.embedding_model, "
                   "source_path = CASE WHEN excluded.source_path = '' "
                   "THEN knowledge_documents.source_path ELSE excluded.source_path END");
-    query.addBindValue(name);
-    query.addBindValue(content);
+    // An empty/null QString binds as SQL NULL, which the NOT NULL columns
+    // reject; bind an explicit empty string instead (sourcePath included).
+    query.addBindValue(bindText(name));
+    query.addBindValue(bindText(content));
     query.addBindValue(QDateTime::currentDateTime().toMSecsSinceEpoch());
-    query.addBindValue(contentHash);
-    query.addBindValue(embeddingModel);
-    // An empty QString binds as SQL NULL, which the NOT NULL column rejects.
-    // Bind an explicit empty string instead.
-    query.addBindValue(sourcePath.isNull() ? QStringLiteral("") : sourcePath);
+    query.addBindValue(bindText(contentHash));
+    query.addBindValue(bindText(embeddingModel));
+    query.addBindValue(bindText(sourcePath));
 
     if (!query.exec()) {
         qWarning() << "Failed to save knowledge document:" << query.lastError().text();
+        if (started) m_db.rollback();
+        return;
+    }
+    if (started) {
+        m_knowledgeTxnPending = true;
+        m_pendingKnowledgeDoc = name;
     }
 }
 
 void SqliteMemory::replaceKnowledgeChunks(const QString& name,
                                           const QVector<KnowledgeChunk>& chunks) {
-    QSqlQuery query(m_db);
-    if (!m_db.transaction()) {
-        qWarning() << "Failed to start chunk transaction:" << query.lastError().text();
-        return;
+    // Pair with the immediately preceding upsert of the SAME document: the
+    // doc row and its chunks then commit together, so a chunk failure leaves
+    // the previous document+chunks untouched. A different name (or no pending
+    // upsert) is a standalone chunk replacement and gets its own transaction.
+    const bool paired = m_knowledgeTxnPending && m_pendingKnowledgeDoc == name;
+    if (m_knowledgeTxnPending && !paired)
+        commitPendingKnowledgeTransaction();
+
+    bool ownsTxn = false;
+    if (!paired) {
+        ownsTxn = m_db.transaction();
+        if (!ownsTxn)
+            qWarning() << "Chunk transaction not started; writing in autocommit mode:"
+                       << m_db.lastError().text();
     }
 
+    QSqlQuery query(m_db);
+    const auto fail = [&](const char* what) {
+        qWarning() << "Failed to" << what << ":" << query.lastError().text();
+        if (paired)
+            rollbackPendingKnowledgeTransaction();
+        else if (ownsTxn)
+            m_db.rollback();
+    };
+
     query.prepare("DELETE FROM knowledge_chunks WHERE doc_name = ?");
-    query.addBindValue(name);
-    if (!query.exec()) {
-        qWarning() << "Failed to clear chunks:" << query.lastError().text();
-        m_db.rollback();
-        return;
-    }
+    query.addBindValue(bindText(name));
+    if (!query.exec()) { fail("clear chunks"); return; }
 
     query.prepare("INSERT INTO knowledge_chunks (doc_name, chunk_index, chunk_total, "
                   "text, embedding, dim, pseudo, page) VALUES (?, ?, ?, ?, ?, ?, ?, ?)");
     for (const KnowledgeChunk& chunk : chunks) {
-        query.addBindValue(name);
+        query.addBindValue(bindText(name));
         query.addBindValue(chunk.index);
         query.addBindValue(chunk.total);
-        query.addBindValue(chunk.text);
+        query.addBindValue(bindText(chunk.text));
         query.addBindValue(embeddingToBlob(chunk.embedding));
         query.addBindValue(chunk.dim);
         query.addBindValue(chunk.pseudo ? 1 : 0);
         query.addBindValue(chunk.page);
-        if (!query.exec()) {
-            qWarning() << "Failed to save chunk:" << query.lastError().text();
-            m_db.rollback();
-            return;
-        }
+        if (!query.exec()) { fail("save chunk"); return; }
     }
 
-    if (!m_db.commit()) {
-        qWarning() << "Failed to commit chunks:" << query.lastError().text();
-        m_db.rollback();
+    if (paired) {
+        commitPendingKnowledgeTransaction();
+        return;
+    }
+    if (ownsTxn) {
+        if (!m_db.commit()) {
+            qWarning() << "Failed to commit chunks:" << m_db.lastError().text();
+            m_db.rollback();
+        }
     }
 }
 
 QVector<KnowledgeChunk> SqliteMemory::loadKnowledgeChunks(const QString& name) const {
+    // Flush a pending pairing transaction so a second connection (or a later
+    // reopen) sees the same document+chunks snapshot.
+    const_cast<SqliteMemory*>(this)->commitPendingKnowledgeTransaction();
     QSqlQuery query(m_db);
     query.prepare("SELECT chunk_index, chunk_total, text, embedding, dim, pseudo, page "
                   "FROM knowledge_chunks WHERE doc_name = ? ORDER BY chunk_index ASC");
@@ -1009,6 +1337,7 @@ QVector<KnowledgeChunk> SqliteMemory::loadKnowledgeChunks(const QString& name) c
 }
 
 bool SqliteMemory::removeKnowledgeDoc(const QString& name) {
+    commitPendingKnowledgeTransaction();
     QSqlQuery query(m_db);
     query.prepare("DELETE FROM knowledge_chunks WHERE doc_name = ?");
     query.addBindValue(name);
@@ -1025,6 +1354,7 @@ bool SqliteMemory::removeKnowledgeDoc(const QString& name) {
 }
 
 void SqliteMemory::clearKnowledgeDocs() {
+    commitPendingKnowledgeTransaction();
     QSqlQuery query(m_db);
     if (!query.exec("DELETE FROM knowledge_chunks")) {
         qWarning() << "Failed to clear knowledge chunks:" << query.lastError().text();
@@ -1035,6 +1365,7 @@ void SqliteMemory::clearKnowledgeDocs() {
 }
 
 QVector<SqliteMemory::KnowledgeDocRecord> SqliteMemory::loadKnowledgeDocRecords() const {
+    const_cast<SqliteMemory*>(this)->commitPendingKnowledgeTransaction();
     QSqlQuery query(m_db);
     query.prepare("SELECT name, content, content_hash, embedding_model, source_path "
                   "FROM knowledge_documents ORDER BY imported_at ASC");
@@ -1057,6 +1388,7 @@ QVector<SqliteMemory::KnowledgeDocRecord> SqliteMemory::loadKnowledgeDocRecords(
 }
 
 QString SqliteMemory::loadKnowledgeDoc(const QString& name) const {
+    const_cast<SqliteMemory*>(this)->commitPendingKnowledgeTransaction();
     QSqlQuery query(m_db);
     query.prepare("SELECT content FROM knowledge_documents WHERE name = ?");
     query.addBindValue(name);
@@ -1661,7 +1993,9 @@ QJsonArray SqliteMemory::searchEpisodic(const QString& query, int limit) {
         sqlQuery.prepare(QStringLiteral(
             "SELECT e.id, e.session_id, e.summary, e.tags, e.timestamp "
             "FROM episodic_fts f JOIN episodic e ON f.rowid = e.id "
-            "WHERE episodic_fts MATCH ? ORDER BY rank LIMIT ?"));
+            "LEFT JOIN sessions s ON s.id = e.session_id "
+            "WHERE episodic_fts MATCH ? AND COALESCE(s.deleted_at, 0) = 0 "
+            "ORDER BY rank LIMIT ?"));
         sqlQuery.addBindValue(QStringLiteral("\"%1\"").arg(match));
     } else {
         // docs/25 B2: the sub-trigram LIKE fallback cannot use any index
@@ -1687,7 +2021,9 @@ QJsonArray SqliteMemory::searchEpisodic(const QString& query, int limit) {
         sqlQuery.prepare(QStringLiteral(
             "SELECT e.id, e.session_id, e.summary, e.tags, e.timestamp "
             "FROM episodic e "
-            "WHERE e.summary LIKE ? ESCAPE '\\' OR e.tags LIKE ? ESCAPE '\\' "
+            "LEFT JOIN sessions s ON s.id = e.session_id "
+            "WHERE (e.summary LIKE ? ESCAPE '\\' OR e.tags LIKE ? ESCAPE '\\') "
+            "AND COALESCE(s.deleted_at, 0) = 0 "
             "ORDER BY e.timestamp DESC LIMIT ?"));
         sqlQuery.addBindValue(QStringLiteral("%%1%").arg(like));
         sqlQuery.addBindValue(QStringLiteral("%%1%").arg(like));
@@ -1718,8 +2054,10 @@ QJsonArray SqliteMemory::searchEpisodicSemantic(const QVector<float>& queryEmbed
     // docs/25 B2: the LIMIT is a named constant now (kSemanticCandidateCap);
     // B1's idx_episodic_ts backs the ORDER BY so the scan reads at most the
     // newest cap rows instead of sorting the whole table.
-    query.prepare("SELECT id, session_id, summary, tags, timestamp, embedding FROM episodic "
-                  "WHERE length(embedding) > 0 ORDER BY timestamp DESC LIMIT ?");
+    query.prepare("SELECT e.id, e.session_id, e.summary, e.tags, e.timestamp, e.embedding "
+                  "FROM episodic e LEFT JOIN sessions s ON s.id = e.session_id "
+                  "WHERE length(e.embedding) > 0 AND COALESCE(s.deleted_at, 0) = 0 "
+                  "ORDER BY e.timestamp DESC LIMIT ?");
     query.addBindValue(kSemanticCandidateCap);
     if (!query.exec()) {
         qWarning() << "searchEpisodicSemantic failed:" << query.lastError().text();
@@ -1983,6 +2321,13 @@ void SqliteMemory::clear(const QString& sessionId) {
     query.prepare("DELETE FROM file_checkpoints WHERE session_id = ?");
     query.addBindValue(sessionId);
     execDelete("clear file checkpoints");
+
+    // B2-B: the no-transaction fallback used to skip session_todos, leaving a
+    // cleared session with its old task list; keep it in sync with the
+    // transactional path above.
+    query.prepare("DELETE FROM session_todos WHERE session_id = ?");
+    query.addBindValue(sessionId);
+    execDelete("clear session todos");
 }
 
 void SqliteMemory::beginSession(const QString& sessionId, const QString& title) {
@@ -2862,8 +3207,10 @@ int SqliteMemory::clearTokenUsage() {
 }
 
 bool SqliteMemory::vacuumDatabase() {
-    // VACUUM 不可在事务内执行；本连接按语句自动提交，正常到这里没有
-    // 挂起事务。其它连接（如备份的短连接）持有锁时 SQLITE_BUSY → false，
+    // VACUUM 不可在事务内执行。B2-B 的知识库两阶段写可能留下挂起事务（文档
+    // 已写、分块尚未配对），先落盘再压缩。
+    commitPendingKnowledgeTransaction();
+    // 其它连接（如备份的短连接）持有锁时 SQLITE_BUSY → false，
     // 由调用方提示"稍后重试"，不做重试循环。
     QSqlQuery query(m_db);
     if (!query.exec("VACUUM")) {
@@ -3750,10 +4097,13 @@ bool SqliteMemory::restoreFromBackup(const QString& backupPath) {
     const QString dbPath = m_dbPath;
     const QString tmpPath = dbPath + QStringLiteral(".restore-tmp");
     const QString rollbackPath = dbPath + QStringLiteral(".pre-restore");
+    const QString intentPath = dbPath + QStringLiteral(".restore-intent");
+    m_restoreInProgress = true;
+    m_restoreAnchorCreated = false;
 
     // ── 1. Close our own connection. Closing the LAST connection to a WAL
     // database checkpoints and removes the -wal sidecar, so the bare .db
-    // file is complete from here on (rollback anchor copies are faithful).
+    // file is complete from here on (the rollback anchor is faithful).
     if (m_db.isOpen()) m_db.close();
     m_db = QSqlDatabase();   // drop the handle before removeDatabase (MEM-702)
     if (!m_connName.isEmpty()) {
@@ -3761,18 +4111,49 @@ bool SqliteMemory::restoreFromBackup(const QString& backupPath) {
         m_connName.clear();
     }
 
-    // Failure helper: best-effort reopen of the original (rolling back via
-    // the anchor when the swap already happened) and report failure.
+    const auto removeSidecars = [&]() {
+        QFile::remove(dbPath + QStringLiteral("-wal"));
+        QFile::remove(dbPath + QStringLiteral("-shm"));
+    };
+
+    // Failure helper. Only an anchor created by THIS attempt may be renamed
+    // back over dbPath: a foreign entry at `.pre-restore` (a directory, a
+    // file from an older version) is not ours to consume. When no anchor was
+    // created the live database is left exactly as it is and reopened.
     const auto failAndReopen = [&](const char* what) {
         qWarning() << "Database restore failed at" << what;
         QFile::remove(tmpPath);
-        if (QFile::exists(rollbackPath) && !QFile::exists(dbPath)) {
-            // Swap already happened: roll the anchor back over the file.
-            QFile::remove(dbPath + "-wal");
-            QFile::remove(dbPath + "-shm");
-            if (!QFile::copy(rollbackPath, dbPath))
-                qWarning() << "Database restore: ROLLBACK copy failed —"
-                           << "original snapshot kept at" << rollbackPath;
+
+        const bool anchorUsable = m_restoreAnchorCreated
+                                  && QFileInfo(rollbackPath).isFile();
+        if (anchorUsable) {
+            removeSidecars();
+            if (QFile::exists(dbPath) && !QFile::remove(dbPath))
+                qWarning() << "Database restore: could not remove partial database:"
+                           << dbPath;
+            if (QFile::rename(rollbackPath, dbPath)) {
+                // Intent has been honoured: the original is back in place.
+                QFile::remove(intentPath);
+            } else {
+                // Keep the intent so the next startup can retry the rollback
+                // from the anchor instead of opening whatever is at dbPath.
+                qCritical() << "Database restore: ROLLBACK rename failed —"
+                            << "original snapshot kept at" << rollbackPath;
+            }
+        } else {
+            // The anchor step never ran: dbPath still holds the original, so
+            // the intent written just before it is not needed.
+            QFile::remove(intentPath);
+        }
+        m_restoreAnchorCreated = false;
+        m_restoreInProgress = false;
+
+        // A missing live file with no usable anchor must not be reopened:
+        // SQLite would create an empty database over the user's data.
+        if (!QFile::exists(dbPath) && !QFileInfo(rollbackPath).isFile()) {
+            qCritical() << "Database restore: no live database and no usable"
+                        << "anchor — refusing to open an empty database";
+            return false;
         }
         if (!openConnection())
             qCritical() << "Database restore: reopen failed — restart required";
@@ -3783,43 +4164,87 @@ bool SqliteMemory::restoreFromBackup(const QString& backupPath) {
     if (!snapshotPassesQuickCheck(backupPath))
         return failAndReopen("integrity check");
 
-    // ── 3. Rollback anchor: the current file, before it is touched.
-    QFile::remove(rollbackPath);
-    if (!QFile::copy(dbPath, rollbackPath))
-        return failAndReopen("rollback anchor");
-
-    // ── 4. Stage the snapshot next to the live file.
+    // ── 3. Stage the snapshot next to the live file (a torn copy is caught
+    // by the startup `.restore-tmp` cleanup, never by the live path).
     QFile::remove(tmpPath);
     if (!QFile::copy(backupPath, tmpPath))
         return failAndReopen("stage snapshot");
 
-    // ── 5. Sidecars of the OLD database must not survive the swap.
-    QFile::remove(dbPath + "-wal");
-    QFile::remove(dbPath + "-shm");
+    // ── 4. The anchor path must be a regular file (or absent). A directory
+    // squatting there makes the rename below impossible; abort BEFORE
+    // writing intent so the failed attempt leaves no recovery marker.
+    const QFileInfo anchorInfo(rollbackPath);
+    if (anchorInfo.exists() && !anchorInfo.isFile()) {
+        qWarning() << "Database restore: anchor path is not a regular file:"
+                   << rollbackPath;
+        return failAndReopen("anchor path occupied");
+    }
 
-    // ── 6. Swap: remove + rename (QFile::rename fails onto an existing
-    // target, so the two-step form is mandatory).
-    if (!QFile::remove(dbPath) || !QFile::rename(tmpPath, dbPath))
+    // ── 5. Write the restore intent and flush it to disk. From here on a
+    // crash leaves evidence that the file on disk belongs to a swap; startup
+    // recovery uses it to decide between "restore committed" and "roll back
+    // from the anchor". A failed write aborts before the live file moves.
+    QFile::remove(intentPath);
+    {
+        QFile intent(intentPath);
+        if (!intent.open(QIODevice::WriteOnly | QIODevice::Truncate)) {
+            qWarning() << "Database restore: could not write intent file:"
+                       << intentPath << intent.errorString();
+            return failAndReopen("restore intent");
+        }
+        const QByteArray payload =
+            QDateTime::currentDateTimeUtc().toString(Qt::ISODate).toUtf8()
+            + '\n' + backupPath.toUtf8() + '\n';
+        if (intent.write(payload) != payload.size() || !intent.flush()) {
+            qWarning() << "Database restore: intent file not flushed:"
+                       << intentPath;
+            intent.close();
+            return failAndReopen("restore intent");
+        }
+        intent.close();
+    }
+
+    // ── 6. Rollback anchor: atomically rename the current file aside. A power
+    // loss right after this leaves dbPath missing while `.pre-restore` holds
+    // the original — recoverInterruptedRestore() puts it back on next start.
+    removeSidecars();
+    if (QFile::exists(rollbackPath) && !QFile::remove(rollbackPath)) {
+        qWarning() << "Database restore: could not clear old anchor:"
+                   << rollbackPath;
+        return failAndReopen("clear old anchor");
+    }
+    if (!QFile::exists(dbPath)) {
+        qWarning() << "Database restore: live database missing before swap";
+        return failAndReopen("missing live database");
+    }
+    if (!QFile::rename(dbPath, rollbackPath))
+        return failAndReopen("rollback anchor");
+    m_restoreAnchorCreated = true;   // this anchor belongs to this attempt
+
+    // ── 7. Swap: rename in the same directory (atomic on one volume). The
+    // window where dbPath is absent exists only between steps 6 and 7 and is
+    // covered by the anchor above.
+    if (!QFile::rename(tmpPath, dbPath))
         return failAndReopen("swap");
 
-    // ── 7. Reopen on the restored file.
+    // ── 8. Reopen on the restored file. On failure the anchor still holds
+    // the original, so the rollback path is the same as every other failure.
     if (!openConnection()) {
         qWarning() << "Database restore: restored file failed to open —"
                    << "rolling back";
+        if (m_db.isOpen()) m_db.close();
         m_db = QSqlDatabase();
         if (!m_connName.isEmpty()) {
             QSqlDatabase::removeDatabase(m_connName);
             m_connName.clear();
         }
-        QFile::remove(dbPath);
-        QFile::copy(rollbackPath, dbPath);
-        if (!openConnection())
-            qCritical() << "Database restore: rollback reopen failed —"
-                        << "restart required";
-        return false;
+        return failAndReopen("open restored database");
     }
 
-    // ── 8. Success: the anchor has served its purpose.
+    // ── 9. Success: the intent and the anchor have served their purpose.
+    m_restoreInProgress = false;
+    m_restoreAnchorCreated = false;
+    QFile::remove(intentPath);
     QFile::remove(rollbackPath);
     qInfo() << "Database restored from" << backupPath;
     return true;

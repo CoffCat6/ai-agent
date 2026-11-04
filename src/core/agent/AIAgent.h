@@ -354,6 +354,20 @@ private:
                                  const QString& note = QStringLiteral(
                                      "[Not executed] The task was completed from the "
                                      "answer above without running this call."));
+    // docs/36 B2-2: 在飞表（GUI 线程独占）。dispatchToolExecution 插入、
+    // 正常完成/迟到回调移除；stop()/epoch-drop 用 sealUnfinishedToolCalls()
+    // 为每个未封口的 call 幂等补一条 tool 响应。epoch 过滤保证旧任务的迟到
+    // 回调不会封掉新任务刚派发的调用。
+    void sealUnfinishedToolCalls(const QString& note, quint64 epoch = 0);
+    // 取出所有未封口的在飞调用并标记为已封口（同一批只返回一次）。
+    QVector<ToolCallInfo> takeUnsealedInFlightCalls(quint64 epoch = 0);
+    // 按本轮 assistant 原始 tool_calls 顺序封口（pending/confirm/in-flight
+    // 混合时也能保持报文顺序）。未登记顺序的调用稳定排在后面。
+    void sealToolCallsInOriginalOrder(QVector<ToolCallInfo> calls,
+                                      const QString& note);
+    // Clears the per-round call bookkeeping. Called on session/task resets.
+    void clearInFlightToolCalls();
+
     // Replace completed tool-call rounds older than the newest few with a
     // short assistant note (keeps the model from pattern-matching the
     // history into calling tools on every new message).
@@ -420,6 +434,23 @@ private:
     // Dispatched to the worker pool but not finished yet: removed from the
     // pending queue, so stop() must seal it separately.
     ToolCallInfo m_currentExecutingCall;
+    // docs/36 B2-2: every dispatched call, keyed by call.id. GUI-thread only.
+    // m_currentExecutingCall is overwritten on each dispatch, so it cannot
+    // name the whole in-flight set of a parallel round; stop() walks this to
+    // seal every unanswered id exactly once.
+    struct InFlightToolCall {
+        ToolCallInfo call;
+        QString traceNodeId;
+        quint64 sequence{0};     // dispatch order == original tool_calls order
+        quint64 epoch{0};        // owning task epoch (late callbacks filter)
+        bool sealed{false};
+    };
+    QHash<QString, InFlightToolCall> m_inFlightCalls;
+    // call.id -> index in the assistant's tool_calls array for the current
+    // round. Lets stop() append sealed tool messages in the original order
+    // even when the unanswered set mixes pending, confirm and in-flight calls.
+    QHash<QString, int> m_toolCallOrder;
+    quint64 m_toolCallSequence{0};
     // Batch 13 (SEC-1302): tools dispatched to the pool and not finished yet
     // (call id -> tool, strong shared reference). stop() walks this to
     // invoke ITool::cancel() so side effects terminate instead of running to

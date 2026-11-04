@@ -20,6 +20,17 @@ void RagService::setBatchEmbedder(DocumentRetriever::BatchEmbedFn fn) {
     m_batchEmbedFn = std::move(fn);
 }
 
+void RagService::setEmbeddingModelName(const QString& model) {
+    QMutexLocker lock(&m_mutex);
+    m_embeddingModel = model;
+    // The model name is the vector identity (persisted chunks are only
+    // restored under a matching name). Cached query vectors belong to the
+    // previous model and may even have a different dimension, so they must
+    // not survive the switch.
+    m_queryCache.clear();
+    m_queryCacheOrder.clear();
+}
+
 void RagService::setMaxTotalChunks(int cap) {
     m_maxTotalChunks = qMax(1, cap);
 }
@@ -36,6 +47,21 @@ bool RagService::hasDocumentLocked(const QString& sourceName) const {
         if (doc.name == sourceName) return true;
     }
     return false;
+}
+
+int RagService::chunksOfDocumentLocked(const QString& sourceName) const {
+    for (const auto& doc : m_docs) {
+        if (doc.name == sourceName) return doc.retriever->documentCount();
+    }
+    return 0;
+}
+
+bool RagService::fitsBudgetLocked(const QString& sourceName,
+                                  int incomingChunks) const {
+    // Re-ingesting the same name replaces its chunks: only the surplus over
+    // the replaced document counts against the cap.
+    const int retained = totalChunksLocked() - chunksOfDocumentLocked(sourceName);
+    return retained + incomingChunks <= m_maxTotalChunks;
 }
 
 bool RagService::hasDocument(const QString& sourceName) const {
@@ -195,10 +221,12 @@ int RagService::ingestDocument(const QString& sourceName, const QString& content
     const QVector<KnowledgeChunk> persisted = retriever->exportChunks();
     {
         QMutexLocker lock(&m_mutex);
-        // REL-1003: knowledge-base-wide budget (existing same-name chunks
-        // are replaced, so only the surplus counts against the cap)
-        const int current = totalChunksLocked() - dropDocumentLocked(sourceName);
-        if (current + chunks > m_maxTotalChunks) return -3;
+        // REL-1003: knowledge-base-wide budget. Checked BEFORE dropping the
+        // same-name document — a rejected ingest must be a no-op, otherwise
+        // the old document disappears from memory while its rows stay in
+        // SQLite (inconsistent until the next restart).
+        if (!fitsBudgetLocked(sourceName, chunks)) return -3;
+        dropDocumentLocked(sourceName);
         Document doc;
         doc.name = sourceName;
         doc.chars = content.trimmed().size();
@@ -239,8 +267,10 @@ int RagService::ingestRestoredDocument(const QString& sourceName, const QString&
         // cleared/removed documents in the meantime. Superseded restores
         // must not re-add what the user deleted.
         if (generation != m_restoreGeneration) return -2;
-        const int current = totalChunksLocked() - dropDocumentLocked(sourceName);
-        if (current + chunks > m_maxTotalChunks) return -3;
+        // Budget first, drop second (see ingestDocument): a skipped restore
+        // must not erase the document that is currently loaded.
+        if (!fitsBudgetLocked(sourceName, chunks)) return -3;
+        dropDocumentLocked(sourceName);
         Document doc;
         doc.name = sourceName;
         doc.chars = content.trimmed().size();
@@ -276,16 +306,16 @@ bool RagService::restorePersistedDocument(const QString& sourceName,
         // docs/23 G6: the 4096-chunk budget (REL-1003) is a full-path
         // invariant — the ingest paths check it, so restore must too.
         // Same accounting as ingestRestoredDocument: an existing same-name
-        // document is dropped first, only the surplus counts against the
-        // cap. A skipped document stays in SQLite (user can delete other
-        // documents or re-embed it later); startup reports the skip count.
-        const int current = totalChunksLocked() - dropDocumentLocked(sourceName);
-        if (current + chunks.size() > m_maxTotalChunks) {
+        // document is replaced, only the surplus counts against the cap. A
+        // skipped document stays in SQLite (user can delete other documents
+        // or re-embed it later); startup reports the skip count.
+        if (!fitsBudgetLocked(sourceName, chunks.size())) {
             qWarning() << "Knowledge restore skipped (budget):" << sourceName
                        << "needs" << chunks.size() << "chunks,"
                        << "budget" << m_maxTotalChunks;
             return false;
         }
+        dropDocumentLocked(sourceName);
         Document doc;
         doc.name = sourceName;
         doc.chars = 0;

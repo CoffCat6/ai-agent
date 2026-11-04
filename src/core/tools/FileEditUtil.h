@@ -1,10 +1,80 @@
 #pragma once
 
+#include "Sandbox.h"
+
+#include <QDir>
+#include <QHash>
+#include <QMutex>
+#include <QRecursiveMutex>
+#include <QSharedPointer>
 #include <QString>
 #include <QStringList>
 #include <QVector>
 
 namespace NexusAI {
+
+// docs/36 B2-1: 进程级「按规范化路径互斥」。write_file / edit_file /
+// apply_proposal 都是「读当前文件 -> 内存改 -> QSaveFile 覆盖」，同一轮
+// 并行派发时两个执行会基于同一份旧内容，后写者静默覆盖先写者的更新。
+// 这个守卫让同一路径的读改写串行，不同路径仍并行（只在单文件粒度排队，
+// 不在 AIAgent 层做全局串行）。
+//
+// key 与工具实际触碰的路径同源：resolvePath（项目根锚定）+ canonical
+// （存在文件穿透 symlink）+ cleanPath（折叠 . / ..），Windows 再做大小写
+// 归一。Windows 文件系统大小写不敏感，若不 lower，"C:\x\A.txt" 与
+// "c:\x\a.txt" 会拿到两把锁。
+//
+// 锁表只按已编辑过的路径增长（每项一个 mutex），条目不做回收：回收需要
+// 等待者引用计数，和「解锁 vs 析构」的竞态耦合，收益不值得复杂度。一个
+// 桌面会话的编辑路径数量有界。
+class PathWriteGuard {
+public:
+    explicit PathWriteGuard(const QString& path) {
+        if (path.isEmpty()) return;
+        // 与工具实际触碰的路径同源：先按项目根解析相对路径，再规范化。
+        // 已存在文件取 canonical（穿透 symlink）；不存在的尾部退化为
+        // absolute + cleanPath。Windows 文件系统大小写不敏感，若不 lower，
+        // "C:\x\A.txt" 与 "c:\x\a.txt" 会拿到两把锁。
+        const QString resolved = Sandbox::resolvePath(path);
+        QString key = QFileInfo(resolved).canonicalFilePath();
+        if (key.isEmpty())
+            key = QFileInfo(resolved).absoluteFilePath();
+        key = QDir::fromNativeSeparators(QDir::cleanPath(key));
+#ifdef Q_OS_WIN
+        key = key.toLower();
+#endif
+        {
+            QMutexLocker locker(&registryMutex());
+            QSharedPointer<QRecursiveMutex>& entry = registry()[key];
+            if (!entry) entry = QSharedPointer<QRecursiveMutex>::create();
+            m_mutex = entry;
+        }
+        // QRecursiveMutex: 同一线程嵌套获取同一路径（例如工具内部再调用
+        // 另一个写工具）不会自锁。
+        m_mutex->lock();
+        m_locked = true;
+    }
+
+    ~PathWriteGuard() {
+        if (m_locked) m_mutex->unlock();
+    }
+
+    PathWriteGuard(const PathWriteGuard&) = delete;
+    PathWriteGuard& operator=(const PathWriteGuard&) = delete;
+
+private:
+    static QMutex& registryMutex() {
+        static QMutex mutex;
+        return mutex;
+    }
+    static QHash<QString, QSharedPointer<QRecursiveMutex>>& registry() {
+        static auto* map = new QHash<QString, QSharedPointer<QRecursiveMutex>>();
+        return *map;
+    }
+
+    QSharedPointer<QRecursiveMutex> m_mutex;
+    bool m_locked{false};
+};
 
 // docs/35 P4.4: shared by edit_file's confirmation preview and the structured
 // proposal applier. Common-prefix/suffix line diff — O(n) and sufficient for

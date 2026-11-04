@@ -29,6 +29,9 @@
 #include <QSysInfo>
 #include <QtConcurrent/QtConcurrentRun>
 
+#include <algorithm>
+#include <limits>
+
 // docs/16 §6: PricingCalculator 由 T7 提供。__has_include 保护使本文件在
 // T7 完成前也能独立编译（costCents 退化为 0），完成后自动接入真实定价。
 #if __has_include("core/utils/PricingCalculator.h")
@@ -1099,6 +1102,7 @@ bool AIAgent::startTask(const QString& userMessage, const QStringList& images,
     m_confirmNodeId.clear();
     m_lastResponse.clear();
     m_currentExecutingCall = ToolCallInfo{};
+    clearInFlightToolCalls();
     m_toolExecutions = 0;
     m_forcedFinalPush.clear();
     clearStreamState();
@@ -1277,6 +1281,7 @@ void AIAgent::resetSession() {
     m_currentConfirmCall = ToolCallInfo{};
     m_currentExecutingCall = ToolCallInfo{};
     m_inFlightTools.clear();   // Batch 13: bookkeeping only; results are epoch-dropped
+    clearInFlightToolCalls();
     m_subAgentNodeCalls.clear();
     m_toolExecutions = 0;
     m_forcedFinalPush.clear();
@@ -1925,6 +1930,13 @@ void AIAgent::onLLMResponse(const LLMResponse& response) {
     }
     m_streamText.clear();
 
+    // docs/36 B2-2: 记录本轮 tool_calls 的原始顺序。stop() 封口时 pending /
+    // confirm / in-flight 三部分会被合并，只有按这个索引排序才能保证 tool
+    // 消息与 assistant 声明的顺序一致。
+    m_toolCallOrder.clear();
+    for (int i = 0; i < calls.size(); ++i)
+        m_toolCallOrder.insert(calls.at(i).id, i);
+
     m_pendingToolCalls = calls;
     processNextToolCall();
 }
@@ -1952,14 +1964,22 @@ void AIAgent::stop() {
     m_subAgentNodeCalls.clear();
     // The assistant message may already be in the history announcing calls
     // that will now never run - seal ALL of them (still queued, awaiting
-    // confirmation, and currently executing on the worker pool) or the next
-    // turn inherits a dangling tool_calls sequence.
+    // confirmation, and every parallel call executing on the worker pool) or
+    // the next turn inherits a dangling tool_calls sequence.
     QVector<ToolCallInfo> unanswered = m_pendingToolCalls;
     if (!m_currentConfirmCall.id.isEmpty())
         unanswered.append(m_currentConfirmCall);
-    if (!m_currentExecutingCall.id.isEmpty())
+    // docs/36 B2-2: m_currentExecutingCall only names the last dispatch of a
+    // parallel round; take every unsealed in-flight call instead and merge it
+    // with pending/confirm in the original tool_calls order.
+    for (const ToolCallInfo& inFlight : takeUnsealedInFlightCalls())
+        unanswered.append(inFlight);
+    // Defensive: an executing call that never made it into the table (older
+    // dispatch path) still needs sealing exactly once.
+    if (!m_currentExecutingCall.id.isEmpty()
+            && !m_inFlightCalls.contains(m_currentExecutingCall.id))
         unanswered.append(m_currentExecutingCall);
-    sealUnansweredToolCalls(unanswered,
+    sealToolCallsInOriginalOrder(std::move(unanswered),
         QStringLiteral("[Not executed] The task was stopped before this call "
                        "could run."));
     m_pendingToolCalls.clear();
@@ -2185,6 +2205,7 @@ void AIAgent::restartTaskFromAnchor() {
     m_confirmNodeId.clear();
     m_lastResponse.clear();
     m_currentExecutingCall = ToolCallInfo{};
+    clearInFlightToolCalls();
     m_toolExecutions = 0;
     m_forcedFinalPush.clear();
     m_thinkingNodeId.clear();
@@ -2330,6 +2351,46 @@ void AIAgent::sealUnansweredToolCalls(const QVector<ToolCallInfo>& calls,
         toolMsg["content"] = note;
         m_messages.append(toolMsg);
     }
+}
+
+// docs/36 B2-2: 取出未封口的在飞调用并在表内标记 sealed。同一项只返回
+// 一次，因此 stop() 与多个迟到回调（epoch-drop）重复调用不会追加第二条。
+QVector<ToolCallInfo> AIAgent::takeUnsealedInFlightCalls(quint64 epoch) {
+    QVector<ToolCallInfo> calls;
+    for (auto it = m_inFlightCalls.begin(); it != m_inFlightCalls.end(); ++it) {
+        if (it->sealed) continue;
+        if (epoch != 0 && it->epoch != epoch) continue;
+        it->sealed = true;
+        calls.append(it->call);
+    }
+    return calls;
+}
+
+void AIAgent::sealToolCallsInOriginalOrder(QVector<ToolCallInfo> calls,
+                                           const QString& note) {
+    if (calls.isEmpty()) return;
+    // stable_sort: 未登记顺序（值为 INT_MAX）的调用保持调用方给出的相对
+    // 顺序，已登记的按 assistant tool_calls 索引排列。
+    const int unregistered = std::numeric_limits<int>::max();
+    std::stable_sort(calls.begin(), calls.end(),
+                     [this, unregistered](const ToolCallInfo& a,
+                                          const ToolCallInfo& b) {
+        return m_toolCallOrder.value(a.id, unregistered)
+             < m_toolCallOrder.value(b.id, unregistered);
+    });
+    sealUnansweredToolCalls(calls, note);
+}
+
+void AIAgent::sealUnfinishedToolCalls(const QString& note, quint64 epoch) {
+    QVector<ToolCallInfo> calls = takeUnsealedInFlightCalls(epoch);
+    if (calls.isEmpty()) return;
+    sealToolCallsInOriginalOrder(std::move(calls), note);
+}
+
+void AIAgent::clearInFlightToolCalls() {
+    m_inFlightCalls.clear();
+    m_toolCallOrder.clear();
+    m_toolCallSequence = 0;
 }
 
 bool AIAgent::toolAllowedForModel(const QString& name) const {
@@ -2554,6 +2615,11 @@ void AIAgent::dispatchToolExecution(const ToolCallInfo& call, const QString& tra
     setState(AgentState::ExecutingTool);
     ++m_toolExecutions;
     m_currentExecutingCall = call;
+    // docs/36 B2-2: 在飞表按 call.id 登记（m_currentExecutingCall 会被下一次
+    // 派发覆盖，不能代表整轮并行集合）。sequence 即派发顺序 = assistant
+    // tool_calls 顺序。
+    m_inFlightCalls.insert(call.id,
+        InFlightToolCall{call, nodeId, ++m_toolCallSequence, m_epoch, false});
 
     // docs/22 F1: dispatch holds a strong reference — the tool stays alive
     // for the whole pool-thread execute() even if the registry entry is
@@ -2581,6 +2647,13 @@ void AIAgent::dispatchToolExecution(const ToolCallInfo& call, const QString& tra
             // Task was stopped/reset while the tool ran: keep the trace
             // consistent but do not resume the (dead) loop.
             updateTraceNodeStatusById(nodeId, "cancelled");
+            // docs/36 B2-2: 停止/重建任务时补封口。stop() 通常已经处理过，
+            // takeUnsealedInFlightCalls() 的 sealed 标记保证这里幂等；重置
+            // 路径（restartTaskFromAnchor/resetSession）只走这里也能补齐。
+            sealUnfinishedToolCalls(QStringLiteral(
+                "[Not executed] The task was stopped before this call "
+                "could complete."), epoch);
+            m_inFlightCalls.remove(call.id);
             return;
         }
         finishToolExecution(call, nodeId, result, autoApproved);
@@ -2737,6 +2810,9 @@ void AIAgent::applySubAgentProgress(const QString& nodeId, const SubAgentProgres
 
 void AIAgent::finishToolExecution(const ToolCallInfo& call, const QString& traceNodeId,
                                   const ToolResult& result, bool autoApproved) {
+    // docs/36 B2-2: 正常完成即出表；此后 stop() 不会再给它补 [Not executed]
+    // （它的 tool 响应马上由下面这条路径追加）。
+    m_inFlightCalls.remove(call.id);
     m_currentExecutingCall = ToolCallInfo{};
     updateTraceNodeStatusById(traceNodeId, result.success ? "success" : "failed");
 
@@ -3050,6 +3126,7 @@ void AIAgent::finishTask(const QString& finalText, bool summaryTraced) {
     m_active = false;
     m_taskTimeoutTimer.stop();
     m_inFlightTools.clear();   // Batch 13: normally empty here; belt-and-braces
+    clearInFlightToolCalls();
     m_subAgentNodeCalls.clear();
 
     // Batch 11: close the observability chain — one audit row carrying the
@@ -3112,6 +3189,7 @@ void AIAgent::failTask(const QString& error) {
     m_active = false;
     m_taskTimeoutTimer.stop();
     m_inFlightTools.clear();   // Batch 13: belt-and-braces, mirrors finishTask
+    clearInFlightToolCalls();
     m_subAgentNodeCalls.clear();
     appendTraceNode("error", error, "failed");
     setState(AgentState::Error);

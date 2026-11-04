@@ -35,8 +35,10 @@ public:
     void setBatchEmbedder(DocumentRetriever::BatchEmbedFn fn);
 
     // Identity of the embedding model currently backing the embedder; used
-    // to version persisted chunk vectors.
-    void setEmbeddingModelName(const QString& model) { m_embeddingModel = model; }
+    // to version persisted chunk vectors. Changing it invalidates the query
+    // cache: vectors produced by the previous model (possibly a different
+    // dimension) must never be reused.
+    void setEmbeddingModelName(const QString& model);
     QString embeddingModelName() const { return m_embeddingModel; }
 
     // Chunk + embed + store a document. Returns the number of chunks kept,
@@ -151,7 +153,13 @@ private:
 
     int dropDocumentLocked(const QString& sourceName); // returns removed chunk count
     bool hasDocumentLocked(const QString& sourceName) const;
+    int chunksOfDocumentLocked(const QString& sourceName) const;
     int totalChunksLocked() const;
+    // REL-1003 budget gate: the SAME-NAME document is replaced, so only the
+    // surplus counts against the cap. Must be evaluated BEFORE any drop —
+    // a rejected ingest/restore is a no-op that leaves the existing document
+    // (and its persisted rows) untouched.
+    bool fitsBudgetLocked(const QString& sourceName, int incomingChunks) const;
     // Chunk + embed outside the lock; nullptr with *chunksOut = 0 (empty) or
     // -1 (oversize). Shared by ingestDocument / ingestRestoredDocument.
     // docs/25 B7: prechunked non-empty → the caller already chunked the

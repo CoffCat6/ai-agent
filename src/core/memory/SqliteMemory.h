@@ -263,6 +263,21 @@ private:
     // docs/24 R1: shared by the constructor and restoreFromBackup — add,
     // open, PRAGMA setup, schema init. m_dbPath must be set already.
     bool openConnection();
+    // B2-B/B2 收口: crash recovery for the file swap in restoreFromBackup.
+    // Runs before the connection is opened. Returns false when a restore
+    // window is provably present but cannot be repaired safely (intent
+    // without a usable anchor, anchor rename failed, incomplete live file
+    // with no anchor): openConnection must then fail closed instead of
+    // letting SQLite materialize an empty database. No-op for ":memory:".
+    bool recoverInterruptedRestore();
+    // B2-B: the knowledge document upsert and its chunk replacement share
+    // one transaction (the persistence bridge in main.cpp calls them back to
+    // back). upsertKnowledgeDoc opens it and leaves it pending;
+    // replaceKnowledgeChunks joins and commits it. A standalone upsert is
+    // committed on the next knowledge operation / destruction, so a document
+    // saved without chunks is never lost.
+    bool commitPendingKnowledgeTransaction();
+    void rollbackPendingKnowledgeTransaction();
     // docs/24 R1: restore-time integrity gate (read-only quick_check).
     static bool snapshotPassesQuickCheck(const QString& path);
     // docs/23 G7: 硬级联（messages/episodic/sessions/trace_nodes），
@@ -283,8 +298,10 @@ private:
     // 拉平：按 head 的祖先链定序、删掉旁支上被放弃的重复答案行、清空 parent_id /
     // head_message_id，并回收遗留的 message_variants 表（答案不再存多版本）。
     // 没经历过树版本的库这些列/表本来就不存在，整段是 no-op，只落版本闸门。
-    // 仅在 user_version < 3 时跑一次。
-    void migrateConversationModel(int userVersion);
+    // 仅在 user_version < 3 时跑一次。B2-B：返回 false 表示迁移未完成（备份
+    // 失败 / 会话头或 parent 链断 / 事务失败），此时调用方不得推进
+    // user_version，下次启动会重试；数据保持原样。
+    bool migrateConversationModel(int userVersion);
     // backfillRows（docs/23 G1）：仅 user_version==0（老库升级/新库首建）
     // 时执行 O(messages) 的 FTS 回填；稳态启动由触发器保证同步，跳过。
     void migrateMessagesFts(bool backfillRows);
@@ -298,6 +315,19 @@ private:
     QSqlDatabase m_db;
     QString m_dbPath;
     QString m_connName; // unique per instance: several may coexist (tests)
+    // B2-B: pending knowledge-document transaction (see the header comment
+    // above commitPendingKnowledgeTransaction).
+    bool m_knowledgeTxnPending = false;
+    QString m_pendingKnowledgeDoc;
+    // True while restoreFromBackup owns the swap: the startup recovery must
+    // not run in the reconnect inside the same operation (it would retire the
+    // rollback anchor before the restored file is known to be usable).
+    bool m_restoreInProgress = false;
+    // P2-5: only an anchor created by THIS restore attempt (the rename of the
+    // live file succeeded) may be renamed back over dbPath. A foreign entry
+    // at `.pre-restore` (e.g. a directory) must never make the failure path
+    // delete the live database.
+    bool m_restoreAnchorCreated = false;
 };
 
 } // namespace NexusAI

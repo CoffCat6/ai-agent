@@ -190,6 +190,16 @@ ToolResult ApplyProposalTool::execute(const QJsonObject& args) {
     if (!Sandbox::validatePath(proposal.path, true, &reason))
         return ToolResult::fail(Sandbox::denialHint(reason));
 
+    // docs/36 B2-1: 提案应用同样是「读当前文件 -> 模拟编辑 -> 覆盖」，必须
+    // 与同路径的 write_file/edit_file/其它提案串行。进入临界区后重新取一次
+    // 提案：并发调用可能已经消费掉它（applied），此时不能基于旧快照再写一遍。
+    const PathWriteGuard writeGuard(proposal.path);
+    if (!store->get(id, &proposal)) return ToolResult::fail(unknownId());
+    if (proposal.applied)
+        return ToolResult::fail(QStringLiteral(
+            "Proposal %1 was already applied; do not apply it twice.")
+            .arg(id));
+
     QString content;
     QString updated;
     QString error;

@@ -92,6 +92,14 @@ private slots:
     // docs/25 B7: an oversize PDF (pageTexts set) is rejected by the budget
     // pre-check BEFORE any chunking/embedding work.
     void oversizePdfRejectedByPrecheck();
+    // B2-C: the budget check must precede the same-name drop (a rejected
+    // re-ingest must leave the existing document untouched), and a change of
+    // the embedding-model identity must invalidate cached query vectors.
+    void budgetRejectionKeepsExistingDocument();
+    void restoreBudgetRejectionKeepsExistingDocument();
+    void persistedRestoreBudgetRejectionKeepsExistingDocument();
+    void modelSwitchInvalidatesQueryCache();
+    void modelSwitchToDifferentDimensionFailsSafely();
 };
 
 void TestRag::ingestAndListDocuments() {
@@ -1095,6 +1103,162 @@ void TestRag::oversizePdfRejectedByPrecheck() {
     const QString huge = longDoc("big", (RagService::MaxChunksPerDocument + 2) * 10);
     QCOMPARE(rag.ingestDocument("big.pdf", huge, {"page one", "page two"}), -1);
     QVERIFY(rag.isEmpty());
+}
+
+// ── B2-C: budget rejection must not drop the existing document ──────────
+// Re-ingesting a same-name document that would exceed the total-chunk cap
+// returns -3. The old implementation subtracted the same-name chunks by
+// DROPPING them first, so a rejected import still erased the existing
+// document from memory (while its rows stayed in SQLite until the next
+// launch). A rejected import must be a no-op: same chunks, same listing,
+// still searchable.
+void TestRag::budgetRejectionKeepsExistingDocument() {
+    RagService local;
+    const int a = local.ingestDocument(QStringLiteral("a.txt"), longDoc("a", 6));
+    QVERIFY2(a >= 2, "fixture must produce several chunks");
+
+    // Cap exactly at the current usage: replacing a.txt with a bigger
+    // document can only fit if the old chunks were subtracted, so the
+    // surplus check must reject it without touching a.txt.
+    local.setMaxTotalChunks(a);
+    const int rejected =
+        local.ingestDocument(QStringLiteral("a.txt"), longDoc("a2", 12));
+    QCOMPARE(rejected, -3);
+
+    QVERIFY2(local.hasDocument(QStringLiteral("a.txt")),
+             "rejected re-ingest erased the existing document");
+    QCOMPARE(local.documentCount(), a);
+    QCOMPARE(local.documents().size(), 1);
+    QCOMPARE(local.documents().at(0).toObject().value("chunks").toInt(), a);
+    QVERIFY2(!local.search(QStringLiteral("alpha"), 3).isEmpty(),
+             "existing document is no longer searchable after a rejected import");
+}
+
+// Same invariant on the background-restore ingest path.
+void TestRag::restoreBudgetRejectionKeepsExistingDocument() {
+    RagService local;
+    const quint64 generation = local.restoreGeneration();
+    const int a = local.ingestRestoredDocument(
+        QStringLiteral("a.txt"), longDoc("a", 6), generation);
+    QVERIFY(a >= 2);
+
+    local.setMaxTotalChunks(a);
+    const int rejected = local.ingestRestoredDocument(
+        QStringLiteral("a.txt"), longDoc("a2", 12), generation);
+    QCOMPARE(rejected, -3);
+
+    QVERIFY2(local.hasDocument(QStringLiteral("a.txt")),
+             "rejected restore erased the existing document");
+    QCOMPARE(local.documentCount(), a);
+    QCOMPARE(local.documents().size(), 1);
+    QVERIFY2(!local.search(QStringLiteral("alpha"), 3).isEmpty(),
+             "existing document lost searchability after a rejected restore");
+}
+
+// ...and on the persisted-chunk restore path, which had the same eager drop.
+void TestRag::persistedRestoreBudgetRejectionKeepsExistingDocument() {
+    RagService source;
+    QVERIFY(source.ingestDocument(QStringLiteral("a.txt"), longDoc("a", 6)) >= 2);
+    const QVector<KnowledgeChunk> small =
+        source.exportPersistedChunks(QStringLiteral("a.txt"));
+    QVERIFY(small.size() >= 2);
+
+    RagService other;
+    QVERIFY(other.ingestDocument(QStringLiteral("a.txt"), longDoc("a2", 12)) >= 2);
+    const QVector<KnowledgeChunk> big =
+        other.exportPersistedChunks(QStringLiteral("a.txt"));
+    QVERIFY(big.size() > small.size());
+
+    RagService local;
+    QVERIFY(local.restorePersistedDocument(QStringLiteral("a.txt"), small,
+                                           QString(), local.restoreGeneration()));
+    local.setMaxTotalChunks(small.size());
+    QVERIFY(!local.restorePersistedDocument(QStringLiteral("a.txt"), big,
+                                            QString(), local.restoreGeneration()));
+
+    QVERIFY2(local.hasDocument(QStringLiteral("a.txt")),
+             "rejected persisted restore erased the existing document");
+    QCOMPARE(local.exportPersistedChunks(QStringLiteral("a.txt")).size(),
+             small.size());
+    QCOMPARE(local.documents().size(), 1);
+}
+
+// ── B2-C: embedding-model switch invalidates the query cache ─────────────
+// setEmbedder() already dropped cached query vectors; the model-name setter
+// (the persistence version identity) did not. After switching models the
+// next search must re-embed instead of reusing the previous model's vector.
+void TestRag::modelSwitchInvalidatesQueryCache() {
+    int embedCalls = 0;
+    QString model = QStringLiteral("A");
+    auto embed = [&embedCalls, &model](const QString&) {
+        ++embedCalls;
+        QVector<float> v(8, 0.0f);
+        // Same dimension, different basis: a stale cache entry from model A
+        // would still match the A-embedded store, masking the bug.
+        v[model == QStringLiteral("A") ? 0 : 1] = 1.0f;
+        return v;
+    };
+
+    RagService local;
+    local.setEmbedder(embed);
+    local.setBatchEmbedder([](const QStringList& texts) {
+        QVector<QVector<float>> out;
+        for (int i = 0; i < texts.size(); ++i) {
+            QVector<float> v(8, 0.0f);
+            v[0] = 1.0f;
+            out.append(v);
+        }
+        return out;
+    });
+    local.setEmbeddingModelName(QStringLiteral("A"));
+    QVERIFY(local.ingestDocument(QStringLiteral("doc.txt"), longDoc("switch", 6)) >= 2);
+
+    QVERIFY(!local.search(QStringLiteral("alpha"), 3).isEmpty());   // A matches
+    const int afterFirst = embedCalls;
+
+    model = QStringLiteral("B");
+    local.setEmbeddingModelName(QStringLiteral("B"));
+    const QJsonArray hits = local.search(QStringLiteral("alpha"), 3);
+
+    QVERIFY2(embedCalls > afterFirst,
+             "model switch reused a cached query vector from the previous model");
+    QVERIFY2(hits.isEmpty(),
+             "search scored the store with the previous model's cached vector");
+}
+
+// A model switch that also changes the embedding dimension must fail safely:
+// the query vector is re-embedded (cache cleared) and, being incompatible
+// with the stored vectors, reports embeddingUnavailable / no-match instead
+// of scoring with the stale same-dimension vector.
+void TestRag::modelSwitchToDifferentDimensionFailsSafely() {
+    QString model = QStringLiteral("A");
+    auto embed = [&model](const QString&) {
+        return model == QStringLiteral("A") ? QVector<float>(8, 0.5f)
+                                            : QVector<float>(3, 1.0f);
+    };
+
+    RagService local;
+    local.setEmbedder(embed);
+    local.setBatchEmbedder([](const QStringList& texts) {
+        QVector<QVector<float>> out;
+        for (int i = 0; i < texts.size(); ++i)
+            out.append(QVector<float>(8, 0.5f));
+        return out;
+    });
+    local.setEmbeddingModelName(QStringLiteral("A"));
+    QVERIFY(local.ingestDocument(QStringLiteral("doc.txt"), longDoc("dim", 6)) >= 2);
+
+    QVERIFY(!local.search(QStringLiteral("alpha"), 3).isEmpty());
+    QVERIFY(!local.searchDetailed(QStringLiteral("alpha"), 3).embeddingUnavailable);
+
+    model = QStringLiteral("B");   // 3-dim query embeddings
+    local.setEmbeddingModelName(QStringLiteral("B"));
+    const RagService::SearchOutcome outcome =
+        local.searchDetailed(QStringLiteral("alpha"), 3);
+    QVERIFY2(outcome.passages.isEmpty(),
+             "stale 8-dim query vector was reused after a model switch");
+    QVERIFY2(outcome.embeddingUnavailable,
+             "dimension drift must be reported as embeddingUnavailable");
 }
 
 QTEST_GUILESS_MAIN(TestRag)

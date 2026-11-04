@@ -1,6 +1,7 @@
 // Unit tests for the glob and grep built-in tools.
 #include "core/tools/ToolRegistry.h"
 #include "core/tools/Sandbox.h"
+#include "core/tools/FileEditUtil.h"
 #include "core/tools/NetworkFetchTool.h"
 
 #include <QDir>
@@ -10,7 +11,13 @@
 #include <QCryptographicHash>
 #include <QTemporaryDir>
 #include <QTextStream>
+#include <QSemaphore>
+#include <QElapsedTimer>
+#include <QThread>
+#include <QtConcurrent/QtConcurrentRun>
 #include <QtTest>
+
+#include <atomic>
 
 using namespace NexusAI;
 
@@ -516,8 +523,201 @@ private slots:
         QVERIFY(!r.checkpoint.isValid());
     }
 
+    // ── B2-A: 同路径写工具串行化 ──
+    // 读改写竞态的最小复现：两个 edit_file 同时读同一份旧内容，后写者用
+    // 自己的内存副本整文件覆盖，先写者的修改被无声丢弃。锁生效后两次
+    // 修改都必须留在最终文件里。
+    void concurrentEditFileSamePathKeepsBothEdits() {
+        const QString filler = makeLargeText("filler line", 60000);
+        createFile("race.txt", filler + QStringLiteral("alpha\n") + filler
+                                   + QStringLiteral("beta\n"));
+
+        auto tool = ToolRegistry::instance().findShared("edit_file");
+        QVERIFY(tool);
+        QSemaphore start(0);
+        const auto runEdit = [&](const QString& from, const QString& to) {
+            return QtConcurrent::run([tool, &start, from, to]() {
+                start.acquire();
+                return tool->execute({{"path", "race.txt"},
+                                      {"old_string", from},
+                                      {"new_string", to}});
+            });
+        };
+        QFuture<ToolResult> a = runEdit(QStringLiteral("alpha"),
+                                       QStringLiteral("ALPHA"));
+        QFuture<ToolResult> b = runEdit(QStringLiteral("beta"),
+                                       QStringLiteral("BETA"));
+        start.release(2);
+        a.waitForFinished();
+        b.waitForFinished();
+        QVERIFY2(a.result().success, qPrintable(a.result().error));
+        QVERIFY2(b.result().success, qPrintable(b.result().error));
+
+        QFile file(QDir(m_tempDir->path()).filePath(QStringLiteral("race.txt")));
+        QVERIFY(file.open(QIODevice::ReadOnly));
+        const QString finalContent = QString::fromUtf8(file.readAll());
+        QVERIFY2(finalContent.contains(QStringLiteral("ALPHA")),
+                 "并发 edit 丢失了 ALPHA 修改（后写者覆盖了先写者）");
+        QVERIFY2(finalContent.contains(QStringLiteral("BETA")),
+                 "并发 edit 丢失了 BETA 修改（后写者覆盖了先写者）");
+        QVERIFY(!finalContent.contains(QStringLiteral("alpha")));
+        QVERIFY(!finalContent.contains(QStringLiteral("beta")));
+    }
+
+    // 串行化之后，第二个使用同一锚点的 edit 必须发现锚点已被前一个消费，
+    // 返回可读的「请重读」错误，而不是基于过期内容再次覆盖。
+    void concurrentEditOnSameAnchorFailsReadably() {
+        const QString filler = makeLargeText("anchor filler", 60000);
+        createFile("anchor.txt", filler + QStringLiteral("anchor_value\n") + filler);
+
+        auto tool = ToolRegistry::instance().findShared("edit_file");
+        QVERIFY(tool);
+        QSemaphore start(0);
+        const auto runEdit = [&](const QString& replacement) {
+            return QtConcurrent::run([tool, &start, replacement]() {
+                start.acquire();
+                return tool->execute({{"path", "anchor.txt"},
+                                      {"old_string", "anchor_value"},
+                                      {"new_string", replacement}});
+            });
+        };
+        QFuture<ToolResult> a = runEdit(QStringLiteral("winner_a"));
+        QFuture<ToolResult> b = runEdit(QStringLiteral("winner_b"));
+        start.release(2);
+        a.waitForFinished();
+        b.waitForFinished();
+
+        int successes = 0;
+        QString loserError;
+        for (const QFuture<ToolResult>* future : {&a, &b}) {
+            const ToolResult r = future->result();
+            if (r.success) ++successes;
+            else loserError = r.error;
+        }
+        QCOMPARE(successes, 1);
+        QVERIFY2(loserError.contains(QStringLiteral("old_string not found")),
+                 qPrintable(loserError));
+        QVERIFY2(loserError.contains(QStringLiteral("re-read"), Qt::CaseInsensitive),
+                 qPrintable(loserError));
+    }
+
+    // write_file 是全量覆盖，语义上允许后写赢；但两个执行必须串行完成，
+    // 第二个写者的 checkpoint 必须看到第一个写者的结果（existed=true），
+    // 而不是两者都认为目标文件不存在。
+    void concurrentWriteFileSamePathSerializes() {
+        const QString contentA(4 * 1024 * 1024, QLatin1Char('A'));
+        const QString contentB(4 * 1024 * 1024, QLatin1Char('B'));
+
+        auto tool = ToolRegistry::instance().findShared("write_file");
+        QVERIFY(tool);
+        QSemaphore start(0);
+        const auto runWrite = [&](const QString& content) {
+            return QtConcurrent::run([tool, &start, content]() {
+                start.acquire();
+                return tool->execute({{"path", "order.txt"},
+                                      {"content", content}});
+            });
+        };
+        QFuture<ToolResult> a = runWrite(contentA);
+        QFuture<ToolResult> b = runWrite(contentB);
+        start.release(2);
+        a.waitForFinished();
+        b.waitForFinished();
+        const ToolResult ra = a.result();
+        const ToolResult rb = b.result();
+        QVERIFY2(ra.success, qPrintable(ra.error));
+        QVERIFY2(rb.success, qPrintable(rb.error));
+
+        // 恰好一个执行把目标当作新文件创建；另一个在其后看到已存在的文件。
+        QCOMPARE((!ra.checkpoint.existed ? 1 : 0)
+                     + (!rb.checkpoint.existed ? 1 : 0), 1);
+        QVERIFY(ra.checkpoint.existed || rb.checkpoint.existed);
+
+        QFile file(QDir(m_tempDir->path()).filePath(QStringLiteral("order.txt")));
+        QVERIFY(file.open(QIODevice::ReadOnly));
+        const QByteArray finalBytes = file.readAll();
+        QCOMPARE(finalBytes.size(), contentA.toUtf8().size());
+        QVERIFY(finalBytes == contentA.toUtf8() || finalBytes == contentB.toUtf8());
+    }
+
+    // 同一规范路径的不同写法（相对 vs 绝对）必须命中同一把锁。
+    void pathWriteGuardSerializesSamePathAcrossSpellings() {
+        createFile("guard.txt", "x");
+        const QString absolute =
+            QDir(m_tempDir->path()).filePath(QStringLiteral("guard.txt"));
+
+        QSemaphore firstHeld(0);
+        QSemaphore releaseFirst(0);
+        std::atomic<bool> secondEntered{false};
+
+        QFuture<void> first = QtConcurrent::run([&]() {
+            PathWriteGuard guard(QStringLiteral("guard.txt"));
+            firstHeld.release();
+            releaseFirst.acquire();
+        });
+        if (!firstHeld.tryAcquire(1, 5000)) {
+            releaseFirst.release();
+            QFAIL("first guard never acquired");
+        }
+
+        QFuture<void> second = QtConcurrent::run([&]() {
+            PathWriteGuard guard(absolute);   // 同一文件的绝对路径写法
+            secondEntered.store(true);
+        });
+        QTest::qWait(250);
+        const bool blocked = !secondEntered.load();
+        releaseFirst.release();
+        first.waitForFinished();
+        second.waitForFinished();
+        QVERIFY2(blocked, "同一规范路径的两个 guard 必须串行");
+    }
+
+    // 不同路径不能因为共享锁表而互相阻塞（保持并行）。
+    void pathWriteGuardDoesNotSerializeDifferentPaths() {
+        createFile("a.txt", "a");
+        createFile("b.txt", "b");
+
+        QSemaphore firstHeld(0);
+        QSemaphore releaseFirst(0);
+        std::atomic<bool> secondEntered{false};
+
+        QFuture<void> first = QtConcurrent::run([&]() {
+            PathWriteGuard guard(QStringLiteral("a.txt"));
+            firstHeld.release();
+            releaseFirst.acquire();
+        });
+        if (!firstHeld.tryAcquire(1, 5000)) {
+            releaseFirst.release();
+            QFAIL("first guard never acquired");
+        }
+
+        QFuture<void> second = QtConcurrent::run([&]() {
+            PathWriteGuard guard(QStringLiteral("b.txt"));
+            secondEntered.store(true);
+        });
+        QElapsedTimer clock;
+        clock.start();
+        while (!secondEntered.load() && clock.elapsed() < 2000)
+            QThread::msleep(5);
+        const bool overlapped = secondEntered.load();
+        releaseFirst.release();
+        first.waitForFinished();
+        second.waitForFinished();
+        QVERIFY2(overlapped, "不同路径的 guard 不应互相阻塞");
+    }
+
 private:
     std::unique_ptr<QTemporaryDir> m_tempDir;
+
+    // 把竞态窗口拉长到毫秒级：小文件读改写太快，两个执行可能自然错开，
+    // 无法稳定复现无锁时的丢失更新。
+    static QString makeLargeText(const QString& linePrefix, int lines) {
+        QString text;
+        text.reserve(lines * 32);
+        for (int i = 0; i < lines; ++i)
+            text += linePrefix + QStringLiteral(" %1 abcdefghijklmnop\n").arg(i);
+        return text;
+    }
 
     // 临时仓库夹具：git 只读工具需要真实仓库才能验证输出形态。
     bool initRepo(const QString& path) {

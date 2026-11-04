@@ -251,6 +251,10 @@ public:
         if (!Sandbox::validatePath(path, true, &reason))
             return ToolResult::fail(Sandbox::denialHint(reason));
 
+        // docs/36 B2-1: 同路径读改写串行。checkpoint 捕获与覆盖必须在
+        // 同一临界区内，否则并发的另一个写者会看到过期的 existed/内容。
+        const PathWriteGuard writeGuard(path);
+
         // Ensure parent directory exists
         QDir().mkpath(QFileInfo(path).absolutePath());
 
@@ -364,6 +368,10 @@ public:
         Sandbox::DenyReason reason;
         if (!Sandbox::validatePath(path, true, &reason))
             return ToolResult::fail(Sandbox::denialHint(reason));
+
+        // docs/36 B2-1: 读到写回必须原子。串行后若前一个执行已经消费了
+        // 锚点，这里的 count==0 分支会返回「请重读」，而不是用旧内容覆盖。
+        const PathWriteGuard writeGuard(path);
 
         QFile file(path);
         if (!file.open(QIODevice::ReadOnly))
