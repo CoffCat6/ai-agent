@@ -3,6 +3,10 @@
 #include "core/tools/Sandbox.h"
 #include "core/tools/FileEditUtil.h"
 #include "core/tools/NetworkFetchTool.h"
+#include "core/tools/WebSearchBackend.h"
+#include "core/tools/WebSearchTool.h"
+#include "core/mcp/McpClient.h"
+#include "core/mcp/McpToolAdapter.h"
 
 #include <QDir>
 #include <QProcess>
@@ -13,13 +17,99 @@
 #include <QTextStream>
 #include <QSemaphore>
 #include <QElapsedTimer>
+#include <QHostAddress>
+#include <QTcpServer>
+#include <QTcpSocket>
 #include <QThread>
+#include <QTimer>
 #include <QtConcurrent/QtConcurrentRun>
 #include <QtTest>
 
 #include <atomic>
 
 using namespace NexusAI;
+
+namespace {
+
+// B3-D: a backend whose search blocks until released or cancelled, so two
+// concurrent calls can be driven deterministically from the test thread.
+class SlowSearchBackend : public WebSearchBackend {
+public:
+    explicit SlowSearchBackend(std::atomic<int>* started) : m_started(started) {}
+
+    QString providerKey() const override { return QStringLiteral("slow-test"); }
+    bool requiresApiKey() const override { return false; }
+
+    QList<WebSearchResult> search(const QString& query, int, const QString&, int,
+                                  QString* errorReason,
+                                  const std::atomic<bool>* cancelled) const override {
+        if (m_started) ++(*m_started);
+        // Different polling phases keep the isolation assertion deterministic:
+        // the first call checks every 5 ms, the second every 100 ms. A shared
+        // cancel flag is therefore observed by the FIRST call in the pre-fix
+        // implementation, which must keep running.
+        const int tickMs = (query == QLatin1String("second")) ? 100 : 5;
+        QElapsedTimer clock;
+        clock.start();
+        while (clock.elapsed() < 5000) {
+            if (cancelled && cancelled->load()) {
+                if (errorReason)
+                    *errorReason = QStringLiteral("Search cancelled");
+                return {};
+            }
+            if (m_release.load()) break;
+            QThread::msleep(tickMs);
+        }
+        if (errorReason) errorReason->clear();
+        WebSearchResult hit;
+        hit.title = QStringLiteral("hit-%1").arg(query);
+        hit.url = QStringLiteral("https://example.test/%1").arg(query);
+        hit.snippet = QStringLiteral("ok");
+        return {hit};
+    }
+
+    std::atomic<bool> m_release{false};
+
+private:
+    std::atomic<int>* m_started{nullptr};
+};
+
+// Minimal local HTTP server: every accepted connection is answered after a
+// fixed delay. Used to keep a fetch in flight while another call is cancelled.
+class SlowHttpServer {
+public:
+    explicit SlowHttpServer(int delayMs) : m_delayMs(delayMs) {
+        m_server.listen(QHostAddress::LocalHost, 0);
+        QObject::connect(&m_server, &QTcpServer::newConnection, &m_server, [this] {
+            while (QTcpSocket* socket = m_server.nextPendingConnection()) {
+                QObject::connect(socket, &QTcpSocket::disconnected, socket,
+                                 &QTcpSocket::deleteLater);
+                QTimer::singleShot(m_delayMs, socket, [socket] {
+                    const QByteArray body = "slow response body";
+                    socket->write(
+                        "HTTP/1.1 200 OK\r\nContent-Type: text/plain\r\n"
+                        "Connection: close\r\nContent-Length: "
+                        + QByteArray::number(body.size()) + "\r\n\r\n" + body);
+                    socket->disconnectFromHost();
+                });
+            }
+        });
+    }
+
+    bool isValid() const { return m_server.isListening(); }
+
+    QString url(const QString& path) const {
+        return QStringLiteral("http://127.0.0.1:%1/%2")
+            .arg(m_server.serverPort())
+            .arg(path);
+    }
+
+private:
+    QTcpServer m_server;
+    int m_delayMs;
+};
+
+} // namespace
 
 class TestTools : public QObject {
     Q_OBJECT
@@ -704,6 +794,189 @@ private slots:
         first.waitForFinished();
         second.waitForFinished();
         QVERIFY2(overlapped, "不同路径的 guard 不应互相阻塞");
+    }
+
+    // B3-D: cancelling one web_search call must not cancel a concurrent call
+    // on the same tool instance (pre-fix they shared m_cancelRequested).
+    void webSearchCancellationIsPerCall() {
+        std::atomic<int> started{0};
+        auto backend = std::make_unique<SlowSearchBackend>(&started);
+        SlowSearchBackend* rawBackend = backend.get();
+        WebSearchTool tool(std::move(backend));
+
+        auto token1 = std::make_shared<std::atomic<bool>>(false);
+        auto token2 = std::make_shared<std::atomic<bool>>(false);
+        ToolResult r1;
+        ToolResult r2;
+
+        QThread* first = QThread::create([&] {
+            r1 = static_cast<ITool&>(tool).execute({{QStringLiteral("query"), QStringLiteral("first")}}, token1);
+        });
+        first->start();
+        QVERIFY(QTest::qWaitFor([&] { return started.load() >= 1; }, 2000));
+
+        QThread* second = QThread::create([&] {
+            r2 = static_cast<ITool&>(tool).execute({{QStringLiteral("query"), QStringLiteral("second")}}, token2);
+        });
+        second->start();
+        QVERIFY(QTest::qWaitFor([&] { return started.load() >= 2; }, 2000));
+
+        static_cast<ITool&>(tool).cancel(token2);   // per-call cancel: only the second call dies
+        QTest::qWait(100);
+        rawBackend->m_release.store(true);
+
+        QVERIFY(QTest::qWaitFor(
+            [&] { return first->isFinished() && second->isFinished(); }, 3000));
+        first->wait();
+        second->wait();
+        delete first;
+        delete second;
+
+        QVERIFY2(r1.success, qPrintable(r1.error));
+        QVERIFY2(!r2.success, "cancelled call must not report success");
+        QVERIFY2(r2.error.contains(QStringLiteral("cancel"), Qt::CaseInsensitive),
+                 qPrintable(r2.error));
+    }
+
+    // B3-D: same isolation contract for http_fetch, with a real in-flight
+    // socket so the cancel flag is observed by the sliced fetch loop.
+    void networkFetchCancellationIsPerCall() {
+        SlowHttpServer server(800);
+        QVERIFY2(server.isValid(), "local HTTP test server must listen");
+
+        NetworkFetchTool tool;
+        tool.setAllowPrivateTargets(true);   // 127.0.0.1 target
+
+        auto token1 = std::make_shared<std::atomic<bool>>(false);
+        auto token2 = std::make_shared<std::atomic<bool>>(false);
+        ToolResult r1;
+        ToolResult r2;
+
+        QThread* first = QThread::create([&] {
+            r1 = static_cast<ITool&>(tool).execute({{QStringLiteral("url"), server.url(QStringLiteral("first"))},
+                               {QStringLiteral("timeout_ms"), 5000}}, token1);
+        });
+        first->start();
+        // Let the first fetch enter its sliced wait before starting/cancelling
+        // the second one, making the "wrong call got cancelled" race stable.
+        QTest::qWait(250);
+
+        QThread* second = QThread::create([&] {
+            r2 = static_cast<ITool&>(tool).execute({{QStringLiteral("url"), server.url(QStringLiteral("second"))},
+                               {QStringLiteral("timeout_ms"), 5000}}, token2);
+        });
+        second->start();
+        QTest::qWait(100);
+        static_cast<ITool&>(tool).cancel(token2);
+
+        QVERIFY(QTest::qWaitFor(
+            [&] { return first->isFinished() && second->isFinished(); }, 5000));
+        first->wait();
+        second->wait();
+        delete first;
+        delete second;
+
+        QVERIFY2(r1.success, qPrintable(r1.error));
+        QVERIFY2(!r2.success, "cancelled fetch must not report success");
+        QVERIFY2(r2.error.contains(QStringLiteral("cancel"), Qt::CaseInsensitive),
+                 qPrintable(r2.error));
+    }
+
+    // An already-cancelled token must fail before any network work starts.
+    void cancelledTokenFailsFast() {
+        auto token = std::make_shared<std::atomic<bool>>(true);
+
+        std::atomic<int> started{0};
+        WebSearchTool search(std::make_unique<SlowSearchBackend>(&started));
+        QElapsedTimer clock;
+        clock.start();
+        const ToolResult sr = static_cast<ITool&>(search).execute({{QStringLiteral("query"), QStringLiteral("x")}}, token);
+        QVERIFY2(!sr.success, "pre-cancelled token must fail");
+        QVERIFY2(sr.error.contains(QStringLiteral("cancel"), Qt::CaseInsensitive),
+                 qPrintable(sr.error));
+        QVERIFY2(clock.elapsed() < 300, "pre-cancelled token must not enter the backend");
+        QCOMPARE(started.load(), 0);
+
+        NetworkFetchTool fetch;
+        fetch.setAllowPrivateTargets(true);
+        clock.restart();
+        const ToolResult fr = static_cast<ITool&>(fetch).execute(
+            {{QStringLiteral("url"), QStringLiteral("http://127.0.0.1:9/never")}}, token);
+        QVERIFY2(!fr.success, "pre-cancelled token must fail");
+        QVERIFY2(fr.error.contains(QStringLiteral("cancel"), Qt::CaseInsensitive),
+                 qPrintable(fr.error));
+        QVERIFY2(clock.elapsed() < 300, "pre-cancelled token must not start a fetch");
+    }
+
+    // B3-D: the adapter's synchronous wait must poll execute()'s own token and
+    // bail out promptly, instead of waiting for the 35 s protocol timeout.
+    void mcpAdapterCancellationAbortsWait() {
+        const QString serverBase = QCoreApplication::applicationDirPath()
+            + QStringLiteral("/fake_mcp_server");
+        // QFileInfo::exists() does not append .exe on Windows, while QProcess
+        // does. Probe both spellings before skipping.
+        QString serverExe = serverBase;
+        if (!QFileInfo::exists(serverExe)) serverExe = serverBase + QStringLiteral(".exe");
+        if (!QFileInfo::exists(serverExe))
+            QSKIP("fake_mcp_server not built; MCP cancel coverage skipped");
+
+        McpServerConfig config;
+        config.name = QStringLiteral("fake");
+        config.transport = QStringLiteral("stdio");
+        config.command = serverExe;
+        config.env = QVariantMap{
+            {QStringLiteral("MCP_FAKE_TOOLS"), QStringLiteral("echo")},
+            {QStringLiteral("MCP_FAKE_MODE"), QStringLiteral("delay")},
+            {QStringLiteral("MCP_FAKE_DELAY"), QStringLiteral("30")},
+        };
+
+        McpClient client(config);
+        client.connectToServer();
+        if (!QTest::qWaitFor([&] {
+                return client.sessionState() == McpClient::SessionState::Connected;
+            }, 5000)) {
+            QSKIP("fake MCP server failed to start");
+        }
+
+        McpToolAdapter adapter(&client, QStringLiteral("fake"),
+                               QStringLiteral("echo"), QStringLiteral("desc"),
+                               QJsonObject{{QStringLiteral("type"), QStringLiteral("object")}});
+
+        auto token = std::make_shared<std::atomic<bool>>(false);
+        ToolResult result;
+        std::atomic<bool> finished{false};
+        QElapsedTimer clock;
+
+        QThread* worker = QThread::create([&] {
+            clock.start();
+            result = static_cast<ITool&>(adapter).execute({}, token);
+            finished.store(true);
+        });
+        worker->start();
+        // Sleep WITHOUT processing events: the queued registration lambda (and
+        // therefore its requestId) is still pending when cancel lands. The
+        // pre-fix adapter then has no id to abort and waits out its 3 s grace
+        // period; the fixed one returns immediately.
+        QThread::msleep(300);
+        // Only flip the per-call token, as the dispatcher does: the adapter's
+        // synchronous wait must observe THIS invocation's cancellation source.
+        token->store(true);
+
+        const bool aborted = QTest::qWaitFor([&] { return finished.load(); }, 2000);
+        // Legacy instance stop: lets a pre-fix worker (which ignores the token)
+        // retire instead of waiting out the 35 s protocol timeout.
+        static_cast<ITool&>(adapter).cancel(token);
+        worker->wait(5000);
+        delete worker;
+        client.disconnectFromServer();
+
+        QVERIFY2(aborted,
+                 "execute() ignored the per-call token and kept waiting for the timeout");
+        QVERIFY2(!result.success, "cancelled MCP call must not report success");
+        QVERIFY2(result.error.contains(QStringLiteral("cancel"), Qt::CaseInsensitive),
+                 qPrintable(result.error));
+        QVERIFY2(clock.elapsed() < 2000,
+                 qPrintable(QStringLiteral("cancel took %1 ms").arg(clock.elapsed())));
     }
 
 private:

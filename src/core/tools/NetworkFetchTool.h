@@ -70,15 +70,41 @@ public:
     // SettingsService::allowLocalNetworkFetch via main.cpp applySettings.
     void setAllowPrivateTargets(bool allowed) { m_allowPrivateTargets.store(allowed); }
 
-    // Batch 13 contract: GUI thread only - flips the atomic flag the sliced
-    // execute() polls; never touches the network reply.
+    // B3-D: instance-level stop is kept for the legacy no-token API only.
+    // Per-call cancellation goes through the Cancellation overloads; a token
+    // path never touches (or observes) m_cancelRequested, so cancelling one
+    // concurrent fetch cannot abort a sibling fetch on the same instance.
     void cancel() override { m_cancelRequested.store(true); }
+    void cancel(const Cancellation& cancelled) override {
+        if (cancelled)
+            cancelled->store(true);
+        else
+            cancel();   // no per-call token: fall back to the legacy instance stop
+    }
 
     ToolResult execute(const QJsonObject& args) override {
         // Batch 21 (B3): clear any stale cancel from a previous call. cancel()
         // can land between two execute() invocations; without this reset the
         // first slice of the NEXT task would observe the leftover flag.
         m_cancelRequested.store(false);
+        return executeInternal(args, m_cancelRequested);
+    }
+
+    // B3-D: bind the caller's token to this fetch. The sliced fetch loop polls
+    // it every ~200 ms and the abort() runs on this thread, so a token cancel
+    // leaves every other in-flight fetch untouched.
+    ToolResult execute(const QJsonObject& args,
+                       const Cancellation& cancelled) override {
+        if (!cancelled) return execute(args);
+        return executeInternal(args, *cancelled);
+    }
+
+private:
+    ToolResult executeInternal(const QJsonObject& args,
+                               std::atomic<bool>& cancelFlag) {
+        // Pre-cancelled token: fail before the SSRF lookup / any connection.
+        if (cancelFlag.load())
+            return ToolResult::fail(QStringLiteral("Fetch cancelled"));
 
         const QString urlText = args.value("url").toString().trimmed();
         if (urlText.isEmpty())
@@ -89,7 +115,7 @@ public:
         // in WebContent::fetchUrl — shared with the knowledge-base URL import
         // so the security contracts cannot drift between the two consumers.
         const auto result = WebContent::fetchUrl(
-            m_cancelRequested, urlText, m_allowPrivateTargets.load(), timeoutMs);
+            cancelFlag, urlText, m_allowPrivateTargets.load(), timeoutMs);
 
         switch (result.outcome) {
         case WebContent::FetchResult::Outcome::Cancelled:
@@ -119,7 +145,8 @@ public:
         return ToolResult::ok(result.text);
     }
 
-private:
+    // Legacy instance-level stop; token-based calls use their own Cancellation
+    // and never touch this flag (B3-D).
     std::atomic<bool> m_cancelRequested{false};
     std::atomic<bool> m_allowPrivateTargets{false};
 };

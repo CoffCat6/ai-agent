@@ -13,6 +13,10 @@
 namespace NexusAI {
 
 namespace {
+// 析构时等待网络收尾的总时间预算。按“总预算”而不是“每个 reply 一份”
+// 计算，保证多个在飞请求叠加也不会把 GUI 线程卡超过 2s。
+constexpr int kShutdownWaitBudgetMs = 2000;
+
 bool isTransientNetworkError(QNetworkReply::NetworkError err) {
     switch (err) {
     case QNetworkReply::TimeoutError:
@@ -31,24 +35,73 @@ LLMServiceBase::LLMServiceBase(QObject* parent)
     : IAIService(parent), m_nam(new QNetworkAccessManager(this)) {}
 
 LLMServiceBase::~LLMServiceBase() {
-    if (m_current && m_current->reply) {
-        QNetworkReply* reply = m_current->reply;
-        reply->abort();
-        // QNAM 的中止经内部 HTTP 线程异步完成：abort() 只是发起，finished
-        // 可能要等事件循环投递。服务经常在池线程上用完即删（子代理/嵌套
-        // 服务），那里没有常驻事件循环——若不等收尾就析构，reply 会作为
-        // m_nam 子对象被销毁，而 HTTP 线程的收尾事件随后踩进已释放内存
-        // （真实栈上表现为 SIGSEGV / 访问违例）。这里自旋等 finished 或
-        // 对象销毁真正送达，1s 兜底防止异常实现挂死线程。
-        QEventLoop drain;
-        connect(reply, &QNetworkReply::finished, &drain, &QEventLoop::quit);
-        connect(reply, &QObject::destroyed, &drain, &QEventLoop::quit);
-        QTimer::singleShot(1000, &drain, &QEventLoop::quit);
-        if (reply->isRunning()) drain.exec();
+    // (1) 先置取消标志：本次析构前已排队的 readyRead/finished 回调一旦被
+    // 投递，就会看到 cancelled 而不再解析/发射。随后断开连接，让它们连
+    // 半析构对象都不再进入。
+    if (m_current)
+        m_current->cancelled = true;
+
+    // 收集 QNAM 下所有仍在跑的 reply —— 不只是 m_current->reply。被新请求
+    // 顶替的旧 reply 同样可能还在飞：旧实现只 abort m_current，把旧 reply
+    // 留给 ~QNAM 在 HTTP 后端收尾时同步释放，正是 use-after-free 的来源。
+    const auto collectRunning = [this]() {
+        QList<QNetworkReply*> running;
+        if (!m_nam) return running;
+        const QList<QNetworkReply*> replies = m_nam->findChildren<QNetworkReply*>();
+        for (QNetworkReply* r : replies) {
+            if (r && r->isRunning()) running.append(r);
+        }
+        return running;
+    };
+
+    // (2) 断开网络/解析连接后再 abort()。abort 只是发起中止，finished 可能
+    // 稍后投递；断开 this 连接确保它不再调用 handleReplyFinished（那里会
+    // emit 信号、访问已析构成员），也不会再解析流数据。
+    if (m_nam) {
+        disconnect(m_nam, nullptr, this, nullptr);
+        for (QNetworkReply* r : collectRunning()) {
+            disconnect(r, nullptr, this, nullptr);
+            r->abort();
+        }
     }
-    // 回收 abort 触发的 reply->deleteLater()：延迟删除同样依赖事件循环，
-    // 池线程上不会自行处理。只清 DeferredDelete 队列，不动其它排队事件。
-    QCoreApplication::sendPostedEvents(nullptr, QEvent::DeferredDelete);
+
+    // (3) 限时等待活动请求归零（finished 或对象销毁送达）。总预算 2s：
+    // 每轮都用“剩余预算”做兜底，多个请求不会叠加等待时间，GUI 不卡更久。
+    QElapsedTimer wait;
+    wait.start();
+    while (int(wait.elapsed()) < kShutdownWaitBudgetMs) {
+        const QList<QNetworkReply*> running = collectRunning();
+        if (running.isEmpty()) break;
+        const int remaining = kShutdownWaitBudgetMs - int(wait.elapsed());
+        QEventLoop drain;
+        for (QNetworkReply* r : running) {
+            connect(r, &QNetworkReply::finished, &drain, &QEventLoop::quit);
+            connect(r, &QObject::destroyed, &drain, &QEventLoop::quit);
+        }
+        // drain 析构时上述连接自动断开；timer 以 drain 为 context 一并取消。
+        QTimer::singleShot(remaining, &drain, &QEventLoop::quit);
+        drain.exec();
+    }
+
+    if (!collectRunning().isEmpty()) {
+        // (4) 超时兜底：仍有 reply 没有收尾。绝不能让它作为 m_nam 的子对象
+        // 在 ~QObject 里被同步 delete —— HTTP 后端的收尾事件随后会踩已释放
+        // 的对象。解除父子关系并 deleteLater 到其所属线程，由该线程的事件
+        // 循环安全回收；若该线程没有事件循环（池线程）则宁可泄漏也不
+        // use-after-free。QNAM 同理延后清理。
+        for (QNetworkReply* r : collectRunning()) {
+            r->setParent(nullptr);
+            r->deleteLater();
+        }
+        if (m_nam) {
+            m_nam->setParent(nullptr);
+            m_nam->deleteLater();
+        }
+    } else {
+        // 收尾已完成：回收 abort/finished 路径排队的 DeferredDelete。延迟
+        // 删除同样依赖事件循环，池线程上不会自行处理。
+        QCoreApplication::sendPostedEvents(nullptr, QEvent::DeferredDelete);
+    }
 }
 
 void LLMServiceBase::cancel() {

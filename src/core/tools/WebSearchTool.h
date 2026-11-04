@@ -81,11 +81,35 @@ public:
         m_timeoutMs = qBound(5000, ms, 60000);
     }
 
+    // B3-D: instance-level stop is kept for the legacy no-token API only.
+    // Per-call cancellation goes through the Cancellation overloads below;
+    // token paths never observe (or clear) this flag, so cancelling one
+    // concurrent call can never cancel a sibling call on the same instance.
     void cancel() override { m_cancelRequested.store(true); }
+    void cancel(const Cancellation& cancelled) override {
+        if (cancelled)
+            cancelled->store(true);
+        else
+            cancel();   // no per-call token: fall back to the legacy instance stop
+    }
 
     ToolResult execute(const QJsonObject& args) override {
         m_cancelRequested.store(false);
+        return executeInternal(args, &m_cancelRequested);
+    }
 
+    // B3-D: one cancel context per invocation. The token is checked before the
+    // backend call and after it returns; the backend polls it during the
+    // network round trip.
+    ToolResult execute(const QJsonObject& args,
+                       const Cancellation& cancelled) override {
+        if (!cancelled) return execute(args);
+        return executeInternal(args, cancelled.get());
+    }
+
+private:
+    ToolResult executeInternal(const QJsonObject& args,
+                               std::atomic<bool>* cancelFlag) {
         // docs/22 F3: one locked snapshot up front — the whole call runs
         // against it, so the backend cannot be swapped mid-search.
         const Config cfg = snapshotConfig();
@@ -93,6 +117,11 @@ public:
         // 每条返回路径都带上后端标识：用户需要知道这次查询发给了谁——
         // 失败时尤其重要（「请求失败」到底是哪家失败）。
         const QString source = cfg.backend->providerKey();
+
+        // 已取消的 token 必须在任何网络动作之前返回（同一实例上的其它
+        // 并发调用不受影响）。
+        if (cancelFlag->load())
+            return ToolResult::fail(QStringLiteral("Search cancelled"), source);
 
         const QString query = args.value(QStringLiteral("query")).toString().trimmed();
         if (query.isEmpty())
@@ -116,9 +145,15 @@ public:
         // 误以为是查询词的问题。
         QString failureReason;
         const QList<WebSearchResult> results =
-            cfg.backend->search(query, maxResults, cfg.apiKey, cfg.timeoutMs, &failureReason, &m_cancelRequested);
+            cfg.backend->search(query, maxResults, cfg.apiKey, cfg.timeoutMs,
+                                &failureReason, cancelFlag);
 
-        if (m_cancelRequested.exchange(false))
+        // token 路径用 load()（不消费调用方的取消状态）；legacy 路径沿用
+        // exchange(false) 清理实例级残留，保证下一次无 token 调用干净。
+        const bool cancelled = (cancelFlag == &m_cancelRequested)
+            ? m_cancelRequested.exchange(false)
+            : cancelFlag->load();
+        if (cancelled)
             return ToolResult::fail(QStringLiteral("Search cancelled"), source);
 
         if (!failureReason.isEmpty())
@@ -163,7 +198,6 @@ public:
         return ToolResult::ok(lines.join(QStringLiteral("\n\n")), source);
     }
 
-private:
     struct Config {
         std::shared_ptr<WebSearchBackend> backend;
         QString apiKey;
@@ -180,6 +214,8 @@ private:
     std::shared_ptr<WebSearchBackend> m_backend;
     QString m_apiKey;
     int m_timeoutMs{30000};
+    // Legacy instance-level stop; token-based calls use their own Cancellation
+    // and never touch this flag (B3-D).
     std::atomic<bool> m_cancelRequested{false};
 };
 

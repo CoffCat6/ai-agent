@@ -68,7 +68,30 @@ ToolResult McpToolAdapter::execute(const QJsonObject& args) {
     // previous call. cancel() can land between two execute() invocations;
     // without this reset the registration lambda below would cancel the
     // NEXT request on sight, leaving the adapter poisoned until reconnect.
+    // Token-based calls never touch this flag (B3-D).
     m_cancelled.store(false);
+    return executeInternal(args, {});
+}
+
+ToolResult McpToolAdapter::execute(const QJsonObject& args,
+                                   const Cancellation& cancelled) {
+    // A null token means the legacy no-token dispatch path: keep the previous
+    // instance-level behaviour (including clearing a stale flag).
+    if (!cancelled) return execute(args);
+    return executeInternal(args, cancelled);
+}
+
+ToolResult McpToolAdapter::executeInternal(const QJsonObject& args,
+                                           const Cancellation& cancelled) {
+    // One cancellation source per invocation: the caller's token when present,
+    // otherwise the legacy instance-level flag. Never both, so cancelling one
+    // call cannot abort a concurrent call on the same adapter.
+    const auto isCancelled = [this, cancelled]() {
+        return cancelled ? cancelled->load() : m_cancelled.load();
+    };
+
+    if (isCancelled())
+        return ToolResult::fail(QStringLiteral("MCP tool call cancelled"));
 
     // docs/22 F1: the client may be torn down while this call is in flight
     // (server removed/disabled). QPointer nulls out as soon as destruction
@@ -81,7 +104,7 @@ ToolResult McpToolAdapter::execute(const QJsonObject& args) {
     auto pending = std::make_shared<PendingCall>();
 
     // Register the call on the GUI thread where the client/transport live.
-    QMetaObject::invokeMethod(client, [this, pending, args]() {
+    QMetaObject::invokeMethod(client, [this, pending, args, isCancelled]() {
         const quint64 id = m_client->callTool(m_toolName, args,
             [pending](bool isError, const QString& text, const QString& error) {
                 QMutexLocker lock(&pending->mutex);
@@ -95,8 +118,8 @@ ToolResult McpToolAdapter::execute(const QJsonObject& args) {
             QMutexLocker lock(&pending->mutex);
             pending->requestId = id;
         }
-        // If cancel arrived before this lambda ran, cancel now.
-        if (m_cancelled.load() && id != 0)
+        // If this invocation was cancelled before the lambda ran, cancel now.
+        if (isCancelled() && id != 0)
             m_client->cancelRequest(id);
     }, Qt::QueuedConnection);
 
@@ -115,43 +138,46 @@ ToolResult McpToolAdapter::execute(const QJsonObject& args) {
             }
         }
 
-        if (m_cancelled.load()) {
-            const quint64 requestId = [this, pending]() -> quint64 {
+        if (isCancelled()) {
+            // Best effort: abort the JSON-RPC request on the GUI thread, then
+            // leave immediately. No grace period — the protocol timeout is
+            // 35 s and a cancel must not keep the pool thread (and the UI's
+            // stop request) waiting for it.
+            const quint64 requestId = [pending]() -> quint64 {
                 QMutexLocker lock(&pending->mutex);
                 return pending->requestId;
             }();
             McpClient* cancelTarget = m_client.data();
-            if (!cancelTarget)
-                return ToolResult::fail(QStringLiteral("MCP client unavailable"));
-            QMetaObject::invokeMethod(cancelTarget, [this, requestId]() {
-                m_client->cancelRequest(requestId);
-            }, Qt::QueuedConnection);
-            // Cooperative cancel: give the round trip a short grace period,
-            // then bail out regardless.
-            const qint64 cancelDeadline =
-                QDateTime::currentMSecsSinceEpoch() + 3000;
-            while (QDateTime::currentMSecsSinceEpoch() < cancelDeadline) {
-                QMutexLocker lock(&pending->mutex);
-                if (pending->done)
-                    return ToolResult::fail(QStringLiteral("cancelled"));
-                pending->condition.wait(&pending->mutex, 150);
+            if (cancelTarget && requestId != 0) {
+                QMetaObject::invokeMethod(cancelTarget, [cancelTarget, requestId]() {
+                    cancelTarget->cancelRequest(requestId);
+                }, Qt::QueuedConnection);
             }
-            return ToolResult::fail(QStringLiteral("cancelled"));
+            return ToolResult::fail(QStringLiteral("MCP tool call cancelled"));
         }
 
         if (QDateTime::currentMSecsSinceEpoch() > deadline)
             return ToolResult::fail(QStringLiteral("MCP tool call timed out"));
 
         {
+            // 60 ms slice: a per-call cancel is observed promptly without
+            // busy-waiting the pool thread.
             QMutexLocker lock(&pending->mutex);
             if (!pending->done)
-                pending->condition.wait(&pending->mutex, 120);
+                pending->condition.wait(&pending->mutex, 60);
         }
     }
 }
 
 void McpToolAdapter::cancel() {
     m_cancelled = true;   // atomic flag only — never touch GUI-thread state
+}
+
+void McpToolAdapter::cancel(const Cancellation& cancelled) {
+    if (cancelled)
+        cancelled->store(true);
+    else
+        cancel();   // no per-call token: legacy instance stop
 }
 
 } // namespace NexusAI

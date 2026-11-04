@@ -41,6 +41,8 @@
 #include <QElapsedTimer>
 #include <QtConcurrent/QtConcurrentRun>
 
+#include <memory>
+
 using namespace NexusAI;
 
 namespace {
@@ -926,6 +928,47 @@ private slots:
             spy.clear();
         }
         QTRY_COMPARE_WITH_TIMEOUT(server.trackedSocketCount(), 0, 5000);
+    }
+
+    // B3-B: destroying a provider with requests still in flight must abort
+    // them, bound the shutdown wait and never deliver a callback into the
+    // already-destroyed service. Request A is superseded by B, so it is no
+    // longer m_current yet still running - exactly the reply the old
+    // destructor never touched and left for ~QNAM to free while the HTTP
+    // backend was still winding it down.
+    void destructorDrainsInFlightRequestsSafely() {
+        FakeSseServer server;
+        auto service = std::make_unique<OpenAIService>();
+        service->setBaseUrl(server.baseUrl());
+        QSignalSpy responses(service.get(), &IAIService::responseReady);
+        QSignalSpy errors(service.get(), &IAIService::errorOccurred);
+
+        // Both requests are held by the server: they are still running when
+        // the provider is destroyed.
+        server.enqueue({openaiTextBody(), true, kMatchA});
+        server.enqueue({openaiTextBody(), true, kMatchB});
+        service->chatComplete(userMessages(QStringLiteral("hi")), {});
+        service->chatComplete(userMessages(QStringLiteral("hi2")), {});
+        QTRY_COMPARE_WITH_TIMEOUT(server.heldCount(), 2, 5000);
+
+        QElapsedTimer clock;
+        clock.start();
+        service.reset();   // destructor with two in-flight replies
+        const qint64 elapsedMs = clock.elapsed();
+        QVERIFY2(elapsedMs < 2500,
+                 qPrintable(QStringLiteral("destructor blocked for %1 ms")
+                                .arg(elapsedMs)));
+
+        // The shutdown must not surface network errors for aborted requests,
+        // and it must actually close both loopback connections.
+        QCOMPARE(responses.count(), 0);
+        QCOMPARE(errors.count(), 0);
+        QTRY_COMPARE_WITH_TIMEOUT(server.trackedSocketCount(), 0, 5000);
+
+        // Keep the event loop spinning after destruction: a backend
+        // completion/finished event that outlived the service lands here and
+        // would touch freed memory in the unfixed version.
+        QTest::qWait(300);
     }
 };
 

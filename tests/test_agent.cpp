@@ -1125,6 +1125,10 @@ private slots:
     void subagentBackgroundPanelThroughViewModel();
     // 2026-11-03：面板实时统计——运行中步数/进度、槽位排队、取消中状态。
     void backgroundHubReportsLiveProgressAndCancelling();
+    // B3-C: 后台任务绑定 sessionId——旧会话任务不得进入新会话的面板/历史。
+    void backgroundTasksStayBoundToTheirSession();
+    // B3-C: hub 析构在非池线程限时返回，不被不配合取消的任务挂住。
+    void backgroundHubDestructorDoesNotHang();
     void subagentStopChipThroughViewModel();
     void subagentInflightAbortStressRealNetwork();
     // docs/35 P4.1: 子代理上下文预算——超限时只压缩线上请求，证据工件保留
@@ -5951,6 +5955,121 @@ void TestAgent::backgroundHubReportsLiveProgressAndCancelling() {
     row = hub->snapshots().first().toMap();
     QVERIFY(!row.value(QStringLiteral("cancelling")).toBool());
     QVERIFY(!row.value(QStringLiteral("slotQueued")).toBool());
+}
+
+// B3-C: a background run belongs to the session that spawned it. After
+// resetSession() the old run must disappear from the panel/report APIs and,
+// critically, must not be re-injected as a subagent_task trace node into the
+// fresh session's history by the 250ms coalescing tick.
+void TestAgent::backgroundTasksStayBoundToTheirSession() {
+    SubAgentFixture fixture;
+    SpawnToolGuard guard;
+    ensureSubAgentProbe();
+
+    QMutex gatesMutex;
+    QVector<std::shared_ptr<QSemaphore>> gates;
+    fixture.tool = std::make_shared<SubAgentTool>();
+    fixture.tool->setServiceFactory([&]() -> IAIService* {
+        auto* service = new RecordingFakeService(&fixture.mutex,
+                                                 &fixture.subSeenTools,
+                                                 &fixture.subSeenMessages);
+        auto gate = std::make_shared<QSemaphore>();
+        {
+            QMutexLocker lock(&gatesMutex);
+            gates.append(gate);
+        }
+        service->gate = gate.get();
+        service->script.append(textResponse(QStringLiteral("old report")));
+        return service;
+    });
+    fixture.tool->refreshCatalog(false);
+    ToolRegistry::instance().registerTool(fixture.tool);
+
+    llm.reset();
+    llm.script.append(toolResponse(QStringLiteral("spawn_agent"),
+        QJsonObject{{QStringLiteral("goal"), QStringLiteral("old session work")},
+                    {QStringLiteral("background"), true}}));
+    llm.script.append(textResponse(QStringLiteral("old ack")));
+    QSignalSpy spy(&agent, &AIAgent::responseReady);
+    agent.startTask(QStringLiteral("spawn in old session"));
+    QTRY_COMPARE_WITH_TIMEOUT(spy.count(), 1, 15000);
+
+    const QString oldSession = agent.currentSessionId();
+    QVERIFY(!oldSession.isEmpty());
+    QTRY_COMPARE_WITH_TIMEOUT(agent.backgroundSubAgentActiveCount(), 1, 5000);
+    const QVariantList oldRows = agent.backgroundSubAgents();
+    QCOMPARE(oldRows.size(), 1);
+    const QString oldTaskId =
+        oldRows.first().toMap().value(QStringLiteral("id")).toString();
+    QVERIFY(!oldTaskId.isEmpty());
+
+    // Leave the session. The hub still holds the (now cancelling) entry, but
+    // the new session must not see it.
+    agent.resetSession();
+    QVERIFY(agent.currentSessionId().isEmpty());
+    QVERIFY2(agent.backgroundSubAgents().isEmpty(),
+             "old-session background task leaked into the fresh session panel");
+    QVERIFY2(agent.backgroundSubAgentActiveCount() == 0,
+             "old-session task counted as active in the fresh session");
+    QVERIFY2(agent.backgroundSubAgentReport(oldTaskId).isEmpty(),
+             "old-session report must not be readable from the fresh session");
+    QVERIFY(!agent.cancelBackgroundSubAgent(oldTaskId));
+
+    // Start a genuinely new session and let the coalescing tick run.
+    llm.reset();
+    llm.script.append(textResponse(QStringLiteral("fresh ok")));
+    QSignalSpy freshSpy(&agent, &AIAgent::responseReady);
+    agent.startTask(QStringLiteral("fresh session"));
+    QTRY_COMPARE_WITH_TIMEOUT(freshSpy.count(), 1, 15000);
+    QVERIFY(!agent.currentSessionId().isEmpty());
+    QVERIFY(agent.currentSessionId() != oldSession);
+
+    QTest::qWait(700);   // > one 250ms background notification tick
+    for (const auto& entry : agent.traceModel()) {
+        const QJsonObject node = entry.toObject();
+        QVERIFY2(node.value(QStringLiteral("type")).toString()
+                     != QLatin1String("subagent_task"),
+                 "old-session background task injected a trace node into the "
+                 "new session");
+    }
+    QVERIFY(agent.backgroundSubAgents().isEmpty());
+
+    // Unblock and drain the parked old worker for a clean teardown.
+    {
+        QMutexLocker lock(&gatesMutex);
+        for (const auto& gate : gates) gate->release();
+    }
+}
+
+// B3-C: the hub owns a private pool. Destroying it from a non-pool thread
+// must cancel and return within a bounded window even when a task ignores
+// the cancellation token; the old implementation called waitForDone() with
+// no timeout and hung forever.
+void TestAgent::backgroundHubDestructorDoesNotHang() {
+    QSemaphore gate;                 // deliberately never signalled until the end
+    std::atomic<bool> started{false};
+    std::atomic<bool> destroyed{false};
+    std::thread terminator([&]() {
+        auto hub = std::make_shared<BackgroundTaskHub>();
+        auto cancelled = std::make_shared<std::atomic<bool>>(false);
+        hub->createTask(QStringLiteral("uncooperative"), QStringLiteral("explore"),
+                        cancelled, [&gate, &started](const QString&) {
+            started.store(true);
+            gate.acquire();   // ignores cancellation on purpose
+        });
+        QElapsedTimer spin;
+        spin.start();
+        while (!started.load() && spin.elapsed() < 3000) QThread::msleep(5);
+        hub.reset();          // dtor runs on this (non-pool) thread
+        destroyed.store(true);
+    });
+
+    const bool finished = QTest::qWaitFor([&]() { return destroyed.load(); }, 4000);
+    gate.release();           // let the parked worker exit before joining
+    terminator.join();
+
+    QVERIFY2(finished,
+             "BackgroundTaskHub dtor blocked waiting for an uncooperative task");
 }
 
 // docs/35 P4.5: ProcessCard 的停止芯片 → AgentVM.cancelSubAgent → AIAgent

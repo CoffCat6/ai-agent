@@ -208,6 +208,8 @@ AIAgent::AIAgent(QObject* parent)
     : QObject(parent),
       m_proposalStore(std::make_shared<ProposalStore>()),
       m_backgroundHub(std::make_shared<BackgroundTaskHub>()) {
+    // m_backgroundHub 归 GUI 线程所有（由本对象构造并销毁）；worker 只经
+    // 互斥任务表 + QueuedConnection 的 changed() 与 GUI 交互。
     m_backgroundNotifyTimer.setSingleShot(true);
     m_backgroundNotifyTimer.setInterval(250);
     connect(&m_backgroundNotifyTimer, &QTimer::timeout, this, [this]() {
@@ -257,7 +259,12 @@ void AIAgent::onTaskTimeout() {
 
 AIAgent::~AIAgent() {
     // docs/35 P4.3: background runs never outlive the session that owns them.
-    if (m_backgroundHub) m_backgroundHub->cancelAll();
+    // shutdown() 在属主线程限时等待池清空（取消 + 丢弃排队），随后 reset
+    // 让最后一个 shared_ptr 在本线程释放——绝不能落到池线程里析构 hub。
+    if (m_backgroundHub) {
+        m_backgroundHub->shutdown();
+        m_backgroundHub.reset();
+    }
     // docs/22 F2: an adopted (per-tab) memory is released here, before the
     // QObject base destroys the children. The episodic service shares the
     // instance and outlives this point as a child, so detach it first — it
@@ -2041,29 +2048,46 @@ bool AIAgent::cancelSubAgent(const QString& traceNodeId) {
 // ── docs/35 P4.3: background sub-agent management ─────────
 
 QVariantList AIAgent::backgroundSubAgents() const {
-    return m_backgroundHub ? m_backgroundHub->snapshots() : QVariantList{};
+    // 只读当前会话：旧会话任务即使尚未从 hub 清出也不进本会话面板/历史。
+    if (!m_backgroundHub || m_sessionId.isEmpty()) return QVariantList{};
+    return m_backgroundHub->snapshotsForSession(m_sessionId);
 }
 
 int AIAgent::backgroundSubAgentActiveCount() const {
-    return m_backgroundHub ? m_backgroundHub->activeCount() : 0;
+    if (!m_backgroundHub || m_sessionId.isEmpty()) return 0;
+    return m_backgroundHub->activeCountFor(m_sessionId);
 }
 
 bool AIAgent::cancelBackgroundSubAgent(const QString& taskId) {
-    return m_backgroundHub && m_backgroundHub->cancel(taskId);
+    // 显式会话门禁：hub 的 GUI 侧 cancel() 没有 router 语境，不能自行串台。
+    if (!m_backgroundHub || m_sessionId.isEmpty()) return false;
+    return m_backgroundHub->cancelForSession(m_sessionId, taskId);
 }
 
 int AIAgent::cancelAllBackgroundSubAgents() {
-    if (!m_backgroundHub) return 0;
-    const int active = m_backgroundHub->activeCount();
-    m_backgroundHub->cancelAll();
+    if (!m_backgroundHub || m_sessionId.isEmpty()) return 0;
+    int active = 0;
+    const QVariantList rows = m_backgroundHub->snapshotsForSession(m_sessionId);
+    for (const QVariant& row : rows) {
+        const QVariantMap task = row.toMap();
+        const QString id = task.value(QStringLiteral("id")).toString();
+        const QString state = task.value(QStringLiteral("state")).toString();
+        if (state == QLatin1String("completed")
+                || state == QLatin1String("failed")
+                || state == QLatin1String("cancelled")) {
+            continue;
+        }
+        if (m_backgroundHub->cancelForSession(m_sessionId, id)) ++active;
+    }
     return active;
 }
 
 QString AIAgent::backgroundSubAgentReport(const QString& taskId) const {
-    if (!m_backgroundHub) return {};
-    const auto report = m_backgroundHub->reportFor(taskId);
+    if (!m_backgroundHub || m_sessionId.isEmpty()) return {};
+    const auto report = m_backgroundHub->reportForSession(m_sessionId, taskId);
     if (!report) {
-        const QString state = m_backgroundHub->stateLabel(taskId);
+        const QString state =
+            m_backgroundHub->stateLabelForSession(m_sessionId, taskId);
         if (state.isEmpty()) return {};
         return QStringLiteral("Sub-agent %1 is %2; no report yet.")
             .arg(taskId, state);
@@ -2072,10 +2096,10 @@ QString AIAgent::backgroundSubAgentReport(const QString& taskId) const {
 }
 
 void AIAgent::dismissFinishedBackgroundSubAgents() {
-    if (!m_backgroundHub) return;
-    m_backgroundHub->removeFinished();
+    if (!m_backgroundHub || m_sessionId.isEmpty()) return;
+    m_backgroundHub->removeFinishedInSession(m_sessionId);
     // Drop bookkeeping for rows the panel removed; trace nodes stay (timeline).
-    const QVariantList tasks = m_backgroundHub->snapshots();
+    const QVariantList tasks = m_backgroundHub->snapshotsForSession(m_sessionId);
     QSet<QString> present;
     for (const QVariant& task : tasks)
         present.insert(task.toMap().value(QStringLiteral("id")).toString());
@@ -2096,8 +2120,10 @@ static QString backgroundTraceStatus(const QString& state) {
 }
 
 void AIAgent::syncBackgroundTraceNodes() {
-    if (!m_backgroundHub) return;
-    const QVariantList tasks = m_backgroundHub->snapshots();
+    // 旧会话任务绝不能在这里"复活"成新会话的 subagent_task 节点：只同步
+    // 本会话快照；resetSession 后的空会话自然什么都不写。
+    if (!m_backgroundHub || m_sessionId.isEmpty()) return;
+    const QVariantList tasks = m_backgroundHub->snapshotsForSession(m_sessionId);
     for (const QVariant& entry : tasks) {
         const QVariantMap task = entry.toMap();
         const QString id = task.value(QStringLiteral("id")).toString();
@@ -2670,7 +2696,10 @@ void AIAgent::dispatchToolExecution(const ToolCallInfo& call, const QString& tra
     // QPointer 守护 agent 在任务运行中被销毁的情形——派发 lambda 本身
     // 不持有裸 this。
     const bool isSpawnCall = call.name == QLatin1String("spawn_agent");
+    // 会话快照：后台任务的归属在派发时钉死，之后切会话不会把它带过去。
+    const QString dispatchSessionId = m_sessionId;
     watcher->setFuture(QtConcurrent::run([tool, call, projectRoot, cancelled, nodeId, isSpawnCall,
+                                          dispatchSessionId,
                                           store = m_proposalStore,
                                           hub = m_backgroundHub,
                                           target = QPointer<AIAgent>(this)]() -> ToolResult {
@@ -2679,8 +2708,9 @@ void AIAgent::dispatchToolExecution(const ToolCallInfo& call, const QString& tra
         // same thread-local pattern as the progress hook below.
         ProposalStoreRouter proposalRouter(store);
         // docs/35 P4.3: spawn_agent(background=true) registers its run here;
-        // subagent_wait/status/cancel read the same session hub.
-        BackgroundTaskHubRouter backgroundRouter(hub);
+        // subagent_wait/status/cancel read the same session hub and only see
+        // tasks bound to this session.
+        BackgroundTaskHubRouter backgroundRouter(hub, dispatchSessionId);
         SubAgentProgressRouter router(isSpawnCall
             ? SubAgentProgressHook([nodeId, target](const SubAgentProgress& p) {
                   if (target.isNull()) return;

@@ -34,9 +34,22 @@ public:
 
     ToolDefinition definition() const override;
     ToolResult execute(const QJsonObject& args) override;
+    // B3-D: the synchronous wait polls this invocation's token (every 60 ms)
+    // and returns as soon as it is set, instead of running into the 35 s
+    // protocol timeout. Other in-flight calls on this adapter keep waiting.
+    ToolResult execute(const QJsonObject& args,
+                       const Cancellation& cancelled) override;
     void cancel() override;
+    // Per-call cancel: only the caller's token is flipped. The instance-level
+    // flag stays untouched so a sibling call is never aborted (B3-D).
+    void cancel(const Cancellation& cancelled) override;
 
 private:
+    // Takes the shared cancellation handle by value so the queued GUI-thread
+    // registration lambda keeps the token alive even if the caller drops its
+    // last reference right after execute() returns.
+    ToolResult executeInternal(const QJsonObject& args,
+                               const Cancellation& cancelled);
     // Guarded: an in-flight execute() on the pool thread can outlive the
     // client (server removed mid-call, docs/22 F1) — the tool itself stays
     // alive via the dispatch shared_ptr, the client must be checked.

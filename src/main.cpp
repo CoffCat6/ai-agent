@@ -54,7 +54,12 @@
 
 #include <memory>
 #include <atomic>
+#include <chrono>
+#include <thread>
 #include <QAtomicInt>
+#include <QFuture>
+#include <QList>
+#include <QPointer>
 
 #include <QDir>
 #include <QLockFile>
@@ -1169,8 +1174,8 @@ qInfo() << "NexusAI" << app.applicationVersion() << "starting";
     // （memory/backupIntervalHours，0 = 关闭）。
     // 装配点从初始化早期挪到托盘创建之后：备份失败要弹托盘气泡，而托盘直
     // 到这里才存在；原先的启动备份块在它之前，失败只能静默记日志。
-    // worker 完全自包含（自建短连接、只捕获值）：退出时不会悬挂
-    // （docs/22 教训）；失败不阻塞启动/退出，只是少一份快照。
+    // worker 只捕获值 + 弱引用（QPointer）：不捕获 &app / tray 裸指针，退出
+    // 时不会悬挂（docs/22 教训）；失败不阻塞启动/退出，只是少一份快照。
     {
         const QString dbPath = memory->databasePath();
         const QString backupDir = SqliteMemory::defaultBackupsDir();
@@ -1178,9 +1183,21 @@ qInfo() << "NexusAI" << app.applicationVersion() << "starting";
         // 主线程后才改，避免跨线程数据竞争。
         auto backupInFlight = std::make_shared<bool>(false);
         auto lastFailureNoticeMs = std::make_shared<qint64>(0);
+        // 任务 #24（B3-A）：退出旗标由 aboutToQuit 置位，worker 在目录准备、
+        // 落盘、轮转、回投结果四个阶段前各检查一次；退出后不再触碰 GUI 对象。
+        auto backupShutdown = std::make_shared<std::atomic<bool>>(false);
+        // 在途 future 仅由 GUI 线程追加/清理；aboutToQuit 用它们做限时等待。
+        auto backupFutures = std::make_shared<QList<QFuture<void>>>();
+        // app 是 main() 的栈对象、tray 随 app 析构销毁：worker 侧一律通过
+        // QPointer 弱引用访问，绝不解引用栈地址或裸指针。
+        const QPointer<QCoreApplication> appGuard(&app);
+        const QPointer<QSystemTrayIcon> trayGuard(tray);
 
-        const auto runBackup = [&app, settings, tray, prefStore, dbPath, backupDir,
-                                backupInFlight, lastFailureNoticeMs]() {
+        const auto runBackup = [settings, prefStore, trayGuard, appGuard, dbPath,
+                                backupDir, backupInFlight, lastFailureNoticeMs,
+                                backupShutdown, backupFutures]() {
+            if (backupShutdown->load(std::memory_order_acquire))
+                return; // 已进入退出流程，不再启动新一轮
             if (*backupInFlight) return; // 上一轮还没落盘，跳过本轮
             *backupInFlight = true;
             const int keep = settings->backupKeepCount();
@@ -1188,47 +1205,80 @@ qInfo() << "NexusAI" << app.applicationVersion() << "starting";
             // 磁盘满时不会每次启动/每小时都弹同一个提示。
             const qint64 noticeGapMs = qMax<qint64>(
                 backupIntervalMs(settings->backupIntervalHours()), 60LL * 60 * 1000);
-            QtConcurrent::run([&app, tray, prefStore, dbPath, backupDir, keep,
-                               noticeGapMs, backupInFlight, lastFailureNoticeMs]() {
-                QDir().mkpath(backupDir);
-                const QString target = backupDir
-                    + QStringLiteral("/auto_%1.db")
-                          .arg(QDateTime::currentDateTime().toString(
-                              QStringLiteral("yyyyMMdd_HHmmss")));
-                const bool ok = SqliteMemory::createBackupFile(dbPath, target);
-                if (ok)
-                    SqliteMemory::rotateAutoBackups(backupDir, keep);
-                // 结果回 GUI 线程：in-flight 标志与托盘都只在那里碰。
-                QMetaObject::invokeMethod(
-                    &app,
-                    [ok, target, backupDir, tray, prefStore, noticeGapMs,
-                     backupInFlight, lastFailureNoticeMs]() {
-                        *backupInFlight = false;
-                        if (ok) {
-                            qInfo() << "Auto backup written:" << target;
-                            return;
-                        }
-                        qWarning() << "Auto backup failed:" << target;
-                        // 活动记录留痕（日志轮转后仍可在「活动日志」页查到），
-                        // 只记目录与结果，不记数据库内容。
-                        Activity::usage(Activity::Kind::Db,
-                                        QStringLiteral("db.backup.auto.failed"),
-                                        backupDir);
-                        const qint64 now = QDateTime::currentMSecsSinceEpoch();
-                        if (*lastFailureNoticeMs != 0
-                                && now - *lastFailureNoticeMs < noticeGapMs)
-                            return;
-                        *lastFailureNoticeMs = now;
-                        if (!prefStore->load(QStringLiteral("notice.enabled")).toBool())
-                            return;
-                        tray->showMessage(
-                            QObject::tr("自动备份失败"),
-                            QObject::tr("无法写入数据库快照目录：%1").arg(backupDir),
-                            QSystemTrayIcon::Warning, 6000);
-                    },
-                    Qt::QueuedConnection);
-            });
+            // 清理已完成的 future，避免长运行进程里列表无限增长。
+            backupFutures->removeIf(
+                [](const QFuture<void>& f) { return f.isFinished(); });
+            backupFutures->append(QtConcurrent::run(
+                [trayGuard, appGuard, prefStore, dbPath, backupDir, keep,
+                 noticeGapMs, backupInFlight, lastFailureNoticeMs,
+                 backupShutdown]() {
+                    // 阶段 1：准备目录。
+                    if (backupShutdown->load(std::memory_order_acquire)) return;
+                    QDir().mkpath(backupDir);
+                    const QString target = backupDir
+                        + QStringLiteral("/auto_%1.db")
+                              .arg(QDateTime::currentDateTime().toString(
+                                  QStringLiteral("yyyyMMdd_HHmmss")));
+                    // 阶段 2：落盘（已在写的那份无法中途取消，但绝不开始新写）。
+                    if (backupShutdown->load(std::memory_order_acquire)) return;
+                    const bool ok = SqliteMemory::createBackupFile(dbPath, target);
+                    // 阶段 3：轮转旧快照。
+                    if (backupShutdown->load(std::memory_order_acquire)) return;
+                    if (ok)
+                        SqliteMemory::rotateAutoBackups(backupDir, keep);
+                    // 阶段 4：结果回 GUI 线程；app 已销毁或已退出则不投递。
+                    if (backupShutdown->load(std::memory_order_acquire)) return;
+                    QCoreApplication* appCtx = appGuard.data();
+                    if (!appCtx) return;
+                    QMetaObject::invokeMethod(
+                        appCtx,
+                        [ok, target, backupDir, trayGuard, prefStore, noticeGapMs,
+                         backupInFlight, lastFailureNoticeMs, backupShutdown]() {
+                            if (backupShutdown->load(std::memory_order_acquire))
+                                return;
+                            *backupInFlight = false;
+                            if (ok) {
+                                qInfo() << "Auto backup written:" << target;
+                                return;
+                            }
+                            qWarning() << "Auto backup failed:" << target;
+                            // 活动记录留痕（日志轮转后仍可在「活动日志」页查到），
+                            // 只记目录与结果，不记数据库内容。
+                            Activity::usage(Activity::Kind::Db,
+                                            QStringLiteral("db.backup.auto.failed"),
+                                            backupDir);
+                            const qint64 now = QDateTime::currentMSecsSinceEpoch();
+                            if (*lastFailureNoticeMs != 0
+                                    && now - *lastFailureNoticeMs < noticeGapMs)
+                                return;
+                            *lastFailureNoticeMs = now;
+                            if (!prefStore->load(QStringLiteral("notice.enabled")).toBool())
+                                return;
+                            // 托盘可能已随 app 析构：判空后再提示，只丢气泡。
+                            QSystemTrayIcon* tray = trayGuard.data();
+                            if (!tray) return;
+                            tray->showMessage(
+                                QObject::tr("自动备份失败"),
+                                QObject::tr("无法写入数据库快照目录：%1").arg(backupDir),
+                                QSystemTrayIcon::Warning, 6000);
+                        },
+                        Qt::QueuedConnection);
+                }));
         };
+
+        // 退出编排：置位旗标 + 限时等待在途备份（最多 2s）。worker 每个阶段
+        // 都检查旗标，正常情况下 0ms 返回；只有正在写盘的这一次需要等。
+        QObject::connect(&app, &QCoreApplication::aboutToQuit, &app,
+            [backupShutdown, backupFutures]() {
+                backupShutdown->store(true, std::memory_order_release);
+                using namespace std::chrono_literals;
+                const auto deadline = std::chrono::steady_clock::now() + 2000ms;
+                for (const QFuture<void>& f : *backupFutures) {
+                    while (!f.isFinished()
+                           && std::chrono::steady_clock::now() < deadline)
+                        std::this_thread::sleep_for(10ms);
+                }
+            });
 
         auto* backupTimer = new QTimer(&app);
         // 备份间隔以小时计，秒级精度没有意义；VeryCoarse 让系统合并唤醒。
