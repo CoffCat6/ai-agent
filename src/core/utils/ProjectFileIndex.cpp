@@ -5,6 +5,11 @@
 #include <QFile>
 #include <QFileInfo>
 #include <QSet>
+#include <QVector>
+
+#ifdef Q_OS_WIN
+#include <qt_windows.h>
+#endif
 
 #include <algorithm>
 
@@ -223,6 +228,46 @@ bool isIndexableFile(const QString& name) {
 // either hide real files from the browser or feed binaries to the model.
 namespace {
 
+// QFileInfo::canonicalFilePath resolves symlinks on POSIX but leaves Windows
+// junctions untouched (Qt even reports isSymLink() == false for them). Ask the
+// OS for the final path of an open handle instead, which resolves both kinds
+// of reparse point, so a junction inside the project cannot expose a file
+// outside it.
+QString canonicalForContainment(const QString& path) {
+#ifdef Q_OS_WIN
+    const QString native = QDir::toNativeSeparators(path);
+    HANDLE handle = CreateFileW(
+        reinterpret_cast<LPCWSTR>(native.utf16()), 0,
+        FILE_SHARE_READ | FILE_SHARE_WRITE | FILE_SHARE_DELETE, nullptr,
+        OPEN_EXISTING, FILE_FLAG_BACKUP_SEMANTICS, nullptr);
+    if (handle == INVALID_HANDLE_VALUE) return {};
+
+    QString result;
+    const DWORD needed = GetFinalPathNameByHandleW(
+        handle, nullptr, 0, FILE_NAME_NORMALIZED);
+    if (needed > 0) {
+        QVector<wchar_t> buffer(static_cast<int>(needed) + 1);
+        const DWORD written = GetFinalPathNameByHandleW(
+            handle, buffer.data(), static_cast<DWORD>(buffer.size()),
+            FILE_NAME_NORMALIZED);
+        if (written > 0 && written < static_cast<DWORD>(buffer.size())) {
+            result = QString::fromWCharArray(buffer.constData(),
+                                             static_cast<int>(written));
+        }
+    }
+    CloseHandle(handle);
+
+    // Strip the extended-length prefix the API returns.
+    if (result.startsWith(QStringLiteral("\\\\?\\UNC\\")))
+        result = QStringLiteral("\\\\") + result.mid(8);
+    else if (result.startsWith(QStringLiteral("\\\\?\\")))
+        result = result.mid(4);
+    return QDir::cleanPath(QDir::fromNativeSeparators(result));
+#else
+    return QFileInfo(path).canonicalFilePath();
+#endif
+}
+
 // Resolve relPath under root without leaving it. Mirrors the checks in
 // resolveTokenPath: absolute paths, drive-relative paths and ".." escapes are
 // all refused before touching the filesystem.
@@ -395,14 +440,48 @@ FilePreview readFilePreview(const QString& root, const QString& relPath,
     if (!resolveUnderRoot(root, relPath, &absolute, &preview.error))
         return preview;
 
+    // resolveUnderRoot only checks the lexical path. A symlink or a Windows
+    // junction that lives inside the project can still target a file outside
+    // it, so the canonical target is what decides containment. Everything
+    // below reads the canonical path, never the link itself.
+    const QString cleanRoot = QDir::cleanPath(QDir::fromNativeSeparators(root));
+    const QString canonicalRoot = canonicalForContainment(cleanRoot);
+    if (canonicalRoot.isEmpty()) {
+        preview.error = QStringLiteral("unreadable");
+        return preview;
+    }
+
     const QFileInfo info(absolute);
     if (!info.exists() || !info.isFile()) {
         preview.error = QStringLiteral("missing");
         return preview;
     }
-    preview.bytes = info.size();
 
-    QFile file(absolute);
+    const QString canonical = canonicalForContainment(absolute);
+    if (canonical.isEmpty()) {
+        // A broken link, or a target the OS refuses to resolve.
+        preview.error = QStringLiteral("unreadable");
+        return preview;
+    }
+
+#if defined(Q_OS_WIN)
+    const Qt::CaseSensitivity sensitivity = Qt::CaseInsensitive;
+#else
+    const Qt::CaseSensitivity sensitivity = Qt::CaseSensitive;
+#endif
+    QString prefix = QDir::cleanPath(canonicalRoot);
+    if (!prefix.endsWith(QLatin1Char('/'))) prefix += QLatin1Char('/');
+    const QString cleanCanonical =
+        QDir::cleanPath(QDir::fromNativeSeparators(canonical));
+    if (!cleanCanonical.startsWith(prefix, sensitivity)) {
+        preview.error = QStringLiteral("outside");
+        return preview;
+    }
+
+    const QFileInfo canonicalInfo(cleanCanonical);
+    preview.bytes = canonicalInfo.size();
+
+    QFile file(cleanCanonical);
     if (!file.open(QIODevice::ReadOnly)) {
         preview.error = QStringLiteral("unreadable");
         return preview;

@@ -58,11 +58,15 @@ public:
                         return;
                     }
                     QJsonObject body;
+                    // B4-B：第 2 个及以后的请求可切换返回维度（模拟模型
+                    // 切换/服务异常导致的跨批异维）。
+                    const int dim = (m_requests > 1 && m_dimAfterFirst >= 0)
+                                        ? m_dimAfterFirst : m_dim;
                     if (m_returnSingleEmbedding && texts.size() == 1) {
                         // 单条 embed 响应形态：{"embedding": [...]}，用于
                         // 验证 OllamaEmbedding::embed() 解析。
                         QJsonArray vec;
-                        for (int d = 0; d < m_dim; ++d)
+                        for (int d = 0; d < dim; ++d)
                             vec.append(0.25);
                         body["embedding"] = vec;
                     } else {
@@ -70,7 +74,7 @@ public:
                         const int count = texts.size() + m_countOffset;
                         for (int i = 0; i < count; ++i) {
                             QJsonArray vec;
-                            for (int d = 0; d < m_dim; ++d)
+                            for (int d = 0; d < dim; ++d)
                                 vec.append(0.25);
                             if (m_indexEncoded) {
                                 QJsonObject entry;
@@ -120,6 +124,8 @@ public:
     // 索引编码开关：true 时 embeddings 数组元素为 {"index":i,"embedding":[...]}
     // 而非纯数组，验证 OllamaEmbedding::embedBatch() 对两种形态的容错。
     void setIndexEncoded(bool encoded) { m_indexEncoded = encoded; }
+    // B4-B：从第 2 个请求起改用 dim 维向量（跨批异维注入）。
+    void setDimAfterFirst(int dim) { m_dimAfterFirst = dim; }
     int requests() const { return m_requests; }
     const QStringList& modelsSeen() const { return m_modelsSeen; }
 
@@ -173,6 +179,7 @@ private:
     bool m_hang{false};
     bool m_failAllUnauthorized{false};
     int m_countOffset{0};
+    int m_dimAfterFirst{-1};
     bool m_indexEncoded{false};
     bool m_returnSingleEmbedding{false};
     int m_requests{0};
@@ -185,6 +192,28 @@ QStringList makeTexts(int n) {
         texts.append(QStringLiteral("text %1").arg(i));
     return texts;
 }
+
+// B4-B：捕获告警文本，用于断言维度失败的错误信息包含 expected/actual
+//（失败语义本身由返回空容器保证；这里只验证错误可读）。
+QStringList g_warningMessages;
+QtMessageHandler g_previousHandler = nullptr;
+
+void captureWarningHandler(QtMsgType type, const QMessageLogContext& ctx,
+                           const QString& msg) {
+    if (type == QtWarningMsg || type == QtCriticalMsg)
+        g_warningMessages.append(msg);
+    if (g_previousHandler) g_previousHandler(type, ctx, msg);
+}
+
+class ScopedWarningCapture {
+public:
+    ScopedWarningCapture() {
+        g_warningMessages.clear();
+        g_previousHandler = qInstallMessageHandler(&captureWarningHandler);
+    }
+    ~ScopedWarningCapture() { qInstallMessageHandler(g_previousHandler); }
+    QStringList messages() const { return g_warningMessages; }
+};
 
 // OpenAI-compatible fake (task #16): answers /v1/embeddings with
 // {"data": [{"index": i, "embedding": [...]}]}. Vector values are encoded
@@ -255,6 +284,8 @@ public:
     void setDropData(bool drop) { m_dropData = drop; }
     // 协议错误注入：data 条数相对 input 的偏移（负数=少几条）。
     void setCountOffset(int offset) { m_countOffset = offset; }
+    // B4-B：从第 2 个请求起改用 dim 维向量（跨批异维注入）。
+    void setDimAfterFirst(int dim) { m_dimAfterFirst = dim; }
     int requests() const { return m_requests; }
     const QString& lastPath() const { return m_lastPath; }
     const QString& lastAuthorization() const { return m_lastAuthorization; }
@@ -296,6 +327,9 @@ private:
     void respond(QTcpSocket* socket) {
         QJsonObject body;
         if (!m_dropData) {
+            // B4-B：第 2 个及以后的请求可切换返回维度。
+            const int dim = (m_requests > 1 && m_dimAfterFirst >= 0)
+                                ? m_dimAfterFirst : m_dim;
             const int count = m_inputCount + m_countOffset;
             QJsonArray data;
             for (int i = 0; i < count; ++i) {
@@ -303,7 +337,7 @@ private:
                 // index 编码，客户端按 index 归位后顺序必须与请求一致。
                 const int index = m_reverseIndices ? (count - 1 - i) : i;
                 QJsonArray vec;
-                for (int d = 0; d < m_dim; ++d)
+                for (int d = 0; d < dim; ++d)
                     vec.append(index + 1 + d * 0.25);
                 QJsonObject item;
                 item["index"] = index;
@@ -332,6 +366,7 @@ private:
     bool m_failAllUnauthorized{false};
     int m_requests{0};
     int m_inputCount{0};
+    int m_dimAfterFirst{-1};
     bool m_reverseIndices{false};
     bool m_dropData{false};
     QString m_lastPath;
@@ -750,6 +785,124 @@ private slots:
         QVERIFY(result.isEmpty());
         QCOMPARE(server.requests(), 1);
         resetEmbeddingShutdownForTesting();
+    }
+
+    // ── B4-B：嵌入维度一致性校验 ──
+
+    // 两批返回不同维度（8 vs 4）→ 整次调用失败、结果为空的空容器
+    //（不部分写入），错误日志同时给出 expected/actual。
+    void ollamaBatchDimensionMismatchFailsWholesale() {
+        FakeEmbedServer server(8);
+        server.setDimAfterFirst(4);
+        OllamaEmbedding embed;
+        embed.setBaseUrl(server.baseUrl());
+
+        ScopedWarningCapture capture;
+        const QVector<QVector<float>> result =
+            embed.embedBatch(makeTexts(OllamaEmbedding::BatchSize + 1));
+        QVERIFY2(result.isEmpty(), "mismatched dimension must abort the run");
+        QCOMPARE(server.requests(), 2);   // 协议错误 fail-fast，无重试
+
+        const QString log = capture.messages().join(QLatin1Char('\n'));
+        QVERIFY2(log.contains(QStringLiteral("expected 8")), qPrintable(log));
+        QVERIFY2(log.contains(QStringLiteral("actual 4")), qPrintable(log));
+    }
+
+    // 同一维度跨批正常：首批维度作为全 run 基准，结果完整返回。
+    void ollamaBatchSameDimensionAcrossBatchesSucceeds() {
+        FakeEmbedServer server(8);
+        OllamaEmbedding embed;
+        embed.setBaseUrl(server.baseUrl());
+
+        const QVector<QVector<float>> result =
+            embed.embedBatch(makeTexts(OllamaEmbedding::BatchSize + 1));
+        QCOMPARE(result.size(), OllamaEmbedding::BatchSize + 1);
+        QCOMPARE(server.requests(), 2);
+        for (const QVector<float>& vec : result)
+            QCOMPARE(vec.size(), 8);
+    }
+
+    // 空向量视为失败（即使条数匹配）。
+    void ollamaBatchEmptyVectorFails() {
+        FakeEmbedServer server(0);   // 每条向量都是 []
+        OllamaEmbedding embed;
+        embed.setBaseUrl(server.baseUrl());
+
+        QVERIFY(embed.embedBatch(makeTexts(2)).isEmpty());
+        QCOMPARE(server.requests(), 1);
+    }
+
+    // 空输入批：不发请求，直接按失败返回。
+    void ollamaEmptyInputBatchFails() {
+        OllamaEmbedding embed;
+        QVERIFY(embed.embedBatch({}).isEmpty());
+    }
+
+    // 单条调用同样要求维度 > 0。
+    void ollamaSingleEmbedEmptyVectorFails() {
+        FakeEmbedServer server(0);
+        server.setReturnSingleEmbedding(true);
+        OllamaEmbedding embed;
+        embed.setBaseUrl(server.baseUrl());
+
+        QVERIFY(embed.embed(QStringLiteral("x")).isEmpty());
+    }
+
+    // OpenAI 后端对称：跨批异维 → 整次失败、结果为空、日志含具体维度。
+    void openaiBatchDimensionMismatchFailsWholesale() {
+        FakeOpenAIEmbedServer server(8);
+        server.setDimAfterFirst(3);
+        OpenAICompatibleEmbedding embed;
+        embed.setBaseUrl(server.baseUrl());
+
+        ScopedWarningCapture capture;
+        const QVector<QVector<float>> result =
+            embed.embedBatch(makeTexts(OpenAICompatibleEmbedding::BatchSize + 1));
+        QVERIFY2(result.isEmpty(), "mismatched dimension must abort the run");
+        QCOMPARE(server.requests(), 2);
+
+        const QString log = capture.messages().join(QLatin1Char('\n'));
+        QVERIFY2(log.contains(QStringLiteral("expected 8")), qPrintable(log));
+        QVERIFY2(log.contains(QStringLiteral("actual 3")), qPrintable(log));
+    }
+
+    // OpenAI 同维度跨批正常返回。
+    void openaiBatchSameDimensionAcrossBatchesSucceeds() {
+        FakeOpenAIEmbedServer server(4);
+        OpenAICompatibleEmbedding embed;
+        embed.setBaseUrl(server.baseUrl());
+
+        const QVector<QVector<float>> result =
+            embed.embedBatch(makeTexts(OpenAICompatibleEmbedding::BatchSize + 1));
+        QCOMPARE(result.size(), OpenAICompatibleEmbedding::BatchSize + 1);
+        QCOMPARE(server.requests(), 2);
+        for (const QVector<float>& vec : result)
+            QCOMPARE(vec.size(), 4);
+    }
+
+    // OpenAI 空向量视为失败。
+    void openaiBatchEmptyVectorFails() {
+        FakeOpenAIEmbedServer server(0);
+        OpenAICompatibleEmbedding embed;
+        embed.setBaseUrl(server.baseUrl());
+
+        QVERIFY(embed.embedBatch(makeTexts(2)).isEmpty());
+        QCOMPARE(server.requests(), 1);
+    }
+
+    // OpenAI 空输入批直接失败。
+    void openaiEmptyInputBatchFails() {
+        OpenAICompatibleEmbedding embed;
+        QVERIFY(embed.embedBatch({}).isEmpty());
+    }
+
+    // OpenAI 单条调用同样要求维度 > 0。
+    void openaiSingleEmbedEmptyVectorFails() {
+        FakeOpenAIEmbedServer server(0);
+        OpenAICompatibleEmbedding embed;
+        embed.setBaseUrl(server.baseUrl());
+
+        QVERIFY(embed.embed(QStringLiteral("x")).isEmpty());
     }
 };
 

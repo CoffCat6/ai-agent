@@ -280,7 +280,7 @@ void AnthropicService::chatComplete(const QJsonArray& messages, const QJsonArray
         body["tools"] = convertTools(tools);
 
     QNetworkRequest request;
-    request.setUrl(QUrl(m_baseUrl + "/v1/messages"));
+    request.setUrl(QUrl(joinUrl(m_baseUrl, QStringLiteral("/v1/messages"))));
     request.setHeader(QNetworkRequest::ContentTypeHeader, "application/json");
     request.setRawHeader("x-api-key", m_apiKey.toUtf8());
     request.setRawHeader("anthropic-version", "2023-06-01");

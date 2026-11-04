@@ -244,7 +244,7 @@ void OpenAIResponsesService::chatComplete(const QJsonArray& messages,
     }
 
     QNetworkRequest request;
-    request.setUrl(QUrl(m_baseUrl + "/responses"));
+    request.setUrl(QUrl(joinUrl(m_baseUrl, QStringLiteral("/responses"))));
     request.setHeader(QNetworkRequest::ContentTypeHeader, "application/json");
     request.setRawHeader("Authorization", ("Bearer " + m_apiKey).toUtf8());
     request.setRawHeader("Accept", "text/event-stream");

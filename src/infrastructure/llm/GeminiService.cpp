@@ -491,15 +491,12 @@ QString GeminiService::sanitizeModelName(const QString& model) {
     return valid.match(trimmed).hasMatch() ? trimmed : QString();
 }
 
-// m-2（任务 #27）：拼接流式端点 URL；baseUrl 末尾多余的 "/" 去重
-// （避免 "//v1beta"）。
+// m-2（任务 #27）：拼接流式端点 URL。尾斜杠与重复版本前缀统一由
+// LLMServiceBase::joinUrl 处理（避免 "//v1beta"）。
 QString GeminiService::buildStreamUrl(const QString& baseUrl,
                                       const QString& model) {
-    QString base = baseUrl;
-    while (base.endsWith(QLatin1Char('/')))
-        base.chop(1);
-    return base + QStringLiteral("/v1beta/models/") + model
-                + QStringLiteral(":streamGenerateContent?alt=sse");
+    return joinUrl(baseUrl, QStringLiteral("/v1beta/models/") + model
+                + QStringLiteral(":streamGenerateContent?alt=sse"));
 }
 
 void GeminiService::chatComplete(const QJsonArray& messages, const QJsonArray& tools) {

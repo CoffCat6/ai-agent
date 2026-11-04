@@ -94,6 +94,13 @@ public:
     // 所以装配层（main.cpp）不需要再按协议字符串分支设参。
     void configure(const LlmProfileConfig& cfg) override;
 
+    // B4-A: 所有 provider 共享的请求 URL 拼接。处理用户在 baseUrl 里带了
+    // 尾斜杠、或既带了 /v1 又在 path 里重复 /v1 的情况：
+    //   joinUrl("https://x/", "v1/chat")        -> https://x/v1/chat
+    //   joinUrl("https://x/v1", "/v1/chat")     -> https://x/v1/chat
+    // base 为空时返回 path；path 的 query 部分原样保留。
+    static QString joinUrl(const QString& base, const QString& path);
+
 protected:
     // 各协议从 profile 里取自己那部分参数；基类实现到此为止什么都不做。
     virtual void applyProfileParams(const LlmProfileConfig&) {}

@@ -43,6 +43,33 @@ bool isWithin(const QString& path, const QString& base) {
     return p.startsWith(prefix, kPathCase);
 }
 
+// Commands that can change the repository. Their result must be authoritative,
+// so a killed process (output cap or timeout) counts as a failure. Kept in one
+// place rather than at every call site: a subcommand added later still gets
+// the strict rule by default. `stash list`/`stash show` are read-only.
+bool isWriteCommand(const QStringList& args) {
+    if (args.isEmpty()) return false;
+    static const QStringList writes{
+        QStringLiteral("add"), QStringLiteral("reset"),
+        QStringLiteral("commit"), QStringLiteral("restore"),
+        QStringLiteral("apply"), QStringLiteral("checkout"),
+        QStringLiteral("switch"), QStringLiteral("init"),
+        QStringLiteral("rm"), QStringLiteral("mv"),
+        QStringLiteral("merge"), QStringLiteral("rebase"),
+        QStringLiteral("cherry-pick"), QStringLiteral("revert"),
+        QStringLiteral("clean"), QStringLiteral("fetch"),
+        QStringLiteral("pull"), QStringLiteral("push"),
+        QStringLiteral("update-index"), QStringLiteral("update-ref"),
+        QStringLiteral("prune"), QStringLiteral("gc"),
+        QStringLiteral("am")};
+    if (args.first() == QLatin1String("stash")) {
+        return args.size() < 2
+            || (args.at(1) != QLatin1String("list")
+                && args.at(1) != QLatin1String("show"));
+    }
+    return writes.contains(args.first());
+}
+
 } // namespace
 
 QJsonObject GitCommitInfo::toJson() const {
@@ -175,9 +202,16 @@ GitService::CommandResult GitService::run(const QStringList& args) const {
 GitService::CommandResult GitService::runWithInput(const QStringList& args,
                                                    const QByteArray& input) const {
     CommandResult result;
+    const bool writeOperation = isWriteCommand(args);
     QProcess process;
     process.setProgram(QStringLiteral("git"));
-    process.setArguments(args);
+    // Every path this service hands to git is an exact repository path, never
+    // a pattern. Literal pathspecs stop `*`, `?` and `[]` inside a user file
+    // name from being reinterpreted and staging/matching a different file.
+    QStringList effectiveArgs;
+    effectiveArgs.reserve(args.size() + 1);
+    effectiveArgs << QStringLiteral("--literal-pathspecs") << args;
+    process.setArguments(effectiveArgs);
     process.setWorkingDirectory(baseDir());
     process.setProcessChannelMode(QProcess::SeparateChannels);
 
@@ -236,12 +270,22 @@ GitService::CommandResult GitService::runWithInput(const QStringList& args,
     drain();
 
     result.exitCode = process.exitCode();
-    result.ok = result.exitCode == 0 || result.truncated;
+    // Reads may cut their output and still be useful (the caller sees the
+    // `truncated` flag). Writes may not: the process was killed mid-operation,
+    // so the exit code and the repository state are both unknown.
+    result.ok = writeOperation
+        ? (result.exitCode == 0 && !result.truncated && !result.timedOut)
+        : (result.exitCode == 0 || result.truncated);
     result.output = QString::fromUtf8(out);
     const QString stderrText = QString::fromUtf8(err).trimmed();
     if (result.timedOut) {
         result.ok = false;
         result.error = QStringLiteral("git timed out after %1 ms").arg(m_timeoutMs);
+    } else if (writeOperation && result.truncated) {
+        result.ok = false;
+        result.error = QStringLiteral(
+            "git output exceeded %1 bytes; the operation was stopped and may "
+            "be incomplete").arg(m_outputLimitBytes);
     } else if (!result.ok) {
         result.error = stderrText.isEmpty()
             ? QStringLiteral("git exited with code %1").arg(result.exitCode)

@@ -205,6 +205,11 @@ private slots:
     void geminiSanitizeSchemaPatternProperties();
     void geminiSanitizeSchemaItemsRecursiveFailure();
     void geminiConvertToolsSkipsUndegradable();
+
+    // B4-A: 统一 URL 拼接（尾斜杠、重复 /v1、空 base）。
+    void joinUrlNormalization();
+    // B4-A: 至少覆盖一家 service 的最终请求 URL。
+    void openAiChatCompletionsUrl();
 };
 
 void TestLlmParsers::openaiPlainText() {
@@ -1536,6 +1541,59 @@ void TestLlmParsers::geminiConvertToolsSkipsUndegradable() {
     QCOMPARE(decls.size(), 1);
     const QJsonObject decl = decls.at(0).toObject();
     QCOMPARE(decl.value("name").toString(), QStringLiteral("ok"));
+}
+
+// B4-A：验证 joinUrl 的归一化规则。base 允许带或不带尾斜杠、path 允许
+// 带或不带前导斜杠；base 以 /v1 结尾且 path 以 /v1/ 开头时只保留一个 v1；
+// base 为空时直接返回归一化后的 path；path 的 query 原样保留。
+void TestLlmParsers::joinUrlNormalization() {
+    QCOMPARE(LLMServiceBase::joinUrl(QStringLiteral("https://x"),
+                                     QStringLiteral("/v1/chat")),
+             QStringLiteral("https://x/v1/chat"));
+    QCOMPARE(LLMServiceBase::joinUrl(QStringLiteral("https://x/"),
+                                     QStringLiteral("v1/chat")),
+             QStringLiteral("https://x/v1/chat"));
+    QCOMPARE(LLMServiceBase::joinUrl(QStringLiteral("https://x/v1"),
+                                     QStringLiteral("/v1/chat")),
+             QStringLiteral("https://x/v1/chat"));
+    QCOMPARE(LLMServiceBase::joinUrl(QStringLiteral("https://x/v1/"),
+                                     QStringLiteral("/v1/chat")),
+             QStringLiteral("https://x/v1/chat"));
+    QCOMPARE(LLMServiceBase::joinUrl(QStringLiteral("https://x/api/v1"),
+                                     QStringLiteral("/v1/chat")),
+             QStringLiteral("https://x/api/v1/chat"));
+    QCOMPARE(LLMServiceBase::joinUrl(QString(),
+                                     QStringLiteral("/v1/chat")),
+             QStringLiteral("/v1/chat"));
+    // base 的多个尾斜杠全部去掉；非 /v1 路径不受影响。
+    QCOMPARE(LLMServiceBase::joinUrl(QStringLiteral("https://x///"),
+                                     QStringLiteral("/v1/chat")),
+             QStringLiteral("https://x/v1/chat"));
+    // Gemini 常见 base 形态：/v1beta 与 path 的 /v1beta/models 只能留一份。
+    QCOMPARE(LLMServiceBase::joinUrl(QStringLiteral("https://x/v1beta"),
+                                     QStringLiteral("/v1beta/models/m:stream?alt=sse")),
+             QStringLiteral("https://x/v1beta/models/m:stream?alt=sse"));
+    // Ollama 兼容网关以 /api 结尾时同理。
+    QCOMPARE(LLMServiceBase::joinUrl(QStringLiteral("https://x/api"),
+                                     QStringLiteral("/api/chat")),
+             QStringLiteral("https://x/api/chat"));
+    // query 原样保留，不做归一化。
+    QCOMPARE(LLMServiceBase::joinUrl(QStringLiteral("https://x"),
+                                     QStringLiteral("/chat?alt=sse")),
+             QStringLiteral("https://x/chat?alt=sse"));
+}
+
+// B4-A：OpenAI service 的最终 URL 走 joinUrl，默认 base 已含 /v1 时不会拼成
+// /v1/v1/chat/completions，base 带尾斜杠时也不会出现双斜杠。
+void TestLlmParsers::openAiChatCompletionsUrl() {
+    QCOMPARE(OpenAIService::chatCompletionsUrl(QStringLiteral("https://x/v1")),
+             QStringLiteral("https://x/v1/chat/completions"));
+    QCOMPARE(OpenAIService::chatCompletionsUrl(QStringLiteral("https://x/v1/")),
+             QStringLiteral("https://x/v1/chat/completions"));
+    QCOMPARE(OpenAIService::chatCompletionsUrl(QStringLiteral("https://x")),
+             QStringLiteral("https://x/chat/completions"));
+    QCOMPARE(OpenAIService::chatCompletionsUrl(QStringLiteral("https://x/")),
+             QStringLiteral("https://x/chat/completions"));
 }
 
 

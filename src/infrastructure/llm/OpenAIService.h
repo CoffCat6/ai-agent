@@ -42,6 +42,10 @@ public:
     // exposed for unit tests.
     static LLMResponse parseResponse(const QJsonObject& json);
 
+    // B4-A: 最终 Chat Completions 端点（经 joinUrl 归一化 baseUrl 的尾斜杠
+    // 与重复 /v1）。纯函数，供测试直接断言实际请求 URL。
+    static QString chatCompletionsUrl(const QString& baseUrl);
+
     // Streaming tool-call accumulation helpers (pure, exposed for tests).
     // OpenAI sends the tool name once (complete) and arguments as split
     // delta fragments, but some OpenAI-compatible proxies RESEND the

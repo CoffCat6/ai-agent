@@ -18,6 +18,57 @@ namespace NexusAI {
 
 #ifdef Q_OS_WIN
 
+namespace {
+
+// Normalize one candidate system directory: trim quotes/spaces, drop empty
+// values, dedupe case-insensitively (Windows comparisons are insensitive).
+void appendSystemDir(QStringList& dirs, const QString& raw)
+{
+    QString value = raw.trimmed();
+    if (value.size() >= 2 && value.startsWith(QLatin1Char('"'))
+            && value.endsWith(QLatin1Char('"'))) {
+        value = value.mid(1, value.size() - 2).trimmed();
+    }
+    if (value.isEmpty())
+        return;
+    const QString native =
+        QDir::toNativeSeparators(QDir::cleanPath(value));
+    if (native.isEmpty())
+        return;
+    for (const QString& existing : dirs) {
+        if (existing.compare(native, Qt::CaseInsensitive) == 0)
+            return;
+    }
+    dirs.append(native);
+}
+
+} // namespace
+
+// docs/37 B4-D: never assume C:. The OS-reported values are correct on a
+// non-C: system drive and for a custom SystemRoot.
+QStringList sandboxWindowsSystemDirectories()
+{
+    QStringList dirs;
+    appendSystemDir(dirs, qEnvironmentVariable("SystemRoot"));
+    appendSystemDir(dirs, qEnvironmentVariable("windir"));
+
+    // Fallback for stripped environments (e.g. services with a minimal env).
+    wchar_t winDir[MAX_PATH + 1] = {};
+    const UINT len = ::GetWindowsDirectoryW(winDir, MAX_PATH + 1);
+    if (len > 0 && len <= MAX_PATH)
+        appendSystemDir(dirs, QString::fromWCharArray(winDir, int(len)));
+
+    // 32-bit processes see ProgramFiles as the WOW64 folder; ProgramW6432
+    // keeps the native one visible. ProgramData is machine-wide app data and
+    // is never a user-writable location.
+    const char* const kEnvNames[] = {
+        "ProgramFiles", "ProgramFiles(x86)", "ProgramW6432", "ProgramData"
+    };
+    for (const char* name : kEnvNames)
+        appendSystemDir(dirs, qEnvironmentVariable(name));
+    return dirs;
+}
+
 QString sandboxNativeFinalPath(const QString& path)
 {
     const QString native = QDir::toNativeSeparators(path);

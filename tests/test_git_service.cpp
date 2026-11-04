@@ -93,6 +93,27 @@ public:
                     QStringLiteral("-m"), subject, QStringLiteral("-m"), body});
     }
 
+    // Installs a real git hook. Used to drive the service into the two states
+    // a write command must never report as success: output over the cap and
+    // execution over the timeout.
+    bool writeHook(const QString& name, const QByteArray& body) {
+        const QString dir = m_dir.filePath(QStringLiteral(".git/hooks"));
+        if (!QDir().mkpath(dir)) return false;
+        QFile file(dir + QLatin1Char('/') + name);
+        if (!file.open(QIODevice::WriteOnly)) return false;
+        file.write("#!/bin/sh\n");
+        file.write(body);
+        if (!body.endsWith('\n')) file.write("\n");
+        file.close();
+        // Windows ignores the mode bits, POSIX needs the executable bit.
+        QFile::setPermissions(file.fileName(),
+                              QFile::ReadOwner | QFile::WriteOwner
+                                  | QFile::ExeOwner | QFile::ReadGroup
+                                  | QFile::ExeGroup | QFile::ReadOther
+                                  | QFile::ExeOther);
+        return true;
+    }
+
 private:
     QTemporaryDir m_dir;
 };
@@ -869,6 +890,107 @@ private slots:
         QVERIFY(!error.isEmpty());
         QVERIFY(git.workingDiff(QStringLiteral("-p"), false, nullptr, &error).isNull());
         QVERIFY(!error.isEmpty());
+    }
+
+    // A write command killed because its output hit the cap has an unknown
+    // exit status and may have stopped halfway; it must never be reported as
+    // success the way a truncated read query is.
+    void writeCommandTruncatedIsFailure() {
+        TempRepo repo;
+        QVERIFY(repo.valid() && repo.init());
+        QVERIFY(repo.write(QStringLiteral("base.txt"), "base\n"));
+        QVERIFY(repo.addAll() && repo.commit(QStringLiteral("base")));
+
+        QVERIFY(repo.write(QStringLiteral("next.txt"), "next\n"));
+        QVERIFY(repo.run({QStringLiteral("add"), QStringLiteral("next.txt")}));
+
+        // `git commit` echoes the subject on stdout; a long subject pushes the
+        // write's own output past the cap in a deterministic way.
+        GitService git(repo.path(), 1024, 8000);
+        const QString longMessage(3000, QLatin1Char('x'));
+        QString error;
+        QVERIFY2(!git.commitStaged(longMessage, &error),
+                 "a write stopped by the output cap must not report success");
+        QVERIFY2(error.contains(QStringLiteral("output exceeded"))
+                     || error.contains(QStringLiteral("incomplete")),
+                 qPrintable(error));
+    }
+
+    // The timeout keeps its 8s default elsewhere; this instance shortens it
+    // so the test stays fast. A killed write is a failure, not an empty
+    // success.
+    void writeCommandTimeoutIsFailure() {
+        TempRepo repo;
+        QVERIFY(repo.valid() && repo.init());
+        QVERIFY(repo.write(QStringLiteral("base.txt"), "base\n"));
+        QVERIFY(repo.addAll() && repo.commit(QStringLiteral("base")));
+        QVERIFY(repo.writeHook(QStringLiteral("pre-commit"), QByteArray("sleep 5")));
+
+        QVERIFY(repo.write(QStringLiteral("next.txt"), "next\n"));
+        QVERIFY(repo.run({QStringLiteral("add"), QStringLiteral("next.txt")}));
+
+        GitService git(repo.path(), 1024, 300);
+        QString error;
+        QVERIFY2(!git.commitStaged(QStringLiteral("slow"), &error),
+                 "a write that timed out must not report success");
+        QVERIFY2(error.contains(QStringLiteral("timed out")), qPrintable(error));
+    }
+
+    // File names are exact repository paths, not patterns. A caller passing
+    // "*.txt" must fail to match instead of staging every txt file, while a
+    // real name containing brackets must still be stageable verbatim.
+    void pathspecGlobIsNotExpanded() {
+        TempRepo repo;
+        QVERIFY(repo.valid() && repo.init());
+        QVERIFY(repo.write(QStringLiteral("base.txt"), "base\n"));
+        QVERIFY(repo.addAll() && repo.commit(QStringLiteral("base")));
+        QVERIFY(repo.write(QStringLiteral("a.txt"), "a\n"));
+        QVERIFY(repo.write(QStringLiteral("b.txt"), "b\n"));
+
+        GitService git(repo.path());
+        const QStringList patterns{
+            QStringLiteral("*.txt"),
+            QStringLiteral("a?.txt"),
+            QStringLiteral("[ab].txt")};
+        for (const QString& pattern : patterns) {
+            QString error;
+            QVERIFY2(!git.stage(QStringList{pattern}, &error),
+                     qPrintable(QStringLiteral("pattern %1 must not expand")
+                                    .arg(pattern)));
+            QVERIFY2(!error.isEmpty(), qPrintable(pattern));
+        }
+
+        // Nothing was staged by the pattern attempts.
+        QString error;
+        const auto entries = git.status(QString(), &error);
+        QVERIFY2(error.isEmpty(), qPrintable(error));
+        bool sawA = false;
+        bool sawB = false;
+        for (const GitStatusEntry& entry : entries) {
+            if (entry.path == QStringLiteral("a.txt")) {
+                sawA = true;
+                QCOMPARE(entry.indexStatus, QLatin1Char('?'));
+            } else if (entry.path == QStringLiteral("b.txt")) {
+                sawB = true;
+                QCOMPARE(entry.indexStatus, QLatin1Char('?'));
+            }
+        }
+        QVERIFY(sawA && sawB);
+
+        // A literal bracket in a real file name still works with the prefix
+        // in place: it must not be read as a character class.
+        QVERIFY(repo.write(QStringLiteral("br[1].txt"), "x\n"));
+        QVERIFY2(git.stage(QStringList{QStringLiteral("br[1].txt")}, &error),
+                 qPrintable(error));
+        const auto after = git.status(QString(), &error);
+        bool stagedBracket = false;
+        for (const GitStatusEntry& entry : after) {
+            if (entry.path == QStringLiteral("br[1].txt")) {
+                stagedBracket = true;
+                QCOMPARE(entry.indexStatus, QLatin1Char('A'));
+            }
+        }
+        QVERIFY(stagedBracket);
     }
 
     void outputCapTruncatesDiff() {

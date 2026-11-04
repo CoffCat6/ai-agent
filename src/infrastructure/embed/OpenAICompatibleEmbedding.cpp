@@ -38,6 +38,30 @@ constexpr int kShutdownPollMs = 200;
 // 进程不会打两条重复警告（任务 #22 B2）。
 QAtomicInt g_warnedEmptyApiKey;
 
+// B4-B：嵌入维度一致性校验（与 OllamaEmbedding 同语义）。同一次
+// embed 调用里首批向量确定基准维度，之后跨批的每条向量都必须一致；
+// 异维或空向量都视为失败，调用方必须整体丢弃结果，不得部分写入。
+bool validateVectorDimension(int& expectedDim, int actualDim,
+                             const QString& where) {
+    if (actualDim <= 0) {
+        qWarning().noquote()
+            << "Embedding dimension check failed:" << where
+            << "returned an empty vector";
+        return false;
+    }
+    if (expectedDim < 0) {
+        expectedDim = actualDim;   // 首批确定基准维度
+        return true;
+    }
+    if (actualDim != expectedDim) {
+        qWarning().noquote()
+            << "Embedding dimension mismatch:" << where
+            << "expected" << expectedDim << "actual" << actualDim;
+        return false;
+    }
+    return true;
+}
+
 } // namespace
 
 OpenAICompatibleEmbedding::OpenAICompatibleEmbedding(QObject* parent)
@@ -193,9 +217,22 @@ QVector<QVector<float>> OpenAICompatibleEmbedding::embedBatch(
     embeddings.reserve(texts.size());
     int done = 0;
 
+    // B4-B：整个 run 的基准维度（由首批向量确定，-1 表示尚未确定）。
+    int expectedDim = -1;
+
     // FEAT-803: page the request so one huge document cannot pin the server
     // (or the GUI-facing progress) for the whole import.
-    for (const QStringList& batch : splitBatches(texts, BatchSize)) {
+    const QVector<QStringList> batches = splitBatches(texts, BatchSize);
+    for (int batchIndex = 0; batchIndex < batches.size(); ++batchIndex) {
+        const QStringList& batch = batches.at(batchIndex);
+        // B4-B：空批视为协议失败，不能静默跳过。
+        if (batch.isEmpty()) {
+            qWarning() << "Empty embedding batch at index" << batchIndex;
+            embeddings.clear();
+            return {};
+        }
+        const QString where = QStringLiteral("batch %1/%2")
+                                  .arg(batchIndex + 1).arg(batches.size());
         // 任务 #22：退出标志置位后中止后续批，返回空向量——与"任一批
         // 失败整篇降级"的现有语义一致，调用方照旧整体回退。
         if (embeddingShutdownRequested()) return {};
@@ -301,11 +338,21 @@ QVector<QVector<float>> OpenAICompatibleEmbedding::embedBatch(
                 return {};
             }
             const QJsonArray vec = obj.value("embedding").toArray();
-            if (vec.isEmpty()) return {};   // any hole -> caller falls back wholesale
+            if (vec.isEmpty()) {
+                qWarning() << "Embedding response vector is empty in" << where;
+                embeddings.clear();
+                return {};   // any hole -> caller falls back wholesale
+            }
             QVector<float> embedding;
             embedding.reserve(vec.size());
             for (const auto& val : vec)
                 embedding.append(static_cast<float>(val.toDouble()));
+            // B4-B：本批内每条向量立即校验；异维则整次调用失败并清空
+            // 已收集结果（batchVectors 尚未并入 embeddings）。
+            if (!validateVectorDimension(expectedDim, embedding.size(), where)) {
+                embeddings.clear();   // B4-B：不部分写入
+                return {};
+            }
             batchVectors[index] = std::move(embedding);
         }
 

@@ -29,6 +29,10 @@ OpenAIService::OpenAIService(QObject* parent)
     m_baseUrl = QStringLiteral("https://api.openai.com/v1");
 }
 
+QString OpenAIService::chatCompletionsUrl(const QString& baseUrl) {
+    return joinUrl(baseUrl, QStringLiteral("/chat/completions"));
+}
+
 // Batch 30 (F6): user messages carrying images become multipart content
 // arrays ([text, image_url, ...]); messages without images keep the plain
 // string content — strict OpenAI-compatible gateways must not see arrays
@@ -124,7 +128,7 @@ void OpenAIService::chatComplete(const QJsonArray& messages, const QJsonArray& t
     }
 
     QNetworkRequest request;
-    request.setUrl(QUrl(m_baseUrl + "/chat/completions"));
+    request.setUrl(QUrl(chatCompletionsUrl(m_baseUrl)));
     request.setHeader(QNetworkRequest::ContentTypeHeader, "application/json");
     request.setRawHeader("Authorization", ("Bearer " + m_apiKey).toUtf8());
     request.setRawHeader("Accept", "text/event-stream");

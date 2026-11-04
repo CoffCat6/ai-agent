@@ -20,6 +20,31 @@ namespace {
 // 不能密到空转浪费 CPU）。
 constexpr int kShutdownPollMs = 200;
 
+// B4-B：嵌入维度一致性校验。首批向量确定基准维度，同一次 embed 调用
+// （含跨批）的每条向量都必须与之一致——模型切换或服务异常时若把异维
+// 向量混入同一知识库，检索会按错误维度比较。actual<=0（空向量）同样
+// 视为失败。返回 false 时调用方必须丢弃本次全部结果，不得部分写入。
+bool validateVectorDimension(int& expectedDim, int actualDim,
+                             const QString& where) {
+    if (actualDim <= 0) {
+        qWarning().noquote()
+            << "Embedding dimension check failed:" << where
+            << "returned an empty vector";
+        return false;
+    }
+    if (expectedDim < 0) {
+        expectedDim = actualDim;   // 首批确定基准维度
+        return true;
+    }
+    if (actualDim != expectedDim) {
+        qWarning().noquote()
+            << "Embedding dimension mismatch:" << where
+            << "expected" << expectedDim << "actual" << actualDim;
+        return false;
+    }
+    return true;
+}
+
 } // namespace
 
 OllamaEmbedding::OllamaEmbedding(QObject* parent)
@@ -51,7 +76,10 @@ QVector<float> OllamaEmbedding::embed(const QString& text) {
 
     QJsonDocument doc(body);
     QNetworkRequest request;
-    request.setUrl(QUrl(baseUrl + "/api/embeddings"));
+    QString embedBase = baseUrl;
+    while (embedBase.endsWith(QLatin1Char('/')))
+        embedBase.chop(1);
+    request.setUrl(QUrl(embedBase + "/api/embeddings"));
     request.setHeader(QNetworkRequest::ContentTypeHeader, "application/json");
     request.setTransferTimeout(30000);
 
@@ -96,6 +124,12 @@ QVector<float> OllamaEmbedding::embed(const QString& text) {
     QJsonObject responseObj = responseDoc.object();
     QJsonArray embeddingArray = responseObj.value("embedding").toArray();
 
+    // B4-B：单条调用同样校验（>0）；空向量不能当作有效嵌入返回。
+    if (embeddingArray.isEmpty()) {
+        qWarning() << "Embedding response vector is empty";
+        return embedding;
+    }
+
     embedding.reserve(embeddingArray.size());
     for (const auto& val : embeddingArray) {
         embedding.append(static_cast<float>(val.toDouble()));
@@ -135,9 +169,22 @@ QVector<QVector<float>> OllamaEmbedding::embedBatch(const QStringList& texts) {
     embeddings.reserve(texts.size());
     int done = 0;
 
+    // B4-B：整个 run 的基准维度（由首批向量确定，-1 表示尚未确定）。
+    int expectedDim = -1;
+
     // FEAT-803: page the request so one huge document cannot pin the server
     // (or the GUI-facing progress) for the whole import.
-    for (const QStringList& batch : splitBatches(texts, BatchSize)) {
+    const QVector<QStringList> batches = splitBatches(texts, BatchSize);
+    for (int batchIndex = 0; batchIndex < batches.size(); ++batchIndex) {
+        const QStringList& batch = batches.at(batchIndex);
+        // B4-B：空批视为协议失败，不能静默跳过。
+        if (batch.isEmpty()) {
+            qWarning() << "Empty embedding batch at index" << batchIndex;
+            embeddings.clear();
+            return {};
+        }
+        const QString where = QStringLiteral("batch %1/%2")
+                                  .arg(batchIndex + 1).arg(batches.size());
         // 任务 #22：退出标志置位后中止后续批，返回空向量——与"任一批
         // 失败整篇降级"的现有语义一致，调用方照旧整体回退。
         if (embeddingShutdownRequested()) return {};
@@ -150,7 +197,10 @@ QVector<QVector<float>> OllamaEmbedding::embedBatch(const QStringList& texts) {
         body["input"] = input;
 
         QNetworkRequest request;
-        request.setUrl(QUrl(baseUrl + "/api/embed"));
+        QString embedBase = baseUrl;
+        while (embedBase.endsWith(QLatin1Char('/')))
+            embedBase.chop(1);
+        request.setUrl(QUrl(embedBase + "/api/embed"));
         request.setHeader(QNetworkRequest::ContentTypeHeader, "application/json");
         request.setTransferTimeout(120000);
 
@@ -214,15 +264,29 @@ QVector<QVector<float>> OllamaEmbedding::embedBatch(const QStringList& texts) {
             return {};
         }
 
+        // B4-B：先在本批内完成解析与维度校验，全部合法后才追加到
+        // 结果集——任一向量异维/为空则整次调用失败并清空已收集结果，
+        // 保证调用方永远看不到"部分批次"的向量。
+        QVector<QVector<float>> batchVectors;
+        batchVectors.reserve(batch.size());
         for (const auto& item : array) {
             const QJsonArray vec = item.toArray();
-            if (vec.isEmpty()) return {};   // any hole -> caller falls back wholesale
+            if (vec.isEmpty()) {
+                qWarning() << "Embedding response vector is empty in" << where;
+                embeddings.clear();
+                return {};   // any hole -> caller falls back wholesale
+            }
             QVector<float> embedding;
             embedding.reserve(vec.size());
             for (const auto& val : vec)
                 embedding.append(static_cast<float>(val.toDouble()));
-            embeddings.append(embedding);
+            if (!validateVectorDimension(expectedDim, embedding.size(), where)) {
+                embeddings.clear();   // B4-B：不部分写入
+                return {};
+            }
+            batchVectors.append(embedding);
         }
+        embeddings += batchVectors;
 
         done += batch.size();
         emit embedProgress(done, texts.size());

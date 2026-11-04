@@ -20,6 +20,13 @@ namespace NexusAI {
 // junctions on Windows, so the sandbox needs the native resolver.
 #ifdef Q_OS_WIN
 QString sandboxNativeFinalPath(const QString& path);
+
+// docs/37 B4-D: Windows system directories resolved from the OS instead of a
+// hard-coded "C:\". Reads SystemRoot / windir / ProgramFiles /
+// ProgramFiles(x86) / ProgramW6432 / ProgramData (all drive-agnostic and
+// aware of a custom SystemRoot), with GetWindowsDirectoryW as a fallback.
+// Empty/unset entries are skipped. Returned paths are native-separated.
+QStringList sandboxWindowsSystemDirectories();
 #endif
 
 // Sandbox security validator - enforces path and tool-level restrictions.
@@ -152,6 +159,8 @@ public:
     enum class DenyReason {
         None,          // 放行
         SystemPath,    // 系统目录硬封锁
+        Traversal,     // 路径穿越（".." 段，拒绝先于词法折叠）
+        InvalidPath,   // 非法路径（Windows 保留设备名）
         DenyList,      // 黑名单命中
         ReadPolicy,    // 不在读取允许层
         WritePolicy    // 不在写入允许层
@@ -165,6 +174,21 @@ public:
     // `reason`（可空出参）在拒绝时返回具体层级，供工具拼接提示。
     static bool validatePath(const QString& path, bool isWrite,
                              DenyReason* reason = nullptr) {
+        return validatePathResolved(path, isWrite, nullptr, reason);
+    }
+
+    // docs/37 B4-D: same policy decision as validatePath, but also returns
+    // the canonical path that was actually evaluated (reparse points /
+    // symlinks resolved, deepest existing ancestor + lexical tail for
+    // not-yet-existing targets). A write caller MUST open the returned path
+    // instead of its raw input: if an attacker swaps a junction between
+    // validate and open, the raw link text would follow the new target while
+    // this canonical path stays pinned to the checked destination.
+    // `resolvedPath` is cleared on every denial.
+    static bool validatePathResolved(const QString& path, bool isWrite,
+                                     QString* resolvedPath,
+                                     DenyReason* reason = nullptr) {
+        if (resolvedPath) resolvedPath->clear();
         const auto deny = [reason](DenyReason r) {
             if (reason) *reason = r;
             return false;
@@ -185,17 +209,37 @@ public:
             return deny(DenyReason::SystemPath);
 
         // P0-2: 先锚定相对路径（项目激活时以项目根为基准），再 canonicalize。
-        const QString normalizedPath = cleanPath(resolvePath(path));
+        const QString anchored = resolvePath(path);
 
-        // ── 1. 系统目录硬封锁 ──
-        static const QStringList blockedPaths = {
-            "/etc", "/usr", "/bin", "/sbin", "/boot", "/sys", "/proc",
-            "C:\\Windows", "C:\\Program Files", "C:\\Program Files (x86)"
-        };
+        // docs/37 B4-D: QDir::cleanPath collapses ".." lexically BEFORE any
+        // reparse point is resolved, which is exactly the wrong order on
+        // Windows: opening "C:\proj\junction\..\evil" resolves the junction
+        // first, then "..", and can land outside the project even though the
+        // lexical clean form looks safe. Reject parent segments outright
+        // (both read and write) instead of trusting lexical collapse.
+        if (containsParentSegment(anchored))
+            return deny(DenyReason::Traversal);
+
+        const QString normalizedPath = cleanPath(anchored);
+
+        // ── 1. 系统目录硬封锁（由 OS 环境/GetWindowsDirectory 提供，
+        //    不假设盘符；大小写不敏感比较）──
+        const QStringList blockedPaths = systemBlockedPaths();
         for (const auto& blocked : blockedPaths) {
             if (isWithin(normalizedPath, QDir::toNativeSeparators(blocked)))
                 return deny(DenyReason::SystemPath);
         }
+
+        // Windows 保留设备名（CON/NUL/COM1…）无法创建为普通文件，且某些
+        // 写法会被 Win32 解析到设备对象，绕过目录策略。
+        if (isReservedDeviceName(normalizedPath))
+            return deny(DenyReason::InvalidPath);
+
+        const auto allow = [&]() {
+            if (reason) *reason = DenyReason::None;
+            if (resolvedPath) *resolvedPath = normalizedPath;
+            return true;
+        };
 
         // ── 2. 黑名单（绝对拒绝层，先于任何允许规则）──
         if (isDenied(normalizedPath))
@@ -234,26 +278,20 @@ public:
                 const QString project = currentProjectDir();
                 if (!project.isEmpty()) writeDirs << project;
             }
-            if (withinUserDir(normalizedPath, writeDirs)) {
-                if (reason) *reason = DenyReason::None;
-                return true;
-            }
+            if (withinUserDir(normalizedPath, writeDirs))
+                return allow();
             return deny(DenyReason::WritePolicy);
         }
 
         // Reads: user allowlist ∪ 当前项目目录；FullDisk（黑名单仍生效）
         // 恢复"只拦系统目录"的行为。
-        if (s_readPolicy == ReadPolicy::FullDisk) {
-            if (reason) *reason = DenyReason::None;
-            return true;
-        }
+        if (s_readPolicy == ReadPolicy::FullDisk)
+            return allow();
         const QString activeProject = currentProjectDir();
         if (withinUserDir(normalizedPath, readDirs)
                 || (!activeProject.isEmpty()
-                    && isWithin(normalizedPath, activeProject))) {
-            if (reason) *reason = DenyReason::None;
-            return true;
-        }
+                    && isWithin(normalizedPath, activeProject)))
+            return allow();
         return deny(DenyReason::ReadPolicy);
     }
 
@@ -263,6 +301,14 @@ public:
         case DenyReason::SystemPath:
             return QStringLiteral(
                 "Path blocked: system directories are never accessible");
+        case DenyReason::Traversal:
+            return QStringLiteral(
+                "Path escapes the project root (parent '..' segments are not "
+                "accepted)");
+        case DenyReason::InvalidPath:
+            return QStringLiteral(
+                "Path blocked: invalid path (Windows reserved device names "
+                "are not accepted)");
         case DenyReason::DenyList:
             return QStringLiteral(
                 "Path blocked by the deny list (sensitive files/directories). "
@@ -337,6 +383,74 @@ private:
                 }
             }
         }
+        return false;
+    }
+
+    // docs/37 B4-D: 系统目录来源。Windows 由 OS 提供（SystemRoot 等，
+    // 支持非 C: 系统盘与自定义 SystemRoot）；Unix 用固定 FHS 目录。
+    // 每次调用重新读取环境，确保运行期安装盘变化/测试注入都能生效。
+    static QStringList systemBlockedPaths() {
+#ifdef Q_OS_WIN
+        return sandboxWindowsSystemDirectories();
+#else
+        static const QStringList kUnixSystemDirs = {
+            QStringLiteral("/etc"), QStringLiteral("/usr"),
+            QStringLiteral("/bin"), QStringLiteral("/sbin"),
+            QStringLiteral("/boot"), QStringLiteral("/sys"),
+            QStringLiteral("/proc")
+        };
+        return kUnixSystemDirs;
+#endif
+    }
+
+    // True when the path carries a ".." segment. Checked on the anchored
+    // input BEFORE QDir::cleanPath so a junction followed by ".." can never
+    // be silently re-ordered into a safe-looking lexical path.
+    static bool containsParentSegment(const QString& path) {
+        const QString unified = QDir::fromNativeSeparators(path);
+        const QStringList parts =
+            unified.split(QLatin1Char('/'), Qt::SkipEmptyParts);
+        for (const QString& part : parts) {
+            if (part == QLatin1String(".."))
+                return true;
+        }
+        return false;
+    }
+
+    // Win32 reserved device names are not creatable as ordinary files and can
+    // be interpreted as device objects by some APIs. Check every segment with
+    // the extension/trailing-dot form normalized away (CON.txt == CON).
+    static bool isReservedDeviceName(const QString& path) {
+#ifdef Q_OS_WIN
+        const QStringList parts = QDir::fromNativeSeparators(path)
+            .split(QLatin1Char('/'), Qt::SkipEmptyParts);
+        static const QStringList kFixed = {
+            QStringLiteral("CON"), QStringLiteral("PRN"),
+            QStringLiteral("AUX"), QStringLiteral("NUL"),
+            QStringLiteral("CLOCK$")
+        };
+        for (QString part : parts) {
+            while (!part.isEmpty()
+                   && (part.endsWith(QLatin1Char('.'))
+                       || part.endsWith(QLatin1Char(' ')))) {
+                part.chop(1);
+            }
+            const int dot = part.indexOf(QLatin1Char('.'));
+            const QString base =
+                (dot < 0 ? part : part.left(dot)).toUpper();
+            if (kFixed.contains(base))
+                return true;
+            if (base.size() == 4
+                    && (base.startsWith(QLatin1String("COM"))
+                        || base.startsWith(QLatin1String("LPT")))
+                    && base.at(3) >= QLatin1Char('1')
+                    && base.at(3) <= QLatin1Char('9')) {
+                return true;
+            }
+        }
+#else
+        Q_UNUSED(path);
+#endif
         return false;
     }
 

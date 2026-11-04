@@ -121,7 +121,7 @@ QJsonArray OllamaService::convertMessagesForOllama(const QJsonArray& messages) {
 
 void OllamaService::chatComplete(const QJsonArray& messages, const QJsonArray& tools) {
     QNetworkRequest request;
-    request.setUrl(QUrl(m_baseUrl + "/api/chat"));
+    request.setUrl(QUrl(joinUrl(m_baseUrl, QStringLiteral("/api/chat"))));
     request.setHeader(QNetworkRequest::ContentTypeHeader, "application/json");
     request.setTransferTimeout(300000); // local models can be slow
 

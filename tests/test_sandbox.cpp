@@ -21,6 +21,12 @@ private slots:
     void allowsUserWrites();
     void blocksTraversalIntoSystemDirs();
     void blocksSystemPaths();
+    // docs/37 B4-D: OS-provided system dirs, ".." / reserved names, and the
+    // canonical path returned for TOCTOU-safe writes.
+    void systemDirectoriesFollowEnvironment();
+    void rejectsParentSegments();
+    void rejectsWindowsReservedNames();
+    void validateResolvedReturnsCanonicalTarget();
     void boundaryAwarePrefixMatching();
     void blocksRelativeEscape();
     // docs/17 A1/A4: validateToolCall removed (dead code) - the policy
@@ -86,12 +92,155 @@ void TestSandbox::blocksTraversalIntoSystemDirs() {
 }
 
 void TestSandbox::blocksSystemPaths() {
+    // docs/37 B4-D: system dirs come from the OS (SystemRoot/ProgramFiles),
+    // so this stays valid on non-C: system drives and custom SystemRoot.
+    const QString systemRoot = qEnvironmentVariable("SystemRoot");
+    if (!systemRoot.isEmpty()) {
+        QVERIFY(!Sandbox::validatePath(
+            QDir(systemRoot).filePath(QStringLiteral("System32/config")), false));
+        QVERIFY(!Sandbox::validatePath(
+            QDir(systemRoot).filePath(QStringLiteral("explorer.exe")), true));
+    }
     QVERIFY(!Sandbox::validatePath("C:\\Windows\\System32\\config", false));
     QVERIFY(!Sandbox::validatePath("C:\\Windows\\explorer.exe", true));
 #ifndef Q_OS_WIN
     QVERIFY(!Sandbox::validatePath("/etc/passwd", false));
 #endif
     QVERIFY(!Sandbox::validatePath("C:\\Program Files\\app\\data.txt", true));
+}
+
+// docs/37 B4-D: a system drive other than C: (or a custom SystemRoot) must
+// still be protected — the block list follows the environment, not a
+// hard-coded drive letter. Case-insensitive like the rest of the policy.
+void TestSandbox::systemDirectoriesFollowEnvironment() {
+#ifdef Q_OS_WIN
+    const QByteArray oldRoot = qgetenv("SystemRoot");
+    const QByteArray oldPf = qgetenv("ProgramFiles");
+    const QByteArray oldPf86 = qgetenv("ProgramFiles(x86)");
+    const QByteArray oldData = qgetenv("ProgramData");
+    const auto restore = [](const char* name, const QByteArray& value) {
+        if (value.isNull()) qunsetenv(name);
+        else qputenv(name, value);
+    };
+
+    const QString fakeRoot = QStringLiteral("Q:/nexusai_fake_sysroot");
+    const QString fakePf = QStringLiteral("Q:/nexusai_fake_program_files");
+    const QString fakeData = QStringLiteral("Q:/nexusai_fake_program_data");
+    qputenv("SystemRoot", fakeRoot.toUtf8());
+    qputenv("ProgramFiles", fakePf.toUtf8());
+    qputenv("ProgramFiles(x86)", fakePf.toUtf8());
+    qputenv("ProgramData", fakeData.toUtf8());
+
+    Sandbox::DenyReason reason = Sandbox::DenyReason::None;
+    QVERIFY(!Sandbox::validatePath(
+        fakeRoot + QStringLiteral("/System32/evil.dll"), false, &reason));
+    QCOMPARE(reason, Sandbox::DenyReason::SystemPath);
+    QVERIFY(!Sandbox::validatePath(
+        fakePf + QStringLiteral("/app/data.txt"), true, &reason));
+    QCOMPARE(reason, Sandbox::DenyReason::SystemPath);
+    QVERIFY(!Sandbox::validatePath(
+        fakeData + QStringLiteral("/secret.txt"), false, &reason));
+    QCOMPARE(reason, Sandbox::DenyReason::SystemPath);
+    // Windows path comparison is case-insensitive.
+    QVERIFY(!Sandbox::validatePath(
+        QStringLiteral("q:/NEXUSAI_FAKE_SYSROOT/system32/EVIL.DLL"),
+        false, &reason));
+    QCOMPARE(reason, Sandbox::DenyReason::SystemPath);
+
+    restore("SystemRoot", oldRoot);
+    restore("ProgramFiles", oldPf);
+    restore("ProgramFiles(x86)", oldPf86);
+    restore("ProgramData", oldData);
+#else
+    QSKIP("drive letters / SystemRoot are Windows-specific");
+#endif
+}
+
+// docs/37 B4-D: ".." is rejected before lexical collapse. CleanPath collapses
+// ".." before resolving junctions, which is the wrong order on Windows:
+// opening "proj\\junction\\..\\evil" resolves the junction first and can land
+// outside the project while looking safe lexically.
+void TestSandbox::rejectsParentSegments() {
+    const QString docs =
+        QStandardPaths::writableLocation(QStandardPaths::DocumentsLocation);
+    Sandbox::DenyReason reason = Sandbox::DenyReason::None;
+    QVERIFY(!Sandbox::validatePath(docs + "/a/../b.txt", true, &reason));
+    QCOMPARE(reason, Sandbox::DenyReason::Traversal);
+    QVERIFY(!Sandbox::validatePath(docs + "\\..\\..\\Windows\\evil.dll",
+                                   false, &reason));
+    QCOMPARE(reason, Sandbox::DenyReason::Traversal);
+    // ".." that is part of a file name is not a path segment.
+    QVERIFY(Sandbox::validatePath(docs + "/notes..txt", true, &reason));
+    QCOMPARE(reason, Sandbox::DenyReason::None);
+}
+
+// docs/37 B4-D: Win32 reserved device names can resolve to device objects
+// (or simply be uncreatable); they are rejected deterministically.
+void TestSandbox::rejectsWindowsReservedNames() {
+#ifdef Q_OS_WIN
+    const QString docs =
+        QStandardPaths::writableLocation(QStandardPaths::DocumentsLocation);
+    Sandbox::DenyReason reason = Sandbox::DenyReason::None;
+    QVERIFY(!Sandbox::validatePath(docs + "/CON.txt", true, &reason));
+    QCOMPARE(reason, Sandbox::DenyReason::InvalidPath);
+    QVERIFY(!Sandbox::validatePath(docs + "/sub/AUX", false, &reason));
+    QCOMPARE(reason, Sandbox::DenyReason::InvalidPath);
+    QVERIFY(!Sandbox::validatePath(docs + "/lpt9.log", true, &reason));
+    QCOMPARE(reason, Sandbox::DenyReason::InvalidPath);
+    // Similar-looking ordinary names stay allowed.
+    QVERIFY(Sandbox::validatePath(docs + "/console.txt", true, &reason));
+    QCOMPARE(reason, Sandbox::DenyReason::None);
+#else
+    QSKIP("reserved device names are Windows-specific");
+#endif
+}
+
+// docs/37 B4-D: validatePathResolved returns the canonical path that was
+// checked, so a write tool can open THAT path instead of the raw link text.
+// Not-yet-existing targets resolve parent-canonical + lexical file name.
+void TestSandbox::validateResolvedReturnsCanonicalTarget() {
+    // Declared before the shared helper namespace below, so use an inline
+    // temp dir: must live under Documents (a write-allowlisted location).
+    QTemporaryDir dir(QStandardPaths::writableLocation(
+                          QStandardPaths::DocumentsLocation)
+                      + QStringLiteral("/nexusai-sandboxcanon-XXXXXX"));
+    QVERIFY(dir.isValid());
+    const QString sub = dir.filePath(QStringLiteral("canon"));
+    QVERIFY(QDir().mkpath(sub));
+
+    const auto norm = [](const QString& p) {
+        return QDir::fromNativeSeparators(QDir::cleanPath(p));
+    };
+
+    QString resolved;
+    Sandbox::DenyReason reason = Sandbox::DenyReason::SystemPath;
+    QVERIFY(Sandbox::validatePathResolved(sub + "/new.txt", true,
+                                          &resolved, &reason));
+    QCOMPARE(reason, Sandbox::DenyReason::None);
+    QVERIFY(!resolved.isEmpty());
+    QCOMPARE(QFileInfo(resolved).fileName(), QStringLiteral("new.txt"));
+    QCOMPARE(norm(QFileInfo(resolved).absolutePath())
+                 .compare(norm(sub), Qt::CaseInsensitive), 0);
+
+    // Missing intermediate directories: canonical parent + lexical tail.
+    QVERIFY(Sandbox::validatePathResolved(sub + "/nested/deeper/x.txt", true,
+                                          &resolved, &reason));
+    QVERIFY2(norm(resolved).endsWith(QStringLiteral("/nested/deeper/x.txt"),
+                                     Qt::CaseInsensitive),
+             qPrintable(resolved));
+
+    // Denial must clear the out-param — never hand a stale path to open().
+    resolved = QStringLiteral("stale");
+    QVERIFY(!Sandbox::validatePathResolved(QStringLiteral("C:\\Windows\\evil.txt"),
+                                           true, &resolved, &reason));
+    QCOMPARE(reason, Sandbox::DenyReason::SystemPath);
+    QVERIFY(resolved.isEmpty());
+
+    // The ordinary allowlisted write path still resolves and passes.
+    QVERIFY(Sandbox::validatePathResolved(sub + "/ok.txt", true,
+                                          &resolved, &reason));
+    QCOMPARE(reason, Sandbox::DenyReason::None);
+    QVERIFY(!resolved.isEmpty());
 }
 
 void TestSandbox::boundaryAwarePrefixMatching() {
@@ -159,12 +308,20 @@ void TestSandbox::readsRestrictedToUserDirectories() {
 // Opt-in full-disk reads restore the legacy behavior (system dirs stay
 // blocked); the test restores the default policy afterwards.
 void TestSandbox::fullDiskReadPolicyOptIn() {
+    // docs/37 B4-D: ProgramData is an OS system directory now (it used to be
+    // allowed here because only C:\\Windows / Program Files were hard-coded).
+    const QString outside =
+        QStringLiteral("Q:/nexusai_fulldisk_nowhere/x.txt");
+    QVERIFY(!Sandbox::validatePath(outside, false));
+
     Sandbox::setReadPolicy(Sandbox::ReadPolicy::FullDisk);
-    QVERIFY(Sandbox::validatePath("C:\\ProgramData\\secret.txt", false));
+    QVERIFY(Sandbox::validatePath(outside, false));
     QVERIFY(Sandbox::validatePath(QStandardPaths::writableLocation(
         QStandardPaths::TempLocation) + "/other.txt", false));
     QVERIFY(!Sandbox::validatePath("C:\\Windows\\System32\\config", false)); // still blocked
+    QVERIFY(!Sandbox::validatePath("C:\\ProgramData\\secret.txt", false));   // still blocked
     Sandbox::setReadPolicy(Sandbox::ReadPolicy::UserDirectories);
+    QVERIFY(!Sandbox::validatePath(outside, false));
     QVERIFY(!Sandbox::validatePath("C:\\ProgramData\\secret.txt", false));
 }
 
@@ -209,10 +366,11 @@ void TestSandbox::relativePathsAnchorToProjectRoot() {
              QDir(root).absoluteFilePath(QStringLiteral("src/a.txt")));
     // Anchored relative path now passes the read policy (project subtree).
     QVERIFY(Sandbox::validatePath(QStringLiteral("src/a.txt"), false));
-    // Escape via ".." still rejected (lands outside the project).
+    // Escape via ".." still rejected (B4-D: rejected before lexical collapse,
+    // so a junction cannot re-order the segments during resolution).
     Sandbox::DenyReason reason;
     QVERIFY(!Sandbox::validatePath(QStringLiteral("../../evil.txt"), false, &reason));
-    QCOMPARE(reason, Sandbox::DenyReason::ReadPolicy);
+    QCOMPARE(reason, Sandbox::DenyReason::Traversal);
     // Absolute paths pass through untouched.
     QCOMPARE(Sandbox::resolvePath(root + "/abs.txt"), root + "/abs.txt");
 
@@ -625,6 +783,8 @@ void TestSandbox::devicePathsAreRejected() {
 // docs/22 F4: a directory junction planted inside the project must not
 // tunnel writes to the linked target — the write path canonicalizes the
 // deepest existing ancestor, so the policy matches the real destination.
+// docs/37 B4-D: validatePathResolved additionally returns that canonical
+// destination, which pins the opened path even if the junction is swapped.
 void TestSandbox::junctionParentChainResolvedForWrites() {
 #ifdef Q_OS_WIN
     QTemporaryDir area;
@@ -632,24 +792,28 @@ void TestSandbox::junctionParentChainResolvedForWrites() {
     const QString root = area.filePath(QStringLiteral("project"));
     QVERIFY(QDir().mkpath(root));
 
-    // Junction target outside every write allowlist, but guaranteed to
-    // exist: C:\ProgramData is not under the user profile, not a blocked
-    // system path and not deny-listed.
-    const QFileInfo targetInfo(QStringLiteral("C:\\ProgramData"));
+    // Junction target outside every write allowlist: C:\Users\Public exists,
+    // is not the current user's profile and is neither system-blocked nor
+    // deny-listed (ProgramData is a blocked system dir since B4-D).
+    const QFileInfo targetInfo(QStringLiteral("C:\\Users\\Public"));
     if (!targetInfo.isDir())
-        QSKIP("C:\\ProgramData unavailable in this environment");
+        QSKIP("C:\\Users\\Public unavailable in this environment");
+
+    const auto makeJunction = [](const QString& link, const QString& target) {
+        QProcess mklink;
+        // mklink is a cmd builtin that rejects forward slashes ("invalid
+        // switch") — both paths must be native-separated.
+        mklink.start(QStringLiteral("cmd.exe"),
+                     {QStringLiteral("/c"), QStringLiteral("mklink"),
+                      QStringLiteral("/J"),
+                      QDir::toNativeSeparators(link),
+                      QDir::toNativeSeparators(target)});
+        return mklink.waitForFinished(5000)
+            && QFileInfo(link).exists();
+    };
 
     const QString link = root + QStringLiteral("\\link");
-    QProcess mklink;
-    // mklink is a cmd builtin that rejects forward slashes ("invalid
-    // switch") — both paths must be native-separated.
-    mklink.start(QStringLiteral("cmd.exe"),
-                 {QStringLiteral("/c"), QStringLiteral("mklink"),
-                  QStringLiteral("/J"),
-                  QDir::toNativeSeparators(link),
-                  QDir::toNativeSeparators(targetInfo.absoluteFilePath())});
-    QVERIFY(mklink.waitForFinished(5000));
-    if (!QFileInfo(link).exists())
+    if (!makeJunction(link, targetInfo.absoluteFilePath()))
         QSKIP("mklink /J unavailable in this environment");
 
     Sandbox::setProjectDir(root);
@@ -658,10 +822,12 @@ void TestSandbox::junctionParentChainResolvedForWrites() {
     Sandbox::DenyReason reason = Sandbox::DenyReason::None;
     // Pre-fix: the not-yet-existing file kept the junction path text, which
     // sits inside the project -> wrongly allowed. Post-fix the ancestor
-    // chain resolves through the junction to C:\ProgramData -> refused.
-    QVERIFY(!Sandbox::validatePath(link + QStringLiteral("\\stolen.txt"),
-                                   true, &reason));
+    // chain resolves through the junction to C:\Users\Public -> refused.
+    QString resolved;
+    QVERIFY(!Sandbox::validatePathResolved(link + QStringLiteral("\\stolen.txt"),
+                                           true, &resolved, &reason));
     QCOMPARE(reason, Sandbox::DenyReason::WritePolicy);
+    QVERIFY(resolved.isEmpty());
     // Deeper: a missing subdirectory inside the junction resolves too.
     QVERIFY(!Sandbox::validatePath(
         link + QStringLiteral("\\sub\\stolen.txt"), true));
@@ -675,6 +841,48 @@ void TestSandbox::junctionParentChainResolvedForWrites() {
                                   true));
     QVERIFY(Sandbox::validatePath(root + QStringLiteral("\\a\\b\\c\\new.txt"),
                                   true));
+
+    // TOCTOU simulation: validate while the junction points INSIDE an
+    // allowed directory, then swap the junction to an out-of-allowlist
+    // target. The canonical path returned by the successful check stays
+    // pinned to the checked destination; the raw link text would have
+    // followed the new target.
+    const QString allowedTarget = area.filePath(QStringLiteral("allowed-target"));
+    QVERIFY(QDir().mkpath(allowedTarget));
+    const QString swapLink = root + QStringLiteral("\\swaplink");
+    if (makeJunction(swapLink, allowedTarget)) {
+        QString checkedPath;
+        QVERIFY2(Sandbox::validatePathResolved(swapLink + QStringLiteral("\\f.txt"),
+                                               true, &checkedPath, &reason),
+                 qPrintable(Sandbox::denialHint(reason)));
+        QCOMPARE(reason, Sandbox::DenyReason::None);
+
+        // Swap the junction to a forbidden destination.
+        QVERIFY(QDir().rmdir(swapLink));
+        if (makeJunction(swapLink, targetInfo.absoluteFilePath())) {
+            QVERIFY(!Sandbox::validatePath(swapLink + QStringLiteral("\\f.txt"),
+                                           true, &reason));
+            // The previously returned canonical path still points at the
+            // checked (allowed) destination, not the swapped one.
+            const QString canonicalChecked =
+                QDir::fromNativeSeparators(QDir::cleanPath(checkedPath));
+            const QString canonicalAllowed =
+                QDir::fromNativeSeparators(QDir::cleanPath(allowedTarget));
+            QVERIFY2(canonicalChecked.startsWith(
+                         canonicalAllowed + QLatin1Char('/'), Qt::CaseInsensitive),
+                     qPrintable(checkedPath));
+        } else {
+            qWarning("mklink /J re-target unavailable; TOCTOU swap not exercised");
+        }
+    } else {
+        qWarning("mklink /J second junction unavailable; TOCTOU swap not exercised");
+    }
+
+    // Remove the reparse points before the temp dir goes away: deleting a
+    // junction through a recursive directory remove can fail and leaves the
+    // QTemporaryDir uncleanable.
+    QDir().rmdir(link);
+    QDir().rmdir(swapLink);
 
     Sandbox::setProjectWriteEnabled(false);
     Sandbox::setProjectDir(QString());

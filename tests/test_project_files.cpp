@@ -9,6 +9,7 @@
 #include <QDir>
 #include <QFile>
 #include <QFileInfo>
+#include <QProcess>
 #include <QTextStream>
 #include <QtTest>
 
@@ -315,7 +316,7 @@ private slots:
             m_root->path(), QStringLiteral("no mentions")).isEmpty());
     }
 
-private:
+private slots:
     // ── file browser: listDir ───────────────────────────
 
     // A listing shows what a file manager would show, which is deliberately
@@ -495,6 +496,57 @@ private:
         const auto noProject = ProjectFileIndex::readFilePreview(
             QString(), QStringLiteral("a.txt"));
         QCOMPARE(noProject.error, QStringLiteral("no-project"));
+    }
+
+    // A link that lives inside the project but targets a file outside it must
+    // be rejected. This is the difference between the lexical path that
+    // resolveUnderRoot sees and the canonical target the OS actually opens.
+    void previewRejectsSymlinkEscape() {
+        QTemporaryDir outside;
+        QVERIFY(outside.isValid());
+        writeFileOutside(outside.path(), "secret.txt", "outside");
+
+        const QString link = m_root->path() + QStringLiteral("/linked");
+        if (!createEscapeLink(link, outside.path()))
+            QSKIP("symbolic links/junctions are not available on this filesystem");
+
+        const auto preview = ProjectFileIndex::readFilePreview(
+            m_root->path(), QStringLiteral("linked/secret.txt"));
+        QCOMPARE(preview.error, QStringLiteral("outside"));
+        QVERIFY(preview.text.isEmpty());
+
+        // A normal file inside the project is still readable in the same
+        // canonical-checking code path.
+        writeFile("inside.txt", "inside\n");
+        const auto normal = ProjectFileIndex::readFilePreview(
+            m_root->path(), QStringLiteral("inside.txt"));
+        QVERIFY2(normal.error.isEmpty(), qPrintable(normal.error));
+        QCOMPARE(normal.text, QStringLiteral("inside\n"));
+    }
+
+    private:
+    // Returns true when `link` resolves to `target`. Tries a Windows junction
+    // first (no administrator rights needed) and falls back to QFile::link.
+    bool createEscapeLink(const QString& link, const QString& target) {
+#if defined(Q_OS_WIN)
+        QProcess process;
+        process.setProgram(QStringLiteral("cmd"));
+        process.setArguments({
+            QStringLiteral("/c"), QStringLiteral("mklink"),
+            QStringLiteral("/J"),
+            QDir::toNativeSeparators(link),
+            QDir::toNativeSeparators(target)});
+        process.start();
+        if (!process.waitForStarted(3000)) return false;
+        if (!process.waitForFinished(5000)) {
+            process.kill();
+            return false;
+        }
+        return process.exitCode() == 0 && QFileInfo(link).isDir();
+#else
+        if (!QFile::link(target, link)) return false;
+        return QFileInfo(link).isDir();
+#endif
     }
 
     void writeFile(const QString& relative, const QByteArray& content) {

@@ -119,6 +119,41 @@ void LLMServiceBase::configure(const LlmProfileConfig& cfg) {
     applyProfileParams(cfg);
 }
 
+QString LLMServiceBase::joinUrl(const QString& base, const QString& path) {
+    // path 统一成绝对路径，兼容调用方/配置里省略前导斜杠的写法。
+    QString normalizedPath = path;
+    if (!normalizedPath.startsWith(QLatin1Char('/')))
+        normalizedPath.prepend(QLatin1Char('/'));
+
+    // 去掉 base 尾部所有 "/"：避免 "https://x//" 与 path 拼出 "//v1"。
+    QString normalizedBase = base;
+    while (normalizedBase.endsWith(QLatin1Char('/')))
+        normalizedBase.chop(1);
+
+    if (normalizedBase.isEmpty())
+        return normalizedPath;
+
+    // base 已含版本前缀而 path 也带同一前缀时，只保留 base 的那一份。
+    // 不能只认 "/v1"：Gemini 常见配置以 /v1beta 结尾，Ollama 兼容网关则
+    // 可能以 /api 结尾；漏掉它们会拼出 /v1beta/v1beta/... 或 /api/api/...。
+    const int lastSlash = normalizedBase.lastIndexOf(QLatin1Char('/'));
+    const QString baseTail = lastSlash >= 0 ? normalizedBase.mid(lastSlash + 1)
+                                            : normalizedBase;
+    const bool versionLike =
+        baseTail == QLatin1String("api")
+        || (baseTail.size() >= 2 && baseTail.at(0) == QLatin1Char('v')
+            && baseTail.at(1).isDigit());
+    if (versionLike) {
+        const QString duplicate = QLatin1Char('/') + baseTail + QLatin1Char('/');
+        if (normalizedPath.startsWith(duplicate))
+            normalizedPath.remove(0, baseTail.size() + 1);
+        else if (normalizedPath == QLatin1Char('/') + baseTail)
+            normalizedPath.clear();
+    }
+
+    return normalizedBase + normalizedPath;
+}
+
 void LLMServiceBase::startReply(QNetworkRequest& request, const QByteArray& body) {
     auto ctx = LLMRequestContextPtr::create();
     ctx->requestId = ++m_lastRequestId;
