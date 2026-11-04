@@ -29,6 +29,9 @@ public:
         QString description;
         QString body;
         QStringList allowedTools;
+        // docs/38 §3：加载时见到 `allowed-tools` 键即为 true（即使值为空），
+        // 保存时据此决定是否写出 `allowed-tools: []`。
+        bool allowedToolsSpecified{false};
     };
 
     // 合法 id：1..64 个字符，首字符为字母或数字，其余允许 . _ -；

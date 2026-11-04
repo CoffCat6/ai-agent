@@ -75,6 +75,7 @@ private slots:
     void validateBodyEnforcesLimit();
     void rootsResolve();
     void roundTrip();
+    void declaredEmptyAllowedToolsRoundTrip();
     void overwriteRequiresFlagAndCreatesBackup();
     void rejectsFrontmatterInjection();
     void loadRejectsMissingAndInvalid();
@@ -159,7 +160,58 @@ void TestSkillsEditor::roundTrip() {
     QCOMPARE(loaded.name, draft.name);
     QCOMPARE(loaded.description, draft.description);
     QCOMPARE(loaded.allowedTools, draft.allowedTools);
+    QVERIFY(loaded.allowedToolsSpecified);
     QCOMPARE(loaded.body, draft.body);
+}
+
+// docs/38 §3：加载到 `allowed-tools` 键即保留“已声明”；已声明的空列表保存
+// 为 `allowed-tools: []`，未声明则省略该键。
+void TestSkillsEditor::declaredEmptyAllowedToolsRoundTrip() {
+    QTemporaryDir root;
+    QVERIFY(root.isValid());
+
+    const QString id = QStringLiteral("empty-list");
+    const QString filePath = skillFilePath(root.path(), id);
+    QVERIFY(writeFile(filePath,
+                      "---\nname: empty-list\ndescription: 禁止全部\n"
+                      "allowed-tools: []\n---\nbody\n"));
+
+    SkillEditorService::Draft loaded;
+    QString error;
+    QVERIFY2(SkillEditorService::load(root.path(), id, &loaded, &error),
+             qPrintable(error));
+    QVERIFY(loaded.allowedToolsSpecified);
+    QVERIFY(loaded.allowedTools.isEmpty());
+
+    // 原样保存：空但已声明必须写出 `allowed-tools: []`。
+    QVERIFY2(SkillEditorService::save(root.path(), loaded, true, &error),
+             qPrintable(error));
+    const QByteArray content = readFile(filePath);
+    QVERIFY(content.contains("allowed-tools: []"));
+
+    SkillEditorService::Draft reloaded;
+    QVERIFY2(SkillEditorService::load(root.path(), id, &reloaded, &error),
+             qPrintable(error));
+    QVERIFY(reloaded.allowedToolsSpecified);
+    QVERIFY(reloaded.allowedTools.isEmpty());
+    QCOMPARE(reloaded.body, loaded.body);
+
+    // 未声明 + 空列表：省略键，重新加载后 specified=false。
+    SkillEditorService::Draft undeclared;
+    undeclared.id = QStringLiteral("undeclared");
+    undeclared.body = QStringLiteral("body\n");
+    QVERIFY2(SkillEditorService::save(root.path(), undeclared, false, &error),
+             qPrintable(error));
+    const QByteArray undeclaredContent =
+        readFile(skillFilePath(root.path(), undeclared.id));
+    QVERIFY(!undeclaredContent.contains("allowed-tools"));
+
+    SkillEditorService::Draft undeclaredLoaded;
+    QVERIFY2(SkillEditorService::load(root.path(), undeclared.id, &undeclaredLoaded,
+                                      &error),
+             qPrintable(error));
+    QVERIFY(!undeclaredLoaded.allowedToolsSpecified);
+    QVERIFY(undeclaredLoaded.allowedTools.isEmpty());
 }
 
 void TestSkillsEditor::overwriteRequiresFlagAndCreatesBackup() {

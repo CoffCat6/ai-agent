@@ -102,6 +102,19 @@ QString argsToString(const QJsonObject& args) {
     return argsToWire(args);
 }
 
+// docs/38 §2：allowed-tools 名称规范化。去掉首尾空白、大小写不敏感；
+// 形如 `shell_exec(git diff)` 的条目只按工具名匹配，取第一个 '(' 前；
+// `mcp__server__tool` 不做括号切分（MCP 名称原样保留，仅统一大小写）。
+QString normalizeSkillToolName(const QString& name) {
+    QString normalized = name.trimmed().toLower();
+    if (normalized.startsWith(QLatin1String("mcp__")))
+        return normalized;
+    const qsizetype paren = normalized.indexOf(QLatin1Char('('));
+    if (paren >= 0)
+        normalized = normalized.left(paren).trimmed();
+    return normalized;
+}
+
 // CITE-801 (docs/20 §5.1): 知识库非空判定。系统提示词里的引用溯源约定
 // 只在库里真有文档时才注入（空库注入纯属浪费 token）。判定经注册的
 // search_knowledge_base 工具实例回查 RagService —— AIAgent 不直接持有
@@ -454,9 +467,91 @@ QString AIAgent::activeSkillsBlock() const {
         out += QStringLiteral("\n</skill>\n");
         ++emitted;
     }
-    if (emitted == 0) return QString();
-    out += QStringLiteral("</skills>");
+    const bool restricted = activeSkillsRestrictTools();
+    // 没有正文且不限制工具时保持旧行为：不产生空的技能块。
+    if (emitted == 0 && !restricted) return QString();
+    if (emitted == 0) {
+        // 只有白名单、没有正文：丢弃已写入的空 “已引用技能/<skills>”
+        // 前缀，避免产生未闭合的 <skills> 标签。
+        out.clear();
+    } else {
+        out += QStringLiteral("</skills>");
+    }
+    // docs/38 §4：限制模式下把本轮允许集合写进系统提示（排序去重）。
+    // 不限制时完全不追加，避免给旧会话增加无意义 token。
+    if (restricted) {
+        out += QStringLiteral(
+                   "\n\n## 本轮允许工具\n<allowed-tools>\n%1\n</allowed-tools>\n"
+                   "未列出的工具不要调用。")
+                   .arg(activeSkillPromptTools().join(QStringLiteral(", ")));
+    }
     return out;
+}
+
+// docs/38 §2：allowed-tools 白名单语义。
+// - 没有任何技能，或没有任何技能声明 allowed-tools → 不限制。
+// - 至少一个已声明 → 允许集合 = 所有已声明技能的并集；`[]` 即空集合。
+// - todo_write 始终允许；spawn_agent 单向成组放行三个后台控制工具。
+bool AIAgent::activeSkillsRestrictTools() const {
+    return std::any_of(m_activeSkills.cbegin(), m_activeSkills.cend(),
+                       [](const Skill& skill) {
+                           return skill.allowedToolsSpecified;
+                       });
+}
+
+QStringList AIAgent::activeSkillAllowedTools() const {
+    if (!activeSkillsRestrictTools()) return QStringList();
+
+    QSet<QString> allowed;
+    for (const Skill& skill : m_activeSkills) {
+        // 未声明 allowed-tools 的技能只注入正文，不扩大工具集。
+        if (!skill.allowedToolsSpecified) continue;
+        for (const QString& tool : skill.allowedTools) {
+            const QString normalized = normalizeSkillToolName(tool);
+            if (!normalized.isEmpty())
+                allowed.insert(normalized);
+        }
+    }
+    // 任务进度管理是元工具，不构成外部能力，始终放行。
+    allowed.insert(QStringLiteral("todo_write"));
+    // spawn_agent 与后台任务控制工具成组放行（仅单向：列控制工具
+    // 不会反向放行 spawn_agent）。
+    if (allowed.contains(QStringLiteral("spawn_agent"))) {
+        allowed.insert(QStringLiteral("subagent_wait"));
+        allowed.insert(QStringLiteral("subagent_status"));
+        allowed.insert(QStringLiteral("subagent_cancel"));
+    }
+
+    QStringList out;
+    out.reserve(allowed.size());
+    for (const QString& name : allowed)
+        out.append(name);
+    out.sort();
+    return out;
+}
+
+QStringList AIAgent::activeSkillPromptTools() const {
+    if (!activeSkillsRestrictTools()) return QStringList();
+    const QStringList declared = activeSkillAllowedTools();
+    if (!m_toolRegistry) return declared;
+
+    // 提示必须与实际下发的 schema 同源，否则会出现“允许列表里有 X，
+    // 但 X 未注册/被禁用/localOnly 被拦”的误导。
+    QStringList out;
+    for (const ToolDefinition& def : m_toolRegistry->listAll()) {
+        if (def.level == ToolLevel::Dangerous) continue;
+        if (!m_toolRegistry->isToolUsable(def.name)) continue;
+        if (!toolAllowedForModel(def.name)) continue;
+        if (!declared.contains(normalizeSkillToolName(def.name))) continue;
+        out.append(def.name);
+    }
+    out.sort();
+    return out;
+}
+
+bool AIAgent::toolAllowedByActiveSkills(const QString& name) const {
+    if (!activeSkillsRestrictTools()) return true;
+    return activeSkillAllowedTools().contains(normalizeSkillToolName(name));
 }
 
 // G3: the seed template written when a project is imported. A file whose
@@ -1658,6 +1753,9 @@ void AIAgent::processIteration() {
             // the wire - the acceptance criterion is that the request body
             // contains no schema for the gated tool at all.
             if (!m_toolRegistry->isToolUsable(def.name) || !toolAllowedForModel(def.name)) continue;
+            // docs/38 W6-2：技能白名单与既有门取交集，未授权工具连 schema
+            // 都不下发（与 disabled/localOnly 的“不上线”语义一致）。
+            if (!toolAllowedByActiveSkills(def.name)) continue;
             QJsonObject toolObj;
             toolObj["type"] = "function";
             QJsonObject fn;
@@ -1764,6 +1862,7 @@ int AIAgent::estimateReservedTokensForNextRequest() const {
     for (const auto& def : m_toolRegistry->listAll()) {
         if (def.level == ToolLevel::Dangerous) continue;
         if (!m_toolRegistry->isToolUsable(def.name) || !toolAllowedForModel(def.name)) continue;
+        if (!toolAllowedByActiveSkills(def.name)) continue;
         QJsonObject toolObj;
         toolObj["type"] = "function";
         QJsonObject fn;
@@ -2599,6 +2698,26 @@ void AIAgent::processNextToolCall() {
             continue;
         }
 
+        // docs/38 W6-2：技能白名单是硬闸。即便模型凭空发出未授权调用，
+        // 也必须补 tool 结果保持 call/tool 配对，并留下审计（只记工具名，
+        // 不落技能正文）。
+        if (!toolAllowedByActiveSkills(call.name)) {
+            const QString allowed =
+                activeSkillAllowedTools().join(QStringLiteral(", "));
+            appendTraceNode("tool_call", call.name, "failed",
+                            QJsonObject{{"args", argsToString(call.arguments)}});
+            appendToolResultMessage(call,
+                QStringLiteral("Error: tool '%1' is not allowed by the referenced "
+                               "skill(s). Allowed tools: %2")
+                    .arg(call.name, allowed));
+            if (m_memory)
+                m_memory->logAudit(m_sessionId, "tool_not_allowed_by_skill",
+                                   call.name, argsToString(call.arguments), false,
+                                   allowed, m_activeRequestId, m_lastLatencyMs,
+                                   m_lastTokensUsed, currentModel());
+            continue;
+        }
+
         const ToolDefinition def = tool->definition();
 
         // G1: PlanOnly is a hard read-only gate. Safe tools always pass;
@@ -3228,6 +3347,25 @@ void AIAgent::approveToolCall(const QString& id, bool approved) {
                                argsToString(call.arguments), false,
                                QStringLiteral("user declined execution"),
                                m_activeRequestId, m_lastLatencyMs,
+                               m_lastTokensUsed, currentModel());
+        processNextToolCall();
+        return;
+    }
+
+    // docs/38 W6-2（防御性）：正常路径下未授权调用根本不会进入确认队列，
+    // 但权限/技能状态可能在挂起期间变化。拒绝时同样保持 call/tool 配对。
+    if (!toolAllowedByActiveSkills(call.name)) {
+        const QString allowed =
+            activeSkillAllowedTools().join(QStringLiteral(", "));
+        updateTraceNodeStatusById(nodeId, "failed");
+        appendToolResultMessage(call,
+            QStringLiteral("Error: tool '%1' is not allowed by the referenced "
+                           "skill(s). Allowed tools: %2")
+                .arg(call.name, allowed));
+        if (m_memory)
+            m_memory->logAudit(m_sessionId, "tool_not_allowed_by_skill",
+                               call.name, argsToString(call.arguments), false,
+                               allowed, m_activeRequestId, m_lastLatencyMs,
                                m_lastTokensUsed, currentModel());
         processNextToolCall();
         return;

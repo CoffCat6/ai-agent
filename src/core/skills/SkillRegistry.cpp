@@ -158,6 +158,8 @@ struct FrontmatterMeta {
     QString name;
     QString description;
     QStringList allowedTools;
+    // docs/38 §3：键存在即视为已声明，即使值为空（`allowed-tools: []`）。
+    bool allowedToolsSpecified{false};
     qint64 maxBytes{-1};
     int bodyOffset{0}; // frontmatter 结束后的字符位置（body 起点）
 };
@@ -205,6 +207,7 @@ FrontmatterMeta parseFrontmatter(const QString& text) {
         } else if (key == QLatin1String("description")) {
             meta.description = value;
         } else if (key == QLatin1String("allowed-tools")) {
+            meta.allowedToolsSpecified = true;
             meta.allowedTools = parseAllowedTools(value);
         } else if (key == QLatin1String("max-bytes")) {
             bool ok = false;
@@ -278,6 +281,7 @@ bool loadSkill(const QString& id, const QString& canonicalPath, SkillSource sour
     skill.bytes = fileSize;
     skill.truncated = truncated;
     skill.allowedTools = meta.allowedTools;
+    skill.allowedToolsSpecified = meta.allowedToolsSpecified;
 
     skill.name = meta.name.trimmed();
     if (skill.name.isEmpty())

@@ -301,6 +301,17 @@ private:
     QString projectContextBlock() const;
     // docs/37 W3：`## 已引用技能` 块（空列表或全空正文时返回空串）。
     QString activeSkillsBlock() const;
+    // docs/38 W6-2：本轮已引用技能的 allowed-tools 白名单。
+    // 没有任何技能声明 allowed-tools 时返回 true（不限制）；
+    // 名称匹配 trim、大小写不敏感、取第一个 '(' 前（mcp__* 保持原样）。
+    bool toolAllowedByActiveSkills(const QString& name) const;
+    // 限制模式下的允许集合（排序去重，含始终放行的 todo_write 与
+    // spawn_agent 成组放行的 subagent_* 控制工具）；未限制时返回空。
+    QStringList activeSkillAllowedTools() const;
+    // 与 schema 同源：声明集合 ∩ 已注册 ∩ 可用 ∩ 模型策略。
+    QStringList activeSkillPromptTools() const;
+    // 是否存在至少一个 allowedToolsSpecified 的技能（即进入限制模式）。
+    bool activeSkillsRestrictTools() const;
     QString appendTraceNode(const QString& type, const QString& title,
                             const QString& status, const QJsonObject& extra = {});
     void updateLastNodeStatus(const QString& status);

@@ -290,7 +290,31 @@ bool traceHas(const QJsonArray& trace, const QString& type,
     return false;
 }
 
-// Every assistant message announcing tool_calls must be followed by tool
+// docs/38 W6-2：把下发的 tools 数组收敛为工具名集合，便于整集比较。
+QSet<QString> toolsArrayNames(const QJsonArray& tools) {
+    QSet<QString> names;
+    for (const auto& entry : tools) {
+        const QJsonObject def = entry.toObject();
+        const QString name = def.value("function").toObject()
+                                 .value("name").toString();
+        if (!name.isEmpty()) names.insert(name);
+    }
+    return names;
+}
+
+// docs/38 W6-2：构造一个声明了 allowed-tools 的测试技能（非空正文以进入
+// `## 已引用技能` 块）。
+Skill skillWithAllowedTools(const QString& id, const QStringList& tools,
+                            bool specified = true) {
+    Skill skill;
+    skill.id = id;
+    skill.name = id;
+    skill.source = SkillSource::Project;
+    skill.body = QStringLiteral("Body of %1.").arg(id);
+    skill.allowedTools = tools;
+    skill.allowedToolsSpecified = specified;
+    return skill;
+}
 // result messages covering all its ids - a dangling sequence is invalid for
 // the OpenAI wire format and derails proxies on the next user turn.
 bool noDanglingToolCalls(const QJsonArray& messages) {
@@ -668,6 +692,30 @@ struct WebToolsGuard {
         ToolRegistry::instance().takeTool(QStringLiteral("web_search"));
         ToolRegistry::instance().takeTool(QStringLiteral("http_fetch"));
     }
+};
+
+// docs/38 W6-2：spawn_agent 与后台控制工具在真实应用里由 main.cpp 注册，
+// 单测按需登记并在守卫析构时只摘除自己新增的那些（不误删邻居夹具）。
+class SubAgentToolsetGuard {
+public:
+    SubAgentToolsetGuard() {
+        add(QStringLiteral("spawn_agent"), std::make_shared<SubAgentTool>());
+        add(QStringLiteral("subagent_wait"), std::make_shared<SubAgentWaitTool>());
+        add(QStringLiteral("subagent_status"), std::make_shared<SubAgentStatusTool>());
+        add(QStringLiteral("subagent_cancel"), std::make_shared<SubAgentCancelTool>());
+    }
+    ~SubAgentToolsetGuard() {
+        for (const QString& name : m_added)
+            ToolRegistry::instance().takeTool(name);
+    }
+
+private:
+    void add(const QString& name, std::shared_ptr<ITool> tool) {
+        if (ToolRegistry::instance().isRegistered(name)) return;
+        ToolRegistry::instance().registerTool(std::move(tool));
+        m_added.append(name);
+    }
+    QStringList m_added;
 };
 
 void ensureNetworkTools() {
@@ -1071,6 +1119,15 @@ private slots:
     void systemPromptOverrideReachesRequest();
     // docs/37 W3：$ 引用技能注入系统提示 + metadata/审计 + 8KB/32KB 截断。
     void skillInjectionAndBudget();
+    // docs/38 W6-2：allowed-tools 白名单对 schema / 派发 / 系统提示生效。
+    void skillAllowedToolsFiltersSchema();
+    void skillAllowedToolsRejectsUnlistedCall();
+    void skillAllowedToolsEmptyAllowsOnlyTodo();
+    void skillAllowedToolsUnionAcrossSkills();
+    void skillAllowedToolsSpawnGroup();
+    void skillAllowedToolsUnrestrictedUnchanged();
+    void skillAllowedToolsPromptAndNormalization();
+    void skillAllowedToolsEmptyBodyPromptIsWellFormed();
 
     // docs/15 §6.1.2: model-switch context-window adaptation
     void testSwitchToLargerWindowRestoresHistory();
@@ -4350,7 +4407,219 @@ void TestAgent::skillInjectionAndBudget() {
     agent.resetSession();
 }
 
-// ── docs/15 §6.1.2: model-switch context-window adaptation ──
+// docs/38 W6-2：白名单只把允许工具（并集 + todo_write）暴露到请求 schema，
+// 未授权工具连 schema 都不下发；同时验证名称规范化（大小写、括号参数）。
+void TestAgent::skillAllowedToolsFiltersSchema() {
+    agent.setLocalOnlyMode(false);
+    agent.setActiveSkills({skillWithAllowedTools(
+        QStringLiteral("review"),
+        {QStringLiteral("read_file"),
+         QStringLiteral(" git_diff (git diff) "),
+         QStringLiteral("READ_FILE")})});
+
+    llm.reset();
+    llm.script.append(textResponse(QStringLiteral("ok")));
+    QSignalSpy spy(&agent, &AIAgent::responseReady);
+    agent.startTask(QStringLiteral("go"));
+    QTRY_COMPARE_WITH_TIMEOUT(spy.count(), 1, 15000);
+
+    const QSet<QString> names = toolsArrayNames(llm.seenTools.first());
+    QSet<QString> expected{QStringLiteral("read_file"),
+                           QStringLiteral("git_diff"),
+                           QStringLiteral("todo_write")};
+    QCOMPARE(names, expected);
+    QVERIFY(!names.contains(QStringLiteral("write_file")));
+    QVERIFY(!names.contains(QStringLiteral("shell_exec")));
+    agent.clearActiveSkills();
+}
+
+// docs/38 W6-2：模型凭空调用未授权工具时必须拒绝、写审计，且 call/tool
+// 配对保持完整，任务继续收敛到最终回答。
+void TestAgent::skillAllowedToolsRejectsUnlistedCall() {
+    SqliteMemory memory(QStringLiteral(":memory:"));
+    agent.setMemory(&memory);
+    agent.setLocalOnlyMode(false);
+    agent.setActiveSkills({skillWithAllowedTools(
+        QStringLiteral("review"), {QStringLiteral("read_file")})});
+
+    llm.reset();
+    llm.script.append(toolResponse(
+        QStringLiteral("write_file"),
+        QJsonObject{{QStringLiteral("path"), QStringLiteral("D:/tmp/nope.txt")},
+                    {QStringLiteral("content"), QStringLiteral("x")}}));
+    llm.script.append(textResponse(QStringLiteral("done")));
+
+    QSignalSpy spy(&agent, &AIAgent::responseReady);
+    agent.startTask(QStringLiteral("go"));
+    QTRY_COMPARE_WITH_TIMEOUT(spy.count(), 1, 15000);
+
+    const QString toolContent = lastToolMessageContent(llm.seenMessages.last());
+    QVERIFY2(toolContent.contains(
+                 QStringLiteral("not allowed by the referenced skill(s)")),
+             qPrintable(toolContent));
+    QVERIFY(toolContent.contains(QStringLiteral("read_file")));
+    QVERIFY(toolContent.contains(QStringLiteral("todo_write")));
+    QVERIFY(traceHas(agent.traceModel(), QStringLiteral("tool_call"),
+                     QStringLiteral("write_file")));
+    QVERIFY2(noDanglingToolCalls(agent.messages()),
+             "skill rejection must keep tool_call/tool pairing intact");
+    QCOMPARE(auditCountByEvent(memory.auditLog(50),
+                               QStringLiteral("tool_not_allowed_by_skill")), 1);
+
+    agent.clearActiveSkills();
+    agent.setMemory(nullptr);
+}
+
+// docs/38 §2：`allowed-tools: []` 是“声明了空集合”，只允许元工具。
+void TestAgent::skillAllowedToolsEmptyAllowsOnlyTodo() {
+    agent.setLocalOnlyMode(false);
+    agent.setActiveSkills({skillWithAllowedTools(
+        QStringLiteral("locked"), {}, /*specified=*/true)});
+
+    llm.reset();
+    llm.script.append(textResponse(QStringLiteral("ok")));
+    QSignalSpy spy(&agent, &AIAgent::responseReady);
+    agent.startTask(QStringLiteral("go"));
+    QTRY_COMPARE_WITH_TIMEOUT(spy.count(), 1, 15000);
+
+    QCOMPARE(toolsArrayNames(llm.seenTools.first()),
+             QSet<QString>{QStringLiteral("todo_write")});
+    agent.clearActiveSkills();
+}
+
+// docs/38 §2：多个技能取“已声明”技能的并集；未声明技能不扩大工具集。
+void TestAgent::skillAllowedToolsUnionAcrossSkills() {
+    agent.setLocalOnlyMode(false);
+    agent.setActiveSkills({
+        skillWithAllowedTools(QStringLiteral("a"), {QStringLiteral("read_file")}),
+        skillWithAllowedTools(QStringLiteral("b"), {QStringLiteral("git_diff")}),
+        skillWithAllowedTools(QStringLiteral("plain"),
+                              {QStringLiteral("shell_exec")}, /*specified=*/false),
+    });
+
+    llm.reset();
+    llm.script.append(textResponse(QStringLiteral("ok")));
+    QSignalSpy spy(&agent, &AIAgent::responseReady);
+    agent.startTask(QStringLiteral("go"));
+    QTRY_COMPARE_WITH_TIMEOUT(spy.count(), 1, 15000);
+
+    QSet<QString> expected{QStringLiteral("read_file"),
+                           QStringLiteral("git_diff"),
+                           QStringLiteral("todo_write")};
+    QCOMPARE(toolsArrayNames(llm.seenTools.first()), expected);
+    agent.clearActiveSkills();
+}
+
+// docs/38 §2：spawn_agent 与三个后台控制工具成组放行（单向，不反向）。
+void TestAgent::skillAllowedToolsSpawnGroup() {
+    SubAgentToolsetGuard guard;
+    agent.setLocalOnlyMode(false);
+    agent.setActiveSkills({skillWithAllowedTools(
+        QStringLiteral("async"), {QStringLiteral("spawn_agent")})});
+
+    llm.reset();
+    llm.script.append(textResponse(QStringLiteral("ok")));
+    QSignalSpy spy(&agent, &AIAgent::responseReady);
+    agent.startTask(QStringLiteral("go"));
+    QTRY_COMPARE_WITH_TIMEOUT(spy.count(), 1, 15000);
+
+    QSet<QString> expected{QStringLiteral("spawn_agent"),
+                           QStringLiteral("subagent_wait"),
+                           QStringLiteral("subagent_status"),
+                           QStringLiteral("subagent_cancel"),
+                           QStringLiteral("todo_write")};
+    QCOMPARE(toolsArrayNames(llm.seenTools.first()), expected);
+    QVERIFY(!toolsArrayNames(llm.seenTools.first())
+                 .contains(QStringLiteral("read_file")));
+    agent.clearActiveSkills();
+}
+
+// docs/38 §2：没有技能 / 全部未声明 allowed-tools → 与旧行为完全一致。
+void TestAgent::skillAllowedToolsUnrestrictedUnchanged() {
+    agent.setLocalOnlyMode(false);
+    auto* registry = &ToolRegistry::instance();
+    QSet<QString> expected;
+    for (const auto& def : registry->listAll()) {
+        if (def.level == ToolLevel::Dangerous) continue;
+        if (!registry->isToolUsable(def.name)) continue;
+        expected.insert(def.name);
+    }
+
+    // 1) 无技能
+    agent.clearActiveSkills();
+    llm.reset();
+    llm.script.append(textResponse(QStringLiteral("ok")));
+    QSignalSpy spy(&agent, &AIAgent::responseReady);
+    agent.startTask(QStringLiteral("go"));
+    QTRY_COMPARE_WITH_TIMEOUT(spy.count(), 1, 15000);
+    QCOMPARE(toolsArrayNames(llm.seenTools.first()), expected);
+
+    // 2) 技能存在但未声明 allowed-tools
+    agent.setActiveSkills({skillWithAllowedTools(
+        QStringLiteral("plain"), {QStringLiteral("read_file")}, /*specified=*/false)});
+    llm.script.append(textResponse(QStringLiteral("ok again")));
+    agent.startTask(QStringLiteral("go again"));
+    QTRY_COMPARE_WITH_TIMEOUT(spy.count(), 2, 15000);
+    QCOMPARE(toolsArrayNames(llm.seenTools.last()), expected);
+
+    agent.clearActiveSkills();
+}
+
+// docs/38 §4：限制模式系统提示列出允许工具并提示“未列出的工具不要调用”；
+// 不限制时不增加任何噪音。允许集合排序去重，mcp__* 仅统一大小写。
+void TestAgent::skillAllowedToolsPromptAndNormalization() {
+    agent.setActiveSkills({skillWithAllowedTools(
+        QStringLiteral("review"),
+        {QStringLiteral("READ_FILE"),
+         QStringLiteral(" git_diff (git diff) "),
+         QStringLiteral("MCP__Srv__Tool")})});
+
+    const QString prompt = agent.effectiveSystemPrompt();
+    QVERIFY2(prompt.contains(QStringLiteral("## 本轮允许工具")),
+             qPrintable(prompt.right(600)));
+    QVERIFY(prompt.contains(QStringLiteral("<allowed-tools>")));
+    QVERIFY(prompt.contains(
+        QStringLiteral("<allowed-tools>\ngit_diff, read_file, todo_write\n"
+                       "</allowed-tools>")));
+    // 提示与 schema 同源：未注册的 mcp__srv__tool 不应出现在允许清单。
+    QVERIFY(!prompt.contains(QStringLiteral("mcp__srv__tool")));
+    QVERIFY(prompt.contains(QStringLiteral("未列出的工具不要调用")));
+
+    // 未限制：无技能或用未声明技能的技能都不产生白名单块。
+    agent.clearActiveSkills();
+    QVERIFY(!agent.effectiveSystemPrompt()
+                 .contains(QStringLiteral("本轮允许工具")));
+    agent.setActiveSkills({skillWithAllowedTools(
+        QStringLiteral("plain"), {QStringLiteral("write_file")}, /*specified=*/false)});
+    QVERIFY(!agent.effectiveSystemPrompt()
+                 .contains(QStringLiteral("本轮允许工具")));
+
+    agent.clearActiveSkills();
+}
+
+void TestAgent::skillAllowedToolsEmptyBodyPromptIsWellFormed() {
+    Skill empty;
+    empty.id = QStringLiteral("empty");
+    empty.name = QStringLiteral("Empty");
+    empty.body.clear();
+    empty.allowedToolsSpecified = true;
+    empty.allowedTools = {QStringLiteral("read_file"),
+                          QStringLiteral("not_a_tool")};
+    agent.setActiveSkills({empty});
+
+    const QString prompt = agent.effectiveSystemPrompt();
+    QVERIFY2(prompt.contains(QStringLiteral("## 本轮允许工具")),
+             qPrintable(prompt.right(500)));
+    // 没有正文时不得留下空的“已引用技能/<skills>”或未闭合标签。
+    QVERIFY(!prompt.contains(QStringLiteral("## 已引用技能")));
+    QVERIFY(!prompt.contains(QStringLiteral("<skills>")));
+    // 提示集合必须与实际下发同源：未注册的 not_a_tool 不应出现。
+    QVERIFY(prompt.contains(QStringLiteral("read_file")));
+    QVERIFY(prompt.contains(QStringLiteral("todo_write")));
+    QVERIFY(!prompt.contains(QStringLiteral("not_a_tool")));
+
+    agent.clearActiveSkills();
+}
 
 // (4) Switching to a larger window restores previously compressed history
 // from SQLite (scenario B in docs/15 §4.1).

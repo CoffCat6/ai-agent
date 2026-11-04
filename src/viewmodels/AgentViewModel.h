@@ -384,7 +384,8 @@ public:
     Q_INVOKABLE QVariantList listSkills(const QString& query, int limit = 50);
     // 解析正文里所有 `$name`（去重、未知忽略），上限
     // settings/skills/maxPerMessage（默认 3，clamp 1-5）。返回
-    // {id,name,description,body,source,sourceId,sourcePath,truncated}。
+    // {id,name,description,body,source,sourceId,sourcePath,truncated,
+    //  allowedTools,allowedToolsSpecified}。
     Q_INVOKABLE QVariantList resolveSkills(const QString& text);
 
     // ── docs/37 W5-1: SkillsPage 设置项 ─────────────────

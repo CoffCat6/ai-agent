@@ -38,6 +38,7 @@
 #include <QHostAddress>
 #include <QTranslator>
 #include <QUrl>
+#include <functional>
 #include "TestSettingsIsolation.h"
 
 // 测试进程的 QSettings 重定向到临时 INI（见 TestSettingsIsolation.h），
@@ -100,8 +101,11 @@ static QString batchWrite(const QTemporaryDir& dir, const QString& name,
 class FakeSkillService : public IAIService {
 public:
     QVector<QJsonArray> seenMessages;
+    // 在同步回包前观察 agent 状态（任务完成后 activeSkills 会被清空）。
+    std::function<void()> beforeRespond;
 
     void chatComplete(const QJsonArray& messages, const QJsonArray& = {}) override {
+        if (beforeRespond) beforeRespond();
         seenMessages.append(messages);
         LLMResponse response;
         response.success = true;
@@ -2538,21 +2542,26 @@ private slots:
 
         auto writeSkill = [&project](const QString& id, const QString& name,
                                      const QString& description,
-                                     const QString& body) {
+                                     const QString& body,
+                                     const QString& allowedToolsLine = QString()) {
             const QString dir = project.filePath(
                 QStringLiteral(".nexusai/skills/%1").arg(id));
             QVERIFY(QDir().mkpath(dir));
             QFile f(dir + QStringLiteral("/SKILL.md"));
             QVERIFY(f.open(QIODevice::WriteOnly | QIODevice::Text));
-            f.write(QStringLiteral("---\nname: %1\ndescription: %2\n---\n%3\n")
-                        .arg(name, description, body).toUtf8());
+            const QString toolsLine = allowedToolsLine.isEmpty()
+                ? QString() : allowedToolsLine + QStringLiteral("\n");
+            f.write(QStringLiteral("---\nname: %1\ndescription: %2\n%3---\n%4\n")
+                        .arg(name, description, toolsLine, body).toUtf8());
             f.close();
         };
         writeSkill(QStringLiteral("review"), QStringLiteral("review"),
                    QStringLiteral("Review a diff"),
-                   QStringLiteral("Always report the highest severity first."));
+                   QStringLiteral("Always report the highest severity first."),
+                   QStringLiteral("allowed-tools: [read_file, search_code]"));
         writeSkill(QStringLiteral("test"), QStringLiteral("test"),
-                   QStringLiteral("Write tests"), QStringLiteral("Run the suite."));
+                   QStringLiteral("Write tests"), QStringLiteral("Run the suite."),
+                   QStringLiteral("allowed-tools: []"));
         writeSkill(QStringLiteral("commit"), QStringLiteral("commit"),
                    QStringLiteral("Commit changes"), QStringLiteral("Use conventional commits."));
         writeSkill(QStringLiteral("lint"), QStringLiteral("lint"),
@@ -2613,6 +2622,18 @@ private slots:
                     .contains(QStringLiteral("highest severity")));
         QCOMPARE(resolved.at(0).toMap().value("sourceId").toString(),
                  QStringLiteral("project"));
+        // docs/38 §3：resolveSkills 必须输出白名单与“是否声明”。
+        QCOMPARE(resolved.at(0).toMap().value("allowedTools").toStringList(),
+                 QStringList({QStringLiteral("read_file"),
+                              QStringLiteral("search_code")}));
+        QCOMPARE(resolved.at(0).toMap().value("allowedToolsSpecified").toBool(),
+                 true);
+        QVERIFY(resolved.at(1).toMap().value("allowedTools").toStringList().isEmpty());
+        QCOMPARE(resolved.at(1).toMap().value("allowedToolsSpecified").toBool(),
+                 true);
+        QVERIFY(resolved.at(2).toMap().value("allowedTools").toStringList().isEmpty());
+        QCOMPARE(resolved.at(2).toMap().value("allowedToolsSpecified").toBool(),
+                 false);
 
         // settings/skills/maxPerMessage：默认 3，clamp 1-5。schema 拒绝越界
         // 写入，故直接用隔离后的 QSettings 造出"历史遗留越界值"。
@@ -2636,10 +2657,27 @@ private slots:
         }
 
         // startTaskWithSkills：先设置 active skills，再走既有 startTask 流程。
+        // 假 LLM 同步回包后 agent 会清空 activeSkills，故在回包前抓一份快照。
         QSignalSpy spy(&agent, &AIAgent::responseReady);
-        QVERIFY(vm.startTaskWithSkills(
-            QStringLiteral("$review $test"), {}, {},
-            vm.resolveSkills(QStringLiteral("$review $test"))));
+        QVector<Skill> capturedSkills;
+        llm.beforeRespond = [&agent, &capturedSkills]() {
+            capturedSkills = agent.activeSkills();
+        };
+        const QVariantList activeSkills =
+            vm.resolveSkills(QStringLiteral("$review $test"));
+        QVERIFY(vm.startTaskWithSkills(QStringLiteral("$review $test"), {}, {},
+                                       activeSkills));
+        llm.beforeRespond = nullptr;
+        QCOMPARE(capturedSkills.size(), 2);
+        QCOMPARE(capturedSkills.at(0).id, QStringLiteral("review"));
+        QCOMPARE(capturedSkills.at(0).allowedTools,
+                 QStringList({QStringLiteral("read_file"),
+                              QStringLiteral("search_code")}));
+        QVERIFY(capturedSkills.at(0).allowedToolsSpecified);
+        QCOMPARE(capturedSkills.at(1).id, QStringLiteral("test"));
+        QVERIFY(capturedSkills.at(1).allowedTools.isEmpty());
+        QVERIFY(capturedSkills.at(1).allowedToolsSpecified);
+
         QTRY_COMPARE(spy.count(), 1);
         QVERIFY(!llm.seenMessages.isEmpty());
         QString systemPrompt;
@@ -2655,6 +2693,28 @@ private slots:
             QStringLiteral("Always report the highest severity first.")));
         QVERIFY(systemPrompt.contains(
             QStringLiteral("<skill name=\"test\" source=\"project\">")));
+
+        // docs/38 W6-3：编辑器桥必须保留 allowed-tools: []，否则 UI 保存会把
+        // “限制为空集”静默降级为“不限制”。
+        const QVariantMap draft = vm.skillDraft(QStringLiteral("test"),
+                                                QStringLiteral("project"));
+        QVERIFY2(draft.value(QStringLiteral("ok")).toBool(),
+                 qPrintable(draft.value(QStringLiteral("error")).toString()));
+        QVERIFY(draft.value(QStringLiteral("allowedToolsSpecified")).toBool());
+        QVariantMap edited = draft;
+        edited[QStringLiteral("body")] = QStringLiteral("kept\n");
+        const QVariantMap saved = vm.saveSkill(edited, QStringLiteral("project"),
+                                               true);
+        QVERIFY2(saved.value(QStringLiteral("ok")).toBool(),
+                 qPrintable(saved.value(QStringLiteral("error")).toString()));
+        QFile raw(project.path()
+                  + QStringLiteral("/.nexusai/skills/test/SKILL.md"));
+        QVERIFY(raw.open(QIODevice::ReadOnly));
+        QVERIFY(raw.readAll().contains("allowed-tools: []"));
+        QVERIFY(vm.resolveSkills(QStringLiteral("$test"))
+                    .first().toMap()
+                    .value(QStringLiteral("allowedToolsSpecified"))
+                    .toBool());
 
         // 旧三参 startTask 仍然可用（签名兼容），且任务结束后技能不残留。
         llm.seenMessages.clear();

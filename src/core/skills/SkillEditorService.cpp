@@ -136,6 +136,8 @@ struct Frontmatter {
     QString name;
     QString description;
     QStringList allowedTools;
+    // docs/38 §3：键存在即视为已声明，即使值为空（`allowed-tools: []`）。
+    bool allowedToolsSpecified{false};
     int bodyOffset{0};
 };
 
@@ -175,8 +177,10 @@ Frontmatter parseFrontmatter(const QString& text) {
                 meta.name = value;
             else if (key == QLatin1String("description"))
                 meta.description = value;
-            else if (key == QLatin1String("allowed-tools"))
+            else if (key == QLatin1String("allowed-tools")) {
+                meta.allowedToolsSpecified = true;
                 meta.allowedTools = parseAllowedTools(value);
+            }
         }
         pos = eol + 1;
     }
@@ -222,6 +226,9 @@ QByteArray serialize(const SkillEditorService::Draft& draft) {
     if (!draft.allowedTools.isEmpty())
         content += QStringLiteral("allowed-tools: [%1]\n")
                        .arg(draft.allowedTools.join(QStringLiteral(", ")));
+    else if (draft.allowedToolsSpecified)
+        // 已声明但为空：必须显式写出 `[]`，否则重新加载会退化为“未声明”。
+        content += QStringLiteral("allowed-tools: []\n");
     content += QStringLiteral("---\n");
     content += draft.body;
     return content.toUtf8();
@@ -354,6 +361,7 @@ bool SkillEditorService::load(const QString& skillsRoot, const QString& id,
     draft.name = meta.name;
     draft.description = meta.description;
     draft.allowedTools = meta.allowedTools;
+    draft.allowedToolsSpecified = meta.allowedToolsSpecified;
     // 正文保留 frontmatter 之后的原始内容（包括开头空行与行尾换行）。
     draft.body = meta.present ? text.mid(meta.bodyOffset) : text;
 

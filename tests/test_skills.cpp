@@ -67,6 +67,7 @@ class TestSkills : public QObject {
 
 private slots:
     void parsesFullFrontmatter();
+    void parsesAllowedToolsVariants();
     void fallsBackWhenFrontmatterMissing();
     void projectOverridesUser();
     void deduplicatesSameId();
@@ -108,6 +109,7 @@ void TestSkills::parsesFullFrontmatter() {
     QCOMPARE(skill->allowedTools,
              QStringList({QStringLiteral("read_file"), QStringLiteral("search_code"),
                           QStringLiteral("git_diff")}));
+    QVERIFY(skill->allowedToolsSpecified);
     QVERIFY(skill->source == SkillSource::User);
     QCOMPARE(skill->sourceId(), QStringLiteral("user"));
     QVERIFY(!skill->truncated);
@@ -134,7 +136,55 @@ void TestSkills::fallsBackWhenFrontmatterMissing() {
     QCOMPARE(skill->description, QStringLiteral("# 审查规则")); // 首个非空正文行
     QVERIFY(skill->body.contains(QStringLiteral("# 审查规则")));
     QVERIFY(skill->allowedTools.isEmpty());
+    QVERIFY(!skill->allowedToolsSpecified);
     QVERIFY(!skill->truncated);
+}
+
+// docs/38 §3：`allowed-tools` 键存在即为“已声明”，即使值为空；解析兼容
+// 行内数组、逗号分隔与单双引号。
+void TestSkills::parsesAllowedToolsVariants() {
+    QTemporaryDir userRoot;
+    QVERIFY(userRoot.isValid());
+
+    QVERIFY(writeSkill(userRoot.path(), QStringLiteral("empty"),
+                       "---\nname: empty\nallowed-tools: []\n---\nbody\n"));
+    QVERIFY(writeSkill(userRoot.path(), QStringLiteral("empty-value"),
+                       "---\nname: empty-value\nallowed-tools:\n---\nbody\n"));
+    QVERIFY(writeSkill(userRoot.path(), QStringLiteral("comma"),
+                       "---\nname: comma\n"
+                       "allowed-tools: \"read_file\", 'search_code', git_diff\n"
+                       "---\nbody\n"));
+    QVERIFY(writeSkill(userRoot.path(), QStringLiteral("inline"),
+                       "---\nname: inline\n"
+                       "allowed-tools: [\"read_file\", 'search_code', git_diff]\n"
+                       "---\nbody\n"));
+
+    SkillRegistry registry;
+    registry.setUserRoot(userRoot.path());
+    registry.reload();
+
+    const Skill* empty = registry.find(QStringLiteral("empty"));
+    QVERIFY(empty);
+    QVERIFY(empty->allowedToolsSpecified);
+    QVERIFY(empty->allowedTools.isEmpty());
+
+    const Skill* emptyValue = registry.find(QStringLiteral("empty-value"));
+    QVERIFY(emptyValue);
+    QVERIFY(emptyValue->allowedToolsSpecified);
+    QVERIFY(emptyValue->allowedTools.isEmpty());
+
+    const QStringList expected{QStringLiteral("read_file"),
+                               QStringLiteral("search_code"),
+                               QStringLiteral("git_diff")};
+    const Skill* comma = registry.find(QStringLiteral("comma"));
+    QVERIFY(comma);
+    QVERIFY(comma->allowedToolsSpecified);
+    QCOMPARE(comma->allowedTools, expected);
+
+    const Skill* inlineArray = registry.find(QStringLiteral("inline"));
+    QVERIFY(inlineArray);
+    QVERIFY(inlineArray->allowedToolsSpecified);
+    QCOMPARE(inlineArray->allowedTools, expected);
 }
 
 void TestSkills::projectOverridesUser() {

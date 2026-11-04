@@ -154,6 +154,8 @@ QVariantMap skillToMap(const Skill& skill) {
         {QStringLiteral("sourcePath"), skill.sourcePath},
         {QStringLiteral("bytes"), skill.bytes},
         {QStringLiteral("truncated"), skill.truncated},
+        {QStringLiteral("allowedTools"), skill.allowedTools},
+        {QStringLiteral("allowedToolsSpecified"), skill.allowedToolsSpecified},
     };
 }
 
@@ -1394,6 +1396,8 @@ QVariantMap AgentViewModel::skillDraft(const QString& id,
     result[QStringLiteral("name")] = draft.name;
     result[QStringLiteral("description")] = draft.description;
     result[QStringLiteral("body")] = draft.body;
+    result[QStringLiteral("allowedToolsSpecified")] =
+        draft.allowedToolsSpecified;
     result[QStringLiteral("allowedTools")] = [&draft]() {
         QVariantList tools;
         tools.reserve(draft.allowedTools.size());
@@ -1426,6 +1430,12 @@ QVariantMap AgentViewModel::saveSkill(const QVariantMap& draft,
         draft.value(QStringLiteral("description")).toString().trimmed();
     parsed.allowedTools =
         coerceAllowedTools(draft.value(QStringLiteral("allowedTools")));
+    // docs/38 W6-3：编辑器桥必须透传 specified，否则打开
+    // `allowed-tools: []` 的技能再保存会退化成“不限制”。非空列表本身即
+    // “已声明”，一并规范化，保证内存态与磁盘态一致。
+    parsed.allowedToolsSpecified =
+        draft.value(QStringLiteral("allowedToolsSpecified")).toBool()
+        || !parsed.allowedTools.isEmpty();
     parsed.body = draft.value(QStringLiteral("body")).toString();
 
     QString error;
@@ -1515,6 +1525,12 @@ bool AgentViewModel::startTaskWithSkills(const QString& input,
                           ? SkillSource::Project : SkillSource::User;
         skill.bytes = map.value(QStringLiteral("bytes")).toLongLong();
         skill.truncated = map.value(QStringLiteral("truncated")).toBool();
+        // docs/38 §3 / W3-1 补漏：resolveSkills 的 map 里已带白名单，
+        // 这里必须原样复制，否则 agent 侧看到的永远是“未声明”。
+        skill.allowedTools =
+            coerceAllowedTools(map.value(QStringLiteral("allowedTools")));
+        skill.allowedToolsSpecified =
+            map.value(QStringLiteral("allowedToolsSpecified")).toBool();
         parsed.append(skill);
     }
     return startTaskInternal(input, images, files, parsed);

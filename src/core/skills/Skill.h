@@ -26,7 +26,10 @@ struct Skill {
     QString sourcePath;  // SKILL.md 的 canonical 路径
     SkillSource source{SkillSource::User};
     qint64 bytes{0};     // 磁盘原始字节数（即使 truncated 也记录完整大小）
-    QStringList allowedTools; // docs/37 §6：本期只解析，不改变工具权限
+    QStringList allowedTools; // docs/38：W6 起作为本轮工具白名单生效
+    // docs/38 §3：解析到 `allowed-tools` 键即为 true（即使值为空）；用于
+    // 区分“未声明（不限制）”与“声明为空数组（限制为空集）”。
+    bool allowedToolsSpecified{false};
     bool truncated{false};
 
     QString sourceId() const { return skillSourceId(source); }
