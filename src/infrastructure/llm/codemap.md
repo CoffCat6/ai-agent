@@ -86,7 +86,7 @@ profile QVariantMap
 ## 集成点
 
 - `main.cpp`：`LlmProtocolRegistry::createServiceSet(&app)` 是进程级「模板集」；每个标签页 Agent 与每个 `EpisodicService`（长记忆摘要）各建一套独立 service set，避免前台流式与摘要互相覆盖；`setModelConfigurator` 按 `profile["apiProtocol"]` 取值 → `configure(profileConfigOf(profile))` → `target->setLLMService()`；`model`/`baseUrl` 为空则传 `nullptr`；`setContextLimit(settings->resolveContextLimitForProfile(profile))` 与 `setModelLocal(LlmProtocolRegistry::isLocal(...))`（local-only 云门控）。
-- `core/agent/AIAgent`：唯一消费者，按 `requestStarted` 的 id 丢弃被取代/取消的回复，把 `reasoningChunk` 与 `streamingChunk` 写进不同节点。
+- **`IAIService` 消费者不止 `AIAgent`**：`core/agent/AIAgent`（主循环）、`core/agent/EpisodicService`（长记忆摘要）、`core/tools/SubAgentTool` + `core/agent/SubAgentRunner`（子代理，经 `main.cpp` 的服务工厂）、`viewmodels/ConnectionTester`（设置页测试连接）、`viewmodels/CommitMessageDrafter`（生成提交信息）各持独立服务实例。`AIAgent` 按 `requestStarted` 的 id 丢弃被取代/取消的回复，把 `reasoningChunk` 与 `streamingChunk` 写进不同节点。
 - `viewmodels/ConnectionTester`、设置页：默认端点/模型/协议候选来自描述符（避免各处 if-else 判 provider 字符串）。
 - `core/utils/NetworkProxyConfig.h`：代理工厂定义处；本目录只依赖「默认工厂」这一隐式约定。
 

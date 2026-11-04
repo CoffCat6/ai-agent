@@ -93,7 +93,7 @@ MCP（Model Context Protocol 2025-03-26）客户端层：把外部 MCP server �
 - **凭据明文**：`env` 与 HTTP `headers` 以明文写入 `mcp_servers.json`（备份文件同样包含），代码中未做加密或脱敏。
 - **两种文件的凭据边界**：整体设置备份（`SettingsBackup`）含 `mcp_servers.json` 全文；N7 的独立导入/导出文件**不含** env/headers，只能迁移服务器形状，凭据需手动补全，二者不可互相替代。
 - **超时是双层的**：client 30 s，adapter 35 s。adapter 超时返回失败后，client 的请求仍可能稍后到达并被静默丢弃；`cancel()` 是协作式的，server 不理会 `notifications/cancelled` 时仍要等满宽限。
-- **资源上限**：stdio 8 MiB 无换行即杀且不重启；stderr 64 KiB；HTTP 单响应 32 MiB 即 `Failed`（无自动恢复）；重启最多 3 次；工具数每 server 32、全局 64（超出只跳过并告警）。
+- **资源上限**：stdio 8 MiB 无换行即杀且不重启；stderr 64 KiB；HTTP 单响应 32 MiB 即 `Failed`（无自动恢复）；重启最多 3 次；工具数每 server 32（超出跳过并告警）；全局 64（超出**只告警、不摘除**，`McpManager.cpp:134-142` 仅 `qCWarning`，已注册的 `mcp__*` 仍留在 `toolNamesForModel()`）。
 - **HTTP 为子集**：无 GET SSE 推送通道、无 OAuth、无重连；`start()` 无条件 `Connected`，所以"连接成功"只代表 URL 配置合法。仅接受单个对象响应，JSON-RPC 批量数组会被 `dispatchPayload` 判为畸形。
 - **线程边界**：adapter 用阻塞等待占线程池线程最长 35 s；`cancel()` 只置原子位，真正的取消依赖下一次 `execute` 或等待循环观察。
 - **配置写入非事务化跨调用**：`McpManager` 先改内存再 `save()`，保存失败只记录 `lastError`，不回滚内存状态。

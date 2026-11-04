@@ -71,7 +71,7 @@
 - **QML**：`NexusAI.ViewModels`（C++ 类型/单例）与 `NexusAI`（QML 文件）两个模块；`main.qml` 通过 `qrc:/qt/qml/NexusAI/src/ui/main.qml` 加载，依赖根 `CMakeLists.txt` 的 `qt_add_qml_module` 与 `QML_IMPORT_PATH`。
 - **系统**：SQLite（app data）、HKCU Run 键、`QSystemTrayIcon`/`QMenu`（Widgets）、Windows 消息过滤器、OLE 拖放（QML `DropArea` → `AgentViewModel::handleDroppedFiles`）。
 - **信号桥**：`SettingsService`（profiles/localOnly/sandbox/web search/embedding/system prompt/permission）→ 运行时；`ChangeBus`（偏好键）→ 自启动；`RagService`/`AgentViewModel` → SQLite；`Activity` → usage_log。
-- **构建/测试**：`nexus_ai` 链接三库 + `nexus_viewmodelsplugin`；`tests/CMakeLists.txt` 复用同一 QML 模块和翻译产物。
+- **构建/测试**：`nexus_ai` 链接三库 + `nexus_viewmodelsplugin`；`tests/CMakeLists.txt` 复用同一 QML 模块和翻译产物。**`ctest -N` 2026-11-04 实测 57 个测试条目**（55 个 `test_*.cpp` + QML TestCase + `qmllint_gate`）。
 - **资源与版本**：图标走 `:/icons/nexus-<size>.png`（`nexus_icon_qrc_check` 守护），翻译走 `:/i18n`，版本宏 `APP_VERSION` 同时供窗口标题与托盘 tooltip 使用。
 
 ## 关键文件

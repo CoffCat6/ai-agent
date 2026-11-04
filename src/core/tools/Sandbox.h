@@ -21,8 +21,8 @@ namespace NexusAI {
 #ifdef Q_OS_WIN
 QString sandboxNativeFinalPath(const QString& path);
 
-// docs/37 B4-D: Windows system directories resolved from the OS instead of a
-// hard-coded "C:\". Reads SystemRoot / windir / ProgramFiles /
+// docs/36 B4-D（B4 收口记录）: Windows system directories resolved from the OS
+// instead of a hard-coded "C:\". Reads SystemRoot / windir / ProgramFiles /
 // ProgramFiles(x86) / ProgramW6432 / ProgramData (all drive-agnostic and
 // aware of a custom SystemRoot), with GetWindowsDirectoryW as a fallback.
 // Empty/unset entries are skipped. Returned paths are native-separated.
@@ -177,7 +177,7 @@ public:
         return validatePathResolved(path, isWrite, nullptr, reason);
     }
 
-    // docs/37 B4-D: same policy decision as validatePath, but also returns
+    // docs/36 B4-D（B4 收口记录）: same policy decision as validatePath, but also returns
     // the canonical path that was actually evaluated (reparse points /
     // symlinks resolved, deepest existing ancestor + lexical tail for
     // not-yet-existing targets). A write caller MUST open the returned path
@@ -211,7 +211,7 @@ public:
         // P0-2: 先锚定相对路径（项目激活时以项目根为基准），再 canonicalize。
         const QString anchored = resolvePath(path);
 
-        // docs/37 B4-D: QDir::cleanPath collapses ".." lexically BEFORE any
+        // docs/36 B4-D（B4 收口记录）: QDir::cleanPath collapses ".." lexically BEFORE any
         // reparse point is resolved, which is exactly the wrong order on
         // Windows: opening "C:\proj\junction\..\evil" resolves the junction
         // first, then "..", and can land outside the project even though the
@@ -386,7 +386,7 @@ private:
         return false;
     }
 
-    // docs/37 B4-D: 系统目录来源。Windows 由 OS 提供（SystemRoot 等，
+    // docs/36 B4-D（B4 收口记录）: 系统目录来源。Windows 由 OS 提供（SystemRoot 等，
     // 支持非 C: 系统盘与自定义 SystemRoot）；Unix 用固定 FHS 目录。
     // 每次调用重新读取环境，确保运行期安装盘变化/测试注入都能生效。
     static QStringList systemBlockedPaths() {

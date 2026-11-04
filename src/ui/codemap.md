@@ -36,7 +36,7 @@
 
 - C++ 单例与属性：`AgentVM`（traceModel/sessionList/projects/sidebarWidth/panelWidth/pendingConfirmation/todoList/fileCheckpoints…）、`Theme`/`ThemeManager`、`Settings`、`PreferenceStore`、`SettingsCatalog`、`ChangeBus`、`I18n`、`EditBuffer`、`GitVM`、`McpManager`、`ConnectionTester`、`ShortcutMap`、`Onboarding`。
 - qrc 路径固定为 `qrc:/qt/qml/NexusAI/src/ui/main.qml`（URI `NexusAI` + 源目录结构）；设置页在 QML 内以绝对 qrc URL 加载。
-- 测试：`tests/CMakeLists.txt` 把 `src/ui/**/*.qml` 与 `FileTree.js` 重新打进测试资源，`qmllint_gate` 对 `nexus_ai`/`nexus_viewmodels` 的响应文件做静态检查；图表/Todo/审阅/引用行有 offscreen 渲染回归；设置搜索/目录覆盖由 `test_settings` 的 C++ 用例锁定。
+- 测试：**`ctest -N` 2026-11-04 实测 57 个条目**（55 个 `test_*.cpp` + QML TestCase + `qmllint_gate`）。`tests/CMakeLists.txt` 把 `src/ui/**/*.qml` 与 `FileTree.js` 重新打进测试资源，`qmllint_gate` 对 `nexus_ai`/`nexus_viewmodels` 的响应文件做静态检查；图表/Todo/审阅/引用行有 offscreen 渲染回归；设置搜索/目录覆盖由 `test_settings` 的 C++ 用例锁定。
 
 ## 关键文件
 
@@ -48,7 +48,7 @@
 | 输入 | `components/InputConsole.qml`、`ModelSelector.qml`、`ThinkingEffortSelector.qml`、`PermissionModeSelector.qml` | 发送、附件、提及、历史与参数选择 |
 | 侧栏/右栏 | `components/Sidebar.qml`、`panels/ContextPanel.qml` | 会话树/搜索 + 会话运行状态槽（busy/等待确认/未读）；Git/文件（审阅与任务清单已移入对话框） |
 | 设置 | `components/SettingsCenterDialog.qml`、`CategoryNav.qml`、`PreferenceControl.qml`、`SettingsPage.qml`、`SettingsPageHeader.qml`、`AppScrollBar.qml`、`SettingsSection.qml`、`SettingRow.qml`、`SettingsField.qml`、`SettingCard.qml` | 搜索（`SettingsCatalog` 字段级结果 + 页内滚动高亮）、四组可滚动分类导航（图标 + 可折叠分组，「数据与诊断」默认收起、当前分类所在组自动展开；对话框宽度 <900 时导航收成 56px 图标条）、偏好控件、按分类复位的底栏。视觉底座：`SettingsPage`（整页滚动 + 页头 + 边距 + 主题滚动条）/`SettingsPageHeader`（统一标题层级），`SettingsSection`（扁平分组）/`SettingRow`（左标签右控件）/`SettingsField`（输入行），`SettingCard` 留给带边框的独立卡片；字号/间距/圆角/输入框表面统一走 `Theme` 令牌 |
-| 设置页 | `pages/GeneralPage`、`AgentBehaviorPage`、`NetworkPage`、`LogsPage`、`KnowledgePage`、`InterfacePage`、`ModelConfigPage`、`SecurityPage`、`McpPage`、`ToolsPage`、`MemoryPage`、`UsageStatsPage`、`ActivityLogPage`、`SettingsBackupPage`、`ProjectRulesPage`、`PromptAssetsPage` | 16 个分类，由 `Loader` 按分类懒加载 |
+| 设置页 | `pages/GeneralPage`、`AgentBehaviorPage`、`NetworkPage`、`LogsPage`、`KnowledgePage`、`InterfacePage`、`ModelConfigPage`、`SecurityPage`、`McpPage`、`ToolsPage`、`MemoryPage`、`UsageStatsPage`、`ActivityLogPage`、`SettingsBackupPage`、`ProjectRulesPage`、`PromptAssetsPage`、`ShortcutsPage`、`StoragePage` | **18 个分类**（`SettingsSchema::categories()` 实测；`AgentChatPage` 是主聊天页，不计入设置分类），由 `Loader` 按分类懒加载 |
 | 业务组件 | `AssistantMessage.qml`、`UserMessageBubble.qml`、`ProcessCard.qml`、`ErrorCard.qml`、`ToolConfirmDialog.qml`、`TodoListPanel.qml`、`TodoDialog.qml`、`BackgroundTasksDialog.qml`、`FileChangesPanel.qml`、`ChangeTree.qml`、`GitPanel.qml` | 消息/工具确认/审阅/Git；ProcessCard 含子代理过程日志（subagentLog 展开）与底部「收起」入口；BackgroundTasksDialog 是后台子代理管理面 |
 
 ProcessCard 的 `subagentLog` 判型注意（2026-11-02 修复，回归 `test_process_card_qml`）：嵌在 modelData（QVariantMap）里的 QVariantList 经 ListView role 进 QML 后是 sequence wrapper——length/索引正常但 `Array.isArray()` 返回 false，判型必须用 undefined/null + length；且 role 数据必须走 ListView 路径测（setProperty 注入会转成原生 JS Array，复现不了）。docs/34 P3.2 的 `subagentProposals`（spawn_agent 结果节点上的 `[{path, rationale, count}]`）走同一判型与同一 role 路径，卡片头显示「N 个提案」徽章（总数 = 各 count 之和），展开区 `subagentProposalsBody` 列出路径/理由/处数并把报告正文（含 diff）附在下方。
