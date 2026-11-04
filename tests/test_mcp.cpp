@@ -772,6 +772,201 @@ private slots:
         QDir(base).removeRecursively();
     }
 
+    // docs/36 B1-4: .cmd/.bat wrappers are spawned as
+    // `cmd.exe /d /s /c "<inner line>"`; args containing cmd metacharacters
+    // would be re-interpreted (command chaining / redirection / expansion).
+    // They must be rejected at import AND at start, with the same verdict.
+    void securityRejectsCmdMetacharactersInBatchArgs() {
+        const QString batch = QStringLiteral("C:/tools/npx.cmd");
+        const QVector<QStringList> malicious{
+            {QStringLiteral("& calc")},
+            {QStringLiteral("| whoami")},
+            {QStringLiteral("%PATH%")},
+            {QStringLiteral("> out.txt")},
+            {QStringLiteral("< in.txt")},
+            {QStringLiteral("^& calc")},
+            {QStringLiteral("(calc)")},
+            {QStringLiteral("!PATH!")},
+            {QStringLiteral("--flag"), QStringLiteral("a&b")},
+        };
+        for (const QStringList& args : malicious) {
+            const QString error = McpConfigTransfer::validateBatchArgs(batch, args);
+            QVERIFY2(!error.isEmpty(), qPrintable(args.join(QLatin1Char(' '))));
+            // 可读错误必须给出修复方向。
+            QVERIFY(error.contains(QStringLiteral("cmd 元字符")));
+            QVERIFY(error.contains(QStringLiteral(".exe")));
+        }
+
+        // 非 batch 不经过 shell：元字符只是普通参数，不得被拒。
+        QVERIFY(McpConfigTransfer::validateBatchArgs(
+                    QStringLiteral("C:/tools/server.exe"),
+                    {QStringLiteral("& calc")}).isEmpty());
+        QVERIFY(McpConfigTransfer::validateBatchArgs(
+                    QStringLiteral("node"),
+                    {QStringLiteral("a&b")}).isEmpty());
+
+        // 导入阶段同步拒绝；该条目不会进入 applyImport，因此不会落盘。
+        QTemporaryDir dir;
+        QVERIFY(dir.isValid());
+        const QString path = dir.filePath(QStringLiteral("evil-servers.json"));
+        const QJsonObject file{
+            {QStringLiteral("format"), QStringLiteral("nexusai-mcp-servers")},
+            {QStringLiteral("version"), 1},
+            {QStringLiteral("servers"),
+             QJsonArray{
+                 QJsonObject{{QStringLiteral("name"), QStringLiteral("evil")},
+                             {QStringLiteral("transport"), QStringLiteral("stdio")},
+                             {QStringLiteral("command"),
+                              dir.filePath(QStringLiteral("evil.cmd"))},
+                             {QStringLiteral("args"),
+                              QJsonArray{QStringLiteral("&"), QStringLiteral("calc")}}}}}};
+        QFile out(path);
+        QVERIFY(out.open(QIODevice::WriteOnly));
+        out.write(QJsonDocument(file).toJson());
+        out.close();
+
+        const auto preview = McpConfigTransfer::previewImportFile(path);
+        QVERIFY2(preview.ok, qPrintable(preview.error));
+        QCOMPARE(preview.total, 1);
+        QCOMPARE(preview.importable, 0);
+        QVERIFY(!preview.entries.first().error.isEmpty());
+
+        int added = 0, replaced = 0, skipped = 0;
+        const auto merged = McpConfigTransfer::applyImport(
+            {}, preview, McpConfigTransfer::MergePolicy::Overwrite,
+            &added, &replaced, &skipped);
+        QCOMPARE(added, 0);
+        QCOMPARE(skipped, 1);
+        QVERIFY(merged.isEmpty());
+
+#ifdef Q_OS_WIN
+        // 启动侧：恶意参数必须 emit errorOccurred + Failed，且进程不启动。
+        // 用无害的 `& echo pwned`（而不是 `& calc`）验证串联形态，避免
+        // 校验回归时真的弹出外部程序。
+        QTemporaryDir binDir;
+        QVERIFY(binDir.isValid());
+        const QString script =
+            binDir.filePath(QStringLiteral("nexus-mcp-evil-args.cmd"));
+        {
+            QFile scriptFile(script);
+            QVERIFY(scriptFile.open(QIODevice::WriteOnly | QIODevice::Text));
+            QTextStream(&scriptFile) << "@echo off\r\n"
+                                     << "ping -n 4 127.0.0.1 >nul\r\n";
+        }
+        const QString originalPath =
+            QProcessEnvironment::systemEnvironment().value(QStringLiteral("PATH"));
+        qputenv("PATH",
+                QByteArray((binDir.path() + QLatin1Char(';') + originalPath)
+                               .toLocal8Bit()));
+        struct PathRestore {
+            QByteArray oldPath;
+            ~PathRestore() { qputenv("PATH", oldPath); }
+        } restore{originalPath.toLocal8Bit()};
+
+        StdioTransport::Config cfg;
+        cfg.command = QStringLiteral("nexus-mcp-evil-args");
+        cfg.args = {QStringLiteral("&"), QStringLiteral("echo"),
+                    QStringLiteral("pwned")};
+        StdioTransport transport(cfg);
+        QSignalSpy errorSpy(&transport, &McpTransport::errorOccurred);
+
+        transport.start();
+        QTRY_COMPARE(transport.state(), McpTransport::State::Failed);
+        QVERIFY(errorSpy.count() > 0);
+        QVERIFY(errorSpy.first().first().toString()
+                    .contains(QStringLiteral("cmd 元字符")));
+        // 给出处理信号后仍不得自行启动。
+        QTest::qWait(100);
+        QCOMPARE(transport.state(), McpTransport::State::Failed);
+        transport.stop();
+#endif
+    }
+
+    // 正常参数不得误伤：空格路径、--foo=bar、--model gpt-4、中文目录、
+    // 普通 URL（不含元字符）。这些正是 npx/uvx 的常见形态。
+    void securityAllowsSafeBatchArgs() {
+        const QString batch = QStringLiteral("C:/tools/uvx.cmd");
+        const QVector<QStringList> safe{
+            {QStringLiteral("--foo=bar")},
+            {QStringLiteral("--model"), QStringLiteral("gpt-4")},
+            {QStringLiteral("C:/Program Files/nodejs/index.js")},
+            {QStringLiteral("--path"), QStringLiteral("D:\\数据 目录\\mcp")},
+            {QStringLiteral("https://example.test/mcp?x=1")},
+            {QStringLiteral("-y"), QStringLiteral("@modelcontextprotocol/server-filesystem")},
+            {QStringLiteral("--root"), QStringLiteral("."), QStringLiteral("..")},
+            {QStringLiteral("--")},
+        };
+        for (const QStringList& args : safe) {
+            const QString error = McpConfigTransfer::validateBatchArgs(batch, args);
+            QVERIFY2(error.isEmpty(), qPrintable(args.join(QLatin1Char(' '))));
+        }
+
+        // 同一批参数在导入预览中也必须通过（口径一致）。
+        QTemporaryDir dir;
+        QVERIFY(dir.isValid());
+        const QString path = dir.filePath(QStringLiteral("safe-servers.json"));
+        const QJsonObject file{
+            {QStringLiteral("format"), QStringLiteral("nexusai-mcp-servers")},
+            {QStringLiteral("version"), 1},
+            {QStringLiteral("servers"),
+             QJsonArray{
+                 QJsonObject{{QStringLiteral("name"), QStringLiteral("safe")},
+                             {QStringLiteral("transport"), QStringLiteral("stdio")},
+                             {QStringLiteral("command"),
+                              dir.filePath(QStringLiteral("safe.cmd"))},
+                             {QStringLiteral("args"),
+                              QJsonArray{QStringLiteral("--foo=bar"),
+                                         QStringLiteral("--model"),
+                                         QStringLiteral("gpt-4"),
+                                         QStringLiteral("C:/Program Files/nodejs/index.js")}}}}}};
+        QFile out(path);
+        QVERIFY(out.open(QIODevice::WriteOnly));
+        out.write(QJsonDocument(file).toJson());
+        out.close();
+
+        const auto preview = McpConfigTransfer::previewImportFile(path);
+        QVERIFY2(preview.ok, qPrintable(preview.error));
+        QCOMPARE(preview.importable, 1);
+        QVERIFY(preview.entries.first().error.isEmpty());
+
+#ifdef Q_OS_WIN
+        // batch 正常启动回归：带安全参数的 .cmd 仍走 cmd /d /s /c 启动。
+        QTemporaryDir binDir;
+        QVERIFY(binDir.isValid());
+        const QString script =
+            binDir.filePath(QStringLiteral("nexus-mcp-safe-args.cmd"));
+        {
+            QFile scriptFile(script);
+            QVERIFY(scriptFile.open(QIODevice::WriteOnly | QIODevice::Text));
+            QTextStream(&scriptFile) << "@echo off\r\n"
+                                     << "ping -n 4 127.0.0.1 >nul\r\n";
+        }
+        const QString originalPath =
+            QProcessEnvironment::systemEnvironment().value(QStringLiteral("PATH"));
+        qputenv("PATH",
+                QByteArray((binDir.path() + QLatin1Char(';') + originalPath)
+                               .toLocal8Bit()));
+        struct PathRestore {
+            QByteArray oldPath;
+            ~PathRestore() { qputenv("PATH", oldPath); }
+        } restore{originalPath.toLocal8Bit()};
+
+        StdioTransport::Config cfg;
+        cfg.command = QStringLiteral("nexus-mcp-safe-args");
+        cfg.args = {QStringLiteral("--foo=bar"), QStringLiteral("--model"),
+                    QStringLiteral("gpt-4"),
+                    QStringLiteral("C:/Program Files/nodejs/index.js")};
+        StdioTransport transport(cfg);
+        QSignalSpy errorSpy(&transport, &McpTransport::errorOccurred);
+        transport.start();
+        QTRY_COMPARE(transport.state(), McpTransport::State::Connected);
+        for (int i = 0; i < errorSpy.count(); ++i)
+            QVERIFY(!errorSpy.at(i).first().toString()
+                         .contains(QStringLiteral("Failed to start")));
+        transport.stop();
+#endif
+    }
+
     // When a server exits non-zero, its stderr tail must be inlined into
     // the transport error so users see the real cause (missing API key,
     // package install failure, ...) in the log instead of just an exit code.

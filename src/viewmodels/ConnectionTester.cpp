@@ -1,5 +1,6 @@
 #include "ConnectionTester.h"
 
+#include "SettingsService.h"
 #include "infrastructure/llm/LlmProtocolRegistry.h"
 
 #include <QJsonArray>
@@ -62,6 +63,56 @@ ConnectionTester::ConnectionTester(QObject* parent) : QObject(parent) {
         m_modelsBusy = false;
         finishModels(false, {}, tr("拉取超时（20 秒）"));
     });
+}
+
+QVariantMap ConnectionTester::selectConnectionProfile(const QVariantList& profiles,
+                                                      const QVariantMap& activeProfile,
+                                                      const QString& profileId) {
+    const QString id = profileId.trimmed();
+    if (id.isEmpty()) return activeProfile;
+    for (const QVariant& entry : profiles) {
+        const QVariantMap profile = entry.toMap();
+        if (profile.value(QStringLiteral("id")).toString() == id) return profile;
+    }
+    // 明确的 id 找不到就失败：回退到 active 会让用户以为测的是刚选的配置，
+    // 实际把请求发到了另一家端点。
+    return {};
+}
+
+void ConnectionTester::testProfile(const QString& profileId, const QString& model) {
+    if (!m_done) return; // a test is already in flight
+
+    SettingsService* settings = SettingsService::instance();
+    const QVariantMap profile = selectConnectionProfile(
+        settings->profilesWithSecrets(), settings->activeProfileWithSecrets(),
+        profileId);
+    if (profile.isEmpty()) {
+        finish(false, tr("未找到模型配置，请先保存后再测试。"));
+        return;
+    }
+
+    QString testModel = model.trimmed();
+    if (testModel.isEmpty()) testModel = profile.value(QStringLiteral("model")).toString();
+    // apiKey 只在 C++ 内部流转，不经过任何 QML 属性。
+    test(profile.value(QStringLiteral("apiProtocol")).toString(),
+         profile.value(QStringLiteral("baseUrl")).toString(),
+         profile.value(QStringLiteral("apiKey")).toString(), testModel);
+}
+
+void ConnectionTester::fetchModelsForProfile(const QString& profileId) {
+    if (m_modelsBusy) return;
+
+    SettingsService* settings = SettingsService::instance();
+    const QVariantMap profile = selectConnectionProfile(
+        settings->profilesWithSecrets(), settings->activeProfileWithSecrets(),
+        profileId);
+    if (profile.isEmpty()) {
+        finishModels(false, {}, tr("未找到模型配置，请先保存后再拉取。"));
+        return;
+    }
+    fetchModels(profile.value(QStringLiteral("apiProtocol")).toString(),
+                profile.value(QStringLiteral("baseUrl")).toString(),
+                profile.value(QStringLiteral("apiKey")).toString());
 }
 
 void ConnectionTester::test(const QString& apiProtocol, const QString& baseUrl,

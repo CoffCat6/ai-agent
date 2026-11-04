@@ -169,9 +169,20 @@ public:
     static SettingsService* instance();
     static SettingsService* create(QQmlEngine*, QJSEngine*);
 
-    QVariantList profiles() const { return m_profiles; }
+    // ── 公共出口（QML 可见）──────────────────────────────────────────
+    // B1-1：profile 在内存里是 DPAPI 解密后的明文，Q_PROPERTY 的 READ 直接
+    // 返回 m_profiles 会让任意 QML 读到 apiKey。公共出口只返回脱敏副本：
+    // 删除 apiKey，补 hasApiKey（真实密钥是否非空），其余字段原样保留。
+    QVariantList profiles() const;
     QString activeProfileId() const { return m_activeId; }
     QVariantMap activeProfile() const;
+
+    // ── C++ 内部出口（刻意不注册 Q_PROPERTY / Q_INVOKABLE）──────────
+    // 只有需要对上游发请求的 C++ 代码（main 的模型装配、子代理快照、起草器、
+    // 连接测试）才拿得到明文密钥。新增调用点请先用公共出口，确认确实要发请求
+    // 再用这里的接口；不要把返回值再喂给任何 QML 属性。
+    QVariantList profilesWithSecrets() const { return m_profiles; }
+    QVariantMap activeProfileWithSecrets() const;
 
     int contextTokens() const { return m_contextTokens; }
     void setContextTokens(int tokens);

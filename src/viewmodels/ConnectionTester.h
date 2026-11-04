@@ -5,6 +5,8 @@
 #include <QPointer>
 #include <QTimer>
 #include <QUrl>
+#include <QVariantList>
+#include <QVariantMap>
 
 #include "infrastructure/llm/IAIService.h"
 
@@ -34,6 +36,14 @@ public:
     static ConnectionTester* instance();
     static ConnectionTester* create(QQmlEngine*, QJSEngine*);
 
+    // 生产入口（B1-1）：QML 只传 profileId，密钥在 C++ 内部从
+    // SettingsService 的 WithSecrets 出口解析，绝不再经过 QML。
+    // model 为空时用 profile 自己的当前模型。
+    Q_INVOKABLE void testProfile(const QString& profileId, const QString& model);
+    Q_INVOKABLE void fetchModelsForProfile(const QString& profileId);
+
+    // 兼容旧 API（连接测试单元测试与第三方调用仍在使用）。生产 QML 不再
+    // 走这两个入口：它们要求调用方持有明文密钥，本身就是泄露面。
     // 按线协议（profile 的 apiProtocol）建一次性服务打一发最小请求。
     Q_INVOKABLE void test(const QString& apiProtocol, const QString& baseUrl,
                           const QString& apiKey, const QString& model);
@@ -47,6 +57,13 @@ public:
     Q_INVOKABLE void fetchModels(const QString& apiProtocol,
                                  const QString& baseUrl,
                                  const QString& apiKey);
+
+    // 纯函数，便于单测：按 id 从给定 profile 列表里取一项；profileId 空则
+    // 回退 active，非空但不存在则返回空 map（不静默拿别的配置去测）。
+    // 单测用 profilesWithSecrets() 传入以锁定「按 id 取真实密钥」的契约。
+    static QVariantMap selectConnectionProfile(const QVariantList& profiles,
+                                               const QVariantMap& activeProfile,
+                                               const QString& profileId);
 
     // 纯函数，便于单测：只负责「协议 → 列举端点」，不碰网络。
     static QUrl modelsUrl(const QString& apiProtocol, const QString& baseUrl);

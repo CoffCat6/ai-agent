@@ -9,9 +9,15 @@
 #include <QJsonParseError>
 #include <QSaveFile>
 #include <QSet>
+#include <QStandardPaths>
 
 namespace NexusAI {
 namespace McpConfigTransfer {
+
+// docs/36 B1-4：定义见文件末尾；前置声明让 validate() 能同步复用同一判定。
+QString validateBatchArgs(const QString& batchPath, const QStringList& args);
+QString validateStdioInvocation(const QString& command, const QStringList& args);
+
 namespace {
 
 QString tr(const char* source) {
@@ -20,6 +26,29 @@ QString tr(const char* source) {
 
 constexpr int kFormatVersion = 1;
 const QString kFormat = QStringLiteral("nexusai-mcp-servers");
+
+// docs/36 B1-4：cmd.exe 在解析 .cmd/.bat 命令行时会把以下字符当作
+// 命令分隔/重定向/变量展开语法。即便参数被双引号包裹，`%`（变量展开）
+// 与 `!`（延迟展开）仍会生效，且 `cmd /s /c` 的引号剥离规则让“只给危险
+// 字符加引号”无法可靠收敛，因此统一拒绝。
+const QString kCmdMetacharacters = QStringLiteral("&|<>^()!%");
+
+bool isBatchWrapperPath(const QString& path) {
+    const QString trimmed = path.trimmed();
+    return trimmed.endsWith(QLatin1String(".cmd"), Qt::CaseInsensitive)
+        || trimmed.endsWith(QLatin1String(".bat"), Qt::CaseInsensitive);
+}
+
+// QJsonArray → QVariantList → QStringList；数字等非字符串项按 toString
+// 读取（校验只看字符，不改变导入落盘的数据形态）。
+QStringList argsFromVariant(const QVariant& value) {
+    if (value.canConvert<QStringList>()) return value.toStringList();
+    QStringList out;
+    if (value.canConvert<QVariantList>()) {
+        for (const QVariant& item : value.toList()) out << item.toString();
+    }
+    return out;
+}
 
 // 导入只接受这几类字段：未知字段（尤其是未来可能出现的凭据字段）不落盘。
 QVariantMap sanitizeServer(const QVariantMap& raw) {
@@ -46,11 +75,19 @@ QString validate(const QVariantMap& server) {
     if (transport != QLatin1String("stdio") && transport != QLatin1String("http"))
         return tr("传输方式必须是 stdio 或 http");
     if (transport == QLatin1String("stdio")) {
-        if (server.value(QStringLiteral("command")).toString().trimmed().isEmpty())
+        const QString command =
+            server.value(QStringLiteral("command")).toString().trimmed();
+        if (command.isEmpty())
             return tr("stdio 服务器缺少启动命令");
-    } else if (server.value(QStringLiteral("url")).toString().trimmed().isEmpty()) {
-        return tr("http 服务器缺少地址");
+        // docs/36 B1-4：.cmd/.bat 包装器的参数会在 cmd.exe 中被二次解释，
+        // 危险元字符必须在导入阶段就拦下（该条目不会进入 applyImport，
+        // 因此不会落盘），错误口径与启动侧完全相同。
+        return validateStdioInvocation(
+            command,
+            argsFromVariant(server.value(QStringLiteral("args"))));
     }
+    if (server.value(QStringLiteral("url")).toString().trimmed().isEmpty())
+        return tr("http 服务器缺少地址");
     return {};
 }
 
@@ -198,6 +235,41 @@ QString policyName(MergePolicy policy) {
     case MergePolicy::Skip:      break;
     }
     return QStringLiteral("skip");
+}
+
+QString validateBatchArgs(const QString& batchPath, const QStringList& args) {
+    // 非 batch（含解析失败的空路径、.exe、脚本语言解释器）不经过 shell，
+    // 由 QProcess 以参数数组启动，元字符只是普通字符。
+    if (!isBatchWrapperPath(batchPath)) return {};
+
+    for (const QString& arg : args) {
+        for (const QChar character : arg) {
+            if (!kCmdMetacharacters.contains(character)) continue;
+            return tr("参数「%1」含有 cmd 元字符「%2」：.cmd/.bat 启动器会经 "
+                      "cmd.exe 解释参数，可能串联执行额外命令。"
+                      "请改用 .exe 启动器，或移除参数中的 cmd 元字符。")
+                .arg(arg, QString(character));
+        }
+    }
+    return {};
+}
+
+QString validateStdioInvocation(const QString& command, const QStringList& args) {
+    const QString trimmed = command.trimmed();
+    if (trimmed.isEmpty()) return {};
+    // 已带 .cmd/.bat 后缀（或绝对路径）：直接校验。
+    if (isBatchWrapperPath(trimmed)) return validateBatchArgs(trimmed, args);
+
+    // 裸名（npx / uvx）：与 StdioTransport 启动时使用同一个
+    // QStandardPaths::findExecutable / PATHEXT 解析规则，确保导入与启动
+    // 对“这是不是一个 batch 包装器”的判断一致。
+    const QString resolved = QStandardPaths::findExecutable(trimmed);
+    if (resolved.isEmpty()) {
+        // 未安装：启动时同样判定为非 batch（随后 FailedToStart），放行以
+        // 保持两侧口径一致；此时也无法串联执行任何命令。
+        return {};
+    }
+    return validateBatchArgs(resolved, args);
 }
 
 QVector<QVariantMap> applyImport(const QVector<QVariantMap>& current,

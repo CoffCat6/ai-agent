@@ -30,6 +30,9 @@
 #include <QJsonObject>
 #include <QLocale>
 #include <QPointer>
+#include <QTcpServer>
+#include <QTcpSocket>
+#include <QHostAddress>
 #include <QTranslator>
 #include <QUrl>
 #include "TestSettingsIsolation.h"
@@ -2032,7 +2035,10 @@ private slots:
         // (already at EOF) would return empty here.
         QFile legacy(dir.path() + "/AGENTS.md");
         QVERIFY(legacy.open(QIODevice::WriteOnly));
-        legacy.write(QByteArray("��ù���"));
+        // Explicit GBK bytes (c4e3 bac3 b9e6 d4f2). Kept as
+        // hex instead of a C string literal so the test never depends on the
+        // source-file encoding (a UTF-8 literal would turn into U+FFFD).
+        legacy.write(QByteArray::fromHex("c4e3bac3b9e6d4f2"));
         legacy.close();
         const QString decoded = vm.loadProjectRules(dir.path());
         QVERIFY(!decoded.isEmpty());
@@ -2437,6 +2443,129 @@ private slots:
                 QCOMPARE(session.value(QStringLiteral("title")).toString(),
                          QStringLiteral("源会话（分支2）"));
         }
+    }
+
+    // B1-2: a failed database restore must leave the VM in the single-tab
+    // steady state (closeAllTabs already emptied m_tabs before the swap), and
+    // the active()-forwarded getters must not dereference a null tab.
+    void restoreFailureKeepsTabSteadyState() {
+        QTemporaryDir dir;
+        QVERIFY(dir.isValid());
+        const QString dbPath = dir.filePath(QStringLiteral("live.db"));
+        {
+            SqliteMemory live(dbPath);
+            live.beginSession(QStringLiteral("before"), QStringLiteral("恢复前会话"));
+        }
+
+        const QString backupPath = dir.filePath(QStringLiteral("snapshot.db"));
+        QVERIFY(SqliteMemory::createBackupFile(dbPath, backupPath));
+        const QVariantMap preview = SqliteMemory::inspectBackupFile(backupPath);
+        QVERIFY(preview.value(QStringLiteral("error")).toString().isEmpty());
+        QVERIFY(preview.value(QStringLiteral("integrityOk")).toBool());
+
+        // Force restore failure AFTER the integrity gate: the rollback anchor
+        // path is occupied by a non-empty directory, so QFile::remove/copy in
+        // restoreFromBackup both fail and the original database is rolled back.
+        const QString anchorPath = dbPath + QStringLiteral(".pre-restore");
+        QVERIFY(QDir().mkpath(anchorPath));
+        QFile blocker(anchorPath + QStringLiteral("/blocker.dat"));
+        QVERIFY(blocker.open(QIODevice::WriteOnly));
+        QCOMPARE(blocker.write("x"), qint64(1));
+        blocker.close();
+
+        SqliteMemory memory(dbPath);
+        AgentViewModel vm(nullptr);
+        vm.setMemory(&memory);
+        QCOMPARE(vm.tabCount(), 1);
+
+        const QString error = vm.restoreDatabaseFrom(backupPath);
+        QVERIFY2(!error.isEmpty(), "restore failure must return an error text");
+        QVERIFY(error.contains(QStringLiteral("恢复失败")));
+
+        // Steady state restored, and all forwarded getters are safe to read.
+        QCOMPARE(vm.tabCount(), 1);
+        QCOMPARE(vm.activeTabIndex(), 0);
+        QCOMPARE(vm.stateAsInt(), vm.stateIdle());
+        QVERIFY(!vm.stateBusy());
+        QVERIFY(!vm.stateText().isNull());   // readable, no null dereference
+        QVERIFY(vm.traceModel() != nullptr);
+        QCOMPARE(vm.traceCount(), 0);
+        QCOMPARE(vm.intermediateCount(), 0);
+        QCOMPARE(vm.usedTokens(), 0);
+        QCOMPARE(vm.permissionMode(), vm.permissionModeConfirmChanges());
+        QVERIFY(vm.currentSessionId().isEmpty());
+        QVERIFY(vm.pendingConfirmation().isEmpty());
+        QVERIFY(vm.activeProjectId().isEmpty());
+
+        // The original database must still be writable after the failed swap.
+        QVERIFY(!memory.databasePath().isEmpty());
+        memory.beginSession(QStringLiteral("after"), QStringLiteral("恢复失败后会话"));
+        QVERIFY(memory.saveMessage(
+                    QStringLiteral("after"),
+                    QJsonObject{{QStringLiteral("role"), QStringLiteral("user")},
+                                {QStringLiteral("content"), QStringLiteral("仍然可用")}})
+                > 0);
+    }
+
+    // B1-3: cancellation releases the import state through the normal finish
+    // callback; a hanging local server holds the fetch in flight long enough
+    // to observe it.
+    void urlImportCancelResetsRunning() {
+        AgentViewModel vm(nullptr);
+        RagService rag;
+        vm.setRagService(&rag);
+        vm.setAllowPrivateTargets(true);   // local loopback server is the target
+
+        QTcpServer server;
+        QVERIFY(server.listen(QHostAddress::LocalHost, 0));
+        QObject::connect(&server, &QTcpServer::newConnection, &server, [&server]() {
+            // Accept and keep the sockets open: the fetch stays in flight.
+            while (server.hasPendingConnections())
+                server.nextPendingConnection();
+        });
+
+        QSignalSpy runningSpy(&vm, &AgentViewModel::urlImportRunningChanged);
+        vm.importFromUrl(QStringLiteral("http://127.0.0.1:%1/slow")
+                             .arg(server.serverPort()));
+        QVERIFY(vm.urlImportRunning());
+
+        vm.cancelUrlImport();
+        QTRY_COMPARE_WITH_TIMEOUT(vm.urlImportRunning(), false, 15000);
+        QVERIFY(runningSpy.count() >= 2);   // true → false
+    }
+
+    // B1-3: destroying the VM while the worker is blocked must not access the
+    // dead object. The worker keeps the shared cancel flag alive, notices the
+    // destructor's cancellation on its next slice, and closes the connection.
+    void urlImportDestroyWhileRunningIsSafe() {
+        RagService rag;
+        QTcpServer server;
+        QVERIFY(server.listen(QHostAddress::LocalHost, 0));
+        int connections = 0;
+        int disconnects = 0;
+        QObject::connect(&server, &QTcpServer::newConnection, &server, [&]() {
+            while (server.hasPendingConnections()) {
+                QTcpSocket* socket = server.nextPendingConnection();
+                ++connections;
+                QObject::connect(socket, &QTcpSocket::disconnected,
+                                 &server, [&disconnects]() { ++disconnects; });
+            }
+        });
+
+        auto* vm = new AgentViewModel(nullptr);
+        vm->setRagService(&rag);
+        vm->setAllowPrivateTargets(true);
+        vm->importFromUrl(QStringLiteral("http://127.0.0.1:%1/slow")
+                              .arg(server.serverPort()));
+        QVERIFY(vm->urlImportRunning());
+
+        // Wait until the worker really reached the server, then destroy the
+        // VM while the request is still pending.
+        QTRY_VERIFY_WITH_TIMEOUT(connections > 0, 5000);
+        delete vm;
+
+        // The worker aborts on the shared flag; the server sees the close.
+        QTRY_VERIFY_WITH_TIMEOUT(disconnects > 0, 15000);
     }
 };
 QTEST_GUILESS_MAIN(TestAgentViewModel)

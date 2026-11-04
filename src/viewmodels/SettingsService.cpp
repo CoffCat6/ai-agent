@@ -52,6 +52,29 @@ const LlmProtocolDescriptor* defaultsForProvider(const QString& provider) {
     return LlmProtocolRegistry::resolve(QString(), provider);
 }
 
+// B1-1：公共出口的 profile 副本。m_profiles 里存的是 DPAPI 解密后的明文
+// 密钥（见 load()），任何 Q_PROPERTY/READ 都不能把它带出去。这里删除 apiKey，
+// 只保留「是否已配置」的布尔位；其余字段（id/displayName/provider/kind/
+// apiProtocol/baseUrl/model/models/生成参数等）原样保留，避免 QML 回归。
+QVariantMap sanitizeProfileForPublic(const QVariantMap& profile) {
+    // 没有活动配置时必须保持空 map：调用方普遍用 isEmpty() 判「未选中」，
+    // 补 hasApiKey 会把空 map 变成非空而骗过这些判断。
+    if (profile.isEmpty()) return {};
+    QVariantMap out = profile;
+    const QString apiKey = out.value(QStringLiteral("apiKey")).toString();
+    out.remove(QStringLiteral("apiKey"));
+    out.insert(QStringLiteral("hasApiKey"), !apiKey.trimmed().isEmpty());
+    return out;
+}
+
+QVariantList sanitizeProfilesForPublic(const QVariantList& profiles) {
+    QVariantList out;
+    out.reserve(profiles.size());
+    for (const QVariant& entry : profiles)
+        out.append(sanitizeProfileForPublic(entry.toMap()));
+    return out;
+}
+
 // kind 是设置页的"这条配置是从哪个预设来的"轴："openai" | "anthropic" |
 // "ollama" | "custom"。它只决定要不要给用户预填端点与模型列表，不参与线格式、
 // local-only 门控与能力表——那三件事仍然只看 provider / apiProtocol。
@@ -249,13 +272,21 @@ SettingsService::SettingsService(QObject* parent) : QObject(parent) {
 // 类型，而头文件只前置声明了它。
 SettingsService::~SettingsService() = default;
 
-QVariantMap SettingsService::activeProfile() const {
+QVariantList SettingsService::profiles() const {
+    return sanitizeProfilesForPublic(m_profiles);
+}
+
+QVariantMap SettingsService::activeProfileWithSecrets() const {
     for (const QVariant& entry : m_profiles) {
         const QVariantMap p = entry.toMap();
         if (p.value("id").toString() == m_activeId)
             return p;
     }
     return {};
+}
+
+QVariantMap SettingsService::activeProfile() const {
+    return sanitizeProfileForPublic(activeProfileWithSecrets());
 }
 
 bool SettingsService::persistValue(const QString& key, const QVariant& value) {
@@ -315,7 +346,7 @@ void SettingsService::load() {
         m_profiles = migrateLegacy();
 
     m_activeId = SettingsRepository::value(kActiveKey).toString();
-    if (activeProfile().isEmpty() && !m_profiles.isEmpty())
+    if (activeProfileWithSecrets().isEmpty() && !m_profiles.isEmpty())
         m_activeId = m_profiles.first().toMap().value("id").toString();
 
     // 提示词与指令页的三组用户资产。坏 JSON / 非数组按空列表处理（首次
@@ -326,8 +357,10 @@ void SettingsService::load() {
     // 键从未写入 → 种入默认资产（老用户升级首次启动同样受益）。
     maybeSeedPromptAssets();
 
-    // Legacy env fallback for the active profile's key
-    QVariantMap active = activeProfile();
+    // Legacy env fallback for the active profile's key。B1-1：这里必须走 C++
+    // 内部出口——公共 activeProfile() 已脱敏，读不到 apiKey 会把「已配置」
+    // 误判成「未配置」，反而用环境变量覆盖用户保存的密钥。
+    QVariantMap active = activeProfileWithSecrets();
     if (!active.isEmpty() && active.value("apiKey").toString().isEmpty()) {
         // 要不要读环境变量、读哪一个，都由协议描述符给出（本地协议没有
         // key 概念，envApiKeyVar 为空即跳过）。
@@ -345,6 +378,10 @@ void SettingsService::load() {
                     break;
                 }
             }
+            // 写入发生在构造期（QML 绑定尚未建立），但仍发信号保持「m_profiles
+            // 变了就通知」的既有契约；接在 load 之后的消费者会重新取到新值。
+            emit profilesChanged();
+            emit activeProfileChanged();
         }
     }
 
@@ -905,6 +942,14 @@ void SettingsService::updateProfile(const QString& id, const QVariantMap& fields
             if (it.key() == QLatin1String("apiProtocol")
                     && !LlmProtocolRegistry::find(it.value().toString()))
                 continue;   // 未注册的协议不接受
+            // B1-1：密钥框永不回显明文，QML 提交空串只代表「用户没改密钥」，
+            // 不能把已保存的密钥清掉。显式清除需要独立入口（当前 UI 不提供）。
+            if (it.key() == QLatin1String("apiKey")) {
+                const QString apiKey = it.value().toString().trimmed();
+                if (apiKey.isEmpty()) continue;
+                p[it.key()] = apiKey;
+                continue;
+            }
             if (it.key() == QLatin1String("model")) {
                 // 模型名带空格会让"当前模型"和列表项对不上（列表项是 trim 过的），
                 // chip 高亮与聊天侧选择器都会错位。

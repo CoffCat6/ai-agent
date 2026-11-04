@@ -167,7 +167,9 @@ Item {
     function syncFields() {
         const p = page.editing
         page.setRow(nameRow, p ? p.displayName : "")
-        page.setRow(keyRow, p ? p.apiKey : "")
+        // B1-1：密钥永不回显。profiles() 已不含 apiKey，这里也显式置空，
+        // 避免将来有人把明文重新接进来。
+        page.setRow(keyRow, "")
         page.setRow(urlRow, p ? p.baseUrl : "")
         page.setRow(modelRow, p ? p.model : "")
         page.setRow(tempRow, p ? p.temperature : "")
@@ -664,11 +666,10 @@ Item {
                     visible: !page.isOllama
                     label: qsTr("API Key")
                     secret: true
-                    statusText: page.editing !== null
-                                && String(page.editing.apiKey || "") !== ""
+                    // 只暴露「是否已配置」：输入框永远为空，真值只留在 C++。
+                    statusText: page.editing !== null && page.editing.hasApiKey === true
                         ? qsTr("已配置") : qsTr("未配置")
-                    statusOk: page.editing !== null
-                              && String(page.editing.apiKey || "") !== ""
+                    statusOk: page.editing !== null && page.editing.hasApiKey === true
                     placeholderText: page.apiKeyPlaceholder
                     // 填了 Key 又直接切分类/关设置最容易踩："填了却没保存"最难
                     // 察觉，这里补一次销毁提交（commitIfDirty 读 text 而非掩码）。
@@ -679,8 +680,8 @@ Item {
                 Text {
                     visible: !page.isOllama
                     Layout.fillWidth: true
-                    text: page.editing !== null && String(page.editing.apiKey || "") !== ""
-                        ? qsTr("密钥已填写，保存时加密存储。")
+                    text: page.editing !== null && page.editing.hasApiKey === true
+                        ? qsTr("密钥已配置（不回显）；留空保存会保留原密钥，输入新值才替换。")
                         : qsTr("密钥为空：请求前会先读环境变量 %1。").arg(page.apiKeyEnvVar)
                     color: Theme.textSecondary
                     font.pixelSize: Theme.fontSizeCaption
@@ -701,10 +702,9 @@ Item {
                         onClicked: {
                             page.testing = true
                             page.testResult = ""
-                            ConnectionTester.test(page.editing.apiProtocol,
-                                                  page.editing.baseUrl,
-                                                  page.editing.apiKey,
-                                                  page.testModel)
+                            // B1-1：只传 profileId，密钥由 C++ 内部取。
+                            ConnectionTester.testProfile(page.editing.id,
+                                                         page.testModel)
                         }
                     }
 
@@ -892,9 +892,8 @@ Item {
                         onClicked: {
                             page.fetchingModels = true
                             page.fetchModelsResult = ""
-                            ConnectionTester.fetchModels(page.editing.apiProtocol,
-                                                         page.editing.baseUrl,
-                                                         page.editing.apiKey)
+                            // B1-1：同上，QML 不再接触密钥。
+                            ConnectionTester.fetchModelsForProfile(page.editing.id)
                         }
                     }
 

@@ -220,6 +220,10 @@ AgentViewModel::AgentViewModel(QObject* parent)
 }
 
 AgentViewModel::~AgentViewModel() {
+    // The URL fetch worker captures the shared cancel flag by value, so it
+    // survives this object; signal cancellation before the watcher (child)
+    // is torn down and the worker self-exits on its next slice.
+    if (m_urlFetchCancel) m_urlFetchCancel->store(true);
     if (m_uiPersistTimer.isActive()) {
         m_uiPersistTimer.stop();
         persistPanelWidths();
@@ -921,38 +925,46 @@ void AgentViewModel::configureModel(ChatSessionController* controller) {
 }
 
 QVariantMap AgentViewModel::chatModelProfile() const {
-    auto profile = active()->modelProfile;
+    ChatSessionController* controller = active();
+    if (!controller) return {};
+    auto profile = controller->modelProfile;
     profile.remove("apiKey");
     return profile;
 }
 
 bool AgentViewModel::modelConfigured() const {
-    return active()->agent() && active()->agent()->hasModelService()
-        && (!m_configureModel || !active()->modelProfile.value("model").toString().trimmed().isEmpty());
+    ChatSessionController* controller = active();
+    if (!controller) return false;
+    return controller->agent() && controller->agent()->hasModelService()
+        && (!m_configureModel || !controller->modelProfile.value("model").toString().trimmed().isEmpty());
 }
 
 void AgentViewModel::selectChatModel(const QString& profileId, const QString& model) {
-    if (active()->isBusy()) {
+    ChatSessionController* controller = active();
+    if (!controller) return;
+    if (controller->isBusy()) {
         emit noticeOccurred(tr("请等待当前任务完成，或停止后切换模型。"));
         return;
     }
     for (const auto& entry : m_availableProfiles) {
         const auto profile = entry.toMap();
         if (profile.value("id").toString() != profileId) continue;
-        active()->modelProfile = profile;
-        active()->modelSelected = true;
-        active()->selectedModel = model;
-        active()->selectedReasoning = QVariant();
-        configureModel(active());
+        controller->modelProfile = profile;
+        controller->modelSelected = true;
+        controller->selectedModel = model;
+        controller->selectedReasoning = QVariant();
+        configureModel(controller);
         return;
     }
 }
 
 void AgentViewModel::setChatReasoningEffort(const QString& effort) {
-    if (active()->isBusy()) return;
+    ChatSessionController* controller = active();
+    if (!controller) return;
+    if (controller->isBusy()) return;
     if (!QStringList{"", "off", "low", "medium", "high"}.contains(effort)) return;
-    active()->selectedReasoning = effort;
-    configureModel(active());
+    controller->selectedReasoning = effort;
+    configureModel(controller);
 }
 
 void AgentViewModel::applyToAgents(const std::function<void(AIAgent*)>& fn) {
@@ -983,7 +995,7 @@ void AgentViewModel::refreshProjects() {
 // docs/18: 派生值——活动标签的 agent 持有的归属。不存在全局活动项目，因此
 // 这个值天然不可能与其他标签不一致（徽标"撒谎"从结构上被消除）。
 QString AgentViewModel::activeProjectId() const {
-    return active()->activeProjectId();
+    return active() ? active()->activeProjectId() : QString();
 }
 
 void AgentViewModel::setActiveProjectId(const QString& id) {
@@ -1871,7 +1883,7 @@ void AgentViewModel::importFromUrl(const QString& url) {
 
     m_urlImportRunning = true;
     emit urlImportRunningChanged();
-    m_urlFetchCancel.store(false);
+    m_urlFetchCancel->store(false);
 
     // Fetch on the pool thread: the sliced event loop inside fetchUrl must
     // not spin on the GUI thread (it would still process events, but a modal
@@ -1911,12 +1923,19 @@ void AgentViewModel::importFromUrl(const QString& url) {
     });
 
     const QUrl parsedCopy = parsed;
-    watcher->setFuture(QtConcurrent::run([this, parsedCopy, allowPrivate]() {
-        return WebContent::fetchUrl(m_urlFetchCancel, parsedCopy.toString(),
+    // Capture the shared flag by value: the worker outlives the VM on exit
+    // and must never dereference `this`.
+    auto cancelFlag = m_urlFetchCancel;
+    watcher->setFuture(QtConcurrent::run([cancelFlag, parsedCopy, allowPrivate]() {
+        return WebContent::fetchUrl(*cancelFlag, parsedCopy.toString(),
                                     allowPrivate, 30000,
                                     4 * 1024 * 1024,   // 4 MB wire: whole page
                                     400000);           // 400k chars of text
     }));
+}
+
+void AgentViewModel::cancelUrlImport() {
+    if (m_urlFetchCancel) m_urlFetchCancel->store(true);
 }
 
 void AgentViewModel::importDocuments(const QStringList& paths) {
@@ -2326,8 +2345,13 @@ QString AgentViewModel::restoreDatabaseFrom(const QString& path) {
     // 3. Swap the file (any failure leaves the original in place and the
     //    connection usable — docs/24 R1). The captured usageMemory /
     //    modelConfigurator raw pointers survive: restore reopens in place.
-    if (!m_memory->restoreFromBackup(local))
+    if (!m_memory->restoreFromBackup(local)) {
+        // The swap failed but closeAllTabs already emptied the tab list;
+        // restore the single-tab steady state before returning so the UI
+        // (and every active()-forwarded getter) stays usable.
+        openTab();
         return tr("恢复失败，原数据库已还原");
+    }
 
     // 4. Re-run the knowledge restore against the swapped file (wiring
     //    layer owns the glue; direct connection runs in-stack).
@@ -2754,7 +2778,8 @@ QVariantMap AgentViewModel::pendingConfirmation() const {
 }
 
 void AgentViewModel::stop() {
-    active()->stop();
+    if (m_urlFetchCancel) m_urlFetchCancel->store(true);
+    if (active()) active()->stop();
 }
 
 // docs/32 §9：只停止活动标签里在飞的子代理（会话窗口的「停止子代理」
@@ -2807,6 +2832,8 @@ void AgentViewModel::dismissFinishedBackgroundSubAgents() {
 // docs/25 A4：停全部标签的任务。与「关 tab 停任务」同一封口语义（agent 封口
 // 未答复的工具调用），托盘退出路径据此不再依赖析构顺序的被动兜底。
 void AgentViewModel::stopAllTabs() {
+    // Tray/exit cleanup: also stop the URL import worker before its VM dies.
+    if (m_urlFetchCancel) m_urlFetchCancel->store(true);
     for (ChatSessionController* controller : std::as_const(m_tabs))
         controller->stop();
 }

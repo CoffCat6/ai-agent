@@ -190,16 +190,17 @@ Dialog {
 
     function testConnection() {
         if (profileId.length === 0 || !profileUsable) return
-        const submittedKey = keyField.text
+        // applyProfileFields() 只提交非空密钥：用户刚输入的 key 会先落盘到
+        // 当前 profile，再由 testProfile(profileId) 在 C++ 内部读取。
+        // 空白密钥不覆盖已保存的密钥，测试也沿用已配置的那把。
         applyProfileFields()
-        const profile = profileById(profileId)
-        if (!profile) return
+        if (!profileById(profileId)) return
         testing = true
         testState = "busy"
         testText = qsTr("正在测试连接…")
-        ConnectionTester.test(String(profile.apiProtocol || ""),
-                              baseUrlField.text.trim(), submittedKey,
-                              modelField.text.trim())
+        // B1-1：QML 不再持有/传递明文 apiKey；旧 test(..., apiKey, ...)
+        // 仅保留给 C++ 单元测试与兼容调用。
+        ConnectionTester.testProfile(profileId, modelField.text.trim())
     }
 
     function next() {

@@ -775,7 +775,10 @@ qInfo() << "NexusAI" << app.applicationVersion() << "starting";
         // QNetworkAccessManager (LLM/embedding/search/MCP/http_fetch) follows
         // the same mode without per-link wiring.
         proxyFactory->setConfig(settings->proxyConfig());
-        agentVM->updateModelProfiles(settings->profiles(), settings->activeProfile());
+        // B1-1：模型装配必须拿真实密钥（configureModel 会把它交给
+        // LLM service），走 C++ 专用出口；QML 可见的 profiles() 已脱敏。
+        agentVM->updateModelProfiles(settings->profilesWithSecrets(),
+                                     settings->activeProfileWithSecrets());
         const auto applyRuntime = [settings](AIAgent* target) {
             target->setLocalOnlyMode(settings->localOnlyMode());
         };
@@ -838,9 +841,11 @@ qInfo() << "NexusAI" << app.applicationVersion() << "starting";
                 settings->resolveContextLimitForProfile(profile);
             return snapshot;
         };
-        const QVariantMap spawnProfile = settings->activeProfile();
+        // 子代理快照要能真正发请求：profileConfigOf() 读 apiKey，
+        // 因此这里同样走 WithSecrets 出口。
+        const QVariantMap spawnProfile = settings->activeProfileWithSecrets();
         auto profileSet = std::make_shared<SubAgentProfileSet>();
-        for (const QVariant& rawProfile : settings->profiles()) {
+        for (const QVariant& rawProfile : settings->profilesWithSecrets()) {
             const QVariantMap profile = rawProfile.toMap();
             const QString profileId = profile.value(QStringLiteral("id")).toString();
             if (profileId.isEmpty()) continue;

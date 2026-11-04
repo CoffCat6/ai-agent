@@ -1,6 +1,7 @@
 // SettingsService multi-model profiles, defaults completion, model switching,
 // addition, removal and persistence coverage.
 #include "viewmodels/SettingsService.h"
+#include "viewmodels/ConnectionTester.h"
 #include "core/utils/SettingsSchema.h"
 #include "viewmodels/ThemeManager.h"
 #include "core/tools/ToolRegistry.h"
@@ -219,8 +220,18 @@ public:
 };
 
 // profile 列表按 id 取一项；找不到返回空 map（测试里用来断言刚建出来的 profile）。
+// 走公共出口（已脱敏），用来锁定「QML 看不到 apiKey」这一面。
 QVariantMap profileById(const SettingsService& service, const QString& id) {
     for (const QVariant& entry : service.profiles()) {
+        const QVariantMap p = entry.toMap();
+        if (p.value("id").toString() == id) return p;
+    }
+    return {};
+}
+
+// C++ 内部出口：只有需要真实密钥的断言才用它。
+QVariantMap profileSecretsById(const SettingsService& service, const QString& id) {
+    for (const QVariant& entry : service.profilesWithSecrets()) {
         const QVariantMap p = entry.toMap();
         if (p.value("id").toString() == id) return p;
     }
@@ -594,7 +605,7 @@ private slots:
              {QStringLiteral("models"), QStringList{QStringLiteral("m1"), QStringLiteral("m2")}},
              {QStringLiteral("apiKey"), QStringLiteral("sk-secret")},
              {QStringLiteral("temperature"), QStringLiteral("0.4")}});
-        QCOMPARE(service.activeProfile().value("apiKey").toString(),
+        QCOMPARE(service.activeProfileWithSecrets().value("apiKey").toString(),
                  QStringLiteral("sk-secret"));
 
         const QString copyId = service.duplicateProfile(sourceId, QStringLiteral("副本 A"));
@@ -602,8 +613,10 @@ private slots:
         QVERIFY(copyId != sourceId);
         const QVariantMap copy = profileById(service, copyId);
         QCOMPARE(copy.value("displayName").toString(), QStringLiteral("副本 A"));
-        QVERIFY2(copy.value("apiKey").toString().isEmpty(),
-                 "复制出的配置绝不能携带 API Key");
+        QVERIFY2(!copy.contains(QStringLiteral("apiKey")),
+                 "复制出的配置绝不能携带 API Key（公共出口也不带该字段）");
+        QVERIFY2(!copy.value("hasApiKey").toBool(),
+                 "复制出的配置不能继承源配置的密钥标记");
         QCOMPARE(copy.value("baseUrl").toString(), QStringLiteral("http://gw.local/v1"));
         QCOMPARE(copy.value("model").toString(), QStringLiteral("m1"));
         QCOMPARE(copy.value("models").toStringList(),
@@ -611,20 +624,168 @@ private slots:
         QCOMPARE(copy.value("temperature").toString(), QStringLiteral("0.4"));
         // 复制不动当前启用项，源配置的密钥也不受影响。
         QCOMPARE(service.activeProfileId(), sourceId);
-        QCOMPARE(service.activeProfile().value("apiKey").toString(),
+        QCOMPARE(service.activeProfileWithSecrets().value("apiKey").toString(),
                  QStringLiteral("sk-secret"));
 
         // 落盘回读：新配置仍在、仍无密钥。
         SettingsService reloaded(nullptr);
         const QVariantMap persisted = profileById(reloaded, copyId);
         QCOMPARE(persisted.value("displayName").toString(), QStringLiteral("副本 A"));
-        QVERIFY(persisted.value("apiKey").toString().isEmpty());
+        QVERIFY(!persisted.contains(QStringLiteral("apiKey")));
+        QVERIFY(!persisted.value("hasApiKey").toBool());
 
         // 空名字回落到 "<原名称> 副本"；未知 id 返回空串。
         const QString unnamed = service.duplicateProfile(sourceId, QStringLiteral("   "));
         QCOMPARE(profileById(service, unnamed).value("displayName").toString(),
                  QStringLiteral("源配置 副本"));
         QVERIFY(service.duplicateProfile(QStringLiteral("missing"), QStringLiteral("x")).isEmpty());
+    }
+
+    // ── B1-1：profile 密钥不向 QML 泄露 ─────────────────────────────
+    // Q_PROPERTY 的 profiles()/activeProfile() 是任意 QML 都能读的出口，
+    // 必须只返回脱敏副本：没有 apiKey，只有 hasApiKey。
+    void profilesNeverExposeApiKey() {
+        SettingsGuard guard;
+        {
+            QSettings s = NexusAI::TestSupport::testSettings();
+            s.remove("modelProfiles");
+            s.remove("activeProfileId");
+        }
+
+        SettingsService service(nullptr);
+        const QString id = service.activeProfileId();
+        service.updateProfile(id, {{QStringLiteral("apiKey"), QStringLiteral("sk-canary")},
+                                    {QStringLiteral("model"), QStringLiteral("gpt-4o-mini")}});
+
+        bool found = false;
+        for (const QVariant& entry : service.profiles()) {
+            const QVariantMap p = entry.toMap();
+            QVERIFY2(!p.contains(QStringLiteral("apiKey")),
+                     "profiles() 不得向 QML 暴露 apiKey");
+            QVERIFY(p.contains(QStringLiteral("hasApiKey")));
+            if (p.value("id").toString() != id) continue;
+            found = true;
+            QVERIFY2(p.value("hasApiKey").toBool(), "真实密钥非空时 hasApiKey 必须为 true");
+            // 其余字段保持原样，避免 ModelConfigPage / ModelSelector 回归。
+            QVERIFY(p.contains(QStringLiteral("displayName")));
+            QVERIFY(p.contains(QStringLiteral("provider")));
+            QVERIFY(p.contains(QStringLiteral("apiProtocol")));
+            QVERIFY(p.contains(QStringLiteral("baseUrl")));
+            QVERIFY(p.contains(QStringLiteral("model")));
+            QVERIFY(p.contains(QStringLiteral("models")));
+        }
+        QVERIFY(found);
+
+        const QVariantMap active = service.activeProfile();
+        QVERIFY(!active.contains(QStringLiteral("apiKey")));
+        QCOMPARE(active.value("hasApiKey").toBool(), true);
+        QCOMPARE(active.value("id").toString(), id);
+        QCOMPARE(active.value("model").toString(), QStringLiteral("gpt-4o-mini"));
+    }
+
+    // 内部出口仍带真实值：main/起草器/子代理靠它发请求。
+    void profilesWithSecretsStillUsable() {
+        SettingsGuard guard;
+        {
+            QSettings s = NexusAI::TestSupport::testSettings();
+            s.remove("modelProfiles");
+            s.remove("activeProfileId");
+        }
+
+        SettingsService service(nullptr);
+        const QString id = service.activeProfileId();
+        service.updateProfile(id, {{QStringLiteral("apiKey"), QStringLiteral("sk-canary")}});
+
+        QCOMPARE(service.activeProfileWithSecrets().value("apiKey").toString(),
+                 QStringLiteral("sk-canary"));
+        QCOMPARE(profileSecretsById(service, id).value("apiKey").toString(),
+                 QStringLiteral("sk-canary"));
+        // 内存里的真实值不受公共出口影响：公共出口只是副本。
+        QCOMPARE(profileById(service, id).value("hasApiKey").toBool(), true);
+        QCOMPARE(service.activeProfileWithSecrets().value("apiKey").toString(),
+                 QStringLiteral("sk-canary"));
+    }
+
+    // 密钥框永不回显：未输入新密钥时（空串）不能覆盖已保存的密钥。
+    void updateProfileWithoutApiKeyKeepsSecret() {
+        SettingsGuard guard;
+        {
+            QSettings s = NexusAI::TestSupport::testSettings();
+            s.remove("modelProfiles");
+            s.remove("activeProfileId");
+        }
+
+        SettingsService service(nullptr);
+        const QString id = service.activeProfileId();
+        service.updateProfile(id, {{QStringLiteral("apiKey"), QStringLiteral("sk-canary")}});
+
+        // 只改别的字段：密钥原样保留。
+        service.updateProfile(id, {{QStringLiteral("model"), QStringLiteral("gpt-4o-mini")}});
+        QCOMPARE(service.activeProfileWithSecrets().value("apiKey").toString(),
+                 QStringLiteral("sk-canary"));
+
+        // 空密钥提交 = 用户没在密钥框输入，绝不能清掉。
+        service.updateProfile(id, {{QStringLiteral("apiKey"), QString()}});
+        QCOMPARE(service.activeProfileWithSecrets().value("apiKey").toString(),
+                 QStringLiteral("sk-canary"));
+        QCOMPARE(service.activeProfile().value("hasApiKey").toBool(), true);
+
+        // 只有非空输入才替换。
+        service.updateProfile(id, {{QStringLiteral("apiKey"), QStringLiteral("  sk-new  ")}});
+        QCOMPARE(service.activeProfileWithSecrets().value("apiKey").toString(),
+                 QStringLiteral("sk-new"));
+
+        // 落盘重载后仍保留最后一个有效密钥。
+        SettingsService reloaded(nullptr);
+        QCOMPARE(reloaded.activeProfileWithSecrets().value("apiKey").toString(),
+                 QStringLiteral("sk-new"));
+        QVERIFY(!reloaded.activeProfile().contains(QStringLiteral("apiKey")));
+    }
+
+    // 连接测试按 profileId 从内部出口取密钥；公共脱敏列表拿不到密钥。
+    // 这里只做解析边界的纯逻辑验证，不发起网络请求。
+    void connectionTestResolvesKeyByProfileId() {
+        SettingsGuard guard;
+        {
+            QSettings s = NexusAI::TestSupport::testSettings();
+            s.remove("modelProfiles");
+            s.remove("activeProfileId");
+        }
+
+        SettingsService service(nullptr);
+        const QString activeId = service.activeProfileId();
+        service.updateProfile(activeId,
+            {{QStringLiteral("apiKey"), QStringLiteral("sk-active")},
+             {QStringLiteral("provider"), QStringLiteral("openai")},
+             {QStringLiteral("baseUrl"), QStringLiteral("https://active.test/v1")},
+             {QStringLiteral("model"), QStringLiteral("m-active")}});
+
+        const QString otherId = service.addProfile(QStringLiteral("anthropic"));
+        service.updateProfile(otherId,
+            {{QStringLiteral("apiKey"), QStringLiteral("sk-other")},
+             {QStringLiteral("baseUrl"), QStringLiteral("https://other.test")},
+             {QStringLiteral("model"), QStringLiteral("claude-x")}});
+
+        // 非 active 的配置也能按 id 拿到自己的真实密钥。
+        const QVariantMap resolved = ConnectionTester::selectConnectionProfile(
+            service.profilesWithSecrets(), service.activeProfileWithSecrets(), otherId);
+        QCOMPARE(resolved.value("id").toString(), otherId);
+        QCOMPARE(resolved.value("apiKey").toString(), QStringLiteral("sk-other"));
+        QCOMPARE(resolved.value("baseUrl").toString(), QStringLiteral("https://other.test"));
+
+        // 同一个解析器喂公共出口时没有密钥——证明生产入口必须走 WithSecrets。
+        const QVariantMap publicResolved = ConnectionTester::selectConnectionProfile(
+            service.profiles(), service.activeProfile(), otherId);
+        QVERIFY(!publicResolved.contains(QStringLiteral("apiKey")));
+        QCOMPARE(publicResolved.value("hasApiKey").toBool(), true);
+
+        // 空 id 回退 active；显式但未知的 id 返回空（不静默测错端点）。
+        QCOMPARE(ConnectionTester::selectConnectionProfile(
+                     service.profilesWithSecrets(), service.activeProfileWithSecrets(),
+                     QString()).value("id").toString(), activeId);
+        QVERIFY(ConnectionTester::selectConnectionProfile(
+                    service.profilesWithSecrets(), service.activeProfileWithSecrets(),
+                    QStringLiteral("missing")).isEmpty());
     }
 
     void moveProfilePersistsOrder() {
@@ -2463,7 +2624,7 @@ Item {
 
         {
             SettingsService service(nullptr);
-            const QVariantMap p = profileById(service, QStringLiteral("v1-profile"));
+            const QVariantMap p = profileSecretsById(service, QStringLiteral("v1-profile"));
             QVERIFY2(!p.isEmpty(), "迁移不能丢掉 profile");
             QVERIFY(p.value("model").toString().isEmpty());
             QVERIFY(p.value("models").toStringList().isEmpty());

@@ -2,6 +2,7 @@
 
 #include <QObject>
 #include <atomic>
+#include <memory>
 #include <QQmlEngine>
 #include <QJsonArray>
 #include <QJsonObject>
@@ -239,10 +240,16 @@ public:
     void setKnowledgeContentProvider(std::function<QString(const QString&)> provider);
 
 
-    // State accessors (active tab)
-    int stateAsInt() const { return static_cast<int>(active()->state()); }
-    AgentState state() const { return active()->state(); }
-    QString stateText() const { return active()->stateText(); }
+    // State accessors (active tab). During the database-restore window the
+    // tab list is momentarily empty (closeAllTabs → swap → openTab), so every
+    // getter must degrade instead of dereferencing a null active().
+    int stateAsInt() const
+    { return active() ? static_cast<int>(active()->state())
+                      : static_cast<int>(AgentState::Idle); }
+    AgentState state() const
+    { return active() ? active()->state() : AgentState::Idle; }
+    QString stateText() const
+    { return active() ? active()->stateText() : QString(); }
 
     // Named enum constants for QML (see the Q_PROPERTY block above)
     int stateIdle() const { return static_cast<int>(AgentState::Idle); }
@@ -252,7 +259,9 @@ public:
 
     // Session permission mode of the ACTIVE tab (draftText pattern): the
     // controller is authoritative per tab; switching tabs re-notifies.
-    int permissionMode() const { return active()->permissionMode(); }
+    int permissionMode() const
+    { return active() ? active()->permissionMode()
+                      : static_cast<int>(PermissionMode::ConfirmChanges); }
     void setPermissionMode(int mode);
     int permissionModeConfirmChanges() const { return static_cast<int>(PermissionMode::ConfirmChanges); }
     int permissionModeAutoEdit() const { return static_cast<int>(PermissionMode::AutoEdit); }
@@ -271,35 +280,45 @@ public:
     int stateSummarizing() const { return static_cast<int>(AgentState::Summarizing); }
     int stateCompleted() const { return static_cast<int>(AgentState::Completed); }
     int stateError() const { return static_cast<int>(AgentState::Error); }
-    bool stateBusy() const { return active()->isBusy(); }
+    bool stateBusy() const { return active() && active()->isBusy(); }
 
-    // Trace model (active tab)
-    QAbstractListModel* traceModel() { return active()->trace(); }
-    int traceCount() const { return active()->traceCount(); }
-    int intermediateCount() const { return active()->intermediateCount(); }
+    // Trace model (active tab). Pointer getters return nullptr/zero when the
+    // tab list is empty: a QML binding sees an empty model instead of a
+    // crash, and the next traceChanged re-syncs it after openTab.
+    QAbstractListModel* traceModel() { return active() ? active()->trace() : nullptr; }
+    int traceCount() const { return active() ? active()->traceCount() : 0; }
+    int intermediateCount() const
+    { return active() ? active()->intermediateCount() : 0; }
     // 过程显示偏好是全局的（跨会话、跨标签），不随当前会话变化——
     // 用户调的是"我想不想看过程"，与正在看哪条会话无关。
     bool showProcess() const { return m_showProcess; }
     void setShowProcess(bool show);
-    QVariantList userMessageIndex() const { return active()->userMessageIndex(); }
+    QVariantList userMessageIndex() const
+    { return active() ? active()->userMessageIndex() : QVariantList{}; }
     // docs/20 §3.1/§3.2：该类型 trace 节点的最后一行（消息级操作按钮用）。
     Q_INVOKABLE int lastTraceIndexOfType(const QString& type) const
-    { return active()->lastIndexOfType(type); }
+    { return active() ? active()->lastIndexOfType(type) : -1; }
 
     // Response (active tab)
-    QString finalResponse() const { return active()->finalResponse(); }
+    QString finalResponse() const
+    { return active() ? active()->finalResponse() : QString(); }
 
     // Draft text (active tab)
-    QString draftText() const { return active()->draftText(); }
+    QString draftText() const { return active() ? active()->draftText() : QString(); }
     void setDraftText(const QString& text);
-    QVariantList draftAttachments() const { return active()->draftAttachments(); }
-    void setDraftAttachments(const QVariantList& attachments) { active()->setDraftAttachments(attachments); }
+    QVariantList draftAttachments() const
+    { return active() ? active()->draftAttachments() : QVariantList{}; }
+    void setDraftAttachments(const QVariantList& attachments)
+    { if (active()) active()->setDraftAttachments(attachments); }
     QVariantMap pendingConfirmation() const;
     // docs/20 §3.3：输入历史回溯（活动标签）。↑ 返回上一条历史，↓ 返回下一条；
     // 无更多历史或已回到草稿态时返回空串。编辑后调用 resetInputHistory 复位游标。
-    Q_INVOKABLE QString historyPrev() { return active()->historyPrev(); }
-    Q_INVOKABLE QString historyNext() { return active()->historyNext(); }
-    Q_INVOKABLE void resetInputHistory() { active()->resetHistoryCursor(); }
+    Q_INVOKABLE QString historyPrev()
+    { return active() ? active()->historyPrev() : QString(); }
+    Q_INVOKABLE QString historyNext()
+    { return active() ? active()->historyNext() : QString(); }
+    Q_INVOKABLE void resetInputHistory()
+    { if (active()) active()->resetHistoryCursor(); }
 
     // Panel
     bool isPanelVisible() const { return m_isPanelVisible; }
@@ -343,7 +362,8 @@ public:
     QVariantList projects() const { return m_projects; }
     // docs/18: 派生自**活动标签**的 agent —— 不存在全局活动项目。
     QString activeProjectId() const;
-    QString activeProjectRoot() const { return active()->activeProjectRoot(); }
+    QString activeProjectRoot() const
+    { return active() ? active()->activeProjectRoot() : QString(); }
     bool projectFilesScanning() const { return m_projectFilesScanning; }
     // G2: '@' file mentions. Completion is served from a background-scanned
     // cache (30s TTL); references are resolved against the active project
@@ -364,7 +384,8 @@ public:
     // P2: 项目重命名（侧栏行内编辑），上限 80 字符；活动项目改名后
     // 系统提示里的项目名同步更新。
     Q_INVOKABLE void renameProject(const QString& projectId, const QString& name);
-    QString currentSessionId() const { return active()->currentSessionId(); }
+    QString currentSessionId() const
+    { return active() ? active()->currentSessionId() : QString(); }
     // Batch 17: message-search results (set via the searchMessages invokable).
     // Batch 22 (search-aggregate): one row per session
     // {sessionId, sessionTitle, hitCount, latestTimestamp, archived,
@@ -374,12 +395,13 @@ public:
 
     // Token management (active tab)
     double tokenUsageRate() const;
-    int usedTokens() const { return active()->usedTokens(); }
-    int maxTokens() const { return active()->maxTokens(); }
+    int usedTokens() const { return active() ? active()->usedTokens() : 0; }
+    int maxTokens() const { return active() ? active()->maxTokens() : 0; }
     // docs/16 §8: last per-request cost (cents), updated via costChanged.
     qint64 lastCostCents() const { return m_lastCostCents; }
     // docs/16 §8.2: 会话累计 token（active tab 的 AIAgent 计数器）。
-    qint64 sessionTokensUsed() const { return active()->sessionTokensUsed(); }
+    qint64 sessionTokensUsed() const
+    { return active() ? active()->sessionTokensUsed() : 0; }
 
     // Tool registry
     QVariantList toolRegistryModel() const { return m_toolRegistryModel; }
@@ -412,6 +434,7 @@ public:
 
     // ── Session tabs (Batch 29) ───────────────────────
     QVariantList tabModel() const;
+    int tabCount() const { return m_tabs.size(); }
     int activeTabIndex() const { return m_activeTab; }
     // docs/35 P4.3: 后台任务面板数据（活动标签）。
     QVariantList backgroundSubAgents() const;
@@ -626,6 +649,10 @@ public:
     void setAllowPrivateTargets(bool allowed) { m_allowPrivateFetchTargets = allowed; }
     bool urlImportRunning() const { return m_urlImportRunning; }
     Q_INVOKABLE void cancelBatchImport();
+    // Cancel an in-flight URL import. The worker notices the flag on its next
+    // 200 ms slice and exits; urlImportRunning is reset by the finish callback
+    // (not here, so a replacement import cannot overlap the old worker).
+    Q_INVOKABLE void cancelUrlImport();
     Q_INVOKABLE void retryFailedBatchImports();
     // docs/20 §5.1 (CITE-801): 打开知识库文档详情。AssistantMessage 的引用
     // 徽标点击后调用它；main.qml 把 knowledgeDocumentOpenRequested 连到
@@ -985,7 +1012,11 @@ private:
     bool m_knowledgeBusy{false};
     bool m_urlImportRunning{false};
     bool m_allowPrivateFetchTargets{false};
-    std::atomic<bool> m_urlFetchCancel{false};
+    // Shared with the fetch worker by value: the VM (and its member) may be
+    // destroyed while the worker is still running; the worker keeps the flag
+    // alive and never touches `this`.
+    std::shared_ptr<std::atomic<bool>> m_urlFetchCancel =
+        std::make_shared<std::atomic<bool>>(false);
     // docs/25: 批量导入状态（全部 GUI 线程独占；worker 只返回结果值）
     QStringList m_batchQueue;             // 尚未开始的文件
     QVariantList m_batchResults;          // {path, name, status, message}

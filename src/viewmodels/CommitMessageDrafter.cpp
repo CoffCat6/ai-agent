@@ -174,7 +174,9 @@ void CommitMessageDrafter::draft(const QString& stagedDiff,
         context = g_contextProvider();
     } else {
         SettingsService* settings = SettingsService::instance();
-        context.profile = settings->activeProfile();
+        // B1-1：起草器要拿真实密钥发请求；QML 可见的 activeProfile()
+        // 已脱敏，只剩 hasApiKey。
+        context.profile = settings->activeProfileWithSecrets();
         context.localOnlyMode = settings->localOnlyMode();
     }
     const QVariantMap& profile = context.profile;

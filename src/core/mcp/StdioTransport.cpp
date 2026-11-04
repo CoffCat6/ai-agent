@@ -1,5 +1,7 @@
 #include "core/mcp/StdioTransport.h"
 
+#include "core/mcp/McpConfigTransfer.h"
+
 #include <QJsonDocument>
 #include <QStandardPaths>
 
@@ -109,6 +111,20 @@ void StdioTransport::start() {
                         || resolved.endsWith(QLatin1String(".bat"),
                                              Qt::CaseInsensitive);
         if (batch) {
+            // docs/36 B1-4: args are concatenated into a cmd.exe command
+            // line, where `& | < > ^ ( ) ! %` are command separators /
+            // expansions. Reject instead of escaping (cmd /s /c quoting is
+            // not fully deterministic). The check is shared with the import
+            // path (McpConfigTransfer::validateBatchArgs) so a config that
+            // passes import cannot be rejected here and vice versa.
+            const QString argError =
+                McpConfigTransfer::validateBatchArgs(resolved, args);
+            if (!argError.isEmpty()) {
+                emit errorOccurred(formatError(argError));
+                setState(State::Failed);
+                return;   // do not start the process
+            }
+
             // Build the inner command line manually and pass it via
             // setNativeArguments to bypass QProcess's own quoting,
             // which conflicts with cmd /s /c's quote-stripping rules.
