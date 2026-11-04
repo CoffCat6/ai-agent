@@ -3,6 +3,11 @@ name: CI
 # Batch 21 (G7): one-click Windows build + regression + deployment artifact.
 # NOTE: this repo currently has no remote - the workflow activates once the
 # repository is pushed to GitHub (see README "Build / Deployment / CI").
+#
+# B6-2: a second, Release-configured job reuses the same aqtinstall cache as
+# the existing (default-configured) job. Both jobs install Qt 6.9 MinGW into
+# ${{ github.workspace }}/Qt; the cache key is identical, so whichever job
+# runs second restores the download instead of fetching it again.
 
 on:
   push:
@@ -21,7 +26,15 @@ jobs:
         with:
           python-version: '3.x'
 
+      - name: Cache Qt (MinGW) toolchain
+        id: qt-cache
+        uses: actions/cache@v4
+        with:
+          path: ${{ env.QT_DIR }}
+          key: qt-${{ runner.os }}-${{ env.QT_VERSION }}-mingw1310-qtpdf-v1
+
       - name: Install Qt (MinGW) via aqtinstall
+        if: steps.qt-cache.outputs.cache-hit != 'true'
         shell: pwsh
         run: |
           python -m pip install aqtinstall
@@ -59,3 +72,62 @@ jobs:
         with:
           name: nexusai-win64-deploy
           path: deploy/
+
+  windows-mingw-release:
+    runs-on: windows-latest
+    env:
+      QT_VERSION: 6.9.0
+      QT_DIR: ${{ github.workspace }}/Qt
+    steps:
+      - uses: actions/checkout@v4
+
+      - uses: actions/setup-python@v5
+        with:
+          python-version: '3.x'
+
+      - name: Cache Qt (MinGW) toolchain
+        id: qt-cache
+        uses: actions/cache@v4
+        with:
+          path: ${{ env.QT_DIR }}
+          key: qt-${{ runner.os }}-${{ env.QT_VERSION }}-mingw1310-qtpdf-v1
+
+      - name: Install Qt (MinGW) via aqtinstall
+        if: steps.qt-cache.outputs.cache-hit != 'true'
+        shell: pwsh
+        run: |
+          python -m pip install aqtinstall
+          # qtpdf: docs/20 §5.2 PDF 导入（QPdfDocument 文本提取），不在基础包里
+          aqt install-qt windows desktop $env:QT_VERSION win64_mingw -m qtpdf --output-dir $env:QT_DIR
+          # MinGW 13.1 toolchain bundled by Qt (same as the local dev setup)
+          aqt install-tool windows desktop tools_mingw1310 qt.tools.win64_mingw1310 --output-dir $env:QT_DIR
+
+      - name: Locate MinGW toolchain
+        shell: pwsh
+        run: |
+          $gpp = Get-ChildItem "$env:QT_DIR/Tools" -Recurse -Filter "g++.exe" | Select-Object -First 1
+          if (-not $gpp) { throw "MinGW g++.exe not found under Qt/Tools" }
+          Add-Content $env:GITHUB_PATH "$($gpp.DirectoryName)"
+          Add-Content $env:GITHUB_PATH "$env:QT_DIR/$env:QT_VERSION/win64_mingw/bin"
+          "CMAKE_PREFIX_PATH=$env:QT_DIR/$env:QT_VERSION/win64_mingw" | Out-File -FilePath $env:GITHUB_ENV -Append
+
+      - name: Configure (Release)
+        shell: pwsh
+        run: cmake -B build-release -G Ninja -DCMAKE_BUILD_TYPE=Release -DBUILD_TESTS=ON
+
+      - name: Build (Release)
+        shell: pwsh
+        run: cmake --build build-release
+
+      - name: Test (Release)
+        shell: pwsh
+        run: ctest --test-dir build-release --output-on-failure
+
+      - name: Deploy (Release)
+        shell: pwsh
+        run: ./scripts/deploy.ps1 -BuildDir build-release -OutDir deploy-release
+
+      - uses: actions/upload-artifact@v4
+        with:
+          name: nexusai-win64-release-deploy
+          path: deploy-release/

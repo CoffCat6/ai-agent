@@ -137,6 +137,29 @@ add_test(NAME qmllint_gate
         -P ${CMAKE_SOURCE_DIR}/cmake/QmllintGate.cmake
     WORKING_DIRECTORY ${CMAKE_BINARY_DIR})
 
+# B6-2: the gate above is still a real qmllint run, but it was only reachable
+# through ctest and silently depended on the response files already existing.
+# This custom target gives it a reproducible build-system entry point:
+#   cmake --build build --target qmllint_gate
+# The target builds the QML targets first (which regenerate .rcc/qmllint/*.rsp),
+# then invokes the same QmllintGate.cmake used by the ctest test: qmllint runs
+# over the generated response files and only Error-level findings fail the
+# gate (warning baseline is reported, not enforced).
+if(NOT NEXUS_QMLLINT)
+    message(FATAL_ERROR "qmllint not found under ${QT6_INSTALL_PREFIX}/${QT6_INSTALL_BINS} - the qmllint gate needs a Qt 6.5+ installation")
+endif()
+add_custom_target(qmllint_gate
+    COMMAND ${CMAKE_COMMAND}
+        -DQMLLINT=${NEXUS_QMLLINT}
+        -DRSP_DIR=${CMAKE_BINARY_DIR}/.rcc/qmllint
+        -DPOWERSHELL=${NEXUS_POWERSHELL}
+        -DGUARD_SCRIPT=${CMAKE_SOURCE_DIR}/cmake/QmllintGuard.ps1
+        -P ${CMAKE_SOURCE_DIR}/cmake/QmllintGate.cmake
+    DEPENDS nexus_ai nexus_viewmodels
+    WORKING_DIRECTORY ${CMAKE_BINARY_DIR}
+    COMMENT "Running qmllint over generated response files (Error-level only)"
+    VERBATIM)
+
 # Exercise transcript scrolling with real QML geometry and pointer/wheel input.
 add_test(NAME test_transcript_scroll
     COMMAND $<TARGET_FILE:Qt6::qmltestrunner>
