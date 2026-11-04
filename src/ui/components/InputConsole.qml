@@ -99,6 +99,276 @@ Rectangle {
         mentionList.positionViewAtIndex(mentionIndex, ListView.Contain)
     }
 
+    // ── W1: '/' command completion ───────────────────────
+    // Same open/empty/closed states as '@', but the two popups are mutually
+    // exclusive: updateCompletions() runs exactly one scanner per edit and
+    // closes the other panel first.
+    property bool slashOpen: false
+    property int slashStart: -1
+    property int slashIndex: 0
+    property string slashQuery: ""
+    property var slashResults: []
+    // Same re-entrancy guard as applyingMention: remove() emits textChanged
+    // synchronously, and an unguarded rebuild would clear slashStart before
+    // insert() runs, losing the completion.
+    property bool applyingSlash: false
+    readonly property int slashPopupHeight: {
+        if (!slashOpen) return 0
+        if (slashResults.length === 0) return 46
+        return Math.min(slashResults.length * 44 + 8, 240)
+    }
+
+    function closeSlash() {
+        if (slashPopup.opened) slashPopup.close()
+        slashOpen = false
+        slashStart = -1
+        slashIndex = 0
+        slashQuery = ""
+        slashResults = []
+    }
+
+    // Scans the token ending at the caret. Returns {start, query} when the
+    // caret is inside a slash command, null otherwise.
+    //   /re        → {start:0, query:"re"}   ('/' at line start)
+    //   hi /re     → {start:3, query:"re"}   ('/' after whitespace)
+    //   /etc/hosts → null (a second '/' makes it a filesystem path)
+    //   http://x   → null (token does not start with '/')
+    //   //host     → null (protocol-relative URL)
+    function slashToken(text, caret) {
+        let start = caret
+        while (start > 0) {
+            const ch = text.charAt(start - 1)
+            if (ch === " " || ch === "\t" || ch === "\n" || ch === "\r") break
+            --start
+        }
+        const token = text.substring(start, caret)
+        if (token.length === 0 || token.charAt(0) !== "/") return null
+        // A command word never contains another slash; the second '/' means
+        // this is a path (e.g. /etc/hosts), not a command.
+        if (token.indexOf("/", 1) !== -1) return null
+        if (token.indexOf("://") !== -1) return null
+        return {start: start, query: token.substring(1)}
+    }
+
+    // Returns true when the slash panel should be open.
+    function updateSlash() {
+        const token = slashToken(textArea.text, textArea.cursorPosition)
+        if (token === null) {
+            closeSlash()
+            return false
+        }
+        if (token.query !== slashQuery) {
+            slashIndex = 0
+            slashQuery = token.query
+        }
+        slashStart = token.start
+        const all = Settings.slashCommands || []
+        const query = token.query.toLowerCase()
+        const matches = []
+        for (let i = 0; i < all.length; ++i) {
+            const entry = all[i] || {}
+            const name = String(entry.name || "")
+            if (name.toLowerCase().indexOf(query) !== 0) continue
+            matches.push({name: name, note: String(entry.note || "")})
+        }
+        slashResults = matches
+        if (slashIndex >= slashResults.length)
+            slashIndex = Math.max(0, slashResults.length - 1)
+        slashOpen = true
+        if (!slashPopup.opened) slashPopup.open()
+        return true
+    }
+
+    // Single entry point for text/cursor changes. The three completion
+    // states ('@' file / '/' command / '$' skill) are mutually exclusive:
+    // whichever token the caret is inside wins, the other two panels close.
+    function updateCompletions() {
+        if (applyingSkill || applyingSlash || applyingMention) return
+        if (restoringDraft || isBusy) {
+            closeMention()
+            closeSlash()
+            closeSkill()
+            return
+        }
+        if (updateSkill()) {
+            closeSlash()
+            closeMention()
+            return
+        }
+        if (updateSlash()) {
+            closeMention()
+            return
+        }
+        updateMention()
+    }
+
+// 光标所在 token 的结束位置（下一个空白/行尾）。补全必须替换整个 token，
+// 否则在 "/re|view" 这类中间补全会把后缀留下来变成 "/review view"。
+function tokenEndAt(text, from) {
+    let end = from
+    while (end < text.length) {
+        const ch = text.charAt(end)
+        if (ch === " " || ch === "\t" || ch === "\n" || ch === "\r") break
+        ++end
+    }
+    return end
+}
+
+// Replaces the whole '/token' with '/name ' — never sends.
+function applySlash(name) {
+    if (slashStart < 0) return
+    const start = slashStart
+    const end = tokenEndAt(textArea.text, start)
+        const inserted = "/" + name + " "
+        applyingSlash = true
+        textArea.remove(start, end)
+        textArea.insert(start, inserted)
+        textArea.cursorPosition = start + inserted.length
+        applyingSlash = false
+        closeSlash()
+        textArea.forceActiveFocus()
+    }
+
+    function moveSlash(delta) {
+        const count = slashResults.length
+        if (count === 0) return
+        slashIndex = (slashIndex + delta + count) % count
+        slashList.positionViewAtIndex(slashIndex, ListView.Contain)
+    }
+
+    // ── docs/37 W3: '$' Skill completion and reference chips ──
+    // Token scanning, dedupe and the per-message cap all live in C++
+    // (AgentViewModel::activeSkillMention / resolveSkills) so the popup,
+    // the chips and the submitted skill list cannot drift.
+    property bool skillOpen: false
+    property int skillStart: -1
+    property int skillIndex: 0
+    property string skillQuery: ""
+    property var skillResults: []
+    property bool applyingSkill: false
+    // {id,name,description,source,sourceId,...} — already deduped, unknown
+    // names dropped, capped by settings/skills/maxPerMessage.
+    property var skillChips: []
+    readonly property bool skillsVisible: skillChips.length > 0
+    readonly property int skillPopupHeight: {
+        if (!skillOpen) return 0
+        if (skillResults.length === 0) return 46
+        return Math.min(skillResults.length * 46 + 8, 260)
+    }
+
+    function closeSkill() {
+        if (skillPopup.opened) skillPopup.close()
+        skillOpen = false
+        skillStart = -1
+        skillIndex = 0
+        skillQuery = ""
+        skillResults = []
+    }
+
+    // Returns true when the caret sits inside a '$name' token.
+    function updateSkill() {
+        const m = AgentVM.activeSkillMention(textArea.text, textArea.cursorPosition)
+        if (!m.active) {
+            closeSkill()
+            return false
+        }
+        if (m.query !== skillQuery) {
+            skillIndex = 0
+            skillQuery = m.query
+        }
+        skillStart = m.start
+        skillResults = AgentVM.listSkills(m.query, 50)
+        if (skillIndex >= skillResults.length)
+            skillIndex = Math.max(0, skillResults.length - 1)
+        skillOpen = true
+        if (!skillPopup.opened) skillPopup.open()
+        return true
+    }
+
+    function updateSkillChips() {
+        skillChips = AgentVM.resolveSkills(textArea.text)
+    }
+
+    // Replaces the whole '$token' with '$name ' — never sends.
+function applySkill(name) {
+    if (skillStart < 0) return
+    const start = skillStart
+    const end = tokenEndAt(textArea.text, start)
+        const inserted = "$" + name + " "
+        applyingSkill = true
+        textArea.remove(start, end)
+        textArea.insert(start, inserted)
+        textArea.cursorPosition = start + inserted.length
+        applyingSkill = false
+        closeSkill()
+        updateSkillChips()
+        textArea.forceActiveFocus()
+    }
+
+    function moveSkill(delta) {
+        const count = skillResults.length
+        if (count === 0) return
+        skillIndex = (skillIndex + delta + count) % count
+        skillList.positionViewAtIndex(skillIndex, ListView.Contain)
+    }
+
+    function isSkillSpaceChar(ch) {
+        return ch === " " || ch === "\t" || ch === "\n" || ch === "\r"
+    }
+
+    function isSkillNameChar(ch) {
+        return (ch >= "a" && ch <= "z") || (ch >= "A" && ch <= "Z")
+            || (ch >= "0" && ch <= "9")
+            || ch === "_" || ch === "." || ch === "-"
+    }
+
+    // Removes every '$name' token (the chip represents the skill as a whole)
+    // while preserving trailing punctuation such as '$review,' → ','.
+    // 纯字符扫描、无正则：qmllint 6.9 对「同函数内正则字面量 + 循环」存在
+    // 病理性内存放大（见 W4 qmllint_gate 失败）。
+    function removeSkill(name) {
+        const wanted = String(name || "")
+        if (wanted.length === 0) return
+        const text = textArea.text
+        let out = ""
+        let i = 0
+        while (i < text.length) {
+            const ch = text.charAt(i)
+            if (ch === "$" && (i === 0 || isSkillSpaceChar(text.charAt(i - 1)))) {
+                let j = i + 1
+                while (j < text.length && isSkillNameChar(text.charAt(j))) ++j
+                if (text.substring(i + 1, j) === wanted) {
+                    i = j
+                    continue
+                }
+                out += text.substring(i, j)
+                i = j
+                continue
+            }
+            out += ch
+            ++i
+        }
+        let cleaned = ""
+        let pendingSpace = false
+        for (let k = 0; k < out.length; ++k) {
+            const c = out.charAt(k)
+            if (c === " " || c === "\t") {
+                pendingSpace = true
+            } else if (c === "\n" || c === "\r") {
+                cleaned += c
+                pendingSpace = false
+            } else {
+                if (pendingSpace && cleaned.length > 0)
+                    cleaned += " "
+                pendingSpace = false
+                cleaned += c
+            }
+        }
+        textArea.text = cleaned.trim()
+        textArea.cursorPosition = textArea.length
+        updateSkillChips()
+    }
+
     // ── G2: live reference status ────────────────────────
     // Path-only validation (no file contents), so this stays cheap enough to
     // run on every keystroke. Chips show exactly which '@' tokens will be
@@ -113,11 +383,14 @@ Rectangle {
     function restoreDraft() {
         restoringDraft = true
         closeMention()
+        closeSlash()
+        closeSkill()
         textArea.text = AgentVM.draftText
         pendingAttachments = AgentVM.draftAttachments
         historyBrowsing = false
         restoringDraft = false
         updateReferences()
+        updateSkillChips()
     }
     Component.onCompleted: restoreDraft()
     Connections {
@@ -132,7 +405,10 @@ Rectangle {
         }
         function onActiveProjectIdChanged() {
             root.closeMention()
+            root.closeSlash()
+            root.closeSkill()
             root.updateReferences()
+            root.updateSkillChips()
         }
     }
     // 由 AgentChatPage 注入：发送后请求轨迹视图跳底并恢复跟随。
@@ -154,6 +430,7 @@ Rectangle {
 
     // Height is driven by the text content (capped) plus the preview strip.
     implicitHeight: (previewVisible ? previewBar.height + 6 : 0)
+                    + (skillsVisible ? skillBar.height + 6 : 0)
                     + (referenceVisible ? referenceBar.height + 6 : 0)
                     + inputRow.height + 16
     height: implicitHeight
@@ -209,12 +486,20 @@ Rectangle {
                 seen[base] = true
                 files.push({kind: "file", name: ref.name, content: ref.content})
             }
-            if (!AgentVM.startTask(
+            // docs/37 W3: '$name' tokens resolve to Skill bodies; unknown names are
+            // dropped and the C++ side caps the list. The composer text keeps
+            // the '$name' tokens (unlike '/' which expands), so both the
+            // expanded template and the skill list are derived from the draft.
+            const skillRefs = AgentVM.resolveSkills(textArea.text)
+            if (!AgentVM.startTaskWithSkills(
                     AgentVM.expandSlashCommand(textArea.text, Settings.slashCommands),
-                    images, files)) return
+                    images, files, skillRefs)) return
             root.closeMention()
+            root.closeSlash()
+            root.closeSkill()
             textArea.text = ""
             root.pendingAttachments = []
+            root.skillChips = []
             // docs/20 §3.3：发送后退出历史浏览态（游标已在 startTask 内复位）。
             root.historyBrowsing = false
             // 发送即「要看新回复」的明确意图：强制解除上一轮的已解钉状
@@ -308,6 +593,106 @@ Rectangle {
         }
     }
 
+    // ── docs/37 W3: referenced skills ────────────────────
+    // One removable chip per resolved '$name' (dedupe/cap already applied by
+    // AgentVM.resolveSkills). Removing a chip also removes every matching
+    // '$name' token from the draft, so the chip and the text never disagree.
+    Item {
+        id: skillBar
+        objectName: "skillChipBar"
+        anchors.left: parent.left
+        anchors.right: parent.right
+        anchors.bottom: inputRow.top
+        anchors.leftMargin: 8
+        anchors.rightMargin: 8
+        anchors.bottomMargin: root.referenceVisible ? referenceBar.height + 8 : 4
+        height: 24
+        visible: root.skillsVisible
+
+        Row {
+            id: skillChipRow
+            anchors.left: parent.left
+            anchors.verticalCenter: parent.verticalCenter
+            spacing: 6
+
+            Repeater {
+                model: root.skillChips
+
+                delegate: Rectangle {
+                    required property var modelData
+                    required property int index
+
+                    objectName: "skillChipRow"
+                    height: 24
+                    radius: 12
+                    color: Qt.rgba(Theme.brandPrimary.r, Theme.brandPrimary.g,
+                                   Theme.brandPrimary.b, 0.12)
+                    border.width: 1
+                    border.color: Qt.rgba(Theme.brandPrimary.r, Theme.brandPrimary.g,
+                                          Theme.brandPrimary.b, 0.35)
+
+                    Row {
+                        id: chipContent
+                        anchors.centerIn: parent
+                        spacing: 5
+
+                        AppIcon {
+                            anchors.verticalCenter: parent.verticalCenter
+                            icon: "preset"
+                            size: 11
+                            iconColor: Theme.brandPrimary
+                        }
+
+                        Text {
+                            anchors.verticalCenter: parent.verticalCenter
+                            text: "$" + modelData.name
+                            color: Theme.textPrimary
+                            font.pixelSize: Theme.fontSizeMicro
+                            font.family: Theme.fontMono
+                        }
+
+                        Text {
+                            anchors.verticalCenter: parent.verticalCenter
+                            text: modelData.source === "project"
+                                ? qsTr("项目") : qsTr("用户")
+                            color: Theme.textSecondary
+                            font.pixelSize: Theme.fontSizeMicro
+                            font.family: Theme.fontSans
+                        }
+
+                        Item {
+                            width: 14
+                            height: 14
+                            anchors.verticalCenter: parent.verticalCenter
+
+                            Text {
+                                anchors.centerIn: parent
+                                text: "×"
+                                color: chipRemoveHover.hovered
+                                    ? Theme.statusDanger : Theme.textSecondary
+                                font.pixelSize: Theme.fontSizeCaption
+                            }
+
+                            HoverHandler { id: chipRemoveHover }
+
+                            MouseArea {
+                                anchors.fill: parent
+                                cursorShape: Qt.PointingHandCursor
+                                onClicked: root.removeSkill(modelData.token ? modelData.token : modelData.name)
+                            }
+
+                            Accessible.role: Accessible.Button
+                            Accessible.name: qsTr("移除技能 %1").arg(modelData.name)
+                            Accessible.onPressAction: root.removeSkill(modelData.token ? modelData.token : modelData.name)
+                        }
+                    }
+
+                    width: chipContent.implicitWidth + 18
+                }
+            }
+        }
+    }
+
     // ── G2: referenced project files ────────────────────
     // One chip per '@' token in the draft. Green = resolves and will be
     // attached on send; red = will be skipped, with the reason on hover.
@@ -350,14 +735,14 @@ Rectangle {
             font.pixelSize: Theme.fontSizeBody
             font.family: Theme.fontSans
             wrapMode: TextArea.Wrap
-            placeholderText: qsTr("输入消息…（Enter 发送，Shift+Enter 换行，@ 引用项目文件）")
+            placeholderText: qsTr("输入消息…（Enter 发送，Shift+Enter 换行，@ 引用文件，/ 选择指令，$ 引用技能）")
             placeholderTextColor: Theme.textSecondary
             selectByMouse: true
             renderType: Text.NativeRendering
             clip: true
 
             Accessible.name: qsTr("消息输入框")
-            Accessible.description: qsTr("输入消息后按 Enter 发送，Shift+Enter 换行；输入 @ 可引用项目文件")
+            Accessible.description: qsTr("输入消息后按 Enter 发送，Shift+Enter 换行；输入 @ 引用项目文件，/ 选择指令，$ 引用技能")
 
             // Custom cursor
             cursorDelegate: Rectangle {
@@ -379,11 +764,12 @@ Rectangle {
                     root.historyBrowsing = false
                     AgentVM.resetInputHistory()
                 }
-                root.updateMention()
+                root.updateCompletions()
                 root.updateReferences()
+                root.updateSkillChips()
             }
 
-            onCursorPositionChanged: root.updateMention()
+            onCursorPositionChanged: root.updateCompletions()
 
             // docs/20 §3.3：输入历史浏览。↑ 前移（更旧），↓ 后移（更新）。
             // Shift+↑/↓ 保持默认（多行光标移动，不进入历史）。仅在无显式编辑
@@ -398,6 +784,16 @@ Rectangle {
             }
 
             Keys.onUpPressed: function(event) {
+                if (root.skillOpen) {
+                    root.moveSkill(-1)
+                    event.accepted = true
+                    return
+                }
+                if (root.slashOpen) {
+                    root.moveSlash(-1)
+                    event.accepted = true
+                    return
+                }
                 if (root.mentionOpen) {
                     root.moveMention(-1)
                     event.accepted = true
@@ -427,6 +823,16 @@ Rectangle {
             }
 
             Keys.onDownPressed: function(event) {
+                if (root.skillOpen) {
+                    root.moveSkill(1)
+                    event.accepted = true
+                    return
+                }
+                if (root.slashOpen) {
+                    root.moveSlash(1)
+                    event.accepted = true
+                    return
+                }
                 if (root.mentionOpen) {
                     root.moveMention(1)
                     event.accepted = true
@@ -457,6 +863,36 @@ Rectangle {
             // G2: while the @ completion popup is open, Esc closes it and
             // Tab accepts the highlighted path.
             Keys.onPressed: function(event) {
+                if (root.skillOpen) {
+                    if (event.key === Qt.Key_Escape) {
+                        root.closeSkill()
+                        event.accepted = true
+                        return
+                    }
+                    if (event.key === Qt.Key_Tab) {
+                        if (root.skillResults.length > 0)
+                            root.applySkill(root.skillResults[root.skillIndex].name)
+                        else
+                            root.closeSkill()
+                        event.accepted = true
+                        return
+                    }
+                }
+                if (root.slashOpen) {
+                    if (event.key === Qt.Key_Escape) {
+                        root.closeSlash()
+                        event.accepted = true
+                        return
+                    }
+                    if (event.key === Qt.Key_Tab) {
+                        if (root.slashResults.length > 0)
+                            root.applySlash(root.slashResults[root.slashIndex].name)
+                        else
+                            root.closeSlash()
+                        event.accepted = true
+                        return
+                    }
+                }
                 if (root.mentionOpen) {
                     if (event.key === Qt.Key_Escape) {
                         root.closeMention()
@@ -489,8 +925,19 @@ Rectangle {
                     event.accepted = false // default: insert newline
                     return
                 }
-                if (root.mentionOpen && root.mentionResults.length > 0) {
+                // Completion (any of '/', '$', '@'): Enter only completes the
+                // highlighted row, it never sends. With no candidate the
+                // popup is dismissed and the original send path runs unchanged.
+                if (root.skillOpen && root.skillResults.length > 0) {
+                    root.applySkill(root.skillResults[root.skillIndex].name)
+                } else if (root.slashOpen && root.slashResults.length > 0) {
+                    root.applySlash(root.slashResults[root.slashIndex].name)
+                } else if (root.mentionOpen && root.mentionResults.length > 0) {
                     root.applyMention(root.mentionResults[root.mentionIndex])
+                } else if (root.skillOpen || root.slashOpen) {
+                    // 命令补全面板打开但无候选：只关闭，不把半截命令发出去。
+                    if (root.skillOpen) root.closeSkill()
+                    if (root.slashOpen) root.closeSlash()
                 } else {
                     if (root.mentionOpen) root.closeMention()
                     sendCurrentText()
@@ -503,8 +950,15 @@ Rectangle {
                     event.accepted = false // default: insert newline
                     return
                 }
-                if (root.mentionOpen && root.mentionResults.length > 0) {
+                if (root.skillOpen && root.skillResults.length > 0) {
+                    root.applySkill(root.skillResults[root.skillIndex].name)
+                } else if (root.slashOpen && root.slashResults.length > 0) {
+                    root.applySlash(root.slashResults[root.slashIndex].name)
+                } else if (root.mentionOpen && root.mentionResults.length > 0) {
                     root.applyMention(root.mentionResults[root.mentionIndex])
+                } else if (root.skillOpen || root.slashOpen) {
+                    if (root.skillOpen) root.closeSkill()
+                    if (root.slashOpen) root.closeSlash()
                 } else {
                     if (root.mentionOpen) root.closeMention()
                     sendCurrentText()
@@ -782,6 +1236,241 @@ Rectangle {
                             font.pixelSize: Theme.fontSizeCaption
                             font.family: Theme.fontMono
                             elide: Text.ElideMiddle
+                        }
+                    }
+                }
+            }
+        }
+    }
+
+    // ── W1: '/' command completion ───────────────────────
+    // Reuses the '@' popup chrome and position, but lists slash commands
+    // (Settings.slashCommands: name + note). Non-focus, same as mentionPopup:
+    // the text area keeps the keyboard and drives navigation.
+    Popup {
+        id: slashPopup
+        objectName: "slashPopup"
+        parent: root
+        x: 36
+        y: -height - 6
+        width: Math.min(520, Math.max(260, root.width - 88))
+        height: root.slashPopupHeight
+        padding: 0
+        modal: false
+        focus: false
+        closePolicy: Popup.NoAutoClose
+
+        background: Rectangle {
+            radius: 10
+            color: Theme.bgSecondary
+            border.width: 1
+            border.color: Theme.borderSubtle
+        }
+
+        contentItem: Item {
+            Text {
+                anchors.left: parent.left
+                anchors.right: parent.right
+                anchors.margins: 12
+                anchors.verticalCenter: parent.verticalCenter
+                visible: root.slashResults.length === 0
+                text: qsTr("没有匹配的指令。\n可在 设置 → 提示词资产 添加命令。")
+                color: Theme.textSecondary
+                font.pixelSize: Theme.fontSizeCaption
+                font.family: Theme.fontSans
+                wrapMode: Text.Wrap
+            }
+
+            ListView {
+                id: slashList
+                objectName: "slashList"
+                anchors.fill: parent
+                anchors.margins: 4
+                visible: root.slashResults.length > 0
+                clip: true
+                model: root.slashResults
+                boundsBehavior: Flickable.StopAtBounds
+
+                delegate: Rectangle {
+                    id: slashRow
+                    objectName: "slashRow"
+                    required property var modelData
+                    required property int index
+
+                    width: ListView.view ? ListView.view.width : 0
+                    height: 38
+                    radius: 6
+                    color: index === root.slashIndex
+                        ? Qt.rgba(Theme.brandPrimary.r, Theme.brandPrimary.g,
+                                  Theme.brandPrimary.b, 0.14)
+                        : slashRowHover.hovered ? Theme.surfaceHover : "transparent"
+
+                    HoverHandler { id: slashRowHover }
+
+                    MouseArea {
+                        anchors.fill: parent
+                        cursorShape: Qt.PointingHandCursor
+                        onClicked: root.applySlash(slashRow.modelData.name)
+                    }
+
+                    RowLayout {
+                        anchors.fill: parent
+                        anchors.leftMargin: 8
+                        anchors.rightMargin: 8
+                        spacing: 8
+
+                        AppIcon {
+                            Layout.alignment: Qt.AlignVCenter
+                            icon: "terminal"
+                            size: 13
+                            iconColor: slashRow.index === root.slashIndex
+                                ? Theme.brandPrimary : Theme.textSecondary
+                        }
+
+                        Text {
+                            Layout.alignment: Qt.AlignVCenter
+                            text: "/" + slashRow.modelData.name
+                            color: Theme.textPrimary
+                            font.pixelSize: Theme.fontSizeCaption
+                            font.family: Theme.fontMono
+                        }
+
+                        Text {
+                            Layout.fillWidth: true
+                            Layout.alignment: Qt.AlignVCenter
+                            text: slashRow.modelData.note
+                            color: Theme.textSecondary
+                            font.pixelSize: Theme.fontSizeCaption
+                            font.family: Theme.fontSans
+                            elide: Text.ElideRight
+                        }
+                    }
+                }
+            }
+        }
+    }
+
+    // ── docs/37 W3: '$' skill completion ─────────────────
+    // Same non-focus popup chrome/position as '@' and '/'. Rows show the
+    // skill name, description and its source badge (project / user).
+    Popup {
+        id: skillPopup
+        objectName: "skillPopup"
+        parent: root
+        x: 36
+        y: -height - 6
+        width: Math.min(560, Math.max(280, root.width - 88))
+        height: root.skillPopupHeight
+        padding: 0
+        modal: false
+        focus: false
+        closePolicy: Popup.NoAutoClose
+
+        background: Rectangle {
+            radius: 10
+            color: Theme.bgSecondary
+            border.width: 1
+            border.color: Theme.borderSubtle
+        }
+
+        contentItem: Item {
+            Text {
+                anchors.left: parent.left
+                anchors.right: parent.right
+                anchors.margins: 12
+                anchors.verticalCenter: parent.verticalCenter
+                visible: root.skillResults.length === 0
+                text: qsTr("没有匹配的技能。\n请在项目 .nexusai/skills 或用户技能目录中添加 SKILL.md。")
+                color: Theme.textSecondary
+                font.pixelSize: Theme.fontSizeCaption
+                font.family: Theme.fontSans
+                wrapMode: Text.Wrap
+            }
+
+            ListView {
+                id: skillList
+                objectName: "skillList"
+                anchors.fill: parent
+                anchors.margins: 4
+                visible: root.skillResults.length > 0
+                clip: true
+                model: root.skillResults
+                boundsBehavior: Flickable.StopAtBounds
+
+                delegate: Rectangle {
+                    id: skillRow
+                    objectName: "skillRow"
+                    required property var modelData
+                    required property int index
+
+                    width: ListView.view ? ListView.view.width : 0
+                    height: 44
+                    radius: 6
+                    color: index === root.skillIndex
+                        ? Qt.rgba(Theme.brandPrimary.r, Theme.brandPrimary.g,
+                                  Theme.brandPrimary.b, 0.14)
+                        : skillRowHover.hovered ? Theme.surfaceHover : "transparent"
+
+                    HoverHandler { id: skillRowHover }
+
+                    MouseArea {
+                        anchors.fill: parent
+                        cursorShape: Qt.PointingHandCursor
+                        onClicked: root.applySkill(skillRow.modelData.name)
+                    }
+
+                    RowLayout {
+                        anchors.fill: parent
+                        anchors.leftMargin: 8
+                        anchors.rightMargin: 8
+                        spacing: 8
+
+                        AppIcon {
+                            Layout.alignment: Qt.AlignVCenter
+                            icon: "preset"
+                            size: 13
+                            iconColor: skillRow.index === root.skillIndex
+                                ? Theme.brandPrimary : Theme.textSecondary
+                        }
+
+                        Text {
+                            Layout.alignment: Qt.AlignVCenter
+                            text: "$" + skillRow.modelData.name
+                            color: Theme.textPrimary
+                            font.pixelSize: Theme.fontSizeCaption
+                            font.family: Theme.fontMono
+                        }
+
+                        Text {
+                            Layout.fillWidth: true
+                            Layout.alignment: Qt.AlignVCenter
+                            text: skillRow.modelData.description
+                            color: Theme.textSecondary
+                            font.pixelSize: Theme.fontSizeCaption
+                            font.family: Theme.fontSans
+                            elide: Text.ElideRight
+                        }
+
+                        Rectangle {
+                            Layout.alignment: Qt.AlignVCenter
+                            width: sourceLabel.implicitWidth + 10
+                            height: 18
+                            radius: 9
+                            color: skillRow.modelData.source === "project"
+                                ? Qt.rgba(Theme.brandPrimary.r, Theme.brandPrimary.g,
+                                          Theme.brandPrimary.b, 0.14)
+                                : Theme.surfaceHover
+
+                            Text {
+                                id: sourceLabel
+                                anchors.centerIn: parent
+                                text: skillRow.modelData.source === "project"
+                                    ? qsTr("项目") : qsTr("用户")
+                                color: skillRow.modelData.source === "project"
+                                    ? Theme.brandPrimary : Theme.textSecondary
+                                font.pixelSize: Theme.fontSizeMicro
+                                font.family: Theme.fontSans
+                            }
                         }
                     }
                 }

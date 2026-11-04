@@ -1265,7 +1265,9 @@ private slots:
             "logging/level", "logging/directory", "logging/maxFileSizeMb",
             "logging/retentionFiles", "webSearch/provider",
             "webSearch/zhipuApiKey", "webSearch/deepseekApiKey",
-            "memory/episodicMemoryEnabled",
+"memory/episodicMemoryEnabled",
+            // docs/37 W3: Skill 引用（启用/项目来源/每轮上限）
+            "skills/enabled", "skills/projectEnabled", "skills/maxPerMessage",
             // H1: proxy settings + encrypted credential blob
             "network/proxyMode", "network/proxyHost", "network/proxyPort",
             "network/proxyAuth",

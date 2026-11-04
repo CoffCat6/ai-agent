@@ -66,6 +66,24 @@ nexus_add_test(test_openai_responses test_openai_responses.cpp)
 nexus_add_test(test_memory test_memory.cpp)
 nexus_add_test(test_tools test_tools.cpp)
 nexus_add_test(test_git_service test_git_service.cpp)
+# docs/37 W2：Skill 发现/解析/搜索（QtCore-only，链接集与其它 core 测试一致）。
+nexus_add_test(test_skills test_skills.cpp)
+
+# docs/37 W3：技能设置页（项目/用户来源、刷新、目录说明）。
+# 与 test_tools_page_qml 同一套加载方式：build/NexusAI 的文件系统副本 +
+# qrc 回退拦截器 + offscreen。
+add_executable(test_skills_qml test_skills_qml.cpp)
+target_link_libraries(test_skills_qml PRIVATE
+    nexus_core nexus_infra nexus_viewmodels nexus_viewmodelsplugin
+    Qt6::Test Qt6::Qml Qt6::Quick)
+target_compile_definitions(test_skills_qml PRIVATE
+    NEXUS_TEST_QML_DIR="${CMAKE_CURRENT_SOURCE_DIR}/qml"
+    NEXUS_BUILD_DIR="${CMAKE_BINARY_DIR}")
+add_dependencies(test_skills_qml nexus_ai)
+add_test(NAME test_skills_qml
+    COMMAND ${CMAKE_COMMAND} -E env
+        "QT_QPA_PLATFORM_PLUGIN_PATH=${QT6_INSTALL_PREFIX}/${QT6_INSTALL_PLUGINS}/platforms"
+        $<TARGET_FILE:test_skills_qml> -platform offscreen)
 # docs/20 §5.2 (C2): PDF text extraction (PdfTextExtractor) lives in
 # nexus_viewmodels, not nexus_core - Qt6::Pdf pulls Qt6::Gui along and core
 # must stay UI-free (docs/13 §4.1). test_rag therefore links the viewmodels

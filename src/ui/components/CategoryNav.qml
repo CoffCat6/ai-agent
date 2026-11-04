@@ -64,6 +64,7 @@ Rectangle {
         "memory": "archive",
         "knowledge": "book",
         "prompts": "edit",
+        "skills": "preset",
         "projects": "folder",
         "usage": "chart",
         "activity": "pulse",

@@ -218,6 +218,20 @@ const QVector<CatalogEntryDef>& staticEntries() {
          QT_TRANSLATE_NOOP("SettingsSearch", "当前项目"),
          QStringLiteral("activeId project"), true, kNone},
 
+        // ── 技能（docs/37 W3）───────────────────────────────
+        // 三个键是技能链路的内部开关，由 SkillsPage/AgentVM 直接消费，
+        // 页面上没有独立的可聚焦控件，因此登记为隐藏条目（仍满足
+        // 「每个 schema 键都有目录条目」的覆盖断言）。
+        {NEXUS_CATALOG_ID("skills/enabled"), QStringLiteral("skills"),
+         QT_TRANSLATE_NOOP("SettingsSearch", "技能功能"),
+         QStringLiteral("skills 技能 enabled 开关"), true, kNone},
+        {NEXUS_CATALOG_ID("skills/projectEnabled"), QStringLiteral("skills"),
+         QT_TRANSLATE_NOOP("SettingsSearch", "项目技能"),
+         QStringLiteral("skills 项目 project 技能 enabled 开关"), true, kNone},
+        {NEXUS_CATALOG_ID("skills/maxPerMessage"), QStringLiteral("skills"),
+         QT_TRANSLATE_NOOP("SettingsSearch", "每轮技能上限"),
+         QStringLiteral("skills 技能 上限 maxPerMessage 每轮"), true, kNone},
+
         // ── 用量与配额 ──────────────────────────────────────
         {NEXUS_CATALOG_ID("dailyTokenQuota"), QStringLiteral("usage"),
          QT_TRANSLATE_NOOP("SettingsSearch", "每日 Token 上限"),

@@ -54,6 +54,11 @@
 namespace NexusAI {
 namespace {
 
+// 定义在文件后部的 QML 动作区（QImage 需要 QtGui）；startTaskInternal 在
+// 其前面，故先声明。
+QString compressedImageDataUrl(const QString& raw, int maxEdge = 1568,
+                               int quality = 85);
+
 // docs/25: 单文件批量导入结果。status:
 //   ok | degraded | duplicate | failed | cancelled
 struct BatchFileResult {
@@ -71,6 +76,85 @@ struct BatchFileResult {
                            {QStringLiteral("chunks"), chunks}};
     }
 };
+
+// docs/37 W3：`$name` 的字符集与 `$` 触发规则。与 ProjectFileIndex 的 '@'
+// 解析同构，但 name 不含 '/'，因此 `$dir/file` 整段不触发。
+bool isSkillNameChar(QChar ch) {
+    return (ch >= QLatin1Char('a') && ch <= QLatin1Char('z'))
+        || (ch >= QLatin1Char('A') && ch <= QLatin1Char('Z'))
+        || (ch >= QLatin1Char('0') && ch <= QLatin1Char('9'))
+        || ch == QLatin1Char('_') || ch == QLatin1Char('.')
+        || ch == QLatin1Char('-');
+}
+
+QVariantMap skillMentionAt(const QString& text, int cursor) {
+    QVariantMap result{{QStringLiteral("active"), false},
+                       {QStringLiteral("start"), -1},
+                       {QStringLiteral("query"), QString()}};
+    const int end = qBound(0, cursor, text.size());
+    int start = -1;
+    for (int i = end - 1; i >= 0; --i) {
+        const QChar ch = text.at(i);
+        if (ch == QLatin1Char('\n')) break;
+        if (ch == QLatin1Char('$')) {
+            if (i == 0 || text.at(i - 1).isSpace())
+                start = i;
+            break;
+        }
+    }
+    if (start < 0) return result;
+
+    // 光标必须落在 token 边界，补全才不会撕裂后面的正文。
+    if (end < text.size() && !text.at(end).isSpace())
+        return result;
+
+    const QString query = text.mid(start + 1, end - start - 1);
+    for (const QChar ch : query) {
+        if (ch.isSpace() || ch == QLatin1Char('/') || !isSkillNameChar(ch))
+            return result;
+    }
+    result[QStringLiteral("active")] = true;
+    result[QStringLiteral("start")] = start;
+    result[QStringLiteral("query")] = query;
+    return result;
+}
+
+// 正文里所有 `$name`（去重、保持出现顺序）。`$` 必须在行首/空白后；
+// `$dir/file` 因后续 '/' 被整段跳过。
+QStringList skillNamesInText(const QString& text) {
+    QStringList names;
+    QSet<QString> seen;
+    for (int i = 0; i < text.size(); ++i) {
+        if (text.at(i) != QLatin1Char('$')) continue;
+        if (i > 0 && !text.at(i - 1).isSpace()) continue;
+        int j = i + 1;
+        while (j < text.size() && isSkillNameChar(text.at(j)))
+            ++j;
+        if (j == i + 1) continue;
+        if (j < text.size() && text.at(j) == QLatin1Char('/'))
+            continue;   // 路径形态不当作 Skill 引用
+        const QString name = text.mid(i + 1, j - i - 1);
+        if (!seen.contains(name)) {
+            seen.insert(name);
+            names.append(name);
+        }
+        i = j - 1;
+    }
+    return names;
+}
+
+QVariantMap skillToMap(const Skill& skill) {
+    return QVariantMap{
+        {QStringLiteral("id"), skill.id},
+        {QStringLiteral("name"), skill.name},
+        {QStringLiteral("description"), skill.description},
+        {QStringLiteral("source"), skill.sourceId()},
+        {QStringLiteral("sourceId"), skill.sourceId()},
+        {QStringLiteral("sourcePath"), skill.sourcePath},
+        {QStringLiteral("bytes"), skill.bytes},
+        {QStringLiteral("truncated"), skill.truncated},
+    };
+}
 
 // docs/25: worker 侧的单文件导入——读取（PDF 走 QPdf 提取，其余按 UTF-8
 // 文本）→ 内容去重 → 唯一命名 → 入库。与单文件路径（importExtractedText）
@@ -217,6 +301,13 @@ AgentViewModel::AgentViewModel(QObject* parent)
 
     // The UI always has at least one session tab (Batch 29).
     ensureTab();
+
+    // docs/37 W3：项目切换 / 标签切换后重扫 Skill；启动时先扫一遍用户目录。
+    connect(this, &AgentViewModel::activeProjectIdChanged,
+            this, &AgentViewModel::reloadSkills);
+    connect(this, &AgentViewModel::activeTabChanged,
+            this, &AgentViewModel::reloadSkills);
+    reloadSkills();
 }
 
 AgentViewModel::~AgentViewModel() {
@@ -1078,6 +1169,157 @@ QVariantList AgentViewModel::resolveFileReferences(const QString& text) {
         });
     }
     return out;
+}
+
+// ── docs/37 W3: `$` Skill 引用 ─────────────────────────────
+
+void AgentViewModel::reloadSkills() {
+    const bool projectEnabled =
+        SettingsRepository::value(QStringLiteral("skills/projectEnabled"), true).toBool();
+    m_skillRegistry.setProjectRoot(
+        projectEnabled && active() ? active()->activeProjectRoot() : QString());
+    m_skillRegistry.reload();
+}
+
+// 项目根来自活动标签的 agent；切项目、导入项目、getter 被首次调用时都可能
+// 晚于上次扫描，所以读路径上做一次廉价的根比较，不一致才重扫。
+void AgentViewModel::syncSkillRoot() {
+    const QString root = active() ? active()->activeProjectRoot() : QString();
+    if (m_skillRegistry.projectRoot() != root)
+        reloadSkills();
+}
+
+QVariantMap AgentViewModel::activeSkillMention(const QString& text,
+                                               int cursor) const {
+    if (!SettingsRepository::value(QStringLiteral("skills/enabled"), true).toBool())
+        return {};
+    return skillMentionAt(text, cursor);
+}
+
+QVariantList AgentViewModel::listSkills(const QString& query, int limit) {
+    if (!SettingsRepository::value(QStringLiteral("skills/enabled"), true).toBool())
+        return {};
+    syncSkillRoot();
+    const QVector<Skill> matches =
+        m_skillRegistry.search(query, qBound(1, limit, 200));
+    QVariantList out;
+    out.reserve(matches.size());
+    for (const Skill& skill : matches)
+        out.append(skillToMap(skill));
+    return out;
+}
+
+QVariantList AgentViewModel::resolveSkills(const QString& text) {
+    if (!SettingsRepository::value(QStringLiteral("skills/enabled"), true).toBool())
+        return {};
+    syncSkillRoot();
+
+    // settings 键由 SettingsSchema 提供默认值 3；这里再 clamp 一次，防止
+    // 数据库里残留越界值直接影响本轮注入量。
+    int maxPerMessage =
+        SettingsRepository::value(QStringLiteral("skills/maxPerMessage"), 3).toInt();
+    maxPerMessage = qBound(1, maxPerMessage, 5);
+
+    QVariantList out;
+    QSet<QString> seenIds;
+    for (const QString& name : skillNamesInText(text)) {
+        // `$name` 优先按目录 id 命中；frontmatter 的 name 可能不同，再按
+        // 显示名（大小写不敏感）兜底。
+        const Skill* skill = m_skillRegistry.find(name);
+        if (!skill) {
+            for (const Skill& candidate : m_skillRegistry.all()) {
+                if (candidate.name.compare(name, Qt::CaseInsensitive) == 0) {
+                    skill = &candidate;
+                    break;
+                }
+            }
+        }
+        if (!skill) continue;   // 未知 skill 静默忽略
+
+        // 同一个 skill 可能有多个 `$token`（id / 显示名 / 大小写变体），
+        // 按 id 去重，避免重复注入与重复占用 maxPerMessage 名额。
+        const QString skillKey = skill->id.toLower();
+        if (seenIds.contains(skillKey)) continue;
+        if (out.size() >= maxPerMessage) break;
+        seenIds.insert(skillKey);
+
+        QVariantMap entry = skillToMap(*skill);
+        entry[QStringLiteral("token")] = name;
+        entry[QStringLiteral("body")] = skill->body;
+        out.append(entry);
+    }
+    return out;
+}
+
+bool AgentViewModel::startTask(const QString& input, const QStringList& images,
+                               const QVariantList& files) {
+    // 旧入口保持三参签名与行为；它意味着"本轮没有引用技能"，因此清掉
+    // 上一任务可能残留的 active skills。
+    return startTaskInternal(input, images, files, {});
+}
+
+bool AgentViewModel::startTaskWithSkills(const QString& input,
+                                         const QStringList& images,
+                                         const QVariantList& files,
+                                         const QVariantList& skills) {
+    QVector<Skill> parsed;
+    parsed.reserve(skills.size());
+    for (const QVariant& value : skills) {
+        const QVariantMap map = value.toMap();
+        Skill skill;
+        skill.id = map.value(QStringLiteral("id")).toString().trimmed();
+        if (skill.id.isEmpty()) continue;
+        skill.name = map.value(QStringLiteral("name")).toString().trimmed();
+        if (skill.name.isEmpty()) skill.name = skill.id;
+        skill.description = map.value(QStringLiteral("description")).toString();
+        skill.body = map.value(QStringLiteral("body")).toString();
+        skill.sourcePath = map.value(QStringLiteral("sourcePath")).toString();
+        skill.source = map.value(QStringLiteral("sourceId")).toString()
+                              == QLatin1String("project")
+                          ? SkillSource::Project : SkillSource::User;
+        skill.bytes = map.value(QStringLiteral("bytes")).toLongLong();
+        skill.truncated = map.value(QStringLiteral("truncated")).toBool();
+        parsed.append(skill);
+    }
+    return startTaskInternal(input, images, files, parsed);
+}
+
+bool AgentViewModel::startTaskInternal(const QString& input,
+                                       const QStringList& images,
+                                       const QVariantList& files,
+                                       const QVector<Skill>& skills) {
+    configureModel(active());
+    AIAgent* agent = active() ? active()->agent() : nullptr;
+    if (agent) {
+        if (skills.isEmpty())
+            agent->clearActiveSkills();
+        else
+            agent->setActiveSkills(skills);
+    }
+
+    QStringList compressed;
+    compressed.reserve(images.size());
+    for (const QString& raw : images) {
+        const QString dataUrl = compressedImageDataUrl(raw);
+        if (!dataUrl.isEmpty())
+            compressed.append(dataUrl);
+    }
+    // Text attachments: {kind:"file", name, content} maps → JSON array.
+    QJsonArray fileArray;
+    for (const QVariant& file : files) {
+        const QVariantMap f = file.toMap();
+        if (f.value("kind").toString() != QLatin1String("file")) continue;
+        fileArray.append(QJsonObject{
+            {"name", f.value("name").toString()},
+            {"content", f.value("content").toString()},
+        });
+    }
+
+    const bool started = active()->startTask(input, compressed, fileArray);
+    // 被拒绝（未配置模型 / 忙 / 空输入）时本轮不存在任务，技能不能留下。
+    if (!started && agent && !active()->isBusy())
+        agent->clearActiveSkills();
+    return started;
 }
 
 QVariantList AgentViewModel::inspectFileReferences(const QString& text) const {
@@ -2556,7 +2798,7 @@ namespace {
 // Batch 30 (F6): decode → downscale so the longest edge fits maxEdge →
 // re-encode JPEG. Lives in the viewmodels layer because QImage needs QtGui,
 // which nexus_core deliberately does not link.
-QString compressedImageDataUrl(const QString& raw, int maxEdge = 1568, int quality = 85) {
+QString compressedImageDataUrl(const QString& raw, int maxEdge, int quality) {
     const auto parsed = DataUrlUtils::parseDataUrl(raw);
     if (!parsed.ok) return {};
 
@@ -2614,28 +2856,6 @@ void AgentViewModel::syncPromptPresets(const QVariantList& presets) {
         controller->syncPromptPreset(presets);
 }
 
-bool AgentViewModel::startTask(const QString& input, const QStringList& images,
-                               const QVariantList& files) {
-    configureModel(active());
-    QStringList compressed;
-    compressed.reserve(images.size());
-    for (const QString& raw : images) {
-        const QString dataUrl = compressedImageDataUrl(raw);
-        if (!dataUrl.isEmpty())
-            compressed.append(dataUrl);
-    }
-    // Text attachments: {kind:"file", name, content} maps → JSON array.
-    QJsonArray fileArray;
-    for (const QVariant& file : files) {
-        const QVariantMap f = file.toMap();
-        if (f.value("kind").toString() != QLatin1String("file")) continue;
-        fileArray.append(QJsonObject{
-            {"name", f.value("name").toString()},
-            {"content", f.value("content").toString()},
-        });
-    }
-    return active()->startTask(input, compressed, fileArray);
-}
 
 // Batch 30 (F6): read a text file as a chat attachment. Binary content
 // (embedded NULs) and oversized files are rejected via noticeOccurred; the

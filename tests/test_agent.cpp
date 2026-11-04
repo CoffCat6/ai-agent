@@ -14,6 +14,7 @@
 #include "core/tools/ProposalStore.h"
 #include "core/tools/SubAgentControlTool.h"
 #include "core/agent/BackgroundTaskHub.h"
+#include "core/skills/Skill.h"
 #include "core/tools/NetworkFetchTool.h"
 #include "core/tools/WebSearchTool.h"
 #include "core/memory/SqliteMemory.h"
@@ -1068,6 +1069,8 @@ private slots:
     void auditCarriesRequestContext();
     // Batch 22 (F8): user-editable system prompt
     void systemPromptOverrideReachesRequest();
+    // docs/37 W3：$ 引用技能注入系统提示 + metadata/审计 + 8KB/32KB 截断。
+    void skillInjectionAndBudget();
 
     // docs/15 §6.1.2: model-switch context-window adaptation
     void testSwitchToLargerWindowRestoresHistory();
@@ -4214,6 +4217,137 @@ void TestAgent::systemPromptOverrideReachesRequest() {
                                 .value("content").toString();
     QVERIFY(content.contains(QStringLiteral("You are NexusAI")));
     agent.setSystemPromptOverride(QString());   // leave the fixture clean
+}
+
+// docs/37 W3: `$` 引用的技能正文按轮注入系统提示；user 消息 metadata 与
+// 审计行携带 skill_refs；任务结束后清空，绝不泄漏到下一任务。
+// 单技能 8 KiB / 总量 32 KiB 的上限必须截断并留下可见标记。
+void TestAgent::skillInjectionAndBudget() {
+    SqliteMemory memory(QStringLiteral(":memory:"));
+    agent.setMemory(&memory);
+
+    Skill review;
+    review.id = QStringLiteral("review");
+    review.name = QStringLiteral("review");
+    review.description = QStringLiteral("Review a diff");
+    review.body = QStringLiteral("Always report the highest severity first.");
+    review.source = SkillSource::Project;
+    review.sourcePath = QStringLiteral("D:/work/demo/.nexusai/skills/review/SKILL.md");
+    review.bytes = review.body.toUtf8().size();
+
+    agent.setActiveSkills({review});
+    llm.reset();
+    llm.script.append(textResponse(QStringLiteral("ok")));
+    QSignalSpy spy(&agent, &AIAgent::responseReady);
+    agent.startTask(QStringLiteral("please $review this diff"));
+    QTRY_COMPARE(spy.count(), 1);
+    QVERIFY(!llm.seenMessages.isEmpty());
+
+    QString systemPrompt;
+    for (const auto& entry : llm.seenMessages.first()) {
+        const QJsonObject msg = entry.toObject();
+        if (msg.value("role").toString() == QLatin1String("system"))
+            systemPrompt = msg.value("content").toString();
+    }
+    QVERIFY2(systemPrompt.contains(QStringLiteral("## 已引用技能")),
+             qPrintable(systemPrompt.right(500)));
+    QVERIFY(systemPrompt.contains(
+        QStringLiteral("<skill name=\"review\" source=\"project\">")));
+    QVERIFY(systemPrompt.contains(
+        QStringLiteral("Always report the highest severity first.")));
+    QVERIFY(systemPrompt.contains(QStringLiteral("</skill>")));
+    QVERIFY(systemPrompt.contains(QStringLiteral("</skills>")));
+
+    // 用户消息 metadata：UI/审计可读的 skill 引用列表。
+    bool metadataFound = false;
+    for (const auto& entry : llm.seenMessages.first()) {
+        const QJsonObject msg = entry.toObject();
+        if (msg.value("role").toString() != QLatin1String("user")) continue;
+        const QJsonArray refs =
+            msg.value("metadata").toObject().value("skills").toArray();
+        if (refs.size() != 1) continue;
+        QCOMPARE(refs.first().toObject().value("name").toString(),
+                 QStringLiteral("review"));
+        QCOMPARE(refs.first().toObject().value("source").toString(),
+                 QStringLiteral("project"));
+        metadataFound = true;
+    }
+    QVERIFY2(metadataFound, "user message metadata must carry skills");
+
+    // 任务开始审计：当前 audit 表无专用列，event=skill_refs + arguments=JSON。
+    bool auditFound = false;
+    for (const auto& entry : memory.auditLog(50)) {
+        const QJsonObject row = entry.toObject();
+        if (row.value("event").toString() != QLatin1String("skill_refs"))
+            continue;
+        QVERIFY(row.value("arguments").toString()
+                    .contains(QStringLiteral("\"review\"")));
+        auditFound = true;
+    }
+    QVERIFY2(auditFound, "task start must audit skill_refs");
+
+    // 任务结束即清空：同一会话的下一次请求不得再带技能块。
+    QVERIFY(agent.activeSkills().isEmpty());
+    llm.reset();
+    llm.script.append(textResponse(QStringLiteral("ok")));
+    QSignalSpy spy2(&agent, &AIAgent::responseReady);
+    agent.startTask(QStringLiteral("plain follow-up"));
+    QTRY_COMPARE(spy2.count(), 1);
+    const QString nextSystem =
+        llm.seenMessages.first().first().toObject()
+            .value("content").toString();
+    QVERIFY(!nextSystem.contains(QStringLiteral("<skill name=")));
+
+    // 显式清除同样生效（防止未被任务收尾覆盖的路径泄漏）。
+    agent.setActiveSkills({review});
+    QCOMPARE(agent.activeSkills().size(), 1);
+    agent.clearActiveSkills();
+    QVERIFY(agent.activeSkills().isEmpty());
+
+    // 单技能上限 8 KiB：截断并追加标记。
+    Skill big;
+    big.id = QStringLiteral("big");
+    big.name = QStringLiteral("big");
+    big.source = SkillSource::User;
+    big.body = QString(9000, QLatin1Char('x'));
+    agent.setActiveSkills({big});
+    const QString bigPrompt = agent.effectiveSystemPrompt();
+    QVERIFY(bigPrompt.contains(QStringLiteral("[skill truncated]")));
+    QVERIFY(bigPrompt.contains(QString(8192, QLatin1Char('x'))));
+    QVERIFY(!bigPrompt.contains(QString(8193, QLatin1Char('x'))));
+
+    // 总上限 32 KiB：5 × 8 KiB 只能注入前 4 条。
+    QVector<Skill> many;
+    for (int i = 0; i < 5; ++i) {
+        Skill s;
+        s.id = QStringLiteral("s%1").arg(i);
+        s.name = s.id;
+        s.source = SkillSource::User;
+        s.body = QString(8192, QLatin1Char(static_cast<char>('a' + i)));
+        many.append(s);
+    }
+    agent.setActiveSkills(many);
+    const QString totalPrompt = agent.effectiveSystemPrompt();
+    int blocks = 0;
+    for (int pos = totalPrompt.indexOf(QStringLiteral("<skill name="));
+         pos >= 0;
+         pos = totalPrompt.indexOf(QStringLiteral("<skill name="), pos + 1)) {
+        ++blocks;
+    }
+    QCOMPARE(blocks, 4);
+
+    // empty body 跳过：不产生空的 skill 块。
+    Skill empty;
+    empty.id = QStringLiteral("empty");
+    empty.name = empty.id;
+    empty.body = QStringLiteral("   ");
+    agent.setActiveSkills({empty});
+    QVERIFY(!agent.effectiveSystemPrompt()
+                 .contains(QStringLiteral("## 已引用技能")));
+
+    agent.clearActiveSkills();
+    agent.setMemory(nullptr);
+    agent.resetSession();
 }
 
 // ── docs/15 §6.1.2: model-switch context-window adaptation ──

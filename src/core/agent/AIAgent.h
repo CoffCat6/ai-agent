@@ -18,6 +18,7 @@
 #include "AgentState.h"
 #include "LLMTypes.h"
 #include "PermissionMode.h"
+#include "core/skills/Skill.h"
 
 namespace NexusAI {
 
@@ -216,6 +217,16 @@ public:
     // Public so tests can assert the injected project root.
     QString effectiveSystemPrompt() const;
 
+    // docs/37 W3：本轮由 `$name` 引用的 Skill（AgentViewModel 在 startTask
+    // 之前设置）。正文每轮由 effectiveSystemPrompt() 重建注入，因此上下文
+    // 压缩后仍然存在；任务收尾/取消/新会话时清空，绝不泄漏到下一任务。
+    void setActiveSkills(const QVector<Skill>& skills);
+    void clearActiveSkills();
+    QVector<Skill> activeSkills() const { return m_activeSkills; }
+    // 单 Skill 正文 8 KiB、本轮合计 32 KiB（UTF-8 字节）。
+    static constexpr int kSkillMaxBytes = 8 * 1024;
+    static constexpr int kSkillsTotalMaxBytes = 32 * 1024;
+
 public slots:
     // Batch 30 (F6): images are compressed data URLs ("data:image/jpeg;
     // base64,..."); files are {name, content} text attachments folded into
@@ -288,6 +299,8 @@ signals:
 private:
     void setState(AgentState state);
     QString projectContextBlock() const;
+    // docs/37 W3：`## 已引用技能` 块（空列表或全空正文时返回空串）。
+    QString activeSkillsBlock() const;
     QString appendTraceNode(const QString& type, const QString& title,
                             const QString& status, const QJsonObject& extra = {});
     void updateLastNodeStatus(const QString& status);
@@ -414,6 +427,8 @@ private:
     // P0 项目上下文：随 id 一起推送，进入系统提示（见 projectContextBlock）。
     QString m_activeProjectName;
     QString m_activeProjectRoot;
+    // docs/37 W3：本轮引用的 Skill。任务级生命周期，绝不持久化。
+    QVector<Skill> m_activeSkills;
     // Rules-file cache (G3): content + the path/mtime it was read at. The
     // mtime check before each task is one stat() call; without the cache
     // every message would re-read the rules file for nothing.

@@ -113,6 +113,36 @@ bool knowledgeBaseNonEmpty(ToolRegistry* registry) {
     return kbTool != nullptr && kbTool->knowledgeBaseNonEmpty();
 }
 
+// docs/37 W3：按 UTF-8 字节截断，且不把多字节字符切成 U+FFFD。
+QByteArray truncateUtf8(const QByteArray& raw, qsizetype maxBytes) {
+    if (maxBytes <= 0) return {};
+    if (raw.size() <= maxBytes) return raw;
+    qsizetype cut = maxBytes;
+    qsizetype lead = cut - 1;
+    while (lead >= 0 && lead > cut - 4
+           && (static_cast<unsigned char>(raw.at(lead)) & 0xC0) == 0x80) {
+        --lead;
+    }
+    if (lead >= 0) {
+        const unsigned char c = static_cast<unsigned char>(raw.at(lead));
+        const int needed = (c & 0x80) == 0x00 ? 1
+                         : (c & 0xE0) == 0xC0 ? 2
+                         : (c & 0xF0) == 0xE0 ? 3
+                         : (c & 0xF8) == 0xF0 ? 4 : 1;
+        if (lead + needed > cut)
+            cut = lead;
+    }
+    return raw.left(cut);
+}
+
+QString xmlAttribute(QString value) {
+    value.replace(QLatin1Char('&'), QStringLiteral("&amp;"));
+    value.replace(QLatin1Char('"'), QStringLiteral("&quot;"));
+    value.replace(QLatin1Char('<'), QStringLiteral("&lt;"));
+    value.replace(QLatin1Char('>'), QStringLiteral("&gt;"));
+    return value;
+}
+
 // 步数预算不再是用户设置：提示词只引导模型自行收敛，不播报硬性上限
 // （2026-11-01 起预算默认为内部安全上限，仅防失控）。
 QString systemPrompt() {
@@ -377,7 +407,56 @@ QString AIAgent::effectiveSystemPrompt() const {
     // 用户 override 表示完全接管系统提示（同引用指令语义），不注入。
     if (m_systemPromptOverride.isEmpty())
         prompt += todoStateBlock(m_todoList);
+    // docs/37 W3：`$` 引用的技能正文。每轮/每次重建都会重新追加，因此
+    // 上下文压缩（保留首条 system）后仍然生效。
+    prompt += activeSkillsBlock();
     return prompt;
+}
+
+void AIAgent::setActiveSkills(const QVector<Skill>& skills) {
+    m_activeSkills = skills;
+}
+
+void AIAgent::clearActiveSkills() {
+    m_activeSkills.clear();
+}
+
+QString AIAgent::activeSkillsBlock() const {
+    if (m_activeSkills.isEmpty()) return QString();
+
+    static const QByteArray kTruncatedMarker = "[skill truncated]";
+    QString out = QStringLiteral("\n\n## 已引用技能\n<skills>\n");
+    int emitted = 0;
+    qint64 totalBytes = 0;
+    for (const Skill& skill : m_activeSkills) {
+        if (skill.body.trimmed().isEmpty()) continue;
+        const qint64 remaining = kSkillsTotalMaxBytes - totalBytes;
+        if (remaining <= 0) break;
+
+        QByteArray body = skill.body.toUtf8();
+        qint64 limit = qMin<qint64>(kSkillMaxBytes, remaining);
+        bool truncated = body.size() > limit;
+        if (truncated && limit + kTruncatedMarker.size() > remaining) {
+            // 标记也算总量：剩余空间放不下正文+标记时，宁可少注一段正文。
+            limit = qMax<qint64>(0, remaining - kTruncatedMarker.size());
+            if (limit == 0) break;
+        }
+        if (truncated)
+            body = truncateUtf8(body, static_cast<qsizetype>(limit));
+        totalBytes += body.size() + (truncated ? kTruncatedMarker.size() : 0);
+
+        out += QStringLiteral("<skill name=\"%1\" source=\"%2\">\n")
+                   .arg(xmlAttribute(skill.name.isEmpty() ? skill.id : skill.name),
+                        xmlAttribute(skill.sourceId()));
+        out += QString::fromUtf8(body);
+        if (truncated)
+            out += QStringLiteral("\n[skill truncated]");
+        out += QStringLiteral("\n</skill>\n");
+        ++emitted;
+    }
+    if (emitted == 0) return QString();
+    out += QStringLiteral("</skills>");
+    return out;
 }
 
 // G3: the seed template written when a project is imported. A file whose
@@ -569,6 +648,10 @@ QString AIAgent::appendTraceNode(const QString& type, const QString& title,
     // 用户附件不渲染；与 images 同样放行。
     if (extra.contains("files"))
         node["files"] = extra.value("files");
+    // docs/37 W3: user_message 携带本轮引用的 skill 列表（[{id,name,source}]），
+    // UI 因此能在消息气泡上显示引用来源，恢复会话后也还在。
+    if (extra.contains("skills"))
+        node["skills"] = extra.value("skills");
     // 字段是白名单式的：不在这里放行的 key 根本进不了节点（也就不会被
     // persistTraceNode 整节点写进 trace_nodes）。
     if (extra.contains("reasoning"))
@@ -1139,6 +1222,21 @@ bool AIAgent::startTask(const QString& userMessage, const QStringList& images,
         metadata["files"] = files;
         userMsg["metadata"] = metadata;
     }
+    // docs/37 W3：本轮引用的技能写进用户消息 metadata（[{id,name,source}]），
+    // 供 UI / 审计读取；正文本身只在系统提示里，不进入持久化的用户消息。
+    QJsonArray skillRefs;
+    for (const Skill& skill : m_activeSkills) {
+        skillRefs.append(QJsonObject{
+            {"id", skill.id},
+            {"name", skill.name.isEmpty() ? skill.id : skill.name},
+            {"source", skill.sourceId()},
+        });
+    }
+    if (!skillRefs.isEmpty()) {
+        QJsonObject metadata = userMsg.value("metadata").toObject();
+        metadata["skills"] = skillRefs;
+        userMsg["metadata"] = metadata;
+    }
     m_messages.append(userMsg);
     // 主键由写入方回传：MAX(id) 反猜在插入失败时会拿到上一条消息的 id。
     qint64 savedUserId = 0;
@@ -1155,8 +1253,22 @@ bool AIAgent::startTask(const QString& userMessage, const QStringList& images,
         extra["images"] = userMsg.value("images");
     if (userMsg.contains("files"))
         extra["files"] = userMsg.value("files");
+    if (!skillRefs.isEmpty())
+        extra["skills"] = skillRefs;
     if (savedUserId > 0) extra["messageId"] = savedUserId;
     appendTraceNode("user_message", userMessage, "completed", extra);
+
+    // docs/37 W3：任务开始审计。audit_log 没有专用 JSON 列，故用
+    // event=skill_refs + arguments=引用列表 JSON（tool_name 留空），
+    // request_id/latency/tokens 对任务开始行无意义。
+    if (!skillRefs.isEmpty() && m_memory && !m_sessionId.isEmpty()) {
+        m_memory->logAudit(
+            m_sessionId, QStringLiteral("skill_refs"), QString(),
+            QString::fromUtf8(
+                QJsonDocument(skillRefs).toJson(QJsonDocument::Compact)),
+            true, QStringLiteral("skills referenced for this task"),
+            0, -1, 0, currentModel());
+    }
 
     // docs/25 B3: fresh sessions resolve the episodic retrieval OFF the GUI
     // thread and continue the launch asynchronously, bounded by
@@ -1282,6 +1394,7 @@ void AIAgent::resetSession() {
     if (m_active) stop();
     const bool wasActive = m_active;
     m_active = false;
+    m_activeSkills.clear();   // docs/37 W3：新会话绝不复用上一任务技能
     ++m_epoch;
     m_taskTimeoutTimer.stop();
     m_pendingToolCalls.clear();
@@ -1338,6 +1451,7 @@ void AIAgent::resetSession() {
 void AIAgent::resumeSession(const QString& sessionId) {
     if (m_active || sessionId.isEmpty()) return;
 
+    m_activeSkills.clear();   // docs/37 W3：技能是任务级的，不跨会话
     m_sessionId = sessionId;
     m_messages = QJsonArray();
     // docs/35 P4.4: proposal ids do not cross sessions (not persisted).
@@ -1957,6 +2071,7 @@ void AIAgent::onLLMError(const QString& error) {
 void AIAgent::stop() {
     if (!m_active) return;
     m_active = false;
+    m_activeSkills.clear();   // docs/37 W3：取消即结束本轮技能
     ++m_epoch;
     m_taskTimeoutTimer.stop();
     // Batch 13 (SEC-1302): cooperatively cancel every tool already running on
@@ -3154,6 +3269,8 @@ void AIAgent::approveToolCall(const QString& id, bool approved) {
 
 void AIAgent::finishTask(const QString& finalText, bool summaryTraced) {
     m_active = false;
+    // docs/37 W3：技能是本轮的，任务结束即失效。
+    m_activeSkills.clear();
     m_taskTimeoutTimer.stop();
     m_inFlightTools.clear();   // Batch 13: normally empty here; belt-and-braces
     clearInFlightToolCalls();
@@ -3217,6 +3334,7 @@ if (m_memory && !m_sessionId.isEmpty()) m_memory->touchSession(m_sessionId);
 
 void AIAgent::failTask(const QString& error) {
     m_active = false;
+    m_activeSkills.clear();   // docs/37 W3：失败任务同样不留下轮技能
     m_taskTimeoutTimer.stop();
     m_inFlightTools.clear();   // Batch 13: belt-and-braces, mirrors finishTask
     clearInFlightToolCalls();

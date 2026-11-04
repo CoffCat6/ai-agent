@@ -2,6 +2,9 @@
 // clamping, debounced QSettings persistence and cross-instance restore.
 #include "viewmodels/AgentViewModel.h"
 #include "core/agent/AIAgent.h"
+#include "infrastructure/llm/IAIService.h"
+#include "core/skills/Skill.h"
+#include "core/utils/SettingsRepository.h"
 #include "viewmodels/TraceModel.h"
 #include "viewmodels/LogModel.h"
 #include "viewmodels/I18nManager.h"
@@ -91,6 +94,26 @@ static QString batchWrite(const QTemporaryDir& dir, const QString& name,
     f.close();
     return path;
 }
+
+// docs/37 W3：同步返回的假 LLM。只用于断言系统提示里是否出现 <skill> 块，
+// 不模拟工具调用，也不发 requestStarted（requestId=0 对 agent 是合法的）。
+class FakeSkillService : public IAIService {
+public:
+    QVector<QJsonArray> seenMessages;
+
+    void chatComplete(const QJsonArray& messages, const QJsonArray& = {}) override {
+        seenMessages.append(messages);
+        LLMResponse response;
+        response.success = true;
+        response.content = QStringLiteral("ok");
+        emit responseReady(response);
+    }
+    void cancel() override {}
+    void setApiKey(const QString&) override {}
+    void setModel(const QString&) override {}
+    void setBaseUrl(const QString&) override {}
+    QString model() const override { return QStringLiteral("fake-skill-model"); }
+};
 
 static void setupEmbedder(RagService& rag, bool slow) {
     rag.setEmbedder([](const QString&) { return QVector<float>(8, 0.25f); });
@@ -2505,6 +2528,146 @@ private slots:
                     QJsonObject{{QStringLiteral("role"), QStringLiteral("user")},
                                 {QStringLiteral("content"), QStringLiteral("仍然可用")}})
                 > 0);
+    }
+
+    // docs/37 W3：$ 补全/解析 API + startTaskWithSkills 注入链路；旧三参
+    // startTask 保持可用且不会携带上一任务的技能。
+    void skillMentionResolveAndInjection() {
+        QTemporaryDir project;
+        QVERIFY(project.isValid());
+
+        auto writeSkill = [&project](const QString& id, const QString& name,
+                                     const QString& description,
+                                     const QString& body) {
+            const QString dir = project.filePath(
+                QStringLiteral(".nexusai/skills/%1").arg(id));
+            QVERIFY(QDir().mkpath(dir));
+            QFile f(dir + QStringLiteral("/SKILL.md"));
+            QVERIFY(f.open(QIODevice::WriteOnly | QIODevice::Text));
+            f.write(QStringLiteral("---\nname: %1\ndescription: %2\n---\n%3\n")
+                        .arg(name, description, body).toUtf8());
+            f.close();
+        };
+        writeSkill(QStringLiteral("review"), QStringLiteral("review"),
+                   QStringLiteral("Review a diff"),
+                   QStringLiteral("Always report the highest severity first."));
+        writeSkill(QStringLiteral("test"), QStringLiteral("test"),
+                   QStringLiteral("Write tests"), QStringLiteral("Run the suite."));
+        writeSkill(QStringLiteral("commit"), QStringLiteral("commit"),
+                   QStringLiteral("Commit changes"), QStringLiteral("Use conventional commits."));
+        writeSkill(QStringLiteral("lint"), QStringLiteral("lint"),
+                   QStringLiteral("Lint code"), QStringLiteral("Fix every warning."));
+
+        AgentViewModel vm(nullptr);
+        AIAgent agent;
+        FakeSkillService llm;
+        agent.setLLMService(&llm);
+        vm.setAgent(&agent);
+        agent.setActiveProject(QStringLiteral("p1"), QStringLiteral("Demo"),
+                               project.path());
+        vm.reloadSkills();
+
+        // activeSkillMention：$ 位于行首/空白后；$dir/file 不触发。
+        QVariantMap mention =
+            vm.activeSkillMention(QStringLiteral("please $rev"), 11);
+        QCOMPARE(mention.value("active").toBool(), true);
+        QCOMPARE(mention.value("start").toInt(), 7);
+        QCOMPARE(mention.value("query").toString(), QStringLiteral("rev"));
+
+        mention = vm.activeSkillMention(QStringLiteral("$"), 1);
+        QCOMPARE(mention.value("active").toBool(), true);
+        QCOMPARE(mention.value("query").toString(), QString());
+
+        QCOMPARE(vm.activeSkillMention(QStringLiteral("see $dir/file"), 13)
+                     .value("active").toBool(), false);
+        QCOMPARE(vm.activeSkillMention(QStringLiteral("foo$review"), 10)
+                     .value("active").toBool(), false);
+        // 光标落在 token 中间时只关闭面板，避免补全撕裂原文。
+        QCOMPARE(vm.activeSkillMention(QStringLiteral("$review tail"), 4)
+                     .value("active").toBool(), false);
+
+        // listSkills：字段契约 + 项目来源。
+        const QVariantList listed = vm.listSkills(QStringLiteral("rev"));
+        QCOMPARE(listed.size(), 1);
+        const QVariantMap row = listed.first().toMap();
+        QCOMPARE(row.value("id").toString(), QStringLiteral("review"));
+        QCOMPARE(row.value("name").toString(), QStringLiteral("review"));
+        QCOMPARE(row.value("description").toString(),
+                 QStringLiteral("Review a diff"));
+        QCOMPARE(row.value("source").toString(), QStringLiteral("project"));
+        QCOMPARE(row.value("sourceId").toString(), QStringLiteral("project"));
+        QVERIFY(row.value("bytes").toLongLong() > 0);
+        QCOMPARE(row.value("truncated").toBool(), false);
+
+        // resolveSkills：去重、未知忽略、$dir/file 不解析、默认上限 3。
+        const QVariantList resolved = vm.resolveSkills(QStringLiteral(
+            "$review $review $test $commit $lint $nope $dir/file"));
+        QCOMPARE(resolved.size(), 3);
+        QCOMPARE(resolved.at(0).toMap().value("id").toString(),
+                 QStringLiteral("review"));
+        QCOMPARE(resolved.at(1).toMap().value("id").toString(),
+                 QStringLiteral("test"));
+        QCOMPARE(resolved.at(2).toMap().value("id").toString(),
+                 QStringLiteral("commit"));
+        QVERIFY(resolved.at(0).toMap().value("body").toString()
+                    .contains(QStringLiteral("highest severity")));
+        QCOMPARE(resolved.at(0).toMap().value("sourceId").toString(),
+                 QStringLiteral("project"));
+
+        // settings/skills/maxPerMessage：默认 3，clamp 1-5。schema 拒绝越界
+        // 写入，故直接用隔离后的 QSettings 造出"历史遗留越界值"。
+        {
+            auto s = NexusAI::TestSupport::testSettings();
+            s.setValue(QStringLiteral("skills/maxPerMessage"), 9);
+            s.sync();
+        }
+        QCOMPARE(vm.resolveSkills(
+                     QStringLiteral("$review $test $commit $lint")).size(), 4);
+        {
+            auto s = NexusAI::TestSupport::testSettings();
+            s.setValue(QStringLiteral("skills/maxPerMessage"), 0);
+            s.sync();
+        }
+        QCOMPARE(vm.resolveSkills(QStringLiteral("$review $test")).size(), 1);
+        {
+            auto s = NexusAI::TestSupport::testSettings();
+            s.remove(QStringLiteral("skills/maxPerMessage"));
+            s.sync();
+        }
+
+        // startTaskWithSkills：先设置 active skills，再走既有 startTask 流程。
+        QSignalSpy spy(&agent, &AIAgent::responseReady);
+        QVERIFY(vm.startTaskWithSkills(
+            QStringLiteral("$review $test"), {}, {},
+            vm.resolveSkills(QStringLiteral("$review $test"))));
+        QTRY_COMPARE(spy.count(), 1);
+        QVERIFY(!llm.seenMessages.isEmpty());
+        QString systemPrompt;
+        for (const auto& entry : llm.seenMessages.first()) {
+            const QJsonObject msg = entry.toObject();
+            if (msg.value("role").toString() == QLatin1String("system"))
+                systemPrompt = msg.value("content").toString();
+        }
+        QVERIFY2(systemPrompt.contains(
+                     QStringLiteral("<skill name=\"review\" source=\"project\">")),
+                 qPrintable(systemPrompt.right(400)));
+        QVERIFY(systemPrompt.contains(
+            QStringLiteral("Always report the highest severity first.")));
+        QVERIFY(systemPrompt.contains(
+            QStringLiteral("<skill name=\"test\" source=\"project\">")));
+
+        // 旧三参 startTask 仍然可用（签名兼容），且任务结束后技能不残留。
+        llm.seenMessages.clear();
+        QSignalSpy spy2(&agent, &AIAgent::responseReady);
+        QVERIFY(vm.startTask(QStringLiteral("plain message"), {}, {}));
+        QTRY_COMPARE(spy2.count(), 1);
+        const QString plainSystem =
+            llm.seenMessages.first().first().toObject()
+                .value("content").toString();
+        QVERIFY(!plainSystem.contains(QStringLiteral("<skill name=")));
+
+        vm.setAgent(nullptr);
+
     }
 
     // B1-3: cancellation releases the import state through the normal finish

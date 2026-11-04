@@ -20,6 +20,7 @@
 
 #include "core/agent/AgentState.h"
 #include "core/agent/PermissionMode.h"
+#include "core/skills/SkillRegistry.h"
 #include "ChatSessionController.h"
 #include "TraceModel.h"
 #include "LogModel.h"
@@ -371,6 +372,26 @@ public:
     Q_INVOKABLE QVariantList listProjectFiles(const QString& query, int limit = 50);
     Q_INVOKABLE QVariantMap activeFileMention(const QString& text, int cursor) const;
     Q_INVOKABLE QVariantList resolveFileReferences(const QString& text);
+
+    // ── docs/37 W3: `$` Skill 引用 ─────────────────────
+    // 活动项目根变化时重扫；也供设置页/手动刷新调用。
+    Q_INVOKABLE void reloadSkills();
+    // 光标前的 `$` token：{active,start,query}。`$` 必须位于行首或空白后，
+    // name 仅 [A-Za-z0-9_.-]；`$dir/file`（含 '/'）不触发补全。
+    Q_INVOKABLE QVariantMap activeSkillMention(const QString& text,
+                                               int cursor) const;
+    // 补全候选：{id,name,description,source,sourceId,bytes,truncated}。
+    Q_INVOKABLE QVariantList listSkills(const QString& query, int limit = 50);
+    // 解析正文里所有 `$name`（去重、未知忽略），上限
+    // settings/skills/maxPerMessage（默认 3，clamp 1-5）。返回
+    // {id,name,description,body,source,sourceId,sourcePath,truncated}。
+    Q_INVOKABLE QVariantList resolveSkills(const QString& text);
+    // 先把技能设为本轮 active，再走既有 startTask 流程（旧三参 startTask
+    // 保持不变，且不会携带上一任务的技能）。
+    Q_INVOKABLE bool startTaskWithSkills(const QString& input,
+                                         const QStringList& images,
+                                         const QVariantList& files,
+                                         const QVariantList& skills);
     // 设置**活动标签**的项目归属（不再广播给所有标签）；同时作为
     // activeProjectId 属性的 WRITE 端。
     Q_INVOKABLE void setActiveProjectId(const QString& id);
@@ -847,6 +868,8 @@ private:
         QString preview;
     };
     QList<Confirmation> m_confirmations;
+    // docs/37 W3：活动项目 + 用户目录的 Skill 缓存（GUI 线程独占）。
+    SkillRegistry m_skillRegistry;
     void pruneConfirmations();
     // UE-1: 按当前检查点列表与已确认水位重算"未查看"文件数。
     // listChanged=true 时表示检查点列表本身刚被替换（可能是切换会话），
@@ -888,6 +911,12 @@ private:
     // 无快照的读取路径兜底。
     void syncSandboxMirror();
     void refreshToolRegistry();
+    // 项目根变化后按需重扫 Skill（list/resolve/启动时懒同步）。
+    void syncSkillRoot();
+    // 三参 startTask 与 startTaskWithSkills 的共同实现。
+    bool startTaskInternal(const QString& input, const QStringList& images,
+                           const QVariantList& files,
+                           const QVector<Skill>& skills);
     void refreshKnowledge();
     void setKnowledgeBusy(bool busy);
 

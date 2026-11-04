@@ -123,6 +123,10 @@ const QVector<CategoryMeta>& SettingsSchema::categories() {
         // 独立成页避免继续堆高备份页。放在数据组末尾。
         {QStringLiteral("storage"), QT_TRANSLATE_NOOP("NexusAI", "数据管理"), 18,
          QStringLiteral("data")},
+        // docs/37 W3：技能是独立能力（发现/引用/注入），既不是工具也不是
+        // 记忆，因此单独成页；排内容组末尾，不打乱既有分类顺序。
+        {QStringLiteral("skills"), QT_TRANSLATE_NOOP("NexusAI", "技能"), 19,
+         QStringLiteral("content")},
     };
     return values;
 }
@@ -349,6 +353,12 @@ const QVector<SettingsKeyDef>& SettingsSchema::registeredKeys() {
             keyDef(QStringLiteral("tools/disabled"), QStringList(), SettingValueType::StringList),
             keyDef(QStringLiteral("schemaVersion"), 0, SettingValueType::Int),
             keyDef(QStringLiteral("projects/activeId"), QString(), SettingValueType::String),
+            // docs/37 W2：Skill 能力开关。本期只登记键；读取方与设置页在 W3
+            // 落地（不新增 SettingsService 属性，键直接走 schema 默认值）。
+            keyDef(QStringLiteral("skills/enabled"), true, SettingValueType::Bool),
+            keyDef(QStringLiteral("skills/projectEnabled"), true, SettingValueType::Bool),
+            keyDef(QStringLiteral("skills/maxPerMessage"), 3, SettingValueType::Int,
+                   intRange(1, 5)),
             keyDef(QStringLiteral("security/readDenyList"), QVariantList(), SettingValueType::Any),
             keyDef(QStringLiteral("theme/dark"), false, SettingValueType::Bool, {}, false, true),
         };

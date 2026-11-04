@@ -51,6 +51,11 @@ add_library(nexus_core STATIC
     src/core/memory/IMemory.h
     src/core/memory/SqliteMemory.h
     src/core/memory/SqliteMemory.cpp
+    # docs/37 W2：Skill 发现/宽松 frontmatter 解析/搜索/上限与路径校验。
+    # QtCore-only，nexus_core 保持无 QML/Gui 依赖。
+    src/core/skills/Skill.h
+    src/core/skills/SkillRegistry.h
+    src/core/skills/SkillRegistry.cpp
     src/core/tools/ITool.h
     src/core/tools/ToolRegistry.h
     src/core/tools/ToolRegistry.cpp
@@ -400,6 +405,8 @@ qt_add_qml_module(nexus_ai
         # G3: per-project AGENTS.md management (settings page)
         src/ui/pages/ProjectRulesPage.qml
         src/ui/pages/PromptAssetsPage.qml
+        # docs/37 W3: 技能列表（项目/用户、来源、刷新）
+        src/ui/pages/SkillsPage.qml
         src/ui/pages/SettingsBackupPage.qml
         # docs/31 S4.5 N5: 数据管理总览（统计 + 维护动作）
         src/ui/pages/DataPage.qml

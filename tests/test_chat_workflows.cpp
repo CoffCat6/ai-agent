@@ -40,6 +40,127 @@ const NexusAI::TestSupport::SettingsIsolation kSettingsIsolation;
 
 using namespace NexusAI;
 
+namespace {
+
+// W1：/ 命令补全的 QML 回归夹具。加载完整 main.qml 而不是单独实例化
+// InputConsole，因为补全候选来自 Settings 单例、且需要真实窗口焦点才能
+// 用 QTest 发送键盘事件。每个用例独立引擎，避免草稿/面板状态互相污染。
+struct SlashHarness {
+    QQmlApplicationEngine engine;
+    QQuickWindow* window = nullptr;
+    QObject* console = nullptr;
+    QObject* field = nullptr;
+    QObject* popup = nullptr;
+    QObject* skillPopup = nullptr;
+    QString error;
+
+    bool load() {
+        engine.rootContext()->setContextProperty("Theme", ThemeProvider::instance());
+        engine.load(QUrl("qrc:/qt/qml/NexusAI/src/ui/main.qml"));
+        if (engine.rootObjects().isEmpty()) {
+            error = QStringLiteral("main.qml produced no root object");
+            return false;
+        }
+        window = qobject_cast<QQuickWindow*>(engine.rootObjects().first());
+        if (!window) {
+            error = QStringLiteral("root object is not a QQuickWindow");
+            return false;
+        }
+        window->resize(1200, 800);
+        window->show();
+        if (!QTest::qWaitForWindowExposed(window)) {
+            error = QStringLiteral("window was not exposed");
+            return false;
+        }
+        window->requestActivate();
+        QTest::qWait(120);
+
+        console = window->findChild<QObject*>(QStringLiteral("inputConsole"));
+        field = window->findChild<QObject*>(QStringLiteral("messageInput"));
+        popup = window->findChild<QObject*>(QStringLiteral("slashPopup"));
+        skillPopup = window->findChild<QObject*>(QStringLiteral("skillPopup"));
+        if (!console) error = QStringLiteral("inputConsole not found");
+        else if (!field) error = QStringLiteral("messageInput not found");
+        else if (!popup) error = QStringLiteral("slashPopup not found");
+        else if (!skillPopup) error = QStringLiteral("skillPopup not found");
+        if (!error.isEmpty()) return false;
+
+        if (auto* item = qobject_cast<QQuickItem*>(field)) {
+            item->forceActiveFocus();
+            QTest::qWait(80);
+        }
+        return true;
+    }
+
+    // 模拟用户输入：先换文本再放光标到末尾，让 onTextChanged /
+    // onCursorPositionChanged 各跑一次补全扫描。
+    void setInput(const QString& text) {
+        field->setProperty("text", text);
+        field->setProperty("cursorPosition", text.size());
+        QTest::qWait(60);
+    }
+
+    QString inputText() const { return field->property("text").toString(); }
+
+    QVariantList results() const {
+        return console->property("slashResults").toList();
+    }
+
+    QStringList resultNames() const {
+        QStringList names;
+        for (const QVariant& entry : results())
+            names << entry.toMap().value(QStringLiteral("name")).toString();
+        return names;
+    }
+
+    QStringList skillNames() const {
+        QStringList names;
+        for (const QVariant& entry :
+             console->property("skillResults").toList())
+            names << entry.toMap().value(QStringLiteral("name")).toString();
+        return names;
+    }
+
+    QStringList chipNames() const {
+        QStringList names;
+        for (const QVariant& entry :
+             console->property("skillChips").toList())
+            names << entry.toMap().value(QStringLiteral("name")).toString();
+        return names;
+    }
+};
+
+// docs/37 W3：项目技能夹具。与 test_viewmodel 的 skillMentionResolveAndInjection
+// 使用同一目录约定（<root>/.nexusai/skills/<id>/SKILL.md）。
+bool writeProjectSkill(const QString& projectRoot, const QString& id,
+                       const QString& description, const QString& body) {
+    const QString dir = projectRoot + QStringLiteral("/.nexusai/skills/") + id;
+    if (!QDir().mkpath(dir)) return false;
+    QFile file(dir + QStringLiteral("/SKILL.md"));
+    if (!file.open(QIODevice::WriteOnly | QIODevice::Text)) return false;
+    const QByteArray content =
+        QStringLiteral("---\nname: %1\ndescription: %2\n---\n%3\n")
+            .arg(id, description, body).toUtf8();
+    return file.write(content) == content.size();
+}
+
+bool writeBaseSkills(const QString& projectRoot) {
+    return writeProjectSkill(projectRoot, QStringLiteral("review"),
+                             QStringLiteral("Review a diff"),
+                             QStringLiteral("Always report the highest severity first."))
+        && writeProjectSkill(projectRoot, QStringLiteral("test"),
+                             QStringLiteral("Write tests"),
+                             QStringLiteral("Run the suite."))
+        && writeProjectSkill(projectRoot, QStringLiteral("commit"),
+                             QStringLiteral("Commit changes"),
+                             QStringLiteral("Use conventional commits."))
+        && writeProjectSkill(projectRoot, QStringLiteral("lint"),
+                             QStringLiteral("Lint code"),
+                             QStringLiteral("Fix every warning."));
+}
+
+} // namespace
+
 class RecordingService : public IAIService {
     Q_OBJECT
 public:
@@ -459,6 +580,430 @@ private slots:
         QVERIFY2(issues.isEmpty(), qPrintable(issues.join('\n')));
         const QString capture = qEnvironmentVariable("NEXUS_CAPTURE_PATH");
         if (!capture.isEmpty()) QVERIFY(window->grabWindow().save(capture));
+    }
+
+    // ── W1: '/' 命令输入即补全 ───────────────────────────
+
+    // 输入 /re 立即出现 review 候选（而不是等到发送时再展开）。
+    void slashCompletionShowsMatchingCommand() {
+        SlashHarness ui;
+        QVERIFY2(ui.load(), qPrintable(ui.error));
+        QVERIFY(!SettingsService::instance()->slashCommands().isEmpty());
+
+        ui.setInput("/re");
+        QCOMPARE(ui.console->property("slashOpen").toBool(), true);
+        QCOMPARE(ui.popup->property("opened").toBool(), true);
+        QCOMPARE(ui.console->property("slashStart").toInt(), 0);
+        QCOMPARE(ui.console->property("slashQuery").toString(), QStringLiteral("re"));
+        QCOMPARE(ui.console->property("slashIndex").toInt(), 0);
+        const QStringList names = ui.resultNames();
+        QVERIFY2(names.contains(QStringLiteral("review")), qPrintable(names.join(',')));
+        QVERIFY(!names.contains(QStringLiteral("translate")));
+
+        // 继续输入按前缀过滤。
+        ui.setInput("/rev");
+        QCOMPARE(ui.resultNames(), QStringList{QStringLiteral("review")});
+    }
+
+    // ↑/↓ 在候选中移动，不改变输入文本。
+    void slashArrowsMoveSelection() {
+        SlashHarness ui;
+        QVERIFY2(ui.load(), qPrintable(ui.error));
+        ui.setInput("/");
+        QVERIFY(ui.results().size() >= 2);
+        QVERIFY(ui.field->property("activeFocus").toBool());
+        QCOMPARE(ui.console->property("slashIndex").toInt(), 0);
+
+        QTest::keyClick(ui.window, Qt::Key_Down);
+        QTest::qWait(40);
+        QCOMPARE(ui.console->property("slashIndex").toInt(), 1);
+
+        QTest::keyClick(ui.window, Qt::Key_Down);
+        QTest::qWait(40);
+        QCOMPARE(ui.console->property("slashIndex").toInt(), 2);
+
+        QTest::keyClick(ui.window, Qt::Key_Up);
+        QTest::qWait(40);
+        QCOMPARE(ui.console->property("slashIndex").toInt(), 1);
+        QCOMPARE(ui.inputText(), QStringLiteral("/"));
+    }
+
+    // Tab 只补全为 "/name "，绝不触发发送。
+    void slashTabCompletesWithoutSending() {
+        SlashHarness ui;
+        QVERIFY2(ui.load(), qPrintable(ui.error));
+        RecordingService service;
+        AIAgent agent;
+        vm->setModelConfigurator([&](AIAgent* target, const QVariantMap&) {
+            target->setLLMService(&service);
+        });
+        vm->setAgent(&agent);
+
+        ui.setInput("/re");
+        QVERIFY(ui.field->property("activeFocus").toBool());
+        QTest::keyClick(ui.window, Qt::Key_Tab);
+        QTest::qWait(80);
+
+        QCOMPARE(ui.inputText(), QStringLiteral("/review "));
+        QCOMPARE(ui.console->property("slashOpen").toBool(), false);
+        QCOMPARE(service.requests.size(), 0);
+
+        vm->setAgent(nullptr);
+        vm->setModelConfigurator({});
+    }
+
+    // Enter 在有候选时同样只补全，不发送。
+    void slashEnterCompletesWithoutSending() {
+        SlashHarness ui;
+        QVERIFY2(ui.load(), qPrintable(ui.error));
+        RecordingService service;
+        AIAgent agent;
+        vm->setModelConfigurator([&](AIAgent* target, const QVariantMap&) {
+            target->setLLMService(&service);
+        });
+        vm->setAgent(&agent);
+
+        ui.setInput("/re");
+        QVERIFY(ui.field->property("activeFocus").toBool());
+        QTest::keyClick(ui.window, Qt::Key_Return);
+        QTest::qWait(80);
+
+        QCOMPARE(ui.inputText(), QStringLiteral("/review "));
+        QCOMPARE(ui.console->property("slashOpen").toBool(), false);
+        QCOMPARE(service.requests.size(), 0);
+
+        vm->setAgent(nullptr);
+        vm->setModelConfigurator({});
+    }
+
+    // Esc 关闭面板并保留已输入文本。
+    void slashEscapeClosesPanel() {
+        SlashHarness ui;
+        QVERIFY2(ui.load(), qPrintable(ui.error));
+        ui.setInput("/re");
+        QCOMPARE(ui.console->property("slashOpen").toBool(), true);
+
+        QTest::keyClick(ui.window, Qt::Key_Escape);
+        QTest::qWait(60);
+
+        QCOMPARE(ui.console->property("slashOpen").toBool(), false);
+        QCOMPARE(ui.popup->property("opened").toBool(), false);
+        QCOMPARE(ui.inputText(), QStringLiteral("/re"));
+    }
+
+    // 路径与 URL 不是命令：/etc/hosts、http://… 不触发；空白后的 /re 才触发。
+    void slashIgnoresPathsAndUrls() {
+        SlashHarness ui;
+        QVERIFY2(ui.load(), qPrintable(ui.error));
+
+        ui.setInput("/etc/hosts");
+        QCOMPARE(ui.console->property("slashOpen").toBool(), false);
+
+        ui.setInput("curl http://localhost:8080/path");
+        QCOMPARE(ui.console->property("slashOpen").toBool(), false);
+
+        ui.setInput("hi /re");
+        QCOMPARE(ui.console->property("slashOpen").toBool(), true);
+        QCOMPARE(ui.console->property("slashStart").toInt(), 3);
+    }
+
+    // 发送路径不变：/review 仍由 expandSlashCommand 展开为模板。
+    void slashCommandStillExpandsOnSend() {
+        const QVariantList commands = SettingsService::instance()->slashCommands();
+        QVERIFY(!commands.isEmpty());
+        const QString expanded =
+            AgentViewModel::expandSlashCommand(QStringLiteral("/review 代码"), commands);
+        QVERIFY(expanded != QStringLiteral("/review 代码"));
+        QVERIFY(!expanded.startsWith(QStringLiteral("/review")));
+        QVERIFY(expanded.contains(QStringLiteral("请审查")));
+        QVERIFY(expanded.endsWith(QStringLiteral("代码")));
+    }
+
+    // ── docs/37 W3: '$' Skill 补全 / chip / 发送 ─────────
+
+    // 输入 $re 立即出现 review 候选；$dir/file 不是技能引用。
+    void skillCompletionShowsProjectSkills() {
+        QTemporaryDir project;
+        QVERIFY(project.isValid());
+        QVERIFY(writeBaseSkills(project.path()));
+
+        RecordingService service;
+        AIAgent agent;
+        vm->setModelConfigurator([&](AIAgent* target, const QVariantMap&) {
+            target->setLLMService(&service);
+        });
+        vm->setAgent(&agent);
+        agent.setActiveProject(QStringLiteral("demo"), QStringLiteral("Demo"),
+                               project.path());
+        vm->reloadSkills();
+
+        SlashHarness ui;
+        QVERIFY2(ui.load(), qPrintable(ui.error));
+
+        ui.setInput("$re");
+        QCOMPARE(ui.console->property("skillOpen").toBool(), true);
+        QCOMPARE(ui.skillPopup->property("opened").toBool(), true);
+        QCOMPARE(ui.console->property("skillStart").toInt(), 0);
+        QCOMPARE(ui.console->property("skillQuery").toString(),
+                 QStringLiteral("re"));
+        QCOMPARE(ui.console->property("slashOpen").toBool(), false);
+        QVERIFY2(ui.skillNames().contains(QStringLiteral("review")),
+                 qPrintable(ui.skillNames().join(',')));
+        QVERIFY(!ui.skillNames().contains(QStringLiteral("test")));
+
+        ui.setInput("$dir/file");
+        QCOMPARE(ui.console->property("skillOpen").toBool(), false);
+
+        vm->setAgent(nullptr);
+        vm->setModelConfigurator({});
+    }
+
+    // ↑/↓ 在技能候选中移动。
+    void skillArrowsMoveSelection() {
+        QTemporaryDir project;
+        QVERIFY(project.isValid());
+        QVERIFY(writeBaseSkills(project.path()));
+        RecordingService service;
+        AIAgent agent;
+        vm->setModelConfigurator([&](AIAgent* target, const QVariantMap&) {
+            target->setLLMService(&service);
+        });
+        vm->setAgent(&agent);
+        agent.setActiveProject(QStringLiteral("demo"), QStringLiteral("Demo"),
+                               project.path());
+        vm->reloadSkills();
+
+        SlashHarness ui;
+        QVERIFY2(ui.load(), qPrintable(ui.error));
+        ui.setInput("$");
+        QVERIFY(ui.skillNames().size() >= 2);
+        QVERIFY(ui.field->property("activeFocus").toBool());
+        QCOMPARE(ui.console->property("skillIndex").toInt(), 0);
+
+        QTest::keyClick(ui.window, Qt::Key_Down);
+        QTest::qWait(40);
+        QCOMPARE(ui.console->property("skillIndex").toInt(), 1);
+
+        QTest::keyClick(ui.window, Qt::Key_Down);
+        QTest::qWait(40);
+        QCOMPARE(ui.console->property("skillIndex").toInt(), 2);
+
+        QTest::keyClick(ui.window, Qt::Key_Up);
+        QTest::qWait(40);
+        QCOMPARE(ui.console->property("skillIndex").toInt(), 1);
+        QCOMPARE(ui.inputText(), QStringLiteral("$"));
+
+        vm->setAgent(nullptr);
+        vm->setModelConfigurator({});
+    }
+
+    // Tab 只补全为 "$name "，不发送；chip 同步出现。
+    void skillTabCompletesWithoutSending() {
+        QTemporaryDir project;
+        QVERIFY(project.isValid());
+        QVERIFY(writeBaseSkills(project.path()));
+        RecordingService service;
+        AIAgent agent;
+        vm->setModelConfigurator([&](AIAgent* target, const QVariantMap&) {
+            target->setLLMService(&service);
+        });
+        vm->setAgent(&agent);
+        agent.setActiveProject(QStringLiteral("demo"), QStringLiteral("Demo"),
+                               project.path());
+        vm->reloadSkills();
+
+        SlashHarness ui;
+        QVERIFY2(ui.load(), qPrintable(ui.error));
+        ui.setInput("$re");
+        QVERIFY(ui.field->property("activeFocus").toBool());
+        QTest::keyClick(ui.window, Qt::Key_Tab);
+        QTest::qWait(80);
+
+        QCOMPARE(ui.inputText(), QStringLiteral("$review "));
+        QCOMPARE(ui.console->property("skillOpen").toBool(), false);
+        QCOMPARE(service.requests.size(), 0);
+        QCOMPARE(ui.chipNames(), QStringList{QStringLiteral("review")});
+
+        vm->setAgent(nullptr);
+        vm->setModelConfigurator({});
+    }
+
+    // Enter 在有候选时同样只补全，不发送。
+    void skillEnterCompletesWithoutSending() {
+        QTemporaryDir project;
+        QVERIFY(project.isValid());
+        QVERIFY(writeBaseSkills(project.path()));
+        RecordingService service;
+        AIAgent agent;
+        vm->setModelConfigurator([&](AIAgent* target, const QVariantMap&) {
+            target->setLLMService(&service);
+        });
+        vm->setAgent(&agent);
+        agent.setActiveProject(QStringLiteral("demo"), QStringLiteral("Demo"),
+                               project.path());
+        vm->reloadSkills();
+
+        SlashHarness ui;
+        QVERIFY2(ui.load(), qPrintable(ui.error));
+        ui.setInput("$re");
+        QVERIFY(ui.field->property("activeFocus").toBool());
+        QTest::keyClick(ui.window, Qt::Key_Return);
+        QTest::qWait(80);
+
+        QCOMPARE(ui.inputText(), QStringLiteral("$review "));
+        QCOMPARE(ui.console->property("skillOpen").toBool(), false);
+        QCOMPARE(service.requests.size(), 0);
+
+        vm->setAgent(nullptr);
+        vm->setModelConfigurator({});
+    }
+
+    // Esc 关闭技能面板并保留输入。
+    void skillEscapeClosesPanel() {
+        QTemporaryDir project;
+        QVERIFY(project.isValid());
+        QVERIFY(writeBaseSkills(project.path()));
+        RecordingService service;
+        AIAgent agent;
+        vm->setModelConfigurator([&](AIAgent* target, const QVariantMap&) {
+            target->setLLMService(&service);
+        });
+        vm->setAgent(&agent);
+        agent.setActiveProject(QStringLiteral("demo"), QStringLiteral("Demo"),
+                               project.path());
+        vm->reloadSkills();
+
+        SlashHarness ui;
+        QVERIFY2(ui.load(), qPrintable(ui.error));
+        ui.setInput("$re");
+        QCOMPARE(ui.console->property("skillOpen").toBool(), true);
+
+        QTest::keyClick(ui.window, Qt::Key_Escape);
+        QTest::qWait(60);
+        QCOMPARE(ui.console->property("skillOpen").toBool(), false);
+        QCOMPARE(ui.inputText(), QStringLiteral("$re"));
+
+        vm->setAgent(nullptr);
+        vm->setModelConfigurator({});
+    }
+
+    // chip：去重、上限 3、× 移除同时删文本里的 $name。
+    void skillChipsDedupeCapAndRemove() {
+        QTemporaryDir project;
+        QVERIFY(project.isValid());
+        QVERIFY(writeBaseSkills(project.path()));
+        RecordingService service;
+        AIAgent agent;
+        vm->setModelConfigurator([&](AIAgent* target, const QVariantMap&) {
+            target->setLLMService(&service);
+        });
+        vm->setAgent(&agent);
+        agent.setActiveProject(QStringLiteral("demo"), QStringLiteral("Demo"),
+                               project.path());
+        vm->reloadSkills();
+
+        SlashHarness ui;
+        QVERIFY2(ui.load(), qPrintable(ui.error));
+        ui.setInput("$review $review $test $commit $lint");
+        QCOMPARE(ui.chipNames(),
+                 (QStringList{QStringLiteral("review"), QStringLiteral("test"),
+                              QStringLiteral("commit")}));
+        QCOMPARE(ui.console->property("skillChips").toList().size(), 3);
+
+        QVERIFY(QMetaObject::invokeMethod(
+            ui.console, "removeSkill",
+            Q_ARG(QVariant, QStringLiteral("test"))));
+        QTest::qWait(60);
+        QVERIFY(!ui.inputText().contains(QStringLiteral("$test")));
+        // 删除 test 后剩下的三个不同名字（review/commit/lint）都在上限内，
+        // 按出现顺序取前三。
+        QCOMPARE(ui.chipNames(),
+                 (QStringList{QStringLiteral("review"), QStringLiteral("commit"),
+                              QStringLiteral("lint")}));
+        QVERIFY(!ui.chipNames().contains(QStringLiteral("test")));
+
+        vm->setAgent(nullptr);
+        vm->setModelConfigurator({});
+    }
+
+    // 发送走 startTaskWithSkills：技能正文进入系统提示，旧三参 startTask 不动。
+    void skillSendUsesStartTaskWithSkills() {
+        QTemporaryDir project;
+        QVERIFY(project.isValid());
+        QVERIFY(writeBaseSkills(project.path()));
+        RecordingService service;
+        AIAgent agent;
+        vm->setModelConfigurator([&](AIAgent* target, const QVariantMap&) {
+            target->setLLMService(&service);
+        });
+        vm->setAgent(&agent);
+        agent.setActiveProject(QStringLiteral("demo"), QStringLiteral("Demo"),
+                               project.path());
+        vm->reloadSkills();
+
+        SlashHarness ui;
+        QVERIFY2(ui.load(), qPrintable(ui.error));
+        ui.setInput("$review 代码");
+        QCOMPARE(ui.console->property("skillOpen").toBool(), false);
+        QTest::keyClick(ui.window, Qt::Key_Return);
+        QTest::qWait(120);
+
+        QCOMPARE(service.requests.size(), 1);
+        QVERIFY(ui.inputText().isEmpty());
+        QVERIFY(ui.console->property("skillChips").toList().isEmpty());
+        QString systemPrompt;
+        for (const QJsonValue& entry : service.requests.first()) {
+            const QJsonObject message = entry.toObject();
+            if (message.value(QStringLiteral("role")).toString()
+                    == QLatin1String("system"))
+                systemPrompt = message.value(QStringLiteral("content")).toString();
+        }
+        QVERIFY2(systemPrompt.contains(
+                     QStringLiteral("Always report the highest severity first")),
+                 qPrintable(systemPrompt.left(300)));
+
+        vm->setAgent(nullptr);
+        vm->setModelConfigurator({});
+    }
+
+    // W4 P1：补全面板已打开但无候选时，Enter 只关闭面板，不发送半截命令。
+    void emptyCompletionEnterDoesNotSend() {
+        QTemporaryDir project;
+        QVERIFY(project.isValid());
+        QVERIFY(writeBaseSkills(project.path()));
+        RecordingService service;
+        AIAgent agent;
+        vm->setModelConfigurator([&](AIAgent* target, const QVariantMap&) {
+            target->setLLMService(&service);
+        });
+        vm->setAgent(&agent);
+        agent.setActiveProject(QStringLiteral("demo"), QStringLiteral("Demo"),
+                              project.path());
+        vm->reloadSkills();
+
+        SlashHarness ui;
+        QVERIFY2(ui.load(), qPrintable(ui.error));
+
+        ui.setInput("$nope");
+        QCOMPARE(ui.console->property("skillOpen").toBool(), true);
+        QCOMPARE(ui.console->property("skillResults").toList().size(), 0);
+        QTest::keyClick(ui.window, Qt::Key_Return);
+        QTest::qWait(80);
+        QCOMPARE(service.requests.size(), 0);
+        QCOMPARE(ui.console->property("skillOpen").toBool(), false);
+        QCOMPARE(ui.inputText(), QStringLiteral("$nope"));
+
+        ui.setInput("/zzz");
+        QCOMPARE(ui.console->property("slashOpen").toBool(), true);
+        QCOMPARE(ui.console->property("slashResults").toList().size(), 0);
+        QTest::keyClick(ui.window, Qt::Key_Return);
+        QTest::qWait(80);
+        QCOMPARE(service.requests.size(), 0);
+        QCOMPARE(ui.console->property("slashOpen").toBool(), false);
+        QCOMPARE(ui.inputText(), QStringLiteral("/zzz"));
+
+        vm->setAgent(nullptr);
+        vm->setModelConfigurator({});
     }
 
     // A fresh window is a local chat, and BOTH right-panel sections are

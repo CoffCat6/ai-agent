@@ -924,6 +924,16 @@ Dialog {
 
                     Loader {
                         anchors.fill: parent
+                        // docs/37 W3: 技能列表随项目/刷新变化，绑定 opened
+                        // 让每次打开重新扫描，避免展示上一次的旧列表。
+                        active: dialog.currentCategory === "skills" && dialog.opened
+                        visible: dialog.currentCategory === "skills"
+                        objectName: "settingsPageLoader.skills"
+                        source: "qrc:/qt/qml/NexusAI/src/ui/pages/SkillsPage.qml"
+                    }
+
+                    Loader {
+                        anchors.fill: parent
                         // docs/31 S4.5 N5：数据管理。绑定 opened（同 usage）：
                         // 关闭即销毁，重开时重新拉统计，避免停在旧值。
                         active: dialog.currentCategory === "storage" && dialog.opened
