@@ -149,3 +149,37 @@ max-bytes: 65536
 - 修复 `test_settings::schemaCoversBypassWriters`：审计键列表补 `skills/enabled`、`skills/projectEnabled`、`skills/maxPerMessage`。
 - 验证口径：`test_chat_workflows` 曾因构建中断残留 0 字节 exe 假失败，删除重链后正常；全量用 `-j2`（`-j4` 下 `test_agent` 因资源竞争 flaky），58/58 + panel 1/1。
 - 遗留： SkillsPage 未提供启用开关与“打开目录”（docs §4 的设计项，暂以说明文案/隐藏键替代）；项目 skill 可覆盖用户同名 skill（按设计，但没有 UI 开关可关闭项目来源）；`test_viewmodel` 的 skill 用例未隔离真实 AppConfig 用户目录（本机若存在同名/大量用户 skill 可能影响计数）；panel 测试仍可能拉起 MarkText。
+
+---
+
+## 9. W5 体验补齐（2026-11-04 启动）
+
+### W5-1 SkillsPage 开关与目录入口
+- `SettingsService::setValueForSetting` 增加 `skills/enabled`、`skills/projectEnabled`、`skills/maxPerMessage`（clamp 1-5），走 `persistValue`（发 `settingSaved`）。
+- `AgentViewModel` 增加 3 个 getter/setter + `openSkillsDirectory(source)`（project/user）+ 测试缝 `openUrlHook`。
+- `SkillsPage` 增加“技能设置”Section（两个 Switch + 每轮上限 1-5）与“打开用户/项目技能目录”按钮。
+- 测试：`test_skills_qml` 覆盖开关写读、列表/解析联动、目录路径。
+
+### W5-2a SkillEditorService（core）
+- 新 `core/skills/SkillEditorService.h/.cpp`：`validateId`、`createOrUpdate`、`remove`、`load`；`QSaveFile` + `PathWriteGuard` + canonical containment；单文件 64KB 上限；保存旧文件 `.bak`。
+- 新增 `test_skills_editor` 单测；CMake 注册。
+
+### W5-2b 编辑器 UI
+- `SkillEditorDialog.qml`：id/name/description/allowed-tools/body、来源选择（项目/用户）、预览、覆盖确认。
+- `SkillsPage` 增加“新建/编辑/删除”入口；`AgentViewModel` 暴露 draft/save/remove。
+- QML harness + C++ 驱动测试。
+
+### 约束
+- 用户技能目录由应用管理；项目技能写入仅限 canonical 项目根内。
+- 不执行脚本/资源；删除需确认；保存原子写 + 旧文件 `.bak`。
+- QML 调用的 C++ 成员必须 `Q_INVOKABLE` 且不得依赖默认参数。
+
+
+### W5 交付记录（2026-11-04）
+
+- W5-1：`SettingsService::setValueForSetting` 支持 `skills/enabled`、`skills/projectEnabled`、`skills/maxPerMessage`（clamp 1-5，走 `persistValue`）；`AgentViewModel` 增加 3 组 getter/setter、`openSkillsDirectory(user|project)` 与测试缝 `openUrlHook`；`SkillsPage` 增加技能设置 Section（两个 Switch + 上限 SpinBox）与打开用户/项目目录按钮。
+- W5-2a：新增 `core/skills/SkillEditorService`：id 校验（`../`、分隔符、`..` 段）、canonical containment、`QSaveFile` 原子写、覆盖前 `SKILL.md.bak`、64KB（UTF-8）限制、删除只清 `SKILL.md` 与空目录；`test_skills_editor` 覆盖往返/备份/注入/越界/删除。
+- W5-2b：`SkillEditorDialog`（来源/id/name/description/allowed-tools/body、只读预览、覆盖二次确认）；`SkillsPage` 新增“新建/编辑/删除”，删除走二次确认；`AgentViewModel` 暴露 `skillDraft/saveSkill/removeSkillById/validateSkillId/skillRootForSource`。
+- 审查修复：`SkillEditorDialog.projectAvailable` 改由 `SkillsPage.hasActiveProject` 绑定（原 C++ 方法调用无法被 QML 依赖追踪，项目切换后不刷新）；`remove` 拒绝根内 symlink（原先按 canonical 目标删除会误删被指向技能）；无活动项目时 `openEdit` 不再静默回落到用户来源。
+- 验证：`test_skills 13`、`test_skills_editor 16`、`test_skills_qml 14`、`test_chat_workflows 43`、`test_settings 83`；全量 59/59（114.40s，`-j2`）+ panel 1/1（13.20s）；`qmllint_gate` Error 0；`check_sources` OK。
+- 遗留：覆盖确认用“已存在”中文文案匹配（建议改结构化 code）；id 允许尾点，Windows 可能别名（P3）；Windows 保留设备名未拒绝（P3）；QML 测试未覆盖“无项目时项目开关/目录按钮 disabled”与 setter 失败回滚；panel 仍可能拉起 MarkText；`-j2` 下 `test_agent` 偶发资源竞争 flaky（单独约 33s 通过）。

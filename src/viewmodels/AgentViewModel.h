@@ -386,6 +386,43 @@ public:
     // settings/skills/maxPerMessage（默认 3，clamp 1-5）。返回
     // {id,name,description,body,source,sourceId,sourcePath,truncated}。
     Q_INVOKABLE QVariantList resolveSkills(const QString& text);
+
+    // ── docs/37 W5-1: SkillsPage 设置项 ─────────────────
+    // 读写都落到 settings 键 skills/*；这里不新增 Q_PROPERTY，页面在
+    // refresh() 时回读一次即可。Q_INVOKABLE 不得依赖默认参数（QML 无法
+    // 传 C++ 默认值）。
+    Q_INVOKABLE bool skillFeatureEnabled() const;
+    Q_INVOKABLE bool skillProjectEnabled() const;
+    Q_INVOKABLE int skillMaxPerMessage() const;
+    // setter 成功（已持久化）返回 true 并重扫技能——enabled/projectEnabled
+    // 都会改变发现结果；失败返回 false，页面据此回滚 UI。
+    Q_INVOKABLE bool setSkillFeatureEnabled(bool enabled);
+    Q_INVOKABLE bool setSkillProjectEnabled(bool enabled);
+    Q_INVOKABLE bool setSkillMaxPerMessage(int value);
+    // 在系统文件管理器中打开技能目录。source = "user" | "project"；
+    // 无活动项目或创建目录失败时返回 false。
+    Q_INVOKABLE bool openSkillsDirectory(const QString& source);
+
+    // ── docs/37 W5-2b: Skill 编辑器桥接 ─────────────────
+    // QML 调用的 C++ 成员一律显式传参（QML 无法使用 C++ 默认参数）。
+    // source = "user" | "project"；未知来源/项目根为空时返回空串。
+    Q_INVOKABLE QString skillRootForSource(const QString& source) const;
+    // 读取已有技能：{ok,error,id,name,description,body,allowedTools}。
+    // allowedTools 为字符串数组；文件不存在/项目根为空时 ok=false。
+    Q_INVOKABLE QVariantMap skillDraft(const QString& id,
+                                       const QString& source) const;
+    // 保存草稿：{ok,error,id}。overwrite=false 且文件已存在时返回
+    // ok=false、error 含「已存在」；成功后重扫技能列表。
+    Q_INVOKABLE QVariantMap saveSkill(const QVariantMap& draft,
+                                      const QString& source, bool overwrite);
+    // 删除技能：{ok,error,id}；成功后重扫技能列表。
+    Q_INVOKABLE QVariantMap removeSkillById(const QString& id,
+                                            const QString& source);
+    // id 校验：空串视为合法（新建时的初始态），否则返回错误文案。
+    Q_INVOKABLE QString validateSkillId(const QString& id) const;
+    // 测试缝：替换 QDesktopServices::openUrl，避免单测真的拉起文件管理器
+    // （传空 function 恢复默认）。
+    void setOpenUrlHookForTest(std::function<bool(const QUrl&)> hook);
     // 先把技能设为本轮 active，再走既有 startTask 流程（旧三参 startTask
     // 保持不变，且不会携带上一任务的技能）。
     Q_INVOKABLE bool startTaskWithSkills(const QString& input,
@@ -870,6 +907,9 @@ private:
     QList<Confirmation> m_confirmations;
     // docs/37 W3：活动项目 + 用户目录的 Skill 缓存（GUI 线程独占）。
     SkillRegistry m_skillRegistry;
+    // docs/37 W5-1：openSkillsDirectory 的打开后端；空 = QDesktopServices。
+    // 仅测试注入，产品路径永远走系统文件管理器。
+    std::function<bool(const QUrl&)> m_openUrlHook;
     void pruneConfirmations();
     // UE-1: 按当前检查点列表与已确认水位重算"未查看"文件数。
     // listChanged=true 时表示检查点列表本身刚被替换（可能是切换会话），

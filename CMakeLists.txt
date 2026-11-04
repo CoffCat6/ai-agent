@@ -56,6 +56,9 @@ add_library(nexus_core STATIC
     src/core/skills/Skill.h
     src/core/skills/SkillRegistry.h
     src/core/skills/SkillRegistry.cpp
+    # docs/37 W5-2a：Skill 创建/编辑/删除（QSaveFile + .bak + canonical 边界）。
+    src/core/skills/SkillEditorService.h
+    src/core/skills/SkillEditorService.cpp
     src/core/tools/ITool.h
     src/core/tools/ToolRegistry.h
     src/core/tools/ToolRegistry.cpp
@@ -407,6 +410,8 @@ qt_add_qml_module(nexus_ai
         src/ui/pages/PromptAssetsPage.qml
         # docs/37 W3: 技能列表（项目/用户、来源、刷新）
         src/ui/pages/SkillsPage.qml
+        # docs/37 W5-2b: 技能新建/编辑弹窗（frontmatter + 正文 + 预览）
+        src/ui/components/SkillEditorDialog.qml
         src/ui/pages/SettingsBackupPage.qml
         # docs/31 S4.5 N5: 数据管理总览（统计 + 维护动作）
         src/ui/pages/DataPage.qml

@@ -1,3 +1,5 @@
+pragma ComponentBehavior: Bound
+
 import QtQuick
 import QtQuick.Layouts
 import QtQuick.Controls
@@ -25,6 +27,16 @@ SettingsPage {
                       + "项目技能随项目提供，用户技能对所有项目生效；"
                       + "同名时项目技能覆盖用户技能。")
 
+    // docs/37 W5-1：设置项没有 Q_PROPERTY 通知，页面在 refresh() 时回读；
+    // 用户操作后先调 setter，失败则回滚到 getter 的真实值。
+    property bool skillsEnabled: true
+    property bool projectSkillsEnabled: true
+    property int maxPerMessage: 3
+    readonly property bool hasActiveProject: AgentVM.activeProjectRoot.length > 0
+    // 新建技能的默认来源：有活动项目时优先项目，否则用户。
+    readonly property string currentSource:
+        page.hasActiveProject ? "project" : "user"
+
     // 列表快照：刷新与项目切换后整体重新赋值，绑定才会重新求值。
     property var skills: []
     readonly property var projectSkills:
@@ -33,6 +45,9 @@ SettingsPage {
         page.skills.filter(s => s.source !== "project")
 
     function refresh() {
+        page.skillsEnabled = AgentVM.skillFeatureEnabled()
+        page.projectSkillsEnabled = AgentVM.skillProjectEnabled()
+        page.maxPerMessage = AgentVM.skillMaxPerMessage()
         AgentVM.reloadSkills()
         page.skills = AgentVM.listSkills("", 200)
     }
@@ -131,6 +146,27 @@ SettingsPage {
                 font.pixelSize: Theme.fontSizeMicro
                 font.family: Theme.fontMono
             }
+
+            // docs/37 W5-2b：行内编辑/删除入口。删除永远先经过确认弹窗。
+            IconButton {
+                objectName: "skillEditButton"
+                Layout.alignment: Qt.AlignVCenter
+                icon: "edit"
+                tooltip: qsTr("编辑技能")
+                Accessible.name: qsTr("编辑技能 %1").arg(row.modelData.name)
+                onClicked: editor.openEdit(String(row.modelData.id),
+                                           String(row.modelData.sourceId))
+            }
+
+            IconButton {
+                objectName: "skillDeleteButton"
+                Layout.alignment: Qt.AlignVCenter
+                icon: "trash"
+                tooltip: qsTr("删除技能")
+                Accessible.name: qsTr("删除技能 %1").arg(row.modelData.name)
+                onClicked: deleteConfirm.openFor(String(row.modelData.id),
+                                                 String(row.modelData.sourceId))
+            }
         }
     }
 
@@ -140,10 +176,32 @@ SettingsPage {
         spacing: Theme.spaceSm
 
         AppButton {
+            objectName: "skillsNewButton"
+            text: qsTr("新建技能")
+            Accessible.name: qsTr("新建技能")
+            onClicked: editor.openCreate(page.currentSource)
+        }
+
+        AppButton {
             objectName: "skillsRefreshButton"
             text: qsTr("刷新")
             Accessible.name: qsTr("重新扫描技能目录")
             onClicked: page.refresh()
+        }
+
+        AppButton {
+            objectName: "skillsOpenUserDirButton"
+            text: qsTr("打开用户目录")
+            Accessible.name: qsTr("打开用户技能目录")
+            onClicked: AgentVM.openSkillsDirectory("user")
+        }
+
+        AppButton {
+            objectName: "skillsOpenProjectDirButton"
+            text: qsTr("打开项目目录")
+            Accessible.name: qsTr("打开项目技能目录")
+            enabled: page.hasActiveProject
+            onClicked: AgentVM.openSkillsDirectory("project")
         }
 
         Text {
@@ -166,6 +224,74 @@ SettingsPage {
             color: Theme.textTertiary
             font.pixelSize: Theme.fontSizeCaption
             font.family: Theme.fontSans
+        }
+    }
+
+    // ── 技能设置（docs/37 W5-1） ─────────────────────────
+    SettingsSection {
+        objectName: "skillsSettingsSection"
+        title: qsTr("技能设置")
+        description: qsTr("关闭后技能仍保留在目录中，但不再参与 $ 补全或注入；修改即时保存。")
+
+        SettingRow {
+            objectName: "skills/enabled"
+            label: qsTr("启用技能")
+            description: qsTr("允许通过 $name 引用技能并把正文注入系统提示。")
+
+            Switch {
+                id: enabledSwitch
+                objectName: "skillsEnabledSwitch"
+                checked: page.skillsEnabled
+                Accessible.name: qsTr("启用技能")
+                onToggled: {
+                    // Switch.checked 是用户赋值，绑定已断开，所以失败时必须
+                    // 显式回写；成功路径由 refresh() 同步页面属性。
+                    const ok = AgentVM.setSkillFeatureEnabled(checked)
+                    page.refresh()
+                    if (!ok) enabledSwitch.checked = page.skillsEnabled
+                }
+            }
+        }
+
+        SettingRow {
+            objectName: "skills/projectEnabled"
+            label: qsTr("启用项目技能")
+            description: qsTr("扫描当前项目的 .nexusai/skills；无活动项目或技能总开关关闭时不可用。")
+
+            Switch {
+                id: projectSwitch
+                objectName: "skillsProjectSwitch"
+                enabled: page.skillsEnabled && page.hasActiveProject
+                checked: page.projectSkillsEnabled
+                Accessible.name: qsTr("启用项目技能")
+                onToggled: {
+                    const ok = AgentVM.setSkillProjectEnabled(checked)
+                    page.refresh()
+                    if (!ok) projectSwitch.checked = page.projectSkillsEnabled
+                }
+            }
+        }
+
+        SettingRow {
+            objectName: "skills/maxPerMessage"
+            label: qsTr("每轮引用上限")
+            description: qsTr("一条消息最多注入几个技能正文（1–5）。")
+
+            SpinBox {
+                id: maxPerMessageSpin
+                objectName: "skillsMaxPerMessageSpin"
+                from: 1
+                to: 5
+                editable: true
+                enabled: page.skillsEnabled
+                value: page.maxPerMessage
+                Accessible.name: qsTr("每轮引用上限")
+                onValueModified: {
+                    if (!AgentVM.setSkillMaxPerMessage(value))
+                        maxPerMessageSpin.value = page.maxPerMessage
+                    page.refresh()
+                }
+            }
         }
     }
 
@@ -238,6 +364,121 @@ SettingsPage {
             font.pixelSize: Theme.fontSizeCaption
             font.family: Theme.fontMono
             wrapMode: Text.Wrap
+        }
+    }
+
+    // ── 编辑器 / 删除确认（docs/37 W5-2b） ─────────────
+    SkillEditorDialog {
+        id: editor
+        projectAvailable: page.hasActiveProject
+        onSaved: page.refresh()
+    }
+
+    Dialog {
+        id: deleteConfirm
+        objectName: "skillsDeleteConfirm"
+
+        property string pendingId: ""
+        property string pendingSource: "user"
+        property string errorText: ""
+
+        function openFor(id, source) {
+            deleteConfirm.pendingId = String(id || "")
+            deleteConfirm.pendingSource =
+                source === "project" ? "project" : "user"
+            deleteConfirm.errorText = ""
+            open()
+        }
+
+        // 删除不可撤销，必须由用户在确认弹窗里再点一次。
+        function confirm() {
+            const result = AgentVM.removeSkillById(deleteConfirm.pendingId,
+                                                   deleteConfirm.pendingSource)
+            if (result.ok === true) {
+                close()
+                page.refresh()
+                return true
+            }
+            deleteConfirm.errorText = String(result.error || "")
+            return false
+        }
+
+        parent: Overlay.overlay
+        anchors.centerIn: parent
+        width: Math.min(440, parent ? parent.width - 32 : 440)
+        modal: true
+        padding: 0
+        closePolicy: Popup.CloseOnEscape
+        background: DialogBackground {}
+
+        contentItem: ColumnLayout {
+            spacing: 10
+            Accessible.role: Accessible.Dialog
+            Accessible.name: qsTr("删除技能确认")
+
+            Text {
+                Layout.fillWidth: true
+                Layout.topMargin: 16
+                Layout.leftMargin: 16
+                Layout.rightMargin: 16
+                text: qsTr("删除技能「$%1」？").arg(deleteConfirm.pendingId)
+                color: Theme.textPrimary
+                font.family: Theme.fontSans
+                font.pixelSize: Theme.fontSizeBody
+                font.bold: true
+                wrapMode: Text.Wrap
+            }
+
+            Text {
+                Layout.fillWidth: true
+                Layout.leftMargin: 16
+                Layout.rightMargin: 16
+                text: qsTr("来源：%1。只删除该技能的 SKILL.md，目录内其它文件会保留。")
+                    .arg(deleteConfirm.pendingSource === "project"
+                         ? qsTr("项目") : qsTr("用户"))
+                color: Theme.textSecondary
+                font.family: Theme.fontSans
+                font.pixelSize: Theme.fontSizeCaption
+                wrapMode: Text.Wrap
+            }
+
+            Text {
+                Layout.fillWidth: true
+                Layout.leftMargin: 16
+                Layout.rightMargin: 16
+                visible: deleteConfirm.errorText.length > 0
+                text: deleteConfirm.errorText
+                color: Theme.statusDanger
+                font.family: Theme.fontSans
+                font.pixelSize: Theme.fontSizeCaption
+                wrapMode: Text.Wrap
+                Accessible.role: Accessible.StaticText
+                Accessible.name: text
+            }
+
+            RowLayout {
+                Layout.fillWidth: true
+                Layout.leftMargin: 16
+                Layout.rightMargin: 16
+                Layout.bottomMargin: 14
+                spacing: 8
+
+                Item { Layout.fillWidth: true }
+
+                AppButton {
+                    objectName: "skillsDeleteCancelButton"
+                    text: qsTr("取消")
+                    Accessible.name: qsTr("取消删除技能")
+                    onClicked: deleteConfirm.close()
+                }
+                AppButton {
+                    objectName: "skillsDeleteConfirmButton"
+                    text: qsTr("删除")
+                    highlighted: true
+                    Accessible.name: qsTr("确认删除技能")
+                    onClicked: deleteConfirm.confirm()
+                }
+            }
         }
     }
 }

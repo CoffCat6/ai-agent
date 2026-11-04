@@ -20,6 +20,7 @@
 #include "core/utils/SettingsRepository.h"
 #include "core/utils/SettingsSchema.h"
 #include "core/utils/SlashCommand.h"
+#include "core/skills/SkillEditorService.h"
 
 #include <QCryptographicHash>
 #include <QFileInfo>
@@ -154,6 +155,32 @@ QVariantMap skillToMap(const Skill& skill) {
         {QStringLiteral("bytes"), skill.bytes},
         {QStringLiteral("truncated"), skill.truncated},
     };
+}
+
+// W5-2b：QML 侧 allowed-tools 可能是字符串数组（编辑回填）或逗号分隔的
+// 文本（表单输入）。两种形态都收口为 QVariantList，再交给 core 校验。
+QStringList coerceAllowedTools(const QVariant& value) {
+    if (value.typeId() == QMetaType::QStringList)
+        return value.toStringList();
+
+    QStringList tools;
+    if (value.typeId() == QMetaType::QVariantList) {
+        for (const QVariant& item : value.toList()) {
+            const QString tool = item.toString().trimmed();
+            if (!tool.isEmpty())
+                tools.append(tool);
+        }
+        return tools;
+    }
+
+    const QStringList parts =
+        value.toString().split(QLatin1Char(','), Qt::SkipEmptyParts);
+    for (const QString& part : parts) {
+        const QString tool = part.trimmed();
+        if (!tool.isEmpty())
+            tools.append(tool);
+    }
+    return tools;
 }
 
 // docs/25: worker 侧的单文件导入——读取（PDF 走 QPdf 提取，其余按 UTF-8
@@ -1249,6 +1276,215 @@ QVariantList AgentViewModel::resolveSkills(const QString& text) {
         out.append(entry);
     }
     return out;
+}
+
+// ── docs/37 W5-1: SkillsPage 设置项 ────────────────────────
+
+bool AgentViewModel::skillFeatureEnabled() const {
+    return SettingsRepository::value(QStringLiteral("skills/enabled"), true).toBool();
+}
+
+bool AgentViewModel::skillProjectEnabled() const {
+    return SettingsRepository::value(QStringLiteral("skills/projectEnabled"), true)
+        .toBool();
+}
+
+int AgentViewModel::skillMaxPerMessage() const {
+    // 与 resolveSkills 同口径：存储可能残留越界值，读路径再 clamp 一次。
+    return qBound(1, SettingsRepository::value(
+        QStringLiteral("skills/maxPerMessage"), 3).toInt(), 5);
+}
+
+bool AgentViewModel::setSkillFeatureEnabled(bool enabled) {
+    auto* settings = SettingsService::instance();
+    if (!settings || !settings->setValueForSetting(
+            QStringLiteral("skills/enabled"), enabled))
+        return false;
+    reloadSkills();
+    return true;
+}
+
+bool AgentViewModel::setSkillProjectEnabled(bool enabled) {
+    auto* settings = SettingsService::instance();
+    if (!settings || !settings->setValueForSetting(
+            QStringLiteral("skills/projectEnabled"), enabled))
+        return false;
+    // reloadSkills 会按新开关决定是否扫描项目根。
+    reloadSkills();
+    return true;
+}
+
+bool AgentViewModel::setSkillMaxPerMessage(int value) {
+    auto* settings = SettingsService::instance();
+    if (!settings || !settings->setValueForSetting(
+            QStringLiteral("skills/maxPerMessage"), value))
+        return false;
+    reloadSkills();
+    return true;
+}
+
+bool AgentViewModel::openSkillsDirectory(const QString& source) {
+    QString dir;
+    if (source == QLatin1String("user")) {
+        dir = SkillRegistry::defaultUserRoot();
+    } else if (source == QLatin1String("project")) {
+        const QString root = activeProjectRoot();
+        if (root.isEmpty()) return false;
+        dir = QDir(root).filePath(QStringLiteral(".nexusai/skills"));
+    } else {
+        return false;   // 未知来源不做任何路径猜测
+    }
+    if (dir.isEmpty() || !QDir().mkpath(dir)) return false;
+
+    // 产品路径用系统文件管理器；测试通过 hook 捕获 URL，避免拉起 Finder/
+    // Explorer（CI/offscreen 环境没有桌面会话）。
+    if (m_openUrlHook) return m_openUrlHook(QUrl::fromLocalFile(dir));
+    return QDesktopServices::openUrl(QUrl::fromLocalFile(dir));
+}
+
+void AgentViewModel::setOpenUrlHookForTest(std::function<bool(const QUrl&)> hook) {
+    m_openUrlHook = std::move(hook);
+}
+
+// ── docs/37 W5-2b: Skill 编辑器桥接 ────────────────────────
+
+QString AgentViewModel::skillRootForSource(const QString& source) const {
+    if (source == QLatin1String("project")) {
+        const QString root = activeProjectRoot();
+        // 与 openSkillsDirectory 同口径：没有活动项目就没有项目技能根。
+        if (root.isEmpty())
+            return QString();
+        return SkillEditorService::projectSkillsRoot(root);
+    }
+    if (source == QLatin1String("user"))
+        return SkillEditorService::userSkillsRoot();
+    return QString();   // 未知来源不做任何路径猜测
+}
+
+QVariantMap AgentViewModel::skillDraft(const QString& id,
+                                       const QString& source) const {
+    QVariantMap result{
+        {QStringLiteral("ok"), false},
+        {QStringLiteral("error"), QString()},
+        {QStringLiteral("id"), id},
+        {QStringLiteral("name"), QString()},
+        {QStringLiteral("description"), QString()},
+        {QStringLiteral("body"), QString()},
+        {QStringLiteral("allowedTools"), QVariantList{}},
+    };
+
+    const QString root = skillRootForSource(source);
+    if (root.isEmpty()) {
+        result[QStringLiteral("error")] =
+            source == QLatin1String("project")
+                ? QStringLiteral("当前没有活动项目，无法读取项目技能")
+                : QStringLiteral("未知的技能来源：%1").arg(source);
+        return result;
+    }
+
+    SkillEditorService::Draft draft;
+    QString error;
+    if (!SkillEditorService::load(root, id, &draft, &error)) {
+        result[QStringLiteral("error")] = error;
+        return result;
+    }
+
+    result[QStringLiteral("ok")] = true;
+    result[QStringLiteral("id")] = draft.id;
+    result[QStringLiteral("name")] = draft.name;
+    result[QStringLiteral("description")] = draft.description;
+    result[QStringLiteral("body")] = draft.body;
+    result[QStringLiteral("allowedTools")] = [&draft]() {
+        QVariantList tools;
+        tools.reserve(draft.allowedTools.size());
+        for (const QString& tool : draft.allowedTools)
+            tools.append(tool);
+        return tools;
+    }();
+    return result;
+}
+
+QVariantMap AgentViewModel::saveSkill(const QVariantMap& draft,
+                                      const QString& source, bool overwrite) {
+    const QString id = draft.value(QStringLiteral("id")).toString().trimmed();
+    const QString root = skillRootForSource(source);
+    if (root.isEmpty()) {
+        return QVariantMap{
+            {QStringLiteral("ok"), false},
+            {QStringLiteral("error"),
+             source == QLatin1String("project")
+                 ? QStringLiteral("当前没有活动项目，无法保存项目技能")
+                 : QStringLiteral("未知的技能来源：%1").arg(source)},
+            {QStringLiteral("id"), id},
+        };
+    }
+
+    SkillEditorService::Draft parsed;
+    parsed.id = id;
+    parsed.name = draft.value(QStringLiteral("name")).toString().trimmed();
+    parsed.description =
+        draft.value(QStringLiteral("description")).toString().trimmed();
+    parsed.allowedTools =
+        coerceAllowedTools(draft.value(QStringLiteral("allowedTools")));
+    parsed.body = draft.value(QStringLiteral("body")).toString();
+
+    QString error;
+    if (!SkillEditorService::save(root, parsed, overwrite, &error)) {
+        return QVariantMap{
+            {QStringLiteral("ok"), false},
+            {QStringLiteral("error"), error},
+            {QStringLiteral("id"), parsed.id},
+        };
+    }
+
+    // 保存成功立即重扫，页面列表/补全候选与磁盘保持一致。
+    reloadSkills();
+    return QVariantMap{
+        {QStringLiteral("ok"), true},
+        {QStringLiteral("error"), QString()},
+        {QStringLiteral("id"), parsed.id},
+    };
+}
+
+QVariantMap AgentViewModel::removeSkillById(const QString& id,
+                                            const QString& source) {
+    const QString root = skillRootForSource(source);
+    if (root.isEmpty()) {
+        return QVariantMap{
+            {QStringLiteral("ok"), false},
+            {QStringLiteral("error"),
+             source == QLatin1String("project")
+                 ? QStringLiteral("当前没有活动项目，无法删除项目技能")
+                 : QStringLiteral("未知的技能来源：%1").arg(source)},
+            {QStringLiteral("id"), id},
+        };
+    }
+
+    QString error;
+    if (!SkillEditorService::remove(root, id, &error)) {
+        return QVariantMap{
+            {QStringLiteral("ok"), false},
+            {QStringLiteral("error"), error},
+            {QStringLiteral("id"), id},
+        };
+    }
+
+    reloadSkills();
+    return QVariantMap{
+        {QStringLiteral("ok"), true},
+        {QStringLiteral("error"), QString()},
+        {QStringLiteral("id"), id},
+    };
+}
+
+QString AgentViewModel::validateSkillId(const QString& id) const {
+    // 新建对话框打开时 id 为空，此时不提示错误；真正保存时由表单拦空值。
+    if (id.isEmpty())
+        return QString();
+    QString error;
+    if (!SkillEditorService::validateId(id, &error))
+        return error;
+    return QString();
 }
 
 bool AgentViewModel::startTask(const QString& input, const QStringList& images,

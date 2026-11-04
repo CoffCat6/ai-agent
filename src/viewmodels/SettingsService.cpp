@@ -2096,6 +2096,20 @@ bool SettingsService::setValueForSetting(const QString& key, const QVariant& val
         return true;
     }
 
+    // docs/37 W5-1：SkillsPage 的设置项。这里没有对应的 type-safe setter，
+    // 但写入仍必须走 persistValue，才能与其它设置一样发 settingSaved，
+    // 并让 test_settings 的 bypass-writer 审计把持久化路径收口到一处。
+    if (key == QLatin1String("skills/enabled")) {
+        return persistValue(key, value.toBool());
+    }
+    if (key == QLatin1String("skills/projectEnabled")) {
+        return persistValue(key, value.toBool());
+    }
+    if (key == QLatin1String("skills/maxPerMessage")) {
+        // 存储层也 clamp：QML/旧版本/手工改库都可能写入越界值。
+        return persistValue(key, qBound(1, value.toInt(), 5));
+    }
+
     return false;
 }
 

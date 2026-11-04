@@ -68,6 +68,8 @@ nexus_add_test(test_tools test_tools.cpp)
 nexus_add_test(test_git_service test_git_service.cpp)
 # docs/37 W2：Skill 发现/解析/搜索（QtCore-only，链接集与其它 core 测试一致）。
 nexus_add_test(test_skills test_skills.cpp)
+# docs/37 W5-2a：Skill 创建/编辑/删除（id/64KB/canonical/.bak/原子写）。
+nexus_add_test(test_skills_editor test_skills_editor.cpp)
 
 # docs/37 W3：技能设置页（项目/用户来源、刷新、目录说明）。
 # 与 test_tools_page_qml 同一套加载方式：build/NexusAI 的文件系统副本 +
