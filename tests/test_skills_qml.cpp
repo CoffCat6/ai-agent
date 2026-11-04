@@ -202,6 +202,244 @@ private slots:
                                        QStringLiteral("user")}));
     }
 
+    // docs/39 S4：默认无搜索、无筛选时展示全部技能，计数与空态一致。
+    void searchFilterDefaults() {
+        Harness h;
+        QVERIFY2(h.load(), qPrintable(h.error));
+        QObject* page = h.page();
+        QVERIFY(page);
+
+        QCOMPARE(page->property("resultCount").toInt(), 2);
+        QCOMPARE(page->property("allSkills").toList().size(), 2);
+        QCOMPARE(page->property("searchText").toString(), QString());
+        QCOMPARE(page->property("sourceFilter").toString(),
+                 QStringLiteral("all"));
+        QCOMPARE(visibleRowCount(h), 2);
+
+        auto* empty = h.window->findChild<QQuickItem*>(
+            QStringLiteral("skillsEmptyHint"));
+        QVERIFY(empty);
+        QVERIFY(!empty->isVisible());
+
+        auto* search = h.window->findChild<QQuickItem*>(
+            QStringLiteral("skillsSearchField"));
+        auto* filter = h.window->findChild<QQuickItem*>(
+            QStringLiteral("skillsSourceFilter"));
+        auto* count = h.window->findChild<QQuickItem*>(
+            QStringLiteral("skillsResultCount"));
+        QVERIFY(search && filter && count);
+        QCOMPARE(filter->property("currentIndex").toInt(), 0);
+        QVERIFY(count->property("text").toString().contains(
+            QStringLiteral("显示 2 / 共 2")));
+    }
+
+    // 搜索把某一来源全部过滤掉时，不能误报“该来源没有技能”。
+    void searchDoesNotClaimOtherSourceIsEmpty() {
+        Harness h;
+        QVERIFY2(h.load(), qPrintable(h.error));
+        QObject* page = h.page();
+        QVERIFY(page);
+
+        auto* projectHint = h.window->findChild<QQuickItem*>(
+            QStringLiteral("skillsProjectEmptyHint"));
+        auto* userHint = h.window->findChild<QQuickItem*>(
+            QStringLiteral("skillsUserEmptyHint"));
+        QVERIFY(projectHint && userHint);
+
+        page->setProperty("searchText", QStringLiteral("review"));
+        QVERIFY(QMetaObject::invokeMethod(page, "applySearch"));
+        QTest::qWait(30);
+        QCOMPARE(page->property("resultCount").toInt(), 1);
+        QVERIFY(!projectHint->isVisible());
+        QVERIFY(!userHint->isVisible());
+        QVERIFY(!userHint->property("text").toString().contains(
+            QStringLiteral("还没有用户技能")));
+
+        // 只命中用户技能时，项目分组仍有技能，不能说“当前项目没有技能”。
+        page->setProperty("searchText", QStringLiteral("user"));
+        QVERIFY(QMetaObject::invokeMethod(page, "applySearch"));
+        QTest::qWait(30);
+        QCOMPARE(page->property("resultCount").toInt(), 1);
+        QVERIFY(!projectHint->isVisible());
+        QVERIFY(!projectHint->property("text").toString().contains(
+            QStringLiteral("当前项目没有技能")));
+        QVERIFY(!userHint->isVisible());
+    }
+
+    void sourceFilterShowsOnlySelectedGroup() {
+        Harness h;
+        QVERIFY2(h.load(), qPrintable(h.error));
+        QObject* page = h.page();
+        QVERIFY(page);
+
+        auto* projectSection = h.window->findChild<QQuickItem*>(
+            QStringLiteral("skillsProjectSection"));
+        auto* userSection = h.window->findChild<QQuickItem*>(
+            QStringLiteral("skillsUserSection"));
+        QVERIFY(projectSection && userSection);
+
+        page->setProperty("sourceFilter", QStringLiteral("project"));
+        QTest::qWait(30);
+        QCOMPARE(page->property("resultCount").toInt(), 1);
+        QCOMPARE(projectSection->property("visible").toBool(), true);
+        QCOMPARE(userSection->property("visible").toBool(), false);
+
+        page->setProperty("sourceFilter", QStringLiteral("user"));
+        QTest::qWait(30);
+        QCOMPARE(page->property("resultCount").toInt(), 1);
+        QCOMPARE(projectSection->property("visible").toBool(), false);
+        QCOMPARE(userSection->property("visible").toBool(), true);
+
+        page->setProperty("sourceFilter", QStringLiteral("all"));
+        QTest::qWait(30);
+        QCOMPARE(page->property("resultCount").toInt(), 2);
+        QCOMPARE(projectSection->property("visible").toBool(), true);
+        QCOMPARE(userSection->property("visible").toBool(), true);
+    }
+
+    // 名称、描述、id 三个字段都参与子串匹配，且大小写不敏感。
+    void searchMatchesNameDescriptionAndId() {
+        Harness h;
+        QVERIFY2(h.load(), qPrintable(h.error));
+        QObject* page = h.page();
+        QVERIFY(page);
+
+        page->setProperty("searchText", QStringLiteral("review"));
+        QVERIFY(QMetaObject::invokeMethod(page, "applySearch"));
+        QTest::qWait(50);
+        QCOMPARE(page->property("resultCount").toInt(), 1);
+        QCOMPARE(visibleRowCount(h), 1);
+
+        // "Review a diff" 只在项目技能的 description 里；故意用大写验证忽略大小写。
+        page->setProperty("searchText", QStringLiteral("DIFF"));
+        QVERIFY(QMetaObject::invokeMethod(page, "applySearch"));
+        QTest::qWait(50);
+        QCOMPARE(page->property("resultCount").toInt(), 1);
+        QCOMPARE(visibleRowCount(h), 1);
+
+        page->setProperty("searchText", QStringLiteral("user-helper"));
+        QVERIFY(QMetaObject::invokeMethod(page, "applySearch"));
+        QTest::qWait(50);
+        QCOMPARE(page->property("resultCount").toInt(), 1);
+        QCOMPARE(visibleRowCount(h), 1);
+    }
+
+    // 输入框路径：关键字立即写入 page.searchText，过滤等 150ms 防抖。
+    void searchFieldDebouncesAndClearRestoresAll() {
+        Harness h;
+        QVERIFY2(h.load(), qPrintable(h.error));
+        QObject* page = h.page();
+        QVERIFY(page);
+        auto* search = h.window->findChild<QQuickItem*>(
+            QStringLiteral("skillsSearchField"));
+        QVERIFY(search);
+
+        search->setProperty("text", QStringLiteral("zzz"));
+        QCOMPARE(page->property("searchText").toString(), QStringLiteral("zzz"));
+        // 防抖窗口内列表仍是上一次的结果。
+        QCOMPARE(page->property("resultCount").toInt(), 2);
+        QTest::qWait(250);
+        QCOMPARE(page->property("resultCount").toInt(), 0);
+        QCOMPARE(visibleRowCount(h), 0);
+
+        // 清空立即恢复全量，不需要等防抖。
+        search->setProperty("text", QString());
+        QCOMPARE(page->property("searchText").toString(), QString());
+        QCOMPARE(page->property("resultCount").toInt(), 2);
+        QCOMPARE(visibleRowCount(h), 2);
+        auto* empty = h.window->findChild<QQuickItem*>(
+            QStringLiteral("skillsEmptyHint"));
+        QVERIFY(empty);
+        QVERIFY(!empty->isVisible());
+    }
+
+    // 无匹配时列表为空，空态可见且文案区分“过滤无命中”。
+    void noMatchShowsFilteredEmptyState() {
+        Harness h;
+        QVERIFY2(h.load(), qPrintable(h.error));
+        QObject* page = h.page();
+        QVERIFY(page);
+
+        page->setProperty("searchText", QStringLiteral("zzz"));
+        QVERIFY(QMetaObject::invokeMethod(page, "applySearch"));
+        QTest::qWait(50);
+        QCOMPARE(page->property("resultCount").toInt(), 0);
+        QCOMPARE(visibleRowCount(h), 0);
+
+        auto* empty = h.window->findChild<QQuickItem*>(
+            QStringLiteral("skillsEmptyHint"));
+        QVERIFY(empty);
+        QVERIFY(empty->isVisible());
+        QVERIFY(empty->property("text").toString().contains(
+            QStringLiteral("没有匹配")));
+
+        auto* count = h.window->findChild<QQuickItem*>(
+            QStringLiteral("skillsResultCount"));
+        QVERIFY(count);
+        QVERIFY(count->property("text").toString().contains(
+            QStringLiteral("显示 0 / 共 2")));
+    }
+
+    // 来源筛选只控制分组可见性与计数，不清空搜索关键字。
+    void sourceFilterNarrowsGroupsAndKeepsSearch() {
+        Harness h;
+        QVERIFY2(h.load(), qPrintable(h.error));
+        QObject* page = h.page();
+        QVERIFY(page);
+
+        page->setProperty("sourceFilter", QStringLiteral("user"));
+        QTest::qWait(30);
+        QCOMPARE(page->property("resultCount").toInt(), 1);
+        QCOMPARE(page->property("allSkills").toList().size(), 2);
+
+        auto* project = h.window->findChild<QQuickItem*>(
+            QStringLiteral("skillsProjectSection"));
+        auto* user = h.window->findChild<QQuickItem*>(
+            QStringLiteral("skillsUserSection"));
+        QVERIFY(project && user);
+        QVERIFY(!project->property("visible").toBool());
+        QVERIFY(user->property("visible").toBool());
+        QCOMPARE(visibleRowCount(h), 1);
+
+        // 切回全部不重置搜索：关键字仍保留且结果继续按它过滤。
+        page->setProperty("sourceFilter", QStringLiteral("all"));
+        page->setProperty("searchText", QStringLiteral("user"));
+        QVERIFY(QMetaObject::invokeMethod(page, "applySearch"));
+        QTest::qWait(30);
+        QCOMPARE(page->property("sourceFilter").toString(), QStringLiteral("all"));
+        QCOMPARE(page->property("searchText").toString(), QStringLiteral("user"));
+        QCOMPARE(page->property("resultCount").toInt(), 1);
+        QCOMPARE(visibleRowCount(h), 1);
+    }
+
+    // 刷新保留 searchText / sourceFilter，并同步筛选框索引。
+    void refreshKeepsSearchAndFilter() {
+        Harness h;
+        QVERIFY2(h.load(), qPrintable(h.error));
+        QObject* page = h.page();
+        QVERIFY(page);
+
+        page->setProperty("searchText", QStringLiteral("user"));
+        page->setProperty("sourceFilter", QStringLiteral("user"));
+        QVERIFY(QMetaObject::invokeMethod(page, "applySearch"));
+        QTest::qWait(50);
+        QCOMPARE(page->property("resultCount").toInt(), 1);
+
+        QVERIFY(QMetaObject::invokeMethod(page, "refresh"));
+        QTest::qWait(120);
+
+        QCOMPARE(page->property("searchText").toString(), QStringLiteral("user"));
+        QCOMPARE(page->property("sourceFilter").toString(), QStringLiteral("user"));
+        QCOMPARE(page->property("allSkills").toList().size(), 2);
+        QCOMPARE(page->property("resultCount").toInt(), 1);
+        QCOMPARE(visibleRowCount(h), 1);
+
+        auto* filter = h.window->findChild<QQuickItem*>(
+            QStringLiteral("skillsSourceFilter"));
+        QVERIFY(filter);
+        QCOMPARE(filter->property("currentIndex").toInt(), 2);
+    }
+
     void refreshPicksUpNewUserSkill() {
         Harness h;
         QVERIFY2(h.load(), qPrintable(h.error));
@@ -564,6 +802,18 @@ private:
 
     static QQuickItem* windowItem(const Harness& h) {
         return qobject_cast<QQuickItem*>(h.window->contentItem());
+    }
+
+    // 只统计真正可见的行：被来源筛选隐藏的分组里，Repeater 的 delegate
+    // 仍然存在，但不应算作当前展示结果。
+    static int visibleRowCount(const Harness& h) {
+        QList<QQuickItem*> rows;
+        collectByName(windowItem(h), QStringLiteral("skillRow"), &rows);
+        int visible = 0;
+        for (QQuickItem* row : rows) {
+            if (row->isVisible()) ++visible;
+        }
+        return visible;
     }
 
     AIAgent* m_agent = nullptr;

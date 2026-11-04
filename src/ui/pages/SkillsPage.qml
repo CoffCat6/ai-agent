@@ -37,19 +37,64 @@ SettingsPage {
     readonly property string currentSource:
         page.hasActiveProject ? "project" : "user"
 
-    // 列表快照：刷新与项目切换后整体重新赋值，绑定才会重新求值。
+    // 列表快照（docs/39 S4）：
+    //   allSkills 是当前配置下的全量快照，只由 refresh() 更新；
+    //   skills 是再经 searchText 过滤后的展示快照。
+    // 两者都用整体赋值，绑定才会重新求值。
+    property var allSkills: []
     property var skills: []
+    property string searchText: ""
+    // all / project / user；只控制分组可见性与计数，不触发重扫。
+    property string sourceFilter: "all"
+
     readonly property var projectSkills:
         page.skills.filter(s => s.source === "project")
     readonly property var userSkills:
         page.skills.filter(s => s.source !== "project")
+    readonly property int resultCount:
+        page.sourceFilter === "project" ? page.projectSkills.length
+        : page.sourceFilter === "user" ? page.userSkills.length
+        : page.skills.length
+    // 未过滤的全量分组计数：用于区分“该来源确实没有技能”与“只是搜索没命中”。
+    readonly property int allProjectCount:
+        page.allSkills.filter(s => s.source === "project").length
+    readonly property int allUserCount:
+        page.allSkills.length - page.allProjectCount
+
+    // 子串匹配 name/description/id，大小写不敏感；空关键字视为全匹配。
+    function matchesSearch(skill) {
+        const query = page.searchText.trim().toLowerCase()
+        if (query.length === 0)
+            return true
+        const fields = [skill.name, skill.description, skill.id]
+        for (let i = 0; i < fields.length; ++i) {
+            const value = fields[i]
+            if (value === undefined || value === null)
+                continue
+            if (String(value).toLowerCase().indexOf(query) >= 0)
+                return true
+        }
+        return false
+    }
+
+    // 本地过滤，不再触发 C++ 重扫。
+    function applySearch() {
+        const all = page.allSkills || []
+        page.skills = all.filter(skill => page.matchesSearch(skill))
+    }
 
     function refresh() {
         page.skillsEnabled = AgentVM.skillFeatureEnabled()
         page.projectSkillsEnabled = AgentVM.skillProjectEnabled()
         page.maxPerMessage = AgentVM.skillMaxPerMessage()
         AgentVM.reloadSkills()
-        page.skills = AgentVM.listSkills("", 200)
+        // 用空查询拿全量，再本地按当前关键字过滤；不能用 listSkills(query)，
+        // 否则结果计数里的“共 N 个”会退化成命中数。
+        page.allSkills = AgentVM.listSkills("", 200)
+        page.applySearch()
+        // 刷新时把来源筛选的 UI 索引与 sourceFilter 对齐（属性是唯一事实源，
+        // ComboBox 只在用户选择时回写，避免双向绑定循环）。
+        sourceFilterBox.syncFromPage()
     }
 
     Component.onCompleted: page.refresh()
@@ -204,11 +249,59 @@ SettingsPage {
             onClicked: AgentVM.openSkillsDirectory("project")
         }
 
-        Text {
+        Item { Layout.fillWidth: true }
+    }
+
+    // ── 搜索与来源筛选（docs/39 S4） ─────────────────────
+    RowLayout {
+        Layout.fillWidth: true
+        spacing: Theme.spaceSm
+
+        TextField {
+
+            objectName: "skillsSearchField"
             Layout.fillWidth: true
+            Layout.minimumWidth: 180
             Layout.alignment: Qt.AlignVCenter
-            text: qsTr("共 %1 个 · 项目 %2 · 用户 %3")
-                .arg(page.skills.length)
+            placeholderText: qsTr("搜索技能名称/描述")
+            Accessible.name: qsTr("搜索技能")
+            // 清空立即恢复全量；输入期间用防抖避免每键重过滤。
+            onTextChanged: {
+                page.searchText = text
+                if (text.length === 0) {
+                    searchDebounce.stop()
+                    page.applySearch()
+                } else {
+                    searchDebounce.restart()
+                }
+            }
+        }
+
+        ComboBox {
+            id: sourceFilterBox
+            objectName: "skillsSourceFilter"
+            Layout.alignment: Qt.AlignVCenter
+            model: [qsTr("全部"), qsTr("项目"), qsTr("用户")]
+            Accessible.name: qsTr("按来源筛选技能")
+            // 0→all / 1→project / 2→user；只回写 page.sourceFilter。
+            onActivated: (index) => page.sourceFilter =
+                index === 1 ? "project" : index === 2 ? "user" : "all"
+            // currentIndex 由代码显式同步，不做绑定，避免与 onActivated 成环。
+            function syncFromPage() {
+                const index = page.sourceFilter === "project" ? 1
+                            : page.sourceFilter === "user" ? 2 : 0
+                if (sourceFilterBox.currentIndex !== index)
+                    sourceFilterBox.currentIndex = index
+            }
+            Component.onCompleted: syncFromPage()
+        }
+
+        Text {
+            objectName: "skillsResultCount"
+            Layout.alignment: Qt.AlignVCenter
+            text: qsTr("显示 %1 / 共 %2 · 项目 %3 · 用户 %4")
+                .arg(page.resultCount)
+                .arg(page.allSkills.length)
                 .arg(page.projectSkills.length)
                 .arg(page.userSkills.length)
             color: Theme.textSecondary
@@ -218,13 +311,23 @@ SettingsPage {
 
         Text {
             objectName: "skillsEmptyHint"
-            visible: page.skills.length === 0
+            visible: page.resultCount === 0
             Layout.alignment: Qt.AlignVCenter
-            text: qsTr("尚未发现技能")
+            // 区分“一个技能都没有”和“过滤后无命中”，避免用户误以为技能丢了。
+            text: page.allSkills.length === 0
+                ? qsTr("尚未发现技能")
+                : qsTr("没有匹配的技能，请调整关键字或来源")
             color: Theme.textTertiary
             font.pixelSize: Theme.fontSizeCaption
             font.family: Theme.fontSans
         }
+    }
+
+    Timer {
+        id: searchDebounce
+        interval: 150
+        repeat: false
+        onTriggered: page.applySearch()
     }
 
     // ── 技能设置（docs/37 W5-1） ─────────────────────────
@@ -298,6 +401,7 @@ SettingsPage {
     // ── 已发现技能 ──────────────────────────────────────
     SettingsSection {
         objectName: "skillsProjectSection"
+        visible: page.sourceFilter !== "user"
         title: qsTr("项目技能")
         description: qsTr("来自当前项目根目录，优先于同名用户技能。切换项目后点「刷新」重新扫描。")
         badge: qsTr("%1 个").arg(page.projectSkills.length)
@@ -308,9 +412,18 @@ SettingsPage {
         }
 
         Text {
-            visible: page.projectSkills.length === 0
+            // 整体无结果时由 skillsEmptyHint 统一提示，这里只在“有结果但本项目
+            // 分组为空”时出现，避免三处重复空态。
+            objectName: "skillsProjectEmptyHint"
+            // 全局无结果由 skillsEmptyHint 统一提示；这里只在“该来源确实
+            // 一个技能都没有”时出现，避免搜索把本组过滤空后误报“没有技能”。
+            visible: page.projectSkills.length === 0 && page.resultCount > 0
+                     && (page.sourceFilter === "all"
+                         ? page.allProjectCount === 0 : true)
             Layout.fillWidth: true
-            text: qsTr("当前项目没有技能。在 <项目根>/.nexusai/skills/<id>/SKILL.md 中新建。")
+            text: page.allProjectCount === 0
+                  ? qsTr("当前项目没有技能。在 <项目根>/.nexusai/skills/<id>/SKILL.md 中新建。")
+                  : qsTr("本组没有匹配的技能")
             color: Theme.textSecondary
             font.pixelSize: Theme.fontSizeCaption
             font.family: Theme.fontSans
@@ -320,6 +433,7 @@ SettingsPage {
 
     SettingsSection {
         objectName: "skillsUserSection"
+        visible: page.sourceFilter !== "project"
         title: qsTr("用户技能")
         description: qsTr("来自用户配置目录，对所有项目生效。")
         badge: qsTr("%1 个").arg(page.userSkills.length)
@@ -330,9 +444,14 @@ SettingsPage {
         }
 
         Text {
-            visible: page.userSkills.length === 0
+            objectName: "skillsUserEmptyHint"
+            visible: page.userSkills.length === 0 && page.resultCount > 0
+                     && (page.sourceFilter === "all"
+                         ? page.allUserCount === 0 : true)
             Layout.fillWidth: true
-            text: qsTr("还没有用户技能。在应用配置目录的 skills/<id>/SKILL.md 中新建。")
+            text: page.allUserCount === 0
+                  ? qsTr("还没有用户技能。在应用配置目录的 skills/<id>/SKILL.md 中新建。")
+                  : qsTr("本组没有匹配的技能")
             color: Theme.textSecondary
             font.pixelSize: Theme.fontSizeCaption
             font.family: Theme.fontSans
