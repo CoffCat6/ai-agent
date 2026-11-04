@@ -25,6 +25,33 @@ Dialog {
     property string diffToken: ""
     property string viewMode: "unified"
 
+    // ── Inline split (file tree ↔ diff) ────────────────────
+    // Same mechanism as FileChangesPanel: the divider position is stored as
+    // a share of the split area instead of a pixel count, so the proportion
+    // survives a dialog resize. The share is clamped so neither pane can be
+    // dragged out of existence.
+    property real listRatio: dialog.defaultListRatio
+    readonly property int splitterThickness: 7
+    readonly property int minTreeWidth: 140
+    readonly property int minDetailWidth: 320
+    // Width of the split row: left pane + divider + right pane.
+    readonly property real splitExtent: splitRow.width
+    // Default share of the split area the tree takes: a path column plus a
+    // little air, capped so the diff always keeps at least half.
+    readonly property real defaultListRatio: dialog.computeDefaultRatio()
+    readonly property real maxTreeWidth: Math.max(dialog.minTreeWidth,
+        dialog.splitExtent - dialog.splitterThickness - dialog.minDetailWidth)
+    readonly property real treePaneWidth: Math.max(dialog.minTreeWidth,
+        Math.min(dialog.maxTreeWidth,
+                 Math.round(dialog.splitExtent * dialog.listRatio)))
+
+    // Animate ratio changes (resize, reset) unless the user is dragging the
+    // divider: then the pane has to track the cursor exactly.
+    Behavior on listRatio {
+        enabled: !commitSplitBar.dragActive
+        NumberAnimation { duration: Theme.motionFast; easing.type: Easing.OutQuad }
+    }
+
     readonly property string shortSha: commitData
         ? (commitData.shortSha || sha.substring(0, 7)) : ""
     readonly property string subject: commitData ? (commitData.subject || "") : ""
@@ -38,6 +65,34 @@ Dialog {
         selectedFile ? Number(selectedFile.additions || 0) : 0
     readonly property int selectedRemoved:
         selectedFile ? Number(selectedFile.removals || 0) : 0
+
+    // Default share of the split area the tree takes. The tree is a path
+    // list and wants a roughly constant width (~252px including the
+    // divider), not a share of the host - the rest is the diff's. The
+    // default is deliberately narrower than the old fixed 280px column,
+    // which is what prompted the resizable split.
+    function computeDefaultRatio() {
+        const extent = dialog.splitExtent
+        if (extent <= 0) return 0.24
+        return Math.max(0.16, Math.min(0.45, (240 + 12) / extent))
+    }
+
+    // Dragging the divider: the delta arrives in pixels but the split is
+    // stored as a ratio. The ratio is capped by what the tree can actually
+    // take, otherwise the divider would keep "eating" pixels that go
+    // nowhere.
+    function adjustSplit(delta) {
+        const extent = dialog.splitExtent
+        if (extent <= 0) return
+        const maxShare = dialog.maxTreeWidth / extent
+        dialog.listRatio = Math.max(0.08,
+            Math.min(dialog.listRatio + delta / extent, maxShare))
+    }
+
+    // Double-click on the divider restores the default proportion.
+    function resetSplit() {
+        dialog.listRatio = dialog.defaultListRatio
+    }
 
     function findFile(path) {
         for (let i = 0; i < files.length; ++i) {
@@ -222,6 +277,7 @@ Dialog {
         }
 
         RowLayout {
+            id: splitRow
             Layout.fillWidth: true
             Layout.fillHeight: true
             Layout.leftMargin: 16
@@ -229,7 +285,11 @@ Dialog {
             spacing: 10
 
             ColumnLayout {
-                Layout.preferredWidth: Math.min(280, Math.max(150, dialog.width * 0.3))
+                Layout.preferredWidth: dialog.treePaneWidth
+                Layout.maximumWidth: dialog.treePaneWidth
+                // The column must be free to shrink below its content's
+                // implicit width, otherwise the drag clamp would be ignored.
+                Layout.minimumWidth: 0
                 Layout.fillHeight: true
                 spacing: 4
 
@@ -283,10 +343,16 @@ Dialog {
                 }
             }
 
-            Rectangle {
+            // "horizontal" is a vertical seam: the strip resizes the tree
+            // column on its left and the diff column on its right.
+            SplitBar {
+                id: commitSplitBar
+                objectName: "commitSplitBar"
+                orientation: "horizontal"
                 Layout.fillHeight: true
-                width: 1
-                color: Theme.borderSubtle
+                Layout.preferredWidth: implicitWidth
+                onDragged: (delta) => dialog.adjustSplit(delta)
+                onResetRequested: dialog.resetSplit()
             }
 
             ColumnLayout {

@@ -26,14 +26,64 @@ Dialog {
     property string filesToken: ""
     property string diffToken: ""
     property string viewMode: "unified"
-    // The file list column is capped: an uncapped fillWidth column would stretch
-    // and leave the diff 3px wide (measured on the review dialog).
-    property real treePaneWidth: 260
+
+    // ── Inline split (file list ↔ diff) ────────────────────
+    // Same mechanism as FileChangesPanel: the divider position is stored as
+    // a share of the split area instead of a pixel count, so a resized
+    // dialog keeps the proportion. treePaneWidth stays as a read-only
+    // derived size so existing geometry references keep working.
+    property real listRatio: dialog.defaultListRatio
+    readonly property int splitterThickness: 7
+    readonly property int minTreeWidth: 140
+    readonly property int minDetailWidth: 320
+    // Width of the split row: left pane + divider + right pane.
+    readonly property real splitExtent: splitRow.width
+    // Default share of the split area the file list takes (a 260px column
+    // plus the divider), capped so the diff always keeps at least half.
+    readonly property real defaultListRatio: dialog.computeDefaultRatio()
+    readonly property real maxTreeWidth: Math.max(dialog.minTreeWidth,
+        dialog.splitExtent - dialog.splitterThickness - dialog.minDetailWidth)
+    readonly property real treePaneWidth: Math.max(dialog.minTreeWidth,
+        Math.min(dialog.maxTreeWidth,
+                 Math.round(dialog.splitExtent * dialog.listRatio)))
+
+    // Animate ratio changes (resize, reset) unless the user is dragging the
+    // divider: then the pane has to track the cursor exactly.
+    Behavior on listRatio {
+        enabled: !compareSplitBar.dragActive
+        NumberAnimation { duration: Theme.motionFast; easing.type: Easing.OutQuad }
+    }
 
     readonly property string labelA: shortOf(commitA, shaA)
     readonly property string labelB: shortOf(commitB, shaB)
     readonly property int fileCount: files ? files.length : 0
     readonly property int diffLineCount: compareDiffView.renderedCount
+
+    // Default share of the split area the file list takes. The list is a
+    // path list and wants a roughly constant width (~252px including the
+    // divider), not a share of the host - the rest is the diff's.
+    function computeDefaultRatio() {
+        const extent = dialog.splitExtent
+        if (extent <= 0) return 0.24
+        return Math.max(0.16, Math.min(0.45, (240 + 12) / extent))
+    }
+
+    // Dragging the divider: the delta arrives in pixels but the split is
+    // stored as a ratio. The ratio is capped by what the list can actually
+    // take, otherwise the divider would keep "eating" pixels that go
+    // nowhere.
+    function adjustSplit(delta) {
+        const extent = dialog.splitExtent
+        if (extent <= 0) return
+        const maxShare = dialog.maxTreeWidth / extent
+        dialog.listRatio = Math.max(0.08,
+            Math.min(dialog.listRatio + delta / extent, maxShare))
+    }
+
+    // Double-click on the divider restores the default proportion.
+    function resetSplit() {
+        dialog.listRatio = dialog.defaultListRatio
+    }
 
     function shortOf(commit, sha) {
         if (commit && commit.shortSha) return commit.shortSha
@@ -259,6 +309,7 @@ Dialog {
         }
 
         RowLayout {
+            id: splitRow
             Layout.fillWidth: true
             Layout.fillHeight: true
             Layout.leftMargin: 16
@@ -269,6 +320,9 @@ Dialog {
             ColumnLayout {
                 Layout.preferredWidth: dialog.treePaneWidth
                 Layout.maximumWidth: dialog.treePaneWidth
+                // The column must be free to shrink below its content's
+                // implicit width, otherwise the drag clamp would be ignored.
+                Layout.minimumWidth: 0
                 Layout.fillHeight: true
                 spacing: 4
 
@@ -304,6 +358,18 @@ Dialog {
                     font.pixelSize: Theme.fontSizeMicro
                     wrapMode: Text.Wrap
                 }
+            }
+
+            // "horizontal" is a vertical seam: the strip resizes the file
+            // list column on its left and the diff column on its right.
+            SplitBar {
+                id: compareSplitBar
+                objectName: "compareSplitBar"
+                orientation: "horizontal"
+                Layout.fillHeight: true
+                Layout.preferredWidth: implicitWidth
+                onDragged: (delta) => dialog.adjustSplit(delta)
+                onResetRequested: dialog.resetSplit()
             }
 
             ColumnLayout {

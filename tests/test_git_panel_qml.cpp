@@ -215,6 +215,158 @@ QList<QQuickItem*> visibleItemsNamed(QQuickWindow* window,
     return visible;
 }
 
+// ── Split-pane contract shared by the two "view changes" dialogs ─────────
+// GitCommitDialog and GitCompareDialog used to pin the file tree at a fixed
+// width, which left the diff too narrow. Both now store the divider position
+// as a share of the split row (listRatio) and derive treePaneWidth from it.
+// These helpers pin the derived contract AND the real control geometry: a
+// property alone would not prove the layout binding actually reaches the
+// ChangeTree control.
+void verifySplitPane(QObject* dialog, const QString& splitBarName,
+                     const QString& treeName, QQuickWindow* win) {
+    if (dialog == nullptr || win == nullptr) {
+        QFAIL("dialog or window is null");
+        return;
+    }
+
+    const qreal extent = dialog->property("splitExtent").toReal();
+    const qreal minTree = dialog->property("minTreeWidth").toReal();
+    const qreal maxTree = dialog->property("maxTreeWidth").toReal();
+    const qreal pane = dialog->property("treePaneWidth").toReal();
+
+    QVERIFY2(extent > 0.0,
+             qPrintable(QStringLiteral("splitExtent not laid out: %1").arg(extent)));
+    // At the default 420px harness window maxTreeWidth is clamped to the 140px
+    // minimum, so a drag could not move the divider at all. Callers must widen
+    // the window first; fail loudly if that did not take effect.
+    QVERIFY2(maxTree > minTree + 1.0,
+             qPrintable(QStringLiteral("window too narrow for split assertions: "
+                                       "extent=%1 maxTree=%2")
+                            .arg(extent).arg(maxTree)));
+
+    // 1. The divider exists, is a vertical seam (orientation "horizontal") and
+    // keeps the 7px hit strip.
+    QList<QQuickItem*> bars;
+    collectVisualItems(win->contentItem(), splitBarName, &bars);
+    QCOMPARE(bars.size(), 1);
+    if (bars.isEmpty()) return;
+    QQuickItem* bar = bars.first();
+    QVERIFY2(bar->isVisible(), "split bar is hidden");
+    QCOMPARE(bar->property("orientation").toString(), QStringLiteral("horizontal"));
+    QCOMPARE(dialog->property("splitterThickness").toInt(), 7);
+    QVERIFY2(qAbs(bar->width() - 7.0) <= 1.0,
+             qPrintable(QStringLiteral("split bar width %1 != 7").arg(bar->width())));
+
+    // 2. treePaneWidth stays inside the clamp range, and the default column is
+    // the deliberately narrower 252px (the old fixed 280px is the regression
+    // this contract exists for).
+    QVERIFY2(pane >= minTree && pane <= maxTree,
+             qPrintable(QStringLiteral("treePaneWidth %1 outside [%2, %3]")
+                            .arg(pane).arg(minTree).arg(maxTree)));
+    QVERIFY2(pane < 280.0,
+             qPrintable(QStringLiteral("default tree column too wide: %1").arg(pane)));
+    QVERIFY2(qAbs(pane - 252.0) <= 2.0,
+             qPrintable(QStringLiteral("default tree column %1 != 252").arg(pane)));
+
+    // 3. The real ChangeTree control received that width.
+    QList<QQuickItem*> trees;
+    collectVisualItems(win->contentItem(), treeName, &trees);
+    QCOMPARE(trees.size(), 1);
+    if (trees.isEmpty()) return;
+    QQuickItem* tree = trees.first();
+    QVERIFY2(tree->isVisible(), "file tree is hidden");
+    QVERIFY2(qAbs(tree->width() - pane) <= 1.0,
+             qPrintable(QStringLiteral("tree width %1 != treePaneWidth %2")
+                            .arg(tree->width()).arg(pane)));
+
+    // 4. Layout chain: left column + gutter + divider + gutter + right column
+    // fills the split row, and the divider sits exactly between the columns.
+    QQuickItem* treeCol = tree->parentItem();
+    QQuickItem* splitRow = bar->parentItem();
+    QVERIFY(treeCol != nullptr && splitRow != nullptr);
+    QVERIFY2(qAbs(splitRow->width() - extent) <= 1.0,
+             qPrintable(QStringLiteral("splitRow width %1 != splitExtent %2")
+                            .arg(splitRow->width()).arg(extent)));
+    QVERIFY2(qAbs(treeCol->width() - pane) <= 1.0,
+             qPrintable(QStringLiteral("left column width %1 != treePaneWidth %2")
+                            .arg(treeCol->width()).arg(pane)));
+
+    QQuickItem* rightCol = nullptr;
+    for (QQuickItem* child : splitRow->childItems()) {
+        if (child == bar || child == treeCol || !child->isVisible())
+            continue;
+        if (child->x() <= bar->x())
+            continue;
+        if (rightCol == nullptr || child->x() > rightCol->x())
+            rightCol = child;
+    }
+    QVERIFY2(rightCol != nullptr, "right diff column not found");
+    if (rightCol == nullptr) return;
+
+    constexpr qreal kGutter = 10.0; // splitRow.spacing
+    QVERIFY2(qAbs(treeCol->x() + treeCol->width() + kGutter - bar->x()) <= 1.0,
+             "left column does not end at the divider");
+    QVERIFY2(qAbs(bar->x() + bar->width() + kGutter - rightCol->x()) <= 1.0,
+             "divider does not end at the diff column");
+    QVERIFY2(qAbs(rightCol->x() + rightCol->width() - extent) <= 1.0,
+             "diff column does not reach the split row edge");
+    QVERIFY2(qAbs(treeCol->width() + bar->width() + rightCol->width()
+                  - (extent - 2.0 * kGutter)) <= 2.0,
+             "left + divider + right != splitExtent minus gutters");
+}
+
+// Drag / reset contract. adjustSplit() is the exact slot SplitBar.dragged()
+// calls, so invoking it exercises the same path a real drag takes (the pointer
+// events themselves are not synthesized here). listRatio carries a Behavior
+// animation, so every step waits for the animated value instead of reading it
+// immediately.
+void verifySplitDragAndReset(QObject* dialog) {
+    if (dialog == nullptr) {
+        QFAIL("dialog is null");
+        return;
+    }
+
+    const qreal beforeRatio = dialog->property("listRatio").toReal();
+    const qreal beforeWidth = dialog->property("treePaneWidth").toReal();
+    QVERIFY2(QMetaObject::invokeMethod(dialog, "adjustSplit",
+                                       Q_ARG(QVariant, 80.0)),
+             "adjustSplit is not invokable");
+    QTRY_VERIFY_WITH_TIMEOUT(
+        dialog->property("listRatio").toReal() > beforeRatio + 0.01, 3000);
+    QTRY_VERIFY_WITH_TIMEOUT(
+        dialog->property("treePaneWidth").toReal() > beforeWidth + 20.0, 3000);
+
+    // Dragging far right is clamped at maxTreeWidth so the diff keeps
+    // minDetailWidth (320px) instead of collapsing.
+    const qreal extent = dialog->property("splitExtent").toReal();
+    const qreal maxTree = dialog->property("maxTreeWidth").toReal();
+    QVERIFY2(QMetaObject::invokeMethod(dialog, "adjustSplit",
+                                       Q_ARG(QVariant, 100000.0)),
+             "adjustSplit is not invokable");
+    QTRY_VERIFY_WITH_TIMEOUT(
+        qAbs(dialog->property("treePaneWidth").toReal() - maxTree) <= 1.0, 3000);
+    QVERIFY2(maxTree <= extent - 7.0 - 320.0 + 1.0,
+             "maxTreeWidth does not reserve minDetailWidth");
+
+    // The other direction clamps at minTreeWidth (140px), which is the floor
+    // a 0.08 ratio would otherwise undershoot.
+    QVERIFY2(QMetaObject::invokeMethod(dialog, "adjustSplit",
+                                       Q_ARG(QVariant, -100000.0)),
+             "adjustSplit is not invokable");
+    QTRY_COMPARE_WITH_TIMEOUT(
+        dialog->property("treePaneWidth").toInt(), 140, 3000);
+
+    // Double-click reset (SplitBar.resetRequested -> resetSplit) restores the
+    // default share, hence the default ~252px column.
+    const qreal defaultRatio = dialog->property("defaultListRatio").toReal();
+    QVERIFY2(QMetaObject::invokeMethod(dialog, "resetSplit"),
+             "resetSplit is not invokable");
+    QTRY_VERIFY_WITH_TIMEOUT(
+        qAbs(dialog->property("listRatio").toReal() - defaultRatio) < 0.005, 3000);
+    QTRY_VERIFY_WITH_TIMEOUT(
+        qAbs(dialog->property("treePaneWidth").toReal() - 252.0) <= 2.0, 3000);
+}
+
 class Harness {
 public:
     NexusQrcFallback fallback{QStringLiteral(NEXUS_BUILD_DIR "/NexusAI")};
@@ -1158,6 +1310,98 @@ private slots:
         picks = pickButtons();
         QVERIFY(QMetaObject::invokeMethod(picks.at(0), "clicked"));
         QTRY_VERIFY(!h.call("hasCompareBase").toBool());
+    }
+
+    // Regression: the commit detail dialog used to pin the changed-file tree at
+    // a fixed width, leaving the diff too narrow. The split is now ratio-driven:
+    // a 7px vertical SplitBar between the tree and the diff, clamped on both
+    // sides, restored by double-click, and the real ChangeTree control must
+    // receive the computed width.
+    void commitDetailSplitIsRatioDriven() {
+        TempRepo repo;
+        QVERIFY2(prepareRepo(repo), "failed to prepare the temporary repository");
+
+        Harness h;
+        QVERIFY2(h.window, qPrintable(h.error));
+        // The harness window is 420x620 by default; at that size maxTreeWidth is
+        // clamped to minTreeWidth (140), so "drag to grow" could not be tested.
+        // 1200x800 gives the dialog its full 1100px width.
+        h.window->resize(1200, 800);
+        QTRY_COMPARE_WITH_TIMEOUT(h.window->width(), 1200, 5000);
+
+        QVERIFY(h.setProjectRoot(repo.path()));
+        QVERIFY(h.setSubTab(1));
+        QTRY_COMPARE_WITH_TIMEOUT(h.call("logCount").toInt(), 2, 15000);
+        QVERIFY(h.openCommitAt(0));
+        QTRY_VERIFY(h.call("commitDialogVisible").toBool());
+        QObject* dialog = h.call("commitDialogItem").value<QObject*>();
+        QVERIFY(dialog);
+        QTRY_COMPARE_WITH_TIMEOUT(dialog->property("fileCount").toInt(), 1, 15000);
+        QTRY_VERIFY_WITH_TIMEOUT(
+            dialog->property("diffLineCount").toInt() > 0, 15000);
+
+        QTest::qWait(250);
+        (void)h.window->grabWindow();
+        QTest::qWait(200);
+
+        verifySplitPane(dialog, QStringLiteral("commitSplitBar"),
+                        QStringLiteral("commitFileTree"), h.window);
+        verifySplitDragAndReset(dialog);
+
+        QVERIFY(h.closeCommitDialog());
+    }
+
+    // Same split contract for the comparison dialog (compareFileTree /
+    // compareSplitBar): the two dialogs expose the same API and regressed
+    // together, so they are pinned together.
+    void compareSplitIsRatioDriven() {
+        TempRepo repo;
+        QVERIFY(repo.valid() && repo.init());
+        QVERIFY(repo.write(QStringLiteral("a.txt"), QByteArrayLiteral("one\n")));
+        QVERIFY(repo.addAll() && repo.commit(QStringLiteral("feat: one")));
+        QVERIFY(repo.write(QStringLiteral("b.txt"), QByteArrayLiteral("two\n")));
+        QVERIFY(repo.addAll() && repo.commit(QStringLiteral("feat: two")));
+        QVERIFY(repo.write(QStringLiteral("c.txt"), QByteArrayLiteral("three\n")));
+        QVERIFY(repo.addAll() && repo.commit(QStringLiteral("feat: three")));
+
+        Harness h;
+        QVERIFY2(h.window, qPrintable(h.error));
+        h.window->resize(1200, 800);
+        QTRY_COMPARE_WITH_TIMEOUT(h.window->width(), 1200, 5000);
+
+        QVERIFY(h.setProjectRoot(repo.path()));
+        QTRY_VERIFY_WITH_TIMEOUT(h.call("isRepo").toBool(), 15000);
+        QVERIFY(h.setSubTab(1));
+        QTRY_COMPARE_WITH_TIMEOUT(h.call("logCount").toInt(), 3, 15000);
+
+        const auto pickButtons = [&h]() {
+            (void)h.window->grabWindow();
+            QTest::qWait(60);
+            return visibleItemsNamed(h.window,
+                                     QStringLiteral("gitComparePickButton"));
+        };
+        QTRY_COMPARE_WITH_TIMEOUT(pickButtons().size(), 3, 5000);
+        QList<QQuickItem*> picks = pickButtons();
+        QVERIFY(QMetaObject::invokeMethod(picks.at(0), "clicked"));
+        QTRY_VERIFY(h.call("hasCompareBase").toBool());
+        picks = pickButtons();
+        QVERIFY(QMetaObject::invokeMethod(picks.at(2), "clicked"));
+        QTRY_VERIFY(h.call("compareVisible").toBool());
+        QObject* dialog = h.call("compareItem").value<QObject*>();
+        QVERIFY(dialog);
+        QTRY_COMPARE_WITH_TIMEOUT(h.call("compareFileCount").toInt(), 2, 15000);
+        QTRY_VERIFY_WITH_TIMEOUT(h.call("compareDiffLines").toInt() > 0, 15000);
+
+        QTest::qWait(250);
+        (void)h.window->grabWindow();
+        QTest::qWait(200);
+
+        verifySplitPane(dialog, QStringLiteral("compareSplitBar"),
+                        QStringLiteral("compareFileTree"), h.window);
+        verifySplitDragAndReset(dialog);
+
+        QVERIFY(QMetaObject::invokeMethod(dialog, "close"));
+        QTRY_VERIFY(!h.call("compareVisible").toBool());
     }
 
     void blamesFileLinesFromTheWorkingDiff() {
