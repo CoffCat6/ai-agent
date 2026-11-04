@@ -25,9 +25,11 @@
 #include "core/tools/ToolRegistry.h"
 #include "infrastructure/llm/IAIService.h"
 #include "viewmodels/AgentViewModel.h"
+#include "viewmodels/ChangeBus.h"
 #include "viewmodels/GitViewModel.h"
 #include "viewmodels/ThemeProvider.h"
 #include "viewmodels/SettingsService.h"
+#include "viewmodels/TraceModel.h"
 #include "TestSettingsIsolation.h"
 
 // 测试进程的 QSettings 重定向到临时 INI（见 TestSettingsIsolation.h），
@@ -1321,6 +1323,78 @@ private slots:
         QVERIFY(pool->waitForDone(5000));
         QVERIFY(!QFileInfo::exists(marker));
         QCoreApplication::processEvents();
+    }
+
+    // A1 (hit-locate) 回归：ChangeBus 的 qint64 在 QML 里是 JS number。
+    // 旧代码 value.toLongLong() 抛 TypeError，整条定位链路被吞掉；
+    // 修正为 Number(value) 后必须真的滚到命中行并高亮。
+    void searchRevealLocatesNumericMessageId() {
+        QQmlApplicationEngine engine;
+        engine.rootContext()->setContextProperty("Theme", ThemeProvider::instance());
+        engine.load(QUrl("qrc:/qt/qml/NexusAI/src/ui/main.qml"));
+        QVERIFY(!engine.rootObjects().isEmpty());
+        auto* window = qobject_cast<QQuickWindow*>(engine.rootObjects().first());
+        QVERIFY(window);
+        QTest::qWait(100);
+        auto* page = window->findChild<QObject*>(QStringLiteral("agentChatPage"));
+        auto* transcript =
+            window->findChild<QObject*>(QStringLiteral("transcriptViewport"));
+        QVERIFY(page);
+        QVERIFY(transcript);
+        auto* model = qobject_cast<TraceModel*>(vm->traceModel());
+        QVERIFY(model);
+
+        QVariantList nodes;
+        for (int i = 0; i < 40; ++i) {
+            nodes.append(QVariantMap{{QStringLiteral("id"), QString::number(i)},
+                                     {QStringLiteral("type"), QStringLiteral("user_message")},
+                                     {QStringLiteral("title"),
+                                      QStringLiteral("消息 %1").arg(i)},
+                                     {QStringLiteral("status"), QStringLiteral("completed")},
+                                     {QStringLiteral("messageId"), i + 1},
+                                     {QStringLiteral("timestamp"), i}});
+        }
+        model->resetNodes(nodes);
+        QTRY_COMPARE(transcript->property("count").toInt(), 40);
+        QCOMPARE(page->property("revealHighlightIndex").toInt(), -1);
+
+        // messageId 37 → 第 36 行（0 起）。
+        ChangeBus::instance()->notify(QStringLiteral("search.revealMessage"),
+                                      QVariant::fromValue<qint64>(37));
+        QTRY_COMPARE(page->property("revealHighlightIndex").toInt(), 36);
+        QTRY_VERIFY(transcript->property("scrollOffset").toReal() > 0.0);
+    }
+
+    // 折叠键回归：无 id 的旧/外部 trace 节点（流式中间节点的形态）不得
+    // 再用内容前缀做 key。内容更新后 key 必须保持不变，否则用户刚展开
+    // 的卡片会被下一帧流式增量折回去。
+    void traceDetailKeyIsStableWithoutNodeId() {
+        QQmlApplicationEngine engine;
+        engine.rootContext()->setContextProperty("Theme", ThemeProvider::instance());
+        engine.load(QUrl("qrc:/qt/qml/NexusAI/src/ui/main.qml"));
+        QVERIFY(!engine.rootObjects().isEmpty());
+        auto* window = qobject_cast<QQuickWindow*>(engine.rootObjects().first());
+        QVERIFY(window);
+        QQmlComponent comp(
+            &engine, QUrl("qrc:/qt/qml/NexusAI/src/ui/components/TraceNodeRouter.qml"));
+        QVERIFY2(comp.isReady(), qPrintable(comp.errorString()));
+        QVariantMap data{{QStringLiteral("type"), QStringLiteral("user_message")},
+                         {QStringLiteral("title"), QStringLiteral("消息")},
+                         {QStringLiteral("status"), QStringLiteral("completed")},
+                         {QStringLiteral("content"), QStringLiteral("第一段")}};
+        QObject* router = comp.createWithInitialProperties(
+            {{QStringLiteral("modelData"), data},
+             {QStringLiteral("index"), 0},
+             {QStringLiteral("showProcess"), true},
+             {QStringLiteral("sessionId"), QStringLiteral("s")}});
+        QVERIFY2(router, qPrintable(comp.errorString()));
+        QCOMPARE(router->property("detailKey").toString(),
+                 QStringLiteral("v2:s:0"));
+        data[QStringLiteral("content")] = QStringLiteral("第二段，内容已经完全不同");
+        router->setProperty("modelData", data);
+        QCOMPARE(router->property("detailKey").toString(),
+                 QStringLiteral("v2:s:0"));
+        delete router;
     }
 };
 

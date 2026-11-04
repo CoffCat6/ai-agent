@@ -26,6 +26,13 @@ Window {
     function setProjectRoot(path) { panel.projectRoot = path }
     function projectRoot() { return panel.projectRoot }
     function setFilter(text) { panel.filterText = text }
+    // Search debounce seams: shorten the window in tests, and count how many
+    // real async searches were issued (rapid typing must coalesce to one).
+    function setSearchDebounceMs(ms) { panel.searchDebounceMs = ms }
+    function searchDebounceMs() { return panel.searchDebounceMs }
+    function searchRunCount() { return panel.searchRunCount }
+    function pendingSearchId() { return panel.pendingSearchId }
+    function searchMode() { return panel.searchMode }
     // The ListView's actual model: the tree rows, or search hits in search
     // mode. Assertions about "what the list shows" must read this, not
     // panel.rows, or search-mode results are invisible to the test.

@@ -7,6 +7,7 @@ import NexusAI.ViewModels
 // Agent chat page - main content area with trace view and input
 Item {
     id: root
+    objectName: "agentChatPage"
 
     signal settingsRequested()
     // TopBar 预设菜单的「管理…」：带目标分类打开设置中心。
@@ -47,6 +48,7 @@ Item {
 
             TranscriptViewport {
                 id: transcript
+                objectName: "transcriptViewport"
                 anchors.fill: parent
                 model: AgentVM.traceModel
                 scrollBarColor: Theme.textSecondary
@@ -96,6 +98,9 @@ Item {
                 delegate: TraceNodeRouter {
                     width: transcript.availableWidth
                     showProcess: transcript.showProcess
+                    // 稳定折叠键的会话维度：无 id 的旧节点用
+                    // sessionId + 行序，避免跨会话撞车。
+                    sessionId: transcript.detailSessionKey
                     detailExpandedFn: function(key, def) {
                         return transcript.detailExpanded(key, def)
                     }
@@ -363,7 +368,13 @@ Item {
             function onChanged(key, value) {
                 if (key !== "search.revealMessage")
                     return
-                const messageId = value.toLongLong()
+                // A1 (hit-locate): ChangeBus 传过来的 qint64 在 QML 里是
+                // JS number，没有 QVariant 的 toLongLong()（旧写法会抛
+                // TypeError 并吞掉整条定位链路）。Number() 同时兼容
+                // number 与可转数字的包装值，非有限值按 0 处理。
+                const numeric = Number(value)
+                const messageId = Number.isFinite(numeric)
+                    ? Math.floor(numeric) : 0
                 if (messageId <= 0) {
                     transcript.jumpToBottom()
                     return

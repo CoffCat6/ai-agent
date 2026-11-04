@@ -127,6 +127,8 @@ Item {
     implicitWidth: 400
     implicitHeight: 220
     focusPolicy: Qt.StrongFocus
+    // 图表本身不是控件，显式声明可进入 Tab 焦点链，键盘左右键才有入口。
+    activeFocusOnTab: true
 
     Keys.onLeftPressed: (event) => {
         root.keyIndex = root.stepHighlight(-1)
@@ -335,4 +337,5 @@ Item {
     Accessible.role: Accessible.Chart
     Accessible.name: qsTr("每日 Token 走势折线图")
     Accessible.description: root.accessSummary
+    Accessible.focusable: true
 }

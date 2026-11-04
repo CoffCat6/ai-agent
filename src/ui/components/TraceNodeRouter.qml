@@ -9,12 +9,15 @@ import NexusAI.ViewModels
 // 保证会话切换后折叠态不丢。
 Item {
     id: root
+    objectName: "traceNodeRouter"
 
     required property var modelData
     required property int index
 
     // 页面级"显示思考过程"总开关。
     property bool showProcess: true
+    // 当前会话 id。无 id 的旧节点的折叠键用它做命名空间，跨会话不撞车。
+    property string sessionId: ""
     // 折叠状态读写回调（来自页面 ListView）。
     property var detailExpandedFn
     property var toggleDetailFn
@@ -55,9 +58,19 @@ Item {
         Math.max(Theme.spaceXl, (width - Theme.maxContentWidth) / 2)
     readonly property real innerWidth: Math.max(0, width - hPad * 2)
 
-    // 折叠 key：有 id 用 id；流式中间节点无 id 时用内容派生 key。
+    // 折叠 key：稳定优先。
+    //   1) 节点 id（core 的 trace 节点都有 UUID）：流式更新内容变化也不变；
+    //   2) 无 id 的旧/外部节点：v2:sessionId:index。trace 只追加不重排，
+    //      行序在会话内稳定，切会话由 sessionId 隔开。
+    // 旧版本的 `type:index:内容前缀` 键在流式增量下会随内容变化，导致
+    // “刚要展开就被折回去”；这里额外暴露 legacyDetailKey 供页面回退读取。
     readonly property string detailKey: {
-        const id = modelData.id || ""
+        const id = String(modelData.id || "")
+        if (id !== "") return id
+        return "v2:" + root.sessionId + ":" + index
+    }
+    readonly property string legacyDetailKey: {
+        const id = String(modelData.id || "")
         if (id !== "") return id
         const detail = nodeType === "thinking"
             ? (modelData.reasoning || "")
@@ -69,7 +82,7 @@ Item {
         : ((modelData.args || "") !== "" ? modelData.args : (modelData.result || ""))
     readonly property bool detailDefault: detailText.length <= 400
     readonly property bool processExpanded: detailExpandedFn !== undefined
-        && detailExpandedFn(detailKey, detailDefault)
+        && detailExpandedFn(detailKey, detailDefault, legacyDetailKey)
 
     // 消息块之间的垂直节奏（docs/19 §4.5）：用户/助手块间距更大，
     // 同侧连续过程卡片更紧凑。首行不留额外间距。
@@ -147,7 +160,8 @@ Item {
             expanded: root.processExpanded
             onToggleRequested: {
                 if (root.toggleDetailFn !== undefined)
-                    root.toggleDetailFn(root.detailKey, root.detailDefault)
+                    root.toggleDetailFn(root.detailKey, root.detailDefault,
+                                        root.legacyDetailKey)
             }
         }
     }

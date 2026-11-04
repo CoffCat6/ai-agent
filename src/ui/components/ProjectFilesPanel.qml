@@ -112,6 +112,15 @@ Item {
     // filter box useful without unfolding anything first.
     property var searchResults: []
     readonly property bool searchMode: filterNeedle.length > 0
+    // 搜索防抖：只有输入停顿 180ms 后才发起一次真实的全项目递归搜索。
+    // 逐键同步调用 searchPaths 在大仓库里会把 GUI 线程卡成幻灯片；这个
+    // 窗口既覆盖连续键入，也不会让用户觉得"停下了还不搜"。
+    property int searchDebounceMs: 180
+    // 测试 seam / 诊断：真正发起的异步搜索次数（不含被 debounce 合并的键）。
+    property int searchRunCount: 0
+    // 最近一次发起、仍被接受的搜索序号。换输入时立即清零，VM 的序号
+    // 校验再兜一层，防止后发先至的旧结果覆盖新结果。
+    property int pendingSearchId: 0
 
     readonly property bool hasProject: projectRoot.length > 0
     readonly property string previewError: previewData.error !== undefined
@@ -315,6 +324,9 @@ Item {
         ProjectFileVM.root = projectRoot
         closePreview()
         rows = []
+        searchDebounce.stop()
+        pendingSearchId = 0
+        searchResults = []
         // Read projectRoot, not hasProject: inside a property-change handler
         // the derived binding has not re-evaluated yet, so hasProject still
         // holds its previous value and the rebuild was skipped.
@@ -326,20 +338,50 @@ Item {
         if (projectRoot.length > 0) rebuild()
     }
 
+    // 输入变化只更新树视图并重启防抖；真正的递归搜索最多每 180ms
+    // 发起一次，快速连打 N 个字符只会产生一次搜索。
     onFilterTextChanged: {
         filterNeedle = filterText ? filterText.toLowerCase().trim() : ""
         rebuild()
-        if (searchMode) runSearch()
+        pendingSearchId = 0
+        if (searchMode) {
+            searchDebounce.restart()
+        } else {
+            searchDebounce.stop()
+            searchResults = []
+        }
     }
 
+    // 防抖到期后发起异步搜索。结果经 searchFinished 回传；不用同步
+    // search()，避免一次大仓库递归阻塞输入。
     function runSearch() {
-        searchResults = ProjectFileVM.search(filterNeedle)
+        if (!hasProject || !searchMode) {
+            searchResults = []
+            return
+        }
+        searchRunCount += 1
+        pendingSearchId = ProjectFileVM.searchAsync(filterNeedle, 50)
+    }
+
+    Timer {
+        id: searchDebounce
+        interval: root.searchDebounceMs
+        repeat: false
+        onTriggered: root.runSearch()
     }
 
     // Rebuild when a folder's contents change on disk (after refresh()).
     Connections {
         target: ProjectFileVM
         function onRootChanged() { if (root.projectRoot.length > 0) root.rebuild() }
+
+        // 异步搜索结果。序号 + 查询词双重校验：用户已经改了输入或发起了
+        // 更新的搜索时，旧结果直接丢弃（后发先至保护）。
+        function onSearchFinished(requestId, query, results) {
+            if (requestId !== root.pendingSearchId) return
+            if (!root.searchMode || String(query) !== root.filterNeedle) return
+            root.searchResults = results
+        }
     }
 
     // The panel itself stays visible in both states: a local chat shows the

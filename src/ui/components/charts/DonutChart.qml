@@ -122,6 +122,8 @@ Item {
     implicitWidth: 360
     implicitHeight: 220
     focusPolicy: Qt.StrongFocus
+    // 图表本身不是控件，显式声明可进入 Tab 焦点链，键盘左右键才有入口。
+    activeFocusOnTab: true
 
     Keys.onLeftPressed: (event) => {
         root.keyIndex = root.stepHighlight(-1)
@@ -382,4 +384,5 @@ Item {
     Accessible.role: Accessible.Chart
     Accessible.name: qsTr("模型 Token 分布环形图")
     Accessible.description: root.accessSummary
+    Accessible.focusable: true
 }

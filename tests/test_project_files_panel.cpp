@@ -229,8 +229,53 @@ private slots:
         QTRY_COMPARE(h.call("rowCount").toInt(), 1);
         QCOMPARE(h.call("rowNames").toStringList().first(), QStringLiteral("beta.txt"));
 
-        QVERIFY(h.invoke1("setFilter", QString()));
+QVERIFY(h.invoke1("setFilter", QString()));
         QTRY_COMPARE(h.call("rowCount").toInt(), 3);
+    }
+
+    // B5-1: 搜索必须防抖 + 异步。快速连打多个字符只允许发起一次真实递归
+    // 搜索；最终展示的必须是最后一次查询的结果。旧实现每个键同步跑一遍
+    // searchPaths，大仓库会把输入卡成幻灯片。
+    void rapidTypingSearchesOnceAndShowsFinalResult() {
+        writeFile("deep/target-only.txt", "x\n");
+        writeFile("readme.md", "r\n");
+
+        Harness h;
+        QVERIFY2(h.window, qPrintable(h.error));
+        QVERIFY(h.invoke1("setProjectRoot", m_dir->path()));
+        QTRY_VERIFY(h.call("rowCount").toInt() >= 2);
+        QVERIFY(h.invoke1("setSearchDebounceMs", 40));
+
+        // 连续输入（每个都是完整的一次 setFilter），中间不等待。
+        const QStringList keystrokes = {
+            QStringLiteral("d"), QStringLiteral("de"), QStringLiteral("dee"),
+            QStringLiteral("deep"), QStringLiteral("deep/"),
+            QStringLiteral("deep/t"), QStringLiteral("deep/ta"),
+            QStringLiteral("deep/tar"), QStringLiteral("deep/targ"),
+            QStringLiteral("deep/targe"), QStringLiteral("deep/target")};
+        for (const QString& text : keystrokes)
+            QVERIFY(h.invoke1("setFilter", text));
+
+        // 防抖窗口内一次都没发出去。
+        QCOMPARE(h.call("searchRunCount").toInt(), 0);
+        // 停手后只发一次，并且结果来自最后一次查询。
+        QTRY_COMPARE(h.call("searchRunCount").toInt(), 1);
+        QTRY_COMPARE(h.call("rowCount").toInt(), 1);
+        QCOMPARE(h.call1("rowPathAt", 0).toString(),
+                 QStringLiteral("deep/target-only.txt"));
+
+        // 再多等几个窗口，确认没有重复搜索。
+        QTest::qWait(150);
+        QCOMPARE(h.call("searchRunCount").toInt(), 1);
+
+        // 清空输入必须取消排队中的搜索，回到普通树视图。
+        QVERIFY(h.invoke1("setFilter", QStringLiteral("deep-ta")));
+        QVERIFY(h.invoke1("setFilter", QString()));
+        const int runsAfterClear = h.call("searchRunCount").toInt();
+        QTest::qWait(150);
+        QCOMPARE(h.call("searchRunCount").toInt(), runsAfterClear);
+        QCOMPARE(h.call("searchMode").toBool(), false);
+        QVERIFY(h.call("rowCount").toInt() >= 2);
     }
 
     // The preview reads the file and reports its own state.

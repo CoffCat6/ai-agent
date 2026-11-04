@@ -76,6 +76,16 @@ public:
     // yields an empty list - the tree itself is the "show everything" view.
     // Not cached: a search reflects the tree as it is right now.
     Q_INVOKABLE QVariantList search(const QString& query, int maxResults = 50);
+    // Asynchronous recursive search for the sidebar. The walk runs on the
+    // global thread pool and reports back via searchFinished(); the request id
+    // is monotonic, so callers can drop stale results when the user keeps
+    // typing. Returns the id of this request (always > 0).
+    // Kept separate from search(): unit tests and non-UI callers still want
+    // the synchronous result, while the panel must not block the GUI thread.
+    Q_INVOKABLE int searchAsync(const QString& query, int maxResults = 50);
+    // Invalidate every in-flight search. Later completions are dropped by the
+    // request-id check; this just makes the current request "last" too.
+    Q_INVOKABLE void cancelPendingSearch();
     // Absolute path for the given relPath, empty when it would escape root.
     // Exposed mainly so a test (and a future "copy path" button) can assert
     // the containment rule without opening anything.
@@ -87,9 +97,17 @@ public:
 
 signals:
     void rootChanged();
+    // Async search completion. requestId matches the value returned by
+    // searchAsync(); query is echoed so the UI can double-check it against the
+    // current input. Only the newest request is actually emitted.
+    void searchFinished(int requestId, const QString& query, const QVariantList& results);
 
 private:
     QString m_root;
+    // Monotonic async-search generation. Worker threads capture their own id;
+    // the GUI-thread delivery lambda compares it before emitting, which is the
+    // out-of-order guard (older walks can finish after newer ones).
+    quint64 m_searchGeneration{0};
     // Key: relPath (root is fixed per cache lifetime). QVariantList because
     // it is handed to QML as-is.
     QHash<QString, QVariantList> m_cache;

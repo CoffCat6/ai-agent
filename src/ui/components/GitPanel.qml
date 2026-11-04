@@ -1589,8 +1589,17 @@ Item {
         closePolicy: Popup.CloseOnEscape
         background: DialogBackground {}
 
+        // 打开即把焦点移到"取消"：确认提交是写操作，默认焦点不落在
+        // Enter 即提交的主按钮上。Dialog 本身不是 Item，role 挂在
+        // contentItem 上供读屏识别。
+        onOpened: confirmCancelButton.forceActiveFocus()
+
         contentItem: ColumnLayout {
             spacing: 10
+
+            Accessible.role: Accessible.Dialog
+            Accessible.name: qsTr("确认提交对话框")
+            Accessible.description: qsTr("确认提交已暂存的改动")
 
             Text {
                 Layout.fillWidth: true
@@ -1660,6 +1669,8 @@ Item {
                 Item { Layout.fillWidth: true }
 
                 AppButton {
+                    id: confirmCancelButton
+                    objectName: "gitCommitConfirmCancel"
                     text: qsTr("取消")
                     onClicked: commitConfirm.close()
                 }

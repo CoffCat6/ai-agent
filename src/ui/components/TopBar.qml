@@ -112,6 +112,7 @@ Rectangle {
         // 图标随状态切换：展开态画"侧栏填实 + 向内箭头"（点它=收起），
         // 收起态画"侧栏留空 + 向外箭头"（点它=展开）。
         IconButton {
+            id: sidebarToggle
             icon: AgentVM.isSidebarExpanded ? "sidebar-collapse" : "sidebar-expand"
             iconSize: 20
             restIconColor: Theme.textPrimary
@@ -327,10 +328,16 @@ Rectangle {
         Text {
             id: sessionTitleLabel
             objectName: "topBarSessionTitle"
+            // 标题可用起点：RowLayout 左内边距(8) + 侧栏按钮宽度 + 标题
+            // 左内边距(12)；项目徽标可见时用它的布局几何，避免读自身 x
+            // 形成 `width -> x -> width` 绑定环。
+            readonly property real leadingEdge: projectBadge.visible
+                ? projectBadge.x + projectBadge.width + 12
+                : 8 + sidebarToggle.width + 12
             Layout.fillWidth: true
             Layout.leftMargin: 12
             Layout.rightMargin: 12
-            Layout.maximumWidth: Math.max(80, root.width / 2 - x - 16)
+            Layout.maximumWidth: Math.max(80, root.width / 2 - leadingEdge - 16)
             text: AgentVM.currentSessionId.length > 0
                 ? (chatTitle || qsTr("新会话"))
                 : qsTr("新对话")

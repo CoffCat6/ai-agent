@@ -6,8 +6,12 @@
 #include <QDir>
 #include <QFileInfo>
 #include <QJSEngine>
+#include <QMetaObject>
+#include <QPointer>
 #include <QProcess>
 #include <QProcessEnvironment>
+#include <QRunnable>
+#include <QThreadPool>
 #include <QUrl>
 #include <QDebug>
 #include <windows.h>
@@ -215,6 +219,47 @@ QVariantList ProjectFileViewModel::search(const QString& query, int maxResults) 
                                {QStringLiteral("isDir"), hit.isDir}});
     }
     return out;
+}
+
+int ProjectFileViewModel::searchAsync(const QString& query, int maxResults) {
+    const quint64 requestId = ++m_searchGeneration;
+    const int id = static_cast<int>(requestId);
+    const QString root = m_root;
+
+    // Snapshot root: a root switch while the walk runs must not mix projects.
+    // QPointer keeps the completion safe if the view model is torn down first.
+    QPointer<ProjectFileViewModel> self(this);
+    QThreadPool::globalInstance()->start(QRunnable::create(
+        [self, root, query, maxResults, requestId, id]() {
+            QVariantList results;
+            if (!root.isEmpty() && maxResults > 0) {
+                const QVector<ProjectFileIndex::SearchHit> hits =
+                    ProjectFileIndex::searchPaths(root, query, maxResults);
+                results.reserve(hits.size());
+                for (const auto& hit : hits) {
+                    results.append(QVariantMap{
+                        {QStringLiteral("relPath"), hit.relPath},
+                        {QStringLiteral("isDir"), hit.isDir}});
+                }
+            }
+            if (!self)
+                return;
+            // Deliver on the VM's (GUI) thread; drop if a newer search has
+            // been issued in the meantime (后发先至保护).
+            QMetaObject::invokeMethod(
+                self.data(),
+                [self, requestId, id, query, results]() {
+                    if (!self || requestId != self->m_searchGeneration)
+                        return;
+                    emit self->searchFinished(id, query, results);
+                },
+                Qt::QueuedConnection);
+        }));
+    return id;
+}
+
+void ProjectFileViewModel::cancelPendingSearch() {
+    ++m_searchGeneration;
 }
 
 QVariantMap ProjectFileViewModel::preview(const QString& relPath, int maxBytes) {

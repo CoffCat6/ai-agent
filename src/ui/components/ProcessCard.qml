@@ -192,7 +192,7 @@ Item {
                 width: parent.width
                 height: headerRow.implicitHeight
 
-                Row {
+                RowLayout {
                     id: headerRow
                     anchors.left: parent.left
                     anchors.right: chevron.left
@@ -200,9 +200,9 @@ Item {
 
                     // 状态点
                     Rectangle {
-                        anchors.verticalCenter: parent.verticalCenter
-                        width: 8
-                        height: 8
+                        Layout.alignment: Qt.AlignVCenter
+                        Layout.preferredWidth: 8
+                        Layout.preferredHeight: 8
                         radius: 4
                         color: root.accent
 
@@ -215,7 +215,7 @@ Item {
                     }
 
                     Text {
-                        anchors.verticalCenter: parent.verticalCenter
+                        Layout.alignment: Qt.AlignVCenter
                         text: root.label
                         color: Theme.textSecondary
                         font.pixelSize: Theme.fontSizeCaption
@@ -224,7 +224,7 @@ Item {
                     }
 
                     Text {
-                        anchors.verticalCenter: parent.verticalCenter
+                        Layout.alignment: Qt.AlignVCenter
                         visible: root.badgeText !== ""
                         text: root.badgeText
                         color: root.accent
@@ -233,31 +233,29 @@ Item {
                     }
 
                     Text {
-                        anchors.verticalCenter: parent.verticalCenter
+                        objectName: "processCardHeaderTitle"
+                        Layout.alignment: Qt.AlignVCenter
                         // 工具名 / 参数摘要作为标题
                         text: root.modelData.title || ""
                         color: Theme.textPrimary
                         font.pixelSize: Theme.fontSizeCaption
                         font.family: Theme.fontMono
                         elide: Text.ElideRight
-                        // 徽章隐藏时不占 Row 宽度，扣减也要跟着消失，否则
-                        // 标题会白白缩掉一段。
-                        width: Math.max(40, headerRow.width - x
-                                        - (sourceBadge.visible ? sourceBadge.width + Theme.spaceSm : 0)
-                                        - (stopChip.visible ? stopChip.width + Theme.spaceSm : 0)
-                                        - (evidenceChip.visible ? evidenceChip.width + Theme.spaceSm : 0)
-                                        - (proposalBadge.visible ? proposalBadge.width + Theme.spaceSm : 0)
-                                        - 8)
+                        // 由 RowLayout 分配剩余宽度：不再用
+                        // `headerRow.width - x - ...` 反推自身宽度，消除
+                        // width -> x -> width 绑定环；芯片显隐会自然重排。
+                        Layout.fillWidth: true
+                        Layout.minimumWidth: 40
                     }
 
                     // 检索来源徽章：让「这次查询发给了谁」在会话里直接可见，
                     // 失败时同样是重要信息（哪家失败）。
                     Rectangle {
                         id: sourceBadge
-                        anchors.verticalCenter: parent.verticalCenter
+                        Layout.alignment: Qt.AlignVCenter
                         visible: root.source !== ""
-                        width: sourceLabelText.implicitWidth + 10
-                        height: 15
+                        Layout.preferredWidth: sourceLabelText.implicitWidth + 10
+                        Layout.preferredHeight: 15
                         radius: 3
                         color: Theme.brandPrimary
                         opacity: 0.14
@@ -278,10 +276,10 @@ Item {
                     Rectangle {
                         id: stopChip
                         objectName: "subagentStopChip"
-                        anchors.verticalCenter: parent.verticalCenter
+                        Layout.alignment: Qt.AlignVCenter
                         visible: root.isSpawnAgent && root.status === "running"
-                        width: stopText.implicitWidth + 14
-                        height: 17
+                        Layout.preferredWidth: stopText.implicitWidth + 14
+                        Layout.preferredHeight: 17
                         radius: 3
                         color: stopMA.containsMouse
                             ? Qt.lighter(Theme.statusDanger, 1.4) : Theme.statusDanger
@@ -312,10 +310,10 @@ Item {
                     Rectangle {
                         id: evidenceChip
                         objectName: "subagentEvidenceChip"
-                        anchors.verticalCenter: parent.verticalCenter
+                        Layout.alignment: Qt.AlignVCenter
                         visible: root.evidencePath !== ""
-                        width: evidenceText.implicitWidth + 14
-                        height: 17
+                        Layout.preferredWidth: evidenceText.implicitWidth + 14
+                        Layout.preferredHeight: 17
                         radius: 3
                         color: evidenceMA.containsMouse
                             ? Qt.lighter(Theme.brandPrimary, 1.4) : Theme.brandPrimary
@@ -344,10 +342,10 @@ Item {
                     // 这次子代理起草了几处修改。
                     Rectangle {
                         id: proposalBadge
-                        anchors.verticalCenter: parent.verticalCenter
+                        Layout.alignment: Qt.AlignVCenter
                         visible: root.hasSubagentProposals
-                        width: proposalBadgeText.implicitWidth + 10
-                        height: 15
+                        Layout.preferredWidth: proposalBadgeText.implicitWidth + 10
+                        Layout.preferredHeight: 15
                         radius: 3
                         color: Theme.brandPrimary
                         opacity: 0.14

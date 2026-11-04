@@ -54,7 +54,7 @@ public:
     // A1 (hit-locate): the first row whose persisted messages.id (stored as
     // the node's `messageId`) matches; -1 when absent. Only user_message
     // nodes carry a messageId today, so assistant-only hits fall through.
-    int rowOfMessageId(qint64 messageId) const;
+    Q_INVOKABLE int rowOfMessageId(qint64 messageId) const;
     // 该类型的最后一行（无命中返回 -1）。docs/20 §3.1/§3.2：消息级操作按钮
     // 只应在「该类型的最后一条」上显示 —— finishTask 会在助手回复（summary）
     // 之后追加 metrics 节点，所以整表末行恒为 metrics，不能用 index==count-1。

@@ -74,6 +74,22 @@ Window {
         }
     }
 
+    // 绑定环回归探针：表头改为 RowLayout 后，标题宽度由布局分配，
+    // 必须保持正宽（不能被芯片挤成 0），且不再读自身 x。
+    function headerTitleGeometry() {
+        const card = getChild(contentItem, "card")
+        if (!card) return { found: false }
+        const title = getChild(card, "processCardHeaderTitle")
+        if (!title) return { found: true, titleFound: false }
+        const row = title.parent
+        return {
+            found: true,
+            titleFound: true,
+            width: title.width,
+            rowWidth: row ? row.width : -1
+        }
+    }
+
     function getChild(item, name) {
         for (let i = 0; i < item.children.length; i++) {
             const child = item.children[i]

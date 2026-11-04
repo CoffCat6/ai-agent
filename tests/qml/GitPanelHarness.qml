@@ -155,4 +155,15 @@ Window {
     function requestDraft() { panel.requestDraft() }
     function applyDraft(ok, text, error) { panel.applyDraft(ok, text, error) }
     function setDraftCommitMessage(text) { panel.commitMessage = text }
+
+    // 主确认对话框的无障碍/初始焦点探针：Dialog 不是 Item，role 挂在
+    // contentItem；打开后焦点必须落在"取消"（写操作不默认 Enter 提交）。
+    function commitConfirmRole() {
+        return panel.commitConfirmItem.contentItem.Accessible.role
+    }
+    function commitConfirmFocusName() {
+        const item = panel.commitConfirmItem.contentItem
+        const active = item ? item.Window.window.activeFocusItem : null
+        return active ? active.objectName : ""
+    }
 }
