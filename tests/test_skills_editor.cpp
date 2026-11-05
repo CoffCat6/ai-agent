@@ -85,6 +85,13 @@ private slots:
     void removeRejectsLinkInsideRoot();
     void rejectsDirectoryLinkOutsideRoot();
     void rejectsFileLinkOutsideRoot();
+    // docs/40 §2.1-2.3：结构化 code、Windows id、symlink 保存防护。
+    void saveLoadRemoveReportOkCode();
+    void saveReportsExistsAndSizeCodes();
+    void saveReportsMetadataAndToolCodes();
+    void saveRejectsWindowsInvalidIds();
+    void removeMissingReportsNotFound();
+    void saveRejectsSymlinkSkillFile();
 };
 
 void TestSkillsEditor::validateIdAcceptsWellFormed() {
@@ -460,6 +467,169 @@ void TestSkillsEditor::rejectsFileLinkOutsideRoot() {
     QVERIFY(!SkillEditorService::remove(root.path(), QStringLiteral("linked"), &error));
     QVERIFY(!error.isEmpty());
     QVERIFY(QFileInfo(target).isFile());
+
+    QFile::remove(linkPath);
+}
+
+// docs/40 §2.1：成功路径必须回填 "ok"，且不破坏 error 语义。
+void TestSkillsEditor::saveLoadRemoveReportOkCode() {
+    QTemporaryDir root;
+    QVERIFY(root.isValid());
+
+    SkillEditorService::Draft draft;
+    draft.id = QStringLiteral("coded");
+    draft.name = QStringLiteral("coded");
+    draft.body = QStringLiteral("body\n");
+
+    QString error = QStringLiteral("stale");
+    QString code = QStringLiteral("stale");
+    QVERIFY2(SkillEditorService::save(root.path(), draft, false, &error, &code),
+             qPrintable(error));
+    QVERIFY(error.isEmpty());
+    QCOMPARE(code, QStringLiteral("ok"));
+
+    SkillEditorService::Draft loaded;
+    code = QStringLiteral("stale");
+    QVERIFY2(SkillEditorService::load(root.path(), draft.id, &loaded, &error, &code),
+             qPrintable(error));
+    QCOMPARE(code, QStringLiteral("ok"));
+
+    code = QStringLiteral("stale");
+    QVERIFY2(SkillEditorService::remove(root.path(), draft.id, &error, &code),
+             qPrintable(error));
+    QCOMPARE(code, QStringLiteral("ok"));
+}
+
+void TestSkillsEditor::saveReportsExistsAndSizeCodes() {
+    QTemporaryDir root;
+    QVERIFY(root.isValid());
+
+    SkillEditorService::Draft draft;
+    draft.id = QStringLiteral("twice");
+    draft.body = QStringLiteral("body\n");
+    QString error;
+    QString code;
+    QVERIFY2(SkillEditorService::save(root.path(), draft, false, &error, &code),
+             qPrintable(error));
+    QCOMPARE(code, QStringLiteral("ok"));
+
+    // 第二次未覆盖：exists（不再靠中文文案判断）。
+    error.clear();
+    code.clear();
+    QVERIFY(!SkillEditorService::save(root.path(), draft, false, &error, &code));
+    QCOMPARE(code, QStringLiteral("exists"));
+    QVERIFY(!error.isEmpty());
+
+    SkillEditorService::Draft oversized;
+    oversized.id = QStringLiteral("oversized");
+    oversized.body = QString(SkillEditorService::kMaxFileBytes + 1, QLatin1Char('a'));
+    error.clear();
+    code.clear();
+    QVERIFY(!SkillEditorService::save(root.path(), oversized, false, &error, &code));
+    QCOMPARE(code, QStringLiteral("too_large"));
+    QVERIFY(!error.isEmpty());
+}
+
+void TestSkillsEditor::saveReportsMetadataAndToolCodes() {
+    QTemporaryDir root;
+    QVERIFY(root.isValid());
+
+    SkillEditorService::Draft draft;
+    draft.id = QStringLiteral("fields");
+    draft.body = QStringLiteral("body\n");
+    QString error;
+    QString code;
+
+    draft.name = QStringLiteral("bad\nname");
+    QVERIFY(!SkillEditorService::save(root.path(), draft, false, &error, &code));
+    QCOMPARE(code, QStringLiteral("invalid_metadata"));
+
+    draft.name = QStringLiteral("fine");
+    draft.allowedTools = {QStringLiteral("a,b")};
+    error.clear();
+    code.clear();
+    QVERIFY(!SkillEditorService::save(root.path(), draft, false, &error, &code));
+    QCOMPARE(code, QStringLiteral("invalid_tools"));
+}
+
+// docs/40 §2.2：尾点/尾空格与 Windows 保留设备名（含带扩展名形态）。
+void TestSkillsEditor::saveRejectsWindowsInvalidIds() {
+    QTemporaryDir root;
+    QVERIFY(root.isValid());
+
+    for (const QString& id : {QStringLiteral("review."),
+                              QStringLiteral("review "),
+                              QStringLiteral("CON"),
+                              QStringLiteral("con.txt"),
+                              QStringLiteral("PRN"),
+                              QStringLiteral("NUL"),
+                              QStringLiteral("COM1"),
+                              QStringLiteral("lpt9")}) {
+        SkillEditorService::Draft draft;
+        draft.id = id;
+        draft.body = QStringLiteral("body\n");
+        QString error;
+        QString code;
+        QVERIFY2(!SkillEditorService::save(root.path(), draft, false, &error, &code),
+                 qPrintable(id));
+        QCOMPARE(code, QStringLiteral("invalid_id"));
+        QVERIFY2(!error.isEmpty(), qPrintable(id));
+    }
+
+    // 错误文案要说明原因，便于编辑器提示。
+    QString error;
+    QVERIFY(!SkillEditorService::validateId(QStringLiteral("review."), &error));
+    QVERIFY2(error.contains(QStringLiteral("结尾")), qPrintable(error));
+    QVERIFY(!SkillEditorService::validateId(QStringLiteral("CON"), &error));
+    QVERIFY2(error.contains(QStringLiteral("保留")), qPrintable(error));
+}
+
+void TestSkillsEditor::removeMissingReportsNotFound() {
+    QTemporaryDir root;
+    QVERIFY(root.isValid());
+
+    QString error;
+    QString code;
+    QVERIFY(!SkillEditorService::remove(root.path(), QStringLiteral("missing"),
+                                        &error, &code));
+    QCOMPARE(code, QStringLiteral("not_found"));
+    QVERIFY(!error.isEmpty());
+}
+
+// docs/40 §2.3：根内 symlink 指向另一个技能也不得写入/覆盖目标。
+void TestSkillsEditor::saveRejectsSymlinkSkillFile() {
+    QTemporaryDir root;
+    QVERIFY(root.isValid());
+
+    SkillEditorService::Draft victim;
+    victim.id = QStringLiteral("victim");
+    victim.body = QStringLiteral("victim body\n");
+    QString error;
+    QString code;
+    QVERIFY2(SkillEditorService::save(root.path(), victim, false, &error, &code),
+             qPrintable(error));
+
+    QVERIFY(QDir().mkpath(QDir(root.path()).filePath(QStringLiteral("alias"))));
+    const QString linkPath =
+        QDir(root.path()).filePath(QStringLiteral("alias/SKILL.md"));
+    const QString target = skillFilePath(root.path(), QStringLiteral("victim"));
+    const QByteArray before = readFile(target);
+    if (!makeFileLink(linkPath, target))
+        QSKIP("文件符号链接创建不可用（需要 SeCreateSymbolicLinkPrivilege）");
+
+    SkillEditorService::Draft attack;
+    attack.id = QStringLiteral("alias");
+    attack.name = QStringLiteral("attack");
+    attack.body = QStringLiteral("overwritten\n");
+
+    error.clear();
+    code.clear();
+    QVERIFY(!SkillEditorService::save(root.path(), attack, true, &error, &code));
+    QCOMPARE(code, QStringLiteral("symlink"));
+    QVERIFY(!error.isEmpty());
+    QCOMPARE(readFile(target), before);
+    QVERIFY(!readFile(target).contains("overwritten"));
+    QVERIFY(QFileInfo(linkPath).isSymLink());
 
     QFile::remove(linkPath);
 }

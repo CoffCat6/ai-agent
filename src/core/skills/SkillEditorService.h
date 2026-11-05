@@ -50,18 +50,24 @@ public:
     // 读取 `<skillsRoot>/<id>/SKILL.md`。宽松解析 frontmatter（缺失/畸形
     // 时回退为空值，不报错），body 保留 frontmatter 之后的原始内容。
     // 文件不存在、超出大小上限或 canonical 越界时返回 false。
+    //
+    // code 为可选的结构化结果（nullptr 时忽略）：成功为 "ok"，失败按
+    // 失败点设置 invalid_id / too_large / invalid_root / root_unavailable /
+    // not_found / not_file / symlink / outside_root / io_error。
     static bool load(const QString& skillsRoot, const QString& id, Draft* out,
-                     QString* error);
+                     QString* error, QString* code = nullptr);
 
     // 创建或覆盖 `<skillsRoot>/<id>/SKILL.md`。
     // 文件已存在且 overwrite == false 时返回 false；overwrite == true 时
     // 先把旧文件复制为 SKILL.md.bak，再原子写入新内容。
+    // code 同上，另含 exists / invalid_metadata / invalid_tools。
     static bool save(const QString& skillsRoot, const Draft& draft, bool overwrite,
-                     QString* error);
+                     QString* error, QString* code = nullptr);
 
     // 删除 `<skillsRoot>/<id>/SKILL.md`，并在技能目录为空时删除该目录；
     // 永远不会删除 skillsRoot 本身。
-    static bool remove(const QString& skillsRoot, const QString& id, QString* error);
+    static bool remove(const QString& skillsRoot, const QString& id, QString* error,
+                       QString* code = nullptr);
 };
 
 } // namespace NexusAI

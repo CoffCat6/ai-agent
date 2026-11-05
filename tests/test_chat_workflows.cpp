@@ -926,6 +926,43 @@ private slots:
         vm->setModelConfigurator({});
     }
 
+    // W7-B：未知 $skill 只提示不阻断；解析成功或清空后提示消失。
+    void skillUnknownHintFollowsDraft() {
+        QTemporaryDir project;
+        QVERIFY(project.isValid());
+        QVERIFY(writeBaseSkills(project.path()));
+        RecordingService service;
+        AIAgent agent;
+        vm->setModelConfigurator([&](AIAgent* target, const QVariantMap&) {
+            target->setLLMService(&service);
+        });
+        vm->setAgent(&agent);
+        agent.setActiveProject(QStringLiteral("demo"), QStringLiteral("Demo"),
+                               project.path());
+        vm->reloadSkills();
+
+        SlashHarness ui;
+        QVERIFY2(ui.load(), qPrintable(ui.error));
+        auto* hint = ui.window->findChild<QQuickItem*>(
+            QStringLiteral("skillUnknownHint"));
+        QVERIFY(hint);
+
+        ui.setInput("$nope");
+        QVERIFY(hint->isVisible());
+        QVERIFY2(hint->property("text").toString().contains(
+                     QStringLiteral("$nope")),
+                 qPrintable(hint->property("text").toString()));
+
+        ui.setInput("$review");
+        QVERIFY(!hint->isVisible());
+
+        ui.setInput("");
+        QVERIFY(!hint->isVisible());
+
+        vm->setAgent(nullptr);
+        vm->setModelConfigurator({});
+    }
+
     // 发送走 startTaskWithSkills：技能正文进入系统提示，旧三参 startTask 不动。
     void skillSendUsesStartTaskWithSkills() {
         QTemporaryDir project;

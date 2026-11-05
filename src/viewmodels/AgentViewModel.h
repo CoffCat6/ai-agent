@@ -387,6 +387,10 @@ public:
     // {id,name,description,body,source,sourceId,sourcePath,truncated,
     //  allowedTools,allowedToolsSpecified}。
     Q_INVOKABLE QVariantList resolveSkills(const QString& text);
+    // docs/40 §2.5：正文里无法按 id/显示名解析的 `$name`（去重、大小写
+    // 不敏感、保持首次出现顺序）。不受 maxPerMessage 上限影响；`$dir/file`
+    // 不算 token；skills/enabled=false 时返回空。
+    Q_INVOKABLE QStringList unknownSkillTokens(const QString& text);
 
     // ── docs/37 W5-1: SkillsPage 设置项 ─────────────────
     // 读写都落到 settings 键 skills/*；这里不新增 Q_PROPERTY，页面在
@@ -408,15 +412,16 @@ public:
     // QML 调用的 C++ 成员一律显式传参（QML 无法使用 C++ 默认参数）。
     // source = "user" | "project"；未知来源/项目根为空时返回空串。
     Q_INVOKABLE QString skillRootForSource(const QString& source) const;
-    // 读取已有技能：{ok,error,id,name,description,body,allowedTools}。
-    // allowedTools 为字符串数组；文件不存在/项目根为空时 ok=false。
+    // 读取已有技能：{ok,error,code,id,name,description,body,allowedTools}。
+    // allowedTools 为字符串数组；文件不存在/项目根为空时 ok=false，code 为
+    // 结构化失败原因（成功为 "ok"）。
     Q_INVOKABLE QVariantMap skillDraft(const QString& id,
                                        const QString& source) const;
-    // 保存草稿：{ok,error,id}。overwrite=false 且文件已存在时返回
-    // ok=false、error 含「已存在」；成功后重扫技能列表。
+    // 保存草稿：{ok,error,code,id}。overwrite=false 且文件已存在时返回
+    // ok=false、code="exists"；成功后重扫技能列表。
     Q_INVOKABLE QVariantMap saveSkill(const QVariantMap& draft,
                                       const QString& source, bool overwrite);
-    // 删除技能：{ok,error,id}；成功后重扫技能列表。
+    // 删除技能：{ok,error,code,id}；成功后重扫技能列表。
     Q_INVOKABLE QVariantMap removeSkillById(const QString& id,
                                             const QString& source);
     // id 校验：空串视为合法（新建时的初始态），否则返回错误文案。

@@ -28,6 +28,12 @@ void clearError(QString* error) {
         error->clear();
 }
 
+// 结构化结果码：调用方（VM/QML）据此判断失败类型，不再匹配中文文案。
+void setCode(QString* code, const char* value) {
+    if (code)
+        *code = QString::fromLatin1(value);
+}
+
 // QFileInfo::canonicalFilePath() resolves symlinks on POSIX but leaves Windows
 // junctions untouched (Qt reports isSymLink() == false for them). Ask the OS
 // for the final path of an open handle instead, so a junction inside a skills
@@ -235,18 +241,23 @@ QByteArray serialize(const SkillEditorService::Draft& draft) {
 }
 
 // 创建（或确认存在）skillsRoot 并返回其 canonical 路径。
-bool ensureRoot(const QString& skillsRoot, QString* canonicalRoot, QString* error) {
+// 空串 = invalid_root；创建/解析失败 = root_unavailable。
+bool ensureRoot(const QString& skillsRoot, QString* canonicalRoot, QString* error,
+                QString* code) {
     if (skillsRoot.trimmed().isEmpty()) {
         setError(error, QStringLiteral("技能根目录不能为空"));
+        setCode(code, "invalid_root");
         return false;
     }
     if (!QDir().mkpath(skillsRoot)) {
         setError(error, QStringLiteral("无法创建技能根目录：%1").arg(skillsRoot));
+        setCode(code, "root_unavailable");
         return false;
     }
     const QString canonical = canonicalForContainment(skillsRoot);
     if (canonical.isEmpty()) {
         setError(error, QStringLiteral("技能根目录不可用：%1").arg(skillsRoot));
+        setCode(code, "root_unavailable");
         return false;
     }
     *canonicalRoot = canonical;
@@ -254,19 +265,23 @@ bool ensureRoot(const QString& skillsRoot, QString* canonicalRoot, QString* erro
 }
 
 // load/remove 不创建根目录：根不存在等价于没有技能。
-bool existingRoot(const QString& skillsRoot, QString* canonicalRoot, QString* error) {
+bool existingRoot(const QString& skillsRoot, QString* canonicalRoot, QString* error,
+                  QString* code) {
     if (skillsRoot.trimmed().isEmpty()) {
         setError(error, QStringLiteral("技能根目录不能为空"));
+        setCode(code, "invalid_root");
         return false;
     }
     const QFileInfo info(skillsRoot);
     if (!info.exists() || !info.isDir()) {
         setError(error, QStringLiteral("技能根目录不存在：%1").arg(skillsRoot));
+        setCode(code, "root_unavailable");
         return false;
     }
     const QString canonical = canonicalForContainment(skillsRoot);
     if (canonical.isEmpty()) {
         setError(error, QStringLiteral("技能根目录不可用：%1").arg(skillsRoot));
+        setCode(code, "root_unavailable");
         return false;
     }
     *canonicalRoot = canonical;
@@ -276,12 +291,40 @@ bool existingRoot(const QString& skillsRoot, QString* canonicalRoot, QString* er
 } // namespace
 
 bool SkillEditorService::validateId(const QString& id, QString* error) {
+    // Windows 会去掉目录名末尾的点和空格（`review.` 与 `review` 是同一
+    // 目录），提前拒绝，避免两个技能互相覆盖。先于正则检查，保证错误
+    // 文案说明的是“结尾字符”而不是泛化的字符集限制。
+    if (!id.isEmpty()
+        && (id.endsWith(QLatin1Char('.')) || id.endsWith(QLatin1Char(' ')))) {
+        setError(error, QStringLiteral("技能 id 不能以点或空格结尾（Windows "
+                                       "会把它归一化成同名目录）"));
+        return false;
+    }
     static const QRegularExpression pattern(
         QStringLiteral("^[A-Za-z0-9][A-Za-z0-9._-]{0,63}$"));
     if (id.isEmpty() || !pattern.match(id).hasMatch()) {
         setError(error,
                  QStringLiteral("技能 id 必须为 1-64 个字母、数字、. _ -，"
                                 "且以字母或数字开头"));
+        return false;
+    }
+    // Windows 保留设备名：即使带扩展名（CON.txt）也会被系统特殊处理。
+    // 取第一个点之前的基名，大小写不敏感比较。
+    static const QStringList kReservedNames{
+        QStringLiteral("CON"),  QStringLiteral("PRN"),  QStringLiteral("AUX"),
+        QStringLiteral("NUL"),  QStringLiteral("COM1"), QStringLiteral("COM2"),
+        QStringLiteral("COM3"), QStringLiteral("COM4"), QStringLiteral("COM5"),
+        QStringLiteral("COM6"), QStringLiteral("COM7"), QStringLiteral("COM8"),
+        QStringLiteral("COM9"), QStringLiteral("LPT1"), QStringLiteral("LPT2"),
+        QStringLiteral("LPT3"), QStringLiteral("LPT4"), QStringLiteral("LPT5"),
+        QStringLiteral("LPT6"), QStringLiteral("LPT7"), QStringLiteral("LPT8"),
+        QStringLiteral("LPT9"),
+    };
+    const QString baseName =
+        id.section(QLatin1Char('.'), 0, 0).toUpper();
+    if (kReservedNames.contains(baseName)) {
+        setError(error, QStringLiteral("技能 id 不能使用 Windows 保留设备名：%1")
+                            .arg(baseName));
         return false;
     }
     // 正则已排除路径分隔符；这里再拦一次 "."/".." 以及任何 ".." 组合，
@@ -315,39 +358,62 @@ QString SkillEditorService::userSkillsRoot() {
 }
 
 bool SkillEditorService::load(const QString& skillsRoot, const QString& id,
-                              Draft* out, QString* error) {
+                              Draft* out, QString* error, QString* code) {
     if (!out) {
         setError(error, QStringLiteral("Draft 输出参数为空"));
+        setCode(code, "io_error");
         return false;
     }
-    if (!validateId(id, error))
+    if (!validateId(id, error)) {
+        setCode(code, "invalid_id");
         return false;
+    }
 
     QString canonicalRoot;
-    if (!existingRoot(skillsRoot, &canonicalRoot, error))
+    if (!existingRoot(skillsRoot, &canonicalRoot, error, code))
         return false;
 
     const QString skillDir = QDir(canonicalRoot).filePath(id);
     const QString filePath = QDir(skillDir).filePath(QStringLiteral("SKILL.md"));
     const QFileInfo fileInfo(filePath);
-    if (!fileInfo.exists() || !fileInfo.isFile()) {
+    // 悬空链接 exists()==false，但仍需以 symlink 归类，而不是 not_found。
+    if (!fileInfo.exists() && !fileInfo.isSymLink()) {
         setError(error, QStringLiteral("技能不存在：%1").arg(id));
+        setCode(code, "not_found");
+        return false;
+    }
+    if (!fileInfo.isFile()) {
+        if (fileInfo.isSymLink()) {
+            setError(error, QStringLiteral("SKILL.md 是符号链接，无法读取：%1").arg(id));
+            setCode(code, "symlink");
+        } else {
+            setError(error, QStringLiteral("SKILL.md 不是普通文件：%1").arg(id));
+            setCode(code, "not_file");
+        }
         return false;
     }
 
     const QString canonicalFile = canonicalForContainment(filePath);
-    if (canonicalFile.isEmpty() || !pathIsInside(canonicalRoot, canonicalFile)) {
+    if (canonicalFile.isEmpty()) {
+        setError(error, QStringLiteral("无法解析技能文件路径：%1").arg(id));
+        setCode(code, fileInfo.isSymLink() ? "symlink" : "io_error");
+        return false;
+    }
+    if (!pathIsInside(canonicalRoot, canonicalFile)) {
         setError(error, QStringLiteral("技能文件越出技能根目录：%1").arg(id));
+        setCode(code, fileInfo.isSymLink() ? "symlink" : "outside_root");
         return false;
     }
 
     QFile file(canonicalFile);
     if (!file.open(QIODevice::ReadOnly)) {
         setError(error, QStringLiteral("无法读取技能文件：%1").arg(id));
+        setCode(code, "io_error");
         return false;
     }
     if (file.size() > kMaxFileBytes) {
         setError(error, QStringLiteral("技能文件超过 64 KiB 上限：%1").arg(id));
+        setCode(code, "too_large");
         return false;
     }
     const QByteArray raw = file.read(kMaxFileBytes);
@@ -367,46 +433,65 @@ bool SkillEditorService::load(const QString& skillsRoot, const QString& id,
 
     *out = draft;
     clearError(error);
+    setCode(code, "ok");
     return true;
 }
 
 bool SkillEditorService::save(const QString& skillsRoot, const Draft& draft,
-                              bool overwrite, QString* error) {
-    if (!validateId(draft.id, error))
+                              bool overwrite, QString* error, QString* code) {
+    if (!validateId(draft.id, error)) {
+        setCode(code, "invalid_id");
         return false;
-    if (!validateBody(draft.body, error))
+    }
+    if (!validateBody(draft.body, error)) {
+        setCode(code, "too_large");
         return false;
-    if (!validateMetadataValue(draft.name, QStringLiteral("name"), error))
+    }
+    if (!validateMetadataValue(draft.name, QStringLiteral("name"), error)) {
+        setCode(code, "invalid_metadata");
         return false;
+    }
     if (!validateMetadataValue(draft.description, QStringLiteral("description"),
-                               error))
+                               error)) {
+        setCode(code, "invalid_metadata");
         return false;
+    }
     for (const QString& tool : draft.allowedTools) {
-        if (!validateToolName(tool, error))
+        if (!validateToolName(tool, error)) {
+            setCode(code, "invalid_tools");
             return false;
+        }
     }
 
     const QByteArray content = serialize(draft);
     if (content.size() > kMaxFileBytes) {
         setError(error, QStringLiteral("技能文件超过 64 KiB 上限"));
+        setCode(code, "too_large");
         return false;
     }
 
     QString canonicalRoot;
-    if (!ensureRoot(skillsRoot, &canonicalRoot, error))
+    if (!ensureRoot(skillsRoot, &canonicalRoot, error, code))
         return false;
 
     const QString skillDir = QDir(canonicalRoot).filePath(draft.id);
     if (!QDir().mkpath(skillDir)) {
         setError(error, QStringLiteral("无法创建技能目录：%1").arg(draft.id));
+        setCode(code, "io_error");
         return false;
     }
 
     // 目录可能是预先存在的 junction/symlink；必须在写入前确认 canonical
     // 目标仍在技能根内。
     const QString canonicalDir = canonicalForContainment(skillDir);
-    if (canonicalDir.isEmpty() || !pathIsInside(canonicalRoot, canonicalDir)) {
+    if (canonicalDir.isEmpty()) {
+        setError(error, QStringLiteral("无法解析技能目录：%1").arg(draft.id));
+        setCode(code, "io_error");
+        return false;
+    }
+    if (!pathIsInside(canonicalRoot, canonicalDir)) {
         setError(error, QStringLiteral("技能目录越出技能根目录：%1").arg(draft.id));
+        setCode(code, "outside_root");
         return false;
     }
 
@@ -414,19 +499,36 @@ bool SkillEditorService::save(const QString& skillsRoot, const Draft& draft,
     const PathWriteGuard guard(filePath);
 
     const QFileInfo existing(filePath);
-    if (existing.exists() || existing.isSymLink()) {
+    // 根内 symlink 的 canonical 目标也可能落在根内（指向另一个技能）；
+    // 若继续写入会覆盖被指向的技能。QSaveFile 提交时会替换链接本身，
+    // 但备份阶段可能顺链读到目标，且 replace 语义在不同平台不一致，
+    // 因此一律拒绝（与 remove 保持一致）。
+    if (existing.isSymLink()) {
+        setError(error,
+                 QStringLiteral("SKILL.md 是符号链接，拒绝保存：%1").arg(draft.id));
+        setCode(code, "symlink");
+        return false;
+    }
+    if (existing.exists()) {
         if (!existing.isFile()) {
             setError(error, QStringLiteral("SKILL.md 不是普通文件：%1").arg(draft.id));
+            setCode(code, "not_file");
             return false;
         }
         const QString canonicalFile = canonicalForContainment(filePath);
-        if (canonicalFile.isEmpty()
-            || !pathIsInside(canonicalRoot, canonicalFile)) {
+        if (canonicalFile.isEmpty()) {
+            setError(error, QStringLiteral("无法解析技能文件路径：%1").arg(draft.id));
+            setCode(code, "io_error");
+            return false;
+        }
+        if (!pathIsInside(canonicalRoot, canonicalFile)) {
             setError(error, QStringLiteral("技能文件越出技能根目录：%1").arg(draft.id));
+            setCode(code, "outside_root");
             return false;
         }
         if (!overwrite) {
             setError(error, QStringLiteral("技能已存在：%1").arg(draft.id));
+            setCode(code, "exists");
             return false;
         }
 
@@ -441,10 +543,12 @@ bool SkillEditorService::save(const QString& skillsRoot, const Draft& draft,
         if ((backupInfo.exists() || backupInfo.isSymLink())
             && !QFile::remove(backupPath)) {
             setError(error, QStringLiteral("无法替换旧的 SKILL.md.bak"));
+            setCode(code, "io_error");
             return false;
         }
         if (!QFile::copy(filePath, backupPath)) {
             setError(error, QStringLiteral("无法备份旧的 SKILL.md"));
+            setCode(code, "io_error");
             return false;
         }
     }
@@ -452,68 +556,86 @@ bool SkillEditorService::save(const QString& skillsRoot, const Draft& draft,
     QSaveFile file(filePath);
     if (!file.open(QIODevice::WriteOnly)) {
         setError(error, QStringLiteral("无法写入技能文件：%1").arg(draft.id));
+        setCode(code, "io_error");
         return false;
     }
     if (file.write(content) != content.size()) {
         setError(error, QStringLiteral("技能文件写入不完整：%1").arg(draft.id));
+        setCode(code, "io_error");
         file.cancelWriting();
         return false;
     }
     if (!file.commit()) {
         setError(error, QStringLiteral("技能文件保存失败：%1").arg(draft.id));
+        setCode(code, "io_error");
         return false;
     }
 
     clearError(error);
+    setCode(code, "ok");
     return true;
 }
 
 bool SkillEditorService::remove(const QString& skillsRoot, const QString& id,
-                                QString* error) {
-    if (!validateId(id, error))
+                                QString* error, QString* code) {
+    if (!validateId(id, error)) {
+        setCode(code, "invalid_id");
         return false;
+    }
 
     QString canonicalRoot;
-    if (!existingRoot(skillsRoot, &canonicalRoot, error))
+    if (!existingRoot(skillsRoot, &canonicalRoot, error, code))
         return false;
 
     const QString skillDir = QDir(canonicalRoot).filePath(id);
     const QFileInfo dirInfo(skillDir);
     if (!dirInfo.exists() || !dirInfo.isDir()) {
         setError(error, QStringLiteral("技能不存在：%1").arg(id));
+        setCode(code, "not_found");
         return false;
     }
 
     const QString canonicalDir = canonicalForContainment(skillDir);
-    if (canonicalDir.isEmpty() || !pathIsInside(canonicalRoot, canonicalDir)) {
+    if (canonicalDir.isEmpty()) {
+        setError(error, QStringLiteral("无法解析技能目录：%1").arg(id));
+        setCode(code, dirInfo.isSymLink() ? "symlink" : "io_error");
+        return false;
+    }
+    if (!pathIsInside(canonicalRoot, canonicalDir)) {
         setError(error, QStringLiteral("技能目录越出技能根目录：%1").arg(id));
+        setCode(code, dirInfo.isSymLink() ? "symlink" : "outside_root");
         return false;
     }
 
     const QString filePath = QDir(canonicalDir).filePath(QStringLiteral("SKILL.md"));
     const QFileInfo fileInfo(filePath);
     if (fileInfo.exists() || fileInfo.isSymLink()) {
-        if (!fileInfo.isFile()) {
-            setError(error, QStringLiteral("SKILL.md 不是普通文件：%1").arg(id));
-            return false;
-        }
-        // 根内 symlink 的 canonical 目标也可能落在根内（指向另一个技能）；
-        // 若按 canonicalFile 删除会误删被指向的技能。删除操作只允许直接
-        // 删除真实文件，symlink 一律拒绝。
         if (fileInfo.isSymLink()) {
             setError(error,
                      QStringLiteral("SKILL.md 是符号链接，拒绝删除：%1").arg(id));
+            setCode(code, "symlink");
+            return false;
+        }
+        if (!fileInfo.isFile()) {
+            setError(error, QStringLiteral("SKILL.md 不是普通文件：%1").arg(id));
+            setCode(code, "not_file");
             return false;
         }
         const QString canonicalFile = canonicalForContainment(filePath);
-        if (canonicalFile.isEmpty()
-            || !pathIsInside(canonicalRoot, canonicalFile)) {
+        if (canonicalFile.isEmpty()) {
+            setError(error, QStringLiteral("无法解析技能文件路径：%1").arg(id));
+            setCode(code, "io_error");
+            return false;
+        }
+        if (!pathIsInside(canonicalRoot, canonicalFile)) {
             setError(error, QStringLiteral("技能文件越出技能根目录：%1").arg(id));
+            setCode(code, "outside_root");
             return false;
         }
         const PathWriteGuard guard(filePath);
         if (!QFile::remove(canonicalFile)) {
             setError(error, QStringLiteral("无法删除技能文件：%1").arg(id));
+            setCode(code, "io_error");
             return false;
         }
     }
@@ -524,6 +646,7 @@ bool SkillEditorService::remove(const QString& skillsRoot, const QString& id,
     QDir().rmdir(canonicalDir);
 
     clearError(error);
+    setCode(code, "ok");
     return true;
 }
 

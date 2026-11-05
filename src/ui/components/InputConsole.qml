@@ -249,7 +249,23 @@ function applySlash(name) {
     // {id,name,description,source,sourceId,...} — already deduped, unknown
     // names dropped, capped by settings/skills/maxPerMessage.
     property var skillChips: []
+    // W7-B：草稿中无法按 id/显示名解析的 `$name` token。只用于提示，
+    // 不阻止发送（正文里的 $HOME 等可能是有意文本）。
+    property var unknownSkillTokens: []
     readonly property bool skillsVisible: skillChips.length > 0
+    // 未知提示占用的垂直空间（显隐都会推移输入行上方的 chip 条）。
+    readonly property int unknownSkillHintHeight:
+        unknownSkillTokens.length > 0 ? 18 : 0
+    readonly property int unknownSkillHintBlock:
+        unknownSkillHintHeight > 0 ? unknownSkillHintHeight + 4 : 0
+    readonly property string unknownSkillText: {
+        if (unknownSkillTokens.length === 0) return ""
+        const names = []
+        for (let i = 0; i < unknownSkillTokens.length; ++i)
+            names.push("$" + String(unknownSkillTokens[i]))
+        return qsTr("未找到技能：%1。请检查名称，或在 设置 → 技能 中刷新。")
+            .arg(names.join(", "))
+    }
     readonly property int skillPopupHeight: {
         if (!skillOpen) return 0
         if (skillResults.length === 0) return 46
@@ -287,6 +303,7 @@ function applySlash(name) {
 
     function updateSkillChips() {
         skillChips = AgentVM.resolveSkills(textArea.text)
+        unknownSkillTokens = AgentVM.unknownSkillTokens(textArea.text)
     }
 
     // Replaces the whole '$token' with '$name ' — never sends.
@@ -432,6 +449,7 @@ function applySkill(name) {
     implicitHeight: (previewVisible ? previewBar.height + 6 : 0)
                     + (skillsVisible ? skillBar.height + 6 : 0)
                     + (referenceVisible ? referenceBar.height + 6 : 0)
+                    + (unknownSkillHintHeight > 0 ? unknownSkillHintHeight + 6 : 0)
                     + inputRow.height + 16
     height: implicitHeight
     color: Theme.cardBackground
@@ -500,6 +518,7 @@ function applySkill(name) {
             textArea.text = ""
             root.pendingAttachments = []
             root.skillChips = []
+            root.unknownSkillTokens = []
             // docs/20 §3.3：发送后退出历史浏览态（游标已在 startTask 内复位）。
             root.historyBrowsing = false
             // 发送即「要看新回复」的明确意图：强制解除上一轮的已解钉状
@@ -605,7 +624,8 @@ function applySkill(name) {
         anchors.bottom: inputRow.top
         anchors.leftMargin: 8
         anchors.rightMargin: 8
-        anchors.bottomMargin: root.referenceVisible ? referenceBar.height + 8 : 4
+        anchors.bottomMargin: (root.referenceVisible ? referenceBar.height + 8 : 4)
+                              + root.unknownSkillHintBlock
         height: 24
         visible: root.skillsVisible
 
@@ -693,6 +713,27 @@ function applySkill(name) {
         }
     }
 
+    // ── W7-B: unknown '$skill' hint ──────────────────────
+    // 未解析的 $name 单独提示，不阻止发送；参考条与技能 chip 条整体上移，
+    // 保证提示始终紧贴输入框上沿且互不重叠。
+    Text {
+        id: skillUnknownHint
+        objectName: "skillUnknownHint"
+        anchors.left: parent.left
+        anchors.right: parent.right
+        anchors.leftMargin: 8
+        anchors.rightMargin: 8
+        anchors.bottom: inputRow.top
+        anchors.bottomMargin: 4
+        height: root.unknownSkillHintHeight
+        visible: root.unknownSkillHintHeight > 0
+        text: root.unknownSkillText
+        color: Theme.statusDanger
+        font.pixelSize: Theme.fontSizeMicro
+        font.family: Theme.fontSans
+        elide: Text.ElideRight
+    }
+
     // ── G2: referenced project files ────────────────────
     // One chip per '@' token in the draft. Green = resolves and will be
     // attached on send; red = will be skipped, with the reason on hover.
@@ -703,7 +744,7 @@ function applySkill(name) {
         anchors.bottom: inputRow.top
         anchors.leftMargin: 8
         anchors.rightMargin: 8
-        anchors.bottomMargin: 4
+        anchors.bottomMargin: 4 + root.unknownSkillHintBlock
         height: 24
         checks: root.referenceChecks
         visible: root.referenceVisible

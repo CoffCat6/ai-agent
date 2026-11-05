@@ -144,6 +144,20 @@ QStringList skillNamesInText(const QString& text) {
     return names;
 }
 
+// docs/40 §2.5：`$name` 解析的唯一入口——先按目录 id 精确命中，再按
+// frontmatter 显示名（大小写不敏感）兜底。resolveSkills 与
+// unknownSkillTokens 共用，避免两套判定漂移。
+const Skill* findSkillInRegistry(const SkillRegistry& registry,
+                                 const QString& name) {
+    if (const Skill* skill = registry.find(name))
+        return skill;
+    for (const Skill& candidate : registry.all()) {
+        if (candidate.name.compare(name, Qt::CaseInsensitive) == 0)
+            return &candidate;
+    }
+    return nullptr;
+}
+
 QVariantMap skillToMap(const Skill& skill) {
     return QVariantMap{
         {QStringLiteral("id"), skill.id},
@@ -1252,18 +1266,8 @@ QVariantList AgentViewModel::resolveSkills(const QString& text) {
     QVariantList out;
     QSet<QString> seenIds;
     for (const QString& name : skillNamesInText(text)) {
-        // `$name` 优先按目录 id 命中；frontmatter 的 name 可能不同，再按
-        // 显示名（大小写不敏感）兜底。
-        const Skill* skill = m_skillRegistry.find(name);
-        if (!skill) {
-            for (const Skill& candidate : m_skillRegistry.all()) {
-                if (candidate.name.compare(name, Qt::CaseInsensitive) == 0) {
-                    skill = &candidate;
-                    break;
-                }
-            }
-        }
-        if (!skill) continue;   // 未知 skill 静默忽略
+        const Skill* skill = findSkillInRegistry(m_skillRegistry, name);
+        if (!skill) continue;   // 未知 skill 静默忽略（提示走 unknownSkillTokens）
 
         // 同一个 skill 可能有多个 `$token`（id / 显示名 / 大小写变体），
         // 按 id 去重，避免重复注入与重复占用 maxPerMessage 名额。
@@ -1278,6 +1282,25 @@ QVariantList AgentViewModel::resolveSkills(const QString& text) {
         out.append(entry);
     }
     return out;
+}
+
+QStringList AgentViewModel::unknownSkillTokens(const QString& text) {
+    if (!SettingsRepository::value(QStringLiteral("skills/enabled"), true).toBool())
+        return {};
+    syncSkillRoot();
+
+    QStringList unknown;
+    // 大小写不敏感去重：`$Nope $nope` 只提示一次（保留首次出现的写法）。
+    QSet<QString> seen;
+    for (const QString& name : skillNamesInText(text)) {
+        const QString key = name.toLower();
+        if (seen.contains(key)) continue;
+        seen.insert(key);
+        // 不占用 maxPerMessage 名额，也不在这里做数量截断。
+        if (!findSkillInRegistry(m_skillRegistry, name))
+            unknown.append(name);
+    }
+    return unknown;
 }
 
 // ── docs/37 W5-1: SkillsPage 设置项 ────────────────────────
@@ -1368,6 +1391,7 @@ QVariantMap AgentViewModel::skillDraft(const QString& id,
     QVariantMap result{
         {QStringLiteral("ok"), false},
         {QStringLiteral("error"), QString()},
+        {QStringLiteral("code"), QString()},
         {QStringLiteral("id"), id},
         {QStringLiteral("name"), QString()},
         {QStringLiteral("description"), QString()},
@@ -1381,17 +1405,21 @@ QVariantMap AgentViewModel::skillDraft(const QString& id,
             source == QLatin1String("project")
                 ? QStringLiteral("当前没有活动项目，无法读取项目技能")
                 : QStringLiteral("未知的技能来源：%1").arg(source);
+        result[QStringLiteral("code")] = QStringLiteral("invalid_root");
         return result;
     }
 
     SkillEditorService::Draft draft;
     QString error;
-    if (!SkillEditorService::load(root, id, &draft, &error)) {
+    QString code;
+    if (!SkillEditorService::load(root, id, &draft, &error, &code)) {
         result[QStringLiteral("error")] = error;
+        result[QStringLiteral("code")] = code;
         return result;
     }
 
     result[QStringLiteral("ok")] = true;
+    result[QStringLiteral("code")] = QStringLiteral("ok");
     result[QStringLiteral("id")] = draft.id;
     result[QStringLiteral("name")] = draft.name;
     result[QStringLiteral("description")] = draft.description;
@@ -1419,6 +1447,7 @@ QVariantMap AgentViewModel::saveSkill(const QVariantMap& draft,
              source == QLatin1String("project")
                  ? QStringLiteral("当前没有活动项目，无法保存项目技能")
                  : QStringLiteral("未知的技能来源：%1").arg(source)},
+            {QStringLiteral("code"), QStringLiteral("invalid_root")},
             {QStringLiteral("id"), id},
         };
     }
@@ -1439,10 +1468,12 @@ QVariantMap AgentViewModel::saveSkill(const QVariantMap& draft,
     parsed.body = draft.value(QStringLiteral("body")).toString();
 
     QString error;
-    if (!SkillEditorService::save(root, parsed, overwrite, &error)) {
+    QString code;
+    if (!SkillEditorService::save(root, parsed, overwrite, &error, &code)) {
         return QVariantMap{
             {QStringLiteral("ok"), false},
             {QStringLiteral("error"), error},
+            {QStringLiteral("code"), code},
             {QStringLiteral("id"), parsed.id},
         };
     }
@@ -1452,6 +1483,7 @@ QVariantMap AgentViewModel::saveSkill(const QVariantMap& draft,
     return QVariantMap{
         {QStringLiteral("ok"), true},
         {QStringLiteral("error"), QString()},
+        {QStringLiteral("code"), QStringLiteral("ok")},
         {QStringLiteral("id"), parsed.id},
     };
 }
@@ -1466,15 +1498,18 @@ QVariantMap AgentViewModel::removeSkillById(const QString& id,
              source == QLatin1String("project")
                  ? QStringLiteral("当前没有活动项目，无法删除项目技能")
                  : QStringLiteral("未知的技能来源：%1").arg(source)},
+            {QStringLiteral("code"), QStringLiteral("invalid_root")},
             {QStringLiteral("id"), id},
         };
     }
 
     QString error;
-    if (!SkillEditorService::remove(root, id, &error)) {
+    QString code;
+    if (!SkillEditorService::remove(root, id, &error, &code)) {
         return QVariantMap{
             {QStringLiteral("ok"), false},
             {QStringLiteral("error"), error},
+            {QStringLiteral("code"), code},
             {QStringLiteral("id"), id},
         };
     }
@@ -1483,6 +1518,7 @@ QVariantMap AgentViewModel::removeSkillById(const QString& id,
     return QVariantMap{
         {QStringLiteral("ok"), true},
         {QStringLiteral("error"), QString()},
+        {QStringLiteral("code"), QStringLiteral("ok")},
         {QStringLiteral("id"), id},
     };
 }

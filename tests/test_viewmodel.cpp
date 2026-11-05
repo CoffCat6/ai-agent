@@ -2730,6 +2730,108 @@ private slots:
 
     }
 
+    // docs/40 §2.1/2.5：save/remove/skillDraft 透传结构化 code；未知
+    // `$token` 只提示、不占用 maxPerMessage 名额。
+    void skillCodesAndUnknownTokens() {
+        QTemporaryDir project;
+        QVERIFY(project.isValid());
+
+        auto writeSkill = [&project](const QString& id, const QString& name,
+                                     const QString& body) {
+            const QString dir = project.filePath(
+                QStringLiteral(".nexusai/skills/%1").arg(id));
+            QVERIFY(QDir().mkpath(dir));
+            QFile f(dir + QStringLiteral("/SKILL.md"));
+            QVERIFY(f.open(QIODevice::WriteOnly | QIODevice::Text));
+            f.write(QStringLiteral("---\nname: %1\n---\n%2\n")
+                        .arg(name, body).toUtf8());
+            f.close();
+        };
+        writeSkill(QStringLiteral("review"), QStringLiteral("review"),
+                   QStringLiteral("Review a diff."));
+        writeSkill(QStringLiteral("test"), QStringLiteral("test"),
+                   QStringLiteral("Write tests."));
+
+        AgentViewModel vm(nullptr);
+        AIAgent agent;
+        vm.setAgent(&agent);
+        agent.setActiveProject(QStringLiteral("p1"), QStringLiteral("Demo"),
+                               project.path());
+        vm.reloadSkills();
+
+        // 未知 token：只返回无法解析的；$dir/file 不算。
+        QCOMPARE(vm.unknownSkillTokens(
+                     QStringLiteral("$review $nope $dir/file")),
+                 QStringList({QStringLiteral("nope")}));
+        // 大小写不敏感去重，只保留首次写法。
+        QCOMPARE(vm.unknownSkillTokens(QStringLiteral("$Nope $nope $NOPE")),
+                 QStringList({QStringLiteral("Nope")}));
+        // 显示名大小写不敏感（id 精确未命中时按 frontmatter name 兜底）。
+        QVERIFY(vm.unknownSkillTokens(QStringLiteral("$REVIEW")).isEmpty());
+
+        // 已有技能且 overwrite=false → exists。
+        QVariantMap existing{
+            {QStringLiteral("id"), QStringLiteral("test")},
+            {QStringLiteral("name"), QStringLiteral("test")},
+            {QStringLiteral("body"), QStringLiteral("new\n")},
+        };
+        const QVariantMap failed =
+            vm.saveSkill(existing, QStringLiteral("project"), false);
+        QCOMPARE(failed.value(QStringLiteral("ok")).toBool(), false);
+        QCOMPARE(failed.value(QStringLiteral("code")).toString(),
+                 QStringLiteral("exists"));
+
+        // 新技能 → ok；skillDraft / removeSkillById 同样透传 code。
+        QVariantMap fresh{
+            {QStringLiteral("id"), QStringLiteral("fresh-skill")},
+            {QStringLiteral("name"), QStringLiteral("fresh")},
+            {QStringLiteral("body"), QStringLiteral("fresh\n")},
+        };
+        const QVariantMap saved =
+            vm.saveSkill(fresh, QStringLiteral("project"), false);
+        QVERIFY2(saved.value(QStringLiteral("ok")).toBool(),
+                 qPrintable(saved.value(QStringLiteral("error")).toString()));
+        QCOMPARE(saved.value(QStringLiteral("code")).toString(),
+                 QStringLiteral("ok"));
+
+        const QVariantMap draft =
+            vm.skillDraft(QStringLiteral("fresh-skill"), QStringLiteral("project"));
+        QVERIFY(draft.value(QStringLiteral("ok")).toBool());
+        QCOMPARE(draft.value(QStringLiteral("code")).toString(),
+                 QStringLiteral("ok"));
+
+        const QVariantMap missingDraft =
+            vm.skillDraft(QStringLiteral("missing"), QStringLiteral("project"));
+        QCOMPARE(missingDraft.value(QStringLiteral("code")).toString(),
+                 QStringLiteral("not_found"));
+
+        QVariantMap removed =
+            vm.removeSkillById(QStringLiteral("fresh-skill"), QStringLiteral("project"));
+        QVERIFY(removed.value(QStringLiteral("ok")).toBool());
+        QCOMPARE(removed.value(QStringLiteral("code")).toString(),
+                 QStringLiteral("ok"));
+
+        const QVariantMap missing =
+            vm.removeSkillById(QStringLiteral("missing"), QStringLiteral("project"));
+        QCOMPARE(missing.value(QStringLiteral("ok")).toBool(), false);
+        QCOMPARE(missing.value(QStringLiteral("code")).toString(),
+                 QStringLiteral("not_found"));
+
+        // skills/enabled=false：未知提示直接为空。
+        QSettings settings = NexusAI::TestSupport::testSettings();
+        const QVariant previous = settings.value(QStringLiteral("skills/enabled"));
+        settings.setValue(QStringLiteral("skills/enabled"), false);
+        settings.sync();
+        QVERIFY(vm.unknownSkillTokens(QStringLiteral("$review $nope")).isEmpty());
+        if (previous.isValid())
+            settings.setValue(QStringLiteral("skills/enabled"), previous);
+        else
+            settings.remove(QStringLiteral("skills/enabled"));
+        settings.sync();
+
+        vm.setAgent(nullptr);
+    }
+
     // B1-3: cancellation releases the import state through the normal finish
     // callback; a hanging local server holds the fetch in flight long enough
     // to observe it.
