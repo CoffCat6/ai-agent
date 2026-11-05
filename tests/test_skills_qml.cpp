@@ -70,17 +70,6 @@ bool writeSkill(const QString& root, const QString& id, const QString& descripti
     return file.write(content) == content.size();
 }
 
-// 显式空 allowed-tools：`[]` 是“一个都不允许”，与“未声明（不限制）”不同。
-bool writeSkillWithEmptyTools(const QString& root, const QString& id) {
-    const QString dir = root + QLatin1Char('/') + id;
-    if (!QDir().mkpath(dir)) return false;
-    QFile file(dir + QStringLiteral("/SKILL.md"));
-    if (!file.open(QIODevice::WriteOnly | QIODevice::Text)) return false;
-    const QByteArray content = QStringLiteral(
-        "---\nname: empty-tools\ndescription: explicit empty\n"
-        "allowed-tools: []\n---\nEmpty tools body.\n").toUtf8();
-    return file.write(content) == content.size();
-}
 
 QByteArray readFile(const QString& path) {
     QFile file(path);
@@ -604,23 +593,16 @@ private slots:
             QStringLiteral("skillNameField"));
         auto* descField = h.window->findChild<QQuickItem*>(
             QStringLiteral("skillDescriptionField"));
-        auto* toolsField = h.window->findChild<QQuickItem*>(
-            QStringLiteral("skillToolsField"));
         auto* bodyArea = h.window->findChild<QQuickItem*>(
             QStringLiteral("skillBodyArea"));
-        QVERIFY(idField && nameField && descField && toolsField && bodyArea);
+        QVERIFY(idField && nameField && descField && bodyArea);
 
         idField->setProperty("text", QStringLiteral("qml-created"));
         nameField->setProperty("text", QStringLiteral("QML created"));
         descField->setProperty("text", QStringLiteral("created by qml test"));
-        toolsField->setProperty("text",
-                                QStringLiteral("read_file, search_code"));
         bodyArea->setProperty("text", QStringLiteral("Use tables.\n"));
 
-        // W7-B：`search_code` 是夹具里的“暂时离线 MCP 名”，不在注册表里，
-        // 第一次 submit 只提示、第二次确认后才写盘（原有断言保持不变）。
-        QVERIFY(QMetaObject::invokeMethod(editor, "submit"));
-        QTest::qWait(80);
+        // docs/41 W8-B：编辑器不再有 allowed-tools 字段，保存无需二次确认。
         QVERIFY(QMetaObject::invokeMethod(editor, "submit"));
         QTest::qWait(120);
 
@@ -628,7 +610,6 @@ private slots:
             skillPath(m_userRoot, QStringLiteral("qml-created"));
         QVERIFY2(QFileInfo(path).isFile(), qPrintable(path));
         const QByteArray bytes = readFile(path);
-        QVERIFY(bytes.contains("allowed-tools: [read_file, search_code]"));
         QVERIFY(bytes.endsWith("Use tables.\n"));
         // saved() 触发 page.refresh()：用户来源从 1 个变成 2 个。
 
@@ -787,113 +768,6 @@ private slots:
         QDir(m_userRoot + QStringLiteral("/overwrite-me")).removeRecursively();
     }
 
-    // W7-B：工具候选来自 ToolRegistry，且 appendTool 会去重（大小写不敏感）。
-    void editorToolPickerAppendsRegisteredTool() {
-        Harness h;
-        QVERIFY2(h.load(), qPrintable(h.error));
-        QObject* editor = h.window->findChild<QObject*>(
-            QStringLiteral("skillEditorDialog"));
-        QVERIFY(editor);
-        QVERIFY(QMetaObject::invokeMethod(
-            editor, "openCreate", Q_ARG(QVariant, QStringLiteral("user"))));
-        QTest::qWait(80);
-
-        const QStringList available =
-            editor->property("availableTools").toStringList();
-        QVERIFY2(available.contains(QStringLiteral("read_file")),
-                 qPrintable(available.join(',')));
-
-        auto* picker = h.window->findChild<QQuickItem*>(
-            QStringLiteral("skillToolPicker"));
-        QVERIFY(picker);
-        QVERIFY(picker->property("enabled").toBool());
-
-        QVERIFY(QMetaObject::invokeMethod(
-            editor, "appendTool", Q_ARG(QVariant, QStringLiteral("read_file"))));
-        auto* toolsField = h.window->findChild<QQuickItem*>(
-            QStringLiteral("skillToolsField"));
-        QVERIFY(toolsField);
-        QCOMPARE(toolsField->property("text").toString(),
-                 QStringLiteral("read_file"));
-
-        QVERIFY(QMetaObject::invokeMethod(
-            editor, "appendTool", Q_ARG(QVariant, QStringLiteral("READ_FILE"))));
-        QCOMPARE(toolsField->property("text").toString(),
-                 QStringLiteral("read_file"));
-    }
-
-    // W7-B：未知工具第一次 submit 不写盘，只显示提示；第二次才落盘。
-    void editorUnknownToolNeedsConfirmation() {
-        Harness h;
-        QVERIFY2(h.load(), qPrintable(h.error));
-        QObject* editor = h.window->findChild<QObject*>(
-            QStringLiteral("skillEditorDialog"));
-        QVERIFY(editor);
-        QVERIFY(QMetaObject::invokeMethod(
-            editor, "openCreate", Q_ARG(QVariant, QStringLiteral("user"))));
-        QTest::qWait(80);
-
-        auto* idField = h.window->findChild<QQuickItem*>(
-            QStringLiteral("skillIdField"));
-        auto* toolsField = h.window->findChild<QQuickItem*>(
-            QStringLiteral("skillToolsField"));
-        auto* bodyArea = h.window->findChild<QQuickItem*>(
-            QStringLiteral("skillBodyArea"));
-        auto* hint = h.window->findChild<QQuickItem*>(
-            QStringLiteral("skillUnknownToolsHint"));
-        QVERIFY(idField && toolsField && bodyArea && hint);
-        idField->setProperty("text", QStringLiteral("unknown-tool-skill"));
-        toolsField->setProperty("text", QStringLiteral("read_fil"));
-        bodyArea->setProperty("text", QStringLiteral("unknown tool body\n"));
-        QTest::qWait(40);
-
-        const QString path =
-            skillPath(m_userRoot, QStringLiteral("unknown-tool-skill"));
-
-        // 第一次：只提示，不写盘。
-        QVERIFY(QMetaObject::invokeMethod(editor, "submit"));
-        QTest::qWait(80);
-        QVERIFY(!QFileInfo(path).exists());
-        QVERIFY(hint->isVisible());
-        QVERIFY2(hint->property("text").toString()
-                     .contains(QStringLiteral("read_fil")),
-                 qPrintable(hint->property("text").toString()));
-        QVERIFY(editor->property("unknownToolsConfirmed").toBool());
-
-        // 第二次：确认后写入，未知名原样保留（允许为离线 MCP 预留）。
-        QVERIFY(QMetaObject::invokeMethod(editor, "submit"));
-        QTest::qWait(120);
-        QVERIFY2(QFileInfo(path).isFile(), qPrintable(path));
-        QVERIFY(readFile(path).contains("allowed-tools: [read_fil]"));
-        QVERIFY(!hint->isVisible());
-        QVERIFY(editor->property("warningText").toString().isEmpty());
-    }
-
-    // W7-B P1：编辑 `allowed-tools: []` 再保存必须保留显式空声明。
-    void editorPreservesExplicitEmptyAllowedTools() {
-        Harness h;
-        QVERIFY2(h.load(), qPrintable(h.error));
-        QVERIFY(writeSkillWithEmptyTools(m_userRoot,
-                                         QStringLiteral("empty-tools")));
-        QVERIFY(QMetaObject::invokeMethod(h.page(), "refresh"));
-        QTest::qWait(80);
-
-        QObject* editor = h.window->findChild<QObject*>(
-            QStringLiteral("skillEditorDialog"));
-        QVERIFY(editor);
-        QVERIFY(QMetaObject::invokeMethod(
-            editor, "openEdit", Q_ARG(QVariant, QStringLiteral("empty-tools")),
-            Q_ARG(QVariant, QStringLiteral("user"))));
-        QTest::qWait(80);
-        QVERIFY(editor->property("editingAllowedToolsSpecified").toBool());
-
-        QVERIFY(QMetaObject::invokeMethod(editor, "submit"));
-        QTest::qWait(120);
-
-        const QString path =
-            skillPath(m_userRoot, QStringLiteral("empty-tools"));
-        QVERIFY(readFile(path).contains("allowed-tools: []"));
-    }
 
     // 每个用例后恢复默认值，避免失败用例把开关留在关闭态影响后续断言。
     void cleanup() {
@@ -907,9 +781,7 @@ private slots:
         // 保证下一次运行仍从 2 个基线技能开始。
         for (const QString& id : {QStringLiteral("qml-created"),
                                   QStringLiteral("delete-me"),
-                                  QStringLiteral("overwrite-me"),
-                                  QStringLiteral("unknown-tool-skill"),
-                                  QStringLiteral("empty-tools")})
+                                  QStringLiteral("overwrite-me")})
             QDir(m_userRoot + QLatin1Char('/') + id).removeRecursively();
         // maxPerMessage 用例会临时创建 3 个项目技能；它也必须在用例后清掉，
         // 否则后续“共 N 个技能”的断言会被残留文件污染。

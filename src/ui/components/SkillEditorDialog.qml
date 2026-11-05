@@ -9,10 +9,13 @@ import NexusAI.ViewModels
 // docs/37 W5-2b：Skill 新建 / 编辑弹窗。
 //
 // 字段与 core 的 SkillEditorService::Draft 一一对应：id（目录名）、
-// name/description/allowed-tools（frontmatter）、body（正文）。保存全部
-// 交给 AgentVM.saveSkill，QML 只做表单校验与“已存在 → 覆盖确认”的二次
-// 交互；磁盘写入、canonical containment、64 KiB 上限与 .bak 备份都在
-// core 层完成，避免 UI 与安全规则分叉。
+// name/description（frontmatter）、body（正文）。保存全部交给
+// AgentVM.saveSkill，QML 只做表单校验与“已存在 → 覆盖确认”的二次交互；
+// 磁盘写入、canonical containment、64 KiB 上限与 .bak 备份都在 core 层
+// 完成，避免 UI 与安全规则分叉。
+//
+// docs/41 W8-B：技能不再限制工具调用，编辑器不提供 allowed-tools 入口。
+// 旧文件里的该键仍会被解析为 legacy 元数据；编辑保存时不再写回。
 Dialog {
     id: dialog
 
@@ -28,20 +31,6 @@ Dialog {
     // W7-B：错误以 core 返回的稳定 code 判定，不匹配中文文案。
     property string errorCode: ""
 
-    // ── W7-B: 工具候选与未知工具二次确认 ────────────────
-    // availableTools：enabled && !blockedByPolicy && level !== "dangerous"，
-    // 保留 ToolRegistry 注册顺序，作为 ComboBox 候选。
-    // allToolNames：全部注册名（含 disabled / dangerous），只用于“未知”判定，
-    // 避免把暂时禁用或危险级工具误报成拼写错误。
-    property var availableTools: []
-    property var allToolNames: []
-    // 未知工具首次保存只提示不写盘；用户再次点击保存才落盘。
-    property var unknownTools: []
-    property bool unknownToolsConfirmed: false
-    property string warningText: ""
-    // 编辑态加载的“allowed-tools 已声明”标记。即便列表为空也必须回传，
-    // 否则 `allowed-tools: []` 再保存会退化成“不限制”（W7-B P1）。
-    property bool editingAllowedToolsSpecified: false
 
     // 由宿主页面绑定（page.hasActiveProject）。不能用
 // AgentVM.skillRootForSource("project") 的返回值做只读绑定：那是 C++
@@ -60,12 +49,7 @@ Dialog {
         if (name.length > 0) lines.push("name: " + name)
         const description = descField.text.trim()
         if (description.length > 0) lines.push("description: " + description)
-        const tools = dialog.parseTools(toolsField.text)
-        if (tools.length > 0)
-            lines.push("allowed-tools: [" + tools.join(", ") + "]")
-        else if (dialog.editing && dialog.editingAllowedToolsSpecified)
-            // 显式空列表也是声明：预览必须与保存结果一致。
-            lines.push("allowed-tools: []")
+
         lines.push("---")
         return lines.join("\n") + "\n" + bodyArea.text
     }
@@ -81,97 +65,13 @@ Dialog {
     closePolicy: Popup.CloseOnEscape
     background: DialogBackground {}
 
-    function parseTools(text) {
-        const parts = String(text || "").split(",")
-        const tools = []
-        for (let i = 0; i < parts.length; ++i) {
-            const tool = parts[i].trim()
-            if (tool.length > 0) tools.push(tool)
-        }
-        return tools
-    }
-
-    // 工具名允许带参数说明（`read_file(path)`），判定只看 '(' 前的名字。
-    function toolNameOf(raw) {
-        let name = String(raw || "").trim()
-        const paren = name.indexOf("(")
-        if (paren >= 0) name = name.substring(0, paren).trim()
-        return name
-    }
-
-    // 返回 text 中不在注册表里的工具名（大小写不敏感、按出现顺序去重）。
-    // allToolNames 为空表示工具目录尚未就绪：跳过校验，避免误报。
-    function unknownToolsFor(text) {
-        const parsed = dialog.parseTools(text)
-        if (dialog.allToolNames.length === 0) return []
-        const known = {}
-        for (let i = 0; i < dialog.allToolNames.length; ++i)
-            known[String(dialog.allToolNames[i]).toLowerCase()] = true
-        const unknown = []
-        const seen = {}
-        for (let i = 0; i < parsed.length; ++i) {
-            const name = dialog.toolNameOf(parsed[i])
-            if (name.length === 0) continue
-            const key = name.toLowerCase()
-            if (known[key] === true || seen[key] === true) continue
-            seen[key] = true
-            unknown.push(name)
-        }
-        return unknown
-    }
-
-    // 从 AgentVM.toolRegistryModel 重建候选与全量名称。目录为空时保持空，
-    // unknownToolsFor 会跳过校验。
-    function refreshToolCatalog() {
-        const model = AgentVM.toolRegistryModel || []
-        const available = []
-        const all = []
-        for (let i = 0; i < model.length; ++i) {
-            const tool = model[i] || {}
-            const name = String(tool.name || "")
-            if (name.length === 0) continue
-            all.push(name)
-            if (tool.enabled === true && tool.blockedByPolicy !== true
-                    && String(tool.level || "").toLowerCase() !== "dangerous")
-                available.push(name)
-        }
-        availableTools = available
-        allToolNames = all
-        unknownTools = unknownToolsFor(toolsField.text)
-        // 候选变化后回到占位文案，避免把第一个候选误显示成“已选择”。
-        toolPicker.currentIndex = -1
-    }
-
-    // 把已注册工具追加到 allowed-tools 输入框：逗号分隔、大小写不敏感去重。
-    function appendTool(name) {
-        const tool = dialog.toolNameOf(name)
-        if (tool.length === 0) return
-        const tools = dialog.parseTools(toolsField.text)
-        for (let i = 0; i < tools.length; ++i) {
-            if (dialog.toolNameOf(tools[i]).toLowerCase()
-                    === tool.toLowerCase())
-                return
-        }
-        tools.push(tool)
-        toolsField.text = tools.join(", ")
-    }
-
-    function resetUnknownToolState() {
-        unknownTools = []
-        unknownToolsConfirmed = false
-        warningText = ""
-    }
-
     function resetFields() {
         errorText = ""
         errorCode = ""
         overwritePending = false
-        editingAllowedToolsSpecified = false
-        resetUnknownToolState()
         idField.text = ""
         nameField.text = ""
         descField.text = ""
-        toolsField.text = ""
         bodyArea.text = ""
     }
 
@@ -179,7 +79,6 @@ Dialog {
     function openCreate(source) {
         editId = ""
         resetFields()
-        refreshToolCatalog()
         sourceCombo.currentIndex =
             (source === "project" && dialog.projectAvailable) ? 1 : 0
         open()
@@ -188,7 +87,6 @@ Dialog {
 
     function openEdit(id, source) {
         resetFields()
-        refreshToolCatalog()
         if (source === "project" && !dialog.projectAvailable) {
             // 不能静默回落到用户来源：否则可能把同名用户技能当成项目技能
             // 打开/覆盖。只展示错误，保持 editId 为空以免误保存。
@@ -210,10 +108,7 @@ Dialog {
             idField.text = String(draft.id || "")
             nameField.text = String(draft.name || "")
             descField.text = String(draft.description || "")
-            const tools = draft.allowedTools || []
-            toolsField.text = tools.join(", ")
-            editingAllowedToolsSpecified =
-                draft.allowedToolsSpecified === true
+
             bodyArea.text = String(draft.body || "")
         }
         open()
@@ -237,26 +132,10 @@ Dialog {
             return
         }
 
-        // W7-B：未知工具第一次保存只提示，不写盘；再次点击才写入。
-        // 工具目录为空（初始化未完成）时 unknownToolsFor 返回空，不误报。
-        unknownTools = unknownToolsFor(toolsField.text)
-        if (unknownTools.length > 0 && !unknownToolsConfirmed) {
-            warningText = qsTr("未注册工具：%1；再次点击保存仍会写入。")
-                .arg(unknownTools.join(", "))
-            unknownToolsConfirmed = true
-            return
-        }
-
         const draft = {
             id: id,
             name: nameField.text.trim(),
             description: descField.text.trim(),
-            allowedTools: dialog.parseTools(toolsField.text),
-            // 编辑态沿用磁盘上的声明标记；新建态由非空列表推导。
-            // 缺了它，`allowed-tools: []` 再保存会被当成“未声明 → 不限制”。
-            allowedToolsSpecified: dialog.editing
-                ? dialog.editingAllowedToolsSpecified
-                : dialog.parseTools(toolsField.text).length > 0,
             body: bodyArea.text
         }
         // 编辑已有技能的目的就是覆盖，不需要再走一次确认；新建时则只有
@@ -267,7 +146,7 @@ Dialog {
             overwritePending = false
             errorCode = ""
             errorText = ""
-            resetUnknownToolState()
+
             close()
             dialog.saved()
             return
@@ -287,7 +166,7 @@ Dialog {
 
     onClosed: {
         overwritePending = false
-        resetUnknownToolState()
+
     }
 
     contentItem: ColumnLayout {
@@ -451,82 +330,6 @@ Dialog {
                 }
             }
 
-            Text {
-                text: qsTr("allowed-tools（逗号分隔，可留空）")
-                color: Theme.textSecondary
-                font.pixelSize: Theme.fontSizeCaption
-                font.family: Theme.fontSans
-            }
-            TextField {
-                id: toolsField
-                objectName: "skillToolsField"
-                Layout.fillWidth: true
-                Accessible.name: qsTr("允许的工具")
-                placeholderText: qsTr("read_file, search_code")
-                placeholderTextColor: Theme.textSecondary
-                color: Theme.textPrimary
-                selectionColor: Theme.brandPrimary
-                selectedTextColor: Theme.selectedTextColor
-                selectByMouse: true
-                font.pixelSize: Theme.fontSizeBody
-                font.family: Theme.fontMono
-                background: Rectangle {
-                    radius: Theme.radiusField
-                    color: Theme.surfaceHover
-                    border.width: toolsField.activeFocus ? 2 : 1
-                    border.color: toolsField.activeFocus
-                        ? Theme.brandPrimary : Theme.borderSubtle
-                }
-                // 文本变化使“未知工具已确认”失效；警告文案只在 submit 时出现。
-                onTextChanged: {
-                    dialog.unknownTools = dialog.unknownToolsFor(text)
-                    dialog.unknownToolsConfirmed = false
-                    dialog.warningText = ""
-                }
-            }
-
-            // W7-B：从已注册工具中选择后追加到上面的输入框。目录为空时
-            // 禁用，用户仍可手填（未知名会走二次确认）。
-            ComboBox {
-                id: toolPicker
-                objectName: "skillToolPicker"
-                Layout.fillWidth: true
-                Accessible.name: qsTr("选择已注册工具")
-                enabled: dialog.availableTools.length > 0
-                model: dialog.availableTools
-                currentIndex: -1
-                displayText: toolPicker.currentIndex >= 0
-                    && toolPicker.currentIndex < dialog.availableTools.length
-                    ? String(dialog.availableTools[toolPicker.currentIndex])
-                    : qsTr("从已注册工具中选择…")
-                delegate: ItemDelegate {
-                    required property int index
-                    required property string modelData
-                    width: toolPicker.width
-                    text: modelData
-                    highlighted: toolPicker.highlightedIndex === index
-                    onClicked: toolPicker.currentIndex = index
-                }
-                onActivated: function(index) {
-                    dialog.appendTool(
-                        String(dialog.availableTools[index] || ""))
-                    // 选择器只负责追加，不复用选中态。
-                    toolPicker.currentIndex = -1
-                }
-            }
-
-            Text {
-                objectName: "skillUnknownToolsHint"
-                Layout.fillWidth: true
-                visible: dialog.warningText.length > 0
-                text: dialog.warningText
-                color: Theme.statusDanger
-                font.pixelSize: Theme.fontSizeMicro
-                font.family: Theme.fontSans
-                wrapMode: Text.Wrap
-                Accessible.role: Accessible.StaticText
-                Accessible.name: text
-            }
         }
 
         // ── 正文 ───────────────────────────────────────
