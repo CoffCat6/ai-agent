@@ -92,6 +92,7 @@ private slots:
     void saveRejectsWindowsInvalidIds();
     void removeMissingReportsNotFound();
     void saveRejectsSymlinkSkillFile();
+    void saveAndRemoveRejectDirectoryLinkInsideRoot();
 };
 
 void TestSkillsEditor::validateIdAcceptsWellFormed() {
@@ -632,6 +633,46 @@ void TestSkillsEditor::saveRejectsSymlinkSkillFile() {
     QVERIFY(QFileInfo(linkPath).isSymLink());
 
     QFile::remove(linkPath);
+}
+
+void TestSkillsEditor::saveAndRemoveRejectDirectoryLinkInsideRoot() {
+    QTemporaryDir root;
+    QVERIFY(root.isValid());
+    QString error;
+
+    SkillEditorService::Draft victim;
+    victim.id = QStringLiteral("victim");
+    victim.body = QStringLiteral("victim body\n");
+    QVERIFY2(SkillEditorService::save(root.path(), victim, false, &error),
+             qPrintable(error));
+
+    const QString linkPath = root.filePath(QStringLiteral("alias"));
+    const QString target = root.filePath(QStringLiteral("victim"));
+    if (!makeDirectoryLink(linkPath, target))
+        QSKIP("目录 junction 创建不可用（需要权限）");
+
+    // 根内目录 junction 指向另一个技能：save 不得顺着链接覆盖目标。
+    SkillEditorService::Draft attack;
+    attack.id = QStringLiteral("alias");
+    attack.body = QStringLiteral("pwned\n");
+    QString code;
+    QVERIFY(!SkillEditorService::save(root.path(), attack, true, &error, &code));
+    QCOMPARE(code, QStringLiteral("symlink"));
+    QVERIFY(!QString::fromUtf8(
+                 readFile(skillFilePath(root.path(), QStringLiteral("victim"))))
+                 .contains(QStringLiteral("pwned")));
+
+    // remove 同样不得删除目标技能的文件/目录。
+    error.clear();
+    code.clear();
+    QVERIFY(!SkillEditorService::remove(root.path(), QStringLiteral("alias"),
+                                        &error, &code));
+    QCOMPARE(code, QStringLiteral("symlink"));
+    QVERIFY(QFileInfo(skillFilePath(root.path(), QStringLiteral("victim")))
+                .isFile());
+    QVERIFY(QFileInfo(linkPath).isDir());
+
+    removeDirectoryLink(linkPath);
 }
 
 QTEST_GUILESS_MAIN(TestSkillsEditor)

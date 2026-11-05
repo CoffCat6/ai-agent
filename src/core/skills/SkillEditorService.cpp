@@ -494,6 +494,24 @@ bool SkillEditorService::save(const QString& skillsRoot, const Draft& draft,
         setCode(code, "outside_root");
         return false;
     }
+    // 根内目录级 symlink/junction（例如 alias -> victim）的 canonical
+    // 目标仍在根内，但写入会落到被指向技能。canonical 路径与词法期望
+    // 路径不一致即说明经过了链接/重解析点，一律拒绝。
+    const QString expectedDir =
+        QDir::cleanPath(QDir(canonicalRoot).filePath(draft.id));
+#ifdef Q_OS_WIN
+    const bool sameDir =
+        canonicalDir.compare(expectedDir, Qt::CaseInsensitive) == 0;
+#else
+    const bool sameDir = canonicalDir == expectedDir;
+#endif
+    if (!sameDir) {
+        setError(error,
+                 QStringLiteral("技能目录经过链接/重解析点，拒绝保存：%1")
+                     .arg(draft.id));
+        setCode(code, "symlink");
+        return false;
+    }
 
     const QString filePath = QDir(canonicalDir).filePath(QStringLiteral("SKILL.md"));
     const PathWriteGuard guard(filePath);
@@ -604,6 +622,22 @@ bool SkillEditorService::remove(const QString& skillsRoot, const QString& id,
     if (!pathIsInside(canonicalRoot, canonicalDir)) {
         setError(error, QStringLiteral("技能目录越出技能根目录：%1").arg(id));
         setCode(code, dirInfo.isSymLink() ? "symlink" : "outside_root");
+        return false;
+    }
+    // 根内目录 junction/symlink 同样会删除被指向技能的文件/空目录；
+    // canonical 与词法期望路径不一致即拒绝（与 save 的规则一致）。
+    const QString expectedDir =
+        QDir::cleanPath(QDir(canonicalRoot).filePath(id));
+#ifdef Q_OS_WIN
+    const bool sameDir =
+        canonicalDir.compare(expectedDir, Qt::CaseInsensitive) == 0;
+#else
+    const bool sameDir = canonicalDir == expectedDir;
+#endif
+    if (!sameDir) {
+        setError(error,
+                 QStringLiteral("技能目录经过链接/重解析点，拒绝删除：%1").arg(id));
+        setCode(code, "symlink");
         return false;
     }
 
