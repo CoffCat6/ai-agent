@@ -91,6 +91,26 @@ private:
     static inline QThreadStorage<SubAgentProgressHook> s_hook;
 };
 
+// docs/43 O1-T2: project rules (AGENTS.md / .nexus/rules.md) handed to the
+// sub-agent run. AIAgent snapshots the block on the GUI thread (the rules
+// cache is not thread-safe) and installs it on the dispatching pool thread;
+// SubAgentTool copies it into the request. Same lifetime/threading contract
+// as SubAgentProgressRouter above.
+class SubAgentRulesRouter {
+public:
+    explicit SubAgentRulesRouter(QString rules) {
+        s_rules.localData() = std::move(rules);
+    }
+    ~SubAgentRulesRouter() { s_rules.localData().clear(); }
+    SubAgentRulesRouter(const SubAgentRulesRouter&) = delete;
+    SubAgentRulesRouter& operator=(const SubAgentRulesRouter&) = delete;
+
+    static QString current() { return s_rules.localData(); }
+
+private:
+    static inline QThreadStorage<QString> s_rules;
+};
+
 // docs/33 E2: a named role profile — the "hint" enum generalized into a
 // configurable roster. name is the model-facing id in spawn_agent's "role"
 // argument; prompt replaces the hint-based focus block in the sub-agent
@@ -120,6 +140,10 @@ struct SubAgentRequest {
                          // rolePrompt is set — kept so old callers still work
     QString rolePrompt;  // docs/33 E2: resolved SubAgentRole prompt; non-empty
                          // replaces the hint-based focus block
+    // docs/43 O1-T2: project rules snapshot (already rendered with its
+    // "Project rules (...)" header by AIAgent::projectRulesBlock); appended
+    // verbatim to the sub-agent system prompt.
+    QString projectRules;
     QVector<SubAgentToolEntry> tools;   // read-only snapshot (see above)
     // LLM round-trip budget incl. the forced final. 0 = 无预算（2026-11-01
     // 起不再是用户可配置限制，与主任务一致：模型自定何时收工）；内部仍设
@@ -137,6 +161,28 @@ struct SubAgentRequest {
     SubAgentProgressHook progress;       // optional; docs/32 P2 live progress
 };
 
+// docs/43 O2: one machine-readable conclusion parsed from the report's
+// trailing "## FINDINGS" section. Parsing never affects the report text —
+// a malformed section simply yields no findings.
+struct SubAgentFinding {
+    QString severity;   // critical | high | medium | low | info
+    QString path;       // project-relative when the report named one
+    int line{0};        // 0 = unspecified
+    QString message;
+};
+
+// docs/43 O2: classified usage. Providers that do not report per-class counts
+// leave every number at 0 and usageReported=false — the aggregate tokensUsed
+// on the report stays the source of truth in that case.
+struct SubAgentUsage {
+    QString model;
+    QString profileId;
+    int inputTokens{0};
+    int outputTokens{0};
+    int cachedTokens{0};   // OpenAI cached_tokens + Anthropic cache_read, merged
+    bool usageReported{false};
+};
+
 struct SubAgentReport {
     enum class Stop {
         Completed,   // final answer produced
@@ -148,9 +194,25 @@ struct SubAgentReport {
 
     bool ok{false};
     Stop stop{Stop::Error};
+    // docs/43 O2: machine-readable reason (completed / cancelled / timeout /
+    // budget / repeated / service_error / empty_response / no_service /
+    // invalid_goal). The Stop enum stays for existing UI/tests; stopCode is
+    // what the primary agent and audit consumers read.
+    QString stopCode{QStringLiteral("error")};
+    // docs/43 O1-T3: transient failure (service/network error, timeout, empty
+    // response) worth one automatic re-run. Budget/Cancelled and wiring
+    // failures are never retryable.
+    bool retryable{false};
+    // Set by SubAgentTool's attempt loop (1-based). Several attempts mean the
+    // steps/tokens below are the accumulated cost of the whole spawn call.
+    int attempt{1};
     QString text;        // final report (Completed) or a readable failure reason
     int steps{0};        // LLM round-trips actually used
     int tokensUsed{0};   // sum of the per-response token counts, when reported
+    // docs/43 O2: classified usage across every step and retry attempt.
+    SubAgentUsage usage;
+    // docs/43 O2: conclusions parsed from "## FINDINGS" (empty when absent).
+    QVector<SubAgentFinding> findings;
     // docs/33 E1: full transcript of the run (goal + every assistant/tool
     // message), written to the app-data artifacts directory. Empty when the
     // run had no tool rounds (nothing to preserve) or the disk write failed.

@@ -54,6 +54,43 @@ Item {
         return (raw !== undefined && raw !== null && raw.length > 0) ? raw : null
     }
     readonly property bool hasSubagentProposals: subagentProposals !== null
+    // docs/43 O4: classified usage from the structured report (trace light
+    // projection). Shown only when the provider actually reported it.
+    readonly property var subagentUsage: {
+        if (nodeType !== "tool_result") return null
+        const info = modelData.subagentReport
+        if (info === undefined || info === null || typeof info !== "object")
+            return null
+        const usage = info.usage
+        return (usage !== undefined && usage !== null
+                && usage.reported === true) ? usage : null
+    }
+    readonly property bool hasSubagentUsage: subagentUsage !== null
+    // docs/43 O4-3: trace 轻量投影里的 topFindings（≤3 条，O2 落盘时已带）
+    // ——展开区渲染摘要，全文仍在报告/证据工件里。
+    readonly property var subagentTopFindings: {
+        if (nodeType !== "tool_result") return null
+        const info = modelData.subagentReport
+        if (info === undefined || info === null || typeof info !== "object")
+            return null
+        const top = info.topFindings
+        return (top !== undefined && top !== null && top.length > 0) ? top : null
+    }
+    readonly property bool hasSubagentTopFindings: subagentTopFindings !== null
+    readonly property int subagentFindingCount: {
+        if (nodeType !== "tool_result") return 0
+        const info = modelData.subagentReport
+        if (info === undefined || info === null || typeof info !== "object") return 0
+        return Number(info.findingCount || 0)
+    }
+    // severity 着色与后台面板同口径：critical/high 危险红、medium 警示黄、
+    // low/info 中性。
+    function severityColor(severity) {
+        if (severity === "critical" || severity === "high")
+            return Theme.statusDanger
+        if (severity === "medium") return Theme.statusWarning
+        return Theme.textTertiary
+    }
     readonly property int proposalTotal: {
         if (!hasSubagentProposals) return 0
         let n = 0
@@ -110,7 +147,8 @@ Item {
     // 确认态必须展开，否则同意/拒绝按钮不可达。
     readonly property bool bodyVisible: (expanded || waitingConfirm)
                                         && (hasDetail || hasSubagentLog
-                                            || hasSubagentProposals)
+                                            || hasSubagentProposals
+                                            || hasSubagentTopFindings)
 
     // git_status 结构化展示：解析 porcelain v1 输出为文件状态列表
     readonly property bool isGitStatus: nodeType === "tool_result" && (modelData.title || "") === "git_status"
@@ -305,6 +343,37 @@ Item {
                         }
                     }
 
+                    // docs/43 O4: cost chip — what this spawn actually consumed.
+                    Rectangle {
+                        id: costChip
+                        objectName: "subagentCostChip"
+                        Layout.alignment: Qt.AlignVCenter
+                        visible: root.hasSubagentUsage
+                        Layout.preferredWidth: costText.implicitWidth + 14
+                        Layout.preferredHeight: 17
+                        radius: 3
+                        color: Theme.brandPrimary
+                        opacity: 0.14
+
+                        Text {
+                            id: costText
+                            objectName: "subagentCostText"
+                            anchors.centerIn: parent
+                            // visible 不阻止绑定求值：守卫必须写进表达式，
+                            // 否则 subagentUsage 为 null 的普通节点每次创建
+                            // 都会对 null 解引用刷 TypeError（docs/43 O4）。
+                            text: root.hasSubagentUsage
+                                      ? qsTr("输入 %1 · 输出 %2")
+                                            .arg(Number(root.subagentUsage.input || 0))
+                                            .arg(Number(root.subagentUsage.output || 0))
+                                      : ""
+                            color: Theme.brandPrimary
+                            font.pixelSize: Theme.fontSizeNano
+                            font.family: Theme.fontSans
+                            font.bold: true
+                        }
+                    }
+
                     // docs/33 E1: 证据工件入口——子代理报告的完整 transcript
                     // 落在本地文件，报告头里的纯文本路径用户没法直接用。
                     Rectangle {
@@ -420,7 +489,9 @@ Item {
                                   : (root.hasSubagentLog
                                      ? subagentLogComp
                                      : (root.hasSubagentProposals
-                                        ? proposalsComp : codeComp))
+                                        ? proposalsComp
+                                        : (root.hasSubagentTopFindings
+                                           ? findingsComp : codeComp)))
             }
 
             Component {
@@ -578,6 +649,90 @@ Item {
                         text: root.detailText
                         textColor: Theme.statusSuccess
                         bgColor: Theme.codeBackground
+                    }
+                }
+            }
+
+            // docs/43 O4-3: 结论摘要——轻量投影里的 topFindings（≤3 条），
+            // 全部结论看报告正文或证据工件。
+            Component {
+                id: findingsComp
+                Column {
+                    objectName: "subagentFindingsBody"
+                    width: bodyLoader.width
+                    spacing: Theme.spaceXs
+
+                    Text {
+                        width: parent.width
+                        text: root.subagentFindingCount > root.subagentTopFindings.length
+                            ? qsTr("结论（前 %1 / 共 %2 条，全部见报告）")
+                                  .arg(root.subagentTopFindings.length)
+                                  .arg(root.subagentFindingCount)
+                            : qsTr("结论（%1 条）")
+                                  .arg(root.subagentTopFindings.length)
+                        color: Theme.textTertiary
+                        font.pixelSize: Theme.fontSizeNano
+                        font.family: Theme.fontSans
+                    }
+
+                    Repeater {
+                        model: root.subagentTopFindings
+
+                        delegate: Column {
+                            required property var modelData
+                            width: parent.width
+                            spacing: 1
+
+                            Row {
+                                width: parent.width
+                                spacing: 6
+
+                                Rectangle {
+                                    anchors.verticalCenter: parent.verticalCenter
+                                    width: sevLabel.implicitWidth + 10
+                                    height: 15
+                                    radius: 3
+                                    color: root.severityColor(
+                                        String(modelData.severity || "info"))
+                                    opacity: 0.16
+
+                                    Text {
+                                        id: sevLabel
+                                        anchors.centerIn: parent
+                                        text: String(modelData.severity || "info")
+                                        color: root.severityColor(
+                                            String(modelData.severity || "info"))
+                                        font.pixelSize: Theme.fontSizeNano
+                                        font.family: Theme.fontSans
+                                        font.bold: true
+                                    }
+                                }
+
+                                Text {
+                                    anchors.verticalCenter: parent.verticalCenter
+                                    width: parent.width
+                                       - (sevLabel.implicitWidth + 10) - 6
+                                    text: (Number(modelData.line || 0) > 0)
+                                        ? qsTr("%1:%2")
+                                              .arg(String(modelData.path || ""))
+                                              .arg(Number(modelData.line))
+                                        : String(modelData.path || "")
+                                    color: Theme.brandPrimary
+                                    font.pixelSize: Theme.fontSizeCaption
+                                    font.family: Theme.fontMono
+                                    elide: Text.ElideMiddle
+                                }
+                            }
+
+                            Text {
+                                width: parent.width
+                                text: String(modelData.message || "")
+                                color: Theme.textPrimary
+                                font.pixelSize: Theme.fontSizeCaption
+                                font.family: Theme.fontSans
+                                wrapMode: Text.Wrap
+                            }
+                        }
                     }
                 }
             }

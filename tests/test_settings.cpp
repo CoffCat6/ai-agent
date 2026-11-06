@@ -2516,6 +2516,40 @@ Item {
         QVERIFY(!store.hasStoredValue("window.closeToTray"));
     }
 
+    // v4 → v5：子代理默认开启。只影响从未设置过该键的用户；显式关闭过的
+    // 用户保持关闭（迁移不覆盖用户意图）。
+    void schemaV5EnablesSubagentByDefaultOnce() {
+        auto restore = [](const QVariant& prior) {
+            QSettings s = NexusAI::TestSupport::testSettings();
+            if (prior.isValid()) s.setValue("agent/subagentEnabled", prior);
+            else s.remove("agent/subagentEnabled");
+            s.sync();
+        };
+        QSettings probe = NexusAI::TestSupport::testSettings();
+        const QVariant prior = probe.value("agent/subagentEnabled");
+        probe.remove("agent/subagentEnabled");
+        probe.setValue("schemaVersion", 4);
+        probe.sync();
+        {
+            SettingsService svc(nullptr);
+            QVERIFY(svc.subagentEnabled());
+        }
+        restore(prior);
+
+        // 显式关闭过：迁移不得打开。
+        {
+            QSettings s = NexusAI::TestSupport::testSettings();
+            s.setValue("agent/subagentEnabled", false);
+            s.setValue("schemaVersion", 4);
+            s.sync();
+        }
+        {
+            SettingsService svc(nullptr);
+            QVERIFY(!svc.subagentEnabled());
+        }
+        restore(prior);
+    }
+
     // v2 → v3/v4：contextTokens 旧默认值（8192、以及短暂存在过的 300000）归一
     // 为当前的保守默认 128000，而用户的自定义值必须原样保留——通用页输入框已
     // 移除，不能把用户的主动设置抹掉。

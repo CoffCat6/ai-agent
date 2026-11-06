@@ -739,6 +739,9 @@ qInfo() << "NexusAI" << app.applicationVersion() << "starting";
     auto subagentWaitTool = std::make_shared<SubAgentWaitTool>();
     auto subagentStatusTool = std::make_shared<SubAgentStatusTool>();
     auto subagentCancelTool = std::make_shared<SubAgentCancelTool>();
+    // docs/43 O4 审计收口（P1-3）: status 工具在池线程经注入引用读
+    // gateSummary，不再直查无锁 ToolRegistry（动态注销时并发读写是 UB）。
+    subagentStatusTool->setSpawnTool(subAgentTool);
     subAgentTool->setServiceFactory(
         [subAgentProfiles](const QString& profileId,
                            const QString& effort) -> IAIService* {

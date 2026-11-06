@@ -14,6 +14,7 @@
 
 #include <QtTest>
 #include <QQmlApplicationEngine>
+#include <functional>
 #include <QQmlComponent>
 #include <QQmlContext>
 #include <QQmlAbstractUrlInterceptor>
@@ -167,6 +168,49 @@ QVariantMap evidenceNode() {
     node[QStringLiteral("title")] = QStringLiteral("spawn_agent");
     node[QStringLiteral("evidencePath")] =
         QStringLiteral("/evidence/sa-1.md");
+    return node;
+}
+
+// docs/43 O4-3: trace 轻量投影的 topFindings 渲染为展开区摘要（徽章 +
+// 定位），findingCount 大于摘要条数时标题带「共 N 条」。
+QVariantMap findingsNode() {
+    QVariantMap node = spawnNode(0);
+    node[QStringLiteral("type")] = QStringLiteral("tool_result");
+    node[QStringLiteral("status")] = QStringLiteral("success");
+    node[QStringLiteral("title")] = QStringLiteral("spawn_agent");
+    node[QStringLiteral("subagentReport")] = QVariantMap{
+        {QStringLiteral("ok"), true},
+        {QStringLiteral("stopCode"), QStringLiteral("completed")},
+        {QStringLiteral("findingCount"), 5},
+        {QStringLiteral("topFindings"), QVariantList{
+            QVariantMap{{QStringLiteral("severity"), QStringLiteral("high")},
+                        {QStringLiteral("path"), QStringLiteral("src/a.cpp")},
+                        {QStringLiteral("line"), 12},
+                        {QStringLiteral("message"),
+                         QStringLiteral("null deref")}},
+            QVariantMap{{QStringLiteral("severity"), QStringLiteral("low")},
+                        {QStringLiteral("path"), QStringLiteral("src/b.cpp")},
+                        {QStringLiteral("line"), 40},
+                        {QStringLiteral("message"),
+                         QStringLiteral("stale comment")}}}}};
+    return node;
+}
+
+// docs/43 O4: 已上报分类用量的 spawn 结果节点带成本芯片。
+QVariantMap usageNode() {
+    QVariantMap node = spawnNode(0);
+    node[QStringLiteral("type")] = QStringLiteral("tool_result");
+    node[QStringLiteral("status")] = QStringLiteral("success");
+    node[QStringLiteral("title")] = QStringLiteral("spawn_agent");
+    node[QStringLiteral("subagentReport")] = QVariantMap{
+        {QStringLiteral("ok"), true},
+        {QStringLiteral("stopCode"), QStringLiteral("completed")},
+        {QStringLiteral("usage"),
+         QVariantMap{{QStringLiteral("input"), 1200},
+                     {QStringLiteral("output"), 300},
+                     {QStringLiteral("cached"), 0},
+                     {QStringLiteral("reported"), true},
+                     {QStringLiteral("model"), QStringLiteral("test-model")}}}};
     return node;
 }
 
@@ -400,6 +444,175 @@ private slots:
                 .toPoint());
         QTRY_COMPARE(vm.openedEvidence.size(), 1);
         QCOMPARE(vm.openedEvidence.first(), QStringLiteral("/evidence/sa-1.md"));
+    }
+// docs/43 O4: 分类用量只在 provider 真上报时显示，0 不能被当成免费。
+    void costChipShowsReportedUsage() {
+        QQmlApplicationEngine engine;
+        RowsModel rows;
+        StubAgentVM vm;
+        engine.rootContext()->setContextProperty(QStringLiteral("rowsModel"),
+                                                 &rows);
+        NexusQrcFallback interceptor(QStringLiteral(NEXUS_MODULE_DIR));
+        engine.addUrlInterceptor(&interceptor);
+        engine.addImportPath(QStringLiteral(NEXUS_BUILD_DIR));
+
+        QQmlComponent component(&engine, QUrl::fromLocalFile(
+            QStringLiteral(NEXUS_TEST_QML_DIR "/ProcessCardHarness.qml")));
+        QVERIFY2(component.isReady(), qPrintable(component.errorString()));
+        std::unique_ptr<QObject> root(component.create());
+        QVERIFY2(root, qPrintable(component.errorString()));
+        auto* win = qobject_cast<QQuickWindow*>(root.get());
+        QVERIFY(win);
+        win->show();
+        QVERIFY(QTest::qWaitForWindowExposed(win));
+        QVERIFY(QMetaObject::invokeMethod(
+            root.get(), "setInjectedAgent",
+            Q_ARG(QVariant, QVariant::fromValue<QObject*>(&vm))));
+
+        rows.setRow(usageNode());
+        QTest::qWait(120);
+
+        QQuickItem* chip = findChildItem(win->contentItem(),
+                                         QStringLiteral("subagentCostChip"));
+        QVERIFY2(chip, "成本芯片没有渲染");
+        QVERIFY(chip->isVisible());
+        QQuickItem* text = findChildItem(win->contentItem(),
+                                         QStringLiteral("subagentCostText"));
+        QVERIFY(text);
+        const QString label = text->property("text").toString();
+        QVERIFY2(label.contains(QStringLiteral("输入 1200"))
+                     && label.contains(QStringLiteral("输出 300")),
+                 qPrintable(label));
+
+        QVariantMap unreported = usageNode();
+        QVariantMap report = unreported.value(
+            QStringLiteral("subagentReport")).toMap();
+        QVariantMap usage = report.value(QStringLiteral("usage")).toMap();
+        usage[QStringLiteral("reported")] = false;
+        report[QStringLiteral("usage")] = usage;
+        unreported[QStringLiteral("subagentReport")] = report;
+        rows.setRow(unreported);
+        QTest::qWait(120);
+        QQuickItem* hidden = findChildItem(win->contentItem(),
+                                          QStringLiteral("subagentCostChip"));
+        QVERIFY2(!hidden || !hidden->isVisible(),
+                 "未上报分类用量时不应显示成本芯片");
+    }
+    // 真机回归（2026-11-06）：普通节点（tool_call、无 subagentReport）上
+    // costText 的 text 绑定对 null 的 subagentUsage 解引用，每次卡片创建都
+    // 刷 "ProcessCard.qml:363 TypeError"——visible 不阻止绑定求值，守卫
+    // 必须在表达式内。failOnWarning 只对本用例生效，绑定重新求值期间
+    // 出现任何 ProcessCard TypeError 即红。
+    void plainNodeDoesNotWarnOnCostBinding() {
+        QTest::failOnWarning(QRegularExpression(
+            QStringLiteral("ProcessCard\\.qml.*TypeError")));
+        QQmlApplicationEngine engine;
+        RowsModel rows;
+        engine.rootContext()->setContextProperty(QStringLiteral("rowsModel"),
+                                                 &rows);
+        NexusQrcFallback interceptor(QStringLiteral(NEXUS_MODULE_DIR));
+        engine.addUrlInterceptor(&interceptor);
+        engine.addImportPath(QStringLiteral(NEXUS_BUILD_DIR));
+
+        QQmlComponent component(&engine, QUrl::fromLocalFile(
+            QStringLiteral(NEXUS_TEST_QML_DIR "/ProcessCardHarness.qml")));
+        QVERIFY2(component.isReady(), qPrintable(component.errorString()));
+        std::unique_ptr<QObject> root(component.create());
+        QVERIFY2(root, qPrintable(component.errorString()));
+        auto* win = qobject_cast<QQuickWindow*>(root.get());
+        QVERIFY(win);
+        win->show();
+        QVERIFY(QTest::qWaitForWindowExposed(win));
+
+        // tool_call 运行态 + 无报告：subagentUsage 为 null 的最普遍形态。
+        rows.setRow(spawnNode(2));
+        QTest::qWait(120);
+        // 再喂一次数据变更触发绑定重求值（模拟 trace 节点刷新）。
+        QVariantMap refreshed = spawnNode(3);
+        refreshed[QStringLiteral("status")] = QStringLiteral("success");
+        rows.setRow(refreshed);
+        QTest::qWait(120);
+
+        QQuickItem* chip = findChildItem(win->contentItem(),
+                                         QStringLiteral("subagentCostChip"));
+        QVERIFY2(!chip || !chip->isVisible(), "普通节点不应显示成本芯片");
+    }
+    // docs/43 O4-3: topFindings 摘要渲染（role 路径 sequence wrapper 判型
+    // 与 subagentLog/subagentProposals 同语义），body 选择 findingsComp。
+    void findingsSummaryRendersFromTopFindings() {
+        QQmlApplicationEngine engine;
+        RowsModel rows;
+        engine.rootContext()->setContextProperty(QStringLiteral("rowsModel"),
+                                                 &rows);
+        NexusQrcFallback interceptor(QStringLiteral(NEXUS_MODULE_DIR));
+        engine.addUrlInterceptor(&interceptor);
+        engine.addImportPath(QStringLiteral(NEXUS_BUILD_DIR));
+
+        QQmlComponent component(&engine, QUrl::fromLocalFile(
+            QStringLiteral(NEXUS_TEST_QML_DIR "/ProcessCardHarness.qml")));
+        QVERIFY2(component.isReady(), qPrintable(component.errorString()));
+        std::unique_ptr<QObject> root(component.create());
+        QVERIFY2(root, qPrintable(component.errorString()));
+        auto* win = qobject_cast<QQuickWindow*>(root.get());
+        QVERIFY(win);
+        win->show();
+        QVERIFY(QTest::qWaitForWindowExposed(win));
+
+        auto* harness = root.get();
+        const auto probe = [&]() -> QVariantMap {
+            QVariant out;
+            const bool ok = QMetaObject::invokeMethod(harness, "probe",
+                                              Q_RETURN_ARG(QVariant, out));
+            return ok ? out.toMap() : QVariantMap{{QStringLiteral("found"), false}};
+        };
+
+        rows.setRow(findingsNode());
+        QTest::qWait(120);
+        QVariantMap p = probe();
+        QCOMPARE(p.value(QStringLiteral("found")).toBool(), true);
+        QCOMPARE(p.value(QStringLiteral("hasSubagentTopFindings")).toBool(), true);
+        QCOMPARE(p.value(QStringLiteral("findingsShown")).toInt(), 2);
+        QCOMPARE(p.value(QStringLiteral("findingCount")).toInt(), 5);
+        QCOMPARE(p.value(QStringLiteral("bodyObjectName")).toString(),
+                 QStringLiteral("subagentFindingsBody"));
+
+        // 摘要内逐条渲染：high 徽章 + src/a.cpp:12 定位 + 标题带总数。
+        QQuickItem* card = findChildItem(win->contentItem(),
+                                         QStringLiteral("card"));
+        QVERIFY(card);
+        // 递归遍历需显式类型（auto lambda 不能自引用）。
+        std::function<void(QQuickItem*, int&, int&, QString&)> walkTexts =
+            [&](QQuickItem* item, int& highBadges, int& locations,
+                QString& title) {
+            const QString text = item->property("text").toString();
+            if (!text.isEmpty()) {
+                if (text == QLatin1String("high")) ++highBadges;
+                if (text.contains(QStringLiteral("src/a.cpp:12"))) ++locations;
+                if (text.contains(QStringLiteral("共 5 条"))) title = text;
+            }
+            for (QQuickItem* child : item->childItems())
+                walkTexts(child, highBadges, locations, title);
+        };
+        int highBadges = 0;
+        int locations = 0;
+        QString title;
+        walkTexts(card, highBadges, locations, title);
+        QCOMPARE(highBadges, 1);
+        QCOMPARE(locations, 1);
+        QVERIFY2(title.contains(QStringLiteral("共 5 条")),
+                 qPrintable(title));
+
+        // 无 findings 键的节点回落参数代码块，不渲染摘要。
+        QVariantMap none = findingsNode();
+        QVariantMap report = none.value(QStringLiteral("subagentReport")).toMap();
+        report.remove(QStringLiteral("topFindings"));
+        none[QStringLiteral("subagentReport")] = report;
+        rows.setRow(none);
+        QTest::qWait(120);
+        p = probe();
+        QCOMPARE(p.value(QStringLiteral("hasSubagentTopFindings")).toBool(), false);
+        QCOMPARE(p.value(QStringLiteral("bodyObjectName")).toString(),
+                 QStringLiteral(""));
     }
 };
 

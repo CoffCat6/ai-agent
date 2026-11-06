@@ -249,8 +249,16 @@ public slots:
     QVariantList backgroundSubAgents() const;
     int backgroundSubAgentActiveCount() const;
     bool cancelBackgroundSubAgent(const QString& taskId);
+    // docs/43 O4-2: 终态（failed/cancelled）后台任务用保存的原始 spawn 参数
+    // 重派一个全新后台任务；原任务保留。不可重试（未知/非本会话/运行中/
+    // 旧任务无快照）返回 false。重派不写主历史、不推主循环——新任务经
+    // hub changed → syncBackgroundTraceNodes 自动上 trace 与面板。
+    bool retryBackgroundSubAgent(const QString& taskId);
     int cancelAllBackgroundSubAgents();
     QString backgroundSubAgentReport(const QString& taskId) const;
+    // docs/43 O4-3: 终态任务的 findings 逐条结构化返回（severity/path/line/
+    // message），供详情区按需渲染；快照只带 count，250ms 刷新不携带全文。
+    QVariantList backgroundSubAgentFindings(const QString& taskId) const;
     void dismissFinishedBackgroundSubAgents();
     void resetSession();                            // clear everything, fresh session
     void resumeSession(const QString& sessionId);   // load history + trace from memory

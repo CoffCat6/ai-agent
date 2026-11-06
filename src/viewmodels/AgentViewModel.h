@@ -603,8 +603,12 @@ public:
                READ backgroundSubAgentActiveCount
                NOTIFY backgroundSubAgentsChanged)
     Q_INVOKABLE bool cancelBackgroundSubAgent(const QString& taskId);
+    // docs/43 O4-2: 终态后台子代理一键重试（原参数重派新任务）。
+    Q_INVOKABLE bool retryBackgroundSubAgent(const QString& taskId);
     Q_INVOKABLE int cancelAllBackgroundSubAgents();
     Q_INVOKABLE QString backgroundSubAgentReport(const QString& taskId) const;
+    // docs/43 O4-3: 详情区 findings 逐条结构化数据（按需查询，不走快照）。
+    Q_INVOKABLE QVariantList backgroundSubAgentFindings(const QString& taskId) const;
     Q_INVOKABLE void dismissFinishedBackgroundSubAgents();
     // docs/25 A4：停**全部**标签的任务（托盘退出等收尾路径用），替代只停
     // active tab 的 stop()——后者让其余 busy tab 依赖 app 析构 → controller

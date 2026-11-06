@@ -37,6 +37,9 @@ Dialog {
     // 选中任务（右栏）。按 id 保存，列表更新/重排不会丢选择。
     property string selectedId: ""
     property string selectedReport: ""
+    // docs/43 O4-3: 选中终态任务的 findings 逐条数据（refreshReport 按需
+    // 查询，快照 250ms 刷新只带 count 不携带全文）。
+    property var findings: []
     // 右栏页签：0 = 实时进度，1 = 完整报告。运行中只看进度，完成后可切换。
     property int detailTab: 0
 
@@ -133,8 +136,34 @@ Dialog {
         return maxSteps > 0 ? qsTr("%1 / %2").arg(steps).arg(maxSteps)
                             : String(steps)
     }
-    function groupRank(display) {
-        if (display === "running" || display === "cancelling") return 0
+    // docs/43 O4: cost is only shown when the provider reported classified
+    // usage; otherwise fall back to the aggregate token count (never show
+    // zeros as "free").
+    function usageText(task) {
+        if (!task) return ""
+        const usage = task.usage || {}
+        const tokens = Number(task.tokensUsed || 0)
+        const model = String(usage.model || "")
+        let text = model !== "" ? model + " · " : ""
+        if (usage.reported === true) {
+            text += qsTr("输入 %1 / 输出 %2")
+                        .arg(Number(usage.input || 0))
+                        .arg(Number(usage.output || 0))
+            const cached = Number(usage.cached || 0)
+            if (cached > 0) text += qsTr(" / 缓存 %1").arg(cached)
+        } else {
+            text += qsTr("tokens %1").arg(tokens)
+        }
+        return text
+    }
+    // docs/43 O4-3: severity 着色与过程卡片同口径。
+    function severityColor(severity) {
+        if (severity === "critical" || severity === "high")
+            return Theme.statusDanger
+        if (severity === "medium") return Theme.statusWarning
+        return Theme.textTertiary
+    }
+    function groupRank(display) {        if (display === "running" || display === "cancelling") return 0
         if (display === "queued") return 1
         return 2
     }
@@ -189,6 +218,9 @@ Dialog {
             steps: Number(task.steps || 0),
             maxSteps: Number(task.maxSteps || 0),
             proposalCount: Number(task.proposalCount || 0),
+            tokensUsed: Number(task.tokensUsed || 0),
+            findingCount: Number(task.findingCount || 0),
+            stopCode: String(task.stopCode || ""),
             error: String(task.error || "")
             // progressTail / cancelling 等复杂或派生字段不进 ListModel：
             // QVariantList/JS array 的 role 类型会在 append/set 之间冲突
@@ -266,12 +298,23 @@ Dialog {
         const task = dialog.findTask(dialog.selectedId)
         if (!task || !dialog.isTerminal(dialog.displayState(task))) {
             dialog.selectedReport = ""
+            dialog.findings = []
             if (dialog.detailTab === 1) dialog.detailTab = 0
             return
         }
         dialog.selectedReport =
             String(dialog.agentFacade.backgroundSubAgentReport(
                        String(task.id)) || "")
+        // docs/43 O4-3: findings 同一时机按需查询；老宿主（无此方法）静默
+        // 置空，不影响报告页签。
+        if (typeof dialog.agentFacade.backgroundSubAgentFindings
+                === "function") {
+            dialog.findings =
+                dialog.agentFacade.backgroundSubAgentFindings(String(task.id))
+                    || []
+        } else {
+            dialog.findings = []
+        }
         if (dialog.selectedReport === "" && dialog.detailTab === 1)
             dialog.detailTab = 0
     }
@@ -487,6 +530,9 @@ Dialog {
                             required property int steps
                             required property int maxSteps
                             required property int proposalCount
+                            required property int tokensUsed
+                            required property int findingCount
+                            required property string stopCode
 
                             readonly property bool selected:
                                 dialog.selectedId === taskId
@@ -566,6 +612,24 @@ Dialog {
                                         visible: rowCard.proposalCount > 0
                                         text: qsTr("%1 个提案").arg(
                                                   rowCard.proposalCount)
+                                        color: Theme.brandPrimary
+                                        font.pixelSize: Theme.fontSizeMicro
+                                        font.family: Theme.fontMono
+                                    }
+                                    Text {
+                                        objectName: "backgroundTaskRowTokens_" + rowCard.taskId
+                                        visible: rowCard.tokensUsed > 0
+                                        text: qsTr("tokens %1").arg(
+                                                  rowCard.tokensUsed)
+                                        color: Theme.textTertiary
+                                        font.pixelSize: Theme.fontSizeMicro
+                                        font.family: Theme.fontMono
+                                    }
+                                    Text {
+                                        objectName: "backgroundTaskRowFindings_" + rowCard.taskId
+                                        visible: rowCard.findingCount > 0
+                                        text: qsTr("%1 条结论").arg(
+                                                  rowCard.findingCount)
                                         color: Theme.brandPrimary
                                         font.pixelSize: Theme.fontSizeMicro
                                         font.family: Theme.fontMono
@@ -778,6 +842,115 @@ Dialog {
                         }
                     }
 
+                    Text {
+                        objectName: "backgroundTaskDetailUsage"
+                        Layout.fillWidth: true
+                        visible: dialog.selectedTask !== null
+                                 && Number(dialog.selectedTask.tokensUsed || 0) > 0
+                        text: dialog.usageText(dialog.selectedTask)
+                        color: Theme.textTertiary
+                        font.pixelSize: Theme.fontSizeMicro
+                        font.family: Theme.fontMono
+                        elide: Text.ElideRight
+                    }
+
+                    Text {
+                        objectName: "backgroundTaskDetailStopCode"
+                        Layout.fillWidth: true
+                        visible: dialog.selectedTask !== null
+                                 && String(dialog.selectedTask.stopCode || "") !== ""
+                                 && String(dialog.selectedTask.stopCode || "")
+                                    !== "completed"
+                        text: dialog.selectedTask
+                                  ? qsTr("stop: %1").arg(
+                                        String(dialog.selectedTask.stopCode || ""))
+                                  : ""
+                        color: Theme.statusWarning
+                        font.pixelSize: Theme.fontSizeMicro
+                        font.family: Theme.fontMono
+                    }
+
+                    // docs/43 O4-3: findings 逐条列表（severity 徽章 + 位置 +
+                    // 说明）。快照只带 count，这里选中终态任务时按需查询；
+                    // 无 findings 的任务不渲染。
+                    ColumnLayout {
+                        id: findingsSection
+                        objectName: "backgroundTaskDetailFindings"
+                        Layout.fillWidth: true
+                        spacing: 3
+                        visible: dialog.findings.length > 0
+
+                        Text {
+                            objectName: "backgroundTaskDetailFindingsTitle"
+                            Layout.fillWidth: true
+                            text: qsTr("结论（%1 条）").arg(dialog.findings.length)
+                            color: Theme.textTertiary
+                            font.pixelSize: Theme.fontSizeMicro
+                            font.family: Theme.fontSans
+                        }
+
+                        Repeater {
+                            model: dialog.findings
+
+                            delegate: RowLayout {
+                                id: findingRow
+                                required property var modelData
+                                Layout.fillWidth: true
+                                spacing: 6
+
+                                Rectangle {
+                                    Layout.alignment: Qt.AlignVCenter
+                                    width: findingSev.implicitWidth + 10
+                                    height: 14
+                                    radius: 3
+                                    color: dialog.severityColor(
+                                        String(findingRow.modelData.severity
+                                               || "info"))
+                                    opacity: 0.16
+
+                                    Text {
+                                        id: findingSev
+                                        anchors.centerIn: parent
+                                        text: String(findingRow.modelData.severity
+                                                     || "info")
+                                        color: dialog.severityColor(
+                                            String(findingRow.modelData.severity
+                                                   || "info"))
+                                        font.pixelSize: Theme.fontSizeNano
+                                        font.family: Theme.fontSans
+                                        font.bold: true
+                                    }
+                                }
+
+                                Text {
+                                    Layout.fillWidth: true
+                                    Layout.alignment: Qt.AlignVCenter
+                                    text: Number(findingRow.modelData.line || 0) > 0
+                                        ? qsTr("%1:%2")
+                                              .arg(String(findingRow.modelData.path
+                                                          || ""))
+                                              .arg(Number(findingRow.modelData.line))
+                                        : String(findingRow.modelData.path || "")
+                                    color: Theme.brandPrimary
+                                    font.pixelSize: Theme.fontSizeCaption
+                                    font.family: Theme.fontMono
+                                    elide: Text.ElideMiddle
+                                }
+
+                                Text {
+                                    Layout.fillWidth: true
+                                    Layout.alignment: Qt.AlignVCenter
+                                    Layout.preferredWidth: -1
+                                    text: String(findingRow.modelData.message || "")
+                                    color: Theme.textPrimary
+                                    font.pixelSize: Theme.fontSizeCaption
+                                    font.family: Theme.fontSans
+                                    elide: Text.ElideRight
+                                }
+                            }
+                        }
+                    }
+
                     RowLayout {
                         Layout.fillWidth: true
                         spacing: 8
@@ -793,6 +966,21 @@ Dialog {
                                        .cancelBackgroundSubAgent(String(
                                            dialog.selectedTask.id))
                             Accessible.name: qsTr("停止这个后台子代理")
+                        }
+                        // docs/43 O4-2: 失败/取消的终态任务可按原始参数一键
+                        // 重派（新任务独立出现在列表与 trace）。
+                        AppButton {
+                            objectName: "backgroundTaskDetailRetry"
+                            visible: dialog.selectedTask !== null
+                                && (dialog.displayState(dialog.selectedTask)
+                                        === "failed"
+                                    || dialog.displayState(dialog.selectedTask)
+                                        === "cancelled")
+                            text: qsTr("重试")
+                            onClicked: dialog.agentFacade
+                                       .retryBackgroundSubAgent(String(
+                                           dialog.selectedTask.id))
+                            Accessible.name: qsTr("按原始参数重试这个后台子代理")
                         }
                         Text {
                             objectName: "backgroundTaskDetailStopping"

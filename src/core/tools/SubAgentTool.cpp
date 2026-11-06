@@ -20,6 +20,9 @@ namespace NexusAI {
 namespace {
 constexpr int kMaxParallelCeiling = 8;
 constexpr int kSlotWaitSliceMs = 250;   // cancellation granularity while queued
+// docs/43 O1-T3: transient failures get one automatic re-run (two attempts
+// total). Each attempt accumulates steps/tokens into the final report.
+constexpr int kSubAgentMaxAttempts = 2;
 } // namespace
 
 // docs/33 E2: the preset roster. Prompts stay English to match the base
@@ -304,10 +307,18 @@ QVector<SubAgentToolEntry> SubAgentTool::catalogSnapshot() const {
 bool SubAgentTool::acquireSlot(const Cancellation& cancelled,
                                const std::function<void()>& onQueued) {
     std::unique_lock<std::mutex> lock(m_gateMutex);
+    bool countedQueued = false;
     while (true) {
         if (m_activeRuns < m_maxParallel) {
             ++m_activeRuns;
+            if (countedQueued) --m_queuedRuns;
             return true;
+        }
+        // docs/43 O3: queued runs are visible to gateSummary() so the primary
+        // agent can see that its next spawn will only wait.
+        if (!countedQueued) {
+            ++m_queuedRuns;
+            countedQueued = true;
         }
         // docs/35 P4.5: report the wait at the same cadence as the cancel
         // poll, so the trace node shows "queued" instead of looking stuck.
@@ -316,7 +327,10 @@ bool SubAgentTool::acquireSlot(const Cancellation& cancelled,
         // queue does not strand the call.
         m_gateCv.wait_for(lock, std::chrono::milliseconds(kSlotWaitSliceMs),
                           [&]() { return m_activeRuns < m_maxParallel; });
-        if (cancelled && cancelled->load()) return false;
+        if (cancelled && cancelled->load()) {
+            if (countedQueued) --m_queuedRuns;
+            return false;
+        }
     }
 }
 
@@ -328,12 +342,19 @@ void SubAgentTool::releaseSlot() {
     m_gateCv.notify_one();
 }
 
+QString SubAgentTool::gateSummary() const {
+    std::lock_guard<std::mutex> lock(m_gateMutex);
+    return QStringLiteral("slots: %1/%2 running, %3 queued")
+        .arg(m_activeRuns).arg(m_maxParallel).arg(m_queuedRuns);
+}
+
 ToolResult SubAgentTool::execute(const QJsonObject& args, const Cancellation& cancelled) {
     const QString goal = args.value(QStringLiteral("goal")).toString().trimmed();
     if (goal.isEmpty())
         return ToolResult::fail(QStringLiteral("'goal' is required and must not be empty."));
     if (cancelled && cancelled->load())
-        return ToolResult::fail(QStringLiteral("Cancelled before start."));
+        return ToolResult::fail(QStringLiteral(
+            "Sub-agent did not complete the goal. Reason: Sub-agent cancelled before start."));
 
     if (!m_factory)
         return ToolResult::fail(QStringLiteral(
@@ -423,11 +444,22 @@ ToolResult SubAgentTool::execute(const QJsonObject& args, const Cancellation& ca
         bgRequest.timeoutMs = m_timeoutMs.load();
         bgRequest.contextLimit = contextLimit;
         bgRequest.cancelled = bgCancelled;
+        // docs/43 O1-T2: the hub work runs on ANOTHER pool thread where the
+        // rules router is not installed, so snapshot it here (dispatch thread).
+        bgRequest.projectRules = SubAgentRulesRouter::current();
         const ServiceFactory factory = m_factory;
         const QString roleProfileId = resolved.profileId;
         const QString roleEffort = resolved.effort;
         const QString roleLabel = resolved.name.isEmpty()
             ? QStringLiteral("explore") : resolved.name;
+        // docs/43 O4 审计收口（P1-1）: 把解析后的 background 决策固化进
+        // 重试快照——重试重放的是「当时」的调度决策，而非按当前设置/
+        // 角色表重解析。否则设置变更（presetBackground 关闭、角色编辑）
+        // 后一键重试会退化为同步执行：整个子代理在池线程同步跑完，结果
+        // 被 retryBackgroundSubAgent 丢弃，不进 hub/面板/trace，不可观测
+        // 也不可取消（显式 false 的调用不进此分支，固化 true 无歧义）。
+        QJsonObject pinnedSpawnArgs = args;
+        pinnedSpawnArgs.insert(QStringLiteral("background"), true);
         const QString taskId = hub->createTask(
             goal, roleLabel, bgCancelled,
             [this, bgRequest, factory, roleProfileId, roleEffort,
@@ -448,20 +480,64 @@ ToolResult SubAgentTool::execute(const QJsonObject& args, const Cancellation& ca
                 })) {
                     report.stop = SubAgentReport::Stop::Cancelled;
                     report.text = QStringLiteral(
-                        "Cancelled while waiting for a free sub-agent slot.");
+                        "Sub-agent cancelled while waiting for a free sub-agent slot.");
                 } else {
-                    IAIService* service = factory
-                        ? factory(roleProfileId, roleEffort) : nullptr;
                     bgRequest.progress = [hub, id](const SubAgentProgress& p) {
                         hub->updateProgress(id, p.phase, p.detail,
                                             p.step, p.maxSteps);
                     };
-                    report = SubAgentRunner::run(service, bgRequest);
-                    delete service;
+                    // docs/43 O1-T3: one automatic re-run on transient errors.
+                    for (int attempt = 1; attempt <= kSubAgentMaxAttempts; ++attempt) {
+                        if (bgCancelled->load()) {
+                            report.stop = SubAgentReport::Stop::Cancelled;
+                            report.text = QStringLiteral(
+                                "Sub-agent cancelled before attempt %1.").arg(attempt);
+                            break;
+                        }
+                        IAIService* service = factory
+                            ? factory(roleProfileId, roleEffort) : nullptr;
+                        SubAgentReport attemptReport =
+                            SubAgentRunner::run(service, bgRequest);
+                        delete service;
+                        if (attempt > 1) {
+                            attemptReport.steps += report.steps;
+                            attemptReport.tokensUsed += report.tokensUsed;
+                            // docs/43 O4 审计收口（P1-2）: 分类用量必须与
+                            // steps/tokensUsed 同样跨 attempt 累计；否则被末次
+                            // attempt 覆盖，input+output ≠ tokensUsed，成本
+                            // 芯片与审计 subagent_usage 双通道失真。
+                            attemptReport.usage.inputTokens
+                                += report.usage.inputTokens;
+                            attemptReport.usage.outputTokens
+                                += report.usage.outputTokens;
+                            attemptReport.usage.cachedTokens
+                                += report.usage.cachedTokens;
+                            attemptReport.usage.usageReported
+                                = attemptReport.usage.usageReported
+                                  || report.usage.usageReported;
+                        }
+                        report = attemptReport;
+                        report.attempt = attempt;
+                        if (report.ok || !report.retryable || bgCancelled->load())
+                            break;
+                        if (attempt >= kSubAgentMaxAttempts) break;
+                        bgRequest.context += QStringLiteral(
+                            "\nPrevious attempt failed (%1); avoid the same "
+                            "failure and try a different approach if needed.")
+                            .arg(report.text.left(300));
+                        hub->updateProgress(id, QStringLiteral("retry"),
+                            QStringLiteral("attempt %1/%2 after a transient failure")
+                                .arg(attempt + 1).arg(kSubAgentMaxAttempts), 0, 0);
+                    }
+                    report.usage.profileId = roleProfileId;
                     releaseSlot();
                 }
                 hub->finishTask(id, report);
-            });
+            },
+            // docs/43 O4-2: keep the original arguments for one-click retry
+            // (sessionId stays router-derived as before). The pinned copy
+            // carries the resolved background decision (see P1-1 above).
+            {}, pinnedSpawnArgs);
         if (taskId.isEmpty())
             return ToolResult::fail(QStringLiteral(
                 "Too many background sub-agents (%1 max). Wait for one to "
@@ -469,7 +545,8 @@ ToolResult SubAgentTool::execute(const QJsonObject& args, const Cancellation& ca
                 .arg(BackgroundTaskHub::kMaxTasks));
         return ToolResult::ok(QStringLiteral(
             "[Sub-agent started] id=%1. Collect with subagent_wait(id) when "
-            "needed; subagent_status(id) reports progress.").arg(taskId));
+            "needed; subagent_status(id) reports progress.\n%2")
+            .arg(taskId, gateSummary()));
     }
 
     // docs/32 P2: the dispatcher installs a thread-local progress hook around
@@ -481,9 +558,11 @@ ToolResult SubAgentTool::execute(const QJsonObject& args, const Cancellation& ca
             progressHook(SubAgentProgress{0, 0, QStringLiteral("queued"),
                                           QStringLiteral("waiting for a free slot")});
     };
-    if (!acquireSlot(cancelled, onQueued))
+if (!acquireSlot(cancelled, onQueued)) {
         return ToolResult::fail(QStringLiteral(
-            "Cancelled while waiting for a free sub-agent slot."));
+            "Sub-agent did not complete the goal. Reason: Sub-agent cancelled "
+            "while waiting for a free sub-agent slot."));
+    }
 
     SubAgentRequest request;
     request.goal = goal;
@@ -496,14 +575,50 @@ ToolResult SubAgentTool::execute(const QJsonObject& args, const Cancellation& ca
     request.contextLimit = contextLimit;
     request.cancelled = cancelled;
     request.progress = progressHook;
+    // docs/43 O1-T2: workspace rules follow the same thread-local hand-off as
+    // the progress hook (installed by AIAgent around this execute()).
+    request.projectRules = SubAgentRulesRouter::current();
 
-    IAIService* service = m_factory
-        ? m_factory(resolved.profileId, resolved.effort) : nullptr;
-    SubAgentReport report = SubAgentRunner::run(service, request);
-    // The factory hands over ownership; the service was created and used on
-    // this thread, so a plain delete here is safe.
-    delete service;
+    // docs/43 O1-T3: transient failures (service/network error, timeout, empty
+    // response) get one automatic re-run. A cancel never retries; Budget
+    // failures do not either (the model itself failed to converge).
+    SubAgentReport report;
+    for (int attempt = 1; attempt <= kSubAgentMaxAttempts; ++attempt) {
+        IAIService* service = m_factory
+            ? m_factory(resolved.profileId, resolved.effort) : nullptr;
+        SubAgentReport attemptReport = SubAgentRunner::run(service, request);
+        // The factory hands over ownership; the service was created and used
+        // on this thread, so a plain delete here is safe.
+        delete service;
+        if (attempt > 1) {
+            attemptReport.steps += report.steps;
+            attemptReport.tokensUsed += report.tokensUsed;
+            // docs/43 O4 审计收口（P1-2）: 与后台路径同口径——分类用量跨
+            // attempt 累计，reported 取 OR（部分上报也是真实数据）。
+            attemptReport.usage.inputTokens += report.usage.inputTokens;
+            attemptReport.usage.outputTokens += report.usage.outputTokens;
+            attemptReport.usage.cachedTokens += report.usage.cachedTokens;
+            attemptReport.usage.usageReported =
+                attemptReport.usage.usageReported
+                || report.usage.usageReported;
+        }
+        report = attemptReport;
+        report.attempt = attempt;
+        if (report.ok || !report.retryable) break;
+        if (cancelled && cancelled->load()) break;
+        if (attempt >= kSubAgentMaxAttempts) break;
+        request.context += QStringLiteral(
+            "\nPrevious attempt failed (%1); avoid the same failure and try a "
+            "different approach if needed.").arg(report.text.left(300));
+        if (progressHook) {
+            progressHook(SubAgentProgress{0, 0, QStringLiteral("retry"),
+                QStringLiteral("attempt %1/%2 after a transient failure")
+                    .arg(attempt + 1).arg(kSubAgentMaxAttempts)});
+        }
+    }
     releaseSlot();
+
+    report.usage.profileId = resolved.profileId;
 
     // docs/33 E4: 计划对齐回显——提醒模型按报告同步该 todo 项的状态
     // （追加在 tokens 之后，stats 前缀形态不变）。
@@ -512,6 +627,8 @@ ToolResult SubAgentTool::execute(const QJsonObject& args, const Cancellation& ca
     ToolResult result = report.ok
         ? ToolResult::ok(reportOutput(report, todoId))
         : ToolResult::fail(reportOutput(report, todoId));
+    // docs/43 O2: structured report rides alongside the human-readable text.
+    result.metadata.insert(QStringLiteral("subagentReport"), reportJson(report));
     // docs/34 P3.2 / docs/35 P4.4: 提案随结果回传。trace 只持久化轻量索引；
     // 完整提案由 AIAgent 送进会话注册表（transient）。
     if (!report.proposals.isEmpty()) {
@@ -527,6 +644,10 @@ QString SubAgentTool::reportOutput(const SubAgentReport& report,
                                    const QString& todoId) {
     QString stats = QStringLiteral("steps: %1, tokens: %2")
                         .arg(report.steps).arg(report.tokensUsed);
+    // docs/43 O1-T3: after an automatic retry the steps/tokens above are the
+    // accumulated cost; echo the attempt count so the primary agent knows.
+    if (report.attempt > 1)
+        stats += QStringLiteral(", attempts: %1").arg(report.attempt);
     // docs/33 E1: full transcript path for on-demand file_read; prefix keeps
     // the audit-side stats regex (steps/tokens) matching.
     if (!report.artifactPath.isEmpty())
@@ -537,6 +658,39 @@ QString SubAgentTool::reportOutput(const SubAgentReport& report,
         ? QStringLiteral("[Sub-agent report] (%1)\n\n%2").arg(stats, report.text)
         : QStringLiteral("Sub-agent did not complete the goal (%1). Reason: %2")
               .arg(stats, report.text);
+}
+
+// docs/43 O2: machine-readable shape. Kept small (findings capped by the
+// runner at 50) because it also rides in the trace/audit path.
+QJsonObject SubAgentTool::reportJson(const SubAgentReport& report) {
+    QJsonObject usage{
+        {QStringLiteral("model"), report.usage.model},
+        {QStringLiteral("profileId"), report.usage.profileId},
+        {QStringLiteral("input"), report.usage.inputTokens},
+        {QStringLiteral("output"), report.usage.outputTokens},
+        {QStringLiteral("cached"), report.usage.cachedTokens},
+        {QStringLiteral("reported"), report.usage.usageReported}};
+    QJsonArray findings;
+
+    for (const SubAgentFinding& finding : report.findings) {
+        findings.append(QJsonObject{
+            {QStringLiteral("severity"), finding.severity},
+            {QStringLiteral("path"), finding.path},
+            {QStringLiteral("line"), finding.line},
+            {QStringLiteral("message"), finding.message}});
+    }
+    return QJsonObject{
+        {QStringLiteral("ok"), report.ok},
+        {QStringLiteral("stop"), static_cast<int>(report.stop)},
+        {QStringLiteral("stopCode"), report.stopCode},
+        {QStringLiteral("retryable"), report.retryable},
+        {QStringLiteral("attempts"), report.attempt},
+        {QStringLiteral("steps"), report.steps},
+        {QStringLiteral("tokensUsed"), report.tokensUsed},
+        {QStringLiteral("usage"), usage},
+        {QStringLiteral("findings"), findings},
+        {QStringLiteral("proposalCount"), report.proposals.size()},
+        {QStringLiteral("artifactPath"), report.artifactPath}};
 }
 
 QJsonArray SubAgentTool::proposalIndex(const SubAgentReport& report) {

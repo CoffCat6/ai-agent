@@ -142,6 +142,42 @@ public:
         }
         for (int i = keepFrom; i < messages.size(); ++i)
             out.append(messages.at(i));
+
+        // Best effort can still overflow: when the newest turn alone does not
+        // fit (small window + large tools schema + a long reply), the array
+        // above keeps it anyway and the request exceeds the window. Truncate
+        // the longest ASSISTANT message (never the user's own words) so the
+        // budget actually holds; the marker tells the model text was cut.
+        int total = estimateTokens(out);
+        for (int guard = 0; guard < 8 && total > maxTokens; ++guard) {
+            int worst = -1;
+            int worstTokens = 0;
+            for (int i = 1; i < out.size(); ++i) {
+                const QJsonObject msg = out.at(i).toObject();
+                if (msg.value("role").toString() != QLatin1String("assistant"))
+                    continue;
+                const int tokens = estimateTokens(msg);
+                if (tokens > worstTokens) {
+                    worstTokens = tokens;
+                    worst = i;
+                }
+            }
+            if (worst < 0) break;
+            QJsonObject msg = out.at(worst).toObject();
+            const QString content = msg.value("content").toString();
+            if (content.isEmpty()) break;
+            // ~4 chars per token (Latin); CJK truncates even more aggressively,
+            // which only makes the cut safer.
+            const int excess = total - maxTokens;
+            const int keepChars = qMax(0, content.size() - (excess * 4 + 64));
+            if (keepChars == 0) break;
+            msg["content"] = content.left(keepChars)
+                + QStringLiteral("\n... [truncated to fit the context window]");
+            out.replace(worst, msg);
+            const int next = estimateTokens(out);
+            if (next >= total) break;   // no progress (framing overhead)
+            total = next;
+        }
         return out;
     }
 

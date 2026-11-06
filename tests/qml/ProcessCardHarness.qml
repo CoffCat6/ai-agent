@@ -71,6 +71,11 @@ Window {
             rawProposalsIsArray: Array.isArray(card.modelData.subagentProposals),
             proposalCount: card.hasSubagentProposals ? card.subagentProposals.length : -1,
             proposalTotal: card.proposalTotal,
+            // docs/43 O4-3：topFindings 摘要走同一条 role 路径。
+            hasSubagentTopFindings: card.hasSubagentTopFindings,
+            findingsShown: card.hasSubagentTopFindings
+                ? card.subagentTopFindings.length : -1,
+            findingCount: card.subagentFindingCount,
         }
     }
 

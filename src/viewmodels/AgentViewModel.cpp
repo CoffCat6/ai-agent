@@ -3293,13 +3293,13 @@ void AgentViewModel::stop() {
 // docs/32 §9：只停止活动标签里在飞的子代理（会话窗口的「停止子代理」
 // 按钮），主任务继续跑。
 bool AgentViewModel::cancelSubAgents() {
-    AIAgent* a = active()->agent();
+    AIAgent* a = active() ? active()->agent() : nullptr;
     return a && a->cancelSubAgents();
 }
 
 // docs/35 P4.5：卡片级停止——只取消该 trace 节点对应的子代理。
 bool AgentViewModel::cancelSubAgent(const QString& traceNodeId) {
-    AIAgent* a = active()->agent();
+    AIAgent* a = active() ? active()->agent() : nullptr;
     return a && a->cancelSubAgent(traceNodeId);
 }
 
@@ -3321,6 +3321,12 @@ bool AgentViewModel::cancelBackgroundSubAgent(const QString& taskId) {
     return a && a->cancelBackgroundSubAgent(taskId);
 }
 
+// docs/43 O4-2: 面板「重试」入口——转发给活动会话的 agent。
+bool AgentViewModel::retryBackgroundSubAgent(const QString& taskId) {
+    AIAgent* a = active() ? active()->agent() : nullptr;
+    return a && a->retryBackgroundSubAgent(taskId);
+}
+
 int AgentViewModel::cancelAllBackgroundSubAgents() {
     AIAgent* a = active() ? active()->agent() : nullptr;
     return a ? a->cancelAllBackgroundSubAgents() : 0;
@@ -3330,6 +3336,13 @@ QString AgentViewModel::backgroundSubAgentReport(const QString& taskId) const {
     ChatSessionController* controller = active();
     AIAgent* a = controller ? controller->agent() : nullptr;
     return a ? a->backgroundSubAgentReport(taskId) : QString();
+}
+
+// docs/43 O4-3: 面板详情区 findings 按需查询入口。
+QVariantList AgentViewModel::backgroundSubAgentFindings(const QString& taskId) const {
+    ChatSessionController* controller = active();
+    AIAgent* a = controller ? controller->agent() : nullptr;
+    return a ? a->backgroundSubAgentFindings(taskId) : QVariantList{};
 }
 
 void AgentViewModel::dismissFinishedBackgroundSubAgents() {

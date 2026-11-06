@@ -11,8 +11,10 @@ namespace NexusAI {
 class SettingsSchema final {
 public:
     // v0 = pre-schema; v1 = structured schema; v2 = model lists became user
-    // managed; v3/v4 normalize context-token defaults while retaining custom values.
-    static constexpr int kSchemaVersion = 4;
+    // managed; v3/v4 normalize context-token defaults while retaining custom
+    // values; v5 turns sub-agents on by default for users who never touched
+    // the switch (an explicit "off" is preserved).
+    static constexpr int kSchemaVersion = 5;
     static constexpr int kDefaultLogMaxFileSizeMb = 10;
     static constexpr int kDefaultLogRetentionFiles = 14;
 

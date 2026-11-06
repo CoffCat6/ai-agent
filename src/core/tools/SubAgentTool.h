@@ -4,6 +4,7 @@
 #include "core/agent/SubAgentRunner.h"
 
 #include <QJsonArray>
+#include <QJsonObject>
 #include <QMutex>
 #include <QVariant>
 #include <QVector>
@@ -105,6 +106,14 @@ public:
                                 const QString& todoId = {});
     static QJsonArray proposalIndex(const SubAgentReport& report);
     static QJsonArray proposalData(const SubAgentReport& report);
+    // docs/43 O2: machine-readable report (usage, stopCode, attempts,
+    // findings, ...) carried in ToolResult.metadata["subagentReport"] by both
+    // the synchronous spawn path and subagent_wait.
+    static QJsonObject reportJson(const SubAgentReport& report);
+    // docs/43 O3: live slot pressure for the model's scheduling decisions
+    // ("slots: 2/3 running, 1 queued"). Shared by the synchronous/background
+    // path (ack) and subagent_status.
+    QString gateSummary() const;
 
     ToolDefinition definition() const override;
     // ITool's pure virtual; the dispatch path always uses the cancellation
@@ -140,6 +149,7 @@ private:
     mutable std::mutex m_gateMutex;
     std::condition_variable m_gateCv;
     int m_activeRuns{0};                    // guarded by m_gateMutex
+    int m_queuedRuns{0};                    // guarded by m_gateMutex
     int m_maxParallel{2};                   // guarded by m_gateMutex
 
     std::atomic<int> m_maxSteps{0};         // 0 = unlimited (kSubStepCap)

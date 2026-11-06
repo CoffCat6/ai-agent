@@ -242,6 +242,47 @@ public:
     }
 };
 
+class BatchWaitFakeService : public FakeAIService {
+public:
+    void chatComplete(const QJsonArray& messages, const QJsonArray& tools) override {
+        seenMessages.append(messages);
+        seenTools.append(tools);
+        const quint64 requestId = ++requestCounter;
+        emit requestStarted(requestId);
+
+        LLMResponse response;
+        if (requestCounter == 1) {
+            response = toolResponse(QStringLiteral("spawn_agent"),
+                QJsonObject{{QStringLiteral("goal"), QStringLiteral("one")},
+                            {QStringLiteral("background"), true}});
+        } else if (requestCounter == 2) {
+            response = toolResponse(QStringLiteral("spawn_agent"),
+                QJsonObject{{QStringLiteral("goal"), QStringLiteral("two")},
+                            {QStringLiteral("background"), true}});
+        } else if (requestCounter == 3) {
+            // docs/43 O3: one batch wait for both acks.
+            QJsonArray ids;
+            static const QRegularExpression idRe(
+                QStringLiteral("\\[Sub-agent started\\] id=(sa-\\d+)"));
+            for (const auto& entry : messages) {
+                const QRegularExpressionMatch match =
+                    idRe.match(entry.toObject().value("content").toString());
+                if (match.hasMatch() && !ids.contains(match.captured(1)))
+                    ids.append(match.captured(1));
+            }
+            response = toolResponse(QStringLiteral("subagent_wait"),
+                QJsonObject{{QStringLiteral("ids"), ids},
+                            {QStringLiteral("mode"), QStringLiteral("all")},
+                            {QStringLiteral("timeout_ms"), 5000}});
+        } else {
+            response = textResponse(QStringLiteral("batch folded"));
+        }
+        response.requestId = requestId;
+        if (response.success) emit responseReady(response);
+        else emit errorOccurred(response.error);
+    }
+};
+
 QString toolMessageContent(const QJsonArray& messages, const QString& callId) {
     for (const auto& entry : messages) {
         const QJsonObject msg = entry.toObject();
@@ -687,9 +728,14 @@ struct WebToolsGuard {
 class SubAgentToolsetGuard {
 public:
     SubAgentToolsetGuard() {
-        add(QStringLiteral("spawn_agent"), std::make_shared<SubAgentTool>());
+        // P1-3: status 需要注入 spawn 引用才能输出 gateSummary（池线程
+        // 禁止直查 ToolRegistry）。
+        auto spawn = std::make_shared<SubAgentTool>();
+        auto status = std::make_shared<SubAgentStatusTool>();
+        status->setSpawnTool(spawn);
+        add(QStringLiteral("spawn_agent"), spawn);
         add(QStringLiteral("subagent_wait"), std::make_shared<SubAgentWaitTool>());
-        add(QStringLiteral("subagent_status"), std::make_shared<SubAgentStatusTool>());
+        add(QStringLiteral("subagent_status"), status);
         add(QStringLiteral("subagent_cancel"), std::make_shared<SubAgentCancelTool>());
     }
     ~SubAgentToolsetGuard() {
@@ -1141,6 +1187,23 @@ private slots:
 
     // docs/32 P1: 子代理（spawn_agent）
     void subagentDisabledNotExposed();
+    // docs/43 O1: 编排准则、项目规则继承、瞬时失败自动重派。
+    void orchestrationPolicyInSystemPrompt();
+    void subagentInheritsProjectRules();
+    void subagentTransientFailureRetriesOnce();
+    void subagentRetryAccumulatesClassifiedUsage();
+    void subagentRetrySnapshotPinsBackgroundDecision();
+    // docs/43 O2: 结构化报告（findings/usage/stopCode）经 trace 与审计回传。
+    void subagentReportCarriesFindingsAndUsage();
+    void subagentWaitAuditCarriesStructuredUsage();
+    // docs/43 O3: batch wait (any/all)、槽位可见、后台任务状态进系统提示。
+    void subagentBatchWaitAnyAndAll();
+    void subagentSlotPressureIsVisible();
+    void subagentBatchWaitAuditAggregates();
+    // docs/43 O4-2: 失败/取消的后台任务按原始参数一键重派。
+    void subagentRetryFailedBackgroundTask();
+    // docs/43 O4-3: findings 逐条结构化查询（面板详情区数据通道）。
+    void subagentFindingsQueryReturnsStructuredList();
     void subagentReportFlowsBackToMainLoop();
     void subagentStepBudgetConverges();
     void subagentTimeoutAborts();
@@ -5115,6 +5178,195 @@ void TestAgent::listUsageEventsExposesFieldContract() {
 
 // ── docs/32 P1: 子代理（spawn_agent）───────────────────────────────────
 
+// docs/43 O1-T4: the base prompt carries the delegation policy only when the
+// user has not taken over the system prompt.
+void TestAgent::orchestrationPolicyInSystemPrompt() {
+    agent.setSystemPromptOverride(QString());
+    const QString prompt = agent.effectiveSystemPrompt();
+    QVERIFY(prompt.contains(QStringLiteral("Delegation policy")));
+    QVERIFY(prompt.contains(QStringLiteral("explore = survey")));
+
+    agent.setSystemPromptOverride(QStringLiteral("You are a pirate."));
+    QVERIFY(!agent.effectiveSystemPrompt()
+                 .contains(QStringLiteral("Delegation policy")));
+    agent.setSystemPromptOverride(QString());
+}
+
+// docs/43 O1-T2: AGENTS.md content reaches the sub-agent's system message,
+// not only the primary agent's prompt.
+void TestAgent::subagentInheritsProjectRules() {
+    QTemporaryDir dir(testDirTemplate());
+    QVERIFY(dir.isValid());
+    QFile rules(dir.path() + "/AGENTS.md");
+    QVERIFY(rules.open(QIODevice::WriteOnly));
+    rules.write("# Demo rules\n- use ninja\n");
+    rules.close();
+    agent.setActiveProject(QStringLiteral("p9"), QStringLiteral("Rules"),
+                           dir.path());
+
+    SubAgentFixture fixture;
+    SpawnToolGuard guard;
+    fixture.tool = registerSpawnTool(fixture, [](RecordingFakeService& sub) {
+        sub.script.append(textResponse(QStringLiteral("rules followed")));
+    });
+    llm.reset();
+    llm.script.append(toolResponse(QStringLiteral("spawn_agent"),
+        QJsonObject{{"goal", QStringLiteral("apply the rules")}}));
+    llm.script.append(textResponse(QStringLiteral("done")));
+    QSignalSpy spy(&agent, &AIAgent::responseReady);
+    agent.startTask(QStringLiteral("spawn with rules"));
+    QTRY_COMPARE(spy.count(), 1);
+
+    QMutexLocker lock(&fixture.mutex);
+    QVERIFY(!fixture.subSeenMessages.isEmpty());
+    const QString system = fixture.subSeenMessages.first().first().toObject()
+                               .value("content").toString();
+    QVERIFY2(system.contains(QStringLiteral("Project rules")), qPrintable(system));
+    QVERIFY(system.contains(QStringLiteral("use ninja")));
+    lock.unlock();
+    agent.setActiveProject(QString(), QString(), QString());
+}
+
+// docs/43 O1-T3: a transient first-attempt failure is retried once; the report
+// echoes the attempt count and accumulates the cost of both runs.
+void TestAgent::subagentTransientFailureRetriesOnce() {
+    SubAgentFixture fixture;
+    SpawnToolGuard guard;
+    int attempts = 0;
+    fixture.tool = registerSpawnTool(fixture,
+        [&attempts](RecordingFakeService& sub) {
+            // The factory runs once per attempt: first fails, second answers.
+            if (++attempts == 1) {
+                LLMResponse failure;
+                failure.success = false;
+                failure.error = QStringLiteral("transient network error");
+                sub.script.append(failure);
+            } else {
+                sub.script.append(textResponse(
+                    QStringLiteral("recovered after retry")));
+            }
+        });
+    llm.reset();
+    llm.script.append(toolResponse(QStringLiteral("spawn_agent"),
+        QJsonObject{{"goal", QStringLiteral("survive a blip")}}));
+    llm.script.append(textResponse(QStringLiteral("handled")));
+    QSignalSpy spy(&agent, &AIAgent::responseReady);
+    agent.startTask(QStringLiteral("retry once"));
+    QTRY_COMPARE(spy.count(), 1);
+
+    QCOMPARE(attempts, 2);
+    const QString report = lastToolMessageContent(agent.messages());
+    QVERIFY2(report.contains(QStringLiteral("[Sub-agent report]")),
+             qPrintable(report));
+    QVERIFY(report.contains(QStringLiteral("recovered after retry")));
+    QVERIFY(report.contains(QStringLiteral("attempts: 2")));
+}
+
+// docs/43 O4 审计收口（P1-2）：自动重试的分类 usage 必须跨 attempt 累计，
+// 与 steps/tokensUsed 同口径。旧行为只累计 tokensUsed，input/output 被
+// 末次 attempt 覆盖 → input+output ≠ tokensUsed（tokensUsed 是两 attempt
+// 总量），成本芯片与审计 subagent_usage 双通道失真。失败 attempt 内已
+// 成功的步携带 usage（100/50），末次成功步 1200/300 → 累计 1300/350。
+void TestAgent::subagentRetryAccumulatesClassifiedUsage() {
+    SubAgentFixture fixture;
+    SpawnToolGuard guard;
+    int attempts = 0;
+    fixture.tool = registerSpawnTool(fixture,
+        [&attempts](RecordingFakeService& sub) {
+            if (++attempts == 1) {
+                // attempt 1: step 1 成功（带分类 usage）→ step 2 瞬时失败。
+                LLMResponse step =
+                    toolResponse(QStringLiteral("test_sub_probe"), {});
+                step.promptTokens = 100;
+                step.completionTokens = 50;
+                sub.script.append(step);
+                LLMResponse failure;
+                failure.success = false;
+                failure.error = QStringLiteral("transient network error");
+                sub.script.append(failure);
+            } else {
+                LLMResponse ok =
+                    textResponse(QStringLiteral("usage recovered"));
+                ok.promptTokens = 1200;
+                ok.completionTokens = 300;
+                sub.script.append(ok);
+            }
+        });
+
+    const ToolResult result = fixture.tool->execute(QJsonObject{
+        {QStringLiteral("goal"), QStringLiteral("usage across attempts")}});
+    QVERIFY2(result.success, qPrintable(result.error));
+    QCOMPARE(attempts, 2);
+    QVERIFY(result.output.contains(QStringLiteral("attempts: 2")));
+    const QJsonObject report = result.metadata
+        .value(QStringLiteral("subagentReport")).toObject();
+    QVERIFY2(!report.isEmpty(), "structured report missing from metadata");
+    const QJsonObject usage = report.value(QStringLiteral("usage")).toObject();
+    QCOMPARE(usage.value(QStringLiteral("input")).toInt(), 1300);
+    QCOMPARE(usage.value(QStringLiteral("output")).toInt(), 350);
+    QCOMPARE(usage.value(QStringLiteral("reported")).toBool(), true);
+}
+
+// docs/43 O4 审计收口（P1-1）：重试快照必须固化 spawn 当时的调度决策。
+// 角色默认后台的任务在角色表变更后重试，仍按当时决策走后台——旧行为
+// 快照只存原始 args（无 background 键），重试按当前角色重解析：设置
+// 变更后退化为同步执行，结果被 retryBackgroundSubAgent 丢弃（不可观测、
+// 不可取消、烧 token）。
+void TestAgent::subagentRetrySnapshotPinsBackgroundDecision() {
+    SubAgentFixture fixture;
+    SpawnToolGuard guard;
+    ensureSubAgentProbe();
+    fixture.tool = registerSpawnTool(fixture, [](RecordingFakeService& sub) {
+        sub.script.append(textResponse(QStringLiteral("pinned bg report")));
+    });
+    fixture.tool->setUserRoles(SubAgentTool::rolesFromVariant({
+        QVariantMap{{QStringLiteral("name"), QStringLiteral("explore")},
+                    {QStringLiteral("prompt"),
+                     QStringLiteral("BG-DEFAULT")},
+                    {QStringLiteral("background"), true}}}));
+
+    auto hub = std::make_shared<BackgroundTaskHub>();
+    BackgroundTaskHubRouter router(hub);
+
+    // 省略 background：按角色默认进后台；原始 args 里没有 background 键。
+    const ToolResult ack = fixture.tool->execute(QJsonObject{
+        {QStringLiteral("goal"), QStringLiteral("pin the decision")}});
+    QVERIFY2(ack.success, qPrintable(ack.error));
+    QCOMPARE(hub->snapshots().size(), 1);
+    static const QRegularExpression idRe(QStringLiteral("id=(sa-\\d+)"));
+    const QString id = idRe.match(ack.output).captured(1);
+    QVERIFY(!id.isEmpty());
+
+    SubAgentWaitTool waitTool;
+    const ToolResult report = waitTool.execute(QJsonObject{
+        {QStringLiteral("id"), id},
+        {QStringLiteral("timeout_ms"), 10000}});
+    QVERIFY2(report.success, qPrintable(report.error));
+    QVERIFY(report.output.contains(QStringLiteral("pinned bg report")));
+
+    // 快照固化了解析后的 background 决策（旧行为：无该键 → toBool()==false）。
+    const QJsonObject spawnArgs = hub->spawnArgsForSession(QString(), id);
+    QCOMPARE(spawnArgs.value(QStringLiteral("background")).toBool(), true);
+
+    // 角色表随后变更（不再默认后台）。按快照重放：仍进 hub 而非同步执行
+    // 后被丢弃（旧行为：hub 仍 1 条、结果静默丢弃）。
+    fixture.tool->setUserRoles(SubAgentTool::rolesFromVariant({
+        QVariantMap{{QStringLiteral("name"), QStringLiteral("explore")},
+                    {QStringLiteral("prompt"),
+                     QStringLiteral("NO-BG")}}}));
+    const ToolResult replay = fixture.tool->execute(spawnArgs);
+    QVERIFY2(replay.success, qPrintable(replay.error));
+    QVERIFY(replay.output.contains(QStringLiteral("[Sub-agent started]")));
+    QCOMPARE(hub->snapshots().size(), 2);
+
+    // 收尾第二条任务，保持 guard 析构前的干净状态。
+    const QString id2 = idRe.match(replay.output).captured(1);
+    QVERIFY(!id2.isEmpty());
+    QVERIFY(waitTool.execute(QJsonObject{
+        {QStringLiteral("id"), id2},
+        {QStringLiteral("timeout_ms"), 10000}}).success);
+}
+
 void TestAgent::subagentDisabledNotExposed() {
     // 未注册 spawn_agent：模型 schema 里不得出现该工具。
     llm.reset();
@@ -5846,6 +6098,8 @@ void TestAgent::subagentBackgroundAckStatusWait() {
     auto hub = std::make_shared<BackgroundTaskHub>();
     SubAgentWaitTool waitTool;
     SubAgentStatusTool statusTool;
+    // P1-3: status 在池线程经注入引用读 gateSummary（不再查 registry）。
+    statusTool.setSpawnTool(fixture.tool);
 
     // 没有 route 的路径（子代理内部/未挂载）拒绝。注意 QThreadStorage
     // 不是栈：必须在安装正式 router 之前测，析构只会清空当前线程。
@@ -6936,6 +7190,7 @@ void TestAgent::subagentCancelOnlyTargetNode() {
     QTRY_VERIFY(!agent.isActive());
 
     // 一个以 Cancelled 收场，另一个拿到完整报告。
+
     int cancelled = 0;
     int reports = 0;
     for (const auto& entry : agent.messages()) {
@@ -7052,6 +7307,488 @@ void TestAgent::subagentAuditCarriesSubagentStats() {
     }
     QVERIFY2(found, "spawn_agent tool_execute audit row missing");
     agent.setMemory(nullptr);
+}
+
+// docs/43 O2: findings + classified usage reach the trace node (light
+// projection) and the audit detail, while the report text stays readable.
+void TestAgent::subagentReportCarriesFindingsAndUsage() {
+    SqliteMemory memory(QStringLiteral(":memory:"));
+    agent.setMemory(&memory);
+
+    SubAgentFixture fixture;
+    SpawnToolGuard guard;
+    fixture.tool = registerSpawnTool(fixture, [](RecordingFakeService& sub) {
+        sub.script.append(toolResponse(QStringLiteral("test_sub_probe"),
+                                       QJsonObject{{"q", QStringLiteral("x")}}));
+        LLMResponse finalReport = textResponse(QStringLiteral(
+            "Two issues were found.\n\n"
+            "## FINDINGS\n"
+            "- [high] src/a.cpp:12 - null deref after the check\n"
+            "- [low] src/b.cpp:40 - stale comment\n"));
+        finalReport.promptTokens = 100;
+        finalReport.completionTokens = 20;
+        finalReport.cachedTokens = 30;
+        sub.script.append(finalReport);
+    });
+    llm.reset();
+    llm.script.append(toolResponse(QStringLiteral("spawn_agent"),
+        QJsonObject{{"goal", QStringLiteral("review the patch")}}));
+    llm.script.append(textResponse(QStringLiteral("synthesized")));
+    QSignalSpy spy(&agent, &AIAgent::responseReady);
+    agent.startTask(QStringLiteral("review through a sub-agent"));
+    QTRY_COMPARE_WITH_TIMEOUT(spy.count(), 1, 15000);
+
+    // Human-readable report keeps the FINDINGS block verbatim.
+    const QString reportText = lastToolMessageContent(agent.messages());
+    QVERIFY(reportText.contains(QStringLiteral("## FINDINGS")));
+
+    // Trace node carries only the light projection.
+    QJsonObject light;
+    for (const auto& entry : agent.traceModel()) {
+        const QJsonObject candidate =
+            entry.toObject().value("subagentReport").toObject();
+        if (candidate.contains(QStringLiteral("stopCode")))
+            light = candidate;
+    }
+    QVERIFY2(!light.isEmpty(), "trace node missing subagentReport");
+    QCOMPARE(light.value("stopCode").toString(), QStringLiteral("completed"));
+    QCOMPARE(light.value("findingCount").toInt(), 2);
+    const QJsonArray top = light.value("topFindings").toArray();
+    QCOMPARE(top.size(), 2);
+    QCOMPARE(top.at(0).toObject().value("severity").toString(),
+             QStringLiteral("high"));
+    QCOMPARE(top.at(0).toObject().value("path").toString(),
+             QStringLiteral("src/a.cpp"));
+    QCOMPARE(top.at(0).toObject().value("line").toInt(), 12);
+    const QJsonObject usage = light.value("usage").toObject();
+    QVERIFY(usage.value("reported").toBool());
+    QCOMPARE(usage.value("input").toInt(), 100);
+    QCOMPARE(usage.value("output").toInt(), 20);
+    QCOMPARE(usage.value("cached").toInt(), 30);
+    QCOMPARE(usage.value("model").toString(), QStringLiteral("fake-model"));
+
+    // Audit detail prefers metadata and records the structured usage.
+    bool found = false;
+    for (const auto& entry : memory.auditLog(50)) {
+        const QJsonObject row = entry.toObject();
+        if (row.value("toolName").toString() != QLatin1String("spawn_agent"))
+            continue;
+        const QJsonObject detail = QJsonDocument::fromJson(
+            row.value("detail").toString().toUtf8()).object();
+        if (!detail.contains(QStringLiteral("subagent_usage"))) continue;
+        QCOMPARE(detail.value("subagent_stop_code").toString(),
+                 QStringLiteral("completed"));
+        QCOMPARE(detail.value("subagent_source").toString(),
+                 QStringLiteral("spawn"));
+        QVERIFY(detail.value("subagent_usage").toObject()
+                    .value("reported").toBool());
+        found = true;
+    }
+    QVERIFY2(found, "audit row missing subagent_usage");
+    agent.setMemory(nullptr);
+}
+
+// docs/43 O2: background reports retrieved via subagent_wait carry the same
+// structured data into the audit trail (source=wait).
+void TestAgent::subagentWaitAuditCarriesStructuredUsage() {
+    SqliteMemory memory(QStringLiteral(":memory:"));
+    agent.setMemory(&memory);
+
+    SubAgentFixture fixture;
+    SpawnToolGuard spawnGuard;
+    ToolNameGuard waitGuard{QString::fromLatin1(SubAgentWaitTool::kName)};
+    fixture.tool = registerSpawnTool(fixture, [](RecordingFakeService& sub) {
+        LLMResponse finalReport = textResponse(QStringLiteral(
+            "background findings\n\n"
+            "## FINDINGS\n- [medium] src/c.cpp:7 - missing guard\n"));
+        finalReport.promptTokens = 55;
+        finalReport.completionTokens = 11;
+        sub.script.append(finalReport);
+    });
+    ToolRegistry::instance().registerTool(std::make_shared<SubAgentWaitTool>());
+
+    BackgroundFlowFakeService dynamicLlm;
+    struct RestoreLlm {
+        AIAgent& agent;
+        FakeAIService* original;
+        ~RestoreLlm() { agent.setLLMService(original); }
+    } restoreLlm{agent, &llm};
+    agent.setLLMService(&dynamicLlm);
+
+    QSignalSpy spy(&agent, &AIAgent::responseReady);
+    agent.startTask(QStringLiteral("background then wait"));
+    QTRY_COMPARE_WITH_TIMEOUT(spy.count(), 1, 20000);
+
+    bool found = false;
+    for (const auto& entry : memory.auditLog(50)) {
+        const QJsonObject row = entry.toObject();
+        if (row.value("toolName").toString() != QLatin1String("subagent_wait"))
+            continue;
+        const QJsonObject detail = QJsonDocument::fromJson(
+            row.value("detail").toString().toUtf8()).object();
+        if (!detail.contains(QStringLiteral("subagent_usage"))) continue;
+        QCOMPARE(detail.value("subagent_source").toString(),
+                 QStringLiteral("wait"));
+        QCOMPARE(detail.value("subagent_stop_code").toString(),
+                 QStringLiteral("completed"));
+        QCOMPARE(detail.value("subagent_usage").toObject()
+                     .value("input").toInt(), 55);
+        found = true;
+    }
+    QVERIFY2(found, "subagent_wait audit row missing subagent_usage");
+    agent.setMemory(nullptr);
+}
+
+// docs/43 O3: batch wait — mode=any returns at the first terminal task,
+// mode=all collects every report.
+void TestAgent::subagentBatchWaitAnyAndAll() {
+    SubAgentFixture fixture;
+    SpawnToolGuard guard;
+    ensureSubAgentProbe();
+    fixture.tool = std::make_shared<SubAgentTool>();
+
+    QMutex gatesMutex;
+    QVector<std::shared_ptr<QSemaphore>> gates;
+    fixture.tool->setServiceFactory([&]() -> IAIService* {
+        auto* service = new RecordingFakeService(
+            &fixture.mutex, &fixture.subSeenTools, &fixture.subSeenMessages);
+        auto gate = std::make_shared<QSemaphore>();
+        {
+            QMutexLocker lock(&gatesMutex);
+            gates.append(gate);
+        }
+        service->gate = gate.get();
+        service->script.append(textResponse(QStringLiteral("batch report")));
+        return service;
+    });
+    auto gateAt = [&](int index) -> std::shared_ptr<QSemaphore> {
+        QMutexLocker lock(&gatesMutex);
+        return index < gates.size() ? gates.at(index) : nullptr;
+    };
+    fixture.tool->refreshCatalog(false);
+    ToolRegistry::instance().registerTool(fixture.tool);
+
+    auto hub = std::make_shared<BackgroundTaskHub>();
+    BackgroundTaskHubRouter router(hub);
+    SubAgentWaitTool waitTool;
+
+    auto spawn = [&](const QString& goal) {
+        return fixture.tool->execute(QJsonObject{
+            {QStringLiteral("goal"), goal},
+            {QStringLiteral("background"), true}});
+    };
+    auto idOf = [](const ToolResult& result) {
+        static const QRegularExpression re(QStringLiteral("id=(sa-\\d+)"));
+        return re.match(result.output).captured(1);
+    };
+    const ToolResult ack1 = spawn(QStringLiteral("one"));
+    const ToolResult ack2 = spawn(QStringLiteral("two"));
+    QVERIFY2(ack1.success, qPrintable(ack1.error));
+    QVERIFY2(ack2.success, qPrintable(ack2.error));
+    const QString id1 = idOf(ack1);
+    const QString id2 = idOf(ack2);
+    QVERIFY(!id1.isEmpty());
+    QVERIFY(!id2.isEmpty());
+    QVERIFY(id1 != id2);
+
+    // Both workers are parked; release exactly one so "any" has something.
+    QTRY_VERIFY_WITH_TIMEOUT(gateAt(1) != nullptr, 5000);
+    gateAt(0)->release();
+
+    const ToolResult any = waitTool.execute(QJsonObject{
+        {QStringLiteral("ids"), QJsonArray{id1, id2}},
+        {QStringLiteral("mode"), QStringLiteral("any")},
+        {QStringLiteral("timeout_ms"), 5000}});
+    QVERIFY2(any.success, qPrintable(any.error));
+    QVERIFY2(any.output.contains(QStringLiteral("1 of 2 finished")),
+             qPrintable(any.output));
+    QVERIFY(any.output.contains(QStringLiteral("pending:")));
+    QCOMPARE(any.metadata.value(QStringLiteral("subagentReports")).toArray().size(), 1);
+
+    gateAt(1)->release();
+    const ToolResult all = waitTool.execute(QJsonObject{
+        {QStringLiteral("ids"), QJsonArray{id1, id2}},
+        {QStringLiteral("mode"), QStringLiteral("all")},
+        {QStringLiteral("timeout_ms"), 5000}});
+    QVERIFY2(all.success, qPrintable(all.error));
+    QVERIFY2(all.output.contains(QStringLiteral("2 of 2 finished")),
+             qPrintable(all.output));
+    QCOMPARE(all.metadata.value(QStringLiteral("subagentReports")).toArray().size(), 2);
+}
+
+// docs/43 O3: the gate reports running/queued pressure so the model knows a
+// further spawn would only wait.
+void TestAgent::subagentSlotPressureIsVisible() {
+    SubAgentFixture fixture;
+    SpawnToolGuard guard;
+    ensureSubAgentProbe();
+    fixture.tool = std::make_shared<SubAgentTool>();
+    fixture.tool->setMaxParallel(1);
+    auto gate = std::make_shared<QSemaphore>();
+    fixture.tool->setServiceFactory([&]() -> IAIService* {
+        auto* service = new RecordingFakeService(
+            &fixture.mutex, &fixture.subSeenTools, &fixture.subSeenMessages);
+        service->gate = gate.get();
+        service->script.append(textResponse(QStringLiteral("slot report")));
+        return service;
+    });
+    fixture.tool->refreshCatalog(false);
+    ToolRegistry::instance().registerTool(fixture.tool);
+
+    auto hub = std::make_shared<BackgroundTaskHub>();
+    BackgroundTaskHubRouter router(hub);
+    SubAgentStatusTool statusTool;
+    // P1-3: 注入 spawn 工具引用，status 输出的槽位压力段保持等价。
+    statusTool.setSpawnTool(fixture.tool);
+
+    auto spawn = [&](const QString& goal) {
+        return fixture.tool->execute(QJsonObject{
+            {QStringLiteral("goal"), goal},
+            {QStringLiteral("background"), true}});
+    };
+    auto idOf = [](const ToolResult& result) {
+        static const QRegularExpression re(QStringLiteral("id=(sa-\\d+)"));
+        return re.match(result.output).captured(1);
+    };
+    QVERIFY2(spawn(QStringLiteral("first")).success, "first spawn failed");
+    const QString second = idOf(spawn(QStringLiteral("second")));
+    QVERIFY(!second.isEmpty());
+
+    QTRY_VERIFY_WITH_TIMEOUT(([&]() {
+        const ToolResult status = statusTool.execute(
+            QJsonObject{{QStringLiteral("id"), second}});
+        return status.success
+            && status.output.contains(QStringLiteral("1/1 running"))
+            && status.output.contains(QStringLiteral("1 queued"));
+    })(), 5000);
+
+    gate->release(2);
+    QTRY_COMPARE_WITH_TIMEOUT(hub->activeCount(), 0, 5000);
+}
+
+// docs/43 O3: one batch wait aggregates the cost of every collected run into
+// a single audit row, and live task state reaches the system prompt.
+void TestAgent::subagentBatchWaitAuditAggregates() {
+    SqliteMemory memory(QStringLiteral(":memory:"));
+    agent.setMemory(&memory);
+
+    SubAgentFixture fixture;
+    SpawnToolGuard spawnGuard;
+    ToolNameGuard waitGuard{QString::fromLatin1(SubAgentWaitTool::kName)};
+    fixture.tool = registerSpawnTool(fixture, [](RecordingFakeService& sub) {
+        LLMResponse report = textResponse(QStringLiteral("batch sub report"));
+        report.tokensUsed = 7;
+        report.promptTokens = 4;
+        report.completionTokens = 3;
+        sub.script.append(report);
+    });
+    ToolRegistry::instance().registerTool(std::make_shared<SubAgentWaitTool>());
+
+    BatchWaitFakeService dynamicLlm;
+    struct RestoreLlm {
+        AIAgent& agent;
+        FakeAIService* original;
+        ~RestoreLlm() { agent.setLLMService(original); }
+    } restoreLlm{agent, &llm};
+    agent.setLLMService(&dynamicLlm);
+
+    QSignalSpy spy(&agent, &AIAgent::responseReady);
+    agent.startTask(QStringLiteral("two background jobs"));
+    QTRY_COMPARE_WITH_TIMEOUT(spy.count(), 1, 20000);
+
+    const QString lastTool = lastToolMessageContent(agent.messages());
+    QVERIFY2(lastTool.contains(QStringLiteral("2 of 2 finished")),
+             qPrintable(lastTool));
+
+    // Tasks stay in the hub after collection, so the prompt reflects them.
+    const QString prompt = agent.effectiveSystemPrompt();
+    QVERIFY2(prompt.contains(QStringLiteral("Background sub-agents")),
+             qPrintable(prompt.right(600)));
+
+    bool found = false;
+    for (const auto& entry : memory.auditLog(50)) {
+        const QJsonObject row = entry.toObject();
+        if (row.value("toolName").toString() != QLatin1String("subagent_wait"))
+            continue;
+        const QJsonObject detail = QJsonDocument::fromJson(
+            row.value("detail").toString().toUtf8()).object();
+        if (!detail.contains(QStringLiteral("subagent_batch_size"))) continue;
+        QCOMPARE(detail.value("subagent_batch_size").toInt(), 2);
+        QCOMPARE(detail.value("subagent_tokens").toInt(), 14);
+        QCOMPARE(detail.value("subagent_usage").toObject()
+                     .value("input").toInt(), 8);
+        found = true;
+    }
+    QVERIFY2(found, "batch wait audit row missing");
+    agent.setMemory(nullptr);
+}
+
+// docs/43 O4-2: 失败的后台任务用保存的原始 spawn 参数重派为新任务——
+// 运行中拒绝、未知 id 拒绝、原任务保留、新任务跑完并产出报告。
+void TestAgent::subagentRetryFailedBackgroundTask() {
+    SubAgentFixture fixture;
+    SpawnToolGuard guard;
+    ensureSubAgentProbe();
+    fixture.tool = std::make_shared<SubAgentTool>();
+
+    // 第 1 次派发先被 gate 停住（覆盖「运行中拒绝重试」），释放后失败；
+    // 第 2 次派发是 SubAgentTool 内的自动重试（attempt 2），同样失败 →
+    // 任务终态 failed。第 3 次起（用户重试）返回成功脚本。
+    auto gate1 = std::make_shared<QSemaphore>();
+    auto dispatches = std::make_shared<std::atomic<int>>(0);
+    fixture.tool->setServiceFactory([&, gate1, dispatches]() -> IAIService* {
+        auto* service = new RecordingFakeService(
+            &fixture.mutex, &fixture.subSeenTools, &fixture.subSeenMessages);
+        const int index = dispatches->fetch_add(1);
+        if (index == 0) {
+            service->gate = gate1.get();
+            LLMResponse failure;
+            failure.success = false;
+            failure.error = QStringLiteral("transient boom");
+            service->script.append(failure);
+        } else if (index == 1) {
+            LLMResponse failure;
+            failure.success = false;
+            failure.error = QStringLiteral("still boom");
+            service->script.append(failure);
+        } else {
+            service->script.append(
+                textResponse(QStringLiteral("recovered on retry")));
+        }
+        return service;
+    });
+    fixture.tool->refreshCatalog(false);
+    ToolRegistry::instance().registerTool(fixture.tool);
+
+    llm.reset();
+    llm.script.append(toolResponse(QStringLiteral("spawn_agent"),
+        QJsonObject{{"goal", QStringLiteral("retry survey")},
+                    {"background", true}}));
+    llm.script.append(textResponse(QStringLiteral("task done")));
+    QSignalSpy spy(&agent, &AIAgent::responseReady);
+    agent.startTask(QStringLiteral("spawn background then retry"));
+    QTRY_COMPARE_WITH_TIMEOUT(spy.count(), 1, 20000);
+
+    // 任务在跑（gate 停住）→ 拒绝重试。
+    QString runningId;
+    QTRY_VERIFY_WITH_TIMEOUT(([&]() {
+        for (const QVariant& value : agent.backgroundSubAgents()) {
+            const QVariantMap task = value.toMap();
+            if (task.value(QStringLiteral("state")).toString()
+                    == QLatin1String("running")) {
+                runningId = task.value(QStringLiteral("id")).toString();
+                return true;
+            }
+        }
+        return false;
+    })(), 10000);
+    QVERIFY(!runningId.isEmpty());
+    QVERIFY(!agent.retryBackgroundSubAgent(runningId));
+    QVERIFY(!agent.retryBackgroundSubAgent(QStringLiteral("sa-999")));
+
+    // 释放 gate → attempt 1 失败 → attempt 2 失败 → 终态 failed。
+    gate1->release();
+    QString failedId;
+    QTRY_VERIFY_WITH_TIMEOUT(([&]() {
+        for (const QVariant& value : agent.backgroundSubAgents()) {
+            const QVariantMap task = value.toMap();
+            if (task.value(QStringLiteral("id")).toString() == runningId
+                    && task.value(QStringLiteral("state")).toString()
+                           == QLatin1String("failed")) {
+                failedId = runningId;
+                return true;
+            }
+        }
+        return false;
+    })(), 10000);
+    QCOMPARE(dispatches->load(), 2);
+
+    // 一键重试：同参数派新任务（第 3 次工厂调用 → 成功脚本）。
+    QVERIFY(agent.retryBackgroundSubAgent(failedId));
+    QString newId;
+    QTRY_VERIFY_WITH_TIMEOUT(([&]() {
+        for (const QVariant& value : agent.backgroundSubAgents()) {
+            const QVariantMap task = value.toMap();
+            if (task.value(QStringLiteral("id")).toString() != failedId
+                    && task.value(QStringLiteral("state")).toString()
+                           == QLatin1String("completed")) {
+                newId = task.value(QStringLiteral("id")).toString();
+                return true;
+            }
+        }
+        return false;
+    })(), 10000);
+    QVERIFY(!newId.isEmpty());
+    QVERIFY(agent.backgroundSubAgentReport(newId)
+                .contains(QStringLiteral("recovered on retry")));
+    // 原任务保留在列表里（failed + completed 共 2 条）。
+    QCOMPARE(agent.backgroundSubAgents().size(), 2);
+    agent.dismissFinishedBackgroundSubAgents();
+    QVERIFY(agent.backgroundSubAgents().isEmpty());
+}
+
+// docs/43 O4-3: backgroundSubAgentFindings 把已解析的 findings 逐条结构化
+// 返回（severity/path/line/message）；无报告/无 findings/未知 id 均为空。
+void TestAgent::subagentFindingsQueryReturnsStructuredList() {
+    SubAgentFixture fixture;
+    SpawnToolGuard guard;
+    ensureSubAgentProbe();
+    fixture.tool = std::make_shared<SubAgentTool>();
+    fixture.tool->setServiceFactory([&]() -> IAIService* {
+        auto* service = new RecordingFakeService(
+            &fixture.mutex, &fixture.subSeenTools, &fixture.subSeenMessages);
+        service->script.append(textResponse(QStringLiteral(
+            "review done\n\n"
+            "## FINDINGS\n"
+            "- [high] src/a.cpp:12 - null deref after the check\n"
+            "- [low] src/b.cpp:40 - stale comment\n")));
+        return service;
+    });
+    fixture.tool->refreshCatalog(false);
+    ToolRegistry::instance().registerTool(fixture.tool);
+
+    llm.reset();
+    llm.script.append(toolResponse(QStringLiteral("spawn_agent"),
+        QJsonObject{{"goal", QStringLiteral("review the patch")},
+                    {"background", true}}));
+    llm.script.append(textResponse(QStringLiteral("ok")));
+    QSignalSpy spy(&agent, &AIAgent::responseReady);
+    agent.startTask(QStringLiteral("background review"));
+    QTRY_COMPARE_WITH_TIMEOUT(spy.count(), 1, 20000);
+
+    // 等任务终态并取 id。
+    QString taskId;
+    QTRY_VERIFY_WITH_TIMEOUT(([&]() {
+        for (const QVariant& value : agent.backgroundSubAgents()) {
+            const QVariantMap task = value.toMap();
+            if (task.value(QStringLiteral("state")).toString()
+                    == QLatin1String("completed")) {
+                taskId = task.value(QStringLiteral("id")).toString();
+                return true;
+            }
+        }
+        return false;
+    })(), 10000);
+    QVERIFY(!taskId.isEmpty());
+
+    const QVariantList findings = agent.backgroundSubAgentFindings(taskId);
+    QCOMPARE(findings.size(), 2);
+    const QVariantMap first = findings.at(0).toMap();
+    QCOMPARE(first.value(QStringLiteral("severity")).toString(),
+             QStringLiteral("high"));
+    QCOMPARE(first.value(QStringLiteral("path")).toString(),
+             QStringLiteral("src/a.cpp"));
+    QCOMPARE(first.value(QStringLiteral("line")).toInt(), 12);
+    QVERIFY(first.value(QStringLiteral("message")).toString()
+                .contains(QStringLiteral("null deref")));
+    const QVariantMap second = findings.at(1).toMap();
+    QCOMPARE(second.value(QStringLiteral("severity")).toString(),
+             QStringLiteral("low"));
+
+    // 未知 id → 空。
+    QVERIFY(agent.backgroundSubAgentFindings(QStringLiteral("sa-999")).isEmpty());
+    agent.dismissFinishedBackgroundSubAgents();
+    QVERIFY(agent.backgroundSubAgents().isEmpty());
 }
 
 // docs/33 E1: 子代理完整过程落盘为证据工件——报告头带路径，主代理可

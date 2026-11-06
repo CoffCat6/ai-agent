@@ -4,6 +4,7 @@
 #include <QHash>
 #include <QMutex>
 #include <QObject>
+#include <QStringList>
 #include <QThreadPool>
 #include <QThreadStorage>
 #include <QVariantList>
@@ -56,9 +57,12 @@ public:
     // 登记并排队一个后台任务；达到 kMaxTasks 时返回空 id。work 在 hub 的
     // 线程池里运行，负责最终调用 finishTask()。sessionId 为空时取当前
     // BackgroundTaskHubRouter 的会话（工具派发线程的常规路径）。
+    // docs/43 O4-2: spawnArgs 保存原始 spawn_agent 调用参数（goal/role/
+    // context/background/todo_id...），失败/取消后的「重试」用它原样重派。
     QString createTask(const QString& goal, const QString& role,
                        const ITool::Cancellation& cancelled, Work work,
-                       const QString& sessionId = {});
+                       const QString& sessionId = {},
+                       const QJsonObject& spawnArgs = {});
 
     // Worker-thread callbacks from the sub-agent run. step/maxSteps are
 // optional (0 = unknown) and let the panel show live step counts while the
@@ -90,12 +94,24 @@ public:
     std::optional<SubAgentReport> reportForSession(const QString& sessionId,
                                                    const QString& id) const;
     QString sessionIdFor(const QString& id) const;
+    // docs/43 O4-2: 终态任务的重试用原始 spawn 参数；旧任务（无快照）或跨
+    // 会话 id 返回空对象，调用方按不可重试处理。
+    QJsonObject spawnArgsForSession(const QString& sessionId,
+                                    const QString& id) const;
 
     // Block until the task is terminal, the wait deadline passes, or the
     // waiter's own cancellation fires. Returns the state label at exit.
     // 会话不匹配时返回 "missing"（旧会话 id 在新会话内等同未知任务）。
     QString waitFor(const QString& id, int timeoutMs,
                     const ITool::Cancellation& waiterCancelled);
+
+    // docs/43 O3: multi-task wait. waitAll=false returns as soon as ANY id is
+    // terminal (waitFor-any), waitAll=true waits for every id or the deadline.
+    // Every requested id maps to its state label; unknown or foreign-session
+    // ids are reported as "missing" and never leak another session's report.
+    QHash<QString, QString> waitForMany(const QStringList& ids, bool waitAll,
+                                        int timeoutMs,
+                                        const ITool::Cancellation& waiterCancelled);
 
     // Drop terminal entries (panel "clear finished").
     void removeFinished();
@@ -117,6 +133,8 @@ private:
         QString goal;
         QString role;
         QString state{QStringLiteral("queued")};
+        // docs/43 O4-2: original spawn_agent arguments for one-click retry.
+        QJsonObject spawnArgs;
         qint64 startedAtMs{0};
         qint64 finishedAtMs{0};
         int steps{0};
@@ -135,6 +153,9 @@ private:
     bool markRunning(const QString& id);
     void expire(const QString& id);
     Entry* findEntry(const QString& id);   // caller holds m_mutex
+    // docs/43 O4: one panel row (cost/findings included). Shared by the
+    // global and per-session snapshot views.
+    QVariantMap snapshotOf(const Entry& entry, qint64 nowMs) const;
 
     // Router 会话（未安装时为空 = 不过滤）。
     static QString currentSessionScope();

@@ -192,6 +192,15 @@ void upgradeContextTokenDefault() {
         qCWarning(lcSettings) << "Failed to migrate context token default:" << error;
 }
 
+// v4 → v5：子代理改为默认开启。只对从未写过该键的用户生效——显式关闭过的
+// 用户保留自己的选择（与 upgradeContextTokenDefault 同思路：不覆盖用户意图）。
+void enableSubagentByDefaultOnUpgrade() {
+    if (SettingsRepository::contains("agent/subagentEnabled")) return;
+    QString error;
+    if (!SettingsRepository::writeValue("agent/subagentEnabled", true, &error))
+        qCWarning(lcSettings) << "Failed to migrate subagent default:" << error;
+}
+
 #ifdef Q_OS_WIN
 
 // API keys are encrypted at rest with the Windows DPAPI (per-user) instead
@@ -314,6 +323,8 @@ void SettingsService::load() {
         // v3/v4：contextTokens 旧默认值（kLegacyContextTokensV2/V3）归一为
         // 当前默认。
         if (storedVersion < 4) upgradeContextTokenDefault();
+        // v5：子代理默认开启（仅从未设置过的用户）。
+        if (storedVersion < 5) enableSubagentByDefaultOnUpgrade();
         QString error;
         if (!SettingsRepository::writeValue("schemaVersion", SettingsSchema::kSchemaVersion,
                                             &error))

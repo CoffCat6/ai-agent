@@ -16,6 +16,7 @@
 #include <QVariantMap>
 
 #include <memory>
+#include <functional>
 
 namespace {
 
@@ -50,12 +51,35 @@ public:
     Q_INVOKABLE QString backgroundSubAgentReport(const QString& id)
     { lastReportId = id; return QStringLiteral("report for %1").arg(id); }
     Q_INVOKABLE void dismissFinishedBackgroundSubAgents() { ++dismissals; }
+    // docs/43 O4-2: 失败任务的一键重试入口。
+    Q_INVOKABLE bool retryBackgroundSubAgent(const QString& id)
+    { ++retries; retriedId = id; return true; }
+    // docs/43 O4-3: 详情区 findings 按需查询。
+    Q_INVOKABLE QVariantList backgroundSubAgentFindings(const QString& id)
+    {
+        if (id == QLatin1String("sa-1")) {
+            return QVariantList{
+                QVariantMap{{QStringLiteral("severity"), QStringLiteral("high")},
+                            {QStringLiteral("path"), QStringLiteral("src/a.cpp")},
+                            {QStringLiteral("line"), 12},
+                            {QStringLiteral("message"),
+                             QStringLiteral("null deref after the check")}},
+                QVariantMap{{QStringLiteral("severity"), QStringLiteral("low")},
+                            {QStringLiteral("path"), QStringLiteral("src/b.cpp")},
+                            {QStringLiteral("line"), 40},
+                            {QStringLiteral("message"),
+                             QStringLiteral("stale comment")}}};
+        }
+        return QVariantList{};
+    }
 
     int cancels{0};
     int cancelsAll{0};
     int dismissals{0};
+    int retries{0};
     QString cancelledId;
     QString lastReportId;
+    QString retriedId;
 };
 
 QQuickItem* findChildItem(QQuickItem* root, const QString& objectName) {
@@ -79,6 +103,18 @@ QVariantMap task(const QString& id, const QString& goal, const QString& state,
     map["elapsedMs"] = 1200;
     map["steps"] = steps;
     map["proposalCount"] = proposals;
+    // docs/43 O4: finished runs carry cost/findings; running ones stay empty.
+    const bool done = state == QLatin1String("completed");
+    map["tokensUsed"] = done ? 1200 : 0;
+    map["usage"] = done
+        ? QVariantMap{{QStringLiteral("input"), 1000},
+                      {QStringLiteral("output"), 200},
+                      {QStringLiteral("cached"), 0},
+                      {QStringLiteral("reported"), true},
+                      {QStringLiteral("model"), QStringLiteral("test-model")}}
+        : QVariantMap{};
+    map["findingCount"] = done ? 2 : 0;
+    map["stopCode"] = done ? QStringLiteral("completed") : QString();
     map["progressTail"] = QVariantList{};
     map["error"] = "";
     return map;
@@ -356,6 +392,124 @@ private slots:
         QVERIFY2(h.click(QStringLiteral("backgroundTasksCancelAll")),
                  "全部停止按钮不可点击");
         QCOMPARE(h.stub.cancelsAll, 1);
+    }
+// docs/43 O4: a finished run exposes cost and finding count in the row and
+    // the classified usage (model/input/output) in the detail pane.
+    void finishedTaskShowsCostAndFindings() {
+        BackgroundDialogHarness h;
+        QVERIFY2(h.window, qPrintable(h.error));
+        QVERIFY(h.setTasks({task(QStringLiteral("sa-1"),
+                                 QStringLiteral("review the patch"),
+                                 QStringLiteral("completed"), 1000, 4, 0)}));
+        QVERIFY(h.openDialog());
+        QTest::qWait(150);
+
+        const auto itemOf = [&](const QString& name) -> QQuickItem* {
+            return findChildItem(h.window->contentItem(), name);
+        };
+        QQuickItem* tokens = itemOf(QStringLiteral("backgroundTaskRowTokens_sa-1"));
+        QVERIFY2(tokens, "行内 tokens 不可见");
+        QVERIFY(tokens->isVisible());
+        QVERIFY2(tokens->property("text").toString().contains(
+                     QStringLiteral("tokens 1200")),
+                 qPrintable(tokens->property("text").toString()));
+
+        QQuickItem* findings = itemOf(QStringLiteral("backgroundTaskRowFindings_sa-1"));
+        QVERIFY2(findings, "行内结论数不可见");
+        QVERIFY(findings->isVisible());
+        QVERIFY(findings->property("text").toString().contains(
+            QStringLiteral("2 条结论")));
+
+        QQuickItem* usage = itemOf(QStringLiteral("backgroundTaskDetailUsage"));
+        QVERIFY2(usage, "详情用量行缺失");
+        QVERIFY(usage->isVisible());
+        const QString usageText = usage->property("text").toString();
+        QVERIFY2(usageText.contains(QStringLiteral("test-model"))
+                     && usageText.contains(QStringLiteral("输入 1000")),
+                 qPrintable(usageText));
+    }
+// docs/43 O4-2: failed/cancelled 终态任务的详情区出现「重试」，点击把任务
+// id 交给门面；completed 任务不给重试入口。
+    void failedTaskShowsRetryButton() {
+        BackgroundDialogHarness h;
+        QVERIFY2(h.window, qPrintable(h.error));
+        QVERIFY(h.setTasks({task(QStringLiteral("sa-1"),
+                                 QStringLiteral("survey failed"),
+                                 QStringLiteral("failed"), 1000, 2, 0)}));
+        QVERIFY(h.openDialog());
+        QTest::qWait(150);
+
+        const auto itemOf = [&](const QString& name) -> QQuickItem* {
+            return findChildItem(h.window->contentItem(), name);
+        };
+
+        // 唯一任务是 failed → 默认选中它，重试按钮可见。
+        QTRY_VERIFY_WITH_TIMEOUT(([&]() {
+            QQuickItem* retry = itemOf(QStringLiteral("backgroundTaskDetailRetry"));
+            return retry && retry->isVisible();
+        })(), 5000);
+        QQuickItem* retry = itemOf(QStringLiteral("backgroundTaskDetailRetry"));
+        QTest::mouseClick(
+            h.window, Qt::LeftButton, Qt::NoModifier,
+            retry->mapToScene(QPointF(retry->width() / 2, retry->height() / 2))
+                .toPoint());
+        QTRY_COMPARE(h.stub.retries, 1);
+        QCOMPARE(h.stub.retriedId, QStringLiteral("sa-1"));
+
+        // completed 任务不显示重试按钮。
+        QVERIFY(h.setTasks({task(QStringLiteral("sa-2"),
+                                 QStringLiteral("all good"),
+                                 QStringLiteral("completed"), 1000, 4, 0)}));
+        QTest::qWait(150);
+        QQuickItem* hidden = itemOf(QStringLiteral("backgroundTaskDetailRetry"));
+        QVERIFY2(!hidden || !hidden->isVisible(),
+                 "completed 任务不应显示重试按钮");
+    }
+
+    // docs/43 O4-3: completed 任务详情区按需渲染 findings 列表——severity
+    // 徽章、path:line 定位、说明文本；运行中任务不渲染（查询返回空）。
+    void completedTaskShowsFindingsList() {
+        BackgroundDialogHarness h;
+        QVERIFY2(h.window, qPrintable(h.error));
+        QVERIFY(h.setTasks({task(QStringLiteral("sa-1"),
+                                 QStringLiteral("review the patch"),
+                                 QStringLiteral("completed"), 1000, 4, 0)}));
+        QVERIFY(h.openDialog());
+        QTest::qWait(150);
+
+        const auto itemOf = [&](const QString& name) -> QQuickItem* {
+            return findChildItem(h.window->contentItem(), name);
+        };
+        const auto textOf = [&](const QString& name) -> QString {
+            QQuickItem* item = itemOf(name);
+            return item ? item->property("text").toString() : QString();
+        };
+
+        QQuickItem* section =
+            itemOf(QStringLiteral("backgroundTaskDetailFindings"));
+        QVERIFY2(section, "findings 区没有渲染");
+        QVERIFY2(section->isVisible(), "findings 区不可见");
+        QVERIFY2(textOf(QStringLiteral("backgroundTaskDetailFindingsTitle"))
+                     .contains(QStringLiteral("2")),
+                 "findings 标题缺条数");
+
+        // 逐条：徽章文本 + 定位 path:line。
+        int highBadges = 0;
+        int locations = 0;
+        // 递归遍历需显式类型（auto lambda 不能自引用）。
+        std::function<void(QQuickItem*)> walkTexts =
+            [&](QQuickItem* item) {
+            if (item->objectName().isEmpty()
+                    && !item->property("text").toString().isEmpty()) {
+                const QString text = item->property("text").toString();
+                if (text == QLatin1String("high")) ++highBadges;
+                if (text.contains(QStringLiteral("src/a.cpp:12"))) ++locations;
+            }
+            for (QQuickItem* child : item->childItems()) walkTexts(child);
+        };
+        walkTexts(section);
+        QCOMPARE(highBadges, 1);
+        QCOMPARE(locations, 1);
     }
 };
 

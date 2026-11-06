@@ -91,7 +91,8 @@ bool BackgroundTaskHub::inSession(const Entry& entry, const QString& sessionId) 
 
 QString BackgroundTaskHub::createTask(const QString& goal, const QString& role,
                                       const ITool::Cancellation& cancelled,
-                                      Work work, const QString& sessionId) {
+                                      Work work, const QString& sessionId,
+                                      const QJsonObject& spawnArgs) {
     QString id;
     {
         QMutexLocker lock(&m_mutex);
@@ -112,6 +113,7 @@ QString BackgroundTaskHub::createTask(const QString& goal, const QString& role,
         entry.state = QStringLiteral("queued");
         entry.startedAtMs = QDateTime::currentMSecsSinceEpoch();
         entry.cancelled = cancelled;
+        entry.spawnArgs = spawnArgs;
         m_tasks.insert(id, entry);
         m_order.append(id);
     }
@@ -289,27 +291,7 @@ QVariantList BackgroundTaskHub::snapshots() const {
     for (const QString& id : m_order) {
         const auto it = m_tasks.constFind(id);
         if (it == m_tasks.cend()) continue;
-        const Entry& entry = it.value();
-        QVariantList tail;
-        for (const auto& item : entry.progress)
-            tail.append(QVariantMap{{QStringLiteral("phase"), item.first},
-                                    {QStringLiteral("text"), item.second}});
-        const qint64 end = entry.finishedAtMs > 0 ? entry.finishedAtMs : now;
-        out.append(QVariantMap{
-            {QStringLiteral("id"), entry.id},
-            {QStringLiteral("sessionId"), entry.sessionId},
-            {QStringLiteral("goal"), entry.goal},
-            {QStringLiteral("role"), entry.role},
-            {QStringLiteral("state"), entry.state},
-            {QStringLiteral("startedAt"), entry.startedAtMs},
-            {QStringLiteral("elapsedMs"), qMax<qint64>(0, end - entry.startedAtMs)},
-            {QStringLiteral("steps"), entry.steps},
-            {QStringLiteral("maxSteps"), entry.maxSteps},
-            {QStringLiteral("proposalCount"), entry.proposalCount},
-            {QStringLiteral("cancelling"), entry.cancelling},
-            {QStringLiteral("slotQueued"), entry.slotQueued},
-            {QStringLiteral("progressTail"), tail},
-            {QStringLiteral("error"), entry.error}});
+        out.append(snapshotOf(it.value(), now));
     }
     return out;
 }
@@ -321,29 +303,55 @@ QVariantList BackgroundTaskHub::snapshotsForSession(const QString& sessionId) co
     for (const QString& id : m_order) {
         const auto it = m_tasks.constFind(id);
         if (it == m_tasks.cend() || !inSession(it.value(), sessionId)) continue;
-        const Entry& entry = it.value();
-        QVariantList tail;
-        for (const auto& item : entry.progress)
-            tail.append(QVariantMap{{QStringLiteral("phase"), item.first},
-                                    {QStringLiteral("text"), item.second}});
-        const qint64 end = entry.finishedAtMs > 0 ? entry.finishedAtMs : now;
-        out.append(QVariantMap{
-            {QStringLiteral("id"), entry.id},
-            {QStringLiteral("sessionId"), entry.sessionId},
-            {QStringLiteral("goal"), entry.goal},
-            {QStringLiteral("role"), entry.role},
-            {QStringLiteral("state"), entry.state},
-            {QStringLiteral("startedAt"), entry.startedAtMs},
-            {QStringLiteral("elapsedMs"), qMax<qint64>(0, end - entry.startedAtMs)},
-            {QStringLiteral("steps"), entry.steps},
-            {QStringLiteral("maxSteps"), entry.maxSteps},
-            {QStringLiteral("proposalCount"), entry.proposalCount},
-            {QStringLiteral("cancelling"), entry.cancelling},
-            {QStringLiteral("slotQueued"), entry.slotQueued},
-            {QStringLiteral("progressTail"), tail},
-            {QStringLiteral("error"), entry.error}});
+        out.append(snapshotOf(it.value(), now));
     }
     return out;
+}
+
+// docs/43 O4: the panel now shows what a run actually cost. Values come from
+// the stored report (0 while running); usage stays empty when the provider
+// reported only an aggregate, so the UI falls back to tokensUsed.
+QVariantMap BackgroundTaskHub::snapshotOf(const Entry& entry, qint64 nowMs) const {
+    QVariantList tail;
+    for (const auto& item : entry.progress)
+        tail.append(QVariantMap{{QStringLiteral("phase"), item.first},
+                                {QStringLiteral("text"), item.second}});
+    const qint64 end = entry.finishedAtMs > 0 ? entry.finishedAtMs : nowMs;
+    int tokensUsed = 0;
+    int findingCount = 0;
+    QString stopCode;
+    QVariantMap usage;
+    if (entry.hasReport) {
+        tokensUsed = entry.report.tokensUsed;
+        findingCount = entry.report.findings.size();
+        stopCode = entry.report.stopCode;
+        usage = QVariantMap{
+            {QStringLiteral("input"), entry.report.usage.inputTokens},
+            {QStringLiteral("output"), entry.report.usage.outputTokens},
+            {QStringLiteral("cached"), entry.report.usage.cachedTokens},
+            {QStringLiteral("reported"), entry.report.usage.usageReported},
+            {QStringLiteral("model"), entry.report.usage.model},
+            {QStringLiteral("profileId"), entry.report.usage.profileId}};
+    }
+    return QVariantMap{
+        {QStringLiteral("id"), entry.id},
+        {QStringLiteral("sessionId"), entry.sessionId},
+        {QStringLiteral("goal"), entry.goal},
+        {QStringLiteral("role"), entry.role},
+        {QStringLiteral("state"), entry.state},
+        {QStringLiteral("startedAt"), entry.startedAtMs},
+        {QStringLiteral("elapsedMs"), qMax<qint64>(0, end - entry.startedAtMs)},
+        {QStringLiteral("steps"), entry.steps},
+        {QStringLiteral("maxSteps"), entry.maxSteps},
+        {QStringLiteral("proposalCount"), entry.proposalCount},
+        {QStringLiteral("cancelling"), entry.cancelling},
+        {QStringLiteral("slotQueued"), entry.slotQueued},
+        {QStringLiteral("progressTail"), tail},
+        {QStringLiteral("error"), entry.error},
+        {QStringLiteral("tokensUsed"), tokensUsed},
+        {QStringLiteral("usage"), usage},
+        {QStringLiteral("findingCount"), findingCount},
+        {QStringLiteral("stopCode"), stopCode}};
 }
 
 int BackgroundTaskHub::activeCount() const {
@@ -410,6 +418,19 @@ QString BackgroundTaskHub::sessionIdFor(const QString& id) const {
     return it == m_tasks.cend() ? QString() : it->sessionId;
 }
 
+// docs/43 O4-2: retry reads the stored spawn arguments of a TERMINAL task.
+// Empty object = unknown id, another session's task, or a task created before
+// the snapshot existed (nothing to re-dispatch).
+QJsonObject BackgroundTaskHub::spawnArgsForSession(const QString& sessionId,
+                                                   const QString& id) const {
+    QMutexLocker lock(&m_mutex);
+    const auto it = m_tasks.constFind(id);
+    if (it == m_tasks.cend() || !inSession(it.value(), sessionId))
+        return {};
+    if (!isTerminal(it->state)) return {};
+    return it->spawnArgs;
+}
+
 QString BackgroundTaskHub::waitFor(const QString& id, int timeoutMs,
                                    const ITool::Cancellation& waiterCancelled) {
     QElapsedTimer timer;
@@ -425,6 +446,43 @@ QString BackgroundTaskHub::waitFor(const QString& id, int timeoutMs,
         if (waiterCancelled && waiterCancelled->load()) return it->state;
         const int remaining = timeoutMs - static_cast<int>(timer.elapsed());
         if (remaining <= 0) return it->state;
+        m_cv.wait(&m_mutex, static_cast<unsigned long>(qMin(remaining, 250)));
+    }
+}
+
+// docs/43 O3: wait-any / wait-all over a set of ids. One condition-variable
+// loop covers both modes so a completed task wakes every waiter immediately.
+QHash<QString, QString> BackgroundTaskHub::waitForMany(
+        const QStringList& ids, bool waitAll, int timeoutMs,
+        const ITool::Cancellation& waiterCancelled) {
+    QElapsedTimer timer;
+    timer.start();
+    QMutexLocker lock(&m_mutex);
+    const QString scope = currentSessionScope();
+    const auto collect = [&]() {
+        QHash<QString, QString> out;
+        for (const QString& id : ids) {
+            const auto it = m_tasks.constFind(id);
+            out.insert(id, it == m_tasks.cend() || !inSession(it.value(), scope)
+                               ? QStringLiteral("missing") : it->state);
+        }
+        return out;
+    };
+    while (true) {
+        const QHash<QString, QString> states = collect();
+        bool anyTerminal = false;
+        bool allTerminal = true;
+        for (const QString& id : ids) {   // ids order keeps results stable
+            const QString state = states.value(id);
+            const bool terminal = isTerminal(state)
+                || state == QLatin1String("missing");
+            anyTerminal = anyTerminal || terminal;
+            allTerminal = allTerminal && terminal;
+        }
+        if (waitAll ? allTerminal : anyTerminal) return states;
+        if (waiterCancelled && waiterCancelled->load()) return states;
+        const int remaining = timeoutMs - static_cast<int>(timer.elapsed());
+        if (remaining <= 0) return states;
         m_cv.wait(&m_mutex, static_cast<unsigned long>(qMin(remaining, 250)));
     }
 }

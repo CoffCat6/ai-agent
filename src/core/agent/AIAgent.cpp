@@ -200,8 +200,58 @@ QString systemPrompt() {
         "Judge each message on its own: if the current message is a greeting, small "
         "talk, or needs no fresh information, reply directly - earlier tool usage in "
         "this conversation does not make a tool call appropriate now.\n"
-        "Always reply in the same language the user writes in."
+        "Always reply in the same language the user writes in.\n"
+        "\n"
+        "Delegation policy (spawn_agent):\n"
+        "- Delegate when a task has 3+ independent directions, needs a broad "
+        "survey, or an independent review. Otherwise answer or do 1-2 "
+        "lookups yourself.\n"
+        "- Roles: explore = survey, research = verification, review = "
+        "critic, coder = draft proposals.\n"
+        "- Short blocking tasks run synchronously; long surveys/drafts use "
+        "background=true + subagent_wait(id). Capacity is capped - extra "
+        "spawns queue.\n"
+        "- Goals must be self-contained (sub-agents see neither this "
+        "conversation nor your todos). Pass todo_id and update that item "
+        "when the report returns.\n"
+        "- Transient failures retry once automatically; if it still fails, "
+        "change the approach instead of repeating the same goal.\n"
+        "- Synthesize: conclusion, evidence (path:line), conflicts, gaps. "
+        "Never paste a report verbatim.\n"
     ).arg(QSysInfo::productType());
+}
+
+// docs/43 O3: background sub-agents are asynchronous; without a status block
+// the model forgets work is in flight once the ack scrolls out of context.
+// Emitted only when tasks exist, so sessions without sub-agents pay nothing.
+QString backgroundSubAgentsBlock(const QVariantList& tasks) {
+    if (tasks.isEmpty()) return {};
+    QString out = QStringLiteral(
+        "\n\nBackground sub-agents (this session):\n");
+    int shown = 0;
+    for (const QVariant& value : tasks) {
+        if (shown >= 5) break;
+        ++shown;
+        const QVariantMap task = value.toMap();
+        const QString state = task.value(QStringLiteral("state")).toString();
+        out += QStringLiteral("- %1 %2: %3")
+                   .arg(task.value(QStringLiteral("id")).toString(),
+                        task.value(QStringLiteral("role")).toString(),
+                        state);
+        const int steps = task.value(QStringLiteral("steps")).toInt();
+        if (state == QLatin1String("running") && steps > 0)
+            out += QStringLiteral(" (step %1)").arg(steps);
+        else if (state == QLatin1String("completed"))
+            out += QStringLiteral(" - call subagent_wait(id) to read its report");
+        else if (state == QLatin1String("failed")
+                 || state == QLatin1String("cancelled"))
+            out += QStringLiteral(" - collect it with subagent_wait(id)");
+        out += QLatin1Char('\n');
+    }
+    if (tasks.size() > shown)
+        out += QStringLiteral("- (%1 more; see subagent_status)\n")
+                   .arg(tasks.size() - shown);
+    return out;
 }
 
 // 当前任务清单注入系统提示。todo_write 的完整列表只出现在某一条工具结果
@@ -407,6 +457,12 @@ QString AIAgent::effectiveSystemPrompt() const {
     // 用户 override 表示完全接管系统提示（同引用指令语义），不注入。
     if (m_systemPromptOverride.isEmpty())
         prompt += todoStateBlock(m_todoList);
+    // docs/43 O3: live background-task state (running / uncollected / failed)
+    // so the model can decide to wait now or keep working. Empty when the
+    // session has no background sub-agents.
+    if (m_systemPromptOverride.isEmpty() && m_backgroundHub)
+        prompt += backgroundSubAgentsBlock(
+            m_backgroundHub->snapshotsForSession(m_sessionId));
     // docs/37 W3：`$` 引用的技能正文。每轮/每次重建都会重新追加，因此
     // 上下文压缩（保留首条 system）后仍然生效。
     prompt += activeSkillsBlock();
@@ -673,6 +729,10 @@ QString AIAgent::appendTraceNode(const QString& type, const QString& title,
     // 白名单放行才能持久化并在会话恢复后继续渲染徽章/提案列表。
     if (extra.contains("subagentProposals"))
         node["subagentProposals"] = extra.value("subagentProposals");
+    // docs/43 O2: light projection of the structured sub-agent report (usage,
+    // stopCode, attempts, finding count + top 3 findings).
+    if (extra.contains("subagentReport"))
+        node["subagentReport"] = extra.value("subagentReport");
     // docs/35 P4.3: 后台任务节点（type = subagent_task）的归因字段。
     if (extra.contains("taskId"))
         node["taskId"] = extra.value("taskId");
@@ -1721,8 +1781,13 @@ void AIAgent::applyContextBudget(int reservedTokens) {
     if (TokenEstimator::estimateTokens(m_messages) <= effective) return;
 
     const int before = m_messages.size();
+    const int beforeTokens = TokenEstimator::estimateTokens(m_messages);
     m_messages = TokenEstimator::compressToFit(m_messages, effective);
-    if (m_messages.size() == before) return;
+    // A truncation keeps the message count but cuts content; treat it as a
+    // real compression so the UI/trace still report it.
+    if (m_messages.size() == before
+            && TokenEstimator::estimateTokens(m_messages) >= beforeTokens)
+        return;
 
     notifyTokens();
     appendTraceNode("context",
@@ -2180,6 +2245,53 @@ bool AIAgent::cancelBackgroundSubAgent(const QString& taskId) {
     return m_backgroundHub->cancelForSession(m_sessionId, taskId);
 }
 
+// docs/43 O4-2: 失败/取消后的「一键重试」。复用 dispatchToolExecution 的
+// 线程局部 router 环境（hub/提案库/项目规则），但不进在飞表、不写主历史、
+// 不推主循环——主任务可能早已结束，重试是纯后台动作；新任务自己的
+// subagent_task 节点与面板行由 syncBackgroundTraceNodes 走既有链路呈现。
+bool AIAgent::retryBackgroundSubAgent(const QString& taskId) {
+    if (!m_backgroundHub || m_sessionId.isEmpty()) return false;
+    // 只重派终态任务；queued/running/cancelling 拒绝（等它结束再谈重试）。
+    const QString state =
+        m_backgroundHub->stateLabelForSession(m_sessionId, taskId);
+    if (state.isEmpty()) return false;   // 未知 id 或别的会话
+    if (state == QLatin1String("queued")
+            || state == QLatin1String("running")
+            || state == QLatin1String("cancelling"))
+        return false;
+    // 保存的原始参数（旧任务无快照 → 空 → 不可重试）。
+    const QJsonObject spawnArgs =
+        m_backgroundHub->spawnArgsForSession(m_sessionId, taskId);
+    if (spawnArgs.isEmpty()) return false;
+    const std::shared_ptr<ITool> tool = m_toolRegistry
+        ? m_toolRegistry->findShared(QLatin1String(SubAgentTool::kName))
+        : nullptr;
+    if (!tool) return false;
+
+    ToolCallInfo call;
+    call.id = QStringLiteral("retry-%1-%2").arg(taskId).arg(++m_toolCallSequence);
+    call.name = QLatin1String(SubAgentTool::kName);
+    call.arguments = spawnArgs;
+    // 与 dispatchToolExecution 相同的 GUI 线程快照：项目根/规则/会话在派发
+    // 时钉死，规则缓存绝不跨线程读。
+    const QString projectRoot = m_activeProjectRoot;
+    const QString spawnProjectRules = projectRulesBlock();
+    const QString dispatchSessionId = m_sessionId;
+    const auto cancelled = std::make_shared<std::atomic<bool>>(false);
+    // 独立取消令牌：主任务的 stop() 不应误杀重试（面板按任务 id 取消）。
+    (void)QtConcurrent::run([tool, call, projectRoot, cancelled,
+                             spawnProjectRules, dispatchSessionId,
+                             store = m_proposalStore,
+                             hub = m_backgroundHub]() -> ToolResult {
+        const Sandbox::ExecutionScope scope(projectRoot);
+        ProposalStoreRouter proposalRouter(store);
+        BackgroundTaskHubRouter backgroundRouter(hub, dispatchSessionId);
+        SubAgentRulesRouter rulesRouter(spawnProjectRules);
+        return tool->execute(call.arguments, cancelled);
+    });
+    return true;
+}
+
 int AIAgent::cancelAllBackgroundSubAgents() {
     if (!m_backgroundHub || m_sessionId.isEmpty()) return 0;
     int active = 0;
@@ -2211,8 +2323,25 @@ QString AIAgent::backgroundSubAgentReport(const QString& taskId) const {
     return SubAgentTool::reportOutput(*report);
 }
 
-void AIAgent::dismissFinishedBackgroundSubAgents() {
-    if (!m_backgroundHub || m_sessionId.isEmpty()) return;
+// docs/43 O4-3: structured findings for the panel detail view. The snapshot
+// carries only the count (250ms refreshes stay light); the full list is
+// fetched on demand from the stored report.
+QVariantList AIAgent::backgroundSubAgentFindings(const QString& taskId) const {
+    QVariantList out;
+    if (!m_backgroundHub || m_sessionId.isEmpty()) return out;
+    const auto report = m_backgroundHub->reportForSession(m_sessionId, taskId);
+    if (!report) return out;
+    for (const SubAgentFinding& finding : report->findings) {
+        out.append(QVariantMap{
+            {QStringLiteral("severity"), finding.severity},
+            {QStringLiteral("path"), finding.path},
+            {QStringLiteral("line"), finding.line},
+            {QStringLiteral("message"), finding.message}});
+    }
+    return out;
+}
+
+void AIAgent::dismissFinishedBackgroundSubAgents() {    if (!m_backgroundHub || m_sessionId.isEmpty()) return;
     m_backgroundHub->removeFinishedInSession(m_sessionId);
     // Drop bookkeeping for rows the panel removed; trace nodes stay (timeline).
     const QVariantList tasks = m_backgroundHub->snapshotsForSession(m_sessionId);
@@ -2812,9 +2941,13 @@ void AIAgent::dispatchToolExecution(const ToolCallInfo& call, const QString& tra
     // QPointer 守护 agent 在任务运行中被销毁的情形——派发 lambda 本身
     // 不持有裸 this。
     const bool isSpawnCall = call.name == QLatin1String("spawn_agent");
+    // docs/43 O1-T2: 项目规则快照必须在 GUI 线程取（m_rulesCache* 不是线程
+    // 安全的），随 lambda 值捕获到子代理执行线程，由 SubAgentTool 装进请求。
+    const QString spawnProjectRules = isSpawnCall ? projectRulesBlock() : QString();
     // 会话快照：后台任务的归属在派发时钉死，之后切会话不会把它带过去。
     const QString dispatchSessionId = m_sessionId;
     watcher->setFuture(QtConcurrent::run([tool, call, projectRoot, cancelled, nodeId, isSpawnCall,
+                                          spawnProjectRules,
                                           dispatchSessionId,
                                           store = m_proposalStore,
                                           hub = m_backgroundHub,
@@ -2827,6 +2960,8 @@ void AIAgent::dispatchToolExecution(const ToolCallInfo& call, const QString& tra
         // subagent_wait/status/cancel read the same session hub and only see
         // tasks bound to this session.
         BackgroundTaskHubRouter backgroundRouter(hub, dispatchSessionId);
+        // docs/43 O1-T2: 项目规则只随 spawn_agent 派发下传；其他工具不读。
+        SubAgentRulesRouter rulesRouter(spawnProjectRules);
         SubAgentProgressRouter router(isSpawnCall
             ? SubAgentProgressHook([nodeId, target](const SubAgentProgress& p) {
                   if (target.isNull()) return;
@@ -2861,9 +2996,14 @@ void AIAgent::applySubAgentProgress(const QString& nodeId, const SubAgentProgres
         if (node.value("status").toString() != QLatin1String("running")) return;
         const bool streamPhase = progress.phase == QLatin1String("stream")
         || progress.phase == QLatin1String("reasoning");
+        // docs/43 O1-T3: an automatic retry is a visible event. Without an
+        // explicit branch it would fall through to the title logic with
+        // step=0 and regress the node to "step 0".
+        const bool retryPhase = progress.phase == QLatin1String("retry");
         if (progress.phase == QLatin1String("assistant")
                 || progress.phase == QLatin1String("tool")
                 || progress.phase == QLatin1String("context")
+                || retryPhase
                 || streamPhase) {
             // 过程可视化：模型的可见文本、逐个工具调用、上下文压缩与流式
             // 增量追加进日志（先进先出，超限丢最旧）。docs/35 P4.6：流式
@@ -2920,10 +3060,12 @@ void AIAgent::applySubAgentProgress(const QString& nodeId, const SubAgentProgres
         // 排队事件（docs/35 P4.5）没有步号，标题单独显示 queued。
         QString title = progress.phase == QLatin1String("queued")
             ? QStringLiteral("spawn_agent · queued")
-            : (progress.maxSteps > 0
-                ? QStringLiteral("spawn_agent · step %1/%2")
-                      .arg(progress.step).arg(progress.maxSteps)
-                : QStringLiteral("spawn_agent · step %1").arg(progress.step));
+            : retryPhase
+                ? QStringLiteral("spawn_agent · retrying")
+                : (progress.maxSteps > 0
+                    ? QStringLiteral("spawn_agent · step %1/%2")
+                          .arg(progress.step).arg(progress.maxSteps)
+                    : QStringLiteral("spawn_agent · step %1").arg(progress.step));
         if (!summaryText.isEmpty())
             title += QStringLiteral(" · %1").arg(summaryText);
         // "final answer"（强制收尾轮）追加在摘要之后而非覆盖它；assistant/
@@ -2944,6 +3086,7 @@ void AIAgent::applySubAgentProgress(const QString& nodeId, const SubAgentProgres
             progress.phase == QLatin1String("assistant")
             || progress.phase == QLatin1String("tool")
             || progress.phase == QLatin1String("context")
+            || retryPhase
             || streamPhase;
         if (!logChanged && node.value("title").toString() == title) return;
         node["title"] = title;
@@ -2974,17 +3117,82 @@ void AIAgent::finishToolExecution(const ToolCallInfo& call, const QString& trace
         call.name == QLatin1String("spawn_agent")
         || call.name == QLatin1String("subagent_wait");
     if (isSubAgentResult && result.success) {
-        static const QRegularExpression evidenceRe(
-            QStringLiteral("evidence: ([^)\\r\\n]+)"));
-        const QRegularExpressionMatch evidenceMatch = evidenceRe.match(output);
-        if (evidenceMatch.hasMatch())
-            resultExtra["evidencePath"] = evidenceMatch.captured(1).trimmed();
+        // docs/43 O4 审计收口（P2-9）: 证据路径优先读结构化 metadata
+        // （subagentReport.artifactPath，O2 起双通道都有），正则仅作旧报告
+        // 回退——`evidence: ([^)\r\n]+)` 以 ')' 为终止符，路径含 ')'（如
+        // 用户名 "John (Work)"）时会被截断成坏路径。
+        const QString artifactPath = result.metadata
+            .value(QStringLiteral("subagentReport")).toObject()
+            .value(QStringLiteral("artifactPath")).toString();
+        if (!artifactPath.isEmpty()) {
+            resultExtra["evidencePath"] = artifactPath;
+        } else {
+            static const QRegularExpression evidenceRe(
+                QStringLiteral("evidence: ([^)\\r\\n]+)"));
+            const QRegularExpressionMatch evidenceMatch =
+                evidenceRe.match(output);
+            if (evidenceMatch.hasMatch())
+                resultExtra["evidencePath"] =
+                    evidenceMatch.captured(1).trimmed();
+        }
     }
     // docs/34 P3.2: 工具报上来的结构化附加数据按白名单挑选（目前只有
     // spawn_agent 的提案索引）。失败同样保留——部分运行也会返回提案。
     if (result.metadata.value("subagentProposals").isArray())
         resultExtra["subagentProposals"] =
             result.metadata.value("subagentProposals");
+    // docs/43 O3: a batch wait aggregates into one light trace node.
+    if (!result.metadata.value("subagentReports").toArray().isEmpty()) {
+        const QJsonArray batch =
+            result.metadata.value("subagentReports").toArray();
+        int steps = 0;
+        int tokens = 0;
+        QJsonObject usage;
+        QStringList codes;
+        for (const QJsonValue& value : batch) {
+            const QJsonObject item = value.toObject();
+            steps += item.value("steps").toInt();
+            tokens += item.value("tokensUsed").toInt();
+            const QString code = item.value("stopCode").toString();
+            if (!code.isEmpty()) codes.append(code);
+            const QJsonObject itemUsage = item.value("usage").toObject();
+            if (itemUsage.isEmpty()) continue;
+            usage["input"] = usage.value("input").toInt()
+                           + itemUsage.value("input").toInt();
+            usage["output"] = usage.value("output").toInt()
+                            + itemUsage.value("output").toInt();
+            usage["cached"] = usage.value("cached").toInt()
+                            + itemUsage.value("cached").toInt();
+            usage["reported"] = usage.value("reported").toBool()
+                                || itemUsage.value("reported").toBool();
+            if (usage.value("model").toString().isEmpty())
+                usage["model"] = itemUsage.value("model").toString();
+        }
+        resultExtra["subagentReport"] = QJsonObject{
+            {"batch", true},
+            {"count", batch.size()},
+            {"steps", steps},
+            {"tokensUsed", tokens},
+            {"usage", usage},
+            {"stopCode", codes.join(QLatin1Char(','))}};
+    } else if (result.metadata.value("subagentReport").isObject()) {
+        const QJsonObject full =
+            result.metadata.value("subagentReport").toObject();
+        QJsonObject light{
+            {"ok", full.value("ok")},
+            {"stopCode", full.value("stopCode")},
+            {"attempts", full.value("attempts")},
+            {"steps", full.value("steps")},
+            {"tokensUsed", full.value("tokensUsed")},
+            {"usage", full.value("usage")},
+            {"findingCount", full.value("findings").toArray().size()}};
+        QJsonArray top;
+        const QJsonArray findings = full.value("findings").toArray();
+        for (int i = 0; i < findings.size() && i < 3; ++i)
+            top.append(findings.at(i));
+        if (!top.isEmpty()) light["topFindings"] = top;
+        resultExtra["subagentReport"] = light;
+    }
     // docs/35 P4.4: 完整提案（transient）进入会话注册表，用当前 trace 节点
     // id 派生稳定 id；报告正文随后注入 id 清单，模型据此调 apply_proposal。
     // trace 持久化仍只拿上面的轻量索引，节点体积不随提案正文增长。
@@ -3061,20 +3269,78 @@ void AIAgent::finishToolExecution(const ToolCallInfo& call, const QString& trace
                     QJsonDocument(detail).toJson(QJsonDocument::Compact));
                 detailIsJson = true;
             }
-        } else if (call.name == QLatin1String("spawn_agent")) {
+        } else if (call.name == QLatin1String("spawn_agent")
+                   || (call.name == QLatin1String("subagent_wait")
+                       && (result.metadata.value("subagentReport").isObject()
+                           || !result.metadata.value("subagentReports")
+                                   .toArray().isEmpty()))) {
             // docs/32 P2: 子代理归因——审计行的 request_id 本就是派发该任务
-            // 的主请求 id（parent 归因），这里再从报告头解析出子代理自身的
-            // 步数/token 消耗，供用量侧按主请求聚合时区分成本来源。
-            static const QRegularExpression statsRe(
-                QStringLiteral("steps: (\\d+), tokens: (\\d+)"));
-            const QRegularExpressionMatch match =
-                statsRe.match(result.success ? result.output : result.error);
+            // 的主请求 id（parent 归因），这里从结构化 metadata 取子代理自身
+            // 的步数/token/分类用量；旧记录（无 metadata）回退解析报告头。
+            const QJsonObject rep =
+                result.metadata.value("subagentReport").toObject();
+            // docs/43 O3: a batch wait reports several runs in one call —
+            // aggregate so the audit row still reflects the real total cost.
+            const QJsonArray batch =
+                result.metadata.value("subagentReports").toArray();
+            int steps = 0;
+            int tokens = 0;
+            int attempts = 0;
+            QString stopCode;
+            QJsonObject usage;
+            QStringList stopCodes;
+            if (!batch.isEmpty()) {
+                for (const QJsonValue& value : batch) {
+                    const QJsonObject item = value.toObject();
+                    steps += item.value("steps").toInt();
+                    tokens += item.value("tokensUsed").toInt();
+                    attempts = qMax(attempts, item.value("attempts").toInt());
+                    const QString code = item.value("stopCode").toString();
+                    if (!code.isEmpty()) stopCodes.append(code);
+                    const QJsonObject itemUsage = item.value("usage").toObject();
+                    if (itemUsage.isEmpty()) continue;
+                    usage["input"] = usage.value("input").toInt()
+                                   + itemUsage.value("input").toInt();
+                    usage["output"] = usage.value("output").toInt()
+                                    + itemUsage.value("output").toInt();
+                    usage["cached"] = usage.value("cached").toInt()
+                                    + itemUsage.value("cached").toInt();
+                    usage["reported"] = usage.value("reported").toBool()
+                                        || itemUsage.value("reported").toBool();
+                    if (usage.value("model").toString().isEmpty())
+                        usage["model"] = itemUsage.value("model").toString();
+                    if (usage.value("profileId").toString().isEmpty())
+                        usage["profileId"] = itemUsage.value("profileId").toString();
+                }
+                stopCode = stopCodes.join(QLatin1Char(','));
+            } else if (!rep.isEmpty()) {
+                steps = rep.value("steps").toInt();
+                tokens = rep.value("tokensUsed").toInt();
+                attempts = rep.value("attempts").toInt();
+                stopCode = rep.value("stopCode").toString();
+                usage = rep.value("usage").toObject();
+            } else {
+                static const QRegularExpression statsRe(
+                    QStringLiteral("steps: (\\d+), tokens: (\\d+)"));
+                const QRegularExpressionMatch match =
+                    statsRe.match(result.success ? result.output : result.error);
+                if (match.hasMatch()) {
+                    steps = match.captured(1).toInt();
+                    tokens = match.captured(2).toInt();
+                }
+            }
             // 非 const：下面要往里写 subagent_todo（const operator[] 的
             // 赋值在 Qt6 是对临时量的空操作）。
             QJsonObject detail{
                 {"output", auditDetail},
-                {"subagent_steps", match.hasMatch() ? match.captured(1).toInt() : 0},
-                {"subagent_tokens", match.hasMatch() ? match.captured(2).toInt() : 0}};
+                {"subagent_source", call.name == QLatin1String("spawn_agent")
+                                        ? "spawn" : "wait"},
+                {"subagent_steps", steps},
+                {"subagent_tokens", tokens}};
+            if (attempts > 0) detail["subagent_attempts"] = attempts;
+            if (!stopCode.isEmpty()) detail["subagent_stop_code"] = stopCode;
+            if (!usage.isEmpty()) detail["subagent_usage"] = usage;
+            if (!batch.isEmpty()) detail["subagent_batch_size"] = batch.size();
             // docs/33 E4: 计划对齐——调用带了 todo_id 时落审计，任务清单
             // 项 ↔ 子代理运行的对应关系可追溯。
             const QString spawnTodoId =

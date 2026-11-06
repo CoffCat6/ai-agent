@@ -18,6 +18,8 @@
 #include <QJsonArray>
 #include <QJsonDocument>
 #include <QJsonObject>
+#include <QRegularExpression>
+
 #include <QStandardPaths>
 #include <QStringList>
 #include <QThreadPool>
@@ -80,7 +82,11 @@ QString systemPrompt(const SubAgentRequest& request) {
         "- Finish with a self-contained report: lead with the answer or "
         "conclusion, then the supporting evidence with concrete file paths "
         "(path:line where possible). If you cannot complete the goal, state "
-        "exactly what you found and what blocked you.\n");
+        "exactly what you found and what blocked you.\n"
+        "- When you have findings (review/research/coder), end with a "
+        "'## FINDINGS' section, one '- [severity] path:line - problem and "
+        "fix' line each. Severity is critical/high/medium/low/info. Omit the "
+        "section when there is nothing to report.\n");
     // docs/33 E2: a resolved role profile owns the focus block when present;
     // the legacy hint enum remains the fallback for old callers/tests.
     if (!request.rolePrompt.trimmed().isEmpty()) {
@@ -99,6 +105,13 @@ QString systemPrompt(const SubAgentRequest& request) {
     if (!request.context.trimmed().isEmpty()) {
         prompt += QStringLiteral("\nContext from the primary agent:\n%1\n")
                       .arg(request.context.trimmed());
+    }
+    // docs/43 O1-T2: workspace rules travel with the run so a sub-agent
+    // follows the same project conventions as the primary agent. Already
+    // rendered (header + truncation marker) by AIAgent::projectRulesBlock().
+    if (!request.projectRules.trimmed().isEmpty()) {
+        prompt += request.projectRules;
+        if (!prompt.endsWith(QLatin1Char('\n'))) prompt += QLatin1Char('\n');
     }
     return prompt;
 }
@@ -365,6 +378,51 @@ QString renderProposals(const QVector<SubAgentProposal>& proposals, bool partial
     return out;
 }
 
+// docs/43 O2: parse the trailing "## FINDINGS" section. Deliberately lenient:
+// unrecognised lines are skipped and the report text is never rewritten.
+QVector<SubAgentFinding> parseFindings(const QString& text) {
+    constexpr int kMaxFindings = 50;
+    QVector<SubAgentFinding> out;
+    const int marker = text.lastIndexOf(QStringLiteral("## FINDINGS"), -1,
+                                        Qt::CaseInsensitive);
+    if (marker < 0) return out;
+    static const QStringList kSeverities{
+        QStringLiteral("critical"), QStringLiteral("high"),
+        QStringLiteral("medium"), QStringLiteral("low"),
+        QStringLiteral("info")};
+    static const QRegularExpression lineRe(
+        QStringLiteral("^\\s*[-*]\\s*\\[([^\\]]*)\\]\\s*(.+)$"));
+    static const QRegularExpression locRe(
+        QStringLiteral("^(.*?):(\\d+)\\b\\s*[-\u2013\u2014:]?\\s*(.*)$"));
+    const QStringList lines =
+        text.mid(marker).split(QLatin1Char('\n'), Qt::SkipEmptyParts);
+    for (const QString& raw : lines) {
+        const QString line = raw.trimmed();
+        if (line.isEmpty() || line.startsWith(QLatin1Char('#'))) continue;
+        const QRegularExpressionMatch match = lineRe.match(line);
+        if (!match.hasMatch()) continue;
+        SubAgentFinding finding;
+        finding.severity = match.captured(1).trimmed().toLower();
+        if (!kSeverities.contains(finding.severity))
+            finding.severity = QStringLiteral("info");
+        const QString rest = match.captured(2).trimmed();
+        const QRegularExpressionMatch loc = locRe.match(rest);
+        if (loc.hasMatch()) {
+            finding.path = loc.captured(1).trimmed();
+            finding.line = loc.captured(2).toInt();
+            finding.message = loc.captured(3).trimmed();
+        } else {
+            finding.message = rest;
+        }
+        if (finding.message.isEmpty()) continue;
+        finding.path = finding.path.left(300);
+        finding.message = finding.message.left(500);
+        out.append(finding);
+        if (out.size() >= kMaxFindings) break;
+    }
+    return out;
+}
+
 // 子代理内的 web_search / http_fetch 是同步执行、只认自己 cancel() 原子旗标
 // 的工具（ITool 默认的 execute(args, cancelled) 只在启动前检查令牌）。Runner
 // 自己的取消检查只发生在轮次边界，于是「停止」在长时间网络调用里会一直停在
@@ -432,10 +490,13 @@ SubAgentReport SubAgentRunner::runImpl(IAIService* service, const SubAgentReques
     SubAgentReport report;
     if (!service) {
         report.stop = SubAgentReport::Stop::Error;
+        report.stopCode = QStringLiteral("no_service");
         report.text = QStringLiteral("Sub-agent has no model service configured.");
         return report;
     }
+    report.usage.model = service->model();
     if (request.goal.trimmed().isEmpty()) {
+        report.stopCode = QStringLiteral("invalid_goal");
         report.text = QStringLiteral("Sub-agent goal is empty.");
         return report;
     }
@@ -444,7 +505,9 @@ SubAgentReport SubAgentRunner::runImpl(IAIService* service, const SubAgentReques
         return request.cancelled && request.cancelled->load();
     };
     if (cancelledFlag()) {
+
         report.stop = SubAgentReport::Stop::Cancelled;
+        report.stopCode = QStringLiteral("cancelled");
         report.text = QStringLiteral("Sub-agent cancelled before start.");
         return report;
     }
@@ -483,6 +546,15 @@ SubAgentReport SubAgentRunner::runImpl(IAIService* service, const SubAgentReques
                      [&](const QString& e) {
                          error = e;
                          gotError = true;
+                         // docs/43 O4 审计收口（P1-2 连带）: 错误轮没有响应
+                         // payload（errorOccurred 只带字符串），清掉上一轮
+                         // 残留的计量字段——否则主循环的累计段会把旧值
+                         // 重复计入（错误轮重复计费，成本高估）。
+                         response.promptTokens = 0;
+                         response.completionTokens = 0;
+                         response.cachedTokens = 0;
+                         response.cacheReadTokens = 0;
+                         response.tokensUsed = 0;
                          loop.quit();
                      });
     // docs/35 P4.6: streaming deltas fill the gap while a long thinking/model
@@ -599,7 +671,9 @@ SubAgentReport SubAgentRunner::runImpl(IAIService* service, const SubAgentReques
     for (int step = 1; step <= stepBudget; ++step) {
         report.steps = step;
         if (cancelledFlag()) {
+
             report.stop = SubAgentReport::Stop::Cancelled;
+            report.stopCode = QStringLiteral("cancelled");
             report.text = QStringLiteral("Sub-agent cancelled after %1 step(s).").arg(step);
             return report;
         }
@@ -656,16 +730,33 @@ SubAgentReport SubAgentRunner::runImpl(IAIService* service, const SubAgentReques
         streamTimer.stop();
 
         report.tokensUsed += response.tokensUsed;
+        // docs/43 O2: classified usage (input/output/cache) across steps and
+        // retries. usageReported stays false when the provider gave only an
+        // aggregate, so consumers never read zeros as "free".
+        report.usage.inputTokens += response.promptTokens;
+        report.usage.outputTokens += response.completionTokens;
+        report.usage.cachedTokens += response.cachedTokens
+                                   + response.cacheReadTokens;
+        if (response.promptTokens > 0 || response.completionTokens > 0)
+            report.usage.usageReported = true;
         if (gotError) {
             report.stop = timedOut ? SubAgentReport::Stop::TimedOut
                 : cancelledByFlag ? SubAgentReport::Stop::Cancelled
                                   : SubAgentReport::Stop::Error;
+            report.stopCode = timedOut ? QStringLiteral("timeout")
+                : cancelledByFlag ? QStringLiteral("cancelled")
+                                  : QStringLiteral("service_error");
+            // docs/43 O1-T3: timeouts and service/network errors are worth
+            // one automatic retry; a user-requested cancel is not.
+            report.retryable = !cancelledByFlag;
             report.text = QStringLiteral("Sub-agent failed on step %1: %2")
                               .arg(step).arg(error);
             return report;
         }
         if (!gotResponse) {
             report.stop = SubAgentReport::Stop::Error;
+            report.stopCode = QStringLiteral("empty_response");
+            report.retryable = true;
             report.text = QStringLiteral("Sub-agent service produced no response.");
             return report;
         }
@@ -689,8 +780,10 @@ SubAgentReport SubAgentRunner::runImpl(IAIService* service, const SubAgentReques
                    truncate(response.content, kProgressTextMaxChars));
 
         if (response.toolCalls.isEmpty()) {
+
             report.ok = true;
             report.stop = SubAgentReport::Stop::Completed;
+            report.stopCode = QStringLiteral("completed");
             report.text = response.content;
             return report;
         }
@@ -711,6 +804,7 @@ SubAgentReport SubAgentRunner::runImpl(IAIService* service, const SubAgentReques
         while (callIndex < calls.size()) {
             if (cancelledFlag()) {
                 report.stop = SubAgentReport::Stop::Cancelled;
+                report.stopCode = QStringLiteral("cancelled");
                 report.text = QStringLiteral("Sub-agent cancelled during tool execution.");
                 return report;
             }
@@ -775,6 +869,7 @@ SubAgentReport SubAgentRunner::runImpl(IAIService* service, const SubAgentReques
             callIndex += futures.size();
             if (cancelledMidBatch) {
                 report.stop = SubAgentReport::Stop::Cancelled;
+                report.stopCode = QStringLiteral("cancelled");
                 report.text = QStringLiteral("Sub-agent cancelled during tool execution.");
                 return report;
             }
@@ -785,6 +880,7 @@ SubAgentReport SubAgentRunner::runImpl(IAIService* service, const SubAgentReques
             // The model is stuck in a loop: converge now instead of letting
             // it run out of steps (mirrors AIAgent's round-level guard).
             report.stop = SubAgentReport::Stop::Budget;
+            report.stopCode = QStringLiteral("repeated");
             report.text = QStringLiteral(
                 "Sub-agent stopped: it repeated the same tool-call round "
                 "without converging. Partial information was gathered but no "
@@ -794,6 +890,7 @@ SubAgentReport SubAgentRunner::runImpl(IAIService* service, const SubAgentReques
     }
 
     report.stop = SubAgentReport::Stop::Budget;
+    report.stopCode = QStringLiteral("budget");
     report.text = QStringLiteral(
         "Sub-agent exhausted its step budget (%1) without a final report.")
         .arg(stepBudget);
@@ -816,6 +913,10 @@ SubAgentReport SubAgentRunner::run(IAIService* service, const SubAgentRequest& r
         report.text += renderProposals(proposals,
                                        report.stop != SubAgentReport::Stop::Completed);
     }
+    // docs/43 O2: last write wins — parse after the proposals section is
+    // appended so a "## FINDINGS" block inside proposal text is not picked up
+    // out of order (lastIndexOf finds the report's own trailing section).
+    report.findings = parseFindings(report.text);
     // docs/33 E1: preserve the full transcript for on-demand file_read; a
     // pure Q&A run (no tool rounds) writes nothing.
     report.artifactPath = writeEvidenceArtifact(request, messages);

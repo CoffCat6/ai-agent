@@ -233,9 +233,10 @@ const QVector<SettingsKeyDef>& SettingsSchema::registeredKeys() {
             // 2026-11-01：agent/maxSteps 与 agent/taskTimeoutMinutes 已随
             // 「取消任务步数/超时限制」移除——步数只留内部安全上限
             // （kDefaultMaxIterations），任务不再限时。
-            // docs/32 P1: 子代理（spawn_agent）。默认关——注册即门控，
-            // 开关翻转时 main.cpp 增删工具而非靠禁用层。
-            keyDef(QStringLiteral("agent/subagentEnabled"), false, SettingValueType::Bool),
+            // docs/32 P1: 子代理（spawn_agent）。2026-11-05 起默认开启——注册
+            // 即门控，开关翻转时 main.cpp 增删工具而非靠禁用层；从未设置过
+            // 的用户由 v5 迁移写入 true，显式关闭过的保持关闭。
+            keyDef(QStringLiteral("agent/subagentEnabled"), true, SettingValueType::Bool),
             keyDef(QStringLiteral("agent/subagentMaxParallel"), 3, SettingValueType::Int,
                    intRange(1, 8)),
             // 2026-11-03：内置角色（explore/research/review/coder）的默认
