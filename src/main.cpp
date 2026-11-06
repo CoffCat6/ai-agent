@@ -255,11 +255,12 @@ int main(int argc, char *argv[])
         return 0;
     }
 
-    // Non-native control style: the UI customizes TextField/Dialog
-    // backgrounds everywhere, which the native (windows) style forbids -
-    // Basic keeps those customizations effective and silences the
-    // "style does not support customization" warnings.
-    QQuickStyle::setStyle(QStringLiteral("Basic"));
+    // 自定义控件样式：NexusStyle 是 src/ui/style/NexusStyle/ 下的纯 QML 样式
+    // 模块（CMake 注册到 :/qt/qml/NexusStyle/）。这里只能传“样式名”——
+    // QQuickStyle::setStyle() 拒绝含 '/' 的路径（Qt 会告警 "Style names must
+    // not contain paths" 并回退 Windows 原生样式）。未实现的控件由 Qt 自动
+    // 回退 Basic，因此 TextField/Dialog 的自定义背景仍然有效。
+    QQuickStyle::setStyle(QStringLiteral("NexusStyle"));
 
     auto* proxyFactory = new ConfigurableProxyFactory;
     QNetworkProxyFactory::setApplicationProxyFactory(proxyFactory);

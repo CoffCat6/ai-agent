@@ -32,7 +32,7 @@
 
 1. `QApplication` 构造；设置 organization/application name 与 `APP_VERSION`（编译宏来自 `app.rc.in` 所在构建段）。
 2. `QLockFile`（`%TEMP%/NexusAI.instance.lock`，`tryLock(100)`）做单实例；失败打印后 `return 0`。锁是 `main` 局部变量，退出即释放。
-3. `QQuickStyle::setStyle("Basic")`：允许 QML 自定义 TextField/Dialog 背景，避免原生样式告警。
+3. `QQuickStyle::setStyle("NexusStyle")`：选中自定义 Qt Quick Controls 样式层（`src/ui/style/NexusStyle/`，资源前缀 `:/qt/qml/NexusStyle`）；`qmldir` 未登记的控件由 Qt 自动回退 Basic。
 4. `new ConfigurableProxyFactory` + `QNetworkProxyFactory::setApplicationProxyFactory`：全应用代理（本地回环直连由工厂内部规则保证）。
 5. `Logger::install()` 安装消息处理器并写轮转日志；`Logger::backfillFromFile()` 回填日志面板历史。
 6. 偏好基础设施：`PreferenceRegistry`、`ChangeBus`、`PreferenceStore`（接 ChangeBus）、`FontProbe`、`LocaleProbe`，全部 parent 到 app；随后 `I18nManager::applyLocale(currentLocale())`。
@@ -44,7 +44,7 @@
 12. 工具注册：`KnowledgeSearchTool(rag)`、`NetworkFetchTool`、`WebSearchTool` 进 `ToolRegistry::instance()`；Web 搜索后端工厂查 `WebSearchProviderRegistry`（`duckduckgo`/`zhipu`/`deepseek`，未知回退注册表默认项）。
 13. local-only 门禁 `applyLocalOnlyGate()`：把 `web_search` 与所有 `mcp__*` 写入 `ToolRegistry::setPolicyBlocked`；监听 `localOnlyModeChanged` 与 `activeProfileChanged`。
 14. Agent 装配：`new AIAgent(&app)`，注入 `ToolRegistry`、主 `memory`；`new EpisodicService(&app)` 注入 memory 与 `embedText`，再 `agent->setEpisodicService()`。
-15. 主题：`ThemeManager`/`ThemeProvider` 单例挂 app；`applyControlPalette()` 把 `ThemeProvider` 颜色写入 `QPalette`（Basic 控件取调色板），`themeChanged` 时重刷。
+15. 主题：`ThemeManager`/`ThemeProvider` 单例挂 app；`applyControlPalette()` 把 `ThemeProvider` 颜色写入 `QPalette`（Basic 回退控件与原生弹窗取调色板；NexusStyle 控件直接读 Theme token），`themeChanged` 时重刷。
 16. `AgentViewModel` 注入：RAG、memory、知识内容提供器；`setModelConfigurator` 按 `apiProtocol` 取服务、空 model/baseUrl 则置空，并同步 EpisodicService 的摘要服务、上下文上限与 `setModelLocal`；`setAgentFactory` 为每个 tab 建 agent/own memory/摘要服务/独立服务集，并在 `destroyed` 时清理三张 `QHash`。
 17. `ConnectionTester` 挂 app；RAG 持久化桥：`documentPersisted → upsertKnowledgeDoc + replaceKnowledgeChunks`、`documentRemoved`、`knowledgeCleared` 均回到 GUI 线程写 SQLite。
 18. `McpManager::loadAndConnectAll()` 读取 `mcp_servers.json` 连接启用的 MCP server 并桥接工具。

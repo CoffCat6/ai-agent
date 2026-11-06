@@ -624,3 +624,21 @@ add_test(NAME test_tools_page_qml
     COMMAND ${CMAKE_COMMAND} -E env
         "QT_QPA_PLATFORM_PLUGIN_PATH=${QT6_INSTALL_PREFIX}/${QT6_INSTALL_PLUGINS}/platforms"
         $<TARGET_FILE:test_tools_page_qml> -platform offscreen)
+# ── NexusStyle 样式回归（docs/44 §8 AC-1 ~ AC-10） ─────────────
+# 测试进程访问不到 nexus_ai 的 qrc，因此用根 CMakeLists 的
+# nexus_add_style_resources() 把 NexusStyle 资源重复编进本 target；
+# main() 在 QGuiApplication 之后、QML 引擎之前设置 QQuickStyle。
+# 链接集与相邻 test_*_qml 一致，另加 Qt6::QuickControls2（QQuickStyle）。
+add_executable(test_style_qml test_style_qml.cpp)
+target_link_libraries(test_style_qml PRIVATE
+    nexus_core nexus_infra nexus_viewmodels nexus_viewmodelsplugin
+    Qt6::Test Qt6::Qml Qt6::Quick Qt6::QuickControls2)
+target_compile_definitions(test_style_qml PRIVATE
+    NEXUS_TEST_QML_DIR="${CMAKE_CURRENT_SOURCE_DIR}/qml"
+    NEXUS_BUILD_DIR="${CMAKE_BINARY_DIR}")
+nexus_add_style_resources(test_style_qml)
+add_dependencies(test_style_qml nexus_ai)
+add_test(NAME test_style_qml
+    COMMAND ${CMAKE_COMMAND} -E env
+        "QT_QPA_PLATFORM_PLUGIN_PATH=${QT6_INSTALL_PREFIX}/${QT6_INSTALL_PLUGINS}/platforms"
+        $<TARGET_FILE:test_style_qml> -platform offscreen)

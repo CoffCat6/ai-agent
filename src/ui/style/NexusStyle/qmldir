@@ -1,0 +1,23 @@
+module NexusStyle
+
+# NexusAI 自定义 Qt Quick Controls 样式（纯 QML，无 plugin/linktarget）。
+# 未在此列出的控件由 Qt Quick Controls 自动回退到 Basic 样式；回滚某个控件
+# 只需删除对应行（不涉及业务 QML）。版本号跟随 Qt Quick Controls 6.x。
+# 支撑文件 NexusMetrics.qml 走同目录隐式导入，不对外暴露。
+Button 6.0 Button.qml
+ToolButton 6.0 ToolButton.qml
+TextField 6.0 TextField.qml
+TextArea 6.0 TextArea.qml
+ComboBox 6.0 ComboBox.qml
+ItemDelegate 6.0 ItemDelegate.qml
+Switch 6.0 Switch.qml
+CheckBox 6.0 CheckBox.qml
+RadioButton 6.0 RadioButton.qml
+SpinBox 6.0 SpinBox.qml
+Slider 6.0 Slider.qml
+Menu 6.0 Menu.qml
+MenuItem 6.0 MenuItem.qml
+MenuSeparator 6.0 MenuSeparator.qml
+ToolTip 6.0 ToolTip.qml
+ScrollBar 6.0 ScrollBar.qml
+ProgressBar 6.0 ProgressBar.qml

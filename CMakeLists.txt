@@ -421,6 +421,81 @@ qt_add_qml_module(nexus_ai
         src/ui/pages/DataPage.qml
 )
 
+# ── NexusStyle: 自定义 Qt Quick Controls 样式（纯 QML） ──────────
+# QQuickStyle::setStyle() 只接受“样式名”，带 '/' 的路径会被 Qt 直接拒绝
+# （qquickstyle.cpp: "Style names must not contain paths"）。自定义样式因此
+# 必须是一个可 import 的 QML 模块：把 qmldir + 控件 QML 放到 Qt 6 默认的
+# QML 导入根 :/qt/qml/NexusStyle/，运行时即可解析 `import NexusStyle`，
+# main.cpp 用 QQuickStyle::setStyle("NexusStyle") 选中它。
+# 未在 qmldir 中列出的控件由 Qt Quick Controls 自动回退到 Basic 样式。
+set(NEXUS_STYLE_DIR "${CMAKE_CURRENT_SOURCE_DIR}/src/ui/style/NexusStyle")
+# 样式目录按「每控件一文件」扩展：GLOB + CONFIGURE_DEPENDS 让新增 *.qml 自动
+# 进入资源，不必每加一个控件都改本文件；qmldir 单独列出，需与控件行同步维护。
+file(GLOB NEXUS_STYLE_QML_FILES CONFIGURE_DEPENDS "${NEXUS_STYLE_DIR}/*.qml")
+
+# 样式资源注册抽成函数：app 与「样式回归测试」各自把同一份 qrc 编进自己的
+# 二进制。测试是独立可执行文件，访问不到 nexus_ai 的资源；不重复注册的话
+# QQuickStyle::setStyle("NexusStyle") 在测试进程里找不到 :/qt/qml/NexusStyle。
+# 调用方不传路径，函数读取本文件里已设置好的 NEXUS_STYLE_DIR /
+# NEXUS_STYLE_QML_FILES（tests/CMakeLists.txt 里调用时同样可见）。
+function(nexus_add_style_resources target)
+    # QT_RESOURCE_ALIAS 是源文件属性：重复 configure 时旧值会被 qt_add_resources
+    # 复用（实测 app 之外的第二个 target 会继承到错误别名
+    # src/ui/style/NexusStyle/Button.qml，导致 :/qt/qml/NexusStyle/Button.qml
+    # 不存在）。这里显式把每个文件钉成其文件名，两个 target 都得到一致别名。
+    foreach(_style_file "${NEXUS_STYLE_DIR}/qmldir" ${NEXUS_STYLE_QML_FILES})
+        get_filename_component(_style_name "${_style_file}" NAME)
+        set_property(SOURCE "${_style_file}" PROPERTY QT_RESOURCE_ALIAS "${_style_name}")
+    endforeach()
+
+    qt_add_resources(${target} "nexus_style"
+        PREFIX "/qt/qml/NexusStyle"
+        BASE "${NEXUS_STYLE_DIR}"
+        FILES
+            "${NEXUS_STYLE_DIR}/qmldir"
+            ${NEXUS_STYLE_QML_FILES}
+    )
+endfunction()
+
+nexus_add_style_resources(nexus_ai)
+
+# ── qmllint 门禁：把 NexusStyle 纳入检查范围（docs/44 §5.5） ──────────
+# 样式文件经 qt_add_resources 注册，不在 nexus_ai / nexus_viewmodels 的
+# QML_FILES 中，因此不会出现在 qt_add_qml_module 生成的 .rsp 里。这里在
+# configure 阶段额外生成一份 nexus_style.rsp，由 cmake/QmllintGate.cmake
+# 复用同一套「Error 必须为 0、Warning 只计数」的执行逻辑。
+#
+# 内容与现有 rsp 对齐：
+#   --bare                不加载默认导入路径，避免环境差异；
+#   -I <build dir>        解析 import NexusAI.ViewModels（Theme 单例）；
+#   -I <Qt qml dir>       解析 QtQuick / QtQuick.Controls；
+#   每个样式 qml 绝对路径    同目录隐式导入的 NexusMetrics.qml 自动可见。
+set(NEXUS_QMLLINT_RSP_DIR "${CMAKE_BINARY_DIR}/.rcc/qmllint")
+file(MAKE_DIRECTORY "${NEXUS_QMLLINT_RSP_DIR}")
+set(NEXUS_STYLE_RSP_CONTENT "--bare\n")
+string(APPEND NEXUS_STYLE_RSP_CONTENT "-I\n${CMAKE_BINARY_DIR}\n")
+if(QT6_INSTALL_QML)
+    string(APPEND NEXUS_STYLE_RSP_CONTENT "-I\n${QT6_INSTALL_PREFIX}/${QT6_INSTALL_QML}\n")
+endif()
+foreach(_style_qml IN LISTS NEXUS_STYLE_QML_FILES)
+    string(APPEND NEXUS_STYLE_RSP_CONTENT "${_style_qml}\n")
+endforeach()
+
+# 仅在内容变化时重写，避免每次 configure 都刷新时间戳。
+set(NEXUS_STYLE_RSP "${NEXUS_QMLLINT_RSP_DIR}/nexus_style.rsp")
+set(_style_rsp_changed FALSE)
+if(EXISTS "${NEXUS_STYLE_RSP}")
+    file(READ "${NEXUS_STYLE_RSP}" _style_rsp_old)
+    if(NOT _style_rsp_old STREQUAL NEXUS_STYLE_RSP_CONTENT)
+        set(_style_rsp_changed TRUE)
+    endif()
+else()
+    set(_style_rsp_changed TRUE)
+endif()
+if(_style_rsp_changed)
+    file(WRITE "${NEXUS_STYLE_RSP}" "${NEXUS_STYLE_RSP_CONTENT}")
+endif()
+
 # docs/20 §4.1: app icon PNGs under :/icons/ for the window icon and the
 # system tray (QIcon(":/icons/nexus-64.png")). Master asset: assets/icons/
 # nexus-512.png; the exe-embedded .ico is generated from the same master.

@@ -141,6 +141,40 @@ public:
         return m_manager->isDark() ? QColor("#0D0D13") : QColor("#F2F4F7");
     }
 
+    // ── Control states (docs/44 §3.1) ─────────────────
+    // Qt Quick Controls 样式层（src/ui/style/NexusStyle）的四态专用色。
+    // 现有 surfaceHover 只有 hover 一档；pressed / disabled / 品牌填充态若
+    // 由每个控件各自 Qt.lighter/darker 派生，17 个控件样式文件（+ NexusMetrics.qml）必然漂移，故收口。
+    Q_PROPERTY(QColor controlBackgroundPressed READ controlBackgroundPressed NOTIFY themeChanged FINAL)
+    QColor controlBackgroundPressed() const {
+        return m_manager->isDark() ? QColor("#20202C") : QColor("#DEE2E7");
+    }
+
+    Q_PROPERTY(QColor controlBackgroundDisabled READ controlBackgroundDisabled NOTIFY themeChanged FINAL)
+    QColor controlBackgroundDisabled() const {
+        return m_manager->isDark() ? QColor("#101016") : QColor("#F2F3F5");
+    }
+
+    Q_PROPERTY(QColor controlBorderDisabled READ controlBorderDisabled NOTIFY themeChanged FINAL)
+    QColor controlBorderDisabled() const {
+        return m_manager->isDark() ? QColor("#262631") : QColor("#E8EBEF");
+    }
+
+    Q_PROPERTY(QColor controlTextDisabled READ controlTextDisabled NOTIFY themeChanged FINAL)
+    QColor controlTextDisabled() const {
+        return m_manager->isDark() ? QColor("#55556A") : QColor("#A0A6AE");
+    }
+
+    Q_PROPERTY(QColor controlBrandHover READ controlBrandHover NOTIFY themeChanged FINAL)
+    QColor controlBrandHover() const {
+        return m_manager->isDark() ? QColor("#33F3FF") : QColor("#1A63DD");
+    }
+
+    Q_PROPERTY(QColor controlBrandPressed READ controlBrandPressed NOTIFY themeChanged FINAL)
+    QColor controlBrandPressed() const {
+        return m_manager->isDark() ? QColor("#00C4D1") : QColor("#0047BE");
+    }
+
     // 极弱提示色：仅承载冗余信息（已折叠提示、耗时），对比度允许 3:1~4.5:1。
     Q_PROPERTY(QColor textTertiary READ textTertiary NOTIFY themeChanged FINAL)
     QColor textTertiary() const {
