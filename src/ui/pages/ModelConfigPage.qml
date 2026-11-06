@@ -137,16 +137,29 @@ Item {
     }
     readonly property bool ready: page.editing !== null && page.missingFields === ""
 
-    // 上下文预算的生效值与来源：手动覆盖 > 模型能力表 > 全局默认。芯片比较的是这个
+    // 上下文预算的生效值与来源，四级链（docs/43 §4.2）：模型覆盖
+    // （modelParams[当前模型].contextLength）> 默认（profile.contextLength，
+    // 即下方「上下文预算」行）> 模型能力表 > 全局默认。芯片比较的是这个
     // 生效值，所以留空时也能看出「当前走的是能力表 128K」。
+    readonly property int perModelContext: {
+        if (page.editing === null) return 0
+        const params = page.editing.modelParams
+        if (params === undefined || params === null) return 0
+        const entry = params[String(page.editing.model || "")]
+        if (entry === undefined || entry === null) return 0
+        const n = parseInt(entry.contextLength) || 0
+        return n > 0 ? n : 0
+    }
     readonly property int manualContext: parseInt(contextLengthRow.input.text) || 0
     readonly property int tableContext: page.editing !== null
         ? Settings.modelContextWindow(page.editing.apiProtocol,
                                       String(page.editing.model || "")) : 0
-    readonly property int effectiveContext: page.manualContext > 0
-        ? page.manualContext : page.tableContext
-    readonly property string contextSource: page.manualContext > 0 ? qsTr("手动覆盖")
-        : (page.tableContext > 0 ? qsTr("模型能力表") : qsTr("全局默认"))
+    readonly property int effectiveContext: page.perModelContext > 0
+        ? page.perModelContext
+        : (page.manualContext > 0 ? page.manualContext : page.tableContext)
+    readonly property string contextSource: page.perModelContext > 0 ? qsTr("模型覆盖")
+        : (page.manualContext > 0 ? qsTr("默认（所有模型）")
+        : (page.tableContext > 0 ? qsTr("模型能力表") : qsTr("全局默认")))
 
     function setField(field, value) {
         // 正在敲的字段不回写：聊天侧切模型、别处加模型都会触发 profilesChanged，
@@ -203,6 +216,17 @@ Item {
         // SettingsService.updateProfile 负责，这里不再补第二次写入：两次写会多一
         // 次 profilesChanged，编辑器会把刚输入的字段再同步一遍。
         Settings.updateProfile(page.editing.id, { [key]: value })
+    }
+
+    // 按模型参数的覆盖计数（docs/43 §6.2 第 3 条）：chips 徽章与编辑器的
+    // ComboBox 条目共用同一语义——modelParams[model] 的显式键数。
+    function modelOverrideCount(model) {
+        if (page.editing === null) return 0
+        const params = page.editing.modelParams
+        if (params === undefined || params === null) return 0
+        const entry = params[String(model)]
+        if (entry === undefined || entry === null) return 0
+        return Object.keys(entry).length
     }
 
     onEditingChanged: page.syncFields()
@@ -803,11 +827,27 @@ Item {
                                 spacing: Theme.spaceXs
 
                                 Text {
+                                    // 模型名是用户手填数据：纯文本渲染防注入。
+                                    textFormat: Text.PlainText
                                     text: modelChip.modelData
                                     color: modelChip.isCurrent
                                         ? Theme.brandPrimary : Theme.textPrimary
                                     font.pixelSize: Theme.fontSizeCaption
                                     font.family: Theme.fontMono
+                                    anchors.verticalCenter: parent.verticalCenter
+                                }
+
+                                Text {
+                                    visible: modelChip.modelData !== ""
+                                        && page.modelOverrideCount(modelChip.modelData) > 0
+                                    // docs/43 §6.2（3）：覆盖状态用纯文本徽章
+                                    // 表达（不单靠颜色），N>0 才显示。
+                                    text: qsTr("%1 项覆盖")
+                                        .arg(page.modelOverrideCount(modelChip.modelData))
+                                    color: modelChip.isCurrent
+                                        ? Theme.brandPrimary : Theme.textSecondary
+                                    font.pixelSize: Theme.fontSizeCaption
+                                    font.family: Theme.fontSans
                                     anchors.verticalCenter: parent.verticalCenter
                                 }
 
@@ -931,16 +971,30 @@ Item {
                     font.family: Theme.fontSans
                     wrapMode: Text.WordWrap
                 }
+
+                // docs/43 §6.1/§6.2：按模型参数编辑区。chips 管列表与当前
+                // 模型，这里管单个模型的参数覆盖；presets 与卡片四/五共用
+                // 同一张表，提交走 Settings.setModelParam / clearModelParams
+                // 专用入口（不拼整份 modelParams，防并发覆盖丢失）。
+                ModelParamEditor {
+                    id: perModelEditor
+                    profileId: page.editing !== null ? page.editing.id : ""
+                    profile: page.editing
+                    contextPresets: page.contextPresets
+                    outputPresets: page.outputPresets
+                    effortPresets: page.effortPresets
+                }
             }
 
-            // ── 卡片四：生成参数 ─────────────────────────
+            // ── 卡片四：生成参数（默认层，docs/43 §6.1）──
             // 每项一行、标签定宽：原来三列并排每列只有 170px，五个档位芯片
-            // 被挤成三行，切厂商时列数还会跳变。
+            // 被挤成三行，切厂商时列数还会跳变。这里的值降级为「所有模型的
+            // 默认」，单个模型的独立覆盖在卡片三的按模型参数编辑区。
             SettingCard {
                 objectName: "model.generation"
                 Layout.fillWidth: true
-                title: qsTr("生成参数")
-                subtitle: qsTr("留空 = 使用服务默认，不随请求发送。")
+                title: qsTr("默认生成参数（所有模型）")
+                subtitle: qsTr("这里是全部模型共用的默认值，留空 = 服务默认不发送；单个模型的独立参数到上方「模型」卡片里按模型覆盖。")
 
                 SettingsField {
                     id: tempRow
@@ -987,12 +1041,12 @@ Item {
                 }
             }
 
-            // ── 卡片五：思考与上下文 ─────────────────────
+            // ── 卡片五：思考与上下文（默认层，docs/43 §6.1）──
             SettingCard {
                 objectName: "model.reasoning"
                 Layout.fillWidth: true
-                title: qsTr("思考与上下文")
-                subtitle: qsTr("思考强度存在这条配置上；聊天输入区的快捷选择框读写的是当前启用的配置。")
+                title: qsTr("默认思考与上下文")
+                subtitle: qsTr("思考强度与上下文预算在这里是全部模型共用的默认值，单个模型的独立覆盖在上方「模型」卡片里配置；聊天输入区的快捷选择框读写的是当前启用的配置。")
 
                 ParamSelectRow {
                     id: effortRow
@@ -1019,10 +1073,12 @@ Item {
 
                     ParamSelectRow {
                         id: contextLengthRow
-                        label: qsTr("上下文预算覆盖")
+                        // profile 级预算在新心智模型里是「默认层」（可被
+                        // 模型覆盖），label 不再叫「覆盖」（docs/43 §6.1）。
+                        label: qsTr("上下文预算")
                         entries: page.contextPresets
                         currentValue: page.editing !== null ? (page.editing.contextLength || "") : ""
-                        placeholderText: qsTr("自定义预算，留空 = 按能力表")
+                        placeholderText: qsTr("自定义预算，留空 = 自动")
                         validator: IntValidator { bottom: 2048; top: 1048576 }
                         commitOnDestroy: true
                         onSubmitted: (value) => page.submitField("contextLength", value)

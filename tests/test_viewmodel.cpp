@@ -5,6 +5,7 @@
 #include "infrastructure/llm/IAIService.h"
 #include "core/skills/Skill.h"
 #include "core/utils/SettingsRepository.h"
+#include "viewmodels/SettingsService.h"
 #include "viewmodels/TraceModel.h"
 #include "viewmodels/LogModel.h"
 #include "viewmodels/I18nManager.h"
@@ -94,6 +95,20 @@ static QString batchWrite(const QTemporaryDir& dir, const QString& name,
     f.write(content.toUtf8());
     f.close();
     return path;
+}
+
+// docs/43 §4.2 优先级链复刻（main.cpp 的 effectiveParam 在匿名命名空间，
+// 测试不可见）：会话临时覆盖 > modelParams[model][key] > profile 顶层。
+// 入参为装配回调捕获的 (profile, sessionOverrides) 实参对。
+static QString effectiveReasoning(const QPair<QVariantMap, QVariantMap>& captured) {
+    if (captured.second.contains(QStringLiteral("reasoningEffort")))
+        return captured.second.value(QStringLiteral("reasoningEffort")).toString();
+    const QString model = captured.first.value(QStringLiteral("model")).toString();
+    const QVariantMap perModel = captured.first.value(QStringLiteral("modelParams"))
+                                     .toMap().value(model).toMap();
+    if (perModel.contains(QStringLiteral("reasoningEffort")))
+        return perModel.value(QStringLiteral("reasoningEffort")).toString();
+    return captured.first.value(QStringLiteral("reasoningEffort")).toString();
 }
 
 // docs/37 W3：同步返回的假 LLM。只用于断言系统提示里是否出现 <skill> 块，
@@ -2891,6 +2906,122 @@ private slots:
 
         // The worker aborts on the shared flag; the server sees the close.
         QTRY_VERIFY_WITH_TIMEOUT(disconnects > 0, 15000);
+    }
+
+    // ── docs/43 §4.3/W3：聊天区会话临时覆盖通道 ──────────────────────
+
+    // 会话临时思考档位经 sessionOverrides 通道下发（链①），不再混写进
+    // profile 副本顶层——顶层键同时承担"默认"与"临时覆盖"会反噬盖掉
+    // modelParams 的模型覆盖（链②）。
+    void sessionOverrideBeatsModelParams() {
+        AgentViewModel vm(nullptr);
+        AIAgent agent;
+        QVector<QPair<QVariantMap, QVariantMap>> captured;
+        vm.setModelConfigurator([&](AIAgent*, const QVariantMap& profile,
+                                    const QVariantMap& overrides) {
+            captured.append(qMakePair(profile, overrides));
+        });
+        const QVariantMap profile{
+            {"id", "p1"}, {"model", "m1"}, {"baseUrl", "http://localhost"},
+            {"reasoningEffort", "medium"},
+            {"modelParams", QVariantMap{{"m1", QVariantMap{{"reasoningEffort", "low"}}}}}};
+        vm.updateModelProfiles({profile}, profile);
+        vm.setAgent(&agent);
+
+        // 未选会话档位 → 模型覆盖 low 生效（链②），无会话临时覆盖。
+        vm.selectChatModel("p1", "m1");
+        QCOMPARE(effectiveReasoning(captured.last()), QStringLiteral("low"));
+        QVERIFY(!captured.last().second.contains("reasoningEffort"));
+
+        // 输入区选"高" → 会话临时覆盖最优先（链①），且不写进 profile 顶层。
+        vm.setChatReasoningEffort("high");
+        QCOMPARE(captured.last().second.value("reasoningEffort").toString(),
+                 QStringLiteral("high"));
+        QCOMPARE(captured.last().first.value("reasoningEffort").toString(),
+                 QStringLiteral("medium"));
+        QCOMPARE(effectiveReasoning(captured.last()), QStringLiteral("high"));
+
+        // 选"默认"（空串）= 放弃会话覆盖：空值不得灌进 overrides 盖掉模型覆盖。
+        vm.setChatReasoningEffort("");
+        QVERIFY(!captured.last().second.contains("reasoningEffort"));
+        QCOMPARE(effectiveReasoning(captured.last()), QStringLiteral("low"));
+
+        // 切模型清空会话临时覆盖（现状行为保持）→ 模型覆盖重新接管。
+        vm.selectChatModel("p1", "m2");
+        QVERIFY(!captured.last().second.contains("reasoningEffort"));
+        QCOMPARE(effectiveReasoning(captured.last()), QStringLiteral("medium"));
+
+        vm.setAgent(nullptr);
+    }
+
+    // 切换模型后装配层收到的参数随模型覆盖表变化；切到无覆盖的模型回落
+    // profile 顶层默认（docs/43 §4.2 链②→③），modelParams 完整透传。
+    void modelParamsFollowsSelectedModel() {
+        AgentViewModel vm(nullptr);
+        AIAgent agent;
+        QVector<QPair<QVariantMap, QVariantMap>> captured;
+        vm.setModelConfigurator([&](AIAgent*, const QVariantMap& profile,
+                                    const QVariantMap& overrides) {
+            captured.append(qMakePair(profile, overrides));
+        });
+        const QVariantMap profile{
+            {"id", "p1"}, {"model", "m1"}, {"baseUrl", "http://localhost"},
+            {"reasoningEffort", "medium"},
+            {"modelParams", QVariantMap{
+                {"m1", QVariantMap{{"reasoningEffort", "low"}}},
+                {"m3", QVariantMap{{"reasoningEffort", "high"}}}}}};
+        vm.updateModelProfiles({profile}, profile);
+        vm.setAgent(&agent);
+
+        vm.selectChatModel("p1", "m1");
+        QCOMPARE(captured.last().first.value("model").toString(), QStringLiteral("m1"));
+        QCOMPARE(effectiveReasoning(captured.last()), QStringLiteral("low"));
+
+        // m2 无覆盖 → 回落 profile 顶层默认 medium。
+        vm.selectChatModel("p1", "m2");
+        QCOMPARE(captured.last().first.value("model").toString(), QStringLiteral("m2"));
+        QCOMPARE(effectiveReasoning(captured.last()), QStringLiteral("medium"));
+
+        // m3 覆盖 high；覆盖表完整透传给装配层（查询键随 model 走）。
+        vm.selectChatModel("p1", "m3");
+        QCOMPARE(captured.last().first.value("model").toString(), QStringLiteral("m3"));
+        QCOMPARE(captured.last().first.value("modelParams").toMap().size(), 2);
+        QCOMPARE(effectiveReasoning(captured.last()), QStringLiteral("high"));
+
+        vm.setAgent(nullptr);
+    }
+
+    // 切模型后上下文预算按新模型的 contextLength 覆盖即时解析（回调侧复刻
+    // main.cpp 装配层的 resolveContextLimitForProfile → setContextLimit 链）。
+    void switchModelAppliesPerModelContext() {
+        AgentViewModel vm(nullptr);
+        AIAgent agent;
+        SettingsService service(nullptr);   // QSettings 已被 TestSettingsIsolation 隔离
+        vm.setModelConfigurator([&](AIAgent* target, const QVariantMap& profile,
+                                    const QVariantMap&) {
+            target->setContextLimit(service.resolveContextLimitForProfile(profile));
+        });
+        const QVariantMap profile{
+            {"id", "p1"}, {"model", "m1"}, {"baseUrl", "http://localhost"},
+            {"provider", "openai"}, {"apiProtocol", "openai-chat"},
+            {"modelParams", QVariantMap{
+                {"m1", QVariantMap{{"contextLength", 16000}}},
+                {"m2", QVariantMap{{"contextLength", 32000}}}}}};
+        vm.updateModelProfiles({profile}, profile);
+        vm.setAgent(&agent);
+
+        vm.selectChatModel("p1", "m1");
+        QCOMPARE(agent.contextLimit(), 16000);
+        vm.selectChatModel("p1", "m2");
+        QCOMPARE(agent.contextLimit(), 32000);
+
+        // 无覆盖模型：回落能力表/全局链（期望值即解析结果本身，自证透传）。
+        vm.selectChatModel("p1", "m3");
+        QVariantMap expected = profile;
+        expected["model"] = "m3";
+        QCOMPARE(agent.contextLimit(), service.resolveContextLimitForProfile(expected));
+
+        vm.setAgent(nullptr);
     }
 };
 QTEST_GUILESS_MAIN(TestAgentViewModel)

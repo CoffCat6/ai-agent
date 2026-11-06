@@ -2767,6 +2767,344 @@ Item {
         QCOMPARE(service.resolveContextLimit(), service.contextTokens());
     }
 
+    // ── docs/43 W1：按模型参数（modelParams）─────────────────────
+
+    // docs/43 §4.2/AC-2：上下文预算四级链（模型覆盖 > profile.contextLength
+    // > 能力表 > 全局）与覆盖表落库结构。profileConfigOf 在 main.cpp 匿名
+    // 命名空间里（不可直接单测），其"模型覆盖"读取链按方案 W1 测试计划经
+    // setModelParam 落库结构 + resolveContextLimitForProfile 的 Priority 0
+    // 间接验证；会话端到端由 W3 接通 overrides 后补。
+    void testModelParamsOverridePriority() {
+        SettingsGuard guard;
+        {
+            QSettings s = NexusAI::TestSupport::testSettings();
+            s.remove("modelProfiles");
+            s.remove("activeProfileId");
+            s.remove("contextTokens");
+        }
+        SettingsService service(nullptr);
+        const QString profileId = service.activeProfileId();
+        QVERIFY(!profileId.isEmpty());
+        // gpt-4o（带覆盖）/ gpt-4o-mini（能力表 128000）/ glm-4（未知模型）。
+        service.addModelToProfile(profileId, QStringLiteral("gpt-4o"));
+        service.addModelToProfile(profileId, QStringLiteral("gpt-4o-mini"));
+        service.addModelToProfile(profileId, QStringLiteral("glm-4"));
+
+        // Priority 0：模型覆盖最优先，profile.contextLength 也压不过它。
+        service.setModelParam(profileId, QStringLiteral("gpt-4o"),
+                              QStringLiteral("contextLength"), QStringLiteral("64000"));
+        service.updateProfile(profileId, QVariantMap{{QStringLiteral("contextLength"), 99999}});
+        service.selectModelForProfile(profileId, QStringLiteral("gpt-4o"));
+        QCOMPARE(service.resolveContextLimit(), 64000);
+
+        // Priority 1：无模型覆盖的模型吃 profile.contextLength（默认层）。
+        service.selectModelForProfile(profileId, QStringLiteral("gpt-4o-mini"));
+        QCOMPARE(service.resolveContextLimit(), 99999);
+
+        // Priority 2：清掉 profile 覆盖后，无覆盖的已知模型查能力表。
+        service.updateProfile(profileId, QVariantMap{{QStringLiteral("contextLength"), QVariant()}});
+        service.selectModelForProfile(profileId, QStringLiteral("gpt-4o-mini"));
+        QCOMPARE(service.resolveContextLimit(), 128000);
+
+        // Priority 3：未知模型回退全局 contextTokens。
+        service.selectModelForProfile(profileId, QStringLiteral("glm-4"));
+        QCOMPARE(service.resolveContextLimit(), service.contextTokens());
+
+        // 落库结构：modelParams 是模型名 → 覆盖表的两层 map，只含显式
+        // 设置过的模型条目（其余模型缺省 = 未设置）。
+        const QVariantMap modelParams = profileById(service, profileId)
+                                            .value(QStringLiteral("modelParams")).toMap();
+        QCOMPARE(modelParams.value(QStringLiteral("gpt-4o")).toMap()
+                     .value(QStringLiteral("contextLength")).toString(),
+                 QStringLiteral("64000"));
+        QVERIFY(!modelParams.contains(QStringLiteral("gpt-4o-mini")));
+        QVERIFY(!modelParams.contains(QStringLiteral("glm-4")));
+
+        // 落盘回读：覆盖表持久生效（JSON blob 里的两层 map 完整往返）。
+        SettingsService reloaded(nullptr);
+        const QVariantMap persisted = profileById(reloaded, profileId)
+                                          .value(QStringLiteral("modelParams")).toMap();
+        QCOMPARE(persisted.value(QStringLiteral("gpt-4o")).toMap()
+                     .value(QStringLiteral("contextLength")).toString(),
+                 QStringLiteral("64000"));
+    }
+
+    // docs/43 §4.4/AC-5：删除模型时同步删除其覆盖条目；最后一个条目删掉后
+    // modelParams 键整体移除（不占位）。
+    void removeModelAlsoDropsModelParamsEntry() {
+        SettingsGuard guard;
+        {
+            QSettings s = NexusAI::TestSupport::testSettings();
+            s.remove("modelProfiles");
+            s.remove("activeProfileId");
+        }
+        SettingsService service(nullptr);
+        const QString profileId = service.activeProfileId();
+        service.addModelToProfile(profileId, QStringLiteral("model-a"));
+        service.addModelToProfile(profileId, QStringLiteral("model-b"));
+        service.setModelParam(profileId, QStringLiteral("model-a"),
+                              QStringLiteral("temperature"), QStringLiteral("0.5"));
+        service.setModelParam(profileId, QStringLiteral("model-b"),
+                              QStringLiteral("numCtx"), QStringLiteral("8192"));
+        QVERIFY(profileById(service, profileId)
+                    .value(QStringLiteral("modelParams")).toMap()
+                    .contains(QStringLiteral("model-a")));
+
+        service.removeModelFromProfile(profileId, QStringLiteral("model-a"));
+        const QVariantMap modelParams = profileById(service, profileId)
+                                            .value(QStringLiteral("modelParams")).toMap();
+        QVERIFY2(!modelParams.contains(QStringLiteral("model-a")),
+                 "删除模型必须同步删除其按模型参数覆盖条目");
+        QVERIFY(modelParams.contains(QStringLiteral("model-b")));
+
+        // 落盘回读：条目删除持久生效。
+        SettingsService reloaded(nullptr);
+        const QVariantMap persisted = profileById(reloaded, profileId)
+                                          .value(QStringLiteral("modelParams")).toMap();
+        QVERIFY(!persisted.contains(QStringLiteral("model-a")));
+        QVERIFY(persisted.contains(QStringLiteral("model-b")));
+
+        // 最后一个模型条目删除后 modelParams 键整体移除（无键 = 未设置）。
+        service.removeModelFromProfile(profileId, QStringLiteral("model-b"));
+        QVERIFY2(!profileById(service, profileId).contains(QStringLiteral("modelParams")),
+                 "覆盖表清空后 modelParams 键不应占位");
+    }
+
+    // docs/43 §5/AC-6：v5 → v6 迁移清掉幽灵键 topP（全仓唯一引用是备份
+    // 白名单）；modelParams 不预填（键缺省 = 未设置，老 profile 行为不变）；
+    // 其余字段原样。
+    void schemaV6DropsLegacyTopP() {
+        SettingsGuard guard;
+        {
+            QSettings s = NexusAI::TestSupport::testSettings();
+            QJsonArray arr;
+            QJsonObject legacy;
+            legacy["id"] = QStringLiteral("v5-profile");
+            legacy["displayName"] = QStringLiteral("旧配置");
+            legacy["provider"] = QStringLiteral("openai");
+            legacy["kind"] = QStringLiteral("openai");
+            legacy["apiProtocol"] = QStringLiteral("openai-chat");
+            legacy["baseUrl"] = QStringLiteral("https://api.openai.com/v1");
+            legacy["apiKey"] = QStringLiteral("legacy-plain-key");
+            legacy["model"] = QStringLiteral("gpt-4o");
+            legacy["models"] = QJsonArray{QStringLiteral("gpt-4o")};
+            legacy["temperature"] = QStringLiteral("0.3");
+            legacy["topP"] = 0.9;
+            arr.append(legacy);
+            s.setValue("modelProfiles",
+                       QString::fromUtf8(QJsonDocument(arr).toJson(QJsonDocument::Compact)));
+            s.setValue("activeProfileId", QStringLiteral("v5-profile"));
+            s.setValue("schemaVersion", 5);
+        }
+
+        SettingsService service(nullptr);
+        const QVariantMap p = profileSecretsById(service, QStringLiteral("v5-profile"));
+        QVERIFY2(!p.isEmpty(), "迁移不能丢掉 profile");
+        QVERIFY2(!p.contains(QStringLiteral("topP")), "v6 迁移后幽灵键 topP 必须消失");
+        QVERIFY2(!p.contains(QStringLiteral("modelParams")),
+                 "迁移不得预填 modelParams（键缺省 = 未设置）");
+        // 其余字段原样：迁移只删 topP。
+        QCOMPARE(p.value("baseUrl").toString(), QStringLiteral("https://api.openai.com/v1"));
+        QCOMPARE(p.value("apiKey").toString(), QStringLiteral("legacy-plain-key"));
+        QCOMPARE(p.value("temperature").toString(), QStringLiteral("0.3"));
+        QCOMPARE(p.value("model").toString(), QStringLiteral("gpt-4o"));
+        QCOMPARE(service.activeProfileId(), QStringLiteral("v5-profile"));
+
+        // 落盘层面同样干净：topP 不再出现在持久化 JSON 里。
+        QSettings s = NexusAI::TestSupport::testSettings();
+        QVERIFY2(!s.value("modelProfiles").toString().contains(QStringLiteral("topP")),
+                 "迁移必须把 topP 从落盘 JSON 里清掉");
+        QCOMPARE(s.value("schemaVersion").toInt(), SettingsSchema::kSchemaVersion);
+    }
+
+    // docs/43 §7 处置表 #8/AC-5：复制携带按模型参数（整 map 深拷贝）且不
+    // 携带密钥；副本与源的覆盖表相互独立。
+    void duplicateProfileCopiesModelParams() {
+        SettingsGuard guard;
+        {
+            QSettings s = NexusAI::TestSupport::testSettings();
+            s.remove("modelProfiles");
+            s.remove("activeProfileId");
+        }
+        SettingsService service(nullptr);
+        const QString sourceId = service.activeProfileId();
+        service.updateProfile(sourceId,
+            {{QStringLiteral("displayName"), QStringLiteral("源配置")},
+             {QStringLiteral("model"), QStringLiteral("m1")},
+             {QStringLiteral("models"), QStringList{QStringLiteral("m1"), QStringLiteral("m2")}},
+             {QStringLiteral("apiKey"), QStringLiteral("sk-secret")}});
+        service.setModelParam(sourceId, QStringLiteral("m1"),
+                              QStringLiteral("temperature"), QStringLiteral("0.5"));
+        service.setModelParam(sourceId, QStringLiteral("m2"),
+                              QStringLiteral("contextLength"), QStringLiteral("128000"));
+
+        const QString copyId = service.duplicateProfile(sourceId, QStringLiteral("副本 A"));
+        QVERIFY(!copyId.isEmpty());
+        const QVariantMap copy = profileById(service, copyId);
+        QVERIFY2(!copy.contains(QStringLiteral("apiKey")),
+                 "复制出的配置绝不能携带 API Key");
+        const QVariantMap copyParams = copy.value(QStringLiteral("modelParams")).toMap();
+        QCOMPARE(copyParams.value(QStringLiteral("m1")).toMap()
+                     .value(QStringLiteral("temperature")).toString(),
+                 QStringLiteral("0.5"));
+        QCOMPARE(copyParams.value(QStringLiteral("m2")).toMap()
+                     .value(QStringLiteral("contextLength")).toString(),
+                 QStringLiteral("128000"));
+
+        // 深拷贝独立性：改副本的覆盖不回写源。
+        service.setModelParam(copyId, QStringLiteral("m1"),
+                              QStringLiteral("temperature"), QStringLiteral("1.5"));
+        QCOMPARE(profileById(service, sourceId)
+                     .value(QStringLiteral("modelParams")).toMap()
+                     .value(QStringLiteral("m1")).toMap()
+                     .value(QStringLiteral("temperature")).toString(),
+                 QStringLiteral("0.5"));
+
+        // 落盘回读：副本的按模型参数持久生效。
+        SettingsService reloaded(nullptr);
+        QCOMPARE(profileById(reloaded, copyId)
+                     .value(QStringLiteral("modelParams")).toMap()
+                     .value(QStringLiteral("m1")).toMap()
+                     .value(QStringLiteral("temperature")).toString(),
+                 QStringLiteral("1.5"));
+    }
+
+    // docs/43 §6.2/§4.4：setModelParam/clearModelParams 的校验与落库——
+    // 非法键/非法值/陌生模型/陌生 profile 被拒 no-op，空串删键，合法值落库；
+    // updateProfile 透传与 load 反序列化两个入口同样过 sanitize（R5）。
+    void setModelParamValidation() {
+        SettingsGuard guard;
+        {
+            QSettings s = NexusAI::TestSupport::testSettings();
+            s.remove("modelProfiles");
+            s.remove("activeProfileId");
+        }
+        SettingsService service(nullptr);
+        const QString profileId = service.activeProfileId();
+        service.addModelToProfile(profileId, QStringLiteral("m1"));
+
+        auto modelParamsOf = [&service, profileId]() {
+            return profileById(service, profileId)
+                .value(QStringLiteral("modelParams")).toMap();
+        };
+
+        // 合法值落库生效。
+        service.setModelParam(profileId, QStringLiteral("m1"),
+                              QStringLiteral("temperature"), QStringLiteral("0.5"));
+        QCOMPARE(modelParamsOf().value(QStringLiteral("m1")).toMap()
+                     .value(QStringLiteral("temperature")).toString(),
+                 QStringLiteral("0.5"));
+
+        // 非法键（不在 5 键集合）：拒 + no-op。
+        service.setModelParam(profileId, QStringLiteral("m1"),
+                              QStringLiteral("foo"), QStringLiteral("1"));
+        QVERIFY(!modelParamsOf().value(QStringLiteral("m1")).toMap()
+                    .contains(QStringLiteral("foo")));
+
+        // 非法值（temperature 须 ≥0 且 ≤2）：拒 + 不覆盖已有合法值。
+        service.setModelParam(profileId, QStringLiteral("m1"),
+                              QStringLiteral("temperature"), QStringLiteral("5"));
+        QCOMPARE(modelParamsOf().value(QStringLiteral("m1")).toMap()
+                     .value(QStringLiteral("temperature")).toString(),
+                 QStringLiteral("0.5"));
+        service.setModelParam(profileId, QStringLiteral("m1"),
+                               QStringLiteral("maxOutputTokens"), QStringLiteral("0"));
+        QVERIFY(!modelParamsOf().value(QStringLiteral("m1")).toMap()
+                    .contains(QStringLiteral("maxOutputTokens")));
+
+        // temperature=0 是合法的 greedy 采样值：覆盖层校验口径 [0, 2] 与
+        // 默认层 SamplingParams::optionalDouble（允许 0）及编辑器「0 - 2」
+        // 提示对齐，不得静默丢弃。
+        service.setModelParam(profileId, QStringLiteral("m1"),
+                              QStringLiteral("temperature"), QStringLiteral("0"));
+        QCOMPARE(modelParamsOf().value(QStringLiteral("m1")).toMap()
+                     .value(QStringLiteral("temperature")).toString(),
+                 QStringLiteral("0"));
+
+        // 不在 models 列表的模型：拒 + no-op。
+        service.setModelParam(profileId, QStringLiteral("ghost-model"),
+                              QStringLiteral("numCtx"), QStringLiteral("8192"));
+        QVERIFY(!modelParamsOf().contains(QStringLiteral("ghost-model")));
+
+        // 不存在的 profile：拒 + no-op（不崩）。
+        service.setModelParam(QStringLiteral("missing"), QStringLiteral("m1"),
+                              QStringLiteral("numCtx"), QStringLiteral("8192"));
+        QCOMPARE(modelParamsOf().size(), 1);
+
+        // 空串 = 删除该覆盖键；最后一个键删掉后条目与 modelParams 键
+        // 整体移除（回到"未设置"）。
+        service.setModelParam(profileId, QStringLiteral("m1"),
+                              QStringLiteral("temperature"), QString());
+        QVERIFY(!modelParamsOf().value(QStringLiteral("m1")).toMap()
+                    .contains(QStringLiteral("temperature")));
+        QVERIFY(!profileById(service, profileId).contains(QStringLiteral("modelParams")));
+
+        // reasoningEffort：合法档位落库，陌生档位被拒。
+        service.setModelParam(profileId, QStringLiteral("m1"),
+                              QStringLiteral("reasoningEffort"), QStringLiteral("high"));
+        QCOMPARE(modelParamsOf().value(QStringLiteral("m1")).toMap()
+                     .value(QStringLiteral("reasoningEffort")).toString(),
+                 QStringLiteral("high"));
+        service.setModelParam(profileId, QStringLiteral("m1"),
+                              QStringLiteral("reasoningEffort"), QStringLiteral("ultra"));
+        QCOMPARE(modelParamsOf().value(QStringLiteral("m1")).toMap()
+                     .value(QStringLiteral("reasoningEffort")).toString(),
+                 QStringLiteral("high"));
+
+        // clearModelParams：整表删除；无条目 / 陌生 profile 时 no-op 不崩。
+        service.clearModelParams(profileId, QStringLiteral("m1"));
+        QVERIFY(!modelParamsOf().value(QStringLiteral("m1")).toMap()
+                    .contains(QStringLiteral("reasoningEffort")));
+        service.clearModelParams(profileId, QStringLiteral("m1"));
+        service.clearModelParams(QStringLiteral("missing"), QStringLiteral("m1"));
+
+        // updateProfile 通用合并透传的 modelParams 同样过 sanitize（R5：
+        // 坏数据不得静默入库）——非法键/非正值丢弃，合法条目保留。
+        service.updateProfile(profileId, QVariantMap{
+            {QStringLiteral("modelParams"), QVariantMap{
+                {QStringLiteral("m1"), QVariantMap{
+                    {QStringLiteral("temperature"), QStringLiteral("0.8")},
+                    {QStringLiteral("foo"), QStringLiteral("1")},
+                    {QStringLiteral("maxOutputTokens"), QStringLiteral("0")}}}}}});
+        const QVariantMap viaMerge = modelParamsOf().value(QStringLiteral("m1")).toMap();
+        QCOMPARE(viaMerge.value(QStringLiteral("temperature")).toString(),
+                 QStringLiteral("0.8"));
+        QVERIFY(!viaMerge.contains(QStringLiteral("foo")));
+        QVERIFY(!viaMerge.contains(QStringLiteral("maxOutputTokens")));
+
+        // load() 反序列化同样过 sanitize：手改注册表写进坏键的落盘数据，
+        // 读回即清洗（防御损坏数据）。
+        {
+            QSettings s = NexusAI::TestSupport::testSettings();
+            QJsonArray arr;
+            QJsonObject p;
+            p["id"] = profileId;
+            p["displayName"] = QStringLiteral("手改数据");
+            p["provider"] = QStringLiteral("openai");
+            p["apiProtocol"] = QStringLiteral("openai-chat");
+            p["model"] = QStringLiteral("m1");
+            p["models"] = QJsonArray{QStringLiteral("m1")};
+            QJsonObject params;
+            QJsonObject m1;
+            m1["temperature"] = QStringLiteral("0.6");
+            m1["bad"] = QStringLiteral("x");
+            params["m1"] = m1;
+            p["modelParams"] = params;
+            arr.append(p);
+            s.setValue("modelProfiles",
+                       QString::fromUtf8(QJsonDocument(arr).toJson(QJsonDocument::Compact)));
+            s.setValue("activeProfileId", profileId);
+        }
+        SettingsService reloaded(nullptr);
+        const QVariantMap cleaned = profileById(reloaded, profileId)
+                                        .value(QStringLiteral("modelParams")).toMap();
+        QCOMPARE(cleaned.value(QStringLiteral("m1")).toMap()
+                     .value(QStringLiteral("temperature")).toString(),
+                 QStringLiteral("0.6"));
+        QVERIFY(!cleaned.value(QStringLiteral("m1")).toMap()
+                    .contains(QStringLiteral("bad")));
+    }
+
     // docs/16 §13 AC-1: token_usage 表正确创建。SqliteMemory 构造后
     // token_usage 表可写入并聚合查询，证明 DDL 执行成功且列结构匹配。
     void testTokenUsageTableCreated() {

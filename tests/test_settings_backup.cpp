@@ -2,7 +2,9 @@
 
 #include "core/mcp/McpConfig.h"
 #include "core/utils/BackupSchedule.h"
+#include "core/utils/SettingsSchema.h"
 #include "viewmodels/SettingsBackup.h"
+#include "viewmodels/SettingsService.h"
 #include "viewmodels/McpManager.h"
 
 #include <QDir>
@@ -170,6 +172,203 @@ private slots:
         } else {
             QVERIFY(QFile::remove(mcpPath));
         }
+    }
+
+    // ── docs/43 W4/AC-7：modelParams 备份链路 ─────────────────────
+
+    // 导出白名单：modelParams（按模型参数覆盖表，模型名 → {参数键: 值}）
+    // 必须整 map 进备份；topP（v5 幽灵键，v6 迁移已删存量数据）必须被白名单
+    // 摘除；apiKey 永不落盘。种入走 updateProfile 通用合并（docs/43 §3.2：
+    // 对未知键无白名单，整 map 提交即落库），顺带覆盖 SettingsService →
+    // QSettings → 导出全链路，而不是只测 cleanProfile 的纯函数行为。
+    void backupExportsModelParamsAndDropsTopP() {
+        QTemporaryDir directory;
+        QVERIFY(directory.isValid());
+        QSettings::setDefaultFormat(QSettings::IniFormat);
+        QSettings::setPath(QSettings::IniFormat, QSettings::UserScope, directory.path());
+        QCoreApplication::setOrganizationName(QStringLiteral("NexusAIBackupTests"));
+        QCoreApplication::setApplicationName(
+            QStringLiteral("NexusAIBackupTests_%1")
+                .arg(QFileInfo(directory.path()).fileName()));
+        QStandardPaths::setTestModeEnabled(true);
+        {
+            QSettings s = NexusAI::TestSupport::testSettings();
+            s.remove(QStringLiteral("modelProfiles"));
+            s.remove(QStringLiteral("activeProfileId"));
+            s.sync();
+        }
+
+        // 覆盖值以 trim 后的字符串落库（与 profile 顶层参数的 QML 提交风格
+        // 一致），全部取合法值（sanitizeModelParams 会清洗非法提交）。
+        const QVariantMap seedParams{
+            {QStringLiteral("glm-4"), QVariantMap{
+                {QStringLiteral("temperature"), QStringLiteral("0.5")},
+                {QStringLiteral("contextLength"), QStringLiteral("128000")}}},
+            {QStringLiteral("gpt-4o"), QVariantMap{
+                {QStringLiteral("maxOutputTokens"), QStringLiteral("8192")},
+                {QStringLiteral("reasoningEffort"), QStringLiteral("high")}}}};
+        SettingsService service(nullptr);
+        const QString profileId = service.activeProfileId();
+        service.updateProfile(profileId, QVariantMap{
+            {QStringLiteral("model"), QStringLiteral("glm-4")},
+            {QStringLiteral("models"), QStringList{QStringLiteral("glm-4"),
+                                                   QStringLiteral("gpt-4o")}},
+            {QStringLiteral("apiKey"), QStringLiteral("hidden-model-key")},
+            {QStringLiteral("topP"), 0.9},
+            {QStringLiteral("modelParams"), seedParams}});
+        // 种入自检：topP 顶层幽灵键照常透传（sanitizeModelParams 只清洗
+        // modelParams 键，不碰顶层）；公共出口无密钥。
+        const QVariantMap stored = service.profiles().first().toMap();
+        QVERIFY2(stored.contains(QStringLiteral("topP")),
+                 "种入前置：updateProfile 必须透传存量幽灵键 topP");
+        QVERIFY2(stored.contains(QStringLiteral("modelParams")),
+                 "种入前置：updateProfile 必须透传 modelParams");
+        QVERIFY(!stored.contains(QStringLiteral("apiKey")));
+
+        SettingsBackup backup;
+        const QString exportPath = directory.filePath(QStringLiteral("params.json"));
+        QVERIFY2(backup.exportSettings(exportPath), qPrintable(backup.lastError()));
+        QFile exported(exportPath);
+        QVERIFY(exported.open(QIODevice::ReadOnly));
+        const QByteArray bytes = exported.readAll();
+
+        const QJsonObject profile = QJsonDocument::fromJson(bytes)
+            .object().value(QStringLiteral("profiles")).toArray().at(0).toObject();
+        // modelParams 整 map 进备份（QJsonObject 相等为键值集合相等，与顺序无关）。
+        QCOMPARE(profile.value(QStringLiteral("modelParams")).toObject(),
+                 QJsonObject::fromVariantMap(seedParams));
+        // topP 被白名单摘除——导出全文不得再出现幽灵键；apiKey 不落盘。
+        QVERIFY2(!profile.contains(QStringLiteral("topP")),
+                 "docs/43 §7 #6：导出白名单不得再包含幽灵键 topP");
+        QVERIFY(!profile.contains(QStringLiteral("apiKey")));
+        QVERIFY(!bytes.contains("topP"));
+        QVERIFY(!bytes.contains("hidden-model-key"));
+    }
+
+    // 恢复链路：modelParams 经 cleanProfile 透传（导入侧与导出侧共用同一
+    // 白名单，一处改动双侧生效），清空存储后恢复能完整找回覆盖表（深比较），
+    // 身份字段不变。备份层不做值的 sanitize——那是写入侧
+    // SettingsService::sanitizeModelParams 的单一出口职责。
+    void restoredProfileKeepsModelParams() {
+        QTemporaryDir directory;
+        QVERIFY(directory.isValid());
+        QSettings::setDefaultFormat(QSettings::IniFormat);
+        QSettings::setPath(QSettings::IniFormat, QSettings::UserScope, directory.path());
+        QCoreApplication::setOrganizationName(QStringLiteral("NexusAIBackupTests"));
+        QCoreApplication::setApplicationName(
+            QStringLiteral("NexusAIBackupTests_%1")
+                .arg(QFileInfo(directory.path()).fileName()));
+        QStandardPaths::setTestModeEnabled(true);
+        {
+            QSettings s = NexusAI::TestSupport::testSettings();
+            s.remove(QStringLiteral("modelProfiles"));
+            s.remove(QStringLiteral("activeProfileId"));
+            s.sync();
+        }
+
+        const QVariantMap seedParams{
+            {QStringLiteral("glm-4"), QVariantMap{
+                {QStringLiteral("temperature"), QStringLiteral("0.5")},
+                {QStringLiteral("contextLength"), QStringLiteral("128000")}}},
+            {QStringLiteral("gpt-4o"), QVariantMap{
+                {QStringLiteral("maxOutputTokens"), QStringLiteral("8192")},
+                {QStringLiteral("reasoningEffort"), QStringLiteral("low")}}}};
+        SettingsService service(nullptr);
+        const QString profileId = service.activeProfileId();
+        service.updateProfile(profileId, QVariantMap{
+            {QStringLiteral("model"), QStringLiteral("glm-4")},
+            {QStringLiteral("models"), QStringList{QStringLiteral("glm-4"),
+                                                   QStringLiteral("gpt-4o")}},
+            {QStringLiteral("modelParams"), seedParams}});
+
+        SettingsBackup backup;
+        const QString exportPath = directory.filePath(QStringLiteral("roundtrip.json"));
+        QVERIFY2(backup.exportSettings(exportPath), qPrintable(backup.lastError()));
+
+        // 清空存储，模拟换机/重置后从备份恢复。
+        {
+            QSettings s = NexusAI::TestSupport::testSettings();
+            s.remove(QStringLiteral("modelProfiles"));
+            s.remove(QStringLiteral("activeProfileId"));
+            s.sync();
+        }
+        QVERIFY2(backup.importSettings(exportPath), qPrintable(backup.lastError()));
+        QVERIFY(backup.restartRequired());
+
+        // 落盘的 modelProfiles JSON：modelParams 完整保留（深比较）。
+        QSettings s = NexusAI::TestSupport::testSettings();
+        const QJsonArray restored = QJsonDocument::fromJson(
+            s.value(QStringLiteral("modelProfiles")).toString().toUtf8()).array();
+        QCOMPARE(restored.size(), 1);
+        const QJsonObject profile = restored.at(0).toObject();
+        QCOMPARE(profile.value(QStringLiteral("id")).toString(), profileId);
+        QCOMPARE(profile.value(QStringLiteral("provider")).toString(),
+                 QStringLiteral("openai"));
+        QCOMPARE(profile.value(QStringLiteral("modelParams")).toObject(),
+                 QJsonObject::fromVariantMap(seedParams));
+        // importSettings 会落一份空 MCP 配置（McpConfig::save({})），清掉
+        // 避免跨用例残留。
+        QVERIFY(QFile::remove(McpConfig::configFilePath()));
+    }
+
+    // docs/43 §5.3/AC-7：恢复侧强校验维持现状——v6 应用拒绝 v5 备份（双向
+    // 兼容边界，与历次 schema 升级行为一致）。既有用例未覆盖该拒绝路径，
+    // 此处补回归保护：把合法导出的 schemaVersion 手工改成 5。
+    void v5BackupRejectedByVersionCheck() {
+        QTemporaryDir directory;
+        QVERIFY(directory.isValid());
+        QSettings::setDefaultFormat(QSettings::IniFormat);
+        QSettings::setPath(QSettings::IniFormat, QSettings::UserScope, directory.path());
+        QCoreApplication::setOrganizationName(QStringLiteral("NexusAIBackupTests"));
+        QCoreApplication::setApplicationName(
+            QStringLiteral("NexusAIBackupTests_%1")
+                .arg(QFileInfo(directory.path()).fileName()));
+        QStandardPaths::setTestModeEnabled(true);
+        {
+            QSettings s = NexusAI::TestSupport::testSettings();
+            s.clear();
+            s.setValue(QStringLiteral("modelProfiles"), QString::fromUtf8(
+                QJsonDocument(QJsonArray{QJsonObject{
+                    {QStringLiteral("id"), QStringLiteral("profile-v5")},
+                    {QStringLiteral("provider"), QStringLiteral("openai")},
+                    {QStringLiteral("apiProtocol"), QStringLiteral("openai-chat")},
+                    {QStringLiteral("model"), QStringLiteral("gpt-4o")}}})
+                    .toJson(QJsonDocument::Compact)));
+            s.setValue(QStringLiteral("activeProfileId"), QStringLiteral("profile-v5"));
+            s.sync();
+            QCOMPARE(s.status(), QSettings::NoError);
+        }
+
+        SettingsBackup backup;
+        const QString exportPath = directory.filePath(QStringLiteral("current.json"));
+        QVERIFY2(backup.exportSettings(exportPath), qPrintable(backup.lastError()));
+        QFile exported(exportPath);
+        QVERIFY(exported.open(QIODevice::ReadOnly));
+        QJsonObject root = QJsonDocument::fromJson(exported.readAll()).object();
+        exported.close();
+        // 手工降级成 v5 备份：其余字段保持合法，只有版本号是旧的。
+        QCOMPARE(root.value(QStringLiteral("schemaVersion")).toInt(),
+                 SettingsSchema::kSchemaVersion);
+        root.insert(QStringLiteral("schemaVersion"), 5);
+        const QString v5Path = directory.filePath(QStringLiteral("v5.json"));
+        QFile v5File(v5Path);
+        QVERIFY(v5File.open(QIODevice::WriteOnly));
+        v5File.write(QJsonDocument(root).toJson());
+        v5File.close();
+
+        const QVariantMap preview = backup.previewImport(v5Path);
+        QVERIFY2(!preview.value(QStringLiteral("valid")).toBool(),
+                 "v5 备份必须被版本强校验拒绝");
+        QVERIFY(preview.value(QStringLiteral("error")).toString()
+                    .contains(QStringLiteral("设置版本不匹配")));
+        QVERIFY2(!backup.importSettings(v5Path),
+                 "v5 备份不得进入恢复流程");
+        QVERIFY(backup.lastError().contains(QStringLiteral("设置版本不匹配")));
+
+        // 拒绝恢复不得动当前存储。
+        QSettings s = NexusAI::TestSupport::testSettings();
+        QVERIFY(s.value(QStringLiteral("modelProfiles")).toString()
+                    .contains(QStringLiteral("profile-v5")));
     }
 
     // docs/31 O5：按分类导出。只导出 model 时，settings 里只能有模型

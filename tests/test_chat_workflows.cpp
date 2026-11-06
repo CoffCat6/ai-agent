@@ -500,7 +500,8 @@ private slots:
             services.insert(agent, new RecordingService(agent));
             return agent;
         });
-        vm->setModelConfigurator([&](AIAgent* agent, const QVariantMap& profile) {
+        vm->setModelConfigurator([&](AIAgent* agent, const QVariantMap& profile,
+                                     const QVariantMap&) {
             auto* service = services.value(agent);
             service->setModel(profile.value("model").toString());
             agent->setLLMService(service);
@@ -634,7 +635,7 @@ private slots:
         QVERIFY2(ui.load(), qPrintable(ui.error));
         RecordingService service;
         AIAgent agent;
-        vm->setModelConfigurator([&](AIAgent* target, const QVariantMap&) {
+        vm->setModelConfigurator([&](AIAgent* target, const QVariantMap&, const QVariantMap&) {
             target->setLLMService(&service);
         });
         vm->setAgent(&agent);
@@ -658,7 +659,7 @@ private slots:
         QVERIFY2(ui.load(), qPrintable(ui.error));
         RecordingService service;
         AIAgent agent;
-        vm->setModelConfigurator([&](AIAgent* target, const QVariantMap&) {
+        vm->setModelConfigurator([&](AIAgent* target, const QVariantMap&, const QVariantMap&) {
             target->setLLMService(&service);
         });
         vm->setAgent(&agent);
@@ -729,7 +730,7 @@ private slots:
 
         RecordingService service;
         AIAgent agent;
-        vm->setModelConfigurator([&](AIAgent* target, const QVariantMap&) {
+        vm->setModelConfigurator([&](AIAgent* target, const QVariantMap&, const QVariantMap&) {
             target->setLLMService(&service);
         });
         vm->setAgent(&agent);
@@ -765,7 +766,7 @@ private slots:
         QVERIFY(writeBaseSkills(project.path()));
         RecordingService service;
         AIAgent agent;
-        vm->setModelConfigurator([&](AIAgent* target, const QVariantMap&) {
+        vm->setModelConfigurator([&](AIAgent* target, const QVariantMap&, const QVariantMap&) {
             target->setLLMService(&service);
         });
         vm->setAgent(&agent);
@@ -804,7 +805,7 @@ private slots:
         QVERIFY(writeBaseSkills(project.path()));
         RecordingService service;
         AIAgent agent;
-        vm->setModelConfigurator([&](AIAgent* target, const QVariantMap&) {
+        vm->setModelConfigurator([&](AIAgent* target, const QVariantMap&, const QVariantMap&) {
             target->setLLMService(&service);
         });
         vm->setAgent(&agent);
@@ -835,7 +836,7 @@ private slots:
         QVERIFY(writeBaseSkills(project.path()));
         RecordingService service;
         AIAgent agent;
-        vm->setModelConfigurator([&](AIAgent* target, const QVariantMap&) {
+        vm->setModelConfigurator([&](AIAgent* target, const QVariantMap&, const QVariantMap&) {
             target->setLLMService(&service);
         });
         vm->setAgent(&agent);
@@ -865,7 +866,7 @@ private slots:
         QVERIFY(writeBaseSkills(project.path()));
         RecordingService service;
         AIAgent agent;
-        vm->setModelConfigurator([&](AIAgent* target, const QVariantMap&) {
+        vm->setModelConfigurator([&](AIAgent* target, const QVariantMap&, const QVariantMap&) {
             target->setLLMService(&service);
         });
         vm->setAgent(&agent);
@@ -894,7 +895,7 @@ private slots:
         QVERIFY(writeBaseSkills(project.path()));
         RecordingService service;
         AIAgent agent;
-        vm->setModelConfigurator([&](AIAgent* target, const QVariantMap&) {
+        vm->setModelConfigurator([&](AIAgent* target, const QVariantMap&, const QVariantMap&) {
             target->setLLMService(&service);
         });
         vm->setAgent(&agent);
@@ -933,7 +934,7 @@ private slots:
         QVERIFY(writeBaseSkills(project.path()));
         RecordingService service;
         AIAgent agent;
-        vm->setModelConfigurator([&](AIAgent* target, const QVariantMap&) {
+        vm->setModelConfigurator([&](AIAgent* target, const QVariantMap&, const QVariantMap&) {
             target->setLLMService(&service);
         });
         vm->setAgent(&agent);
@@ -970,7 +971,7 @@ private slots:
         QVERIFY(writeBaseSkills(project.path()));
         RecordingService service;
         AIAgent agent;
-        vm->setModelConfigurator([&](AIAgent* target, const QVariantMap&) {
+        vm->setModelConfigurator([&](AIAgent* target, const QVariantMap&, const QVariantMap&) {
             target->setLLMService(&service);
         });
         vm->setAgent(&agent);
@@ -1010,7 +1011,7 @@ private slots:
         QVERIFY(writeBaseSkills(project.path()));
         RecordingService service;
         AIAgent agent;
-        vm->setModelConfigurator([&](AIAgent* target, const QVariantMap&) {
+        vm->setModelConfigurator([&](AIAgent* target, const QVariantMap&, const QVariantMap&) {
             target->setLLMService(&service);
         });
         vm->setAgent(&agent);

@@ -10,6 +10,7 @@
 #include <QStandardPaths>
 #include <QTemporaryDir>
 #include <QFontDatabase>
+#include <QMetaEnum>
 
 #include <QQmlAbstractUrlInterceptor>
 #include <QQmlApplicationEngine>
@@ -1103,6 +1104,269 @@ private slots:
         // 界面切到副本：底栏显示「编辑中的配置未启用」而不是继续停在源配置。
         QCOMPARE(page->property("editingId").toString(),
                  copy.value(QStringLiteral("id")).toString());
+
+        win->close();
+        while (!settings->profiles().isEmpty()) {
+            settings->removeProfile(settings->profiles().first().toMap()
+                                        .value(QStringLiteral("id")).toString());
+        }
+    }
+
+    // docs/43 W2：卡片三内嵌「按模型参数」编辑器。test_settings 的
+    // setModelParamValidation 只证明 C++ 专用入口的校验正确；这里经
+    // ModelConfigHarness 加载真实页面，覆盖「ComboBox 选中模型 → 表单提交
+    // → Settings 读回 modelParams」整条链路——绑定漏读 modelParams、
+    // selectedModel 没接上 ComboBox 时，界面写了数据也不落库。
+    void perModelEditorWritesOverride() {
+        auto* settings = SettingsService::instance();
+        while (!settings->profiles().isEmpty()) {
+            settings->removeProfile(settings->profiles().first().toMap()
+                                        .value(QStringLiteral("id")).toString());
+        }
+        const QString profileId = settings->addProfile(QStringLiteral("openai"));
+        QVERIFY(!profileId.isEmpty());
+        settings->updateProfile(profileId,
+                                QVariantMap{{QStringLiteral("baseUrl"),
+                                             QStringLiteral("https://api.example.com/v1")},
+                                            {QStringLiteral("model"),
+                                             QStringLiteral("gpt-test")}});
+        settings->addModelToProfile(profileId, QStringLiteral("glm-test"));
+
+        NexusQrcFallback fallback(QStringLiteral(NEXUS_BUILD_DIR "/NexusAI"));
+        QQmlApplicationEngine engine;
+        engine.addUrlInterceptor(&fallback);
+        engine.addImportPath(QStringLiteral(NEXUS_BUILD_DIR));
+        QQmlComponent component(
+            &engine,
+            QUrl::fromLocalFile(QStringLiteral(NEXUS_TEST_QML_DIR
+                                               "/ModelConfigHarness.qml")));
+        QVERIFY2(component.isReady(), qPrintable(component.errorString()));
+        std::unique_ptr<QObject> root(component.create());
+        QVERIFY2(root, qPrintable(component.errorString()));
+
+        auto* win = qobject_cast<QQuickWindow*>(root.get());
+        QVERIFY(win);
+        win->resize(1000, 760);
+        win->show();
+        QVERIFY(QTest::qWaitForWindowExposed(win));
+
+        QQuickItem* page = findVisualItem(win->contentItem(),
+                                          QStringLiteral("modelConfigPage"));
+        QVERIFY(page);
+        QQuickItem* editor = findVisualItem(page,
+                                            QStringLiteral("model.perModelParams"));
+        QVERIFY2(editor, "卡片三必须内嵌按模型参数编辑器");
+
+        // 默认选中当前模型（gpt-test）；经编辑器的 selectModel 入口切到
+        // glm-test（ComboBox onActivated 的同一条处理链路——activate 不在
+        // metaobject 里，无法直接 invoke）。
+        QObject* combo = editor->findChild<QObject*>(
+            QStringLiteral("model.paramModelCombo"));
+        QVERIFY(combo);
+        QCOMPARE(editor->property("selectedModel").toString(),
+                 QStringLiteral("gpt-test"));
+        QVERIFY(QMetaObject::invokeMethod(editor, "selectModel",
+                                          Q_ARG(QVariant,
+                                                QStringLiteral("glm-test"))));
+        QTRY_COMPARE(editor->property("selectedModel").toString(),
+                     QStringLiteral("glm-test"));
+
+        // contextLength 行选 128K 预设：allowAuto 下拉 index 0 = 跟随默认，
+        // index 1 = 128K → submitted(128000) → setModelParam 落库。
+        QQuickItem* contextRow = findVisualItem(
+            editor, QStringLiteral("model.paramRowContext"));
+        QVERIFY(contextRow);
+        QVERIFY(QMetaObject::invokeMethod(contextRow, "applyOption",
+                                          Q_ARG(QVariant, 1)));
+
+        const auto readOverride = [settings]() -> QString {
+            return settings->profiles()
+                .at(0).toMap()
+                .value(QStringLiteral("modelParams")).toMap()
+                .value(QStringLiteral("glm-test")).toMap()
+                .value(QStringLiteral("contextLength")).toString();
+        };
+        QTRY_COMPARE(readOverride(), QStringLiteral("128000"));
+
+        // Major-2：收起态显示的 contentItem 必须是 PlainText 的 Text——
+        // 模型名可来自远端拉取，默认 AutoText 会把 <b> 之类当富文本解析
+        // （textFormat 只能在 contentItem 上设）；同时核对 contentItem
+        // 绑定的是 displayText（收起态显示当前选中项）。
+        QQuickItem* comboLabel = qvariant_cast<QQuickItem*>(
+            combo->property("contentItem"));
+        QVERIFY(comboLabel);
+        const QMetaObject* labelMeta = comboLabel->metaObject();
+        const int formatIndex = labelMeta->indexOfEnumerator("TextFormat");
+        QVERIFY(formatIndex >= 0);
+        QCOMPARE(comboLabel->property("textFormat").toInt(),
+                 labelMeta->enumerator(formatIndex).keyToValue("PlainText"));
+        QCOMPARE(comboLabel->property("text").toString(),
+                 combo->property("displayText").toString());
+
+        win->close();
+        while (!settings->profiles().isEmpty()) {
+            settings->removeProfile(settings->profiles().first().toMap()
+                                        .value(QStringLiteral("id")).toString());
+        }
+    }
+
+    // docs/43 §6.2（3）/ AC-8：覆盖徽章。设 2 项覆盖后 ComboBox 条目带
+    // 计数后缀、chips 徽章渲染「2 项覆盖」（纯文本，不单靠颜色）；清除
+    // 覆盖后徽章消失——数据变了界面不动的退化只有真渲染才能发现。
+    void overrideBadgeCount() {
+        auto* settings = SettingsService::instance();
+        while (!settings->profiles().isEmpty()) {
+            settings->removeProfile(settings->profiles().first().toMap()
+                                        .value(QStringLiteral("id")).toString());
+        }
+        const QString profileId = settings->addProfile(QStringLiteral("openai"));
+        QVERIFY(!profileId.isEmpty());
+        settings->updateProfile(profileId,
+                                QVariantMap{{QStringLiteral("baseUrl"),
+                                             QStringLiteral("https://api.example.com/v1")},
+                                            {QStringLiteral("model"),
+                                             QStringLiteral("glm-test")}});
+        settings->addModelToProfile(profileId, QStringLiteral("gpt-test"));
+        settings->setModelParam(profileId, QStringLiteral("glm-test"),
+                                QStringLiteral("temperature"),
+                                QStringLiteral("0.5"));
+        settings->setModelParam(profileId, QStringLiteral("glm-test"),
+                                QStringLiteral("contextLength"),
+                                QStringLiteral("128000"));
+
+        NexusQrcFallback fallback(QStringLiteral(NEXUS_BUILD_DIR "/NexusAI"));
+        QQmlApplicationEngine engine;
+        engine.addUrlInterceptor(&fallback);
+        engine.addImportPath(QStringLiteral(NEXUS_BUILD_DIR));
+        QQmlComponent component(
+            &engine,
+            QUrl::fromLocalFile(QStringLiteral(NEXUS_TEST_QML_DIR
+                                               "/ModelConfigHarness.qml")));
+        QVERIFY2(component.isReady(), qPrintable(component.errorString()));
+        std::unique_ptr<QObject> root(component.create());
+        QVERIFY2(root, qPrintable(component.errorString()));
+
+        auto* win = qobject_cast<QQuickWindow*>(root.get());
+        QVERIFY(win);
+        win->resize(1000, 760);
+        win->show();
+        QVERIFY(QTest::qWaitForWindowExposed(win));
+
+        QQuickItem* page = findVisualItem(win->contentItem(),
+                                          QStringLiteral("modelConfigPage"));
+        QVERIFY(page);
+        QQuickItem* editor = findVisualItem(page,
+                                            QStringLiteral("model.perModelParams"));
+        QVERIFY(editor);
+
+        // ComboBox 条目：模型名 + 「2 项覆盖」计数（comboEntries 是编辑器的
+        // 派生 property，与下拉真实 model 同源）。
+        const QVariantList entries = editor->property("comboEntries").toList();
+        QCOMPARE(entries.size(), 2);
+        QVERIFY2(entries.at(0).toString().contains(QStringLiteral("glm-test"))
+                 && entries.at(0).toString().contains(QStringLiteral("2 项覆盖")),
+                 qPrintable(entries.at(0).toString()));
+        QVERIFY2(!entries.at(1).toString().contains(QStringLiteral("项覆盖")),
+                 "无覆盖的模型条目不应带计数后缀");
+
+        // chips 徽章：真实渲染文本里出现「2 项覆盖」（列内精确匹配，标题行
+        // 的「当前 2 项覆盖」是不同字符串不会误命中）。
+        const auto renderedTexts = [page]() {
+            QStringList texts;
+            collectItemTexts(page, &texts);
+            return texts;
+        };
+        QTRY_VERIFY(renderedTexts().contains(QStringLiteral("2 项覆盖")));
+
+        // 清除覆盖 → 徽章消失。
+        settings->clearModelParams(profileId, QStringLiteral("glm-test"));
+        QTRY_VERIFY(!renderedTexts().contains(QStringLiteral("2 项覆盖")));
+        QTRY_VERIFY(!editor->property("comboEntries").toList()
+                        .at(0).toString().contains(QStringLiteral("项覆盖")));
+
+        win->close();
+        while (!settings->profiles().isEmpty()) {
+            settings->removeProfile(settings->profiles().first().toMap()
+                                        .value(QStringLiteral("id")).toString());
+        }
+    }
+
+    // docs/43 §6.2（4）：「清除该模型全部覆盖」走二次确认——点入口只开
+    // 确认框不删数据，点确认才整表删除；删除后 modelParams 键一并消失
+    // （空表不占位）。
+    void clearPerModelOverrides() {
+        auto* settings = SettingsService::instance();
+        while (!settings->profiles().isEmpty()) {
+            settings->removeProfile(settings->profiles().first().toMap()
+                                        .value(QStringLiteral("id")).toString());
+        }
+        const QString profileId = settings->addProfile(QStringLiteral("openai"));
+        QVERIFY(!profileId.isEmpty());
+        settings->updateProfile(profileId,
+                                QVariantMap{{QStringLiteral("baseUrl"),
+                                             QStringLiteral("https://api.example.com/v1")},
+                                            {QStringLiteral("model"),
+                                             QStringLiteral("glm-test")}});
+        settings->setModelParam(profileId, QStringLiteral("glm-test"),
+                                QStringLiteral("temperature"),
+                                QStringLiteral("0.5"));
+        settings->setModelParam(profileId, QStringLiteral("glm-test"),
+                                QStringLiteral("contextLength"),
+                                QStringLiteral("128000"));
+        settings->setModelParam(profileId, QStringLiteral("glm-test"),
+                                QStringLiteral("reasoningEffort"),
+                                QStringLiteral("high"));
+
+        NexusQrcFallback fallback(QStringLiteral(NEXUS_BUILD_DIR "/NexusAI"));
+        QQmlApplicationEngine engine;
+        engine.addUrlInterceptor(&fallback);
+        engine.addImportPath(QStringLiteral(NEXUS_BUILD_DIR));
+        QQmlComponent component(
+            &engine,
+            QUrl::fromLocalFile(QStringLiteral(NEXUS_TEST_QML_DIR
+                                               "/ModelConfigHarness.qml")));
+        QVERIFY2(component.isReady(), qPrintable(component.errorString()));
+        std::unique_ptr<QObject> root(component.create());
+        QVERIFY2(root, qPrintable(component.errorString()));
+
+        auto* win = qobject_cast<QQuickWindow*>(root.get());
+        QVERIFY(win);
+        win->resize(1000, 760);
+        win->show();
+        QVERIFY(QTest::qWaitForWindowExposed(win));
+
+        QQuickItem* page = findVisualItem(win->contentItem(),
+                                          QStringLiteral("modelConfigPage"));
+        QVERIFY(page);
+        QQuickItem* editor = findVisualItem(page,
+                                            QStringLiteral("model.perModelParams"));
+        QVERIFY(editor);
+        QQuickItem* clearButton = findVisualItem(
+            editor, QStringLiteral("model.paramClearButton"));
+        QVERIFY(clearButton);
+        // 有覆盖才可点（enabled 绑定 overrideCount）。
+        QTRY_VERIFY(clearButton->property("enabled").toBool());
+        QVERIFY(QMetaObject::invokeMethod(clearButton, "clicked"));
+
+        // 二次确认：弹窗打开、数据未删。
+        QObject* dialog = win->findChild<QObject*>(
+            QStringLiteral("model.paramClearDialog"));
+        QVERIFY(dialog);
+        QTRY_VERIFY(dialog->property("visible").toBool());
+        QCOMPARE(settings->profiles().at(0).toMap()
+                     .value(QStringLiteral("modelParams")).toMap()
+                     .value(QStringLiteral("glm-test")).toMap().size(),
+                 3);
+
+        QQuickItem* confirmButton = dialog->findChild<QQuickItem*>(
+            QStringLiteral("model.paramClearConfirmButton"));
+        QVERIFY(confirmButton);
+        QVERIFY(QMetaObject::invokeMethod(confirmButton, "clicked"));
+
+        // 整表删除后 modelParams 键不占位（W1 契约：空表移除键本身）。
+        QTRY_VERIFY(!settings->profiles().at(0).toMap()
+                        .contains(QStringLiteral("modelParams")));
+        QTRY_VERIFY(!dialog->property("visible").toBool());
 
         win->close();
         while (!settings->profiles().isEmpty()) {

@@ -13,8 +13,10 @@ public:
     // v0 = pre-schema; v1 = structured schema; v2 = model lists became user
     // managed; v3/v4 normalize context-token defaults while retaining custom
     // values; v5 turns sub-agents on by default for users who never touched
-    // the switch (an explicit "off" is preserved).
-    static constexpr int kSchemaVersion = 5;
+    // the switch (an explicit "off" is preserved); v6 (docs/43) introduces
+    // per-model parameter overrides (profile 内 modelParams) and drops the
+    // legacy topP ghost key — no data is pre-filled, old behavior unchanged.
+    static constexpr int kSchemaVersion = 6;
     static constexpr int kDefaultLogMaxFileSizeMb = 10;
     static constexpr int kDefaultLogRetentionFiles = 14;
 

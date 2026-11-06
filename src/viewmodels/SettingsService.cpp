@@ -23,6 +23,8 @@
 #include <QUrl>
 #include <QUuid>
 #include <QtConcurrent/QtConcurrentRun>
+#include <cmath>
+#include <limits>
 #include <memory>
 
 #ifdef Q_OS_WIN
@@ -201,6 +203,97 @@ void enableSubagentByDefaultOnUpgrade() {
         qCWarning(lcSettings) << "Failed to migrate subagent default:" << error;
 }
 
+// v5 → v6（docs/43 §5）：清掉幽灵键 topP——它是历史遗留的 profile 键，全仓
+// 无任何读写（SettingsBackup.cpp 的 cleanProfile 白名单是唯一引用），删除零
+// 行为影响。modelParams 不预填、不搬运：键缺省即"未设置"，老 profile 行为与
+// v5 完全一致；损坏的 modelParams（非 map）由 load() 反序列化后的
+// sanitizeModelParams 兜底，不在迁移里重复处理（单一出口）。
+void dropLegacyTopPOnUpgrade() {
+    const QByteArray raw = SettingsRepository::value(kProfilesKey).toString().toUtf8();
+    QJsonParseError parseError{};
+    const QJsonDocument doc = QJsonDocument::fromJson(raw, &parseError);
+    if (parseError.error != QJsonParseError::NoError || !doc.isArray()) return;
+
+    QJsonArray arr = doc.array();
+    bool changed = false;
+    for (int i = 0; i < arr.size(); ++i) {
+        QJsonObject profile = arr.at(i).toObject();
+        if (!profile.contains("topP")) continue;
+        profile.remove("topP");
+        arr[i] = profile;
+        changed = true;
+    }
+    if (!changed) return;
+    QString error;
+    if (!SettingsRepository::writeValue(
+            kProfilesKey,
+            QString::fromUtf8(QJsonDocument(arr).toJson(QJsonDocument::Compact)),
+            &error))
+        qCWarning(lcSettings) << "Failed to migrate model profile list:" << error;
+}
+
+// ── docs/43：modelParams 覆盖表的合法性规约（§4.1/§4.4）─────────
+
+// 覆盖表允许的参数键（与 profile 级生成参数一致；contextLength 的消费在
+// resolveContextLimitForProfile，其余四个在 main.cpp 的 profileConfigOf）。
+QStringList modelParamKeys() {
+    return {QStringLiteral("temperature"), QStringLiteral("maxOutputTokens"),
+            QStringLiteral("numCtx"), QStringLiteral("reasoningEffort"),
+            QStringLiteral("contextLength")};
+}
+
+// 字符串/数值统一转有限 double：字符串按 C locale 解析（QML/setModelParam
+// 提交字符串，JSON 反序列化出数值，两种都要收）；空串与非数字都失败。
+bool paramDouble(const QVariant& value, double* out) {
+    if (value.metaType().id() == QMetaType::QString) {
+        const QString text = value.toString().trimmed();
+        if (text.isEmpty()) return false;
+        bool ok = false;
+        *out = text.toDouble(&ok);
+        return ok && std::isfinite(*out);
+    }
+    bool ok = false;
+    *out = value.toDouble(&ok);
+    return ok && std::isfinite(*out);
+}
+
+// 同上的正整数版（对齐 SamplingParams::optionalPositiveInt：0、负数、小数
+// 与超 int 范围的值都不收——超界值静默截断会变成"另一个参数"）。
+bool paramPositiveInt(const QVariant& value, int* out) {
+    qlonglong v = 0;
+    bool ok = false;
+    if (value.metaType().id() == QMetaType::QString) {
+        const QString text = value.toString().trimmed();
+        if (text.isEmpty()) return false;
+        v = text.toLongLong(&ok);
+    } else {
+        v = value.toLongLong(&ok);
+    }
+    if (!ok || v <= 0 || v > std::numeric_limits<int>::max()) return false;
+    *out = static_cast<int>(v);
+    return true;
+}
+
+// 单个覆盖值的类型/范围校验：reasoningEffort 须为合法档位；temperature 须为
+// [0, 2] 的数（0 是合法的 greedy 采样值——与默认层 SamplingParams::
+// optionalDouble 允许 0 的口径及编辑器「0 - 2」提示对齐，两层不得各说各话）；
+// maxOutputTokens/numCtx/contextLength 须为正整数。空串在此处不合法——
+// "删除键"的语义由 setModelParam 显式处理，sanitize 只丢坏值。
+bool isValidModelParamValue(const QString& key, const QVariant& value) {
+    if (key == QLatin1String("reasoningEffort")) {
+        if (value.metaType().id() != QMetaType::QString) return false;
+        const QString text = value.toString().trimmed().toLower();
+        return text == QLatin1String("off") || text == QLatin1String("low")
+            || text == QLatin1String("medium") || text == QLatin1String("high");
+    }
+    if (key == QLatin1String("temperature")) {
+        double v = 0.0;
+        return paramDouble(value, &v) && v >= 0.0 && v <= 2.0;
+    }
+    int iv = 0;
+    return paramPositiveInt(value, &iv);
+}
+
 #ifdef Q_OS_WIN
 
 // API keys are encrypted at rest with the Windows DPAPI (per-user) instead
@@ -325,6 +418,9 @@ void SettingsService::load() {
         if (storedVersion < 4) upgradeContextTokenDefault();
         // v5：子代理默认开启（仅从未设置过的用户）。
         if (storedVersion < 5) enableSubagentByDefaultOnUpgrade();
+        // v6（docs/43 §5）：清掉幽灵键 topP；modelParams 不预填（键缺省 =
+        // 未设置，读取链缺级即跟随默认层）。
+        if (storedVersion < 6) dropLegacyTopPOnUpgrade();
         QString error;
         if (!SettingsRepository::writeValue("schemaVersion", SettingsSchema::kSchemaVersion,
                                             &error))
@@ -347,6 +443,9 @@ void SettingsService::load() {
             normalizeEndpoint(p);
             // kind 同理补齐（放在归一之后：normalizeEndpoint 可能按协议改写厂商）。
             p["kind"] = kindOf(p);
+            // docs/43 §4.4：modelParams 覆盖表过 sanitize（反序列化出口）——
+            // 手改注册表写进的坏键/坏值在读入时即被清洗，不静默入库（R5）。
+            sanitizeModelParams(p);
 
             // 模型列表完全由用户维护：这里既不按厂商预设回填，也不把当前模型塞
             // 进列表——否则刚清空的列表会被立刻灌回一项。
@@ -969,6 +1068,12 @@ void SettingsService::updateProfile(const QString& id, const QVariantMap& fields
             }
             p[it.key()] = it.value();
         }
+        // docs/43 §4.4：modelParams 经上方通用合并透传（对未知键无白名单），
+        // 本次提交含该键时统一过 sanitizeModelParams——非法键/非法值丢弃，
+        // 防止坏数据静默入库（R5）。UI 侧请走 setModelParam/clearModelParams
+        // 专用入口，不要裸提交整个 map（并发拼装会互相覆盖丢键）。
+        if (fields.contains(QStringLiteral("modelParams")))
+            sanitizeModelParams(p);
         // 设置页的厂商芯片统一提交 kind（"openai" | "anthropic" | "ollama" |
         // "custom"）：非 custom 时 kind 就是厂商键，custom 归到 openai 厂商——
         // 自定义网关骑在 openai-chat 上，不是第五种线协议。UI 因此不必再各自
@@ -1068,7 +1173,9 @@ QString SettingsService::duplicateProfile(const QString& id, const QString& newN
     if (index < 0) return {};
 
     // 红线 1：复制绝不携带密钥。apiKey 由用户在新配置上重新填写；其余
-    // 结构字段（端点、模型、模型列表、生成参数、上下文预算等）原样复制。
+    // 结构字段（端点、模型、模型列表、生成参数、上下文预算、按模型参数
+    // modelParams 覆盖表等）原样复制——整 map 深拷贝天然携带，副本与源
+    // 的覆盖表相互独立（docs/43 §7 处置表 #8）。
     source.remove(QStringLiteral("apiKey"));
     const QString newId = QUuid::createUuid().toString(QUuid::WithoutBraces);
     source["id"] = newId;
@@ -1201,6 +1308,18 @@ void SettingsService::removeModelFromProfile(const QString& id, const QString& m
             // If the deleted model was current, switch to first remaining
             if (p.value("model").toString() == model) {
                 p["model"] = models.isEmpty() ? QString() : models.first();
+            }
+
+            // docs/43 §4.4：删模型时同步删除其按模型参数覆盖条目（唯一需
+            // 联动的方法）。留下的孤儿条目读取无害，但模型既然被删，覆盖
+            // 也一并清掉；最后一个条目删掉后 modelParams 键整体移除（不占位）。
+            QVariantMap modelParams = p.value("modelParams").toMap();
+            if (modelParams.contains(model)) {
+                modelParams.remove(model);
+                if (modelParams.isEmpty())
+                    p.remove(QStringLiteral("modelParams"));
+                else
+                    p["modelParams"] = modelParams;
             }
 
             const QVariantList previousProfiles = m_profiles;
@@ -2241,8 +2360,10 @@ QVariantList SettingsService::endpointOptions(const QString& provider) const {
     return out;
 }
 
-// Three-level priority resolution for the active profile's context budget:
-//   1. Profile-level "contextLength" override (highest)
+// Four-level priority resolution for the active profile's context budget
+// (docs/43 §4.2，由三级扩为四级):
+//   0. Per-model modelParams[model].contextLength override (highest)
+//   1. Profile-level "contextLength" override (default layer for all models)
 //   2. Capability-table contextWindow (default per model)
 //   3. Global contextTokens (fallback for unknown models)
 int SettingsService::resolveContextLimit() const {
@@ -2252,6 +2373,17 @@ int SettingsService::resolveContextLimit() const {
 int SettingsService::resolveContextLimitForProfile(const QVariantMap& profile) const {
     const QString provider = profile.value("provider").toString();
     const QString model = profile.value("model").toString();
+
+    // Priority 0: per-model contextLength override（docs/43 按模型参数，插在
+    // 最前）。聊天区链路的 profile 是 model 已被改写过的副本，因此用
+    // profile["model"] 作查询键即为"当前生效模型"的覆盖。
+    const QVariant modelOverride = profile.value("modelParams").toMap()
+        .value(model).toMap().value("contextLength");
+    if (modelOverride.isValid() && !modelOverride.toString().isEmpty()) {
+        bool ok = false;
+        const int v = modelOverride.toInt(&ok);
+        if (ok && v > 0) return v;
+    }
 
     // Priority 1: Profile-level contextLength override.
     const QVariant profileOverride = profile.value("contextLength");
@@ -2270,6 +2402,129 @@ int SettingsService::resolveContextLimitForProfile(const QVariantMap& profile) c
 
     // Priority 3: global contextTokens (fallback).
     return m_contextTokens;
+}
+
+// ── docs/43：按模型参数（modelParams）─────────────────────────
+
+void SettingsService::setModelParam(const QString& profileId, const QString& model,
+                                    const QString& key, const QString& value) {
+    // 写入操作先做全量校验，失败一律 no-op + qCWarning（对齐 updateProfile
+    // 丢弃非法提交的静默风格——坏值来自输入框而非存储层，不适用
+    // persistenceError 的"保存失败"语义）。
+    const QString trimmedModel = model.trimmed();
+    const QString trimmedValue = value.trimmed();
+    if (!modelParamKeys().contains(key)) {
+        qCWarning(lcSettings) << "setModelParam: unknown param key" << key;
+        return;
+    }
+
+    int index = -1;
+    QVariantMap p;
+    for (int i = 0; i < m_profiles.size(); ++i) {
+        const QVariantMap candidate = m_profiles.at(i).toMap();
+        if (candidate.value("id").toString() != profileId) continue;
+        index = i;
+        p = candidate;
+        break;
+    }
+    if (index < 0) {
+        qCWarning(lcSettings) << "setModelParam: unknown profile" << profileId;
+        return;
+    }
+    if (!p.value("models").toStringList().contains(trimmedModel)) {
+        qCWarning(lcSettings) << "setModelParam: model not in list" << trimmedModel;
+        return;
+    }
+    if (!trimmedValue.isEmpty() && !isValidModelParamValue(key, trimmedValue)) {
+        qCWarning(lcSettings) << "setModelParam: invalid value" << value << "for" << key;
+        return;
+    }
+
+    // 值以 trim 后的字符串落库（与 profile 顶层参数的 QML 提交风格一致，
+    // 消费侧 SamplingParams/toInt 兼容两种形态）。空串 = 删除该覆盖键。
+    QVariantMap modelParams = p.value("modelParams").toMap();
+    QVariantMap overrides = modelParams.value(trimmedModel).toMap();
+    if (trimmedValue.isEmpty())
+        overrides.remove(key);
+    else
+        overrides[key] = trimmedValue;
+
+    // 空条目/空表不占位：覆盖表只剩"显式设置的键"（缺键 = 跟随默认）。
+    if (overrides.isEmpty())
+        modelParams.remove(trimmedModel);
+    else
+        modelParams[trimmedModel] = overrides;
+    if (modelParams.isEmpty())
+        p.remove(QStringLiteral("modelParams"));
+    else
+        p[QStringLiteral("modelParams")] = modelParams;
+
+    const QVariantList previousProfiles = m_profiles;
+    m_profiles[index] = p;
+    if (!persist()) {
+        m_profiles = previousProfiles;
+        return;
+    }
+    emit profilesChanged();
+    if (profileId == m_activeId)
+        emit activeProfileChanged();
+}
+
+void SettingsService::clearModelParams(const QString& profileId, const QString& model) {
+    const QString trimmedModel = model.trimmed();
+    for (int i = 0; i < m_profiles.size(); ++i) {
+        QVariantMap p = m_profiles.at(i).toMap();
+        if (p.value("id").toString() != profileId) continue;
+
+        QVariantMap modelParams = p.value("modelParams").toMap();
+        if (!modelParams.contains(trimmedModel)) return;   // 无条目：幂等 no-op
+
+        modelParams.remove(trimmedModel);
+        if (modelParams.isEmpty())
+            p.remove(QStringLiteral("modelParams"));
+        else
+            p[QStringLiteral("modelParams")] = modelParams;
+
+        const QVariantList previousProfiles = m_profiles;
+        m_profiles[i] = p;
+        if (!persist()) {
+            m_profiles = previousProfiles;
+            return;
+        }
+        emit profilesChanged();
+        if (profileId == m_activeId)
+            emit activeProfileChanged();
+        return;
+    }
+}
+
+void SettingsService::sanitizeModelParams(QVariantMap& profile) {
+    const QVariant raw = profile.value(QStringLiteral("modelParams"));
+    if (!raw.isValid()) return;   // 键缺省 = 未设置，合法状态
+    if (raw.metaType().id() != QMetaType::QVariantMap) {
+        // 损坏数据（手改注册表写出非对象 JSON）：整体丢弃，不留半份。
+        profile.remove(QStringLiteral("modelParams"));
+        return;
+    }
+    const QVariantMap modelParams = raw.toMap();
+    QVariantMap cleaned;
+    for (auto it = modelParams.constBegin(); it != modelParams.constEnd(); ++it) {
+        // 覆盖表本身非 map 的条目（modelParams[m] = "str"）在 toMap() 后为
+        // 空，自然走"清洗后为空 → 移除条目"。
+        const QVariantMap overrides = it.value().toMap();
+        QVariantMap kept;
+        for (auto o = overrides.constBegin(); o != overrides.constEnd(); ++o) {
+            if (modelParamKeys().contains(o.key())
+                    && isValidModelParamValue(o.key(), o.value()))
+                kept.insert(o.key(), o.value());
+        }
+        if (!kept.isEmpty())
+            cleaned.insert(it.key(), kept);
+    }
+    if (cleaned.isEmpty())
+        profile.remove(QStringLiteral("modelParams"));   // 不占位
+    else
+        profile[QStringLiteral("modelParams")] = cleaned;
 }
 
 } // namespace NexusAI

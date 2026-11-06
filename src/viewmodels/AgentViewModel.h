@@ -221,7 +221,12 @@ public:
     // Batch 29: factory building a fresh AIAgent (+ own SQLite connection)
     // for every additional tab.
     void setAgentFactory(std::function<AIAgent*()> factory);
-    void setModelConfigurator(std::function<void(AIAgent*, const QVariantMap&)> configure);
+    // docs/43 §4.3：模型装配回调（全显式参数，不依赖默认参数——QML 侧经
+    // moc 的默认参数有坑，项目惯例）。profile 是聊天区副本（model 已按会话
+    // 切换改写、携带 modelParams）；sessionOverrides 是会话临时覆盖通道
+    // （当前仅 reasoningEffort），优先级高于 modelParams 模型覆盖与顶层默认。
+    void setModelConfigurator(std::function<void(AIAgent*, const QVariantMap&,
+                                                 const QVariantMap&)> configure);
     void updateModelProfiles(const QVariantList& profiles, const QVariantMap& defaultProfile);
     QVariantMap chatModelProfile() const;
     bool modelConfigured() const;
@@ -928,7 +933,10 @@ private:
     void configureModel(ChatSessionController* controller);
     QVariantList m_availableProfiles;
     QVariantMap m_defaultProfile;
-    std::function<void(AIAgent*, const QVariantMap&)> m_configureModel;
+    // docs/43 §4.3：三参形态见 setModelConfigurator 注释——第二参为 profile
+    // 副本，第三参为会话临时覆盖（不混写进 profile 顶层，避免顶层键同时
+    // 承担"默认"与"临时覆盖"两个角色而反噬 modelParams 覆盖）。
+    std::function<void(AIAgent*, const QVariantMap&, const QVariantMap&)> m_configureModel;
     ChatSessionController* active() const;
     // 低层：新建一个标签并挂接 agent（不决定归属）。
     ChatSessionController* ensureTab();

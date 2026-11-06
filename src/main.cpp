@@ -135,20 +135,43 @@ namespace {
 // 一套按协议键索引的 LLM 服务集合：进程级一份 + 每个会话 tab 一份。
 using ProviderSet = QHash<QString, IAIService*>;
 
+// docs/43 §4.2：生成参数按三级链读取（会话临时覆盖 > 模型覆盖 > profile
+// 默认）。overrides 是会话临时覆盖通道（如 selectedReasoning），经
+// m_configureModel 三参签名传入：主/tab 服务的装配 lambda 透传会话覆盖；
+// 摘要服务与子代理快照传空 map（非交互消费者不接会话临时覆盖，设计如此，
+// docs/43 §7 处置表 #2）。模型覆盖从 profile["modelParams"][当前模型] 取，
+// 缺键 = 跟随 profile 顶层默认。profile 参数在聊天区链路上是 model 已被
+// 改写过的副本，因此用 profile["model"] 作查询键即为"当前生效模型"的覆盖。
+QVariant effectiveParam(const QVariantMap& profile, const QVariantMap& overrides,
+                        const char* key) {
+    const QString k = QString::fromLatin1(key);
+    if (overrides.contains(k)) return overrides.value(k);          // ① 会话临时覆盖
+    const QString model = profile.value("model").toString();
+    const QVariantMap perModel =
+        profile.value("modelParams").toMap().value(model).toMap();
+    if (perModel.contains(k)) return perModel.value(k);            // ② 模型覆盖
+    return profile.value(k);                                       // ③ profile 默认
+}
+
 // profile map → 服务配置快照。清洗沿用 SamplingParams 的"未设置/清空/非数字
 // 都不发该字段"语义（Batch 15 FEAT-1501/1502、Batch 21 A1）；哪个协议消费哪
 // 几个字段由各 Service 的 applyProfileParams 决定，装配层不再按协议分支。
-LlmProfileConfig profileConfigOf(const QVariantMap& profile) {
+// contextLength 不在这里（上下文预算单点收口在
+// SettingsService::resolveContextLimitForProfile 的四级链）。
+LlmProfileConfig profileConfigOf(const QVariantMap& profile,
+                                 const QVariantMap& overrides) {
     LlmProfileConfig cfg;
     cfg.baseUrl = profile.value("baseUrl").toString();
     cfg.apiKey = profile.value("apiKey").toString();
     cfg.model = profile.value("model").toString();
-    cfg.temperature = SamplingParams::optionalDouble(profile.value("temperature"));
+    cfg.temperature = SamplingParams::optionalDouble(
+        effectiveParam(profile, overrides, "temperature"));
     cfg.maxOutputTokens = SamplingParams::optionalPositiveInt(
-        profile.value("maxOutputTokens"));
-    cfg.numCtx = SamplingParams::optionalPositiveInt(profile.value("numCtx"));
+        effectiveParam(profile, overrides, "maxOutputTokens"));
+    cfg.numCtx = SamplingParams::optionalPositiveInt(
+        effectiveParam(profile, overrides, "numCtx"));
     cfg.reasoningEffort = SamplingParams::optionalReasoningLevel(
-        profile.value("reasoningEffort"));
+        effectiveParam(profile, overrides, "reasoningEffort"));
     return cfg;
 }
 
@@ -551,20 +574,24 @@ qInfo() << "NexusAI" << app.applicationVersion() << "starting";
     tabMemories->insert(agent, episodicService);
     summaryProviders->insert(agent, LlmProtocolRegistry::createServiceSet(episodicService));
     agentVM->setModelConfigurator([settings, agent, templateSet, tabProviderSets, tabMemories, summaryProviders](
-            AIAgent* target, const QVariantMap& profile) {
+            AIAgent* target, const QVariantMap& profile,
+            const QVariantMap& sessionOverrides) {
         const ProviderSet set = target == agent ? templateSet : tabProviderSets->value(target);
         IAIService* service = set.value(profile.value("apiProtocol").toString());
         if (profile.value("model").toString().trimmed().isEmpty()
                 || profile.value("baseUrl").toString().trimmed().isEmpty())
             service = nullptr;
-        if (service) service->configure(profileConfigOf(profile));
+        // docs/43 §4.3：会话临时覆盖（输入区思考档位等）只进前台会话请求。
+        if (service) service->configure(profileConfigOf(profile, sessionOverrides));
         target->setLLMService(service);
         // Long-term summaries use the same chosen model through a separate
         // service, so neither foreground streams nor other tabs are touched.
+        // docs/43 §7 #2：摘要服务不接会话临时覆盖（传空），沿用 profile
+        // 当前模型的 modelParams/默认层解析。
         if (auto* summaries = tabMemories->value(target)) {
             auto* summaryService = service
                 ? summaryProviders->value(target).value(profile.value("apiProtocol").toString()) : nullptr;
-            if (summaryService) summaryService->configure(profileConfigOf(profile));
+            if (summaryService) summaryService->configure(profileConfigOf(profile, QVariantMap{}));
             summaries->setLlmService(summaryService);
         }
         target->setContextLimit(settings->resolveContextLimitForProfile(profile));
@@ -844,7 +871,7 @@ qInfo() << "NexusAI" << app.applicationVersion() << "starting";
             snapshot->protocolKey = LlmProtocolRegistry::resolve(
                 profile.value(QStringLiteral("apiProtocol")).toString(),
                 profile.value(QStringLiteral("provider")).toString())->key;
-            snapshot->config = profileConfigOf(profile);
+            snapshot->config = profileConfigOf(profile, QVariantMap{});
             snapshot->contextLimit =
                 settings->resolveContextLimitForProfile(profile);
             return snapshot;

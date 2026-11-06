@@ -1027,7 +1027,8 @@ void AgentViewModel::setAgentFactory(std::function<AIAgent*()> factory) {
     m_agentFactory = std::move(factory);
 }
 
-void AgentViewModel::setModelConfigurator(std::function<void(AIAgent*, const QVariantMap&)> configure) {
+void AgentViewModel::setModelConfigurator(std::function<void(AIAgent*, const QVariantMap&,
+                                                             const QVariantMap&)> configure) {
     m_configureModel = std::move(configure);
 }
 
@@ -1052,9 +1053,17 @@ void AgentViewModel::configureModel(ChatSessionController* controller) {
         }
     }
     if (!controller->selectedModel.isEmpty()) profile["model"] = controller->selectedModel;
-    if (controller->selectedReasoning.isValid()) profile["reasoningEffort"] = controller->selectedReasoning;
+    // docs/43 §4.3：会话临时思考档位改经独立通道下发，不再混写进 profile
+    // 副本顶层——顶层键同时承担"默认"与"临时覆盖"两个角色，会反噬盖掉
+    // modelParams 的模型覆盖。空串档位（"默认"）视为放弃会话覆盖，同样
+    // 不进通道，让优先级链回落到模型覆盖/默认层。
+    QVariantMap sessionOverrides;
+    const QString sessionEffort = controller->selectedReasoning.toString();
+    if (controller->selectedReasoning.isValid() && !sessionEffort.isEmpty())
+        sessionOverrides.insert(QStringLiteral("reasoningEffort"), sessionEffort);
     controller->modelProfile = profile;
-    if (controller->agent()) m_configureModel(controller->agent(), profile);
+    if (controller->agent())
+        m_configureModel(controller->agent(), profile, sessionOverrides);
     if (controller == active()) emit chatModelChanged();
 }
 
@@ -1063,6 +1072,20 @@ QVariantMap AgentViewModel::chatModelProfile() const {
     if (!controller) return {};
     auto profile = controller->modelProfile;
     profile.remove("apiKey");
+    // docs/43 §4.3：会话临时档位不再混写进 modelProfile 顶层，而聊天区的
+    // ThinkingEffortSelector 仍以本属性回显当前会话档位，故在出口处按与
+    // 实际下发一致的优先级链补齐：会话临时值 > modelParams[model] 覆盖 >
+    // 顶层默认（缺键时保持顶层原值，维持"缺 = 跟随默认"语义）。
+    const QString sessionEffort = controller->selectedReasoning.toString();
+    if (controller->selectedReasoning.isValid() && !sessionEffort.isEmpty()) {
+        profile.insert(QStringLiteral("reasoningEffort"), sessionEffort);
+    } else {
+        const QVariantMap perModel = profile.value("modelParams").toMap()
+            .value(profile.value("model").toString()).toMap();
+        if (perModel.contains("reasoningEffort"))
+            profile.insert(QStringLiteral("reasoningEffort"),
+                           perModel.value("reasoningEffort").toString());
+    }
     return profile;
 }
 

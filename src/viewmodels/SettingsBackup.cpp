@@ -121,14 +121,20 @@ bool validValue(const SettingsKeyDef& def, const QJsonValue& value) {
 
 // An explicit field list also prevents unknown future profile fields from
 // silently leaking credentials into a portable, unencrypted JSON file.
+// docs/43 §7 #6：modelParams 为按模型参数覆盖表（模型名 → {参数键: 值}），
+// 整 map 透传，导出/导入两侧共用本白名单（一处改动双侧生效）；值的合法性
+// 由 SettingsService::sanitizeModelParams 在写入侧单点把关，备份层只校验
+// 身份字段，不做值的 sanitize。topP 为 v5 幽灵键（全仓无读写），v6 迁移已
+// 负责删除存量数据，白名单同步摘除（AC-7）。
 QJsonObject cleanProfile(const QJsonObject& input) {
     static const QStringList fields{
         QStringLiteral("id"), QStringLiteral("displayName"), QStringLiteral("kind"),
         QStringLiteral("provider"), QStringLiteral("apiProtocol"),
         QStringLiteral("baseUrl"), QStringLiteral("model"), QStringLiteral("models"),
-        QStringLiteral("temperature"), QStringLiteral("topP"),
+        QStringLiteral("temperature"),
         QStringLiteral("maxOutputTokens"), QStringLiteral("numCtx"),
-        QStringLiteral("contextLength"), QStringLiteral("reasoningEffort")};
+        QStringLiteral("contextLength"), QStringLiteral("reasoningEffort"),
+        QStringLiteral("modelParams")};
     QJsonObject clean;
     for (const QString& field : fields)
         if (input.contains(field)) clean.insert(field, input.value(field));

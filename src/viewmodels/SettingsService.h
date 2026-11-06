@@ -467,9 +467,10 @@ public:
     Q_INVOKABLE int modelContextWindow(const QString& apiProtocol, const QString& model) const;
 
     // Resolve the effective context budget for the active profile using a
-    // three-level priority: Profile-level "contextLength" override >
-    // capability-table contextWindow > global contextTokens. Consumed by
-    // main.cpp when wiring AIAgent::setContextLimit.
+    // four-level priority (docs/43 §4.2): per-model
+    // modelParams[model].contextLength override > profile-level
+    // "contextLength" override > capability-table contextWindow > global
+    // contextTokens. Consumed by main.cpp when wiring AIAgent::setContextLimit.
     int resolveContextLimit() const;
     int resolveContextLimitForProfile(const QVariantMap& profile) const;
 
@@ -499,6 +500,25 @@ public:
     // 把第 from 项移到第 to 项（最终位置），其余项顺移。索引非法、同位置
     // 或写盘失败都是 no-op；成功发 profilesChanged，不改变 activeProfileId。
     Q_INVOKABLE void moveProfile(int from, int to);
+
+    // docs/43（按模型参数）：profile 内每个模型可独立覆盖生成参数，覆盖表
+    // 存在 profile 顶层键 modelParams（模型名 → {参数键: 值}），缺键 = 跟随
+    // profile 默认。两个专用提交入口（追加在公开 API 尾部，沿用 docs/31
+    // S4.4 N4 惯例；不裸用 updateProfile 提交整个 map，避免 UI 并发拼装时
+    // 互相覆盖丢键）。
+    //
+    // setModelParam：为 profileId 的 model 写入单个覆盖键。value 是字符串
+    // （QML 输入框原样提交）：空串 = 删除该覆盖键（回到跟随默认）；非空 =
+    // 经 sanitizeModelParams 校验后写入。合法键集合与 profile 级参数一致：
+    // temperature / maxOutputTokens / numCtx / reasoningEffort /
+    // contextLength。校验失败（profile 不存在、model 不在 models 列表、
+    // 键或值非法）为 no-op 并 qCWarning——对齐 updateProfile 丢弃非法提交
+    // 的静默风格，不发 persistenceError。成功后 persist + profilesChanged
+    // （改动的是当前 profile 时补发 activeProfileChanged）。
+    Q_INVOKABLE void setModelParam(const QString& profileId, const QString& model,
+                                   const QString& key, const QString& value);
+    // 删除 model 的全部覆盖；model 无条目时 no-op（不报错，UI 幂等调用）。
+    Q_INVOKABLE void clearModelParams(const QString& profileId, const QString& model);
 
 signals:
     void persistenceError(const QString& message);
@@ -568,6 +588,11 @@ private:
     void load();
     QVariantList migrateLegacy();
     bool persist();
+    // docs/43 §4.4：modelParams 覆盖表的合法性校验（单一出口）。清洗
+    // profile 里的 modelParams 键：非 map 整体丢弃、覆盖表内非法键/非法值
+    // 丢弃；清洗后为空的模型条目与 modelParams 键本身一并移除。调用点：
+    // updateProfile 通用合并后 + load() 反序列化后。
+    void sanitizeModelParams(QVariantMap& profile);
 
     QVariantList m_profiles;   // each entry: {id, displayName, kind, provider, apiProtocol, baseUrl, apiKey, model, models}
     // 提示词与指令页的三组用户资产（JSON blob 持久化，同 modelProfiles 模式）。
