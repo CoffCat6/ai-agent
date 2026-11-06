@@ -35,6 +35,11 @@ class IAIService;
 class SubAgentTool : public ITool {
 public:
     static constexpr const char* kName = "spawn_agent";
+    // docs/43 P3-18: 排队等待的墙钟上限（与 subagent_wait 的
+    // kMaxWaitMs 对齐）。上游网络挂起时同步 join 不再无限期滞留：
+    // 超时返回可读错误，后台任务归类 stopCode=slot_timeout。测试
+    // 用 setMaxSlotWaitMs 调小注入。
+    static constexpr qint64 kMaxSlotWaitMs = 10 * 60 * 1000;
 
     // Creates one parentless IAIService per run. docs/35 P4.6: the role may
     // select a model profile and an effort override (both empty = the active
@@ -128,8 +133,12 @@ public:
 private:
     // Counting gate with cancel-aware queueing. onQueued fires once per
     // kSlotWaitSliceMs while the call has no slot (docs/35 P4.5).
-    bool acquireSlot(const Cancellation& cancelled,
-                     const std::function<void()>& onQueued);
+    // docs/43 P3-18: the queue is wall-clock bounded (kMaxSlotWaitMs);
+    // TimedOut tells the caller the wait itself gave up (distinct from a
+    // user cancellation).
+    enum class SlotResult { Acquired, Cancelled, TimedOut };
+    SlotResult acquireSlot(const Cancellation& cancelled,
+                           const std::function<void()>& onQueued);
     void releaseSlot();
     QVector<SubAgentToolEntry> catalogSnapshot() const;
     // presets + user roles, user entries first (override by name).
@@ -156,6 +165,12 @@ private:
     std::atomic<qint64> m_timeoutMs{0};     // 0 = no wall-clock budget
     std::atomic<int> m_contextLimit{0};     // 0 = no compression (docs/35 P4.1)
     std::atomic<bool> m_presetBackground{false};  // built-in role default
+    // docs/43 P3-18: slot-queue wall-clock cap (default kMaxSlotWaitMs).
+    std::atomic<qint64> m_maxSlotWaitMs{kMaxSlotWaitMs};
+
+public:
+    // Test/host injection for the slot-queue deadline (GUI thread).
+    void setMaxSlotWaitMs(qint64 ms) { m_maxSlotWaitMs.store(ms); }
 };
 
 } // namespace NexusAI

@@ -125,6 +125,14 @@ signals:
     // Coalesced by AIAgent (250ms) before reaching QML; still emitted from
     // arbitrary threads, so receivers must connect queued.
     void changed();
+    // docs/43 P2-7: emitted whenever a task reaches a terminal state —
+    // finishTask, queued-cancel and queued TTL expiry alike. AIAgent
+    // forwards it queued to the GUI thread and writes a subagent_finish
+    // audit row, so runs the model never collects are still traceable.
+    // summary: {taskId, sessionId, state, stopCode, steps, tokens,
+    // usage{input,output,cached,reported}}; usage is empty when the
+    // provider reported only an aggregate.
+    void taskFinished(const QVariantMap& summary);
 
 private:
     struct Entry {
@@ -156,6 +164,11 @@ private:
     // docs/43 O4: one panel row (cost/findings included). Shared by the
     // global and per-session snapshot views.
     QVariantMap snapshotOf(const Entry& entry, qint64 nowMs) const;
+    // docs/43 P2-7: terminal-state audit summary (caller holds m_mutex);
+    // stopCode/steps/tokens come from the stored report when there is one
+    // (queued-cancel / queued-TTL entries have none and get a synthetic
+    // stopCode).
+    QVariantMap terminalSummaryOf(const Entry& entry) const;
 
     // Router 会话（未安装时为空 = 不过滤）。
     static QString currentSessionScope();

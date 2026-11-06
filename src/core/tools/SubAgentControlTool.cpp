@@ -91,6 +91,16 @@ ToolDefinition SubAgentWaitTool::definition() const {
     def.readOnly = true;
     QJsonObject props;
     props.insert(QStringLiteral("id"), idParam());
+    // docs/43 P3-15: 单 id 收割也接受 todo_id——后台链路的报告头与同步
+    // spawn 同样回显该 todo，提醒模型同步状态（批量路径多任务混杂，
+    // 不回显）。
+    QJsonObject waitTodoParam{
+        {"type", QLatin1String("string")},
+        {"description", QStringLiteral(
+            "Optional id of the todo item this sub-task implements (same "
+            "meaning as spawn_agent's todo_id). With a single 'id' the "
+            "report header echoes it as a reminder to update that item.")}};
+    props.insert(QStringLiteral("todo_id"), waitTodoParam);
     QJsonObject idsParam{
         {"type", QLatin1String("array")},
         {"items", QJsonObject{{"type", QLatin1String("string")}}},
@@ -169,9 +179,13 @@ ToolResult SubAgentWaitTool::execute(const QJsonObject& args,
             return ToolResult::fail(QStringLiteral(
                 "Background sub-agent %1 finished without a stored report "
                 "(internal error).").arg(id));
+        // docs/43 P3-15: 单 id 收割回显 todo_id（与同步 spawn 的报告头
+        // 同口径）；批量路径不适用。
+        const QString todoId =
+            args.value(QStringLiteral("todo_id")).toString().trimmed();
         ToolResult result = report->ok
-            ? ToolResult::ok(SubAgentTool::reportOutput(*report))
-            : ToolResult::fail(SubAgentTool::reportOutput(*report));
+            ? ToolResult::ok(SubAgentTool::reportOutput(*report, todoId))
+            : ToolResult::fail(SubAgentTool::reportOutput(*report, todoId));
         // docs/43 O2: same structured report as the synchronous spawn path.
         result.metadata.insert(QStringLiteral("subagentReport"),
                                SubAgentTool::reportJson(*report));

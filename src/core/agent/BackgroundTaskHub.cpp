@@ -116,12 +116,16 @@ QString BackgroundTaskHub::createTask(const QString& goal, const QString& role,
         entry.spawnArgs = spawnArgs;
         m_tasks.insert(id, entry);
         m_order.append(id);
+        // docs/43 P2-8: start() under m_mutex so it is serialized with the
+        // destructor's delete path — previously the window between the
+        // m_shuttingDown check (in lock) and start() (out of lock) could
+        // race a tab teardown into starting work on a deleted pool.
+        m_pool->start(QRunnable::create([this, id, work = std::move(work)]() {
+            if (!markRunning(id)) return;   // cancelled while queued
+            work(id);
+        }));
     }
     emit changed();
-    m_pool->start(QRunnable::create([this, id, work = std::move(work)]() {
-        if (!markRunning(id)) return;   // cancelled while queued
-        work(id);
-    }));
     // TTL is armed on the hub's thread (createTask may run on a pool thread;
     // QTimer::singleShot with a receiver is thread-safe). The hub's ownership
     // contract is the GUI/main thread; on an adopted std::thread (test-only
@@ -134,6 +138,7 @@ QString BackgroundTaskHub::createTask(const QString& goal, const QString& role,
 }
 
 void BackgroundTaskHub::expire(const QString& id) {
+    QVariantMap summary;
     {
         QMutexLocker lock(&m_mutex);
         Entry* entry = findEntry(id);
@@ -147,10 +152,16 @@ void BackgroundTaskHub::expire(const QString& id) {
             entry->finishedAtMs = QDateTime::currentMSecsSinceEpoch();
             entry->cancelling = false;
             entry->slotQueued = false;
+            // docs/43 P2-7: queued TTL expiry never reaches finishTask
+            // (no runner ever started); emit the audit summary here.
+            summary = terminalSummaryOf(*entry);
+            summary[QStringLiteral("stopCode")] = QStringLiteral("timeout");
+            summary[QStringLiteral("reason")] = QStringLiteral("ttl_queued");
         }
         m_cv.wakeAll();
     }
     emit changed();
+    if (!summary.isEmpty()) emit taskFinished(summary);
 }
 
 bool BackgroundTaskHub::markRunning(const QString& id) {
@@ -205,6 +216,7 @@ void BackgroundTaskHub::updateProgress(const QString& id, const QString& phase,
 }
 
 void BackgroundTaskHub::finishTask(const QString& id, const SubAgentReport& report) {
+    QVariantMap summary;
     {
         QMutexLocker lock(&m_mutex);
         Entry* entry = findEntry(id);
@@ -224,9 +236,14 @@ void BackgroundTaskHub::finishTask(const QString& id, const SubAgentReport& repo
         } else if (!report.ok && report.stop != SubAgentReport::Stop::Cancelled) {
             entry->error = report.text;
         }
+        // docs/43 P2-7: audit summary for every terminal transition (also
+        // covers runner-side cancel and running TTL expiry).
+        summary = terminalSummaryOf(*entry);
+        if (entry->expired) summary[QStringLiteral("reason")] = QStringLiteral("ttl");
         m_cv.wakeAll();
     }
     emit changed();
+    if (!summary.isEmpty()) emit taskFinished(summary);
 }
 
 bool BackgroundTaskHub::cancel(const QString& id) {
@@ -242,6 +259,7 @@ bool BackgroundTaskHub::cancelImpl(const QString& id,
                                    const QString& sessionScope,
                                    bool anySession) {
     bool cancelledNow = false;
+    QVariantMap summary;
     {
         QMutexLocker lock(&m_mutex);
         Entry* entry = findEntry(id);
@@ -257,6 +275,11 @@ bool BackgroundTaskHub::cancelImpl(const QString& id,
             entry->error = QStringLiteral("cancelled before start");
             entry->finishedAtMs = QDateTime::currentMSecsSinceEpoch();
             entry->slotQueued = false;
+            // docs/43 P2-7: queued-cancel never reaches finishTask either.
+            summary = terminalSummaryOf(*entry);
+            summary[QStringLiteral("stopCode")] = QStringLiteral("cancelled");
+            summary[QStringLiteral("reason")] =
+                QStringLiteral("cancelled_before_start");
         } else {
             // A running task keeps its state until the runner unwinds and
             // calls finishTask(); the token is what it polls. The flag gives
@@ -270,6 +293,7 @@ bool BackgroundTaskHub::cancelImpl(const QString& id,
         m_cv.wakeAll();
     }
     if (cancelledNow) emit changed();
+    if (!summary.isEmpty()) emit taskFinished(summary);
     return cancelledNow;
 }
 
@@ -354,8 +378,34 @@ QVariantMap BackgroundTaskHub::snapshotOf(const Entry& entry, qint64 nowMs) cons
         {QStringLiteral("stopCode"), stopCode}};
 }
 
-int BackgroundTaskHub::activeCount() const {
-    QMutexLocker lock(&m_mutex);
+// docs/43 P2-7: audit-side terminal summary. Caller holds m_mutex. Entries
+// without a stored report (queued-cancel / queued-TTL) carry zeros and a
+// synthetic stopCode their emit-site overrides.
+QVariantMap BackgroundTaskHub::terminalSummaryOf(const Entry& entry) const {
+    QVariantMap usage;
+    int tokens = 0;
+    QString stopCode;
+    if (entry.hasReport) {
+        tokens = entry.report.tokensUsed;
+        stopCode = entry.report.stopCode;
+        usage = QVariantMap{
+            {QStringLiteral("input"), entry.report.usage.inputTokens},
+            {QStringLiteral("output"), entry.report.usage.outputTokens},
+            {QStringLiteral("cached"), entry.report.usage.cachedTokens},
+            {QStringLiteral("reported"),
+             entry.report.usage.usageReported}};
+    }
+    return QVariantMap{
+        {QStringLiteral("taskId"), entry.id},
+        {QStringLiteral("sessionId"), entry.sessionId},
+        {QStringLiteral("state"), entry.state},
+        {QStringLiteral("stopCode"), stopCode},
+        {QStringLiteral("steps"), entry.steps},
+        {QStringLiteral("tokens"), tokens},
+        {QStringLiteral("usage"), usage}};
+}
+
+int BackgroundTaskHub::activeCount() const {    QMutexLocker lock(&m_mutex);
     int active = 0;
     for (const auto& entry : m_tasks) {
         if (!isTerminal(entry.state)) ++active;
@@ -474,8 +524,13 @@ QHash<QString, QString> BackgroundTaskHub::waitForMany(
         bool allTerminal = true;
         for (const QString& id : ids) {   // ids order keeps results stable
             const QString state = states.value(id);
-            const bool terminal = isTerminal(state)
-                || state == QLatin1String("missing");
+            // docs/43 P3-11: missing is NOT terminal — same contract as the
+            // single-id path (which reports unknownTask). A removed or
+            // other-session id mixed into the batch no longer fakes an
+            // immediate "ready"; it surfaces as missing in the state line
+            // after the wait times out (the hasTask pre-check at the entry
+            // already rejects ids missing at call time).
+            const bool terminal = isTerminal(state);
             anyTerminal = anyTerminal || terminal;
             allTerminal = allTerminal && terminal;
         }

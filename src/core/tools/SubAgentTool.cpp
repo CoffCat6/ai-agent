@@ -304,15 +304,21 @@ QVector<SubAgentToolEntry> SubAgentTool::catalogSnapshot() const {
     return m_catalog;
 }
 
-bool SubAgentTool::acquireSlot(const Cancellation& cancelled,
-                               const std::function<void()>& onQueued) {
+SubAgentTool::SlotResult SubAgentTool::acquireSlot(
+        const Cancellation& cancelled,
+        const std::function<void()>& onQueued) {
     std::unique_lock<std::mutex> lock(m_gateMutex);
     bool countedQueued = false;
+    // docs/43 P3-18: 排队有界——同步路径的 join 与后台任务的调度都不该
+    // 因为上游挂起而无限期滞留（旧行为用户只能 stop 打断）。上限对齐
+    // subagent_wait 的 kMaxWaitMs；测试可注入调小。
+    const auto deadline = std::chrono::steady_clock::now()
+        + std::chrono::milliseconds(m_maxSlotWaitMs.load());
     while (true) {
         if (m_activeRuns < m_maxParallel) {
             ++m_activeRuns;
             if (countedQueued) --m_queuedRuns;
-            return true;
+            return SlotResult::Acquired;
         }
         // docs/43 O3: queued runs are visible to gateSummary() so the primary
         // agent can see that its next spawn will only wait.
@@ -329,7 +335,11 @@ bool SubAgentTool::acquireSlot(const Cancellation& cancelled,
                           [&]() { return m_activeRuns < m_maxParallel; });
         if (cancelled && cancelled->load()) {
             if (countedQueued) --m_queuedRuns;
-            return false;
+            return SlotResult::Cancelled;
+        }
+        if (std::chrono::steady_clock::now() >= deadline) {
+            if (countedQueued) --m_queuedRuns;
+            return SlotResult::TimedOut;
         }
     }
 }
@@ -469,68 +479,99 @@ ToolResult SubAgentTool::execute(const QJsonObject& args, const Cancellation& ca
                     report.stop = SubAgentReport::Stop::Cancelled;
                     report.text = QStringLiteral(
                         "Sub-agent cancelled before start.");
-                } else if (!acquireSlot(bgCancelled, [hub, id]() {
-                    // P4.5：后台任务的「等待并发槽位」也要上屏。同步路径
-                    // 由 AIAgent 的线程局部进度钩子负责；后台路径没有钩子，
-                    // 必须显式写 hub，否则面板会把等待中的任务误报成运行中。
-                    hub->updateProgress(
-                        id, QStringLiteral("queued"),
-                        QStringLiteral("waiting for a free sub-agent slot"),
-                        0, 0);
-                })) {
-                    report.stop = SubAgentReport::Stop::Cancelled;
-                    report.text = QStringLiteral(
-                        "Sub-agent cancelled while waiting for a free sub-agent slot.");
                 } else {
-                    bgRequest.progress = [hub, id](const SubAgentProgress& p) {
-                        hub->updateProgress(id, p.phase, p.detail,
-                                            p.step, p.maxSteps);
-                    };
-                    // docs/43 O1-T3: one automatic re-run on transient errors.
-                    for (int attempt = 1; attempt <= kSubAgentMaxAttempts; ++attempt) {
-                        if (bgCancelled->load()) {
-                            report.stop = SubAgentReport::Stop::Cancelled;
-                            report.text = QStringLiteral(
-                                "Sub-agent cancelled before attempt %1.").arg(attempt);
-                            break;
+                    const SlotResult slot =
+                        acquireSlot(bgCancelled, [hub, id]() {
+                            // P4.5：后台任务的「等待并发槽位」也要上屏。
+                            // 同步路径由 AIAgent 的线程局部进度钩子负责；
+                            // 后台路径没有钩子，必须显式写 hub，否则面板
+                            // 会把等待中的任务误报成运行中。
+                            hub->updateProgress(
+                                id, QStringLiteral("queued"),
+                                QStringLiteral(
+                                    "waiting for a free sub-agent slot"),
+                                0, 0);
+                        });
+                    if (slot == SlotResult::Cancelled) {
+                        report.stop = SubAgentReport::Stop::Cancelled;
+                        report.text = QStringLiteral(
+                            "Sub-agent cancelled while waiting for a free "
+                            "sub-agent slot.");
+                    } else if (slot == SlotResult::TimedOut) {
+                        // docs/43 P3-18: 排队超时——不自动重试（槽位压力
+                        // 是环境态，模型自己决定等/取消/稍后再试）。
+                        report.stop = SubAgentReport::Stop::TimedOut;
+                        report.stopCode =
+                            QStringLiteral("slot_timeout");
+                        report.text = QStringLiteral(
+                            "Timed out after %1 ms waiting for a free "
+                            "sub-agent slot. Wait for running sub-agents to "
+                            "finish, cancel one, or retry later.")
+                            .arg(m_maxSlotWaitMs.load());
+                    } else {
+                        bgRequest.progress =
+                            [hub, id](const SubAgentProgress& p) {
+                                hub->updateProgress(id, p.phase, p.detail,
+                                                    p.step, p.maxSteps);
+                            };
+                        // docs/43 O1-T3: one automatic re-run on transient
+                        // errors.
+                        for (int attempt = 1;
+                             attempt <= kSubAgentMaxAttempts; ++attempt) {
+                            if (bgCancelled->load()) {
+                                report.stop =
+                                    SubAgentReport::Stop::Cancelled;
+                                report.text = QStringLiteral(
+                                    "Sub-agent cancelled before attempt %1.")
+                                                      .arg(attempt);
+                                break;
+                            }
+                            IAIService* service = factory
+                                ? factory(roleProfileId, roleEffort)
+                                : nullptr;
+                            SubAgentReport attemptReport =
+                                SubAgentRunner::run(service, bgRequest);
+                            delete service;
+                            if (attempt > 1) {
+                                attemptReport.steps += report.steps;
+                                attemptReport.tokensUsed
+                                    += report.tokensUsed;
+                                // docs/43 O4 审计收口（P1-2）: 分类用量必须与
+                                // steps/tokensUsed 同样跨 attempt 累计；否则被
+                                // 末次 attempt 覆盖，input+output ≠ tokensUsed，
+                                // 成本芯片与审计 subagent_usage 双通道失真。
+                                attemptReport.usage.inputTokens
+                                    += report.usage.inputTokens;
+                                attemptReport.usage.outputTokens
+                                    += report.usage.outputTokens;
+                                attemptReport.usage.cachedTokens
+                                    += report.usage.cachedTokens;
+                                attemptReport.usage.usageReported
+                                    = attemptReport.usage.usageReported
+                                      || report.usage.usageReported;
+                            }
+                            report = attemptReport;
+                            report.attempt = attempt;
+                            if (report.ok || !report.retryable
+                                    || bgCancelled->load())
+                                break;
+                            if (attempt >= kSubAgentMaxAttempts) break;
+                            bgRequest.context += QStringLiteral(
+                                "\nPrevious attempt failed (%1); avoid the "
+                                "same failure and try a different approach "
+                                "if needed.")
+                                .arg(report.text.left(300));
+                            hub->updateProgress(
+                                id, QStringLiteral("retry"),
+                                QStringLiteral(
+                                    "attempt %1/%2 after a transient failure")
+                                    .arg(attempt + 1)
+                                    .arg(kSubAgentMaxAttempts),
+                                0, 0);
                         }
-                        IAIService* service = factory
-                            ? factory(roleProfileId, roleEffort) : nullptr;
-                        SubAgentReport attemptReport =
-                            SubAgentRunner::run(service, bgRequest);
-                        delete service;
-                        if (attempt > 1) {
-                            attemptReport.steps += report.steps;
-                            attemptReport.tokensUsed += report.tokensUsed;
-                            // docs/43 O4 审计收口（P1-2）: 分类用量必须与
-                            // steps/tokensUsed 同样跨 attempt 累计；否则被末次
-                            // attempt 覆盖，input+output ≠ tokensUsed，成本
-                            // 芯片与审计 subagent_usage 双通道失真。
-                            attemptReport.usage.inputTokens
-                                += report.usage.inputTokens;
-                            attemptReport.usage.outputTokens
-                                += report.usage.outputTokens;
-                            attemptReport.usage.cachedTokens
-                                += report.usage.cachedTokens;
-                            attemptReport.usage.usageReported
-                                = attemptReport.usage.usageReported
-                                  || report.usage.usageReported;
-                        }
-                        report = attemptReport;
-                        report.attempt = attempt;
-                        if (report.ok || !report.retryable || bgCancelled->load())
-                            break;
-                        if (attempt >= kSubAgentMaxAttempts) break;
-                        bgRequest.context += QStringLiteral(
-                            "\nPrevious attempt failed (%1); avoid the same "
-                            "failure and try a different approach if needed.")
-                            .arg(report.text.left(300));
-                        hub->updateProgress(id, QStringLiteral("retry"),
-                            QStringLiteral("attempt %1/%2 after a transient failure")
-                                .arg(attempt + 1).arg(kSubAgentMaxAttempts), 0, 0);
+                        report.usage.profileId = roleProfileId;
+                        releaseSlot();
                     }
-                    report.usage.profileId = roleProfileId;
-                    releaseSlot();
                 }
                 hub->finishTask(id, report);
             },
@@ -558,10 +599,20 @@ ToolResult SubAgentTool::execute(const QJsonObject& args, const Cancellation& ca
             progressHook(SubAgentProgress{0, 0, QStringLiteral("queued"),
                                           QStringLiteral("waiting for a free slot")});
     };
-if (!acquireSlot(cancelled, onQueued)) {
+    // docs/43 P3-18: TimedOut 与用户取消分开——排队本身放弃了，报可读
+    // 错误让模型决定等运行中的子代理结束、取消一个、或稍后再试。
+    const SlotResult slot = acquireSlot(cancelled, onQueued);
+    if (slot == SlotResult::Cancelled) {
         return ToolResult::fail(QStringLiteral(
             "Sub-agent did not complete the goal. Reason: Sub-agent cancelled "
             "while waiting for a free sub-agent slot."));
+    }
+    if (slot == SlotResult::TimedOut) {
+        return ToolResult::fail(QStringLiteral(
+            "Sub-agent did not complete the goal. Reason: timed out after "
+            "%1 ms waiting for a free sub-agent slot (all slots busy). Wait "
+            "for running sub-agents to finish, cancel one, or retry later.")
+            .arg(m_maxSlotWaitMs.load()));
     }
 
     SubAgentRequest request;

@@ -201,24 +201,38 @@ QString systemPrompt() {
         "talk, or needs no fresh information, reply directly - earlier tool usage in "
         "this conversation does not make a tool call appropriate now.\n"
         "Always reply in the same language the user writes in.\n"
-        "\n"
-        "Delegation policy (spawn_agent):\n"
-        "- Delegate when a task has 3+ independent directions, needs a broad "
-        "survey, or an independent review. Otherwise answer or do 1-2 "
-        "lookups yourself.\n"
-        "- Roles: explore = survey, research = verification, review = "
-        "critic, coder = draft proposals.\n"
-        "- Short blocking tasks run synchronously; long surveys/drafts use "
-        "background=true + subagent_wait(id). Capacity is capped - extra "
-        "spawns queue.\n"
-        "- Goals must be self-contained (sub-agents see neither this "
-        "conversation nor your todos). Pass todo_id and update that item "
-        "when the report returns.\n"
-        "- Transient failures retry once automatically; if it still fails, "
-        "change the approach instead of repeating the same goal.\n"
-        "- Synthesize: conclusion, evidence (path:line), conflicts, gaps. "
-        "Never paste a report verbatim.\n"
     ).arg(QSysInfo::productType());
+}
+
+// docs/43 O4-4: delegation policy 抽成条件注入块——仅当 spawn_agent 实际
+// 在下发工具面里（isToolUsable && toolAllowedForModel，与 schema 序列化
+// 同源判定）才注入。禁用子代理的会话不再教模型委托：既省提示 token，
+// 也避免引导模型调用 schema 里不存在的工具。四段式编排循环（Plan →
+// Spawn → Collect → Synthesize）承担决策层指引；参数机械细节（schema、
+// background 语义、todo_id 用法）留在 spawn_agent 的工具描述里，两处
+// 不再双写同一口径。Collect 段含 docs/43 O3 的批量收割指引（wait-any）。
+QString delegationPolicyBlock() {
+    return QStringLiteral(
+        "\n\nDelegation policy (spawn_agent):\n"
+        "- Plan: when a task splits into 3+ independent directions, needs "
+        "a broad survey, or an independent review, break it into "
+        "self-contained sub-tasks and track them with todo_write first. "
+        "Otherwise answer directly or do 1-2 lookups yourself.\n"
+        "- Spawn: assign each sub-task to the matching role (explore = "
+        "survey, research = verification, review = critic, coder = draft "
+        "proposals). Short blocking tasks run synchronously; long "
+        "surveys/drafts use background=true. Capacity is capped - extra "
+        "spawns queue.\n"
+        "- Collect: after a fan-out, harvest the ids with ONE batched "
+        "subagent_wait(ids, mode=any|all) instead of waiting one by one; "
+        "peek with subagent_status(id) while you keep working. Goals must "
+        "be self-contained (sub-agents see neither this conversation nor "
+        "your todos) - pass todo_id and update that item when the report "
+        "returns.\n"
+        "- Synthesize: conclusion, evidence (path:line), conflicts, gaps. "
+        "Never paste a report verbatim. Transient failures retry once "
+        "automatically; if it still fails, change the approach instead of "
+        "repeating the same goal.\n");
 }
 
 // docs/43 O3: background sub-agents are asynchronous; without a status block
@@ -300,6 +314,37 @@ AIAgent::AIAgent(QObject* parent)
     connect(m_backgroundHub.get(), &BackgroundTaskHub::changed, this, [this]() {
         if (!m_backgroundNotifyTimer.isActive())
             m_backgroundNotifyTimer.start();
+    }, Qt::QueuedConnection);
+    // docs/43 P2-7: 后台任务终态审计——未被 subagent_wait 收割的完成/TTL/
+    // 取消此前在审计侧不可追溯（成本核算缺漏）。hub 从池线程发 summary，
+    // Queued 回 GUI 线程写 subagent_finish 行（retry 的重派另有
+    // subagent_retry 行，见 retryBackgroundSubAgent）。
+    connect(m_backgroundHub.get(), &BackgroundTaskHub::taskFinished, this,
+            [this](const QVariantMap& summary) {
+        if (!m_memory) return;
+        QJsonObject usage = QJsonObject::fromVariantMap(
+            summary.value(QStringLiteral("usage")).toMap());
+        // 与工具路径审计同口径（P3-14）：分类用量未上报时不入库，
+        // 消费方读 tokens，不误读 0 为免费。
+        if (!usage.value("reported").toBool()) usage = {};
+        QJsonObject detail{
+            {"taskId", summary.value(QStringLiteral("taskId")).toString()},
+            {"state", summary.value(QStringLiteral("state")).toString()},
+            {"stopCode",
+             summary.value(QStringLiteral("stopCode")).toString()},
+            {"reason", summary.value(QStringLiteral("reason")).toString()},
+            {"steps", summary.value(QStringLiteral("steps")).toInt()},
+            {"tokens", summary.value(QStringLiteral("tokens")).toInt()}};
+        if (!usage.isEmpty()) detail["usage"] = usage;
+        const bool ok = summary.value(QStringLiteral("state")).toString()
+                        == QLatin1String("completed");
+        m_memory->logAudit(
+            summary.value(QStringLiteral("sessionId")).toString(),
+            QStringLiteral("subagent_finish"),
+            QStringLiteral("spawn_agent"),
+            summary.value(QStringLiteral("taskId")).toString(), ok,
+            QString::fromUtf8(
+                QJsonDocument(detail).toJson(QJsonDocument::Compact)));
     }, Qt::QueuedConnection);
 
     m_streamTimer.setSingleShot(true);
@@ -434,6 +479,16 @@ void AIAgent::setSystemPromptOverride(const QString& prompt) {
 QString AIAgent::effectiveSystemPrompt() const {
     QString prompt = m_systemPromptOverride.isEmpty()
         ? systemPrompt() : m_systemPromptOverride;
+    // docs/43 O4-4: delegation policy rides with the dispatched tool schema
+    // — injected only when spawn_agent is actually usable for this model
+    // (same isToolUsable/toolAllowedForModel gate the schema serialization
+    // applies). A user override takes over the whole prompt (same semantics
+    // as the todo/background blocks below).
+    if (m_systemPromptOverride.isEmpty() && m_toolRegistry
+            && m_toolRegistry->isToolUsable(
+                QLatin1String(SubAgentTool::kName))
+            && toolAllowedForModel(QLatin1String(SubAgentTool::kName)))
+        prompt += delegationPolicyBlock();
     // P0 项目上下文：附加在基础提示之后（用户自定义 override 也附加），
     // startTask 与 resumeSession 都经此处组装，续聊同样携带项目信息。
     const QString project = projectContextBlock();
@@ -1478,11 +1533,18 @@ void AIAgent::resetSession() {
     m_todoIdSeq = 0;
     if (m_llmService && wasActive) m_llmService->cancel();
 
+    // docs/43 P2-5: 切走前留存会话 id（下面的终态清理按它过滤）。
+    const QString leavingSession = m_sessionId;
     m_sessionId.clear();
     // docs/35 P4.4: proposal ids are session-scoped and never persisted.
     m_proposalStore->clear();
-    // docs/35 P4.3: 后台任务属于正在离开的会话——统一取消并清理映射。
-    if (m_backgroundHub) m_backgroundHub->cancelAll();
+    // docs/43 P2-5: 后台任务与会话绑定并保留至完成（TTL 30 分钟兜底）；
+    // 面板/系统提示/trace 均按会话过滤（snapshotsForSession），不会串台。
+    // 这里只清掉离开会话的终态条目——来回切换会话不再误杀正在运行的
+    // 后台任务（旧行为 cancelAll：长调查期间切走再切回，任务已全灭、
+    // token 白烧；终态仍由 taskFinished 审计行追溯）。
+    if (m_backgroundHub && !leavingSession.isEmpty())
+        m_backgroundHub->removeFinishedInSession(leavingSession);
     m_backgroundNodeIds.clear();
     m_backgroundNodeStates.clear();
     m_episodicInjection.clear();   // session-scoped; next fresh launch sets it
@@ -1517,9 +1579,11 @@ void AIAgent::resumeSession(const QString& sessionId) {
     m_messages = QJsonArray();
     // docs/35 P4.4: proposal ids do not cross sessions (not persisted).
     m_proposalStore->clear();
-    // docs/35 P4.3: background tasks from the previous session must not keep
-    // running against this session's panel.
-    if (m_backgroundHub) m_backgroundHub->cancelAll();
+    // docs/43 P2-5: 与 resetSession 同语义——不再 cancelAll。其他会话的
+    // 运行中任务保留（按会话过滤不串台，TTL 兜底）；只清掉被恢复会话
+    // 自身的历史终态条目，面板干净。
+    if (m_backgroundHub)
+        m_backgroundHub->removeFinishedInSession(sessionId);
     m_backgroundNodeIds.clear();
     m_backgroundNodeStates.clear();
     m_episodicInjection.clear();   // resumed sessions never carried one
@@ -2251,13 +2315,14 @@ bool AIAgent::cancelBackgroundSubAgent(const QString& taskId) {
 // subagent_task 节点与面板行由 syncBackgroundTraceNodes 走既有链路呈现。
 bool AIAgent::retryBackgroundSubAgent(const QString& taskId) {
     if (!m_backgroundHub || m_sessionId.isEmpty()) return false;
-    // 只重派终态任务；queued/running/cancelling 拒绝（等它结束再谈重试）。
+    // 只重派终态任务；queued/running 拒绝（等它结束再谈重试）。注意
+    // cancelling 不是 state 而是 Entry flag：请求取消期间 state 仍是
+    // running，已被上面的 running 分支拒绝（docs/43 P3-13：旧代码里
+    // state=="cancelling" 的判断永不成立，属死码已删）。
     const QString state =
         m_backgroundHub->stateLabelForSession(m_sessionId, taskId);
     if (state.isEmpty()) return false;   // 未知 id 或别的会话
-    if (state == QLatin1String("queued")
-            || state == QLatin1String("running")
-            || state == QLatin1String("cancelling"))
+    if (state == QLatin1String("queued") || state == QLatin1String("running"))
         return false;
     // 保存的原始参数（旧任务无快照 → 空 → 不可重试）。
     const QJsonObject spawnArgs =
@@ -2283,12 +2348,19 @@ bool AIAgent::retryBackgroundSubAgent(const QString& taskId) {
                              spawnProjectRules, dispatchSessionId,
                              store = m_proposalStore,
                              hub = m_backgroundHub]() -> ToolResult {
-        const Sandbox::ExecutionScope scope(projectRoot);
-        ProposalStoreRouter proposalRouter(store);
-        BackgroundTaskHubRouter backgroundRouter(hub, dispatchSessionId);
-        SubAgentRulesRouter rulesRouter(spawnProjectRules);
-        return tool->execute(call.arguments, cancelled);
-    });
+         const Sandbox::ExecutionScope scope(projectRoot);
+         ProposalStoreRouter proposalRouter(store);
+         BackgroundTaskHubRouter backgroundRouter(hub, dispatchSessionId);
+         SubAgentRulesRouter rulesRouter(spawnProjectRules);
+         return tool->execute(call.arguments, cancelled);
+     });
+    // docs/43 P2-7: 重派全程此前无审计行；GUI 线程补一行（新任务自身的
+    // 终态由 hub 的 taskFinished 审计覆盖）。
+    if (m_memory)
+        m_memory->logAudit(m_sessionId, QStringLiteral("subagent_retry"),
+                           QStringLiteral("spawn_agent"), taskId, true,
+                           QStringLiteral("re-dispatched from state %1")
+                               .arg(state));
     return true;
 }
 
@@ -2393,6 +2465,7 @@ void AIAgent::syncBackgroundTraceNodes() {
             continue;
         }
         if (m_backgroundNodeStates.value(id) == state) continue;
+        bool found = false;
         for (int i = 0; i < m_traceModel.size(); ++i) {
             QJsonObject node = m_traceModel.at(i).toObject();
             if (node.value("id").toString() != nodeId) continue;
@@ -2401,7 +2474,16 @@ void AIAgent::syncBackgroundTraceNodes() {
             m_traceModel.replace(i, node);
             persistTraceNode(node, i);
             emit traceChanged();
+            found = true;
             break;
+        }
+        if (!found) {
+            // docs/43 P3-16: 节点已被 rewindLastTurn 一类截断删除——清掉死
+            // 映射让下一轮 sync 重建（旧行为继续更新 state 映射，旧
+            // nodeId 永久静默，时间线状态从此不再更新）。
+            m_backgroundNodeIds.remove(id);
+            m_backgroundNodeStates.remove(id);
+            continue;
         }
         m_backgroundNodeStates.insert(id, state);
     }
@@ -3188,8 +3270,28 @@ void AIAgent::finishToolExecution(const ToolCallInfo& call, const QString& trace
             {"findingCount", full.value("findings").toArray().size()}};
         QJsonArray top;
         const QJsonArray findings = full.value("findings").toArray();
-        for (int i = 0; i < findings.size() && i < 3; ++i)
-            top.append(findings.at(i));
+        // docs/43 P3-17: 按严重度取前 3（旧行为按报告顺序切片，「前 3」
+        // 未必是「最严重 3」）；同权重保持报告顺序（稳定排序）。
+        const auto severityRank = [](const QString& severity) {
+            if (severity == QLatin1String("critical")) return 4;
+            if (severity == QLatin1String("high")) return 3;
+            if (severity == QLatin1String("medium")) return 2;
+            if (severity == QLatin1String("low")) return 1;
+            return 0;
+        };
+        QVector<QPair<int, QJsonValue>> ranked;
+        ranked.reserve(findings.size());
+        for (const QJsonValue& value : findings)
+            ranked.append({severityRank(
+                               value.toObject().value("severity").toString()),
+                           value});
+        std::stable_sort(ranked.begin(), ranked.end(),
+                         [](const QPair<int, QJsonValue>& a,
+                            const QPair<int, QJsonValue>& b) {
+                             return a.first > b.first;
+                         });
+        for (int i = 0; i < ranked.size() && i < 3; ++i)
+            top.append(ranked.at(i).second);
         if (!top.isEmpty()) light["topFindings"] = top;
         resultExtra["subagentReport"] = light;
     }
@@ -3339,7 +3441,11 @@ void AIAgent::finishToolExecution(const ToolCallInfo& call, const QString& trace
                 {"subagent_tokens", tokens}};
             if (attempts > 0) detail["subagent_attempts"] = attempts;
             if (!stopCode.isEmpty()) detail["subagent_stop_code"] = stopCode;
-            if (!usage.isEmpty()) detail["subagent_usage"] = usage;
+            // docs/43 P3-14: 分类用量与 UI 同口径——仅 provider 真上报
+            // （reported=true）时入库；否则不入，消费方读 subagent_tokens
+            // 兜底，不把全 0 的 usage 对象误读成"免费"。
+            if (!usage.isEmpty() && usage.value("reported").toBool())
+                detail["subagent_usage"] = usage;
             if (!batch.isEmpty()) detail["subagent_batch_size"] = batch.size();
             // docs/33 E4: 计划对齐——调用带了 todo_id 时落审计，任务清单
             // 项 ↔ 子代理运行的对应关系可追溯。
