@@ -27,6 +27,7 @@
 
 #include "viewmodels/AppInfo.h"
 #include "viewmodels/ChangeBus.h"
+
 #include "viewmodels/EditBuffer.h"
 #include "viewmodels/FontProbe.h"
 #include "viewmodels/Onboarding.h"
@@ -1367,6 +1368,269 @@ private slots:
         QTRY_VERIFY(!settings->profiles().at(0).toMap()
                         .contains(QStringLiteral("modelParams")));
         QTRY_VERIFY(!dialog->property("visible").toBool());
+
+        win->close();
+        while (!settings->profiles().isEmpty()) {
+            settings->removeProfile(settings->profiles().first().toMap()
+                                        .value(QStringLiteral("id")).toString());
+        }
+    }
+
+    // 任务 #11：添加模型不再只靠回车。按钮与 onAccepted 共用
+    // commitAddModel；这里经真实页面覆盖「输入 → 按钮可点 → 点击 → 落库 +
+    // 清空 → 按钮重新禁用」整条链路。
+    void addModelButtonCommitsFieldText() {
+        auto* settings = SettingsService::instance();
+        while (!settings->profiles().isEmpty()) {
+            settings->removeProfile(settings->profiles().first().toMap()
+                                        .value(QStringLiteral("id")).toString());
+        }
+        const QString profileId = settings->addProfile(QStringLiteral("openai"));
+        QVERIFY(!profileId.isEmpty());
+        settings->updateProfile(profileId,
+                                QVariantMap{{QStringLiteral("baseUrl"),
+                                             QStringLiteral("https://api.example.com/v1")}});
+        settings->setActiveProfile(profileId);
+
+        NexusQrcFallback fallback(QStringLiteral(NEXUS_BUILD_DIR "/NexusAI"));
+        QQmlApplicationEngine engine;
+        engine.addUrlInterceptor(&fallback);
+        engine.addImportPath(QStringLiteral(NEXUS_BUILD_DIR));
+        QQmlComponent component(
+            &engine,
+            QUrl::fromLocalFile(QStringLiteral(NEXUS_TEST_QML_DIR
+                                               "/ModelConfigHarness.qml")));
+        QVERIFY2(component.isReady(), qPrintable(component.errorString()));
+        std::unique_ptr<QObject> root(component.create());
+        QVERIFY2(root, qPrintable(component.errorString()));
+
+        auto* win = qobject_cast<QQuickWindow*>(root.get());
+        QVERIFY(win);
+        win->resize(1000, 760);
+        win->show();
+        QVERIFY(QTest::qWaitForWindowExposed(win));
+
+        QQuickItem* page = findVisualItem(win->contentItem(),
+                                          QStringLiteral("modelConfigPage"));
+        QVERIFY(page);
+        QQuickItem* field = findVisualItem(page,
+                                           QStringLiteral("model.addModelField"));
+        QVERIFY2(field, "模型卡片必须有输入框（objectName=model.addModelField）");
+        QQuickItem* button = findVisualItem(page,
+                                            QStringLiteral("model.addModelButton"));
+        QVERIFY2(button, "模型卡片必须有「添加」按钮（objectName=model.addModelButton）");
+
+        // 空输入时不可提交。
+        QTRY_VERIFY(!button->property("enabled").toBool());
+
+        field->setProperty("text", QStringLiteral("gpt-button"));
+        QTRY_VERIFY(button->property("enabled").toBool());
+        QVERIFY(QMetaObject::invokeMethod(button, "clicked"));
+
+        const auto modelsFor = [settings](const QString& id) {
+            for (const QVariant& entry : settings->profiles()) {
+                const QVariantMap p = entry.toMap();
+                if (p.value(QStringLiteral("id")).toString() == id)
+                    return p.value(QStringLiteral("models")).toStringList();
+            }
+            return QStringList();
+        };
+        QTRY_VERIFY(modelsFor(profileId).contains(QStringLiteral("gpt-button")));
+        QTRY_COMPARE(field->property("text").toString(), QString());
+        QTRY_VERIFY(!button->property("enabled").toBool());
+
+        // 空输入再点一次也不能写入（commitAddModel 内的 trim 守卫）。
+        QVERIFY(QMetaObject::invokeMethod(button, "clicked"));
+        QTest::qWait(20);
+        QCOMPARE(modelsFor(profileId).size(), 1);
+
+        win->close();
+        while (!settings->profiles().isEmpty()) {
+            settings->removeProfile(settings->profiles().first().toMap()
+                                        .value(QStringLiteral("id")).toString());
+        }
+    }
+
+    // 任务 #11：拉取结果只弹出勾选对话框，不自动全部添加；确认后才落库，
+    // 且已在列表中的模型不会被重复写入。
+    void fetchedModelsDialogRequiresConfirmation() {
+        auto* settings = SettingsService::instance();
+        while (!settings->profiles().isEmpty()) {
+            settings->removeProfile(settings->profiles().first().toMap()
+                                        .value(QStringLiteral("id")).toString());
+        }
+        const QString profileId = settings->addProfile(QStringLiteral("openai"));
+        QVERIFY(!profileId.isEmpty());
+        settings->updateProfile(profileId,
+                                QVariantMap{{QStringLiteral("baseUrl"),
+                                             QStringLiteral("https://api.example.com/v1")},
+                                            {QStringLiteral("model"),
+                                             QStringLiteral("glm-test")}});
+        settings->setActiveProfile(profileId);
+
+        const auto modelsFor = [settings](const QString& id) {
+            for (const QVariant& entry : settings->profiles()) {
+                const QVariantMap p = entry.toMap();
+                if (p.value(QStringLiteral("id")).toString() == id)
+                    return p.value(QStringLiteral("models")).toStringList();
+            }
+            return QStringList();
+        };
+        QCOMPARE(modelsFor(profileId).size(), 1);
+
+        NexusQrcFallback fallback(QStringLiteral(NEXUS_BUILD_DIR "/NexusAI"));
+        QQmlApplicationEngine engine;
+        engine.addUrlInterceptor(&fallback);
+        engine.addImportPath(QStringLiteral(NEXUS_BUILD_DIR));
+        QQmlComponent component(
+            &engine,
+            QUrl::fromLocalFile(QStringLiteral(NEXUS_TEST_QML_DIR
+                                               "/ModelConfigHarness.qml")));
+        QVERIFY2(component.isReady(), qPrintable(component.errorString()));
+        std::unique_ptr<QObject> root(component.create());
+        QVERIFY2(root, qPrintable(component.errorString()));
+
+        auto* win = qobject_cast<QQuickWindow*>(root.get());
+        QVERIFY(win);
+        win->resize(1000, 760);
+        win->show();
+        QVERIFY(QTest::qWaitForWindowExposed(win));
+
+        QQuickItem* page = findVisualItem(win->contentItem(),
+                                          QStringLiteral("modelConfigPage"));
+        QVERIFY(page);
+
+        // 信号触发方式：ConnectionTester 是 QML 单例，由 harness 的
+        // emitModelsFetched 调用 modelsFetched(true, models, "ok")，等价于
+        // 端点拉取成功；页面仍走真实的 Connections。
+        const QVariantList fetched{QStringLiteral("glm-test"),
+                                   QStringLiteral("gpt-5"),
+                                   QStringLiteral("claude-x")};
+        QVERIFY2(QMetaObject::invokeMethod(root.get(), "emitModelsFetched",
+                                           Q_ARG(QVariant, QVariant(fetched))),
+                 "harness 应能发射 modelsFetched");
+
+        QObject* dialog = win->findChild<QObject*>(
+            QStringLiteral("fetchedModels.dialog"));
+        QVERIFY(dialog);
+        QTRY_VERIFY(dialog->property("opened").toBool());
+
+        // 关键契约：弹出对话框本身不写库，用户确认前列表保持原样。
+        QCOMPARE(modelsFor(profileId).size(), 1);
+        QCOMPARE(modelsFor(profileId).first(), QStringLiteral("glm-test"));
+        QCOMPARE(dialog->property("totalCount").toInt(), 3);
+        QCOMPARE(dialog->property("existingCount").toInt(), 1);
+        QCOMPARE(dialog->property("selectedCount").toInt(), 2);
+
+        // 已存在的项有「已添加」纯文本标记。
+        const auto dialogTexts = [dialog]() {
+            QStringList texts;
+            QQuickItem* content = qvariant_cast<QQuickItem*>(
+                dialog->property("contentItem"));
+            collectItemTexts(content, &texts);
+            return texts;
+        };
+        QTRY_VERIFY(dialogTexts().contains(QStringLiteral("已添加")));
+
+        QObject* accept = dialog->findChild<QObject*>(
+            QStringLiteral("fetchedModels.accept"));
+        QVERIFY(accept);
+        QTRY_VERIFY(accept->property("enabled").toBool());
+        QVERIFY(QMetaObject::invokeMethod(accept, "clicked"));
+
+        QTRY_VERIFY(!dialog->property("opened").toBool());
+        QTRY_COMPARE(modelsFor(profileId).size(), 3);
+        const QStringList after = modelsFor(profileId);
+        QCOMPARE(after.count(QStringLiteral("glm-test")), 1);
+        QVERIFY(after.contains(QStringLiteral("gpt-5")));
+        QVERIFY(after.contains(QStringLiteral("claude-x")));
+
+        win->close();
+        while (!settings->profiles().isEmpty()) {
+            settings->removeProfile(settings->profiles().first().toMap()
+                                        .value(QStringLiteral("id")).toString());
+        }
+    }
+
+    // 任务 #11：全选/全不选必须作用到提交集合；取消不产生任何写入。
+    void fetchedModelsDialogSelectAllAndCancel() {
+        auto* settings = SettingsService::instance();
+        while (!settings->profiles().isEmpty()) {
+            settings->removeProfile(settings->profiles().first().toMap()
+                                        .value(QStringLiteral("id")).toString());
+        }
+        const QString profileId = settings->addProfile(QStringLiteral("openai"));
+        QVERIFY(!profileId.isEmpty());
+        settings->updateProfile(profileId,
+                                QVariantMap{{QStringLiteral("baseUrl"),
+                                             QStringLiteral("https://api.example.com/v1")},
+                                            {QStringLiteral("model"),
+                                             QStringLiteral("glm-test")}});
+        settings->setActiveProfile(profileId);
+
+        NexusQrcFallback fallback(QStringLiteral(NEXUS_BUILD_DIR "/NexusAI"));
+        QQmlApplicationEngine engine;
+        engine.addUrlInterceptor(&fallback);
+        engine.addImportPath(QStringLiteral(NEXUS_BUILD_DIR));
+        QQmlComponent component(
+            &engine,
+            QUrl::fromLocalFile(QStringLiteral(NEXUS_TEST_QML_DIR
+                                               "/ModelConfigHarness.qml")));
+        QVERIFY2(component.isReady(), qPrintable(component.errorString()));
+        std::unique_ptr<QObject> root(component.create());
+        QVERIFY2(root, qPrintable(component.errorString()));
+
+        auto* win = qobject_cast<QQuickWindow*>(root.get());
+        QVERIFY(win);
+        win->resize(1000, 760);
+        win->show();
+        QVERIFY(QTest::qWaitForWindowExposed(win));
+
+        QQuickItem* page = findVisualItem(win->contentItem(),
+                                          QStringLiteral("modelConfigPage"));
+        QVERIFY(page);
+
+        const QVariantList fetched{QStringLiteral("glm-test"),
+                                   QStringLiteral("alpha"),
+                                   QStringLiteral("beta")};
+        QVERIFY(QMetaObject::invokeMethod(root.get(), "emitModelsFetched",
+                                          Q_ARG(QVariant, QVariant(fetched))));
+
+        QObject* dialog = win->findChild<QObject*>(
+            QStringLiteral("fetchedModels.dialog"));
+        QVERIFY(dialog);
+        QTRY_VERIFY(dialog->property("opened").toBool());
+        QCOMPARE(dialog->property("selectedCount").toInt(), 2);
+
+        QObject* accept = dialog->findChild<QObject*>(
+            QStringLiteral("fetchedModels.accept"));
+        QVERIFY(accept);
+
+        QObject* clearAll = dialog->findChild<QObject*>(
+            QStringLiteral("fetchedModels.clearAll"));
+        QVERIFY(clearAll);
+        QVERIFY(QMetaObject::invokeMethod(clearAll, "clicked"));
+        QTRY_COMPARE(dialog->property("selectedCount").toInt(), 0);
+        QTRY_VERIFY(!accept->property("enabled").toBool());
+
+        QObject* selectAll = dialog->findChild<QObject*>(
+            QStringLiteral("fetchedModels.selectAll"));
+        QVERIFY(selectAll);
+        QVERIFY(QMetaObject::invokeMethod(selectAll, "clicked"));
+        QTRY_COMPARE(dialog->property("selectedCount").toInt(), 2);
+        QTRY_VERIFY(accept->property("enabled").toBool());
+
+        // 取消：对话框关闭，配置里的模型列表一条不加。
+        QObject* cancel = dialog->findChild<QObject*>(
+            QStringLiteral("fetchedModels.cancel"));
+        QVERIFY(cancel);
+        QVERIFY(QMetaObject::invokeMethod(cancel, "clicked"));
+        QTRY_VERIFY(!dialog->property("opened").toBool());
+
+        const QVariantMap profile = settings->profiles().at(0).toMap();
+        const QStringList after = profile.value(QStringLiteral("models")).toStringList();
+        QCOMPARE(after.size(), 1);
+        QCOMPARE(after.first(), QStringLiteral("glm-test"));
 
         win->close();
         while (!settings->profiles().isEmpty()) {

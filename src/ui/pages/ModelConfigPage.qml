@@ -26,6 +26,10 @@ Item {
         return list.length > 0 ? list[0] : null
     }
 
+    // 添加模型与「添加」按钮共用同一提交条件：有可编辑配置且输入非空。
+    readonly property bool canAddModel: page.editing !== null
+        && addModelField.text.trim().length > 0
+
     property bool testing: false
     property string testResult: ""
     property bool testOk: false
@@ -218,6 +222,16 @@ Item {
         Settings.updateProfile(page.editing.id, { [key]: value })
     }
 
+    // 输入框回车与「添加」按钮共用的提交入口：两处走同一段 trim / 清空
+    // 逻辑，避免一条路径漏了校验把空模型或半截名字写进列表。
+    function commitAddModel() {
+        if (page.editing === null) return
+        const name = addModelField.text.trim()
+        if (name.length === 0) return
+        Settings.addModelToProfile(page.editing.id, name)
+        addModelField.text = ""
+    }
+
     // 按模型参数的覆盖计数（docs/43 §6.2 第 3 条）：chips 徽章与编辑器的
     // ComboBox 条目共用同一语义——modelParams[model] 的显式键数。
     function modelOverrideCount(model) {
@@ -254,15 +268,23 @@ Item {
             }
             const id = page.editing !== null ? page.editing.id : ""
             const known = page.editing !== null ? (page.editing.models || []) : []
-            let added = 0
+            let fresh = 0
             for (let i = 0; i < models.length; ++i) {
                 const name = String(models[i])
                 if (name.length === 0 || known.indexOf(name) >= 0) continue
-                Settings.addModelToProfile(id, name)
-                added += 1
+                fresh += 1
             }
-            page.fetchModelsResult = qsTr("共 %1 个模型，新增 %2 个。")
-                .arg(models.length).arg(added)
+            // 拉取只负责把候选摆出来，不再替用户全量落库：同一端点常常列出
+            // 几十个模型，直接灌进列表会把聊天选择器淹掉。
+            if (fresh === 0) {
+                page.fetchModelsResult = qsTr("共 %1 个模型，全部已在列表中。")
+                    .arg(models.length)
+                return
+            }
+            page.fetchModelsResult = qsTr("共 %1 个模型，其中 %2 个是新的。")
+                .arg(models.length).arg(fresh)
+            if (id.length > 0)
+                fetchedModelsDialog.openForProfile(id, models, known)
         }
     }
 
@@ -772,7 +794,7 @@ Item {
                 objectName: "model.models"
                 Layout.fillWidth: true
                 title: qsTr("模型")
-                subtitle: qsTr("模型名不再按厂商预填：在下面的输入框里自己添加，列表会同步到聊天输入区的选择器。")
+                subtitle: qsTr("模型名不再按厂商预填：可以自己添加，也可以从端点拉取后勾选要添加的模型，列表会同步到聊天输入区的选择器。")
 
                 SettingsField {
                     id: modelRow
@@ -888,11 +910,20 @@ Item {
                             }
                         }
                     }
+                }
+
+                // 添加模型行：输入框独占整行（原先塞在 chips 的 Flow 里，
+                // 宽度被挤到 160px），回车与「添加」按钮共用 commitAddModel。
+                RowLayout {
+                    Layout.fillWidth: true
+                    spacing: Theme.spaceSm
 
                     TextField {
                         id: addModelField
-                        width: Theme.controlWidthSm
-                        height: 26
+                        objectName: "model.addModelField"
+                        Layout.fillWidth: true
+                        Layout.preferredHeight: 26
+                        Layout.alignment: Qt.AlignVCenter
                         placeholderText: page.isCustom
                             ? qsTr("添加网关模型名…") : qsTr("添加模型…")
                         placeholderTextColor: Theme.textSecondary
@@ -909,12 +940,16 @@ Item {
                                 ? Theme.brandPrimary : Theme.borderSubtle
                         }
                         Accessible.name: qsTr("添加模型到列表")
-                        onAccepted: {
-                            if (text.trim() !== "" && page.editing !== null) {
-                                Settings.addModelToProfile(page.editing.id, text.trim())
-                                text = ""
-                            }
-                        }
+                        onAccepted: page.commitAddModel()
+                    }
+
+                    AppButton {
+                        objectName: "model.addModelButton"
+                        Layout.alignment: Qt.AlignVCenter
+                        text: qsTr("添加")
+                        // 与回车提交同一条件：空输入 / 无可编辑配置时不可点。
+                        enabled: page.canAddModel
+                        onClicked: page.commitAddModel()
                     }
                 }
 
@@ -965,7 +1000,7 @@ Item {
                     visible: page.editing !== null
                         && (page.editing.models || []).length === 0
                     Layout.fillWidth: true
-                    text: qsTr("列表还是空的：模型名不再自动预填，在右边输入一个名字回车即可。")
+                    text: qsTr("列表还是空的：模型名不再自动预填，在下方输入一个名字回车或点「添加」即可。")
                     color: Theme.textSecondary
                     font.pixelSize: Theme.fontSizeCaption
                     font.family: Theme.fontSans
@@ -1114,6 +1149,12 @@ Item {
                 }
             }
         }
+    }
+
+    // 拉取结果不自动入库：先让用户在弹出的列表里勾选要添加的模型。
+    // profileId 由 openForProfile 快照，对话框期间切换档案也不会写错配置。
+    FetchedModelsDialog {
+        id: fetchedModelsDialog
     }
 
     // 新建前先选来源：不选就只能得到一个 OpenAI 预设，这正是自定义要绕开的坑。

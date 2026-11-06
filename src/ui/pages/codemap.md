@@ -159,10 +159,11 @@ PromptAssets/ModelConfig 因需要固定页头 + 内部列表滚动，保留各�
   决定协议芯片，`Settings.modelContextWindow(apiProtocol, model)` 决定能力表窗口。
   API Key 输入框带「已配置/未配置」徽标（`SettingsField.statusText`）。
   「从端点拉取模型」按钮（`modelFetchModels`）调
-  `ConnectionTester.fetchModels(apiProtocol, baseUrl, apiKey)`：按协议走
+  `ConnectionTester.fetchModelsForProfile(id)`（B1-1 起 QML 不接触密钥）：按配置协议走
   `/models`、`/v1/models`、`/v1beta/models`、`/api/tags`，结果经
-  `modelsFetched(ok, models, message)` 回填；成功时把新模型逐个
-  `Settings.addModelToProfile(id, name)` 去重追加，并显示「共 N 个，新增 M 个」。
+  `modelsFetched(ok, models, message)` 回填；成功时不自动落库，有新模型时打开
+  `FetchedModelsDialog`（已存在项置灰，勾选后逐个 `Settings.addModelToProfile`），
+  状态行显示「共 N 个，其中 M 个是新的」；全部已存在时提示「全部已在列表中」。
   服务地址为空时按钮禁用并提示先填端点。
 - SecurityPage：两个 `SettingsSection`（文件读取沙箱 / 隐私门），每项是 `SettingRow` +
   无文字 CheckBox（行标签即 `Accessible.name`）；CheckBox 直接写 `Settings.*`；黑名单增删以

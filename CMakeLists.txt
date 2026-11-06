@@ -328,6 +328,8 @@ qt_add_qml_module(nexus_ai
         src/ui/components/ParamSelectRow.qml
         # docs/43 W2：按模型参数编辑器（模型配置页卡片三内嵌）
         src/ui/components/ModelParamEditor.qml
+        # 任务 #11：拉取模型后的「选择要添加的模型」对话框
+        src/ui/components/FetchedModelsDialog.qml
         src/ui/components/SettingCard.qml
         src/ui/components/SettingRow.qml
         src/ui/components/SettingsField.qml
