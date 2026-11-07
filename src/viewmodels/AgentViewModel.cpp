@@ -3050,7 +3050,11 @@ QVariantMap AgentViewModel::tokenUsageRecords(qint64 fromTs, qint64 toTs, int li
 // docs/16 §8.3: TopBar 悬停浮层的数据源。取当前激活 tab 的会话 id 做
 // 会话级聚合；浮层每次打开时重新调用，天然跟随会话切换与请求完成刷新。
 QVariantMap AgentViewModel::sessionTokenBreakdown() const {
-    const QString sessionId = active()->currentSessionId();
+    // A12: 活动标签可能为空（启动恢复/关闭全部标签的瞬间），逐个调用点
+    // 自行判空，避免 active()-> 解引用空指针。
+    ChatSessionController* controller = active();
+    if (!controller) return QVariantMap{};
+    const QString sessionId = controller->currentSessionId();
     if (sessionId.isEmpty() || !m_memory) return QVariantMap{};
     return m_memory->sessionTokenBreakdown(sessionId);
 }
@@ -3058,7 +3062,9 @@ QVariantMap AgentViewModel::sessionTokenBreakdown() const {
 // docs/16 §8.3: TopBar 容量占比浮层。取激活 tab 的实时上下文构成；
 // 每次打开浮层时重新查询，跟随会话切换与任务进行刷新。
 QVariantMap AgentViewModel::contextComposition() const {
-    return active()->contextComposition();
+    // A12: 与同类 getter 一致，活动标签缺失时返回空 map。
+    ChatSessionController* controller = active();
+    return controller ? controller->contextComposition() : QVariantMap{};
 }
 
 QString AgentViewModel::logFilePath() const {

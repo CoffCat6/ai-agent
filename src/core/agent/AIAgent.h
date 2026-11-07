@@ -323,6 +323,8 @@ private:
     double tokenEstimateScale() const;
     // 消息数组估算 × 校准系数（与 notifyTokens 同口径），供预算判断用。
     int calibratedMessageTokens() const;
+    // 下次请求 tools schema 估算 × 校准系数（与 notifyTokens/预算同口径）。
+    int calibratedReservedTokens() const;
 
     void processIteration();
     // docs/25 B3: shared launch tail — fresh system message (with/without
@@ -351,6 +353,10 @@ private:
     bool checkQuota();
     // docs/16 §5.2.2: 采集单次请求的 token 分类明细并持久化。
     void recordTokenUsage(const LLMResponse& response);
+    // B1: 子代理用量的唯一入账点（spawn 同步报告 / 后台 taskFinished）。
+    // runKey 去重；subagent_wait 收割不调用，避免同一任务重复计费。
+    void accountSubagentUsage(const QString& runKey, const QJsonObject& usage,
+                              int tokensUsed, const QString& sessionId);
     void onTaskTimeout();
     void onRequestStarted(quint64 requestId);
     void onLLMResponse(const LLMResponse& response);
@@ -579,6 +585,10 @@ private:
     qint64 m_requestStartMs{-1};
     qint64 m_lastLatencyMs{-1};
     int m_lastTokensUsed{0};
+    // A10: 实际发出的 wire 请求估算（requestMessages + tools schema），由
+    // processIteration 在 chatComplete 前写入；recordTokenUsage 用它做 EWMA
+    // 分母后清零（失败路径在 onLLMError/stop 清理）。
+    int m_lastWireEstimate{0};
     // 本会话累计消耗（input+output）。新会话清零、续会话从 token_usage
     // 恢复、recordTokenUsage 逐请求累加 —— 与 m_lastTokensUsed（单请求）
     // 区分，供 TopBar 显示跨任务累计。
@@ -589,6 +599,11 @@ private:
     // 系统性偏小（cl100k 中文 ~1.16 tok/字，估算只给 0.667），实时占用
     // 显示必须乘此系数才贴近真实窗口占用。0 = 尚无观测。
     double m_estimateScale{0.0};
+    // A4: 最近一次 EWMA 观测所属的模型名。同一 service 实例被 configure()
+    // 原地改写 model() 时，setLLMService 的“同指针”早退分支已无法靠
+    // previous/next 比较发现换模型，只能与这里的观测基准比较。
+    // 空 = 尚无带模型名的观测（不做判断）；setLLMService(nullptr) 不清空。
+    QString m_scaleModelName;
     // Process-global tool_call_id fallback counter + session-scoped set of
     // ids already in the history: agent-generated or provider-fallback ids
     // ("call_0") repeat across turns, and strict proxies reject duplicates.
@@ -598,6 +613,10 @@ private:
     // 去重，不新增落盘键（重启后当天可能再提醒一次，可接受且更简单）。
     QDate m_quotaAlertDate;
     QSet<QString> m_quotaAlertsToday;
+    // B1: 已入账的子代理运行（"sync:<sessionId>:<callId>" /
+    // "bg:<sessionId>:<taskId>"）。后台任务
+    // 完成时入账，之后 subagent_wait 收割不再重复写 token_usage。
+    QSet<QString> m_accountedSubagentRuns;
 };
 
 } // namespace NexusAI

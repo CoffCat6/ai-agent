@@ -45,6 +45,7 @@
 #include <QTimer>
 #include <QTcpServer>
 #include <QTcpSocket>
+#include <QSqlQuery>
 
 #include <atomic>
 #include <chrono>
@@ -61,6 +62,31 @@ using namespace NexusAI;
 
 namespace {
 
+// B1 test probe: tokenUsageRecords() omits source buckets, so read the row
+// directly to prove subagent accounting landed in inputToolCall/outputToolCall.
+QVariantList subagentTokenRows(SqliteMemory& memory, const QString& sessionId) {
+    QVariantList rows;
+    QSqlQuery q(memory.databaseForTest());
+    q.prepare(QStringLiteral(
+        "SELECT input_tokens, output_tokens, cache_hit_tokens, "
+        "input_tool_call, output_tool_call, model "
+        "FROM token_usage WHERE request_id = 0 AND session_id = ?"));
+    q.addBindValue(sessionId);
+    if (!q.exec()) return rows;
+    while (q.next()) {
+        rows.append(QVariantMap{
+            {QStringLiteral("input"), q.value(0).toLongLong()},
+            {QStringLiteral("output"), q.value(1).toLongLong()},
+            {QStringLiteral("cacheHit"), q.value(2).toLongLong()},
+            {QStringLiteral("inputToolCall"), q.value(3).toLongLong()},
+            {QStringLiteral("outputToolCall"), q.value(4).toLongLong()},
+            {QStringLiteral("model"), q.value(5).toString()},
+        });
+    }
+    return rows;
+}
+
+
 class FakeAIService : public IAIService {
     Q_OBJECT
 public:
@@ -69,6 +95,8 @@ public:
     QVector<LLMResponse> script;
     bool repeatLast{false};
     quint64 requestCounter{0};          // requestStarted()/requestId echo
+    // A4 用例需要模拟“同模型重连 / 换模型”：默认值保持既有测试的 fake-model。
+    QString modelName{QStringLiteral("fake-model")};
 
     void chatComplete(const QJsonArray& messages, const QJsonArray& tools) override {
         seenMessages.append(messages);
@@ -93,7 +121,7 @@ public:
     void setApiKey(const QString&) override {}
     void setModel(const QString&) override {}
     void setBaseUrl(const QString&) override {}
-    QString model() const override { return QStringLiteral("fake-model"); }
+    QString model() const override { return modelName; }
 
     void reset() {
         seenMessages.clear();
@@ -106,6 +134,65 @@ public:
 
 private:
     int idx{0};
+};
+
+// A10: 首轮响应按“实际发出的 wire 请求”给出 promptTokens（消息 + tools
+// schema 的 2 倍），用于验证 recordTokenUsage 的 EWMA 分母确实取了
+// m_lastWireEstimate；后续轮不带 usage，避免再次更新系数。
+class WireScalingFakeService : public FakeAIService {
+public:
+    void chatComplete(const QJsonArray& messages, const QJsonArray& tools) override {
+        seenMessages.append(messages);
+        seenTools.append(tools);
+        const quint64 requestId = ++requestCounter;
+        emit requestStarted(requestId);
+        LLMResponse response = m_calls < script.size()
+            ? script.at(m_calls) : script.last();
+        if (m_calls == 0) {
+            const int wire = TokenEstimator::estimateTokens(messages)
+                           + TokenEstimator::estimateToolsSchema(tools);
+            response.promptTokens = wire * 2;
+        }
+        ++m_calls;
+        response.requestId = requestId;
+        if (response.success) emit responseReady(response);
+        else emit errorOccurred(response.error);
+    }
+private:
+    int m_calls{0};
+};
+
+// A9: 在每次 chatComplete 时刻（响应回来之前）采集 contextComposition 的
+// tools schema 预留，用来断言 forced-final 轮不再预留 schema。
+class ForcedFinalSchemaService : public FakeAIService {
+public:
+    explicit ForcedFinalSchemaService(AIAgent* owner) : m_owner(owner) {}
+
+    void chatComplete(const QJsonArray& messages, const QJsonArray& tools) override {
+        seenMessages.append(messages);
+        seenTools.append(tools);
+        const quint64 requestId = ++requestCounter;
+        emit requestStarted(requestId);
+        if (m_owner) {
+            schemas.append(static_cast<int>(
+                m_owner->contextComposition().value(QStringLiteral("toolsSchema"))
+                    .toLongLong()));
+            toolsEmpty.append(tools.isEmpty());
+        }
+        LLMResponse response = m_calls < script.size()
+            ? script.at(m_calls) : script.last();
+        ++m_calls;
+        response.requestId = requestId;
+        if (response.success) emit responseReady(response);
+        else emit errorOccurred(response.error);
+    }
+
+    QVector<int> schemas;
+    QVector<bool> toolsEmpty;
+
+private:
+    AIAgent* m_owner;
+    int m_calls{0};
 };
 
 LLMResponse textResponse(const QString& text) {
@@ -576,6 +663,27 @@ public:
     }
 };
 
+// B8: a single sub-agent tool result is capped at 6000 chars, so the fallback
+// context limit only becomes observable across many rounds. CJK content makes
+// each round cost ~4000 tokens (1.5 chars/token), keeping the fixture small.
+class HugeOutputProbeTool : public ITool {
+public:
+    ToolDefinition definition() const override {
+        ToolDefinition def;
+        def.name = QStringLiteral("test_huge_output");
+        def.description = QStringLiteral(
+            "Test helper: returns a large CJK-padded read-only result.");
+        def.level = ToolLevel::Safe;
+        def.readOnly = true;
+        def.parameters = QJsonObject{
+            {"type", "object"}, {"properties", QJsonObject{}}, {"required", QJsonArray{}}};
+        return def;
+    }
+    ToolResult execute(const QJsonObject&) override {
+        return ToolResult::ok(QString(6000, QChar(0x4E2D)));
+    }
+};
+
 // docs/35 P4.2: a sleeping read-only tool that records peak concurrency, so
 // the test can prove the runner actually overlaps calls (and respects the cap).
 class SleepProbeTool : public ITool {
@@ -705,6 +813,49 @@ private:
 class SilentFakeService : public FakeAIService {
 public:
     void chatComplete(const QJsonArray&, const QJsonArray&) override {}
+};
+
+// B2: 第一步正常回答（带 usage + tool_calls），之后永远挂起。取消/超时
+// 路径收场时没有 response payload，Runner 绝不能复用上一步的计量。
+class HangAfterFirstStepService : public FakeAIService {
+public:
+    void chatComplete(const QJsonArray& messages, const QJsonArray& tools) override {
+        if (++m_calls >= 2) return;   // 后续步骤永不回包
+        FakeAIService::chatComplete(messages, tools);
+    }
+private:
+    int m_calls{0};
+};
+
+// B2: 第一步正常回答（带 usage），并在 60ms 后重复 emit 一个属于第一步
+// requestId 的“迟到”responseReady；第二步只发请求（requestStarted）不回包，
+// 靠取消旗标收场。旧实现整轮共用一条连接，迟到 payload 会落到第二步的
+// loop 里被当成第二步响应（正文与 usage 串步）；每步连接隔离 + requestId
+// 校验后必须丢弃它。
+class LateDuplicateAfterFirstStepService : public FakeAIService {
+public:
+    void chatComplete(const QJsonArray& messages, const QJsonArray& tools) override {
+        seenMessages.append(messages);
+        seenTools.append(tools);
+        const quint64 requestId = ++requestCounter;
+        emit requestStarted(requestId);
+        if (requestId != 1) return;   // 第二步：请求已发出，响应永不到达
+        LLMResponse first = toolResponse(QStringLiteral("test_sub_probe"), {});
+        first.toolCalls[0].id = QStringLiteral("call_1");
+        first.requestId = requestId;
+        first.promptTokens = 100;
+        first.completionTokens = 50;
+        first.tokensUsed = 150;
+        emit responseReady(first);
+        QTimer::singleShot(60, this, [this, requestId]() {
+            LLMResponse late = textResponse(QStringLiteral("late duplicate"));
+            late.requestId = requestId;   // 上一步的请求
+            late.promptTokens = 900;
+            late.completionTokens = 100;
+            late.tokensUsed = 1000;
+            emit responseReady(late);
+        });
+    }
 };
 
 struct SubAgentFixture {
@@ -924,6 +1075,10 @@ private slots:
 
     void init() {
         llm.reset();
+        // A4 用例会把 agent 切到 otherLlm/third 等临时服务；QtTest 全程共用
+        // 一个测试对象，init 统一恢复 fixture 默认服务，防止脚本错位串扰。
+        otherLlm.modelName = QStringLiteral("fake-model");
+        agent.setLLMService(&llm);
         agent.setContextLimit(8192);
         agent.setMemory(nullptr);
         // 工具执行预算生产默认关闭（0=无限）；预算用例显式设置后必须复位，
@@ -1132,6 +1287,8 @@ private slots:
     void toolExecutionBudgetForcesFinal();
     void mainAgentToolExecutionsUnlimitedByDefault();
     void forcedFinalControlMessageNotPersisted();
+    // A9: forced-final 请求不带 tools，窗口占用/来源统计也不得预留 schema。
+    void forcedFinalDoesNotReserveToolsSchema();
     // docs/35: 模型原生文本工具调用模板不得当成回答（真机写进 messages 表）。
     void textualToolCallMarkupDiscardedFromAnswer();
     void forcedFinalTextualToolCallDoesNotBecomeTheAnswer();
@@ -1166,6 +1323,12 @@ private slots:
     void regenerateWithoutHistoryOrBusyIsNoop();
     // docs/16 §13 AC-2/AC-4: token_usage 采集埋点（response 有分类 token 时正确采集）
     void testRecordTokenUsage();
+    // docs/16 §5.1 统一口径：Anthropic cache_read 计入 input/total（cacheHit 是其子集）
+    void testAnthropicCacheReadCountedInInput();
+    // A5: 图片 token 只进 inputImage，不在 conversation 里重复计入
+    void testImageTokensNotDoubleCounted();
+    // B3: tokensUsed 含 thoughts（Gemini）时以总量为准补 output 差额
+    void mainUsageTotalIncludesThoughts();
     // docs/16 §8.2: 会话累计 token（逐请求累加 / 清零 / 续会话恢复）
     void testSessionTokensUsed();
     // docs/16 §13 AC-7: 配额检查（超限 emit quotaWarning，strict 模式拒绝）
@@ -1174,6 +1337,17 @@ private slots:
     void testQuotaAlertThreshold();
     // docs/16 §3.3: 估算器滚动校准（API 真实 promptTokens 反馈 → EWMA 系数）
     void testEstimateScaleCalibration();
+    // A10: EWMA 分母取实际 wire 请求（files 折叠 / forced-final push）。
+    void tokenEstimateScaleUsesWireRequest();
+    // A2: 校准系数必须同样作用于 tools schema（与 EWMA 观测分母同口径）
+    void testEstimateScaleAppliedToToolSchema();
+    // A4: 切换模型时系数复位；同模型重连保留观测
+    void testEstimateScaleResetOnModelSwitch();
+    // A4: 同一 service 实例（configure 原地改 model）换模型清零；
+    // setLLMService(nullptr) 跨空切换后同样比较观测基准。
+    void estimateScaleResetOnSameServiceModelChange();
+    // B1: runKey 带 sessionId，跨会话相同 call id 的同步 spawn 各自入账。
+    void subagentRunKeySeparatesSessions();
     // docs/25 B3: fresh-session launch with an episodic service attached —
     // the retrieval resolves off-thread, the injection reaches the system
     // prompt, and the task completes normally.
@@ -1192,6 +1366,16 @@ private slots:
     void subagentInheritsProjectRules();
     void subagentTransientFailureRetriesOnce();
     void subagentRetryAccumulatesClassifiedUsage();
+    // B2: 取消/超时步骤不得复用上一步的 response 计量（不翻倍）。
+    void subagentCancelDoesNotDoubleCountUsage();
+    // B2: 每步信号连接隔离——上一请求的迟到 responseReady 不得污染下一步。
+    void subagentStepSignalsAreIsolated();
+    // B3: cacheRead/cacheCreation 原值保留并进入 reportJson
+    void subagentUsageKeepsCacheClassification();
+    // B1: 同步 spawn 的用量入账到 token_usage（requestId=0 + tool 来源）
+    void subagentUsageAccountedIntoSyncSession();
+    // B1: 后台任务 taskFinished 入账一次，subagent_wait 收割不重复
+    void subagentUsageAccountedOnceForBackgroundRun();
     void subagentRetrySnapshotPinsBackgroundDecision();
     // docs/43 O2: 结构化报告（findings/usage/stopCode）经 trace 与审计回传。
     void subagentReportCarriesFindingsAndUsage();
@@ -1200,6 +1384,8 @@ private slots:
     void subagentBatchWaitAnyAndAll();
     void subagentSlotPressureIsVisible();
     void subagentBatchWaitAuditAggregates();
+    // B4: 批量 wait 部分任务未上报分类用量时保留 OR 语义并标记 partial。
+    void subagentBatchWaitMarksPartialUsage();
     // docs/43 O4-2: 失败/取消的后台任务按原始参数一键重派。
     void subagentRetryFailedBackgroundTask();
     // docs/43 O4 审计收口第二批：终态审计/会话保留/排队上限/todo 回显/
@@ -1246,6 +1432,10 @@ private slots:
     // docs/35 P4.1: 子代理上下文预算——超限时只压缩线上请求，证据工件保留
     // 完整转录；压缩事件进过程日志。
     void subagentCompressesContextOnTheWire();
+    // B8: contextLimit=0（profile 解析失败/未知）也必须用保守默认上限压缩。
+    void subagentCompressesWithFallbackLimit();
+    // B9: provider 不上报 usage 时用 TokenEstimator 回退并标记 estimated。
+    void subagentWithoutUsageFallsBackToEstimatedTokens();
     // docs/35 P4.2: 同轮只读工具并发（有上限）但结果按调用顺序回填；
     // propose_edit 混排时仍在运行线程串行执行、提案顺序不变。
     void subagentReadOnlyToolsRunConcurrently();
@@ -3853,6 +4043,65 @@ void TestAgent::forcedFinalControlMessageNotPersisted() {
     agent.setMaxIterations(AIAgent::kDefaultMaxIterations);   // 还原共享 agent
 }
 
+// A9: forced-final 轮的请求确实不带 tools（processIteration 构建空数组），
+// 因此窗口占用/来源拆分也必须不再预留完整 schema；任务结束后 m_forcedFinal
+// 复位，下一次请求/新任务恢复 schema 预留。
+void TestAgent::forcedFinalDoesNotReserveToolsSchema() {
+    SqliteMemory memory(QStringLiteral(":memory:"));
+    agent.setMemory(&memory);
+    struct RestoreMemory {
+        AIAgent& agent;
+        ~RestoreMemory() { agent.setMemory(nullptr); }
+    } restoreMemory{agent};
+
+    ForcedFinalSchemaService service(&agent);
+    struct RestoreService {
+        AIAgent& agent;
+        FakeAIService* original;
+        ~RestoreService() { agent.setLLMService(original); }
+    } restoreService{agent, &llm};
+    agent.setLLMService(&service);
+
+    agent.setMaxIterations(3);
+    const QString home = QStandardPaths::writableLocation(QStandardPaths::HomeLocation);
+    for (int i = 0; i < 3; ++i) {
+        service.script.append(toolResponse(QStringLiteral("list_dir"),
+            QJsonObject{{QStringLiteral("path"),
+                         home + QStringLiteral("/nexusai_final_schema_%1").arg(i)}}));
+    }
+    service.script.append(textResponse(QStringLiteral("forced summary")));
+    service.script.append(textResponse(QStringLiteral("next answer")));
+
+    QSignalSpy tokensSpy(&agent, &AIAgent::tokensChanged);
+    QSignalSpy spy(&agent, &AIAgent::responseReady);
+    agent.startTask(QStringLiteral("loop"));
+    QTRY_COMPARE_WITH_TIMEOUT(spy.count(), 1, 20000);
+
+    // 3 轮正常请求 + 1 轮 forced-final：前 3 轮带 schema，最后一轮为空。
+    QCOMPARE(service.schemas.size(), 4);
+    QVERIFY2(service.schemas.at(0) > 0,
+             "normal round must reserve the tools schema");
+    QCOMPARE(service.schemas.at(3), 0);
+    QVERIFY2(service.toolsEmpty.at(3), "forced-final request must carry no tools");
+
+    // 任务结束后 m_forcedFinal 必须复位：composition 与 tokensChanged 恢复
+    // schema 预留，而不是长期显示“无工具”的偏小占用。
+    const QVariantMap afterTask = agent.contextComposition();
+    QVERIFY2(afterTask.value(QStringLiteral("toolsSchema")).toLongLong() > 0,
+             "forcedFinal leaked into the idle composition");
+    QVERIFY(tokensSpy.count() >= 1);
+    QCOMPARE(tokensSpy.last().at(0).toLongLong(),
+             afterTask.value(QStringLiteral("totalTokens")).toLongLong());
+
+    // 新任务的第一个请求恢复非 0 schema 预留。
+    agent.startTask(QStringLiteral("next question"));
+    QTRY_COMPARE(spy.count(), 2);
+    QVERIFY2(service.schemas.size() >= 5, "next task did not issue a request");
+    QVERIFY2(service.schemas.at(4) > 0,
+             "new task must reserve the tools schema again");
+
+    agent.setMaxIterations(AIAgent::kDefaultMaxIterations);   // 还原共享 agent
+}
 // docs/35: 部分模型的 chat template 把工具调用写成 XML 文本。端点只有在
 // 模板完整时才会翻译成结构化 tool_calls；服务端解析失败时模板会作为普通
 // content 回来。它不得被当成回答展示/落库（真机曾把整条伪调用写进
@@ -4669,6 +4918,125 @@ void TestAgent::testRecordTokenUsage() {
     agent.setMemory(nullptr);
 }
 
+// docs/16 §5.1 统一口径：cacheHitTokens 是 inputTokens 的子集。Anthropic 的
+// input_tokens 不含缓存类 token，cache_creation/cache_read 必须显式补入
+// input（进而进 total/会话累计/计费基数），否则总量偏小、命中率可能 >100%。
+void TestAgent::testAnthropicCacheReadCountedInInput() {
+    agent.resetSession();
+    SqliteMemory memory(QStringLiteral(":memory:"));
+    agent.setMemory(&memory);
+
+    LLMResponse resp = textResponse(QStringLiteral("anthropic answer"));
+    resp.promptTokens = 200;          // Anthropic input_tokens（不含缓存类）
+    resp.completionTokens = 20;
+    resp.cacheReadTokens = 80;        // cache_read_input_tokens
+    resp.cacheCreationTokens = 30;    // cache_creation_input_tokens
+    llm.reset();
+    llm.script.append(resp);
+
+    QSignalSpy responseSpy(&agent, &AIAgent::responseReady);
+    QSignalSpy sessionSpy(&agent, &AIAgent::sessionTokensChanged);
+    QVERIFY(agent.startTask(QStringLiteral("cache accounting")));
+    QTRY_COMPARE(responseSpy.count(), 1);
+
+    const QVariantMap stats = memory.tokenStatsDetailed(30);
+    // input = 200(prompt) + 30(creation) + 80(read) = 310
+    QCOMPARE(stats.value("totalInputTokens").toLongLong(), qint64(310));
+    // total = input + output = 310 + 20
+    QCOMPARE(stats.value("totalTokens").toLongLong(), qint64(330));
+    // cacheHit = cache_read（Anthropic 无 cached_tokens）；是 input 的子集
+    QCOMPARE(stats.value("totalCacheHitTokens").toLongLong(), qint64(80));
+    const double hitRate = stats.value("cacheHitRate").toDouble();
+    QVERIFY(hitRate > 0.0);
+    QVERIFY(hitRate <= 1.0);
+
+    // 会话累计与逐行 input+output 同口径
+    QCOMPARE(agent.sessionTokensUsed(), qint64(330));
+    QCOMPARE(sessionSpy.last().at(0).toLongLong(), qint64(330));
+
+    // 来源拆分总和 == 输入合计（cacheRead 落在 inputOther 残差，不被重复计）
+    const qint64 sourceSum =
+          stats.value("totalInputSystemPrompt").toLongLong()
+        + stats.value("totalInputConversation").toLongLong()
+        + stats.value("totalInputToolCall").toLongLong()
+        + stats.value("totalInputMcp").toLongLong()
+        + stats.value("totalInputSkill").toLongLong()
+        + stats.value("totalInputImage").toLongLong()
+        + stats.value("totalInputOther").toLongLong();
+    QCOMPARE(sourceSum, qint64(310));
+
+    agent.setMemory(nullptr);
+}
+
+// A5：TokenEstimator::estimateTokens(msg) 已含 images.size()*1000，来源拆分
+// 必须把这部分从 conversation 扣除、只归 inputImage；否则无 usage 的回退
+// 路径上来源之和会比 inputTokens 多出一整份图片 token（UI 占比 >100%）。
+void TestAgent::testImageTokensNotDoubleCounted() {
+    agent.resetSession();
+    SqliteMemory memory(QStringLiteral(":memory:"));
+    agent.setMemory(&memory);
+
+    llm.reset();
+    // 无 usage → recordTokenUsage 走 estimate(messages)+schema 的回退口径，
+    // 来源之和必须与 inputTokens 严格相等。
+    llm.script.append(textResponse(QStringLiteral("image answer")));
+
+    QSignalSpy responseSpy(&agent, &AIAgent::responseReady);
+    QVERIFY(agent.startTask(QStringLiteral("describe the image"),
+                            QStringList{QStringLiteral(
+                                "data:image/png;base64,iVBORw0KGgo=")}));
+    QTRY_COMPARE(responseSpy.count(), 1);
+
+    const QVariantMap stats = memory.tokenStatsDetailed(30);
+    const qint64 input = stats.value("totalInputTokens").toLongLong();
+    const qint64 image = stats.value("totalInputImage").toLongLong();
+    QVERIFY(image > 0);   // 图片 token 归入 image 桶
+
+    const qint64 sourceSum =
+          stats.value("totalInputSystemPrompt").toLongLong()
+        + stats.value("totalInputConversation").toLongLong()
+        + stats.value("totalInputToolCall").toLongLong()
+        + stats.value("totalInputMcp").toLongLong()
+        + stats.value("totalInputSkill").toLongLong()
+        + image
+        + stats.value("totalInputOther").toLongLong();
+    // 旧口径会把图片同时算进 conversation 与 inputImage，这里会多出 image。
+    QCOMPARE(sourceSum, input);
+    QVERIFY(stats.value("totalInputConversation").toLongLong() < input);
+
+    // 会话累计仍等于逐行 input+output
+    QCOMPARE(agent.sessionTokensUsed(),
+             input + stats.value("totalOutputTokens").toLongLong());
+
+    agent.setMemory(nullptr);
+}
+
+// B3：Gemini 把 thoughts 计入 tokensUsed 但不进 completionTokens。总量以
+// tokensUsed 为准，把差额补进 output，保证 input+output == total。
+void TestAgent::mainUsageTotalIncludesThoughts() {
+    SqliteMemory memory(QStringLiteral(":memory:"));
+    agent.setMemory(&memory);
+
+    llm.reset();
+    LLMResponse resp = textResponse(QStringLiteral("thoughtful answer"));
+    resp.promptTokens = 100;
+    resp.completionTokens = 20;
+    resp.tokensUsed = 150;   // 30 个 thoughts token
+    llm.script.append(resp);
+
+    QSignalSpy responseSpy(&agent, &AIAgent::responseReady);
+    QVERIFY(agent.startTask(QStringLiteral("think harder")));
+    QTRY_COMPARE(responseSpy.count(), 1);
+
+    const QVariantMap stats = memory.tokenStatsDetailed(30);
+    QCOMPARE(stats.value("totalInputTokens").toLongLong(), qint64(100));
+    QCOMPARE(stats.value("totalOutputTokens").toLongLong(), qint64(50));
+    QCOMPARE(stats.value("totalTokens").toLongLong(), qint64(150));
+    QCOMPARE(agent.sessionTokensUsed(), qint64(150));
+
+    agent.setMemory(nullptr);
+}
+
 // docs/16 §8.2: 会话累计 token —— 每次请求累加 input+output，多轮任务
 // 持续增长；resetSession 清零；resumeSession 从 token_usage 恢复基数。
 void TestAgent::testSessionTokensUsed() {
@@ -4676,6 +5044,7 @@ void TestAgent::testSessionTokensUsed() {
     agent.setMemory(&memory);
 
     QSignalSpy sessionTokensSpy(&agent, &AIAgent::sessionTokensChanged);
+    QSignalSpy tokensSpy(&agent, &AIAgent::tokensChanged);
     QSignalSpy responseSpy(&agent, &AIAgent::responseReady);
 
     // 第一轮：promptTokens=100 / completion=50 → 累计 150
@@ -4705,6 +5074,12 @@ void TestAgent::testSessionTokensUsed() {
     agent.resetSession();
     QCOMPARE(agent.sessionTokensUsed(), qint64(0));
     QCOMPARE(sessionTokensSpy.last().at(0).toLongLong(), qint64(0));
+    // A3: 清空后窗口占用必须重算并广播（空历史 + tools schema），
+    // TopBar 不会残留旧会话的占用。
+    QVERIFY(tokensSpy.count() >= 1);
+    QCOMPARE(tokensSpy.last().at(0).toInt(),
+             static_cast<int>(agent.contextComposition()
+                                  .value("totalTokens").toLongLong()));
 
     // resumeSession → 从 DB 恢复累计基数（375 = 两轮 input+output 之和）
     agent.resumeSession(sessionId);
@@ -4733,14 +5108,14 @@ void TestAgent::testEstimateScaleCalibration() {
     const QVariantMap baseComp = agent.contextComposition();
     QCOMPARE(baseComp.value("totalTokens").toLongLong(),
              static_cast<qint64>(baseline));
-    // 消息段 = 总占用 - tools schema 预留（后者保持原始估算口径）。
+// 消息段 = 总占用 - tools schema 预留（scale=1 时即原始预留）。
     const int rawBefore = baseline
         - static_cast<int>(baseComp.value("toolsSchema").toLongLong());
     QVERIFY(rawBefore > 0);
 
     // ── 校准生效：API 报告的 promptTokens = 2× 原始消息估算 → 系数 2.0
-    // （在 [0.5, 3.0] 钳制内）。下一次 tokensChanged 的消息部分被放大，
-    // 但 tools schema 部分保持原始口径，增幅应小于 2×。
+    // （在 [0.5, 3.0] 钳制内）。下一次 tokensChanged 的消息与 schema 都按
+    // 同一系数放大，但 scale<2 且新增用户消息使总占用仍小于 2×基线。
     LLMResponse cal = textResponse(QStringLiteral("calibrated"));
     cal.promptTokens = rawBefore * 2;
     cal.completionTokens = 10;
@@ -4749,23 +5124,293 @@ void TestAgent::testEstimateScaleCalibration() {
     QTRY_COMPARE(responseSpy.count(), 2);
     const int scaled = tokensSpy.last().at(0).toInt();
     QVERIFY(scaled > baseline);         // 系数生效，总占用变大
-    QVERIFY(scaled < baseline * 2 + 1); // schema 未同步放大，增幅 < 2×
+    QVERIFY(scaled < baseline * 2 + 1); // 系数 < 2×，整体占用仍小于 2×基线
 
-    // contextComposition 与 notifyTokens 同口径；校准只重分配桶，
-    // 不破坏“桶之和 == usedTokens”的合同。
+    // contextComposition 与 notifyTokens 同口径（各桶独立取整，允许 ≤4 的
+    // 截断差）；校准只重分配桶，不破坏“桶之和 == usedTokens”的合同。
     const QVariantMap comp = agent.contextComposition();
-    QCOMPARE(comp.value("totalTokens").toLongLong(),
-             static_cast<qint64>(scaled));
+    QVERIFY(qAbs(comp.value("totalTokens").toLongLong()
+                 - static_cast<qint64>(scaled)) <= 4);
     QCOMPARE(comp.value("systemPrompt").toLongLong()
            + comp.value("conversation").toLongLong()
            + comp.value("toolResults").toLongLong()
            + comp.value("images").toLongLong(),
-             comp.value("usedTokens").toLongLong());
-    // resetSession 清零系数，新会话回到基线口径。
+              comp.value("usedTokens").toLongLong());
+    QCOMPARE(comp.value("usedTokens").toLongLong()
+             + comp.value("toolsSchema").toLongLong(),
+              comp.value("totalTokens").toLongLong());
+    // resetSession 清零系数，新会话回到基线口径（重新取一份 composition 的
+    // toolsSchema 才是未校准值）。
     agent.resetSession();
-    QCOMPARE(static_cast<int>(agent.contextComposition().value("totalTokens").toLongLong()),
+    const QVariantMap resetComp = agent.contextComposition();
+    QCOMPARE(static_cast<int>(resetComp.value("totalTokens").toLongLong()),
              static_cast<int>(TokenEstimator::estimateTokens(agent.messages())
-                              + static_cast<int>(comp.value("toolsSchema").toLongLong())));
+                              + resetComp.value("toolsSchema").toLongLong()));
+}
+
+// A10: EWMA 分母必须取实际发出的 wire 请求（files 折叠成文本、控制消息
+// 追加等），而不是持久化消息数组的估算。首轮按 wire 估算的 2 倍上报
+// promptTokens，第二轮的显示值必须精确按 2.0 放大；旧口径（消息数组 +
+// schema，不含折叠包装）会得到 >2 的系数。
+void TestAgent::tokenEstimateScaleUsesWireRequest() {
+    SqliteMemory memory(QStringLiteral(":memory:"));
+    agent.setMemory(&memory);
+    struct RestoreMemory {
+        AIAgent& agent;
+        ~RestoreMemory() { agent.setMemory(nullptr); }
+    } restoreMemory{agent};
+
+    WireScalingFakeService service;
+    struct RestoreService {
+        AIAgent& agent;
+        FakeAIService* original;
+        ~RestoreService() { agent.setLLMService(original); }
+    } restoreService{agent, &llm};
+    agent.setLLMService(&service);
+    service.script.append(textResponse(QStringLiteral("first")));
+    service.script.append(textResponse(QStringLiteral("second")));
+
+    QSignalSpy tokensSpy(&agent, &AIAgent::tokensChanged);
+    QSignalSpy responseSpy(&agent, &AIAgent::responseReady);
+
+    QJsonArray files;
+    files.append(QJsonObject{{QStringLiteral("name"), QStringLiteral("big.txt")},
+                             {QStringLiteral("content"), QString(4000, QChar('f'))}});
+    QVERIFY(agent.startTask(QStringLiteral("with attachment"), {}, files));
+    QTRY_COMPARE(responseSpy.count(), 1);
+
+    QVERIFY(agent.startTask(QStringLiteral("second")));
+    QTRY_COMPARE(responseSpy.count(), 2);
+
+    QCOMPARE(service.seenMessages.size(), 2);
+    const int rawSchema =
+        TokenEstimator::estimateToolsSchema(service.seenTools.last());
+    const int rawMessages = TokenEstimator::estimateTokens(agent.messages());
+    const int expected = (rawMessages + rawSchema) * 2;
+    QCOMPARE(tokensSpy.last().at(0).toInt(), expected);
+
+    agent.setMemory(nullptr);
+}
+
+// A2：校准系数只作用于消息、schema 保持原始，会让 EWMA 观测（分母含
+// schema）与显示/预算（不含 schema 缩放）产生 rawSchema×(scale-1) 的偏差。
+// 本用例注册一个带 schema 的 tool，用超大 promptTokens 把系数顶到 3.0，
+// 验证 toolsSchema / totalTokens 与 notifyTokens 一起放大且口径一致。
+void TestAgent::testEstimateScaleAppliedToToolSchema() {
+    SqliteMemory memory(QStringLiteral(":memory:"));
+    agent.setMemory(&memory);
+    if (!ToolRegistry::instance().isRegistered(QStringLiteral("test_readonly")))
+        ToolRegistry::instance().registerTool(std::make_unique<ReadOnlyProbeTool>());
+    NamedToolGuard guard{QStringLiteral("test_readonly")};
+
+    // scale==1 基线：空历史的 toolsSchema 即原始预留。
+    const int rawSchema = agent.contextComposition()
+                              .value("toolsSchema").toInt();
+    QVERIFY(rawSchema > 0);
+
+    QSignalSpy tokensSpy(&agent, &AIAgent::tokensChanged);
+    QSignalSpy responseSpy(&agent, &AIAgent::responseReady);
+
+    LLMResponse cal = textResponse(QStringLiteral("huge usage"));
+    cal.promptTokens = 100000;   // 首次观测即触顶 3.0
+    cal.completionTokens = 10;
+    llm.script.append(cal);
+    QVERIFY(agent.startTask(QStringLiteral("校准 schema")));
+    QTRY_COMPARE(responseSpy.count(), 1);
+
+    const QVariantMap comp = agent.contextComposition();
+    const qint64 scaledSchema = comp.value("toolsSchema").toLongLong();
+    // 首次 EWMA 直接取钳制上限 3.0，schema 也必须同步放大。
+    QVERIFY2(scaledSchema >= static_cast<qint64>(rawSchema) * 2,
+             "tools schema must scale with the EWMA coefficient");
+    QCOMPARE(comp.value("usedTokens").toLongLong() + scaledSchema,
+             comp.value("totalTokens").toLongLong());
+    // 各桶独立取整，notifyTokens 整体取整，二者最大差 4。
+    QVERIFY2(qAbs(tokensSpy.last().at(0).toLongLong()
+                  - comp.value("totalTokens").toLongLong()) <= 4,
+             "notifyTokens and contextComposition must share the scaled口径");
+
+    agent.setMemory(nullptr);
+}
+
+// A4：不同模型 tokenizer/分词口径不同，切换模型必须让旧系数失效；
+// configure 每次新建 service 但模型不变的“同模型重连”则必须保留观测。
+void TestAgent::testEstimateScaleResetOnModelSwitch() {
+    SqliteMemory memory(QStringLiteral(":memory:"));
+    agent.setMemory(&memory);
+
+    // 空历史 toolsSchema 作为未校准预留基线（无注册工具时为 0，不影响断言）。
+    const int rawSchema = agent.contextComposition()
+                              .value("toolsSchema").toInt();
+
+    QSignalSpy tokensSpy(&agent, &AIAgent::tokensChanged);
+    QSignalSpy responseSpy(&agent, &AIAgent::responseReady);
+
+    // ── 先构造 scale > 1（首次观测顶到 3.0）──
+    LLMResponse first = textResponse(QStringLiteral("first"));
+    first.promptTokens = 100000;
+    first.completionTokens = 10;
+    llm.script.append(first);
+    QVERIFY(agent.startTask(QStringLiteral("校准")));
+    QTRY_COMPARE(responseSpy.count(), 1);
+    const int calibratedRaw = TokenEstimator::estimateTokens(agent.messages())
+                            + rawSchema;
+    QVERIFY(tokensSpy.last().at(0).toInt() >= calibratedRaw * 2);
+
+    // ── 同模型重连：model 名不变 → 系数保留，下一轮仍按 3× 放大 ──
+    otherLlm.modelName = QStringLiteral("fake-model");
+    otherLlm.reset();
+    otherLlm.script.append(textResponse(QStringLiteral("same model")));
+    agent.setLLMService(&otherLlm);
+    QVERIFY(agent.startTask(QStringLiteral("同模型重连")));
+    QTRY_COMPARE(responseSpy.count(), 2);
+    const int sameRaw = TokenEstimator::estimateTokens(agent.messages())
+                      + rawSchema;
+    QCOMPARE(tokensSpy.last().at(0).toInt(),
+             static_cast<int>(sameRaw * 3.0));
+
+    // ── 换模型：生效模型从 fake-model 换成 other-model → 系数复位 ──
+    // 注意模型名必须在 startTask 的请求真正生效（生效模型才是观测基准），
+    // 仅改一个从未使用的实例是旧用例的场景错误。
+    otherLlm.modelName = QStringLiteral("other-model");
+    agent.setLLMService(&otherLlm);
+    otherLlm.reset();
+    otherLlm.script.append(textResponse(QStringLiteral("different model")));
+    QVERIFY(agent.startTask(QStringLiteral("换模型")));
+    QTRY_COMPARE(responseSpy.count(), 3);
+    const int resetRaw = TokenEstimator::estimateTokens(agent.messages())
+                       + rawSchema;
+    // 下一轮 tokensChanged 回落到未校准量级（scale 已复位 1.0）。
+    QCOMPARE(tokensSpy.last().at(0).toInt(), resetRaw);
+
+    otherLlm.modelName = QStringLiteral("fake-model");
+    agent.setMemory(nullptr);
+}
+
+// A4（Major）：main.cpp 按 apiProtocol 复用同一 service 实例，configure()
+// 原地改写 model() 后 setLLMService(同一指针) 走早退分支——旧实现直接
+// return，旧模型观测出的系数跨模型残留。另覆盖跨 setLLMService(nullptr)
+// 换到新 service 时观测基准不丢失。
+void TestAgent::estimateScaleResetOnSameServiceModelChange() {
+    SqliteMemory memory(QStringLiteral(":memory:"));
+    agent.setMemory(&memory);
+
+    const int rawSchema = agent.contextComposition()
+                              .value("toolsSchema").toInt();
+    QSignalSpy tokensSpy(&agent, &AIAgent::tokensChanged);
+    QSignalSpy responseSpy(&agent, &AIAgent::responseReady);
+
+    llm.reset();
+    llm.modelName = QStringLiteral("fake-model");
+    // ── 第一轮：真实 promptTokens 远大于估算 → 首次观测即顶到 3.0 ──
+    LLMResponse first = textResponse(QStringLiteral("first"));
+    first.promptTokens = 100000;
+    first.completionTokens = 10;
+    llm.script.append(first);
+    QVERIFY(agent.startTask(QStringLiteral("校准")));
+    QTRY_COMPARE(responseSpy.count(), 1);
+    const int calibratedRaw = TokenEstimator::estimateTokens(agent.messages())
+                            + rawSchema;
+    QVERIFY(tokensSpy.last().at(0).toInt() >= calibratedRaw * 2);
+
+    // ── 同一指针只改 modelName（等效 configure 原地换模型）──
+    // setLLMService 命中指针相等的早退分支，必须比较 m_scaleModelName。
+    llm.modelName = QStringLiteral("other-model");
+    agent.setLLMService(&llm);
+    llm.reset();
+    llm.script.append(textResponse(QStringLiteral("same instance")));
+    QVERIFY(agent.startTask(QStringLiteral("同实例换模型")));
+    QTRY_COMPARE(responseSpy.count(), 2);
+    const int resetRaw = TokenEstimator::estimateTokens(agent.messages())
+                       + rawSchema;
+    // 下一轮无 usage，tokensChanged 必须回落到未校准量级（系数已清零）。
+    QCOMPARE(tokensSpy.last().at(0).toInt(), resetRaw);
+
+    // ── 再次构造高系数，然后跨 nullptr 换到第三个模型 ──
+    llm.reset();
+    LLMResponse again = textResponse(QStringLiteral("recalibrate"));
+    again.promptTokens = 100000;
+    again.completionTokens = 10;
+    llm.script.append(again);
+    QVERIFY(agent.startTask(QStringLiteral("重新校准")));
+    QTRY_COMPARE(responseSpy.count(), 3);
+    QVERIFY(tokensSpy.last().at(0).toInt() >= resetRaw * 2);
+
+    FakeAIService third;
+    third.modelName = QStringLiteral("third-model");
+    agent.setLLMService(nullptr);   // 基准不清空
+    agent.setLLMService(&third);    // 与基准不同 → 清零
+    third.script.append(textResponse(QStringLiteral("third")));
+    QVERIFY(agent.startTask(QStringLiteral("跨空换模型")));
+    QTRY_COMPARE(responseSpy.count(), 4);
+    const int thirdRaw = TokenEstimator::estimateTokens(agent.messages())
+                       + rawSchema;
+    QCOMPARE(tokensSpy.last().at(0).toInt(), thirdRaw);
+
+    agent.setLLMService(&llm);   // 恢复 fixture 默认服务
+    llm.modelName = QStringLiteral("fake-model");
+    agent.setMemory(nullptr);
+}
+
+// B1（Major）：provider 每会话可能复用同一 call id。runKey 必须带
+// sessionId，resetSession 也必须清空去重集合；否则第二个会话的同 id
+// 同步子代理会被当成“已入账”漏记。
+void TestAgent::subagentRunKeySeparatesSessions() {
+    SqliteMemory memory(QStringLiteral(":memory:"));
+    agent.setMemory(&memory);
+
+    SubAgentFixture fixture;
+    SpawnToolGuard guard;
+    fixture.tool = registerSpawnTool(fixture, [](RecordingFakeService& sub) {
+        LLMResponse r = textResponse(QStringLiteral("dup report"));
+        r.promptTokens = 20;
+        r.completionTokens = 5;
+        r.tokensUsed = 25;
+        sub.script.append(r);
+    });
+
+    const auto runOnce = [&](const QString& prompt) -> QString {
+        llm.reset();
+        LLMResponse spawn = toolResponse(QStringLiteral("spawn_agent"),
+            QJsonObject{{QStringLiteral("goal"), QStringLiteral("dup goal")}});
+        spawn.toolCalls[0].id = QStringLiteral("call_dup");
+        spawn.promptTokens = 10;
+        spawn.completionTokens = 1;
+        spawn.tokensUsed = 11;
+        llm.script.append(spawn);
+        llm.script.append(textResponse(QStringLiteral("done")));
+        QSignalSpy spy(&agent, &AIAgent::responseReady);
+        if (!agent.startTask(prompt)) return QString();
+        QElapsedTimer timer;
+        timer.start();
+        while (spy.count() < 1 && timer.elapsed() < 20000)
+            QTest::qWait(50);
+        return spy.count() >= 1 ? agent.currentSessionId() : QString();
+    };
+
+    const QString firstSession = runOnce(QStringLiteral("first session"));
+    QVERIFY(!firstSession.isEmpty());
+    QCOMPARE(subagentTokenRows(memory, firstSession).size(), 1);
+    QVERIFY(agent.sessionTokensUsed() > 0);
+
+    agent.resetSession();
+    QCOMPARE(agent.sessionTokensUsed(), qint64(0));
+
+    const QString secondSession = runOnce(QStringLiteral("second session"));
+    QVERIFY(!secondSession.isEmpty());
+    QVERIFY(secondSession != firstSession);
+    QCOMPARE(subagentTokenRows(memory, secondSession).size(), 1);
+    QVERIFY(agent.sessionTokensUsed() > 0);
+
+    // 跨会话总计 2 条子代理行（旧实现 runKey="sync:call_dup" + 集合不清，
+    // 第二会话会被去重漏记，只剩 1 条）。
+    QSqlQuery q(memory.databaseForTest());
+    QVERIFY(q.exec(QStringLiteral(
+        "SELECT COUNT(*) FROM token_usage WHERE request_id = 0")));
+    QVERIFY(q.next());
+    QCOMPARE(q.value(0).toInt(), 2);
+
+    agent.setMemory(nullptr);
 }
 
 // docs/16 §13 AC-7: 配额检查 —— 超限时 emit quotaWarning，strict 模式拒绝请求，
@@ -5328,6 +5973,294 @@ void TestAgent::subagentRetryAccumulatesClassifiedUsage() {
     QCOMPARE(usage.value(QStringLiteral("input")).toInt(), 1300);
     QCOMPARE(usage.value(QStringLiteral("output")).toInt(), 350);
     QCOMPARE(usage.value(QStringLiteral("reported")).toBool(), true);
+}
+
+// B2：取消/超时的步骤没有 response payload，Runner 若把跨 step 复用的
+// `response` 无条件累加，会把上一步 usage 再计一遍（成本/统计翻倍）。
+// 本用例直接驱动 Runner：第 1 步返回 tool_calls + usage(100/50/150)，
+// 第 2 步挂起后分别由墙钟超时与取消旗标收场，断言计量只等于第 1 步。
+void TestAgent::subagentCancelDoesNotDoubleCountUsage() {
+    auto probe = std::make_shared<SubAgentProbeTool>();
+    const auto scriptFirstStep = [](HangAfterFirstStepService& service) {
+        LLMResponse step = toolResponse(QStringLiteral("test_sub_probe"), {});
+        step.toolCalls[0].id = QStringLiteral("call_1");
+        step.promptTokens = 100;
+        step.completionTokens = 50;
+        step.tokensUsed = 150;
+        service.script.append(step);
+    };
+
+    // ── 超时收场 ──
+    {
+        HangAfterFirstStepService service;
+        scriptFirstStep(service);
+        SubAgentRequest request;
+        request.goal = QStringLiteral("hang on the second step");
+        request.maxSteps = 3;
+        request.timeoutMs = 300;
+        request.tools.append(SubAgentToolEntry{probe->definition(), probe});
+
+        const SubAgentReport report = SubAgentRunner::run(&service, request);
+        QCOMPARE(int(report.stop), int(SubAgentReport::Stop::TimedOut));
+        QCOMPARE(report.stopCode, QStringLiteral("timeout"));
+        // 旧实现：第 2 步没有 payload，仍复用第 1 步 response → 300/200/100。
+        QCOMPARE(report.tokensUsed, 150);
+        QCOMPARE(report.usage.inputTokens, 100);
+        QCOMPARE(report.usage.outputTokens, 50);
+        QCOMPARE(report.usage.cachedTokens, 0);
+        QVERIFY(report.usage.usageReported);
+    }
+
+    // ── 取消旗标收场 ──
+    {
+        HangAfterFirstStepService service;
+        scriptFirstStep(service);
+        auto cancelled = std::make_shared<std::atomic<bool>>(false);
+        QTimer::singleShot(150, nullptr,
+                           [flag = cancelled.get()]() { flag->store(true); });
+        SubAgentRequest request;
+        request.goal = QStringLiteral("cancel while the second step hangs");
+        request.maxSteps = 3;
+        request.timeoutMs = 0;   // 只靠取消旗标收场
+        request.cancelled = cancelled;
+        request.tools.append(SubAgentToolEntry{probe->definition(), probe});
+
+        const SubAgentReport report = SubAgentRunner::run(&service, request);
+        QCOMPARE(int(report.stop), int(SubAgentReport::Stop::Cancelled));
+        QCOMPARE(report.stopCode, QStringLiteral("cancelled"));
+        QCOMPARE(report.tokensUsed, 150);
+        QCOMPARE(report.usage.inputTokens, 100);
+        QCOMPARE(report.usage.outputTokens, 50);
+    }
+}
+
+// B2（Major，推测竞态）：第一步的迟到/重复 responseReady 不得被第二步
+// 的等待循环捕获。修复前整轮共用一条信号连接，迟到 payload 会改写第二
+// 步的 response 并让 loop.quit()——报告把迟到正文和 usage 当成本步结果。
+void TestAgent::subagentStepSignalsAreIsolated() {
+    auto probe = std::make_shared<SubAgentProbeTool>();
+    LateDuplicateAfterFirstStepService service;
+
+    auto cancelled = std::make_shared<std::atomic<bool>>(false);
+    // abortTimer 每 250ms 轮询：300ms 置位 → 500ms 检测到并收场。
+    QTimer::singleShot(300, nullptr,
+                       [flag = cancelled.get()]() { flag->store(true); });
+
+    SubAgentRequest request;
+    request.goal = QStringLiteral("late payload must not leak into step two");
+    request.maxSteps = 3;
+    request.timeoutMs = 0;   // 只靠取消旗标收场
+    request.cancelled = cancelled;
+    request.tools.append(SubAgentToolEntry{probe->definition(), probe});
+
+    const SubAgentReport report = SubAgentRunner::run(&service, request);
+
+    // 第二步没有被迟到 payload 提前“完成”，仍按取消收场。
+    QCOMPARE(int(report.stop), int(SubAgentReport::Stop::Cancelled));
+    QCOMPARE(report.stopCode, QStringLiteral("cancelled"));
+    // 只有第一步的真实 usage；迟到 payload（1000）绝不能计入。
+    QCOMPARE(report.tokensUsed, 150);
+    QCOMPARE(report.usage.inputTokens, 100);
+    QCOMPARE(report.usage.outputTokens, 50);
+    QVERIFY(report.usage.usageReported);
+    QVERIFY2(!report.text.contains(QStringLiteral("late duplicate")),
+             "report text was replaced by the late payload");
+}
+
+// B3：Anthropic 缓存分类必须保留原值——cacheRead 并入展示用 cached，
+// cacheCreation 单独保留；reportJson 同时暴露两者供入账归一化。
+void TestAgent::subagentUsageKeepsCacheClassification() {
+    FakeAIService fake;
+    LLMResponse resp = textResponse(QStringLiteral("classified"));
+    resp.promptTokens = 100;
+    resp.completionTokens = 20;
+    resp.cachedTokens = 7;          // OpenAI cached
+    resp.cacheReadTokens = 30;      // Anthropic cache_read
+    resp.cacheCreationTokens = 10;  // Anthropic cache_creation
+    resp.tokensUsed = 160;
+    fake.script.append(resp);
+
+    SubAgentRequest request;
+    request.goal = QStringLiteral("classify usage");
+    const SubAgentReport report = SubAgentRunner::run(&fake, request);
+    QVERIFY2(report.ok, qPrintable(report.text));
+    QCOMPARE(report.usage.inputTokens, 100);
+    QCOMPARE(report.usage.outputTokens, 20);
+    QCOMPARE(report.usage.cachedTokens, 37);      // 7 + 30 展示合并值
+    QCOMPARE(report.usage.cacheReadTokens, 30);
+    QCOMPARE(report.usage.cacheCreationTokens, 10);
+    QVERIFY(report.usage.usageReported);
+
+    const QJsonObject usage =
+        SubAgentTool::reportJson(report).value(QStringLiteral("usage")).toObject();
+    QCOMPARE(usage.value(QStringLiteral("cached")).toInt(), 37);
+    QCOMPARE(usage.value(QStringLiteral("cacheRead")).toInt(), 30);
+    QCOMPARE(usage.value(QStringLiteral("cacheCreation")).toInt(), 10);
+}
+
+// B1 同步：spawn_agent 的同步报告在 finishToolExecution 入账。子代理行
+// requestId=0（父请求不可靠），来源统一 inputToolCall/outputToolCall，
+// 会话累计包含主 + 子。
+void TestAgent::subagentUsageAccountedIntoSyncSession() {
+    SqliteMemory memory(QStringLiteral(":memory:"));
+    agent.setMemory(&memory);
+
+    SubAgentFixture fixture;
+    SpawnToolGuard guard;
+    fixture.tool = registerSpawnTool(fixture, [](RecordingFakeService& sub) {
+        LLMResponse r = textResponse(QStringLiteral("sync report"));
+        r.promptTokens = 40;
+        r.completionTokens = 10;
+        r.cachedTokens = 2;
+        r.cacheReadTokens = 5;
+        r.cacheCreationTokens = 3;
+        r.tokensUsed = 50;
+        sub.script.append(r);
+    });
+
+    llm.reset();
+    LLMResponse spawn = toolResponse(QStringLiteral("spawn_agent"),
+        QJsonObject{{QStringLiteral("goal"), QStringLiteral("sync accounting")}});
+    spawn.toolCalls[0].id = QStringLiteral("call_spawn_sync");
+    spawn.promptTokens = 100;
+    spawn.completionTokens = 5;
+    spawn.tokensUsed = 105;
+    llm.script.append(spawn);
+    LLMResponse finalResp = textResponse(QStringLiteral("done"));
+    finalResp.promptTokens = 120;
+    finalResp.completionTokens = 10;
+    finalResp.tokensUsed = 130;
+    llm.script.append(finalResp);
+
+    QSignalSpy responseSpy(&agent, &AIAgent::responseReady);
+    QVERIFY(agent.startTask(QStringLiteral("spawn sync")));
+    QTRY_COMPARE(responseSpy.count(), 1);
+
+    const QString sessionId = agent.currentSessionId();
+    QVERIFY(!sessionId.isEmpty());
+    const QVariantList subRows = subagentTokenRows(memory, sessionId);
+    QCOMPARE(subRows.size(), 1);
+    const QVariantMap row = subRows.first().toMap();
+    // input = 40 + cacheRead 5 + cacheCreation 3 = 48；tokensUsed(50) 不足以
+    // 覆盖分类合计 → output 保持 10。
+    QCOMPARE(row.value("input").toLongLong(), qint64(48));
+    QCOMPARE(row.value("output").toLongLong(), qint64(10));
+    QCOMPARE(row.value("cacheHit").toLongLong(), qint64(7));   // 2 + 5
+    QCOMPARE(row.value("inputToolCall").toLongLong(), qint64(48));
+    QCOMPARE(row.value("outputToolCall").toLongLong(), qint64(10));
+    QCOMPARE(row.value("model").toString(), QStringLiteral("fake-model"));
+
+    // 会话累计 == token_usage 所有行（主 + 子）之和。
+    const QVariantMap records = memory.tokenUsageRecords(0, 0, 500, 0);
+    qint64 expected = 0;
+    for (const QVariant& value : records.value("rows").toList()) {
+        const QVariantMap rec = value.toMap();
+        expected += rec.value("inputTokens").toLongLong()
+                  + rec.value("outputTokens").toLongLong();
+    }
+    QCOMPARE(agent.sessionTokensUsed(), expected);
+    QCOMPARE(records.value("total").toInt(), 3);   // 2 主行 + 1 子行
+
+    agent.setMemory(nullptr);
+}
+
+// B1 后台：taskFinished 入账一次；随后 subagent_wait 只收割报告，不得
+// 再写 token_usage 或增加会话累计。
+void TestAgent::subagentUsageAccountedOnceForBackgroundRun() {
+    SqliteMemory memory(QStringLiteral(":memory:"));
+    agent.setMemory(&memory);
+
+    SubAgentFixture fixture;
+    SpawnToolGuard guard;
+    fixture.tool = registerSpawnTool(fixture, [](RecordingFakeService& sub) {
+        LLMResponse r = textResponse(QStringLiteral("bg report"));
+        r.promptTokens = 60;
+        r.completionTokens = 20;
+        r.cacheReadTokens = 10;
+        r.cacheCreationTokens = 5;
+        r.tokensUsed = 80;
+        sub.script.append(r);
+    });
+    ToolNameGuard waitGuard{QString::fromLatin1(SubAgentWaitTool::kName)};
+    if (!ToolRegistry::instance().isRegistered(
+            QString::fromLatin1(SubAgentWaitTool::kName))) {
+        ToolRegistry::instance().registerTool(std::make_shared<SubAgentWaitTool>());
+    }
+
+    llm.reset();
+    LLMResponse spawn = toolResponse(QStringLiteral("spawn_agent"),
+        QJsonObject{{QStringLiteral("goal"), QStringLiteral("bg accounting")},
+                    {QStringLiteral("background"), true}});
+    spawn.toolCalls[0].id = QStringLiteral("call_spawn_bg");
+    spawn.promptTokens = 100;
+    spawn.completionTokens = 5;
+    spawn.tokensUsed = 105;
+    llm.script.append(spawn);
+    llm.script.append(textResponse(QStringLiteral("started")));
+
+    QSignalSpy responseSpy(&agent, &AIAgent::responseReady);
+    QVERIFY(agent.startTask(QStringLiteral("spawn background")));
+    QTRY_COMPARE(responseSpy.count(), 1);
+
+    QString taskId;
+    QTRY_VERIFY_WITH_TIMEOUT([&]() {
+        for (const QVariant& value : agent.backgroundSubAgents()) {
+            const QVariantMap row = value.toMap();
+            if (row.value(QStringLiteral("state")).toString()
+                    != QLatin1String("completed"))
+                continue;
+            taskId = row.value(QStringLiteral("id")).toString();
+            return true;
+        }
+        return false;
+    }(), 10000);
+    QVERIFY(!taskId.isEmpty());
+
+    const QString sessionId = agent.currentSessionId();
+    // taskFinished 是 Queued 连接，等 GUI 线程把入账行写完。
+    QTRY_COMPARE_WITH_TIMEOUT(subagentTokenRows(memory, sessionId).size(), 1,
+                              5000);
+    const QVariantMap subRow = subagentTokenRows(memory, sessionId)
+                                   .first().toMap();
+    // input = 60 + 10 + 5 = 75；output 20。
+    QCOMPARE(subRow.value("input").toLongLong(), qint64(75));
+    QCOMPARE(subRow.value("output").toLongLong(), qint64(20));
+    QCOMPARE(subRow.value("inputToolCall").toLongLong(), qint64(75));
+    QCOMPARE(subRow.value("outputToolCall").toLongLong(), qint64(20));
+
+    const int rowsAfterBg =
+        memory.tokenUsageRecords(0, 0, 500, 0).value("total").toInt();
+    const qint64 sessionAfterBg = agent.sessionTokensUsed();
+    QVERIFY(sessionAfterBg > 0);
+
+    // 收割同一后台任务：只回报告，不得重复入账。
+    LLMResponse waitCall = toolResponse(QStringLiteral("subagent_wait"),
+        QJsonObject{{QStringLiteral("id"), taskId},
+                    {QStringLiteral("timeout_ms"), 1000}});
+    waitCall.toolCalls[0].id = QStringLiteral("call_wait_bg");
+    llm.script.append(waitCall);
+    llm.script.append(textResponse(QStringLiteral("harvested")));
+    QVERIFY(agent.startTask(QStringLiteral("harvest the background run")));
+    QTRY_COMPARE(responseSpy.count(), 2);
+
+    QCOMPARE(subagentTokenRows(memory, sessionId).size(), 1);
+    const int rowsAfterWait =
+        memory.tokenUsageRecords(0, 0, 500, 0).value("total").toInt();
+    // 两轮主任务各 2 条主记录；等待轮多出 2 条主记录，但没有新增子代理行。
+    QCOMPARE(rowsAfterWait, rowsAfterBg + 2);
+    QVERIFY(agent.sessionTokensUsed() > sessionAfterBg);
+
+    // 总量仍与逐行 input+output 一致。
+    const QVariantMap records = memory.tokenUsageRecords(0, 0, 500, 0);
+    qint64 expected = 0;
+    for (const QVariant& value : records.value("rows").toList()) {
+        const QVariantMap rec = value.toMap();
+        expected += rec.value("inputTokens").toLongLong()
+                  + rec.value("outputTokens").toLongLong();
+    }
+    QCOMPARE(agent.sessionTokensUsed(), expected);
+
+    agent.setMemory(nullptr);
 }
 
 // docs/43 O4 审计收口（P1-1）：重试快照必须固化 spawn 当时的调度决策。
@@ -6739,6 +7672,95 @@ void TestAgent::subagentCompressesContextOnTheWire() {
     QVERIFY(evidence.contains("test_large_output"));
 }
 
+// B8: profile 解析失败时 contextLimit 为 0（未知），Runner 不能把超窗请求
+// 原样发给 provider。用保守默认上限压缩 wire 副本：大量 CJK tool 结果把
+// 历史推过 128k tokens，断言每一次请求的 messages 估算都不超上限，且有
+// 压缩进度事件（旧实现 contextLimit=0 完全跳过压缩）。
+void TestAgent::subagentCompressesWithFallbackLimit() {
+    QTemporaryDir artifacts;
+    QVERIFY(artifacts.isValid());
+    SubAgentRunner::setArtifactsRootOverride(artifacts.path());
+
+    constexpr int kRounds = 36;
+    FakeAIService fake;
+    for (int i = 0; i < kRounds; ++i) {
+        LLMResponse r = toolResponse(QStringLiteral("test_huge_output"),
+                                     QJsonObject{{QStringLiteral("round"), i}});
+        r.toolCalls[0].id = QStringLiteral("call_%1").arg(i);
+        fake.script.append(r);
+    }
+    fake.script.append(textResponse(QStringLiteral("done")));
+
+    auto probe = std::make_shared<HugeOutputProbeTool>();
+    SubAgentRequest request;
+    request.goal = QStringLiteral("gather a very large evidence set");
+    request.tools.append(SubAgentToolEntry{probe->definition(), probe});
+    request.maxSteps = kRounds + 1;
+    request.contextLimit = 0;   // unknown profile window
+    QStringList contextEvents;
+    request.progress = [&contextEvents](const SubAgentProgress& p) {
+        if (p.phase == QLatin1String("context"))
+            contextEvents.append(p.detail);
+    };
+
+    const SubAgentReport report = SubAgentRunner::run(&fake, request);
+    SubAgentRunner::setArtifactsRootOverride(QString());
+
+    QVERIFY2(report.ok, qPrintable(report.text));
+    QVERIFY2(!contextEvents.isEmpty(),
+             "contextLimit=0 skipped compression instead of using the fallback");
+    QCOMPARE(fake.seenMessages.size(), kRounds + 1);
+
+    bool sawMarker = false;
+    for (const QJsonArray& wire : fake.seenMessages) {
+        const int tokens = TokenEstimator::estimateTokens(wire);
+        QVERIFY2(tokens <= 128000,
+                 qPrintable(QStringLiteral("fallback wire uses %1 tokens")
+                                .arg(tokens)));
+        for (const auto& entry : wire) {
+            if (entry.toObject().value(QStringLiteral("content")).toString()
+                    .contains(QStringLiteral("earlier tool round(s)")))
+                sawMarker = true;
+        }
+    }
+    QVERIFY2(sawMarker, "fallback compression never dropped an old round");
+}
+
+// B9: provider 未上报 usage（prompt/completion/tokensUsed 全 0）时，Runner
+// 必须用 TokenEstimator 回退估算（实际 wire 消息 + schema + 响应正文），
+// 并标记 estimated；不能把子代理成本显示成 0。
+void TestAgent::subagentWithoutUsageFallsBackToEstimatedTokens() {
+    FakeAIService fake;
+    fake.script.append(textResponse(QStringLiteral("no usage payload")));
+
+    auto probe = std::make_shared<SubAgentProbeTool>();
+    SubAgentRequest request;
+    request.goal = QStringLiteral("estimate my cost");
+    request.tools.append(SubAgentToolEntry{probe->definition(), probe});
+
+    const SubAgentReport report = SubAgentRunner::run(&fake, request);
+    QVERIFY2(report.ok, qPrintable(report.text));
+    QVERIFY2(report.tokensUsed > 0,
+             "missing usage left the sub-agent cost at zero");
+    QVERIFY2(!report.usage.usageReported, "fallback must not fake reported usage");
+    QCOMPARE(report.usage.inputTokens, 0);
+    QCOMPARE(report.usage.outputTokens, 0);
+
+    QCOMPARE(fake.seenMessages.size(), 1);
+    const int expected = TokenEstimator::estimateTokens(fake.seenMessages.last())
+                       + TokenEstimator::estimateToolsSchema(fake.seenTools.last())
+                       + TokenEstimator::estimateTokens(
+                             QStringLiteral("no usage payload"));
+    QCOMPARE(report.tokensUsed, expected);
+
+    // 结构化报告同步暴露 estimated，供面板/过程卡片加「≈」。
+    const QJsonObject usage =
+        SubAgentTool::reportJson(report).value(QStringLiteral("usage")).toObject();
+    QVERIFY2(usage.value(QStringLiteral("estimated")).toBool(),
+             "reportJson lost the estimated marker");
+    QCOMPARE(usage.value(QStringLiteral("reported")).toBool(), false);
+}
+
 // docs/35 P4.2: five read-only calls in one round used to execute strictly
 // one after another. They now overlap (up to kSubToolParallelCap), while the
 // tool messages still land in call order.
@@ -7493,6 +8515,7 @@ void TestAgent::subagentBatchWaitAnyAndAll() {
 
     auto hub = std::make_shared<BackgroundTaskHub>();
     BackgroundTaskHubRouter router(hub);
+    QSignalSpy finishedSpy(hub.get(), &BackgroundTaskHub::taskFinished);
     SubAgentWaitTool waitTool;
 
     auto spawn = [&](const QString& goal) {
@@ -7537,6 +8560,23 @@ void TestAgent::subagentBatchWaitAnyAndAll() {
     QVERIFY2(all.output.contains(QStringLiteral("2 of 2 finished")),
              qPrintable(all.output));
     QCOMPARE(all.metadata.value(QStringLiteral("subagentReports")).toArray().size(), 2);
+
+    // B7: 后台终态快照与 taskFinished 摘要都暴露 attempts（本次均 1 次）。
+    const QVariantList snapshots = hub->snapshots();
+    QCOMPARE(snapshots.size(), 2);
+    for (const QVariant& value : snapshots) {
+        const QVariantMap snapshot = value.toMap();
+        QCOMPARE(snapshot.value(QStringLiteral("attempts")).toInt(), 1);
+        QCOMPARE(snapshot.value(QStringLiteral("usage")).toMap()
+                     .value(QStringLiteral("attempts")).toInt(), 1);
+    }
+    QCOMPARE(finishedSpy.count(), 2);
+    for (const QList<QVariant>& args : finishedSpy) {
+        const QVariantMap summary = args.at(0).toMap();
+        QCOMPARE(summary.value(QStringLiteral("attempts")).toInt(), 1);
+        QCOMPARE(summary.value(QStringLiteral("usage")).toMap()
+                     .value(QStringLiteral("attempts")).toInt(), 1);
+    }
 }
 
 // docs/43 O3: the gate reports running/queued pressure so the model knows a
@@ -7755,6 +8795,16 @@ void TestAgent::subagentSlotQueueTimesOut() {
         .value(QStringLiteral("subagentReport")).toObject();
     QCOMPARE(meta.value(QStringLiteral("stopCode")).toString(),
              QStringLiteral("slot_timeout"));
+    // B7: 槽位超时没有真正运行 attempt，报告与终态快照都应为 0。
+    QCOMPARE(meta.value(QStringLiteral("attempts")).toInt(), 0);
+    bool zeroAttemptSeen = false;
+    for (const QVariant& value : hub->snapshots()) {
+        const QVariantMap snapshot = value.toMap();
+        if (snapshot.value(QStringLiteral("id")).toString() != id) continue;
+        QCOMPARE(snapshot.value(QStringLiteral("attempts")).toInt(), 0);
+        zeroAttemptSeen = true;
+    }
+    QVERIFY2(zeroAttemptSeen, "timed-out task missing from snapshots");
 
     gate.release(2);
     QTRY_COMPARE_WITH_TIMEOUT(hub->activeCount(), 0, 5000);
@@ -7943,6 +8993,80 @@ void TestAgent::subagentBatchWaitAuditAggregates() {
         found = true;
     }
     QVERIFY2(found, "batch wait audit row missing");
+    agent.setMemory(nullptr);
+}
+
+// B4: 批量 wait 中只有一个任务上报分类用量时，聚合结果保留 reported=OR
+// （仍可展示分类），同时给出 reportedCount/totalCount/partial，避免把未
+// 上报项当成 0 成本；input/output 仍按现有求和口径（未上报项贡献 0）。
+// 聚合还要传播 estimated（任一项缺分类用量或用了估算回退）与
+// cacheRead/cacheCreation 原值。
+void TestAgent::subagentBatchWaitMarksPartialUsage() {
+    SqliteMemory memory(QStringLiteral(":memory:"));
+    agent.setMemory(&memory);
+
+    SubAgentFixture fixture;
+    SpawnToolGuard spawnGuard;
+    ToolNameGuard waitGuard{QString::fromLatin1(SubAgentWaitTool::kName)};
+    auto dispatches = std::make_shared<std::atomic<int>>(0);
+    fixture.tool = registerSpawnTool(fixture,
+        [dispatches](RecordingFakeService& sub) {
+            const int index = dispatches->fetch_add(1);
+            LLMResponse report = textResponse(
+                QStringLiteral("partial batch report"));
+            report.tokensUsed = 7;
+            if (index == 0) {
+                // 第一个任务上报分类用量（含 Anthropic 缓存明细）；
+                // 第二个只有聚合 tokens。
+                report.promptTokens = 4;
+                report.completionTokens = 3;
+                report.cachedTokens = 1;
+                report.cacheReadTokens = 6;
+                report.cacheCreationTokens = 2;
+            }
+            sub.script.append(report);
+        });
+    ToolRegistry::instance().registerTool(std::make_shared<SubAgentWaitTool>());
+
+    BatchWaitFakeService dynamicLlm;
+    struct RestoreLlm {
+        AIAgent& agent;
+        FakeAIService* original;
+        ~RestoreLlm() { agent.setLLMService(original); }
+    } restoreLlm{agent, &llm};
+    agent.setLLMService(&dynamicLlm);
+
+    QSignalSpy spy(&agent, &AIAgent::responseReady);
+    agent.startTask(QStringLiteral("two jobs, one reports usage"));
+    QTRY_COMPARE_WITH_TIMEOUT(spy.count(), 1, 20000);
+
+    QJsonObject light;
+    for (const auto& entry : agent.traceModel()) {
+        const QJsonObject candidate =
+            entry.toObject().value("subagentReport").toObject();
+        if (candidate.value("batch").toBool()) {
+            light = candidate;
+            break;
+        }
+    }
+    QVERIFY2(!light.isEmpty(), "trace node missing batch subagentReport");
+    const QJsonObject usage = light.value("usage").toObject();
+    QVERIFY2(usage.value("reported").toBool(),
+             "reported 应保持 OR（有任一任务上报即可展示分类）");
+    QCOMPARE(usage.value("reportedCount").toInt(), 1);
+    QCOMPARE(usage.value("totalCount").toInt(), 2);
+    QCOMPARE(usage.value("partial").toBool(), true);
+    QCOMPARE(usage.value("input").toInt(), 4);
+    QCOMPARE(usage.value("output").toInt(), 3);
+    // Runner 的展示 cached 合并了 OpenAI cached + Anthropic cacheRead。
+    QCOMPARE(usage.value("cached").toInt(), 7);
+    QCOMPARE(usage.value("cacheRead").toInt(), 6);
+    QCOMPARE(usage.value("cacheCreation").toInt(), 2);
+    // 第二个任务没上报分类用量 → 聚合结果必须标记 estimated。
+    QVERIFY2(usage.value("estimated").toBool(),
+             "batch aggregation lost the estimated marker");
+    QCOMPARE(light.value("tokensUsed").toInt(), 14);
+
     agent.setMemory(nullptr);
 }
 

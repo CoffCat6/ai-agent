@@ -1,4 +1,7 @@
 #include <QtTest>
+#include <QFont>
+#include <QTextDocument>
+#include <QVector2D>
 #include <QQmlComponent>
 #include <QQmlContext>
 #include <QQmlEngine>
@@ -127,6 +130,64 @@ struct SlashHarness {
              console->property("skillChips").toList())
             names << entry.toMap().value(QStringLiteral("name")).toString();
         return names;
+    }
+};
+
+// docs/45 §3.4：对话文本排版（行距 / ATX 标题 / 代码块）夹具。与上方
+// SlashHarness 加载 main.qml、input() 加载 InputConsole 同构：源码树
+// 文件系统加载 tests/qml/AssistantMessageHarness.qml，import NexusAI 经
+// build 目录模块 qmldir 解析到 qrc 里的 workflow_ui 副本——不新开测试
+// 可执行（该套件已链接 viewmodelsplugin 且 qrc 全量收录 src/ui/*.qml）。
+// 两个 AssistantMessage 实例分别锁单 TextEdit（mdText，流式同路径）与
+// segments 拆分路径；C++ 直接 setProperty modelData（var 属性自带 changed
+// 信号，绑定会重算，先例见 traceDetailKeyIsStableWithoutNodeId）、读
+// segments property 与 objectName 子项，不经过 JS 探针转发。
+struct MessageHarness {
+    QQmlApplicationEngine engine;
+    std::unique_ptr<QObject> root;
+    QQuickWindow* window = nullptr;
+    QString error;
+
+    bool load() {
+        engine.rootContext()->setContextProperty("Theme", ThemeProvider::instance());
+        QQmlComponent component(&engine, QUrl::fromLocalFile(
+            QStringLiteral(NEXUS_SOURCE_DIR "/tests/qml/AssistantMessageHarness.qml")));
+        if (!component.isReady()) {
+            error = component.errorString();
+            return false;
+        }
+        root.reset(component.create());
+        if (!root) {
+            error = component.errorString();
+            return false;
+        }
+        window = qobject_cast<QQuickWindow*>(root.get());
+        if (!window) {
+            error = QStringLiteral("harness root is not a QQuickWindow");
+            return false;
+        }
+        window->resize(700, 900);
+        window->show();
+        if (!QTest::qWaitForWindowExposed(window)) {
+            error = QStringLiteral("window was not exposed");
+            return false;
+        }
+        QTest::qWait(80);
+        return true;
+    }
+
+    // Repeater 的 delegate 是动态实例，不挂在 QObject children 树上——
+    // window->findChild 覆盖不到（见 singleConversationViewChrome 的注释），
+    // 必须沿场景图 childItems 递归找（ProcessCardHarness.getChild 的 C++
+    // 版）。实例内部的声明式子对象（DocumentLineHeight 等 QObject）再用
+    // findChild。
+    static QQuickItem* findSceneChild(QQuickItem* root, const QString& objectName) {
+        if (!root) return nullptr;
+        if (root->objectName() == objectName) return root;
+        for (QQuickItem* child : root->childItems())
+            if (QQuickItem* hit = findSceneChild(child, objectName))
+                return hit;
+        return nullptr;
     }
 };
 
@@ -1978,6 +2039,531 @@ private slots:
         QCOMPARE(router->property("detailKey").toString(),
                  QStringLiteral("v2:s:0"));
         delete router;
+    }
+
+    // ── docs/45 §3.4：对话文本排版（行距 / 标题 / 代码块）回归 ──
+
+    // AC-2/AC-3：segments 扫描器把非围栏的 ATX 标题（#+空白+内容，整行）
+    // 拆成独立 heading 段；围栏内 '#' 行仍是代码内容；行内 '#tag' 与行首
+    // 无空格 '#tag' 不是标题、留在 text 段；7 个井号超出 1-6 也留在 text 段。
+    void assistantSegmentsSplitHeadingsAndCode() {
+        MessageHarness ui;
+        QVERIFY2(ui.load(), qPrintable(ui.error));
+        auto* split = ui.window->findChild<QObject*>(QStringLiteral("splitMsg"));
+        QVERIFY(split);
+
+        // AC-2 标准输入：标题 / 空行 / 正文 / 围栏代码 → 恰好 3 段。
+        split->setProperty("modelData", QVariantMap{
+            {QStringLiteral("title"),
+             QStringLiteral("# T1\n\ntext\n\n```\ncode\n```")},
+            {QStringLiteral("status"), QStringLiteral("completed")}});
+        QTRY_COMPARE(split->property("splitMode").toBool(), true);
+        QVariantList segs = split->property("segments").toList();
+        QCOMPARE(segs.size(), 3);
+        QCOMPARE(segs[0].toMap().value(QStringLiteral("kind")).toString(),
+                 QStringLiteral("heading"));
+        QCOMPARE(segs[0].toMap().value(QStringLiteral("level")).toInt(), 1);
+        QCOMPARE(segs[0].toMap().value(QStringLiteral("text")).toString(),
+                 QStringLiteral("T1"));
+        QCOMPARE(segs[1].toMap().value(QStringLiteral("kind")).toString(),
+                 QStringLiteral("text"));
+        // 空行归属 text 段首尾（既有行为，锁住避免静默漂移）。
+        QCOMPARE(segs[1].toMap().value(QStringLiteral("text")).toString(),
+                 QStringLiteral("\ntext\n"));
+        QCOMPARE(segs[2].toMap().value(QStringLiteral("kind")).toString(),
+                 QStringLiteral("code"));
+        QCOMPARE(segs[2].toMap().value(QStringLiteral("code")).toString(),
+                 QStringLiteral("code"));
+
+        // 组合输入（紧凑排版让断言值可读）：行内 #tag、行首无空格 #tag、
+        // 围栏内 '#' 行、7 井号都不是标题。
+        split->setProperty("modelData", QVariantMap{
+            {QStringLiteral("title"),
+             QStringLiteral("# 标题一\n开场 #tag 文本\n## 副标\n")
+                 + QStringLiteral("```cpp\n# 注释行不是标题\nint x = 1;\n```\n")
+                 + QStringLiteral("结尾 #无空格tag\n####### 七个井号过深")},
+            {QStringLiteral("status"), QStringLiteral("completed")}});
+        QTRY_COMPARE(split->property("segments").toList().size(), 5);
+        segs = split->property("segments").toList();
+
+        QCOMPARE(segs[0].toMap().value(QStringLiteral("kind")).toString(),
+                 QStringLiteral("heading"));
+        QCOMPARE(segs[0].toMap().value(QStringLiteral("level")).toInt(), 1);
+        QCOMPARE(segs[0].toMap().value(QStringLiteral("text")).toString(),
+                 QStringLiteral("标题一"));
+
+        // AC-3：行内 #tag 留在 text 段。
+        QCOMPARE(segs[1].toMap().value(QStringLiteral("kind")).toString(),
+                 QStringLiteral("text"));
+        QCOMPARE(segs[1].toMap().value(QStringLiteral("text")).toString(),
+                 QStringLiteral("开场 #tag 文本"));
+
+        QCOMPARE(segs[2].toMap().value(QStringLiteral("kind")).toString(),
+                 QStringLiteral("heading"));
+        QCOMPARE(segs[2].toMap().value(QStringLiteral("level")).toInt(), 2);
+        QCOMPARE(segs[2].toMap().value(QStringLiteral("text")).toString(),
+                 QStringLiteral("副标"));
+
+        // AC-3：围栏内 '#' 行保留在 code 段（lang 与 code 逐字断言）。
+        QCOMPARE(segs[3].toMap().value(QStringLiteral("kind")).toString(),
+                 QStringLiteral("code"));
+        QCOMPARE(segs[3].toMap().value(QStringLiteral("lang")).toString(),
+                 QStringLiteral("cpp"));
+        QCOMPARE(segs[3].toMap().value(QStringLiteral("code")).toString(),
+                 QStringLiteral("# 注释行不是标题\nint x = 1;"));
+
+        // 行首无空格 #tag 与 7 井号都留在 text 段。
+        QCOMPARE(segs[4].toMap().value(QStringLiteral("kind")).toString(),
+                 QStringLiteral("text"));
+        QCOMPARE(segs[4].toMap().value(QStringLiteral("text")).toString(),
+                 QStringLiteral("结尾 #无空格tag\n####### 七个井号过深"));
+    }
+
+    // AC-1/AC-5：mdText（流式与终态同一条单 TextEdit 路径）与 segment
+    // 散文 textSeg 的行距收口 Theme.lineHeightBody；CodeBlock 的 codeText
+    // 收口 Theme.lineHeightCode。TextEdit 没有 lineHeight 属性（Qt 6.9 仅
+    // Text 元素有），行距由 DocumentLineHeight 行为组件落到 QTextDocument
+    // 的 blockFormat 上。断言锁三层（offscreen 无字体目录——QFontDatabase
+    // 警告属实，绝对行高不可靠，故不比像素）：
+    //   1) helper 实例的 token 绑定；
+    //   2) blockFormat 结构：首块 lineHeight == token×100（percent）且
+    //      类型为 ProportionalHeight；
+    //   3) 动态行距：把 helper 拉到 2.8 → contentHeight 显著增大、恢复
+    //      后回落——布局真实消费 blockFormat，任何字体环境都成立。
+    // （prosePiece 与 textSeg 同 token 同写法，但 citeMode 需要真实知识库
+    // 文档——AgentVM.knowledgeDocuments 只读无注入点，离屏环境无法稳定
+    // 实例化，故不在此直接断言。）
+    void assistantTextLineHeightFollowsThemeTokens() {
+        MessageHarness ui;
+        QVERIFY2(ui.load(), qPrintable(ui.error));
+        const qreal bodyLH = ThemeProvider::instance()->lineHeightBody();
+        const qreal codeLH = ThemeProvider::instance()->lineHeightCode();
+
+        // 无围栏、无方括号 → 单 TextEdit 路径（completed 终态）。
+        auto* plain = ui.window->findChild<QObject*>(QStringLiteral("plainMsg"));
+        QVERIFY(plain);
+        plain->setProperty("modelData", QVariantMap{
+            {QStringLiteral("title"), QStringLiteral("第一行\n第二行\n第三行")},
+            {QStringLiteral("status"), QStringLiteral("completed")}});
+        QTRY_COMPARE(plain->property("splitMode").toBool(), false);
+        auto* mdText = plain->findChild<QQuickItem*>(
+            QStringLiteral("assistantMdText"));
+        QVERIFY(mdText);
+        auto* mdLH = plain->findChild<QObject*>(
+            QStringLiteral("assistantMdLineHeight"));
+        QVERIFY2(mdLH, "DocumentLineHeight helper missing on mdText");
+        QCOMPARE(mdLH->property("lineHeight").toDouble(), bodyLH);
+
+        // 结构层：首块 blockFormat 带 token 行高。
+        auto* mdDoc = mdText->property("textDocument").value<QQuickTextDocument*>();
+        QVERIFY(mdDoc);
+        const QTextBlockFormat bodyFmt = mdDoc->textDocument()->begin().blockFormat();
+        QCOMPARE(int(bodyFmt.lineHeightType()),
+                 int(QTextBlockFormat::ProportionalHeight));
+        QCOMPARE(qRound(bodyFmt.lineHeight()), qRound(bodyLH * 100.0));
+
+        // 动态行距驱动布局高度。
+        qreal threeLines = mdText->property("contentHeight").toDouble();
+        QVERIFY(threeLines > 0.0);
+        mdLH->setProperty("lineHeight", 2.8);
+        qreal boosted = 0.0;
+        QTRY_VERIFY((boosted = mdText->property("contentHeight").toDouble())
+                    > threeLines + 1.0);
+        mdLH->setProperty("lineHeight", bodyLH);
+        qreal restored = 0.0;
+        QTRY_VERIFY((restored = mdText->property("contentHeight").toDouble())
+                    < boosted - 1.0);
+        QVERIFY(restored > 0.0);
+
+        // AC-5：流式态强制单 TextEdit（D7：流式正是用户盯着看的阶段），
+        // 行距绑定不变，且文档重建（contentsChange）后行高结构仍被重应用。
+        plain->setProperty("modelData", QVariantMap{
+            {QStringLiteral("title"), QStringLiteral("流式第一行")},
+            {QStringLiteral("status"), QStringLiteral("running")}});
+        QTRY_COMPARE(plain->property("streaming").toBool(), true);
+        QCOMPARE(plain->property("splitMode").toBool(), false);
+        QCOMPARE(mdLH->property("lineHeight").toDouble(), bodyLH);
+        QTest::qWait(80);
+        const QTextBlockFormat streamFmt =
+            mdDoc->textDocument()->begin().blockFormat();
+        QCOMPARE(qRound(streamFmt.lineHeight()), qRound(bodyLH * 100.0));
+
+        // 拆分路径：text 段（heading0 之后的 index 1）散文 + 代码块。
+        auto* split = ui.window->findChild<QObject*>(QStringLiteral("splitMsg"));
+        QVERIFY(split);
+        split->setProperty("modelData", QVariantMap{
+            {QStringLiteral("title"),
+             QStringLiteral("# 标题\n正文一行\n```js\nvar a = 1;\n```")},
+            {QStringLiteral("status"), QStringLiteral("completed")}});
+        QTRY_COMPARE(split->property("splitMode").toBool(), true);
+        auto* splitItem = qobject_cast<QQuickItem*>(split);
+        QVERIFY(splitItem);
+        QQuickItem* textSeg = nullptr;
+        QTRY_VERIFY((textSeg = MessageHarness::findSceneChild(
+                         splitItem, QStringLiteral("assistantTextSeg1"))));
+        auto* textLH = textSeg->findChild<QObject*>(
+            QStringLiteral("assistantTextLineHeight1"));
+        QVERIFY2(textLH, "DocumentLineHeight helper missing on textSeg");
+        QCOMPARE(textLH->property("lineHeight").toDouble(), bodyLH);
+        const QTextBlockFormat segFmt = textSeg->property("textDocument")
+                                            .value<QQuickTextDocument*>()
+                                            ->textDocument()->begin().blockFormat();
+        QCOMPARE(int(segFmt.lineHeightType()),
+                 int(QTextBlockFormat::ProportionalHeight));
+        QCOMPARE(qRound(segFmt.lineHeight()), qRound(bodyLH * 100.0));
+
+        QQuickItem* codeText = nullptr;
+        QTRY_VERIFY((codeText = MessageHarness::findSceneChild(
+                         splitItem, QStringLiteral("codeBlockText"))));
+        auto* codeLHHelper = codeText->findChild<QObject*>(
+            QStringLiteral("codeBlockLineHeight"));
+        QVERIFY2(codeLHHelper, "DocumentLineHeight helper missing on codeText");
+        QCOMPARE(codeLHHelper->property("lineHeight").toDouble(), codeLH);
+    }
+
+    // AC-4：heading 段按 level 映射字号（H1/H2 专用 token、H3=正文+1、
+    // H4-6=正文）+ DemiBold；首段上间距 0、非首段 spaceMd、下方 spaceXs；
+    // heading 段不做 citation 切片（R2）；段间距 spaceSm → spaceMd。
+    void assistantHeadingRendersWithThemeTokens() {
+        MessageHarness ui;
+        QVERIFY2(ui.load(), qPrintable(ui.error));
+        auto* split = ui.window->findChild<QObject*>(QStringLiteral("splitMsg"));
+        QVERIFY(split);
+        // 段序列：heading0 / text1（"引言段落。"带首尾空行）/ heading2(H2)
+        // / heading3(H3) / heading4(H4) / code5。注意 H2~H4 之间只有空行，
+        // 空行不成段（pushText 对空文本跳过），heading 连续编号 2/3/4。
+        // 尾部带一个围栏：segments 拆分路径由 hasFence || mayHaveCitation
+        // 触发（方案 D3 只扩扫描器、不动 splitMode 条件），纯标题输入仍走
+        // 单 TextEdit 内置渲染，故渲染级断言必须用含围栏的输入。
+        split->setProperty("modelData", QVariantMap{
+            {QStringLiteral("title"),
+             QStringLiteral("# 大标题\n\n引言段落。\n\n## 二级标题\n\n")
+                 + QStringLiteral("### 三级标题\n\n#### 四级标题\n\n")
+                 + QStringLiteral("```\ncode\n```")},
+            {QStringLiteral("status"), QStringLiteral("completed")}});
+        QTRY_COMPARE(split->property("splitMode").toBool(), true);
+        QTest::qWait(80);
+        auto* splitItem = qobject_cast<QQuickItem*>(split);
+        QVERIFY(splitItem);
+
+        const int h1Size = ThemeProvider::instance()->fontSizeH1();
+        const int h2Size = ThemeProvider::instance()->fontSizeH2();
+        const int bodySize = ThemeProvider::instance()->fontSizeBody();
+        const int spaceMd = ThemeProvider::instance()->spaceMd();
+        const int spaceXs = ThemeProvider::instance()->spaceXs();
+
+        auto* h0 = MessageHarness::findSceneChild(
+            splitItem, QStringLiteral("assistantHeading0"));
+        QVERIFY2(h0, "first heading delegate missing");
+        const QFont f0 = h0->property("font").value<QFont>();
+        QCOMPARE(f0.pixelSize(), h1Size);
+        QCOMPARE(f0.weight(), QFont::DemiBold);
+        QCOMPARE(h0->property("topPadding").toDouble(), 0.0);   // 首段上间距 0
+        QCOMPARE(h0->property("bottomPadding").toDouble(), double(spaceXs));
+
+        auto* h2i = MessageHarness::findSceneChild(
+            splitItem, QStringLiteral("assistantHeading2"));
+        QVERIFY2(h2i, "second heading delegate missing");
+        const QFont f2 = h2i->property("font").value<QFont>();
+        QCOMPARE(f2.pixelSize(), h2Size);
+        QCOMPARE(f2.weight(), QFont::DemiBold);
+        QCOMPARE(h2i->property("topPadding").toDouble(), double(spaceMd));
+
+        auto* h3i = MessageHarness::findSceneChild(
+            splitItem, QStringLiteral("assistantHeading3"));
+        QVERIFY2(h3i, "H3 heading delegate missing");
+        QCOMPARE(h3i->property("font").value<QFont>().pixelSize(), bodySize + 1);
+        QCOMPARE(h3i->property("font").value<QFont>().weight(), QFont::DemiBold);
+        QCOMPARE(h3i->property("topPadding").toDouble(), double(spaceMd));
+
+        auto* h4i = MessageHarness::findSceneChild(
+            splitItem, QStringLiteral("assistantHeading4"));
+        QVERIFY2(h4i, "H4 heading delegate missing");
+        QCOMPARE(h4i->property("font").value<QFont>().pixelSize(), bodySize);
+        QCOMPARE(h4i->property("font").value<QFont>().weight(), QFont::DemiBold);
+
+        // heading 段不做 citation 切片（R2）：citeParts 空、citeMode false。
+        auto* seg0 = MessageHarness::findSceneChild(
+            splitItem, QStringLiteral("assistantSeg0"));
+        QVERIFY(seg0);
+        QCOMPARE(seg0->property("citeParts").toList().size(), 0);
+        QCOMPARE(seg0->property("citeMode").toBool(), false);
+
+        // §3.2.4：段间距 spaceSm → spaceMd。
+        auto* col = MessageHarness::findSceneChild(
+            splitItem, QStringLiteral("assistantSegmentCol"));
+        QVERIFY(col);
+        QCOMPARE(col->property("spacing").toDouble(), double(spaceMd));
+    }
+
+    // 回归（2026-11-07）：heading 段曾因 textSeg 只排除 isCode/citeMode，
+    // 标题文本被 headingText（大字号）与正文字号 TextEdit 在同一 y=0 各画
+    // 一次 → 标题重叠。本用例锁定「heading 段散文 TextEdit 隐藏且文本清空」，
+    // 同时确认正文段仍正常显示、不重复出标题。
+    void assistantHeadingDoesNotDoubleRenderProseTextEdit() {
+        MessageHarness ui;
+        QVERIFY2(ui.load(), qPrintable(ui.error));
+        auto* split = ui.window->findChild<QObject*>(QStringLiteral("splitMsg"));
+        QVERIFY(split);
+        // 段序列：heading0 / text1（正文段落）/ code2。
+        split->setProperty("modelData", QVariantMap{
+            {QStringLiteral("title"),
+             QStringLiteral("# 标题\n正文段落\n```\ncode\n```")},
+            {QStringLiteral("status"), QStringLiteral("completed")}});
+        QTRY_COMPARE(split->property("splitMode").toBool(), true);
+        QTest::qWait(80);
+        auto* splitItem = qobject_cast<QQuickItem*>(split);
+        QVERIFY(splitItem);
+
+        auto* h0 = MessageHarness::findSceneChild(
+            splitItem, QStringLiteral("assistantHeading0"));
+        QVERIFY2(h0, "heading delegate missing");
+        QCOMPARE(h0->property("visible").toBool(), true);
+
+        auto* seg0Text = MessageHarness::findSceneChild(
+            splitItem, QStringLiteral("assistantTextSeg0"));
+        QVERIFY2(seg0Text, "heading prose TextEdit missing");
+        QCOMPARE(seg0Text->property("visible").toBool(), false);
+        QVERIFY2(seg0Text->property("text").toString().isEmpty(),
+                 "heading prose TextEdit must not carry the heading text");
+
+        auto* t1 = MessageHarness::findSceneChild(
+            splitItem, QStringLiteral("assistantTextSeg1"));
+        QVERIFY2(t1, "body TextEdit missing");
+        QCOMPARE(t1->property("visible").toBool(), true);
+        // 正文文本以 segments 数据层为准：TextEdit 在 MarkdownText 模式下
+        // 会规范化块间空行，读取 text 属性不能逐字比对。
+        const QVariantList segs = split->property("segments").toList();
+        QVERIFY(segs.size() >= 2);
+        QCOMPARE(segs[1].toMap().value(QStringLiteral("kind")).toString(),
+                 QStringLiteral("text"));
+        QCOMPARE(segs[1].toMap().value(QStringLiteral("text")).toString(),
+                 QStringLiteral("正文段落"));
+    }
+
+    // AC-R4 + §3.3：codeText 行距收口 token；bodyHeight 与 contentHeight
+    // 同步（+20 = 上下内边距 10+10，NativeRendering 的 contentHeight 已随
+    // blockFormat 行高自动含入）；左内边距 14；行距真实生效以「结构层
+    // blockFormat + 动态行距驱动 contentHeight」字体无关地锁定（绝对行高
+    // 在 offscreen 无字体目录环境下不可靠）。
+    void assistantCodeBlockGeometryFollowsLineHeight() {
+        MessageHarness ui;
+        QVERIFY2(ui.load(), qPrintable(ui.error));
+        auto* split = ui.window->findChild<QObject*>(QStringLiteral("splitMsg"));
+        QVERIFY(split);
+        split->setProperty("modelData", QVariantMap{
+            {QStringLiteral("title"),
+             QStringLiteral("```cpp\nint a = 1;\nint b = 2;\nint c = 3;\n```")},
+            {QStringLiteral("status"), QStringLiteral("completed")}});
+        QTRY_COMPARE(split->property("splitMode").toBool(), true);
+        auto* splitItem = qobject_cast<QQuickItem*>(split);
+        QVERIFY(splitItem);
+
+        QQuickItem* codeSeg = nullptr;
+        QTRY_VERIFY((codeSeg = MessageHarness::findSceneChild(
+                         splitItem, QStringLiteral("assistantCodeSeg0"))));
+        QQuickItem* codeText = nullptr;
+        QTRY_VERIFY((codeText = MessageHarness::findSceneChild(
+                         splitItem, QStringLiteral("codeBlockText"))));
+
+        // 行距 token（AC-1 的代码侧；TextEdit 无 lineHeight 属性，断言
+        // DocumentLineHeight helper 的绑定）。
+        auto* codeLHHelper = codeText->findChild<QObject*>(
+            QStringLiteral("codeBlockLineHeight"));
+        QVERIFY2(codeLHHelper, "DocumentLineHeight helper missing on codeText");
+        QCOMPARE(codeLHHelper->property("lineHeight").toDouble(),
+                 ThemeProvider::instance()->lineHeightCode());
+
+        // 行距真实生效（AC-R4，字体无关，同 assistantTextLineHeight 的
+        // 三层证据）：结构层 blockFormat + 动态行距驱动 contentHeight
+        // （NativeRendering 只影响字形光栅化，布局仍走 QTextDocument 的
+        // blockFormat；offscreen 无字体目录时绝对行高不可靠）。
+        auto* codeDoc = codeText->property("textDocument").value<QQuickTextDocument*>();
+        QVERIFY(codeDoc);
+        const QTextBlockFormat codeFmt =
+            codeDoc->textDocument()->begin().blockFormat();
+        QCOMPARE(int(codeFmt.lineHeightType()),
+                 int(QTextBlockFormat::ProportionalHeight));
+        QCOMPARE(qRound(codeFmt.lineHeight()),
+                 qRound(ThemeProvider::instance()->lineHeightCode() * 100.0));
+
+        const qreal contentH = codeText->property("contentHeight").toDouble();
+        QVERIFY(contentH > 0.0);
+        codeLHHelper->setProperty("lineHeight", 3.0);
+        qreal boostedH = 0.0;
+        QTRY_VERIFY((boostedH = codeText->property("contentHeight").toDouble())
+                    > contentH + 1.0);
+        codeLHHelper->setProperty("lineHeight",
+                                  ThemeProvider::instance()->lineHeightCode());
+        QTRY_VERIFY(codeText->property("contentHeight").toDouble()
+                    < boostedH - 1.0);
+
+        // 内边距：左 14（leftMargin 覆盖 margins 的 10）。
+        QCOMPARE(codeText->property("x").toDouble(), 14.0);
+
+        // bodyHeight 公式同步（AC-R4：contentHeight 已随行距自动含入，
+        // 公式只补上下内边距 10+10）。
+        QTest::qWait(80);
+        const qreal settledH = codeText->property("contentHeight").toDouble();
+        QCOMPARE(double(codeSeg->property("bodyHeight").toInt()), settledH + 20.0);
+        QVERIFY(codeSeg->property("bodyHeight").toInt() > 0);
+    }
+
+    // docs/45 §3.3（2026-11-07）：代码块投影——暗/亮两套取值必须真正对应，
+    // 且投影在裁剪区外（卡片 clip、根不 clip），不能把投影裁掉或压到下一段。
+    // docs/45 §3.2（2026-11-07）：行内代码（`code`）底色——MarkdownText
+    // 只把 code span 变等宽、不给底色，靠 DocumentInlineCode 后处理补背景。
+    // 断言：等宽片段拿到 token 底色/前景；普通散文不受影响；切主题跟随。
+    void inlineCodeRendersWithThemeBackground() {
+        MessageHarness ui;
+        QVERIFY2(ui.load(), qPrintable(ui.error));
+        auto* plain = ui.window->findChild<QObject*>(QStringLiteral("plainMsg"));
+        QVERIFY(plain);
+        plain->setProperty("modelData", QVariantMap{
+            {QStringLiteral("title"),
+             QStringLiteral("代码说明：`random.randint(1, 100)` 生成随机整数，用 `while True` 循环。")},
+            {QStringLiteral("status"), QStringLiteral("completed")}});
+        QTest::qWait(160);
+        auto* plainItem = qobject_cast<QQuickItem*>(plain);
+        QVERIFY(plainItem);
+        auto* mdText = MessageHarness::findSceneChild(
+            plainItem, QStringLiteral("assistantMdText"));
+        QVERIFY2(mdText, "mdText missing");
+        auto* qtd = mdText->property("textDocument").value<QQuickTextDocument*>();
+        QVERIFY(qtd);
+
+        auto collect = [](QTextDocument* doc, QList<QTextFragment>* codes,
+                          QList<QTextFragment>* plains) {
+            for (QTextBlock b = doc->begin(); b.isValid(); b = b.next()) {
+                for (QTextBlock::iterator it = b.begin(); !it.atEnd(); ++it) {
+                    const QTextFragment f = it.fragment();
+                    if (!f.isValid())
+                        continue;
+                    const QTextCharFormat cf = f.charFormat();
+                    if (cf.fontFixedPitch()
+                            || cf.fontStyleHint() == QFont::Monospace)
+                        codes->append(f);
+                    else
+                        plains->append(f);
+                }
+            }
+        };
+
+        auto* tm = ThemeManager::instance();
+        const QString originalMode = tm->themeMode();
+        tm->setThemeMode(QStringLiteral("dark"));
+        QTest::qWait(80);
+
+        QList<QTextFragment> codes;
+        QList<QTextFragment> plains;
+        collect(qtd->textDocument(), &codes, &plains);
+        QVERIFY2(codes.size() >= 2, "expected at least two inline code spans");
+        QVERIFY2(!plains.isEmpty(), "expected prose fragments");
+        for (const QTextFragment& f : codes) {
+            const QTextCharFormat cf = f.charFormat();
+            QCOMPARE(cf.background().color(),
+                     ThemeProvider::instance()->inlineCodeBackground());
+            QCOMPARE(cf.foreground().color(),
+                     ThemeProvider::instance()->inlineCodeForeground());
+        }
+        for (const QTextFragment& f : plains) {
+            QVERIFY2(f.charFormat().background().color()
+                         != ThemeProvider::instance()->inlineCodeBackground(),
+                     "plain prose must not get inline code background");
+        }
+
+        // 亮色主题：底色/前景跟随 token（深浅对应）。
+        tm->setThemeMode(QStringLiteral("light"));
+        QTest::qWait(120);
+        codes.clear();
+        plains.clear();
+        collect(qtd->textDocument(), &codes, &plains);
+        QVERIFY(codes.size() >= 2);
+        for (const QTextFragment& f : codes) {
+            QCOMPARE(f.charFormat().background().color(),
+                     ThemeProvider::instance()->inlineCodeBackground());
+        }
+        tm->setThemeMode(originalMode);
+    }
+
+    void codeBlockShadowFollowsTheme() {
+        MessageHarness ui;
+        QVERIFY2(ui.load(), qPrintable(ui.error));
+        auto* split = ui.window->findChild<QObject*>(QStringLiteral("splitMsg"));
+        QVERIFY(split);
+        split->setProperty("modelData", QVariantMap{
+            {QStringLiteral("title"), QStringLiteral("正文\n```cpp\nint x = 1;\n```")},
+            {QStringLiteral("status"), QStringLiteral("completed")}});
+        QTRY_COMPARE(split->property("splitMode").toBool(), true);
+        QTest::qWait(80);
+        auto* splitItem = qobject_cast<QQuickItem*>(split);
+        QVERIFY(splitItem);
+
+        auto* codeSeg = MessageHarness::findSceneChild(
+            splitItem, QStringLiteral("assistantCodeSeg1"));
+        QVERIFY2(codeSeg, "code block segment missing");
+        auto* card = MessageHarness::findSceneChild(
+            codeSeg, QStringLiteral("codeBlockCard"));
+        QVERIFY2(card, "code block card missing");
+        auto* shadow = MessageHarness::findSceneChild(
+            codeSeg, QStringLiteral("codeBlockShadow"));
+        QVERIFY2(shadow, "code block shadow missing");
+
+        auto* tm = ThemeManager::instance();
+        const QString originalMode = tm->themeMode();
+        const double cardRadius = card->property("radius").toDouble();
+
+        // 暗色：纯黑 + 较高不透明度 + 较大的外扩/位移。
+        tm->setThemeMode(QStringLiteral("dark"));
+        QTRY_COMPARE(shadow->property("color").value<QColor>(),
+                     ThemeProvider::instance()->codeBlockShadowColor());
+        QTRY_COMPARE(shadow->property("opacity").toDouble(),
+                     double(ThemeProvider::instance()->codeBlockShadowOpacity()));
+        QCOMPARE(shadow->property("color").value<QColor>(), QColor("#000000"));
+        const double darkOpacity = shadow->property("opacity").toDouble();
+        const int darkBlur = ThemeProvider::instance()->codeBlockShadowBlur();
+        const int darkOffset = ThemeProvider::instance()->codeBlockShadowOffsetY();
+        QVERIFY2(darkOpacity >= 0.25, "dark shadow should be strong enough to sink");
+        // 第 0 层外扩 = blur/3，圆角随外扩同步增大（同心分层）。
+        QCOMPARE(shadow->property("radius").toDouble(),
+                 cardRadius + qRound(darkBlur / 3.0));
+        // 顶部外扩量少一个 offsetY，形成向下的重量感。
+        auto* anchorsObj = shadow->property("anchors").value<QObject*>();
+        QVERIFY(anchorsObj);
+        QCOMPARE(anchorsObj->property("topMargin").toDouble(),
+                 double(darkOffset) - qRound(darkBlur / 3.0));
+
+        // 亮色：冷灰蓝 + 更低不透明度 + 更小的外扩/位移（白底纯黑会发脏）。
+        tm->setThemeMode(QStringLiteral("light"));
+        QTRY_COMPARE(shadow->property("color").value<QColor>(),
+                     ThemeProvider::instance()->codeBlockShadowColor());
+        QTRY_COMPARE(shadow->property("opacity").toDouble(),
+                     double(ThemeProvider::instance()->codeBlockShadowOpacity()));
+        const QColor lightShadow = shadow->property("color").value<QColor>();
+        QCOMPARE(lightShadow, QColor("#1F2A37"));
+        QVERIFY2(lightShadow.blue() >= lightShadow.red(),
+                 "light shadow should be a cool grey-blue, not pure black");
+        QVERIFY2(shadow->property("opacity").toDouble() < darkOpacity,
+                 "light shadow must stay subtler than dark");
+        QVERIFY2(ThemeProvider::instance()->codeBlockShadowBlur() < darkBlur,
+                 "light spread should be tighter than dark");
+        QVERIFY2(ThemeProvider::instance()->codeBlockShadowOffsetY() < darkOffset,
+                 "light offset should be smaller than dark");
+
+        tm->setThemeMode(originalMode);
+        QTRY_COMPARE(shadow->property("color").value<QColor>(),
+                     ThemeProvider::instance()->codeBlockShadowColor());
+
+        // 投影计入布局高度（底部外扩 = 外扩像素 + 位移），且卡片自身裁剪、
+        // 根节点不裁剪——否则投影要么被裁掉、要么压到下一段正文。
+        QCOMPARE(card->property("clip").toBool(), true);
+        QCOMPARE(codeSeg->property("clip").toBool(), false);
+        const int footprint = codeSeg->property("shadowFootprint").toInt();
+        QCOMPARE(footprint,
+                 ThemeProvider::instance()->codeBlockShadowBlur()
+                     + ThemeProvider::instance()->codeBlockShadowOffsetY());
+        QCOMPARE(codeSeg->property("implicitHeight").toInt(),
+                 card->property("implicitHeight").toInt() + footprint);
     }
 };
 

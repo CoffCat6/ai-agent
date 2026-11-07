@@ -3214,6 +3214,13 @@ Item {
         const qint64 costCache = PricingCalculator::calculateCost(
             QStringLiteral("gpt-4o"), 1000000, 500000, 200000, inP, outP, chP);
         QCOMPARE(costCache, qint64(725));
+        // cacheHit 是 input 的子集：传入大于 input 的脏数据必须先钳制。
+        // 0.1M 输入 + 0.15M cacheHit → cacheHit 只剩 0.1M：
+        // billableInput=0，缓存部分 0.1M*125/1M = 12.5 → ceil 13。
+        // 旧实现把 0.15M 全按缓存价计费（18.75 → 19），金额虚高。
+        const qint64 costClamped = PricingCalculator::calculateCost(
+            QStringLiteral("gpt-4o"), 100000, 0, 150000, inP, outP, chP);
+        QCOMPARE(costClamped, qint64(13));
 
         QVariantMap rec;
         rec["requestId"] = quint64(1);

@@ -407,10 +407,14 @@ LLMResponse GeminiService::parseResponse(const QJsonObject& json) {
     response.reasoning = thinking;
 
     // usageMetadata: promptTokenCount -> promptTokens,
-    // candidatesTokenCount -> completionTokens；总消耗再计入思考 token
+    // candidatesTokenCount -> completionTokens；总消耗再计入思考 token。
+    // cachedContentTokenCount 是 promptTokenCount 中命中缓存的子集（官方
+    // 语义与 OpenAI cached_tokens 一致），映射到 cachedTokens，不能从
+    // promptTokens 里扣除。
     const QJsonObject usage = json.value("usageMetadata").toObject();
     response.promptTokens = usage.value("promptTokenCount").toInt();
     response.completionTokens = usage.value("candidatesTokenCount").toInt();
+    response.cachedTokens = usage.value("cachedContentTokenCount").toInt();
     response.tokensUsed = response.promptTokens + response.completionTokens
                        + usage.value("thoughtsTokenCount").toInt();
 
@@ -588,6 +592,7 @@ LLMResponse GeminiService::streamResult(const LLMRequestContext& ctx) const {
     response.tokensUsed = ctx.tokensUsed;
     response.promptTokens = state->promptTokens;
     response.completionTokens = state->completionTokens;
+    response.cachedTokens = state->cachedTokens;
     response.toolCalls = state->toolCalls;
     // 拦截型 finishReason（isBlockedFinishReason 家族）且无任何输出：
     // 升级为错误（同 parseResponse）
@@ -699,6 +704,8 @@ void GeminiService::processLine(LLMRequestContext& ctx, const QByteArray& line) 
     if (!usage.isEmpty()) {
         state->promptTokens = usage.value("promptTokenCount").toInt();
         state->completionTokens = usage.value("candidatesTokenCount").toInt();
+        // 缓存命中是 promptTokenCount 的子集（官方 cachedContentTokenCount）。
+        state->cachedTokens = usage.value("cachedContentTokenCount").toInt();
         state->thoughtsTokens = usage.value("thoughtsTokenCount").toInt();
         ctx.tokensUsed = state->promptTokens + state->completionTokens
                        + state->thoughtsTokens;

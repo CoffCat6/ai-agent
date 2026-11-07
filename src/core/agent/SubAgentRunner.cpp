@@ -492,12 +492,17 @@ SubAgentReport SubAgentRunner::runImpl(IAIService* service, const SubAgentReques
         report.stop = SubAgentReport::Stop::Error;
         report.stopCode = QStringLiteral("no_service");
         report.text = QStringLiteral("Sub-agent has no model service configured.");
+        // B7: 未真正发起任何 attempt（没有模型服务可用），attempt=0 供 UI
+        // 显示「未开始」，避免把配置错误误报成一次失败尝试。
+        report.attempt = 0;
         return report;
     }
     report.usage.model = service->model();
     if (request.goal.trimmed().isEmpty()) {
         report.stopCode = QStringLiteral("invalid_goal");
         report.text = QStringLiteral("Sub-agent goal is empty.");
+        // B7: 请求在进入循环前即被拒绝，同样没有 attempt 发生。
+        report.attempt = 0;
         return report;
     }
 
@@ -509,6 +514,8 @@ SubAgentReport SubAgentRunner::runImpl(IAIService* service, const SubAgentReques
         report.stop = SubAgentReport::Stop::Cancelled;
         report.stopCode = QStringLiteral("cancelled");
         report.text = QStringLiteral("Sub-agent cancelled before start.");
+        // B7: 预启动取消没有消耗任何 attempt。
+        report.attempt = 0;
         return report;
     }
 
@@ -536,27 +543,9 @@ SubAgentReport SubAgentRunner::runImpl(IAIService* service, const SubAgentReques
     // 取消旗标触发的中止走 gotError 通道（abort 以错误形式冒出），需要
     // 单独记账，报告才能归类为 Cancelled 而不是 Error。
     bool cancelledByFlag{false};
-    QObject::connect(service, &IAIService::responseReady, &loop,
-                     [&](const LLMResponse& r) {
-                         response = r;
-                         gotResponse = true;
-                         loop.quit();
-                     });
-    QObject::connect(service, &IAIService::errorOccurred, &loop,
-                     [&](const QString& e) {
-                         error = e;
-                         gotError = true;
-                         // docs/43 O4 审计收口（P1-2 连带）: 错误轮没有响应
-                         // payload（errorOccurred 只带字符串），清掉上一轮
-                         // 残留的计量字段——否则主循环的累计段会把旧值
-                         // 重复计入（错误轮重复计费，成本高估）。
-                         response.promptTokens = 0;
-                         response.completionTokens = 0;
-                         response.cachedTokens = 0;
-                         response.cacheReadTokens = 0;
-                         response.tokensUsed = 0;
-                         loop.quit();
-                     });
+    // B2: responseReady / errorOccurred 的连接按步建立、步末断开（见下方
+    // for 循环）。整轮只建一条连接会让上一步的迟到/重复 payload 落到
+    // 下一步的 loop 里，被当成下一步的响应（usage/正文串步）。
     // docs/35 P4.6: streaming deltas fill the gap while a long thinking/model
     // response is in flight. They are throttled into progress events below.
     QString streamBuffer;
@@ -688,9 +677,48 @@ SubAgentReport SubAgentRunner::runImpl(IAIService* service, const SubAgentReques
         gotError = false;
         timedOut = false;
         error.clear();
+        // B2: 每步计量必须独立。response 在 step 之间复用；取消/超时由
+        // abortTimer 直接置 gotError 并 quit（service->cancel() 不保证再回
+        // payload），若不清空，下面的累计段会把上一步的 usage 再算一遍。
+        response = LLMResponse{};
         streamStep = step;
         streamBuffer.clear();
         reasoningBuffer.clear();
+        // B2: 每步局部建立信号连接。requestStarted 在 chatComplete 之前
+        // 连接，用来记下本步 requestId；responseReady 只接受本步请求的
+        // payload（provider 未填 requestId 时不做过滤），上一步迟到/重复
+        // 的 response 不会改写本步 response、也不会提前结束本步等待。
+        quint64 stepRequestId{0};
+        const QMetaObject::Connection stepStartedConn = QObject::connect(
+            service, &IAIService::requestStarted, &loop,
+            [&stepRequestId](quint64 id) { stepRequestId = id; });
+        const QMetaObject::Connection stepResponseConn = QObject::connect(
+            service, &IAIService::responseReady, &loop,
+            [&](const LLMResponse& r) {
+                if (r.requestId != 0 && stepRequestId != 0
+                        && r.requestId != stepRequestId)
+                    return;   // 上一步的迟到/重复 payload，丢弃
+                response = r;
+                gotResponse = true;
+                loop.quit();
+            });
+        const QMetaObject::Connection stepErrorConn = QObject::connect(
+            service, &IAIService::errorOccurred, &loop,
+            [&](const QString& e) {
+                error = e;
+                gotError = true;
+                // docs/43 O4 审计收口（P1-2 连带）: 错误轮没有响应
+                // payload（errorOccurred 只带字符串），清掉上一轮
+                // 残留的计量字段——否则主循环的累计段会把旧值
+                // 重复计入（错误轮重复计费，成本高估）。
+                response.promptTokens = 0;
+                response.completionTokens = 0;
+                response.cachedTokens = 0;
+                response.cacheReadTokens = 0;
+                response.cacheCreationTokens = 0;
+                response.tokensUsed = 0;
+                loop.quit();
+            });
         abortTimer.start();
         streamTimer.start();
         // docs/35 P4.1: keep the full transcript for the evidence artifact,
@@ -700,10 +728,15 @@ SubAgentReport SubAgentRunner::runImpl(IAIService* service, const SubAgentReques
         const QJsonArray wireTools =
             forcedFinal ? QJsonArray() : toolsSchema(request.tools);
         QJsonArray wireMessages = messages;
-        if (request.contextLimit > 0) {
+        // B8: contextLimit=0 means "unknown" (profile resolution failed), not
+        // "unlimited". Without a fallback the runner sent requests over the
+        // provider's real window, got a 400 and burned a retry. Compress against
+        // a conservative default instead.
+        const int limit = request.contextLimit > 0
+            ? request.contextLimit : kFallbackContextLimit;
+        {
             const int capacity = qMax(
-                0, request.contextLimit
-                       - TokenEstimator::estimateToolsSchema(wireTools));
+                0, limit - TokenEstimator::estimateToolsSchema(wireTools));
             if (TokenEstimator::estimateTokens(wireMessages) > capacity) {
                 int omittedRounds = 0;
                 int truncatedResults = 0;
@@ -721,6 +754,11 @@ SubAgentReport SubAgentRunner::runImpl(IAIService* service, const SubAgentReques
                 }
             }
         }
+        // B9: fallback estimate for the step actually sent (compressed copy +
+        // schema). Computed before chatComplete because a synchronous fake may
+        // respond inside it.
+        const int stepWireTokens = TokenEstimator::estimateTokens(wireMessages)
+                                 + TokenEstimator::estimateToolsSchema(wireTools);
         service->chatComplete(wireMessages, wireTools);
         // Fakes may emit synchronously inside chatComplete (before exec);
         // quitting before exec() is a no-op, so only enter the loop when
@@ -728,17 +766,43 @@ SubAgentReport SubAgentRunner::runImpl(IAIService* service, const SubAgentReques
         if (!gotResponse && !gotError) loop.exec();
         abortTimer.stop();
         streamTimer.stop();
+        // B2: 本步收场（含超时/取消/错误路径）立即断开三步信号，绝不让
+        // 迟到 payload 进入下一轮等待。同步 emit 的 fake 不受影响——连接
+        // 在 chatComplete 之前就已建立。
+        QObject::disconnect(stepStartedConn);
+        QObject::disconnect(stepResponseConn);
+        QObject::disconnect(stepErrorConn);
 
-        report.tokensUsed += response.tokensUsed;
-        // docs/43 O2: classified usage (input/output/cache) across steps and
-        // retries. usageReported stays false when the provider gave only an
-        // aggregate, so consumers never read zeros as "free".
-        report.usage.inputTokens += response.promptTokens;
-        report.usage.outputTokens += response.completionTokens;
-        report.usage.cachedTokens += response.cachedTokens
-                                   + response.cacheReadTokens;
-        if (response.promptTokens > 0 || response.completionTokens > 0)
-            report.usage.usageReported = true;
+        // B2: 只有真正收到响应才累计本步计量。取消/超时的步骤没有 payload，
+        // 旧实现在这里无条件累加跨步复用的 response，导致上一轮 usage 翻倍。
+        if (gotResponse) {
+            // B9: provider gave no usage at all (not even an aggregate): fall
+            // back to the TokenEstimator for this step's actual wire payload
+            // plus the response text, and mark it estimated. Do NOT fake
+            // input/output classes or usageReported — the aggregate stays the
+            // only number, just no longer zero.
+            if (response.promptTokens == 0 && response.completionTokens == 0
+                    && response.tokensUsed == 0) {
+                report.tokensUsed += stepWireTokens
+                    + TokenEstimator::estimateTokens(response.content);
+                report.usage.estimated = true;
+            } else {
+                report.tokensUsed += response.tokensUsed;
+            }
+            // docs/43 O2: classified usage (input/output/cache) across steps and
+            // retries. usageReported stays false when the provider gave only an
+            // aggregate, so consumers never read zeros as "free".
+            report.usage.inputTokens += response.promptTokens;
+            report.usage.outputTokens += response.completionTokens;
+            report.usage.cachedTokens += response.cachedTokens
+                                       + response.cacheReadTokens;
+            // B3: 保留 Anthropic 的原始分类，供入账时把 cacheRead / cacheCreation
+            // 分别补进 input，而不是只看到合并后的 cached 展示值。
+            report.usage.cacheReadTokens += response.cacheReadTokens;
+            report.usage.cacheCreationTokens += response.cacheCreationTokens;
+            if (response.promptTokens > 0 || response.completionTokens > 0)
+                report.usage.usageReported = true;
+        }
         if (gotError) {
             report.stop = timedOut ? SubAgentReport::Stop::TimedOut
                 : cancelledByFlag ? SubAgentReport::Stop::Cancelled

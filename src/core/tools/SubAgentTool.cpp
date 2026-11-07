@@ -477,6 +477,8 @@ ToolResult SubAgentTool::execute(const QJsonObject& args, const Cancellation& ca
                 SubAgentReport report;
                 if (bgCancelled->load()) {
                     report.stop = SubAgentReport::Stop::Cancelled;
+                    // B7: 任务在预启动阶段被取消，没有真正发起 attempt。
+                    report.attempt = 0;
                     report.text = QStringLiteral(
                         "Sub-agent cancelled before start.");
                 } else {
@@ -494,6 +496,8 @@ ToolResult SubAgentTool::execute(const QJsonObject& args, const Cancellation& ca
                         });
                     if (slot == SlotResult::Cancelled) {
                         report.stop = SubAgentReport::Stop::Cancelled;
+                        // B7: 等槽位时用户取消，未开始 attempt。
+                        report.attempt = 0;
                         report.text = QStringLiteral(
                             "Sub-agent cancelled while waiting for a free "
                             "sub-agent slot.");
@@ -503,6 +507,8 @@ ToolResult SubAgentTool::execute(const QJsonObject& args, const Cancellation& ca
                         report.stop = SubAgentReport::Stop::TimedOut;
                         report.stopCode =
                             QStringLiteral("slot_timeout");
+                        // B7: 槽位超时同样没有运行 attempt。
+                        report.attempt = 0;
                         report.text = QStringLiteral(
                             "Timed out after %1 ms waiting for a free "
                             "sub-agent slot. Wait for running sub-agents to "
@@ -516,6 +522,11 @@ ToolResult SubAgentTool::execute(const QJsonObject& args, const Cancellation& ca
                             };
                         // docs/43 O1-T3: one automatic re-run on transient
                         // errors.
+                        // B4: 跨 attempt 的 usage 汇总必须区分「部分上报」：
+                        // reported 保持 OR（任一 attempt 上报即可展示分类），
+                        // 同时记录 reportedCount/attemptCount 供 UI 标注。
+                        int reportedAttempts = 0;
+                        int startedAttempts = 0;
                         for (int attempt = 1;
                              attempt <= kSubAgentMaxAttempts; ++attempt) {
                             if (bgCancelled->load()) {
@@ -532,6 +543,13 @@ ToolResult SubAgentTool::execute(const QJsonObject& args, const Cancellation& ca
                             SubAgentReport attemptReport =
                                 SubAgentRunner::run(service, bgRequest);
                             delete service;
+                            // B7: attempt==0 表示 Runner 早退，没有真正发起
+                            // 一次尝试，不计入分母。reported 只统计真正上报
+                            // 分类用量的 attempt。
+                            if (attemptReport.attempt != 0)
+                                ++startedAttempts;
+                            if (attemptReport.usage.usageReported)
+                                ++reportedAttempts;
                             if (attempt > 1) {
                                 attemptReport.steps += report.steps;
                                 attemptReport.tokensUsed
@@ -546,12 +564,31 @@ ToolResult SubAgentTool::execute(const QJsonObject& args, const Cancellation& ca
                                     += report.usage.outputTokens;
                                 attemptReport.usage.cachedTokens
                                     += report.usage.cachedTokens;
+                                attemptReport.usage.cacheReadTokens
+                                    += report.usage.cacheReadTokens;
+                                attemptReport.usage.cacheCreationTokens
+                                    += report.usage.cacheCreationTokens;
                                 attemptReport.usage.usageReported
                                     = attemptReport.usage.usageReported
                                       || report.usage.usageReported;
+                                // B9: 任一 attempt 使用估算回退时，聚合结果
+                                // 仍标记 estimated（tokensUsed 里含估算部分）。
+                                attemptReport.usage.estimated
+                                    = attemptReport.usage.estimated
+                                      || report.usage.estimated;
                             }
+                            // B4/B7: 汇总计数写回本次结果，再整体替换 report。
+                            // attempts 只数真正跑过的 attempt；Runner 早退
+                            // （attempt=0）时保持 0（UI 显示「未开始」）。
+                            attemptReport.attempt = startedAttempts;
+                            attemptReport.usage.reportedCount =
+                                reportedAttempts;
+                            attemptReport.usage.attemptCount =
+                                startedAttempts;
+                            attemptReport.usage.partial =
+                                reportedAttempts > 0
+                                && reportedAttempts < startedAttempts;
                             report = attemptReport;
-                            report.attempt = attempt;
                             if (report.ok || !report.retryable
                                     || bgCancelled->load())
                                 break;
@@ -634,6 +671,10 @@ ToolResult SubAgentTool::execute(const QJsonObject& args, const Cancellation& ca
     // response) get one automatic re-run. A cancel never retries; Budget
     // failures do not either (the model itself failed to converge).
     SubAgentReport report;
+    // B4: 与后台路径同口径——reported 取 OR，另记 reportedCount/attemptCount
+    // 供 UI 标注「部分上报」。
+    int reportedAttempts = 0;
+    int startedAttempts = 0;
     for (int attempt = 1; attempt <= kSubAgentMaxAttempts; ++attempt) {
         IAIService* service = m_factory
             ? m_factory(resolved.profileId, resolved.effort) : nullptr;
@@ -641,6 +682,9 @@ ToolResult SubAgentTool::execute(const QJsonObject& args, const Cancellation& ca
         // The factory hands over ownership; the service was created and used
         // on this thread, so a plain delete here is safe.
         delete service;
+        // B7: attempt==0 表示 Runner 早退，没有真正发起一次尝试。
+        if (attemptReport.attempt != 0) ++startedAttempts;
+        if (attemptReport.usage.usageReported) ++reportedAttempts;
         if (attempt > 1) {
             attemptReport.steps += report.steps;
             attemptReport.tokensUsed += report.tokensUsed;
@@ -649,12 +693,23 @@ ToolResult SubAgentTool::execute(const QJsonObject& args, const Cancellation& ca
             attemptReport.usage.inputTokens += report.usage.inputTokens;
             attemptReport.usage.outputTokens += report.usage.outputTokens;
             attemptReport.usage.cachedTokens += report.usage.cachedTokens;
+            attemptReport.usage.cacheReadTokens += report.usage.cacheReadTokens;
+            attemptReport.usage.cacheCreationTokens +=
+                report.usage.cacheCreationTokens;
             attemptReport.usage.usageReported =
                 attemptReport.usage.usageReported
                 || report.usage.usageReported;
+            // B9: 同后台路径——聚合里含估算回退时保留 estimated。
+            attemptReport.usage.estimated =
+                attemptReport.usage.estimated || report.usage.estimated;
         }
+        // B4/B7: 汇总计数写回本次结果，attempts 只数真正跑过的尝试。
+        attemptReport.attempt = startedAttempts;
+        attemptReport.usage.reportedCount = reportedAttempts;
+        attemptReport.usage.attemptCount = startedAttempts;
+        attemptReport.usage.partial =
+            reportedAttempts > 0 && reportedAttempts < startedAttempts;
         report = attemptReport;
-        report.attempt = attempt;
         if (report.ok || !report.retryable) break;
         if (cancelled && cancelled->load()) break;
         if (attempt >= kSubAgentMaxAttempts) break;
@@ -720,7 +775,15 @@ QJsonObject SubAgentTool::reportJson(const SubAgentReport& report) {
         {QStringLiteral("input"), report.usage.inputTokens},
         {QStringLiteral("output"), report.usage.outputTokens},
         {QStringLiteral("cached"), report.usage.cachedTokens},
-        {QStringLiteral("reported"), report.usage.usageReported}};
+        {QStringLiteral("cacheRead"), report.usage.cacheReadTokens},
+        {QStringLiteral("cacheCreation"), report.usage.cacheCreationTokens},
+        {QStringLiteral("reported"), report.usage.usageReported},
+        // B9: 无 usage 时的估算回退标记，面板/过程卡片据此显示「≈」。
+        {QStringLiteral("estimated"), report.usage.estimated},
+        // B4: 部分上报标记——reported 仍为 OR，UI 据此追加「部分」提示。
+        {QStringLiteral("reportedCount"), report.usage.reportedCount},
+        {QStringLiteral("attemptCount"), report.usage.attemptCount},
+        {QStringLiteral("partial"), report.usage.partial}};
     QJsonArray findings;
 
     for (const SubAgentFinding& finding : report.findings) {

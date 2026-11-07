@@ -322,8 +322,21 @@ AIAgent::AIAgent(QObject* parent)
     connect(m_backgroundHub.get(), &BackgroundTaskHub::taskFinished, this,
             [this](const QVariantMap& summary) {
         if (!m_memory) return;
-        QJsonObject usage = QJsonObject::fromVariantMap(
+        const QJsonObject rawUsage = QJsonObject::fromVariantMap(
             summary.value(QStringLiteral("usage")).toMap());
+        // B1: 先入账再按审计口径清空未上报 usage。taskFinished 是后台任务
+        // 的唯一终态回调；同一 taskId 的迟到重放由 runKey 集合去重。
+        // runKey 必须带 sessionId：provider 每会话可能复用同一 taskId，
+        // 仅用 "bg:<taskId>" 会把后一个会话的同名任务误当重复（漏记）。
+        const QString bgSessionId =
+            summary.value(QStringLiteral("sessionId")).toString();
+        accountSubagentUsage(
+            QStringLiteral("bg:") + bgSessionId + QLatin1Char(':')
+                + summary.value(QStringLiteral("taskId")).toString(),
+            rawUsage,
+            summary.value(QStringLiteral("tokens")).toInt(),
+            bgSessionId);
+        QJsonObject usage = rawUsage;
         // 与工具路径审计同口径（P3-14）：分类用量未上报时不入库，
         // 消费方读 tokens，不误读 0 为免费。
         if (!usage.value("reported").toBool()) usage = {};
@@ -400,15 +413,36 @@ AIAgent::~AIAgent() {
 }
 
 void AIAgent::setLLMService(IAIService* service) {
-    if (m_llmService == service) return; // re-wiring the same service would duplicate connections
+    // A4: 同一 service 实例（main.cpp 按 apiProtocol 复用）改配置时指针
+    // 不变但 model() 已被 configure() 原地改写。早退分支同样必须比较模型，
+    // 否则旧校准系数会跨模型残留。基准是最近一次 EWMA 观测的模型名，
+    // 不是“当前 service 的旧 model()”（那时已被改写）。
+    if (m_llmService == service) {
+        const QString sameServiceModel = service ? service->model() : QString();
+        if (!sameServiceModel.isEmpty() && !m_scaleModelName.isEmpty()
+                && sameServiceModel != m_scaleModelName)
+            m_estimateScale = 0.0;
+        return; // re-wiring the same service would duplicate connections
+    }
     // Switching providers mid-task (settings profile change) terminates the
     // active task cleanly - otherwise the in-flight response loses its
     // receiver and the agent is stuck until restart.
     if (m_active) stop();
+    // 校准系数是用旧模型 API usage 观测出来的，不同模型的 tokenizer/分词
+    // 口径不同，旧系数对新模型不再适用。configure 每次新建 service 但模型
+    // 不变时（“同模型重连”）必须保留系数，否则每次改配置都会把校准打回
+    // 1.0。比较对象是观测基准 m_scaleModelName；nullptr 不清空基准，跨
+    // setLLMService(nullptr) 换到新 service 时仍能判断模型变化。
     if (m_llmService) {
         disconnect(m_llmService, nullptr, this, nullptr);
     }
     m_llmService = service;
+    const QString nextModel = m_llmService ? m_llmService->model() : QString();
+    // 仅当观测基准与新模型都已知且确实不同才复位；未知模型名（空串）不做
+    // 判断，避免 provider 未实现 model() 时误清有效观测。
+    if (!m_scaleModelName.isEmpty() && !nextModel.isEmpty()
+            && m_scaleModelName != nextModel)
+        m_estimateScale = 0.0;
     if (m_llmService) {
         connect(m_llmService, &IAIService::requestStarted, this, &AIAgent::onRequestStarted);
         connect(m_llmService, &IAIService::responseReady, this, &AIAgent::onLLMResponse);
@@ -865,10 +899,14 @@ void AIAgent::notifyTokens() {
     // 原始估算乘以滚动校准系数：启发式公式对中文/代码/JSON 系统性偏小
     // （实测 cl100k 中文 ~1.16 tok/字，估算只给 0.667），首个请求拿到
     // API 真实 prompt_tokens 后即可自愈。
-    const int estimated = static_cast<int>(TokenEstimator::estimateTokens(m_messages)
-                                               * tokenEstimateScale())
-                        + estimateReservedTokensForNextRequest();
-    emit tokensChanged(estimated);
+    // A2：整体缩放而非只缩放消息——EWMA 观测分母就是
+    // estimate(messages)+estimateReservedTokensForNextRequest()，显示/预算
+    // 必须与观测同口径，否则 schema 不随 scale 变化会残留
+    // rawSchema×(scale-1) 的系统性偏差。
+    const double scale = tokenEstimateScale();
+    const int rawMessages = TokenEstimator::estimateTokens(m_messages);
+    const int rawReserved = estimateReservedTokensForNextRequest();
+    emit tokensChanged(static_cast<int>((rawMessages + rawReserved) * scale));
 }
 
 // 估算校准系数（docs/16 §3.3）：≥1，无观测时 1.0。m_estimateScale 由
@@ -882,29 +920,35 @@ int AIAgent::calibratedMessageTokens() const {
                             * tokenEstimateScale());
 }
 
+int AIAgent::calibratedReservedTokens() const {
+    return static_cast<int>(estimateReservedTokensForNextRequest()
+                            * tokenEstimateScale());
+}
+
 // docs/16 §8.3: 实时上下文构成。桶来自当前消息数组（system prompt 是
 // 数组首条，与 usedTokens 同口径），tools schema 预留单独成桶——它随
 // 下一次请求发出、占用窗口，但不在 m_messages 里。
 QVariantMap AIAgent::contextComposition() const {
-    QVariantMap out = TokenEstimator::splitContextTokens(
-        m_messages, estimateReservedTokensForNextRequest());
-    // 与 notifyTokens 同一校准口径：消息桶整体乘 scale，tools schema 保持
-    // 原始估算（它有自己的估算误差，不应借用消息侧的系数）。桶之和仍等于
-    // usedTokens，TopBar 浮层的分段条与头部数字保持一致。
-    if (const double scale = tokenEstimateScale(); scale != 1.0) {
-        qint64 scaledUsed = 0;
-        for (const QString& key : {QStringLiteral("systemPrompt"),
-                                    QStringLiteral("conversation"),
-                                    QStringLiteral("toolResults"),
-                                    QStringLiteral("images")}) {
-            const qint64 v = static_cast<qint64>(out.value(key).toLongLong() * scale);
-            out[key] = v;
-            scaledUsed += v;
-        }
-        out["usedTokens"] = scaledUsed;
-        out["totalTokens"] = scaledUsed
-            + static_cast<qint64>(out.value("toolsSchema").toLongLong());
+    const double scale = tokenEstimateScale();
+    const int rawReserved = estimateReservedTokensForNextRequest();
+    QVariantMap out = TokenEstimator::splitContextTokens(m_messages, rawReserved);
+    // 与 notifyTokens / EWMA 观测同一口径：消息桶与 tools schema 都乘校准
+    // 系数（schema 不是消息数组的一部分，但同样参与该次请求的估算偏差）。
+    // 各桶独立取整后求和，与 notifyTokens 的“整体取整”最多差 4（五个桶
+    // 各截断 <1）。scale==1 时数值与旧实现完全一致。
+    qint64 scaledUsed = 0;
+    for (const QString& key : {QStringLiteral("systemPrompt"),
+                                QStringLiteral("conversation"),
+                                QStringLiteral("toolResults"),
+                                QStringLiteral("images")}) {
+        const qint64 v = static_cast<qint64>(out.value(key).toLongLong() * scale);
+        out[key] = v;
+        scaledUsed += v;
     }
+    const qint64 scaledSchema = static_cast<qint64>(rawReserved * scale);
+    out["toolsSchema"] = scaledSchema;
+    out["usedTokens"] = scaledUsed;
+    out["totalTokens"] = scaledUsed + scaledSchema;
     out["maxTokens"] = m_contextLimit;
     return out;
 }
@@ -1456,10 +1500,13 @@ void AIAgent::launchTaskTail(bool fresh, const QString& episodicInjection) {
     // user sends a large message (compression was previously deferred
     // to processIteration, causing a transient over-100% window).
     {
-        const int reserved = estimateReservedTokensForNextRequest();
+        const int rawReserved = estimateReservedTokensForNextRequest();
+        const int reserved = calibratedReservedTokens();
         const int effective = qMax(0, m_contextLimit - reserved);
         if (calibratedMessageTokens() > effective) {
-            applyContextBudget(reserved);
+            // 预算判断用校准值；applyContextBudget 接收原始估算并在内部
+            // 乘 scale（双重缩放会凭空多扣一份 schema）。
+            applyContextBudget(rawReserved);
         }
     }
     notifyTokens();
@@ -1536,6 +1583,9 @@ void AIAgent::resetSession() {
     // docs/43 P2-5: 切走前留存会话 id（下面的终态清理按它过滤）。
     const QString leavingSession = m_sessionId;
     m_sessionId.clear();
+    // B1: 去重集合是 per-agent 的，runKey 虽已带 sessionId，但旧会话的
+    // 条目没有跨会话价值（旧任务不会重放）；清空同时限制集合无界增长。
+    m_accountedSubagentRuns.clear();
     // docs/35 P4.4: proposal ids are session-scoped and never persisted.
     m_proposalStore->clear();
     // docs/43 P2-5: 后台任务与会话绑定并保留至完成（TTL 30 分钟兜底）；
@@ -1569,6 +1619,10 @@ void AIAgent::resetSession() {
     setState(AgentState::Idle);
     emit traceChanged();
     emit sessionChanged(QString());
+    // 清空后的窗口占用必须重算并广播：m_messages 已重置，notifyTokens 用
+    // 空历史 + tools schema 得出新会话的基线值，TopBar 不再残留旧会话占用。
+    // 保留上面 sessionTokensChanged(0) 的原始时机（会话累计清零先于重算）。
+    notifyTokens();
 }
 
 void AIAgent::resumeSession(const QString& sessionId) {
@@ -1576,6 +1630,9 @@ void AIAgent::resumeSession(const QString& sessionId) {
 
     m_activeSkills.clear();   // docs/37 W3：技能是任务级的，不跨会话
     m_sessionId = sessionId;
+    // B1: 与 resetSession 同语义——旧会话的入账去重条目不再有意义，且
+    // 恢复会话后 provider 可能复用相同 call id，必须从干净集合开始。
+    m_accountedSubagentRuns.clear();
     m_messages = QJsonArray();
     // docs/35 P4.4: proposal ids do not cross sessions (not persisted).
     m_proposalStore->clear();
@@ -1710,10 +1767,11 @@ void AIAgent::resumeSession(const QString& sessionId) {
     // rebuilding the trace, check whether the restored messages exceed the
     // current contextLimit and compress immediately so the resumed session
     // matches the active model's window.
-    const int reserved = estimateReservedTokensForNextRequest();
+    const int rawReserved = estimateReservedTokensForNextRequest();
+    const int reserved = calibratedReservedTokens();
     const int effective = qMax(0, m_contextLimit - reserved);
     if (calibratedMessageTokens() > effective) {
-        applyContextBudget(reserved);
+        applyContextBudget(rawReserved);
     }
 
     setState(AgentState::Idle);
@@ -1828,6 +1886,10 @@ void AIAgent::processIteration() {
         pushMsg["content"] = m_forcedFinalPush;
         requestMessages.append(pushMsg);
     }
+    // A10: 校准分母取这一份真正发出的 wire 请求（files 已折叠、forced-final
+    // 控制消息已追加、schema 与本次 toolsArray 一致），而不是持久化消息数组。
+    m_lastWireEstimate = TokenEstimator::estimateTokens(requestMessages)
+                       + TokenEstimator::estimateToolsSchema(toolsArray);
     m_llmService->chatComplete(requestMessages, toolsArray);
 }
 
@@ -1837,11 +1899,15 @@ void AIAgent::processIteration() {
 // window but are not part of m_messages (REL-1002).
 void AIAgent::applyContextBudget(int reservedTokens) {
     if (m_contextLimit <= 0) return;
-    // 压缩目标与显示同口径：校准后的消息占用 = 原始估算 × scale，所以把
-    // 可用预算除回 scale 后再交给 compressToFit（其内部用原始估算对比）。
+    // 压缩目标与显示同口径：校准后的消息占用 = 原始估算 × scale。传入的
+    // reservedTokens 是原始（未校准）tools schema 估算——调用点保持原样，
+    // 这里统一乘 scale 得到与 notifyTokens/contextComposition 相同的预留；
+    // 再把可用预算除回 scale 交给 compressToFit（其内部用原始估算对比）。
     // scale==1.0 时行为与旧版完全一致。
-    const int capacity = qMax(0, m_contextLimit - reservedTokens);
-    const int effective = static_cast<int>(capacity / tokenEstimateScale());
+    const double scale = tokenEstimateScale();
+    const int reserved = static_cast<int>(reservedTokens * scale);
+    const int capacity = qMax(0, m_contextLimit - reserved);
+    const int effective = static_cast<int>(capacity / scale);
     if (TokenEstimator::estimateTokens(m_messages) <= effective) return;
 
     const int before = m_messages.size();
@@ -1870,7 +1936,8 @@ void AIAgent::onContextLimitChanged(int oldLimit, int newLimit) {
     if (m_active) return;  // task in progress - do not interfere
 
     const int currentTokens = calibratedMessageTokens();
-    const int reserved = estimateReservedTokensForNextRequest();
+    const int rawReserved = estimateReservedTokensForNextRequest();
+    const int reserved = calibratedReservedTokens();
     const int effective = qMax(0, newLimit - reserved);
 
     if (newLimit > oldLimit && currentTokens <= effective) {
@@ -1879,8 +1946,9 @@ void AIAgent::onContextLimitChanged(int oldLimit, int newLimit) {
         restoreFullHistoryIfAvailable();
     } else if (currentTokens > effective) {
         // Scenario A or C: history exceeds the new budget - compress now.
-        // applyContextBudget inserts its own trace node on actual compression.
-        applyContextBudget(reserved);
+        // applyContextBudget inserts its own trace node on actual compression;
+        // pass the raw schema (it scales internally, avoid double scaling).
+        applyContextBudget(rawReserved);
     }
     // else: history fits the new budget, nothing to do.
 }
@@ -1889,6 +1957,11 @@ void AIAgent::onContextLimitChanged(int oldLimit, int newLimit) {
 // effective budget can be computed. Mirrors the toolsArray built in
 // processIteration (dangerous and disabled tools are excluded).
 int AIAgent::estimateReservedTokensForNextRequest() const {
+    // A9: the forced-final request withholds every tool definition, so it
+    // reserves no tools schema. Keeping the full schema here made the window
+    // occupancy and the inputToolCall source bucket look much larger than the
+    // request actually was.
+    if (m_forcedFinal) return 0;
     if (!m_toolRegistry) return 0;
     QJsonArray toolsArray;
     for (const auto& def : m_toolRegistry->listAll()) {
@@ -1936,14 +2009,15 @@ void AIAgent::restoreFullHistoryIfAvailable() {
 
     const int restoredTokens = static_cast<int>(
         TokenEstimator::estimateTokens(restored) * tokenEstimateScale());
-    const int reserved = estimateReservedTokensForNextRequest();
+    const int rawReserved = estimateReservedTokensForNextRequest();
+    const int reserved = calibratedReservedTokens();
     const int effective = qMax(0, m_contextLimit - reserved);
 
     if (restoredTokens > effective) {
         // Restored history still exceeds the new window - compress (but we
         // restored more history than before regardless).
         m_messages = restored;
-        applyContextBudget(reserved);
+        applyContextBudget(rawReserved);
     } else {
         const int added = restored.size() - m_messages.size();
         if (added > 0) {
@@ -2001,9 +2075,24 @@ void AIAgent::onLLMResponse(const LLMResponse& response) {
     // Batch 11: per-request latency/token accounting for the audit chain
     if (m_requestStartMs > 0)
         m_lastLatencyMs = QDateTime::currentMSecsSinceEpoch() - m_requestStartMs;
-    m_lastTokensUsed = response.tokensUsed > 0
-        ? response.tokensUsed
-        : TokenEstimator::estimateTokens(m_messages);
+    // 归一化口径（docs/16 §5.1）：Provider 上报 usage 时按方向字段求和，
+    // Anthropic 的 input_tokens 不含缓存类 token，必须显式补上 cache_creation
+    // 与 cache_read，否则审计链里的本轮 token 会系统性偏小；OpenAI 的 cached
+    // 已包含在 prompt_tokens 内且 cacheRead=0，同一公式成立。无 usage 时回退
+    // 到“消息估算 + 下次请求的 tools schema”，与 notifyTokens 同口径。
+    const bool usageReported = response.promptTokens > 0
+                            || response.completionTokens > 0;
+    // B3: Gemini 的 thoughts 计入 tokensUsed 但不进 completionTokens（Anthropic
+    // 的 tokensUsed 较小不会触发）。以 tokensUsed 为总量上限补差额，避免
+    // 审计/方向卡总量偏小。
+    int normalized = response.promptTokens + response.cacheCreationTokens
+                   + response.cacheReadTokens + response.completionTokens;
+    if (response.tokensUsed > normalized)
+        normalized = response.tokensUsed;
+    m_lastTokensUsed = usageReported
+        ? normalized
+        : TokenEstimator::estimateTokens(m_messages)
+              + estimateReservedTokensForNextRequest();
 
     // docs/16 §5.2.2: 采集分类 token 明细 + 计费 + 持久化。向后兼容
     // m_lastTokensUsed（仍用于 audit_log），此处不影响现有流程。
@@ -2195,6 +2284,7 @@ void AIAgent::onLLMResponse(const LLMResponse& response) {
 void AIAgent::onLLMError(const QString& error) {
     if (!m_active) return;
     m_forcedFinalPush.clear();
+    m_lastWireEstimate = 0;   // failed request: do not leak into the next EWMA
     failTask(error);
 }
 
@@ -2255,6 +2345,12 @@ void AIAgent::stop() {
         m_streamNodeActive = false;
     }
     m_streamTimer.stop();
+
+    // A9: a stop can land on the forced-final round; clear the withheld-tools
+    // state so the idle occupancy/next request shows the schema again.
+    m_forcedFinal = false;
+    m_lastWireEstimate = 0;
+    notifyTokens();
 
     setState(AgentState::Idle);
     if (m_memory && !m_sessionId.isEmpty()) m_memory->touchSession(m_sessionId);
@@ -2572,10 +2668,11 @@ void AIAgent::restartTaskFromAnchor() {
     rebuildSystemMessage();
 
     {
-        const int reserved = estimateReservedTokensForNextRequest();
+        const int rawReserved = estimateReservedTokensForNextRequest();
+        const int reserved = calibratedReservedTokens();
         const int effective = qMax(0, m_contextLimit - reserved);
         if (calibratedMessageTokens() > effective) {
-            applyContextBudget(reserved);
+            applyContextBudget(rawReserved);
         }
     }
     notifyTokens();
@@ -3231,6 +3328,14 @@ void AIAgent::finishToolExecution(const ToolCallInfo& call, const QString& trace
         int tokens = 0;
         QJsonObject usage;
         QStringList codes;
+        // B4: 批内每个任务各自决定是否上报分类用量；reported 保持 OR（有
+        // 任一上报即可展示分类），reportedCount/totalCount/partial 供 UI
+        // 标注「部分上报」，避免把缺失项当成 0 成本。
+        int reportedCount = 0;
+        const int totalCount = batch.size();
+        // 批内任一项没有 provider 分类用量（reported=false）或 Runner 已用
+        // 估算回退（estimated=true），聚合结果就带估算成分。
+        bool estimated = false;
         for (const QJsonValue& value : batch) {
             const QJsonObject item = value.toObject();
             steps += item.value("steps").toInt();
@@ -3238,6 +3343,10 @@ void AIAgent::finishToolExecution(const ToolCallInfo& call, const QString& trace
             const QString code = item.value("stopCode").toString();
             if (!code.isEmpty()) codes.append(code);
             const QJsonObject itemUsage = item.value("usage").toObject();
+            const bool itemReported = itemUsage.value("reported").toBool();
+            if (itemReported) ++reportedCount;
+            if (!itemReported || itemUsage.value("estimated").toBool())
+                estimated = true;
             if (itemUsage.isEmpty()) continue;
             usage["input"] = usage.value("input").toInt()
                            + itemUsage.value("input").toInt();
@@ -3245,11 +3354,22 @@ void AIAgent::finishToolExecution(const ToolCallInfo& call, const QString& trace
                             + itemUsage.value("output").toInt();
             usage["cached"] = usage.value("cached").toInt()
                             + itemUsage.value("cached").toInt();
-            usage["reported"] = usage.value("reported").toBool()
-                                || itemUsage.value("reported").toBool();
+            // 缓存读取/写入与原值一并求和：只累加 merged cached 会让
+            // Anthropic 的 cacheRead/cacheCreation 明细在批量路径丢失。
+            usage["cacheRead"] = usage.value("cacheRead").toInt()
+                               + itemUsage.value("cacheRead").toInt();
+            usage["cacheCreation"] = usage.value("cacheCreation").toInt()
+                                   + itemUsage.value("cacheCreation").toInt();
             if (usage.value("model").toString().isEmpty())
                 usage["model"] = itemUsage.value("model").toString();
         }
+        // 未上报项不贡献 input/output（保持既有求和口径），是否「部分」
+        // 由计数单独表达；reported 不能改成 AND，否则会丢失已上报数据。
+        usage["reported"] = reportedCount > 0;
+        usage["estimated"] = estimated;
+        usage["reportedCount"] = reportedCount;
+        usage["totalCount"] = totalCount;
+        usage["partial"] = reportedCount > 0 && reportedCount < totalCount;
         resultExtra["subagentReport"] = QJsonObject{
             {"batch", true},
             {"count", batch.size()},
@@ -3391,6 +3511,12 @@ void AIAgent::finishToolExecution(const ToolCallInfo& call, const QString& trace
             QString stopCode;
             QJsonObject usage;
             QStringList stopCodes;
+            // B4: 与 trace 轻投影同口径——reported 保持 OR，另记计数与
+            // partial，审计侧也能看出「只有部分任务上报了分类用量」。
+            int reportedCount = 0;
+            const int totalCount = batch.size();
+            // 与 trace 轻投影同口径：任一项无分类用量或使用估算回退。
+            bool estimated = false;
             if (!batch.isEmpty()) {
                 for (const QJsonValue& value : batch) {
                     const QJsonObject item = value.toObject();
@@ -3400,6 +3526,10 @@ void AIAgent::finishToolExecution(const ToolCallInfo& call, const QString& trace
                     const QString code = item.value("stopCode").toString();
                     if (!code.isEmpty()) stopCodes.append(code);
                     const QJsonObject itemUsage = item.value("usage").toObject();
+                    const bool itemReported = itemUsage.value("reported").toBool();
+                    if (itemReported) ++reportedCount;
+                    if (!itemReported || itemUsage.value("estimated").toBool())
+                        estimated = true;
                     if (itemUsage.isEmpty()) continue;
                     usage["input"] = usage.value("input").toInt()
                                    + itemUsage.value("input").toInt();
@@ -3407,13 +3537,21 @@ void AIAgent::finishToolExecution(const ToolCallInfo& call, const QString& trace
                                     + itemUsage.value("output").toInt();
                     usage["cached"] = usage.value("cached").toInt()
                                     + itemUsage.value("cached").toInt();
-                    usage["reported"] = usage.value("reported").toBool()
-                                        || itemUsage.value("reported").toBool();
+                    usage["cacheRead"] = usage.value("cacheRead").toInt()
+                                       + itemUsage.value("cacheRead").toInt();
+                    usage["cacheCreation"] = usage.value("cacheCreation").toInt()
+                                           + itemUsage.value("cacheCreation").toInt();
                     if (usage.value("model").toString().isEmpty())
                         usage["model"] = itemUsage.value("model").toString();
                     if (usage.value("profileId").toString().isEmpty())
                         usage["profileId"] = itemUsage.value("profileId").toString();
                 }
+                usage["reported"] = reportedCount > 0;
+                usage["estimated"] = estimated;
+                usage["reportedCount"] = reportedCount;
+                usage["totalCount"] = totalCount;
+                usage["partial"] =
+                    reportedCount > 0 && reportedCount < totalCount;
                 stopCode = stopCodes.join(QLatin1Char(','));
             } else if (!rep.isEmpty()) {
                 steps = rep.value("steps").toInt();
@@ -3430,6 +3568,17 @@ void AIAgent::finishToolExecution(const ToolCallInfo& call, const QString& trace
                     steps = match.captured(1).toInt();
                     tokens = match.captured(2).toInt();
                 }
+            }
+            // B1: 同步 spawn_agent 的唯一入账点。batch（subagent_wait）只汇总审计，
+// 不入账——后台任务已在 taskFinished 时入账，避免收割时重复计费。
+            if (call.name == QLatin1String("spawn_agent") && !rep.isEmpty()) {
+                // runKey 带 sessionId：provider 每会话可能复用 call_0 一类
+                // 调用 id，仅用 "sync:<callId>" 会让后一会话的用量被去重漏记。
+                accountSubagentUsage(
+                    QStringLiteral("sync:") + m_sessionId + QLatin1Char(':')
+                        + call.id,
+                    rep.value("usage").toObject(),
+                    rep.value("tokensUsed").toInt(), m_sessionId);
             }
             // 非 const：下面要往里写 subagent_todo（const operator[] 的
             // 赋值在 Qt6 是对临时量的空操作）。
@@ -3700,6 +3849,14 @@ if (m_memory && !m_sessionId.isEmpty()) m_memory->touchSession(m_sessionId);
 
     emit sessionsChanged();
 
+    // A9: the task is over — the NEXT request will carry tools again. Reset
+    // the forced-final flag before the final state so the idle window occupancy
+    // (and any listener reading it on responseReady) includes the schema.
+    m_forcedFinal = false;
+    m_forcedFinalPush.clear();
+    m_lastWireEstimate = 0;
+    notifyTokens();
+
     setState(AgentState::Summarizing);
     setState(AgentState::Completed);
     emit responseReady(finalText);
@@ -3713,8 +3870,87 @@ void AIAgent::failTask(const QString& error) {
     clearInFlightToolCalls();
     m_subAgentNodeCalls.clear();
     appendTraceNode("error", error, "failed");
+    // A9: failure also ends the task; do not keep the forced-final schema
+    // reservation suppressed for the idle/next state.
+    m_forcedFinal = false;
+    m_forcedFinalPush.clear();
+    m_lastWireEstimate = 0;
+    notifyTokens();
     setState(AgentState::Error);
     emit errorOccurred(error);
+}
+
+// B1: 子代理用量入账（唯一入账点）。
+// - 同步 spawn_agent：finishToolExecution 拿到 subagentReport 后立即入账；
+// - 后台任务：BackgroundTaskHub::taskFinished 的 GUI 线程 lambda 入账；
+// - subagent_wait 只收割报告，不再入账（runKey 去重双保险）。
+// 归一化口径：input 补上 Anthropic 的 cacheRead/cacheCreation；总量以
+// tokensUsed 为上限补 output 差额；reported=false 时无法拆分，整笔按输入记。
+void AIAgent::accountSubagentUsage(const QString& runKey,
+                                   const QJsonObject& usage,
+                                   int tokensUsed,
+                                   const QString& sessionId) {
+    if (!m_memory || sessionId.isEmpty() || runKey.isEmpty()
+            || m_accountedSubagentRuns.contains(runKey))
+        return;
+
+    const int input = usage.value(QStringLiteral("input")).toInt();
+    const int output = usage.value(QStringLiteral("output")).toInt();
+    const int cached = usage.value(QStringLiteral("cached")).toInt();
+    const int cacheRead = usage.value(QStringLiteral("cacheRead")).toInt();
+    const int cacheCreation =
+        usage.value(QStringLiteral("cacheCreation")).toInt();
+    const bool reported = usage.value(QStringLiteral("reported")).toBool();
+    QString model = usage.value(QStringLiteral("model")).toString();
+    if (model.isEmpty()) model = QStringLiteral("subagent");
+
+    int normInput = input + cacheRead + cacheCreation;
+    int normOutput = output;
+    if (tokensUsed > normInput + normOutput)
+        normOutput = tokensUsed - normInput;
+    if (!reported && tokensUsed > 0) {
+        // 只有聚合总量、方向不可拆：保守地把整笔记在输入侧（不虚构输出）。
+        normInput = tokensUsed;
+        normOutput = 0;
+    }
+    if (normInput <= 0 && normOutput <= 0) return;   // 不写全零行
+
+    qint64 costCents = 0;
+#if NEXUSAI_HAS_PRICING
+    int inputPrice = 0, outputPrice = 0, cacheHitPrice = 0;
+    PricingCalculator::getPricing(model, inputPrice, outputPrice, cacheHitPrice);
+    costCents = PricingCalculator::calculateCost(
+        model, normInput, normOutput, cached,
+        inputPrice, outputPrice, cacheHitPrice);
+#endif
+
+    QVariantMap rec;
+    // 父请求在后台完成时已不可靠：requestId=0 避免把子代理成本错误归因。
+    rec["requestId"] = quint64(0);
+    rec["sessionId"] = sessionId;
+    rec["model"] = model;
+    rec["timestamp"] = QDateTime::currentMSecsSinceEpoch();
+    rec["inputTokens"] = normInput;
+    rec["outputTokens"] = normOutput;
+    rec["cacheHitTokens"] = cached;
+    // 子代理调用本身是主代理的一次工具派发：来源统一记 inputToolCall /
+    // outputToolCall，与主记录的系统提示/对话来源保持互斥。
+    rec["inputToolCall"] = normInput;
+    rec["outputToolCall"] = normOutput;
+    rec["costCents"] = costCents;
+    rec["latencyMs"] = -1;
+    m_memory->logTokenUsage(rec);
+
+    m_accountedSubagentRuns.insert(runKey);
+    // 旧运行早已终态，不会再次触发；清空只防止长会话无界增长。
+    if (m_accountedSubagentRuns.size() > 4096)
+        m_accountedSubagentRuns.clear();
+
+    // 跨会话任务只落库，不污染当前会话的 TopBar 累计。
+    if (sessionId == m_sessionId) {
+        m_sessionTokensUsed += normInput + normOutput;
+        emit sessionTokensChanged(m_sessionTokensUsed);
+    }
 }
 
 // docs/16 §5.2.2: 响应接收时采集分类 token 明细 + 计费 + 持久化。
@@ -3722,6 +3958,10 @@ void AIAgent::failTask(const QString& error) {
 // → 缓存命中分摊 → 计费 → logTokenUsage → emit costChanged。
 // 不改 m_lastTokensUsed（保持现有 audit_log 流程，向后兼容）。
 void AIAgent::recordTokenUsage(const LLMResponse& response) {
+    // A10: consume the wire estimate for THIS response, then clear it so a
+    // failed/partial request cannot leak into the next EWMA observation.
+    const int wireEstimate = m_lastWireEstimate;
+    m_lastWireEstimate = 0;
     if (!m_memory || m_sessionId.isEmpty()) return;
 
     // ── 来源拆分·输入（估算，文档 §5.2.1）──
@@ -3732,13 +3972,18 @@ void AIAgent::recordTokenUsage(const LLMResponse& response) {
     for (const auto& entry : m_messages) {
         const QJsonObject msg = entry.toObject();
         const QString role = msg.value("role").toString();
+        // 图片附件 token（perImageTokens=1000，与 TokenEstimator 一致）单列
+        // 到 inputImage。estimateTokens(msg) 内部已含 images.size()*1000，
+        // 会话来源累加时必须扣除，否则同一张图会同时计入 conversation 与
+        // image 两个来源，promptTokens=0 的回退路径上来源之和会超过 input。
+        const int imageTokens = msg.value("images").toArray().size() * 1000;
+        inputImage += imageTokens;
         if (role == QLatin1String("user") || role == QLatin1String("assistant")) {
-            inputConversation += TokenEstimator::estimateTokens(msg);
+            inputConversation += qMax(0, TokenEstimator::estimateTokens(msg)
+                                         - imageTokens);
         } else if (role == QLatin1String("tool")) {
             inputToolCall += TokenEstimator::estimateTokens(msg);
         }
-        // 图片附件 token（perImageTokens=1000，与 TokenEstimator 一致）
-        inputImage += msg.value("images").toArray().size() * 1000;
     }
     // MCP / 技能来源由各自模块单独统计，此处为 0。
     const int inputMcp = 0;
@@ -3753,14 +3998,24 @@ void AIAgent::recordTokenUsage(const LLMResponse& response) {
     const int inputTokens = (response.promptTokens > 0
         ? response.promptTokens
         : TokenEstimator::estimateTokens(m_messages) + reservedSchema)
-        // docs/16 §5.1: Anthropic 的 input_tokens 不含缓存 token，缓存写入
-        // （cache_creation）属于“未命中的输入”，按输入侧计入（否则被解析后
-        // 静默丢弃）；缓存读取归 cacheHit 桶。不能把写入并入 cacheHit，
-        // 那会把写入按命中低价计费。
-        + response.cacheCreationTokens;
-    const int outputTokens = response.completionTokens > 0
+        // docs/16 §5.1 统一语义：cacheHitTokens 始终是 inputTokens 的子集。
+        // Anthropic 的 input_tokens 不含缓存 token，缓存写入（cache_creation）
+        // 与缓存读取（cache_read）都是本次请求的真实输入，显式补入——否则
+        // total（方向卡三项之和）/会话累计/计费基数偏小，且 cacheHitRate
+        // （分母 totalInputTokens）可能 >100%。OpenAI 的 prompt_tokens 已含
+        // cached_tokens 且 cacheRead=0，同一公式成立。不能把写入并入
+        // cacheHit，那会把写入按命中低价计费。
+        + response.cacheCreationTokens
+        + response.cacheReadTokens;
+    int outputTokens = response.completionTokens > 0
         ? response.completionTokens
         : TokenEstimator::estimateTokens(response.content);
+    // B3: provider 把 reasoning/thoughts 计入 tokensUsed 但不计入
+    // completionTokens（Gemini）。总量以 tokensUsed 为准，把差额补进输出，
+    // 保持 input+output == total tokensUsed。Anthropic/OpenAI 的
+    // tokensUsed 不会大于 input+output，不触发。
+    if (response.tokensUsed > inputTokens + outputTokens)
+        outputTokens = response.tokensUsed - inputTokens;
     // 缓存命中 = 真正命中缓存的输入（OpenAI cached_tokens / Anthropic
     // cache_read）。缓存写入不计入。
     const int cacheHitTokens = response.cachedTokens + response.cacheReadTokens;
@@ -3788,12 +4043,23 @@ void AIAgent::recordTokenUsage(const LLMResponse& response) {
             inputImage        = static_cast<int>(inputImage * scale);
         }
         // ── 估算器滚动校准（docs/16 §3.3）──
-        // 分子用与 inputTokens 同口径的 API 输入（含缓存写入），分母用与
-        // notifyTokens 同口径的原始估算（消息 + tools schema）。EWMA α=0.3
-        // 平滑单次请求的异常；钳制到 [0.5, 3.0] 防御脏数据把系数带飞。
-        const double rawEstimate = static_cast<double>(
-            TokenEstimator::estimateTokens(m_messages) + reservedSchema);
+        // 分子用与 inputTokens 同口径的 API 输入（含缓存写入），分母优先用
+        // A10 的实际 wire 请求估算（files 折叠后正文、forced-final 控制
+        // 消息、本次 toolsArray）；缺失时回退旧的“消息 + schema”口径。
+        // EWMA α=0.3 平滑单次请求的异常；钳制到 [0.5, 3.0] 防御脏数据。
+        const double rawEstimate = wireEstimate > 0
+            ? static_cast<double>(wireEstimate)
+            : static_cast<double>(TokenEstimator::estimateTokens(m_messages)
+                                  + reservedSchema);
         if (rawEstimate > 0) {
+            // A4: 观测前先确认这条观测属于当前模型。configure() 原地改
+            // service->model() 不经过 setLLMService 的指针切换分支，只有
+            // 这里能发现“同实例换模型”；旧系数先清零，本次观测重新起算。
+            const QString modelNow = currentModel();
+            if (!modelNow.isEmpty() && !m_scaleModelName.isEmpty()
+                    && modelNow != m_scaleModelName)
+                m_estimateScale = 0.0;
+            if (!modelNow.isEmpty()) m_scaleModelName = modelNow;
             const double observed = static_cast<double>(inputTokens) / rawEstimate;
             const double clamped = qBound(0.5, observed, 3.0);
             m_estimateScale = m_estimateScale > 0.0

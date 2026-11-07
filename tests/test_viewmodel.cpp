@@ -908,6 +908,49 @@ private slots:
         vm.setAgent(nullptr);
     }
 
+    // A11: controller 的 m_sessionTokensUsed 只是 agent 的镜像——挂接时必须
+    // 立即同步（否则新标签显示 0），脱钩时必须清零并通知（否则残留上一个
+    // 会话的累计值）。窗口占用 m_usedTokens 同处理。
+    void controllerMirrorsSessionTokensOnAttachAndDetach() {
+        SqliteMemory memory(QStringLiteral(":memory:"));
+        memory.beginSession("s-tok", "Token mirror");
+        QVariantMap row;
+        row["requestId"] = quint64(1);
+        row["sessionId"] = QStringLiteral("s-tok");
+        row["model"] = QStringLiteral("gpt-4o");
+        row["inputTokens"] = 100;
+        row["outputTokens"] = 50;
+        memory.logTokenUsage(row);
+
+        AgentViewModel vm(nullptr);
+        vm.setMemory(&memory);
+        AIAgent agent;
+        agent.setMemory(&memory);
+        vm.setAgent(&agent);
+
+        QSignalSpy sessionSpy(&vm, &AgentViewModel::sessionTokensChanged);
+        agent.resumeSession("s-tok");
+        QCOMPARE(agent.sessionTokensUsed(), qint64(150));
+        QCOMPARE(vm.sessionTokensUsed(), qint64(150));
+        QVERIFY(vm.usedTokens() > 0);   // notifyTokens: 空历史 + tools schema
+
+        const int beforeDetach = sessionSpy.count();
+        vm.setAgent(nullptr);
+        QVERIFY2(sessionSpy.count() > beforeDetach,
+                 "detach must notify sessionTokensChanged");
+        QCOMPARE(vm.sessionTokensUsed(), qint64(0));
+        QCOMPARE(vm.usedTokens(), 0);
+    }
+
+    // A12: 未挂接 agent 的活动标签上调用 TopBar 数据源 getter 必须返回空
+    // map 且不崩溃（旧实现直接 active()-> 解引用）。
+    void statsGettersSurviveDetachedAgent() {
+        AgentViewModel vm(nullptr);
+        vm.setAgent(nullptr);
+        QVERIFY(vm.sessionTokenBreakdown().isEmpty());
+        QVERIFY(vm.contextComposition().isEmpty());
+    }
+
     void exportSessionMarkdownRoundtrip() {
         SqliteMemory memory(QStringLiteral(":memory:"));
         memory.beginSession("s1", "Exported");

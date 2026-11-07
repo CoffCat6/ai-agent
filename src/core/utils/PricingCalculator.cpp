@@ -18,9 +18,14 @@ qint64 PricingCalculator::calculateCost(const QString& model,
                                         int cacheHitPriceCents) {
     Q_UNUSED(model);
     // 缓存命中部分从输入中剥离，单独按缓存单价计费；剩余输入按输入单价。
-    // 钳制非负，防御上层 cacheHitTokens > inputTokens 的脏数据。
-    const qint64 billableInput = static_cast<qint64>(qMax(0, inputTokens - cacheHitTokens));
-    const qint64 cacheHit      = static_cast<qint64>(qMax(0, cacheHitTokens));
+    // cacheHitTokens 语义上是 inputTokens 的子集（OpenAI cached_tokens 已含
+    // 在 prompt_tokens 内，Anthropic cache_read 也已并入 input）。上层若传
+    // 入大于 input 的脏数据，必须先钳到 input：否则 billableInput 只被钳到
+    // 0，而 cacheHit 仍按完整值计费，缓存部分会重复/虚高。
+    const qint64 cacheHit = static_cast<qint64>(
+        qBound(0, cacheHitTokens, qMax(0, inputTokens)));
+    const qint64 billableInput =
+        static_cast<qint64>(qMax(0, inputTokens)) - cacheHit;
     const qint64 output        = static_cast<qint64>(qMax(0, outputTokens));
     // qint64 防溢出：1M token * 7500 分 = 7.5e9，已超 int32 上限。
     const qint64 inputCost  = billableInput * inputPriceCents;

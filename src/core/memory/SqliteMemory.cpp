@@ -3012,11 +3012,12 @@ void SqliteMemory::saveTraceNode(const QString& sessionId, const QJsonObject& no
     // subagentTools: 子代理进度节点累积的工具摘要（docs/32 P2 优化），
     // 会话恢复后标题摘要仍可重建。evidencePath: 证据工件路径（E1），
     // 「查看证据」入口随会话恢复仍可用。subagentProposals: 提案索引
-    // （docs/34 P3.2），卡片徽章/列表随会话恢复仍可渲染。
+    // （docs/34 P3.2），卡片徽章/列表随会话恢复仍可渲染。subagentReport:
+    // 结构化报告轻投影（B6），成本芯片/未上报 fallback 随会话恢复仍可用。
     for (const char* key : {"images", "files", "model", "preview", "source",
                             "subagentTools", "subagentLog", "evidencePath",
-                            "subagentProposals", "taskId", "goal", "role",
-                            "state"})
+                            "subagentProposals", "subagentReport", "taskId",
+                            "goal", "role", "state"})
         if (node.contains(QLatin1String(key))) metadata[key] = node.value(QLatin1String(key));
     query.addBindValue(QString::fromUtf8(QJsonDocument(metadata).toJson(QJsonDocument::Compact)));
 
@@ -3051,8 +3052,8 @@ QJsonObject traceNodeFromRow(const QSqlQuery& query) {
     const auto metadata = QJsonDocument::fromJson(query.value(10).toByteArray()).object();
     for (const char* key : {"images", "files", "model", "preview", "source",
                             "subagentTools", "subagentLog", "evidencePath",
-                            "subagentProposals", "taskId", "goal", "role",
-                            "state"})
+                            "subagentProposals", "subagentReport", "taskId",
+                            "goal", "role", "state"})
         if (metadata.contains(QLatin1String(key))) node[key] = metadata.value(QLatin1String(key));
     return node;
 }
@@ -3533,8 +3534,7 @@ QVariantList SqliteMemory::tokenStatsBySource(int recentDays, qint64 fromTs, qin
         "COALESCE(SUM(output_other),0), "
         "COALESCE(SUM(cache_hit_system_prompt),0), COALESCE(SUM(cache_hit_conversation),0), "
         "COALESCE(SUM(cache_hit_tool_call),0), "
-        "COALESCE(SUM(cost_cents),0), "
-        "COALESCE(SUM(input_tokens),0)+COALESCE(SUM(output_tokens),0) "
+        "COALESCE(SUM(cost_cents),0) "
         "FROM token_usage WHERE ") + win.whereSql);
     bindUsageWindow(q, win);
     if (!q.exec() || !q.next()) {
@@ -3557,7 +3557,14 @@ QVariantList SqliteMemory::tokenStatsBySource(int recentDays, qint64 fromTs, qin
     const qint64 chConv   = q.value(13).toLongLong();
     const qint64 chTool   = q.value(14).toLongLong();
     const qint64 totalCost   = q.value(15).toLongLong();
-    const qint64 totalTokens = q.value(16).toLongLong();
+    // A7: 分摊权重与分母统一用 inT+outT，不再把 cacheHit 计入。
+    // cacheHit 是 input 的折扣子集（OpenAI 的 cached_tokens 已含在
+    // prompt_tokens 内，Anthropic 的 cache_read 也已显式并入 input），
+    // 不是额外 token；把它加进分子会让含缓存的数据集 Σ来源费用 > 总费用
+    // （双计）。cacheHit 仍作为展示字段下发，只不参与费用权重。
+    const qint64 totalTokens = inSp + inConv + inTool + inMcp + inSkill
+                             + inImg + inOther
+                             + outConv + outTool + outMcp + outSkill + outOther;
 
     // 费用按 token 占比分摊到各来源（整数除法，余数归入最大来源可接受）。
     const auto share = [totalTokens, totalCost](qint64 srcTokens) -> qint64 {
@@ -3579,7 +3586,7 @@ QVariantList SqliteMemory::tokenStatsBySource(int recentDays, qint64 fromTs, qin
         m[QStringLiteral("inputTokens")]    = r.inT;
         m[QStringLiteral("outputTokens")]   = r.outT;
         m[QStringLiteral("cacheHitTokens")] = r.chT;
-        m[QStringLiteral("costCents")]      = share(r.inT + r.outT + r.chT);
+        m[QStringLiteral("costCents")]      = share(r.inT + r.outT);
         out.append(m);
     }
     return out;

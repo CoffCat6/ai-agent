@@ -5,6 +5,12 @@
 #include <QLocale>
 #include <QQmlEngine>
 #include <QObject>
+#include <QQuickTextDocument>
+#include <QTextBlock>
+#include <QTextBlockFormat>
+#include <QTextCursor>
+#include <QTextDocument>
+#include <QTextObject>
 
 #include "ThemeManager.h"
 
@@ -139,6 +145,47 @@ public:
     Q_PROPERTY(QColor codeBackground READ codeBackground NOTIFY themeChanged FINAL)
     QColor codeBackground() const {
         return m_manager->isDark() ? QColor("#0D0D13") : QColor("#F2F4F7");
+    }
+
+    // ── Code block shadow (docs/45 §3.3) ─────────────
+    // 代码块要从页面底色里"托起"，但深浅色不能用同一套阴影：暗色底
+    // (#0A0A0F) 上需要纯黑较高不透明度才有下沉感；亮色底 (#F5F7FA) 上纯黑
+    // 会发脏，改用冷灰蓝低不透明度，并把外扩/位移收小，避免白底糊成一片。
+    //
+    // 实现刻意不用 QtQuick.Effects：项目下限是 REQUIRES 6.5
+    // （CMakeLists.txt:20），而 RectangularShadow 需 6.7+；MultiEffect 挂在
+    // 会变高的节点上每帧重缓存（docs/19 V7-c 已否决）。代码块是非流式静态
+    // 节点，用「三层同心矩形 + 透明度递减」的零特效分层即可，无 FBO 开销。
+    Q_PROPERTY(QColor codeBlockShadowColor READ codeBlockShadowColor NOTIFY themeChanged FINAL)
+    QColor codeBlockShadowColor() const {
+        return m_manager->isDark() ? QColor("#000000") : QColor("#1F2A37");
+    }
+
+    // 最内层（贴卡片那层）的不透明度；三层按 1 / 0.55 / 0.30 递减叠加。
+    Q_PROPERTY(qreal codeBlockShadowOpacity READ codeBlockShadowOpacity NOTIFY themeChanged FINAL)
+    qreal codeBlockShadowOpacity() const { return m_manager->isDark() ? 0.30 : 0.12; }
+
+    // 向外扩的像素总量（三层各占 1/3），底部外扩计入布局。
+    Q_PROPERTY(int codeBlockShadowBlur READ codeBlockShadowBlur NOTIFY themeChanged FINAL)
+    int codeBlockShadowBlur() const { return m_manager->isDark() ? 10 : 7; }
+
+    Q_PROPERTY(int codeBlockShadowOffsetY READ codeBlockShadowOffsetY NOTIFY themeChanged FINAL)
+    int codeBlockShadowOffsetY() const { return m_manager->isDark() ? 4 : 2; }
+
+    // ── Inline code (docs/45 §3.2) ──────────────────
+    // MarkdownText 把 `code` 渲染成等宽字体但并不给底色（实测 bg 为空），
+    // 正文里的 `random.randint(1, 100)` 与普通文字混在一起难以辨识。底色
+    // 要比正文底（bgPrimary）亮一档、又略区别于整块代码（codeBackground）：
+    // 暗色 #1C1C28 是"浅一层的灰紫"，亮色 #E9EDF2 是"深一层的冷灰"。
+    // 前景用品牌色而非正文色，让行内代码在长段落里一眼可辨。
+    Q_PROPERTY(QColor inlineCodeBackground READ inlineCodeBackground NOTIFY themeChanged FINAL)
+    QColor inlineCodeBackground() const {
+        return m_manager->isDark() ? QColor("#1C1C28") : QColor("#E9EDF2");
+    }
+
+    Q_PROPERTY(QColor inlineCodeForeground READ inlineCodeForeground NOTIFY themeChanged FINAL)
+    QColor inlineCodeForeground() const {
+        return m_manager->isDark() ? QColor("#8FE3FF") : QColor("#0052D9");
     }
 
     // ── Control states (docs/44 §3.1) ─────────────────
@@ -325,6 +372,21 @@ public:
     Q_PROPERTY(int fontSizeNano READ fontSizeNano NOTIFY themeChanged FINAL)
     int fontSizeNano() const { return qMax(9, m_manager->baseFontSize() - 5); }
 
+    // ── Line height (docs/45 §2 D1/D2) ─────────────────
+    // 对话排版的行距 token（Text.lineHeight 的 ProportionalHeight 倍数，
+    // 1.0 = Qt 默认单倍行高）。为什么收口成 token：AssistantMessage 的
+    // 三处散文 TextEdit 与 CodeBlock 共 4 个消费点，散写数值必然各自
+    // 漂移，将来统一调行距要逐个动业务文件。为什么取 1.4/1.5：中文正文
+    // 公认舒适区 1.4（1.3 偏紧、1.5 偏松，Qt 默认 1.0 下 CJK 密度过高）；
+    // 等宽代码符号稀疏，1.5 与 GitHub 网页代码行高观感一致。主题无关，
+    // 但沿用 themeChanged 通知——与字号 token 同一刷新语义，避免将来
+    // 出现第二套通知信号。
+    Q_PROPERTY(qreal lineHeightBody READ lineHeightBody NOTIFY themeChanged FINAL)
+    qreal lineHeightBody() const { return 1.4; }
+
+    Q_PROPERTY(qreal lineHeightCode READ lineHeightCode NOTIFY themeChanged FINAL)
+    qreal lineHeightCode() const { return 1.5; }
+
 signals:
     void themeChanged();
     void motionChanged();
@@ -333,6 +395,207 @@ private:
     ThemeManager* m_manager;
 
     inline static ThemeProvider* s_instance = nullptr;
+};
+
+// ── docs/45 D1/D2/D7 的落地载体（TextEdit 行距） ────────
+// 为什么需要这个类：QML 的 Text 元素自带 lineHeight 属性，TextEdit 没有
+// （Qt 6.9 无此 API），而对话正文必须保留 TextEdit 的选中/复制/流式光标
+// 交互，不能换成 Text——行距只能下沉到 QTextDocument 层，用
+// QTextBlockFormat::setLineHeight(ProportionalHeight) 实现。
+// 形态与 CodeHighlighter 同构：声明式行为组件，挂进 TextEdit，把
+// document 与 Theme.lineHeight* 绑定为属性；文本变化（流式增量）与行距
+// token 变化都会自动重应用，QML 侧不调用任何 C++ 方法（绑定只依赖属性）。
+class DocumentLineHeight : public QObject {
+    Q_OBJECT
+    QML_NAMED_ELEMENT(DocumentLineHeight)
+    Q_PROPERTY(QQuickTextDocument* document READ document WRITE setDocument
+               NOTIFY documentChanged FINAL)
+    Q_PROPERTY(qreal lineHeight READ lineHeight WRITE setLineHeight
+               NOTIFY lineHeightChanged FINAL)
+public:
+    explicit DocumentLineHeight(QObject* parent = nullptr)
+        : QObject(parent) {}
+
+    QQuickTextDocument* document() const { return m_document; }
+    void setDocument(QQuickTextDocument* document) {
+        if (m_document == document)
+            return;
+        if (m_contentsConnection) {
+            disconnect(m_contentsConnection);
+            m_contentsConnection = {};
+        }
+        m_document = document;
+        if (m_document && m_document->textDocument()) {
+            // 流式路径每个 token 都会触发 contentsChange；reapply 内部
+            // 跳过已达标的 block，稳态零写入、无布局失效，增量开销仅是
+            // 逐 block 读一次 blockFormat。
+            m_contentsConnection = connect(
+                m_document->textDocument(), &QTextDocument::contentsChange,
+                this, &DocumentLineHeight::reapply);
+        }
+        emit documentChanged();
+        reapply();
+    }
+
+    qreal lineHeight() const { return m_lineHeight; }
+    void setLineHeight(qreal lineHeight) {
+        if (qFuzzyCompare(m_lineHeight, lineHeight))
+            return;
+        m_lineHeight = lineHeight;
+        emit lineHeightChanged();
+        reapply();
+    }
+
+signals:
+    void documentChanged();
+    void lineHeightChanged();
+
+private:
+    void reapply() {
+        if (!m_document || m_lineHeight <= 0.0 || m_applying)
+            return;
+        QTextDocument* doc = m_document->textDocument();
+        if (!doc)
+            return;
+        // percent 语义：QTextBlockFormat 的 ProportionalHeight 以 100 为
+        // 单倍行高，与 Text.lineHeight 的 1.0 倍数换算（1.4 → 140）。
+        const int percent = qRound(m_lineHeight * 100.0);
+        m_applying = true;
+        // beginEditBlock 把整轮 block 格式写入合并成一次 contentsChange，
+        // 避免流式高频更新下的事件风暴；由此引发的重入由 m_applying 挡住。
+        QTextCursor cursor(doc);
+        cursor.beginEditBlock();
+        for (QTextBlock block = doc->begin(); block.isValid();
+             block = block.next()) {
+            const QTextBlockFormat fmt = block.blockFormat();
+            if (fmt.lineHeightType() == QTextBlockFormat::ProportionalHeight
+                    && fmt.lineHeight() == percent)
+                continue;
+            QTextBlockFormat next = fmt;
+            next.setLineHeight(percent, QTextBlockFormat::ProportionalHeight);
+            cursor.setPosition(block.position());
+            cursor.setBlockFormat(next);
+        }
+        cursor.endEditBlock();
+        m_applying = false;
+    }
+
+    QQuickTextDocument* m_document = nullptr;
+    qreal m_lineHeight = 1.0;
+    bool m_applying = false;
+    QMetaObject::Connection m_contentsConnection;
+};
+
+// ── docs/45 §3.2 的落地载体（MarkdownText 行内代码底色） ──────────
+// 为什么需要这个类：Qt 的 TextEdit.MarkdownText 会把 `code` 渲染成等宽字体
+// （实测 fontFixedPitch=true、styleHint=Monospace），但不给任何背景色，
+// 正文里的 `random.randint(1, 100)` 与普通文字混在一起难以辨识。QML 侧拿
+// 不到 Markdown 解析出的 span 位置，只能在 QTextDocument 上做后处理：遍历
+// fragment，把等宽片段补上 background/foreground。
+// 注意：QTextCharFormat 不支持圆角，"圆角胶囊"在 QTextDocument 层面做不到，
+// 底色是紧贴文字的矩形块；要圆角只能改成自绘富文本管线（会丢选中/复制）。
+class DocumentInlineCode : public QObject {
+    Q_OBJECT
+    QML_NAMED_ELEMENT(DocumentInlineCode)
+    Q_PROPERTY(QQuickTextDocument* document READ document WRITE setDocument
+               NOTIFY documentChanged FINAL)
+    Q_PROPERTY(QColor background READ background WRITE setBackground
+               NOTIFY backgroundChanged FINAL)
+    Q_PROPERTY(QColor foreground READ foreground WRITE setForeground
+               NOTIFY foregroundChanged FINAL)
+public:
+    explicit DocumentInlineCode(QObject* parent = nullptr)
+        : QObject(parent) {}
+
+    QQuickTextDocument* document() const { return m_document; }
+    void setDocument(QQuickTextDocument* document) {
+        if (m_document == document)
+            return;
+        if (m_contentsConnection) {
+            disconnect(m_contentsConnection);
+            m_contentsConnection = {};
+        }
+        m_document = document;
+        if (m_document && m_document->textDocument()) {
+            m_contentsConnection = connect(
+                m_document->textDocument(), &QTextDocument::contentsChange,
+                this, &DocumentInlineCode::reapply);
+        }
+        emit documentChanged();
+        reapply();
+    }
+
+    QColor background() const { return m_background; }
+    void setBackground(const QColor& background) {
+        if (m_background == background)
+            return;
+        m_background = background;
+        emit backgroundChanged();
+        reapply();
+    }
+
+    QColor foreground() const { return m_foreground; }
+    void setForeground(const QColor& foreground) {
+        if (m_foreground == foreground)
+            return;
+        m_foreground = foreground;
+        emit foregroundChanged();
+        reapply();
+    }
+
+signals:
+    void documentChanged();
+    void backgroundChanged();
+    void foregroundChanged();
+
+private:
+    void reapply() {
+        if (!m_document || m_applying || !m_background.isValid())
+            return;
+        QTextDocument* doc = m_document->textDocument();
+        if (!doc)
+            return;
+        m_applying = true;
+        // 与 DocumentLineHeight 同构：beginEditBlock 把整轮字符格式写入
+        // 合并成一次 contentsChange，避免流式高频更新下的事件风暴；重入
+        // 由 m_applying 挡住，稳态下"已达标"片段直接跳过（零写入）。
+        QTextCursor cursor(doc);
+        cursor.beginEditBlock();
+        for (QTextBlock block = doc->begin(); block.isValid();
+             block = block.next()) {
+            for (QTextBlock::iterator it = block.begin(); !it.atEnd(); ++it) {
+                const QTextFragment fragment = it.fragment();
+                if (!fragment.isValid())
+                    continue;
+                QTextCharFormat fmt = fragment.charFormat();
+                // 实测判定：MarkdownText 的 code span 带 fixedPitch 且
+                // styleHint 为 Monospace，普通正文两者都不成立——不依赖
+                // 重新解析 Markdown，也不会误伤普通等宽字体（正文无它）。
+                if (!fmt.fontFixedPitch()
+                        && fmt.fontStyleHint() != QFont::Monospace)
+                    continue;
+                if (fmt.background().style() == Qt::SolidPattern
+                        && fmt.background().color() == m_background
+                        && fmt.foreground().color() == m_foreground)
+                    continue;
+                fmt.setBackground(m_background);
+                fmt.setForeground(m_foreground);
+                QTextCursor span(doc);
+                span.setPosition(fragment.position());
+                span.setPosition(fragment.position() + fragment.length(),
+                                 QTextCursor::KeepAnchor);
+                span.setCharFormat(fmt);
+            }
+        }
+        cursor.endEditBlock();
+        m_applying = false;
+    }
+
+    QQuickTextDocument* m_document = nullptr;
+    QColor m_background;
+    QColor m_foreground;
+    bool m_applying = false;
+    QMetaObject::Connection m_contentsConnection;
 };
 
 } // namespace NexusAI

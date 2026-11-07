@@ -20,8 +20,11 @@ public:
     //      +  cacheHitTokens           * cacheHitPriceCents  / 1_000_000
     //      +  outputTokens             * outputPriceCents    / 1_000_000)
     // 缓存命中部分从 inputTokens 中剥离，单独按缓存单价计费（缓存单价通常
-    // 0.1-0.5x 输入）；剩余输入按输入单价。model 仅用于扩展/日志，不参与
-    // 公式——调用方应先 getPricing(model,...) 取价再调本函数。
+    // 0.1-0.5x 输入）；剩余输入按输入单价。cacheHitTokens 是 inputTokens 的
+    // 子集：实现内部先钳制 cacheHitTokens = min(max(cacheHitTokens,0),
+    // max(inputTokens,0))，保证 billableInput 不为负、缓存部分不被重复计费。
+    // model 仅用于扩展/日志，不参与公式——调用方应先 getPricing(model,...)
+    // 取价再调本函数。
     static qint64 calculateCost(const QString& model,
                                 int inputTokens, int outputTokens, int cacheHitTokens,
                                 int inputPriceCents, int outputPriceCents,

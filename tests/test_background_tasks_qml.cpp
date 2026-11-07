@@ -427,6 +427,89 @@ private slots:
         QVERIFY2(usageText.contains(QStringLiteral("test-model"))
                      && usageText.contains(QStringLiteral("输入 1000")),
                  qPrintable(usageText));
+
+        // B4: 部分上报（批量/多 attempt 中只有部分提供分类用量）追加提示。
+        QVariantMap partialTask = task(QStringLiteral("sa-2"),
+                                       QStringLiteral("partially reported"),
+                                       QStringLiteral("completed"), 1000, 4, 0);
+        QVariantMap partialUsage = partialTask.value(
+            QStringLiteral("usage")).toMap();
+        partialUsage[QStringLiteral("partial")] = true;
+        partialTask[QStringLiteral("usage")] = partialUsage;
+        QVERIFY(h.setTasks({partialTask}));
+        QTest::qWait(150);
+        QQuickItem* partial = itemOf(QStringLiteral("backgroundTaskDetailUsage"));
+        QVERIFY2(partial, "部分上报任务缺少详情用量行");
+        const QString partialText = partial->property("text").toString();
+        QVERIFY2(partialText.contains(QStringLiteral("部分上报")),
+                 qPrintable(partialText));
+
+        // B9: 无 usage 的估算回退用「≈ tokens N」标明，不能冒充真实计量。
+        QVariantMap estimatedTask = task(QStringLiteral("sa-3"),
+                                         QStringLiteral("estimated cost"),
+                                         QStringLiteral("completed"), 1000, 4, 0);
+        QVariantMap estimatedUsage = estimatedTask.value(
+            QStringLiteral("usage")).toMap();
+        estimatedUsage[QStringLiteral("reported")] = false;
+        estimatedUsage[QStringLiteral("estimated")] = true;
+        estimatedTask[QStringLiteral("usage")] = estimatedUsage;
+        estimatedTask[QStringLiteral("tokensUsed")] = 1400;
+        QVERIFY(h.setTasks({estimatedTask}));
+        QTest::qWait(150);
+        QQuickItem* estimated = itemOf(QStringLiteral("backgroundTaskDetailUsage"));
+        QVERIFY2(estimated, "估算回退任务缺少详情用量行");
+        const QString estimatedText = estimated->property("text").toString();
+        QVERIFY2(estimatedText.contains(QStringLiteral("≈ tokens 1400")),
+                 qPrintable(estimatedText));
+    }
+
+    // B7: 详情区在自动重试（attempts>1）或未开始（attempts==0）时展示
+    // attempts 文案；常规单次尝试不占位置。
+    void detailShowsAttemptsWhenRetriedOrNotStarted() {
+        BackgroundDialogHarness h;
+        QVERIFY2(h.window, qPrintable(h.error));
+
+        const auto itemOf = [&](const QString& name) -> QQuickItem* {
+            return findChildItem(h.window->contentItem(), name);
+        };
+
+        QVariantMap retried = task(QStringLiteral("sa-1"),
+                                   QStringLiteral("retried twice"),
+                                   QStringLiteral("completed"), 1000, 4, 0);
+        retried[QStringLiteral("attempts")] = 3;
+        QVERIFY(h.setTasks({retried}));
+        QVERIFY(h.openDialog());
+        QTest::qWait(150);
+        QQuickItem* attempts = itemOf(QStringLiteral("backgroundTaskDetailAttempts"));
+        QVERIFY2(attempts, "attempts 文案缺失");
+        QTRY_VERIFY(attempts->isVisible());
+        QVERIFY2(attempts->property("text").toString().contains(
+                     QStringLiteral("3 次")),
+                 qPrintable(attempts->property("text").toString()));
+
+        // attempts==0（未真正开始，如预启动取消/槽位超时）显示「未开始」。
+        QVariantMap notStarted = task(QStringLiteral("sa-2"),
+                                      QStringLiteral("never started"),
+                                      QStringLiteral("failed"), 1000, 0, 0);
+        notStarted[QStringLiteral("attempts")] = 0;
+        QVERIFY(h.setTasks({notStarted}));
+        QTest::qWait(150);
+        attempts = itemOf(QStringLiteral("backgroundTaskDetailAttempts"));
+        QVERIFY2(attempts, "attempts 文案缺失");
+        QTRY_VERIFY(attempts->isVisible());
+        QCOMPARE(attempts->property("text").toString(),
+                 QStringLiteral("未开始"));
+
+        // 常规单次尝试：不显示。
+        QVariantMap single = task(QStringLiteral("sa-3"),
+                                  QStringLiteral("single attempt"),
+                                  QStringLiteral("completed"), 1000, 4, 0);
+        single[QStringLiteral("attempts")] = 1;
+        QVERIFY(h.setTasks({single}));
+        QTest::qWait(150);
+        QQuickItem* hidden = itemOf(QStringLiteral("backgroundTaskDetailAttempts"));
+        QVERIFY2(!hidden || !hidden->isVisible(),
+                 "单次尝试不应显示 attempts 文案");
     }
 // docs/43 O4-2: failed/cancelled 终态任务的详情区出现「重试」，点击把任务
 // id 交给门面；completed 任务不给重试入口。
@@ -510,6 +593,44 @@ private slots:
         walkTexts(section);
         QCOMPARE(highBadges, 1);
         QCOMPARE(locations, 1);
+    }
+
+    // Minor: attempts 列只对终态有意义。running/queued 还没有 report，
+    // attempts 缺省 0 不能显示成「未开始」；终态 attempts==0 才显示。
+    void attemptsColumnHiddenWhileRunningVisibleForTerminal() {
+        BackgroundDialogHarness h;
+        QVERIFY2(h.window, qPrintable(h.error));
+
+        QVariantMap running = task(QStringLiteral("sa-1"),
+                                   QStringLiteral("still running"),
+                                   QStringLiteral("running"), 1000, 2, 0);
+        running["attempts"] = 0;
+        QVERIFY(h.setTasks(QVariantList{running}));
+        QVERIFY(h.openDialog());
+        QTest::qWait(150);
+
+        QQuickItem* attempts = findChildItem(
+            h.window->contentItem(),
+            QStringLiteral("backgroundTaskDetailAttempts"));
+        QVERIFY(attempts);
+        QVERIFY2(!attempts->isVisible(),
+                 "running 任务的 attempts=0 不应显示「未开始」");
+
+        // 终态 failed + attempts=0（预启动/排队失败）→ 显示「未开始」。
+        QVariantMap failed = task(QStringLiteral("sa-2"),
+                                  QStringLiteral("failed run"),
+                                  QStringLiteral("failed"), 1000, 1, 0);
+        failed["attempts"] = 0;
+        QVERIFY(h.setTasks(QVariantList{failed}));
+        QTest::qWait(150);
+
+        attempts = findChildItem(h.window->contentItem(),
+                                 QStringLiteral("backgroundTaskDetailAttempts"));
+        QVERIFY(attempts);
+        QVERIFY2(attempts->isVisible(),
+                 "终态 failed 的 attempts=0 应回落到「未开始」");
+        QCOMPARE(attempts->property("text").toString(),
+                 QStringLiteral("未开始"));
     }
 };
 

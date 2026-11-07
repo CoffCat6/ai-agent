@@ -413,7 +413,7 @@ Rectangle {
             // 颜色跟占用色阶走。maxTokens 为 0（无任务）时不显示。
             Text {
                 visible: AgentVM.maxTokens > 0
-                text: Math.round(AgentVM.tokenUsageRate * 100) + "%"
+                text: Math.min(100, Math.round(AgentVM.tokenUsageRate * 100)) + "%"
                 color: tokenArea.usageColor
                 font.pixelSize: Theme.fontSizeCaption
                 font.family: Theme.fontMono
@@ -533,7 +533,8 @@ Rectangle {
                 return rows
             }
             function windowPct(tokens) {
-                return maxTokens > 0 ? Math.round(tokens * 100 / maxTokens) : 0
+                return maxTokens > 0
+                    ? Math.min(100, Math.round(tokens * 100 / maxTokens)) : 0
             }
 
             readonly property bool hasSessionTotals:
@@ -545,7 +546,7 @@ Rectangle {
                 const total = t.totalTokens || 0
                 const rate = t.cacheHitRate || 0
                 return qsTr("会话累计 · %1 tokens · 命中率 %2%")
-                    .arg(total).arg(Math.round(rate * 100))
+                    .arg(total).arg(Math.min(100, Math.round(rate * 100)))
             }
 
             // 输入(未命中)/缓存命中/输出：与统计页方向卡同一互斥口径。
@@ -564,7 +565,8 @@ Rectangle {
                     if (rows[i][1] > 0)
                         out.push({ label: rows[i][0], tokens: rows[i][1],
                                    pct: total > 0
-                                       ? Math.round(rows[i][1] * 100 / total) : 0 })
+                                       ? Math.min(100,
+                                                  Math.round(rows[i][1] * 100 / total)) : 0 })
                 }
                 return out
             }
@@ -588,7 +590,8 @@ Rectangle {
                     if (v > 0)
                         rows.push({ label: defs[i][1], tokens: v,
                                     pct: total > 0
-                                        ? Math.round(v * 100 / total) : 0 })
+                                        ? Math.min(100,
+                                                   Math.round(v * 100 / total)) : 0 })
                 }
                 rows.sort(function(a, b) { return b.tokens - a.tokens })
                 return rows

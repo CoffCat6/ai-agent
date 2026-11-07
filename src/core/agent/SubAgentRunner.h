@@ -152,9 +152,10 @@ struct SubAgentRequest {
     // 0 = no wall-clock budget (user may stop manually); >0 only from tests.
     qint64 timeoutMs{0};
     // docs/35 P4.1: model context window (tokens) shared by the sub-agent's
-    // profile; 0 = unknown/unlimited (no compression). The runner only
-    // compresses the request copy — the full transcript is kept for the
-    // evidence artifact and the next round.
+    // profile. 0 = unknown (profile resolution failed / caller has no value):
+    // the runner compresses the request copy with kFallbackContextLimit instead
+    // of sending an over-window request to the provider. The full transcript is
+    // still kept for the evidence artifact and the next round.
     int contextLimit{0};
     ITool::Cancellation cancelled;       // shared with the dispatching tool; a
                                          // stop() of the primary agent flips it
@@ -180,7 +181,20 @@ struct SubAgentUsage {
     int inputTokens{0};
     int outputTokens{0};
     int cachedTokens{0};   // OpenAI cached_tokens + Anthropic cache_read, merged
+    // B3: Anthropic 缓存分类原值。cacheRead 同时并入 cachedTokens 供 UI 展示，
+    // cacheCreation 属于未命中的输入，入账时单独补进 input。
+    int cacheReadTokens{0};
+    int cacheCreationTokens{0};
     bool usageReported{false};
+    // B9: provider 未上报 usage 时 Runner 用 TokenEstimator 回退估算 tokensUsed
+    // 并置此标记；UI 以「≈ tokens N」区分估算值，绝不冒充真实计量。
+    bool estimated{false};
+    // B4: 跨 attempt 汇总时区分「部分上报」——reported 保持 OR（有任一上报即
+    // 可展示分类），reportedCount/attemptCount 给出分母，partial 标记只有
+    // 部分 attempt 提供了分类用量。单次 attempt 全量上报时 partial=false。
+    int reportedCount{0};
+    int attemptCount{0};
+    bool partial{false};
 };
 
 struct SubAgentReport {
@@ -239,6 +253,10 @@ struct SubAgentReport {
 // (cancel flag, deadline) bound the wait.
 class SubAgentRunner {
 public:
+    // B8: contextLimit=0（未知 profile）时的保守回退窗口。与主代理
+    // AIAgent::kDefaultContextTokens 同值：宁可多压缩一轮，也不把必然被
+    // provider 拒绝的超窗请求发出去（失败重试只会白烧 token）。
+    static constexpr int kFallbackContextLimit = 128000;
     // Per-tool-result cap inside the sub-history: bounds a single huge read
     // from filling the sub-context. The final report is NOT truncated here —
     // the primary agent applies its own kMaxToolResultChars when the result

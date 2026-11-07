@@ -343,17 +343,29 @@ QVariantMap BackgroundTaskHub::snapshotOf(const Entry& entry, qint64 nowMs) cons
     const qint64 end = entry.finishedAtMs > 0 ? entry.finishedAtMs : nowMs;
     int tokensUsed = 0;
     int findingCount = 0;
+    int attempts = 0;
     QString stopCode;
     QVariantMap usage;
     if (entry.hasReport) {
         tokensUsed = entry.report.tokensUsed;
         findingCount = entry.report.findings.size();
+        attempts = entry.report.attempt;
         stopCode = entry.report.stopCode;
         usage = QVariantMap{
             {QStringLiteral("input"), entry.report.usage.inputTokens},
             {QStringLiteral("output"), entry.report.usage.outputTokens},
             {QStringLiteral("cached"), entry.report.usage.cachedTokens},
+            {QStringLiteral("cacheRead"), entry.report.usage.cacheReadTokens},
+            {QStringLiteral("cacheCreation"), entry.report.usage.cacheCreationTokens},
             {QStringLiteral("reported"), entry.report.usage.usageReported},
+            // B9: 无 usage 时的估算回退标记（UI 显示「≈ tokens N」）。
+            {QStringLiteral("estimated"), entry.report.usage.estimated},
+            // B4: 部分上报标记供面板详情追加「部分上报」文案。
+            {QStringLiteral("reportedCount"), entry.report.usage.reportedCount},
+            {QStringLiteral("attemptCount"), entry.report.usage.attemptCount},
+            {QStringLiteral("partial"), entry.report.usage.partial},
+            // B7: attempts 同时放进 usage map，UI 绑定不必另取顶层键。
+            {QStringLiteral("attempts"), entry.report.attempt},
             {QStringLiteral("model"), entry.report.usage.model},
             {QStringLiteral("profileId"), entry.report.usage.profileId}};
     }
@@ -374,6 +386,8 @@ QVariantMap BackgroundTaskHub::snapshotOf(const Entry& entry, qint64 nowMs) cons
         {QStringLiteral("error"), entry.error},
         {QStringLiteral("tokensUsed"), tokensUsed},
         {QStringLiteral("usage"), usage},
+        // B7: 终态快照暴露 attempt 次数（0 = 未真正开始）。
+        {QStringLiteral("attempts"), attempts},
         {QStringLiteral("findingCount"), findingCount},
         {QStringLiteral("stopCode"), stopCode}};
 }
@@ -384,16 +398,30 @@ QVariantMap BackgroundTaskHub::snapshotOf(const Entry& entry, qint64 nowMs) cons
 QVariantMap BackgroundTaskHub::terminalSummaryOf(const Entry& entry) const {
     QVariantMap usage;
     int tokens = 0;
+    int attempts = 0;
     QString stopCode;
     if (entry.hasReport) {
         tokens = entry.report.tokensUsed;
+        attempts = entry.report.attempt;
         stopCode = entry.report.stopCode;
         usage = QVariantMap{
             {QStringLiteral("input"), entry.report.usage.inputTokens},
             {QStringLiteral("output"), entry.report.usage.outputTokens},
             {QStringLiteral("cached"), entry.report.usage.cachedTokens},
+            {QStringLiteral("cacheRead"), entry.report.usage.cacheReadTokens},
+            {QStringLiteral("cacheCreation"), entry.report.usage.cacheCreationTokens},
             {QStringLiteral("reported"),
-             entry.report.usage.usageReported}};
+             entry.report.usage.usageReported},
+            // B9: 审计侧同样保留估算回退标记。
+            {QStringLiteral("estimated"), entry.report.usage.estimated},
+            // B4: 审计侧同样保留 partial 计数。
+            {QStringLiteral("reportedCount"), entry.report.usage.reportedCount},
+            {QStringLiteral("attemptCount"), entry.report.usage.attemptCount},
+            {QStringLiteral("partial"), entry.report.usage.partial},
+            // B7: attempts 也随 usage map 下发。
+            {QStringLiteral("attempts"), entry.report.attempt},
+            {QStringLiteral("model"), entry.report.usage.model},
+            {QStringLiteral("profileId"), entry.report.usage.profileId}};
     }
     return QVariantMap{
         {QStringLiteral("taskId"), entry.id},
@@ -402,7 +430,8 @@ QVariantMap BackgroundTaskHub::terminalSummaryOf(const Entry& entry) const {
         {QStringLiteral("stopCode"), stopCode},
         {QStringLiteral("steps"), entry.steps},
         {QStringLiteral("tokens"), tokens},
-        {QStringLiteral("usage"), usage}};
+        {QStringLiteral("usage"), usage},
+        {QStringLiteral("attempts"), attempts}};
 }
 
 int BackgroundTaskHub::activeCount() const {    QMutexLocker lock(&m_mutex);

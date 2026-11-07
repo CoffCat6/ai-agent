@@ -66,6 +66,28 @@ Item {
                 && usage.reported === true) ? usage : null
     }
     readonly property bool hasSubagentUsage: subagentUsage !== null
+    // B5: 供应商只给聚合 token 数时（reported=false）仍展示成本芯片，
+    // 回退文本与后台面板一致（tokens N），不再让芯片整块消失。
+    readonly property int subagentTokensUsed: {
+        if (nodeType !== "tool_result") return 0
+        const info = modelData.subagentReport
+        if (info === undefined || info === null || typeof info !== "object")
+            return 0
+        return Number(info.tokensUsed || 0)
+    }
+    readonly property bool hasSubagentTokens: subagentTokensUsed > 0
+    // B9: provider 完全没上报 usage 时 Runner 用估算值回退，UI 以「≈」标明
+    // 不是真实计量。usage.reported 为 false 时 subagentUsage 为 null，故这里
+    // 单独读取原始 usage map。
+    readonly property bool subagentTokensEstimated: {
+        if (nodeType !== "tool_result") return false
+        const info = modelData.subagentReport
+        if (info === undefined || info === null || typeof info !== "object")
+            return false
+        const usage = info.usage
+        return usage !== undefined && usage !== null
+                && usage.reported !== true && usage.estimated === true
+    }
     // docs/43 O4-3: trace 轻量投影里的 topFindings（≤3 条，O2 落盘时已带）
     // ——展开区渲染摘要，全文仍在报告/证据工件里。
     readonly property var subagentTopFindings: {
@@ -348,7 +370,7 @@ Item {
                         id: costChip
                         objectName: "subagentCostChip"
                         Layout.alignment: Qt.AlignVCenter
-                        visible: root.hasSubagentUsage
+                        visible: root.hasSubagentUsage || root.hasSubagentTokens
                         Layout.preferredWidth: costText.implicitWidth + 14
                         Layout.preferredHeight: 17
                         radius: 3
@@ -362,11 +384,25 @@ Item {
                             // visible 不阻止绑定求值：守卫必须写进表达式，
                             // 否则 subagentUsage 为 null 的普通节点每次创建
                             // 都会对 null 解引用刷 TypeError（docs/43 O4）。
-                            text: root.hasSubagentUsage
-                                      ? qsTr("输入 %1 · 输出 %2")
-                                            .arg(Number(root.subagentUsage.input || 0))
-                                            .arg(Number(root.subagentUsage.output || 0))
-                                      : ""
+                            text: {
+                                if (root.hasSubagentUsage) {
+                                    let label = qsTr("输入 %1 · 输出 %2")
+                                        .arg(Number(root.subagentUsage.input || 0))
+                                        .arg(Number(root.subagentUsage.output || 0))
+                                    // B4: 批量/多次尝试部分上报时标注。
+                                    if (root.subagentUsage.partial === true)
+                                        label += qsTr(" · 部分")
+                                    return label
+                                }
+                                // B5: 未上报分类时回退聚合 token 数。
+                                if (root.hasSubagentTokens)
+                                    return root.subagentTokensEstimated
+                                        ? qsTr("≈ tokens %1")
+                                              .arg(root.subagentTokensUsed)
+                                        : qsTr("tokens %1")
+                                              .arg(root.subagentTokensUsed)
+                                return ""
+                            }
                             color: Theme.brandPrimary
                             font.pixelSize: Theme.fontSizeNano
                             font.family: Theme.fontSans

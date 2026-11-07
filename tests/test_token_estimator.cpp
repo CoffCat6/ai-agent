@@ -22,6 +22,22 @@ bool anyContentContains(const QJsonArray& messages, const QString& needle) {
     return false;
 }
 
+// A13: UTF-16 代理对（emoji 等非 BMP 字符）必须保持完整；孤立代理字符
+// 会让 QString/JSON 序列化损坏。
+bool hasLoneSurrogate(const QString& text) {
+    for (int i = 0; i < text.size(); ++i) {
+        const QChar ch = text.at(i);
+        if (ch.isHighSurrogate()) {
+            if (i + 1 >= text.size() || !text.at(i + 1).isLowSurrogate())
+                return true;
+            ++i;
+        } else if (ch.isLowSurrogate()) {
+            return true;
+        }
+    }
+    return false;
+}
+
 // docs/35 P4.1: a sub-agent's wire history — system prompt + one goal, then
 // assistant/tool rounds (the shape compressToolRoundsToFit must handle; the
 // generic compressToFit only understands user-anchored conversations).
@@ -88,12 +104,19 @@ private slots:
 
     void estimateBasics();
     void estimateCjkWeighted();
+    // A13: Hangul 音节也是 CJK 成本；非 BMP 字符（代理对）按 2 token。
+    void estimateHangulWeighted();
+    void estimateEmojiSurrogatePairs();
+    // A13: 截断不得劈开代理对（压缩后的 tool 正文无孤立代理字符）。
+    void compressDoesNotSplitSurrogatePair();
     void compressFittingHistoryUnchanged();
     void compressKeepsSystemAndSuffix();
     void compressSuffixStartsAtUser();
     void compressFitsBudget();
     void compressInsertsMarker();
     void compressGiantLastTurnBestEffort();
+    // A6: assistant(tool_calls, content 空) 时兜底截断本轮超大 tool 结果
+    void compressTruncatesCurrentToolResult();
     void compressNoUserAnchorUnchanged();
     // docs/35 P4.1: sub-agent compression drops whole assistant→tool rounds
     // from the front (never a lone tool message) and truncates oversized
@@ -207,6 +230,73 @@ void TestTokenEstimator::estimateCjkWeighted() {
     QVERIFY(TokenEstimator::estimateTokens(QStringLiteral("中")) >= 1);
 }
 
+// A13: Hangul syllables (U+AC00-U+D7A3) were outside the CJK range, so Korean
+// text was estimated at ASCII /4 and under-counted by roughly 5x.
+void TestTokenEstimator::estimateHangulWeighted() {
+    const QString ko = QStringLiteral("한국어테스트");   // 6 Hangul syllables
+    QCOMPARE(ko.length(), 6);
+    // ceil(6 / 1.5) = 4 tokens, not 6 / 4 = 1.
+    QCOMPARE(TokenEstimator::estimateTokens(ko), (6 * 2 + 2) / 3);
+    QVERIFY(TokenEstimator::estimateTokens(ko) > ko.length() / 4);
+
+    // Same-length ASCII keeps the /4 rule.
+    QCOMPARE(TokenEstimator::estimateTokens(QString(6, QChar('a'))),
+             (6 + 3) / 4);
+}
+
+// A13: each emoji is a surrogate pair. Counting both UTF-16 units as Latin
+// text yielded ~0.5 token per emoji; a non-BMP code point costs 2 tokens.
+void TestTokenEstimator::estimateEmojiSurrogatePairs() {
+    const QString emoji = QStringLiteral("😀");
+    QCOMPARE(emoji.size(), 2);   // UTF-16 surrogate pair
+    const QString four = emoji + emoji + emoji + emoji;
+    const int tokens = TokenEstimator::estimateTokens(four);
+    QVERIFY2(tokens >= 7 && tokens <= 9,
+             qPrintable(QStringLiteral("4 emoji estimated %1 tokens").arg(tokens)));
+
+    // Other characters keep their old accounting next to the pair.
+    const int mixed = TokenEstimator::estimateTokens(QStringLiteral("ab") + emoji);
+    QCOMPARE(mixed, (2 + 3) / 4 + 2);
+}
+
+// A13: compressToFit truncates by QChar index; cutting between the two halves
+// of a surrogate pair leaves a lone high surrogate.
+void TestTokenEstimator::compressDoesNotSplitSurrogatePair() {
+    QJsonArray history;
+    history.append(msg("system", QStringLiteral("sys")));
+    history.append(msg("user", QStringLiteral("read the emoji file")));
+
+    QJsonObject assistant;
+    assistant["role"] = QStringLiteral("assistant");
+    assistant["content"] = QString();
+    QJsonArray calls;
+    QJsonObject call;
+    call["id"] = QStringLiteral("call_emoji");
+    call["type"] = QStringLiteral("function");
+    QJsonObject fn;
+    fn["name"] = QStringLiteral("read_file");
+    fn["arguments"] = QStringLiteral("{\"path\":\"emoji.json\"}");
+    call["function"] = fn;
+    calls.append(call);
+    assistant["tool_calls"] = calls;
+    history.append(assistant);
+
+    const QString emoji = QStringLiteral("😀");   // U+1F600, 2 UTF-16 units
+    QJsonObject toolMsg = msg("tool",
+        QStringLiteral("x") + emoji.repeated(2000) + QStringLiteral("y"));
+    toolMsg["tool_call_id"] = QStringLiteral("call_emoji");
+    history.append(toolMsg);
+    QVERIFY2(!hasLoneSurrogate(history.last().toObject()
+                                   .value("content").toString()),
+             "fixture itself is not a valid UTF-16 string");
+
+    const QJsonArray compressed = TokenEstimator::compressToFit(history, 700);
+    const QString content = compressed.last().toObject()
+                                .value("content").toString();
+    QVERIFY2(!hasLoneSurrogate(content),
+             "compression cut a surrogate pair, leaving an orphan surrogate");
+}
+
 void TestTokenEstimator::compressFittingHistoryUnchanged() {
     QJsonArray history;
     history.append(msg("system", "sys"));
@@ -252,6 +342,61 @@ void TestTokenEstimator::compressGiantLastTurnBestEffort() {
     const QJsonArray compressed = TokenEstimator::compressToFit(history, 1000);
     QVERIFY(compressed.size() >= 2);
     QVERIFY(anyContentContains(compressed, "done"));
+}
+
+// A6：最新的 assistant 轮只有 tool_calls（content 为空），超大的 tool 结果
+// 才是压垮预算的元凶。旧实现只截断 content 非空的 assistant，找不到就
+// break，函数返回超预算数组；新实现应兜底截断当前轮的 tool 结果，同时
+// 保留 role / tool_call_id 与 assistant 的 tool_calls（配对不破坏）。
+void TestTokenEstimator::compressTruncatesCurrentToolResult() {
+    QJsonArray history;
+    history.append(msg("system", QStringLiteral("sys")));
+    history.append(msg("user", QStringLiteral("read the file")));
+
+    QJsonObject assistant;
+    assistant["role"] = QStringLiteral("assistant");
+    assistant["content"] = QStringLiteral("");
+    QJsonArray calls;
+    QJsonObject call;
+    call["id"] = QStringLiteral("call_1");
+    call["type"] = QStringLiteral("function");
+    QJsonObject fn;
+    fn["name"] = QStringLiteral("read_file");
+    fn["arguments"] = QStringLiteral("{\"path\":\"big.txt\"}");
+    call["function"] = fn;
+    calls.append(call);
+    assistant["tool_calls"] = calls;
+    history.append(assistant);
+
+    QJsonObject toolMsg = msg("tool", QString(6000, QChar('t')));
+    toolMsg["tool_call_id"] = QStringLiteral("call_1");
+    history.append(toolMsg);
+
+    const int before = TokenEstimator::estimateTokens(history);
+    QVERIFY2(before > 700, qPrintable(QStringLiteral("fixture too small: %1").arg(before)));
+
+    const QJsonArray compressed = TokenEstimator::compressToFit(history, 700);
+    QVERIFY2(TokenEstimator::estimateTokens(compressed) <= 700,
+             qPrintable(QStringLiteral("still over budget: %1")
+                            .arg(TokenEstimator::estimateTokens(compressed))));
+
+    const QJsonObject last = compressed.last().toObject();
+    QCOMPARE(last.value("role").toString(), QStringLiteral("tool"));
+    QCOMPARE(last.value("tool_call_id").toString(), QStringLiteral("call_1"));
+    QVERIFY(last.value("content").toString()
+                .contains(QStringLiteral("[truncated")));
+    QVERIFY(last.value("content").toString().size() < 6000);
+
+    // assistant 的 tool_calls 原样保留（配对的两端都还在）。
+    const QJsonObject assistantOut = compressed.at(2).toObject();
+    QCOMPARE(assistantOut.value("role").toString(), QStringLiteral("assistant"));
+    const QJsonArray callsOut = assistantOut.value("tool_calls").toArray();
+    QCOMPARE(callsOut.size(), 1);
+    QCOMPARE(callsOut.first().toObject().value("id").toString(),
+             QStringLiteral("call_1"));
+    QCOMPARE(callsOut.first().toObject().value("function").toObject()
+                 .value("name").toString(),
+             QStringLiteral("read_file"));
 }
 
 void TestTokenEstimator::compressNoUserAnchorUnchanged() {

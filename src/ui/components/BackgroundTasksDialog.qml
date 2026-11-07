@@ -151,8 +151,15 @@ Dialog {
                         .arg(Number(usage.output || 0))
             const cached = Number(usage.cached || 0)
             if (cached > 0) text += qsTr(" / 缓存 %1").arg(cached)
+            // B4: 批量/多次尝试里只有部分任务上报了分类用量时明确标注，
+            // 避免把未上报项的 0 当成「免费」。
+            if (usage.partial === true) text += qsTr(" · 部分上报")
         } else {
-            text += qsTr("tokens %1").arg(tokens)
+            // B9: 估算回退（provider 完全没给 usage）用「≈」标明，避免
+            // 读者把启发式估算当成真实计量。
+            text += usage.estimated === true
+                ? qsTr("≈ tokens %1").arg(tokens)
+                : qsTr("tokens %1").arg(tokens)
         }
         return text
     }
@@ -836,6 +843,38 @@ Dialog {
                                               ? dialog.selectedTask.proposalCount || 0
                                               : 0) > 0
                                     ? Theme.brandPrimary : Theme.textPrimary
+                                font.pixelSize: Theme.fontSizeCaption
+                                font.family: Theme.fontMono
+                            }
+                        }
+                        // B7: 自动重试/未开始时的尝试次数。常规单次尝试
+                        // （attempts===1）不占位置，避免详情区噪音。
+                        // attempts===0 只在终态才代表「未开始」；running/queued
+                        // 还没有报告，0 是"尚未产生"，显示成「未开始」会误导。
+                        ColumnLayout {
+                            Layout.fillWidth: true
+                            spacing: 1
+                            visible: dialog.selectedTask !== null
+                                     && (Number(dialog.selectedTask.attempts || 0) > 1
+                                         || Number(dialog.selectedTask.attempts || 0) === 0)
+                                     && dialog.selectedTask.state !== "running"
+                                     && dialog.selectedTask.state !== "queued"
+                            Text {
+                                text: qsTr("尝试")
+                                color: Theme.textTertiary
+                                font.pixelSize: Theme.fontSizeMicro
+                                font.family: Theme.fontSans
+                            }
+                            Text {
+                                objectName: "backgroundTaskDetailAttempts"
+                                text: {
+                                    const n = Number(dialog.selectedTask
+                                                     ? dialog.selectedTask.attempts || 0
+                                                     : 0)
+                                    if (n === 0) return qsTr("未开始")
+                                    return qsTr("%1 次").arg(n)
+                                }
+                                color: Theme.textPrimary
                                 font.pixelSize: Theme.fontSizeCaption
                                 font.family: Theme.fontMono
                             }

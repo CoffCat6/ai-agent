@@ -19,18 +19,44 @@ public:
     static int estimateTokens(const QString& text) {
         if (text.isEmpty()) return 0;
         int cjk = 0;
-        for (const QChar ch : text) {
+        int surrogatePairs = 0;
+        for (int i = 0; i < text.size(); ++i) {
+            const QChar ch = text.at(i);
+            // A13: non-BMP characters (emoji, rare CJK) are a UTF-16
+            // surrogate pair. Half of each pair is not a Latin character;
+            // counting both units as "other / 4" under-estimated them by
+            // ~4x. A full code point costs 2 tokens.
+            if (ch.isHighSurrogate() && i + 1 < text.size()
+                    && text.at(i + 1).isLowSurrogate()) {
+                ++surrogatePairs;
+                ++i;
+                continue;
+            }
             const char16_t u = ch.unicode();
             if ((u >= 0x2E80 && u <= 0x9FFF)     // CJK radicals .. unified ideographs
+                || (u >= 0xAC00 && u <= 0xD7A3)  // A13: Hangul syllables
                 || (u >= 0xF900 && u <= 0xFAFF)  // compatibility ideographs
                 || (u >= 0x3000 && u <= 0x303F)  // CJK punctuation
                 || (u >= 0xFF00 && u <= 0xFFEF)) // fullwidth forms
                 ++cjk;
         }
-        const int other = text.length() - cjk;
+        const int other = text.length() - cjk - surrogatePairs * 2;
         // ceil(other/4) + ceil(cjk/1.5), integer math; never zero for
         // non-empty text so compression budgets stay conservative.
-        return qMax(1, (other + 3) / 4 + (cjk * 2 + 2) / 3);
+        return qMax(1, (other + 3) / 4 + (cjk * 2 + 2) / 3 + surrogatePairs * 2);
+    }
+
+    // A13: truncate by UTF-16 index without splitting a surrogate pair.
+    // When the cut would land between a high and a low surrogate, back off
+    // one unit so the full code point stays intact (a lone surrogate is not
+    // valid UTF-16 and corrupts JSON/tool payloads).
+    static QString safeLeft(const QString& text, int keepChars) {
+        if (keepChars <= 0) return QString();
+        if (keepChars >= text.size()) return text;
+        int cut = keepChars;
+        if (text.at(cut).isLowSurrogate() && text.at(cut - 1).isHighSurrogate())
+            --cut;
+        return text.left(cut);
     }
 
     // Estimate tokens for a single message object
@@ -148,30 +174,38 @@ public:
         // above keeps it anyway and the request exceeds the window. Truncate
         // the longest ASSISTANT message (never the user's own words) so the
         // budget actually holds; the marker tells the model text was cut.
-        int total = estimateTokens(out);
-        for (int guard = 0; guard < 8 && total > maxTokens; ++guard) {
+        // A6: an assistant tool-call turn has empty content, so historically
+        // this loop found nothing and returned an over-budget array. Fall back
+        // to the longest non-empty TOOL message — keep role/tool_call_id and
+        // only cut content, so the assistant tool_calls pairing stays valid.
+        const auto findLongest = [&out](const QString& role) {
             int worst = -1;
             int worstTokens = 0;
             for (int i = 1; i < out.size(); ++i) {
                 const QJsonObject msg = out.at(i).toObject();
-                if (msg.value("role").toString() != QLatin1String("assistant"))
-                    continue;
+                if (msg.value("role").toString() != role) continue;
+                if (msg.value("content").toString().isEmpty()) continue;
                 const int tokens = estimateTokens(msg);
                 if (tokens > worstTokens) {
                     worstTokens = tokens;
                     worst = i;
                 }
             }
+            return worst;
+        };
+        int total = estimateTokens(out);
+        for (int guard = 0; guard < 8 && total > maxTokens; ++guard) {
+            int worst = findLongest(QStringLiteral("assistant"));
+            if (worst < 0) worst = findLongest(QStringLiteral("tool"));
             if (worst < 0) break;
             QJsonObject msg = out.at(worst).toObject();
             const QString content = msg.value("content").toString();
-            if (content.isEmpty()) break;
             // ~4 chars per token (Latin); CJK truncates even more aggressively,
             // which only makes the cut safer.
             const int excess = total - maxTokens;
             const int keepChars = qMax(0, content.size() - (excess * 4 + 64));
             if (keepChars == 0) break;
-            msg["content"] = content.left(keepChars)
+            msg["content"] = safeLeft(content, keepChars)
                 + QStringLiteral("\n... [truncated to fit the context window]");
             out.replace(worst, msg);
             const int next = estimateTokens(out);
@@ -291,7 +325,7 @@ public:
             const int newLen = qMax(kMinToolContentChars, largestLen / 2);
             if (newLen + truncSuffix.length() >= largestLen) break;
             QJsonObject msg = out.at(largest).toObject();
-            msg["content"] = msg.value("content").toString().left(newLen)
+            msg["content"] = safeLeft(msg.value("content").toString(), newLen)
                              + truncSuffix;
             out.replace(largest, msg);
             ++truncated;

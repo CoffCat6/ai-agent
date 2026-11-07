@@ -823,13 +823,17 @@ void TestLlmParsers::geminiParseTextAndUsage() {
             "finishReason": "STOP"
         }],
         "usageMetadata": {"promptTokenCount": 120, "candidatesTokenCount": 34,
-                          "thoughtsTokenCount": 6}
+                          "thoughtsTokenCount": 6,
+                          "cachedContentTokenCount": 48}
     })"));
     QVERIFY(r.success);
     QCOMPARE(r.content, QStringLiteral("Hello!"));
     QVERIFY(r.toolCalls.isEmpty());
     QCOMPARE(r.promptTokens, 120);
     QCOMPARE(r.completionTokens, 34);
+    // cachedContentTokenCount 是 promptTokenCount 的子集（与 OpenAI cached
+    // 同语义），只映射到 cachedTokens，不改变 prompt/总量。
+    QCOMPARE(r.cachedTokens, 48);
     QCOMPARE(r.tokensUsed, 160);   // 120 + 34 + 6
 }
 
@@ -941,7 +945,7 @@ void TestLlmParsers::geminiStreamingAccumulation() {
         "data: {\"candidates\":[{\"content\":{\"role\":\"model\",\"parts\":[]},"
         "\"finishReason\":\"STOP\"}],\"usageMetadata\":"
         "{\"promptTokenCount\":100,\"candidatesTokenCount\":25,"
-        "\"thoughtsTokenCount\":10}}"));
+        "\"thoughtsTokenCount\":10,\"cachedContentTokenCount\":60}}"));
 
     QVERIFY(ctx.doneReceived);
     const LLMResponse r = svc.result(ctx);
@@ -955,6 +959,8 @@ void TestLlmParsers::geminiStreamingAccumulation() {
     // 累积 usageMetadata 取最后一 chunk 的值（覆盖而非累加）
     QCOMPARE(r.promptTokens, 100);
     QCOMPARE(r.completionTokens, 25);
+    // 缓存命中是 prompt 的子集（Gemini cachedContentTokenCount 语义）。
+    QCOMPARE(r.cachedTokens, 60);
     QCOMPARE(r.tokensUsed, 135);   // 100 + 25 + 10
     // 通道分离：思考增量只走 reasoningChunk，答案只走 streamingChunk
     QCOMPARE(answer.count(), 1);

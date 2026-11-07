@@ -7,6 +7,11 @@ import NexusAI.ViewModels
 // V5（docs/19 §5.2）：回复含围栏代码块时，把正文拆成「散文 / 代码」交替片段——
 // 散文走 TextEdit.MarkdownText，代码片段交给 CodeBlock（语言标签 + 语法高亮）。
 //
+// V7（docs/45 排版优化）：散文与代码统一走 Theme 行距 token（正文 1.4、
+// 代码 1.5，MarkdownText 的内置标题渲染不再承担层级观感）；非围栏的
+// ATX 标题（#+空白+内容，整行）拆成独立 heading 段，字号/字重/间距
+// 全部收口 Theme，标题不再混在散文的内置渲染里。
+//
 // 实现约束（上次该文件曾让 qmlcachegen 内存失控，事后定位到「正则字面量里含
 // 反引号」——反引号是 JS 模板字符串定界符，QML 词法器会误判）：
 //   本文件不得出现任何正则字面量，也不得出现裸反引号字符；
@@ -86,7 +91,8 @@ Item {
         AgentVM.openKnowledgeDocument(name, chunk)
     }
 
-    // 逐行扫描，切成 {kind:"text"|"code", text/lang/code} 片段。
+    // 逐行扫描，切成 {kind:"text"|"code"|"heading", text/lang/code/level}
+    // 片段（heading 拆分规则见 docs/45 D3/D4）。
     readonly property var segments: {
         if (!splitMode)
             return []
@@ -97,7 +103,7 @@ Item {
         let lang = ""
         const pushText = function() {
             const t = buf.join("\n")
-            if (t !== "") out.push({ kind: "text", text: t })
+            if (t !== "") out.push({ kind: "text", text: t, idx: out.length })
             buf = []
         }
         for (let i = 0; i < lines.length; ++i) {
@@ -119,18 +125,43 @@ Item {
                     while (e < rest.length && rest.charCodeAt(e) > 32) ++e
                     lang = rest.substring(0, e)
                 } else {
-                    out.push({ kind: "code", lang: lang, code: buf.join("\n") })
+                    out.push({ kind: "code", lang: lang, code: buf.join("\n"),
+                               idx: out.length })
                     buf = []
                     inFence = false
                     lang = ""
                 }
                 continue
             }
+            // docs/45 D3/D4：非围栏行的 ATX 标题（1-6 个 # + 空白 + 有内容，
+            // 整行）先收掉积攒的散文，再拆成独立 heading 段——标题的字号/
+            // 字重/间距由此脱离 MarkdownText 内置渲染、受 Theme 控制。
+            // # 后无空白（#tag）不是标题，留在 text 段；围栏内的 # 行仍是
+            // 代码内容（inFence 时跳过本分支）。空白判定沿用上面行首剥离
+            // 的 charCode<=32 风格，手工扫描、不用正则。
+            if (!inFence) {
+                let h = 0
+                while (h < head.length && head.charAt(h) === "#") ++h
+                if (h >= 1 && h <= 6 && h < head.length
+                        && head.charCodeAt(h) <= 32) {
+                    // 剥掉 # 前缀后的连续空白才是标题文本；纯空白尾巴
+                    // （“# ”无内容）不算标题，落回普通行。
+                    let t = h
+                    while (t < head.length && head.charCodeAt(t) <= 32) ++t
+                    if (t < head.length) {
+                        pushText()
+                        out.push({ kind: "heading", level: h,
+                                   text: head.substring(t), idx: out.length })
+                        continue
+                    }
+                }
+            }
             buf.push(raw)
         }
         if (inFence) {
             // 未闭合围栏（异常/截断）：已收内容仍按代码段落渲染，避免丢字。
-            out.push({ kind: "code", lang: lang, code: buf.join("\n") })
+            out.push({ kind: "code", lang: lang, code: buf.join("\n"),
+                       idx: out.length })
         } else {
             pushText()
         }
@@ -172,6 +203,7 @@ Item {
         // 单 TextEdit 路径：无围栏，或仍在流式。
         TextEdit {
             id: mdText
+            objectName: "assistantMdText"
             anchors.left: parent.left
             anchors.right: parent.right
             visible: !root.splitMode
@@ -187,6 +219,23 @@ Item {
             font.pixelSize: Theme.fontSizeBody
             font.family: Theme.fontSans
             wrapMode: TextEdit.Wrap
+            // docs/45 D1/D7：流式期间正是用户盯着看的阶段，行距同样
+            // 走 Theme token。TextEdit 没有 lineHeight 属性（Qt 6.9 仅
+            // Text 元素有），经 DocumentLineHeight 落到 QTextDocument
+            // 的 blockFormat 上——流式增量自动重应用，交互语义不变。
+            DocumentLineHeight {
+                objectName: "assistantMdLineHeight"
+                document: mdText.textDocument
+                lineHeight: Theme.lineHeightBody
+            }
+            // docs/45 §3.2：行内代码底色。MarkdownText 只把 `code` 变等宽，
+            // 不给底色；由后处理组件在 QTextDocument 上补背景/前景。
+            DocumentInlineCode {
+                objectName: "assistantMdInlineCode"
+                document: mdText.textDocument
+                background: Theme.inlineCodeBackground
+                foreground: Theme.inlineCodeForeground
+            }
             onLinkActivated: function(link) { Qt.openUrlExternally(link) }
             // 流式光标要跟在文本末尾；只读 TextEdit 的 cursorPosition 默认在 0。
             onTextChanged: if (root.streaming) cursorPosition = length
@@ -210,25 +259,45 @@ Item {
             }
         }
 
-        // 片段路径：散文 / 代码交替。
+        // 片段路径：散文 / 标题 / 代码交替。
         Column {
             id: segmentCol
+            objectName: "assistantSegmentCol"
             width: parent.width
             visible: root.splitMode
-            spacing: Theme.spaceSm
+            // docs/45 §3.2.4：段间距 spaceSm → spaceMd——行距增大后
+            // 段与段（尤其代码块）需要更多呼吸感，仍小于卡片级 spaceLg。
+            spacing: Theme.spaceMd
 
             Repeater {
                 model: root.splitMode ? root.segments : []
 
                 delegate: Item {
                     id: segItem
+                    // 段数据必须显式声明成 required property：delegate 一旦
+                    // 声明 required property，Qt 就关闭 role 的上下文注入，
+                    // modelData 不声明就拿不到（与 ProcessCard 的既有做法
+                    // 一致）。段序号也不能指望 required index——Repeater 的
+                    // 数组 model 只填充 modelData（index 拿到 undefined），
+                    // 裸 index 又会被消息级根属性遮蔽，indexOf 也不可行
+                    // （数组 model 的 role 填充给 delegate 的是元素副本，
+                    // 引用比较恒 miss），所以扫描器在 push 时直接把段序号
+                    // 写进段的 idx 字段（数值随值拷贝无损），objectName 与
+                    // heading 的首段间距判断都读它。
+                    readonly property int segIndex:
+                        (modelData && modelData.idx !== undefined) ? modelData.idx : -1
+                    required property var modelData
+                    objectName: "assistantSeg" + segIndex
                     width: segmentCol.width
                     readonly property bool isCode: modelData.kind === "code"
+                    // docs/45 D3：ATX 标题段。
+                    readonly property bool isHeading: modelData.kind === "heading"
                     // CITE-801: 散文段先按 [文档名] 记号切片（C++ 单例，唯一
                     // 实现）；含真实文档的记号才进徽标流布局，普通方括号维持
-                    // 原单 TextEdit 渲染。
+                    // 原单 TextEdit 渲染。heading 段不做 citation 切片（R2：
+                    // 标题内引用记号罕见，citeParts 恒空 → citeMode 恒 false）。
                     readonly property var citeParts:
-                        isCode ? [] : CitationParser.parse(modelData.text)
+                        (isCode || isHeading) ? [] : CitationParser.parse(modelData.text)
                     readonly property bool citeMode: {
                         if (isCode)
                             return false
@@ -241,14 +310,49 @@ Item {
                     }
                     implicitHeight: isCode
                         ? codeSeg.implicitHeight
-                        : (citeMode ? citeFlow.implicitHeight
-                                    : Math.max(1, textSeg.contentHeight))
+                        : isHeading
+                          ? headingText.implicitHeight
+                          : (citeMode ? citeFlow.implicitHeight
+                                      : Math.max(1, textSeg.contentHeight))
+
+                    // docs/45 D3/D5：ATX 标题段——脱离 MarkdownText 内置
+                    // 渲染，字号/字重/间距收口 Theme（H1/H2 用专用字号 token，
+                    // H3 = 正文 + 1，H4-6 与正文同号仅靠字重与间距区分）；
+                    // 标题内的行内 markdown 按纯文本渲染（低频场景，避免引
+                    // 入第二个行内解析器）。上方间距：首个 segment 归零（避免
+                    // 与消息起点叠加），其余 spaceMd 与 segmentCol.spacing
+                    // 叠出标题前的呼吸感；下方 spaceXs 贴住后续正文。
+                    Text {
+                        id: headingText
+                        objectName: "assistantHeading" + segItem.segIndex
+                        visible: segItem.isHeading
+                        width: parent.width
+                        text: segItem.isHeading ? modelData.text : ""
+                        color: Theme.textPrimary
+                        font.family: Theme.fontSans
+                        font.weight: Font.DemiBold
+                        font.pixelSize: {
+                            if (modelData.level === 1) return Theme.fontSizeH1
+                            if (modelData.level === 2) return Theme.fontSizeH2
+                            if (modelData.level === 3) return Theme.fontSizeBody + 1
+                            return Theme.fontSizeBody
+                        }
+                        wrapMode: Text.Wrap
+                        topPadding: segItem.segIndex === 0 ? 0 : Theme.spaceMd
+                        bottomPadding: Theme.spaceXs
+                    }
 
                     TextEdit {
                         id: textSeg
-                        visible: !segItem.isCode && !segItem.citeMode
+                        objectName: "assistantTextSeg" + segItem.segIndex
+                        // heading 段必须同时排除：此前只排除 isCode/citeMode，
+                        // heading 段的标题文本会被 headingText（大字号）与本
+                        // TextEdit（正文字号）在 y=0 各画一次 → 标题重叠。
+                        visible: !segItem.isCode && !segItem.isHeading && !segItem.citeMode
                         width: parent.width
-                        text: segItem.isCode ? "" : modelData.text
+                        // 隐藏之外再清空文本：避免隐藏控件保留可选中/可读文本
+                        // 影响复制与无障碍遍历。
+                        text: (segItem.isCode || segItem.isHeading) ? "" : modelData.text
                         textFormat: TextEdit.MarkdownText
                         readOnly: true
                         selectByMouse: rootHover.hovered
@@ -257,6 +361,21 @@ Item {
                         color: Theme.textPrimary
                         font.pixelSize: Theme.fontSizeBody
                         font.family: Theme.fontSans
+                        // docs/45 D1：散文行距 token（与流式 mdText 同源）。
+                        // TextEdit 无 lineHeight 属性，经 DocumentLineHeight
+                        // 落到 QTextDocument（见 mdText 处注释）。
+                        DocumentLineHeight {
+                            objectName: "assistantTextLineHeight" + segItem.segIndex
+                            document: textSeg.textDocument
+                            lineHeight: Theme.lineHeightBody
+                        }
+                        // 与流式路径同一行内代码底色（docs/45 §3.2）。
+                        DocumentInlineCode {
+                            objectName: "assistantTextInlineCode" + segItem.segIndex
+                            document: textSeg.textDocument
+                            background: Theme.inlineCodeBackground
+                            foreground: Theme.inlineCodeForeground
+                        }
                         wrapMode: TextEdit.Wrap
                         onLinkActivated: function(link) { Qt.openUrlExternally(link) }
                     }
@@ -287,6 +406,7 @@ Item {
 
                                 TextEdit {
                                     id: prosePiece
+                                    objectName: "assistantProsePiece"
                                     visible: !piece.isChip
                                     width: piece.width
                                     text: modelData.text
@@ -298,6 +418,19 @@ Item {
                                     color: Theme.textPrimary
                                     font.pixelSize: Theme.fontSizeBody
                                     font.family: Theme.fontSans
+                                    // docs/45 D1：引用徽标流里的散文片段与
+                                    // textSeg 同一行距 token，避免混排行高
+                                    // 错位的基线跳动（实现同 textSeg）。
+                                    DocumentLineHeight {
+                                        document: prosePiece.textDocument
+                                        lineHeight: Theme.lineHeightBody
+                                    }
+                                    DocumentInlineCode {
+                                        objectName: "assistantProseInlineCode"
+                                        document: prosePiece.textDocument
+                                        background: Theme.inlineCodeBackground
+                                        foreground: Theme.inlineCodeForeground
+                                    }
                                     wrapMode: TextEdit.Wrap
                                     onLinkActivated: function(link) { Qt.openUrlExternally(link) }
                                 }
@@ -357,6 +490,7 @@ Item {
 
                     CodeBlock {
                         id: codeSeg
+                        objectName: "assistantCodeSeg" + segItem.segIndex
                         visible: segItem.isCode
                         width: parent.width
                         languageLabel: segItem.isCode ? (modelData.lang || "") : ""

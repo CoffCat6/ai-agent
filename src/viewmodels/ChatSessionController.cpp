@@ -40,6 +40,17 @@ void ChatSessionController::attachAgent(AIAgent* agent, bool owned) {
         emit traceChanged();
         m_currentSessionId.clear();
         emit currentSessionIdChanged();
+        // 脱钩后没有 agent 可供查询，镜像必须清零并通知 UI，否则 TopBar 会
+        // 继续显示上一个会话的窗口占用/累计 token。仅在确有残留值时 emit，
+        // 避免重复信号打乱现有订阅方的计数。
+        const bool hadUsedTokens = m_usedTokens != 0;
+        const bool hadSessionTokens = m_sessionTokensUsed != 0;
+        m_usedTokens = 0;
+        m_sessionTokensUsed = 0;
+        if (hadUsedTokens)
+            emit tokenUsageChanged();
+        if (hadSessionTokens)
+            emit sessionTokensChanged();
     }
     if (m_agent) {
         // The controller mirror is authoritative for UX continuity; push it
@@ -212,6 +223,10 @@ void ChatSessionController::connectAgent(AIAgent* agent) {
     // 保证初始同步值也和后续 tokensChanged 一致。
     m_usedTokens = agent->contextComposition().value("totalTokens").toInt();
     emit tokenUsageChanged();
+    // 会话累计同样是 agent 侧状态（跨任务累加），换 agent/新建标签后必须
+    // 跟随新 agent，否则 TopBar 会显示上一个会话的累计值。
+    m_sessionTokensUsed = agent->sessionTokensUsed();
+    emit sessionTokensChanged();
     m_currentSessionId = agent->currentSessionId();
     m_fileCheckpoints = agent->fileCheckpoints().toVariantList();
     emit currentSessionIdChanged();

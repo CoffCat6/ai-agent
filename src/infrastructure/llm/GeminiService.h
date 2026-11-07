@@ -114,6 +114,8 @@ protected:
         // 赋值，最后一个 chunk 即最终计数。
         int promptTokens{0};
         int completionTokens{0};
+        // 缓存命中（cachedContentTokenCount），是 promptTokens 的子集。
+        int cachedTokens{0};
         int thoughtsTokens{0};
         // 拦截型 finishReason（SAFETY/PROHIBITED/... 全家族见
         // isBlockedFinishReason）且无任何可用输出时，streamResult 要把

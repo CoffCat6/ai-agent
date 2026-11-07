@@ -484,6 +484,25 @@ private slots:
                      && label.contains(QStringLiteral("输出 300")),
                  qPrintable(label));
 
+        // B4: 批量/多次尝试部分上报时，已上报分类仍展示并追加「部分」。
+        QVariantMap partialNode = usageNode();
+        QVariantMap partialReport = partialNode.value(
+            QStringLiteral("subagentReport")).toMap();
+        QVariantMap partialUsage = partialReport.value(
+            QStringLiteral("usage")).toMap();
+        partialUsage[QStringLiteral("partial")] = true;
+        partialReport[QStringLiteral("usage")] = partialUsage;
+        partialNode[QStringLiteral("subagentReport")] = partialReport;
+        rows.setRow(partialNode);
+        QTest::qWait(120);
+        QQuickItem* partialText = findChildItem(
+            win->contentItem(), QStringLiteral("subagentCostText"));
+        QVERIFY(partialText);
+        const QString partialLabel = partialText->property("text").toString();
+        QVERIFY2(partialLabel.contains(QStringLiteral("输入 1200"))
+                     && partialLabel.contains(QStringLiteral("部分")),
+                 qPrintable(partialLabel));
+
         QVariantMap unreported = usageNode();
         QVariantMap report = unreported.value(
             QStringLiteral("subagentReport")).toMap();
@@ -497,6 +516,87 @@ private slots:
                                           QStringLiteral("subagentCostChip"));
         QVERIFY2(!hidden || !hidden->isVisible(),
                  "未上报分类用量时不应显示成本芯片");
+    }
+    /**
+     * 本用例用同一份 harness 分别验证：
+     * 1) 只有聚合 tokens、未上报分类用量时，成本芯片仍可见并显示 tokens N
+     *    （B5：旧实现因 hasSubagentUsage=false 整块隐藏）；
+     * 2) 既无报告也无 tokens 的节点保持隐藏（回归）。
+     */
+    void costChipFallsBackToTokensWhenUnreported() {
+        QQmlApplicationEngine engine;
+        RowsModel rows;
+        StubAgentVM vm;
+        engine.rootContext()->setContextProperty(QStringLiteral("rowsModel"),
+                                                 &rows);
+        NexusQrcFallback interceptor(QStringLiteral(NEXUS_MODULE_DIR));
+        engine.addUrlInterceptor(&interceptor);
+        engine.addImportPath(QStringLiteral(NEXUS_BUILD_DIR));
+
+        QQmlComponent component(&engine, QUrl::fromLocalFile(
+            QStringLiteral(NEXUS_TEST_QML_DIR "/ProcessCardHarness.qml")));
+        QVERIFY2(component.isReady(), qPrintable(component.errorString()));
+        std::unique_ptr<QObject> root(component.create());
+        QVERIFY2(root, qPrintable(component.errorString()));
+        auto* win = qobject_cast<QQuickWindow*>(root.get());
+        QVERIFY(win);
+        win->show();
+        QVERIFY(QTest::qWaitForWindowExposed(win));
+        QVERIFY(QMetaObject::invokeMethod(
+            root.get(), "setInjectedAgent",
+            Q_ARG(QVariant, QVariant::fromValue<QObject*>(&vm))));
+
+        QVariantMap node = usageNode();
+        QVariantMap report = node.value(
+            QStringLiteral("subagentReport")).toMap();
+        QVariantMap usage = report.value(QStringLiteral("usage")).toMap();
+        usage[QStringLiteral("reported")] = false;
+        report[QStringLiteral("usage")] = usage;
+        report[QStringLiteral("tokensUsed")] = 1400;
+        node[QStringLiteral("subagentReport")] = report;
+        rows.setRow(node);
+        QTest::qWait(120);
+
+        QQuickItem* chip = findChildItem(win->contentItem(),
+                                         QStringLiteral("subagentCostChip"));
+        QVERIFY2(chip, "未上报分类但 tokensUsed>0 时应渲染成本芯片");
+        QVERIFY(chip->isVisible());
+        QQuickItem* text = findChildItem(win->contentItem(),
+                                         QStringLiteral("subagentCostText"));
+        QVERIFY(text);
+        const QString label = text->property("text").toString();
+        QVERIFY2(label.contains(QStringLiteral("tokens")),
+                 qPrintable(label));
+        QVERIFY2(label.contains(QStringLiteral("1400")), qPrintable(label));
+
+        // B9: estimated=true（无 usage 的估算回退）必须用「≈」标明，
+        // 不能让读者误以为是 provider 的真实计量。
+        QVariantMap estimatedNode = node;
+        QVariantMap estimatedReport = estimatedNode.value(
+            QStringLiteral("subagentReport")).toMap();
+        QVariantMap estimatedUsage = estimatedReport.value(
+            QStringLiteral("usage")).toMap();
+        estimatedUsage[QStringLiteral("estimated")] = true;
+        estimatedReport[QStringLiteral("usage")] = estimatedUsage;
+        estimatedNode[QStringLiteral("subagentReport")] = estimatedReport;
+        rows.setRow(estimatedNode);
+        QTest::qWait(120);
+        QQuickItem* estimatedText = findChildItem(
+            win->contentItem(), QStringLiteral("subagentCostText"));
+        QVERIFY(estimatedText);
+        const QString estimatedLabel =
+            estimatedText->property("text").toString();
+        QVERIFY2(estimatedLabel.contains(QStringLiteral("≈"))
+                     && estimatedLabel.contains(QStringLiteral("1400")),
+                 qPrintable(estimatedLabel));
+
+        // 既无报告也无 tokens 的普通节点仍不显示（回归）。
+        rows.setRow(spawnNode(0));
+        QTest::qWait(120);
+        QQuickItem* hidden = findChildItem(win->contentItem(),
+                                           QStringLiteral("subagentCostChip"));
+        QVERIFY2(!hidden || !hidden->isVisible(),
+                 "无用量节点不应显示成本芯片");
     }
     // 真机回归（2026-11-06）：普通节点（tool_call、无 subagentReport）上
     // costText 的 text 绑定对 null 的 subagentUsage 解引用，每次卡片创建都

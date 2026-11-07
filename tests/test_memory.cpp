@@ -164,6 +164,10 @@ private slots:
     void traceNodeSubagentToolsRoundTrip();
     // docs/34 P3.2: 提案索引 metadata 往返。
     void traceNodeSubagentProposalsRoundTrip();
+    // B6: 结构化报告轻投影（含 usage.partial）随 trace 节点持久化。
+    void traceNodeSubagentReportRoundTrip();
+    // A7: cacheHit 计入分摊分母后，各来源费用份额之和 ≈ 1。
+    void costBySourceSharesSumToOne();
     // P1：恢复会话只读最近一段轨迹，且必须取"最新"而不是"最旧"。
     void loadRecentTraceNodesTakesNewestWindow();
     // Batch 6: knowledge persistence v2
@@ -1013,6 +1017,94 @@ void TestMemory::traceNodeSubagentProposalsRoundTrip() {
              QStringLiteral("return success"));
     QCOMPARE(proposals.at(1).toObject().value("path").toString(),
              QStringLiteral("README.md"));
+}
+
+// B6: spawn_agent 结果节点的结构化报告（轻投影）必须随 metadata 白名单
+// 持久化；否则会话恢复后成本芯片/未上报 fallback 全部丢失。
+void TestMemory::traceNodeSubagentReportRoundTrip() {
+    SqliteMemory mem(QStringLiteral(":memory:"));
+    mem.beginSession("s1", "Sub");
+
+    QJsonObject node;
+    node["id"] = QStringLiteral("n1");
+    node["type"] = QStringLiteral("tool_result");
+    node["title"] = QStringLiteral("spawn_agent");
+    node["status"] = QStringLiteral("success");
+    node["result"] = QStringLiteral("[Sub-agent report] ok");
+    node["timestamp"] = 1000.0;
+    node["subagentReport"] = QJsonObject{
+        {QStringLiteral("batch"), true},
+        {QStringLiteral("stopCode"), QStringLiteral("completed")},
+        {QStringLiteral("steps"), 4},
+        {QStringLiteral("tokensUsed"), 130},
+        {QStringLiteral("usage"),
+         QJsonObject{{QStringLiteral("input"), 100},
+                     {QStringLiteral("output"), 30},
+                     {QStringLiteral("reported"), true},
+                     {QStringLiteral("reportedCount"), 1},
+                     {QStringLiteral("totalCount"), 2},
+                     {QStringLiteral("partial"), true}}}};
+    mem.saveTraceNode("s1", node, 0);
+
+    const QJsonArray loaded = mem.loadTraceNodes("s1");
+    QCOMPARE(loaded.size(), 1);
+    const QJsonObject report = loaded.at(0).toObject()
+                                   .value("subagentReport").toObject();
+    QVERIFY2(!report.isEmpty(), "subagentReport 未随 trace 节点持久化");
+    QCOMPARE(report.value("tokensUsed").toInt(), 130);
+    const QJsonObject usage = report.value("usage").toObject();
+    QCOMPARE(usage.value("reported").toBool(), true);
+    QCOMPARE(usage.value("reportedCount").toInt(), 1);
+    QCOMPARE(usage.value("totalCount").toInt(), 2);
+    QCOMPARE(usage.value("partial").toBool(), true);
+}
+
+// A7: cacheHit 是 input 的折扣子集，不是额外 token，分摊权重必须只用
+// input+output。该行同时带 input=100/output=50 与 30 的 cacheHit 明细：
+// 旧口径把 cacheHit 加进分子和分母，会让“命中缓存”被二次分摊、Σ来源费用
+// 偏离 totalCost；新口径分母 = 100 + 50 = 150。
+void TestMemory::costBySourceSharesSumToOne() {
+    SqliteMemory mem(QStringLiteral(":memory:"));
+
+    QVariantMap row;
+    row["sessionId"] = QStringLiteral("s-cache");
+    row["model"] = QStringLiteral("gpt-4o");
+    row["requestId"] = 1;
+    row["timestamp"] = QDateTime::currentMSecsSinceEpoch();
+    row["inputTokens"] = 100;
+    row["outputTokens"] = 50;
+    row["cacheHitTokens"] = 30;
+    row["inputSystemPrompt"] = 60;
+    row["inputConversation"] = 40;
+    row["outputConversation"] = 50;
+    row["cacheHitSystemPrompt"] = 30;
+    // 权重分母 = input(60+40) + output(50) = 150（cacheHit 30 不参与）；
+    // 费用取 180 让 60/150、90/150 两种份额整数除尽。
+    row["costCents"] = 180;
+    mem.logTokenUsage(row);
+
+    const QVariantList sources = mem.tokenStatsBySource(30);
+    QVERIFY(!sources.isEmpty());
+    qint64 sum = 0;
+    qint64 systemCost = 0;
+    qint64 conversationCost = 0;
+    for (const QVariant& value : sources) {
+        const QVariantMap m = value.toMap();
+        sum += m.value("costCents").toLongLong();
+        if (m.value("source").toString() == QLatin1String("system_prompt"))
+            systemCost = m.value("costCents").toLongLong();
+        if (m.value("source").toString() == QLatin1String("conversation"))
+            conversationCost = m.value("costCents").toLongLong();
+        // cacheHit 仍作为展示字段下发，但不参与费用权重。
+        if (m.value("source").toString() == QLatin1String("system_prompt"))
+            QCOMPARE(m.value("cacheHitTokens").toLongLong(), qint64(30));
+    }
+    // 180*60/150 = 72；180*90/150 = 108；合计 180。
+    QCOMPARE(systemCost, qint64(72));
+    QCOMPARE(conversationCost, qint64(108));
+    QCOMPARE(sum, qint64(180));
+    QVERIFY2(qAbs(static_cast<double>(sum) / 180.0 - 1.0) < 1e-6,
+             qPrintable(QString::number(sum)));
 }
 
 
