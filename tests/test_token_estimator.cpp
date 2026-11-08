@@ -115,6 +115,9 @@ private slots:
     void compressFitsBudget();
     void compressInsertsMarker();
     void compressGiantLastTurnBestEffort();
+    // docs/16 §8.3（S3）: 压缩出参（省略条数 / 是否原地截断），供 UI 显示
+    // "已压缩 N 条"。默认参数路径必须保持旧行为。
+    void compressReportsOmittedAndTruncated();
     // A6: assistant(tool_calls, content 空) 时兜底截断本轮超大 tool 结果
     void compressTruncatesCurrentToolResult();
     void compressNoUserAnchorUnchanged();
@@ -200,6 +203,111 @@ private slots:
                              + split.value("toolResults").toLongLong()
                              + split.value("images").toLongLong();
         QCOMPARE(buckets, used);
+    }
+
+    // docs/16 §8.3（S1）: 互斥分类。断言三件事：
+    //   1) 所有行之和 == estimateTokens(messages)（"桶之和 == 总量"合同）
+    //   2) 工具结果按 tool_call_id → 工具名归类，未知工具落 tool.other
+    //   3) 压缩标记（system）不与系统提示词混为一桶
+    void classifyMessagesBuckets() {
+        const auto toolCall = [](const QString& id, const QString& name,
+                                 const QString& args) {
+            return QJsonObject{{"id", id}, {"type", "function"},
+                               {"function", QJsonObject{{"name", name},
+                                                        {"arguments", args}}}};
+        };
+
+        QJsonArray messages;
+        messages.append(msg("system", QString(240, 's')));
+        messages.append(msg("system", QStringLiteral(
+            "[Context compressed: 4 earlier messages were omitted to fit "
+            "the model's context window.]")));
+
+        QJsonObject user = msg("user", QStringLiteral("please read the file"));
+        user["files"] = QJsonArray{QJsonObject{{"name", "a.txt"},
+                                               {"content", QString(320, 'f')}}};
+        user["images"] = QJsonArray{QStringLiteral("data:image/png;base64,QUJD")};
+        messages.append(user);
+
+        QJsonObject assistant = msg("assistant", QStringLiteral("reading"));
+        assistant["tool_calls"] = QJsonArray{
+            toolCall("c1", "read_file", QStringLiteral("{\"path\":\"a.txt\"}")),
+            toolCall("c2", "shell_exec", QStringLiteral("{\"cmd\":\"ls\"}")),
+            toolCall("c3", "mcp__fs__stat", QStringLiteral("{\"path\":\"b\"}")),
+            toolCall("c4", "git_log", QStringLiteral("{}")),
+            toolCall("c5", "spawn_agent", QStringLiteral("{\"goal\":\"x\"}")),
+            toolCall("c6", "search_knowledge_base", QStringLiteral("{\"q\":\"y\"}")),
+            toolCall("c7", "todo_write", QStringLiteral("{\"items\":[]}")),
+        };
+        messages.append(assistant);
+
+        const QStringList ids{"c1", "c2", "c3", "c4", "c5", "c6", "c7"};
+        for (const QString& id : ids) {
+            QJsonObject toolMsg = msg("tool", QString(160, 't'));
+            toolMsg["tool_call_id"] = id;
+            messages.append(toolMsg);
+        }
+
+        const QVariantMap rows = TokenEstimator::classifyMessages(messages);
+        const auto row = [&rows](const char* key) {
+            return rows.value(QString::fromLatin1(key)).toLongLong();
+        };
+
+        // 1) 互斥合同
+        qint64 sum = 0;
+        for (auto it = rows.constBegin(); it != rows.constEnd(); ++it) {
+            if (it.key() == QLatin1String("compressedCount")) continue;
+            sum += it.value().toLongLong();
+        }
+        QCOMPARE(sum, static_cast<qint64>(TokenEstimator::estimateTokens(messages)));
+
+        // 2) 分类
+        QCOMPARE(rows.value("compressedCount").toInt(), 1);
+        QVERIFY(row("systemPrompt") > 0);
+        QVERIFY(row("compressed") > 0);
+        QVERIFY(row("toolCalls") > 0);
+        QVERIFY(row("user") > 0);
+        QVERIFY(row("assistant") > 0);
+        QCOMPARE(row("images"), qint64(1000));
+        QVERIFY(row("files") > 0);
+        QVERIFY(row("tool.fileRead") > 0);
+        QVERIFY(row("tool.command") > 0);
+        QVERIFY(row("tool.mcp") > 0);
+        QVERIFY(row("tool.git") > 0);
+        QVERIFY(row("tool.subagent") > 0);
+        QVERIFY(row("tool.knowledge") > 0);
+        QVERIFY(row("tool.other") > 0);
+        // 七条工具结果全部落到 <tool.*>，一条都不该留在对话行里
+        const qint64 toolTotal = row("tool.fileRead") + row("tool.command")
+                               + row("tool.mcp") + row("tool.git")
+                               + row("tool.subagent") + row("tool.knowledge")
+                               + row("tool.other");
+        QVERIFY(toolTotal > 0);
+
+        // 3) 附件正文从用户行剥离（否则"对话"会把附件也算进去）
+        const QJsonObject userOnly = msg("user", QStringLiteral("please read the file"));
+        QCOMPARE(row("user"),
+                 static_cast<qint64>(TokenEstimator::estimateTokens(
+                     QJsonArray{userOnly})));
+    }
+
+    // S2 预置：工具定义拆分（内置 / MCP）不改动总量口径
+    void toolsSchemaSplitMatchesTotal() {
+        QJsonArray tools;
+        tools.append(QJsonObject{
+            {"type", "function"},
+            {"function", QJsonObject{{"name", "read_file"},
+                                     {"description", "read a file"},
+                                     {"parameters", QJsonObject{{"type", "object"}}}}}});
+        tools.append(QJsonObject{
+            {"type", "function"},
+            {"function", QJsonObject{{"name", "mcp__fs__stat"},
+                                     {"description", "stat via MCP"},
+                                     {"parameters", QJsonObject{{"type", "object"}}}}}});
+        int sum = 0;
+        for (const auto& t : tools)
+            sum += TokenEstimator::estimateToolTokens(t.toObject());
+        QCOMPARE(sum, TokenEstimator::estimateToolsSchema(tools));
     }
 
 };
@@ -342,6 +450,51 @@ void TestTokenEstimator::compressGiantLastTurnBestEffort() {
     const QJsonArray compressed = TokenEstimator::compressToFit(history, 1000);
     QVERIFY(compressed.size() >= 2);
     QVERIFY(anyContentContains(compressed, "done"));
+}
+
+// docs/16 §8.3（S3）: 省略条数与截断标记必须能报给调用方（TopBar 的
+// "已压缩 N 条"），而默认参数下行为与旧实现完全一致。
+void TestTokenEstimator::compressReportsOmittedAndTruncated() {
+    // ① 整轮省略：omittedMessages = 被丢掉的消息数（不含保留的 system）
+    int omitted = -1;
+    bool truncated = true;
+    const QJsonArray history = buildOversizedHistory();
+    const QJsonArray squeezed =
+        TokenEstimator::compressToFit(history, 4000, &omitted, &truncated);
+    QVERIFY(omitted > 0);
+    // 输出 = 保留的 system + 1 条省略标记 + 被保留的后缀
+    QCOMPARE(squeezed.size(), history.size() - omitted + 1);
+    QVERIFY(anyContentContains(squeezed, "[Context compressed"));
+
+    // ② 无需压缩：两个出参都归零
+    QJsonArray small;
+    small.append(msg("system", "sys"));
+    small.append(msg("user", "hi"));
+    small.append(msg("assistant", "hello"));
+    int omittedSmall = -1;
+    bool truncatedSmall = true;
+    const QJsonArray untouched =
+        TokenEstimator::compressToFit(small, 100000, &omittedSmall, &truncatedSmall);
+    QCOMPARE(untouched.size(), small.size());
+    QCOMPARE(omittedSmall, 0);
+    QVERIFY(!truncatedSmall);
+
+    // ③ 原地截断：消息数不变但内容被切，truncated 必须为 true
+    QJsonArray giant;
+    giant.append(msg("system", "sys"));
+    giant.append(msg("user", "hi"));
+    // 只有 assistant 可控可截（用户自己的话永远不动），所以让它成为超大头。
+    giant.append(msg("assistant", QString(20000, 'a')));
+    int omittedGiant = -1;
+    bool truncatedGiant = false;
+    const QJsonArray cut =
+        TokenEstimator::compressToFit(giant, 1000, &omittedGiant, &truncatedGiant);
+    QVERIFY(truncatedGiant);
+    QVERIFY(anyContentContains(cut, "truncated to fit the context window"));
+
+    // ④ 不传默认参数：编译与行为都不受影响（旧调用点零改动）
+    const QJsonArray legacy = TokenEstimator::compressToFit(history, 4000);
+    QCOMPARE(legacy.size(), squeezed.size());
 }
 
 // A6：最新的 assistant 轮只有 tool_calls（content 为空），超大的 tool 结果

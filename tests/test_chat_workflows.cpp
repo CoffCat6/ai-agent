@@ -644,6 +644,144 @@ private slots:
         if (!capture.isEmpty()) QVERIFY(window->grabWindow().save(capture));
     }
 
+    // S3 回归：TopBar 的 token 明细浮层必须真的"有尺寸地打开"。
+    // 曾经的写法把 Popup.contentHeight 绑到 contentItem.implicitHeight，而
+    // contentItem 是 ScrollView —— 两者形成绑定环，contentItem 的
+    // implicitHeight 恒为 0，Popup 高度只剩 padding×2（20px），内容被整块
+    // 裁掉：悬停看起来毫无反应（打开是"打开"了，但用户什么都看不到）。
+    void topBarTokenPopupOpensWithVisibleContent() {
+        // 必须先让活动会话真的跑完一轮：空会话时浮层只有"暂无数据"一行，
+        // 高度断言失去意义（旧实现也能"通过"，起不到回归作用）。
+        SqliteMemory memory(QStringLiteral(":memory:"));
+        RecordingService service;
+        AIAgent agent;
+        agent.setMemory(&memory);
+        agent.setLLMService(&service);
+        vm->setMemory(&memory);
+        vm->setAgent(&agent);
+        QScopeGuard restore([this, &agent]() {
+            vm->setAgent(nullptr);
+            vm->setMemory(nullptr);
+            agent.setMemory(nullptr);
+        });
+
+        QVERIFY(vm->startTask(QStringLiteral("please count some tokens here")));
+        const QString sessionId = agent.currentSessionId();
+        QVERIFY(!sessionId.isEmpty());
+        service.answer(QStringLiteral("here is a fairly long answer that "
+                                      "occupies a few tokens in the context"));
+        QTRY_VERIFY(!agent.isActive());
+        const QVariantMap composition = agent.contextComposition();
+        QVERIFY2(composition.value(QStringLiteral("groups")).toList().size() == 3,
+                 "composition 没有分组：浮层不会有任何可渲染内容");
+
+        QQmlApplicationEngine engine;
+        QStringList issues;
+        connect(&engine, &QQmlEngine::warnings, this, [&issues](const QList<QQmlError>& errors) {
+            for (const auto& error : errors) issues.append(error.toString());
+        });
+        engine.rootContext()->setContextProperty("Theme", ThemeProvider::instance());
+        engine.load(QUrl("qrc:/qt/qml/NexusAI/src/ui/main.qml"));
+        QVERIFY(!engine.rootObjects().isEmpty());
+        auto* window = qobject_cast<QQuickWindow*>(engine.rootObjects().first());
+        QVERIFY(window);
+        window->resize(1280, 800);
+        QTest::qWait(200);
+
+        QObject* popup = window->findChild<QObject*>(QStringLiteral("topBarTokenPopup"));
+        QVERIFY2(popup, "token popup 未注册 objectName，UI 结构可能已变");
+        QVERIFY(!popup->property("opened").toBool());
+
+        QMetaObject::invokeMethod(popup, "open");
+        QTest::qWait(150);
+        QVERIFY(popup->property("opened").toBool());
+
+        // 关键断言一：contentItem 必须量出非零隐式高度。旧写法把
+        // Popup.contentHeight 绑到 contentItem.implicitHeight，而 contentItem
+        // 是 ScrollView，两者形成绑定环，内容区高度恒为 0 —— 浮层虽然"打开"
+        // 了，用户却什么都看不到。
+        QTRY_VERIFY2(popup->property("implicitContentHeight").toInt() > 60,
+                     qPrintable(QStringLiteral("contentItem 隐式高度只有 %1")
+                                    .arg(popup->property("implicitContentHeight").toInt())));
+        // 关键断言二：内容区没被裁——Popup 高度必须容纳内容 + padding。
+        const int implicitH = popup->property("implicitContentHeight").toInt();
+        const int expectedHeight = implicitH + 2 * popup->property("padding").toInt();
+        QTRY_VERIFY2(popup->property("height").toInt() >= expectedHeight - 2,
+                     qPrintable(QStringLiteral("popup height=%1 < 内容 %2 + padding，"
+                                               "明细被裁掉了")
+                                    .arg(popup->property("height").toInt())
+                                    .arg(implicitH)));
+        auto* contentItem = popup->property("contentItem").value<QQuickItem*>();
+        QVERIFY(contentItem);
+        QVERIFY2(contentItem->height() > 60, "内容区高度过小，浮层等于不可见");
+        // 浮层必须落在窗口可视范围内（x 由 tokenArea 推导并钳制）。
+        // 380 宽 + 右对齐时，旧写法会把 x 推到 -271，左侧标签看不见。
+        QVERIFY2(popup->property("x").toDouble() >= 0,
+                 qPrintable(QStringLiteral("x=%1：浮层越出窗口左边界")
+                                .arg(popup->property("x").toDouble())));
+        const int popupRight = popup->property("x").toInt()
+                             + popup->property("width").toInt();
+        QVERIFY2(popupRight <= window->width(),
+                 qPrintable(QStringLiteral("right=%1 > windowWidth=%2：浮层越出右边界")
+                                .arg(popupRight).arg(window->width())));
+        // 只量浮层自己的内容列：Popup 内容挂在 overlay 上，必须经
+        // objectName 定位，否则会量到侧栏/面板里本来就该省略的长文本。
+        QObject* popupContent =
+            window->findChild<QObject*>(QStringLiteral("topBarTokenPopupContent"));
+        QVERIFY2(popupContent, "浮层内容根节点缺失，objectName 已变");
+        auto* contentCol = qobject_cast<QQuickItem*>(popupContent);
+        QVERIFY(contentCol);
+
+        // 断言一：内容自然宽度不得超过可用宽度（否则标签被压窄 = 看不全）。
+        QVERIFY2(contentCol->implicitWidth() <= contentCol->width() + 1.0,
+                 qPrintable(QStringLiteral("内容宽 %1 被压到 %2")
+                                .arg(contentCol->implicitWidth())
+                                .arg(contentCol->width())));
+
+        // 断言二：标签与数字之间不得出现大空隙。"中间空隙太多"的直接来源
+        // 就是 RowLayout 的弹性列——剩余空间被摊给标签，标签右边缘到数字
+        // 之间就是一条空带。判据不依赖具体文案：对每个 Text，量它与右侧
+        // 最近同级 Text 的水平间距，超过 12px（设计 spacing 6px 的两倍）即
+        // 视为空档。
+        int gaps = 0;
+        QString widestGap;
+        qreal widest = 0;
+        for (QObject* obj : popupContent->findChildren<QObject*>()) {
+            auto* item = qobject_cast<QQuickItem*>(obj);
+            if (!item) continue;
+            const QVariant textProp = obj->property("text");
+            if (!textProp.isValid() || textProp.toString().isEmpty()) continue;
+            QQuickItem* parentRow = item->parentItem();
+            if (!parentRow) continue;
+            QQuickItem* next = nullptr;
+            qreal best = 1e9;
+            for (QQuickItem* sibling : parentRow->childItems()) {
+                if (sibling == item) continue;
+                const QVariant st = sibling->property("text");
+                if (!st.isValid() || st.toString().isEmpty()) continue;
+                // 用 mapToItem 取真实位置：Row 手工排布，sibling->x() 是
+                // 相对父级的旧值，且在 RowLayout 下被管理器改写。
+                const QPointF sibPos = sibling->mapToItem(contentCol, QPointF(0, 0));
+                const QPointF selfPos = item->mapToItem(contentCol, QPointF(0, 0));
+                const qreal dx = sibPos.x() - (selfPos.x() + item->width());
+                if (dx >= 0 && dx < best) { best = dx; next = sibling; }
+            }
+            if (!next) continue;
+            if (best > 12.0) {
+                ++gaps;
+                if (best > widest) {
+                    widest = best;
+                    widestGap = textProp.toString() + QStringLiteral(" -> ")
+                              + next->property("text").toString();
+                }
+            }
+        }
+        QVERIFY2(gaps == 0,
+                 qPrintable(QStringLiteral("有 %1 处标签与数字之间留空，最大 %2px：%3")
+                                .arg(gaps).arg(widest).arg(widestGap)));
+        QVERIFY2(issues.isEmpty(), qPrintable(issues.join(QStringLiteral("\n"))));
+    }
+
     // ── W1: '/' 命令输入即补全 ───────────────────────────
 
     // 输入 /re 立即出现 review 候选（而不是等到发送时再展开）。
@@ -1252,6 +1390,11 @@ private slots:
         engine.load(QUrl("qrc:/qt/qml/NexusAI/src/ui/main.qml"));
         QVERIFY(!engine.rootObjects().isEmpty());
         auto* window = engine.rootObjects().first();
+        // 显式钉住窗口尺寸：本用例断言依赖 compact=false（dialog.width ≥
+        // 900），而窗口宽度可能被运行环境（OS 侧）改动——实测同一进程内
+        // 前序用例跑完后，新窗口偶发以 686px 出现，紧凑断点被误命中。
+        // 其余 main.qml 用例均显式 resize，这里对齐同一惯例。
+        qobject_cast<QQuickWindow*>(window)->resize(1280, 800);
         auto* dialog = window->findChild<QObject*>("settingsCenterDialog");
         auto* nav = window->findChild<QObject*>("settingsCategoryNav");
         QVERIFY(dialog);

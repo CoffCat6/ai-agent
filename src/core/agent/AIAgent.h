@@ -217,6 +217,19 @@ public:
     // Public so tests can assert the injected project root.
     QString effectiveSystemPrompt() const;
 
+    // docs/16 §8.3（S2）: system 消息的结构化记账。text 与旧
+    // effectiveSystemPrompt() 逐字节一致（parts 按序拼接），parts 供 TopBar 把
+    // 「指令」拆成 系统提示词/技能/记忆/项目规则/运行状态。
+    struct PromptPartTokens {
+        QString key;
+        int tokens = 0;
+    };
+    struct BuiltPrompt {
+        QString text;
+        QVector<PromptPartTokens> parts;
+    };
+    BuiltPrompt buildSystemPrompt() const;
+
     // docs/37 W3：本轮由 `$name` 引用的 Skill（AgentViewModel 在 startTask
     // 之前设置）。正文每轮由 effectiveSystemPrompt() 重建注入，因此上下文
     // 压缩后仍然存在；任务收尾/取消/新会话时清空，绝不泄漏到下一任务。
@@ -349,6 +362,10 @@ private:
     void onContextLimitChanged(int oldLimit, int newLimit);
     void restoreFullHistoryIfAvailable();
     int estimateReservedTokensForNextRequest() const;
+    // docs/16 §8.3（S1）: 下一次请求真正会下发的 tools 数组。预算
+    // （estimateReservedTokensForNextRequest）与构成明细（contextComposition）
+    // 共用这一份，避免"预算算 0、显示算全量"的口径分裂。
+    QJsonArray nextRequestTools() const;
     // docs/16 §7.2: 配额检查，返回 false 表示 strict 模式下拒绝请求。
     bool checkQuota();
     // docs/16 §5.2.2: 采集单次请求的 token 分类明细并持久化。
@@ -438,6 +455,10 @@ private:
     // session's injection from being dropped by the rebuild. Cleared by
     // resetSession/resumeSession (resumed sessions never carried one).
     QString m_episodicInjection;
+    // docs/16 §8.3（S2）: 当前 system 消息（m_messages[0]）的分块估算，随
+    // buildSystemPrompt() 的落盘同步更新——不能现算，否则 todo/技能/项目规则
+    // 变化后显示会与实际发出的 system 消息脱钩。
+    QVector<PromptPartTokens> m_systemPromptParts;
     QString m_activeProjectId;   // docs/17 A0: 活动项目（空 = 本地）
     // P0 项目上下文：随 id 一起推送，进入系统提示（见 projectContextBlock）。
     QString m_activeProjectName;
@@ -599,6 +620,11 @@ private:
     // 系统性偏小（cl100k 中文 ~1.16 tok/字，估算只给 0.667），实时占用
     // 显示必须乘此系数才贴近真实窗口占用。0 = 尚无观测。
     double m_estimateScale{0.0};
+    // docs/16 §8.3（S3）: 最近一次压缩的结果，跨任务累计（会话内）。浮层据此
+    // 显示"已压缩 N 条"，否则百分比从 95% 掉到 30% 时用户没有任何解释。
+    int  m_omittedContextMessages{0};   // 累计被省略的历史消息数
+    int  m_compressionCount{0};         // 本会话发生压缩的轮次
+    bool m_contextTruncated{false};     // 是否发生过原地截断（消息数不变）
     // A4: 最近一次 EWMA 观测所属的模型名。同一 service 实例被 configure()
     // 原地改写 model() 时，setLLMService 的“同指针”早退分支已无法靠
     // previous/next 比较发现换模型，只能与这里的观测基准比较。

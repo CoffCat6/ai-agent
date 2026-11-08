@@ -1331,6 +1331,12 @@ private slots:
     void mainUsageTotalIncludesThoughts();
     // docs/16 §8.2: 会话累计 token（逐请求累加 / 清零 / 续会话恢复）
     void testSessionTokensUsed();
+    // docs/16 §8.3（S1）: 上下文构成分组树的不变式（组 = 行之和、行 = 子项之和、
+    // 消息侧行之和 = usedTokens，全部行之和 = totalTokens）。
+    void contextCompositionGroupsInvariant();
+    // docs/16 §8.3（S2）: system 消息结构化记账——技能/记忆/项目规则/运行状态
+    // 各自成行，且 system 消息内容仍与 buildSystemPrompt() 逐字节一致。
+    void systemPromptPartsSplit();
     // docs/16 §13 AC-7: 配额检查（超限 emit quotaWarning，strict 模式拒绝）
     void testCheckQuota();
     // docs/31 S4.1 N9：达到阈值（未超限）提醒一次，同一天不重复。
@@ -5087,6 +5093,113 @@ void TestAgent::testSessionTokensUsed() {
     QCOMPARE(sessionTokensSpy.last().at(0).toLongLong(), qint64(375));
 
     agent.setMemory(nullptr);
+}
+
+// docs/16 §8.3（S2）: system 消息结构化记账。技能注入后「技能」行必须出现，
+// 且落盘的 system 消息仍与 buildSystemPrompt().text（= effectiveSystemPrompt()）
+// 逐字节一致——episodic 注入已并入 memory 块，调用方不再二次拼接。
+void TestAgent::systemPromptPartsSplit() {
+    Skill skill;
+    skill.id = QStringLiteral("demo-skill");
+    skill.name = QStringLiteral("demo");
+    skill.body = QString(400, QLatin1Char('x'));
+    agent.setActiveSkills(QVector<Skill>{skill});
+
+    // 技能就位时的系统提示（任务结束后 m_activeSkills 会被清空，先取快照）
+    const QString expectedPrompt = agent.effectiveSystemPrompt();
+
+    QSignalSpy responseSpy(&agent, &AIAgent::responseReady);
+    llm.script.append(textResponse(QStringLiteral("ok")));
+    QVERIFY(agent.startTask(QStringLiteral("use the skill")));
+    QTRY_COMPARE(responseSpy.count(), 1);
+
+    QCOMPARE(agent.messages().first().toObject().value("content").toString(),
+             expectedPrompt);
+
+    const QVariantMap comp = agent.contextComposition();
+    qint64 skillsTokens = -1;
+    qint64 memoryTokens = -1;
+    qint64 instructionSum = 0;
+    for (const QVariant& gv : comp.value("groups").toList()) {
+        const QVariantMap group = gv.toMap();
+        if (group.value("key").toString() != QLatin1String("instructions")) continue;
+        for (const QVariant& rv : group.value("rows").toList()) {
+            const QVariantMap row = rv.toMap();
+            const QString key = row.value("key").toString();
+            instructionSum += row.value("tokens").toLongLong();
+            if (key == QLatin1String("skills"))
+                skillsTokens = row.value("tokens").toLongLong();
+            if (key == QLatin1String("memory"))
+                memoryTokens = row.value("tokens").toLongLong();
+        }
+        QCOMPARE(instructionSum, group.value("tokens").toLongLong());
+    }
+    QVERIFY2(skillsTokens > 0, "技能注入后「技能」行必须大于 0");
+    // 无 episodic 注入、无知识库命中 → 记忆行 0（浮层会自动隐藏空行）
+    QCOMPARE(memoryTokens, qint64(0));
+
+    agent.clearActiveSkills();
+}
+
+// docs/16 §8.3（S1）: 上下文构成分组树的不变式。浮层把三组行直接展示给用户，
+// 组小计、行小计、二级子项会被肉眼相加——任何一层对不上都是"显示错了"。
+void TestAgent::contextCompositionGroupsInvariant() {
+    QSignalSpy responseSpy(&agent, &AIAgent::responseReady);
+    llm.script.append(textResponse(QStringLiteral("ok")));
+    QVERIFY(agent.startTask(QStringLiteral("hello groups")));
+    QTRY_COMPARE(responseSpy.count(), 1);
+
+    const QVariantMap comp = agent.contextComposition();
+    const QVariantList groups = comp.value(QStringLiteral("groups")).toList();
+    QCOMPARE(groups.size(), 3);
+
+    qint64 groupSum = 0;
+    qint64 messageRows = 0;
+    bool sawInstructions = false;
+    bool sawTools = false;
+    bool sawContext = false;
+    for (const QVariant& gv : groups) {
+        const QVariantMap group = gv.toMap();
+        const QString groupKey = group.value(QStringLiteral("key")).toString();
+        sawInstructions = sawInstructions || groupKey == QLatin1String("instructions");
+        sawTools = sawTools || groupKey == QLatin1String("tools");
+        sawContext = sawContext || groupKey == QLatin1String("context");
+
+        qint64 rowSum = 0;
+        for (const QVariant& rv : group.value(QStringLiteral("rows")).toList()) {
+            const QVariantMap row = rv.toMap();
+            const QString rowKey = row.value(QStringLiteral("key")).toString();
+            const qint64 rowTokens = row.value(QStringLiteral("tokens")).toLongLong();
+
+            const QVariantList children = row.value(QStringLiteral("children")).toList();
+            if (!children.isEmpty()) {
+                qint64 childSum = 0;
+                for (const QVariant& cv : children)
+                    childSum += cv.toMap().value(QStringLiteral("tokens")).toLongLong();
+                QCOMPARE(childSum, rowTokens);
+            }
+            rowSum += rowTokens;
+            // tools schema 随请求发出但不在消息数组里，单独计入 totalTokens。
+            if (rowKey != QLatin1String("toolsSchema"))
+                messageRows += rowTokens;
+        }
+        QCOMPARE(rowSum, group.value(QStringLiteral("tokens")).toLongLong());
+        groupSum += group.value(QStringLiteral("tokens")).toLongLong();
+    }
+    QVERIFY(sawInstructions && sawTools && sawContext);
+
+    const qint64 schema = comp.value(QStringLiteral("toolsSchema")).toLongLong();
+    QCOMPARE(groupSum, comp.value(QStringLiteral("totalTokens")).toLongLong());
+    QCOMPARE(messageRows, comp.value(QStringLiteral("usedTokens")).toLongLong());
+    QCOMPARE(messageRows + schema, comp.value(QStringLiteral("totalTokens")).toLongLong());
+    // 四桶（旧字段）与行口径必须一致：TopBar 之外还有消费者读它们。
+    QCOMPARE(comp.value(QStringLiteral("systemPrompt")).toLongLong()
+           + comp.value(QStringLiteral("conversation")).toLongLong()
+           + comp.value(QStringLiteral("toolResults")).toLongLong()
+           + comp.value(QStringLiteral("images")).toLongLong(),
+             comp.value(QStringLiteral("usedTokens")).toLongLong());
+    // 无压缩时标记计数为 0（有压缩时由 UI 显示角标）。
+    QCOMPARE(comp.value(QStringLiteral("compressionCount")).toInt(), 0);
 }
 
 // docs/16 §3.3: 估算器滚动校准 —— 响应携带 API 真实 promptTokens 时，

@@ -510,9 +510,20 @@ void AIAgent::setSystemPromptOverride(const QString& prompt) {
     m_systemPromptOverride = trimmed;
 }
 
-QString AIAgent::effectiveSystemPrompt() const {
-    QString prompt = m_systemPromptOverride.isEmpty()
-        ? systemPrompt() : m_systemPromptOverride;
+// docs/16 §8.3（S2）: system 消息结构化记账。返回值 text 与旧实现逐字节一致
+// （parts 按序拼接），parts 只记录每块的估算 token——TopBar 因此能把「指令」
+// 拆成 系统提示词/技能/记忆/项目规则/运行状态，而不用事后按文案 marker 猜。
+AIAgent::BuiltPrompt AIAgent::buildSystemPrompt() const {
+    BuiltPrompt built;
+    const auto add = [&built](const char* key, const QString& block) {
+        if (block.isEmpty()) return;
+        built.parts.append(PromptPartTokens{QString::fromLatin1(key),
+                                            TokenEstimator::estimateTokens(block)});
+        built.text += block;
+    };
+
+    add("base", m_systemPromptOverride.isEmpty()
+                    ? systemPrompt() : m_systemPromptOverride);
     // docs/43 O4-4: delegation policy rides with the dispatched tool schema
     // — injected only when spawn_agent is actually usable for this model
     // (same isToolUsable/toolAllowedForModel gate the schema serialization
@@ -522,40 +533,44 @@ QString AIAgent::effectiveSystemPrompt() const {
             && m_toolRegistry->isToolUsable(
                 QLatin1String(SubAgentTool::kName))
             && toolAllowedForModel(QLatin1String(SubAgentTool::kName)))
-        prompt += delegationPolicyBlock();
+        add("delegation", delegationPolicyBlock());
     // P0 项目上下文：附加在基础提示之后（用户自定义 override 也附加），
     // startTask 与 resumeSession 都经此处组装，续聊同样携带项目信息。
-    const QString project = projectContextBlock();
-    if (!project.isEmpty())
-        prompt += project;
+    add("project", projectContextBlock());
     // G3 project rules: after the project context block (same "appended even
     // to a user override" semantics), before the citation instruction. The
     // order is deliberate and test-locked: rules are the project's voice,
     // the citation line is the app's.
-    const QString rules = projectRulesBlock();
-    if (!rules.isEmpty())
-        prompt += rules;
+    add("projectRules", projectRulesBlock());
     // CITE-801 (docs/20 §5.1): 回答侧约定 —— 知识库非空时才追加引用格式
     // 指令，让模型在句子末尾标 [文档名]，UI 据此渲染可点击溯源徽标。
     // 用户自定义 override 提示不注入：override 表示"完全接管系统提示"，
     // test_agent 的 systemPromptOverrideReachesRequest 锁定了该语义
     // （override 内容必须原样到达请求），且设计未要求改写用户提示。
     if (m_systemPromptOverride.isEmpty() && knowledgeBaseNonEmpty(m_toolRegistry))
-        prompt += QStringLiteral(
-            "\n\n引用知识库内容时，在句子末尾以 [文档名] 标注来源。");
+        add("citation", QStringLiteral(
+            "\n\n引用知识库内容时，在句子末尾以 [文档名] 标注来源。"));
     // 用户 override 表示完全接管系统提示（同引用指令语义），不注入。
     if (m_systemPromptOverride.isEmpty())
-        prompt += todoStateBlock(m_todoList);
+        add("todo", todoStateBlock(m_todoList));
     // docs/43 O3: live background-task state (running / uncollected / failed)
     // so the model can decide to wait now or keep working. Empty when the
     // session has no background sub-agents.
     if (m_systemPromptOverride.isEmpty() && m_backgroundHub)
-        prompt += backgroundSubAgentsBlock(
-            m_backgroundHub->snapshotsForSession(m_sessionId));
+        add("background", backgroundSubAgentsBlock(
+            m_backgroundHub->snapshotsForSession(m_sessionId)));
     // docs/37 W3：`$` 引用的技能正文。每轮/每次重建都会重新追加，因此
     // 上下文压缩（保留首条 system）后仍然生效。
-    prompt += activeSkillsBlock();
-    return prompt;
+    add("skills", activeSkillsBlock());
+    // T8: episodic memory 注入。历史上由调用方在 effectiveSystemPrompt() 之后
+    // 追加，导致 system 消息有了两块来源、来源桶只统计了前一块；并入记账后
+    // text 的顺序仍是"…技能 → 记忆"，与旧内容逐字节一致。
+    add("memory", m_episodicInjection);
+    return built;
+}
+
+QString AIAgent::effectiveSystemPrompt() const {
+    return buildSystemPrompt().text;
 }
 
 void AIAgent::setActiveSkills(const QVector<Skill>& skills) {
@@ -930,26 +945,227 @@ int AIAgent::calibratedReservedTokens() const {
 // 下一次请求发出、占用窗口，但不在 m_messages 里。
 QVariantMap AIAgent::contextComposition() const {
     const double scale = tokenEstimateScale();
-    const int rawReserved = estimateReservedTokensForNextRequest();
-    QVariantMap out = TokenEstimator::splitContextTokens(m_messages, rawReserved);
-    // 与 notifyTokens / EWMA 观测同一口径：消息桶与 tools schema 都乘校准
-    // 系数（schema 不是消息数组的一部分，但同样参与该次请求的估算偏差）。
-    // 各桶独立取整后求和，与 notifyTokens 的“整体取整”最多差 4（五个桶
-    // 各截断 <1）。scale==1 时数值与旧实现完全一致。
-    qint64 scaledUsed = 0;
-    for (const QString& key : {QStringLiteral("systemPrompt"),
-                                QStringLiteral("conversation"),
-                                QStringLiteral("toolResults"),
-                                QStringLiteral("images")}) {
-        const qint64 v = static_cast<qint64>(out.value(key).toLongLong() * scale);
-        out[key] = v;
-        scaledUsed += v;
+    const QVariantMap raw = TokenEstimator::classifyMessages(m_messages);
+
+    // 工具定义按内置 / MCP 拆分，与 estimateToolsSchema 同源（同一份
+    // nextRequestTools + estimateToolTokens），总量不会因为拆分而漂移。
+    int rawBuiltinSchema = 0;
+    int rawMcpSchema = 0;
+    for (const auto& entry : nextRequestTools()) {
+        const QJsonObject tool = entry.toObject();
+        const int t = TokenEstimator::estimateToolTokens(tool);
+        const QString name = tool.value("function").toObject()
+                                 .value("name").toString();
+        if (name.startsWith(QLatin1String("mcp__"))) rawMcpSchema += t;
+        else rawBuiltinSchema += t;
     }
-    const qint64 scaledSchema = static_cast<qint64>(rawReserved * scale);
-    out["toolsSchema"] = scaledSchema;
-    out["usedTokens"] = scaledUsed;
-    out["totalTokens"] = scaledUsed + scaledSchema;
-    out["maxTokens"] = m_contextLimit;
+
+    // 逐行缩放（四舍五入），父行恒等于子行之和：浮层里用户会肉眼相加，
+    // 差一个数就是"显示错了"。与 notifyTokens 的整体取整最多差几 token。
+    const auto scaled = [scale](qint64 value) {
+        return static_cast<int>(qRound(static_cast<double>(value) * scale));
+    };
+    const auto rawInt = [&raw](const char* key) {
+        return raw.value(QString::fromLatin1(key)).toLongLong();
+    };
+
+    const int systemRow     = scaled(rawInt("systemPrompt"));
+    const int compressedRow = scaled(rawInt("compressed"));
+    const int toolCallsRow  = scaled(rawInt("toolCalls"));
+    const int filesRow      = scaled(rawInt("files"));
+    const int imagesRow     = scaled(rawInt("images"));
+    const int userRow       = scaled(rawInt("user"));
+    const int assistantRow  = scaled(rawInt("assistant"));
+
+    // ── 指令组：按 system 消息的分块记账拆分（S2）──
+    // 分块 token 来自真正落盘的那条 system 消息（buildSystemPrompt 记账），
+    // 而不是现算——否则 todo / 技能 / 项目规则变了之后，浮层会和实际发出的
+    // 内容脱钩。没有记账（旧会话、无 system 消息）时退化为单行。
+    const auto partTokens = [this](const char* key) {
+        const QString wanted = QString::fromLatin1(key);
+        for (const auto& part : m_systemPromptParts)
+            if (part.key == wanted) return part.tokens;
+        return 0;
+    };
+    const bool partsKnown = systemRow > 0 && !m_systemPromptParts.isEmpty();
+
+    // 知识库命中从"工具结果"移到"记忆"（用户口径：模型记住的东西）。
+    const int knowledgeRow = scaled(rawInt("tool.knowledge"));
+
+    struct PartRow {
+        const char* key;
+        qint64 raw;
+    };
+    QVector<PartRow> partRows;
+    if (partsKnown) {
+        partRows = {
+            // 基础提示 + 委托策略 + 引用约定：都属于"模型行为规范"
+            {  "systemPrompt", static_cast<qint64>(partTokens("base"))
+                                + partTokens("delegation") + partTokens("citation") },
+            {  "skills",       static_cast<qint64>(partTokens("skills")) },
+            {  "memory",       static_cast<qint64>(partTokens("memory")) + knowledgeRow },
+            // 项目上下文与 AGENTS.md 规则是项目的声音，合成一行
+            {  "projectRules", static_cast<qint64>(partTokens("project"))
+                                + partTokens("projectRules") },
+            // todo 清单 + 后台子代理状态：每轮重建的运行态
+            {  "runtimeState", static_cast<qint64>(partTokens("todo"))
+                                + partTokens("background") },
+        };
+    } else {
+        partRows = { { "systemPrompt", rawInt("systemPrompt") } };
+    }
+
+    // 逐块取整与整条取整会差 1~2 token：在最大行上配平，保证
+    // 「行之和 == 系统消息估算」严格成立（浮层里用户会直接相加）。
+    QVector<int> partScaled(partRows.size(), 0);
+    int partsScaledSum = 0;
+    int largestPart = 0;
+    for (int i = 0; i < partRows.size(); ++i) {
+        partScaled[i] = scaled(partRows.at(i).raw);
+        partsScaledSum += partScaled.at(i);
+        if (partRows.at(i).raw > partRows.at(largestPart).raw) largestPart = i;
+    }
+    partScaled[largestPart] += systemRow - partsScaledSum;
+    if (partScaled.at(largestPart) < 0) partScaled[largestPart] = 0;
+
+    // 记忆行 = 历史摘要（episodic）+ 知识库命中；子项相加恒等于父行。
+    int memoryEpisodic = 0;
+    int memoryKnowledge = 0;
+    for (int i = 0; i < partRows.size(); ++i) {
+        if (QLatin1String(partRows.at(i).key) != QLatin1String("memory")) continue;
+        memoryKnowledge = qMin(knowledgeRow, partScaled.at(i));
+        memoryEpisodic = partScaled.at(i) - memoryKnowledge;
+    }
+
+    QVariantList instructionRows;
+    int instructionsFromParts = 0;
+    for (int i = 0; i < partRows.size(); ++i) {
+        QVariantMap row;
+        row[QStringLiteral("key")] = QString::fromLatin1(partRows.at(i).key);
+        row[QStringLiteral("tokens")] = partScaled.at(i);
+        instructionsFromParts += partScaled.at(i);
+        if (QLatin1String(partRows.at(i).key) == QLatin1String("memory")) {
+            row[QStringLiteral("children")] = QVariantList{
+                QVariantMap{{QStringLiteral("key"), QStringLiteral("memory.episodic")},
+                            {QStringLiteral("tokens"), memoryEpisodic}},
+                QVariantMap{{QStringLiteral("key"), QStringLiteral("memory.knowledge")},
+                            {QStringLiteral("tokens"), memoryKnowledge}},
+            };
+        }
+        instructionRows.append(row);
+    }
+    instructionRows.append(QVariantMap{
+        {QStringLiteral("key"), QStringLiteral("compressed")},
+        {QStringLiteral("tokens"), compressedRow}});
+    // 知识库命中已并入"记忆"，所以指令组比 system 消息本身多出这一块。
+    const int instructionsTotal = instructionsFromParts + compressedRow;
+    // 旧字段 systemPrompt 的语义是"system 消息"，不含工具结果里的知识库命中。
+    const int systemOnly = instructionsTotal - memoryKnowledge;
+
+    // ── 工具结果二级分类 ──
+    QVariantList toolResultChildren;
+    const auto addToolChild = [&toolResultChildren, &scaled, &rawInt](const char* key) {
+        toolResultChildren.append(QVariantMap{
+            {QStringLiteral("key"), QString::fromLatin1(key)},
+            {QStringLiteral("tokens"), scaled(rawInt(key))}});
+    };
+    addToolChild("tool.fileRead");
+    addToolChild("tool.command");
+    addToolChild("tool.search");
+    addToolChild("tool.git");
+    addToolChild("tool.subagent");
+    addToolChild("tool.mcp");
+    addToolChild("tool.other");
+    // 没有分块记账时（旧会话）知识库留在工具结果里，避免凭空多出一行记忆
+    if (!partsKnown) addToolChild("tool.knowledge");
+
+    int toolResultsRow = 0;
+    for (const auto& child : toolResultChildren)
+        toolResultsRow += child.toMap().value(QStringLiteral("tokens")).toInt();
+
+    const int schemaBuiltinRow = scaled(rawBuiltinSchema);
+    const int schemaMcpRow     = scaled(rawMcpSchema);
+    const int schemaRow = schemaBuiltinRow + schemaMcpRow;
+    const int conversationRow = userRow + assistantRow;
+
+    // 三组互斥：指令（system 消息 + 记忆）／工具（schema + 调用 + 结果）／
+    // 素材与会话（附件、图片、对话正文）。
+    const QVariantList toolRows{
+        QVariantMap{{QStringLiteral("key"), QStringLiteral("toolsSchema")},
+                    {QStringLiteral("tokens"), schemaRow},
+                    {QStringLiteral("children"),
+                     QVariantList{
+                         QVariantMap{{QStringLiteral("key"), QStringLiteral("toolsSchema.builtin")},
+                                     {QStringLiteral("tokens"), schemaBuiltinRow}},
+                         QVariantMap{{QStringLiteral("key"), QStringLiteral("toolsSchema.mcp")},
+                                     {QStringLiteral("tokens"), schemaMcpRow}},
+                     }}},
+        QVariantMap{{QStringLiteral("key"), QStringLiteral("toolCalls")},
+                    {QStringLiteral("tokens"), toolCallsRow}},
+        QVariantMap{{QStringLiteral("key"), QStringLiteral("toolResults")},
+                    {QStringLiteral("tokens"), toolResultsRow},
+                    {QStringLiteral("children"), toolResultChildren}},
+    };
+    const int toolsTotal = schemaRow + toolCallsRow + toolResultsRow;
+
+    const QVariantList contextRows{
+        QVariantMap{{QStringLiteral("key"), QStringLiteral("files")},
+                    {QStringLiteral("tokens"), filesRow}},
+        QVariantMap{{QStringLiteral("key"), QStringLiteral("images")},
+                    {QStringLiteral("tokens"), imagesRow}},
+        QVariantMap{{QStringLiteral("key"), QStringLiteral("conversation")},
+                    {QStringLiteral("tokens"), conversationRow},
+                    {QStringLiteral("children"),
+                     QVariantList{
+                         QVariantMap{{QStringLiteral("key"), QStringLiteral("conversation.user")},
+                                     {QStringLiteral("tokens"), userRow}},
+                         QVariantMap{{QStringLiteral("key"), QStringLiteral("conversation.assistant")},
+                                     {QStringLiteral("tokens"), assistantRow}},
+                     }}},
+    };
+    const int contextTotal = filesRow + imagesRow + conversationRow;
+
+    const QVariantList groups{
+        QVariantMap{{QStringLiteral("key"), QStringLiteral("instructions")},
+                    {QStringLiteral("tokens"), instructionsTotal},
+                    {QStringLiteral("rows"), instructionRows}},
+        QVariantMap{{QStringLiteral("key"), QStringLiteral("tools")},
+                    {QStringLiteral("tokens"), toolsTotal},
+                    {QStringLiteral("rows"), toolRows}},
+        QVariantMap{{QStringLiteral("key"), QStringLiteral("context")},
+                    {QStringLiteral("tokens"), contextTotal},
+                    {QStringLiteral("rows"), contextRows}},
+    };
+
+    // 窗口占用 = 消息侧行之和（知识库命中在指令组里，只算一次）；
+    // 加 schema 即真实占用。
+    const int usedTotal = instructionsTotal + contextTotal
+                        + toolCallsRow + toolResultsRow;
+    QVariantMap out;
+    // 旧字段语义保持不变：systemPrompt = 全部 system 消息；toolResults = 全部
+    // 工具消息（含被移进"记忆"的知识库命中）；conversation 仍含工具调用与附件。
+    // 因此四桶之和仍恒等于 usedTokens（既有测试锁定）。
+    out["systemPrompt"] = systemOnly;
+    out["conversation"] = conversationRow + toolCallsRow + filesRow;
+    out["toolResults"]  = toolResultsRow + memoryKnowledge;
+    out["images"]       = imagesRow;
+    out["toolsSchema"]  = schemaRow;
+    out["usedTokens"]   = usedTotal;
+    out["totalTokens"]  = usedTotal + schemaRow;
+    out["maxTokens"]    = m_contextLimit;
+    out["groups"]       = groups;
+    // docs/16 §8.3（S1）: 压缩标记条数——TopBar 用它显示"已压缩"角标，
+    // 否则百分比从 95% 掉到 30% 时用户没有任何解释。
+    out["compressionCount"] =
+        raw.value(QStringLiteral("compressedCount")).toInt();
+    // docs/16 §8.3（S3）: 口径说明字段。窗口占用是"估算 × 滚动校准"，与会话
+    // 累计（provider 真实值、含子代理）不是同一口径；浮层必须标出来，否则
+    // 用户会把两个数当成互相矛盾。
+    out["estimated"]         = true;
+    out["estimateScale"]     = tokenEstimateScale();
+    out["omittedMessages"]   = m_omittedContextMessages;
+    out["compressionRounds"] = m_compressionCount;
+    out["contextTruncated"]  = m_contextTruncated;
     return out;
 }
 
@@ -1478,12 +1694,13 @@ void AIAgent::launchTaskTail(bool fresh, const QString& episodicInjection) {
         // Async-only since docs/25 B3: an empty injection (timeout / nothing
         // found) simply launches without it.
         m_episodicInjection = episodicInjection;
+        // S2: buildSystemPrompt() 自带 episodic 注入（memory 块），调用方不再
+        // 二次追加；顺手把分块 token 记下来供浮层使用。
+        const BuiltPrompt built = buildSystemPrompt();
+        m_systemPromptParts = built.parts;
         QJsonObject sysMsg;
         sysMsg["role"] = "system";
-        QString prompt = effectiveSystemPrompt();
-        if (!episodicInjection.isEmpty())
-            prompt += episodicInjection;
-        sysMsg["content"] = prompt;
+        sysMsg["content"] = built.text;
         m_messages.prepend(sysMsg);   // user message was appended first (B3)
     } else {
         // The system prompt used to be built once per session, so mid-session
@@ -1537,12 +1754,12 @@ void AIAgent::resumeTaskLaunch(const QString& episodicInjection) {
 // changed and only carries the diff when something did (rules by mtime,
 // active project, override, knowledge-base citation line).
 void AIAgent::rebuildSystemMessage() {
-    QString prompt = effectiveSystemPrompt();
-    if (!m_episodicInjection.isEmpty())
-        prompt += m_episodicInjection;
+    // S2: 注入已并入 buildSystemPrompt() 的 memory 块；这里只落盘 + 记账。
+    const BuiltPrompt built = buildSystemPrompt();
+    m_systemPromptParts = built.parts;
     QJsonObject sysMsg;
     sysMsg["role"] = "system";
-    sysMsg["content"] = prompt;
+    sysMsg["content"] = built.text;
     if (!m_messages.isEmpty()
             && m_messages.first().toObject().value("role")
                    == QLatin1String("system")) {
@@ -1598,6 +1815,7 @@ void AIAgent::resetSession() {
     m_backgroundNodeIds.clear();
     m_backgroundNodeStates.clear();
     m_episodicInjection.clear();   // session-scoped; next fresh launch sets it
+    m_systemPromptParts.clear();   // S2: 分块记账随会话一起失效
     // G4: emit after the id is cleared so listeners read an empty list.
     emit fileCheckpointsChanged();
     m_messages = QJsonArray();
@@ -1610,6 +1828,11 @@ void AIAgent::resetSession() {
     // 校准系数随会话失效：语言/内容构成改变后旧系数不再适用，
     // 新会话从 1.0 重新观测。
     m_estimateScale = 0.0;
+    // S3: 压缩记账是 per-session 的，新会话必须归零（否则浮层会显示上一
+    // 个会话的"已压缩 N 条"）。
+    m_omittedContextMessages = 0;
+    m_compressionCount = 0;
+    m_contextTruncated = false;
     m_lastResponse.clear();
     m_iteration = 0;
     m_lastToolSignature.clear();
@@ -1645,6 +1868,10 @@ void AIAgent::resumeSession(const QString& sessionId) {
     m_backgroundNodeStates.clear();
     m_episodicInjection.clear();   // resumed sessions never carried one
     m_usedToolCallIds.clear();   // resumed history carries no tool calls
+    // S3: 恢复会话从干净记账开始（压缩结果不持久化，本轮还没发生压缩）。
+    m_omittedContextMessages = 0;
+    m_compressionCount = 0;
+    m_contextTruncated = false;
     // F1: todo state is persisted per session; reopening a session reloads
     // ITS OWN stored list (empty when it never used todo_write) instead of
     // resurrecting the list left by the previous session in this tab.
@@ -1663,9 +1890,13 @@ void AIAgent::resumeSession(const QString& sessionId) {
     }
     emit todoListChanged(m_todoList);
 
+    // S2: 记账与落盘同源（resumeSession 已清空 m_episodicInjection，因此这里
+    // 的 memory 块为空，内容与旧实现一致）。
+    const BuiltPrompt built = buildSystemPrompt();
+    m_systemPromptParts = built.parts;
     QJsonObject sysMsg;
     sysMsg["role"] = "system";
-    sysMsg["content"] = effectiveSystemPrompt();
+    sysMsg["content"] = built.text;
     m_messages.append(sysMsg);
 
     // Persisted history contains clean user/assistant pairs.
@@ -1912,12 +2143,20 @@ void AIAgent::applyContextBudget(int reservedTokens) {
 
     const int before = m_messages.size();
     const int beforeTokens = TokenEstimator::estimateTokens(m_messages);
-    m_messages = TokenEstimator::compressToFit(m_messages, effective);
+    int omitted = 0;
+    bool truncated = false;
+    m_messages = TokenEstimator::compressToFit(m_messages, effective,
+                                               &omitted, &truncated);
     // A truncation keeps the message count but cuts content; treat it as a
     // real compression so the UI/trace still report it.
     if (m_messages.size() == before
             && TokenEstimator::estimateTokens(m_messages) >= beforeTokens)
         return;
+
+    // S3: 记账给浮层（"已压缩 N 条 / M 次"），跨任务累计到会话结束。
+    m_omittedContextMessages += omitted;
+    m_contextTruncated = m_contextTruncated || truncated;
+    ++m_compressionCount;
 
     notifyTokens();
     appendTraceNode("context",
@@ -1956,14 +2195,14 @@ void AIAgent::onContextLimitChanged(int oldLimit, int newLimit) {
 // Estimate the reserved tokens (tools schema) for the next LLM request so the
 // effective budget can be computed. Mirrors the toolsArray built in
 // processIteration (dangerous and disabled tools are excluded).
-int AIAgent::estimateReservedTokensForNextRequest() const {
-    // A9: the forced-final request withholds every tool definition, so it
-    // reserves no tools schema. Keeping the full schema here made the window
-    // occupancy and the inputToolCall source bucket look much larger than the
-    // request actually was.
-    if (m_forcedFinal) return 0;
-    if (!m_toolRegistry) return 0;
+// A9: the forced-final request withholds every tool definition, so it reserves
+// no tools schema. Keeping the full schema there made the window occupancy and
+// the inputToolCall source bucket look much larger than the request actually
+// was. docs/16 §8.3（S1）: 抽成 nextRequestTools()，让预算与构成明细同源。
+QJsonArray AIAgent::nextRequestTools() const {
     QJsonArray toolsArray;
+    if (m_forcedFinal) return toolsArray;
+    if (!m_toolRegistry) return toolsArray;
     for (const auto& def : m_toolRegistry->listAll()) {
         if (def.level == ToolLevel::Dangerous) continue;
         if (!m_toolRegistry->isToolUsable(def.name) || !toolAllowedForModel(def.name)) continue;
@@ -1976,7 +2215,11 @@ int AIAgent::estimateReservedTokensForNextRequest() const {
         toolObj["function"] = fn;
         toolsArray.append(toolObj);
     }
-    return TokenEstimator::estimateToolsSchema(toolsArray);
+    return toolsArray;
+}
+
+int AIAgent::estimateReservedTokensForNextRequest() const {
+    return TokenEstimator::estimateToolsSchema(nextRequestTools());
 }
 
 // Model-switch adaptation (docs/15 §4.2.3): after switching to a larger
@@ -2022,6 +2265,11 @@ void AIAgent::restoreFullHistoryIfAvailable() {
         const int added = restored.size() - m_messages.size();
         if (added > 0) {
             m_messages = restored;
+            // S3: 历史整段恢复了，之前累计的"已压缩 N 条"不再成立，清零后
+            // 重新从真实发生的压缩开始算。
+            m_omittedContextMessages = 0;
+            m_compressionCount = 0;
+            m_contextTruncated = false;
             appendTraceNode("context",
                 QStringLiteral("History restored: %1 messages reloaded "
                                "after switching to a larger context window")

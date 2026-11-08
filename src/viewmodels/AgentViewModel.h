@@ -124,6 +124,10 @@ class AgentViewModel : public QObject {
     // Follows the live agent's context limit when attached (needs refresh
     // notifications, hence not CONSTANT).
     Q_PROPERTY(int maxTokens READ maxTokens NOTIFY tokenUsageChanged FINAL)
+    // docs/16 §8.3（S1）: 上下文构成明细的可绑定版本——TopBar 浮层与表面
+    // 角标都要随 tokensChanged 自动刷新，而 Q_INVOKABLE 版本只在打开时拉一次。
+    Q_PROPERTY(QVariantMap contextCompositionMap READ contextCompositionMap
+               NOTIFY tokenUsageChanged FINAL)
     // docs/16 §8: per-request cost (cents) for the TopBar live display.
     Q_PROPERTY(qint64 lastCostCents READ lastCostCents NOTIFY costChanged FINAL)
     // docs/16 §8.2: 本会话累计消耗（input+output，跨任务累加）。
@@ -466,6 +470,8 @@ public:
     double tokenUsageRate() const;
     int usedTokens() const { return active() ? active()->usedTokens() : 0; }
     int maxTokens() const { return active() ? active()->maxTokens() : 0; }
+    // docs/16 §8.3（S1）: 可绑定版构成明细（见 Q_PROPERTY 声明）。
+    QVariantMap contextCompositionMap() const { return contextComposition(); }
     // docs/16 §8: last per-request cost (cents), updated via costChanged.
     qint64 lastCostCents() const { return m_lastCostCents; }
     // docs/16 §8.2: 会话累计 token（active tab 的 AIAgent 计数器）。

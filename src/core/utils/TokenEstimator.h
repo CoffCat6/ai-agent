@@ -4,6 +4,8 @@
 #include <QJsonArray>
 #include <QJsonObject>
 #include <QVariant>
+#include <QVariantMap>
+#include <QHash>
 #include <QVector>
 
 namespace NexusAI {
@@ -90,12 +92,128 @@ public:
     // must reserve room for it before compressing history.
     static int estimateToolsSchema(const QJsonArray& tools) {
         int total = 0;
-        for (const auto& t : tools) {
-            const QJsonDocument doc(t.toObject());
-            total += estimateTokens(
-                QString::fromUtf8(doc.toJson(QJsonDocument::Compact)));
-        }
+        for (const auto& t : tools)
+            total += estimateToolTokens(t.toObject());
         return total;
+    }
+
+    // docs/16 §8.3（S1）: 单个工具定义的线上开销。抽成独立函数，让 TopBar 能把
+    // 「工具定义」再拆成内置 / MCP（mcp__* 前缀）；总量口径与
+    // estimateToolsSchema 逐字节一致，不会因为拆分而漂移。
+    static int estimateToolTokens(const QJsonObject& tool) {
+        return estimateTokens(QString::fromUtf8(
+            QJsonDocument(tool).toJson(QJsonDocument::Compact)));
+    }
+
+    // docs/16 §8.3（S1）: 互斥的上下文构成明细（原始估算，未乘校准系数）。
+    // 返回 key → tokens，约定：**所有行之和恒等于 estimateTokens(messages)**。
+    //
+    // 分类规则（顺序即优先级）：
+    //   · role=system 且正文以压缩标记 "[Context compressed:" 开头 → compressed
+    //     （compressedCount 单独给出标记条数）；其余 system → systemPrompt
+    //   · role=tool → 按 tool_call_id 回查 assistant.tool_calls 的工具名，
+    //     归入 tool.<category>；查不到（历史恢复/异常）→ tool.other
+    //   · user / assistant → 正文分 user / assistant 两行；同一条消息里的
+    //     tool_calls（name+arguments+8 的线上 framing）单独计入 toolCalls，
+    //     附件正文计入 files，图片计入 images
+    //
+    // 工具结果分类只依赖 tool_call_id→name 映射，**不给消息添加任何字段**：
+    // OpenAI Chat 路径会把整个 message 对象原样外发
+    // （OpenAIService::convertMessagesForOpenAI 只删 images），多一个字段就是
+    // 往请求体里塞垃圾，还会让估算与真实 prompt 彻底脱钩。
+    static QVariantMap classifyMessages(const QJsonArray& messages) {
+        // 第一趟：assistant.tool_calls 的 id → 工具名（第二趟查表归类）
+        QHash<QString, QString> callNames;
+        for (const auto& entry : messages) {
+            const QJsonObject msg = entry.toObject();
+            if (msg.value("role").toString() != QLatin1String("assistant")) continue;
+            for (const auto& tc : msg.value("tool_calls").toArray()) {
+                const QJsonObject call = tc.toObject();
+                callNames.insert(call.value("id").toString(),
+                                 call.value("function").toObject()
+                                     .value("name").toString());
+            }
+        }
+
+        qint64 systemPrompt = 0, compressed = 0, toolCalls = 0;
+        qint64 files = 0, images = 0, user = 0, assistant = 0;
+        // 工具结果 8 类，与 TopBar 二级图例一一对应
+        qint64 toolFileRead = 0, toolCommand = 0, toolSearch = 0, toolGit = 0;
+        qint64 toolSubagent = 0, toolKnowledge = 0, toolMcp = 0, toolOther = 0;
+        int compressedCount = 0;
+
+        for (const auto& entry : messages) {
+            const QJsonObject msg = entry.toObject();
+            const QString role = msg.value("role").toString();
+            const int img = msg.value("images").toArray().size() * 1000;
+            int fileTokens = 0;
+            for (const auto& file : msg.value("files").toArray())
+                fileTokens += estimateTokens(
+                    file.toObject().value("content").toString());
+            int callTokens = 0;
+            for (const auto& tc : msg.value("tool_calls").toArray()) {
+                const QJsonObject fn = tc.toObject().value("function").toObject();
+                callTokens += 8
+                            + estimateTokens(fn.value("name").toString())
+                            + estimateTokens(fn.value("arguments").toString());
+            }
+            // 扣掉已单列的部分后，剩下的就是这个角色自己的开销
+            // （role 串 + 正文 + 每消息 +4 framing），恒 >= 0。
+            const int own = estimateTokens(msg) - img - fileTokens - callTokens;
+            images += img;
+            files += fileTokens;
+
+            if (role == QLatin1String("system")) {
+                const QString content = msg.value("content").toString();
+                if (content.startsWith(QLatin1String("[Context compressed:"))) {
+                    compressed += own;
+                    ++compressedCount;
+                } else {
+                    systemPrompt += own;
+                }
+            } else if (role == QLatin1String("tool")) {
+                const QString name =
+                    callNames.value(msg.value("tool_call_id").toString());
+                if (name.startsWith(QLatin1String("mcp__"))) toolMcp += own;
+                else if (name == QLatin1String("read_file")
+                         || name == QLatin1String("glob")
+                         || name == QLatin1String("grep")
+                         || name == QLatin1String("list_dir")) toolFileRead += own;
+                else if (name == QLatin1String("shell_exec")) toolCommand += own;
+                else if (name == QLatin1String("web_search")
+                         || name == QLatin1String("http_fetch")) toolSearch += own;
+                else if (name.startsWith(QLatin1String("git_"))) toolGit += own;
+                else if (name == QLatin1String("spawn_agent")
+                         || name.startsWith(QLatin1String("subagent_")))
+                    toolSubagent += own;
+                else if (name == QLatin1String("search_knowledge_base"))
+                    toolKnowledge += own;
+                else toolOther += own;
+            } else {
+                if (role == QLatin1String("user")) user += own;
+                else assistant += own;
+                toolCalls += callTokens;
+            }
+        }
+
+        return QVariantMap{
+            {QStringLiteral("systemPrompt"),      systemPrompt},
+            {QStringLiteral("compressed"),        compressed},
+            {QStringLiteral("compressedCount"),   compressedCount},
+            {QStringLiteral("toolCalls"),         toolCalls},
+            {QStringLiteral("files"),             files},
+            {QStringLiteral("images"),            images},
+            {QStringLiteral("user"),              user},
+            {QStringLiteral("assistant"),         assistant},
+            {QStringLiteral("tool.fileRead"),     toolFileRead},
+            {QStringLiteral("tool.command"),      toolCommand},
+            {QStringLiteral("tool.search"),       toolSearch},
+            {QStringLiteral("tool.git"),          toolGit},
+            {QStringLiteral("tool.subagent"),     toolSubagent},
+            {QStringLiteral("tool.knowledge"),    toolKnowledge},
+            {QStringLiteral("tool.mcp"),          toolMcp},
+            {QStringLiteral("tool.other"),        toolOther},
+        };
     }
 
     // Estimate total tokens for a message array
@@ -122,7 +240,14 @@ public:
     // contiguous suffix that starts at a user message. Starting the kept
     // range at a user message guarantees no orphan "tool" result messages
     // (which would break the OpenAI tool_call/tool pairing contract).
-    static QJsonArray compressToFit(const QJsonArray& messages, int maxTokens) {
+    // docs/16 §8.3（S3）: omittedMessages / truncated 是可选出参（默认 nullptr），
+    // 让调用方能把"这次压缩掉了多少"报给 UI——此前只能靠 before/after 消息数
+    // 猜，原地截断（消息数不变）完全不可见。默认参数保证既有调用点零改动。
+    static QJsonArray compressToFit(const QJsonArray& messages, int maxTokens,
+                                    int* omittedMessages = nullptr,
+                                    bool* truncated = nullptr) {
+        if (omittedMessages) *omittedMessages = 0;
+        if (truncated) *truncated = false;
         if (messages.isEmpty()) return messages;
 
         // Latest user message that may start the kept suffix
@@ -156,6 +281,7 @@ public:
         if (keepFrom < 0) keepFrom = lastUserIdx; // best effort: keep latest turn
 
         const int omitted = keepFrom - 1;
+        if (omittedMessages && omitted > 0) *omittedMessages = omitted;
         QJsonArray out;
         out.append(messages.first());
         if (omitted > 0) {
@@ -208,6 +334,7 @@ public:
             msg["content"] = safeLeft(content, keepChars)
                 + QStringLiteral("\n... [truncated to fit the context window]");
             out.replace(worst, msg);
+            if (truncated) *truncated = true;
             const int next = estimateTokens(out);
             if (next >= total) break;   // no progress (framing overhead)
             total = next;
