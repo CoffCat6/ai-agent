@@ -10,7 +10,46 @@ Item {
     property alias delegate: messages.delegate
     readonly property int count: messages.count
     readonly property real contentHeight: flick.contentHeight
-    readonly property real availableWidth: flick.width
+    // ── 缩放节流（resize throttle）──────────────────
+    // 全部 delegate 的宽度都来自 availableWidth（AgentChatPage 的 delegate
+    // 绑定）。非虚拟化列里，窗口拖动缩放的每个 WM_SIZE 步都会改这个宽度，
+    // 令所有消息的 MarkdownText/CodeBlock 重新断行——整个场景最贵的操作，
+    // 高 DPR 屏（3.2K@175%，每帧物理像素 2.85× 于 1080p）上单帧超预算，
+    // 表现为拖动缩放一卡一卡。节流策略：拖动进行中 delegate 宽度按 50ms
+    // 节拍追赶新宽度（变窄时右缘被 clip 裁掉、变宽时暂时留白，均无错误
+    // 布局）；80ms 无新宽度变化视为结束，立即贴合并恢复逐像素跟随。
+    // 常态路径零开销（availableWidth 直接绑 liveWidth）。
+    // 顺带收益：contentHeight 变化 → onMaximumOffsetChanged → forceLayout
+    // 的触发频率也从每个 WM_SIZE 步降到节拍级。
+    readonly property real liveWidth: flick.width
+    property real syncedWidth: 0
+    property bool resizing: false
+    readonly property real availableWidth: resizing ? syncedWidth : liveWidth
+
+    onLiveWidthChanged: {
+        // 首帧/初始布局不节流：delegate 必须以正确宽度创建，否则整列以
+        // 宽度 0 参与首布局再跳变。
+        if (syncedWidth <= 0)
+            syncedWidth = liveWidth
+        resizing = true
+        resizeSettle.restart()
+    }
+    Timer {
+        id: resizeCatchUp
+        interval: 50
+        running: root.resizing && root.syncedWidth > 0
+                 && root.syncedWidth !== root.liveWidth
+        repeat: true
+        onTriggered: root.syncedWidth = root.liveWidth
+    }
+    Timer {
+        id: resizeSettle
+        interval: 80
+        onTriggered: {
+            root.syncedWidth = root.liveWidth
+            root.resizing = false
+        }
+    }
     readonly property real scrollOffset: flick.contentY
     readonly property real maximumOffset: Math.max(0, flick.contentHeight - flick.height)
     readonly property bool userInteracting: flick.moving || scrollMouse.pressed
@@ -24,8 +63,16 @@ Item {
         return Math.max(0, Math.min(maximumOffset, offset))
     }
 
-    function syncPosition() {
-        messageColumn.forceLayout()
+    function syncPosition(forceLayout) {
+        if (forceLayout === undefined)
+            forceLayout = true
+        // 几何驱动调用（onMaximumOffsetChanged）不需要强制布局：contentHeight
+        // 的变化本身就意味着布局已经完成。强制反而有害——TextEdit 的重排走
+        // polish 调度，缩放节流期间积压的宽度重排会被这里提前同步执行，把
+        // 50ms 节拍打穿（拖角缩放时垂直分量每步都触发本函数）。只有模型
+        // 驱动的入口（新消息/折叠切换/跳转定位）才需要先量出高度。
+        if (forceLayout)
+            messageColumn.forceLayout()
         if (userInteracting)
             return
         const next = pinnedToBottom ? maximumOffset : clampOffset(flick.contentY)
@@ -33,9 +80,22 @@ Item {
             flick.contentY = next
     }
 
-    function requestScrollToBottom() {
-        // Passing the same function coalesces model and geometry notifications.
-        Qt.callLater(syncPosition)
+    // Qt.callLater 按函数引用去重：必须用同一个共享回调，本帧内的多次
+    // 请求（几何驱动 + 模型驱动并发时）才合并成一次执行。forceLayout 取
+    // "本帧任一调用方要求强制"的并集——几何驱动的 false 不能抹掉模型
+    // 驱动的 true。
+    property bool pendingForceLayout: false
+    function syncPending() {
+        const fl = pendingForceLayout
+        pendingForceLayout = false
+        syncPosition(fl)
+    }
+    function requestScrollToBottom(forceLayout) {
+        if (forceLayout === undefined)
+            forceLayout = true
+        if (forceLayout)
+            pendingForceLayout = true
+        Qt.callLater(syncPending)
     }
 
     function jumpToBottom() {
@@ -115,7 +175,7 @@ Item {
         endUserScroll()
     }
 
-    onMaximumOffsetChanged: requestScrollToBottom()
+    onMaximumOffsetChanged: requestScrollToBottom(false)
     onModelChanged: jumpToBottom()
     Component.onCompleted: requestScrollToBottom()
 

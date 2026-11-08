@@ -66,6 +66,8 @@
 #include <QTimer>
 #ifdef Q_OS_WIN
 #include <QQuickWindow>
+#include <QSGRendererInterface>
+#include <QScreen>
 #include <QWindow>
 #define WIN32_LEAN_AND_MEAN
 #include <windows.h>
@@ -1038,6 +1040,17 @@ qInfo() << "NexusAI" << app.applicationVersion() << "starting";
     // Theme/ThemeManager/AgentVM/Settings/ConnectionTester resolve to the
     // NexusAI.ViewModels QML singletons above (create() returns the very
     // instances wired up here).
+    //
+    // RHI 后端钉在 D3D11（3.2K@175% 混合 DPI 环境实测 Qt 默认已选它）。
+    // 显式钉住是防将来默认策略变化或显卡初始化异常引入静默回退——software
+    // 光栅在 1.75 DPR 下每帧 ~3M 物理像素，窗口缩放会卡一个数量级，且回退
+    // 本身无任何日志可见。测试环境用 QT_QUICK_BACKEND=software 强制软件
+    // 路径（offscreen 平台无 GPU 上下文），这里必须让位。
+#ifdef Q_OS_WIN
+    if (!qEnvironmentVariableIsSet("QT_QUICK_BACKEND"))
+        QQuickWindow::setGraphicsApi(QSGRendererInterface::Direct3D11);
+#endif
+
     QQmlApplicationEngine engine;
 
     // docs/20 §4.1（D10 完善）：把托盘可用性注入根对象。close-to-tray 必须
@@ -1069,6 +1082,31 @@ qInfo() << "NexusAI" << app.applicationVersion() << "starting";
     // 中等完整性 Explorer 的 OLE 拖放握手消息，导致光标一直 🚫。这里把
     // 三条握手消息放行，让拖拽在任意启动方式下都可用（见上方说明）。
     allowDragDropFromLowerIntegrity(mainWindow);
+
+    // 渲染环境一次性登记：QSG_INFO 的分类日志被 Logger 收编后对用户不可
+    // 见，这里把"实际后端 + 每块屏 DPR"主动写进日志，作为缩放流畅度问题
+    // 的排查基线（DPR × 每帧物理像素是缩放开销的直接乘数）。
+    {
+        QString screens;
+        for (const QScreen* s : QGuiApplication::screens()) {
+            screens += QStringLiteral(" [%1 dpr=%2 %3x%4]")
+                           .arg(s->name(),
+                                QString::number(s->devicePixelRatio(), 'f', 2),
+                                QString::number(s->geometry().width()),
+                                QString::number(s->geometry().height()));
+        }
+        const char* apiName = "unknown";
+        switch (QQuickWindow::graphicsApi()) {
+        case QSGRendererInterface::Software:   apiName = "software"; break;
+        case QSGRendererInterface::OpenGL:     apiName = "opengl"; break;
+        case QSGRendererInterface::Direct3D11: apiName = "d3d11"; break;
+        case QSGRendererInterface::Direct3D12: apiName = "d3d12"; break;
+        case QSGRendererInterface::Vulkan:     apiName = "vulkan"; break;
+        default: break;
+        }
+        qInfo().noquote() << QStringLiteral("render: backend=%1 screens%2")
+                                 .arg(QLatin1String(apiName), screens);
+    }
 #endif
 
     // ── docs/20 §4.1（D6/D10）：系统托盘 + 后台任务完成通知 ──
