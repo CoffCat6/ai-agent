@@ -136,10 +136,9 @@ struct SubAgentRole {
 struct SubAgentRequest {
     QString goal;        // required, self-contained task description
     QString context;     // optional background/constraints from the primary agent
-    QString hint;        // legacy preset id ("explore"/"research"); ignored when
-                         // rolePrompt is set — kept so old callers still work
     QString rolePrompt;  // docs/33 E2: resolved SubAgentRole prompt; non-empty
-                         // replaces the hint-based focus block
+                         // owns the focus block, empty falls back to the
+                         // built-in explore focus
     // docs/43 O1-T2: project rules snapshot (already rendered with its
     // "Project rules (...)" header by AIAgent::projectRulesBlock); appended
     // verbatim to the sub-agent system prompt.

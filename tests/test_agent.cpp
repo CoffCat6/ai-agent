@@ -903,6 +903,51 @@ private:
     QStringList m_added;
 };
 
+// 提示词门控自检的探针工具：只借 schema 让 buildSystemPrompt 的工具策略
+// bullet 全部点亮，从不执行。
+class GateProbeTool : public ITool {
+public:
+    explicit GateProbeTool(QString name) : m_name(std::move(name)) {}
+    ToolDefinition definition() const override {
+        ToolDefinition def;
+        def.name = m_name;
+        def.description = QStringLiteral("Prompt-gate probe: %1.").arg(m_name);
+        def.level = ToolLevel::Safe;
+        def.readOnly = true;
+        def.parameters = QJsonObject{{"type", QStringLiteral("object")}};
+        return def;
+    }
+    ToolResult execute(const QJsonObject&) override {
+        return ToolResult::fail(QStringLiteral("probe is never executed"));
+    }
+private:
+    QString m_name;
+};
+
+// 按名登记探针、析构时只摘除自己新增的（与 SubAgentToolsetGuard 同款）。
+// 默认登记全部门控相关工具名；传子集用于部分门控用例。
+struct GateProbeGuard {
+    explicit GateProbeGuard(std::initializer_list<const char*> names = {
+            "http_fetch", "read_file", "list_dir", "shell_exec", "git_log",
+            "git_show", "git_status", "git_diff", "todo_write",
+            "mcp__prompt_probe" }) {
+        for (const char* name : names)
+            add(QString::fromLatin1(name));
+    }
+    ~GateProbeGuard() {
+        for (const QString& name : m_added)
+            ToolRegistry::instance().takeTool(name);
+    }
+private:
+    void add(const QString& name) {
+        if (ToolRegistry::instance().isRegistered(name)) return;
+        ToolRegistry::instance().registerTool(
+            std::make_shared<GateProbeTool>(name));
+        m_added.append(name);
+    }
+    QStringList m_added;
+};
+
 void ensureNetworkTools() {
     if (!ToolRegistry::instance().isRegistered(QStringLiteral("web_search")))
         ToolRegistry::instance().registerTool(std::make_unique<WebSearchTool>());
@@ -1308,6 +1353,11 @@ private slots:
     void auditCarriesRequestContext();
     // Batch 22 (F8): user-editable system prompt
     void systemPromptOverrideReachesRequest();
+    // 防回归：模型可见文本（系统提示词/工具 schema/角色提示词）不携带
+    // 开发期文档编号或 § 记号。
+    void modelVisibleTextFreeOfDevDocRefs();
+    // 工具策略 bullet 随工具可用性门控；指向缺席工具的交叉引用同步消失。
+    void toolPolicyBulletsFollowToolAvailability();
     // docs/37 W3：$ 引用技能注入系统提示 + metadata/审计 + 8KB/32KB 截断。
     void skillInjectionAndBudget();
     // docs/41：allowed-tools 仅作为 legacy frontmatter 保留，运行期不限制工具。
@@ -6486,7 +6536,7 @@ void TestAgent::subagentReportFlowsBackToMainLoop() {
     QCOMPARE(subMessages.first().toObject().value("role").toString(),
              QStringLiteral("system"));
     QVERIFY(subMessages.first().toObject().value("content").toString()
-                .contains(QStringLiteral("read-only research sub-agent")));
+                .contains(QStringLiteral("read-only sub-agent")));
     QVERIFY(subMessages.at(1).toObject().value("content").toString()
                 .contains(QStringLiteral("inspect the probe")));
 }
@@ -9848,8 +9898,8 @@ void TestAgent::subagentStreamingLogCollapses() {
 }
 
 // docs/33 E3 批判环：review 预设是执行端（自圈改动集 + 严重度排序的
-// findings list），spawn_agent 描述是主循环侧的引导（批次后派审、逐条
-// 核实、不辩论）。
+// findings list），delegation policy 块是主循环侧的引导（批次后派审、
+// 逐条核实、不辩论）——随 spawn_agent 可用性注入系统提示词。
 void TestAgent::reviewCriticLoopGuidanceInPresetAndSchema() {
     const QVector<SubAgentRole> presets = SubAgentTool::presetRoles();
     const QString review = presets.at(2).prompt;
@@ -9861,11 +9911,132 @@ void TestAgent::reviewCriticLoopGuidanceInPresetAndSchema() {
     QVERIFY(review.contains(QStringLiteral("path:line")));
     QVERIFY(review.contains(QStringLiteral("do not invent issues")));
 
-    SubAgentTool tool;
-    const QString desc = tool.definition().description;
-    QVERIFY(desc.contains(QStringLiteral("Critic loop")));
-    QVERIFY(desc.contains(QStringLiteral("'review'")));
-    QVERIFY(desc.contains(QStringLiteral("findings")));
+    SubAgentToolsetGuard toolset;
+    AIAgent agent;
+    agent.setToolRegistry(&ToolRegistry::instance());
+    const QString prompt = agent.effectiveSystemPrompt();
+    QVERIFY(prompt.contains(QStringLiteral("Critic loop")));
+    QVERIFY(prompt.contains(QStringLiteral("'review'")));
+    QVERIFY(prompt.contains(QStringLiteral("findings")));
+}
+
+// 防回归：模型可见字符串（系统提示词、工具 schema、内置角色提示词）不得
+// 携带开发期文档编号（docs/NN）或 § 记号——它们对模型毫无意义，还可能
+// 诱导它去读不存在的文件。C++ 注释里的引用不受约束（不进请求体）。
+void TestAgent::modelVisibleTextFreeOfDevDocRefs() {
+    const QRegularExpression docRef(QStringLiteral("docs?/[0-9]+"));
+    const QRegularExpression sectionMark(QStringLiteral("\u00A7"));
+    QStringList problems;
+    const auto scanText = [&](const QString& text, const QString& origin) {
+        for (const QRegularExpression* re : { &docRef, &sectionMark }) {
+            auto it = re->globalMatch(text);
+            while (it.hasNext())
+                problems.append(QStringLiteral("%1: %2")
+                                    .arg(origin, it.next().captured(0)));
+        }
+    };
+    const auto scanTool = [&](const ToolDefinition& def, const QString& origin) {
+        scanText(def.name + QLatin1Char('\n') + def.description
+                     + QLatin1Char('\n') + QString::fromUtf8(
+                           QJsonDocument(def.parameters).toJson()),
+                 origin);
+    };
+
+    // 1) 注册表内全部工具 schema（含其他用例可能遗留的注册项）。
+    for (const ToolDefinition& def : ToolRegistry::instance().listAll())
+        scanTool(def, QStringLiteral("tool %1").arg(def.name));
+    // 2) 子代理专用工具：propose_edit / apply_proposal 不进全局注册表，
+    //    独立实例化补扫。
+    scanTool(SubAgentTool().definition(), QStringLiteral("tool spawn_agent"));
+    scanTool(SubAgentWaitTool().definition(),
+             QStringLiteral("tool subagent_wait"));
+    scanTool(SubAgentStatusTool().definition(),
+             QStringLiteral("tool subagent_status"));
+    scanTool(SubAgentCancelTool().definition(),
+             QStringLiteral("tool subagent_cancel"));
+    scanTool(ProposeEditTool().definition(),
+             QStringLiteral("tool propose_edit"));
+    scanTool(ApplyProposalTool().definition(),
+             QStringLiteral("tool apply_proposal"));
+    // 3) 内置角色提示词（spawn_agent role 枚举的正文）。
+    for (const SubAgentRole& role : SubAgentTool::presetRoles())
+        scanText(role.prompt, QStringLiteral("role %1").arg(role.name));
+    // 4) 系统提示词两种形态：无注册表裸形态（工具 bullet 全部被门控掉）+
+    //    全门控开启形态（bullet / MCP 段 / delegation / citation 在场）。
+    {
+        AIAgent bare;
+        const QString prompt = bare.effectiveSystemPrompt();
+        QVERIFY(!prompt.contains(QStringLiteral("Tool policy")));
+        QVERIFY(!prompt.contains(QStringLiteral("MCP tools")));
+        QVERIFY(!prompt.contains(QStringLiteral("Delegation policy")));
+        scanText(prompt, QStringLiteral("bare prompt"));
+    }
+    {
+        SubAgentToolsetGuard toolset;
+        registerKnowledgeTool();
+        GateProbeGuard probes;
+        // 拉回启用，防其他用例遗留禁用状态（本测试只关心提示词文本）。
+        for (const char* name : { "search_knowledge_base", "spawn_agent",
+                                  "http_fetch", "read_file", "list_dir",
+                                  "shell_exec", "git_log", "git_show",
+                                  "git_status", "git_diff", "todo_write" })
+            ToolRegistry::instance().setToolEnabled(
+                QString::fromLatin1(name), true);
+        AIAgent agent;
+        agent.setToolRegistry(&ToolRegistry::instance());
+        const QString prompt = agent.effectiveSystemPrompt();
+        // 门控生效性自检：所有条件块都在场。
+        QVERIFY(prompt.contains(QStringLiteral("Tool policy")));
+        QVERIFY(prompt.contains(QStringLiteral("search_knowledge_base")));
+        QVERIFY(prompt.contains(QStringLiteral("http_fetch")));
+        QVERIFY(prompt.contains(QStringLiteral("todo_write")));
+        QVERIFY(prompt.contains(QStringLiteral("MCP tools")));
+        QVERIFY(prompt.contains(QStringLiteral("Delegation policy")));
+        QVERIFY(prompt.contains(QStringLiteral("Critic loop")));
+        QVERIFY(prompt.contains(QStringLiteral("引用知识库内容时")));
+        scanText(prompt, QStringLiteral("full prompt"));
+    }
+    QVERIFY2(problems.isEmpty(), qPrintable(problems.join(QLatin1Char('\n'))));
+}
+
+// 部分门控：只开 read_file + git 工具，http_fetch/shell_exec/todo_write/
+// 知识库显式禁用（防其他用例遗留注册）。对应 bullet 缺席，且仍在场的
+// bullet 里指向缺席工具的交叉引用（"use http_fetch instead"、git 段的
+// shell_exec 告诫）一并消失。
+void TestAgent::toolPolicyBulletsFollowToolAvailability() {
+    GateProbeGuard probes({ "read_file", "git_log", "git_status" });
+    const QStringList absent{
+        QStringLiteral("http_fetch"), QStringLiteral("shell_exec"),
+        QStringLiteral("list_dir"), QStringLiteral("todo_write"),
+        QStringLiteral("search_knowledge_base") };
+    for (const QString& name : absent)
+        ToolRegistry::instance().setToolEnabled(name, false);
+    for (const char* name : { "read_file", "git_log", "git_status" })
+        ToolRegistry::instance().setToolEnabled(QString::fromLatin1(name), true);
+    AIAgent agent;
+    agent.setToolRegistry(&ToolRegistry::instance());
+    const QString prompt = agent.effectiveSystemPrompt();
+    bool anyMcp = false;
+    for (const QString& name : ToolRegistry::instance().toolNamesForModel())
+        anyMcp = anyMcp || name.startsWith(QLatin1String("mcp__"));
+    // 断言前先复原默认启用态：失败早退也不把禁用状态漏给后续用例。
+    for (const QString& name : absent)
+        ToolRegistry::instance().setToolEnabled(name, true);
+
+    QVERIFY(prompt.contains(QStringLiteral("Tool policy")));
+    QVERIFY(prompt.contains(QStringLiteral(
+        "- read_file / list_dir / shell_exec: only for tasks that explicitly "
+        "target this local workspace.\n")));
+    QVERIFY(prompt.contains(QStringLiteral(
+        "- Git: use the dedicated tools. History")));
+    QVERIFY(!prompt.contains(QStringLiteral("Do NOT use shell_exec")));
+    QVERIFY(!prompt.contains(QStringLiteral("use http_fetch instead")));
+    QVERIFY(!prompt.contains(QStringLiteral("confirm-gated")));
+    QVERIFY(!prompt.contains(QStringLiteral("call http_fetch")));
+    QVERIFY(!prompt.contains(QStringLiteral("- Task lists:")));
+    QVERIFY(!prompt.contains(QStringLiteral(
+        "- Questions about the user's imported documents")));
+    QCOMPARE(prompt.contains(QStringLiteral("MCP tools")), anyMcp);
 }
 
 // docs/32 修正：子代理工具面必须包含网络只读检索（web_search/http_fetch

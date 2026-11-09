@@ -69,12 +69,13 @@ QJsonArray toolsSchema(const QVector<SubAgentToolEntry>& tools) {
 
 QString systemPrompt(const SubAgentRequest& request) {
     QString prompt = QStringLiteral(
-        "You are a read-only research sub-agent spawned by a primary agent. "
+        "You are a read-only sub-agent spawned by a primary agent. "
         "Complete the given goal using the read-only tools provided "
-        "(file reads, directory listings, searches, git inspection) and "
-        "report back. You cannot modify anything and you have no channel to "
-        "the user: your final answer IS the deliverable the primary agent "
-        "will consume.\n\n"
+        "(file reads, directory listings, searches, git inspection; the "
+        "coder role additionally drafts edits with propose_edit - recorded "
+        "as proposals, never applied) and report back. You cannot modify "
+        "any file and you have no channel to the user: your final answer IS "
+        "the deliverable the primary agent will consume.\n\n"
         "Rules:\n"
         "- Work autonomously; do not ask questions.\n"
         "- Every tool call costs a step from a tight budget. Avoid redundant "
@@ -88,16 +89,12 @@ QString systemPrompt(const SubAgentRequest& request) {
         "fix' line each. Severity is critical/high/medium/low/info. Omit the "
         "section when there is nothing to report.\n");
     // docs/33 E2: a resolved role profile owns the focus block when present;
-    // the legacy hint enum remains the fallback for old callers/tests.
+    // otherwise "explore" is the default - the primary agent usually wants
+    // a survey.
     if (!request.rolePrompt.trimmed().isEmpty()) {
         prompt += QStringLiteral("\nRole focus: %1\n")
                       .arg(request.rolePrompt.trimmed());
-    } else if (request.hint == QLatin1String("research")) {
-        prompt += QStringLiteral(
-            "\nFocus: depth over breadth - chase the specific question and "
-            "verify it against the sources before reporting.\n");
     } else {
-        // "explore" is the default: the primary agent usually wants a survey.
         prompt += QStringLiteral(
             "\nFocus: breadth first - enumerate candidate locations before "
             "reading anything in full, then read selectively.\n");
@@ -304,8 +301,11 @@ QString renderProposals(const QVector<SubAgentProposal>& proposals, bool partial
         "Apply each proposal with apply_proposal(id), using the ids listed "
         "below (every call still requires user approval). If a proposal has "
         "no id listed, or its anchor needs adjusting, fall back to edit_file "
-        "with the 'find' text verbatim (use file_write only for a new file). "
-        "Do not describe the change as done until the tool call succeeds.\n\n");
+        "with the 'find' text verbatim (use file_write only for a new file); "
+        "if an anchor no longer matches the current file, re-read and "
+        "re-locate it instead of forcing the patch. Verify the result "
+        "(re-read the file, build or test when available) before saying the "
+        "change is done.\n\n");
 
     // 合并提示：按首次出现顺序聚合同一文件的提案。
     QStringList fileOrder;

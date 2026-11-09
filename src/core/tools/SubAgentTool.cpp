@@ -207,13 +207,6 @@ ToolDefinition SubAgentTool::definition() const {
         "Issue several spawn_agent calls in one round to run sub-tasks in "
         "parallel; keep goals focused (one coherent question each) and mind "
         "that every sub-agent consumes tokens.\n"
-        "Critic loop: after you complete a batch of edits, spawn a 'review' "
-        "sub-agent over that changeset (state the touched files or diff "
-        "scope in 'context'; it can also run git_diff itself) and fold its "
-        "findings list back into your work before declaring the task done. "
-        "Verify each finding and fix the valid ones yourself - do not "
-        "debate with the sub-agent, and re-review only after a substantial "
-        "new batch of edits.\n"
         "Plan alignment: write the plan with todo_write, then hand each "
         "step to a sub-agent - pass the step's todo id in 'todo_id' and "
         "restate the task itself in 'goal' (the sub-agent cannot see your "
@@ -221,10 +214,9 @@ ToolDefinition SubAgentTool::definition() const {
         "with todo_write.\n"
         "Drafting changes: the 'coder' role can propose edits, but its "
         "proposals are NEVER applied - its report ends with a "
-        "## PROPOSALS section listing anchored find/replace pairs. Apply them "
-        "yourself with apply_proposal(id) using the ids listed under the "
-        "section header (each call still needs user approval); fall back to "
-        "edit_file when no id is shown. Verify, and only then report success.\n"
+        "## PROPOSALS section; apply them yourself once the report returns "
+        "(each application still needs user approval; the report footer "
+        "carries the step-by-step guidance).\n"
         "Background mode: set background=true for long surveys or drafting "
         "runs whose result is not needed for your next reasoning step. The "
         "call then returns immediately with a task id; collect the report "
@@ -377,15 +369,11 @@ ToolResult SubAgentTool::execute(const QJsonObject& args, const Cancellation& ca
             "No read-only tools are available for the sub-agent (all disabled "
             "or gated)."));
 
-    // docs/33 E2: resolve the role profile. "role" is the current argument;
-    // "hint" stays as the legacy fallback. An empty name = default (explore),
+    // docs/33 E2: resolve the role profile. An empty name = default (explore),
     // resolved like an explicit role so a user shadow of "explore" (tools,
     // model profile, default background) also applies when role is omitted.
-    const QString requestedRole = [&args]() {
-        const QString role = args.value(QStringLiteral("role")).toString().trimmed();
-        if (!role.isEmpty()) return role;
-        return args.value(QStringLiteral("hint")).toString().trimmed();
-    }();
+    const QString requestedRole =
+        args.value(QStringLiteral("role")).toString().trimmed();
     const QString roleName = requestedRole.isEmpty()
         ? QStringLiteral("explore") : requestedRole;
     SubAgentRole resolved;
@@ -447,7 +435,6 @@ ToolResult SubAgentTool::execute(const QJsonObject& args, const Cancellation& ca
         SubAgentRequest bgRequest;
         bgRequest.goal = goal;
         bgRequest.context = args.value(QStringLiteral("context")).toString();
-        bgRequest.hint = args.value(QStringLiteral("hint")).toString();
         bgRequest.rolePrompt = resolved.prompt;
         bgRequest.tools = catalog;
         bgRequest.maxSteps = m_maxSteps.load();
@@ -655,7 +642,6 @@ ToolResult SubAgentTool::execute(const QJsonObject& args, const Cancellation& ca
     SubAgentRequest request;
     request.goal = goal;
     request.context = args.value(QStringLiteral("context")).toString();
-    request.hint = args.value(QStringLiteral("hint")).toString();
     request.rolePrompt = resolved.prompt;
     request.tools = catalog;
     request.maxSteps = m_maxSteps.load();
