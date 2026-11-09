@@ -506,12 +506,12 @@
 <context>
     <name>AttachmentChip</name>
     <message>
-        <location filename="../src/ui/components/AttachmentChip.qml" line="99"/>
+        <location filename="../src/ui/components/AttachmentChip.qml" line="101"/>
         <source>移除附件</source>
         <translation>Remove attachment</translation>
     </message>
     <message>
-        <location filename="../src/ui/components/AttachmentChip.qml" line="104"/>
+        <location filename="../src/ui/components/AttachmentChip.qml" line="106"/>
         <source>图片附件</source>
         <translation>Image attachment</translation>
     </message>
@@ -3603,7 +3603,7 @@ Any manual edits made since then will be overwritten.</translation>
 <context>
     <name>InputConsole</name>
     <message>
-        <location filename="../src/ui/components/InputConsole.qml" line="754"/>
+        <location filename="../src/ui/components/InputConsole.qml" line="755"/>
         <source>附件将随消息发送给当前模型服务</source>
         <translation>Attachments are sent to the current model service with your message</translation>
     </message>
@@ -3612,7 +3612,7 @@ Any manual edits made since then will be overwritten.</translation>
         <translation type="vanished">Type a message... (Enter to send, Shift+Enter for newline)</translation>
     </message>
     <message>
-        <location filename="../src/ui/components/InputConsole.qml" line="933"/>
+        <location filename="../src/ui/components/InputConsole.qml" line="970"/>
         <source>消息输入框</source>
         <translation>Message input field</translation>
     </message>
@@ -3667,6 +3667,7 @@ Any manual edits made since then will be overwritten.</translation>
     </message>
     <message>
         <location filename="../src/ui/components/InputConsole.qml" line="318"/>
+        <location filename="../src/ui/components/InputConsole.qml" line="1406"/>
         <source>未知错误</source>
         <translation>Unknown error</translation>
     </message>
@@ -3676,105 +3677,120 @@ Any manual edits made since then will be overwritten.</translation>
         <translation>Skill not found: %1. Check the name, or refresh in Settings → Skills.</translation>
     </message>
     <message>
-        <location filename="../src/ui/components/InputConsole.qml" line="825"/>
-        <location filename="../src/ui/components/InputConsole.qml" line="1658"/>
+        <location filename="../src/ui/components/InputConsole.qml" line="826"/>
+        <location filename="../src/ui/components/InputConsole.qml" line="1749"/>
         <source>项目</source>
         <translation>Project</translation>
     </message>
     <message>
-        <location filename="../src/ui/components/InputConsole.qml" line="825"/>
-        <location filename="../src/ui/components/InputConsole.qml" line="1658"/>
+        <location filename="../src/ui/components/InputConsole.qml" line="826"/>
+        <location filename="../src/ui/components/InputConsole.qml" line="1749"/>
         <source>用户</source>
         <translation>User</translation>
     </message>
     <message>
-        <location filename="../src/ui/components/InputConsole.qml" line="853"/>
+        <location filename="../src/ui/components/InputConsole.qml" line="854"/>
         <source>移除技能 %1</source>
         <translation>Remove skill %1</translation>
     </message>
     <message>
-        <location filename="../src/ui/components/InputConsole.qml" line="927"/>
+        <location filename="../src/ui/components/InputConsole.qml" line="964"/>
         <source>输入消息…（Enter 发送，Shift+Enter 换行，@ 引用文件，/ 选择指令，$ 引用技能）</source>
         <translation>Type a message… (Enter to send, Shift+Enter for newline, @ to reference files, / for commands, $ for skills)</translation>
     </message>
     <message>
-        <location filename="../src/ui/components/InputConsole.qml" line="934"/>
+        <location filename="../src/ui/components/InputConsole.qml" line="971"/>
         <source>输入消息后按 Enter 发送，Shift+Enter 换行；输入 @ 引用项目文件，/ 选择指令，$ 引用技能</source>
         <translation>Press Enter to send, Shift+Enter for a newline; type @ to reference project files, / to pick a command, $ to reference a skill</translation>
     </message>
     <message>
-        <location filename="../src/ui/components/InputConsole.qml" line="1184"/>
+        <location filename="../src/ui/components/InputConsole.qml" line="1221"/>
         <source>添加附件</source>
         <translation>Add attachment</translation>
     </message>
     <message>
-        <location filename="../src/ui/components/InputConsole.qml" line="1185"/>
+        <location filename="../src/ui/components/InputConsole.qml" line="1222"/>
         <source>上传图片或文件附件</source>
         <translation>Upload image or file attachment</translation>
     </message>
     <message>
-        <location filename="../src/ui/components/InputConsole.qml" line="1236"/>
+        <location filename="../src/ui/components/InputConsole.qml" line="1273"/>
         <source>停止</source>
         <translation>Stop</translation>
     </message>
     <message>
-        <location filename="../src/ui/components/InputConsole.qml" line="1236"/>
+        <location filename="../src/ui/components/InputConsole.qml" line="1273"/>
         <source>发送</source>
         <translation>Send</translation>
     </message>
     <message>
-        <location filename="../src/ui/components/InputConsole.qml" line="1307"/>
+        <location filename="../src/ui/components/InputConsole.qml" line="1344"/>
         <source>上传图片</source>
         <translation>Upload image</translation>
     </message>
     <message>
-        <location filename="../src/ui/components/InputConsole.qml" line="1312"/>
+        <location filename="../src/ui/components/InputConsole.qml" line="1349"/>
         <source>上传文件</source>
         <translation>Upload file</translation>
     </message>
     <message>
-        <location filename="../src/ui/components/InputConsole.qml" line="1326"/>
+        <location filename="../src/ui/components/InputConsole.qml" line="1356"/>
+        <source>MCP 资源…</source>
+        <translation></translation>
+    </message>
+    <message>
+        <location filename="../src/ui/components/InputConsole.qml" line="1373"/>
         <source>文本文件 (*.txt *.md *.json *.csv *.log *.xml *.yml *.yaml *.ini *.cpp *.h *.py *.js *.ts)</source>
         <translation>Text files (*.txt *.md *.json *.csv *.log *.xml *.yml *.yaml *.ini *.cpp *.h *.py *.js *.ts)</translation>
     </message>
     <message>
-        <location filename="../src/ui/components/InputConsole.qml" line="1327"/>
+        <location filename="../src/ui/components/InputConsole.qml" line="1374"/>
         <source>全部文件 (*)</source>
         <translation>All files (*)</translation>
     </message>
     <message>
-        <location filename="../src/ui/components/InputConsole.qml" line="1364"/>
+        <location filename="../src/ui/components/InputConsole.qml" line="1406"/>
+        <source>资源读取失败：%1</source>
+        <translation></translation>
+    </message>
+    <message>
+        <location filename="../src/ui/components/InputConsole.qml" line="1417"/>
+        <source>已添加资源：%1</source>
+        <translation></translation>
+    </message>
+    <message>
+        <location filename="../src/ui/components/InputConsole.qml" line="1455"/>
         <source>当前会话未绑定项目，无法引用项目文件。
 请先在侧栏选择或导入项目。</source>
         <translation>This conversation is not bound to a project, so project files cannot be referenced.
 Select or import a project in the sidebar first.</translation>
     </message>
     <message>
-        <location filename="../src/ui/components/InputConsole.qml" line="1366"/>
+        <location filename="../src/ui/components/InputConsole.qml" line="1457"/>
         <source>正在扫描项目文件…</source>
         <translation>Scanning project files…</translation>
     </message>
     <message>
-        <location filename="../src/ui/components/InputConsole.qml" line="1367"/>
+        <location filename="../src/ui/components/InputConsole.qml" line="1458"/>
         <source>没有匹配的项目文件</source>
         <translation>No matching project files</translation>
     </message>
     <message>
-        <location filename="../src/ui/components/InputConsole.qml" line="1466"/>
+        <location filename="../src/ui/components/InputConsole.qml" line="1557"/>
         <source>没有匹配的指令。
 可在 设置 → 提示词资产 添加命令。</source>
         <translation>No matching command.
 Add one in Settings → Prompt Assets.</translation>
     </message>
     <message>
-        <location filename="../src/ui/components/InputConsole.qml" line="1573"/>
+        <location filename="../src/ui/components/InputConsole.qml" line="1664"/>
         <source>没有匹配的技能。
 请在项目 .nexusai/skills 或用户技能目录中添加 SKILL.md。</source>
         <translation>No matching skill.
 Add a SKILL.md under the project&apos;s .nexusai/skills or the user skills directory.</translation>
     </message>
     <message>
-        <location filename="../src/ui/components/InputConsole.qml" line="1319"/>
+        <location filename="../src/ui/components/InputConsole.qml" line="1366"/>
         <source>图片文件 (*.png *.jpg *.jpeg *.webp *.bmp *.gif)</source>
         <translation>Image files (*.png *.jpg *.jpeg *.webp *.bmp *.gif)</translation>
     </message>
@@ -4759,7 +4775,7 @@ Add a SKILL.md under the project&apos;s .nexusai/skills or the user skills direc
     </message>
     <message>
         <location filename="../src/ui/pages/McpPage.qml" line="57"/>
-        <location filename="../src/ui/pages/McpPage.qml" line="259"/>
+        <location filename="../src/ui/pages/McpPage.qml" line="267"/>
         <source>导出 MCP 服务器配置</source>
         <translation>Export MCP server config</translation>
     </message>
@@ -4770,7 +4786,7 @@ Add a SKILL.md under the project&apos;s .nexusai/skills or the user skills direc
     </message>
     <message>
         <location filename="../src/ui/pages/McpPage.qml" line="64"/>
-        <location filename="../src/ui/pages/McpPage.qml" line="319"/>
+        <location filename="../src/ui/pages/McpPage.qml" line="327"/>
         <source>导入 MCP 服务器配置</source>
         <translation>Import MCP server config</translation>
     </message>
@@ -4790,115 +4806,120 @@ Add a SKILL.md under the project&apos;s .nexusai/skills or the user skills direc
         <translation>%1 个提示词</translation>
     </message>
     <message>
-        <location filename="../src/ui/pages/McpPage.qml" line="168"/>
+        <location filename="../src/ui/pages/McpPage.qml" line="156"/>
+        <source>%1 个资源</source>
+        <translation></translation>
+    </message>
+    <message>
+        <location filename="../src/ui/pages/McpPage.qml" line="176"/>
         <source>编辑服务器</source>
         <translation>Edit server</translation>
     </message>
     <message>
-        <location filename="../src/ui/pages/McpPage.qml" line="178"/>
+        <location filename="../src/ui/pages/McpPage.qml" line="186"/>
         <source>重新连接</source>
         <translation>Reconnect</translation>
     </message>
     <message>
-        <location filename="../src/ui/pages/McpPage.qml" line="227"/>
+        <location filename="../src/ui/pages/McpPage.qml" line="235"/>
         <source>工具：%1</source>
         <translation>Tools: %1</translation>
     </message>
     <message>
-        <location filename="../src/ui/pages/McpPage.qml" line="262"/>
-        <location filename="../src/ui/pages/McpPage.qml" line="281"/>
+        <location filename="../src/ui/pages/McpPage.qml" line="270"/>
+        <location filename="../src/ui/pages/McpPage.qml" line="289"/>
         <source>JSON 文件 (*.json)</source>
         <translation>JSON files (*.json)</translation>
     </message>
     <message>
-        <location filename="../src/ui/pages/McpPage.qml" line="267"/>
+        <location filename="../src/ui/pages/McpPage.qml" line="275"/>
         <source>导出失败。</source>
         <translation>Export failed.</translation>
     </message>
     <message>
-        <location filename="../src/ui/pages/McpPage.qml" line="271"/>
+        <location filename="../src/ui/pages/McpPage.qml" line="279"/>
         <source>已导出 %1 台服务器；其中 %2 台的环境变量/请求头未包含，请手动补全。</source>
         <translation>Exported %1 server(s); environment variables/headers for %2 of them were not included — please fill them in manually.</translation>
     </message>
     <message>
-        <location filename="../src/ui/pages/McpPage.qml" line="273"/>
+        <location filename="../src/ui/pages/McpPage.qml" line="281"/>
         <source>已导出 %1 台服务器；导入后默认禁用，需要手动启用。</source>
         <translation>Exported %1 server(s). Imported servers stay disabled until you enable them.</translation>
     </message>
     <message>
-        <location filename="../src/ui/pages/McpPage.qml" line="279"/>
+        <location filename="../src/ui/pages/McpPage.qml" line="287"/>
         <source>选择 MCP 服务器配置文件</source>
         <translation>Select an MCP server config file</translation>
     </message>
     <message>
-        <location filename="../src/ui/pages/McpPage.qml" line="288"/>
-        <location filename="../src/ui/pages/McpPage.qml" line="464"/>
+        <location filename="../src/ui/pages/McpPage.qml" line="296"/>
+        <location filename="../src/ui/pages/McpPage.qml" line="472"/>
         <source>导入失败。</source>
         <translation>Import failed.</translation>
     </message>
     <message>
-        <location filename="../src/ui/pages/McpPage.qml" line="331"/>
+        <location filename="../src/ui/pages/McpPage.qml" line="339"/>
         <source>共 %1 台：可导入 %2 台，同名冲突 %3 台，%4 台包含环境变量或请求头。导入的服务器默认禁用。</source>
         <translation>%1 server(s) in total: %2 importable, %3 with name conflicts, %4 containing environment variables or headers. Imported servers stay disabled.</translation>
     </message>
     <message>
-        <location filename="../src/ui/pages/McpPage.qml" line="349"/>
+        <location filename="../src/ui/pages/McpPage.qml" line="357"/>
         <source>同名服务器</source>
         <translation>Same-name servers</translation>
     </message>
     <message>
-        <location filename="../src/ui/pages/McpPage.qml" line="360"/>
+        <location filename="../src/ui/pages/McpPage.qml" line="368"/>
         <source>跳过同名（推荐）</source>
         <translation>Skip duplicates (recommended)</translation>
     </message>
     <message>
-        <location filename="../src/ui/pages/McpPage.qml" line="361"/>
+        <location filename="../src/ui/pages/McpPage.qml" line="369"/>
         <source>覆盖同名</source>
         <translation>Overwrite duplicates</translation>
     </message>
     <message>
-        <location filename="../src/ui/pages/McpPage.qml" line="362"/>
+        <location filename="../src/ui/pages/McpPage.qml" line="370"/>
         <source>重命名后添加</source>
         <translation>Add with renamed copies</translation>
     </message>
     <message>
-        <location filename="../src/ui/pages/McpPage.qml" line="368"/>
+        <location filename="../src/ui/pages/McpPage.qml" line="376"/>
         <source>同名服务器处理方式</source>
         <translation>Duplicate name handling</translation>
     </message>
     <message>
-        <location filename="../src/ui/pages/McpPage.qml" line="403"/>
+        <location filename="../src/ui/pages/McpPage.qml" line="411"/>
         <source>（未命名）</source>
         <translation>(unnamed)</translation>
     </message>
     <message>
-        <location filename="../src/ui/pages/McpPage.qml" line="413"/>
+        <location filename="../src/ui/pages/McpPage.qml" line="421"/>
         <source>同名</source>
         <translation>Duplicate</translation>
     </message>
     <message>
-        <location filename="../src/ui/pages/McpPage.qml" line="455"/>
+        <location filename="../src/ui/pages/McpPage.qml" line="463"/>
         <source>导入</source>
         <translation>Import</translation>
     </message>
     <message>
-        <location filename="../src/ui/pages/McpPage.qml" line="462"/>
+        <location filename="../src/ui/pages/McpPage.qml" line="470"/>
         <source>已导入：新增 %1 台，覆盖 %2 台，跳过 %3 台；导入的服务器默认禁用。</source>
         <translation>Imported: %1 added, %2 replaced, %3 skipped. Imported servers stay disabled.</translation>
     </message>
     <message>
-        <location filename="../src/ui/pages/McpPage.qml" line="498"/>
+        <location filename="../src/ui/pages/McpPage.qml" line="506"/>
         <source>移除服务器 %1？</source>
         <translation>Remove server %1?</translation>
     </message>
     <message>
-        <location filename="../src/ui/pages/McpPage.qml" line="450"/>
-        <location filename="../src/ui/pages/McpPage.qml" line="512"/>
+        <location filename="../src/ui/pages/McpPage.qml" line="458"/>
+        <location filename="../src/ui/pages/McpPage.qml" line="520"/>
         <source>取消</source>
         <translation>Cancel</translation>
     </message>
     <message>
-        <location filename="../src/ui/pages/McpPage.qml" line="516"/>
+        <location filename="../src/ui/pages/McpPage.qml" line="524"/>
         <source>移除</source>
         <translation>Remove</translation>
     </message>
@@ -4912,17 +4933,17 @@ Add a SKILL.md under the project&apos;s .nexusai/skills or the user skills direc
         <translation>MCP server management page</translation>
     </message>
     <message>
-        <location filename="../src/ui/pages/McpPage.qml" line="157"/>
+        <location filename="../src/ui/pages/McpPage.qml" line="165"/>
         <source>启用服务器 %1</source>
         <translation>Enable server %1</translation>
     </message>
     <message>
-        <location filename="../src/ui/pages/McpPage.qml" line="189"/>
+        <location filename="../src/ui/pages/McpPage.qml" line="197"/>
         <source>删除服务器</source>
         <translation>Delete server</translation>
     </message>
     <message>
-        <location filename="../src/ui/pages/McpPage.qml" line="245"/>
+        <location filename="../src/ui/pages/McpPage.qml" line="253"/>
         <source>多个服务器连接失败，详见日志</source>
         <translation>Multiple servers failed to connect, see logs</translation>
     </message>
@@ -4980,6 +5001,40 @@ Add a SKILL.md under the project&apos;s .nexusai/skills or the user skills direc
         <location filename="../src/ui/components/McpPromptDialog.qml" line="153"/>
         <source>获取提示词</source>
         <translation>获取提示词</translation>
+    </message>
+</context>
+<context>
+    <name>McpResourceDialog</name>
+    <message>
+        <location filename="../src/ui/components/McpResourceDialog.qml" line="48"/>
+        <source>MCP 资源选择器</source>
+        <translation></translation>
+    </message>
+    <message>
+        <location filename="../src/ui/components/McpResourceDialog.qml" line="66"/>
+        <source>MCP 资源</source>
+        <translation></translation>
+    </message>
+    <message>
+        <location filename="../src/ui/components/McpResourceDialog.qml" line="81"/>
+        <source>搜索名称 / URI / 描述…</source>
+        <translation></translation>
+    </message>
+    <message>
+        <location filename="../src/ui/components/McpResourceDialog.qml" line="92"/>
+        <source>没有匹配的资源。</source>
+        <translation></translation>
+    </message>
+    <message>
+        <location filename="../src/ui/components/McpResourceDialog.qml" line="93"/>
+        <source>暂无可用资源。
+连接声明了 resources 能力的 MCP 服务器后在此读取。</source>
+        <translation></translation>
+    </message>
+    <message>
+        <location filename="../src/ui/components/McpResourceDialog.qml" line="191"/>
+        <source>读取资源 %1</source>
+        <translation></translation>
     </message>
 </context>
 <context>
@@ -7337,28 +7392,28 @@ Add a SKILL.md under the project&apos;s .nexusai/skills or the user skills direc
 <context>
     <name>NexusAI::McpManager</name>
     <message>
-        <location filename="../src/viewmodels/McpManager.cpp" line="283"/>
-        <location filename="../src/viewmodels/McpManager.cpp" line="340"/>
-        <location filename="../src/viewmodels/McpManager.cpp" line="347"/>
+        <location filename="../src/viewmodels/McpManager.cpp" line="335"/>
+        <location filename="../src/viewmodels/McpManager.cpp" line="392"/>
+        <location filename="../src/viewmodels/McpManager.cpp" line="399"/>
         <source>已存在名为「%1」的服务器</source>
         <translation>A server named &quot;%1&quot; already exists</translation>
     </message>
     <message>
-        <location filename="../src/viewmodels/McpManager.cpp" line="296"/>
-        <location filename="../src/viewmodels/McpManager.cpp" line="364"/>
-        <location filename="../src/viewmodels/McpManager.cpp" line="423"/>
-        <location filename="../src/viewmodels/McpManager.cpp" line="442"/>
-        <location filename="../src/viewmodels/McpManager.cpp" line="586"/>
+        <location filename="../src/viewmodels/McpManager.cpp" line="348"/>
+        <location filename="../src/viewmodels/McpManager.cpp" line="416"/>
+        <location filename="../src/viewmodels/McpManager.cpp" line="475"/>
+        <location filename="../src/viewmodels/McpManager.cpp" line="494"/>
+        <location filename="../src/viewmodels/McpManager.cpp" line="638"/>
         <source>保存 MCP 服务器配置失败</source>
         <translation>Failed to save MCP server configuration</translation>
     </message>
     <message>
-        <location filename="../src/viewmodels/McpManager.cpp" line="503"/>
+        <location filename="../src/viewmodels/McpManager.cpp" line="555"/>
         <source>还没有可导出的 MCP 服务器</source>
         <translation>There are no MCP servers to export</translation>
     </message>
     <message>
-        <location filename="../src/viewmodels/McpManager.cpp" line="574"/>
+        <location filename="../src/viewmodels/McpManager.cpp" line="626"/>
         <source>文件里没有可导入的服务器</source>
         <translation>The file has no importable servers</translation>
     </message>
@@ -13634,17 +13689,17 @@ select a file to view its content diff on the right.</translation>
         <translation type="vanished">Settings saved</translation>
     </message>
     <message>
-        <location filename="../src/ui/main.qml" line="328"/>
+        <location filename="../src/ui/main.qml" line="336"/>
         <source>已删除会话「%1」，可撤销</source>
         <translation>Session &quot;%1&quot; deleted — undo available</translation>
     </message>
     <message>
-        <location filename="../src/ui/main.qml" line="329"/>
+        <location filename="../src/ui/main.qml" line="337"/>
         <source>会话</source>
         <translation>session</translation>
     </message>
     <message>
-        <location filename="../src/ui/main.qml" line="330"/>
+        <location filename="../src/ui/main.qml" line="338"/>
         <source>撤销</source>
         <translation>Undo</translation>
     </message>

@@ -16,6 +16,8 @@ Rectangle {
     property string kind: "file"      // "image" | "file"
     property string source: ""        // image: data URL
     property string name: ""          // file: 文件名
+    // docs/48: 附件来源（"mcp" = MCP resources 读取，地球图标区分本地文件）
+    property string origin: ""
     property int imageWidth: 96
     property int imageHeight: 72
     property bool removable: false
@@ -46,7 +48,7 @@ Rectangle {
 
         AppIcon {
             anchors.verticalCenter: parent.verticalCenter
-            icon: "export"
+            icon: root.origin === "mcp" ? "globe" : "export"
             size: 12
             iconColor: Theme.textSecondary
         }

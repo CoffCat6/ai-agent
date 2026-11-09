@@ -150,6 +150,14 @@ Item {
                             font.pixelSize: Theme.fontSizeCaption
                             font.family: Theme.fontMono
                         }
+                        // docs/48: 服务器声明的资源数（同上，0 隐藏）。
+                        Text {
+                            visible: modelData.resourceCount > 0
+                            text: qsTr("%1 个资源").arg(modelData.resourceCount)
+                            color: Theme.textSecondary
+                            font.pixelSize: Theme.fontSizeCaption
+                            font.family: Theme.fontMono
+                        }
 
                         Switch {
                             id: mcpEnableSwitch

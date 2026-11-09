@@ -2382,6 +2382,102 @@ private slots:
         restore();
     }
 
+    // docs/48: MCP resources 聚合——listResources 带 server 归属与 uri，
+    // servers() 卡片的 resourceCount 同步；超 512KB 拒绝；移除后清空。
+    void mcpManagerAggregatesResources() {
+        const QString configPath = McpConfig::configFilePath();
+        QFile configFile(configPath);
+        const bool hadConfig = configFile.exists();
+        QByteArray originalConfig;
+        if (hadConfig && configFile.open(QIODevice::ReadOnly)) {
+            originalConfig = configFile.readAll();
+            configFile.close();
+        }
+        auto restore = [&]() {
+            if (hadConfig) {
+                QFile out(configPath);
+                out.open(QIODevice::WriteOnly);
+                out.write(originalConfig);
+            } else {
+                QFile::remove(configPath);
+            }
+        };
+        QFile::remove(configPath);
+
+        auto* manager = McpManager::instance();
+        const QString fakeExe = QCoreApplication::applicationDirPath()
+            + QStringLiteral("/fake_mcp_server");
+
+        manager->addServer(QVariantMap{
+            {"name", QStringLiteral("t-fake")},
+            {"transport", QStringLiteral("stdio")},
+            {"command", fakeExe},
+            {"env", QVariantMap{
+                {"MCP_FAKE_RESOURCES",
+                 QStringLiteral("mem://notes/1|Notes|text/markdown")}}},
+            {"enabled", true}});
+
+        QTRY_COMPARE(manager->listResources().size(), 1);
+        const QVariantMap first = manager->listResources().first().toMap();
+        QCOMPARE(first.value("server").toString(), QStringLiteral("t-fake"));
+        QCOMPARE(first.value("uri").toString(),
+                 QStringLiteral("mem://notes/1"));
+        QCOMPARE(first.value("name").toString(), QStringLiteral("Notes"));
+        QCOMPARE(first.value("mimeType").toString(),
+                 QStringLiteral("text/markdown"));
+
+        // 读取回程：resourceRead 带服务器归属、uri 与回显内容。
+        QSignalSpy readSpy(manager, &McpManager::resourceRead);
+        manager->readResource(QStringLiteral("t-fake"),
+                              QStringLiteral("mem://notes/1"));
+        QTRY_VERIFY(!readSpy.isEmpty());
+        const auto args = readSpy.first();
+        QCOMPARE(args.at(0).toString(), QStringLiteral("t-fake"));
+        QCOMPARE(args.at(1).toString(), QStringLiteral("mem://notes/1"));
+        QVERIFY(args.at(2).toBool());
+        QVERIFY(args.at(3).toString().contains(
+            QStringLiteral("resource mem://notes/1 content")));
+
+        // 超 512KB：Manager 层字节判定拒绝（ok=false + 原因）。fake server
+        // 的环境变量在启动时读——加一台带 MCP_FAKE_RESOURCE_BYTES 的大包
+        // 服务器来触发（子进程已在跑，不能中途改环境）。
+        manager->addServer(QVariantMap{
+            {"name", QStringLiteral("t-big")},
+            {"transport", QStringLiteral("stdio")},
+            {"command", fakeExe},
+            {"env", QVariantMap{
+                {"MCP_FAKE_RESOURCES", QStringLiteral("mem://big|Big")},
+                {"MCP_FAKE_RESOURCE_BYTES", QStringLiteral("600000")}}},
+            {"enabled", true}});
+        QTRY_COMPARE(manager->listResources().size(), 2);
+        QSignalSpy bigSpy(manager, &McpManager::resourceRead);
+        manager->readResource(QStringLiteral("t-big"),
+                              QStringLiteral("mem://big"));
+        QTRY_VERIFY(!bigSpy.isEmpty());
+        QVERIFY(!bigSpy.first().at(2).toBool());
+        QVERIFY(bigSpy.first().at(4).toString().contains(
+            QStringLiteral("资源过大")));
+
+        // 卡片计数同步（两台服务器各 1）。
+        QTRY_COMPARE(manager->servers().size(), 2);
+        const QVariantList servers = manager->servers();
+        QCOMPARE(servers.at(0).toMap().value("resourceCount").toInt(), 1);
+        QCOMPARE(servers.at(1).toMap().value("resourceCount").toInt(), 1);
+
+        // 未知服务器：同步失败回程，不崩溃。
+        QSignalSpy failSpy(manager, &McpManager::resourceRead);
+        manager->readResource(QStringLiteral("no-such-server"),
+                              QStringLiteral("mem://x"));
+        QCOMPARE(failSpy.count(), 1);
+        QVERIFY(!failSpy.first().at(2).toBool());
+
+        manager->removeServer(QStringLiteral("t-fake"));
+        manager->removeServer(QStringLiteral("t-big"));
+        QTRY_COMPARE(manager->listResources().size(), 0);
+
+        restore();
+    }
+
     // docs/20 §3.2：编辑重发守卫 —— 空文本 / 纯空白 / 无 agent 都是 no-op。
     void editAndResendGuards() {
         SqliteMemory memory(QStringLiteral(":memory:"));

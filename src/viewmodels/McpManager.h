@@ -25,7 +25,7 @@ public:
     QML_NAMED_ELEMENT(McpManager)
 
     // [{name, transport, endpoint, enabled, state, toolCount, promptCount,
-    //   command, args, url, env, headers}]
+    //   resourceCount, command, args, url, env, headers}]
     // 后五项供设置页「编辑」回填：它们不在卡片上直接展示，但改动必须
     // 能在原有条目上继续编辑，否则用户只能删了重建（工具会掉线重连）。
     Q_PROPERTY(QVariantList servers READ servers NOTIFY serversChanged FINAL)
@@ -55,6 +55,13 @@ public:
     // 不阻塞 GUI 线程，与 callTool 的回调语义一致。
     Q_INVOKABLE void requestPrompt(const QString& server, const QString& name,
                                    const QVariantMap& args);
+
+    // docs/48: 跨服务器聚合 resources（输入框 + 菜单的资源选择器数据源）。
+    // [{server, uri, name, title, description(≤1024), mimeType}]。
+    Q_INVOKABLE QVariantList listResources() const;
+    // 按 uri 读取资源（异步）：结果经 resourceRead 信号回 QML。读取结果
+    // 超 512KB（与本地文本附件 MaxTextAttachmentBytes 同口径）直接拒绝。
+    Q_INVOKABLE void readResource(const QString& server, const QString& uri);
 
     // map: {name, transport:"stdio"|"http", command, args, url,
     //       env, headers, enabled}
@@ -90,6 +97,9 @@ signals:
     // docs/46: requestPrompt 的回程。ok=false 时 text 为空、error 带原因。
     void promptResolved(const QString& server, const QString& name,
                         bool ok, const QString& text, const QString& error);
+    // docs/48: readResource 的回程，语义同 promptResolved。
+    void resourceRead(const QString& server, const QString& uri,
+                      bool ok, const QString& text, const QString& error);
 
 private:
     McpClient* clientFor(const QString& name) const;

@@ -736,6 +736,7 @@ function applySkill(name) {
                     kind: modelData.kind === "image" ? "image" : "file"
                     source: modelData.kind === "image" ? modelData.dataUrl : ""
                     name: modelData.kind === "file" ? modelData.name : ""
+                    origin: modelData.origin || ""
                     imageWidth: 56
                     imageHeight: 56
                     removable: true
@@ -1348,6 +1349,16 @@ function applySkill(name) {
             text: qsTr("上传文件")
             onTriggered: fileDialog.open()
         }
+        // docs/48: MCP 资源（远程数据读取成文本附件）。localOnlyMode 下
+        // 与 MCP 服务器不往返（与 mcp__* 工具/prompts 门控同向）。
+        AttachMenuItem {
+            glyph: "globe"
+            text: qsTr("MCP 资源…")
+            visible: !Settings.localOnlyMode
+                      && McpManager.listResources().length > 0
+            height: visible ? implicitHeight : 0
+            onTriggered: resourceDialog.openFor()
+        }
     }
 
     FileDialog {
@@ -1364,6 +1375,50 @@ function applySkill(name) {
         ]
         onAccepted: root.addTextFile(selectedFile)
     }
+
+    // ── docs/48: MCP 资源选择器与读取回程 ─────────────────
+    // 点击资源即 readResource；回程成功接成文本附件（origin:"mcp" 供
+    // chip 换地球图标，发送组装只取 kind/name/content，不影响管线）。
+    // pendingMcpUri 只接受本实例发起的回程（旧回程/竞态直接丢弃）。
+    McpResourceDialog {
+        id: resourceDialog
+        onResourceActivated: function(server, uri, name) {
+            root.requestMcpResource(server, uri, name)
+        }
+    }
+
+    property string pendingMcpUri: ""
+    property string pendingMcpName: ""
+
+    function requestMcpResource(server, uri, name) {
+        pendingMcpUri = uri
+        pendingMcpName = name
+        McpManager.readResource(server, uri)
+    }
+
+    Connections {
+        target: McpManager
+        function onResourceRead(server, uri, ok, text, error) {
+            if (uri !== root.pendingMcpUri) return
+            root.pendingMcpUri = ""
+            if (!ok) {
+                root.showPromptNote(
+                    qsTr("资源读取失败：%1").arg(error || qsTr("未知错误")),
+                    Theme.statusDanger)
+                return
+            }
+            root.appendAttachments([{kind: "file",
+                                     name: root.pendingMcpName,
+                                     content: text,
+                                     origin: "mcp"}])
+            const addedName = root.pendingMcpName || uri
+            root.pendingMcpName = ""
+            root.showPromptNote(
+                qsTr("已添加资源：%1").arg(addedName),
+                Theme.statusSuccess)
+        }
+    }
+
 
     // ── G2: '@' project file completion ──────────────────
     // Non-focus popup: the text area keeps the keyboard, so typing narrows

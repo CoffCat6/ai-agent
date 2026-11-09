@@ -72,6 +72,10 @@ void McpClient::disconnectFromServer() {
     m_prompts.clear();
     m_promptsCapability = false;
     emit promptsChanged();
+    // Resources 同口径（docs/48）。
+    m_resources.clear();
+    m_resourcesCapability = false;
+    emit resourcesChanged();
 }
 
 void McpClient::onTransportStateChanged(McpTransport::State state) {
@@ -120,16 +124,20 @@ void McpClient::runHandshake() {
                 setSessionState(SessionState::Failed);
                 return;
             }
-            // Parse the server's declared capabilities: prompts/list is only
-            // sent when the server actually advertises the prompts capability,
-            // otherwise servers without it would answer method-not-found.
-            m_promptsCapability = result.value("capabilities").toObject()
-                                      .value("prompts").isObject();
+            // Parse the server's declared capabilities: prompts/list and
+            // resources/list are only sent when the server advertises the
+            // respective capability, otherwise servers without it would
+            // answer method-not-found.
+            const QJsonObject caps = result.value("capabilities").toObject();
+            m_promptsCapability = caps.value("prompts").isObject();
+            m_resourcesCapability = caps.value("resources").isObject();
             // Announce the client, then pull the tool list.
             sendNotification(QStringLiteral("notifications/initialized"), {});
             refreshTools();
             if (m_promptsCapability)
                 refreshPrompts();
+            if (m_resourcesCapability)
+                refreshResources();
         });
 }
 
@@ -262,6 +270,101 @@ quint64 McpClient::promptsGet(const QString& name, const QJsonObject& args,
         });
 }
 
+// docs/48: resources/list 分页拉取。状态机与 prompts 完全同构（busy/stale
+// 处理 list_changed 中途再到的竞态），上限 kMaxResources。
+void McpClient::refreshResources() {
+    if (!m_resourcesCapability || !m_transport) return;
+    if (m_resourcesBusy) {
+        m_resourcesStale = true;
+        return;
+    }
+    m_resourcesBusy = true;
+    fetchResourcesPage(QString(), std::make_shared<QList<ResourceInfo>>());
+}
+
+void McpClient::fetchResourcesPage(const QString& cursor,
+                                   std::shared_ptr<QList<ResourceInfo>> acc) {
+    QJsonObject params;
+    if (!cursor.isEmpty())
+        params.insert(QStringLiteral("cursor"), cursor);
+    sendRequest(QStringLiteral("resources/list"), params,
+        [this, acc](const QJsonObject& result, const QJsonObject& error) {
+            m_resourcesBusy = false;
+            if (!error.isEmpty()) {
+                // 非致命：tools 已可用而 resources 拉取失败不连坐连接。
+                emit diagnostic(QStringLiteral("resources/list failed: ")
+                    + error.value("message").toString());
+                if (m_resourcesStale) {
+                    m_resourcesStale = false;
+                    refreshResources();
+                }
+                return;
+            }
+            for (const auto& entry : result.value("resources").toArray()) {
+                if (acc->size() >= kMaxResources) break;
+                const QJsonObject r = entry.toObject();
+                ResourceInfo info;
+                info.uri = r.value("uri").toString();
+                info.name = r.value("name").toString();
+                info.title = r.value("title").toString();
+                info.description = r.value("description").toString();
+                info.mimeType = r.value("mimeType").toString();
+                if (!info.uri.isEmpty() && !info.name.isEmpty())
+                    acc->append(info);
+            }
+            const QString next = result.value("nextCursor").toString();
+            if (!next.isEmpty() && acc->size() < kMaxResources) {
+                m_resourcesBusy = true;
+                fetchResourcesPage(next, acc);
+                return;
+            }
+            m_resources = *acc;
+            emit resourcesChanged();
+            if (m_resourcesStale) {
+                m_resourcesStale = false;
+                refreshResources();
+            }
+        });
+}
+
+quint64 McpClient::resourcesRead(const QString& uri,
+                                 std::function<void(bool, const QString&,
+                                                    const QString&)> handler) {
+    if (!m_transport) {
+        if (handler) handler(false, QString(),
+            QStringLiteral("MCP server not connected"));
+        return 0;
+    }
+    // resources/read 的结果结构与 tools/call 不同：顶层 contents[]
+    // （每项带 uri/mimeType，文本在 text、二进制在 blob）——在这里拼接，
+    // blob 记占位符不进上下文；空结果按失败处理，调用方拿到明确错误。
+    return sendRequest(QStringLiteral("resources/read"),
+        QJsonObject{{"uri", uri}},
+        [handler](const QJsonObject& result, const QJsonObject& error) {
+            if (!error.isEmpty()) {
+                if (handler) handler(false, QString(),
+                    error.value("message").toString());
+                return;
+            }
+            QString text;
+            for (const auto& entry : result.value("contents").toArray()) {
+                const QJsonObject c = entry.toObject();
+                if (c.contains("text")) {
+                    if (!text.isEmpty()) text += QLatin1Char('\n');
+                    text += c.value("text").toString();
+                } else if (c.contains("blob")) {
+                    if (!text.isEmpty()) text += QLatin1Char('\n');
+                    text += QStringLiteral("[binary resource content]");
+                }
+            }
+            if (handler)
+                handler(!text.isEmpty(), text,
+                        text.isEmpty()
+                            ? QStringLiteral("resource returned no content")
+                            : QString());
+        });
+}
+
 quint64 McpClient::callTool(const QString& tool, const QJsonObject& args,
                             std::function<void(bool, const QString&,
                                                const QString&)> handler) {
@@ -340,6 +443,8 @@ void McpClient::onMessage(const QJsonObject& message) {
             refreshTools();
         else if (method == QLatin1String("notifications/prompts/list_changed"))
             refreshPrompts();
+        else if (method == QLatin1String("notifications/resources/list_changed"))
+            refreshResources();
         return;
     }
 

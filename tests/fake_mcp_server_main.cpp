@@ -6,6 +6,11 @@
 //   MCP_FAKE_PROMPTS docs/46: prompts to advertise, ';'-separated; an
 //                    entry "name:a,b" declares required args a and b
 //                    (default: unset — no prompts capability declared)
+//   MCP_FAKE_RESOURCES docs/48: resources to advertise, ';'-separated; an
+//                    entry "uri|name|mime" (default: unset — no resources
+//                    capability declared)
+//   MCP_FAKE_RESOURCE_BYTES docs/48: resources/read payload size in bytes
+//                    (default 0 — echo the uri instead)
 // Speaks newline-delimited JSON-RPC 2.0 over stdin/stdout; stderr is logs.
 #include <QCoreApplication>
 #include <QJsonArray>
@@ -82,6 +87,65 @@ QList<FakePrompt> fakePrompts() {
             out.append(prompt);
     }
     return out;
+}
+
+// docs/48: parse MCP_FAKE_RESOURCES entries. "mem://a|Alpha;text/plain;..."
+// → uri|name|mime, ';'-separated. Empty variable = the server does NOT
+// declare the resources capability (client must not send resources/list).
+struct FakeResource {
+    QString uri;
+    QString name;
+    QString mime;
+};
+
+QList<FakeResource> fakeResources() {
+    QList<FakeResource> out;
+    const QStringList entries =
+        qEnvironmentVariable("MCP_FAKE_RESOURCES").split(';', Qt::SkipEmptyParts);
+    for (QString entry : entries) {
+        entry = entry.trimmed();
+        const QStringList fields = entry.split('|');
+        if (fields.size() < 2) continue;
+        FakeResource r;
+        r.uri = fields.at(0).trimmed();
+        r.name = fields.at(1).trimmed();
+        r.mime = fields.size() > 2 ? fields.at(2).trimmed()
+                                   : QStringLiteral("text/plain");
+        if (!r.uri.isEmpty() && !r.name.isEmpty())
+            out.append(r);
+    }
+    return out;
+}
+
+QJsonArray advertisedResources() {
+    QJsonArray resources;
+    for (const FakeResource& r : fakeResources()) {
+        resources.append(QJsonObject{
+            {"uri", r.uri},
+            {"name", r.name},
+            {"title", QStringLiteral("Fake %1").arg(r.name)},
+            {"description",
+             QStringLiteral("fake resource %1 (test server)").arg(r.name)},
+            {"mimeType", r.mime}});
+    }
+    return resources;
+}
+
+void handleResourcesRead(quint64 id, const QJsonObject& params) {
+    const QString uri = params.value("uri").toString();
+    // MCP_FAKE_RESOURCE_BYTES > 0 → emit a payload of that size (over-limit
+    // rejection test); otherwise echo the uri back as the content.
+    const int bytes = qEnvironmentVariableIntValue("MCP_FAKE_RESOURCE_BYTES",
+                                                   nullptr);
+    const QString text = bytes > 0
+        ? QString(bytes, QLatin1Char('x'))
+        : QStringLiteral("resource %1 content").arg(uri);
+    const QJsonObject content{
+        {"uri", uri},
+        {"mimeType", QStringLiteral("text/plain")},
+        {"text", text}};
+    sendResult(id, QJsonObject{
+        {"contents", QJsonArray{content}}});
 }
 
 QJsonArray advertisedPrompts() {
@@ -192,10 +256,12 @@ void handleRequest(const QJsonObject& request) {
     if (method == QLatin1String("initialize")) {
         QJsonObject capabilities{
             {"tools", QJsonObject{{"listChanged", false}}}};
-        // Only declare the prompts capability when the test asked for
-        // prompts — mirrors real servers that implement a subset.
+        // Only declare the prompts/resources capability when the test asked
+        // for them — mirrors real servers that implement a subset.
         if (!fakePrompts().isEmpty())
             capabilities["prompts"] = QJsonObject{{"listChanged", false}};
+        if (!fakeResources().isEmpty())
+            capabilities["resources"] = QJsonObject{{"listChanged", false}};
         sendResult(id, QJsonObject{
             {"protocolVersion", QStringLiteral("2025-03-26")},
             {"capabilities", capabilities},
@@ -215,6 +281,14 @@ void handleRequest(const QJsonObject& request) {
     }
     if (method == QLatin1String("prompts/get")) {
         handlePromptsGet(id, request.value("params").toObject());
+        return;
+    }
+    if (method == QLatin1String("resources/list")) {
+        sendResult(id, QJsonObject{{"resources", advertisedResources()}});
+        return;
+    }
+    if (method == QLatin1String("resources/read")) {
+        handleResourcesRead(id, request.value("params").toObject());
         return;
     }
     if (method == QLatin1String("ping")) {

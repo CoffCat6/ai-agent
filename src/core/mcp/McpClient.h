@@ -56,6 +56,17 @@ public:
         QList<PromptArgument> arguments;
     };
 
+    // MCP resources（docs/48）：服务器暴露的远程数据（数据库表、文档页等）。
+    // uri 是读取主键（resources/read 按 uri，不是 name）；templates/subscribe
+    // 不在本批范围。
+    struct ResourceInfo {
+        QString uri;
+        QString name;
+        QString title;
+        QString description;
+        QString mimeType;
+    };
+
     explicit McpClient(const McpServerConfig& config, QObject* parent = nullptr);
     ~McpClient() override;
 
@@ -77,6 +88,11 @@ public:
     static constexpr int kMaxPrompts = 32;
     QList<PromptInfo> prompts() const { return m_prompts; }
 
+    // 服务器声明的 resources 能力下才非空（capabilities.resources，握手时
+    // 解析）；上限与分页口径同 prompts。
+    static constexpr int kMaxResources = 32;
+    QList<ResourceInfo> resources() const { return m_resources; }
+
 
     // Sends tools/call; handler runs on the GUI thread exactly once:
     // handler(isError, joinedText, errorText).
@@ -90,6 +106,12 @@ public:
     quint64 promptsGet(const QString& name, const QJsonObject& args,
                        std::function<void(bool ok, const QString& text,
                                           const QString& error)> handler);
+    // Sends resources/read by uri; handler semantics 同 promptsGet。
+    // contents[] 中 text 项按换行拼接；blob（base64 二进制）记占位符
+    // 不进上下文；空结果按失败处理。
+    quint64 resourcesRead(const QString& uri,
+                          std::function<void(bool ok, const QString& text,
+                                             const QString& error)> handler);
     // Aborts an in-flight request and tells the server (best effort).
     void cancelRequest(quint64 id);
 
@@ -99,6 +121,7 @@ signals:
     void connectionFailed(const QString& error);
     void toolsChanged();
     void promptsChanged();
+    void resourcesChanged();
     void toolResultArrived(quint64 requestId, bool isError,
                            const QString& text, const QString& error);
     void diagnostic(const QString& message);   // transport/stderr diagnostics
@@ -111,6 +134,9 @@ private:
     void refreshPrompts();
     void fetchPromptsPage(const QString& cursor,
                           std::shared_ptr<QList<PromptInfo>> acc);
+    void refreshResources();
+    void fetchResourcesPage(const QString& cursor,
+                            std::shared_ptr<QList<ResourceInfo>> acc);
     quint64 sendRequest(const QString& method, const QJsonObject& params,
                         std::function<void(const QJsonObject& result,
                                            const QJsonObject& error)> handler,
@@ -133,6 +159,12 @@ private:
     bool m_promptsBusy{false};
     bool m_promptsStale{false};
     QList<PromptInfo> m_prompts;
+
+    // Resources（docs/48）：状态机同 prompts。
+    bool m_resourcesCapability{false};
+    bool m_resourcesBusy{false};
+    bool m_resourcesStale{false};
+    QList<ResourceInfo> m_resources;
 
     struct PendingRequest {
         std::function<void(const QJsonObject& result, const QJsonObject& error)> handler;

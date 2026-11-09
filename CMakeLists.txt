@@ -355,6 +355,8 @@ qt_add_qml_module(nexus_ai
         src/ui/components/ShortcutsDialog.qml
         # docs/46: MCP prompts 填参对话框（/ 补全选中带参模板时弹出）
         src/ui/components/McpPromptDialog.qml
+        # docs/48: MCP 资源选择器（+ 菜单「MCP 资源…」读取远程数据成附件）
+        src/ui/components/McpResourceDialog.qml
         # F1: todo_write task list (read-only, fed by AgentVM.todoList)
         src/ui/components/TodoListPanel.qml
         # 任务清单对话框：把待办列表从窄侧栏移进可按需打开的弹窗

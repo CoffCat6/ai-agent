@@ -391,6 +391,92 @@ private slots:
         client.disconnectFromServer();
     }
 
+    // ── docs/48: MCP resources ───────────────────────────
+
+    // makePromptsConfig 的资源版：追加 MCP_FAKE_RESOURCES（uri|name|mime）。
+    McpServerConfig makeResourcesConfig(const QString& resources) {
+        McpServerConfig config = makeConfig({"echo"});
+        config.env.insert(QStringLiteral("MCP_FAKE_RESOURCES"), resources);
+        return config;
+    }
+
+    // resources/list 发现：capabilities.resources 声明的服务器在握手后自动
+    // 拉取，uri/name/mimeType 完整入列；断开连接即清空。
+    void resourceDiscoveryParsesFields() {
+        McpClient client(makeResourcesConfig(
+            QStringLiteral("mem://notes/1|Notes|text/markdown;"
+                           "db://users|Users")));
+        QSignalSpy resourcesSpy(&client, &McpClient::resourcesChanged);
+
+        client.connectToServer();
+        QTRY_COMPARE(client.sessionState(),
+                     McpClient::SessionState::Connected);
+        QTRY_COMPARE(resourcesSpy.count(), 1);
+
+        const QList<McpClient::ResourceInfo> resources = client.resources();
+        QCOMPARE(resources.size(), 2);
+        QCOMPARE(resources.first().uri, QStringLiteral("mem://notes/1"));
+        QCOMPARE(resources.first().name, QStringLiteral("Notes"));
+        QCOMPARE(resources.first().mimeType,
+                 QStringLiteral("text/markdown"));
+        QVERIFY(!resources.first().description.isEmpty());
+        // 第二条无 mime 字段 → 缺省 text/plain
+        QCOMPARE(resources.last().uri, QStringLiteral("db://users"));
+        QCOMPARE(resources.last().mimeType, QStringLiteral("text/plain"));
+
+        client.disconnectFromServer();
+        QTRY_VERIFY(client.resources().isEmpty());
+    }
+
+    // resources/read 往返：按 uri 读取，text 块拼接进结果。
+    void resourceReadRoundTrip() {
+        McpClient client(makeResourcesConfig(
+            QStringLiteral("mem://notes/1|Notes")));
+        client.connectToServer();
+        QTRY_COMPARE(client.sessionState(),
+                     McpClient::SessionState::Connected);
+        QTRY_VERIFY(!client.resources().isEmpty());
+
+        bool handlerRan = false;
+        client.resourcesRead(QStringLiteral("mem://notes/1"),
+                             [&handlerRan](bool ok, const QString& text,
+                                           const QString& error) {
+            handlerRan = true;
+            QVERIFY(ok);
+            QVERIFY(error.isEmpty());
+            QVERIFY(text.contains(
+                QStringLiteral("resource mem://notes/1 content")));
+        });
+        QTRY_VERIFY(handlerRan);
+        client.disconnectFromServer();
+    }
+
+    // 单服务器上限 kMaxResources：声明再多也只入列 32 条。
+    void resourcesCappedPerServer() {
+        QStringList specs;
+        for (int i = 0; i < 40; ++i)
+            specs << QStringLiteral("mem://r%1|R%1").arg(i);
+        McpClient client(makeResourcesConfig(specs.join(QLatin1Char(';'))));
+        client.connectToServer();
+        QTRY_COMPARE(client.sessionState(),
+                     McpClient::SessionState::Connected);
+        QTRY_VERIFY(!client.resources().isEmpty());
+        QCOMPARE(client.resources().size(), McpClient::kMaxResources);
+        client.disconnectFromServer();
+    }
+
+    // 未声明 resources 能力的服务器永远不会被问：无信号、无条目。
+    void resourcesAbsentWithoutCapability() {
+        McpClient client(makeConfig({"echo"}));
+        QSignalSpy resourcesSpy(&client, &McpClient::resourcesChanged);
+        client.connectToServer();
+        QTRY_COMPARE(client.sessionState(),
+                     McpClient::SessionState::Connected);
+        QCOMPARE(resourcesSpy.count(), 0);
+        QVERIFY(client.resources().isEmpty());
+        client.disconnectFromServer();
+    }
+
     // isError:true in the tool result maps to a failed ToolResult.
     void toolErrorMapsToIsError() {
         qputenv("MCP_FAKE_MODE", "error");

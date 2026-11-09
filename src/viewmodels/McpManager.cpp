@@ -169,6 +169,9 @@ void McpManager::connectClient(McpClient* client) {
     // 刷新（promptsChanged 在断开清理时也会发出）。
     connect(client, &McpClient::promptsChanged, this,
             [this]() { refreshServers(); });
+    // docs/48: resources 同口径。
+    connect(client, &McpClient::resourcesChanged, this,
+            [this]() { refreshServers(); });
 }
 
 // docs/46: 聚合各已连接服务器声明的提示词模板。数据只在 client 侧存一份
@@ -221,6 +224,53 @@ void McpManager::requestPrompt(const QString& server, const QString& name,
         });
 }
 
+// docs/48: 聚合各已连接服务器声明的资源清单（拼装与描述截断同 prompts，
+// 上限 kMaxResources 已在 McpClient 分页时截断）。
+QVariantList McpManager::listResources() const {
+    static constexpr int MaxDescriptionChars = 1024;
+    QVariantList out;
+    for (McpClient* client : m_clients) {
+        const auto resources = client->resources();
+        for (const auto& resource : resources) {
+            QString description = resource.description;
+            if (description.size() > MaxDescriptionChars)
+                description = description.left(MaxDescriptionChars);
+            out.append(QVariantMap{
+                {QStringLiteral("server"), client->serverName()},
+                {QStringLiteral("uri"), resource.uri},
+                {QStringLiteral("name"), resource.name},
+                {QStringLiteral("title"), resource.title},
+                {QStringLiteral("description"), description},
+                {QStringLiteral("mimeType"), resource.mimeType},
+            });
+        }
+    }
+    return out;
+}
+
+void McpManager::readResource(const QString& server, const QString& uri) {
+    McpClient* client = clientFor(server);
+    if (!client) {
+        emit resourceRead(server, uri, false, QString(),
+                          QStringLiteral("MCP server not connected: %1").arg(server));
+        return;
+    }
+    client->resourcesRead(uri,
+        [this, server, uri](bool ok, const QString& text, const QString& error) {
+            // 与本地文本附件同一字节上限：直接构造附件会绕过 C++ 读取侧的
+            // MaxTextAttachmentBytes 检查，这里补上同一道闸（512KB）。
+            // 拒绝优于截断——截半的 JSON/表格对模型是误导。
+            static constexpr int MaxResourceBytes = 512 * 1024;
+            if (ok && text.toUtf8().size() > MaxResourceBytes) {
+                emit resourceRead(server, uri, false, QString(),
+                    QStringLiteral("资源过大（附件上限 %1 KB）")
+                        .arg(MaxResourceBytes / 1024));
+                return;
+            }
+            emit resourceRead(server, uri, ok, text, error);
+        });
+}
+
 QVariantList McpManager::servers() const {
     QVariantList out;
     for (const QVariant& entry : m_configs) {
@@ -247,6 +297,8 @@ QVariantList McpManager::servers() const {
         item["toolCount"] = client ? client->tools().size() : 0;
         // docs/46: 服务器声明的提示词模板数（未连接/无能力均 0）。
         item["promptCount"] = client ? client->prompts().size() : 0;
+        // docs/48: 服务器声明的资源数（未连接/无能力均 0）。
+        item["resourceCount"] = client ? client->resources().size() : 0;
         // 工具名预览：连接成功后卡片上直接看得到这台服务器贡献了哪些工具，
         // 不必去工具页逐个对来源。未连接的服务器给空列表。
         QStringList toolNames;
