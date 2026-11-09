@@ -3,6 +3,9 @@
 //   MCP_FAKE_TOOLS   JSON array of tool names to advertise (default: ["echo"])
 //   MCP_FAKE_MODE    echo | error | delay  (tools/call behavior)
 //   MCP_FAKE_DELAY   delay seconds for the delay mode (default 2)
+//   MCP_FAKE_PROMPTS docs/46: prompts to advertise, ';'-separated; an
+//                    entry "name:a,b" declares required args a and b
+//                    (default: unset — no prompts capability declared)
 // Speaks newline-delimited JSON-RPC 2.0 over stdin/stdout; stderr is logs.
 #include <QCoreApplication>
 #include <QJsonArray>
@@ -51,6 +54,73 @@ void sendError(quint64 id, int code, const QString& message) {
         {"id", static_cast<qint64>(id)},
         {"error", QJsonObject{{"code", code}, {"message", message}}}};
     sendLine(response);
+}
+
+// docs/46: parse MCP_FAKE_PROMPTS entries. "alpha;beta:lang,tone" →
+// alpha without arguments + beta requiring lang and tone (';' separates
+// prompts, ',' their args). An empty variable means the server does NOT
+// declare the prompts capability at all (client must not send prompts/list).
+struct FakePrompt {
+    QString name;
+    QStringList args;
+};
+
+QList<FakePrompt> fakePrompts() {
+    QList<FakePrompt> out;
+    const QStringList entries =
+        qEnvironmentVariable("MCP_FAKE_PROMPTS").split(';', Qt::SkipEmptyParts);
+    for (QString entry : entries) {
+        entry = entry.trimmed();
+        const int colon = entry.indexOf(':');
+        FakePrompt prompt;
+        prompt.name = colon < 0 ? entry : entry.left(colon).trimmed();
+        if (colon >= 0) {
+            for (QString arg : entry.mid(colon + 1).split(',', Qt::SkipEmptyParts))
+                prompt.args << arg.trimmed();
+        }
+        if (!prompt.name.isEmpty())
+            out.append(prompt);
+    }
+    return out;
+}
+
+QJsonArray advertisedPrompts() {
+    QJsonArray prompts;
+    for (const FakePrompt& prompt : fakePrompts()) {
+        QJsonArray arguments;
+        for (const QString& arg : prompt.args) {
+            arguments.append(QJsonObject{
+                {"name", arg},
+                {"description",
+                 QStringLiteral("fake argument %1").arg(arg)},
+                {"required", true}});
+        }
+        prompts.append(QJsonObject{
+            {"name", prompt.name},
+            {"title", QStringLiteral("Fake %1").arg(prompt.name)},
+            {"description",
+             QStringLiteral("fake prompt %1 (test server)").arg(prompt.name)},
+            {"arguments", arguments}});
+    }
+    return prompts;
+}
+
+void handlePromptsGet(quint64 id, const QJsonObject& params) {
+    const QString name = params.value("name").toString();
+    // Echo the arguments back as JSON text: the round-trip test asserts the
+    // client-provided argument values actually reached the server.
+    const QJsonObject args = params.value("arguments").toObject();
+    const QString argsJson = QString::fromUtf8(
+        QJsonDocument(args).toJson(QJsonDocument::Compact));
+    const QJsonObject textBlock{
+        {"type", QStringLiteral("text")},
+        {"text", QStringLiteral("prompt %1 with args: %2").arg(name, argsJson)}};
+    const QJsonObject message{
+        {"role", QStringLiteral("user")},
+        {"content", textBlock}};
+    sendResult(id, QJsonObject{
+        {"description", QStringLiteral("fake prompt %1").arg(name)},
+        {"messages", QJsonArray{message}}});
 }
 
 QJsonArray advertisedTools() {
@@ -120,10 +190,15 @@ void handleRequest(const QJsonObject& request) {
     const QString method = request.value("method").toString();
 
     if (method == QLatin1String("initialize")) {
+        QJsonObject capabilities{
+            {"tools", QJsonObject{{"listChanged", false}}}};
+        // Only declare the prompts capability when the test asked for
+        // prompts — mirrors real servers that implement a subset.
+        if (!fakePrompts().isEmpty())
+            capabilities["prompts"] = QJsonObject{{"listChanged", false}};
         sendResult(id, QJsonObject{
             {"protocolVersion", QStringLiteral("2025-03-26")},
-            {"capabilities", QJsonObject{
-                {"tools", QJsonObject{{"listChanged", false}}}}},
+            {"capabilities", capabilities},
             {"serverInfo", QJsonObject{
                 {"name", QStringLiteral("fake-mcp")},
                 {"version", QStringLiteral("1.0")}}},
@@ -132,6 +207,14 @@ void handleRequest(const QJsonObject& request) {
     }
     if (method == QLatin1String("tools/list")) {
         sendResult(id, QJsonObject{{"tools", advertisedTools()}});
+        return;
+    }
+    if (method == QLatin1String("prompts/list")) {
+        sendResult(id, QJsonObject{{"prompts", advertisedPrompts()}});
+        return;
+    }
+    if (method == QLatin1String("prompts/get")) {
+        handlePromptsGet(id, request.value("params").toObject());
         return;
     }
     if (method == QLatin1String("ping")) {

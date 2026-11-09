@@ -141,6 +141,15 @@ Item {
                             font.pixelSize: Theme.fontSizeCaption
                             font.family: Theme.fontMono
                         }
+                        // docs/46: 该服务器声明的提示词模板数（0 时隐藏，
+                        // 空服务器卡片不加噪音）。
+                        Text {
+                            visible: modelData.promptCount > 0
+                            text: qsTr("%1 个提示词").arg(modelData.promptCount)
+                            color: Theme.textSecondary
+                            font.pixelSize: Theme.fontSizeCaption
+                            font.family: Theme.fontMono
+                        }
 
                         Switch {
                             id: mcpEnableSwitch

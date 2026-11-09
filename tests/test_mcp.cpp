@@ -201,6 +201,15 @@ McpServerConfig makeConfig(const QStringList& tools = {"echo"},
     return config;
 }
 
+// docs/46: 带提示词声明的 fake server 配置。prompts 形如
+// "alpha;beta:lang,tone"（; 分隔模板，: 后是该模板的 required 参数）。
+McpServerConfig makePromptsConfig(const QString& prompts,
+                                  const QStringList& tools = {"echo"}) {
+    McpServerConfig config = makeConfig(tools);
+    config.env.insert(QStringLiteral("MCP_FAKE_PROMPTS"), prompts);
+    return config;
+}
+
 } // namespace
 
 class TestMcp : public QObject {
@@ -295,6 +304,90 @@ private slots:
             QVERIFY(error.isEmpty());
         });
         QTRY_VERIFY(handlerRan);
+        client.disconnectFromServer();
+    }
+
+    // ── docs/46: MCP prompts ─────────────────────────────
+
+    // prompts/list 发现：capabilities.prompts 声明的服务器在握手后自动拉取，
+    // 名称/标题/required 参数声明完整入列；断开连接即清空。
+    void promptDiscoveryParsesArguments() {
+        McpClient client(
+            makePromptsConfig(QStringLiteral("alpha;beta:lang,tone")));
+        QSignalSpy promptsSpy(&client, &McpClient::promptsChanged);
+
+        client.connectToServer();
+        QTRY_COMPARE(client.sessionState(),
+                     McpClient::SessionState::Connected);
+        QTRY_COMPARE(promptsSpy.count(), 1);
+
+        const QList<McpClient::PromptInfo> prompts = client.prompts();
+        QCOMPARE(prompts.size(), 2);
+        QCOMPARE(prompts.first().name, QStringLiteral("alpha"));
+        QCOMPARE(prompts.first().title, QStringLiteral("Fake alpha"));
+        QVERIFY(!prompts.first().description.isEmpty());
+        QVERIFY(prompts.first().arguments.isEmpty());
+
+        QCOMPARE(prompts.last().name, QStringLiteral("beta"));
+        QCOMPARE(prompts.last().arguments.size(), 2);
+        QCOMPARE(prompts.last().arguments.first().name,
+                 QStringLiteral("lang"));
+        QVERIFY(prompts.last().arguments.first().required);
+        QCOMPARE(prompts.last().arguments.last().name,
+                 QStringLiteral("tone"));
+
+        client.disconnectFromServer();
+        QTRY_VERIFY(client.prompts().isEmpty());
+    }
+
+    // prompts/get 往返：参数值真实到达服务器，返回的 text 块被拼接。
+    void promptGetRoundTrip() {
+        McpClient client(makePromptsConfig(QStringLiteral("beta:lang")));
+        client.connectToServer();
+        QTRY_COMPARE(client.sessionState(),
+                     McpClient::SessionState::Connected);
+        QTRY_VERIFY(!client.prompts().isEmpty());
+
+        bool handlerRan = false;
+        client.promptsGet(QStringLiteral("beta"),
+                          QJsonObject{{"lang", QStringLiteral("zh")}},
+                          [&handlerRan](bool ok, const QString& text,
+                                        const QString& error) {
+            handlerRan = true;
+            QVERIFY(ok);
+            QVERIFY(error.isEmpty());
+            QVERIFY(text.contains(
+                QStringLiteral("prompt beta with args:")));
+            QVERIFY(text.contains(QStringLiteral("lang")));
+            QVERIFY(text.contains(QStringLiteral("zh")));
+        });
+        QTRY_VERIFY(handlerRan);
+        client.disconnectFromServer();
+    }
+
+    // 单服务器上限 kMaxPrompts：声明再多也只入列 32 条。
+    void promptsCappedPerServer() {
+        QStringList specs;
+        for (int i = 0; i < 40; ++i)
+            specs << QStringLiteral("p%1").arg(i);
+        McpClient client(makePromptsConfig(specs.join(QLatin1Char(';'))));
+        client.connectToServer();
+        QTRY_COMPARE(client.sessionState(),
+                     McpClient::SessionState::Connected);
+        QTRY_VERIFY(!client.prompts().isEmpty());
+        QCOMPARE(client.prompts().size(), McpClient::kMaxPrompts);
+        client.disconnectFromServer();
+    }
+
+    // 未声明 prompts 能力的服务器永远不会被问：无信号、无条目。
+    void promptsAbsentWithoutCapability() {
+        McpClient client(makeConfig({"echo"}));
+        QSignalSpy promptsSpy(&client, &McpClient::promptsChanged);
+        client.connectToServer();
+        QTRY_COMPARE(client.sessionState(),
+                     McpClient::SessionState::Connected);
+        QCOMPARE(promptsSpy.count(), 0);
+        QVERIFY(client.prompts().isEmpty());
         client.disconnectFromServer();
     }
 

@@ -127,6 +127,15 @@ Rectangle {
         slashResults = []
     }
 
+    // ── docs/46: MCP prompts（/ 弹层的动态条目）──────────
+    // 选中 MCP 条目走 fetch-and-insert：prompts/get 往返是异步的，记录
+    // 选中时的 token 区间，回来时 token 仍在原位则整段替换，已被编辑则
+    // 退化为光标处插入。
+    property var pendingMcpPrompt: null
+    // 取回失败/异常的瞬态提示（自动消失；与技能未知提示同在输入框上沿）。
+    property string promptNote: ""
+    property color promptNoteColor: Theme.statusDanger
+
     // Scans the token ending at the caret. Returns {start, query} when the
     // caret is inside a slash command, null otherwise.
     //   /re        → {start:0, query:"re"}   ('/' at line start)
@@ -171,6 +180,24 @@ Rectangle {
             if (name.toLowerCase().indexOf(query) !== 0) continue
             matches.push({name: name, note: String(entry.note || "")})
         }
+        // docs/46: MCP prompts 动态混入。localOnlyMode 下不与 MCP 服务器
+        // 往返（与 mcp__* 工具门控同方向），候选一并隐藏。
+        if (!Settings.localOnlyMode) {
+            const prompts = McpManager.listPrompts()
+            for (let i = 0; i < prompts.length; ++i) {
+                const p = prompts[i] || {}
+                const name = String(p.name || "")
+                if (name.length === 0
+                        || name.toLowerCase().indexOf(query) !== 0) continue
+                matches.push({name: name,
+                              note: String(p.server || "MCP"),
+                              mcp: true,
+                              server: String(p.server || ""),
+                              title: String(p.title || ""),
+                              description: String(p.description || ""),
+                              arguments: p.arguments || []})
+            }
+        }
         slashResults = matches
         if (slashIndex >= slashResults.length)
             slashIndex = Math.max(0, slashResults.length - 1)
@@ -214,8 +241,16 @@ function tokenEndAt(text, from) {
     return end
 }
 
-// Replaces the whole '/token' with '/name ' — never sends.
-function applySlash(name) {
+// Replaces the whole '/token' with '/name ' — never sends. MCP prompt
+// entries (docs/46) dispatch to applyMcpPrompt instead: they resolve to
+// fetched text, not a literal token.
+function applySlash(entry) {
+    if (!entry) return
+    if (entry.mcp) {
+        applyMcpPrompt(entry)
+        return
+    }
+    const name = String(entry.name || "")
     if (slashStart < 0) return
     const start = slashStart
     const end = tokenEndAt(textArea.text, start)
@@ -234,6 +269,119 @@ function applySlash(name) {
         if (count === 0) return
         slashIndex = (slashIndex + delta + count) % count
         slashList.positionViewAtIndex(slashIndex, ListView.Contain)
+    }
+
+    // ── docs/46: MCP prompt fetch-and-insert ─────────────
+    // 选中 MCP 条目：记录 token 区间 → required 参数走 McpPromptDialog →
+    // requestPrompt。取回文本替换 token（用户审阅后自行发送）。
+    function applyMcpPrompt(entry) {
+        if (slashStart < 0) return
+        const start = slashStart
+        const end = tokenEndAt(textArea.text, start)
+        const tokenText = textArea.text.substring(start, end)
+        closeSlash()
+        textArea.forceActiveFocus()
+        pendingMcpPrompt = {
+            server: String(entry.server || ""),
+            name: String(entry.name || ""),
+            tokenStart: start, tokenEnd: end, tokenText: tokenText
+        }
+        const argDefs = entry.arguments || []
+        let requiredCount = 0
+        for (let i = 0; i < argDefs.length; ++i)
+            if (argDefs[i] && argDefs[i].required) ++requiredCount
+        if (requiredCount > 0) {
+            promptDialog.openFor(entry)
+            return
+        }
+        McpManager.requestPrompt(pendingMcpPrompt.server,
+                                 pendingMcpPrompt.name, ({}))
+    }
+
+    function showPromptNote(message, accent) {
+        promptNote = message
+        promptNoteColor = accent
+        promptNoteTimer.restart()
+    }
+
+    // prompts/get 回程：ok 时替换记录的 token（已被动过则退化为光标处
+    // 插入），失败给瞬态提示。applyingSlash 保护 text 重赋值期间的
+    // updateCompletions 重入。
+    Connections {
+        target: McpManager
+        function onPromptResolved(server, name, ok, text, error) {
+            const pending = root.pendingMcpPrompt
+            root.pendingMcpPrompt = null
+            if (!pending) return
+            if (!ok) {
+                root.showPromptNote(
+                    qsTr("提示词获取失败：%1").arg(error || qsTr("未知错误")),
+                    Theme.statusDanger)
+                return
+            }
+            let insertText = String(text || "")
+            // 与技能注入同一量纲的插入上限（32KiB）：模板也可能很大。
+            const MaxInsertChars = 32 * 1024
+            if (insertText.length > MaxInsertChars)
+                insertText = insertText.slice(0, MaxInsertChars)
+                    + "\n…（已截断）"
+            const t = textArea.text
+            let insertAt = textArea.cursorPosition
+            if (t.substring(pending.tokenStart, pending.tokenEnd)
+                    === pending.tokenText) {
+                insertAt = pending.tokenStart + insertText.length
+                applyingSlash = true
+                textArea.remove(pending.tokenStart, pending.tokenEnd)
+                textArea.insert(pending.tokenStart, insertText)
+                applyingSlash = false
+            } else {
+                insertAt = insertAt + insertText.length
+                applyingSlash = true
+                textArea.insert(textArea.cursorPosition, insertText)
+                applyingSlash = false
+            }
+            textArea.cursorPosition = insertAt
+        }
+    }
+
+    Timer {
+        id: promptNoteTimer
+        interval: 4000
+        onTriggered: root.promptNote = ""
+    }
+
+    McpPromptDialog {
+        id: promptDialog
+        onPromptSubmitted: function(args) {
+            const pending = root.pendingMcpPrompt
+            if (!pending) return
+            McpManager.requestPrompt(pending.server, pending.name, args)
+        }
+    }
+
+    // docs/46: prompt 取回失败的瞬态提示。skillUnknownHint 也锚在输入框
+    // 上沿——同时可见时本条带不透明底色叠在其上（提示是瞬态的，4s 自清）。
+    Rectangle {
+        anchors.right: parent.right
+        anchors.bottom: inputRow.top
+        anchors.rightMargin: 8
+        anchors.bottomMargin: 4
+        width: promptNoteText.implicitWidth + 20
+        height: promptNoteText.implicitHeight + 10
+        radius: 6
+        visible: root.promptNote.length > 0
+        color: Theme.bgSecondary
+        border.width: 1
+        border.color: root.promptNoteColor
+
+        Text {
+            id: promptNoteText
+            anchors.centerIn: parent
+            text: root.promptNote
+            color: root.promptNoteColor
+            font.pixelSize: Theme.fontSizeCaption
+            font.family: Theme.fontSans
+        }
     }
 
     // ── docs/37 W3: '$' Skill completion and reference chips ──
@@ -927,7 +1075,7 @@ function applySkill(name) {
                     }
                     if (event.key === Qt.Key_Tab) {
                         if (root.slashResults.length > 0)
-                            root.applySlash(root.slashResults[root.slashIndex].name)
+                            root.applySlash(root.slashResults[root.slashIndex])
                         else
                             root.closeSlash()
                         event.accepted = true
@@ -972,7 +1120,7 @@ function applySkill(name) {
                 if (root.skillOpen && root.skillResults.length > 0) {
                     root.applySkill(root.skillResults[root.skillIndex].name)
                 } else if (root.slashOpen && root.slashResults.length > 0) {
-                    root.applySlash(root.slashResults[root.slashIndex].name)
+                    root.applySlash(root.slashResults[root.slashIndex])
                 } else if (root.mentionOpen && root.mentionResults.length > 0) {
                     root.applyMention(root.mentionResults[root.mentionIndex])
                 } else if (root.skillOpen || root.slashOpen) {
@@ -994,7 +1142,7 @@ function applySkill(name) {
                 if (root.skillOpen && root.skillResults.length > 0) {
                     root.applySkill(root.skillResults[root.skillIndex].name)
                 } else if (root.slashOpen && root.slashResults.length > 0) {
-                    root.applySlash(root.slashResults[root.slashIndex].name)
+                    root.applySlash(root.slashResults[root.slashIndex])
                 } else if (root.mentionOpen && root.mentionResults.length > 0) {
                     root.applyMention(root.mentionResults[root.mentionIndex])
                 } else if (root.skillOpen || root.slashOpen) {
@@ -1362,7 +1510,8 @@ function applySkill(name) {
 
                         AppIcon {
                             Layout.alignment: Qt.AlignVCenter
-                            icon: "terminal"
+                            // docs/46: MCP 条目用模板图标与内置命令区分。
+                            icon: slashRow.modelData.mcp ? "preset" : "terminal"
                             size: 13
                             iconColor: slashRow.index === root.slashIndex
                                 ? Theme.brandPrimary : Theme.textSecondary

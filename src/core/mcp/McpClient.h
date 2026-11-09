@@ -9,6 +9,7 @@
 #include <QTimer>
 #include <QVariantMap>
 #include <functional>
+#include <memory>
 
 namespace NexusAI {
 
@@ -41,6 +42,20 @@ public:
         QJsonObject inputSchema;
     };
 
+    // MCP prompts（docs/46）：服务器预制的提示词模板。arguments 是模板的
+    // 填参槽位（prompts/get 需要按名提供）；与 ToolInfo 平行，不走 ITool。
+    struct PromptArgument {
+        QString name;
+        QString description;
+        bool required{false};
+    };
+    struct PromptInfo {
+        QString name;
+        QString title;
+        QString description;
+        QList<PromptArgument> arguments;
+    };
+
     explicit McpClient(const McpServerConfig& config, QObject* parent = nullptr);
     ~McpClient() override;
 
@@ -56,12 +71,25 @@ public:
 
     QList<ToolInfo> tools() const { return m_tools; }
 
+    // 服务器声明的 prompts 能力下才非空（capabilities.prompts，握手时解析）。
+    // 单服务器上限 kMaxPrompts：与工具的 per-server 上限同一量纲，防止单台
+    // 服务器把补全列表撑爆；分页（nextCursor）拉满上限即停。
+    static constexpr int kMaxPrompts = 32;
+    QList<PromptInfo> prompts() const { return m_prompts; }
+
 
     // Sends tools/call; handler runs on the GUI thread exactly once:
     // handler(isError, joinedText, errorText).
     quint64 callTool(const QString& tool, const QJsonObject& args,
                      std::function<void(bool isError, const QString& text,
                                         const QString& error)> handler);
+    // Sends prompts/get; handler runs on the GUI thread exactly once:
+    // handler(ok, joinedText, errorText)。ok=false 时 text 为空。复用
+    // tools/call 的内容块拼接（toolHandler 路径），prompts/get 结果没有
+    // isError 标记，普通成功即 ok=true。
+    quint64 promptsGet(const QString& name, const QJsonObject& args,
+                       std::function<void(bool ok, const QString& text,
+                                          const QString& error)> handler);
     // Aborts an in-flight request and tells the server (best effort).
     void cancelRequest(quint64 id);
 
@@ -70,6 +98,7 @@ signals:
     void disconnected();
     void connectionFailed(const QString& error);
     void toolsChanged();
+    void promptsChanged();
     void toolResultArrived(quint64 requestId, bool isError,
                            const QString& text, const QString& error);
     void diagnostic(const QString& message);   // transport/stderr diagnostics
@@ -79,6 +108,9 @@ private:
     void onMessage(const QJsonObject& message);
     void runHandshake();
     void refreshTools();
+    void refreshPrompts();
+    void fetchPromptsPage(const QString& cursor,
+                          std::shared_ptr<QList<PromptInfo>> acc);
     quint64 sendRequest(const QString& method, const QJsonObject& params,
                         std::function<void(const QJsonObject& result,
                                            const QJsonObject& error)> handler,
@@ -94,6 +126,13 @@ private:
     quint64 m_nextId{1};
     QList<ToolInfo> m_tools;
     QString m_lastDiagnostic;   // most recent transport error (for connectionFailed detail)
+
+    // Prompts（docs/46）：能力协商 + 分页拉取状态。busy/stale 处理
+    // list_changed 在一次分页拉取中途再到的竞态——拉完后若已过期则重拉。
+    bool m_promptsCapability{false};
+    bool m_promptsBusy{false};
+    bool m_promptsStale{false};
+    QList<PromptInfo> m_prompts;
 
     struct PendingRequest {
         std::function<void(const QJsonObject& result, const QJsonObject& error)> handler;

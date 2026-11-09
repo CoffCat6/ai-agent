@@ -24,7 +24,7 @@ public:
     static constexpr int kMaxGlobalMcpTools = 64;
     QML_NAMED_ELEMENT(McpManager)
 
-    // [{name, transport, endpoint, enabled, state, toolCount,
+    // [{name, transport, endpoint, enabled, state, toolCount, promptCount,
     //   command, args, url, env, headers}]
     // 后五项供设置页「编辑」回填：它们不在卡片上直接展示，但改动必须
     // 能在原有条目上继续编辑，否则用户只能删了重建（工具会掉线重连）。
@@ -45,6 +45,16 @@ public:
 
     QVariantList servers() const;
     QString lastError() const { return m_lastError; }
+
+    // docs/46: 跨服务器聚合 prompts（输入框 / 补全的动态候选源）。
+    // [{server, name, title, description(≤1024), arguments:[{name,
+    //   description, required}]}]。仅含已连接且声明 prompts 能力的服务器；
+    // 上限在 McpClient 拉取时截断（kMaxPrompts）。
+    Q_INVOKABLE QVariantList listPrompts() const;
+    // 取回提示词文本（异步）：结果经 promptResolved 信号回 QML——MCP 往返
+    // 不阻塞 GUI 线程，与 callTool 的回调语义一致。
+    Q_INVOKABLE void requestPrompt(const QString& server, const QString& name,
+                                   const QVariantMap& args);
 
     // map: {name, transport:"stdio"|"http", command, args, url,
     //       env, headers, enabled}
@@ -77,6 +87,9 @@ public:
 signals:
     void serversChanged();
     void lastErrorChanged(const QString& error);
+    // docs/46: requestPrompt 的回程。ok=false 时 text 为空、error 带原因。
+    void promptResolved(const QString& server, const QString& name,
+                        bool ok, const QString& text, const QString& error);
 
 private:
     McpClient* clientFor(const QString& name) const;

@@ -2306,6 +2306,82 @@ private slots:
         restore();
     }
 
+    // docs/46: MCP prompts 聚合——listPrompts 带 server 归属与参数声明，
+    // servers() 卡片的 promptCount 同步；移除服务器后聚合为空。
+    void mcpManagerAggregatesPrompts() {
+        const QString configPath = McpConfig::configFilePath();
+        QFile configFile(configPath);
+        const bool hadConfig = configFile.exists();
+        QByteArray originalConfig;
+        if (hadConfig && configFile.open(QIODevice::ReadOnly)) {
+            originalConfig = configFile.readAll();
+            configFile.close();
+        }
+        auto restore = [&]() {
+            if (hadConfig) {
+                QFile out(configPath);
+                out.open(QIODevice::WriteOnly);
+                out.write(originalConfig);
+            } else {
+                QFile::remove(configPath);
+            }
+        };
+        QFile::remove(configPath);
+
+        auto* manager = McpManager::instance();
+        const QString fakeExe = QCoreApplication::applicationDirPath()
+            + QStringLiteral("/fake_mcp_server");
+
+        manager->addServer(QVariantMap{
+            {"name", QStringLiteral("t-fake")},
+            {"transport", QStringLiteral("stdio")},
+            {"command", fakeExe},
+            {"env", QVariantMap{
+                {"MCP_FAKE_PROMPTS", QStringLiteral("alpha;beta:lang")}}},
+            {"enabled", true}});
+
+        QTRY_COMPARE(manager->listPrompts().size(), 2);
+        const QVariantList prompts = manager->listPrompts();
+        const QVariantMap first = prompts.first().toMap();
+        QCOMPARE(first.value("server").toString(), QStringLiteral("t-fake"));
+        QCOMPARE(first.value("name").toString(), QStringLiteral("alpha"));
+        QVERIFY(first.value("arguments").toList().isEmpty());
+        const QVariantMap second = prompts.last().toMap();
+        QCOMPARE(second.value("name").toString(), QStringLiteral("beta"));
+        QCOMPARE(second.value("arguments").toList().size(), 1);
+        QCOMPARE(second.value("arguments").toList().first().toMap()
+                     .value("name").toString(), QStringLiteral("lang"));
+
+        // 请求回程：promptResolved 带服务器归属与参数回显。
+        QSignalSpy resolvedSpy(manager, &McpManager::promptResolved);
+        manager->requestPrompt(QStringLiteral("t-fake"),
+                               QStringLiteral("beta"),
+                               QVariantMap{{"lang", QStringLiteral("zh")}});
+        QTRY_VERIFY(!resolvedSpy.isEmpty());
+        const auto args = resolvedSpy.first();
+        QCOMPARE(args.at(0).toString(), QStringLiteral("t-fake"));
+        QCOMPARE(args.at(1).toString(), QStringLiteral("beta"));
+        QVERIFY(args.at(2).toBool());
+        QVERIFY(args.at(3).toString().contains(QStringLiteral("lang")));
+
+        // 卡片计数与服务器状态同步。
+        const QVariantList servers = manager->servers();
+        QCOMPARE(servers.size(), 1);
+        QCOMPARE(servers.at(0).toMap().value("promptCount").toInt(), 2);
+
+        // 请求未知服务器：同步失败回程，不崩溃。
+        QSignalSpy failSpy(manager, &McpManager::promptResolved);
+        manager->requestPrompt(QStringLiteral("no-such-server"),
+                               QStringLiteral("x"), {});
+        QCOMPARE(failSpy.count(), 1);
+        QVERIFY(!failSpy.first().at(2).toBool());
+
+        manager->removeServer(QStringLiteral("t-fake"));
+        QTRY_COMPARE(manager->listPrompts().size(), 0);
+
+        restore();
+    }
+
     // docs/20 §3.2：编辑重发守卫 —— 空文本 / 纯空白 / 无 agent 都是 no-op。
     void editAndResendGuards() {
         SqliteMemory memory(QStringLiteral(":memory:"));

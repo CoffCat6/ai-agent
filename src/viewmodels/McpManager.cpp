@@ -165,6 +165,60 @@ void McpManager::connectClient(McpClient* client) {
     });
     connect(client, &McpClient::toolsChanged, this,
             [this]() { refreshServers(); });
+    // docs/46: prompts 到达/清空都会改变卡片计数与补全候选，与 tools 同路
+    // 刷新（promptsChanged 在断开清理时也会发出）。
+    connect(client, &McpClient::promptsChanged, this,
+            [this]() { refreshServers(); });
+}
+
+// docs/46: 聚合各已连接服务器声明的提示词模板。数据只在 client 侧存一份
+// （拉取上限 kMaxPrompts 在 McpClient 分页时已截断），这里做跨服务器的
+// 拼装与描述截断——列表 description ≤1024 字符与工具 description 同一
+// 收口（McpToolAdapter::MaxDescriptionChars），防超长描述污染补全弹层。
+QVariantList McpManager::listPrompts() const {
+    static constexpr int MaxDescriptionChars = 1024;
+    QVariantList out;
+    for (McpClient* client : m_clients) {
+        const auto prompts = client->prompts();
+        for (const auto& prompt : prompts) {
+            QString description = prompt.description;
+            if (description.size() > MaxDescriptionChars)
+                description = description.left(MaxDescriptionChars);
+            QVariantList args;
+            for (const auto& arg : prompt.arguments) {
+                args.append(QVariantMap{
+                    {QStringLiteral("name"), arg.name},
+                    {QStringLiteral("description"), arg.description},
+                    {QStringLiteral("required"), arg.required},
+                });
+            }
+            out.append(QVariantMap{
+                {QStringLiteral("server"), client->serverName()},
+                {QStringLiteral("name"), prompt.name},
+                {QStringLiteral("title"), prompt.title},
+                {QStringLiteral("description"), description},
+                {QStringLiteral("arguments"), args},
+            });
+        }
+    }
+    return out;
+}
+
+void McpManager::requestPrompt(const QString& server, const QString& name,
+                               const QVariantMap& args) {
+    McpClient* client = clientFor(server);
+    if (!client) {
+        emit promptResolved(server, name, false, QString(),
+                            QStringLiteral("MCP server not connected: %1").arg(server));
+        return;
+    }
+    QJsonObject jsonArgs;
+    for (auto it = args.constBegin(); it != args.constEnd(); ++it)
+        jsonArgs.insert(it.key(), QJsonValue::fromVariant(it.value()));
+    client->promptsGet(name, jsonArgs,
+        [this, server, name](bool ok, const QString& text, const QString& error) {
+            emit promptResolved(server, name, ok, text, error);
+        });
 }
 
 QVariantList McpManager::servers() const {
@@ -191,6 +245,8 @@ QVariantList McpManager::servers() const {
             client ? client->sessionState()
                    : McpClient::SessionState::Disconnected);
         item["toolCount"] = client ? client->tools().size() : 0;
+        // docs/46: 服务器声明的提示词模板数（未连接/无能力均 0）。
+        item["promptCount"] = client ? client->prompts().size() : 0;
         // 工具名预览：连接成功后卡片上直接看得到这台服务器贡献了哪些工具，
         // 不必去工具页逐个对来源。未连接的服务器给空列表。
         QStringList toolNames;

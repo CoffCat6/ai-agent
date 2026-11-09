@@ -194,6 +194,9 @@ target_link_libraries(test_viewmodel PRIVATE nexus_core nexus_infra nexus_viewmo
 # bundle lives in the nexus_ai target, unreachable from here). The lrelease
 # dependency guarantees the .qm files exist before rcc runs.
 add_dependencies(test_viewmodel NexusAI_lrelease)
+# docs/46: MCP prompts 聚合用例要起 fake_mcp_server 子进程，必须保证
+# 它先于本测试构建（此前仅 test_mcp 声明了该依赖）。
+add_dependencies(test_viewmodel fake_mcp_server)
 # QT_RESOURCE_ALIAS must name the file under the PREFIX; absolute build-tree
 # paths are rejected by qt_add_resources otherwise.
 set_source_files_properties(${CMAKE_BINARY_DIR}/nexus_ai_zh_CN.qm PROPERTIES

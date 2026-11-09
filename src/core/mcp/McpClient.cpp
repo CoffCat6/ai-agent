@@ -67,6 +67,11 @@ void McpClient::disconnectFromServer() {
     // from the registry by walking tools() in their disconnected handler.
     emit disconnected();
     m_tools.clear();
+    // Prompts 同步清空：servers() 的 promptCount 读 client->prompts()，
+    // 断开后卡片计数必须归零（promptsChanged 触发 refreshServers）。
+    m_prompts.clear();
+    m_promptsCapability = false;
+    emit promptsChanged();
 }
 
 void McpClient::onTransportStateChanged(McpTransport::State state) {
@@ -109,16 +114,22 @@ void McpClient::runHandshake() {
                 {"version", QStringLiteral("0.2.0")}}},
         },
         [this](const QJsonObject& result, const QJsonObject& error) {
-            Q_UNUSED(result)
             if (!error.isEmpty()) {
                 emit connectionFailed(QStringLiteral("initialize failed: ")
                     + error.value("message").toString());
                 setSessionState(SessionState::Failed);
                 return;
             }
+            // Parse the server's declared capabilities: prompts/list is only
+            // sent when the server actually advertises the prompts capability,
+            // otherwise servers without it would answer method-not-found.
+            m_promptsCapability = result.value("capabilities").toObject()
+                                      .value("prompts").isObject();
             // Announce the client, then pull the tool list.
             sendNotification(QStringLiteral("notifications/initialized"), {});
             refreshTools();
+            if (m_promptsCapability)
+                refreshPrompts();
         });
 }
 
@@ -149,6 +160,107 @@ void McpClient::refreshTools() {
         });
 }
 
+
+// docs/46: prompts/list 分页拉取。cursor 循环拉到 kMaxPrompts 为止；
+// list_changed 中途再到的竞态用 busy/stale 处理——拉完后若已过期则重拉。
+void McpClient::refreshPrompts() {
+    if (!m_promptsCapability || !m_transport) return;
+    if (m_promptsBusy) {
+        m_promptsStale = true;
+        return;
+    }
+    m_promptsBusy = true;
+    fetchPromptsPage(QString(), std::make_shared<QList<PromptInfo>>());
+}
+
+void McpClient::fetchPromptsPage(const QString& cursor,
+                                 std::shared_ptr<QList<PromptInfo>> acc) {
+    QJsonObject params;
+    if (!cursor.isEmpty())
+        params.insert(QStringLiteral("cursor"), cursor);
+    sendRequest(QStringLiteral("prompts/list"), params,
+        [this, acc](const QJsonObject& result, const QJsonObject& error) {
+            m_promptsBusy = false;
+            if (!error.isEmpty()) {
+                // 非致命：tools 已可用而 prompts 拉取失败不该连坐连接状态，
+                // 记诊断即可（卡片照常显示工具，提示词计 0）。
+                emit diagnostic(QStringLiteral("prompts/list failed: ")
+                    + error.value("message").toString());
+                if (m_promptsStale) {
+                    m_promptsStale = false;
+                    refreshPrompts();
+                }
+                return;
+            }
+            for (const auto& entry : result.value("prompts").toArray()) {
+                if (acc->size() >= kMaxPrompts) break;
+                const QJsonObject p = entry.toObject();
+                PromptInfo info;
+                info.name = p.value("name").toString();
+                info.title = p.value("title").toString();
+                info.description = p.value("description").toString();
+                for (const auto& argEntry : p.value("arguments").toArray()) {
+                    const QJsonObject a = argEntry.toObject();
+                    PromptArgument arg;
+                    arg.name = a.value("name").toString();
+                    arg.description = a.value("description").toString();
+                    arg.required = a.value("required").toBool();
+                    info.arguments.append(arg);
+                }
+                if (!info.name.isEmpty())
+                    acc->append(info);
+            }
+            const QString next = result.value("nextCursor").toString();
+            if (!next.isEmpty() && acc->size() < kMaxPrompts) {
+                m_promptsBusy = true;
+                fetchPromptsPage(next, acc);
+                return;
+            }
+            m_prompts = *acc;
+            emit promptsChanged();
+            if (m_promptsStale) {
+                m_promptsStale = false;
+                refreshPrompts();
+            }
+        });
+}
+
+quint64 McpClient::promptsGet(const QString& name, const QJsonObject& args,
+                              std::function<void(bool, const QString&,
+                                                 const QString&)> handler) {
+    if (!m_transport) {
+        if (handler) handler(false, QString(),
+            QStringLiteral("MCP server not connected"));
+        return 0;
+    }
+    // prompts/get 的结果结构与 tools/call 不同：顶层是 messages[]
+    // （每条带 role + content），没有顶层 content 数组——不能走 toolHandler
+    // 的拼接路径，在这里按 text 块拼接全部消息内容。空结果按失败处理，
+    // 让调用方拿到明确错误而不是静默插入空串。
+    return sendRequest(QStringLiteral("prompts/get"),
+        QJsonObject{{"name", name}, {"arguments", args}},
+        [handler](const QJsonObject& result, const QJsonObject& error) {
+            if (!error.isEmpty()) {
+                if (handler) handler(false, QString(),
+                    error.value("message").toString());
+                return;
+            }
+            QString text;
+            for (const auto& msg : result.value("messages").toArray()) {
+                const QJsonObject content =
+                    msg.toObject().value("content").toObject();
+                if (content.value("type").toString() == QLatin1String("text")) {
+                    if (!text.isEmpty()) text += QLatin1Char('\n');
+                    text += content.value("text").toString();
+                }
+            }
+            if (handler)
+                handler(!text.isEmpty(), text,
+                        text.isEmpty()
+                            ? QStringLiteral("prompt returned no text content")
+                            : QString());
+        });
+}
 
 quint64 McpClient::callTool(const QString& tool, const QJsonObject& args,
                             std::function<void(bool, const QString&,
@@ -226,6 +338,8 @@ void McpClient::onMessage(const QJsonObject& message) {
         const QString method = message.value("method").toString();
         if (method == QLatin1String("notifications/tools/list_changed"))
             refreshTools();
+        else if (method == QLatin1String("notifications/prompts/list_changed"))
+            refreshPrompts();
         return;
     }
 
