@@ -350,6 +350,11 @@ const QVector<SettingsKeyDef>& SettingsSchema::registeredKeys() {
             keyDef(QStringLiteral("ui/windowY"), QVariant(), SettingValueType::Double),
             keyDef(QStringLiteral("ui/windowWidth"), QVariant(), SettingValueType::Double),
             keyDef(QStringLiteral("ui/windowHeight"), QVariant(), SettingValueType::Double),
+            // docs/46-adjacent（DPI 修复）：物理像素格式标记。X/Y/W/H 四键
+            // 在该标记为 true 时按物理像素解释（保存 逻辑×DPR，恢复 ÷DPR），
+            // 旧数据无此键按旧逻辑值兼容读取。必须注册进 schema——
+            // writeBatch 对未注册键整批拒绝，漏注册会把几何写入一起废掉。
+            keyDef(QStringLiteral("ui/windowPhysX"), false, SettingValueType::Bool),
             keyDef(QStringLiteral("ui/windowMaximized"), false, SettingValueType::Bool),
             keyDef(QStringLiteral("tools/disabled"), QStringList(), SettingValueType::StringList),
             keyDef(QStringLiteral("schemaVersion"), 0, SettingValueType::Int),

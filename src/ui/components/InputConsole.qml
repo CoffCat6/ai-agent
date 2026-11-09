@@ -907,6 +907,40 @@ function applySkill(name) {
         anchors.margins: 8
         height: Math.min(textArea.implicitHeight, root.maxHeight)
 
+        // ── 草稿区宽度节流（docs/47）──────────────────
+        // textArea 是全宽 wrap 的 TextEdit：窗口拖动缩放的每步都会令
+        // 草稿整篇重新断行，且 implicitHeight 随之抖动会连锁拉动整个
+        // 输入区高度。与 TranscriptViewport 同款冻结策略：缩放进行中
+        // 宽度不动（变窄右缘被 clip 裁掉、变宽暂时留白），250ms 定期
+        // 贴合、停止 80ms 后一次性贴合。顺带收益：冻结期间
+        // implicitHeight 稳定，输入区高度不再逐帧抖动。
+        readonly property real draftLiveWidth: inputRow.width - 80
+        property real draftSyncedWidth: 0
+        property bool draftResizing: false
+
+        onDraftLiveWidthChanged: {
+            if (draftSyncedWidth <= 0)
+                draftSyncedWidth = draftLiveWidth
+            draftResizing = true
+            draftSettle.restart()
+        }
+        Timer {
+            id: draftCatchUp
+            interval: 250
+            running: inputRow.draftResizing && inputRow.draftSyncedWidth > 0
+                     && inputRow.draftSyncedWidth !== inputRow.draftLiveWidth
+            repeat: true
+            onTriggered: inputRow.draftSyncedWidth = inputRow.draftLiveWidth
+        }
+        Timer {
+            id: draftSettle
+            interval: 80
+            onTriggered: {
+                inputRow.draftSyncedWidth = inputRow.draftLiveWidth
+                inputRow.draftResizing = false
+            }
+        }
+
         // Text input area: height follows the content so the placeholder
         // stays vertically centered; grows with wrapping up to the cap
         // (the text area scrolls internally past it).
@@ -915,8 +949,10 @@ function applySkill(name) {
             objectName: "messageInput"
             anchors.left: parent.left
             anchors.leftMargin: 36
-            anchors.right: parent.right
-            anchors.rightMargin: 44
+            // 宽度走节流值（80 = 左图标 36 + 右按钮区 44），缩放中冻结——
+            // 见上方 draftLiveWidth 注释。
+            width: inputRow.draftResizing
+                ? inputRow.draftSyncedWidth : inputRow.draftLiveWidth
             anchors.verticalCenter: parent.verticalCenter
             height: Math.min(implicitHeight, root.maxHeight)
 

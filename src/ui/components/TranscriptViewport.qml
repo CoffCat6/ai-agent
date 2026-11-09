@@ -13,14 +13,19 @@ Item {
     // ── 缩放节流（resize throttle）──────────────────
     // 全部 delegate 的宽度都来自 availableWidth（AgentChatPage 的 delegate
     // 绑定）。非虚拟化列里，窗口拖动缩放的每个 WM_SIZE 步都会改这个宽度，
-    // 令所有消息的 MarkdownText/CodeBlock 重新断行——整个场景最贵的操作，
-    // 高 DPR 屏（3.2K@175%，每帧物理像素 2.85× 于 1080p）上单帧超预算，
-    // 表现为拖动缩放一卡一卡。节流策略：拖动进行中 delegate 宽度按 50ms
-    // 节拍追赶新宽度（变窄时右缘被 clip 裁掉、变宽时暂时留白，均无错误
-    // 布局）；80ms 无新宽度变化视为结束，立即贴合并恢复逐像素跟随。
+    // 令所有消息的 MarkdownText/CodeBlock 重新断行——整个场景最贵的操作。
+    // 实测教训：50ms 节拍只是把"每像素重排"降为"每 50ms 重排"，单次全列
+    // 重排本身要 50~200ms（几百条消息），拖动中仍周期性掉帧。所以策略是
+    // **拖动中冻结**：delegate 宽度在拖动进行中完全不动（变窄时右缘被
+    // clip 裁掉、变宽时暂时留白，均无错误布局），只在两种时机重排——
+    //   · 长拖（>250ms 仍不松手）每 250ms 贴合一次，防止留白无限扩大
+    //     （单次重排被稀释到 4Hz，感知为内容偶发跳动而非持续卡顿）；
+    //   · 停止缩放 80ms 后一次性贴合并恢复逐像素跟随。
+    // 一次不可避免的昂贵重排被挪到松手之后，拖动全程帧成本只剩光栅化，
+    // 高 DPR 屏（3.2K@175%，每帧物理像素 2.85× 于 1080p）与 1080p 同时
+    // 受益。刻意不做宽度渐变动画：Behavior on width 会把一次重排摊成
+    // 每帧重排，恰恰是最贵路径（VSCode/Chrome 的内容区同为滞后贴合）。
     // 常态路径零开销（availableWidth 直接绑 liveWidth）。
-    // 顺带收益：contentHeight 变化 → onMaximumOffsetChanged → forceLayout
-    // 的触发频率也从每个 WM_SIZE 步降到节拍级。
     readonly property real liveWidth: flick.width
     property real syncedWidth: 0
     property bool resizing: false
@@ -36,7 +41,7 @@ Item {
     }
     Timer {
         id: resizeCatchUp
-        interval: 50
+        interval: 250
         running: root.resizing && root.syncedWidth > 0
                  && root.syncedWidth !== root.liveWidth
         repeat: true

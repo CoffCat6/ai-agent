@@ -22,6 +22,12 @@ ApplicationWindow {
     // ── Window geometry persistence (启动时恢复窗口) ─────
     // Restore only when the preference allows it; AgentVM.loadWindowGeometry
     // already drops positions that are off every screen.
+    //
+    // DPI（AgentVM 侧按物理像素持久化，见 loadWindowGeometry 注释）：恢复
+    // 赋值必须等窗口完成平台归属与 DPR 绑定后再做——实测在
+    // Component.onCompleted 里直接赋值，原生窗口还挂在错误的 DPI 因子上
+    // （3.2K@175% 实测请求 1201x800 被换算成 1575x1050，Qt 打出
+    // setGeometry 告警且窗口尺寸失真）。Qt.callLater 推迟到事件循环首拍。
     Component.onCompleted: {
         if (AgentVM.restoreWindowOnStartup) {
             const geo = AgentVM.loadWindowGeometry()
@@ -29,10 +35,12 @@ ApplicationWindow {
                 if (geo.maximized) {
                     mainWindow.visibility = Window.Maximized
                 } else {
-                    x = geo.x
-                    y = geo.y
-                    width = geo.width
-                    height = geo.height
+                    Qt.callLater(function() {
+                        mainWindow.x = geo.x
+                        mainWindow.y = geo.y
+                        mainWindow.width = geo.width
+                        mainWindow.height = geo.height
+                    })
                 }
             }
         }

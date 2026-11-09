@@ -3625,12 +3625,36 @@ void AgentViewModel::setRestoreWindowOnStartup(bool restore) {
 }
 
 // ── Window geometry ──────────────────────────────────────
+//
+// docs/46-adjacent（DPI 修复）：几何按**物理像素**持久化。
+//
+// 3.2K@175% 混合 DPI 环境的实测告警：请求 1201x800 → 结果 1575x1050
+// （×1.3125 ≠ DPR 1.75）——QML 侧在 Component.onCompleted 极早期以逻辑
+// 坐标赋值，原生窗口尚未完成 DPI 归属，Qt 用错误的因子做了逻辑→原生
+// 换算。逻辑值随屏幕 DPR 漂移，跨屏/改缩放后恢复必然失真。
+//
+// 物理像素方案（Qt 对跨 DPR 几何持久化的标准做法）：保存 逻辑×DPR，
+// 恢复 物理÷目标屏DPR——无论缩放比例与屏幕如何变化，窗口占的物理尺寸
+// 恒定。历史值的兼容：键里没有 DPR 标记的旧数据按"当时是本屏默认
+// DPR"无法反推，退化为一次性按当前 DPR 换算（与旧行为等价，仅首启
+// 一帧的差异），之后新格式自持续。
 
 QVariantMap AgentViewModel::loadWindowGeometry() const {
     if (!SettingsRepository::contains(QStringLiteral("ui/windowX"))) return {};
 
-    const double x = SettingsRepository::value(QStringLiteral("ui/windowX")).toDouble();
-    const double y = SettingsRepository::value(QStringLiteral("ui/windowY")).toDouble();
+    const qreal dpr = QGuiApplication::primaryScreen()->devicePixelRatio();
+
+    // 物理像素存储（ui/windowPhysX 标记新格式）；无标记的旧键按逻辑值
+    // 读取——它们是旧 DPR 下的逻辑值，一次性按当前 DPR 归一（容差内的
+    // DPR 变化不放大误差）。
+    const bool hasPhys = SettingsRepository::contains(QStringLiteral("ui/windowPhysX"));
+    double x = SettingsRepository::value(QStringLiteral("ui/windowX")).toDouble();
+    double y = SettingsRepository::value(QStringLiteral("ui/windowY")).toDouble();
+    double width = SettingsRepository::value(QStringLiteral("ui/windowWidth")).toDouble();
+    double height = SettingsRepository::value(QStringLiteral("ui/windowHeight")).toDouble();
+    if (hasPhys && dpr > 0) {
+        x /= dpr; y /= dpr; width /= dpr; height /= dpr;
+    }
 
     QVariantMap geo;
     // Reject a position that landed off every screen (e.g. an unplugged
@@ -3648,19 +3672,32 @@ QVariantMap AgentViewModel::loadWindowGeometry() const {
     geo.insert(QStringLiteral("valid"), onScreen);
     geo.insert(QStringLiteral("x"), x);
     geo.insert(QStringLiteral("y"), y);
-    geo.insert(QStringLiteral("width"), SettingsRepository::value(QStringLiteral("ui/windowWidth")).toDouble());
-    geo.insert(QStringLiteral("height"), SettingsRepository::value(QStringLiteral("ui/windowHeight")).toDouble());
+    geo.insert(QStringLiteral("width"), width);
+    geo.insert(QStringLiteral("height"), height);
     geo.insert(QStringLiteral("maximized"), SettingsRepository::value(
         QStringLiteral("ui/windowMaximized"), false).toBool());
     return geo;
 }
 
 void AgentViewModel::saveWindowGeometry(double x, double y, double width, double height, bool maximized) {
+    // 逻辑坐标 × 当前 DPR → 物理像素落盘（见上方说明）。
+    const qreal dpr = QGuiApplication::primaryScreen()->devicePixelRatio();
+    if (dpr <= 0) {
+        // 异常环境（无屏/offscreen）：退化为原样保存，保底不丢几何。
+        persistSettingsBatch({
+            {QStringLiteral("ui/windowX"), x},
+            {QStringLiteral("ui/windowY"), y},
+            {QStringLiteral("ui/windowWidth"), width},
+            {QStringLiteral("ui/windowHeight"), height},
+            {QStringLiteral("ui/windowMaximized"), maximized}});
+        return;
+    }
     persistSettingsBatch({
-        {QStringLiteral("ui/windowX"), x},
-        {QStringLiteral("ui/windowY"), y},
-        {QStringLiteral("ui/windowWidth"), width},
-        {QStringLiteral("ui/windowHeight"), height},
+        {QStringLiteral("ui/windowX"), x * dpr},
+        {QStringLiteral("ui/windowY"), y * dpr},
+        {QStringLiteral("ui/windowWidth"), width * dpr},
+        {QStringLiteral("ui/windowHeight"), height * dpr},
+        {QStringLiteral("ui/windowPhysX"), true},
         {QStringLiteral("ui/windowMaximized"), maximized}});
 }
 
