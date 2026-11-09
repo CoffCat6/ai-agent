@@ -1285,7 +1285,7 @@ private slots:
             "ui/sidebarWidth", "ui/panelWidth",
             "ui/panelVisible", "ui/sidebarExpanded", "ui/showProcess",
             "ui/windowX", "ui/windowY", "ui/windowWidth", "ui/windowHeight",
-            "ui/windowMaximized",
+            "ui/windowPhysX", "ui/windowMaximized",
             // M2: PreferenceStore 物理键（prefs/v1/<key>）
             "prefs/v1/ui.themeMode", "prefs/v1/ui.fontSans",
             "prefs/v1/ui.fontMono", "prefs/v1/ui.baseFontSize",

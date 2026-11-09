@@ -306,6 +306,8 @@ const QVector<CatalogEntryDef>& staticEntries() {
          QT_TRANSLATE_NOOP("SettingsSearch", "窗口宽度"), QStringLiteral("window width"), true, kNone},
         {NEXUS_CATALOG_ID("ui/windowHeight"), QStringLiteral("interface"),
          QT_TRANSLATE_NOOP("SettingsSearch", "窗口高度"), QStringLiteral("window height"), true, kNone},
+        {NEXUS_CATALOG_ID("ui/windowPhysX"), QStringLiteral("interface"),
+         QT_TRANSLATE_NOOP("SettingsSearch", "窗口位置"), QStringLiteral("window physX"), true, kNone},
         {NEXUS_CATALOG_ID("ui/windowMaximized"), QStringLiteral("interface"),
          QT_TRANSLATE_NOOP("SettingsSearch", "窗口最大化"), QStringLiteral("window maximized"),
          true, kNone},
