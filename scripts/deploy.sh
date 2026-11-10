@@ -59,7 +59,10 @@ OutDir="$(assertSafeOutDir "$OutDir")"
 AppDir="$OutDir/AppDir"
 
 [ -f "$BuildDir/CMakeCache.txt" ] || die "build directory '$BuildDir' has no CMakeCache.txt - configure first: cmake -B $BuildDir -G Ninja -DNEXUS_LINUX_APPIMAGE=ON"
-[ -f "$BuildDir/nexus_ai_deploy_script.cmake" ] || die "build dir '$BuildDir' was not configured with -DNEXUS_LINUX_APPIMAGE=ON - the Qt runtime would not be bundled"
+# Qt deploy 脚本生成在 .qt/deploy_qml_app_nexus_ai_<hash>.cmake（文件名带
+# 哈希后缀，不能按名检查）——直接查缓存里的开关，这才是权威状态。
+grep -q "^NEXUS_LINUX_APPIMAGE:BOOL=ON$" "$BuildDir/CMakeCache.txt" \
+    || die "build dir '$BuildDir' was not configured with -DNEXUS_LINUX_APPIMAGE=ON - the Qt runtime would not be bundled"
 command -v patchelf >/dev/null 2>&1 || die "patchelf not found - the Qt deploy script needs it to rewrite rpaths on Linux (apt install patchelf)"
 command -v curl >/dev/null 2>&1 || die "curl not found - needed to fetch appimagetool"
 
