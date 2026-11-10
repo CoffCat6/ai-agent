@@ -81,6 +81,14 @@ mkdir -p "$AppDir"
 echo "== Installing to $AppDir/usr =="
 cmake --install "$BuildDir" --prefix "$AppDir/usr"
 
+# Qt deploy 脚本只改写 exe 与 Qt 库的 rpath，不碰显式捆绑的第三方库——
+# qtkeychain（install 规则放入 usr/lib）的 Qt 依赖必须同样解析进 AppDir，
+# 否则它的 libQt6DBus/libQt6Core 会走系统路径（版本可能与捆绑的 Qt 不符）。
+for kclib in "$AppDir/usr/lib/"libqt6keychain.so*; do
+    [ -e "$kclib" ] || continue
+    patchelf --set-rpath '$ORIGIN' "$kclib"
+done
+
 echo "== Sanity checks =="
 exe="$AppDir/usr/bin/nexus_ai"
 [ -x "$exe" ] || die "usr/bin/nexus_ai missing (or not executable) in $AppDir"
@@ -91,11 +99,13 @@ exe="$AppDir/usr/bin/nexus_ai"
 find "$AppDir/usr" -name 'libQt6Core.so.*' -print -quit | grep -q . \
     || die "libQt6Core was not bundled into $AppDir - did the Qt deploy script run?"
 
-# rpath 改写成功的判据：exe 直接依赖的所有 Qt 库都解析到 AppDir 内部。
-# 解析到构建机的 Qt 安装路径 = 拿到别的机器上必死；"not found" 同样拦截。
-ldd "$exe" | grep libQt6 | grep -qv "$AppDir" && {
-    echo "ERROR: some Qt libraries resolve outside $AppDir:" >&2
-    ldd "$exe" | grep libQt6 | grep -v "$AppDir" >&2
+# rpath 改写成功的判据：exe 的 Qt/qtkeychain 依赖（含传递闭包，ldd 全列）
+# 全部解析到 AppDir 内部。解析到构建机的路径 = 拿到别的机器上必死；
+# "not found" 同样拦截。-i 同时覆盖 libQt6* 与 libqt6keychain。
+# 例外：glibc/libstdc++/libdbus 等 C 运行时按 AppImage 惯例交给目标系统。
+ldd "$exe" | grep -i "libqt6" | grep -qv "$AppDir" && {
+    echo "ERROR: some Qt/keychain libraries resolve outside $AppDir:" >&2
+    ldd "$exe" | grep -i "libqt6" | grep -v "$AppDir" >&2
     die "rpath rewrite failed (patchelf missing or deploy script skipped runtime dependencies)"
 }
 

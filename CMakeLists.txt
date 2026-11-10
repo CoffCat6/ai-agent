@@ -621,6 +621,16 @@ elseif(UNIX AND NOT APPLE)
             RENAME nexusai.png)
     endforeach()
     if(NEXUS_LINUX_APPIMAGE)
+        # Qt deploy 脚本只捆绑 Qt 自家的库——链接的 qtkeychain 共享库必须
+        # 显式放进 AppDir，否则 exe 的 DT_NEEDED(libqt6keychain.so.1) 解析
+        # 到构建机的系统副本，其 Qt 依赖也跟着解析到系统 Qt（run15 实测：
+        # libQt6DBus 从 /usr/lib 解析），拿到别的机器上直接起不来。
+        # find_library 拿到的是 .so 开发符号链接，file(REAL_PATH) 解析出
+        # 带版本号的运行时对象再装。deploy.sh 会补它的 $ORIGIN rpath。
+        find_library(NEXUS_QTKEYCHAIN_LIBRARY NAMES qt6keychain REQUIRED)
+        file(REAL_PATH "${NEXUS_QTKEYCHAIN_LIBRARY}" NEXUS_QTKEYCHAIN_RUNTIME_LIB)
+        install(FILES "${NEXUS_QTKEYCHAIN_RUNTIME_LIB}"
+            DESTINATION ${CMAKE_INSTALL_LIBDIR})
         qt_generate_deploy_qml_app_script(
             TARGET nexus_ai
             OUTPUT_SCRIPT nexus_ai_deploy_script
