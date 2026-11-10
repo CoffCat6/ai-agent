@@ -412,7 +412,7 @@ bool keychainWrite(const QString& slot, const QString& plain) {
     QObject::connect(&job, &QKeychain::Job::finished, &loop, &QEventLoop::quit);
     job.start();
     loop.exec();
-    if (job.error() != QKeychain::Job::NoError) {
+    if (job.error() != QKeychain::NoError) {
         qWarning() << "Keychain write failed for" << slot << ":"
                    << job.errorString() << "- API key will not be persisted";
         return false;
@@ -428,7 +428,7 @@ QString keychainRead(const QString& slot) {
     QObject::connect(&job, &QKeychain::Job::finished, &loop, &QEventLoop::quit);
     job.start();
     loop.exec();
-    if (job.error() != QKeychain::Job::NoError) {
+    if (job.error() != QKeychain::NoError) {
         // EntryNotFound (never stored, or QSettings restored without the
         // keyring) degrades to "unset" — same shape as a corrupt DPAPI blob.
         qWarning() << "Keychain read failed for" << slot << ":"
