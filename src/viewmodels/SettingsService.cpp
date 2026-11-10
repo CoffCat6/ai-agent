@@ -30,6 +30,12 @@
 #ifdef Q_OS_WIN
 #include <windows.h>
 #include <dpapi.h>
+#elif defined(Q_OS_LINUX)
+// docs/49 D1: API keys at rest go to the system keyring (Secret Service on
+// desktop-neutral sessions, KWallet on KDE) via QtKeychain. CMake links
+// Qt6Keychain on Linux only; macOS is not a target (docs/49 §8).
+#include <qtkeychain/keychain.h>
+#include <QEventLoop>
 #endif
 
 Q_LOGGING_CATEGORY(lcSettings, "nexus.settings")
@@ -294,6 +300,18 @@ bool isValidModelParamValue(const QString& key, const QVariant& value) {
     return paramPositiveInt(value, &iv);
 }
 
+// ── API key storage slots (docs/49 D1) ─────────────────────
+// protectApiKey/unprotectApiKey 是无状态的字符串变换，但 Linux 的钥匙环
+// 后端按「槽位」读写：每条模型 profile 一把（id 是持久化的 UUID）、
+// embedding/代理各一把、webSearch 每后端一把（直接用其 settingKey）。
+// Windows DPAPI 的密文内联在存储值里，槽位参数被忽略。
+QString profileKeySlot(const QVariantMap& p) {
+    return QStringLiteral("profile/") + p.value(QStringLiteral("id")).toString();
+}
+const QLatin1String kEmbeddingKeySlot("embedding/apiKey");
+const QLatin1String kProxyAuthSlot("network/proxyAuth");
+const QLatin1String kLegacyKeySlot("legacy/apiKey");
+
 #ifdef Q_OS_WIN
 
 // API keys are encrypted at rest with the Windows DPAPI (per-user) instead
@@ -301,7 +319,8 @@ bool isValidModelParamValue(const QString& key, const QVariant& value) {
 // anything else is legacy plain text and is migrated on load.
 const QLatin1String kEncPrefix("dpapi:v1:");
 
-QString protectApiKey(const QString& plain) {
+QString protectApiKey(const QString& slot, const QString& plain) {
+    Q_UNUSED(slot);
     if (plain.isEmpty()) return plain;
 
     const QByteArray utf8 = plain.toUtf8();
@@ -325,7 +344,8 @@ QString protectApiKey(const QString& plain) {
     return QString(kEncPrefix) + QString::fromLatin1(blob.toBase64());
 }
 
-QString unprotectApiKey(const QString& stored) {
+QString unprotectApiKey(const QString& slot, const QString& stored) {
+    Q_UNUSED(slot);
     if (!stored.startsWith(kEncPrefix)) return stored; // legacy plain text
     const QByteArray blob = QByteArray::fromBase64(
         stored.mid(kEncPrefix.size()).toLatin1());
@@ -346,9 +366,85 @@ QString unprotectApiKey(const QString& stored) {
 
 #else
 
-// Non-Windows platforms: keys stay plain text in QSettings; prefer env vars.
-QString protectApiKey(const QString& plain) { return plain; }
-QString unprotectApiKey(const QString& stored) { return stored; }
+// docs/49 D1: the secret lives in the system keyring; QSettings only carries
+// the "secret:v1:" marker. As with DPAPI above, a failed write never degrades
+// to plain text: the key is dropped from persistence (the in-memory profile
+// keeps working for this session; the user re-enters the key or uses the
+// env-var fallback after a restart).
+const QLatin1String kSecretMarker("secret:v1:");
+const QLatin1String kKeychainService("NexusAI");
+
+// Headless environments (CI) have no keyring daemon, yet tests must exercise
+// the full persistence pipeline. Test binaries (NEXUSAI_TESTING) opt into a
+// clearly marked prefixed storage instead of the keyring; production builds
+// cannot compile this path at all, and even the test path needs the explicit
+// env opt-in so a desktop test run never touches the real keyring.
+bool keychainTestFallback() {
+#if defined(NEXUSAI_TESTING)
+    return qEnvironmentVariableIsSet("NEXUS_TEST_PLAINTEXT_KEYS");
+#else
+    return false;
+#endif
+}
+
+// Blocking on the async keychain round-trip: these helpers run on the GUI
+// thread at configuration time (load/persist) — the same places DPAPI was
+// synchronous — and fire once per key change, so an inner event loop is
+// acceptable here.
+bool keychainWrite(const QString& slot, const QString& plain) {
+    QKeychain::WritePasswordJob job(kKeychainService);
+    job.setAutoDelete(false);
+    job.setKey(slot);
+    job.setTextData(plain);
+    QEventLoop loop;
+    QObject::connect(&job, &QKeychain::Job::finished, &loop, &QEventLoop::quit);
+    job.start();
+    loop.exec();
+    if (job.error() != QKeychain::Job::NoError) {
+        qWarning() << "Keychain write failed for" << slot << ":"
+                   << job.errorString() << "- API key will not be persisted";
+        return false;
+    }
+    return true;
+}
+
+QString keychainRead(const QString& slot) {
+    QKeychain::ReadPasswordJob job(kKeychainService);
+    job.setAutoDelete(false);
+    job.setKey(slot);
+    QEventLoop loop;
+    QObject::connect(&job, &QKeychain::Job::finished, &loop, &QEventLoop::quit);
+    job.start();
+    loop.exec();
+    if (job.error() != QKeychain::Job::NoError) {
+        // EntryNotFound (never stored, or QSettings restored without the
+        // keyring) degrades to "unset" — same shape as a corrupt DPAPI blob.
+        qWarning() << "Keychain read failed for" << slot << ":"
+                   << job.errorString();
+        return QString();
+    }
+    return job.textData();
+}
+
+QString protectApiKey(const QString& slot, const QString& plain) {
+    if (plain.isEmpty()) return plain;
+    if (keychainTestFallback()) {
+        // Test-only format: prefixed + base64, round-trips without a keyring.
+        return QString(QStringLiteral("test-plain:v1:"))
+            + QString::fromLatin1(plain.toUtf8().toBase64());
+    }
+    if (!keychainWrite(slot, plain)) return QString();
+    return QString(kSecretMarker);
+}
+
+QString unprotectApiKey(const QString& slot, const QString& stored) {
+    if (stored.startsWith(QStringLiteral("test-plain:v1:"))) {
+        return QString::fromUtf8(QByteArray::fromBase64(
+            stored.mid(QStringLiteral("test-plain:v1:").size()).toLatin1()));
+    }
+    if (!stored.startsWith(kSecretMarker)) return stored; // legacy plain text
+    return keychainRead(slot);
+}
 
 #endif // Q_OS_WIN
 
@@ -434,7 +530,7 @@ void SettingsService::load() {
     if (parseError.error == QJsonParseError::NoError && doc.isArray()) {
         for (const auto& entry : doc.array()) {
             QVariantMap p = entry.toObject().toVariantMap();
-            p["apiKey"] = unprotectApiKey(p.value("apiKey").toString());
+            p["apiKey"] = unprotectApiKey(profileKeySlot(p), p.value("apiKey").toString());
             // 厂商与协议都不认识的 profile 是损坏数据，沿用旧行为直接丢弃。
             if (!LlmProtocolRegistry::isKnownProvider(p.value("provider").toString())
                     && !LlmProtocolRegistry::find(p.value("apiProtocol").toString()))
@@ -537,7 +633,7 @@ void SettingsService::load() {
              .contains(m_embeddingProvider))
         m_embeddingProvider = SettingsSchema::defaultValue(
             QStringLiteral("embedding/provider")).toString();
-    m_embeddingApiKey = unprotectApiKey(SettingsRepository::value(
+    m_embeddingApiKey = unprotectApiKey(kEmbeddingKeySlot, SettingsRepository::value(
         QStringLiteral("embedding/apiKey"),
         SettingsSchema::defaultValue(QStringLiteral("embedding/apiKey"))).toString());
     m_systemPromptOverride = SettingsRepository::value(
@@ -572,7 +668,7 @@ void SettingsService::load() {
         const QString settingKey = WebSearchProviderRegistry::apiKeySettingKey(providerKey);
         if (settingKey.isEmpty()) continue;   // 免密钥后端（duckduckgo）没有存储舱
         m_webSearchApiKeys.insert(providerKey,
-            unprotectApiKey(SettingsRepository::value(
+            unprotectApiKey(settingKey, SettingsRepository::value(
                 settingKey, SettingsSchema::defaultValue(settingKey)).toString()));
     }
     // H1: proxy mode/host/port plus the encrypted credential blob. A corrupt
@@ -588,7 +684,7 @@ void SettingsService::load() {
             SettingsSchema::defaultValue(QStringLiteral("network/proxyPort"))).toInt());
     m_proxyUsername.clear();
     m_proxyPassword.clear();
-    const QString proxyAuth = unprotectApiKey(SettingsRepository::value(
+    const QString proxyAuth = unprotectApiKey(kProxyAuthSlot, SettingsRepository::value(
         QStringLiteral("network/proxyAuth"),
         SettingsSchema::defaultValue(QStringLiteral("network/proxyAuth"))).toString());
     if (!proxyAuth.isEmpty()) {
@@ -652,7 +748,7 @@ QVariantList SettingsService::migrateLegacy() {
         const QString p = SettingsRepository::value("provider", "openai").toString();
         return LlmProtocolRegistry::isKnownProvider(p) ? p : QStringLiteral("openai");
     }();
-    const QString legacyKey = unprotectApiKey(SettingsRepository::value("apiKey").toString());
+    const QString legacyKey = unprotectApiKey(kLegacyKeySlot, SettingsRepository::value("apiKey").toString());
 
     QVariantList out;
     for (const QString& provider : LlmProtocolRegistry::providers()) {
@@ -689,7 +785,7 @@ bool SettingsService::persist() {
     for (const QVariant& entry : m_profiles) {
         QVariantMap p = entry.toMap();
         const QString apiKey = p.value("apiKey").toString();
-        const QString protectedKey = protectApiKey(apiKey);
+        const QString protectedKey = protectApiKey(profileKeySlot(p), apiKey);
         if (!apiKey.isEmpty() && protectedKey.isEmpty()) {
             emit persistenceError(tr("API 密钥加密失败，模型配置未保存。"));
             return false;
@@ -1494,7 +1590,7 @@ bool SettingsService::embeddingUsesExternalProvider(const QString& provider,
 void SettingsService::setEmbeddingApiKey(const QString& key) {
     const QString trimmed = key.trimmed();
     if (m_embeddingApiKey == trimmed) return;
-    const QString stored = protectApiKey(trimmed);
+    const QString stored = protectApiKey(kEmbeddingKeySlot, trimmed);
     if (!trimmed.isEmpty() && stored.isEmpty()) {
         emit persistenceError(tr("向量模型 API 密钥加密失败，未保存更改。"));
         return;
@@ -1621,7 +1717,7 @@ void SettingsService::setWebSearchApiKey(const QString& key) {
     const QString trimmed = key.trimmed();
     if (m_webSearchApiKeys.value(m_webSearchProvider) == trimmed) return;
     // REQ-T6-05: encrypt on persistence; never log the key.
-    const QString stored = protectApiKey(trimmed);
+    const QString stored = protectApiKey(settingKey, trimmed);
     if (!trimmed.isEmpty() && stored.isEmpty()) {
         emit persistenceError(tr("搜索 API 密钥加密失败，未保存更改。"));
         return;
@@ -1784,7 +1880,7 @@ bool SettingsService::persistProxyAuth() {
         const QString plain = QString::fromUtf8(
             QJsonDocument(auth).toJson(QJsonDocument::Compact));
         // Never fall back to plain text: a failed encryption drops the change.
-        stored = protectApiKey(plain);
+        stored = protectApiKey(kProxyAuthSlot, plain);
         if (stored.isEmpty()) {
             emit persistenceError(tr("代理认证信息加密失败，未保存更改。"));
             return false;

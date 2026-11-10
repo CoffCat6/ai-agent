@@ -2,7 +2,7 @@
 
 | | |
 |---|---|
-| **状态** | 阶段 0 已实施（3c38973a，Windows 全量测试通过）；阶段 1 实施中（install 规则 + deploy.sh + CI artifact，待 Linux CI 首跑验证） |
+| **状态** | 阶段 0/1 已实施（3c38973a / da091d14，Windows 全量测试通过）；CI 环境问题修复中（此工作流此前从未成功运行：aqt 参数/编码/目录名三连）；阶段 2 实施中（D1 已落地） |
 | **范围** | Linux 桌面（X11 / Wayland；GCC/Clang，Qt ≥ 6.5）。macOS 明确不做（§8） |
 | **前置** | 全量只读分析：`linux/master@7790fabb`，约 282 个源文件逐文件核查 `Q_OS_WIN` 门控、进程/路径/编码/环境变量、构建与 CI |
 
@@ -78,7 +78,7 @@ Linux 依赖面：`Qt6::Pdf` 是额外模块（aqt `-m qtpdf`，gcc_64 架构可
 
 ## 3. 关键设计决策
 
-- **D1 API Key 加密**：QtKeychain（`qt6keychain`）而非直连 libsecret——后者拖入 GLib/GObject 依赖栈，与纯 Qt 项目不搭；QtKeychain 统一封装 Secret Service（GNOME/桌面中性环境）与 KWallet（KDE）。存储格式沿用版本前缀模式：`secret:v1:<base64>`。**dpapi 密文不跨 OS 迁移**：Linux 首次使用需重录密钥（迁移方案：明文导入向导，阶段 2 顺带）。⚠ 新增第三方依赖，需拍板。
+- **D1 API Key 加密**：QtKeychain（`Qt6Keychain::Qt6Keychain`）而非直连 libsecret——后者拖入 GLib/GObject 依赖栈，与纯 Qt 项目不搭；QtKeychain 统一封装 Secret Service（GNOME/桌面中性环境）与 KWallet（KDE）。**已实施**（2026-11-10）：`protectApiKey/unprotectApiKey` 增加「槽位」参数（profile 按 UUID、embedding/代理/legacy 各固定槽、webSearch 用各后端 settingKey）；QSettings 只落 `secret:v1:` 标记，密文在钥匙环；写入失败仍绝不回退明文。headless CI 无钥匙环服务，测试二进制（`NEXUSAI_TESTING`）经 `NEXUS_TEST_PLAINTEXT_KEYS=1` 环境变量显式切换到 `test-plain:v1:` 前缀格式（生产构建编译不到该路径，桌面测试运行也不触碰真实钥匙环）。**dpapi 密文不跨 OS 迁移**：Linux 首次使用需重录密钥。已知限制：删除 profile 不清理钥匙环残留条目（persist 是整表重写，无删除事件，后续补 DeletePasswordJob）。Ubuntu 依赖包：`qtkeychain-qt6-dev`。
 - **D2 开机自启**：写 `~/.config/autostart/nexusai.desktop`（XDG autostart），Exec 为当前 exe 路径；卸载应用时该文件自然失效。文案改为平台中性（"无法更新开机自启动设置"）。`AutoStartBackend` 注入点已预留（SettingsService.h:484–490）。
 - **D3 进程树清理**：`QProcess::setChildProcessModifier([]{ ::setpgid(0,0); })`（Qt 6.4+，子进程 exec 前回调，无竞态）建立进程组；取消/超时/超限三路径 `::kill(-pid, SIGTERM)`，宽限后 `SIGKILL`。
 - **D4 QSaveFile 权限保留**：commit 前若目标文件存在则记录 `QFile::permissions()`，commit 后恢复；新文件保持 umask 默认。实现收敛为一个工具函数，7 处调用点统一接入。

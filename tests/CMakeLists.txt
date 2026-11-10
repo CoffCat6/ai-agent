@@ -48,8 +48,14 @@ function(add_test)
         # QPA platform even when they never open a window; -platform offscreen
         # flags on individual tests take precedence, and core-only tests never
         # consult the variable. Windows keeps its GUI-session default.
+        # NEXUS_TEST_PLAINTEXT_KEYS: CI has no Secret Service daemon, so the
+        # keyring-backed API key storage (docs/49 D1) would drop every key and
+        # fail the persistence round-trips. The env opt-in switches test
+        # binaries (NEXUSAI_TESTING only) to a prefixed test format; desktop
+        # test runs also go through it, never touching the real keyring.
         set_property(TEST "${_nexus_name}" APPEND PROPERTY
-            ENVIRONMENT "QT_QPA_PLATFORM=offscreen")
+            ENVIRONMENT "QT_QPA_PLATFORM=offscreen"
+                        "NEXUS_TEST_PLAINTEXT_KEYS=1")
     endif()
 endfunction()
 
