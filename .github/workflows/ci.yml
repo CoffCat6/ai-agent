@@ -191,6 +191,15 @@ jobs:
 
       # NEXUS_LINUX_APPIMAGE=ON：install 规则额外挂载 Qt deploy 脚本，
       # deploy.sh 的 cmake --install 会把 Qt 运行时捆绑进 AppDir
+      # QtKeychain 头文件诊断：noble 包声称 /usr/include/qt6keychain/keychain.h，
+      # 但 __has_include 两种形态都探不到（run8 实测），列出真实布局与
+      # CMake target 的 include 目录配置。
+      - name: Inspect QtKeychain headers
+        run: |
+          dpkg -L qtkeychain-qt6-dev | grep -E "\.h$|\.cmake$" || true
+          find /usr/include -name "*keychain*" 2>/dev/null || true
+          grep -rE "INTERFACE_INCLUDE_DIRECTORIES|INTERFACE_LINK_LIBRARIES" /usr/lib/x86_64-linux-gnu/cmake/Qt6Keychain/ || true
+
       - name: Configure
         run: cmake -B build -G Ninja -DBUILD_TESTS=ON -DNEXUS_LINUX_APPIMAGE=ON -DCMAKE_PREFIX_PATH=$QT_DIR/$QT_VERSION/gcc_64
 
