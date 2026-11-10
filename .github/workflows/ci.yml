@@ -49,11 +49,11 @@ jobs:
           $gpp = Get-ChildItem "$env:QT_DIR/Tools" -Recurse -Filter "g++.exe" | Select-Object -First 1
           if (-not $gpp) { throw "MinGW g++.exe not found under Qt/Tools" }
           Add-Content $env:GITHUB_PATH "$($gpp.DirectoryName)"
-          Add-Content $env:GITHUB_PATH "$env:QT_DIR/$env:QT_VERSION/win64_mingw/bin"
+          Add-Content $env:GITHUB_PATH "$env:QT_DIR/$env:QT_VERSION/mingw_64/bin"
           # PS 5.1 的 Out-File 默认 UTF-16 编码，runner 的 GITHUB_ENV 解析器
           # 读不出该文件 → CMAKE_PREFIX_PATH 静默丢失（find_package Qt6 失败）。
           # 与上面 PATH 行同用 Add-Content（ASCII）才是 runner 能解析的格式。
-          Add-Content $env:GITHUB_ENV "CMAKE_PREFIX_PATH=$env:QT_DIR/$env:QT_VERSION/win64_mingw"
+          Add-Content $env:GITHUB_ENV "CMAKE_PREFIX_PATH=$env:QT_DIR/$env:QT_VERSION/mingw_64"
 
       - name: Configure
         shell: pwsh
@@ -111,11 +111,11 @@ jobs:
           $gpp = Get-ChildItem "$env:QT_DIR/Tools" -Recurse -Filter "g++.exe" | Select-Object -First 1
           if (-not $gpp) { throw "MinGW g++.exe not found under Qt/Tools" }
           Add-Content $env:GITHUB_PATH "$($gpp.DirectoryName)"
-          Add-Content $env:GITHUB_PATH "$env:QT_DIR/$env:QT_VERSION/win64_mingw/bin"
+          Add-Content $env:GITHUB_PATH "$env:QT_DIR/$env:QT_VERSION/mingw_64/bin"
           # PS 5.1 的 Out-File 默认 UTF-16 编码，runner 的 GITHUB_ENV 解析器
           # 读不出该文件 → CMAKE_PREFIX_PATH 静默丢失（find_package Qt6 失败）。
           # 与上面 PATH 行同用 Add-Content（ASCII）才是 runner 能解析的格式。
-          Add-Content $env:GITHUB_ENV "CMAKE_PREFIX_PATH=$env:QT_DIR/$env:QT_VERSION/win64_mingw"
+          Add-Content $env:GITHUB_ENV "CMAKE_PREFIX_PATH=$env:QT_DIR/$env:QT_VERSION/mingw_64"
 
       - name: Configure (Release)
         shell: pwsh
@@ -140,7 +140,9 @@ jobs:
 
   # docs/49 阶段 0：Linux 编译 + 测试基线。linux_gcc_64 + qtpdf，offscreen 跑
   # 全量 ctest（Qt 运行时解析/无显示器适配在 tests/CMakeLists.txt 内按平台处理）。
-  # 注意 6.7+ 的 Linux 架构名是 linux_gcc_64（旧的 gcc_64 已不存在）。
+  # 注意：aqt 的 CLI 架构令牌（6.7+ 为 linux_gcc_64）与磁盘安装目录名
+  # （始终是 gcc_64；Windows 同理：令牌 win64_mingw / 目录 mingw_64）不同，
+  # CMAKE_PREFIX_PATH 必须指向目录名。
   linux-gcc:
     runs-on: ubuntu-latest
     env:
@@ -177,7 +179,7 @@ jobs:
       # NEXUS_LINUX_APPIMAGE=ON：install 规则额外挂载 Qt deploy 脚本，
       # deploy.sh 的 cmake --install 会把 Qt 运行时捆绑进 AppDir
       - name: Configure
-        run: cmake -B build -G Ninja -DBUILD_TESTS=ON -DNEXUS_LINUX_APPIMAGE=ON -DCMAKE_PREFIX_PATH=$QT_DIR/$QT_VERSION/linux_gcc_64
+        run: cmake -B build -G Ninja -DBUILD_TESTS=ON -DNEXUS_LINUX_APPIMAGE=ON -DCMAKE_PREFIX_PATH=$QT_DIR/$QT_VERSION/gcc_64
 
       - name: Build
         run: cmake --build build

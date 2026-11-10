@@ -275,6 +275,13 @@ target_link_libraries(nexus_viewmodels PUBLIC Qt6::Pdf)
 if(WIN32)
     # DPAPI (CryptProtectData) for encrypted API key storage
     target_link_libraries(nexus_viewmodels PUBLIC crypt32)
+elseif(UNIX AND NOT APPLE)
+    # docs/49 D1: API keys at rest go to the system keyring (Secret Service
+    # on desktop-neutral sessions, KWallet on KDE) via QtKeychain; QSettings
+    # only carries a "secret:v1:" marker. Ubuntu 24.04 package:
+    # qtkeychain-qt6-dev.
+    find_package(Qt6Keychain REQUIRED)
+    target_link_libraries(nexus_viewmodels PUBLIC Qt6Keychain::Qt6Keychain)
 endif()
 
 # ── Main Executable ───────────────────────────────────────
