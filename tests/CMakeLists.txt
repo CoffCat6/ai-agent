@@ -3,22 +3,32 @@
 
 enable_testing()
 
-# ── Qt runtime on PATH for every test ─────────────────────
-# The test executables link Qt dynamically, so Windows must resolve
-# Qt6Core/Qt6Gui/... at load time. Without the Qt bin dir on PATH they die
-# with 0xc0000135 (STATUS_DLL_NOT_FOUND) before a single test runs, which
-# reads as a mass failure rather than a missing toolchain.
+# ── Qt runtime resolution for every test ──────────────────
+# The test executables link Qt dynamically, so the loader must resolve
+# Qt6Core/Qt6Gui/... at load time — a miss reads as a mass failure rather
+# than a missing toolchain. The mechanism differs per platform (docs/49):
 #
-# Qt's own bin dir also ships the MinGW C++ runtime (libstdc++-6,
-# libgcc_s_seh-1, libwinpthread-1), so it is the only entry needed — the
-# separate D:/Qt/Tools/mingw*/bin is not required.
+#   - Windows: the Qt bin dir must be on PATH, else the loader dies with
+#     0xc0000135 (STATUS_DLL_NOT_FOUND). Qt's bin dir also ships the MinGW
+#     C++ runtime (libstdc++-6, libgcc_s_seh-1, libwinpthread-1), so it is
+#     the only entry needed — the separate D:/Qt/Tools/mingw*/bin is not.
+#   - Linux: Qt's shared libraries live in <prefix>/lib (not bin/), so
+#     LD_LIBRARY_PATH gets the lib dir. Build-tree rpath already covers the
+#     common case; the explicit entry keeps tests loading even where rpath
+#     is stripped (installed/copied trees) and mirrors the Windows mechanism.
 #
 # Implementation: shadow add_test so every registration — direct or through
 # the nexus_add_test helper further down — gets the property applied
 # immediately. ENVIRONMENT_MODIFICATION "path_list_prepend" (CMake >= 3.22)
-# prepends to the inherited PATH rather than replacing it, so the compiler
-# dir and user PATH entries survive.
-set(NEXUS_QT_BIN_DIR "${QT6_INSTALL_PREFIX}/${QT6_INSTALL_BINS}")
+# prepends to the inherited value rather than replacing it, so user PATH /
+# LD_LIBRARY_PATH entries survive.
+if(WIN32)
+    set(NEXUS_QT_RUNTIME_DIR "${QT6_INSTALL_PREFIX}/${QT6_INSTALL_BINS}")
+    set(NEXUS_QT_RUNTIME_VAR "PATH")
+else()
+    set(NEXUS_QT_RUNTIME_DIR "${QT6_INSTALL_PREFIX}/${QT6_INSTALL_LIBS}")
+    set(NEXUS_QT_RUNTIME_VAR "LD_LIBRARY_PATH")
+endif()
 
 function(add_test)
     _add_test(${ARGV})
@@ -31,7 +41,16 @@ function(add_test)
         set(_nexus_name "${_nexus_first}")
     endif()
     set_tests_properties("${_nexus_name}" PROPERTIES
-        ENVIRONMENT_MODIFICATION "PATH=path_list_prepend:${NEXUS_QT_BIN_DIR}")
+        ENVIRONMENT_MODIFICATION
+        "${NEXUS_QT_RUNTIME_VAR}=path_list_prepend:${NEXUS_QT_RUNTIME_DIR}")
+    if(NOT WIN32)
+        # Headless CI: tests instantiated via QTEST_MAIN (QApplication) need a
+        # QPA platform even when they never open a window; -platform offscreen
+        # flags on individual tests take precedence, and core-only tests never
+        # consult the variable. Windows keeps its GUI-session default.
+        set_property(TEST "${_nexus_name}" APPEND PROPERTY
+            ENVIRONMENT "QT_QPA_PLATFORM=offscreen")
+    endif()
 endfunction()
 
 add_executable(test_chat_workflows test_chat_workflows.cpp)

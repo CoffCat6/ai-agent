@@ -14,7 +14,10 @@
 #include <QThreadPool>
 #include <QUrl>
 #include <QDebug>
+#ifdef Q_OS_WIN
+// Registry access for the emergency "open with" fallback below.
 #include <windows.h>
+#endif
 
 namespace NexusAI {
 
@@ -29,6 +32,13 @@ namespace NexusAI {
 // This fallback asks the registry which editors are actually registered and
 // launches one directly with the file as an argument, bypassing whatever the
 // association resolves to.
+
+// Everything below is Windows-only: the association store it consults is the
+// registry. Linux builds compile the block out and openWithKnownEditor()
+// simply reports "no editor" (docs/49 - a future xdg-mime based lookup could
+// fill the same role there).
+
+#ifdef Q_OS_WIN
 
 // Registry value reader. Two things the obvious implementation gets wrong:
 //   1. RegGetValueW refuses HKEY_CLASSES_ROOT, so the key is opened with
@@ -140,11 +150,13 @@ static QStringList candidateEditors(const QString& absolute) {
                               QStringLiteral("Applications\\VSCodium.exe"),
                               QStringLiteral("VSCode.md")}) {
         QString cmd;
-        if (readShellOpenCommand(HKEY_CLASSES_ROOT, id, &cmd))
-            pushCommand(cmd);
+            if (readShellOpenCommand(HKEY_CLASSES_ROOT, id, &cmd))
+                pushCommand(cmd);
     }
     return commands;
 }
+
+#endif // Q_OS_WIN
 
 ProjectFileViewModel* ProjectFileViewModel::s_instance = nullptr;
 
@@ -353,6 +365,11 @@ QString ProjectFileViewModel::openWithKnownEditor(const QString& relPath) {
     const QString absolute = absolutePath(relPath);
     if (absolute.isEmpty() || !QFileInfo::exists(absolute)) return {};
 
+    // The registry probe below is a Windows-shell workaround; Linux has no
+    // equivalent association store to consult (docs/49 - a future xdg-mime
+    // based lookup could fill the same role), so the fallback reports "no
+    // editor found" there.
+#ifdef Q_OS_WIN
     for (const QString& command : candidateEditors(absolute)) {
         // Split the executable from its own arguments: every candidate starts
         // with either a quoted path or a bare one.
@@ -385,6 +402,7 @@ QString ProjectFileViewModel::openWithKnownEditor(const QString& relPath) {
         if (proc.startDetached())
             return program + QLatin1Char(' ') + absolute;
     }
+#endif // Q_OS_WIN
     return {};
 }
 
