@@ -209,8 +209,12 @@ GitService::CommandResult GitService::runWithInput(const QStringList& args,
     // a pattern. Literal pathspecs stop `*`, `?` and `[]` inside a user file
     // name from being reinterpreted and staging/matching a different file.
     QStringList effectiveArgs;
-    effectiveArgs.reserve(args.size() + 1);
-    effectiveArgs << QStringLiteral("--literal-pathspecs") << args;
+    effectiveArgs.reserve(args.size() + 3);
+    // core.quotepath=false: LC_ALL=C makes git quote non-ASCII pathnames as
+    // octal escapes ("\346\226\207...") in status/log/diff output; the UI
+    // renders UTF-8, so raw names are what the user expects (docs/49 D7).
+    effectiveArgs << QStringLiteral("-c") << QStringLiteral("core.quotepath=false")
+                  << QStringLiteral("--literal-pathspecs") << args;
     process.setArguments(effectiveArgs);
     process.setWorkingDirectory(baseDir());
     process.setProcessChannelMode(QProcess::SeparateChannels);

@@ -321,10 +321,15 @@ bool ProjectFileViewModel::openInDefaultApp(const QString& relPath) {
     // ELECTRON_RUN_AS_NODE=1, and any Electron-based handler (MarkText was
     // the reported case) then boots as a bare Node runtime and treats the
     // file as a JavaScript entry point: "SyntaxError: Invalid or unexpected
-    // token". Removing the variable before the spawn is what makes the
+    // token". Clearing the variable before the spawn is what makes the
     // handler start as a GUI app again.
-    QProcessEnvironment::systemEnvironment().remove(
-        QStringLiteral("ELECTRON_RUN_AS_NODE"));
+    //
+    // qunsetenv, not systemEnvironment().remove(): the latter mutates a
+    // snapshot copy — a documented no-op for whatever QDesktopServices
+    // detaches later. The real process environment is what the handler
+    // inherits, and qunsetenv is what actually rewrites it. The variable
+    // means nothing to this (non-Electron) process, so clearing is safe.
+    qunsetenv("ELECTRON_RUN_AS_NODE");
     return QDesktopServices::openUrl(QUrl::fromLocalFile(absolute));
 }
 
@@ -347,8 +352,9 @@ bool ProjectFileViewModel::openAbsolute(const QString& absolutePath) {
     // so the route (see openAbsoluteRoute) sends URLs to the browser.
     const QString route = openAbsoluteRoute(absolutePath);
     if (route.isEmpty()) return false;
-    QProcessEnvironment::systemEnvironment().remove(
-        QStringLiteral("ELECTRON_RUN_AS_NODE"));
+    // Same scrub as openInDefaultApp: systemEnvironment().remove() mutates a
+    // snapshot copy and changes nothing the spawned handler would inherit.
+    qunsetenv("ELECTRON_RUN_AS_NODE");
     if (route == QLatin1String("web"))
         return QDesktopServices::openUrl(QUrl(absolutePath, QUrl::StrictMode));
     return QDesktopServices::openUrl(QUrl::fromLocalFile(absolutePath));

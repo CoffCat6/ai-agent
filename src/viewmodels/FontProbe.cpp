@@ -3,6 +3,7 @@
 #include <QFontDatabase>
 #include <QGuiApplication>
 #include <QFont>
+#include <QFontInfo>
 
 namespace NexusAI {
 
@@ -33,7 +34,12 @@ QString FontProbe::systemDefaultSans() const {
 #elif defined(Q_OS_MACOS)
     return QStringLiteral("SF Pro Text");
 #else
-    return QStringLiteral("Sans Serif");
+    // "Sans Serif" 是 fontconfig 的通用别名，不是 QFontDatabase::families()
+    // 列出的具体族名——hasFamily() 探空后 ThemeManager 拿不到「可命名」的
+    // 默认值（设置页下拉框无法高亮）。defaultFamily() 返回 fontconfig
+    // 解析后的具体族名（如 DejaVu Sans / Noto Sans CJK SC），isAvailable()
+    // 对它成立（docs/49 D6）。
+    return QFont().defaultFamily();
 #endif
 }
 
@@ -43,7 +49,10 @@ QString FontProbe::systemDefaultMono() const {
 #elif defined(Q_OS_MACOS)
     return QStringLiteral("Menlo");
 #else
-    return QStringLiteral("Monospace");
+    // 同上：别名 "Monospace" 不在具体族名清单里。systemFont(FixedFont) 经
+    // QFontInfo 解析出实际命中的等宽族（docs/49 D6）。
+    return QFontInfo(QFontDatabase::systemFont(QFontDatabase::FixedFont))
+        .family();
 #endif
 }
 

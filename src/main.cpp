@@ -64,11 +64,11 @@
 #include <QDir>
 #include <QLockFile>
 #include <QTimer>
-#ifdef Q_OS_WIN
 #include <QQuickWindow>
 #include <QSGRendererInterface>
 #include <QScreen>
 #include <QWindow>
+#ifdef Q_OS_WIN
 #define WIN32_LEAN_AND_MEAN
 #include <windows.h>
 #endif
@@ -1082,10 +1082,13 @@ qInfo() << "NexusAI" << app.applicationVersion() << "starting";
     // 中等完整性 Explorer 的 OLE 拖放握手消息，导致光标一直 🚫。这里把
     // 三条握手消息放行，让拖拽在任意启动方式下都可用（见上方说明）。
     allowDragDropFromLowerIntegrity(mainWindow);
+#endif
 
     // 渲染环境一次性登记：QSG_INFO 的分类日志被 Logger 收编后对用户不可
     // 见，这里把"实际后端 + 每块屏 DPR"主动写进日志，作为缩放流畅度问题
     // 的排查基线（DPR × 每帧物理像素是缩放开销的直接乘数）。
+    // docs/49 D5：不再限 Windows——Linux 的 RHI 后端选择（OpenGL/Vulkan，
+    // 防意外回退 software）与 X11/Wayland 的 DPR 行为同样需要这份基线。
     {
         QString screens;
         for (const QScreen* s : QGuiApplication::screens()) {
@@ -1107,7 +1110,6 @@ qInfo() << "NexusAI" << app.applicationVersion() << "starting";
         qInfo().noquote() << QStringLiteral("render: backend=%1 screens%2")
                                  .arg(QLatin1String(apiName), screens);
     }
-#endif
 
     // ── docs/20 §4.1（D6/D10）：系统托盘 + 后台任务完成通知 ──
     // 图标：assets/icons/nexus.ai.ico 嵌进 exe（任务栏/资源管理器/Alt-Tab），

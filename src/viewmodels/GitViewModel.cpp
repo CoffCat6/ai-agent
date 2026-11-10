@@ -689,9 +689,10 @@ bool GitViewModel::openInDefaultApp(const QString& path) {
     const QString absolute = absolutePath(path);
     if (absolute.isEmpty() || !QFileInfo::exists(absolute)) return false;
     // Same ELECTRON_RUN_AS_NODE scrub as ProjectFileViewModel: a handler
-    // inherited from a VSCode-family terminal must not boot as Node.
-    QProcessEnvironment::systemEnvironment().remove(
-        QStringLiteral("ELECTRON_RUN_AS_NODE"));
+    // inherited from a VSCode-family terminal must not boot as Node. Must be
+    // qunsetenv — systemEnvironment().remove() edits a snapshot copy, not
+    // the process environment the detached handler actually inherits.
+    qunsetenv("ELECTRON_RUN_AS_NODE");
     return QDesktopServices::openUrl(QUrl::fromLocalFile(absolute));
 }
 

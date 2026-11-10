@@ -938,7 +938,13 @@ static GitResult runGit(const QStringList& args, int timeoutMs = 10000) {
     if (!projectRoot.isEmpty())
         proc.setWorkingDirectory(projectRoot);
     proc.setProcessEnvironment(gitProcessEnvironment());
-    proc.start(QStringLiteral("git"), args);
+    // core.quotepath=false（docs/49 D7）：LC_ALL=C 下 git 会把非 ASCII 文件名
+    // 转义成八进制；模型和用户看到的应是原始 UTF-8 名字。
+    QStringList effectiveArgs;
+    effectiveArgs.reserve(args.size() + 2);
+    effectiveArgs << QStringLiteral("-c") << QStringLiteral("core.quotepath=false")
+                  << args;
+    proc.start(QStringLiteral("git"), effectiveArgs);
     if (!proc.waitForStarted(3000))
         return {false, QStringLiteral("Failed to start git: %1").arg(proc.errorString())};
     if (!proc.waitForFinished(timeoutMs)) {

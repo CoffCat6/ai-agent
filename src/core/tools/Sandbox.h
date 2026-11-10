@@ -514,10 +514,19 @@ private:
 #endif
     }
 
-    // True when path equals base or lies underneath it
+    // True when path equals base or lies underneath it. Prefix matching
+    // follows the platform filesystem's case convention — the same split
+    // GitService/SkillRegistry/ProjectFileIndex already apply (docs/49):
+    // Windows is insensitive, case-sensitive filesystems must not treat
+    // /home/u/Documents and /home/u/documents as the same directory.
     static bool isWithin(const QString& path, const QString& base) {
         if (base.isEmpty()) return false;
-        if (!path.startsWith(base, Qt::CaseInsensitive)) return false;
+#ifdef Q_OS_WIN
+        const Qt::CaseSensitivity pathCase = Qt::CaseInsensitive;
+#else
+        const Qt::CaseSensitivity pathCase = Qt::CaseSensitive;
+#endif
+        if (!path.startsWith(base, pathCase)) return false;
         if (path.size() == base.size()) return true;
         const QChar next = path.at(base.size());
         return next == '/' || next == '\\'
