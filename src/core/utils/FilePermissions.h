@@ -34,7 +34,7 @@ inline void restoreAfterReplace(const QString& target,
     Q_UNUSED(target);
     Q_UNUSED(saved);
 #else
-    if (!saved.isEmpty()) QFile::setPermissions(target, saved);
+    if (saved) QFile::setPermissions(target, saved);   // 空集 = 新建文件，保持 umask
 #endif
 }
 
