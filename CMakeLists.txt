@@ -283,6 +283,16 @@ elseif(UNIX AND NOT APPLE)
     # only carries a "secret:v1:" marker. Ubuntu 24.04 package:
     # qtkeychain-qt6-dev.
     find_package(Qt6Keychain REQUIRED)
+    # 发行版头文件布局不统一（上游 <qt6keychain 惯用 qtkeychain/ 前缀，
+    # Debian 0.14/0.15 是扁平 /usr/include/qt6keychain/keychain.h），且
+    # CI 实测 GCC 默认路径下 __has_include 也探不到该文件——不猜布局，
+    # find_path 显式定位并作为 include 目录下发。
+    find_path(NEXUS_QTKEYCHAIN_INCLUDE_DIR
+        NAMES qtkeychain/keychain.h keychain.h
+        PATH_SUFFIXES qt6keychain
+        REQUIRED)
+    target_include_directories(nexus_viewmodels SYSTEM
+        PUBLIC ${NEXUS_QTKEYCHAIN_INCLUDE_DIR})
     target_link_libraries(nexus_viewmodels PUBLIC Qt6Keychain::Qt6Keychain)
 endif()
 
