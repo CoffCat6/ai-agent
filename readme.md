@@ -130,6 +130,13 @@ MCP 工具的 `description` 字段截断至 **≤ 1024 字符**（`McpToolAdapte
 性能设置」取消勾选**「显示窗口内容的同时拖动」**——缩放时只画边框轮廓、松手后绘制
 内容，系统级根治（影响所有应用）。诊断与修复细节见 [docs/47](docs/47-高分屏缩放流畅度与DPI几何修复.md)。
 
+## 许可证
+
+本项目以 [MIT 许可证](LICENSE) 发布。发布物捆绑的第三方运行时组件
+（Qt 6 LGPL-3.0、qtkeychain BSD-3-Clause）声明见
+[THIRD-PARTY-NOTICES.md](THIRD-PARTY-NOTICES.md)，并随各安装包分发
+（Linux: `/usr/share/doc/nexusai/`）。
+
 ## 更多文档
 
 架构与实施细节见 `docs/`（1-开发文档、2-技术路线、3-界面开发、4-MVP 实施计划）。

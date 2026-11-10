@@ -83,7 +83,7 @@ Name: nexusai
 Version: $version
 Release: 1
 Summary: Local-first AI agent desktop app
-License: Unknown
+License: MIT
 AutoReqProv: no
 Requires: glibc, libstdc++, libgcc, mesa-libGL, mesa-libEGL, fontconfig, libX11, libxcb, libxkbcommon, libxkbcommon-x11, libsecret, dbus-libs
 %define debug_package %{nil}

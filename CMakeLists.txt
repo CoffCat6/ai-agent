@@ -594,6 +594,8 @@ if(WIN32)
     # script places DLLs and bin/qt.conf (Prefix=..) under the install
     # prefix's bin directory, and Windows DLL search starts at the exe dir.
     install(TARGETS nexus_ai RUNTIME DESTINATION bin)
+    # 许可证随包分发（MIT + 第三方声明，LGPL 合规的一部分）
+    install(FILES LICENSE THIRD-PARTY-NOTICES.md DESTINATION .)
     qt_generate_deploy_qml_app_script(
         TARGET nexus_ai
         OUTPUT_SCRIPT nexus_ai_deploy_script
@@ -620,6 +622,9 @@ elseif(UNIX AND NOT APPLE)
             DESTINATION "${CMAKE_INSTALL_DATADIR}/icons/hicolor/${size}x${size}/apps"
             RENAME nexusai.png)
     endforeach()
+    # 许可证随包分发：deb/rpm 惯例位置 /usr/share/doc/nexusai/
+    install(FILES LICENSE THIRD-PARTY-NOTICES.md
+        DESTINATION "${CMAKE_INSTALL_DATADIR}/doc/nexusai")
     if(NEXUS_LINUX_APPIMAGE)
         # Qt deploy 脚本只捆绑 Qt 自家的库——链接的 qtkeychain 共享库必须
         # 显式放进 AppDir，否则 exe 的 DT_NEEDED(libqt6keychain.so.1) 解析
