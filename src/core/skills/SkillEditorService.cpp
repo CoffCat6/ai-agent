@@ -2,6 +2,7 @@
 
 #include "core/skills/SkillRegistry.h"
 #include "core/tools/FileEditUtil.h"
+#include "core/utils/FilePermissions.h"
 
 #include <QDir>
 #include <QFile>
@@ -571,6 +572,8 @@ bool SkillEditorService::save(const QString& skillsRoot, const Draft& draft,
         }
     }
 
+    // docs/49 D4: rename 替换会丢原文件的执行位等权限，commit 后恢复。
+    const QFile::Permissions savedPerms = FilePermissions::captureForReplace(filePath);
     QSaveFile file(filePath);
     if (!file.open(QIODevice::WriteOnly)) {
         setError(error, QStringLiteral("无法写入技能文件：%1").arg(draft.id));
@@ -588,6 +591,7 @@ bool SkillEditorService::save(const QString& skillsRoot, const Draft& draft,
         setCode(code, "io_error");
         return false;
     }
+    FilePermissions::restoreAfterReplace(filePath, savedPerms);
 
     clearError(error);
     setCode(code, "ok");

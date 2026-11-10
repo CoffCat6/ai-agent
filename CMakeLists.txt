@@ -75,6 +75,8 @@ add_library(nexus_core STATIC
     # docs/35 P4.4: 提案的结构化应用（会话内注册表 + RequiresConfirm 工具）。
     src/core/tools/ProposalStore.h
     src/core/tools/FileEditUtil.h
+    # docs/49 D4: QSaveFile 替换后的权限保留（Linux 执行位）。
+    src/core/utils/FilePermissions.h
     src/core/tools/ApplyProposalTool.h
     src/core/tools/ApplyProposalTool.cpp
     # docs/35 P4.3: 后台子代理的 wait/status/cancel 管理工具。

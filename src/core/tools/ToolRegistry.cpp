@@ -2,6 +2,7 @@
 #include "Sandbox.h"
 #include "FileEditUtil.h"
 #include "core/git/GitService.h"
+#include "core/utils/FilePermissions.h"
 #include "core/utils/SettingsRepository.h"
 #include "core/utils/SettingsSchema.h"
 
@@ -281,6 +282,8 @@ public:
         // G4: snapshot before QSaveFile replaces the target. On a fresh file
         // this records existed=false, so undo removes the file again.
         FileCheckpoint checkpoint = captureFileCheckpoint(path);
+        // docs/49 D4: rename 替换会丢原文件的执行位等权限，commit 后恢复。
+        const QFile::Permissions savedPerms = FilePermissions::captureForReplace(path);
         QSaveFile out(path);
         if (!out.open(QIODevice::WriteOnly))
             return ToolResult::fail("Cannot open file for writing: " + out.errorString());
@@ -290,6 +293,7 @@ public:
         }
         if (!out.commit())
             return ToolResult::fail("Failed to commit atomic write: " + out.errorString());
+        FilePermissions::restoreAfterReplace(path, savedPerms);
 
         ToolResult result = ToolResult::ok(
             QStringLiteral("File written successfully: %1 (%2 bytes)")
@@ -433,6 +437,7 @@ public:
         } else {
             checkpoint.beforeContent = beforeBytes;
         }
+        const QFile::Permissions savedPerms = FilePermissions::captureForReplace(path);
         QSaveFile out(path);
         if (!out.open(QIODevice::WriteOnly))
             return ToolResult::fail("Cannot open file for writing: " + out.errorString());
@@ -442,6 +447,7 @@ public:
         }
         if (!out.commit())
             return ToolResult::fail("Failed to commit atomic write: " + out.errorString());
+        FilePermissions::restoreAfterReplace(path, savedPerms);
 
         ToolResult result = ToolResult::ok(
             QStringLiteral("Replaced %1 occurrence%2; file now %3 bytes")

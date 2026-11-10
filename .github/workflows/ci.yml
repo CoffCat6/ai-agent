@@ -63,9 +63,25 @@ jobs:
         shell: pwsh
         run: cmake --build build
 
+      # run4 实测：runner 上个别测试无输出即死（loader 级），--output-on-failure
+      # 拿不到任何信息。失败时直接重跑失败子集的 exe 并打印退出码
+      # （0xC0000135 = -1073741515 = 缺 DLL）与原始输出。
       - name: Test
         shell: pwsh
-        run: ctest --test-dir build --output-on-failure
+        run: |
+          ctest --test-dir build --output-on-failure
+          if ($LASTEXITCODE -eq 0) { exit 0 }
+          Write-Host "== diagnostics: direct rerun of failing exes =="
+          foreach ($name in @("test_sandbox", "test_viewmodel", "test_agent")) {
+            $exe = Join-Path "build" "$name.exe"
+            if (-not (Test-Path $exe)) { continue }
+            $p = Start-Process -FilePath $exe -Wait -PassThru -NoNewWindow `
+              -RedirectStandardOutput "$name.out.txt" -RedirectStandardError "$name.err.txt"
+            Write-Host "$name exit=$($p.ExitCode) (0xC0000135 = -1073741515)"
+            Get-Content "$name.out.txt" -ErrorAction SilentlyContinue | Select-Object -First 30
+            Get-Content "$name.err.txt" -ErrorAction SilentlyContinue | Select-Object -First 30
+          }
+          exit $LASTEXITCODE
 
       - name: Deploy
         shell: pwsh
@@ -158,10 +174,12 @@ jobs:
       # offscreen 测试的运行时依赖：runner 预装大部分，显式补齐最小集。
       # patchelf: Qt deploy 脚本在 Linux 改写 rpath 的硬依赖（docs/49 阶段 1）
       # qtkeychain-qt6-dev: docs/49 D1 凭据加密（find_package(Qt6Keychain)）
+      # *-mesa-dev/-dev 系列：find_package(Qt6 Gui→WrapOpenGL) 需要 GL 头与
+      # libOpenGL/libGLX 开发链（run4 实测缺失）
       - name: Install runtime deps
         run: |
           sudo apt-get update
-          sudo apt-get install -y ninja-build libgl1 libegl1 libfontconfig1 libdbus-1-3 libxkbcommon0 libglib2.0-0 patchelf squashfs-tools file qtkeychain-qt6-dev
+          sudo apt-get install -y ninja-build libgl1 libegl1 libfontconfig1 libdbus-1-3 libxkbcommon0 libglib2.0-0 patchelf squashfs-tools file qtkeychain-qt6-dev libgl1-mesa-dev libegl1-mesa-dev libxkbcommon-dev
 
       - name: Cache Qt (linux_gcc_64) toolchain
         id: qt-cache

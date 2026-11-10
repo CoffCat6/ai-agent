@@ -1,5 +1,7 @@
 #include "core/mcp/McpConfig.h"
 
+#include "core/utils/FilePermissions.h"
+
 #include <QDir>
 #include <QFile>
 #include <QFileInfo>
@@ -65,6 +67,8 @@ bool save(const QVariantList& servers) {
         array.append(obj);
     }
 
+    // docs/49 D4: rename 替换会丢原文件的执行位等权限，commit 后恢复。
+    const QFile::Permissions savedPerms = FilePermissions::captureForReplace(path);
     QSaveFile file(path);
     if (!file.open(QIODevice::WriteOnly)) {
         qWarning() << "Failed to open MCP config for writing:" << path << file.errorString();
@@ -80,6 +84,7 @@ bool save(const QVariantList& servers) {
         qWarning() << "Failed to commit MCP config:" << path << file.errorString();
         return false;
     }
+    FilePermissions::restoreAfterReplace(path, savedPerms);
     return true;
 }
 

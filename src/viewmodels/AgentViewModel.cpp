@@ -9,6 +9,7 @@
 #include "core/memory/SqliteMemory.h"
 #include "core/rag/RagService.h"
 #include "core/rag/KnowledgeChunk.h"
+#include "core/utils/FilePermissions.h"
 #include "viewmodels/PdfTextExtractor.h"
 #include "core/tools/ToolRegistry.h"
 #include "core/tools/Sandbox.h"
@@ -2003,6 +2004,8 @@ bool AgentViewModel::exportSession(const QString& sessionId, const QString& path
         payload = QJsonDocument(root).toJson(QJsonDocument::Indented);
     }
 
+    // docs/49 D4: rename 替换会丢原文件的执行位等权限，commit 后恢复。
+    const QFile::Permissions savedPerms = FilePermissions::captureForReplace(localPath);
     QSaveFile file(localPath);
     if (!file.open(QIODevice::WriteOnly)) {
         emit errorOccurred(tr("导出失败：无法写入 %1").arg(localPath));
@@ -2013,6 +2016,7 @@ bool AgentViewModel::exportSession(const QString& sessionId, const QString& path
         emit errorOccurred(tr("导出失败：写入未完成 %1").arg(localPath));
         return false;
     }
+    FilePermissions::restoreAfterReplace(localPath, savedPerms);
 
     Activity::usage(Activity::Kind::User, QStringLiteral("user.export"),
                     sessionId, 0, format);
@@ -2085,6 +2089,8 @@ bool AgentViewModel::exportUsageCsv(const QString& path, const QVariantList& row
             .join(QLatin1Char(',')));
     }
 
+    // docs/49 D4: rename 替换会丢原文件的执行位等权限，commit 后恢复。
+    const QFile::Permissions savedPerms = FilePermissions::captureForReplace(localPath);
     QSaveFile file(localPath);
     if (!file.open(QIODevice::WriteOnly)) {
         emit errorOccurred(tr("导出失败：无法写入 %1").arg(localPath));
@@ -2097,6 +2103,7 @@ bool AgentViewModel::exportUsageCsv(const QString& path, const QVariantList& row
         emit errorOccurred(tr("导出失败：写入未完成 %1").arg(localPath));
         return false;
     }
+    FilePermissions::restoreAfterReplace(localPath, savedPerms);
     return true;
 }
 

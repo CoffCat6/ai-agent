@@ -25,6 +25,7 @@
 #include <QPointer>
 #include <QRegularExpression>
 #include <QSaveFile>
+#include "core/utils/FilePermissions.h"
 #include <QUuid>
 #include <QSysInfo>
 #include <QtConcurrent/QtConcurrentRun>
@@ -1365,6 +1366,7 @@ bool AIAgent::revertFileCheckpointGroup(const QString& path) {
 
     if (existed) {
         QDir().mkpath(QFileInfo(storedPath).absolutePath());
+        const QFile::Permissions savedPerms = FilePermissions::captureForReplace(storedPath);
         QSaveFile out(storedPath);
         if (!out.open(QIODevice::WriteOnly)) return false;
         if (out.write(beforeContent) != beforeContent.size()) {
@@ -1372,6 +1374,7 @@ bool AIAgent::revertFileCheckpointGroup(const QString& path) {
             return false;
         }
         if (!out.commit()) return false;
+        FilePermissions::restoreAfterReplace(storedPath, savedPerms);
     } else {
         QFile created(storedPath);
         if (created.exists() && !created.remove()) return false;

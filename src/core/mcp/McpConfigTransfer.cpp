@@ -1,5 +1,7 @@
 #include "McpConfigTransfer.h"
 
+#include "core/utils/FilePermissions.h"
+
 #include <QCoreApplication>
 #include <QDateTime>
 #include <QFile>
@@ -148,6 +150,8 @@ bool writeExport(const QString& path, const QVector<QVariantMap>& servers,
         if (error) *error = tr("请选择保存位置");
         return false;
     }
+    // docs/49 D4: rename 替换会丢原文件的执行位等权限，commit 后恢复。
+    const QFile::Permissions savedPerms = FilePermissions::captureForReplace(path);
     QSaveFile file(path);
     if (!file.open(QIODevice::WriteOnly)) {
         if (error) *error = tr("无法写入文件：%1").arg(file.errorString());
@@ -158,6 +162,7 @@ bool writeExport(const QString& path, const QVector<QVariantMap>& servers,
         if (error) *error = tr("保存失败：%1").arg(file.errorString());
         return false;
     }
+    FilePermissions::restoreAfterReplace(path, savedPerms);
     return true;
 }
 

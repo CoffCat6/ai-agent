@@ -3,6 +3,7 @@
 #include "FileEditUtil.h"
 #include "ProposalStore.h"
 #include "Sandbox.h"
+#include "core/utils/FilePermissions.h"
 
 #include <QCryptographicHash>
 #include <QFile>
@@ -216,6 +217,8 @@ ToolResult ApplyProposalTool::execute(const QJsonObject& args) {
     else
         checkpoint.beforeContent = beforeBytes;
 
+    // docs/49 D4: rename 替换会丢原文件的执行位等权限，commit 后恢复。
+    const QFile::Permissions savedPerms = FilePermissions::captureForReplace(proposal.path);
     QSaveFile out(proposal.path);
     if (!out.open(QIODevice::WriteOnly))
         return ToolResult::fail(QStringLiteral("Cannot open file for writing: %1")
@@ -228,6 +231,7 @@ ToolResult ApplyProposalTool::execute(const QJsonObject& args) {
     if (!out.commit())
         return ToolResult::fail(QStringLiteral(
             "Failed to commit atomic write: %1").arg(out.errorString()));
+    FilePermissions::restoreAfterReplace(proposal.path, savedPerms);
 
     store->markApplied(id);
     ToolResult result = ToolResult::ok(QStringLiteral(
