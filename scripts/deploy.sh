@@ -35,13 +35,17 @@ repoRoot="$(cd "$(dirname "${BASH_SOURCE[0]}")/.." && pwd)"
 cd "$repoRoot"
 
 # 与 deploy.ps1 Assert-SafeOutDir 同语义：部署脚本只允许写自己拥有的目录。
-# 拒绝：文件系统根、仓库根、$HOME 及其子树——这些位置要么会被误清空，
-# 要么混入用户文件。
+# 拒绝：文件系统根、仓库根本身、仓库之外的 $HOME 及其子树。仓库工作区
+# 内部（默认 OutDir = <repo>/deploy）始终放行——CI runner 的 workspace
+# 就在 $HOME 下（Windows deploy.ps1 不受影响：workspace 在别的盘）。
 assertSafeOutDir() {
     local dir
     dir="$(readlink -m "$1")"
     [ "$dir" = "/" ] && die "refusing to write into the filesystem root: $dir"
     [ "$dir" = "$repoRoot" ] && die "refusing to write into the repository root: $dir"
+    case "$dir/" in
+        "$repoRoot/"*) printf '%s' "$dir"; return 0 ;;
+    esac
     if [ -n "${HOME:-}" ]; then
         [ "$dir" = "$HOME" ] && die "refusing to write into the user profile: $dir"
         case "$dir/" in
