@@ -37,7 +37,16 @@
 // docs/49 D1: API keys at rest go to the system keyring (Secret Service on
 // desktop-neutral sessions, KWallet on KDE) via QtKeychain. CMake links
 // Qt6Keychain on Linux only; macOS is not a target (docs/49 §8).
+// 上游文档用 <qtkeychain/keychain.h>，Debian/Ubuntu 的 qt6keychain 头文件
+// 布局是扁平的 <keychain.h>——两种布局都用 __has_include 兼容（同
+// AIAgent.cpp 的 PricingCalculator 先例）。
+#if __has_include(<qtkeychain/keychain.h>)
 #include <qtkeychain/keychain.h>
+#elif __has_include(<keychain.h>)
+#include <keychain.h>
+#else
+#error "QtKeychain headers not found (install qtkeychain-qt6-dev / libqt6keychain-dev)"
+#endif
 #include <QEventLoop>
 #endif
 
