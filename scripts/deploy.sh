@@ -81,6 +81,17 @@ mkdir -p "$AppDir"
 echo "== Installing to $AppDir/usr =="
 cmake --install "$BuildDir" --prefix "$AppDir/usr"
 
+# qtkeychain 实文件名（如 .so.0.15.0）与 exe 需要的 SONAME（如 .so.1）
+# 在发行版包里靠符号链接衔接——install(FILES) 只拷了最终文件，SONAME
+# 名字不存在则加载器回退系统路径（run16 实测）。按 exe 的 DT_NEEDED
+# 重建相对符号链接，保证 $ORIGIN 内可解析。
+soname="$(objdump -p "$AppDir/usr/bin/nexus_ai" | awk '/NEEDED/ {print $2}' | grep '^libqt6keychain' | head -1)"
+if [ -n "$soname" ] && [ ! -e "$AppDir/usr/lib/$soname" ]; then
+    real="$(find "$AppDir/usr/lib" -maxdepth 1 -name 'libqt6keychain.so.*' -type f | head -1)"
+    [ -n "$real" ] || die "qtkeychain runtime library missing in AppDir/usr/lib - check the NEXUS_LINUX_APPIMAGE install rule"
+    ln -s "$(basename "$real")" "$AppDir/usr/lib/$soname"
+fi
+
 # Qt deploy 脚本只改写 exe 与 Qt 库的 rpath，不碰显式捆绑的第三方库——
 # qtkeychain（install 规则放入 usr/lib）的 Qt 依赖必须同样解析进 AppDir，
 # 否则它的 libQt6DBus/libQt6Core 会走系统路径（版本可能与捆绑的 Qt 不符）。
