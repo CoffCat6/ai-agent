@@ -63,18 +63,26 @@ jobs:
         shell: pwsh
         run: cmake --build build
 
-      # run4/5 实测：runner 上个别测试失败且 --output-on-failure 拿不到输出
-      # （疑似崩溃丢 stdout 缓冲）。-V 全量透传 + 失败时导出 ctest 自己捕获的
-      # LastTest.log 关键行（FAIL!/Totals），拿到底层失败原因。
+      # run4/5/7 实测：runner 上个别测试在 ctest 下 0.2s 内无输出死亡，但
+      # 直跑同一 exe 能跑完（exit=1/2 真实断言失败）——失败时直接以 ctest
+      # 同款工作目录重跑失败子集，输出取尾部（FAIL!/Totals 在末尾）。
       - name: Test
         shell: pwsh
         run: |
           ctest --test-dir build --output-on-failure -V --timeout 900
           if ($LASTEXITCODE -eq 0) { exit 0 }
-          Write-Host "== diagnostics: ctest-captured LastTest.log highlights =="
-          Get-Content build/Testing/Temporary/LastTest.log |
-            Select-String -Pattern "FAIL!|Totals:|Start testing|exit code|QFATAL|Signal" |
-            Select-Object -First 120
+          Write-Host "== diagnostics: direct rerun from ctest working dir =="
+          foreach ($name in @("test_sandbox", "test_viewmodel", "test_chat_workflows", "test_agent")) {
+            $exe = Join-Path "build" "$name.exe"
+            if (-not (Test-Path $exe)) { continue }
+            Push-Location build/tests
+            $out = & $exe 2>&1
+            $code = $LASTEXITCODE
+            Pop-Location
+            Write-Host "$name exit=$code (0xC0000135 = -1073741515)"
+            Write-Host "---- output tail ----"
+            $out | Select-Object -Last 60
+          }
           exit $LASTEXITCODE
 
       - name: Deploy
