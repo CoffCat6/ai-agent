@@ -36,7 +36,9 @@ PrivilegesRequired=admin
 ArchitecturesInstallIn64BitMode=x64
 
 [Languages]
-Name: "chinese"; MessagesFile: "compiler:Languages\ChineseSimplified.isl"
+; Inno Setup 6.3+ 不再捆绑中文语言文件（官方「非官方翻译」语种），仓库内
+; vendor 一份（源自 jrsoftware/issrc is-6_3_1 标签，相对本脚本同目录）。
+Name: "chinese"; MessagesFile: "ChineseSimplified.isl"
 Name: "english"; MessagesFile: "compiler:Default.isl"
 
 [Tasks]
