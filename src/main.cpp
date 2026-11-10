@@ -1020,10 +1020,10 @@ qInfo() << "NexusAI" << app.applicationVersion() << "starting";
             if (key != QLatin1String("general.autoStart")) return;
             settings->setAutoStart(value.toBool());
         });
-    // 已保存的偏好是期望状态，Windows Run 项是实际状态。若偏好键尚不存在，
-    // 先从旧版/外部已有的 Run 项迁入，避免升级时误删用户原有的自启动配置；
-    // 否则按明确保存的偏好双向协调。非 Windows 上后端不受支持。
-#ifdef Q_OS_WIN
+    // 已保存的偏好是期望状态，系统自启状态是实际状态（Windows：Run 键；
+    // Linux：~/.config/autostart，docs/49 D2）。若偏好键尚不存在，先从
+    // 旧版/外部已有的自启状态迁入，避免升级时误删用户原有的自启动配置；
+    // 否则按明确保存的偏好双向协调。
     {
         const QString autoStartKey = QStringLiteral("general.autoStart");
         const bool hasPreference = prefStore->hasStoredValue(autoStartKey);
@@ -1034,7 +1034,6 @@ qInfo() << "NexusAI" << app.applicationVersion() << "starting";
         else if (hasPreference && preferred != registered)
             settings->setAutoStart(preferred);
     }
-#endif
 
     // ── QML Engine ─────────────────────────────────────
     // Theme/ThemeManager/AgentVM/Settings/ConnectionTester resolve to the

@@ -15,6 +15,9 @@
 #include <QLoggingCategory>
 #include <QCoreApplication>
 #include <QDir>
+#include <QFileInfo>
+#include <QSaveFile>
+#include <QStandardPaths>
 #include <QNetworkAccessManager>
 #include <QNetworkReply>
 #include <QNetworkRequest>
@@ -2350,14 +2353,22 @@ void SettingsService::setDefaultPermissionMode(const QString& v) {
 
 namespace {
 
-// docs/20 §4.3（D8）：HKCU\...\Run 键的默认实现（Windows 专属）。
-// 只写 HKCU（用户级，无需管理员）；值 = exe 全路径，卸载/换机时清键即可。
-// 非 Windows 平台 no-op（docs/20 的 Windows 优先策略，预留扩展点）。
-class RegistryAutoStart : public SettingsService::AutoStartBackend {
+// docs/20 §4.3（D8）+ docs/49 D2：开机自启的默认后端。
+// Windows：HKCU\...\Run 键（用户级，无需管理员；值 = exe 全路径，卸载/
+// 换机时清键即可）。Linux：XDG autostart——写 ~/.config/autostart/
+// nexusai.desktop（本应用私有文件，Exec 为当前 exe 全路径，卸载即失效）。
+class PlatformAutoStart : public SettingsService::AutoStartBackend {
 public:
+#ifdef Q_OS_WIN
     static constexpr const wchar_t* kRunKey =
         L"Software\\Microsoft\\Windows\\CurrentVersion\\Run";
     static constexpr const wchar_t* kValueName = L"NexusAI";
+#else
+    static QString autostartFilePath() {
+        return QStandardPaths::writableLocation(QStandardPaths::ConfigLocation)
+            + QStringLiteral("/autostart/nexusai.desktop");
+    }
+#endif
 
     bool isEnabled() const override {
 #ifdef Q_OS_WIN
@@ -2371,7 +2382,7 @@ public:
         RegCloseKey(key);
         return rc == ERROR_SUCCESS;
 #else
-        return false;
+        return QFileInfo::exists(autostartFilePath());
 #endif
     }
 
@@ -2399,8 +2410,24 @@ public:
         RegCloseKey(key);
         return rc == ERROR_SUCCESS;
 #else
-        Q_UNUSED(enabled); Q_UNUSED(exePath);
-        return false;
+        const QString path = autostartFilePath();
+        if (!enabled) {
+            // 文件不存在 = 已是目标状态，视为成功（与注册表分支同语义）。
+            return !QFileInfo::exists(path) || QFile::remove(path);
+        }
+        QDir().mkpath(QFileInfo(path).absolutePath());
+        // Exec 的引号形式是 XDG 桌面条目规范允许的写法，覆盖带空格的路径。
+        const QString contents = QStringLiteral(
+            "[Desktop Entry]\n"
+            "Type=Application\n"
+            "Exec=\"%1\"\n"
+            "Name=NexusAI\n"
+            "Terminal=false\n"
+            "X-GNOME-Autostart-enabled=true\n").arg(exePath);
+        QSaveFile file(path);
+        if (!file.open(QIODevice::WriteOnly)) return false;
+        if (file.write(contents.toUtf8()) < 0) return false;
+        return file.commit();
 #endif
     }
 };
@@ -2409,7 +2436,7 @@ public:
 
 bool SettingsService::autoStart() const {
     if (m_autoStart) return m_autoStart->isEnabled();
-    static RegistryAutoStart defaultBackend;
+    static PlatformAutoStart defaultBackend;
     return defaultBackend.isEnabled();
 }
 
@@ -2417,10 +2444,10 @@ void SettingsService::setAutoStart(bool enabled) {
     if (autoStart() == enabled) return;
     const bool ok = m_autoStart
         ? m_autoStart->setEnabled(enabled, QCoreApplication::applicationFilePath())
-        : RegistryAutoStart().setEnabled(enabled, QCoreApplication::applicationFilePath());
+        : PlatformAutoStart().setEnabled(enabled, QCoreApplication::applicationFilePath());
     if (!ok) {
-        qCWarning(lcSettings) << "autoStart: registry write failed for" << enabled;
-        emit persistenceError(tr("无法更新 Windows 开机自启动设置。"));
+        qCWarning(lcSettings) << "autoStart: backend write failed for" << enabled;
+        emit persistenceError(tr("无法更新开机自启动设置。"));
         return;
     }
     emit autoStartChanged();

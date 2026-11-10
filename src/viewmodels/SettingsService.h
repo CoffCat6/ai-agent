@@ -478,9 +478,10 @@ public:
     QVariantList slashCommands() const { return m_slashCommands; }
     QVariantList sessionTemplates() const { return m_sessionTemplates; }
 
-    // docs/20 §4.3：开机自启的注册表读写封装（可注入，test_settings 用它
-    // 在不碰真实 Run 键的前提下校验读写路径）。默认实现（nullptr）为
-    // HKCU\...\Run 键的读写；非 Windows 平台恒 false。
+    // docs/20 §4.3：开机自启的读写封装（可注入，test_settings 用它在不碰
+    // 真实系统状态的前提下校验读写路径）。默认实现（nullptr）：Windows 为
+    // HKCU\...\Run 键；Linux 为 XDG autostart（docs/49 D2，写
+    // ~/.config/autostart/nexusai.desktop）。
     class AutoStartBackend {
     public:
         virtual ~AutoStartBackend() = default;
