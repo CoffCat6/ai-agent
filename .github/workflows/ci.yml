@@ -4,6 +4,10 @@ name: CI
 # （用户决策 2026-11-10：runner 环境差异导致的测试问题不阻塞发布；
 # 本地 ctest 与 tests/ 基础设施完整保留）。
 #
+# 普通 push / PR：只跑构建，产物进 CI artifact 页（90 天过期）。
+# 推送 v* 版本标签：额外触发 release job，把 Release 配置的 win64 zip
+# 与 Linux AppImage 发到 GitHub Releases（gh release create）。
+#
 # Windows：aqt 安装 Qt 6.9 MinGW + deploy.ps1（自包含目录 + zip 产物）。
 # Linux：aqt 安装 Qt 6.9 gcc_64 + deploy.sh（AppDir + AppImage 产物）。
 #
@@ -124,12 +128,14 @@ jobs:
 
       - name: Deploy (Release)
         shell: pwsh
-        run: ./scripts/deploy.ps1 -BuildDir build-release -OutDir deploy-release
+        run: ./scripts/deploy.ps1 -BuildDir build-release -OutDir deploy-release -Zip
 
+      # -Zip 在仓库根产出 NexusAI-<version>-win64.zip；发布 job 直接取该
+      # 文件作为 Release 资产（文件夹形态保留给默认配置的 job 供浏览）。
       - uses: actions/upload-artifact@v4
         with:
           name: nexusai-win64-release-deploy
-          path: deploy-release/
+          path: NexusAI-*-win64.zip
 
   # Linux：构建 + AppImage（docs/49 阶段 1）。NEXUS_LINUX_APPIMAGE=ON 让
   # install 规则挂载 Qt deploy 脚本，deploy.sh 的 cmake --install 把 Qt
@@ -186,3 +192,33 @@ jobs:
         with:
           name: nexusai-linux64-appimage
           path: NexusAI-*-linux64.AppImage
+
+  # 发布：仅版本标签（v*）触发——普通 push 只跑构建，打 tag 才发 Release。
+  # 资产 = Release 配置的 win64 zip + Linux AppImage；默认配置的 Windows
+  # job 是构建验证，其产物留在 CI artifact 页不进 Release。
+  release:
+    if: startsWith(github.ref, 'refs/tags/v')
+    needs: [windows-mingw, windows-mingw-release, linux-gcc]
+    runs-on: ubuntu-latest
+    permissions:
+      contents: write
+    steps:
+      - uses: actions/download-artifact@v4
+        with:
+          path: artifacts
+
+      - name: Stage release files
+        run: |
+          mkdir -p release
+          cp artifacts/nexusai-win64-release-deploy/*.zip release/
+          cp artifacts/nexusai-linux64-appimage/*.AppImage release/
+          ls -la release/
+
+      - name: Create GitHub Release
+        env:
+          GH_TOKEN: ${{ github.token }}
+          GH_REPO: ${{ github.repository }}
+        run: |
+          gh release create "$GITHUB_REF_NAME" release/* \
+            --title "NexusAI $GITHUB_REF_NAME" \
+            --generate-notes
