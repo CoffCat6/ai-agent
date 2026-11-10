@@ -16,6 +16,11 @@
 #include <QJsonArray>
 #include <QJsonDocument>
 #include <QProcess>
+#ifndef Q_OS_WIN
+// docs/49 D3: 进程组整组清理（kill(-pgid)），见 ShellExecTool 的三条路径。
+#include <signal.h>
+#include <unistd.h>
+#endif
 
 #include <atomic>
 
@@ -587,6 +592,10 @@ public:
         proc.setNativeArguments(QStringLiteral("/d /s /c \"") + command + QLatin1Char('"'));
         proc.start();
 #else
+        // docs/49 D3：子进程进独立进程组——取消/超时/超限三条路径可以
+        // kill(-pgid) 整组清理。setChildProcessModifier 在 fork 之后、
+        // exec 之前执行，没有竞态窗口；对应 Windows 侧的 taskkill /T。
+        proc.setChildProcessModifier([]{ ::setpgid(0, 0); });
         proc.start("/bin/sh", {"-c", command});
 #endif
         if (!proc.waitForStarted(3000))
@@ -615,6 +624,14 @@ public:
                     if (killExit != 0)
                         qWarning() << "shell_exec overflow: taskkill exit" << killExit;
                 }
+#else
+                // docs/49 D3：整组 SIGTERM 给善后型子进程退场机会，宽限后
+                // 仍存活再 SIGKILL 兜底（组内含 /bin/sh 的孙进程）。
+                if (proc.processId() > 0)
+                    ::kill(-proc.processId(), SIGTERM);
+                proc.waitForFinished(2000);
+                if (proc.state() != QProcess::NotRunning && proc.processId() > 0)
+                    ::kill(-proc.processId(), SIGKILL);
 #endif
                 proc.kill();
                 proc.waitForFinished(2000);
@@ -636,6 +653,13 @@ public:
                     if (killExit != 0)
                         qWarning() << "shell_exec cancel: taskkill exit" << killExit;
                 }
+#else
+                // docs/49 D3：与 Windows 侧 taskkill /T 对应的整组清理。
+                if (proc.processId() > 0)
+                    ::kill(-proc.processId(), SIGTERM);
+                proc.waitForFinished(2000);
+                if (proc.state() != QProcess::NotRunning && proc.processId() > 0)
+                    ::kill(-proc.processId(), SIGKILL);
 #endif
                 proc.kill();
                 proc.waitForFinished(2000);
@@ -655,6 +679,13 @@ public:
                     if (killExit != 0)
                         qWarning() << "shell_exec timeout: taskkill exit" << killExit;
                 }
+#else
+                // docs/49 D3：与 cancel 同一整组清理。
+                if (proc.processId() > 0)
+                    ::kill(-proc.processId(), SIGTERM);
+                proc.waitForFinished(2000);
+                if (proc.state() != QProcess::NotRunning && proc.processId() > 0)
+                    ::kill(-proc.processId(), SIGKILL);
 #endif
                 proc.kill();
                 proc.waitForFinished(2000);
