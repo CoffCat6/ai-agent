@@ -34,6 +34,10 @@ endif()
 qt_policy(SET QTP0001 NEW)
 qt_policy(SET QTP0004 NEW)
 
+# docs/49 阶段 1: canonical install layout for the Linux install rules
+# (CMAKE_INSTALL_BINDIR / DATADIR below). No-op on the Windows branch.
+include(GNUInstallDirs)
+
 # ── Core Library (no Qt UI dependency) ────────────────────
 add_library(nexus_core STATIC
     src/core/agent/AgentState.h
@@ -573,6 +577,34 @@ if(WIN32)
         OUTPUT_SCRIPT nexus_ai_deploy_script
     )
     install(SCRIPT ${nexus_ai_deploy_script})
+elseif(UNIX AND NOT APPLE)
+    # docs/49 阶段 1：Linux 安装规则。默认（NEXUS_LINUX_APPIMAGE=OFF）产出
+    # 系统安装布局——bin/ 可执行文件 + applications/.desktop + hicolor 图标，
+    # Qt 运行时交给发行版（deb 等系统包场景），绝不捆绑进系统目录。
+    #
+    # AppImage 打包（scripts/deploy.sh）需要自包含：ON 时额外生成 Qt deploy
+    # 脚本并挂进 install——cmake --install --prefix <AppDir>/usr 时同步捆绑
+    # Qt 库/插件/QML 模块并改写 rpath（需 patchelf）。项目 QML 全部 qrc
+    # 内嵌，linuxdeploy-plugin-qt 的 AppDir 扫描判不出 QML 依赖，因此捆绑
+    # 一律走 Qt 官方 deploy 脚本（与 Windows 侧同一机制），appimagetool
+    # 只做纯封装。
+    option(NEXUS_LINUX_APPIMAGE
+        "Bundle the Qt runtime into the install prefix (AppImage staging; docs/49)" OFF)
+    install(TARGETS nexus_ai RUNTIME DESTINATION ${CMAKE_INSTALL_BINDIR})
+    install(FILES assets/linux/nexusai.desktop
+        DESTINATION ${CMAKE_INSTALL_DATADIR}/applications)
+    foreach(size IN LISTS NEXUS_ICON_SIZES)
+        install(FILES assets/icons/nexus-${size}.png
+            DESTINATION "${CMAKE_INSTALL_DATADIR}/icons/hicolor/${size}x${size}/apps"
+            RENAME nexusai.png)
+    endforeach()
+    if(NEXUS_LINUX_APPIMAGE)
+        qt_generate_deploy_qml_app_script(
+            TARGET nexus_ai
+            OUTPUT_SCRIPT nexus_ai_deploy_script
+        )
+        install(SCRIPT ${nexus_ai_deploy_script})
+    endif()
 endif()
 
 # ── Translations (Batch 8 FEAT-804) ───────────────────────

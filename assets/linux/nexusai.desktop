@@ -1,0 +1,14 @@
+[Desktop Entry]
+Type=Application
+Name=NexusAI
+Name[zh_CN]=NexusAI
+GenericName=AI Agent
+GenericName[zh_CN]=AI 智能代理
+Comment=Local-first AI agent desktop app with tool calling and a knowledge base
+Comment[zh_CN]=本地优先的 AI 代理桌面应用（工具调用 / 知识库 / MCP）
+Exec=nexus_ai
+Icon=nexusai
+Terminal=false
+Categories=Development;Utility;
+Keywords=AI;agent;chat;LLM;assistant;
+StartupWMClass=NexusAI

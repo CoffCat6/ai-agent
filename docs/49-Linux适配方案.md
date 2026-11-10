@@ -2,7 +2,7 @@
 
 | | |
 |---|---|
-| **状态** | 进行中（2026-11-10）：阶段 0 落地中（编译门控 + 测试运行时 + Linux CI） |
+| **状态** | 阶段 0 已实施（3c38973a，Windows 全量测试通过）；阶段 1 实施中（install 规则 + deploy.sh + CI artifact，待 Linux CI 首跑验证） |
 | **范围** | Linux 桌面（X11 / Wayland；GCC/Clang，Qt ≥ 6.5）。macOS 明确不做（§8） |
 | **前置** | 全量只读分析：`linux/master@7790fabb`，约 282 个源文件逐文件核查 `Q_OS_WIN` 门控、进程/路径/编码/环境变量、构建与 CI |
 
@@ -91,7 +91,7 @@ Linux 依赖面：`Qt6::Pdf` 是额外模块（aqt `-m qtpdf`，gcc_64 架构可
 | 阶段 | 内容 | 验收 |
 |---|---|---|
 | **0（本批）** | §2.1 编译门控；tests/CMakeLists 运行时解析按平台（`LD_LIBRARY_PATH`+`lib/`）；ci.yml 增 `linux-gcc` job（configure/build/ctest，暂不部署） | Linux CI 全绿；Windows CI/本地零回归 |
-| **1 交付形态** | GNUInstallDirs install 规则（bin/libexec + `.desktop` + hicolor 图标 16–256 + `StartupWMClass=NexusAI`）；`scripts/deploy.sh`（linuxdeploy + linuxdeploy-plugin-qt → AppImage，deb 次选）；CI 增加 Linux artifact | `cmake --install` 自包含目录可运行；AppImage 在干净 Ubuntu 启动 |
+| **1 交付形态** | GNUInstallDirs install 规则（bin + `.desktop` + hicolor 图标 16–256 + `StartupWMClass=NexusAI`）；`scripts/deploy.sh`（**Qt deploy 脚本捆绑运行时 + appimagetool 纯封装 → AppImage**，deb 次选）；CI 增加 Linux artifact | `cmake --install` 系统布局正确；AppImage 通过脚本内完整性校验（Qt 库全部解析进 AppDir、QtQuick 模块在位） |
 | **2 功能补齐** | §3 D1–D7 逐项落地 + §2.2 其余项（no-op bug、措辞、isWithin 对齐）；`openWithKnownEditor` 的 `xdg-mime` 实现顺带评估 | 各项带单测；密文格式有版本前缀、失败绝不落盘明文 |
 | **3 真机验收** | §5 矩阵过一遍；readme 增 Linux 构建/数据位置章节 | 验收表全勾 |
 
@@ -125,6 +125,7 @@ X11 + Wayland，GNOME（AppIndicator 扩展开/关）+ KDE 各一轮：
 - **qmllint pwsh-on-Linux**：ubuntu-latest 预装 pwsh，`QmllintGuard.ps1` 的 .NET API（WorkingSet64/Stopwatch）在 Core 可用，`-ExecutionPolicy Bypass` 被接受；首跑若失败，兜底是给 `find_program` 加 `NO_DEFAULT_PATH` 或提供 shell 版守卫
 - **aqt gcc_64 + qtpdf**：Qt 6.9.0 linux 桌面包带 `-m qtpdf` 可用（与 Windows 同源缓存策略）；若离线 apt 场景，发行版 qt6-pdf 包名待查
 - **测试 GUI 依赖**：offscreen 平台仍需 libfontconfig/libglib 等运行时，CI 里显式 apt 安装最小集
+- **AppImage 打包选型（阶段 1 实施定稿）**：放弃原推荐的 linuxdeploy-plugin-qt——它靠扫描 AppDir 内散落 .qml 文件判 QML 依赖，本项目 QML 全部 qrc 内嵌会扫空；改用 Qt 官方 deploy 脚本捆绑（与 Windows 侧同一机制，CI 已验证），**patchelf 是 rpath 改写硬依赖**，appimagetool 只做纯封装不做依赖分析，两层职责不重叠。appimagetool 用 continuous 版 + `--appimage-extract-and-run` 绕开 CI 无 libfuse2；aarch64 需 APPIMAGETOOL_URL 覆盖。首个 Linux CI 跑通前，deploy.sh 的捆绑/封装链路未经真机验证
 - **ELECTRON_RUN_AS_NODE no-op**：平台无关既有 bug，与适配无关但顺路修复（改 `qunsetenv`，对本进程无影响——NexusAI 非 Electron 应用）
 
 ## 8. 明确不做
