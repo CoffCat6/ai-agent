@@ -91,7 +91,7 @@ Linux 依赖面：`Qt6::Pdf` 是额外模块（aqt `-m qtpdf`，gcc_64 架构可
 | 阶段 | 内容 | 验收 |
 |---|---|---|
 | **0（本批）** | §2.1 编译门控；tests/CMakeLists 运行时解析按平台（`LD_LIBRARY_PATH`+`lib/`）；ci.yml 增 `linux-gcc` job | Linux CI 构建绿；Windows CI/本地零回归（后调整为 CI 纯发布流水线，测试仅本地跑，见 §7） |
-| **1 交付形态** | GNUInstallDirs install 规则（bin + `.desktop` + hicolor 图标 16–256 + `StartupWMClass=NexusAI`）；`scripts/deploy.sh`（**Qt deploy 脚本捆绑运行时 + appimagetool 纯封装 → AppImage**，deb 次选）；CI 增加 Linux artifact | `cmake --install` 系统布局正确；AppImage 通过脚本内完整性校验（Qt 库全部解析进 AppDir、QtQuick 模块在位） |
+| **1 交付形态** | GNUInstallDirs install 规则（bin + `.desktop` + hicolor 图标 16–256 + `StartupWMClass=NexusAI`）；发布矩阵五资产：**win64 setup.exe（Inno Setup）+ win64 zip（deploy.ps1）+ AppImage（Qt deploy 脚本捆绑 + appimagetool 封装）+ deb + rpm（package-linux.sh，与 AppImage 同源 AppDir，/opt/NexusAI 布局）**；v* 标签触发 release job 汇总发布 | `cmake --install` 系统布局正确；AppImage/deb/rpm 通过脚本内完整性校验；安装包在干净系统可装可卸载 |
 | **2 功能补齐** | §3 D1–D7 逐项落地 + §2.2 其余项（no-op bug、措辞、isWithin 对齐）；`openWithKnownEditor` 的 `xdg-mime` 实现顺带评估 | 各项带单测；密文格式有版本前缀、失败绝不落盘明文 |
 | **3 真机验收** | §5 矩阵过一遍；readme 增 Linux 构建/数据位置章节 | 验收表全勾 |
 
@@ -127,6 +127,7 @@ X11 + Wayland，GNOME（AppIndicator 扩展开/关）+ KDE 各一轮：
 - **测试 GUI 依赖**：offscreen 平台仍需 libfontconfig/libglib 等运行时，CI 里显式 apt 安装最小集
 - **CI 范围收缩（用户决策 2026-11-10）**：CI 只做 build + deploy（发布流水线）。原因：GitHub windows runner 上 5 个测试（test_sandbox/test_viewmodel/test_agent/test_chat_workflows/test_project_files_panel）环境特异性失败——本机同 Qt 版本 Debug/Release 全绿，runner 上 QTest 输出整体缺失（疑似崩溃丢 stdout 缓冲，直跑 exe 返回 exit=1/2 为真实断言失败），排查成本高。测试回归改为本地责任（tests/ 与 ctest 基础设施完整保留，Linux 下 LD_LIBRARY_PATH + offscreen 机制已就位）
 - **CI bring-up 踩坑记录（勿回退）**：aqt 参数是 `--outputdir`；aqt CLI 架构令牌≠磁盘目录名（`win64_mingw`→`mingw_64/`、`linux_gcc_64`→`gcc_64/`）；PS 5.1 写 GITHUB_ENV 必须 `Add-Content`（`Out-File` 默认 UTF-16 解析失败）；Linux configure 需 mesa/xkbcommon 开发包；qtkeychain 头文件布局需 find_path 显式定位（GCC 默认路径探不到），且 0.15 的 `NoError` 在命名空间级枚举（`QKeychain::NoError`，非旧版 `QKeychain::Job::NoError`）；APP_VERSION 编译定义须全平台（曾误锁 WIN32）；AppImage 的 qtkeychain 捆绑需要「REAL_PATH 实文件 + 按 DT_NEEDED 重建 SONAME 符号链接 + patchelf $ORIGIN rpath」三件套（Qt deploy 脚本只管 Qt 自家库，第三方依赖的 SONAME/文件名在发行版包里靠符号链接衔接，install(FILES) 拷实文件会断链）
+- **安装包矩阵（v0.2.1 起）**：Windows 走 Inno Setup（`assets/windows/nexusai.iss`，AppId 固定保证升级识别，版本号/部署目录/输出目录经 `/D` 注入）；Linux deb/rpm 与 AppImage **同源**——都消费 deploy.sh 产出的 AppDir（Qt 已捆绑、rpath 已改写），Qt6 的 relocatable 布局让 `/opt/NexusAI` 迁移后 prefix/plugins/qml 自定位依然成立。deb 用 `dpkg-deb --root-owner-group`；rpm 用 rpmbuild 且 `AutoReqProv: no` + 手工 Requires（放任自动依赖会对捆绑的 Qt soname 生成不可满足的 Requires）。C 运行时与桌面栈（GL/X11/fontconfig/libsecret）按 AppImage 同策略交给目标系统——deb 的 Depends 刻意只列跨发行版稳定的核心三件（t64 命名过渡期各发行版包名不一致，硬列桌面栈反而制造不可满足依赖）
 - **AppImage 打包选型（阶段 1 实施定稿）**：放弃原推荐的 linuxdeploy-plugin-qt——它靠扫描 AppDir 内散落 .qml 文件判 QML 依赖，本项目 QML 全部 qrc 内嵌会扫空；改用 Qt 官方 deploy 脚本捆绑（与 Windows 侧同一机制，CI 已验证），**patchelf 是 rpath 改写硬依赖**，appimagetool 只做纯封装不做依赖分析，两层职责不重叠。appimagetool 用 continuous 版 + `--appimage-extract-and-run` 绕开 CI 无 libfuse2；aarch64 需 APPIMAGETOOL_URL 覆盖。首个 Linux CI 跑通前，deploy.sh 的捆绑/封装链路未经真机验证
 - **ELECTRON_RUN_AS_NODE no-op**：平台无关既有 bug，与适配无关但顺路修复（改 `qunsetenv`，对本进程无影响——NexusAI 非 Electron 应用）
 
