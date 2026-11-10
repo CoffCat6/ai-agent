@@ -97,6 +97,7 @@ under /opt/NexusAI; expects a standard desktop stack.
 /opt/NexusAI
 /usr/bin/nexus_ai
 /usr/share/applications/nexusai.desktop
+/usr/share/doc/nexusai
 /usr/share/icons/hicolor/*/apps/nexusai.png
 EOF
 rpmbuild -bb "$spec" \
