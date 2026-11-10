@@ -301,6 +301,10 @@ qt_add_executable(nexus_ai
     src/main.cpp
 )
 
+# main.cpp 无条件使用 APP_VERSION（关于页构建信息），全平台定义；
+# 只有 VERSIONINFO 资源（app.rc）是 Windows 专属（docs/49）。
+target_compile_definitions(nexus_ai PRIVATE APP_VERSION="${PROJECT_VERSION}")
+
 # Windows VERSIONINFO resource: single source of truth is project(VERSION)
 if(WIN32)
     # windres cannot take absolute paths with spaces/blanks reliably; it
@@ -310,7 +314,6 @@ if(WIN32)
         "${CMAKE_CURRENT_BINARY_DIR}" "${CMAKE_CURRENT_SOURCE_DIR}/assets/icons/nexus.ai.ico")
     configure_file(src/app.rc.in ${CMAKE_CURRENT_BINARY_DIR}/app.rc @ONLY)
     target_sources(nexus_ai PRIVATE ${CMAKE_CURRENT_BINARY_DIR}/app.rc)
-    target_compile_definitions(nexus_ai PRIVATE APP_VERSION="${PROJECT_VERSION}")
 endif()
 
 # QML module with singleton Theme
