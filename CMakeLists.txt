@@ -55,6 +55,13 @@ add_library(nexus_core STATIC
     src/core/memory/IMemory.h
     src/core/memory/SqliteMemory.h
     src/core/memory/SqliteMemory.cpp
+    # docs/50 P1：定时任务调度规格（纯函数：解析/校验/下一次触发，可单测）。
+    src/core/schedule/ScheduleSpec.h
+    src/core/schedule/ScheduleSpec.cpp
+    # docs/50 P2：定时任务调度器（30s tick + 错过收敛 + 无头执行编排）。
+    # 依赖全注入（memory/clock/工厂/配置器），不感知设置服务与 QML。
+    src/core/schedule/ScheduledTasksManager.h
+    src/core/schedule/ScheduledTasksManager.cpp
     # docs/37 W2：Skill 发现/宽松 frontmatter 解析/搜索/上限与路径校验。
     # QtCore-only，nexus_core 保持无 QML/Gui 依赖。
     src/core/skills/Skill.h
@@ -397,6 +404,9 @@ qt_add_qml_module(nexus_ai
         src/ui/components/ProjectFilesPanel.qml
         # Knowledge base management (global; opened from the sidebar tool strip)
         src/ui/components/KnowledgeDialog.qml
+        # docs/50 P3: scheduled tasks (global; opened from the sidebar tool strip)
+        src/ui/components/ScheduledTasksDialog.qml
+        src/ui/components/ScheduledTaskEditorDialog.qml
         # G4: the review dialog - the panel's wide host (tree beside diff)
         src/ui/components/ReviewDialog.qml
         # 审阅升级：扁平化目录树（审阅 / Git 状态 / 提交文件共用）+ 路径工具

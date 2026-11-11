@@ -451,6 +451,7 @@ void AIAgent::onTaskTimeout() {
     if (!m_active) return;
     qWarning() << "Task timed out after" << m_taskTimeoutMs << "ms - sealing";
     stop();   // seals pending/confirm/executing calls and cancels the service
+    emit taskTimedOut();
     finishTask(QStringLiteral(
         "The task timed out and was stopped. The work completed so far is "
         "summarized above - ask a follow-up to continue."));
@@ -3288,6 +3289,29 @@ void AIAgent::processNextToolCall() {
                         && def.readOnly)));
 
         if (!autoApproved) {
+            // docs/50 §6.1: unattended runs (scheduled tasks) never suspend —
+            // a confirmation nobody will answer would wedge the task forever
+            // (no timeout exists for AwaitingToolConfirm). Reject with a
+            // readable reason, same shape as the PlanOnly gate above; the
+            // model is told to continue without the tool. Dangerous tools
+            // land here too in every mode (autoApproved is false for them).
+            if (m_unattended) {
+                appendTraceNode("tool_call", call.name, "failed",
+                                QJsonObject{{"args", argsToString(call.arguments)}});
+                appendToolResultMessage(call,
+                    QStringLiteral("Error: tool '%1' requires user confirmation, but "
+                                   "this task runs unattended (scheduled task). It was "
+                                   "rejected automatically; continue without it or "
+                                   "describe the proposed change.")
+                        .arg(call.name));
+                if (m_memory)
+                    m_memory->logAudit(m_sessionId, "tool_blocked", call.name,
+                                       argsToString(call.arguments), false,
+                                       QStringLiteral("unattended (scheduled task)"),
+                                       m_activeRequestId, m_lastLatencyMs,
+                                       m_lastTokensUsed, currentModel());
+                continue;
+            }
             // Suspend the loop and ask the user. Dispatch any parallel calls
             // collected so far first, then emit the confirmation request.
             if (!parallelCalls.isEmpty())

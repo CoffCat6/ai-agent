@@ -531,9 +531,11 @@ private slots:
         QCOMPARE(sidebarSpy.count(), 1);
 
         // Hard clamps applied in the setter (the QML drag handler applies
-        // the finer window-aware limit on top of these)
+        // the finer window-aware limit on top of these). docs/50 §7.1: the
+        // minimum rose 180 → 208 for the fifth tool-strip button (scheduled
+        // tasks); both the setter and the load path clamp to the new range.
         vm.setSidebarWidth(0);
-        QCOMPARE(vm.sidebarWidth(), 180);
+        QCOMPARE(vm.sidebarWidth(), 208);
         vm.setSidebarWidth(9999);
         QCOMPARE(vm.sidebarWidth(), 560);
         vm.setPanelWidth(0);

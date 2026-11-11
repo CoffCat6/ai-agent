@@ -668,6 +668,50 @@ void SqliteMemory::createTables() {
         )
     )", "create session_todos table");
 
+    // docs/50 P1: 定时任务（H4）。两张新表，CREATE IF NOT EXISTS 即全部
+    // 迁移（user_version 不动，同 file_checkpoints/session_todos 惯例）。
+    // schedule_value 存 ScheduleSpec::toJson() 的紧凑串，语义校验在
+    // core/schedule；数据层只做哑存储，坏行由消费方跳过并审计。
+    execDdl(query, R"(
+        CREATE TABLE IF NOT EXISTS scheduled_tasks (
+            id TEXT PRIMARY KEY,
+            name TEXT NOT NULL,
+            prompt TEXT NOT NULL,
+            profile_id TEXT NOT NULL,
+            profile_name TEXT NOT NULL,
+            schedule_kind TEXT NOT NULL,
+            schedule_value TEXT NOT NULL,
+            permission_mode TEXT NOT NULL DEFAULT 'plan_only',
+            enabled INTEGER NOT NULL DEFAULT 1,
+            notify INTEGER NOT NULL DEFAULT 1,
+            last_fired_at INTEGER NOT NULL DEFAULT 0,
+            created_at INTEGER NOT NULL,
+            updated_at INTEGER NOT NULL
+        )
+    )", "create scheduled_tasks table");
+    execDdl(query, "CREATE INDEX IF NOT EXISTS idx_scheduled_tasks_enabled "
+                   "ON scheduled_tasks(enabled)",
+            "create scheduled_tasks index");
+
+    // run 历史：每任务保留最近 kMaxScheduledTaskRuns 条（插入时清理），
+    // 删任务级联删除。trigger_source 是 SQL 关键字 TRIGGER 的避让命名。
+    execDdl(query, R"(
+        CREATE TABLE IF NOT EXISTS scheduled_task_runs (
+            id INTEGER PRIMARY KEY AUTOINCREMENT,
+            task_id TEXT NOT NULL,
+            session_id TEXT,
+            status TEXT NOT NULL,
+            trigger_source TEXT NOT NULL DEFAULT 'schedule',
+            started_at INTEGER NOT NULL,
+            finished_at INTEGER,
+            error TEXT NOT NULL DEFAULT '',
+            summary TEXT NOT NULL DEFAULT ''
+        )
+    )", "create scheduled_task_runs table");
+    execDdl(query, "CREATE INDEX IF NOT EXISTS idx_scheduled_task_runs_task "
+                   "ON scheduled_task_runs(task_id, started_at DESC, id DESC)",
+            "create scheduled_task_runs index");
+
     // Cross-session usage trail (user operations / network outcomes). New
     // table — no migration needed; retention is enforced by pruneUsage.
     execDdl(query, R"(
@@ -2472,6 +2516,246 @@ void SqliteMemory::setSessionProject(const QString& sessionId,
         qWarning() << "Failed to set session project:" << q.lastError().text();
 }
 
+// ── docs/50 P1: scheduled tasks（定时任务 H4）──────────────
+
+namespace {
+
+// SELECT 列序固定，list 与 upsert 回读共用（camelCase 行键见头文件）。
+QVariantMap scheduledTaskRow(QSqlQuery& q) {
+    return QVariantMap{
+        {"id",             q.value(0).toString()},
+        {"name",           q.value(1).toString()},
+        {"prompt",         q.value(2).toString()},
+        {"profileId",      q.value(3).toString()},
+        {"profileName",    q.value(4).toString()},
+        {"scheduleKind",   q.value(5).toString()},
+        {"scheduleValue",  q.value(6).toString()},
+        {"permissionMode", q.value(7).toString()},
+        {"enabled",        q.value(8).toBool()},
+        {"notify",         q.value(9).toBool()},
+        {"lastFiredAt",    q.value(10).toLongLong()},
+        {"createdAt",      q.value(11).toLongLong()},
+        {"updatedAt",      q.value(12).toLongLong()},
+    };
+}
+
+QVariantMap scheduledRunRow(QSqlQuery& q) {
+    return QVariantMap{
+        {"id",            q.value(0).toLongLong()},
+        {"taskId",        q.value(1).toString()},
+        {"sessionId",     q.value(2).toString()},
+        {"status",        q.value(3).toString()},
+        {"triggerSource", q.value(4).toString()},
+        {"startedAt",     q.value(5).toLongLong()},
+        {"finishedAt",    q.value(6).toLongLong()},
+        {"error",         q.value(7).toString()},
+        {"summary",       q.value(8).toString()},
+    };
+}
+
+// QVariant::toString() 对缺失键、QString() 形参都给出 null QString，而 null
+// 绑定成 SQL NULL 会撞这些列的 NOT NULL——统一归一为非 null 空串（空串是
+// 本组文本列的既定"无值"形态，session_id 这类可空列除外）。
+QString nonNullText(const QString& s) {
+    return s.isNull() ? QString(QLatin1String("")) : s;
+}
+
+} // namespace
+
+QVariantMap SqliteMemory::upsertScheduledTask(const QVariantMap& task) {
+    QString id = task.value(QStringLiteral("id")).toString();
+    if (id.isEmpty())
+        id = QUuid::createUuid().toString(QUuid::WithoutBraces);
+    const qint64 now = QDateTime::currentMSecsSinceEpoch();
+    QSqlQuery q(m_db);
+    // 冲突时只更新定义列：created_at 保留首次值、last_fired_at 保留运行
+    // 锚点（编辑不得把"已触发到哪"洗掉）。
+    q.prepare("INSERT INTO scheduled_tasks "
+              "(id, name, prompt, profile_id, profile_name, schedule_kind, "
+              " schedule_value, permission_mode, enabled, notify, "
+              " last_fired_at, created_at, updated_at) "
+              "VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?) "
+              "ON CONFLICT(id) DO UPDATE SET "
+              "name = excluded.name, prompt = excluded.prompt, "
+              "profile_id = excluded.profile_id, "
+              "profile_name = excluded.profile_name, "
+              "schedule_kind = excluded.schedule_kind, "
+              "schedule_value = excluded.schedule_value, "
+              "permission_mode = excluded.permission_mode, "
+              "enabled = excluded.enabled, notify = excluded.notify, "
+              "updated_at = excluded.updated_at");
+    q.addBindValue(id);
+    q.addBindValue(nonNullText(task.value(QStringLiteral("name")).toString()));
+    q.addBindValue(nonNullText(task.value(QStringLiteral("prompt")).toString()));
+    q.addBindValue(nonNullText(task.value(QStringLiteral("profileId")).toString()));
+    q.addBindValue(nonNullText(task.value(QStringLiteral("profileName")).toString()));
+    q.addBindValue(nonNullText(task.value(QStringLiteral("scheduleKind")).toString()));
+    q.addBindValue(nonNullText(task.value(QStringLiteral("scheduleValue")).toString()));
+    q.addBindValue(nonNullText(task.value(QStringLiteral("permissionMode"),
+                                          QVariant(QStringLiteral("plan_only"))).toString()));
+    q.addBindValue(task.value(QStringLiteral("enabled"), true).toBool() ? 1 : 0);
+    q.addBindValue(task.value(QStringLiteral("notify"), true).toBool() ? 1 : 0);
+    q.addBindValue(task.value(QStringLiteral("lastFiredAt"), 0).toLongLong());
+    q.addBindValue(now);
+    q.addBindValue(now);
+    if (!q.exec()) {
+        qWarning() << "Failed to upsert scheduled task:" << q.lastError().text();
+        return {};
+    }
+    // 回读整行：INSERT 分支要拿生成的时间戳，UPDATE 分支要拿未被覆盖的
+    // created_at / last_fired_at（权威值以库为准）。
+    QSqlQuery read(m_db);
+    read.prepare("SELECT id, name, prompt, profile_id, profile_name, "
+                 "schedule_kind, schedule_value, permission_mode, enabled, "
+                 "notify, last_fired_at, created_at, updated_at "
+                 "FROM scheduled_tasks WHERE id = ?");
+    read.addBindValue(id);
+    if (!read.exec() || !read.next()) {
+        qWarning() << "Failed to read back scheduled task:"
+                   << read.lastError().text();
+        return {};
+    }
+    return scheduledTaskRow(read);
+}
+
+bool SqliteMemory::deleteScheduledTask(const QString& id) {
+    // 先清 run 再删任务（run 无外键约束，级联靠这里）。
+    QSqlQuery runs(m_db);
+    runs.prepare("DELETE FROM scheduled_task_runs WHERE task_id = ?");
+    runs.addBindValue(id);
+    if (!runs.exec())
+        qWarning() << "Failed to delete scheduled task runs:"
+                   << runs.lastError().text();
+    QSqlQuery q(m_db);
+    q.prepare("DELETE FROM scheduled_tasks WHERE id = ?");
+    q.addBindValue(id);
+    if (!q.exec()) {
+        qWarning() << "Failed to delete scheduled task:" << q.lastError().text();
+        return false;
+    }
+    return q.numRowsAffected() > 0;
+}
+
+QVariantList SqliteMemory::listScheduledTasks() {
+    QVariantList out;
+    QSqlQuery q(m_db);
+    if (!q.exec("SELECT id, name, prompt, profile_id, profile_name, "
+                "schedule_kind, schedule_value, permission_mode, enabled, "
+                "notify, last_fired_at, created_at, updated_at "
+                "FROM scheduled_tasks ORDER BY created_at ASC, id ASC")) {
+        qWarning() << "Failed to list scheduled tasks:" << q.lastError().text();
+        return out;
+    }
+    while (q.next())
+        out.append(scheduledTaskRow(q));
+    return out;
+}
+
+bool SqliteMemory::setScheduledTaskEnabled(const QString& id, bool enabled) {
+    QSqlQuery q(m_db);
+    q.prepare("UPDATE scheduled_tasks SET enabled = ?, updated_at = ? WHERE id = ?");
+    q.addBindValue(enabled ? 1 : 0);
+    q.addBindValue(QDateTime::currentMSecsSinceEpoch());
+    q.addBindValue(id);
+    if (!q.exec()) {
+        qWarning() << "Failed to toggle scheduled task:" << q.lastError().text();
+        return false;
+    }
+    return q.numRowsAffected() > 0;
+}
+
+bool SqliteMemory::markScheduledTaskFired(const QString& id, qint64 firedAtMs) {
+    // 只动锚点：updated_at 语义是"定义被编辑"，触发不是编辑。
+    QSqlQuery q(m_db);
+    q.prepare("UPDATE scheduled_tasks SET last_fired_at = ? WHERE id = ?");
+    q.addBindValue(firedAtMs > 0 ? firedAtMs
+                                 : QDateTime::currentMSecsSinceEpoch());
+    q.addBindValue(id);
+    if (!q.exec()) {
+        qWarning() << "Failed to mark scheduled task fired:"
+                   << q.lastError().text();
+        return false;
+    }
+    return q.numRowsAffected() > 0;
+}
+
+qint64 SqliteMemory::addScheduledTaskRun(const QString& taskId,
+                                         const QString& triggerSource,
+                                         qint64 startedAtMs) {
+    if (taskId.isEmpty()) return 0;
+    QSqlQuery q(m_db);
+    q.prepare("INSERT INTO scheduled_task_runs "
+              "(task_id, session_id, status, trigger_source, started_at) "
+              "VALUES (?, NULL, 'running', ?, ?)");
+    q.addBindValue(taskId);
+    q.addBindValue(triggerSource.isEmpty() ? QStringLiteral("schedule")
+                                           : triggerSource);
+    q.addBindValue(startedAtMs > 0 ? startedAtMs
+                                   : QDateTime::currentMSecsSinceEpoch());
+    if (!q.exec()) {
+        qWarning() << "Failed to add scheduled task run:" << q.lastError().text();
+        return 0;
+    }
+    const qint64 runId = q.lastInsertId().toLongLong();
+    // 保留清理：仅保留该任务最近 kMaxScheduledTaskRuns 条（id 升序 = 写入
+    // 顺序；与 started_at 无关，时钟注入的测试值不影响保留语义）。
+    QSqlQuery prune(m_db);
+    prune.prepare("DELETE FROM scheduled_task_runs WHERE task_id = ? AND id "
+                  "NOT IN (SELECT id FROM scheduled_task_runs "
+                  "        WHERE task_id = ? ORDER BY id DESC LIMIT ?)");
+    prune.addBindValue(taskId);
+    prune.addBindValue(taskId);
+    prune.addBindValue(kMaxScheduledTaskRuns);
+    if (!prune.exec())
+        qWarning() << "Failed to prune scheduled task runs:"
+                   << prune.lastError().text();
+    return runId;
+}
+
+bool SqliteMemory::finishScheduledTaskRun(qint64 runId, const QString& status,
+                                          const QString& sessionId,
+                                          const QString& error,
+                                          const QString& summary,
+                                          qint64 finishedAtMs) {
+    QSqlQuery q(m_db);
+    q.prepare("UPDATE scheduled_task_runs SET status = ?, session_id = ?, "
+              "finished_at = ?, error = ?, summary = ? WHERE id = ?");
+    q.addBindValue(nonNullText(status));
+    // 空 sessionId 绑 NULL（missed/skipped 类 run 没有会话）。
+    q.addBindValue(sessionId.isEmpty() ? QVariant() : QVariant(sessionId));
+    q.addBindValue(finishedAtMs > 0 ? finishedAtMs
+                                    : QDateTime::currentMSecsSinceEpoch());
+    q.addBindValue(nonNullText(error));
+    q.addBindValue(nonNullText(summary));
+    q.addBindValue(runId);
+    if (!q.exec()) {
+        qWarning() << "Failed to finish scheduled task run:"
+                   << q.lastError().text();
+        return false;
+    }
+    return q.numRowsAffected() > 0;
+}
+
+QVariantList SqliteMemory::listScheduledTaskRuns(const QString& taskId,
+                                                 int limit) {
+    QVariantList out;
+    QSqlQuery q(m_db);
+    q.prepare("SELECT id, task_id, session_id, status, trigger_source, "
+              "started_at, finished_at, error, summary "
+              "FROM scheduled_task_runs WHERE task_id = ? "
+              "ORDER BY started_at DESC, id DESC LIMIT ?");
+    q.addBindValue(taskId);
+    q.addBindValue(limit > 0 ? limit : kMaxScheduledTaskRuns);
+    if (!q.exec()) {
+        qWarning() << "Failed to list scheduled task runs:"
+                   << q.lastError().text();
+        return out;
+    }
+    while (q.next())
+        out.append(scheduledRunRow(q));
+    return out;
+}
+
 // docs/23 G7: 软删除。消息/轨迹/审计为撤销窗口保留（审计链"重新生成是
 // 正常行为"的同一纪律），列表与搜索按 deleted_at 过滤；到期行由
 // purgeDeletedSessions 硬级联回收。
@@ -3994,6 +4278,9 @@ QVariantMap SqliteMemory::collectStats(const QString& dbPath) {
             {QStringLiteral("tokenUsage"), QStringLiteral("token_usage")},
             {QStringLiteral("auditLog"), QStringLiteral("audit_log")},
             {QStringLiteral("sessionTodos"), QStringLiteral("session_todos")},
+            // docs/50 P1：定时任务与执行历史。
+            {QStringLiteral("scheduledTasks"), QStringLiteral("scheduled_tasks")},
+            {QStringLiteral("scheduledTaskRuns"), QStringLiteral("scheduled_task_runs")},
         };
         for (const auto& it : tables) {
             const QVariant rows = scalar(

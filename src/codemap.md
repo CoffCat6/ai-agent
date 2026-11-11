@@ -23,7 +23,7 @@
 
 ### 子层内容速览
 
-- `core/`：`agent/`（`AIAgent`、`EpisodicService`、`PermissionMode`、`LLMTypes`）、`memory/`（`IMemory`/`SqliteMemory`）、`tools/`（`ITool`/`ToolRegistry`/`Sandbox`/web 工具）、`rag/`、`git/`、`mcp/`、`utils/`（日志、设置、Token、定价、代理、附件/项目索引）。
+- `core/`：`agent/`（`AIAgent`、`EpisodicService`、`PermissionMode`、`LLMTypes`）、`memory/`（`IMemory`/`SqliteMemory`）、`tools/`（`ITool`/`ToolRegistry`/`Sandbox`/web 工具）、`rag/`、`git/`、`mcp/`、`schedule/`（定时任务调度规格）、`utils/`（日志、设置、Token、定价、代理、附件/项目索引）。
 - `infrastructure/llm/`：`IAIService` + `LLMServiceBase` + `LlmProtocolRegistry`，协议实现 `OpenAI`/`OpenAIResponses`/`Anthropic`/`Gemini`/`Ollama`；`infrastructure/embed/`：`OllamaEmbedding`、`OpenAICompatibleEmbedding`、`EmbedShutdown`（进程级中断标志）。
 - `viewmodels/`：会话编排 `AgentViewModel`/`ChatSessionController`/`TraceModel`；设置与偏好 `SettingsService`/`SettingsBackup`/`PresetPackTransfer`/`Preference*`/`ChangeBus`/`EditBuffer`；主题与本地化 `ThemeProvider`/`ThemeManager`/`I18nManager`/`LocaleProbe`/`FontProbe`；能力面板 `GitViewModel`/`McpManager`/`ConnectionTester`/`CodeHighlighter`/`CitationParser`/`PdfTextExtractor`/`CommitMessageDrafter`。
 - `ui/`：壳层与组件，详见 [ui/codemap.md](ui/codemap.md)。

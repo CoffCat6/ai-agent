@@ -41,6 +41,7 @@
 #include "core/tools/SubAgentControlTool.h"
 #include "core/rag/RagService.h"
 #include "core/rag/KnowledgeSearchTool.h"
+#include "core/schedule/ScheduledTasksManager.h"
 #include "core/utils/Logger.h"
 #include "core/utils/Activity.h"
 #include "core/utils/BackupSchedule.h"
@@ -576,7 +577,10 @@ qInfo() << "NexusAI" << app.applicationVersion() << "starting";
     auto summaryProviders = std::make_shared<QHash<AIAgent*, ProviderSet>>();
     tabMemories->insert(agent, episodicService);
     summaryProviders->insert(agent, LlmProtocolRegistry::createServiceSet(episodicService));
-    agentVM->setModelConfigurator([settings, agent, templateSet, tabProviderSets, tabMemories, summaryProviders](
+    // docs/50 P2: 模型配置闭包抽出为具名 lambda——tab 会话（经 VM）与定时
+    // 任务的无头 agent（经 ScheduledTasksManager）共用同一份配置逻辑。
+    auto configureAgentModel =
+        [settings, agent, templateSet, tabProviderSets, tabMemories, summaryProviders](
             AIAgent* target, const QVariantMap& profile,
             const QVariantMap& sessionOverrides) {
         const ProviderSet set = target == agent ? templateSet : tabProviderSets->value(target);
@@ -600,8 +604,11 @@ qInfo() << "NexusAI" << app.applicationVersion() << "starting";
         target->setContextLimit(settings->resolveContextLimitForProfile(profile));
         target->setModelLocal(LlmProtocolRegistry::isLocal(
             profile.value("apiProtocol").toString(), profile.value("provider").toString()));
-    });
-    agentVM->setAgentFactory([&app, settings, embedText,
+    };
+    agentVM->setModelConfigurator(configureAgentModel);
+    // docs/50 P2: agent 工厂同理抽出——无头 agent 与 tab agent 走同一套
+    // 「独立 SQLite 连接 + 独立协议服务集 + destroyed 清理」装配。
+    auto makeSessionAgent = [&app, settings, embedText,
                               tabProviderSets, tabMemories, summaryProviders]() -> AIAgent* {
         auto* tabAgent = new AIAgent(&app);
         tabAgent->setToolRegistry(&ToolRegistry::instance());
@@ -626,7 +633,41 @@ qInfo() << "NexusAI" << app.applicationVersion() << "starting";
                 summaryProviders->remove(tabAgent);
             });
         return tabAgent;
+    };
+    agentVM->setAgentFactory(makeSessionAgent);
+
+    // ── docs/50 P2: 定时任务调度器（H4）────────────────────
+    // 执行环境与 tab 会话同源（上面的共享工厂/配置闭包）；profile 解析取
+    // profilesWithSecrets（与 VM updateModelProfiles 同源）；墙钟上限触发时
+    // 现读偏好（改值即生效）。托盘通知与侧栏刷新接线在 P4。
+    auto* scheduleManager = new ScheduledTasksManager(memory, {}, &app);
+    scheduleManager->setAgentFactory(makeSessionAgent);
+    scheduleManager->setModelConfigurator(
+        [configureAgentModel](AIAgent* target, const QVariantMap& profile) {
+            // 会话临时覆盖传空——定时任务没有 UI 侧覆盖通道（与摘要服务
+            // 同一空覆盖语义，docs/43 §7 #2）。
+            configureAgentModel(target, profile, QVariantMap{});
+        });
+    scheduleManager->setProfileResolver([settings](const QString& profileId) {
+        for (const QVariant& entry : settings->profilesWithSecrets()) {
+            if (entry.toMap().value(QStringLiteral("id")).toString() == profileId)
+                return entry.toMap();
+        }
+        return QVariantMap{};
     });
+    scheduleManager->setMaxRunMinutesProvider([prefStore]() {
+        // docs/50 §8: schedule.maxRunMinutes（声明式偏好，P3 登记 schema；
+        // 未登记时 load 无效 → 默认 10）。clamp 1–120。
+        const QVariant raw = prefStore->load(QStringLiteral("schedule.maxRunMinutes"));
+        int minutes = raw.isValid() ? raw.toInt() : 10;
+        if (minutes <= 0)
+            minutes = 10;
+        return qBound(1, minutes, 120);
+    });
+    scheduleManager->startTicking();
+    QObject::connect(&app, &QCoreApplication::aboutToQuit, &app,
+        [scheduleManager]() { scheduleManager->shutdown(); });
+
     auto* connectionTester = ConnectionTester::instance();
     connectionTester->setParent(&app);
 
@@ -1051,6 +1092,12 @@ qInfo() << "NexusAI" << app.applicationVersion() << "starting";
 #endif
 
     QQmlApplicationEngine engine;
+
+    // docs/50 P3: 定时任务管理器暴露给 QML。进程里唯一的 setContextProperty
+    // ——manager 生命周期在 main.cpp（依赖注入 + aboutToQuit 停机），进不了
+    // ViewModels 的 QML_SINGLETON 体系（那是自建单例的注册通道）。
+    engine.rootContext()->setContextProperty(QStringLiteral("ScheduleManager"),
+                                             scheduleManager);
 
     // docs/20 §4.1（D10 完善）：把托盘可用性注入根对象。close-to-tray 必须
     // 先看它——托盘不可用时藏窗口等于让应用失踪（用户只能去任务管理器结束）。

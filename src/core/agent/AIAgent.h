@@ -138,6 +138,11 @@ public:
     bool hasModelService() const { return m_llmService != nullptr; }
     void setModelLocal(bool local) { m_modelLocal = local; }
     void setLocalOnlyMode(bool enabled) { m_localOnly = enabled; }
+    // docs/50 §6.1：无人值守运行（定时任务）。开启后确认分支不再挂起等
+    // 人——RequiresConfirm / Dangerous 工具直接拒绝并回灌可读原因（PlanOnly
+    // 拒绝的同型路径），任务永不因等待确认而卡死。默认关闭，tab 路径不受影响。
+    void setUnattended(bool unattended) { m_unattended = unattended; }
+    bool unattended() const { return m_unattended; }
     QString pendingConfirmationId() const { return m_confirmNodeId; }
     QJsonArray messages() const { return m_messages; }
     QJsonArray traceModel() const { return m_traceModel; }
@@ -292,6 +297,9 @@ signals:
     void stateChanged(AgentState state);
     void traceChanged();
     void responseReady(const QString& response);
+    // docs/50 §6.2: 墙钟超时封口（onTaskTimeout）。responseReady 也会随
+    // finishTask 发出，监听方按"首个终态信号生效"处理，不靠文本识别超时。
+    void taskTimedOut();
     void toolConfirmRequired(const QString& id, const QString& name, const QJsonObject& args, const QString& preview);
     void errorOccurred(const QString& error);
     void tokensChanged(int usedTokens);
@@ -447,6 +455,7 @@ private:
     bool m_active{false};
     bool m_modelLocal{false};
     bool m_localOnly{false};
+    bool m_unattended{false};   // docs/50: 无人值守（定时任务）——确认分支直接拒绝
     quint64 m_epoch{0};   // bumped on start/stop/reset; stale tool results are dropped
 
     QString m_sessionId;

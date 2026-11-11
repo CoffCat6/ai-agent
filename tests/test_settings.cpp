@@ -1304,6 +1304,8 @@ private slots:
             // docs/20 工作流 B（桌面集成）偏好键
             "prefs/v1/window.closeToTray", "prefs/v1/general.autoStart",
             "prefs/v1/notice.enabled",
+            // docs/50 §8: 定时任务单次运行上限（调度器 provider 触发时现读）
+            "prefs/v1/schedule.maxRunMinutes",
             // M2 内部键：PreferenceStore 写入的物理路径
             "prefs/v1/settings.lastCategory",
             "prefs/v1/settings.collapsedGroups",

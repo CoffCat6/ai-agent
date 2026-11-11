@@ -22,6 +22,7 @@
 | `rag/` | `RagService` 多文档知识库门面：切块、embedding、余弦检索与持久化恢复。 | [rag/codemap.md](rag/codemap.md) |
 | `git/` | `GitService` 以参数列表调用 git，提供 status/log/diff/stage/commit/stash/blame/graph 等只读与显式写操作。 | [git/codemap.md](git/codemap.md) |
 | `mcp/` | MCP JSON-RPC 客户端、stdio/HTTP 传输、`mcp_servers.json` 配置与 `ITool` 适配器。 | [mcp/codemap.md](mcp/codemap.md) |
+| `schedule/` | 定时任务（docs/50）的调度规格：三种形态的解析/校验/下一次触发纯函数，DST 语义按 QDateTime 固化。 | [schedule/codemap.md](schedule/codemap.md) |
 | `utils/` | Token 估算、设置 schema、日志/Activity、定价、代理、`@` 项目文件索引、data URL/附件分类等横切工具。 | [utils/codemap.md](utils/codemap.md) |
 
 ## 数据与控制流（具体调用序列、状态机）
@@ -49,7 +50,7 @@
 - `memory/IMemory.h`、`memory/SqliteMemory.{h,cpp}`：持久化契约与实现。
 - `tools/ITool.h`、`tools/ToolRegistry.{h,cpp}`、`tools/Sandbox.h`：能力/权限/路径边界。
 - `rag/RagService.{h,cpp}`、`rag/DocumentRetriever.h`、`rag/VectorStore.h`、`rag/KnowledgeSearchTool.h`。
-- `git/GitService.{h,cpp}`；`mcp/McpClient.{h,cpp}`、`mcp/McpTransport.h`、`mcp/McpToolAdapter.{h,cpp}`、`mcp/McpConfig.{h,cpp}`。
+- `git/GitService.{h,cpp}`；`mcp/McpClient.{h,cpp}`、`mcp/McpTransport.h`、`mcp/McpToolAdapter.{h,cpp}`、`mcp/McpConfig.{h,cpp}`；`schedule/ScheduleSpec.{h,cpp}`（docs/50 定时任务调度规格）。
 - `utils/TokenEstimator.h`、`utils/SettingsSchema.{h,cpp}`、`utils/SettingsRepository.{h,cpp}`、`utils/PricingCalculator.{h,cpp}`、`utils/ProjectFileIndex.{h,cpp}`、`utils/Logger.{h,cpp}`、`utils/Activity.{h,cpp}`。
 
 ## 约束与风险

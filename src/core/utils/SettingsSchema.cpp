@@ -164,7 +164,7 @@ const QVector<PreferenceMeta>& SettingsSchema::preferences() {
                                   QStringLiteral("en")})),
         preference(QStringLiteral("ui.defaultSidebarWidth"), QStringLiteral("interface"),
                    QT_TRANSLATE_NOOP("NexusAI", "侧边栏默认宽度"), 260,
-                   PreferenceType::Int, integerRange(180, 560)),
+                   PreferenceType::Int, integerRange(208, 560)),
         preference(QStringLiteral("ui.defaultPanelWidth"), QStringLiteral("interface"),
                    QT_TRANSLATE_NOOP("NexusAI", "面板默认宽度"), 300,
                    PreferenceType::Int, integerRange(220, 640)),
@@ -205,6 +205,11 @@ const QVector<PreferenceMeta>& SettingsSchema::preferences() {
         preference(QStringLiteral("notice.enabled"), QStringLiteral("general"),
                    QT_TRANSLATE_NOOP("NexusAI", "系统通知"), true,
                    PreferenceType::Bool),
+        // docs/50 §8：定时任务（H4）唯一的设置键——单次运行的墙钟上限。
+        // 调度器触发时现读（main.cpp 注入的 provider），改值即生效。
+        preference(QStringLiteral("schedule.maxRunMinutes"), QStringLiteral("general"),
+                   QT_TRANSLATE_NOOP("NexusAI", "定时任务单次运行上限（分钟）"), 10,
+                   PreferenceType::Int, integerRange(1, 120)),
         // docs/31 N1：首次启动向导是否已看过。无分类 = 隐藏条目（不进导航、
         // 搜索与「恢复全部设置」），否则复位设置会把向导重新弹出来。
         // 完成与跳过都写它，保证只打扰一次。
@@ -337,7 +342,9 @@ const QVector<SettingsKeyDef>& SettingsSchema::registeredKeys() {
                    enumValues({QStringLiteral("confirm"), QStringLiteral("auto_edit"),
                                QStringLiteral("full_access"), QStringLiteral("plan_only")})),
             keyDef(QStringLiteral("ui/sidebarWidth"), QVariant(), SettingValueType::Int,
-                   intRange(180, 560)),
+                   // docs/50 §7.1: 侧栏工具条第五按钮（定时任务）后最小宽
+                   // 24 + 5*32 + 6*4 = 208；旧值 180–207 在加载路径被抬升。
+                   intRange(208, 560)),
             keyDef(QStringLiteral("ui/panelWidth"), QVariant(), SettingValueType::Int,
                    intRange(220, 640)),
             keyDef(QStringLiteral("ui/panelVisible"), QVariant(), SettingValueType::Bool),

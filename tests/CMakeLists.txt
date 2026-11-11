@@ -89,6 +89,11 @@ nexus_add_test(test_protocol_registry test_protocol_registry.cpp)
 # OpenAI Responses 协议的报文转换与非流式解析
 nexus_add_test(test_openai_responses test_openai_responses.cpp)
 nexus_add_test(test_memory test_memory.cpp)
+# docs/50 P1：ScheduleSpec 解析/校验/nextOccurrence 纯函数矩阵（含 DST）。
+nexus_add_test(test_schedule test_schedule.cpp)
+# docs/50 P2：ScheduledTasksManager 全链（冻结时钟 + 假 LLM，AIAgent 在 core，
+# IAIService 接口在 infra，链接集与 nexus_add_test 默认一致）。
+nexus_add_test(test_scheduled_manager test_scheduled_manager.cpp)
 nexus_add_test(test_tools test_tools.cpp)
 nexus_add_test(test_git_service test_git_service.cpp)
 # docs/37 W2：Skill 发现/解析/搜索（QtCore-only，链接集与其它 core 测试一致）。

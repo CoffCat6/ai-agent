@@ -14,7 +14,7 @@
 
 ## 数据模型（表结构表格）
 
-单库 14 张表（含 2 张 FTS5 虚拟表），全部由 `createTables()` 以 `IF NOT EXISTS` 幂等建立。
+单库 16 张表（含 2 张 FTS5 虚拟表），全部由 `createTables()` 以 `IF NOT EXISTS` 幂等建立。
 
 | 表 | 主键 / 键 | 关键列 | 用途 |
 |---|---|---|---|
@@ -32,10 +32,13 @@
 | `token_usage` | `id` AUTOINCREMENT | `request_id, session_id, model, timestamp`, 3 方向 × 多来源 token 列, `cost_cents, latency_ms` | 每次 LLM 请求一行；聚合统计的唯一精确来源 |
 | `usage_log` | `id` AUTOINCREMENT | `ts, category, action, target, request_id, detail` | `Activity` 门面的操作/网络事件流水（仅元数据） |
 | `model_pricing` | `model` TEXT | `input/output/cache_hit_price_cents, effective_date, notes` | 单价（分/1M token），启动时 `INSERT OR IGNORE` 预置 11 个模型 |
+| `scheduled_tasks` | `id` TEXT（UUID） | `name, prompt, profile_id, profile_name, schedule_kind, schedule_value, permission_mode, enabled, notify, last_fired_at, created_at, updated_at` | docs/50 定时任务定义；`schedule_value` 存 `ScheduleSpec::toJson()` 紧凑串，编辑不洗 `last_fired_at`/`created_at` |
+| `scheduled_task_runs` | `id` AUTOINCREMENT | `task_id, session_id, status, trigger_source, started_at, finished_at, error, summary` | 执行历史；每任务保留最近 30 条（插入时按 id 清理），删任务级联删除；`trigger_source` 避开 SQL 关键字 TRIGGER |
 
 索引：`idx_messages_session_ts(session_id,timestamp)`、`idx_sessions_pinned_updated(pinned,updated_at)`、
 `idx_episodic_ts`、`idx_episodic_session`、`idx_audit_ts`、`idx_trace_nodes_session(session_id,node_order)`、
-`idx_file_checkpoints_session`、`idx_usage_ts`、`idx_token_usage_ts/model/session`。
+`idx_file_checkpoints_session`、`idx_usage_ts`、`idx_token_usage_ts/model/session`、
+`idx_scheduled_tasks_enabled`、`idx_scheduled_task_runs_task(task_id,started_at,id)`。
 已退役索引 `idx_messages_session_parent` 在启动时 `DROP`。
 
 时间语义：所有时间戳均为 `QDateTime::...toMSecsSinceEpoch()`（**本地时区的 epoch ms**）；按天聚合用

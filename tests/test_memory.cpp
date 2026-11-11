@@ -226,6 +226,12 @@ private slots:
     void knowledgeDocChunksCommitAtomically();
     void knowledgeEmptyMarkersBindAsEmptyStrings();
     void clearFallbackRemovesSessionTodos();
+    // ── docs/50 P1：定时任务两表（CRUD / 编辑不洗锚点 / 级联 / 保留 /
+    // run 终态生命周期）──
+    void scheduledTaskCrudRoundTrip();
+    void scheduledTaskRunLifecycleAndFinish();
+    void scheduledTaskRunRetentionKeepsLatest30();
+    void scheduledTaskDeleteCascadesRuns();
 };
 
 void TestMemory::messageRoundTrip() {
@@ -3367,6 +3373,166 @@ void TestMemory::clearFallbackRemovesSessionTodos() {
     QVERIFY(db.commit());
 
     QCOMPARE(mem.loadSessionTodos(QStringLiteral("s1")).size(), 0);
+}
+
+// ── docs/50 P1：定时任务两表 ─────────────────────────────
+
+namespace {
+// 最小合法任务行（camelCase 键对齐 upsertScheduledTask 契约）。
+QVariantMap scheduledTaskFixture(const QString& name) {
+    return QVariantMap{
+        {"name", name},
+        {"prompt", QStringLiteral("总结今日要闻")},
+        {"profileId", QStringLiteral("p-1")},
+        {"profileName", QStringLiteral("Flash")},
+        {"scheduleKind", QStringLiteral("daily")},
+        {"scheduleValue", QStringLiteral("{\"kind\":\"daily\",\"time\":\"09:00\"}")},
+    };
+}
+} // namespace
+
+void TestMemory::scheduledTaskCrudRoundTrip() {
+    SqliteMemory mem(QStringLiteral(":memory:"));
+
+    // 新建：id 为空 → 生成 UUID；默认值落位。
+    const QVariantMap stored = mem.upsertScheduledTask(scheduledTaskFixture(
+        QStringLiteral("早报")));
+    const QString id = stored.value(QStringLiteral("id")).toString();
+    QVERIFY(!id.isEmpty());
+    QCOMPARE(stored.value(QStringLiteral("name")).toString(),
+             QStringLiteral("早报"));
+    QCOMPARE(stored.value(QStringLiteral("scheduleValue")).toString(),
+             QStringLiteral("{\"kind\":\"daily\",\"time\":\"09:00\"}"));
+    QCOMPARE(stored.value(QStringLiteral("permissionMode")).toString(),
+             QStringLiteral("plan_only"));
+    QCOMPARE(stored.value(QStringLiteral("enabled")).toBool(), true);
+    QCOMPARE(stored.value(QStringLiteral("notify")).toBool(), true);
+    QCOMPARE(stored.value(QStringLiteral("lastFiredAt")).toLongLong(), 0);
+    QVERIFY(stored.value(QStringLiteral("createdAt")).toLongLong() > 0);
+
+    // 触发锚点推进后编辑：定义覆盖，last_fired_at 不被洗掉、
+    // created_at 保留首次值。
+    QVERIFY(mem.markScheduledTaskFired(id, 1700000000000));
+    QVariantMap edited = scheduledTaskFixture(QStringLiteral("早报（改）"));
+    edited.insert(QStringLiteral("id"), id);
+    edited.insert(QStringLiteral("enabled"), false);
+    edited.insert(QStringLiteral("permissionMode"), QStringLiteral("auto_edit"));
+    const QVariantMap updated = mem.upsertScheduledTask(edited);
+    QCOMPARE(updated.value(QStringLiteral("id")).toString(), id);
+    QCOMPARE(updated.value(QStringLiteral("name")).toString(),
+             QStringLiteral("早报（改）"));
+    QCOMPARE(updated.value(QStringLiteral("enabled")).toBool(), false);
+    QCOMPARE(updated.value(QStringLiteral("permissionMode")).toString(),
+             QStringLiteral("auto_edit"));
+    QCOMPARE(updated.value(QStringLiteral("lastFiredAt")).toLongLong(),
+             qint64(1700000000000));
+    QCOMPARE(updated.value(QStringLiteral("createdAt")).toLongLong(),
+             stored.value(QStringLiteral("createdAt")).toLongLong());
+
+    // 列表与启停；未知 id 拒绝。
+    mem.upsertScheduledTask(scheduledTaskFixture(QStringLiteral("晚报")));
+    const QVariantList list = mem.listScheduledTasks();
+    QCOMPARE(list.size(), 2);
+    // 同毫秒插入时顺序按 UUID 不定，只断言成员与个数。
+    bool foundFirst = false, foundSecond = false;
+    for (const QVariant& row : list) {
+        const QString rowId = row.toMap().value(QStringLiteral("id")).toString();
+        foundFirst = foundFirst || rowId == id;
+        foundSecond = foundSecond || rowId != id;
+    }
+    QVERIFY(foundFirst && foundSecond);
+
+    QVERIFY(mem.setScheduledTaskEnabled(id, true));
+    QVERIFY(!mem.setScheduledTaskEnabled(QStringLiteral("nope"), false));
+    QVERIFY(!mem.markScheduledTaskFired(QStringLiteral("nope")));
+    QVERIFY(!mem.deleteScheduledTask(QStringLiteral("nope")));
+}
+
+void TestMemory::scheduledTaskRunLifecycleAndFinish() {
+    SqliteMemory mem(QStringLiteral(":memory:"));
+    const QString id = mem.upsertScheduledTask(scheduledTaskFixture(
+        QStringLiteral("t"))).value(QStringLiteral("id")).toString();
+
+    // 显式 startedAt 做确定性断言。
+    const qint64 runId = mem.addScheduledTaskRun(id, QStringLiteral("schedule"),
+                                                 1700000000000);
+    QVERIFY(runId > 0);
+    QVariantList runs = mem.listScheduledTaskRuns(id);
+    QCOMPARE(runs.size(), 1);
+    QVariantMap run = runs.at(0).toMap();
+    QCOMPARE(run.value(QStringLiteral("status")).toString(),
+             QStringLiteral("running"));
+    QCOMPARE(run.value(QStringLiteral("triggerSource")).toString(),
+             QStringLiteral("schedule"));
+    QCOMPARE(run.value(QStringLiteral("startedAt")).toLongLong(),
+             qint64(1700000000000));
+    QCOMPARE(run.value(QStringLiteral("sessionId")).toString(), QString());
+    QCOMPARE(run.value(QStringLiteral("finishedAt")).toLongLong(), 0);
+
+    // 终态落库：status/sessionId/summary/finished_at（error 空串往返）。
+    QVERIFY(mem.finishScheduledTaskRun(runId, QStringLiteral("success"),
+                                       QStringLiteral("sess-1"), QString(),
+                                       QStringLiteral("总结完成"), 1700000123456));
+    run = mem.listScheduledTaskRuns(id).at(0).toMap();
+    QCOMPARE(run.value(QStringLiteral("status")).toString(),
+             QStringLiteral("success"));
+    QCOMPARE(run.value(QStringLiteral("sessionId")).toString(),
+             QStringLiteral("sess-1"));
+    QCOMPARE(run.value(QStringLiteral("finishedAt")).toLongLong(),
+             qint64(1700000123456));
+    QCOMPARE(run.value(QStringLiteral("summary")).toString(),
+             QStringLiteral("总结完成"));
+    QCOMPARE(run.value(QStringLiteral("error")).toString(), QString());
+
+    // 空 triggerSource 归一为 schedule；startedAt=0 → 当前时刻（排最前）。
+    const qint64 autoRun = mem.addScheduledTaskRun(id, QString());
+    QVERIFY(autoRun > 0);
+    runs = mem.listScheduledTaskRuns(id);
+    QCOMPARE(runs.size(), 2);
+    const QVariantMap newest = runs.at(0).toMap();
+    QCOMPARE(newest.value(QStringLiteral("triggerSource")).toString(),
+             QStringLiteral("schedule"));
+    QVERIFY(newest.value(QStringLiteral("startedAt")).toLongLong()
+            > 1700000123456);
+
+    // 空任务 / 未知 run。
+    QCOMPARE(mem.addScheduledTaskRun(QString(), QStringLiteral("schedule")), 0);
+    QVERIFY(!mem.finishScheduledTaskRun(999999, QStringLiteral("failed")));
+}
+
+void TestMemory::scheduledTaskRunRetentionKeepsLatest30() {
+    SqliteMemory mem(QStringLiteral(":memory:"));
+    const QString id = mem.upsertScheduledTask(scheduledTaskFixture(
+        QStringLiteral("t"))).value(QStringLiteral("id")).toString();
+
+    for (int i = 0; i < 35; ++i)
+        QVERIFY(mem.addScheduledTaskRun(id, QStringLiteral("schedule"),
+                                        1700000000000 + i * 1000) > 0);
+
+    // 保留清理按写入顺序（id）保留最近 30 条，放大 limit 也只见 30 行。
+    QCOMPARE(mem.listScheduledTaskRuns(id).size(), 30);
+    QCOMPARE(mem.listScheduledTaskRuns(id, 100).size(), 30);
+    // 最新在前（started_at DESC）。
+    const QVariantMap newest = mem.listScheduledTaskRuns(id).at(0).toMap();
+    QCOMPARE(newest.value(QStringLiteral("startedAt")).toLongLong(),
+             qint64(1700000000000 + 34 * 1000));
+}
+
+void TestMemory::scheduledTaskDeleteCascadesRuns() {
+    SqliteMemory mem(QStringLiteral(":memory:"));
+    const QString first = mem.upsertScheduledTask(scheduledTaskFixture(
+        QStringLiteral("一"))).value(QStringLiteral("id")).toString();
+    const QString second = mem.upsertScheduledTask(scheduledTaskFixture(
+        QStringLiteral("二"))).value(QStringLiteral("id")).toString();
+
+    QVERIFY(mem.addScheduledTaskRun(first, QStringLiteral("schedule")) > 0);
+    QVERIFY(mem.addScheduledTaskRun(first, QStringLiteral("manual")) > 0);
+    QVERIFY(mem.addScheduledTaskRun(second, QStringLiteral("schedule")) > 0);
+
+    QVERIFY(mem.deleteScheduledTask(first));
+    QCOMPARE(mem.listScheduledTaskRuns(first).size(), 0);
+    QCOMPARE(mem.listScheduledTaskRuns(second).size(), 1);
+    QCOMPARE(mem.listScheduledTasks().size(), 1);
 }
 
 QTEST_GUILESS_MAIN(TestMemory)

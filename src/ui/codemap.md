@@ -43,6 +43,7 @@
 | 分类 | 文件 | 说明 |
 | --- | --- | --- |
 | 壳层 | `main.qml` | 窗口、三分栏、对话框/Toast、快捷键（含 Ctrl+W / Ctrl+Tab）、DropArea、几何/关闭。侧栏/面板的开关**只**在 TopBar（`sidebar-collapse`/`sidebar-expand` 状态图标），main.qml 不再有浮动的中间把手 |
+| 定时任务 | `components/ScheduledTasksDialog.qml`、`ScheduledTaskEditorDialog.qml` | docs/50：侧栏工具条第五按钮（Clock，最小宽 208）打开的全局对话框；列表启停/编辑/立即运行/删除（二次确认）+ 历史展开与「打开会话」。数据面走 `ScheduleManager` 上下文属性（main.cpp 注入，进程内唯一 setContextProperty；`Connections` 用 `typeof` 守卫兼容无该属性的测试夹具），编辑器内联四档权限选择（不复用绑定活动会话状态的 `PermissionModeSelector`） |
 | 聊天页 | `pages/AgentChatPage.qml` | TopBar + 轨迹（折叠态按会话分桶）+ 输入区与模型选项 |
 | 轨迹 | `components/TranscriptViewport.qml`、`TraceNodeRouter.qml` | 滚动/跟随/定位与节点类型路由 |
 | 输入 | `components/InputConsole.qml`、`ModelSelector.qml`、`ThinkingEffortSelector.qml`、`PermissionModeSelector.qml` | 发送、附件、提及、历史与参数选择 |

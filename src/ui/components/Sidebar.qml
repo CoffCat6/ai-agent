@@ -16,6 +16,9 @@ Rectangle {
     signal settingsRequested()
     signal auditRequested()
     signal logsRequested()
+    // docs/50 P3: 定时任务管理。与日志/审计同属全局（会话与项目无关），
+    // 所以也在这条全局工具条上，而不是项目作用域的右侧面板。
+    signal scheduledTasksRequested()
     // Knowledge base management. Global like the three above, which is why it
     // belongs in this row rather than in the project-scoped right panel.
     signal knowledgeRequested()
@@ -1840,6 +1843,15 @@ Rectangle {
                     onClicked: root.auditRequested()
                 }
 
+                // docs/50 P3: scheduled tasks entry (global, like log/audit).
+                IconButton {
+                    objectName: "scheduledTasksButton"
+                    icon: "clock"
+                    iconSize: 17
+                    tooltip: qsTr("定时任务")
+                    onClicked: root.scheduledTasksRequested()
+                }
+
                 // Settings button
                 IconButton {
                     icon: "settings"
@@ -1861,8 +1873,10 @@ Rectangle {
                 // The theme toggle that used to live here was removed to make
                 // room: the same three-way switch (follow system / dark /
                 // light) is in Settings > Interface, so nothing was lost but a
-                // shortcut, and the row now fits four buttons at the 180px
-                // sidebar minimum (24 + 4*32 + 4*4 = 168px).
+                // shortcut. docs/50 P3 added the scheduled-tasks clock as the
+                // fifth button, lifting the sidebar minimum from 180 to 208px
+                // (24 + 5*32 + 6*4 = 208px; clamp lives in SettingsSchema's
+                // ui/sidebarWidth range, applied on both load and save).
                 IconButton {
                     objectName: "knowledgeButton"
                     icon: "layers"

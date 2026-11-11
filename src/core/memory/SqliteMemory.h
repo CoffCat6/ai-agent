@@ -140,6 +140,47 @@ public:
     QVariantList listProjects() override;
     void setSessionProject(const QString& sessionId, const QString& projectId) override;
 
+    // ── docs/50 P1: scheduled tasks（定时任务，H4）─────────────
+    // scheduled_tasks / scheduled_task_runs 两表的哑 CRUD。SqliteMemory 专有，
+    // 不进 IMemory：agent 不消费这组表；ScheduledTasksManager（P2）持独立
+    // 连接，与各 tab 连接同库文件、同 busy_timeout 串行化约定。
+    //
+    // 行键（camelCase，与 listProjects/snapshots 一致）——任务行：
+    // id/name/prompt/profileId/profileName/scheduleKind/scheduleValue/
+    // permissionMode/enabled/notify/lastFiredAt/createdAt/updatedAt；
+    // run 行：id/taskId/sessionId/status/triggerSource/startedAt/finishedAt/
+    // error/summary。schedule_value 存 ScheduleSpec::toJson() 的紧凑串，
+    // 语义校验在 core/schedule，数据层只做存储。
+    //
+    // 时间戳参数显式传入、0 = 当前时刻（测试传固定值做确定性断言）。
+    // 每任务保留最近 kMaxScheduledTaskRuns 条 run（插入时清理）。
+    static constexpr int kMaxScheduledTaskRuns = 30;
+
+    // 新建（id 为空时生成 UUID）或整行更新；created_at 保留首次值，
+    // last_fired_at 不被编辑覆盖。返回存储后的完整行，失败返回空。
+    QVariantMap upsertScheduledTask(const QVariantMap& task);
+    // 级联删除该任务的全部 run；未知 id 返回 false。
+    bool deleteScheduledTask(const QString& id);
+    // created_at ASC（新建顺序稳定，列表不做启用优先重排）。
+    QVariantList listScheduledTasks();
+    bool setScheduledTaskEnabled(const QString& id, bool enabled);
+    // 推进触发锚点（不碰 updated_at：定义编辑与运行状态分离）。
+    bool markScheduledTaskFired(const QString& id, qint64 firedAtMs = 0);
+    // 插入 status='running' 的 run 并执行保留清理；失败返回 0。
+    qint64 addScheduledTaskRun(const QString& taskId,
+                               const QString& triggerSource,
+                               qint64 startedAtMs = 0);
+    // 终态落库：status/sessionId（空绑 NULL）/error/summary/finished_at。
+    // 未知 runId 返回 false。
+    bool finishScheduledTaskRun(qint64 runId, const QString& status,
+                                const QString& sessionId = {},
+                                const QString& error = {},
+                                const QString& summary = {},
+                                qint64 finishedAtMs = 0);
+    // started_at DESC, id DESC（最新在前）；limit<=0 用保留上限。
+    QVariantList listScheduledTaskRuns(const QString& taskId,
+                                       int limit = kMaxScheduledTaskRuns);
+
     // Audit trail
     void logAudit(const QString& sessionId, const QString& event,
                   const QString& toolName, const QString& arguments,

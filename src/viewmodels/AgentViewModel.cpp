@@ -331,7 +331,11 @@ AgentViewModel::AgentViewModel(QObject* parent)
     m_isPanelVisible = SettingsRepository::value("ui/panelVisible", m_defaultPanelVisible).toBool();
     m_isSidebarExpanded = SettingsRepository::value("ui/sidebarExpanded", m_defaultSidebarExpanded).toBool();
     m_panelWidth = SettingsRepository::value("ui/panelWidth", m_defaultPanelWidth).toInt();
-    m_sidebarWidth = SettingsRepository::value("ui/sidebarWidth", m_defaultSidebarWidth).toInt();
+    // docs/50 §7.1: 加载路径同样过 clamp——最小宽 180→208 后，存量 180–207
+    // 的持久化值必须被抬升，否则第五个工具按钮装不下（setter 只覆盖写路径）。
+    m_sidebarWidth = SettingsSchema::clampInt(
+        QStringLiteral("ui/sidebarWidth"),
+        SettingsRepository::value("ui/sidebarWidth", m_defaultSidebarWidth).toInt());
     // 过程显示的偏好与窗口布局同域（都属"界面状态"），一起在启动时读回。
     m_showProcess = SettingsRepository::value(
         "ui/showProcess",

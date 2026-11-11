@@ -105,6 +105,7 @@ ApplicationWindow {
             onSettingsRequested: settingsCenterDialog.open()
             onAuditRequested: auditDialog.open()
             onLogsRequested: logPanel.open()
+            onScheduledTasksRequested: scheduledTasksDialog.open()
             onKnowledgeRequested: knowledgeDialog.open()
             onSettingsCategoryRequested: (category) => settingsCenterDialog.openCategory(category)
         }
@@ -122,7 +123,7 @@ ApplicationWindow {
             onDragged: (delta) => {
                 const reserved = (AgentVM.isPanelVisible ? AgentVM.panelWidth : 0)
                     + chatMinWidth + rightSplitter.width
-                AgentVM.sidebarWidth = Math.max(180, Math.min(
+                AgentVM.sidebarWidth = Math.max(208, Math.min(
                     AgentVM.sidebarWidth + delta,
                     Math.min(560, mainWindow.width - reserved)))
             }
@@ -248,6 +249,13 @@ ApplicationWindow {
     KnowledgeDocDialog {
         id: knowledgeDocDialog
         parent: Overlay.overlay
+    }
+
+    // ── Scheduled Tasks Dialog ────────────────────────
+    // docs/50 P3: 定时任务管理。与知识库同款的全局工具条入口；数据面走
+    // ScheduleManager 上下文属性（main.cpp 注入），对话框自持 parent。
+    ScheduledTasksDialog {
+        id: scheduledTasksDialog
     }
 
     // ── Task List Dialog ──────────────────────────────
