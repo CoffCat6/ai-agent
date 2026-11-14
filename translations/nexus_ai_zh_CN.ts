@@ -12969,7 +12969,7 @@
     </message>
     <message>
         <location filename="../src/ui/components/TopBar.qml" line="736"/>
-        <location filename="../src/ui/components/TopBar.qml" line="880"/>
+        <location filename="../src/ui/components/TopBar.qml" line="883"/>
         <source>系统提示词</source>
         <translation>系统提示词</translation>
     </message>
@@ -12979,7 +12979,7 @@
         <translation>工具定义</translation>
     </message>
     <message>
-        <location filename="../src/ui/components/TopBar.qml" line="881"/>
+        <location filename="../src/ui/components/TopBar.qml" line="884"/>
         <source>对话</source>
         <translation>对话</translation>
     </message>
@@ -12989,23 +12989,22 @@
         <translation>工具结果</translation>
     </message>
     <message>
-        <location filename="../src/ui/components/TopBar.qml" line="852"/>
         <source>会话累计 · %1 tokens · 命中率 %2%</source>
-        <translation>会话累计 · %1 tokens · 命中率 %2%</translation>
+        <translation type="vanished">会话累计 · %1 tokens · 命中率 %2%</translation>
     </message>
     <message>
-        <location filename="../src/ui/components/TopBar.qml" line="864"/>
+        <location filename="../src/ui/components/TopBar.qml" line="867"/>
         <source>输入（未命中）</source>
         <translation>输入（未命中）</translation>
     </message>
     <message>
-        <location filename="../src/ui/components/TopBar.qml" line="866"/>
+        <location filename="../src/ui/components/TopBar.qml" line="869"/>
         <source>输出</source>
         <translation>输出</translation>
     </message>
     <message>
         <location filename="../src/ui/components/TopBar.qml" line="737"/>
-        <location filename="../src/ui/components/TopBar.qml" line="884"/>
+        <location filename="../src/ui/components/TopBar.qml" line="887"/>
         <source>技能</source>
         <translation>技能</translation>
     </message>
@@ -13145,108 +13144,113 @@
         <translation>助手</translation>
     </message>
     <message>
-        <location filename="../src/ui/components/TopBar.qml" line="949"/>
+        <location filename="../src/ui/components/TopBar.qml" line="855"/>
+        <source>会话累计 · %1 · 命中率 %2%</source>
+        <translation>会话累计 · %1 · 命中率 %2%</translation>
+    </message>
+    <message>
+        <location filename="../src/ui/components/TopBar.qml" line="952"/>
         <source>上下文构成 · %1 / %2 · %3%</source>
         <translation>上下文构成 · %1 / %2 · %3%</translation>
     </message>
     <message>
-        <location filename="../src/ui/components/TopBar.qml" line="954"/>
+        <location filename="../src/ui/components/TopBar.qml" line="957"/>
         <source>上下文构成 · %1</source>
         <translation>上下文构成 · %1</translation>
     </message>
     <message>
-        <location filename="../src/ui/components/TopBar.qml" line="967"/>
+        <location filename="../src/ui/components/TopBar.qml" line="973"/>
         <source>已按实测校准 ×%1</source>
         <translation>已按实测校准 ×%1</translation>
     </message>
     <message>
-        <location filename="../src/ui/components/TopBar.qml" line="1067"/>
+        <location filename="../src/ui/components/TopBar.qml" line="1073"/>
         <source>剩余可用</source>
         <translation>剩余可用</translation>
     </message>
     <message>
-        <location filename="../src/ui/components/TopBar.qml" line="1124"/>
+        <location filename="../src/ui/components/TopBar.qml" line="1134"/>
         <source>本会话累计 %1 次请求 · ¥%2</source>
         <translation>本会话累计 %1 次请求 · ¥%2</translation>
     </message>
     <message>
-        <location filename="../src/ui/components/TopBar.qml" line="1127"/>
+        <location filename="../src/ui/components/TopBar.qml" line="1137"/>
         <source>本会话累计 %1 次请求</source>
         <translation>本会话累计 %1 次请求</translation>
     </message>
     <message>
-        <location filename="../src/ui/components/TopBar.qml" line="1193"/>
+        <location filename="../src/ui/components/TopBar.qml" line="1203"/>
         <source>任务清单（%1 项未完成）</source>
         <translation>任务清单（%1 项未完成）</translation>
     </message>
     <message>
-        <location filename="../src/ui/components/TopBar.qml" line="1194"/>
+        <location filename="../src/ui/components/TopBar.qml" line="1204"/>
         <source>任务清单（全部完成）</source>
         <translation>任务清单（全部完成）</translation>
     </message>
     <message>
-        <location filename="../src/ui/components/TopBar.qml" line="1196"/>
+        <location filename="../src/ui/components/TopBar.qml" line="1206"/>
         <source>打开任务清单，%1 项未完成</source>
         <translation>打开任务清单，%1 项未完成</translation>
     </message>
     <message>
-        <location filename="../src/ui/components/TopBar.qml" line="1197"/>
+        <location filename="../src/ui/components/TopBar.qml" line="1207"/>
         <source>打开任务清单，全部完成</source>
         <translation>打开任务清单，全部完成</translation>
     </message>
     <message>
-        <location filename="../src/ui/components/TopBar.qml" line="1242"/>
+        <location filename="../src/ui/components/TopBar.qml" line="1252"/>
         <source>后台子代理（%1 个进行中）</source>
         <translation>后台子代理（%1 个进行中）</translation>
     </message>
     <message>
-        <location filename="../src/ui/components/TopBar.qml" line="1243"/>
+        <location filename="../src/ui/components/TopBar.qml" line="1253"/>
         <source>后台子代理面板</source>
         <translation>后台子代理面板</translation>
     </message>
     <message>
-        <location filename="../src/ui/components/TopBar.qml" line="1245"/>
+        <location filename="../src/ui/components/TopBar.qml" line="1255"/>
         <source>打开后台子代理面板，%1 个进行中</source>
         <translation>打开后台子代理面板，%1 个进行中</translation>
     </message>
     <message>
-        <location filename="../src/ui/components/TopBar.qml" line="1246"/>
+        <location filename="../src/ui/components/TopBar.qml" line="1256"/>
         <source>打开后台子代理面板</source>
         <translation>打开后台子代理面板</translation>
     </message>
     <message>
-        <location filename="../src/ui/components/TopBar.qml" line="1297"/>
+        <location filename="../src/ui/components/TopBar.qml" line="1307"/>
         <source>审阅本次会话的文件改动（%1 个文件待查看）</source>
         <translation>审阅本次会话的文件改动（%1 个文件待查看）</translation>
     </message>
     <message>
-        <location filename="../src/ui/components/TopBar.qml" line="1298"/>
+        <location filename="../src/ui/components/TopBar.qml" line="1308"/>
         <source>审阅本次会话的文件改动 (Ctrl+R)</source>
         <translation>审阅本次会话的文件改动 (Ctrl+R)</translation>
     </message>
     <message>
-        <location filename="../src/ui/components/TopBar.qml" line="1300"/>
+        <location filename="../src/ui/components/TopBar.qml" line="1310"/>
         <source>打开文件改动审阅，%1 个文件待查看</source>
         <translation>打开文件改动审阅，%1 个文件待查看</translation>
     </message>
     <message>
-        <location filename="../src/ui/components/TopBar.qml" line="1301"/>
+        <location filename="../src/ui/components/TopBar.qml" line="1311"/>
         <source>打开文件改动审阅</source>
         <translation>打开文件改动审阅</translation>
     </message>
     <message>
-        <location filename="../src/ui/components/TopBar.qml" line="1346"/>
+        <location filename="../src/ui/components/TopBar.qml" line="1356"/>
         <source>收起右侧面板 (Ctrl+])</source>
         <translation>收起右侧面板 (Ctrl+])</translation>
     </message>
     <message>
-        <location filename="../src/ui/components/TopBar.qml" line="1346"/>
+        <location filename="../src/ui/components/TopBar.qml" line="1356"/>
         <source>展开右侧面板 (Ctrl+])</source>
         <translation>展开右侧面板 (Ctrl+])</translation>
     </message>
     <message>
         <location filename="../src/ui/components/TopBar.qml" line="747"/>
-        <location filename="../src/ui/components/TopBar.qml" line="882"/>
+        <location filename="../src/ui/components/TopBar.qml" line="885"/>
         <source>工具调用</source>
         <translation>工具调用</translation>
     </message>
@@ -13265,7 +13269,7 @@
         <translation type="vanished">从会话模板开始</translation>
     </message>
     <message>
-        <location filename="../src/ui/components/TopBar.qml" line="883"/>
+        <location filename="../src/ui/components/TopBar.qml" line="886"/>
         <source>MCP</source>
         <translation>MCP</translation>
     </message>
@@ -13275,17 +13279,17 @@
     </message>
     <message>
         <location filename="../src/ui/components/TopBar.qml" line="758"/>
-        <location filename="../src/ui/components/TopBar.qml" line="885"/>
+        <location filename="../src/ui/components/TopBar.qml" line="888"/>
         <source>图片</source>
         <translation>图片</translation>
     </message>
     <message>
-        <location filename="../src/ui/components/TopBar.qml" line="886"/>
+        <location filename="../src/ui/components/TopBar.qml" line="889"/>
         <source>其他</source>
         <translation>其他</translation>
     </message>
     <message>
-        <location filename="../src/ui/components/TopBar.qml" line="935"/>
+        <location filename="../src/ui/components/TopBar.qml" line="938"/>
         <source>暂无数据</source>
         <translation>暂无数据</translation>
     </message>
@@ -13302,7 +13306,7 @@
         <translation type="vanished">输出 %1</translation>
     </message>
     <message>
-        <location filename="../src/ui/components/TopBar.qml" line="865"/>
+        <location filename="../src/ui/components/TopBar.qml" line="868"/>
         <source>缓存命中</source>
         <translation>缓存命中</translation>
     </message>
@@ -13319,12 +13323,12 @@
         <translation type="vanished">展开上下文面板 (Ctrl+B)</translation>
     </message>
     <message>
-        <location filename="../src/ui/components/TopBar.qml" line="1155"/>
+        <location filename="../src/ui/components/TopBar.qml" line="1165"/>
         <source>折叠思考与工具调用过程（%1 项）</source>
         <translation>折叠思考与工具调用过程（%1 项）</translation>
     </message>
     <message>
-        <location filename="../src/ui/components/TopBar.qml" line="1156"/>
+        <location filename="../src/ui/components/TopBar.qml" line="1166"/>
         <source>显示思考与工具调用过程（%1 项）</source>
         <translation>显示思考与工具调用过程（%1 项）</translation>
     </message>

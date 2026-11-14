@@ -673,23 +673,39 @@ Rectangle {
         Popup {
             id: tokenPopup
             objectName: "topBarTokenPopup"
-            parent: tokenArea
-            // 不用 Layout 属性——Popup 不是 RowLayout 的 item，Layout.* 在
-            // 这里无效（qmllint 已告警）。y 在触发器下方。
-            // x 右对齐触发器并钳制在窗口内：浮层有固定宽度，窄窗口下单纯的
-            // `tokenArea.width - width` 会把浮层推到左边界之外，左边那截标签
-            // 就看不见了。
-            readonly property real areaXInRoot: tokenArea.mapToItem(root, 0, 0).x
-            x: Math.max(8 - areaXInRoot,
-                        Math.min(tokenArea.width - width,
-                                 root.width - areaXInRoot - width - 8))
-            y: tokenArea.height + 8
-            // 宽度跟字号缩放（字号 11px 时 = 300）：300 容得下最宽的
-            // "缩进 + 色块 + 标签 + token 列 + 百分比列"，又不留空档。
-            // 字号调大时按比例放大（fontScale），列宽/缩进与弹层宽度同一
-            // 缩放源（见下方 colNumW/colPctW/indent*），避免文字变大后被压窄。
-            // 极窄窗口下退让到窗口可用宽度，避免贴边溢出。
-            width: Math.min(Math.round(300 * fontScale),
+            // parent 必须挂 TopBar 根（宽度 = 窗口宽），x/y 直接用窗口坐标。
+            // 曾经挂 tokenArea 并用 mapToItem 换算窗口钳制——mapToItem 是函数
+            // 调用，绑定没有属性依赖：首求值早于布局时把 0 永久冻结（连"裸
+            // 语句引用属性"的块绑定写法都可能被编译器剔除依赖），浮层右缘
+            // 钳制失准、整体伸出窗口被裁，shiftX 也看似不生效。改挂根后全部
+            // 依赖都是 reactive 属性，此类失活路径不存在。
+            parent: root
+            // ── 弹层位置 · 手动调整 ────────────────────────────────
+            // 基准锚点：右缘距窗口右缘 8px、顶边贴着顶栏下缘。想往窗口内部
+            // 挪，只调这两个偏移（px），Math.max 钳制保证不会挪出窗口：
+            //   shiftX > 0 → 从右缘向左（窗口内部）移，右缘留白 = 8 + shiftX
+            //   shiftY > 0 → 向下远离顶栏
+            readonly property int shiftX: 50
+            readonly property int shiftY: 4
+            x: Math.max(8, root.width - width - 8 - shiftX)
+            y: tokenArea.y + tokenArea.height + 8 + shiftY
+            // ── 弹层几何 · 手动调整指南 ─────────────────────────────
+            // 想自己调窄/调宽，按影响面从小到大改这些值（全部集中在本
+            // Popup 的这几行）：
+            //   1) 下面 width 里的 260   —— 弹层基准总宽（字号 11px 时），改它一处整体生效
+            //   2) padding: 10            —— 弹层内边距
+            //   3) colNumW / colPctW      —— token 列 / 百分比列宽（mono 下最长
+            //                                "45.2k" 5 字符 / "100.0%" 6 字符）
+            //   4) indentRow / indentChild —— 行 / 二级子项缩进
+            // 基准宽的下限：内容底线 ≈ 内边距 20 + 色块槽 7 + 列间距 18 +
+            // 数字列 40 + 百分比列 42 + 子项缩进 32 + 最长子标签 ≈60
+            // （"MCP 工具"/"子代理报告"）≈ 219px——低于 ~230 子项标签开始
+            // 省略号；摘要行 "会话累计 · 123.4k · 命中率 100.0%" ≈ 203px
+            // + 内边距也需要 ≥230。260 留了约 40px 余量。
+            // 宽度跟字号缩放（fontScale）：字号调大时列宽/缩进/弹层宽度
+            // 同一缩放源等比放大，避免文字变大后被压窄。极窄窗口下退让
+            // 到窗口可用宽度，避免贴边溢出。
+            width: Math.min(Math.round(220 * fontScale),
                             Math.max(200, root.width - 16))
             padding: 10
             closePolicy: Popup.CloseOnEscape | Popup.CloseOnPressOutside
@@ -702,6 +718,10 @@ Rectangle {
             property var sessionTotals: ({})
 
             function refreshAndOpen() {
+                // 调参辅助：把定位决策落到日志（stderr + 应用日志文件），
+                // 调 shiftX/shiftY/宽度时直接看数值，不用对着界面猜。
+                console.warn("[tokenPopup] window w=%1 popup x=%2 y=%3 w=%4"
+                             .arg(root.width).arg(x).arg(y).arg(width))
                 sessionTotals = AgentVM.sessionTokenBreakdown()
                 open()
             }
@@ -849,7 +869,10 @@ Rectangle {
                 // 口径说明不写进标题：会话累计本来就含子代理、本来就是
                 // provider 真实值，写出来只是占宽度。真实/估算的差异放在
                 // 上方容量区（那里才有被误读的风险）。
-                return qsTr("会话累计 · %1 tokens · 命中率 %2%")
+                // 不带 "tokens" 单位：浮层里每个数字都是 token 数（列结构
+                // 自解释），单位是冗余信息——这行是全弹层最长的行，窄窗口
+                // 下弹层宽度收缩后它是第一个被截断的。
+                return qsTr("会话累计 · %1 · 命中率 %2%")
                     .arg(root.formatTokens(total))
                     .arg(Math.min(100, rate * 100).toFixed(1))
             }
@@ -956,6 +979,9 @@ Rectangle {
                     font.pixelSize: Theme.fontSizeCaption
                     font.bold: true
                     font.family: Theme.fontMono
+                    // 同会话累计行：极窄窗口下省略号兜底，不硬裁剪。
+                    Layout.fillWidth: true
+                    elide: Text.ElideRight
                 }
                 // 校准系数只在真正观测过（≠1.0）时出现；避免给未校准的会话
                 // 增加一行噪音。
@@ -1086,6 +1112,10 @@ Rectangle {
                     font.bold: true
                     font.pixelSize: Theme.fontSizeCaption
                     font.family: Theme.fontMono
+                    // 极窄窗口（弹层退到 200px 下限）下的兜底：超出即省略号，
+                    // 不做硬裁剪——与 BreakdownRow 的"标签先让"策略一致。
+                    Layout.fillWidth: true
+                    elide: Text.ElideRight
                 }
 
                 // 输入(未命中)/缓存命中/输出：三项互斥，和恰为累计总额。

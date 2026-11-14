@@ -12965,7 +12965,7 @@ select a file to view its content diff on the right.</translation>
     </message>
     <message>
         <location filename="../src/ui/components/TopBar.qml" line="736"/>
-        <location filename="../src/ui/components/TopBar.qml" line="880"/>
+        <location filename="../src/ui/components/TopBar.qml" line="883"/>
         <source>系统提示词</source>
         <translation>System Prompt</translation>
     </message>
@@ -12975,7 +12975,7 @@ select a file to view its content diff on the right.</translation>
         <translation>Tool Definitions</translation>
     </message>
     <message>
-        <location filename="../src/ui/components/TopBar.qml" line="881"/>
+        <location filename="../src/ui/components/TopBar.qml" line="884"/>
         <source>对话</source>
         <translation>Conversation</translation>
     </message>
@@ -12985,23 +12985,22 @@ select a file to view its content diff on the right.</translation>
         <translation>Tool Results</translation>
     </message>
     <message>
-        <location filename="../src/ui/components/TopBar.qml" line="852"/>
         <source>会话累计 · %1 tokens · 命中率 %2%</source>
-        <translation>Session total · %1 tokens · hit rate %2%</translation>
+        <translation type="vanished">Session total · %1 tokens · hit rate %2%</translation>
     </message>
     <message>
-        <location filename="../src/ui/components/TopBar.qml" line="864"/>
+        <location filename="../src/ui/components/TopBar.qml" line="867"/>
         <source>输入（未命中）</source>
         <translation>Input (cache miss)</translation>
     </message>
     <message>
-        <location filename="../src/ui/components/TopBar.qml" line="866"/>
+        <location filename="../src/ui/components/TopBar.qml" line="869"/>
         <source>输出</source>
         <translation>Output</translation>
     </message>
     <message>
         <location filename="../src/ui/components/TopBar.qml" line="737"/>
-        <location filename="../src/ui/components/TopBar.qml" line="884"/>
+        <location filename="../src/ui/components/TopBar.qml" line="887"/>
         <source>技能</source>
         <translation>Skills</translation>
     </message>
@@ -13141,97 +13140,102 @@ select a file to view its content diff on the right.</translation>
         <translation>Assistant</translation>
     </message>
     <message>
-        <location filename="../src/ui/components/TopBar.qml" line="949"/>
+        <location filename="../src/ui/components/TopBar.qml" line="855"/>
+        <source>会话累计 · %1 · 命中率 %2%</source>
+        <translation>Session total · %1 · hit rate %2%</translation>
+    </message>
+    <message>
+        <location filename="../src/ui/components/TopBar.qml" line="952"/>
         <source>上下文构成 · %1 / %2 · %3%</source>
         <translation>Context · %1 / %2 · %3%</translation>
     </message>
     <message>
-        <location filename="../src/ui/components/TopBar.qml" line="954"/>
+        <location filename="../src/ui/components/TopBar.qml" line="957"/>
         <source>上下文构成 · %1</source>
         <translation>Context · %1</translation>
     </message>
     <message>
-        <location filename="../src/ui/components/TopBar.qml" line="967"/>
+        <location filename="../src/ui/components/TopBar.qml" line="973"/>
         <source>已按实测校准 ×%1</source>
         <translation>已按实测校准 ×%1</translation>
     </message>
     <message>
-        <location filename="../src/ui/components/TopBar.qml" line="1067"/>
+        <location filename="../src/ui/components/TopBar.qml" line="1073"/>
         <source>剩余可用</source>
         <translation>Free</translation>
     </message>
     <message>
-        <location filename="../src/ui/components/TopBar.qml" line="1124"/>
+        <location filename="../src/ui/components/TopBar.qml" line="1134"/>
         <source>本会话累计 %1 次请求 · ¥%2</source>
         <translation>Session total: %1 requests · $%2</translation>
     </message>
     <message>
-        <location filename="../src/ui/components/TopBar.qml" line="1127"/>
+        <location filename="../src/ui/components/TopBar.qml" line="1137"/>
         <source>本会话累计 %1 次请求</source>
         <translation>Session total: %1 requests</translation>
     </message>
     <message>
-        <location filename="../src/ui/components/TopBar.qml" line="1193"/>
+        <location filename="../src/ui/components/TopBar.qml" line="1203"/>
         <source>任务清单（%1 项未完成）</source>
         <translation>Task list (%1 unfinished)</translation>
     </message>
     <message>
-        <location filename="../src/ui/components/TopBar.qml" line="1194"/>
+        <location filename="../src/ui/components/TopBar.qml" line="1204"/>
         <source>任务清单（全部完成）</source>
         <translation>Task list (all done)</translation>
     </message>
     <message>
-        <location filename="../src/ui/components/TopBar.qml" line="1196"/>
+        <location filename="../src/ui/components/TopBar.qml" line="1206"/>
         <source>打开任务清单，%1 项未完成</source>
         <translation>Open the task list, %1 unfinished</translation>
     </message>
     <message>
-        <location filename="../src/ui/components/TopBar.qml" line="1197"/>
+        <location filename="../src/ui/components/TopBar.qml" line="1207"/>
         <source>打开任务清单，全部完成</source>
         <translation>Open task list, all done</translation>
     </message>
     <message>
-        <location filename="../src/ui/components/TopBar.qml" line="1242"/>
+        <location filename="../src/ui/components/TopBar.qml" line="1252"/>
         <source>后台子代理（%1 个进行中）</source>
         <translation>Background sub-agents (%1 active)</translation>
     </message>
     <message>
-        <location filename="../src/ui/components/TopBar.qml" line="1243"/>
+        <location filename="../src/ui/components/TopBar.qml" line="1253"/>
         <source>后台子代理面板</source>
         <translation>Background sub-agents</translation>
     </message>
     <message>
-        <location filename="../src/ui/components/TopBar.qml" line="1245"/>
+        <location filename="../src/ui/components/TopBar.qml" line="1255"/>
         <source>打开后台子代理面板，%1 个进行中</source>
         <translation>Open the background sub-agents panel, %1 active</translation>
     </message>
     <message>
-        <location filename="../src/ui/components/TopBar.qml" line="1246"/>
+        <location filename="../src/ui/components/TopBar.qml" line="1256"/>
         <source>打开后台子代理面板</source>
         <translation>Open the background sub-agents panel</translation>
     </message>
     <message>
-        <location filename="../src/ui/components/TopBar.qml" line="1297"/>
+        <location filename="../src/ui/components/TopBar.qml" line="1307"/>
         <source>审阅本次会话的文件改动（%1 个文件待查看）</source>
         <translation>Review this session&apos;s file changes (%1 files to look at)</translation>
     </message>
     <message>
-        <location filename="../src/ui/components/TopBar.qml" line="1298"/>
+        <location filename="../src/ui/components/TopBar.qml" line="1308"/>
         <source>审阅本次会话的文件改动 (Ctrl+R)</source>
         <translation>Review this session&apos;s file changes (Ctrl+R)</translation>
     </message>
     <message>
-        <location filename="../src/ui/components/TopBar.qml" line="1300"/>
+        <location filename="../src/ui/components/TopBar.qml" line="1310"/>
         <source>打开文件改动审阅，%1 个文件待查看</source>
         <translation>Open the file-change review, %1 files to look at</translation>
     </message>
     <message>
-        <location filename="../src/ui/components/TopBar.qml" line="1346"/>
+        <location filename="../src/ui/components/TopBar.qml" line="1356"/>
         <source>收起右侧面板 (Ctrl+])</source>
         <translation>Collapse right panel (Ctrl+])</translation>
     </message>
     <message>
-        <location filename="../src/ui/components/TopBar.qml" line="1346"/>
+        <location filename="../src/ui/components/TopBar.qml" line="1356"/>
         <source>展开右侧面板 (Ctrl+])</source>
         <translation>Expand right panel (Ctrl+])</translation>
     </message>
@@ -13248,13 +13252,13 @@ select a file to view its content diff on the right.</translation>
         <translation type="vanished">Review this session&apos;s file changes (Ctrl+R)</translation>
     </message>
     <message>
-        <location filename="../src/ui/components/TopBar.qml" line="1301"/>
+        <location filename="../src/ui/components/TopBar.qml" line="1311"/>
         <source>打开文件改动审阅</source>
         <translation>Open the file change review</translation>
     </message>
     <message>
         <location filename="../src/ui/components/TopBar.qml" line="747"/>
-        <location filename="../src/ui/components/TopBar.qml" line="882"/>
+        <location filename="../src/ui/components/TopBar.qml" line="885"/>
         <source>工具调用</source>
         <translation>Tool Calls</translation>
     </message>
@@ -13273,7 +13277,7 @@ select a file to view its content diff on the right.</translation>
         <translation type="vanished">Start from a session template</translation>
     </message>
     <message>
-        <location filename="../src/ui/components/TopBar.qml" line="883"/>
+        <location filename="../src/ui/components/TopBar.qml" line="886"/>
         <source>MCP</source>
         <translation>MCP</translation>
     </message>
@@ -13283,17 +13287,17 @@ select a file to view its content diff on the right.</translation>
     </message>
     <message>
         <location filename="../src/ui/components/TopBar.qml" line="758"/>
-        <location filename="../src/ui/components/TopBar.qml" line="885"/>
+        <location filename="../src/ui/components/TopBar.qml" line="888"/>
         <source>图片</source>
         <translation>Images</translation>
     </message>
     <message>
-        <location filename="../src/ui/components/TopBar.qml" line="886"/>
+        <location filename="../src/ui/components/TopBar.qml" line="889"/>
         <source>其他</source>
         <translation>Other</translation>
     </message>
     <message>
-        <location filename="../src/ui/components/TopBar.qml" line="935"/>
+        <location filename="../src/ui/components/TopBar.qml" line="938"/>
         <source>暂无数据</source>
         <translation>No data yet</translation>
     </message>
@@ -13310,7 +13314,7 @@ select a file to view its content diff on the right.</translation>
         <translation type="vanished">Output %1</translation>
     </message>
     <message>
-        <location filename="../src/ui/components/TopBar.qml" line="865"/>
+        <location filename="../src/ui/components/TopBar.qml" line="868"/>
         <source>缓存命中</source>
         <translation>Cache Hit</translation>
     </message>
@@ -13327,12 +13331,12 @@ select a file to view its content diff on the right.</translation>
         <translation type="vanished">Expand Context Panel (Ctrl+B)</translation>
     </message>
     <message>
-        <location filename="../src/ui/components/TopBar.qml" line="1155"/>
+        <location filename="../src/ui/components/TopBar.qml" line="1165"/>
         <source>折叠思考与工具调用过程（%1 项）</source>
         <translation>Collapse thinking and tool-call process (%1)</translation>
     </message>
     <message>
-        <location filename="../src/ui/components/TopBar.qml" line="1156"/>
+        <location filename="../src/ui/components/TopBar.qml" line="1166"/>
         <source>显示思考与工具调用过程（%1 项）</source>
         <translation>Show thinking and tool-call process (%1)</translation>
     </message>
