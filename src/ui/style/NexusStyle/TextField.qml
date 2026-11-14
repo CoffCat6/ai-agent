@@ -10,7 +10,6 @@
 // pressActive 跟随按下/释放信号，避免为视觉状态引入额外输入控件。
 import QtQuick
 import QtQuick.Controls.impl
-import QtQuick.Controls.Basic.impl
 import QtQuick.Templates as T
 import NexusAI.ViewModels
 
@@ -56,9 +55,12 @@ T.TextField {
     verticalAlignment: TextInput.AlignVCenter
 
     // ContextMenu 是 QtQuick.Templates 6.9 的附加类型；样式文件不在 Basic
-    // 模块作用域内，必须经由 T 别名限定，否则运行时找不到该附加属性。
+    // 模块作用域内，必须经由 T 别名限定，否则运行时找不到该附加属性。菜单是
+    // 本样式自绘的（同目录隐式导入），不再引用 QtQuick.Controls.Basic.impl
+    // 的内部 TextEditingContextMenu——它的 required property 在 Qt
+    // 6.9/6.11 间改名，自绘后多 Qt 版本共用一套代码（见头注释）。
     T.ContextMenu.menu: TextEditingContextMenu {
-        control: control
+        editor: control
     }
 
     PlaceholderText {

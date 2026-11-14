@@ -343,6 +343,10 @@ nexus_add_test(test_sampling_params test_sampling_params.cpp)
 nexus_add_test(test_data_url_utils test_data_url_utils.cpp)
 nexus_add_test(test_attachment_classifier test_attachment_classifier.cpp)
 
+# docs/49 阶段 2: Linux 应急打开链的 .desktop 纯函数（Exec 字段代码展开、
+# 数据目录定位、TryExec 探测）
+nexus_add_test(test_desktop_entry test_desktop_entry.cpp)
+
 # G2: project file index + '@' mention parsing. The popup and the
 # submit-time resolver share this implementation, so ordering/rejection
 # rules are locked here rather than in QML.

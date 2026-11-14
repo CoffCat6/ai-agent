@@ -926,9 +926,13 @@ QVERIFY(h.invoke1("setFilter", QString()));
     }
 
     // Emergency open path (broken file association). Probed against the
-    // machine's real registry, so the assertion is loose by design: either
-    // nothing is registered (empty is correct) or the launched command names
-    // a known editor. What must never happen is a garbage result.
+    // machine's real association store (Windows registry / xdg-mime), so the
+    // assertion is loose by design: either nothing is registered (empty is
+    // correct) or the launched command names the file it was asked to open.
+    // What must never happen is a garbage result. The editor-name whitelist
+    // was dropped with docs/49 阶段 2: on Linux the resolved handler is
+    // whatever the desktop default is (gedit/kate/...), not a known markdown
+    // editor, and the invariant is the same on both platforms.
     void openWithKnownEditorFindsRegisteredEditor() {
         writeFile("real.md", "# hello");
 
@@ -939,10 +943,7 @@ QVERIFY(h.invoke1("setFilter", QString()));
 
         const QString launched = h.call1("openWithKnownEditorProbe",
             QStringLiteral("real.md")).toString();
-        QVERIFY2(launched.isEmpty()
-                     || launched.toLower().contains("marktext")
-                     || launched.toLower().contains("codium")
-                     || launched.toLower().contains("code"),
+        QVERIFY2(launched.isEmpty() || launched.contains(QStringLiteral("real.md")),
                  qPrintable(QStringLiteral("fallback result: %1").arg(launched)));
     }
 

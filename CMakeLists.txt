@@ -676,3 +676,20 @@ if(BUILD_TESTS)
         message(WARNING "BUILD_TESTS is ON but tests/CMakeLists.txt does not exist yet - skipping tests")
     endif()
 endif()
+
+# ── 配置摘要（docs/49：双平台各自选 Qt 版本） ─────────────
+# Qt 版本由各平台的 CMAKE_PREFIX_PATH 决定，CMake 不写死。已知可用矩阵：
+#   Windows：Qt 6.9.0 MinGW（开发机 D:/Qt/6.9.0；CI 经 aqt 装 mingw_64）
+#   Linux：Qt 6.9.0（aqt gcc_64）或发行版 Qt ≥ 6.11（如 Fedora 系统包）
+# QML 层不引用 QtQuick.Controls.Basic.impl 等内部 API（编辑菜单已自绘为
+# NexusStyle/TextEditingContextMenu.qml，只用 TextArea/TextField 稳定公开
+# API），故 6.5+ 任一小版本均可构建；升级 Qt 不再牵动样式代码。
+message(STATUS "NexusAI ${PROJECT_VERSION} | Qt ${Qt6_VERSION} | "
+        "${CMAKE_CXX_COMPILER_ID} ${CMAKE_CXX_COMPILER_VERSION} | "
+        "${CMAKE_SYSTEM_NAME} ${CMAKE_SYSTEM_PROCESSOR}")
+if(UNIX AND NOT APPLE)
+    message(STATUS "  NEXUS_LINUX_APPIMAGE=${NEXUS_LINUX_APPIMAGE} (AppImage/deb/rpm 同源 AppDir，见 scripts/deploy.sh + package-linux.sh)")
+endif()
+if(BUILD_TESTS)
+    message(STATUS "  BUILD_TESTS=ON")
+endif()

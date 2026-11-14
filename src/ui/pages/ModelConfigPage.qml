@@ -695,9 +695,15 @@ Item {
                 objectName: "model.connection"
                 Layout.fillWidth: true
                 title: qsTr("服务连接")
+                // 加密文案按平台分支：Windows 走 DPAPI（SettingsService 的
+                // dpapi:v1:），Linux 走系统钥匙环 Secret Service / KWallet
+                // （secret:v1:，docs/49 D1）——旧文案写死 DPAPI，在 Linux 上
+                // 描述的是错误行为。
                 subtitle: page.isOllama
                     ? qsTr("本地服务不需要 API Key；地址指向 Ollama 的 host:port。")
-                    : qsTr("API Key 保存时按当前用户加密（Windows DPAPI）。")
+                    : Qt.platform.os === "windows"
+                        ? qsTr("API Key 保存时按当前用户加密（Windows DPAPI）。")
+                        : qsTr("API Key 保存时加密到系统钥匙环（Secret Service / KWallet）。")
 
                 SettingsField {
                     id: urlRow

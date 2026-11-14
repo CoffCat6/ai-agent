@@ -9,7 +9,6 @@
 // （上下与 Basic 原行为对齐，避免局部 background 覆盖时比 Basic 多出 4px）。
 import QtQuick
 import QtQuick.Controls.impl
-import QtQuick.Controls.Basic.impl
 import QtQuick.Templates as T
 import NexusAI.ViewModels
 
@@ -51,9 +50,12 @@ T.TextArea {
     selectionColor: Theme.brandPrimary
     selectedTextColor: Theme.selectedTextColor
 
-    // 同 TextField：附加属性必须经 QtQuick.Templates 别名限定。
+    // 同 TextField：附加属性必须经 QtQuick.Templates 别名限定。菜单是本样式
+    // 自绘的（同目录隐式导入），不再引用 QtQuick.Controls.Basic.impl 的内部
+    // TextEditingContextMenu——它的 required property 在 Qt 6.9/6.11 间改名，
+    // 自绘后多 Qt 版本共用一套代码（见 TextEditingContextMenu.qml 头注释）。
     T.ContextMenu.menu: TextEditingContextMenu {
-        control: control
+        editor: control
     }
 
     PlaceholderText {

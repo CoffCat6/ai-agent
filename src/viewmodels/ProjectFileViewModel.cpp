@@ -1,5 +1,6 @@
 #include "ProjectFileViewModel.h"
 
+#include "core/utils/DesktopEntry.h"
 #include "core/utils/ProjectFileIndex.h"
 
 #include <QDesktopServices>
@@ -14,7 +15,10 @@
 #include <QThreadPool>
 #include <QUrl>
 #include <QDebug>
-#ifdef Q_OS_WIN
+#ifndef Q_OS_WIN
+#include <QMimeDatabase>
+#include <QMimeType>
+#else
 // Registry access for the emergency "open with" fallback below.
 #include <windows.h>
 #endif
@@ -33,10 +37,23 @@ namespace NexusAI {
 // launches one directly with the file as an argument, bypassing whatever the
 // association resolves to.
 
-// Everything below is Windows-only: the association store it consults is the
-// registry. Linux builds compile the block out and openWithKnownEditor()
-// simply reports "no editor" (docs/49 - a future xdg-mime based lookup could
-// fill the same role there).
+// Everything below is platform split: the Windows branch reads the registry
+// (the association store it consults); the Linux branch asks xdg-mime for the
+// default handler of the file's MIME type and launches the program named by
+// the matching .desktop entry's Exec line (docs/49 阶段 2, pure parsing lives
+// in core/utils/DesktopEntry.h).
+
+// Child processes must not inherit ELECTRON_RUN_AS_NODE: it turns every
+// Electron application into a bare Node runtime, which then misreads the
+// document it was handed as a script. The variable is harmless to native
+// programs, so a copy with just that entry removed is safe for anything we
+// might launch here. Used by both the registry path (Windows) and the
+// xdg-mime path (Linux).
+static QProcessEnvironment cleanChildEnvironment() {
+    QProcessEnvironment env = QProcessEnvironment::systemEnvironment();
+    env.remove(QStringLiteral("ELECTRON_RUN_AS_NODE"));
+    return env;
+}
 
 #ifdef Q_OS_WIN
 
@@ -103,17 +120,6 @@ static bool readShellOpenCommand(HKEY root, const QString& progId,
                          QString(), out);
 }
 
-// Child processes must not inherit ELECTRON_RUN_AS_NODE: it turns every
-// Electron application into a bare Node runtime, which then misreads the
-// document it was handed as a script. The variable is harmless to native
-// programs, so a copy with just that entry removed is safe for anything we
-// might launch here.
-static QProcessEnvironment cleanChildEnvironment() {
-    QProcessEnvironment env = QProcessEnvironment::systemEnvironment();
-    env.remove(QStringLiteral("ELECTRON_RUN_AS_NODE"));
-    return env;
-}
-
 // Known markdown/code editors, probed where each installer registers itself.
 // The .md UserChoice (what Explorer actually honours) comes first; everything
 // else is a fixed list.
@@ -157,6 +163,69 @@ static QStringList candidateEditors(const QString& absolute) {
 }
 
 #endif // Q_OS_WIN
+
+#ifdef Q_OS_LINUX
+// Linux 应急打开（docs/49 阶段 2）：没有集中的关联存储可供枚举，走
+// 「xdg-mime 查默认应用 → 读 .desktop 的 Exec → 直接拉起」。查询结果为空
+// 时回退 text/plain 的默认应用，让没有自身关联的类型至少落到默认文本编辑
+// 器——与 Windows 分支「UserChoice 优先、固定清单兜底」的降级思路对齐。
+static QString queryXdgDefaultHandler(const QString& mimeType) {
+    QProcess proc;
+    proc.setProgram(QStringLiteral("xdg-mime"));
+    proc.setArguments({QStringLiteral("query"), QStringLiteral("default"),
+                       mimeType});
+    proc.setProcessEnvironment(cleanChildEnvironment());
+    proc.start();
+    // 同步等待：xdg-mime query 是毫秒级查询，而 openWithKnownEditor 的
+    // 契约就是同步返回启动描述（QML 侧据此提示）。
+    if (!proc.waitForFinished(3000)
+            || proc.exitStatus() != QProcess::NormalExit
+            || proc.exitCode() != 0) {
+        if (proc.state() != QProcess::NotRunning)
+            proc.kill();
+        return {};
+    }
+    return QString::fromUtf8(proc.readAllStandardOutput()).trimmed();
+}
+
+static QString openWithDesktopEntry(const QString& absolute) {
+    const QMimeDatabase mimeDb;
+    const QMimeType type =
+        mimeDb.mimeTypeForFile(absolute, QMimeDatabase::MatchExtension);
+    QStringList queries;
+    if (type.isValid()
+            && type.name() != QStringLiteral("application/octet-stream"))
+        queries.append(type.name());
+    queries.append(QStringLiteral("text/plain"));
+
+    const QStringList dataDirs = DesktopEntry::desktopDataDirs();
+    for (const QString& mime : queries) {
+        const QString id = queryXdgDefaultHandler(mime);
+        if (id.isEmpty())
+            continue;
+        const QString path = DesktopEntry::locateDesktopFile(id, dataDirs);
+        if (path.isEmpty())
+            continue;
+        const DesktopEntry::DesktopEntryInfo entry =
+            DesktopEntry::readDesktopEntry(path);
+        if (!entry.valid || entry.hidden || entry.noDisplay
+                || !DesktopEntry::tryExecAvailable(entry.tryExec))
+            continue;
+
+        const QStringList args =
+            DesktopEntry::desktopExecArguments(entry.exec, absolute);
+        if (args.size() < 2)   // 程序名 + 文件路径，缺一不可
+            continue;
+        QProcess proc;
+        proc.setProgram(args.first());
+        proc.setArguments(args.mid(1));
+        proc.setProcessEnvironment(cleanChildEnvironment());
+        if (proc.startDetached())
+            return args.first() + QLatin1Char(' ') + absolute;
+    }
+    return {};
+}
+#endif // Q_OS_LINUX
 
 ProjectFileViewModel* ProjectFileViewModel::s_instance = nullptr;
 
@@ -371,10 +440,8 @@ QString ProjectFileViewModel::openWithKnownEditor(const QString& relPath) {
     const QString absolute = absolutePath(relPath);
     if (absolute.isEmpty() || !QFileInfo::exists(absolute)) return {};
 
-    // The registry probe below is a Windows-shell workaround; Linux has no
-    // equivalent association store to consult (docs/49 - a future xdg-mime
-    // based lookup could fill the same role), so the fallback reports "no
-    // editor found" there.
+    // The registry probe below is a Windows-shell workaround; Linux asks
+    // xdg-mime for the default handler instead (see openWithDesktopEntry).
 #ifdef Q_OS_WIN
     for (const QString& command : candidateEditors(absolute)) {
         // Split the executable from its own arguments: every candidate starts
@@ -409,7 +476,11 @@ QString ProjectFileViewModel::openWithKnownEditor(const QString& relPath) {
             return program + QLatin1Char(' ') + absolute;
     }
 #endif // Q_OS_WIN
+#ifdef Q_OS_LINUX
+    return openWithDesktopEntry(absolute);
+#else
     return {};
+#endif
 }
 
 } // namespace NexusAI

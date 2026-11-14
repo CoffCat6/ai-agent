@@ -68,6 +68,15 @@ Description: Local-first AI agent desktop app
  and a local knowledge base. Bundles its own Qt runtime under
  /opt/NexusAI; expects a standard desktop stack (GL/X11/fontconfig).
 EOF
+# 安装后刷新桌面数据库与图标缓存；工具缺失（极简容器）时静默跳过，
+# 与 rpm %post 同一套钩子。
+cat > "$staging/DEBIAN/postinst" <<'EOF'
+#!/bin/sh
+update-desktop-database -q 2>/dev/null || true
+gtk-update-icon-cache -q /usr/share/icons/hicolor 2>/dev/null || true
+exit 0
+EOF
+chmod 0755 "$staging/DEBIAN/postinst"
 debOut="$OutDir/nexusai_${version}_${arch}.deb"
 dpkg-deb --root-owner-group --build "$staging" "$debOut"
 
@@ -78,14 +87,21 @@ rpmbuildDir="$OutDir/rpmbuild"
 rm -rf "$rpmbuildDir"
 mkdir -p "$rpmbuildDir"/{BUILD,RPMS,SOURCES,SPECS,SRPMS}
 spec="$rpmbuildDir/SPECS/nexusai.spec"
+changelogDate="$(date "+%a %b %d %Y")"
 cat > "$spec" <<EOF
 Name: nexusai
 Version: $version
 Release: 1
 Summary: Local-first AI agent desktop app
 License: MIT
+URL: https://github.com/CoffCat6/ai-agent
+Group: Applications/Productivity
 AutoReqProv: no
-Requires: glibc, libstdc++, libgcc, mesa-libGL, mesa-libEGL, fontconfig, libX11, libxcb, libxkbcommon, libxkbcommon-x11, libsecret, dbus-libs
+# 依赖用 soname 文件名而非发行版包名：Fedora 的 mesa-libGL/libX11 与
+# openSUSE 的 Mesa-libGL1/libX11-6 命名不同，包名硬列在跨发行版安装时会
+# 变成不可满足依赖；soname（libX11.so.6()(64bit) 形态）在所有 rpm 系上都
+# 存在且由 file-provides 天然满足。
+Requires: libc.so.6()(64bit), libstdc++.so.6()(64bit), libgcc_s.so.1()(64bit), libGL.so.1()(64bit), libEGL.so.1()(64bit), libfontconfig.so.1()(64bit), libX11.so.6()(64bit), libxcb.so.1()(64bit), libxkbcommon.so.0()(64bit), libxkbcommon-x11.so.0()(64bit), libsecret-1.so.0()(64bit), libdbus-1.so.3()(64bit)
 %define debug_package %{nil}
 
 %description
@@ -99,6 +115,19 @@ under /opt/NexusAI; expects a standard desktop stack.
 /usr/share/applications/nexusai.desktop
 /usr/share/doc/nexusai
 /usr/share/icons/hicolor/*/apps/nexusai.png
+
+%post
+# 与 deb postinst 同一套钩子；极简环境缺工具时静默跳过。
+update-desktop-database -q 2>/dev/null || true
+gtk-update-icon-cache -q /usr/share/icons/hicolor 2>/dev/null || true
+
+%postun
+update-desktop-database -q 2>/dev/null || true
+gtk-update-icon-cache -q /usr/share/icons/hicolor 2>/dev/null || true
+
+%changelog
+* $changelogDate NexusAI project <noreply@github.com> - ${version}-1
+- Local-first AI agent desktop app (automated release build).
 EOF
 rpmbuild -bb "$spec" \
     --define "_topdir $rpmbuildDir" \

@@ -1,6 +1,6 @@
 # NexusAI
 
-本地优先的桌面 AI 智能体应用：ReAct 循环驱动的大模型对话 + 工具调用 + 知识库检索增强（RAG）+ 子代理并行与技能（Skill）扩展，基于 Qt 6 / QML，Windows 优先。
+本地优先的桌面 AI 智能体应用：ReAct 循环驱动的大模型对话 + 工具调用 + 知识库检索增强（RAG）+ 子代理并行与技能（Skill）扩展，基于 Qt 6 / QML，Windows / Linux 双平台（macOS 明确不做，见 [docs/49](docs/49-Linux适配方案.md) §8）。
 
 ## 功能特性
 
@@ -23,10 +23,10 @@
 - **稳定性**：网络瞬时失败自动重试一次、任务超时自动封口收敛、上下文预算计入工具调用与工具定义、知识库总量预算（默认 4096 段）
 - **桌面集成**：系统托盘（后台任务完成气泡通知，主窗不在前台才打扰、可一键关闭通知）、关闭可最小化到托盘（托盘不可用时自动退回正常退出，不会把窗口"藏丢"）、单实例锁（重复启动静默退出，杜绝双写 SQLite/配置）、开机自启（用户级注册表，设置页开关）、快捷键速查表（`Ctrl+/`）
 - **日志面板**：侧栏入口打开实时日志视图，级别/分类/关键词三维筛选，一键复制与打开日志目录；重启后回填上次会话历史日志（标注"历史"）
-- **联网搜索**：`web_search` 工具（默认 Tavily）让模型检索实时信息，结果截断 6000 字符回灌；密钥经 DPAPI 加密；调用前需确认；`localOnlyMode` 下门控禁用
+- **联网搜索**：`web_search` 工具（默认 Tavily）让模型检索实时信息，结果截断 6000 字符回灌；密钥经系统凭据加密（Windows DPAPI / Linux 系统钥匙环）；调用前需确认；`localOnlyMode` 下门控禁用
 - **SearXNG 搜索后端**：联网搜索新增自托管 SearXNG 后端（`GET /search?format=json`，无需 API Key），与 Tavily / DuckDuckGo 同走 `WebSearchBackend` 扩展点，工具管理页可切换后端并配置实例地址
 - **长期记忆**：情景记忆在会话结束时异步生成摘要，新会话按相关性检索注入（≤1500 token），默认关闭
-- **主题跟随系统**：主题模式三档（跟随系统 / 深色 / 浅色），`auto` 实时跟随 Windows 深浅色，显式选择优先
+- **主题跟随系统**：主题模式三档（跟随系统 / 深色 / 浅色），`auto` 实时跟随系统深浅色，显式选择优先
 - **无障碍**：自定义 QML 控件补全 `Accessible.role/name/description`，纯图标控件具备可读名称，纯键盘可完成核心流程
 - **MCP 协议接入**：支持 MCP（Model Context Protocol）服务器动态注册工具、提示词模板（prompts）与远程资源（resources），带安全收紧策略（详见下文 MCP 安全章节）；提示词模板在输入框 `/` 补全中按服务器混入，带参模板弹表单填参后取回文本审阅发送；资源经输入框 `+` 菜单的选择器读取，作为文本附件进消息（512KB 上限，超限拒绝），`localOnlyMode` 下整体门控
 - **设置中心**：分类导航（可折叠分组）+ 即输即搜（结果跳转并短暂高亮）；设置项行级撤销与恢复默认、预设包导入导出、JSON 导出/恢复（脱敏）；对话框尺寸记忆与窄窗紧凑态
@@ -83,9 +83,14 @@ ctest --test-dir build --output-on-failure
 
 ## 配置与数据位置
 
-- 模型配置：QSettings（Windows 注册表 `HKCU\Software\NexusAI\NexusAI`），API Key 在 Windows 上经 DPAPI 按用户加密存储
-- 应用数据：`%APPDATA%\NexusAI\NexusAI\nexusai_memory.db`（消息 / 轨迹 / 审计 / 知识库）
-- 运行日志：`%LOCALAPPDATA%/NexusAI/NexusAI/logs/`，按天轮转保留 7 天；使用/网络事件另存 usage_log（同一数据库，保留 30 天/10000 行）
+| 数据 | Windows | Linux |
+|---|---|---|
+| 模型配置（QSettings） | 注册表 `HKCU\Software\NexusAI\NexusAI` | `~/.config/NexusAI/NexusAI.conf` |
+| API Key 密文 | DPAPI 按用户加密（`dpapi:v1:`） | 系统钥匙环 Secret Service / KWallet（`secret:v1:`） |
+| 应用数据（数据库） | `%APPDATA%\NexusAI\NexusAI\nexusai_memory.db` | `~/.local/share/NexusAI/nexusai_memory.db` |
+| 运行日志 / MCP 配置 | `%LOCALAPPDATA%\NexusAI\NexusAI\logs\`、`%APPDATA%\NexusAI\NexusAI\mcp_servers.json` | `~/.local/share/NexusAI/logs/`、`~/.local/share/NexusAI/mcp_servers.json` |
+
+日志按天轮转保留 7 天；使用/网络事件另存 usage_log（同一数据库，保留 30 天/10000 行）。
 
 ### 设置导出与恢复
 
@@ -126,9 +131,12 @@ MCP 工具的 `description` 字段截断至 **≤ 1024 字符**（`McpToolAdapte
 ## 高分屏使用提示
 
 高分辨率屏幕（3.2K/4K）+ 分数缩放（150%~200%）下，若拖动缩放窗口仍感卡顿（应用内
-已做消息区/草稿区缩放冻结优化，正常设置下应流畅），可在 Windows「系统属性 → 高级 →
-性能设置」取消勾选**「显示窗口内容的同时拖动」**——缩放时只画边框轮廓、松手后绘制
-内容，系统级根治（影响所有应用）。诊断与修复细节见 [docs/47](docs/47-高分屏缩放流畅度与DPI几何修复.md)。
+已做消息区/草稿区缩放冻结优化，正常设置下应流畅）：
+
+- **Windows**：可在「系统属性 → 高级 → 性能设置」取消勾选**「显示窗口内容的同时拖动」**——缩放时只画边框轮廓、松手后绘制内容，系统级根治（影响所有应用）。
+- **Linux**：Wayland 下窗口位置（x/y）不参与持久化恢复属合成器预期行为；fractional scaling 的渲染后端与每屏 DPR 在启动日志输出（`RHI backend` 行），排查时先确认非 software 后端。
+
+诊断与修复细节见 [docs/47](docs/47-高分屏缩放流畅度与DPI几何修复.md)、Linux 适配结论见 [docs/49](docs/49-Linux适配方案.md)。
 
 ## 许可证
 
