@@ -193,6 +193,8 @@ void startKnowledgeRestore(SqliteMemory* memory, RagService* rag) {
         QString contentHash;
         QString embeddingModel;
         QString sourcePath;
+        qint64 fileMtimeMs{0};
+        qint64 fileSize{0};
         QVector<KnowledgeChunk> chunks;
     };
     QVector<RestoreItem> restoreItems;
@@ -203,6 +205,8 @@ void startKnowledgeRestore(SqliteMemory* memory, RagService* rag) {
         item.contentHash = rec.contentHash;
         item.embeddingModel = rec.embeddingModel;
         item.sourcePath = rec.sourcePath;
+        item.fileMtimeMs = rec.fileMtimeMs;
+        item.fileSize = rec.fileSize;
         item.chunks = memory->loadKnowledgeChunks(rec.name);
         restoreItems.append(item);
     }
@@ -218,6 +222,10 @@ void startKnowledgeRestore(SqliteMemory* memory, RagService* rag) {
             // 重嵌入——继续算只会白写一堆 pseudo 降级向量，还会拖住静态
             // 析构阶段的线程池 waitForDone。
             if (embeddingShutdownRequested()) break;
+            // docs/51: 恢复源文件快照（mtime+size），增量同步的快速路径
+            // 才能在重启后继续生效。
+            rag->setDocumentFileInfo(item.name, item.fileMtimeMs,
+                                     item.fileSize);
             if (persistedChunksUsable(item.contentHash, item.embeddingModel,
                                       item.content, currentModel)
                     && rag->restorePersistedDocument(
@@ -695,6 +703,13 @@ qInfo() << "NexusAI" << app.applicationVersion() << "starting";
                                        sourcePath);
             memory->replaceKnowledgeChunks(name, chunks);
         });
+    // docs/51: sync linkage refreshes a document's source-file snapshot —
+    // persist it (worker-thread signal arrives queued; SQLite stays on the
+    // GUI thread).
+    QObject::connect(rag, &RagService::documentFileInfoPersisted, &app,
+        [memory](const QString& name, qint64 fileMtimeMs, qint64 fileSize) {
+            memory->setKnowledgeFileInfo(name, fileMtimeMs, fileSize);
+        });
     QObject::connect(agentVM, &AgentViewModel::documentRemoved, &app,
         [memory](const QString& name) { memory->removeKnowledgeDoc(name); });
     QObject::connect(agentVM, &AgentViewModel::knowledgeCleared, &app,
@@ -857,7 +872,7 @@ qInfo() << "NexusAI" << app.applicationVersion() << "starting";
                                 proxyFactory, subAgentTool, subAgentProfiles,
                                 spawnRegistered, applyProposalTool,
                                 subagentWaitTool, subagentStatusTool,
-                                subagentCancelTool,
+                                subagentCancelTool, prefStore,
                                 tabMemories, createWebSearchBackend]() {
         // H1: one snapshot drives the application-wide proxy factory, so every
         // QNetworkAccessManager (LLM/embedding/search/MCP/http_fetch) follows
@@ -889,6 +904,12 @@ qInfo() << "NexusAI" << app.applicationVersion() << "starting";
         // knowledge-base URL import shares the same gate.
         fetchPtr->setAllowPrivateTargets(settings->allowLocalNetworkFetch());
         agentVM->setAllowPrivateTargets(settings->allowLocalNetworkFetch());
+
+        // docs/51: knowledge ↔ source-file auto-sync switch (mtime+size fast
+        // path keeps unchanged files free; the embed itself may be billed on
+        // the OpenAI-compatible backend, hence the switch).
+        agentVM->setKnowledgeAutoSync(prefStore->load(
+            QStringLiteral("knowledge.autoSyncSourceFiles")).toBool());
 
         // T6 (F3): inject the current web search API key (DPAPI-decrypted).
         // 任务 #20 修 Mj2：webSearchApiKey() 是掩码 getter（恒空串），注入

@@ -177,6 +177,10 @@ private slots:
     // knowledge_documents.source_path: import records it, restore/re-embed
     // preserves it, a fresh import replaces it.
     void knowledgeSourcePathRoundTrip();
+    // docs/51: file_mtime_ms/file_size snapshot columns — upsert's -1
+    // sentinel keeps stored values, explicit values overwrite, the standalone
+    // setKnowledgeFileInfo refreshes without touching content.
+    void knowledgeFileInfoSnapshot();
     // Batch 7: Conversation/Memory consistency
     void sqliteConnectionNameCleanedUp();
     void workspaceIdColumnReserved();
@@ -1245,6 +1249,45 @@ void TestMemory::knowledgeSourcePathRoundTrip() {
         if (rec.name == "a.md")
             QCOMPARE(rec.sourcePath, QStringLiteral("D:/elsewhere/a.md"));
     }
+}
+
+// docs/51: file_mtime_ms/file_size snapshot columns — upsert's -1 sentinel
+// keeps stored values, explicit values overwrite, the standalone
+// setKnowledgeFileInfo refreshes without touching content.
+void TestMemory::knowledgeFileInfoSnapshot() {
+    SqliteMemory memory(":memory:");
+
+    // Explicit snapshot values are recorded.
+    memory.upsertKnowledgeDoc("a.md", "aaa",
+                              knowledgeContentHash("aaa"), "m1",
+                              QStringLiteral("D:/notes/a.md"), 1000, 42);
+    auto records = memory.loadKnowledgeDocRecords();
+    QCOMPARE(records.size(), 1);
+    QCOMPARE(records.at(0).fileMtimeMs, qint64(1000));
+    QCOMPARE(records.at(0).fileSize, qint64(42));
+
+    // Content update without a snapshot (re-embed path): the stored snapshot
+    // must survive the -1 sentinel.
+    memory.upsertKnowledgeDoc("a.md", "aaa v2",
+                              knowledgeContentHash("aaa v2"), "m2");
+    records = memory.loadKnowledgeDocRecords();
+    QCOMPARE(records.at(0).fileMtimeMs, qint64(1000));
+    QCOMPARE(records.at(0).fileSize, qint64(42));
+
+    // Content update WITH a new snapshot (sync re-embed path): overwritten.
+    memory.upsertKnowledgeDoc("a.md", "aaa v3",
+                              knowledgeContentHash("aaa v3"), "m2",
+                              QStringLiteral("D:/notes/a.md"), 2000, 55);
+    records = memory.loadKnowledgeDocRecords();
+    QCOMPARE(records.at(0).fileMtimeMs, qint64(2000));
+    QCOMPARE(records.at(0).fileSize, qint64(55));
+
+    // Standalone metadata refresh (content-hash matched fast path).
+    memory.setKnowledgeFileInfo("a.md", 3000, 77);
+    records = memory.loadKnowledgeDocRecords();
+    QCOMPARE(records.at(0).fileMtimeMs, qint64(3000));
+    QCOMPARE(records.at(0).fileSize, qint64(77));
+    QCOMPARE(records.at(0).content, QStringLiteral("aaa v3"));  // content untouched
 }
 
 // may survive (a deleted document must not stay retrievable).

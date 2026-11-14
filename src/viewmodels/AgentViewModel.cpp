@@ -22,7 +22,10 @@
 #include "core/utils/SettingsSchema.h"
 #include "core/utils/SlashCommand.h"
 #include "core/skills/SkillEditorService.h"
+// docs/51: knowledge sync worker honours the process-level embed shutdown gate.
+#include "infrastructure/embed/EmbedShutdown.h"
 
+#include <QAtomicInt>
 #include <QCryptographicHash>
 #include <QFileInfo>
 #include <QFileSystemWatcher>
@@ -321,6 +324,30 @@ AgentViewModel::AgentViewModel(QObject* parent)
     // docs/35 P4.3: 切换标签即切换后台任务面板的数据源。
     connect(this, &AgentViewModel::activeTabChanged,
             this, &AgentViewModel::backgroundSubAgentsChanged);
+
+    // docs/51: knowledge ↔ source-file sync. One file-level watcher covers
+    // BOTH trigger sources (agent writes land on disk the same way external
+    // editor saves do); the debounce merges write bursts before the scan.
+    m_knowledgeWatcher = new QFileSystemWatcher(this);
+    m_knowledgeSyncTimer.setSingleShot(true);
+    m_knowledgeSyncTimer.setInterval(600);
+    connect(&m_knowledgeSyncTimer, &QTimer::timeout, this, [this]() {
+        if (m_knowledgeSyncPending.isEmpty()) return;
+        const QStringList paths(m_knowledgeSyncPending.cbegin(),
+                                m_knowledgeSyncPending.cend());
+        m_knowledgeSyncPending.clear();
+        syncKnowledgePaths(paths);
+    });
+    connect(m_knowledgeWatcher, &QFileSystemWatcher::fileChanged, this,
+            [this](const QString& path) {
+        // Rewriting a file can drop it from the watch list on some
+        // platforms — re-arm immediately so later saves still surface.
+        if (!m_knowledgeWatcher->files().contains(path))
+            m_knowledgeWatcher->addPath(path);
+        if (!m_knowledgeAutoSync) return;
+        m_knowledgeSyncPending.insert(path);
+        m_knowledgeSyncTimer.start();
+    });
 
     // Layout defaults must load first: they seed the panel restore below.
     loadLayoutDefaults();
@@ -2191,6 +2218,154 @@ void AgentViewModel::refreshKnowledge() {
     if (m_knowledgeDocuments == docs) return;
     m_knowledgeDocuments = docs;
     emit knowledgeChanged();
+    // docs/51: keep the source-file watch list in step with the document
+    // set (imports/removals/restores all funnel through here).
+    rearmKnowledgeWatcher();
+}
+
+void AgentViewModel::rearmKnowledgeWatcher() {
+    if (!m_knowledgeWatcher) return;
+    const QStringList watched = m_knowledgeWatcher->files();
+    if (!watched.isEmpty()) m_knowledgeWatcher->removePaths(watched);
+    for (const QVariant& entry : m_knowledgeDocuments) {
+        const QVariantMap doc = entry.toMap();
+        const QString path = doc.value("sourcePath").toString();
+        if (path.isEmpty()) continue;
+        if (QFileInfo::exists(path) && !m_knowledgeWatcher->files().contains(path))
+            m_knowledgeWatcher->addPath(path);
+    }
+}
+
+void AgentViewModel::recordKnowledgeFileInfo(const QString& sourcePath,
+                                             const QString& name) {
+    // Post-ingest metadata record: stat the source file and mirror the
+    // snapshot into the in-memory document and the database (the database
+    // write must happen on the GUI thread — SQLite is single-threaded).
+    if (sourcePath.isEmpty() || name.isEmpty()) return;
+    const QFileInfo info(sourcePath);
+    if (!info.exists()) return;
+    const qint64 mtime = info.lastModified().toMSecsSinceEpoch();
+    const qint64 size = info.size();
+    if (m_rag) m_rag->setDocumentFileInfo(name, mtime, size);
+    // Database persistence rides the cross-thread signal (main.cpp bridges
+    // it to the SQLite layer on the GUI thread).
+    emit m_rag->documentFileInfoPersisted(name, mtime, size);
+}
+
+void AgentViewModel::syncKnowledgeSources() {
+    QStringList paths;
+    for (const QVariant& entry : m_knowledgeDocuments) {
+        const QString path = entry.toMap().value("sourcePath").toString();
+        if (!path.isEmpty()) paths.append(path);
+    }
+    if (paths.isEmpty()) {
+        emit noticeOccurred(tr("没有带来源文件的文档可同步。"));
+        return;
+    }
+    syncKnowledgePaths(paths);
+}
+
+void AgentViewModel::syncKnowledgePaths(const QStringList& paths) {
+    // Full-scan + re-embed runs on a worker thread (embedding is a blocking
+    // QEventLoop call, same discipline as imports). The document snapshot is
+    // taken HERE on the GUI thread and captured by value, so the worker never
+    // touches QML state; RagService methods are mutex-guarded and thread-safe.
+    if (!m_rag || m_knowledgeBusy) return;
+    if (!m_knowledgeSyncRunning.testAndSetAcquire(0, 1)) {
+        emit noticeOccurred(tr("知识库同步正在进行中。"));
+        return;
+    }
+    setKnowledgeBusy(true);
+    setEmbedProgress(0, 0);
+
+    const QJsonArray snapshot = m_rag->documents();
+    RagService* rag = m_rag;
+    auto* watcher = new QFutureWatcher<QVariantMap>(this);
+    connect(watcher, &QFutureWatcherBase::finished, this,
+            [this, watcher]() {
+        watcher->deleteLater();
+        setKnowledgeBusy(false);
+        m_knowledgeSyncRunning.storeRelease(0);
+        const QVariantMap stats = watcher->result();
+        emit noticeOccurred(tr("源文件同步完成：更新 %1 · 元数据刷新 %2 · "
+                               "跳过 %3 · 源缺失 %4 · 失败 %5")
+            .arg(stats.value("updated").toInt())
+            .arg(stats.value("refreshed").toInt())
+            .arg(stats.value("skipped").toInt())
+            .arg(stats.value("missing").toInt())
+            .arg(stats.value("failed").toInt()));
+    });
+
+    watcher->setFuture(QtConcurrent::run([rag, snapshot, paths]() -> QVariantMap {
+        QVariantMap stats;
+        stats.insert("updated", 0);
+        stats.insert("refreshed", 0);
+        stats.insert("skipped", 0);
+        stats.insert("missing", 0);
+        stats.insert("failed", 0);
+        for (const QString& path : paths) {
+            if (embeddingShutdownRequested()) break;
+            QString name;
+            QString recordedHash;
+            qint64 recordedMtime = 0;
+            qint64 recordedSize = 0;
+            for (const auto& entry : snapshot) {
+                const QJsonObject doc = entry.toObject();
+                if (doc.value("sourcePath").toString() == path) {
+                    name = doc.value("name").toString();
+                    recordedHash = doc.value("contentHash").toString();
+                    recordedMtime = doc.value("fileMtimeMs").toDouble();
+                    recordedSize = doc.value("fileSize").toDouble();
+                    break;
+                }
+            }
+            if (name.isEmpty()) continue;
+
+            const QFileInfo info(path);
+            if (!info.exists()) {
+                stats["missing"] = stats.value("missing").toInt() + 1;
+                continue;   // source vanished — third state, never auto-delete
+            }
+            const qint64 mtime = info.lastModified().toMSecsSinceEpoch();
+            const qint64 size = info.size();
+            if (mtime == recordedMtime && size == recordedSize) {
+                stats["skipped"] = stats.value("skipped").toInt() + 1;
+                continue;   // fast path: nothing changed, zero embed cost
+            }
+
+            QFile file(path);
+            if (!file.open(QIODevice::ReadOnly | QIODevice::Text)) {
+                stats["failed"] = stats.value("failed").toInt() + 1;
+                continue;
+            }
+            const QString content = QString::fromUtf8(file.readAll());
+            file.close();
+            if (content.trimmed().isEmpty()) {
+                stats["failed"] = stats.value("failed").toInt() + 1;
+                continue;
+            }
+
+            const QString hash = knowledgeContentHash(content);
+            if (hash == recordedHash) {
+                // Content unchanged (touch / editor rewrite with same bytes):
+                // refresh the recorded snapshot only — no re-embed.
+                rag->setDocumentFileInfo(name, mtime, size);
+                emit rag->documentFileInfoPersisted(name, mtime, size);
+                stats["refreshed"] = stats.value("refreshed").toInt() + 1;
+                continue;
+            }
+
+            const int chunks = rag->ingestDocument(name, content, {}, path);
+            if (chunks > 0) {
+                rag->setDocumentFileInfo(name, mtime, size);
+                emit rag->documentFileInfoPersisted(name, mtime, size);
+                stats["updated"] = stats.value("updated").toInt() + 1;
+            } else {
+                stats["failed"] = stats.value("failed").toInt() + 1;
+            }
+        }
+        return stats;
+    }));
 }
 
 void AgentViewModel::importDocument(const QString& path) {
@@ -2693,10 +2868,15 @@ void AgentViewModel::startIngestion(const QString& name, const QString& content,
     setEmbedProgress(0, 0);
     auto* watcher = new QFutureWatcher<int>(this);
     connect(watcher, &QFutureWatcherBase::finished, this,
-            [this, watcher, name, content, reembed, pageTexts]() {
+            [this, watcher, name, content, reembed, pageTexts, sourcePath]() {
         const int chunks = watcher->result();
         watcher->deleteLater();
         setKnowledgeBusy(false);
+        // docs/51: record the source-file snapshot after a successful ingest
+        // so the incremental sync's mtime+size fast path is primed (reembed
+        // carries no sourcePath — the stored snapshot stays untouched).
+        if (!sourcePath.isEmpty() && chunks > 0)
+            recordKnowledgeFileInfo(sourcePath, name);
         if (reembed) {
             if (chunks > 0)
                 emit noticeOccurred(tr("已重新嵌入 %1（%2 段）").arg(name).arg(chunks));

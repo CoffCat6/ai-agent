@@ -101,6 +101,15 @@ public:
     // "a.txt" exists → "a (2).txt", "a (3).txt", ... (display-name dedupe;
     // the DB primary key stays the unique display name)
     QString uniqueDocumentName(const QString& baseName) const;
+    // docs/51: name of the document imported from this exact source path
+    // (empty when none) — the incremental-sync linkage keys on source_path,
+    // NOT on the display name.
+    QString documentNameByPath(const QString& sourcePath) const;
+    // docs/51: record/refresh the source-file snapshot of a document (called
+    // by the sync linkage after ingest and by the startup restore so the
+    // fast path survives restarts). Unknown name → no-op.
+    void setDocumentFileInfo(const QString& sourceName, qint64 fileMtimeMs,
+                             qint64 fileSize);
     // docs/25: whether the named document was stored with the local pseudo
     // embedding (embedder unavailable during import) — batch import reports
     // this as the "degraded" status. Unknown name → false.
@@ -133,6 +142,11 @@ signals:
     void documentPersisted(const QString& name, const QString& content,
                            const QString& sourcePath,
                            const QVector<KnowledgeChunk>& chunks);
+    // docs/51: emitted (worker thread) when the sync linkage refreshes a
+    // document's source-file snapshot — the GUI-side consumer persists it
+    // (SQLite is single-threaded).
+    void documentFileInfoPersisted(const QString& name, qint64 fileMtimeMs,
+                                   qint64 fileSize);
 
 private:
     struct Document {
@@ -144,6 +158,11 @@ private:
         // re-embedded without a known origin). The persistence layer stores it
         // so the UI can offer "open the original file".
         QString sourcePath;
+        // docs/51: source-file snapshot for the incremental sync — the
+        // recorded mtime/size are compared against the file's current stat
+        // to decide "unchanged (skip)" vs "changed (re-embed)".
+        qint64 fileMtimeMs{0};
+        qint64 fileSize{0};
         // docs/25 B5: shared_ptr so finishSearch can snapshot the retriever
         // set under the lock and run the (CPU-heavy) cosine + merge OUTSIDE
         // it — a raw pointer would dangle if removeDocument() dropped the

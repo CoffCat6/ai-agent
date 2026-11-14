@@ -602,7 +602,9 @@ void SqliteMemory::createTables() {
             name TEXT PRIMARY KEY,
             content TEXT NOT NULL,
             imported_at INTEGER NOT NULL,
-            source_path TEXT NOT NULL DEFAULT ''
+            source_path TEXT NOT NULL DEFAULT '',
+            file_mtime_ms INTEGER NOT NULL DEFAULT 0,
+            file_size INTEGER NOT NULL DEFAULT 0
         )
     )", "create knowledge_documents table");
 
@@ -1141,6 +1143,20 @@ void SqliteMemory::migrateKnowledgeChunkPageColumn() {
                 "add knowledge_chunks.page column");
 }
 
+void SqliteMemory::setKnowledgeFileInfo(const QString& name, qint64 fileMtimeMs,
+                                        qint64 fileSize) {
+    commitPendingKnowledgeTransaction();
+    QSqlQuery query(m_db);
+    query.prepare("UPDATE knowledge_documents SET file_mtime_ms = ?, "
+                  "file_size = ? WHERE name = ?");
+    query.addBindValue(fileMtimeMs);
+    query.addBindValue(fileSize);
+    query.addBindValue(name);
+    if (!query.exec())
+        qWarning() << "Failed to set knowledge file info:"
+                   << query.lastError().text();
+}
+
 void SqliteMemory::migrateKnowledgeSchema() {
     QSqlQuery pragma(m_db);
     QStringList columns;
@@ -1165,6 +1181,22 @@ void SqliteMemory::migrateKnowledgeSchema() {
         execDdl(query, "ALTER TABLE knowledge_documents "
                        "ADD COLUMN source_path TEXT NOT NULL DEFAULT ''",
                 "add knowledge_documents.source_path");
+    // docs/51: source-file snapshot for the incremental sync (mtime+size fast
+    // path — unchanged files skip re-embedding entirely).
+    if (!columns.contains("file_mtime_ms"))
+        execDdl(query, "ALTER TABLE knowledge_documents "
+                       "ADD COLUMN file_mtime_ms INTEGER NOT NULL DEFAULT 0",
+                "add knowledge_documents.file_mtime_ms");
+    if (!columns.contains("file_size"))
+        execDdl(query, "ALTER TABLE knowledge_documents "
+                       "ADD COLUMN file_size INTEGER NOT NULL DEFAULT 0",
+                "add knowledge_documents.file_size");
+    // Path lookups (sync scan, agent-write linkage) match on source_path;
+    // without the index every sync would table-scan the knowledge table.
+    execDdl(query, "CREATE INDEX IF NOT EXISTS "
+                   "idx_knowledge_documents_source_path "
+                   "ON knowledge_documents(source_path)",
+            "create knowledge_documents.source_path index");
 
     // OBS-1102: observability columns on audit_log (Batch 11)
     {
@@ -1271,7 +1303,8 @@ void SqliteMemory::rollbackPendingKnowledgeTransaction() {
 void SqliteMemory::upsertKnowledgeDoc(const QString& name, const QString& content,
                                       const QString& contentHash,
                                       const QString& embeddingModel,
-                                      const QString& sourcePath) {
+                                      const QString& sourcePath,
+                                      qint64 fileMtimeMs, qint64 fileSize) {
     // B2-B: the persistence bridge (main.cpp) calls upsertKnowledgeDoc and
     // replaceKnowledgeChunks back to back. Both run in ONE transaction that
     // is opened here and committed there. Any earlier standalone save (a
@@ -1287,14 +1320,21 @@ void SqliteMemory::upsertKnowledgeDoc(const QString& name, const QString& conten
     QSqlQuery query(m_db);
     // source_path uses a COALESCE-style guard: an empty incoming value (restore
     // or re-embed, where no path is known) keeps the stored one instead of
-    // erasing it.
+    // erasing it. file_mtime_ms/file_size (docs/51) use a -1-sentinel guard:
+    // callers that don't know the file snapshot (restore / re-embed) keep the
+    // stored values instead of resetting them to "unknown".
     query.prepare("INSERT INTO knowledge_documents (name, content, imported_at, "
-                  "content_hash, embedding_model, source_path) VALUES (?, ?, ?, ?, ?, ?) "
+                  "content_hash, embedding_model, source_path, file_mtime_ms, "
+                  "file_size) VALUES (?, ?, ?, ?, ?, ?, ?, ?) "
                   "ON CONFLICT(name) DO UPDATE SET content = excluded.content, "
                   "imported_at = excluded.imported_at, content_hash = excluded.content_hash, "
                   "embedding_model = excluded.embedding_model, "
                   "source_path = CASE WHEN excluded.source_path = '' "
-                  "THEN knowledge_documents.source_path ELSE excluded.source_path END");
+                  "THEN knowledge_documents.source_path ELSE excluded.source_path END, "
+                  "file_mtime_ms = CASE WHEN excluded.file_mtime_ms < 0 "
+                  "THEN knowledge_documents.file_mtime_ms ELSE excluded.file_mtime_ms END, "
+                  "file_size = CASE WHEN excluded.file_size < 0 "
+                  "THEN knowledge_documents.file_size ELSE excluded.file_size END");
     // An empty/null QString binds as SQL NULL, which the NOT NULL columns
     // reject; bind an explicit empty string instead (sourcePath included).
     query.addBindValue(bindText(name));
@@ -1303,6 +1343,8 @@ void SqliteMemory::upsertKnowledgeDoc(const QString& name, const QString& conten
     query.addBindValue(bindText(contentHash));
     query.addBindValue(bindText(embeddingModel));
     query.addBindValue(bindText(sourcePath));
+    query.addBindValue(fileMtimeMs);
+    query.addBindValue(fileSize);
 
     if (!query.exec()) {
         qWarning() << "Failed to save knowledge document:" << query.lastError().text();
@@ -1432,7 +1474,8 @@ void SqliteMemory::clearKnowledgeDocs() {
 QVector<SqliteMemory::KnowledgeDocRecord> SqliteMemory::loadKnowledgeDocRecords() const {
     const_cast<SqliteMemory*>(this)->commitPendingKnowledgeTransaction();
     QSqlQuery query(m_db);
-    query.prepare("SELECT name, content, content_hash, embedding_model, source_path "
+    query.prepare("SELECT name, content, content_hash, embedding_model, source_path, "
+                  "file_mtime_ms, file_size "
                   "FROM knowledge_documents ORDER BY imported_at ASC");
 
     QVector<KnowledgeDocRecord> records;
@@ -1444,6 +1487,8 @@ QVector<SqliteMemory::KnowledgeDocRecord> SqliteMemory::loadKnowledgeDocRecords(
             rec.contentHash = query.value(2).toString();
             rec.embeddingModel = query.value(3).toString();
             rec.sourcePath = query.value(4).toString();
+            rec.fileMtimeMs = query.value(5).toLongLong();
+            rec.fileSize = query.value(6).toLongLong();
             records.append(rec);
         }
     } else {

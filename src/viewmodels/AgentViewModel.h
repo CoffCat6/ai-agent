@@ -715,6 +715,20 @@ public:
     // display-name-only info records nothing, an override passes through.
     Q_INVOKABLE QString probeSourcePathForName(const QString& displayName);
     Q_INVOKABLE QString probeSourcePathForUrl(const QString& url);
+    // docs/51: knowledge ↔ source-file incremental sync. Manual entry point
+    // ("同步源文件" button): stats every document that has a source_path,
+    // re-embeds the ones whose file changed (content-hash compared — a
+    // touch/re-save only refreshes the recorded mtime/size), reports files
+    // that vanished. The QFileSystemWatcher variant feeds the same routine
+    // from fileChanged events (debounced) when knowledge.autoSyncSourceFiles
+    // is on. Runs on a worker thread; embed progress reuses knowledgeEmbed*.
+    Q_INVOKABLE void syncKnowledgeSources();
+    // docs/51 internals: re-arm the source-file watcher after the document
+    // set changes; run the sync for an explicit path list; record the
+    // post-ingest source snapshot.
+    void rearmKnowledgeWatcher();
+    void syncKnowledgePaths(const QStringList& paths);
+    void recordKnowledgeFileInfo(const QString& sourcePath, const QString& name);
     // G3 rules-file authoring (settings page): read/write the AGENTS.md under
     // a project root, and a state probe for the UI ("empty" | "seed" |
     // "truncated" | "active" | "missing").
@@ -727,6 +741,9 @@ public:
     // the http_fetch tool uses).
     void setAllowPrivateTargets(bool allowed) { m_allowPrivateFetchTargets = allowed; }
     bool urlImportRunning() const { return m_urlImportRunning; }
+    // docs/51: knowledge ↔ source-file auto-sync switch, mirrored from
+    // PreferenceStore by main.cpp (same injection pattern as above).
+    void setKnowledgeAutoSync(bool on) { m_knowledgeAutoSync = on; }
     Q_INVOKABLE void cancelBatchImport();
     // Cancel an in-flight URL import. The worker notices the flag on its next
     // 200 ms slice and exits; urlImportRunning is reset by the finish callback
@@ -1060,6 +1077,15 @@ private:
     // R3: watches the edited project's rules candidates for external saves.
     QFileSystemWatcher* m_rulesWatcher{nullptr};
     QString m_watchedRulesRoot;      // native-separators root being watched
+    // docs/51: watches every knowledge document's source_path so agent writes
+    // AND external editor saves both funnel into the incremental sync. The
+    // debounce timer merges write bursts (a tool batch may touch one file
+    // several times); pending paths survive the burst.
+    QFileSystemWatcher* m_knowledgeWatcher{nullptr};
+    QTimer m_knowledgeSyncTimer;
+    QSet<QString> m_knowledgeSyncPending;
+    QAtomicInt m_knowledgeSyncRunning{0};
+    bool m_knowledgeAutoSync{true};
     // docs/18: 归属按标签持有，故这里没有全局活动项目成员。
     // G2: active project's indexable file cache (background scan).
     QStringList m_projectFiles;

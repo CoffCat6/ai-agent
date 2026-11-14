@@ -103,6 +103,26 @@ QString RagService::uniqueDocumentName(const QString& baseName) const {
     return baseName;
 }
 
+QString RagService::documentNameByPath(const QString& sourcePath) const {
+    if (sourcePath.isEmpty()) return {};
+    QMutexLocker lock(&m_mutex);
+    for (const auto& doc : m_docs)
+        if (doc.sourcePath == sourcePath) return doc.name;
+    return {};
+}
+
+void RagService::setDocumentFileInfo(const QString& sourceName, qint64 fileMtimeMs,
+                                     qint64 fileSize) {
+    QMutexLocker lock(&m_mutex);
+    for (auto& doc : m_docs) {
+        if (doc.name == sourceName) {
+            doc.fileMtimeMs = fileMtimeMs;
+            doc.fileSize = fileSize;
+            return;
+        }
+    }
+}
+
 int RagService::dropDocumentLocked(const QString& sourceName) {
     for (int i = 0; i < static_cast<int>(m_docs.size()); ++i) {
         if (m_docs[i].name == sourceName) {
@@ -459,6 +479,29 @@ QJsonArray RagService::documents() const {
         entry["chars"] = doc.chars;
         entry["pseudo"] = doc.retriever->usesPseudoEmbedding();
         entry["sourcePath"] = doc.sourcePath;
+        entry["contentHash"] = doc.contentHash;
+        entry["fileMtimeMs"] = doc.fileMtimeMs;
+        entry["fileSize"] = doc.fileSize;
+        // docs/51: three-state source status, computed on the fly (a stat
+        // per row — knowledge bases hold tens of documents at most):
+        //   "missing" — the recorded source file no longer exists;
+        //   "stale"   — file exists but mtime/size drifted from the
+        //               recorded snapshot (re-import will re-embed);
+        //   "synced"  — file matches the snapshot (or no source path:
+        //               empty sourcePath rows report "synced" and hide
+        //               the badge in the UI).
+        if (!doc.sourcePath.isEmpty()) {
+            QFileInfo info(doc.sourcePath);
+            if (!info.exists())
+                entry["sourceState"] = QStringLiteral("missing");
+            else if (info.lastModified().toMSecsSinceEpoch() != doc.fileMtimeMs
+                     || info.size() != doc.fileSize)
+                entry["sourceState"] = QStringLiteral("stale");
+            else
+                entry["sourceState"] = QStringLiteral("synced");
+        } else {
+            entry["sourceState"] = QStringLiteral("synced");
+        }
         out.append(entry);
     }
     return out;

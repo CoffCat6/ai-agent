@@ -198,11 +198,20 @@ public:
         QString contentHash;
         QString embeddingModel;
         QString sourcePath;
+        // docs/51: source-file snapshot used by the incremental sync (mtime+
+        // size fast path). 0 = unknown (no on-disk origin or legacy row).
+        qint64 fileMtimeMs{0};
+        qint64 fileSize{0};
     };
 
     void upsertKnowledgeDoc(const QString& name, const QString& content,
                             const QString& contentHash, const QString& embeddingModel,
-                            const QString& sourcePath = QString());
+                            const QString& sourcePath = QString(),
+                            qint64 fileMtimeMs = -1, qint64 fileSize = -1);
+    // docs/51: refresh ONLY the source-file snapshot (sync fast path — the
+    // content hash matched, so no re-embed is needed).
+    void setKnowledgeFileInfo(const QString& name, qint64 fileMtimeMs,
+                              qint64 fileSize);
     bool removeKnowledgeDoc(const QString& name);
     void clearKnowledgeDocs();
     QString loadKnowledgeDoc(const QString& name) const; // empty when unknown

@@ -259,6 +259,20 @@ Dialog {
                 Accessible.name: qsTr("从网页地址导入知识库")
             }
 
+            // docs/51: 增量同步——扫描所有带来源文件的文档（mtime+size 快
+            // 速路径），变化的重嵌、内容未变只刷新快照、源缺失标记由行内
+            // 状态徽章展示（不自动删除）。
+            AppButton {
+                objectName: "knowledgeSyncButton"
+                Layout.alignment: Qt.AlignVCenter
+                text: qsTr("同步源文件")
+                implicitHeight: 24
+                enabled: !AgentVM.knowledgeBusy && !AgentVM.urlImportRunning
+                opacity: enabled ? 1.0 : 0.4
+                onClicked: AgentVM.syncKnowledgeSources()
+                Accessible.name: qsTr("同步知识库源文件")
+            }
+
             IconButton {
                 objectName: "knowledgeCloseButton"
                 Layout.alignment: Qt.AlignVCenter
@@ -611,6 +625,44 @@ Dialog {
                                 // The dialog is wide, so the explanation is not
                                 // truncated the way it had to be in the sidebar.
                                 ToolTip.text: qsTr("导入时嵌入服务不可用，已使用本地降级嵌入，检索质量有限。可点击右侧刷新按钮重新嵌入。")
+                            }
+                        }
+
+                        // docs/51: source-file sync state (only where a
+                        // source path exists). "已同步" stays invisible —
+                        // it is the normal case and would be noise; "已变
+                        // 化" nudges the user toward the 同步按钮, "源缺失"
+                        // warns the recorded file is gone (never auto-deleted).
+                        Rectangle {
+                            Layout.preferredWidth: syncText.visible || missingText.visible
+                                                   ? syncText.implicitWidth + 10 : 0
+                            Layout.alignment: Qt.AlignVCenter
+                            implicitHeight: 15
+                            radius: 7
+                            visible: syncText.visible || missingText.visible
+                            color: missingText.visible
+                                ? Qt.rgba(Theme.statusDanger.r, Theme.statusDanger.g,
+                                          Theme.statusDanger.b, 0.15)
+                                : Qt.rgba(Theme.statusWarning.r, Theme.statusWarning.g,
+                                          Theme.statusWarning.b, 0.15)
+
+                            Text {
+                                id: syncText
+                                anchors.centerIn: parent
+                                visible: docRow.modelData.sourceState === "stale"
+                                text: qsTr("已变化")
+                                color: Theme.statusWarning
+                                font.pixelSize: Theme.fontSizeNano
+                                font.family: Theme.fontSans
+                            }
+                            Text {
+                                id: missingText
+                                anchors.centerIn: parent
+                                visible: docRow.modelData.sourceState === "missing"
+                                text: qsTr("源缺失")
+                                color: Theme.statusDanger
+                                font.pixelSize: Theme.fontSizeNano
+                                font.family: Theme.fontSans
                             }
                         }
 

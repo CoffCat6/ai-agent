@@ -10,6 +10,7 @@
 #include "viewmodels/PdfTextExtractor.h"
 
 #include <QFile>
+#include <QFileInfo>
 #include <QRegularExpression>
 #include <QTemporaryDir>
 #include <QFuture>
@@ -40,6 +41,9 @@ private slots:
     void searchReturnsScoredChunks();
     void removeDocument();
     void replaceSameName();
+    // docs/51: source-path lookup + file snapshot metadata + three-state
+    // source status in the documents() projection.
+    void documentPathLookupAndFileInfo();
     void emptyInputRejected();
     void toolOnEmptyBase();
     void toolReportsOfflineEmbedder();
@@ -149,6 +153,71 @@ void TestRag::replaceSameName() {
     rag.ingestDocument("doc2.txt", longDoc("two-again", 8));
     const QJsonArray docs = rag.documents();
     QCOMPARE(docs.size(), 1); // replaced, not duplicated
+}
+
+void TestRag::documentPathLookupAndFileInfo() {
+    RagService rag;
+    QVERIFY(rag.ingestDocument("doc.txt", longDoc("hello", 4), {},
+                               QStringLiteral("/tmp/nexus-doc.txt")) > 0);
+
+    // Path lookup keys on source_path, not the display name.
+    QCOMPARE(rag.documentNameByPath(QStringLiteral("/tmp/nexus-doc.txt")),
+             QStringLiteral("doc.txt"));
+    QVERIFY(rag.documentNameByPath(QStringLiteral("/tmp/other.txt")).isEmpty());
+    QVERIFY(rag.documentNameByPath(QString()).isEmpty());
+
+    // Unknown names are a no-op; known names record the snapshot and the
+    // documents() projection surfaces it.
+    rag.setDocumentFileInfo(QStringLiteral("nope.txt"), 123, 456);
+    rag.setDocumentFileInfo(QStringLiteral("doc.txt"), 1000, 42);
+    const QJsonArray docs = rag.documents();
+    QCOMPARE(docs.size(), 1);
+    const QJsonObject doc = docs.at(0).toObject();
+    QCOMPARE(doc.value("fileMtimeMs").toDouble(), 1000.0);
+    QCOMPARE(doc.value("fileSize").toDouble(), 42.0);
+    QVERIFY(!doc.value("contentHash").toString().isEmpty());
+
+    // Missing file → "missing"; existing-but-drifted → "stale"; matching
+    // snapshot → "synced". (Uses a real temp file for the stat.)
+    QTemporaryDir dir;
+    const QString path = dir.filePath(QStringLiteral("src.md"));
+    {
+        QFile f(path);
+        QVERIFY(f.open(QIODevice::WriteOnly));
+        f.write("knowledge body");
+    }
+    QVERIFY(rag.ingestDocument("src.md", "knowledge body", {}, path) > 0);
+    // The snapshot record is the VM layer's job (recordKnowledgeFileInfo);
+    // RagService only computes the three-state projection from it.
+    const QFileInfo srcInfo(path);
+    rag.setDocumentFileInfo("src.md",
+                            srcInfo.lastModified().toMSecsSinceEpoch(),
+                            srcInfo.size());
+    // The rag still holds earlier documents — locate by source path.
+    const auto byPath = [&rag](const QString& p) {
+        const QJsonArray docs = rag.documents();
+        for (const auto& d : docs)
+            if (d.toObject().value("sourcePath").toString() == p)
+                return d.toObject();
+        return QJsonObject();
+    };
+
+    const QJsonObject synced = byPath(path);
+    QCOMPARE(synced.value("sourceState").toString(), QStringLiteral("synced"));
+    QCOMPARE(QFileInfo(path).lastModified().toMSecsSinceEpoch(),
+             static_cast<qint64>(synced.value("fileMtimeMs").toDouble()));
+
+    {
+        QFile f(path);
+        QVERIFY(f.open(QIODevice::WriteOnly | QIODevice::Append));
+        f.write(" plus more");
+    }
+    const QJsonObject stale = byPath(path);
+    QCOMPARE(stale.value("sourceState").toString(), QStringLiteral("stale"));
+
+    QVERIFY(QFile::remove(path));
+    const QJsonObject missing = byPath(path);
+    QCOMPARE(missing.value("sourceState").toString(), QStringLiteral("missing"));
 }
 
 void TestRag::emptyInputRejected() {

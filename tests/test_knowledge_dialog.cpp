@@ -213,6 +213,13 @@ private slots:
                            QStringLiteral("knowledgeImportButton"), &importBtn);
         QCOMPARE(importBtn.size(), 1);
         QVERIFY(importBtn.first()->isVisible());
+
+        // docs/51: the incremental sync button sits beside it.
+        QList<QQuickItem*> syncBtn;
+        collectVisualItems(window->contentItem(),
+                           QStringLiteral("knowledgeSyncButton"), &syncBtn);
+        QCOMPARE(syncBtn.size(), 1);
+        QVERIFY(syncBtn.first()->isVisible());
     }
 
     // sourcePath rides the document data: an import with a recorded path

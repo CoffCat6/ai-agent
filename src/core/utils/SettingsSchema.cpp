@@ -205,6 +205,14 @@ const QVector<PreferenceMeta>& SettingsSchema::preferences() {
         preference(QStringLiteral("notice.enabled"), QStringLiteral("general"),
                    QT_TRANSLATE_NOOP("NexusAI", "系统通知"), true,
                    PreferenceType::Bool),
+        // docs/51: knowledge ↔ source-file incremental sync. The watcher
+        // variant (auto re-embed on file change) can be turned off — the
+        // mtime+size fast path means unchanged files cost nothing, but the
+        // embed itself is provider-billed on the OpenAI-compatible backend.
+        preference(QStringLiteral("knowledge.autoSyncSourceFiles"),
+                   QStringLiteral("general"),
+                   QT_TRANSLATE_NOOP("NexusAI", "源文件变化时自动同步知识库"), true,
+                   PreferenceType::Bool),
         // docs/50 §8：定时任务（H4）唯一的设置键——单次运行的墙钟上限。
         // 调度器触发时现读（main.cpp 注入的 provider），改值即生效。
         preference(QStringLiteral("schedule.maxRunMinutes"), QStringLiteral("general"),
