@@ -460,7 +460,8 @@ ChatSessionController* AgentViewModel::ensureTab() {
                 emit sessionListChanged();
             }
             emit taskFinished(title,
-                controller->state() == AgentState::Completed);
+                controller->state() == AgentState::Completed,
+                finishedSession);
         }
         m_prevBusy[controller] = busy;
         if (controller == active()) emit stateChanged();

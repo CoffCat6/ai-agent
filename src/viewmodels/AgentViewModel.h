@@ -911,7 +911,8 @@ signals:
     // docs/20 §4.1（D10）：某个 tab 的任务从 Busy 变为非 Busy 时发射（携带
     // 会话标题与结果状态）。**任意 tab** 都发（不是仅活动 tab）——切走窗口
     // 后后台长任务完成时，托盘通知靠它。UI 不消费；main.cpp 联动托盘。
-    void taskFinished(const QString& sessionTitle, bool success);
+    void taskFinished(const QString& sessionTitle, bool success,
+                      const QString& sessionId);
     // docs/31 S4.1 N9：任意 tab 的用量达到配额的提醒阈值（未超限）。
     // 已在门面层按 (日期, quotaType) 去重——多标签不会重复弹同一条通知。
     // UI 不消费；main.cpp 联动托盘气泡（notice.enabled 门控）。

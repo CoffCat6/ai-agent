@@ -32,6 +32,8 @@
 #include "core/memory/SqliteMemory.h"
 #include "core/agent/EpisodicService.h"
 #include "core/tools/ToolRegistry.h"
+// docs/20 §4.2 二期：单实例 IPC（锁失败分支唤起已有实例）。
+#include "core/utils/InstanceIpc.h"
 #include "core/tools/Sandbox.h"
 #include "core/tools/NetworkFetchTool.h"
 #include "core/tools/WebSearchTool.h"
@@ -251,10 +253,17 @@ int main(int argc, char *argv[])
     // 检测（进程存在性）自动清掉。作用域必须在 main 内——QLockFile 在
     // 析构时释放锁，做成局部变量可保证退出即释放。
     QLockFile instanceLock(QDir::temp().absoluteFilePath(
-        QStringLiteral("NexusAI.instance.lock")));
+        QString::fromLatin1(NexusAI::InstanceIpc::kName)
+        + QStringLiteral(".lock")));
     if (!instanceLock.tryLock(100)) {
-        // 已有实例在跑：静默退出（二期可通过 QLocalServer 唤起已有实例）。
-        qInfo() << "Another NexusAI instance is already running; exiting.";
+        // 已有实例在跑：尝试通过本地 socket 唤起它的主窗（docs/20 §4.2
+        // 二期），然后静默退出。唤起失败（旧版本实例没有 IPC 监听）也
+        // 直接退出——绝不双起，双写风险（SQLite 锁冲突/双托盘）不变。
+        if (NexusAI::InstanceIpc::notifyRunningInstance(
+                QLatin1String(NexusAI::InstanceIpc::kName)))
+            qInfo() << "Another instance is running; raised its window.";
+        else
+            qInfo() << "Another instance is running but did not answer; exiting.";
         return 0;
     }
 
@@ -1123,6 +1132,22 @@ qInfo() << "NexusAI" << app.applicationVersion() << "starting";
     if (!mainWindow)
         return -1;
 
+    // docs/20 §4.2 二期：单实例 IPC 监听。锁已经保证了主实例身份，这里
+    // 只是给第二个实例一个唤起入口（前置主窗，与托盘"显示/隐藏"同动作）。
+    // 唤起回调捕获裸指针是安全的：server 随 main 作用域析构，先于 engine
+    // 拆除窗口。监听失败（socket 文件异常等）不阻断启动，只记日志——
+    // 单实例锁仍然有效，损失的只是"二次启动唤起"这个便利。
+    NexusAI::InstanceIpc instanceIpc;
+    if (!instanceIpc.startServer(QLatin1String(NexusAI::InstanceIpc::kName),
+                                 [mainWindow]() {
+            mainWindow->show();
+            mainWindow->raise();
+            mainWindow->requestActivate();
+        })) {
+        qWarning() << "Instance IPC listen failed;"
+                      " second-instance raise is disabled";
+    }
+
 #ifdef Q_OS_WIN
     // A4 拖拽附件：从 VSCode 终端 / 管理员启动时，UIPI 会静默丢弃来自
     // 中等完整性 Explorer 的 OLE 拖放握手消息，导致光标一直 🚫。这里把
@@ -1267,20 +1292,39 @@ qInfo() << "NexusAI" << app.applicationVersion() << "starting";
     // 仅当窗口**可见且激活**（用户正在看）时才静默——最小化（minimized 时
     // isVisible() 仍为 true）与藏进托盘都要通知，否则切走窗口就收不到。
     // 「系统通知」开关（prefs/v1/notice.enabled，默认开）关闭后一律不打扰。
+    // 通知携带的 sessionId 记在 lastNotifiedSession：气泡被点击时（下一条
+    // connect）跳回刚完成的会话——定时任务的结果通知尤其需要这一跳。
+    const auto lastNotifiedSession = std::make_shared<QString>();
     QObject::connect(agentVM, &AgentViewModel::taskFinished, &app,
-        [mainWindow, tray, prefStore](const QString& sessionTitle, bool success) {
+        [mainWindow, tray, prefStore,
+         lastNotifiedSession](const QString& sessionTitle, bool success,
+                              const QString& sessionId) {
             if (!prefStore->load(QStringLiteral("notice.enabled")).toBool()) return;
             if (mainWindow->isVisible() && mainWindow->isActive()) return;
             const bool closeToTray = prefStore->load(
                 QStringLiteral("window.closeToTray")).toBool();
             if (!closeToTray && !QSystemTrayIcon::isSystemTrayAvailable())
                 return;
+            *lastNotifiedSession = sessionId;
             tray->showMessage(
                 success ? QObject::tr("任务完成") : QObject::tr("任务结束"),
                 sessionTitle.isEmpty() ? QObject::tr("会话已回复")
                                        : sessionTitle,
                 success ? QSystemTrayIcon::Information
                         : QSystemTrayIcon::Warning, 6000);
+        });
+
+    // 通知气泡点击 → 唤起主窗并打开刚通知的会话。配额气泡（未记
+    // sessionId）点击只唤起主窗。messageClicked 在 Linux 走通知守护
+    // 进程的点击回调（Plasma/GNOME 支持点击）；守护进程不支持时点击
+    // 无效，托盘单击/菜单仍是兜底召回路径。
+    QObject::connect(tray, &QSystemTrayIcon::messageClicked, &app,
+        [mainWindow, agentVM, lastNotifiedSession]() {
+            mainWindow->show();
+            mainWindow->raise();
+            mainWindow->requestActivate();
+            if (!lastNotifiedSession->isEmpty())
+                agentVM->openConversation(*lastNotifiedSession);
         });
 
     // docs/31 S4.1 N9：用量达到配额阈值（未超限）时弹一次托盘气泡。

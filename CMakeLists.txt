@@ -70,6 +70,9 @@ add_library(nexus_core STATIC
     # docs/37 W5-2a：Skill 创建/编辑/删除（QSaveFile + .bak + canonical 边界）。
     src/core/skills/SkillEditorService.h
     src/core/skills/SkillEditorService.cpp
+    # docs/20 §4.2 二期：单实例 IPC（第二个实例唤起已有实例的主窗）。
+    src/core/utils/InstanceIpc.h
+    src/core/utils/InstanceIpc.cpp
     src/core/tools/ITool.h
     src/core/tools/ToolRegistry.h
     src/core/tools/ToolRegistry.cpp

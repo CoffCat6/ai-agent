@@ -383,8 +383,13 @@ if (!instanceLock.tryLock(100)) { qInfo() << "..."; return 0; }   // 静默退�
 - 崩溃残留由 QLockFile 的陈旧锁检测（进程存在性）自动清掉；
 - 实测：第一个实例跑起来后启动第二个，进程数保持 1，第二个实例不做任何
   副作用（不写日志/不碰 DB/不开托盘）。
-- 二期可选：第二个实例通过本地 socket 唤起已有实例（`QLocalServer`），本期
-  仅静默退出（量级 S 不膨胀）。
+- ~~二期可选：第二个实例通过本地 socket 唤起已有实例（`QLocalServer`），本期
+  仅静默退出（量级 S 不膨胀）。~~ **已实施（2026-11-14）**：`core/utils/
+  InstanceIpc`（QLocalServer/Socket 行文本协议，动词 "show"）——第二实例
+  发唤起请求后退出，主实例前置主窗（与托盘"显示/隐藏"同动作）；锁名与
+  socket 名同源（`kName`）；启动残留 socket 文件由 `startServer` 的
+  removeServer 清理。测试 `test_instance_ipc`（两端闭环/无监听/陈旧 socket
+  三用例）。
 
 ### 4.3 开机自启（修 D8，量级 S）
 

@@ -341,6 +341,9 @@ nexus_add_test(test_sampling_params test_sampling_params.cpp)
 
 # Batch 30 (F6): multimodal data-URL parsing (pure string helpers)
 nexus_add_test(test_data_url_utils test_data_url_utils.cpp)
+
+# docs/20 §4.2 二期: 单实例 IPC（第二实例唤起已有实例的两端闭环）
+nexus_add_test(test_instance_ipc test_instance_ipc.cpp)
 nexus_add_test(test_attachment_classifier test_attachment_classifier.cpp)
 
 # docs/49 阶段 2: Linux 应急打开链的 .desktop 纯函数（Exec 字段代码展开、
