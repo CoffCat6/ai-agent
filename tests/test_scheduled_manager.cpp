@@ -185,6 +185,7 @@ private slots:
     void unattendedRejectsConfirmTool();
     void timeoutSealsRun();
     void profileMissingFailsReadable();
+    void modelOverrideReachesConfigurator();
     // ── 并发与手动 ──
     void busyGateSkipsScheduleFiresAndBlocksRunNow();
     void runNowFiresWithoutConsumingSchedule();
@@ -368,6 +369,57 @@ void TestScheduledManager::profileMissingFailsReadable() {
              qPrintable(run.value(QStringLiteral("error")).toString()));
     QVERIFY(run.value(QStringLiteral("sessionId")).toString().isEmpty());
     QVERIFY(m_agents.isEmpty());   // 失败路径不建 agent
+}
+
+void TestScheduledManager::modelOverrideReachesConfigurator() {
+    // docs/50 增量（任务级模型覆盖）：task.model 非空时，执行前把 resolver
+    // 返回 profile 的 model 覆盖为存档值——「任务锁定具体模型」的执行端
+    // 契约；空 = 跟随配置当前模型（Settings 改模型后任务下次运行即跟随）。
+    QVariantMap configured;
+    m_mgr->setModelConfigurator([this, &configured](AIAgent* agent,
+                                                    const QVariantMap& profile) {
+        configured = profile;
+        agent->setLLMService(m_serviceForNext);
+        agent->setContextLimit(8192);
+    });
+    m_mgr->setProfileResolver([](const QString&) {
+        return QVariantMap{{QStringLiteral("id"), QStringLiteral("p1")},
+                           {QStringLiteral("model"), QStringLiteral("m-default")}};
+    });
+
+    QVariantMap task = taskFixture(QStringLiteral("t"),
+                                   T(10, 9, 0).toMSecsSinceEpoch());
+    task.insert(QStringLiteral("model"), QStringLiteral("m-override"));
+    const QString id = upsert(task);
+
+    m_llm.script.append(textResponse(QStringLiteral("ok")));
+    m_now = T(11, 9, 0, 30);   // 宽限窗内
+    m_mgr->tick();
+
+    QCOMPARE(latestRunStatus(*m_mem, id), QStringLiteral("success"));
+    QCOMPARE(configured.value(QStringLiteral("model")).toString(),
+             QStringLiteral("m-override"));
+
+    // 空 model：跟随 profile 的当前模型，不发生覆盖。t2 到期错开到
+    // 09:05——同一 tick 内到期会背靠背连续执行（t 同步完成后闸已释放），
+    // 那会让 t2 撞上还没来得及 append 的空 script。
+    QVariantMap follow = taskFixture(QStringLiteral("t2"),
+                                     T(10, 9, 0).toMSecsSinceEpoch());
+    follow.insert(QStringLiteral("scheduleValue"),
+                  QStringLiteral(R"({"kind":"daily","time":"09:05"})"));
+    const QString id2 = upsert(follow);
+    m_llm.script.append(textResponse(QStringLiteral("ok")));
+    m_now = T(11, 9, 5, 30);   // t2 到期 +30s，宽限窗内
+    m_mgr->tick();
+
+    const QVariantMap run2 = m_mem->listScheduledTaskRuns(id2).value(0).toMap();
+    QVERIFY2(run2.value(QStringLiteral("status")).toString()
+                 == QStringLiteral("success"),
+             qPrintable(QStringLiteral("t2 status=%1 error=%2")
+                            .arg(run2.value(QStringLiteral("status")).toString(),
+                                 run2.value(QStringLiteral("error")).toString())));
+    QCOMPARE(configured.value(QStringLiteral("model")).toString(),
+             QStringLiteral("m-default"));
 }
 
 // ── 并发与手动 ────────────────────────────────────────────

@@ -7613,32 +7613,32 @@ Add a SKILL.md under the project&apos;s .nexusai/skills or the user skills direc
         <translation>Model profile has been deleted or is unavailable (%1)</translation>
     </message>
     <message>
-        <location filename="../src/core/schedule/ScheduledTasksManager.cpp" line="271"/>
+        <location filename="../src/core/schedule/ScheduledTasksManager.cpp" line="278"/>
         <source>调度器未装配执行环境</source>
         <translation>Scheduler has no execution environment wired</translation>
     </message>
     <message>
-        <location filename="../src/core/schedule/ScheduledTasksManager.cpp" line="277"/>
+        <location filename="../src/core/schedule/ScheduledTasksManager.cpp" line="284"/>
         <source>创建执行环境失败</source>
         <translation>Failed to create the execution environment</translation>
     </message>
     <message>
-        <location filename="../src/core/schedule/ScheduledTasksManager.cpp" line="310"/>
+        <location filename="../src/core/schedule/ScheduledTasksManager.cpp" line="317"/>
         <source>运行超过上限，已强制封口</source>
         <translation>Run exceeded the time limit and was sealed</translation>
     </message>
     <message>
-        <location filename="../src/core/schedule/ScheduledTasksManager.cpp" line="315"/>
+        <location filename="../src/core/schedule/ScheduledTasksManager.cpp" line="322"/>
         <source>执行环境异常退出</source>
         <translation>Execution environment exited unexpectedly</translation>
     </message>
     <message>
-        <location filename="../src/core/schedule/ScheduledTasksManager.cpp" line="320"/>
+        <location filename="../src/core/schedule/ScheduledTasksManager.cpp" line="327"/>
         <source>任务启动失败（模型未就绪或配额已满）</source>
         <translation>Task failed to start (model not ready or quota exhausted)</translation>
     </message>
     <message>
-        <location filename="../src/core/schedule/ScheduledTasksManager.cpp" line="380"/>
+        <location filename="../src/core/schedule/ScheduledTasksManager.cpp" line="387"/>
         <source>应用退出，任务已停止</source>
         <translation>Application exited; task stopped</translation>
     </message>
@@ -9518,208 +9518,223 @@ select a file to view its content diff on the right.</translation>
 <context>
     <name>ScheduledTaskEditorDialog</name>
     <message>
-        <location filename="../src/ui/components/ScheduledTaskEditorDialog.qml" line="32"/>
-        <location filename="../src/ui/components/ScheduledTaskEditorDialog.qml" line="51"/>
+        <location filename="../src/ui/components/ScheduledTaskEditorDialog.qml" line="35"/>
+        <location filename="../src/ui/components/ScheduledTaskEditorDialog.qml" line="64"/>
         <source>新建定时任务</source>
         <translation>New scheduled task</translation>
     </message>
     <message>
-        <location filename="../src/ui/components/ScheduledTaskEditorDialog.qml" line="51"/>
+        <location filename="../src/ui/components/ScheduledTaskEditorDialog.qml" line="64"/>
         <source>编辑定时任务</source>
         <translation>Edit scheduled task</translation>
     </message>
     <message>
-        <location filename="../src/ui/components/ScheduledTaskEditorDialog.qml" line="67"/>
+        <location filename="../src/ui/components/ScheduledTaskEditorDialog.qml" line="97"/>
+        <source>跟随配置</source>
+        <translation>Follow profile</translation>
+    </message>
+    <message>
+        <location filename="../src/ui/components/ScheduledTaskEditorDialog.qml" line="127"/>
         <source>变更确认</source>
         <translation>Confirm changes</translation>
     </message>
     <message>
-        <location filename="../src/ui/components/ScheduledTaskEditorDialog.qml" line="68"/>
+        <location filename="../src/ui/components/ScheduledTaskEditorDialog.qml" line="128"/>
         <source>自动编辑</source>
         <translation>Auto edit</translation>
     </message>
     <message>
-        <location filename="../src/ui/components/ScheduledTaskEditorDialog.qml" line="69"/>
+        <location filename="../src/ui/components/ScheduledTaskEditorDialog.qml" line="129"/>
         <source>完全访问</source>
         <translation>Full access</translation>
     </message>
     <message>
-        <location filename="../src/ui/components/ScheduledTaskEditorDialog.qml" line="70"/>
+        <location filename="../src/ui/components/ScheduledTaskEditorDialog.qml" line="130"/>
         <source>只读（计划）</source>
         <translation>Read-only (plan)</translation>
     </message>
     <message>
-        <location filename="../src/ui/components/ScheduledTaskEditorDialog.qml" line="75"/>
+        <location filename="../src/ui/components/ScheduledTaskEditorDialog.qml" line="135"/>
         <source>请填写任务名称</source>
         <translation>Enter a task name</translation>
     </message>
     <message>
-        <location filename="../src/ui/components/ScheduledTaskEditorDialog.qml" line="77"/>
+        <location filename="../src/ui/components/ScheduledTaskEditorDialog.qml" line="137"/>
         <source>请填写提示词</source>
         <translation>Enter a prompt</translation>
     </message>
     <message>
-        <location filename="../src/ui/components/ScheduledTaskEditorDialog.qml" line="89"/>
+        <location filename="../src/ui/components/ScheduledTaskEditorDialog.qml" line="149"/>
         <source>请填写有效的触发时间（HH:mm）</source>
         <translation>Enter a valid trigger time (HH:mm)</translation>
     </message>
     <message>
-        <location filename="../src/ui/components/ScheduledTaskEditorDialog.qml" line="99"/>
         <source>请先在设置中配置模型</source>
-        <translation>Configure a model profile in Settings first</translation>
+        <translation type="vanished">Configure a model profile in Settings first</translation>
     </message>
     <message>
-        <location filename="../src/ui/components/ScheduledTaskEditorDialog.qml" line="157"/>
         <location filename="../src/ui/components/ScheduledTaskEditorDialog.qml" line="159"/>
+        <source>请选择模型配置</source>
+        <translation>Select a model profile</translation>
+    </message>
+    <message>
+        <location filename="../src/ui/components/ScheduledTaskEditorDialog.qml" line="219"/>
+        <location filename="../src/ui/components/ScheduledTaskEditorDialog.qml" line="221"/>
         <source>关闭</source>
         <translation>Close</translation>
     </message>
     <message>
-        <location filename="../src/ui/components/ScheduledTaskEditorDialog.qml" line="175"/>
+        <location filename="../src/ui/components/ScheduledTaskEditorDialog.qml" line="237"/>
         <source>名称</source>
         <translation>Name</translation>
     </message>
     <message>
-        <location filename="../src/ui/components/ScheduledTaskEditorDialog.qml" line="184"/>
+        <location filename="../src/ui/components/ScheduledTaskEditorDialog.qml" line="246"/>
         <source>如：每日要闻总结</source>
         <translation>e.g. Daily news digest</translation>
     </message>
     <message>
-        <location filename="../src/ui/components/ScheduledTaskEditorDialog.qml" line="185"/>
+        <location filename="../src/ui/components/ScheduledTaskEditorDialog.qml" line="247"/>
         <source>任务名称</source>
         <translation>Task name</translation>
     </message>
     <message>
-        <location filename="../src/ui/components/ScheduledTaskEditorDialog.qml" line="193"/>
+        <location filename="../src/ui/components/ScheduledTaskEditorDialog.qml" line="255"/>
         <source>提示词（到点以此新建会话执行）</source>
         <translation>Prompt (a new session runs this when due)</translation>
     </message>
     <message>
-        <location filename="../src/ui/components/ScheduledTaskEditorDialog.qml" line="205"/>
+        <location filename="../src/ui/components/ScheduledTaskEditorDialog.qml" line="267"/>
         <source>模型将收到的完整指令</source>
         <translation>The full instruction the model receives</translation>
     </message>
     <message>
-        <location filename="../src/ui/components/ScheduledTaskEditorDialog.qml" line="206"/>
+        <location filename="../src/ui/components/ScheduledTaskEditorDialog.qml" line="268"/>
         <source>提示词</source>
         <translation>Prompt</translation>
     </message>
     <message>
-        <location filename="../src/ui/components/ScheduledTaskEditorDialog.qml" line="215"/>
-        <location filename="../src/ui/components/ScheduledTaskEditorDialog.qml" line="226"/>
+        <location filename="../src/ui/components/ScheduledTaskEditorDialog.qml" line="277"/>
+        <location filename="../src/ui/components/ScheduledTaskEditorDialog.qml" line="288"/>
         <source>模型配置</source>
         <translation>Model profile</translation>
     </message>
     <message>
-        <location filename="../src/ui/components/ScheduledTaskEditorDialog.qml" line="234"/>
+        <location filename="../src/ui/components/ScheduledTaskEditorDialog.qml" line="301"/>
+        <location filename="../src/ui/components/ScheduledTaskEditorDialog.qml" line="312"/>
+        <source>执行模型</source>
+        <translation>Model to run</translation>
+    </message>
+    <message>
+        <location filename="../src/ui/components/ScheduledTaskEditorDialog.qml" line="320"/>
         <source>调度</source>
         <translation>Schedule</translation>
     </message>
     <message>
-        <location filename="../src/ui/components/ScheduledTaskEditorDialog.qml" line="246"/>
+        <location filename="../src/ui/components/ScheduledTaskEditorDialog.qml" line="332"/>
         <source>每天</source>
         <translation>Daily</translation>
     </message>
     <message>
-        <location filename="../src/ui/components/ScheduledTaskEditorDialog.qml" line="246"/>
+        <location filename="../src/ui/components/ScheduledTaskEditorDialog.qml" line="332"/>
         <source>每周</source>
         <translation>Weekly</translation>
     </message>
     <message>
-        <location filename="../src/ui/components/ScheduledTaskEditorDialog.qml" line="246"/>
+        <location filename="../src/ui/components/ScheduledTaskEditorDialog.qml" line="332"/>
         <source>每 N 小时</source>
         <translation>Every N hours</translation>
     </message>
     <message>
-        <location filename="../src/ui/components/ScheduledTaskEditorDialog.qml" line="247"/>
+        <location filename="../src/ui/components/ScheduledTaskEditorDialog.qml" line="333"/>
         <source>调度形态</source>
         <translation>Schedule type</translation>
     </message>
     <message>
-        <location filename="../src/ui/components/ScheduledTaskEditorDialog.qml" line="256"/>
+        <location filename="../src/ui/components/ScheduledTaskEditorDialog.qml" line="342"/>
         <source>触发时间</source>
         <translation>Trigger time</translation>
     </message>
     <message>
-        <location filename="../src/ui/components/ScheduledTaskEditorDialog.qml" line="261"/>
+        <location filename="../src/ui/components/ScheduledTaskEditorDialog.qml" line="347"/>
         <source>周一</source>
         <translation>Mon</translation>
     </message>
     <message>
-        <location filename="../src/ui/components/ScheduledTaskEditorDialog.qml" line="261"/>
+        <location filename="../src/ui/components/ScheduledTaskEditorDialog.qml" line="347"/>
         <source>周二</source>
         <translation>Tue</translation>
     </message>
     <message>
-        <location filename="../src/ui/components/ScheduledTaskEditorDialog.qml" line="261"/>
+        <location filename="../src/ui/components/ScheduledTaskEditorDialog.qml" line="347"/>
         <source>周三</source>
         <translation>Wed</translation>
     </message>
     <message>
-        <location filename="../src/ui/components/ScheduledTaskEditorDialog.qml" line="261"/>
+        <location filename="../src/ui/components/ScheduledTaskEditorDialog.qml" line="347"/>
         <source>周四</source>
         <translation>Thu</translation>
     </message>
     <message>
-        <location filename="../src/ui/components/ScheduledTaskEditorDialog.qml" line="262"/>
+        <location filename="../src/ui/components/ScheduledTaskEditorDialog.qml" line="348"/>
         <source>周五</source>
         <translation>Fri</translation>
     </message>
     <message>
-        <location filename="../src/ui/components/ScheduledTaskEditorDialog.qml" line="262"/>
+        <location filename="../src/ui/components/ScheduledTaskEditorDialog.qml" line="348"/>
         <source>周六</source>
         <translation>Sat</translation>
     </message>
     <message>
-        <location filename="../src/ui/components/ScheduledTaskEditorDialog.qml" line="262"/>
+        <location filename="../src/ui/components/ScheduledTaskEditorDialog.qml" line="348"/>
         <source>周日</source>
         <translation>Sun</translation>
     </message>
     <message>
-        <location filename="../src/ui/components/ScheduledTaskEditorDialog.qml" line="264"/>
+        <location filename="../src/ui/components/ScheduledTaskEditorDialog.qml" line="350"/>
         <source>星期</source>
         <translation>Weekday</translation>
     </message>
     <message>
-        <location filename="../src/ui/components/ScheduledTaskEditorDialog.qml" line="271"/>
+        <location filename="../src/ui/components/ScheduledTaskEditorDialog.qml" line="357"/>
         <source>间隔小时数</source>
         <translation>Interval hours</translation>
     </message>
     <message>
-        <location filename="../src/ui/components/ScheduledTaskEditorDialog.qml" line="274"/>
+        <location filename="../src/ui/components/ScheduledTaskEditorDialog.qml" line="360"/>
         <source>小时</source>
         <translation>hours</translation>
     </message>
     <message>
-        <location filename="../src/ui/components/ScheduledTaskEditorDialog.qml" line="288"/>
-        <location filename="../src/ui/components/ScheduledTaskEditorDialog.qml" line="302"/>
+        <location filename="../src/ui/components/ScheduledTaskEditorDialog.qml" line="374"/>
+        <location filename="../src/ui/components/ScheduledTaskEditorDialog.qml" line="388"/>
         <source>权限档</source>
         <translation>Permission mode</translation>
     </message>
     <message>
-        <location filename="../src/ui/components/ScheduledTaskEditorDialog.qml" line="308"/>
+        <location filename="../src/ui/components/ScheduledTaskEditorDialog.qml" line="394"/>
         <source>无人值守运行：需要确认的工具会被自动拒绝，不会挂起等待；建议配合较小墙钟上限。</source>
         <translation>Unattended run: tools requiring confirmation are rejected automatically instead of waiting; keep the time limit small.</translation>
     </message>
     <message>
-        <location filename="../src/ui/components/ScheduledTaskEditorDialog.qml" line="320"/>
-        <location filename="../src/ui/components/ScheduledTaskEditorDialog.qml" line="329"/>
+        <location filename="../src/ui/components/ScheduledTaskEditorDialog.qml" line="406"/>
+        <location filename="../src/ui/components/ScheduledTaskEditorDialog.qml" line="415"/>
         <source>完成时系统通知</source>
         <translation>Notify on completion</translation>
     </message>
     <message>
-        <location filename="../src/ui/components/ScheduledTaskEditorDialog.qml" line="359"/>
-        <location filename="../src/ui/components/ScheduledTaskEditorDialog.qml" line="362"/>
+        <location filename="../src/ui/components/ScheduledTaskEditorDialog.qml" line="445"/>
+        <location filename="../src/ui/components/ScheduledTaskEditorDialog.qml" line="448"/>
         <source>取消</source>
         <translation>Cancel</translation>
     </message>
     <message>
-        <location filename="../src/ui/components/ScheduledTaskEditorDialog.qml" line="366"/>
+        <location filename="../src/ui/components/ScheduledTaskEditorDialog.qml" line="452"/>
         <source>保存</source>
         <translation>Save</translation>
     </message>
     <message>
-        <location filename="../src/ui/components/ScheduledTaskEditorDialog.qml" line="370"/>
+        <location filename="../src/ui/components/ScheduledTaskEditorDialog.qml" line="456"/>
         <source>保存定时任务</source>
         <translation>Save scheduled task</translation>
     </message>
@@ -9762,151 +9777,151 @@ select a file to view its content diff on the right.</translation>
         <translation>Skipped (busy)</translation>
     </message>
     <message>
-        <location filename="../src/ui/components/ScheduledTasksDialog.qml" line="65"/>
+        <location filename="../src/ui/components/ScheduledTasksDialog.qml" line="78"/>
         <source>%1 秒</source>
         <translation>%1s</translation>
     </message>
     <message>
-        <location filename="../src/ui/components/ScheduledTasksDialog.qml" line="66"/>
+        <location filename="../src/ui/components/ScheduledTasksDialog.qml" line="79"/>
         <source>%1 分钟</source>
         <translation>%1 min</translation>
     </message>
     <message>
-        <location filename="../src/ui/components/ScheduledTasksDialog.qml" line="94"/>
+        <location filename="../src/ui/components/ScheduledTasksDialog.qml" line="107"/>
         <source>定时任务「%1」完成</source>
         <translation>Scheduled task &quot;%1&quot; finished</translation>
     </message>
     <message>
-        <location filename="../src/ui/components/ScheduledTasksDialog.qml" line="95"/>
+        <location filename="../src/ui/components/ScheduledTasksDialog.qml" line="108"/>
         <source>定时任务「%1」失败</source>
         <translation>Scheduled task &quot;%1&quot; failed</translation>
     </message>
     <message>
-        <location filename="../src/ui/components/ScheduledTasksDialog.qml" line="122"/>
+        <location filename="../src/ui/components/ScheduledTasksDialog.qml" line="135"/>
         <source>定时任务</source>
         <translation>Scheduled tasks</translation>
     </message>
     <message>
-        <location filename="../src/ui/components/ScheduledTasksDialog.qml" line="130"/>
+        <location filename="../src/ui/components/ScheduledTasksDialog.qml" line="143"/>
         <source>新建任务</source>
         <translation>New task</translation>
     </message>
     <message>
-        <location filename="../src/ui/components/ScheduledTasksDialog.qml" line="134"/>
-        <location filename="../src/ui/components/ScheduledTasksDialog.qml" line="419"/>
+        <location filename="../src/ui/components/ScheduledTasksDialog.qml" line="147"/>
+        <location filename="../src/ui/components/ScheduledTasksDialog.qml" line="434"/>
         <source>新建定时任务</source>
         <translation>New scheduled task</translation>
     </message>
     <message>
-        <location filename="../src/ui/components/ScheduledTasksDialog.qml" line="141"/>
-        <location filename="../src/ui/components/ScheduledTasksDialog.qml" line="143"/>
+        <location filename="../src/ui/components/ScheduledTasksDialog.qml" line="154"/>
+        <location filename="../src/ui/components/ScheduledTasksDialog.qml" line="156"/>
         <source>关闭</source>
         <translation>Close</translation>
     </message>
     <message>
-        <location filename="../src/ui/components/ScheduledTasksDialog.qml" line="149"/>
+        <location filename="../src/ui/components/ScheduledTasksDialog.qml" line="162"/>
         <source>仅在应用运行期间触发；错过的周期不补跑，会记录在执行历史里。</source>
         <translation>Tasks fire only while the application is running; missed periods are not re-run and are recorded in the run history.</translation>
     </message>
     <message>
-        <location filename="../src/ui/components/ScheduledTasksDialog.qml" line="204"/>
+        <location filename="../src/ui/components/ScheduledTasksDialog.qml" line="217"/>
         <source>停用任务 %1</source>
         <translation>Disable task %1</translation>
     </message>
     <message>
-        <location filename="../src/ui/components/ScheduledTasksDialog.qml" line="205"/>
+        <location filename="../src/ui/components/ScheduledTasksDialog.qml" line="218"/>
         <source>启用任务 %1</source>
         <translation>Enable task %1</translation>
     </message>
     <message>
-        <location filename="../src/ui/components/ScheduledTasksDialog.qml" line="232"/>
+        <location filename="../src/ui/components/ScheduledTasksDialog.qml" line="247"/>
         <source>下次 %1</source>
         <translation>Next %1</translation>
     </message>
     <message>
-        <location filename="../src/ui/components/ScheduledTasksDialog.qml" line="234"/>
+        <location filename="../src/ui/components/ScheduledTasksDialog.qml" line="249"/>
         <source>已停用</source>
         <translation>Disabled</translation>
     </message>
     <message>
-        <location filename="../src/ui/components/ScheduledTasksDialog.qml" line="245"/>
+        <location filename="../src/ui/components/ScheduledTasksDialog.qml" line="260"/>
         <source>立即运行</source>
         <translation>Run now</translation>
     </message>
     <message>
-        <location filename="../src/ui/components/ScheduledTasksDialog.qml" line="248"/>
+        <location filename="../src/ui/components/ScheduledTasksDialog.qml" line="263"/>
         <source>已有任务在运行，请稍后再试</source>
         <translation>Another task is running; try again later</translation>
     </message>
     <message>
-        <location filename="../src/ui/components/ScheduledTasksDialog.qml" line="250"/>
+        <location filename="../src/ui/components/ScheduledTasksDialog.qml" line="265"/>
         <source>立即运行 %1</source>
         <translation>Run %1 now</translation>
     </message>
     <message>
-        <location filename="../src/ui/components/ScheduledTasksDialog.qml" line="257"/>
+        <location filename="../src/ui/components/ScheduledTasksDialog.qml" line="272"/>
         <source>编辑</source>
         <translation>Edit</translation>
     </message>
     <message>
-        <location filename="../src/ui/components/ScheduledTasksDialog.qml" line="259"/>
+        <location filename="../src/ui/components/ScheduledTasksDialog.qml" line="274"/>
         <source>编辑 %1</source>
         <translation>Edit %1</translation>
     </message>
     <message>
-        <location filename="../src/ui/components/ScheduledTasksDialog.qml" line="267"/>
-        <location filename="../src/ui/components/ScheduledTasksDialog.qml" line="484"/>
+        <location filename="../src/ui/components/ScheduledTasksDialog.qml" line="282"/>
+        <location filename="../src/ui/components/ScheduledTasksDialog.qml" line="499"/>
         <source>删除</source>
         <translation>Delete</translation>
     </message>
     <message>
-        <location filename="../src/ui/components/ScheduledTasksDialog.qml" line="276"/>
+        <location filename="../src/ui/components/ScheduledTasksDialog.qml" line="291"/>
         <source>删除 %1</source>
         <translation>Delete %1</translation>
     </message>
     <message>
-        <location filename="../src/ui/components/ScheduledTasksDialog.qml" line="338"/>
+        <location filename="../src/ui/components/ScheduledTasksDialog.qml" line="353"/>
         <source>手动</source>
         <translation>Manual</translation>
     </message>
     <message>
-        <location filename="../src/ui/components/ScheduledTasksDialog.qml" line="338"/>
+        <location filename="../src/ui/components/ScheduledTasksDialog.qml" line="353"/>
         <source>计划</source>
         <translation>Scheduled</translation>
     </message>
     <message>
-        <location filename="../src/ui/components/ScheduledTasksDialog.qml" line="363"/>
-        <location filename="../src/ui/components/ScheduledTasksDialog.qml" line="370"/>
+        <location filename="../src/ui/components/ScheduledTasksDialog.qml" line="378"/>
+        <location filename="../src/ui/components/ScheduledTasksDialog.qml" line="385"/>
         <source>打开会话</source>
         <translation>Open conversation</translation>
     </message>
     <message>
-        <location filename="../src/ui/components/ScheduledTasksDialog.qml" line="400"/>
+        <location filename="../src/ui/components/ScheduledTasksDialog.qml" line="415"/>
         <source>还没有定时任务</source>
         <translation>No scheduled tasks yet</translation>
     </message>
     <message>
-        <location filename="../src/ui/components/ScheduledTasksDialog.qml" line="407"/>
+        <location filename="../src/ui/components/ScheduledTasksDialog.qml" line="422"/>
         <source>创建一个任务，让模型每天、每周或每隔几小时自动跑一次提示词。</source>
         <translation>Create a task to run a prompt automatically every day, week, or few hours.</translation>
     </message>
     <message>
-        <location filename="../src/ui/components/ScheduledTasksDialog.qml" line="415"/>
+        <location filename="../src/ui/components/ScheduledTasksDialog.qml" line="430"/>
         <source>新建第一个定时任务</source>
         <translation>Create your first task</translation>
     </message>
     <message>
-        <location filename="../src/ui/components/ScheduledTasksDialog.qml" line="457"/>
+        <location filename="../src/ui/components/ScheduledTasksDialog.qml" line="472"/>
         <source>删除定时任务「%1」？</source>
         <translation>Delete scheduled task &quot;%1&quot;?</translation>
     </message>
     <message>
-        <location filename="../src/ui/components/ScheduledTasksDialog.qml" line="466"/>
+        <location filename="../src/ui/components/ScheduledTasksDialog.qml" line="481"/>
         <source>该任务的执行历史会一并删除，已产生的会话保留。</source>
         <translation>The task&apos;s run history is deleted with it; sessions it produced are kept.</translation>
     </message>
     <message>
-        <location filename="../src/ui/components/ScheduledTasksDialog.qml" line="478"/>
+        <location filename="../src/ui/components/ScheduledTasksDialog.qml" line="493"/>
         <source>取消</source>
         <translation>Cancel</translation>
     </message>
@@ -12288,7 +12303,7 @@ select a file to view its content diff on the right.</translation>
         <translation>Yesterday</translation>
     </message>
     <message>
-        <location filename="../src/core/memory/SqliteMemory.cpp" line="1819"/>
+        <location filename="../src/core/memory/SqliteMemory.cpp" line="1834"/>
         <source>消息库超过 %1 条：少于 3 个字符的关键词只能全表扫描，请输入至少 3 个字符以使用全文索引。</source>
         <translation>The message store exceeds %1 rows: keywords shorter than 3 characters fall back to a full table scan. Enter at least 3 characters to use the full-text index.</translation>
     </message>
@@ -12964,23 +12979,23 @@ select a file to view its content diff on the right.</translation>
         <translation>$%1/req</translation>
     </message>
     <message>
-        <location filename="../src/ui/components/TopBar.qml" line="736"/>
-        <location filename="../src/ui/components/TopBar.qml" line="883"/>
+        <location filename="../src/ui/components/TopBar.qml" line="756"/>
+        <location filename="../src/ui/components/TopBar.qml" line="903"/>
         <source>系统提示词</source>
         <translation>System Prompt</translation>
     </message>
     <message>
-        <location filename="../src/ui/components/TopBar.qml" line="744"/>
+        <location filename="../src/ui/components/TopBar.qml" line="764"/>
         <source>工具定义</source>
         <translation>Tool Definitions</translation>
     </message>
     <message>
-        <location filename="../src/ui/components/TopBar.qml" line="884"/>
+        <location filename="../src/ui/components/TopBar.qml" line="904"/>
         <source>对话</source>
         <translation>Conversation</translation>
     </message>
     <message>
-        <location filename="../src/ui/components/TopBar.qml" line="748"/>
+        <location filename="../src/ui/components/TopBar.qml" line="768"/>
         <source>工具结果</source>
         <translation>Tool Results</translation>
     </message>
@@ -12989,18 +13004,18 @@ select a file to view its content diff on the right.</translation>
         <translation type="vanished">Session total · %1 tokens · hit rate %2%</translation>
     </message>
     <message>
-        <location filename="../src/ui/components/TopBar.qml" line="867"/>
+        <location filename="../src/ui/components/TopBar.qml" line="887"/>
         <source>输入（未命中）</source>
         <translation>Input (cache miss)</translation>
     </message>
     <message>
-        <location filename="../src/ui/components/TopBar.qml" line="869"/>
+        <location filename="../src/ui/components/TopBar.qml" line="889"/>
         <source>输出</source>
         <translation>Output</translation>
     </message>
     <message>
-        <location filename="../src/ui/components/TopBar.qml" line="737"/>
-        <location filename="../src/ui/components/TopBar.qml" line="887"/>
+        <location filename="../src/ui/components/TopBar.qml" line="757"/>
+        <location filename="../src/ui/components/TopBar.qml" line="907"/>
         <source>技能</source>
         <translation>Skills</translation>
     </message>
@@ -13025,217 +13040,217 @@ select a file to view its content diff on the right.</translation>
         <translation>（含原地截断）</translation>
     </message>
     <message>
-        <location filename="../src/ui/components/TopBar.qml" line="733"/>
+        <location filename="../src/ui/components/TopBar.qml" line="753"/>
         <source>指令</source>
         <translation>指令</translation>
     </message>
     <message>
-        <location filename="../src/ui/components/TopBar.qml" line="734"/>
+        <location filename="../src/ui/components/TopBar.qml" line="754"/>
         <source>工具</source>
         <translation>Tools</translation>
     </message>
     <message>
-        <location filename="../src/ui/components/TopBar.qml" line="735"/>
+        <location filename="../src/ui/components/TopBar.qml" line="755"/>
         <source>素材与会话</source>
         <translation>素材与会话</translation>
     </message>
     <message>
-        <location filename="../src/ui/components/TopBar.qml" line="738"/>
+        <location filename="../src/ui/components/TopBar.qml" line="758"/>
         <source>记忆</source>
         <translation>记忆</translation>
     </message>
     <message>
-        <location filename="../src/ui/components/TopBar.qml" line="739"/>
+        <location filename="../src/ui/components/TopBar.qml" line="759"/>
         <source>历史摘要</source>
         <translation>历史摘要</translation>
     </message>
     <message>
-        <location filename="../src/ui/components/TopBar.qml" line="740"/>
+        <location filename="../src/ui/components/TopBar.qml" line="760"/>
         <source>知识库命中</source>
         <translation>知识库命中</translation>
     </message>
     <message>
-        <location filename="../src/ui/components/TopBar.qml" line="741"/>
+        <location filename="../src/ui/components/TopBar.qml" line="761"/>
         <source>项目规则</source>
         <translation>Project rules</translation>
     </message>
     <message>
-        <location filename="../src/ui/components/TopBar.qml" line="742"/>
+        <location filename="../src/ui/components/TopBar.qml" line="762"/>
         <source>运行状态</source>
         <translation>运行状态</translation>
     </message>
     <message>
-        <location filename="../src/ui/components/TopBar.qml" line="743"/>
+        <location filename="../src/ui/components/TopBar.qml" line="763"/>
         <source>压缩标记</source>
         <translation>压缩标记</translation>
     </message>
     <message>
-        <location filename="../src/ui/components/TopBar.qml" line="745"/>
+        <location filename="../src/ui/components/TopBar.qml" line="765"/>
         <source>内置工具</source>
         <translation>Built-in tools</translation>
     </message>
     <message>
-        <location filename="../src/ui/components/TopBar.qml" line="746"/>
+        <location filename="../src/ui/components/TopBar.qml" line="766"/>
         <source>MCP 工具</source>
         <translation>MCP tools</translation>
     </message>
     <message>
-        <location filename="../src/ui/components/TopBar.qml" line="749"/>
+        <location filename="../src/ui/components/TopBar.qml" line="769"/>
         <source>文件读取</source>
         <translation>文件读取</translation>
     </message>
     <message>
-        <location filename="../src/ui/components/TopBar.qml" line="750"/>
+        <location filename="../src/ui/components/TopBar.qml" line="770"/>
         <source>命令执行</source>
         <translation>命令执行</translation>
     </message>
     <message>
-        <location filename="../src/ui/components/TopBar.qml" line="751"/>
+        <location filename="../src/ui/components/TopBar.qml" line="771"/>
         <source>检索/网络</source>
         <translation>检索/网络</translation>
     </message>
     <message>
-        <location filename="../src/ui/components/TopBar.qml" line="752"/>
+        <location filename="../src/ui/components/TopBar.qml" line="772"/>
         <source>Git 查询</source>
         <translation>Git 查询</translation>
     </message>
     <message>
-        <location filename="../src/ui/components/TopBar.qml" line="753"/>
+        <location filename="../src/ui/components/TopBar.qml" line="773"/>
         <source>子代理报告</source>
         <translation>子代理报告</translation>
     </message>
     <message>
-        <location filename="../src/ui/components/TopBar.qml" line="754"/>
+        <location filename="../src/ui/components/TopBar.qml" line="774"/>
         <source>知识库</source>
         <translation>Knowledge Base</translation>
     </message>
     <message>
-        <location filename="../src/ui/components/TopBar.qml" line="755"/>
+        <location filename="../src/ui/components/TopBar.qml" line="775"/>
         <source>MCP 结果</source>
         <translation>MCP 结果</translation>
     </message>
     <message>
-        <location filename="../src/ui/components/TopBar.qml" line="756"/>
+        <location filename="../src/ui/components/TopBar.qml" line="776"/>
         <source>其他工具</source>
         <translation>其他工具</translation>
     </message>
     <message>
-        <location filename="../src/ui/components/TopBar.qml" line="757"/>
+        <location filename="../src/ui/components/TopBar.qml" line="777"/>
         <source>文件附件</source>
         <translation>文件附件</translation>
     </message>
     <message>
-        <location filename="../src/ui/components/TopBar.qml" line="759"/>
+        <location filename="../src/ui/components/TopBar.qml" line="779"/>
         <source>会话内容</source>
         <translation>会话内容</translation>
     </message>
     <message>
-        <location filename="../src/ui/components/TopBar.qml" line="760"/>
+        <location filename="../src/ui/components/TopBar.qml" line="780"/>
         <source>用户</source>
         <translation>User</translation>
     </message>
     <message>
-        <location filename="../src/ui/components/TopBar.qml" line="761"/>
+        <location filename="../src/ui/components/TopBar.qml" line="781"/>
         <source>助手</source>
         <translation>Assistant</translation>
     </message>
     <message>
-        <location filename="../src/ui/components/TopBar.qml" line="855"/>
+        <location filename="../src/ui/components/TopBar.qml" line="875"/>
         <source>会话累计 · %1 · 命中率 %2%</source>
         <translation>Session total · %1 · hit rate %2%</translation>
     </message>
     <message>
-        <location filename="../src/ui/components/TopBar.qml" line="952"/>
+        <location filename="../src/ui/components/TopBar.qml" line="972"/>
         <source>上下文构成 · %1 / %2 · %3%</source>
         <translation>Context · %1 / %2 · %3%</translation>
     </message>
     <message>
-        <location filename="../src/ui/components/TopBar.qml" line="957"/>
+        <location filename="../src/ui/components/TopBar.qml" line="977"/>
         <source>上下文构成 · %1</source>
         <translation>Context · %1</translation>
     </message>
     <message>
-        <location filename="../src/ui/components/TopBar.qml" line="973"/>
+        <location filename="../src/ui/components/TopBar.qml" line="993"/>
         <source>已按实测校准 ×%1</source>
         <translation>已按实测校准 ×%1</translation>
     </message>
     <message>
-        <location filename="../src/ui/components/TopBar.qml" line="1073"/>
+        <location filename="../src/ui/components/TopBar.qml" line="1093"/>
         <source>剩余可用</source>
         <translation>Free</translation>
     </message>
     <message>
-        <location filename="../src/ui/components/TopBar.qml" line="1134"/>
+        <location filename="../src/ui/components/TopBar.qml" line="1154"/>
         <source>本会话累计 %1 次请求 · ¥%2</source>
         <translation>Session total: %1 requests · $%2</translation>
     </message>
     <message>
-        <location filename="../src/ui/components/TopBar.qml" line="1137"/>
+        <location filename="../src/ui/components/TopBar.qml" line="1157"/>
         <source>本会话累计 %1 次请求</source>
         <translation>Session total: %1 requests</translation>
     </message>
     <message>
-        <location filename="../src/ui/components/TopBar.qml" line="1203"/>
+        <location filename="../src/ui/components/TopBar.qml" line="1223"/>
         <source>任务清单（%1 项未完成）</source>
         <translation>Task list (%1 unfinished)</translation>
     </message>
     <message>
-        <location filename="../src/ui/components/TopBar.qml" line="1204"/>
+        <location filename="../src/ui/components/TopBar.qml" line="1224"/>
         <source>任务清单（全部完成）</source>
         <translation>Task list (all done)</translation>
     </message>
     <message>
-        <location filename="../src/ui/components/TopBar.qml" line="1206"/>
+        <location filename="../src/ui/components/TopBar.qml" line="1226"/>
         <source>打开任务清单，%1 项未完成</source>
         <translation>Open the task list, %1 unfinished</translation>
     </message>
     <message>
-        <location filename="../src/ui/components/TopBar.qml" line="1207"/>
+        <location filename="../src/ui/components/TopBar.qml" line="1227"/>
         <source>打开任务清单，全部完成</source>
         <translation>Open task list, all done</translation>
     </message>
     <message>
-        <location filename="../src/ui/components/TopBar.qml" line="1252"/>
+        <location filename="../src/ui/components/TopBar.qml" line="1272"/>
         <source>后台子代理（%1 个进行中）</source>
         <translation>Background sub-agents (%1 active)</translation>
     </message>
     <message>
-        <location filename="../src/ui/components/TopBar.qml" line="1253"/>
+        <location filename="../src/ui/components/TopBar.qml" line="1273"/>
         <source>后台子代理面板</source>
         <translation>Background sub-agents</translation>
     </message>
     <message>
-        <location filename="../src/ui/components/TopBar.qml" line="1255"/>
+        <location filename="../src/ui/components/TopBar.qml" line="1275"/>
         <source>打开后台子代理面板，%1 个进行中</source>
         <translation>Open the background sub-agents panel, %1 active</translation>
     </message>
     <message>
-        <location filename="../src/ui/components/TopBar.qml" line="1256"/>
+        <location filename="../src/ui/components/TopBar.qml" line="1276"/>
         <source>打开后台子代理面板</source>
         <translation>Open the background sub-agents panel</translation>
     </message>
     <message>
-        <location filename="../src/ui/components/TopBar.qml" line="1307"/>
+        <location filename="../src/ui/components/TopBar.qml" line="1327"/>
         <source>审阅本次会话的文件改动（%1 个文件待查看）</source>
         <translation>Review this session&apos;s file changes (%1 files to look at)</translation>
     </message>
     <message>
-        <location filename="../src/ui/components/TopBar.qml" line="1308"/>
+        <location filename="../src/ui/components/TopBar.qml" line="1328"/>
         <source>审阅本次会话的文件改动 (Ctrl+R)</source>
         <translation>Review this session&apos;s file changes (Ctrl+R)</translation>
     </message>
     <message>
-        <location filename="../src/ui/components/TopBar.qml" line="1310"/>
+        <location filename="../src/ui/components/TopBar.qml" line="1330"/>
         <source>打开文件改动审阅，%1 个文件待查看</source>
         <translation>Open the file-change review, %1 files to look at</translation>
     </message>
     <message>
-        <location filename="../src/ui/components/TopBar.qml" line="1356"/>
+        <location filename="../src/ui/components/TopBar.qml" line="1376"/>
         <source>收起右侧面板 (Ctrl+])</source>
         <translation>Collapse right panel (Ctrl+])</translation>
     </message>
     <message>
-        <location filename="../src/ui/components/TopBar.qml" line="1356"/>
+        <location filename="../src/ui/components/TopBar.qml" line="1376"/>
         <source>展开右侧面板 (Ctrl+])</source>
         <translation>Expand right panel (Ctrl+])</translation>
     </message>
@@ -13252,13 +13267,13 @@ select a file to view its content diff on the right.</translation>
         <translation type="vanished">Review this session&apos;s file changes (Ctrl+R)</translation>
     </message>
     <message>
-        <location filename="../src/ui/components/TopBar.qml" line="1311"/>
+        <location filename="../src/ui/components/TopBar.qml" line="1331"/>
         <source>打开文件改动审阅</source>
         <translation>Open the file change review</translation>
     </message>
     <message>
-        <location filename="../src/ui/components/TopBar.qml" line="747"/>
-        <location filename="../src/ui/components/TopBar.qml" line="885"/>
+        <location filename="../src/ui/components/TopBar.qml" line="767"/>
+        <location filename="../src/ui/components/TopBar.qml" line="905"/>
         <source>工具调用</source>
         <translation>Tool Calls</translation>
     </message>
@@ -13277,7 +13292,7 @@ select a file to view its content diff on the right.</translation>
         <translation type="vanished">Start from a session template</translation>
     </message>
     <message>
-        <location filename="../src/ui/components/TopBar.qml" line="886"/>
+        <location filename="../src/ui/components/TopBar.qml" line="906"/>
         <source>MCP</source>
         <translation>MCP</translation>
     </message>
@@ -13286,18 +13301,18 @@ select a file to view its content diff on the right.</translation>
         <translation type="vanished">Skill</translation>
     </message>
     <message>
-        <location filename="../src/ui/components/TopBar.qml" line="758"/>
-        <location filename="../src/ui/components/TopBar.qml" line="888"/>
+        <location filename="../src/ui/components/TopBar.qml" line="778"/>
+        <location filename="../src/ui/components/TopBar.qml" line="908"/>
         <source>图片</source>
         <translation>Images</translation>
     </message>
     <message>
-        <location filename="../src/ui/components/TopBar.qml" line="889"/>
+        <location filename="../src/ui/components/TopBar.qml" line="909"/>
         <source>其他</source>
         <translation>Other</translation>
     </message>
     <message>
-        <location filename="../src/ui/components/TopBar.qml" line="938"/>
+        <location filename="../src/ui/components/TopBar.qml" line="958"/>
         <source>暂无数据</source>
         <translation>No data yet</translation>
     </message>
@@ -13314,7 +13329,7 @@ select a file to view its content diff on the right.</translation>
         <translation type="vanished">Output %1</translation>
     </message>
     <message>
-        <location filename="../src/ui/components/TopBar.qml" line="868"/>
+        <location filename="../src/ui/components/TopBar.qml" line="888"/>
         <source>缓存命中</source>
         <translation>Cache Hit</translation>
     </message>
@@ -13331,12 +13346,12 @@ select a file to view its content diff on the right.</translation>
         <translation type="vanished">Expand Context Panel (Ctrl+B)</translation>
     </message>
     <message>
-        <location filename="../src/ui/components/TopBar.qml" line="1165"/>
+        <location filename="../src/ui/components/TopBar.qml" line="1185"/>
         <source>折叠思考与工具调用过程（%1 项）</source>
         <translation>Collapse thinking and tool-call process (%1)</translation>
     </message>
     <message>
-        <location filename="../src/ui/components/TopBar.qml" line="1166"/>
+        <location filename="../src/ui/components/TopBar.qml" line="1186"/>
         <source>显示思考与工具调用过程（%1 项）</source>
         <translation>Show thinking and tool-call process (%1)</translation>
     </message>

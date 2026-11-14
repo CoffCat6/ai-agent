@@ -686,12 +686,27 @@ void SqliteMemory::createTables() {
             notify INTEGER NOT NULL DEFAULT 1,
             last_fired_at INTEGER NOT NULL DEFAULT 0,
             created_at INTEGER NOT NULL,
-            updated_at INTEGER NOT NULL
+            updated_at INTEGER NOT NULL,
+            model TEXT NOT NULL DEFAULT ''
         )
     )", "create scheduled_tasks table");
     execDdl(query, "CREATE INDEX IF NOT EXISTS idx_scheduled_tasks_enabled "
                    "ON scheduled_tasks(enabled)",
             "create scheduled_tasks index");
+    // docs/50 增量：任务级模型覆盖（空 = 跟随 profile 当前模型）。老库
+    // probe-and-add 补列；注意 scheduledTaskRow 按位置索引取值，新列一律
+    // 追加在**列尾**（新库 CREATE 与老库 ALTER 保持同序）。
+    {
+        QSqlQuery tcols(m_db);
+        QStringList taskColumns;
+        if (tcols.exec("PRAGMA table_info(scheduled_tasks)"))
+            while (tcols.next())
+                taskColumns.append(tcols.value(1).toString());
+        if (!taskColumns.contains(QStringLiteral("model")))
+            execDdl(query, "ALTER TABLE scheduled_tasks ADD COLUMN "
+                           "model TEXT NOT NULL DEFAULT ''",
+                    "add scheduled_tasks.model column");
+    }
 
     // run 历史：每任务保留最近 kMaxScheduledTaskRuns 条（插入时清理），
     // 删任务级联删除。trigger_source 是 SQL 关键字 TRIGGER 的避让命名。
@@ -2536,6 +2551,7 @@ QVariantMap scheduledTaskRow(QSqlQuery& q) {
         {"lastFiredAt",    q.value(10).toLongLong()},
         {"createdAt",      q.value(11).toLongLong()},
         {"updatedAt",      q.value(12).toLongLong()},
+        {"model",          q.value(13).toString()},
     };
 }
 
@@ -2573,8 +2589,8 @@ QVariantMap SqliteMemory::upsertScheduledTask(const QVariantMap& task) {
     q.prepare("INSERT INTO scheduled_tasks "
               "(id, name, prompt, profile_id, profile_name, schedule_kind, "
               " schedule_value, permission_mode, enabled, notify, "
-              " last_fired_at, created_at, updated_at) "
-              "VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?) "
+              " last_fired_at, created_at, updated_at, model) "
+              "VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?) "
               "ON CONFLICT(id) DO UPDATE SET "
               "name = excluded.name, prompt = excluded.prompt, "
               "profile_id = excluded.profile_id, "
@@ -2583,7 +2599,7 @@ QVariantMap SqliteMemory::upsertScheduledTask(const QVariantMap& task) {
               "schedule_value = excluded.schedule_value, "
               "permission_mode = excluded.permission_mode, "
               "enabled = excluded.enabled, notify = excluded.notify, "
-              "updated_at = excluded.updated_at");
+              "updated_at = excluded.updated_at, model = excluded.model");
     q.addBindValue(id);
     q.addBindValue(nonNullText(task.value(QStringLiteral("name")).toString()));
     q.addBindValue(nonNullText(task.value(QStringLiteral("prompt")).toString()));
@@ -2598,6 +2614,7 @@ QVariantMap SqliteMemory::upsertScheduledTask(const QVariantMap& task) {
     q.addBindValue(task.value(QStringLiteral("lastFiredAt"), 0).toLongLong());
     q.addBindValue(now);
     q.addBindValue(now);
+    q.addBindValue(nonNullText(task.value(QStringLiteral("model")).toString()));
     if (!q.exec()) {
         qWarning() << "Failed to upsert scheduled task:" << q.lastError().text();
         return {};
@@ -2607,7 +2624,7 @@ QVariantMap SqliteMemory::upsertScheduledTask(const QVariantMap& task) {
     QSqlQuery read(m_db);
     read.prepare("SELECT id, name, prompt, profile_id, profile_name, "
                  "schedule_kind, schedule_value, permission_mode, enabled, "
-                 "notify, last_fired_at, created_at, updated_at "
+                 "notify, last_fired_at, created_at, updated_at, model "
                  "FROM scheduled_tasks WHERE id = ?");
     read.addBindValue(id);
     if (!read.exec() || !read.next()) {
@@ -2641,7 +2658,7 @@ QVariantList SqliteMemory::listScheduledTasks() {
     QSqlQuery q(m_db);
     if (!q.exec("SELECT id, name, prompt, profile_id, profile_name, "
                 "schedule_kind, schedule_value, permission_mode, enabled, "
-                "notify, last_fired_at, created_at, updated_at "
+                "notify, last_fired_at, created_at, updated_at, model "
                 "FROM scheduled_tasks ORDER BY created_at ASC, id ASC")) {
         qWarning() << "Failed to list scheduled tasks:" << q.lastError().text();
         return out;

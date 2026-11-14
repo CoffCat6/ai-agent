@@ -19,12 +19,15 @@ Dialog {
     // tasksChanged 刷新把字段绑定冲掉。
     property var editTask: null
     // Settings.profiles 的轻投影（label + id），ComboBox 的 textRole 需要
-    // 对象数组而非 QVariantMap 列表。
+    // 对象数组而非 QVariantMap 列表。显示名键是 displayName（与
+    // ModelSelector 同口径）——profile map 上没有 "name" 这个键，取它永远
+    // 回退 id，下拉里就成了一串 UUID。
     property var profileOptions: {
         const out = []
         const list = Settings.profiles || []
         for (let i = 0; i < list.length; ++i)
-            out.push({label: String(list[i].name || list[i].id), profileId: String(list[i].id)})
+            out.push({label: String(list[i].displayName || list[i].provider || list[i].id),
+                      profileId: String(list[i].id)})
         return out
     }
     property string errorText: ""
@@ -47,6 +50,16 @@ Dialog {
         permCombo.currentIndex = permIndexFor(String(
             editTask ? editTask.permissionMode || "plan_only" : "plan_only"))
         notifySwitch.checked = editTask ? editTask.notify !== false : true
+        // 回填模型选择：编辑时按任务的 profileId 匹配，新建时选中活动配
+        // 置。找不到（原配置已删除/一个配置都没有）置 -1 留空，由 save 的
+        // 空检查拦截——不能静默落在第一项，那会把任务悄悄换绑到别的模型。
+        profileCombo.currentIndex = profileIndexFor(String(
+            editTask ? editTask.profileId || "" : Settings.activeProfileId || ""))
+        // 模型回填须在 profile 回填之后：候选列表跟随 profile，切换时
+        // onCurrentIndexChanged 会先重置为「跟随配置」，这里再覆盖为
+        // 任务存档值（新建任务 model 为空 → 正好落回「跟随配置」）。
+        modelCombo.currentIndex = modelValueIndex(String(
+            editTask ? editTask.model || "" : ""))
         errorText = ""
         dialogTitle = editTask ? qsTr("编辑定时任务") : qsTr("新建定时任务")
         open()
@@ -60,6 +73,53 @@ Dialog {
         for (let i = 0; i < permOptions.length; ++i)
             if (permOptions[i].value === mode) return i
         return 3   // plan_only
+    }
+
+    function profileIndexFor(id) {
+        for (let i = 0; i < profileOptions.length; ++i)
+            if (profileOptions[i].profileId === id) return i
+        return -1
+    }
+
+    // 当前选中配置的原 map（models 列表 / model 当前值都在上面）。
+    function profileById(id) {
+        const list = Settings.profiles || []
+        for (let i = 0; i < list.length; ++i)
+            if (String(list[i].id) === String(id)) return list[i]
+        return null
+    }
+
+    // ── 执行模型下拉（docs/50 增量：任务级模型覆盖）──────────────
+    // 候选 = 「跟随配置」首项 + 所选 profile 的模型（models 列表，当前
+    // model 排最前；编辑中的任务自带 model 也保证入列）。value 为空串
+    // 表示跟随配置当前模型——配置页改模型后任务下次运行即跟随。
+    readonly property var modelOptions: {
+        const out = [{label: qsTr("跟随配置"), value: ""}]
+        const opt = profileCombo.currentIndex >= 0
+            ? (profileOptions[profileCombo.currentIndex] || null) : null
+        const p = opt ? profileById(opt.profileId) : null
+        if (!p) return out
+        const seen = {}
+        const push = function(m) {
+            m = String(m || "")
+            if (!m || seen[m]) return
+            seen[m] = true
+            out.push({label: m, value: m})
+        }
+        push(p.model)
+        const original = editTask && opt
+            && String(editTask.profileId || "") === String(opt.profileId)
+            ? String(editTask.model || "") : ""
+        push(original)
+        const list = p.models || []
+        for (let i = 0; i < list.length; ++i) push(list[i])
+        return out
+    }
+
+    function modelValueIndex(value) {
+        for (let i = 0; i < modelOptions.length; ++i)
+            if (modelOptions[i].value === value) return i
+        return 0   // 跟随配置
     }
 
     // 与 PermissionMode 的四档文案同源（docs/26 G1 措辞）。
@@ -96,15 +156,17 @@ Dialog {
 
         const profile = profileOptions[profileCombo.currentIndex] || {profileId: "", label: ""}
         if (!profile.profileId) {
-            errorText = qsTr("请先在设置中配置模型")
+            errorText = qsTr("请选择模型配置")
             return
         }
+        const modelOpt = modelOptions[modelCombo.currentIndex] || {value: ""}
 
         const map = {
             name: name,
             prompt: prompt,
             profileId: profile.profileId,
             profileName: profile.label,
+            model: modelOpt.value,
             scheduleKind: kind,
             scheduleValue: JSON.stringify(scheduleValue),
             permissionMode: permOptions[permCombo.currentIndex].value,
@@ -224,6 +286,30 @@ Dialog {
                     model: editor.profileOptions
                     textRole: "label"
                     Accessible.name: qsTr("模型配置")
+                    // 用户手动换配置后原模型选择多半不属于新配置的候选，
+                    // 重置为「跟随配置」。onActivated 只在用户交互时发出，
+                    // openFor 的程序化回填（currentIndex 赋值）不会触发，
+                    // 也避开初始化期引用尚未创建的 modelCombo。
+                    onActivated: modelCombo.currentIndex = 0
+                }
+            }
+
+            ColumnLayout {
+                Layout.fillWidth: true
+                spacing: 4
+                Text {
+                    text: qsTr("执行模型")
+                    color: Theme.textSecondary
+                    font.pixelSize: Theme.fontSizeMicro
+                    font.family: Theme.fontSans
+                }
+                ComboBox {
+                    id: modelCombo
+                    objectName: "scheduleTaskModelCombo"
+                    Layout.fillWidth: true
+                    model: editor.modelOptions
+                    textRole: "label"
+                    Accessible.name: qsTr("执行模型")
                 }
             }
 

@@ -57,6 +57,19 @@ Dialog {
         return Qt.formatDateTime(new Date(Number(ms)), "MM-dd HH:mm")
     }
 
+    // 任务行显示的模型名：profileId 是权威键，显示名实时从 Settings.profiles
+    // 解析——存档的 profileName 在配置改名后会过期，旧任务存档的甚至是一串
+    // id（编辑器取错键的历史数据）。解析不到（配置已删除）再回退存档值，
+    // 最后回退 id。
+    function profileDisplay(task) {
+        const id = String(task.profileId || "")
+        const list = Settings.profiles || []
+        for (let i = 0; i < list.length; ++i)
+            if (String(list[i].id) === id)
+                return String(list[i].displayName || list[i].provider || id)
+        return String(task.profileName || id)
+    }
+
     function formatDuration(run) {
         const start = Number(run.startedAt || 0)
         const end = Number(run.finishedAt || 0)
@@ -114,7 +127,7 @@ Dialog {
 
                 AppIcon {
                     Layout.alignment: Qt.AlignVCenter
-                    icon: "clock"
+                    icon: "alarm-clock"
                     size: 16
                     iconColor: Theme.textSecondary
                 }
@@ -218,7 +231,9 @@ Dialog {
                             }
                             Text {
                                 text: ScheduleManager.describeTask(modelData)
-                                      + " · " + String(modelData.profileName || "")
+                                      + " · " + profileDisplay(modelData)
+                                      + (String(modelData.model || "")
+                                         ? " · " + String(modelData.model) : "")
                                 color: Theme.textTertiary
                                 font.pixelSize: Theme.fontSizeMicro
                                 font.family: Theme.fontSans
@@ -391,7 +406,7 @@ Dialog {
                 spacing: 10
                 AppIcon {
                     Layout.alignment: Qt.AlignHCenter
-                    icon: "clock"
+                    icon: "alarm-clock"
                     size: 28
                     iconColor: Theme.textTertiary
                 }

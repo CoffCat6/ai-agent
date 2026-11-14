@@ -384,6 +384,16 @@ Canvas {
             circle(c, 12, 12, 8.2)
             polyline(c, [12, 7.2, 12, 12, 15.8, 13.8])
         },
+        "alarm-clock": function(c) {
+            // 闹钟（Feather "alarm-clock"）：定时任务入口（docs/50）。双铃锤
+            // + 底脚与普通时钟（history）明确区分，「定时」语义一眼可辨。
+            circle(c, 12, 13, 7.6)
+            polyline(c, [12, 9.5, 12, 13, 14.3, 14.8])
+            line(c, 5, 3, 2.6, 5.4)
+            line(c, 19, 3, 21.4, 5.4)
+            line(c, 6.6, 19, 4.6, 21)
+            line(c, 17.4, 19, 19.4, 21)
+        },
         "blame": function(c) {
             // 行号槽 + 三行代码：逐行归属（blame）入口。
             line(c, 5.2, 5.5, 5.2, 18.5)

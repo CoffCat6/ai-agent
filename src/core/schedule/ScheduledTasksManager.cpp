@@ -266,6 +266,13 @@ void ScheduledTasksManager::fireTask(const QVariantMap& task,
         return;
     }
 
+    // 任务级模型覆盖（docs/50 增量）：task.model 非空时以此模型执行——在
+    // resolver 返回的副本上覆盖，Settings 原数据不受影响；空 = 跟随配置
+    // 当前模型（配置页改模型后，任务下次运行即跟随）。
+    const QString modelOverride = task.value(QStringLiteral("model")).toString();
+    if (!modelOverride.isEmpty())
+        profile.insert(QStringLiteral("model"), modelOverride);
+
     if (!m_agentFactory || !m_modelConfigurator) {
         finishActiveRun(QStringLiteral("failed"), QString(),
                         tr("调度器未装配执行环境"), QString());

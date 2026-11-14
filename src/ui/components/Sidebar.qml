@@ -1844,9 +1844,11 @@ Rectangle {
                 }
 
                 // docs/50 P3: scheduled tasks entry (global, like log/audit).
+                // 图标用 alarm-clock：原名 "clock" 从未在 painters 注册过，
+                // 一直回退显示三条横线的兜底 menu 图标。
                 IconButton {
                     objectName: "scheduledTasksButton"
-                    icon: "clock"
+                    icon: "alarm-clock"
                     iconSize: 17
                     tooltip: qsTr("定时任务")
                     onClicked: root.scheduledTasksRequested()

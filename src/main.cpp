@@ -1214,25 +1214,34 @@ qInfo() << "NexusAI" << app.applicationVersion() << "starting";
         agentVM->newChat();
     });
     // 退出：先停全部 busy tab（沿用"关 tab 停任务"封口语义），再退出。
+    // 托盘菜单与 lastWindowClosed（见下）共用同一条退出链。
     // 不能在这里直接 delete menu——quitAction 正是它的子动作，信号还没发
     // 完就销毁宿主对象会在返回时用已释放的 QAction。解除绑定后交给
     // deleteLater。
-    QObject::connect(quitAction, &QAction::triggered, &app,
-                     [&app, agentVM, tray, trayMenu]() {
+    const auto quitFromTray = [&app, agentVM, tray, trayMenu]() {
         tray->hide();
         tray->setContextMenu(nullptr);
         trayMenu->deleteLater();
         agentVM->stopAllTabs();
         QCoreApplication::quit();
-    });
+    };
+    QObject::connect(quitAction, &QAction::triggered, &app, quitFromTray);
 
     tray->setContextMenu(trayMenu);
     tray->show();
 
-    // 双击托盘 = 显示/隐藏主窗（系统托盘的惯用交互）。
+    // 单击/双击托盘 = 显示/隐藏主窗（系统托盘的惯用交互）。曾经只认
+    // DoubleClick——Linux 的 StatusNotifierItem 左键只发 Trigger，结果
+    // 点击托盘毫无反应，藏进托盘后找不到任何召回入口。
+    //
+    // 这里只响应 Trigger、显式忽略 DoubleClick：Windows 上双击会连发
+    // Trigger + DoubleClick，两个分支都 toggle 会互相抵消（窗口闪一下
+    // 回到原状态）；Linux 的 SNI 没有双击概念（连点就是多次 Trigger），
+    // 同理只在 Trigger 上做 toggle。closeToTray（hide 分支）不产生 close
+    // 事件，所以这里的 hide 不会牵动下面的退出链。
     QObject::connect(tray, &QSystemTrayIcon::activated, &app,
         [mainWindow](QSystemTrayIcon::ActivationReason reason) {
-            if (reason != QSystemTrayIcon::DoubleClick) return;
+            if (reason != QSystemTrayIcon::Trigger) return;
             if (mainWindow->isVisible() && mainWindow->isActive())
                 mainWindow->hide();
             else {
@@ -1241,6 +1250,18 @@ qInfo() << "NexusAI" << app.applicationVersion() << "starting";
                 mainWindow->requestActivate();
             }
         });
+
+    // 关闭行为第二半（prefs/v1/window.closeToTray 的另一半在 main.qml 的
+    // onClosing）：偏好为 false（"不最小化到托盘"）时窗口真正关闭，此时
+    // 必须退出进程。实测 Qt 6.11 下 quitOnLastWindowClosed 的自动退出对
+    // 纯 QML ApplicationWindow 不生效——lastWindowClosed 信号发了，进程
+    // 却留在事件循环里（窗口没了但托盘进程永活，用户只能 kill）。这里
+    // 显式补上退出链，与托盘"退出"动作同一条清理语义。
+    // closeToTray=true 时 onClosing 走 hide()，不产生 close 事件，不会
+    // 误触发本连接。QueuedConnection：不在窗口 close 事件的处理栈里做
+    // 重量级清理（stopAllTabs 会同步中止运行中的任务）。
+    QObject::connect(&app, &QGuiApplication::lastWindowClosed, &app,
+                     quitFromTray, Qt::QueuedConnection);
 
     // D10：任务从 Busy→Idle 时弹气泡通知（标题带会话名）。
     // 仅当窗口**可见且激活**（用户正在看）时才静默——最小化（minimized 时
