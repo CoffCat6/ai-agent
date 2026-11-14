@@ -292,6 +292,17 @@ public slots:
     // （audit_log 不动）。无历史或无 agent 挂接时静默返回。busy 时拒绝。
     void regenerateLast();
     bool editLastUserMessage(const QString& text);
+    // docs/52 (/compact): manual LLM-summary context compaction. The
+    // continuous suffix starting at the LAST user message is kept verbatim
+    // (tool_call pairing contract, same anchor as compressToFit); everything
+    // between the leading system message and that suffix is summarized by
+    // the CURRENT model into a digest message that replaces it. The result
+    // is in-memory only (same contract as automatic compression — the
+    // database keeps the full history, restoreFullHistoryIfAvailable
+    // depends on it). Returns false when the agent is busy (a task runs or
+    // a compaction is already in flight); the outcome surfaces via
+    // compactFinished. Accepted-but-failed invocations still return true.
+    bool compactContextNow(const QString& instruction = {});
 
 signals:
     void stateChanged(AgentState state);
@@ -303,6 +314,9 @@ signals:
     void toolConfirmRequired(const QString& id, const QString& name, const QJsonObject& args, const QString& preview);
     void errorOccurred(const QString& error);
     void tokensChanged(int usedTokens);
+    // docs/52 (/compact): async outcome of compactContextNow — success and
+    // a user-facing message (AgentViewModel turns it into a notice toast).
+    void compactFinished(bool success, const QString& message);
     void contextLimitChanged();
     void sessionChanged(const QString& sessionId);
     void sessionsChanged();
@@ -634,6 +648,7 @@ private:
     int  m_omittedContextMessages{0};   // 累计被省略的历史消息数
     int  m_compressionCount{0};         // 本会话发生压缩的轮次
     bool m_contextTruncated{false};     // 是否发生过原地截断（消息数不变）
+    bool m_compacting{false};           // docs/52 (/compact): summary request in flight
     // A4: 最近一次 EWMA 观测所属的模型名。同一 service 实例被 configure()
     // 原地改写 model() 时，setLLMService 的“同指针”早退分支已无法靠
     // previous/next 比较发现换模型，只能与这里的观测基准比较。

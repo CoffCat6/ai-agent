@@ -1306,6 +1306,10 @@ private slots:
     // 确认期间不得推进到下一轮 LLM 请求。
     void confirmationSuspendsEvenWithParallelAutoApprovedCalls();
     void contextBudgetCompressesHistory();
+    // docs/52 (/compact): manual LLM-summary compaction.
+    void manualCompactSummarizesHistory();
+    void manualCompactFailsWithoutScript();
+    void manualCompactRejectsWhenBusy();
     void auditTrailRecorded();
     // TEST-002: Knowledge/Normal behavioral matrix (agent level, scripted
     // provider). Locks the contract the provider-state fix must preserve:
@@ -3469,6 +3473,90 @@ void TestAgent::contextBudgetCompressesHistory() {
         .contains("[Context compressed"));
     QCOMPARE(sent.at(2).toObject().value("content").toString(), QStringLiteral("second"));
     QVERIFY(traceHas(agent.traceModel(), "context"));
+}
+
+// docs/52 (/compact): two user turns + replies, then a manual compaction —
+// the digest message (with the [Context compressed: prefix) replaces the
+// summarized turns, the last user turn survives, the trace records it.
+void TestAgent::manualCompactSummarizesHistory() {
+    SqliteMemory memory(QStringLiteral(":memory:"));
+    agent.setMemory(&memory);
+    agent.setLLMService(&llm);
+
+    llm.script.append(textResponse(QStringLiteral("first answer")));
+    QSignalSpy first(&agent, &AIAgent::responseReady);
+    agent.startTask(QStringLiteral("first question"));
+    QTRY_COMPARE(first.count(), 1);
+    llm.script.append(textResponse(QStringLiteral("second answer")));
+    QSignalSpy second(&agent, &AIAgent::responseReady);
+    agent.startTask(QStringLiteral("second question"));
+    QTRY_COMPARE(second.count(), 1);
+    const int beforeCount = agent.messages().size();
+
+    llm.script.append(textResponse(
+        QStringLiteral("digest: the user asked two testing questions")));
+    QSignalSpy done(&agent, &AIAgent::compactFinished);
+    QVERIFY(agent.compactContextNow(QStringLiteral("keep the testing focus")));
+    QTRY_COMPARE(done.count(), 1);
+    QCOMPARE(done.first().at(0).toBool(), true);
+
+    const QJsonArray msgs = agent.messages();
+    QCOMPARE(msgs.at(0).toObject().value("role").toString(),
+             QStringLiteral("system"));
+    const QString digestContent =
+        msgs.at(1).toObject().value("content").toString();
+    QVERIFY2(digestContent.startsWith(QStringLiteral("[Context compressed:")),
+             qPrintable(digestContent.left(80)));
+    QVERIFY(digestContent.contains(
+        QStringLiteral("digest: the user asked two testing questions")));
+    bool foundLastTurn = false;
+    for (const auto& m : msgs)
+        if (m.toObject().value("content").toString()
+                == QStringLiteral("second question"))
+            foundLastTurn = true;
+    QVERIFY(foundLastTurn);   // the anchored suffix survives verbatim
+    QVERIFY(agent.messages().size() < beforeCount);
+    QVERIFY(traceHas(agent.traceModel(), "context"));   // manual compaction trace
+}
+
+// No scripted response → the summary request fails → compactFinished(false)
+// and the context is left EXACTLY as it was (no silent truncation fallback).
+void TestAgent::manualCompactFailsWithoutScript() {
+    SqliteMemory memory(QStringLiteral(":memory:"));
+    agent.setMemory(&memory);
+    agent.setLLMService(&llm);
+
+    llm.script.append(textResponse(QStringLiteral("answer")));
+    QSignalSpy first(&agent, &AIAgent::responseReady);
+    agent.startTask(QStringLiteral("hello"));
+    QTRY_COMPARE(first.count(), 1);
+    const QJsonArray before = agent.messages();
+
+    QSignalSpy done(&agent, &AIAgent::compactFinished);
+    QVERIFY(agent.compactContextNow(QString()));
+    QTRY_COMPARE(done.count(), 1);
+    QCOMPARE(done.first().at(0).toBool(), false);
+    QCOMPARE(agent.messages(), before);   // untouched on failure
+}
+
+// A running task blocks the compaction (busy guard).
+void TestAgent::manualCompactRejectsWhenBusy() {
+    SqliteMemory memory(QStringLiteral(":memory:"));
+    agent.setMemory(&memory);
+    agent.setLLMService(&llm);
+
+    auto* blocking = registerBlockingTool();
+    llm.script.append(toolResponse("test_blocking", QJsonObject{}));
+    agent.startTask(QStringLiteral("block"));
+    QTRY_VERIFY_WITH_TIMEOUT(traceHasRunningToolCall(agent.traceModel(),
+                                                    QStringLiteral("test_blocking")),
+                             5000);
+
+    QVERIFY(!agent.compactContextNow(QString()));   // busy: rejected
+
+    blocking->release();
+    agent.stop();
+    QTRY_COMPARE(agent.state(), AgentState::Idle);   // task torn down cleanly
 }
 
 void TestAgent::auditTrailRecorded() {

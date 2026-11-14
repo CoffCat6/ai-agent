@@ -158,6 +158,10 @@ void ChatSessionController::connectAgent(AIAgent* agent) {
 
     connect(agent, &AIAgent::errorOccurred, this, &ChatSessionController::errorOccurred);
 
+    // docs/52 (/compact): forward the async compaction outcome.
+    connect(agent, &AIAgent::compactFinished, this,
+            &ChatSessionController::compactFinished);
+
     connect(agent, &AIAgent::todoListChanged, this, [this](const QJsonArray& todos) {
         m_todoList = todos.toVariantList();
         emit todoListChanged(m_todoList);
@@ -326,6 +330,11 @@ bool ChatSessionController::startTask(const QString& input, const QStringList& i
     emit responseReady();
 
     return m_agent->startTask(input, images, files);
+}
+
+bool ChatSessionController::compactContextNow(const QString& instruction) {
+    if (!m_agent) return false;
+    return m_agent->compactContextNow(instruction);
 }
 
 void ChatSessionController::approveToolCall(const QString& id, bool approved) {

@@ -570,6 +570,14 @@ ChatSessionController* AgentViewModel::ensureTab() {
     });
     connect(controller, &ChatSessionController::errorOccurred, this,
             &AgentViewModel::errorOccurred);
+    // docs/52 (/compact): surface the async compaction outcome as a notice.
+    connect(controller, &ChatSessionController::compactFinished, this,
+            [this](bool success, const QString& message) {
+        Activity::usage(Activity::Kind::User, QStringLiteral("ctx.compact"),
+                        success ? QStringLiteral("ok") : QStringLiteral("failed"));
+        if (success) emit noticeOccurred(message);
+        else emit errorOccurred(message);
+    });
     connect(controller, &ChatSessionController::todoListChanged, this,
             [this, controller](const QVariantList& todos) {
         if (controller != active()) return;
@@ -2847,6 +2855,25 @@ void AgentViewModel::clearKnowledge() {
 
 QVariantList AgentViewModel::documentChunks(const QString& name) {
     return m_rag ? m_rag->documentChunks(name).toVariantList() : QVariantList{};
+}
+
+bool AgentViewModel::handleBuiltinCommand(const QString& text) {
+    // Built-in command table (docs/52): v1 ships "/compact [focus]" — a
+    // manual LLM-summary context compaction. Non-slash or unknown "/..."
+    // input returns false and flows to the model as plain text (existing
+    // behavior for user template commands handled by SlashCommand::expand).
+    const QString trimmed = text.trimmed();
+    if (!trimmed.startsWith(QLatin1Char('/'))) return false;
+    const QString name = trimmed.section(QLatin1Char(' '), 0, 0).mid(1);
+    if (name != QLatin1String("compact")) return false;
+
+    auto* controller = qobject_cast<ChatSessionController*>(active());
+    if (!controller) return false;
+    const QString instruction = trimmed.mid(name.length() + 1).trimmed();
+    const bool accepted = controller->compactContextNow(instruction);
+    if (!accepted)
+        emit noticeOccurred(tr("任务运行中，暂不能压缩上下文；等当前任务结束再试。"));
+    return true;   // consumed either way — "/compact" never reaches the model
 }
 
 void AgentViewModel::reembedDocument(const QString& name) {

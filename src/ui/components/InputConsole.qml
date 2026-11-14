@@ -174,6 +174,16 @@ Rectangle {
         const all = Settings.slashCommands || []
         const query = token.query.toLowerCase()
         const matches = []
+        // docs/52: built-in commands come first ("compact" is v1) — they are
+        // intercepted by AgentVM.handleBuiltinCommand on submit and never
+        // reach the model.
+        const builtins = [{name: "compact",
+                           note: qsTr("摘要压缩历史上下文（/compact [重点]）"),
+                           builtin: true}]
+        for (let b = 0; b < builtins.length; ++b) {
+            if (builtins[b].name.toLowerCase().indexOf(query) !== 0) continue
+            matches.push(builtins[b])
+        }
         for (let i = 0; i < all.length; ++i) {
             const entry = all[i] || {}
             const name = String(entry.name || "")
@@ -657,6 +667,19 @@ function applySkill(name) {
             // the '$name' tokens (unlike '/' which expands), so both the
             // expanded template and the skill list are derived from the draft.
             const skillRefs = AgentVM.resolveSkills(textArea.text)
+            // docs/52: built-in slash commands ("/compact ...") are intercepted
+            // BEFORE the model round-trip — "/compact" must never reach the
+            // model as chat text.
+            if (AgentVM.handleBuiltinCommand(textArea.text)) {
+                root.closeMention()
+                root.closeSlash()
+                root.closeSkill()
+                textArea.text = ""
+                root.pendingAttachments = []
+                root.skillChips = []
+                root.unknownSkillTokens = []
+                return
+            }
             if (!AgentVM.startTaskWithSkills(
                     AgentVM.expandSlashCommand(textArea.text, Settings.slashCommands),
                     images, files, skillRefs)) return

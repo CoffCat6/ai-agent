@@ -121,6 +121,10 @@ public:
     bool startTask(const QString& input, const QStringList& images = {},
                    const QJsonArray& files = {});
     void approveToolCall(const QString& id, bool approved);
+    // docs/52 (/compact): manual LLM-summary compaction. Returns false when
+    // the agent is busy; the async outcome surfaces via AgentViewModel's
+    // compactFinished bridge (notice toast).
+    bool compactContextNow(const QString& instruction = {});
     void stop();
     // docs/20 §3.1（FORK-701）：重新生成。busy 时拒绝。
     void regenerate();
@@ -158,6 +162,8 @@ signals:
     void toolConfirmRequired(const QString& id, const QString& name,
                              const QVariantMap& args, const QString& preview);
     void errorOccurred(const QString& error);
+    // docs/52 (/compact): async outcome of compactContextNow.
+    void compactFinished(bool success, const QString& message);
     // Session data behind the global history list changed.
     void sessionHistoryChanged();
     // docs/16 §6/§7: forwarded from AIAgent so the UI can show per-request

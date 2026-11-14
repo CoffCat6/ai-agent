@@ -723,6 +723,12 @@ public:
     // from fileChanged events (debounced) when knowledge.autoSyncSourceFiles
     // is on. Runs on a worker thread; embed progress reuses knowledgeEmbed*.
     Q_INVOKABLE void syncKnowledgeSources();
+    // docs/52: built-in slash commands ("/compact [focus]"). Returns true
+    // when the text was consumed as a built-in command (the caller must NOT
+    // send it to the model); unknown/non-slash text returns false. This is
+    // the missing interception point — SlashCommand::expand only expands
+    // user templates and passes unknown "/..." through as plain text.
+    Q_INVOKABLE bool handleBuiltinCommand(const QString& text);
     // docs/51 internals: re-arm the source-file watcher after the document
     // set changes; run the sync for an explicit path list; record the
     // post-ingest source snapshot.

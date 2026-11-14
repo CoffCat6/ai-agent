@@ -2260,6 +2260,140 @@ void AIAgent::applyContextBudget(int reservedTokens) {
         "completed");
 }
 
+// docs/52 (/compact): manual LLM-summary context compaction. The summary
+// request reuses the CURRENT model (m_llmService) — the user compacting a
+// conversation expects the same model that has been answering it. Async via
+// one-shot connection (EpisodicService pattern); a 90 s deadline covers the
+// digest round-trip. Failure states are reported verbatim — unlike the
+// automatic path there is NO silent truncation fallback (the user asked for
+// a digest; delivering a lossy truncation instead would be a lie).
+bool AIAgent::compactContextNow(const QString& instruction) {
+    if (m_active || m_compacting) return false;   // task running / already compacting
+    if (!m_llmService) {
+        emit compactFinished(false, tr("未配置模型服务，无法压缩上下文。"));
+        return true;
+    }
+
+    // Anchor: keep the continuous suffix starting at the LAST user message
+    // verbatim (tool_call pairing contract — the same rule compressToFit
+    // applies); summarize everything between the leading system message and
+    // that suffix.
+    int lastUserIdx = -1;
+    for (int i = m_messages.size() - 1; i >= 1; --i) {
+        if (m_messages.at(i).toObject().value("role").toString()
+                == QLatin1String("user")) {
+            lastUserIdx = i;
+            break;
+        }
+    }
+    const int summarizeEnd = lastUserIdx > 1 ? lastUserIdx : 1;
+    if (summarizeEnd <= 1) {
+        emit compactFinished(false, tr("没有足够的历史可压缩。"));
+        return true;
+    }
+
+    QString transcript;
+    for (int i = 1; i < summarizeEnd; ++i) {
+        const QJsonObject msg = m_messages.at(i).toObject();
+        const QString content = msg.value("content").toString();
+        if (content.trimmed().isEmpty()) continue;
+        transcript += QStringLiteral("[%1] %2\n")
+            .arg(msg.value("role").toString(), content.left(8000));
+    }
+    if (transcript.trimmed().isEmpty()) {
+        emit compactFinished(false, tr("没有足够的历史可压缩。"));
+        return true;
+    }
+    constexpr int kCompactTranscriptChars = 60000;
+    if (transcript.size() > kCompactTranscriptChars)
+        transcript = QStringLiteral("[…earlier parts were truncated…]\n")
+                     + transcript.right(kCompactTranscriptChars);
+
+    m_compacting = true;
+    const int summarizeEndLocal = summarizeEnd;
+
+    QJsonArray reqMessages;
+    QJsonObject sysMsg;
+    sysMsg["role"] = "system";
+    sysMsg["content"] = QStringLiteral(
+        "You compact a conversation's history into a digest so the assistant "
+        "can continue working with a much smaller context. Preserve: the "
+        "user's goals and decisions, key technical facts, file paths, "
+        "important tool results, constraints, and open tasks. Reply with "
+        "ONLY the digest, in the same language as the conversation, at most "
+        "about 800 words.")
+        + (instruction.trimmed().isEmpty()
+               ? QString()
+               : QStringLiteral("\nAdditional focus from the user: ")
+                 + instruction.trimmed());
+    QJsonObject userMsg;
+    userMsg["role"] = "user";
+    userMsg["content"] = QStringLiteral("Conversation history to summarize:\n\n")
+                         + transcript;
+    reqMessages.append(sysMsg);
+    reqMessages.append(userMsg);
+
+    // One-shot connection MUST be armed BEFORE chatComplete: fakes and some
+    // providers emit responseReady synchronously inside the call — connecting
+    // afterwards would miss the digest forever (caught by the unit test).
+    const auto conn = std::make_shared<QMetaObject::Connection>();
+    *conn = connect(m_llmService, &IAIService::responseReady, this,
+        [this, conn, summarizeEndLocal](const LLMResponse& response) {
+            disconnect(*conn);
+            m_compacting = false;
+            if (!response.success || response.content.trimmed().isEmpty()) {
+                emit compactFinished(false,
+                    response.error.isEmpty()
+                        ? tr("上下文压缩失败：模型未返回摘要。")
+                        : tr("上下文压缩失败：%1").arg(response.error));
+                return;
+            }
+            const QString digest =
+                response.content.trimmed().left(8000);
+            const int omitted = summarizeEndLocal - 1;
+            QJsonArray next;
+            if (!m_messages.isEmpty()
+                    && m_messages.at(0).toObject().value("role").toString()
+                       == QLatin1String("system"))
+                next.append(m_messages.at(0));
+            QJsonObject digestMsg;
+            digestMsg["role"] = "system";
+            // The "[Context compressed:" prefix is the classifier's marker —
+            // reusing it lets contextComposition()/TopBar badge account this
+            // compaction exactly like the automatic ones.
+            digestMsg["content"] =
+                QStringLiteral("[Context compressed: %1 earlier messages were "
+                               "summarized into this digest by /compact. Treat "
+                               "it as the authoritative record of the earlier "
+                               "conversation.]\n\n%2").arg(omitted).arg(digest);
+            next.append(digestMsg);
+            for (int i = summarizeEndLocal; i < m_messages.size(); ++i)
+                next.append(m_messages.at(i));
+
+            const int before = m_messages.size();
+            m_messages = next;
+            m_omittedContextMessages += omitted;
+            ++m_compressionCount;
+            notifyTokens();
+            appendTraceNode("context",
+                QStringLiteral("Manual compaction (/compact): %1 → %2 messages, "
+                               "history summarized by the model")
+                    .arg(before).arg(m_messages.size()),
+                "completed");
+            emit compactFinished(true,
+                tr("上下文已压缩：%1 条历史已摘要，最近一轮保留原文。").arg(omitted));
+        });
+    QTimer::singleShot(90000, this, [this, conn]() {
+        if (!m_compacting) return;
+        disconnect(*conn);
+        m_compacting = false;
+        emit compactFinished(false, tr("上下文压缩超时。"));
+    });
+
+    m_llmService->chatComplete(reqMessages);
+    return true;   // accepted — outcome arrives via compactFinished
+}
+
 // Model-switch adaptation (docs/15 §4.2.2): react to a contextLimit change
 // immediately instead of waiting for the next LLM request. Larger window ->
 // restore previously compressed history; smaller window -> compress now.
