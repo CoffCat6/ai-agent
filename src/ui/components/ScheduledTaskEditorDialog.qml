@@ -50,6 +50,7 @@ Dialog {
         permCombo.currentIndex = permIndexFor(String(
             editTask ? editTask.permissionMode || "plan_only" : "plan_only"))
         notifySwitch.checked = editTask ? editTask.notify !== false : true
+        catchUpSwitch.checked = editTask ? editTask.catchUp === true : false
         // 回填模型选择：编辑时按任务的 profileId 匹配，新建时选中活动配
         // 置。找不到（原配置已删除/一个配置都没有）置 -1 留空，由 save 的
         // 空检查拦截——不能静默落在第一项，那会把任务悄悄换绑到别的模型。
@@ -170,7 +171,8 @@ Dialog {
             scheduleKind: kind,
             scheduleValue: JSON.stringify(scheduleValue),
             permissionMode: permOptions[permCombo.currentIndex].value,
-            notify: notifySwitch.checked
+            notify: notifySwitch.checked,
+            catchUp: catchUpSwitch.checked
         }
         if (editTask) map.id = editTask.id
         ScheduleManager.upsertTask(map)
@@ -413,6 +415,25 @@ Dialog {
                     id: notifySwitch
                     objectName: "scheduleTaskNotifySwitch"
                     Accessible.name: qsTr("完成时系统通知")
+                }
+            }
+
+            RowLayout {
+                Layout.fillWidth: true
+                Text {
+                    // docs/50 增量：错过补跑。默认关（记 missed 不补，D5
+                    // 语义不变）；开启后应用停运期间错过的触发，在下次启动
+                    // 收敛时补跑最近一次（不洪泛——停三天也只补最近一次）。
+                    text: qsTr("错过时补跑最近一次")
+                    color: Theme.textSecondary
+                    font.pixelSize: Theme.fontSizeMicro
+                    font.family: Theme.fontSans
+                    Layout.fillWidth: true
+                }
+                Switch {
+                    id: catchUpSwitch
+                    objectName: "scheduleTaskCatchUpSwitch"
+                    Accessible.name: qsTr("错过时补跑最近一次")
                 }
             }
 

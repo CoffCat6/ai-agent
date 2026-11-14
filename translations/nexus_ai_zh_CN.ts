@@ -6798,61 +6798,61 @@
 <context>
     <name>NexusAI::AgentViewModel</name>
     <message>
-        <location filename="../src/viewmodels/AgentViewModel.cpp" line="2337"/>
-        <location filename="../src/viewmodels/AgentViewModel.cpp" line="2342"/>
+        <location filename="../src/viewmodels/AgentViewModel.cpp" line="2338"/>
+        <location filename="../src/viewmodels/AgentViewModel.cpp" line="2343"/>
         <source>保存项目规则失败：%1</source>
         <translation>保存项目规则失败：%1</translation>
     </message>
     <message>
         <location filename="../src/viewmodels/AgentViewModel.cpp" line="453"/>
-        <location filename="../src/viewmodels/AgentViewModel.cpp" line="755"/>
-        <location filename="../src/viewmodels/AgentViewModel.cpp" line="3314"/>
-        <location filename="../src/viewmodels/AgentViewModel.cpp" line="3438"/>
+        <location filename="../src/viewmodels/AgentViewModel.cpp" line="756"/>
+        <location filename="../src/viewmodels/AgentViewModel.cpp" line="3315"/>
+        <location filename="../src/viewmodels/AgentViewModel.cpp" line="3439"/>
         <source>新会话</source>
         <translation>新会话</translation>
     </message>
     <message>
-        <location filename="../src/viewmodels/AgentViewModel.cpp" line="880"/>
+        <location filename="../src/viewmodels/AgentViewModel.cpp" line="881"/>
         <source>打开的对话过多，请先结束其中一些再打开新的。</source>
         <translation>打开的对话过多，请先结束其中一些再打开新的。</translation>
     </message>
     <message>
-        <location filename="../src/viewmodels/AgentViewModel.cpp" line="1108"/>
+        <location filename="../src/viewmodels/AgentViewModel.cpp" line="1109"/>
         <source>请等待当前任务完成，或停止后切换模型。</source>
         <translation>请等待当前任务完成，或停止后切换模型。</translation>
     </message>
     <message>
-        <location filename="../src/viewmodels/AgentViewModel.cpp" line="1895"/>
+        <location filename="../src/viewmodels/AgentViewModel.cpp" line="1896"/>
         <source>无法更新会话置顶状态，请重试。</source>
         <translation>无法更新会话置顶状态，请重试。</translation>
     </message>
     <message>
-        <location filename="../src/viewmodels/AgentViewModel.cpp" line="1903"/>
+        <location filename="../src/viewmodels/AgentViewModel.cpp" line="1904"/>
         <source>无法更新会话归档状态，请重试。</source>
         <translation>无法更新会话归档状态，请重试。</translation>
     </message>
     <message>
-        <location filename="../src/viewmodels/AgentViewModel.cpp" line="1907"/>
+        <location filename="../src/viewmodels/AgentViewModel.cpp" line="1908"/>
         <source>会话已归档，可在“包含已归档”中恢复。</source>
         <translation>会话已归档，可在“包含已归档”中恢复。</translation>
     </message>
     <message>
-        <location filename="../src/viewmodels/AgentViewModel.cpp" line="1907"/>
+        <location filename="../src/viewmodels/AgentViewModel.cpp" line="1908"/>
         <source>会话已恢复。</source>
         <translation>会话已恢复。</translation>
     </message>
     <message>
-        <location filename="../src/viewmodels/AgentViewModel.cpp" line="1947"/>
+        <location filename="../src/viewmodels/AgentViewModel.cpp" line="1948"/>
         <source>导出失败：未连接持久化后端</source>
         <translation>导出失败：未连接持久化后端</translation>
     </message>
     <message>
-        <location filename="../src/viewmodels/AgentViewModel.cpp" line="1952"/>
+        <location filename="../src/viewmodels/AgentViewModel.cpp" line="1953"/>
         <source>导出失败：不支持的格式“%1”（可选 md / json）</source>
         <translation>导出失败：不支持的格式“%1”（可选 md / json）</translation>
     </message>
     <message>
-        <location filename="../src/viewmodels/AgentViewModel.cpp" line="1967"/>
+        <location filename="../src/viewmodels/AgentViewModel.cpp" line="1968"/>
         <source># NexusAI 会话导出
 
 </source>
@@ -6861,21 +6861,21 @@
 </translation>
     </message>
     <message>
-        <location filename="../src/viewmodels/AgentViewModel.cpp" line="1968"/>
+        <location filename="../src/viewmodels/AgentViewModel.cpp" line="1969"/>
         <source>- 会话 ID：%1
 </source>
         <translation>- 会话 ID：%1
 </translation>
     </message>
     <message>
-        <location filename="../src/viewmodels/AgentViewModel.cpp" line="1969"/>
+        <location filename="../src/viewmodels/AgentViewModel.cpp" line="1970"/>
         <source>- 导出时间：%1
 </source>
         <translation>- 导出时间：%1
 </translation>
     </message>
     <message>
-        <location filename="../src/viewmodels/AgentViewModel.cpp" line="1970"/>
+        <location filename="../src/viewmodels/AgentViewModel.cpp" line="1971"/>
         <source>- 消息数：%1
 
 ---
@@ -6888,17 +6888,17 @@
 </translation>
     </message>
     <message>
-        <location filename="../src/viewmodels/AgentViewModel.cpp" line="1974"/>
+        <location filename="../src/viewmodels/AgentViewModel.cpp" line="1975"/>
         <source>用户</source>
         <translation>用户</translation>
     </message>
     <message>
-        <location filename="../src/viewmodels/AgentViewModel.cpp" line="1975"/>
+        <location filename="../src/viewmodels/AgentViewModel.cpp" line="1976"/>
         <source>助手</source>
         <translation>助手</translation>
     </message>
     <message>
-        <location filename="../src/viewmodels/AgentViewModel.cpp" line="1984"/>
+        <location filename="../src/viewmodels/AgentViewModel.cpp" line="1985"/>
         <source>---
 
 ## 过程摘要
@@ -6911,169 +6911,169 @@
 </translation>
     </message>
     <message>
-        <location filename="../src/viewmodels/AgentViewModel.cpp" line="2015"/>
-        <location filename="../src/viewmodels/AgentViewModel.cpp" line="2100"/>
+        <location filename="../src/viewmodels/AgentViewModel.cpp" line="2016"/>
+        <location filename="../src/viewmodels/AgentViewModel.cpp" line="2101"/>
         <source>导出失败：无法写入 %1</source>
         <translation>导出失败：无法写入 %1</translation>
     </message>
     <message>
-        <location filename="../src/viewmodels/AgentViewModel.cpp" line="2020"/>
-        <location filename="../src/viewmodels/AgentViewModel.cpp" line="2107"/>
+        <location filename="../src/viewmodels/AgentViewModel.cpp" line="2021"/>
+        <location filename="../src/viewmodels/AgentViewModel.cpp" line="2108"/>
         <source>导出失败：写入未完成 %1</source>
         <translation>导出失败：写入未完成 %1</translation>
     </message>
     <message>
-        <location filename="../src/viewmodels/AgentViewModel.cpp" line="2027"/>
+        <location filename="../src/viewmodels/AgentViewModel.cpp" line="2028"/>
         <source>已导出会话（%1 条消息）：%2</source>
         <translation>已导出会话（%1 条消息）：%2</translation>
     </message>
     <message>
-        <location filename="../src/viewmodels/AgentViewModel.cpp" line="2061"/>
+        <location filename="../src/viewmodels/AgentViewModel.cpp" line="2062"/>
         <source>导出失败：当前没有可导出的请求明细</source>
         <translation>导出失败：当前没有可导出的请求明细</translation>
     </message>
     <message>
-        <location filename="../src/viewmodels/AgentViewModel.cpp" line="2067"/>
+        <location filename="../src/viewmodels/AgentViewModel.cpp" line="2068"/>
         <source>导出失败：未指定文件路径</source>
         <translation>导出失败：未指定文件路径</translation>
     </message>
     <message>
-        <location filename="../src/viewmodels/AgentViewModel.cpp" line="2073"/>
+        <location filename="../src/viewmodels/AgentViewModel.cpp" line="2074"/>
         <source>时间</source>
         <translation>时间</translation>
     </message>
     <message>
-        <location filename="../src/viewmodels/AgentViewModel.cpp" line="2073"/>
+        <location filename="../src/viewmodels/AgentViewModel.cpp" line="2074"/>
         <source>模型</source>
         <translation>模型</translation>
     </message>
     <message>
-        <location filename="../src/viewmodels/AgentViewModel.cpp" line="2073"/>
+        <location filename="../src/viewmodels/AgentViewModel.cpp" line="2074"/>
         <source>输入 Tokens</source>
         <translation>输入 Tokens</translation>
     </message>
     <message>
-        <location filename="../src/viewmodels/AgentViewModel.cpp" line="2073"/>
+        <location filename="../src/viewmodels/AgentViewModel.cpp" line="2074"/>
         <source>输出 Tokens</source>
         <translation>输出 Tokens</translation>
     </message>
     <message>
-        <location filename="../src/viewmodels/AgentViewModel.cpp" line="2074"/>
+        <location filename="../src/viewmodels/AgentViewModel.cpp" line="2075"/>
         <source>缓存命中 Tokens</source>
         <translation>缓存命中 Tokens</translation>
     </message>
     <message>
-        <location filename="../src/viewmodels/AgentViewModel.cpp" line="2074"/>
+        <location filename="../src/viewmodels/AgentViewModel.cpp" line="2075"/>
         <source>延迟(ms)</source>
         <translation>延迟(ms)</translation>
     </message>
     <message>
-        <location filename="../src/viewmodels/AgentViewModel.cpp" line="2074"/>
+        <location filename="../src/viewmodels/AgentViewModel.cpp" line="2075"/>
         <source>费用(元)</source>
         <translation>费用(元)</translation>
     </message>
     <message>
-        <location filename="../src/viewmodels/AgentViewModel.cpp" line="2075"/>
+        <location filename="../src/viewmodels/AgentViewModel.cpp" line="2076"/>
         <source>会话 ID</source>
         <translation>会话 ID</translation>
     </message>
     <message>
-        <location filename="../src/viewmodels/AgentViewModel.cpp" line="2075"/>
+        <location filename="../src/viewmodels/AgentViewModel.cpp" line="2076"/>
         <source>请求 ID</source>
         <translation>请求 ID</translation>
     </message>
     <message>
-        <location filename="../src/viewmodels/AgentViewModel.cpp" line="2200"/>
+        <location filename="../src/viewmodels/AgentViewModel.cpp" line="2201"/>
         <source>无法读取文件：%1</source>
         <translation>无法读取文件：%1</translation>
     </message>
     <message>
-        <location filename="../src/viewmodels/AgentViewModel.cpp" line="2247"/>
+        <location filename="../src/viewmodels/AgentViewModel.cpp" line="2248"/>
         <source>PDF 已加密或需要密码，无法导入：%1</source>
         <translation>PDF 已加密或需要密码，无法导入：%1</translation>
     </message>
     <message>
-        <location filename="../src/viewmodels/AgentViewModel.cpp" line="2250"/>
+        <location filename="../src/viewmodels/AgentViewModel.cpp" line="2251"/>
         <source>PDF 文件已损坏或格式无效，无法导入：%1</source>
         <translation>PDF 文件已损坏或格式无效，无法导入：%1</translation>
     </message>
     <message>
-        <location filename="../src/viewmodels/AgentViewModel.cpp" line="2253"/>
+        <location filename="../src/viewmodels/AgentViewModel.cpp" line="2254"/>
         <source>未能从 PDF 中提取到文本（可能是扫描件，没有文本层）：%1</source>
         <translation>未能从 PDF 中提取到文本（可能是扫描件，没有文本层）：%1</translation>
     </message>
     <message>
-        <location filename="../src/viewmodels/AgentViewModel.cpp" line="2257"/>
+        <location filename="../src/viewmodels/AgentViewModel.cpp" line="2258"/>
         <source>无法读取 PDF 文件：%1</source>
         <translation>无法读取 PDF 文件：%1</translation>
     </message>
     <message>
-        <location filename="../src/viewmodels/AgentViewModel.cpp" line="2443"/>
+        <location filename="../src/viewmodels/AgentViewModel.cpp" line="2444"/>
         <source>仅支持 http/https URL：%1</source>
         <translation>仅支持 http/https URL：%1</translation>
     </message>
     <message>
-        <location filename="../src/viewmodels/AgentViewModel.cpp" line="2467"/>
+        <location filename="../src/viewmodels/AgentViewModel.cpp" line="2468"/>
         <source>页面无可用正文：%1</source>
         <translation>页面无可用正文：%1</translation>
     </message>
     <message>
-        <location filename="../src/viewmodels/AgentViewModel.cpp" line="2480"/>
+        <location filename="../src/viewmodels/AgentViewModel.cpp" line="2481"/>
         <source>页面已重定向至 %1，请直接导入新地址。</source>
         <translation>页面已重定向至 %1，请直接导入新地址。</translation>
     </message>
     <message>
-        <location filename="../src/viewmodels/AgentViewModel.cpp" line="2484"/>
+        <location filename="../src/viewmodels/AgentViewModel.cpp" line="2485"/>
         <source>抓取失败：%1</source>
         <translation>抓取失败：%1</translation>
     </message>
     <message>
-        <location filename="../src/viewmodels/AgentViewModel.cpp" line="2852"/>
+        <location filename="../src/viewmodels/AgentViewModel.cpp" line="2853"/>
         <source>数据库正被占用（可能有备份或其它任务在进行），请稍后重试</source>
         <translation>数据库正被占用（可能有备份或其它任务在进行），请稍后重试</translation>
     </message>
     <message>
-        <location filename="../src/viewmodels/AgentViewModel.cpp" line="2863"/>
+        <location filename="../src/viewmodels/AgentViewModel.cpp" line="2864"/>
         <source>未指定备份文件</source>
         <translation>未指定备份文件</translation>
     </message>
     <message>
-        <location filename="../src/viewmodels/AgentViewModel.cpp" line="2872"/>
+        <location filename="../src/viewmodels/AgentViewModel.cpp" line="2873"/>
         <source>备份文件不存在</source>
         <translation>备份文件不存在</translation>
     </message>
     <message>
-        <location filename="../src/viewmodels/AgentViewModel.cpp" line="2876"/>
+        <location filename="../src/viewmodels/AgentViewModel.cpp" line="2877"/>
         <source>只能删除备份目录中的文件</source>
         <translation>只能删除备份目录中的文件</translation>
     </message>
     <message>
-        <location filename="../src/viewmodels/AgentViewModel.cpp" line="2879"/>
+        <location filename="../src/viewmodels/AgentViewModel.cpp" line="2880"/>
         <source>删除失败，请检查文件是否被占用</source>
         <translation>删除失败，请检查文件是否被占用</translation>
     </message>
     <message>
-        <location filename="../src/viewmodels/AgentViewModel.cpp" line="3421"/>
+        <location filename="../src/viewmodels/AgentViewModel.cpp" line="3422"/>
         <source>这个会话还没有可分叉的历史记录。</source>
         <translation>这个会话还没有可分叉的历史记录。</translation>
     </message>
     <message>
-        <location filename="../src/viewmodels/AgentViewModel.cpp" line="3426"/>
+        <location filename="../src/viewmodels/AgentViewModel.cpp" line="3427"/>
         <source>这条回答还没有存进会话记录，稍等一下再试。</source>
         <translation>这条回答还没有存进会话记录，稍等一下再试。</translation>
     </message>
     <message>
-        <location filename="../src/viewmodels/AgentViewModel.cpp" line="3444"/>
+        <location filename="../src/viewmodels/AgentViewModel.cpp" line="3445"/>
         <source>%1（分支）</source>
         <translation>%1（分支）</translation>
     </message>
     <message>
-        <location filename="../src/viewmodels/AgentViewModel.cpp" line="3446"/>
+        <location filename="../src/viewmodels/AgentViewModel.cpp" line="3447"/>
         <source>%1（分支%2）</source>
         <translation>%1（分支%2）</translation>
     </message>
     <message>
-        <location filename="../src/viewmodels/AgentViewModel.cpp" line="3450"/>
+        <location filename="../src/viewmodels/AgentViewModel.cpp" line="3451"/>
         <source>无法创建分叉出来的会话，请重试。</source>
         <translation>无法创建分叉出来的会话，请重试。</translation>
     </message>
@@ -7082,97 +7082,97 @@
         <translation type="vanished">分叉会话已创建，但没能发出第一条消息。</translation>
     </message>
     <message>
-        <location filename="../src/viewmodels/AgentViewModel.cpp" line="2222"/>
+        <location filename="../src/viewmodels/AgentViewModel.cpp" line="2223"/>
         <source>无法打开文件：%1</source>
         <translation>无法打开文件：%1</translation>
     </message>
     <message>
-        <location filename="../src/viewmodels/AgentViewModel.cpp" line="2513"/>
+        <location filename="../src/viewmodels/AgentViewModel.cpp" line="2514"/>
         <source>知识库正忙（导入或重新嵌入进行中），请稍后再试</source>
         <translation>知识库正忙（导入或重新嵌入进行中），请稍后再试</translation>
     </message>
     <message>
-        <location filename="../src/viewmodels/AgentViewModel.cpp" line="2640"/>
+        <location filename="../src/viewmodels/AgentViewModel.cpp" line="2641"/>
         <source>文档内容已存在，已跳过：%1</source>
         <translation>文档内容已存在，已跳过：%1</translation>
     </message>
     <message>
-        <location filename="../src/viewmodels/AgentViewModel.cpp" line="2681"/>
+        <location filename="../src/viewmodels/AgentViewModel.cpp" line="2682"/>
         <source>未找到文档内容，无法重新嵌入：%1</source>
         <translation>未找到文档内容，无法重新嵌入：%1</translation>
     </message>
     <message>
-        <location filename="../src/viewmodels/AgentViewModel.cpp" line="2701"/>
+        <location filename="../src/viewmodels/AgentViewModel.cpp" line="2702"/>
         <source>已重新嵌入 %1（%2 段）</source>
         <translation>已重新嵌入 %1（%2 段）</translation>
     </message>
     <message>
-        <location filename="../src/viewmodels/AgentViewModel.cpp" line="2703"/>
+        <location filename="../src/viewmodels/AgentViewModel.cpp" line="2704"/>
         <source>重新嵌入失败：%1</source>
         <translation>重新嵌入失败：%1</translation>
     </message>
     <message>
-        <location filename="../src/viewmodels/AgentViewModel.cpp" line="2707"/>
+        <location filename="../src/viewmodels/AgentViewModel.cpp" line="2708"/>
         <source>已导入 %1（%2 段）</source>
         <translation>已导入 %1（%2 段）</translation>
     </message>
     <message>
-        <location filename="../src/viewmodels/AgentViewModel.cpp" line="2709"/>
+        <location filename="../src/viewmodels/AgentViewModel.cpp" line="2710"/>
         <source>导入失败（文件为空或无法分块）：%1</source>
         <translation>导入失败（文件为空或无法分块）：%1</translation>
     </message>
     <message>
-        <location filename="../src/viewmodels/AgentViewModel.cpp" line="2711"/>
+        <location filename="../src/viewmodels/AgentViewModel.cpp" line="2712"/>
         <source>知识库总量已达上限（最多 %1 段），请先删除部分文档后再导入</source>
         <translation>知识库总量已达上限（最多 %1 段），请先删除部分文档后再导入</translation>
     </message>
     <message>
-        <location filename="../src/viewmodels/AgentViewModel.cpp" line="2714"/>
+        <location filename="../src/viewmodels/AgentViewModel.cpp" line="2715"/>
         <source>文件过大（超过单文档 %1 段上限）：%2</source>
         <translation>文件过大（超过单文档 %1 段上限）：%2</translation>
     </message>
     <message>
-        <location filename="../src/viewmodels/AgentViewModel.cpp" line="2777"/>
-        <location filename="../src/viewmodels/AgentViewModel.cpp" line="2811"/>
-        <location filename="../src/viewmodels/AgentViewModel.cpp" line="2829"/>
-        <location filename="../src/viewmodels/AgentViewModel.cpp" line="2842"/>
-        <location filename="../src/viewmodels/AgentViewModel.cpp" line="2850"/>
-        <location filename="../src/viewmodels/AgentViewModel.cpp" line="2891"/>
+        <location filename="../src/viewmodels/AgentViewModel.cpp" line="2778"/>
+        <location filename="../src/viewmodels/AgentViewModel.cpp" line="2812"/>
+        <location filename="../src/viewmodels/AgentViewModel.cpp" line="2830"/>
+        <location filename="../src/viewmodels/AgentViewModel.cpp" line="2843"/>
+        <location filename="../src/viewmodels/AgentViewModel.cpp" line="2851"/>
+        <location filename="../src/viewmodels/AgentViewModel.cpp" line="2892"/>
         <source>数据库未就绪</source>
         <translation>数据库未就绪</translation>
     </message>
     <message>
-        <location filename="../src/viewmodels/AgentViewModel.cpp" line="2784"/>
+        <location filename="../src/viewmodels/AgentViewModel.cpp" line="2785"/>
         <source>备份失败，详见日志</source>
         <translation>备份失败，详见日志</translation>
     </message>
     <message>
-        <location filename="../src/viewmodels/AgentViewModel.cpp" line="2896"/>
+        <location filename="../src/viewmodels/AgentViewModel.cpp" line="2897"/>
         <source>无法读取该备份文件：%1</source>
         <translation>无法读取该备份文件：%1</translation>
     </message>
     <message>
-        <location filename="../src/viewmodels/AgentViewModel.cpp" line="2898"/>
+        <location filename="../src/viewmodels/AgentViewModel.cpp" line="2899"/>
         <source>备份完整性检查未通过，已取消恢复</source>
         <translation>备份完整性检查未通过，已取消恢复</translation>
     </message>
     <message>
-        <location filename="../src/viewmodels/AgentViewModel.cpp" line="2917"/>
+        <location filename="../src/viewmodels/AgentViewModel.cpp" line="2918"/>
         <source>恢复失败，原数据库已还原</source>
         <translation>恢复失败，原数据库已还原</translation>
     </message>
     <message>
-        <location filename="../src/viewmodels/AgentViewModel.cpp" line="3198"/>
+        <location filename="../src/viewmodels/AgentViewModel.cpp" line="3199"/>
         <source>文件过大（附件上限 %1 KB）：%2</source>
         <translation>文件过大（附件上限 %1 KB）：%2</translation>
     </message>
     <message>
-        <location filename="../src/viewmodels/AgentViewModel.cpp" line="3203"/>
+        <location filename="../src/viewmodels/AgentViewModel.cpp" line="3204"/>
         <source>暂不支持二进制文件作为附件：%1</source>
         <translation>暂不支持二进制文件作为附件：%1</translation>
     </message>
     <message>
-        <location filename="../src/viewmodels/AgentViewModel.cpp" line="3216"/>
+        <location filename="../src/viewmodels/AgentViewModel.cpp" line="3217"/>
         <source>已忽略 %1 个不支持的文件类型（仅支持图片与文本文件）</source>
         <translation>已忽略 %1 个不支持的文件类型（仅支持图片与文本文件）</translation>
     </message>
@@ -7598,47 +7598,47 @@
 <context>
     <name>NexusAI::ScheduledTasksManager</name>
     <message>
-        <location filename="../src/core/schedule/ScheduledTasksManager.cpp" line="114"/>
+        <location filename="../src/core/schedule/ScheduledTasksManager.cpp" line="124"/>
         <source>应用未运行期间错过该次触发，未补跑</source>
         <translation>应用未运行期间错过该次触发，未补跑</translation>
     </message>
     <message>
-        <location filename="../src/core/schedule/ScheduledTasksManager.cpp" line="230"/>
+        <location filename="../src/core/schedule/ScheduledTasksManager.cpp" line="240"/>
         <source>已有定时任务在运行，本次触发跳过</source>
         <translation>已有定时任务在运行，本次触发跳过</translation>
     </message>
     <message>
-        <location filename="../src/core/schedule/ScheduledTasksManager.cpp" line="265"/>
+        <location filename="../src/core/schedule/ScheduledTasksManager.cpp" line="275"/>
         <source>模型配置已删除或不可用（%1）</source>
         <translation>模型配置已删除或不可用（%1）</translation>
     </message>
     <message>
-        <location filename="../src/core/schedule/ScheduledTasksManager.cpp" line="278"/>
+        <location filename="../src/core/schedule/ScheduledTasksManager.cpp" line="288"/>
         <source>调度器未装配执行环境</source>
         <translation>调度器未装配执行环境</translation>
     </message>
     <message>
-        <location filename="../src/core/schedule/ScheduledTasksManager.cpp" line="284"/>
+        <location filename="../src/core/schedule/ScheduledTasksManager.cpp" line="294"/>
         <source>创建执行环境失败</source>
         <translation>创建执行环境失败</translation>
     </message>
     <message>
-        <location filename="../src/core/schedule/ScheduledTasksManager.cpp" line="317"/>
+        <location filename="../src/core/schedule/ScheduledTasksManager.cpp" line="327"/>
         <source>运行超过上限，已强制封口</source>
         <translation>运行超过上限，已强制封口</translation>
     </message>
     <message>
-        <location filename="../src/core/schedule/ScheduledTasksManager.cpp" line="322"/>
+        <location filename="../src/core/schedule/ScheduledTasksManager.cpp" line="332"/>
         <source>执行环境异常退出</source>
         <translation>执行环境异常退出</translation>
     </message>
     <message>
-        <location filename="../src/core/schedule/ScheduledTasksManager.cpp" line="327"/>
+        <location filename="../src/core/schedule/ScheduledTasksManager.cpp" line="337"/>
         <source>任务启动失败（模型未就绪或配额已满）</source>
         <translation>任务启动失败（模型未就绪或配额已满）</translation>
     </message>
     <message>
-        <location filename="../src/core/schedule/ScheduledTasksManager.cpp" line="387"/>
+        <location filename="../src/core/schedule/ScheduledTasksManager.cpp" line="397"/>
         <source>应用退出，任务已停止</source>
         <translation>应用退出，任务已停止</translation>
     </message>
@@ -9235,12 +9235,12 @@
 <context>
     <name>QObject</name>
     <message>
-        <location filename="../src/main.cpp" line="1194"/>
+        <location filename="../src/main.cpp" line="1219"/>
         <source>显示/隐藏主窗</source>
         <translation>显示/隐藏主窗</translation>
     </message>
     <message>
-        <location filename="../src/main.cpp" line="1195"/>
+        <location filename="../src/main.cpp" line="1220"/>
         <source>新建会话</source>
         <translation>新建会话</translation>
     </message>
@@ -9253,62 +9253,62 @@
         <translation type="vanished">（暂无配置）</translation>
     </message>
     <message>
-        <location filename="../src/main.cpp" line="1197"/>
+        <location filename="../src/main.cpp" line="1222"/>
         <source>退出</source>
         <translation>退出</translation>
     </message>
     <message>
-        <location filename="../src/main.cpp" line="1258"/>
+        <location filename="../src/main.cpp" line="1310"/>
         <source>任务完成</source>
         <translation>任务完成</translation>
     </message>
     <message>
-        <location filename="../src/main.cpp" line="1258"/>
+        <location filename="../src/main.cpp" line="1310"/>
         <source>任务结束</source>
         <translation>任务结束</translation>
     </message>
     <message>
-        <location filename="../src/main.cpp" line="1259"/>
+        <location filename="../src/main.cpp" line="1311"/>
         <source>会话已回复</source>
         <translation>会话已回复</translation>
     </message>
     <message>
-        <location filename="../src/main.cpp" line="1274"/>
+        <location filename="../src/main.cpp" line="1339"/>
         <source>今日 Token</source>
         <translation>今日 Token</translation>
     </message>
     <message>
-        <location filename="../src/main.cpp" line="1276"/>
+        <location filename="../src/main.cpp" line="1341"/>
         <source>今日费用</source>
         <translation>今日费用</translation>
     </message>
     <message>
-        <location filename="../src/main.cpp" line="1278"/>
+        <location filename="../src/main.cpp" line="1343"/>
         <source>本月 Token</source>
         <translation>本月 Token</translation>
     </message>
     <message>
-        <location filename="../src/main.cpp" line="1280"/>
+        <location filename="../src/main.cpp" line="1345"/>
         <source>本月费用</source>
         <translation>本月费用</translation>
     </message>
     <message>
-        <location filename="../src/main.cpp" line="1284"/>
+        <location filename="../src/main.cpp" line="1349"/>
         <source>用量接近配额上限</source>
         <translation>用量接近配额上限</translation>
     </message>
     <message>
-        <location filename="../src/main.cpp" line="1285"/>
+        <location filename="../src/main.cpp" line="1350"/>
         <source>%1 已用 %2 / %3</source>
         <translation>%1 已用 %2 / %3</translation>
     </message>
     <message>
-        <location filename="../src/main.cpp" line="1378"/>
+        <location filename="../src/main.cpp" line="1443"/>
         <source>自动备份失败</source>
         <translation>自动备份失败</translation>
     </message>
     <message>
-        <location filename="../src/main.cpp" line="1379"/>
+        <location filename="../src/main.cpp" line="1444"/>
         <source>无法写入数据库快照目录：%1</source>
         <translation>无法写入数据库快照目录：%1</translation>
     </message>
@@ -9519,52 +9519,52 @@
     <name>ScheduledTaskEditorDialog</name>
     <message>
         <location filename="../src/ui/components/ScheduledTaskEditorDialog.qml" line="35"/>
-        <location filename="../src/ui/components/ScheduledTaskEditorDialog.qml" line="64"/>
+        <location filename="../src/ui/components/ScheduledTaskEditorDialog.qml" line="65"/>
         <source>新建定时任务</source>
         <translation>新建定时任务</translation>
     </message>
     <message>
-        <location filename="../src/ui/components/ScheduledTaskEditorDialog.qml" line="64"/>
+        <location filename="../src/ui/components/ScheduledTaskEditorDialog.qml" line="65"/>
         <source>编辑定时任务</source>
         <translation>编辑定时任务</translation>
     </message>
     <message>
-        <location filename="../src/ui/components/ScheduledTaskEditorDialog.qml" line="97"/>
+        <location filename="../src/ui/components/ScheduledTaskEditorDialog.qml" line="98"/>
         <source>跟随配置</source>
         <translation>跟随配置</translation>
     </message>
     <message>
-        <location filename="../src/ui/components/ScheduledTaskEditorDialog.qml" line="127"/>
+        <location filename="../src/ui/components/ScheduledTaskEditorDialog.qml" line="128"/>
         <source>变更确认</source>
         <translation>变更确认</translation>
     </message>
     <message>
-        <location filename="../src/ui/components/ScheduledTaskEditorDialog.qml" line="128"/>
+        <location filename="../src/ui/components/ScheduledTaskEditorDialog.qml" line="129"/>
         <source>自动编辑</source>
         <translation>自动编辑</translation>
     </message>
     <message>
-        <location filename="../src/ui/components/ScheduledTaskEditorDialog.qml" line="129"/>
+        <location filename="../src/ui/components/ScheduledTaskEditorDialog.qml" line="130"/>
         <source>完全访问</source>
         <translation>完全访问</translation>
     </message>
     <message>
-        <location filename="../src/ui/components/ScheduledTaskEditorDialog.qml" line="130"/>
+        <location filename="../src/ui/components/ScheduledTaskEditorDialog.qml" line="131"/>
         <source>只读（计划）</source>
         <translation>只读（计划）</translation>
     </message>
     <message>
-        <location filename="../src/ui/components/ScheduledTaskEditorDialog.qml" line="135"/>
+        <location filename="../src/ui/components/ScheduledTaskEditorDialog.qml" line="136"/>
         <source>请填写任务名称</source>
         <translation>请填写任务名称</translation>
     </message>
     <message>
-        <location filename="../src/ui/components/ScheduledTaskEditorDialog.qml" line="137"/>
+        <location filename="../src/ui/components/ScheduledTaskEditorDialog.qml" line="138"/>
         <source>请填写提示词</source>
         <translation>请填写提示词</translation>
     </message>
     <message>
-        <location filename="../src/ui/components/ScheduledTaskEditorDialog.qml" line="149"/>
+        <location filename="../src/ui/components/ScheduledTaskEditorDialog.qml" line="150"/>
         <source>请填写有效的触发时间（HH:mm）</source>
         <translation>请填写有效的触发时间（HH:mm）</translation>
     </message>
@@ -9573,168 +9573,174 @@
         <translation type="vanished">请先在设置中配置模型</translation>
     </message>
     <message>
-        <location filename="../src/ui/components/ScheduledTaskEditorDialog.qml" line="159"/>
+        <location filename="../src/ui/components/ScheduledTaskEditorDialog.qml" line="160"/>
         <source>请选择模型配置</source>
         <translation>请选择模型配置</translation>
     </message>
     <message>
-        <location filename="../src/ui/components/ScheduledTaskEditorDialog.qml" line="219"/>
         <location filename="../src/ui/components/ScheduledTaskEditorDialog.qml" line="221"/>
+        <location filename="../src/ui/components/ScheduledTaskEditorDialog.qml" line="223"/>
         <source>关闭</source>
         <translation>关闭</translation>
     </message>
     <message>
-        <location filename="../src/ui/components/ScheduledTaskEditorDialog.qml" line="237"/>
+        <location filename="../src/ui/components/ScheduledTaskEditorDialog.qml" line="239"/>
         <source>名称</source>
         <translation>名称</translation>
     </message>
     <message>
-        <location filename="../src/ui/components/ScheduledTaskEditorDialog.qml" line="246"/>
+        <location filename="../src/ui/components/ScheduledTaskEditorDialog.qml" line="248"/>
         <source>如：每日要闻总结</source>
         <translation>如：每日要闻总结</translation>
     </message>
     <message>
-        <location filename="../src/ui/components/ScheduledTaskEditorDialog.qml" line="247"/>
+        <location filename="../src/ui/components/ScheduledTaskEditorDialog.qml" line="249"/>
         <source>任务名称</source>
         <translation>任务名称</translation>
     </message>
     <message>
-        <location filename="../src/ui/components/ScheduledTaskEditorDialog.qml" line="255"/>
+        <location filename="../src/ui/components/ScheduledTaskEditorDialog.qml" line="257"/>
         <source>提示词（到点以此新建会话执行）</source>
         <translation>提示词（到点以此新建会话执行）</translation>
     </message>
     <message>
-        <location filename="../src/ui/components/ScheduledTaskEditorDialog.qml" line="267"/>
+        <location filename="../src/ui/components/ScheduledTaskEditorDialog.qml" line="269"/>
         <source>模型将收到的完整指令</source>
         <translation>模型将收到的完整指令</translation>
     </message>
     <message>
-        <location filename="../src/ui/components/ScheduledTaskEditorDialog.qml" line="268"/>
+        <location filename="../src/ui/components/ScheduledTaskEditorDialog.qml" line="270"/>
         <source>提示词</source>
         <translation>提示词</translation>
     </message>
     <message>
-        <location filename="../src/ui/components/ScheduledTaskEditorDialog.qml" line="277"/>
-        <location filename="../src/ui/components/ScheduledTaskEditorDialog.qml" line="288"/>
+        <location filename="../src/ui/components/ScheduledTaskEditorDialog.qml" line="279"/>
+        <location filename="../src/ui/components/ScheduledTaskEditorDialog.qml" line="290"/>
         <source>模型配置</source>
         <translation>模型配置</translation>
     </message>
     <message>
-        <location filename="../src/ui/components/ScheduledTaskEditorDialog.qml" line="301"/>
-        <location filename="../src/ui/components/ScheduledTaskEditorDialog.qml" line="312"/>
+        <location filename="../src/ui/components/ScheduledTaskEditorDialog.qml" line="303"/>
+        <location filename="../src/ui/components/ScheduledTaskEditorDialog.qml" line="314"/>
         <source>执行模型</source>
         <translation>执行模型</translation>
     </message>
     <message>
-        <location filename="../src/ui/components/ScheduledTaskEditorDialog.qml" line="320"/>
+        <location filename="../src/ui/components/ScheduledTaskEditorDialog.qml" line="322"/>
         <source>调度</source>
         <translation>调度</translation>
     </message>
     <message>
-        <location filename="../src/ui/components/ScheduledTaskEditorDialog.qml" line="332"/>
+        <location filename="../src/ui/components/ScheduledTaskEditorDialog.qml" line="334"/>
         <source>每天</source>
         <translation>每天</translation>
     </message>
     <message>
-        <location filename="../src/ui/components/ScheduledTaskEditorDialog.qml" line="332"/>
+        <location filename="../src/ui/components/ScheduledTaskEditorDialog.qml" line="334"/>
         <source>每周</source>
         <translation>每周</translation>
     </message>
     <message>
-        <location filename="../src/ui/components/ScheduledTaskEditorDialog.qml" line="332"/>
+        <location filename="../src/ui/components/ScheduledTaskEditorDialog.qml" line="334"/>
         <source>每 N 小时</source>
         <translation>每 N 小时</translation>
     </message>
     <message>
-        <location filename="../src/ui/components/ScheduledTaskEditorDialog.qml" line="333"/>
+        <location filename="../src/ui/components/ScheduledTaskEditorDialog.qml" line="335"/>
         <source>调度形态</source>
         <translation>调度形态</translation>
     </message>
     <message>
-        <location filename="../src/ui/components/ScheduledTaskEditorDialog.qml" line="342"/>
+        <location filename="../src/ui/components/ScheduledTaskEditorDialog.qml" line="344"/>
         <source>触发时间</source>
         <translation>触发时间</translation>
     </message>
     <message>
-        <location filename="../src/ui/components/ScheduledTaskEditorDialog.qml" line="347"/>
+        <location filename="../src/ui/components/ScheduledTaskEditorDialog.qml" line="349"/>
         <source>周一</source>
         <translation>周一</translation>
     </message>
     <message>
-        <location filename="../src/ui/components/ScheduledTaskEditorDialog.qml" line="347"/>
+        <location filename="../src/ui/components/ScheduledTaskEditorDialog.qml" line="349"/>
         <source>周二</source>
         <translation>周二</translation>
     </message>
     <message>
-        <location filename="../src/ui/components/ScheduledTaskEditorDialog.qml" line="347"/>
+        <location filename="../src/ui/components/ScheduledTaskEditorDialog.qml" line="349"/>
         <source>周三</source>
         <translation>周三</translation>
     </message>
     <message>
-        <location filename="../src/ui/components/ScheduledTaskEditorDialog.qml" line="347"/>
+        <location filename="../src/ui/components/ScheduledTaskEditorDialog.qml" line="349"/>
         <source>周四</source>
         <translation>周四</translation>
     </message>
     <message>
-        <location filename="../src/ui/components/ScheduledTaskEditorDialog.qml" line="348"/>
+        <location filename="../src/ui/components/ScheduledTaskEditorDialog.qml" line="350"/>
         <source>周五</source>
         <translation>周五</translation>
     </message>
     <message>
-        <location filename="../src/ui/components/ScheduledTaskEditorDialog.qml" line="348"/>
+        <location filename="../src/ui/components/ScheduledTaskEditorDialog.qml" line="350"/>
         <source>周六</source>
         <translation>周六</translation>
     </message>
     <message>
-        <location filename="../src/ui/components/ScheduledTaskEditorDialog.qml" line="348"/>
+        <location filename="../src/ui/components/ScheduledTaskEditorDialog.qml" line="350"/>
         <source>周日</source>
         <translation>周日</translation>
     </message>
     <message>
-        <location filename="../src/ui/components/ScheduledTaskEditorDialog.qml" line="350"/>
+        <location filename="../src/ui/components/ScheduledTaskEditorDialog.qml" line="352"/>
         <source>星期</source>
         <translation>星期</translation>
     </message>
     <message>
-        <location filename="../src/ui/components/ScheduledTaskEditorDialog.qml" line="357"/>
+        <location filename="../src/ui/components/ScheduledTaskEditorDialog.qml" line="359"/>
         <source>间隔小时数</source>
         <translation>间隔小时数</translation>
     </message>
     <message>
-        <location filename="../src/ui/components/ScheduledTaskEditorDialog.qml" line="360"/>
+        <location filename="../src/ui/components/ScheduledTaskEditorDialog.qml" line="362"/>
         <source>小时</source>
         <translation>小时</translation>
     </message>
     <message>
-        <location filename="../src/ui/components/ScheduledTaskEditorDialog.qml" line="374"/>
-        <location filename="../src/ui/components/ScheduledTaskEditorDialog.qml" line="388"/>
+        <location filename="../src/ui/components/ScheduledTaskEditorDialog.qml" line="376"/>
+        <location filename="../src/ui/components/ScheduledTaskEditorDialog.qml" line="390"/>
         <source>权限档</source>
         <translation>权限档</translation>
     </message>
     <message>
-        <location filename="../src/ui/components/ScheduledTaskEditorDialog.qml" line="394"/>
+        <location filename="../src/ui/components/ScheduledTaskEditorDialog.qml" line="396"/>
         <source>无人值守运行：需要确认的工具会被自动拒绝，不会挂起等待；建议配合较小墙钟上限。</source>
         <translation>无人值守运行：需要确认的工具会被自动拒绝，不会挂起等待；建议配合较小墙钟上限。</translation>
     </message>
     <message>
-        <location filename="../src/ui/components/ScheduledTaskEditorDialog.qml" line="406"/>
-        <location filename="../src/ui/components/ScheduledTaskEditorDialog.qml" line="415"/>
+        <location filename="../src/ui/components/ScheduledTaskEditorDialog.qml" line="408"/>
+        <location filename="../src/ui/components/ScheduledTaskEditorDialog.qml" line="417"/>
         <source>完成时系统通知</source>
         <translation>完成时系统通知</translation>
     </message>
     <message>
-        <location filename="../src/ui/components/ScheduledTaskEditorDialog.qml" line="445"/>
-        <location filename="../src/ui/components/ScheduledTaskEditorDialog.qml" line="448"/>
+        <location filename="../src/ui/components/ScheduledTaskEditorDialog.qml" line="427"/>
+        <location filename="../src/ui/components/ScheduledTaskEditorDialog.qml" line="436"/>
+        <source>错过时补跑最近一次</source>
+        <translation>错过时补跑最近一次</translation>
+    </message>
+    <message>
+        <location filename="../src/ui/components/ScheduledTaskEditorDialog.qml" line="466"/>
+        <location filename="../src/ui/components/ScheduledTaskEditorDialog.qml" line="469"/>
         <source>取消</source>
         <translation>取消</translation>
     </message>
     <message>
-        <location filename="../src/ui/components/ScheduledTaskEditorDialog.qml" line="452"/>
+        <location filename="../src/ui/components/ScheduledTaskEditorDialog.qml" line="473"/>
         <source>保存</source>
         <translation>保存</translation>
     </message>
     <message>
-        <location filename="../src/ui/components/ScheduledTaskEditorDialog.qml" line="456"/>
+        <location filename="../src/ui/components/ScheduledTaskEditorDialog.qml" line="477"/>
         <source>保存定时任务</source>
         <translation>保存定时任务</translation>
     </message>
@@ -11733,17 +11739,17 @@
         <translation>%1 条命中</translation>
     </message>
     <message>
-        <location filename="../src/ui/components/Sidebar.qml" line="1851"/>
+        <location filename="../src/ui/components/Sidebar.qml" line="1853"/>
         <source>定时任务</source>
         <translation>定时任务</translation>
     </message>
     <message>
-        <location filename="../src/ui/components/Sidebar.qml" line="1885"/>
+        <location filename="../src/ui/components/Sidebar.qml" line="1887"/>
         <source>知识库（正在处理）</source>
         <translation>知识库（正在处理）</translation>
     </message>
     <message>
-        <location filename="../src/ui/components/Sidebar.qml" line="1886"/>
+        <location filename="../src/ui/components/Sidebar.qml" line="1888"/>
         <source>知识库</source>
         <translation>知识库</translation>
     </message>
@@ -11787,7 +11793,7 @@
         <translation>审计日志</translation>
     </message>
     <message>
-        <location filename="../src/ui/components/Sidebar.qml" line="1859"/>
+        <location filename="../src/ui/components/Sidebar.qml" line="1861"/>
         <source>设置 (Ctrl+,)</source>
         <translation>设置 (Ctrl+,)</translation>
     </message>
@@ -11804,12 +11810,12 @@
         <translation type="vanished">当前为浅色主题，按回车切换到深色</translation>
     </message>
     <message>
-        <location filename="../src/ui/components/Sidebar.qml" line="1900"/>
+        <location filename="../src/ui/components/Sidebar.qml" line="1902"/>
         <source>Markdown (*.md)</source>
         <translation>Markdown (*.md)</translation>
     </message>
     <message>
-        <location filename="../src/ui/components/Sidebar.qml" line="1900"/>
+        <location filename="../src/ui/components/Sidebar.qml" line="1902"/>
         <source>JSON (*.json)</source>
         <translation>JSON (*.json)</translation>
     </message>
@@ -12303,7 +12309,7 @@
         <translation>昨天</translation>
     </message>
     <message>
-        <location filename="../src/core/memory/SqliteMemory.cpp" line="1834"/>
+        <location filename="../src/core/memory/SqliteMemory.cpp" line="1840"/>
         <source>消息库超过 %1 条：少于 3 个字符的关键词只能全表扫描，请输入至少 3 个字符以使用全文索引。</source>
         <translation>消息库超过 %1 条：少于 3 个字符的关键词只能全表扫描，请输入至少 3 个字符以使用全文索引。</translation>
     </message>

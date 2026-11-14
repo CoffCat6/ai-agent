@@ -186,6 +186,7 @@ private slots:
     void timeoutSealsRun();
     void profileMissingFailsReadable();
     void modelOverrideReachesConfigurator();
+    void missedCatchUpRunsLatestOccurrence();
     // ── 并发与手动 ──
     void busyGateSkipsScheduleFiresAndBlocksRunNow();
     void runNowFiresWithoutConsumingSchedule();
@@ -420,6 +421,26 @@ void TestScheduledManager::modelOverrideReachesConfigurator() {
                                  run2.value(QStringLiteral("error")).toString())));
     QCOMPARE(configured.value(QStringLiteral("model")).toString(),
              QStringLiteral("m-default"));
+}
+
+void TestScheduledManager::missedCatchUpRunsLatestOccurrence() {
+    // docs/50 增量（错过补跑）：catchUp=true 时超宽限窗的错过不再记
+    // missed，而是补跑最近一次应触发点——停运三天也只补最近一次（锚点
+    // 由 fireTask 推进），不洪泛；默认关（false）保持 D5 记 missed 语义。
+    QVariantMap task = taskFixture(QStringLiteral("t"),
+                                   T(10, 9, 0).toMSecsSinceEpoch());
+    task.insert(QStringLiteral("catchUp"), true);
+    const QString id = upsert(task);
+
+    m_llm.script.append(textResponse(QStringLiteral("catchup ok")));
+    m_now = T(11, 9, 2, 1);   // 到期 +121s：刚出宽限窗（missed 领地）
+    m_mgr->tick();
+
+    QCOMPARE(latestRunStatus(*m_mem, id), QStringLiteral("success"));
+    // 补的是最近应触发点（今天 09:00），锚点推进到它——下一个周期从
+    // 明天 09:00 起，不会被反复补跑。
+    QCOMPARE(lastFiredOf(*m_mem, id), T(11, 9, 0).toMSecsSinceEpoch());
+    QCOMPARE(m_mem->listScheduledTaskRuns(id).size(), 1);
 }
 
 // ── 并发与手动 ────────────────────────────────────────────

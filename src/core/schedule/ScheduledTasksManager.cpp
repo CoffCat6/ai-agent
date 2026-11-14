@@ -100,6 +100,16 @@ void ScheduledTasksManager::tick() {
         if (now.toMSecsSinceEpoch() - due.toMSecsSinceEpoch() <= kGraceMs) {
             fireTask(task, QStringLiteral("schedule"), due);
             changed = true;
+        } else if (task.value(QStringLiteral("catchUp")).toBool()) {
+            // 每任务「错过补跑」开关（docs/50 增量）：开启时把最近一次应
+            // 触发点补跑一次——应用停了三天也只补最近一次，锚点由 fireTask
+            // 内部推进，不会洪泛；撞上并发闸（另一任务在跑）由 fireTask
+            // 的 busy gate 记 skipped_busy 并照常推进锚点。
+            const QDateTime latest = spec->latestOccurrenceAtOrBefore(anchor, now);
+            if (!latest.isValid())
+                continue;
+            fireTask(task, QStringLiteral("schedule"), latest);
+            changed = true;
         } else {
             // 锚点一次推进到最近应触发点，只记一条 missed（D5 不补跑）。
             const QDateTime latest = spec->latestOccurrenceAtOrBefore(anchor, now);
