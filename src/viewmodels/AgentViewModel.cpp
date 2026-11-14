@@ -10,6 +10,8 @@
 #include "core/rag/RagService.h"
 #include "core/rag/KnowledgeChunk.h"
 #include "core/utils/FilePermissions.h"
+// docs/53: LaTeX → Unicode approximation for the chat render path.
+#include "core/utils/MathText.h"
 #include "viewmodels/PdfTextExtractor.h"
 #include "core/tools/ToolRegistry.h"
 #include "core/tools/Sandbox.h"
@@ -2855,6 +2857,10 @@ void AgentViewModel::clearKnowledge() {
 
 QVariantList AgentViewModel::documentChunks(const QString& name) {
     return m_rag ? m_rag->documentChunks(name).toVariantList() : QVariantList{};
+}
+
+QString AgentViewModel::renderMath(const QString& text) {
+    return MathText::render(text);
 }
 
 bool AgentViewModel::handleBuiltinCommand(const QString& text) {

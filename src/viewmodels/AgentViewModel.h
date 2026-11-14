@@ -723,6 +723,9 @@ public:
     // from fileChanged events (debounced) when knowledge.autoSyncSourceFiles
     // is on. Runs on a worker thread; embed progress reuses knowledgeEmbed*.
     Q_INVOKABLE void syncKnowledgeSources();
+    // docs/53: lightweight LaTeX → Unicode math approximation for the chat
+    // render path (no WebEngine). Static — pure text transformation.
+    Q_INVOKABLE static QString renderMath(const QString& text);
     // docs/52: built-in slash commands ("/compact [focus]"). Returns true
     // when the text was consumed as a built-in command (the caller must NOT
     // send it to the model); unknown/non-slash text returns false. This is

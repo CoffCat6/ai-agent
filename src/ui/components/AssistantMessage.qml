@@ -103,7 +103,8 @@ Item {
         let lang = ""
         const pushText = function() {
             const t = buf.join("\n")
-            if (t !== "") out.push({ kind: "text", text: t, idx: out.length })
+            if (t !== "") out.push({ kind: "text",
+                                     text: AgentVM.renderMath(t), idx: out.length })
             buf = []
         }
         for (let i = 0; i < lines.length; ++i) {
@@ -151,7 +152,8 @@ Item {
                     if (t < head.length) {
                         pushText()
                         out.push({ kind: "heading", level: h,
-                                   text: head.substring(t), idx: out.length })
+                                   text: AgentVM.renderMath(head.substring(t)),
+                                   idx: out.length })
                         continue
                     }
                 }
@@ -207,7 +209,7 @@ Item {
             anchors.left: parent.left
             anchors.right: parent.right
             visible: !root.splitMode
-            text: root.body
+            text: AgentVM.renderMath(root.body)
             textFormat: TextEdit.MarkdownText
             readOnly: true
             // 悬停时才允许鼠标选中：避免整块 TextEdit 抢占滚轮/拖拽，

@@ -73,6 +73,8 @@ add_library(nexus_core STATIC
     # docs/20 §4.2 二期：单实例 IPC（第二个实例唤起已有实例的主窗）。
     src/core/utils/InstanceIpc.h
     src/core/utils/InstanceIpc.cpp
+    # docs/53: LaTeX → Unicode 轻量近似渲染（无 WebEngine 的对话公式路径）。
+    src/core/utils/MathText.h
     src/core/tools/ITool.h
     src/core/tools/ToolRegistry.h
     src/core/tools/ToolRegistry.cpp

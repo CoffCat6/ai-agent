@@ -82,6 +82,27 @@ Item {
                 font.weight: Font.DemiBold
             }
 
+            IconButton {
+                objectName: "codeBlockMermaidButton"
+                anchors.right: copyBtn.left
+                anchors.rightMargin: 6
+                anchors.verticalCenter: parent.verticalCenter
+                // docs/53: mermaid fence → 轻量路线不做内嵌图形渲染（无
+                // WebEngine）；把源码复制进剪贴板并打开 mermaid.live，由
+                // 浏览器完成图形渲染。仅 mermaid 围栏显示。
+                visible: root.displayLanguage.toLowerCase() === "mermaid"
+                         && root.text !== ""
+                         && (codeHover.hovered || activeFocus)
+                icon: "export"
+                iconSize: 12
+                tooltip: qsTr("复制源码并在 mermaid.live 打开预览")
+                Accessible.name: tooltip
+                onClicked: {
+                    AgentVM.copyToClipboard(root.text)
+                    Qt.openUrlExternally("https://mermaid.live/edit")
+                }
+            }
+
             CopyButton {
                 id: copyBtn
                 anchors.right: parent.right

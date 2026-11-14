@@ -350,6 +350,9 @@ nexus_add_test(test_attachment_classifier test_attachment_classifier.cpp)
 # 数据目录定位、TryExec 探测）
 nexus_add_test(test_desktop_entry test_desktop_entry.cpp)
 
+# docs/53: LaTeX → Unicode 轻量近似渲染（转换矩阵 + 守卫）
+nexus_add_test(test_math_text test_math_text.cpp)
+
 # G2: project file index + '@' mention parsing. The popup and the
 # submit-time resolver share this implementation, so ordering/rejection
 # rules are locked here rather than in QML.
