@@ -38,6 +38,20 @@ Rectangle {
         source: root.isImage ? root.source : ""
         fillMode: Image.PreserveAspectCrop
         asynchronous: true
+
+        // docs/53: 图片点击放大（Lightbox）。原图 data URL 已在手，缺的
+        // 只是查看入口；TapHandler 不阻断右上角删除按钮的事件。
+        TapHandler {
+            acceptedButtons: Qt.LeftButton
+            enabled: root.isImage
+            cursorShape: Qt.PointingHandCursor
+            onTapped: lightbox.open()
+        }
+    }
+
+    ImageLightbox {
+        id: lightbox
+        source: root.source
     }
 
     Row {

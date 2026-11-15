@@ -466,39 +466,59 @@
 <context>
     <name>AssistantMessage</name>
     <message>
-        <location filename="../src/ui/components/AssistantMessage.qml" line="484"/>
+        <location filename="../src/ui/components/AssistantMessage.qml" line="238"/>
+        <source>复制所选</source>
+        <translation>Copy selection</translation>
+    </message>
+    <message>
+        <location filename="../src/ui/components/AssistantMessage.qml" line="243"/>
+        <source>复制全文</source>
+        <translation>Copy full text</translation>
+    </message>
+    <message>
+        <location filename="../src/ui/components/AssistantMessage.qml" line="251"/>
+        <source>引用到输入框</source>
+        <translation>Quote into input</translation>
+    </message>
+    <message>
+        <location filename="../src/ui/components/AssistantMessage.qml" line="256"/>
+        <source>全选</source>
+        <translation>Select all</translation>
+    </message>
+    <message>
+        <location filename="../src/ui/components/AssistantMessage.qml" line="520"/>
         <source>打开引用文档 %1，定位到分块 %2</source>
         <translation>Open cited document %1, located at chunk %2</translation>
     </message>
     <message>
-        <location filename="../src/ui/components/AssistantMessage.qml" line="486"/>
+        <location filename="../src/ui/components/AssistantMessage.qml" line="522"/>
         <source>打开引用文档 %1</source>
         <translation>Open cited document %1</translation>
     </message>
     <message>
-        <location filename="../src/ui/components/AssistantMessage.qml" line="553"/>
-        <location filename="../src/ui/components/AssistantMessage.qml" line="573"/>
+        <location filename="../src/ui/components/AssistantMessage.qml" line="589"/>
+        <location filename="../src/ui/components/AssistantMessage.qml" line="609"/>
         <source>从此处分支</source>
         <translation>Branch from here</translation>
     </message>
     <message>
-        <location filename="../src/ui/components/AssistantMessage.qml" line="574"/>
+        <location filename="../src/ui/components/AssistantMessage.qml" line="610"/>
         <source>把到这里为止的对话复制成一个新会话，在新会话里继续</source>
         <translation>Copy the conversation up to this point into a new chat and continue there</translation>
     </message>
     <message>
-        <location filename="../src/ui/components/AssistantMessage.qml" line="596"/>
-        <location filename="../src/ui/components/AssistantMessage.qml" line="616"/>
+        <location filename="../src/ui/components/AssistantMessage.qml" line="632"/>
+        <location filename="../src/ui/components/AssistantMessage.qml" line="652"/>
         <source>重新生成</source>
         <translation>Regenerate</translation>
     </message>
     <message>
-        <location filename="../src/ui/components/AssistantMessage.qml" line="617"/>
+        <location filename="../src/ui/components/AssistantMessage.qml" line="653"/>
         <source>丢弃当前回答并重新生成</source>
         <translation>Discard the current answer and regenerate</translation>
     </message>
     <message>
-        <location filename="../src/ui/components/AssistantMessage.qml" line="626"/>
+        <location filename="../src/ui/components/AssistantMessage.qml" line="662"/>
         <source>助手回复</source>
         <translation>Assistant reply</translation>
     </message>
@@ -506,12 +526,12 @@
 <context>
     <name>AttachmentChip</name>
     <message>
-        <location filename="../src/ui/components/AttachmentChip.qml" line="101"/>
+        <location filename="../src/ui/components/AttachmentChip.qml" line="115"/>
         <source>移除附件</source>
         <translation>Remove attachment</translation>
     </message>
     <message>
-        <location filename="../src/ui/components/AttachmentChip.qml" line="106"/>
+        <location filename="../src/ui/components/AttachmentChip.qml" line="120"/>
         <source>图片附件</source>
         <translation>Image attachment</translation>
     </message>
@@ -1078,17 +1098,17 @@
 <context>
     <name>CodeBlock</name>
     <message>
-        <location filename="../src/ui/components/CodeBlock.qml" line="98"/>
+        <location filename="../src/ui/components/CodeBlock.qml" line="117"/>
         <source>复制源码并在 mermaid.live 打开预览</source>
         <translation>Copy the source and open a preview at mermaid.live</translation>
     </message>
     <message>
-        <location filename="../src/ui/components/CodeBlock.qml" line="194"/>
+        <location filename="../src/ui/components/CodeBlock.qml" line="250"/>
         <source>代码块（%1）</source>
         <translation>Code block (%1)</translation>
     </message>
     <message>
-        <location filename="../src/ui/components/CodeBlock.qml" line="195"/>
+        <location filename="../src/ui/components/CodeBlock.qml" line="251"/>
         <source>代码块</source>
         <translation>Code block</translation>
     </message>
@@ -3603,6 +3623,14 @@ Any manual edits made since then will be overwritten.</translation>
         <location filename="../src/ui/components/GitWorkingDiffDialog.qml" line="446"/>
         <source>暂存</source>
         <translation>Stage</translation>
+    </message>
+</context>
+<context>
+    <name>ImageLightbox</name>
+    <message>
+        <location filename="../src/ui/components/ImageLightbox.qml" line="45"/>
+        <source>点击任意处关闭 (Esc)</source>
+        <translation>Click anywhere to close (Esc)</translation>
     </message>
 </context>
 <context>
@@ -6872,8 +6900,8 @@ Add a SKILL.md under the project&apos;s .nexusai/skills or the user skills direc
     <message>
         <location filename="../src/viewmodels/AgentViewModel.cpp" line="482"/>
         <location filename="../src/viewmodels/AgentViewModel.cpp" line="793"/>
-        <location filename="../src/viewmodels/AgentViewModel.cpp" line="3528"/>
-        <location filename="../src/viewmodels/AgentViewModel.cpp" line="3652"/>
+        <location filename="../src/viewmodels/AgentViewModel.cpp" line="3539"/>
+        <location filename="../src/viewmodels/AgentViewModel.cpp" line="3663"/>
         <source>新会话</source>
         <translation>New Session</translation>
     </message>
@@ -7109,57 +7137,57 @@ Add a SKILL.md under the project&apos;s .nexusai/skills or the user skills direc
         <translation>Fetch failed: %1</translation>
     </message>
     <message>
-        <location filename="../src/viewmodels/AgentViewModel.cpp" line="2881"/>
+        <location filename="../src/viewmodels/AgentViewModel.cpp" line="2892"/>
         <source>任务运行中，暂不能压缩上下文；等当前任务结束再试。</source>
         <translation>A task is running; compact after it finishes.</translation>
     </message>
     <message>
-        <location filename="../src/viewmodels/AgentViewModel.cpp" line="3066"/>
+        <location filename="../src/viewmodels/AgentViewModel.cpp" line="3077"/>
         <source>数据库正被占用（可能有备份或其它任务在进行），请稍后重试</source>
         <translation>The database is busy (a backup or another task may be running). Try again later</translation>
     </message>
     <message>
-        <location filename="../src/viewmodels/AgentViewModel.cpp" line="3077"/>
+        <location filename="../src/viewmodels/AgentViewModel.cpp" line="3088"/>
         <source>未指定备份文件</source>
         <translation>No backup file specified</translation>
     </message>
     <message>
-        <location filename="../src/viewmodels/AgentViewModel.cpp" line="3086"/>
+        <location filename="../src/viewmodels/AgentViewModel.cpp" line="3097"/>
         <source>备份文件不存在</source>
         <translation>The backup file does not exist</translation>
     </message>
     <message>
-        <location filename="../src/viewmodels/AgentViewModel.cpp" line="3090"/>
+        <location filename="../src/viewmodels/AgentViewModel.cpp" line="3101"/>
         <source>只能删除备份目录中的文件</source>
         <translation>Only files in the backup folder can be deleted</translation>
     </message>
     <message>
-        <location filename="../src/viewmodels/AgentViewModel.cpp" line="3093"/>
+        <location filename="../src/viewmodels/AgentViewModel.cpp" line="3104"/>
         <source>删除失败，请检查文件是否被占用</source>
         <translation>Delete failed. Check whether the file is in use</translation>
     </message>
     <message>
-        <location filename="../src/viewmodels/AgentViewModel.cpp" line="3635"/>
+        <location filename="../src/viewmodels/AgentViewModel.cpp" line="3646"/>
         <source>这个会话还没有可分叉的历史记录。</source>
         <translation>This conversation has no history to fork from yet.</translation>
     </message>
     <message>
-        <location filename="../src/viewmodels/AgentViewModel.cpp" line="3640"/>
+        <location filename="../src/viewmodels/AgentViewModel.cpp" line="3651"/>
         <source>这条回答还没有存进会话记录，稍等一下再试。</source>
         <translation>This answer is not saved to the conversation yet - try again in a moment.</translation>
     </message>
     <message>
-        <location filename="../src/viewmodels/AgentViewModel.cpp" line="3658"/>
+        <location filename="../src/viewmodels/AgentViewModel.cpp" line="3669"/>
         <source>%1（分支）</source>
         <translation>%1 (branch)</translation>
     </message>
     <message>
-        <location filename="../src/viewmodels/AgentViewModel.cpp" line="3660"/>
+        <location filename="../src/viewmodels/AgentViewModel.cpp" line="3671"/>
         <source>%1（分支%2）</source>
         <translation>%1 (branch %2)</translation>
     </message>
     <message>
-        <location filename="../src/viewmodels/AgentViewModel.cpp" line="3664"/>
+        <location filename="../src/viewmodels/AgentViewModel.cpp" line="3675"/>
         <source>无法创建分叉出来的会话，请重试。</source>
         <translation>Could not create the forked conversation. Please try again.</translation>
     </message>
@@ -7183,82 +7211,82 @@ Add a SKILL.md under the project&apos;s .nexusai/skills or the user skills direc
         <translation>Document content already exists, skipped: %1</translation>
     </message>
     <message>
-        <location filename="../src/viewmodels/AgentViewModel.cpp" line="2890"/>
+        <location filename="../src/viewmodels/AgentViewModel.cpp" line="2901"/>
         <source>未找到文档内容，无法重新嵌入：%1</source>
         <translation>Document content not found, cannot re-embed: %1</translation>
     </message>
     <message>
-        <location filename="../src/viewmodels/AgentViewModel.cpp" line="2915"/>
+        <location filename="../src/viewmodels/AgentViewModel.cpp" line="2926"/>
         <source>已重新嵌入 %1（%2 段）</source>
         <translation>Re-embedded %1 (%2 chunks)</translation>
     </message>
     <message>
-        <location filename="../src/viewmodels/AgentViewModel.cpp" line="2917"/>
+        <location filename="../src/viewmodels/AgentViewModel.cpp" line="2928"/>
         <source>重新嵌入失败：%1</source>
         <translation>Re-embedding failed: %1</translation>
     </message>
     <message>
-        <location filename="../src/viewmodels/AgentViewModel.cpp" line="2921"/>
+        <location filename="../src/viewmodels/AgentViewModel.cpp" line="2932"/>
         <source>已导入 %1（%2 段）</source>
         <translation>Imported %1 (%2 chunks)</translation>
     </message>
     <message>
-        <location filename="../src/viewmodels/AgentViewModel.cpp" line="2923"/>
+        <location filename="../src/viewmodels/AgentViewModel.cpp" line="2934"/>
         <source>导入失败（文件为空或无法分块）：%1</source>
         <translation>Import failed (file is empty or cannot be chunked): %1</translation>
     </message>
     <message>
-        <location filename="../src/viewmodels/AgentViewModel.cpp" line="2925"/>
+        <location filename="../src/viewmodels/AgentViewModel.cpp" line="2936"/>
         <source>知识库总量已达上限（最多 %1 段），请先删除部分文档后再导入</source>
         <translation>Knowledge base has reached its limit (max %1 chunks); delete some documents before importing</translation>
     </message>
     <message>
-        <location filename="../src/viewmodels/AgentViewModel.cpp" line="2928"/>
+        <location filename="../src/viewmodels/AgentViewModel.cpp" line="2939"/>
         <source>文件过大（超过单文档 %1 段上限）：%2</source>
         <translation>File too large (exceeds the per-document limit of %1 chunks): %2</translation>
     </message>
     <message>
-        <location filename="../src/viewmodels/AgentViewModel.cpp" line="2991"/>
-        <location filename="../src/viewmodels/AgentViewModel.cpp" line="3025"/>
-        <location filename="../src/viewmodels/AgentViewModel.cpp" line="3043"/>
-        <location filename="../src/viewmodels/AgentViewModel.cpp" line="3056"/>
-        <location filename="../src/viewmodels/AgentViewModel.cpp" line="3064"/>
-        <location filename="../src/viewmodels/AgentViewModel.cpp" line="3105"/>
+        <location filename="../src/viewmodels/AgentViewModel.cpp" line="3002"/>
+        <location filename="../src/viewmodels/AgentViewModel.cpp" line="3036"/>
+        <location filename="../src/viewmodels/AgentViewModel.cpp" line="3054"/>
+        <location filename="../src/viewmodels/AgentViewModel.cpp" line="3067"/>
+        <location filename="../src/viewmodels/AgentViewModel.cpp" line="3075"/>
+        <location filename="../src/viewmodels/AgentViewModel.cpp" line="3116"/>
         <source>数据库未就绪</source>
         <translation>Database not ready</translation>
     </message>
     <message>
-        <location filename="../src/viewmodels/AgentViewModel.cpp" line="2998"/>
+        <location filename="../src/viewmodels/AgentViewModel.cpp" line="3009"/>
         <source>备份失败，详见日志</source>
         <translation>Backup failed; see the log for details</translation>
     </message>
     <message>
-        <location filename="../src/viewmodels/AgentViewModel.cpp" line="3110"/>
+        <location filename="../src/viewmodels/AgentViewModel.cpp" line="3121"/>
         <source>无法读取该备份文件：%1</source>
         <translation>Cannot read this backup file: %1</translation>
     </message>
     <message>
-        <location filename="../src/viewmodels/AgentViewModel.cpp" line="3112"/>
+        <location filename="../src/viewmodels/AgentViewModel.cpp" line="3123"/>
         <source>备份完整性检查未通过，已取消恢复</source>
         <translation>Backup failed the integrity check — restore cancelled</translation>
     </message>
     <message>
-        <location filename="../src/viewmodels/AgentViewModel.cpp" line="3131"/>
+        <location filename="../src/viewmodels/AgentViewModel.cpp" line="3142"/>
         <source>恢复失败，原数据库已还原</source>
         <translation>Restore failed; the original database was kept</translation>
     </message>
     <message>
-        <location filename="../src/viewmodels/AgentViewModel.cpp" line="3412"/>
+        <location filename="../src/viewmodels/AgentViewModel.cpp" line="3423"/>
         <source>文件过大（附件上限 %1 KB）：%2</source>
         <translation>File too large (attachment limit %1 KB): %2</translation>
     </message>
     <message>
-        <location filename="../src/viewmodels/AgentViewModel.cpp" line="3417"/>
+        <location filename="../src/viewmodels/AgentViewModel.cpp" line="3428"/>
         <source>暂不支持二进制文件作为附件：%1</source>
         <translation>Binary files are not supported as attachments yet: %1</translation>
     </message>
     <message>
-        <location filename="../src/viewmodels/AgentViewModel.cpp" line="3430"/>
+        <location filename="../src/viewmodels/AgentViewModel.cpp" line="3441"/>
         <source>已忽略 %1 个不支持的文件类型（仅支持图片与文本文件）</source>
         <translation>Ignored %1 file(s) of unsupported types (images and text files only)</translation>
     </message>
@@ -14254,12 +14282,12 @@ select a file to view its content diff on the right.</translation>
 <context>
     <name>UserMessageBubble</name>
     <message>
-        <location filename="../src/ui/components/UserMessageBubble.qml" line="105"/>
+        <location filename="../src/ui/components/UserMessageBubble.qml" line="158"/>
         <source>发送</source>
         <translation>Send</translation>
     </message>
     <message>
-        <location filename="../src/ui/components/UserMessageBubble.qml" line="118"/>
+        <location filename="../src/ui/components/UserMessageBubble.qml" line="171"/>
         <source>取消</source>
         <translation>Cancel</translation>
     </message>
@@ -14276,17 +14304,43 @@ select a file to view its content diff on the right.</translation>
         <translation type="vanished">Branch from here</translation>
     </message>
     <message>
-        <location filename="../src/ui/components/UserMessageBubble.qml" line="199"/>
+        <location filename="../src/ui/components/UserMessageBubble.qml" line="88"/>
+        <source>复制所选</source>
+        <translation>Copy selection</translation>
+    </message>
+    <message>
+        <location filename="../src/ui/components/UserMessageBubble.qml" line="93"/>
+        <source>复制全文</source>
+        <translation>Copy full text</translation>
+    </message>
+    <message>
+        <location filename="../src/ui/components/UserMessageBubble.qml" line="101"/>
+        <source>引用到输入框</source>
+        <translation>Quote into input</translation>
+    </message>
+    <message>
+        <location filename="../src/ui/components/UserMessageBubble.qml" line="106"/>
+        <location filename="../src/ui/components/UserMessageBubble.qml" line="144"/>
+        <source>全选</source>
+        <translation>Select all</translation>
+    </message>
+    <message>
+        <location filename="../src/ui/components/UserMessageBubble.qml" line="139"/>
+        <source>粘贴</source>
+        <translation>Paste</translation>
+    </message>
+    <message>
+        <location filename="../src/ui/components/UserMessageBubble.qml" line="252"/>
         <source>编辑</source>
         <translation>Edit</translation>
     </message>
     <message>
-        <location filename="../src/ui/components/UserMessageBubble.qml" line="228"/>
+        <location filename="../src/ui/components/UserMessageBubble.qml" line="281"/>
         <source>编辑并重发</source>
         <translation>Edit and resend</translation>
     </message>
     <message>
-        <location filename="../src/ui/components/UserMessageBubble.qml" line="229"/>
+        <location filename="../src/ui/components/UserMessageBubble.qml" line="282"/>
         <source>修改这条消息并重新发送</source>
         <translation>Edit this message and send it again</translation>
     </message>
@@ -14307,7 +14361,7 @@ select a file to view its content diff on the right.</translation>
         <translation type="vanished">Delete this branch</translation>
     </message>
     <message>
-        <location filename="../src/ui/components/UserMessageBubble.qml" line="238"/>
+        <location filename="../src/ui/components/UserMessageBubble.qml" line="291"/>
         <source>你的消息</source>
         <translation>Your message</translation>
     </message>

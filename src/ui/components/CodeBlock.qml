@@ -30,6 +30,25 @@ Item {
     // （contentHeight 已随行距 token 自动含入 1.5 倍行高，无需单独加成）。
     readonly property int bodyHeight: codeText.contentHeight + 20
 
+    // docs/53: 行号槽。折行模式下 TextEdit.lineCount 是**视觉行**数——
+    // 行号按视觉行编号（同代码编辑器折叠视图惯例），行高以
+    // contentHeight / lineCount 反推（与 ProjectFilesPanel 同法），
+    // 保证 gutter 与正文逐行对齐。超大块（>1000 视觉行）隐藏，避免
+    // Repeater 在流式期间高频重建。
+    readonly property bool showGutter:
+        root.text !== "" && codeText.lineCount > 0 && codeText.lineCount <= 1000
+    readonly property real gutterRowHeight:
+        codeText.lineCount > 0 ? codeText.contentHeight / codeText.lineCount : 0
+    readonly property real gutterWidth:
+        showGutter ? (lineMetrics.width + 16) : 0
+
+    TextMetrics {
+        id: lineMetrics
+        font.family: Theme.fontMono
+        font.pixelSize: Theme.fontSizeCaption
+        text: "99999"
+    }
+
     // 投影在卡片底部的外扩量，计入布局高度：段间距只有 12px，投影若完全
     // 溢出会压到下一段正文上（底部外扩 = 外扩像素 + 垂直位移）。
     readonly property int shadowFootprint:
@@ -127,6 +146,42 @@ Item {
         }
 
         // ── Body ─────────────────────────────────────
+        // 行号槽：与正文同高，行高反推对齐（折行安全）。
+        Rectangle {
+            id: gutter
+            anchors.top: codeText.top
+            anchors.bottom: codeText.bottom
+            anchors.left: parent.left
+            anchors.leftMargin: 4
+            width: root.gutterWidth + 6
+            visible: root.showGutter
+            color: Qt.rgba(Theme.textTertiary.r, Theme.textTertiary.g,
+                           Theme.textTertiary.b, 0.08)
+
+            Column {
+                id: gutterCol
+                x: 4
+                y: codeText.topPadding
+                spacing: 0
+
+                Repeater {
+                    model: root.showGutter ? codeText.lineCount : 0
+
+                    Text {
+                        required property int index
+                        width: gutterCol.width
+                        height: root.gutterRowHeight
+                        verticalAlignment: Text.AlignVCenter
+                        horizontalAlignment: Text.AlignRight
+                        text: String(index + 1)
+                        color: Theme.textTertiary
+                        font.family: Theme.fontMono
+                        font.pixelSize: Theme.fontSizeCaption
+                    }
+                }
+            }
+        }
+
         TextEdit {
             id: codeText
             objectName: "codeBlockText"
@@ -134,9 +189,10 @@ Item {
             anchors.left: parent.left
             anchors.right: parent.right
             // docs/45 §3.3：内边距 8/12 → 10/14——等宽小字贴边显得局促，
-            // 左侧多 4px 与代码缩进层级拉开距离。
+            // 左侧多 4px 与代码缩进层级拉开距离；docs/53 行号开启时左侧再
+            // 让出 gutter 宽度（折行宽度随动，行号与正文不重叠）。
             anchors.margins: 10
-            anchors.leftMargin: 14
+            anchors.leftMargin: 14 + root.gutterWidth
             text: root.text
             readOnly: true
             cursorVisible: false

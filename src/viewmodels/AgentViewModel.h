@@ -723,6 +723,10 @@ public:
     // from fileChanged events (debounced) when knowledge.autoSyncSourceFiles
     // is on. Runs on a worker thread; embed progress reuses knowledgeEmbed*.
     Q_INVOKABLE void syncKnowledgeSources();
+    // docs/53: quote text into the input draft as a Markdown blockquote
+    // ("> " per line), appended to the existing draft. Used by the message
+    // context menus ("引用到输入框").
+    Q_INVOKABLE void quoteToDraft(const QString& text);
     // docs/53: lightweight LaTeX → Unicode math approximation for the chat
     // render path (no WebEngine). Static — pure text transformation.
     Q_INVOKABLE static QString renderMath(const QString& text);

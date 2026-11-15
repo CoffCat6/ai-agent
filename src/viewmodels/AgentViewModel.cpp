@@ -2863,6 +2863,17 @@ QString AgentViewModel::renderMath(const QString& text) {
     return MathText::render(text);
 }
 
+void AgentViewModel::quoteToDraft(const QString& text) {
+    QString quoted;
+    const QStringList lines = text.split(QLatin1Char('\n'));
+    for (const QString& line : lines)
+        quoted += QStringLiteral("> ") + line + QLatin1Char('\n');
+    const QString existing = draftText().trimmed();
+    setDraftText(existing.isEmpty()
+        ? quoted + QLatin1Char('\n')
+        : existing + QStringLiteral("\n\n") + quoted + QLatin1Char('\n'));
+}
+
 bool AgentViewModel::handleBuiltinCommand(const QString& text) {
     // Built-in command table (docs/52): v1 ships "/compact [focus]" — a
     // manual LLM-summary context compaction. Non-slash or unknown "/..."

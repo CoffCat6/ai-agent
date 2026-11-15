@@ -97,6 +97,12 @@ Item {
                         }
                     }
                     MenuItem {
+                        // docs/53: 引用所选文字进输入框草稿。
+                        text: qsTr("引用到输入框")
+                        enabled: bodyText.selectedText !== ""
+                        onTriggered: AgentVM.quoteToDraft(bodyText.selectedText)
+                    }
+                    MenuItem {
                         text: qsTr("全选")
                         onTriggered: bodyText.selectAll()
                     }

@@ -357,6 +357,7 @@ qt_add_qml_module(nexus_ai
         src/ui/components/MetricsLine.qml
         src/ui/components/ErrorCard.qml
         src/ui/components/AttachmentChip.qml
+        src/ui/components/ImageLightbox.qml
         src/ui/components/InputConsole.qml
         src/ui/components/ModelSelector.qml
         src/ui/components/PermissionModeSelector.qml

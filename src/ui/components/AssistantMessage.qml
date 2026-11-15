@@ -247,6 +247,12 @@ Item {
                     }
                 }
                 MenuItem {
+                    // docs/53: 把所选文字以 Markdown 引用前缀送进输入框草稿。
+                    text: qsTr("引用到输入框")
+                    enabled: mdText.selectedText !== ""
+                    onTriggered: AgentVM.quoteToDraft(mdText.selectedText)
+                }
+                MenuItem {
                     text: qsTr("全选")
                     onTriggered: mdText.selectAll()
                 }
