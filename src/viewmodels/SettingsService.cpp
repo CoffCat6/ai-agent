@@ -2478,6 +2478,20 @@ int SettingsService::modelContextWindow(const QString& apiProtocol,
     return d->contextWindows.value(model, 0);
 }
 
+// docs/54（能力徽章）：三个字段一次取齐——上下文（模型级，能力表可能未
+// 收录返回 0）、视觉（模型名关键词启发式，宁缺勿错）、工具（协议级）。
+QVariantMap SettingsService::modelCapabilities(const QString& apiProtocol,
+                                               const QString& model) const {
+    const auto* d = LlmProtocolRegistry::find(apiProtocol);
+    QVariantMap caps;
+    caps.insert(QStringLiteral("contextWindow"),
+                d ? d->contextWindows.value(model, 0) : 0);
+    caps.insert(QStringLiteral("vision"),
+                d && LlmProtocolRegistry::supportsVision(apiProtocol, model));
+    caps.insert(QStringLiteral("tools"), d ? d->toolCalling : false);
+    return caps;
+}
+
 // 某厂商可选的协议（UI 的协议选择行与列表标签）：{apiProtocol, label}。
 // 只有一个协议时 UI 不显示这一行。默认端点与模型不从这里外发——切换端点后的
 // 回填由 updateProfile 单点负责，两处各给一份默认值迟早会漂移。

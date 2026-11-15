@@ -30,11 +30,14 @@ Item {
         font.family: Theme.fontMono
     }
     function showWindowHint(apiProtocol, model) {
-        const cw = Settings.modelContextWindow(apiProtocol, model)
-        const hint = cw > 0
+        const caps = Settings.modelCapabilities(apiProtocol, model)
+        const cw = caps.contextWindow
+        const parts = [cw > 0
             ? qsTr("上下文窗口：%1K").arg(Math.round(cw / 1000))
-            : qsTr("上下文窗口：未知（使用全局默认）")
-        windowHint.show(hint, 2500)
+            : qsTr("上下文窗口：未知（使用全局默认）")]
+        if (caps.vision) parts.push(qsTr("支持视觉输入"))
+        if (!caps.tools) parts.push(qsTr("工具调用受限"))
+        windowHint.show(parts.join(" · "), 2500)
     }
 
     implicitWidth: selectorRow.implicitWidth + 20
@@ -225,6 +228,27 @@ Item {
                                 font.bold: modelItem.isSelected
                                 elide: Text.ElideRight
                             }
+
+                            // docs/54: 能力徽章（上下文窗口 / 视觉 / 工具）。
+                            // 纯文本徽章（docs/43 §6.2 不单靠颜色）；能力表
+                            // 未收录的模型只显示 "？"。
+                            Text {
+                                objectName: "modelCapsBadge"
+                                text: {
+                                    const caps = Settings.modelCapabilities(
+                                        root.activeProfile.apiProtocol, modelData)
+                                    const parts = []
+                                    parts.push(caps.contextWindow > 0
+                                        ? Math.round(caps.contextWindow / 1000) + "K"
+                                        : "?")
+                                    if (caps.vision) parts.push(qsTr("视觉"))
+                                    if (caps.tools) parts.push(qsTr("工具"))
+                                    return parts.join(" · ")
+                                }
+                                color: Theme.textTertiary
+                                font.pixelSize: Theme.fontSizeNano
+                                font.family: Theme.fontSans
+                            }
                         }
 
                         MouseArea {
@@ -330,6 +354,26 @@ Item {
                                 font.pixelSize: Theme.fontSizeCaption
                                 font.family: Theme.fontSans
                                 elide: Text.ElideRight
+                            }
+
+                            // docs/54: profile 级能力徽章（同 Section 1 口径）。
+                            Text {
+                                objectName: "profileCapsBadge"
+                                text: {
+                                    const caps = Settings.modelCapabilities(
+                                        String(modelData.apiProtocol || ""),
+                                        String(modelData.model || ""))
+                                    const parts = []
+                                    parts.push(caps.contextWindow > 0
+                                        ? Math.round(caps.contextWindow / 1000) + "K"
+                                        : "?")
+                                    if (caps.vision) parts.push(qsTr("视觉"))
+                                    if (caps.tools) parts.push(qsTr("工具"))
+                                    return parts.join(" · ")
+                                }
+                                color: Theme.textTertiary
+                                font.pixelSize: Theme.fontSizeNano
+                                font.family: Theme.fontSans
                             }
                         }
 

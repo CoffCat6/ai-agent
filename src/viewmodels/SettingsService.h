@@ -465,6 +465,10 @@ public:
     // back to the global contextTokens). 按协议查：同一厂商的两条协议可用的
     // 模型集合不一样。Invoked from QML (ModelConfigPage / ModelSelector).
     Q_INVOKABLE int modelContextWindow(const QString& apiProtocol, const QString& model) const;
+    // docs/54（能力徽章）：{contextWindow, vision, tools}——contextWindow
+    // 为 0 表示能力表未收录；vision 为模型名关键词启发式；tools 为协议级。
+    Q_INVOKABLE QVariantMap modelCapabilities(const QString& apiProtocol,
+                                              const QString& model) const;
 
     // Resolve the effective context budget for the active profile using a
     // four-level priority (docs/43 §4.2): per-model

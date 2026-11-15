@@ -25,7 +25,12 @@ const QVector<LlmProtocolDescriptor>& LlmProtocolRegistry::descriptors() {
           {QStringLiteral("gpt-4-turbo"), 128000},
           {QStringLiteral("o3-mini"), 200000}},
          QStringLiteral("OPENAI_API_KEY"), false,
-         [](QObject* parent) -> IAIService* { return new OpenAIService(parent); }},
+         [](QObject* parent) -> IAIService* { return new OpenAIService(parent); },
+         // docs/54: 视觉模型关键词（小写子串）。o3-mini 是文本推理模型，
+         // "o3" 宽匹配会误标——省略 o3 系（宁缺勿错）。
+         {QStringLiteral("gpt-4o"), QStringLiteral("gpt-4.1"),
+          QStringLiteral("gpt-4-turbo"), QStringLiteral("chatgpt-4o"),
+          QStringLiteral("o4-mini")}, true, },
 
         // OpenAI 官方端点；绝大多数"OpenAI 兼容"网关只实现 /chat/completions，
         // 所以这条协议排在 openai-chat 之后——厂商默认协议取表里第一条。
@@ -39,7 +44,9 @@ const QVector<LlmProtocolDescriptor>& LlmProtocolRegistry::descriptors() {
           {QStringLiteral("o3-mini"), 200000},
           {QStringLiteral("gpt-4.1"), 1000000}},
          QStringLiteral("OPENAI_API_KEY"), false,
-         [](QObject* parent) -> IAIService* { return new OpenAIResponsesService(parent); }},
+         [](QObject* parent) -> IAIService* { return new OpenAIResponsesService(parent); },
+         {QStringLiteral("gpt-4o"), QStringLiteral("gpt-4.1"),
+          QStringLiteral("chatgpt-4o"), QStringLiteral("o4-mini")}, true, },
 
         {protocolKey(LlmProtocol::kAnthropicMessages), QStringLiteral("anthropic"),
          QStringLiteral("Messages"),
@@ -51,7 +58,8 @@ const QVector<LlmProtocolDescriptor>& LlmProtocolRegistry::descriptors() {
           {QStringLiteral("claude-3-5-sonnet-20241022"), 200000},
           {QStringLiteral("claude-3-opus-20240229"), 200000}},
          QStringLiteral("ANTHROPIC_API_KEY"), false,
-         [](QObject* parent) -> IAIService* { return new AnthropicService(parent); }},
+         [](QObject* parent) -> IAIService* { return new AnthropicService(parent); },
+         {QStringLiteral("claude")}, true, },   // 全系多模态
 
         // 任务 #24（批次四）：Google Gemini 原生 GenerateContent 协议。
         // 云 provider（local=false）：localOnlyMode 的云 gate 机制现成。
@@ -63,7 +71,8 @@ const QVector<LlmProtocolDescriptor>& LlmProtocolRegistry::descriptors() {
          {{QStringLiteral("gemini-2.5-flash"), 1000000},
           {QStringLiteral("gemini-2.5-pro"), 1000000}},
          QStringLiteral("GEMINI_API_KEY"), false,
-         [](QObject* parent) -> IAIService* { return new GeminiService(parent); }},
+         [](QObject* parent) -> IAIService* { return new GeminiService(parent); },
+         {QStringLiteral("gemini")}, true, },   // 全系多模态
 
         {protocolKey(LlmProtocol::kOllamaChat), QStringLiteral("ollama"),
          QStringLiteral("Ollama Chat"),
@@ -74,7 +83,13 @@ const QVector<LlmProtocolDescriptor>& LlmProtocolRegistry::descriptors() {
           {QStringLiteral("llama3.1:8b"), 128000},
           {QStringLiteral("deepseek-r1:7b"), 65536}},
          QString(), true,
-         [](QObject* parent) -> IAIService* { return new OllamaService(parent); }},
+         [](QObject* parent) -> IAIService* { return new OllamaService(parent); },
+         // 本地视觉模型族（用户自拉模型，名单覆盖常见命名族）。
+         {QStringLiteral("llava"), QStringLiteral("llama3.2-vision"),
+          QStringLiteral("qwen-vl"), QStringLiteral("qwen2-vl"),
+          QStringLiteral("qwen2.5-vl"), QStringLiteral("minicpm-v"),
+          QStringLiteral("moondream"), QStringLiteral("bakllava"),
+          QStringLiteral("granite3-vision")}, true, },
     };
     return table;
 }
@@ -117,6 +132,17 @@ LlmProtocolRegistry::protocolsOfProvider(const QString& provider) {
         if (d.provider == provider) out.append(d);
     }
     return out;
+}
+
+// docs/54（能力徽章）：模型名小写化后命中描述符 visionModelHints 任一子串
+// 即视为支持视觉。启发式——未收录模型返回 false（宁缺勿错）。
+bool LlmProtocolRegistry::supportsVision(const QString& key, const QString& model) {
+    const auto* d = find(key);
+    if (!d) return false;
+    const QString lowered = model.toLower();
+    for (const QString& hint : d->visionModelHints)
+        if (lowered.contains(hint)) return true;
+    return false;
 }
 
 bool LlmProtocolRegistry::isLocal(const QString& key, const QString& provider) {

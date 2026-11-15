@@ -6273,55 +6273,77 @@
 <context>
     <name>ModelSelector</name>
     <message>
-        <location filename="../src/ui/components/ModelSelector.qml" line="35"/>
+        <location filename="../src/ui/components/ModelSelector.qml" line="36"/>
         <source>上下文窗口：%1K</source>
         <translation>上下文窗口：%1K</translation>
     </message>
     <message>
-        <location filename="../src/ui/components/ModelSelector.qml" line="36"/>
+        <location filename="../src/ui/components/ModelSelector.qml" line="37"/>
         <source>上下文窗口：未知（使用全局默认）</source>
         <translation>上下文窗口：未知（使用全局默认）</translation>
     </message>
     <message>
-        <location filename="../src/ui/components/ModelSelector.qml" line="56"/>
+        <location filename="../src/ui/components/ModelSelector.qml" line="38"/>
+        <source>支持视觉输入</source>
+        <translation>支持视觉输入</translation>
+    </message>
+    <message>
+        <location filename="../src/ui/components/ModelSelector.qml" line="39"/>
+        <source>工具调用受限</source>
+        <translation>工具调用受限</translation>
+    </message>
+    <message>
+        <location filename="../src/ui/components/ModelSelector.qml" line="59"/>
         <source>模型选择器</source>
         <translation>模型选择器</translation>
     </message>
     <message>
-        <location filename="../src/ui/components/ModelSelector.qml" line="59"/>
+        <location filename="../src/ui/components/ModelSelector.qml" line="62"/>
         <source>未配置模型</source>
         <translation>未配置模型</translation>
     </message>
     <message>
-        <location filename="../src/ui/components/ModelSelector.qml" line="95"/>
+        <location filename="../src/ui/components/ModelSelector.qml" line="98"/>
         <source>未配置模型 · 点击设置</source>
         <translation>未配置模型 · 点击设置</translation>
     </message>
     <message>
-        <location filename="../src/ui/components/ModelSelector.qml" line="98"/>
-        <location filename="../src/ui/components/ModelSelector.qml" line="327"/>
-        <location filename="../src/ui/components/ModelSelector.qml" line="350"/>
+        <location filename="../src/ui/components/ModelSelector.qml" line="101"/>
+        <location filename="../src/ui/components/ModelSelector.qml" line="351"/>
+        <location filename="../src/ui/components/ModelSelector.qml" line="394"/>
         <source>未指定模型</source>
         <translation>未指定模型</translation>
     </message>
     <message>
-        <location filename="../src/ui/components/ModelSelector.qml" line="164"/>
+        <location filename="../src/ui/components/ModelSelector.qml" line="167"/>
         <source>模型 · %1</source>
         <translation>模型 · %1</translation>
     </message>
     <message>
-        <location filename="../src/ui/components/ModelSelector.qml" line="254"/>
+        <location filename="../src/ui/components/ModelSelector.qml" line="244"/>
+        <location filename="../src/ui/components/ModelSelector.qml" line="370"/>
+        <source>视觉</source>
+        <translation>视觉</translation>
+    </message>
+    <message>
+        <location filename="../src/ui/components/ModelSelector.qml" line="245"/>
+        <location filename="../src/ui/components/ModelSelector.qml" line="371"/>
+        <source>工具</source>
+        <translation>工具</translation>
+    </message>
+    <message>
+        <location filename="../src/ui/components/ModelSelector.qml" line="278"/>
         <source>这条配置还没有可选模型：先在「管理模型配置…」里填写模型名。</source>
         <translation>这条配置还没有可选模型：先在「管理模型配置…」里填写模型名。</translation>
     </message>
     <message>
-        <location filename="../src/ui/components/ModelSelector.qml" line="273"/>
+        <location filename="../src/ui/components/ModelSelector.qml" line="297"/>
         <source>配置 · 共 %1 个</source>
         <translation>配置 · 共 %1 个</translation>
     </message>
     <message>
-        <location filename="../src/ui/components/ModelSelector.qml" line="400"/>
-        <location filename="../src/ui/components/ModelSelector.qml" line="420"/>
+        <location filename="../src/ui/components/ModelSelector.qml" line="444"/>
+        <location filename="../src/ui/components/ModelSelector.qml" line="464"/>
         <source>管理模型配置…</source>
         <translation>管理模型配置…</translation>
     </message>

@@ -6273,55 +6273,77 @@ Add a SKILL.md under the project&apos;s .nexusai/skills or the user skills direc
 <context>
     <name>ModelSelector</name>
     <message>
-        <location filename="../src/ui/components/ModelSelector.qml" line="35"/>
+        <location filename="../src/ui/components/ModelSelector.qml" line="36"/>
         <source>上下文窗口：%1K</source>
         <translation>Context window: %1K</translation>
     </message>
     <message>
-        <location filename="../src/ui/components/ModelSelector.qml" line="36"/>
+        <location filename="../src/ui/components/ModelSelector.qml" line="37"/>
         <source>上下文窗口：未知（使用全局默认）</source>
         <translation>Context window: unknown (using global default)</translation>
     </message>
     <message>
-        <location filename="../src/ui/components/ModelSelector.qml" line="56"/>
+        <location filename="../src/ui/components/ModelSelector.qml" line="38"/>
+        <source>支持视觉输入</source>
+        <translation>Vision input supported</translation>
+    </message>
+    <message>
+        <location filename="../src/ui/components/ModelSelector.qml" line="39"/>
+        <source>工具调用受限</source>
+        <translation>Tool calling limited</translation>
+    </message>
+    <message>
+        <location filename="../src/ui/components/ModelSelector.qml" line="59"/>
         <source>模型选择器</source>
         <translation>Model selector</translation>
     </message>
     <message>
-        <location filename="../src/ui/components/ModelSelector.qml" line="59"/>
+        <location filename="../src/ui/components/ModelSelector.qml" line="62"/>
         <source>未配置模型</source>
         <translation>No model configured</translation>
     </message>
     <message>
-        <location filename="../src/ui/components/ModelSelector.qml" line="95"/>
+        <location filename="../src/ui/components/ModelSelector.qml" line="98"/>
         <source>未配置模型 · 点击设置</source>
         <translation>No model configured · Click to set up</translation>
     </message>
     <message>
-        <location filename="../src/ui/components/ModelSelector.qml" line="98"/>
-        <location filename="../src/ui/components/ModelSelector.qml" line="327"/>
-        <location filename="../src/ui/components/ModelSelector.qml" line="350"/>
+        <location filename="../src/ui/components/ModelSelector.qml" line="101"/>
+        <location filename="../src/ui/components/ModelSelector.qml" line="351"/>
+        <location filename="../src/ui/components/ModelSelector.qml" line="394"/>
         <source>未指定模型</source>
         <translation>no model set</translation>
     </message>
     <message>
-        <location filename="../src/ui/components/ModelSelector.qml" line="164"/>
+        <location filename="../src/ui/components/ModelSelector.qml" line="167"/>
         <source>模型 · %1</source>
         <translation>Model · %1</translation>
     </message>
     <message>
-        <location filename="../src/ui/components/ModelSelector.qml" line="254"/>
+        <location filename="../src/ui/components/ModelSelector.qml" line="244"/>
+        <location filename="../src/ui/components/ModelSelector.qml" line="370"/>
+        <source>视觉</source>
+        <translation>Vision</translation>
+    </message>
+    <message>
+        <location filename="../src/ui/components/ModelSelector.qml" line="245"/>
+        <location filename="../src/ui/components/ModelSelector.qml" line="371"/>
+        <source>工具</source>
+        <translation>Tools</translation>
+    </message>
+    <message>
+        <location filename="../src/ui/components/ModelSelector.qml" line="278"/>
         <source>这条配置还没有可选模型：先在「管理模型配置…」里填写模型名。</source>
         <translation>This profile has no models yet - set a model name under Manage model profiles…</translation>
     </message>
     <message>
-        <location filename="../src/ui/components/ModelSelector.qml" line="273"/>
+        <location filename="../src/ui/components/ModelSelector.qml" line="297"/>
         <source>配置 · 共 %1 个</source>
         <translation>Profiles · %1 total</translation>
     </message>
     <message>
-        <location filename="../src/ui/components/ModelSelector.qml" line="400"/>
-        <location filename="../src/ui/components/ModelSelector.qml" line="420"/>
+        <location filename="../src/ui/components/ModelSelector.qml" line="444"/>
+        <location filename="../src/ui/components/ModelSelector.qml" line="464"/>
         <source>管理模型配置…</source>
         <translation>Manage Model Profiles…</translation>
     </message>

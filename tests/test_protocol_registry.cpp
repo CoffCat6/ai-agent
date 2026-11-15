@@ -32,6 +32,32 @@ private slots:
         }
     }
 
+    // docs/54（能力徽章）：视觉启发式与协议级工具标志。
+    void visionHintsAndToolCalling() {
+        // 已知视觉模型族命中（大小写不敏感）。
+        QVERIFY(LlmProtocolRegistry::supportsVision(
+            QString::fromLatin1(LlmProtocol::kOpenaiChat), QStringLiteral("gpt-4o")));
+        QVERIFY(LlmProtocolRegistry::supportsVision(
+            QString::fromLatin1(LlmProtocol::kOpenaiChat), QStringLiteral("GPT-4O-MINI")));
+        QVERIFY(LlmProtocolRegistry::supportsVision(
+            QString::fromLatin1(LlmProtocol::kAnthropicMessages),
+            QStringLiteral("claude-sonnet-4-5")));
+        QVERIFY(LlmProtocolRegistry::supportsVision(
+            QString::fromLatin1(LlmProtocol::kOllamaChat), QStringLiteral("llava:13b")));
+        // 文本推理模型不在视觉名单（宁缺勿错）。
+        QVERIFY(!LlmProtocolRegistry::supportsVision(
+            QString::fromLatin1(LlmProtocol::kOpenaiChat), QStringLiteral("o3-mini")));
+        QVERIFY(!LlmProtocolRegistry::supportsVision(
+            QString::fromLatin1(LlmProtocol::kOllamaChat),
+            QStringLiteral("qwen2.5:7b")));
+        // 未知协议 → false。
+        QVERIFY(!LlmProtocolRegistry::supportsVision(
+            QStringLiteral("nope"), QStringLiteral("gpt-4o")));
+        // 工具调用：五协议全部支持（Gemini 走 schema 清洗降级）。
+        for (const auto& d : LlmProtocolRegistry::descriptors())
+            QVERIFY2(d.toolCalling, qPrintable(d.key));
+    }
+
     void findOnlyAcceptsRegisteredKeys() {
         QVERIFY(LlmProtocolRegistry::find(QString::fromLatin1(LlmProtocol::kOpenaiChat)));
         QVERIFY(LlmProtocolRegistry::find(QString::fromLatin1(LlmProtocol::kOllamaChat)));

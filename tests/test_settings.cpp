@@ -1306,6 +1306,8 @@ private slots:
             "prefs/v1/notice.enabled",
             // docs/50 §8: 定时任务单次运行上限（调度器 provider 触发时现读）
             "prefs/v1/schedule.maxRunMinutes",
+            // docs/53: 知识库源文件自动同步开关（watcher 联动门控）
+            "prefs/v1/knowledge.autoSyncSourceFiles",
             // M2 内部键：PreferenceStore 写入的物理路径
             "prefs/v1/settings.lastCategory",
             "prefs/v1/settings.collapsedGroups",

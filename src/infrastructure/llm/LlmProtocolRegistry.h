@@ -36,6 +36,13 @@ struct LlmProtocolDescriptor {
     QString envApiKeyVar;      // 空 = 不读环境变量（本地服务）
     bool local{false};         // 内容不出本机，local-only 门控豁免
     IAIService* (*createService)(QObject* parent){nullptr};
+    // docs/54（能力徽章）：模型级能力的启发式数据。
+    // visionModelHints：模型名（小写化）命中任一子串即视为支持视觉输入。
+    // 启发式而非精确表——宁缺勿错，未收录的模型不标视觉。
+    QStringList visionModelHints;
+    // 工具调用为协议级：五协议的 service 均实现 tools 转换（Gemini 带
+    // schema 清洗降级，降级失败也不报错）。
+    bool toolCalling{true};
 };
 
 // 协议 → 实现的唯一映射表。加一种协议只需要在表里加一条描述符：运行时装配、
@@ -63,6 +70,10 @@ public:
 
     // 给定（协议, 厂商）判定是否本地服务；main.cpp 的 local-only 门控用。
     static bool isLocal(const QString& key, const QString& provider);
+
+    // docs/54（能力徽章）：模型名的视觉支持启发式——小写化后命中描述符的
+    // visionModelHints 任一子串即 true。未收录模型返回 false（宁缺勿错）。
+    static bool supportsVision(const QString& key, const QString& model);
 
     // 未注册 / 工厂缺失返回 nullptr，调用方据此报告"未配置模型服务"。
     static IAIService* createService(const QString& key, QObject* parent);
