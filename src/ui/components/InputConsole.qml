@@ -785,120 +785,8 @@ function applySkill(name) {
     }
 
     // ── docs/53: quoted excerpts（引用卡片）────────────────
-    // 每条引用一张卡片：左侧品牌竖条 + 摘要文本（单行省略，tooltip 全
-    // 文）+ × 移除。发送时由 AgentVM.startTaskWithSkills 统一拼成
-    // Markdown 引用块前置，成功后清空（失败还原）。
-    Item {
-        id: quoteBar
-        objectName: "quoteChipBar"
-        anchors.left: parent.left
-        anchors.right: parent.right
-        anchors.bottom: inputRow.top
-        anchors.leftMargin: 8
-        anchors.rightMargin: 8
-        anchors.bottomMargin: (root.referenceVisible ? referenceBar.height + 8 : 4)
-                              + root.unknownSkillHintBlock
-        height: quotesFlow.implicitHeight
-        visible: AgentVM.draftQuotes.length > 0
-
-        Flow {
-            id: quotesFlow
-            anchors.left: parent.left
-            anchors.right: parent.right
-            spacing: 6
-
-            Repeater {
-                model: AgentVM.draftQuotes
-
-                delegate: Rectangle {
-                    id: quoteChip
-                    required property var modelData
-                    required property int index
-
-                    objectName: "quoteChip"
-                    height: quoteText.implicitHeight + 14
-                    width: Math.min(quoteText.implicitWidth + 16,
-                                    quoteBar.width - 12)
-                    radius: 6
-                    color: Theme.surfaceHover
-                    border.width: 1
-                    border.color: Qt.rgba(Theme.brandPrimary.r, Theme.brandPrimary.g,
-                                          Theme.brandPrimary.b, 0.35)
-
-                    // 左侧 3px 品牌竖条：Markdown 引用块的视觉隐喻。
-                    Rectangle {
-                        anchors.left: parent.left
-                        anchors.top: parent.top
-                        anchors.bottom: parent.top
-                        anchors.topMargin: 2
-                        anchors.bottomMargin: anchors.topMargin
-                        width: 3
-                        radius: 1
-                        color: Theme.brandPrimary
-                    }
-
-                    Row {
-                        anchors.centerIn: parent
-                        spacing: 5
-
-                        Text {
-                            anchors.verticalCenter: parent.verticalCenter
-                            text: "❝"
-                            color: Theme.brandPrimary
-                            font.pixelSize: Theme.fontSizeCaption
-                            font.family: Theme.fontSans
-                        }
-
-                        Text {
-                            id: quoteText
-                            anchors.verticalCenter: parent.verticalCenter
-                            text: String(quoteChip.modelData.text)
-                                      .replace(/\n/g, " ⏎ ")
-                            color: Theme.textSecondary
-                            font.pixelSize: Theme.fontSizeMicro
-                            font.family: Theme.fontSans
-                            // Chip 宽度上限 340 由外层截断；文本自身兜底省略。
-                            width: Math.min(implicitWidth, 320)
-                            elide: Text.ElideRight
-
-                            HoverHandler { id: quoteFullHover }
-                            ToolTip.visible: quoteFullHover.hovered
-                            ToolTip.delay: 300
-                            ToolTip.text: String(quoteChip.modelData.text)
-                        }
-                    }
-
-                    Item {
-                        width: 14
-                        height: 14
-                        anchors.verticalCenter: parent.verticalCenter
-
-                        Text {
-                            anchors.centerIn: parent
-                            text: "×"
-                            color: quoteRemoveHover.hovered
-                                ? Theme.statusDanger : Theme.textSecondary
-                            font.pixelSize: Theme.fontSizeCaption
-                        }
-
-                        HoverHandler { id: quoteRemoveHover }
-
-                        MouseArea {
-                            anchors.fill: parent
-                            cursorShape: Qt.PointingHandCursor
-                            onClicked: AgentVM.removeQuoteRef(
-                                quoteChip.modelData.id)
-                        }
-
-                        Accessible.role: Accessible.Button
-                        Accessible.name: qsTr("移除引用")
-                        Accessible.onPressAction: AgentVM.removeQuoteRef(
-                            quoteChip.modelData.id)
-                    }
-                }
-            }
-        }
-    }
+    // 渲染在 inputRow **内部**（见 inputRow 顶部的 quoteBar）——用户要求
+    // 引用内容显示在输入框里，而不是悬浮在框外。
 
     // ── docs/37 W3: referenced skills ────────────────────
     // One removable chip per resolved '$name' (dedupe/cap already applied by
@@ -914,7 +802,6 @@ function applySkill(name) {
         anchors.rightMargin: 8
         anchors.bottomMargin: (root.referenceVisible ? referenceBar.height + 8 : 4)
                               + root.unknownSkillHintBlock
-                              + (AgentVM.draftQuotes.length > 0 ? quoteBar.height + 4 : 0)
         height: 24
         visible: root.skillsVisible
 
@@ -1046,7 +933,132 @@ function applySkill(name) {
         anchors.right: parent.right
         anchors.bottom: parent.bottom
         anchors.margins: 8
+        // docs/53: 引用卡片嵌在输入框内部顶部——有引用时输入框高度加上
+        // 卡片区（卡片 + 间距），textArea 从卡片下方起排。
         height: Math.min(textArea.implicitHeight, root.maxHeight)
+                + (AgentVM.draftQuotes.length > 0 ? quoteBar.height + 10 : 0)
+
+        // ── docs/53: quoted excerpts（输入框内引用卡片）────────
+        // 每条引用一张卡片：品牌竖条 + 摘要文本（单行省略、tooltip 全
+        // 文）+ × 移除。× 是 Row 的固定件恒可见（文本列被 elide 让位，
+        // 不会像首版那样被宽度截断挤掉）。
+        Item {
+            id: quoteBar
+            objectName: "quoteChipBar"
+            anchors.top: parent.top
+            anchors.topMargin: 8
+            anchors.left: parent.left
+            anchors.leftMargin: 12
+            anchors.right: parent.right
+            anchors.rightMargin: 56   // 让开发送按钮区
+            height: quotesFlow.implicitHeight
+            visible: AgentVM.draftQuotes.length > 0
+
+            Flow {
+                id: quotesFlow
+                anchors.fill: parent
+                spacing: 6
+
+                Repeater {
+                    model: AgentVM.draftQuotes
+
+                    delegate: Rectangle {
+                        id: quoteChip
+                        required property var modelData
+                        required property int index
+
+                        // 固定件：左 padding 8 + ❝ 12 + 两个 spacing 10 +
+                        // × 14 + 右 padding 6——文本宽度 = chip 宽 - 固定件，
+                        // × 恒可见可点。
+                        readonly property real fixedParts: 50
+
+                        objectName: "quoteChip"
+                        height: quoteText.implicitHeight + 14
+                        width: Math.min(quoteText.implicitWidth + fixedParts,
+                                        quotesFlow.width - 12)
+                        radius: 6
+                        color: Theme.surfaceHover
+                        border.width: 1
+                        border.color: Qt.rgba(Theme.brandPrimary.r,
+                                              Theme.brandPrimary.g,
+                                              Theme.brandPrimary.b, 0.35)
+
+                        // 左侧 3px 品牌竖条：Markdown 引用块的视觉隐喻。
+                        Rectangle {
+                            anchors.left: parent.left
+                            anchors.top: parent.top
+                            anchors.bottom: parent.top
+                            anchors.topMargin: 2
+                            anchors.bottomMargin: anchors.topMargin
+                            width: 3
+                            radius: 1
+                            color: Theme.brandPrimary
+                        }
+
+                        Row {
+                            anchors.centerIn: parent
+                            spacing: 5
+
+                            Text {
+                                anchors.verticalCenter: parent.verticalCenter
+                                text: "❝"
+                                color: Theme.brandPrimary
+                                font.pixelSize: Theme.fontSizeCaption
+                                font.family: Theme.fontSans
+                            }
+
+                            Text {
+                                id: quoteText
+                                anchors.verticalCenter: parent.verticalCenter
+                                // Chip 宽度随内容，上限由 chip width 截：
+                                // 文本列 = chip 宽 - 固定件 → elide。
+                                width: quoteChip.width - quoteChip.fixedParts
+                                       - 12 - 10 - 5   // 左竖条外 padding + ❝ + spacings + ×
+                                text: String(quoteChip.modelData.text)
+                                          .replace(/\n/g, " ⏎ ")
+                                color: Theme.textSecondary
+                                font.pixelSize: Theme.fontSizeMicro
+                                font.family: Theme.fontSans
+                                elide: Text.ElideRight
+
+                                HoverHandler { id: quoteFullHover }
+                                ToolTip.visible: quoteFullHover.hovered
+                                ToolTip.delay: 300
+                                ToolTip.text: String(quoteChip.modelData.text)
+                            }
+                        }
+
+                        Item {
+                            width: 14
+                            height: 14
+                            anchors.verticalCenter: parent.verticalCenter
+
+                            Text {
+                                anchors.centerIn: parent
+                                text: "×"
+                                color: quoteRemoveHover.hovered
+                                    ? Theme.statusDanger : Theme.textSecondary
+                                font.pixelSize: Theme.fontSizeCaption
+                            }
+
+                            HoverHandler { id: quoteRemoveHover }
+
+                            MouseArea {
+                                anchors.fill: parent
+                                cursorShape: Qt.PointingHandCursor
+                                onClicked: AgentVM.removeQuoteRef(
+                                    quoteChip.modelData.id)
+                            }
+
+                            Accessible.role: Accessible.Button
+                            Accessible.name: qsTr("移除引用")
+                            Accessible.onPressAction: AgentVM.removeQuoteRef(
+                                quoteChip.modelData.id)
+                        }
+                    }
+                }
+            }
+        }
 
         // ── 草稿区宽度节流（docs/47）──────────────────
         // textArea 是全宽 wrap 的 TextEdit：窗口拖动缩放的每步都会令
@@ -1085,6 +1097,8 @@ function applySkill(name) {
         // Text input area: height follows the content so the placeholder
         // stays vertically centered; grows with wrapping up to the cap
         // (the text area scrolls internally past it).
+        // docs/53: 有引用卡片时改为顶部锚定（卡片下方起排）；无引用时
+        // inputRow 高度 = textArea 高度，顶锚与原垂直居中视觉等价。
         TextArea {
             id: textArea
             objectName: "messageInput"
@@ -1094,7 +1108,9 @@ function applySkill(name) {
             // 见上方 draftLiveWidth 注释。
             width: inputRow.draftResizing
                 ? inputRow.draftSyncedWidth : inputRow.draftLiveWidth
-            anchors.verticalCenter: parent.verticalCenter
+            anchors.top: parent.top
+            anchors.topMargin: AgentVM.draftQuotes.length > 0
+                ? quoteBar.height + 10 : 0
             height: Math.min(implicitHeight, root.maxHeight)
 
             color: Theme.textPrimary
