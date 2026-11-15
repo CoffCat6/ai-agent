@@ -26,6 +26,8 @@ Item {
     // 高亮强度（底色透明度）。搜索命中用 0.10（"这是你要找的"），
     // 导轨跳转用 0.06（只是"确认落点"，不该和搜索结果混淆）。
     property real highlightStrength: 0.10
+    // docs/54: 新消息分隔线——true 时在节点顶部渲染"以下为新消息"条。
+    property bool showSeparatorBefore: false
 
     // A1 (hit-locate): 2s 自动复位高亮——避免搜索卡片残留高亮底色。
     Timer {
@@ -94,6 +96,40 @@ Item {
     height: processHidden ? 0 : implicitHeight
     visible: !processHidden
     implicitHeight: topGap + (loader.item ? loader.item.implicitHeight : 0)
+
+    // docs/54: 新消息分隔条（"以下为新消息"）——插在锚行顶部，显示后
+    // 随会话继续存在（用户发新消息或再次离开会话时锚点更新）。
+    Row {
+        id: newSeparator
+        visible: root.showSeparatorBefore
+        anchors.left: parent.left
+        anchors.right: parent.right
+        anchors.top: parent.top
+        anchors.topMargin: -8
+        spacing: 8
+        height: visible ? 18 : 0
+
+        Rectangle {
+            width: parent.width - newLabel.width - parent.spacing * 2
+            height: 1
+            anchors.verticalCenter: parent.verticalCenter
+            color: Theme.brandPrimary
+        }
+        Text {
+            id: newLabel
+            anchors.verticalCenter: parent.verticalCenter
+            text: qsTr("以下为新消息")
+            color: Theme.brandPrimary
+            font.pixelSize: Theme.fontSizeNano
+            font.family: Theme.fontSans
+        }
+        Rectangle {
+            width: parent.width - newLabel.width - parent.spacing * 2
+            height: 1
+            anchors.verticalCenter: parent.verticalCenter
+            color: Theme.brandPrimary
+        }
+    }
 
     // A1 (hit-locate): 命中定位的短暂高亮底色（z 置底，不遮挡交互）。
     Rectangle {

@@ -742,6 +742,19 @@ public:
     // the missing interception point — SlashCommand::expand only expands
     // user templates and passes unknown "/..." through as plain text.
     Q_INVOKABLE bool handleBuiltinCommand(const QString& text);
+    // docs/54: in-conversation find. Scans the ACTIVE conversation's trace
+    // (user_message + summary nodes, case-insensitive) and returns
+    // [{row, preview}] in trace order — QML find bar navigates rows via
+    // transcript.scrollToIndex + the existing reveal highlight.
+    Q_INVOKABLE QVariantList findInConversation(const QString& needle) const;
+    // docs/54: row index where "new since last visit" messages begin
+    // (recorded when LEAVING a conversation; -1 = no anchor). QML renders a
+    // separator before that trace row.
+    Q_PROPERTY(int unreadSeparatorIndex READ unreadSeparatorIndex NOTIFY traceChanged)
+    int unreadSeparatorIndex() const;
+    // docs/54: trace row count recorded when LEAVING a conversation — the
+    // "new since last visit" anchor for the separator.
+    QHash<QString, int> m_seenTraceRows;
     // docs/51 internals: re-arm the source-file watcher after the document
     // set changes; run the sync for an explicit path list; record the
     // post-ingest source snapshot.

@@ -6,6 +6,7 @@
 #include "core/agent/AIAgent.h"
 #include "core/agent/SubAgentRunner.h"
 #include "core/memory/IMemory.h"
+#include "viewmodels/TraceModel.h"
 #include "core/memory/SqliteMemory.h"
 #include "core/rag/RagService.h"
 #include "core/rag/KnowledgeChunk.h"
@@ -710,6 +711,12 @@ void AgentViewModel::startFromSessionTemplate(const QVariantMap& tmpl) {
 
 void AgentViewModel::activateTab(int index) {
     if (index < 0 || index >= m_tabs.size() || index == m_activeTab) return;
+    // docs/54: the tab being LEFT gets its trace row count recorded as the
+    // "read" anchor for the new-message separator.
+    if (ChatSessionController* leaving = active()) {
+        if (TraceModel* tm = qobject_cast<TraceModel*>(leaving->trace()))
+            m_seenTraceRows[leaving->currentSessionId()] = tm->rowCount();
+    }
     // docs/18: activeProjectId 是派生值，切标签会改变它——先取旧值用于比对。
     const QString projectBefore = activeProjectId();
     m_activeTab = index;
@@ -2890,6 +2897,49 @@ QString AgentViewModel::renderMath(const QString& text) {
     return MathText::render(text);
 }
 
+QVariantList AgentViewModel::findInConversation(const QString& needle) const {
+    QVariantList hits;
+    const QString needleTrimmed = needle.trimmed();
+    if (needleTrimmed.isEmpty()) return hits;
+    ChatSessionController* controller = active();
+    TraceModel* tm = controller
+        ? qobject_cast<TraceModel*>(controller->trace()) : nullptr;
+    if (!tm) return hits;
+    // UI 一致口径：用户看到的每一行都来自 traceModel——正文就是节点
+    // title（TraceModel::userMessageIndex 已确立的约定）。只扫正文两型：
+    // user_message 与 summary（助手回复）。
+    for (int row = 0; row < tm->rowCount(); ++row) {
+        const QVariantMap node = tm->get(row);
+        const QString type = node.value(QStringLiteral("type")).toString();
+        if (type != QLatin1String("user_message")
+                && type != QLatin1String("summary"))
+            continue;
+        const QString title = node.value(QStringLiteral("title")).toString();
+        if (!title.contains(needleTrimmed, Qt::CaseInsensitive)) continue;
+        QVariantMap hit;
+        hit.insert(QStringLiteral("row"), row);
+        hit.insert(QStringLiteral("type"), type);
+        const int at = title.indexOf(needleTrimmed, 0, Qt::CaseInsensitive);
+        hit.insert(QStringLiteral("preview"),
+                   title.mid(qMax(0, at - 30), 120));
+        hits.append(hit);
+    }
+    return hits;
+}
+
+int AgentViewModel::unreadSeparatorIndex() const {
+    ChatSessionController* controller = active();
+    TraceModel* tm = controller
+        ? qobject_cast<TraceModel*>(controller->trace()) : nullptr;
+    if (!tm) return -1;
+    const QString sessionId = controller->currentSessionId();
+    if (sessionId.isEmpty() || !m_seenTraceRows.contains(sessionId))
+        return -1;
+    const int anchor = m_seenTraceRows.value(sessionId);
+    const int total = tm->rowCount();
+    return total > anchor ? anchor : -1;
+}
+
 void AgentViewModel::addQuoteRef(const QString& text) {
     const QString trimmed = text.trimmed();
     if (trimmed.isEmpty()) return;
@@ -3747,6 +3797,15 @@ void AgentViewModel::newChat() {
 }
 
 void AgentViewModel::loadSession(const QString& sessionId) {
+    // docs/54: switching sessions in THIS tab — record the row count of the
+    // session being left as its "read" anchor.
+    if (ChatSessionController* c = active()) {
+        const QString leaving = c->currentSessionId();
+        if (!leaving.isEmpty() && leaving != sessionId) {
+            if (TraceModel* tm = qobject_cast<TraceModel*>(c->trace()))
+                m_seenTraceRows[leaving] = tm->rowCount();
+        }
+    }
     // docs/17 P0-3 + docs/18: 会话与项目联动，且只作用于**承载它的那个标签**
     // （旧实现改的是全局活动项目，会连带影响其他标签）。项目会话 → 该标签
     // 归属其项目；本地会话 → 该标签回到本地（空）。

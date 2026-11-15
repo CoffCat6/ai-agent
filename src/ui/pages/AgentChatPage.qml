@@ -20,6 +20,152 @@ Item {
     // （只是"确认落点"，不该和搜索结果混淆）。
     property real revealHighlightStrength: 0.10
 
+    // docs/54: 会话内查找（Ctrl+F）。命中 = trace 中 user_message/summary
+    // 行，跳转复用 scrollToIndex + 命中高亮链路；Enter/Shift+Enter 上下遍历。
+    property bool findBarVisible: false
+    property string findQuery: ""
+    property var findHits: []
+    property int findCursor: 0
+    readonly property var currentFindHit:
+        findCursor >= 0 && findCursor < findHits.length
+            ? findHits[findCursor] : null
+
+    function openFindBar() {
+        findBarVisible = true
+        findQuery = ""
+        findHits = []
+        findCursor = 0
+        findField.forceActiveFocus()
+    }
+    function closeFindBar() {
+        findBarVisible = false
+        revealHighlightIndex = -1
+        inputConsole.textArea.forceActiveFocus()
+    }
+    function refreshFindHits() {
+        findHits = findQuery.trim().length > 0
+            ? AgentVM.findInConversation(findQuery) : []
+        findCursor = findHits.length > 0 ? 0 : 0
+        jumpToCurrentHit()
+    }
+    function jumpToCurrentHit() {
+        const hit = currentFindHit
+        if (!hit) { revealHighlightIndex = -1; return }
+        transcript.scrollToIndex(hit.row)
+        revealHighlightStrength = 0.10
+        revealHighlightIndex = hit.row
+        highlightTimer.restart()
+    }
+    function jumpFindHit(delta) {
+        if (findHits.length === 0) return
+        findCursor = (findCursor + delta + findHits.length) % findHits.length
+        jumpToCurrentHit()
+    }
+
+    Shortcut {
+        sequence: ShortcutMap.bindings["conversation.find"] || ""
+        enabled: !ShortcutMap.recording
+        onActivated: openFindBar()
+    }
+
+    Timer {
+        id: findDebounce
+        interval: 200
+        onTriggered: root.refreshFindHits()
+    }
+
+    // 查找条：会话区顶部悬浮（与"回到底部"按钮同层风格）。
+    Rectangle {
+        id: findBar
+        objectName: "findBar"
+        visible: root.findBarVisible
+        anchors.top: parent.top
+        anchors.topMargin: 6
+        anchors.horizontalCenter: parent.horizontalCenter
+        z: 6
+        width: findRow.implicitWidth + 16
+        height: 34
+        radius: Theme.radiusMd
+        color: Theme.bgPrimary
+        border.width: 1
+        border.color: Theme.cardBorder
+
+        Row {
+            id: findRow
+            anchors.centerIn: parent
+            spacing: 8
+
+            TextInput {
+                id: findField
+                objectName: "findField"
+                width: 180
+                anchors.verticalCenter: parent.verticalCenter
+                color: Theme.textPrimary
+                font.pixelSize: Theme.fontSizeCaption
+                font.family: Theme.fontSans
+                clip: true
+                selectByMouse: true
+                // Enter/↓ 下一个命中；Shift+Enter/↑ 上一个；Esc 关闭还焦输入框。
+                Keys.onReturnPressed: root.jumpFindHit(1)
+                Keys.onEnterPressed: root.jumpFindHit(1)
+                Keys.onDownPressed: root.jumpFindHit(1)
+                Keys.onUpPressed: root.jumpFindHit(-1)
+                Keys.onEscapePressed: root.closeFindBar()
+                onTextChanged: {
+                    root.findQuery = text
+                    findDebounce.restart()
+                }
+
+                Text {
+                    visible: findField.text === ""
+                    anchors.left: parent.left
+                    anchors.verticalCenter: parent.verticalCenter
+                    text: qsTr("在当前对话中查找…")
+                    color: Theme.textSecondary
+                    font.pixelSize: Theme.fontSizeCaption
+                    font.family: Theme.fontSans
+                }
+            }
+
+            Text {
+                anchors.verticalCenter: parent.verticalCenter
+                objectName: "findCounter"
+                text: root.findHits.length > 0
+                    ? qsTr("%1 / %2").arg(root.findCursor + 1)
+                          .arg(root.findHits.length)
+                    : (root.findQuery.trim().length > 0
+                       ? qsTr("无匹配") : qsTr(" "))
+                color: Theme.textSecondary
+                font.pixelSize: Theme.fontSizeMicro
+                font.family: Theme.fontMono
+            }
+
+            IconButton {
+                anchors.verticalCenter: parent.verticalCenter
+                iconSize: 12
+                icon: "chevron-up"
+                enabled: root.findHits.length > 0
+                onClicked: root.jumpFindHit(-1)
+                Accessible.name: qsTr("上一个命中")
+            }
+            IconButton {
+                anchors.verticalCenter: parent.verticalCenter
+                iconSize: 12
+                icon: "chevron-down"
+                enabled: root.findHits.length > 0
+                onClicked: root.jumpFindHit(1)
+                Accessible.name: qsTr("下一个命中")
+            }
+            IconButton {
+                anchors.verticalCenter: parent.verticalCenter
+                iconSize: 12
+                icon: "close"
+                onClicked: root.closeFindBar()
+                Accessible.name: qsTr("关闭查找")
+            }
+        }
+    }
+
     // Sending can synchronously insert the user row before requestFollow().
     // Forward the intent immediately instead of waiting for another count change.
     QtObject {
@@ -110,6 +256,10 @@ Item {
                     // A1 (hit-locate): 搜索命中定位——索引匹配时短暂高亮。
                     highlighted: index === root.revealHighlightIndex
                     highlightStrength: root.revealHighlightStrength
+                    // docs/54: 新消息分隔线（离开会话时记录的行数锚）。
+                    showSeparatorBefore:
+                        index === AgentVM.unreadSeparatorIndex
+                        && AgentVM.unreadSeparatorIndex > 0
                 }
             }
 

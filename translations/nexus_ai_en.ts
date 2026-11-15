@@ -399,47 +399,82 @@
 <context>
     <name>AgentChatPage</name>
     <message>
-        <location filename="../src/ui/pages/AgentChatPage.qml" line="34"/>
+        <location filename="../src/ui/pages/AgentChatPage.qml" line="123"/>
+        <source>在当前对话中查找…</source>
+        <translation>Find in conversation…</translation>
+    </message>
+    <message>
+        <location filename="../src/ui/pages/AgentChatPage.qml" line="134"/>
+        <source>%1 / %2</source>
+        <translation>%1 / %2</translation>
+    </message>
+    <message>
+        <location filename="../src/ui/pages/AgentChatPage.qml" line="137"/>
+        <source>无匹配</source>
+        <translation>No matches</translation>
+    </message>
+    <message>
+        <location filename="../src/ui/pages/AgentChatPage.qml" line="137"/>
+        <source> </source>
+        <translation> </translation>
+    </message>
+    <message>
+        <location filename="../src/ui/pages/AgentChatPage.qml" line="149"/>
+        <source>上一个命中</source>
+        <translation>Previous match</translation>
+    </message>
+    <message>
+        <location filename="../src/ui/pages/AgentChatPage.qml" line="157"/>
+        <source>下一个命中</source>
+        <translation>Next match</translation>
+    </message>
+    <message>
+        <location filename="../src/ui/pages/AgentChatPage.qml" line="164"/>
+        <source>关闭查找</source>
+        <translation>Close find</translation>
+    </message>
+    <message>
+        <location filename="../src/ui/pages/AgentChatPage.qml" line="180"/>
         <source>AI 对话页面</source>
         <translation>AI chat page</translation>
     </message>
     <message>
-        <location filename="../src/ui/pages/AgentChatPage.qml" line="177"/>
+        <location filename="../src/ui/pages/AgentChatPage.qml" line="327"/>
         <source>发送一条消息，开始与 NexusAI 对话</source>
         <translation>Send a message to start chatting with NexusAI</translation>
     </message>
     <message>
-        <location filename="../src/ui/pages/AgentChatPage.qml" line="178"/>
+        <location filename="../src/ui/pages/AgentChatPage.qml" line="328"/>
         <source>先连接一个模型，即可开始对话。你的输入会保留在这里。</source>
         <translation>Connect a model to start chatting. Your draft will stay here.</translation>
     </message>
     <message>
-        <location filename="../src/ui/pages/AgentChatPage.qml" line="189"/>
+        <location filename="../src/ui/pages/AgentChatPage.qml" line="339"/>
         <source>配置模型</source>
         <translation>Configure model</translation>
     </message>
     <message>
-        <location filename="../src/ui/pages/AgentChatPage.qml" line="227"/>
+        <location filename="../src/ui/pages/AgentChatPage.qml" line="377"/>
         <source>从模板开始</source>
         <translation>Start from a template</translation>
     </message>
     <message>
-        <location filename="../src/ui/pages/AgentChatPage.qml" line="252"/>
+        <location filename="../src/ui/pages/AgentChatPage.qml" line="402"/>
         <source>从会话模板开始</source>
         <translation>Start from a session template</translation>
     </message>
     <message>
-        <location filename="../src/ui/pages/AgentChatPage.qml" line="291"/>
+        <location filename="../src/ui/pages/AgentChatPage.qml" line="441"/>
         <source>有待确认 · %1</source>
         <translation>Pending · %1</translation>
     </message>
     <message>
-        <location filename="../src/ui/pages/AgentChatPage.qml" line="309"/>
+        <location filename="../src/ui/pages/AgentChatPage.qml" line="459"/>
         <source>有待确认的工具操作，点击查看</source>
         <translation>Pending tool confirmation, click to view</translation>
     </message>
     <message>
-        <location filename="../src/ui/pages/AgentChatPage.qml" line="344"/>
+        <location filename="../src/ui/pages/AgentChatPage.qml" line="494"/>
         <source>回到底部</source>
         <translation>Scroll to bottom</translation>
     </message>
@@ -3645,7 +3680,7 @@ Any manual edits made since then will be overwritten.</translation>
         <translation type="vanished">Type a message... (Enter to send, Shift+Enter for newline)</translation>
     </message>
     <message>
-        <location filename="../src/ui/components/InputConsole.qml" line="1110"/>
+        <location filename="../src/ui/components/InputConsole.qml" line="1126"/>
         <source>消息输入框</source>
         <translation>Message input field</translation>
     </message>
@@ -3705,7 +3740,7 @@ Any manual edits made since then will be overwritten.</translation>
     </message>
     <message>
         <location filename="../src/ui/components/InputConsole.qml" line="328"/>
-        <location filename="../src/ui/components/InputConsole.qml" line="1546"/>
+        <location filename="../src/ui/components/InputConsole.qml" line="1562"/>
         <source>未知错误</source>
         <translation>Unknown error</translation>
     </message>
@@ -3715,125 +3750,125 @@ Any manual edits made since then will be overwritten.</translation>
         <translation>Skill not found: %1. Check the name, or refresh in Settings → Skills.</translation>
     </message>
     <message>
-        <location filename="../src/ui/components/InputConsole.qml" line="894"/>
+        <location filename="../src/ui/components/InputConsole.qml" line="1054"/>
         <source>移除引用</source>
         <translation>Remove quote</translation>
     </message>
     <message>
-        <location filename="../src/ui/components/InputConsole.qml" line="966"/>
-        <location filename="../src/ui/components/InputConsole.qml" line="1889"/>
+        <location filename="../src/ui/components/InputConsole.qml" line="853"/>
+        <location filename="../src/ui/components/InputConsole.qml" line="1905"/>
         <source>项目</source>
         <translation>Project</translation>
     </message>
     <message>
-        <location filename="../src/ui/components/InputConsole.qml" line="966"/>
-        <location filename="../src/ui/components/InputConsole.qml" line="1889"/>
+        <location filename="../src/ui/components/InputConsole.qml" line="853"/>
+        <location filename="../src/ui/components/InputConsole.qml" line="1905"/>
         <source>用户</source>
         <translation>User</translation>
     </message>
     <message>
-        <location filename="../src/ui/components/InputConsole.qml" line="994"/>
+        <location filename="../src/ui/components/InputConsole.qml" line="881"/>
         <source>移除技能 %1</source>
         <translation>Remove skill %1</translation>
     </message>
     <message>
-        <location filename="../src/ui/components/InputConsole.qml" line="1104"/>
+        <location filename="../src/ui/components/InputConsole.qml" line="1120"/>
         <source>输入消息…（Enter 发送，Shift+Enter 换行，@ 引用文件，/ 选择指令，$ 引用技能）</source>
         <translation>Type a message… (Enter to send, Shift+Enter for newline, @ to reference files, / for commands, $ for skills)</translation>
     </message>
     <message>
-        <location filename="../src/ui/components/InputConsole.qml" line="1111"/>
+        <location filename="../src/ui/components/InputConsole.qml" line="1127"/>
         <source>输入消息后按 Enter 发送，Shift+Enter 换行；输入 @ 引用项目文件，/ 选择指令，$ 引用技能</source>
         <translation>Press Enter to send, Shift+Enter for a newline; type @ to reference project files, / to pick a command, $ to reference a skill</translation>
     </message>
     <message>
-        <location filename="../src/ui/components/InputConsole.qml" line="1361"/>
+        <location filename="../src/ui/components/InputConsole.qml" line="1377"/>
         <source>添加附件</source>
         <translation>Add attachment</translation>
     </message>
     <message>
-        <location filename="../src/ui/components/InputConsole.qml" line="1362"/>
+        <location filename="../src/ui/components/InputConsole.qml" line="1378"/>
         <source>上传图片或文件附件</source>
         <translation>Upload image or file attachment</translation>
     </message>
     <message>
-        <location filename="../src/ui/components/InputConsole.qml" line="1413"/>
+        <location filename="../src/ui/components/InputConsole.qml" line="1429"/>
         <source>停止</source>
         <translation>Stop</translation>
     </message>
     <message>
-        <location filename="../src/ui/components/InputConsole.qml" line="1413"/>
+        <location filename="../src/ui/components/InputConsole.qml" line="1429"/>
         <source>发送</source>
         <translation>Send</translation>
     </message>
     <message>
-        <location filename="../src/ui/components/InputConsole.qml" line="1484"/>
+        <location filename="../src/ui/components/InputConsole.qml" line="1500"/>
         <source>上传图片</source>
         <translation>Upload image</translation>
     </message>
     <message>
-        <location filename="../src/ui/components/InputConsole.qml" line="1489"/>
+        <location filename="../src/ui/components/InputConsole.qml" line="1505"/>
         <source>上传文件</source>
         <translation>Upload file</translation>
     </message>
     <message>
-        <location filename="../src/ui/components/InputConsole.qml" line="1496"/>
+        <location filename="../src/ui/components/InputConsole.qml" line="1512"/>
         <source>MCP 资源…</source>
         <translation></translation>
     </message>
     <message>
-        <location filename="../src/ui/components/InputConsole.qml" line="1513"/>
+        <location filename="../src/ui/components/InputConsole.qml" line="1529"/>
         <source>文本文件 (*.txt *.md *.json *.csv *.log *.xml *.yml *.yaml *.ini *.cpp *.h *.py *.js *.ts)</source>
         <translation>Text files (*.txt *.md *.json *.csv *.log *.xml *.yml *.yaml *.ini *.cpp *.h *.py *.js *.ts)</translation>
     </message>
     <message>
-        <location filename="../src/ui/components/InputConsole.qml" line="1514"/>
+        <location filename="../src/ui/components/InputConsole.qml" line="1530"/>
         <source>全部文件 (*)</source>
         <translation>All files (*)</translation>
     </message>
     <message>
-        <location filename="../src/ui/components/InputConsole.qml" line="1546"/>
+        <location filename="../src/ui/components/InputConsole.qml" line="1562"/>
         <source>资源读取失败：%1</source>
         <translation></translation>
     </message>
     <message>
-        <location filename="../src/ui/components/InputConsole.qml" line="1557"/>
+        <location filename="../src/ui/components/InputConsole.qml" line="1573"/>
         <source>已添加资源：%1</source>
         <translation></translation>
     </message>
     <message>
-        <location filename="../src/ui/components/InputConsole.qml" line="1595"/>
+        <location filename="../src/ui/components/InputConsole.qml" line="1611"/>
         <source>当前会话未绑定项目，无法引用项目文件。
 请先在侧栏选择或导入项目。</source>
         <translation>This conversation is not bound to a project, so project files cannot be referenced.
 Select or import a project in the sidebar first.</translation>
     </message>
     <message>
-        <location filename="../src/ui/components/InputConsole.qml" line="1597"/>
+        <location filename="../src/ui/components/InputConsole.qml" line="1613"/>
         <source>正在扫描项目文件…</source>
         <translation>Scanning project files…</translation>
     </message>
     <message>
-        <location filename="../src/ui/components/InputConsole.qml" line="1598"/>
+        <location filename="../src/ui/components/InputConsole.qml" line="1614"/>
         <source>没有匹配的项目文件</source>
         <translation>No matching project files</translation>
     </message>
     <message>
-        <location filename="../src/ui/components/InputConsole.qml" line="1697"/>
+        <location filename="../src/ui/components/InputConsole.qml" line="1713"/>
         <source>没有匹配的指令。
 可在 设置 → 提示词资产 添加命令。</source>
         <translation>No matching command.
 Add one in Settings → Prompt Assets.</translation>
     </message>
     <message>
-        <location filename="../src/ui/components/InputConsole.qml" line="1804"/>
+        <location filename="../src/ui/components/InputConsole.qml" line="1820"/>
         <source>没有匹配的技能。
 请在项目 .nexusai/skills 或用户技能目录中添加 SKILL.md。</source>
         <translation>No matching skill.
 Add a SKILL.md under the project&apos;s .nexusai/skills or the user skills directory.</translation>
     </message>
     <message>
-        <location filename="../src/ui/components/InputConsole.qml" line="1506"/>
+        <location filename="../src/ui/components/InputConsole.qml" line="1522"/>
         <source>图片文件 (*.png *.jpg *.jpeg *.webp *.bmp *.gif)</source>
         <translation>Image files (*.png *.jpg *.jpeg *.webp *.bmp *.gif)</translation>
     </message>
@@ -6772,36 +6807,41 @@ Add a SKILL.md under the project&apos;s .nexusai/skills or the user skills direc
     </message>
     <message>
         <location filename="../src/viewmodels/ShortcutMap.cpp" line="81"/>
+        <source>会话内查找</source>
+        <translation>Find in conversation</translation>
+    </message>
+    <message>
+        <location filename="../src/viewmodels/ShortcutMap.cpp" line="84"/>
         <source>切换深色/浅色主题</source>
         <translation>Toggle dark/light theme</translation>
     </message>
     <message>
-        <location filename="../src/viewmodels/ShortcutMap.cpp" line="84"/>
+        <location filename="../src/viewmodels/ShortcutMap.cpp" line="87"/>
         <source>打开快捷键速查表</source>
         <translation>Open shortcut reference</translation>
     </message>
     <message>
-        <location filename="../src/viewmodels/ShortcutMap.cpp" line="178"/>
+        <location filename="../src/viewmodels/ShortcutMap.cpp" line="181"/>
         <source>未知的快捷键动作</source>
         <translation>Unknown shortcut action</translation>
     </message>
     <message>
-        <location filename="../src/viewmodels/ShortcutMap.cpp" line="185"/>
+        <location filename="../src/viewmodels/ShortcutMap.cpp" line="188"/>
         <source>无法识别的快捷键</source>
         <translation>Unrecognized shortcut</translation>
     </message>
     <message>
-        <location filename="../src/viewmodels/ShortcutMap.cpp" line="200"/>
+        <location filename="../src/viewmodels/ShortcutMap.cpp" line="203"/>
         <source>全局快捷键需要包含 Ctrl、Alt 或 Meta，或使用功能键</source>
         <translation>Global shortcuts need Ctrl, Alt, or Meta, or a function key</translation>
     </message>
     <message>
-        <location filename="../src/viewmodels/ShortcutMap.cpp" line="213"/>
+        <location filename="../src/viewmodels/ShortcutMap.cpp" line="216"/>
         <source>该快捷键已被「%1」使用</source>
         <translation>This shortcut is already used by &quot;%1&quot;</translation>
     </message>
     <message>
-        <location filename="../src/viewmodels/ShortcutMap.cpp" line="227"/>
+        <location filename="../src/viewmodels/ShortcutMap.cpp" line="230"/>
         <source>快捷键未能保存，请稍后重试</source>
         <translation>Could not save the shortcut. Please try again.</translation>
     </message>
@@ -6897,61 +6937,61 @@ Add a SKILL.md under the project&apos;s .nexusai/skills or the user skills direc
 <context>
     <name>NexusAI::AgentViewModel</name>
     <message>
-        <location filename="../src/viewmodels/AgentViewModel.cpp" line="2550"/>
-        <location filename="../src/viewmodels/AgentViewModel.cpp" line="2555"/>
+        <location filename="../src/viewmodels/AgentViewModel.cpp" line="2557"/>
+        <location filename="../src/viewmodels/AgentViewModel.cpp" line="2562"/>
         <source>保存项目规则失败：%1</source>
         <translation>Failed to save project rules: %1</translation>
     </message>
     <message>
-        <location filename="../src/viewmodels/AgentViewModel.cpp" line="492"/>
-        <location filename="../src/viewmodels/AgentViewModel.cpp" line="803"/>
-        <location filename="../src/viewmodels/AgentViewModel.cpp" line="3589"/>
-        <location filename="../src/viewmodels/AgentViewModel.cpp" line="3713"/>
+        <location filename="../src/viewmodels/AgentViewModel.cpp" line="493"/>
+        <location filename="../src/viewmodels/AgentViewModel.cpp" line="810"/>
+        <location filename="../src/viewmodels/AgentViewModel.cpp" line="3639"/>
+        <location filename="../src/viewmodels/AgentViewModel.cpp" line="3763"/>
         <source>新会话</source>
         <translation>New Session</translation>
     </message>
     <message>
-        <location filename="../src/viewmodels/AgentViewModel.cpp" line="928"/>
+        <location filename="../src/viewmodels/AgentViewModel.cpp" line="935"/>
         <source>打开的对话过多，请先结束其中一些再打开新的。</source>
         <translation>Too many conversations are open. Close some before opening a new one.</translation>
     </message>
     <message>
-        <location filename="../src/viewmodels/AgentViewModel.cpp" line="1156"/>
+        <location filename="../src/viewmodels/AgentViewModel.cpp" line="1163"/>
         <source>请等待当前任务完成，或停止后切换模型。</source>
         <translation>Wait for the current task to finish, or stop it before switching models.</translation>
     </message>
     <message>
-        <location filename="../src/viewmodels/AgentViewModel.cpp" line="1960"/>
+        <location filename="../src/viewmodels/AgentViewModel.cpp" line="1967"/>
         <source>无法更新会话置顶状态，请重试。</source>
         <translation>Could not update the pinned state. Please retry.</translation>
     </message>
     <message>
-        <location filename="../src/viewmodels/AgentViewModel.cpp" line="1968"/>
+        <location filename="../src/viewmodels/AgentViewModel.cpp" line="1975"/>
         <source>无法更新会话归档状态，请重试。</source>
         <translation>Could not update the archive state. Please retry.</translation>
     </message>
     <message>
-        <location filename="../src/viewmodels/AgentViewModel.cpp" line="1972"/>
+        <location filename="../src/viewmodels/AgentViewModel.cpp" line="1979"/>
         <source>会话已归档，可在“包含已归档”中恢复。</source>
         <translation>Conversation archived. Enable “Include archived” to restore it.</translation>
     </message>
     <message>
-        <location filename="../src/viewmodels/AgentViewModel.cpp" line="1972"/>
+        <location filename="../src/viewmodels/AgentViewModel.cpp" line="1979"/>
         <source>会话已恢复。</source>
         <translation>Conversation restored.</translation>
     </message>
     <message>
-        <location filename="../src/viewmodels/AgentViewModel.cpp" line="2012"/>
+        <location filename="../src/viewmodels/AgentViewModel.cpp" line="2019"/>
         <source>导出失败：未连接持久化后端</source>
         <translation>Export failed: no persistent backend connected</translation>
     </message>
     <message>
-        <location filename="../src/viewmodels/AgentViewModel.cpp" line="2017"/>
+        <location filename="../src/viewmodels/AgentViewModel.cpp" line="2024"/>
         <source>导出失败：不支持的格式“%1”（可选 md / json）</source>
         <translation>Export failed: unsupported format &quot;%1&quot; (md / json)</translation>
     </message>
     <message>
-        <location filename="../src/viewmodels/AgentViewModel.cpp" line="2032"/>
+        <location filename="../src/viewmodels/AgentViewModel.cpp" line="2039"/>
         <source># NexusAI 会话导出
 
 </source>
@@ -6960,21 +7000,21 @@ Add a SKILL.md under the project&apos;s .nexusai/skills or the user skills direc
 </translation>
     </message>
     <message>
-        <location filename="../src/viewmodels/AgentViewModel.cpp" line="2033"/>
+        <location filename="../src/viewmodels/AgentViewModel.cpp" line="2040"/>
         <source>- 会话 ID：%1
 </source>
         <translation>- Session ID: %1
 </translation>
     </message>
     <message>
-        <location filename="../src/viewmodels/AgentViewModel.cpp" line="2034"/>
+        <location filename="../src/viewmodels/AgentViewModel.cpp" line="2041"/>
         <source>- 导出时间：%1
 </source>
         <translation>- Exported at: %1
 </translation>
     </message>
     <message>
-        <location filename="../src/viewmodels/AgentViewModel.cpp" line="2035"/>
+        <location filename="../src/viewmodels/AgentViewModel.cpp" line="2042"/>
         <source>- 消息数：%1
 
 ---
@@ -6987,17 +7027,17 @@ Add a SKILL.md under the project&apos;s .nexusai/skills or the user skills direc
 </translation>
     </message>
     <message>
-        <location filename="../src/viewmodels/AgentViewModel.cpp" line="2039"/>
+        <location filename="../src/viewmodels/AgentViewModel.cpp" line="2046"/>
         <source>用户</source>
         <translation>User</translation>
     </message>
     <message>
-        <location filename="../src/viewmodels/AgentViewModel.cpp" line="2040"/>
+        <location filename="../src/viewmodels/AgentViewModel.cpp" line="2047"/>
         <source>助手</source>
         <translation>Assistant</translation>
     </message>
     <message>
-        <location filename="../src/viewmodels/AgentViewModel.cpp" line="2049"/>
+        <location filename="../src/viewmodels/AgentViewModel.cpp" line="2056"/>
         <source>---
 
 ## 过程摘要
@@ -7010,189 +7050,189 @@ Add a SKILL.md under the project&apos;s .nexusai/skills or the user skills direc
 </translation>
     </message>
     <message>
-        <location filename="../src/viewmodels/AgentViewModel.cpp" line="2080"/>
-        <location filename="../src/viewmodels/AgentViewModel.cpp" line="2165"/>
+        <location filename="../src/viewmodels/AgentViewModel.cpp" line="2087"/>
+        <location filename="../src/viewmodels/AgentViewModel.cpp" line="2172"/>
         <source>导出失败：无法写入 %1</source>
         <translation>Export failed: cannot write %1</translation>
     </message>
     <message>
-        <location filename="../src/viewmodels/AgentViewModel.cpp" line="2085"/>
-        <location filename="../src/viewmodels/AgentViewModel.cpp" line="2172"/>
+        <location filename="../src/viewmodels/AgentViewModel.cpp" line="2092"/>
+        <location filename="../src/viewmodels/AgentViewModel.cpp" line="2179"/>
         <source>导出失败：写入未完成 %1</source>
         <translation>Export failed: write incomplete %1</translation>
     </message>
     <message>
-        <location filename="../src/viewmodels/AgentViewModel.cpp" line="2092"/>
+        <location filename="../src/viewmodels/AgentViewModel.cpp" line="2099"/>
         <source>已导出会话（%1 条消息）：%2</source>
         <translation>Session exported (%1 messages): %2</translation>
     </message>
     <message>
-        <location filename="../src/viewmodels/AgentViewModel.cpp" line="2126"/>
+        <location filename="../src/viewmodels/AgentViewModel.cpp" line="2133"/>
         <source>导出失败：当前没有可导出的请求明细</source>
         <translation>Export failed: no request details to export</translation>
     </message>
     <message>
-        <location filename="../src/viewmodels/AgentViewModel.cpp" line="2132"/>
+        <location filename="../src/viewmodels/AgentViewModel.cpp" line="2139"/>
         <source>导出失败：未指定文件路径</source>
         <translation>Export failed: no file path specified</translation>
     </message>
     <message>
-        <location filename="../src/viewmodels/AgentViewModel.cpp" line="2138"/>
+        <location filename="../src/viewmodels/AgentViewModel.cpp" line="2145"/>
         <source>时间</source>
         <translation>Time</translation>
     </message>
     <message>
-        <location filename="../src/viewmodels/AgentViewModel.cpp" line="2138"/>
+        <location filename="../src/viewmodels/AgentViewModel.cpp" line="2145"/>
         <source>模型</source>
         <translation>Model</translation>
     </message>
     <message>
-        <location filename="../src/viewmodels/AgentViewModel.cpp" line="2138"/>
+        <location filename="../src/viewmodels/AgentViewModel.cpp" line="2145"/>
         <source>输入 Tokens</source>
         <translation>Input Tokens</translation>
     </message>
     <message>
-        <location filename="../src/viewmodels/AgentViewModel.cpp" line="2138"/>
+        <location filename="../src/viewmodels/AgentViewModel.cpp" line="2145"/>
         <source>输出 Tokens</source>
         <translation>Output Tokens</translation>
     </message>
     <message>
-        <location filename="../src/viewmodels/AgentViewModel.cpp" line="2139"/>
+        <location filename="../src/viewmodels/AgentViewModel.cpp" line="2146"/>
         <source>缓存命中 Tokens</source>
         <translation>Cache hit Tokens</translation>
     </message>
     <message>
-        <location filename="../src/viewmodels/AgentViewModel.cpp" line="2139"/>
+        <location filename="../src/viewmodels/AgentViewModel.cpp" line="2146"/>
         <source>延迟(ms)</source>
         <translation>Latency (ms)</translation>
     </message>
     <message>
-        <location filename="../src/viewmodels/AgentViewModel.cpp" line="2139"/>
+        <location filename="../src/viewmodels/AgentViewModel.cpp" line="2146"/>
         <source>费用(元)</source>
         <translation>Cost (CNY)</translation>
     </message>
     <message>
-        <location filename="../src/viewmodels/AgentViewModel.cpp" line="2140"/>
+        <location filename="../src/viewmodels/AgentViewModel.cpp" line="2147"/>
         <source>会话 ID</source>
         <translation>Session ID</translation>
     </message>
     <message>
-        <location filename="../src/viewmodels/AgentViewModel.cpp" line="2140"/>
+        <location filename="../src/viewmodels/AgentViewModel.cpp" line="2147"/>
         <source>请求 ID</source>
         <translation>Request ID</translation>
     </message>
     <message>
-        <location filename="../src/viewmodels/AgentViewModel.cpp" line="2299"/>
+        <location filename="../src/viewmodels/AgentViewModel.cpp" line="2306"/>
         <source>没有带来源文件的文档可同步。</source>
         <translation>No documents with source files to sync.</translation>
     </message>
     <message>
-        <location filename="../src/viewmodels/AgentViewModel.cpp" line="2312"/>
+        <location filename="../src/viewmodels/AgentViewModel.cpp" line="2319"/>
         <source>知识库同步正在进行中。</source>
         <translation>Knowledge base sync already in progress.</translation>
     </message>
     <message>
-        <location filename="../src/viewmodels/AgentViewModel.cpp" line="2327"/>
+        <location filename="../src/viewmodels/AgentViewModel.cpp" line="2334"/>
         <source>源文件同步完成：更新 %1 · 元数据刷新 %2 · 跳过 %3 · 源缺失 %4 · 失败 %5</source>
         <translation>Source sync done: %1 updated · %2 metadata refreshed · %3 skipped · %4 missing · %5 failed</translation>
     </message>
     <message>
-        <location filename="../src/viewmodels/AgentViewModel.cpp" line="2413"/>
+        <location filename="../src/viewmodels/AgentViewModel.cpp" line="2420"/>
         <source>无法读取文件：%1</source>
         <translation>Cannot read file: %1</translation>
     </message>
     <message>
-        <location filename="../src/viewmodels/AgentViewModel.cpp" line="2460"/>
+        <location filename="../src/viewmodels/AgentViewModel.cpp" line="2467"/>
         <source>PDF 已加密或需要密码，无法导入：%1</source>
         <translation>PDF is encrypted or password-protected, cannot import: %1</translation>
     </message>
     <message>
-        <location filename="../src/viewmodels/AgentViewModel.cpp" line="2463"/>
+        <location filename="../src/viewmodels/AgentViewModel.cpp" line="2470"/>
         <source>PDF 文件已损坏或格式无效，无法导入：%1</source>
         <translation>PDF file is corrupted or has an invalid format, cannot import: %1</translation>
     </message>
     <message>
-        <location filename="../src/viewmodels/AgentViewModel.cpp" line="2466"/>
+        <location filename="../src/viewmodels/AgentViewModel.cpp" line="2473"/>
         <source>未能从 PDF 中提取到文本（可能是扫描件，没有文本层）：%1</source>
         <translation>No text could be extracted from the PDF (it may be a scan without a text layer): %1</translation>
     </message>
     <message>
-        <location filename="../src/viewmodels/AgentViewModel.cpp" line="2470"/>
+        <location filename="../src/viewmodels/AgentViewModel.cpp" line="2477"/>
         <source>无法读取 PDF 文件：%1</source>
         <translation>Cannot read PDF file: %1</translation>
     </message>
     <message>
-        <location filename="../src/viewmodels/AgentViewModel.cpp" line="2656"/>
+        <location filename="../src/viewmodels/AgentViewModel.cpp" line="2663"/>
         <source>仅支持 http/https URL：%1</source>
         <translation>Only http/https URLs are supported: %1</translation>
     </message>
     <message>
-        <location filename="../src/viewmodels/AgentViewModel.cpp" line="2680"/>
+        <location filename="../src/viewmodels/AgentViewModel.cpp" line="2687"/>
         <source>页面无可用正文：%1</source>
         <translation>The page has no usable text: %1</translation>
     </message>
     <message>
-        <location filename="../src/viewmodels/AgentViewModel.cpp" line="2693"/>
+        <location filename="../src/viewmodels/AgentViewModel.cpp" line="2700"/>
         <source>页面已重定向至 %1，请直接导入新地址。</source>
         <translation>The page redirected to %1; import the new address directly.</translation>
     </message>
     <message>
-        <location filename="../src/viewmodels/AgentViewModel.cpp" line="2697"/>
+        <location filename="../src/viewmodels/AgentViewModel.cpp" line="2704"/>
         <source>抓取失败：%1</source>
         <translation>Fetch failed: %1</translation>
     </message>
     <message>
-        <location filename="../src/viewmodels/AgentViewModel.cpp" line="2942"/>
+        <location filename="../src/viewmodels/AgentViewModel.cpp" line="2992"/>
         <source>任务运行中，暂不能压缩上下文；等当前任务结束再试。</source>
         <translation>A task is running; compact after it finishes.</translation>
     </message>
     <message>
-        <location filename="../src/viewmodels/AgentViewModel.cpp" line="3127"/>
+        <location filename="../src/viewmodels/AgentViewModel.cpp" line="3177"/>
         <source>数据库正被占用（可能有备份或其它任务在进行），请稍后重试</source>
         <translation>The database is busy (a backup or another task may be running). Try again later</translation>
     </message>
     <message>
-        <location filename="../src/viewmodels/AgentViewModel.cpp" line="3138"/>
+        <location filename="../src/viewmodels/AgentViewModel.cpp" line="3188"/>
         <source>未指定备份文件</source>
         <translation>No backup file specified</translation>
     </message>
     <message>
-        <location filename="../src/viewmodels/AgentViewModel.cpp" line="3147"/>
+        <location filename="../src/viewmodels/AgentViewModel.cpp" line="3197"/>
         <source>备份文件不存在</source>
         <translation>The backup file does not exist</translation>
     </message>
     <message>
-        <location filename="../src/viewmodels/AgentViewModel.cpp" line="3151"/>
+        <location filename="../src/viewmodels/AgentViewModel.cpp" line="3201"/>
         <source>只能删除备份目录中的文件</source>
         <translation>Only files in the backup folder can be deleted</translation>
     </message>
     <message>
-        <location filename="../src/viewmodels/AgentViewModel.cpp" line="3154"/>
+        <location filename="../src/viewmodels/AgentViewModel.cpp" line="3204"/>
         <source>删除失败，请检查文件是否被占用</source>
         <translation>Delete failed. Check whether the file is in use</translation>
     </message>
     <message>
-        <location filename="../src/viewmodels/AgentViewModel.cpp" line="3696"/>
+        <location filename="../src/viewmodels/AgentViewModel.cpp" line="3746"/>
         <source>这个会话还没有可分叉的历史记录。</source>
         <translation>This conversation has no history to fork from yet.</translation>
     </message>
     <message>
-        <location filename="../src/viewmodels/AgentViewModel.cpp" line="3701"/>
+        <location filename="../src/viewmodels/AgentViewModel.cpp" line="3751"/>
         <source>这条回答还没有存进会话记录，稍等一下再试。</source>
         <translation>This answer is not saved to the conversation yet - try again in a moment.</translation>
     </message>
     <message>
-        <location filename="../src/viewmodels/AgentViewModel.cpp" line="3719"/>
+        <location filename="../src/viewmodels/AgentViewModel.cpp" line="3769"/>
         <source>%1（分支）</source>
         <translation>%1 (branch)</translation>
     </message>
     <message>
-        <location filename="../src/viewmodels/AgentViewModel.cpp" line="3721"/>
+        <location filename="../src/viewmodels/AgentViewModel.cpp" line="3771"/>
         <source>%1（分支%2）</source>
         <translation>%1 (branch %2)</translation>
     </message>
     <message>
-        <location filename="../src/viewmodels/AgentViewModel.cpp" line="3725"/>
+        <location filename="../src/viewmodels/AgentViewModel.cpp" line="3775"/>
         <source>无法创建分叉出来的会话，请重试。</source>
         <translation>Could not create the forked conversation. Please try again.</translation>
     </message>
@@ -7201,97 +7241,97 @@ Add a SKILL.md under the project&apos;s .nexusai/skills or the user skills direc
         <translation type="vanished">The forked conversation was created, but its first message could not be sent.</translation>
     </message>
     <message>
-        <location filename="../src/viewmodels/AgentViewModel.cpp" line="2435"/>
+        <location filename="../src/viewmodels/AgentViewModel.cpp" line="2442"/>
         <source>无法打开文件：%1</source>
         <translation>Cannot open file: %1</translation>
     </message>
     <message>
-        <location filename="../src/viewmodels/AgentViewModel.cpp" line="2726"/>
+        <location filename="../src/viewmodels/AgentViewModel.cpp" line="2733"/>
         <source>知识库正忙（导入或重新嵌入进行中），请稍后再试</source>
         <translation>Knowledge base is busy (an import or re-embed is running); try again shortly</translation>
     </message>
     <message>
-        <location filename="../src/viewmodels/AgentViewModel.cpp" line="2853"/>
+        <location filename="../src/viewmodels/AgentViewModel.cpp" line="2860"/>
         <source>文档内容已存在，已跳过：%1</source>
         <translation>Document content already exists, skipped: %1</translation>
     </message>
     <message>
-        <location filename="../src/viewmodels/AgentViewModel.cpp" line="2951"/>
+        <location filename="../src/viewmodels/AgentViewModel.cpp" line="3001"/>
         <source>未找到文档内容，无法重新嵌入：%1</source>
         <translation>Document content not found, cannot re-embed: %1</translation>
     </message>
     <message>
-        <location filename="../src/viewmodels/AgentViewModel.cpp" line="2976"/>
+        <location filename="../src/viewmodels/AgentViewModel.cpp" line="3026"/>
         <source>已重新嵌入 %1（%2 段）</source>
         <translation>Re-embedded %1 (%2 chunks)</translation>
     </message>
     <message>
-        <location filename="../src/viewmodels/AgentViewModel.cpp" line="2978"/>
+        <location filename="../src/viewmodels/AgentViewModel.cpp" line="3028"/>
         <source>重新嵌入失败：%1</source>
         <translation>Re-embedding failed: %1</translation>
     </message>
     <message>
-        <location filename="../src/viewmodels/AgentViewModel.cpp" line="2982"/>
+        <location filename="../src/viewmodels/AgentViewModel.cpp" line="3032"/>
         <source>已导入 %1（%2 段）</source>
         <translation>Imported %1 (%2 chunks)</translation>
     </message>
     <message>
-        <location filename="../src/viewmodels/AgentViewModel.cpp" line="2984"/>
+        <location filename="../src/viewmodels/AgentViewModel.cpp" line="3034"/>
         <source>导入失败（文件为空或无法分块）：%1</source>
         <translation>Import failed (file is empty or cannot be chunked): %1</translation>
     </message>
     <message>
-        <location filename="../src/viewmodels/AgentViewModel.cpp" line="2986"/>
+        <location filename="../src/viewmodels/AgentViewModel.cpp" line="3036"/>
         <source>知识库总量已达上限（最多 %1 段），请先删除部分文档后再导入</source>
         <translation>Knowledge base has reached its limit (max %1 chunks); delete some documents before importing</translation>
     </message>
     <message>
-        <location filename="../src/viewmodels/AgentViewModel.cpp" line="2989"/>
+        <location filename="../src/viewmodels/AgentViewModel.cpp" line="3039"/>
         <source>文件过大（超过单文档 %1 段上限）：%2</source>
         <translation>File too large (exceeds the per-document limit of %1 chunks): %2</translation>
     </message>
     <message>
-        <location filename="../src/viewmodels/AgentViewModel.cpp" line="3052"/>
-        <location filename="../src/viewmodels/AgentViewModel.cpp" line="3086"/>
-        <location filename="../src/viewmodels/AgentViewModel.cpp" line="3104"/>
-        <location filename="../src/viewmodels/AgentViewModel.cpp" line="3117"/>
-        <location filename="../src/viewmodels/AgentViewModel.cpp" line="3125"/>
-        <location filename="../src/viewmodels/AgentViewModel.cpp" line="3166"/>
+        <location filename="../src/viewmodels/AgentViewModel.cpp" line="3102"/>
+        <location filename="../src/viewmodels/AgentViewModel.cpp" line="3136"/>
+        <location filename="../src/viewmodels/AgentViewModel.cpp" line="3154"/>
+        <location filename="../src/viewmodels/AgentViewModel.cpp" line="3167"/>
+        <location filename="../src/viewmodels/AgentViewModel.cpp" line="3175"/>
+        <location filename="../src/viewmodels/AgentViewModel.cpp" line="3216"/>
         <source>数据库未就绪</source>
         <translation>Database not ready</translation>
     </message>
     <message>
-        <location filename="../src/viewmodels/AgentViewModel.cpp" line="3059"/>
+        <location filename="../src/viewmodels/AgentViewModel.cpp" line="3109"/>
         <source>备份失败，详见日志</source>
         <translation>Backup failed; see the log for details</translation>
     </message>
     <message>
-        <location filename="../src/viewmodels/AgentViewModel.cpp" line="3171"/>
+        <location filename="../src/viewmodels/AgentViewModel.cpp" line="3221"/>
         <source>无法读取该备份文件：%1</source>
         <translation>Cannot read this backup file: %1</translation>
     </message>
     <message>
-        <location filename="../src/viewmodels/AgentViewModel.cpp" line="3173"/>
+        <location filename="../src/viewmodels/AgentViewModel.cpp" line="3223"/>
         <source>备份完整性检查未通过，已取消恢复</source>
         <translation>Backup failed the integrity check — restore cancelled</translation>
     </message>
     <message>
-        <location filename="../src/viewmodels/AgentViewModel.cpp" line="3192"/>
+        <location filename="../src/viewmodels/AgentViewModel.cpp" line="3242"/>
         <source>恢复失败，原数据库已还原</source>
         <translation>Restore failed; the original database was kept</translation>
     </message>
     <message>
-        <location filename="../src/viewmodels/AgentViewModel.cpp" line="3473"/>
+        <location filename="../src/viewmodels/AgentViewModel.cpp" line="3523"/>
         <source>文件过大（附件上限 %1 KB）：%2</source>
         <translation>File too large (attachment limit %1 KB): %2</translation>
     </message>
     <message>
-        <location filename="../src/viewmodels/AgentViewModel.cpp" line="3478"/>
+        <location filename="../src/viewmodels/AgentViewModel.cpp" line="3528"/>
         <source>暂不支持二进制文件作为附件：%1</source>
         <translation>Binary files are not supported as attachments yet: %1</translation>
     </message>
     <message>
-        <location filename="../src/viewmodels/AgentViewModel.cpp" line="3491"/>
+        <location filename="../src/viewmodels/AgentViewModel.cpp" line="3541"/>
         <source>已忽略 %1 个不支持的文件类型（仅支持图片与文本文件）</source>
         <translation>Ignored %1 file(s) of unsupported types (images and text files only)</translation>
     </message>
@@ -9432,57 +9472,57 @@ Add a SKILL.md under the project&apos;s .nexusai/skills or the user skills direc
         <translation>Could not write the database snapshot to: %1</translation>
     </message>
     <message>
-        <location filename="../src/viewmodels/AgentViewModel.cpp" line="228"/>
+        <location filename="../src/viewmodels/AgentViewModel.cpp" line="229"/>
         <source>PDF 已加密或需要密码</source>
         <translation>PDF is encrypted or password-protected</translation>
     </message>
     <message>
-        <location filename="../src/viewmodels/AgentViewModel.cpp" line="231"/>
+        <location filename="../src/viewmodels/AgentViewModel.cpp" line="232"/>
         <source>PDF 文件已损坏或格式无效</source>
         <translation>PDF file is corrupted or invalid</translation>
     </message>
     <message>
-        <location filename="../src/viewmodels/AgentViewModel.cpp" line="234"/>
+        <location filename="../src/viewmodels/AgentViewModel.cpp" line="235"/>
         <source>PDF 没有文本层（可能是扫描件）</source>
         <translation>PDF has no text layer (possibly a scanned copy)</translation>
     </message>
     <message>
-        <location filename="../src/viewmodels/AgentViewModel.cpp" line="237"/>
+        <location filename="../src/viewmodels/AgentViewModel.cpp" line="238"/>
         <source>PDF 读取失败</source>
         <translation>Failed to read the PDF</translation>
     </message>
     <message>
-        <location filename="../src/viewmodels/AgentViewModel.cpp" line="248"/>
+        <location filename="../src/viewmodels/AgentViewModel.cpp" line="249"/>
         <source>无法打开文件</source>
         <translation>Cannot open the file</translation>
     </message>
     <message>
-        <location filename="../src/viewmodels/AgentViewModel.cpp" line="257"/>
+        <location filename="../src/viewmodels/AgentViewModel.cpp" line="258"/>
         <source>内容为空或无可用分段</source>
         <translation>Content is empty or has no usable segments</translation>
     </message>
     <message>
-        <location filename="../src/viewmodels/AgentViewModel.cpp" line="264"/>
+        <location filename="../src/viewmodels/AgentViewModel.cpp" line="265"/>
         <source>相同内容的文档已存在</source>
         <translation>A document with identical content already exists</translation>
     </message>
     <message>
-        <location filename="../src/viewmodels/AgentViewModel.cpp" line="277"/>
+        <location filename="../src/viewmodels/AgentViewModel.cpp" line="278"/>
         <source>嵌入服务不可用，已降级为本地伪嵌入（可稍后重新嵌入）</source>
         <translation>Embedding service unavailable; degraded to local pseudo-embedding (re-embed later)</translation>
     </message>
     <message>
-        <location filename="../src/viewmodels/AgentViewModel.cpp" line="283"/>
+        <location filename="../src/viewmodels/AgentViewModel.cpp" line="284"/>
         <source>文档过大，超过单文档分段上限</source>
         <translation>Document too large for the per-document segment cap</translation>
     </message>
     <message>
-        <location filename="../src/viewmodels/AgentViewModel.cpp" line="286"/>
+        <location filename="../src/viewmodels/AgentViewModel.cpp" line="287"/>
         <source>超出知识库总段数预算</source>
         <translation>Exceeds the knowledge-base chunk budget</translation>
     </message>
     <message>
-        <location filename="../src/viewmodels/AgentViewModel.cpp" line="289"/>
+        <location filename="../src/viewmodels/AgentViewModel.cpp" line="290"/>
         <source>导入失败</source>
         <translation>Import failed</translation>
     </message>
@@ -13479,6 +13519,14 @@ select a file to view its content diff on the right.</translation>
         <location filename="../src/ui/components/TopBar.qml" line="1186"/>
         <source>显示思考与工具调用过程（%1 项）</source>
         <translation>Show thinking and tool-call process (%1)</translation>
+    </message>
+</context>
+<context>
+    <name>TraceNodeRouter</name>
+    <message>
+        <location filename="../src/ui/components/TraceNodeRouter.qml" line="121"/>
+        <source>以下为新消息</source>
+        <translation>New messages below</translation>
     </message>
 </context>
 <context>
