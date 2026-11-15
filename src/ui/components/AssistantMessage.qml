@@ -1,4 +1,5 @@
 import QtQuick
+import QtQuick.Controls
 import NexusAI
 import NexusAI.ViewModels
 
@@ -221,6 +222,35 @@ Item {
             font.pixelSize: Theme.fontSizeBody
             font.family: Theme.fontSans
             wrapMode: TextEdit.Wrap
+            // docs/53: 选中高亮走 Theme token（与输入框同款品牌色选中）。
+            selectionColor: Theme.brandPrimary
+            selectedTextColor: Theme.selectedTextColor
+
+            // docs/53: 右键菜单（复制所选 / 复制全文 / 全选）。只读 TextEdit
+            // 无内建菜单；TapHandler 右键默认 passive，不清除已选中内容。
+            TapHandler {
+                acceptedButtons: Qt.RightButton
+                onTapped: assistantMenu.popup()
+            }
+            Menu {
+                id: assistantMenu
+                MenuItem {
+                    text: qsTr("复制所选")
+                    enabled: mdText.selectedText !== ""
+                    onTriggered: mdText.copy()
+                }
+                MenuItem {
+                    text: qsTr("复制全文")
+                    onTriggered: {
+                        mdText.deselect()
+                        AgentVM.copyToClipboard(root.body)
+                    }
+                }
+                MenuItem {
+                    text: qsTr("全选")
+                    onTriggered: mdText.selectAll()
+                }
+            }
             // docs/45 D1/D7：流式期间正是用户盯着看的阶段，行距同样
             // 走 Theme token。TextEdit 没有 lineHeight 属性（Qt 6.9 仅
             // Text 元素有），经 DocumentLineHeight 落到 QTextDocument

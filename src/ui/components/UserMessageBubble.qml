@@ -69,10 +69,38 @@ Item {
                 renderType: Text.NativeRendering
                 textFormat: TextEdit.PlainText
                 width: parent.width
-                // docs/20 §3.2：编辑态可写，阅读态只读不选中（与气泡语义
-                // 一致——用户消息无需选中复制，操作条已有复制按钮）。
+                // docs/20 §3.2：编辑态可写，阅读态只读。原设计"阅读态不
+                // 选中（操作条已有复制）"在长 prompt 场景不便——docs/53 起
+                // 支持选中复制 + 右键菜单，选中高亮与输入框同款 token。
                 readOnly: !root.editing
                 visible: !root.editing
+                selectByMouse: true
+                selectionColor: Theme.brandPrimary
+                selectedTextColor: Theme.selectedTextColor
+
+                TapHandler {
+                    acceptedButtons: Qt.RightButton
+                    onTapped: userMessageMenu.popup()
+                }
+                Menu {
+                    id: userMessageMenu
+                    MenuItem {
+                        text: qsTr("复制所选")
+                        enabled: bodyText.selectedText !== ""
+                        onTriggered: bodyText.copy()
+                    }
+                    MenuItem {
+                        text: qsTr("复制全文")
+                        onTriggered: {
+                            bodyText.deselect()
+                            AgentVM.copyToClipboard(root.body)
+                        }
+                    }
+                    MenuItem {
+                        text: qsTr("全选")
+                        onTriggered: bodyText.selectAll()
+                    }
+                }
             }
 
             // docs/20 §3.2：内联编辑框（替换气泡正文）。
@@ -86,11 +114,30 @@ Item {
                 font.family: Theme.fontSans
                 wrapMode: TextArea.Wrap
                 selectByMouse: true
+                selectionColor: Theme.brandPrimary
+                selectedTextColor: Theme.selectedTextColor
                 background: null
                 onTextChanged: if (root.editing) editDraft = text
                 Keys.onEscapePressed: {
                     root.editing = false
                     editDraft = root.body
+                }
+
+                TapHandler {
+                    acceptedButtons: Qt.RightButton
+                    onTapped: editMenu.popup()
+                }
+                Menu {
+                    id: editMenu
+                    MenuItem {
+                        text: qsTr("粘贴")
+                        enabled: root.editing
+                        onTriggered: editArea.paste()
+                    }
+                    MenuItem {
+                        text: qsTr("全选")
+                        onTriggered: editArea.selectAll()
+                    }
                 }
             }
 
