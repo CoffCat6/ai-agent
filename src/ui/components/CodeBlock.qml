@@ -146,7 +146,9 @@ Item {
         }
 
         // ── Body ─────────────────────────────────────
-        // 行号槽：与正文同高，行高反推对齐（折行安全）。
+        // 行号槽：与正文同高，行高反推对齐（折行安全）。gutterCol 必须给
+        // **显式宽度**（引用 gutter 而非自身子项，否则 Column 隐式宽 ↔ 子
+        // 项宽互引成环，Text 宽度归零、数字不可见）。
         Rectangle {
             id: gutter
             anchors.top: codeText.top
@@ -162,6 +164,7 @@ Item {
                 id: gutterCol
                 x: 4
                 y: codeText.topPadding
+                width: gutter.width - 8
                 spacing: 0
 
                 Repeater {
@@ -174,7 +177,7 @@ Item {
                         verticalAlignment: Text.AlignVCenter
                         horizontalAlignment: Text.AlignRight
                         text: String(index + 1)
-                        color: Theme.textTertiary
+                        color: Theme.textSecondary
                         font.family: Theme.fontMono
                         font.pixelSize: Theme.fontSizeCaption
                     }
