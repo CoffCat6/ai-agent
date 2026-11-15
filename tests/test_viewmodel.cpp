@@ -159,6 +159,39 @@ class TestAgentViewModel : public QObject {
     Q_OBJECT
 
 private slots:
+    // docs/53: quoted excerpts — add/remove cycle, empty-text guard, unknown
+    // id no-op, and the blockquote composition fed to startTaskWithSkills.
+    void draftQuotesAddRemoveAndCompose() {
+        AgentViewModel vm(nullptr);
+        QSignalSpy spy(&vm, &AgentViewModel::draftQuotesChanged);
+
+        vm.addQuoteRef(QStringLiteral("line one\nline two"));
+        QCOMPARE(vm.draftQuotes().size(), 1);
+        QCOMPARE(spy.count(), 1);
+
+        // Whitespace-only text is ignored (no entry, no signal).
+        vm.addQuoteRef(QStringLiteral("   "));
+        QCOMPARE(vm.draftQuotes().size(), 1);
+        QCOMPARE(spy.count(), 1);
+
+        const int id = vm.draftQuotes().first().toMap()
+                           .value(QStringLiteral("id")).toInt();
+        vm.removeQuoteRef(id + 5);          // unknown id: silent no-op
+        QCOMPARE(vm.draftQuotes().size(), 1);
+        QCOMPARE(spy.count(), 1);
+        vm.removeQuoteRef(id);
+        QCOMPARE(vm.draftQuotes().size(), 0);
+        QCOMPARE(spy.count(), 2);
+
+        const QVariantList quotes = {
+            QVariantMap{{"text", QStringLiteral("a\nb")}},
+            QVariantMap{{"text", QStringLiteral("c")}},
+        };
+        QCOMPARE(AgentViewModel::composeQuotedBlock(quotes),
+                 QStringLiteral("> a\n> b\n\n> c\n\n"));
+        QCOMPARE(AgentViewModel::composeQuotedBlock(QVariantList{}), QString());
+    }
+
     // TraceModel diffing: trailing appends -> rowsInserted, in-place status
     // changes -> dataChanged, structural changes -> modelReset.
     void traceModelDelta() {

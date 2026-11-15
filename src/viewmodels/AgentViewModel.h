@@ -723,10 +723,16 @@ public:
     // from fileChanged events (debounced) when knowledge.autoSyncSourceFiles
     // is on. Runs on a worker thread; embed progress reuses knowledgeEmbed*.
     Q_INVOKABLE void syncKnowledgeSources();
-    // docs/53: quote text into the input draft as a Markdown blockquote
-    // ("> " per line), appended to the existing draft. Used by the message
-    // context menus ("引用到输入框").
-    Q_INVOKABLE void quoteToDraft(const QString& text);
+    // docs/53: quoted message excerpts pending in the input draft — rendered
+    // as removable cards above the composer, prepended as a Markdown
+    // blockquote block when the task starts (then cleared).
+    Q_PROPERTY(QVariantList draftQuotes READ draftQuotes NOTIFY draftQuotesChanged FINAL)
+    Q_INVOKABLE void addQuoteRef(const QString& text);
+    Q_INVOKABLE void removeQuoteRef(int id);
+    QVariantList draftQuotes() const { return m_draftQuotes; }
+    // Pure composition: quoted excerpts → Markdown blockquote block (the
+    // task text is prepended with it). Static for unit tests.
+    static QString composeQuotedBlock(const QVariantList& quotes);
     // docs/53: lightweight LaTeX → Unicode math approximation for the chat
     // render path (no WebEngine). Static — pure text transformation.
     Q_INVOKABLE static QString renderMath(const QString& text);
@@ -922,6 +928,8 @@ signals:
     void unreviewedFileCountChanged();
     void episodicChanged();
     void errorOccurred(const QString& error);
+    // docs/53: quoted excerpts pending in the draft changed.
+    void draftQuotesChanged();
     // Non-error user feedback (import finished, etc.)
     void noticeOccurred(const QString& notice);
     // docs/24 R4: the live database file was swapped for a snapshot — the
@@ -1099,6 +1107,8 @@ private:
     QSet<QString> m_knowledgeSyncPending;
     QAtomicInt m_knowledgeSyncRunning{0};
     bool m_knowledgeAutoSync{true};
+    QVariantList m_draftQuotes;          // docs/53: {id, text} pending quotes
+    int m_nextQuoteId{1};
     // docs/18: 归属按标签持有，故这里没有全局活动项目成员。
     // G2: active project's indexable file cache (background scan).
     QStringList m_projectFiles;

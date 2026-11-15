@@ -351,6 +351,16 @@ AgentViewModel::AgentViewModel(QObject* parent)
         m_knowledgeSyncTimer.start();
     });
 
+    // docs/53: quoted excerpts live in the composer of the ACTIVE tab —
+    // switching tabs drops them (the draft itself is per-tab, the quotes
+    // are process-wide; keeping them across tabs would leak into the
+    // wrong conversation's prompt).
+    connect(this, &AgentViewModel::activeTabChanged, this, [this]() {
+        if (m_draftQuotes.isEmpty()) return;
+        m_draftQuotes.clear();
+        emit draftQuotesChanged();
+    });
+
     // Layout defaults must load first: they seed the panel restore below.
     loadLayoutDefaults();
     subscribeLayoutChanges();
@@ -1635,7 +1645,24 @@ bool AgentViewModel::startTaskWithSkills(const QString& input,
             map.value(QStringLiteral("allowedToolsSpecified")).toBool();
         parsed.append(skill);
     }
-    return startTaskInternal(input, images, files, parsed);
+
+    // docs/53: quoted excerpts prepend as a Markdown blockquote block (the
+    // composer cards are presentation-only). Cleared on success; on a
+    // rejected start the quotes are restored so nothing is lost.
+    QString composed = input;
+    const QVariantList pendingQuotes = m_draftQuotes;
+    if (!pendingQuotes.isEmpty()) {
+        composed = composeQuotedBlock(pendingQuotes)
+            + (input.trimmed().isEmpty() ? QString() : QStringLiteral("\n") + input);
+        m_draftQuotes.clear();
+        emit draftQuotesChanged();
+    }
+    const bool started = startTaskInternal(composed, images, files, parsed);
+    if (!started && !pendingQuotes.isEmpty()) {
+        m_draftQuotes = pendingQuotes;
+        emit draftQuotesChanged();
+    }
+    return started;
 }
 
 bool AgentViewModel::startTaskInternal(const QString& input,
@@ -2863,15 +2890,38 @@ QString AgentViewModel::renderMath(const QString& text) {
     return MathText::render(text);
 }
 
-void AgentViewModel::quoteToDraft(const QString& text) {
-    QString quoted;
-    const QStringList lines = text.split(QLatin1Char('\n'));
-    for (const QString& line : lines)
-        quoted += QStringLiteral("> ") + line + QLatin1Char('\n');
-    const QString existing = draftText().trimmed();
-    setDraftText(existing.isEmpty()
-        ? quoted + QLatin1Char('\n')
-        : existing + QStringLiteral("\n\n") + quoted + QLatin1Char('\n'));
+void AgentViewModel::addQuoteRef(const QString& text) {
+    const QString trimmed = text.trimmed();
+    if (trimmed.isEmpty()) return;
+    QVariantMap entry;
+    entry.insert(QStringLiteral("id"), m_nextQuoteId++);
+    entry.insert(QStringLiteral("text"), trimmed);
+    m_draftQuotes.append(entry);
+    emit draftQuotesChanged();
+}
+
+void AgentViewModel::removeQuoteRef(int id) {
+    for (int i = 0; i < m_draftQuotes.size(); ++i) {
+        if (m_draftQuotes.at(i).toMap().value(QStringLiteral("id")).toInt() == id) {
+            m_draftQuotes.removeAt(i);
+            emit draftQuotesChanged();
+            return;
+        }
+    }
+}
+
+QString AgentViewModel::composeQuotedBlock(const QVariantList& quotes) {
+    if (quotes.isEmpty()) return QString();
+    QString block;
+    for (const QVariant& entry : quotes) {
+        const QStringList lines = entry.toMap().value(QStringLiteral("text"))
+                                      .toString()
+                                      .split(QLatin1Char('\n'));
+        for (const QString& line : lines)
+            block += QStringLiteral("> ") + line + QLatin1Char('\n');
+        block += QLatin1Char('\n');
+    }
+    return block;
 }
 
 bool AgentViewModel::handleBuiltinCommand(const QString& text) {

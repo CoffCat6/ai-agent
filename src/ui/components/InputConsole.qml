@@ -784,6 +784,122 @@ function applySkill(name) {
         }
     }
 
+    // ── docs/53: quoted excerpts（引用卡片）────────────────
+    // 每条引用一张卡片：左侧品牌竖条 + 摘要文本（单行省略，tooltip 全
+    // 文）+ × 移除。发送时由 AgentVM.startTaskWithSkills 统一拼成
+    // Markdown 引用块前置，成功后清空（失败还原）。
+    Item {
+        id: quoteBar
+        objectName: "quoteChipBar"
+        anchors.left: parent.left
+        anchors.right: parent.right
+        anchors.bottom: inputRow.top
+        anchors.leftMargin: 8
+        anchors.rightMargin: 8
+        anchors.bottomMargin: (root.referenceVisible ? referenceBar.height + 8 : 4)
+                              + root.unknownSkillHintBlock
+        height: quotesFlow.implicitHeight
+        visible: AgentVM.draftQuotes.length > 0
+
+        Flow {
+            id: quotesFlow
+            anchors.left: parent.left
+            anchors.right: parent.right
+            spacing: 6
+
+            Repeater {
+                model: AgentVM.draftQuotes
+
+                delegate: Rectangle {
+                    id: quoteChip
+                    required property var modelData
+                    required property int index
+
+                    objectName: "quoteChip"
+                    height: quoteText.implicitHeight + 14
+                    width: Math.min(quoteText.implicitWidth + 16,
+                                    quoteBar.width - 12)
+                    radius: 6
+                    color: Theme.surfaceHover
+                    border.width: 1
+                    border.color: Qt.rgba(Theme.brandPrimary.r, Theme.brandPrimary.g,
+                                          Theme.brandPrimary.b, 0.35)
+
+                    // 左侧 3px 品牌竖条：Markdown 引用块的视觉隐喻。
+                    Rectangle {
+                        anchors.left: parent.left
+                        anchors.top: parent.top
+                        anchors.bottom: parent.top
+                        anchors.topMargin: 2
+                        anchors.bottomMargin: anchors.topMargin
+                        width: 3
+                        radius: 1
+                        color: Theme.brandPrimary
+                    }
+
+                    Row {
+                        anchors.centerIn: parent
+                        spacing: 5
+
+                        Text {
+                            anchors.verticalCenter: parent.verticalCenter
+                            text: "❝"
+                            color: Theme.brandPrimary
+                            font.pixelSize: Theme.fontSizeCaption
+                            font.family: Theme.fontSans
+                        }
+
+                        Text {
+                            id: quoteText
+                            anchors.verticalCenter: parent.verticalCenter
+                            text: String(quoteChip.modelData.text)
+                                      .replace(/\n/g, " ⏎ ")
+                            color: Theme.textSecondary
+                            font.pixelSize: Theme.fontSizeMicro
+                            font.family: Theme.fontSans
+                            // Chip 宽度上限 340 由外层截断；文本自身兜底省略。
+                            width: Math.min(implicitWidth, 320)
+                            elide: Text.ElideRight
+
+                            HoverHandler { id: quoteFullHover }
+                            ToolTip.visible: quoteFullHover.hovered
+                            ToolTip.delay: 300
+                            ToolTip.text: String(quoteChip.modelData.text)
+                        }
+                    }
+
+                    Item {
+                        width: 14
+                        height: 14
+                        anchors.verticalCenter: parent.verticalCenter
+
+                        Text {
+                            anchors.centerIn: parent
+                            text: "×"
+                            color: quoteRemoveHover.hovered
+                                ? Theme.statusDanger : Theme.textSecondary
+                            font.pixelSize: Theme.fontSizeCaption
+                        }
+
+                        HoverHandler { id: quoteRemoveHover }
+
+                        MouseArea {
+                            anchors.fill: parent
+                            cursorShape: Qt.PointingHandCursor
+                            onClicked: AgentVM.removeQuoteRef(
+                                quoteChip.modelData.id)
+                        }
+
+                        Accessible.role: Accessible.Button
+                        Accessible.name: qsTr("移除引用")
+                        Accessible.onPressAction: AgentVM.removeQuoteRef(
+                            quoteChip.modelData.id)
+                    }
+                }
+            }
+        }
+    }
+
     // ── docs/37 W3: referenced skills ────────────────────
     // One removable chip per resolved '$name' (dedupe/cap already applied by
     // AgentVM.resolveSkills). Removing a chip also removes every matching
@@ -798,6 +914,7 @@ function applySkill(name) {
         anchors.rightMargin: 8
         anchors.bottomMargin: (root.referenceVisible ? referenceBar.height + 8 : 4)
                               + root.unknownSkillHintBlock
+                              + (AgentVM.draftQuotes.length > 0 ? quoteBar.height + 4 : 0)
         height: 24
         visible: root.skillsVisible
 
