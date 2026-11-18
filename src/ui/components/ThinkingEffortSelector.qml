@@ -1,11 +1,19 @@
 import QtQuick
-import QtQuick.Layouts
 import QtQuick.Controls
-import NexusAI
 import NexusAI.ViewModels
 
-// Reasoning effort belongs to the current conversation. Running tasks
-// keep their configuration snapshot; changes here do not edit defaults.
+// 思考强度选择器：进度条式分段档位条。
+//
+// 原先是「触发器 + 上拉菜单」的下拉：档位藏在弹层里，改一档要走
+// 开-找-点-关四步。现在五档（默认/关闭/低/中/高）平铺在一根分段条上——
+// 每段是一个可点的档位，填充到选中档即成一根进度条，改档 = 点一下；
+// 键盘为 slider 语义，左右方向键直接改档并生效。会话级语义不变：改的
+// 是当前会话的临时值（AgentVM.setChatReasoningEffort），不碰 profile
+// 默认层；运行中的任务继续用发起时的快照。
+//
+// 填充按「步进位置」算（选第 k 档 → 前 k+1 段亮）：「默认」是跟随
+// profile 的特殊档而不是零强度，关闭也不是「思考最多」，所以条上表达
+// 的是选择位置，档位含义由标签与悬停提示承载（不单靠颜色，docs/43 §6.4）。
 Item {
     id: root
 
@@ -18,7 +26,7 @@ Item {
     }
 
     // 未设置的 profile 在界面上显示为"跟随默认"，与实际发出去的报文一致
-    // （未设置 = 该字段整体不发）。
+    // （未设置 = 该字段整体不发）。顺序即条上位置：默认 → 关闭 → 低 → 中 → 高。
     readonly property var levels: [
         { value: "",         label: qsTr("思考·默认"), desc: qsTr("不发送思考参数，由模型自己决定") },
         { value: "off",      label: qsTr("思考·关闭"), desc: qsTr("明确要求不要思考，响应最快、最省 token") },
@@ -31,40 +39,44 @@ Item {
     // 任何效果——与其让人点了没反应，不如显式禁用并说明原因。
     readonly property bool usable: AgentVM.modelConfigured && !AgentVM.stateBusy
     // docs/25 D4: 整体禁用让 Tab 焦点链跳过不可用触发器（enabled 会向下传播
-    // 到 MouseArea/Popup，取代原先单独的 triggerMA.enabled 绑定）。
+    // 到 MouseArea，取代原先单独的 triggerMA.enabled 绑定）。
     enabled: root.usable
 
-    readonly property string currentLabel: {
-        for (var i = 0; i < levels.length; ++i)
-            if (levels[i].value === current) return levels[i].label
-        return qsTr("思考·默认")
+    readonly property int selectedIndex: {
+        for (var i = 0; i < root.levels.length; ++i)
+            if (root.levels[i].value === root.current) return i
+        return 0
     }
+    readonly property string currentLabel: root.levels[root.selectedIndex].label
+    readonly property string currentDesc: root.levels[root.selectedIndex].desc
 
     // 只有"中/高"值得用品牌色点标识强度，默认与关闭保持中性。
     readonly property bool emphasized: current === "medium" || current === "high"
 
-    // 回归用例用：弹层是否打开（Popup 不是 Item，测试取不到它）。
-    readonly property bool opened: effortPopup.opened
-
-    Accessible.role: Accessible.ComboBox
-    Accessible.name: qsTr("思考强度") + " · " + currentLabel
-    Accessible.description: {
-        for (var i = 0; i < levels.length; ++i)
-            if (levels[i].value === current) return levels[i].desc
-        return ""
-    }
-    // docs/25 D4: 触发器键盘可达——Tab 聚焦，回车/空格/下方向键开合菜单
-    Accessible.onPressAction: root.toggleMenu()
+    Accessible.role: Accessible.Slider
+    Accessible.name: qsTr("思考强度") + " · " + root.currentLabel
+    Accessible.description: root.currentDesc
+    // docs/25 D4: 键盘可达——Tab 聚焦，左右方向键改档（slider 语义，
+    // 按下即生效，与分段条的点击路径走同一个 selectIndex）。
     activeFocusOnTab: true
-    function toggleMenu() {
-        effortPopup.opened ? effortPopup.close() : effortPopup.open()
-    }
-    Keys.onReturnPressed: root.toggleMenu()
-    Keys.onSpacePressed: root.toggleMenu()
-    Keys.onDownPressed: root.toggleMenu()
+    Keys.onLeftPressed: root.selectIndex(root.selectedIndex - 1)
+    Keys.onRightPressed: root.selectIndex(root.selectedIndex + 1)
 
     function selectLevel(value) {
         AgentVM.setChatReasoningEffort(value)
+    }
+
+    function selectIndex(index) {
+        if (index < 0 || index >= root.levels.length) return
+        root.selectLevel(root.levels[index].value)
+    }
+
+    // 档位说明随弹层一并删除后仍需可达：悬停段位时短暂展示。
+    ToolTip {
+        id: levelTip
+        parent: triggerBox
+        font.pixelSize: Theme.fontSizeMicro
+        font.family: Theme.fontSans
     }
 
     Rectangle {
@@ -73,11 +85,13 @@ Item {
         anchors.fill: parent
         radius: 6
         opacity: root.usable ? 1.0 : 0.5
-        color: triggerMA.containsMouse || effortPopup.opened || root.activeFocus
+        // HoverHandler 而非 MouseArea：段位上的 MouseArea 不会抢走悬停态，
+        // 指针在段位之间/之外移动时药丸底色连续响应。
+        HoverHandler { id: pillHover }
+        color: pillHover.hovered || root.activeFocus
             ? Theme.surfaceHover : "transparent"
         border.width: 1
-        border.color: effortPopup.opened || root.activeFocus
-            ? Theme.brandPrimary : "transparent"
+        border.color: root.activeFocus ? Theme.brandPrimary : "transparent"
 
         Behavior on color { ColorAnimation { duration: Theme.motionBase } }
 
@@ -97,152 +111,58 @@ Item {
             Text {
                 anchors.verticalCenter: parent.verticalCenter
                 text: root.usable ? root.currentLabel : qsTr("思考·未配置模型")
-                color: root.usable && (triggerMA.containsMouse || effortPopup.opened)
+                color: root.usable && (pillHover.hovered || root.activeFocus)
                     ? Theme.brandPrimary : Theme.textSecondary
                 font.pixelSize: Theme.fontSizeMicro
                 font.family: Theme.fontMono
             }
 
-            AppIcon {
+            // 分段档位条：填充到选中档即"进度条"。未填充段用 textSecondary
+            // 半透明而不是 surfaceHover/bgPrimary——药丸底色在悬停时会变，
+            // 段位在两种底色下都要保持可见。
+            Row {
+                objectName: "thinkingEffortBar"
                 anchors.verticalCenter: parent.verticalCenter
-                icon: effortPopup.opened ? "chevron-up" : "chevron-down"
-                size: 11
-                iconColor: triggerMA.containsMouse || effortPopup.opened
-                    ? Theme.brandPrimary : Theme.textSecondary
-            }
-        }
+                spacing: 3
 
-        MouseArea {
-            id: triggerMA
-            anchors.fill: parent
-            anchors.margins: -4
-            hoverEnabled: true
-            cursorShape: Qt.PointingHandCursor
-            // 再点一次关闭（修复）：原先 onClicked + CloseOnPressOutside 的组合
-            // 有竞态——弹层在**按下**时就被关掉，抬起时 onClicked 读到 opened
-            // 为 false 又打开一次，表现为"点第二次还是开着"。
-            // 现在把判断放在 onPressed（此刻弹层状态还没被外部点击策略改写），
-            // 并让弹层改用 CloseOnReleaseOutside：鼠标释放时才处理"点外面"，
-            // 于是触发器自己的 pressed 处理总是先看到真实状态。
-            // 必须在 onPressed 而不是 onReleased/onClicked 上做这个判断：
-            // 弹层的 CloseOnReleaseOutside 会在**鼠标释放**时先把弹层关掉，
-            // 于是 onReleased/onClicked 读到的 opened 恒为 false，toggle 就
-            // 又打开了——用户看到的正是"点第二次还是开着，只能点别处关"。
-            // onPressed 发生在弹层的外部点击处理之前，读到的才是点击前状态。
-            onPressed: effortPopup.opened ? effortPopup.close() : effortPopup.open()
-        }
-    }
+                Repeater {
+                    model: root.levels
 
-    // 触发器贴着窗口底边，所以和另两个选择器一样向上弹。
-    Popup {
-        id: effortPopup
-        // docs/25 D4: 打开时接受键盘焦点，菜单项才能进入焦点链
-        focus: true
-        x: 0
-        y: -height - 6
-        width: 320
-        height: effortContent.implicitHeight + 12
-        padding: 6
-        closePolicy: Popup.CloseOnEscape | Popup.CloseOnReleaseOutside
+                    delegate: Rectangle {
+                        id: segment
+                        required property var modelData
+                        required property int index
+                        readonly property bool filled: root.selectedIndex >= segment.index
 
-        background: DialogBackground {}
+                        width: 16
+                        height: 8
+                        radius: 4
+                        color: segment.filled ? Theme.brandPrimary
+                            : Qt.rgba(Theme.textSecondary.r, Theme.textSecondary.g,
+                                      Theme.textSecondary.b, 0.25)
 
-        contentItem: ColumnLayout {
-            id: effortContent
-            spacing: 2
-
-            Text {
-                text: qsTr("思考强度 · 当前会话")
-                color: Theme.textSecondary
-                font.pixelSize: Theme.fontSizeMicro
-                font.bold: true
-                font.family: Theme.fontMono
-                Layout.leftMargin: 8
-                Layout.topMargin: 2
-            }
-
-            Repeater {
-                model: root.levels
-
-                delegate: Rectangle {
-                    id: levelItem
-                    required property var modelData
-                    readonly property bool isSelected: modelData.value === root.current
-                    Layout.fillWidth: true
-                    Layout.leftMargin: 2
-                    Layout.rightMargin: 2
-                    Layout.preferredHeight: 34
-                    radius: 5
-                    color: levelMA.containsMouse || levelItem.activeFocus
-                        ? Theme.surfaceHover : "transparent"
-
-                    // docs/25 D4: 菜单项键盘激活 + 读屏单选语义
-                    function activate() {
-                        effortPopup.close()
-                        root.selectLevel(modelData.value)
-                    }
-
-                    RowLayout {
-                        anchors.fill: parent
-                        anchors.leftMargin: 8
-                        anchors.rightMargin: 8
-                        spacing: 6
-
-                        AppIcon {
-                            Layout.preferredWidth: 12
-                            Layout.preferredHeight: 12
-                            icon: "check"
-                            size: 12
-                            iconColor: Theme.brandPrimary
-                            visible: levelItem.isSelected
-                        }
-
-                        Item {
-                            Layout.preferredWidth: 12
-                            Layout.preferredHeight: 12
-                            visible: !levelItem.isSelected
-                        }
-
-                        ColumnLayout {
-                            Layout.fillWidth: true
-                            spacing: 0
-
-                            Text {
-                                text: modelData.label
-                                color: levelItem.isSelected
-                                    ? Theme.brandPrimary : Theme.textPrimary
-                                font.pixelSize: Theme.fontSizeCaption
-                                font.family: Theme.fontMono
-                                font.bold: levelItem.isSelected
-                            }
-                            Text {
-                                Layout.fillWidth: true
-                                text: modelData.desc
-                                color: Theme.textSecondary
-                                font.pixelSize: Theme.fontSizeMicro
-                                font.family: Theme.fontSans
-                                elide: Text.ElideRight
+                        MouseArea {
+                            id: segmentMA
+                            anchors.fill: parent
+                            // 8px 高的段位太小：向外扩一圈作为点击热区。
+                            anchors.margins: -3
+                            hoverEnabled: true
+                            cursorShape: Qt.PointingHandCursor
+                            onClicked: root.selectIndex(segment.index)
+                            onHoveredChanged: {
+                                if (segmentMA.containsMouse)
+                                    levelTip.show(segment.modelData.label + " · "
+                                                  + segment.modelData.desc, 2000)
                             }
                         }
-                    }
 
-                    MouseArea {
-                        id: levelMA
-                        anchors.fill: parent
-                        hoverEnabled: true
-                        cursorShape: Qt.PointingHandCursor
-                        onClicked: levelItem.activate()
+                        // 读屏沿用旧弹层的单选语义：每段一枚选项。
+                        Accessible.role: Accessible.RadioButton
+                        Accessible.name: segment.modelData.label
+                        Accessible.description: segment.modelData.desc
+                        Accessible.checked: root.selectedIndex === segment.index
+                        Accessible.onPressAction: root.selectIndex(segment.index)
                     }
-                    activeFocusOnTab: true
-                    Keys.onReturnPressed: levelItem.activate()
-                    Keys.onSpacePressed: levelItem.activate()
-                    Keys.onDownPressed: nextItemInFocusChain().forceActiveFocus()
-                    Keys.onUpPressed: nextItemInFocusChain(false).forceActiveFocus()
-                    Accessible.role: Accessible.RadioButton
-                    Accessible.name: modelData.label
-                    Accessible.description: modelData.desc
-                    Accessible.checked: levelItem.isSelected
-                    Accessible.onPressAction: levelItem.activate()
                 }
             }
         }

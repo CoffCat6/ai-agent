@@ -28,11 +28,25 @@ RowLayout {
     // 什么也不显示。
     property string settingKey: ""
     readonly property string settingId: settingKey.length > 0 ? settingKey : objectName
-    // 先读 revision 建立依赖：SettingsCatalog.describe() 是 Q_INVOKABLE，
-    // 没有变更通知，不显式依赖就只会在创建时求值一次。
-    readonly property var valueState: {
-        SettingsCatalog.revision
-        return SettingsCatalog.describe(settingId)
+    // 「已修改」标识与复位按钮的数据源。describe() 是 Q_INVOKABLE，自己不
+    // 带变更通知，因此必须由 SettingsCatalog.revisionChanged 显式驱动重算。
+    //
+    // 为什么不用「先读一次 revision 建立依赖」：qmlcachegen 会把求值后立即
+    // 丢弃的无副作用表达式当死代码消除——AOT 产物里既没有这次读取，也就
+    // 不再随 revision 重算，「已修改」圆点改完不消失只有在正式包才复现
+    // （源码解释执行时该死读会真实执行，测试反而全绿，见 docs/54 同类修复）。
+    // 这里改为普通属性 + Connections 命令式重算，行为不依赖编译器是否保留
+    // 死读语句。
+    property var valueState: ({})
+    function refreshValueState() {
+        root.valueState = SettingsCatalog.describe(root.settingId)
+    }
+    onSettingIdChanged: refreshValueState()
+    Component.onCompleted: refreshValueState()
+
+    Connections {
+        target: SettingsCatalog
+        function onRevisionChanged() { root.refreshValueState() }
     }
 
     default property alias content: controlBox.data

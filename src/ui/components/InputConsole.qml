@@ -22,12 +22,25 @@ Rectangle {
         if (!restoringDraft) AgentVM.draftAttachments = pendingAttachments
     }
 
+    // 输入框下方预设选择器移除后，「管理预设…」经由 "/" 指令菜单到达设置
+    // 中心 prompts 分类（AgentChatPage 接线），与模型选择器的「管理模型
+    // 配置…」同一模式。
+    signal managePresetsRequested()
+
     // ── G2: '@' project file mentions ────────────────────
     property bool mentionOpen: false
     property int mentionStart: -1
     property int mentionIndex: 0
     property string mentionQuery: ""
     property var mentionResults: []
+    // 「+ → MCP 资源…」菜单项是否可见（docs/48）。抽成派生属性而不是写在
+    // MenuItem.visible 里：MenuItem 在父 Menu 未弹出时不做绑定求值
+    // （QQuickMenuBase 只在 open 时重建 contentItem），逻辑留在行内既不好测，
+    // 也容易被写成直接调用 McpManager.listResources()——那样拿不到变更通知，
+    // 资源在服务器连上之后才到达时菜单项永远不出现。
+    readonly property bool mcpResourceEntryVisible: !Settings.localOnlyMode
+        && resourceDialog.allResources.length > 0
+
     // Guards the two-step text replacement in applyMention(): remove() emits
     // textChanged synchronously, and the unguarded updateMention() would reset
     // mentionStart to -1 before insert() runs, losing the completion.
@@ -190,6 +203,42 @@ Rectangle {
             if (name.toLowerCase().indexOf(query) !== 0) continue
             matches.push({name: name, note: String(entry.note || "")})
         }
+        // 提示词预设混入（docs/31 prompts 资产，原输入框下方选择器的 / 化
+        // 迁移）：选中即套用为会话级系统提示（派发式语义，同 MCP 条目），
+        // "/名称" token 从草稿移除、不随消息发送。已套用的条目在 note 里
+        // 标注；有套用中的预设时额外提供清除条目（回落全局提示词）。
+        const activePresetId = String(AgentVM.activePromptPresetId || "")
+        if (activePresetId.length > 0) {
+            const clearName = qsTr("清除预设")
+            if (clearName.toLowerCase().indexOf(query) === 0)
+                matches.push({name: clearName,
+                              note: qsTr("清除当前会话套用的预设，回落全局系统提示词"),
+                              presetClear: true})
+        }
+        const presets = Settings.promptPresets || []
+        for (let i = 0; i < presets.length; ++i) {
+            const p = presets[i] || {}
+            const name = String(p.name || "")
+            if (name.length === 0
+                    || name.toLowerCase().indexOf(query) !== 0) continue
+            const applied = String(p.id || "") === activePresetId
+            matches.push({name: name,
+                          note: applied
+                              ? qsTr("会话预设（已套用）· 点击切换")
+                              : qsTr("会话预设 · 套用为当前会话系统提示"),
+                          preset: true,
+                          presetId: String(p.id || ""),
+                          promptText: String(p.prompt || "")})
+        }
+        // 「管理预设…」与模型选择器的「管理模型配置…」同一模式：菜单条目
+        // 直达设置中心 prompts 分类。
+        {
+            const manageName = qsTr("管理预设")
+            if (manageName.toLowerCase().indexOf(query) === 0)
+                matches.push({name: manageName,
+                              note: qsTr("在设置中心新建/编辑系统提示预设"),
+                              managePresets: true})
+        }
         // docs/46: MCP prompts 动态混入。localOnlyMode 下不与 MCP 服务器
         // 往返（与 mcp__* 工具门控同方向），候选一并隐藏。
         if (!Settings.localOnlyMode) {
@@ -251,13 +300,18 @@ function tokenEndAt(text, from) {
     return end
 }
 
-// Replaces the whole '/token' with '/name ' — never sends. MCP prompt
-// entries (docs/46) dispatch to applyMcpPrompt instead: they resolve to
-// fetched text, not a literal token.
+// Replaces the whole '/token' with '/name ' — never sends. Dispatch-style
+// entries don't insert: MCP prompts (docs/46) resolve to fetched text, and
+// prompt presets (docs/31 prompts) apply as the session system prompt —
+// both remove the token instead.
 function applySlash(entry) {
     if (!entry) return
     if (entry.mcp) {
         applyMcpPrompt(entry)
+        return
+    }
+    if (entry.preset || entry.presetClear || entry.managePresets) {
+        applyPresetCommand(entry)
         return
     }
     const name = String(entry.name || "")
@@ -273,6 +327,27 @@ function applySlash(entry) {
         closeSlash()
         textArea.forceActiveFocus()
     }
+
+// ── 提示词预设 / 管理入口的派发（原输入框下方选择器的 / 化迁移）────
+// 预设是会话级动作：套用/清除走 AgentVM（toast 反馈由 VM 发
+// noticeOccurred），「/名称」token 从草稿移除——它不是要发送的文本。
+function applyPresetCommand(entry) {
+    if (slashStart < 0) return
+    const start = slashStart
+    const end = tokenEndAt(textArea.text, start)
+    closeSlash()
+    textArea.forceActiveFocus()
+    if (entry.managePresets) {
+        root.managePresetsRequested()
+    } else if (entry.presetClear) {
+        AgentVM.clearPromptPreset()
+    } else {
+        AgentVM.applyPromptPreset(String(entry.presetId || ""),
+                                  String(entry.name || ""),
+                                  String(entry.promptText || ""))
+    }
+    textArea.remove(start, end)
+}
 
     function moveSlash(delta) {
         const count = slashResults.length
@@ -1508,10 +1583,12 @@ function applySkill(name) {
         // docs/48: MCP 资源（远程数据读取成文本附件）。localOnlyMode 下
         // 与 MCP 服务器不往返（与 mcp__* 工具/prompts 门控同向）。
         AttachMenuItem {
+            objectName: "mcpResourceMenuItem"
             glyph: "globe"
             text: qsTr("MCP 资源…")
-            visible: !Settings.localOnlyMode
-                      && McpManager.listResources().length > 0
+            // 复用选择器已算好的结果（由 McpManager.serversChanged 命令式
+            // 重算），判据见 root.mcpResourceEntryVisible 的注释。
+            visible: root.mcpResourceEntryVisible
             height: visible ? implicitHeight : 0
             onTriggered: resourceDialog.openFor()
         }
@@ -1746,7 +1823,11 @@ function applySkill(name) {
                     MouseArea {
                         anchors.fill: parent
                         cursorShape: Qt.PointingHandCursor
-                        onClicked: root.applySlash(slashRow.modelData.name)
+                        // 必须传整个条目对象：派发式条目（MCP prompt / 提示词
+                        // 预设）靠 mcp/preset 标志分派，只传 name 字符串会
+                        // 走进字面展开分支——键盘路径（slashResults[index]）
+                        // 一直是对的，鼠标路径此前坏的就是这里。
+                        onClicked: root.applySlash(slashRow.modelData)
                     }
 
                     RowLayout {
@@ -1757,8 +1838,13 @@ function applySkill(name) {
 
                         AppIcon {
                             Layout.alignment: Qt.AlignVCenter
-                            // docs/46: MCP 条目用模板图标与内置命令区分。
-                            icon: slashRow.modelData.mcp ? "preset" : "terminal"
+                            // docs/46: MCP 条目用模板图标与内置命令区分；
+                            // 提示词预设/管理入口走同一枚（note 里写清语义）。
+                            icon: slashRow.modelData.mcp
+                                  || slashRow.modelData.preset
+                                  || slashRow.modelData.presetClear
+                                  || slashRow.modelData.managePresets
+                                  ? "preset" : "terminal"
                             size: 13
                             iconColor: slashRow.index === root.slashIndex
                                 ? Theme.brandPrimary : Theme.textSecondary

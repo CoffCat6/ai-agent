@@ -17,6 +17,8 @@
 #include <QQmlComponent>
 #include <QDir>
 #include <QFile>
+#include <QFileInfo>
+#include <QImage>
 #include <QQuickItem>
 #include <QQuickWindow>
 #include <QUuid>
@@ -24,6 +26,7 @@
 #include <QVariantMap>
 
 #include <memory>
+#include <functional>
 
 #include "viewmodels/AppInfo.h"
 #include "viewmodels/ChangeBus.h"
@@ -33,6 +36,9 @@
 #include "viewmodels/Onboarding.h"
 #include "viewmodels/PreferenceStore.h"
 #include "viewmodels/SettingsService.h"
+#include "viewmodels/AgentViewModel.h"
+#include "core/agent/AIAgent.h"
+#include "infrastructure/llm/LlmProtocolRegistry.h"
 #include "viewmodels/ShortcutMap.h"
 #include "viewmodels/ThemeProvider.h"
 #include "TestSettingsIsolation.h"
@@ -1286,6 +1292,603 @@ private slots:
                         .at(0).toString().contains(QStringLiteral("项覆盖")));
 
         win->close();
+        while (!settings->profiles().isEmpty()) {
+            settings->removeProfile(settings->profiles().first().toMap()
+                                        .value(QStringLiteral("id")).toString());
+        }
+    }
+
+    // docs/54：能力标注行（视觉/工具）经真实页面落库——ParamSelectRow 枚举
+    // 提交链路与 setModelParam 校验都过一遍，再从 modelCapabilities(profileId)
+    // 读回徽章视角的合成值：配置页设置的值就是选择器徽章显示的值。
+    void capabilityRowsWriteOverride() {
+        auto* settings = SettingsService::instance();
+        while (!settings->profiles().isEmpty()) {
+            settings->removeProfile(settings->profiles().first().toMap()
+                                        .value(QStringLiteral("id")).toString());
+        }
+        const QString profileId = settings->addProfile(QStringLiteral("openai"));
+        QVERIFY(!profileId.isEmpty());
+        settings->updateProfile(profileId,
+                                QVariantMap{{QStringLiteral("baseUrl"),
+                                             QStringLiteral("https://api.example.com/v1")},
+                                            {QStringLiteral("model"),
+                                             QStringLiteral("glm-test")}});
+        settings->addModelToProfile(profileId, QStringLiteral("gpt-test"));
+
+        NexusQrcFallback fallback(QStringLiteral(NEXUS_BUILD_DIR "/NexusAI"));
+        QQmlApplicationEngine engine;
+        engine.addUrlInterceptor(&fallback);
+        engine.addImportPath(QStringLiteral(NEXUS_BUILD_DIR));
+        QQmlComponent component(
+            &engine,
+            QUrl::fromLocalFile(QStringLiteral(NEXUS_TEST_QML_DIR
+                                               "/ModelConfigHarness.qml")));
+        QVERIFY2(component.isReady(), qPrintable(component.errorString()));
+        std::unique_ptr<QObject> root(component.create());
+        QVERIFY2(root, qPrintable(component.errorString()));
+
+        auto* win = qobject_cast<QQuickWindow*>(root.get());
+        QVERIFY(win);
+        win->resize(1000, 760);
+        win->show();
+        QVERIFY(QTest::qWaitForWindowExposed(win));
+
+        QQuickItem* page = findVisualItem(win->contentItem(),
+                                          QStringLiteral("modelConfigPage"));
+        QVERIFY(page);
+        QQuickItem* editor = findVisualItem(page,
+                                            QStringLiteral("model.perModelParams"));
+        QVERIFY(editor);
+        // 默认选中当前模型 glm-test：能力表未收录（表值 vision=false，
+        // contextWindow=0），正是需要手动标注的场景。
+        QCOMPARE(editor->property("selectedModel").toString(),
+                 QStringLiteral("glm-test"));
+
+        const auto overridesOf = [settings, profileId]() {
+            return settings->profiles()
+                .at(0).toMap()
+                .value(QStringLiteral("modelParams")).toMap()
+                .value(QStringLiteral("glm-test")).toMap();
+        };
+        const auto capsOf = [settings, profileId]() {
+            return settings->modelCapabilities(QStringLiteral("openai-chat"),
+                                               QStringLiteral("glm-test"),
+                                               profileId);
+        };
+
+        // 视觉行选「支持」（index 1）→ modelParams.vision = "true"，徽章
+        // 查询翻 true（表值 false 被覆盖）。
+        QQuickItem* visionRow = findVisualItem(editor,
+                                               QStringLiteral("model.paramRowVision"));
+        QVERIFY2(visionRow, "能力标注行（视觉）必须内嵌在按模型参数编辑器");
+        QVERIFY(QMetaObject::invokeMethod(visionRow, "applyOption",
+                                          Q_ARG(QVariant, 1)));
+        QTRY_COMPARE(overridesOf().value(QStringLiteral("vision")).toString(),
+                     QStringLiteral("true"));
+        QCOMPARE(capsOf().value(QStringLiteral("vision")).toBool(), true);
+
+        // 工具行选「不支持」（index 2）→ "false"，徽章查询的 tools 翻 false
+        // （协议级 true 被覆盖）。
+        QQuickItem* toolsRow = findVisualItem(editor,
+                                              QStringLiteral("model.paramRowTools"));
+        QVERIFY2(toolsRow, "能力标注行（工具）必须内嵌在按模型参数编辑器");
+        QVERIFY(QMetaObject::invokeMethod(toolsRow, "applyOption",
+                                          Q_ARG(QVariant, 2)));
+        QTRY_COMPARE(overridesOf().value(QStringLiteral("tools")).toString(),
+                     QStringLiteral("false"));
+        QCOMPARE(capsOf().value(QStringLiteral("tools")).toBool(), false);
+
+        // 选回「跟随能力表/协议」（index 0）→ 键删除，查询退回表值/启发式。
+        QVERIFY(QMetaObject::invokeMethod(visionRow, "applyOption",
+                                          Q_ARG(QVariant, 0)));
+        QTRY_VERIFY(!overridesOf().contains(QStringLiteral("vision")));
+        QCOMPARE(capsOf().value(QStringLiteral("vision")).toBool(), false);
+        QVERIFY(QMetaObject::invokeMethod(toolsRow, "applyOption",
+                                          Q_ARG(QVariant, 0)));
+        QTRY_VERIFY(!overridesOf().contains(QStringLiteral("tools")));
+        QCOMPARE(capsOf().value(QStringLiteral("tools")).toBool(), true);
+        // 覆盖键全清后条目不占位（空 map 不留残骸）。
+        QVERIFY(!overridesOf().contains(QStringLiteral("vision"))
+                && !overridesOf().contains(QStringLiteral("tools")));
+
+        win->close();
+        while (!settings->profiles().isEmpty()) {
+            settings->removeProfile(settings->profiles().first().toMap()
+                                        .value(QStringLiteral("id")).toString());
+        }
+    }
+
+    // docs/54：能力徽章胶囊芯片。真实弹层渲染下断言芯片结构、几何与数据
+    // 口径（按模型覆盖优先于能力表），并整窗抓图确认弹层真的画了出来。
+    void capsBadgesRenderAsChips() {
+        auto* settings = SettingsService::instance();
+        while (!settings->profiles().isEmpty()) {
+            settings->removeProfile(settings->profiles().first().toMap()
+                                        .value(QStringLiteral("id")).toString());
+        }
+        const QString profileId = settings->addProfile(QStringLiteral("openai"));
+        QVERIFY(!profileId.isEmpty());
+        settings->updateProfile(profileId,
+                                QVariantMap{{QStringLiteral("displayName"),
+                                             QStringLiteral("工作用 GPT")},
+                                            {QStringLiteral("baseUrl"),
+                                             QStringLiteral("https://api.example.com/v1")},
+                                            {QStringLiteral("model"),
+                                             QStringLiteral("gpt-4o")}});
+        settings->addModelToProfile(profileId, QStringLiteral("glm-4.6"));
+        settings->addModelToProfile(profileId, QStringLiteral("o3-mini"));
+        // 按模型覆盖：glm-4.6 能力表未收录（表值 ? 且无视觉），配置页标注
+        // vision=true + contextLength=200000 → 徽章应显示 200K·视觉·工具。
+        settings->setModelParam(profileId, QStringLiteral("glm-4.6"),
+                                QStringLiteral("vision"), QStringLiteral("true"));
+        settings->setModelParam(profileId, QStringLiteral("glm-4.6"),
+                                QStringLiteral("contextLength"), QStringLiteral("200000"));
+
+        // Section 1（当前配置的模型行）由 AgentVM 驱动：main.cpp 的装配在
+        // 测试进程里不存在，这里手工等价注入（configureModel 回调为空时
+        // configureModel 安全 no-op，单例构造器已保证有会话标签）。
+        auto* vm = AgentViewModel::instance();
+        vm->updateModelProfiles(settings->profiles(), settings->activeProfile());
+        vm->selectChatModel(profileId);
+
+        NexusQrcFallback fallback(QStringLiteral(NEXUS_BUILD_DIR "/NexusAI"));
+        QQmlApplicationEngine engine;
+        engine.addUrlInterceptor(&fallback);
+        engine.addImportPath(QStringLiteral(NEXUS_BUILD_DIR));
+        QQmlComponent component(
+            &engine,
+            QUrl::fromLocalFile(QStringLiteral(NEXUS_TEST_QML_DIR
+                                               "/ModelSelectorHarness.qml")));
+        QVERIFY2(component.isReady(), qPrintable(component.errorString()));
+        std::unique_ptr<QObject> root(component.create());
+        QVERIFY2(root, qPrintable(component.errorString()));
+
+        auto* win = qobject_cast<QQuickWindow*>(root.get());
+        QVERIFY(win);
+        win->resize(420, 380);
+        win->show();
+        QVERIFY(QTest::qWaitForWindowExposed(win));
+
+        QQuickItem* selector = findVisualItem(win->contentItem(),
+                                              QStringLiteral("modelSelector"));
+        QVERIFY(selector);
+
+        const auto collectItems = [](QQuickItem* tree, const QString& name) {
+            QList<QQuickItem*> out;
+            std::function<void(QQuickItem*)> walk = [&](QQuickItem* item) {
+                if (item->objectName() == name) out.append(item);
+                for (QQuickItem* child : item->childItems()) walk(child);
+            };
+            walk(tree);
+            return out;
+        };
+
+        // 打开弹层：Section 1 / Section 2 的徽章行才参与布局。
+        QVERIFY(QMetaObject::invokeMethod(root.get(), "openPopup"));
+        QTRY_COMPARE(selector->property("opened").toBool(), true);
+
+        // 芯片几何：18 高（radiusBadge 胶囊），宿主行（28px）内垂直居中。
+        // 芯片自身相对徽章行 y=0，居中发生在徽章行与其宿主行布局之间。
+        const auto assertChipGeometry = [](QQuickItem* badge) {
+            QVERIFY(badge);
+            QVERIFY(badge->parentItem());
+            QCOMPARE(badge->height(), 18.0);
+            QCOMPARE(badge->y(),
+                     (badge->parentItem()->height() - badge->height()) / 2);
+            for (QQuickItem* chip : badge->childItems()) {
+                if (!chip->isVisible()) continue;
+                QCOMPARE(chip->height(), 18.0);
+                QCOMPARE(chip->y(), 0.0);
+            }
+        };
+
+        QTRY_COMPARE(collectItems(win->contentItem(),
+                                  QStringLiteral("modelCapsBadge")).size(), 3);
+        QTRY_COMPARE(collectItems(win->contentItem(),
+                                  QStringLiteral("profileCapsBadge")).size(), 1);
+
+        // 徽章行 → 可见芯片标签集合。CapsChip 的 label 是普通 QML property，
+        // 经 QObject::property 读出，不依赖私有头。
+        const auto chipLabels = [](QQuickItem* badge) {
+            QStringList labels;
+            for (QQuickItem* chip : badge->childItems())
+                if (chip->isVisible())
+                    labels.append(chip->property("label").toString());
+            return labels;
+        };
+
+        const auto modelBadges = collectItems(win->contentItem(),
+                                              QStringLiteral("modelCapsBadge"));
+        QCOMPARE(chipLabels(modelBadges.at(0)),
+                 (QStringList{"128K", "视觉", "工具"}));
+        // glm-4.6：contextLength/vision 覆盖生效（能力表是 ？/无视觉）。
+        QCOMPARE(chipLabels(modelBadges.at(1)),
+                 (QStringList{"200K", "视觉", "工具"}));
+        // o3-mini：文本推理模型不在视觉启发式名单（宁缺勿错），上下文走表值。
+        QCOMPARE(chipLabels(modelBadges.at(2)), (QStringList{"200K", "工具"}));
+
+        const auto profileBadges = collectItems(win->contentItem(),
+                                                QStringLiteral("profileCapsBadge"));
+        QCOMPARE(chipLabels(profileBadges.at(0)),
+                 (QStringList{"128K", "视觉", "工具"}));
+
+        // 几何断言跑满全部四枚徽章行。
+        for (QQuickItem* badge : modelBadges + profileBadges)
+            assertChipGeometry(badge);
+
+        // 整窗抓图：弹层真的画出来了（非空图 + 非 0 字节文件）。
+        const QImage shot = win->grabWindow();
+        QVERIFY(!shot.isNull());
+        QTemporaryDir snapDir;
+        const QString snapPath = snapDir.filePath(QStringLiteral("model-selector-popup.png"));
+        QVERIFY(shot.save(snapPath));
+        QVERIFY(QFileInfo(snapPath).size() > 0);
+        // 本地目视辅助：设 NEXUS_TEST_SNAPSHOT_DIR 时把抓图镜像到该目录。
+        const QString mirrorDir = qEnvironmentVariable("NEXUS_TEST_SNAPSHOT_DIR");
+        if (!mirrorDir.isEmpty())
+            shot.save(mirrorDir + QStringLiteral("/model-selector-popup.png"));
+
+        win->close();
+        // 单例状态复位：不把本用例注入的模型配置漏给后续用例。
+        vm->updateModelProfiles(QVariantList{}, QVariantMap{});
+        while (!settings->profiles().isEmpty()) {
+            settings->removeProfile(settings->profiles().first().toMap()
+                                        .value(QStringLiteral("id")).toString());
+        }
+    }
+
+    // docs/54 回归：弹层开着时在配置侧改能力标注，聊天选择器的徽章必须
+    // 立刻跟着变。原实现里 CapsBadgeRow.caps 的绑定只依赖 apiProtocol /
+    // model / profileId 三个字符串，modelCapabilities() 是 Q_INVOKABLE，
+    // 读 Settings.profiles 不会建立依赖——改完要重启才会更新。
+    void capsBadgesFollowLiveEdits() {
+        auto* settings = SettingsService::instance();
+        while (!settings->profiles().isEmpty()) {
+            settings->removeProfile(settings->profiles().first().toMap()
+                                        .value(QStringLiteral("id")).toString());
+        }
+        const QString profileId = settings->addProfile(QStringLiteral("openai"));
+        QVERIFY(!profileId.isEmpty());
+        settings->updateProfile(profileId,
+                                QVariantMap{{QStringLiteral("baseUrl"),
+                                             QStringLiteral("https://api.example.com/v1")},
+                                            {QStringLiteral("model"),
+                                             QStringLiteral("glm-4.6")}});
+
+        auto* vm = AgentViewModel::instance();
+        vm->updateModelProfiles(settings->profiles(), settings->activeProfile());
+        vm->selectChatModel(profileId);
+
+        NexusQrcFallback fallback(QStringLiteral(NEXUS_BUILD_DIR "/NexusAI"));
+        QQmlApplicationEngine engine;
+        engine.addUrlInterceptor(&fallback);
+        engine.addImportPath(QStringLiteral(NEXUS_BUILD_DIR));
+        QQmlComponent component(
+            &engine,
+            QUrl::fromLocalFile(QStringLiteral(NEXUS_TEST_QML_DIR
+                                               "/ModelSelectorHarness.qml")));
+        QVERIFY2(component.isReady(), qPrintable(component.errorString()));
+        std::unique_ptr<QObject> root(component.create());
+        QVERIFY2(root, qPrintable(component.errorString()));
+
+        auto* win = qobject_cast<QQuickWindow*>(root.get());
+        QVERIFY(win);
+        win->resize(420, 380);
+        win->show();
+        QVERIFY(QTest::qWaitForWindowExposed(win));
+
+        QQuickItem* selector = findVisualItem(win->contentItem(),
+                                              QStringLiteral("modelSelector"));
+        QVERIFY(selector);
+        QVERIFY(QMetaObject::invokeMethod(root.get(), "openPopup"));
+        QTRY_COMPARE(selector->property("opened").toBool(), true);
+
+        // Section 1（模型行）与 Section 2（profile 行）两处徽章都要跟着变，
+        // 两处共用同一条 profiles 依赖。
+        const auto badgeLabels = [win](const QString& objectName) {
+            QQuickItem* badge = findVisualItem(win->contentItem(), objectName);
+            QStringList labels;
+            if (!badge) return labels;
+            for (QQuickItem* chip : badge->childItems())
+                if (chip->isVisible())
+                    labels.append(chip->property("label").toString());
+            return labels;
+        };
+        const auto modelLabels = [&]() {
+            return badgeLabels(QStringLiteral("modelCapsBadge"));
+        };
+        const auto profileRowLabels = [&]() {
+            return badgeLabels(QStringLiteral("profileCapsBadge"));
+        };
+
+        // 能力表未收录 glm-4.6：上下文未知、无视觉（只有协议级「工具」）。
+        QTRY_COMPARE(modelLabels(), (QStringList{"?", "工具"}));
+        QTRY_COMPARE(profileRowLabels(), (QStringList{"?", "工具"}));
+        // 配置侧标注视觉 + 上下文预算 → 徽章即时出现两枚新芯片。
+        settings->setModelParam(profileId, QStringLiteral("glm-4.6"),
+                                QStringLiteral("vision"), QStringLiteral("true"));
+        settings->setModelParam(profileId, QStringLiteral("glm-4.6"),
+                                QStringLiteral("contextLength"),
+                                QStringLiteral("200000"));
+        QTRY_COMPARE(modelLabels(), (QStringList{"200K", "视觉", "工具"}));
+        QTRY_COMPARE(profileRowLabels(), (QStringList{"200K", "视觉", "工具"}));
+
+        // 再改回来（清空覆盖）→ 徽章回落，不需要重开弹层/重启。
+        settings->clearModelParams(profileId, QStringLiteral("glm-4.6"));
+        QTRY_COMPARE(modelLabels(), (QStringList{"?", "工具"}));
+        QTRY_COMPARE(profileRowLabels(), (QStringList{"?", "工具"}));
+
+        win->close();
+        vm->updateModelProfiles(QVariantList{}, QVariantMap{});
+        while (!settings->profiles().isEmpty()) {
+            settings->removeProfile(settings->profiles().first().toMap()
+                                        .value(QStringLiteral("id")).toString());
+        }
+    }
+
+    // docs/54 回归（真实用户路径）：在**设置页 UI 上点能力行**，回到对话
+    // 界面的选择器下拉框，徽章必须已经变了。上一个用例从 C++ 直接调
+    // setModelParam，绕过了设置页的提交链路；这里两个真实组件放进同一个
+    // 窗口共享 Settings 单例，点的是 ParamSelectRow 的真实交互入口。
+    void capsBadgesFollowSettingsPageEdits() {
+        auto* settings = SettingsService::instance();
+        while (!settings->profiles().isEmpty()) {
+            settings->removeProfile(settings->profiles().first().toMap()
+                                        .value(QStringLiteral("id")).toString());
+        }
+        const QString profileId = settings->addProfile(QStringLiteral("openai"));
+        QVERIFY(!profileId.isEmpty());
+        settings->updateProfile(profileId,
+                                QVariantMap{{QStringLiteral("baseUrl"),
+                                             QStringLiteral("https://api.example.com/v1")},
+                                            {QStringLiteral("model"),
+                                             QStringLiteral("glm-4.6")}});
+
+        auto* vm = AgentViewModel::instance();
+        vm->updateModelProfiles(settings->profiles(), settings->activeProfile());
+        vm->selectChatModel(profileId);
+
+        NexusQrcFallback fallback(QStringLiteral(NEXUS_BUILD_DIR "/NexusAI"));
+        QQmlApplicationEngine engine;
+        engine.addUrlInterceptor(&fallback);
+        engine.addImportPath(QStringLiteral(NEXUS_BUILD_DIR));
+        QQmlComponent component(
+            &engine,
+            QUrl::fromLocalFile(QStringLiteral(NEXUS_TEST_QML_DIR
+                                               "/ModelCapsLiveSyncHarness.qml")));
+        QVERIFY2(component.isReady(), qPrintable(component.errorString()));
+        std::unique_ptr<QObject> root(component.create());
+        QVERIFY2(root, qPrintable(component.errorString()));
+
+        auto* win = qobject_cast<QQuickWindow*>(root.get());
+        QVERIFY(win);
+        win->resize(1200, 900);
+        win->show();
+        QVERIFY(QTest::qWaitForWindowExposed(win));
+
+        // 设置页侧：按模型参数编辑器里的能力行（真实页面里的那颗）。
+        QQuickItem* page = findVisualItem(win->contentItem(),
+                                          QStringLiteral("modelConfigPage"));
+        QVERIFY(page);
+        QQuickItem* editor = findVisualItem(page,
+                                            QStringLiteral("model.perModelParams"));
+        QVERIFY(editor);
+        QQuickItem* visionRow = findVisualItem(editor,
+                                               QStringLiteral("model.paramRowVision"));
+        QVERIFY(visionRow);
+
+        // 对话侧：先把下拉框打开（用户就是在开着下拉框时看到旧徽章的）。
+        QQuickItem* selector = findVisualItem(win->contentItem(),
+                                              QStringLiteral("modelSelector"));
+        QVERIFY(selector);
+        QVERIFY(QMetaObject::invokeMethod(root.get(), "openPopup"));
+        QTRY_COMPARE(selector->property("opened").toBool(), true);
+
+        const auto modelLabels = [win]() {
+            QQuickItem* badge = findVisualItem(win->contentItem(),
+                                               QStringLiteral("modelCapsBadge"));
+            QStringList labels;
+            if (!badge) return labels;
+            for (QQuickItem* chip : badge->childItems())
+                if (chip->isVisible())
+                    labels.append(chip->property("label").toString());
+            return labels;
+        };
+
+        QTRY_COMPARE(modelLabels(), (QStringList{"?", "工具"}));
+
+        // 在设置页点「视觉 → 支持」（index 1），与用户点下拉一致。
+        QVERIFY(QMetaObject::invokeMethod(visionRow, "applyOption",
+                                          Q_ARG(QVariant, 1)));
+        QTRY_COMPARE(modelLabels(), (QStringList{"?", "视觉", "工具"}));
+
+        // 点回「跟随能力表」（index 0）→ 徽章回落。
+        QVERIFY(QMetaObject::invokeMethod(visionRow, "applyOption",
+                                          Q_ARG(QVariant, 0)));
+        QTRY_COMPARE(modelLabels(), (QStringList{"?", "工具"}));
+
+        // ── 隔离 profilesChanged 这一条依赖 ──────────────────────
+        // 上面改的是**当前活动配置**，setModelParam 会同时发 profilesChanged
+        // 与 activeProfileChanged，两个处理器都接 refreshCaps，测不出"少接
+        // 一个信号"的退化（实验验证过：删掉 onProfilesChanged 上面照样通过）。
+        // 这里改**非活动配置**：只发 profilesChanged，没有 activeProfileChanged，
+        // Section 2 的该行徽章必须单独靠 profilesChanged 刷出来。
+        const QString otherId = settings->addProfile(QStringLiteral("anthropic"));
+        QVERIFY(!otherId.isEmpty());
+        settings->updateProfile(otherId,
+                                QVariantMap{{QStringLiteral("model"),
+                                             QStringLiteral("glm-other")}});
+        QTRY_COMPARE(selector->property("opened").toBool(), true);
+
+        const auto badgeLabelsById = [win](const QString& profileId) {
+            // profileCapsBadge 在 Repeater 里，逐行找 profileId 匹配的那颗。
+            QList<QQuickItem*> all;
+            std::function<void(QQuickItem*)> walk = [&](QQuickItem* it) {
+                if (it->objectName() == QStringLiteral("profileCapsBadge"))
+                    all.append(it);
+                for (QQuickItem* c : it->childItems()) walk(c);
+            };
+            walk(win->contentItem());
+            for (QQuickItem* candidate : all) {
+                if (candidate->property("profileId").toString() != profileId) continue;
+                QStringList labels;
+                for (QQuickItem* chip : candidate->childItems())
+                    if (chip->isVisible())
+                        labels.append(chip->property("label").toString());
+                return labels;
+            }
+            return QStringList{};
+        };
+
+        QTRY_COMPARE(badgeLabelsById(otherId), (QStringList{"?", "工具"}));
+        settings->setModelParam(otherId, QStringLiteral("glm-other"),
+                                QStringLiteral("tools"), QStringLiteral("false"));
+        QTRY_COMPARE(badgeLabelsById(otherId), (QStringList{"?"}));
+        settings->setModelParam(otherId, QStringLiteral("glm-other"),
+                                QStringLiteral("tools"), QStringLiteral("true"));
+        QTRY_COMPARE(badgeLabelsById(otherId), (QStringList{"?", "工具"}));
+        settings->removeProfile(otherId);
+
+        win->close();
+        vm->updateModelProfiles(QVariantList{}, QVariantMap{});
+        while (!settings->profiles().isEmpty()) {
+            settings->removeProfile(settings->profiles().first().toMap()
+                                        .value(QStringLiteral("id")).toString());
+        }
+    }
+
+    // 思考强度分段进度条（原下拉弹层重构）：真实渲染下覆盖三条交互路径——
+    // 点段位改档、左右方向键改档（slider 语义）、填充段数跟随选中档；
+    // 数据口径断言 AgentVM 会话临时值的实际落点。
+    void thinkingEffortBarSelectsLevel() {
+        auto* settings = SettingsService::instance();
+        while (!settings->profiles().isEmpty()) {
+            settings->removeProfile(settings->profiles().first().toMap()
+                                        .value(QStringLiteral("id")).toString());
+        }
+        const QString profileId = settings->addProfile(QStringLiteral("openai"));
+        QVERIFY(!profileId.isEmpty());
+        settings->updateProfile(profileId,
+                                QVariantMap{{QStringLiteral("baseUrl"),
+                                             QStringLiteral("https://api.example.com/v1")},
+                                            {QStringLiteral("model"),
+                                             QStringLiteral("gpt-4o")}});
+
+        // AgentVM 装配（对齐 main.cpp 的最小等价）：模板 agent 挂到已有
+        // 标签，工厂为后续标签造带 LLM service 的 agent——modelConfigured
+        // 依赖 agent()->hasModelService()，缺了它 usable 恒为 false。
+        auto* vm = AgentViewModel::instance();
+        AIAgent templateAgent(vm);
+        // 模板 agent 与工厂造的 agent 都要带 LLM service：modelConfigured
+        // 依赖 agent()->hasModelService()，缺了它 usable 恒为 false。
+        templateAgent.setLLMService(LlmProtocolRegistry::createService(
+            QStringLiteral("openai-chat"), &templateAgent));
+        vm->setAgent(&templateAgent);
+        vm->setAgentFactory([vm]() -> AIAgent* {
+            auto* agent = new AIAgent(vm);
+            agent->setLLMService(LlmProtocolRegistry::createService(
+                QStringLiteral("openai-chat"), agent));
+            return agent;
+        });
+        vm->updateModelProfiles(settings->profiles(), settings->activeProfile());
+        vm->selectChatModel(profileId);
+
+        NexusQrcFallback fallback(QStringLiteral(NEXUS_BUILD_DIR "/NexusAI"));
+        QQmlApplicationEngine engine;
+        engine.addUrlInterceptor(&fallback);
+        engine.addImportPath(QStringLiteral(NEXUS_BUILD_DIR));
+        QQmlComponent component(
+            &engine,
+            QUrl::fromLocalFile(QStringLiteral(NEXUS_TEST_QML_DIR
+                                               "/ThinkingEffortHarness.qml")));
+        QVERIFY2(component.isReady(), qPrintable(component.errorString()));
+        std::unique_ptr<QObject> root(component.create());
+        QVERIFY2(root, qPrintable(component.errorString()));
+
+        auto* win = qobject_cast<QQuickWindow*>(root.get());
+        QVERIFY(win);
+        win->resize(420, 200);
+        win->show();
+        QVERIFY(QTest::qWaitForWindowExposed(win));
+
+        QQuickItem* selector = findVisualItem(win->contentItem(),
+                                              QStringLiteral("thinkingEffortSelector"));
+        QVERIFY(selector);
+        QTRY_COMPARE(selector->property("usable").toBool(), true);
+        // 初始档位：未设置 = 「默认」（selectedIndex 0 → 1 段填充）。
+        QCOMPARE(selector->property("current").toString(), QString());
+        QCOMPARE(selector->property("selectedIndex").toInt(), 0);
+
+        QQuickItem* bar = findVisualItem(selector,
+                                         QStringLiteral("thinkingEffortBar"));
+        QVERIFY(bar);
+        // Repeater 在 Qt 6 里也是 childItems 成员：按 filled 自定义属性
+        // 过滤出真正的段位 delegate（model 是静态表，delegate 集合稳定）。
+        QList<QQuickItem*> segments;
+        for (QQuickItem* c : bar->childItems())
+            if (c->property("filled").isValid()) segments.append(c);
+        QCOMPARE(segments.size(), 5);
+
+        const auto filledCount = [segments]() {
+            int n = 0;
+            for (QQuickItem* seg : segments)
+                if (seg->isVisible() && seg->property("filled").toBool()) ++n;
+            return n;
+        };
+        QCOMPARE(filledCount(), 1);
+
+        // 点第 4 段（index 3 = 思考·中）：真实鼠标点击走 MouseArea 链路。
+        QQuickItem* mediumSeg = segments.at(3);
+        QVERIFY(mediumSeg);
+        const QPoint center = mediumSeg->mapToScene(
+            QPointF(mediumSeg->width() / 2, mediumSeg->height() / 2)).toPoint();
+        QTest::mouseClick(win, Qt::LeftButton, Qt::NoModifier, center);
+        QTRY_COMPARE(selector->property("current").toString(),
+                     QStringLiteral("medium"));
+        QCOMPARE(vm->chatModelProfile().value(QStringLiteral("reasoningEffort"))
+                     .toString(), QStringLiteral("medium"));
+        QCOMPARE(filledCount(), 4);
+        // 强度点：中/高档用品牌色标识。
+        QCOMPARE(selector->property("emphasized").toBool(), true);
+
+        // 键盘 slider 语义：左右方向键直接改档并生效。
+        selector->forceActiveFocus();
+        QTRY_COMPARE(selector->property("activeFocus").toBool(), true);
+        QTest::keyClick(win, Qt::Key_Right);
+        QTRY_COMPARE(vm->chatModelProfile().value(QStringLiteral("reasoningEffort"))
+                     .toString(), QStringLiteral("high"));
+        QCOMPARE(filledCount(), 5);
+        // 高 → 左方向键一格 → 中。
+        QTest::keyClick(win, Qt::Key_Left);
+        QTRY_COMPARE(vm->chatModelProfile().value(QStringLiteral("reasoningEffort"))
+                     .toString(), QStringLiteral("medium"));
+        QCOMPARE(filledCount(), 4);
+
+        // 回「默认」：会话临时值清空（reasoningEffort 回到 profile 口径）。
+        QVERIFY(QMetaObject::invokeMethod(selector, "selectIndex",
+                                          Q_ARG(QVariant, 0)));
+        QTRY_COMPARE(selector->property("current").toString(), QString());
+        QCOMPARE(filledCount(), 1);
+        QCOMPARE(selector->property("emphasized").toBool(), false);
+
+        // 整窗抓图：分段条真的画出来了（非空图 + 非 0 字节文件）。
+        const QImage shot = win->grabWindow();
+        QVERIFY(!shot.isNull());
+        QTemporaryDir snapDir;
+        const QString snapPath = snapDir.filePath(QStringLiteral("thinking-effort-bar.png"));
+        QVERIFY(shot.save(snapPath));
+        QVERIFY(QFileInfo(snapPath).size() > 0);
+        // 本地目视辅助：设 NEXUS_TEST_SNAPSHOT_DIR 时把抓图镜像到该目录。
+        const QString mirrorDir = qEnvironmentVariable("NEXUS_TEST_SNAPSHOT_DIR");
+        if (!mirrorDir.isEmpty())
+            shot.save(mirrorDir + QStringLiteral("/thinking-effort-bar.png"));
+
+        win->close();
+        // 单例状态复位：agent 工厂 / 模板 agent / 模型配置不漏给后续用例。
+        vm->setAgent(nullptr);
+        vm->setAgentFactory(std::function<AIAgent*()>{});
+        vm->updateModelProfiles(QVariantList{}, QVariantMap{});
         while (!settings->profiles().isEmpty()) {
             settings->removeProfile(settings->profiles().first().toMap()
                                         .value(QStringLiteral("id")).toString());

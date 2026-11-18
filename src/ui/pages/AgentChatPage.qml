@@ -564,6 +564,9 @@ Item {
                 anchors.leftMargin: 20
                 anchors.rightMargin: 20
                 traceJump: root.traceJump
+                // "/" 菜单的「管理预设」直达设置中心 prompts 分类（原预设
+                // 选择器弹层里的管理入口随组件一并移除，路径保持可达）。
+                onManagePresetsRequested: root.settingsCategoryRequested("prompts")
             }
 
             Flow {
@@ -579,11 +582,9 @@ Item {
                 }
                 ThinkingEffortSelector {}
                 PermissionModeSelector {}
-                // 提示词预设与另三个会话级选择器同排：回显当前套用的预设，
-                // 向上弹出带摘要的列表（顶栏只有 40px，装不下预设名）。
-                PromptPresetSelector {
-                    onManageRequested: root.settingsCategoryRequested("prompts")
-                }
+                // 提示词预设选择器已移除：预设经输入框 "/" 指令菜单套用
+                // （派发式，选中即套用为会话系统提示），管理入口同样在
+                // 菜单里，不再占据选项行。
             }
         }
     }

@@ -1182,6 +1182,10 @@ void AgentViewModel::setChatReasoningEffort(const QString& effort) {
     if (!QStringList{"", "off", "low", "medium", "high"}.contains(effort)) return;
     controller->selectedReasoning = effort;
     configureModel(controller);
+    // 会话临时档位变更必须发 chatModelChanged：chatModelProfile 在出口处
+    // 按 selectedReasoning 补齐（docs/43 §4.3），UI 的思考强度条依赖这条
+    // NOTIFY 刷新填充位置——原先不发，改档后绑定停在旧值上。
+    emit chatModelChanged();
 }
 
 void AgentViewModel::applyToAgents(const std::function<void(AIAgent*)>& fn) {
@@ -3492,11 +3496,17 @@ void AgentViewModel::applyPromptPreset(const QString& id, const QString& name,
     // 管理，切预设不该污染它）。
     if (!active()) return;
     active()->applyPromptPreset(id, name, prompt);
+    // 输入框下方预设选择器已并入 "/" 指令菜单：套用/清除没有常驻回显位
+    // （草稿里的 token 派发后即移除），toast 是唯一的即时反馈。
+    emit noticeOccurred(name.isEmpty()
+        ? tr("已套用会话预设，覆盖全局系统提示词")
+        : tr("已套用预设「%1」，覆盖全局系统提示词").arg(name));
 }
 
 void AgentViewModel::clearPromptPreset() {
     if (!active()) return;
     active()->clearPromptPreset();
+    emit noticeOccurred(tr("已清除会话预设，回落全局系统提示词"));
 }
 
 void AgentViewModel::applyGlobalSystemPrompt(const QString& prompt) {

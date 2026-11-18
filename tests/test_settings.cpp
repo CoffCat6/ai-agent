@@ -2731,6 +2731,80 @@ Item {
         QCOMPARE(service.modelContextWindow(QStringLiteral("openai"), QStringLiteral("gpt-4o")), 0);
     }
 
+    // docs/54：能力徽章三字段查询。不带 profileId 是纯能力表/启发式；带
+    // profileId 时该模型的 modelParams 能力覆盖（contextLength / vision /
+    // tools）优先——配置页设置的值就是徽章读到的值。
+    void testModelCapabilities() {
+        SettingsGuard guard;
+        {
+            QSettings s = NexusAI::TestSupport::testSettings();
+            s.remove("modelProfiles");
+            s.remove("activeProfileId");
+        }
+        SettingsService service(nullptr);
+        const QString profileId = service.activeProfileId();
+        QVERIFY(!profileId.isEmpty());
+        service.addModelToProfile(profileId, QStringLiteral("glm-4-v"));   // 未收录模型
+        service.addModelToProfile(profileId, QStringLiteral("gpt-4o"));
+
+        // 纯表查询（不带 profileId）：已知模型三字段全来自能力表/启发式。
+        QVariantMap caps = service.modelCapabilities(QStringLiteral("openai-chat"),
+                                                     QStringLiteral("gpt-4o"));
+        QCOMPARE(caps.value(QStringLiteral("contextWindow")).toInt(), 128000);
+        QCOMPARE(caps.value(QStringLiteral("vision")).toBool(), true);
+        QCOMPARE(caps.value(QStringLiteral("tools")).toBool(), true);
+
+        // 未收录模型：上下文 0、视觉 false（宁缺勿错）、工具跟随协议。
+        caps = service.modelCapabilities(QStringLiteral("openai-chat"),
+                                         QStringLiteral("glm-4-v"));
+        QCOMPARE(caps.value(QStringLiteral("contextWindow")).toInt(), 0);
+        QCOMPARE(caps.value(QStringLiteral("vision")).toBool(), false);
+        QCOMPARE(caps.value(QStringLiteral("tools")).toBool(), true);
+
+        // 未知协议：三字段全部无效值。
+        caps = service.modelCapabilities(QStringLiteral("unknown-protocol"),
+                                         QStringLiteral("gpt-4o"));
+        QCOMPARE(caps.value(QStringLiteral("contextWindow")).toInt(), 0);
+        QCOMPARE(caps.value(QStringLiteral("vision")).toBool(), false);
+        QCOMPARE(caps.value(QStringLiteral("tools")).toBool(), false);
+
+        // 带 profileId：覆盖值优先。未收录模型标 vision=true 后徽章按用户
+        // 标注显示；已知视觉模型标 vision=false 后不再显示。
+        service.setModelParam(profileId, QStringLiteral("glm-4-v"),
+                              QStringLiteral("vision"), QStringLiteral("true"));
+        caps = service.modelCapabilities(QStringLiteral("openai-chat"),
+                                         QStringLiteral("glm-4-v"), profileId);
+        QCOMPARE(caps.value(QStringLiteral("vision")).toBool(), true);
+        service.setModelParam(profileId, QStringLiteral("gpt-4o"),
+                              QStringLiteral("vision"), QStringLiteral("false"));
+        caps = service.modelCapabilities(QStringLiteral("openai-chat"),
+                                         QStringLiteral("gpt-4o"), profileId);
+        QCOMPARE(caps.value(QStringLiteral("vision")).toBool(), false);
+        QCOMPARE(caps.value(QStringLiteral("tools")).toBool(), true);
+
+        // 上下文覆盖：能力表 128000 被按模型 contextLength 覆盖。
+        service.setModelParam(profileId, QStringLiteral("gpt-4o"),
+                              QStringLiteral("contextLength"), QStringLiteral("64000"));
+        caps = service.modelCapabilities(QStringLiteral("openai-chat"),
+                                         QStringLiteral("gpt-4o"), profileId);
+        QCOMPARE(caps.value(QStringLiteral("contextWindow")).toInt(), 64000);
+
+        // 工具覆盖：协议支持但用户标注不支持 → false。
+        service.setModelParam(profileId, QStringLiteral("glm-4-v"),
+                              QStringLiteral("tools"), QStringLiteral("false"));
+        caps = service.modelCapabilities(QStringLiteral("openai-chat"),
+                                         QStringLiteral("glm-4-v"), profileId);
+        QCOMPARE(caps.value(QStringLiteral("tools")).toBool(), false);
+
+        // 未知 profileId：等价于不带（退回表值/启发式——gpt-4o 按启发式
+        // 仍判为视觉模型；上面的 vision=false 覆盖只作用于真实 profile）。
+        caps = service.modelCapabilities(QStringLiteral("openai-chat"),
+                                         QStringLiteral("gpt-4o"),
+                                         QStringLiteral("missing-profile"));
+        QCOMPARE(caps.value(QStringLiteral("contextWindow")).toInt(), 128000);
+        QCOMPARE(caps.value(QStringLiteral("vision")).toBool(), true);
+    }
+
     // docs/15 §6.1.1: resolveContextLimit three-level priority:
     //   1. Profile-level contextLength override (highest)
     //   2. Capability-table contextWindow (default per model)
@@ -3054,6 +3128,32 @@ Item {
         QCOMPARE(modelParamsOf().value(QStringLiteral("m1")).toMap()
                      .value(QStringLiteral("reasoningEffort")).toString(),
                  QStringLiteral("high"));
+
+        // docs/54：vision / tools 能力覆盖——字面量 "true"/"false" 落库，
+        // 大小写变体与其他值一律拒（落库值保持规范形态，消费侧直接比对）。
+        service.setModelParam(profileId, QStringLiteral("m1"),
+                              QStringLiteral("vision"), QStringLiteral("true"));
+        QCOMPARE(modelParamsOf().value(QStringLiteral("m1")).toMap()
+                     .value(QStringLiteral("vision")).toString(),
+                 QStringLiteral("true"));
+        service.setModelParam(profileId, QStringLiteral("m1"),
+                              QStringLiteral("tools"), QStringLiteral("false"));
+        QCOMPARE(modelParamsOf().value(QStringLiteral("m1")).toMap()
+                     .value(QStringLiteral("tools")).toString(),
+                 QStringLiteral("false"));
+        for (const auto& bad : {QStringLiteral("TRUE"), QStringLiteral("1"),
+                                QStringLiteral("yes")}) {
+            service.setModelParam(profileId, QStringLiteral("m1"),
+                                  QStringLiteral("vision"), bad);
+            QCOMPARE(modelParamsOf().value(QStringLiteral("m1")).toMap()
+                         .value(QStringLiteral("vision")).toString(),
+                     QStringLiteral("true"));
+        }
+        // 空串 = 删除覆盖键（回到跟随能力表）。
+        service.setModelParam(profileId, QStringLiteral("m1"),
+                              QStringLiteral("vision"), QString());
+        QVERIFY(!modelParamsOf().value(QStringLiteral("m1")).toMap()
+                    .contains(QStringLiteral("vision")));
 
         // clearModelParams：整表删除；无条目 / 陌生 profile 时 no-op 不崩。
         service.clearModelParams(profileId, QStringLiteral("m1"));

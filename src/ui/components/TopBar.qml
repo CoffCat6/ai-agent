@@ -728,7 +728,7 @@ Rectangle {
 
             readonly property int totalTokens: composition.totalTokens || 0
             readonly property int maxTokens: composition.maxTokens || 0
-
+                
             // 列宽/缩进与弹层宽度共用同一字号缩放源：字号调大时数字列等比
             // 放大，"45.2k"（5 字符）与 "100.0%"（6 字符）在 mono 下的宽度
             // 预算不会被压破。

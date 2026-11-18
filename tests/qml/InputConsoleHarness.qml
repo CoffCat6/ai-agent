@@ -30,4 +30,23 @@ Window {
         consoleRoot.mentionResults = items
         consoleRoot.mentionOpen = true
     }
+
+    // 同 setMentionResults 的理由：QVariantList 经 C++ setProperty 注入后
+    // 在 JS 里 length 是 undefined。这里完全在 JS 侧构造数组再赋给 dialog，
+    // 复现"资源到达后菜单项是否出现"。count=0 即清空。
+    function setMcpResources(dialog, count) {
+        const list = []
+        for (let i = 0; i < count; ++i) {
+            list.push({ server: "s", uri: "file:///r" + i + ".txt",
+                        name: "r" + i + ".txt", title: "", mimeType: "" })
+        }
+        dialog.allResources = list
+    }
+
+    // 整窗截图（contentItem 含 Overlay 补全面板），保存路径由测试侧给。
+    function snapshot(path) {
+        win.contentItem.grabToImage(function (result) {
+            result.saveAs(String(path))
+        }, Qt.size(win.width, win.height))
+    }
 }

@@ -361,7 +361,6 @@ qt_add_qml_module(nexus_ai
         src/ui/components/InputConsole.qml
         src/ui/components/ModelSelector.qml
         src/ui/components/PermissionModeSelector.qml
-        src/ui/components/PromptPresetSelector.qml
         src/ui/components/SessionTemplateMenu.qml
         src/ui/components/Sidebar.qml
         src/ui/components/ParamSelectRow.qml

@@ -254,10 +254,13 @@ void dropLegacyTopPOnUpgrade() {
 
 // 覆盖表允许的参数键（与 profile 级生成参数一致；contextLength 的消费在
 // resolveContextLimitForProfile，其余四个在 main.cpp 的 profileConfigOf）。
+// docs/54：vision / tools 是能力徽章的按模型覆盖——能力表与启发式给默认，
+// 自定义网关或未收录的模型由用户在配置页显式标注（缺键 = 跟随表值）。
 QStringList modelParamKeys() {
     return {QStringLiteral("temperature"), QStringLiteral("maxOutputTokens"),
             QStringLiteral("numCtx"), QStringLiteral("reasoningEffort"),
-            QStringLiteral("contextLength")};
+            QStringLiteral("contextLength"), QStringLiteral("vision"),
+            QStringLiteral("tools")};
 }
 
 // 字符串/数值统一转有限 double：字符串按 C locale 解析（QML/setModelParam
@@ -295,14 +298,20 @@ bool paramPositiveInt(const QVariant& value, int* out) {
 // 单个覆盖值的类型/范围校验：reasoningEffort 须为合法档位；temperature 须为
 // [0, 2] 的数（0 是合法的 greedy 采样值——与默认层 SamplingParams::
 // optionalDouble 允许 0 的口径及编辑器「0 - 2」提示对齐，两层不得各说各话）；
-// maxOutputTokens/numCtx/contextLength 须为正整数。空串在此处不合法——
-// "删除键"的语义由 setModelParam 显式处理，sanitize 只丢坏值。
+// maxOutputTokens/numCtx/contextLength 须为正整数；vision/tools 须为字面量
+// "true"/"false"（下拉只发这两值；大小写变体一律拒——落库值保持规范形态，
+// 消费侧才能直接比对）。空串在此处不合法——"删除键"的语义由 setModelParam
+// 显式处理，sanitize 只丢坏值。
 bool isValidModelParamValue(const QString& key, const QVariant& value) {
     if (key == QLatin1String("reasoningEffort")) {
         if (value.metaType().id() != QMetaType::QString) return false;
         const QString text = value.toString().trimmed().toLower();
         return text == QLatin1String("off") || text == QLatin1String("low")
             || text == QLatin1String("medium") || text == QLatin1String("high");
+    }
+    if (key == QLatin1String("vision") || key == QLatin1String("tools")) {
+        const QString text = value.toString().trimmed();
+        return text == QLatin1String("true") || text == QLatin1String("false");
     }
     if (key == QLatin1String("temperature")) {
         double v = 0.0;
@@ -2480,8 +2489,12 @@ int SettingsService::modelContextWindow(const QString& apiProtocol,
 
 // docs/54（能力徽章）：三个字段一次取齐——上下文（模型级，能力表可能未
 // 收录返回 0）、视觉（模型名关键词启发式，宁缺勿错）、工具（协议级）。
+// profileId 命中配置且该模型的 modelParams 有覆盖时以覆盖为准（docs/43
+// 「默认 + 覆盖」两层心智在能力维度上的延伸）：配置页设置的值就是徽章
+// 显示的值。未知 profile / 未覆盖的键退回表值与启发式。
 QVariantMap SettingsService::modelCapabilities(const QString& apiProtocol,
-                                               const QString& model) const {
+                                               const QString& model,
+                                               const QString& profileId) const {
     const auto* d = LlmProtocolRegistry::find(apiProtocol);
     QVariantMap caps;
     caps.insert(QStringLiteral("contextWindow"),
@@ -2489,6 +2502,33 @@ QVariantMap SettingsService::modelCapabilities(const QString& apiProtocol,
     caps.insert(QStringLiteral("vision"),
                 d && LlmProtocolRegistry::supportsVision(apiProtocol, model));
     caps.insert(QStringLiteral("tools"), d ? d->toolCalling : false);
+
+    if (!profileId.isEmpty()) {
+        // 内部表直查（同 setModelParam）：modelParams 不含密钥，无需脱敏出口。
+        QVariantMap overrides;
+        for (const QVariant& entry : m_profiles) {
+            const QVariantMap p = entry.toMap();
+            if (p.value("id").toString() != profileId) continue;
+            overrides = p.value(QStringLiteral("modelParams")).toMap()
+                .value(model).toMap();
+            break;
+        }
+        const QVariant contextOverride = overrides.value(QStringLiteral("contextLength"));
+        if (contextOverride.isValid()) {
+            bool ok = false;
+            const int v = contextOverride.toInt(&ok);
+            if (ok && v > 0)
+                caps.insert(QStringLiteral("contextWindow"), v);
+        }
+        const QVariant visionOverride = overrides.value(QStringLiteral("vision"));
+        if (visionOverride.isValid())
+            caps.insert(QStringLiteral("vision"),
+                        visionOverride.toString() == QLatin1String("true"));
+        const QVariant toolsOverride = overrides.value(QStringLiteral("tools"));
+        if (toolsOverride.isValid())
+            caps.insert(QStringLiteral("tools"),
+                        toolsOverride.toString() == QLatin1String("true"));
+    }
     return caps;
 }
 

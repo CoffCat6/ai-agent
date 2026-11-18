@@ -10,6 +10,9 @@ import NexusAI.ViewModels
 Dialog {
     id: dialog
 
+    // 回归用例据此定位实例（Popup/Dialog 不是 Item，测试取不到可视树外的东西）。
+    objectName: "mcpResourceDialog"
+
     modal: true
     anchors.centerIn: parent
     padding: 0
@@ -18,7 +21,23 @@ Dialog {
 
     // 搜索过滤（name/uri/description 大小写不敏感子串）。
     property string query: ""
-    readonly property var allResources: McpManager.listResources()
+    // listResources() 是 Q_INVOKABLE，自身没有变更通知；本组件常驻在
+    // InputConsole 里（只创建一次，openFor() 不重建），所以必须在资源到达
+    // 时重算，否则对话框整个生命周期都停在创建那一刻的空列表上。
+    // 刷新信号走 McpManager.serversChanged（resourcesChanged → refreshServers
+    // → serversChanged，见 McpManager::connectClient 的接线）——与 SettingRow /
+    // ModelSelector 同一套命令式重算，不用"死读属性"的绑定写法（qmlcachegen
+    // 会把该死读当死代码消除，正式包才会复现）。
+    property var allResources: []
+    function refreshResources() {
+        dialog.allResources = McpManager.listResources()
+    }
+    Component.onCompleted: refreshResources()
+
+    Connections {
+        target: McpManager
+        function onServersChanged() { refreshResources() }
+    }
     readonly property var filtered: {
         const q = query.toLowerCase()
         if (q.length === 0) return allResources

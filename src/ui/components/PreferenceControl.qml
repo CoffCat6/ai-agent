@@ -26,10 +26,19 @@ Item {
 
     implicitHeight: layout.implicitHeight
 
-    // docs/31 O1: 与 SettingRow 同一套"已修改/复原"口径。
-    readonly property var valueState: {
-        SettingsCatalog.revision
-        return SettingsCatalog.describe(prefKey)
+    // docs/31 O1: 与 SettingRow 同一套"已修改/复原"口径。驱动方式也一致：
+    // describe() 无变更通知，靠 revisionChanged 显式重算；不用死读 revision
+    // 的绑定写法——qmlcachegen 会把它当死代码消除（见 SettingRow 同处注释）。
+    property var valueState: ({})
+    function refreshValueState() {
+        control.valueState = SettingsCatalog.describe(control.prefKey)
+    }
+    onPrefKeyChanged: refreshValueState()
+    Component.onCompleted: refreshValueState()
+
+    Connections {
+        target: SettingsCatalog
+        function onRevisionChanged() { control.refreshValueState() }
     }
 
     Accessible.name: control.displayName

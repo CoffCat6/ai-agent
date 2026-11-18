@@ -8,8 +8,10 @@ import NexusAI.ViewModels
 
 // 「按模型参数」编辑器（docs/43 §6.1/§6.2）：models 列表里的每个模型可
 // 独立覆盖 temperature / maxOutputTokens / numCtx / reasoningEffort /
-// contextLength 的任意子集，缺键 = 跟随 profile 默认（「默认 + 覆盖」两层
-// 心智模型）。
+// contextLength / vision / tools 的任意子集，缺键 = 跟随 profile 默认或
+// 能力表（「默认 + 覆盖」两层心智模型）。vision / tools 是 docs/54 能力
+// 徽章的按模型标注：能力表与启发式给默认，自定义网关/新模型由用户显式
+// 标注，ModelSelector 经 modelCapabilities(profileId) 读同一份。
 //
 // 数据流对齐 ModelSelector 读 Settings.profiles 的模式：宿主把编辑中的
 // profile map 接进 profile 属性，覆盖值 / 徽章计数 / 生效来源全部从这份
@@ -85,6 +87,17 @@ Item {
         && root.selectedModel !== ""
         ? Settings.modelContextWindow(root.profile.apiProtocol,
                                       root.selectedModel) : 0
+    // docs/54：能力表/启发式对当前模型的判定（不带 profileId 的纯表查询，
+    // 与 ModelSelector 徽章同口径）。「跟随能力表/协议」提示文案的「当前」
+    // 来源——覆盖值优先，这里是缺省层。
+    readonly property bool tableVision: root.profile !== null
+        && root.selectedModel !== ""
+        ? Settings.modelCapabilities(root.profile.apiProtocol,
+                                     root.selectedModel).vision : false
+    readonly property bool tableTools: root.profile !== null
+        && root.selectedModel !== ""
+        ? Settings.modelCapabilities(root.profile.apiProtocol,
+                                     root.selectedModel).tools : false
     readonly property int effectiveContext: root.perModelContext > 0
         ? root.perModelContext
         : (root.profileContext > 0 ? root.profileContext
@@ -425,6 +438,77 @@ Item {
                     || root.tableContext > 0 ? Theme.textSecondary : Theme.statusWarning
                 font.pixelSize: Theme.fontSizeCaption
                 font.family: Theme.fontMono
+                wrapMode: Text.WordWrap
+            }
+
+            // ── 能力标注（docs/54）：能力徽章的按模型覆盖 ─────────
+            // 能力表/启发式只覆盖常见命名；自定义网关与新模型由用户显式
+            // 标注。覆盖值落 modelParams（vision/tools，"true"/"false"），
+            // ModelSelector 徽章经 modelCapabilities(profileId) 读同一份。
+            ParamSelectRow {
+                id: visionRow
+                objectName: "model.paramRowVision"
+                label: root.overrideValue("vision") !== ""
+                    ? qsTr("视觉（图像输入）（已覆盖）") : qsTr("视觉（图像输入）")
+                entries: [
+                    { v: "true",  label: qsTr("支持") },
+                    { v: "false", label: qsTr("不支持") }
+                ]
+                currentValue: root.overrideValue("vision")
+                // 枚举标注不存在自定义值。
+                allowCustom: false
+                autoLabel: qsTr("跟随能力表")
+                onSubmitted: (value) => root.submitOverride("vision", value)
+            }
+
+            Text {
+                Layout.fillWidth: true
+                text: {
+                    const o = root.overrideValue("vision")
+                    if (o === "true")
+                        return qsTr("已标注为视觉模型：选择器徽章显示「视觉」。")
+                    if (o === "false")
+                        return qsTr("已标注为不支持：选择器徽章不显示「视觉」。")
+                    return root.tableVision
+                        ? qsTr("跟随能力表：模型名已识别为视觉模型。")
+                        : qsTr("跟随能力表：模型名未收录（自定义网关/新模型可在此手动标注）。")
+                }
+                color: Theme.textSecondary
+                font.pixelSize: Theme.fontSizeCaption
+                font.family: Theme.fontSans
+                wrapMode: Text.WordWrap
+            }
+
+            ParamSelectRow {
+                id: toolsRow
+                objectName: "model.paramRowTools"
+                label: root.overrideValue("tools") !== ""
+                    ? qsTr("工具调用（已覆盖）") : qsTr("工具调用")
+                entries: [
+                    { v: "true",  label: qsTr("支持") },
+                    { v: "false", label: qsTr("不支持") }
+                ]
+                currentValue: root.overrideValue("tools")
+                allowCustom: false
+                autoLabel: qsTr("跟随协议")
+                onSubmitted: (value) => root.submitOverride("tools", value)
+            }
+
+            Text {
+                Layout.fillWidth: true
+                text: {
+                    const o = root.overrideValue("tools")
+                    if (o === "true")
+                        return qsTr("已标注为支持：选择器徽章显示「工具」。")
+                    if (o === "false")
+                        return qsTr("已标注为不支持：选择器徽章不显示「工具」。")
+                    return root.tableTools
+                        ? qsTr("跟随协议：当前协议支持工具调用。")
+                        : qsTr("跟随协议：当前协议不支持工具调用。")
+                }
+                color: Theme.textSecondary
+                font.pixelSize: Theme.fontSizeCaption
+                font.family: Theme.fontSans
                 wrapMode: Text.WordWrap
             }
         }

@@ -1895,9 +1895,10 @@ private slots:
     }
 
     // 用户报告：下拉按钮点第二次还是打开，必须点别处才关。
-    // 覆盖输入区选项行的三个下拉（模型 / 思考强度 / 权限模式）与顶栏项目徽标。
-    // 这三个选择器都是"Popup + onPressed toggle"的同一模式，逐个用真实鼠标
-    // 点两次，第二次必须关闭。
+    // 覆盖输入区选项行的下拉（模型 / 权限模式）与顶栏项目徽标。
+    // 这两个选择器都是"Popup + onPressed toggle"的同一模式，逐个用真实鼠标
+    // 点两次，第二次必须关闭。思考强度已改为内联分段进度条（无弹层），
+    // 不属于本用例的对象。
     void dropdownTriggersToggleClosedOnSecondClick() {
         QQmlApplicationEngine engine;
         engine.rootContext()->setContextProperty("Theme", ThemeProvider::instance());
@@ -1910,7 +1911,6 @@ private slots:
 
         const QStringList triggerNames = {
             QStringLiteral("modelSelectorTrigger"),
-            QStringLiteral("thinkingEffortTrigger"),
             QStringLiteral("permissionModeTrigger"),
         };
         for (const QString& name : triggerNames) {
@@ -1919,8 +1919,7 @@ private slots:
             // 弹层状态挂在选择器 root 上（触发器是它的子项）。
             QObject* selectorRoot = trigger->parent();
             QVERIFY2(selectorRoot, qPrintable(name + ": trigger has no parent"));
-            // 未配置模型时思考强度整体不可用（usable=false），点不开是正确行为，
-            // 不是本用例的对象。
+            // 模型选择器在无可用配置时也会整体禁用（点不开是正确行为）。
             if (selectorRoot->property("usable").isValid()
                     && !selectorRoot->property("usable").toBool())
                 continue;

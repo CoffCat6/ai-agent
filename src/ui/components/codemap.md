@@ -164,6 +164,7 @@
 ## 约束与风险
 
 - **代码级硬约束**：`AssistantMessage.qml` **禁止出现正则字面量与裸反引号**（历史上导致 qmlcachegen 内存失控），围栏标记用 `String.fromCharCode(96)` 动态拼接；`DiffView.qml` 的 hunk 正则必须用 `new RegExp(...)` 构造（qmllint 6.9.0 在「正则字面量 + 循环」的函数上会无限增长）。改动这两个文件前先读文件头注释。
+- **`Q_INVOKABLE` 查询不能靠"死读属性"建立绑定依赖**（AOT 陷阱）：曾出现 `readonly property var caps: { Settings.profiles; return Settings.modelCapabilities(...) }` 这类「读一次属性再丢弃」的写法。它在**源码解释执行**下有效（测试全绿），但 `qmlcachegen` 会把求值后立即丢弃的无副作用表达式当死代码消除——`build/.rcc/qmlcache/*_qml.cpp` 里该绑定的指令序列中**没有**那句读取，绑定于是只在创建时求值一次，表现为「设置里改完要重启才生效」。已按此修复三处：`ModelSelector`（能力徽章）、`SettingRow`/`PreferenceControl`（`valueState` 的「已修改」圆点与恢复按钮）、`McpResourceDialog`（MCP 资源列表）。统一写法是**普通 property + 具名函数 + `Connections` 命令式重算**（`onXxxChanged: refresh()`），语义不依赖编译器优化。排查手法：扫 `build/.rcc/qmlcache/*_qml.cpp`，找同时缺 `getObjectLookup` 与 `loadScopeObjectPropertyLookup`、却含 `callPropertyLookup` 的 AOT 绑定（未被 AOT 编译的绑定反而无害——解释执行时死读会真实生效）。
 - **拖放只能在窗口根级**：`drop.urls` 的元素是 QML URL 包装对象，**没有 `toLocalFile()`**，必须原样交给 C++；组件内部再放 `DropArea` 收不到事件（分派只给首个接受者），因此 `InputConsole` 内不放 DropArea，改由 `main.qml` 根级解析后经 `AgentVM.attachmentsDropped` 推入 `appendAttachments()`。
 - **`TranscriptViewport` 刻意不 import NexusAI**（tests/qml 以相对路径直接加载，保持 dependency-free），因此它拿不到 `Theme` 令牌，滚动条颜色靠宿主注入 `scrollBarColor`。
 - **Layout 管理的 item 上写 `anchors` 是未定义行为**（每次启动告警 "Detected anchors on an item that is managed by a layout"），`InputConsole` 的 `AttachMenuItem` 已改用 `Layout.alignment`。

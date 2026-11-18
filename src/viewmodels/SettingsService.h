@@ -467,8 +467,12 @@ public:
     Q_INVOKABLE int modelContextWindow(const QString& apiProtocol, const QString& model) const;
     // docs/54（能力徽章）：{contextWindow, vision, tools}——contextWindow
     // 为 0 表示能力表未收录；vision 为模型名关键词启发式；tools 为协议级。
+    // profileId 非空且命中配置时，该模型 modelParams 里的能力覆盖
+    // （contextLength / vision / tools，docs/54）优先于表值与启发式——
+    // 配置页设置的值就是徽章显示的值。未知 profile 等价于不传。
     Q_INVOKABLE QVariantMap modelCapabilities(const QString& apiProtocol,
-                                              const QString& model) const;
+                                              const QString& model,
+                                              const QString& profileId = QString()) const;
 
     // Resolve the effective context budget for the active profile using a
     // four-level priority (docs/43 §4.2): per-model

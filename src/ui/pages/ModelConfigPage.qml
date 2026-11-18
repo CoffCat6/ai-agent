@@ -881,8 +881,13 @@ Item {
 
                                 Text {
                                     text: {
-                                        const cw = Settings.modelContextWindow(
-                                            page.editing.apiProtocol, modelChip.modelData)
+                                        // 带 profileId：按模型覆盖（contextLength/
+                                        // vision/tools）优先于能力表，配置页设置
+                                        // 的值在芯片上即时可见。
+                                        const cw = Settings.modelCapabilities(
+                                            page.editing.apiProtocol,
+                                            modelChip.modelData,
+                                            page.editing.id).contextWindow
                                         return cw > 0 ? qsTr("%1K").arg(Math.round(cw / 1000))
                                                       : qsTr("未知")
                                     }

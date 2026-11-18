@@ -29,8 +29,10 @@ Item {
         font.pixelSize: Theme.fontSizeMicro
         font.family: Theme.fontMono
     }
-    function showWindowHint(apiProtocol, model) {
-        const caps = Settings.modelCapabilities(apiProtocol, model)
+    function showWindowHint(apiProtocol, model, profileId) {
+        // docs/54：带 profileId 查询——配置页设置的按模型覆盖（上下文/视觉/
+        // 工具）即时反映在选择反馈里，与徽章同口径。
+        const caps = Settings.modelCapabilities(apiProtocol, model, profileId || "")
         const cw = caps.contextWindow
         const parts = [cw > 0
             ? qsTr("上下文窗口：%1K").arg(Math.round(cw / 1000))
@@ -38,6 +40,113 @@ Item {
         if (caps.vision) parts.push(qsTr("支持视觉输入"))
         if (!caps.tools) parts.push(qsTr("工具调用受限"))
         windowHint.show(parts.join(" · "), 2500)
+    }
+
+    // ── docs/54 能力徽章：胶囊芯片 ────────────────────────────
+    // 原先是点号连接的一整串小字（"128K · 视觉 · 工具"），数字与中文挤在
+    // 一起、能力差异只能逐字读。改成三枚独立胶囊：上下文走中性底 + mono
+    // （数字列稳定），视觉/工具走品牌着色（扫列表时先看到能力差异，缺失
+    // 直接不出现芯片）。样式配方对齐 SettingsField 的 statusBadge
+    // （accent 底 0.12 / 边 0.35；中性底取 bgPrimary——原因见芯片注释）。
+    component CapsChip: Rectangle {
+        id: chip
+        property string label: ""
+        property bool accent: false
+        property bool mono: false
+        // muted：未知上下文的 "?"——同样是中性底，但文字再退一档。
+        property bool muted: false
+        implicitWidth: chipText.implicitWidth + Theme.spaceSm + 4
+        implicitHeight: 18
+        radius: Theme.radiusBadge
+        // 中性底用 bgPrimary 而不是 surfaceHover：弹层底是 bgSecondary，
+        // 行悬停底是 surfaceHover——芯片在两种状态下都要保持对比（悬停时
+        // 用 surfaceHover 会糊进行底）。
+        color: chip.accent
+            ? Qt.rgba(Theme.brandPrimary.r, Theme.brandPrimary.g,
+                      Theme.brandPrimary.b, 0.12)
+            : Theme.bgPrimary
+        border.width: 1
+        border.color: chip.accent
+            ? Qt.rgba(Theme.brandPrimary.r, Theme.brandPrimary.g,
+                      Theme.brandPrimary.b, 0.35)
+            : Theme.borderSubtle
+
+        Text {
+            id: chipText
+            anchors.centerIn: parent
+            text: chip.label
+            // 模型名/能力文案是固定枚举 + 能力表数字：仍显式 PlainText，
+            // 与本文件其他 Text 的红线一致（W2 踩坑）。
+            textFormat: Text.PlainText
+            color: chip.accent ? Theme.brandPrimary
+                 : (chip.muted ? Theme.textTertiary : Theme.textSecondary)
+            font.pixelSize: Theme.fontSizeNano
+            font.family: chip.mono ? Theme.fontMono : Theme.fontSans
+        }
+    }
+
+    // Section 1（模型行）/ Section 2（profile 行）共用的徽章行：三字段
+    // 一次取齐（覆盖值优先于表值与启发式），读屏语义由 summary 提供。
+    component CapsBadgeRow: Row {
+        id: badgeRow
+        property string apiProtocol: ""
+        property string model: ""
+        property string profileId: ""
+        // 能力查询（modelCapabilities）是 Q_INVOKABLE：绑定依赖只登记表达式
+        // 里**读到的属性**，函数内部的 profile 访问不建立依赖，而下面三个入参
+        // 在「只改 vision / tools / contextLength 覆盖」时都不变。所以不能写成
+        // 纯绑定——必须由 profilesChanged 显式驱动重算。
+        //
+        // 为什么不用「先读一次 Settings.profiles 建立依赖」：qmlcachegen 会把
+        // 求值后立即丢弃的无副作用表达式当死代码消除，AOT 产物里既没有该读
+        // 取也不再重算（源码解释执行时却有效，正是"改完要重启"只在正式包
+        // 复现的原因）。这里改为普通属性 + Connections 命令式重算，行为不依赖
+        // 编译器是否保留死读语句。
+        property var caps: ({})
+        function refreshCaps() {
+            badgeRow.caps = Settings.modelCapabilities(
+                badgeRow.apiProtocol, badgeRow.model, badgeRow.profileId)
+        }
+        onApiProtocolChanged: refreshCaps()
+        onModelChanged: refreshCaps()
+        onProfileIdChanged: refreshCaps()
+        Component.onCompleted: refreshCaps()
+
+        Connections {
+            target: Settings
+            function onProfilesChanged() { badgeRow.refreshCaps() }
+            // 能力表的视觉启发式按「协议 + 模型名」查，协议切换同样要重算；
+            // profile 级 modelParams 走 profilesChanged，覆盖作用域之外。
+            function onActiveProfileChanged() { badgeRow.refreshCaps() }
+        }
+        readonly property string contextLabel: caps.contextWindow > 0
+            ? Math.round(caps.contextWindow / 1000) + "K" : "?"
+        readonly property bool hasVision: caps.vision === true
+        readonly property bool hasTools: caps.tools === true
+        // 读屏名称：芯片是纯视觉容器，语义文本放在行容器的 Accessible.name。
+        readonly property string summary: {
+            const parts = [contextLabel]
+            if (hasVision) parts.push(qsTr("视觉"))
+            if (hasTools) parts.push(qsTr("工具"))
+            return parts.join(" · ")
+        }
+        spacing: Theme.spaceXs
+
+        CapsChip {
+            label: badgeRow.contextLabel
+            mono: true
+            muted: badgeRow.caps.contextWindow <= 0
+        }
+        CapsChip {
+            visible: badgeRow.hasVision
+            label: qsTr("视觉")
+            accent: true
+        }
+        CapsChip {
+            visible: badgeRow.hasTools
+            label: qsTr("工具")
+            accent: true
+        }
     }
 
     implicitWidth: selectorRow.implicitWidth + 20
@@ -194,7 +303,8 @@ Item {
                             AgentVM.selectChatModel(
                                 root.activeProfile.id, modelData)
                             menuPopup.close()
-                            root.showWindowHint(root.activeProfile.apiProtocol, modelData)
+                            root.showWindowHint(root.activeProfile.apiProtocol,
+                                                modelData, root.activeProfile.id)
                         }
 
                         RowLayout {
@@ -230,24 +340,14 @@ Item {
                             }
 
                             // docs/54: 能力徽章（上下文窗口 / 视觉 / 工具）。
-                            // 纯文本徽章（docs/43 §6.2 不单靠颜色）；能力表
-                            // 未收录的模型只显示 "？"。
-                            Text {
+                            // 胶囊芯片行；能力表未收录的模型上下文显示 "？"。
+                            // 带 profileId：配置页的按模型覆盖优先于表值与启发式。
+                            CapsBadgeRow {
                                 objectName: "modelCapsBadge"
-                                text: {
-                                    const caps = Settings.modelCapabilities(
-                                        root.activeProfile.apiProtocol, modelData)
-                                    const parts = []
-                                    parts.push(caps.contextWindow > 0
-                                        ? Math.round(caps.contextWindow / 1000) + "K"
-                                        : "?")
-                                    if (caps.vision) parts.push(qsTr("视觉"))
-                                    if (caps.tools) parts.push(qsTr("工具"))
-                                    return parts.join(" · ")
-                                }
-                                color: Theme.textTertiary
-                                font.pixelSize: Theme.fontSizeNano
-                                font.family: Theme.fontSans
+                                apiProtocol: root.activeProfile.apiProtocol
+                                model: modelData
+                                profileId: root.activeProfile.id
+                                Accessible.name: summary
                             }
                         }
 
@@ -320,7 +420,8 @@ Item {
                         function activate() {
                             AgentVM.selectChatModel(modelData.id)
                             menuPopup.close()
-                            root.showWindowHint(modelData.apiProtocol, modelData.model)
+                            root.showWindowHint(modelData.apiProtocol,
+                                                modelData.model, modelData.id)
                         }
 
                         RowLayout {
@@ -356,24 +457,14 @@ Item {
                                 elide: Text.ElideRight
                             }
 
-                            // docs/54: profile 级能力徽章（同 Section 1 口径）。
-                            Text {
+                            // docs/54: profile 级能力徽章（同 Section 1 口径，
+                            // 带 profileId 读该配置的按模型覆盖）。
+                            CapsBadgeRow {
                                 objectName: "profileCapsBadge"
-                                text: {
-                                    const caps = Settings.modelCapabilities(
-                                        String(modelData.apiProtocol || ""),
-                                        String(modelData.model || ""))
-                                    const parts = []
-                                    parts.push(caps.contextWindow > 0
-                                        ? Math.round(caps.contextWindow / 1000) + "K"
-                                        : "?")
-                                    if (caps.vision) parts.push(qsTr("视觉"))
-                                    if (caps.tools) parts.push(qsTr("工具"))
-                                    return parts.join(" · ")
-                                }
-                                color: Theme.textTertiary
-                                font.pixelSize: Theme.fontSizeNano
-                                font.family: Theme.fontSans
+                                apiProtocol: String(modelData.apiProtocol || "")
+                                model: String(modelData.model || "")
+                                profileId: String(modelData.id || "")
+                                Accessible.name: summary
                             }
                         }
 
