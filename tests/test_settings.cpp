@@ -2668,10 +2668,12 @@ Item {
             QVERIFY2(!p.isEmpty(), "迁移不能丢掉 profile");
             QVERIFY(p.value("model").toString().isEmpty());
             QVERIFY(p.value("models").toStringList().isEmpty());
-            // 迁移只碰模型两项：地址、加密串、生成参数原样保留
+            // 地址与加密串原样保留。
             QCOMPARE(p.value("baseUrl").toString(), QStringLiteral("https://api.openai.com/v1"));
             QCOMPARE(p.value("apiKey").toString(), QStringLiteral("legacy-plain-key"));
-            QCOMPARE(p.value("temperature").toString(), QStringLiteral("0.3"));
+            // v2 早已清空模型列表，v7 又要移除「默认层」——temperature 没有任何
+            // 模型可挂靠，因此随顶层键一起丢弃（留着只会让"默认层已移除"看不出来）。
+            QVERIFY(p.value("temperature").toString().isEmpty());
             QCOMPARE(service.activeProfileId(), QStringLiteral("v1-profile"));
 
             // 迁移是一次性的：版本已到最新后再 load 不得再清空（此时加回来的模型
@@ -2805,10 +2807,10 @@ Item {
         QCOMPARE(caps.value(QStringLiteral("vision")).toBool(), true);
     }
 
-    // docs/15 §6.1.1: resolveContextLimit three-level priority:
-    //   1. Profile-level contextLength override (highest)
-    //   2. Capability-table contextWindow (default per model)
-    //   3. Global contextTokens (fallback for unknown models)
+    // docs/15 §6.1.1 / docs/43 §4.2（v7 起两级）:
+    //   1. Model-level modelParams[model].contextLength / 能力表 contextWindow
+    //   2. Global contextTokens (fallback for unknown models)
+    // profile 级「默认层」已移除：写顶层 contextLength 不再影响预算。
     void testResolveContextLimitPriority() {
         SettingsGuard guard;
         {
@@ -2830,25 +2832,24 @@ Item {
         const QString profileId = service.activeProfileId();
         QVERIFY(!profileId.isEmpty());
 
-        // Priority 1: Profile-level contextLength override.
+        // v7：顶层 contextLength 不再是"默认层"，写了也不影响预算——
+        // 预算按模型定（能力表或模型覆盖）。
+        service.updateProfile(profileId, QVariantMap{{QStringLiteral("model"), QStringLiteral("gpt-4o")}});
         service.updateProfile(profileId, QVariantMap{{QStringLiteral("contextLength"), 99999}});
-        QCOMPARE(service.resolveContextLimit(), 99999);
-
-        // Priority 2: capability table (after clearing the override). 模型不再
-        // 预填，所以用已知模型把能力表那一条跑出来（gpt-4o → 128000）。
-        service.updateProfile(profileId, QVariantMap{{QStringLiteral("contextLength"), QVariant()},
-                                                     {QStringLiteral("model"), QStringLiteral("gpt-4o")}});
         QCOMPARE(service.resolveContextLimit(), 128000);
 
-        // Priority 3: global fallback (unknown model, no override).
+        // 能力表命中：gpt-4o → 128000。
+        QCOMPARE(service.resolveContextLimit(), 128000);
+
+        // 未知模型回退全局 contextTokens。
         service.updateProfile(profileId, QVariantMap{{QStringLiteral("model"), QStringLiteral("unknown-model")}});
         QCOMPARE(service.resolveContextLimit(), service.contextTokens());
     }
 
     // ── docs/43 W1：按模型参数（modelParams）─────────────────────
 
-    // docs/43 §4.2/AC-2：上下文预算四级链（模型覆盖 > profile.contextLength
-    // > 能力表 > 全局）与覆盖表落库结构。profileConfigOf 在 main.cpp 匿名
+    // docs/43 §4.2/AC-2（v7 起三级）：上下文预算链（模型覆盖 > 能力表 >
+    // 全局）与覆盖表落库结构。profile 级「默认层」已移除。profileConfigOf 在 main.cpp 匿名
     // 命名空间里（不可直接单测），其"模型覆盖"读取链按方案 W1 测试计划经
     // setModelParam 落库结构 + resolveContextLimitForProfile 的 Priority 0
     // 间接验证；会话端到端由 W3 接通 overrides 后补。
@@ -2868,23 +2869,20 @@ Item {
         service.addModelToProfile(profileId, QStringLiteral("gpt-4o-mini"));
         service.addModelToProfile(profileId, QStringLiteral("glm-4"));
 
-        // Priority 0：模型覆盖最优先，profile.contextLength 也压不过它。
+        // Priority 0：模型覆盖最优先（顶层 contextLength 已不参与计算，这里
+        // 一并写上看它确实无效）。
         service.setModelParam(profileId, QStringLiteral("gpt-4o"),
                               QStringLiteral("contextLength"), QStringLiteral("64000"));
         service.updateProfile(profileId, QVariantMap{{QStringLiteral("contextLength"), 99999}});
         service.selectModelForProfile(profileId, QStringLiteral("gpt-4o"));
         QCOMPARE(service.resolveContextLimit(), 64000);
 
-        // Priority 1：无模型覆盖的模型吃 profile.contextLength（默认层）。
-        service.selectModelForProfile(profileId, QStringLiteral("gpt-4o-mini"));
-        QCOMPARE(service.resolveContextLimit(), 99999);
-
-        // Priority 2：清掉 profile 覆盖后，无覆盖的已知模型查能力表。
-        service.updateProfile(profileId, QVariantMap{{QStringLiteral("contextLength"), QVariant()}});
+        // Priority 1：无模型覆盖的已知模型查能力表（gpt-4o-mini → 128000）。
+        // v7 起没有 profile 默认层可兜：顶层 99999 不再生效。
         service.selectModelForProfile(profileId, QStringLiteral("gpt-4o-mini"));
         QCOMPARE(service.resolveContextLimit(), 128000);
 
-        // Priority 3：未知模型回退全局 contextTokens。
+        // Priority 2：未知模型回退全局 contextTokens。
         service.selectModelForProfile(profileId, QStringLiteral("glm-4"));
         QCOMPARE(service.resolveContextLimit(), service.contextTokens());
 
@@ -2951,6 +2949,69 @@ Item {
     // docs/43 §5/AC-6：v5 → v6 迁移清掉幽灵键 topP（全仓唯一引用是备份
     // 白名单）；modelParams 不预填（键缺省 = 未设置，老 profile 行为不变）；
     // 其余字段原样。
+    // v7（docs/43 修订）：profile 级「默认层」移除。存量顶层生成参数/预算
+    // 必须搬进该配置**每个模型**的覆盖表，而不是静默丢弃——用户设过
+    // temperature=0.7 是明确意图，丢了就是"设置失效"。
+    void schemaV7MovesProfileDefaultsIntoModelOverrides() {
+        SettingsGuard guard;
+        {
+            QSettings s = NexusAI::TestSupport::testSettings();
+            QJsonArray arr;
+            QJsonObject legacy;
+            legacy["id"] = QStringLiteral("v6-profile");
+            legacy["displayName"] = QStringLiteral("旧配置");
+            legacy["provider"] = QStringLiteral("openai");
+            legacy["kind"] = QStringLiteral("openai");
+            legacy["apiProtocol"] = QStringLiteral("openai-chat");
+            legacy["baseUrl"] = QStringLiteral("https://api.openai.com/v1");
+            legacy["model"] = QStringLiteral("gpt-4o");
+            legacy["models"] = QJsonArray{QStringLiteral("gpt-4o"),
+                                          QStringLiteral("gpt-4o-mini")};
+            // 顶层默认值：迁移后应出现在两个模型的覆盖表里。
+            legacy["temperature"] = QStringLiteral("0.7");
+            legacy["contextLength"] = QStringLiteral("200000");
+            // 模型级覆盖已存在时优先级更高，不被默认值盖掉。
+            legacy["modelParams"] = QJsonObject{
+                {QStringLiteral("gpt-4o-mini"),
+                 QJsonObject{{QStringLiteral("temperature"), QStringLiteral("1.0")}}}};
+            arr.append(legacy);
+            s.setValue("modelProfiles",
+                       QString::fromUtf8(QJsonDocument(arr).toJson(QJsonDocument::Compact)));
+            s.setValue("activeProfileId", QStringLiteral("v6-profile"));
+            s.setValue("schemaVersion", 6);
+        }
+
+        SettingsService service(nullptr);
+        const QVariantMap p = profileSecretsById(service, QStringLiteral("v6-profile"));
+        QVERIFY2(!p.isEmpty(), "迁移不能丢掉 profile");
+
+        // 顶层键全部消失（否则"移除默认层"只是 UI 层的事）。
+        for (const QString& key : {QStringLiteral("temperature"),
+                                   QStringLiteral("maxOutputTokens"),
+                                   QStringLiteral("numCtx"),
+                                   QStringLiteral("reasoningEffort"),
+                                   QStringLiteral("contextLength")})
+            QVERIFY2(!p.contains(key), qPrintable(key + QStringLiteral(" 应随默认层移除")));
+
+        const QVariantMap params = p.value(QStringLiteral("modelParams")).toMap();
+        const QVariantMap gpt4o = params.value(QStringLiteral("gpt-4o")).toMap();
+        QCOMPARE(gpt4o.value(QStringLiteral("temperature")).toString(),
+                 QStringLiteral("0.7"));
+        QCOMPARE(gpt4o.value(QStringLiteral("contextLength")).toString(),
+                 QStringLiteral("200000"));
+
+        // 模型级覆盖优先：gpt-4o-mini 的 temperature 保持用户设的 1.0，
+        // contextLength 则从默认值补进来。
+        const QVariantMap mini = params.value(QStringLiteral("gpt-4o-mini")).toMap();
+        QCOMPARE(mini.value(QStringLiteral("temperature")).toString(),
+                 QStringLiteral("1.0"));
+        QCOMPARE(mini.value(QStringLiteral("contextLength")).toString(),
+                 QStringLiteral("200000"));
+
+        // 生效值也跟着走：当前模型 gpt-4o 有覆盖 → 200000（不再依赖默认层）。
+        QCOMPARE(service.resolveContextLimit(), 200000);
+    }
+
     void schemaV6DropsLegacyTopP() {
         SettingsGuard guard;
         {
@@ -2979,12 +3040,17 @@ Item {
         const QVariantMap p = profileSecretsById(service, QStringLiteral("v5-profile"));
         QVERIFY2(!p.isEmpty(), "迁移不能丢掉 profile");
         QVERIFY2(!p.contains(QStringLiteral("topP")), "v6 迁移后幽灵键 topP 必须消失");
-        QVERIFY2(!p.contains(QStringLiteral("modelParams")),
-                 "迁移不得预填 modelParams（键缺省 = 未设置）");
-        // 其余字段原样：迁移只删 topP。
+        // v6 本身不预填 modelParams；但 v7 会把顶层参数搬进各模型覆盖表，
+        // 所以最终态里 modelParams 有值——这是刻意的（见下方 temperature 断言）。
         QCOMPARE(p.value("baseUrl").toString(), QStringLiteral("https://api.openai.com/v1"));
         QCOMPARE(p.value("apiKey").toString(), QStringLiteral("legacy-plain-key"));
-        QCOMPARE(p.value("temperature").toString(), QStringLiteral("0.3"));
+        // v7：顶层 temperature 搬进 modelParams[gpt-4o]，顶层键不再存在。
+        QVERIFY2(!p.contains(QStringLiteral("temperature")),
+                 "v7 起 profile 不再有顶层生成参数（默认层已移除）");
+        const QVariantMap moved = p.value(QStringLiteral("modelParams")).toMap()
+            .value(QStringLiteral("gpt-4o")).toMap();
+        QCOMPARE(moved.value(QStringLiteral("temperature")).toString(),
+                 QStringLiteral("0.3"));
         QCOMPARE(p.value("model").toString(), QStringLiteral("gpt-4o"));
         QCOMPARE(service.activeProfileId(), QStringLiteral("v5-profile"));
 

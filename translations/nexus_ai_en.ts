@@ -3671,7 +3671,7 @@ Any manual edits made since then will be overwritten.</translation>
 <context>
     <name>InputConsole</name>
     <message>
-        <location filename="../src/ui/components/InputConsole.qml" line="845"/>
+        <location filename="../src/ui/components/InputConsole.qml" line="853"/>
         <source>附件将随消息发送给当前模型服务</source>
         <translation>Attachments are sent to the current model service with your message</translation>
     </message>
@@ -3680,7 +3680,7 @@ Any manual edits made since then will be overwritten.</translation>
         <translation type="vanished">Type a message... (Enter to send, Shift+Enter for newline)</translation>
     </message>
     <message>
-        <location filename="../src/ui/components/InputConsole.qml" line="1193"/>
+        <location filename="../src/ui/components/InputConsole.qml" line="1201"/>
         <source>消息输入框</source>
         <translation>Message input field</translation>
     </message>
@@ -3729,176 +3729,176 @@ Any manual edits made since then will be overwritten.</translation>
         <translation type="vanished">Type a message and press Enter to send, Shift+Enter for a new line; type @ to reference project files</translation>
     </message>
     <message>
-        <location filename="../src/ui/components/InputConsole.qml" line="186"/>
+        <location filename="../src/ui/components/InputConsole.qml" line="194"/>
         <source>摘要压缩历史上下文（/compact [重点]）</source>
         <translation>Summarize-compact the history (/compact [focus])</translation>
     </message>
     <message>
-        <location filename="../src/ui/components/InputConsole.qml" line="395"/>
+        <location filename="../src/ui/components/InputConsole.qml" line="403"/>
         <source>提示词获取失败：%1</source>
         <translation>提示词获取失败：%1</translation>
     </message>
     <message>
-        <location filename="../src/ui/components/InputConsole.qml" line="395"/>
-        <location filename="../src/ui/components/InputConsole.qml" line="1629"/>
+        <location filename="../src/ui/components/InputConsole.qml" line="403"/>
+        <location filename="../src/ui/components/InputConsole.qml" line="1639"/>
         <source>未知错误</source>
         <translation>Unknown error</translation>
     </message>
     <message>
-        <location filename="../src/ui/components/InputConsole.qml" line="491"/>
+        <location filename="../src/ui/components/InputConsole.qml" line="499"/>
         <source>未找到技能：%1。请检查名称，或在 设置 → 技能 中刷新。</source>
         <translation>Skill not found: %1. Check the name, or refresh in Settings → Skills.</translation>
     </message>
     <message>
-        <location filename="../src/ui/components/InputConsole.qml" line="1121"/>
+        <location filename="../src/ui/components/InputConsole.qml" line="1129"/>
         <source>移除引用</source>
         <translation>Remove quote</translation>
     </message>
     <message>
-        <location filename="../src/ui/components/InputConsole.qml" line="920"/>
-        <location filename="../src/ui/components/InputConsole.qml" line="1981"/>
+        <location filename="../src/ui/components/InputConsole.qml" line="928"/>
+        <location filename="../src/ui/components/InputConsole.qml" line="1991"/>
         <source>项目</source>
         <translation>Project</translation>
     </message>
     <message>
-        <location filename="../src/ui/components/InputConsole.qml" line="204"/>
+        <location filename="../src/ui/components/InputConsole.qml" line="212"/>
         <source>清除预设</source>
         <translation>Clear preset</translation>
     </message>
     <message>
-        <location filename="../src/ui/components/InputConsole.qml" line="207"/>
+        <location filename="../src/ui/components/InputConsole.qml" line="215"/>
         <source>清除当前会话套用的预设，回落全局系统提示词</source>
         <translation>Clear the preset applied to this session and fall back to the global system prompt</translation>
     </message>
     <message>
-        <location filename="../src/ui/components/InputConsole.qml" line="219"/>
+        <location filename="../src/ui/components/InputConsole.qml" line="227"/>
         <source>会话预设（已套用）· 点击切换</source>
         <translation>Session preset (applied) · click to switch</translation>
     </message>
     <message>
-        <location filename="../src/ui/components/InputConsole.qml" line="220"/>
+        <location filename="../src/ui/components/InputConsole.qml" line="228"/>
         <source>会话预设 · 套用为当前会话系统提示</source>
         <translation>Session preset · applies as the session system prompt</translation>
     </message>
     <message>
-        <location filename="../src/ui/components/InputConsole.qml" line="228"/>
+        <location filename="../src/ui/components/InputConsole.qml" line="236"/>
         <source>管理预设</source>
         <translation>Manage presets</translation>
     </message>
     <message>
-        <location filename="../src/ui/components/InputConsole.qml" line="231"/>
+        <location filename="../src/ui/components/InputConsole.qml" line="239"/>
         <source>在设置中心新建/编辑系统提示预设</source>
         <translation>Create and edit session prompt presets in Settings</translation>
     </message>
     <message>
-        <location filename="../src/ui/components/InputConsole.qml" line="920"/>
-        <location filename="../src/ui/components/InputConsole.qml" line="1981"/>
+        <location filename="../src/ui/components/InputConsole.qml" line="928"/>
+        <location filename="../src/ui/components/InputConsole.qml" line="1991"/>
         <source>用户</source>
         <translation>User</translation>
     </message>
     <message>
-        <location filename="../src/ui/components/InputConsole.qml" line="948"/>
+        <location filename="../src/ui/components/InputConsole.qml" line="956"/>
         <source>移除技能 %1</source>
         <translation>Remove skill %1</translation>
     </message>
     <message>
-        <location filename="../src/ui/components/InputConsole.qml" line="1187"/>
+        <location filename="../src/ui/components/InputConsole.qml" line="1195"/>
         <source>输入消息…（Enter 发送，Shift+Enter 换行，@ 引用文件，/ 选择指令，$ 引用技能）</source>
         <translation>Type a message… (Enter to send, Shift+Enter for newline, @ to reference files, / for commands, $ for skills)</translation>
     </message>
     <message>
-        <location filename="../src/ui/components/InputConsole.qml" line="1194"/>
+        <location filename="../src/ui/components/InputConsole.qml" line="1202"/>
         <source>输入消息后按 Enter 发送，Shift+Enter 换行；输入 @ 引用项目文件，/ 选择指令，$ 引用技能</source>
         <translation>Press Enter to send, Shift+Enter for a newline; type @ to reference project files, / to pick a command, $ to reference a skill</translation>
     </message>
     <message>
-        <location filename="../src/ui/components/InputConsole.qml" line="1444"/>
+        <location filename="../src/ui/components/InputConsole.qml" line="1452"/>
         <source>添加附件</source>
         <translation>Add attachment</translation>
     </message>
     <message>
-        <location filename="../src/ui/components/InputConsole.qml" line="1445"/>
+        <location filename="../src/ui/components/InputConsole.qml" line="1453"/>
         <source>上传图片或文件附件</source>
         <translation>Upload image or file attachment</translation>
     </message>
     <message>
-        <location filename="../src/ui/components/InputConsole.qml" line="1496"/>
+        <location filename="../src/ui/components/InputConsole.qml" line="1504"/>
         <source>停止</source>
         <translation>Stop</translation>
     </message>
     <message>
-        <location filename="../src/ui/components/InputConsole.qml" line="1496"/>
+        <location filename="../src/ui/components/InputConsole.qml" line="1504"/>
         <source>发送</source>
         <translation>Send</translation>
     </message>
     <message>
-        <location filename="../src/ui/components/InputConsole.qml" line="1567"/>
+        <location filename="../src/ui/components/InputConsole.qml" line="1575"/>
         <source>上传图片</source>
         <translation>Upload image</translation>
     </message>
     <message>
-        <location filename="../src/ui/components/InputConsole.qml" line="1572"/>
+        <location filename="../src/ui/components/InputConsole.qml" line="1580"/>
         <source>上传文件</source>
         <translation>Upload file</translation>
     </message>
     <message>
-        <location filename="../src/ui/components/InputConsole.qml" line="1579"/>
+        <location filename="../src/ui/components/InputConsole.qml" line="1588"/>
         <source>MCP 资源…</source>
         <translation></translation>
     </message>
     <message>
-        <location filename="../src/ui/components/InputConsole.qml" line="1596"/>
+        <location filename="../src/ui/components/InputConsole.qml" line="1606"/>
         <source>文本文件 (*.txt *.md *.json *.csv *.log *.xml *.yml *.yaml *.ini *.cpp *.h *.py *.js *.ts)</source>
         <translation>Text files (*.txt *.md *.json *.csv *.log *.xml *.yml *.yaml *.ini *.cpp *.h *.py *.js *.ts)</translation>
     </message>
     <message>
-        <location filename="../src/ui/components/InputConsole.qml" line="1597"/>
+        <location filename="../src/ui/components/InputConsole.qml" line="1607"/>
         <source>全部文件 (*)</source>
         <translation>All files (*)</translation>
     </message>
     <message>
-        <location filename="../src/ui/components/InputConsole.qml" line="1629"/>
+        <location filename="../src/ui/components/InputConsole.qml" line="1639"/>
         <source>资源读取失败：%1</source>
         <translation></translation>
     </message>
     <message>
-        <location filename="../src/ui/components/InputConsole.qml" line="1640"/>
+        <location filename="../src/ui/components/InputConsole.qml" line="1650"/>
         <source>已添加资源：%1</source>
         <translation></translation>
     </message>
     <message>
-        <location filename="../src/ui/components/InputConsole.qml" line="1678"/>
+        <location filename="../src/ui/components/InputConsole.qml" line="1688"/>
         <source>当前会话未绑定项目，无法引用项目文件。
 请先在侧栏选择或导入项目。</source>
         <translation>This conversation is not bound to a project, so project files cannot be referenced.
 Select or import a project in the sidebar first.</translation>
     </message>
     <message>
-        <location filename="../src/ui/components/InputConsole.qml" line="1680"/>
+        <location filename="../src/ui/components/InputConsole.qml" line="1690"/>
         <source>正在扫描项目文件…</source>
         <translation>Scanning project files…</translation>
     </message>
     <message>
-        <location filename="../src/ui/components/InputConsole.qml" line="1681"/>
+        <location filename="../src/ui/components/InputConsole.qml" line="1691"/>
         <source>没有匹配的项目文件</source>
         <translation>No matching project files</translation>
     </message>
     <message>
-        <location filename="../src/ui/components/InputConsole.qml" line="1780"/>
+        <location filename="../src/ui/components/InputConsole.qml" line="1790"/>
         <source>没有匹配的指令。
 可在 设置 → 提示词资产 添加命令。</source>
         <translation>No matching command.
 Add one in Settings → Prompt Assets.</translation>
     </message>
     <message>
-        <location filename="../src/ui/components/InputConsole.qml" line="1896"/>
+        <location filename="../src/ui/components/InputConsole.qml" line="1906"/>
         <source>没有匹配的技能。
 请在项目 .nexusai/skills 或用户技能目录中添加 SKILL.md。</source>
         <translation>No matching skill.
 Add a SKILL.md under the project&apos;s .nexusai/skills or the user skills directory.</translation>
     </message>
     <message>
-        <location filename="../src/ui/components/InputConsole.qml" line="1589"/>
+        <location filename="../src/ui/components/InputConsole.qml" line="1599"/>
         <source>图片文件 (*.png *.jpg *.jpeg *.webp *.bmp *.gif)</source>
         <translation>Image files (*.png *.jpg *.jpeg *.webp *.bmp *.gif)</translation>
     </message>
@@ -5134,33 +5134,33 @@ Add a SKILL.md under the project&apos;s .nexusai/skills or the user skills direc
 <context>
     <name>McpResourceDialog</name>
     <message>
-        <location filename="../src/ui/components/McpResourceDialog.qml" line="48"/>
+        <location filename="../src/ui/components/McpResourceDialog.qml" line="67"/>
         <source>MCP 资源选择器</source>
         <translation></translation>
     </message>
     <message>
-        <location filename="../src/ui/components/McpResourceDialog.qml" line="66"/>
+        <location filename="../src/ui/components/McpResourceDialog.qml" line="85"/>
         <source>MCP 资源</source>
         <translation></translation>
     </message>
     <message>
-        <location filename="../src/ui/components/McpResourceDialog.qml" line="81"/>
+        <location filename="../src/ui/components/McpResourceDialog.qml" line="100"/>
         <source>搜索名称 / URI / 描述…</source>
         <translation></translation>
     </message>
     <message>
-        <location filename="../src/ui/components/McpResourceDialog.qml" line="92"/>
+        <location filename="../src/ui/components/McpResourceDialog.qml" line="111"/>
         <source>没有匹配的资源。</source>
         <translation></translation>
     </message>
     <message>
-        <location filename="../src/ui/components/McpResourceDialog.qml" line="93"/>
+        <location filename="../src/ui/components/McpResourceDialog.qml" line="112"/>
         <source>暂无可用资源。
 连接声明了 resources 能力的 MCP 服务器后在此读取。</source>
         <translation></translation>
     </message>
     <message>
-        <location filename="../src/ui/components/McpResourceDialog.qml" line="191"/>
+        <location filename="../src/ui/components/McpResourceDialog.qml" line="210"/>
         <source>读取资源 %1</source>
         <translation></translation>
     </message>
@@ -5476,61 +5476,55 @@ Add a SKILL.md under the project&apos;s .nexusai/skills or the user skills direc
         <translation>Gemini</translation>
     </message>
     <message>
-        <location filename="../src/ui/pages/ModelConfigPage.qml" line="1047"/>
         <source>temperature</source>
-        <translation>temperature</translation>
+        <translation type="vanished">temperature</translation>
     </message>
     <message>
         <source>最大输出</source>
         <translation type="vanished">Max Output</translation>
     </message>
     <message>
-        <location filename="../src/ui/pages/ModelConfigPage.qml" line="1079"/>
         <source>num_ctx</source>
-        <translation>num_ctx</translation>
+        <translation type="vanished">num_ctx</translation>
     </message>
     <message>
-        <location filename="../src/ui/pages/ModelConfigPage.qml" line="1094"/>
         <source>默认思考与上下文</source>
-        <translation>Default Reasoning &amp; Context</translation>
+        <translation type="vanished">Default Reasoning &amp; Context</translation>
     </message>
     <message>
-        <location filename="../src/ui/pages/ModelConfigPage.qml" line="1095"/>
         <source>思考强度与上下文预算在这里是全部模型共用的默认值，单个模型的独立覆盖在上方「模型」卡片里配置；聊天输入区的快捷选择框读写的是当前启用的配置。</source>
-        <translation>Reasoning effort and context budget here are defaults shared by all models; per-model overrides are configured in the “Models” card above; the quick selector in the chat input reads and writes the active profile.</translation>
+        <translation type="vanished">Reasoning effort and context budget here are defaults shared by all models; per-model overrides are configured in the “Models” card above; the quick selector in the chat input reads and writes the active profile.</translation>
     </message>
     <message>
-        <location filename="../src/ui/pages/ModelConfigPage.qml" line="1099"/>
         <source>思考强度</source>
-        <translation>Thinking effort</translation>
+        <translation type="vanished">Thinking effort</translation>
     </message>
     <message>
-        <location filename="../src/ui/pages/ModelConfigPage.qml" line="1124"/>
         <source>上下文预算</source>
-        <translation>Context Budget</translation>
+        <translation type="vanished">Context Budget</translation>
     </message>
     <message>
-        <location filename="../src/ui/pages/ModelConfigPage.qml" line="103"/>
+        <location filename="../src/ui/pages/ModelConfigPage.qml" line="101"/>
         <source>例如 https://my-gateway.example.com/v1</source>
         <translation>e.g. https://my-gateway.example.com/v1</translation>
     </message>
     <message>
-        <location filename="../src/ui/pages/ModelConfigPage.qml" line="114"/>
+        <location filename="../src/ui/pages/ModelConfigPage.qml" line="112"/>
         <source>网关上真实在跑的模型名，例如 glm-4</source>
         <translation>Model name served by your gateway, e.g. glm-4</translation>
     </message>
     <message>
-        <location filename="../src/ui/pages/ModelConfigPage.qml" line="131"/>
+        <location filename="../src/ui/pages/ModelConfigPage.qml" line="129"/>
         <source>按网关要求填写（可留空走环境变量）</source>
         <translation>Enter as your gateway requires (blank falls back to the environment variable)</translation>
     </message>
     <message>
-        <location filename="../src/ui/pages/ModelConfigPage.qml" line="132"/>
+        <location filename="../src/ui/pages/ModelConfigPage.qml" line="130"/>
         <source>或留空，读环境变量 %1</source>
         <translation>Or leave blank to read %1 from the environment</translation>
     </message>
     <message>
-        <location filename="../src/ui/pages/ModelConfigPage.qml" line="139"/>
+        <location filename="../src/ui/pages/ModelConfigPage.qml" line="137"/>
         <source>模型名</source>
         <translation>model name</translation>
     </message>
@@ -5539,61 +5533,59 @@ Add a SKILL.md under the project&apos;s .nexusai/skills or the user skills direc
         <translation type="vanished">manual override</translation>
     </message>
     <message>
-        <location filename="../src/ui/pages/ModelConfigPage.qml" line="166"/>
         <source>模型能力表</source>
-        <translation>model capability table</translation>
+        <translation type="vanished">model capability table</translation>
     </message>
     <message>
-        <location filename="../src/ui/pages/ModelConfigPage.qml" line="166"/>
         <source>全局默认</source>
-        <translation>global default</translation>
+        <translation type="vanished">global default</translation>
     </message>
     <message>
         <source>共 %1 个模型，新增 %2 个。</source>
         <translation type="vanished">%1 models found, %2 added.</translation>
     </message>
     <message>
-        <location filename="../src/ui/pages/ModelConfigPage.qml" line="302"/>
+        <location filename="../src/ui/pages/ModelConfigPage.qml" line="276"/>
         <source>模型服务配置</source>
         <translation>Model Configuration</translation>
     </message>
     <message>
-        <location filename="../src/ui/pages/ModelConfigPage.qml" line="303"/>
+        <location filename="../src/ui/pages/ModelConfigPage.qml" line="277"/>
         <source>点芯片切换要编辑的配置，拖动芯片可调整顺序；改动即时写入配置，不需要另点保存。</source>
         <translation>Click a chip to edit that profile; drag chips to reorder. Changes save instantly.</translation>
     </message>
     <message>
-        <location filename="../src/ui/pages/ModelConfigPage.qml" line="563"/>
+        <location filename="../src/ui/pages/ModelConfigPage.qml" line="537"/>
         <source>新建一条配置，填上服务地址与模型名，聊天区就能开始工作。</source>
         <translation>Create a profile with the service URL and model name, and the chat is ready to go.</translation>
     </message>
     <message>
-        <location filename="../src/ui/pages/ModelConfigPage.qml" line="573"/>
+        <location filename="../src/ui/pages/ModelConfigPage.qml" line="547"/>
         <source>新建第一个配置</source>
         <translation>Create your first profile</translation>
     </message>
     <message>
-        <location filename="../src/ui/pages/ModelConfigPage.qml" line="608"/>
+        <location filename="../src/ui/pages/ModelConfigPage.qml" line="582"/>
         <source>厂商决定默认地址，接口协议决定报文格式；模型由你自己填。</source>
         <translation>The vendor picks the default URL and the protocol decides the wire format; you type the model yourself.</translation>
     </message>
     <message>
-        <location filename="../src/ui/pages/ModelConfigPage.qml" line="706"/>
+        <location filename="../src/ui/pages/ModelConfigPage.qml" line="680"/>
         <source>API Key 保存时加密到系统钥匙环（Secret Service / KWallet）。</source>
         <translation>The API key is encrypted to the system keyring when stored (Secret Service / KWallet).</translation>
     </message>
     <message>
-        <location filename="../src/ui/pages/ModelConfigPage.qml" line="723"/>
+        <location filename="../src/ui/pages/ModelConfigPage.qml" line="697"/>
         <source>已配置</source>
         <translation>Configured</translation>
     </message>
     <message>
-        <location filename="../src/ui/pages/ModelConfigPage.qml" line="723"/>
+        <location filename="../src/ui/pages/ModelConfigPage.qml" line="697"/>
         <source>未配置</source>
         <translation>Not configured</translation>
     </message>
     <message>
-        <location filename="../src/ui/pages/ModelConfigPage.qml" line="736"/>
+        <location filename="../src/ui/pages/ModelConfigPage.qml" line="710"/>
         <source>密钥已配置（不回显）；留空保存会保留原密钥，输入新值才替换。</source>
         <translation>Key configured (never displayed); leaving it blank keeps the existing key, entering a new value replaces it.</translation>
     </message>
@@ -5602,32 +5594,32 @@ Add a SKILL.md under the project&apos;s .nexusai/skills or the user skills direc
         <translation type="vanished">Model names are no longer preset by vendor: add your own in the input below, and the list syncs to the chat input&apos;s selector.</translation>
     </message>
     <message>
-        <location filename="../src/ui/pages/ModelConfigPage.qml" line="873"/>
+        <location filename="../src/ui/pages/ModelConfigPage.qml" line="847"/>
         <source>%1 项覆盖</source>
         <translation>%1 overrides</translation>
     </message>
     <message>
-        <location filename="../src/ui/pages/ModelConfigPage.qml" line="960"/>
+        <location filename="../src/ui/pages/ModelConfigPage.qml" line="934"/>
         <source>添加</source>
         <translation>Add</translation>
     </message>
     <message>
-        <location filename="../src/ui/pages/ModelConfigPage.qml" line="974"/>
+        <location filename="../src/ui/pages/ModelConfigPage.qml" line="948"/>
         <source>正在拉取…</source>
         <translation>Fetching…</translation>
     </message>
     <message>
-        <location filename="../src/ui/pages/ModelConfigPage.qml" line="974"/>
+        <location filename="../src/ui/pages/ModelConfigPage.qml" line="948"/>
         <source>从端点拉取模型</source>
         <translation>Fetch models from endpoint</translation>
     </message>
     <message>
-        <location filename="../src/ui/pages/ModelConfigPage.qml" line="990"/>
+        <location filename="../src/ui/pages/ModelConfigPage.qml" line="964"/>
         <source>正在向端点请求模型列表（最多等 20 秒）…</source>
         <translation>Requesting the model list from the endpoint (up to 20 seconds)…</translation>
     </message>
     <message>
-        <location filename="../src/ui/pages/ModelConfigPage.qml" line="1002"/>
+        <location filename="../src/ui/pages/ModelConfigPage.qml" line="976"/>
         <source>先在上方「服务地址」里填端点，才能从端点拉取模型。</source>
         <translation>Fill in the service address above before fetching models from the endpoint.</translation>
     </message>
@@ -5636,66 +5628,62 @@ Add a SKILL.md under the project&apos;s .nexusai/skills or the user skills direc
         <translation type="vanished">The list is still empty: model names are no longer auto-filled; type a name on the right and press Enter.</translation>
     </message>
     <message>
-        <location filename="../src/ui/pages/ModelConfigPage.qml" line="1042"/>
         <source>默认生成参数（所有模型）</source>
-        <translation>Default Generation Parameters (All Models)</translation>
+        <translation type="vanished">Default Generation Parameters (All Models)</translation>
     </message>
     <message>
-        <location filename="../src/ui/pages/ModelConfigPage.qml" line="1043"/>
         <source>这里是全部模型共用的默认值，留空 = 服务默认不发送；单个模型的独立参数到上方「模型」卡片里按模型覆盖。</source>
-        <translation>Values here are defaults shared by all models; blank = service default (not sent); configure per-model parameters in the “Models” card above.</translation>
+        <translation type="vanished">Values here are defaults shared by all models; blank = service default (not sent); configure per-model parameters in the “Models” card above.</translation>
     </message>
     <message>
-        <location filename="../src/ui/pages/ModelConfigPage.qml" line="1059"/>
         <source>自定义上限，留空 = 服务默认</source>
-        <translation>Custom limit, blank = server default</translation>
+        <translation type="vanished">Custom limit, blank = server default</translation>
     </message>
     <message>
         <source>自定义预算，留空 = 按能力表</source>
         <translation type="vanished">Custom budget, blank = follow capability table</translation>
     </message>
     <message>
-        <location filename="../src/ui/pages/ModelConfigPage.qml" line="1240"/>
+        <location filename="../src/ui/pages/ModelConfigPage.qml" line="1087"/>
         <source>删除模型配置</source>
         <translation>Delete model profile</translation>
     </message>
     <message>
-        <location filename="../src/ui/pages/ModelConfigPage.qml" line="1250"/>
+        <location filename="../src/ui/pages/ModelConfigPage.qml" line="1097"/>
         <source>将删除「%1」，该配置的 API Key 会一并清除，操作不可撤销。</source>
         <translation>&quot;%1&quot; will be deleted and its API key removed with it. This cannot be undone.</translation>
     </message>
     <message>
-        <location filename="../src/ui/pages/ModelConfigPage.qml" line="1266"/>
+        <location filename="../src/ui/pages/ModelConfigPage.qml" line="1113"/>
         <source>取消</source>
         <translation>Cancel</translation>
     </message>
     <message>
-        <location filename="../src/ui/pages/ModelConfigPage.qml" line="500"/>
+        <location filename="../src/ui/pages/ModelConfigPage.qml" line="474"/>
         <source>复制</source>
         <translation>Duplicate</translation>
     </message>
     <message>
-        <location filename="../src/ui/pages/ModelConfigPage.qml" line="509"/>
+        <location filename="../src/ui/pages/ModelConfigPage.qml" line="483"/>
         <source>%1 副本</source>
         <translation>%1 copy</translation>
     </message>
     <message>
-        <location filename="../src/ui/pages/ModelConfigPage.qml" line="803"/>
+        <location filename="../src/ui/pages/ModelConfigPage.qml" line="777"/>
         <source>模型名不再按厂商预填：可以自己添加，也可以从端点拉取后勾选要添加的模型，列表会同步到聊天输入区的选择器。</source>
         <translation>Model names are no longer prefilled per vendor: add them yourself, or fetch them from the endpoint and tick the ones you want. The list stays in sync with the model picker in the chat input.</translation>
     </message>
     <message>
-        <location filename="../src/ui/pages/ModelConfigPage.qml" line="1014"/>
+        <location filename="../src/ui/pages/ModelConfigPage.qml" line="988"/>
         <source>列表还是空的：模型名不再自动预填，在下方输入一个名字回车或点「添加」即可。</source>
         <translation>The list is still empty: model names are no longer prefilled. Type a name below and press Enter, or click &quot;Add&quot;.</translation>
     </message>
     <message>
-        <location filename="../src/ui/pages/ModelConfigPage.qml" line="1127"/>
         <source>自定义预算，留空 = 自动</source>
-        <translation>Custom budget, blank = automatic</translation>
+        <translation type="vanished">Custom budget, blank = automatic</translation>
     </message>
     <message>
-        <location filename="../src/ui/pages/ModelConfigPage.qml" line="1212"/>
+        <location filename="../src/ui/pages/ModelConfigPage.qml" line="1059"/>
         <source>厂商配置会带上默认地址，模型名一律留空由你自己填——预填的官方模型列表未必是你实际调用的那个。</source>
         <translation>A vendor config comes with a default address; the model name is left blank for you to fill in - the preset official model list may not be the one you actually call.</translation>
     </message>
@@ -5712,7 +5700,7 @@ Add a SKILL.md under the project&apos;s .nexusai/skills or the user skills direc
         <translation type="vanished">+ Add</translation>
     </message>
     <message>
-        <location filename="../src/ui/pages/ModelConfigPage.qml" line="612"/>
+        <location filename="../src/ui/pages/ModelConfigPage.qml" line="586"/>
         <source>显示名称</source>
         <translation>Display Name</translation>
     </message>
@@ -5725,18 +5713,18 @@ Add a SKILL.md under the project&apos;s .nexusai/skills or the user skills direc
         <translation type="vanished">One profile per service. The vendor sets the defaults; the API protocol sets the wire format.</translation>
     </message>
     <message>
-        <location filename="../src/ui/pages/ModelConfigPage.qml" line="461"/>
-        <location filename="../src/ui/pages/ModelConfigPage.qml" line="1189"/>
+        <location filename="../src/ui/pages/ModelConfigPage.qml" line="435"/>
+        <location filename="../src/ui/pages/ModelConfigPage.qml" line="1036"/>
         <source>新建模型配置</source>
         <translation>New Model Profile</translation>
     </message>
     <message>
-        <location filename="../src/ui/pages/ModelConfigPage.qml" line="466"/>
+        <location filename="../src/ui/pages/ModelConfigPage.qml" line="440"/>
         <source>+ 新建</source>
         <translation>+ New</translation>
     </message>
     <message>
-        <location filename="../src/ui/pages/ModelConfigPage.qml" line="613"/>
+        <location filename="../src/ui/pages/ModelConfigPage.qml" line="587"/>
         <source>例如：工作用 GPT、本地 qwen…</source>
         <translation>e.g. Work GPT, local qwen…</translation>
     </message>
@@ -5765,43 +5753,41 @@ Add a SKILL.md under the project&apos;s .nexusai/skills or the user skills direc
         <translation>Custom Gateway</translation>
     </message>
     <message>
-        <location filename="../src/ui/pages/ModelConfigPage.qml" line="164"/>
         <source>模型覆盖</source>
-        <translation>Model override</translation>
+        <translation type="vanished">Model override</translation>
     </message>
     <message>
-        <location filename="../src/ui/pages/ModelConfigPage.qml" line="165"/>
         <source>默认（所有模型）</source>
-        <translation>Default (all models)</translation>
+        <translation type="vanished">Default (all models)</translation>
     </message>
     <message>
-        <location filename="../src/ui/pages/ModelConfigPage.qml" line="280"/>
+        <location filename="../src/ui/pages/ModelConfigPage.qml" line="254"/>
         <source>共 %1 个模型，全部已在列表中。</source>
         <translation>%1 models in total, all already in the list.</translation>
     </message>
     <message>
-        <location filename="../src/ui/pages/ModelConfigPage.qml" line="284"/>
+        <location filename="../src/ui/pages/ModelConfigPage.qml" line="258"/>
         <source>共 %1 个模型，其中 %2 个是新的。</source>
         <translation>%1 models in total, %2 are new.</translation>
     </message>
     <message>
-        <location filename="../src/ui/pages/ModelConfigPage.qml" line="607"/>
+        <location filename="../src/ui/pages/ModelConfigPage.qml" line="581"/>
         <source>配置来源</source>
         <translation>Profile Source</translation>
     </message>
     <message>
-        <location filename="../src/ui/pages/ModelConfigPage.qml" line="654"/>
+        <location filename="../src/ui/pages/ModelConfigPage.qml" line="628"/>
         <source>接口协议</source>
         <translation>API Protocol</translation>
     </message>
     <message>
-        <location filename="../src/ui/pages/ModelConfigPage.qml" line="138"/>
-        <location filename="../src/ui/pages/ModelConfigPage.qml" line="710"/>
+        <location filename="../src/ui/pages/ModelConfigPage.qml" line="136"/>
+        <location filename="../src/ui/pages/ModelConfigPage.qml" line="684"/>
         <source>服务地址</source>
         <translation>Base URL</translation>
     </message>
     <message>
-        <location filename="../src/ui/pages/ModelConfigPage.qml" line="719"/>
+        <location filename="../src/ui/pages/ModelConfigPage.qml" line="693"/>
         <source>API Key</source>
         <translation>API Key</translation>
     </message>
@@ -5814,7 +5800,7 @@ Add a SKILL.md under the project&apos;s .nexusai/skills or the user skills direc
         <translation type="vanished">Base URL</translation>
     </message>
     <message>
-        <location filename="../src/ui/pages/ModelConfigPage.qml" line="807"/>
+        <location filename="../src/ui/pages/ModelConfigPage.qml" line="781"/>
         <source>当前模型</source>
         <translation>Current Model</translation>
     </message>
@@ -5823,17 +5809,17 @@ Add a SKILL.md under the project&apos;s .nexusai/skills or the user skills direc
         <translation type="vanished">Model List</translation>
     </message>
     <message>
-        <location filename="../src/ui/pages/ModelConfigPage.qml" line="891"/>
+        <location filename="../src/ui/pages/ModelConfigPage.qml" line="865"/>
         <source>%1K</source>
         <translation>%1K</translation>
     </message>
     <message>
-        <location filename="../src/ui/pages/ModelConfigPage.qml" line="892"/>
+        <location filename="../src/ui/pages/ModelConfigPage.qml" line="866"/>
         <source>未知</source>
         <translation>Unknown</translation>
     </message>
     <message>
-        <location filename="../src/ui/pages/ModelConfigPage.qml" line="939"/>
+        <location filename="../src/ui/pages/ModelConfigPage.qml" line="913"/>
         <source>添加模型…</source>
         <translation>Add model…</translation>
     </message>
@@ -5850,12 +5836,11 @@ Add a SKILL.md under the project&apos;s .nexusai/skills or the user skills direc
         <translation type="vanished">Empty = not sent</translation>
     </message>
     <message>
-        <location filename="../src/ui/pages/ModelConfigPage.qml" line="1056"/>
         <source>最大输出 tokens</source>
-        <translation>Max Output Tokens</translation>
+        <translation type="vanished">Max Output Tokens</translation>
     </message>
     <message>
-        <location filename="../src/ui/pages/ModelConfigPage.qml" line="641"/>
+        <location filename="../src/ui/pages/ModelConfigPage.qml" line="615"/>
         <source>自定义不预填服务地址与模型名，也不带入厂商预设模型；请求仍按 OpenAI Chat Completions 报文发出。</source>
         <translation>A custom profile pre-fills neither the base URL nor the model name, and brings in no vendor presets. Requests still use the OpenAI Chat Completions wire format.</translation>
     </message>
@@ -5864,22 +5849,22 @@ Add a SKILL.md under the project&apos;s .nexusai/skills or the user skills direc
         <translation type="vanished">One profile maps to one usable service: the vendor decides the default address, the API protocol decides the message format, and the model is yours to fill in.</translation>
     </message>
     <message>
-        <location filename="../src/ui/pages/ModelConfigPage.qml" line="684"/>
+        <location filename="../src/ui/pages/ModelConfigPage.qml" line="658"/>
         <source>Responses 需要端点显式实现 /responses；多数「OpenAI 兼容」网关只提供 Chat Completions。</source>
         <translation>Responses requires the endpoint to implement /responses; most OpenAI-compatible gateways only offer Chat Completions.</translation>
     </message>
     <message>
-        <location filename="../src/ui/pages/ModelConfigPage.qml" line="697"/>
+        <location filename="../src/ui/pages/ModelConfigPage.qml" line="671"/>
         <source>服务连接</source>
         <translation>Connection</translation>
     </message>
     <message>
-        <location filename="../src/ui/pages/ModelConfigPage.qml" line="703"/>
+        <location filename="../src/ui/pages/ModelConfigPage.qml" line="677"/>
         <source>本地服务不需要 API Key；地址指向 Ollama 的 host:port。</source>
         <translation>Local services need no API key; the address points at Ollama&apos;s host:port.</translation>
     </message>
     <message>
-        <location filename="../src/ui/pages/ModelConfigPage.qml" line="705"/>
+        <location filename="../src/ui/pages/ModelConfigPage.qml" line="679"/>
         <source>API Key 保存时按当前用户加密（Windows DPAPI）。</source>
         <translation>The API key is encrypted per user when stored (Windows DPAPI).</translation>
     </message>
@@ -5888,32 +5873,32 @@ Add a SKILL.md under the project&apos;s .nexusai/skills or the user skills direc
         <translation type="vanished">Key filled in; stored encrypted.</translation>
     </message>
     <message>
-        <location filename="../src/ui/pages/ModelConfigPage.qml" line="737"/>
+        <location filename="../src/ui/pages/ModelConfigPage.qml" line="711"/>
         <source>密钥为空：请求前会先读环境变量 %1。</source>
         <translation>No key set: %1 from the environment is read before the request.</translation>
     </message>
     <message>
-        <location filename="../src/ui/pages/ModelConfigPage.qml" line="769"/>
+        <location filename="../src/ui/pages/ModelConfigPage.qml" line="743"/>
         <source>测试用模型</source>
         <translation>Test model</translation>
     </message>
     <message>
-        <location filename="../src/ui/pages/ModelConfigPage.qml" line="781"/>
+        <location filename="../src/ui/pages/ModelConfigPage.qml" line="755"/>
         <source>测试用模型只影响本次请求，不会改写当前模型。</source>
         <translation>The test model only affects this request; it does not change the current model.</translation>
     </message>
     <message>
-        <location filename="../src/ui/pages/ModelConfigPage.qml" line="782"/>
+        <location filename="../src/ui/pages/ModelConfigPage.qml" line="756"/>
         <source>模型列表为空，没东西可测：先在上方「模型」卡片里添加一个模型名。</source>
         <translation>The model list is empty, nothing to test: add a model name in the &quot;Model&quot; card above first.</translation>
     </message>
     <message>
-        <location filename="../src/ui/pages/ModelConfigPage.qml" line="792"/>
+        <location filename="../src/ui/pages/ModelConfigPage.qml" line="766"/>
         <source>正在连接（最多等 20 秒）…</source>
         <translation>Connecting (waits up to 20 s)…</translation>
     </message>
     <message>
-        <location filename="../src/ui/pages/ModelConfigPage.qml" line="802"/>
+        <location filename="../src/ui/pages/ModelConfigPage.qml" line="776"/>
         <source>模型</source>
         <translation>Models</translation>
     </message>
@@ -5922,17 +5907,17 @@ Add a SKILL.md under the project&apos;s .nexusai/skills or the user skills direc
         <translation type="vanished">These models also appear in the chat model picker. Click a chip to make it current; × removes it.</translation>
     </message>
     <message>
-        <location filename="../src/ui/pages/ModelConfigPage.qml" line="842"/>
+        <location filename="../src/ui/pages/ModelConfigPage.qml" line="816"/>
         <source>设为当前模型 %1</source>
         <translation>Set as current model %1</translation>
     </message>
     <message>
-        <location filename="../src/ui/pages/ModelConfigPage.qml" line="939"/>
+        <location filename="../src/ui/pages/ModelConfigPage.qml" line="913"/>
         <source>添加网关模型名…</source>
         <translation>Add gateway model name…</translation>
     </message>
     <message>
-        <location filename="../src/ui/pages/ModelConfigPage.qml" line="953"/>
+        <location filename="../src/ui/pages/ModelConfigPage.qml" line="927"/>
         <source>添加模型到列表</source>
         <translation>Add model to list</translation>
     </message>
@@ -5953,23 +5938,20 @@ Add a SKILL.md under the project&apos;s .nexusai/skills or the user skills direc
         <translation type="vanished">Blank = service default; the field is not sent.</translation>
     </message>
     <message>
-        <location filename="../src/ui/pages/ModelConfigPage.qml" line="1048"/>
         <source>0 - 2，留空不发送</source>
-        <translation>0 - 2, blank to omit</translation>
+        <translation type="vanished">0 - 2, blank to omit</translation>
     </message>
     <message>
         <source>留空 = 服务默认</source>
         <translation type="vanished">Empty = service default</translation>
     </message>
     <message>
-        <location filename="../src/ui/pages/ModelConfigPage.qml" line="1071"/>
         <source>Ollama 的上下文窗口就是 num_ctx</source>
-        <translation>For Ollama the context window is num_ctx</translation>
+        <translation type="vanished">For Ollama the context window is num_ctx</translation>
     </message>
     <message>
-        <location filename="../src/ui/pages/ModelConfigPage.qml" line="1082"/>
         <source>自定义窗口，留空 = 不发送</source>
-        <translation>Custom window, blank = do not send</translation>
+        <translation type="vanished">Custom window, blank = do not send</translation>
     </message>
     <message>
         <source>思考与上下文</source>
@@ -5980,9 +5962,8 @@ Add a SKILL.md under the project&apos;s .nexusai/skills or the user skills direc
         <translation type="vanished">Effort is stored on this profile; the shortcut selector by the chat input reads and writes the active profile.</translation>
     </message>
     <message>
-        <location filename="../src/ui/pages/ModelConfigPage.qml" line="1109"/>
         <source>OpenAI 兼容按档位发送 reasoning_effort；Claude 折算为思考预算（输出上限要留得住预算，否则自动退回不思考）；Ollama 只有开/关，低中高均按开处理。</source>
-        <translation>OpenAI sends reasoning_effort per level; Claude converts it into a thinking budget (the output limit must leave room for it, otherwise thinking is dropped); Ollama is on/off only, so low, medium and high all mean on.</translation>
+        <translation type="vanished">OpenAI sends reasoning_effort per level; Claude converts it into a thinking budget (the output limit must leave room for it, otherwise thinking is dropped); Ollama is on/off only, so low, medium and high all mean on.</translation>
     </message>
     <message>
         <source>上下文预算覆盖</source>
@@ -5993,22 +5974,19 @@ Add a SKILL.md under the project&apos;s .nexusai/skills or the user skills direc
         <translation type="vanished">Blank = follow the model capability table</translation>
     </message>
     <message>
-        <location filename="../src/ui/pages/ModelConfigPage.qml" line="1136"/>
         <source>当前生效 %1 tokens（来源：%2）</source>
-        <translation>Effective budget: %1 tokens (source: %2)</translation>
+        <translation type="vanished">Effective budget: %1 tokens (source: %2)</translation>
     </message>
     <message>
-        <location filename="../src/ui/pages/ModelConfigPage.qml" line="1138"/>
         <source>当前生效 %1 tokens（来源：全局默认，能力表里没有这个模型）</source>
-        <translation>Effective budget: %1 tokens (global default; the capability table has no entry for this model)</translation>
+        <translation type="vanished">Effective budget: %1 tokens (global default; the capability table has no entry for this model)</translation>
     </message>
     <message>
-        <location filename="../src/ui/pages/ModelConfigPage.qml" line="1153"/>
         <source>最大输出 %1 已不小于上下文窗口 %2，请求可能被服务端拒绝。</source>
-        <translation>Max output %1 is not below the context window %2; the server may reject the request.</translation>
+        <translation type="vanished">Max output %1 is not below the context window %2; the server may reject the request.</translation>
     </message>
     <message>
-        <location filename="../src/ui/pages/ModelConfigPage.qml" line="553"/>
+        <location filename="../src/ui/pages/ModelConfigPage.qml" line="527"/>
         <source>还没有模型配置</source>
         <translation>No model profile yet</translation>
     </message>
@@ -6041,9 +6019,8 @@ Add a SKILL.md under the project&apos;s .nexusai/skills or the user skills direc
         <translation type="vanished">Thinking effort (Default = no thinking parameter is sent)</translation>
     </message>
     <message>
-        <location filename="../src/ui/pages/ModelConfigPage.qml" line="1103"/>
         <source>默认</source>
-        <translation>Default</translation>
+        <translation type="vanished">Default</translation>
     </message>
     <message>
         <location filename="../src/ui/pages/ModelConfigPage.qml" line="83"/>
@@ -6078,18 +6055,18 @@ Add a SKILL.md under the project&apos;s .nexusai/skills or the user skills direc
         <translation type="vanished">Empty = auto</translation>
     </message>
     <message>
-        <location filename="../src/ui/pages/ModelConfigPage.qml" line="492"/>
+        <location filename="../src/ui/pages/ModelConfigPage.qml" line="466"/>
         <source>✓ 使用中</source>
         <translation>✓ In Use</translation>
     </message>
     <message>
-        <location filename="../src/ui/pages/ModelConfigPage.qml" line="492"/>
+        <location filename="../src/ui/pages/ModelConfigPage.qml" line="466"/>
         <source>启用此配置</source>
         <translation>Enable This Profile</translation>
     </message>
     <message>
-        <location filename="../src/ui/pages/ModelConfigPage.qml" line="515"/>
-        <location filename="../src/ui/pages/ModelConfigPage.qml" line="1272"/>
+        <location filename="../src/ui/pages/ModelConfigPage.qml" line="489"/>
+        <location filename="../src/ui/pages/ModelConfigPage.qml" line="1119"/>
         <source>删除</source>
         <translation>Delete</translation>
     </message>
@@ -6102,7 +6079,7 @@ Add a SKILL.md under the project&apos;s .nexusai/skills or the user skills direc
         <translation type="vanished">Testing…</translation>
     </message>
     <message>
-        <location filename="../src/ui/pages/ModelConfigPage.qml" line="749"/>
+        <location filename="../src/ui/pages/ModelConfigPage.qml" line="723"/>
         <source>测试连接</source>
         <translation>Test Connection</translation>
     </message>
@@ -6115,269 +6092,292 @@ Add a SKILL.md under the project&apos;s .nexusai/skills or the user skills direc
         <translation>%1 · %2 overrides</translation>
     </message>
     <message>
-        <location filename="../src/ui/components/ModelParamEditor.qml" line="105"/>
+        <location filename="../src/ui/components/ModelParamEditor.qml" line="100"/>
         <source>模型覆盖</source>
         <translation>Model override</translation>
     </message>
     <message>
-        <location filename="../src/ui/components/ModelParamEditor.qml" line="106"/>
         <source>默认（所有模型）</source>
-        <translation>Default (all models)</translation>
+        <translation type="vanished">Default (all models)</translation>
     </message>
     <message>
-        <location filename="../src/ui/components/ModelParamEditor.qml" line="107"/>
+        <location filename="../src/ui/components/ModelParamEditor.qml" line="101"/>
         <source>模型能力表</source>
         <translation>Model capability table</translation>
     </message>
     <message>
-        <location filename="../src/ui/components/ModelParamEditor.qml" line="107"/>
+        <location filename="../src/ui/components/ModelParamEditor.qml" line="101"/>
         <source>全局默认</source>
         <translation>Global default</translation>
     </message>
     <message>
-        <location filename="../src/ui/components/ModelParamEditor.qml" line="209"/>
+        <location filename="../src/ui/components/ModelParamEditor.qml" line="196"/>
         <source>按模型参数</source>
         <translation>Per-Model Parameters</translation>
     </message>
     <message>
-        <location filename="../src/ui/components/ModelParamEditor.qml" line="262"/>
+        <location filename="../src/ui/components/ModelParamEditor.qml" line="249"/>
         <source>选择要编辑的模型</source>
         <translation>Select the model to edit</translation>
     </message>
     <message>
-        <location filename="../src/ui/components/ModelParamEditor.qml" line="272"/>
+        <location filename="../src/ui/components/ModelParamEditor.qml" line="259"/>
         <source>当前 %1 项覆盖</source>
         <translation>%1 overrides in effect</translation>
     </message>
     <message>
-        <location filename="../src/ui/components/ModelParamEditor.qml" line="292"/>
+        <location filename="../src/ui/components/ModelParamEditor.qml" line="279"/>
         <source>先在上方添加至少一个模型，才能为单个模型单独配置参数。</source>
         <translation>Add at least one model above before configuring per-model parameters.</translation>
     </message>
     <message>
-        <location filename="../src/ui/components/ModelParamEditor.qml" line="310"/>
+        <location filename="../src/ui/components/ModelParamEditor.qml" line="297"/>
         <source>temperature（已覆盖）</source>
         <translation>temperature (overridden)</translation>
     </message>
     <message>
-        <location filename="../src/ui/components/ModelParamEditor.qml" line="310"/>
+        <location filename="../src/ui/components/ModelParamEditor.qml" line="297"/>
         <source>temperature</source>
         <translation>temperature</translation>
     </message>
     <message>
-        <location filename="../src/ui/components/ModelParamEditor.qml" line="311"/>
         <source>0 - 2，留空 = 跟随默认</source>
-        <translation>0 - 2, blank = follow default</translation>
+        <translation type="vanished">0 - 2, blank = follow default</translation>
     </message>
     <message>
-        <location filename="../src/ui/components/ModelParamEditor.qml" line="322"/>
-        <location filename="../src/ui/components/ModelParamEditor.qml" line="348"/>
-        <location filename="../src/ui/components/ModelParamEditor.qml" line="379"/>
         <source>留空 = 跟随默认（当前 %1）</source>
-        <translation>Blank = follow default (currently %1)</translation>
+        <translation type="vanished">Blank = follow default (currently %1)</translation>
     </message>
     <message>
-        <location filename="../src/ui/components/ModelParamEditor.qml" line="324"/>
         <source>留空 = 服务默认（不发送）</source>
-        <translation>Blank = service default (not sent)</translation>
+        <translation type="vanished">Blank = service default (not sent)</translation>
     </message>
     <message>
-        <location filename="../src/ui/components/ModelParamEditor.qml" line="335"/>
+        <location filename="../src/ui/components/ModelParamEditor.qml" line="320"/>
         <source>最大输出 tokens（已覆盖）</source>
         <translation>Max output tokens (overridden)</translation>
     </message>
     <message>
-        <location filename="../src/ui/components/ModelParamEditor.qml" line="335"/>
+        <location filename="../src/ui/components/ModelParamEditor.qml" line="320"/>
         <source>最大输出 tokens</source>
         <translation>Max output tokens</translation>
     </message>
     <message>
-        <location filename="../src/ui/components/ModelParamEditor.qml" line="338"/>
-        <location filename="../src/ui/components/ModelParamEditor.qml" line="369"/>
-        <location filename="../src/ui/components/ModelParamEditor.qml" line="398"/>
-        <location filename="../src/ui/components/ModelParamEditor.qml" line="421"/>
         <source>跟随默认</source>
-        <translation>Follow default</translation>
+        <translation type="vanished">Follow default</translation>
     </message>
     <message>
-        <location filename="../src/ui/components/ModelParamEditor.qml" line="339"/>
+        <location filename="../src/ui/components/ModelParamEditor.qml" line="324"/>
         <source>自定义上限，留空 = 服务默认</source>
         <translation>Custom limit, blank = service default</translation>
     </message>
     <message>
-        <location filename="../src/ui/components/ModelParamEditor.qml" line="350"/>
         <source>留空 = 服务默认</source>
-        <translation>Blank = service default</translation>
+        <translation type="vanished">Blank = service default</translation>
     </message>
     <message>
-        <location filename="../src/ui/components/ModelParamEditor.qml" line="366"/>
+        <location filename="../src/ui/components/ModelParamEditor.qml" line="348"/>
         <source>num_ctx（已覆盖）</source>
         <translation>num_ctx (overridden)</translation>
     </message>
     <message>
-        <location filename="../src/ui/components/ModelParamEditor.qml" line="366"/>
+        <location filename="../src/ui/components/ModelParamEditor.qml" line="348"/>
         <source>num_ctx</source>
         <translation>num_ctx</translation>
     </message>
     <message>
-        <location filename="../src/ui/components/ModelParamEditor.qml" line="370"/>
+        <location filename="../src/ui/components/ModelParamEditor.qml" line="352"/>
         <source>自定义窗口，留空 = 不发送</source>
         <translation>Custom window, blank = not sent</translation>
     </message>
     <message>
-        <location filename="../src/ui/components/ModelParamEditor.qml" line="381"/>
         <source>留空 = 不发送</source>
-        <translation>Blank = not sent</translation>
+        <translation type="vanished">Blank = not sent</translation>
     </message>
     <message>
-        <location filename="../src/ui/components/ModelParamEditor.qml" line="393"/>
+        <location filename="../src/ui/components/ModelParamEditor.qml" line="372"/>
         <source>思考强度（已覆盖）</source>
         <translation>Reasoning effort (overridden)</translation>
     </message>
     <message>
-        <location filename="../src/ui/components/ModelParamEditor.qml" line="393"/>
+        <location filename="../src/ui/components/ModelParamEditor.qml" line="372"/>
         <source>思考强度</source>
         <translation>Reasoning effort</translation>
     </message>
     <message>
-        <location filename="../src/ui/components/ModelParamEditor.qml" line="405"/>
         <source>跟随默认（当前 %1）</source>
-        <translation>Follow default (currently %1)</translation>
+        <translation type="vanished">Follow default (currently %1)</translation>
     </message>
     <message>
-        <location filename="../src/ui/components/ModelParamEditor.qml" line="407"/>
         <source>跟随默认（不发送）</source>
-        <translation>Follow default (not sent)</translation>
+        <translation type="vanished">Follow default (not sent)</translation>
     </message>
     <message>
-        <location filename="../src/ui/components/ModelParamEditor.qml" line="418"/>
+        <location filename="../src/ui/components/ModelParamEditor.qml" line="298"/>
+        <source>0 - 2，留空 = 不发送</source>
+        <translation>0 - 2, empty = not sent</translation>
+    </message>
+    <message>
+        <location filename="../src/ui/components/ModelParamEditor.qml" line="309"/>
+        <source>留空 = 使用服务的默认值（不发送该参数）</source>
+        <translation>Empty = use the service default (the parameter is not sent)</translation>
+    </message>
+    <message>
+        <location filename="../src/ui/components/ModelParamEditor.qml" line="323"/>
+        <location filename="../src/ui/components/ModelParamEditor.qml" line="351"/>
+        <location filename="../src/ui/components/ModelParamEditor.qml" line="377"/>
+        <location filename="../src/ui/components/ModelParamEditor.qml" line="397"/>
+        <source>不设置</source>
+        <translation>Not set</translation>
+    </message>
+    <message>
+        <location filename="../src/ui/components/ModelParamEditor.qml" line="332"/>
+        <source>留空 = 使用服务的默认上限（不发送该参数）</source>
+        <translation>Empty = use the service&apos;s default limit (the parameter is not sent)</translation>
+    </message>
+    <message>
+        <location filename="../src/ui/components/ModelParamEditor.qml" line="360"/>
+        <source>留空 = 不发送 num_ctx，由 Ollama 按模型自带窗口决定</source>
+        <translation>Empty = num_ctx is not sent; Ollama uses the model&apos;s built-in window</translation>
+    </message>
+    <message>
+        <location filename="../src/ui/components/ModelParamEditor.qml" line="383"/>
+        <source>留空 = 不发送思考参数，由模型的默认行为决定</source>
+        <translation>Empty = no reasoning parameter is sent; the model decides</translation>
+    </message>
+    <message>
+        <location filename="../src/ui/components/ModelParamEditor.qml" line="394"/>
         <source>上下文预算（已覆盖）</source>
         <translation>Context budget (overridden)</translation>
     </message>
     <message>
-        <location filename="../src/ui/components/ModelParamEditor.qml" line="418"/>
+        <location filename="../src/ui/components/ModelParamEditor.qml" line="394"/>
         <source>上下文预算</source>
         <translation>Context budget</translation>
     </message>
     <message>
-        <location filename="../src/ui/components/ModelParamEditor.qml" line="422"/>
+        <location filename="../src/ui/components/ModelParamEditor.qml" line="398"/>
         <source>自定义预算，留空 = 自动</source>
         <translation>Custom budget, blank = automatic</translation>
     </message>
     <message>
-        <location filename="../src/ui/components/ModelParamEditor.qml" line="433"/>
+        <location filename="../src/ui/components/ModelParamEditor.qml" line="409"/>
         <source>当前生效 %1 tokens（来源：%2）</source>
         <translation>Currently effective %1 tokens (source: %2)</translation>
     </message>
     <message>
-        <location filename="../src/ui/components/ModelParamEditor.qml" line="435"/>
+        <location filename="../src/ui/components/ModelParamEditor.qml" line="411"/>
         <source>当前生效 %1 tokens（来源：全局默认，能力表里没有这个模型）</source>
         <translation>Currently effective %1 tokens (source: global default; the model is not in the capability table)</translation>
     </message>
     <message>
-        <location filename="../src/ui/components/ModelParamEditor.qml" line="452"/>
+        <location filename="../src/ui/components/ModelParamEditor.qml" line="428"/>
         <source>视觉（图像输入）（已覆盖）</source>
         <translation>Vision (image input) (overridden)</translation>
     </message>
     <message>
-        <location filename="../src/ui/components/ModelParamEditor.qml" line="452"/>
+        <location filename="../src/ui/components/ModelParamEditor.qml" line="428"/>
         <source>视觉（图像输入）</source>
         <translation>Vision (image input)</translation>
     </message>
     <message>
-        <location filename="../src/ui/components/ModelParamEditor.qml" line="454"/>
-        <location filename="../src/ui/components/ModelParamEditor.qml" line="488"/>
+        <location filename="../src/ui/components/ModelParamEditor.qml" line="430"/>
+        <location filename="../src/ui/components/ModelParamEditor.qml" line="464"/>
         <source>支持</source>
         <translation>Supported</translation>
     </message>
     <message>
-        <location filename="../src/ui/components/ModelParamEditor.qml" line="455"/>
-        <location filename="../src/ui/components/ModelParamEditor.qml" line="489"/>
+        <location filename="../src/ui/components/ModelParamEditor.qml" line="431"/>
+        <location filename="../src/ui/components/ModelParamEditor.qml" line="465"/>
         <source>不支持</source>
         <translation>Not supported</translation>
     </message>
     <message>
-        <location filename="../src/ui/components/ModelParamEditor.qml" line="460"/>
+        <location filename="../src/ui/components/ModelParamEditor.qml" line="436"/>
         <source>跟随能力表</source>
         <translation>Follow capability table</translation>
     </message>
     <message>
-        <location filename="../src/ui/components/ModelParamEditor.qml" line="469"/>
+        <location filename="../src/ui/components/ModelParamEditor.qml" line="445"/>
         <source>已标注为视觉模型：选择器徽章显示「视觉」。</source>
         <translation>Marked as a vision model: the selector badge shows &quot;Vision&quot;.</translation>
     </message>
     <message>
-        <location filename="../src/ui/components/ModelParamEditor.qml" line="471"/>
+        <location filename="../src/ui/components/ModelParamEditor.qml" line="447"/>
         <source>已标注为不支持：选择器徽章不显示「视觉」。</source>
         <translation>Marked as unsupported: the selector badge hides &quot;Vision&quot;.</translation>
     </message>
     <message>
-        <location filename="../src/ui/components/ModelParamEditor.qml" line="473"/>
+        <location filename="../src/ui/components/ModelParamEditor.qml" line="449"/>
         <source>跟随能力表：模型名已识别为视觉模型。</source>
         <translation>Follow capability table: the model name matches a known vision model.</translation>
     </message>
     <message>
-        <location filename="../src/ui/components/ModelParamEditor.qml" line="474"/>
+        <location filename="../src/ui/components/ModelParamEditor.qml" line="450"/>
         <source>跟随能力表：模型名未收录（自定义网关/新模型可在此手动标注）。</source>
         <translation>Follow capability table: model name not listed (custom gateways and new models can be labeled here).</translation>
     </message>
     <message>
-        <location filename="../src/ui/components/ModelParamEditor.qml" line="486"/>
+        <location filename="../src/ui/components/ModelParamEditor.qml" line="462"/>
         <source>工具调用（已覆盖）</source>
         <translation>Tool calling (overridden)</translation>
     </message>
     <message>
-        <location filename="../src/ui/components/ModelParamEditor.qml" line="486"/>
+        <location filename="../src/ui/components/ModelParamEditor.qml" line="462"/>
         <source>工具调用</source>
         <translation>Tool calling</translation>
     </message>
     <message>
-        <location filename="../src/ui/components/ModelParamEditor.qml" line="493"/>
+        <location filename="../src/ui/components/ModelParamEditor.qml" line="469"/>
         <source>跟随协议</source>
         <translation>Follow protocol</translation>
     </message>
     <message>
-        <location filename="../src/ui/components/ModelParamEditor.qml" line="502"/>
+        <location filename="../src/ui/components/ModelParamEditor.qml" line="478"/>
         <source>已标注为支持：选择器徽章显示「工具」。</source>
         <translation>Marked as supported: the selector badge shows &quot;Tools&quot;.</translation>
     </message>
     <message>
-        <location filename="../src/ui/components/ModelParamEditor.qml" line="504"/>
+        <location filename="../src/ui/components/ModelParamEditor.qml" line="480"/>
         <source>已标注为不支持：选择器徽章不显示「工具」。</source>
         <translation>Marked as unsupported: the selector badge hides &quot;Tools&quot;.</translation>
     </message>
     <message>
-        <location filename="../src/ui/components/ModelParamEditor.qml" line="506"/>
+        <location filename="../src/ui/components/ModelParamEditor.qml" line="482"/>
         <source>跟随协议：当前协议支持工具调用。</source>
         <translation>Follow protocol: the current protocol supports tool calling.</translation>
     </message>
     <message>
-        <location filename="../src/ui/components/ModelParamEditor.qml" line="507"/>
+        <location filename="../src/ui/components/ModelParamEditor.qml" line="483"/>
         <source>跟随协议：当前协议不支持工具调用。</source>
         <translation>Follow protocol: the current protocol does not support tool calling.</translation>
     </message>
     <message>
-        <location filename="../src/ui/components/ModelParamEditor.qml" line="526"/>
+        <location filename="../src/ui/components/ModelParamEditor.qml" line="502"/>
         <source>清除该模型全部覆盖</source>
         <translation>Clear all overrides for this model</translation>
     </message>
     <message>
-        <location filename="../src/ui/components/ModelParamEditor.qml" line="558"/>
+        <location filename="../src/ui/components/ModelParamEditor.qml" line="534"/>
         <source>清除按模型参数</source>
         <translation>Clear Per-Model Parameters</translation>
     </message>
     <message>
-        <location filename="../src/ui/components/ModelParamEditor.qml" line="570"/>
-        <source>将删除「%1」的全部 %2 项参数覆盖，该模型回退跟随默认，操作不可撤销。</source>
-        <translation>This deletes all %2 parameter overrides for “%1”; the model falls back to the defaults. This cannot be undone.</translation>
+        <location filename="../src/ui/components/ModelParamEditor.qml" line="546"/>
+        <source>将删除「%1」的全部 %2 项参数覆盖，该模型改用服务默认值，操作不可撤销。</source>
+        <translation>This deletes all %2 parameter overrides for &quot;%1&quot;; that model falls back to the service defaults. This cannot be undone.</translation>
     </message>
     <message>
-        <location filename="../src/ui/components/ModelParamEditor.qml" line="587"/>
+        <source>将删除「%1」的全部 %2 项参数覆盖，该模型回退跟随默认，操作不可撤销。</source>
+        <translation type="vanished">This deletes all %2 parameter overrides for “%1”; the model falls back to the defaults. This cannot be undone.</translation>
+    </message>
+    <message>
+        <location filename="../src/ui/components/ModelParamEditor.qml" line="563"/>
         <source>取消</source>
         <translation>Cancel</translation>
     </message>
     <message>
-        <location filename="../src/ui/components/ModelParamEditor.qml" line="593"/>
+        <location filename="../src/ui/components/ModelParamEditor.qml" line="569"/>
         <source>清除</source>
         <translation>Clear</translation>
     </message>
@@ -6405,57 +6405,57 @@ Add a SKILL.md under the project&apos;s .nexusai/skills or the user skills direc
         <translation>Tool calling limited</translation>
     </message>
     <message>
-        <location filename="../src/ui/components/ModelSelector.qml" line="143"/>
+        <location filename="../src/ui/components/ModelSelector.qml" line="168"/>
         <source>模型选择器</source>
         <translation>Model selector</translation>
     </message>
     <message>
-        <location filename="../src/ui/components/ModelSelector.qml" line="146"/>
+        <location filename="../src/ui/components/ModelSelector.qml" line="171"/>
         <source>未配置模型</source>
         <translation>No model configured</translation>
     </message>
     <message>
-        <location filename="../src/ui/components/ModelSelector.qml" line="182"/>
+        <location filename="../src/ui/components/ModelSelector.qml" line="207"/>
         <source>未配置模型 · 点击设置</source>
         <translation>No model configured · Click to set up</translation>
     </message>
     <message>
-        <location filename="../src/ui/components/ModelSelector.qml" line="185"/>
-        <location filename="../src/ui/components/ModelSelector.qml" line="427"/>
-        <location filename="../src/ui/components/ModelSelector.qml" line="460"/>
+        <location filename="../src/ui/components/ModelSelector.qml" line="210"/>
+        <location filename="../src/ui/components/ModelSelector.qml" line="452"/>
+        <location filename="../src/ui/components/ModelSelector.qml" line="485"/>
         <source>未指定模型</source>
         <translation>no model set</translation>
     </message>
     <message>
-        <location filename="../src/ui/components/ModelSelector.qml" line="251"/>
+        <location filename="../src/ui/components/ModelSelector.qml" line="276"/>
         <source>模型 · %1</source>
         <translation>Model · %1</translation>
     </message>
     <message>
-        <location filename="../src/ui/components/ModelSelector.qml" line="104"/>
-        <location filename="../src/ui/components/ModelSelector.qml" line="117"/>
+        <location filename="../src/ui/components/ModelSelector.qml" line="129"/>
+        <location filename="../src/ui/components/ModelSelector.qml" line="142"/>
         <source>视觉</source>
         <translation>Vision</translation>
     </message>
     <message>
-        <location filename="../src/ui/components/ModelSelector.qml" line="105"/>
-        <location filename="../src/ui/components/ModelSelector.qml" line="122"/>
+        <location filename="../src/ui/components/ModelSelector.qml" line="130"/>
+        <location filename="../src/ui/components/ModelSelector.qml" line="147"/>
         <source>工具</source>
         <translation>Tools</translation>
     </message>
     <message>
-        <location filename="../src/ui/components/ModelSelector.qml" line="353"/>
+        <location filename="../src/ui/components/ModelSelector.qml" line="378"/>
         <source>这条配置还没有可选模型：先在「管理模型配置…」里填写模型名。</source>
         <translation>This profile has no models yet - set a model name under Manage model profiles…</translation>
     </message>
     <message>
-        <location filename="../src/ui/components/ModelSelector.qml" line="372"/>
+        <location filename="../src/ui/components/ModelSelector.qml" line="397"/>
         <source>配置 · 共 %1 个</source>
         <translation>Profiles · %1 total</translation>
     </message>
     <message>
-        <location filename="../src/ui/components/ModelSelector.qml" line="510"/>
-        <location filename="../src/ui/components/ModelSelector.qml" line="530"/>
+        <location filename="../src/ui/components/ModelSelector.qml" line="535"/>
+        <location filename="../src/ui/components/ModelSelector.qml" line="555"/>
         <source>管理模型配置…</source>
         <translation>Manage Model Profiles…</translation>
     </message>
@@ -7353,7 +7353,7 @@ Add a SKILL.md under the project&apos;s .nexusai/skills or the user skills direc
     <message>
         <location filename="../src/viewmodels/AgentViewModel.cpp" line="3503"/>
         <source>已套用预设「%1」，覆盖全局系统提示词</source>
-        <translation>Preset "%1" applied — overrides the global system prompt</translation>
+        <translation>Preset &quot;%1&quot; applied — overrides the global system prompt</translation>
     </message>
     <message>
         <location filename="../src/viewmodels/AgentViewModel.cpp" line="3509"/>
@@ -8170,127 +8170,127 @@ Add a SKILL.md under the project&apos;s .nexusai/skills or the user skills direc
 <context>
     <name>NexusAI::SettingsService</name>
     <message>
-        <location filename="../src/viewmodels/SettingsService.cpp" line="519"/>
+        <location filename="../src/viewmodels/SettingsService.cpp" line="595"/>
         <source>设置未能保存，请检查存储权限或磁盘空间后重试。</source>
         <translation>Settings could not be saved. Check storage permissions or disk space and retry.</translation>
     </message>
     <message>
-        <location filename="../src/viewmodels/SettingsService.cpp" line="811"/>
+        <location filename="../src/viewmodels/SettingsService.cpp" line="890"/>
         <source>API 密钥加密失败，模型配置未保存。</source>
         <translation>API key encryption failed. Model configuration was not saved.</translation>
     </message>
     <message>
-        <location filename="../src/viewmodels/SettingsService.cpp" line="832"/>
+        <location filename="../src/viewmodels/SettingsService.cpp" line="911"/>
         <source>模型配置未能保存。请检查设置存储权限或磁盘空间后重试。</source>
         <translation>Model configuration could not be saved. Check storage permissions or disk space and retry.</translation>
     </message>
     <message>
-        <location filename="../src/viewmodels/SettingsService.cpp" line="1128"/>
+        <location filename="../src/viewmodels/SettingsService.cpp" line="1207"/>
         <source>自定义网关</source>
         <translation>Custom Gateway</translation>
     </message>
     <message>
-        <location filename="../src/viewmodels/SettingsService.cpp" line="1133"/>
+        <location filename="../src/viewmodels/SettingsService.cpp" line="1212"/>
         <source>新配置</source>
         <translation>New Profile</translation>
     </message>
     <message>
-        <location filename="../src/viewmodels/SettingsService.cpp" line="1303"/>
+        <location filename="../src/viewmodels/SettingsService.cpp" line="1382"/>
         <source>%1 副本</source>
         <translation>%1 copy</translation>
     </message>
     <message>
-        <location filename="../src/viewmodels/SettingsService.cpp" line="1458"/>
+        <location filename="../src/viewmodels/SettingsService.cpp" line="1537"/>
         <source>OpenAI 兼容</source>
         <translation>OpenAI Compatible</translation>
     </message>
     <message>
-        <location filename="../src/viewmodels/SettingsService.cpp" line="1459"/>
+        <location filename="../src/viewmodels/SettingsService.cpp" line="1538"/>
         <source>Ollama 本地</source>
         <translation>Ollama (Local)</translation>
     </message>
     <message>
-        <location filename="../src/viewmodels/SettingsService.cpp" line="1462"/>
+        <location filename="../src/viewmodels/SettingsService.cpp" line="1541"/>
         <source>Gemini</source>
         <translation>Gemini</translation>
     </message>
     <message>
-        <location filename="../src/viewmodels/SettingsService.cpp" line="1463"/>
+        <location filename="../src/viewmodels/SettingsService.cpp" line="1542"/>
         <source>Claude</source>
         <translation>Claude</translation>
     </message>
     <message>
-        <location filename="../src/viewmodels/SettingsService.cpp" line="1616"/>
+        <location filename="../src/viewmodels/SettingsService.cpp" line="1695"/>
         <source>向量模型 API 密钥加密失败，未保存更改。</source>
         <translation>Embedding API key encryption failed. Changes were not saved.</translation>
     </message>
     <message>
-        <location filename="../src/viewmodels/SettingsService.cpp" line="1743"/>
+        <location filename="../src/viewmodels/SettingsService.cpp" line="1822"/>
         <source>搜索 API 密钥加密失败，未保存更改。</source>
         <translation>Search API key encryption failed. Changes were not saved.</translation>
     </message>
     <message>
-        <location filename="../src/viewmodels/SettingsService.cpp" line="1772"/>
+        <location filename="../src/viewmodels/SettingsService.cpp" line="1851"/>
         <source>测试失败：未知的搜索服务 %1。</source>
         <translation>Test failed: unknown search provider %1.</translation>
     </message>
     <message>
-        <location filename="../src/viewmodels/SettingsService.cpp" line="1782"/>
+        <location filename="../src/viewmodels/SettingsService.cpp" line="1861"/>
         <source>测试失败：请先填写 %1 的 API Key。</source>
         <translation>Test failed: enter the API key for %1 first.</translation>
     </message>
     <message>
-        <location filename="../src/viewmodels/SettingsService.cpp" line="1790"/>
+        <location filename="../src/viewmodels/SettingsService.cpp" line="1869"/>
         <source>正在测试搜索连接…</source>
         <translation>Testing search connection…</translation>
     </message>
     <message>
-        <location filename="../src/viewmodels/SettingsService.cpp" line="1810"/>
+        <location filename="../src/viewmodels/SettingsService.cpp" line="1889"/>
         <source>%1 连接失败：%2</source>
         <translation>%1 connection failed: %2</translation>
     </message>
     <message>
-        <location filename="../src/viewmodels/SettingsService.cpp" line="1814"/>
+        <location filename="../src/viewmodels/SettingsService.cpp" line="1893"/>
         <source>%1 连接正常（返回 %2 条结果）。</source>
         <translation>%1 connection is working (%2 results returned).</translation>
     </message>
     <message>
-        <location filename="../src/viewmodels/SettingsService.cpp" line="1906"/>
+        <location filename="../src/viewmodels/SettingsService.cpp" line="1985"/>
         <source>代理认证信息加密失败，未保存更改。</source>
         <translation>Failed to encrypt proxy credentials; changes were not saved.</translation>
     </message>
     <message>
-        <location filename="../src/viewmodels/SettingsService.cpp" line="1971"/>
+        <location filename="../src/viewmodels/SettingsService.cpp" line="2050"/>
         <source>代理测试失败：测试地址无效。</source>
         <translation>Proxy test failed: invalid test URL.</translation>
     </message>
     <message>
-        <location filename="../src/viewmodels/SettingsService.cpp" line="1977"/>
+        <location filename="../src/viewmodels/SettingsService.cpp" line="2056"/>
         <source>代理测试失败：请先填写有效的代理地址和端口。</source>
         <translation>Proxy test failed: enter a valid proxy host and port first.</translation>
     </message>
     <message>
-        <location filename="../src/viewmodels/SettingsService.cpp" line="2002"/>
+        <location filename="../src/viewmodels/SettingsService.cpp" line="2081"/>
         <source>正在测试代理…</source>
         <translation>Testing proxy…</translation>
     </message>
     <message>
-        <location filename="../src/viewmodels/SettingsService.cpp" line="2027"/>
+        <location filename="../src/viewmodels/SettingsService.cpp" line="2106"/>
         <source>代理测试失败：%1</source>
         <translation>Proxy test failed: %1</translation>
     </message>
     <message>
-        <location filename="../src/viewmodels/SettingsService.cpp" line="2033"/>
+        <location filename="../src/viewmodels/SettingsService.cpp" line="2112"/>
         <source>代理测试失败：未收到任何 HTTP 响应。</source>
         <translation>Proxy test failed: no HTTP response received.</translation>
     </message>
     <message>
-        <location filename="../src/viewmodels/SettingsService.cpp" line="2036"/>
+        <location filename="../src/viewmodels/SettingsService.cpp" line="2115"/>
         <source>代理连接正常（HTTP %1）。</source>
         <translation>Proxy connection is working (HTTP %1).</translation>
     </message>
     <message>
-        <location filename="../src/viewmodels/SettingsService.cpp" line="2468"/>
+        <location filename="../src/viewmodels/SettingsService.cpp" line="2547"/>
         <source>无法更新开机自启动设置。</source>
         <translation>Failed to update the auto-start setting.</translation>
     </message>
@@ -8299,52 +8299,52 @@ Add a SKILL.md under the project&apos;s .nexusai/skills or the user skills direc
         <translation type="vanished">Could not update Windows startup settings.</translation>
     </message>
     <message>
-        <location filename="../src/viewmodels/SettingsService.cpp" line="868"/>
+        <location filename="../src/viewmodels/SettingsService.cpp" line="947"/>
         <source>技术评审</source>
         <translation>Rigorous code reviewer</translation>
     </message>
     <message>
-        <location filename="../src/viewmodels/SettingsService.cpp" line="869"/>
+        <location filename="../src/viewmodels/SettingsService.cpp" line="948"/>
         <source>你是一位严谨的技术评审。审查代码时只关注真实问题：正确性缺陷、边界条件、安全隐患、性能陷阱与可维护性风险。不写客套与表扬，按严重程度排序输出发现，每条给出位置与具体修改建议。没有问题时明确说&quot;未发现问题&quot;，不硬凑。</source>
         <translation>You are a rigorous code reviewer. Focus only on real problems: correctness defects, edge cases, security risks, performance traps and maintainability issues. No pleasantries or praise - report findings ordered by severity, each with a location and a concrete fix. When there is nothing to find, say so plainly instead of inventing issues.</translation>
     </message>
     <message>
-        <location filename="../src/viewmodels/SettingsService.cpp" line="872"/>
+        <location filename="../src/viewmodels/SettingsService.cpp" line="951"/>
         <source>资深架构师</source>
         <translation>Senior architect</translation>
     </message>
     <message>
-        <location filename="../src/viewmodels/SettingsService.cpp" line="873"/>
+        <location filename="../src/viewmodels/SettingsService.cpp" line="952"/>
         <source>你是一位资深软件架构师。面对需求先明确约束与取舍，再给方案：优先给出最小可行的解决路径，说明所选方案的代价与放弃的替代项。复杂设计先讲清结构再动手，始终警惕过度设计与过早优化。</source>
         <translation>You are a senior software architect. Clarify constraints and trade-offs before proposing anything: prefer the minimal viable path, and state what the chosen approach costs and which alternatives were rejected. For complex designs explain the structure before writing code; stay alert to over-engineering and premature optimization.</translation>
     </message>
     <message>
-        <location filename="../src/viewmodels/SettingsService.cpp" line="876"/>
+        <location filename="../src/viewmodels/SettingsService.cpp" line="955"/>
         <source>耐心导师</source>
         <translation>Patient mentor</translation>
     </message>
     <message>
-        <location filename="../src/viewmodels/SettingsService.cpp" line="877"/>
+        <location filename="../src/viewmodels/SettingsService.cpp" line="956"/>
         <source>你是一位耐心的技术导师，面向初学者解释问题。每次只引入一个新概念，用类比帮助理解，先讲&quot;为什么&quot;再讲&quot;怎么做&quot;。学生答错时不直接给答案，先给提示；确认理解后再继续下一步。</source>
         <translation>You are a patient technical mentor teaching beginners. Introduce one new concept at a time, use analogies, and always explain the &quot;why&quot; before the &quot;how&quot;. When the learner gets it wrong, offer a hint instead of the answer; confirm understanding before moving on.</translation>
     </message>
     <message>
-        <location filename="../src/viewmodels/SettingsService.cpp" line="880"/>
+        <location filename="../src/viewmodels/SettingsService.cpp" line="959"/>
         <source>简洁模式</source>
         <translation>Concise mode</translation>
     </message>
     <message>
-        <location filename="../src/viewmodels/SettingsService.cpp" line="881"/>
+        <location filename="../src/viewmodels/SettingsService.cpp" line="960"/>
         <source>用尽可能少的篇幅回答。优先给结论和关键依据，不写铺垫、总结与客套；能一句话说清的不用两句。需要展开时先给一句话版本，被追问再展开。</source>
         <translation>Answer in as few words as possible. Lead with the conclusion and the key evidence - no preamble, no summary, no pleasantries; if one sentence suffices, never use two. When detail is needed, give the one-line version first and expand only when asked.</translation>
     </message>
     <message>
-        <location filename="../src/viewmodels/SettingsService.cpp" line="896"/>
+        <location filename="../src/viewmodels/SettingsService.cpp" line="975"/>
         <source>审查代码或 diff</source>
         <translation>Review code or a diff</translation>
     </message>
     <message>
-        <location filename="../src/viewmodels/SettingsService.cpp" line="897"/>
+        <location filename="../src/viewmodels/SettingsService.cpp" line="976"/>
         <source>请审查以下代码，重点检查正确性问题、边界条件与潜在 bug，按严重程度排序；只给关键修改建议，不要重写全部：
 
 {text}</source>
@@ -8353,12 +8353,12 @@ Add a SKILL.md under the project&apos;s .nexusai/skills or the user skills direc
 {text}</translation>
     </message>
     <message>
-        <location filename="../src/viewmodels/SettingsService.cpp" line="899"/>
+        <location filename="../src/viewmodels/SettingsService.cpp" line="978"/>
         <source>解释代码</source>
         <translation>Explain code</translation>
     </message>
     <message>
-        <location filename="../src/viewmodels/SettingsService.cpp" line="900"/>
+        <location filename="../src/viewmodels/SettingsService.cpp" line="979"/>
         <source>请详细解释下面代码的作用与执行逻辑，包括关键分支、边界处理和可能的坑：
 
 {text}</source>
@@ -8367,12 +8367,12 @@ Add a SKILL.md under the project&apos;s .nexusai/skills or the user skills direc
 {text}</translation>
     </message>
     <message>
-        <location filename="../src/viewmodels/SettingsService.cpp" line="901"/>
+        <location filename="../src/viewmodels/SettingsService.cpp" line="980"/>
         <source>翻译成英文</source>
         <translation>Translate to English</translation>
     </message>
     <message>
-        <location filename="../src/viewmodels/SettingsService.cpp" line="902"/>
+        <location filename="../src/viewmodels/SettingsService.cpp" line="981"/>
         <source>将下面的内容翻译成英文，保持原意与语气；技术术语、专有名词与代码保持原文：
 
 {text}</source>
@@ -8381,12 +8381,12 @@ Add a SKILL.md under the project&apos;s .nexusai/skills or the user skills direc
 {text}</translation>
     </message>
     <message>
-        <location filename="../src/viewmodels/SettingsService.cpp" line="903"/>
+        <location filename="../src/viewmodels/SettingsService.cpp" line="982"/>
         <source>生成提交信息</source>
         <translation>Draft a commit message</translation>
     </message>
     <message>
-        <location filename="../src/viewmodels/SettingsService.cpp" line="904"/>
+        <location filename="../src/viewmodels/SettingsService.cpp" line="983"/>
         <source>为以下代码改动生成一条符合 Conventional Commits 规范的中文提交信息（格式：type(scope): subject，正文用要点列表说明动机与改动），只输出提交信息本身：
 
 {text}</source>
@@ -8395,32 +8395,32 @@ Add a SKILL.md under the project&apos;s .nexusai/skills or the user skills direc
 {text}</translation>
     </message>
     <message>
-        <location filename="../src/viewmodels/SettingsService.cpp" line="921"/>
+        <location filename="../src/viewmodels/SettingsService.cpp" line="1000"/>
         <source>代码审查</source>
         <translation>Code review</translation>
     </message>
     <message>
-        <location filename="../src/viewmodels/SettingsService.cpp" line="923"/>
+        <location filename="../src/viewmodels/SettingsService.cpp" line="1002"/>
         <source>请审查这个项目的近期改动：先看当前 git 状态与未提交的变更，再指出正确性、安全性与可维护性问题，按严重程度排序。</source>
         <translation>Review this project&apos;s recent changes: start with the current git status and uncommitted changes, then report correctness, security and maintainability issues ordered by severity.</translation>
     </message>
     <message>
-        <location filename="../src/viewmodels/SettingsService.cpp" line="925"/>
+        <location filename="../src/viewmodels/SettingsService.cpp" line="1004"/>
         <source>项目探索</source>
         <translation>Explore project</translation>
     </message>
     <message>
-        <location filename="../src/viewmodels/SettingsService.cpp" line="927"/>
+        <location filename="../src/viewmodels/SettingsService.cpp" line="1006"/>
         <source>我是第一次接触这个项目。请带我了解它：先浏览目录结构，然后介绍核心模块的职责、它们之间的数据流，以及从哪里开始读代码最合适。</source>
         <translation>I am new to this project. Walk me through it: first the directory layout, then what each core module is responsible for, how data flows between them, and where I should start reading.</translation>
     </message>
     <message>
-        <location filename="../src/viewmodels/SettingsService.cpp" line="929"/>
+        <location filename="../src/viewmodels/SettingsService.cpp" line="1008"/>
         <source>快速润色</source>
         <translation>Quick polish</translation>
     </message>
     <message>
-        <location filename="../src/viewmodels/SettingsService.cpp" line="931"/>
+        <location filename="../src/viewmodels/SettingsService.cpp" line="1010"/>
         <source>请润色我接下来粘贴的文字：保持原意不变，让它更清晰、专业、简洁，并保留我的语气。</source>
         <translation>Polish the text I am about to paste: keep the meaning unchanged while making it clearer, more professional and more concise, preserving my voice.</translation>
     </message>
@@ -8745,12 +8745,12 @@ Add a SKILL.md under the project&apos;s .nexusai/skills or the user skills direc
 <context>
     <name>PreferenceControl</name>
     <message>
-        <location filename="../src/ui/components/PreferenceControl.qml" line="76"/>
+        <location filename="../src/ui/components/PreferenceControl.qml" line="85"/>
         <source>恢复默认值</source>
         <translation>Restore default</translation>
     </message>
     <message>
-        <location filename="../src/ui/components/PreferenceControl.qml" line="80"/>
+        <location filename="../src/ui/components/PreferenceControl.qml" line="89"/>
         <source>将「%1」恢复为默认值</source>
         <translation>Restore “%1” to its default value</translation>
     </message>
@@ -9222,7 +9222,7 @@ Add a SKILL.md under the project&apos;s .nexusai/skills or the user skills direc
     <message>
         <location filename="../src/ui/pages/PromptAssetsPage.qml" line="160"/>
         <source>整段角色设定（如「严谨的技术评审」）。在输入框输入 / 从指令菜单套用到当前会话，选中即生效；覆盖全局系统提示词，删除预设不影响已套用的会话，「清除预设」指令回落。</source>
-        <translation>A full persona (e.g. "rigorous tech reviewer"). Type / in the input and pick it from the command menu to apply to the current session — effective on selection; overrides the global system prompt, and deleting a preset does not affect sessions already using it. The "Clear preset" command falls back to the global prompt.</translation>
+        <translation>A full persona (e.g. &quot;rigorous tech reviewer&quot;). Type / in the input and pick it from the command menu to apply to the current session — effective on selection; overrides the global system prompt, and deleting a preset does not affect sessions already using it. The &quot;Clear preset&quot; command falls back to the global prompt.</translation>
     </message>
     <message>
         <location filename="../src/ui/pages/PromptAssetsPage.qml" line="196"/>
@@ -9532,12 +9532,12 @@ Add a SKILL.md under the project&apos;s .nexusai/skills or the user skills direc
 <context>
     <name>QObject</name>
     <message>
-        <location filename="../src/main.cpp" line="1240"/>
+        <location filename="../src/main.cpp" line="1244"/>
         <source>显示/隐藏主窗</source>
         <translation>Show / hide main window</translation>
     </message>
     <message>
-        <location filename="../src/main.cpp" line="1241"/>
+        <location filename="../src/main.cpp" line="1245"/>
         <source>新建会话</source>
         <translation>New session</translation>
     </message>
@@ -9550,62 +9550,62 @@ Add a SKILL.md under the project&apos;s .nexusai/skills or the user skills direc
         <translation type="vanished">(No profiles yet)</translation>
     </message>
     <message>
-        <location filename="../src/main.cpp" line="1243"/>
+        <location filename="../src/main.cpp" line="1247"/>
         <source>退出</source>
         <translation>Quit</translation>
     </message>
     <message>
-        <location filename="../src/main.cpp" line="1331"/>
+        <location filename="../src/main.cpp" line="1335"/>
         <source>任务完成</source>
         <translation>Task finished</translation>
     </message>
     <message>
-        <location filename="../src/main.cpp" line="1331"/>
+        <location filename="../src/main.cpp" line="1335"/>
         <source>任务结束</source>
         <translation>Task ended</translation>
     </message>
     <message>
-        <location filename="../src/main.cpp" line="1332"/>
+        <location filename="../src/main.cpp" line="1336"/>
         <source>会话已回复</source>
         <translation>The session has replied</translation>
     </message>
     <message>
-        <location filename="../src/main.cpp" line="1360"/>
+        <location filename="../src/main.cpp" line="1364"/>
         <source>今日 Token</source>
         <translation>Today&apos;s tokens</translation>
     </message>
     <message>
-        <location filename="../src/main.cpp" line="1362"/>
+        <location filename="../src/main.cpp" line="1366"/>
         <source>今日费用</source>
         <translation>Today&apos;s cost</translation>
     </message>
     <message>
-        <location filename="../src/main.cpp" line="1364"/>
+        <location filename="../src/main.cpp" line="1368"/>
         <source>本月 Token</source>
         <translation>This month&apos;s tokens</translation>
     </message>
     <message>
-        <location filename="../src/main.cpp" line="1366"/>
+        <location filename="../src/main.cpp" line="1370"/>
         <source>本月费用</source>
         <translation>This month&apos;s cost</translation>
     </message>
     <message>
-        <location filename="../src/main.cpp" line="1370"/>
+        <location filename="../src/main.cpp" line="1374"/>
         <source>用量接近配额上限</source>
         <translation>Usage nearing quota</translation>
     </message>
     <message>
-        <location filename="../src/main.cpp" line="1371"/>
+        <location filename="../src/main.cpp" line="1375"/>
         <source>%1 已用 %2 / %3</source>
         <translation>%1: %2 of %3 used</translation>
     </message>
     <message>
-        <location filename="../src/main.cpp" line="1464"/>
+        <location filename="../src/main.cpp" line="1468"/>
         <source>自动备份失败</source>
         <translation>Automatic backup failed</translation>
     </message>
     <message>
-        <location filename="../src/main.cpp" line="1465"/>
+        <location filename="../src/main.cpp" line="1469"/>
         <source>无法写入数据库快照目录：%1</source>
         <translation>Could not write the database snapshot to: %1</translation>
     </message>
@@ -10426,12 +10426,12 @@ select a file to view its content diff on the right.</translation>
 <context>
     <name>SettingRow</name>
     <message>
-        <location filename="../src/ui/components/SettingRow.qml" line="99"/>
+        <location filename="../src/ui/components/SettingRow.qml" line="113"/>
         <source>恢复默认值</source>
         <translation>Restore default</translation>
     </message>
     <message>
-        <location filename="../src/ui/components/SettingRow.qml" line="103"/>
+        <location filename="../src/ui/components/SettingRow.qml" line="117"/>
         <source>将「%1」恢复为默认值</source>
         <translation>Restore “%1” to its default value</translation>
     </message>
@@ -12652,62 +12652,66 @@ select a file to view its content diff on the right.</translation>
 <context>
     <name>ThinkingEffortSelector</name>
     <message>
-        <location filename="../src/ui/components/ThinkingEffortSelector.qml" line="31"/>
+        <location filename="../src/ui/components/ThinkingEffortSelector.qml" line="73"/>
         <source>思考·默认</source>
         <translation>Thinking - Default</translation>
     </message>
     <message>
-        <location filename="../src/ui/components/ThinkingEffortSelector.qml" line="31"/>
         <source>不发送思考参数，由模型自己决定</source>
-        <translation>Send no thinking parameter; the model decides</translation>
+        <translation type="vanished">Send no thinking parameter; the model decides</translation>
     </message>
     <message>
-        <location filename="../src/ui/components/ThinkingEffortSelector.qml" line="32"/>
+        <location filename="../src/ui/components/ThinkingEffortSelector.qml" line="48"/>
         <source>思考·关闭</source>
         <translation>Thinking - Off</translation>
     </message>
     <message>
-        <location filename="../src/ui/components/ThinkingEffortSelector.qml" line="32"/>
+        <location filename="../src/ui/components/ThinkingEffortSelector.qml" line="48"/>
         <source>明确要求不要思考，响应最快、最省 token</source>
         <translation>Explicitly request no thinking; fastest and cheapest responses</translation>
     </message>
     <message>
-        <location filename="../src/ui/components/ThinkingEffortSelector.qml" line="33"/>
+        <location filename="../src/ui/components/ThinkingEffortSelector.qml" line="49"/>
         <source>思考·低</source>
         <translation>Thinking - Low</translation>
     </message>
     <message>
-        <location filename="../src/ui/components/ThinkingEffortSelector.qml" line="33"/>
+        <location filename="../src/ui/components/ThinkingEffortSelector.qml" line="49"/>
         <source>少量推理预算，适合简单问答</source>
         <translation>A small reasoning budget; good for simple questions</translation>
     </message>
     <message>
-        <location filename="../src/ui/components/ThinkingEffortSelector.qml" line="34"/>
+        <location filename="../src/ui/components/ThinkingEffortSelector.qml" line="50"/>
         <source>思考·中</source>
         <translation>Thinking - Medium</translation>
     </message>
     <message>
-        <location filename="../src/ui/components/ThinkingEffortSelector.qml" line="34"/>
+        <location filename="../src/ui/components/ThinkingEffortSelector.qml" line="50"/>
         <source>均衡；工具型任务推荐</source>
         <translation>Balanced; recommended for tool-driven tasks</translation>
     </message>
     <message>
-        <location filename="../src/ui/components/ThinkingEffortSelector.qml" line="35"/>
+        <location filename="../src/ui/components/ThinkingEffortSelector.qml" line="51"/>
         <source>思考·高</source>
         <translation>Thinking - High</translation>
     </message>
     <message>
-        <location filename="../src/ui/components/ThinkingEffortSelector.qml" line="35"/>
+        <location filename="../src/ui/components/ThinkingEffortSelector.qml" line="51"/>
         <source>最大推理投入，慢且贵，适合难题</source>
         <translation>Maximum reasoning effort; slow and costly, for hard problems</translation>
     </message>
     <message>
-        <location filename="../src/ui/components/ThinkingEffortSelector.qml" line="57"/>
+        <location filename="../src/ui/components/ThinkingEffortSelector.qml" line="75"/>
+        <source>不发送思考参数，由模型的默认行为决定</source>
+        <translation>No reasoning parameter is sent; the model decides</translation>
+    </message>
+    <message>
+        <location filename="../src/ui/components/ThinkingEffortSelector.qml" line="82"/>
         <source>思考强度</source>
         <translation>Thinking effort</translation>
     </message>
     <message>
-        <location filename="../src/ui/components/ThinkingEffortSelector.qml" line="113"/>
+        <location filename="../src/ui/components/ThinkingEffortSelector.qml" line="150"/>
         <source>思考·未配置模型</source>
         <translation>Effort · no model set</translation>
     </message>
@@ -13041,23 +13045,23 @@ select a file to view its content diff on the right.</translation>
         <translation type="vanished">Enable tool %1</translation>
     </message>
     <message>
-        <location filename="../src/ui/pages/ToolsPage.qml" line="142"/>
+        <location filename="../src/ui/pages/ToolsPage.qml" line="154"/>
         <source>联网搜索</source>
         <translation>Web Search</translation>
     </message>
     <message>
-        <location filename="../src/ui/pages/ToolsPage.qml" line="143"/>
+        <location filename="../src/ui/pages/ToolsPage.qml" line="155"/>
         <source>启用后模型可调用 web_search 获取实时信息。搜索查询会发送至所配置的搜索服务商，请勿在查询中包含敏感信息。</source>
         <translation>When enabled, the model can call web_search to fetch real-time information. Search queries are sent to the configured search provider; do not include sensitive information in your queries.</translation>
     </message>
     <message>
-        <location filename="../src/ui/pages/ToolsPage.qml" line="147"/>
-        <location filename="../src/ui/pages/ToolsPage.qml" line="166"/>
+        <location filename="../src/ui/pages/ToolsPage.qml" line="159"/>
+        <location filename="../src/ui/pages/ToolsPage.qml" line="178"/>
         <source>搜索服务</source>
         <translation>Search provider</translation>
     </message>
     <message>
-        <location filename="../src/ui/pages/ToolsPage.qml" line="182"/>
+        <location filename="../src/ui/pages/ToolsPage.qml" line="194"/>
         <source>搜索 API Key</source>
         <translation>Search API key</translation>
     </message>
@@ -13066,27 +13070,27 @@ select a file to view its content diff on the right.</translation>
         <translation type="vanished">Configured (enter a new value to overwrite, leave blank to keep)</translation>
     </message>
     <message>
-        <location filename="../src/ui/pages/ToolsPage.qml" line="190"/>
+        <location filename="../src/ui/pages/ToolsPage.qml" line="202"/>
         <source>未配置</source>
         <translation>Not configured</translation>
     </message>
     <message>
-        <location filename="../src/ui/pages/ToolsPage.qml" line="199"/>
+        <location filename="../src/ui/pages/ToolsPage.qml" line="211"/>
         <source>清除密钥</source>
         <translation>Clear key</translation>
     </message>
     <message>
-        <location filename="../src/ui/pages/ToolsPage.qml" line="202"/>
+        <location filename="../src/ui/pages/ToolsPage.qml" line="214"/>
         <source>清除搜索 API Key</source>
         <translation>Clear search API key</translation>
     </message>
     <message>
-        <location filename="../src/ui/pages/ToolsPage.qml" line="214"/>
+        <location filename="../src/ui/pages/ToolsPage.qml" line="226"/>
         <source>测试连接</source>
         <translation>Test connection</translation>
     </message>
     <message>
-        <location filename="../src/ui/pages/ToolsPage.qml" line="221"/>
+        <location filename="../src/ui/pages/ToolsPage.qml" line="233"/>
         <source>测试搜索服务连接</source>
         <translation>Test search service connection</translation>
     </message>
@@ -13096,9 +13100,8 @@ select a file to view its content diff on the right.</translation>
         <translation>DuckDuckGo (no API key)</translation>
     </message>
     <message>
-        <location filename="../src/ui/pages/ToolsPage.qml" line="13"/>
         <source>控制哪些工具可被 AI 调用。禁用的工具不会暴露给模型；内置工具默认折叠，MCP 工具单独成组。</source>
-        <translation>Control which tools the AI can call. Disabled tools are hidden from the model; built-in tools are collapsed by default, and MCP tools are grouped separately.</translation>
+        <translation type="vanished">Control which tools the AI can call. Disabled tools are hidden from the model; built-in tools are collapsed by default, and MCP tools are grouped separately.</translation>
     </message>
     <message>
         <location filename="../src/ui/pages/ToolsPage.qml" line="46"/>
@@ -13121,7 +13124,7 @@ select a file to view its content diff on the right.</translation>
         <translation>Search tools</translation>
     </message>
     <message>
-        <location filename="../src/ui/pages/ToolsPage.qml" line="81"/>
+        <location filename="../src/ui/pages/ToolsPage.qml" line="83"/>
         <source>内置工具</source>
         <translation>Built-in tools</translation>
     </message>
@@ -13130,104 +13133,109 @@ select a file to view its content diff on the right.</translation>
         <translation type="vanished">Tools shipped with the app. Expand to toggle them individually; disabled tools are hidden from the model. The sub-agent-only tool (propose_edit) is available only inside sub-agent runs and is not listed here; enabling sub-agents also registers apply_proposal, which applies a change by its proposal id (approval each time).</translation>
     </message>
     <message>
-        <location filename="../src/ui/pages/ToolsPage.qml" line="82"/>
+        <location filename="../src/ui/pages/ToolsPage.qml" line="13"/>
+        <source>控制哪些工具可被 AI 调用。禁用的工具不会暴露给模型；内置工具与 MCP 工具各自成组，默认折叠，展开后可逐个启停。</source>
+        <translation>Control which tools the AI may call. Disabled tools are never exposed to the model; built-in and MCP tools are grouped separately and collapsed by default, with per-tool toggles once expanded.</translation>
+    </message>
+    <message>
+        <location filename="../src/ui/pages/ToolsPage.qml" line="84"/>
         <source>随应用提供的工具。展开后可逐个启停；禁用的工具不会暴露给模型。子代理专属工具（propose_edit）只在子代理运行时可用，不在此列表；启用子代理时还会注册 apply_proposal（按提案 id 应用改动，逐次确认）与 subagent_wait/status/cancel（取回、查看、停止后台子代理）。</source>
         <translation>Tools shipped with the app. Expand to toggle them individually; disabled tools are hidden from the model. The sub-agent-only tool (propose_edit) is available only inside sub-agent runs and is not listed here; enabling sub-agents also registers apply_proposal (applies a change by proposal id, with approval each time) and subagent_wait/status/cancel (collect, inspect and stop background sub-agents).</translation>
     </message>
     <message>
-        <location filename="../src/ui/pages/ToolsPage.qml" line="86"/>
+        <location filename="../src/ui/pages/ToolsPage.qml" line="88"/>
         <source>暂无</source>
         <translation>None</translation>
     </message>
     <message>
-        <location filename="../src/ui/pages/ToolsPage.qml" line="86"/>
-        <location filename="../src/ui/pages/ToolsPage.qml" line="104"/>
+        <location filename="../src/ui/pages/ToolsPage.qml" line="88"/>
+        <location filename="../src/ui/pages/ToolsPage.qml" line="116"/>
         <source>无匹配</source>
         <translation>No matches</translation>
     </message>
     <message>
-        <location filename="../src/ui/pages/ToolsPage.qml" line="87"/>
-        <location filename="../src/ui/pages/ToolsPage.qml" line="105"/>
+        <location filename="../src/ui/pages/ToolsPage.qml" line="89"/>
+        <location filename="../src/ui/pages/ToolsPage.qml" line="117"/>
         <source>%1 个 · 已启用 %2</source>
         <translation>%1 total · %2 enabled</translation>
     </message>
     <message>
-        <location filename="../src/ui/pages/ToolsPage.qml" line="100"/>
+        <location filename="../src/ui/pages/ToolsPage.qml" line="105"/>
         <source>MCP 工具</source>
         <translation>MCP tools</translation>
     </message>
     <message>
-        <location filename="../src/ui/pages/ToolsPage.qml" line="101"/>
+        <location filename="../src/ui/pages/ToolsPage.qml" line="106"/>
         <source>由已连接的 MCP 服务器提供，与内置工具分开管理。</source>
         <translation>Provided by connected MCP servers; managed separately from built-in tools.</translation>
     </message>
     <message>
-        <location filename="../src/ui/pages/ToolsPage.qml" line="117"/>
+        <location filename="../src/ui/pages/ToolsPage.qml" line="129"/>
         <source>暂无 MCP 工具。先到「MCP 服务器」页连接服务器，服务器提供的工具会出现在这里。</source>
         <translation>No MCP tools yet. Connect a server on the &quot;MCP servers&quot; page and its tools will appear here.</translation>
     </message>
     <message>
-        <location filename="../src/ui/pages/ToolsPage.qml" line="131"/>
+        <location filename="../src/ui/pages/ToolsPage.qml" line="143"/>
         <source>没有匹配「%1」的工具。换个关键词，或清空搜索查看全部。</source>
         <translation>No tools match “%1”. Try another keyword, or clear the search to see everything.</translation>
     </message>
     <message>
-        <location filename="../src/ui/pages/ToolsPage.qml" line="190"/>
+        <location filename="../src/ui/pages/ToolsPage.qml" line="202"/>
         <source>已配置</source>
         <translation>Configured</translation>
     </message>
     <message>
-        <location filename="../src/ui/pages/ToolsPage.qml" line="193"/>
+        <location filename="../src/ui/pages/ToolsPage.qml" line="205"/>
         <source>输入新值可覆盖，留空不修改</source>
         <translation>Enter a new value to overwrite; leave blank to keep the current one</translation>
     </message>
     <message>
-        <location filename="../src/ui/pages/ToolsPage.qml" line="194"/>
+        <location filename="../src/ui/pages/ToolsPage.qml" line="206"/>
         <source>输入搜索服务 API Key</source>
         <translation>Enter the search service API key</translation>
     </message>
     <message>
-        <location filename="../src/ui/pages/ToolsPage.qml" line="214"/>
+        <location filename="../src/ui/pages/ToolsPage.qml" line="226"/>
         <source>测试中…</source>
         <translation>Testing…</translation>
     </message>
     <message>
-        <location filename="../src/ui/pages/ToolsPage.qml" line="235"/>
+        <location filename="../src/ui/pages/ToolsPage.qml" line="247"/>
         <source>会话权限模式</source>
         <translation>Session Permission Mode</translation>
     </message>
     <message>
-        <location filename="../src/ui/pages/ToolsPage.qml" line="236"/>
+        <location filename="../src/ui/pages/ToolsPage.qml" line="248"/>
         <source>新会话默认使用的工具审批级别。可在会话内随时通过输入框旁的模式选择器更改，仅对当前会话生效。</source>
         <translation>Default tool-approval level for new sessions. Change anytime per session via the mode selector next to the input box; applies to that session only.</translation>
     </message>
     <message>
-        <location filename="../src/ui/pages/ToolsPage.qml" line="240"/>
+        <location filename="../src/ui/pages/ToolsPage.qml" line="252"/>
         <source>默认模式</source>
         <translation>Default Mode</translation>
     </message>
     <message>
-        <location filename="../src/ui/pages/ToolsPage.qml" line="247"/>
+        <location filename="../src/ui/pages/ToolsPage.qml" line="259"/>
         <source>变更确认</source>
         <translation>Confirm Changes</translation>
     </message>
     <message>
-        <location filename="../src/ui/pages/ToolsPage.qml" line="248"/>
+        <location filename="../src/ui/pages/ToolsPage.qml" line="260"/>
         <source>只读（计划模式）</source>
         <translation>Read-only (plan mode)</translation>
     </message>
     <message>
-        <location filename="../src/ui/pages/ToolsPage.qml" line="249"/>
+        <location filename="../src/ui/pages/ToolsPage.qml" line="261"/>
         <source>自动编辑</source>
         <translation>Auto Edit</translation>
     </message>
     <message>
-        <location filename="../src/ui/pages/ToolsPage.qml" line="250"/>
+        <location filename="../src/ui/pages/ToolsPage.qml" line="262"/>
         <source>完全访问</source>
         <translation>Full Access</translation>
     </message>
     <message>
-        <location filename="../src/ui/pages/ToolsPage.qml" line="260"/>
+        <location filename="../src/ui/pages/ToolsPage.qml" line="272"/>
         <source>默认权限模式</source>
         <translation>Default Permission Mode</translation>
     </message>

@@ -90,8 +90,6 @@ Item {
         ? (page.editing.kind || page.editing.provider) : ""
     readonly property bool isCustom: page.editingKind === "custom"
     readonly property bool isOllama: page.editingKind === "ollama"
-    readonly property string editingEffort: page.editing !== null
-        ? (page.editing.reasoningEffort || "") : ""
 
     // 同一个厂商可以有多条协议（OpenAI 兼容 = Chat Completions / Responses）。
     readonly property var protocolOptions: page.editing !== null
@@ -140,30 +138,6 @@ Item {
         return missing.join("、")
     }
     readonly property bool ready: page.editing !== null && page.missingFields === ""
-
-    // 上下文预算的生效值与来源，四级链（docs/43 §4.2）：模型覆盖
-    // （modelParams[当前模型].contextLength）> 默认（profile.contextLength，
-    // 即下方「上下文预算」行）> 模型能力表 > 全局默认。芯片比较的是这个
-    // 生效值，所以留空时也能看出「当前走的是能力表 128K」。
-    readonly property int perModelContext: {
-        if (page.editing === null) return 0
-        const params = page.editing.modelParams
-        if (params === undefined || params === null) return 0
-        const entry = params[String(page.editing.model || "")]
-        if (entry === undefined || entry === null) return 0
-        const n = parseInt(entry.contextLength) || 0
-        return n > 0 ? n : 0
-    }
-    readonly property int manualContext: parseInt(contextLengthRow.input.text) || 0
-    readonly property int tableContext: page.editing !== null
-        ? Settings.modelContextWindow(page.editing.apiProtocol,
-                                      String(page.editing.model || "")) : 0
-    readonly property int effectiveContext: page.perModelContext > 0
-        ? page.perModelContext
-        : (page.manualContext > 0 ? page.manualContext : page.tableContext)
-    readonly property string contextSource: page.perModelContext > 0 ? qsTr("模型覆盖")
-        : (page.manualContext > 0 ? qsTr("默认（所有模型）")
-        : (page.tableContext > 0 ? qsTr("模型能力表") : qsTr("全局默认")))
 
     function setField(field, value) {
         // 正在敲的字段不回写：聊天侧切模型、别处加模型都会触发 profilesChanged，
@@ -1019,9 +993,10 @@ Item {
                 }
 
                 // docs/43 §6.1/§6.2：按模型参数编辑区。chips 管列表与当前
-                // 模型，这里管单个模型的参数覆盖；presets 与卡片四/五共用
-                // 同一张表，提交走 Settings.setModelParam / clearModelParams
-                // 专用入口（不拼整份 modelParams，防并发覆盖丢失）。
+                // 模型，这里管单个模型的参数覆盖（v7 起这里也是**唯一**的
+                // 生成参数入口——profile 级「默认层」已移除）；提交走
+                // Settings.setModelParam / clearModelParams 专用入口（不拼
+                // 整份 modelParams，防并发覆盖丢失）。
                 ModelParamEditor {
                     id: perModelEditor
                     profileId: page.editing !== null ? page.editing.id : ""
@@ -1029,134 +1004,6 @@ Item {
                     contextPresets: page.contextPresets
                     outputPresets: page.outputPresets
                     effortPresets: page.effortPresets
-                }
-            }
-
-            // ── 卡片四：生成参数（默认层，docs/43 §6.1）──
-            // 每项一行、标签定宽：原来三列并排每列只有 170px，五个档位芯片
-            // 被挤成三行，切厂商时列数还会跳变。这里的值降级为「所有模型的
-            // 默认」，单个模型的独立覆盖在卡片三的按模型参数编辑区。
-            SettingCard {
-                objectName: "model.generation"
-                Layout.fillWidth: true
-                title: qsTr("默认生成参数（所有模型）")
-                subtitle: qsTr("这里是全部模型共用的默认值，留空 = 服务默认不发送；单个模型的独立参数到上方「模型」卡片里按模型覆盖。")
-
-                SettingsField {
-                    id: tempRow
-                    label: qsTr("temperature")
-                    placeholderText: qsTr("0 - 2，留空不发送")
-                    validator: DoubleValidator { locale: "C"; bottom: 0; top: 2; decimals: 2 }
-                    commitOnDestroy: true
-                    onSubmitted: (value) => page.submitField("temperature", value.trim())
-                }
-
-                ParamSelectRow {
-                    id: outRow
-                    label: qsTr("最大输出 tokens")
-                    entries: page.outputPresets
-                    currentValue: page.editing !== null ? (page.editing.maxOutputTokens || "") : ""
-                    placeholderText: qsTr("自定义上限，留空 = 服务默认")
-                    validator: IntValidator { bottom: 1 }
-                    commitOnDestroy: true
-                    onSubmitted: (value) => page.submitField("maxOutputTokens", value)
-                }
-
-                ColumnLayout {
-                    visible: page.isOllama
-                    Layout.fillWidth: true
-                    spacing: Theme.spaceXs
-
-                    Text {
-                        text: qsTr("Ollama 的上下文窗口就是 num_ctx")
-                        color: Theme.textSecondary
-                        font.pixelSize: Theme.fontSizeCaption
-                        font.family: Theme.fontSans
-                    }
-
-                    ParamSelectRow {
-                        id: numCtxRow
-                        label: qsTr("num_ctx")
-                        entries: page.contextPresets
-                        currentValue: page.editing !== null ? (page.editing.numCtx || "") : ""
-                        placeholderText: qsTr("自定义窗口，留空 = 不发送")
-                        validator: IntValidator { bottom: 1 }
-                        commitOnDestroy: true
-                        onSubmitted: (value) => page.submitField("numCtx", value)
-                    }
-                }
-            }
-
-            // ── 卡片五：思考与上下文（默认层，docs/43 §6.1）──
-            SettingCard {
-                objectName: "model.reasoning"
-                Layout.fillWidth: true
-                title: qsTr("默认思考与上下文")
-                subtitle: qsTr("思考强度与上下文预算在这里是全部模型共用的默认值，单个模型的独立覆盖在上方「模型」卡片里配置；聊天输入区的快捷选择框读写的是当前启用的配置。")
-
-                ParamSelectRow {
-                    id: effortRow
-                    label: qsTr("思考强度")
-                    entries: page.effortPresets
-                    currentValue: page.editingEffort
-                    allowCustom: false
-                    autoLabel: qsTr("默认")
-                    onSubmitted: (value) => page.submitField("reasoningEffort", value)
-                }
-
-                Text {
-                    Layout.fillWidth: true
-                    text: qsTr("OpenAI 兼容按档位发送 reasoning_effort；Claude 折算为思考预算（输出上限要留得住预算，否则自动退回不思考）；Ollama 只有开/关，低中高均按开处理。")
-                    color: Theme.textSecondary
-                    font.pixelSize: Theme.fontSizeCaption
-                    font.family: Theme.fontSans
-                    wrapMode: Text.WordWrap
-                }
-
-                ColumnLayout {
-                    Layout.fillWidth: true
-                    spacing: Theme.spaceXs
-
-                    ParamSelectRow {
-                        id: contextLengthRow
-                        // profile 级预算在新心智模型里是「默认层」（可被
-                        // 模型覆盖），label 不再叫「覆盖」（docs/43 §6.1）。
-                        label: qsTr("上下文预算")
-                        entries: page.contextPresets
-                        currentValue: page.editing !== null ? (page.editing.contextLength || "") : ""
-                        placeholderText: qsTr("自定义预算，留空 = 自动")
-                        validator: IntValidator { bottom: 2048; top: 1048576 }
-                        commitOnDestroy: true
-                        onSubmitted: (value) => page.submitField("contextLength", value)
-                    }
-
-                    Text {
-                        Layout.fillWidth: true
-                        text: page.effectiveContext > 0
-                            ? qsTr("当前生效 %1 tokens（来源：%2）")
-                                  .arg(page.effectiveContext).arg(page.contextSource)
-                            : qsTr("当前生效 %1 tokens（来源：全局默认，能力表里没有这个模型）")
-                                  .arg(Settings.contextTokens)
-                        color: page.tableContext > 0 || page.manualContext > 0
-                            ? Theme.textSecondary : Theme.statusWarning
-                        font.pixelSize: Theme.fontSizeCaption
-                        font.family: Theme.fontMono
-                        wrapMode: Text.WordWrap
-                    }
-
-                    // 不阻断，只提醒：max_output 超过上下文窗口时服务端会直接拒。
-                    Text {
-                        readonly property int requestedOutput: parseInt(outRow.input.text) || 0
-                        visible: page.effectiveContext > 0
-                            && requestedOutput >= page.effectiveContext
-                        Layout.fillWidth: true
-                        text: qsTr("最大输出 %1 已不小于上下文窗口 %2，请求可能被服务端拒绝。")
-                                  .arg(requestedOutput).arg(page.effectiveContext)
-                        color: Theme.statusWarning
-                        font.pixelSize: Theme.fontSizeCaption
-                        font.family: Theme.fontSans
-                        wrapMode: Text.WordWrap
-                    }
                 }
             }
         }

@@ -155,7 +155,11 @@ QVariant effectiveParam(const QVariantMap& profile, const QVariantMap& overrides
     const QVariantMap perModel =
         profile.value("modelParams").toMap().value(model).toMap();
     if (perModel.contains(k)) return perModel.value(k);            // ② 模型覆盖
-    return profile.value(k);                                       // ③ profile 默认
+    // v7 起没有 profile 级「默认层」：缺键 = 不发送该字段（服务默认）。
+    // 存量顶层值已由 moveProfileDefaultsIntoModelOverrides() 搬进模型覆盖表，
+    // 因此这里不再回落到 profile.value(k)——那条回落会让"移除默认层"变成
+    // 只改了 UI、数据层照旧读旧键。
+    return {};
 }
 
 // profile map → 服务配置快照。清洗沿用 SamplingParams 的"未设置/清空/非数字

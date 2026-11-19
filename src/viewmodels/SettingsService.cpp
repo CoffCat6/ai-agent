@@ -250,6 +250,82 @@ void dropLegacyTopPOnUpgrade() {
         qCWarning(lcSettings) << "Failed to migrate model profile list:" << error;
 }
 
+// v7（docs/43 修订）：移除 profile 的「默认层」——生成参数与上下文预算不再
+// 有 profile 级默认值，只在每个模型的 modelParams 里按模型设置。
+//
+// 存量配置的顶层值不能直接丢：用户设过 temperature=0.7 是明确的意图，静默
+// 忽略会让人以为设置失效。这里把五个顶层键复制进该 profile **每个模型**的
+// 覆盖表（已存在同名覆盖键的以模型覆盖为准，不覆盖用户显式设过的值），然后
+// 删掉顶层键——迁移后行为与迁移前完全一致，用户无感。
+void moveProfileDefaultsIntoModelOverrides() {
+    // 与 modelParamKeys() 同名同集合；先前在这里复制一份是为了让迁移只依赖
+    // 存储层，但两处漂移的代价更高，直接用同一份。
+    static const QStringList kKeys{
+        QStringLiteral("temperature"), QStringLiteral("maxOutputTokens"),
+        QStringLiteral("numCtx"), QStringLiteral("reasoningEffort"),
+        QStringLiteral("contextLength")};
+
+    const QByteArray raw = SettingsRepository::value(kProfilesKey).toString().toUtf8();
+    QJsonParseError parseError{};
+    const QJsonDocument doc = QJsonDocument::fromJson(raw, &parseError);
+    if (parseError.error != QJsonParseError::NoError || !doc.isArray()) return;
+
+    QJsonArray arr = doc.array();
+    bool changed = false;
+    for (int i = 0; i < arr.size(); ++i) {
+        QJsonObject profile = arr.at(i).toObject();
+
+        // 收集本 profile 的顶层默认值（只看有值的键：空串历史上表示"未设置"）。
+        QJsonObject defaults;
+        for (const QString& key : kKeys) {
+            if (!profile.contains(key)) continue;
+            const QString text = profile.value(key).toVariant().toString().trimmed();
+            if (text.isEmpty()) continue;
+            defaults[key] = text;
+        }
+        if (!defaults.isEmpty()) {
+            QJsonObject modelParams = profile.value(QStringLiteral("modelParams")).toObject();
+            // 覆盖到"每个已知模型"：当前模型 + models 列表。
+            //
+            // 两者都空时无处可迁（v1/v2 老数据：模型列表在 v2 迁移里就被清空
+            // 了，这些顶层值早已没有模型可应用），因此随顶层键一并丢弃——比
+            // 留在原地更诚实：留着只会让"默认层已移除"看起来没生效。
+            QStringList targets;
+            const QString current = profile.value(QStringLiteral("model")).toString().trimmed();
+            if (!current.isEmpty()) targets.append(current);
+            for (const QJsonValue& m : profile.value(QStringLiteral("models")).toArray()) {
+                const QString name = m.toVariant().toString().trimmed();
+                if (!name.isEmpty() && !targets.contains(name)) targets.append(name);
+            }
+            for (const QString& model : targets) {
+                QJsonObject entry = modelParams.value(model).toObject();
+                for (auto it = defaults.constBegin(); it != defaults.constEnd(); ++it) {
+                    // 模型级覆盖优先：用户显式设过的不被默认值盖掉。
+                    if (entry.contains(it.key())) continue;
+                    entry[it.key()] = it.value();
+                }
+                modelParams[model] = entry;
+            }
+            if (!modelParams.isEmpty())
+                profile[QStringLiteral("modelParams")] = modelParams;
+        }
+
+        for (const QString& key : kKeys) {
+            if (!profile.contains(key)) continue;
+            profile.remove(key);
+            changed = true;
+        }
+        arr[i] = profile;
+    }
+    if (!changed) return;
+    QString error;
+    if (!SettingsRepository::writeValue(
+            kProfilesKey,
+            QString::fromUtf8(QJsonDocument(arr).toJson(QJsonDocument::Compact)),
+            &error))
+        qCWarning(lcSettings) << "Failed to migrate model profile defaults:" << error;
+}
+
 // ── docs/43：modelParams 覆盖表的合法性规约（§4.1/§4.4）─────────
 
 // 覆盖表允许的参数键（与 profile 级生成参数一致；contextLength 的消费在
@@ -536,8 +612,11 @@ void SettingsService::load() {
         // v5：子代理默认开启（仅从未设置过的用户）。
         if (storedVersion < 5) enableSubagentByDefaultOnUpgrade();
         // v6（docs/43 §5）：清掉幽灵键 topP；modelParams 不预填（键缺省 =
-        // 未设置，读取链缺级即跟随默认层）。
+        // 未设置，读取链缺级即不发送该字段）。
         if (storedVersion < 6) dropLegacyTopPOnUpgrade();
+        // v7（docs/43 修订）：取消 profile 级「默认层」，存量顶层值搬到各模型
+        // 的覆盖表（docs/54 §4.3 的能力覆盖同理，键集合一致）。
+        if (storedVersion < 7) moveProfileDefaultsIntoModelOverrides();
         QString error;
         if (!SettingsRepository::writeValue("schemaVersion", SettingsSchema::kSchemaVersion,
                                             &error))
@@ -2546,12 +2625,11 @@ QVariantList SettingsService::endpointOptions(const QString& provider) const {
     return out;
 }
 
-// Four-level priority resolution for the active profile's context budget
-// (docs/43 §4.2，由三级扩为四级):
+// Context-budget resolution for a profile (docs/43 §4.2，v7 起三级):
 //   0. Per-model modelParams[model].contextLength override (highest)
-//   1. Profile-level "contextLength" override (default layer for all models)
-//   2. Capability-table contextWindow (default per model)
-//   3. Global contextTokens (fallback for unknown models)
+//   1. Capability-table contextWindow (default per model)
+//   2. Global contextTokens (fallback for unknown models)
+// profile 级「默认层」已移除——预算按模型定，不再有"所有模型共用"的一层。
 int SettingsService::resolveContextLimit() const {
     return resolveContextLimitForProfile(activeProfile());
 }
@@ -2571,22 +2649,18 @@ int SettingsService::resolveContextLimitForProfile(const QVariantMap& profile) c
         if (ok && v > 0) return v;
     }
 
-    // Priority 1: Profile-level contextLength override.
-    const QVariant profileOverride = profile.value("contextLength");
-    if (profileOverride.isValid() && !profileOverride.toString().isEmpty()) {
-        bool ok = false;
-        const int v = profileOverride.toInt(&ok);
-        if (ok && v > 0) return v;
-    }
+    // v7 起没有 profile 级 contextLength「默认层」（docs/43 修订）：预算只在
+    // 模型覆盖或能力表里定，避免"改默认值悄悄影响所有模型"。存量顶层值由
+    // moveProfileDefaultsIntoModelOverrides() 搬进每个模型的覆盖表。
 
-    // Priority 2: capability-table contextWindow（按协议查，同厂商两条协议的
+    // Priority 1: capability-table contextWindow（按协议查，同厂商两条协议的
     // 可用模型集合不同）。apiProtocol 未经 load 归一的调用方按厂商兜底。
     const QString apiProtocol = LlmProtocolRegistry::resolve(
         profile.value("apiProtocol").toString(), provider)->key;
     const int tableValue = modelContextWindow(apiProtocol, model);
     if (tableValue > 0) return tableValue;
 
-    // Priority 3: global contextTokens (fallback).
+    // Priority 2: global contextTokens (fallback).
     return m_contextTokens;
 }
 

@@ -86,20 +86,22 @@ private slots:
         QVERIFY(builtinSection && mcpSection);
         QVERIFY(builtinSection->property("collapsible").toBool());
         QCOMPARE(builtinSection->property("collapsed").toBool(), true);
-        QVERIFY(mcpSection->property("collapsible").toBool());
+        // MCP 组默认折叠：上限 64 项，展开会把「联网搜索」与「会话权限模式」
+        // 挤出首屏；这页的常见操作通常不是逐个翻 MCP 工具。
+        QCOMPARE(mcpSection->property("collapsed").toBool(), true);
+        // collapsible 是独立的一维：没有工具时不可折叠，否则「暂无 MCP 工具，
+        // 先去连接服务器」那句引导会被一起藏掉（空态等于没人知道该做什么）。
+        QCOMPARE(mcpSection->property("collapsible").toBool(), mcp > 0);
 
-        // 折叠期间行仍然创建，但不可见（不占首屏）。
+        // 折叠期间行仍然创建，但不可见（不占首屏）——两个分组都要成立。
         QList<QQuickItem*> rows;
         QTRY_VERIFY_WITH_TIMEOUT([&] {
             rows.clear();
             collectByName(win->contentItem(), QStringLiteral("toolRow"), &rows);
             return rows.size() == registry;
         }(), 3000);
-        for (QQuickItem* row : rows) {
-            const bool isBuiltin =
-                row->property("modelData").toMap().value("source").toString() != "MCP";
-            if (isBuiltin) QVERIFY2(!row->isVisible(), "折叠组内工具行仍然可见");
-        }
+        for (QQuickItem* row : rows)
+            QVERIFY2(!row->isVisible(), "折叠组内的工具行不应可见");
 
         // 展开内置组 → 折叠标志翻转、内置行可见。
         QVERIFY(QMetaObject::invokeMethod(builtinSection, "toggle"));

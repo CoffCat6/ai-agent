@@ -10,7 +10,7 @@ SettingsPage {
     Accessible.name: qsTr("工具管理页")
 
     title: qsTr("工具管理")
-    description: qsTr("控制哪些工具可被 AI 调用。禁用的工具不会暴露给模型；内置工具默认折叠，MCP 工具单独成组。")
+    description: qsTr("控制哪些工具可被 AI 调用。禁用的工具不会暴露给模型；内置工具与 MCP 工具各自成组，默认折叠，展开后可逐个启停。")
 
     // 工具列表按来源拆成两组：内置工具默认折叠，MCP 工具单独成组，
     // 让「本地随附」与「服务器提供」不再混在同一串里。两个名字都以
@@ -68,9 +68,11 @@ SettingsPage {
         }
         onTextChanged: {
             page.searchQuery = text
-            // 命中时展开内置组；折叠状态下的搜索等于没搜。
-            if (text.trim().length > 0 && builtinSection.collapsed)
-                builtinSection.toggle()
+            // 命中时展开两个分组：折叠状态下的搜索等于没搜。原先只展开内置组，
+            // MCP 组（现在也默认折叠）里的命中项会被藏住，看起来像没有结果。
+            if (text.trim().length === 0) return
+            if (builtinSection.collapsed) builtinSection.toggle()
+            if (mcpSection.collapsed) mcpSection.toggle()
         }
     }
 
@@ -94,12 +96,22 @@ SettingsPage {
     }
 
     // ── MCP 工具（由服务器提供，与内置工具分开管理）──
+    // 与内置工具一样默认折叠：上限 64 项的列表一旦展开就把「联网搜索」「会话
+    // 权限模式」两节挤出首屏，而这页的常见操作通常是改后端/权限，不是逐个
+    // 翻 MCP 工具。枚数徽章（「N 个 · 已启用 M」）在折叠态就能看出规模。
     SettingsSection {
         id: mcpSection
         objectName: "toolsMcpSection"
         title: qsTr("MCP 工具")
         description: qsTr("由已连接的 MCP 服务器提供，与内置工具分开管理。")
-        collapsible: true
+        // 默认折叠（上限 64 项，展开会把下面两节挤出首屏）；但没有工具时不
+        // 可折叠——折叠会连「暂无 MCP 工具，先去连接服务器」那句引导一起藏掉，
+        // 用户只看到一个空标题，不知道该做什么。
+        //
+        // 两者是独立属性：collapsed 恒为 true（用户的展开操作会把它翻成
+        // false），collapsible 才随空态变化。
+        collapsible: page.mcpTools.length > 0
+        collapsed: true
         badge: page.mcpTools.length === 0
                ? (page.searching ? qsTr("无匹配") : "")
                : qsTr("%1 个 · 已启用 %2").arg(page.mcpTools.length)

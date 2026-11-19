@@ -1761,6 +1761,131 @@ private slots:
     // 思考强度分段进度条（原下拉弹层重构）：真实渲染下覆盖三条交互路径——
     // 点段位改档、左右方向键改档（slider 语义）、填充段数跟随选中档；
     // 数据口径断言 AgentVM 会话临时值的实际落点。
+    // docs/43 §4.3：会话未设临时档位时，选择器显示 profile 配置的默认档位，
+    // 而不是把「默认」当成条上最左端的一个档。配置页把默认思考强度设成
+    // 「中」，聊天区就必须直接显示「思考·中」并把填充推进到中档——否则用户
+    // 在设置里选的值看起来没生效，而请求里其实已经按 medium 发出去了。
+    void thinkingEffortReflectsProfileDefault() {
+        auto* settings = SettingsService::instance();
+        while (!settings->profiles().isEmpty()) {
+            settings->removeProfile(settings->profiles().first().toMap()
+                                        .value(QStringLiteral("id")).toString());
+        }
+        const QString profileId = settings->addProfile(QStringLiteral("openai"));
+        QVERIFY(!profileId.isEmpty());
+        settings->updateProfile(profileId,
+                                QVariantMap{{QStringLiteral("baseUrl"),
+                                             QStringLiteral("https://api.example.com/v1")},
+                                            {QStringLiteral("model"),
+                                             QStringLiteral("gpt-4o")}});
+
+        auto* vm = AgentViewModel::instance();
+        AIAgent templateAgent(vm);
+        templateAgent.setLLMService(LlmProtocolRegistry::createService(
+            QStringLiteral("openai-chat"), &templateAgent));
+        vm->setAgent(&templateAgent);
+        vm->setAgentFactory([vm]() -> AIAgent* {
+            auto* agent = new AIAgent(vm);
+            agent->setLLMService(LlmProtocolRegistry::createService(
+                QStringLiteral("openai-chat"), agent));
+            return agent;
+        });
+        // configureModel 在 m_configureModel 为空时整体早退（不刷新
+        // controller->modelProfile），与 main.cpp 的装配等价地补一个空配置器。
+        vm->setModelConfigurator([](AIAgent*, const QVariantMap&, const QVariantMap&) {});
+        vm->updateModelProfiles(settings->profiles(), settings->activeProfile());
+        vm->selectChatModel(profileId);
+
+        // 配置页把默认思考强度设为「中」（profile 顶层键）。
+        settings->updateProfile(profileId,
+                                QVariantMap{{QStringLiteral("reasoningEffort"),
+                                             QStringLiteral("medium")}});
+        // main.cpp 的 profilesChanged → applySettings → updateModelProfiles
+        // 接线在测试进程里不存在，这里手工等价重跑一次。注意 configureModel
+        // 在未注入 modelConfigurator 时会整体早退（不刷新 modelProfile），
+        // 所以装配时给一个空配置器——本用例只关心 profile 快照的回显链路。
+        vm->updateModelProfiles(settings->profiles(), settings->activeProfile());
+
+        NexusQrcFallback fallback(QStringLiteral(NEXUS_BUILD_DIR "/NexusAI"));
+        QQmlApplicationEngine engine;
+        engine.addUrlInterceptor(&fallback);
+        engine.addImportPath(QStringLiteral(NEXUS_BUILD_DIR));
+        QQmlComponent component(
+            &engine,
+            QUrl::fromLocalFile(QStringLiteral(NEXUS_TEST_QML_DIR
+                                               "/ThinkingEffortHarness.qml")));
+        QVERIFY2(component.isReady(), qPrintable(component.errorString()));
+        std::unique_ptr<QObject> root(component.create());
+        QVERIFY2(root, qPrintable(component.errorString()));
+
+        auto* win = qobject_cast<QQuickWindow*>(root.get());
+        QVERIFY(win);
+        win->resize(420, 200);
+        win->show();
+        QVERIFY(QTest::qWaitForWindowExposed(win));
+
+        QQuickItem* selector = findVisualItem(win->contentItem(),
+                                              QStringLiteral("thinkingEffortSelector"));
+        QVERIFY(selector);
+        QTRY_COMPARE(selector->property("usable").toBool(), true);
+
+        // 会话临时值为空 → 回显 profile 默认「中」。
+        QCOMPARE(selector->property("current").toString(), QStringLiteral("medium"));
+        // 四段(关闭/低/中/高)布局下 medium = index 2。
+        QCOMPARE(selector->property("selectedIndex").toInt(), 2);
+        QCOMPARE(selector->property("currentLabel").toString(),
+                 QStringLiteral("思考·中"));
+        QCOMPARE(selector->property("emphasized").toBool(), true);
+
+        // 「默认」不再是条上的一段：中档 = 前 3 段亮（关闭/低/中）。
+        QQuickItem* bar = findVisualItem(selector,
+                                         QStringLiteral("thinkingEffortBar"));
+        QVERIFY(bar);
+        QList<QQuickItem*> segments;
+        for (QQuickItem* c : bar->childItems())
+            if (c->property("filled").isValid()) segments.append(c);
+        QCOMPARE(segments.size(), 4);
+        int filled = 0;
+        for (QQuickItem* seg : segments)
+            if (seg->property("filled").toBool()) ++filled;
+        QCOMPARE(filled, 3);
+
+        // 改配置 → 聊天区自动跟上（不需要重开组件）：低档与未配置两种态。
+        const auto labelsOf = [&]() {
+            int filledN = 0;
+            for (QQuickItem* seg : segments)
+                if (seg->property("filled").toBool()) ++filledN;
+            return filledN;
+        };
+        settings->updateProfile(profileId,
+                                QVariantMap{{QStringLiteral("reasoningEffort"),
+                                             QStringLiteral("low")}});
+        vm->updateModelProfiles(settings->profiles(), settings->activeProfile());
+        QTRY_COMPARE(selector->property("current").toString(), QStringLiteral("low"));
+        QCOMPARE(selector->property("selectedIndex").toInt(), 1);
+        QCOMPARE(labelsOf(), 2);                     // 关闭 + 低
+        QCOMPARE(selector->property("emphasized").toBool(), false);
+
+        settings->updateProfile(profileId,
+                                QVariantMap{{QStringLiteral("reasoningEffort"),
+                                             QString()}});
+        vm->updateModelProfiles(settings->profiles(), settings->activeProfile());
+        QTRY_COMPARE(selector->property("current").toString(), QString());
+        QCOMPARE(selector->property("selectedIndex").toInt(), -1);
+        QCOMPARE(labelsOf(), 0);                     // 未指定 = 全灭
+        QCOMPARE(selector->property("currentLabel").toString(),
+                 QStringLiteral("思考·默认"));
+
+        win->close();
+        vm->setAgent(nullptr);
+        vm->setAgentFactory(std::function<AIAgent*()>{});
+        vm->updateModelProfiles(QVariantList{}, QVariantMap{});
+        while (!settings->profiles().isEmpty()) {
+            settings->removeProfile(settings->profiles().first().toMap()
+                                        .value(QStringLiteral("id")).toString());
+        }
+    }
+
     void thinkingEffortBarSelectsLevel() {
         auto* settings = SettingsService::instance();
         while (!settings->profiles().isEmpty()) {
@@ -1816,9 +1941,10 @@ private slots:
                                               QStringLiteral("thinkingEffortSelector"));
         QVERIFY(selector);
         QTRY_COMPARE(selector->property("usable").toBool(), true);
-        // 初始档位：未设置 = 「默认」（selectedIndex 0 → 1 段填充）。
+        // 初始档位：未显式指定 = 「默认」，四段全不点亮（selectedIndex -1，
+        // 不是"第零档"——「默认」已不再占据条上的一段）。
         QCOMPARE(selector->property("current").toString(), QString());
-        QCOMPARE(selector->property("selectedIndex").toInt(), 0);
+        QCOMPARE(selector->property("selectedIndex").toInt(), -1);
 
         QQuickItem* bar = findVisualItem(selector,
                                          QStringLiteral("thinkingEffortBar"));
@@ -1828,7 +1954,7 @@ private slots:
         QList<QQuickItem*> segments;
         for (QQuickItem* c : bar->childItems())
             if (c->property("filled").isValid()) segments.append(c);
-        QCOMPARE(segments.size(), 5);
+        QCOMPARE(segments.size(), 4);
 
         const auto filledCount = [segments]() {
             int n = 0;
@@ -1836,10 +1962,10 @@ private slots:
                 if (seg->isVisible() && seg->property("filled").toBool()) ++n;
             return n;
         };
-        QCOMPARE(filledCount(), 1);
+        QCOMPARE(filledCount(), 0);
 
-        // 点第 4 段（index 3 = 思考·中）：真实鼠标点击走 MouseArea 链路。
-        QQuickItem* mediumSeg = segments.at(3);
+        // 点第 3 段（index 2 = 思考·中）：真实鼠标点击走 MouseArea 链路。
+        QQuickItem* mediumSeg = segments.at(2);
         QVERIFY(mediumSeg);
         const QPoint center = mediumSeg->mapToScene(
             QPointF(mediumSeg->width() / 2, mediumSeg->height() / 2)).toPoint();
@@ -1848,7 +1974,15 @@ private slots:
                      QStringLiteral("medium"));
         QCOMPARE(vm->chatModelProfile().value(QStringLiteral("reasoningEffort"))
                      .toString(), QStringLiteral("medium"));
-        QCOMPARE(filledCount(), 4);
+        QCOMPARE(filledCount(), 3);
+        // 动效真的挂上了：点中的段位进入脉冲（pulse > 0 → scale 放大），且会
+        // 自动回落——说明是有限时长的动画而不是永久放大。只断言"在动"，
+        // 具体缓动曲线属于实现细节，不进回归。
+        {
+            QQuickItem* clicked = segments.at(2);
+            QTRY_VERIFY(clicked->property("pulse").toReal() > 0.0);
+            QTRY_COMPARE(clicked->property("pulse").toReal(), 0.0);
+        }
         // 强度点：中/高档用品牌色标识。
         QCOMPARE(selector->property("emphasized").toBool(), true);
 
@@ -1858,19 +1992,32 @@ private slots:
         QTest::keyClick(win, Qt::Key_Right);
         QTRY_COMPARE(vm->chatModelProfile().value(QStringLiteral("reasoningEffort"))
                      .toString(), QStringLiteral("high"));
-        QCOMPARE(filledCount(), 5);
+        QCOMPARE(filledCount(), 4);
         // 高 → 左方向键一格 → 中。
         QTest::keyClick(win, Qt::Key_Left);
         QTRY_COMPARE(vm->chatModelProfile().value(QStringLiteral("reasoningEffort"))
                      .toString(), QStringLiteral("medium"));
-        QCOMPARE(filledCount(), 4);
+        QCOMPARE(filledCount(), 3);
 
         // 回「默认」：会话临时值清空（reasoningEffort 回到 profile 口径）。
-        QVERIFY(QMetaObject::invokeMethod(selector, "selectIndex",
-                                          Q_ARG(QVariant, 0)));
+        // 四段布局下没有"默认段"，空串档 = selectedIndex -1 = 四段全不亮。
+        QVERIFY(QMetaObject::invokeMethod(selector, "selectLevel",
+                                          Q_ARG(QVariant, QString())));
         QTRY_COMPARE(selector->property("current").toString(), QString());
-        QCOMPARE(filledCount(), 1);
+        QCOMPARE(selector->property("selectedIndex").toInt(), -1);
+        QCOMPARE(filledCount(), 0);
         QCOMPARE(selector->property("emphasized").toBool(), false);
+
+        // 动效不得改动布局：段位放大走 scale（渲染变换），Row 的 x 坐标由
+        // width+spacing 决定。这里在悬停/脉冲进行中读取几何，锁住"动画不会
+        // 把相邻段位挤开"——否则整条宽度会随鼠标抖动，视觉上像在抽搐。
+        QTest::qWait(120);
+        QList<qreal> xs;
+        for (QQuickItem* seg : segments) xs.append(seg->x());
+        for (int i = 1; i < xs.size(); ++i)
+            QCOMPARE(xs.at(i) - xs.at(i - 1), 19.0);   // 16 (width) + 3 (spacing)
+        for (QQuickItem* seg : segments)
+            QCOMPARE(seg->width(), 16.0);              // scale 不写回 width
 
         // 整窗抓图：分段条真的画出来了（非空图 + 非 0 字节文件）。
         const QImage shot = win->grabWindow();
@@ -1883,6 +2030,29 @@ private slots:
         const QString mirrorDir = qEnvironmentVariable("NEXUS_TEST_SNAPSHOT_DIR");
         if (!mirrorDir.isEmpty())
             shot.save(mirrorDir + QStringLiteral("/thinking-effort-bar.png"));
+
+        // 「减少动效」开启时动效令牌全部归零（Theme 层已由
+        // reduceMotionZeroesMotionTokens 覆盖），这里补一条组件层证据：
+        // 归零后点击不再产生脉冲，档位切换是瞬时的。
+        {
+            // main.cpp 的 PreferenceStore → ChangeBus → ThemeManager 接线在
+            // 测试进程里不存在，先补齐（与 reduceMotionZeroesMotionTokens 同）。
+            auto* store = PreferenceStore::instance();
+            store->setChangeBus(ChangeBus::instance());
+            store->reset(QStringLiteral("ui.reduceMotion"));
+            QVERIFY(store->save(QStringLiteral("ui.reduceMotion"), true));
+            QTRY_COMPARE(ThemeProvider::instance()->motionFast(), 0);
+            // 四段布局下 index 0 = 关闭。
+            QVERIFY(QMetaObject::invokeMethod(selector, "selectIndex",
+                                              Q_ARG(QVariant, 0)));
+            QTRY_COMPARE(selector->property("current").toString(),
+                         QStringLiteral("off"));
+            QTest::qWait(60);
+            for (QQuickItem* seg : segments)
+                QCOMPARE(seg->property("pulse").toReal(), 0.0);
+            QVERIFY(store->save(QStringLiteral("ui.reduceMotion"), false));
+            store->reset(QStringLiteral("ui.reduceMotion"));
+        }
 
         win->close();
         // 单例状态复位：agent 工厂 / 模板 agent / 模型配置不漏给后续用例。

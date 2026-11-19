@@ -17,7 +17,7 @@ import NexusAI.ViewModels
 // profile map 接进 profile 属性，覆盖值 / 徽章计数 / 生效来源全部从这份
 // QML property 派生（Settings 的 profilesChanged → 宿主 editing 重算 →
 // 本组件的绑定链自动刷新）；提交逐键走 Settings.setModelParam /
-// clearModelParams 专用入口（空串 = 删除覆盖键，回到跟随默认），不拼整份
+// clearModelParams 专用入口（空串 = 删除覆盖键 = 不发送该参数），不拼整份
 // modelParams 提交，避免 UI 并发拼装互相覆盖丢键（docs/43 §6.2 第 6 条）。
 //
 // 根用 Item 而不是 ColumnLayout：清除确认 Dialog 要与可视内容平级，挂进
@@ -71,14 +71,10 @@ Item {
     readonly property int selectedOverrideCount: root.overrideCount(root.selectedModel)
 
     // 当前生效上下文预算的四级链（与 C++ resolveContextLimitForProfile 同
-    // 序，docs/43 §4.2）：模型覆盖 > 默认（profile.contextLength）> 能力表
-    // > 全局 contextTokens。
+    // 序，docs/43 §4.2 v7 起三级）：模型覆盖 > 能力表 > 全局 contextTokens。
+    // profile 级「默认层」已移除，因此这里没有 profileContext 这一级。
     readonly property int perModelContext: {
         const n = parseInt(root.overrideValue("contextLength")) || 0
-        return n > 0 ? n : 0
-    }
-    readonly property int profileContext: {
-        const n = parseInt(root.profileValue("contextLength")) || 0
         return n > 0 ? n : 0
     }
     // 依赖项（profile / selectedModel）都是 QML property，能力表查询本身是
@@ -100,11 +96,9 @@ Item {
                                      root.selectedModel).tools : false
     readonly property int effectiveContext: root.perModelContext > 0
         ? root.perModelContext
-        : (root.profileContext > 0 ? root.profileContext
-          : (root.tableContext > 0 ? root.tableContext : Settings.contextTokens))
+        : (root.tableContext > 0 ? root.tableContext : Settings.contextTokens)
     readonly property string contextSource: root.perModelContext > 0 ? qsTr("模型覆盖")
-        : (root.profileContext > 0 ? qsTr("默认（所有模型）")
-        : (root.tableContext > 0 ? qsTr("模型能力表") : qsTr("全局默认")))
+        : (root.tableContext > 0 ? qsTr("模型能力表") : qsTr("全局默认"))
 
     // 指定模型的覆盖键数（徽章 / 清除按钮 / 确认文案共用）。
     function overrideCount(model) {
@@ -116,7 +110,7 @@ Item {
         return Object.keys(entry).length
     }
 
-    // 当前选中模型的覆盖值；空串 = 未覆盖（跟随默认）。
+    // 当前选中模型的覆盖值；空串 = 未覆盖（该参数不发送）。
     function overrideValue(key) {
         if (root.profile === null || root.selectedModel === "") return ""
         const params = root.profile.modelParams
@@ -124,13 +118,6 @@ Item {
         const entry = params[root.selectedModel]
         if (entry === undefined || entry === null) return ""
         const value = entry[key]
-        return (value === undefined || value === null) ? "" : String(value)
-    }
-
-    // profile 级默认值（「留空 = 跟随默认（当前 X）」提示用）。
-    function profileValue(key) {
-        if (root.profile === null) return ""
-        const value = root.profile[key]
         return (value === undefined || value === null) ? "" : String(value)
     }
 
@@ -296,7 +283,7 @@ Item {
             wrapMode: Text.WordWrap
         }
 
-        // ── 覆盖表单：留空 / 「跟随默认」= 删除覆盖键 ────────
+        // ── 参数表单：留空 = 删除覆盖键（= 不发送该参数）────────
         ColumnLayout {
             visible: root.modelsList.length > 0
             Layout.fillWidth: true
@@ -308,7 +295,7 @@ Item {
                 // 覆盖状态写进 label 纯文本（docs/43 §6.4：不单靠颜色区分）。
                 label: root.overrideValue("temperature") !== ""
                     ? qsTr("temperature（已覆盖）") : qsTr("temperature")
-                placeholderText: qsTr("0 - 2，留空 = 跟随默认")
+                placeholderText: qsTr("0 - 2，留空 = 不发送")
                 validator: DoubleValidator { locale: "C"; bottom: 0; top: 2; decimals: 2 }
                 // 防抖默认 600ms：停顿即提交（这里没有「当前模型」那种半截名字
                 // 灌列表的问题）；页面销毁补交（切设置分类丢编辑的坑，同卡片四）。
@@ -318,10 +305,8 @@ Item {
 
             Text {
                 Layout.fillWidth: true
-                text: root.profileValue("temperature") !== ""
-                    ? qsTr("留空 = 跟随默认（当前 %1）")
-                          .arg(root.profileValue("temperature"))
-                    : qsTr("留空 = 服务默认（不发送）")
+                // v7：没有 profile 默认层可"跟随"，留空的语义就是不发该字段。
+                text: qsTr("留空 = 使用服务的默认值（不发送该参数）")
                 color: Theme.textSecondary
                 font.pixelSize: Theme.fontSizeCaption
                 font.family: Theme.fontSans
@@ -335,7 +320,7 @@ Item {
                     ? qsTr("最大输出 tokens（已覆盖）") : qsTr("最大输出 tokens")
                 entries: root.outputPresets
                 currentValue: root.overrideValue("maxOutputTokens")
-                autoLabel: qsTr("跟随默认")
+                autoLabel: qsTr("不设置")
                 placeholderText: qsTr("自定义上限，留空 = 服务默认")
                 validator: IntValidator { bottom: 1 }
                 commitOnDestroy: true
@@ -344,10 +329,7 @@ Item {
 
             Text {
                 Layout.fillWidth: true
-                text: root.profileValue("maxOutputTokens") !== ""
-                    ? qsTr("留空 = 跟随默认（当前 %1）")
-                          .arg(root.profileValue("maxOutputTokens"))
-                    : qsTr("留空 = 服务默认")
+                text: qsTr("留空 = 使用服务的默认上限（不发送该参数）")
                 color: Theme.textSecondary
                 font.pixelSize: Theme.fontSizeCaption
                 font.family: Theme.fontSans
@@ -366,7 +348,7 @@ Item {
                         ? qsTr("num_ctx（已覆盖）") : qsTr("num_ctx")
                     entries: root.contextPresets
                     currentValue: root.overrideValue("numCtx")
-                    autoLabel: qsTr("跟随默认")
+                    autoLabel: qsTr("不设置")
                     placeholderText: qsTr("自定义窗口，留空 = 不发送")
                     validator: IntValidator { bottom: 1 }
                     commitOnDestroy: true
@@ -375,10 +357,7 @@ Item {
 
                 Text {
                     Layout.fillWidth: true
-                    text: root.profileValue("numCtx") !== ""
-                        ? qsTr("留空 = 跟随默认（当前 %1）")
-                              .arg(root.profileValue("numCtx"))
-                        : qsTr("留空 = 不发送")
+                    text: qsTr("留空 = 不发送 num_ctx，由 Ollama 按模型自带窗口决定")
                     color: Theme.textSecondary
                     font.pixelSize: Theme.fontSizeCaption
                     font.family: Theme.fontSans
@@ -395,16 +374,13 @@ Item {
                 currentValue: root.overrideValue("reasoningEffort")
                 // 枚举参数不存在自定义值（与卡片五 effortRow 同款）。
                 allowCustom: false
-                autoLabel: qsTr("跟随默认")
+                autoLabel: qsTr("不设置")
                 onSubmitted: (value) => root.submitOverride("reasoningEffort", value)
             }
 
             Text {
                 Layout.fillWidth: true
-                text: root.profileValue("reasoningEffort") !== ""
-                    ? qsTr("跟随默认（当前 %1）")
-                          .arg(root.effortLabel(root.profileValue("reasoningEffort")))
-                    : qsTr("跟随默认（不发送）")
+                text: qsTr("留空 = 不发送思考参数，由模型的默认行为决定")
                 color: Theme.textSecondary
                 font.pixelSize: Theme.fontSizeCaption
                 font.family: Theme.fontSans
@@ -418,15 +394,15 @@ Item {
                     ? qsTr("上下文预算（已覆盖）") : qsTr("上下文预算")
                 entries: root.contextPresets
                 currentValue: root.overrideValue("contextLength")
-                autoLabel: qsTr("跟随默认")
+                autoLabel: qsTr("不设置")
                 placeholderText: qsTr("自定义预算，留空 = 自动")
                 validator: IntValidator { bottom: 2048; top: 1048576 }
                 commitOnDestroy: true
                 onSubmitted: (value) => root.submitOverride("contextLength", value)
             }
 
-            // 四级生效来源（docs/43 §6.2 第 2 条）：常显当前生效值与来源，
-            // 「默认层 + 模型覆盖」两层心智的困惑点（R6）靠它消解。
+            // 生效来源（docs/43 §6.2 第 2 条，v7 起两级）：常显当前生效值与
+            // 来源（模型覆盖 / 能力表 / 全局默认），让"这个值从哪来"始终可见。
             Text {
                 Layout.fillWidth: true
                 text: root.effectiveContext > 0
@@ -434,7 +410,7 @@ Item {
                           .arg(root.effectiveContext).arg(root.contextSource)
                     : qsTr("当前生效 %1 tokens（来源：全局默认，能力表里没有这个模型）")
                           .arg(Settings.contextTokens)
-                color: root.perModelContext > 0 || root.profileContext > 0
+                color: root.perModelContext > 0
                     || root.tableContext > 0 ? Theme.textSecondary : Theme.statusWarning
                 font.pixelSize: Theme.fontSizeCaption
                 font.family: Theme.fontMono
@@ -567,7 +543,7 @@ Item {
                 // 模型名是用户数据：纯文本渲染防注入（工程约定）。
                 textFormat: Text.PlainText
                 text: root.selectedModel !== ""
-                    ? qsTr("将删除「%1」的全部 %2 项参数覆盖，该模型回退跟随默认，操作不可撤销。")
+                    ? qsTr("将删除「%1」的全部 %2 项参数覆盖，该模型改用服务默认值，操作不可撤销。")
                             .arg(root.selectedModel)
                             .arg(root.selectedOverrideCount)
                     : ""

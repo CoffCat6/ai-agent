@@ -16,7 +16,7 @@ public:
     // the switch (an explicit "off" is preserved); v6 (docs/43) introduces
     // per-model parameter overrides (profile 内 modelParams) and drops the
     // legacy topP ghost key — no data is pre-filled, old behavior unchanged.
-    static constexpr int kSchemaVersion = 6;
+    static constexpr int kSchemaVersion = 7;
     static constexpr int kDefaultLogMaxFileSizeMb = 10;
     static constexpr int kDefaultLogRetentionFiles = 14;
 

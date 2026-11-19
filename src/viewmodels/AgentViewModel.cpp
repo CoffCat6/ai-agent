@@ -1116,7 +1116,7 @@ void AgentViewModel::configureModel(ChatSessionController* controller) {
     // docs/43 §4.3：会话临时思考档位改经独立通道下发，不再混写进 profile
     // 副本顶层——顶层键同时承担"默认"与"临时覆盖"两个角色，会反噬盖掉
     // modelParams 的模型覆盖。空串档位（"默认"）视为放弃会话覆盖，同样
-    // 不进通道，让优先级链回落到模型覆盖/默认层。
+    // 不进通道，让优先级链回落到模型覆盖（v7 起没有 profile 默认层）。
     QVariantMap sessionOverrides;
     const QString sessionEffort = controller->selectedReasoning.toString();
     if (controller->selectedReasoning.isValid() && !sessionEffort.isEmpty())
