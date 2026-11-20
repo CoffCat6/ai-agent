@@ -4,7 +4,12 @@
 # race each other's ninja in a shared tree. Same rationale as /build.
 /build-*
 /.agents
+# 仓库根下的点目录一律忽略（编辑器/工具的本地状态），但 .github 要入库：
+# 原先的裸 `/.*` 会把 .github 下**新建**的子目录（如 .github/actions/）一起
+# 静默挡在版本控制之外——已跟踪的 .github/workflows/ 不受影响，所以问题
+# 只在新文件上暴露。先放行 .github，再保留其余点目录的忽略。
 /.*
+!/.github
 /txt
 /deploy
 NexusAI-*-win64.zip

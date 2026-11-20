@@ -5,26 +5,30 @@
 ## 功能特性
 
 - **ReAct 智能体管线**：思考 → 工具调用 → 结果回灌的完整循环，带步数预算、防重复调用守卫、流式输出与随时中止
-- **多模型多配置**：五家协议——OpenAI Chat Completions / OpenAI Responses / Anthropic / Gemini / Ollama，多 profile 管理；对话区按会话选择模型与思考强度，执行中的任务保持配置快照；设置页支持按模型独立配置生成参数，活动配置作为新会话默认
+- **多模型多配置**：五家协议——OpenAI Chat Completions / OpenAI Responses / Anthropic / Gemini / Ollama，多 profile 管理；对话区按会话选择模型与思考强度（思考档位分关闭/低/中/高四段，配置了 profile 默认档时直接回显该档），执行中的任务保持配置快照；生成参数（temperature / 最大输出 / num_ctx / 思考强度 / 上下文预算）**按模型独立设置**，没有「全局默认」层——留空即不发送该参数
+- **模型能力徽章**：对话区模型选择器的每行带三枚胶囊芯片（上下文窗口 / 视觉 / 工具），扫列表即可看出能力差异；能力表未收录的模型显示 `?`，可在设置页按模型显式标注视觉与工具支持、覆盖上下文预算，徽章即时跟随
 - **单对话视图**：多标签已移除，侧栏驱动会话切换；会话标题、项目归属、运行状态（含运行时长）集中于顶栏，模型与思考强度在对话区选择（引擎侧每会话独立 AIAgent 语义不变）
 - **子代理并行**：可派发子代理在后台并行执行任务，不阻塞主对话；后台任务面板查看进行中任务、编排可视化与历史报告，顶栏角标显示进行中数量
 - **技能（Skill）**：本地技能注册与编辑器，输入框 `/` 命令即补全（候选按名称/描述过滤），技能内容按需注入系统提示词；技能可用性有搜索与来源筛选
-- **工具沙箱**：三级安全策略（直接执行 / 用户确认 / 永禁用），读取默认限制在用户目录（可设置中开启全盘读取），路径黑白名单 + 全量审计日志
+- **工具沙箱**：四档权限模式（只读计划 / 变更确认 / 自动编辑 / 完全访问，可在会话内随时切换，也可设新会话默认），逐工具启停开关与三级执行策略（直接执行 / 用户确认 / 永禁用）；读取默认限制在用户目录（可开启全盘读取），路径黑白名单 + 全量审计日志
 - **知识库 RAG**：中文友好分块、Ollama 向量嵌入（可配置模型，离线自动降级本地伪嵌入）、内容去重与同名共存、向量持久化（重启秒级恢复）、本地知识库管理与检索；管理界面在独立对话框（侧栏左下工具条入口），表格式列表展示段数/字符/嵌入状态
 - **引用溯源徽标**：知识库命中项带 `[doc:文档名#chunkId]` 标记，回答中的 `[文档名]` 记号渲染为可点击徽标 chip，点开即复用知识库文档对话框按名定位，回答来源可验证
+- **知识库源文件联动**：从文件导入的知识条目可开启自动同步——源文件 mtime/大小未变时走快路径跳过，变更后重新分块与嵌入（开关可关，嵌入可能计费）
 - **PDF 导入**：知识库可直接导入 `.pdf`（Qt6Pdf 逐页提取文本，去重/分块/嵌入链路与文本文件完全复用），加密、损坏、无文本层（扫描件）、读取失败给出分类错误提示
 - **会话持久化**：SQLite 保存消息、思考轨迹、附件、审计与知识库；重开应用恢复时间线。会话支持置顶、归档与恢复，历史搜索可选择包含归档记录
 - **数据库备份与数据保留**：启动自动备份（VACUUM INTO 一致性快照，保留最近 N 份）、可配置间隔的定时备份与随时手动备份，备份文件可预览内容概况与完整性，一键恢复（自动回滚保护）；会话删除支持 10 秒内撤销（软删除 30 天后硬回收）；审计日志与 Token 用量按天保留（可配置，0 为永久）
 - **Token 计量与费用**：请求前估算×滚动校准（校准系数在浮层可见），顶栏常显窗口占用与「上下文构成」明细浮层——指令/工具/素材与会话/工具结果等分组树，四列跨行对齐、紧凑 K 格式、一位小数百分比；会话累计按输入（未命中）/缓存命中/输出与来源拆分，费用按 provider 计费入账；统计页按天/按模型/按工具聚合
+- **会话内查找**：`Ctrl+F` 打开查找条，命中范围是 trace 中的用户消息与助手回复；结果按序号跳转并高亮，`Esc` 关闭
+- **手动上下文压缩**：`/compact [重点]` 让模型把历史摘要成一段精简上下文，长会话不必等到自动压缩；摘要内容与压缩点对后续请求可见
 - **消息级操作**：末条助手回复一键重新生成、末条用户消息内联编辑重发并保留附件（上下文与持久化消息、轨迹同步回退，审计链保留）；输入框 ↑/↓ 回溯本会话输入历史（内存态、相邻去重）；拖拽本地图片/文本文件到输入区直接成附件（任意启动方式可用：从终端/管理员启动时自动放行 UIPI 的 OLE 拖放握手消息）
+- **定时任务**：三种调度形态——每天 HH:mm、每周 X HH:mm、每 N 小时（刻意不做 cron 表达式，编辑器只需三行可选字段）；每条任务可指定模型配置与提示词，支持「错过补跑」开关（应用停了三天也只补最近一次，不会洪泛）；与主对话并发时按 busy 闸跳过并记录原因
 - **项目级会话**：文件夹可导入为「项目」，项目会话与本地对话在侧栏分树共存；右侧栏的 Git 与文件浏览仅在项目会话中出现，本地对话时面板保持空白；归属按会话持有（每条会话记录自己的项目），顶栏徽标显示当前会话的归属，新建会话默认落到普通对话，项目会话由项目行的「+」创建
 - **项目文件浏览**：右侧栏「文件」分区以目录树只读浏览当前项目（仅项目会话），目录按需展开、支持名称过滤与折叠全部；点击文件在面板内预览前 512 KB（超大/二进制/已删除各有明确提示），双击或用按钮交给系统默认程序打开。忽略目录与敏感文件（`.env`、`id_rsa` 等）在数据层排除；预览带语法高亮（按扩展名判定，未识别扩展名保持纯文本而不猜测），支持自动换行开关、可拖动的高度调节与行号显示
-- **可观测性**：内置实时日志面板（分类/级别/关键词筛选），审计链凭 request_id 串起 LLM 请求、工具执行与任务结果，使用与网络事件独立留存（usage_log，30 天/10000 行保留）
+- **可观测性**：审计链凭 request_id 串起 LLM 请求、工具执行与任务结果，使用与网络事件独立留存（usage_log，30 天/10000 行保留）
 - **稳定性**：网络瞬时失败自动重试一次、任务超时自动封口收敛、上下文预算计入工具调用与工具定义、知识库总量预算（默认 4096 段）
 - **桌面集成**：系统托盘（后台任务完成气泡通知，主窗不在前台才打扰、可一键关闭通知）、关闭可最小化到托盘（托盘不可用时自动退回正常退出，不会把窗口"藏丢"）、单实例锁（重复启动静默退出，杜绝双写 SQLite/配置）、开机自启（用户级注册表，设置页开关）、快捷键速查表（`Ctrl+/`）
 - **日志面板**：侧栏入口打开实时日志视图，级别/分类/关键词三维筛选，一键复制与打开日志目录；重启后回填上次会话历史日志（标注"历史"）
-- **联网搜索**：`web_search` 工具（默认 Tavily）让模型检索实时信息，结果截断 6000 字符回灌；密钥经系统凭据加密（Windows DPAPI / Linux 系统钥匙环）；调用前需确认；`localOnlyMode` 下门控禁用
-- **SearXNG 搜索后端**：联网搜索新增自托管 SearXNG 后端（`GET /search?format=json`，无需 API Key），与 Tavily / DuckDuckGo 同走 `WebSearchBackend` 扩展点，工具管理页可切换后端并配置实例地址
+- **联网搜索**：`web_search` 工具让模型检索实时信息，结果截断 6000 字符回灌；三个后端——DuckDuckGo（免密钥，默认）、智谱 Web Search、DeepSeek Search，同走 `WebSearchBackend` 扩展点，工具管理页可切换并填入各自 API Key；密钥经系统凭据加密（Windows DPAPI / Linux 系统钥匙环），按 provider 分桶存储；调用前需确认；`localOnlyMode` 下门控禁用
 - **长期记忆**：情景记忆在会话结束时异步生成摘要，新会话按相关性检索注入（≤1500 token），默认关闭
 - **主题跟随系统**：主题模式三档（跟随系统 / 深色 / 浅色），`auto` 实时跟随系统深浅色，显式选择优先
 - **无障碍**：自定义 QML 控件补全 `Accessible.role/name/description`，纯图标控件具备可读名称，纯键盘可完成核心流程
@@ -40,8 +44,8 @@ src/
 ├── viewmodels/      # MVVM 层：AgentViewModel / SettingsService / ThemeManager / McpManager
 ├── ui/              # QML 视图（main.qml + components / panels / pages + style/NexusStyle 统一样式层）
 └── main.cpp         # 组装依赖链并暴露给 QML
-tests/               # QtTest 单测（61 个 ctest 条目，2026-11-09 实测）
-docs/                # 设计文档与技术路线（1-45）
+tests/               # QtTest 单测（65 个 ctest 条目，2026-11-19 实测）
+docs/                # 设计文档与技术路线（1-53）
 ```
 
 ## 构建与运行
@@ -49,10 +53,16 @@ docs/                # 设计文档与技术路线（1-45）
 要求：CMake ≥ 3.24、C++20 编译器、Qt ≥ 6.5（Core/Qml/Quick/Sql/Network/Concurrent/QuickControls2/LinguistTools/Widgets，PDF 导入另需 Pdf 模块）。
 
 ```bash
-# Windows (MinGW) 示例：Qt 工具链需在 PATH 中
+# Windows (MinGW)：Qt 工具链需在 PATH 中
 cmake -B build -G Ninja -DCMAKE_BUILD_TYPE=Release
 cmake --build build
 ./build/nexus_ai.exe
+
+# Linux：另需 qtkeychain-qt6-dev（密钥存系统钥匙环，见 docs/49 D1）
+cmake -B build -G Ninja -DCMAKE_BUILD_TYPE=Release \
+      -DCMAKE_PREFIX_PATH=$QT_DIR/6.9.0/gcc_64
+cmake --build build
+./build/nexus_ai
 ```
 
 未配置模型时，空白页提供“配置模型”入口。填写、测试并启用配置后即可发送；未被接受的发送会保留草稿和附件。
@@ -69,7 +79,27 @@ powershell -ExecutionPolicy Bypass -File scripts\deploy.ps1 -OutDir deploy -Zip
 
 产物布局：`deploy/bin/nexus_ai.exe`（与 Qt DLL、qt.conf 同目录，双击即启动），`qml/`、`plugins/`、`translations/` 为运行时资源。exe 内嵌 VERSIONINFO（版本号单一来源为 CMakeLists 的 `project(VERSION)`）。
 
-CI（`.github/workflows/ci.yml`）：GitHub Actions `windows-latest` 单 job——aqtinstall 安装 Qt 6.9.0 MinGW 工具链 → Ninja 构建（BUILD_TESTS=ON）→ 全量 ctest（含 qmllint 门禁）→ 调 deploy.ps1 并上传部署产物 artifact。当前仓库尚无远端：**推送到 GitHub 后工作流即生效**；「非开发机可启动」验收需在第二台 Windows 机器解压 zip 直接运行。
+Linux 侧对应 `scripts/deploy.sh`（AppDir + AppImage）与 `scripts/package-linux.sh`（deb/rpm，与 AppImage 同源复用 AppDir）。
+
+### CI
+
+`.github/workflows/ci.yml`，四个 job：
+
+| job | 触发 | 产物 |
+|---|---|---|
+| `windows-mingw` | push / PR | Debug 部署目录，进 CI artifact 页 |
+| `windows-mingw-release` | 仅 `v*` 标签 | `NexusAI-<ver>-win64.zip` + `setup.exe`（Inno Setup） |
+| `linux-gcc` | push / PR | AppImage + deb/rpm |
+| `release` | 仅 `v*` 标签 | 汇总三份资产发 GitHub Release |
+
+几点设计说明：
+
+- **测试不在 CI 里跑**。runner 环境差异导致的测试问题不阻塞发布（决策记录在 workflow 头部注释）；本地 `ctest` 与 `tests/` 基础设施完整保留。
+- **两个 Windows job 共用** `.github/actions/setup-qt-mingw`（aqtinstall 装 Qt 6.9 MinGW + 定位缓存工具链），避免装 Qt 的 28 行步骤两处各写一份后漂移。
+- **Release 配置只在标签上构建**：普通 push 省掉一次全量 Windows 构建，而 Release 的编译问题打 tag 时同样会暴露。
+- `release` 的 `needs` 含 debug 那份，作为发版前的额外编译门禁——代价是 tag 上会跑两次 Windows 构建。
+
+标签推送即发布：`git tag -a v0.3.1 -m "..." && git push origin v0.3.1`。
 
 ## 测试
 
@@ -79,7 +109,7 @@ cmake --build build
 ctest --test-dir build --output-on-failure
 ```
 
-覆盖范围：沙箱策略、Token 估算、五家 LLM 响应解析（OpenAI Chat / OpenAI Responses / Anthropic / Gemini / Ollama）、SQLite 记忆、RAG、ReAct 全流程、嵌入分页与进度、ViewModel、设置服务、日志（环形缓冲/Activity 分类/历史回填）、Provider 请求生命周期与并发隔离、Web 搜索、Episodic 记忆、消息重新生成/编辑重发（FORK-701）、附件类型分派与拖放边界（A4）、偏好键账本与开机自启（B）、设置项编辑生命周期（Loader 销毁不丢值，含可复用字段行/销毁掉真实文本两条守卫）、日志尾部读取（级别/续行继承/关键字/大文件窗口）、MCP 配置导入导出（脱敏/冲突策略/非法输入）、schema v3/v4 迁移与保守 128000 默认、Git 面板与文件改动审阅、知识库导入、代码图表渲染、设置页工具分组与折叠、MCP 与代理链路、快捷键覆盖与冲突拒绝、关于页构建信息、首次启动向导触发与跳过回收、设置中心尺寸记忆（真实拖动→关闭落盘→重开恢复→窄窗 clamp）、用量告警阈值（按天/类型去重）、定时备份间隔归一（五档/非法值/写盘值）、设置变更撤销（有旧值回原值/无旧值删键/复位清记录/密钥拒绝）、模型配置复制（不带密钥）与排序（落盘回读）、活动配置切换（重复/未知 id no-op）、减少动效开关（Theme 动效令牌即时归零/恢复）、数据管理总览（统计异步、清空用量、VACUUM、破坏性操作二次确认），以及近期增量——子代理后台任务（生命周期/并发隔离/报告回流）与编排可视化、Skill 注册与 `/` 命令补全、token 上下文构成分组树与明细浮层（含浮层可用性回归）、按模型生成参数、样式层一致性（test_style_qml），共 **61 个 ctest 条目**（2026-11-09 实测；用例数未重统计；含 docs/31 S1 的设置值层/行级复位/备份列表三套，S2 的分类导出/导入逐键差异/日志尾部读取/MCP 配置导入导出，S3 的字体搜索/关于页、快捷键数据层与页面、首次启动向导数据层与三步交互，S4.1 的尺寸记忆与配额告警，S4.2 的备份间隔调度，S4.3 的设置撤销数据层与点击级用例，S4.6 的预设包导入导出/冲突策略/无凭据字段，S4.4 的配置复制与排序、S4.7 的动效令牌归零，以及 S4.5 的数据库统计/清理/压缩），另含 `qmllint_gate` 静态门禁。双语 .ts 已补齐全部译文（0 unfinished）。
+覆盖范围：沙箱策略、Token 估算、五家 LLM 响应解析（OpenAI Chat / OpenAI Responses / Anthropic / Gemini / Ollama）、SQLite 记忆、RAG、ReAct 全流程、嵌入分页与进度、ViewModel、设置服务、日志（环形缓冲/Activity 分类/历史回填）、Provider 请求生命周期与并发隔离、Web 搜索、Episodic 记忆、消息重新生成/编辑重发（FORK-701）、附件类型分派与拖放边界（A4）、偏好键账本与开机自启（B）、设置项编辑生命周期（Loader 销毁不丢值，含可复用字段行/销毁掉真实文本两条守卫）、日志尾部读取（级别/续行继承/关键字/大文件窗口）、MCP 配置导入导出（脱敏/冲突策略/非法输入）、schema v3/v4 迁移与保守 128000 默认、Git 面板与文件改动审阅、知识库导入、代码图表渲染、设置页工具分组与折叠、MCP 与代理链路、快捷键覆盖与冲突拒绝、关于页构建信息、首次启动向导触发与跳过回收、设置中心尺寸记忆（真实拖动→关闭落盘→重开恢复→窄窗 clamp）、用量告警阈值（按天/类型去重）、定时备份间隔归一（五档/非法值/写盘值）、设置变更撤销（有旧值回原值/无旧值删键/复位清记录/密钥拒绝）、模型配置复制（不带密钥）与排序（落盘回读）、活动配置切换（重复/未知 id no-op）、减少动效开关（Theme 动效令牌即时归零/恢复）、数据管理总览（统计异步、清空用量、VACUUM、破坏性操作二次确认），以及近期增量——子代理后台任务（生命周期/并发隔离/报告回流）与编排可视化、Skill 注册与 `/` 命令补全、token 上下文构成分组树与明细浮层（含浮层可用性回归）、按模型生成参数、样式层一致性（test_style_qml）；本轮增量——会话内查找定位、模型能力徽章（胶囊芯片 + 按模型覆盖）、思考强度分段条的档位/键盘/动效/减少动效归零、profile 默认层移除后的 v7 迁移（顶层值搬入模型覆盖表）、MCP 资源列表随 serversChanged 重算、工具页两组默认折叠，共 **65 个 ctest 条目**（2026-11-19 实测；含 docs/31 S1 的设置值层/行级复位/备份列表三套，S2 的分类导出/导入逐键差异/日志尾部读取/MCP 配置导入导出，S3 的字体搜索/关于页、快捷键数据层与页面、首次启动向导数据层与三步交互，S4.1 的尺寸记忆与配额告警，S4.2 的备份间隔调度，S4.3 的设置撤销数据层与点击级用例，S4.6 的预设包导入导出/冲突策略/无凭据字段，S4.4 的配置复制与排序、S4.7 的动效令牌归零，以及 S4.5 的数据库统计/清理/压缩），另含 `qmllint_gate` 静态门禁。双语 .ts 已补齐全部译文（0 unfinished）。
 
 ## 配置与数据位置
 
@@ -87,8 +117,8 @@ ctest --test-dir build --output-on-failure
 |---|---|---|
 | 模型配置（QSettings） | 注册表 `HKCU\Software\NexusAI\NexusAI` | `~/.config/NexusAI/NexusAI.conf` |
 | API Key 密文 | DPAPI 按用户加密（`dpapi:v1:`） | 系统钥匙环 Secret Service / KWallet（`secret:v1:`） |
-| 应用数据（数据库） | `%APPDATA%\NexusAI\NexusAI\nexusai_memory.db` | `~/.local/share/NexusAI/nexusai_memory.db` |
-| 运行日志 / MCP 配置 | `%LOCALAPPDATA%\NexusAI\NexusAI\logs\`、`%APPDATA%\NexusAI\NexusAI\mcp_servers.json` | `~/.local/share/NexusAI/logs/`、`~/.local/share/NexusAI/mcp_servers.json` |
+| 应用数据（数据库 / 备份） | `%APPDATA%\NexusAI\NexusAI\nexusai_memory.db` | `~/.local/share/NexusAI/NexusAI/nexusai_memory.db`（备份在同级 `backups/`） |
+| 运行日志 / MCP 配置 | `%LOCALAPPDATA%\NexusAI\NexusAI\logs\`、`%APPDATA%\NexusAI\NexusAI\mcp_servers.json` | `~/.local/share/NexusAI/NexusAI/logs/`、`~/.local/share/NexusAI/NexusAI/mcp_servers.json` |
 
 日志按天轮转保留 7 天；使用/网络事件另存 usage_log（同一数据库，保留 30 天/10000 行）。
 
@@ -171,4 +201,6 @@ MCP 工具的 `description` 字段截断至 **≤ 1024 字符**（`McpToolAdapte
 
 下一阶段功能完善目标与计划（F 接通已有能力 / G 编码场景 / H 平台与集成 / I 安全与长尾四批，含优先级、依赖顺序与验收口径）见 [26-下一阶段功能完善目标与计划](docs/26-下一阶段功能完善目标与计划.md)。
 
-docs/27-45 为 2026-11 前后的迭代实录，重点：[27-项目现状基线盘点](docs/27-项目现状基线盘点.md)、[30-单对话视图重构](docs/30-单对话视图重构方案.md)（多标签 → 侧栏驱动）、[31-设置界面及相关功能完善](docs/31-设置界面及相关功能完善.md)、[32/34/35-子智能体与主代理并行](docs/35-主代理与子代理并行方案.md)、[42-子代理编排可视化](docs/42-子代理编排可视化方案.md)、[37-40-Skill 与命令补全](docs/37-Skill与命令补全方案.md)（41 为工具白名单运行期生效的回滚决策）、[43-按模型参数优化](docs/43-模型配置页面按模型参数优化方案.md)、[44-组件样式统一（NexusStyle）](docs/44-组件样式统一方案.md)、[45-对话文本排版优化](docs/45-对话文本排版优化方案.md)。
+docs/27-53 为 2026-11 前后的迭代实录，重点：[27-项目现状基线盘点](docs/27-项目现状基线盘点.md)、[30-单对话视图重构](docs/30-单对话视图重构方案.md)（多标签 → 侧栏驱动）、[31-设置界面及相关功能完善](docs/31-设置界面及相关功能完善.md)、[32/34/35-子智能体与主代理并行](docs/35-主代理与子代理并行方案.md)、[42-子代理编排可视化](docs/42-子代理编排可视化方案.md)、[37-40-Skill 与命令补全](docs/37-Skill与命令补全方案.md)（41 为工具白名单运行期生效的回滚决策）、[43-按模型参数优化](docs/43-模型配置页面按模型参数优化方案.md)、[44-组件样式统一（NexusStyle）](docs/44-组件样式统一方案.md)、[45-对话文本排版优化](docs/45-对话文本排版优化方案.md)。
+
+[46-MCP-Prompts 接入](docs/46-MCP-Prompts接入方案.md) / [48-MCP-Resources 接入](docs/48-MCP-Resources接入方案.md)（prompts 与 resources 两条 MCP 能力通道）、[47-高分屏缩放与 DPI 几何修复](docs/47-高分屏缩放流畅度与DPI几何修复.md)、[49-Linux 适配](docs/49-Linux适配方案.md)（打包矩阵与平台差异）、[50-定时任务](docs/50-定时任务方案.md)、[51-知识库 RAG 文件变更联动](docs/51-知识库RAG文件变更联动方案.md)、[52-手动压缩命令](docs/52-手动压缩命令方案.md)（`/compact`）、[53-对话渲染轻量增强](docs/53-对话渲染轻量增强方案.md)。

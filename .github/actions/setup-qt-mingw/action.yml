@@ -1,0 +1,64 @@
+name: Setup Qt (MinGW)
+description: >-
+  Install the Qt 6 MinGW kit + MinGW toolchain via aqtinstall and expose them to
+  later steps (PATH + CMAKE_PREFIX_PATH). Shared by the debug and release
+  Windows jobs so the aqt invocation, cache key and PS 5.1 GITHUB_ENV quirks
+  live in exactly one place.
+
+inputs:
+  qt-version:
+    description: Qt version to install
+    required: false
+    default: "6.9.0"
+
+outputs:
+  qt-version:
+    description: Qt version that was installed
+    value: ${{ inputs.qt-version }}
+
+# composite action 没有 action 级的 env（只有 workflow / job / step 三级），
+# 因此 QT_DIR / QT_VERSION 在这两个步骤里各写一次。它们都是常量表达式，
+# 不会漂移；要改 Qt 版本只改下面的 inputs.qt-version。
+runs:
+  using: composite
+  steps:
+    - uses: actions/setup-python@v5
+      with:
+        python-version: '3.x'
+
+    - name: Cache Qt (MinGW) toolchain
+      id: qt-cache
+      uses: actions/cache@v4
+      with:
+        path: ${{ github.workspace }}/Qt
+        key: qt-${{ runner.os }}-${{ inputs.qt-version }}-mingw1310-qtpdf-v1
+
+    - name: Install Qt (MinGW) via aqtinstall
+      if: steps.qt-cache.outputs.cache-hit != 'true'
+      shell: pwsh
+      env:
+        QT_DIR: ${{ github.workspace }}/Qt
+        QT_VERSION: ${{ inputs.qt-version }}
+      run: |
+        python -m pip install aqtinstall
+        # qtpdf: docs/20 §5.2 PDF 导入（QPdfDocument 文本提取），不在基础包里
+        aqt install-qt windows desktop $env:QT_VERSION win64_mingw -m qtpdf --outputdir $env:QT_DIR
+        # MinGW 13.1 toolchain bundled by Qt (same as the local dev setup)
+        aqt install-tool windows desktop tools_mingw1310 qt.tools.win64_mingw1310 --outputdir $env:QT_DIR
+
+    # 把工具链写进 GITHUB_PATH / GITHUB_ENV，后续步骤（含调用方的 job step）
+    # 才看得到 git 与 CMAKE_PREFIX_PATH。GITHUB_ENV 的写入对**同一 action 之后
+    # 的步骤**生效，所以这里不能把 path 计算留在 action 外部。
+    - name: Locate MinGW toolchain
+      shell: pwsh
+      env:
+        QT_DIR: ${{ github.workspace }}/Qt
+        QT_VERSION: ${{ inputs.qt-version }}
+      run: |
+        $gpp = Get-ChildItem "$env:QT_DIR/Tools" -Recurse -Filter "g++.exe" | Select-Object -First 1
+        if (-not $gpp) { throw "MinGW g++.exe not found under Qt/Tools" }
+        # Add-Content 写 ASCII：PS 5.1 的 Out-File 默认 UTF-16 会让
+        # GITHUB_ENV/GITHUB_PATH 解析失败（bring-up 实测）。
+        Add-Content $env:GITHUB_PATH "$($gpp.DirectoryName)"
+        Add-Content $env:GITHUB_PATH "$env:QT_DIR/$env:QT_VERSION/mingw_64/bin"
+        Add-Content $env:GITHUB_ENV "CMAKE_PREFIX_PATH=$env:QT_DIR/$env:QT_VERSION/mingw_64"

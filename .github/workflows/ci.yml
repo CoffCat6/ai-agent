@@ -23,45 +23,20 @@ on:
   pull_request:
 
 jobs:
+  # ── Windows：debug（构建验证）与 release（发版资产）──
+  #
+  # 两个 job 的「装 Qt + 定位 MinGW」完全共用 .github/actions/setup-qt-mingw
+  # （原先各写 28 行，改 Qt 版本要同步改两处，极易漂移）。
+  #
+  # 为什么拆成两个 job 而不是一个 matrix：release 那份只需在版本标签上跑
+  # （普通 push 省掉一次全量 Windows 构建——装 Qt 6.9 + MinGW + 编译 +
+  # windeployqt 并不便宜），而 job 级 if 里拿不到 matrix 上下文，matrix 的
+  # include 条目也不支持条件。拆开后两件事各自表达清楚。
   windows-mingw:
     runs-on: windows-latest
-    env:
-      QT_VERSION: 6.9.0
-      QT_DIR: ${{ github.workspace }}/Qt
     steps:
       - uses: actions/checkout@v4
-
-      - uses: actions/setup-python@v5
-        with:
-          python-version: '3.x'
-
-      - name: Cache Qt (MinGW) toolchain
-        id: qt-cache
-        uses: actions/cache@v4
-        with:
-          path: ${{ env.QT_DIR }}
-          key: qt-${{ runner.os }}-${{ env.QT_VERSION }}-mingw1310-qtpdf-v1
-
-      - name: Install Qt (MinGW) via aqtinstall
-        if: steps.qt-cache.outputs.cache-hit != 'true'
-        shell: pwsh
-        run: |
-          python -m pip install aqtinstall
-          # qtpdf: docs/20 §5.2 PDF 导入（QPdfDocument 文本提取），不在基础包里
-          aqt install-qt windows desktop $env:QT_VERSION win64_mingw -m qtpdf --outputdir $env:QT_DIR
-          # MinGW 13.1 toolchain bundled by Qt (same as the local dev setup)
-          aqt install-tool windows desktop tools_mingw1310 qt.tools.win64_mingw1310 --outputdir $env:QT_DIR
-
-      - name: Locate MinGW toolchain
-        shell: pwsh
-        run: |
-          $gpp = Get-ChildItem "$env:QT_DIR/Tools" -Recurse -Filter "g++.exe" | Select-Object -First 1
-          if (-not $gpp) { throw "MinGW g++.exe not found under Qt/Tools" }
-          # Add-Content 写 ASCII：PS 5.1 的 Out-File 默认 UTF-16 会让
-          # GITHUB_ENV/GITHUB_PATH 解析失败（bring-up 实测）。
-          Add-Content $env:GITHUB_PATH "$($gpp.DirectoryName)"
-          Add-Content $env:GITHUB_PATH "$env:QT_DIR/$env:QT_VERSION/mingw_64/bin"
-          Add-Content $env:GITHUB_ENV "CMAKE_PREFIX_PATH=$env:QT_DIR/$env:QT_VERSION/mingw_64"
+      - uses: ./.github/actions/setup-qt-mingw
 
       - name: Configure
         shell: pwsh
@@ -71,6 +46,8 @@ jobs:
         shell: pwsh
         run: cmake --build build
 
+      # Debug profile 只产 deploy/ 目录，供 CI artifact 页取用；
+      # 不发 Release（发版资产由下面的 release job 负责）。
       - name: Deploy
         shell: pwsh
         run: ./scripts/deploy.ps1 -OutDir deploy
@@ -81,42 +58,12 @@ jobs:
           path: deploy/
 
   windows-mingw-release:
+    # 仅版本标签：普通 push/PR 不必为发版资产多跑一次全量构建。
+    if: startsWith(github.ref, 'refs/tags/v')
     runs-on: windows-latest
-    env:
-      QT_VERSION: 6.9.0
-      QT_DIR: ${{ github.workspace }}/Qt
     steps:
       - uses: actions/checkout@v4
-
-      - uses: actions/setup-python@v5
-        with:
-          python-version: '3.x'
-
-      - name: Cache Qt (MinGW) toolchain
-        id: qt-cache
-        uses: actions/cache@v4
-        with:
-          path: ${{ env.QT_DIR }}
-          key: qt-${{ runner.os }}-${{ env.QT_VERSION }}-mingw1310-qtpdf-v1
-
-      - name: Install Qt (MinGW) via aqtinstall
-        if: steps.qt-cache.outputs.cache-hit != 'true'
-        shell: pwsh
-        run: |
-          python -m pip install aqtinstall
-          # qtpdf: docs/20 §5.2 PDF 导入（QPdfDocument 文本提取），不在基础包里
-          aqt install-qt windows desktop $env:QT_VERSION win64_mingw -m qtpdf --outputdir $env:QT_DIR
-          # MinGW 13.1 toolchain bundled by Qt (same as the local dev setup)
-          aqt install-tool windows desktop tools_mingw1310 qt.tools.win64_mingw1310 --outputdir $env:QT_DIR
-
-      - name: Locate MinGW toolchain
-        shell: pwsh
-        run: |
-          $gpp = Get-ChildItem "$env:QT_DIR/Tools" -Recurse -Filter "g++.exe" | Select-Object -First 1
-          if (-not $gpp) { throw "MinGW g++.exe not found under Qt/Tools" }
-          Add-Content $env:GITHUB_PATH "$($gpp.DirectoryName)"
-          Add-Content $env:GITHUB_PATH "$env:QT_DIR/$env:QT_VERSION/mingw_64/bin"
-          Add-Content $env:GITHUB_ENV "CMAKE_PREFIX_PATH=$env:QT_DIR/$env:QT_VERSION/mingw_64"
+      - uses: ./.github/actions/setup-qt-mingw
 
       - name: Configure (Release)
         shell: pwsh
@@ -224,8 +171,17 @@ jobs:
             deploy/*.rpm
 
   # 发布：仅版本标签（v*）触发——普通 push 只跑构建，打 tag 才发 Release。
-  # 资产 = win64 安装包 + win64 zip + Linux AppImage/deb/rpm；默认配置的
-  # Windows job 是构建验证，其产物留在 CI artifact 页不进 Release。
+  # 资产 = win64 安装包 + win64 zip + Linux AppImage/deb/rpm；debug 配置的
+  # Windows job 产物留在 CI artifact 页，不进 Release。
+  #
+  # needs 里保留 windows-mingw（debug）是有意的：它充当发版前的额外编译
+  # 门禁——同一个 tag 上 debug 编译不过时，不应该把 release 资产发出去。
+  # 代价是该 tag 会跑两次 Windows 构建（debug + release），这是有意识的取舍。
+  #
+  # 约束：本 job 的 if 必须与 windows-mingw-release 的 if **字面一致**。
+  # needs 里的 job 被跳过时，依赖它的 job 也会被跳过；两者条件一致，所以
+  # tag 场景下 windows-mingw-release 一定会跑，本 job 不会被连带跳过。
+  # 若要放宽本 job 的触发条件，必须同时放宽上面那个 job。
   release:
     if: startsWith(github.ref, 'refs/tags/v')
     needs: [windows-mingw, windows-mingw-release, linux-gcc]
